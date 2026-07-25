@@ -43,6 +43,17 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 - 对照用户已经确认的目标、纠正和决策，检查当前 change 的 proposal、design、delta specs 和 tasks、最终实现、Git diff 与验证结果是否语义完整对齐。任务范围内仍有未记录语义、实现偏差或验证缺口时，在资产审查门控前停止收尾并回到修正流程。
 - OpenSpec contract sidebar 只证明已记录契约、baseline、canonical specs、active conflict 和同步结果的一致性；它不能替代上述用户决策与实现语义检查，selected asset-review provider 也不重复承担当前 change 完整性判断。
 
+### 1.1 Candidate 前 closeout readiness checkpoint
+
+在把 implementation tree 交给 selected task-verification provider 前，先判断当前任务是否触及受管 Component、Skill、Command、lockfile、外部命令声明或 OpenSpec 升级信号。报告触发信号、实际检查和跳过理由；信号不明确时先诊断，不得静默跳过。本 checkpoint 是 closeout workflow check，不计作 task-verification `execute` 或 Candidate executor invocation，也不改变 requiredAssurance。
+
+触发时按以下顺序收敛：
+
+1. 读取当前 Project/Component 声明的外部命令版本，并核对实际可用 command。外部 CLI 不匹配时停止，报告声明版本、实际版本和明确的安装/升级路径；“收尾”不授权安装、升级或降级 user/system 级外部 CLI，Buildr 也不自动安装它。
+2. 区分 checkout-local dependency 与外部 CLI。仅当当前 Project 的 lockfile 已声明该依赖、且在 canonical task environment 中运行既有依赖准备入口属于已知安全路径时，才在 Candidate 前执行该入口（例如该 Project 已规定的 `npm ci`）并复核实际版本。依赖准备失败、不存在已声明入口或版本仍不一致时停止；不得把 Buildr Product 的命令硬编码为其他 Project 的收尾要求。
+3. 在 Candidate 前运行 `git diff --check`，并为任务触及的每个受管 Component 运行 `buildr component check <id> --target <dir> --json`。只修复可证明属于当前任务且已获既有收尾授权的格式或生成问题；每次修复后重新运行相应检查。Component integrity/receipt 不匹配、无法证明来源或复查失败时停止，不得把之后的 generated asset 更新归类为 archive-only delta。
+4. 只有上述运行时、格式和生成完整性均收敛后，才冻结 implementation Candidate 并交给 selected task-verification provider。普通任务没有相关资产信号时，记录未触发理由并继续既有流程。
+
 如果此前正式验证失败，收尾前必须确认 selected task-verification provider 在修复期间优先重跑失败项和受影响专项检查，并在候选重新稳定后完成一次新的 `requiredAssurance`。不得把仍在修复循环中的专项检查结果当作正式验证证据。
 
 多个 change、多个 worktree、多个远端或目标分支无法消歧时停止，不替用户选择。
@@ -73,7 +84,8 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 2. 归档后立即运行 `git diff --check`。
 3. 只有全部诊断都是本次 archive/specs sync 修改的 OpenSpec Markdown 文件中的 `new blank line at EOF` 时，才自动删除多余结尾空白行，使每个文件恰好以一个换行结束。
 4. 自动规范后重新运行 `git diff --check` 和当前 planning root 的 OpenSpec strict validation。
-5. 任何其他 whitespace error、非 OpenSpec 文件或无法确认来源的问题都停止自动修复并报告。
+5. 使用当前 OpenSpec CLI 的 status 和 strict validation 确认 archive 后不存在 active change。若仅本次 change 仍被识别为 active，且逐层检查证明遗留 change scaffold 及其子目录均为空，才只移除这些已证明为空的目录；记录残留路径和空目录证据后再次运行 strict validation。非空内容、其他 change 或无法归因的状态一律停止自动清理，不得根据目录名、空父目录假设或批量删除扩大范围。
+6. 任何其他 whitespace error、非 OpenSpec 文件或无法确认来源的问题都停止自动修复并报告。
 
 归档改变 delivery tree，但不自动改变 `implementationCandidateIdentity`。只运行归档直接影响的格式、OpenSpec 或项目专项检查；这些 closeout workflow checks 不得计作 task-verification `execute` 或 Candidate executor invocation。
 

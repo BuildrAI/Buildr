@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "add-closeout-readiness-checkpoint",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-9aa551ebd3af1609214b0a16b193e1c06e55349aab7fbb7833f7913589b38236",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 在相关资产变更中先完成收尾就绪检查",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 在 OpenSpec archive 后检查空 active-change scaffold",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

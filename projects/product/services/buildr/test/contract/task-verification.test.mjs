@@ -145,6 +145,32 @@ test('task-finish 消费 requiredAssurance evidence 并报告耗时', () => {
   assert.match(finishSkill, /Buildr Product.*buildr\.verification-timing\/v1/s);
 });
 
+test('task-finish 在相关资产变更中先收敛 closeout readiness checkpoint', () => {
+  for (const required of [
+    'Candidate 前 closeout readiness checkpoint',
+    '受管 Component、Skill、Command、lockfile、外部命令声明或 OpenSpec 升级信号',
+    '触发信号、实际检查和跳过理由',
+    '不计作 task-verification `execute` 或 Candidate executor invocation',
+    '“收尾”不授权安装、升级或降级 user/system 级外部 CLI',
+    'Buildr 也不自动安装它',
+    '既有依赖准备入口',
+    'buildr component check <id> --target <dir> --json',
+    '不得把之后的 generated asset 更新归类为 archive-only delta',
+    '普通任务没有相关资产信号时，记录未触发理由',
+  ]) assert.ok(finishSkill.includes(required), `task-finish must define readiness checkpoint boundary: ${required}`);
+  assert.ok(finishSkill.indexOf('Candidate 前 closeout readiness checkpoint') < finishSkill.indexOf('如果此前正式验证失败'));
+});
+
+test('task-finish archive 后只清理已证明为空的 active change scaffold', () => {
+  for (const required of [
+    '当前 OpenSpec CLI 的 status 和 strict validation',
+    '遗留 change scaffold 及其子目录均为空',
+    '记录残留路径和空目录证据',
+    '不得根据目录名、空父目录假设或批量删除扩大范围',
+  ]) assert.ok(finishSkill.includes(required), `task-finish must bound archive residue cleanup: ${required}`);
+  assert.ok(finishSkill.indexOf('遗留 change scaffold') > finishSkill.indexOf('自动规范后重新运行 `git diff --check`'));
+});
+
 test('task-finish 将健康 Local App 同端口交接作为 cleanup 门槛', () => {
   for (const required of [
     'instance.json', '/api/v1/health', 'buildr app --port <recorded-port> --no-open',
