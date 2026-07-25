@@ -80,7 +80,8 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 8. 使用 npm 官方 registry 验证目标版本存在且 dist-tag 正确；验证 GitHub Release 指向相同 tag，RC 必须是 prerelease 且不是 Latest，稳定版必须不是 prerelease。
 9. 使用同一 release notes 提取器生成期望 Markdown，并核对 `gh release view <tag> --json body` 返回的 GitHub Release body 与目标版本内容一致；不得只因 Release 已存在就接受笼统 PR 摘要。
 10. 用明确版本或正确 dist-tag 执行正式 tarball 安装 smoke；不得用本地 checkout 冒充发布后验证。
-11. 远端 release task 分支只服务于发布准备与中断恢复；上述发布事实全部验证成功后，该分支不再承载有用工作，必须进入发布后清理检查，不得把长期保留当作默认结果。查询远端 `tasks/release-<version>`；如 ref 存在，展示待删除 ref、commit，以及已验证的 tag、npm version/dist-tag、GitHub Release 和安装 smoke 证据，并请求用户明确授权删除；只有取得该授权后才删除远端分支，随后重新查询远端确认 ref 不存在。用户未授权、查询不可用或删除失败时保留分支并报告清理 follow-up，不得因此重做 tag、npm publish 或 GitHub Release。
+11. 上述发布事实全部验证成功后，默认直接清理本地 release task environment，不把它留作长期恢复点。从保留的 checkout 执行：确认 `<workspace-root>/.worktrees/release-<version>` 干净、`tasks/release-<version>` 已集成到目标开发分支、没有该 environment 所属的健康 preview，且本机 `buildr` 不指向该 worktree；随后删除该本地 worktree 和本地分支，并复核 worktree 列表与本地 ref 均已不存在。此清理不依赖远端 release task ref 是否存在；任一检查或删除失败时保留现场，报告具体阻塞和恢复路径。
+12. 远端 release task 分支只服务于发布准备与中断恢复；本地清理完成后，该远端分支不再承载有用工作，必须进入发布后清理检查，不得把长期保留当作默认结果。查询远端 `tasks/release-<version>`；如 ref 存在，展示待删除 ref、commit，以及已验证的 tag、npm version/dist-tag、GitHub Release 和安装 smoke 证据，并请求用户明确授权删除；只有取得该授权后才删除远端分支，随后重新查询远端确认 ref 不存在。用户未授权、查询不可用或删除失败时保留分支并报告清理 follow-up，不得因此重做 tag、npm publish 或 GitHub Release。
 
 发布候选版不得主动把 `latest` 当作稳定版更新。发布稳定版后确认 `latest` 指向稳定版本，并报告 `next` 的当前状态，不擅自移动或删除它。
 
@@ -107,7 +108,8 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - npm 官方 registry、GitHub Release 和安装 smoke 结果。
 - GitHub Release body 是否与目标版本 changelog 预览一致。
 - 未完成步骤、阻塞项、回滚或后续版本建议。
+- 本地 release worktree/branch 的清理前置条件、删除结果与复核结果。
 - 远端 release task 分支是否存在、是否已获授权清理，以及删除后的远端 ref 复核结果。
 
 不要把“PR 已创建”“tag 已推送”“workflow 已启动”单独视为发布完成。
-也不要把已无恢复价值的远端 release task 分支遗留在 GitHub 上视为默认完成状态；未取得删除授权时必须明确报告待清理项。
+也不要把已无恢复价值的本地 release task environment 或远端 release task 分支遗留为默认完成状态；远端分支未取得删除授权时必须明确报告待清理项。
