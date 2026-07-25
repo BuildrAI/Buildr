@@ -115,7 +115,7 @@ test('CLI 集成验证 optional provider 卸载后 consumer 降级', { concurren
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   await run(['init', '--target', root, '--name', 'capability-optional', '--profile', 'personal']);
   const uninstallReview = await run(['builtin', 'uninstall', 'task-asset-review', '--target', root, '--reason', 'optional fixture']);
-  assert.match(uninstallReview.stdout, /\[optional\].*task-finish.*buildr\.task-asset-review@2/);
+  assert.match(uninstallReview.stdout, /\[optional\].*task-finish.*buildr\.task-asset-review@3/);
   assert.equal(consumer(await doctor(root), '.', 'task-finish').readiness, 'degraded');
 });
 

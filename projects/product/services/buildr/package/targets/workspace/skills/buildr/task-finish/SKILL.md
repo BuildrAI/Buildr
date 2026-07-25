@@ -70,9 +70,9 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 
 当前任务语义完成、canonical specs 同步结果和 contract sidebar 结论可确认、候选 tree 与最终验证证据有效后，且 cleanup 尚未使来源证据消失时：
 
-1. 调用 `buildr.task-asset-review/v2` selected provider 的 finalize。Task Finish 只传递 Workspace root、task owner、当前 task/change identity 和最终证据引用，不汇总 observation 信号、不执行资格门禁、不判断最终应沉淀什么。
+1. 调用 `buildr.task-asset-review/v3` selected provider 的 finalize。Task Finish 只传递 canonical Workspace root、来源 task identity、task owner、当前 change identity 和最终证据引用，不汇总 observation 信号、不执行资格门禁、不判断最终应沉淀什么。
 2. provider 返回 `no-observation` 或 `discarded` 时继续正常收尾，不增加形式化复盘。
-3. provider 返回 `awaiting-human` 时，在 worktree cleanup 前等待用户明确 accept 或 reject。accept 只建立后续新 `task-triage` handoff，不改变原任务内容，也不构成 Rule、Skill、capability Contract 或产品实现授权。
+3. provider 返回 `awaiting-human` 时，在 worktree cleanup 前等待用户明确 accept 或 reject。accept 只建立 identity 不同的后续新 `task-triage` handoff，不改变原任务内容，也不构成 Rule、Skill、capability Contract 或产品实现授权。
 4. provider 未解析为 ready、已卸载、本地 observation 状态不可写或 finalize 失败时，记录 readiness/reason 和降级原因并继续既有收尾；Task Finish 不自行实现备用审查。
 5. Task Finish 不创建、编辑或删除 observation，不生成 `asset-maintenance` 记录，也不决定 product follow-up 的 OpenSpec 内容。全部审查和去向政策属于 selected provider。
 

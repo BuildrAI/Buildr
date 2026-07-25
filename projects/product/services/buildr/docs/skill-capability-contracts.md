@@ -100,7 +100,7 @@ render/sync 会在 `task-finish` 的 runtime 派生版本中注入受管 binding
 
 对 `buildr.task-verification/v2`，调用 provider 还必须携带 operation、任务/change、发布意图、风险信号、变更路径、候选 identity 与已有 evidence。`inspect` 只核对已有 evidence，`execute` 才启动验证，`cleanup` 只处理已消费 evidence。provider 返回 `requiredAssurance: affected | candidate`；Task Finish 只核对 evidence 是否满足该保证。实现内容变化时重新执行同一 required assurance，不机械升级为 Candidate。`same-content` 或可归因 `closeout-metadata-only` transition 使用 `inspect`，两个 executor 调用计数均为 0。
 
-对 optional `buildr.task-asset-review/v2`，provider 从非简单 Workspace 任务期间开始维护用户级 observation，并独占信号筛选、资格审查、人工决定和新任务交接政策。Task Finish consumer 只传递 Workspace/task identity 与最终证据引用并触发 finalize；它不复制 provider 的门禁。v2 允许写当前 owner 的本地 observation，因此不能用只读 v1 contract 替代。
+对 optional `buildr.task-asset-review/v3`，provider 从非简单 Workspace 任务期间开始维护 canonical Workspace 的 `.buildr/asset-review/inbox/` observation，并独占信号筛选、资格审查、人工决定和新任务交接政策。该运行期目录必须由根 `.gitignore` 排除；长期维护历史仍只随真实资产修改提交到 `asset-maintenance/`。Task Finish consumer 只传递 Workspace/task identity 与最终证据引用并触发 finalize；它不复制 provider 的门禁。v3 允许写当前 owner 的本地 observation、迁移匹配的 v2 用户级草稿，并要求独立任务 handoff 与类型化完成证据，因此不能用 v1/v2 contract 替代。
 
 ### 6. 用户替换实现
 

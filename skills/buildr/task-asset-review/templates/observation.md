@@ -1,5 +1,5 @@
 ---
-schemaVersion: buildr.task-asset-observation/v1
+schemaVersion: buildr.task-asset-observation/v2
 observationId: "<observation-id>"
 workspaceId: "<workspace-id>"
 owner: "<task-owner>"
@@ -7,6 +7,7 @@ status: observing
 createdAt: "<iso-time>"
 updatedAt: "<iso-time>"
 source: {}
+assessment: null
 decision: null
 destination: null
 ---
@@ -19,12 +20,12 @@ destination: null
 
 ## Agent Review
 
-<!-- finalize 时记录覆盖核验、候选类型和审查结论。 -->
+<!-- finalize 时记录覆盖核验；无合格候选时 discard，不保留空记录。 -->
 
 ## Human Decision
 
-<!-- accept 后记录明确决定；reject 直接删除本文件。 -->
+<!-- accept 后记录明确决定；reject 只处理 awaiting-human 候选。 -->
 
 ## Handoff Evidence
 
-<!-- 记录新 task-triage/OpenSpec/asset-maintenance 去向和删除前置条件。 -->
+<!-- 记录 identity 不同的新 task-triage/OpenSpec/asset-maintenance 去向和类型化完成证据。 -->

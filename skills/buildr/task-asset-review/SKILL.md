@@ -5,13 +5,13 @@ description: 非简单 Workspace 任务开始探索、设计、诊断、实现�
 
 # Task Asset Review Skill
 
-本 Skill 是 `buildr.task-asset-review/v2` 的默认 provider。它从任务期间的公开、可观察节点维护轻量 observation，在任务结束时完成审查并请求人工 accept/reject；它不读取隐藏推理，不保存完整轨迹，也不在原任务修改长期资产。
+本 Skill 是 `buildr.task-asset-review/v3` 的默认 provider。它从任务期间的公开、可观察节点维护轻量 observation，在任务结束时完成审查；没有合格候选时确定性 discard，存在候选时请求人工 accept/reject。它不读取隐藏推理，不保存完整轨迹，也不在原任务修改长期资产。
 
 ## 职责边界
 
 - 本 Skill 拥有：是否创建 observation、信号筛选、持续更新、资格审查、候选分类、人工决定、去向交接和删除条件。
 - `task-finish` 只触发 selected provider 的 finalize 并等待结果；不得汇总信号、执行资格门禁或判断最终沉淀什么。
-- accept 只建立新任务 handoff。后续必须重新进入 `task-triage`，原任务保持结束。
+- accept 只建立 identity 不同的新任务 handoff。后续必须重新进入 `task-triage`，原任务保持结束。
 - provider optional 不可用或本地状态不可写时，报告降级；不得用最终总结伪造持久化 observation。
 - 不为简单问答、翻译、单一稳定事实查询或没有 Workspace 资产含义的对话机械创建 observation。
 
@@ -23,13 +23,15 @@ description: 非简单 Workspace 任务开始探索、设计、诊断、实现�
 scripts/observation.mjs
 ```
 
-它从 `--workspace-root` 向上定位 `.buildr/workspace.yml`，按稳定 `workspace.id` 解析：
+它从 `--workspace-root` 向上定位 `.buildr/workspace.yml`，再把 linked task worktree 解析回 identity 匹配的 canonical Workspace root：
 
 ```text
-<Buildr user state>/asset-review/<workspace-id>/inbox/<observation-id>.md
+<canonical-workspace>/.buildr/asset-review/inbox/<observation-id>.md
 ```
 
-这是用户级共享 inbox：同一 Workspace 的所有 worktree 与非 worktree 任务使用同一位置。每个任务使用独立 observation id；root Agent 是单一写者，`--owner` 必须稳定且与文件 owner 匹配。不要让 subagent 直接写 observation；由 root Agent 吸收其可验证报告。owner mismatch 必须停止，不得覆盖或选择任意文件。helper 对文件使用同目录临时文件加 rename 的原子替换。
+这是 Workspace-local untracked inbox：根 `.gitignore` 必须包含 `/.buildr/asset-review/`；同一物理 Workspace 的主 checkout、task worktree 与嵌套路径使用同一位置，不同 clone 不通过用户级目录合并。每个任务使用独立 observation id；root Agent 是单一写者，`--owner` 必须稳定且与文件 owner 匹配。不要让 subagent 直接写 observation；由 root Agent 吸收其可验证报告。owner mismatch、canonical root identity 不一致或 legacy/target 内容冲突时必须停止，不得覆盖或选择任意文件。helper 对文件使用同目录临时文件加 rename 的原子替换。
+
+首次访问时 helper 会检查 v2 的 `<Buildr user state>/asset-review/<workspace-id>/inbox/`。只迁移 Workspace identity 匹配且目标不存在或内容完全一致的 observation；冲突或损坏时保留两侧并返回精确诊断。不要手工移动或合并 legacy inbox 文件。
 
 helper 是 Skill 内部资源，不是公共 Buildr CLI。不要为该生命周期启动 Hook、daemon、watcher、事件总线、数据库、全局索引、CAS 或复杂锁。
 
@@ -58,7 +60,7 @@ node "<skill-root>/scripts/observation.mjs" start \
   --source '{"task":"...","thread":"...","worktree":"...","branch":"...","change":"...","commit":"...","project":"...","service":"..."}'
 ```
 
-来源字段只填实际存在的值。observation id 和 owner 使用稳定的字母、数字、点、下划线或连字符。
+`source.task` 必须是稳定来源 task identity；其他来源字段只填实际存在的值。observation id 和 owner 使用稳定的字母、数字、点、下划线或连字符。
 
 ## 持续记录
 
@@ -91,17 +93,30 @@ node "<skill-root>/scripts/observation.mjs" observe \
    - `product-followup`：产品行为、API、数据模型、状态流或用户体验变化。
 7. Command、Component 和普通 docs 不作为直接候选；只分析其背后的四类语义。
 
-执行：
+若任务从未产生 observation，返回 `no-observation`。若 observation 已由当前任务完整解决、被现有资产完整覆盖或不满足长期门槛，执行：
+
+```bash
+node "<skill-root>/scripts/observation.mjs" discard \
+  --workspace-root "<workspace-root>" \
+  --observation-id "<id>" \
+  --owner "<owner>" \
+  --review "<覆盖核验与无候选结论>"
+```
+
+该动作返回 `discarded` 并删除 observation，不请求用户接受空候选或同一项已完成修改。存在合格且未解决的候选时，finalize 必须同时提供结构化结论：
 
 ```bash
 node "<skill-root>/scripts/observation.mjs" finalize \
   --workspace-root "<workspace-root>" \
   --observation-id "<id>" \
   --owner "<owner>" \
-  --review "<覆盖核验、候选类型、证据和建议动作>"
+  --candidate-type "<rule|skill|capability-contract|product-followup>" \
+  --coverage "<complete|partial|conflict|absent>" \
+  --evidence-summary "<最小证据摘要>" \
+  --review "<覆盖核验、目标 scope 和建议动作>"
 ```
 
-若任务从未产生 observation，返回 `no-observation`。若现有 observation 经审查没有价值，明确向用户说明建议 reject；不要把它升级为 tracked 记录。存在候选时返回 `awaiting-human` 并请求明确 accept/reject。
+成功后返回 `awaiting-human` 并请求明确 accept/reject。
 
 ## 人工决定
 
@@ -136,8 +151,10 @@ node "<skill-root>/scripts/observation.mjs" accept \
 ```bash
 node "<skill-root>/scripts/observation.mjs" handoff \
   --workspace-root "<workspace-root>" --observation-id "<id>" --owner "<owner>" \
-  --destination '{"task":"...","worktree":"...","branch":"...","change":"...","assetType":"...","assetId":"..."}'
+  --destination '{"task":"<new-task-id>","sourceTask":"<source-task-id>","worktree":"...","branch":"...","change":"...","assetType":"...","assetId":"..."}'
 ```
+
+`task` 必须与 observation 的 `source.task` 不同；Rule、Skill、capability Contract 必须包含匹配的 `assetType`/`assetId`，product follow-up 必须包含 OpenSpec change identity。任一字段缺失时保留 observation。
 
 ### Rule、Skill、capability Contract
 
@@ -155,14 +172,18 @@ asset-maintenance/
 只有记录与资产变更成功集成后，才能执行：
 
 ```bash
-node "<skill-root>/scripts/observation.mjs" complete ... --outcome asset-integrated
+node "<skill-root>/scripts/observation.mjs" complete ... \
+  --outcome asset-integrated \
+  --completion '{"task":"<new-task-id>","assetType":"<type>","assetId":"<id>","maintenanceRecord":"asset-maintenance/...md","commit":"<commit>","targetBranch":"<branch>","remoteRef":"<remote/ref>"}'
 ```
 
 新任务暂停或失败时保留 observation。正式调查后不修改资产时不保留 tracked 记录，记录 destination 后以 `--outcome no-change` 删除 observation。
 
 ### Product follow-up
 
-product follow-up 重新使用 `task-triage` 和 OpenSpec。新 proposal 或 design 必须吸收必要来源事实；不得再复制 `asset-maintenance` 历史。facts 安全进入 artifacts 后，以 `--outcome product-absorbed` 删除 observation。
+product follow-up 重新使用 `task-triage` 和 OpenSpec。新 proposal 或 design 必须吸收必要来源事实；不得再复制 `asset-maintenance` 历史。facts 安全进入 artifacts 后，以 `--outcome product-absorbed` 和包含新 task、change、artifact 路径的 `--completion` 删除 observation。
+
+正式调查后不修改资产时，以 `--outcome no-change` 和包含新 task、核验结论、稳定证据引用的 `--completion` 删除 observation。helper 会按 outcome 校验类型化 evidence；缺少 maintenance record、Git 集成、OpenSpec artifact 或正式 no-change 结论时保留现场。
 
 ## 输出契约
 
@@ -177,8 +198,8 @@ product follow-up 重新使用 `task-triage` 和 OpenSpec。新 proposal 或 des
 Task Finish 调用时返回：
 
 - `no-observation`：没有 observation，继续收尾；
-- `discarded`：审查无价值且用户已 reject，继续收尾；
+- `discarded`：provider 已证明没有合格且未解决候选并删除 observation，继续收尾；
 - `awaiting-human`：必须在 cleanup 前等待决定；
 - degradation：provider/helper 不可用，报告原因但不伪造结果。
 
-不要把“收尾”解释为长期资产写入授权，也不要在原任务自动实施接受的建议。
+不要把“收尾”解释为长期资产写入授权，也不要在原任务自动实施接受的建议。当前任务已经完成同一项修改时应 discard observation，不得倒序 accept 并把原任务伪装成新 handoff。

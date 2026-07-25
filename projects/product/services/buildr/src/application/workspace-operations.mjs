@@ -323,6 +323,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '.qoder/',
       '# Buildr transaction state',
       '/.buildr/mutations/',
+      '# Task asset review runtime state',
+      '/.buildr/asset-review/',
       '# Task worktrees',
       '/.worktrees/',
     ]);

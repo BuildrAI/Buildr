@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-asset-review-lifecycle",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-d580118cdf0e00b63b4781f1ffe9f95e1674ca8e5f38f8fd04ef2cedcde9f28d",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-asset-observation-lifecycle",
+      "title": "Buildr 安全迁移用户级 legacy Observation",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-asset-observation-lifecycle",
+      "title": "Buildr 按 Workspace 隔离共享任务资产观察",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Buildr 按 Workspace 隔离共享任务资产观察\nBuildr MUST 将任务资产 observation 保存到用户级共享状态，并 MUST 让同一 Workspace 的 worktree 与非 worktree 任务解析到同一 inbox。\n\n#### Scenario: 不同 task environment 解析共享 inbox\n- **WHEN** 两个 task environment 属于同一 `workspace.id`\n- **THEN** provider MUST 将 observation 解析到同一 Workspace inbox\n- **AND** 每个任务 MUST 使用独立 observation id 和文件\n\n#### Scenario: 不同 Workspace 隔离\n- **WHEN** 两个任务属于不同 `workspace.id`\n- **THEN** 它们的 observation MUST 位于不同 Workspace 目录\n- **AND** worktree 路径或当前 launcher checkout MUST NOT 决定该 identity\n"
+    },
+    {
+      "capability": "task-asset-observation-lifecycle",
+      "title": "人工决定控制 Observation 去向",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 人工决定控制 Observation 去向\nProvider MUST 在任务结束时完成审查并请求人工 accept 或 reject；未经决定 MUST NOT 把 observation 当作长期资产。\n\n#### Scenario: 人工拒绝\n- **WHEN** 用户明确判断 observation 无价值或拒绝候选\n- **THEN** provider MUST 精确删除该 observation\n- **AND** Buildr MUST NOT 创建 tracked tombstone 或维护记录\n\n#### Scenario: 人工接受\n- **WHEN** 用户接受 Rule、Skill、capability Contract 或 product follow-up 候选\n- **THEN** provider MUST 记录目标类型和新任务 handoff\n- **AND** 后续工作 MUST 重新进入 `task-triage`，不得重开原任务\n"
+    },
+    {
+      "capability": "task-asset-observation-lifecycle",
+      "title": "只有实际资产变更保留维护历史",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 只有实际资产变更保留维护历史\nBuildr MUST 只为实际修改的 Rule、Skill 或 capability Contract 保存 tracked 维护记录；product follow-up MUST 使用 OpenSpec 吸收来源事实而不复制维护历史。\n\n#### Scenario: 新任务完成资产修改\n- **WHEN** 接受的候选在新任务中实际修改 Rule、Skill 或 capability Contract\n- **THEN** 新任务 MUST 在 `asset-maintenance/<type>/<asset-id>/records/` 创建记录并与资产变更一起提交\n- **AND** observation MUST 只在该记录和资产变更成功集成后删除\n\n#### Scenario: 调查后不修改\n- **WHEN** 新任务正式核验后决定不修改目标资产\n- **THEN** provider MUST 删除 observation\n- **AND** Buildr MUST NOT 长期保留无修改调查记录\n\n#### Scenario: Product follow-up 吸收来源\n- **WHEN** 接受的候选属于 product follow-up\n- **THEN** 新任务的 OpenSpec proposal 或 design MUST 吸收必要来源事实\n- **AND** observation MUST 在 artifacts 安全保存事实后删除，不得创建重复 `asset-maintenance` 记录\n"
+    },
+    {
+      "capability": "task-asset-promotion",
+      "title": "审查输出区分执行质量反馈和资产建议",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 审查输出区分执行质量反馈和资产建议\nAgent MUST 区分对本次任务执行质量的反馈与需要长期写入的组织资产建议。\n\n#### Scenario: 显式任务复盘\n- **WHEN** 用户明确要求复盘任务执行\n- **THEN** Agent MUST 输出简短执行轮廓、主要质量发现及其证据\n- **AND** 只有通过沉淀门槛的发现 MUST 进入独立资产建议部分\n\n#### Scenario: Task Finish 条件审查\n- **WHEN** `task-finish` 的轻量资格判断命中并调用 `task-asset-review`\n- **THEN** Agent MUST 在存在重要质量发现或合格候选时将摘要纳入最终收尾报告\n- **AND** 没有重要发现时 Agent MAY 静默继续，不得创建空洞复盘\n"
+    },
+    {
+      "capability": "task-asset-promotion",
+      "title": "写入前必须取得用户确认",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 写入前必须取得用户确认\nAgent MUST 在当前任务结束时向用户提交审查结论，并取得 accept 或 reject；accept 只授权创建新的维护任务，不授权在原任务写入目标资产。\n\n#### Scenario: 用户接受候选\n- **WHEN** 用户明确接受一个候选\n- **THEN** Agent MUST 保存 handoff 并重新进入 `task-triage`\n- **AND** 原任务 MUST 保持结束\n\n#### Scenario: 用户拒绝候选\n- **WHEN** 用户拒绝候选或判断其没有价值\n- **THEN** Agent MUST 删除 observation\n- **AND** 未确认内容 MUST NOT 形成 Git history\n"
+    },
+    {
+      "capability": "task-asset-promotion",
+      "title": "确认后的写回使用现有生命周期",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 确认后的写回使用现有生命周期\n用户接受候选后，Agent MUST 在新的 task-triage 环境中使用目标资产的维护、授权和验证流程。\n\n#### Scenario: 新任务写入资产\n- **WHEN** 新任务实际修改 Rule、Skill 或 capability Contract\n- **THEN** Agent MUST 同时维护对应 tracked asset-maintenance record\n- **AND** 只有集成成功后才能删除 observation\n\n#### Scenario: 新任务未形成资产修改\n- **WHEN** 新任务核验后不修改资产\n- **THEN** Agent MUST 删除 observation 且不保留维护日志\n"
+    }
+  ]
+}

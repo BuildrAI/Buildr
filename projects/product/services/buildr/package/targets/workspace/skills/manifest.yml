@@ -26,8 +26,8 @@ contracts:
     path: contracts/buildr/task-finish/v1.md
     description: 编排已验证任务的归档、集成、推送与本地收尾。
   - id: buildr.task-asset-review
-    version: 2
-    path: contracts/buildr/task-asset-review/v2.md
+    version: 3
+    path: contracts/buildr/task-asset-review/v3.md
     description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
 bindings:
   - capability: buildr.git-single-operation
@@ -49,7 +49,7 @@ bindings:
     version: 1
     provider: task-finish
   - capability: buildr.task-asset-review
-    version: 2
+    version: 3
     provider: task-asset-review
 skills:
   - id: task-triage
@@ -98,7 +98,7 @@ skills:
     runtimePath: task-asset-review
     provides:
       - capability: buildr.task-asset-review
-        version: 2
+        version: 3
   - id: task-worktree
     assetIdentity: buildr:skill:task-worktree
     sourceIdentity: package:workspace:buildr/task-worktree
@@ -152,7 +152,7 @@ skills:
         version: 1
         mode: required
       - capability: buildr.task-asset-review
-        version: 2
+        version: 3
         mode: optional
   - id: git-ops
     assetIdentity: buildr:skill:git-ops

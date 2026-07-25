@@ -96,7 +96,7 @@ skills:
         version: 1
         mode: required
       - capability: buildr.task-asset-review
-        version: 2
+        version: 3
         mode: optional
   - id: openspec-contract-guard
     assetIdentity: buildr:skill:openspec-contract-guard
@@ -262,7 +262,7 @@ skills:
     runtimePath: task-asset-review
     provides:
       - capability: buildr.task-asset-review
-        version: 2
+        version: 3
   - id: capability-adaptation
     assetIdentity: buildr:skill:capability-adaptation
     sourceIdentity: package:skills/buildr/capability-adaptation
@@ -344,6 +344,10 @@ contracts:
     version: 2
     path: contracts/buildr/task-asset-review/v2.md
     description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
+  - id: buildr.task-asset-review
+    version: 3
+    path: contracts/buildr/task-asset-review/v3.md
+    description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
 bindings:
   - capability: buildr.git-single-operation
     version: 1
@@ -371,5 +375,8 @@ bindings:
     provider: task-worktree
   - capability: buildr.task-asset-review
     version: 2
+    provider: task-asset-review
+  - capability: buildr.task-asset-review
+    version: 3
     provider: task-asset-review
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

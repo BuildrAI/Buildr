@@ -1,10 +1,4 @@
-# task-asset-observation-lifecycle Specification
-
-## Purpose
-
-定义跨 worktree 共享的任务资产 observation、最小记录模型、人工决定和维护历史交接边界。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Buildr 按 Workspace 隔离共享任务资产观察
 Buildr MUST 将任务资产 observation 保存到 canonical Workspace 的 `.buildr/asset-review/inbox/`，MUST 通过根 `.gitignore` 保证该目录 untracked，并 MUST 让同一物理 Workspace 的主 checkout、task worktree 与嵌套执行路径解析到同一 inbox。
@@ -23,31 +17,6 @@ Buildr MUST 将任务资产 observation 保存到 canonical Workspace 的 `.buil
 - **WHEN** Buildr 初始化、更新或同步 Workspace baseline
 - **THEN** 根 `.gitignore` MUST 包含 `/.buildr/asset-review/`
 - **AND** observation 文件 MUST NOT 成为 Git tracked asset
-
-### Requirement: Observation 保存最小可审查状态
-Observation MUST 使用 Markdown 与可解析 frontmatter 保存来源、精炼观察、审查状态、人工决定和去向，并 MUST NOT 保存完整任务轨迹。
-
-#### Scenario: 创建 observation
-- **WHEN** provider 在非简单 Workspace 任务中发现可能影响长期资产的可观察信号
-- **THEN** observation MUST 记录 workspace、task owner、task/thread 以及可用的 worktree、branch、change、commit、Project、Service 来源
-- **AND** 正文 MUST 只保存精炼事实、证据引用和待审查含义
-
-#### Scenario: 禁止完整轨迹
-- **WHEN** provider 更新 observation
-- **THEN** provider MUST NOT 复制完整对话、完整工具日志、隐藏推理或逐节点 execution trace
-
-### Requirement: Observation 写入保持单任务所有权
-Provider MUST 以 observation owner 约束单文件写入，并 MUST 使用原子替换避免部分文件。
-
-#### Scenario: Owner 更新自己的 observation
-- **WHEN** 当前 task owner 与 observation owner 匹配
-- **THEN** helper MUST 允许追加观察或推进 lifecycle 状态
-- **AND** 写入 MUST 通过同目录原子替换完成
-
-#### Scenario: Owner 不匹配
-- **WHEN** 当前 task owner 尝试修改其他 owner 的 observation
-- **THEN** helper MUST 拒绝修改并返回可诊断错误
-- **AND** helper MUST NOT 选择任意文件或覆盖现有内容
 
 ### Requirement: 人工决定控制 Observation 去向
 Provider MUST 在任务结束时完成覆盖核验；没有合格候选时 MUST 返回 `discarded` 并删除 observation，存在合格候选时 MUST 请求人工 accept 或 reject；未经决定 MUST NOT 把候选当作长期资产。
@@ -87,6 +56,8 @@ Buildr MUST 只为实际修改的 Rule、Skill 或 capability Contract 保存 tr
 - **AND** `product-absorbed` 完成证据 MUST 包含 change identity 和实际 artifact 路径
 - **AND** observation MUST 在 artifacts 可核验后删除，不得创建重复 `asset-maintenance` 记录
 
+## ADDED Requirements
+
 ### Requirement: Buildr 安全迁移用户级 legacy Observation
 Buildr MUST 在 v3 provider 首次访问 Workspace observation 时检查该 Workspace 的 v2 用户级 inbox，并 MUST 只迁移 identity 匹配且不会覆盖不同内容的 observation。
 
@@ -104,11 +75,3 @@ Buildr MUST 在 v3 provider 首次访问 Workspace observation 时检查该 Work
 - **WHEN** legacy observation 损坏或其 Workspace identity 不匹配
 - **THEN** provider MUST 保留 legacy 文件并拒绝迁移
 - **AND** MUST NOT 用路径或文件名猜测其归属
-
-### Requirement: Observation MVP 不引入后台系统
-Buildr MUST 通过 task-asset-review Skill 的内部资源实现 observation lifecycle，并 MUST NOT 为 MVP 增加公共 CLI、daemon、watcher、数据库、全局索引或复杂锁。
-
-#### Scenario: Skill 执行 lifecycle action
-- **WHEN** provider 创建、更新、finalize、accept 或 reject observation
-- **THEN** provider MUST 使用随 Skill 交付的内部 helper 或等价确定性资源
-- **AND** 用户 MUST 能继续通过自然语言完成决定

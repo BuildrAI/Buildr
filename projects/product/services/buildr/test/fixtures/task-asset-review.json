@@ -1,9 +1,13 @@
 {
   "lifecycleCases": [
-    "workspace-shared-inbox",
+    "workspace-local-inbox",
+    "linked-worktree-shared-inbox",
     "workspace-isolation",
+    "legacy-migration",
+    "migration-conflict",
     "owner-mismatch",
     "atomic-replacement",
+    "discard-no-candidate",
     "reject-delete",
     "accept-new-task",
     "asset-integrated",

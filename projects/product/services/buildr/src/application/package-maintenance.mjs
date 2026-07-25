@@ -147,6 +147,8 @@ export function registerApplicationPackageMaintenance(runtime) {
         '.qoder/',
         '# Buildr transaction state',
         '/.buildr/mutations/',
+        '# Task asset review runtime state',
+        '/.buildr/asset-review/',
         '# Task worktrees',
         '/.worktrees/',
       ])) {

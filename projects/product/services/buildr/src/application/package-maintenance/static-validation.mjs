@@ -800,7 +800,7 @@ export function createPackageStaticValidator(deps) {
           '任务范围内仍有未记录语义、实现偏差或验证缺口时',
           'OpenSpec contract sidebar 只证明已记录契约',
           '任务资产审查 finalize',
-          '调用 `buildr.task-asset-review/v2` selected provider 的 finalize',
+          '调用 `buildr.task-asset-review/v3` selected provider 的 finalize',
           '不汇总 observation 信号、不执行资格门禁、不判断最终应沉淀什么',
           '`no-observation` 或 `discarded`',
           '`awaiting-human`',
@@ -854,9 +854,11 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-asset-review') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-asset-review/v2` 的默认 provider',
+          '本 Skill 是 `buildr.task-asset-review/v3` 的默认 provider',
           '探索、设计、诊断、实现或验证',
-          '用户级共享 inbox',
+          'Workspace-local untracked inbox',
+          '/.buildr/asset-review/',
+          'legacy inbox',
           'root Agent 是单一写者',
           'owner mismatch',
           '原子替换',
@@ -878,6 +880,10 @@ export function createPackageStaticValidator(deps) {
           '--outcome asset-integrated',
           '--outcome product-absorbed',
           '--outcome no-change',
+          'discard',
+          'source.task',
+          'identity 不同',
+          '--completion',
           '`no-observation`',
           '`discarded`',
           '`awaiting-human`',
