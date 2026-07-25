@@ -70,7 +70,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@fission-ai/openspec": "1.4.1",
+    "@fission-ai/openspec": "1.6.0",
     "playwright-core": "^1.61.1"
   }
 }

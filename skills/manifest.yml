@@ -152,6 +152,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-propose
+  - id: openspec-update-change
+    assetIdentity: buildr:skill:openspec-update-change
+    sourceIdentity: package:skills/openspec/openspec-update-change
+    source: openspec
+    path: openspec/openspec-update-change
+    description: 用户要修订既有 OpenSpec change 的 proposal、design、specs 或 tasks，且不进入代码实现时使用。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: openspec-update-change
   - id: openspec-apply-change
     assetIdentity: buildr:skill:openspec-apply-change
     sourceIdentity: package:skills/openspec/openspec-apply-change

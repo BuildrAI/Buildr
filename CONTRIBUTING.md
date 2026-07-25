@@ -7,7 +7,7 @@
 - Node.js 20 或更新版本
 - npm
 - Git
-- OpenSpec CLI 1.4.1：`npm install -g @fission-ai/openspec@1.4.1`
+- OpenSpec CLI 1.6.0：`npm install -g @fission-ai/openspec@1.6.0`
 
 ```bash
 git clone https://github.com/elevenching/Buildr.git

@@ -31,7 +31,7 @@ import {
 } from './product-layout.mjs';
 const OPENSPEC_CONTRACT_BASELINE_SCHEMA = 'buildr.openspec-contract-baseline/v1';
 const OPENSPEC_CONTRACT_RECEIPT_SCHEMA = 'buildr.openspec-contract-receipt/v1';
-const OPENSPEC_CONTRACT_SUPPORTED_UPSTREAM_VERSIONS = new Set(['1.4.1']);
+const OPENSPEC_CONTRACT_SUPPORTED_UPSTREAM_VERSIONS = new Set(['1.6.0']);
 
 export {
   fs, crypto, os, path, process, fileURLToPath, execFileSync, spawnSync, YAML,

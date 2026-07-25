@@ -14,13 +14,15 @@ const project = 'demo';
 const projectRoot = path.join(root, 'projects', project);
 const specsRoot = path.join(projectRoot, 'openspec', 'specs');
 const changesRoot = path.join(projectRoot, 'openspec', 'changes');
+const openspec = path.join(productRoot, 'node_modules', '.bin', 'openspec');
+const commandEnv = { ...process.env, PATH: `${path.dirname(openspec)}${path.delimiter}${process.env.PATH || ''}` };
 
 function fail(message) {
   throw new Error(message);
 }
 
 function run(args, expected = 0) {
-  const result = spawnSync(process.execPath, [buildr, ...args], { cwd: productRoot, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [buildr, ...args], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
   if (result.status !== expected) {
     fail(`buildr ${args.join(' ')} exited ${result.status}, expected ${expected}: ${(result.stderr || result.stdout).trim()}`);
   }
@@ -30,6 +32,14 @@ function run(args, expected = 0) {
     if (payload.schemaVersion !== expectedSchema) fail(`Expected ${expectedSchema}, got ${payload.schemaVersion}`);
   }
   return payload;
+}
+
+function runUpstream(args, cwd = projectRoot, expected = 0) {
+  const result = spawnSync(openspec, args, { cwd, encoding: 'utf8', env: commandEnv });
+  if (result.status !== expected) {
+    fail(`openspec ${args.join(' ')} exited ${result.status}, expected ${expected}: ${(result.error?.message || result.stderr || result.stdout || '').trim()}`);
+  }
+  return result;
 }
 
 function write(file, content) {
@@ -86,14 +96,16 @@ function assertError(result, code) {
 }
 
 try {
+  if (runUpstream(['--version'], productRoot).stdout.trim() !== '1.6.0') fail('OpenSpec contract fixtures must execute the bundled 1.6.0 CLI');
   run(['init', '--target', root, '--name', 'contract-fixture', '--profile', 'team']);
   run(['project', 'create', project, '--target', root]);
+  write(path.join(projectRoot, 'openspec', 'config.yaml'), 'schema: spec-driven\n');
 
   const existing = requirement('Existing', '保留既有行为');
   const untouched = requirement('Untouched', '保持不变');
   canonical('demo', [existing, untouched]);
 
-  const unknownProject = spawnSync(process.execPath, [buildr, 'openspec', 'check', 'missing', '--stage', 'proposal', '--project', 'missing', '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8' });
+  const unknownProject = spawnSync(process.execPath, [buildr, 'openspec', 'check', 'missing', '--stage', 'proposal', '--project', 'missing', '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
   if (unknownProject.status === 0 || !unknownProject.stderr.includes('Project is not registered')) fail('unknown Project must be rejected before OpenSpec sidecar access');
 
   const modified = requirement('Existing', '使用更新后的行为');
@@ -199,12 +211,47 @@ try {
 
   const definition = path.join(root, 'components', 'buildr', 'openspec', 'component.yml');
   const originalDefinition = fs.readFileSync(definition, 'utf8');
-  fs.writeFileSync(definition, originalDefinition.replace('version: "1.4.1"', 'version: "9.9.9"'));
+  fs.writeFileSync(definition, originalDefinition.replace('version: "1.6.0"', 'version: "9.9.9"'));
   change('unsupported-upstream', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`);
-  const unsupported = spawnSync(process.execPath, [buildr, 'openspec', 'baseline', 'create', 'unsupported-upstream', '--project', project, '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8' });
+  const unsupported = spawnSync(process.execPath, [buildr, 'openspec', 'baseline', 'create', 'unsupported-upstream', '--project', project, '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
   if (unsupported.status === 0 || !unsupported.stderr.includes('does not support upstream version')) fail('unsupported OpenSpec upstream version must fail closed');
   fs.writeFileSync(definition, originalDefinition);
   removeChange('unsupported-upstream');
+
+  const preserved = [
+    '### Requirement: Preserve scenarios',
+    '系统 MUST 保留全部既有场景。',
+    '',
+    '#### Scenario: first scenario',
+    '- **WHEN** 第一条件满足',
+    '- **THEN** 第一结果成立',
+    '',
+    '#### Scenario: second scenario',
+    '- **WHEN** 第二条件满足',
+    '- **THEN** 第二结果成立',
+    '',
+  ].join('\n');
+  const staleModification = [
+    '## MODIFIED Requirements',
+    '',
+    '### Requirement: Preserve scenarios',
+    '系统 MUST 只保留第一个场景。',
+    '',
+    '#### Scenario: first scenario',
+    '- **WHEN** 第一条件满足',
+    '- **THEN** 第一结果成立',
+    '',
+  ].join('\n');
+  canonical('upstream-archive', [preserved]);
+  change('upstream-archive-safety', 'upstream-archive', 'modified', staleModification);
+  write(path.join(changesRoot, 'upstream-archive-safety', 'design.md'), '# Design\n');
+  write(path.join(changesRoot, 'upstream-archive-safety', 'tasks.md'), '- [x] Archive safety fixture\n');
+  runUpstream(['validate', 'upstream-archive-safety', '--strict'], projectRoot);
+  const archive = runUpstream(['archive', 'upstream-archive-safety', '--yes', '--json'], projectRoot, 1);
+  if (!/current spec contains scenario\(s\) not present|Refresh the change spec before archiving/.test(`${archive.stdout}\n${archive.stderr}`)) {
+    fail(`OpenSpec 1.6 archive must reject a MODIFIED requirement that drops an existing scenario: ${(archive.stderr || archive.stdout).trim()}`);
+  }
+  removeChange('upstream-archive-safety');
 
   console.log('OpenSpec contract fixtures passed.');
 } finally {

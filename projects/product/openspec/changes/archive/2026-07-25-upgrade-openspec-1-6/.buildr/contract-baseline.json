@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "upgrade-openspec-1-6",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-0e7757a65509776ca929328441aa994f927267cdbd6181b13c837d9854d9a65f",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "managed-components",
+      "title": "OpenSpec 作为首个随包 Component",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: OpenSpec 作为首个随包 Component\nBuildr MUST 随包提供 workspace 级 OpenSpec Component，统一管理 OpenSpec Command collection、外部 workflow Skills 和 Buildr sidebar。\n\n#### Scenario: OpenSpec Component 成员\n- **WHEN** Buildr 初始化或更新默认启用 OpenSpec 的 workspace\n- **THEN** OpenSpec Component MUST 包含 `commands/buildr/openspec/manifest.yml`\n- **AND** Component MUST 以外部发布型 Skill 身份包含全部支持的 `openspec-*` workflow Skills\n- **AND** Component MUST 包含 Buildr 自有的 `openspec-contract-guard` 和 sidebar contributions\n- **AND** Component 定义 MUST 分别记录 OpenSpec 上游版本、外部 Skill 来源与 integrity，以及 Buildr sidebar 成员 integrity\n- **AND** Component MUST NOT 在 `skills/buildr/openspec-*` 下物化外部 workflow Skill fork\n\n#### Scenario: OpenSpec CLI 仍是外部工具\n- **WHEN** OpenSpec Component 安装或更新\n- **THEN** Buildr MUST 只声明并检查 OpenSpec CLI\n- **AND** Buildr MUST NOT 自动安装、升级或卸载本机 OpenSpec CLI\n\n#### Scenario: OpenSpec Component 不拥有 Project 数据\n- **WHEN** OpenSpec Component 安装、更新或卸载\n- **THEN** Buildr MUST NOT 创建、修改或删除任何 Project 的 `openspec/` 内容\n"
+    },
+    {
+      "capability": "managed-components",
+      "title": "OpenSpec Component 交付 Buildr 契约门禁 sidebar",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: OpenSpec Component 交付 Buildr 契约门禁 sidebar\nBuildr MUST 将 OpenSpec 契约门禁作为现有 OpenSpec Component 的 Buildr 自有 sidebar 成员交付，并保持外部 OpenSpec 工具链的独立升级边界。\n\n#### Scenario: OpenSpec Component 成员包含门禁 Skill\n- **WHEN** Buildr 初始化或更新默认启用 OpenSpec 的 workspace\n- **THEN** OpenSpec Component MUST 同时包含上游 workflow Skills、OpenSpec Command collection 和 `openspec-contract-guard` Skill\n- **AND** Component integrity MUST 覆盖该门禁 Skill\n\n#### Scenario: 门禁更新不改外部 Skills\n- **WHEN** Buildr 发布新版契约门禁\n- **THEN** Component update MUST 通过正常三方比较更新 Buildr sidebar 成员\n- **AND** Buildr MUST NOT 为加入门禁而修改外部 `openspec-*` workflow Skill 的正文\n\n#### Scenario: OpenSpec 上游升级\n- **WHEN** Buildr 更新 OpenSpec Component 的 upstream version 和上游 workflow Skills\n- **THEN** package verification MUST 同时验证门禁对该 upstream version 的兼容性\n- **AND** Component MUST 保持外部 CLI 只声明和检查、Project OpenSpec 内容不归 Component 所有的既有边界\n"
+    },
+    {
+      "capability": "openspec-upgrade-integration",
+      "title": "Buildr 只支持经过评估的 OpenSpec 集成版本",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-upgrade-integration",
+      "title": "Buildr 受控交付 OpenSpec planning update workflow",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-upgrade-integration",
+      "title": "Buildr OpenSpec guard 只保留上游未提供的契约安全",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-upgrade-integration",
+      "title": "Buildr OpenSpec sidebars 只表达 Buildr 特有增量",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-upgrade-integration",
+      "title": "Buildr 不将 OpenSpec Stores 作为默认受支持工作流",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

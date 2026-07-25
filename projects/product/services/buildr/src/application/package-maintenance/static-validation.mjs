@@ -297,6 +297,23 @@ export function createPackageStaticValidator(deps) {
           ]) {
             if (!content.includes(requiredText)) problems.push(`OpenSpec propose sidebar must include ${JSON.stringify(requiredText)}.`);
           }
+          const updateSidebar = packageComponentSourcePath('components/buildr/openspec/contributions/openspec-update-sidebar.md');
+          const updateContent = fs.readFileSync(updateSidebar, 'utf8');
+          for (const requiredText of [
+            '只修订既有 planning artifacts',
+            '不授予实现、同步或归档权限',
+            '重新执行 `task-worktree` 决策',
+            '`openspec-apply-change`',
+          ]) {
+            if (!updateContent.includes(requiredText)) problems.push(`OpenSpec update sidebar must include ${JSON.stringify(requiredText)}.`);
+          }
+          const members = new Set(componentMemberPaths(record.definition));
+          if (!members.has('skills/openspec/openspec-update-change')) problems.push('OpenSpec Component must include the upstream update workflow Skill.');
+          for (const legacySidebar of ['openspec-explore-sidebar.md', 'openspec-sync-sidebar.md', 'openspec-archive-sidebar.md']) {
+            if ([...(record.definition.members.skillContributions || [])].some((member) => member.endsWith(legacySidebar))) {
+              problems.push(`OpenSpec Component must not retain the duplicated ${legacySidebar} sidebar.`);
+            }
+          }
         }
         for (const member of componentMemberPaths(record.definition)) {
           const previousOwner = componentMemberOwners.get(member);
@@ -916,7 +933,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['buildr openspec baseline create', '--stage pre-sync', '--stage post-sync', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec baseline create', '--stage pre-sync', '--stage post-sync', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }
@@ -934,6 +951,9 @@ export function createPackageStaticValidator(deps) {
     }
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-board' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-board.');
+    }
+    if (manifest.builtins.skills.some((skill) => skill.id.includes('openspec-store'))) {
+      problems.push('OpenSpec Stores are beta and must not be registered as a Buildr builtin Skill.');
     }
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-asset-review' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-asset-review.');

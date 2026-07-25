@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
 const OPENSPEC_CONTRACT_BASELINE_SCHEMA = 'buildr.openspec-contract-baseline/v1';
 const OPENSPEC_CONTRACT_RECEIPT_SCHEMA = 'buildr.openspec-contract-receipt/v1';
-const OPENSPEC_CONTRACT_SUPPORTED_UPSTREAM_VERSIONS = new Set(['1.4.1']);
+const OPENSPEC_CONTRACT_SUPPORTED_UPSTREAM_VERSIONS = new Set(['1.6.0']);
 
 export function registerDomainsOpenspec(runtime) {
   const readProjectsRegistryIfExists = (...args) => runtime.readProjectsRegistryIfExists(...args);
@@ -83,18 +84,31 @@ export function registerDomainsOpenspec(runtime) {
   }
 
   function parseOpenSpecRequirementBlocks(content, label) {
+    // OpenSpec strict validation owns Markdown and delta correctness. Buildr
+    // only extracts identities and full blocks needed for baseline and receipt facts.
     const normalized = normalizeOpenSpecContractText(content);
     const matches = [...normalized.matchAll(/^### Requirement:\s*(.+?)\s*$/gm)];
     const requirements = new Map();
     for (let index = 0; index < matches.length; index += 1) {
       const title = matches[index][1].trim();
-      if (!title) throw new Error(`${label} contains an empty Requirement title.`);
-      if (requirements.has(title)) throw new Error(`${label} contains duplicate Requirement: ${title}`);
+      if (!title) continue;
       const start = matches[index].index;
       const end = index + 1 < matches.length ? matches[index + 1].index : normalized.length;
       requirements.set(title, normalizeOpenSpecContractText(normalized.slice(start, end)));
     }
     return requirements;
+  }
+
+  function validateUpstreamOpenSpecStrict(projectRoot, change) {
+    const result = spawnSync('openspec', ['validate', change, '--strict', '--no-interactive'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+    });
+    if (result.error) throw new Error('Unable to execute OpenSpec strict validation: ' + result.error.message);
+    if (result.status !== 0) {
+      const detail = (result.stderr || result.stdout || '').trim();
+      throw new Error('OpenSpec strict validation failed for ' + change + (detail ? ': ' + detail : ''));
+    }
   }
 
   function openSpecSection(content, name) {
@@ -119,11 +133,7 @@ export function registerDomainsOpenspec(runtime) {
     for (const match of renamed.matchAll(renamePattern)) {
       const from = match[1].trim();
       const to = match[2].trim();
-      if (!from || !to || from === to) throw new Error(`${label} contains an invalid RENAMED Requirement.`);
-      operations.push({ type: 'RENAMED', capability, from, to });
-    }
-    if (renamed.trim() && operations.filter((item) => item.type === 'RENAMED').length === 0) {
-      throw new Error(`${label} contains an unsupported RENAMED Requirements format.`);
+      if (from && to && from !== to) operations.push({ type: 'RENAMED', capability, from, to });
     }
     return operations;
   }
@@ -143,15 +153,6 @@ export function registerDomainsOpenspec(runtime) {
       if (items.length === 0) throw new Error(`Delta spec does not declare any Requirement operation: specs/${entry.name}/spec.md`);
       capabilities.set(entry.name, { file, content, operations: items });
       operations.push(...items);
-    }
-    const identities = new Set();
-    for (const operation of operations) {
-      const names = operation.type === 'RENAMED' ? [operation.from, operation.to] : [operation.title];
-      for (const name of names) {
-        const identity = `${operation.capability}\u0000${name}`;
-        if (identities.has(identity)) throw new Error(`Delta declares conflicting Requirement operations: ${operation.capability} / ${name}`);
-        identities.add(identity);
-      }
     }
     return { capabilities, operations, hash: openSpecContractHash([...capabilities.values()].map((item) => `${item.file}\n${item.content}`).join('\n')) };
   }
@@ -374,6 +375,7 @@ export function registerDomainsOpenspec(runtime) {
       if (candidate.id === change) continue;
       let other;
       try {
+        validateUpstreamOpenSpecStrict(projectRoot, candidate.id);
         other = parseOpenSpecChangeDelta(candidate.root);
       } catch (error) {
         addOpenSpecContractFinding(result, 'error', 'openspec_contract.active_change_invalid', `无法解析 active change ${candidate.id}：${error.message}`, {
@@ -484,6 +486,7 @@ export function registerDomainsOpenspec(runtime) {
     const { projectRoot } = resolveOpenSpecContractProject(targetRoot, project);
     const component = openSpecContractComponent(targetRoot);
     const changeRoot = openSpecContractChangePath(projectRoot, change);
+    validateUpstreamOpenSpecStrict(projectRoot, change);
     const delta = parseOpenSpecChangeDelta(changeRoot);
     if (delta.operations.length === 0) throw new Error(`OpenSpec change has no delta Requirements: ${change}`);
     return { targetRoot, project, projectRoot, component, change, changeRoot, delta };
