@@ -7,7 +7,7 @@
 | 内容 | 权威位置 |
 |------|----------|
 | 产品入口、定位和后续方向摘要 | [`README.md`](../../README.md) 与 [`docs/buildr-product.md`](../buildr-product.md) |
-| 已实现的当前事实 | [`openspec/knowledge/buildr-current-state.md`](../../openspec/knowledge/buildr-current-state.md) |
+| 已实现的当前事实 | [`openspec/knowledge/overview.md`](../../openspec/knowledge/overview.md) |
 | MUST / SHOULD 级行为契约 | [`openspec/specs/`](../../openspec/specs/) |
 | 已进入实施评审的计划型变更 | [`openspec/changes/`](../../openspec/changes/) |
 | 历史参考 | [`docs/archive/`](../archive/) |

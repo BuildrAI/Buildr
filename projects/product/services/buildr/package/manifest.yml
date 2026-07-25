@@ -56,6 +56,16 @@ capabilityContracts:
     description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
     path: package/targets/workspace/skills/contracts/buildr/task-asset-review/v3.md
     target: skills/contracts/buildr/task-asset-review/v3.md
+  - id: buildr.terminology-governance
+    version: 1
+    description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
+    path: package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md
+    target: skills/contracts/buildr/terminology-governance/v1.md
+  - id: buildr.current-knowledge-maintenance
+    version: 1
+    description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
+    path: package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md
+    target: skills/contracts/buildr/current-knowledge-maintenance/v1.md
 
 initialSkillBindings:
   - capability: buildr.git-single-operation
@@ -79,6 +89,12 @@ initialSkillBindings:
   - capability: buildr.task-asset-review
     version: 3
     provider: task-asset-review
+  - capability: buildr.terminology-governance
+    version: 1
+    provider: terminology-governance
+  - capability: buildr.current-knowledge-maintenance
+    version: 1
+    provider: current-knowledge-maintenance
 
 builtins:
   rules:
@@ -153,6 +169,9 @@ builtins:
         - capability: buildr.task-finish
           version: 1
       requires:
+        - capability: buildr.current-knowledge-maintenance
+          version: 1
+          mode: required
         - capability: buildr.task-verification
           version: 2
           mode: required
@@ -168,6 +187,28 @@ builtins:
       legacyIntegrities:
         - sha256-0607663344932ed85cdff84fe5c8dc817e4fc12a159a047eac054fa307fc1fd1
         - sha256-1e0e321129f98abb33c4b82d6eddecd960ca0888e58a8ab47bc0776847f05fcf
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: terminology-governance
+      path: package/targets/workspace/skills/buildr/terminology-governance
+      target: skills/buildr/terminology-governance
+      description: Agent 在探索、提案、设计、实现或文档整理中遇到新术语、同义词、一词多义、中英不一致、Context/Context Window 等概念边界，或 consumer 需要正式术语对齐 evidence 时使用。
+      required: false
+      provides:
+        - capability: buildr.terminology-governance
+          version: 1
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: current-knowledge-maintenance
+      path: package/targets/workspace/skills/buildr/current-knowledge-maintenance
+      target: skills/buildr/current-knowledge-maintenance
+      description: OpenSpec Change 创建、修订、实现、同步或 Task Finish 前，需要评估、维护、收敛或检查 Change Brief、Project 概览、产品/技术架构、核心流程、Service 说明和术语时使用。
+      required: false
+      provides:
+        - capability: buildr.current-knowledge-maintenance
+          version: 1
+      requires:
+        - capability: buildr.terminology-governance
+          version: 1
+          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: git-ops
       path: package/targets/workspace/skills/buildr/git-ops
@@ -190,6 +231,10 @@ builtins:
       description: 探索想法、调查问题或澄清需求时使用；只思考和梳理，不实现代码。
       required: false
       component: openspec
+      requires:
+        - capability: buildr.terminology-governance
+          version: 1
+          mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-propose
       path: package/targets/workspace/skills/openspec/openspec-propose
@@ -197,6 +242,10 @@ builtins:
       description: 用户要快速创建完整 OpenSpec change 提案、设计、规格和任务时使用。
       required: false
       component: openspec
+      requires:
+        - capability: buildr.current-knowledge-maintenance
+          version: 1
+          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-update-change
       path: package/targets/workspace/skills/openspec/openspec-update-change
@@ -204,6 +253,10 @@ builtins:
       description: 用户要修订既有 OpenSpec change 的 proposal、design、specs 或 tasks，且不进入代码实现时使用。
       required: false
       component: openspec
+      requires:
+        - capability: buildr.current-knowledge-maintenance
+          version: 1
+          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-apply-change
       path: package/targets/workspace/skills/openspec/openspec-apply-change
@@ -211,6 +264,10 @@ builtins:
       description: 用户要开始或继续实现某个 OpenSpec change 的任务时使用。
       required: false
       component: openspec
+      requires:
+        - capability: buildr.current-knowledge-maintenance
+          version: 1
+          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-sync-specs
       path: package/targets/workspace/skills/openspec/openspec-sync-specs
@@ -218,6 +275,10 @@ builtins:
       description: 用户要把 change 中的 delta specs 同步到主 specs，但不归档 change 时使用。
       required: false
       component: openspec
+      requires:
+        - capability: buildr.current-knowledge-maintenance
+          version: 1
+          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-archive-change
       path: package/targets/workspace/skills/openspec/openspec-archive-change
@@ -267,6 +328,8 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v1.md => skills/contracts/buildr/task-asset-review/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v2.md => skills/contracts/buildr/task-asset-review/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v3.md => skills/contracts/buildr/task-asset-review/v3.md copy
+  - package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
   - package/targets/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-board/SKILL.md => skills/buildr/task-board/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-board/agents/openai.yaml => skills/buildr/task-board/agents/openai.yaml copy
@@ -283,6 +346,8 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-verification/references/project-verification-v1.md => skills/buildr/task-verification/references/project-verification-v1.md copy
   - package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
   - package/targets/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
+  - package/targets/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
+  - package/targets/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
   - package/targets/workspace/skills/buildr/git-ops/SKILL.md => skills/buildr/git-ops/SKILL.md copy
 
 projectDirectories:

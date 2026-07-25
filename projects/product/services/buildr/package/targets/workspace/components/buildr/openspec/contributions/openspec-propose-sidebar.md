@@ -9,3 +9,5 @@
 - 无法判断是否会进入实现时，先澄清执行范围，不得先创建 artifacts 再决定位置。
 
 该门禁只补充 Buildr 的任务位置路由，不修改外部 `openspec-propose` Skill 的上游正文，也不让 `task-worktree` 判断是否需要 OpenSpec change。
+
+完整 planning artifacts 形成后，读取 required `buildr.current-knowledge-maintenance/v1` binding、contract 和 selected provider：创建或刷新同级 `brief.md`，执行 `assess`，并把真实 Brief/current knowledge/terminology impacts 写入 tasks 与 `.buildr/knowledge-impact.yml` evidence。没有真实内容的目标不得产生空文档任务；provider unresolved 或 dependency blocked 时将 Change 报告为 blocked，不得开始 apply。

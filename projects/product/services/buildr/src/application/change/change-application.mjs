@@ -4,7 +4,7 @@ import path from 'node:path';
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
 const ARCHIVED_PREFIX = 'archived~';
-const STANDARD_FILES = ['.openspec.yaml', 'proposal.md', 'design.md', 'tasks.md'];
+const CHANGE_CONTENT_FILES = ['.openspec.yaml', 'brief.md', 'proposal.md', 'design.md', 'tasks.md'];
 
 export function changeError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
@@ -79,7 +79,7 @@ function specs(changeRoot, workspaceRoot, includeContent) {
 }
 
 function updatedAt(changeRoot) {
-  const files = STANDARD_FILES.map((name) => path.join(changeRoot, name));
+  const files = CHANGE_CONTENT_FILES.map((name) => path.join(changeRoot, name));
   for (const capability of readDirectories(path.join(changeRoot, 'specs'))) {
     files.push(path.join(changeRoot, 'specs', capability, 'spec.md'));
   }
@@ -111,6 +111,10 @@ function buildChange(targetRoot, project, directory, lifecycle, includeContent =
     ? directory.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1] || directory
     : directory;
   const proposal = artifact(path.join(changeRoot, 'proposal.md'), targetRoot, includeContent);
+  const brief = {
+    kind: 'buildr-companion',
+    ...artifact(path.join(changeRoot, 'brief.md'), targetRoot, includeContent),
+  };
   const design = artifact(path.join(changeRoot, 'design.md'), targetRoot, includeContent);
   const tasks = artifact(path.join(changeRoot, 'tasks.md'), targetRoot, includeContent);
   const changeSpecs = specs(changeRoot, targetRoot, includeContent);
@@ -122,6 +126,7 @@ function buildChange(targetRoot, project, directory, lifecycle, includeContent =
     project: { id: project.id, code: project.code, name: project.name },
     updatedAt: updatedAt(changeRoot),
     progress: parseTasks(path.join(changeRoot, 'tasks.md')),
+    brief,
     artifacts: {
       root: relativePath(targetRoot, changeRoot),
       proposal,

@@ -152,6 +152,7 @@ Project write routes MUST use the same fixed-target, same-origin, token, JSON an
 - **WHEN** request contains target path, filesystem path, invalid token/origin/content type, oversized body or unknown mutation fields
 - **THEN** server MUST reject it before Application mutation
 - **AND** Project registry MUST remain unchanged
+
 ### Requirement: 本地应用必须提供 Service 列表与详情
 固定 Workspace 的本地应用 MUST 按 Project 展示 Service Domain、声明 source 与实时观察状态。
 
@@ -478,12 +479,18 @@ Buildr 本机应用 MUST 在资源导航中提供独立的变更（Change）管�
 - **AND** MUST 展示可复制的 Agent prompt，不得直接写入 OpenSpec
 
 ### Requirement: 本机应用必须提供可链接的 Change 详情页
-Buildr 本机应用 MUST 使用稳定独立路由展示 Change 详情，并 MUST 将长 artifact 内容与短 prompt 交互分离。
+Buildr 本机应用 MUST 使用稳定独立路由展示 Change 详情，并 MUST 将生命周期摘要、人类可读 Brief、技术 artifacts 与短 prompt 交互分离。页面 MUST 优先帮助普通用户理解 Change，再提供 proposal、design、specs 和 tasks 的可深入入口。
 
 #### Scenario: 打开 Change 详情
-- **WHEN** 用户访问 `/changes/<projectCode>/<changeRef>`
-- **THEN** 页面 MUST 展示 identity、lifecycle、任务进度、artifact availability 和可用的 proposal、design、specs、tasks 内容
+- **WHEN** 用户访问 `/changes/<projectCode>/<changeRef>` 且 read model 返回 Brief
+- **THEN** 页面 MUST 先展示 identity、lifecycle、任务进度和更新时间，再展示 Brief 的人类可读内容
+- **AND** proposal、design、specs、tasks MUST 位于 Brief 之后并可按 artifact 深入查看
 - **AND** 页面刷新后 MUST 保持同一 Change 上下文
+
+#### Scenario: 打开缺少 Brief 的 Change 详情
+- **WHEN** 用户访问合法 Change 且 read model 报告 Brief unavailable
+- **THEN** 页面 MUST 显示明确缺失状态并继续展示可用的标准 artifacts
+- **AND** 页面 MUST NOT 在浏览器或 API 请求期间生成、保存或推断 Brief
 
 #### Scenario: Change 不存在
 - **WHEN** 详情 API 返回 not found
@@ -493,6 +500,11 @@ Buildr 本机应用 MUST 使用稳定独立路由展示 Change 详情，并 MUST
 - **WHEN** 用户在详情中选择继续或审阅
 - **THEN** 页面 MUST 打开短交互抽屉并生成可复制 prompt
 - **AND** MUST NOT 叠加承载第二份完整 Change 详情的二级抽屉
+
+#### Scenario: 普通用户深入技术 artifacts
+- **WHEN** 用户从 Brief 继续查看 proposal、design、specs 或 tasks
+- **THEN** 页面 MUST 保留每类 artifact 的身份、availability 和原始内容
+- **AND** Brief 摘要 MUST NOT 覆盖、截断或改写技术 artifact 的权威内容
 
 ### Requirement: 项目详情必须展示所属 Change 摘要
 Buildr 本机应用 MUST 在项目详情中展示该 Project 的 Change 数量、有限列表和进入过滤后 Change 表格的稳定入口。
@@ -658,6 +670,7 @@ Buildr MUST 将任意目录选择限制在显式登记用例中，并 MUST 保�
 - **WHEN** 登记或移除请求携带的 registry revision 已过期
 - **THEN** Application MUST 返回 conflict
 - **AND** MUST NOT 覆盖另一页面或进程已经完成的修改
+
 ### Requirement: 平台安装必须提供完整且可解释的 Buildr App
 Buildr MUST 为 macOS 和 Windows 提供不依赖用户预装 Node、npm 或 PATH 的平台安装产物，并 MUST 将安装、启动和后台常驻保持为不同动作。
 

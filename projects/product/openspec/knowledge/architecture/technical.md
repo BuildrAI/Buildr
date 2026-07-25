@@ -1,0 +1,28 @@
+# Buildr 技术架构
+
+## 所有权与源码边界
+
+- Product Project root：`projects/product/`，拥有产品治理、OpenSpec、docs、knowledge 与 Service registry。
+- Buildr Service root：`projects/product/services/buildr/`，拥有 CLI、Local App、runtime adapters、验证、package 和发布实现。
+- 用户 Workspace 中由 Buildr 交付的 Rules/Skills/Components 是安装结果，只能由 Product checkout 的 update/sync 单向物化。
+
+## 运行结构
+
+- CLI 解析 Workspace/Project/Service manifests，执行确定性 source mutation、render、doctor、package 和 Local App lifecycle。
+- Runtime adapter 将受管 Rules、Skills、contributions 和 capability binding evidence 投射到 Agent 原生入口；Project 普通知识和 Service repo 保持源资产，不复制进 runtime。
+- Local App 只监听 loopback，以 Workspace registry 为全局目录，通过 application/domain 层读取 Project、Service 和 Change；生命周期写操作交给 Agent prompt。
+
+## Capability 与 Component
+
+- `skills/manifest.yml` 注册 capability contracts、providers、consumers 和 workspace default bindings。
+- Consumer 依赖 capability identity，不依赖 provider Skill id；required/optional 分别产生 blocked/degraded readiness。
+- OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 contract guard、terminology 和 current knowledge 门禁，不修改上游 Skill source bytes。
+
+## 数据与完整性
+
+Workspace、Project、Service、Rules、Skills、Commands 和 Components 由各自 manifests/registries 维护稳定 identity。Buildr 对路径、symlink、ownership、transaction、integrity 和并发 mutation fail closed；runtime 是可重建投影，不是源资产。
+
+## 验证
+
+Project `verification.yml` 定义或增强验证政策。实现循环使用 minimal feedback，任务组完成后运行 affected，最终冻结 tree 运行 Candidate；evidence 绑定 candidate identity，内容变化后失效。
+

@@ -86,6 +86,9 @@ skills:
       - capability: buildr.task-finish
         version: 1
     requires:
+      - capability: buildr.current-knowledge-maintenance
+        version: 1
+        mode: required
       - capability: buildr.task-verification
         version: 2
         mode: required
@@ -134,6 +137,10 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-explore
+    requires:
+      - capability: buildr.terminology-governance
+        version: 1
+        mode: optional
   - id: openspec-propose
     assetIdentity: buildr:skill:openspec-propose
     sourceIdentity: package:skills/openspec/openspec-propose
@@ -152,6 +159,10 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-propose
+    requires:
+      - capability: buildr.current-knowledge-maintenance
+        version: 1
+        mode: required
   - id: openspec-update-change
     assetIdentity: buildr:skill:openspec-update-change
     sourceIdentity: package:skills/openspec/openspec-update-change
@@ -170,6 +181,10 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-update-change
+    requires:
+      - capability: buildr.current-knowledge-maintenance
+        version: 1
+        mode: required
   - id: openspec-apply-change
     assetIdentity: buildr:skill:openspec-apply-change
     sourceIdentity: package:skills/openspec/openspec-apply-change
@@ -188,6 +203,10 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-apply-change
+    requires:
+      - capability: buildr.current-knowledge-maintenance
+        version: 1
+        mode: required
   - id: openspec-sync-specs
     assetIdentity: buildr:skill:openspec-sync-specs
     sourceIdentity: package:skills/openspec/openspec-sync-specs
@@ -206,6 +225,10 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-sync-specs
+    requires:
+      - capability: buildr.current-knowledge-maintenance
+        version: 1
+        mode: required
   - id: openspec-archive-change
     assetIdentity: buildr:skill:openspec-archive-change
     sourceIdentity: package:skills/openspec/openspec-archive-change
@@ -307,6 +330,52 @@ skills:
     provides:
       - capability: buildr.task-verification
         version: 2
+  - id: terminology-governance
+    assetIdentity: buildr:skill:terminology-governance
+    sourceIdentity: package:skills/buildr/terminology-governance
+    source: buildr
+    path: buildr/terminology-governance
+    description: Agent 在探索、提案、设计、实现或文档整理中遇到新术语、同义词、一词多义、中英不一致、Context/Context Window 等概念边界，或 consumer 需要正式术语对齐 evidence 时使用。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: terminology-governance
+    provides:
+      - capability: buildr.terminology-governance
+        version: 1
+  - id: current-knowledge-maintenance
+    assetIdentity: buildr:skill:current-knowledge-maintenance
+    sourceIdentity: package:skills/buildr/current-knowledge-maintenance
+    source: buildr
+    path: buildr/current-knowledge-maintenance
+    description: OpenSpec Change 创建、修订、实现、同步或 Task Finish 前，需要评估、维护、收敛或检查 Change Brief、Project 概览、产品/技术架构、核心流程、Service 说明和术语时使用。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: current-knowledge-maintenance
+    provides:
+      - capability: buildr.current-knowledge-maintenance
+        version: 1
+    requires:
+      - capability: buildr.terminology-governance
+        version: 1
+        mode: required
 contracts:
   - id: buildr.git-single-operation
     version: 1
@@ -348,6 +417,14 @@ contracts:
     version: 3
     path: contracts/buildr/task-asset-review/v3.md
     description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
+  - id: buildr.terminology-governance
+    version: 1
+    path: contracts/buildr/terminology-governance/v1.md
+    description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
+  - id: buildr.current-knowledge-maintenance
+    version: 1
+    path: contracts/buildr/current-knowledge-maintenance/v1.md
+    description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
 bindings:
   - capability: buildr.git-single-operation
     version: 1
@@ -379,4 +456,10 @@ bindings:
   - capability: buildr.task-asset-review
     version: 3
     provider: task-asset-review
+  - capability: buildr.terminology-governance
+    version: 1
+    provider: terminology-governance
+  - capability: buildr.current-knowledge-maintenance
+    version: 1
+    provider: current-knowledge-maintenance
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

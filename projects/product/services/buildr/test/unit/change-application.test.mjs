@@ -62,10 +62,11 @@ test('Change read model 分开索引进行中与已归档，并按 checkbox 计�
   assert.deepEqual(result.changes.find(({ code }) => code === 'old-flow').progress, { exists: false, completed: null, total: null, remaining: null });
 });
 
-test('Change detail 只读取标准 artifacts 并拒绝路径逃逸', (t) => {
+test('Change detail 读取 Buildr Brief 与标准 artifacts 并拒绝路径逃逸', (t) => {
   const { root, runtime, projectRoot } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   writeChange(projectRoot, 'safe-change', {
+    'brief.md': '# Safe Change Brief\n\n## Summary\nHuman readable.\n',
     'proposal.md': '# Safe Change\nProposal body.\n',
     'design.md': '# Design\n',
     'tasks.md': '- [ ] work\n',
@@ -74,11 +75,48 @@ test('Change detail 只读取标准 artifacts 并拒绝路径逃逸', (t) => {
   });
 
   const { change } = runtime.changeDetail(root, 'product', 'active~safe-change');
+  assert.deepEqual(change.brief, {
+    kind: 'buildr-companion',
+    exists: true,
+    path: 'projects/product/openspec/changes/safe-change/brief.md',
+    content: '# Safe Change Brief\n\n## Summary\nHuman readable.\n',
+  });
   assert.equal(change.artifacts.proposal.content, '# Safe Change\nProposal body.\n');
   assert.equal(change.artifacts.specs[0].capability, 'capability');
   assert.equal(JSON.stringify(change).includes('must not be exposed'), false);
   assert.throws(() => runtime.changeDetail(root, 'product', 'active~..'), /不合法/);
   assert.throws(() => runtime.changeDetail(root, 'product', 'active~missing'), /不存在/);
+});
+
+test('Change detail 对缺失或不安全 Brief 保持兼容且零写入', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const legacyRoot = writeChange(projectRoot, 'legacy-change', { 'proposal.md': '# Legacy\n' });
+  const before = fs.readdirSync(legacyRoot).sort();
+  const legacy = runtime.changeDetail(root, 'product', 'active~legacy-change').change;
+  assert.equal(legacy.brief.exists, false);
+  assert.equal('content' in legacy.brief, false);
+  assert.deepEqual(fs.readdirSync(legacyRoot).sort(), before);
+
+  const outside = path.join(root, 'outside-brief.md');
+  fs.writeFileSync(outside, '# Outside\n');
+  const unsafeRoot = writeChange(projectRoot, 'unsafe-brief', { 'proposal.md': '# Unsafe\n' });
+  fs.symlinkSync(outside, path.join(unsafeRoot, 'brief.md'));
+  const unsafe = runtime.changeDetail(root, 'product', 'active~unsafe-brief').change;
+  assert.equal(unsafe.brief.exists, false);
+  assert.equal(JSON.stringify(unsafe).includes('Outside'), false);
+});
+
+test('Archived Change 随目录投影 Brief', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeChange(projectRoot, 'archive/2026-07-25-readable', {
+    'brief.md': '# Archived Brief\n',
+    'proposal.md': '# Readable\n',
+  });
+  const change = runtime.changeDetail(root, 'product', 'archived~2026-07-25-readable').change;
+  assert.equal(change.lifecycle, 'archived');
+  assert.equal(change.brief.content, '# Archived Brief\n');
 });
 
 test('Change prompt-only 操作解析真实 Change 且保护归档历史', (t) => {

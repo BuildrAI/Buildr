@@ -40,17 +40,21 @@ Buildr 不是另一个 Agent，也不与 Agent 抢活。Buildr 负责治理和�
 
 Buildr 把个体员工积累的工作事实和工作方法转化为组织可以共同维护的工作资产，再按 supported Agent runtime 的能力投射必要入口。不同成员和 Agent 可以从同一组织基础开始工作，让个人探索成为可共享、可传承、可持续演进的组织价值。
 
-## 工作资产、共享工作环境与任务上下文
+## 工作信息、工作资产、任务上下文与 Context Window
 
-Buildr 管理的是组织工作资产，不是 context window：
+Buildr 管理的是工作信息空间中适合长期复用的组织工作资产，不是全部工作信息，也不是 Context Window：
 
 | 概念 | 含义 | 责任主体 |
 |---|---|---|
-| 工作资产 | 组织长期复用的工作事实与工作方法；工作事实回答“干的是什么”，工作方法回答“怎么干”，Rules、Skills、Commands、OpenSpec、Projects、Services 和专业能力是当前示例 | Buildr 组织、治理和诊断 |
-| 共享工作环境 | 工作资产经组织并按 runtime 投射后，Agent 可发现和使用的整体环境 | Buildr 维护源资产并 render 必要入口 |
-| 任务上下文 | Agent 为当前任务发现、选择并加载到 context window 的相关内容 | Agent 根据任务语义形成 |
+| 工作信息空间 | 所有潜在可用于工作的来源，包括 Workspace 文件、数据库、API、网页、聊天、机器状态、用户输入和工具结果 | 多种来源；不等于 Buildr 管理范围 |
+| Workspace | 工作范围、治理根和发现入口，可同时包含受管资产、普通代码、临时文件、依赖和本机配置 | Buildr 维护范围 identity 和受管入口；位于其中不等于被治理 |
+| 工作资产与共享工作环境 | 被明确组织、登记或纳入治理的长期工作事实与工作方法，以及它们经组织和 runtime 投射后形成的整体环境 | Buildr 组织、治理、投射和诊断 |
+| 任务上下文 | Agent 为具体 Task 发现、检索、判断、选择、组织和压缩后实际使用的语义工作集 | Agent 根据任务语义形成；可使用 Buildr 资产和外部授权信息 |
+| Context Window | 某一次模型调用实际装入的有限临时输入，是 Task Context 在该时刻的有限投影 | Agent/runtime 按当前调用选择和加载 |
 
-Buildr 不替 Agent 填充 context window，也不保证把所有信息都加载进去。它提供可发现、可选择、可使用的组织化资产，让 Agent 有基础为任务建立相关而充分的上下文。runtime adapter 只负责发现和投射标准资产，不替 Agent 判断哪些内容与当前任务相关。
+Buildr 不替 Agent 填充 Context Window，也不保证把所有信息都加载进去。它提供可发现、可选择、可使用的组织化资产，让 Agent 有基础形成 Task Context；Agent 也可以通过文件检索、数据库/API 查询、网页、语义检索、MCP 或其他授权来源补充任务信息。具体检索工具不是 Buildr Context 模型的一部分。runtime adapter 只负责发现和投射标准资产，不替 Agent 判断哪些内容与当前任务相关。
+
+Context 表示某个工作范围中可供 Agent 发现、选择和使用的候选信息；Workspace Context、Project Context 和 Service Context 是范围限定，不等于已经加载的模型输入。Task Context 是语义工作集，Context Window 是单次调用的技术容器；一个长期 Task 可以跨越多个 Context Windows。
 
 “工作事实”与“工作方法”是对工作资产的公开解释，不是新的存储分类，也不封闭 Buildr 可以治理的资产类型。
 
@@ -183,7 +187,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 
 Buildr 当前 MVP 已验证文件系统、Git、CLI、Buildr Skill、bootstrap guide 和 Agent runtime 渲染可以支撑人和 Agent 共同维护工作资产。
 
-当前事实以 [Buildr current state](../openspec/knowledge/buildr-current-state.md) 为准；规范性行为以 [OpenSpec specs](../openspec/specs/) 为准。
+当前事实以 [Buildr current knowledge](../openspec/knowledge/overview.md) 为准；规范性行为以 [OpenSpec specs](../openspec/specs/) 为准。
 
 MVP 不解决完整企业云服务、权限系统、托管 Web/SaaS、多用户协作、代码托管平台集成、跨机器自动恢复、系统级 hook 或所有 Agent adapter。
 
@@ -199,7 +203,7 @@ Buildr 的数据完整性保护是不可卸载的 CLI core：资产 identity、s
 
 ## Roadmap
 
-本节只概括后续产品方向。详细设计候选见 [Roadmap 资料](roadmap/)；这些资料不是当前产品事实、可执行资产或已经批准的实施契约。当前实现以 [Buildr current state](../openspec/knowledge/buildr-current-state.md) 为准，规范性行为以 [OpenSpec specs](../openspec/specs/) 为准；具体方向进入实现前仍需创建独立 OpenSpec change。
+本节只概括后续产品方向。详细设计候选见 [Roadmap 资料](roadmap/)；这些资料不是当前产品事实、可执行资产或已经批准的实施契约。当前实现以 [Buildr current knowledge](../openspec/knowledge/overview.md) 为准，规范性行为以 [OpenSpec specs](../openspec/specs/) 为准；具体方向进入实现前仍需创建独立 OpenSpec change。
 
 后续产品方向包括：
 

@@ -9,9 +9,47 @@ function artifactPanel(label, artifact) {
   return article;
 }
 
+function briefPanel(brief) {
+  const section = document.createElement('section'); section.className = 'panel change-brief-panel';
+  const heading = document.createElement('div'); heading.className = 'panel-heading';
+  const copy = document.createElement('div');
+  const eyebrow = document.createElement('p'); eyebrow.className = 'eyebrow'; eyebrow.textContent = '先了解变更';
+  const title = document.createElement('h2'); title.textContent = '变更说明';
+  copy.append(eyebrow, title);
+  const state = document.createElement('span'); state.className = 'state'; state.textContent = brief.exists ? '人类可读' : '未提供';
+  heading.append(copy, state); section.append(heading);
+  if (!brief.exists) {
+    const missing = document.createElement('div'); missing.className = 'brief-missing';
+    const message = document.createElement('p'); message.textContent = '这个变更还没有人类可读 Brief。你仍可以继续查看下方 OpenSpec 技术产物。';
+    const source = document.createElement('small'); source.textContent = brief.path;
+    missing.append(message, source); section.append(missing); return section;
+  }
+  const content = document.createElement('div'); content.className = 'brief-content';
+  let list = null;
+  for (const rawLine of brief.content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) { list = null; continue; }
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (headingMatch) {
+      list = null;
+      const level = Math.min(headingMatch[1].length + 1, 4);
+      const node = document.createElement(`h${level}`); node.textContent = headingMatch[2]; content.append(node); continue;
+    }
+    const itemMatch = line.match(/^[-*]\s+(.+)$/);
+    if (itemMatch) {
+      if (!list) { list = document.createElement('ul'); content.append(list); }
+      const item = document.createElement('li'); item.textContent = itemMatch[1]; list.append(item); continue;
+    }
+    list = null;
+    const paragraph = document.createElement('p'); paragraph.textContent = line; content.append(paragraph);
+  }
+  const source = document.createElement('small'); source.className = 'brief-source'; source.textContent = brief.path;
+  section.append(content, source); return section;
+}
+
 export async function renderChangeDetail({ root, api, onWorkspace, onBreadcrumb, openAgentAction, params }) {
   const { projectCode, changeRef } = params;
-  root.innerHTML = `<section class="page-header change-detail-header"><a class="back-link" href="/changes" data-route>← 返回变更目录</a><div class="page-header-row"><div><p class="eyebrow">变更</p><h1 id="change-detail-name">正在读取…</h1><p id="change-detail-copy" class="page-copy">读取变更契约与任务状态。</p></div><div class="panel-actions"><button id="continue-change" class="button primary" type="button">继续推进</button><button id="review-change" class="button secondary" type="button">交给 Agent 审查</button></div></div></section><section class="metric-grid change-metrics"><article class="metric-card identity-card"><span>变更 ID</span><strong id="change-detail-code">—</strong><small id="change-detail-project">—</small></article><article class="metric-card"><span>生命周期</span><strong id="change-detail-lifecycle">—</strong><small>来自实际目录位置</small></article><article class="metric-card"><span>任务进度</span><strong id="change-detail-progress">—</strong><small id="change-detail-updated">—</small></article></section><section class="panel"><div class="panel-heading"><div><p class="eyebrow">标准产物</p><h2>OpenSpec 产物</h2></div><span class="state">只读</span></div><div id="change-artifacts" class="artifact-list"></div></section>`;
+  root.innerHTML = `<section class="page-header change-detail-header"><a class="back-link" href="/changes" data-route>← 返回变更目录</a><div class="page-header-row"><div><p class="eyebrow">变更</p><h1 id="change-detail-name">正在读取…</h1><p id="change-detail-copy" class="page-copy">先了解变更，再按需查看技术产物。</p></div><div class="panel-actions"><button id="continue-change" class="button primary" type="button">继续推进</button><button id="review-change" class="button secondary" type="button">交给 Agent 审查</button></div></div></section><section class="metric-grid change-metrics"><article class="metric-card identity-card"><span>变更 ID</span><strong id="change-detail-code">—</strong><small id="change-detail-project">—</small></article><article class="metric-card"><span>生命周期</span><strong id="change-detail-lifecycle">—</strong><small>来自实际目录位置</small></article><article class="metric-card"><span>任务进度</span><strong id="change-detail-progress">—</strong><small id="change-detail-updated">—</small></article></section><div id="change-brief"></div><section class="panel technical-artifacts-panel"><div class="panel-heading"><div><p class="eyebrow">深入技术细节</p><h2>OpenSpec 产物</h2></div><span class="state">只读</span></div><div id="change-artifacts" class="artifact-list"></div></section>`;
   try {
     const [workspace, data] = await Promise.all([api('/api/v1/workspace'), api(`/api/v1/projects/${encodeURIComponent(projectCode)}/changes/${encodeURIComponent(changeRef)}`)]); onWorkspace(workspace);
     const change = data.change;
@@ -20,6 +58,7 @@ export async function renderChangeDetail({ root, api, onWorkspace, onBreadcrumb,
     document.getElementById('change-detail-lifecycle').textContent = change.lifecycle === 'active' ? '进行中' : '已归档';
     document.getElementById('change-detail-progress').textContent = change.progress.exists ? `${change.progress.completed} / ${change.progress.total}` : '未声明';
     document.getElementById('change-detail-updated').textContent = `更新于 ${new Date(change.updatedAt).toLocaleString('zh-CN')}`;
+    document.getElementById('change-brief').append(briefPanel(change.brief));
     const container = document.getElementById('change-artifacts'); container.append(artifactPanel('提案', change.artifacts.proposal), artifactPanel('设计', change.artifacts.design));
     for (const spec of change.artifacts.specs) container.append(artifactPanel(`规格 · ${spec.capability}`, spec));
     container.append(artifactPanel('任务', change.artifacts.tasks));

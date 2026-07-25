@@ -8,7 +8,7 @@
 |------|------|
 | [../README.md](../README.md) | 产品入口、快速开始和文档导航 |
 | [buildr-product.md](buildr-product.md) | 产品理解：定位、核心模型、工作资产、协作方式和后续方向 |
-| [../openspec/knowledge/buildr-current-state.md](../openspec/knowledge/buildr-current-state.md) | 当前已实现事实，按 OpenSpec 能力域组织 |
+| [../openspec/knowledge/overview.md](../openspec/knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
 | [../openspec/specs/](../openspec/specs/) | 规范性产品行为契约 |
 | [roadmap/](roadmap/) | 尚未实现的产品方向和详细设计候选，不作为当前事实或实施契约 |
 | [release-checklist.md](../services/buildr/docs/release-checklist.md) | 发布准备和验证清单 |
@@ -26,7 +26,7 @@
 |----------|----------|
 | 产品入口、最小心智模型、快速开始 | `README.md` |
 | 产品定位、为什么、核心概念、协作模型 | `docs/buildr-product.md` |
-| 已经实现的当前事实 | `openspec/knowledge/buildr-current-state.md` |
+| 已经实现的当前事实 | `openspec/knowledge/overview.md` 及其导航的结构化 knowledge |
 | 复杂任务跨 change 的交付批次、依赖池、方案、进度和证据看板 | `openspec/knowledge/task-boards/yyyy-MM-dd-<task-id>.html` |
 | MUST / SHOULD 级产品行为 | `openspec/specs/` |
 | 计划型产品变更 | `openspec/changes/` |
@@ -75,7 +75,7 @@
 ## 维护约定
 
 - 新增当前产品说明时，优先更新 `docs/buildr-product.md`。
-- 新增当前实现事实时，优先更新 `openspec/knowledge/buildr-current-state.md`。
+- 新增当前实现事实时，按影响更新 `openspec/knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/` 或 `services/` 中真正相关的资产；不生成空文档。
 - 复杂任务需要持续可视化认知入口时，使用 `task-board` Skill 维护任务看板；每个看板至少关联一个真实 OpenSpec change，并以交付批次和依赖池表达进度，不要把任务进度混入 current-state facts 文档。既有 `task-cockpits/` 页面是保留原路径和原内容的历史资产，不迁移到新目录。
 - 新增规范性行为时，更新 `openspec/specs/` 或创建 OpenSpec change。
 - 新增尚未进入实现的详细产品方向时，维护 `docs/roadmap/` 并保持非当前事实声明。

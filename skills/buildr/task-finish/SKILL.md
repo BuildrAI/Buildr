@@ -56,6 +56,8 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 
 如果此前正式验证失败，收尾前必须确认 selected task-verification provider 在修复期间优先重跑失败项和受影响专项检查，并在候选重新稳定后完成一次新的 `requiredAssurance`。不得把仍在修复循环中的专项检查结果当作正式验证证据。
 
+<!-- buildr:skill-contributions pre-verification -->
+
 多个 change、多个 worktree、多个远端或目标分支无法消歧时停止，不替用户选择。
 
 当前任务包含已完成的 active OpenSpec change 时：

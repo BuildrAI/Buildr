@@ -34,7 +34,7 @@ OpenSpec 自举变更 MUST NOT 修改现有 Buildr CLI runtime check、render �
 - **THEN** 现有 Buildr runtime 命令 MUST 保持原有行为
 
 ### Requirement: Buildr 产品文档分层
-Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历史参考分层维护，避免同一事实在 README、docs、knowledge 和 specs 中重复成为事实源。
+Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历史参考分层维护，避免同一事实在 README、docs、knowledge 和 specs 中重复成为事实源。Project current knowledge MUST 按概览、术语、产品架构、技术架构、核心流程和 Service 说明组织真实当前事实，并 MUST 只在存在已确认内容或真实 Change 影响时逐步创建或更新对应文档。
 
 #### Scenario: README 作为产品入口
 - **WHEN** Buildr 维护根 `README.md`
@@ -50,9 +50,20 @@ Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历�
 
 #### Scenario: knowledge 承载当前事实
 - **WHEN** Buildr 记录已经实现的产品事实
-- **THEN** facts MUST be maintained in `openspec/knowledge/buildr-current-state.md` or an equivalent current-state knowledge file
-- **AND** facts MUST be written as current-state statements aligned with `openspec/specs/`
+- **THEN** facts MUST be maintained in `openspec/knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/`、`services/` 或职责等价的 current-state knowledge assets
+- **AND** facts MUST be written as current-state statements aligned with `openspec/specs/` and the current implementation
 - **AND** knowledge MUST NOT include product value propositions, future roadmap, historical rationale, or design philosophy as current facts
+
+#### Scenario: 产品与技术架构分开维护
+- **WHEN** Buildr 同时记录产品模型和技术系统事实
+- **THEN** 产品架构 MUST 维护用户、角色、业务能力、领域模块、产品边界和信息架构
+- **AND** 技术架构 MUST 维护系统、Service、模块、数据所有权、接口依赖、runtime、部署和安全边界
+- **AND** `architecture/index.md` MUST 在两类真实文档存在时提供统一摘要与导航
+
+#### Scenario: Change 只影响部分当前认知
+- **WHEN** current-knowledge assessment 只识别到一个或部分真实影响目标
+- **THEN** Agent MUST 只创建或更新对应文档
+- **AND** MUST NOT 为保持目录形式完整生成其他空文档
 
 #### Scenario: specs 承载行为契约
 - **WHEN** Buildr 记录规范性产品行为
@@ -60,9 +71,9 @@ Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历�
 - **AND** specs MUST NOT be replaced by explanatory docs or knowledge notes
 
 #### Scenario: archive 不是当前事实源
-- **WHEN** Buildr moves old product docs into `docs/archive/`
-- **THEN** archived docs MUST be marked as historical notes
-- **AND** archived docs MUST NOT be treated as current Buildr product source of truth
+- **WHEN** Buildr moves old product docs into `docs/archive/` or archives an OpenSpec Change
+- **THEN** archived assets MUST be treated as historical notes and provenance
+- **AND** archived assets MUST NOT be treated as current Buildr product source of truth
 
 ### Requirement: Buildr 未来规划资产使用明确 Roadmap 语境
 Buildr MUST 将尚未实现但仍保留为产品方向的详细资料维护在明确的 Roadmap 语境中，并 MUST 将其与当前事实、行为契约、可执行规则、Skills 和历史 archive 区分。

@@ -54,6 +54,7 @@ function writeChange(projectRoot, relative, title) {
   const changeRoot = path.join(projectRoot, 'openspec', 'changes', relative);
   fs.mkdirSync(path.join(changeRoot, 'specs', 'demo-capability'), { recursive: true });
   fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
+  fs.writeFileSync(path.join(changeRoot, 'brief.md'), `# ${title}\n\n## 一句话摘要\n\n普通用户先从这里了解变更。\n\n## 核心流程\n\n- 查看 Brief\n- 深入技术产物\n`);
   fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${title}\n\n验证本机应用。\n`);
   fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\nBrowser smoke fixture.\n');
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 准备 fixture\n- [ ] 验证页面\n');
@@ -261,6 +262,11 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
     assert.equal(await page.locator('#change-detail-code').innerText(), 'browser-flow');
     assert.equal(await page.locator('#change-detail-lifecycle').innerText(), '进行中');
     assert.equal(await page.locator('#change-detail-progress').innerText(), '1 / 2');
+    assert.equal(await page.locator('.change-brief-panel').count(), 1);
+    assert.match(await page.locator('.brief-content').innerText(), /普通用户先从这里了解变更/);
+    const briefTop = await page.locator('.change-brief-panel').evaluate((element) => element.getBoundingClientRect().top);
+    const artifactsTop = await page.locator('.technical-artifacts-panel').evaluate((element) => element.getBoundingClientRect().top);
+    assert.ok(briefTop < artifactsTop, 'Brief 必须位于技术 artifacts 之前');
     assert.equal(await page.locator('#change-artifacts .artifact-panel').count(), 4);
     const proceed = page.getByRole('button', { name: '继续推进', exact: true });
     await unique(proceed, '继续推进操作');

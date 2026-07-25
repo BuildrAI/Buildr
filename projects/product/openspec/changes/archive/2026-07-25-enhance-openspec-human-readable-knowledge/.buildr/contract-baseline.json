@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "enhance-openspec-human-readable-knowledge",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-7d459522588deb50db39fa7383fd3056fb7e1f6054f68b3f821bcbe18bb8e041",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-first-product-positioning",
+      "title": "Buildr 区分工作资产、共享工作环境和任务上下文",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Buildr 区分工作资产、共享工作环境和任务上下文\nBuildr MUST 将组织长期复用的工作事实和工作方法统一描述为组织工作资产，将这些资产经组织和 runtime 投射形成的整体使用体验描述为 Agent 的共享工作环境，并 MUST 将任务上下文限定为 Agent 根据当前任务发现、选择并加载到当前 context window 的相关内容。工作事实描述“干的是什么”，工作方法描述“怎么干”；专业能力 MUST 作为工作方法可承载的内容，不得与工作事实、工作方法并列为第三个公开顶层分类。Rules、Skills、Commands、Specs、产品事实、Projects、Services 和协作流程等 MUST 只作为当前示例，不得被描述为封闭的长期资产枚举。\n\n#### Scenario: 产品文档解释上下文责任\n- **WHEN** 公开文档解释 Buildr 如何帮助 Agent 获得任务信息\n- **THEN** 文档 MUST 说明 Buildr 组织和投射 Agent 可发现、可选择、可使用的工作资产\n- **AND** 文档 MUST 说明 Agent 负责根据任务形成任务上下文\n- **AND** 文档 MUST NOT 宣称 Buildr 直接提供完整 context window 或保证所有任务信息完整无缺\n- **AND** 文档提及尚未实现的 MCP、hooks 或其他未来资产形态时 MUST 明确其不是当前能力事实\n\n#### Scenario: 公开入口解释工作资产\n- **WHEN** README、产品主说明、Buildr Skill 或 Buildr Core 概括工作资产的内容\n- **THEN** 文档 MUST 使用“工作事实”和“工作方法”作为公开顶层解释\n- **AND** 文档 MAY 使用 Rules、Skills、Commands、Specs、Projects、Services 或专业能力作为两类内容的示例\n- **AND** 文档 MUST NOT 将该二分法描述为受管资产类型的封闭枚举\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "OpenSpec workflow 必须通过能力契约组合当前认知维护",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Change lifecycle 必须在最终验证前收敛 Brief 与当前认知",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须把当前认知检查作为验证前门禁",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-development-openspec",
+      "title": "Buildr 产品文档分层",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Buildr 产品文档分层\nBuildr MUST 将产品入口、产品理解、当前事实、行为契约和历史参考分层维护，避免同一事实在 README、docs、knowledge 和 specs 中重复成为事实源。\n\n#### Scenario: README 作为产品入口\n- **WHEN** Buildr 维护根 `README.md`\n- **THEN** README MUST 作为产品入口和快速开始文档\n- **AND** README MUST link to 产品理解文档、current-state knowledge 和 OpenSpec specs\n- **AND** README MUST NOT 承担当前实现事实全集或产品路线图职责\n\n#### Scenario: docs 承载产品理解\n- **WHEN** Buildr 维护 `docs/` 下的当前产品文档\n- **THEN** 当前产品理解 SHOULD 聚合到 `docs/buildr-product.md` 或等价单一主文档\n- **AND** 该文档 SHOULD 解释产品定位、核心模型、工作资产、协作方式、runtime 高层模型、MVP 边界摘要和后续方向\n- **AND** 该文档 MUST NOT 作为当前实现事实的唯一来源\n\n#### Scenario: knowledge 承载当前事实\n- **WHEN** Buildr 记录已经实现的产品事实\n- **THEN** facts MUST be maintained in `openspec/knowledge/buildr-current-state.md` or an equivalent current-state knowledge file\n- **AND** facts MUST be written as current-state statements aligned with `openspec/specs/`\n- **AND** knowledge MUST NOT include product value propositions, future roadmap, historical rationale, or design philosophy as current facts\n\n#### Scenario: specs 承载行为契约\n- **WHEN** Buildr 记录规范性产品行为\n- **THEN** MUST / SHOULD level requirements MUST be maintained in `openspec/specs/`\n- **AND** specs MUST NOT be replaced by explanatory docs or knowledge notes\n\n#### Scenario: archive 不是当前事实源\n- **WHEN** Buildr moves old product docs into `docs/archive/`\n- **THEN** archived docs MUST be marked as historical notes\n- **AND** archived docs MUST NOT be treated as current Buildr product source of truth\n"
+    },
+    {
+      "capability": "change-asset-indexing",
+      "title": "Change 详情必须按需投影标准 artifacts",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Change 详情必须按需投影标准 artifacts\nBuildr MUST 为单个 Change 返回 identity、lifecycle、任务进度和标准 artifact 内容，并 MUST 对 Project、Change 与文件路径执行边界校验。\n\n#### Scenario: 读取完整 Change\n- **WHEN** 请求命中存在的 active 或 archived Change\n- **THEN** 详情 MUST 返回 proposal、design、specs 和 tasks 的可用内容与来源路径\n- **AND** specs MUST 使用稳定 capability 与相对路径标识\n\n#### Scenario: 读取部分完成 Change\n- **WHEN** Change 仅包含部分标准 artifacts\n- **THEN** 详情 MUST 明确每类 artifact 是否存在\n- **AND** MUST 保留已有 artifact 内容，不得伪造缺失内容或完成状态\n\n#### Scenario: Change reference 非法或不存在\n- **WHEN** 请求包含路径穿越、非法 identity 或无法在目标 Project 中解析的 Change reference\n- **THEN** Application MUST 拒绝请求或返回 not found\n- **AND** MUST NOT 读取 Project planning root 外的文件\n"
+    },
+    {
+      "capability": "current-knowledge-maintenance",
+      "title": "Project 当前认知必须按信息职责组织",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "current-knowledge-maintenance",
+      "title": "当前认知必须保持事实来源边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "current-knowledge-maintenance",
+      "title": "Buildr 必须提供当前认知维护能力契约",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "current-knowledge-maintenance",
+      "title": "Knowledge impact sidecar 必须只承载工作流证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "current-knowledge-maintenance",
+      "title": "当前认知维护必须按真实变更触发",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "human-readable-change-brief",
+      "title": "正式 Change 必须提供人类可读 Brief",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "human-readable-change-brief",
+      "title": "Brief 不得成为第二套规范来源",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "human-readable-change-brief",
+      "title": "Brief 必须随 Change 生命周期保持稳定可读",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "local-workspace-application",
+      "title": "本机应用必须提供可链接的 Change 详情页",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 本机应用必须提供可链接的 Change 详情页\nBuildr 本机应用 MUST 使用稳定独立路由展示 Change 详情，并 MUST 将长 artifact 内容与短 prompt 交互分离。\n\n#### Scenario: 打开 Change 详情\n- **WHEN** 用户访问 `/changes/<projectCode>/<changeRef>`\n- **THEN** 页面 MUST 展示 identity、lifecycle、任务进度、artifact availability 和可用的 proposal、design、specs、tasks 内容\n- **AND** 页面刷新后 MUST 保持同一 Change 上下文\n\n#### Scenario: Change 不存在\n- **WHEN** 详情 API 返回 not found\n- **THEN** 页面 MUST 显示明确空状态并提供返回 Change 表格的入口\n\n#### Scenario: 详情中的 Agent 行为\n- **WHEN** 用户在详情中选择继续或审阅\n- **THEN** 页面 MUST 打开短交互抽屉并生成可复制 prompt\n- **AND** MUST NOT 叠加承载第二份完整 Change 详情的二级抽屉\n"
+    },
+    {
+      "capability": "terminology-governance",
+      "title": "Project 必须提供 canonical glossary 作用域",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "terminology-governance",
+      "title": "Buildr 必须提供术语治理能力契约",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "terminology-governance",
+      "title": "术语治理必须先调查再追问",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "terminology-governance",
+      "title": "术语治理必须返回结构化结果证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

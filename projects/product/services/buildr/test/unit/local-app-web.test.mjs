@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 const originalGlobals = {
@@ -57,4 +58,16 @@ test('api client 只为写请求附加 session，并保留服务端错误结构'
     return true;
   });
   assert.deepEqual(calls[1].options.headers, { 'content-type': 'application/json', 'x-buildr-session': 'session-token' });
+});
+
+test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
+  const source = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
+  const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
+  assert.ok(source.indexOf('id="change-brief"') < source.indexOf('technical-artifacts-panel'));
+  assert.match(source, /briefPanel\(change\.brief\)/);
+  assert.match(source, /这个变更还没有人类可读 Brief/);
+  assert.match(source, /textContent = itemMatch\[1\]/);
+  assert.doesNotMatch(source, /brief\.content.*innerHTML/);
+  assert.match(styles, /\.change-brief-panel/);
+  assert.match(styles, /\.brief-content/);
 });

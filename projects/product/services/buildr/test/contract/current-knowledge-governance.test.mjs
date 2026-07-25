@@ -1,0 +1,96 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import YAML from 'yaml';
+
+import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
+import { resolveSkillCapabilityGraph } from '../../src/infrastructure/runtime/skills/capabilities.mjs';
+
+const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
+const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
+const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'package', 'targets', 'workspace');
+const read = (file) => fs.readFileSync(file, 'utf8');
+const resolveChangeRoot = (change) => {
+  const active = path.join(PRODUCT_ROOT, 'openspec/changes', change);
+  if (fs.existsSync(active)) return active;
+  const archive = path.join(PRODUCT_ROOT, 'openspec/changes/archive');
+  const matches = fs.readdirSync(archive).filter((entry) => entry.endsWith(`-${change}`));
+  assert.equal(matches.length, 1, `expected one archived Change for ${change}`);
+  return path.join(archive, matches[0]);
+};
+
+test('terminology 与 current knowledge contracts 具有稳定 identity 和固定语义章节', () => {
+  const terminology = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/terminology-governance/v1.md');
+  const knowledge = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v1.md');
+  assert.equal(parseCapabilityContract(terminology).id, 'buildr.terminology-governance');
+  assert.equal(parseCapabilityContract(knowledge).id, 'buildr.current-knowledge-maintenance');
+  assert.match(read(terminology), /先调查.*只对会改变长期语义/);
+  assert.match(read(knowledge), /`assess`.*`reconcile`.*`inspect`/s);
+  assert.match(read(knowledge), /不得机械创建空文件/);
+});
+
+test('默认 providers、bindings 与 Task Finish required dependency 可解析为 ready', () => {
+  const graph = resolveSkillCapabilityGraph(WORKSPACE_TARGET, null, { runtime: 'codex' });
+  const knowledge = graph.consumers.find((item) => item.consumer === 'current-knowledge-maintenance');
+  const finish = graph.consumers.find((item) => item.consumer === 'task-finish');
+  assert.ok(knowledge);
+  assert.equal(knowledge.readiness, 'ready');
+  assert.equal(knowledge.dependencies[0].selectedProvider.id, 'terminology-governance');
+  assert.ok(finish.dependencies.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.mode === 'required'));
+  assert.equal(finish.dependencies.find((item) => item.capability === 'buildr.current-knowledge-maintenance').selectedProvider.id, 'current-knowledge-maintenance');
+  assert.equal(finish.readiness, 'ready');
+});
+
+test('OpenSpec consumers 只声明 capability dependencies，archive 保持无知识写入依赖', () => {
+  const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const skills = new Map(manifest.builtins.skills.map((skill) => [skill.id, skill]));
+  const dependency = (id, capability, mode) => skills.get(id).requires?.some((item) => item.capability === capability && item.mode === mode);
+  assert.equal(dependency('openspec-explore', 'buildr.terminology-governance', 'optional'), true);
+  for (const id of ['openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs']) {
+    assert.equal(dependency(id, 'buildr.current-knowledge-maintenance', 'required'), true, id);
+  }
+  assert.equal(dependency('task-finish', 'buildr.current-knowledge-maintenance', 'required'), true);
+  assert.equal(skills.get('openspec-archive-change').requires, undefined);
+});
+
+test('OpenSpec Component 通过 contributions 组合且不改写 external Skill source', () => {
+  const component = YAML.parse(read(path.join(WORKSPACE_TARGET, 'components/buildr/openspec/component.yml')));
+  const fragments = component.contributions.skillFragments;
+  assert.ok(fragments.some((item) => item.startsWith('openspec-explore@prepend=')));
+  assert.ok(fragments.some((item) => item.startsWith('openspec-sync-specs@prepend=')));
+  assert.ok(fragments.some((item) => item.startsWith('task-finish#pre-verification=')));
+  for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) {
+    const source = read(path.join(WORKSPACE_TARGET, `skills/openspec/${id}/SKILL.md`));
+    assert.match(source, /generatedBy: "1\.6\.0"/);
+    assert.doesNotMatch(source, /current-knowledge-maintenance|terminology-governance/);
+  }
+});
+
+test('自举 Brief、impact evidence 与 current knowledge 使用真实目标且无 unresolved', () => {
+  const changeRoot = resolveChangeRoot('enhance-openspec-human-readable-knowledge');
+  const brief = read(path.join(changeRoot, 'brief.md'));
+  const impact = YAML.parse(read(path.join(changeRoot, '.buildr/knowledge-impact.yml')));
+  assert.match(brief, /## 一句话摘要/);
+  assert.match(brief, /## 核心流程/);
+  assert.deepEqual(impact.unresolvedItems, []);
+  assert.ok(impact.impacts.every((item) => item.target && item.reason && item.status !== 'pending'));
+  for (const item of impact.impacts) {
+    const target = item.type === 'brief' ? path.join(changeRoot, 'brief.md') : path.join(PRODUCT_ROOT, item.target);
+    assert.equal(fs.existsSync(target), true, item.target);
+  }
+});
+
+test('Context 四层模型、知识导航和 Service 局部术语边界保持一致', () => {
+  const glossary = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/glossary.md'));
+  const productArchitecture = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/architecture/product.md'));
+  const service = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/services/buildr.md'));
+  for (const term of ['工作信息空间', 'Workspace', '工作资产', '共享工作环境', '上下文（Context）', '任务上下文', '上下文窗口']) {
+    assert.match(glossary, new RegExp(term.replace(/[()]/g, '\\$&')));
+  }
+  assert.match(glossary, /位于 Workspace 不表示它已经被 Buildr 治理/);
+  assert.match(productArchitecture, /Task Context[\s\S]*Context Window/);
+  assert.match(service, /当前不重定义 Project glossary/);
+  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'openspec/knowledge/architecture/product.md')), true);
+  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'openspec/knowledge/architecture/technical.md')), true);
+});
