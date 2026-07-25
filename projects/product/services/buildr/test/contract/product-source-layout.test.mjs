@@ -42,7 +42,10 @@ test('结构 verifier 拒绝旧 Product package-root 残留', () => {
       serviceEntries: canonicalServiceEntries,
       bridgeSource: canonicalBridge,
     });
-    assert.ok(findings.includes(`Project root must not own ${forbidden}`), forbidden);
+    const expected = forbidden === 'node_modules'
+      ? 'Product Project root must not retain node_modules from a retired package root; remove it and run npm ci in projects/product/services/buildr.'
+      : `Project root must not own ${forbidden}`;
+    assert.ok(findings.includes(expected), forbidden);
   }
 });
 

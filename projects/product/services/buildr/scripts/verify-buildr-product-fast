@@ -4,7 +4,7 @@ set -euo pipefail
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="$product_root/node_modules/.bin:$PATH"
 if ! command -v openspec >/dev/null 2>&1; then
-  echo "OpenSpec CLI is missing. Run npm ci in projects/product before verification." >&2
+  echo "OpenSpec CLI is missing. Run npm ci in projects/product/services/buildr before verification." >&2
   exit 1
 fi
 

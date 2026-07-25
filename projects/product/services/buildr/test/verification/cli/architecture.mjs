@@ -15,7 +15,7 @@ const entry = path.join(productRoot, 'bin', 'buildr.mjs');
 const problems = [];
 
 problems.push(...validateProductSourceLayout({
-  projectEntries: fs.readdirSync(projectRoot).filter((entryName) => entryName !== 'node_modules'),
+  projectEntries: fs.readdirSync(projectRoot),
   serviceEntries: fs.readdirSync(productRoot).filter((entryName) => entryName !== 'node_modules'),
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));

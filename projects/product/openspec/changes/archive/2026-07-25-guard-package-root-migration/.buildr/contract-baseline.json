@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "guard-package-root-migration",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-d453f061ff90bb953f2caf7fb010b59c2847fffeab688366f6cda76f11456712",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "product-source-layout",
+      "title": "Product Project 治理根与可执行 Service 根必须分离",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Product Project 治理根与可执行 Service 根必须分离\nBuildr 自举 Product MUST 将项目治理资产保留在 Product Project root，并 MUST 将 npm package、CLI、运行源码、测试、维护脚本和交付源资产放入已登记的 Buildr Service root，二者不得形成双重实现事实源。\n\n#### Scenario: 检查 Product Project root\n- **WHEN** 架构 verifier 扫描 `projects/product/`\n- **THEN** Project root MUST 保留 `AGENTS.md`、OpenSpec、Project capabilities、Command requirements、Service registry 和项目级文档\n- **AND** Project root MUST NOT 继续拥有 npm package metadata、`src/`、`bin/`、`test/`、`scripts/` 或 `package/` 实现目录\n\n#### Scenario: 检查 Buildr Service root\n- **WHEN** verifier 扫描 `projects/product/services/buildr/`\n- **THEN** 该目录 MUST 是 `@buildr-ai/buildr` package、运行源码、验证、维护脚本和交付源资产的唯一源码根\n- **AND** Service root MUST 提供 Service-level `AGENTS.md`\n\n#### Scenario: 从旧开发入口运行 Buildr\n- **WHEN** 用户或 Agent 执行 `projects/product/buildr`\n- **THEN** 该入口 MUST 作为薄兼容 bridge 调用 Buildr Service 的 CLI\n- **AND** bridge MUST NOT 复制运行实现或建立第二份 package root\n"
+    }
+  ]
+}
