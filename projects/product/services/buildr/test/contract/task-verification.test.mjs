@@ -171,6 +171,15 @@ test('task-finish archive 后只清理已证明为空的 active change scaffold'
   assert.ok(finishSkill.indexOf('遗留 change scaffold') > finishSkill.indexOf('自动规范后重新运行 `git diff --check`'));
 });
 
+test('task-finish 只在已验证的手动 sync 后跳过 archive spec update', () => {
+  for (const required of [
+    'post-sync contract guard 返回 `ok: true`',
+    'openspec archive <change> --skip-specs --yes',
+    'archive 未重复更新 specs',
+    '缺少当前会话的 sync evidence、post-sync 未通过或状态不明时，不得使用 `--skip-specs`',
+  ]) assert.ok(finishSkill.includes(required), `task-finish must bound archive skip-specs: ${required}`);
+});
+
 test('task-finish 将健康 Local App 同端口交接作为 cleanup 门槛', () => {
   for (const required of [
     'instance.json', '/api/v1/health', 'buildr app --port <recorded-port> --no-open',

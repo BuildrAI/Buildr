@@ -80,7 +80,7 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 
 当前任务包含已完成的 active OpenSpec change 时：
 
-1. 使用外部可用的 OpenSpec CLI/Skills 归档 change。
+1. 使用外部可用的 OpenSpec CLI/Skills 归档 change。若当前会话已经通过 agent-driven 路径完成 canonical spec sync，且 post-sync contract guard 返回 `ok: true`，使用 `openspec archive <change> --skip-specs --yes`；记录 canonical specs 已同步、archive 未重复更新 specs 和后续 strict validation。缺少当前会话的 sync evidence、post-sync 未通过或状态不明时，不得使用 `--skip-specs`，必须停止或走既有默认 sync/archive 路径。
 2. 归档后立即运行 `git diff --check`。
 3. 只有全部诊断都是本次 archive/specs sync 修改的 OpenSpec Markdown 文件中的 `new blank line at EOF` 时，才自动删除多余结尾空白行，使每个文件恰好以一个换行结束。
 4. 自动规范后重新运行 `git diff --check` 和当前 planning root 的 OpenSpec strict validation。
