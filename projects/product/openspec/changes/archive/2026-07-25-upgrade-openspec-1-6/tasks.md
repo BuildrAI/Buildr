@@ -23,4 +23,4 @@
 
 - [x] 4.1 在冻结的 implementation candidate tree 运行 `npm run test:candidate`，记录验证耗时、最慢阶段和结果。
 - [x] 4.2 复核 OpenSpec delta 与 canonical specs，建立 baseline 并运行 proposal contract check；在实施完成后按 pre-sync/post-sync 门禁同步并归档。
-- [ ] 4.3 按 Buildr 产品发布与 workspace runtime 规则完成集成、必要的 sync/doctor 和交付说明。
+- [x] 4.3 按 Buildr 产品发布与 workspace runtime 规则完成集成、必要的 sync/doctor 和交付说明。
