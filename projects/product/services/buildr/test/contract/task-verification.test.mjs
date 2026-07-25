@@ -140,7 +140,7 @@ test('task-finish 消费 requiredAssurance evidence 并报告耗时', () => {
     'implementationCandidateIdentity', 'deliveryTreeIdentity', 'same-content',
     'closeout-metadata-only', 'implementation-changed', 'taskVerificationExecuteCalls',
     'candidateExecutorCalls', 'verification-result-metadata-only', 'source/target identity',
-    'session-only',
+    'session-only', 'runtime-projection-only', 'Component integrity', 'sync 来源',
   ]) assert.ok(finishSkill.includes(required), `finish Skill must include ${required}`);
   assert.match(finishSkill, /Buildr Product.*buildr\.verification-timing\/v1/s);
 });
@@ -180,6 +180,18 @@ test('task-finish 只在已验证的手动 sync 后跳过 archive spec update', 
   ]) assert.ok(finishSkill.includes(required), `task-finish must bound archive skip-specs: ${required}`);
 });
 
+test('OpenSpec apply 和 Task Finish 固定 canonical sync 的 guard 时序', () => {
+  for (const required of [
+    '不得在当前会话的 `pre-sync` contract guard 成功前', 'delta 预写入 canonical specs',
+    'pre-sync 成功后', 'post-sync guard',
+  ]) assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve sync sequencing: ${required}`);
+
+  for (const required of [
+    '不得把 apply 阶段预写的 canonical specs 作为已同步事实',
+    '当前会话 pre-sync 成功后', '随后必须通过 post-sync guard',
+  ]) assert.ok(finishSkill.includes(required), `task-finish must preserve sync sequencing: ${required}`);
+});
+
 test('task-finish 将健康 Local App 同端口交接作为 cleanup 门槛', () => {
   for (const required of [
     'instance.json', '/api/v1/health', 'buildr app --port <recorded-port> --no-open',
@@ -194,16 +206,18 @@ test('已有 Candidate 进入收尾时按 transition class 去重 executor 调�
   assert.deepEqual(closeoutFixtures.cases.map((item) => item.id), [
     'existing-candidate-same-content',
     'openspec-archive-only',
+    'runtime-projection-only',
     'candidate-task-checkbox-only',
     'candidate-checkbox-with-extra-edit',
     'candidate-checkbox-ambiguous-task',
     'candidate-checkbox-cross-session-without-evidence',
     'implementation-changed-affected',
+    'runtime-projection-with-source-edit',
     'implementation-changed-candidate',
   ]);
 
-  const [sameContent, archiveOnly, checkboxOnly, ...implementationChanges] = closeoutFixtures.cases;
-  for (const item of [sameContent, archiveOnly, checkboxOnly]) {
+  const [sameContent, archiveOnly, runtimeProjectionOnly, checkboxOnly, ...implementationChanges] = closeoutFixtures.cases;
+  for (const item of [sameContent, archiveOnly, runtimeProjectionOnly, checkboxOnly]) {
     assert.equal(item.taskVerificationExecuteCalls, 0, `${item.id} must not execute task verification`);
     assert.equal(item.candidateExecutorCalls, 0, `${item.id} must not execute Candidate`);
     assert.equal(item.candidateReused, true, `${item.id} must reuse Candidate evidence`);
@@ -213,6 +227,12 @@ test('已有 Candidate 进入收尾时按 transition class 去重 executor 调�
   assert.equal(sameContent.transitionClass, 'same-content');
   assert.equal(archiveOnly.transitionClass, 'closeout-metadata-only');
   assert.deepEqual(archiveOnly.closeoutChecks, ['openspec-strict', 'contract-guard', 'git-diff-check']);
+
+  assert.equal(runtimeProjectionOnly.transitionClass, 'closeout-metadata-only');
+  assert.equal(runtimeProjectionOnly.transitionSubtype, 'runtime-projection-only');
+  assert.equal(runtimeProjectionOnly.syncSourceCaptured, true);
+  assert.equal(runtimeProjectionOnly.implementationSourceUnchanged, true);
+  assert.deepEqual(runtimeProjectionOnly.closeoutChecks, ['runtime-component-integrity', 'doctor', 'git-diff-check']);
 
   assert.equal(checkboxOnly.transitionClass, 'closeout-metadata-only');
   assert.equal(checkboxOnly.transitionSubtype, 'verification-result-metadata-only');

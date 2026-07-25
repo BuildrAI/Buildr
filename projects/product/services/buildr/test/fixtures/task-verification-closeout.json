@@ -21,6 +21,19 @@
       "candidateReused": true
     },
     {
+      "id": "runtime-projection-only",
+      "requiredAssurance": "affected",
+      "transitionClass": "closeout-metadata-only",
+      "transitionSubtype": "runtime-projection-only",
+      "providerOperations": ["inspect", "cleanup"],
+      "closeoutChecks": ["runtime-component-integrity", "doctor", "git-diff-check"],
+      "syncSourceCaptured": true,
+      "implementationSourceUnchanged": true,
+      "taskVerificationExecuteCalls": 0,
+      "candidateExecutorCalls": 0,
+      "candidateReused": true
+    },
+    {
       "id": "candidate-task-checkbox-only",
       "requiredAssurance": "candidate",
       "transitionClass": "closeout-metadata-only",
@@ -72,6 +85,16 @@
       "requiredAssurance": "affected",
       "transitionClass": "implementation-changed",
       "providerOperations": ["execute", "cleanup"],
+      "taskVerificationExecuteCalls": 1,
+      "candidateExecutorCalls": 0,
+      "candidateReused": false
+    },
+    {
+      "id": "runtime-projection-with-source-edit",
+      "requiredAssurance": "affected",
+      "transitionClass": "implementation-changed",
+      "providerOperations": ["execute", "cleanup"],
+      "implementationSourceUnchanged": false,
       "taskVerificationExecuteCalls": 1,
       "candidateExecutorCalls": 0,
       "candidateReused": false

@@ -64,7 +64,7 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 
 <!-- buildr:skill-contributions pre-spec-sync -->
 
-1. 使用外部可用的 OpenSpec CLI/Skills 评估 delta specs，并采用默认推荐路径同步 canonical specs。不得直接修改 Buildr 随附的 `openspec-*` Skill 源来加入收尾逻辑。
+1. 先通过 Component contribution 的 pre-sync guard；不得把 apply 阶段预写的 canonical specs 作为已同步事实。仅在当前会话 pre-sync 成功后，使用外部可用的 OpenSpec CLI/Skills 执行 agent-driven canonical sync；随后必须通过 post-sync guard，才可进入 archive。不得直接修改 Buildr 随附的 `openspec-*` Skill 源来加入收尾逻辑。
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
@@ -96,9 +96,10 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 - 将已披露的任务范围、目标分支、远端、commit message 和授权交给 selected task-integration provider；由 provider 决定其 rebase、fast-forward 或 merge policy，本 Skill 不复制这些策略。
 - provider 必须返回 `deliveryTreeIdentity`，例如 `git rev-parse HEAD^{tree}`，以及集成前后的 tree/commit/ref evidence；Task Finish 同时保留已验证的 `implementationCandidateIdentity`。
 - `same-content`：delivery tree 的内容与 implementation Candidate 相同。调用 selected provider `inspect` 并复用 evidence；不得启动验证 executor，两个 execute count 均为 `0`。
-- `closeout-metadata-only`：差异完全来自当前 Task Finish 已执行且可归因的 OpenSpec sync/archive、归档格式规范或 Project 明确定义的 closeout-only artifacts。保留 implementation Candidate evidence，只运行 closeout workflow 已要求的 focused checks；不得调用 task-verification `execute`，两个 execute count均为 `0`。
+- `closeout-metadata-only`：差异完全来自当前 Task Finish 已执行且可归因的 OpenSpec sync/archive、归档格式规范、Project 明确定义的 closeout-only artifacts，或满足下述严格条件的 Buildr runtime projection/receipt delta。保留 implementation Candidate evidence，只运行 closeout workflow 已要求的 focused checks；不得调用 task-verification `execute`，两个 execute count均为 `0`。
+- `runtime-projection-only` 是 `closeout-metadata-only` 的严格 subtype：只允许已集成且保留 checkout 上的 `buildr sync` 生成受管 runtime projection 与对应 receipt，要求 `git diff` 精确限定于该同步输出、全部对应 Component integrity 和 doctor 通过、implementation source identity 未改变。记录 sync 来源、implementationCandidateIdentity、deliveryTreeIdentity 与 runtime/receipt focused checks；任一条件缺失，或出现 lockfile、非受管生成内容、手工修复或 source diff 时，按 `implementation-changed` fail closed。
 - `verification-result-metadata-only` 是 `closeout-metadata-only` 的严格 subtype：只允许同一会话内刚成功的 Candidate 对应的唯一最终任务 checkbox 由 `- [ ]` 变为 `- [x]`，并要求 source/target identity、change/task identity、精确 marker transition 与唯一 diff 证据。调用 provider `inspect`，两个 execute count 均为 `0`；最终报告必须明确 Candidate 只验证 source implementation identity，metadata transition 单独解释 target delivery identity。
-- `implementation-changed`：rebase 冲突解决、生成资产更新、代码/配置/runtime 资产变化，或任何无法完全证明属于 closeout-only scope 的差异。原 evidence 失效，在集成完成前调用 selected provider `execute` 重新运行同一 `requiredAssurance`；Candidate 时 `candidateExecutorCalls: 1`，Affected 时保持 `0`，失败时停止尚未执行的 integrate、push 和 cleanup。
+- `implementation-changed`：rebase 冲突解决、代码/配置/runtime source 资产变化、lockfile 或非 `runtime-projection-only` 的生成资产更新，或任何无法完全证明属于 closeout-only scope 的差异。原 evidence 失效，在集成完成前调用 selected provider `execute` 重新运行同一 `requiredAssurance`；Candidate 时 `candidateExecutorCalls: 1`，Affected 时保持 `0`，失败时停止尚未执行的 integrate、push 和 cleanup。
 - transition classification 必须基于动作来源、实际 diff 和 Project policy，不得仅按目录名、扩展名、“看起来像文档”或最终 checkbox 状态判断；无法证明 `closeout-metadata-only` 时按 `implementation-changed` fail closed。`verification-result-metadata-only` 没有当前会话的完整 transition evidence 时也必须 fail closed。
 - provider 返回 `treeChanged: true` 时，直接遵守 required Core workspace-transition invariant，并通过产品入口 Buildr Skill 执行具体 doctor、sync 询问和修复边界；不依赖 provider id。
 - selected provider 的验证命令仍返回 session、cell、process id 或运行中状态时，继续 wait、poll 或 resume 同一进程；暂时无输出不得启动第二个相同验证。

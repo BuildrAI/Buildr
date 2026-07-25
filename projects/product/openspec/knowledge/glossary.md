@@ -72,3 +72,16 @@
 - 避免混用：Change archive 是历史与 provenance，不是 Project 当前事实源。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## 受控同步（Controlled Sync）
+
+- 定义：active Change 在当前会话成功取得 pre-sync receipt 后，由 Agent 按 delta 更新 canonical specs、再通过 post-sync guard 的同步阶段。
+- 适用范围：OpenSpec Change 从实现进入归档前的 canonical spec 维护。
+- 避免混用：不等于 apply 阶段预写 canonical specs，也不以 baseline adopt、重跑 pre-sync 或 `--skip-specs` 掩盖失败。
+- 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
+
+## 仅 runtime 投影变更（Runtime Projection-only Delta）
+
+- 定义：已验证 implementation source 在保留 checkout 上执行 Buildr runtime sync 后，仅产生受管 runtime projection 与对应 receipt 的 delivery 差异。
+- 适用范围：Task Finish 对 verification evidence 的严格 closeout-metadata-only subtype 判断。
+- 避免混用：lockfile、source、非受管 generated asset、手工修复或无法精确归因的 diff 都是 implementation-changed，不可复用原验证证据。
+- 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)

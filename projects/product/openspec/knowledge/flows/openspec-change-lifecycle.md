@@ -7,12 +7,11 @@
 3. `openspec-update-change` 修订 planning artifacts 时同步刷新 Brief 与 impacts。
 4. `openspec-apply-change` 实现 tasks；发现的新知识影响写回 tasks/sidecar，implementation content 完成后在最终验证前 `reconcile`。
 5. `task-verification` 按 Project policy 运行 affected 或 Candidate，并把 evidence 绑定当前 tree identity。
-6. `openspec-sync-specs` 在 reconcile evidence、pre-sync contract guard 通过后同步 canonical specs；post-sync guard 核对结果。
-7. `task-finish` 在验证前执行 current knowledge `inspect`，再完成验证、archive、Git integration、目标分支 push 和安全 cleanup。
+6. `openspec-sync-specs` 仅在 reconcile evidence 与当前会话的 pre-sync contract guard 通过后执行 agent-driven canonical sync；apply 阶段不得预写 canonical specs，sync 后必须通过 post-sync guard。
+7. `task-finish` 在验证前执行 current knowledge `inspect`，并在 post-sync 通过后使用 `archive --skip-specs`；随后完成验证、Git integration、目标分支 push 和安全 cleanup。
 
 ## 失败与停止
 
 - Required capability blocked、术语 unresolved、Brief/current knowledge 冲突或 evidence identity 陈旧时停止后续 workflow。
 - Reconcile 或 fallback 修订 delivery content 后，旧验证 evidence 失效。
 - Archive 只移动已对齐 Change、Brief 和 sidecar；归档后不补写 glossary 或 current knowledge。
-

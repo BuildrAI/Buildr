@@ -246,6 +246,24 @@ Buildr task triage 和 OpenSpec propose guidance MUST 在首次写入预计进�
 - **THEN** Buildr MUST 通过 Component-owned Skill contribution 组合该 guidance
 - **AND** Buildr MUST NOT 修改外部 `openspec-propose` Skill 的上游正文
 
+### Requirement: OpenSpec apply 保持 canonical specs 直到受控同步阶段
+Buildr OpenSpec apply guidance MUST 要求 Agent 在 active change 的实现阶段只修改 change artifacts 与实现内容，MUST NOT 在当前会话的 `pre-sync` contract guard 成功前写入该 change 的 canonical specs。Agent MUST 在 pre-sync 成功后执行 agent-driven canonical sync，并在 `post-sync` guard 返回 `ok: true` 后才使用 `openspec archive <change> --skip-specs --yes`。
+
+#### Scenario: apply 阶段尚未进入受控同步
+- **WHEN** Agent 正在实现 active OpenSpec change，且当前会话尚未取得该 change 的成功 pre-sync receipt
+- **THEN** Agent MUST NOT 将该 change 的 delta 预写入 canonical specs
+- **AND** MUST 保持 canonical Requirement 与 baseline 可比较，直到 Task Finish 进入受控同步阶段
+
+#### Scenario: 受控同步与归档
+- **WHEN** pre-sync guard 返回 `ok: true`，Agent 已按该 change 的 delta 完成 canonical sync，且 post-sync guard 返回 `ok: true`
+- **THEN** Agent MUST 记录同步证据并使用 `openspec archive <change> --skip-specs --yes`
+- **AND** archive 后 MUST 继续执行 strict validation、status 与现有 closeout workflow checks
+
+#### Scenario: pre-sync 或 post-sync 未通过
+- **WHEN** pre-sync 或 post-sync guard 未返回 `ok: true`
+- **THEN** Agent MUST 停止 canonical sync 后续动作或 archive
+- **AND** MUST NOT 通过 baseline adopt、重跑 pre-sync 或 `--skip-specs` 掩盖失败
+
 ### Requirement: Task Finish 自动编排已验证任务收尾
 Buildr MUST 提供实现 `buildr.task-finish/v1` 的 `task-finish` 默认 workspace Skill，将用户当前轮次明确的“收尾”意图作为受限的一次性授权，并通过绑定的 `buildr.task-verification/v2`、`buildr.task-worktree-lifecycle/v1` 和 `buildr.git-task-integration/v1` providers 自动完成可安全确定的剩余任务动作；Task Finish MUST NOT 固定所有任务均要求 Candidate。
 
@@ -266,7 +284,7 @@ Buildr MUST 提供实现 `buildr.task-finish/v1` 的 `task-finish` 默认 worksp
 - **AND** Task Finish MUST 只在成功 Candidate evidence 完整、identity 匹配且可复用时继续
 
 #### Scenario: 收尾复用可信 evidence
-- **WHEN** 当前候选已有 selected verification provider 产生或核对的成功 evidence，且 level 满足 `requiredAssurance`、候选 identity 未改变
+- **WHEN** 当前候选已有 selected verification provider 产生或核对的成功 evidence，且 level 满足 `requiredAssurance`、candidate identity 未改变
 - **THEN** Task Finish MUST 复用该 evidence
 - **AND** Task Finish MUST NOT 重复运行相同验证
 - **AND** provider evidence inspection MUST NOT 被计作 verification execution
@@ -277,18 +295,23 @@ Buildr MUST 提供实现 `buildr.task-finish/v1` 的 `task-finish` 默认 worksp
 - **AND** 新验证失败或仍不完整时 MUST 停止 integrate、push 和 cleanup
 
 #### Scenario: Closeout metadata 改变 delivery tree
-- **WHEN** delivery tree 与已验证 implementation identity 的差异完全来自可归因的 OpenSpec sync/archive、归档格式规范或 Project 明确定义的 closeout-only artifacts
+- **WHEN** delivery tree 与已验证 implementation identity 的差异完全来自可归因的 OpenSpec sync/archive、归档格式规范、Project 明确定义的 closeout-only artifacts，或符合 runtime projection-only 条件的 Buildr sync 投影与 receipt
 - **THEN** Task Finish MUST 将 transition 标记为 `closeout-metadata-only`，保留原 evidence，并运行 closeout workflow 已要求的 focused checks
 - **AND** Task Finish MUST NOT 调用 task-verification `execute`，最终报告 MUST 分别说明已验证 identity、delivery tree identity 和 closeout delta checks
 
+#### Scenario: Buildr runtime projection-only delivery delta
+- **WHEN** implementation source 已由可复用 evidence 覆盖，已集成保留 checkout 上的 `buildr sync` 只修改受管 runtime projection 与对应 receipt，且 `git diff`、component integrity 与 doctor 均证明没有其他 source 或生成资产变化
+- **THEN** Task Finish MUST 将该 delta 作为 `closeout-metadata-only` 处理并复用原 verification evidence
+- **AND** MUST 运行并记录 runtime/receipt focused checks、sync 来源、implementationCandidateIdentity 和 deliveryTreeIdentity
+
 #### Scenario: 实现内容改变时重新验证同一所需保证
-- **WHEN** provider integration、冲突解决、生成资产更新或其他步骤改变 implementation content，或差异无法完全证明属于 closeout-only scope
+- **WHEN** provider integration、冲突解决、lockfile 或非 projection-only 的生成资产更新、其他步骤改变 implementation content，或差异无法完全证明属于 closeout-only scope
 - **THEN** Task Finish MUST 将 transition 标记为 `implementation-changed`，使原 evidence 失效，并在集成前请求新的 `requiredAssurance`
 - **AND** 普通任务 MUST 重跑 affected，发布、高风险或显式完整验证任务 MUST 重跑 candidate，新验证失败时 MUST 停止尚未执行的 integrate、push 和 cleanup
 
 #### Scenario: 完成 OpenSpec 归档
 - **WHEN** 当前任务包含 artifacts 和 tasks 均完成的 active OpenSpec change
-- **THEN** Task Finish MUST 默认同步 delta specs 并归档 change
+- **THEN** Task Finish MUST 先通过 pre-sync guard，再执行 canonical sync，并在 post-sync guard 通过后归档 change
 - **AND** Task Finish MUST 通过外部可用的 OpenSpec CLI/Skills 完成该步骤，不修改外部 `openspec-*` Skill 源
 - **AND** OpenSpec strict、contract guard 和 `git diff --check` MUST 作为 closeout workflow checks 记录，不得计作 verification executor invocation
 
