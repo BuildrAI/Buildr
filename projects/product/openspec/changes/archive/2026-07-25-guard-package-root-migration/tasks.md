@@ -11,9 +11,9 @@
 ## 3. 候选验证与集成
 
 - [x] 3.1 冻结实现候选并运行 Product Candidate，记录与 task worktree 一致的验证 identity 和 timing summary。
-- [ ] 3.2 通过 task-finish 归档、提交并集成已验证 change，保留主 checkout 的清理前状态供复核。
+- [x] 3.2 通过 task-finish 归档、提交并集成已验证 change，保留主 checkout 的清理前状态供复核。
 
 ## 4. 当前遗留收尾
 
-- [ ] 4.1 集成产品变更后，复核主 checkout 的 Product Project root 无 package metadata，并删除唯一已证明的遗留目录 `projects/product/node_modules`。
-- [ ] 4.2 在主 checkout 验证 Product Project root 不再包含遗留依赖入口，并记录清理结果。
+- [x] 4.1 集成产品变更后，复核主 checkout 的 Product Project root 无 package metadata，并将唯一已证明的遗留目录 `projects/product/node_modules` 移至废纸篓。
+- [x] 4.2 在主 checkout 验证 Product Project root 不再包含遗留依赖入口，并记录清理结果。
