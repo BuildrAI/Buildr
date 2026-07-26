@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-safe-execution
+operation: reconcile
+treeIdentity: implementation-complete-pre-verification
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 说明自动执行范围、恢复边界和耗时目标。
+    status: aligned
+    sourceIdentities: [proposal.md, design.md, specs/task-finish-execution/spec.md, ../../services/buildr/src/application/task-finish/task-finish-run.mjs]
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 在既有状态机内部增加 executor，不改变长期系统拓扑。
+    status: not-applicable
+    sourceIdentities: [design.md]
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 不引入新的产品级术语。
+    status: not-applicable
+    sourceIdentities: [proposal.md]
+unresolvedItems: []

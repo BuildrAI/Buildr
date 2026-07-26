@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { advanceFinishRun, createFinishRun, FINISH_STEPS, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
+import { advanceFinishRun, createFinishRun, executeSafeFinishRun, FINISH_STEPS, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-'));
@@ -188,4 +188,64 @@ test('late asset review 位于 runtime install 与 cleanup 之间', () => {
   const ids = FINISH_STEPS.map((item) => item.id);
   assert.ok(ids.indexOf('runtime-install') < ids.indexOf('asset-review-late'));
   assert.ok(ids.indexOf('asset-review-late') < ids.indexOf('cleanup'));
+});
+
+test('safe executor 在原 checkpoint 上连续完成已声明只读步骤并停在边界', async (t) => {
+  const root = fixture(t); create(root);
+  const plan = (id) => ({ cwd: root, command: '/usr/bin/true', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: id });
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1',
+    fingerprints: { context: 'context-v1', 'current-knowledge': 'knowledge-v1' },
+    executionPlans: { context: plan('context-safe'), 'current-knowledge': plan('knowledge-safe') },
+  });
+  assert.equal(result.safeExecution.status, 'stopped');
+  assert.equal(result.safeExecution.reason, 'safe-plan-unavailable');
+  assert.equal(result.currentStep, 'contract-convergence');
+  assert.deepEqual(result.safeExecution.executedSteps.map(({ step, status }) => ({ step, status })), [
+    { step: 'context', status: 'passed' }, { step: 'current-knowledge', status: 'passed' },
+  ]);
+});
+
+test('safe executor 命令失败后保留 blocked checkpoint', async (t) => {
+  const root = fixture(t); create(root);
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', fingerprints: { context: 'context-v1' },
+    executionPlans: { context: { cwd: root, command: '/usr/bin/false', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: 'context-failed' } },
+  });
+  assert.equal(result.safeExecution.reason, 'safe-action-failed');
+  assert.equal(result.blocked[0].code, 'safe-action-failed');
+});
+
+test('safe executor 并行执行同一步的只读 observations', async (t) => {
+  const root = fixture(t); create(root);
+  let active = 0; let maxActive = 0;
+  const runCommand = async () => {
+    active += 1; maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    active -= 1;
+    return { status: 0, stdout: '{}', stderr: '' };
+  };
+  const observation = { cwd: root, command: '/usr/bin/true', commandSource: 'external-declared', args: [], sharedMutation: false, safeHandler: 'process-probe' };
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', fingerprints: { context: 'context-v1' }, runCommand,
+    executionPlans: { context: { cwd: root, sharedMutation: false, safeAuto: true, evidenceId: 'parallel-context', observations: [observation, observation] } },
+  });
+  assert.equal(maxActive, 2);
+  assert.equal(result.steps[0].evidence[0].observationCount, 2);
+});
+
+test('registered runtime sync handler 复用原状态机共享 lease', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'runtime-convergence') passCurrent(root, 'finish-1');
+  const executable = path.join(root, 'projects/product/buildr');
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, '#!/bin/sh\n');
+  let observedLease = false;
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'runtime-convergence': 'runtime-v1' },
+    executionPlans: { 'runtime-convergence': { cwd: root, command: executable, args: ['sync', 'codex', '--target', root], sharedMutation: true, safeAuto: true, safeHandler: 'buildr-runtime-sync', evidenceId: 'runtime-sync' } },
+    runCommand: async () => { observedLease = Boolean(readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'runtime-convergence').lease); return { status: 0, stdout: '{}', stderr: '' }; },
+  });
+  assert.equal(observedLease, true);
+  assert.equal(result.steps.find((item) => item.id === 'runtime-convergence').status, 'passed');
 });

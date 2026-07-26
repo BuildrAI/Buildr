@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "buildr.openspec-convergence-receipt/v1",
+  "change": "optimize-task-finish-safe-execution",
+  "deltaDigest": "13b37d45c33bd85fbb0c3a61949187aef916db09bee8a63067f7bd4ea7b1bbc6",
+  "canonicalDigest": "9da87acbf740f4a58da50eedd29e2ae046575d05d97a804fb0eb01bb8eb8fdf3",
+  "openspecExecutable": "/Users/chenjun/Buildr/.worktrees/optimize-task-finish-safe-execution/projects/product/services/buildr/node_modules/@fission-ai/openspec/bin/openspec.js",
+  "openspecVersion": "1.6.0",
+  "stage": "post-sync",
+  "transitions": [
+    {
+      "stage": "rehearsed",
+      "outcome": "passed"
+    },
+    {
+      "stage": "pre-sync",
+      "outcome": "passed"
+    },
+    {
+      "stage": "canonical-sync",
+      "outcome": "passed"
+    },
+    {
+      "stage": "post-sync",
+      "outcome": "passed"
+    }
+  ],
+  "sequence": [
+    "compatibility-scan",
+    "archive-rehearsal",
+    "pre-sync",
+    "canonical-sync",
+    "post-sync"
+  ],
+  "postSyncCanonicalDigest": "42d2e9ee5d26e7eaf2cc8abe3831b4d8cfde05e1a5fec34c650a7561f8d5765d"
+}

@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v1';
 export const FINISH_PLAN_VERSION = 1;
@@ -127,6 +131,13 @@ export function validateFinishExecutionPlan({ root, plan }) {
     verificationSelector: plan.verificationSelector || null,
     availableSelectors: Array.isArray(plan.availableSelectors) ? [...plan.availableSelectors] : null,
     sharedMutation: plan.sharedMutation !== false,
+    safeAuto: plan.safeAuto === true,
+    safeHandler: typeof plan.safeHandler === 'string' ? plan.safeHandler : null,
+    evidenceId: typeof plan.evidenceId === 'string' ? plan.evidenceId : null,
+    jsonAssertion: plan.jsonAssertion && typeof plan.jsonAssertion.path === 'string'
+      ? { path: plan.jsonAssertion.path, equals: plan.jsonAssertion.equals }
+      : null,
+    observations: Array.isArray(plan.observations) ? plan.observations.map((entry) => validateFinishExecutionPlan({ root, plan: { ...entry, sharedMutation: false, safeAuto: true } })) : [],
   };
 }
 
@@ -434,4 +445,67 @@ export function resumeFinishRun(options) {
   run.updatedAt = now(options.clock || Date.now);
   atomicWriteJson(runFile(options.root, options.runId), run);
   return advanceFinishRun(options);
+}
+
+async function defaultSafeCommand(command, args, options) {
+  try { const result = await execFileAsync(command, args, options); return { status: 0, ...result }; }
+  catch (error) { return { status: Number.isInteger(error.code) ? error.code : 1, stdout: error.stdout || '', stderr: error.stderr || error.message }; }
+}
+
+function registeredSafeHandler(plan, root) {
+  const executable = path.basename(plan.command || '');
+  if (plan.safeHandler === 'process-probe') return ['true', 'false'].includes(executable) && plan.args.length === 0;
+  if (plan.safeHandler === 'git-observation') return executable === 'git' && ['status', 'rev-parse', 'merge-base', 'diff', 'ls-remote'].includes(plan.args[0]);
+  const localBuildr = path.resolve(root, 'projects/product/buildr');
+  if (plan.command !== localBuildr) return false;
+  if (plan.safeHandler === 'buildr-doctor') return plan.args[0] === 'doctor' && plan.args.includes('--json');
+  if (plan.safeHandler === 'buildr-openspec-check') return plan.args[0] === 'openspec' && plan.args[1] === 'check' && plan.args.includes('--json');
+  if (plan.safeHandler === 'buildr-runtime-sync') return plan.args[0] === 'sync' && plan.args.includes('--target');
+  return false;
+}
+
+export async function executeSafeFinishRun({ root, runId, fingerprints = {}, executionPlans = {}, runCommand = defaultSafeCommand, clock = Date.now }) {
+  const startedAt = clock();
+  const executedSteps = [];
+  while (true) {
+    const checkpoint = inspectFinishRun(readFinishRun({ root, runId }));
+    if (checkpoint.status === 'complete' || !checkpoint.nextAction) return { ...checkpoint, safeExecution: { status: 'complete', executedSteps, durationMs: clock() - startedAt } };
+    const step = checkpoint.nextAction.step;
+    if (checkpoint.nextAction.status === 'running' || checkpoint.nextAction.status === 'blocked') return { ...checkpoint, safeExecution: { status: 'stopped', reason: checkpoint.nextAction.status === 'blocked' ? 'resume-required' : 'step-already-running', step, executedSteps, durationMs: clock() - startedAt } };
+    const plan = validateFinishExecutionPlan({ root, plan: executionPlans[step] });
+    const commands = plan?.observations.length ? plan.observations : plan ? [plan] : [];
+    const allowedSharedMutation = commands.length === 1 && plan?.safeHandler === 'buildr-runtime-sync';
+    if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root))) {
+      return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'safe-plan-unavailable', step, executedSteps, durationMs: clock() - startedAt } };
+    }
+    const fingerprint = fingerprints[step];
+    if (!fingerprint) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'fingerprint-missing', step, executedSteps, durationMs: clock() - startedAt } };
+    const claimed = advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, executionPlan: plan, clock });
+    const results = await Promise.all(commands.map((entry) => runCommand(entry.command, entry.args, { cwd: entry.cwd, encoding: 'utf8' })));
+    const assessed = results.map((result, index) => {
+      const descriptor = commands[index];
+      const stdout = String(result.stdout || '').trim();
+      const stderr = String(result.stderr || '').trim();
+      let assertionPassed = true;
+      if (result.status === 0 && descriptor.jsonAssertion) {
+        try {
+          const payload = JSON.parse(stdout);
+          const actual = descriptor.jsonAssertion.path.split('.').filter(Boolean).reduce((value, key) => value?.[key], payload);
+          assertionPassed = Object.is(actual, descriptor.jsonAssertion.equals);
+        } catch { assertionPassed = false; }
+      }
+      return { ...result, stdout, stderr, assertionPassed };
+    });
+    const result = assessed.find((entry) => entry.status !== 0 || !entry.assertionPassed) || assessed[0];
+    const passed = assessed.every((entry) => entry.status === 0 && entry.assertionPassed);
+    const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
+    const evidence = { id: plan.evidenceId, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
+    const completed = advanceFinishRun({
+      root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
+      attemptToken: claimed.nextAction.attemptToken, evidence,
+      blocked: passed ? null : { code: 'safe-action-failed', reason: result.stderr || (result.assertionPassed ? `command exited ${result.status}` : 'structured success assertion failed') }, clock,
+    });
+    executedSteps.push({ step, status: passed ? 'passed' : 'blocked', durationMs: completed.timing.attempts.at(-1)?.durationMs ?? null });
+    if (!passed) return { ...completed, safeExecution: { status: 'stopped', reason: 'safe-action-failed', step, executedSteps, durationMs: clock() - startedAt } };
+  }
 }

@@ -171,11 +171,11 @@
 
   <script id="board-data" type="application/json">
   {
-    "meta":{"title":"Task Finish 收尾耗时优化","taskId":"optimize-task-finish-delivery-latency","status":"进行中","phase":"正确性补丁已验证 · 待收尾","taskProgress":"已完成 2 / 3 个批次","updatedAt":"2026-07-26 22:10","relativePath":"projects/product/openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html"},
+    "meta":{"title":"Task Finish 收尾耗时优化","taskId":"optimize-task-finish-delivery-latency","status":"进行中","phase":"第二阶段 · safe executor","taskProgress":"已完成 2 / 3 个批次 · 当前批次实现中","updatedAt":"2026-07-26 22:35","relativePath":"projects/product/openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html"},
     "overview":{
       "purpose":"把 Buildr 普通 Task Finish 从 20 多分钟逐步缩短到稳定约 3 分钟，同时保留 checkpoint、resume 与并发安全边界。",
       "conclusion":"第一轮已降到 12 分 39 秒；detached descendants 与 selector completion 正确性补丁也已通过正式验证，下一阶段进入安全自动执行器。",
-      "currentFocus":"收尾 fix-task-finish-detached-process-cleanup 后，为约 3 分钟目标建立 safe executor Change。",
+      "currentFocus":"实现并验证 optimize-task-finish-safe-execution，用一次调用推进安全步骤并并行只读 observation。",
       "userAttention":"当前没有需要用户立即处理的事项。",
       "highlights":{
         "done":{"title":"已经完成","text":"第一阶段加入 execution plan、lease renew、OpenSpec convergence receipt、attempt timing 与 late asset review；真实收尾从 20 多分钟降至 12 分 39 秒。"},
@@ -187,13 +187,14 @@
     },
     "changes":[
       {"id":"optimize-task-finish-closeout-latency-phase-1","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-closeout-latency-phase-1/","summary":"完成第一阶段重试浪费与 convergence 安全优化；真实收尾 12 分 39 秒。","batchIds":["phase-1"]},
-      {"id":"fix-task-finish-detached-process-cleanup","status":"archived","path":"openspec/changes/archive/2026-07-26-fix-task-finish-detached-process-cleanup/","summary":"补齐 detached descendant cleanup，并验证 selector completion 可重放。","batchIds":["correctness-patch"]}
+      {"id":"fix-task-finish-detached-process-cleanup","status":"archived","path":"openspec/changes/archive/2026-07-26-fix-task-finish-detached-process-cleanup/","summary":"补齐 detached descendant cleanup，并验证 selector completion 可重放。","batchIds":["correctness-patch"]},
+      {"id":"optimize-task-finish-safe-execution","status":"active","path":"openspec/changes/optimize-task-finish-safe-execution/","summary":"在既有 checkpoint 状态机上增加安全自动执行与并行只读 observation。","batchIds":["phase-2"]}
     ],
     "progress":{
       "batches":[
         {"id":"phase-1","status":"completed","label":"已完成","title":"第一阶段 · 正常收尾进入分钟级","summary":"减少 OpenSpec、lease、execution binding、timing 与 late review 的可避免返工。","deliverable":"Change 已归档并推送 dev；实测 12 分 39 秒，较此前下降约 35%–40%。","changeIds":["optimize-task-finish-closeout-latency-phase-1"],"items":["execution plan 预检","lease renew 与完整 attempt timing","事务式 OpenSpec convergence","真实 finish timing evidence"]},
         {"id":"correctness-patch","status":"completed","label":"已完成","title":"补丁 · detached process cleanup","summary":"修复第一阶段现场暴露的进程回收缺口和 selector completion 回归。","deliverable":"真实 detached descendant 已被精确回收；真实 finish completion 接受持久化 selector plan；affected 验证后无任务进程残留。","changeIds":["fix-task-finish-detached-process-cleanup"],"items":["runner-owned detached descendant cleanup","selector completion integration proof","正式 affected verification"]},
-        {"id":"phase-2","status":"planned","label":"下一批次","title":"第二阶段 · 安全自动执行器","summary":"增加 task finish run 或 advance --execute-safe，自动执行确定性步骤并并行只读检查。","deliverable":"Candidate 保持约 100 秒，其他收尾约 60–90 秒，整体稳定约 3 分钟。","changeIds":[],"items":["safe executor","doctor/guard/Git observation/runtime sync 自动化","只读检查并行化","异常回落 checkpoint/resume"]}
+        {"id":"phase-2","status":"current","label":"当前批次","title":"第二阶段 · 安全自动执行器","summary":"增加 task finish run，在原状态机上自动执行确定性步骤并并行只读检查。","deliverable":"Candidate 保持约 100 秒，其他收尾约 60–90 秒，整体稳定约 3 分钟。","changeIds":["optimize-task-finish-safe-execution"],"items":["safe executor 已实现","结构化 JSON assertion 与输出摘要","只读 observation 并行化","异常回落 checkpoint/resume"]}
       ],
       "dependencyPool":[]
     },

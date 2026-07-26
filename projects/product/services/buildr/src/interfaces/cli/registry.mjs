@@ -28,6 +28,7 @@ export const COMMAND_REGISTRY = [
   { key: 'task finish advance', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'advance', run: (r, c) => r.taskFinish('advance', c.argv.slice(5)) },
   { key: 'task finish resume', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'resume', run: (r, c) => r.taskFinish('resume', c.argv.slice(5)) },
   { key: 'task finish renew', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'renew', run: (r, c) => r.taskFinish('renew', c.argv.slice(5)) },
+  { key: 'task finish run', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run', run: (r, c) => r.taskFinish('run', c.argv.slice(5)) },
   { key: 'doctor', match: ({ domain }) => domain === 'doctor', run: (r, c) => r.doctor(c.argv.slice(3)) },
   { key: 'mutation recover', match: ({ domain, action }) => domain === 'mutation' && action === 'recover', run: (r, c) => r.mutationRecover(c.argv.slice(4)) },
   { key: 'runtime list', match: ({ domain, action }) => domain === 'runtime' && action === 'list', run: (r, c) => r.runtimeList(c.argv.slice(4)) },

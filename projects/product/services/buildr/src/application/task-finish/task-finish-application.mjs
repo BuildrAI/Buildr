@@ -1,4 +1,4 @@
-import { advanceFinishRun, createFinishRun, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
+import { advanceFinishRun, createFinishRun, executeSafeFinishRun, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
 
 function values(args, name) {
   const result = [];
@@ -33,9 +33,10 @@ export function registerTaskFinishApplication(runtime) {
     let run;
     try { run = readFinishRun({ root, runId }); }
     catch (error) {
-      if (action !== 'advance') throw error;
+      if (!['advance', 'run'].includes(action)) throw error;
       run = createFinishRun({ root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null), targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin') });
     }
+    if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {} }).then((result) => print(result, command.args));
     const options = {
       root, runId: run.runId, fingerprints: fingerprints(command.args),
       outcome: optionValue(command.args, '--outcome', null), attemptToken: optionValue(command.args, '--attempt', null),

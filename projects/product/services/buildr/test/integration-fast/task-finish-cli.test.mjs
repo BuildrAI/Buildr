@@ -50,3 +50,16 @@ test('task finish completion 使用持久化 selector plan 且无需重复声明
   assert.equal(completed.status, 0, completed.stderr);
   assert.equal(JSON.parse(completed.stdout).currentStep, 'current-knowledge');
 });
+
+test('task finish run 自动执行安全计划并在未声明步骤停止', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-run-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const plan = (id) => ({ cwd: root, command: '/usr/bin/true', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: id });
+  const plans = JSON.stringify({ context: plan('context-safe'), 'current-knowledge': plan('knowledge-safe') });
+  const result = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--run', 'safe-run', '--task', 'safe-task', '--target-branch', 'dev', '--target', root, '--fingerprint', 'context=context-v1', '--fingerprint', 'current-knowledge=knowledge-v1', '--execution-plans', plans, '--json'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const checkpoint = JSON.parse(result.stdout);
+  assert.equal(checkpoint.currentStep, 'contract-convergence');
+  assert.equal(checkpoint.safeExecution.reason, 'safe-plan-unavailable');
+  assert.equal(checkpoint.safeExecution.executedSteps.length, 2);
+});
