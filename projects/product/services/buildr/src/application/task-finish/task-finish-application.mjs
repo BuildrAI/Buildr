@@ -1,4 +1,7 @@
 import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, inspectFinishRun, prepareFinishCleanup, readFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
 function values(args, name) {
   const result = [];
@@ -28,17 +31,17 @@ export function registerTaskFinishApplication(runtime) {
     const root = command.targetRoot;
     const runId = optionValue(command.args, '--run');
     if (!runId) throw new Error('Missing value for --run');
-    if (action === 'cleanup-finalize') return print(finalizeFinishCleanup({ root, runId, evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args);
-    if (action === 'inspect') return print(inspectFinishRun(readFinishRun({ root, runId })), command.args);
-    if (action === 'renew') return print(renewFinishLease({ root, runId, attemptToken: optionValue(command.args, '--attempt') }), command.args);
+    if (action === 'cleanup-finalize') return print(finalizeFinishCleanup({ root, runId, evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args, root);
+    if (action === 'inspect') return print(inspectFinishRun(readFinishRun({ root, runId })), command.args, root);
+    if (action === 'renew') return print(renewFinishLease({ root, runId, attemptToken: optionValue(command.args, '--attempt') }), command.args, root);
     let run;
     try { run = readFinishRun({ root, runId }); }
     catch (error) {
       if (!['advance', 'run'].includes(action)) throw error;
       run = createFinishRun({ root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null), targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin') });
     }
-    if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {} }).then((result) => print(result, command.args));
-    if (action === 'cleanup-prepare') return print(prepareFinishCleanup({ root, runId: run.runId, attemptToken: optionValue(command.args, '--attempt'), evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args);
+    if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {} }).then((result) => print(result, command.args, root));
+    if (action === 'cleanup-prepare') return print(prepareFinishCleanup({ root, runId: run.runId, attemptToken: optionValue(command.args, '--attempt'), evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args, root);
     const options = {
       root, runId: run.runId, fingerprints: fingerprints(command.args),
       outcome: optionValue(command.args, '--outcome', null), attemptToken: optionValue(command.args, '--attempt', null),
@@ -50,13 +53,23 @@ export function registerTaskFinishApplication(runtime) {
       refTransition: jsonValue(optionValue(command.args, '--ref-transition', null), '--ref-transition'),
       executionPlan: jsonValue(optionValue(command.args, '--execution-plan', null), '--execution-plan'),
     };
-    return print(action === 'resume' ? resumeFinishRun(options) : advanceFinishRun(options), command.args);
+    return print(action === 'resume' ? resumeFinishRun(options) : advanceFinishRun(options), command.args, root);
   }
 
-  function print(result, args) {
+  function print(result, args, root) {
     if (args.includes('--json')) {
       const checkpoint = Array.isArray(result.completedEffects) && result.timing;
-      console.log(JSON.stringify(checkpoint && !(args.includes('--detail') && optionValue(args, '--detail') === 'full') ? compactFinishCheckpoint(result) : result, null, 2));
+      const full = args.includes('--detail') && optionValue(args, '--detail') === 'full';
+      let payload = checkpoint && !full ? compactFinishCheckpoint(result) : result;
+      const serialized = JSON.stringify(payload, null, 2);
+      if (full && serialized.length > 32_768) {
+        const directory = path.join(root, '.buildr', 'task-finish', 'diagnostics');
+        fs.mkdirSync(directory, { recursive: true });
+        const file = path.join(directory, `${result.runId}-full.json`);
+        fs.writeFileSync(file, `${serialized}\n`);
+        payload = { ...compactFinishCheckpoint(result), diagnostics: { path: file, sha256: crypto.createHash('sha256').update(serialized).digest('hex'), bytes: Buffer.byteLength(serialized), preview: serialized.slice(0, 2000), truncated: true } };
+      }
+      console.log(JSON.stringify(payload, null, 2));
     }
     else {
       console.log(`Task Finish run ${result.runId}: ${result.status}`);

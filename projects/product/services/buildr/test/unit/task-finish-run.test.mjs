@@ -312,6 +312,20 @@ test('registered runtime sync handler 复用原状态机共享 lease', async (t)
   assert.equal(result.steps.find((item) => item.id === 'runtime-convergence').status, 'passed');
 });
 
+test('registered OpenSpec convergence handler调用单一产品入口', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'contract-convergence') passCurrent(root, 'finish-1');
+  const executable = path.join(root, 'projects/product/buildr');
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, '#!/bin/sh\n');
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'contract-convergence': 'converge-v1' },
+    executionPlans: { 'contract-convergence': { cwd: root, command: executable, args: ['openspec', 'converge', 'change', '--project', 'product', '--target', root, '--json'], sharedMutation: true, safeAuto: true, safeHandler: 'buildr-openspec-converge', evidenceId: 'product-convergence' } },
+    runCommand: async () => ({ status: 0, stdout: '{"schemaVersion":"buildr.openspec-convergence/v1","status":"passed"}', stderr: '' }),
+  });
+  assert.equal(result.currentStep, 'candidate-commit');
+});
+
 test('composite handler 顺序执行阶段并记录阶段 timing', async (t) => {
   const root = fixture(t); create(root);
   while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'contract-convergence') passCurrent(root, 'finish-1');

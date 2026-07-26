@@ -112,6 +112,7 @@ Buildr MUST 用 lease key、run、step 和 attempt token 共同标识共享资�
 - **WHEN** holder 提交 completion 时当前 lease 已过期且未被同一 attempt 有效持有
 - **THEN** Buildr MUST fail closed 并要求重新领取或恢复该步骤
 - **AND** 已 passed 的无关上游步骤 MUST 保持不变
+
 ### Requirement: Finish step 执行计划必须可预检
 Buildr Task Finish MUST 支持为 step 提交结构化 execution plan，并在动作开始前核对 command entry、cwd、参数与已声明 script 或 selector。规范化计划 MUST 完整保留 completion 重新验证所需的 selector declaration，并纳入 step input fingerprint 和 evidence；第一阶段预检 MUST NOT 被表述为 Buildr 已代替 Agent 执行 provider action。
 
@@ -129,7 +130,6 @@ Buildr Task Finish MUST 支持为 step 提交结构化 execution plan，并在�
 - **WHEN** step 以已声明 `availableSelectors` 中的 selector 领取并持久化规范化 execution plan
 - **THEN** completion MUST 使用同一持久化 declaration 成功重新验证 selector
 - **AND** MUST NOT 因规范化过程丢失 `availableSelectors` 而误报 selector 未声明
-
 
 ### Requirement: Shared lease 必须支持受 fencing 约束的续租
 Task Finish MUST 允许当前 holder 在 lease 未过期时使用相同 run、step、attempt 与 token 显式续租。renew MUST NOT 复活过期 lease、覆盖接管者或改变 fencing identity，并 MUST 记录 renewal evidence。
@@ -169,6 +169,7 @@ Task Finish MUST 持久化每次 attempt 的 start、finish、duration、outcome
 - **WHEN** 首次 finalize 后 observation revision 未变化
 - **THEN** finish run MUST 跳过重复资格审查
 - **AND** MUST 记录 `not-applicable` evidence
+
 ### Requirement: Finish run 必须支持安全自动执行
 Buildr MUST 提供 safe execution 入口，在同一持久化 finish run 上自动推进已登记、可预检且授权边界确定的步骤。执行器 MUST 复用现有 attempt、fingerprint、lease、evidence 和 invalidation 语义，不得建立第二套完成状态。
 
@@ -264,3 +265,53 @@ Task Finish MUST 报告 command execution、provider orchestration、Agent/tool 
 - **WHEN** formal-assurance attempt启动 required capabilities并在完成后提交 summary
 - **THEN** attempt start/finish MUST 包围真实 verifier execution
 - **AND** timing MUST 使用跨平台单调时钟而非调用方手写 duration
+
+### Requirement: Task Finish必须消费产品持有的convergence orchestrator
+Task Finish MUST通过产品application service推进archive rehearsal、pre-sync guard、deterministic plan/apply、strict validation与post-sync guard，并持久化每个阶段的identity、timing和恢复边界。正常safe路径MUST NOT要求Agent读取delta、直接编辑canonical文件或手工搬运receipt。
+
+#### Scenario: Safe convergence一次推进
+- **WHEN**deterministic plan全部safe/already-applied且各阶段identity匹配
+- **THEN**Task Finish executor MUST在同一convergence attempt内完成全部阶段
+- **AND**checkpoint MUST记录阶段摘要与最终receipt
+
+#### Scenario: Planner要求语义处理
+- **WHEN**orchestrator返回`semantic-resolution-required`
+- **THEN**run MUST保持contract-convergence blocked并指向Agent fallback
+- **AND**resume MUST从真实失效阶段继续而不重复passed rehearsal/guard effects
+
+### Requirement: Finish入口必须解析权威execution roots
+Task Finish MUST从明确Workspace target、Project selector、task environment receipt和repository membership解析Workspace、Product、Service与command cwd。调用方相对路径或当前shell cwd MUST NOT替代这些authority。
+
+#### Scenario: 从Service目录调用Workspace动作
+- **WHEN**consumer在allowed Service cwd调用finish且提供Workspace target与Project context
+- **THEN**系统 MUST解析同一canonical finish run与正确Product/Service roots
+- **AND**MUST NOT因调用方少退或多退目录而创建嵌套Workspace状态
+
+#### Scenario: Root无法唯一解析
+- **WHEN**target、Project registry、membership或receipt identity不一致
+- **THEN**系统 MUST在文件写入或命令启动前blocked
+- **AND**result MUST返回resolved candidates与唯一修复动作
+
+### Requirement: Completion receipt必须持久化完整效率证据
+Canonical completion receipt MUST包含run created/completed time、端到端wall-clock、各step/attempt execution timing、retry count、blocked recovery、attributable waste、formal verification timing、tool round-trip计数和输出量近似指标。删除task environment后这些证据MUST仍可访问。
+
+#### Scenario: Environment删除后审查效率
+- **WHEN**cleanup finalize已删除task environment
+- **THEN**canonical receipt MUST允许consumer重建关键阶段耗时与重试来源
+- **AND**MUST NOT只保留formal verification单项duration
+
+### Requirement: Full detail必须使用有界诊断引用
+正常compact result MUST仅内联当前状态、阶段摘要、失败项与timing totals；完整attempts、command previews和测试输出MUST写入run-owned diagnostics并返回稳定digest/path，除非调用方明确读取该引用。
+
+#### Scenario: Consumer请求full detail
+- **WHEN**历史steps、attempts或command output超过内联预算
+- **THEN**CLI MUST返回诊断引用与有界preview
+- **AND**MUST NOT把全部历史重复注入主JSON响应
+
+### Requirement: Finish benchmark必须测量执行与Agent编排
+Buildr MUST提供真实finish benchmark evidence，分别记录产品命令执行、provider/composite execution、Agent/tool round-trip、blocked recovery、输出字节或Token近似量和端到端wall-clock。
+
+#### Scenario: 比较连续两轮finish
+- **WHEN**同类普通Change完成真实收尾
+- **THEN**结果 MUST能比较formal verification、OpenSpec convergence、Git/runtime/cleanup与Agent编排成本
+- **AND**MUST明确披露未被产品自动化的阶段

@@ -6,7 +6,7 @@
 2. `openspec-propose` 使用 OpenSpec 1.6.0 创建 proposal、design、delta specs 和 tasks；Buildr contribution 创建 Brief、执行 current knowledge `assess`，并建立 contract baseline/proposal check。
 3. `openspec-update-change` 修订 planning artifacts 时同步刷新 Brief 与 impacts。
 4. `openspec-apply-change` 实现 tasks；发现的新知识影响写回 tasks/sidecar，implementation content 完成后在最终验证前 `reconcile`。
-5. `task-finish` 创建独立持久化 run，通过 `inspect|advance|resume|run` 推进 context、current knowledge、contract/canonical、candidate commit、target 与 runtime convergence；每步保存 fingerprint、effects、evidence、失效依赖和 retry policy。已登记 composite handler 可以在同一 attempt 内推进有序子阶段，默认 CLI 只返回 compact checkpoint delta，完整历史按需展开。
+5. `task-finish` 创建独立持久化 run，通过 `inspect|advance|resume|run` 推进 context、current knowledge、contract/canonical、candidate commit、target 与 runtime convergence；每步保存 fingerprint、effects、evidence、失效依赖和 retry policy。OpenSpec convergence 由产品入口在同一 attempt 内推进 rehearsal、pre-sync、deterministic plan/apply、strict 与 post-sync；只有结构、baseline 和 identity 能证明唯一结果时自动写入，歧义整批零写入并返回 Agent fallback。默认 CLI 只返回 compact checkpoint delta，超预算完整历史写入 run-owned diagnostics 引用。
 6. `task-verification` 对收敛后的 implementation identity 运行 required assurance；普通任务为 affected，高风险、发布或显式完整验证为 Candidate。provider 在同一 execute 内并行调度无依赖 required capabilities并持有真实 wall-clock，最终树变化只使该步及下游 stale。
 7. Final assurance 后推进 asset review、archive、integration/push、runtime install 与 cleanup。integration evidence 区分 push 前后 expected/observed ref；自身成功推进或远端已等于 candidate 不属于 `target-race`。blocked 后只恢复真实失效的下游，running step失效时原子终结 attempt并释放自己的 lease。
 8. Cleanup 先在 environment 内 prepare并把 completion receipt写入 canonical Workspace，实际删除task-owned process、worktree和branch后再由retained checkout finalize；prepare不得冒充run complete。push已成功而cleanup失败时不得重复push或验证。

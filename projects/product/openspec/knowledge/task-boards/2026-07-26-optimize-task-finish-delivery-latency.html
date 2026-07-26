@@ -171,32 +171,34 @@
 
   <script id="board-data" type="application/json">
   {
-    "meta":{"title":"Task Finish 收尾耗时优化","taskId":"optimize-task-finish-delivery-latency","status":"进行中","phase":"第三阶段 · 编排效率与证据可靠性","taskProgress":"已完成 3 / 4 个批次 · 新 Change 已规划","updatedAt":"2026-07-26 23:05","relativePath":"projects/product/openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html"},
+    "meta":{"title":"Task Finish 收尾耗时优化","taskId":"optimize-task-finish-delivery-latency","status":"进行中","phase":"第四阶段 · 确定性同步与路径收敛","taskProgress":"已完成 4 / 5 个批次 · 真实收尾进行中","updatedAt":"2026-07-27 00:20","relativePath":"projects/product/openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html"},
     "overview":{
       "purpose":"把 Buildr 普通 Task Finish 从 20 多分钟逐步缩短到稳定约 3 分钟，同时保留 checkpoint、resume 与并发安全边界。",
-      "conclusion":"safe executor 已交付，但真实 finish run 为 7 分 51 秒、端到端约 10 分钟；主要瓶颈已转为 Agent 多阶段编排、证据搬运和异常恢复。",
-      "currentFocus":"实施 optimize-task-finish-orchestration-efficiency，修复 ref/lease/cleanup 语义并把 convergence、verification 和 compact evidence 收敛为产品编排。",
+      "conclusion":"第三阶段真实收尾约6分52秒；verification composite已降至32.54秒且cleanup/ref transition正确，但OpenSpec仍由Agent手工sync，convergence attempt耗时94.8秒并伴随root/cwd重复错误。",
+      "currentFocus":"真实finish已自动完成11个Requirement的plan/apply；EOF newline缺陷使首次post-sync blocked，修复后从strict-validation阶段恢复并通过。",
       "userAttention":"当前没有需要用户立即处理的事项。",
       "highlights":{
         "done":{"title":"已经完成","text":"第一阶段加入 execution plan、lease renew、OpenSpec convergence receipt、attempt timing 与 late asset review；真实收尾从 20 多分钟降至 12 分 39 秒。"},
-        "current":{"title":"最新实测","text":"safe executor 能在约 1–2 秒完成 runtime sync/doctor，但一次 ref evidence 误用触发错误 target race，连带重跑验证并暴露 stale lease、cleanup 和 durable evidence 缺口。"},
-        "next":{"title":"下一步","text":"让产品持有多阶段 convergence、verification、Git ref transition 与 completion receipt，减少 Agent 工具往返和 Token 消耗。"}
+        "current":{"title":"最新实测","text":"formal verification一次并行execution为32.54秒；完整finish仍为6分52秒，OpenSpec手工sync、cwd误路由和full checkpoint是主要Token/时间来源。"},
+        "next":{"title":"下一步","text":"完成最终affected、archive、integration/runtime sync与cleanup，核对canonical completion receipt的完整效率证据。"}
       },
       "blockers":[],
-      "flow":[{"title":"第一轮收敛","text":"减少重试与错误顺序"},{"title":"补齐正确性","text":"清理 detached descendants"},{"title":"安全自动执行","text":"建立 handler registry"},{"title":"编排收敛","text":"稳定约 3 分钟"}]
+      "flow":[{"title":"第一轮收敛","text":"减少重试与错误顺序"},{"title":"补齐正确性","text":"清理 detached descendants"},{"title":"安全自动执行","text":"建立 handler registry"},{"title":"编排收敛","text":"验证与cleanup产品化"},{"title":"确定性同步","text":"消除正常路径Agent手工sync"}]
     },
     "changes":[
       {"id":"optimize-task-finish-closeout-latency-phase-1","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-closeout-latency-phase-1/","summary":"完成第一阶段重试浪费与 convergence 安全优化；真实收尾 12 分 39 秒。","batchIds":["phase-1"]},
       {"id":"fix-task-finish-detached-process-cleanup","status":"archived","path":"openspec/changes/archive/2026-07-26-fix-task-finish-detached-process-cleanup/","summary":"补齐 detached descendant cleanup，并验证 selector completion 可重放。","batchIds":["correctness-patch"]},
       {"id":"optimize-task-finish-safe-execution","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-safe-execution/","summary":"完成safe handler registry与task finish run；实测finish run 7分51秒。","batchIds":["phase-2"]},
-      {"id":"optimize-task-finish-orchestration-efficiency","status":"active","path":"openspec/changes/optimize-task-finish-orchestration-efficiency/","summary":"收敛多阶段编排、ref/lease/cleanup语义、durable completion与低噪声evidence。","batchIds":["phase-3"]}
+      {"id":"optimize-task-finish-orchestration-efficiency","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-orchestration-efficiency/","summary":"verification composite与cleanup/ref transition已生效；真实finish约6分52秒。","batchIds":["phase-3"]},
+      {"id":"automate-deterministic-openspec-convergence","status":"active","path":"openspec/changes/automate-deterministic-openspec-convergence/","summary":"产品化确定性sync、convergence receipt、root/cwd解析与完整效率证据。","batchIds":["phase-4"]}
     ],
     "progress":{
       "batches":[
         {"id":"phase-1","status":"completed","label":"已完成","title":"第一阶段 · 正常收尾进入分钟级","summary":"减少 OpenSpec、lease、execution binding、timing 与 late review 的可避免返工。","deliverable":"Change 已归档并推送 dev；实测 12 分 39 秒，较此前下降约 35%–40%。","changeIds":["optimize-task-finish-closeout-latency-phase-1"],"items":["execution plan 预检","lease renew 与完整 attempt timing","事务式 OpenSpec convergence","真实 finish timing evidence"]},
         {"id":"correctness-patch","status":"completed","label":"已完成","title":"补丁 · detached process cleanup","summary":"修复第一阶段现场暴露的进程回收缺口和 selector completion 回归。","deliverable":"真实 detached descendant 已被精确回收；真实 finish completion 接受持久化 selector plan；affected 验证后无任务进程残留。","changeIds":["fix-task-finish-detached-process-cleanup"],"items":["runner-owned detached descendant cleanup","selector completion integration proof","正式 affected verification"]},
         {"id":"phase-2","status":"completed","label":"已完成","title":"第二阶段 · 安全自动执行器","summary":"增加task finish run，在原状态机上自动执行已登记安全步骤。","deliverable":"Change已归档并推送dev；executor有效，但真实finish run 7分51秒，尚未达到约3分钟。","changeIds":["optimize-task-finish-safe-execution"],"items":["safe handler registry","结构化JSON assertion与输出摘要","只读observation并行化","异常回落checkpoint/resume"]},
-        {"id":"phase-3","status":"current","label":"当前批次","title":"第三阶段 · 编排效率与证据可靠性","summary":"把convergence、verification、Git transition、cleanup和completion evidence变成产品拥有的多阶段编排。","deliverable":"正常路径稳定约3分钟；无自身push误判、残留attempt/lease、预先cleanup complete或run evidence丢失。","changeIds":["optimize-task-finish-orchestration-efficiency"],"items":["composite handlers","完整ref transition","原子attempt/lease恢复","durable completion receipt","compact CLI evidence"]}
+        {"id":"phase-3","status":"completed","label":"已完成","title":"第三阶段 · 编排效率与证据可靠性","summary":"完成verification composite、完整ref transition、attempt/lease原子恢复与两阶段cleanup。","deliverable":"Change已归档并推送dev；真实finish约6分52秒，验证32.54秒，但OpenSpec convergence仍需Agent手工sync。","changeIds":["optimize-task-finish-orchestration-efficiency"],"items":["formal verification composite","完整ref transition","原子attempt/lease恢复","两阶段cleanup","compact CLI evidence"]},
+        {"id":"phase-4","status":"current","label":"当前批次","title":"第四阶段 · 确定性同步与路径收敛","summary":"让产品对可证明唯一结果的OpenSpec delta生成plan并原子apply，同时消除root/cwd误路由和durable timing缺口。","deliverable":"正常safe路径无需Agent编辑canonical；歧义零写入fallback；真实finish具备完整效率证据并继续接近约3分钟。","changeIds":["automate-deterministic-openspec-convergence"],"items":["deterministic sync planner","atomic apply","convergence orchestrator","root/cwd authority","completion timing与diagnostics引用"]}
       ],
       "dependencyPool":[]
     },
@@ -206,12 +208,13 @@
       "technicalPlan":[
         {"label":"正确性补丁","title":"Owned process lifecycle","text":"验证 runner 必须持有可回收的 process ownership，覆盖主命令退出后仍存活或重新托管的 descendants。"},
         {"label":"第二阶段","title":"Safe executor","text":"只自动执行已声明、可预检且副作用边界确定的步骤；异常继续使用现有checkpoint/resume。"},
-        {"label":"第三阶段","title":"Composite orchestration","text":"产品持有OpenSpec convergence、verification、Git ref transition和durable completion，默认输出compact evidence。"}
+        {"label":"第三阶段","title":"Composite orchestration","text":"产品持有verification、Git ref transition和两阶段cleanup，默认输出compact evidence。"},
+        {"label":"第四阶段","title":"Deterministic OpenSpec sync","text":"产品只自动应用可结构化证明唯一结果的操作；任一歧义整批零写入并回退Agent。"}
       ],
       "boundaries":{"inScope":["Task Finish 正常路径耗时","确定性步骤自动执行","runner-owned process cleanup","耗时与重试证据"],"outOfScope":["降低 Candidate 覆盖","force push 或共享历史改写","用全局进程匹配清理"]},
-      "decisions":["第一阶段目标与约3分钟目标拆成独立Change","detached cleanup作为第一阶段正确性补丁，不并入safe executor Change","任务看板以完整优化计划为identity，不随单个Change归档结束","safe executor方向保留；第三阶段重点从增加handler转向减少Agent编排与Token开销"]
+      "decisions":["第一阶段目标与约3分钟目标拆成独立Change","detached cleanup作为第一阶段正确性补丁，不并入safe executor Change","任务看板以完整优化计划为identity，不随单个Change归档结束","safe executor方向保留；第三阶段重点从增加handler转向减少Agent编排与Token开销","确定性sync按结构化保守白名单判断，不使用模型置信度；blocked整批零写入并保留Agent fallback"]
     },
-    "technical":{"details":[{"title":"第一阶段实测","text":"完整finish run 12分39秒；一次selector completion缺陷产生约89秒attributable waste，cleanup发现并终止7个task-owned detached Local App fixture processes。"},{"title":"正确性补丁验证","text":"新增真实detached descendant回收证明、reparent lineage与非owned保护测试，以及task finish start→persist→completion selector集成证明；Product fast和archive lifecycle门禁全部通过。"},{"title":"第二阶段实测","text":"finish run 7分51秒、端到端约10分钟；runtime safe steps仅约1–2秒。主要浪费来自Agent逐段convergence/evidence编排、数万Token doctor输出，以及错误target race后的验证和下游重做。"}]}
+    "technical":{"details":[{"title":"第一阶段实测","text":"完整finish run 12分39秒；一次selector completion缺陷产生约89秒attributable waste，cleanup发现并终止7个task-owned detached Local App fixture processes。"},{"title":"正确性补丁验证","text":"新增真实detached descendant回收证明、reparent lineage与非owned保护测试，以及task finish start→persist→completion selector集成证明；Product fast和archive lifecycle门禁全部通过。"},{"title":"第二阶段实测","text":"finish run 7分51秒、端到端约10分钟；runtime safe steps仅约1–2秒。主要浪费来自Agent逐段convergence/evidence编排、数万Token doctor输出，以及错误target race后的验证和下游重做。"},{"title":"第三阶段实测","text":"端到端约6分52秒；formal verification composite为32.54秒，OpenSpec convergence attempt为94.8秒。cleanup prepare/finalize与ref transition正确，但completion receipt缺少完整run timing，且多次root/cwd错误与full checkpoint仍显著消耗Token。"},{"title":"第四阶段进行中实测","text":"产品一次生成并应用11个safe Requirement；首次convergence 13.01秒后由EOF newline规范化缺陷在post-sync阻塞，未重跑rehearsal/pre-sync/plan/apply/strict，修复后仅用3.35秒从post-sync恢复。当前attributable waste为13.01秒，正常路径已不需要Agent手工编辑canonical。"}]}
   }
   </script>
   <script>

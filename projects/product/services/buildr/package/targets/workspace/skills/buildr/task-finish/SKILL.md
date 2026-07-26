@@ -17,7 +17,9 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 优先用完整 `--execution-plans` manifest 调用 `run`，让已登记 handler 连续推进确定性步骤；语义冲突、授权缺口或未登记动作仍停回 checkpoint。默认 compact JSON 已足够驱动下一步，只有诊断时使用 `--detail full`。
 
-OpenSpec convergence 与正式验证使用 identity-bound composite handler，阶段状态由产品持久化，不手工搬运 receipt 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 决定 assurance；已有 identity 匹配的有效 evidence 不重跑。每步提交非空 fingerprint、effects 与 evidence。
+OpenSpec convergence 优先把 Component 贡献的单一产品 orchestrator 登记为 safe handler；产品负责 rehearsal、guard、deterministic plan/apply、strict 与 post-sync。返回 `semantic-resolution-required` 时才由 Agent 读取最小上下文并处理语义，随后从 checkpoint 恢复。Skill 不直接编辑 canonical、不手工搬运 receipt 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 决定 assurance；已有 identity 匹配的有效 evidence 不重跑。
+
+每步继续提交非空 fingerprint、effects 与 evidence；产品自动化只替代确定性动作，不绕过原状态机证据。
 
 push 使用 `--ref-transition` 提交 before/after expected/observed refs，保留 expected/observed target ref 兼容语义；自身成功推进和远端已等于 candidate 是成功，只有 push 前外部漂移才是 `target-race`。
 
@@ -27,9 +29,9 @@ push 使用 `--ref-transition` 提交 before/after expected/observed refs，保�
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
-`resume` 只重跑 blocked/stale 及其下游，passed effects 不重复。共享写临界区使用 holder/token/expiry fencing 短 lease；未过期可 `renew`。running step失效时 attempt与其自有lease必须一起终结，不创建Workspace全局锁。
+`resume` 只重跑 blocked/stale 及其下游，passed effects 不重复。共享写临界区使用 holder/token/expiry fencing 短 lease；未过期可 `renew`。running step失效时 attempt与其自有lease必须一起终结，不创建 Workspace 全局锁。
 
-含 delta 时聚合 findings 并生成 receipt；严格执行 rehearsal → pre-sync → canonical sync → post-sync。identity 变化返回 pre-sync，禁止事后 baseline。
+含 delta 时由产品 orchestrator 聚合 findings 并生成 receipt；严格执行 rehearsal → pre-sync → deterministic plan/apply → strict → post-sync。identity 变化返回 pre-sync，禁止事后 baseline。
 
 ## 授权与停止
 

@@ -389,12 +389,20 @@ export function prepareFinishCleanup({ root, runId, attemptToken, evidence, cloc
   item.status = 'prepared';
   item.blocked = { code: 'cleanup-finalize-required', reason: 'Cleanup is prepared; finalize from the retained canonical Workspace after task-owned deletion succeeds.' };
   item.evidence.push(evidence);
+  const checkpoint = inspectFinishRun(run);
+  const observations = run.steps.flatMap((candidate) => candidate.evidence || []).flatMap((entry) => entry.observations || []);
   const receipt = {
     schemaVersion: 'buildr.task-finish-completion/v1', status: 'prepared', runId, task: run.task, change: run.change,
     target: run.target, preparedAt, environmentRoot: path.resolve(root), cleanupEvidence: evidence,
     effects: run.steps.flatMap((candidate) => candidate.effects.map((entry) => ({ step: candidate.id, id: entry.id }))),
     verificationEvidence: run.steps.find((candidate) => candidate.id === 'formal-assurance')?.evidence || [],
     archiveEvidence: run.steps.find((candidate) => candidate.id === 'archive')?.evidence || [],
+    timing: {
+      ...checkpoint.timing,
+      toolRoundTripCount: observations.length,
+      outputApproxBytes: observations.reduce((total, item) => total + String(item.stdout?.preview || '').length + String(item.stderr?.preview || '').length, 0),
+      preparedAt,
+    },
   };
   atomicWriteJson(receiptFile, receipt);
   run.completionReceipt = receiptFile;
@@ -410,7 +418,8 @@ export function finalizeFinishCleanup({ root, runId, evidence, clock = Date.now 
   const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   if (receipt.schemaVersion !== 'buildr.task-finish-completion/v1' || receipt.status !== 'prepared') throw new Error('Task Finish completion receipt is not prepared.');
   if (evidence.environmentRemoved !== true && evidence.environmentRetained !== true) throw new Error('cleanup finalize evidence must confirm environmentRemoved or environmentRetained.');
-  const completed = { ...receipt, status: 'complete', completedAt: now(clock), finalCleanupEvidence: evidence };
+  const completedAt = now(clock);
+  const completed = { ...receipt, status: 'complete', completedAt, finalCleanupEvidence: evidence, timing: { ...receipt.timing, completedAt, wallClockMs: Math.max(0, Date.parse(completedAt) - Date.parse(receipt.preparedAt) + (receipt.timing?.wallClockMs || 0)) } };
   atomicWriteJson(receiptFile, completed);
   return { schemaVersion: 'buildr.task-finish-completion-result/v1', runId, status: 'complete', completionReceipt: receiptFile, cleanup: evidence };
 }
@@ -589,6 +598,7 @@ function registeredSafeHandler(plan, root) {
   if (plan.command !== localBuildr) return false;
   if (plan.safeHandler === 'buildr-doctor') return plan.args[0] === 'doctor' && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-openspec-check') return plan.args[0] === 'openspec' && plan.args[1] === 'check' && plan.args.includes('--json');
+  if (plan.safeHandler === 'buildr-openspec-converge') return plan.args[0] === 'openspec' && plan.args[1] === 'converge' && plan.args.includes('--json') && plan.args.includes('--target') && plan.args.includes('--project');
   if (plan.safeHandler === 'buildr-runtime-sync') return plan.args[0] === 'sync' && plan.args.includes('--target');
   if (['openspec-convergence', 'formal-verification'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root)));
   return false;
@@ -604,7 +614,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     if (checkpoint.nextAction.status === 'running' || checkpoint.nextAction.status === 'blocked') return { ...checkpoint, safeExecution: { status: 'stopped', reason: checkpoint.nextAction.status === 'blocked' ? 'resume-required' : 'step-already-running', step, executedSteps, durationMs: clock() - startedAt } };
     const plan = validateFinishExecutionPlan({ root, plan: executionPlans[step] });
     const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
-    const allowedSharedMutation = (commands.length === 1 && plan?.safeHandler === 'buildr-runtime-sync') || ['openspec-convergence', 'formal-verification'].includes(plan?.safeHandler);
+    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification'].includes(plan?.safeHandler);
     if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root))) {
       return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'safe-plan-unavailable', step, executedSteps, durationMs: clock() - startedAt } };
     }

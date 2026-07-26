@@ -22,6 +22,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
     console.error('  buildr task finish <inspect|advance|resume|renew|run|cleanup-prepare|cleanup-finalize> --run <id> [--task <id> --change <id> --target-branch <branch>] [--fingerprint <step>=<value> ...] [--execution-plan <json> | --execution-plans <json>] [--ref-transition <json>] [--detail <compact|full>] [--json]');
+    console.error('  buildr openspec <sync-plan|sync-apply|converge> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
     console.error('  buildr mutation recover <transaction-id> [--target <dir>]');
     console.error('  buildr commands add <id> --purpose <text> [--target <dir>] [--collection <path>] [--executable <name>] [--name <text>] [--description <text>] [--version-constraint <constraint>] [--version-args <args>] [--install-hint <text>] [--replace]');
