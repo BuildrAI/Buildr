@@ -18,9 +18,10 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 
 ## 运行与验证
 
-Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。验证分为静态/package、unit、fast integration、browser integration 与完整 Candidate，并输出 identity-bound timing evidence。
+Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。验证分为静态/package、unit、fast integration、active/archive lifecycle、browser integration 与完整 Candidate，并输出 identity-bound timing evidence。
+
+Task Finish 是三阶段编排 provider：先完成 delivery convergence，再请求 final assurance，最后只允许有独立 diff/evidence 的 closeout-only delivery。它通过隔离 archive rehearsal 提前检查 OpenSpec archive compatibility，通过目标 ref observation 检测 Candidate 后竞态；真实 rebase、冲突修复或 runtime 内容变化会使旧 evidence 失效并触发同级重跑。task-verification provider 对 archive-sensitive 任务选择 Project 声明的 active/archive capability，并用 `supersedesEvidence`、`invalidationReason` 和 `supersessionRelationship` 表达重复验证链。
 
 ## 局部术语
 
 本 Service 当前不重定义 Project glossary。CLI、runtime adapter、Component、provider、consumer 和 binding 继续使用 [Project canonical terminology](../glossary.md) 及相关 specs 的精确定义。
-

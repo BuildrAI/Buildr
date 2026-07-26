@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "buildr.task-verification-closeout-fixtures/v2",
+  "schemaVersion": "buildr.task-verification-closeout-fixtures/v3",
   "cases": [
     {
       "id": "existing-candidate-same-content",
@@ -103,6 +103,36 @@
       "id": "implementation-changed-candidate",
       "requiredAssurance": "candidate",
       "transitionClass": "implementation-changed",
+      "providerOperations": ["execute", "cleanup"],
+      "taskVerificationExecuteCalls": 1,
+      "candidateExecutorCalls": 1,
+      "candidateReused": false
+    },
+    {
+      "id": "target-ref-stable-after-final-assurance",
+      "requiredAssurance": "candidate",
+      "transitionClass": "same-content",
+      "targetRefStable": true,
+      "providerOperations": ["inspect", "cleanup"],
+      "taskVerificationExecuteCalls": 0,
+      "candidateExecutorCalls": 0,
+      "candidateReused": true
+    },
+    {
+      "id": "target-race-after-final-assurance",
+      "requiredAssurance": "candidate",
+      "transitionClass": "implementation-changed",
+      "invalidationReason": "target-race",
+      "providerOperations": ["execute", "cleanup"],
+      "taskVerificationExecuteCalls": 1,
+      "candidateExecutorCalls": 1,
+      "candidateReused": false
+    },
+    {
+      "id": "rebase-conflict-resolution",
+      "requiredAssurance": "candidate",
+      "transitionClass": "implementation-changed",
+      "invalidationReason": "implementation-changed",
       "providerOperations": ["execute", "cleanup"],
       "taskVerificationExecuteCalls": 1,
       "candidateExecutorCalls": 1,

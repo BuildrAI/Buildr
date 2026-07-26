@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-final-candidate-sequencing
+operation: reconcile
+treeIdentity: implementation-reconciled-before-verification
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-task-finish-final-candidate-sequencing/brief.md
+    reason: 本 Change 需要面向人的入口解释重复 Candidate 的根因、优化边界和新收尾流程。
+    status: updated
+    sourceIdentities: [proposal.md, design.md, tasks.md]
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: Task Finish 的收敛、最终保证、归档预演和 closeout-only 顺序属于 OpenSpec Change 核心生命周期事实。
+    status: updated
+    sourceIdentities: [specs/agent-task-workflows/spec.md, openspec/knowledge/flows/openspec-change-lifecycle.md, services/buildr/package/targets/workspace/skills/buildr/task-finish/SKILL.md]
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Finish 编排、verification evidence 与 archive-sensitive coverage 改变 Buildr Service 的当前责任和行为。
+    status: updated
+    sourceIdentities: [specs/task-verification/spec.md, openspec/knowledge/services/buildr.md, services/buildr/package/targets/workspace/skills/buildr/task-verification/SKILL.md, verification.yml]
+unresolvedItems: []

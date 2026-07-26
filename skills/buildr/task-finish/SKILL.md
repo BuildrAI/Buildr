@@ -22,6 +22,16 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 
 “收尾”不授权 force push、创建或推送远端任务分支、删除远端任务分支、丢弃改动、改写已推送或共享分支历史，也不授权替用户解决需要业务或语义判断的冲突。merge commit 是否属于常规动作由 selected task-integration contract、provider policy 和执行前披露决定，不由本 Skill 全局禁止。出现固定排除项时停止并请求对具体动作的明确授权或决策。
 
+## 三阶段收尾顺序
+
+Task Finish MUST 按以下顺序执行，不得在 delivery tree 尚未完成可预见收敛时消费或执行最终 required assurance：
+
+1. **Delivery convergence**：完成 current knowledge reconcile/inspect、受管资产完整性、OpenSpec archive rehearsal、pre-sync、canonical sync、post-sync、候选提交、目标分支 fetch/rebase、tree transition doctor/runtime sync，并记录用于 rebase 的目标 ref observation。所有可能改变 implementation content 的常规动作都在本阶段完成。
+2. **Final assurance**：冻结收敛后的 `implementationCandidateIdentity`，调用 selected task-verification provider `inspect` 或 `execute` 满足其返回的 `requiredAssurance`。普通任务保持 affected；只有发布、高风险或显式完整验证才是 Candidate。
+3. **Closeout-only delivery**：只允许当前会话可证明的最终验证任务 checkbox、已成功预演且 post-sync 通过的 `archive --skip-specs`、归档格式规范、focused checks、候选提交 amend、目标分支 fast-forward 和 push。每项都要记录动作来源、精确 diff、tree-equivalence 与 focused evidence；无法证明时归类为 `implementation-changed`，废弃旧 evidence 并返回 delivery convergence。
+
+Final assurance 后、集成前重新读取远端目标 ref，只做 race detection。若它与 convergence observation 不同，记录 `target-race`，停止集成与 push，返回 convergence 执行 fetch/rebase，并为新 identity 重新请求相同 `requiredAssurance`；不得在已验证候选上静默 rebase 或 force push。
+
 ## 1. 收尾前置检查
 
 在任何归档、提交、merge、push 或 cleanup 前确认：
@@ -64,7 +74,8 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 
 <!-- buildr:skill-contributions pre-spec-sync -->
 
-1. 先通过 Component contribution 的 pre-sync guard；不得把 apply 阶段预写的 canonical specs 作为已同步事实。仅在当前会话 pre-sync 成功后，使用外部可用的 OpenSpec CLI/Skills 执行 agent-driven canonical sync；随后必须通过 post-sync guard，才可进入 archive。不得直接修改 Buildr 随附的 `openspec-*` Skill 源来加入收尾逻辑。
+1. 当 Change 包含 delta specs 时，先运行 `node skills/buildr/task-finish/scripts/archive-rehearsal.mjs --project-root <project-root> --change <change> --openspec <current-openspec> --owner <task-owner>`。helper 只把当前 Project 的 `openspec/` 复制到精确临时目录并在那里执行当前 OpenSpec CLI archive；记录 schema、OpenSpec version、Change、owner、结果摘要、temporary root 和 cleanup status。失败或 cleanup retained 时停止；没有 delta specs 时记录 `change-has-no-delta-specs`，不得伪造 success。rehearsal 不修改真实 planning root，也不替代 pre-sync/post-sync。
+2. 通过 Component contribution 的 pre-sync guard；不得把 apply 阶段预写的 canonical specs 作为已同步事实。仅在当前会话 pre-sync 成功后，使用外部可用的 OpenSpec CLI/Skills 执行 agent-driven canonical sync；随后必须通过 post-sync guard，才可进入 archive。不得直接修改 Buildr 随附的 `openspec-*` Skill 源来加入收尾逻辑。
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
@@ -94,6 +105,7 @@ description: 用户在 task worktree 中要求“收尾”、完成任务、自�
 ## 4. 提交与验证 tree
 
 - 将已披露的任务范围、目标分支、远端、commit message 和授权交给 selected task-integration provider；由 provider 决定其 rebase、fast-forward 或 merge policy，本 Skill 不复制这些策略。
+- candidate commit、常规 fetch/rebase 与 rebase 后 doctor/runtime sync 属于 delivery convergence，必须发生在 final assurance 之前。Final assurance 后 provider 只可比较目标 ref observation；目标前进时按 `target-race` 返回 convergence，不得继续复用旧 evidence。
 - provider 必须返回 `deliveryTreeIdentity`，例如 `git rev-parse HEAD^{tree}`，以及集成前后的 tree/commit/ref evidence；Task Finish 同时保留已验证的 `implementationCandidateIdentity`。
 - `same-content`：delivery tree 的内容与 implementation Candidate 相同。调用 selected provider `inspect` 并复用 evidence；不得启动验证 executor，两个 execute count 均为 `0`。
 - `closeout-metadata-only`：差异完全来自当前 Task Finish 已执行且可归因的 OpenSpec sync/archive、归档格式规范、Project 明确定义的 closeout-only artifacts，或满足下述严格条件的 Buildr runtime projection/receipt delta。保留 implementation Candidate evidence，只运行 closeout workflow 已要求的 focused checks；不得调用 task-verification `execute`，两个 execute count均为 `0`。
@@ -132,7 +144,7 @@ OpenSpec 和 task-integration 阶段成功后，把 integration/push evidence、
 
 ## 8. 最终报告
 
-最终报告除交付、OpenSpec、提交/推送、doctor、active change 和 worktree 清理状态外，还必须基于已核对的 Candidate evidence 说明：`implementationCandidateIdentity`、`deliveryTreeIdentity`、transition class/subtype、provider operations、目标分支推送结果、任务分支未推送状态或其明确授权、`taskVerificationExecuteCalls`、`candidateExecutorCalls`、验证范围与状态、完整验证总耗时、timing source、最慢检查及其耗时、失败项、跳过项、closeout delta checks、evidence retention 和 cleanup status。存在 `verification-result-metadata-only` 时还要报告 source/target identity、change/task identity、marker transition 与 session-only retention，并明确 Candidate 未直接覆盖 target delivery tree。Buildr Product summary 包含预算时同时报告预算状态；summary 仍保留时报告绝对路径，已清理时报告摘要已捕获且 transient evidence 已删除，不得输出失效路径。不得只报告“测试通过”或只列各阶段耗时。
+最终报告除交付、OpenSpec、提交/推送、doctor、active change 和 worktree 清理状态外，还必须基于已核对的 Candidate evidence 说明：`implementationCandidateIdentity`、`deliveryTreeIdentity`、transition class/subtype、provider operations、convergence/final-assurance 目标 ref observations、目标分支推送结果、任务分支未推送状态或其明确授权、`taskVerificationExecuteCalls`、`candidateExecutorCalls`、验证范围与状态、完整验证总耗时、timing source、最慢检查及其耗时、失败项、跳过项、closeout delta checks、evidence retention 和 cleanup status。存在多次正式验证时，逐次报告 candidate identity、run reference、状态、独立 wall-clock、`implementation-changed|target-race|verification-failed` 原因和 supersession relationship，并汇总 execute count、失效次数和重复验证总耗时；只有一次时报告 execute count 为一、失效次数为零，不虚构历史 run。存在 `verification-result-metadata-only` 时还要报告 source/target identity、change/task identity、marker transition 与 session-only retention，并明确 Candidate 未直接覆盖 target delivery tree。Buildr Product summary 包含预算时同时报告预算状态；summary 仍保留时报告绝对路径，已清理时报告摘要已捕获且 transient evidence 已删除，不得输出失效路径。不得只报告“测试通过”或只列各阶段耗时。
 
 ## 失败处理
 

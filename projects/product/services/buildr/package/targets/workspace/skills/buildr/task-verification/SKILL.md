@@ -17,6 +17,8 @@ description: 用户要求测试、验证、耗时报告、初始化或更新测�
 - operation：`inspect` 只核对已有 evidence，`execute` 才运行验证命令，`cleanup` 只处理 evidence 生命周期。不得因为 consumer 调用 provider 就默认选择 `execute`。
 - 正式保证由本 provider 决定：普通开发与普通收尾返回 `requiredAssurance: affected`；发布、高风险或用户明确要求完整验证返回 `requiredAssurance: candidate`。consumer 不替 provider 选测试或级别。
 - 当前候选 identity 和已有验证 evidence。Git 候选优先记录 repository root、tree 或包含未提交内容的稳定 fingerprint；非 Git 候选记录当前工具可证明的 snapshot identity。无法建立可比较 identity 时，将 evidence 标记为不可跨状态复用。
+- 变更路径是否命中 Change lifecycle、Change path resolution 或 OpenSpec sync/archive；命中时记录 `archive-sensitive` signal，并从 Project policy 选择 active/archive capability。无法确认覆盖时在 `coverageSummary` 披露 gap；OpenSpec archive rehearsal 不等于应用层测试覆盖。
+- 重新执行是否携带可验证的前序 evidence 与 `implementation-changed`、`target-race` 或 `verification-failed` 原因；存在时保留前序 run 的独立状态与耗时，在新 result 中返回 `supersedesEvidence`、`invalidationReason` 和 `supersessionRelationship`。
 - 按 authority 顺序读取当前 scope 的 Rules/AGENTS、明确 Project context 及可选 `projects/<project>/verification.yml`、OpenSpec change/tasks、项目开发或发布文档、公开脚本与帮助。只读取任务相关范围，不按技术栈名称猜测命令。
 
 Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有发现行为：继续读取 AGENTS、POM、项目文档和已有测试命令；不因缺少新声明产生失败、阻塞或 warning，不自动启动新的 Spring、端到端、容器、数据库或外部环境。声明存在时先按 `references/project-verification-v1.md` 核对；无效声明不得执行。
@@ -112,6 +114,9 @@ reusable: true | false
 operation: inspect | execute | cleanup
 taskVerificationExecuteCalls: <本次启动验证 execution 的次数>
 candidateExecutorCalls: <本次启动 Candidate executor 的次数>
+supersedesEvidence: <可选；被本次 run 替代的前序 evidence reference>
+invalidationReason: <可选；implementation-changed | target-race | verification-failed>
+supersessionRelationship: <可选；前序状态、失败项与当前 run reference>
 evidenceReference: <summary 绝对路径或当前会话 evidence>
 evidenceRetention: transient | caller-managed | session-only
 cleanupAfter: consumer-finished | caller-policy | not-applicable

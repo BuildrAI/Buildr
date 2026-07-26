@@ -79,3 +79,29 @@ capabilities:
     dependsOn: []
     supersedes: []
     sources: ["services/buildr/package.json", "services/buildr/test/browser-smoke/local-app-browser.test.mjs", "openspec/specs/local-app-browser-verification/spec.md"]
+  - id: product.archive-lifecycle
+    title: Buildr Change active/archive 生命周期契约
+    command:
+      argv: ["node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
+      cwd: services/buildr
+    maturity: stable
+    stages: [affected]
+    enforcement:
+      affected: required
+    applicability:
+      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/package/targets/workspace/skills/buildr/task-finish/**", "services/buildr/test/contract/**"]
+      risks: ["Change lifecycle、Change path resolution、OpenSpec sync/archive workflow"]
+    coverage:
+      kind: contract
+      owns: ["active 或唯一 archived Change 定位、archive rehearsal 隔离与 Task Finish 生命周期顺序"]
+    environment:
+      requires: [node]
+      services: []
+    effects:
+      level: local-temporary
+      writes: ["系统临时目录中的隔离 OpenSpec fixture"]
+      externalSystems: false
+    authorization: implicit
+    dependsOn: []
+    supersedes: []
+    sources: ["services/buildr/test/contract/current-knowledge-governance.test.mjs", "services/buildr/test/contract/task-finish-sequencing.test.mjs"]

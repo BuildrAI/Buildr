@@ -202,7 +202,7 @@ test('task-finish 将健康 Local App 同端口交接作为 cleanup 门槛', () 
 });
 
 test('已有 Candidate 进入收尾时按 transition class 去重 executor 调用', () => {
-  assert.equal(closeoutFixtures.schemaVersion, 'buildr.task-verification-closeout-fixtures/v2');
+  assert.equal(closeoutFixtures.schemaVersion, 'buildr.task-verification-closeout-fixtures/v3');
   assert.deepEqual(closeoutFixtures.cases.map((item) => item.id), [
     'existing-candidate-same-content',
     'openspec-archive-only',
@@ -214,10 +214,15 @@ test('已有 Candidate 进入收尾时按 transition class 去重 executor 调�
     'implementation-changed-affected',
     'runtime-projection-with-source-edit',
     'implementation-changed-candidate',
+    'target-ref-stable-after-final-assurance',
+    'target-race-after-final-assurance',
+    'rebase-conflict-resolution',
   ]);
 
-  const [sameContent, archiveOnly, runtimeProjectionOnly, checkboxOnly, ...implementationChanges] = closeoutFixtures.cases;
-  for (const item of [sameContent, archiveOnly, runtimeProjectionOnly, checkboxOnly]) {
+  const [sameContent, archiveOnly, runtimeProjectionOnly, checkboxOnly, ...rest] = closeoutFixtures.cases;
+  const stableTarget = rest.find((item) => item.id === 'target-ref-stable-after-final-assurance');
+  const implementationChanges = rest.filter((item) => item.id !== stableTarget.id);
+  for (const item of [sameContent, archiveOnly, runtimeProjectionOnly, checkboxOnly, stableTarget]) {
     assert.equal(item.taskVerificationExecuteCalls, 0, `${item.id} must not execute task verification`);
     assert.equal(item.candidateExecutorCalls, 0, `${item.id} must not execute Candidate`);
     assert.equal(item.candidateReused, true, `${item.id} must reuse Candidate evidence`);
@@ -251,6 +256,9 @@ test('已有 Candidate 进入收尾时按 transition class 去重 executor 调�
     assert.equal(item.candidateExecutorCalls, item.requiredAssurance === 'candidate' ? 1 : 0);
     assert.equal(item.candidateReused, false);
   }
+  assert.equal(stableTarget.targetRefStable, true);
+  assert.equal(closeoutFixtures.cases.find((item) => item.id === 'target-race-after-final-assurance').invalidationReason, 'target-race');
+  assert.equal(closeoutFixtures.cases.find((item) => item.id === 'rebase-conflict-resolution').invalidationReason, 'implementation-changed');
 });
 
 test('Candidate task checkbox 复用必须由 Buildr sidebar 和 provider consumer 共同约束', () => {
