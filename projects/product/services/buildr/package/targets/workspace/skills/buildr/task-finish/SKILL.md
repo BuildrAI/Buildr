@@ -41,6 +41,7 @@ Final assurance 后、集成前重新读取远端目标 ref，只做 race detect
 - 默认推送计划只包含已集成的目标分支；任务分支未推送。只有用户在当前轮次明确要求 PR、远程备份、交接或其他具体目的时，才把远端任务分支及其目的纳入披露与执行计划。
 - `buildr.task-verification/v2`、`buildr.git-task-integration/v1` 与 `buildr.task-worktree-lifecycle/v2` 均已解析为 `ready`；任一 required dependency 为 `blocked` 时，只报告 reason、candidates 和 nextActions，不继续 provider-dependent action。
 - task worktree 中的改动都属于当前任务；存在无关 dirty changes 时不 stage、不丢弃，并在破坏性动作前停止。
+- checkout-local `worktree context` 必须用当前 host-visible session root/handle 重核并返回 adoption `adopted`、`executionReady: true`；runtime projection、session 或 adoption receipt stale 时停止收尾。该 evidence 只证明 task runtime provenance，不替代候选验证。
 - 主 workspace 可用于集成且没有未处理改动。
 - 如果存在 active OpenSpec change，使用 `openspec status --change <id> --json` 和 apply instructions 确认 artifacts、tasks 与 action context；未完成、blocked 或 workspace planning context 不得自动归档。
 - 将任务/change、发布意图、高风险信号、变更路径、当前候选 identity 与已有 evidence 交给 selected task-verification provider，由 provider 返回 `requiredAssurance`。只有 `status: passed`、`level == requiredAssurance`、`reusable: true`，且 `candidateIdentity` 与当前 `implementationCandidateIdentity` 一致时，才把它作为本次收尾证据；Task Finish 不自行选测试。普通收尾通常为 affected，发布、高风险或显式完整收尾为 candidate。
@@ -125,7 +126,7 @@ Final assurance 后、集成前重新读取远端目标 ref，只做 race detect
 
 OpenSpec 和 task-integration 阶段成功后，把 integration/push evidence、当前工作区状态和本机入口信息交给 selected worktree-lifecycle provider。placement、retention、cleanup preconditions 和删除顺序由该 provider contract 与正文决定，本 Skill 不复制。
 
-多仓 task environment 必须按 receipt 逐仓完成验证、提交、集成和 push evidence 核对；这些远端动作不是跨仓原子事务。任一仓库失败时停止 cleanup，报告已完成与未完成仓库并保留整个 environment。只有全部成员 checkout clean、已安全集成且没有 preview/CLI/runtime 依赖时，才按由内到外顺序清理 nested worktrees 与 root worktree。
+多仓 task environment 必须按 receipt 逐仓完成验证、提交、集成和 push evidence 核对；这些远端动作不是跨仓原子事务。任一仓库失败时停止 cleanup，报告已完成与未完成仓库并保留整个 environment。只有全部成员 checkout clean、已安全集成且没有 preview/CLI/runtime 依赖时，才按由内到外顺序清理 nested worktrees 与 root worktree，并同时删除该 task 的 environment/adoption receipts。合并后的主 Workspace runtime 仍只从 retained checkout sync。
 
 如果健康的 Local App 或当前 `buildr` 入口仍依赖即将删除的 task worktree，Task Finish 必须先完成入口交接：在停止旧实例前读取用户级 `instance.json`，只接受通过其 secret 的 `/api/v1/health` 验证过的 loopback URL，并记录其中的 port；从已集成、仍保留的 checkout 重装开发 CLI 与 development launcher；停止旧实例后，使用 `buildr app --port <recorded-port> --no-open` 启动或复用新实例。只有新的健康实例仍监听该记录端口、`command -v buildr` 解析到保留 checkout，且静态资源或运行身份不再指向 task worktree 时，才允许删除 worktree。没有健康实例、实例不依赖 task worktree 或没有可验证端口时，不得虚构端口，按普通入口迁移继续。
 

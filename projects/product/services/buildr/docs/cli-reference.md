@@ -36,7 +36,7 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
 | `buildr worktree create <task-id> --agent <agent> --branch <branch> [--include ...]` | 创建或幂等复用 `<workspace>/.worktrees/<task-id>`；默认根仓库，重复 `--include project:<code>` / `service:<project>/<service>` 加入 nested independent Git repositories。 |
-| `buildr worktree inspect/context` | 按 receipt 检查完整 repository set，或判断实际 cwd 是否属于允许执行根；identity 或 membership 不匹配时 fail closed。 |
+| `buildr worktree inspect/context/adopt` | 按 receipt 检查完整 repository set；以 host-visible session evidence 采用 checkout-local runtime；再核对实际 cwd、session root/handle 与允许执行根。identity、runtime projection 或 session 不匹配时 fail closed。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
@@ -56,7 +56,7 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 
 `service create --integration-branch` 只适用于 Git 来源，`--branch` 仅为兼容别名。Canonical Service Domain 保存 UUID `id`、`workspaceId`、`projectId`、`code`、`name`、`description`、`type` 和 `source`；`source.path` 定位文件系统中的实际 Service，Git source 保存 URL、remote 与稳定 integration branch。当前分支、HEAD、dirty、upstream 与 ahead/behind 只实时观察，不写回 Domain。
 
-`worktree create` 要求 Agent 显式提供 task id、task branch、root start point、当前 Agent、workspace root 和完整 repository selectors。`buildr.worktree-create/v2` 返回 environment、repository plan、逐仓 identity/state、隔离披露和兼容的 root `worktree`/bootstrap 字段；相同 plan 幂等复用，不同 plan、occupied/tracked path、remote/branch ownership 或 identity 冲突均 fail closed。部分创建失败保留 receipt、checkout 和分支。Git working tree/index 被隔离，但 objects/refs 共享。外部依赖沿用 Project 既有环境；只有并发任务会修改同一共享状态时，才要求使用项目已有租户、测试账号、数据前缀或串行验证边界。
+`worktree create` 要求 Agent 显式提供 task id、task branch、root start point、当前 Agent、workspace root 和完整 repository selectors。`buildr.worktree-create/v2` 返回 environment、repository plan、逐仓 identity/state、runtime expectation、`handoff-required`、隔离披露和兼容的 root `worktree`/bootstrap 字段；相同 plan 幂等复用，不同 plan、occupied/tracked path、remote/branch ownership 或 identity 冲突均 fail closed。新 session 使用 `worktree adopt` 提交 session root/handle、adoption mode 与 event time；Buildr 将 environment evidence 标为 `buildr-verified`，将 host 声明标为 `agent-attested`。随后只有带同一 session evidence 的 `worktree context` 返回 `executionReady: true` 才能进入实现。部分创建失败保留 receipt、checkout 和分支。Git working tree/index 被隔离，但 objects/refs 共享。外部依赖沿用 Project 既有环境；只有并发任务会修改同一共享状态时，才要求使用项目已有租户、测试账号、数据前缀或串行验证边界。
 
 ## Runtime 与诊断
 

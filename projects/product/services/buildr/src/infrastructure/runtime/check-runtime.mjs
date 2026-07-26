@@ -92,6 +92,9 @@ export function printRuntimeAdapterCheckReport(result) {
   }
   console.log(`Activation: rules=${result.activation.rules} skills=${result.activation.skills}`);
   if (result.activation.reloadGuidance) console.log(`Reload: ${result.activation.reloadGuidance}`);
+  console.log(`Runtime source: ${result.runtimeSourceEvidence.sourceRoot}`);
+  console.log(`Projection identity: ${result.runtimeSourceEvidence.projectionIdentity}`);
+  console.log(`Session consumption: ${result.runtimeSourceEvidence.sessionConsumption}`);
 }
 
 export const RUNTIME_CHECKERS = Object.freeze({ projection: checkRuntimeAdapter });

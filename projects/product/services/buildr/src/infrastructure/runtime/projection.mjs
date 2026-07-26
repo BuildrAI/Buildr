@@ -367,6 +367,27 @@ function summarize(findings) {
   return counts;
 }
 
+function projectionIdentity(plan) {
+  const contentHash = (content) => crypto.createHash('sha256').update(content || '').digest('hex');
+  const relative = (file) => toPosixRelative(plan.targetRoot, file);
+  const identity = {
+    adapterId: plan.adapterId,
+    scope: plan.scope,
+    writes: plan.writes.map((item) => ({ path: relative(item.targetFile), content: contentHash(item.content) })).sort((a, b) => a.path.localeCompare(b.path)),
+    nativeAssets: plan.nativeAssets.map((item) => ({
+      path: relative(item.targetFile),
+      content: fs.existsSync(item.targetFile) ? contentHash(fs.readFileSync(item.targetFile)) : null,
+    })).sort((a, b) => a.path.localeCompare(b.path)),
+  };
+  return `sha256-${crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex')}`;
+}
+
+function adoptionModes(adapter) {
+  return adapter.traits.activation.skills === 'explicit-reload'
+    ? ['new-session', 'reentered', 'reload']
+    : ['new-session', 'reentered'];
+}
+
 export function repairCommands(result, adapterId) {
   const target = path.relative(process.cwd(), result.targetRoot).split(path.sep).join('/') || '.';
   const has = (repair) => result.findings.some((item) => ['missing', 'stale', 'orphan'].includes(item.status) && item.repair === repair);
@@ -407,7 +428,28 @@ export function checkRuntimeProjection(options) {
   const staleSatisfaction = satisfaction.filter((item) => item.status !== 'satisfied_by_user' && fs.existsSync(evidenceFile(item.receipt.skillId))).map((item) => ({ status: 'stale', path: toPosixRelative(options.repoRoot, evidenceFile(item.receipt.skillId)), message: `workspace Skill ${item.receipt.skillId} user satisfaction evidence is stale.`, code: 'runtime.skill_satisfaction_stale', repair: 'skills-render', userActionRequired: true }));
   const findings = [...reconciled.findings, ...staleSatisfaction];
   const counts = summarize(findings);
-  const result = { ...reconciled, findings, counts, exitCode: counts.conflict ? 2 : counts.missing || counts.stale || counts.orphan ? 1 : 0, requestedScope: assembled.scopeInfo.requestedScope, discoveryBoundaries: assembled.discovery.boundaries, skillInventoryEvidence: adapter.traits.skills.destinations.discovery };
+  const result = {
+    ...reconciled,
+    findings,
+    counts,
+    exitCode: counts.conflict ? 2 : counts.missing || counts.stale || counts.orphan ? 1 : 0,
+    requestedScope: assembled.scopeInfo.requestedScope,
+    discoveryBoundaries: assembled.discovery.boundaries,
+    skillInventoryEvidence: adapter.traits.skills.destinations.discovery,
+    runtimeSourceEvidence: {
+      assurance: 'buildr-verified',
+      adapter: adapter.id,
+      sourceRoot: path.resolve(options.repoRoot),
+      targetRoot: assembled.plan.targetRoot,
+      projectionIdentity: projectionIdentity(assembled.plan),
+      activation: adapter.traits.activation,
+      adoptionModes: adoptionModes(adapter),
+      guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the task environment root as its local project.`,
+      projectionReady: false,
+      sessionConsumption: 'unknown',
+    },
+  };
+  result.runtimeSourceEvidence.projectionReady = result.exitCode === 0;
   result.repairCommands = repairCommands(result, options.adapterId);
   return result;
 }

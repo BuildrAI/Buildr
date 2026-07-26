@@ -27,8 +27,9 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `openspec check` | `buildr.openspec-check/v1` |
 | `worktree create` | `buildr.worktree-create/v2` |
 | `worktree inspect/context` | `buildr.task-environment-context/v1` |
+| `worktree adopt` | `buildr.task-environment-adoption/v1` |
 
-`buildr.worktree-create/v2` 的 `state` 为 `created`、`reused` 或 `blocked`，`environment` 披露 environment root/owner/isolation，`repositories` 返回完整 plan 的逐仓 checkout/branch/HEAD/clean/state。`treeChanged` 表示本次调用是否创建任一 checkout；`bootstrap` 保留根 Workspace 的 doctor/sync 决策。`buildr.task-environment-context/v1` 返回当前 membership、`allowedExecutionRoots`、CLI source 与全仓 identity；blocked 结果非零退出并保留现场。
+`buildr.worktree-create/v2` 的 `state` 为 `created`、`reused` 或 `blocked`，`environment` 披露 environment root/owner/isolation，`repositories` 返回完整 plan 的逐仓 checkout/branch/HEAD/clean/state。`treeChanged` 表示本次调用是否创建任一 checkout；`bootstrap` 保留根 Workspace 的 doctor/sync 决策；`runtimeExpectation` 与 `adoption` 是向后兼容新增字段。`buildr.task-environment-adoption/v1` 返回 Buildr-verified environment/runtime evidence 与 agent-attested session evidence。`buildr.task-environment-context/v1` 返回当前 membership、`allowedExecutionRoots`、CLI source、全仓 identity、adoption 和 `executionReady`；environment 不 ready 或当前 session 未匹配 adopted receipt 时非零退出并保留现场。
 
 ## Doctor v1 结果语义
 

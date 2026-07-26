@@ -15,6 +15,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 - Workspace/Project/Service、Rules、Skills、Commands 和 Components 使用 YAML manifests/registries。
 - OpenSpec 依赖 `@fission-ai/openspec` 1.6.0；Buildr 只补充跨 Change baseline/conflict evidence 和 runtime contributions。
 - Local App Change read model 从 Project canonical planning root 只读索引 active/archive artifacts；Brief 是 Buildr companion，不改变 OpenSpec schema。
+- Task environment 使用本机 environment/adoption receipts 绑定 repository plan、checkout-local runtime projection 与 Agent session handoff。`worktree adopt` 校验 environment/runtime identity，并把 host-visible session root/handle 保存为 `agent-attested` evidence；Buildr 不接入 Agent 私有 session，也不把工具 `cwd` 当作 Skills 已加载证明。
 
 ## 运行与验证
 
@@ -23,6 +24,8 @@ Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。�
 验证分为静态/package、unit、fast integration、active/archive lifecycle、browser integration 与完整 Candidate，并输出 identity-bound timing evidence。
 
 Task Finish 是三阶段编排 provider：先完成 delivery convergence，再请求 final assurance，最后只允许有独立 diff/evidence 的 closeout-only delivery。它通过隔离 archive rehearsal 提前检查 OpenSpec archive compatibility，通过目标 ref observation 检测 Candidate 后竞态；真实 rebase、冲突修复或 runtime 内容变化会使旧 evidence 失效并触发同级重跑。task-verification provider 对 archive-sensitive 任务选择 Project 声明的 active/archive capability，并用 `supersedesEvidence`、`invalidationReason` 和 `supersessionRelationship` 表达重复验证链。
+
+task environment 合并后，主 Workspace runtime 仍从 retained checkout sync/doctor；未合并 task checkout 不更新主 runtime，adoption receipt 随 environment 安全清理。
 
 ## 局部术语
 

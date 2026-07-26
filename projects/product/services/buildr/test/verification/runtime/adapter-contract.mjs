@@ -25,6 +25,7 @@ import {
 import { validateSkillPublication } from '../../../src/infrastructure/runtime/skills/publication.mjs';
 import { resolveSkillContributions } from '../../../src/infrastructure/runtime/render-claude-code.mjs';
 import { assembleRuntimeProjection } from '../../../src/infrastructure/runtime/projection.mjs';
+import { checkRuntimeAdapter } from '../../../src/infrastructure/runtime/check-runtime.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryRoot = path.resolve(productRoot, '../../../..');
@@ -37,6 +38,8 @@ assert.deepEqual(implementationMatrix.representatives.map((entry) => entry.famil
 ]);
 assert.deepEqual(ADAPTER_TRAIT_CATALOG.rules, ['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']);
 assert.equal(runtimeDiscoveryPayload().adapterTraitCatalog, ADAPTER_TRAIT_CATALOG);
+assert.deepEqual(runtimeDiscoveryPayload().agents.codex.taskAdoption.modes, ['new-session', 'reentered']);
+assert.equal(runtimeDiscoveryPayload().agents.codex.taskAdoption.sessionConsumption, 'unknown-until-adopted');
 assert.deepEqual(RUNTIME_ADAPTERS.codex.traits.skills.publicationExtensions, [
   { path: 'agents/openai.yaml', format: 'openai-skill-metadata' },
 ]);
@@ -84,6 +87,12 @@ for (const adapterId of SUPPORTED_AGENT_IDS) {
     assert.ok(targets.some((target) => target.includes(expectedRuleTargets[adapterId])), `${adapterId} must plan its declared Rules target`);
   }
 }
+const codexCheck = checkRuntimeAdapter(['--target', projectionRoot, '--scope', '.'], { repoRoot: projectionRoot, adapterId: 'codex' });
+assert.equal(codexCheck.runtimeSourceEvidence.assurance, 'buildr-verified');
+assert.equal(codexCheck.runtimeSourceEvidence.activation.rules, 'path-read');
+assert.equal(codexCheck.runtimeSourceEvidence.activation.skills, 'session-start');
+assert.match(codexCheck.runtimeSourceEvidence.projectionIdentity, /^sha256-[a-f0-9]{64}$/);
+assert.equal(codexCheck.runtimeSourceEvidence.sessionConsumption, 'unknown');
 fs.rmSync(projectionRoot, { recursive: true, force: true });
 
 for (const adapterId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {

@@ -346,7 +346,7 @@ const DESCRIPTORS = [
         publicationExtensions: [{ path: 'agents/openai.yaml', format: 'openai-skill-metadata' }],
       },
       surfaces: [{ kind: 'cli' }, { kind: 'desktop' }],
-      activation: { rules: 'path-read', skills: 'session-start' },
+      activation: { rules: 'path-read', skills: 'session-start', reloadGuidance: 'Start a new Codex task/session with the task environment root as its local project; changing command cwd does not reload workspace Skills.' },
       checker: { kind: 'projection', implementation: 'projection', resultKey: 'codex', installationProbe: { kind: 'none' }, versionProbe: { kind: 'none' } },
     },
     recommendedCommands: {
@@ -557,7 +557,15 @@ export function runtimeDiscoveryPayload() {
     supportedAgents: [...SUPPORTED_AGENT_IDS],
     requiredRenderCapabilities: [...REQUIRED_RENDER_CAPABILITIES],
     adapterTraitCatalog: ADAPTER_TRAIT_CATALOG,
-    agents: RUNTIME_ADAPTERS,
+    agents: Object.fromEntries(Object.entries(RUNTIME_ADAPTERS).map(([id, adapter]) => [id, {
+      ...adapter,
+      taskAdoption: {
+        sessionEvidenceRequired: true,
+        modes: adapter.traits.activation.skills === 'explicit-reload' ? ['new-session', 'reentered', 'reload'] : ['new-session', 'reentered'],
+        guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the task environment root as its local project.`,
+        sessionConsumption: 'unknown-until-adopted',
+      },
+    }])),
     unsupportedAgentGuidance: UNSUPPORTED_AGENT_GUIDANCE,
   };
 }

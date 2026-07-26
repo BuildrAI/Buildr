@@ -14,6 +14,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   updateCheck: 'buildr.update-check/v1',
   version: 'buildr.version/v1',
   taskEnvironmentContext: 'buildr.task-environment-context/v1',
+  taskEnvironmentAdoption: 'buildr.task-environment-adoption/v1',
   worktreeCreate: 'buildr.worktree-create/v2',
 });
 
