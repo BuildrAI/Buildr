@@ -50,7 +50,13 @@ function renameCurrentSourceToLegacy(workspace) {
   const currentDir = path.join(workspace, 'skills', 'buildr', 'task-board');
   const legacyDir = path.join(workspace, 'skills', 'buildr', 'task-cockpit');
   fs.renameSync(currentDir, legacyDir);
-  fs.writeFileSync(manifestFile, fs.readFileSync(manifestFile, 'utf8').replaceAll('task-board', 'task-cockpit'));
+  fs.writeFileSync(manifestFile, fs.readFileSync(manifestFile, 'utf8')
+    .replace('    provider: task-board\n', '    provider: task-cockpit\n')
+    .replace('  - id: task-board\n', '  - id: task-cockpit\n')
+    .replaceAll('buildr:skill:task-board', 'buildr:skill:task-cockpit')
+    .replaceAll('package:workspace:buildr/task-board', 'package:workspace:buildr/task-cockpit')
+    .replace('    path: buildr/task-board\n', '    path: buildr/task-cockpit\n')
+    .replace('    runtimePath: task-board\n', '    runtimePath: task-cockpit\n'));
 
   const receiptFile = path.join(workspace, '.buildr', 'builtin-receipts.json');
   const receipts = fs.existsSync(receiptFile)

@@ -902,7 +902,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['OpenSpec change 状态', 'artifact 或 task 进度', '下一步或阻塞原因', 'openspec status --change <id> --json', '文档正文使用中文', 'openspec-*` Skills', '执行形态：implementation / metadata-only / 待确认', 'Worktree：创建 / 复用 / 不需要 / 待确认', '`change-flow + implementation`', '`code-only + implementation`', '等 task worktree ready 后才进入 OpenSpec propose', '不得先写入 change artifacts 再决定位置', '本 Skill 只选择任务位置', '实现型任务的验证节点规划', 'selected `buildr.task-verification/v2` provider', '有语义的任务组', '完整候选验证放在全部实现', '不得把 Buildr 产品仓的 package check', '<!-- buildr:skill-contributions change-ready -->']) {
+        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-worktree-lifecycle/v2`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-verification/v2` provider', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (skillContent.includes('buildr openspec')) problems.push('task-triage source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
@@ -914,8 +914,10 @@ export function createPackageStaticValidator(deps) {
           '不是 OpenSpec change 的翻译',
           '任务看板',
           '既有 `task-cockpits/` 页面保持原路径和原内容',
-          '至少关联一个已经创建并核实路径的 OpenSpec change',
-          '`changes` 必须非空',
+          '`buildr.task-board-maintenance/v1`',
+          '`changes` 可以为空',
+          'OpenSpec changes 是 `0..N`',
+          'status: created | updated | aligned | blocked',
           '`dependencyPool`',
           '首页',
           '推进',

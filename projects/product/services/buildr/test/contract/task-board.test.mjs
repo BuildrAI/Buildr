@@ -22,27 +22,38 @@ function parseBoardData(html) {
 
 test('任务看板是当前 artifact，旧称只保留用户意图路由', () => {
   assert.match(boardSkill, /“任务驾驶舱”只作为旧用户意图继续路由/);
-  assert.match(boardSkill, /每个看板至少关联一个已经创建并核实路径的 OpenSpec change/);
-  assert.match(triageSkill, /至少关联一个真实 OpenSpec change/);
-  assert.match(triageSkill, /先进入 `change-flow`/);
+  assert.match(boardSkill, /OpenSpec changes 是 `0\.\.N` 个可选真实关联/);
+  assert.match(boardSkill, /`changes` 可以为空/);
+  assert.match(triageSkill, /复杂 `code-only` 任务可以在没有 Change 时创建看板/);
+  assert.match(triageSkill, /不得为了看板格式创建虚假 Change/);
   assert.match(openaiMetadata, /display_name: "任务看板"/);
   assert.match(openaiMetadata, /Use \$task-board/);
 });
 
 test('任务看板模板提供 changes batches dependencyPool 和方案分层', () => {
   const data = parseBoardData(template);
-  assert.ok(Array.isArray(data.changes) && data.changes.length > 0);
+  assert.deepEqual(data.changes, []);
   assert.ok(Array.isArray(data.progress.batches));
   assert.ok(Array.isArray(data.progress.dependencyPool));
   assert.ok(Array.isArray(data.solution.businessPlan));
   assert.ok(Array.isArray(data.solution.technicalPlan));
   assert.ok(Array.isArray(data.technical.details));
   assert.ok(data.progress.batches.every((batch) => batch.id && Array.isArray(batch.changeIds)));
+  assert.ok(data.progress.batches.some((batch) => batch.changeIds.length === 0));
   assert.ok(data.changes.every((change) => change.id && change.path && Array.isArray(change.batchIds)));
   assert.doesNotMatch(template, /https?:\/\//);
   assert.doesNotMatch(template, /\b(?:fetch|XMLHttpRequest|localStorage)\b/);
   assert.doesNotMatch(template, /data\.progress\.stages/);
   assert.match(template, /@media \(max-width: 820px\)/);
+});
+
+test('任务看板 provider 与 capability contract 返回稳定结果证据', () => {
+  const contract = read('package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md');
+  assert.match(boardSkill, /`buildr\.task-board-maintenance\/v1` 的默认 provider/);
+  assert.match(boardSkill, /status: created \| updated \| aligned \| blocked/);
+  assert.match(contract, /id: buildr\.task-board-maintenance/);
+  assert.match(contract, /允许 `changes` 与 batch `changeIds` 为空/);
+  assert.match(packageManifest, /capability: buildr\.task-board-maintenance[\s\S]*?provider: task-board/);
 });
 
 test('任务看板从 runtime Skill 自身复制完整目录中的模板', () => {

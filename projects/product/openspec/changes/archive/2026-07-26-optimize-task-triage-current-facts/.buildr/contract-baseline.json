@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-triage-current-facts",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-7b2bceede14ac1fad7f5b377d53b4244e5f3e789e71911c408fb609c2de84fa1",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "task-triage 必须输出正交且有证据的任务决策",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "task-triage 必须通过条件能力依赖交接专业动作",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "task-triage 路由任务看板",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: task-triage 路由任务看板\nBuildr 的 task-triage Skill MUST 在理解任务意图和影响范围后判断任务看板是“不需要”“创建”还是“继续维护”，并 MUST 在需要看板时引导 Agent 使用独立 `task-board` Skill，而不是在 task-triage 中复制完整可视化流程；创建看板前 MUST 已解析至少一个真实 OpenSpec change。\n\n#### Scenario: 复杂任务需要任务看板\n- **WHEN** task triage 发现任务跨批次、跨 change、跨服务或团队，存在交叉依赖、长期跟踪或多次用户判断\n- **THEN** task triage MUST 将任务看板判定为“创建”或“继续维护”\n- **AND** Agent MUST 使用 `task-board` 执行创建或维护\n\n#### Scenario: 看板需要先建立 change 锚点\n- **WHEN** task triage 判定复杂任务需要创建任务看板但尚无已创建的 OpenSpec change\n- **THEN** task triage MUST 先将任务路由到 change-flow 并创建、核实 change\n- **AND** Agent MUST NOT 用未来 change 名称或普通计划代替真实关联\n\n#### Scenario: task triage 输出看板状态\n- **WHEN** task triage 选择创建或继续维护任务看板\n- **THEN** 面向用户的路径判定 MUST 在可确认时包含 task id、看板路径、关联 change 和当前状态\n- **AND** task triage MUST NOT 猜测尚未解析的 Project、change 或文件路径\n"
+    },
+    {
+      "capability": "current-knowledge-maintenance",
+      "title": "当前认知必须支持独立事实收敛",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "current-knowledge-maintenance",
+      "title": "Buildr 必须提供当前认知维护能力契约",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Buildr 必须提供当前认知维护能力契约\nBuildr MUST 提供 `buildr.current-knowledge-maintenance/v1` capability contract 和默认 workspace Skill provider；contract MUST 定义 `assess`、`reconcile` 和 `inspect` 三种动作及其授权、副作用、失败语义和 result evidence。默认 provider MUST required 依赖 `buildr.terminology-governance/v1`。\n\n#### Scenario: 评估 Change 影响\n- **WHEN** consumer 请求 `assess`\n- **THEN** provider MUST 分类 Brief、overview、product architecture、technical architecture、flows、services 和 glossary 的可能影响、目标与理由\n- **AND** 无真实影响的目标 MUST NOT 被转化为空文档任务\n\n#### Scenario: 收敛最终事实\n- **WHEN** implementation content 已完成且 consumer 请求 `reconcile`\n- **THEN** provider MUST 按最终 specs、实现、registries、Brief 和现有 knowledge 创建或更新实际受影响资产\n- **AND** provider MUST 使用绑定的 terminology capability 解决或披露术语影响\n\n#### Scenario: 检查收尾就绪\n- **WHEN** Task Finish 请求 `inspect`\n- **THEN** provider MUST 核对 assess impacts 已处理、Brief 与权威 artifacts 一致、current knowledge 对应最终 tree 且没有 unresolved terms\n- **AND** 任一 required 条件不满足时 MUST 返回阻塞结果和可执行下一步\n"
+    },
+    {
+      "capability": "task-board",
+      "title": "任务看板关联真实 OpenSpec change",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 任务看板关联真实 OpenSpec change\n每个任务看板 MUST 至少关联一个已创建的 OpenSpec change，并 MUST 展示 change id、核实状态、稳定路径及其与交付批次的关系；未来设想或仅有名称的计划 MUST NOT 冒充真实 change。\n\n#### Scenario: 创建任务看板时已有 active change\n- **WHEN** Agent 为复杂任务创建任务看板且 active change 已存在\n- **THEN** 看板 MUST 在 `changes` 中记录该 change 的真实 id、状态和路径\n- **AND** 至少一个交付批次 MUST 通过 change id 关联该 change\n\n#### Scenario: 创建任务看板时尚无 change\n- **WHEN** 任务需要任务看板但尚无已创建的 OpenSpec change\n- **THEN** Agent MUST 先通过 task-triage 的 change-flow 创建并核实 change\n- **AND** Agent MUST NOT 创建没有真实 change 关联的任务看板\n\n#### Scenario: change 归档后继续维护看板\n- **WHEN** 已关联 change 从 active 移至 archive\n- **THEN** Agent MUST 更新该 change 的状态和稳定归档路径\n- **AND** 看板 MUST 保留其与历史交付批次的关联\n"
+    },
+    {
+      "capability": "task-board",
+      "title": "任务看板按交付批次和依赖池组织进度",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 任务看板按交付批次和依赖池组织进度\n任务看板 MUST 用可独立计划、实施和验收的 `batches` 表示可执行交付，并 MUST 用 `dependencyPool` 表示启动条件尚未满足的任务；批次 MAY 包含 code-only 或外部协作项，但 MUST 显式记录其关联 change ids。\n\n#### Scenario: 形成可独立交付批次\n- **WHEN** 一组任务能够独立计划、实施和验收\n- **THEN** Agent MUST 将其组织为具有稳定 id、状态、交付结果和 `changeIds` 的批次\n- **AND** 看板 MUST 基于批次和批次内任务计算可核实进度\n\n#### Scenario: 部分工作仍被依赖阻塞\n- **WHEN** 任务中的一部分尚未满足外部条件，但其他工作可以继续\n- **THEN** Agent MUST 将未就绪工作保留在 `dependencyPool` 并记录启动条件\n- **AND** Agent MUST 将已就绪工作组织为新的可执行批次或 change，而不是阻塞整个任务\n"
+    },
+    {
+      "capability": "task-board-maintenance",
+      "title": "Buildr 必须提供任务看板维护能力契约",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

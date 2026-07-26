@@ -22,12 +22,17 @@ const resolveChangeRoot = (change) => {
 
 test('terminology 与 current knowledge contracts 具有稳定 identity 和固定语义章节', () => {
   const terminology = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/terminology-governance/v1.md');
-  const knowledge = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v1.md');
+  const knowledgeV1 = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v1.md');
+  const knowledgeV2 = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v2.md');
   assert.equal(parseCapabilityContract(terminology).id, 'buildr.terminology-governance');
-  assert.equal(parseCapabilityContract(knowledge).id, 'buildr.current-knowledge-maintenance');
+  assert.equal(parseCapabilityContract(knowledgeV1).id, 'buildr.current-knowledge-maintenance');
+  assert.equal(parseCapabilityContract(knowledgeV2).id, 'buildr.current-knowledge-maintenance');
+  assert.equal(parseCapabilityContract(knowledgeV2).version, 2);
   assert.match(read(terminology), /先调查.*只对会改变长期语义/);
-  assert.match(read(knowledge), /`assess`.*`reconcile`.*`inspect`/s);
-  assert.match(read(knowledge), /不得机械创建空文件/);
+  assert.match(read(knowledgeV1), /`assess`.*`reconcile`.*`inspect`/s);
+  assert.match(read(knowledgeV2), /`assess`.*`reconcile`.*`inspect`.*`maintain`/s);
+  assert.match(read(knowledgeV2), /`change-required`/);
+  assert.match(read(knowledgeV2), /`maintain` 不得创建该 sidecar/);
 });
 
 test('默认 providers、bindings 与 Task Finish required dependency 可解析为 ready', () => {
@@ -40,6 +45,23 @@ test('默认 providers、bindings 与 Task Finish required dependency 可解析�
   assert.ok(finish.dependencies.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.mode === 'required'));
   assert.equal(finish.dependencies.find((item) => item.capability === 'buildr.current-knowledge-maintenance').selectedProvider.id, 'current-knowledge-maintenance');
   assert.equal(finish.readiness, 'ready');
+  const triage = graph.consumers.find((item) => item.consumer === 'task-triage');
+  assert.equal(triage.readiness, 'ready');
+  assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 2 && item.mode === 'optional'));
+  assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.task-board-maintenance' && item.mode === 'optional'));
+});
+
+test('current knowledge provider 同时提供 v1/v2 且 maintain 不伪造 Change', () => {
+  const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const provider = manifest.builtins.skills.find((item) => item.id === 'current-knowledge-maintenance');
+  assert.deepEqual(provider.provides, [
+    { capability: 'buildr.current-knowledge-maintenance', version: 1 },
+    { capability: 'buildr.current-knowledge-maintenance', version: 2 },
+  ]);
+  const skill = read(path.join(WORKSPACE_TARGET, 'skills/buildr/current-knowledge-maintenance/SKILL.md'));
+  assert.match(skill, /## 6\. Maintain/);
+  assert.match(skill, /不创建或要求 OpenSpec Change/);
+  assert.match(skill, /change: <id \| none>/);
 });
 
 test('OpenSpec consumers 只声明 capability dependencies，archive 保持无知识写入依赖', () => {

@@ -13,7 +13,7 @@ Buildr 是 Agent-first 的工作基础设施：治理适合长期复用的工作
 - Workspace、Project、Service：由 manifests/registries 表达稳定 identity、关系和 source ownership。
 - Rules、Skills、Commands、Components：由 workspace manifests 治理并按 runtime adapter 投射。
 - OpenSpec：在 Product Project 管理 proposal、design、delta specs、tasks、contract baseline 和 active/archive lifecycle。
-- Task workflow：task-triage、task-worktree、task-verification、task-finish 与 task-asset-review 通过 capability contracts 分层协作。
+- Task workflow：task-triage 分别判断语义治理、执行形态和任务跟踪；current-knowledge、task-worktree、task-board、task-verification、task-finish 与 task-asset-review 通过按分支适用的 capability contracts 分层协作。
 - Local App：以 Workspace 为全局目录，提供 Project、Service 和 Change 的只读理解与受控操作入口；Change 生命周期动作仍交给 Agent。
 
 ## 当前认知导航
@@ -26,4 +26,3 @@ Buildr 是 Agent-first 的工作基础设施：治理适合长期复用的工作
 - [Buildr Service](services/buildr.md)
 
 `task-boards/` 是 task-scoped working knowledge；既有 `task-cockpits/` 是保留的历史任务页面。它们都不替代 current knowledge、canonical specs、active Change、实现或验证 evidence。
-

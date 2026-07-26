@@ -1,0 +1,42 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-triage-current-facts
+operation: reconcile
+treeIdentity: 5d513a8288dab78f15f166bf2436a4b3ea70c856+task-worktree
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 任务分流、当前事实维护和任务看板协作边界发生变化
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/agent-task-workflows/spec.md
+      - specs/current-knowledge-maintenance/spec.md
+      - specs/task-board/spec.md
+      - specs/task-board-maintenance/spec.md
+  - type: overview
+    target: ../../knowledge/overview.md
+    reason: Task workflow capability collaboration 新增 current knowledge v2 与 task-board capability
+    status: updated
+    sourceIdentities:
+      - specs/agent-task-workflows/spec.md
+  - type: flow
+    target: ../../knowledge/flows/openspec-change-lifecycle.md
+    reason: task-triage 三轴决策和独立 current knowledge maintain 改变任务入口说明
+    status: updated
+    sourceIdentities:
+      - specs/agent-task-workflows/spec.md
+      - specs/current-knowledge-maintenance/spec.md
+  - type: product-architecture
+    target: ../../../docs/buildr-product.md
+    reason: 当前任务看板不再强制至少关联一个 OpenSpec change
+    status: updated
+    sourceIdentities:
+      - specs/task-board/spec.md
+  - type: glossary
+    target: ../../knowledge/glossary.md
+    reason: 已核对当前认知、Change 与任务看板术语，无新增长期术语
+    status: not-applicable
+    sourceIdentities:
+      - ../../knowledge/glossary.md
+unresolvedItems: []

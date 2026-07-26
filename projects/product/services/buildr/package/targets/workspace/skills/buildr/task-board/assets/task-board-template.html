@@ -198,15 +198,7 @@
         { "title": "验证交付", "text": "形成可信结果" }
       ]
     },
-    "changes": [
-      {
-        "id": "change-id",
-        "status": "active",
-        "path": "openspec/changes/change-id/",
-        "summary": "说明该 change 对完整任务的交付作用。",
-        "batchIds": ["batch-1"]
-      }
-    ],
+    "changes": [],
     "progress": {
       "batches": [
         {
@@ -216,7 +208,7 @@
           "title": "批次 1 · 可独立交付任务组",
           "summary": "说明该批次可以独立形成方案、实施和验收。",
           "deliverable": "说明该批次完成后可验收的交付结果。",
-          "changeIds": ["change-id"],
+          "changeIds": [],
           "items": []
         }
       ],
@@ -337,7 +329,7 @@
       overviewPanel.append(flowSection);
 
       const progressPanel = document.getElementById('progress-panel');
-      const changeSection = section('关联的 OpenSpec changes', '看板至少关联一个真实 change；状态和路径由 Agent 从权威事实核实。');
+      const changeSection = section('关联的 OpenSpec changes', 'Change 是可选真实关联；没有 change 的 code-only 或外部协作任务保持空集合。');
       const changeGrid = el('div', 'grid');
       (data.changes || []).forEach(change => {
         const card = el('article', 'card');
@@ -347,11 +339,11 @@
         card.append(el('p', 'section-desc', `关联批次：${(change.batchIds || []).join('、') || '待核实'}`));
         changeGrid.append(card);
       });
-      if (!changeGrid.children.length) changeGrid.append(el('p', 'empty', '错误：任务看板尚未关联真实 OpenSpec change。'));
+      if (!changeGrid.children.length) changeGrid.append(el('p', 'empty', '当前任务没有关联 OpenSpec change。'));
       changeSection.append(changeGrid);
       progressPanel.append(changeSection);
 
-      const progressSection = section('已形成的交付批次', '每个批次是一组可以独立形成方案、实施和验收的任务，并显式记录关联 change。');
+      const progressSection = section('已形成的交付批次', '每个批次是一组可以独立形成方案、实施和验收的任务；只记录真实 change 关联。');
       const timeline = el('div', 'timeline');
       (data.progress.batches || []).forEach(stageData => {
         const stage = el('article', `stage ${stageData.status || ''}`);

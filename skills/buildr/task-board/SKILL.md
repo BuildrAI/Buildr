@@ -1,11 +1,11 @@
 ---
 name: task-board
-description: 为复杂、长期、跨批次、跨 change、跨服务或团队，或存在交叉依赖和多次用户判断的任务创建、更新和检查只读 HTML 任务看板；管理完整任务、change 关联、交付批次和依赖任务池。用户明确要求任务可视化、任务看板、整体进度、任务全景、长期跟踪，或沿用旧称“任务驾驶舱”时也使用。简单短时任务不机械创建。
+description: 为复杂、长期、跨批次、跨 change、跨服务或团队，或存在交叉依赖和多次用户判断的任务创建、更新和检查只读 HTML 任务看板；看板以稳定 task identity 为主，可关联零个或多个真实 changes。用户要求任务可视化、整体进度、任务全景、长期跟踪或沿用旧称“任务驾驶舱”时也使用。
 ---
 
 # Task Board Skill
 
-本 Skill 由 Agent 单向维护整个任务面向用户的可视化任务看板。任务看板不是 OpenSpec change 的翻译，也不替代 specs、代码、验证或外部系统事实。“任务驾驶舱”只作为旧用户意图继续路由到本 Skill，不再作为当前产品名称或 artifact 身份。
+本 Skill 是 `buildr.task-board-maintenance/v1` 的默认 provider，由 Agent 单向维护整个任务面向用户的可视化任务看板。任务看板不是 OpenSpec change 的翻译，也不替代 specs、代码、验证或外部系统事实。“任务驾驶舱”只作为旧用户意图继续路由到本 Skill，不再作为当前产品名称或 artifact 身份。
 
 ## 判断创建还是维护
 
@@ -22,7 +22,7 @@ description: 为复杂、长期、跨批次、跨 change、跨服务或团队，
 ## 解析任务与位置
 
 1. 从 Buildr workspace root、Project registry 和任务实际范围解析拥有任务的 Project，不根据当前目录猜测。
-2. 使用稳定、简短的 kebab-case `task-id`。每个看板至少关联一个已经创建并核实路径的 OpenSpec change；尚无 change 时先按 `task-triage` 进入 change-flow，不用未来名称冒充真实关联。
+2. 使用稳定、简短的 kebab-case `task-id` 作为看板主 identity。OpenSpec changes 是 `0..N` 个可选真实关联；尚无 change 时保持空集合，不用未来名称冒充真实关联，也不为创建看板强制进入 change-flow。
 3. 查找 `projects/<project>/openspec/knowledge/task-boards/*-<task-id>.html`；存在时继续更新，不按更新时间创建新文件。
 4. 首次创建时使用 Project 所在环境的本地日期，路径固定为：
 
@@ -39,7 +39,7 @@ description: 为复杂、长期、跨批次、跨 change、跨服务或团队，
 按任务相关性读取，不做无关全量审计：
 
 - 用户已经确认的目标、边界和判断。
-- 当前及历史 OpenSpec proposal、design、specs、tasks 和 CLI status。
+- 存在关联时，当前及历史 OpenSpec proposal、design、specs、tasks 和 CLI status。
 - 相关代码、提交、测试和验证结果。
 - 外部团队、接口、审批、发布或联调依赖。
 - 既有看板中的历史批次、change 关联与稳定任务身份。
@@ -49,12 +49,12 @@ description: 为复杂、长期、跨批次、跨 change、跨服务或团队，
 ## 任务、批次、change 与依赖池
 
 - 看板的范围是用户确认的完整任务或迭代，不是当前 active change，也不因一个 change 完成或归档而结束。
-- `changes` 必须非空；每项记录真实 change id、核实状态、active 或 archive 稳定路径、摘要和关联 `batchIds`。更新看板时重新核实状态和路径。
-- 批次是可以独立形成方案、实施和验收的一组任务。每个 `batches` 项使用稳定 id，记录交付结果、状态和 `changeIds`；批次可以包含 code-only 工作或外部协作，但不能隐藏其 change 关系。
+- `changes` 可以为空；存在关联时，每项记录真实 change id、核实状态、active 或 archive 稳定路径、摘要和关联 `batchIds`，更新时重新核实状态和路径。
+- 批次是可以独立形成方案、实施和验收的一组任务。每个 `batches` 项使用稳定 id，记录交付结果、状态和 `changeIds`；没有真实 change 的 code-only 或外部协作批次使用空数组，并通过任务、代码或验证 evidence 表达进度。
 - 阶段只表达随时间推进的状态，不得成为所有任务必须串行通过的瀑布门禁。
 - 没有依赖或依赖已经到位的任务形成可执行批次，不得被其他尚未澄清的依赖拖住。
 - 尚不具备实施条件的任务进入 `dependencyPool`，写明缺失能力、进入条件和不受影响的批次。
-- 依赖部分到位时，把已具备条件的任务拆成新批次并按需形成新 change；其余任务继续留池。
+- 依赖部分到位时，把已具备条件的任务拆成新批次；只有改变业务语义时才按 task triage 形成新 change，其余任务继续留池。
 
 ## 组织内容
 
@@ -74,7 +74,7 @@ description: 为复杂、长期、跨批次、跨 change、跨服务或团队，
 
 按整个任务而不是单个 change 展示：
 
-- 已关联 change 的 id、状态、路径及其与批次的关系。
+- 已关联 change 的 id、状态、路径及其与批次的关系；没有关联时明确显示 `none`。
 - 已形成批次及其完成、进行中或待开始状态。
 - 批次内的关键任务、code-only 工作或外部协作交付。
 - 尚未满足条件的依赖池、进入条件和不受影响的批次。
@@ -130,7 +130,7 @@ description: 为复杂、长期、跨批次、跨 change、跨服务或团队，
 1. 确认文件名匹配 `yyyy-MM-dd-<task-id>.html`，且位于正确 Project 的 `openspec/knowledge/task-boards/`。
 2. 检查内嵌 JSON 可解析，页面没有外部网络依赖。
 3. 用本地浏览器检查桌面和窄屏布局；确认默认首页聚焦，导航可用，技术内容后置。
-4. 确认 `changes` 非空，change 状态和路径真实，双向关联的 `batchIds` / `changeIds` 一致。
+4. 确认 `changes` 是数组；存在 change 时状态和路径真实、双向 `batchIds` / `changeIds` 一致，不存在时 batch `changeIds` 为空且没有 planned identity。
 5. 对照权威来源检查完整任务、批次、依赖池、任务数量、验证结论和链接；可执行工作没有被无关依赖阻塞。
 6. 确认“方案”是任务业务与技术方案；“技术细节”只记录已完成复杂任务，不把预期写成事实。
 7. 确认 HTML 只读，没有修改任务状态的事件处理或外部写回。
@@ -142,9 +142,31 @@ description: 为复杂、长期、跨批次、跨 change、跨服务或团队，
 ```text
 任务看板：查看 <任务名称>（使用任务看板绝对路径作为 Markdown 链接目标）
 位置：<workspace-relative-path>
-关联 change：<change-id>[, ...]
+关联 change：<change-id>[, ...] / none
 当前状态：<一句话状态>
 任务看板已更新：<实际时间>
 ```
 
 当前 runtime 不支持本地 Markdown 链接时仍提供准确绝对路径和 workspace 相对路径。未成功更新时不得声称已更新，改为说明原因和下一步。
+
+## Result Evidence
+
+每次 create/update 返回：
+
+```text
+operation: create | update
+status: created | updated | aligned | blocked
+workspace: <identity>
+project: <identity/code>
+task: <task-id>
+path: <absolute path>
+relativePath: <workspace-relative path>
+changeIds: <ids or none>
+changedAssets: <path or none>
+sourceIdentities: <facts/evidence>
+updatedAt: <actual time>
+unresolvedItems: <items or none>
+nextActions: <actions or none>
+```
+
+Project、task identity、事实来源、授权或稳定路径无法确认，既有页面冲突，或候选内容会覆盖权威事实时返回 `blocked` 并保留现场。只有真实写入成功才能返回 `created|updated`。

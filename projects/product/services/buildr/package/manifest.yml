@@ -66,6 +66,16 @@ capabilityContracts:
     description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
     path: package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md
     target: skills/contracts/buildr/current-knowledge-maintenance/v1.md
+  - id: buildr.current-knowledge-maintenance
+    version: 2
+    description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
+    path: package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md
+    target: skills/contracts/buildr/current-knowledge-maintenance/v2.md
+  - id: buildr.task-board-maintenance
+    version: 1
+    description: 创建或更新以稳定 Project task identity 为主的只读任务看板。
+    path: package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md
+    target: skills/contracts/buildr/task-board-maintenance/v1.md
 
 initialSkillBindings:
   - capability: buildr.git-single-operation
@@ -95,6 +105,12 @@ initialSkillBindings:
   - capability: buildr.current-knowledge-maintenance
     version: 1
     provider: current-knowledge-maintenance
+  - capability: buildr.current-knowledge-maintenance
+    version: 2
+    provider: current-knowledge-maintenance
+  - capability: buildr.task-board-maintenance
+    version: 1
+    provider: task-board
 
 builtins:
   rules:
@@ -107,14 +123,27 @@ builtins:
     - id: task-triage
       path: package/targets/workspace/skills/buildr/task-triage
       target: skills/buildr/task-triage
-      description: 用户要求修 bug、实现或调整功能、改需求、重构、优化、补文档、补测试、调整 API/契约/权限/状态流/数据语义，或询问某项改动是否需要更新 spec、创建 change、只改代码时使用。
+      description: 用户提出修复、实现、重构、优化、文档/测试或契约语义调整，或询问任务应走代码修改、当前事实维护还是 OpenSpec Change 时使用。
       required: false
+      requires:
+        - capability: buildr.current-knowledge-maintenance
+          version: 2
+          mode: optional
+        - capability: buildr.task-worktree-lifecycle
+          version: 2
+          mode: optional
+        - capability: buildr.task-board-maintenance
+          version: 1
+          mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-board
       path: package/targets/workspace/skills/buildr/task-board
       target: skills/buildr/task-board
-      description: 为复杂、长期、跨批次、跨 change、跨服务或团队的任务维护只读 HTML 任务看板、change 关联、交付批次和依赖池；用户明确要求任务看板、整体进度、长期跟踪，或使用旧称“任务驾驶舱”时也使用。
+      description: 为复杂、长期、跨批次、跨 change、跨服务或团队的任务维护只读 HTML 任务看板、交付批次、依赖池和可选真实 change 关联；用户明确要求任务看板、整体进度、长期跟踪，或使用旧称“任务驾驶舱”时也使用。
       required: false
+      provides:
+        - capability: buildr.task-board-maintenance
+          version: 1
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
       replaces:
         id: task-cockpit
@@ -200,11 +229,13 @@ builtins:
     - id: current-knowledge-maintenance
       path: package/targets/workspace/skills/buildr/current-knowledge-maintenance
       target: skills/buildr/current-knowledge-maintenance
-      description: OpenSpec Change 创建、修订、实现、同步或 Task Finish 前，需要评估、维护、收敛或检查 Change Brief、Project 概览、产品/技术架构、核心流程、Service 说明和术语时使用。
+      description: OpenSpec Change lifecycle 中评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 当前认知追上已确认事实时使用。
       required: false
       provides:
         - capability: buildr.current-knowledge-maintenance
           version: 1
+        - capability: buildr.current-knowledge-maintenance
+          version: 2
       requires:
         - capability: buildr.terminology-governance
           version: 1
@@ -330,6 +361,8 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v3.md => skills/contracts/buildr/task-asset-review/v3.md copy
   - package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md => skills/contracts/buildr/task-board-maintenance/v1.md copy
   - package/targets/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-board/SKILL.md => skills/buildr/task-board/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-board/agents/openai.yaml => skills/buildr/task-board/agents/openai.yaml copy

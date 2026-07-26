@@ -2,7 +2,7 @@
 
 ## 当前流程
 
-1. `task-triage` 判断是否需要 Change 以及 implementation/metadata-only 形态；实现型工作先建立 canonical task worktree。
+1. `task-triage` 先核对 authority 与 repository set，再分别判断语义治理、implementation/metadata-only 形态和任务跟踪；实现型工作先通过 selected task-worktree provider 建立 canonical task environment。
 2. `openspec-propose` 使用 OpenSpec 1.6.0 创建 proposal、design、delta specs 和 tasks；Buildr contribution 创建 Brief、执行 current knowledge `assess`，并建立 contract baseline/proposal check。
 3. `openspec-update-change` 修订 planning artifacts 时同步刷新 Brief 与 impacts。
 4. `openspec-apply-change` 实现 tasks；发现的新知识影响写回 tasks/sidecar，implementation content 完成后在最终验证前 `reconcile`。
@@ -10,6 +10,8 @@
 6. `task-verification` 对已经收敛并冻结的 implementation identity 运行 required assurance；普通任务为 affected，高风险、发布或显式完整验证为 Candidate。
 7. Final assurance 后只执行可证明的 closeout-only delivery：最终任务 checkbox、已预演的 `archive --skip-specs`、归档 focused checks、candidate commit amend、目标分支 fast-forward/push 和安全 cleanup。
 8. 集成前重新观察目标 ref；目标分支在 final assurance 后前进时，以 `target-race` 返回 convergence，rebase 后对新 identity 重跑相同 required assurance。
+
+没有 Change 的独立当前事实收敛不进入上述生命周期：`task-triage` 选择 `spec-maintenance + metadata-only`，由 selected `buildr.current-knowledge-maintenance/v2` provider 执行 `maintain`。它只让 current knowledge 追上已由 canonical specs、实现、registries 或已确认决定证明的既有事实；authority 冲突返回 `unresolved`，发现新业务语义返回 `change-required` 并重新进入 Change lifecycle。
 
 ## 失败与停止
 
