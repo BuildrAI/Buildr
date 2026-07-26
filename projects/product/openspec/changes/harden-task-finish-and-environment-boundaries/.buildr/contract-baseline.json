@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "harden-task-finish-and-environment-boundaries",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-96571704d7460ac96422b82a93b2254f9c6a92458df1fb4294bc73248a186c24",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Workflow 按任务影响验证 adapter activation",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Workflow 按任务影响验证 adapter activation\n只有任务修改 Rules、Skills 或 runtime adapter 且验收要求证明新 runtime 已激活时，workflow MUST 消费 adapter activation metadata。该专项 evidence MUST NOT 阻塞不涉及 runtime activation 的普通 workflow。\n\n#### Scenario: Codex Skills 在 session start 激活\n- **WHEN** 任务修改 Codex Skills 且验收需要证明新 Skill 已激活\n- **THEN** workflow MUST 说明 Rules 可按 `path-read` 发现而 Skills 需要 session start\n- **AND** Codex App 不能绑定既有 Buildr worktree 时 MUST 报告 evidence 缺口，不得伪造自动 handoff\n\n#### Scenario: Runtime 支持显式 reload\n- **WHEN** adapter 声明 `explicit-reload`、提供 reload guidance 且 Agent/runtime host 返回匹配的 reload evidence\n- **THEN** workflow MUST 接受 reload activation evidence\n- **AND** 该 evidence MUST 与 execution readiness 分开记录\n"
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "内置 Skill routing description 必须保持单一事实",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 必须核验 execution binding",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task environment 必须核验 execution binding\nBuildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、checkout-local CLI/runtime projection identity 和明确 target/workdir 判断 `executionReady`。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。\n\n#### Scenario: canonical workspace 对话操作 task environment\n- **WHEN** Agent session 从 canonical Workspace 启动，但命令使用 task environment 的明确 target、成员 checkout workdir 和 checkout-local CLI\n- **THEN** context MUST 在 environment 与 repository identity 匹配时返回 `executionReady: true`\n- **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效\n\n#### Scenario: 请求路径或 CLI 越界\n- **WHEN** target/workdir 不属于 allowed execution roots，或 CLI/runtime projection identity 不属于该 environment\n- **THEN** context MUST 返回 blocked 并 fail closed\n- **AND** MUST 报告不匹配的 target、workdir、membership 或 CLI identity\n\n#### Scenario: runtime identity 漂移\n- **WHEN** environment identity、repository plan 或 checkout-local runtime projection identity 不再匹配 receipt\n- **THEN** context MUST 返回 `stale` 或 `blocked`\n- **AND** MUST 要求重新收敛 environment/runtime，而不是创建另一份纯 checkout\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Runtime activation evidence 必须是按影响触发的特例",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Runtime activation evidence 必须是按影响触发的特例\nBuildr MUST 只在任务修改 Rules、Skills 或 runtime adapter，且验收明确要求证明新 runtime 已由 Agent 激活时检查 adapter-specific activation。该 evidence MUST 与普通 execution readiness 分离。\n\n#### Scenario: Agent 提交 activation evidence\n- **WHEN** Agent/runtime host 提交 reload 或新 session activation evidence\n- **THEN** result MUST 将 environment evidence 标为 `buildr-verified`，将 host evidence 标为 `agent-attested`\n- **AND** MUST 明确 Buildr 没有直接内省或自动启动 Agent host\n\n#### Scenario: Codex 无法绑定既有 environment\n- **WHEN** Codex 只支持 session-start，当前 App 又不能把新 session 绑定到既有 Buildr worktree\n- **THEN** Buildr MUST 报告 activation evidence 缺口\n- **AND** MUST NOT 创建指向该 worktree 的另一份纯 checkout或把 adoption receipt 包装成自动 handoff\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run identity 必须限制在 canonical state root",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish step completion 必须携带最小可信证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Shared lease 必须使用 fencing identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "workspace-first-runtime-projection",
+      "title": "Runtime projection 必须提供 execution binding 与条件式 activation expectation",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Runtime projection 必须提供 execution binding 与条件式 activation expectation\nBuildr runtime adapter plan 与公开 runtime evidence MUST 提供 task environment 可消费的 adapter identity、runtime source root、projection identity 和 Rules/Skills activation metadata。projection identity MUST 参与普通 execution binding；session activation evidence MUST 只在 Rules、Skills/runtime adapter 变更且验收明确要求 activation proof 时检查。公开 evidence MUST 描述 Buildr 可证明的投射事实，不得声称目标 Agent 已在当前 session 加载 runtime。\n\n#### Scenario: Session-start Skills 已投射到 task checkout\n- **WHEN** Buildr 为 task environment 成功投射一个 Skills activation 为 `session-start` 的 runtime\n- **THEN** runtime evidence MUST 返回 checkout-local runtime source root、projection identity 与 activation metadata\n- **AND** 普通 proposal、implementation、verification 与 finish MUST NOT 等待 session adoption evidence\n\n#### Scenario: Runtime projection identity 改变\n- **WHEN** task environment 的 sync/render 改变了影响 Rules 或 Skills discovery 的 projection identity\n- **THEN** runtime evidence MUST 使既有 execution binding 失效\n- **AND** 如果当前验收另行要求 activation proof，既有 activation receipt MUST 同时可被识别为 stale\n\n#### Scenario: Filesystem 无法证明 session consumption\n- **WHEN** runtime check 只能证明投射内容与期望状态一致\n- **THEN** result MUST 报告 projection ready 与 session consumption unknown\n- **AND** MUST NOT 仅凭文件存在、content identity 或 checker success 报告 session adopted\n"
+    }
+  ]
+}

@@ -59,6 +59,7 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(created.runtimeExpectation.activation.skills, 'session-start');
     assert.equal(created.runtimeExpectation.sessionConsumption, 'unknown');
     assert.equal(created.adoption.status, 'not-required');
+    assert.deepEqual(created.nextActions, []);
     assert.equal(git(['-C', created.worktree.path, 'status', '--porcelain']), '');
 
     const cwdOnly = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--json']);
@@ -66,13 +67,17 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(cwdOnly.executionReady, true);
     assert.equal(cwdOnly.adoption.status, 'not-verified');
     assert.equal(cwdOnly.executionBinding.workdir, created.worktree.path);
+    assert.equal(cwdOnly.executionBinding.cliSourceKind, 'external-product');
+    assert.equal(cwdOnly.executionBinding.checkoutLocal, false);
     const adopted = runBuildr(['worktree', 'adopt', '--agent', 'codex', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'codex-demo-session', '--root-evidence-source', 'host-context', '--mode', 'new-session', '--started-at', new Date().toISOString(), '--json']);
     assert.equal(adopted.schemaVersion, 'buildr.task-environment-adoption/v1');
     assert.equal(adopted.environmentEvidence.assurance, 'buildr-verified');
     assert.equal(adopted.sessionEvidence.assurance, 'agent-attested');
-    const adoptedContext = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', created.worktree.path, '--session-handle', 'codex-demo-session', '--json']);
+    const adoptedContext = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'codex-demo-session', '--json']);
     assert.equal(adoptedContext.executionReady, true);
     assert.equal(adoptedContext.adoption.status, 'activation-verified');
+    const wrongRoot = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', created.worktree.path, '--session-handle', 'codex-demo-session', '--json']);
+    assert.equal(wrongRoot.adoption.blocked.code, 'worktree.activation_session_mismatch');
     const wrongSession = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'other-session', '--json']);
     assert.equal(wrongSession.executionReady, true);
     assert.equal(wrongSession.adoption.blocked.code, 'worktree.activation_session_mismatch');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { isSafeRuntimeStaleOnly, parseWorktreeList } from '../../src/application/worktree/worktree-application.mjs';
+import { isSafeRuntimeStaleOnly, parseWorktreeList, resolveExecutionCliSource } from '../../src/application/worktree/worktree-application.mjs';
 
 describe('worktree application', () => {
   test('parses porcelain worktree identity', () => {
@@ -39,5 +39,32 @@ describe('worktree application', () => {
     assert.equal(isSafeRuntimeStaleOnly({ ...base, identity: { ...base.identity, clean: false } }), false);
     assert.equal(isSafeRuntimeStaleOnly({ ...base, identity: { ...base.identity, head: 'changed' } }), false);
     assert.equal(isSafeRuntimeStaleOnly({ ...base, report: { ...base.report, mutations: { blocked: true } } }), false);
+  });
+
+  test('binds self-hosted environments to their local CLI and consumers to the external product CLI', () => {
+    assert.deepEqual(resolveExecutionCliSource({
+      workspaceRoot: '/workspace',
+      environmentRoot: '/workspace/.worktrees/demo',
+      productRoot: '/workspace/projects/product/services/buildr',
+    }), {
+      sourceRoot: '/workspace/.worktrees/demo/projects/product/services/buildr',
+      sourceKind: 'environment-local',
+    });
+    assert.deepEqual(resolveExecutionCliSource({
+      workspaceRoot: '/workspace',
+      environmentRoot: '/workspace/.worktrees/demo',
+      productRoot: '/workspace/.worktrees/demo/projects/product/services/buildr',
+    }), {
+      sourceRoot: '/workspace/.worktrees/demo/projects/product/services/buildr',
+      sourceKind: 'environment-local',
+    });
+    assert.deepEqual(resolveExecutionCliSource({
+      workspaceRoot: '/consumer',
+      environmentRoot: '/consumer/.worktrees/demo',
+      productRoot: '/opt/buildr',
+    }), {
+      sourceRoot: '/opt/buildr',
+      sourceKind: 'external-product',
+    });
   });
 });

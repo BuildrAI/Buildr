@@ -346,7 +346,7 @@ const DESCRIPTORS = [
         publicationExtensions: [{ path: 'agents/openai.yaml', format: 'openai-skill-metadata' }],
       },
       surfaces: [{ kind: 'cli' }, { kind: 'desktop' }],
-      activation: { rules: 'path-read', skills: 'session-start', reloadGuidance: 'Codex discovers workspace Skills at session start; when acceptance explicitly requires activation proof, use a host-supported reload or a session bound to the existing task environment and report any unsupported evidence gap.' },
+      activation: { rules: 'path-read', skills: 'session-start', reloadGuidance: 'Codex discovers workspace Skills at session start. Only when a task changes runtime discovery, loading, or activation behavior and specialty acceptance explicitly requires host activation proof, use a host-supported reload or session evidence and report any unsupported gap.' },
       checker: { kind: 'projection', implementation: 'projection', resultKey: 'codex', installationProbe: { kind: 'none' }, versionProbe: { kind: 'none' } },
     },
     recommendedCommands: {

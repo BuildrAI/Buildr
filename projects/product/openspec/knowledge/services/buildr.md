@@ -15,7 +15,8 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 - Workspace/Project/Service、Rules、Skills、Commands 和 Components 使用 YAML manifests/registries。
 - OpenSpec 依赖 `@fission-ai/openspec` 1.6.0；Buildr 只补充跨 Change baseline/conflict evidence 和 runtime contributions。
 - Local App Change read model 从 Project canonical planning root 只读索引 active/archive artifacts；Brief 是 Buildr companion，不改变 OpenSpec schema。
-- Task environment 使用本机 environment receipt、repository membership/identity、allowed roots、明确 target/workdir 与 checkout-local CLI/runtime projection 建立 execution binding。Agent 可在从 canonical Workspace 启动的原对话中操作该 environment；`worktree adopt` 仅为需要 runtime activation proof 的专项验收保存 `agent-attested` evidence，Buildr 不内省或自动 handoff Agent host。
+- Task environment 使用本机 environment receipt、repository membership/identity、allowed roots、明确 target/workdir 与 receipt-bound CLI/runtime projection 建立 execution binding。自举 workspace 绑定 environment-local 产品 CLI；普通消费 workspace 可以绑定 external-product CLI，但 source kind、path 与 identity 必须和 receipt 一致。Agent 可在从 canonical Workspace 启动的原对话中操作该 environment。
+- 普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence；发布资产已投射到 Agent runtime。`worktree adopt` 仅在任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时保存同时匹配 session root 与 handle 的 `agent-attested` evidence，Buildr 不内省或自动 handoff Agent host。
 
 ## 运行与验证
 

@@ -640,6 +640,9 @@ export function createPackageStaticValidator(deps) {
       try {
         const metadata = parseSkillFrontmatter(skillFile);
         if (metadata.name !== skill.id) problems.push(`${label}.id must match SKILL.md frontmatter name: ${skill.id} != ${metadata.name}`);
+        if (['task-triage', 'task-worktree', 'task-board', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
+          problems.push(`${label}.description must exactly match SKILL.md frontmatter description.`);
+        }
       } catch (error) {
         problems.push(error.message);
       }
@@ -995,6 +998,13 @@ export function createPackageStaticValidator(deps) {
       try {
         const baselineSkills = readSkillManifest(baselineSkillsManifest);
         validateSkillManifestEntries(baselineSkills, baselineSkillsManifest);
+        for (const id of ['task-triage', 'task-worktree', 'task-board', 'task-finish']) {
+          const packaged = manifest.builtins.skills.find((entry) => entry.id === id);
+          const baseline = baselineSkills.find((entry) => entry.id === id);
+          if (packaged && baseline?.description !== packaged.description) {
+            problems.push(`Workspace skills baseline ${id} description must exactly match package manifest.`);
+          }
+        }
         const taskFinish = baselineSkills.find((entry) => entry.id === 'task-finish');
         if (!taskFinish || taskFinish.source !== 'buildr' || taskFinish.state !== 'installed' || taskFinish.enabled !== true) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-finish.');

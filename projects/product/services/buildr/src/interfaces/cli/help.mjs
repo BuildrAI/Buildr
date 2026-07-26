@@ -194,13 +194,13 @@ export function registerCommandHelp(runtime) {
     'worktree context': [
       'Usage: buildr worktree context [--target <path>] [--session-root <path>] [--session-handle <id>] [--json]',
       '',
-      '判断明确 target/workdir 是否位于 task environment 的允许执行根内，并报告成员仓库、checkout-local CLI、runtime projection、可选 activation evidence 和隔离边界。',
+      '判断明确 target/workdir 是否位于 task environment 的允许执行根内，并报告成员仓库、receipt-bound CLI、runtime projection、可选 activation evidence 和隔离边界。',
       'executionReady 由 environment binding 决定；Agent session root 不要求等于 environment root。',
     ],
     'worktree adopt': [
       'Usage: buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]',
       '',
-      '为 Rules、Skills/runtime adapter 变更的专项验收记录 Agent/runtime host 提供的 activation evidence。',
+      '仅为 runtime 发现、加载或激活机制变更且专项验收明确要求时，记录 Agent/runtime host 提供的 activation evidence。普通 Rule/Skill 内容修改不需要。',
       'Buildr 直接核验 environment evidence；session evidence 标记为 agent-attested，不表示 Buildr 内省或密码学认证 Agent session。',
       '该 evidence 不参与普通 executionReady，也不表示 Buildr 能自动 reload、启动或 handoff Agent session。',
     ],

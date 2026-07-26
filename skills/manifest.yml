@@ -79,7 +79,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户在 task worktree 中要求“收尾”、完成任务、自动收尾，或要求自动完成已验证 change 的归档、提交、集成、推送和本地清理时使用。
+    description: 用户要求“收尾”、完成任务或自动完成已验证 Change 的归档、集成、推送与安全本地清理时使用；通过持久化 finish run 渐进执行并支持跨 session 恢复。
     enabled: true
     required: false
     state: installed

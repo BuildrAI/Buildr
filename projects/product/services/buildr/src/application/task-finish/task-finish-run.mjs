@@ -4,6 +4,7 @@ import path from 'node:path';
 
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v1';
 export const FINISH_PLAN_VERSION = 1;
+const FINISH_RUN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 
 export const FINISH_STEPS = Object.freeze([
   step('context', '核对 task environment execution binding 与 provider readiness'),
@@ -26,7 +27,14 @@ function step(id, action, dependsOn = [], sharedResource = null) {
 
 function now(clock) { return new Date(clock()).toISOString(); }
 function digest(value) { return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }
-function runFile(root, runId) { return path.join(root, '.buildr', 'task-finish', 'runs', `${runId}.json`); }
+function runRoot(root) { return path.resolve(root, '.buildr', 'task-finish', 'runs'); }
+function runFile(root, runId) {
+  if (!FINISH_RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish run id must use lowercase letters, numbers, dots, underscores, or hyphens.');
+  const directory = runRoot(root);
+  const file = path.resolve(directory, `${runId}.json`);
+  if (path.dirname(file) !== directory) throw new Error('Task Finish run path escapes the canonical runs root.');
+  return file;
+}
 function leaseRoot(root) { return path.join(root, '.buildr', 'task-finish', 'leases'); }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
@@ -109,6 +117,31 @@ function leaseKey(run, item) {
   return item.sharedResource ? `${item.sharedResource}:workspace` : null;
 }
 
+function removeLeasePath(target) {
+  fs.rmSync(target, { recursive: true, force: true });
+}
+
+function withLeaseMutationLock(directory, callback) {
+  const lock = `${directory}.lock`;
+  try { fs.mkdirSync(lock); }
+  catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const busy = new Error('Shared resource lease metadata is being updated by another run.');
+    busy.code = 'task_finish.lease_busy';
+    throw busy;
+  }
+  try { return callback(); }
+  finally { removeLeasePath(lock); }
+}
+
+function leaseIdentityMatches(existing, item) {
+  return Boolean(existing
+    && existing.key === item.lease?.key
+    && existing.runId === item.lease?.runId
+    && existing.step === item.lease?.step
+    && existing.token === item.lease?.token);
+}
+
 function acquireLease({ root, run, item, token, clock, leaseTtlMs }) {
   const key = leaseKey(run, item);
   if (!key) return null;
@@ -116,26 +149,61 @@ function acquireLease({ root, run, item, token, clock, leaseTtlMs }) {
   const file = path.join(directory, 'lease.json');
   const timestamp = clock();
   fs.mkdirSync(path.dirname(directory), { recursive: true });
-  try { fs.mkdirSync(directory, { recursive: false }); }
-  catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    let existing = null;
-    try { existing = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
-    if (existing && Date.parse(existing.expiresAt) > timestamp && existing.runId !== run.runId) {
-      const blocked = new Error(`Shared resource lease is held by run ${existing.runId} until ${existing.expiresAt}`);
-      blocked.code = 'task_finish.lease_held'; blocked.lease = existing; throw blocked;
+  return withLeaseMutationLock(directory, () => {
+    if (fs.existsSync(directory)) {
+      let existing = null;
+      try { existing = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+      if (existing && Date.parse(existing.expiresAt) > timestamp) {
+        const blocked = new Error(`Shared resource lease is held by run ${existing.runId} until ${existing.expiresAt}`);
+        blocked.code = 'task_finish.lease_held'; blocked.lease = existing; throw blocked;
+      }
+      removeLeasePath(directory);
     }
-    fs.rmSync(directory, { recursive: true, force: true });
     fs.mkdirSync(directory);
-  }
-  const lease = { schemaVersion: 'buildr.task-finish-lease/v1', key, runId: run.runId, step: item.id, token, acquiredAt: now(clock), expiresAt: new Date(timestamp + leaseTtlMs).toISOString() };
-  atomicWriteJson(file, lease);
-  return { ...lease, directory };
+    const lease = { schemaVersion: 'buildr.task-finish-lease/v1', key, runId: run.runId, step: item.id, token, acquiredAt: now(clock), expiresAt: new Date(timestamp + leaseTtlMs).toISOString() };
+    atomicWriteJson(file, lease);
+    return { ...lease, directory };
+  });
 }
 
-function releaseLease(item) {
-  if (item.lease?.directory) fs.rmSync(item.lease.directory, { recursive: true, force: true });
+function consumeLease(item, clock) {
+  if (!item.lease?.directory) return { ok: true };
+  const directory = item.lease.directory;
+  return withLeaseMutationLock(directory, () => {
+    let existing = null;
+    try { existing = JSON.parse(fs.readFileSync(path.join(directory, 'lease.json'), 'utf8')); } catch {}
+    if (!leaseIdentityMatches(existing, item)) return { ok: false, code: 'lease-lost', reason: 'Shared resource lease is no longer owned by this attempt.', current: existing };
+    if (Date.parse(existing.expiresAt) <= clock()) return { ok: false, code: 'lease-expired', reason: `Shared resource lease expired at ${existing.expiresAt}.`, current: existing };
+    removeLeasePath(directory);
+    return { ok: true };
+  });
+}
+
+function clearLease(item) {
   item.lease = null;
+}
+
+function assertEvidence(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.id !== 'string' || !value.id.trim()) throw new Error(`${label} must be an object with a stable non-empty id.`);
+}
+
+function completionIdentity({ item, fingerprint, effect, evidence, outcome }) {
+  return {
+    attemptToken: item.attemptToken,
+    inputFingerprint: fingerprint,
+    effectIds: effect ? [effect.id] : [],
+    evidenceIds: evidence ? [evidence.id] : [],
+    outcome,
+  };
+}
+
+function sameCompletion(left, right) {
+  return Boolean(left && right
+    && left.attemptToken === right.attemptToken
+    && left.inputFingerprint === right.inputFingerprint
+    && left.outcome === right.outcome
+    && JSON.stringify(left.effectIds) === JSON.stringify(right.effectIds)
+    && JSON.stringify(left.evidenceIds) === JSON.stringify(right.evidenceIds));
 }
 
 function nextStep(run) {
@@ -156,15 +224,23 @@ export function inspectFinishRun(run) {
   };
 }
 
-export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, clock = Date.now, leaseTtlMs = 30_000 }) {
+export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, clock = Date.now, leaseTtlMs = 600_000 }) {
   const run = refreshFinishInputs(readFinishRun({ root, runId }), fingerprints);
   if (session && !run.sessions.some((item) => item.handle === session.handle)) run.sessions.push(session);
   let item = nextStep(run);
   if (!item) return inspectFinishRun(run);
 
   if (outcome) {
+    if (!['passed', 'blocked'].includes(outcome)) throw new Error(`Unsupported Task Finish outcome: ${outcome}`);
     const completedAttempt = run.steps.find((candidate) => candidate.status === 'passed' && candidate.lastAttemptToken === attemptToken);
-    if (completedAttempt) return inspectFinishRun(run);
+    if (completedAttempt) {
+      const repeatedFingerprint = fingerprints[completedAttempt.id] ?? completedAttempt.inputFingerprint;
+      if (effect) assertEvidence(effect, 'effect');
+      if (evidence) assertEvidence(evidence, 'evidence');
+      const repeated = { attemptToken, inputFingerprint: repeatedFingerprint, effectIds: effect ? [effect.id] : [], evidenceIds: evidence ? [evidence.id] : [], outcome };
+      if (!sameCompletion(completedAttempt.lastCompletion, repeated)) throw new Error(`Repeated completion for step ${completedAttempt.id} does not match the recorded result identity.`);
+      return inspectFinishRun(run);
+    }
     if (item.status !== 'running') {
       if (item.status === 'passed' && item.attemptToken === attemptToken) return inspectFinishRun(run);
       throw new Error(`Step ${item.id} is ${item.status}; no running attempt can accept ${outcome}`);
@@ -172,8 +248,24 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
     if (!attemptToken || item.attemptToken !== attemptToken) throw new Error(`Attempt token mismatch for step ${item.id}`);
     const submittedFingerprint = fingerprints[item.id] ?? item.inputFingerprint;
     if (submittedFingerprint !== item.inputFingerprint) throw new Error(`Input fingerprint mismatch for step ${item.id}`);
-    if (item.id === 'integration-push' && expectedTargetRef && observedTargetRef && expectedTargetRef !== observedTargetRef) {
-      releaseLease(item);
+    if (outcome === 'passed') {
+      if (typeof item.inputFingerprint !== 'string' || !item.inputFingerprint.trim()) throw new Error(`Step ${item.id} requires a non-empty input fingerprint before it can pass.`);
+      assertEvidence(evidence, 'evidence');
+      if (effect) assertEvidence(effect, 'effect');
+      if (item.id === 'integration-push' && (!expectedTargetRef || !observedTargetRef)) throw new Error('integration-push requires expectedTargetRef and observedTargetRef observations.');
+    }
+    const leaseResult = consumeLease(item, clock);
+    if (!leaseResult.ok) {
+      clearLease(item);
+      item.status = 'blocked';
+      item.blocked = { code: leaseResult.code, reason: leaseResult.reason, currentLease: leaseResult.current || null };
+      item.lastAttemptToken = item.attemptToken; item.attemptToken = null; item.completedAt = now(clock);
+      run.updatedAt = now(clock);
+      atomicWriteJson(runFile(root, runId), run);
+      return inspectFinishRun(run);
+    }
+    clearLease(item);
+    if (item.id === 'integration-push' && expectedTargetRef !== observedTargetRef) {
       invalidate(run, 'target-convergence', `target-race: expected ${expectedTargetRef}, observed ${observedTargetRef}`);
       item.status = 'blocked';
       item.blocked = { code: 'target-race', reason: 'Remote target ref changed after convergence', expectedTargetRef, observedTargetRef };
@@ -184,13 +276,12 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
     }
     if (effect && !item.effects.some((entry) => entry.id === effect.id)) item.effects.push(effect);
     if (evidence && !item.evidence.some((entry) => entry.id === evidence.id)) item.evidence.push(evidence);
-    releaseLease(item);
     item.completedAt = now(clock);
     item.lastAttemptToken = item.attemptToken;
+    item.lastCompletion = completionIdentity({ item, fingerprint: submittedFingerprint, effect, evidence, outcome });
     item.attemptToken = null;
     if (outcome === 'passed') { item.status = 'passed'; item.blocked = null; }
     else if (outcome === 'blocked') { item.status = 'blocked'; item.blocked = blocked || { code: 'provider-blocked', reason: 'Provider action blocked' }; }
-    else throw new Error(`Unsupported Task Finish outcome: ${outcome}`);
   } else {
     if (item.status === 'running') return inspectFinishRun(run);
     if (item.status === 'blocked') return inspectFinishRun(run);

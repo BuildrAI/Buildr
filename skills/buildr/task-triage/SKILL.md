@@ -53,7 +53,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
-| `implementation` | `buildr.task-worktree-lifecycle/v2` | 完整 repository set；在写入前创建或复用 canonical task environment，并用明确 target/workdir、membership 与 checkout-local CLI 取得 `executionReady: true` | 只阻塞 execution |
+| `implementation` | `buildr.task-worktree-lifecycle/v2` | 完整 repository set；在写入前创建或复用 canonical task environment，并用明确 target/workdir、membership 与 receipt-bound CLI 取得 `executionReady: true` | 只阻塞 execution |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 | `create-board|continue-board` | `buildr.task-board-maintenance/v1` | task identity、真实 Change ids 或 `none`；返回 `created|updated|aligned`、路径和时间 | `blocked` 只影响 tracking |
 

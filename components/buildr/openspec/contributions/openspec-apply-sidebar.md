@@ -2,7 +2,7 @@
 
 应用 change 前先向用户说明正在使用 OpenSpec、`apply` action、change id 及其选择或推断来源。OpenSpec status 解析上下文后，在编辑前报告实际 `changeRoot`；采用 task worktree 时同时报告 canonical 路径与分支。
 
-采用 task environment 时，编辑前必须用 checkout-local CLI 对明确 target/workdir 运行 `worktree context`，确认 membership、allowed roots、runtime projection identity 与 receipt 匹配且 `executionReady: true`。Session activation 只在本任务修改 Rules、Skills/runtime adapter 且验收需要时专项验证。
+采用 task environment 时，编辑前必须用 receipt-bound CLI 对明确 target/workdir 运行 `worktree context`，确认 membership、allowed roots、CLI source/identity、runtime projection identity 与 receipt 匹配且 `executionReady: true`。普通 Rule/Skill 内容修改不要求 session activation；只有本任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时才验证。
 
 实现 active change 时只编辑 change artifacts 与实现内容。不得在当前会话的 `pre-sync` contract guard 成功前，把该 change 的 delta 预写入 canonical specs；canonical sync 只能在 Task Finish 的 pre-sync 成功后执行，并且必须在 archive 前通过 post-sync guard。不得通过 baseline adopt、重跑 pre-sync 或 `--skip-specs` 掩盖这两个门禁失败。
 

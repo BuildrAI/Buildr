@@ -2,7 +2,7 @@
 
 ## 当前流程
 
-1. `task-triage` 先核对 authority 与 repository set，再分别判断语义治理、implementation/metadata-only 形态和任务跟踪；实现型工作先通过 selected task-worktree provider 建立 canonical task environment。原用户对话可以从 canonical Workspace 启动，并用明确 target/workdir 和 checkout-local CLI 操作 task environment；`executionReady` 由 environment receipt、repository membership/identity、allowed roots 与 runtime projection identity 决定，不要求 session root 等于 environment root。
+1. `task-triage` 先核对 authority 与 repository set，再分别判断语义治理、implementation/metadata-only 形态和任务跟踪；实现型工作先通过 selected task-worktree provider 建立 canonical task environment。原用户对话可以从 canonical Workspace 启动，并用明确 target/workdir 和 receipt-bound CLI 操作 task environment；自举 workspace 绑定 environment-local 产品 CLI，普通消费 workspace 可以绑定 external-product CLI。`executionReady` 由 environment receipt、repository membership/identity、allowed roots、CLI source/identity 与 runtime projection identity 决定，不要求 session root 等于 environment root。
 2. `openspec-propose` 使用 OpenSpec 1.6.0 创建 proposal、design、delta specs 和 tasks；Buildr contribution 创建 Brief、执行 current knowledge `assess`，并建立 contract baseline/proposal check。
 3. `openspec-update-change` 修订 planning artifacts 时同步刷新 Brief 与 impacts。
 4. `openspec-apply-change` 实现 tasks；发现的新知识影响写回 tasks/sidecar，implementation content 完成后在最终验证前 `reconcile`。
@@ -16,10 +16,10 @@
 ## 失败与停止
 
 - Required capability blocked、术语 unresolved、Brief/current knowledge 冲突或 evidence identity 陈旧时停止后续 workflow。
-- Task environment receipt、repository membership/identity、allowed execution root、明确 target/workdir、checkout-local CLI 或 runtime projection identity 不匹配时停止 proposal/apply/verification。
+- Task environment receipt、repository membership/identity、allowed execution root、明确 target/workdir、receipt-bound CLI 或 runtime projection identity 不匹配时停止 proposal/apply/verification。
 - Reconcile 或 fallback 修订 delivery content 后，旧验证 evidence 失效。
 - Archive rehearsal 在隔离 planning copy 中检查 scenario identity、delta merge 与 archive mechanics；相对或不可执行的 OpenSpec 路径在复制前失败，不修改真实 canonical specs，也不替代 pre-sync/post-sync 或 active/archive 应用层测试。
 - 收尾报告分别呈现正式验证 wall-clock、convergence workflow checks 与可归因重试成本；不得把 guard、doctor、Git 或 rehearsal 计入 task-verification 时间。
 - 多次正式验证必须保留独立 run evidence、失效原因、替代关系和累计耗时；不得只报告最后一次成功。
 - Archive 只移动已对齐 Change、Brief 和 sidecar；归档后不补写 glossary 或 current knowledge。
-- 逻辑 task/change/run 可跨 Agent session 延续，但默认仍是同一用户对话和一个 task environment。只有 Rules、Skills/runtime adapter 变化且验收明确要求 activation proof 时才验证 reload/session activation；Buildr 当前不内省或自动 handoff Agent host，无法取得的 activation evidence 应如实报告，且不得伪造 Codex-managed 与 Buildr worktree adoption evidence。
+- 逻辑 task/change/run 可跨 Agent session 延续，但默认仍是同一用户对话和一个 task environment。普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence；发布时资产已投射到 Agent runtime，不存在开发 checkout 源资产与既有 session 加载快照的差异。只有任务本身修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制在真实 Agent host 生效时，才验证 reload/session activation。Buildr 当前不内省或自动 handoff Agent host，无法取得的 activation evidence 应如实报告，且不得伪造 Codex-managed 与 Buildr worktree adoption evidence。

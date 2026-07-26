@@ -15,11 +15,11 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 buildr task finish advance --run <run-id> --task <task-id> --change <change-id> --target-branch <branch> --remote <remote> --target <workspace> --json
 ```
 
-默认在同一用户对话中用明确 target/workdir 与 checkout-local CLI 操作 task environment。后台 session/subagent 只是可选载体，task/change/run 不变；不得要求用户切换 UI，或伪造 Codex/Buildr worktree adoption。
+默认在同一用户对话中用明确 target/workdir 与 receipt-bound CLI 操作 task environment。后台 session/subagent 只是可选载体，task/change/run 不变；普通 Rule/Skill 内容修改不要求新 session。不得要求用户切换 UI，或伪造 Codex/Buildr worktree adoption。
 
 ## 推进
 
-读取 checkpoint，执行 `nextAction`，再用同一 attempt、fingerprint、effects 与 evidence 提交 `passed` 或 `blocked`。正式保证只在 canonical、target、runtime 收敛后执行，级别由 task-verification provider 决定。
+读取 checkpoint，执行 `nextAction`，再用同一 attempt、非空 fingerprint、稳定 evidence id 与 effect id 提交 `passed` 或 `blocked`；同一 attempt 的重复完成必须使用完全相同的 identity。`integration-push` 还必须提交 expected/observed target ref。正式保证只在 canonical、target、runtime 收敛后执行，级别由 task-verification provider 决定。
 
 <!-- buildr:skill-contributions pre-verification -->
 
@@ -27,7 +27,7 @@ buildr task finish advance --run <run-id> --task <task-id> --change <change-id> 
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
-失败后运行 `resume`，只重跑 blocked/stale 及其下游；fingerprint 未变的 passed 副作用不得重复。tree、远端 observation 或 provider 输入变化时更新 fingerprint。共享资源只使用 CLI 短 lease，不创建 Workspace 全局锁。
+失败后运行 `resume`，只重跑 blocked/stale 及其下游；fingerprint 未变的 passed 副作用不得重复。tree、远端 observation 或 provider 输入变化时更新 fingerprint。共享资源只使用带 holder/token/expiry fencing 的 CLI 短 lease；失去 lease 的旧 holder 不得提交成功或删除接管者 lease。run id 只能解析到 canonical runs root 内，不创建 Workspace 全局锁。
 
 ## 授权与停止
 
