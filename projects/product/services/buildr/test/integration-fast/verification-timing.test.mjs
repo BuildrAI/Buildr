@@ -6,7 +6,7 @@ import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
+import { cleanupOwnedProcessGroup, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
 import { candidateStepBudget } from '../../test/verification/timing/budgets.mjs';
 import {
   collectVerificationSourceIdentity,
@@ -369,4 +369,12 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'OpenSpec contract fixtures',
     'CLI compatibility',
   ]) assert.ok(candidateStepBudget(name) > 0, `${name} must have a target budget`);
+});
+
+test('verification process cleanup 只终止 runner-owned process group', () => {
+  const calls = [];
+  const result = cleanupOwnedProcessGroup(4321, { platform: 'darwin', kill: (pid, signal) => calls.push({ pid, signal }) });
+  assert.equal(result.status, 'clean');
+  assert.equal(result.ownership, 'pgid-4321');
+  assert.deepEqual(calls, [{ pid: -4321, signal: 0 }, { pid: -4321, signal: 'SIGTERM' }]);
 });

@@ -1,4 +1,4 @@
-import { advanceFinishRun, createFinishRun, inspectFinishRun, readFinishRun, resumeFinishRun } from './task-finish-run.mjs';
+import { advanceFinishRun, createFinishRun, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
 
 function values(args, name) {
   const result = [];
@@ -29,6 +29,7 @@ export function registerTaskFinishApplication(runtime) {
     const runId = optionValue(command.args, '--run');
     if (!runId) throw new Error('Missing value for --run');
     if (action === 'inspect') return print(inspectFinishRun(readFinishRun({ root, runId })), command.args);
+    if (action === 'renew') return print(renewFinishLease({ root, runId, attemptToken: optionValue(command.args, '--attempt') }), command.args);
     let run;
     try { run = readFinishRun({ root, runId }); }
     catch (error) {
@@ -43,6 +44,7 @@ export function registerTaskFinishApplication(runtime) {
       session: jsonValue(optionValue(command.args, '--session', null), '--session'),
       expectedTargetRef: optionValue(command.args, '--expected-target-ref', null),
       observedTargetRef: optionValue(command.args, '--observed-target-ref', null),
+      executionPlan: jsonValue(optionValue(command.args, '--execution-plan', null), '--execution-plan'),
     };
     return print(action === 'resume' ? resumeFinishRun(options) : advanceFinishRun(options), command.args);
   }

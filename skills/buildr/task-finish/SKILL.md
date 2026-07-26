@@ -5,21 +5,17 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的薄入口。它把本轮“收尾”作为一次性授权，用 `buildr task finish inspect|advance|resume` 持久化进度，并调用 selected providers；专业政策不在此复制。
+本 Skill 是 `buildr.task-finish/v1` 的薄入口，把“收尾”作为一次性授权，用 `buildr task finish inspect|advance|resume|renew` 持久化进度并调用 selected providers。
 
 ## 开始与采用
 
-先确认 task/change、目标分支、远端、提交范围与排除动作；默认只 push 已集成目标分支。创建或继续稳定 run id：
+确认 task/change、目标分支、远端、提交范围与排除动作；默认只 push 已集成目标分支。创建或继续稳定 run id。
 
-```text
-buildr task finish advance --run <run-id> --task <task-id> --change <change-id> --target-branch <branch> --remote <remote> --target <workspace> --json
-```
-
-默认在同一用户对话中用明确 target/workdir 与 receipt-bound CLI 操作 task environment。后台 session/subagent 只是可选载体，task/change/run 不变；普通 Rule/Skill 内容修改不要求新 session。不得要求用户切换 UI，或伪造 Codex/Buildr worktree adoption。
+同一对话用明确 target/workdir 与 receipt-bound CLI 操作。session 只是可选载体；普通 Rule/Skill 修改不要求新 session。
 
 ## 推进
 
-读取 checkpoint，执行 `nextAction`，再用同一 attempt、非空 fingerprint、稳定 evidence id 与 effect id 提交 `passed` 或 `blocked`；同一 attempt 的重复完成必须使用完全相同的 identity。`integration-push` 还必须提交 expected/observed target ref。正式保证只在 canonical、target、runtime 收敛后执行，级别由 task-verification provider 决定。
+读取 checkpoint；`--execution-plan` 预检 executable、cwd、script 与 selector，再由 Agent/provider 执行。用同一 attempt、非空 fingerprint、稳定 evidence/effects 提交结果；重复 identity 必须相同。push 还提交 expected/observed target ref。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 定级。
 
 <!-- buildr:skill-contributions pre-verification -->
 
@@ -27,14 +23,16 @@ buildr task finish advance --run <run-id> --task <task-id> --change <change-id> 
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
-失败后运行 `resume`，只重跑 blocked/stale 及其下游；fingerprint 未变的 passed 副作用不得重复。tree、远端 observation 或 provider 输入变化时更新 fingerprint。共享资源只使用带 holder/token/expiry fencing 的 CLI 短 lease；失去 lease 的旧 holder 不得提交成功或删除接管者 lease。run id 只能解析到 canonical runs root 内，不创建 Workspace 全局锁。
+`resume` 只重跑 blocked/stale 及其下游，passed effects 不重复。共享写临界区使用 holder/token/expiry fencing 短 lease；未过期可 `renew`。不创建 Workspace 全局锁。
+
+含 delta 时聚合 findings 并生成 receipt；严格执行 rehearsal → pre-sync → canonical sync → post-sync。identity 变化返回 pre-sync，禁止事后 baseline。
 
 ## 授权与停止
 
-“收尾”授权已披露的归档、任务提交、目标分支集成/push、入口迁移和安全本地清理；不授权 force push、远端任务分支操作、丢弃改动、改写共享历史或语义冲突。provider blocked、evidence 不可信、target race 或 cleanup 不安全时保存 blocked。
+“收尾”授权归档、提交、目标分支集成/push、入口迁移和安全清理；不授权 force push、远端任务分支操作、丢弃改动、改写共享历史或语义冲突。
 
-asset review 返回 `awaiting-human` 时在 cleanup 前等待；optional provider 不可用则记录降级。不得删除其他任务 worktree、preview、进程或用户状态。
+asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化执行 late review。optional provider 不可用则记录降级。不得删除其他任务状态。
 
 ## 完成
 
-完成前用 `inspect` 核对全部 passed。报告 identity、验证与耗时、effects、archive/commit/integration/push、runtime/doctor、cleanup、未触碰环境和风险。cleanup 失败不得重做远端动作。
+完成前 `inspect` 核对全部 passed。报告 identity、验证、attempt timing、retry/waste、effects、archive/integration/push、runtime/doctor、asset/process/environment cleanup 与风险。cleanup 失败不得重做远端动作。

@@ -18,7 +18,8 @@ export const FINISH_STEPS = Object.freeze([
   step('archive', '归档 Change 并完成 closeout-only checks', ['asset-review'], 'canonical-checkout'),
   step('integration-push', '乐观核对目标 ref，集成并 push 目标分支', ['archive'], 'target-branch'),
   step('runtime-install', '从保留 checkout 迁移默认 CLI/Local App 入口', ['integration-push'], 'runtime-install'),
-  step('cleanup', '清理 task-owned transient evidence 与本地 environment', ['runtime-install'], 'canonical-checkout'),
+  step('asset-review-late', '仅在首次 finalize 后 observation revision 变化时再次调用 asset-review provider', ['runtime-install']),
+  step('cleanup', '清理 task-owned transient evidence 与本地 environment', ['asset-review-late'], 'canonical-checkout'),
 ]);
 
 function step(id, action, dependsOn = [], sharedResource = null) {
@@ -59,7 +60,7 @@ export function createFinishRun({ root, runId, task, change = null, targetBranch
     steps: FINISH_STEPS.map((definition) => ({
       ...clone(definition), status: 'pending', attempt: 0, attemptToken: null,
       inputFingerprint: null, effects: [], evidence: [], blocked: null,
-      startedAt: null, completedAt: null, lease: null,
+      startedAt: null, completedAt: null, lease: null, executionPlan: null, attempts: [],
     })),
   };
   atomicWriteJson(file, run);
@@ -71,7 +72,67 @@ export function readFinishRun({ root, runId }) {
   if (!fs.existsSync(file)) throw new Error(`Unknown Task Finish run: ${runId}`);
   const run = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error(`Unsupported Task Finish run schema: ${run.schemaVersion}`);
+  if (run.status !== 'complete') {
+    for (const definition of FINISH_STEPS) {
+      if (!run.steps.some((item) => item.id === definition.id)) {
+        run.steps.splice(FINISH_STEPS.findIndex((item) => item.id === definition.id), 0, {
+          ...clone(definition), status: 'pending', attempt: 0, attemptToken: null, inputFingerprint: null,
+          effects: [], evidence: [], blocked: null, startedAt: null, completedAt: null, lease: null, executionPlan: null, attempts: [],
+        });
+      }
+    }
+    for (const definition of FINISH_STEPS) run.steps.find((item) => item.id === definition.id).dependsOn = [...definition.dependsOn];
+  }
+  for (const item of run.steps) {
+    item.executionPlan ??= null;
+    item.attempts ??= [];
+  }
   return run;
+}
+
+function isWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+export function validateFinishExecutionPlan({ root, plan }) {
+  if (plan == null) return null;
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('execution plan must be an object.');
+  const cwd = path.resolve(plan.cwd || root);
+  if (!isWithin(root, cwd)) throw new Error(`execution plan cwd is outside the allowed execution root: ${cwd}`);
+  const command = plan.command ? path.resolve(plan.command) : null;
+  if (command && (!path.isAbsolute(plan.command) || !fs.existsSync(command))) throw new Error(`execution plan command must be an existing absolute path: ${plan.command}`);
+  const commandSource = plan.commandSource || 'environment-local';
+  if (command && commandSource === 'environment-local' && !isWithin(root, command)) throw new Error(`execution plan command is outside the receipt-bound environment: ${command}`);
+  if (!['environment-local', 'external-declared'].includes(commandSource)) throw new Error(`execution plan command source is unsupported: ${commandSource}`);
+  const args = Array.isArray(plan.args) && plan.args.every((value) => typeof value === 'string') ? [...plan.args] : [];
+  if (plan.args && args.length !== plan.args.length) throw new Error('execution plan args must be strings.');
+  let packageRoot = null;
+  if (plan.npmScript) {
+    packageRoot = path.resolve(plan.packageRoot || cwd);
+    if (!isWithin(root, packageRoot)) throw new Error(`execution plan package root is outside the allowed execution root: ${packageRoot}`);
+    const manifestPath = path.join(packageRoot, 'package.json');
+    if (!fs.existsSync(manifestPath)) throw new Error(`execution plan package manifest does not exist: ${manifestPath}`);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (!manifest.scripts?.[plan.npmScript]) {
+      const available = Object.keys(manifest.scripts || {}).sort().join(', ') || 'none';
+      throw new Error(`execution plan npm script does not exist: ${plan.npmScript}; available: ${available}`);
+    }
+  }
+  if (plan.verificationSelector && (!Array.isArray(plan.availableSelectors) || !plan.availableSelectors.includes(plan.verificationSelector))) {
+    throw new Error(`execution plan verification selector is not declared: ${plan.verificationSelector}`);
+  }
+  return {
+    cwd, command, commandSource, args, packageRoot, npmScript: plan.npmScript || null,
+    verificationSelector: plan.verificationSelector || null,
+    availableSelectors: Array.isArray(plan.availableSelectors) ? [...plan.availableSelectors] : null,
+    sharedMutation: plan.sharedMutation !== false,
+  };
+}
+
+function effectiveFingerprint(fingerprint, plan) {
+  if (!plan) return fingerprint;
+  return `${fingerprint || ''}:plan-${digest(JSON.stringify(plan))}`;
 }
 
 function descendants(run, stepId) {
@@ -183,6 +244,33 @@ function clearLease(item) {
   item.lease = null;
 }
 
+export function renewFinishLease({ root, runId, attemptToken, clock = Date.now, leaseTtlMs = 600_000 }) {
+  const run = readFinishRun({ root, runId });
+  const item = nextStep(run);
+  if (!item || item.status !== 'running' || item.attemptToken !== attemptToken || !item.lease?.directory) throw new Error('Current running attempt does not own a renewable lease.');
+  const directory = item.lease.directory;
+  const result = withLeaseMutationLock(directory, () => {
+    let existing = null;
+    try { existing = JSON.parse(fs.readFileSync(path.join(directory, 'lease.json'), 'utf8')); } catch {}
+    if (!leaseIdentityMatches(existing, item)) return { ok: false, code: 'lease-lost', current: existing };
+    if (Date.parse(existing.expiresAt) <= clock()) return { ok: false, code: 'lease-expired', current: existing };
+    const renewed = { ...existing, expiresAt: new Date(clock() + leaseTtlMs).toISOString(), renewalCount: (existing.renewalCount || 0) + 1, renewedAt: now(clock) };
+    atomicWriteJson(path.join(directory, 'lease.json'), renewed);
+    return { ok: true, lease: renewed };
+  });
+  if (!result.ok) {
+    const error = new Error(result.code === 'lease-expired' ? 'Shared resource lease has expired.' : 'Shared resource lease is no longer owned by this attempt.');
+    error.code = `task_finish.${result.code}`;
+    error.lease = result.current || null;
+    throw error;
+  }
+  item.lease = { ...item.lease, ...result.lease };
+  item.evidence.push({ id: `lease-renewal-${item.id}-${result.lease.renewalCount}`, type: 'lease-renewal', expiresAt: result.lease.expiresAt });
+  run.updatedAt = now(clock);
+  atomicWriteJson(runFile(root, runId), run);
+  return inspectFinishRun(run);
+}
+
 function assertEvidence(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.id !== 'string' || !value.id.trim()) throw new Error(`${label} must be an object with a stable non-empty id.`);
 }
@@ -212,6 +300,12 @@ function nextStep(run) {
 
 export function inspectFinishRun(run) {
   const current = nextStep(run) || null;
+  const attempts = run.steps.flatMap((item) => (item.attempts || []).map((attempt) => ({ step: item.id, ...attempt })));
+  const completedDurations = attempts.filter((attempt) => Number.isFinite(attempt.durationMs));
+  const retryAttempts = completedDurations.filter((attempt) => attempt.number > 1);
+  const wastedAttempts = completedDurations.filter((attempt) => attempt.outcome === 'blocked' || attempt.outcome === 'failed');
+  const started = Date.parse(run.createdAt);
+  const finished = run.status === 'complete' ? Date.parse(run.updatedAt) : Date.now();
   return {
     schemaVersion: 'buildr.task-finish-checkpoint/v1', runId: run.runId, task: run.task, change: run.change,
     status: run.status, currentStep: current?.id || null,
@@ -219,13 +313,35 @@ export function inspectFinishRun(run) {
     validEvidence: run.steps.filter((item) => item.status === 'passed').flatMap((item) => item.evidence.map((evidence) => ({ step: item.id, ...evidence }))),
     blocked: run.steps.filter((item) => item.status === 'blocked').map((item) => ({ step: item.id, ...item.blocked })),
     staleSteps: run.steps.filter((item) => item.status === 'stale').map((item) => item.id),
-    nextAction: current ? { step: current.id, status: current.status, action: current.action, attemptToken: current.status === 'running' ? current.attemptToken : null, retryPolicy: current.retryPolicy } : null,
-    steps: run.steps.map(({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn }) => ({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn })),
+    timing: {
+      wallClockMs: Math.max(0, finished - started),
+      attemptCount: attempts.length,
+      retryCount: retryAttempts.length,
+      attributableWasteMs: wastedAttempts.reduce((total, attempt) => total + attempt.durationMs, 0),
+      attempts,
+    },
+    nextAction: current ? { step: current.id, status: current.status, action: current.action, attemptToken: current.status === 'running' ? current.attemptToken : null, retryPolicy: current.retryPolicy, lease: current.lease } : null,
+    steps: run.steps.map(({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan }) => ({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan })),
   };
 }
 
-export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, clock = Date.now, leaseTtlMs = 600_000 }) {
-  const run = refreshFinishInputs(readFinishRun({ root, runId }), fingerprints);
+export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, executionPlan = null, clock = Date.now, leaseTtlMs = 600_000 }) {
+  const run = readFinishRun({ root, runId });
+  const plannedItem = nextStep(run);
+  let normalizedPlan;
+  try { normalizedPlan = validateFinishExecutionPlan({ root, plan: executionPlan ?? plannedItem?.executionPlan }); }
+  catch (error) {
+    if (outcome || !plannedItem || plannedItem.status === 'running') throw error;
+    plannedItem.status = 'blocked';
+    plannedItem.blocked = { code: 'execution-plan-invalid', reason: error.message };
+    plannedItem.completedAt = now(clock);
+    run.updatedAt = plannedItem.completedAt;
+    atomicWriteJson(runFile(root, runId), run);
+    return inspectFinishRun(run);
+  }
+  const normalizedFingerprints = { ...fingerprints };
+  if (plannedItem && Object.hasOwn(normalizedFingerprints, plannedItem.id) && normalizedFingerprints[plannedItem.id] !== plannedItem.inputFingerprint) normalizedFingerprints[plannedItem.id] = effectiveFingerprint(normalizedFingerprints[plannedItem.id], normalizedPlan);
+  refreshFinishInputs(run, normalizedFingerprints);
   if (session && !run.sessions.some((item) => item.handle === session.handle)) run.sessions.push(session);
   let item = nextStep(run);
   if (!item) return inspectFinishRun(run);
@@ -234,7 +350,7 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
     if (!['passed', 'blocked'].includes(outcome)) throw new Error(`Unsupported Task Finish outcome: ${outcome}`);
     const completedAttempt = run.steps.find((candidate) => candidate.status === 'passed' && candidate.lastAttemptToken === attemptToken);
     if (completedAttempt) {
-      const repeatedFingerprint = fingerprints[completedAttempt.id] ?? completedAttempt.inputFingerprint;
+      const repeatedFingerprint = normalizedFingerprints[completedAttempt.id] ?? completedAttempt.inputFingerprint;
       if (effect) assertEvidence(effect, 'effect');
       if (evidence) assertEvidence(evidence, 'evidence');
       const repeated = { attemptToken, inputFingerprint: repeatedFingerprint, effectIds: effect ? [effect.id] : [], evidenceIds: evidence ? [evidence.id] : [], outcome };
@@ -246,7 +362,7 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
       throw new Error(`Step ${item.id} is ${item.status}; no running attempt can accept ${outcome}`);
     }
     if (!attemptToken || item.attemptToken !== attemptToken) throw new Error(`Attempt token mismatch for step ${item.id}`);
-    const submittedFingerprint = fingerprints[item.id] ?? item.inputFingerprint;
+    const submittedFingerprint = normalizedFingerprints[item.id] ?? item.inputFingerprint;
     if (submittedFingerprint !== item.inputFingerprint) throw new Error(`Input fingerprint mismatch for step ${item.id}`);
     if (outcome === 'passed') {
       if (typeof item.inputFingerprint !== 'string' || !item.inputFingerprint.trim()) throw new Error(`Step ${item.id} requires a non-empty input fingerprint before it can pass.`);
@@ -260,6 +376,8 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
       item.status = 'blocked';
       item.blocked = { code: leaseResult.code, reason: leaseResult.reason, currentLease: leaseResult.current || null };
       item.lastAttemptToken = item.attemptToken; item.attemptToken = null; item.completedAt = now(clock);
+      const attempt = item.attempts.find((entry) => entry.token === attemptToken);
+      if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome: 'blocked', attribution: leaseResult.code });
       run.updatedAt = now(clock);
       atomicWriteJson(runFile(root, runId), run);
       return inspectFinishRun(run);
@@ -270,6 +388,8 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
       item.status = 'blocked';
       item.blocked = { code: 'target-race', reason: 'Remote target ref changed after convergence', expectedTargetRef, observedTargetRef };
       item.lastAttemptToken = item.attemptToken; item.attemptToken = null; item.completedAt = now(clock);
+      const attempt = item.attempts.find((entry) => entry.token === attemptToken);
+      if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome: 'blocked', attribution: 'target-race' });
       run.updatedAt = now(clock);
       atomicWriteJson(runFile(root, runId), run);
       return inspectFinishRun(run);
@@ -277,6 +397,8 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
     if (effect && !item.effects.some((entry) => entry.id === effect.id)) item.effects.push(effect);
     if (evidence && !item.evidence.some((entry) => entry.id === evidence.id)) item.evidence.push(evidence);
     item.completedAt = now(clock);
+    const attempt = item.attempts.find((entry) => entry.token === attemptToken);
+    if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome, attribution: outcome === 'blocked' ? (blocked?.code || 'provider-blocked') : 'none' });
     item.lastAttemptToken = item.attemptToken;
     item.lastCompletion = completionIdentity({ item, fingerprint: submittedFingerprint, effect, evidence, outcome });
     item.attemptToken = null;
@@ -287,10 +409,12 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
     if (item.status === 'blocked') return inspectFinishRun(run);
     if (!item.dependsOn.every((dependency) => run.steps.find((candidate) => candidate.id === dependency)?.status === 'passed')) return inspectFinishRun(run);
     if (item.status === 'stale') item.status = 'pending';
+    item.executionPlan = normalizedPlan;
     item.attempt += 1;
     item.attemptToken = crypto.randomUUID();
-    item.lease = acquireLease({ root, run, item, token: item.attemptToken, clock, leaseTtlMs });
+    item.lease = normalizedPlan?.sharedMutation === false ? null : acquireLease({ root, run, item, token: item.attemptToken, clock, leaseTtlMs });
     item.status = 'running'; item.startedAt = now(clock); item.blocked = null;
+    item.attempts.push({ number: item.attempt, token: item.attemptToken, startedAt: item.startedAt, finishedAt: null, durationMs: null, outcome: 'running', attribution: item.attempt > 1 ? 'retry' : 'none', executionPlan: normalizedPlan });
   }
   run.status = run.steps.every((candidate) => candidate.status === 'passed') ? 'complete' : 'active';
   run.updatedAt = now(clock);

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { rehearseArchive } from '../../package/targets/workspace/skills/buildr/task-finish/scripts/archive-rehearsal.mjs';
+import { advanceConvergenceReceipt, rehearseArchive, scanDeltaCompatibility } from '../../package/targets/workspace/skills/buildr/task-finish/scripts/archive-rehearsal.mjs';
 import { FINISH_STEPS } from '../../src/application/task-finish/task-finish-run.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
@@ -79,5 +79,39 @@ test('archive rehearsal 在复制前拒绝相对 executable', () => {
     assert.equal(result.status, 'failed');
     assert.equal(result.cleanupStatus, 'not-applicable');
     assert.match(result.error, /绝对路径/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('archive rehearsal 一次聚合全部 MODIFIED Scenario 遗漏', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-rehearsal-test-'));
+  try {
+    fs.mkdirSync(path.join(root, 'openspec/specs/example'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'openspec/changes/demo/specs/example'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'openspec/specs/example/spec.md'), '# example\n\n### Requirement: One\ntext\n\n#### Scenario: A\n- **WHEN** a\n- **THEN** a\n\n#### Scenario: B\n- **WHEN** b\n- **THEN** b\n\n### Requirement: Two\ntext\n\n#### Scenario: C\n- **WHEN** c\n- **THEN** c\n');
+    fs.writeFileSync(path.join(root, 'openspec/changes/demo/specs/example/spec.md'), '## MODIFIED Requirements\n\n### Requirement: One\ntext\n\n#### Scenario: A\n- **WHEN** a\n- **THEN** a\n\n### Requirement: Two\ntext\n');
+    const findings = scanDeltaCompatibility({ sourceRoot: path.join(root, 'openspec'), change: 'demo' });
+    assert.equal(findings.length, 2);
+    assert.deepEqual(findings.flatMap((entry) => entry.missingScenarios), ['B', 'C']);
+    const result = rehearseArchive({ projectRoot: root, change: 'demo', openspecCommand: '/bin/echo' });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.compatibilityFindings.length, 2);
+    assert.equal(result.cleanupStatus, 'not-applicable');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('convergence receipt 固定 pre-sync、canonical-sync、post-sync 顺序并拒绝事后 baseline', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-convergence-test-'));
+  try {
+    fs.mkdirSync(path.join(root, 'openspec/specs/example'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'openspec/changes/demo/specs/example'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'openspec/specs/example/spec.md'), '# canonical\n');
+    fs.writeFileSync(path.join(root, 'openspec/changes/demo/specs/example/spec.md'), '## ADDED Requirements\n');
+    const rehearsal = rehearseArchive({ projectRoot: root, change: 'demo', openspecCommand: '/bin/echo', runCommand: (_command, args) => args[0] === '--version' ? { status: 0, stdout: '1.6.0\n', stderr: '' } : { status: 0, stdout: 'ok\n', stderr: '' } });
+    const preSync = advanceConvergenceReceipt({ receipt: rehearsal.convergenceReceipt, sourceRoot: path.join(root, 'openspec'), stage: 'pre-sync' });
+    assert.throws(() => advanceConvergenceReceipt({ receipt: preSync, sourceRoot: path.join(root, 'openspec'), stage: 'pre-sync' }), /Invalid convergence transition/);
+    fs.writeFileSync(path.join(root, 'openspec/specs/example/spec.md'), '# canonical after sync\n');
+    const synced = advanceConvergenceReceipt({ receipt: preSync, sourceRoot: path.join(root, 'openspec'), stage: 'canonical-sync' });
+    const postSync = advanceConvergenceReceipt({ receipt: synced, sourceRoot: path.join(root, 'openspec'), stage: 'post-sync' });
+    assert.equal(postSync.stage, 'post-sync');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

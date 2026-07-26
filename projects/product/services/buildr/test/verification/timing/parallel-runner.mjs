@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 function diagnosticBaseName(step) {
   return String(step.diagnosticId ?? step.name ?? 'verification-step')
@@ -22,12 +22,36 @@ export function writeVerificationDiagnostics(step, stdout, stderr) {
   return { stdoutPath, stderrPath };
 }
 
-export async function runVerificationStep(step) {
+export function cleanupOwnedProcessGroup(pid, { platform = process.platform, kill = process.kill, killTree = spawnSync } = {}) {
+  if (!Number.isInteger(pid)) return { status: 'not-applicable', ownership: 'unavailable' };
+  if (platform === 'win32') {
+    const result = killTree('taskkill', ['/pid', String(pid), '/t', '/f'], { encoding: 'utf8' });
+    if (result.status === 0) return { status: 'clean', ownership: `pid-tree-${pid}`, terminated: true };
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+    if (/not found|no running instance/i.test(output)) return { status: 'clean', ownership: `pid-tree-${pid}`, terminated: false };
+    return { status: 'failed', ownership: `pid-tree-${pid}`, error: output.trim() || `taskkill exited ${result.status}` };
+  }
+  try {
+    kill(-pid, 0);
+  } catch (error) {
+    if (error.code === 'ESRCH') return { status: 'clean', ownership: `pgid-${pid}`, terminated: false };
+    return { status: 'failed', ownership: `pgid-${pid}`, error: error.message };
+  }
+  try {
+    kill(-pid, 'SIGTERM');
+    return { status: 'clean', ownership: `pgid-${pid}`, terminated: true };
+  } catch (error) {
+    return { status: 'failed', ownership: `pgid-${pid}`, error: error.message };
+  }
+}
+
+export async function runVerificationStep(step, runtime = {}) {
   const startedAt = Date.now();
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let processCleanup = { status: 'pending', ownership: 'unavailable' };
     const finish = (exitCode, error = null) => {
       if (settled) return;
       settled = true;
@@ -42,20 +66,24 @@ export async function runVerificationStep(step) {
         durationMs,
         stdout,
         stderr,
+        processCleanup,
         ...diagnosticPaths,
         ...(budgetMs === undefined ? {} : { budgetMs, budgetStatus: durationMs <= budgetMs ? 'within' : 'over' }),
       });
     };
-    const child = spawn(step.command, step.args ?? [], {
+    const spawnProcess = runtime.spawnProcess || spawn;
+    const child = spawnProcess(step.command, step.args ?? [], {
       cwd: step.cwd,
       env: step.env ?? process.env,
       shell: step.shell ?? false,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => finish(1, error));
     child.on('close', (code, signal) => {
+      processCleanup = cleanupOwnedProcessGroup(child.pid, runtime);
       if (signal) stderr += `terminated by signal ${signal}\n`;
       finish(Number.isInteger(code) ? code : 1);
     });

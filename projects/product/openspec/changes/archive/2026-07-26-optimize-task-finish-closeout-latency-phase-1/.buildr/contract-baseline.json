@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-closeout-latency-phase-1",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-bd41509662399fae46966a9a5c923678fa069978ef143bc6f76dce754798d42a",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须事务式推进 OpenSpec convergence",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "验证执行必须回收 task-owned descendant processes",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish step 执行计划必须可预检",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Shared lease 必须支持受 fencing 约束的续租",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须报告完整阶段和重试耗时",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须支持晚期资产审查",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

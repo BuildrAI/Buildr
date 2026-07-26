@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { advanceFinishRun, createFinishRun, inspectFinishRun, readFinishRun, resumeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { advanceFinishRun, createFinishRun, FINISH_STEPS, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-'));
@@ -133,4 +133,59 @@ test('非法 outcome 不得消费已领取的共享 lease', (t) => {
   const claimed = advanceFinishRun({ root, runId: 'one', fingerprints: { 'target-convergence': 'one' } });
   assert.throws(() => advanceFinishRun({ root, runId: 'one', fingerprints: { 'target-convergence': 'one' }, outcome: 'unknown', attemptToken: claimed.nextAction.attemptToken }), /Unsupported Task Finish outcome/);
   assert.throws(() => advanceFinishRun({ root, runId: 'two', fingerprints: { 'target-convergence': 'two' } }), (error) => error.code === 'task_finish.lease_held');
+});
+
+test('execution plan 在领取动作前拒绝错误 cwd 与不存在 npm script', (t) => {
+  const root = fixture(t);
+  fs.writeFileSync(path.join(root, 'package.json'), '{"scripts":{"test":"node --test"}}\n');
+  assert.throws(() => validateFinishExecutionPlan({ root, plan: { cwd: path.dirname(root), command: process.execPath, commandSource: 'external-declared' } }), /outside/);
+  assert.throws(() => validateFinishExecutionPlan({ root, plan: { cwd: root, command: process.execPath } }), /receipt-bound/);
+  assert.throws(() => validateFinishExecutionPlan({ root, plan: { cwd: root, command: process.execPath, commandSource: 'external-declared', npmScript: 'missing' } }), /does not exist/);
+  const plan = validateFinishExecutionPlan({ root, plan: { cwd: root, command: process.execPath, commandSource: 'external-declared', npmScript: 'test', verificationSelector: 'group:unit', availableSelectors: ['group:unit'] } });
+  assert.equal(plan.npmScript, 'test');
+  assert.equal(plan.verificationSelector, 'group:unit');
+  assert.deepEqual(plan.availableSelectors, ['group:unit']);
+  assert.equal(validateFinishExecutionPlan({ root, plan }).verificationSelector, 'group:unit');
+});
+
+test('active v1 run 兼容补入 late asset review 步骤', (t) => {
+  const root = fixture(t); create(root);
+  const file = path.join(root, '.buildr/task-finish/runs/finish-1.json');
+  const legacy = JSON.parse(fs.readFileSync(file, 'utf8'));
+  legacy.steps = legacy.steps.filter((item) => item.id !== 'asset-review-late');
+  legacy.steps.find((item) => item.id === 'cleanup').dependsOn = ['runtime-install'];
+  fs.writeFileSync(file, `${JSON.stringify(legacy, null, 2)}\n`);
+  const migrated = readFinishRun({ root, runId: 'finish-1' });
+  assert.ok(migrated.steps.some((item) => item.id === 'asset-review-late'));
+  assert.deepEqual(migrated.steps.find((item) => item.id === 'cleanup').dependsOn, ['asset-review-late']);
+});
+
+test('当前 holder 可续租且过期 holder 不可复活', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'target-convergence') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'target' }, clock: () => 1_000, leaseTtlMs: 100 });
+  const renewed = renewFinishLease({ root, runId: 'finish-1', attemptToken: claimed.nextAction.attemptToken, clock: () => 1_050, leaseTtlMs: 200 });
+  const lease = readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'target-convergence').lease;
+  assert.equal(lease.renewalCount, 1);
+  assert.equal(Date.parse(lease.expiresAt), 1_250);
+  assert.equal(renewed.steps.find((item) => item.id === 'target-convergence').lease.renewalCount, 1);
+  assert.throws(() => renewFinishLease({ root, runId: 'finish-1', attemptToken: claimed.nextAction.attemptToken, clock: () => 2_000 }), (error) => error.code === 'task_finish.lease-expired');
+});
+
+test('inspect 保留 blocked retry timing 并汇总浪费成本', (t) => {
+  const root = fixture(t); create(root);
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'v1' }, clock: () => 1_000 });
+  advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'v1' }, outcome: 'blocked', attemptToken: claimed.nextAction.attemptToken, blocked: { code: 'preflight', reason: 'bad plan' }, clock: () => 1_025 });
+  const resumed = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'v2' }, clock: () => 2_000 });
+  advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'v2' }, outcome: 'passed', attemptToken: resumed.nextAction.attemptToken, evidence: { id: 'context-ok' }, clock: () => 2_040 });
+  const timing = inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).timing;
+  assert.equal(timing.attemptCount, 2);
+  assert.equal(timing.retryCount, 1);
+  assert.equal(timing.attributableWasteMs, 25);
+});
+
+test('late asset review 位于 runtime install 与 cleanup 之间', () => {
+  const ids = FINISH_STEPS.map((item) => item.id);
+  assert.ok(ids.indexOf('runtime-install') < ids.indexOf('asset-review-late'));
+  assert.ok(ids.indexOf('asset-review-late') < ids.indexOf('cleanup'));
 });

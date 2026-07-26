@@ -818,7 +818,7 @@ export function createPackageStaticValidator(deps) {
       if (skill.id === 'task-finish') {
         for (const requiredText of [
           '一次性授权',
-          'buildr task finish inspect|advance|resume',
+          'buildr task finish inspect|advance|resume|renew',
           'fingerprint',
           'effects',
           'evidence',
