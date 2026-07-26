@@ -8,7 +8,7 @@
 - **THEN** workflow MUST 使用 source、package、render/sync、projection 与 doctor evidence 验证交付
 - **AND** MUST NOT 要求当前开发 session 重新加载新版 Skill
 
-#### Scenario: Codex Skills discovery 机制专项验收
+#### Scenario: Codex Skills 在 session start 激活
 - **WHEN** 任务改变 Codex Skills 的 discovery、session-start loading 或投射机制，且验收需要证明新机制已激活
 - **THEN** workflow MUST 说明 Rules 与 Skills 各自 activation mode
 - **AND** Codex App 不能绑定既有 Buildr worktree 时 MUST 报告 evidence 缺口，不得伪造自动 handoff

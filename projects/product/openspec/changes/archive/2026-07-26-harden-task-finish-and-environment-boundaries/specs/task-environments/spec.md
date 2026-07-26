@@ -3,7 +3,7 @@
 ### Requirement: Task environment 必须核验 execution binding
 Buildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、environment-bound CLI/runtime projection identity 和明确 target/workdir 判断 `executionReady`。自举 Workspace MUST 使用 environment 内对应的产品 CLI；没有产品源码成员的普通 Workspace MAY 使用 receipt 显式声明的 external-product CLI。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。
 
-#### Scenario: canonical workspace 对话操作自举 task environment
+#### Scenario: canonical workspace 对话操作 task environment
 - **WHEN** Agent session 从 canonical Workspace 启动，并在 create 后使用 task environment 的明确 target、成员 checkout workdir 和 environment-local CLI
 - **THEN** context MUST 在 environment、repository、CLI 与 runtime identity 匹配时返回 `executionReady: true`
 - **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效
@@ -31,7 +31,7 @@ Buildr MUST 只在任务修改 Agent runtime 的 discovery、loading、activatio
 - **THEN** Buildr MUST NOT 要求新 session、reload、re-enter 或 adoption receipt 作为完成条件
 - **AND** create/reuse 结果 MUST NOT 返回 session handoff next action
 
-#### Scenario: Agent 提交专项 activation evidence
+#### Scenario: Agent 提交 activation evidence
 - **WHEN** runtime 机制变更的专项验收提交 reload 或新 session activation evidence
 - **THEN** result MUST 将 environment evidence 标为 `buildr-verified`，将 host evidence 标为 `agent-attested`
 - **AND** receipt 与再次核验 MUST 同时绑定规范化 session root 和 session handle

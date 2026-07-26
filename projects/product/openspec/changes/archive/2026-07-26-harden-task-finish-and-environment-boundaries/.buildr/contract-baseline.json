@@ -3,7 +3,7 @@
   "change": "harden-task-finish-and-environment-boundaries",
   "project": "product",
   "upstreamVersion": "1.6.0",
-  "deltaHash": "sha256-96571704d7460ac96422b82a93b2254f9c6a92458df1fb4294bc73248a186c24",
+  "deltaHash": "sha256-47f3bb4d274ac9365519496eba041110bdaaf97814af633188869f1d6a3de6c2",
   "adopted": false,
   "targets": [
     {
