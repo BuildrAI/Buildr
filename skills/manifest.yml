@@ -33,7 +33,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-worktree
     source: buildr
     path: buildr/task-worktree
-    description: 用户要求创建、定位、复用、保留或清理 task worktree/change-id/任务分支，或处理 task checkout、创建后环境准备与本机入口迁移时使用。
+    description: 用户要求创建、定位、复用、保留或清理 task worktree/change-id/本地任务分支，或实现型任务需要确定隔离 checkout 时使用；负责 canonical task environment 生命周期，不负责业务分流、Git 集成或验证。
     enabled: true
     required: false
     state: installed
