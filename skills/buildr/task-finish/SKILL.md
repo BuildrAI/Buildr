@@ -75,7 +75,7 @@ Final assurance 后、集成前重新读取远端目标 ref，只做 race detect
 <!-- buildr:skill-contributions pre-spec-sync -->
 
 1. 当 Change 包含 delta specs 时，先运行 `node skills/buildr/task-finish/scripts/archive-rehearsal.mjs --project-root <project-root> --change <change> --openspec <absolute-current-openspec> --owner <task-owner>`。helper 只把当前 Project 的 `openspec/` 复制到精确临时目录并在那里执行调用前已解析且可执行的绝对 OpenSpec CLI；相对路径或不可执行路径必须在复制前失败。记录 schema、OpenSpec version、Change、owner、结果摘要、temporary root 和 cleanup status。失败或 cleanup retained 时停止；没有 delta specs 时记录 `change-has-no-delta-specs`，不得伪造 success。rehearsal 不修改真实 planning root，也不替代 pre-sync/post-sync。
-2. 通过 Component contribution 的 pre-sync guard；不得把 apply 阶段预写的 canonical specs 作为已同步事实。成功 pre-sync 产生且仍匹配当前 delta/canonical facts 的 receipt 是 canonical sync 的唯一授权；receipt、delta 或 canonical facts 失效时返回对应门禁。随后必须通过 post-sync guard，才可进入 archive。不得直接修改 Buildr 随附的 `openspec-*` Skill 源来加入收尾逻辑。
+2. 通过 Component contribution 的 pre-sync guard；不得把 apply 阶段预写的 canonical specs 作为已同步事实。当前会话 pre-sync 成功后产生且仍匹配当前 delta/canonical facts 的 receipt 是 canonical sync 的唯一授权；receipt、delta 或 canonical facts 失效时返回对应门禁。随后必须通过 post-sync guard，才可进入 archive。不得直接修改 Buildr 随附的 `openspec-*` Skill 源来加入收尾逻辑。
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
