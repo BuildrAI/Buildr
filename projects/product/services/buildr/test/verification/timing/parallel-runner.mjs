@@ -45,6 +45,95 @@ export function cleanupOwnedProcessGroup(pid, { platform = process.platform, kil
   }
 }
 
+export function parseProcessLineage(output) {
+  return String(output ?? '').split('\n').flatMap((line) => {
+    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]) }] : [];
+  });
+}
+
+function defaultListProcesses() {
+  const result = spawnSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr?.trim() || `ps exited ${result.status}`);
+  return parseProcessLineage(result.stdout);
+}
+
+export function createOwnedDescendantTracker(rootPid, runtime = {}) {
+  const platform = runtime.platform ?? process.platform;
+  const ownedPids = new Set(Number.isInteger(rootPid) ? [rootPid] : []);
+  const listProcesses = runtime.listProcesses ?? defaultListProcesses;
+  const intervalMs = runtime.lineageSampleIntervalMs ?? 50;
+  let timer = null;
+  let sampleError = null;
+
+  const sample = () => {
+    if (platform === 'win32' || ownedPids.size === 0) return;
+    try {
+      const rows = listProcesses();
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const row of rows) {
+          if (!ownedPids.has(row.pid) && ownedPids.has(row.ppid)) {
+            ownedPids.add(row.pid);
+            changed = true;
+          }
+        }
+      }
+    } catch (error) {
+      sampleError = error.message;
+    }
+  };
+
+  if (platform !== 'win32' && ownedPids.size > 0) {
+    sample();
+    timer = (runtime.setInterval ?? setInterval)(sample, intervalMs);
+    timer?.unref?.();
+  }
+
+  return {
+    sample,
+    stop() {
+      if (timer !== null) (runtime.clearInterval ?? clearInterval)(timer);
+      timer = null;
+      sample();
+      return { ownedPids: [...ownedPids], sampleError };
+    },
+  };
+}
+
+export function cleanupTrackedDescendants(rootPid, ownedPids, { platform = process.platform, kill = process.kill } = {}) {
+  if (platform === 'win32') return { status: 'not-applicable', ownership: 'taskkill-tree' };
+  const tracked = [...new Set(ownedPids)].filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== rootPid);
+  const terminated = [];
+  const alreadyExited = [];
+  const failures = [];
+  for (const pid of tracked) {
+    try {
+      kill(pid, 0);
+    } catch (error) {
+      if (error.code === 'ESRCH') alreadyExited.push(pid);
+      else failures.push({ pid, error: error.message });
+      continue;
+    }
+    try {
+      kill(pid, 'SIGTERM');
+      terminated.push(pid);
+    } catch (error) {
+      if (error.code === 'ESRCH') alreadyExited.push(pid);
+      else failures.push({ pid, error: error.message });
+    }
+  }
+  return {
+    status: failures.length === 0 ? 'clean' : 'failed',
+    ownership: `observed-lineage-${rootPid}`,
+    observed: tracked,
+    terminated,
+    alreadyExited,
+    failures,
+  };
+}
+
 export async function runVerificationStep(step, runtime = {}) {
   const startedAt = Date.now();
   return new Promise((resolve) => {
@@ -52,9 +141,20 @@ export async function runVerificationStep(step, runtime = {}) {
     let stderr = '';
     let settled = false;
     let processCleanup = { status: 'pending', ownership: 'unavailable' };
+    let lineageTracker = null;
     const finish = (exitCode, error = null) => {
       if (settled) return;
       settled = true;
+      const lineage = lineageTracker?.stop() ?? { ownedPids: [], sampleError: null };
+      const processGroup = cleanupOwnedProcessGroup(child?.pid, runtime);
+      const descendants = cleanupTrackedDescendants(child?.pid, lineage.ownedPids, runtime);
+      processCleanup = {
+        status: processGroup.status === 'failed' || descendants.status === 'failed' ? 'failed' : 'clean',
+        ownership: 'runner-observed-lineage',
+        processGroup,
+        descendants,
+        ...(lineage.sampleError ? { sampleError: lineage.sampleError } : {}),
+      };
       if (error) stderr += `${error.message}\n`;
       const durationMs = Date.now() - startedAt;
       const budgetMs = Number.isFinite(step.budgetMs) ? step.budgetMs : undefined;
@@ -72,18 +172,19 @@ export async function runVerificationStep(step, runtime = {}) {
       });
     };
     const spawnProcess = runtime.spawnProcess || spawn;
-    const child = spawnProcess(step.command, step.args ?? [], {
+    let child;
+    child = spawnProcess(step.command, step.args ?? [], {
       cwd: step.cwd,
       env: step.env ?? process.env,
       shell: step.shell ?? false,
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    lineageTracker = createOwnedDescendantTracker(child.pid, runtime);
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => finish(1, error));
     child.on('close', (code, signal) => {
-      processCleanup = cleanupOwnedProcessGroup(child.pid, runtime);
       if (signal) stderr += `terminated by signal ${signal}\n`;
       finish(Number.isInteger(code) ? code : 1);
     });

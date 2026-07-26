@@ -6,7 +6,7 @@ import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cleanupOwnedProcessGroup, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
+import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
 import { candidateStepBudget } from '../../test/verification/timing/budgets.mjs';
 import {
   collectVerificationSourceIdentity,
@@ -377,4 +377,57 @@ test('verification process cleanup 只终止 runner-owned process group', () => 
   assert.equal(result.status, 'clean');
   assert.equal(result.ownership, 'pgid-4321');
   assert.deepEqual(calls, [{ pid: -4321, signal: 0 }, { pid: -4321, signal: 'SIGTERM' }]);
+});
+
+test('verification process cleanup 持续保留已观察到且随后 reparent 的 descendant ownership', () => {
+  const snapshots = [
+    [{ pid: 4321, ppid: 1 }, { pid: 4322, ppid: 4321 }, { pid: 9000, ppid: 1 }],
+    [{ pid: 4322, ppid: 1 }, { pid: 4323, ppid: 4322 }, { pid: 9000, ppid: 1 }],
+  ];
+  let index = 0;
+  const tracker = createOwnedDescendantTracker(4321, {
+    platform: 'darwin',
+    listProcesses: () => snapshots[Math.min(index++, snapshots.length - 1)],
+    setInterval: () => ({ unref() {} }),
+    clearInterval() {},
+  });
+  tracker.sample();
+  const lineage = tracker.stop();
+  assert.deepEqual(lineage.ownedPids, [4321, 4322, 4323]);
+
+  const calls = [];
+  const result = cleanupTrackedDescendants(4321, lineage.ownedPids, {
+    platform: 'darwin',
+    kill: (pid, signal) => calls.push({ pid, signal }),
+  });
+  assert.equal(result.status, 'clean');
+  assert.deepEqual(result.observed, [4322, 4323]);
+  assert.deepEqual(result.terminated, [4322, 4323]);
+  assert.deepEqual(calls, [
+    { pid: 4322, signal: 0 }, { pid: 4322, signal: 'SIGTERM' },
+    { pid: 4323, signal: 0 }, { pid: 4323, signal: 'SIGTERM' },
+  ]);
+  assert.ok(!calls.some(({ pid }) => pid === 9000), 'unobserved process must not be touched');
+});
+
+test('verification runner 回收真实 detached descendant', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX-only detached process proof');
+  const result = await runVerificationStep({
+    name: 'detached descendant fixture',
+    command: process.execPath,
+    args: ['-e', [
+      'const { spawn } = require("node:child_process");',
+      'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });',
+      'child.unref();',
+      'console.log(child.pid);',
+      'setTimeout(() => process.exit(0), 150);',
+    ].join(' ')],
+  });
+  assert.equal(result.status, 'passed', result.stderr);
+  const detachedPid = Number(result.stdout.trim());
+  assert.ok(Number.isInteger(detachedPid));
+  assert.ok(result.processCleanup.descendants.observed.includes(detachedPid));
+  assert.ok(result.processCleanup.descendants.terminated.includes(detachedPid));
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.throws(() => process.kill(detachedPid, 0), (error) => error.code === 'ESRCH');
 });

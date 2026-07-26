@@ -23,3 +23,30 @@ test('task finish advance 与 inspect 返回同一持久 checkpoint', (t) => {
   assert.equal(completed.status, 0, completed.stderr);
   assert.equal(JSON.parse(completed.stdout).currentStep, 'current-knowledge');
 });
+
+test('task finish completion 使用持久化 selector plan 且无需重复声明', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-selector-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), '{"scripts":{"test":"node --test"}}\n');
+  const executionPlan = JSON.stringify({
+    cwd: root,
+    command: process.execPath,
+    commandSource: 'external-declared',
+    npmScript: 'test',
+    verificationSelector: 'group:unit',
+    availableSelectors: ['group:unit'],
+  });
+  const claimed = spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'selector-run', '--task', 'selector-task', '--target-branch', 'dev', '--target', root, '--fingerprint', 'context=context-v1', '--execution-plan', executionPlan, '--json'], { encoding: 'utf8' });
+  assert.equal(claimed.status, 0, claimed.stderr);
+  const checkpoint = JSON.parse(claimed.stdout);
+
+  const inspected = spawnSync(process.execPath, [cli, 'task', 'finish', 'inspect', '--run', 'selector-run', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(inspected.status, 0, inspected.stderr);
+  const persistedPlan = JSON.parse(inspected.stdout).steps.find((step) => step.id === 'context').executionPlan;
+  assert.equal(persistedPlan.verificationSelector, 'group:unit');
+  assert.deepEqual(persistedPlan.availableSelectors, ['group:unit']);
+
+  const completed = spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'selector-run', '--target', root, '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--fingerprint', 'context=context-v1', '--evidence', '{"id":"selector-completion"}', '--json'], { encoding: 'utf8' });
+  assert.equal(completed.status, 0, completed.stderr);
+  assert.equal(JSON.parse(completed.stdout).currentStep, 'current-knowledge');
+});

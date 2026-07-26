@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "fix-task-finish-detached-process-cleanup",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-6a7d7fea4516f928d253ee0bc1e9252101f66c286b3f4228d22ce02074512370",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "验证执行必须回收 task-owned descendant processes",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 验证执行必须回收 task-owned descendant processes\nBuildr Product verification runner MUST 为自身启动的 step 建立可识别 ownership，并在 step 完成或 runner 异常结束时清理仍存活的 owned descendants。清理 MUST 限于该 runner 创建的进程组或等价 ownership，不得按端口、进程名或宽泛 workspace 匹配终止其他任务进程。\n\n#### Scenario: verification step 留下 server descendant\n- **WHEN** Candidate 或 affected step 的主命令结束但其 owned server descendant 仍存活\n- **THEN** runner MUST 终止该 owned descendant 并记录 cleanup status\n- **AND** 最终 verification evidence MUST 报告是否存在 cleanup failure\n\n#### Scenario: 其他任务存在同名进程\n- **WHEN** 另一个 task environment 中存在同名 server 或使用相同默认端口的进程\n- **THEN** 当前 runner MUST 保留该进程\n- **AND** cleanup evidence MUST 只引用当前 runner 的 ownership identity\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish step 执行计划必须可预检",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Finish step 执行计划必须可预检\nBuildr Task Finish MUST 支持为 step 提交结构化 execution plan，并在动作开始前核对 command entry、cwd、参数与已声明 script 或 selector。规范化计划 MUST 纳入 step input fingerprint 和 evidence；第一阶段预检 MUST NOT 被表述为 Buildr 已代替 Agent 执行 provider action。\n\n#### Scenario: npm script 不存在\n- **WHEN** execution plan 指向当前 package manifest 未声明的 npm script\n- **THEN** Task Finish MUST 在动作执行前返回结构化 blocked 结果\n- **AND** MUST 报告 package root、script 和可用入口，而不是启动失败命令\n\n#### Scenario: cwd 或 executable 越界\n- **WHEN** execution plan 的 cwd 不在 task environment allowed execution roots 内，或 executable identity 与 receipt 不匹配\n- **THEN** Task Finish MUST fail closed\n- **AND** MUST NOT 领取该动作的共享资源 lease\n"
+    }
+  ]
+}
