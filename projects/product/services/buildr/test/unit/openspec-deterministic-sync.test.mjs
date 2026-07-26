@@ -94,3 +94,45 @@ test('所有temporary准备完成前失败不会写canonical', (t) => {
   assert.throws(() => applyDeterministicSyncPlan({ projectRoot, plan, io }), /injected/);
   assert.equal(fs.readFileSync(file, 'utf8'), '# sample Specification\n');
 });
+
+test('expected Project strict validation失败时整批零写入', (t) => {
+  const projectRoot = fixture();
+  t.after(() => fs.rmSync(projectRoot, { recursive: true, force: true }));
+  const file = path.join(projectRoot, 'openspec', 'specs', 'sample', 'spec.md');
+  const before = '# sample Specification\n';
+  fs.writeFileSync(file, before);
+  const plan = createDeterministicSyncPlan({ change: 'change', project: 'product', projectRoot, delta: delta([{ type: 'ADDED', capability: 'sample', title: 'One', requirement: requirement('One') }]), baseline: { targets: [] } });
+  let observed;
+  const result = applyDeterministicSyncPlan({ projectRoot, plan, validateExpected(input) { observed = input; return { status: 'blocked', code: 'strict' }; } });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blocked[0].code, 'expected-tree-invalid');
+  assert.equal(observed.files[0].digest, plan.files[0].expectedDigest);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
+
+test('expected Project合法骨架通过后记录validator identity与完整digests', (t) => {
+  const projectRoot = fixture();
+  t.after(() => fs.rmSync(projectRoot, { recursive: true, force: true }));
+  const file = path.join(projectRoot, 'openspec', 'specs', 'sample', 'spec.md');
+  fs.writeFileSync(file, '# sample Specification\n\n## Purpose\n\nSample capability purpose with sufficient authority for strict validation behavior.\n\n## Requirements\n');
+  const plan = createDeterministicSyncPlan({ change: 'change', project: 'product', projectRoot, delta: delta([{ type: 'ADDED', capability: 'sample', title: 'One', requirement: requirement('One') }]), baseline: { targets: [] } });
+  const result = applyDeterministicSyncPlan({ projectRoot, plan, validateExpected: ({ files }) => ({ status: 'passed', executable: '/fixture/openspec', version: '1.6.0', expectedDigests: Object.fromEntries(files.map((item) => [item.path, item.digest])) }) });
+  assert.equal(result.status, 'passed');
+  assert.equal(result.validation.executable, '/fixture/openspec');
+  assert.deepEqual(result.validation.expectedDigests, Object.fromEntries(plan.files.map((item) => [item.path, item.expectedDigest])));
+});
+
+test('expected validator拒绝缺少Requirements或不完整Purpose且canonical不变', (t) => {
+  const projectRoot = fixture();
+  t.after(() => fs.rmSync(projectRoot, { recursive: true, force: true }));
+  const file = path.join(projectRoot, 'openspec', 'specs', 'sample', 'spec.md');
+  const before = '# sample Specification\n';
+  fs.writeFileSync(file, before);
+  const plan = createDeterministicSyncPlan({ change: 'change', project: 'product', projectRoot, delta: delta([{ type: 'ADDED', capability: 'sample', title: 'One', requirement: requirement('One') }]), baseline: { targets: [] } });
+  for (const code of ['missing-requirements', 'purpose-incomplete']) {
+    const result = applyDeterministicSyncPlan({ projectRoot, plan, validateExpected: () => ({ status: 'blocked', code }) });
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.validation.code, code);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  }
+});

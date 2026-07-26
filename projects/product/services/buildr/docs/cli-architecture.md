@@ -65,6 +65,8 @@ infrastructure/runtime/render-claude-code.mjs
 
 CLI command 只在 `src/interfaces/cli/registry.mjs` 登记一次。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
 
+Task Finish 的CLI adapter只解析`advance|resume|run|recover`输入；`application/task-finish/task-finish-run.mjs`唯一持有checkpoint、typed recovery、invalidation、lease、safe executor和append-only observation ledger。`recover`不建立第二套状态机：它原子更新原run后复用同一executor，并在required formal assurance或未登记动作前停止。compact diagnostic从ledger读取结构化child result或有界非结构化摘要，full output写入digest绑定的durable completion diagnostics。
+
 ## Product verifier 与仓库 verification
 
 分类依据是安装后 CLI 的运行依赖，而不是文件名：

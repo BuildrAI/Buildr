@@ -3,3 +3,5 @@
 其中 pre-sync 阶段等价执行 `buildr openspec check <change> --stage pre-sync --project <project> --target <workspace> --json`，但由 orchestrator 持有调用和 receipt，不要求 Agent 单独编排。
 
 只有 planner 返回全批 `safe|already-applied` 且 receipt identity 未变化时才能自动 apply；`semantic-resolution-required`、receipt stale、guard failure 或顺序不匹配时，停止后续动作并把最小上下文交给 Agent。Agent fallback 不得刷新事后 baseline；修复后从真实 checkpoint 恢复并重新经过 strict 与 post-sync。
+
+deterministic apply在替换任何canonical file前，必须把完整expected files投射到task-owned temporary Project surface，并使用receipt绑定的OpenSpec executable/version执行`validate --all --strict`。验证失败整批零写入，compact diagnostic返回validator identity、expected digests和最小修复引用；成功后才允许原子replace。

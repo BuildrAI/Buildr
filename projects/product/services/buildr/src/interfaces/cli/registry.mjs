@@ -29,6 +29,7 @@ export const COMMAND_REGISTRY = [
   { key: 'task finish resume', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'resume', run: (r, c) => r.taskFinish('resume', c.argv.slice(5)) },
   { key: 'task finish renew', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'renew', run: (r, c) => r.taskFinish('renew', c.argv.slice(5)) },
   { key: 'task finish run', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run', run: (r, c) => r.taskFinish('run', c.argv.slice(5)) },
+  { key: 'task finish recover', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'recover', run: (r, c) => r.taskFinish('recover', c.argv.slice(5)) },
   { key: 'task finish cleanup-prepare', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'cleanup-prepare', run: (r, c) => r.taskFinish('cleanup-prepare', c.argv.slice(5)) },
   { key: 'task finish cleanup-finalize', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'cleanup-finalize', run: (r, c) => r.taskFinish('cleanup-finalize', c.argv.slice(5)) },
   { key: 'doctor', match: ({ domain }) => domain === 'doctor', run: (r, c) => r.doctor(c.argv.slice(3)) },

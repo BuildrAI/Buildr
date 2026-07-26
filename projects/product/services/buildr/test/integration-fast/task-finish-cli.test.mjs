@@ -95,3 +95,22 @@ test('task finish run 自动执行安全计划并在未声明步骤停止', (t) 
   assert.equal(checkpoint.safeExecution.reason, 'safe-plan-unavailable');
   assert.equal(checkpoint.safeExecution.executedSteps.length, 2);
 });
+
+test('task finish recover消费版本化manifest并连续执行safe plans', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-recover-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const created = spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'recover-run', '--task', 'recover-task', '--target-branch', 'dev', '--target', root, '--fingerprint', 'context=old', '--json'], { encoding: 'utf8' });
+  assert.equal(created.status, 0, created.stderr);
+  const plan = { cwd: root, command: '/usr/bin/true', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: 'context-recovered' };
+  const recovery = JSON.stringify({
+    schemaVersion: 'buildr.task-finish-recovery/v1', id: 'cli-recovery',
+    identities: { before: { environment: 'old' }, after: { environment: 'new' } },
+    fingerprints: { context: 'new' }, executionPlans: { context: plan }, transition: { type: 'implementation-changed', evidenceId: 'checkout-change' },
+  });
+  const result = spawnSync(process.execPath, [cli, 'task', 'finish', 'recover', '--run', 'recover-run', '--target', root, '--recovery', recovery, '--json'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const checkpoint = JSON.parse(result.stdout);
+  assert.equal(checkpoint.currentStep, 'current-knowledge');
+  assert.equal(checkpoint.recovery.transition.type, 'implementation-changed');
+  assert.equal(checkpoint.safeExecution.executedSteps[0].step, 'context');
+});

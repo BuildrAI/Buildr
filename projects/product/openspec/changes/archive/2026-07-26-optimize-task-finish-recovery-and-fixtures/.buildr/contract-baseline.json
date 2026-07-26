@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-recovery-and-fixtures",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-3ebc86a1102cbba170464c9b9962abe3fedfab82560476bda48225b0b5dd780c",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "openspec-deterministic-sync",
+      "title": "Deterministic apply必须在提交前验证完整expected Project",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-deterministic-sync",
+      "title": "新capability Purpose必须来自明确authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run必须支持原子identity recovery",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Compact failure必须保留可恢复的结构化诊断",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Completion metrics必须声明可观察coverage",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Recovery性能必须进入真实finish benchmark",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "OpenSpec contract fixtures必须复用identity-bound preparation",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Fixture preparation与assertion timing必须独立可审计",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Scheduler必须显式组合run-local prepared artifact",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

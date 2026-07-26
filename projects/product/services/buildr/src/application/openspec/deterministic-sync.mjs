@@ -107,7 +107,7 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
   return plan;
 }
 
-export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity = plan.identity, io = fs }) {
+export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity = plan.identity, io = fs, validateExpected = null }) {
   if (plan.schemaVersion !== DETERMINISTIC_SYNC_PLAN_SCHEMA || plan.identity !== expectedIdentity || planIdentity(plan) !== plan.identity) throw new Error('OpenSpec deterministic sync receipt is stale or invalid.');
   if (plan.status === 'blocked') return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'blocked', identity: plan.identity, effects: [], blocked: plan.blocked };
   const prepared = [];
@@ -124,6 +124,7 @@ export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity
   // back from the receipt-bound before images.
   const temporaries = [];
   const committed = [];
+  let validationEvidence = null;
   try {
     for (const item of prepared.filter((entry) => entry.changed)) {
       io.mkdirSync(path.dirname(item.file), { recursive: true });
@@ -132,11 +133,21 @@ export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity
       if (digest(normalize(io.readFileSync(temporary, 'utf8'))) !== digest(item.content)) throw new Error('OpenSpec deterministic sync temporary verification failed.');
       temporaries.push({ ...item, temporary });
     }
+    const validation = validateExpected?.({
+      projectRoot,
+      plan,
+      files: prepared.map((item) => ({ path: path.relative(projectRoot, item.file).split(path.sep).join('/'), content: item.content, digest: digest(item.content) })),
+    }) || null;
+    validationEvidence = validation;
+    if (validation && validation.status !== 'passed') {
+      for (const item of temporaries) if (io.existsSync(item.temporary)) io.rmSync(item.temporary, { force: true });
+      return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'blocked', identity: plan.identity, effects: [], blocked: [{ operation: 'VALIDATE_EXPECTED', code: 'expected-tree-invalid' }], validation };
+    }
     for (const item of temporaries) { io.renameSync(item.temporary, item.file); committed.push(item); }
   } catch (error) {
     for (const item of temporaries) if (io.existsSync(item.temporary)) io.rmSync(item.temporary, { force: true });
     for (const item of committed.reverse()) io.writeFileSync(item.file, plan.files.find((entry) => path.resolve(projectRoot, entry.path) === item.file).before);
     throw error;
   }
-  return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'passed', identity: plan.identity, effects: prepared.filter((item) => item.changed).map((item) => ({ path: path.relative(projectRoot, item.file).split(path.sep).join('/'), digest: digest(item.content) })) };
+  return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'passed', identity: plan.identity, effects: prepared.filter((item) => item.changed).map((item) => ({ path: path.relative(projectRoot, item.file).split(path.sep).join('/'), digest: digest(item.content) })), validation: validationEvidence };
 }

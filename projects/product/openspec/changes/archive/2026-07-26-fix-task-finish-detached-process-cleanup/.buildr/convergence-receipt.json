@@ -3,7 +3,7 @@
   "change": "fix-task-finish-detached-process-cleanup",
   "deltaDigest": "33a6cb716a4da5591ac48475e3a73264fe107f45c655b69b487d30f003d39308",
   "canonicalDigest": "fc6732cfd3cc01c00d583680bb4c4b411990ccde0d7b99ecb4df688e8bfa318f",
-  "openspecExecutable": "/Users/chenjun/Buildr/.worktrees/fix-task-finish-detached-process-cleanup/projects/product/services/buildr/node_modules/.bin/openspec",
+  "openspecExecutable": "projects/product/services/buildr/node_modules/.bin/openspec",
   "openspecVersion": "1.6.0",
   "stage": "post-sync",
   "transitions": [

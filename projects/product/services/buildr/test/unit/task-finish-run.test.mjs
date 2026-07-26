@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, FINISH_STEPS, inspectFinishRun, prepareFinishCleanup, readFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
+import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, FINISH_RECOVERY_SCHEMA, FINISH_STEPS, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-'));
@@ -57,6 +57,16 @@ test('重复提交 passed attempt 不重复 effects', (t) => {
   advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'context-v1' }, outcome: 'passed', attemptToken: token, effect: { id: 'adopted' }, evidence: { id: 'context-ready' } });
   assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps[0].effects.length, 1);
   assert.equal(claimed.currentStep, 'context');
+});
+
+test('失效step保留历史effect但completed effects只报告当前completion identity', (t) => {
+  const root = fixture(t); create(root);
+  passCurrent(root, 'finish-1', 'old');
+  let checkpoint = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'new' } });
+  assert.equal(checkpoint.completedEffects.length, 0);
+  checkpoint = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'new' }, outcome: 'passed', attemptToken: checkpoint.nextAction.attemptToken, effect: { id: 'context-new-effect' }, evidence: { id: 'context-new-evidence' } });
+  assert.deepEqual(checkpoint.completedEffects.map((effect) => effect.id), ['context-new-effect']);
+  assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps[0].effects.length, 2);
 });
 
 test('不同资源可并行，共享 target branch 使用短 lease', (t) => {
@@ -352,4 +362,109 @@ test('formal verification composite 并行执行 required capabilities', async (
   assert.equal(maxActive, 2);
   assert.equal(result.currentStep, 'asset-review');
   assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'formal-assurance').evidence[0].observationCount, 2);
+});
+
+function recoveryManifest(overrides = {}) {
+  return {
+    schemaVersion: FINISH_RECOVERY_SCHEMA, id: 'recover-1',
+    identities: {
+      before: { environment: 'env-1', candidate: 'tree-1', target: 'ref-1', runtime: 'runtime-1', change: 'change-1', assurance: 'assurance-1' },
+      after: { environment: 'env-1', candidate: 'tree-2', target: 'ref-1', runtime: 'runtime-2', change: 'change-1', assurance: null },
+    },
+    fingerprints: { 'contract-convergence': 'tree-2', 'candidate-commit': 'tree-2', 'target-convergence': 'ref-1', 'runtime-convergence': 'runtime-2', 'formal-assurance': 'tree-2' },
+    executionPlans: {}, transition: { type: 'implementation-changed', evidenceId: 'candidate-diff' },
+    ...overrides,
+  };
+}
+
+test('typed recovery 原子终结 running lease 并停在真实 safe boundary', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'target-convergence') passCurrent(root, 'finish-1');
+  advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'ref-1' } });
+  const result = await recoverFinishRun({ root, runId: 'finish-1', manifest: recoveryManifest() });
+  assert.equal(result.recovery.boundary, 'contract-convergence');
+  assert.equal(result.safeExecution.reason, 'safe-plan-unavailable');
+  const run = readFinishRun({ root, runId: 'finish-1' });
+  const target = run.steps.find((item) => item.id === 'target-convergence');
+  assert.equal(target.attempts.at(-1).outcome, 'stale');
+  assert.equal(target.lease, null);
+});
+
+test('runtime projection recovery 需要digest与允许路径证明，否则按implementation changed fail closed', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  const before = recoveryManifest();
+  before.id = 'runtime-proof-missing';
+  before.transition = { type: 'runtime-projection-only', changedPaths: ['.agents/skills/task-finish/SKILL.md'], allowedPaths: [] };
+  const failedClosed = await recoverFinishRun({ root, runId: 'finish-1', manifest: before });
+  assert.equal(failedClosed.recovery.transition.type, 'implementation-changed');
+  assert.equal(failedClosed.recovery.transition.classification, 'fail-closed');
+
+  const proven = recoveryManifest({
+    id: 'runtime-proof-ok',
+    identities: { before: before.identities.after, after: { ...before.identities.after, runtime: 'runtime-3' } },
+    transition: { type: 'runtime-projection-only', changedPaths: ['.agents/skills/task-finish/SKILL.md'], allowedPaths: ['.agents/skills/task-finish/SKILL.md'], sourceDigest: 'source-1', projectionDigest: 'projection-1', evidenceId: 'sync-receipt' },
+  });
+  const result = await recoverFinishRun({ root, runId: 'finish-1', manifest: proven });
+  assert.equal(result.recovery.boundary, 'runtime-convergence');
+  assert.equal(result.recovery.transition.type, 'runtime-projection-only');
+});
+
+test('重复 recovery 不重复登记transition，safe command ledger使用原始byte计量与child诊断', async (t) => {
+  const root = fixture(t); create(root);
+  const plan = { cwd: root, command: '/usr/bin/false', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: 'context-failed' };
+  const manifest = recoveryManifest({
+    identities: { before: { environment: 'old' }, after: { environment: 'new' } },
+    fingerprints: { context: 'new' }, executionPlans: { context: plan }, transition: { type: 'unknown' },
+  });
+  const runCommand = async () => ({ status: 2, stdout: JSON.stringify({ schemaVersion: 'buildr.child/v1', status: 'blocked', code: 'child-invalid', nextActions: ['repair'] }), stderr: '' });
+  const first = await recoverFinishRun({ root, runId: 'finish-1', manifest, runCommand });
+  assert.equal(first.diagnostics.code, 'child-invalid');
+  assert.deepEqual(first.diagnostics.nextActions, ['repair']);
+  await recoverFinishRun({ root, runId: 'finish-1', manifest, runCommand });
+  const run = readFinishRun({ root, runId: 'finish-1' });
+  assert.equal(run.recoveries.filter((entry) => entry.id === 'recover-1').length, 1);
+  assert.equal(run.observationLedger.find((entry) => entry.kind === 'command').stdoutBytes, Buffer.byteLength(JSON.stringify({ schemaVersion: 'buildr.child/v1', status: 'blocked', code: 'child-invalid', nextActions: ['repair'] })));
+});
+
+test('recovery成功后executed timing归属当前step并清除已解决diagnostic', async (t) => {
+  const root = fixture(t); create(root);
+  passCurrent(root, 'finish-1');
+  passCurrent(root, 'finish-1');
+  const probe = (id) => ({ cwd: root, command: '/usr/bin/true', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: id });
+  await executeSafeFinishRun({ root, runId: 'finish-1', fingerprints: { 'contract-convergence': 'old' }, executionPlans: { 'contract-convergence': probe('old-failure') }, runCommand: async () => ({ status: 2, stdout: '{"status":"blocked","code":"old"}', stderr: '' }) });
+  assert.equal(inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).diagnostics.code, 'old');
+  const manifest = recoveryManifest({
+    identities: { before: { environment: 'old' }, after: { environment: 'new' } },
+    fingerprints: { context: 'new-context', 'current-knowledge': 'new-knowledge', 'contract-convergence': 'new-contract' },
+    executionPlans: { context: probe('new-context'), 'current-knowledge': probe('new-knowledge'), 'contract-convergence': probe('new-contract') },
+  });
+  const result = await recoverFinishRun({ root, runId: 'finish-1', manifest, runCommand: async () => ({ status: 0, stdout: '{}', stderr: '' }) });
+  assert.equal(result.diagnostics, null);
+  assert.equal(result.validEvidence.some((evidence) => evidence.id === 'old-failure'), false);
+  assert.equal(result.validEvidence.some((evidence) => evidence.id === 'new-contract'), true);
+  for (const executed of result.safeExecution.executedSteps) {
+    assert.equal(executed.durationMs, result.timing.attempts.filter((attempt) => attempt.step === executed.step).at(-1).durationMs);
+  }
+});
+
+test('大输出非结构化失败有界且full diagnostic digest持久，手工checkpoint标记coverage gap', async (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-ledger-'));
+  const root = path.join(workspace, '.worktrees', 'task');
+  fs.mkdirSync(root, { recursive: true });
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  create(root);
+  const plan = { cwd: root, command: '/usr/bin/false', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: 'large-failure' };
+  const output = 'x'.repeat(50_000);
+  const result = await executeSafeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'v1' }, executionPlans: { context: plan }, runCommand: async () => ({ status: 9, stdout: '', stderr: output }) });
+  assert.equal(result.diagnostics.structured, false);
+  assert.equal(result.diagnostics.stderr.preview.length, 1000);
+  assert.equal(result.diagnostics.stderrBytes, undefined);
+  assert.ok(fs.existsSync(result.diagnostics.diagnostic.path));
+  assert.equal(result.timing.outputBytes, 50_000);
+  assert.equal(result.timing.coverage, 'product-complete');
+
+  const resumed = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'v2' } });
+  advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'v2' }, outcome: 'passed', attemptToken: resumed.nextAction.attemptToken, evidence: { id: 'manual-context' } });
+  assert.equal(inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).timing.coverage, 'product-partial');
 });

@@ -5,7 +5,7 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的薄入口，把“收尾”作为一次性授权，用 `buildr task finish inspect|advance|resume|renew|run` 持久化进度并调用 selected providers。
+本 Skill 是 `buildr.task-finish/v1` 的薄入口，把“收尾”作为一次性授权，用 `buildr task finish inspect|advance|resume|renew|run|recover` 持久化进度并调用 selected providers。
 
 ## 开始与采用
 
@@ -17,7 +17,9 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 优先用完整 `--execution-plans` manifest 调用 `run`，让已登记 handler 连续推进确定性步骤；语义冲突、授权缺口或未登记动作仍停回 checkpoint。默认 compact JSON 已足够驱动下一步，只有诊断时使用 `--detail full`。
 
-OpenSpec convergence 优先把 Component 贡献的单一产品 orchestrator 登记为 safe handler；产品负责 rehearsal、guard、deterministic plan/apply、strict 与 post-sync。返回 `semantic-resolution-required` 时才由 Agent 读取最小上下文并处理语义，随后从 checkpoint 恢复。Skill 不直接编辑 canonical、不手工搬运 receipt 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 决定 assurance；已有 identity 匹配的有效 evidence 不重跑。
+checkpoint 后 identity 变化时提交 `buildr.task-finish-recovery/v1` 给 `recover`，包含 before/after identities、fingerprints、transition proof 与 plans。未知变化 fail closed；runtime-only 必须有 digest/path 证明。recover 复用原 run 和 executor，停在 formal assurance 或真实边界。
+
+OpenSpec convergence 使用 Component 贡献的产品 orchestrator；返回 `semantic-resolution-required` 时才由 Agent 处理最小语义上下文。Skill 不直接编辑 canonical 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 持有；identity 匹配的 evidence 不重跑。
 
 每步继续提交非空 fingerprint、effects 与 evidence；产品自动化只替代确定性动作，不绕过原状态机证据。
 
@@ -29,9 +31,9 @@ push 使用 `--ref-transition` 提交 before/after expected/observed refs，保�
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
-`resume` 只重跑 blocked/stale 及其下游，passed effects 不重复。共享写临界区使用 holder/token/expiry fencing 短 lease；未过期可 `renew`。running step失效时 attempt与其自有lease必须一起终结，不创建 Workspace 全局锁。
+`resume` 只重跑 blocked/stale 及其下游；共享写使用 holder/token/expiry fencing 短 lease，可 `renew`，不创建 Workspace 全局锁。running step失效时同时终结 attempt与自有lease。
 
-含 delta 时由产品 orchestrator 聚合 findings 并生成 receipt；严格执行 rehearsal → pre-sync → deterministic plan/apply → strict → post-sync。identity 变化返回 pre-sync，禁止事后 baseline。
+含 delta 时由产品执行 rehearsal → pre-sync → deterministic apply → strict → post-sync；identity 变化返回 pre-sync，禁止事后 baseline。
 
 ## 授权与停止
 
@@ -43,4 +45,4 @@ asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化�
 
 cleanup 先在task environment内执行 `cleanup-prepare`，把prepared completion receipt写入canonical Workspace；实际删除task-owned process、worktree和branch后，从retained checkout执行 `cleanup-finalize`。prepare不得表述为complete，cleanup失败不得重做远端动作。
 
-完成后报告identity、验证、attempt timing、retry/waste、effects、archive/integration/push、runtime/doctor、asset/process/environment cleanup、canonical completion receipt与风险。正常doctor使用`--detail compact`，失败再请求full detail，避免把逐资产成功项注入Agent context。
+完成后报告验证、effects、归档/集成/push、runtime、清理、receipt与风险。ledger只计Buildr-owned invocation和原始bytes；手工间隔声明`product-partial|external-unobserved`，不推断token。compact失败优先使用child code/stage/nextActions，必要时打开digest绑定diagnostic。

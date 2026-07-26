@@ -1,4 +1,4 @@
-import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, inspectFinishRun, prepareFinishCleanup, readFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
+import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,6 +41,7 @@ export function registerTaskFinishApplication(runtime) {
       run = createFinishRun({ root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null), targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin') });
     }
     if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {} }).then((result) => print(result, command.args, root));
+    if (action === 'recover') return recoverFinishRun({ root, runId: run.runId, manifest: jsonValue(optionValue(command.args, '--recovery', null), '--recovery') }).then((result) => print(result, command.args, root));
     if (action === 'cleanup-prepare') return print(prepareFinishCleanup({ root, runId: run.runId, attemptToken: optionValue(command.args, '--attempt'), evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args, root);
     const options = {
       root, runId: run.runId, fingerprints: fingerprints(command.args),

@@ -171,26 +171,27 @@
 
   <script id="board-data" type="application/json">
   {
-    "meta":{"title":"Task Finish 收尾耗时优化","taskId":"optimize-task-finish-delivery-latency","status":"进行中","phase":"第四阶段 · 确定性同步与路径收敛","taskProgress":"已完成 4 / 5 个批次 · 真实收尾进行中","updatedAt":"2026-07-27 00:20","relativePath":"projects/product/openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html"},
+    "meta":{"title":"Task Finish 收尾耗时优化","taskId":"optimize-task-finish-delivery-latency","status":"进行中","phase":"第五阶段 · 恢复往返与Fixtures性能","taskProgress":"已完成 5 / 6 个批次 · 新Change已规划","updatedAt":"2026-07-27 00:38","relativePath":"projects/product/openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html"},
     "overview":{
       "purpose":"把 Buildr 普通 Task Finish 从 20 多分钟逐步缩短到稳定约 3 分钟，同时保留 checkpoint、resume 与并发安全边界。",
-      "conclusion":"第三阶段真实收尾约6分52秒；verification composite已降至32.54秒且cleanup/ref transition正确，但OpenSpec仍由Agent手工sync，convergence attempt耗时94.8秒并伴随root/cwd重复错误。",
-      "currentFocus":"真实finish已自动完成11个Requirement的plan/apply；EOF newline缺陷使首次post-sync blocked，修复后从strict-validation阶段恢复并通过。",
+      "conclusion":"第四阶段已自动同步11个Requirements并完成归档，但真实收尾因两次OpenSpec骨架缺陷重跑达到22分13秒；最终affected为107.049秒，其中contract fixtures占90.174秒。",
+      "currentFocus":"第五阶段实现已完成：expected-tree提交前验证、typed identity recovery、run-local fixture preparation复用和coverage-aware diagnostics已进入聚焦验证。",
       "userAttention":"当前没有需要用户立即处理的事项。",
       "highlights":{
         "done":{"title":"已经完成","text":"第一阶段加入 execution plan、lease renew、OpenSpec convergence receipt、attempt timing 与 late asset review；真实收尾从 20 多分钟降至 12 分 39 秒。"},
-        "current":{"title":"最新实测","text":"formal verification一次并行execution为32.54秒；完整finish仍为6分52秒，OpenSpec手工sync、cwd误路由和full checkpoint是主要Token/时间来源。"},
-        "next":{"title":"下一步","text":"完成最终affected、archive、integration/runtime sync与cleanup，核对canonical completion receipt的完整效率证据。"}
+        "current":{"title":"最新实测","text":"deterministic convergence正常恢复已降到3.35秒，但三次affected约100秒验证与候选修订后的逐步证据重建产生324.851秒可归因浪费。"},
+        "next":{"title":"下一步","text":"完成affected验证与真实finish benchmark，核对约15秒fixtures结果、recover副作用去重和约3分钟目标。"}
       },
       "blockers":[],
-      "flow":[{"title":"第一轮收敛","text":"减少重试与错误顺序"},{"title":"补齐正确性","text":"清理 detached descendants"},{"title":"安全自动执行","text":"建立 handler registry"},{"title":"编排收敛","text":"验证与cleanup产品化"},{"title":"确定性同步","text":"消除正常路径Agent手工sync"}]
+      "flow":[{"title":"第一轮收敛","text":"减少重试与错误顺序"},{"title":"补齐正确性","text":"清理 detached descendants"},{"title":"安全自动执行","text":"建立 handler registry"},{"title":"编排收敛","text":"验证与cleanup产品化"},{"title":"确定性同步","text":"消除正常路径Agent手工sync"},{"title":"恢复与Fixtures","text":"消除身份重建往返和重复准备"}]
     },
     "changes":[
       {"id":"optimize-task-finish-closeout-latency-phase-1","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-closeout-latency-phase-1/","summary":"完成第一阶段重试浪费与 convergence 安全优化；真实收尾 12 分 39 秒。","batchIds":["phase-1"]},
       {"id":"fix-task-finish-detached-process-cleanup","status":"archived","path":"openspec/changes/archive/2026-07-26-fix-task-finish-detached-process-cleanup/","summary":"补齐 detached descendant cleanup，并验证 selector completion 可重放。","batchIds":["correctness-patch"]},
       {"id":"optimize-task-finish-safe-execution","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-safe-execution/","summary":"完成safe handler registry与task finish run；实测finish run 7分51秒。","batchIds":["phase-2"]},
       {"id":"optimize-task-finish-orchestration-efficiency","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-orchestration-efficiency/","summary":"verification composite与cleanup/ref transition已生效；真实finish约6分52秒。","batchIds":["phase-3"]},
-      {"id":"automate-deterministic-openspec-convergence","status":"active","path":"openspec/changes/automate-deterministic-openspec-convergence/","summary":"产品化确定性sync、convergence receipt、root/cwd解析与完整效率证据。","batchIds":["phase-4"]}
+      {"id":"automate-deterministic-openspec-convergence","status":"archived","path":"openspec/changes/archive/2026-07-26-automate-deterministic-openspec-convergence/","summary":"已产品化确定性sync并完成真实收尾；自动同步有效，但OpenSpec骨架与fixtures暴露新瓶颈。","batchIds":["phase-4"]},
+      {"id":"optimize-task-finish-recovery-and-fixtures","status":"completed","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-recovery-and-fixtures/","summary":"实现与最终affected验证完成：fixtures 18.435秒，OpenSpec/runtime recovery约2.5/1.7秒；异常收尾仍暴露compact诊断与Agent编排间隔。","batchIds":["phase-5"]}
     ],
     "progress":{
       "batches":[
@@ -198,7 +199,8 @@
         {"id":"correctness-patch","status":"completed","label":"已完成","title":"补丁 · detached process cleanup","summary":"修复第一阶段现场暴露的进程回收缺口和 selector completion 回归。","deliverable":"真实 detached descendant 已被精确回收；真实 finish completion 接受持久化 selector plan；affected 验证后无任务进程残留。","changeIds":["fix-task-finish-detached-process-cleanup"],"items":["runner-owned detached descendant cleanup","selector completion integration proof","正式 affected verification"]},
         {"id":"phase-2","status":"completed","label":"已完成","title":"第二阶段 · 安全自动执行器","summary":"增加task finish run，在原状态机上自动执行已登记安全步骤。","deliverable":"Change已归档并推送dev；executor有效，但真实finish run 7分51秒，尚未达到约3分钟。","changeIds":["optimize-task-finish-safe-execution"],"items":["safe handler registry","结构化JSON assertion与输出摘要","只读observation并行化","异常回落checkpoint/resume"]},
         {"id":"phase-3","status":"completed","label":"已完成","title":"第三阶段 · 编排效率与证据可靠性","summary":"完成verification composite、完整ref transition、attempt/lease原子恢复与两阶段cleanup。","deliverable":"Change已归档并推送dev；真实finish约6分52秒，验证32.54秒，但OpenSpec convergence仍需Agent手工sync。","changeIds":["optimize-task-finish-orchestration-efficiency"],"items":["formal verification composite","完整ref transition","原子attempt/lease恢复","两阶段cleanup","compact CLI evidence"]},
-        {"id":"phase-4","status":"current","label":"当前批次","title":"第四阶段 · 确定性同步与路径收敛","summary":"让产品对可证明唯一结果的OpenSpec delta生成plan并原子apply，同时消除root/cwd误路由和durable timing缺口。","deliverable":"正常safe路径无需Agent编辑canonical；歧义零写入fallback；真实finish具备完整效率证据并继续接近约3分钟。","changeIds":["automate-deterministic-openspec-convergence"],"items":["deterministic sync planner","atomic apply","convergence orchestrator","root/cwd authority","completion timing与diagnostics引用"]}
+        {"id":"phase-4","status":"completed","label":"已完成","title":"第四阶段 · 确定性同步与路径收敛","summary":"让产品对可证明唯一结果的OpenSpec delta生成plan并原子apply，同时消除root/cwd误路由。","deliverable":"Change已归档并推送dev；11个Requirements自动同步，resume为3.35秒；真实finish因两次骨架缺陷重跑为22分13秒。","changeIds":["automate-deterministic-openspec-convergence"],"items":["deterministic sync planner","atomic apply","convergence orchestrator","root/cwd authority","completion timing与diagnostics引用"]},
+        {"id":"phase-5","status":"completed","label":"已完成","title":"第五阶段 · 恢复往返与Fixtures性能","summary":"expected tree门禁、typed recover、共享fixture preparation与coverage计量均完成最终affected验证。","deliverable":"最终affected 59.239秒；fixtures 18.435秒；OpenSpec/runtime recovery约2.5/1.7秒。正常产品路径接近3分钟，异常路径仍受full affected重跑、compact诊断缺口和Agent编排间隔影响。","changeIds":["optimize-task-finish-recovery-and-fixtures"],"items":["expected-tree strict validation complete","typed identity recovery complete","run-local prepared fixtures 18.435s","structured diagnostic digest complete","coverage-aware completion metrics complete","真实finish benchmark complete"]}
       ],
       "dependencyPool":[]
     },

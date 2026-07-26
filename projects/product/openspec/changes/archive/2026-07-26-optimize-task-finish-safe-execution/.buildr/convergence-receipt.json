@@ -3,7 +3,7 @@
   "change": "optimize-task-finish-safe-execution",
   "deltaDigest": "13b37d45c33bd85fbb0c3a61949187aef916db09bee8a63067f7bd4ea7b1bbc6",
   "canonicalDigest": "9da87acbf740f4a58da50eedd29e2ae046575d05d97a804fb0eb01bb8eb8fdf3",
-  "openspecExecutable": "/Users/chenjun/Buildr/.worktrees/optimize-task-finish-safe-execution/projects/product/services/buildr/node_modules/@fission-ai/openspec/bin/openspec.js",
+  "openspecExecutable": "projects/product/services/buildr/node_modules/@fission-ai/openspec/bin/openspec.js",
   "openspecVersion": "1.6.0",
   "stage": "post-sync",
   "transitions": [

@@ -24,7 +24,7 @@ Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。�
 
 验证分为静态/package、unit、fast integration、active/archive lifecycle、browser integration 与完整 Candidate，并输出 identity-bound timing evidence。
 
-Task Finish 是薄 Skill 加持久化执行引擎：`task finish inspect|advance|resume` 为每个逻辑任务保存独立 run、步骤状态、fingerprint、effects、evidence、失效依赖和 retry policy。delivery convergence 后才请求 final assurance；失败只恢复 blocked/stale 下游，已成功 push 不因 cleanup 失败而重复。多个 run 不使用 Workspace 全局锁，只对真实共享资源使用短 lease，目标 ref 通过乐观并发 observation 检测竞态。verification、Git、worktree、asset-review 与 current-knowledge 的政策仍由各自 selected provider 拥有。
+Task Finish 是薄 Skill 加持久化执行引擎：`task finish inspect|advance|resume|run|recover` 为每个逻辑任务保存独立 run、步骤状态、fingerprint、effects、evidence、失效依赖和 retry policy。typed recovery一次消费before/after identities与transition proof，原子终结失效attempt/lease并由safe executor推进到formal assurance或真实边界；未知变化fail closed。run-local observation ledger记录Buildr-owned command/stage/recovery的raw bytes与timing，compact failure保留结构化child diagnostic，completion明确声明可观察coverage。delivery convergence 后才请求 final assurance；失败只恢复 blocked/stale 下游，已成功 push 不因 cleanup 失败而重复。多个 run 不使用 Workspace 全局锁，只对真实共享资源使用短 lease，目标 ref 通过乐观并发 observation 检测竞态。verification、Git、worktree、asset-review 与 current-knowledge 的政策仍由各自 selected provider 拥有。
 
 task environment 合并后，主 Workspace runtime 仍从 retained checkout sync/doctor；未合并 task checkout 不更新主 runtime，adoption receipt 随 environment 安全清理。
 

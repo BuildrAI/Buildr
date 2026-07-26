@@ -494,6 +494,7 @@ export function registerDomainsOpenspec(runtime) {
 
   function openSpecContractContext(args, options = {}) {
     const allowed = new Set(['--target', '--project', '--json', '--adopt-current', '--update', '--stage']);
+    for (const option of options.allowedOptions || []) allowed.add(option);
     assertNoUnknownOptions(args, allowed, new Set(['--json', '--adopt-current', '--update']));
     const positionals = positionalArgs(args);
     const change = positionals[0];
@@ -641,11 +642,41 @@ export function registerDomainsOpenspec(runtime) {
   function openspecSyncApply(args) {
     const context = openSpecContractContext(args, {
       usage: 'buildr openspec sync-apply <change> --project <project> [--target <dir>] [--json]',
+      allowedOptions: ['--openspec-executable'],
     });
     const plan = readOpenSpecContractJson(openSpecSyncPlanPath(context.changeRoot), DETERMINISTIC_SYNC_PLAN_SCHEMA);
     if (!plan) throw new Error('OpenSpec deterministic sync plan receipt is missing. Run openspec sync-plan first.');
     if (plan.change !== context.change || plan.project !== context.project || plan.deltaHash !== context.delta.hash) throw new Error('OpenSpec deterministic sync plan receipt no longer matches the change.');
-    const result = applyDeterministicSyncPlan({ projectRoot: context.projectRoot, plan });
+    const result = applyDeterministicSyncPlan({ projectRoot: context.projectRoot, plan, validateExpected: ({ files }) => {
+      const startedAt = Date.now();
+      const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-expected-'));
+      try {
+        const temporaryProject = path.join(temporaryRoot, 'project');
+        fs.mkdirSync(temporaryProject, { recursive: true });
+        fs.cpSync(path.join(context.projectRoot, 'openspec'), path.join(temporaryProject, 'openspec'), { recursive: true });
+        for (const item of files) {
+          const target = path.join(temporaryProject, item.path);
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          fs.writeFileSync(target, item.content);
+        }
+        const declaredExecutable = optionValue(args, '--openspec-executable');
+        const executableLookup = declaredExecutable ? null : spawnSync('which', ['openspec'], { encoding: 'utf8' });
+        const executable = declaredExecutable || (executableLookup.status === 0 ? executableLookup.stdout.trim() : '');
+        if (!path.isAbsolute(executable) || !existsFile(executable)) return { status: 'blocked', code: 'openspec-executable-unavailable', durationMs: Date.now() - startedAt };
+        const version = spawnSync(executable, ['--version'], { cwd: temporaryProject, encoding: 'utf8' });
+        const validation = spawnSync(executable, ['validate', '--all', '--strict', '--no-interactive'], { cwd: temporaryProject, encoding: 'utf8' });
+        const output = `${validation.stdout || ''}${validation.stderr || ''}`;
+        return {
+          status: validation.status === 0 ? 'passed' : 'blocked',
+          code: validation.status === 0 ? null : 'expected-tree-strict-validation-failed',
+          executable,
+          version: version.status === 0 ? version.stdout.trim() : null,
+          durationMs: Date.now() - startedAt,
+          expectedDigests: Object.fromEntries(files.map((item) => [item.path, item.digest])),
+          diagnostic: { bytes: Buffer.byteLength(output), sha256: openSpecContractHash(output), preview: output.slice(0, 2000), truncated: output.length > 2000 },
+        };
+      } finally { fs.rmSync(temporaryRoot, { recursive: true, force: true }); }
+    } });
     const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecSyncApply, { change: context.change, project: context.project, ...result });
     if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else console.log(`OpenSpec deterministic sync apply: ${result.status} (${result.effects.length} effects)`);
@@ -714,7 +745,7 @@ export function registerDomainsOpenspec(runtime) {
       } else reuse('archive-rehearsal');
       if (!reached('pre-sync')) { runStage('pre-sync', ['openspec', 'check', ...base, '--stage', 'pre-sync']); advanceReceipt('pre-sync'); } else reuse('pre-sync');
       if (!reached('sync-plan')) { const plan = runStage('sync-plan', ['openspec', 'sync-plan', ...base], (payload) => payload.status !== 'blocked'); advanceReceipt('sync-plan', { planIdentity: plan.identity }); } else reuse('sync-plan');
-      if (!reached('sync-apply')) { const applied = runStage('sync-apply', ['openspec', 'sync-apply', ...base], (payload) => payload.status === 'passed'); advanceReceipt('sync-apply', { planIdentity: applied.identity }); } else reuse('sync-apply');
+      if (!reached('sync-apply')) { const applied = runStage('sync-apply', ['openspec', 'sync-apply', ...base, '--openspec-executable', openspecExecutable], (payload) => payload.status === 'passed'); advanceReceipt('sync-apply', { planIdentity: applied.identity, openspecExecutable }); } else reuse('sync-apply');
       if (!reached('strict-validation')) {
         stageStarted = Date.now();
         try { validateUpstreamOpenSpecStrict(context.projectRoot, context.change); record('strict-validation', stageStarted, 'passed'); advanceReceipt('strict-validation'); }

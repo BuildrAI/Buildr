@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v1';
+export const FINISH_RECOVERY_SCHEMA = 'buildr.task-finish-recovery/v1';
 export const FINISH_PLAN_VERSION = 1;
 const FINISH_RUN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 
@@ -67,6 +68,7 @@ export function createFinishRun({ root, runId, task, change = null, targetBranch
     runId, task, change, target: { branch: targetBranch, remote },
     status: 'active', createdAt, updatedAt: createdAt,
     sessions: session ? [session] : [],
+    recoveries: [], observationLedger: [],
     steps: FINISH_STEPS.map((definition) => ({
       ...clone(definition), status: 'pending', attempt: 0, attemptToken: null,
       inputFingerprint: null, effects: [], evidence: [], blocked: null,
@@ -97,6 +99,8 @@ export function readFinishRun({ root, runId }) {
     item.executionPlan ??= null;
     item.attempts ??= [];
   }
+  run.recoveries ??= [];
+  run.observationLedger ??= [];
   return run;
 }
 
@@ -217,6 +221,71 @@ export function refreshFinishInputs(run, fingerprints = {}, clock = Date.now) {
     item.inputFingerprint = fingerprint;
   }
   return run;
+}
+
+function normalizeRecoveryManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('recovery manifest must be an object.');
+  if (manifest.schemaVersion !== FINISH_RECOVERY_SCHEMA) throw new Error(`Unsupported Task Finish recovery schema: ${manifest.schemaVersion}`);
+  if (!manifest.identities?.before || !manifest.identities?.after || !manifest.fingerprints || typeof manifest.fingerprints !== 'object') {
+    throw new Error('recovery manifest requires before/after identities and fingerprints.');
+  }
+  const requested = manifest.transition?.type;
+  let type = ['implementation-changed', 'archive-sensitive-metadata', 'runtime-projection-only'].includes(requested)
+    ? requested : 'implementation-changed';
+  let classification = requested === type ? 'verified' : 'fail-closed';
+  if (type === 'runtime-projection-only') {
+    const changed = manifest.transition?.changedPaths;
+    const allowed = manifest.transition?.allowedPaths;
+    const proof = manifest.transition?.sourceDigest && manifest.transition?.projectionDigest
+      && Array.isArray(changed) && changed.length > 0 && Array.isArray(allowed)
+      && changed.every((entry) => allowed.includes(entry));
+    if (!proof) { type = 'implementation-changed'; classification = 'fail-closed'; }
+  }
+  if (type === 'archive-sensitive-metadata' && (!manifest.transition?.providerPolicy || !manifest.transition?.evidenceId)) {
+    type = 'implementation-changed'; classification = 'fail-closed';
+  }
+  return { ...clone(manifest), transition: { ...clone(manifest.transition || {}), requestedType: requested || null, type, classification } };
+}
+
+function recoveryBoundary(manifest) {
+  const before = manifest.identities.before;
+  const after = manifest.identities.after;
+  const changed = (key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null);
+  if (manifest.transition.type === 'runtime-projection-only') return changed('runtime') ? 'runtime-convergence' : null;
+  if (manifest.transition.type === 'archive-sensitive-metadata') return changed('change') ? 'contract-convergence' : null;
+  for (const [identity, stepId] of [['environment', 'context'], ['change', 'current-knowledge'], ['candidate', 'contract-convergence'], ['target', 'target-convergence'], ['runtime', 'runtime-convergence'], ['assurance', 'formal-assurance']]) {
+    if (changed(identity)) return stepId;
+  }
+  return null;
+}
+
+export async function recoverFinishRun({ root, runId, manifest, runCommand = defaultSafeCommand, clock = Date.now }) {
+  const normalized = normalizeRecoveryManifest(manifest);
+  const run = readFinishRun({ root, runId });
+  const boundary = recoveryBoundary(normalized);
+  if (boundary) invalidate(run, boundary, `recovery ${normalized.transition.type}: ${normalized.transition.evidenceId || 'identity transition'}`, true, clock);
+  refreshFinishInputs(run, normalized.fingerprints, clock);
+  for (const item of run.steps) {
+    if (item.status === 'blocked' || (item.status === 'stale' && item.dependsOn.every((dependency) => run.steps.find((candidate) => candidate.id === dependency)?.status === 'passed'))) {
+      item.status = 'pending'; item.blocked = null;
+    }
+  }
+  const recovery = {
+    id: normalized.id || `recovery-${digest(JSON.stringify(normalized))}`,
+    schemaVersion: FINISH_RECOVERY_SCHEMA, recordedAt: now(clock), boundary,
+    transition: normalized.transition, identities: normalized.identities,
+  };
+  if (!run.recoveries.some((entry) => entry.id === recovery.id)) run.recoveries.push(recovery);
+  run.observationLedger.push({
+    schemaVersion: 'buildr.task-finish-observation/v1', kind: 'recovery', id: recovery.id,
+    startedAt: recovery.recordedAt, finishedAt: recovery.recordedAt, durationMs: 0,
+    commandIdentity: 'task-finish:recover', cwdIdentity: digest(path.resolve(root)), exitCode: 0,
+    stdoutBytes: 0, stderrBytes: 0, transitionType: normalized.transition.type, boundary,
+  });
+  run.updatedAt = now(clock);
+  atomicWriteJson(runFile(root, runId), run);
+  const result = await executeSafeFinishRun({ root, runId, fingerprints: normalized.fingerprints, executionPlans: normalized.executionPlans || {}, runCommand, clock, stopBefore: 'formal-assurance' });
+  return { ...result, recovery };
 }
 
 function leaseKey(run, item) {
@@ -345,6 +414,15 @@ function nextStep(run) {
   return run.steps.find((item) => ['pending', 'stale', 'blocked', 'running', 'prepared'].includes(item.status));
 }
 
+function evidencePassed(entry) {
+  return entry?.exitCode == null || (entry.exitCode === 0 && entry.assertionPassed !== false);
+}
+
+function validStepEffects(item) {
+  const ids = new Set(item.lastCompletion?.effectIds || []);
+  return item.status === 'passed' ? item.effects.filter((entry) => ids.has(entry.id)) : [];
+}
+
 export function inspectFinishRun(run) {
   const current = nextStep(run) || null;
   const attempts = run.steps.flatMap((item) => (item.attempts || []).map((attempt) => ({ step: item.id, ...attempt })));
@@ -353,11 +431,14 @@ export function inspectFinishRun(run) {
   const wastedAttempts = completedDurations.filter((attempt) => attempt.outcome === 'blocked' || attempt.outcome === 'failed');
   const started = Date.parse(run.createdAt);
   const finished = run.status === 'complete' ? Date.parse(run.updatedAt) : Date.now();
+  const ledger = run.observationLedger || [];
+  const commandLedger = ledger.filter((entry) => entry.kind === 'command');
+  const unobservedIntervals = run.steps.filter((item) => (item.attempts || []).some((attempt) => !attempt.observationIds?.length)).map((item) => item.id);
   return {
     schemaVersion: 'buildr.task-finish-checkpoint/v1', runId: run.runId, task: run.task, change: run.change,
     status: run.status, currentStep: current?.id || null,
-    completedEffects: run.steps.flatMap((item) => item.effects.map((effect) => ({ step: item.id, ...effect }))),
-    validEvidence: run.steps.filter((item) => item.status === 'passed').flatMap((item) => item.evidence.map((evidence) => ({ step: item.id, ...evidence }))),
+    completedEffects: run.steps.flatMap((item) => validStepEffects(item).map((effect) => ({ step: item.id, ...effect }))),
+    validEvidence: run.steps.filter((item) => item.status === 'passed').flatMap((item) => item.evidence.filter(evidencePassed).map((evidence) => ({ step: item.id, ...evidence }))),
     blocked: run.steps.filter((item) => item.status === 'blocked').map((item) => ({ step: item.id, ...item.blocked })),
     staleSteps: run.steps.filter((item) => item.status === 'stale').map((item) => item.id),
     timing: {
@@ -365,9 +446,15 @@ export function inspectFinishRun(run) {
       attemptCount: attempts.length,
       retryCount: retryAttempts.length,
       attributableWasteMs: wastedAttempts.reduce((total, attempt) => total + attempt.durationMs, 0),
+      productExecutionMs: commandLedger.reduce((total, entry) => total + (entry.durationMs || 0), 0),
+      invocationCount: commandLedger.length,
+      outputBytes: commandLedger.reduce((total, entry) => total + (entry.stdoutBytes || 0) + (entry.stderrBytes || 0), 0),
+      coverage: commandLedger.length === 0 ? 'external-unobserved' : unobservedIntervals.length ? 'product-partial' : 'product-complete',
+      unobservedIntervals,
       attempts,
     },
     nextAction: current ? { step: current.id, status: current.status, action: current.action, attemptToken: current.status === 'running' ? current.attemptToken : null, retryPolicy: current.retryPolicy, lease: current.lease } : null,
+    diagnostics: run.lastDiagnostic || null,
     steps: run.steps.map(({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan }) => ({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan })),
   };
 }
@@ -390,17 +477,17 @@ export function prepareFinishCleanup({ root, runId, attemptToken, evidence, cloc
   item.blocked = { code: 'cleanup-finalize-required', reason: 'Cleanup is prepared; finalize from the retained canonical Workspace after task-owned deletion succeeds.' };
   item.evidence.push(evidence);
   const checkpoint = inspectFinishRun(run);
-  const observations = run.steps.flatMap((candidate) => candidate.evidence || []).flatMap((entry) => entry.observations || []);
   const receipt = {
     schemaVersion: 'buildr.task-finish-completion/v1', status: 'prepared', runId, task: run.task, change: run.change,
     target: run.target, preparedAt, environmentRoot: path.resolve(root), cleanupEvidence: evidence,
-    effects: run.steps.flatMap((candidate) => candidate.effects.map((entry) => ({ step: candidate.id, id: entry.id }))),
-    verificationEvidence: run.steps.find((candidate) => candidate.id === 'formal-assurance')?.evidence || [],
-    archiveEvidence: run.steps.find((candidate) => candidate.id === 'archive')?.evidence || [],
+    effects: run.steps.flatMap((candidate) => validStepEffects(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
+    verificationEvidence: (run.steps.find((candidate) => candidate.id === 'formal-assurance')?.evidence || []).filter(evidencePassed),
+    archiveEvidence: (run.steps.find((candidate) => candidate.id === 'archive')?.evidence || []).filter(evidencePassed),
+    observationLedger: run.observationLedger,
     timing: {
       ...checkpoint.timing,
-      toolRoundTripCount: observations.length,
-      outputApproxBytes: observations.reduce((total, item) => total + String(item.stdout?.preview || '').length + String(item.stderr?.preview || '').length, 0),
+      toolRoundTripCount: checkpoint.timing.invocationCount,
+      outputBytes: checkpoint.timing.outputBytes,
       preparedAt,
     },
   };
@@ -435,7 +522,9 @@ export function compactFinishCheckpoint(checkpoint) {
     staleSteps: checkpoint.staleSteps,
     timing: { ...checkpoint.timing, attempts: undefined },
     nextAction: checkpoint.nextAction,
+    diagnostics: checkpoint.diagnostics || null,
     ...(checkpoint.safeExecution ? { safeExecution: checkpoint.safeExecution } : {}),
+    ...(checkpoint.recovery ? { recovery: checkpoint.recovery } : {}),
   };
 }
 
@@ -556,8 +645,9 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
       const receipt = {
         schemaVersion: 'buildr.task-finish-completion/v1', runId: run.runId, task: run.task, change: run.change,
         target: run.target, completedAt: now(clock),
-        effects: run.steps.flatMap((candidate) => candidate.effects.map((entry) => ({ step: candidate.id, id: entry.id }))),
-        evidence: run.steps.filter((candidate) => candidate.status === 'passed').flatMap((candidate) => candidate.evidence.map((entry) => ({ step: candidate.id, id: entry.id }))),
+        effects: run.steps.flatMap((candidate) => validStepEffects(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
+        evidence: run.steps.filter((candidate) => candidate.status === 'passed').flatMap((candidate) => candidate.evidence.filter(evidencePassed).map((entry) => ({ step: candidate.id, id: entry.id }))),
+        observationLedger: run.observationLedger,
         timing: (() => { const timing = inspectFinishRun({ ...run, updatedAt: now(clock) }).timing; return { ...timing, attempts: undefined }; })(),
       };
       const receiptFile = path.join(completionRoot(root), `${run.runId}.json`);
@@ -589,6 +679,55 @@ async function defaultSafeCommand(command, args, options) {
   catch (error) { return { status: Number.isInteger(error.code) ? error.code : 1, stdout: error.stdout || '', stderr: error.stderr || error.message }; }
 }
 
+function parseChildDiagnostic(stdout, stderr) {
+  for (const source of [stdout, stderr]) {
+    try {
+      const child = JSON.parse(source);
+      if (child && typeof child === 'object') return {
+        structured: true, schemaVersion: child.schemaVersion || null, status: child.status || null,
+        code: child.code || child.blocked?.code || child.error?.code || null,
+        findings: Array.isArray(child.findings) ? child.findings.slice(0, 20) : [],
+        nextActions: Array.isArray(child.nextActions) ? child.nextActions.slice(0, 20) : child.nextAction ? [child.nextAction] : [],
+      };
+    } catch {}
+  }
+  return { structured: false };
+}
+
+function appendCommandObservations({ root, runId, stepId, attemptToken, descriptors, assessed, stageResults, clock }) {
+  const run = readFinishRun({ root, runId });
+  const attempt = run.steps.find((item) => item.id === stepId)?.attempts.find((entry) => entry.token === attemptToken);
+  const ids = [];
+  const stagesByIndex = stageResults.flatMap((stage) => stage.results.map(() => stage.id));
+  assessed.forEach((entry, index) => {
+    const descriptor = descriptors[index];
+    const stage = stagesByIndex[index] || null;
+    const id = `observation-${digest(`${runId}:${attemptToken}:${index}`)}`;
+    const diagnosticDirectory = path.join(completionRoot(root), 'diagnostics', runId);
+    const diagnosticFile = path.join(diagnosticDirectory, `${id}.json`);
+    const diagnosticBody = `${JSON.stringify({ stdout: entry.stdout, stderr: entry.stderr }, null, 2)}\n`;
+    atomicWriteJson(diagnosticFile, { stdout: entry.stdout, stderr: entry.stderr });
+    ids.push(id);
+    run.observationLedger.push({
+      schemaVersion: 'buildr.task-finish-observation/v1', kind: 'command', id, step: stepId, attemptToken, stage,
+      commandIdentity: digest(JSON.stringify([descriptor?.command, descriptor?.args || []])), cwdIdentity: digest(descriptor?.cwd || root),
+      startedAt: entry.startedAt || attempt?.startedAt || now(clock), finishedAt: entry.finishedAt || now(clock), durationMs: entry.durationMs || 0,
+      exitCode: entry.status, assertionPassed: entry.assertionPassed,
+      stdoutBytes: Buffer.byteLength(entry.stdout), stderrBytes: Buffer.byteLength(entry.stderr),
+      stdout: { preview: entry.stdout.slice(0, 1000), truncated: entry.stdout.length > 1000, sha256: crypto.createHash('sha256').update(entry.stdout).digest('hex') },
+      stderr: { preview: entry.stderr.slice(0, 1000), truncated: entry.stderr.length > 1000, sha256: crypto.createHash('sha256').update(entry.stderr).digest('hex') },
+      child: parseChildDiagnostic(entry.stdout, entry.stderr),
+      diagnostic: { path: diagnosticFile, bytes: Buffer.byteLength(diagnosticBody), sha256: crypto.createHash('sha256').update(diagnosticBody).digest('hex') },
+    });
+  });
+  if (attempt) attempt.observationIds = ids;
+  const failed = run.observationLedger.filter((entry) => ids.includes(entry.id)).find((entry) => entry.exitCode !== 0 || entry.assertionPassed === false);
+  if (failed) run.lastDiagnostic = { step: stepId, stage: failed.stage, exitCode: failed.exitCode, ...failed.child, stdout: failed.stdout, stderr: failed.stderr, diagnostic: failed.diagnostic };
+  else if (run.lastDiagnostic?.step === stepId) run.lastDiagnostic = null;
+  atomicWriteJson(runFile(root, runId), run);
+  return ids;
+}
+
 function registeredSafeHandler(plan, root) {
   const executable = path.basename(plan.command || '');
   if (plan.safeHandler === 'process-probe') return ['true', 'false'].includes(executable) && plan.args.length === 0;
@@ -604,13 +743,14 @@ function registeredSafeHandler(plan, root) {
   return false;
 }
 
-export async function executeSafeFinishRun({ root, runId, fingerprints = {}, executionPlans = {}, runCommand = defaultSafeCommand, clock = Date.now }) {
+export async function executeSafeFinishRun({ root, runId, fingerprints = {}, executionPlans = {}, runCommand = defaultSafeCommand, clock = Date.now, stopBefore = null }) {
   const startedAt = clock();
   const executedSteps = [];
   while (true) {
     const checkpoint = inspectFinishRun(readFinishRun({ root, runId }));
     if (checkpoint.status === 'complete' || !checkpoint.nextAction) return { ...checkpoint, safeExecution: { status: 'complete', executedSteps, durationMs: clock() - startedAt } };
     const step = checkpoint.nextAction.step;
+    if (step === stopBefore) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'required-boundary', step, executedSteps, durationMs: clock() - startedAt } };
     if (checkpoint.nextAction.status === 'running' || checkpoint.nextAction.status === 'blocked') return { ...checkpoint, safeExecution: { status: 'stopped', reason: checkpoint.nextAction.status === 'blocked' ? 'resume-required' : 'step-already-running', step, executedSteps, durationMs: clock() - startedAt } };
     const plan = validateFinishExecutionPlan({ root, plan: executionPlans[step] });
     const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
@@ -622,7 +762,12 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     if (!fingerprint) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'fingerprint-missing', step, executedSteps, durationMs: clock() - startedAt } };
     const claimed = advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, executionPlan: plan, clock });
     const stageResults = [];
-    const runOne = (entry) => runCommand(entry.command, entry.args, { cwd: entry.cwd, encoding: 'utf8' });
+    const runOne = async (entry) => {
+      const commandStarted = clock();
+      const result = await runCommand(entry.command, entry.args, { cwd: entry.cwd, encoding: 'utf8' });
+      const commandFinished = clock();
+      return { ...result, startedAt: new Date(commandStarted).toISOString(), finishedAt: new Date(commandFinished).toISOString(), durationMs: commandFinished - commandStarted };
+    };
     if (plan.stages.length) {
       for (const stage of plan.stages) {
         const stageStarted = clock();
@@ -650,14 +795,16 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     });
     const result = assessed.find((entry) => entry.status !== 0 || !entry.assertionPassed) || assessed[0];
     const passed = assessed.every((entry) => entry.status === 0 && entry.assertionPassed);
+    const observationIds = appendCommandObservations({ root, runId, stepId: step, attemptToken: claimed.nextAction.attemptToken, descriptors: commandDescriptors, assessed, stageResults, clock });
     const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
-    const evidence = { id: plan.evidenceId, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
+    const evidence = { id: plan.evidenceId, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
     const completed = advanceFinishRun({
       root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
       attemptToken: claimed.nextAction.attemptToken, evidence,
       blocked: passed ? null : { code: 'safe-action-failed', reason: result.stderr || (result.assertionPassed ? `command exited ${result.status}` : 'structured success assertion failed') }, clock,
     });
-    executedSteps.push({ step, status: passed ? 'passed' : 'blocked', durationMs: completed.timing.attempts.at(-1)?.durationMs ?? null });
+    const completedAttempt = completed.timing.attempts.filter((attempt) => attempt.step === step).at(-1);
+    executedSteps.push({ step, status: passed ? 'passed' : 'blocked', durationMs: completedAttempt?.durationMs ?? null });
     if (!passed) return { ...completed, safeExecution: { status: 'stopped', reason: 'safe-action-failed', step, executedSteps, durationMs: clock() - startedAt } };
   }
 }
