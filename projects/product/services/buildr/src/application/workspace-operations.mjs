@@ -325,6 +325,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '/.buildr/mutations/',
       '# Task asset review runtime state',
       '/.buildr/asset-review/',
+      '/.buildr/task-finish/',
       '# Task worktrees',
       '/.worktrees/',
     ]);

@@ -30,14 +30,16 @@ test('task triage 输出三轴决策、repository set 与条件化任务环境',
     '`buildr.task-worktree-lifecycle/v2`',
   ]) assert.ok(triageSkill.includes(required), `task-triage must include ${required}`);
 
-  assert.match(triageSkill, /任何实现或 Change artifact 写入前创建或复用 canonical task environment/);
+  assert.match(triageSkill, /在写入前创建或复用 canonical task environment/);
+  assert.match(triageSkill, /明确 target\/workdir、membership 与 checkout-local CLI/);
   assert.match(triageSkill, /本 Skill 只选择位置；创建、doctor、sync、保留和清理由 selected provider 负责/);
 });
 
 test('OpenSpec propose 直接入口在首次写入前执行 worktree 门禁', () => {
   assert.match(proposeSidebar, /执行 `openspec new change` 或写入任何 change artifacts 前/);
-  assert.match(proposeSidebar, /代码修改、构建、测试或需要长期开发上下文/);
-  assert.match(proposeSidebar, /先使用 `task-worktree` 声明完整 repository set/);
+  assert.match(proposeSidebar, /代码修改、构建或测试/);
+  assert.match(proposeSidebar, /先使用 `task-worktree` 声明 repository set/);
+  assert.match(proposeSidebar, /不要求 session root 等于 environment root/);
   assert.match(proposeSidebar, /无法判断是否会进入实现时，先澄清执行范围/);
   assert.match(proposeSidebar, /不修改外部 `openspec-propose` Skill 的上游正文/);
 
@@ -49,7 +51,8 @@ test('OpenSpec update 只补实施转换的 worktree 门槛，不引入新的 ca
   assert.match(updateUpstream, /generatedBy: "1\.6\.0"/);
   assert.match(updateSidebar, /只修订既有 planning artifacts/);
   assert.match(updateSidebar, /不授予实现、同步或归档权限/);
-  assert.match(updateSidebar, /重新执行 `task-worktree` 决策/);
+  assert.match(updateSidebar, /创建或复用 canonical task environment/);
+  assert.match(updateSidebar, /`executionReady: true`/);
   assert.ok(openSpecComponent.members.skills.includes('skills/openspec/openspec-update-change'));
   assert.ok(openSpecComponent.contributions.skillFragments.some((item) => item.startsWith('openspec-update-change@prepend=')));
   for (const sidebar of ['openspec-explore-sidebar.md', 'openspec-sync-sidebar.md', 'openspec-archive-sidebar.md']) {
@@ -69,10 +72,11 @@ test('worktree provider 保持环境职责且 triage 只声明分支级 optional
     '| `reuse` |',
     '| `none` |',
     '| `blocked` |',
-    '只跳过 create-time doctor/sync',
-    '仍执行 context 和本次动作需要的状态检查',
+    '复用同一 environment，并重新核对 execution binding',
+    'Agent 可从 canonical Workspace 启动的原对话',
+    '缺口如实报告但不阻塞普通执行',
     '无法证明时停止删除或覆盖',
-    '同一 environment 同时只有一个 owner Agent 写入',
+    '同一 environment 只有一个 owner Agent 写入',
     'selected `buildr.task-verification/v2` provider',
   ]) assert.ok(worktreeSkill.includes(required), `task-worktree must include ${required}`);
   assert.doesNotMatch(worktreeSkill, /## Guardrails/);

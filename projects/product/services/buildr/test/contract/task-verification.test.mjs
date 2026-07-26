@@ -94,10 +94,8 @@ test('默认收尾只推送目标分支，远端任务分支需要明确要求',
   for (const required of [
     '默认 push 只面向已集成的目标分支', '才可推送任务分支',
   ]) assert.ok(gitOpsSkill.includes(required), `git-ops must include ${required}`);
-  for (const required of [
-    '默认推送计划只包含已集成的目标分支', '任务分支未推送',
-    '不得因为任务分支存在、已提交或已合入而创建或推送其远端 ref',
-  ]) assert.ok(finishSkill.includes(required), `task-finish must include ${required}`);
+  assert.match(finishSkill, /默认只 push 已集成目标分支/);
+  assert.match(finishSkill, /不授权.*远端任务分支操作/);
 });
 
 test('随包 manifest 原子登记 contract、provider、binding 与 consumer', () => {
@@ -133,52 +131,11 @@ test('随包 manifest 原子登记 contract、provider、binding 与 consumer', 
   ]);
 });
 
-test('task-finish 消费 requiredAssurance evidence 并报告耗时', () => {
-  for (const required of [
-    'selected task-verification provider', '`level == requiredAssurance`', '`requiredAssurance`', '`totalDurationMs`',
-    '`timingSource`', '最慢检查', '失败项', '跳过项', 'evidence retention',
-    'cleanup status', 'selected task-verification provider 使用其 `cleanupReference`',
-    'implementationCandidateIdentity', 'deliveryTreeIdentity', 'same-content',
-    'closeout-metadata-only', 'implementation-changed', 'taskVerificationExecuteCalls',
-    'candidateExecutorCalls', 'verification-result-metadata-only', 'source/target identity',
-    'session-only', 'runtime-projection-only', 'Component integrity', 'sync 来源',
-  ]) assert.ok(finishSkill.includes(required), `finish Skill must include ${required}`);
-  assert.match(finishSkill, /Buildr Product.*buildr\.verification-timing\/v1/s);
-});
-
-test('task-finish 在相关资产变更中先收敛 closeout readiness checkpoint', () => {
-  for (const required of [
-    'Candidate 前 closeout readiness checkpoint',
-    '受管 Component、Skill、Command、lockfile、外部命令声明或 OpenSpec 升级信号',
-    '触发信号、实际检查和跳过理由',
-    '不计作 task-verification `execute` 或 Candidate executor invocation',
-    '“收尾”不授权安装、升级或降级 user/system 级外部 CLI',
-    'Buildr 也不自动安装它',
-    '既有依赖准备入口',
-    'buildr component check <id> --target <dir> --json',
-    '不得把之后的 generated asset 更新归类为 archive-only delta',
-    '普通任务没有相关资产信号时，记录未触发理由',
-  ]) assert.ok(finishSkill.includes(required), `task-finish must define readiness checkpoint boundary: ${required}`);
-  assert.ok(finishSkill.indexOf('Candidate 前 closeout readiness checkpoint') < finishSkill.indexOf('如果此前正式验证失败'));
-});
-
-test('task-finish archive 后只清理已证明为空的 active change scaffold', () => {
-  for (const required of [
-    '当前 OpenSpec CLI 的 status 和 strict validation',
-    '遗留 change scaffold 及其子目录均为空',
-    '记录残留路径和空目录证据',
-    '不得根据目录名、空父目录假设或批量删除扩大范围',
-  ]) assert.ok(finishSkill.includes(required), `task-finish must bound archive residue cleanup: ${required}`);
-  assert.ok(finishSkill.indexOf('遗留 change scaffold') > finishSkill.indexOf('自动规范后重新运行 `git diff --check`'));
-});
-
-test('task-finish 只在已验证的手动 sync 后跳过 archive spec update', () => {
-  for (const required of [
-    'post-sync contract guard 返回 `ok: true`',
-    'openspec archive <change> --skip-specs --yes',
-    'archive 未重复更新 specs',
-    '缺少当前会话的 sync evidence、post-sync 未通过或状态不明时，不得使用 `--skip-specs`',
-  ]) assert.ok(finishSkill.includes(required), `task-finish must bound archive skip-specs: ${required}`);
+test('task-finish 保持薄入口并把证据政策交给 provider', () => {
+  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 2500);
+  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 50);
+  for (const required of ['inspect|advance|resume', 'selected providers', 'fingerprint', 'effects', 'evidence', 'task-verification provider']) assert.ok(finishSkill.includes(required));
+  assert.doesNotMatch(finishSkill, /instance\.json|archive-rehearsal\.mjs|buildr component check/);
 });
 
 test('OpenSpec apply 和 Task Finish 固定 canonical sync 的 guard 时序', () => {
@@ -187,19 +144,7 @@ test('OpenSpec apply 和 Task Finish 固定 canonical sync 的 guard 时序', ()
     'pre-sync 成功后', 'post-sync guard',
   ]) assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve sync sequencing: ${required}`);
 
-  for (const required of [
-    '不得把 apply 阶段预写的 canonical specs 作为已同步事实',
-    '当前会话 pre-sync 成功后', '随后必须通过 post-sync guard',
-  ]) assert.ok(finishSkill.includes(required), `task-finish must preserve sync sequencing: ${required}`);
-});
-
-test('task-finish 将健康 Local App 同端口交接作为 cleanup 门槛', () => {
-  for (const required of [
-    'instance.json', '/api/v1/health', 'buildr app --port <recorded-port> --no-open',
-    '静态资源或运行身份不再指向 task worktree', '随机端口或其他端口替代',
-    'Local App 迁移前后端口与健康结果',
-  ]) assert.ok(finishSkill.includes(required), `task-finish must include Local App handoff requirement ${required}`);
-  assert.ok(finishSkill.indexOf('instance.json') < finishSkill.indexOf('才允许删除 worktree'), 'Local App handoff must precede worktree cleanup');
+  assert.match(finishSkill, /canonical、target、runtime 收敛后执行/);
 });
 
 test('已有 Candidate 进入收尾时按 transition class 去重 executor 调用', () => {

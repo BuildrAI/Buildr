@@ -223,8 +223,8 @@ const codexBuildr = fs.readFileSync(path.join(workspace, '.agents', 'skills', 't
 const claudeBuildr = fs.readFileSync(path.join(workspace, '.claude', 'skills', 'task-finish', 'SKILL.md'), 'utf8');
 assert.ok(codexBuildr.includes('buildr:contribution openspec#pre-spec-sync'));
 assert.ok(claudeBuildr.includes('buildr:contribution openspec#pre-spec-sync'));
-assert.ok(codexBuildr.includes('调用 `buildr.task-asset-review/v3` selected provider 的 finalize'));
-assert.ok(claudeBuildr.includes('调用 `buildr.task-asset-review/v3` selected provider 的 finalize'));
+assert.ok(codexBuildr.includes('asset review 返回 `awaiting-human` 时在 cleanup 前等待'));
+assert.ok(claudeBuildr.includes('asset review 返回 `awaiting-human` 时在 cleanup 前等待'));
 
 const betaCursorRule = path.join(workspace, 'projects', 'scope-beta', '.cursor', 'rules', 'buildr.mdc');
 const qoderDirectory = path.join(workspace, '.qoder', 'rules', 'buildr');

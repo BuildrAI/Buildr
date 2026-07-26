@@ -75,13 +75,8 @@ test('provider 独占资格审查、分类和人工交接政策', () => {
 });
 
 test('Task Finish 只触发 finalize 并等待 provider 结果', () => {
-  const section = finishSkill.slice(finishSkill.indexOf('## 2. 任务资产审查 finalize'), finishSkill.indexOf('## 3. OpenSpec 归档'));
-  assert.match(section, /调用 `buildr\.task-asset-review\/v3` selected provider 的 finalize/);
-  assert.match(section, /不汇总 observation 信号、不执行资格门禁、不判断最终应沉淀什么/);
-  assert.match(section, /`no-observation` 或 `discarded`/);
-  assert.match(section, /`awaiting-human`/);
-  assert.match(section, /worktree cleanup 前等待用户明确 accept 或 reject/);
-  assert.match(section, /不自行实现备用审查/);
-  assert.doesNotMatch(section, /强信号|Rule\/Skill 候选|轻量资格判断/);
+  assert.match(finishSkill, /asset review 返回 `awaiting-human` 时在 cleanup 前等待/);
+  assert.match(finishSkill, /optional provider 不可用则记录降级/);
+  assert.doesNotMatch(finishSkill, /强信号|Rule\/Skill 候选|轻量资格判断/);
   assert.match(workspaceSkills, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-asset-review[\s\S]*version: 3[\s\S]*mode: optional/);
 });

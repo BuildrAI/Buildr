@@ -920,33 +920,46 @@ Task Finish MUST 在 delivery convergence 阶段记录 fetch/rebase 所使用的
 - **THEN** Task Finish MUST 报告 execute count 为一、失效次数为零
 - **AND** MUST NOT 为满足格式创建虚构的历史 run
 
-### Requirement: 实现型 workflow 必须在 session adoption 后继续
-Buildr 的 task triage、task-worktree 与 OpenSpec Skills MUST 将 Agent session adoption 作为采用 canonical task environment 的完成条件。implementation workflow MUST 在 adoption evidence 为 adopted 后才能创建 Change artifacts、编辑实现、运行构建/测试或产生正式验证 evidence。
+### Requirement: 实现型 workflow 必须绑定 task execution context
+Buildr 的 task triage、task-worktree 与 OpenSpec Skills MUST 在写入前核对 canonical task environment 与明确 execution binding。普通 workflow MUST NOT 以 session root 等于 environment root 或 session adoption receipt 作为执行前置条件。
 
-#### Scenario: Triage 创建 environment 后交接新 session
-- **WHEN** task triage 选择 implementation 并创建新的 canonical task environment
-- **THEN** task-worktree provider MUST 返回 task、change、environment、repository set、runtime expectation 与 handoff next action
-- **AND** 当前 session MUST 停止 task 写入，直到以 environment root 启动或重新进入的 Agent session 完成 adoption
+#### Scenario: Triage 创建 environment 后在原对话继续
+- **WHEN** task triage 创建 canonical task environment，且当前 Agent 能使用明确 target/workdir 和 checkout-local CLI
+- **THEN** task-worktree provider MUST 返回 task、change、environment、repository set、allowed execution roots 与 runtime projection identity
+- **AND** 当前用户对话 MUST 能在 context 返回 `executionReady: true` 后继续写入
 
-#### Scenario: 仅改变工具工作目录
-- **WHEN** 原 session 只把命令或编辑工具的工作目录切换到 allowed execution root
-- **THEN** workflow MUST NOT 将该动作视为 session adoption
-- **AND** proposal、实现、构建、测试与正式验证 MUST 保持 blocked
+#### Scenario: 明确工作目录绑定 environment
+- **WHEN** 命令 target、workdir、repository membership 和 checkout-local CLI identity 匹配 environment receipt
+- **THEN** workflow MUST 将其视为有效 execution binding
+- **AND** MUST NOT 因 Agent session 从 canonical Workspace 启动而阻塞 proposal、实现、构建、测试或验证
 
-#### Scenario: Adopted session 继续 change-flow
-- **WHEN** checkout-local context 返回当前 Agent session adoption 为 adopted
-- **THEN** Agent MUST 在同一 environment 的 allowed execution roots 内继续 proposal、apply 与验证
-- **AND** Skills 间交接 MUST 携带 adoption evidence identity，而不是只传递 environment path
+#### Scenario: Execution binding 漂移
+- **WHEN** target、workdir、repository identity 或 runtime projection 与 environment receipt 不匹配
+- **THEN** workflow MUST fail closed 并报告精确差异
+- **AND** MUST NOT 通过创建第二份纯 checkout 规避 identity mismatch
 
-### Requirement: Workflow 必须遵守 adapter activation mode
-Task environment handoff MUST 消费 runtime adapter 的 Rules/Skills activation metadata。对于 `session-start`，workflow MUST 要求新 session 或 runtime host 可证明的等价重新进入；对于 `explicit-reload`，只有 descriptor guidance 与 reload evidence 都存在时才 MUST 允许 reload adoption。
+### Requirement: Workflow 按任务影响验证 adapter activation
+只有任务修改 Rules、Skills 或 runtime adapter 且验收要求证明新 runtime 已激活时，workflow MUST 消费 adapter activation metadata。该专项 evidence MUST NOT 阻塞不涉及 runtime activation 的普通 workflow。
 
 #### Scenario: Codex Skills 在 session start 激活
-- **WHEN** Codex task environment 已完成 checkout-local runtime sync
+- **WHEN** 任务修改 Codex Skills 且验收需要证明新 Skill 已激活
 - **THEN** workflow MUST 说明 Rules 可按 `path-read` 发现而 Skills 需要 session start
-- **AND** Buildr MUST NOT 承诺当前 Codex session 因 sync 完成而即时重发现 checkout-local Skills
+- **AND** Codex App 不能绑定既有 Buildr worktree 时 MUST 报告 evidence 缺口，不得伪造自动 handoff
 
 #### Scenario: Runtime 支持显式 reload
 - **WHEN** adapter 声明 `explicit-reload`、提供 reload guidance 且 Agent/runtime host 返回匹配的 reload evidence
-- **THEN** workflow MUST 允许以 reload mode 完成 adoption
-- **AND** 缺少任一项时 MUST 回退为新 session handoff 或保持 blocked
+- **THEN** workflow MUST 接受 reload activation evidence
+- **AND** 该 evidence MUST 与 execution readiness 分开记录
+
+### Requirement: Task Finish 使用持久化执行架构
+Buildr MUST 提供实现 `buildr.task-finish/v1` 的薄 `task-finish` Workspace Skill，把当前轮次明确的“收尾”作为受限授权，并使用持久化 finish run 编排 selected verification、Git integration、worktree lifecycle、asset review 与 current knowledge providers。Skill MUST NOT 复制 provider policy 或依赖单个 Agent session 保存步骤进度。
+
+#### Scenario: 默认在同一用户对话继续
+- **WHEN** finish run 的 environment execution binding 有效
+- **THEN** Task Finish MUST 在同一用户对话继续同一 task/change/run
+- **AND** 后台 session MUST 只是可选执行载体，不得成为 task environment 成立条件
+
+#### Scenario: provider 步骤失败后恢复
+- **WHEN** 某个 provider action blocked 且早期副作用已经 passed
+- **THEN** Task Finish MUST 保存 checkpoint 并从 blocked/stale 边界恢复
+- **AND** MUST NOT 要求 Agent 从头复述或重跑整个 Skill

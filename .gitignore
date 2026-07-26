@@ -15,3 +15,4 @@
 CLAUDE.md
 # Task asset review runtime state
 /.buildr/asset-review/
+/.buildr/task-finish/

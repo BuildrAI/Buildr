@@ -122,38 +122,36 @@ Buildr MUST 只在当前 environment 的全部 repository changes 已安全集�
 - **WHEN** 同一 Workspace 或任一 source repository 还拥有其他 task worktrees
 - **THEN** Buildr MUST 保持其 checkouts、branches、receipts、preview、ports 和状态目录不变
 
-### Requirement: Task environment 必须核验 Agent session adoption
-Buildr MUST 将 task environment 的 checkout/runtime readiness 与承载任务的 Agent session adoption 分开建模。采用完成前，context MUST 返回 `handoff-required` 或其他非 adopted 状态；只有 session root、environment identity、owner Agent 和 checkout-local runtime source identity 全部匹配时，才 MUST 返回 adopted。
+### Requirement: Task environment 必须核验 execution binding
+Buildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、checkout-local CLI/runtime projection identity 和明确 target/workdir 判断 `executionReady`。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。
 
-#### Scenario: 新 environment 等待 Agent session handoff
-- **WHEN** Buildr 已创建 task environment、准备 checkout-local runtime 且 environment context identity 有效，但尚无匹配的 session adoption evidence
-- **THEN** context MUST 返回 environment ready 与 adoption `handoff-required`
-- **AND** MUST 提供以 environment root 启动或重新进入 Agent session 的 next action
-- **AND** MUST NOT 将命令 `cwd`、runtime 文件存在或 doctor 成功描述为 session 已采用 environment
+#### Scenario: canonical workspace 对话操作 task environment
+- **WHEN** Agent session 从 canonical Workspace 启动，但命令使用 task environment 的明确 target、成员 checkout workdir 和 checkout-local CLI
+- **THEN** context MUST 在 environment 与 repository identity 匹配时返回 `executionReady: true`
+- **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效
 
-#### Scenario: 新 session 采用 environment
-- **WHEN** Agent/runtime host 提供的 session root 是 environment root，owner、task、adapter 与 runtime source identity 均匹配当前 context
-- **THEN** Buildr MUST 写入 Buildr-owned local adoption receipt
-- **AND** 后续 context MUST 返回 adoption `adopted`、environment evidence 与 session evidence
-- **AND** receipt MUST NOT 写入 Git tracked source 或跨 clone 复用
+#### Scenario: 请求路径或 CLI 越界
+- **WHEN** target/workdir 不属于 allowed execution roots，或 CLI/runtime projection identity 不属于该 environment
+- **THEN** context MUST 返回 blocked 并 fail closed
+- **AND** MUST 报告不匹配的 target、workdir、membership 或 CLI identity
 
-#### Scenario: session 或 runtime identity 漂移
-- **WHEN** adoption 后的 session root、session handle、environment identity、repository plan 或 checkout-local runtime projection identity 不再匹配 receipt
-- **THEN** context MUST 返回 `stale` 或 `blocked` 并 fail closed
-- **AND** MUST 要求重新 handoff/adopt，而不是仅凭 receipt 文件存在继续任务
+#### Scenario: runtime identity 漂移
+- **WHEN** environment identity、repository plan 或 checkout-local runtime projection identity 不再匹配 receipt
+- **THEN** context MUST 返回 `stale` 或 `blocked`
+- **AND** MUST 要求重新收敛 environment/runtime，而不是创建另一份纯 checkout
 
-### Requirement: Session adoption evidence 必须披露 assurance 边界
-Buildr MUST 分别标识由 Buildr 直接核验的 environment/runtime evidence 与由 Agent/runtime host 提供的 session evidence，并 MUST NOT 将后者描述为 Buildr 对 Agent session 的直接内省或密码学认证。
+### Requirement: Runtime activation evidence 必须是按影响触发的特例
+Buildr MUST 只在任务修改 Rules、Skills 或 runtime adapter，且验收明确要求证明新 runtime 已由 Agent 激活时检查 adapter-specific activation。该 evidence MUST 与普通 execution readiness 分离。
 
-#### Scenario: Agent 提交 host-visible session evidence
-- **WHEN** Agent 提交 session root、session handle、adoption mode 与启动或重新进入时间
-- **THEN** Buildr MUST 核对其与当前 environment/runtime expectation 一致
-- **AND** result MUST 将 environment evidence 标为 `buildr-verified`，将 session evidence 标为 `agent-attested`
+#### Scenario: Agent 提交 activation evidence
+- **WHEN** Agent/runtime host 提交 reload 或新 session activation evidence
+- **THEN** result MUST 将 environment evidence 标为 `buildr-verified`，将 host evidence 标为 `agent-attested`
+- **AND** MUST 明确 Buildr 没有直接内省或自动启动 Agent host
 
-#### Scenario: runtime host 不提供必要 session evidence
-- **WHEN** 当前 Agent/runtime surface 无法提供 session root、session handle 或对应 adoption event evidence
-- **THEN** Buildr MUST 保持 adoption 非 adopted 并列出缺失 evidence
-- **AND** MUST NOT 通过读取进程 `cwd`、私有应用状态或手工读取 runtime 文件伪造 adopted 结论
+#### Scenario: Codex 无法绑定既有 environment
+- **WHEN** Codex 只支持 session-start，当前 App 又不能把新 session 绑定到既有 Buildr worktree
+- **THEN** Buildr MUST 报告 activation evidence 缺口
+- **AND** MUST NOT 创建指向该 worktree 的另一份纯 checkout或把 adoption receipt 包装成自动 handoff
 
 ### Requirement: Task environment 清理必须移除本地 adoption state
 Buildr MUST 将 adoption receipt 作为 task environment-owned local state 管理，并 MUST 只在 environment 满足既有安全清理前置条件时一并清理；它不得改变 retained checkout 的主 runtime sync 边界。

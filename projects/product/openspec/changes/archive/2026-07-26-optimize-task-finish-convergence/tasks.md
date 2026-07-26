@@ -1,23 +1,24 @@
-## 1. 收尾编排与 Rehearsal
+## 1. 执行契约与状态机
 
-- [x] 1.1 更新 `task-finish` capability contract 与 Skill，使 pre-sync receipt 成为 canonical sync 的唯一授权，并定义 receipt/delta/canonical 失效后的返回阶段。
-- [x] 1.2 更新 archive rehearsal helper：在复制 planning root 前解析并校验绝对 OpenSpec executable，拒绝隔离副本中的相对路径猜测。
-- [x] 1.3 为正常收敛、过早 canonical 写入、receipt stale 与相对 executable 添加 Task Finish / helper tests。
+- [x] 1.1 建立 Change contract baseline，并实现 finish run schema、固定步骤 DAG、原子持久化与 inspect result。
+- [x] 1.2 实现 advance/resume、attempt/fingerprint 幂等、blocked/stale 传播和 effects/evidence 历史。
+- [x] 1.3 实现 shared-resource 短 lease 与 target-ref 乐观并发输入。
 
-## 2. OpenSpec 同步诊断
+## 2. CLI 与 Skill 收敛
 
-- [x] 2.1 扩展 `openspec-contract-guard` result schema 和 post-sync finding，提供 operation、expected/actual 摘要及确定性 next action。
-- [x] 2.2 为 MODIFIED Requirement 不完整、未触达 Requirement 变化和 pre-sync 前 canonical 写入添加 contract fixtures。
-- [x] 2.3 保持既有 baseline、receipt 与 JSON consumer 的兼容性，并补充静态/集成覆盖。
+- [x] 2.1 增加 `buildr task finish inspect|advance|resume` registry、help 与 JSON/text 输出。
+- [x] 2.2 将 Task Finish Skill 精简到约 1,500–2,500 Unicode 字符、30–50 行，并更新 capability contract/package target。
+- [x] 2.3 更新 package integrity、runtime projection 和受影响 current knowledge，明确 Codex worktree/session adoption 边界。
 
-## 3. 验证成本与当前认知
+## 3. 行为验证
 
-- [x] 3.1 更新 `task-verification` contract/provider，使正式验证 wall-clock 不混入 consumer workflow checks。
-- [x] 3.2 更新 Task Finish 最终报告，分别呈现验证、收敛检查和失效/重试成本，且不重复启动可复用验证。
-- [x] 3.3 执行 current knowledge reconcile，更新受影响的 OpenSpec lifecycle flow 与 Change Brief/impact evidence；确认术语无需新增。
+- [x] 3.1 增加恢复与幂等测试：push passed、cleanup blocked 后只恢复 cleanup。
+- [x] 3.2 增加 fingerprint 失效测试：最终树变化只使 assurance 及下游 stale。
+- [x] 3.3 增加并发与 lease 测试：独立 run 并行、共享资源互斥、过期 lease 恢复。
+- [x] 3.4 增加 CLI integration 测试并替换依赖 Skill 固定字符串的主要断言。
 
-## 4. 验证与同步
+## 4. 收敛与交付
 
-- [x] 4.1 运行受影响的 unit、contract、integration 与 OpenSpec strict validation，记录实际 timing 和失败/跳过项。
-- [x] 4.2 建立 contract baseline，运行 proposal/pre-sync/post-sync guards，并按结果同步 canonical specs。
-- [x] 4.3 在最终 delivery tree 运行 Project required assurance、doctor 与 managed asset integrity checks。
+- [x] 4.1 运行 OpenSpec strict、proposal/pre-sync/post-sync guards 与受影响验证，记录 evidence identity 和耗时。
+- [x] 4.2 完成 current knowledge reconcile、Component integrity、doctor 与最终 required assurance。
+- [x] 4.3 完成新版 Task Finish run 的归档前检查；交付时保留并报告未经授权不得删除的遗留 Buildr worktree。

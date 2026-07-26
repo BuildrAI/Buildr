@@ -21,6 +21,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
+    console.error('  buildr task finish <inspect|advance|resume> --run <id> [--task <id> --change <id> --target-branch <branch>] [--fingerprint <step>=<value> ...] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--include-info] [--verbose]');
     console.error('  buildr mutation recover <transaction-id> [--target <dir>]');
     console.error('  buildr commands add <id> --purpose <text> [--target <dir>] [--collection <path>] [--executable <name>] [--name <text>] [--description <text>] [--version-constraint <constraint>] [--version-args <args>] [--install-hint <text>] [--replace]');
@@ -74,6 +75,7 @@ export function registerCommandHelp(runtime) {
       '  worktree inspect     检查 task environment 的仓库集合、身份和隔离边界。',
       '  worktree context     判断当前路径是否属于可执行的 task environment。',
       '  worktree adopt       核验并记录 Agent session 对 task environment runtime 的采用证据。',
+      '  task finish          持久化检查、推进或恢复可重入的任务收尾 run。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
       '  runtime list         列出 Buildr 支持的 Agent runtime adapter。',
@@ -192,15 +194,15 @@ export function registerCommandHelp(runtime) {
     'worktree context': [
       'Usage: buildr worktree context [--target <path>] [--session-root <path>] [--session-handle <id>] [--json]',
       '',
-      '判断指定路径是否位于 task environment 的允许执行根内，并报告当前成员仓库、checkout-local CLI、runtime expectation、session adoption 和隔离边界。',
-      'implementation consumer 必须传入 host-visible session root/handle；仅改变工具 cwd 不会使 executionReady 变为 true。',
+      '判断明确 target/workdir 是否位于 task environment 的允许执行根内，并报告成员仓库、checkout-local CLI、runtime projection、可选 activation evidence 和隔离边界。',
+      'executionReady 由 environment binding 决定；Agent session root 不要求等于 environment root。',
     ],
     'worktree adopt': [
       'Usage: buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]',
       '',
-      '从 checkout-local CLI 校验 environment/runtime identity，并记录 Agent/runtime host 提供的 session evidence。',
+      '为 Rules、Skills/runtime adapter 变更的专项验收记录 Agent/runtime host 提供的 activation evidence。',
       'Buildr 直接核验 environment evidence；session evidence 标记为 agent-attested，不表示 Buildr 内省或密码学认证 Agent session。',
-      'session-start runtime 只接受 new-session 或 reentered；文件投射成功、shell cd 或手工读取 Skill 不构成 adoption。',
+      '该 evidence 不参与普通 executionReady，也不表示 Buildr 能自动 reload、启动或 handoff Agent session。',
     ],
     doctor: [
       'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--include-info] [--verbose]',

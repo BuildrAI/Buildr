@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { rehearseArchive } from '../../package/targets/workspace/skills/buildr/task-finish/scripts/archive-rehearsal.mjs';
+import { FINISH_STEPS } from '../../src/application/task-finish/task-finish-run.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
@@ -13,11 +14,12 @@ const verification = read('package/targets/workspace/skills/buildr/task-verifica
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v2.md');
 
 test('Task Finish 把 delivery convergence 放在 final assurance 前', () => {
-  for (const phrase of ['Delivery convergence', 'Final assurance', 'Closeout-only delivery', 'target-race', 'archive-rehearsal.mjs']) assert.match(finish, new RegExp(phrase));
-  assert.ok(finish.indexOf('**Delivery convergence**') < finish.indexOf('**Final assurance**'));
-  assert.ok(finish.indexOf('**Final assurance**') < finish.indexOf('**Closeout-only delivery**'));
-  assert.match(finish, /candidate commit、常规 fetch\/rebase.*final assurance 之前/);
-  assert.match(finish, /不得在已验证候选上静默 rebase 或 force push/);
+  const ids = FINISH_STEPS.map((item) => item.id);
+  assert.ok(ids.indexOf('contract-convergence') < ids.indexOf('formal-assurance'));
+  assert.ok(ids.indexOf('target-convergence') < ids.indexOf('formal-assurance'));
+  assert.ok(ids.indexOf('runtime-convergence') < ids.indexOf('formal-assurance'));
+  assert.ok(ids.indexOf('formal-assurance') < ids.indexOf('integration-push'));
+  assert.match(finish, /正式保证只在 canonical、target、runtime 收敛后执行/);
 });
 
 test('verification evidence 表达 archive-sensitive 与 supersession', () => {

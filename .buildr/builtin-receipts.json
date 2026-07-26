@@ -105,11 +105,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-778ed15fa590e74de46a90ccdabf7e0405e43a29e58a02a9871f864b9f31233c",
+      "integrity": "sha256-f164d28fbf348fd420dfd3bb6e747a31146c3b9d8dcc7af00ea2ad33d2c8ac97",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8fccf0e9295c1d714805238c27313be2d8de6fdbee037a345d04113f41b30810"
+          "integrity": "sha256-e48699a39031272f6fdc0f3c93a74ec5ea48247bbe24def21f26cc9a23f976a6"
         },
         {
           "path": "scripts/archive-rehearsal.mjs",
@@ -121,11 +121,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-eaa6975274c3a4a645b3894becf32604aa8c855c8d3f37f140cee97e9df20399",
+      "integrity": "sha256-80ba581732845fd1d9c6e6fda77fc3cb76cc4b666f00e87ce9a1d9923f1d2201",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-fb34f46341d87bc0f6dd338225ec5133f797c36a517555fe927cc16d490fc8b1"
+          "integrity": "sha256-43e8250479b232078205441ed8d96e26124340f1b824b1c61b96588532785187"
         }
       ]
     },
@@ -133,11 +133,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-b1661387ee4db7e157e0db505fd45b2b4ec9a4a59e90aaca18171336b3ac261a",
+      "integrity": "sha256-9f618cf1b957c3c1ea31d6734d754544730e07a15d4f5c6781a69754e7f1b8a3",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-0113a57082f242c83e2fc5f996784d17cec4655ef27a47dd58c550eff32aa21f"
+          "integrity": "sha256-542f4e17342bad62cf8a4face57455be9be08f194bfb5046eb530500e48944b2"
         },
         {
           "path": "references/project-verification-v1.md",
@@ -153,11 +153,11 @@
       "type": "skill",
       "id": "task-worktree",
       "target": "skills/buildr/task-worktree",
-      "integrity": "sha256-e540e1a52c6ff11bb32c14ed6dde358df3d8d6ba82b54ecb066f927d1f86de30",
+      "integrity": "sha256-d76c2511671ef22a4efcd1a32660749d5bdab38e9764eb404f875a71f28c4535",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-083767f29365132b08e95eed032353b8b2b1e4867c8716dced4fe8bcd2201927"
+          "integrity": "sha256-9729497b058ff22875583e64e132f72abed52334a3efc3a89e68733ca65b1526"
         }
       ]
     },

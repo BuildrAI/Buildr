@@ -58,22 +58,24 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(created.runtimeExpectation.activation.rules, 'path-read');
     assert.equal(created.runtimeExpectation.activation.skills, 'session-start');
     assert.equal(created.runtimeExpectation.sessionConsumption, 'unknown');
-    assert.equal(created.adoption.status, 'handoff-required');
+    assert.equal(created.adoption.status, 'not-required');
     assert.equal(git(['-C', created.worktree.path, 'status', '--porcelain']), '');
 
-    const cwdOnly = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--json'], 1);
+    const cwdOnly = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--json']);
     assert.equal(cwdOnly.ready, true);
-    assert.equal(cwdOnly.executionReady, false);
-    assert.equal(cwdOnly.adoption.status, 'handoff-required');
-    const adopted = runBuildr(['worktree', 'adopt', '--agent', 'codex', '--target', created.worktree.path, '--session-root', created.worktree.path, '--session-handle', 'codex-demo-session', '--root-evidence-source', 'host-context', '--mode', 'new-session', '--started-at', new Date().toISOString(), '--json']);
+    assert.equal(cwdOnly.executionReady, true);
+    assert.equal(cwdOnly.adoption.status, 'not-verified');
+    assert.equal(cwdOnly.executionBinding.workdir, created.worktree.path);
+    const adopted = runBuildr(['worktree', 'adopt', '--agent', 'codex', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'codex-demo-session', '--root-evidence-source', 'host-context', '--mode', 'new-session', '--started-at', new Date().toISOString(), '--json']);
     assert.equal(adopted.schemaVersion, 'buildr.task-environment-adoption/v1');
     assert.equal(adopted.environmentEvidence.assurance, 'buildr-verified');
     assert.equal(adopted.sessionEvidence.assurance, 'agent-attested');
     const adoptedContext = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', created.worktree.path, '--session-handle', 'codex-demo-session', '--json']);
     assert.equal(adoptedContext.executionReady, true);
-    assert.equal(adoptedContext.adoption.status, 'adopted');
-    const wrongSession = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', created.worktree.path, '--session-handle', 'other-session', '--json'], 1);
-    assert.equal(wrongSession.adoption.blocked.code, 'worktree.session_mismatch');
+    assert.equal(adoptedContext.adoption.status, 'activation-verified');
+    const wrongSession = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'other-session', '--json']);
+    assert.equal(wrongSession.executionReady, true);
+    assert.equal(wrongSession.adoption.blocked.code, 'worktree.activation_session_mismatch');
     const agentsFile = path.join(created.worktree.path, 'AGENTS.md');
     const agentsBefore = fs.readFileSync(agentsFile, 'utf8');
     fs.writeFileSync(agentsFile, `${agentsBefore.trimEnd()}\n\n<!-- adoption drift fixture -->\n`);
@@ -102,9 +104,10 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     const legacyReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
     delete legacyReceipt.runtimeExpectation;
     fs.writeFileSync(receiptFile, `${JSON.stringify(legacyReceipt, null, 2)}\n`);
-    const legacyContext = runBuildr(['worktree', 'context', '--target', healthy.environment.root, '--json'], 1);
+    const legacyContext = runBuildr(['worktree', 'context', '--target', healthy.environment.root, '--json']);
     assert.equal(legacyContext.ready, true);
-    assert.equal(legacyContext.adoption.status, 'legacy-handoff-required');
+    assert.equal(legacyContext.adoption.status, 'legacy-activation-unverified');
+    assert.equal(legacyContext.executionReady, true);
   });
 
   test('creates one environment with nested Project and Service repositories and resolves context', (t) => {
@@ -157,10 +160,9 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(created.repositories[1].checkoutPath, path.join(created.environment.root, 'projects', 'nested'));
     assert.equal(created.repositories[2].checkoutPath, path.join(created.environment.root, 'projects', 'nested', 'services', 'api'));
 
-    const preAdoptionContext = runBuildr(['worktree', 'context', '--target', created.repositories[2].checkoutPath, '--json'], 1);
-    assert.equal(preAdoptionContext.adoption.status, 'handoff-required');
-    runBuildr(['worktree', 'adopt', '--agent', 'codex', '--target', created.environment.root, '--session-root', created.environment.root, '--session-handle', 'codex-multi-session', '--root-evidence-source', 'runtime-host', '--mode', 'reentered', '--started-at', new Date().toISOString(), '--json']);
-    const context = runBuildr(['worktree', 'context', '--target', created.repositories[2].checkoutPath, '--session-root', created.environment.root, '--session-handle', 'codex-multi-session', '--json']);
+    const preAdoptionContext = runBuildr(['worktree', 'context', '--target', created.repositories[2].checkoutPath, '--json']);
+    assert.equal(preAdoptionContext.executionReady, true);
+    const context = runBuildr(['worktree', 'context', '--target', created.repositories[2].checkoutPath, '--json']);
     assert.equal(context.schemaVersion, 'buildr.task-environment-context/v1');
     assert.equal(context.ready, true);
     assert.equal(context.taskId, 'multi');
@@ -188,9 +190,9 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
 
     const parallel = runBuildr(['worktree', 'create', 'parallel', '--agent', 'codex', '--branch', 'codex/parallel', '--start-point', 'main', '--include', 'project:nested', '--include', 'service:nested/api', '--target', workspace, '--json']);
     assert.equal(parallel.ready, true);
-    const parallelContext = runBuildr(['worktree', 'context', '--target', parallel.environment.root, '--json'], 1);
+    const parallelContext = runBuildr(['worktree', 'context', '--target', parallel.environment.root, '--json']);
     assert.equal(parallelContext.taskId, 'parallel');
-    assert.equal(parallelContext.adoption.status, 'handoff-required');
+    assert.equal(parallelContext.executionReady, true);
     assert.equal(runBuildr(['worktree', 'inspect', 'multi', '--target', workspace, '--json']).ready, true);
 
     const partialArgs = ['worktree', 'create', 'partial', '--agent', 'codex', '--branch', 'codex/partial', '--start-point', 'main', '--include', 'project:nested', '--include', 'service:nested/api', '--target', workspace, '--json'];

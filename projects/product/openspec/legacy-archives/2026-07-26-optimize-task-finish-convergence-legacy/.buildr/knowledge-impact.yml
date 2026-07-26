@@ -1,0 +1,29 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-convergence
+operation: reconcile
+treeIdentity: task-worktree
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 收尾编排、同步诊断和验证成本报告的当前能力将变化
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/agent-task-workflows/spec.md
+      - specs/openspec-contract-guard/spec.md
+      - specs/task-verification/spec.md
+  - type: flow
+    target: ../../knowledge/flows/openspec-change-lifecycle.md
+    reason: receipt 驱动的同步恢复路径可能改变当前流程说明
+    status: updated
+    sourceIdentities:
+      - specs/agent-task-workflows/spec.md
+      - specs/openspec-contract-guard/spec.md
+  - type: glossary
+    target: ../../knowledge/glossary.md
+    reason: 已核对术语；不引入新的长期概念
+    status: not-applicable
+    sourceIdentities:
+      - ../../knowledge/glossary.md
+unresolvedItems: []

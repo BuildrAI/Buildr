@@ -1,19 +1,19 @@
 ## 摘要
 
-让 Buildr 的 Task Finish 在不降低验证与同步门禁的前提下，减少 OpenSpec 收尾中的可预防返工，并报告真实的耗时归因。
+把 Task Finish 从依赖单个 Agent 会话记忆的长 Skill，重构为薄入口加持久化、可恢复、可并发的 finish run。
 
 ## 背景与问题
 
-现有门禁能拦住错误同步，但 post-sync mismatch 的恢复依赖手工全文比对；rehearsal 的相对 CLI 路径也会在隔离副本失效。结果是一次正常收尾可能出现额外诊断、回退和验证证据解释成本。
+旧流程虽有正确 provider 分层，但步骤、失效和副作用进度只存在于会话。后半程失败或 session handoff 容易重复验证、push，多个任务也无法安全共享 target branch 与本机入口。
 
 ## 目标与非目标
 
-目标是 receipt 驱动的同步顺序、可操作 mismatch 诊断、稳定 rehearsal executable 与阶段化成本报告。非目标是不再验证、自动接受同步结果或修改 OpenSpec 上游。
+目标是渐进 checkpoint、精确失效、幂等恢复和短 lease；不在 Buildr 中实现第二个 Agent、Git/验证 provider 或 Codex worktree 管理器。
 
 ## 核心流程
 
-完成 Change 后，Task Finish 先解析绝对 OpenSpec executable 并 rehearsal，成功 pre-sync receipt 才授权 canonical sync；post-sync 的 failure 直接指出 touched Requirement 的期望/实际摘要和返回阶段。冻结树后执行一次所需 assurance，最终报告分别呈现验证耗时、workflow checks 与失效重试成本。
+Agent 在同一用户对话和 task environment 中创建 finish run，按 `nextAction` 调用 selected provider，再提交 fingerprint、effects 和 evidence。正式验证位于 canonical/target/runtime convergence 后；blocked/stale 只重跑自身和下游。后台 session 只是可选执行载体，同一 task/change/run identity 保持不变；Buildr 不声称能自动 handoff Agent host。
 
 ## 风险与验收
 
-保持 fail-closed 与现有 JSON 兼容；成功路径不得新增第二次正式验证。验收以 guard/Skill contract tests、rehearsal path tests 和收尾报告 evidence 为准。
+以行为测试覆盖恢复、失效、幂等、并发与 lease；Task Finish Skill 保持 30–50 行、约 1,500–2,500 Unicode 字符。不得使用 Workspace 全局锁或伪造 Codex/Buildr worktree adoption evidence。

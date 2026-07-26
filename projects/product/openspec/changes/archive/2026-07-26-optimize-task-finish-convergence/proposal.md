@@ -1,15 +1,17 @@
 ## Why
 
-一次真实的 Buildr 收尾暴露出，`task-finish` 已有的收敛顺序和 OpenSpec 门禁虽然能阻止错误交付，但在 canonical sync 前后仍需要 Agent 手工比对 Requirement。相对 CLI 路径、过早写入 canonical spec、遗漏完整 Requirement 文本都会把一次普通收尾扩展成多轮诊断、回退和重复门禁。现在需要把这些可预防的返工收敛为可执行、可诊断的流程能力。
+Task Finish 目前主要由一份很长的 Skill 正文驱动，步骤、证据失效、重试和副作用进度只存在于 Agent 会话中。会话切换或后半程失败后，Agent 难以可靠判断哪些动作已经完成，既会重复验证或 push，也无法让多个任务安全并发收尾。
 
 ## What Changes
 
-- 强化 Task Finish 的 OpenSpec 收敛事务：确认 rehearsal、pre-sync receipt、canonical sync、post-sync 和 archive 的唯一顺序，并在任一前置事实失效时给出明确恢复边界。
-- 为 OpenSpec contract guard 提供面向 Agent 的 requirement-level 同步差异和可执行 next action，避免通过人工复制或猜测修复 post-sync mismatch。
-- 让收尾报告区分必要验证耗时、收敛检查耗时和可避免的失效/重试成本，帮助定位流程而非把总时长笼统归因于测试。
-- 规范 archive rehearsal 的 CLI 解析边界，确保隔离 planning copy 能稳定使用调用方已验证的 OpenSpec executable。
+- 将 Task Finish 重构为持久化的 finish run：每一步记录状态、输入 fingerprint、副作用、证据、失效依赖与 retry policy。
+- 新增 `buildr task finish inspect|advance|resume` CLI；失败后只恢复 blocked/stale 及其下游，已完成且输入未变的副作用不会重复执行。
+- 默认在同一用户对话中用明确 target/workdir 和 checkout-local CLI 操作 task environment；逻辑任务需要时可跨执行载体继续同一 run。
+- 多个 run 独立并发；不使用 Workspace 全局锁，只对 target branch、canonical checkout、runtime sync 和默认安装等共享资源使用短 lease，并对远端 ref 做乐观并发检查。
+- 把正式 affected/Candidate 放到 rebase、canonical/runtime convergence 之后，并按最终树 fingerprint 精确失效。
+- 将 Task Finish Skill 精简为薄入口，保留 verification、Git、worktree、asset-review 与 current-knowledge provider 的职责边界。
 
-无破坏性用户 API 变更；已有 active Change 和 archive 继续按现有兼容路径处理。
+这是新增 CLI 与持久化状态契约，但不破坏现有 capability id；旧的纯 Skill 收尾流程迁移为由 Agent 驱动新 run。
 
 ## Capabilities
 
@@ -19,11 +21,14 @@
 
 ### Modified Capabilities
 
-- `agent-task-workflows`: 收紧 Task Finish 的 OpenSpec 收敛顺序、失败恢复和成本报告要求。
-- `openspec-contract-guard`: 为 post-sync mismatch 增加可操作、requirement 级的实际/预期差异与同步指导。
-- `task-verification`: 让收尾消费的验证结果能与收敛/重试成本清晰区分并可汇总报告。
+- `agent-task-workflows`: Task Finish 改为薄 Skill 编排持久化执行能力，并让 execution binding 取代通用 session-root/adoption 门禁。
+- `task-finish-execution`: 定义可恢复 finish run、步骤状态、失效、幂等、并发 lease 与 CLI 结果证据。
+- `task-environments`: `executionReady` 绑定 environment、repository、allowed roots、CLI/runtime projection 和明确 target/workdir；activation evidence 降为按影响触发的特例。
+- `workspace-first-runtime-projection`: runtime projection identity 参与 execution binding，session-start activation 只作为明确验收要求下的专项 evidence。
 
 ## Impact
 
-- 受影响资产：`task-finish`、`openspec-contract-guard`、`task-verification` Skills 及其 capability contracts，OpenSpec guard/application 实现与相关 contract/integration tests。
-- 不改变业务产品 API；会改变 Buildr Agent 的收尾诊断、同步指导和结果证据结构。
+- `services/buildr/src/application/` 新增 Task Finish 状态机与持久化实现。
+- CLI registry/help 新增 `task finish inspect|advance|resume`。
+- `buildr.task-finish/v1` contract、Task Finish Skill、package manifest/integrity 与行为测试更新。
+- 当前认知中的任务收尾流程更新；不新增 Workspace 全局 daemon、Agent router 或第二套任务事实源。

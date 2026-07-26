@@ -191,8 +191,14 @@ export function registerWorktreeApplication(runtime) {
     return {
       ...checked.runtimeSourceEvidence,
       environmentRoot,
-      requiresSessionAdoption: true,
+      activationVerification: 'conditional',
+      requiresSessionAdoption: false,
     };
+  }
+
+  function executionCliEvidence() {
+    const source = path.join(productRoot(), 'bin', 'buildr.mjs');
+    return { source, identity: `sha256-${crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex')}` };
   }
 
   function handoffAction(receipt) {
@@ -518,7 +524,7 @@ export function registerWorktreeApplication(runtime) {
       }
       const expectedRuntime = runtimeExpectation(environmentRoot, agent);
       if (!expectedRuntime.projectionReady) {
-        return printCreateResult(blockedResult(base, 'worktree.runtime_projection_not_ready', 'Checkout-local runtime projection is not ready for session adoption.', [`Run buildr doctor --agent ${agent} --target ${environmentRoot} --json`]), json);
+        return printCreateResult(blockedResult(base, 'worktree.runtime_projection_not_ready', 'Checkout-local runtime projection is not ready for task execution.', [`Run buildr doctor --agent ${agent} --target ${environmentRoot} --json`]), json);
       }
       receipt = {
         schemaVersion: RECEIPT_SCHEMA,
@@ -530,6 +536,7 @@ export function registerWorktreeApplication(runtime) {
         state: 'ready',
         repositories: repositoryResults,
         runtimeExpectation: expectedRuntime,
+        executionCli: executionCliEvidence(),
         isolation: isolation(),
         updatedAt: new Date().toISOString(),
       };
@@ -544,7 +551,7 @@ export function registerWorktreeApplication(runtime) {
         treeChanged,
         ready: true,
         runtimeExpectation: expectedRuntime,
-        adoption: { status: 'handoff-required', receipt: null, currentSessionMatch: false },
+        adoption: { status: 'not-required', receipt: null, currentSessionMatch: null },
         blocked: null,
         nextActions: [handoffAction(receipt)],
       }, json);
@@ -584,21 +591,21 @@ export function registerWorktreeApplication(runtime) {
       return { status: 'stale', receipt: saved, currentSessionMatch: false, assurance: saved?.sessionEvidence?.assurance || null, missingEvidence: [], blocked: { code: 'worktree.adoption_runtime_not_ready', message: 'Checkout-local runtime projection is missing, stale, orphaned, or conflicting.' }, nextActions: [`Run buildr doctor --agent ${receipt.agent} --target ${receipt.environmentRoot} --json`, handoffAction(receipt)] };
     }
     if (!receipt.runtimeExpectation) {
-      return { status: 'legacy-handoff-required', receipt: null, currentSessionMatch: false, assurance: null, missingEvidence: ['runtimeExpectation'], nextActions: [handoffAction(receipt)] };
+      return { status: 'legacy-activation-unverified', receipt: null, currentSessionMatch: false, assurance: null, missingEvidence: ['runtimeExpectation'], nextActions: [handoffAction(receipt)] };
     }
     if (receipt.runtimeExpectation.projectionIdentity !== expectedRuntime.projectionIdentity) {
       return { status: 'stale', receipt: saved, currentSessionMatch: false, assurance: saved?.sessionEvidence?.assurance || null, missingEvidence: [], blocked: { code: 'worktree.adoption_runtime_stale', message: 'Checkout-local runtime projection identity changed after environment creation or adoption.' }, nextActions: [handoffAction(receipt)] };
     }
-    if (!saved) return { status: 'handoff-required', receipt: null, currentSessionMatch: false, assurance: null, missingEvidence: ['sessionRoot', 'sessionHandle', 'adoptionMode', 'startedOrReenteredAt'], nextActions: [handoffAction(receipt)] };
+    if (!saved) return { status: 'not-verified', receipt: null, currentSessionMatch: null, assurance: null, missingEvidence: [], nextActions: [] };
     const receiptMatches = saved.agent === receipt.agent
       && saved.environmentRoot === receipt.environmentRoot
       && saved.planDigest === receipt.planDigest
       && saved.runtimeProjectionIdentity === expectedRuntime.projectionIdentity;
     if (!receiptMatches) return { status: 'stale', receipt: saved, currentSessionMatch: false, assurance: saved.sessionEvidence?.assurance || null, missingEvidence: [], blocked: { code: 'worktree.adoption_receipt_stale', message: 'Session adoption receipt does not match the current task environment identity.' }, nextActions: [handoffAction(receipt)] };
     const supplied = Boolean(session.root || session.handle);
-    const currentSessionMatch = supplied && session.root === receipt.environmentRoot && session.handle === saved.sessionEvidence.sessionHandle;
-    if (supplied && !currentSessionMatch) return { status: 'blocked', receipt: saved, currentSessionMatch: false, assurance: saved.sessionEvidence.assurance, missingEvidence: [], blocked: { code: 'worktree.session_mismatch', message: 'Current host-visible session evidence does not match the adopted session.' }, nextActions: [handoffAction(receipt)] };
-    return { status: 'adopted', receipt: saved, currentSessionMatch: supplied ? true : 'recorded-not-rechecked', assurance: saved.sessionEvidence.assurance, missingEvidence: [], nextActions: [] };
+    const currentSessionMatch = supplied && session.handle === saved.sessionEvidence.sessionHandle;
+    if (supplied && !currentSessionMatch) return { status: 'activation-evidence-mismatch', receipt: saved, currentSessionMatch: false, assurance: saved.sessionEvidence.assurance, missingEvidence: [], blocked: { code: 'worktree.activation_session_mismatch', message: 'Supplied session evidence does not match the optional runtime activation receipt.' }, nextActions: [] };
+    return { status: 'activation-verified', receipt: saved, currentSessionMatch: supplied ? true : 'recorded-not-rechecked', assurance: saved.sessionEvidence.assurance, missingEvidence: [], nextActions: [] };
   }
 
   function contextFromReceipt(receipt, requestedPath = receipt.environmentRoot, session = {}) {
@@ -613,7 +620,15 @@ export function registerWorktreeApplication(runtime) {
     const ready = receipt.state === 'ready' && repositories.every((item) => item.identityMatches) && Boolean(membership);
     const expectedRuntime = fs.existsSync(receipt.environmentRoot) ? runtimeExpectation(receipt.environmentRoot, receipt.agent) : receipt.runtimeExpectation || null;
     const adoption = ready && expectedRuntime ? adoptionState(receipt, expectedRuntime, session) : { status: 'blocked', receipt: null, currentSessionMatch: false, assurance: null, missingEvidence: [], nextActions: [] };
-    const executionReady = ready && adoption.status === 'adopted' && adoption.currentSessionMatch === true;
+    const currentCli = executionCliEvidence();
+    const cliSource = currentCli.source;
+    const cliWithinEnvironment = inside(receipt.environmentRoot, productRoot());
+    const cliIdentityMatches = receipt.executionCli
+      ? receipt.executionCli.source === currentCli.source && receipt.executionCli.identity === currentCli.identity
+      : cliWithinEnvironment;
+    const runtimeIdentityMatches = Boolean(expectedRuntime && (!receipt.runtimeExpectation
+      || receipt.runtimeExpectation.projectionIdentity === expectedRuntime.projectionIdentity));
+    const executionReady = ready && expectedRuntime?.projectionReady === true && runtimeIdentityMatches && cliIdentityMatches;
     return {
       taskId: receipt.taskId,
       owner: receipt.agent,
@@ -623,21 +638,30 @@ export function registerWorktreeApplication(runtime) {
       membership: membership ? { selector: membership.selector, checkoutPath: membership.checkoutPath } : null,
       repositories,
       allowedExecutionRoots: repositories.map((item) => item.checkoutPath),
-      cliSource: path.join(productRoot(), 'bin', 'buildr.mjs'),
-      cliWithinEnvironment: inside(receipt.environmentRoot, productRoot()),
+      cliSource,
+      cliWithinEnvironment,
+      cliIdentityMatches,
+      runtimeIdentityMatches,
       state: ready ? 'ready' : 'blocked',
       ready,
       executionReady,
+      executionBinding: executionReady ? { assurance: 'buildr-verified', target: requestPath, workdir: membership.checkoutPath, membership: membership.selector, cliSource, cliIdentity: currentCli.identity, checkoutLocal: cliWithinEnvironment, runtimeProjectionIdentity: expectedRuntime.projectionIdentity } : null,
       environmentEvidence: expectedRuntime ? { assurance: 'buildr-verified', planDigest: receipt.planDigest, runtimeExpectation: expectedRuntime } : null,
       sessionEvidence: adoption.receipt?.sessionEvidence || null,
       adoption,
       isolation: receipt.isolation || isolation(),
-      blocked: ready ? null : { code: membership ? 'worktree.context_identity_mismatch' : 'worktree.context_path_mismatch', message: membership ? 'One or more task environment repository identities do not match the receipt.' : 'Requested path is outside the task environment repository set.' },
-      nextActions: ready ? adoption.nextActions : [`Run buildr worktree inspect ${receipt.taskId} --target ${receipt.workspaceRoot} --json`],
+      blocked: !ready
+        ? { code: membership ? 'worktree.context_identity_mismatch' : 'worktree.context_path_mismatch', message: membership ? 'One or more task environment repository identities do not match the receipt.' : 'Requested path is outside the task environment repository set.' }
+        : !runtimeIdentityMatches
+          ? { code: 'worktree.execution_runtime_stale', message: 'Checkout-local runtime projection identity no longer matches the task environment receipt.' }
+          : !cliIdentityMatches
+            ? { code: 'worktree.execution_cli_mismatch', message: 'The current Buildr CLI identity does not match the task environment receipt.' }
+            : null,
+      nextActions: ready && runtimeIdentityMatches && cliIdentityMatches ? [] : [`Run buildr worktree inspect ${receipt.taskId} --target ${receipt.workspaceRoot} --json`],
     };
   }
 
-  function printContext(result, json, requireAdoption = false) {
+  function printContext(result, json, requireExecutionReady = false) {
     const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.taskEnvironmentContext, result);
     if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
@@ -647,7 +671,7 @@ export function registerWorktreeApplication(runtime) {
       console.log(`Repositories: ${result.repositories.map((item) => `${item.selector}:${item.identityMatches ? 'ready' : 'mismatch'}`).join(', ')}`);
       console.log(`Session adoption: ${result.adoption?.status || 'unknown'}`);
     }
-    if (!result.ready || (requireAdoption && !result.executionReady)) process.exitCode = 1;
+    if (!result.ready || (requireExecutionReady && !result.executionReady)) process.exitCode = 1;
     return payload;
   }
 
@@ -684,7 +708,6 @@ export function registerWorktreeApplication(runtime) {
     if (agent !== receipt.agent) throw new Error(`Adoption Agent does not match environment owner: ${agent || '(missing)'}.`);
     if (!sessionRootValue || !fs.existsSync(sessionRootValue)) throw new Error('A valid --session-root from host-visible session context is required.');
     const sessionRoot = fs.realpathSync(sessionRootValue);
-    if (sessionRoot !== receipt.environmentRoot) throw new Error('Session root does not match the canonical task environment root.');
     if (!sessionHandle || sessionHandle.length > 256 || /[\r\n]/.test(sessionHandle)) throw new Error('A stable --session-handle without newlines is required.');
     if (!ROOT_EVIDENCE_SOURCES.has(rootEvidenceSource)) throw new Error('--root-evidence-source must be host-context or runtime-host.');
     if (!ADOPTION_MODES.has(mode)) throw new Error('--mode must be new-session, reentered, or reload.');
@@ -709,9 +732,9 @@ export function registerWorktreeApplication(runtime) {
       adoptedAt: new Date().toISOString(),
     };
     const file = writeAdoptionReceipt(receipt.workspaceRoot, adoptionReceipt);
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.taskEnvironmentAdoption, { taskId: receipt.taskId, state: 'adopted', ready: true, executionReady: true, receipt: file, environmentEvidence: adoptionReceipt.environmentEvidence, sessionEvidence: adoptionReceipt.sessionEvidence, nextActions: [] });
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.taskEnvironmentAdoption, { taskId: receipt.taskId, state: 'activation-verified', ready: true, executionReady: true, receipt: file, environmentEvidence: adoptionReceipt.environmentEvidence, sessionEvidence: adoptionReceipt.sessionEvidence, limitation: 'agent-attested; Buildr does not introspect or start the Agent host', nextActions: [] });
     if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    else console.log(`Task environment adopted: ${receipt.environmentRoot}`);
+    else console.log(`Task environment activation evidence recorded: ${receipt.environmentRoot}`);
     return payload;
   }
 
