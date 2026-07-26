@@ -20,4 +20,4 @@
 
 - [x] 4.1 运行受影响的 unit、contract、integration 与 OpenSpec strict validation，记录实际 timing 和失败/跳过项。
 - [x] 4.2 建立 contract baseline，运行 proposal/pre-sync/post-sync guards，并按结果同步 canonical specs。
-- [ ] 4.3 在最终 delivery tree 运行 Project required assurance、doctor 与 managed asset integrity checks。
+- [x] 4.3 在最终 delivery tree 运行 Project required assurance、doctor 与 managed asset integrity checks。
