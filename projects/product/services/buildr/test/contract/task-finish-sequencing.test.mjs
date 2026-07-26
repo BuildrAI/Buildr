@@ -46,7 +46,7 @@ test('archive rehearsal 使用隔离副本并清理成功', () => {
       calls.push({ command, args, cwd: options.cwd });
       return args[0] === '--version' ? { status: 0, stdout: '1.6.0\n', stderr: '' } : { status: 0, stdout: 'archived\n', stderr: '' };
     };
-    const result = rehearseArchive({ projectRoot: root, change: 'demo', owner: 'test-owner', runCommand });
+    const result = rehearseArchive({ projectRoot: root, change: 'demo', owner: 'test-owner', openspecCommand: '/bin/echo', runCommand });
     assert.equal(result.status, 'passed');
     assert.equal(result.cleanupStatus, 'cleaned');
     assert.equal(fs.existsSync(result.temporaryRoot), false);
@@ -61,10 +61,21 @@ test('archive rehearsal 保留 cleanup failure 诊断', () => {
   const io = Object.create(fs);
   io.rmSync = () => { throw new Error('cleanup denied'); };
   const runCommand = (_command, args) => args[0] === '--version' ? { status: 0, stdout: '1.6.0\n', stderr: '' } : { status: 1, stdout: '', stderr: 'scenario mismatch' };
-  const result = rehearseArchive({ projectRoot: root, change: 'demo', owner: 'test-owner', io, runCommand });
+  const result = rehearseArchive({ projectRoot: root, change: 'demo', owner: 'test-owner', openspecCommand: '/bin/echo', io, runCommand });
   assert.equal(result.status, 'failed');
   assert.equal(result.cleanupStatus, 'retained');
   assert.match(result.cleanupError, /cleanup denied/);
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(result.temporaryRoot, { recursive: true, force: true });
+});
+
+test('archive rehearsal 在复制前拒绝相对 executable', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-rehearsal-test-'));
+  try {
+    fs.mkdirSync(path.join(root, 'openspec/changes/demo/specs/example'), { recursive: true });
+    const result = rehearseArchive({ projectRoot: root, change: 'demo', openspecCommand: 'openspec' });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.cleanupStatus, 'not-applicable');
+    assert.match(result.error, /绝对路径/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

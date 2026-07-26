@@ -94,7 +94,7 @@ Task verification provider MUST 为每次执行记录整体 wall-clock 耗时和
 - **AND** provider MUST NOT 因暂时无输出重复启动相同验证
 
 ### Requirement: 验证能力返回并报告标准结果证据
-Task verification provider MUST 返回 `requiredAssurance`、验证级别、状态、policy sources、policy mode、候选 identity、检查结果、能力选择决策、覆盖与环境摘要、授权决策、Candidate 完整性、整体耗时、timing source、最慢检查、失败项、跳过项、evidence reference 和 evidence 生命周期，并 MUST 在直接验证或开发完成回复中以“受影响验证”或“完整候选验证”作为主要用户表述。
+Task verification provider MUST 返回 `requiredAssurance`、验证级别、状态、policy sources、policy mode、候选 identity、检查结果、能力选择决策、覆盖与环境摘要、授权决策、Candidate 完整性、整体耗时、timing source、最慢检查、失败项、跳过项、evidence reference 和 evidence 生命周期，并 MUST 在直接验证或开发完成回复中以“受影响验证”或“完整候选验证”作为主要用户表述。provider MUST 区分自身 `execute` 的验证 wall-clock 与 consumer 的 workflow check、同步诊断或 Git 操作；后者不得进入 verification totalDurationMs。
 
 #### Scenario: 受影响验证成功
 - **WHEN** 普通任务的 affected 验证成功并产生与当前候选一致的 evidence
@@ -105,6 +105,11 @@ Task verification provider MUST 返回 `requiredAssurance`、验证级别、状�
 - **WHEN** Candidate 验证成功并产生可信 evidence
 - **THEN** provider MUST 报告候选、完整验证、选中能力、Candidate 完整性、总耗时、最慢检查、失败项为无、跳过项和 evidence reference
 - **AND** provider MUST 只有在 `candidateCompleteness: confirmed` 时说明实现具备完整候选证据
+
+#### Scenario: Consumer workflow check 不计入验证时间
+- **WHEN** consumer 在 execute 前后运行 OpenSpec guard、doctor、Git fetch 或 archive rehearsal
+- **THEN** provider MUST 只记录自身 verification execution 的 wall-clock
+- **AND** result evidence MUST 使 consumer 能将其他步骤另行归因
 
 #### Scenario: 能力因环境或授权未运行
 - **WHEN** 某个适用能力因环境未就绪、副作用未知或缺少授权被跳过或阻塞

@@ -53,7 +53,7 @@ openspec validate <change> --strict
 buildr openspec check <change> --stage post-sync --project <project> --target <workspace> --json
 ```
 
-post-sync 验证 receipt 绑定的预期结果，并确认未触达 Requirement 没有被删改。失败时停止 archive、commit、push 和 cleanup；不要删除 sidecar 或重跑 pre-sync 掩盖结果。
+post-sync 验证 receipt 绑定的预期结果，并确认未触达 Requirement 没有被删改。失败 finding 必须包含 operation、expected/actual 摘要和确定性的 next action；失败时停止 archive、commit、push 和 cleanup；不要删除 sidecar、自动采纳 canonical 或重跑 pre-sync 掩盖结果。
 
 ## 3. 失败处理
 

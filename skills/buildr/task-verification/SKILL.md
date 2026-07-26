@@ -163,5 +163,5 @@ verificationResultMetadataTransition: <可选；subtype、source/target identity
 - 不依赖 `task-worktree`、`git-ops` 或任何固定 provider id；有 worktree 时只消费调用方提供的候选边界与 identity。
 - 不把测试通过等同于业务验收、上线、归档、提交、推送或清理授权。
 - 不重复启动仍在运行的验证，不相加并行步骤推算整体耗时。
-- 不把 provider 的 `inspect`、`cleanup` 或 summary verifier 调用表述为重新执行验证；已有满足 `requiredAssurance` 的可信 evidence 进入收尾时不得仅因 consumer 调用而启动 executor。
+- 不把 provider 的 `inspect`、`cleanup`、summary verifier 或 consumer 的 OpenSpec guard、doctor、Git、archive rehearsal 调用表述为重新执行验证，或混入 `totalDurationMs`；已有满足 `requiredAssurance` 的可信 evidence 进入收尾时不得仅因 consumer 调用而启动 executor。
 - 不在候选变化后沿用旧 evidence；唯一例外是 Project 明确定义且证据完整的 `verification-result-metadata-only` consumer composition，原 evidence identity 仍保持不变。实现内容变化后重跑同一 `requiredAssurance`，不机械升级为 Candidate。

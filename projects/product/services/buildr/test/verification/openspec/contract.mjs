@@ -193,6 +193,9 @@ try {
   change('partial', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`);
   baseline('partial');
   check('partial', 'pre-sync');
+  const mismatch = check('partial', 'post-sync', 1);
+  const mismatchFinding = mismatch.findings.find((finding) => finding.code === 'openspec_contract.post_sync_result_mismatch');
+  if (!mismatchFinding || mismatchFinding.operation !== 'MODIFIED' || !mismatchFinding.expectedSummary?.startsWith('sha256-') || !mismatchFinding.actualSummary?.startsWith('sha256-') || !mismatchFinding.nextAction?.includes('完整文本')) fail('post-sync mismatch must return operation, expected/actual summaries, and an actionable repair');
   canonical('demo', [modified, requirement('Untouched', '被错误改写')]);
   assertError(check('partial', 'post-sync', 1), 'openspec_contract.post_sync_untouched_changed');
   removeChange('partial');

@@ -289,6 +289,7 @@ export function registerDomainsOpenspec(runtime) {
     for (const finding of result.findings) {
       console.log(`[${finding.severity}] ${finding.code} - ${finding.message}`);
       if (finding.nextAction) console.log(`  下一步：${finding.nextAction}`);
+      if (finding.expectedSummary || finding.actualSummary) console.log(`  预期/实际：${finding.expectedSummary ?? '<none>'} / ${finding.actualSummary ?? '<none>'}`);
     }
   }
 
@@ -414,7 +415,9 @@ export function registerDomainsOpenspec(runtime) {
           capability: target.capability,
           requirement: target.title,
           expectedState: target.state,
-          nextAction: '先审阅并合并已发生的契约变化，再显式更新或重建该 change 的基线。',
+          expectedSummary: openSpecContractHash(expected || ''),
+          actualSummary: openSpecContractHash(actual || ''),
+          nextAction: '先恢复或审阅 canonical Requirement，再显式更新或重建该 change 的基线；不得将当前 canonical 自动采纳为同步结果。',
         });
       }
     }
@@ -456,9 +459,14 @@ export function registerDomainsOpenspec(runtime) {
       for (const name of names) touched.set(`${operation.capability}\u0000${name}`, operation);
       const requirements = readOpenSpecCanonicalRequirements(projectRoot, operation.capability).requirements;
       if (operation.type === 'ADDED' || operation.type === 'MODIFIED') {
-        if (requirements.get(operation.title) !== operation.requirement) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_result_mismatch', `同步结果不匹配 ${operation.type} Requirement：${operation.capability} / ${operation.title}`, { capability: operation.capability, requirement: operation.title });
+        const actual = requirements.get(operation.title) || null;
+        if (actual !== operation.requirement) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_result_mismatch', `同步结果不匹配 ${operation.type} Requirement：${operation.capability} / ${operation.title}`, {
+          capability: operation.capability, requirement: operation.title, operation: operation.type,
+          expectedSummary: openSpecContractHash(operation.requirement), actualSummary: openSpecContractHash(actual || ''),
+          nextAction: '从 delta 中该 Requirement 的完整文本重建 canonical 后重跑 post-sync；不得重跑 pre-sync 掩盖 mismatch。',
+        });
       } else if (operation.type === 'REMOVED') {
-        if (requirements.has(operation.title)) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_result_mismatch', `同步结果仍保留 REMOVED Requirement：${operation.capability} / ${operation.title}`, { capability: operation.capability, requirement: operation.title });
+        if (requirements.has(operation.title)) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_result_mismatch', `同步结果仍保留 REMOVED Requirement：${operation.capability} / ${operation.title}`, { capability: operation.capability, requirement: operation.title, operation: operation.type, expectedSummary: '<absent>', actualSummary: openSpecContractHash(requirements.get(operation.title)), nextAction: '移除 delta 声明的 Requirement 后重跑 post-sync。' });
       } else if (operation.type === 'RENAMED') {
         const before = receipt.capabilities?.[operation.capability]?.[operation.from];
         const expected = before ? renameRequirementBlock(before, operation.from, operation.to) : null;
