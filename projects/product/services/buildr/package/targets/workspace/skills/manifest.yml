@@ -106,7 +106,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-board
     source: buildr
     path: buildr/task-board
-    description: 为复杂、长期、跨批次、跨 change、跨服务或团队的任务维护只读 HTML 任务看板、交付批次、依赖池和可选真实 change 关联；旧称“任务驾驶舱”继续作为用户意图路由。
+    description: 为跨批次、跨 change、跨团队或跨会话的复杂任务创建或更新只读任务看板；用户明确要求任务看板、整体进度、长期跟踪或使用旧称“任务驾驶舱”时也使用。简单任务不使用。
     enabled: true
     required: false
     state: installed
