@@ -1,0 +1,62 @@
+#!/bin/sh
+set -u
+
+minimum_node_major=20
+script_root=$(CDPATH= cd "${0%/*}" && pwd)
+cli_entry="$script_root/../bin/buildr.mjs"
+
+node_major() {
+  "$1" -p "process.versions.node.split('.')[0]" 2>/dev/null
+}
+
+is_compatible_node() {
+  [ -x "$1" ] || return 1
+  candidate_major=$(node_major "$1") || return 1
+  case "$candidate_major" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$candidate_major" -ge "$minimum_node_major" ]
+}
+
+run_with_node() {
+  selected_node=$1
+  shift
+  exec "$selected_node" "$cli_entry" "$@"
+}
+
+if [ "${BUILDR_NODE+x}" = x ]; then
+  explicit_node=$BUILDR_NODE
+  case "$explicit_node" in
+    */*) ;;
+    *) explicit_node=$(command -v "$explicit_node" 2>/dev/null || true) ;;
+  esac
+  if ! is_compatible_node "$explicit_node"; then
+    echo "Buildr development entry requires Node.js >=${minimum_node_major}; BUILDR_NODE must name a compatible executable." >&2
+    exit 1
+  fi
+  run_with_node "$explicit_node" "$@"
+fi
+
+old_ifs=$IFS
+IFS=:
+for path_entry in ${PATH:-}; do
+  [ -n "$path_entry" ] || path_entry=.
+  candidate="$path_entry/node"
+  if is_compatible_node "$candidate"; then
+    IFS=$old_ifs
+    run_with_node "$candidate" "$@"
+  fi
+done
+
+for path_entry in ${PATH:-}; do
+  [ -n "$path_entry" ] || path_entry=.
+  candidate="$path_entry/../../node/bin/node"
+  if is_compatible_node "$candidate"; then
+    IFS=$old_ifs
+    run_with_node "$candidate" "$@"
+  fi
+done
+IFS=$old_ifs
+
+echo "Buildr development entry requires Node.js >=${minimum_node_major}. Set BUILDR_NODE to a compatible executable or add one to PATH." >&2
+exit 1

@@ -43,7 +43,7 @@ export function validateProductSourceLayout({ projectEntries, serviceEntries, br
   for (const entry of requiredServiceRootEntries) {
     if (!serviceEntries.includes(entry)) findings.push(`Buildr Service root is missing ${entry}`);
   }
-  if (!/^#!\/usr\/bin\/env node\s+import ['"]\.\/services\/buildr\/bin\/buildr\.mjs['"];?\s*$/u.test(bridgeSource)) {
+  if (!/^#!\/bin\/sh\nset -eu\nproject_root=\$\(CDPATH= cd "\$\{0%\/\*\}" && pwd\)\nexec "\$project_root\/services\/buildr\/scripts\/run-development-cli" "\$@"\s*$/u.test(bridgeSource)) {
     findings.push('projects/product/buildr must be a thin Service CLI bridge');
   }
 

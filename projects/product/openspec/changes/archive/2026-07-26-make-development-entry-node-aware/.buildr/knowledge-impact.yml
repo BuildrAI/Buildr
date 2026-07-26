@@ -1,0 +1,20 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: make-development-entry-node-aware
+operation: reconcile
+treeIdentity: implementation
+impacts:
+  - type: brief
+    target: openspec/changes/make-development-entry-node-aware/brief.md
+    reason: 记录变更范围、入口流程与验收边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/make-development-entry-node-aware/proposal.md
+      - openspec/changes/make-development-entry-node-aware/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 开发运行要求新增自动 Node 选择行为
+    status: updated
+    sourceIdentities:
+      - openspec/specs/npm-cli-package/spec.md
+      - openspec/changes/make-development-entry-node-aware/specs/npm-cli-package/spec.md
+unresolvedItems: []

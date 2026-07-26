@@ -25,7 +25,7 @@ const canonicalServiceEntries = [
   'src',
   'test',
 ];
-const canonicalBridge = "#!/usr/bin/env node\nimport './services/buildr/bin/buildr.mjs';\n";
+const canonicalBridge = '#!/bin/sh\nset -eu\nproject_root=$(CDPATH= cd "${0%/*}" && pwd)\nexec "$project_root/services/buildr/scripts/run-development-cli" "$@"\n';
 
 test('Product 治理根与 Buildr Service 实现根满足最终结构契约', () => {
   assert.deepEqual(validateProductSourceLayout({
