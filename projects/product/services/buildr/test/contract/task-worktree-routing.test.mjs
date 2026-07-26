@@ -59,9 +59,24 @@ test('OpenSpec update 只补实施转换的 worktree 门槛，不引入新的 ca
 });
 
 test('worktree provider 保持环境职责且 triage 只声明分支级 optional dependencies', () => {
-  assert.match(worktreeSkill, /它不判断业务语义是否需要 OpenSpec change/);
-  assert.match(worktreeSkill, /propose 和创建 change artifacts 前先完成 worktree 决策/);
-  assert.match(worktreeSkill, /artifacts、实现、CLI、构建、测试和合并前候选验证都只能从 receipt 的 `allowedExecutionRoots` 执行/);
+  for (const required of [
+    '## 1. 职责边界',
+    '## 2. 决策',
+    '## 3. 生命周期',
+    '## 4. 协作交接',
+    '## 5. 授权与停止条件',
+    '| `create` |',
+    '| `reuse` |',
+    '| `none` |',
+    '| `blocked` |',
+    '只跳过 create-time doctor/sync',
+    '仍执行 context 和本次动作需要的状态检查',
+    '无法证明时停止删除或覆盖',
+    '同一 environment 同时只有一个 owner Agent 写入',
+    'selected `buildr.task-verification/v2` provider',
+  ]) assert.ok(worktreeSkill.includes(required), `task-worktree must include ${required}`);
+  assert.doesNotMatch(worktreeSkill, /## Guardrails/);
+  assert.doesNotMatch(worktreeSkill, /复用既有 worktree且没有发生 tree 转换时不重复检查/);
 
   const packagedTriage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');
   const workspaceTriage = workspaceManifest.skills.find((item) => item.id === 'task-triage');
@@ -78,6 +93,10 @@ test('worktree provider 保持环境职责且 triage 只声明分支级 optional
 
   const contract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-worktree-lifecycle');
   const binding = packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-worktree-lifecycle');
+  const packagedWorktree = packageManifest.builtins.skills.find((item) => item.id === 'task-worktree');
+  const workspaceWorktree = workspaceManifest.skills.find((item) => item.id === 'task-worktree');
   assert.equal(contract.version, 2);
   assert.equal(binding.provider, 'task-worktree');
+  assert.equal(packagedWorktree.description, workspaceWorktree.description);
+  assert.match(packagedWorktree.description, /不负责业务分流、Git 集成或验证。$/);
 });

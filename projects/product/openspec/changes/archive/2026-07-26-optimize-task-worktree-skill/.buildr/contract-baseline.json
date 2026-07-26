@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-worktree-skill",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-92c61f7c86474037af79d972994d7832976c4e5169db2bec2c7ac6e69f45bae6",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "buildr-package-assets",
+      "title": "随包 task-worktree guidance 必须简洁且结构化",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

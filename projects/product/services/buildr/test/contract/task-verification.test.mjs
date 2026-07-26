@@ -62,14 +62,15 @@ test('默认 provider 区分内部反馈与两级正式保证', () => {
 });
 
 test('worktree lifecycle 与任务验证职责解耦', () => {
-  assert.match(worktreeSkill, /候选边界交接/);
-  assert.match(worktreeSkill, /不执行验证/);
+  assert.match(worktreeSkill, /## 4\. 协作交接/);
+  assert.match(worktreeSkill, /验证属于 `task-verification`/);
   assert.doesNotMatch(worktreeSkill, /实现期间采用三级验证门禁/);
   assert.doesNotMatch(worktreeSkill, /单任务最小反馈：/);
   assert.match(worktreeSkill, /不监控普通编辑/);
-  assert.match(worktreeSkill, /不把 task checkout lifecycle contract 扩张为内容监控、Git integration 或验证执行 contract/);
-  assert.equal(worktreeSkill.split('实际自举 workspace 的 sync 是独立的状态变更').length - 1, 1);
-  assert.equal(worktreeSkill.split('本机 `buildr` 若指向即将删除的 task worktree').length - 1, 1);
+  assert.match(worktreeSkill, /不决定 Candidate evidence 的有效、复用或重跑/);
+  assert.equal(worktreeSkill.split('实际自举 workspace 的 sync 是独立的状态变更').length - 1, 0);
+  assert.equal(worktreeSkill.split('本机 `buildr` 若指向即将删除的 task worktree').length - 1, 0);
+  assert.match(worktreeSkill, /迁移或停止 task-owned 本机入口与进程/);
   assert.doesNotMatch(worktreeSkill, /旧 evidence 随即失效/);
 });
 

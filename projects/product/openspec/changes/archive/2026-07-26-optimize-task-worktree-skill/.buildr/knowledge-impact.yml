@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-worktree-skill
+operation: reconcile
+treeIdentity: 76c1a03723c131c222267a8e198e5c2a9df50fbd+task-worktree
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 每个正式 Change 维护人类可读摘要
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/buildr-package-assets/spec.md
+      - ../../../services/buildr/package/targets/workspace/skills/buildr/task-worktree/SKILL.md
+  - type: technical-architecture
+    target: none
+    reason: 仅优化既有 Skill 表达，不改变架构或 capability 拓扑
+    status: not-applicable
+    sourceIdentities:
+      - skills/contracts/buildr/task-worktree-lifecycle/v2.md
+unresolvedItems: []

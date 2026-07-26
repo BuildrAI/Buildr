@@ -664,44 +664,64 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-worktree') {
         for (const requiredText of [
+          'description: 用户要求创建、定位、复用、保留或清理 task worktree/change-id/本地任务分支',
+          '## 1. 职责边界',
+          '## 2. 决策',
+          '## 3. 生命周期',
+          '## 4. 协作交接',
+          '## 5. 授权与停止条件',
+          '| `create` |',
+          '| `reuse` |',
+          '| `none` |',
+          '| `blocked` |',
+          'Project/Service 规则优先于本表',
           '<workspace-root>/.worktrees/<task-id>',
-          'canonical environment root、repository selectors/checkout paths 和任务分支',
           '不得静默回退到 `/tmp`',
           'propose 和创建 change artifacts 前',
-          'artifacts、实现、CLI、构建、测试和合并前候选验证都只能从 receipt 的 `allowedExecutionRoots` 执行',
-          '候选边界交接',
-          '不执行验证',
-          'selected task-verification provider',
-          '`treeChanged` 结果证据',
-          '不监控普通编辑',
-          '不把 task checkout lifecycle contract 扩张为内容监控、Git integration 或验证执行 contract',
-          '不从未合并 task checkout 更新主自举 workspace',
+          '核对已有 artifacts 的 ownership、内容和唯一目标',
+          '无法证明时停止删除或覆盖',
           '`buildr worktree create <task-id>',
-          '产品入口先完整预检再创建 root 与 nested checkout',
-          'actionable findings 仅为当前 Agent runtime stale',
+          '产品入口统一预检 root 与 nested checkouts',
           '部分失败保留现场和 receipt',
+          '只跳过 create-time doctor/sync',
+          '仍执行 context 和本次动作需要的状态检查',
+          '`allowedExecutionRoots`',
+          '同一 environment 同时只有一个 owner Agent 写入',
+          '不从未合并 task checkout 更新主自举 workspace',
+          '<workspace-root>/.worktrees/',
+          '发布 environment 在远端 ref 匹配候选',
+          '不得据此删除远端分支',
+          'environment identity',
+          'repository state',
+          'lifecycle result',
+          '`treeChanged`',
+          '不监控普通编辑',
+          'selected `buildr.task-verification/v2` provider',
+          '删除远端分支、丢弃工作或清理外部资源始终需要当前轮次单独明确授权',
           'required Core workspace-transition invariant',
-          '复用既有 worktree且没有发生 tree 转换时不重复检查',
-          '通过产品入口 Buildr Skill 完成 doctor、sync 询问、Agent 执行和手动兜底边界',
           '不依赖 `git-ops`',
-          '不把手动命令作为默认处理方式',
-          '不在 `worktree create` 的封闭安全条件之外自动同步新 worktree runtime',
-          '不沿用普通开发任务的保守保留策略',
-          '远端 ref 与本地候选提交一致',
-          '没有明确的后续本地构建、部署、修复或验证动作',
-          '说明保留原因和下一项本地动作',
-          '默认清理不授权删除远端发布分支',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-worktree Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        for (const uniqueText of [
-          '实际自举 workspace 的 sync 是独立的状态变更',
-          '本机 `buildr` 若指向即将删除的 task worktree',
-        ]) {
+        for (const uniqueText of ['## 1. 职责边界', '## 2. 决策', '## 3. 生命周期', '## 4. 协作交接', '## 5. 授权与停止条件']) {
           const count = skillContent.split(uniqueText).length - 1;
           if (count !== 1) problems.push(`task-worktree Skill must include ${JSON.stringify(uniqueText)} exactly once, found ${count}.`);
         }
+        if (skillContent.includes('## Guardrails')) problems.push('task-worktree Skill must integrate guardrails into lifecycle and stop conditions.');
+        const body = skillContent.slice(skillContent.indexOf('# Task Worktree Skill'));
+        const nonWhitespaceCharacters = body.replace(/\s/g, '').length;
+        if (nonWhitespaceCharacters > 3400) problems.push(`task-worktree Skill body must stay concise: ${nonWhitespaceCharacters} non-whitespace characters > 3400.`);
+        try {
+          const { description = '' } = parseSkillFrontmatter(skillFile);
+          const sentenceStops = description.match(/[。！？]/g)?.length || 0;
+          if (sentenceStops !== 1) problems.push(`task-worktree Skill description must be one sentence, found ${sentenceStops}.`);
+        } catch {
+          // Frontmatter errors are reported by the shared validation above.
+        }
         for (const forbiddenText of [
+          '复用既有 worktree且没有发生 tree 转换时不重复检查',
+          '把已有 artifacts 收敛到该唯一位置并清除原工作区重复副本',
+          'canonical environment root、receipt、完整 repository set、每仓 checkout/branch/HEAD/clean 状态',
           '改变候选内容时必须返回 `treeChanged: true`，旧 evidence 随即失效',
           '不因 checkout 或 commit hash 改变而机械重复验证',
           '候选 tree 已改变时沿用旧验证结果',
