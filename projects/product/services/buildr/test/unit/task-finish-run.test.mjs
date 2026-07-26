@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { advanceFinishRun, createFinishRun, executeSafeFinishRun, FINISH_STEPS, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
+import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, FINISH_STEPS, inspectFinishRun, prepareFinishCleanup, readFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-'));
@@ -87,6 +87,68 @@ test('远端 target ref 竞态阻塞 push 并失效 target convergence 下游', 
   const run = readFinishRun({ root, runId: 'finish-1' });
   assert.equal(run.steps.find((item) => item.id === 'target-convergence').status, 'stale');
   assert.equal(run.steps.find((item) => item.id === 'integration-push').effects.length, 0);
+});
+
+test('integration push 接受自身 ref transition 与已收敛幂等结果', (t) => {
+  for (const [runId, before] of [['pushed', 'base'], ['idempotent', 'candidate']]) {
+    const root = fixture(t); create(root, runId);
+    while (inspectFinishRun(readFinishRun({ root, runId })).currentStep !== 'integration-push') passCurrent(root, runId);
+    const claimed = advanceFinishRun({ root, runId, fingerprints: { 'integration-push': 'push-v2' } });
+    const result = advanceFinishRun({
+      root, runId, fingerprints: { 'integration-push': 'push-v2' }, outcome: 'passed', attemptToken: claimed.nextAction.attemptToken,
+      evidence: { id: `${runId}-transition` },
+      refTransition: { expectedBeforePush: 'base', observedBeforePush: before, expectedAfterPush: 'candidate', observedAfterPush: 'candidate' },
+    });
+    assert.equal(result.blocked.length, 0);
+    const evidence = readFinishRun({ root, runId }).steps.find((item) => item.id === 'integration-push').evidence.at(-1);
+    assert.equal(evidence.refTransition.observedAfterPush, 'candidate');
+    assert.equal(evidence.idempotent, before === 'candidate');
+  }
+});
+
+test('running step 失效会终结 attempt 并释放自己的 lease', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'target-convergence') passCurrent(root, 'finish-1');
+  advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'old' }, clock: () => 1_000 });
+  resumeFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'new' }, clock: () => 1_100 });
+  const run = readFinishRun({ root, runId: 'finish-1' });
+  const attempts = run.steps.find((item) => item.id === 'target-convergence').attempts;
+  assert.equal(attempts[0].outcome, 'stale');
+  assert.equal(attempts[0].finishedAt, new Date(1_100).toISOString());
+  assert.equal(attempts[1].outcome, 'running');
+});
+
+test('complete run 写入 canonical compact completion receipt', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).status !== 'complete') passCurrent(root, 'finish-1');
+  const run = readFinishRun({ root, runId: 'finish-1' });
+  assert.ok(fs.existsSync(run.completionReceipt));
+  const receipt = JSON.parse(fs.readFileSync(run.completionReceipt, 'utf8'));
+  assert.equal(receipt.schemaVersion, 'buildr.task-finish-completion/v1');
+  assert.equal(Object.hasOwn(receipt.timing, 'attempts'), false);
+  assert.equal(run.steps.flatMap((item) => item.attempts).some((attempt) => attempt.finishedAt == null), false);
+});
+
+test('cleanup prepare 与 retained checkout finalize 分离真实删除证据', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'cleanup') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { cleanup: 'cleanup-v2' } });
+  const prepared = prepareFinishCleanup({ root, runId: 'finish-1', attemptToken: claimed.nextAction.attemptToken, evidence: { id: 'cleanup-prepared', worktreeClean: true } });
+  assert.equal(prepared.cleanup.status, 'prepared');
+  assert.equal(JSON.parse(fs.readFileSync(prepared.completionReceipt, 'utf8')).status, 'prepared');
+  assert.throws(() => finalizeFinishCleanup({ root, runId: 'finish-1', evidence: { id: 'missing-removal' } }), /environmentRemoved/);
+  const completed = finalizeFinishCleanup({ root, runId: 'finish-1', evidence: { id: 'cleanup-complete', environmentRemoved: true, branchRemoved: true } });
+  assert.equal(completed.status, 'complete');
+  assert.equal(JSON.parse(fs.readFileSync(completed.completionReceipt, 'utf8')).status, 'complete');
+});
+
+test('compact checkpoint 不重复展开 steps 与 attempts', (t) => {
+  const root = fixture(t); create(root);
+  const compact = compactFinishCheckpoint(inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })));
+  assert.equal(compact.schemaVersion, 'buildr.task-finish-checkpoint-summary/v1');
+  assert.equal(Object.hasOwn(compact, 'steps'), false);
+  assert.equal(Object.hasOwn(compact.timing, 'attempts'), true);
+  assert.equal(compact.timing.attempts, undefined);
 });
 
 test('run id 不得逃逸 canonical runs root', (t) => {
@@ -248,4 +310,32 @@ test('registered runtime sync handler 复用原状态机共享 lease', async (t)
   });
   assert.equal(observedLease, true);
   assert.equal(result.steps.find((item) => item.id === 'runtime-convergence').status, 'passed');
+});
+
+test('composite handler 顺序执行阶段并记录阶段 timing', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'contract-convergence') passCurrent(root, 'finish-1');
+  const probe = (id) => ({ id, cwd: root, command: '/usr/bin/true', commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe' });
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'contract-convergence': 'composite-v1' },
+    executionPlans: { 'contract-convergence': { cwd: root, sharedMutation: true, safeAuto: true, safeHandler: 'openspec-convergence', evidenceId: 'convergence-composite', stages: [{ id: 'rehearsal', commands: [probe('one')] }, { id: 'post-sync', commands: [probe('two')] }] } },
+  });
+  assert.equal(result.currentStep, 'candidate-commit');
+  const evidence = readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'contract-convergence').evidence[0];
+  assert.deepEqual(evidence.stages.map((stage) => stage.id), ['rehearsal', 'post-sync']);
+});
+
+test('formal verification composite 并行执行 required capabilities', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  let active = 0; let maxActive = 0;
+  const capability = (id) => ({ id, cwd: root, command: process.execPath, commandSource: 'external-declared', args: ['--test'], sharedMutation: false, safeAuto: true, safeHandler: 'verification-capability' });
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-v1' },
+    executionPlans: { 'formal-assurance': { cwd: root, sharedMutation: true, safeAuto: true, safeHandler: 'formal-verification', evidenceId: 'affected-summary', stages: [{ id: 'required-capabilities', parallel: true, commands: [capability('fast'), capability('archive')] }] } },
+    runCommand: async () => { active += 1; maxActive = Math.max(maxActive, active); await new Promise((resolve) => setTimeout(resolve, 10)); active -= 1; return { status: 0, stdout: '{}', stderr: '' }; },
+  });
+  assert.equal(maxActive, 2);
+  assert.equal(result.currentStep, 'asset-review');
+  assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'formal-assurance').evidence[0].observationCount, 2);
 });

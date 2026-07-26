@@ -1,4 +1,4 @@
-import { advanceFinishRun, createFinishRun, executeSafeFinishRun, inspectFinishRun, readFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
+import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, inspectFinishRun, prepareFinishCleanup, readFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
 
 function values(args, name) {
   const result = [];
@@ -28,6 +28,7 @@ export function registerTaskFinishApplication(runtime) {
     const root = command.targetRoot;
     const runId = optionValue(command.args, '--run');
     if (!runId) throw new Error('Missing value for --run');
+    if (action === 'cleanup-finalize') return print(finalizeFinishCleanup({ root, runId, evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args);
     if (action === 'inspect') return print(inspectFinishRun(readFinishRun({ root, runId })), command.args);
     if (action === 'renew') return print(renewFinishLease({ root, runId, attemptToken: optionValue(command.args, '--attempt') }), command.args);
     let run;
@@ -37,6 +38,7 @@ export function registerTaskFinishApplication(runtime) {
       run = createFinishRun({ root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null), targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin') });
     }
     if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {} }).then((result) => print(result, command.args));
+    if (action === 'cleanup-prepare') return print(prepareFinishCleanup({ root, runId: run.runId, attemptToken: optionValue(command.args, '--attempt'), evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args);
     const options = {
       root, runId: run.runId, fingerprints: fingerprints(command.args),
       outcome: optionValue(command.args, '--outcome', null), attemptToken: optionValue(command.args, '--attempt', null),
@@ -45,17 +47,21 @@ export function registerTaskFinishApplication(runtime) {
       session: jsonValue(optionValue(command.args, '--session', null), '--session'),
       expectedTargetRef: optionValue(command.args, '--expected-target-ref', null),
       observedTargetRef: optionValue(command.args, '--observed-target-ref', null),
+      refTransition: jsonValue(optionValue(command.args, '--ref-transition', null), '--ref-transition'),
       executionPlan: jsonValue(optionValue(command.args, '--execution-plan', null), '--execution-plan'),
     };
     return print(action === 'resume' ? resumeFinishRun(options) : advanceFinishRun(options), command.args);
   }
 
   function print(result, args) {
-    if (args.includes('--json')) console.log(JSON.stringify(result, null, 2));
+    if (args.includes('--json')) {
+      const checkpoint = Array.isArray(result.completedEffects) && result.timing;
+      console.log(JSON.stringify(checkpoint && !(args.includes('--detail') && optionValue(args, '--detail') === 'full') ? compactFinishCheckpoint(result) : result, null, 2));
+    }
     else {
       console.log(`Task Finish run ${result.runId}: ${result.status}`);
       console.log(result.nextAction ? `Next: ${result.nextAction.step} - ${result.nextAction.action}` : 'Next: none');
-      if (result.blocked.length) console.log(`Blocked: ${result.blocked.map((item) => `${item.step}: ${item.reason || item.code}`).join('; ')}`);
+      if (result.blocked?.length) console.log(`Blocked: ${result.blocked.map((item) => `${item.step}: ${item.reason || item.code}`).join('; ')}`);
     }
     return result;
   }

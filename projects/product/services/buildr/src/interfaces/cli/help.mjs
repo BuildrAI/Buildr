@@ -21,8 +21,8 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
-    console.error('  buildr task finish <inspect|advance|resume|renew|run> --run <id> [--task <id> --change <id> --target-branch <branch>] [--fingerprint <step>=<value> ...] [--execution-plan <json> | --execution-plans <json>] [--json]');
-    console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--include-info] [--verbose]');
+    console.error('  buildr task finish <inspect|advance|resume|renew|run|cleanup-prepare|cleanup-finalize> --run <id> [--task <id> --change <id> --target-branch <branch>] [--fingerprint <step>=<value> ...] [--execution-plan <json> | --execution-plans <json>] [--ref-transition <json>] [--detail <compact|full>] [--json]');
+    console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
     console.error('  buildr mutation recover <transaction-id> [--target <dir>]');
     console.error('  buildr commands add <id> --purpose <text> [--target <dir>] [--collection <path>] [--executable <name>] [--name <text>] [--description <text>] [--version-constraint <constraint>] [--version-args <args>] [--install-hint <text>] [--replace]');
     console.error('  buildr commands remove <id> [--target <dir>] [--collection <path>]');
@@ -205,7 +205,7 @@ export function registerCommandHelp(runtime) {
       '该 evidence 不参与普通 executionReady，也不表示 Buildr 能自动 reload、启动或 handoff Agent session。',
     ],
     doctor: [
-      'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--include-info] [--verbose]',
+      'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
       '',
       '诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。',
     ],

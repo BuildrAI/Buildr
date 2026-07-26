@@ -167,6 +167,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
     const requestedAgent = optionValue(args, '--agent', null);
     if (requestedAgent !== null) assertAgentId(requestedAgent);
     const json = hasFlag(args, '--json');
+    const detail = optionValue(args, '--detail', 'full');
+    if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
     const includeInfo = hasFlag(args, '--include-info') || hasFlag(args, '--verbose');
     const result = {
       targetRoot,
@@ -257,7 +259,12 @@ export function registerApplicationWorkspaceOperations(runtime) {
     finalizeDoctorResult(result);
 
     if (json) {
-      process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, result), null, 2)}\n`);
+      const report = detail === 'compact' ? {
+        targetRoot: result.targetRoot, scope: result.scope, agentRuntime: result.agentRuntime,
+        ok: result.ok, summary: result.summary, health: result.health,
+        findings: result.findings, repairPlan: result.repairPlan, nextSteps: result.nextSteps,
+      } : result;
+      process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, report), null, 2)}\n`);
     } else {
       printDoctorReport(result);
     }

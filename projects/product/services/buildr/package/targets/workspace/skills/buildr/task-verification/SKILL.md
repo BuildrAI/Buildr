@@ -40,6 +40,8 @@ Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有
 
 共享实现区域、验证入口或失败影响面的任务组完成后，集中运行一次受影响范围验证。选择影响面内的 stable required 能力；环境和授权允许时可以运行 trial/advisory 能力积累证据，但其失败不得单独冒充 required gate 失败。同一候选状态下，只有能证明上层入口覆盖底层检查时才去重；无法证明覆盖关系时保留必要检查。
 
+当多个 required 能力彼此独立、执行根与副作用允许并行时，向 Task Finish consumer 返回一次 `formal-verification` composite execution plan，由产品 executor 在同一 execution 内并行调度并汇总整体 wall-clock。不得为此生成临时 shell、手工轮询日志、重复启动相同 verifier，或用外部包装再次计算已有可信 timing。
+
 ### 完整候选验证（candidate）
 
 全部实现、自然语言资产、生成资产同步和 review 修订完成后冻结候选，再运行项目要求的完整验证。`authoritative` 模式必须运行全部适用的 stable required Candidate gates，不得按 Git diff、固定能力数量或技术栈分层缩小；`augment` 或 legacy 无法确认完整范围时设置 `candidateCompleteness: unconfirmed`。只有 `level: candidate`、`status: passed`、`candidateCompleteness: confirmed`、candidate identity 匹配且 evidence 可复用时，才能把结果作为实现完整验证或 Task Finish 的完成证据。
@@ -73,6 +75,7 @@ Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有
 2. 普通命令没有 summary 时，从启动验证进程前到该进程退出后使用单调时钟测量，标记 `timingSource: wrapper-measured`。只报告实际可测的整体与单命令耗时，不声称不存在的逐阶段数据。
 3. 并行执行时不得把各检查 `durationMs` 相加推算 `totalDurationMs`；总耗时必须来自整体 execution 的 wall-clock。
 4. 工具返回 session、cell、process id 或运行中状态时，继续 wait、poll 或 resume 同一进程；暂时无输出不得启动第二个相同验证。
+5. consumer 已提供产品持有的 composite executor 时，优先让 executor 持有 required capability 的进程、阶段状态和 timing；Agent 只消费其结构化结果并处理异常分支，不逐命令接管正常路径。
 
 验证命令需要修改外部系统、部署环境、持久业务数据或共享状态时，停止并取得该具体副作用的授权。构建产物和项目政策明确允许的本地测试临时文件仍属于常规验证效果。
 
@@ -155,6 +158,8 @@ verificationResultMetadataTransition: <可选；subtype、source/target identity
 ```
 
 报告使用“受影响验证”或“完整候选验证”。只有当前政策确实要求 Candidate 时，Affected 通过后才追加“完整候选验证尚未执行”。不得只说“测试通过”，也不得把任务总耗时、排队时间或人工等待混入验证自身耗时。
+
+正常成功路径默认返回 compact summary；只有失败诊断、审计或明确请求时才展开完整 attempts、原始命令输出和 runtime diagnostics。
 
 ## Guardrails
 

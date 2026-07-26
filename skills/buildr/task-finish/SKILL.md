@@ -5,7 +5,7 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的薄入口，把“收尾”作为一次性授权，用 `buildr task finish inspect|advance|resume|renew` 持久化进度并调用 selected providers。
+本 Skill 是 `buildr.task-finish/v1` 的薄入口，把“收尾”作为一次性授权，用 `buildr task finish inspect|advance|resume|renew|run` 持久化进度并调用 selected providers。
 
 ## 开始与采用
 
@@ -15,7 +15,11 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 ## 推进
 
-读取 checkpoint；`--execution-plan` 预检 executable、cwd、script 与 selector，再由 Agent/provider 执行。用同一 attempt、非空 fingerprint、稳定 evidence/effects 提交结果；重复 identity 必须相同。push 还提交 expected/observed target ref。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 定级。
+优先用完整 `--execution-plans` manifest 调用 `run`，让已登记 handler 连续推进确定性步骤；语义冲突、授权缺口或未登记动作仍停回 checkpoint。默认 compact JSON 已足够驱动下一步，只有诊断时使用 `--detail full`。
+
+OpenSpec convergence 与正式验证使用 identity-bound composite handler，阶段状态由产品持久化，不手工搬运 receipt 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 决定 assurance；已有 identity 匹配的有效 evidence 不重跑。每步提交非空 fingerprint、effects 与 evidence。
+
+push 使用 `--ref-transition` 提交 before/after expected/observed refs，保留 expected/observed target ref 兼容语义；自身成功推进和远端已等于 candidate 是成功，只有 push 前外部漂移才是 `target-race`。
 
 <!-- buildr:skill-contributions pre-verification -->
 
@@ -23,7 +27,7 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
-`resume` 只重跑 blocked/stale 及其下游，passed effects 不重复。共享写临界区使用 holder/token/expiry fencing 短 lease；未过期可 `renew`。不创建 Workspace 全局锁。
+`resume` 只重跑 blocked/stale 及其下游，passed effects 不重复。共享写临界区使用 holder/token/expiry fencing 短 lease；未过期可 `renew`。running step失效时 attempt与其自有lease必须一起终结，不创建Workspace全局锁。
 
 含 delta 时聚合 findings 并生成 receipt；严格执行 rehearsal → pre-sync → canonical sync → post-sync。identity 变化返回 pre-sync，禁止事后 baseline。
 
@@ -35,4 +39,6 @@ asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化�
 
 ## 完成
 
-完成前 `inspect` 核对全部 passed。报告 identity、验证、attempt timing、retry/waste、effects、archive/integration/push、runtime/doctor、asset/process/environment cleanup 与风险。cleanup 失败不得重做远端动作。
+cleanup 先在task environment内执行 `cleanup-prepare`，把prepared completion receipt写入canonical Workspace；实际删除task-owned process、worktree和branch后，从retained checkout执行 `cleanup-finalize`。prepare不得表述为complete，cleanup失败不得重做远端动作。
+
+完成后报告identity、验证、attempt timing、retry/waste、effects、archive/integration/push、runtime/doctor、asset/process/environment cleanup、canonical completion receipt与风险。正常doctor使用`--detail compact`，失败再请求full detail，避免把逐资产成功项注入Agent context。

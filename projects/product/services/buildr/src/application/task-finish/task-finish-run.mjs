@@ -41,6 +41,12 @@ function runFile(root, runId) {
   return file;
 }
 function leaseRoot(root) { return path.join(root, '.buildr', 'task-finish', 'leases'); }
+function completionRoot(root) {
+  const marker = `${path.sep}.worktrees${path.sep}`;
+  const index = path.resolve(root).indexOf(marker);
+  const workspace = index >= 0 ? path.resolve(root).slice(0, index) : path.resolve(root);
+  return path.join(workspace, '.buildr', 'task-finish', 'completed');
+}
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
 function atomicWriteJson(file, value) {
@@ -138,6 +144,13 @@ export function validateFinishExecutionPlan({ root, plan }) {
       ? { path: plan.jsonAssertion.path, equals: plan.jsonAssertion.equals }
       : null,
     observations: Array.isArray(plan.observations) ? plan.observations.map((entry) => validateFinishExecutionPlan({ root, plan: { ...entry, sharedMutation: false, safeAuto: true } })) : [],
+    stages: Array.isArray(plan.stages) ? plan.stages.map((entry) => ({
+      id: typeof entry.id === 'string' && entry.id.trim() ? entry.id : null,
+      parallel: entry.parallel === true,
+      commands: Array.isArray(entry.commands)
+        ? entry.commands.map((commandPlan) => validateFinishExecutionPlan({ root, plan: { ...commandPlan, sharedMutation: false, safeAuto: true } }))
+        : [],
+    })) : [],
   };
 }
 
@@ -160,12 +173,35 @@ function descendants(run, stepId) {
   return result;
 }
 
-function invalidate(run, stepId, reason, includeSelf = true) {
+function finishAttempt(item, outcome, attribution, clock) {
+  const token = item.attemptToken;
+  const attempt = item.attempts?.find((entry) => entry.token === token && entry.finishedAt == null);
+  const finishedAt = now(clock);
+  if (attempt) Object.assign(attempt, { finishedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome, attribution });
+  item.lastAttemptToken = token || item.lastAttemptToken;
+  item.attemptToken = null;
+  item.completedAt = finishedAt;
+}
+
+function releaseOwnedLease(item) {
+  if (!item.lease?.directory) { item.lease = null; return; }
+  const file = path.join(item.lease.directory, 'lease.json');
+  let existing = null;
+  try { existing = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  if (leaseIdentityMatches(existing, item)) removeLeasePath(item.lease.directory);
+  item.lease = null;
+}
+
+function invalidate(run, stepId, reason, includeSelf = true, clock = Date.now) {
   const ids = descendants(run, stepId);
   if (includeSelf) ids.add(stepId);
   for (const id of ids) {
     const item = run.steps.find((candidate) => candidate.id === id);
     if (item.status === 'passed' || item.status === 'blocked' || item.status === 'running') {
+      if (item.status === 'running') {
+        releaseOwnedLease(item);
+        finishAttempt(item, 'stale', 'input-changed', clock);
+      }
       item.status = 'stale';
       item.blocked = { code: 'input-changed', reason, invalidatedBy: stepId };
       item.attemptToken = null; item.lease = null;
@@ -173,11 +209,11 @@ function invalidate(run, stepId, reason, includeSelf = true) {
   }
 }
 
-export function refreshFinishInputs(run, fingerprints = {}) {
+export function refreshFinishInputs(run, fingerprints = {}, clock = Date.now) {
   for (const [stepId, fingerprint] of Object.entries(fingerprints)) {
     const item = run.steps.find((candidate) => candidate.id === stepId);
     if (!item) throw new Error(`Unknown Task Finish step: ${stepId}`);
-    if (item.inputFingerprint && item.inputFingerprint !== fingerprint) invalidate(run, stepId, `input fingerprint changed from ${item.inputFingerprint} to ${fingerprint}`);
+    if (item.inputFingerprint && item.inputFingerprint !== fingerprint) invalidate(run, stepId, `input fingerprint changed from ${item.inputFingerprint} to ${fingerprint}`, true, clock);
     item.inputFingerprint = fingerprint;
   }
   return run;
@@ -306,7 +342,7 @@ function sameCompletion(left, right) {
 }
 
 function nextStep(run) {
-  return run.steps.find((item) => ['pending', 'stale', 'blocked', 'running'].includes(item.status));
+  return run.steps.find((item) => ['pending', 'stale', 'blocked', 'running', 'prepared'].includes(item.status));
 }
 
 export function inspectFinishRun(run) {
@@ -336,7 +372,65 @@ export function inspectFinishRun(run) {
   };
 }
 
-export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, executionPlan = null, clock = Date.now, leaseTtlMs = 600_000 }) {
+function completionFile(root, runId) {
+  if (!FINISH_RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish run id is invalid.');
+  return path.join(completionRoot(root), `${runId}.json`);
+}
+
+export function prepareFinishCleanup({ root, runId, attemptToken, evidence, clock = Date.now }) {
+  assertEvidence(evidence, 'evidence');
+  const run = readFinishRun({ root, runId });
+  const item = nextStep(run);
+  if (!item || item.id !== 'cleanup' || item.status !== 'running' || item.attemptToken !== attemptToken) throw new Error('cleanup prepare requires the current running cleanup attempt.');
+  const receiptFile = completionFile(root, runId);
+  const preparedAt = now(clock);
+  releaseOwnedLease(item);
+  finishAttempt(item, 'prepared', 'none', clock);
+  item.status = 'prepared';
+  item.blocked = { code: 'cleanup-finalize-required', reason: 'Cleanup is prepared; finalize from the retained canonical Workspace after task-owned deletion succeeds.' };
+  item.evidence.push(evidence);
+  const receipt = {
+    schemaVersion: 'buildr.task-finish-completion/v1', status: 'prepared', runId, task: run.task, change: run.change,
+    target: run.target, preparedAt, environmentRoot: path.resolve(root), cleanupEvidence: evidence,
+    effects: run.steps.flatMap((candidate) => candidate.effects.map((entry) => ({ step: candidate.id, id: entry.id }))),
+    verificationEvidence: run.steps.find((candidate) => candidate.id === 'formal-assurance')?.evidence || [],
+    archiveEvidence: run.steps.find((candidate) => candidate.id === 'archive')?.evidence || [],
+  };
+  atomicWriteJson(receiptFile, receipt);
+  run.completionReceipt = receiptFile;
+  run.updatedAt = preparedAt;
+  atomicWriteJson(runFile(root, runId), run);
+  return { ...compactFinishCheckpoint(inspectFinishRun(run)), completionReceipt: receiptFile, cleanup: { status: 'prepared' } };
+}
+
+export function finalizeFinishCleanup({ root, runId, evidence, clock = Date.now }) {
+  assertEvidence(evidence, 'evidence');
+  const receiptFile = completionFile(root, runId);
+  if (!fs.existsSync(receiptFile)) throw new Error(`Prepared Task Finish completion receipt not found: ${runId}`);
+  const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+  if (receipt.schemaVersion !== 'buildr.task-finish-completion/v1' || receipt.status !== 'prepared') throw new Error('Task Finish completion receipt is not prepared.');
+  if (evidence.environmentRemoved !== true && evidence.environmentRetained !== true) throw new Error('cleanup finalize evidence must confirm environmentRemoved or environmentRetained.');
+  const completed = { ...receipt, status: 'complete', completedAt: now(clock), finalCleanupEvidence: evidence };
+  atomicWriteJson(receiptFile, completed);
+  return { schemaVersion: 'buildr.task-finish-completion-result/v1', runId, status: 'complete', completionReceipt: receiptFile, cleanup: evidence };
+}
+
+export function compactFinishCheckpoint(checkpoint) {
+  return {
+    schemaVersion: 'buildr.task-finish-checkpoint-summary/v1',
+    runId: checkpoint.runId, task: checkpoint.task, change: checkpoint.change,
+    status: checkpoint.status, currentStep: checkpoint.currentStep,
+    completedEffectCount: checkpoint.completedEffects.length,
+    validEvidenceCount: checkpoint.validEvidence.length,
+    blocked: checkpoint.blocked,
+    staleSteps: checkpoint.staleSteps,
+    timing: { ...checkpoint.timing, attempts: undefined },
+    nextAction: checkpoint.nextAction,
+    ...(checkpoint.safeExecution ? { safeExecution: checkpoint.safeExecution } : {}),
+  };
+}
+
+export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, refTransition = null, executionPlan = null, clock = Date.now, leaseTtlMs = 600_000 }) {
   const run = readFinishRun({ root, runId });
   const plannedItem = nextStep(run);
   let normalizedPlan;
@@ -352,7 +446,7 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
   }
   const normalizedFingerprints = { ...fingerprints };
   if (plannedItem && Object.hasOwn(normalizedFingerprints, plannedItem.id) && normalizedFingerprints[plannedItem.id] !== plannedItem.inputFingerprint) normalizedFingerprints[plannedItem.id] = effectiveFingerprint(normalizedFingerprints[plannedItem.id], normalizedPlan);
-  refreshFinishInputs(run, normalizedFingerprints);
+  refreshFinishInputs(run, normalizedFingerprints, clock);
   if (session && !run.sessions.some((item) => item.handle === session.handle)) run.sessions.push(session);
   let item = nextStep(run);
   if (!item) return inspectFinishRun(run);
@@ -379,7 +473,7 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
       if (typeof item.inputFingerprint !== 'string' || !item.inputFingerprint.trim()) throw new Error(`Step ${item.id} requires a non-empty input fingerprint before it can pass.`);
       assertEvidence(evidence, 'evidence');
       if (effect) assertEvidence(effect, 'effect');
-      if (item.id === 'integration-push' && (!expectedTargetRef || !observedTargetRef)) throw new Error('integration-push requires expectedTargetRef and observedTargetRef observations.');
+      if (item.id === 'integration-push' && !refTransition && (!expectedTargetRef || !observedTargetRef)) throw new Error('integration-push requires refTransition or legacy expectedTargetRef/observedTargetRef observations.');
     }
     const leaseResult = consumeLease(item, clock);
     if (!leaseResult.ok) {
@@ -394,10 +488,22 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
       return inspectFinishRun(run);
     }
     clearLease(item);
-    if (item.id === 'integration-push' && expectedTargetRef !== observedTargetRef) {
-      invalidate(run, 'target-convergence', `target-race: expected ${expectedTargetRef}, observed ${observedTargetRef}`);
+    const transition = item.id === 'integration-push' ? refTransition : null;
+    if (transition) {
+      for (const key of ['expectedBeforePush', 'observedBeforePush', 'expectedAfterPush', 'observedAfterPush']) {
+        if (typeof transition[key] !== 'string' || !transition[key]) throw new Error(`integration-push ref transition requires ${key}.`);
+      }
+    }
+    const beforeRace = transition
+      ? transition.observedBeforePush !== transition.expectedBeforePush && transition.observedBeforePush !== transition.expectedAfterPush
+      : item.id === 'integration-push' && expectedTargetRef !== observedTargetRef;
+    const afterMismatch = transition && transition.observedAfterPush !== transition.expectedAfterPush;
+    if (item.id === 'integration-push' && (beforeRace || afterMismatch)) {
+      const expected = transition ? (beforeRace ? transition.expectedBeforePush : transition.expectedAfterPush) : expectedTargetRef;
+      const observed = transition ? (beforeRace ? transition.observedBeforePush : transition.observedAfterPush) : observedTargetRef;
+      invalidate(run, 'target-convergence', `target-race: expected ${expected}, observed ${observed}`, true, clock);
       item.status = 'blocked';
-      item.blocked = { code: 'target-race', reason: 'Remote target ref changed after convergence', expectedTargetRef, observedTargetRef };
+      item.blocked = { code: 'target-race', reason: 'Remote target ref changed outside the declared transition', expectedTargetRef: expected, observedTargetRef: observed, refTransition: transition };
       item.lastAttemptToken = item.attemptToken; item.attemptToken = null; item.completedAt = now(clock);
       const attempt = item.attempts.find((entry) => entry.token === attemptToken);
       if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome: 'blocked', attribution: 'target-race' });
@@ -406,12 +512,13 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
       return inspectFinishRun(run);
     }
     if (effect && !item.effects.some((entry) => entry.id === effect.id)) item.effects.push(effect);
-    if (evidence && !item.evidence.some((entry) => entry.id === evidence.id)) item.evidence.push(evidence);
+    const completedEvidence = transition ? { ...evidence, refTransition: transition, idempotent: transition.observedBeforePush === transition.expectedAfterPush } : evidence;
+    if (completedEvidence && !item.evidence.some((entry) => entry.id === completedEvidence.id)) item.evidence.push(completedEvidence);
     item.completedAt = now(clock);
     const attempt = item.attempts.find((entry) => entry.token === attemptToken);
     if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome, attribution: outcome === 'blocked' ? (blocked?.code || 'provider-blocked') : 'none' });
     item.lastAttemptToken = item.attemptToken;
-    item.lastCompletion = completionIdentity({ item, fingerprint: submittedFingerprint, effect, evidence, outcome });
+    item.lastCompletion = completionIdentity({ item, fingerprint: submittedFingerprint, effect, evidence: completedEvidence, outcome });
     item.attemptToken = null;
     if (outcome === 'passed') { item.status = 'passed'; item.blocked = null; }
     else if (outcome === 'blocked') { item.status = 'blocked'; item.blocked = blocked || { code: 'provider-blocked', reason: 'Provider action blocked' }; }
@@ -427,14 +534,35 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
     item.status = 'running'; item.startedAt = now(clock); item.blocked = null;
     item.attempts.push({ number: item.attempt, token: item.attemptToken, startedAt: item.startedAt, finishedAt: null, durationMs: null, outcome: 'running', attribution: item.attempt > 1 ? 'retry' : 'none', executionPlan: normalizedPlan });
   }
-  run.status = run.steps.every((candidate) => candidate.status === 'passed') ? 'complete' : 'active';
+  const wouldComplete = run.steps.every((candidate) => candidate.status === 'passed');
+  if (wouldComplete) {
+    const unfinished = run.steps.flatMap((candidate) => candidate.attempts || []).filter((attempt) => attempt.finishedAt == null);
+    const retainedLease = run.steps.find((candidate) => candidate.lease);
+    if (unfinished.length || retainedLease) {
+      item.status = 'blocked';
+      item.blocked = { code: 'finish-invariant-failed', reason: `Cannot complete with ${unfinished.length} unfinished attempt(s)${retainedLease ? ` or retained lease on ${retainedLease.id}` : ''}.` };
+      run.status = 'active';
+    } else {
+      run.status = 'complete';
+      const receipt = {
+        schemaVersion: 'buildr.task-finish-completion/v1', runId: run.runId, task: run.task, change: run.change,
+        target: run.target, completedAt: now(clock),
+        effects: run.steps.flatMap((candidate) => candidate.effects.map((entry) => ({ step: candidate.id, id: entry.id }))),
+        evidence: run.steps.filter((candidate) => candidate.status === 'passed').flatMap((candidate) => candidate.evidence.map((entry) => ({ step: candidate.id, id: entry.id }))),
+        timing: (() => { const timing = inspectFinishRun({ ...run, updatedAt: now(clock) }).timing; return { ...timing, attempts: undefined }; })(),
+      };
+      const receiptFile = path.join(completionRoot(root), `${run.runId}.json`);
+      atomicWriteJson(receiptFile, receipt);
+      run.completionReceipt = receiptFile;
+    }
+  } else run.status = 'active';
   run.updatedAt = now(clock);
   atomicWriteJson(runFile(root, runId), run);
   return inspectFinishRun(run);
 }
 
 export function resumeFinishRun(options) {
-  const run = refreshFinishInputs(readFinishRun(options), options.fingerprints || {});
+  const run = refreshFinishInputs(readFinishRun(options), options.fingerprints || {}, options.clock || Date.now);
   const current = nextStep(run);
   if (current?.status === 'blocked') { current.status = 'pending'; current.blocked = null; }
   for (const item of run.steps) {
@@ -455,12 +583,14 @@ async function defaultSafeCommand(command, args, options) {
 function registeredSafeHandler(plan, root) {
   const executable = path.basename(plan.command || '');
   if (plan.safeHandler === 'process-probe') return ['true', 'false'].includes(executable) && plan.args.length === 0;
+  if (plan.safeHandler === 'verification-capability') return ['node', 'npm'].includes(executable) && (plan.npmScript || plan.args[0] === '--test');
   if (plan.safeHandler === 'git-observation') return executable === 'git' && ['status', 'rev-parse', 'merge-base', 'diff', 'ls-remote'].includes(plan.args[0]);
   const localBuildr = path.resolve(root, 'projects/product/buildr');
   if (plan.command !== localBuildr) return false;
   if (plan.safeHandler === 'buildr-doctor') return plan.args[0] === 'doctor' && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-openspec-check') return plan.args[0] === 'openspec' && plan.args[1] === 'check' && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-runtime-sync') return plan.args[0] === 'sync' && plan.args.includes('--target');
+  if (['openspec-convergence', 'formal-verification'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root)));
   return false;
 }
 
@@ -473,17 +603,29 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     const step = checkpoint.nextAction.step;
     if (checkpoint.nextAction.status === 'running' || checkpoint.nextAction.status === 'blocked') return { ...checkpoint, safeExecution: { status: 'stopped', reason: checkpoint.nextAction.status === 'blocked' ? 'resume-required' : 'step-already-running', step, executedSteps, durationMs: clock() - startedAt } };
     const plan = validateFinishExecutionPlan({ root, plan: executionPlans[step] });
-    const commands = plan?.observations.length ? plan.observations : plan ? [plan] : [];
-    const allowedSharedMutation = commands.length === 1 && plan?.safeHandler === 'buildr-runtime-sync';
+    const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
+    const allowedSharedMutation = (commands.length === 1 && plan?.safeHandler === 'buildr-runtime-sync') || ['openspec-convergence', 'formal-verification'].includes(plan?.safeHandler);
     if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root))) {
       return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'safe-plan-unavailable', step, executedSteps, durationMs: clock() - startedAt } };
     }
     const fingerprint = fingerprints[step];
     if (!fingerprint) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'fingerprint-missing', step, executedSteps, durationMs: clock() - startedAt } };
     const claimed = advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, executionPlan: plan, clock });
-    const results = await Promise.all(commands.map((entry) => runCommand(entry.command, entry.args, { cwd: entry.cwd, encoding: 'utf8' })));
+    const stageResults = [];
+    const runOne = (entry) => runCommand(entry.command, entry.args, { cwd: entry.cwd, encoding: 'utf8' });
+    if (plan.stages.length) {
+      for (const stage of plan.stages) {
+        const stageStarted = clock();
+        const results = stage.parallel ? await Promise.all(stage.commands.map(runOne)) : [];
+        if (!stage.parallel) for (const command of stage.commands) results.push(await runOne(command));
+        stageResults.push({ id: stage.id, durationMs: clock() - stageStarted, results });
+        if (results.some((result) => result.status !== 0)) break;
+      }
+    }
+    const results = plan.stages.length ? stageResults.flatMap((stage) => stage.results) : await Promise.all(commands.map(runOne));
+    const commandDescriptors = plan.stages.length ? plan.stages.flatMap((stage) => stage.commands) : commands;
     const assessed = results.map((result, index) => {
-      const descriptor = commands[index];
+      const descriptor = commandDescriptors[index];
       const stdout = String(result.stdout || '').trim();
       const stderr = String(result.stderr || '').trim();
       let assertionPassed = true;
@@ -499,7 +641,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     const result = assessed.find((entry) => entry.status !== 0 || !entry.assertionPassed) || assessed[0];
     const passed = assessed.every((entry) => entry.status === 0 && entry.assertionPassed);
     const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
-    const evidence = { id: plan.evidenceId, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
+    const evidence = { id: plan.evidenceId, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
     const completed = advanceFinishRun({
       root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
       attemptToken: claimed.nextAction.attemptToken, evidence,
