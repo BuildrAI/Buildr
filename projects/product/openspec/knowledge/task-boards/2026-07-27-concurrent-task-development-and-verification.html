@@ -175,16 +175,16 @@
       "title": "多任务并发开发与验证",
       "taskId": "concurrent-task-development-and-verification",
       "status": "已完成",
-      "phase": "全部 6 个批次已交付",
-      "taskProgress": "已完成 6 / 6 个批次",
-      "updatedAt": "2026-07-27 13:14",
+      "phase": "全部 7 个批次已交付",
+      "taskProgress": "已完成 7 / 7 个批次",
+      "updatedAt": "2026-07-27 15:30",
       "relativePath": "projects/product/openspec/knowledge/task-boards/2026-07-27-concurrent-task-development-and-verification.html"
     },
     "overview": {
       "purpose": "让多个任务在同一个 Buildr 自举 Workspace 中独立开发、独立验证，并在集成后安全收敛主工作区。",
-      "conclusion": "六个批次均已交付；双任务并发组合验收和 managed mutation 门禁已同时通过完整 Candidate。",
-      "currentFocus": "本看板已完成，后续由 Candidate 持续回归任务入口、预览、共享资源、竞态、清理和受管写入边界。",
-      "userAttention": "完整 Candidate 40 / 40 通过；此前 6 处 managed-mutations 阻塞已经清零。",
+      "conclusion": "七个批次均已交付；组合验收真实覆盖多仓任务、不同 cwd 的独立 CLI、并发重叠、竞态恢复和产品化清理。",
+      "currentFocus": "本看板已完成，后续由完整 Candidate 持续回归并发开发与组合验收边界。",
+      "userAttention": "最终树完整 Candidate 无失败；Change 已归档、集成并清理任务环境。",
       "highlights": {
         "done": {
           "title": "已有基础",
@@ -192,11 +192,11 @@
         },
         "current": {
           "title": "最终交付",
-          "text": "两个真实任务的入口、预览、共享资源、目标竞态和归属清理已形成自动验收。"
+          "text": "批次 7 已归档并集成，任务环境已安全清理。"
         },
         "next": {
           "title": "持续保障",
-          "text": "后续完整 Candidate 自动执行双任务并发组合验收与 managed mutation 检查。"
+          "text": "后续完整 Candidate 自动执行多任务组合验收与受管写入检查。"
         }
       },
       "blockers": [],
@@ -308,6 +308,15 @@
         "summary": "OpenSpec 临时投射、清理和 Task Finish 诊断落盘已统一使用受审阅的文件系统入口；完整 Candidate 40 / 40 通过。",
         "batchIds": [
           "managed-mutation-cleanup"
+        ]
+      },
+      {
+        "id": "strengthen-concurrent-task-composition-acceptance",
+        "status": "archived",
+        "path": "openspec/changes/archive/2026-07-27-strengthen-concurrent-task-composition-acceptance/",
+        "summary": "双任务组合验收补强已归档：实际执行独立 CLI，覆盖嵌套仓、并发重叠、正式竞态恢复、产品化归属清理和稳定子进程诊断。",
+        "batchIds": [
+          "composition-acceptance-hardening"
         ]
       }
     ],
@@ -423,6 +432,24 @@
             "完整 Candidate 40 / 40 通过",
             "Change 归档、dev 推送、CLI 刷新和任务环境清理完成"
           ]
+        },
+        {
+          "id": "composition-acceptance-hardening",
+          "status": "done",
+          "label": "已完成",
+          "title": "批次 7 · 多任务组合验收补强",
+          "summary": "让组合验收中的每项声明都对应真实产品入口和端到端证据，不再由字段形状、底层原语或测试脚本直接操作推断通过。",
+          "deliverable": "两个多仓任务已从不同 cwd 实际执行各自 CLI，并发运行预览和验证，经正式收尾恢复竞态，并只通过产品入口完成归属清理；受影响验证和完整 Candidate 均通过。",
+          "changeIds": [
+            "strengthen-concurrent-task-composition-acceptance"
+          ],
+          "items": [
+            "真实执行两个 receipt-bound CLI invocation",
+            "覆盖入口仓库与嵌套独立仓库 membership",
+            "以就绪屏障证明预览和可并行 worker 重叠运行",
+            "通过正式收尾入口恢复 target-race",
+            "通过产品生命周期入口清理并稳定收集子进程诊断"
+          ]
         }
       ],
       "dependencyPool": [
@@ -431,8 +458,8 @@
           "status": "done",
           "label": "已完成",
           "title": "尚未创建的 Change 身份",
-          "summary": "全部优化方向均已按真实需求创建并交付 OpenSpec Change，没有遗留的 planned identity。",
-          "entryCondition": "已满足：各批次均在进入实现前完成 task triage、任务环境和 OpenSpec proposal。",
+          "summary": "全部优化方向均已按真实需求创建 OpenSpec Change；新补强 Change 已完成规划，没有 planned identity。",
+          "entryCondition": "已满足：各批次均在进入实现前完成 task triage 和 OpenSpec proposal；实现型任务在 apply 前创建任务环境。",
           "unaffectedBatchIds": [
             "foundation",
             "workspace-convergence"
