@@ -928,7 +928,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec baseline create', '--stage pre-sync', '--stage post-sync', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec converge', 'passed|blocked|recovery-unprovable', 'archive --skip-specs', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }

@@ -141,11 +141,11 @@ test('task-finish 保持薄入口并把证据政策交给 provider', () => {
   assert.match(finishSkill, /holder\/token\/expiry fencing/);
 });
 
-test('OpenSpec apply 和 Task Finish 固定 canonical sync 的 guard 时序', () => {
+test('OpenSpec apply 和 Task Finish 固定单一 convergence 事务边界', () => {
   for (const required of [
-    '不得在当前会话的 `pre-sync` contract guard 成功前', 'delta 预写入 canonical specs',
-    'pre-sync 成功后', 'post-sync guard',
-  ]) assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve sync sequencing: ${required}`);
+    '不把 delta 预写入 canonical specs', 'buildr openspec converge',
+    '不得手工恢复 canonical', '选择内部 stage',
+  ]) assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve convergence boundary: ${required}`);
 
   assert.match(finishSkill, /canonical、target、runtime 收敛后执行/);
 });

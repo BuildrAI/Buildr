@@ -24,6 +24,31 @@ test('task finish advance 与 inspect 返回同一持久 checkpoint', (t) => {
   assert.equal(JSON.parse(completed.stdout).currentStep, 'current-knowledge');
 });
 
+test('轻量checkpoint在完整domain bootstrap损坏时仍记录blocked并释放归属lease', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-light-bootstrap-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const env = { ...process.env, BUILDR_TEST_FAIL_FULL_BOOTSTRAP: '1' };
+  let checkpoint = JSON.parse(spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'light-run', '--task', 'light-task', '--change', 'light-change', '--target-branch', 'dev', '--target', root, '--fingerprint', 'context=v1', '--detail', 'full', '--json'], { encoding: 'utf8', env }).stdout);
+  while (checkpoint.currentStep !== 'target-convergence') {
+    const step = checkpoint.currentStep;
+    checkpoint = JSON.parse(spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'light-run', '--target', root, '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--fingerprint', `${step}=v1`, '--evidence', `{"id":"${step}-passed"}`, '--detail', 'full', '--json'], { encoding: 'utf8', env }).stdout);
+    if (checkpoint.currentStep && checkpoint.nextAction.status !== 'running') {
+      checkpoint = JSON.parse(spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'light-run', '--target', root, '--fingerprint', `${checkpoint.currentStep}=v1`, '--detail', 'full', '--json'], { encoding: 'utf8', env }).stdout);
+    }
+  }
+  if (checkpoint.nextAction.status !== 'running') checkpoint = JSON.parse(spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'light-run', '--target', root, '--fingerprint', 'target-convergence=v1', '--detail', 'full', '--json'], { encoding: 'utf8', env }).stdout);
+  const leaseDirectory = checkpoint.steps.find((item) => item.id === 'target-convergence').lease.directory;
+  assert.equal(fs.existsSync(leaseDirectory), true);
+  const blocked = spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'light-run', '--target', root, '--outcome', 'blocked', '--attempt', checkpoint.nextAction.attemptToken, '--fingerprint', 'target-convergence=v1', '--evidence', '{"id":"domain-load-failed"}', '--blocked', '{"code":"openspec-domain-unloadable","reason":"OpenSpec domain contains a conflict"}', '--detail', 'full', '--json'], { encoding: 'utf8', env });
+  assert.equal(blocked.status, 0, blocked.stderr);
+  const result = JSON.parse(blocked.stdout);
+  assert.equal(result.steps.find((item) => item.id === 'target-convergence').status, 'blocked');
+  assert.equal(fs.existsSync(leaseDirectory), false);
+  const fullCommand = spawnSync(process.execPath, [cli, 'openspec', 'converge', 'change', '--project', 'product', '--target', root, '--json'], { encoding: 'utf8', env });
+  assert.notEqual(fullCommand.status, 0);
+  assert.match(fullCommand.stderr, /Injected full runtime bootstrap failure/);
+});
+
 test('task finish completion 使用持久化 selector plan 且无需重复声明', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-selector-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

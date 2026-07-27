@@ -1,0 +1,35 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: redesign-openspec-convergence-transaction
+operation: reconcile
+treeIdentity: implementation
+impacts:
+  - type: brief
+    target: openspec/changes/redesign-openspec-convergence-transaction/brief.md
+    reason: 正式架构Change需要面向维护者的目标、流程、风险和验收入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/redesign-openspec-convergence-transaction/proposal.md
+      - openspec/changes/redesign-openspec-convergence-transaction/design.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: Task Finish的OpenSpec收敛从阶段编排改为单一文件事实事务
+    status: updated
+    sourceIdentities:
+      - openspec/changes/redesign-openspec-convergence-transaction/specs/agent-task-workflows/spec.md
+      - openspec/changes/redesign-openspec-convergence-transaction/specs/task-finish-execution/spec.md
+      - openspec/knowledge/flows/openspec-change-lifecycle.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service模块边界、receipt与轻量CLI bootstrap发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/redesign-openspec-convergence-transaction/design.md
+      - openspec/changes/redesign-openspec-convergence-transaction/specs/openspec-deterministic-sync/spec.md
+      - openspec/knowledge/services/buildr.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: convergence identity、receipt、checkpoint与disposition沿用既有领域语义，不新增需要长期定义的Project术语
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

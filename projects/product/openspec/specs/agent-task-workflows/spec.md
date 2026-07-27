@@ -971,22 +971,32 @@ Buildr MUST 提供实现 `buildr.task-finish/v1` 的薄 `task-finish` Workspace 
 - **AND** MUST NOT 要求 Agent 从头复述或重跑整个 Skill
 
 ### Requirement: Task Finish 必须事务式推进 OpenSpec convergence
-Task Finish MUST 将 delta compatibility scan、隔离 archive rehearsal、pre-sync guard、agent-driven canonical sync 与 post-sync guard 作为同一 identity-bound convergence sequence。真实 sync 只能消费当前 delta、canonical facts 与 OpenSpec identity 对应的成功 pre-sync receipt；canonical 已改变后 MUST NOT 通过刷新 baseline 或重跑 pre-sync 重建事后授权。
+Task Finish MUST 把 OpenSpec deterministic convergence 作为单一产品事务调用。产品 MUST 在内部完成输入确定、冲突扫描、确定性规划、隔离严格验证、条件式原子应用、写后确认与 `archive --skip-specs`，并以 canonical before/expected 实际 digest 处理断点恢复。Task Finish 与 Agent MUST NOT 通过 baseline、pre-sync、post-sync 或 recovery stage 状态编排正常路径。
 
 #### Scenario: delta 存在多个不兼容问题
-- **WHEN** 多个 MODIFIED Requirement 遗漏、重命名或破坏既有 Scenario identity
-- **THEN** convergence helper MUST 在真实 canonical sync 前聚合报告全部可检测问题
-- **AND** MUST NOT 每次只返回第一个问题后要求重复 rehearsal
+- **WHEN** 多个 MODIFIED Requirement 遗漏、重命名、破坏既有 Scenario identity或与active Change冲突
+- **THEN** convergence transaction MUST 在真实 canonical 写入前聚合报告全部可检测问题并返回 `blocked`
+- **AND** MUST NOT 每次只返回第一个问题后要求重复内部命令
 
 #### Scenario: canonical 在 pre-sync 后漂移
-- **WHEN** pre-sync receipt 之后 canonical facts、delta digest 或 OpenSpec executable identity 改变
-- **THEN** Task Finish MUST 将 receipt 标记 stale 并返回 pre-sync 边界
-- **AND** MUST NOT 执行或继续 post-sync/archive
+- **WHEN** plan或projected validation后canonical before digest、delta identity或OpenSpec executable identity改变
+- **THEN** transaction MUST放弃旧执行资格并重新观察/规划或验证
+- **AND** MUST NOT覆盖并发内容、刷新baseline或继续旧apply
+
+#### Scenario: 应用后进程中断
+- **WHEN** canonical已全部等于receipt expected digests但写后receipt或confirmation尚未完成
+- **THEN** 下一次transaction MUST识别`applied-and-matched`并继续confirmation
+- **AND** MUST NOT恢复canonical、重建baseline或重复apply
 
 #### Scenario: post-sync 失败
-- **WHEN** canonical sync 后 post-sync guard 失败
-- **THEN** Task Finish MUST 保留 change、canonical diff 和失败 evidence
-- **AND** MUST 要求恢复到可证明的 pre-sync facts 或修正当前 sync，而不是直接采用 post-sync canonical 作为新 baseline
+- **WHEN** canonical已应用但写后严格验证或确认失败
+- **THEN** transaction MUST 保留真实文件和回执事实并返回 `recovery-unprovable`
+- **AND** MUST NOT 恢复 canonical、刷新 baseline 或伪造 post-sync 通过
+
+#### Scenario: 状态无法证明
+- **WHEN** canonical文件既不全部匹配before也不全部匹配expected
+- **THEN** transaction MUST返回`recovery-unprovable`
+- **AND** Task Finish与Agent MUST停止自动覆盖并保留人工检查现场
 
 ### Requirement: 验证执行必须回收 task-owned descendant processes
 Buildr Product verification runner MUST 为自身启动的 step 建立可识别 ownership，并在 step 完成或 runner 异常结束时清理仍存活的 owned descendants，包括运行期间已由 owned lineage 观察到、随后 detached 或 reparented 的 descendants。清理 MUST 限于该 runner 创建的进程组或运行期间由精确 parent-child lineage 建立的 ownership，不得按端口、进程名或宽泛 workspace 匹配终止其他任务进程。
@@ -1011,30 +1021,20 @@ Buildr Product verification runner MUST 为自身启动的 step 建立可识别 
 - **THEN** runner MUST 保留该进程
 - **AND** MUST NOT 用名称、端口或 workspace 文本匹配补充 ownership
 
-### Requirement: post-sync 后的实现变化必须恢复到可证明的 pre-sync 事实
+### Requirement: Agent只处理OpenSpec收敛语义结果
+Buildr MUST 让 Agent 只处理 `blocked` 的语义冲突或 `recovery-unprovable` 的人工事实检查；确定性路径 MUST 完全由产品执行。Agent MUST NOT 被要求手工恢复 canonical spec、刷新 baseline、选择内部恢复 stage、拼装多条 guard 命令或解释多个 sidecar 不一致。
 
-当 active Change 已完成旧 delta 的 `post-sync`，随后合法实现变化改变 delta identity 时，Buildr MUST 只使用旧 contract baseline、deterministic sync plan、convergence receipt 和当前 canonical 摘要恢复旧同步前事实。Buildr MUST NOT 删除 receipt 后从当前 `post-sync` canonical 创建或更新 baseline。
+#### Scenario: 确定性事务通过
+- **WHEN** `buildr openspec converge` 返回 `passed`
+- **THEN** Agent MUST 将 canonical收敛与Change归档视为产品已安全完成
+- **AND** 不得额外运行旧pre-sync/post-sync或手工sync命令
 
-#### Scenario: 当前 canonical 精确匹配旧同步结果
+#### Scenario: 语义冲突阻塞
+- **WHEN** converge返回`blocked`并列出冲突Change、Requirement或不完整delta
+- **THEN** Agent MUST只修订语义authority或请求用户决定
+- **AND** 修订后 MUST重新调用同一converge入口
 
-- **WHEN** 旧 plan 与 receipt identity 一致，且全部受影响 canonical 文件匹配旧 plan 的 `expectedDigest`
-- **THEN** Buildr MUST 在隔离 Project surface 验证旧 plan 的完整 `before` 文件
-- **AND** 严格验证通过后 MUST 原子恢复这些文件、从恢复后的事实为新 delta 建立 baseline并重新执行完整 convergence
-
-#### Scenario: 当前 canonical 包含旧同步之外的漂移
-
-- **WHEN** 任一受影响 canonical 文件不匹配旧 plan 的 `expectedDigest`
-- **THEN** Buildr MUST 返回 `semantic-resolution-required` 或 `recovery-unprovable`
-- **AND** MUST NOT 覆盖 canonical、刷新 baseline或继续 pre-sync、sync、post-sync 与 archive
-
-#### Scenario: 隔离恢复树严格验证失败
-
-- **WHEN** 旧 `before` 文件投射后的临时 Project 未通过凭证绑定 OpenSpec executable 的严格验证
-- **THEN** 恢复 MUST 整批零写入并返回失败阶段、executable identity、expected digests 和诊断引用
-- **AND** 重试 MUST 从同一恢复 checkpoint 开始，不得留下部分 canonical 写入
-
-#### Scenario: 恢复动作重复执行
-
-- **WHEN** 同一 old/new delta、sync plan 和 canonical identity 的恢复动作被重复调用
-- **THEN** Buildr MUST 复用版本化恢复凭证和已完成 checkpoint
-- **AND** MUST NOT 重复恢复文件、重建多个 baseline 或重复已通过的副作用
+#### Scenario: 状态不可证明
+- **WHEN** converge返回`recovery-unprovable`
+- **THEN** Agent MUST停止自动收尾并报告真实文件与receipt证据缺口
+- **AND** MUST NOT通过删除sidecar、采用当前baseline或覆盖canonical绕过失败

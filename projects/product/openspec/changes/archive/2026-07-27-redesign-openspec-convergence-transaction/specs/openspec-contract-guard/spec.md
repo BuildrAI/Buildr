@@ -1,10 +1,4 @@
-# OpenSpec contract guard 规范
-
-## Purpose
-
-定义 Buildr 对 OpenSpec change 的 Requirement 基线、跨 change 冲突、同步前后验证、上游兼容性和 Agent-readable CLI 契约。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Buildr 维护 OpenSpec change 契约基线
 Buildr MUST 将新 deterministic convergence 的 canonical before facts 直接包含在唯一 convergence identity/receipt 中，正常收敛 MUST NOT 要求独立 contract baseline。Buildr MAY 只读解析历史 `.buildr/contract-baseline.json` 用于兼容诊断，但 MUST NOT 在新 converge 正常路径创建、刷新或把 adopted baseline 当作事后授权。
@@ -46,22 +40,6 @@ Buildr MUST 在 proposal 与 converge 入口校验 proposal capability、delta s
 - **WHEN** delta 在 receipt 计划后新增或改变 Requirement identity
 - **THEN** 旧 convergence identity MUST 失效
 - **AND** Buildr MUST 基于当前 canonical 重新规划而不是更新旧 baseline
-
-### Requirement: 同一 Requirement 的活动 change 冲突必须阻塞
-Buildr MUST 在同步前扫描同一 Project 的全部 active changes，并以 capability 与 Requirement identity 识别并行契约冲突。
-
-#### Scenario: 两个 change 修改同一 Requirement
-- **WHEN** 两个 active changes 的 delta 触达相同 capability 和 Requirement identity
-- **THEN** pre-sync check MUST 失败
-- **AND** JSON diagnostics MUST 列出全部冲突 change、capability、Requirement 和可执行的排序或合并下一步
-
-#### Scenario: 同 capability 的不同 Requirement
-- **WHEN** 两个 active changes 只触达同一 capability 中不同的 Requirement identity
-- **THEN** Buildr MUST NOT 仅因 capability 相同而报告冲突
-
-#### Scenario: Rename 占用两个 identity
-- **WHEN** change 将 Requirement 从旧名称重命名为新名称
-- **THEN** conflict detection MUST 同时将旧名称和新名称视为该 change 触达的 identity
 
 ### Requirement: 陈旧 Requirement 基线必须阻塞同步
 Buildr MUST 在条件式 apply 前比较当前 canonical 文件 digest 与 plan 的 beforeDigest，并在 touched 文件变化时放弃旧 plan、重新观察与规划。Buildr MUST NOT 自动覆盖并发修改，也 MUST NOT 通过刷新 baseline 继续应用旧 expected content。
@@ -124,18 +102,6 @@ Buildr MUST 提供 project-scoped `openspec converge` CLI，并为 `passed`、`b
 - **WHEN** Project、OpenSpec planning root、Change 或 receipt 无法安全解析
 - **THEN** Buildr MUST 在 canonical 写入前失败
 - **AND** 输出 MUST 提供具体诊断而不是创建猜测路径
-
-### Requirement: 未验证的 OpenSpec 上游版本不得绕过门禁
-Buildr MUST 将 contract parser 与 OpenSpec Component 声明的上游版本绑定，并对未知或不一致版本 fail closed。
-
-#### Scenario: 上游版本受支持
-- **WHEN** workspace OpenSpec Component、OpenSpec Command 声明、本机 CLI、baseline 和 guard 支持的上游版本一致
-- **THEN** Buildr MUST 继续执行对应阶段检查
-
-#### Scenario: 上游版本未知或不一致
-- **WHEN** OpenSpec Component 或 Command 声明缺失、本机 CLI 不满足声明、upstream version 未被 guard 支持，或 baseline version 与当前版本不一致
-- **THEN** Buildr MUST 阻止门禁通过
-- **AND** nextActions MUST 引导升级或重新验证 Buildr/OpenSpec Component，而不是自动安装外部 CLI
 
 ### Requirement: OpenSpec 契约 sidecar 原子写入
 Buildr MUST 通过受管数据完整性 atomic writer 提交唯一 `convergence-receipt.json`，使 receipt 不会以截断或半写入状态替代上次有效事实。新 converge 正常路径 MUST NOT 写 contract baseline、pre-sync receipt、deterministic sync plan 或 recovery receipt。

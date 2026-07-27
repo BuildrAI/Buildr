@@ -20,7 +20,9 @@ function fixture(t) {
 test('action registry 为全部标准 finish step 提供唯一 entry', () => {
   assert.equal(listFinishActions().schemaVersion, FINISH_ACTION_REGISTRY_SCHEMA);
   for (const step of FINISH_STEPS) assert.equal(FINISH_ACTIONS.filter((action) => action.step === step.id).length, 1, step.id);
-  assert.deepEqual([...new Set(FINISH_ACTIONS.map((action) => action.step))].sort(), FINISH_STEPS.map((step) => step.id).sort());
+  const currentActions = FINISH_ACTIONS.filter((action) => !action.legacy);
+  assert.deepEqual([...new Set(currentActions.map((action) => action.step))].sort(), FINISH_STEPS.map((step) => step.id).sort());
+  assert.deepEqual(FINISH_ACTIONS.filter((action) => action.legacy).map((action) => action.step), ['archive']);
   for (const action of FINISH_ACTIONS) {
     assert.ok(action.id && action.kind && action.executionSurface && action.authorization);
     assert.ok(Array.isArray(action.effects));

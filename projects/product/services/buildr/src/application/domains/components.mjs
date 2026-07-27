@@ -445,7 +445,7 @@ export function registerDomainsComponents(runtime) {
           return '';
         }
       }).join('\n');
-      for (const requiredText of ['buildr openspec baseline create', '--stage proposal', '--stage pre-sync', '--stage post-sync']) {
+      for (const requiredText of ['--stage proposal', 'buildr openspec converge', 'passed|blocked|recovery-unprovable', 'archive --skip-specs']) {
         if (!contributionContent.includes(requiredText)) errors.push(`OpenSpec Component Skill contributions must include ${JSON.stringify(requiredText)}.`);
       }
     }

@@ -4,7 +4,7 @@
 
 采用 task environment 时，编辑前必须用 receipt-bound CLI 对明确 target/workdir 运行 `worktree context`，确认 membership、allowed roots、CLI source/identity、runtime projection identity 与 receipt 匹配且 `executionReady: true`。普通 Rule/Skill 内容修改不要求 session activation；只有本任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时才验证。
 
-实现 active change 时只编辑 change artifacts 与实现内容。不得在当前会话的 `pre-sync` contract guard 成功前，把该 change 的 delta 预写入 canonical specs；canonical sync 只能在 Task Finish 的 pre-sync 成功后执行，并且必须在 archive 前通过 post-sync guard。不得通过 baseline adopt、重跑 pre-sync 或 `--skip-specs` 掩盖这两个门禁失败。
+实现 active change 时只编辑 change artifacts 与实现内容，不把 delta 预写入 canonical specs。Canonical sync/archive 只由 Task Finish 的单一 `buildr openspec converge` 事务执行；不得手工恢复 canonical、刷新 baseline、选择内部 stage 或直接运行 `--skip-specs` 掩盖事务失败。
 
 当未完成的最后一项是“运行完整 Candidate”时，先保持该任务为 `- [ ]`，对当前 implementation identity 运行 Candidate 并捕获可信 evidence。Candidate 成功后立即只把这一项由 `- [ ]` 改为 `- [x]`，同时记录 source/target identity、change/task identity 和精确 old/new marker；确认 `git diff` 中没有任务文本、顺序、其他 checkbox、其他文件或实现内容变化。
 
