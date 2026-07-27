@@ -19,7 +19,7 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 identity变化用 recovery manifest 一次提交 before/after identity、fingerprint 与 proof；未知变化 fail closed。formal assurance 失败先报告主缺陷，只有匹配 failure identity 与 allowed scopes 的 repair authorization 才能修复重验。
 
-OpenSpec convergence 由产品 orchestrator 执行；只有 `semantic-resolution-required` 交给 Agent。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 持有。每步提交非空 fingerprint、effects 与 evidence；push 保留 expected/observed target ref。
+OpenSpec 收敛由产品执行。`post-sync` 后 delta 变化时，核验 receipt、baseline、sync plan、canonical 与 executable；可证明则恢复 `pre-sync` 并重跑，禁止 Agent 手工还原。`recoverable-stale-receipt` 自动执行，`semantic-resolution-required` 交给 Agent，`recovery-unprovable` 补证。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 持有。每步提交非空 fingerprint、effects 与 evidence；push 保留 expected/observed target ref。
 
 integration-push 后提供 retained root、retained 绝对 `cliInvocation`、Agent 和完整 `changedPaths`。`retained-convergence` 始终 doctor，仅在 runtime 资产受影响时 sync；CLI/Local App impact 才交给 `runtime-install`，否则 not-applicable。不得从 cwd 或 task checkout 猜输入，不重跑 Candidate；失败只恢复本步骤及下游。
 
@@ -30,8 +30,6 @@ integration-push 后提供 retained root、retained 绝对 `cliInvocation`、Age
 <!-- buildr:skill-contributions post-spec-sync -->
 
 `resume` 只重跑 blocked/stale 及其下游；共享写使用 holder/token/expiry fencing 短 lease，可 `renew`，不创建 Workspace 全局锁。running step失效时同时终结 attempt与自有lease。
-
-含 delta 时由产品执行 rehearsal → pre-sync → deterministic apply → strict → post-sync；identity 变化返回 pre-sync，禁止事后 baseline。
 
 ## 授权与停止
 

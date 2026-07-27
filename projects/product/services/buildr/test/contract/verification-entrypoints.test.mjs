@@ -142,7 +142,7 @@ test('candidate verification retains every release gate and split package steps'
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   assert.deepEqual(candidatePlan.steps.filter((step) => step.resources?.includes('workspace-saturating')).map((step) => step.id), [
-    'integration-candidate-recovery', 'integration-candidate-release', 'concurrent-task-acceptance', 'runtime-adapter-parity',
+    'integration-candidate-recovery', 'integration-candidate-release', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
   ]);
 });
 

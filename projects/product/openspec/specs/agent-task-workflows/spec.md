@@ -4,6 +4,7 @@
 
 定义 Buildr 内置场景化 Skills、Agent 任务协作、OpenSpec/Git/worktree/finish 工作流和分层验证契约。
 ## Requirements
+
 ### Requirement: 内置场景化 Skills 引导产品工作流
 Buildr MUST 为依赖用户任务意图或工作流阶段的 Buildr 维护流程提供内置 workspace Skills。
 
@@ -968,6 +969,7 @@ Buildr MUST 提供实现 `buildr.task-finish/v1` 的薄 `task-finish` Workspace 
 - **WHEN** 某个 provider action blocked 且早期副作用已经 passed
 - **THEN** Task Finish MUST 保存 checkpoint 并从 blocked/stale 边界恢复
 - **AND** MUST NOT 要求 Agent 从头复述或重跑整个 Skill
+
 ### Requirement: Task Finish 必须事务式推进 OpenSpec convergence
 Task Finish MUST 将 delta compatibility scan、隔离 archive rehearsal、pre-sync guard、agent-driven canonical sync 与 post-sync guard 作为同一 identity-bound convergence sequence。真实 sync 只能消费当前 delta、canonical facts 与 OpenSpec identity 对应的成功 pre-sync receipt；canonical 已改变后 MUST NOT 通过刷新 baseline 或重跑 pre-sync 重建事后授权。
 
@@ -1008,3 +1010,31 @@ Buildr Product verification runner MUST 为自身启动的 step 建立可识别 
 - **WHEN** 另一个任务存在同名进程，但它从未出现在当前 step 的 owned parent-child lineage 中
 - **THEN** runner MUST 保留该进程
 - **AND** MUST NOT 用名称、端口或 workspace 文本匹配补充 ownership
+
+### Requirement: post-sync 后的实现变化必须恢复到可证明的 pre-sync 事实
+
+当 active Change 已完成旧 delta 的 `post-sync`，随后合法实现变化改变 delta identity 时，Buildr MUST 只使用旧 contract baseline、deterministic sync plan、convergence receipt 和当前 canonical 摘要恢复旧同步前事实。Buildr MUST NOT 删除 receipt 后从当前 `post-sync` canonical 创建或更新 baseline。
+
+#### Scenario: 当前 canonical 精确匹配旧同步结果
+
+- **WHEN** 旧 plan 与 receipt identity 一致，且全部受影响 canonical 文件匹配旧 plan 的 `expectedDigest`
+- **THEN** Buildr MUST 在隔离 Project surface 验证旧 plan 的完整 `before` 文件
+- **AND** 严格验证通过后 MUST 原子恢复这些文件、从恢复后的事实为新 delta 建立 baseline并重新执行完整 convergence
+
+#### Scenario: 当前 canonical 包含旧同步之外的漂移
+
+- **WHEN** 任一受影响 canonical 文件不匹配旧 plan 的 `expectedDigest`
+- **THEN** Buildr MUST 返回 `semantic-resolution-required` 或 `recovery-unprovable`
+- **AND** MUST NOT 覆盖 canonical、刷新 baseline或继续 pre-sync、sync、post-sync 与 archive
+
+#### Scenario: 隔离恢复树严格验证失败
+
+- **WHEN** 旧 `before` 文件投射后的临时 Project 未通过凭证绑定 OpenSpec executable 的严格验证
+- **THEN** 恢复 MUST 整批零写入并返回失败阶段、executable identity、expected digests 和诊断引用
+- **AND** 重试 MUST 从同一恢复 checkpoint 开始，不得留下部分 canonical 写入
+
+#### Scenario: 恢复动作重复执行
+
+- **WHEN** 同一 old/new delta、sync plan 和 canonical identity 的恢复动作被重复调用
+- **THEN** Buildr MUST 复用版本化恢复凭证和已完成 checkpoint
+- **AND** MUST NOT 重复恢复文件、重建多个 baseline 或重复已通过的副作用

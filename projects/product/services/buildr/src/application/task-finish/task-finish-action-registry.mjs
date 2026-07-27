@@ -35,8 +35,12 @@ export const FINISH_ACTIONS = Object.freeze([
   actionEntry({
     id: 'contract-convergence.openspec', step: 'contract-convergence', kind: 'product-executable',
     effects: ['canonical-spec-sync', 'convergence-receipt'], requiredContext: ['cliInvocation', 'project'],
-    resultContract: { outcome: ['passed', 'blocked'], processExit: 0 },
-    evidenceProjection: { finishStep: 'contract-convergence', required: ['stages', 'receipt', 'change identity'] },
+    resultContract: {
+      outcome: ['passed', 'blocked'], processExit: 0,
+      blockedReasons: ['semantic-resolution-required', 'recovery-unprovable'],
+    },
+    evidenceProjection: { finishStep: 'contract-convergence', required: ['stages', 'receipt', 'change identity', 'recovery classification'] },
+    fallbackPolicy: 'product-recovery-then-agent-semantic-or-evidence-repair',
     resolver: resolveOpenSpecConvergence,
   }),
   provider('candidate-commit', 'buildr.git-task-integration@1', 'commit-candidate', 'task-checkout', ['candidate commit', 'tree identity'], ['git-commit']),

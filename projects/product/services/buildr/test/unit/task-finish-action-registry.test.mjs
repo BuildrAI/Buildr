@@ -54,6 +54,13 @@ test('resolver 区分 ready、input、provider handoff 与 registry miss', (t) =
   assert.equal(missing.reason, 'registry-action-uncovered');
 });
 
+test('OpenSpec convergence登记产品恢复与明确阻塞出口', () => {
+  const action = FINISH_ACTIONS.find((entry) => entry.id === 'contract-convergence.openspec');
+  assert.deepEqual(action.resultContract.blockedReasons, ['semantic-resolution-required', 'recovery-unprovable']);
+  assert.equal(action.fallbackPolicy, 'product-recovery-then-agent-semantic-or-evidence-repair');
+  assert.ok(action.evidenceProjection.required.includes('recovery classification'));
+});
+
 test('safe executor 无 caller plan/fingerprint 时执行 registry action并停在provider handoff', async (t) => {
   const { root, cli } = fixture(t);
   const result = await executeSafeFinishRun({

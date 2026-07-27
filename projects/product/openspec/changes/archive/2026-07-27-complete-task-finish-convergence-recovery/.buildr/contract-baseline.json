@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "complete-task-finish-convergence-recovery",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-86fd4f08912839d9b3e86ec6fc2d59b1d0c88286247d07a0c6f2a0f5f2b2af72",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "post-sync 后的实现变化必须恢复到可证明的 pre-sync 事实",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须为可预期收敛阻塞提供恢复出口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须验证真实收敛恢复旅程",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}
