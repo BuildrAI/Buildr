@@ -63,11 +63,18 @@ test('api client 只为写请求附加 session，并保留服务端错误结构'
 test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
   const source = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
   const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
+  const markdown = fs.readFileSync('src/interfaces/local-app/web/markdown.js', 'utf8');
   assert.ok(source.indexOf('id="change-brief"') < source.indexOf('technical-artifacts-panel'));
+  assert.match(source, /import \{ renderMarkdown \} from '\.\.\/markdown\.js'/);
   assert.match(source, /briefPanel\(change\.brief\)/);
   assert.match(source, /这个变更还没有人类可读 Brief/);
-  assert.match(source, /textContent = itemMatch\[1\]/);
+  assert.match(source, /renderMarkdown\(artifact\.content\)/);
+  assert.match(source, /renderMarkdown\(brief\.content\)/);
   assert.doesNotMatch(source, /brief\.content.*innerHTML/);
+  assert.doesNotMatch(source, /artifact\.content.*innerHTML/);
+  assert.doesNotMatch(markdown, /innerHTML/);
   assert.match(styles, /\.change-brief-panel/);
   assert.match(styles, /\.brief-content/);
+  assert.match(styles, /\.markdown-body/);
+  assert.match(styles, /\.artifact-content/);
 });

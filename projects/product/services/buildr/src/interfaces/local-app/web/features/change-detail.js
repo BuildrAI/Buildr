@@ -1,11 +1,18 @@
+import { renderMarkdown } from '../markdown.js';
+
 function artifactPanel(label, artifact) {
   const article = document.createElement('article'); article.className = 'artifact-panel';
   const heading = document.createElement('div'); heading.className = 'artifact-heading';
   const title = document.createElement('strong'); title.textContent = label;
   const path = document.createElement('small'); path.textContent = artifact.path;
   heading.append(title, path); article.append(heading);
-  if (artifact.exists) { const content = document.createElement('pre'); content.textContent = artifact.content; article.append(content); }
-  else { const missing = document.createElement('p'); missing.className = 'artifact-missing'; missing.textContent = '未声明'; article.append(missing); }
+  if (artifact.exists) {
+    const content = renderMarkdown(artifact.content);
+    content.classList.add('artifact-content');
+    article.append(content);
+  } else {
+    const missing = document.createElement('p'); missing.className = 'artifact-missing'; missing.textContent = '未声明'; article.append(missing);
+  }
   return article;
 }
 
@@ -24,25 +31,8 @@ function briefPanel(brief) {
     const source = document.createElement('small'); source.textContent = brief.path;
     missing.append(message, source); section.append(missing); return section;
   }
-  const content = document.createElement('div'); content.className = 'brief-content';
-  let list = null;
-  for (const rawLine of brief.content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) { list = null; continue; }
-    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
-    if (headingMatch) {
-      list = null;
-      const level = Math.min(headingMatch[1].length + 1, 4);
-      const node = document.createElement(`h${level}`); node.textContent = headingMatch[2]; content.append(node); continue;
-    }
-    const itemMatch = line.match(/^[-*]\s+(.+)$/);
-    if (itemMatch) {
-      if (!list) { list = document.createElement('ul'); content.append(list); }
-      const item = document.createElement('li'); item.textContent = itemMatch[1]; list.append(item); continue;
-    }
-    list = null;
-    const paragraph = document.createElement('p'); paragraph.textContent = line; content.append(paragraph);
-  }
+  const content = renderMarkdown(brief.content);
+  content.classList.add('brief-content');
   const source = document.createElement('small'); source.className = 'brief-source'; source.textContent = brief.path;
   section.append(content, source); return section;
 }

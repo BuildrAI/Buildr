@@ -268,6 +268,10 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
     const artifactsTop = await page.locator('.technical-artifacts-panel').evaluate((element) => element.getBoundingClientRect().top);
     assert.ok(briefTop < artifactsTop, 'Brief 必须位于技术 artifacts 之前');
     assert.equal(await page.locator('#change-artifacts .artifact-panel').count(), 4);
+    assert.equal(await page.locator('#change-artifacts .artifact-content.markdown-body').count(), 4);
+    assert.match(await page.locator('#change-artifacts .artifact-content').first().innerText(), /浏览器流程|验证本机应用/);
+    assert.ok(await page.locator('#change-artifacts .artifact-content h1').count() > 0);
+    assert.equal(await page.locator('#change-artifacts .artifact-panel pre').count(), 0);
     const proceed = page.getByRole('button', { name: '继续推进', exact: true });
     await unique(proceed, '继续推进操作');
     await proceed.click();

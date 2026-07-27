@@ -274,7 +274,7 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
     assert.equal(response.status, 200);
     assert.match(await response.text(), /Buildr 工作空间/);
   }
-  for (const asset of ['/app.js', '/api-client.js', '/router.js', '/features/workspaces.js', '/features/workspace.js', '/features/projects.js', '/features/project-detail.js', '/features/services.js', '/features/changes.js', '/features/change-detail.js', '/features/agent-actions.js']) {
+  for (const asset of ['/app.js', '/api-client.js', '/router.js', '/markdown.js', '/features/workspaces.js', '/features/workspace.js', '/features/projects.js', '/features/project-detail.js', '/features/services.js', '/features/changes.js', '/features/change-detail.js', '/features/agent-actions.js']) {
     response = await fetch(`${url}${asset}`);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /text\/javascript/);
