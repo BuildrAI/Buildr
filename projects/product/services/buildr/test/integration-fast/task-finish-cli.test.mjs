@@ -92,8 +92,26 @@ test('task finish run 自动执行安全计划并在未声明步骤停止', (t) 
   assert.equal(result.status, 0, result.stderr);
   const checkpoint = JSON.parse(result.stdout);
   assert.equal(checkpoint.currentStep, 'contract-convergence');
-  assert.equal(checkpoint.safeExecution.reason, 'safe-plan-unavailable');
+  assert.equal(checkpoint.safeExecution.reason, 'action-input-required');
   assert.equal(checkpoint.safeExecution.executedSteps.length, 2);
+});
+
+test('task finish actions列出registry并只读解析当前run', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-actions-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const listed = spawnSync(process.execPath, [cli, 'task', 'finish', 'actions', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  const registry = JSON.parse(listed.stdout);
+  assert.equal(registry.schemaVersion, 'buildr.task-finish-action-registry/v1');
+  assert.equal(registry.actions.length, 13);
+
+  const created = spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'actions-run', '--task', 'actions-task', '--target-branch', 'dev', '--target', root, '--fingerprint', 'context=v1', '--json'], { encoding: 'utf8' });
+  assert.equal(created.status, 0, created.stderr);
+  const before = fs.readFileSync(path.join(root, '.buildr', 'task-finish', 'runs', 'actions-run.json'), 'utf8');
+  const queried = spawnSync(process.execPath, [cli, 'task', 'finish', 'actions', '--run', 'actions-run', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(queried.status, 0, queried.stderr);
+  assert.equal(JSON.parse(queried.stdout).resolution.status, 'input-required');
+  assert.equal(fs.readFileSync(path.join(root, '.buildr', 'task-finish', 'runs', 'actions-run.json'), 'utf8'), before);
 });
 
 test('task finish recover消费版本化manifest并连续执行safe plans', (t) => {

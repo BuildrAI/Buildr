@@ -1,4 +1,5 @@
 import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
+import { listFinishActions, resolveFinishAction } from './task-finish-action-registry.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +31,13 @@ export function registerTaskFinishApplication(runtime) {
     const command = withResolvedTarget(args);
     const root = command.targetRoot;
     const runId = optionValue(command.args, '--run');
+    if (action === 'actions' && !runId) return print(listFinishActions(), command.args, root);
     if (!runId) throw new Error('Missing value for --run');
+    if (action === 'actions') {
+      const checkpoint = inspectFinishRun(readFinishRun({ root, runId }));
+      const context = jsonValue(optionValue(command.args, '--action-context', null), '--action-context') || {};
+      return print({ ...listFinishActions(), runId, currentStep: checkpoint.currentStep, resolution: checkpoint.currentStep ? resolveFinishAction({ root, run: readFinishRun({ root, runId }), step: checkpoint.currentStep, context }) : null }, command.args, root);
+    }
     if (action === 'cleanup-finalize') return print(finalizeFinishCleanup({ root, runId, evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args, root);
     if (action === 'inspect') return print(inspectFinishRun(readFinishRun({ root, runId })), command.args, root);
     if (action === 'renew') return print(renewFinishLease({ root, runId, attemptToken: optionValue(command.args, '--attempt') }), command.args, root);
@@ -44,7 +51,7 @@ export function registerTaskFinishApplication(runtime) {
         repairAuthorization: jsonValue(optionValue(command.args, '--repair-authorization', null), '--repair-authorization'),
       });
     }
-    if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {} }).then((result) => print(result, command.args, root));
+    if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {}, actionContext: jsonValue(optionValue(command.args, '--action-context', null), '--action-context') || {} }).then((result) => print(result, command.args, root));
     if (action === 'recover') return recoverFinishRun({ root, runId: run.runId, manifest: jsonValue(optionValue(command.args, '--recovery', null), '--recovery') }).then((result) => print(result, command.args, root));
     if (action === 'cleanup-prepare') return print(prepareFinishCleanup({ root, runId: run.runId, attemptToken: optionValue(command.args, '--attempt'), evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args, root);
     const options = {
@@ -77,6 +84,11 @@ export function registerTaskFinishApplication(runtime) {
       console.log(JSON.stringify(payload, null, 2));
     }
     else {
+      if (result.schemaVersion === 'buildr.task-finish-action-registry/v1') {
+        console.log(`Task Finish action registry v${result.registryVersion}: ${result.actions.length} actions`);
+        if (result.resolution) console.log(`Current: ${result.currentStep} - ${result.resolution.status}`);
+        return result;
+      }
       console.log(`Task Finish run ${result.runId}: ${result.status}`);
       console.log(result.nextAction ? `Next: ${result.nextAction.step} - ${result.nextAction.action}` : 'Next: none');
       if (result.blocked?.length) console.log(`Blocked: ${result.blocked.map((item) => `${item.step}: ${item.reason || item.code}`).join('; ')}`);

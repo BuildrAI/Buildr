@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "introduce-task-finish-action-registry",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-d6d847a314bc4e9dfaa7728468c22305d70e88f0d3b54962a5d27e6a6e84cec1",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须持有版本化 action registry",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须区分登记 provider 与 Agent 推理 fallback",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须提供 action registry 查询入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Registry 驱动执行必须兼容现有 finish evidence",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

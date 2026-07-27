@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolveFinishAction } from './task-finish-action-registry.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -165,6 +166,9 @@ export function validateFinishExecutionPlan({ root, plan }) {
     safeAuto: plan.safeAuto === true,
     safeHandler: typeof plan.safeHandler === 'string' ? plan.safeHandler : null,
     evidenceId: typeof plan.evidenceId === 'string' ? plan.evidenceId : null,
+    actionId: typeof plan.actionId === 'string' ? plan.actionId : null,
+    registryVersion: Number.isInteger(plan.registryVersion) ? plan.registryVersion : null,
+    planSource: plan.planSource === 'registry' ? 'registry' : 'caller-supplied',
     jsonAssertion: plan.jsonAssertion && typeof plan.jsonAssertion.path === 'string'
       ? { path: plan.jsonAssertion.path, equals: plan.jsonAssertion.equals }
       : null,
@@ -597,6 +601,7 @@ export function compactFinishCheckpoint(checkpoint) {
     nextAction: checkpoint.nextAction,
     diagnostics: checkpoint.diagnostics || null,
     repairDecision: checkpoint.repairDecision || null,
+    ...(checkpoint.actionResolution ? { actionResolution: checkpoint.actionResolution } : {}),
     ...(checkpoint.safeExecution ? { safeExecution: checkpoint.safeExecution } : {}),
     ...(checkpoint.recovery ? { recovery: checkpoint.recovery } : {}),
   };
@@ -812,22 +817,23 @@ function appendCommandObservations({ root, runId, stepId, attemptToken, descript
   return ids;
 }
 
-function registeredSafeHandler(plan, root) {
+function registeredSafeHandler(plan, root, registryOwned = false) {
   const executable = path.basename(plan.command || '');
   if (plan.safeHandler === 'process-probe') return ['true', 'false'].includes(executable) && plan.args.length === 0;
   if (plan.safeHandler === 'verification-capability') return ['node', 'npm'].includes(executable) && (plan.npmScript || plan.args[0] === '--test');
   if (plan.safeHandler === 'git-observation') return executable === 'git' && ['status', 'rev-parse', 'merge-base', 'diff', 'ls-remote'].includes(plan.args[0]);
   const localBuildr = path.resolve(root, 'projects/product/buildr');
-  if (plan.command !== localBuildr) return false;
+  if (plan.command !== localBuildr && !registryOwned) return false;
   if (plan.safeHandler === 'buildr-doctor') return plan.args[0] === 'doctor' && plan.args.includes('--json');
+  if (plan.safeHandler === 'buildr-worktree-context') return plan.args[0] === 'worktree' && plan.args[1] === 'context' && plan.args.includes('--target') && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-openspec-check') return plan.args[0] === 'openspec' && plan.args[1] === 'check' && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-openspec-converge') return plan.args[0] === 'openspec' && plan.args[1] === 'converge' && plan.args.includes('--json') && plan.args.includes('--target') && plan.args.includes('--project');
   if (plan.safeHandler === 'buildr-runtime-sync') return plan.args[0] === 'sync' && plan.args.includes('--target');
-  if (['openspec-convergence', 'formal-verification'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root)));
+  if (['openspec-convergence', 'formal-verification', 'runtime-convergence'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root, registryOwned)));
   return false;
 }
 
-export async function executeSafeFinishRun({ root, runId, fingerprints = {}, executionPlans = {}, runCommand = defaultSafeCommand, clock = Date.now, stopBefore = null }) {
+export async function executeSafeFinishRun({ root, runId, fingerprints = {}, executionPlans = {}, actionContext = {}, runCommand = defaultSafeCommand, clock = Date.now, stopBefore = null }) {
   const startedAt = clock();
   const executedSteps = [];
   while (true) {
@@ -836,13 +842,20 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     const step = checkpoint.nextAction.step;
     if (step === stopBefore) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'required-boundary', step, executedSteps, durationMs: clock() - startedAt } };
     if (checkpoint.nextAction.status === 'running' || checkpoint.nextAction.status === 'blocked') return { ...checkpoint, safeExecution: { status: 'stopped', reason: checkpoint.nextAction.status === 'blocked' ? 'resume-required' : 'step-already-running', step, executedSteps, durationMs: clock() - startedAt } };
-    const plan = validateFinishExecutionPlan({ root, plan: executionPlans[step] });
+    const explicitPlan = executionPlans[step];
+    const resolution = explicitPlan ? null : resolveFinishAction({ root, run: readFinishRun({ root, runId }), step, context: actionContext });
+    if (!explicitPlan && resolution.status !== 'ready') {
+      const reason = resolution.status === 'agent-provider-required' ? 'agent-provider-required'
+        : resolution.status === 'input-required' ? 'action-input-required' : 'agent-reasoning-required';
+      return { ...checkpoint, actionResolution: resolution, safeExecution: { status: 'stopped', reason, step, executedSteps, durationMs: clock() - startedAt } };
+    }
+    const plan = validateFinishExecutionPlan({ root, plan: explicitPlan || resolution.plan });
     const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
-    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification'].includes(plan?.safeHandler);
-    if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root))) {
+    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification', 'runtime-convergence'].includes(plan?.safeHandler);
+    if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root, Boolean(resolution)))) {
       return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'safe-plan-unavailable', step, executedSteps, durationMs: clock() - startedAt } };
     }
-    const fingerprint = fingerprints[step];
+    const fingerprint = fingerprints[step] || resolution?.fingerprint;
     if (!fingerprint) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'fingerprint-missing', step, executedSteps, durationMs: clock() - startedAt } };
     const claimed = advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, executionPlan: plan, clock });
     const stageResults = [];
@@ -882,7 +895,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     const observationIds = appendCommandObservations({ root, runId, stepId: step, attemptToken: claimed.nextAction.attemptToken, descriptors: commandDescriptors, assessed, stageResults, clock });
     const recordedDiagnostic = inspectFinishRun(readFinishRun({ root, runId })).diagnostics;
     const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
-    const evidence = { id: plan.evidenceId, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
+    const evidence = { id: plan.evidenceId, actionId: plan.actionId, planSource: plan.planSource, registryVersion: plan.registryVersion, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
     const completed = advanceFinishRun({
       root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
       attemptToken: claimed.nextAction.attemptToken, evidence,
@@ -894,7 +907,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
       }, clock,
     });
     const completedAttempt = completed.timing.attempts.filter((attempt) => attempt.step === step).at(-1);
-    executedSteps.push({ step, status: passed ? 'passed' : 'blocked', durationMs: completedAttempt?.durationMs ?? null });
+    executedSteps.push({ step, actionId: plan.actionId, planSource: plan.planSource, status: passed ? 'passed' : 'blocked', durationMs: completedAttempt?.durationMs ?? null });
     if (!passed) return { ...completed, safeExecution: { status: 'stopped', reason: 'safe-action-failed', step, executedSteps, durationMs: clock() - startedAt } };
   }
 }

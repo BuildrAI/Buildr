@@ -24,6 +24,7 @@ export const COMMAND_REGISTRY = [
   { key: 'worktree inspect', match: ({ domain, action }) => domain === 'worktree' && action === 'inspect', run: (r, c) => r.inspectTaskEnvironment(c.argv.slice(4)) },
   { key: 'worktree context', match: ({ domain, action }) => domain === 'worktree' && action === 'context', run: (r, c) => r.taskEnvironmentContext(c.argv.slice(4)) },
   { key: 'worktree adopt', match: ({ domain, action }) => domain === 'worktree' && action === 'adopt', run: (r, c) => r.adoptTaskEnvironment(c.argv.slice(4)) },
+  { key: 'task finish actions', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'actions', run: (r, c) => r.taskFinish('actions', c.argv.slice(5)) },
   { key: 'task finish inspect', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect', run: (r, c) => r.taskFinish('inspect', c.argv.slice(5)) },
   { key: 'task finish advance', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'advance', run: (r, c) => r.taskFinish('advance', c.argv.slice(5)) },
   { key: 'task finish resume', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'resume', run: (r, c) => r.taskFinish('resume', c.argv.slice(5)) },

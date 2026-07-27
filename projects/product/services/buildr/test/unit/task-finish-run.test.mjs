@@ -271,7 +271,7 @@ test('safe executor 在原 checkpoint 上连续完成已声明只读步骤并停
     executionPlans: { context: plan('context-safe'), 'current-knowledge': plan('knowledge-safe') },
   });
   assert.equal(result.safeExecution.status, 'stopped');
-  assert.equal(result.safeExecution.reason, 'safe-plan-unavailable');
+  assert.equal(result.safeExecution.reason, 'action-input-required');
   assert.equal(result.currentStep, 'contract-convergence');
   assert.deepEqual(result.safeExecution.executedSteps.map(({ step, status }) => ({ step, status })), [
     { step: 'context', status: 'passed' }, { step: 'current-knowledge', status: 'passed' },
@@ -319,6 +319,23 @@ test('registered runtime sync handler 复用原状态机共享 lease', async (t)
     runCommand: async () => { observedLease = Boolean(readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'runtime-convergence').lease); return { status: 0, stdout: '{}', stderr: '' }; },
   });
   assert.equal(observedLease, true);
+  assert.equal(result.steps.find((item) => item.id === 'runtime-convergence').status, 'passed');
+});
+
+test('registry runtime convergence staged plan 可由真实 run executor 执行', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'runtime-convergence') passCurrent(root, 'finish-1');
+  const executable = path.join(root, 'projects/product/buildr');
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, '#!/bin/sh\n');
+  const commands = [];
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', actionContext: { agent: 'codex', cliSource: executable },
+    runCommand: async (command, args) => { commands.push([command, ...args]); return { status: 0, stdout: '{}', stderr: '' }; },
+  });
+  assert.equal(result.safeExecution.reason, 'agent-provider-required');
+  assert.equal(result.currentStep, 'formal-assurance');
+  assert.deepEqual(commands.map((entry) => entry.slice(1, 3)), [['doctor', '--agent'], ['sync', 'codex'], ['doctor', '--agent']]);
   assert.equal(result.steps.find((item) => item.id === 'runtime-convergence').status, 'passed');
 });
 
@@ -423,7 +440,7 @@ test('typed recovery 原子终结 running lease 并停在真实 safe boundary', 
   advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'ref-1' } });
   const result = await recoverFinishRun({ root, runId: 'finish-1', manifest: recoveryManifest() });
   assert.equal(result.recovery.boundary, 'contract-convergence');
-  assert.equal(result.safeExecution.reason, 'safe-plan-unavailable');
+  assert.equal(result.safeExecution.reason, 'action-input-required');
   const run = readFinishRun({ root, runId: 'finish-1' });
   const target = run.steps.find((item) => item.id === 'target-convergence');
   assert.equal(target.attempts.at(-1).outcome, 'stale');

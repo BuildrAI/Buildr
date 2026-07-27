@@ -1,0 +1,37 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: introduce-task-finish-action-registry
+operation: reconcile
+treeIdentity: implementation-complete-pre-verification
+impacts:
+  - type: brief
+    target: openspec/changes/introduce-task-finish-action-registry/brief.md
+    reason: 需要向普通用户解释registry执行、provider交接与Agent推理fallback边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-finish-action-registry/proposal.md
+      - openspec/changes/introduce-task-finish-action-registry/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Finish application与CLI将新增action registry和查询入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-finish-action-registry/specs/task-finish-execution/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 收尾流程需要说明registry自动执行、provider handoff和登记外fallback
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-finish-action-registry/design.md
+  - type: task-board
+    target: openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html
+    reason: 本Change是同一Task Finish长期效率优化的下一批次
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-finish-action-registry
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: action registry沿用工程通用词且已在Change首次解释，不新增领域术语
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/introduce-task-finish-action-registry/design.md
+unresolvedItems: []

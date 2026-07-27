@@ -5,7 +5,7 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的薄入口；“收尾”的一次性授权仅覆盖delivery closeout。用 `buildr task finish inspect|advance|resume|renew|run|recover` 持久化进度并调用 selected providers；候选修复不属于收尾。
+本 Skill 是 `buildr.task-finish/v1` 的薄入口；“收尾”的一次性授权只覆盖delivery closeout。用 `buildr task finish inspect|advance|resume|renew|run|recover` 持久化进度并调用 selected providers；`actions`只读查询产品action registry。候选修复不属于收尾。
 
 ## 开始与采用
 
@@ -15,9 +15,9 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 ## 推进
 
-优先用完整 `--execution-plans` manifest 调用 `run`，连续推进确定性步骤；语义冲突、授权缺口或未登记动作停回 checkpoint。默认用 compact JSON，诊断时使用 `--detail full`。
+先查询`actions --run <id> --json`，再用`run --action-context <json>`提交结构化事实。registry自动执行`product-executable`；按handoff处理`agent-provider-required`；只补`input-required`。仅`agent-reasoning-required`需要Agent推理。显式plans仅兼容/恢复并标记`caller-supplied`。
 
-identity变化时提交含before/after identities、fingerprints、transition proof与plans的`buildr.task-finish-recovery/v1`；未知变化fail closed，runtime-only须有digest/path证明。formal assurance失败先报告主缺陷、影响、repair scope与重验成本；只有`--repair-authorization`绑定当前failure identity且全部changed paths位于allowed scopes，才能进入re-verification。
+identity变化时提交`buildr.task-finish-recovery/v1`的before/after identities、fingerprints与transition proof；registry覆盖时不重复提供plans。未知变化fail closed，runtime-only须有digest/path。formal assurance失败报告主缺陷、repair scope与重验成本；只有授权绑定failure identity且changed paths均在allowed scopes内，才能re-verification。
 
 OpenSpec convergence 使用 Component 贡献的产品 orchestrator；返回 `semantic-resolution-required` 时才由 Agent 处理最小语义上下文。Skill 不直接编辑 canonical 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 持有；identity 匹配的 evidence 不重跑。
 
@@ -45,4 +45,4 @@ asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化�
 
 cleanup 先在task environment内执行 `cleanup-prepare`，把prepared completion receipt写入canonical Workspace；实际删除task-owned process、worktree和branch后，从retained checkout执行 `cleanup-finalize`。prepare不得表述为complete，cleanup失败不得重做远端动作。
 
-完成后报告验证、effects、交付、runtime、清理、receipt与风险；分别计量initial verification、repair、re-verification、最后有效assurance后的closeout-only和end-to-end。ledger只计Buildr-owned invocation/raw bytes；不可观察间隔如实声明，不推断token。compact先给primary failure/repair decision，再列warning；必要时打开digest diagnostic。
+完成后报告验证、交付、runtime、清理、receipt与风险；分开计量verification、repair、re-verification、closeout-only和end-to-end。不可观察间隔不推断token；compact先给primary failure/repair decision。
