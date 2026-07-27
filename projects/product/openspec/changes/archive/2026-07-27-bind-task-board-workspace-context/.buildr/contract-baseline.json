@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "bind-task-board-workspace-context",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-1ddc915c7ac9239dc45982fa030ddbe689975c865bc15e72657660b8bb49bc6c",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-board",
+      "title": "任务看板使用稳定的 Project knowledge 路径",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 任务看板使用稳定的 Project knowledge 路径\n任务看板 MUST 保存在拥有该任务的 Project 位于 retained Workspace checkout 的 `openspec/knowledge/task-boards/` 下，并 MUST 使用 `yyyy-MM-dd-<task-id>.html` 文件名；日期 MUST 取首次创建时 retained Workspace 所在环境的本地日期，后续更新 MUST 通过完整文件名结构和内嵌 `meta.taskId` 解析唯一既有看板并保持同一路径。关联 OpenSpec Change 的 task environment MUST 只作为事实来源，MUST NOT 创建、复制、更新或持有任务看板。\n\n#### Scenario: 创建 Project 任务看板\n- **WHEN** Agent 首次为 Project task id `fund-system-integration` 创建任务看板，且 retained Workspace 所在环境的本地日期为 2026-07-20\n- **THEN** retained Workspace checkout 中的文件路径 MUST 以 `openspec/knowledge/task-boards/2026-07-20-fund-system-integration.html` 结尾\n- **AND** 后续批次或 change 变化 MUST 更新该文件而不是按更新时间创建新文件\n\n#### Scenario: 任务看板跨越多个 change\n- **WHEN** 一个任务包含已归档 change、当前 active change、code-only 工作或未来批次\n- **THEN** 任务看板 MUST 在 retained Workspace checkout 保持稳定路径并关联这些批次\n- **AND** OpenSpec change archive 或任一关联 task environment 清理 MUST NOT 使任务看板入口消失、被移动或产生副本\n\n#### Scenario: 从关联 task environment 维护看板\n- **WHEN** Agent 从关联 Change 的 task environment 核实任务事实并请求创建或更新任务看板\n- **THEN** Agent MUST 从 environment receipt 或显式 Workspace identity 解析 retained Workspace checkout，并只更新其中的唯一看板\n- **AND** Agent MUST NOT 在当前 task environment 的 Project checkout 中创建、复制或更新任务看板\n\n#### Scenario: 解析唯一既有任务看板\n- **WHEN** Agent 为已有 task id 创建或更新任务看板\n- **THEN** Agent MUST 在 retained Workspace checkout 同时核对完整文件名结构和内嵌 `meta.taskId`\n- **AND** 只有唯一一致的候选可以被更新\n\n#### Scenario: 既有看板身份存在歧义\n- **WHEN** retained Workspace checkout 中候选文件超过一个、文件名与内嵌 task identity 不一致或目标路径已被其他任务占用\n- **THEN** Agent MUST 返回 `blocked`、冲突路径和 next actions\n- **AND** Agent MUST NOT 按更新时间、后缀相似或任意顺序选择文件\n"
+    },
+    {
+      "capability": "task-board-maintenance",
+      "title": "Buildr 必须提供任务看板维护能力契约",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Buildr 必须提供任务看板维护能力契约\nBuildr MUST 提供 `buildr.task-board-maintenance/v1` capability contract 和默认 `task-board` provider；contract MUST 定义 retained Workspace/Project/task identity、事实来源、create/update operation、写入授权、稳定路径、task environment 非所有权、失败语义和 result evidence。\n\n#### Scenario: Consumer 创建任务看板\n- **WHEN** consumer 请求 `create` 并提供 retained Workspace、Project、task id、任务事实和授权范围\n- **THEN** selected provider MUST 在 retained Workspace checkout 解析稳定路径、创建自包含看板并返回 changed path、status 和 source identities\n- **AND** provider MUST NOT 要求至少存在一个 OpenSpec change\n\n#### Scenario: Consumer 更新既有任务看板\n- **WHEN** consumer 请求 `update` 并提供既有 task identity 与已核实事实\n- **THEN** selected provider MUST 更新 retained Workspace checkout 中的同一路径并返回 `updated | aligned | blocked`\n- **AND** provider MUST NOT 根据更新时间或关联 task environment 创建第二份看板\n\n#### Scenario: Consumer 从 task environment 调用 provider\n- **WHEN** consumer 在关联 Change 的 task environment 中调用 provider\n- **THEN** consumer MUST 提供可解析 canonical Workspace 的 environment receipt 或显式 retained Workspace identity\n- **AND** provider MUST 只把该 environment 用作事实来源，不得在其 checkout 内写入看板\n\n#### Scenario: Provider 无法确认事实或位置\n- **WHEN** retained Workspace、Project、task identity、事实来源、写入授权或稳定路径无法确认\n- **THEN** provider MUST 返回 `blocked`、未决项和 next actions\n- **AND** consumer MUST NOT 声称看板已创建或更新\n"
+    }
+  ]
+}

@@ -63,9 +63,14 @@ Agent MUST 在创建或更新任务看板前验证候选 HTML 的 task identity�
 - **AND** OpenSpec change archive 或任一关联 task environment 清理 MUST NOT 使任务看板入口消失、被移动或产生副本
 
 #### Scenario: 从关联 task environment 维护看板
-- **WHEN** Agent 从关联 Change 的 task environment 核实任务事实并请求创建或更新任务看板
-- **THEN** Agent MUST 从 environment receipt 或显式 Workspace identity 解析 retained Workspace checkout，并只更新其中的唯一看板
-- **AND** Agent MUST NOT 在当前 task environment 的 Project checkout 中创建、复制或更新任务看板
+- **WHEN** Agent 从关联 Change 的 task environment 请求创建或更新任务看板
+- **THEN** Agent MUST 使用 environment-bound CLI 调用 `buildr worktree context --target <environment-root> --json`，并只使用成功结果的 `workspaceRoot` 定位 retained Workspace checkout
+- **AND** Agent MUST NOT 读取 receipt 结构、扫描父目录、接受显式 Workspace identity 作为 fallback，或在当前 task environment 的 Project checkout 中写入看板
+
+#### Scenario: Task environment context 无效
+- **WHEN** `worktree context` 未返回有效 `workspaceRoot`、返回 blocked，或 environment/CLI/runtime identity 不匹配
+- **THEN** Agent MUST 返回 `blocked` 和 context 的 next actions
+- **AND** Agent MUST NOT 猜测、回退或请求重复提供产品已经拥有的 Workspace identity
 
 #### Scenario: 解析唯一既有任务看板
 - **WHEN** Agent 为已有 task id 创建或更新任务看板

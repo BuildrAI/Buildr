@@ -18,14 +18,14 @@ description: 为跨批次、跨 change、跨团队或跨会话的复杂任务创
 执行前确认：
 
 - operation：`create` 或 `update`；
-- retained Workspace、拥有任务的 Project、稳定 kebab-case `task-id` 和当前写入授权；若调用发生在 task environment 中，必须用 environment receipt 或显式 Workspace identity 解析 retained checkout；
+- retained Workspace、拥有任务的 Project、稳定 kebab-case `task-id` 和当前写入授权；若调用发生在 task environment 中，必须取得成功的 `buildr worktree context` result；
 - 已核实任务事实与来源；OpenSpec changes 是 `0..N` 个真实 OpenSpec change ids，没有 change 时使用空集合，不创建或猜测 planned identity。
 
 按相关性读取用户确认、OpenSpec artifacts/status、代码与提交、验证结果、外部协作依赖和既有看板。来源冲突时修正看板，不用看板覆盖权威事实。决定改变 requirement、状态流、API、权限或数据语义时，先交给 `task-triage` 判断是否进入 change-flow；普通进度、批次关系、外部等待和验证结论可直接更新。
 
 ## 3. 定位与操作
 
-1. 从显式 Workspace identity 或 task environment receipt 解析 retained Workspace root，再结合 Project registry 和任务范围解析 Project；不根据当前目录猜测，也不把 task environment checkout 当作看板 authority。
+1. 调用路径属于 task environment 时，使用 environment-bound CLI 执行 `buildr worktree context --target <environment-root> --json`，只消费成功 result 的 `workspaceRoot` 作为 retained Workspace root；context blocked、缺少 `workspaceRoot` 或 identity 不匹配时返回 `blocked`，不得读取 receipt、扫描父目录、接受显式 Workspace identity fallback 或改用 environment checkout，也不把 task environment checkout 当作看板 authority。非 task environment 调用按普通 Workspace discovery 解析 root。随后结合 Project registry 和任务范围解析 Project。
 2. 只在 retained Workspace checkout 按完整文件名 `yyyy-MM-dd-<task-id>.html` 查找 `projects/<project>/openspec/knowledge/task-boards/yyyy-MM-dd-<task-id>.html`，并核对候选内嵌 `meta.taskId`。只有一个 identity 一致的候选可以更新；多个候选、identity 不一致或目标冲突均返回 `blocked`。
 3. `create` 没有候选时，以 retained Workspace 所在环境的首次创建日期生成稳定路径；已有同 identity 候选时复用它，不创建第二份。`update` 找不到候选时返回 `blocked`。
 4. 从当前 runtime Skill 目录复制 `assets/task-board-template.html`，只更新 `script#board-data` JSON 和必要的任务专属文案。保持单文件，不重新手写模板，不依赖 workspace 源目录、CDN、远端脚本、字体或图片。

@@ -85,11 +85,11 @@
       "type": "skill",
       "id": "task-board",
       "target": "skills/buildr/task-board",
-      "integrity": "sha256-5d0505e00be4e9fb9084f8acfe7fcdb621a6d8bb12f2843875f9ecb86cddc260",
+      "integrity": "sha256-5836d4788aeb34508f35b4972182ec3c82dac0c55a6fc5cb72e89ae0d14f4f2c",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-a1168fd48ab66982b8bb69c6d513edf0dc738f6fba9303af732a247917af2f54"
+          "integrity": "sha256-0dfc008160a849b93555a1114e42639e47a942b8df7c24720ed9528f0519037d"
         },
         {
           "path": "agents/openai.yaml",

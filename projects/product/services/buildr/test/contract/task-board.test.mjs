@@ -70,6 +70,21 @@ test('任务看板只由 retained Workspace checkout 持有', () => {
   assert.match(contract, /不得写入关联 task environment/);
 });
 
+test('task environment 通过 worktree context 确定性解析 retained Workspace', () => {
+  const contract = read('package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md');
+  assert.match(boardSkill, /`buildr worktree context --target <environment-root> --json`/);
+  assert.match(boardSkill, /只消费成功 result 的 `workspaceRoot`/);
+  assert.match(contract, /唯一来自 `worktree context\.workspaceRoot`/);
+  for (const forbidden of [
+    /environment receipt 或显式 Workspace identity/,
+    /从显式 Workspace identity 或 task environment receipt/,
+  ]) {
+    assert.doesNotMatch(boardSkill, forbidden);
+    assert.doesNotMatch(contract, forbidden);
+  }
+  assert.match(contract, /不得读取 receipt 结构、扫描路径或接受显式 Workspace identity/);
+});
+
 test('任务看板从 runtime Skill 自身复制完整目录中的模板', () => {
   assert.match(boardSkill, /从当前 runtime Skill 目录复制 `assets\/task-board-template\.html`/);
   assert.match(boardSkill, /不重新手写模板/);

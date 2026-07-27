@@ -1,10 +1,4 @@
-# 任务看板维护
-
-## Purpose
-
-定义创建和更新以稳定 Project task identity 为主的只读任务看板时，consumer 与 provider 的最小协作语义。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Buildr 必须提供任务看板维护能力契约
 Buildr MUST 提供 `buildr.task-board-maintenance/v1` capability contract 和默认 `task-board` provider；contract MUST 定义 retained Workspace/Project/task identity、事实来源、create/update operation、写入授权、稳定路径、task environment context 绑定、失败语义和 result evidence。
