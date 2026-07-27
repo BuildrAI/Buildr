@@ -89,6 +89,8 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskFinishCompletion',
     'taskFinishObservation',
     'taskFinishRecovery',
+    'taskFinishRepairAuthorization',
+    'taskFinishRepairDecision',
     'update',
     'updateCheck',
     'version',

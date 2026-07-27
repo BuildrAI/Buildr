@@ -38,7 +38,11 @@ export function registerTaskFinishApplication(runtime) {
     try { run = readFinishRun({ root, runId }); }
     catch (error) {
       if (!['advance', 'run'].includes(action)) throw error;
-      run = createFinishRun({ root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null), targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin') });
+      run = createFinishRun({
+        root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null),
+        targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin'),
+        repairAuthorization: jsonValue(optionValue(command.args, '--repair-authorization', null), '--repair-authorization'),
+      });
     }
     if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {} }).then((result) => print(result, command.args, root));
     if (action === 'recover') return recoverFinishRun({ root, runId: run.runId, manifest: jsonValue(optionValue(command.args, '--recovery', null), '--recovery') }).then((result) => print(result, command.args, root));

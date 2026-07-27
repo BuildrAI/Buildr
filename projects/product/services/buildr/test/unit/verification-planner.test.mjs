@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   auditVerificationInputCoverage,
+  createVerificationPreflightPlan,
   createVerificationPlan,
   globToRegExp,
   matchesInput,
@@ -48,6 +49,13 @@ test('docs-only changed plan 只选择轻量文档 owner', () => {
   const plan = createVerificationPlan({ paths: ['docs/buildr-product.md'] });
   assert.deepEqual(ids(plan), ['docs-quality']);
   assert.match(plan.steps[0].reasons[0], /docs\/buildr-product\.md matches/);
+});
+
+test('candidate-aware preflight只选择登记的低成本直接契约', () => {
+  const skill = createVerificationPreflightPlan({ paths: ['package/targets/workspace/skills/buildr/task-finish/SKILL.md'] });
+  assert.deepEqual(ids(skill), ['preflight-contract']);
+  assert.equal(skill.steps[0].executor.file, 'test/contract/task-finish-sequencing.test.mjs');
+  assert.deepEqual(ids(createVerificationPreflightPlan({ paths: ['docs/buildr-product.md'] })), []);
 });
 
 test('代表源码路径只选择真实 Changed owner 并排除无关重型 owner', () => {
@@ -136,6 +144,16 @@ test('registry validation 在启动前拒绝重复、未知依赖、未知 execu
   for (const code of ['duplicate_or_missing_id', 'missing_inputs', 'unknown_executor', 'invalid_scheduling_cost', 'dependency_cycle']) {
     assert.ok(result.findings.some((finding) => finding.code === code), `missing ${code}`);
   }
+});
+
+test('registry validation拒绝有副作用或无预算的preflight', () => {
+  const invalid = [{
+    id: 'unsafe', name: 'unsafe', executor: { type: 'node', file: 'x.mjs' }, profiles: [], groups: [], inputs: ['x.mjs'],
+    concurrencyClass: 'default', dependsOn: [], preflight: { inputs: ['x.mjs'], executor: { type: 'node', file: 'x.mjs' }, sideEffects: 'shared', budgetMs: 0 },
+  }];
+  const result = validateVerificationRegistry(invalid);
+  assert.ok(result.findings.some((finding) => finding.code === 'preflight_side_effects_unsafe'));
+  assert.ok(result.findings.some((finding) => finding.code === 'preflight_budget_invalid'));
 });
 
 test('registry validation 拒绝缺少 producer 依赖的 artifact consumer', () => {

@@ -7,6 +7,7 @@ const step = (definition) => Object.freeze({
   inputs: [],
   concurrencyClass: 'default',
   resources: [],
+  preflight: null,
   ...definition,
 });
 
@@ -89,7 +90,12 @@ export const verificationSteps = Object.freeze([
     'package/targets/workspace/skills/**', 'package/targets/runtime/skills/**',
     'skills/buildr-release/**', 'docs/skill-capability-contracts.md',
     'package.json', 'package-lock.json',
-  ], concurrencyClass: 'cpu-heavy' }),
+  ], concurrencyClass: 'cpu-heavy', preflight: {
+    inputs: ['package/targets/workspace/skills/buildr/task-finish/**', 'test/contract/task-finish-sequencing.test.mjs'],
+    executor: { type: 'node', file: 'test/contract/task-finish-sequencing.test.mjs' },
+    budgetMs: 2000,
+    sideEffects: 'none',
+  } }),
   step({ id: 'integration-fast', name: 'fast integration tests', executor: { type: 'npm', args: ['run', 'test:integration:fast'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/integration-fast/**',
     'bin/buildr.mjs', 'buildr',

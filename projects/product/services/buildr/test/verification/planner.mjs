@@ -53,6 +53,12 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     if (item.schedulingCostMs != null && (!Number.isInteger(item.schedulingCostMs) || item.schedulingCostMs < 1)) {
       findings.push({ step: item.id, code: 'invalid_scheduling_cost', value: item.schedulingCostMs });
     }
+    if (item.preflight) {
+      if (!Array.isArray(item.preflight.inputs) || item.preflight.inputs.length === 0) findings.push({ step: item.id, code: 'preflight_inputs_missing' });
+      if (!VERIFICATION_EXECUTORS.includes(item.preflight.executor?.type)) findings.push({ step: item.id, code: 'preflight_executor_unknown', value: item.preflight.executor?.type });
+      if (item.preflight.sideEffects !== 'none') findings.push({ step: item.id, code: 'preflight_side_effects_unsafe', value: item.preflight.sideEffects });
+      if (!Number.isInteger(item.preflight.budgetMs) || item.preflight.budgetMs < 1) findings.push({ step: item.id, code: 'preflight_budget_invalid', value: item.preflight.budgetMs });
+    }
     for (const profile of item.profiles ?? []) if (!VERIFICATION_PROFILES.includes(profile)) findings.push({ step: item.id, code: 'unknown_profile', value: profile });
     for (const group of item.groups ?? []) if (!VERIFICATION_GROUPS.includes(group)) findings.push({ step: item.id, code: 'unknown_group', value: group });
   }
@@ -85,6 +91,24 @@ export function validateVerificationRegistry(steps = verificationSteps) {
   };
   for (const item of steps) visit(item.id);
   return { ok: findings.length === 0, findings };
+}
+
+export function createVerificationPreflightPlan(request = {}, steps = verificationSteps) {
+  const validation = validateVerificationRegistry(steps);
+  if (!validation.ok) throw new Error(`Invalid verification registry:\n${validation.findings.map((item) => `${item.step}: ${item.code}`).join('\n')}`);
+  const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
+  const selected = [];
+  for (const item of steps) {
+    if (!item.preflight) continue;
+    const matched = paths.filter((productPath) => item.preflight.inputs.some((pattern) => matchesInput(productPath, pattern)));
+    if (matched.length) selected.push(Object.freeze({
+      id: `preflight-${item.id}`, name: `${item.name} preflight`, executor: item.preflight.executor,
+      dependsOn: [], profiles: [], groups: [], inputs: item.preflight.inputs, concurrencyClass: 'default', resources: [],
+      budgetMs: item.preflight.budgetMs, reasons: Object.freeze(matched.map((entry) => `${entry} matches candidate-aware preflight`)),
+      assures: item.id,
+    }));
+  }
+  return Object.freeze({ paths: Object.freeze(paths), profiles: Object.freeze([]), groups: Object.freeze([]), stepIds: Object.freeze([]), steps: Object.freeze(selected) });
 }
 
 export function auditVerificationInputCoverage(paths, steps = verificationSteps) {

@@ -34,6 +34,8 @@ capabilities: []
 - `supersedes`：团队明确确认可以被本能力覆盖的能力 id；Agent 不自行推断。
 - `sources`：扫描或团队确认的事实来源，例如 POM、CI 或项目文档路径。
 
+实现侧registry可以为已登记owner附加preflight，但它不是Project capability的新maturity或enforcement层级。preflight必须声明candidate path inputs、直接executor、artifact dependencies、`effects: none`和budget；不能从技术栈猜测或自动扩张到未声明路径，也不能替代affected/Candidate capability。
+
 ## 演进规则
 
 - `discovered`：只作为候选，不自动执行，不得 required。

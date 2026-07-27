@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v1';
 export const FINISH_RECOVERY_SCHEMA = 'buildr.task-finish-recovery/v1';
+export const FINISH_REPAIR_AUTHORIZATION_SCHEMA = 'buildr.task-finish-repair-authorization/v1';
 export const FINISH_PLAN_VERSION = 1;
 const FINISH_RUN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 
@@ -57,7 +58,7 @@ function atomicWriteJson(file, value) {
   fs.renameSync(temporary, file);
 }
 
-export function createFinishRun({ root, runId, task, change = null, targetBranch, remote = 'origin', session = null, clock = Date.now }) {
+export function createFinishRun({ root, runId, task, change = null, targetBranch, remote = 'origin', session = null, repairAuthorization = null, clock = Date.now }) {
   if (!runId || !task || !targetBranch) throw new Error('runId, task and targetBranch are required');
   const file = runFile(root, runId);
   if (fs.existsSync(file)) return readFinishRun({ root, runId });
@@ -68,7 +69,7 @@ export function createFinishRun({ root, runId, task, change = null, targetBranch
     runId, task, change, target: { branch: targetBranch, remote },
     status: 'active', createdAt, updatedAt: createdAt,
     sessions: session ? [session] : [],
-    recoveries: [], observationLedger: [],
+    recoveries: [], observationLedger: [], repairAuthorizations: repairAuthorization ? [normalizeRepairAuthorization(repairAuthorization, { task, change })] : [],
     steps: FINISH_STEPS.map((definition) => ({
       ...clone(definition), status: 'pending', attempt: 0, attemptToken: null,
       inputFingerprint: null, effects: [], evidence: [], blocked: null,
@@ -101,7 +102,27 @@ export function readFinishRun({ root, runId }) {
   }
   run.recoveries ??= [];
   run.observationLedger ??= [];
+  run.repairAuthorizations ??= [];
   return run;
+}
+
+function normalizeRepairAuthorization(value, identity) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('repair authorization must be an object.');
+  if (value.schemaVersion !== FINISH_REPAIR_AUTHORIZATION_SCHEMA) throw new Error(`Unsupported repair authorization schema: ${value.schemaVersion}`);
+  if (value.task !== identity.task || (value.change ?? null) !== (identity.change ?? null)) throw new Error('repair authorization task/change identity mismatch.');
+  if (typeof value.failureIdentity !== 'string' || !value.failureIdentity.trim()) throw new Error('repair authorization requires failureIdentity.');
+  if (!Array.isArray(value.allowedScopes) || value.allowedScopes.length === 0 || value.allowedScopes.some((entry) => typeof entry !== 'string' || !entry.trim())) {
+    throw new Error('repair authorization requires non-empty allowedScopes.');
+  }
+  return { ...clone(value), authorizedAt: value.authorizedAt || new Date().toISOString() };
+}
+
+function pathAllowed(candidate, scopes) {
+  const normalized = String(candidate || '').replaceAll('\\', '/').replace(/^\.\//, '');
+  return scopes.some((scope) => {
+    const prefix = scope.replaceAll('\\', '/').replace(/^\.\//, '').replace(/\*\*?$/, '').replace(/\/$/, '');
+    return normalized === prefix || normalized.startsWith(`${prefix}/`);
+  });
 }
 
 function isWithin(root, candidate) {
@@ -262,6 +283,21 @@ function recoveryBoundary(manifest) {
 export async function recoverFinishRun({ root, runId, manifest, runCommand = defaultSafeCommand, clock = Date.now }) {
   const normalized = normalizeRecoveryManifest(manifest);
   const run = readFinishRun({ root, runId });
+  const formal = run.steps.find((item) => item.id === 'formal-assurance');
+  const failedFormal = formal?.status === 'blocked' && formal.lastCompletion?.outcome === 'blocked';
+  if (failedFormal && normalized.transition.type === 'implementation-changed') {
+    const supplied = normalized.repairAuthorization
+      ? normalizeRepairAuthorization(normalized.repairAuthorization, { task: run.task, change: run.change })
+      : null;
+    const authorization = supplied || run.repairAuthorizations.find((entry) => entry.failureIdentity === formal.inputFingerprint);
+    if (!authorization || authorization.failureIdentity !== formal.inputFingerprint) throw new Error('Formal assurance failed; an identity-bound repair authorization is required before implementation recovery.');
+    const changedPaths = normalized.transition.changedPaths || [];
+    if (!Array.isArray(changedPaths) || changedPaths.length === 0 || changedPaths.some((entry) => !pathAllowed(entry, authorization.allowedScopes))) {
+      throw new Error('Repair transition changedPaths exceed the authorized repair scope.');
+    }
+    if (!run.repairAuthorizations.some((entry) => entry.id === authorization.id)) run.repairAuthorizations.push(authorization);
+    normalized.repairAuthorization = authorization;
+  }
   const boundary = recoveryBoundary(normalized);
   if (boundary) invalidate(run, boundary, `recovery ${normalized.transition.type}: ${normalized.transition.evidenceId || 'identity transition'}`, true, clock);
   refreshFinishInputs(run, normalized.fingerprints, clock);
@@ -273,7 +309,7 @@ export async function recoverFinishRun({ root, runId, manifest, runCommand = def
   const recovery = {
     id: normalized.id || `recovery-${digest(JSON.stringify(normalized))}`,
     schemaVersion: FINISH_RECOVERY_SCHEMA, recordedAt: now(clock), boundary,
-    transition: normalized.transition, identities: normalized.identities,
+    transition: normalized.transition, identities: normalized.identities, repairAuthorization: normalized.repairAuthorization || null,
   };
   if (!run.recoveries.some((entry) => entry.id === recovery.id)) run.recoveries.push(recovery);
   run.observationLedger.push({
@@ -423,6 +459,26 @@ function validStepEffects(item) {
   return item.status === 'passed' ? item.effects.filter((entry) => ids.has(entry.id)) : [];
 }
 
+function phaseTiming(run, finished) {
+  const formal = run.steps.find((item) => item.id === 'formal-assurance');
+  const formalAttempts = (formal?.attempts || []).filter((attempt) => Number.isFinite(attempt.durationMs));
+  const successful = [...formalAttempts].reverse().find((attempt) => attempt.outcome === 'passed');
+  const repairs = (run.recoveries || []).filter((entry) => entry.repairAuthorization);
+  const repairMs = repairs.reduce((total, entry) => {
+    const start = Date.parse(entry.repairAuthorization.authorizedAt);
+    const end = Date.parse(entry.recordedAt);
+    return total + (Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : 0);
+  }, 0);
+  const closeoutStart = successful?.finishedAt ? Date.parse(successful.finishedAt) : null;
+  return {
+    initialVerificationMs: formalAttempts[0]?.durationMs || 0,
+    repairMs,
+    reverificationMs: formalAttempts.slice(1).reduce((total, attempt) => total + attempt.durationMs, 0),
+    closeoutMs: Number.isFinite(closeoutStart) ? Math.max(0, finished - closeoutStart) : 0,
+    phaseCoverage: repairs.length ? 'verification-repair-reverification-closeout' : successful ? 'verification-closeout' : 'verification-incomplete',
+  };
+}
+
 export function inspectFinishRun(run) {
   const current = nextStep(run) || null;
   const attempts = run.steps.flatMap((item) => (item.attempts || []).map((attempt) => ({ step: item.id, ...attempt })));
@@ -443,10 +499,13 @@ export function inspectFinishRun(run) {
     staleSteps: run.steps.filter((item) => item.status === 'stale').map((item) => item.id),
     timing: {
       wallClockMs: Math.max(0, finished - started),
+      endToEndWallClockMs: Math.max(0, finished - started),
+      ...phaseTiming(run, finished),
       attemptCount: attempts.length,
       retryCount: retryAttempts.length,
       attributableWasteMs: wastedAttempts.reduce((total, attempt) => total + attempt.durationMs, 0),
       productExecutionMs: commandLedger.reduce((total, entry) => total + (entry.durationMs || 0), 0),
+      orchestrationGapMs: Math.max(0, finished - started - commandLedger.reduce((total, entry) => total + (entry.durationMs || 0), 0)),
       invocationCount: commandLedger.length,
       outputBytes: commandLedger.reduce((total, entry) => total + (entry.stdoutBytes || 0) + (entry.stderrBytes || 0), 0),
       coverage: commandLedger.length === 0 ? 'external-unobserved' : unobservedIntervals.length ? 'product-partial' : 'product-complete',
@@ -455,6 +514,12 @@ export function inspectFinishRun(run) {
     },
     nextAction: current ? { step: current.id, status: current.status, action: current.action, attemptToken: current.status === 'running' ? current.attemptToken : null, retryPolicy: current.retryPolicy, lease: current.lease } : null,
     diagnostics: run.lastDiagnostic || null,
+    repairDecision: current?.id === 'formal-assurance' && current.status === 'blocked' ? {
+      schemaVersion: 'buildr.task-finish-repair-decision/v1', status: 'required', failureIdentity: current.inputFingerprint,
+      authorized: run.repairAuthorizations.some((entry) => entry.failureIdentity === current.inputFingerprint),
+      reason: current.blocked?.reason || current.blocked?.code || 'formal assurance failed',
+      nextActions: ['向用户报告缺陷、影响、repair scope与重新验证成本', '取得identity-bound repair authorization后提交typed recovery'],
+    } : null,
     steps: run.steps.map(({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan }) => ({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan })),
   };
 }
@@ -483,6 +548,8 @@ export function prepareFinishCleanup({ root, runId, attemptToken, evidence, cloc
     effects: run.steps.flatMap((candidate) => validStepEffects(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
     verificationEvidence: (run.steps.find((candidate) => candidate.id === 'formal-assurance')?.evidence || []).filter(evidencePassed),
     archiveEvidence: (run.steps.find((candidate) => candidate.id === 'archive')?.evidence || []).filter(evidencePassed),
+    repairAuthorizations: run.repairAuthorizations || [],
+    recoveries: run.recoveries || [],
     observationLedger: run.observationLedger,
     timing: {
       ...checkpoint.timing,
@@ -506,7 +573,13 @@ export function finalizeFinishCleanup({ root, runId, evidence, clock = Date.now 
   if (receipt.schemaVersion !== 'buildr.task-finish-completion/v1' || receipt.status !== 'prepared') throw new Error('Task Finish completion receipt is not prepared.');
   if (evidence.environmentRemoved !== true && evidence.environmentRetained !== true) throw new Error('cleanup finalize evidence must confirm environmentRemoved or environmentRetained.');
   const completedAt = now(clock);
-  const completed = { ...receipt, status: 'complete', completedAt, finalCleanupEvidence: evidence, timing: { ...receipt.timing, completedAt, wallClockMs: Math.max(0, Date.parse(completedAt) - Date.parse(receipt.preparedAt) + (receipt.timing?.wallClockMs || 0)) } };
+  const finalizeMs = Math.max(0, Date.parse(completedAt) - Date.parse(receipt.preparedAt));
+  const wallClockMs = finalizeMs + (receipt.timing?.wallClockMs || 0);
+  const completed = { ...receipt, status: 'complete', completedAt, finalCleanupEvidence: evidence, timing: {
+    ...receipt.timing, completedAt, wallClockMs, endToEndWallClockMs: wallClockMs,
+    closeoutMs: (receipt.timing?.closeoutMs || 0) + finalizeMs,
+    orchestrationGapMs: (receipt.timing?.orchestrationGapMs || 0) + finalizeMs,
+  } };
   atomicWriteJson(receiptFile, completed);
   return { schemaVersion: 'buildr.task-finish-completion-result/v1', runId, status: 'complete', completionReceipt: receiptFile, cleanup: evidence };
 }
@@ -523,6 +596,7 @@ export function compactFinishCheckpoint(checkpoint) {
     timing: { ...checkpoint.timing, attempts: undefined },
     nextAction: checkpoint.nextAction,
     diagnostics: checkpoint.diagnostics || null,
+    repairDecision: checkpoint.repairDecision || null,
     ...(checkpoint.safeExecution ? { safeExecution: checkpoint.safeExecution } : {}),
     ...(checkpoint.recovery ? { recovery: checkpoint.recovery } : {}),
   };
@@ -691,7 +765,17 @@ function parseChildDiagnostic(stdout, stderr) {
       };
     } catch {}
   }
-  return { structured: false };
+  const combined = `${stdout || ''}\n${stderr || ''}`;
+  const failedSummary = combined.match(/\[(verify[^\]]*)\]\s+failed:\s*([^\n]+)/i);
+  const failedTest = combined.match(/^\s*[✖✕x]\s+(.+)$/m);
+  const assertion = combined.match(/AssertionError[^\n]*|ERR_ASSERTION[^\n]*/);
+  const warnings = combined.split(/\r?\n/).filter((line) => /\bwarning\b/i.test(line)).slice(0, 20);
+  const primaryFailure = failedSummary || failedTest || assertion ? {
+    stage: failedSummary?.[1] || null,
+    check: failedSummary?.[2]?.trim() || failedTest?.[1]?.trim() || assertion?.[0]?.trim() || null,
+    excerpt: (failedTest?.[0] || assertion?.[0] || failedSummary?.[0] || '').slice(0, 1000),
+  } : null;
+  return { structured: false, primaryFailure, warnings };
 }
 
 function appendCommandObservations({ root, runId, stepId, attemptToken, descriptors, assessed, stageResults, clock }) {
@@ -796,12 +880,18 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     const result = assessed.find((entry) => entry.status !== 0 || !entry.assertionPassed) || assessed[0];
     const passed = assessed.every((entry) => entry.status === 0 && entry.assertionPassed);
     const observationIds = appendCommandObservations({ root, runId, stepId: step, attemptToken: claimed.nextAction.attemptToken, descriptors: commandDescriptors, assessed, stageResults, clock });
+    const recordedDiagnostic = inspectFinishRun(readFinishRun({ root, runId })).diagnostics;
     const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
     const evidence = { id: plan.evidenceId, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
     const completed = advanceFinishRun({
       root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
       attemptToken: claimed.nextAction.attemptToken, evidence,
-      blocked: passed ? null : { code: 'safe-action-failed', reason: result.stderr || (result.assertionPassed ? `command exited ${result.status}` : 'structured success assertion failed') }, clock,
+      blocked: passed ? null : {
+        code: 'safe-action-failed',
+        reason: recordedDiagnostic?.primaryFailure?.check || result.stderr || (result.assertionPassed ? `command exited ${result.status}` : 'structured success assertion failed'),
+        primaryFailure: recordedDiagnostic?.primaryFailure || null,
+        warnings: recordedDiagnostic?.warnings || [],
+      }, clock,
     });
     const completedAttempt = completed.timing.attempts.filter((attempt) => attempt.step === step).at(-1);
     executedSteps.push({ step, status: passed ? 'passed' : 'blocked', durationMs: completedAttempt?.durationMs ?? null });

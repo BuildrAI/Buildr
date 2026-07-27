@@ -1,0 +1,38 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: harden-task-finish-verification-boundaries
+operation: assess
+treeIdentity: planning-37adf2d
+impacts:
+  - type: brief
+    target: openspec/changes/harden-task-finish-verification-boundaries/brief.md
+    reason: 需要向普通用户解释验证失败后的授权边界与新的耗时口径
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-task-finish-verification-boundaries/proposal.md
+      - .buildr/task-finish/completed/optimize-task-finish-recovery-and-fixtures.json
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 实现后需要明确preflight、formal failure、repair decision、re-verification与closeout-only顺序
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-task-finish-verification-boundaries/specs/task-finish-execution/spec.md
+      - openspec/changes/harden-task-finish-verification-boundaries/specs/task-verification/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Finish状态机、completion metrics、diagnostic与receipt持久化行为将变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-task-finish-verification-boundaries/design.md
+  - type: task-board
+    target: openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html
+    reason: 本Change是同一Task Finish长期优化任务的第六批次
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-task-finish-verification-boundaries
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: verification、repair、re-verification与closeout均为已有通用流程术语，本Change只明确计量和授权边界
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/harden-task-finish-verification-boundaries/design.md
+unresolvedItems: []

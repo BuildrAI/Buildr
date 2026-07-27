@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, FINISH_RECOVERY_SCHEMA, FINISH_STEPS, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
+import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, FINISH_RECOVERY_SCHEMA, FINISH_REPAIR_AUTHORIZATION_SCHEMA, FINISH_STEPS, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-'));
@@ -362,6 +362,46 @@ test('formal verification composite 并行执行 required capabilities', async (
   assert.equal(maxActive, 2);
   assert.equal(result.currentStep, 'asset-review');
   assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'formal-assurance').evidence[0].observationCount, 2);
+});
+
+test('formal failure默认等待identity-bound repair授权', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  const command = { cwd: root, command: process.execPath, commandSource: 'external-declared', args: ['--test'], sharedMutation: false, safeAuto: true, safeHandler: 'verification-capability' };
+  const plan = { cwd: root, sharedMutation: true, safeAuto: true, safeHandler: 'formal-verification', evidenceId: 'failed-formal', stages: [{ id: 'required', commands: [command] }] };
+  const failed = await executeSafeFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-failed' }, executionPlans: { 'formal-assurance': plan },
+    runCommand: async () => ({ status: 1, stdout: '[verify-changed] failed: static contract tests (1)\n✖ task finish sequencing', stderr: '[verify-changed] warning: budget exceeded' }),
+  });
+  assert.equal(failed.repairDecision.status, 'required');
+  assert.equal(failed.repairDecision.authorized, false);
+  assert.equal(failed.diagnostics.primaryFailure.check, 'static contract tests (1)');
+  assert.deepEqual(failed.diagnostics.warnings, ['[verify-changed] warning: budget exceeded']);
+  const manifest = recoveryManifest({
+    identities: { before: { candidate: 'old' }, after: { candidate: 'new' } },
+    fingerprints: { 'contract-convergence': 'new' },
+    transition: { type: 'implementation-changed', evidenceId: 'repair', changedPaths: ['src/application/task-finish/task-finish-run.mjs'] },
+  });
+  await assert.rejects(recoverFinishRun({ root, runId: 'finish-1', manifest }), /repair authorization is required/);
+  manifest.repairAuthorization = {
+    schemaVersion: FINISH_REPAIR_AUTHORIZATION_SCHEMA, id: 'auth-1', task: 'finish-1', change: 'change-1',
+    failureIdentity: readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'formal-assurance').inputFingerprint,
+    allowedScopes: ['src/application/task-finish/**'], authorizedAt: new Date(Date.now() - 25).toISOString(),
+  };
+  const recovered = await recoverFinishRun({ root, runId: 'finish-1', manifest });
+  assert.equal(recovered.recovery.repairAuthorization.id, 'auth-1');
+  assert.ok(recovered.timing.repairMs >= 0);
+  assert.equal(recovered.timing.phaseCoverage, 'verification-repair-reverification-closeout');
+});
+
+test('completion timing独立报告verification与closeout-only', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'cleanup') passCurrent(root, 'finish-1');
+  const checkpoint = inspectFinishRun(readFinishRun({ root, runId: 'finish-1' }));
+  assert.ok(checkpoint.timing.initialVerificationMs >= 0);
+  assert.ok(checkpoint.timing.closeoutMs >= 0);
+  assert.equal(checkpoint.timing.endToEndWallClockMs, checkpoint.timing.wallClockMs);
+  assert.ok(checkpoint.timing.orchestrationGapMs >= 0);
 });
 
 function recoveryManifest(overrides = {}) {

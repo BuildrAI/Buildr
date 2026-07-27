@@ -40,13 +40,15 @@ Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有
 
 共享实现区域、验证入口或失败影响面的任务组完成后，集中运行一次受影响范围验证。选择影响面内的 stable required 能力；环境和授权允许时可以运行 trial/advisory 能力积累证据，但其失败不得单独冒充 required gate 失败。同一候选状态下，只有能证明上层入口覆盖底层检查时才去重；无法证明覆盖关系时保留必要检查。
 
+正式执行前，先按verification registry和实际candidate paths选择候选owner声明的preflight。preflight必须有直接executor、artifact dependencies、`sideEffects: none`与明确budget；selector歧义、依赖缺失或preflight失败时停止，不启动完整affected/Candidate。preflight通过只表示可以进入正式计划，不是正式evidence，正式计划中的相应required capability仍执行。
+
 当多个 required 能力彼此独立、执行根与副作用允许并行时，向 Task Finish consumer 返回一次 `formal-verification` composite execution plan，由产品 executor 在同一 execution 内并行调度并汇总整体 wall-clock。不得为此生成临时 shell、手工轮询日志、重复启动相同 verifier，或用外部包装再次计算已有可信 timing。
 
 ### 完整候选验证（candidate）
 
 全部实现、自然语言资产、生成资产同步和 review 修订完成后冻结候选，再运行项目要求的完整验证。`authoritative` 模式必须运行全部适用的 stable required Candidate gates，不得按 Git diff、固定能力数量或技术栈分层缩小；`augment` 或 legacy 无法确认完整范围时设置 `candidateCompleteness: unconfirmed`。只有 `level: candidate`、`status: passed`、`candidateCompleteness: confirmed`、candidate identity 匹配且 evidence 可复用时，才能把结果作为实现完整验证或 Task Finish 的完成证据。
 
-完整验证失败后退出候选冻结状态。修复期间优先重跑失败项与受影响检查；候选重新稳定后再执行一次新的 Candidate 验证。
+完整验证失败后退出候选冻结状态。首次正式执行记为initial verification；取得明确repair授权并修改候选后，优先重跑失败项与受影响检查，候选重新稳定后再执行同一required assurance并记为re-verification，不机械升级级别。
 
 ## 3. 初始化与演进测试声明
 
@@ -130,7 +132,7 @@ cleanupReference: <仅 transient 落盘 evidence 的精确、安全清理引用>
 verificationResultMetadataTransition: <可选；subtype、source/target identity、change/task identity、精确 old/new marker 与 session-only retention>
 ```
 
-必要检查失败时保留实际退出状态、已完成检查和耗时，停止把任务描述为验证完成。只有较低级别验证时，明确 Candidate 尚未执行。
+必要检查失败时保留实际退出状态、已完成检查和耗时，失败摘要先给primary failed capability/check、exit和next action，再列budget warning等次级诊断，并停止把任务描述为验证完成。只有较低级别验证时，明确 Candidate 尚未执行。
 
 ## 7. Evidence 保留与清理
 

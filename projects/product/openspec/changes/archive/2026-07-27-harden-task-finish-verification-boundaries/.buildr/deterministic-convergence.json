@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "buildr.openspec-convergence-receipt/v2",
+  "change": "harden-task-finish-verification-boundaries",
+  "project": "product",
+  "deltaHash": "sha256-4acbe3bb01aaea828596e9cae3f05bd278e4605a37ffc9ca5377ac4e36a4f3c1",
+  "openspecExecutable": "external:openspec",
+  "openspecExecutableIdentity": {
+    "sourceKind": "external-declared",
+    "reference": "external:openspec",
+    "version": "1.6.0",
+    "sha256": "ca136f0e9fd4951dcf93d8ed729ebc97b2d97d3980cd9dc9d42fc80e32e797c6"
+  },
+  "stage": "post-sync",
+  "transitions": [
+    {
+      "stage": "archive-rehearsal",
+      "completedAt": "2026-07-27T00:50:23.418Z"
+    },
+    {
+      "stage": "pre-sync",
+      "completedAt": "2026-07-27T00:50:25.062Z"
+    },
+    {
+      "stage": "sync-plan",
+      "completedAt": "2026-07-27T00:50:26.506Z",
+      "planIdentity": "sha256-7b2aa522e9a135b1bdf7b6ec66ef99c361b53c691588fcf1844668a07f32ea56"
+    },
+    {
+      "stage": "sync-apply",
+      "completedAt": "2026-07-27T00:50:30.177Z",
+      "planIdentity": "sha256-7b2aa522e9a135b1bdf7b6ec66ef99c361b53c691588fcf1844668a07f32ea56",
+      "openspecExecutable": "external:openspec",
+      "openspecExecutableIdentity": {
+        "sourceKind": "external-declared",
+        "reference": "external:openspec",
+        "version": "1.6.0",
+        "sha256": "ca136f0e9fd4951dcf93d8ed729ebc97b2d97d3980cd9dc9d42fc80e32e797c6"
+      }
+    },
+    {
+      "stage": "strict-validation",
+      "completedAt": "2026-07-27T00:50:31.220Z"
+    },
+    {
+      "stage": "post-sync",
+      "completedAt": "2026-07-27T00:50:32.616Z"
+    }
+  ]
+}

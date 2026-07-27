@@ -8,6 +8,7 @@ import { advanceConvergenceReceipt, rehearseArchive, scanDeltaCompatibility } fr
 import { FINISH_STEPS } from '../../src/application/task-finish/task-finish-run.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
+const productRoot = path.resolve(serviceRoot, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
@@ -25,6 +26,27 @@ test('Task Finish 把 delivery convergence 放在 final assurance 前', () => {
 test('verification evidence 表达 archive-sensitive 与 supersession', () => {
   for (const source of [verification, verificationContract]) {
     for (const phrase of ['archive-sensitive', 'implementation-changed', 'target-race', 'verification-failed', 'supersedesEvidence', 'invalidationReason', 'supersessionRelationship']) assert.ok(source.includes(phrase), phrase);
+  }
+});
+
+test('convergence receipt writer持久化portable executable identity', () => {
+  const source = read('src/application/domains/openspec.mjs');
+  assert.match(source, /openspecExecutableIdentity/);
+  assert.match(source, /sourceKind: executableReference\.startsWith/);
+  assert.doesNotMatch(source, /advanceReceipt\('sync-apply', \{ planIdentity: applied\.identity, openspecExecutable \}\)/);
+  const receiptFiles = [];
+  const walk = (directory) => {
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(target);
+      else if (entry.name === 'convergence-receipt.json' || entry.name === 'deterministic-convergence.json') receiptFiles.push(target);
+    }
+  };
+  walk(path.join(productRoot, 'openspec/changes'));
+  for (const file of receiptFiles) {
+    const content = fs.readFileSync(file, 'utf8');
+    assert.doesNotMatch(content, /\/(?:Users|home)\/[^/]+\//, path.relative(productRoot, file));
   }
 });
 

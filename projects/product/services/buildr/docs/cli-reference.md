@@ -37,7 +37,7 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
 | `buildr worktree create <task-id> --agent <agent> --branch <branch> [--include ...]` | 创建或幂等复用 `<workspace>/.worktrees/<task-id>`；默认根仓库，重复 `--include project:<code>` / `service:<project>/<service>` 加入 nested independent Git repositories。 |
 | `buildr worktree inspect/context/adopt` | 按 receipt 检查完整 repository set；以 host-visible session evidence 采用 checkout-local runtime；再核对实际 cwd、session root/handle 与允许执行根。identity、runtime projection 或 session 不匹配时 fail closed。 |
-| `buildr task finish inspect/advance/resume/run/recover` | 持久化收尾 checkpoint；`run`连续执行登记的安全计划，`recover --recovery <json>`原子消费版本化before/after identities与transition proof并推进到formal assurance或真实边界。 |
+| `buildr task finish inspect/advance/resume/run/recover` | 持久化收尾 checkpoint；`run`连续执行登记的安全计划。formal assurance失败默认返回identity-bound repair decision并停止；仅当`recover --repair-authorization <json>`明确绑定task/change、failure identity与allowed scopes时，才消费版本化before/after identities与transition proof继续re-verification。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |

@@ -693,6 +693,17 @@ export function registerDomainsOpenspec(runtime) {
     const executableLookup = spawnSync('which', ['openspec'], { encoding: 'utf8' });
     const openspecExecutable = executableLookup.status === 0 ? executableLookup.stdout.trim() : '';
     if (!path.isAbsolute(openspecExecutable) || !existsFile(openspecExecutable)) throw new Error('Unable to resolve the declared OpenSpec executable for archive rehearsal.');
+    const openspecVersionResult = spawnSync(openspecExecutable, ['--version'], { cwd: context.projectRoot, encoding: 'utf8' });
+    const executableRelative = path.relative(context.projectRoot, openspecExecutable).replaceAll('\\', '/');
+    const executableReference = executableRelative && !executableRelative.startsWith('../')
+      ? executableRelative
+      : `external:${path.basename(openspecExecutable)}`;
+    const executableIdentity = {
+      sourceKind: executableReference.startsWith('external:') ? 'external-declared' : 'project-relative',
+      reference: executableReference,
+      version: openspecVersionResult.status === 0 ? openspecVersionResult.stdout.trim() : null,
+      sha256: crypto.createHash('sha256').update(fs.readFileSync(openspecExecutable)).digest('hex'),
+    };
 
     let stageStarted = Date.now();
     const cli = process.argv[1];
@@ -700,10 +711,15 @@ export function registerDomainsOpenspec(runtime) {
     const receiptFile = path.join(context.changeRoot, '.buildr', 'deterministic-convergence.json');
     const receiptSchema = 'buildr.openspec-convergence-receipt/v2';
     let receipt = readOpenSpecContractJson(receiptFile, receiptSchema);
-    if (receipt && (receipt.change !== context.change || receipt.project !== context.project || receipt.deltaHash !== context.delta.hash || receipt.openspecExecutable !== openspecExecutable)) {
+    if (receipt && (receipt.change !== context.change || receipt.project !== context.project || receipt.deltaHash !== context.delta.hash
+      || (!path.isAbsolute(receipt.openspecExecutable || '') && receipt.openspecExecutable !== executableIdentity.reference)
+      || (receipt.openspecExecutableIdentity?.sha256 && receipt.openspecExecutableIdentity.sha256 !== executableIdentity.sha256))) {
       throw new Error('OpenSpec convergence receipt is stale; review identity drift before restarting convergence.');
     }
-    receipt ||= { schemaVersion: receiptSchema, change: context.change, project: context.project, deltaHash: context.delta.hash, openspecExecutable, stage: 'pending', transitions: [] };
+    receipt = receipt
+      ? { ...receipt, openspecExecutable: executableIdentity.reference, openspecExecutableIdentity: executableIdentity }
+      : { schemaVersion: receiptSchema, change: context.change, project: context.project, deltaHash: context.delta.hash, openspecExecutable: executableIdentity.reference, openspecExecutableIdentity: executableIdentity, stage: 'pending', transitions: [] };
+    writeOpenSpecContractJson(receiptFile, receipt);
     const order = ['pending', 'archive-rehearsal', 'pre-sync', 'sync-plan', 'sync-apply', 'strict-validation', 'post-sync'];
     const reached = (stage) => order.indexOf(receipt.stage) >= order.indexOf(stage);
     const advanceReceipt = (stage, evidence = {}) => {
@@ -745,7 +761,7 @@ export function registerDomainsOpenspec(runtime) {
       } else reuse('archive-rehearsal');
       if (!reached('pre-sync')) { runStage('pre-sync', ['openspec', 'check', ...base, '--stage', 'pre-sync']); advanceReceipt('pre-sync'); } else reuse('pre-sync');
       if (!reached('sync-plan')) { const plan = runStage('sync-plan', ['openspec', 'sync-plan', ...base], (payload) => payload.status !== 'blocked'); advanceReceipt('sync-plan', { planIdentity: plan.identity }); } else reuse('sync-plan');
-      if (!reached('sync-apply')) { const applied = runStage('sync-apply', ['openspec', 'sync-apply', ...base, '--openspec-executable', openspecExecutable], (payload) => payload.status === 'passed'); advanceReceipt('sync-apply', { planIdentity: applied.identity, openspecExecutable }); } else reuse('sync-apply');
+      if (!reached('sync-apply')) { const applied = runStage('sync-apply', ['openspec', 'sync-apply', ...base, '--openspec-executable', openspecExecutable], (payload) => payload.status === 'passed'); advanceReceipt('sync-apply', { planIdentity: applied.identity, openspecExecutable: executableIdentity.reference, openspecExecutableIdentity: executableIdentity }); } else reuse('sync-apply');
       if (!reached('strict-validation')) {
         stageStarted = Date.now();
         try { validateUpstreamOpenSpecStrict(context.projectRoot, context.change); record('strict-validation', stageStarted, 'passed'); advanceReceipt('strict-validation'); }
