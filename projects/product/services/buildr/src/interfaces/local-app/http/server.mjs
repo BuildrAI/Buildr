@@ -357,7 +357,10 @@ export function registerLocalWorkspaceAppInterface(runtime) {
         instanceSecret: secret,
         launcherIdentity,
         previewIdentity,
-        onShutdown: () => state && clearLocalAppInstance(state),
+        onShutdown: () => {
+          if (state) clearLocalAppInstance(state);
+          if (previewIdentity) process.exit(0);
+        },
       });
       const ready = await instance.ready;
       state = { url: ready.url, secret, pid: process.pid, launcherIdentity };

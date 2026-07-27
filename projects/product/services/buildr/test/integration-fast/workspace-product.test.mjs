@@ -494,6 +494,15 @@ test('task preview 并行隔离 worktree、输出身份并只停止自身实例'
   assert.equal(JSON.parse(stopped.stdout).status, 'stopped');
   const remaining = JSON.parse(runBuildr(['app', 'preview', 'list', '--json'], { env }).stdout).previews;
   assert.deepEqual(remaining.map((item) => item.instance), ['second-task']);
+  const secondPid = secondPreview.pid;
+  const secondStopped = runBuildr(['app', 'preview', 'stop', 'second-task', '--json'], { env });
+  assert.equal(secondStopped.status, 0, secondStopped.stderr);
+  started.splice(started.indexOf('second-task'), 1);
+  for (let index = 0; index < 40; index += 1) {
+    try { process.kill(secondPid, 0); } catch (error) { if (error.code === 'ESRCH') break; throw error; }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.throws(() => process.kill(secondPid, 0), (error) => error.code === 'ESRCH');
 });
 
 test('public CLI 暴露 app 与 init description help', () => {

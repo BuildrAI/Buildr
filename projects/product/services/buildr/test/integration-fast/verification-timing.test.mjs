@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
@@ -15,6 +17,7 @@ import {
   createVerificationEvidencePaths,
   formatVerificationTimingSummary,
   validateVerificationTimingEvidence,
+  writeVerificationTimingEvidence,
 } from '../../test/verification/timing/evidence.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -430,4 +433,92 @@ test('verification runner 回收真实 detached descendant', async (t) => {
   assert.ok(result.processCleanup.descendants.terminated.includes(detachedPid));
   await new Promise((resolve) => setTimeout(resolve, 25));
   assert.throws(() => process.kill(detachedPid, 0), (error) => error.code === 'ESRCH');
+});
+
+test('verification runner 在direct child退出后回收仍持有stdio的detached descendant', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX-only inherited stdio proof');
+  const result = await runVerificationStep({
+    name: 'inherited stdio descendant fixture',
+    command: process.execPath,
+    args: ['-e', [
+      'const { spawn } = require("node:child_process");',
+      'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "inherit" });',
+      'child.unref();',
+      'console.log(child.pid);',
+      'setTimeout(() => process.exit(0), 150);',
+    ].join(' ')],
+  }, { exitCloseGraceMs: 500 });
+  assert.equal(result.status, 'passed', result.stderr);
+  const detachedPid = Number(result.stdout.trim());
+  assert.ok(result.processCleanup.descendants.observed.includes(detachedPid));
+  assert.ok(result.processCleanup.descendants.terminated.includes(detachedPid));
+});
+
+test('verification runner 对exit/close竞态只清理和settle一次', async () => {
+  const child = new EventEmitter();
+  child.pid = 4321;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let terminations = 0;
+  queueMicrotask(() => {
+    child.emit('exit', 0, null);
+    child.stdout.end('complete\n');
+    child.stderr.end();
+    child.emit('close', 0, null);
+  });
+  const result = await runVerificationStep({ name: 'event race', command: 'fixture' }, {
+    platform: 'darwin', spawnProcess: () => child, listProcesses: () => [{ pid: 4321, ppid: 1 }],
+    kill: (_pid, signal) => { if (signal === 'SIGTERM') terminations += 1; },
+  });
+  assert.equal(result.status, 'passed');
+  assert.equal(result.stdout, 'complete\n');
+  assert.equal(terminations, 1);
+});
+
+test('verification runner 的process-close-timeout返回失败并仍可生成timing summary', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-close-timeout-summary-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const child = new EventEmitter();
+  child.pid = 4321;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  queueMicrotask(() => child.emit('exit', 0, null));
+  const result = await runVerificationStep({ name: 'close timeout', command: 'fixture', diagnosticsDirectory: path.join(root, 'diagnostics') }, {
+    platform: 'darwin', spawnProcess: () => child, listProcesses: () => [{ pid: 4321, ppid: 1 }], kill() {}, exitCloseGraceMs: 5,
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.failureCode, 'process-close-timeout');
+  assert.match(result.stderr, /process-close-timeout/);
+  const evidence = { runId: 'close-timeout-run', timingOutput: path.join(root, 'timing.json'), evidenceLifecycle: { evidenceRetention: 'caller-managed', cleanupAfter: 'caller-policy', cleanupStatus: 'not-applicable' } };
+  writeVerificationTimingEvidence({
+    ...evidence, kind: 'changed', source: { candidateFingerprint: 'sha256-fixture' }, status: 'failed', results: [result],
+    startedAt: Date.now() - result.durationMs, finishedAt: Date.now(), diagnosticsDirectory: path.join(root, 'diagnostics'),
+    prefix: 'verify-changed', stream: { write() {} }, errorStream: { write() {} },
+  });
+  const summary = JSON.parse(fs.readFileSync(evidence.timingOutput, 'utf8'));
+  assert.equal(summary.status, 'failed');
+  assert.equal(summary.steps[0].status, 'failed');
+  assert.equal(summary.steps[0].failureCode, 'process-close-timeout');
+  assert.equal(summary.steps[0].processCleanup.ownership, 'runner-observed-lineage');
+  assert.equal(summary.source.candidateFingerprint, 'sha256-fixture');
+});
+
+test('verification runner 将owned cleanup failure作为主失败返回', async () => {
+  const child = new EventEmitter();
+  child.pid = 4321;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  queueMicrotask(() => {
+    child.emit('exit', 0, null);
+    child.stdout.end();
+    child.stderr.end();
+    child.emit('close', 0, null);
+  });
+  const result = await runVerificationStep({ name: 'cleanup failure', command: 'fixture' }, {
+    platform: 'darwin', spawnProcess: () => child, listProcesses: () => [{ pid: 4321, ppid: 1 }],
+    kill: (_pid, signal) => { if (signal === 'SIGTERM') throw new Error('termination denied'); },
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.failureCode, 'process-cleanup-failed');
+  assert.equal(result.processCleanup.status, 'failed');
 });

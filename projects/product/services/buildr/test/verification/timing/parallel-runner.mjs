@@ -142,9 +142,16 @@ export async function runVerificationStep(step, runtime = {}) {
     let settled = false;
     let processCleanup = { status: 'pending', ownership: 'unavailable' };
     let lineageTracker = null;
-    const finish = (exitCode, error = null) => {
-      if (settled) return;
-      settled = true;
+    let cleanupCompleted = false;
+    let exitCloseTimer = null;
+    let exitResult = null;
+    const requestedExitCloseGraceMs = runtime.exitCloseGraceMs ?? 1_000;
+    const exitCloseGraceMs = Number.isFinite(requestedExitCloseGraceMs) && requestedExitCloseGraceMs >= 0 ? requestedExitCloseGraceMs : 1_000;
+    const scheduleTimeout = runtime.setTimeout ?? setTimeout;
+    const cancelTimeout = runtime.clearTimeout ?? clearTimeout;
+    const cleanup = () => {
+      if (cleanupCompleted) return processCleanup;
+      cleanupCompleted = true;
       const lineage = lineageTracker?.stop() ?? { ownedPids: [], sampleError: null };
       const processGroup = cleanupOwnedProcessGroup(child?.pid, runtime);
       const descendants = cleanupTrackedDescendants(child?.pid, lineage.ownedPids, runtime);
@@ -155,7 +162,20 @@ export async function runVerificationStep(step, runtime = {}) {
         descendants,
         ...(lineage.sampleError ? { sampleError: lineage.sampleError } : {}),
       };
+      return processCleanup;
+    };
+    const finish = (exitCode, error = null, failureCode = null) => {
+      if (settled) return;
+      settled = true;
+      if (exitCloseTimer !== null) cancelTimeout(exitCloseTimer);
+      exitCloseTimer = null;
+      cleanup();
       if (error) stderr += `${error.message}\n`;
+      if (processCleanup.status === 'failed' && exitCode === 0) {
+        exitCode = 1;
+        failureCode ??= 'process-cleanup-failed';
+        stderr += 'Verification process cleanup did not preserve runner ownership.\n';
+      }
       const durationMs = Date.now() - startedAt;
       const budgetMs = Number.isFinite(step.budgetMs) ? step.budgetMs : undefined;
       const diagnosticPaths = writeVerificationDiagnostics(step, stdout, stderr);
@@ -167,6 +187,7 @@ export async function runVerificationStep(step, runtime = {}) {
         stdout,
         stderr,
         processCleanup,
+        ...(failureCode ? { failureCode } : {}),
         ...diagnosticPaths,
         ...(budgetMs === undefined ? {} : { budgetMs, budgetStatus: durationMs <= budgetMs ? 'within' : 'over' }),
       });
@@ -184,9 +205,19 @@ export async function runVerificationStep(step, runtime = {}) {
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => finish(1, error));
+    child.on('exit', (code, signal) => {
+      if (settled || exitResult) return;
+      exitResult = { code: Number.isInteger(code) ? code : 1, signal };
+      cleanup();
+      exitCloseTimer = scheduleTimeout(() => {
+        stderr += `process-close-timeout: verification stdio did not close within ${exitCloseGraceMs} ms after child exit.\n`;
+        finish(1, null, 'process-close-timeout');
+      }, exitCloseGraceMs);
+    });
     child.on('close', (code, signal) => {
-      if (signal) stderr += `terminated by signal ${signal}\n`;
-      finish(Number.isInteger(code) ? code : 1);
+      const finalSignal = signal ?? exitResult?.signal;
+      if (finalSignal) stderr += `terminated by signal ${finalSignal}\n`;
+      finish(Number.isInteger(code) ? code : exitResult?.code ?? 1);
     });
   });
 }
