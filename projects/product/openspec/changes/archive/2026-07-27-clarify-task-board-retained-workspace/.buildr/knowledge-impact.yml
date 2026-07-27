@@ -1,0 +1,19 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: clarify-task-board-retained-workspace
+operation: reconcile
+treeIdentity: sha256-761620c6d5f96ecb6abf27863b70cb751bf55c18fca862050b9f616ad040ba0e
+impacts:
+  - type: brief
+    target: openspec/changes/clarify-task-board-retained-workspace/brief.md
+    reason: 正式 Change 需要人类可读的范围、流程和验收入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/clarify-task-board-retained-workspace/proposal.md
+      - openspec/changes/clarify-task-board-retained-workspace/design.md
+  - type: product-architecture
+    target: docs/buildr-product.md
+    reason: 任务看板与 task environment 的所有权边界属于产品工作流事实
+    status: updated
+    sourceIdentities:
+      - openspec/changes/clarify-task-board-retained-workspace/specs/task-board/spec.md
+unresolvedItems: []

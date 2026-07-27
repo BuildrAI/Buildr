@@ -61,6 +61,15 @@ test('任务看板 provider 与 capability contract 返回稳定结果证据', (
   assert.match(packageManifest, /capability: buildr\.task-board-maintenance[\s\S]*?provider: task-board/);
 });
 
+test('任务看板只由 retained Workspace checkout 持有', () => {
+  const contract = read('package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md');
+  assert.match(boardSkill, /只在 retained Workspace checkout/);
+  assert.match(boardSkill, /不把 task environment checkout 当作看板 authority/);
+  assert.match(boardSkill, /不得在其中创建、复制或更新任务看板/);
+  assert.match(contract, /关联 task environment 只能作为事实来源/);
+  assert.match(contract, /不得写入关联 task environment/);
+});
+
 test('任务看板从 runtime Skill 自身复制完整目录中的模板', () => {
   assert.match(boardSkill, /从当前 runtime Skill 目录复制 `assets\/task-board-template\.html`/);
   assert.match(boardSkill, /不重新手写模板/);
