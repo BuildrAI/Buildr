@@ -44,6 +44,18 @@ function canonicalSnapshots({ projectRoot, delta, io }) {
   return snapshots;
 }
 
+function canonicalSafelyExtendsExpected({ projectRoot, receipt, io }) {
+  return receipt.files.every((item) => {
+    const file = path.resolve(projectRoot, item.path);
+    if (!file.startsWith(`${path.resolve(projectRoot)}${path.sep}`) || !io.existsSync(file)) return false;
+    const expected = normalizeConvergenceText(item.expectedContent);
+    const actual = normalizeConvergenceText(io.readFileSync(file, 'utf8'));
+    if (actual === expected) return true;
+    if (!actual.startsWith(expected)) return false;
+    return actual.slice(expected.length).trimStart().startsWith('### Requirement:');
+  });
+}
+
 function planFromReceipt(receipt) {
   return {
     schemaVersion: CONVERGENCE_PLAN_SCHEMA,
@@ -61,6 +73,15 @@ function planFromReceipt(receipt) {
   };
 }
 
+function legacyReceiptPlanIdentity(receipt) {
+  if (typeof receipt.planIdentity === 'string' && receipt.planIdentity) return receipt.planIdentity;
+  const transitionIdentities = [...new Set((Array.isArray(receipt.transitions) ? receipt.transitions : [])
+    .filter((item) => ['sync-plan', 'sync-apply'].includes(item?.stage))
+    .map((item) => item.planIdentity)
+    .filter((identity) => typeof identity === 'string' && identity))];
+  return transitionIdentities.length === 1 ? transitionIdentities[0] : null;
+}
+
 function migrateLegacyReceipt({ context, executableIdentity, io }) {
   const oldReceiptFile = path.join(context.changeRoot, '.buildr', 'deterministic-convergence.json');
   const oldPlanFile = path.join(context.changeRoot, '.buildr', 'deterministic-sync-plan.json');
@@ -76,15 +97,17 @@ function migrateLegacyReceipt({ context, executableIdentity, io }) {
   } catch {
     return { status: 'recovery-unprovable', code: 'legacy-sidecar-invalid' };
   }
+  const legacyPlanIdentity = legacyReceiptPlanIdentity(oldReceipt);
   if (!['buildr.openspec-convergence-receipt/v1', 'buildr.openspec-convergence-receipt/v2'].includes(oldReceipt.schemaVersion)
     || oldPlan.schemaVersion !== 'buildr.openspec-sync-plan/v1'
     || oldReceipt.change !== context.change || oldReceipt.project !== context.project
     || oldPlan.change !== context.change || oldPlan.project !== context.project
-    || oldReceipt.deltaHash !== context.delta.hash || oldPlan.deltaHash !== context.delta.hash
+    || typeof oldReceipt.deltaHash !== 'string' || !oldReceipt.deltaHash
+    || oldReceipt.deltaHash !== oldPlan.deltaHash
     || oldReceipt.stage !== 'post-sync' || oldReceipt.openspecExecutableIdentity?.sha256 !== executableIdentity.sha256
     || oldReceipt.openspecExecutableIdentity?.version !== executableIdentity.version
     || deterministicSyncPlanIdentity(oldPlan) !== oldPlan.identity
-    || oldReceipt.planIdentity !== oldPlan.identity
+    || legacyPlanIdentity !== oldPlan.identity
     || !Array.isArray(oldPlan.files) || oldPlan.files.length === 0) {
     return { status: 'recovery-unprovable', code: 'legacy-identity-chain-incomplete' };
   }
@@ -99,7 +122,7 @@ function migrateLegacyReceipt({ context, executableIdentity, io }) {
     || convergenceDigest(normalizeConvergenceText(item.expectedContent)) !== item.expectedDigest)) {
     return { status: 'recovery-unprovable', code: 'legacy-content-digest-mismatch' };
   }
-  const identity = convergenceIdentity({ change: context.change, project: context.project, deltaDigest: context.delta.hash, files, executableIdentity });
+  const identity = convergenceIdentity({ change: context.change, project: context.project, deltaDigest: oldReceipt.deltaHash, files, executableIdentity });
   const plan = {
     schemaVersion: CONVERGENCE_PLAN_SCHEMA,
     algorithmVersion: 2,
@@ -107,7 +130,7 @@ function migrateLegacyReceipt({ context, executableIdentity, io }) {
     planIdentity: null,
     change: context.change,
     project: context.project,
-    deltaDigest: context.delta.hash,
+    deltaDigest: oldReceipt.deltaHash,
     executableIdentity,
     status: oldPlan.status,
     operations: oldPlan.operations || [],
@@ -146,20 +169,24 @@ export function runOpenSpecConvergence({
 
   if (receipt) {
     const observation = observeConvergence({ projectRoot: context.projectRoot, receipt, archived: context.archived, io });
-    execution.push({ id: 'observe', status: observation.disposition === 'state-unknown' ? 'blocked' : 'passed', durationMs: 0, commandCount: 0 });
-    if (observation.disposition === 'state-unknown') {
+    const safeCurrentDeltaReplan = observation.disposition === 'state-unknown'
+      && receipt.deltaDigest !== context.delta.hash
+      && canonicalSafelyExtendsExpected({ projectRoot: context.projectRoot, receipt, io });
+    execution.push({ id: 'observe', status: observation.disposition === 'state-unknown' && !safeCurrentDeltaReplan ? 'blocked' : 'passed', durationMs: 0, commandCount: 0 });
+    if (observation.disposition === 'state-unknown' && !safeCurrentDeltaReplan) {
       const unknown = { ...receipt, disposition: 'state-unknown', updatedAt: new Date().toISOString() };
       writeReceipt(receiptFile, unknown);
       return result('recovery-unprovable', context, startedAt, execution, { code: 'canonical-state-unknown', files: observation.files, receipt: publicReceipt(context.projectRoot, receiptFile, unknown), nextActions: ['人工核对 canonical 文件；Buildr 不会自动覆盖混合或未知状态。'] });
     }
-    if (context.archived && observation.disposition === 'archived') {
+    if (safeCurrentDeltaReplan) receipt = null;
+    if (receipt && context.archived && observation.disposition === 'archived') {
       if (receipt.disposition !== 'archived') { receipt = { ...receipt, disposition: 'archived', updatedAt: new Date().toISOString() }; writeReceipt(receiptFile, receipt); }
       return result('passed', context, startedAt, execution, { disposition: 'archived', receipt: publicReceipt(context.projectRoot, receiptFile, receipt), effects: [] });
     }
-    if (receipt.deltaDigest !== context.delta.hash) receipt = null;
-    else if (receipt.executableIdentity.sha256 !== executableIdentity.sha256 || receipt.executableIdentity.version !== executableIdentity.version) receipt = null;
-    else {
-      receipt = { ...receipt, disposition: observation.disposition, updatedAt: new Date().toISOString() };
+    if (receipt) {
+      if (receipt.deltaDigest !== context.delta.hash) receipt = null;
+      else if (receipt.executableIdentity.sha256 !== executableIdentity.sha256 || receipt.executableIdentity.version !== executableIdentity.version) receipt = null;
+      else receipt = { ...receipt, disposition: observation.disposition, updatedAt: new Date().toISOString() };
     }
   }
 

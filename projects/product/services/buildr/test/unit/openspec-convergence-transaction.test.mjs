@@ -260,6 +260,151 @@ test('完整旧plan与post-sync receipt按真实expected迁移且不恢复canoni
   } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
 });
 
+test('旧v2 receipt仅在同步transitions保存唯一plan identity时仍可迁移', () => {
+  const fixture = journey();
+  try {
+    const oldPlan = createDeterministicSyncPlan({
+      change: fixture.context.change, project: fixture.context.project, projectRoot: fixture.root,
+      delta: fixture.context.delta, baseline: { targets: [] }, capabilityPurposes: new Map(),
+    });
+    fs.writeFileSync(fixture.file, oldPlan.files[0].expected);
+    const buildrRoot = path.join(fixture.changeRoot, '.buildr');
+    fs.mkdirSync(buildrRoot, { recursive: true });
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-sync-plan.json'), `${JSON.stringify(oldPlan, null, 2)}\n`);
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-convergence.json'), `${JSON.stringify({
+      schemaVersion: 'buildr.openspec-convergence-receipt/v2',
+      change: fixture.context.change,
+      project: fixture.context.project,
+      deltaHash: fixture.context.delta.hash,
+      stage: 'post-sync',
+      openspecExecutableIdentity: executableIdentity,
+      transitions: [
+        { stage: 'sync-plan', planIdentity: oldPlan.identity },
+        { stage: 'sync-apply', planIdentity: oldPlan.identity },
+      ],
+    }, null, 2)}\n`);
+    const result = fixture.run();
+    assert.equal(result.status, 'passed');
+    assert.equal(result.execution.some((item) => item.id === 'apply'), false);
+    assert.equal(fs.readFileSync(fixture.file, 'utf8'), oldPlan.files[0].expected);
+    assert.equal(fs.existsSync(path.join(fixture.archivedRoot, '.buildr', 'convergence-receipt.json')), true);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('旧v2 receipt与plan自洽但delta已变化时先观察旧状态再按当前delta重规划', () => {
+  const fixture = journey();
+  try {
+    const oldPlan = createDeterministicSyncPlan({
+      change: fixture.context.change, project: fixture.context.project, projectRoot: fixture.root,
+      delta: fixture.context.delta, baseline: { targets: [] }, capabilityPurposes: new Map(),
+    });
+    fs.writeFileSync(fixture.file, `${oldPlan.files[0].expected}\n${requirement('Upstream Added')}`);
+    const buildrRoot = path.join(fixture.changeRoot, '.buildr');
+    fs.mkdirSync(buildrRoot, { recursive: true });
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-sync-plan.json'), `${JSON.stringify(oldPlan, null, 2)}\n`);
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-convergence.json'), `${JSON.stringify({
+      schemaVersion: 'buildr.openspec-convergence-receipt/v2',
+      change: fixture.context.change,
+      project: fixture.context.project,
+      deltaHash: fixture.context.delta.hash,
+      stage: 'post-sync',
+      openspecExecutableIdentity: executableIdentity,
+      transitions: [{ stage: 'sync-apply', planIdentity: oldPlan.identity }],
+    }, null, 2)}\n`);
+    fixture.context.delta = delta([{ type: 'ADDED', capability: 'demo', title: 'Added Again', requirement: requirement('Added Again') }], 'sha256-delta-next');
+    const result = fixture.run();
+    assert.equal(result.status, 'passed');
+    assert.equal(result.execution.some((item) => item.id === 'observe'), true);
+    assert.equal(result.execution.some((item) => item.id === 'plan'), true);
+    assert.equal(result.execution.some((item) => item.id === 'apply'), true);
+    assert.equal(fs.readFileSync(fixture.file, 'utf8').includes('Requirement: Added Again'), true);
+    assert.equal(fs.readFileSync(fixture.file, 'utf8').includes('Requirement: Upstream Added'), true);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('旧expected被改写而非append-only扩展时即使delta变化也fail closed', () => {
+  const fixture = journey();
+  try {
+    const oldPlan = createDeterministicSyncPlan({
+      change: fixture.context.change, project: fixture.context.project, projectRoot: fixture.root,
+      delta: fixture.context.delta, baseline: { targets: [] }, capabilityPurposes: new Map(),
+    });
+    fs.writeFileSync(fixture.file, oldPlan.files[0].expected.replace('Requirement: Added', 'Requirement: Rewritten'));
+    const buildrRoot = path.join(fixture.changeRoot, '.buildr');
+    fs.mkdirSync(buildrRoot, { recursive: true });
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-sync-plan.json'), `${JSON.stringify(oldPlan, null, 2)}\n`);
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-convergence.json'), `${JSON.stringify({
+      schemaVersion: 'buildr.openspec-convergence-receipt/v2',
+      change: fixture.context.change,
+      project: fixture.context.project,
+      deltaHash: fixture.context.delta.hash,
+      stage: 'post-sync',
+      openspecExecutableIdentity: executableIdentity,
+      transitions: [{ stage: 'sync-apply', planIdentity: oldPlan.identity }],
+    }, null, 2)}\n`);
+    fixture.context.delta = delta([{ type: 'ADDED', capability: 'demo', title: 'Added Again', requirement: requirement('Added Again') }], 'sha256-delta-next');
+    const result = fixture.run();
+    assert.equal(result.status, 'recovery-unprovable');
+    assert.equal(result.code, 'canonical-state-unknown');
+    assert.equal(fixture.archiveCalls(), 0);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('旧v2 receipt与deterministic plan的delta identity不匹配时fail closed', () => {
+  const fixture = journey();
+  try {
+    const oldPlan = createDeterministicSyncPlan({
+      change: fixture.context.change, project: fixture.context.project, projectRoot: fixture.root,
+      delta: fixture.context.delta, baseline: { targets: [] }, capabilityPurposes: new Map(),
+    });
+    const buildrRoot = path.join(fixture.changeRoot, '.buildr');
+    fs.mkdirSync(buildrRoot, { recursive: true });
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-sync-plan.json'), `${JSON.stringify(oldPlan, null, 2)}\n`);
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-convergence.json'), `${JSON.stringify({
+      schemaVersion: 'buildr.openspec-convergence-receipt/v2',
+      change: fixture.context.change,
+      project: fixture.context.project,
+      deltaHash: 'sha256-mismatched-delta',
+      stage: 'post-sync',
+      openspecExecutableIdentity: executableIdentity,
+      transitions: [{ stage: 'sync-apply', planIdentity: oldPlan.identity }],
+    }, null, 2)}\n`);
+    const result = fixture.run();
+    assert.equal(result.status, 'recovery-unprovable');
+    assert.equal(result.code, 'legacy-identity-chain-incomplete');
+    assert.equal(fixture.archiveCalls(), 0);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('旧v2 receipt的同步transition plan identity歧义时fail closed', () => {
+  const fixture = journey();
+  try {
+    const oldPlan = createDeterministicSyncPlan({
+      change: fixture.context.change, project: fixture.context.project, projectRoot: fixture.root,
+      delta: fixture.context.delta, baseline: { targets: [] }, capabilityPurposes: new Map(),
+    });
+    const buildrRoot = path.join(fixture.changeRoot, '.buildr');
+    fs.mkdirSync(buildrRoot, { recursive: true });
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-sync-plan.json'), `${JSON.stringify(oldPlan, null, 2)}\n`);
+    fs.writeFileSync(path.join(buildrRoot, 'deterministic-convergence.json'), `${JSON.stringify({
+      schemaVersion: 'buildr.openspec-convergence-receipt/v2',
+      change: fixture.context.change,
+      project: fixture.context.project,
+      deltaHash: fixture.context.delta.hash,
+      stage: 'post-sync',
+      openspecExecutableIdentity: executableIdentity,
+      transitions: [
+        { stage: 'sync-plan', planIdentity: oldPlan.identity },
+        { stage: 'sync-apply', planIdentity: 'sha256-mismatched-plan' },
+      ],
+    }, null, 2)}\n`);
+    const result = fixture.run();
+    assert.equal(result.status, 'recovery-unprovable');
+    assert.equal(result.code, 'legacy-identity-chain-incomplete');
+    assert.equal(fixture.archiveCalls(), 0);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
 test('孤立旧recovery receipt无法证明时fail closed', () => {
   const fixture = journey();
   try {

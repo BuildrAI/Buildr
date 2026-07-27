@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "harden-task-finish-identity-timing",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-e6a79832f44f9014fe126dd164aa7e8592361d434c8a072ebfc9b2823e1a91ec",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须只投射当前成功身份的 evidence 与 effect",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须区分产品观测执行耗时与编排耗时",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "已解决诊断不得继续作为当前故障",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

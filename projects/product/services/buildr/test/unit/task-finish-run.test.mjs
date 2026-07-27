@@ -23,7 +23,12 @@ function passCurrent(root, runId, fingerprint = 'same') {
   const refObservation = step === 'integration-push'
     ? { expectedTargetRef: 'same-ref', observedTargetRef: 'same-ref' }
     : {};
-  return { result: advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, outcome: 'passed', attemptToken: token, effect: { id: `${step}-effect` }, evidence: { id: `${step}-evidence` }, ...refObservation }), token, step };
+  const verificationSummary = step === 'formal-assurance' ? {
+    schemaVersion: 'buildr.verification-timing/v1', status: 'passed', run: { id: 'fixture-assurance' },
+    source: { candidateFingerprint: fingerprint }, totalDurationMs: 1,
+    evidenceIdentity: `fixture-${fingerprint}`, summaryPath: '/tmp/fixture-timing.json',
+  } : null;
+  return { result: advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, outcome: 'passed', attemptToken: token, effect: { id: `${step}-effect` }, evidence: { id: `${step}-evidence`, ...(verificationSummary ? { verificationSummary } : {}) }, ...refObservation }), token, step };
 }
 
 test('cleanup blocked 后 resume 不重复 push 或正式验证', (t) => {
@@ -99,8 +104,10 @@ test('失效step保留历史effect但completed effects只报告当前completion 
   passCurrent(root, 'finish-1', 'old');
   let checkpoint = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'new' } });
   assert.equal(checkpoint.completedEffects.length, 0);
+  assert.equal(checkpoint.validEvidence.length, 0);
   checkpoint = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'new' }, outcome: 'passed', attemptToken: checkpoint.nextAction.attemptToken, effect: { id: 'context-new-effect' }, evidence: { id: 'context-new-evidence' } });
   assert.deepEqual(checkpoint.completedEffects.map((effect) => effect.id), ['context-new-effect']);
+  assert.deepEqual(checkpoint.validEvidence.map((evidence) => evidence.id), ['context-new-evidence']);
   assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps[0].effects.length, 2);
 });
 
@@ -172,6 +179,19 @@ test('complete run 写入 canonical compact completion receipt', (t) => {
   assert.equal(receipt.schemaVersion, 'buildr.task-finish-completion/v1');
   assert.equal(Object.hasOwn(receipt.timing, 'attempts'), false);
   assert.equal(run.steps.flatMap((item) => item.attempts).some((attempt) => attempt.finishedAt == null), false);
+});
+
+test('completion receipt只包含最后成功身份引用的evidence与effect', (t) => {
+  const root = fixture(t); create(root);
+  passCurrent(root, 'finish-1', 'old-context');
+  const claimed = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'new-context' } });
+  advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'new-context' }, outcome: 'passed', attemptToken: claimed.nextAction.attemptToken, effect: { id: 'new-context-effect' }, evidence: { id: 'new-context-evidence' } });
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).status !== 'complete') passCurrent(root, 'finish-1');
+  const receipt = JSON.parse(fs.readFileSync(readFinishRun({ root, runId: 'finish-1' }).completionReceipt, 'utf8'));
+  assert.equal(receipt.evidence.some((entry) => entry.id === 'context-evidence'), false);
+  assert.equal(receipt.effects.some((entry) => entry.id === 'context-effect'), false);
+  assert.equal(receipt.evidence.some((entry) => entry.id === 'new-context-evidence'), true);
+  assert.equal(receipt.effects.some((entry) => entry.id === 'new-context-effect'), true);
 });
 
 test('cleanup prepare 与 retained checkout finalize 分离真实删除证据', (t) => {
@@ -292,6 +312,8 @@ test('inspect 保留 blocked retry timing 并汇总浪费成本', (t) => {
   assert.equal(timing.attemptCount, 2);
   assert.equal(timing.retryCount, 1);
   assert.equal(timing.attributableWasteMs, 25);
+  assert.equal(timing.unobservedExecutionMs, 65);
+  assert.equal(timing.coverage, 'external-unobserved');
 });
 
 test('late asset review 位于 runtime install 与 cleanup 之间', () => {
@@ -463,7 +485,95 @@ test('formal verification composite 并行执行 required capabilities', async (
   });
   assert.equal(maxActive, 2);
   assert.equal(result.currentStep, 'asset-review');
-  assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'formal-assurance').evidence[0].observationCount, 2);
+  const formal = readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'formal-assurance');
+  assert.equal(formal.evidence[0].observationCount, 2);
+  assert.equal(formal.attempts[0].timingSource, 'product-observation');
+  assert.ok(formal.attempts[0].executionDurationMs >= 10);
+  assert.ok(formal.attempts[0].executionDurationMs < 30, 'parallel stage must use stage wall-clock instead of summing both commands');
+  assert.equal(result.timing.initialVerificationMs, formal.attempts[0].executionDurationMs);
+});
+
+test('外部formal assurance必须消费候选匹配的verification timing summary', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-v1' }, clock: () => 1_000 });
+  const evidence = {
+    id: 'external-assurance',
+    verificationSummary: { schemaVersion: 'buildr.verification-timing/v1', status: 'passed', run: { id: 'affected-1' }, source: { candidateFingerprint: 'wrong' }, totalDurationMs: 53_800, evidenceIdentity: 'affected-1', summaryPath: '/tmp/affected-timing.json' },
+  };
+  assert.throws(() => advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-v1' }, outcome: 'passed', attemptToken: claimed.nextAction.attemptToken, evidence, clock: () => 12_500 }), /passed buildr\.verification-timing\/v1 summary matching the current candidate fingerprint/);
+  evidence.verificationSummary.source.candidateFingerprint = 'candidate-v1';
+  const completed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-v1' }, outcome: 'passed', attemptToken: claimed.nextAction.attemptToken, evidence, clock: () => 12_500 });
+  const attempt = completed.timing.attempts.filter((entry) => entry.step === 'formal-assurance').at(-1);
+  assert.equal(attempt.durationMs, 11_500);
+  assert.equal(attempt.executionDurationMs, 53_800);
+  assert.equal(attempt.timingSource, 'verification-summary');
+  assert.equal(completed.timing.initialVerificationMs, 53_800);
+  assert.equal(completed.timing.providerExecutionMs, 53_800);
+  assert.equal(completed.timing.unobservedIntervals.includes('formal-assurance'), false);
+  assert.equal(completed.timing.orchestrationGapMs, Math.max(0, completed.timing.wallClockMs - completed.timing.productExecutionMs - completed.timing.providerExecutionMs));
+});
+
+test('外部formal assurance的非通过summary只能完成blocked attempt', (t) => {
+  for (const status of ['failed', 'incomplete']) {
+    const root = fixture(t); create(root, `finish-${status}`);
+    while (inspectFinishRun(readFinishRun({ root, runId: `finish-${status}` })).currentStep !== 'formal-assurance') passCurrent(root, `finish-${status}`);
+    const claimed = advanceFinishRun({ root, runId: `finish-${status}`, fingerprints: { 'formal-assurance': `candidate-${status}` }, clock: () => 1_000 });
+    const evidence = {
+      id: `external-assurance-${status}`,
+      verificationSummary: {
+        schemaVersion: 'buildr.verification-timing/v1', status, run: { id: `affected-${status}` },
+        source: { candidateFingerprint: `candidate-${status}` }, totalDurationMs: 8_500,
+        evidenceIdentity: `affected-${status}`, summaryPath: `/tmp/affected-${status}-timing.json`,
+      },
+    };
+    assert.throws(() => advanceFinishRun({
+      root, runId: `finish-${status}`, fingerprints: { 'formal-assurance': `candidate-${status}` }, outcome: 'passed',
+      attemptToken: claimed.nextAction.attemptToken, evidence, clock: () => 12_500,
+    }), /passed buildr\.verification-timing\/v1 summary/);
+    const blocked = advanceFinishRun({
+      root, runId: `finish-${status}`, fingerprints: { 'formal-assurance': `candidate-${status}` }, outcome: 'blocked',
+      attemptToken: claimed.nextAction.attemptToken, evidence,
+      blocked: { code: 'formal-assurance-failed', reason: `${status} verification summary` }, clock: () => 12_500,
+    });
+    const attempt = blocked.timing.attempts.filter((entry) => entry.step === 'formal-assurance').at(-1);
+    assert.equal(blocked.currentStep, 'formal-assurance');
+    assert.equal(blocked.steps.find((entry) => entry.id === 'formal-assurance').status, 'blocked');
+    assert.equal(blocked.repairDecision.status, 'required');
+    assert.equal(attempt.executionDurationMs, 8_500);
+    assert.equal(attempt.timingSource, 'verification-summary');
+    assert.equal(attempt.timingEvidence.status, status);
+  }
+});
+
+test('外部formal assurance拒绝用passed summary完成blocked attempt', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-v1' } });
+  const evidence = {
+    id: 'external-assurance-passed',
+    verificationSummary: {
+      schemaVersion: 'buildr.verification-timing/v1', status: 'passed', run: { id: 'affected-passed' },
+      source: { candidateFingerprint: 'candidate-v1' }, totalDurationMs: 5,
+      evidenceIdentity: 'affected-passed', summaryPath: '/tmp/affected-passed-timing.json',
+    },
+  };
+  assert.throws(() => advanceFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-v1' }, outcome: 'blocked',
+    attemptToken: claimed.nextAction.attemptToken, evidence,
+  }), /failed\|incomplete buildr\.verification-timing\/v1 summary/);
+});
+
+test('成功completion清除current diagnostic但保留历史observation', async (t) => {
+  const root = fixture(t); create(root);
+  const plan = (command, id) => ({ cwd: root, command, commandSource: 'external-declared', args: [], sharedMutation: false, safeAuto: true, safeHandler: 'process-probe', evidenceId: id });
+  const failed = await executeSafeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'bad' }, executionPlans: { context: plan('/usr/bin/false', 'bad-context') } });
+  assert.ok(failed.diagnostics);
+  const resumed = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'good' }, executionPlan: plan('/usr/bin/true', 'good-context') });
+  const completed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { context: 'good' }, outcome: 'passed', attemptToken: resumed.nextAction.attemptToken, evidence: { id: 'good-context' } });
+  assert.equal(resumed.currentStep, 'context');
+  assert.equal(completed.diagnostics, null);
+  assert.ok(readFinishRun({ root, runId: 'finish-1' }).observationLedger.some((entry) => entry.exitCode !== 0));
 });
 
 test('formal failure默认等待identity-bound repair授权', async (t) => {
@@ -528,17 +638,14 @@ test('正式保证计时只接受候选绑定的验证摘要，不把checkpoint�
   assert.deepEqual(completed.timing.formalAssuranceTimingSources, ['verifier-reported']);
 });
 
-test('调用方手写duration不能冒充正式验证耗时', (t) => {
+test('调用方手写duration不能冒充正式验证耗时或绕过可信summary', (t) => {
   const root = fixture(t); create(root);
   while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
   const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-manual' } });
-  const completed = advanceFinishRun({
+  assert.throws(() => advanceFinishRun({
     root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-manual' }, outcome: 'passed',
     attemptToken: claimed.nextAction.attemptToken, evidence: { id: 'manual-summary', durationMs: 21_000 },
-  });
-  assert.equal(completed.timing.initialVerificationMs, 0);
-  assert.equal(completed.timing.providerExecutionMs, 0);
-  assert.deepEqual(completed.timing.formalAssuranceTimingSources, ['external-unobserved']);
+  }), /formal-assurance requires product observations or a trusted verificationSummary/);
 });
 
 function recoveryManifest(overrides = {}) {

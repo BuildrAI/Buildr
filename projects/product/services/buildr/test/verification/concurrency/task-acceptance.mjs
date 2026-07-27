@@ -91,11 +91,19 @@ function finishInspect(runId, root, full = false) {
 
 function passFinishStep(runId, root, step, fingerprint) {
   const claimed = finishCommand('advance', runId, root, ['--fingerprint', `${step}=${fingerprint}`]);
+  const verificationSummary = step === 'formal-assurance' ? {
+    schemaVersion: 'buildr.verification-timing/v1',
+    status: 'passed',
+    run: { id: `${runId}-formal-assurance` },
+    source: { candidateFingerprint: fingerprint },
+    totalDurationMs: 1,
+    summaryPath: path.join(root, '.buildr', 'verification', `${runId}-formal-assurance.json`),
+  } : null;
   return finishCommand('advance', runId, root, [
     '--fingerprint', `${step}=${fingerprint}`,
     '--outcome', 'passed',
     '--attempt', claimed.nextAction.attemptToken,
-    '--evidence', JSON.stringify({ id: `${runId}-${step}-evidence` }),
+    '--evidence', JSON.stringify({ id: `${runId}-${step}-evidence`, ...(verificationSummary ? { verificationSummary } : {}) }),
   ]);
 }
 

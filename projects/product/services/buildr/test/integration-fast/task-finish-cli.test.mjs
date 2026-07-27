@@ -94,10 +94,19 @@ test('task finish cleanup prepare/finalize 通过 canonical receipt 跨 environm
   let checkpoint = JSON.parse(spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'cleanup-run', '--task', 'cleanup-task', '--target-branch', 'dev', '--target', root, '--fingerprint', 'context=v', '--detail', 'full', '--json'], { encoding: 'utf8' }).stdout);
   while (checkpoint.currentStep !== 'cleanup') {
     const step = checkpoint.currentStep;
-    const args = [cli, 'task', 'finish', 'advance', '--run', 'cleanup-run', '--target', root, '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--fingerprint', `${step}=v`, '--evidence', `{"id":"${step}-ok"}`, '--detail', 'full', '--json'];
+    const evidence = step === 'formal-assurance'
+      ? { id: `${step}-ok`, verificationSummary: { schemaVersion: 'buildr.verification-timing/v1', status: 'passed', run: { id: 'cli-assurance' }, source: { candidateFingerprint: 'v' }, totalDurationMs: 5, evidenceIdentity: 'cli-assurance', summaryPath: '/tmp/cli-assurance.json' } }
+      : { id: `${step}-ok` };
+    const args = [cli, 'task', 'finish', 'advance', '--run', 'cleanup-run', '--target', root, '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--fingerprint', `${step}=v`, '--evidence', JSON.stringify(evidence), '--detail', 'full', '--json'];
     if (step === 'integration-push') args.push('--ref-transition', '{"expectedBeforePush":"a","observedBeforePush":"a","expectedAfterPush":"b","observedAfterPush":"b"}');
-    checkpoint = JSON.parse(spawnSync(process.execPath, args, { encoding: 'utf8' }).stdout);
-    if (checkpoint.currentStep && checkpoint.nextAction.status !== 'running') checkpoint = JSON.parse(spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'cleanup-run', '--target', root, '--fingerprint', `${checkpoint.currentStep}=v`, '--detail', 'full', '--json'], { encoding: 'utf8' }).stdout);
+    const completed = spawnSync(process.execPath, args, { encoding: 'utf8' });
+    assert.equal(completed.status, 0, completed.stderr);
+    checkpoint = JSON.parse(completed.stdout);
+    if (checkpoint.currentStep && checkpoint.nextAction.status !== 'running') {
+      const claimed = spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'cleanup-run', '--target', root, '--fingerprint', `${checkpoint.currentStep}=v`, '--detail', 'full', '--json'], { encoding: 'utf8' });
+      assert.equal(claimed.status, 0, claimed.stderr);
+      checkpoint = JSON.parse(claimed.stdout);
+    }
   }
   if (checkpoint.nextAction.status !== 'running') checkpoint = JSON.parse(spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'cleanup-run', '--target', root, '--fingerprint', 'cleanup=v', '--detail', 'full', '--json'], { encoding: 'utf8' }).stdout);
   const prepared = spawnSync(process.execPath, [cli, 'task', 'finish', 'cleanup-prepare', '--run', 'cleanup-run', '--target', root, '--attempt', checkpoint.nextAction.attemptToken, '--evidence', '{"id":"cleanup-ready","worktreeClean":true}', '--json'], { encoding: 'utf8' });

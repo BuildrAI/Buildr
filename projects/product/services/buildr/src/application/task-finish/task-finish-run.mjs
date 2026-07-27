@@ -506,12 +506,79 @@ function evidencePassed(entry) {
   return entry?.exitCode == null || (entry.exitCode === 0 && entry.assertionPassed !== false);
 }
 
+function validStepEvidence(item) {
+  if (!item) return [];
+  const ids = new Set(item.lastCompletion?.evidenceIds || []);
+  return item.status === 'passed' ? item.evidence.filter((entry) => ids.has(entry.id) && evidencePassed(entry)) : [];
+}
+
 function validStepEffects(item) {
   const ids = new Set(item.lastCompletion?.effectIds || []);
   return item.status === 'passed' ? item.effects.filter((entry) => ids.has(entry.id)) : [];
 }
 
+function observedExecutionTiming(evidence, durationMs, item, fingerprint, outcome) {
+  const verification = evidence?.verificationSummary;
+  if (verification) {
+    const acceptedStatuses = outcome === 'passed' ? ['passed'] : outcome === 'blocked' ? ['failed', 'incomplete'] : [];
+    if (item.id !== 'formal-assurance'
+      || verification.schemaVersion !== 'buildr.verification-timing/v1'
+      || !acceptedStatuses.includes(verification.status)
+      || !Number.isFinite(verification.totalDurationMs)
+      || verification.totalDurationMs < 0
+      || verification.source?.candidateFingerprint !== fingerprint
+      || typeof verification.evidenceIdentity !== 'string'
+      || !verification.evidenceIdentity.trim()) {
+      throw new Error(`formal-assurance ${outcome} completion requires a ${acceptedStatuses.join('|') || 'supported'} buildr.verification-timing/v1 summary matching the current candidate fingerprint.`);
+    }
+    return {
+      executionDurationMs: verification.totalDurationMs,
+      orchestrationDurationMs: Math.max(0, durationMs - verification.totalDurationMs),
+      unobservedDurationMs: 0,
+      timingSource: 'verification-summary',
+      timingEvidence: {
+        schemaVersion: verification.schemaVersion,
+        status: verification.status,
+        runId: verification.run?.id || null,
+        evidenceIdentity: verification.evidenceIdentity,
+        summaryPath: typeof verification.summaryPath === 'string' ? verification.summaryPath : null,
+        candidateFingerprint: verification.source.candidateFingerprint,
+      },
+    };
+  }
+  const observationIds = Array.isArray(evidence?.observationIds) ? evidence.observationIds : [];
+  if (item.id === 'formal-assurance' && observationIds.length === 0) {
+    throw new Error('formal-assurance requires product observations or a trusted verificationSummary.');
+  }
+  if (observationIds.length === 0) return {
+    executionDurationMs: null,
+    orchestrationDurationMs: null,
+    unobservedDurationMs: durationMs,
+    timingSource: 'external-unobserved',
+  };
+  const stages = Array.isArray(evidence?.stages) ? evidence.stages : [];
+  const executionDurationMs = stages.length
+    ? stages.reduce((total, stage) => total + (Number.isFinite(stage.durationMs) ? stage.durationMs : 0), 0)
+    : Array.isArray(evidence?.observations)
+      ? evidence.observations.reduce((total, observation) => total + (Number.isFinite(observation.durationMs) ? observation.durationMs : 0), 0)
+      : durationMs;
+  return {
+    executionDurationMs,
+    orchestrationDurationMs: Math.max(0, durationMs - executionDurationMs),
+    unobservedDurationMs: 0,
+    timingSource: 'product-observation',
+  };
+}
+
 function attemptExecutionTiming(run, step, attempt) {
+  if (Number.isFinite(attempt.executionDurationMs)) {
+    const source = attempt.timingSource === 'verification-summary'
+      ? 'verifier-reported'
+      : attempt.timingSource === 'product-observation'
+        ? 'product-observed'
+        : attempt.timingSource || 'external-unobserved';
+    return { durationMs: attempt.executionDurationMs, source };
+  }
   const commandMs = (run.observationLedger || []).filter((entry) => attempt.observationIds?.includes(entry.id)).reduce((total, entry) => total + (entry.durationMs || 0), 0);
   if (commandMs > 0) return { durationMs: commandMs, source: 'product-observed' };
   if (attempt.providerTiming?.source === 'verifier-reported') return attempt.providerTiming;
@@ -550,17 +617,24 @@ export function inspectFinishRun(run) {
   const finished = run.status === 'complete' ? Date.parse(run.updatedAt) : Date.now();
   const ledger = run.observationLedger || [];
   const commandLedger = ledger.filter((entry) => entry.kind === 'command');
-  const providerExecutionMs = attempts.reduce((total, attempt) => total + (attempt.providerTiming?.source === 'verifier-reported' ? attempt.providerTiming.durationMs : 0), 0);
-  const checkpointWaitMs = attempts.reduce((total, attempt) => {
+  const productObservedAttempts = completedDurations.filter((attempt) => attempt.timingSource === 'product-observation');
+  const providerObservedAttempts = completedDurations.filter((attempt) => attempt.timingSource === 'verification-summary');
+  const observedAttempts = [...productObservedAttempts, ...providerObservedAttempts];
+  const legacyAttempts = completedDurations.filter((attempt) => attempt.timingSource == null);
+  const unobservedAttempts = completedDurations.filter((attempt) => attempt.timingSource === 'external-unobserved');
+  const productExecutionMs = productObservedAttempts.reduce((total, attempt) => total + (attempt.executionDurationMs || 0), 0);
+  const providerExecutionMs = providerObservedAttempts.reduce((total, attempt) => total + (attempt.executionDurationMs || 0), 0)
+    + legacyAttempts.reduce((total, attempt) => total + (attempt.providerTiming?.source === 'verifier-reported' ? attempt.providerTiming.durationMs : 0), 0);
+  const checkpointWaitMs = completedDurations.reduce((total, attempt) => {
     const observed = attemptExecutionTiming(run, run.steps.find((item) => item.id === attempt.step), attempt).durationMs;
     return total + Math.max(0, (attempt.durationMs || 0) - observed);
   }, 0);
-  const unobservedIntervals = run.steps.filter((item) => (item.attempts || []).some((attempt) => !attempt.observationIds?.length)).map((item) => item.id);
+  const unobservedIntervals = run.steps.filter((item) => (item.attempts || []).some((attempt) => attempt.finishedAt && !['product-observation', 'verification-summary'].includes(attempt.timingSource))).map((item) => item.id);
   return {
     schemaVersion: 'buildr.task-finish-checkpoint/v1', runId: run.runId, task: run.task, change: run.change,
     status: run.status, currentStep: current?.id || null,
     completedEffects: run.steps.flatMap((item) => validStepEffects(item).map((effect) => ({ step: item.id, ...effect }))),
-    validEvidence: run.steps.filter((item) => item.status === 'passed').flatMap((item) => item.evidence.filter(evidencePassed).map((evidence) => ({ step: item.id, ...evidence }))),
+    validEvidence: run.steps.flatMap((item) => validStepEvidence(item).map((evidence) => ({ step: item.id, ...evidence }))),
     blocked: run.steps.filter((item) => item.status === 'blocked').map((item) => ({ step: item.id, ...item.blocked })),
     staleSteps: run.steps.filter((item) => item.status === 'stale').map((item) => item.id),
     timing: {
@@ -570,13 +644,14 @@ export function inspectFinishRun(run) {
       attemptCount: attempts.length,
       retryCount: retryAttempts.length,
       attributableWasteMs: wastedAttempts.reduce((total, attempt) => total + attempt.durationMs, 0),
-      productExecutionMs: commandLedger.reduce((total, entry) => total + (entry.durationMs || 0), 0),
+      productExecutionMs,
       providerExecutionMs,
       checkpointWaitMs,
-      orchestrationGapMs: Math.max(0, finished - started - commandLedger.reduce((total, entry) => total + (entry.durationMs || 0), 0) - providerExecutionMs),
+      orchestrationGapMs: Math.max(0, finished - started - productExecutionMs - providerExecutionMs),
+      unobservedExecutionMs: unobservedAttempts.reduce((total, attempt) => total + attempt.durationMs, 0),
       invocationCount: commandLedger.length,
       outputBytes: commandLedger.reduce((total, entry) => total + (entry.stdoutBytes || 0) + (entry.stderrBytes || 0), 0),
-      coverage: commandLedger.length === 0 && providerExecutionMs === 0 ? 'external-unobserved' : unobservedIntervals.length ? 'product-partial' : 'product-complete',
+      coverage: observedAttempts.length === 0 ? (legacyAttempts.length ? 'legacy-unclassified' : 'external-unobserved') : unobservedIntervals.length ? 'product-partial' : 'product-complete',
       unobservedIntervals,
       attempts,
     },
@@ -614,8 +689,8 @@ export function prepareFinishCleanup({ root, runId, attemptToken, evidence, cloc
     schemaVersion: 'buildr.task-finish-completion/v1', status: 'prepared', runId, task: run.task, change: run.change,
     target: run.target, preparedAt, environmentRoot: path.resolve(root), cleanupEvidence: evidence,
     effects: run.steps.flatMap((candidate) => validStepEffects(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
-    verificationEvidence: (run.steps.find((candidate) => candidate.id === 'formal-assurance')?.evidence || []).filter(evidencePassed),
-    archiveEvidence: (run.steps.find((candidate) => candidate.id === 'archive')?.evidence || []).filter(evidencePassed),
+    verificationEvidence: validStepEvidence(run.steps.find((candidate) => candidate.id === 'formal-assurance')),
+    archiveEvidence: validStepEvidence(run.steps.find((candidate) => candidate.id === 'archive')),
     repairAuthorizations: run.repairAuthorizations || [],
     recoveries: run.recoveries || [],
     observationLedger: run.observationLedger,
@@ -757,12 +832,21 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
     if (completedEvidence && !item.evidence.some((entry) => entry.id === completedEvidence.id)) item.evidence.push(completedEvidence);
     item.completedAt = now(clock);
     const attempt = item.attempts.find((entry) => entry.token === attemptToken);
-    const providerTiming = trustedVerificationTiming(item, completedEvidence, outcome);
-    if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome, attribution: outcome === 'blocked' ? (blocked?.code || 'provider-blocked') : 'none', ...(providerTiming ? { providerTiming } : {}) });
+    if (attempt) {
+      const durationMs = Math.max(0, clock() - Date.parse(attempt.startedAt));
+      const executionTiming = observedExecutionTiming(completedEvidence, durationMs, item, submittedFingerprint, outcome);
+      const providerTiming = trustedVerificationTiming(item, completedEvidence, outcome);
+      Object.assign(attempt, {
+        finishedAt: item.completedAt, durationMs, outcome,
+        attribution: outcome === 'blocked' ? (blocked?.code || 'provider-blocked') : 'none',
+        ...executionTiming,
+        ...(providerTiming ? { providerTiming } : {}),
+      });
+    }
     item.lastAttemptToken = item.attemptToken;
     item.lastCompletion = completionIdentity({ item, fingerprint: submittedFingerprint, effect, evidence: completedEvidence, outcome });
     item.attemptToken = null;
-    if (outcome === 'passed') { item.status = 'passed'; item.blocked = null; }
+    if (outcome === 'passed') { item.status = 'passed'; item.blocked = null; run.lastDiagnostic = null; }
     else if (outcome === 'blocked') { item.status = 'blocked'; item.blocked = decorateBlocked(run, item, blocked || { code: 'provider-blocked', reason: 'Provider action blocked' }); }
   } else {
     if (item.status === 'running') return inspectFinishRun(run);
@@ -790,7 +874,7 @@ export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = nul
         schemaVersion: 'buildr.task-finish-completion/v1', runId: run.runId, task: run.task, change: run.change,
         target: run.target, completedAt: now(clock),
         effects: run.steps.flatMap((candidate) => validStepEffects(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
-        evidence: run.steps.filter((candidate) => candidate.status === 'passed').flatMap((candidate) => candidate.evidence.filter(evidencePassed).map((entry) => ({ step: candidate.id, id: entry.id }))),
+        evidence: run.steps.flatMap((candidate) => validStepEvidence(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
         observationLedger: run.observationLedger,
         timing: (() => { const timing = inspectFinishRun({ ...run, updatedAt: now(clock) }).timing; return { ...timing, attempts: undefined }; })(),
       };
@@ -969,7 +1053,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     const observationIds = appendCommandObservations({ root, runId, stepId: step, attemptToken: claimed.nextAction.attemptToken, descriptors: commandDescriptors, assessed, stageResults, clock });
     const recordedDiagnostic = inspectFinishRun(readFinishRun({ root, runId })).diagnostics;
     const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
-    const evidence = { id: plan.evidenceId, actionId: plan.actionId, planSource: plan.planSource, registryVersion: plan.registryVersion, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
+    const evidence = { id: plan.evidenceId, actionId: plan.actionId, planSource: plan.planSource, registryVersion: plan.registryVersion, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, durationMs: entry.durationMs, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
     const completed = advanceFinishRun({
       root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
       attemptToken: claimed.nextAction.attemptToken, evidence,
