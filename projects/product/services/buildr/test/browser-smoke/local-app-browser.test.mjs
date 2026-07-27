@@ -253,6 +253,13 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
     await lifecycle.selectOption('archived');
     assert.equal(await page.locator('#change-table-body tr').count(), 1);
     await lifecycle.selectOption('active');
+    await unique(page.getByRole('button', { name: '让 Agent 创建变更', exact: true }), '创建变更操作');
+    await page.getByRole('button', { name: '让 Agent 创建变更', exact: true }).click();
+    await page.locator('#action-project option[value="demo"]').waitFor({ state: 'attached' });
+    assert.equal(await page.locator('#action-project').evaluate((element) => element.tagName), 'SELECT');
+    assert.equal(await page.locator('#action-project option').count(), 2);
+    assert.equal(await page.locator('#action-project').inputValue(), 'demo');
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
     const row = page.locator('#change-table-body tr').filter({ hasText: 'browser-flow' });
     await unique(row, '进行中变更行');
     const detail = row.getByRole('link', { name: '详情', exact: true });
