@@ -20,7 +20,11 @@ test('Task Finish 把 delivery convergence 放在 final assurance 前', () => {
   assert.ok(ids.indexOf('target-convergence') < ids.indexOf('formal-assurance'));
   assert.ok(ids.indexOf('runtime-convergence') < ids.indexOf('formal-assurance'));
   assert.ok(ids.indexOf('formal-assurance') < ids.indexOf('integration-push'));
+  assert.ok(ids.indexOf('integration-push') < ids.indexOf('retained-convergence'));
+  assert.ok(ids.indexOf('retained-convergence') < ids.indexOf('runtime-install'));
   assert.match(finish, /正式保证只在 canonical、target、runtime 收敛后执行/);
+  assert.match(finish, /retained-convergence/);
+  assert.match(finish, /不重跑 Candidate/);
 });
 
 test('verification evidence 表达 archive-sensitive 与 supersession', () => {

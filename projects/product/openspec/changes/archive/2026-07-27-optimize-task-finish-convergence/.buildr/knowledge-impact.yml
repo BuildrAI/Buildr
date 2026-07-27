@@ -1,0 +1,25 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-convergence
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-task-finish-convergence/brief.md
+    reason: 正式 Change 需要稳定的人类可读目标、流程与验收摘要
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: integration-push 后新增影响感知 retained Workspace 收敛步骤
+    status: updated
+    sourceIdentities:
+      - specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Task Finish action registry 与 safe executor 职责变化
+    status: updated
+    sourceIdentities:
+      - design.md
+unresolvedItems: []

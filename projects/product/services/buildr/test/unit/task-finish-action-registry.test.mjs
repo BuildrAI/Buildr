@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { FINISH_ACTIONS, FINISH_ACTION_REGISTRY_SCHEMA, listFinishActions, resolveFinishAction } from '../../src/application/task-finish/task-finish-action-registry.mjs';
+import { classifyRetainedConvergencePaths, FINISH_ACTIONS, FINISH_ACTION_REGISTRY_SCHEMA, listFinishActions, resolveFinishAction } from '../../src/application/task-finish/task-finish-action-registry.mjs';
 import { createFinishRun, executeSafeFinishRun, FINISH_STEPS, inspectFinishRun, readFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 
 function fixture(t) {
@@ -90,4 +90,24 @@ test('显式 caller plan 保持兼容且不会冒充 registry coverage', async (
     runCommand: async () => ({ status: 0, stdout: '', stderr: '' }),
   });
   assert.equal(result.safeExecution.executedSteps[0].planSource, 'caller-supplied');
+});
+
+test('retained convergence 分类 runtime、默认入口与未知路径', () => {
+  const impact = classifyRetainedConvergencePaths([
+    'skills/buildr/task-finish/SKILL.md',
+    'projects/product/services/buildr/src/interfaces/cli/help.mjs',
+    'projects/product/services/buildr/src/interfaces/local-app/runtime/task-preview.mjs',
+    'projects/product/docs/buildr-product.md',
+  ]);
+  assert.equal(impact.requiresRuntimeSync, true);
+  assert.equal(impact.requiresCliInstall, true);
+  assert.equal(impact.requiresLocalAppInstall, true);
+  assert.deepEqual(impact.unknown, ['docs/buildr-product.md']);
+});
+
+test('retained convergence 缺少 authority 时零执行并返回 input-required', (t) => {
+  const { root, run } = fixture(t);
+  const result = resolveFinishAction({ root, run, step: 'retained-convergence', context: { agent: 'codex' } });
+  assert.equal(result.status, 'input-required');
+  assert.deepEqual(result.requiredInputs, ['retainedWorkspaceRoot', 'retainedCliInvocation', 'changedPaths']);
 });

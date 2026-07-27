@@ -103,7 +103,8 @@ test('task finish actions列出registry并只读解析当前run', (t) => {
   assert.equal(listed.status, 0, listed.stderr);
   const registry = JSON.parse(listed.stdout);
   assert.equal(registry.schemaVersion, 'buildr.task-finish-action-registry/v1');
-  assert.equal(registry.actions.length, 13);
+  assert.equal(registry.actions.length, 14);
+  assert.ok(registry.actions.some((action) => action.step === 'retained-convergence'));
 
   const created = spawnSync(process.execPath, [cli, 'task', 'finish', 'advance', '--run', 'actions-run', '--task', 'actions-task', '--target-branch', 'dev', '--target', root, '--fingerprint', 'context=v1', '--json'], { encoding: 'utf8' });
   assert.equal(created.status, 0, created.stderr);

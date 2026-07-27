@@ -24,7 +24,8 @@ export const FINISH_STEPS = Object.freeze([
   step('asset-review', '调用 selected task-asset-review provider finalize', ['formal-assurance']),
   step('archive', '归档 Change 并完成 closeout-only checks', ['asset-review'], 'canonical-checkout'),
   step('integration-push', '乐观核对目标 ref，集成并 push 目标分支', ['archive'], 'target-branch'),
-  step('runtime-install', '从保留 checkout 迁移默认 CLI/Local App 入口', ['integration-push'], 'runtime-install'),
+  step('retained-convergence', '按影响收敛 retained Workspace runtime', ['integration-push'], 'runtime-sync'),
+  step('runtime-install', '按 retained impact 迁移默认 CLI/Local App 入口', ['retained-convergence'], 'runtime-install'),
   step('asset-review-late', '仅在首次 finalize 后 observation revision 变化时再次调用 asset-review provider', ['runtime-install']),
   step('cleanup', '清理 task-owned transient evidence 与本地 environment', ['asset-review-late'], 'canonical-checkout'),
 ]);
@@ -169,6 +170,7 @@ export function validateFinishExecutionPlan({ root, plan }) {
     actionId: typeof plan.actionId === 'string' ? plan.actionId : null,
     registryVersion: Number.isInteger(plan.registryVersion) ? plan.registryVersion : null,
     planSource: plan.planSource === 'registry' ? 'registry' : 'caller-supplied',
+    metadata: plan.metadata && typeof plan.metadata === 'object' && !Array.isArray(plan.metadata) ? clone(plan.metadata) : null,
     jsonAssertion: plan.jsonAssertion && typeof plan.jsonAssertion.path === 'string'
       ? { path: plan.jsonAssertion.path, equals: plan.jsonAssertion.equals }
       : null,
@@ -829,7 +831,7 @@ function registeredSafeHandler(plan, root, registryOwned = false) {
   if (plan.safeHandler === 'buildr-openspec-check') return plan.args[0] === 'openspec' && plan.args[1] === 'check' && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-openspec-converge') return plan.args[0] === 'openspec' && plan.args[1] === 'converge' && plan.args.includes('--json') && plan.args.includes('--target') && plan.args.includes('--project');
   if (plan.safeHandler === 'buildr-runtime-sync') return plan.args[0] === 'sync' && plan.args.includes('--target');
-  if (['openspec-convergence', 'formal-verification', 'runtime-convergence'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root, registryOwned)));
+  if (['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root, registryOwned)));
   return false;
 }
 
@@ -851,7 +853,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     }
     const plan = validateFinishExecutionPlan({ root, plan: explicitPlan || resolution.plan });
     const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
-    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification', 'runtime-convergence'].includes(plan?.safeHandler);
+    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence'].includes(plan?.safeHandler);
     if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root, Boolean(resolution)))) {
       return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'safe-plan-unavailable', step, executedSteps, durationMs: clock() - startedAt } };
     }

@@ -52,7 +52,14 @@ export const FINISH_ACTIONS = Object.freeze([
   provider('asset-review', 'buildr.task-asset-review@3', 'finalize', 'task-checkout', ['review status', 'observation revision']),
   provider('archive', null, 'archive', 'retained-checkout', ['archive path', 'post-sync result'], ['archive-change'], 'openspec-archive-change'),
   provider('integration-push', 'buildr.git-task-integration@1', 'integrate-and-push', 'retained-checkout', ['ref transition'], ['merge-or-fast-forward', 'push']),
-  provider('runtime-install', 'buildr.task-finish@1', 'install-retained-runtime', 'retained-checkout', ['runtime identity'], ['runtime-install'], 'task-finish'),
+  actionEntry({
+    id: 'retained-convergence.impact-aware', step: 'retained-convergence', kind: 'product-executable', executionSurface: 'retained-checkout',
+    effects: ['runtime-projection-sync'], requiredContext: ['retainedWorkspaceRoot', 'retainedCliInvocation', 'agent', 'changedPaths'],
+    resultContract: { outcome: ['passed', 'blocked'], processExit: 0 },
+    evidenceProjection: { finishStep: 'retained-convergence', required: ['retained identity', 'impact classification', 'doctor result', 'sync applicability'] },
+    resolver: resolveRetainedConvergence,
+  }),
+  provider('runtime-install', 'buildr.task-finish@1', 'install-affected-retained-entrypoints', 'retained-checkout', ['retained impact', 'runtime identity', 'not-applicable reasons'], ['runtime-install'], 'task-finish'),
   provider('asset-review-late', 'buildr.task-asset-review@3', 'finalize-if-revised', 'retained-checkout', ['review status', 'observation revision']),
   provider('cleanup', 'buildr.task-worktree-lifecycle@2', 'cleanup', 'retained-checkout', ['cleanup readiness', 'durable receipt'], ['local-environment-cleanup']),
 ]);
@@ -110,6 +117,53 @@ function resolveRuntimeConvergence({ root, action, context }) {
       { id: 'doctor-after', commands: [child('doctor-after', ['doctor', '--agent', context.agent, '--target', path.resolve(root), '--json'], 'buildr-doctor')] },
     ],
   }) };
+}
+
+const stripProductPrefix = (value) => String(value || '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^projects\/product\//, '');
+
+export function classifyRetainedConvergencePaths(paths = []) {
+  const result = { runtime: [], cli: [], localApp: [], unknown: [] };
+  const normalized = [...new Set(paths.map(stripProductPrefix).filter(Boolean))].sort();
+  const runtimePattern = /^(?:rules\/|skills\/|components\/|commands\/|capabilities\.yml$|commands\.yml$|services\/buildr\/package\/targets\/workspace\/|services\/buildr\/package\/manifest\.yml$)/;
+  const cliPattern = /^(?:buildr$|services\/buildr\/(?:bin\/|src\/interfaces\/cli\/|scripts\/(?:install|uninstall)-buildr-cli$|package\.json$|package-lock\.json$))/;
+  const localAppPattern = /^services\/buildr\/(?:src\/interfaces\/local-app\/(?:runtime|http)\/|src\/application\/local-app|scripts\/(?:install|uninstall)-local-app)/;
+  for (const candidate of normalized) {
+    let matched = false;
+    if (runtimePattern.test(candidate)) { result.runtime.push(candidate); matched = true; }
+    if (cliPattern.test(candidate)) { result.cli.push(candidate); matched = true; }
+    if (localAppPattern.test(candidate)) { result.localApp.push(candidate); matched = true; }
+    if (!matched) result.unknown.push(candidate);
+  }
+  return { ...result, requiresRuntimeSync: result.runtime.length > 0, requiresCliInstall: result.cli.length > 0, requiresLocalAppInstall: result.localApp.length > 0 };
+}
+
+function resolveRetainedConvergence({ root, action, context }) {
+  const retainedRoot = context.retainedWorkspaceRoot ? path.resolve(context.retainedWorkspaceRoot) : null;
+  const invocation = context.retainedCliInvocation?.command ? {
+    command: path.resolve(context.retainedCliInvocation.command), argsPrefix: [...(context.retainedCliInvocation.argsPrefix || [])],
+  } : null;
+  const changedPaths = Array.isArray(context.changedPaths) && context.changedPaths.every((entry) => typeof entry === 'string') ? context.changedPaths : null;
+  const missing = [...(!retainedRoot ? ['retainedWorkspaceRoot'] : []), ...(!invocation ? ['retainedCliInvocation'] : []), ...(!context.agent ? ['agent'] : []), ...(!changedPaths ? ['changedPaths'] : [])];
+  if (missing.length) return { missing };
+  const impact = classifyRetainedConvergencePaths(changedPaths);
+  const child = (id, args, safeHandler, jsonAssertion = null) => executablePlan({
+    root, action, command: invocation.command, args: [...invocation.argsPrefix, ...args], safeHandler, evidenceId: id, jsonAssertion,
+  });
+  const stages = impact.requiresRuntimeSync ? [
+    { id: 'retained-doctor-before', commands: [child('retained-doctor-before', ['doctor', '--agent', context.agent, '--target', retainedRoot, '--json'], 'buildr-doctor')] },
+    { id: 'retained-runtime-sync', commands: [child('retained-runtime-sync', ['sync', context.agent, '--target', retainedRoot], 'buildr-runtime-sync')] },
+    { id: 'retained-doctor-after', commands: [child('retained-doctor-after', ['doctor', '--agent', context.agent, '--target', retainedRoot, '--json'], 'buildr-doctor', { path: 'health.ready', equals: true })] },
+  ] : [
+    { id: 'retained-doctor', commands: [child('retained-doctor', ['doctor', '--agent', context.agent, '--target', retainedRoot, '--json'], 'buildr-doctor', { path: 'health.ready', equals: true })] },
+  ];
+  return { plan: {
+    ...executablePlan({ root, action, command: invocation.command, args: invocation.argsPrefix, sharedMutation: impact.requiresRuntimeSync, safeHandler: 'retained-convergence', evidenceId: `registry-retained-${context.agent}`, stages }),
+    metadata: { retainedWorkspaceRoot: retainedRoot, changedPaths: [...new Set(changedPaths)].sort(), impact, skipReasons: {
+      runtimeSync: impact.requiresRuntimeSync ? null : 'runtime-assets-not-affected',
+      cliInstall: impact.requiresCliInstall ? null : 'default-cli-not-affected',
+      localAppInstall: impact.requiresLocalAppInstall ? null : 'local-app-entry-not-affected',
+    } },
+  } };
 }
 
 function fingerprint({ run, action, plan, context }) {

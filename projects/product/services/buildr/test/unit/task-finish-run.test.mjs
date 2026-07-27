@@ -220,14 +220,17 @@ test('execution plan 在领取动作前拒绝错误 cwd 与不存在 npm script'
   assert.equal(validateFinishExecutionPlan({ root, plan }).verificationSelector, 'group:unit');
 });
 
-test('active v1 run 兼容补入 late asset review 步骤', (t) => {
+test('active v1 run 兼容补入 retained convergence 与 late asset review 步骤', (t) => {
   const root = fixture(t); create(root);
   const file = path.join(root, '.buildr/task-finish/runs/finish-1.json');
   const legacy = JSON.parse(fs.readFileSync(file, 'utf8'));
-  legacy.steps = legacy.steps.filter((item) => item.id !== 'asset-review-late');
+  legacy.steps = legacy.steps.filter((item) => !['retained-convergence', 'asset-review-late'].includes(item.id));
+  legacy.steps.find((item) => item.id === 'runtime-install').dependsOn = ['integration-push'];
   legacy.steps.find((item) => item.id === 'cleanup').dependsOn = ['runtime-install'];
   fs.writeFileSync(file, `${JSON.stringify(legacy, null, 2)}\n`);
   const migrated = readFinishRun({ root, runId: 'finish-1' });
+  assert.ok(migrated.steps.some((item) => item.id === 'retained-convergence'));
+  assert.deepEqual(migrated.steps.find((item) => item.id === 'runtime-install').dependsOn, ['retained-convergence']);
   assert.ok(migrated.steps.some((item) => item.id === 'asset-review-late'));
   assert.deepEqual(migrated.steps.find((item) => item.id === 'cleanup').dependsOn, ['asset-review-late']);
 });
@@ -337,6 +340,53 @@ test('registry runtime convergence staged plan 可由真实 run executor 执行'
   assert.equal(result.currentStep, 'formal-assurance');
   assert.deepEqual(commands.map((entry) => entry.slice(1, 3)), [['doctor', '--agent'], ['sync', 'codex'], ['doctor', '--agent']]);
   assert.equal(result.steps.find((item) => item.id === 'runtime-convergence').status, 'passed');
+});
+
+test('registry retained convergence 只按 changed paths 执行必要 stages', async (t) => {
+  for (const [runId, changedPaths, expected] of [
+    ['retained-doctor', ['projects/product/docs/buildr-product.md'], ['doctor']],
+    ['retained-sync', ['skills/buildr/task-finish/SKILL.md'], ['doctor', 'sync', 'doctor']],
+  ]) {
+    const root = fixture(t); create(root, runId);
+    while (inspectFinishRun(readFinishRun({ root, runId })).currentStep !== 'retained-convergence') passCurrent(root, runId);
+    const executable = path.join(root, 'projects/product/buildr');
+    fs.mkdirSync(path.dirname(executable), { recursive: true });
+    fs.writeFileSync(executable, '#!/bin/sh\n');
+    const commands = [];
+    const result = await executeSafeFinishRun({
+      root, runId, actionContext: {
+        agent: 'codex', retainedWorkspaceRoot: root, retainedCliInvocation: { command: executable, argsPrefix: [] }, changedPaths,
+      },
+      runCommand: async (command, args) => {
+        commands.push(args[0]);
+        return { status: 0, stdout: args[0] === 'doctor' ? '{"health":{"ready":true}}' : '', stderr: '' };
+      },
+    });
+    assert.deepEqual(commands, expected);
+    assert.equal(result.currentStep, 'runtime-install');
+    assert.equal(result.safeExecution.reason, 'agent-provider-required');
+    const retainedStep = readFinishRun({ root, runId }).steps.find((item) => item.id === 'retained-convergence');
+    assert.equal(retainedStep.executionPlan.metadata.impact.requiresRuntimeSync, expected.includes('sync'));
+  }
+});
+
+test('retained convergence 失败只阻塞自身且不重复 push 或验证', async (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'retained-convergence') passCurrent(root, 'finish-1');
+  const executable = path.join(root, 'projects/product/buildr');
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, '#!/bin/sh\n');
+  const result = await executeSafeFinishRun({
+    root, runId: 'finish-1', actionContext: {
+      agent: 'codex', retainedWorkspaceRoot: root, retainedCliInvocation: { command: executable, argsPrefix: [] }, changedPaths: ['skills/demo/SKILL.md'],
+    },
+    runCommand: async (command, args) => ({ status: args[0] === 'sync' ? 1 : 0, stdout: '{"health":{"ready":true}}', stderr: args[0] === 'sync' ? 'sync failed' : '' }),
+  });
+  assert.equal(result.currentStep, 'retained-convergence');
+  assert.equal(result.blocked[0].code, 'safe-action-failed');
+  const run = readFinishRun({ root, runId: 'finish-1' });
+  assert.equal(run.steps.find((item) => item.id === 'formal-assurance').attempt, 1);
+  assert.equal(run.steps.find((item) => item.id === 'integration-push').attempt, 1);
 });
 
 test('registered OpenSpec convergence handler调用单一产品入口', async (t) => {
