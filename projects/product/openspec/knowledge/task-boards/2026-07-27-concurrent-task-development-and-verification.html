@@ -174,29 +174,29 @@
     "meta": {
       "title": "多任务并发开发与验证",
       "taskId": "concurrent-task-development-and-verification",
-      "status": "进行中",
-      "phase": "批次 5 · 双任务并发整体验收",
-      "taskProgress": "已完成 4 / 5 个批次 · 1 个待验收批次",
-      "updatedAt": "2026-07-27 14:20",
+      "status": "已完成",
+      "phase": "全部 5 个批次已交付",
+      "taskProgress": "已完成 5 / 5 个批次",
+      "updatedAt": "2026-07-27 15:00",
       "relativePath": "projects/product/openspec/knowledge/task-boards/2026-07-27-concurrent-task-development-and-verification.html"
     },
     "overview": {
       "purpose": "让多个任务在同一个 Buildr 自举 Workspace 中独立开发、独立验证，并在集成后安全收敛主工作区。",
-      "conclusion": "保留一个整体任务看板，后续按职责拆成多个小 Change。",
-      "currentFocus": "批次 4 已交付；下一步用两个真实任务完成并发开发、预览、验证、集成和清理的整体验收。",
-      "userAttention": "主工作区收敛已通过受影响验证；完整 Candidate 仍仅被 dev 既有 managed-mutations 六处违规阻塞。",
+      "conclusion": "五个批次均已交付；双任务并发组合验收已经成为 Product Candidate 的必需门禁。",
+      "currentFocus": "本看板已完成，后续由 Candidate 持续回归任务入口、预览、共享资源、竞态和清理边界。",
+      "userAttention": "双任务组合验收和受影响验证均通过；完整 Candidate 仍仅被 dev 既有 managed-mutations 六处违规阻塞。",
       "highlights": {
         "done": {
           "title": "已有基础",
           "text": "任务环境、Local App 独立预览、验证分层和收尾动作登记已经交付。"
         },
         "current": {
-          "title": "当前工作",
-          "text": "使用两个真实任务验证入口、预览、共享资源和清理互不串扰。"
+          "title": "最终交付",
+          "text": "两个真实任务的入口、预览、共享资源、目标竞态和归属清理已形成自动验收。"
         },
         "next": {
-          "title": "后续方向",
-          "text": "完成双任务并发整体验收后关闭本看板。"
+          "title": "持续保障",
+          "text": "后续完整 Candidate 自动执行双任务并发组合验收。"
         }
       },
       "blockers": [],
@@ -291,6 +291,15 @@
         "batchIds": [
           "workspace-convergence"
         ]
+      },
+      {
+        "id": "validate-concurrent-task-workflows",
+        "status": "archived",
+        "path": "openspec/changes/archive/2026-07-27-validate-concurrent-task-workflows/",
+        "summary": "Product Candidate 已新增双任务组合验收，在单一临时 Workspace 真实核对 CLI binding、双预览、共享容量、target-race、精确清理和 retained doctor。",
+        "batchIds": [
+          "concurrent-acceptance"
+        ]
       }
     ],
     "progress": {
@@ -372,12 +381,14 @@
         },
         {
           "id": "concurrent-acceptance",
-          "status": "current",
-          "label": "当前批次",
+          "status": "done",
+          "label": "已完成",
           "title": "批次 5 · 双任务并发整体验收",
           "summary": "使用两个真实任务同时开发、启动预览、执行验证和集成，验证完整流程没有入口、资源或清理串扰。",
           "deliverable": "形成任务级验证证据、共享资源协调证据、主工作区收敛结果和安全清理结果。",
-          "changeIds": [],
+          "changeIds": [
+            "validate-concurrent-task-workflows"
+          ],
           "items": [
             "两个任务使用各自 CLI 调用信息",
             "两个 Local App 预览同时运行",

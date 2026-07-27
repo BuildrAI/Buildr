@@ -20,4 +20,4 @@
 
 - [x] 4.1 完成 OpenSpec guard 和受影响验证
 - [x] 4.2 在最终实现树运行 Product Candidate，并记录既有 `managed-mutations` 基线阻塞与 95.7 秒耗时
-- [ ] 4.3 归档、集成、对齐 retained Workspace 并清理任务环境
+- [x] 4.3 归档、集成、对齐 retained Workspace 并清理任务环境
