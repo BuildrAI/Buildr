@@ -177,22 +177,22 @@
       "status": "进行中",
       "phase": "批次 3 · 跨任务验证资源协调",
       "taskProgress": "已完成 2 / 5 个批次 · 2 个待优化批次",
-      "updatedAt": "2026-07-27 10:44",
+      "updatedAt": "2026-07-27 11:15",
       "relativePath": "projects/product/openspec/knowledge/task-boards/2026-07-27-concurrent-task-development-and-verification.html"
     },
     "overview": {
       "purpose": "让多个任务在同一个 Buildr 自举 Workspace 中独立开发、独立验证，并在集成后安全收敛主工作区。",
       "conclusion": "保留一个整体任务看板，后续按职责拆成多个小 Change。",
-      "currentFocus": "任务专属 CLI 调用信息已经交付；下一批次协调多个任务同时验证时的端口、临时目录、数据和重型资源。",
-      "userAttention": "当前无实施阻塞；批次 3 尚未创建 Change，需要开始时再建立真实身份。",
+      "currentFocus": "正在实现跨任务验证资源协调：Project 声明资源策略，多个验证进程共享容量租约并只清理自己的占用。",
+      "userAttention": "当前无实施阻塞；Change 已进入独立任务环境。",
       "highlights": {
         "done": {
           "title": "已有基础",
           "text": "任务环境、Local App 独立预览、验证分层和收尾动作登记已经交付。"
         },
         "current": {
-          "title": "本批完成",
-          "text": "任务环境已返回 receipt-bound 绝对 CLI invocation，Action Registry 不再猜产品路径。"
+          "title": "当前工作",
+          "text": "让独立资源并行、有限资源排队、外部共享状态显式授权。"
         },
         "next": {
           "title": "后续方向",
@@ -275,6 +275,15 @@
         ]
       },
       {
+        "id": "coordinate-concurrent-verification-resources",
+        "status": "active",
+        "path": "openspec/changes/coordinate-concurrent-verification-resources/",
+        "summary": "为 Project 验证声明资源策略，并协调多个 task environment 的有限容量验证资源。",
+        "batchIds": [
+          "verification-resource-coordination"
+        ]
+      },
+      {
         "id": "optimize-task-finish-convergence",
         "status": "active",
         "path": "openspec/changes/optimize-task-finish-convergence/",
@@ -333,7 +342,9 @@
           "title": "批次 3 · 跨任务验证资源协调",
           "summary": "让每项验证声明运行位置、占用资源、隔离方式和清理方式，并在多个任务之间统一协调。",
           "deliverable": "临时目录、端口和测试数据按任务隔离；浏览器、Docker 和重型验证按容量排队；未知共享副作用停止执行。",
-          "changeIds": [],
+          "changeIds": [
+            "coordinate-concurrent-verification-resources"
+          ],
           "items": [
             "扩充 Project 验证声明",
             "支持独立、命名隔离、排队和外部授权四种资源处理",
