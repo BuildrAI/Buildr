@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { FINISH_STEPS } from '../../src/application/task-finish/task-finish-run.mjs';
+import { LEGACY_CONVERGENCE_REGISTRY, legacyConvergenceRetirementStatus } from '../../src/application/openspec/legacy-convergence.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
@@ -70,4 +71,30 @@ test('Task Finish checkpoint 使用轻量 bootstrap，完整 domain 延迟加载
   assert.doesNotMatch(bootstrap, /domains\/openspec|domains\/git|domains\/runtime/);
   assert.match(bootstrap, /registerTaskFinishApplication/);
   assert.match(finishRun, /releaseOwnedLease/);
+});
+
+test('旧 OpenSpec 阶段接口受显式消费者和兼容窗口门禁约束', () => {
+  assert.deepEqual(Object.keys(LEGACY_CONVERGENCE_REGISTRY), ['baseline', 'check', 'sync-plan', 'sync-apply']);
+  const roots = [
+    path.join(serviceRoot, 'package/targets/workspace'),
+    path.join(productRoot, 'openspec/knowledge'),
+    path.join(productRoot, 'docs'),
+    path.join(serviceRoot, 'docs'),
+  ];
+  const consumers = [];
+  const walk = (directory) => {
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(target);
+      else if (/\.(?:md|ya?ml)$/.test(entry.name) && /buildr openspec (?:baseline|check|sync-plan|sync-apply)\b/.test(fs.readFileSync(target, 'utf8'))) consumers.push(path.relative(productRoot, target).split(path.sep).join('/'));
+    }
+  };
+  roots.forEach(walk);
+  assert.deepEqual(consumers.sort(), [
+    'services/buildr/package/targets/workspace/components/buildr/openspec/contributions/task-triage-change-ready.md',
+    'services/buildr/package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
+  ]);
+  assert.equal(legacyConvergenceRetirementStatus({ consumers, compatibilityWindowComplete: false }).removalEligible, false);
+  assert.equal(legacyConvergenceRetirementStatus({ consumers: [], compatibilityWindowComplete: true }).removalEligible, true);
 });

@@ -23,7 +23,7 @@ const helpTopics = [
   ['worktree', 'create'],
   ['mutation', 'recover'], ['runtime', 'list'], ['runtime', 'check'],
   ['commands', 'add'], ['commands', 'remove'], ['commands', 'check'],
-  ['openspec', 'baseline', 'create'], ['openspec', 'check'],
+  ['openspec', 'baseline', 'create'], ['openspec', 'check'], ['openspec', 'converge'], ['openspec', 'audit'],
   ['component', 'list'], ['component', 'check'], ['component', 'install'], ['component', 'uninstall'],
   ['rules', 'add'], ['rules', 'remove'], ['rules', 'render'],
   ['builtin', 'list'], ['builtin', 'uninstall'], ['builtin', 'restore'],

@@ -64,6 +64,7 @@ export function registerTaskFinishApplication(runtime) {
       observedTargetRef: optionValue(command.args, '--observed-target-ref', null),
       refTransition: jsonValue(optionValue(command.args, '--ref-transition', null), '--ref-transition'),
       executionPlan: jsonValue(optionValue(command.args, '--execution-plan', null), '--execution-plan'),
+      resolutionAuthorization: jsonValue(optionValue(command.args, '--resolution-authorization', null), '--resolution-authorization'),
     };
     return print(action === 'resume' ? resumeFinishRun(options) : advanceFinishRun(options), command.args, root);
   }

@@ -45,6 +45,7 @@ export const COMMAND_REGISTRY = [
   { key: 'openspec sync-plan', match: ({ domain, action }) => domain === 'openspec' && action === 'sync-plan', run: (r, c) => r.openspecSyncPlan(c.argv.slice(4)) },
   { key: 'openspec sync-apply', match: ({ domain, action }) => domain === 'openspec' && action === 'sync-apply', run: (r, c) => r.openspecSyncApply(c.argv.slice(4)) },
   { key: 'openspec converge', match: ({ domain, action }) => domain === 'openspec' && action === 'converge', run: (r, c) => r.openspecConverge(c.argv.slice(4)) },
+  { key: 'openspec audit', match: ({ domain, action }) => domain === 'openspec' && action === 'audit', run: (r, c) => r.openspecAudit(c.argv.slice(4)) },
   { key: 'component list', match: ({ domain, action }) => domain === 'component' && action === 'list', run: (r, c) => r.componentListOrCheck(c.argv.slice(4), false) },
   { key: 'component check', match: ({ domain, action }) => domain === 'component' && action === 'check', run: (r, c) => r.componentListOrCheck(c.argv.slice(4), true) },
   { key: 'component install', match: ({ domain, action }) => domain === 'component' && action === 'install', run: (r, c) => r.componentInstall(c.argv.slice(4)) },

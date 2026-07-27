@@ -22,8 +22,8 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
-    console.error('  buildr task finish <actions|inspect|advance|resume|renew|run|recover|cleanup-prepare|cleanup-finalize> [--run <id>] [--task <id> --change <id> --target-branch <branch>] [--action-context <json>] [--fingerprint <step>=<value> ...] [--execution-plan <json> | --execution-plans <json>] [--recovery <json>] [--repair-authorization <json>] [--ref-transition <json>] [--detail <compact|full>] [--json]');
-    console.error('  buildr openspec <sync-plan|sync-apply|converge> <change> --project <project> [--target <workspace>] [--json]');
+    console.error('  buildr task finish <actions|inspect|advance|resume|renew|run|recover|cleanup-prepare|cleanup-finalize> [--run <id>] [--task <id> --change <id> --target-branch <branch>] [--action-context <json>] [--fingerprint <step>=<value> ...] [--execution-plan <json> | --execution-plans <json>] [--recovery <json>] [--repair-authorization <json>] [--resolution-authorization <json>] [--ref-transition <json>] [--detail <compact|full>] [--json]');
+    console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
     console.error('  buildr mutation recover <transaction-id> [--target <dir>]');
     console.error('  buildr commands add <id> --purpose <text> [--target <dir>] [--collection <path>] [--executable <name>] [--name <text>] [--description <text>] [--version-constraint <constraint>] [--version-args <args>] [--install-hint <text>] [--replace]');
@@ -96,7 +96,7 @@ export function registerCommandHelp(runtime) {
       '',
       'Product maintenance / workflow internals:',
       '  package check/build  校验或构建 Buildr 产品包。',
-      '  openspec baseline/check  供 Buildr OpenSpec workflow 管理契约基线与同步门禁。',
+      '  openspec converge/audit  执行单一收敛事务或只读审计；旧阶段命令仅作弃用兼容。',
       '',
       '表面分类说明用途与支持边界，不是权限或安全限制；以上命令仍可执行并可查看主题帮助。',
     ],
@@ -301,12 +301,22 @@ export function registerCommandHelp(runtime) {
     'openspec baseline create': [
       'Usage: buildr openspec baseline create <change> --project <project> [--target <dir>] [--adopt-current] [--update] [--json]',
       '',
-      '供 Buildr OpenSpec workflow 为 active change 显式创建或更新 Requirement 契约基线。不会安装或升级外部 OpenSpec CLI。',
+      '弃用兼容入口：为旧 workflow 创建 Requirement 契约基线；新 Task Finish 使用 openspec converge。',
     ],
     'openspec check': [
       'Usage: buildr openspec check <change> --stage <proposal|pre-sync|post-sync> --project <project> [--target <dir>] [--json]',
       '',
-      '供 Buildr OpenSpec workflow 检查 proposal、基线、活动 change 冲突和同步结果。',
+      '弃用兼容入口：检查旧 proposal、基线和阶段结果；新 Task Finish 使用 openspec converge。',
+    ],
+    'openspec converge': [
+      'Usage: buildr openspec converge <change> --project <project> [--target <dir>] [--json]',
+      '',
+      '产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。',
+    ],
+    'openspec audit': [
+      'Usage: buildr openspec audit <change> --project <project> [--target <dir>] [--json]',
+      '',
+      '只读比较唯一收敛回执的 before/expected 与当前实际摘要；不会写 canonical、回执或归档。',
     ],
     'component list': [
       'Usage: buildr component list [--target <dir>] [--json]',
@@ -401,6 +411,7 @@ export function registerCommandHelp(runtime) {
     if (domain === 'commands' && ['add', 'remove', 'check'].includes(action)) return `commands ${action}`;
     if (domain === 'openspec' && action === 'baseline' && runtime === 'create') return 'openspec baseline create';
     if (domain === 'openspec' && action === 'check') return 'openspec check';
+    if (domain === 'openspec' && ['converge', 'audit'].includes(action)) return `openspec ${action}`;
     if (domain === 'component' && ['list', 'check', 'install', 'uninstall'].includes(action)) return `component ${action}`;
     if (domain === 'rules' && ['add', 'remove'].includes(action)) return `rules ${action}`;
     if (domain === 'builtin' && ['list', 'uninstall', 'restore'].includes(action)) return `builtin ${action}`;

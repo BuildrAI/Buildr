@@ -7,7 +7,10 @@ import os from 'node:os';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { applyDeterministicSyncPlan, createDeterministicSyncPlan, DETERMINISTIC_SYNC_PLAN_SCHEMA } from '../openspec/deterministic-sync.mjs';
 import { portableExecutableIdentity } from '../openspec/convergence-model.mjs';
-import { runOpenSpecConvergence } from '../openspec/openspec-converge.mjs';
+import { CONVERGENCE_RECEIPT_SCHEMA } from '../openspec/convergence-model.mjs';
+import { convergenceReceiptPath, runOpenSpecConvergence } from '../openspec/openspec-converge.mjs';
+import { observeConvergence } from '../openspec/convergence-observer.mjs';
+import { legacyConvergenceDeprecation, legacyConvergenceWarning } from '../openspec/legacy-convergence.mjs';
 import { validateActualOpenSpec, validateProjectedOpenSpec } from '../openspec/projected-validator.mjs';
 
 const OPENSPEC_CONTRACT_BASELINE_SCHEMA = 'buildr.openspec-contract-baseline/v1';
@@ -560,10 +563,11 @@ export function registerDomainsOpenspec(runtime) {
       baselinePath: toPosixRelative(context.projectRoot, baselineFile),
       adopted: baseline.adopted,
       targetCount: targets.length,
-      nextActions: [`buildr openspec check ${context.change} --stage proposal --project ${context.project} --target ${context.targetRoot} --json`],
+      nextActions: [`buildr openspec converge ${context.change} --project ${context.project} --target ${context.targetRoot} --json`],
+      deprecation: legacyConvergenceDeprecation('baseline'),
     };
     if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecBaseline, payload), null, 2)}\n`);
-    else console.log(`Created OpenSpec contract baseline: ${payload.baselinePath} (${targets.length} targets)`);
+    else { console.warn(legacyConvergenceWarning('baseline')); console.log(`Created OpenSpec contract baseline: ${payload.baselinePath} (${targets.length} targets)`); }
   }
 
   function openspecCheck(args) {
@@ -635,8 +639,9 @@ export function registerDomainsOpenspec(runtime) {
     }
 
     finishOpenSpecContractResult(result);
+    result.deprecation = legacyConvergenceDeprecation('check');
     if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecCheck, result), null, 2)}\n`);
-    else printOpenSpecContractResult(result);
+    else { console.warn(legacyConvergenceWarning('check')); printOpenSpecContractResult(result); }
     process.exitCode = result.ok ? 0 : 1;
   }
 
@@ -655,9 +660,10 @@ export function registerDomainsOpenspec(runtime) {
       files: plan.files.map((item) => ({ path: item.path, beforeDigest: item.beforeDigest, expectedDigest: item.expectedDigest })),
       planPath: toPosixRelative(context.projectRoot, openSpecSyncPlanPath(context.changeRoot)),
       fallback: plan.status === 'blocked' ? { action: 'agent-driven-sync', reason: 'semantic-resolution-required' } : null,
+      deprecation: legacyConvergenceDeprecation('sync-plan'),
     });
     if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    else console.log(`OpenSpec deterministic sync plan: ${plan.status} (${plan.operations.length} operations)`);
+    else { console.warn(legacyConvergenceWarning('sync-plan')); console.log(`OpenSpec deterministic sync plan: ${plan.status} (${plan.operations.length} operations)`); }
     process.exitCode = plan.status === 'blocked' ? 2 : 0;
   }
 
@@ -698,9 +704,9 @@ export function registerDomainsOpenspec(runtime) {
         };
       } finally { removePath(temporaryRoot); }
     } });
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecSyncApply, { change: context.change, project: context.project, ...result });
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecSyncApply, { change: context.change, project: context.project, ...result, deprecation: legacyConvergenceDeprecation('sync-apply') });
     if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    else console.log(`OpenSpec deterministic sync apply: ${result.status} (${result.effects.length} effects)`);
+    else { console.warn(legacyConvergenceWarning('sync-apply')); console.log(`OpenSpec deterministic sync apply: ${result.status} (${result.effects.length} effects)`); }
     process.exitCode = result.status === 'passed' ? 0 : 2;
   }
 
@@ -754,6 +760,40 @@ export function registerDomainsOpenspec(runtime) {
     process.exitCode = payload.status === 'passed' ? 0 : 2;
   }
 
-  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, openSpecBaselinePath, openSpecReceiptPath, openSpecSyncPlanPath, readOpenSpecContractJson, writeOpenSpecContractJson, baselineTargetsForDelta, expectedOpenSpecBaselineTargets, baselineTargetMap, createOpenSpecContractResult, addOpenSpecContractFinding, finishOpenSpecContractResult, printOpenSpecContractResult, validateOpenSpecProposalAlignment, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, validateOpenSpecBaselineCurrent, snapshotOpenSpecCapabilities, snapshotOpenSpecSpecIntegrities, renameRequirementBlock, validateOpenSpecPostSync, openSpecContractContext, openspecBaselineCreate, openspecCheck, openspecSyncPlan, openspecSyncApply, openspecConverge });
+  function openspecAudit(args) {
+    assertNoUnknownOptions(args, new Set(['--target', '--project', '--json']), new Set(['--json']));
+    const positionals = positionalArgs(args);
+    const change = positionals[0];
+    if (!change || positionals.length !== 1) throw new Error('Usage: buildr openspec audit <change> --project <project> [--target <dir>] [--json]');
+    const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
+    const project = optionValue(args, '--project');
+    const { projectRoot } = resolveOpenSpecContractProject(targetRoot, project);
+    const resolved = openSpecConvergenceChangePath(projectRoot, change);
+    const receiptFile = convergenceReceiptPath(resolved.changeRoot);
+    let payload;
+    try {
+      const receipt = readOpenSpecContractJson(receiptFile, CONVERGENCE_RECEIPT_SCHEMA);
+      if (!receipt) throw new Error('OpenSpec convergence receipt is missing.');
+      const observed = observeConvergence({ projectRoot, receipt, archived: resolved.archived, io: fs });
+      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecAudit, {
+        change, project, status: observed.disposition === 'state-unknown' ? 'recovery-unprovable' : 'passed',
+        disposition: observed.disposition, files: observed.files,
+        receipt: toPosixRelative(projectRoot, receiptFile),
+        nextActions: observed.disposition === 'state-unknown' ? ['停止正式文件写入并人工核对 unknown 文件；不得刷新旧 baseline 或删除回执。'] : [],
+      });
+    } catch (error) {
+      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecAudit, {
+        change, project, status: 'recovery-unprovable', disposition: 'state-unknown', files: [],
+        receipt: toPosixRelative(projectRoot, receiptFile),
+        diagnostic: { code: 'convergence-receipt-unprovable', message: error.message },
+        nextActions: ['人工核对唯一 convergence receipt 与正式文件；不得从旧旁路状态生成授权事实。'],
+      });
+    }
+    if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else console.log(`OpenSpec convergence audit: ${payload.status} (${payload.disposition})`);
+    process.exitCode = payload.status === 'passed' ? 0 : 2;
+  }
+
+  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, openSpecBaselinePath, openSpecReceiptPath, openSpecSyncPlanPath, readOpenSpecContractJson, writeOpenSpecContractJson, baselineTargetsForDelta, expectedOpenSpecBaselineTargets, baselineTargetMap, createOpenSpecContractResult, addOpenSpecContractFinding, finishOpenSpecContractResult, printOpenSpecContractResult, validateOpenSpecProposalAlignment, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, validateOpenSpecBaselineCurrent, snapshotOpenSpecCapabilities, snapshotOpenSpecSpecIntegrities, renameRequirementBlock, validateOpenSpecPostSync, openSpecContractContext, openspecBaselineCreate, openspecCheck, openspecSyncPlan, openspecSyncApply, openspecConverge, openspecAudit });
   return runtime;
 }

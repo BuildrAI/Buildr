@@ -2,7 +2,7 @@
 
 本文用于区分“Buildr 产品 MVP 已完成”和“公开发布前还需要补齐的事项”。MVP 完成表示本地产品闭环成立；公开发布需要额外的开源、分发和示例材料收口。
 
-`package check/build` 是 Buildr 产品 maintenance 命令，`openspec baseline/check` 是 change workflow internal 命令；它们仍可直接执行并在 CLI help 中明确分区，但不属于普通 workspace onboarding 的日常命令。该分类描述产品用途，不是权限或安全限制。
+`package check/build` 是 Buildr 产品 maintenance 命令。OpenSpec 新路径只使用 `converge` 与只读 `audit`；历史阶段命令仍可兼容执行，但必须返回弃用信息且不得有当前产品消费者。该分类描述产品用途，不是权限或安全限制。
 
 ## 已完成 MVP
 
@@ -12,7 +12,7 @@
 - `doctor --agent <agent> --json` 输出面向当前 Agent runtime 的 Agent-readable 诊断结果。
 - `commands add/remove/check` 维护 root 级命令行工具清单。
 - `component list/check/install/uninstall` 管理 workspace 级统一生命周期资产；OpenSpec Component、嵌套 Commands collection、Buildr 自有契约门禁 sidebar 与声明式 Skill Contribution 已纳入 package 与 E2E 验证。
-- `buildr openspec baseline create` 与 `buildr openspec check` 保护 OpenSpec change 的 proposal、同步前和同步后契约边界；fixture corpus 覆盖并行冲突、陈旧基线和破坏性同步结果。
+- `buildr openspec converge` 产品化执行 OpenSpec change 的规划、隔离验证、条件应用、确认与仅移动归档；`buildr openspec audit` 只读解释状态不明，fixture corpus 同时覆盖并行冲突、文件漂移和历史入口弃用兼容。
 - `skills add/remove` 只维护 workspace Skill source；`skills render --destination workspace|user` 显式选择 runtime destination，Project 只保存 capability/applicability context。
 - Skill Contribution 只在 runtime render 时组合自然语言 fragments；检查安装后注入、卸载后移除、通用 Skill 源不变，以及无效 slot/integrity fail closed。
 - `skill install <agent>` 为七个 supported adapters 安装 Buildr 产品内置 Agent Skill。

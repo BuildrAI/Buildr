@@ -137,7 +137,7 @@ Buildr 按用途和承诺区分三类产品表面：
 
 该分类是 help/docs 产品契约，不是权限或安全边界。maintenance/workflow 命令仍然可执行，也可以直接查看主题帮助；分类只说明普通 workspace 用户不应把它们当作日常资产 API。
 
-当前 `package check/build` 属于产品 maintenance，`openspec baseline/check` 属于 workflow internal。`package:<source-id>` 是 package manifest 与随包 Skill resolver 的内部 source identity，不是用户资产 id 或公开 source scheme。`service create --rules` 仅保留 deprecated warning compatibility no-op；canonical Service 规则入口是 Service 目录中的 `AGENTS.md`。
+当前 `package check/build` 属于产品 maintenance；OpenSpec 正常入口是 `converge` 与只读 `audit`，历史阶段命令只保留弃用兼容并受零消费者门禁约束。`package:<source-id>` 是 package manifest 与随包 Skill resolver 的内部 source identity，不是用户资产 id 或公开 source scheme。`service create --rules` 仅保留 deprecated warning compatibility no-op；canonical Service 规则入口是 Service 目录中的 `AGENTS.md`。
 
 ## Runtime 投射
 

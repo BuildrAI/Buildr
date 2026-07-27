@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, FINISH_RECOVERY_SCHEMA, FINISH_REPAIR_AUTHORIZATION_SCHEMA, FINISH_STEPS, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
+import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, FINISH_RECOVERY_SCHEMA, FINISH_REPAIR_AUTHORIZATION_SCHEMA, FINISH_RESOLUTION_AUTHORIZATION_SCHEMA, FINISH_STEPS, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun, validateFinishExecutionPlan } from '../../src/application/task-finish/task-finish-run.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-'));
@@ -37,6 +37,41 @@ test('cleanup blocked 后 resume 不重复 push 或正式验证', (t) => {
   const run = readFinishRun({ root, runId: 'finish-1' });
   assert.equal(run.steps.find((item) => item.id === 'integration-push').attempt, 1);
   assert.equal(run.steps.find((item) => item.id === 'formal-assurance').attempt, 1);
+});
+
+test('语义阻塞必须等待可验证的新输入，普通resume不能覆盖产品失败', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'contract-convergence') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'contract-convergence': 'delta-v1' } });
+  const blocked = advanceFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'contract-convergence': 'delta-v1' }, outcome: 'blocked',
+    attemptToken: claimed.nextAction.attemptToken, evidence: { id: 'product-conflict' },
+    blocked: { code: 'active-change-conflict', reason: 'another Change modifies the same Requirement' },
+  });
+  assert.equal(blocked.nextAction.resumePolicy, 'input-change');
+  assert.match(blocked.nextAction.blockIdentity, /^sha256-/);
+  assert.throws(() => resumeFinishRun({ root, runId: 'finish-1', fingerprints: { 'contract-convergence': 'delta-v1' } }), /remains blocked/);
+  const resumed = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { 'contract-convergence': 'delta-v2' } });
+  assert.equal(resumed.nextAction.status, 'running');
+  assert.equal(readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'contract-convergence').attempts[0].outcome, 'blocked');
+});
+
+test('重要集成冲突只接受绑定当前阻塞身份的解决授权', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'target-convergence') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'target-v1' } });
+  const blocked = advanceFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'target-convergence': 'target-v1' }, outcome: 'blocked',
+    attemptToken: claimed.nextAction.attemptToken, evidence: { id: 'rebase-conflict' },
+    blocked: { code: 'rebase-conflict', reason: 'material conflict requires semantic resolution' },
+  });
+  assert.throws(() => resumeFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'target-v1' } }), /resolution authorization/);
+  const authorization = {
+    schemaVersion: FINISH_RESOLUTION_AUTHORIZATION_SCHEMA, task: 'finish-1', change: 'change-1', step: 'target-convergence',
+    blockIdentity: blocked.nextAction.blockIdentity, kind: 'integration-resolution', evidenceId: 'user-approved-resolution',
+  };
+  const resumed = resumeFinishRun({ root, runId: 'finish-1', fingerprints: { 'target-convergence': 'target-v1' }, resolutionAuthorization: authorization });
+  assert.equal(resumed.nextAction.status, 'running');
 });
 
 test('最终树 fingerprint 变化只失效 formal assurance 及下游', (t) => {
@@ -469,6 +504,41 @@ test('completion timing独立报告verification与closeout-only', (t) => {
   assert.ok(checkpoint.timing.closeoutMs >= 0);
   assert.equal(checkpoint.timing.endToEndWallClockMs, checkpoint.timing.wallClockMs);
   assert.ok(checkpoint.timing.orchestrationGapMs >= 0);
+});
+
+test('正式保证计时只接受候选绑定的验证摘要，不把checkpoint等待当作验证执行', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  const started = Date.now();
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'sha256-candidate' }, clock: () => started });
+  const completed = advanceFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'sha256-candidate' }, outcome: 'passed',
+    attemptToken: claimed.nextAction.attemptToken, clock: () => started + 9_000,
+    evidence: {
+      id: 'affected-summary', durationMs: 7,
+      verificationSummary: {
+        schemaVersion: 'buildr.verification-timing/v1', status: 'passed', totalDurationMs: 1_200,
+        evidenceIdentity: 'sha256-summary', source: { candidateFingerprint: 'sha256-candidate' },
+      },
+    },
+  });
+  assert.equal(completed.timing.initialVerificationMs, 1_200);
+  assert.equal(completed.timing.providerExecutionMs, 1_200);
+  assert.equal(completed.timing.checkpointWaitMs >= 7_800, true);
+  assert.deepEqual(completed.timing.formalAssuranceTimingSources, ['verifier-reported']);
+});
+
+test('调用方手写duration不能冒充正式验证耗时', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-manual' } });
+  const completed = advanceFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-manual' }, outcome: 'passed',
+    attemptToken: claimed.nextAction.attemptToken, evidence: { id: 'manual-summary', durationMs: 21_000 },
+  });
+  assert.equal(completed.timing.initialVerificationMs, 0);
+  assert.equal(completed.timing.providerExecutionMs, 0);
+  assert.deepEqual(completed.timing.formalAssuranceTimingSources, ['external-unobserved']);
 });
 
 function recoveryManifest(overrides = {}) {

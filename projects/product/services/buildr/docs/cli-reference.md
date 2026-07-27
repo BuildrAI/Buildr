@@ -104,7 +104,8 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 
 - `buildr package check/build`：产品 package 维护和构建，不是普通 workspace 日常命令。
 - `buildr openspec converge <change> --project <project> --target <workspace> --json`：Buildr OpenSpec 单一收敛事务；内部完成规划、隔离 strict validation、条件式 canonical 应用、写后确认与 `archive --skip-specs`，结果为 `passed|blocked|recovery-unprovable`。
-- `buildr openspec baseline create`、`check --stage pre-sync|post-sync`、`sync-plan`、`sync-apply`：历史 workflow 诊断兼容入口；新 Task Finish 和新 Change 不再编排或写入对应阶段 sidecar。
+- `buildr openspec audit <change> --project <project> --target <workspace> --json`：只读比较唯一回执中的 before/expected 与当前实际摘要；不写 canonical、回执或归档。
+- 历史 baseline、阶段 check、sync plan/apply 命令只在旧调用命中时执行并返回结构化弃用信息；新 Task Finish 和新 Change 不再消费或写入对应阶段 sidecar，达到零当前消费者与兼容窗口后删除。
 - `buildr bootstrap guide`：产品 Skill 不可用时的纯文本兜底说明。
 
 这些命令可执行，但不构成普通用户需要记忆的 public asset API。
