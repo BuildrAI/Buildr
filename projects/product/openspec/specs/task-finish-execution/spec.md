@@ -267,17 +267,22 @@ Task Finish MUST 报告 command execution、provider orchestration、Agent/tool 
 - **AND** timing MUST 使用跨平台单调时钟而非调用方手写 duration
 
 ### Requirement: Task Finish必须消费产品持有的convergence orchestrator
-Task Finish MUST通过产品application service推进archive rehearsal、pre-sync guard、deterministic plan/apply、strict validation与post-sync guard，并持久化每个阶段的identity、timing和恢复边界。正常safe路径MUST NOT要求Agent读取delta、直接编辑canonical文件或手工搬运receipt。
+Task Finish MUST 通过唯一 product-executable action 调用 `buildr openspec converge`，并且只消费 `passed`、`blocked` 或 `recovery-unprovable`、单一 receipt identity、effects、duration 与 command count。Task Finish MUST NOT 理解或持久化 rehearsal、baseline、pre-sync、plan、apply、post-sync、canonical restore 或 recovery stages。
 
 #### Scenario: Safe convergence一次推进
-- **WHEN**deterministic plan全部safe/already-applied且各阶段identity匹配
-- **THEN**Task Finish executor MUST在同一convergence attempt内完成全部阶段
-- **AND**checkpoint MUST记录阶段摘要与最终receipt
+- **WHEN** planner、projected validation、conditional apply、confirmation 与 `archive --skip-specs` 均可安全完成
+- **THEN** Task Finish executor MUST 在同一 convergence attempt 内调用一次产品 action 并接收 `passed`
+- **AND** checkpoint MUST 记录最终 receipt identity 与聚合执行摘要
 
 #### Scenario: Planner要求语义处理
-- **WHEN**orchestrator返回`semantic-resolution-required`
-- **THEN**run MUST保持contract-convergence blocked并指向Agent fallback
-- **AND**resume MUST从真实失效阶段继续而不重复passed rehearsal/guard effects
+- **WHEN** orchestrator 返回 `blocked`
+- **THEN** run MUST 保持 contract-convergence blocked并指向Agent/用户处理最小语义冲突
+- **AND** resume MUST 重新调用同一 product action而不得要求Agent拼装内部命令
+
+#### Scenario: 恢复状态无法证明
+- **WHEN** orchestrator 返回 `recovery-unprovable`
+- **THEN** run MUST 停止尚未执行的正式验证、archive集成与push
+- **AND** checkpoint MUST 保留实际文件摘要和人工检查下一动作
 
 ### Requirement: Finish入口必须解析权威execution roots
 Task Finish MUST从明确Workspace target、Project selector、task environment receipt和repository membership解析Workspace、Product、Service与command cwd。调用方相对路径或当前shell cwd MUST NOT替代这些authority。
@@ -504,40 +509,20 @@ Retained convergence evidence MUST 记录 retained Workspace 与 CLI identity、
 - **THEN** evidence MUST 记录 unknown paths 并继续执行 retained doctor
 - **AND** MUST NOT 因未知路径自动运行全部 sync、安装或 Candidate
 
-### Requirement: Task Finish 必须为可预期收敛阻塞提供恢复出口
+### Requirement: Task Finish checkpoint必须使用轻量CLI bootstrap
+Buildr MUST 为 `task finish inspect|advance|recover` 的 checkpoint 状态写入提供不加载 OpenSpec、Git、runtime 或其他产品 domain 的轻量 CLI bootstrap。该 bootstrap MUST 只加载 finish run store、atomic writer、lease ownership 和 compact result 所需模块。
 
-Task Finish MUST 将 OpenSpec 收敛中的可预期身份变化分类为产品可执行恢复、语义处理交接或证据不足的明确终止；MUST NOT 只返回没有后续动作的通用阻塞。动作注册表 MUST 持有对应动作、授权、effects、输入和结果证据。
+#### Scenario: OpenSpec模块存在语法错误
+- **WHEN** 完整 OpenSpec domain 因语法错误或 Git 冲突标记无法加载
+- **THEN** Task Finish checkpoint 命令 MUST 仍能启动并把 contract-convergence记录为 blocked
+- **AND** 命令 MUST 返回可恢复的 compact checkpoint而不是 bootstrap 崩溃
 
-#### Scenario: post-sync 后实现变化使收敛凭证过期
+#### Scenario: blocked attempt持有lease
+- **WHEN** 损坏 domain 导致当前 contract-convergence attempt无法继续且lease仍属于该attempt
+- **THEN** 轻量 checkpoint MUST 原子终结 attempt并释放identity匹配的lease
+- **AND** MUST NOT删除其他run或attempt持有的lease
 
-- **WHEN** finish run 已完成旧 delta 的 `post-sync`，随后以可核验的 `implementation-changed` transition 更新 change 和候选身份
-- **THEN** `contract-convergence` action MUST 解析产品持有的 stale receipt recovery
-- **AND** recovery 可证明安全时 MUST 自动恢复并重新执行 convergence，而不是要求 Agent 删除、移动或重建 receipt
-
-#### Scenario: 恢复需要语义判断
-
-- **WHEN** 当前 canonical 与旧同步结果不一致，或 Requirement、active Change 之间存在语义冲突
-- **THEN** action resolution MUST 返回 `semantic-resolution-required`、冲突 identity、未执行 effects 和最小处理上下文
-- **AND** finish run MUST 保留最后成功 checkpoint，不得猜测恢复内容
-
-#### Scenario: 恢复证据不足
-
-- **WHEN** 旧 baseline、sync plan、receipt 或 executable identity 无法共同证明恢复前后状态
-- **THEN** action resolution MUST 返回 `recovery-unprovable` 和缺失证据
-- **AND** canonical、baseline、receipt、archive、Git 与正式验证 MUST 保持未执行
-
-### Requirement: Task Finish 必须验证真实收敛恢复旅程
-
-Buildr MUST 以真实 Task Finish 状态机、动作注册表、OpenSpec application service 和文件凭证验证收敛恢复的完整旅程；局部门禁测试或通用成功进程 MUST NOT 替代该完成证据。
-
-#### Scenario: 类型化恢复重新到达正式验证边界
-
-- **WHEN** 测试 fixture 首次完成 `post-sync`，随后修改实现和 delta 并提交 `implementation-changed` recovery
-- **THEN** 同一 finish run MUST 通过 registry 恢复 `contract-convergence` 并重新到达 required formal assurance boundary
-- **AND** 测试 MUST 证明旧有效 evidence 已失效、未变 effects 未重复且新 convergence receipt 绑定当前 identity
-
-#### Scenario: 每个负向门禁具有对应完成结论
-
-- **WHEN** 产品为可预期 convergence blocker 增加或保留负向测试
-- **THEN** 同一测试集合 MUST 覆盖其安全恢复、语义交接或明确不可恢复结论
-- **AND** 仅断言命令失败 MUST NOT 作为该 blocker 的完整验收
+#### Scenario: 轻量入口尝试扩大副作用
+- **WHEN** 调用方要求轻量 bootstrap执行converge、Git、provider或canonical写入
+- **THEN** bootstrap MUST拒绝该动作并保持产品 domain未加载
+- **AND** 必须要求通过完整CLI入口执行实际产品动作

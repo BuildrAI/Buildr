@@ -1,10 +1,4 @@
-# openspec-deterministic-sync Specification
-
-## Purpose
-
-定义 Buildr 如何从 delta、contract baseline 与 canonical facts 证明唯一同步结果，原子应用 identity-bound plan，并在语义歧义、输入漂移或验证失败时保持零写入和可恢复的 Agent fallback。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Sync planner必须证明唯一结果
 Buildr MUST 提供纯 deterministic sync planner，比较 change delta、当前 canonical facts、active Change touches 与 OpenSpec executable/algorithm identity，并为每个 operation 返回 `safe`、`already-applied` 或 `blocked`、稳定 convergence/plan identity、before/expected digests、完整 expected content 和 decision reason。Planner MUST NOT 依赖持久化 contract baseline、Agent 或模型置信度判定确定性，且相同规范化输入 MUST 产生相同 plan。
@@ -28,19 +22,6 @@ Buildr MUST 提供纯 deterministic sync planner，比较 change delta、当前 
 - **WHEN** change、delta、canonical、active Change、executable 与 algorithm identity 均未变化
 - **THEN** planner MUST 产生相同 convergence identity、plan identity、operations 与 expected digests
 - **AND** planner MUST 不读取或写入阶段型 sidecar
-
-### Requirement: Deterministic operation必须使用保守白名单
-Planner MUST只自动接受能由结构与baseline证明唯一结果的完整ADDED、唯一REMOVED、无冲突RENAMED、baseline/current匹配的完整MODIFIED，以及identity唯一且内容完整的Scenario增改。未明确声明的Scenario缺失 MUST NOT被推断为删除。
-
-#### Scenario: 完整MODIFIED与baseline一致
-- **WHEN** delta提供完整Requirement，baseline中有唯一原内容且current仍等于baseline
-- **THEN** planner MUST生成完整替换operation并保留delta未要求删除之外的契约结构
-- **AND** expected digest MUST绑定完整结果
-
-#### Scenario: Partial MODIFIED省略既有Scenario
-- **WHEN** planner无法证明delta是完整Requirement或省略内容是否应保留
-- **THEN** 整批plan MUST blocked
-- **AND** result MUST列出受影响Requirement和需要Agent判断的最小上下文
 
 ### Requirement: Sync apply必须原子且identity-bound
 Buildr MUST 通过 canonical applier 只消费当前 convergence identity 对应且通过隔离验证的内存 plan；写入前 MUST 重验 change delta、OpenSpec executable identity 和全部 canonical before digests。任一 operation blocked 或任一输入变化时整批 MUST 零写入并重新观察/规划，不得修补旧 plan 或刷新旧 baseline。
@@ -73,27 +54,6 @@ Buildr MUST 通过 canonical applier 只消费当前 convergence identity 对应
 - **THEN** Task Finish MUST 接收 `recovery-unprovable` 并停止自动处理
 - **AND** Buildr MUST NOT 覆盖当前 canonical 内容
 
-### Requirement: Deterministic apply必须在提交前验证完整expected Project
-Buildr MUST 在替换真实canonical前，把本批次全部expected OpenSpec files投射到task-owned temporary Project surface，并使用receipt绑定的OpenSpec executable/version执行strict validation。只有expected surface验证通过且input/output digests仍匹配时才能原子提交；失败时整批MUST零写入并返回validation diagnostic与Agent fallback。
-
-#### Scenario: 新capability缺少严格结构
-- **WHEN** deterministic plan生成的新capability缺少`Purpose`、`Requirements`或其他当前strict validator要求的结构
-- **THEN** apply MUST在真实canonical写入前返回blocked
-- **AND** actual canonical files MUST保持不变
-
-#### Scenario: Expected surface严格验证通过
-- **WHEN**全部expected files在temporary Project中通过绑定版本的strict validation且receipt identity未变化
-- **THEN** apply MUST原子提交完整批次
-- **AND** result MUST记录expected digests、validator identity、duration和diagnostic reference
-
-### Requirement: 新capability Purpose必须来自明确authority
-Planner MUST只从proposal中对应New Capability的唯一非空描述取得新canonical Purpose authority，并 MUST NOT由Requirement正文、模型补写或默认模板推断语义。Purpose缺失、重复或不能形成可strict验证的expected surface时，整批plan MUST返回`semantic-resolution-required`。
-
-#### Scenario: Proposal描述不足以形成合法Purpose
-- **WHEN** new capability的proposal描述缺失、重复或导致expected strict validation失败
-- **THEN** planner或apply MUST返回blocked与最小修复引用
-- **AND** MUST NOT创建部分canonical capability
-
 ### Requirement: 持久化OpenSpec convergence receipt必须可移植
 Buildr MUST 将运行时 OpenSpec executable 定位与持久化 identity 分离，并且新的 deterministic convergence 正常路径 MUST 只写一份 `.buildr/convergence-receipt.json`。Receipt MUST 保存 portable executable identity、convergence/plan identity、algorithm version、delta identity、每个 canonical 文件的完整 before/expected content 与 digests、disposition、验证/应用/确认/归档结果和时间，MUST NOT 保存机器绝对路径或长期内部 stage transitions。
 
@@ -116,6 +76,8 @@ Buildr MUST 将运行时 OpenSpec executable 定位与持久化 identity 分离�
 - **WHEN** open-source candidate 或 contract fixture 检查 tracked active/archive convergence receipts
 - **THEN** verification MUST 拒绝新生成的机器绝对路径、旧阶段型 sidecar 和重复 identity
 - **AND** 单一 receipt MUST 保留足够事实证明 executable 与 canonical before/expected 结果
+
+## ADDED Requirements
 
 ### Requirement: Convergence observer必须根据真实文件恢复
 Buildr MUST 使用 convergence receipt 的 before/expected digests 观察 canonical 实际状态，并且只产生 `planned-not-applied`、`applied-and-matched`、`state-unknown` 或 `archived` disposition。Observer MUST NOT 根据上次声明的内部 stage 推断恢复动作。

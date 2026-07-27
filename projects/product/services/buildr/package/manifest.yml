@@ -379,7 +379,6 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-verification/references/project-verification-v1.md => skills/buildr/task-verification/references/project-verification-v1.md copy
   - package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
   - package/targets/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-finish/scripts/archive-rehearsal.mjs => skills/buildr/task-finish/scripts/archive-rehearsal.mjs copy
   - package/targets/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - package/targets/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
   - package/targets/workspace/skills/buildr/git-ops/SKILL.md => skills/buildr/git-ops/SKILL.md copy

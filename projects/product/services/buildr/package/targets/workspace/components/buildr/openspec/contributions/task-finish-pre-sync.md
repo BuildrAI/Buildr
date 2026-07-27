@@ -1,7 +1,5 @@
-在任何 canonical spec sync 前，从明确的 Buildr workspace target 和 Project registry 解析 `<workspace>`、`<project>` 与 `<change>`，不得从 shell cwd 猜测 root。当 Change 有 delta specs 时，把 `buildr openspec converge <change> --project <project> --target <workspace> --json` 作为单一产品 handler 提交给 finish executor。产品必须持有 archive rehearsal、pre-sync guard、deterministic plan/apply、strict validation 与 post-sync guard，并记录每阶段 timing、identity 和恢复边界。
+从明确的 Buildr workspace target 和 Project registry 解析 `<workspace>`、`<project>` 与 `<change>`，不得从 shell cwd 猜测 root。当 Change 有 delta specs 时，只把 `buildr openspec converge <change> --project <project> --target <workspace> --json` 提交给 finish executor。
 
-其中 pre-sync 阶段等价执行 `buildr openspec check <change> --stage pre-sync --project <project> --target <workspace> --json`，但由 orchestrator 持有调用和 receipt，不要求 Agent 单独编排。
+产品内部持有 pure plan、projected `validate --all --strict`、delta/executable/canonical before 条件重验、完整批次准备、原子替换、写后 digest/strict confirmation 与 `archive --skip-specs`。正常路径只写一个 convergence receipt；命令返回每次 execution 的 timing 与 command count，但不把内部步骤持久化为恢复 stage。
 
-只有 planner 返回全批 `safe|already-applied` 且 receipt identity 未变化时才能自动 apply；`semantic-resolution-required`、receipt stale、guard failure 或顺序不匹配时，停止后续动作并把最小上下文交给 Agent。Agent fallback 不得刷新事后 baseline；修复后从真实 checkpoint 恢复并重新经过 strict 与 post-sync。
-
-deterministic apply在替换任何canonical file前，必须把完整expected files投射到task-owned temporary Project surface，并使用receipt绑定的OpenSpec executable/version执行`validate --all --strict`。验证失败整批零写入，compact diagnostic返回validator identity、expected digests和最小修复引用；成功后才允许原子replace。
+对外结果固定为 `passed|blocked|recovery-unprovable`。Agent 只处理 `blocked` 的语义冲突或 `recovery-unprovable` 的人工事实核对。不得恢复 canonical、刷新 baseline、重建 pre-sync 或删除 sidecar来掩盖未知状态。

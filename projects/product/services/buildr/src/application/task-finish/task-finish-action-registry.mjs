@@ -34,12 +34,9 @@ export const FINISH_ACTIONS = Object.freeze([
   provider('current-knowledge', 'buildr.current-knowledge-maintenance@1', 'inspect', 'task-checkout', ['status', 'impacts', 'treeIdentity']),
   actionEntry({
     id: 'contract-convergence.openspec', step: 'contract-convergence', kind: 'product-executable',
-    effects: ['canonical-spec-sync', 'convergence-receipt'], requiredContext: ['cliInvocation', 'project'],
-    resultContract: {
-      outcome: ['passed', 'blocked'], processExit: 0,
-      blockedReasons: ['semantic-resolution-required', 'recovery-unprovable'],
-    },
-    evidenceProjection: { finishStep: 'contract-convergence', required: ['stages', 'receipt', 'change identity', 'recovery classification'] },
+    effects: ['canonical-spec-sync', 'archive-change', 'convergence-receipt'], requiredContext: ['cliInvocation', 'project'],
+    resultContract: { outcome: ['passed', 'blocked'], processExit: 0, blockedStatuses: ['blocked', 'recovery-unprovable'], blockedReasons: ['semantic-resolution-required', 'recovery-unprovable'] },
+    evidenceProjection: { finishStep: 'contract-convergence', required: ['status', 'receipt identity', 'disposition', 'duration', 'command count', 'recovery classification'] },
     fallbackPolicy: 'product-recovery-then-agent-semantic-or-evidence-repair',
     resolver: resolveOpenSpecConvergence,
   }),
@@ -54,7 +51,14 @@ export const FINISH_ACTIONS = Object.freeze([
   }),
   provider('formal-assurance', 'buildr.task-verification@2', 'verify-required', 'task-checkout', ['candidate identity', 'verification summary']),
   provider('asset-review', 'buildr.task-asset-review@3', 'finalize', 'task-checkout', ['review status', 'observation revision']),
-  provider('archive', null, 'archive', 'retained-checkout', ['archive path', 'post-sync result'], ['archive-change'], 'openspec-archive-change'),
+  actionEntry({
+    id: 'archive.legacy-provider', step: 'archive', kind: 'agent-provider', applicability: 'legacy-finish-run-only', executionSurface: 'retained-checkout',
+    legacy: true,
+    effects: ['archive-change'], resultContract: { outcome: ['passed', 'blocked'], evidence: ['archive path', 'post-sync result'] },
+    evidenceProjection: { finishStep: 'archive', required: ['archive path', 'post-sync result'] },
+    fallbackPolicy: 'legacy-run-provider-only',
+    providerHandoff: { capability: null, provider: 'openspec-archive-change', action: 'archive', requiredEvidence: ['archive path', 'post-sync result'] },
+  }),
   provider('integration-push', 'buildr.git-task-integration@1', 'integrate-and-push', 'retained-checkout', ['ref transition'], ['merge-or-fast-forward', 'push']),
   actionEntry({
     id: 'retained-convergence.impact-aware', step: 'retained-convergence', kind: 'product-executable', executionSurface: 'retained-checkout',
