@@ -175,16 +175,16 @@
       "title": "多任务并发开发与验证",
       "taskId": "concurrent-task-development-and-verification",
       "status": "已完成",
-      "phase": "全部 5 个批次已交付",
-      "taskProgress": "已完成 5 / 5 个批次",
-      "updatedAt": "2026-07-27 15:00",
+      "phase": "全部 6 个批次已交付",
+      "taskProgress": "已完成 6 / 6 个批次",
+      "updatedAt": "2026-07-27 13:14",
       "relativePath": "projects/product/openspec/knowledge/task-boards/2026-07-27-concurrent-task-development-and-verification.html"
     },
     "overview": {
       "purpose": "让多个任务在同一个 Buildr 自举 Workspace 中独立开发、独立验证，并在集成后安全收敛主工作区。",
-      "conclusion": "五个批次均已交付；双任务并发组合验收已经成为 Product Candidate 的必需门禁。",
-      "currentFocus": "本看板已完成，后续由 Candidate 持续回归任务入口、预览、共享资源、竞态和清理边界。",
-      "userAttention": "双任务组合验收和受影响验证均通过；完整 Candidate 仍仅被 dev 既有 managed-mutations 六处违规阻塞。",
+      "conclusion": "六个批次均已交付；双任务并发组合验收和 managed mutation 门禁已同时通过完整 Candidate。",
+      "currentFocus": "本看板已完成，后续由 Candidate 持续回归任务入口、预览、共享资源、竞态、清理和受管写入边界。",
+      "userAttention": "完整 Candidate 40 / 40 通过；此前 6 处 managed-mutations 阻塞已经清零。",
       "highlights": {
         "done": {
           "title": "已有基础",
@@ -196,7 +196,7 @@
         },
         "next": {
           "title": "持续保障",
-          "text": "后续完整 Candidate 自动执行双任务并发组合验收。"
+          "text": "后续完整 Candidate 自动执行双任务并发组合验收与 managed mutation 检查。"
         }
       },
       "blockers": [],
@@ -300,6 +300,15 @@
         "batchIds": [
           "concurrent-acceptance"
         ]
+      },
+      {
+        "id": "eliminate-unmanaged-production-mutations",
+        "status": "archived",
+        "path": "openspec/changes/archive/2026-07-27-eliminate-unmanaged-production-mutations/",
+        "summary": "OpenSpec 临时投射、清理和 Task Finish 诊断落盘已统一使用受审阅的文件系统入口；完整 Candidate 40 / 40 通过。",
+        "batchIds": [
+          "managed-mutation-cleanup"
+        ]
       }
     ],
     "progress": {
@@ -396,16 +405,34 @@
             "目标分支竞态可诊断和恢复",
             "只清理各自资源，主工作区最终健康"
           ]
+        },
+        {
+          "id": "managed-mutation-cleanup",
+          "status": "done",
+          "label": "已完成",
+          "title": "批次 6 · 清除完整 Candidate 阻塞",
+          "summary": "修复并发任务能力交付后暴露的 6 处未受管生产写入，让临时投射、清理和诊断落盘回到统一文件系统入口。",
+          "deliverable": "managed-mutations 与完整 Candidate 均通过；Change 已归档并推送 dev，本机 CLI 与 retained doctor 已收敛。",
+          "changeIds": [
+            "eliminate-unmanaged-production-mutations"
+          ],
+          "items": [
+            "application 层不再直接 copy、write 或 remove",
+            "基础设施明确登记 copyDirectory 与 removePath 审阅点",
+            "受影响验证 11 / 11 通过",
+            "完整 Candidate 40 / 40 通过",
+            "Change 归档、dev 推送、CLI 刷新和任务环境清理完成"
+          ]
         }
       ],
       "dependencyPool": [
         {
           "id": "planned-change-identities",
-          "status": "next",
-          "label": "按批次创建",
+          "status": "done",
+          "label": "已完成",
           "title": "尚未创建的 Change 身份",
-          "summary": "前两项优化方向均已创建并交付真实 OpenSpec Change；后续批次仍按进入条件创建或确认 Change。",
-          "entryCondition": "进入对应批次时先完成 task triage、任务环境创建和 OpenSpec proposal。",
+          "summary": "全部优化方向均已按真实需求创建并交付 OpenSpec Change，没有遗留的 planned identity。",
+          "entryCondition": "已满足：各批次均在进入实现前完成 task triage、任务环境和 OpenSpec proposal。",
           "unaffectedBatchIds": [
             "foundation",
             "workspace-convergence"
