@@ -175,16 +175,16 @@
       "title": "多任务并发开发与验证",
       "taskId": "concurrent-task-development-and-verification",
       "status": "进行中",
-      "phase": "批次 4 · 主工作区收敛检查",
-      "taskProgress": "已完成 3 / 5 个批次 · 2 个待优化批次",
-      "updatedAt": "2026-07-27 12:05",
+      "phase": "批次 5 · 双任务并发整体验收",
+      "taskProgress": "已完成 4 / 5 个批次 · 1 个待验收批次",
+      "updatedAt": "2026-07-27 14:20",
       "relativePath": "projects/product/openspec/knowledge/task-boards/2026-07-27-concurrent-task-development-and-verification.html"
     },
     "overview": {
       "purpose": "让多个任务在同一个 Buildr 自举 Workspace 中独立开发、独立验证，并在集成后安全收敛主工作区。",
       "conclusion": "保留一个整体任务看板，后续按职责拆成多个小 Change。",
-      "currentFocus": "批次 3 已交付；下一步确认 optimize-task-finish-convergence 的正式范围，收敛集成后的主工作区检查。",
-      "userAttention": "跨任务资源协调已通过受影响验证；完整 Candidate 仅被 dev 既有 managed-mutations 六处违规阻塞。",
+      "currentFocus": "批次 4 已交付；下一步用两个真实任务完成并发开发、预览、验证、集成和清理的整体验收。",
+      "userAttention": "主工作区收敛已通过受影响验证；完整 Candidate 仍仅被 dev 既有 managed-mutations 六处违规阻塞。",
       "highlights": {
         "done": {
           "title": "已有基础",
@@ -192,11 +192,11 @@
         },
         "current": {
           "title": "当前工作",
-          "text": "确认主工作区收敛范围，减少集成后的重复检查和路径猜测。"
+          "text": "使用两个真实任务验证入口、预览、共享资源和清理互不串扰。"
         },
         "next": {
           "title": "后续方向",
-          "text": "协调跨任务共享验证资源，再完成主工作区收敛检查和双任务验收。"
+          "text": "完成双任务并发整体验收后关闭本看板。"
         }
       },
       "blockers": [],
@@ -285,9 +285,9 @@
       },
       {
         "id": "optimize-task-finish-convergence",
-        "status": "active",
-        "path": "openspec/changes/optimize-task-finish-convergence/",
-        "summary": "真实存在但尚无 proposal、design、specs 和 tasks；是否承担主工作区收敛批次，需在创建 proposal 时确认。",
+        "status": "archived",
+        "path": "openspec/changes/archive/2026-07-27-optimize-task-finish-convergence/",
+        "summary": "Task Finish 已在集成推送后按 changed paths 收敛 retained Workspace：始终 doctor，仅在运行资产受影响时 sync，并把 CLI、Local App 影响交给现有入口安装动作。",
         "batchIds": [
           "workspace-convergence"
         ]
@@ -354,8 +354,8 @@
         },
         {
           "id": "workspace-convergence",
-          "status": "current",
-          "label": "当前批次",
+          "status": "done",
+          "label": "已完成",
           "title": "批次 4 · 主工作区收敛检查",
           "summary": "任务集成后，只在保留的主工作区检查真实运行资产和默认入口，不机械重复相同候选的完整验证。",
           "deliverable": "目标分支、运行资产、doctor、默认 CLI 和本机应用按实际影响收敛，并形成可核实结果。",
@@ -363,7 +363,7 @@
             "optimize-task-finish-convergence"
           ],
           "items": [
-            "先为现有 active Change 创建 proposal 并确认范围",
+            "已归档 optimize-task-finish-convergence",
             "集成内容等价性与目标分支检查",
             "从保留 checkout 执行必要的 sync 和 doctor",
             "按影响范围检查默认 CLI 或本机应用",
@@ -372,8 +372,8 @@
         },
         {
           "id": "concurrent-acceptance",
-          "status": "next",
-          "label": "最终验收",
+          "status": "current",
+          "label": "当前批次",
           "title": "批次 5 · 双任务并发整体验收",
           "summary": "使用两个真实任务同时开发、启动预览、执行验证和集成，验证完整流程没有入口、资源或清理串扰。",
           "deliverable": "形成任务级验证证据、共享资源协调证据、主工作区收敛结果和安全清理结果。",
@@ -407,11 +407,11 @@
         },
         {
           "id": "active-convergence-scope",
-          "status": "next",
-          "label": "需确认",
+          "status": "done",
+          "label": "已确认",
           "title": "optimize-task-finish-convergence 的正式范围",
-          "summary": "该 active Change 当前为空，名称与主工作区收敛接近，但尚没有 artifacts 证明其实际目标。",
-          "entryCondition": "创建 proposal 时确认它是否只承担集成后的主工作区收敛；若目标不同，重新分流。",
+          "summary": "该 Change 已确认只承担集成后的 retained Workspace 收敛，并已完成归档。",
+          "entryCondition": "已满足：proposal、design、spec、实现和验证证据完整。",
           "unaffectedBatchIds": [
             "foundation",
             "task-cli-invocation",

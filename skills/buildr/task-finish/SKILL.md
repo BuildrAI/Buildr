@@ -17,13 +17,11 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 先查询`actions --run <id> --json`，再用`run --action-context <json>`提交结构化事实。registry自动执行`product-executable`；按handoff处理`agent-provider-required`；只补`input-required`。仅`agent-reasoning-required`需要Agent推理。显式plans仅兼容/恢复并标记`caller-supplied`。
 
-identity变化时提交`buildr.task-finish-recovery/v1`的before/after identities、fingerprints与transition proof；registry覆盖时不重复提供plans。未知变化fail closed，runtime-only须有digest/path。formal assurance失败报告主缺陷、repair scope与重验成本；只有授权绑定failure identity且changed paths均在allowed scopes内，才能re-verification。
+identity变化用 recovery manifest 一次提交 before/after identity、fingerprint 与 proof；未知变化 fail closed。formal assurance 失败先报告主缺陷，只有匹配 failure identity 与 allowed scopes 的 repair authorization 才能修复重验。
 
-OpenSpec convergence 使用 Component 贡献的产品 orchestrator；返回 `semantic-resolution-required` 时才由 Agent 处理最小语义上下文。Skill 不直接编辑 canonical 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 持有；identity 匹配的 evidence 不重跑。
+OpenSpec convergence 由产品 orchestrator 执行；只有 `semantic-resolution-required` 交给 Agent。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 持有。每步提交非空 fingerprint、effects 与 evidence；push 保留 expected/observed target ref。
 
-每步提交非空 fingerprint、effects 与 evidence；自动化不绕过状态机证据。
-
-push 使用 `--ref-transition` 提交 before/after expected/observed refs，保留 expected/observed target ref 兼容语义；自身成功推进和远端已等于 candidate 是成功，只有 push 前外部漂移才是 `target-race`。
+integration-push 后提供 retained root、retained 绝对 `cliInvocation`、Agent 和完整 `changedPaths`。`retained-convergence` 始终 doctor，仅在 runtime 资产受影响时 sync；CLI/Local App impact 才交给 `runtime-install`，否则 not-applicable。不得从 cwd 或 task checkout 猜输入，不重跑 Candidate；失败只恢复本步骤及下游。
 
 <!-- buildr:skill-contributions pre-verification -->
 
@@ -45,4 +43,4 @@ asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化�
 
 cleanup 先在task environment内执行 `cleanup-prepare`，把prepared completion receipt写入canonical Workspace；实际删除task-owned process、worktree和branch后，从retained checkout执行 `cleanup-finalize`。prepare不得表述为complete，cleanup失败不得重做远端动作。
 
-完成后报告验证、交付、runtime、清理、receipt与风险；分开计量verification、repair、re-verification、closeout-only和end-to-end。不可观察间隔不推断token；compact先给primary failure/repair decision。
+完成后报告验证、交付、retained convergence、runtime、清理、receipt与风险；说明 sync、CLI/Local App 的 executed/not-applicable，分开计量verification、repair、re-verification、closeout-only和end-to-end。不可观察间隔不推断token。

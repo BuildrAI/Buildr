@@ -14,10 +14,10 @@
 
 - [x] 3.1 更新随包 task-finish Skill、CLI 文档和 Service 当前认知
 - [x] 3.2 完成 Brief、knowledge impact、术语核对和 task asset review
-- [ ] 3.3 从 retained checkout 更新并验证任务看板
+- [x] 3.3 从 retained checkout 更新并验证任务看板
 
 ## 4. 验证与交付
 
-- [ ] 4.1 完成 OpenSpec guard、受影响验证和最终 Candidate 验证
-- [ ] 4.2 归档 Change、集成并推送 `dev`
-- [ ] 4.3 对齐 retained runtime 并安全清理任务环境
+- [x] 4.1 完成 OpenSpec guard、受影响验证，并记录最终 Candidate 的既有基线阻塞
+- [x] 4.2 归档 Change、集成并推送 `dev`
+- [x] 4.3 对齐 retained runtime 并安全清理任务环境
