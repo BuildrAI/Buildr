@@ -4,6 +4,7 @@
 
 定义 Buildr 标准规则资产与 Agent runtime 投射产物的边界，以及 MVP 以 workspace runtime 为主路径的行为。
 ## Requirements
+
 ### Requirement: Buildr 标准规则资产独立于 Agent runtime
 Buildr MVP MUST 将 `AGENTS.md` 作为 Buildr 标准规则资产，并将 Agent runtime 目录视为可重建投射产物。
 
@@ -448,12 +449,28 @@ Buildr MUST 在写入结束后确认本次命令负责的运行时状态已经�
 - **THEN** 命令 MUST 返回失败并给出可重新执行的修复动作
 
 ### Requirement: Buildr Core 要求简明表达
-Buildr required Core MUST 要求 Agent 面向用户时优先使用常用、直接和简练的语言，避免使用不必要的专业术语。
+Buildr required Core MUST 要求 Agent 面向用户说明产品设计、实现、问题、方案、进度或结果时，使用直接、简练的中文，并按统一规则表达中英文专业术语与必须精确对应实现的文本。
 
 #### Scenario: Agent 说明方案或结果
-- **WHEN** Agent 向用户说明问题、方案、进度或结果
-- **THEN** Agent MUST 优先使用用户容易理解的简练语言
-- **AND** 只有准确表达所必需时才使用专业术语，并在需要时解释
+- **WHEN** Agent 向用户说明产品设计、实现、问题、方案、进度或结果
+- **THEN** Agent MUST 优先使用用户容易理解的直接、简练中文
+- **AND** Agent MUST 只在准确表达所必需时使用专业术语
+
+#### Scenario: 已有中文名称的专业术语首次出现
+- **WHEN** 面向用户的专业术语已有正式或稳定的中文名称并在当前描述范围内首次出现
+- **THEN** Agent MUST 使用“中文（English Term）”形式
+- **AND** 后续内容 MUST 优先使用中文名称
+- **AND** 同一描述范围内 MUST 保持术语译法一致
+
+#### Scenario: 专业术语没有稳定中文译名
+- **WHEN** 面向用户的专业术语没有稳定中文译名
+- **THEN** Agent MAY 保留英文术语
+- **AND** Agent MUST 在该术语首次出现时说明其含义
+
+#### Scenario: 文本必须精确对应实现
+- **WHEN** 命令、代码标识、字段名、接口名、文件路径、错误原文或其他文本必须与实现精确对应
+- **THEN** Agent MUST 保留其英文原文
+- **AND** Agent SHOULD 在有助于用户理解时补充简明中文说明
 
 ### Requirement: Buildr Core 要求 Agent 引导下一步
 Buildr required Core MUST 要求 Agent 在完成当前工作、到达阶段节点或遇到阻塞时，向用户说明明确、可执行的下一步。
