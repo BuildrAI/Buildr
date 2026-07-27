@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "eliminate-unmanaged-production-mutations",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-f0940433b893eac7b68787e9e7214714c78e9d241f4f3f8bd8581aad727dfaf9",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "managed-data-integrity",
+      "title": "生产 mutation 只能使用受审阅写入入口",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 生产 mutation 只能使用受审阅写入入口\nBuildr MUST 通过产品验证防止新的生产命令绕过安全路径、atomic writer 和 transaction primitives 执行未审阅的直接删除、复制或写入。\n\n#### Scenario: 验证发现直接危险写入\n- **WHEN** package check 扫描到生产 mutation 路径新增未列入显式 allowlist 的直接 `rm`、递归 copy 或非原子 write\n- **THEN** 产品验证 MUST 失败\n- **AND** finding MUST 指向文件和操作类型\n"
+    }
+  ]
+}

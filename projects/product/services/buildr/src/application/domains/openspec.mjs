@@ -24,6 +24,10 @@ export function registerDomainsOpenspec(runtime) {
   const assertName = (...args) => runtime.assertName(...args);
   const optionValue = (...args) => runtime.optionValue(...args);
   const atomicWriteJson = (...args) => runtime.atomicWriteJson(...args);
+  const atomicWriteFile = (...args) => runtime.atomicWriteFile(...args);
+  const ensureDirectory = (...args) => runtime.ensureDirectory(...args);
+  const copyDirectory = (...args) => runtime.copyDirectory(...args);
+  const removePath = (...args) => runtime.removePath(...args);
   const hasFlag = (...args) => runtime.hasFlag(...args);
   const toPosixRelative = (...args) => runtime.toPosixRelative(...args);
   const existsDirectory = (...args) => runtime.existsDirectory(...args);
@@ -652,12 +656,11 @@ export function registerDomainsOpenspec(runtime) {
       const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-expected-'));
       try {
         const temporaryProject = path.join(temporaryRoot, 'project');
-        fs.mkdirSync(temporaryProject, { recursive: true });
-        fs.cpSync(path.join(context.projectRoot, 'openspec'), path.join(temporaryProject, 'openspec'), { recursive: true });
+        ensureDirectory(temporaryProject);
+        copyDirectory(path.join(context.projectRoot, 'openspec'), path.join(temporaryProject, 'openspec'));
         for (const item of files) {
           const target = path.join(temporaryProject, item.path);
-          fs.mkdirSync(path.dirname(target), { recursive: true });
-          fs.writeFileSync(target, item.content);
+          atomicWriteFile(target, item.content);
         }
         const declaredExecutable = optionValue(args, '--openspec-executable');
         const executableLookup = declaredExecutable ? null : spawnSync('which', ['openspec'], { encoding: 'utf8' });
@@ -675,7 +678,7 @@ export function registerDomainsOpenspec(runtime) {
           expectedDigests: Object.fromEntries(files.map((item) => [item.path, item.digest])),
           diagnostic: { bytes: Buffer.byteLength(output), sha256: openSpecContractHash(output), preview: output.slice(0, 2000), truncated: output.length > 2000 },
         };
-      } finally { fs.rmSync(temporaryRoot, { recursive: true, force: true }); }
+      } finally { removePath(temporaryRoot); }
     } });
     const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecSyncApply, { change: context.change, project: context.project, ...result });
     if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
@@ -750,14 +753,14 @@ export function registerDomainsOpenspec(runtime) {
         const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-converge-'));
         try {
           const isolatedProject = path.join(temporaryRoot, 'project');
-          fs.mkdirSync(isolatedProject, { recursive: true });
-          fs.cpSync(path.join(context.projectRoot, 'openspec'), path.join(isolatedProject, 'openspec'), { recursive: true });
+          ensureDirectory(isolatedProject);
+          copyDirectory(path.join(context.projectRoot, 'openspec'), path.join(isolatedProject, 'openspec'));
           const rehearsal = spawnSync(openspecExecutable, ['archive', context.change, '--yes'], { cwd: isolatedProject, encoding: 'utf8' });
           const passed = rehearsal.status === 0;
           record('archive-rehearsal', stageStarted, passed ? 'passed' : 'blocked', { exitCode: rehearsal.status });
           if (!passed) { const error = new Error(`OpenSpec archive rehearsal failed: ${(rehearsal.stderr || rehearsal.stdout).trim()}`); error.stage = 'archive-rehearsal'; throw error; }
           advanceReceipt('archive-rehearsal');
-        } finally { fs.rmSync(temporaryRoot, { recursive: true, force: true }); }
+        } finally { removePath(temporaryRoot); }
       } else reuse('archive-rehearsal');
       if (!reached('pre-sync')) { runStage('pre-sync', ['openspec', 'check', ...base, '--stage', 'pre-sync']); advanceReceipt('pre-sync'); } else reuse('pre-sync');
       if (!reached('sync-plan')) { const plan = runStage('sync-plan', ['openspec', 'sync-plan', ...base], (payload) => payload.status !== 'blocked'); advanceReceipt('sync-plan', { planIdentity: plan.identity }); } else reuse('sync-plan');

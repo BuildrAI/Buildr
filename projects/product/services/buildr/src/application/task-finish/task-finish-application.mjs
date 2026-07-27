@@ -1,7 +1,6 @@
 import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
 import { listFinishActions, resolveFinishAction } from './task-finish-action-registry.mjs';
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 
 function values(args, name) {
@@ -26,6 +25,7 @@ function fingerprints(args) {
 export function registerTaskFinishApplication(runtime) {
   const optionValue = (...args) => runtime.optionValue(...args);
   const withResolvedTarget = (...args) => runtime.withResolvedTarget(...args);
+  const atomicWriteFile = (...args) => runtime.atomicWriteFile(...args);
 
   function taskFinish(action, args) {
     const command = withResolvedTarget(args);
@@ -76,9 +76,8 @@ export function registerTaskFinishApplication(runtime) {
       const serialized = JSON.stringify(payload, null, 2);
       if (full && serialized.length > 32_768) {
         const directory = path.join(root, '.buildr', 'task-finish', 'diagnostics');
-        fs.mkdirSync(directory, { recursive: true });
         const file = path.join(directory, `${result.runId}-full.json`);
-        fs.writeFileSync(file, `${serialized}\n`);
+        atomicWriteFile(file, `${serialized}\n`);
         payload = { ...compactFinishCheckpoint(result), diagnostics: { path: file, sha256: crypto.createHash('sha256').update(serialized).digest('hex'), bytes: Buffer.byteLength(serialized), preview: serialized.slice(0, 2000), truncated: true } };
       }
       console.log(JSON.stringify(payload, null, 2));

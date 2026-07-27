@@ -29,7 +29,7 @@ for (const entry of packageManifest.files.filter((file) => file === 'src/' || fi
 productionFiles.sort();
 const allowed = new Map([
   ['src/infrastructure/filesystem/index.mjs', new Set([
-    'atomicWriteFile', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
+    'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
   ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
