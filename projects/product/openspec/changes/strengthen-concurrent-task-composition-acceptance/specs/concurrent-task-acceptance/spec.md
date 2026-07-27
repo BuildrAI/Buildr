@@ -1,10 +1,4 @@
-# concurrent-task-acceptance Specification
-
-## Purpose
-
-定义两个任务并发开发与验证的组合验收、结构化证据和隔离边界，确保入口、预览、共享验证资源、目标分支竞态及清理在同一场景中可重复核验。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 双任务并发组合验收
 Buildr MUST 提供可重复的双任务并发组合验收，在同一临时 Workspace 中使用两个真实 task environment 覆盖 receipt 绑定 CLI 的实际执行、包含嵌套独立仓库的完整 repository membership、Local App 预览并发启动、验证资源协调、目标分支竞态、可恢复收尾和产品化归属清理，并 MUST 输出可归因到两个任务的结构化证据。

@@ -18,6 +18,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr project create <code> [--target <dir>] [--name <text>] [--description <text>] [--repo <git-url>] [--remote <name>] [--integration-branch <branch>]');
     console.error('  buildr service create <project>/<service> <repo-ref> [--target <dir>] [--name <text>] [--description <text>] [--type <type>] [--remote <name>] [--integration-branch <branch>] [--json]');
     console.error(`  buildr worktree create <task-id> --agent <${runtimeIds}> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]`);
+    console.error(`  buildr worktree cleanup <task-id> --agent <${runtimeIds}> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]`);
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
@@ -73,6 +74,7 @@ export function registerCommandHelp(runtime) {
       '  project create       创建或登记 Project。',
       '  service create       创建或登记 Service。',
       '  worktree create      创建或复用单仓或多仓 canonical task environment。',
+      '  worktree cleanup     按 receipt、owner 和 integrated ref 安全清理本地任务环境。',
       '  worktree inspect     检查 task environment 的仓库集合、身份和隔离边界。',
       '  worktree context     判断当前路径是否属于可执行的 task environment。',
       '  worktree adopt       核验并记录 Agent session 对 task environment runtime 的采用证据。',
@@ -186,6 +188,13 @@ export function registerCommandHelp(runtime) {
       '复用同一 repository set/branch 的既有环境时返回 reused，不重复 doctor 或 sync。',
       'working tree/index 可隔离；Git objects/refs 仍共享。外部依赖沿用 Project 既有环境；只有多个任务会修改同一共享状态时才需要既有租户、账号、数据前缀、串行化或显式授权边界。',
       '该命令不承担任务理解、OpenSpec 选择、merge、rebase、push 或 cleanup policy。',
+    ],
+    'worktree cleanup': [
+      `Usage: buildr worktree cleanup <task-id> --agent <${SUPPORTED_AGENT_IDS.join('|')}> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]`,
+      '',
+      '根据 task environment receipt 在写入前统一核对 owner、全部成员 checkout/branch/clean identity，以及每仓任务 HEAD 已被声明的 integrated ref 包含。',
+      '每个 receipt repository selector 必须恰好提供一个 --integrated-ref；通过后按 nested-first 删除本地 worktree，再以精确旧 HEAD 删除已集成的本地任务分支和 receipts。',
+      '该命令不停止 task-owned 进程、不删除远端分支、不强制删除 dirty checkout，也不授权放弃未集成提交；调用前必须先完成资源停止与集成。',
     ],
     'worktree inspect': [
       'Usage: buildr worktree inspect <task-id> [--target <workspace>] [--json]',
@@ -380,6 +389,7 @@ export function registerCommandHelp(runtime) {
     if (domain === 'project' && action === 'create') return 'project create';
     if (domain === 'service' && action === 'create') return 'service create';
     if (domain === 'worktree' && action === 'create') return 'worktree create';
+    if (domain === 'worktree' && action === 'cleanup') return 'worktree cleanup';
     if (domain === 'worktree' && action === 'inspect') return 'worktree inspect';
     if (domain === 'worktree' && action === 'context') return 'worktree context';
     if (domain === 'runtime' && action === 'list') return 'runtime list';

@@ -129,6 +129,30 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(legacyContext.executionReady, true);
   });
 
+  test('cleanup validates owner and integrated refs before removing the receipt-bound environment', () => {
+    const created = runBuildr(['worktree', 'create', 'cleanup-safe', '--agent', 'codex', '--branch', 'codex/cleanup-safe', '--start-point', 'main', '--target', workspace, '--json']);
+    assert.equal(created.ready, true);
+
+    const wrongOwner = runBuildr(['worktree', 'cleanup', 'cleanup-safe', '--agent', 'claude-code', '--integrated-ref', 'workspace=main', '--target', workspace, '--json'], 1);
+    assert.equal(wrongOwner.blocked.code, 'worktree.cleanup_owner_mismatch');
+    assert.equal(fs.existsSync(created.environment.root), true);
+
+    const missingRef = runBuildr(['worktree', 'cleanup', 'cleanup-safe', '--agent', 'codex', '--target', workspace, '--json'], 1);
+    assert.equal(missingRef.blocked.code, 'worktree.cleanup_integrated_refs_incomplete');
+    assert.equal(fs.existsSync(created.environment.root), true);
+
+    const cleaned = runBuildr(['worktree', 'cleanup', 'cleanup-safe', '--agent', 'codex', '--integrated-ref', 'workspace=main', '--target', workspace, '--json']);
+    assert.equal(cleaned.schemaVersion, 'buildr.worktree-cleanup/v1');
+    assert.equal(cleaned.status, 'removed');
+    assert.equal(cleaned.repositories[0].status, 'removed');
+    assert.equal(cleaned.branches[0].status, 'removed');
+    assert.equal(cleaned.receipts.environment, 'removed');
+    assert.equal(fs.existsSync(created.environment.root), false);
+    assert.equal(spawnSync('git', ['-C', workspace, 'show-ref', '--verify', '--quiet', 'refs/heads/codex/cleanup-safe']).status, 1);
+    const inspected = runBuildr(['worktree', 'inspect', 'cleanup-safe', '--target', workspace, '--json'], 1);
+    assert.equal(inspected.blocked.code, 'worktree.receipt_missing');
+  });
+
   test('creates one environment with nested Project and Service repositories and resolves context', (t) => {
     const sourceBase = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-worktree-multi-source-'));
     t.after(() => fs.rmSync(sourceBase, { recursive: true, force: true }));

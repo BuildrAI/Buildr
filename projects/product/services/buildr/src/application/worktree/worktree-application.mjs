@@ -122,6 +122,7 @@ export function registerWorktreeApplication(runtime) {
   const isSupportedAgent = (...args) => runtime.isSupportedAgent(...args);
   const productRoot = (...args) => runtime.productRoot(...args);
   const atomicWriteJson = (...args) => runtime.atomicWriteJson(...args);
+  const removePath = (...args) => runtime.removePath(...args);
 
   function git(cwd, args, options = {}) {
     return spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', ...options });
@@ -791,6 +792,131 @@ export function registerWorktreeApplication(runtime) {
     return printContext(contextFromReceipt(receipt), json, false);
   }
 
+  function printCleanup(result, json) {
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.worktreeCleanup, result);
+    if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else if (result.status === 'removed') console.log(`Task environment removed: ${result.environmentRoot}`);
+    else console.error(`Task environment cleanup blocked: ${result.blocked?.message || 'unknown reason'}`);
+    if (result.status !== 'removed') process.exitCode = 1;
+    return payload;
+  }
+
+  function cleanupBlocked({ workspaceRoot, taskId, receipt = null, code, message, repositories = [], branches = [] }, json) {
+    return printCleanup({
+      taskId,
+      owner: receipt?.agent || null,
+      workspaceRoot,
+      environmentRoot: receipt?.environmentRoot || null,
+      status: 'blocked',
+      repositories,
+      branches,
+      receipts: { environment: 'retained', adoption: 'retained' },
+      blocked: { code, message },
+      nextActions: [message],
+    }, json);
+  }
+
+  function cleanupTaskEnvironment(args) {
+    const json = args.includes('--json');
+    const allowed = new Set(['--agent', '--target', '--integrated-ref', '--json']);
+    assertNoUnknownOptions(args, allowed, new Set(['--json']));
+    const positions = positionalArgs(args);
+    if (positions.length !== 1) throw new Error('worktree cleanup requires exactly one <task-id>.');
+    const taskId = positions[0];
+    if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
+    const workspaceRoot = fs.realpathSync(path.resolve(optionValue(args, '--target', process.cwd())));
+    const repository = gitText(workspaceRoot, ['rev-parse', '--show-toplevel']);
+    if (!repository || path.resolve(repository) !== workspaceRoot) throw new Error('worktree cleanup requires --target to be the retained Workspace root Git repository.');
+    const receipt = readReceipt(workspaceRoot, taskId);
+    if (!receipt) return cleanupBlocked({ workspaceRoot, taskId, code: 'worktree.cleanup_receipt_missing', message: 'Task environment receipt was not found.' }, json);
+    const agent = optionValue(args, '--agent', null);
+    if (!agent || !isSupportedAgent(agent)) throw new Error('worktree cleanup requires a supported --agent.');
+    if (agent !== receipt.agent) return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_owner_mismatch', message: `Cleanup Agent does not match environment owner: ${agent}.` }, json);
+    if (path.resolve(receipt.workspaceRoot) !== workspaceRoot || path.resolve(receipt.environmentRoot) !== path.join(workspaceRoot, '.worktrees', taskId)) {
+      return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_receipt_identity_mismatch', message: 'Task environment receipt does not match the canonical Workspace or environment path.' }, json);
+    }
+
+    const integratedRefs = new Map();
+    try {
+      for (const value of optionValues(args, '--integrated-ref')) {
+        const separator = value.indexOf('=');
+        if (separator < 1 || separator === value.length - 1) throw new Error('--integrated-ref must use <selector>=<ref>.');
+        const selector = value.slice(0, separator);
+        if (integratedRefs.has(selector)) throw new Error(`Duplicate integrated ref selector: ${selector}`);
+        integratedRefs.set(selector, value.slice(separator + 1));
+      }
+    } catch (error) {
+      return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_integrated_refs_invalid', message: error.message }, json);
+    }
+    const selectors = receipt.repositories.map((item) => item.selector).sort();
+    const suppliedSelectors = [...integratedRefs.keys()].sort();
+    if (JSON.stringify(selectors) !== JSON.stringify(suppliedSelectors)) {
+      return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_integrated_refs_incomplete', message: `Integrated refs must exactly cover receipt selectors: ${selectors.join(', ')}.` }, json);
+    }
+
+    const repositoryEvidence = [];
+    for (const record of receipt.repositories) {
+      if (!fs.existsSync(record.checkoutPath)) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_checkout_missing', message: `Task checkout is missing: ${record.selector}.`, repositories: repositoryEvidence }, json);
+      }
+      const identity = worktreeIdentity(record.checkoutPath);
+      if (!identity || identity.repository !== path.resolve(record.checkoutPath) || identity.branch !== record.branch) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_identity_mismatch', message: `Task checkout identity does not match receipt: ${record.selector}.`, repositories: repositoryEvidence }, json);
+      }
+      if (!identity.clean) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_dirty', message: `Task checkout is dirty: ${record.selector}.`, repositories: [...repositoryEvidence, { selector: record.selector, status: 'blocked', head: identity.head, branch: identity.branch, clean: false }] }, json);
+      }
+      const integratedRef = integratedRefs.get(record.selector);
+      const target = gitText(record.sourceRepository, ['rev-parse', '--verify', `${integratedRef}^{commit}`]);
+      if (!target) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_integrated_ref_missing', message: `Integrated ref is unavailable for ${record.selector}: ${integratedRef}.`, repositories: repositoryEvidence }, json);
+      }
+      if (git(record.sourceRepository, ['merge-base', '--is-ancestor', identity.head, target]).status !== 0) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_not_integrated', message: `Task HEAD is not contained by ${record.selector} integrated ref ${integratedRef}.`, repositories: [...repositoryEvidence, { selector: record.selector, status: 'blocked', head: identity.head, branch: identity.branch, clean: true, integratedRef, integratedHead: target }] }, json);
+      }
+      const registered = parseWorktreeList(git(record.sourceRepository, ['worktree', 'list', '--porcelain']).stdout)
+        .find((entry) => path.resolve(entry.path) === path.resolve(record.checkoutPath));
+      if (!registered || registered.branch !== record.branch) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_registration_mismatch', message: `Git worktree registration does not match receipt: ${record.selector}.`, repositories: repositoryEvidence }, json);
+      }
+      repositoryEvidence.push({ selector: record.selector, status: 'ready', checkoutPath: record.checkoutPath, branch: record.branch, head: identity.head, clean: true, integratedRef, integratedHead: target });
+    }
+
+    const removedRepositories = [];
+    const removedBranches = [];
+    for (const evidence of [...repositoryEvidence].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
+      const record = receipt.repositories.find((item) => item.selector === evidence.selector);
+      const removed = git(record.sourceRepository, ['worktree', 'remove', record.checkoutPath]);
+      if (removed.status !== 0) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_remove_failed', message: `Failed to remove ${record.selector} worktree: ${(removed.stderr || removed.stdout).trim()}`, repositories: [...removedRepositories, { ...evidence, status: 'remove-failed' }], branches: removedBranches }, json);
+      }
+      removedRepositories.push({ ...evidence, status: 'removed' });
+      const deleted = git(record.sourceRepository, ['update-ref', '-d', `refs/heads/${record.branch}`, evidence.head]);
+      if (deleted.status !== 0) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_branch_remove_failed', message: `Failed to remove ${record.selector} local branch: ${(deleted.stderr || deleted.stdout).trim()}`, repositories: removedRepositories, branches: [...removedBranches, { selector: record.selector, branch: record.branch, status: 'remove-failed' }] }, json);
+      }
+      removedBranches.push({ selector: record.selector, branch: record.branch, head: evidence.head, status: 'removed' });
+    }
+
+    const adoptionFile = adoptionReceiptPath(workspaceRoot, taskId);
+    const environmentFile = receiptPath(workspaceRoot, taskId);
+    const adoptionStatus = fs.existsSync(adoptionFile) ? 'removed' : 'not-present';
+    if (fs.existsSync(adoptionFile)) removePath(adoptionFile);
+    removePath(environmentFile);
+    return printCleanup({
+      taskId,
+      owner: receipt.agent,
+      workspaceRoot,
+      environmentRoot: receipt.environmentRoot,
+      status: 'removed',
+      repositories: removedRepositories,
+      branches: removedBranches,
+      receipts: { environment: 'removed', adoption: adoptionStatus },
+      blocked: null,
+      nextActions: [],
+    }, json);
+  }
+
   function adoptTaskEnvironment(args) {
     const json = args.includes('--json');
     const allowed = new Set(['--agent', '--target', '--session-root', '--session-handle', '--root-evidence-source', '--mode', '--started-at', '--json']);
@@ -864,6 +990,7 @@ export function registerWorktreeApplication(runtime) {
 
   Object.assign(runtime, {
     createTaskWorktree,
+    cleanupTaskEnvironment,
     inspectTaskEnvironment,
     taskEnvironmentContext,
     adoptTaskEnvironment,

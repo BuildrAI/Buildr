@@ -149,9 +149,9 @@ export const verificationSteps = Object.freeze([
     'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-convergence.mjs',
   ], budgetMs: 15000, schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], inputs: [
-    'test/verification/concurrency/**', 'test/fixtures/verification-resource-worker.mjs',
+    'test/verification/concurrency/**', 'test/fixtures/verification-resource-worker.mjs', 'test/helpers/child-process-supervisor.mjs',
     'src/application/worktree/**', 'src/application/task-finish/**', 'src/interfaces/local-app/runtime/preview-manager.mjs',
-    'openspec/specs/concurrent-task-acceptance/**',
+    'openspec/specs/concurrent-task-acceptance/**', 'openspec/specs/task-environments/**',
   ], budgetMs: 30000, schedulingCostMs: 20000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
 
   step({ id: 'candidate-tarball', name: 'candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate'], inputs: ['package.json', 'package-lock.json', 'buildr', 'bin/buildr.mjs', 'scripts/install-buildr-cli', 'scripts/uninstall-buildr-cli'] }),
