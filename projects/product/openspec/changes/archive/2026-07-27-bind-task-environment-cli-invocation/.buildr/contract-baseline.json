@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "bind-task-environment-cli-invocation",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-da1c0f58303236d48c5ba0f9702f941ef850528bafa79ad7fe7b49c75be40a5d",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-environments",
+      "title": "Task environment 必须核验 execution binding",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task environment 必须核验 execution binding\nBuildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、environment-bound CLI/runtime projection identity 和明确 target/workdir 判断 `executionReady`。自举 Workspace MUST 使用 environment 内对应的产品 CLI；没有产品源码成员的普通 Workspace MAY 使用 receipt 显式声明的 external-product CLI。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。\n\n#### Scenario: canonical workspace 对话操作 task environment\n- **WHEN** Agent session 从 canonical Workspace 启动，并在 create 后使用 task environment 的明确 target、成员 checkout workdir 和 environment-local CLI\n- **THEN** context MUST 在 environment、repository、CLI 与 runtime identity 匹配时返回 `executionReady: true`\n- **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效\n\n#### Scenario: 普通 Workspace 使用外部产品 CLI\n- **WHEN** Buildr 产品源码不属于目标 Workspace repository set，receipt 已声明 external-product CLI identity，且命令使用 environment target/workdir\n- **THEN** context MAY 返回 `executionReady: true`\n- **AND** result MUST 将 CLI source kind 与 `checkoutLocal: false` 明确披露，不得伪装为 environment-local CLI\n\n#### Scenario: 请求路径或 CLI 越界\n- **WHEN** target/workdir 不属于 allowed execution roots，或当前 CLI/runtime projection identity 不匹配 receipt 声明的 environment-bound source\n- **THEN** context MUST 返回 blocked 并 fail closed\n- **AND** MUST 报告不匹配的 target、workdir、membership、CLI source kind 或 identity\n\n#### Scenario: runtime identity 漂移\n- **WHEN** environment identity、repository plan 或 runtime projection identity 不再匹配 receipt\n- **THEN** context MUST 返回 `stale` 或 `blocked`\n- **AND** MUST 要求重新收敛 environment/runtime，而不是创建另一份纯 checkout\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须持有版本化 action registry",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须持有版本化 action registry\nBuildr MUST 为全部标准 finish step 登记稳定 action entry，并为每个 entry 声明执行种类、适用条件、执行 surface、授权边界、effects、结果契约、evidence projection 与 fallback policy。Registry MUST 是 Task Finish application 的产品事实，不得要求 Agent 从 Skill 文本或历史命令猜测 execution plan。\n\n#### Scenario: 标准步骤均有登记动作\n- **WHEN** 产品加载当前 finish plan\n- **THEN** 每个 `FINISH_STEPS` identity MUST 至少解析到一个唯一 action entry\n- **AND** contract test MUST 在新增 step 未登记时失败\n\n#### Scenario: 登记动作生成执行计划\n- **WHEN** 当前 step 匹配 `product-executable` entry 且所需 context 完整\n- **THEN** resolver MUST 生成固定 command source、cwd、argv、effect、assertion、evidence 和 fingerprint\n- **AND** 调用方 MUST NOT 需要提供 `--execution-plans` 或逐 step fingerprint\n"
+    }
+  ]
+}

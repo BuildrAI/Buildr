@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 
 export const FINISH_ACTION_REGISTRY_SCHEMA = 'buildr.task-finish-action-registry/v1';
@@ -27,7 +26,7 @@ function actionEntry(entry) {
 export const FINISH_ACTIONS = Object.freeze([
   actionEntry({
     id: 'context.verify-environment', step: 'context', kind: 'product-executable',
-    effects: [], requiredContext: ['cliSource'],
+    effects: [], requiredContext: ['cliInvocation'],
     resultContract: { outcome: ['passed', 'blocked'], jsonAssertion: { path: 'executionReady', equals: true } },
     evidenceProjection: { finishStep: 'context', required: ['execution binding', 'CLI identity', 'runtime identity'] },
     resolver: resolveContext,
@@ -35,7 +34,7 @@ export const FINISH_ACTIONS = Object.freeze([
   provider('current-knowledge', 'buildr.current-knowledge-maintenance@1', 'inspect', 'task-checkout', ['status', 'impacts', 'treeIdentity']),
   actionEntry({
     id: 'contract-convergence.openspec', step: 'contract-convergence', kind: 'product-executable',
-    effects: ['canonical-spec-sync', 'convergence-receipt'], requiredContext: ['cliSource', 'project'],
+    effects: ['canonical-spec-sync', 'convergence-receipt'], requiredContext: ['cliInvocation', 'project'],
     resultContract: { outcome: ['passed', 'blocked'], processExit: 0 },
     evidenceProjection: { finishStep: 'contract-convergence', required: ['stages', 'receipt', 'change identity'] },
     resolver: resolveOpenSpecConvergence,
@@ -44,7 +43,7 @@ export const FINISH_ACTIONS = Object.freeze([
   provider('target-convergence', 'buildr.git-task-integration@1', 'converge-target', 'task-checkout', ['target observation', 'candidate identity'], ['fetch', 'rebase']),
   actionEntry({
     id: 'runtime-convergence.doctor-sync', step: 'runtime-convergence', kind: 'product-executable',
-    effects: ['runtime-projection-sync'], requiredContext: ['cliSource', 'agent'],
+    effects: ['runtime-projection-sync'], requiredContext: ['cliInvocation', 'agent'],
     resultContract: { outcome: ['passed', 'blocked'], processExit: 0 },
     evidenceProjection: { finishStep: 'runtime-convergence', required: ['doctor result', 'sync result'] },
     resolver: resolveRuntimeConvergence,
@@ -63,10 +62,15 @@ function publicAction(entry) {
   return value;
 }
 
-function inferredCli(root, context) {
-  if (context.cliSource) return path.resolve(context.cliSource);
-  const local = path.resolve(root, 'projects/product/buildr');
-  return fs.existsSync(local) ? local : null;
+function declaredCliInvocation(context) {
+  if (context.cliInvocation?.command) {
+    return {
+      command: path.resolve(context.cliInvocation.command),
+      argsPrefix: [...(context.cliInvocation.argsPrefix || [])],
+    };
+  }
+  if (context.cliSource) return { command: path.resolve(context.cliSource), argsPrefix: [] };
+  return null;
 }
 
 function executablePlan({ root, action, command, args, safeHandler, evidenceId, sharedMutation = false, jsonAssertion = null, stages = [] }) {
@@ -78,28 +82,28 @@ function executablePlan({ root, action, command, args, safeHandler, evidenceId, 
 }
 
 function resolveContext({ root, action, context }) {
-  const command = inferredCli(root, context);
-  if (!command) return { missing: ['cliSource'] };
-  return { plan: executablePlan({ root, action, command, args: ['worktree', 'context', '--target', path.resolve(root), '--json'], safeHandler: 'buildr-worktree-context', evidenceId: 'registry-context-ready', jsonAssertion: action.resultContract.jsonAssertion }) };
+  const invocation = declaredCliInvocation(context);
+  if (!invocation) return { missing: ['cliInvocation'] };
+  return { plan: executablePlan({ root, action, command: invocation.command, args: [...invocation.argsPrefix, 'worktree', 'context', '--target', path.resolve(root), '--json'], safeHandler: 'buildr-worktree-context', evidenceId: 'registry-context-ready', jsonAssertion: action.resultContract.jsonAssertion }) };
 }
 
 function resolveOpenSpecConvergence({ root, run, action, context }) {
-  const command = inferredCli(root, context);
-  const missing = [...(!command ? ['cliSource'] : []), ...(!context.project ? ['project'] : []), ...(!run.change ? ['change'] : [])];
+  const invocation = declaredCliInvocation(context);
+  const missing = [...(!invocation ? ['cliInvocation'] : []), ...(!context.project ? ['project'] : []), ...(!run.change ? ['change'] : [])];
   if (missing.length) return { missing };
   return { plan: executablePlan({
-    root, action, command, sharedMutation: true, safeHandler: 'buildr-openspec-converge', evidenceId: `registry-openspec-${run.change}`,
-    args: ['openspec', 'converge', run.change, '--project', context.project, '--target', path.resolve(root), '--json'],
+    root, action, command: invocation.command, sharedMutation: true, safeHandler: 'buildr-openspec-converge', evidenceId: `registry-openspec-${run.change}`,
+    args: [...invocation.argsPrefix, 'openspec', 'converge', run.change, '--project', context.project, '--target', path.resolve(root), '--json'],
   }) };
 }
 
 function resolveRuntimeConvergence({ root, action, context }) {
-  const command = inferredCli(root, context);
-  const missing = [...(!command ? ['cliSource'] : []), ...(!context.agent ? ['agent'] : [])];
+  const invocation = declaredCliInvocation(context);
+  const missing = [...(!invocation ? ['cliInvocation'] : []), ...(!context.agent ? ['agent'] : [])];
   if (missing.length) return { missing };
-  const child = (id, args, safeHandler) => executablePlan({ root, action, command, args, safeHandler, evidenceId: id, sharedMutation: args[0] === 'sync' });
+  const child = (id, args, safeHandler) => executablePlan({ root, action, command: invocation.command, args: [...invocation.argsPrefix, ...args], safeHandler, evidenceId: id, sharedMutation: args[0] === 'sync' });
   return { plan: executablePlan({
-    root, action, command, args: [], sharedMutation: true, safeHandler: 'runtime-convergence', evidenceId: `registry-runtime-${context.agent}`,
+    root, action, command: invocation.command, args: [...invocation.argsPrefix], sharedMutation: true, safeHandler: 'runtime-convergence', evidenceId: `registry-runtime-${context.agent}`,
     stages: [
       { id: 'doctor-before', commands: [child('doctor-before', ['doctor', '--agent', context.agent, '--target', path.resolve(root), '--json'], 'buildr-doctor')] },
       { id: 'runtime-sync', commands: [child('runtime-sync', ['sync', context.agent, '--target', path.resolve(root)], 'buildr-runtime-sync')] },

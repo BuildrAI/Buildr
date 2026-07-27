@@ -55,6 +55,9 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.deepEqual(created.bootstrap.sync, { status: 'applied', reason: 'runtime-stale-only' });
     assert.equal(created.bootstrap.doctorAfter.health.ready, true);
     assert.equal(created.ready, true);
+    assert.equal(created.executionReady, true);
+    assert.equal(created.cliInvocation.command, process.execPath);
+    assert.deepEqual(created.cliInvocation.argsPrefix, [cli]);
     assert.equal(created.runtimeExpectation.activation.rules, 'path-read');
     assert.equal(created.runtimeExpectation.activation.skills, 'session-start');
     assert.equal(created.runtimeExpectation.sessionConsumption, 'unknown');
@@ -69,6 +72,8 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(cwdOnly.executionBinding.workdir, created.worktree.path);
     assert.equal(cwdOnly.executionBinding.cliSourceKind, 'external-product');
     assert.equal(cwdOnly.executionBinding.checkoutLocal, false);
+    assert.deepEqual(cwdOnly.cliInvocation, created.cliInvocation);
+    assert.deepEqual(cwdOnly.executionBinding.cliInvocation, created.cliInvocation);
     const adopted = runBuildr(['worktree', 'adopt', '--agent', 'codex', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'codex-demo-session', '--root-evidence-source', 'host-context', '--mode', 'new-session', '--started-at', new Date().toISOString(), '--json']);
     assert.equal(adopted.schemaVersion, 'buildr.task-environment-adoption/v1');
     assert.equal(adopted.environmentEvidence.assurance, 'buildr-verified');
@@ -88,6 +93,15 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(staleRuntime.adoption.status, 'stale');
     assert.equal(staleRuntime.adoption.blocked.code, 'worktree.adoption_runtime_stale');
     fs.writeFileSync(agentsFile, agentsBefore);
+
+    const common = git(['rev-parse', '--git-common-dir']);
+    const receiptFile = path.join(path.resolve(workspace, common), 'buildr', 'task-environments', 'demo.json');
+    const legacyReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+    delete legacyReceipt.executionCli.invocation;
+    fs.writeFileSync(receiptFile, `${JSON.stringify(legacyReceipt, null, 2)}\n`);
+    const legacyInvocationContext = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--json']);
+    assert.equal(legacyInvocationContext.executionReady, true);
+    assert.deepEqual(legacyInvocationContext.cliInvocation, created.cliInvocation);
 
     const reused = runBuildr(['worktree', 'create', 'demo', '--agent', 'codex', '--branch', 'codex/demo', '--start-point', 'main', '--target', workspace, '--json']);
     assert.equal(reused.state, 'reused');

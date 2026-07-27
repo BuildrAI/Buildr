@@ -34,6 +34,15 @@ export function resolveExecutionCliSource({ workspaceRoot, environmentRoot, prod
   };
 }
 
+export function resolveExecutionCliInvocation({ sourceRoot, sourceKind, nodeExecutable = process.execPath }) {
+  const resolvedSourceRoot = path.resolve(sourceRoot);
+  const source = path.join(resolvedSourceRoot, 'bin', 'buildr.mjs');
+  if (sourceKind === 'environment-local') {
+    return { command: path.resolve(resolvedSourceRoot, '..', '..', 'buildr'), argsPrefix: [] };
+  }
+  return { command: path.resolve(nodeExecutable), argsPrefix: [source] };
+}
+
 function optionValues(args, option) {
   const values = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -232,7 +241,8 @@ export function registerWorktreeApplication(runtime) {
       hash.update(fs.readFileSync(file));
       hash.update('\0');
     }
-    return { source, sourceKind, identity: `sha256-${hash.digest('hex')}` };
+    const invocation = resolveExecutionCliInvocation({ sourceRoot, sourceKind });
+    return { source, sourceKind, identity: `sha256-${hash.digest('hex')}`, invocation };
   }
 
   function expectedExecutionCliEvidence(workspaceRoot, environmentRoot) {
@@ -250,9 +260,21 @@ export function registerWorktreeApplication(runtime) {
     if (!receipt.executionCli) return currentCli.sourceKind === 'environment-local';
     const expectedKind = receipt.executionCli.sourceKind
       || (inside(receipt.environmentRoot, path.dirname(path.dirname(receipt.executionCli.source))) ? 'environment-local' : 'external-product');
+    const invocationMatches = !receipt.executionCli.invocation
+      || (receipt.executionCli.invocation.command === currentCli.invocation.command
+        && JSON.stringify(receipt.executionCli.invocation.argsPrefix || []) === JSON.stringify(currentCli.invocation.argsPrefix));
+    const invocationShapeValid = currentCli.sourceKind === 'environment-local'
+      ? currentCli.invocation.argsPrefix.length === 0 && inside(receipt.environmentRoot, currentCli.invocation.command)
+      : currentCli.invocation.argsPrefix[0] === currentCli.source;
+    const invocationExecutable = path.isAbsolute(currentCli.invocation.command)
+      && invocationShapeValid
+      && fs.existsSync(currentCli.invocation.command)
+      && (() => { try { fs.accessSync(currentCli.invocation.command, fs.constants.X_OK); return true; } catch { return false; } })();
     return expectedKind === currentCli.sourceKind
       && receipt.executionCli.source === currentCli.source
-      && receipt.executionCli.identity === currentCli.identity;
+      && receipt.executionCli.identity === currentCli.identity
+      && invocationMatches
+      && invocationExecutable;
   }
 
   function handoffAction(receipt) {
@@ -604,6 +626,21 @@ export function registerWorktreeApplication(runtime) {
         state: treeChanged ? 'created' : 'reused',
         treeChanged,
         ready: true,
+        executionReady: true,
+        cliSource: receipt.executionCli.source,
+        cliInvocation: receipt.executionCli.invocation,
+        executionBinding: {
+          assurance: 'buildr-verified',
+          target: environmentRoot,
+          workdir: environmentRoot,
+          membership: rootIdentity.selector,
+          cliSource: receipt.executionCli.source,
+          cliInvocation: receipt.executionCli.invocation,
+          cliSourceKind: receipt.executionCli.sourceKind,
+          cliIdentity: receipt.executionCli.identity,
+          checkoutLocal: receipt.executionCli.sourceKind === 'environment-local',
+          runtimeProjectionIdentity: expectedRuntime.projectionIdentity,
+        },
         runtimeExpectation: expectedRuntime,
         adoption: { status: 'not-required', receipt: null, currentSessionMatch: null },
         blocked: null,
@@ -678,7 +715,8 @@ export function registerWorktreeApplication(runtime) {
     const expectedRuntime = fs.existsSync(receipt.environmentRoot) ? runtimeExpectation(receipt.environmentRoot, receipt.agent) : receipt.runtimeExpectation || null;
     const adoption = ready && expectedRuntime ? adoptionState(receipt, expectedRuntime, session) : { status: 'blocked', receipt: null, currentSessionMatch: false, assurance: null, missingEvidence: [], nextActions: [] };
     const currentCli = currentExecutionCliEvidence(receipt);
-    const cliSource = currentCli.source;
+      const cliSource = currentCli.source;
+      const cliInvocation = currentCli.invocation;
     const cliWithinEnvironment = currentCli.sourceKind === 'environment-local';
     const cliIdentityMatches = executionCliMatches(receipt, currentCli);
     const runtimeIdentityMatches = Boolean(expectedRuntime && (!receipt.runtimeExpectation
@@ -699,13 +737,14 @@ export function registerWorktreeApplication(runtime) {
       repositories,
       allowedExecutionRoots: repositories.map((item) => item.checkoutPath),
       cliSource,
+      cliInvocation,
       cliWithinEnvironment,
       cliIdentityMatches,
       runtimeIdentityMatches,
       state: ready ? 'ready' : 'blocked',
       ready,
       executionReady,
-      executionBinding: executionReady ? { assurance: 'buildr-verified', target: requestPath, workdir: membership.checkoutPath, membership: membership.selector, cliSource, cliSourceKind: currentCli.sourceKind, cliIdentity: currentCli.identity, checkoutLocal: cliWithinEnvironment, runtimeProjectionIdentity: expectedRuntime.projectionIdentity } : null,
+      executionBinding: executionReady ? { assurance: 'buildr-verified', target: requestPath, workdir: membership.checkoutPath, membership: membership.selector, cliSource, cliInvocation, cliSourceKind: currentCli.sourceKind, cliIdentity: currentCli.identity, checkoutLocal: cliWithinEnvironment, runtimeProjectionIdentity: expectedRuntime.projectionIdentity } : null,
       environmentEvidence: expectedRuntime ? { assurance: 'buildr-verified', planDigest: receipt.planDigest, runtimeExpectation: expectedRuntime } : null,
       sessionEvidence: adoption.receipt?.sessionEvidence || null,
       adoption,
@@ -746,7 +785,7 @@ export function registerWorktreeApplication(runtime) {
     const receipt = readReceipt(workspaceRoot, positions[0]);
     if (!receipt) return printContext({
       taskId: positions[0], owner: null, workspaceRoot, environmentRoot: null, requestedPath: workspaceRoot,
-      membership: null, repositories: [], allowedExecutionRoots: [], cliSource: path.join(productRoot(), 'bin', 'buildr.mjs'), cliWithinEnvironment: false,
+      membership: null, repositories: [], allowedExecutionRoots: [], cliSource: path.join(productRoot(), 'bin', 'buildr.mjs'), cliInvocation: null, cliWithinEnvironment: false,
       state: 'blocked', ready: false, isolation: isolation(), blocked: { code: 'worktree.receipt_missing', message: 'Task environment receipt was not found.' }, nextActions: [],
     }, json);
     return printContext(contextFromReceipt(receipt), json, false);
@@ -780,6 +819,7 @@ export function registerWorktreeApplication(runtime) {
     const currentCli = currentExecutionCliEvidence(receipt);
     if (!executionCliMatches(receipt, currentCli)) throw new Error('The current Buildr CLI identity does not match the task environment receipt.');
     const cliSource = currentCli.source;
+    const cliInvocation = currentCli.invocation;
     const cliWithinEnvironment = currentCli.sourceKind === 'environment-local';
     const normalizedReceipt = { ...receipt, runtimeExpectation: expectedRuntime, updatedAt: new Date().toISOString() };
     if (!receipt.runtimeExpectation || receipt.runtimeExpectation.projectionIdentity !== expectedRuntime.projectionIdentity) writeReceipt(receipt.workspaceRoot, normalizedReceipt);
@@ -791,7 +831,7 @@ export function registerWorktreeApplication(runtime) {
       environmentRoot: receipt.environmentRoot,
       planDigest: receipt.planDigest,
       runtimeProjectionIdentity: expectedRuntime.projectionIdentity,
-      environmentEvidence: { assurance: 'buildr-verified', cliSource, cliWithinEnvironment, runtimeExpectation: expectedRuntime },
+      environmentEvidence: { assurance: 'buildr-verified', cliSource, cliInvocation, cliWithinEnvironment, runtimeExpectation: expectedRuntime },
       sessionEvidence: { assurance: 'agent-attested', sessionRoot, sessionHandle, rootEvidenceSource, adoptionMode: mode, startedOrReenteredAt: new Date(startedAt).toISOString() },
       adoptedAt: new Date().toISOString(),
     };
@@ -811,7 +851,7 @@ export function registerWorktreeApplication(runtime) {
     const receipt = findEnvironmentReceipt(requestedPath);
     if (!receipt) return printContext({
       taskId: null, owner: null, workspaceRoot: null, environmentRoot: null, requestedPath,
-      membership: null, repositories: [], allowedExecutionRoots: [], cliSource: path.join(productRoot(), 'bin', 'buildr.mjs'), cliWithinEnvironment: false,
+      membership: null, repositories: [], allowedExecutionRoots: [], cliSource: path.join(productRoot(), 'bin', 'buildr.mjs'), cliInvocation: null, cliWithinEnvironment: false,
       state: 'blocked', ready: false, isolation: isolation(), blocked: { code: 'worktree.not_task_environment', message: 'Requested path is not owned by a task environment receipt.' }, nextActions: [],
     }, json);
     const sessionRootValue = optionValue(args, '--session-root', null);

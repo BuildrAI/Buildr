@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { isSafeRuntimeStaleOnly, parseWorktreeList, resolveExecutionCliSource } from '../../src/application/worktree/worktree-application.mjs';
+import { isSafeRuntimeStaleOnly, parseWorktreeList, resolveExecutionCliInvocation, resolveExecutionCliSource } from '../../src/application/worktree/worktree-application.mjs';
 
 describe('worktree application', () => {
   test('parses porcelain worktree identity', () => {
@@ -65,6 +65,25 @@ describe('worktree application', () => {
     }), {
       sourceRoot: '/opt/buildr',
       sourceKind: 'external-product',
+    });
+  });
+
+  test('returns cwd-independent invocations for self-hosted and external products', () => {
+    assert.deepEqual(resolveExecutionCliInvocation({
+      sourceRoot: '/workspace/.worktrees/demo/projects/product/services/buildr',
+      sourceKind: 'environment-local',
+      nodeExecutable: '/ignored/node',
+    }), {
+      command: '/workspace/.worktrees/demo/projects/product/buildr',
+      argsPrefix: [],
+    });
+    assert.deepEqual(resolveExecutionCliInvocation({
+      sourceRoot: '/opt/arbitrary/buildr',
+      sourceKind: 'external-product',
+      nodeExecutable: '/opt/node/bin/node',
+    }), {
+      command: '/opt/node/bin/node',
+      argsPrefix: ['/opt/arbitrary/buildr/bin/buildr.mjs'],
     });
   });
 });

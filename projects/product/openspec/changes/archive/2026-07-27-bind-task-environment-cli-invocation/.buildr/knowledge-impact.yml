@@ -1,0 +1,26 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: bind-task-environment-cli-invocation
+operation: reconcile
+treeIdentity: final-candidate
+impacts:
+  - type: brief
+    target: openspec/changes/bind-task-environment-cli-invocation/brief.md
+    reason: Change 的范围、流程、兼容策略和验收需要稳定摘要
+    status: updated
+    sourceIdentities:
+      - openspec/changes/bind-task-environment-cli-invocation/proposal.md
+      - openspec/changes/bind-task-environment-cli-invocation/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task environment execution binding 与 Action Registry 输入契约变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/bind-task-environment-cli-invocation/specs/task-environments/spec.md
+      - openspec/changes/bind-task-environment-cli-invocation/specs/task-finish-execution/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: task environment 到标准消费者的 CLI 调用方式变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/bind-task-environment-cli-invocation/specs/task-environments/spec.md
+unresolvedItems: []

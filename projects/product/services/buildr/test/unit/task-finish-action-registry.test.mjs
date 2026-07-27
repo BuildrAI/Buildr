@@ -30,7 +30,7 @@ test('action registry 为全部标准 finish step 提供唯一 entry', () => {
 
 test('resolver 区分 ready、input、provider handoff 与 registry miss', (t) => {
   const { root, cli, run } = fixture(t);
-  const ready = resolveFinishAction({ root, run, step: 'context', context: { cliSource: cli } });
+  const ready = resolveFinishAction({ root, run, step: 'context', context: { cliInvocation: { command: '/usr/bin/env', argsPrefix: ['sh', cli] } } });
   assert.equal(ready.status, 'ready');
   assert.equal(ready.plan.actionId, 'context.verify-environment');
   assert.equal(ready.plan.planSource, 'registry');
@@ -38,11 +38,12 @@ test('resolver 区分 ready、input、provider handoff 与 registry miss', (t) =
 
   const input = resolveFinishAction({ root: path.join(root, 'consumer'), run, step: 'context' });
   assert.equal(input.status, 'input-required');
-  assert.deepEqual(input.requiredInputs, ['cliSource']);
+  assert.deepEqual(input.requiredInputs, ['cliInvocation']);
 
   const external = resolveFinishAction({ root: path.join(root, 'consumer'), run, step: 'context', context: { cliSource: cli } });
   assert.equal(external.status, 'ready');
   assert.equal(external.plan.commandSource, 'external-declared');
+  assert.deepEqual(ready.plan.args.slice(0, 2), ['sh', cli]);
 
   const provider = resolveFinishAction({ root, run, step: 'current-knowledge' });
   assert.equal(provider.status, 'agent-provider-required');

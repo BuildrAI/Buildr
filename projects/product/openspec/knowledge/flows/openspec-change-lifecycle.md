@@ -2,7 +2,7 @@
 
 ## 当前流程
 
-1. `task-triage` 先核对 authority 与 repository set，再分别判断语义治理、implementation/metadata-only 形态和任务跟踪；实现型工作先通过 selected task-worktree provider 建立 canonical task environment。原用户对话可以从 canonical Workspace 启动，并用明确 target/workdir 和 receipt-bound CLI 操作 task environment；自举 workspace 绑定 environment-local 产品 CLI，普通消费 workspace 可以绑定 external-product CLI。`executionReady` 由 environment receipt、repository membership/identity、allowed roots、CLI source/identity 与 runtime projection identity 决定，不要求 session root 等于 environment root。
+1. `task-triage` 先核对 authority 与 repository set，再分别判断语义治理、implementation/metadata-only 形态和任务跟踪；实现型工作先通过 selected task-worktree provider 建立 canonical task environment。原用户对话可以从 canonical Workspace 启动，并使用 context 返回的明确 target/workdir 与结构化 `cliInvocation` 操作 task environment；自举 workspace 绑定 task checkout 内已有 bridge，普通消费 workspace 绑定外部产品 Node/entry，不根据 cwd 或固定产品目录拼路径。`executionReady` 由 environment receipt、repository membership/identity、allowed roots、CLI source/identity/invocation 与 runtime projection identity 决定，不要求 session root 等于 environment root。
 2. `openspec-propose` 使用 OpenSpec 1.6.0 创建 proposal、design、delta specs 和 tasks；Buildr contribution 创建 Brief、执行 current knowledge `assess`，并建立 contract baseline/proposal check。
 3. `openspec-update-change` 修订 planning artifacts 时同步刷新 Brief 与 impacts。
 4. `openspec-apply-change` 实现 tasks；发现的新知识影响写回 tasks/sidecar，implementation content 完成后在最终验证前 `reconcile`。
