@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "coordinate-concurrent-verification-resources",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-2a7b21eb8b5e34b18bec12d6519caffa593f1f718d9f84597006361473ac7218",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "project-test-capabilities",
+      "title": "Project 验证声明必须显式表达资源处理策略",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "验证资源协调必须跨 task environment 生效",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "验证资源证据与清理必须绑定当前 run",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

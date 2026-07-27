@@ -57,6 +57,8 @@ try {
     schedulingMode,
     concurrency: executionProfile.limits,
     executionProfile,
+    runId: evidence.runId,
+    taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'candidate',
   });
   results = execution.results;
   passed = execution.passed;

@@ -15,6 +15,12 @@ function validDeclaration(overrides = {}) {
   return {
     schemaVersion: 'buildr.project-verification/v1',
     mode: 'augment',
+    resources: [
+      { id: 'temp', title: 'Task temp', strategy: 'isolated', cleanup: 'provider-owned', authorization: 'implicit' },
+      { id: 'data', title: 'Test data', strategy: 'namespaced', namespaceEnv: 'TEST_NAMESPACE', cleanup: 'task-owned', authorization: 'implicit' },
+      { id: 'browser', title: 'Browser', strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' },
+      { id: 'staging', title: 'Staging', strategy: 'external', cleanup: 'external', authorization: 'explicit' },
+    ],
     capabilities: [{
       id: 'demo.unit',
       title: 'Demo unit tests',
@@ -27,6 +33,7 @@ function validDeclaration(overrides = {}) {
       environment: { requires: ['node'], services: [] },
       effects: { level: 'local-temporary', writes: ['services/demo/coverage/**'], externalSystems: false },
       authorization: 'implicit',
+      resourceClaims: ['temp', 'browser'],
       dependsOn: [],
       supersedes: [],
       sources: ['services/demo/package.json'],
@@ -71,6 +78,19 @@ test('Project verification v1 拒绝未知引用、依赖环和高副作用 impl
   assert.ok(errors.some((message) => message.includes('contains a cycle')));
   assert.ok(errors.some((message) => message.includes('references unknown capability missing.capability')));
   assert.ok(errors.some((message) => message.includes('authorization cannot be implicit')));
+});
+
+test('Project verification v1 校验资源策略、引用与授权闭包', () => {
+  const declaration = validDeclaration();
+  declaration.resources[1].namespaceEnv = 'invalid-name';
+  declaration.resources[2].capacity = 0;
+  declaration.resources[3].authorization = 'implicit';
+  declaration.capabilities[0].resourceClaims.push('missing');
+  const errors = validateProjectVerification(declaration);
+  assert.ok(errors.some((message) => message.includes('namespaceEnv')));
+  assert.ok(errors.some((message) => message.includes('capacity must be a positive integer')));
+  assert.ok(errors.some((message) => message.includes('authorization must be explicit')));
+  assert.ok(errors.some((message) => message.includes('references unknown resource missing')));
 });
 
 test('authoritative 模式要求稳定 Candidate required gate', () => {

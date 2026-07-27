@@ -68,6 +68,8 @@ try {
         diagnosticsDirectory: evidence.diagnosticsOutput,
         artifactDirectory: path.join(executionRoot, 'candidate-package'),
         env: { BUILDR_CHANGED_PATHS_JSON: JSON.stringify(changed.paths) },
+        runId: evidence.runId,
+        taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'changed',
         stream: process.stdout,
         errorStream: process.stderr,
       };

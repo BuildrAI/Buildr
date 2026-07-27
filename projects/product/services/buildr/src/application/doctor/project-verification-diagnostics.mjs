@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-const ROOT_FIELDS = new Set(['schemaVersion', 'mode', 'capabilities']);
+const ROOT_FIELDS = new Set(['schemaVersion', 'mode', 'resources', 'capabilities']);
 const CAPABILITY_FIELDS = new Set([
   'id', 'title', 'command', 'maturity', 'stages', 'enforcement', 'applicability',
-  'coverage', 'environment', 'effects', 'authorization', 'dependsOn', 'supersedes', 'sources',
+  'coverage', 'environment', 'effects', 'authorization', 'resourceClaims', 'dependsOn', 'supersedes', 'sources',
 ]);
+const RESOURCE_FIELDS = new Set(['id', 'title', 'strategy', 'capacity', 'namespaceEnv', 'cleanup', 'authorization']);
 const COMMAND_FIELDS = new Set(['argv', 'cwd']);
 const APPLICABILITY_FIELDS = new Set(['paths', 'risks']);
 const COVERAGE_FIELDS = new Set(['kind', 'owns']);
@@ -18,7 +19,10 @@ const STAGES = new Set(['minimal', 'affected', 'candidate']);
 const ENFORCEMENTS = new Set(['advisory', 'required']);
 const AUTHORIZATIONS = new Set(['implicit', 'explicit']);
 const EFFECT_LEVELS = new Set(['none', 'local-temporary', 'local-service', 'shared', 'persistent', 'unknown']);
+const RESOURCE_STRATEGIES = new Set(['isolated', 'namespaced', 'coordinated', 'external']);
+const RESOURCE_CLEANUP = new Set(['provider-owned', 'task-owned', 'external']);
 const ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const ENV_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -69,6 +73,31 @@ export function validateProjectVerification(value) {
   if (!Array.isArray(value.capabilities)) {
     errors.push('verification.capabilities must be an array.');
     return errors;
+  }
+
+  const resourceIds = new Set();
+  if (value.resources !== undefined && !Array.isArray(value.resources)) errors.push('verification.resources must be an array.');
+  for (const [index, resource] of (Array.isArray(value.resources) ? value.resources : []).entries()) {
+    const label = `verification.resources[${index}]`;
+    if (!isObject(resource)) { errors.push(`${label} must be a mapping.`); continue; }
+    unknownFields(resource, RESOURCE_FIELDS, label, errors);
+    if (typeof resource.id !== 'string' || !ID_PATTERN.test(resource.id)) errors.push(`${label}.id must be a stable lowercase resource id.`);
+    else if (resourceIds.has(resource.id)) errors.push(`${label}.id duplicates ${resource.id}.`);
+    else resourceIds.add(resource.id);
+    if (typeof resource.title !== 'string' || !resource.title.trim()) errors.push(`${label}.title is required.`);
+    if (!RESOURCE_STRATEGIES.has(resource.strategy)) errors.push(`${label}.strategy must be isolated, namespaced, coordinated or external.`);
+    if (!RESOURCE_CLEANUP.has(resource.cleanup)) errors.push(`${label}.cleanup must be provider-owned, task-owned or external.`);
+    if (!AUTHORIZATIONS.has(resource.authorization)) errors.push(`${label}.authorization must be implicit or explicit.`);
+    if (resource.strategy === 'coordinated') {
+      if (!Number.isInteger(resource.capacity) || resource.capacity < 1) errors.push(`${label}.capacity must be a positive integer for coordinated resources.`);
+    } else if (resource.capacity !== undefined) errors.push(`${label}.capacity is only supported for coordinated resources.`);
+    if (resource.strategy === 'namespaced') {
+      if (typeof resource.namespaceEnv !== 'string' || !ENV_PATTERN.test(resource.namespaceEnv)) errors.push(`${label}.namespaceEnv must be an uppercase environment variable for namespaced resources.`);
+    } else if (resource.namespaceEnv !== undefined) errors.push(`${label}.namespaceEnv is only supported for namespaced resources.`);
+    if (resource.strategy === 'external') {
+      if (resource.cleanup !== 'external') errors.push(`${label}.cleanup must be external for external resources.`);
+      if (resource.authorization !== 'explicit') errors.push(`${label}.authorization must be explicit for external resources.`);
+    } else if (resource.cleanup === 'external') errors.push(`${label}.cleanup external is only supported for external resources.`);
   }
 
   const ids = new Set();
@@ -143,6 +172,10 @@ export function validateProjectVerification(value) {
     if (capability.authorization === 'implicit' && (capability.effects?.externalSystems === true || !['none', 'local-temporary'].includes(capability.effects?.level))) {
       errors.push(`${label}.authorization cannot be implicit for external, service, shared, persistent or unknown effects.`);
     }
+
+    const resourceClaims = capability.resourceClaims === undefined ? [] : stringArray(capability.resourceClaims, `${label}.resourceClaims`, errors);
+    if (new Set(resourceClaims).size !== resourceClaims.length) errors.push(`${label}.resourceClaims must not contain duplicates.`);
+    for (const resourceId of resourceClaims) if (!resourceIds.has(resourceId)) errors.push(`${label}.resourceClaims references unknown resource ${resourceId}.`);
 
     const dependsOn = capability.dependsOn === undefined ? [] : stringArray(capability.dependsOn, `${label}.dependsOn`, errors);
     const supersedes = capability.supersedes === undefined ? [] : stringArray(capability.supersedes, `${label}.supersedes`, errors);

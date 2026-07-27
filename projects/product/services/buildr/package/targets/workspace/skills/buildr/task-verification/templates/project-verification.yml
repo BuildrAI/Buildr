@@ -1,5 +1,11 @@
 schemaVersion: buildr.project-verification/v1
 mode: augment
+resources:
+  - id: example-temp
+    title: Example task-local temporary state
+    strategy: isolated
+    cleanup: provider-owned
+    authorization: implicit
 capabilities:
   - id: example.unit
     title: Example unit tests
@@ -25,6 +31,7 @@ capabilities:
       writes: []
       externalSystems: false
     authorization: explicit
+    resourceClaims: [example-temp]
     dependsOn: []
     supersedes: []
     sources: ["replace-with-policy-source"]

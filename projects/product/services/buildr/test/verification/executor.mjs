@@ -29,7 +29,7 @@ export function createVerificationExecutor(options) {
     throw new Error(`Executor ${executor.type} does not resolve to a command`);
   };
 
-  return async function executeVerificationStep(step) {
+  return async function executeVerificationStep(step, executionContext = {}) {
     if (step.executor.type === 'candidate-artifact') {
       const startedAt = Date.now();
       let error = null;
@@ -62,7 +62,7 @@ export function createVerificationExecutor(options) {
       ...step,
       ...resolved,
       cwd: resolved.cwd ?? productRoot,
-      env: { ...baseEnv, ...artifactEnv },
+      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv },
       diagnosticsDirectory: options.diagnosticsDirectory,
     });
   };

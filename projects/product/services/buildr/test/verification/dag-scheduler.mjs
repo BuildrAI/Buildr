@@ -54,12 +54,19 @@ export async function runVerificationDag(plan, options = {}) {
   };
 
   const launch = (step) => {
-    const startedAtMs = now();
+    let startedAtMs = null;
     pending.delete(step.id);
     activeByClass.set(step.concurrencyClass, (activeByClass.get(step.concurrencyClass) ?? 0) + 1);
     for (const resource of step.resources ?? []) activeByResource.set(resource, (activeByResource.get(resource) ?? 0) + 1);
-    options.onStart?.(step);
-    const promise = Promise.resolve().then(() => execute(step)).then((result) => ({
+    let resourceHandle = null;
+    const promise = Promise.resolve().then(async () => {
+      resourceHandle = options.resourceCoordinator && (step.resources ?? []).length > 0
+        ? await options.resourceCoordinator.acquire(step.resources, { signal: options.signal })
+        : null;
+      startedAtMs = now();
+      options.onStart?.(step);
+      return execute(step, { resourceEnvironment: resourceHandle?.environment || {} });
+    }).then((result) => ({
       id: step.id,
       name: step.name,
       ...result,
@@ -71,10 +78,22 @@ export async function runVerificationDag(plan, options = {}) {
       durationMs: 0,
       stdout: '',
       stderr: `${error.stack || error.message}\n`,
-    })).then((result) => {
+    })).then(async (result) => {
+      startedAtMs ??= now();
+      const release = resourceHandle ? await resourceHandle.release() : [];
+      const releaseFailed = release.some((item) => !['released', 'not-applicable'].includes(item.status));
       const finishedAtMs = now();
       const scheduledResult = {
         ...result,
+        ...(resourceHandle ? {
+          resourceCoordination: {
+            waitDurationMs: resourceHandle.waitDurationMs,
+            acquiredAt: resourceHandle.acquiredAt,
+            claims: resourceHandle.claims.map(({ heartbeat, directory, token, ...claim }) => claim),
+            release,
+          },
+        } : {}),
+        ...(releaseFailed && result.status === 'passed' ? { status: 'failed', exitCode: 1, stderr: `${result.stderr || ''}Verification resource cleanup did not preserve ownership.\n` } : {}),
         queuedAt,
         startedAt: new Date(startedAtMs).toISOString(),
         finishedAt: new Date(finishedAtMs).toISOString(),

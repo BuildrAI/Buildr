@@ -30,7 +30,9 @@ Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有
 
 ## 2. 两级正式保证与内部快速反馈
 
-执行前先解析声明能力的 applicability、maturity、stage、enforcement、dependsOn/supersedes、环境、副作用与授权，形成 `availableCapabilities`、`selectedCapabilities`、`skippedCapabilities` 和 `blockedCapabilities`。只有显式 `supersedes` 或可信上层入口覆盖证据才能去重；不得根据测试名称、技术栈或看似更高的层级自行推断覆盖。
+执行前先解析声明能力的 applicability、maturity、stage、enforcement、dependsOn/supersedes、环境、副作用、授权与 `resourceClaims`，形成 `availableCapabilities`、`selectedCapabilities`、`skippedCapabilities` 和 `blockedCapabilities`。只有显式 `supersedes` 或可信上层入口覆盖证据才能去重；不得根据测试名称、技术栈或看似更高的层级自行推断覆盖。
+
+Project 声明验证资源时，按 `references/project-verification-v1.md` 解析其策略：`isolated` 由每个任务环境独立提供，`namespaced` 由任务与 run 身份生成隔离命名空间，`coordinated` 由验证 executor 在 Workspace 范围排队并持有容量槽，`external` 只有获得显式授权才可使用。Agent 不手工创建跨任务锁、不轮询其他任务，也不把资源协调扩展成通用任务调度器；无法取得 required 资源时将对应能力标记为 blocked 或验证不完整。
 
 ### 内部快速反馈（minimal）
 
@@ -78,6 +80,7 @@ Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有
 3. 并行执行时不得把各检查 `durationMs` 相加推算 `totalDurationMs`；总耗时必须来自整体 execution 的 wall-clock。
 4. 工具返回 session、cell、process id 或运行中状态时，继续 wait、poll 或 resume 同一进程；暂时无输出不得启动第二个相同验证。
 5. consumer 已提供产品持有的 composite executor 时，优先让 executor 持有 required capability 的进程、阶段状态和 timing；Agent 只消费其结构化结果并处理异常分支，不逐命令接管正常路径。
+6. 资源排队、取得、归属恢复和释放由同一个 execution 管理。证据分别记录资源等待时间、槽位与任务/run 归属、过期恢复及释放结果；资源等待可以计入整体 wall-clock，但不得混入 verifier 自身的 `durationMs`。释放时 ownership 不匹配或清理失败必须保留诊断，不得删除其他任务的资源状态。
 
 验证命令需要修改外部系统、部署环境、持久业务数据或共享状态时，停止并取得该具体副作用的授权。构建产物和项目政策明确允许的本地测试临时文件仍属于常规验证效果。
 
@@ -110,6 +113,7 @@ blockedCapabilities: <阻塞能力 id 与环境/副作用/授权原因>
 coverageSummary: <已声明并实际覆盖的范围；未知项>
 environmentReadiness: <ready/unready/unknown 与依据>
 authorizationDecisions: <implicit/explicit/denied 与依据>
+resourceCoordination: <资源策略、等待耗时、任务/run 归属、槽位、过期恢复与释放结果>
 candidateCompleteness: confirmed | unconfirmed | not-applicable
 checks: <名称、命令摘要、状态、exitCode、durationMs>
 totalDurationMs: <真实整体 wall-clock>
@@ -172,5 +176,6 @@ verificationResultMetadataTransition: <可选；subtype、source/target identity
 - 不依赖 `task-worktree`、`git-ops` 或任何固定 provider id；有 worktree 时只消费调用方提供的候选边界与 identity。
 - 不把测试通过等同于业务验收、上线、归档、提交、推送或清理授权。
 - 不重复启动仍在运行的验证，不相加并行步骤推算整体耗时。
+- 不由 Agent 手工协调并发任务的共享验证资源，不清理归属其他任务或 run 的资源槽。
 - 不把 provider 的 `inspect`、`cleanup`、summary verifier 或 consumer 的 OpenSpec guard、doctor、Git、archive rehearsal 调用表述为重新执行验证，或混入 `totalDurationMs`；已有满足 `requiredAssurance` 的可信 evidence 进入收尾时不得仅因 consumer 调用而启动 executor。
 - 不在候选变化后沿用旧 evidence；唯一例外是 Project 明确定义且证据完整的 `verification-result-metadata-only` consumer composition，原 evidence identity 仍保持不变。实现内容变化后重跑同一 `requiredAssurance`，不机械升级为 Candidate。

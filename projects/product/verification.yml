@@ -1,5 +1,23 @@
 schemaVersion: buildr.project-verification/v1
 mode: augment
+resources:
+  - id: task-temporary
+    title: Task-owned verification temporary state
+    strategy: isolated
+    cleanup: provider-owned
+    authorization: implicit
+  - id: browser
+    title: Local browser capacity
+    strategy: coordinated
+    capacity: 1
+    cleanup: provider-owned
+    authorization: implicit
+  - id: workspace-saturating
+    title: Workspace-saturating fixture capacity
+    strategy: coordinated
+    capacity: 1
+    cleanup: provider-owned
+    authorization: implicit
 capabilities:
   - id: product.fast
     title: Buildr Product Fast 验证
@@ -24,6 +42,7 @@ capabilities:
       writes: ["系统临时目录中的验证 fixture 与 diagnostics"]
       externalSystems: false
     authorization: implicit
+    resourceClaims: [task-temporary]
     dependsOn: []
     supersedes: []
     sources: ["AGENTS.md", "services/buildr/package.json", "services/buildr/test/verification/registry.mjs"]
@@ -50,6 +69,7 @@ capabilities:
       writes: ["系统临时目录中的候选 workspace、tarball、timing evidence 与 diagnostics"]
       externalSystems: false
     authorization: implicit
+    resourceClaims: [task-temporary]
     dependsOn: []
     supersedes: []
     sources: ["AGENTS.md", "services/buildr/docs/release-checklist.md", ".github/workflows/verify.yml"]
@@ -76,6 +96,7 @@ capabilities:
       writes: ["系统临时目录中的隔离 Workspace、Service source 与浏览器 profile"]
       externalSystems: false
     authorization: implicit
+    resourceClaims: [browser]
     dependsOn: []
     supersedes: []
     sources: ["services/buildr/package.json", "services/buildr/test/browser-smoke/local-app-browser.test.mjs", "openspec/specs/local-app-browser-verification/spec.md"]
@@ -102,6 +123,7 @@ capabilities:
       writes: ["系统临时目录中的隔离 OpenSpec fixture"]
       externalSystems: false
     authorization: implicit
+    resourceClaims: [task-temporary]
     dependsOn: []
     supersedes: []
     sources: ["services/buildr/test/contract/current-knowledge-governance.test.mjs", "services/buildr/test/contract/task-finish-sequencing.test.mjs"]
