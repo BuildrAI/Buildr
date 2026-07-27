@@ -19,6 +19,6 @@
 
 ## 4. 交付
 
-- [ ] 4.1 运行 OpenSpec guard、affected 和最终 Candidate 验证
-- [ ] 4.2 归档 Change、集成并推送 `dev`
-- [ ] 4.3 从 retained checkout 核验 runtime 并安全清理 task environment
+- [x] 4.1 运行 OpenSpec guard、affected 和最终 Candidate 验证
+- [x] 4.2 归档 Change、集成并推送 `dev`
+- [x] 4.3 从 retained checkout 核验 runtime 并安全清理 task environment

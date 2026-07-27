@@ -175,16 +175,16 @@
       "title": "多任务并发开发与验证",
       "taskId": "concurrent-task-development-and-verification",
       "status": "进行中",
-      "phase": "批次 3 · 跨任务验证资源协调",
-      "taskProgress": "已完成 2 / 5 个批次 · 2 个待优化批次",
-      "updatedAt": "2026-07-27 11:15",
+      "phase": "批次 4 · 主工作区收敛检查",
+      "taskProgress": "已完成 3 / 5 个批次 · 2 个待优化批次",
+      "updatedAt": "2026-07-27 12:05",
       "relativePath": "projects/product/openspec/knowledge/task-boards/2026-07-27-concurrent-task-development-and-verification.html"
     },
     "overview": {
       "purpose": "让多个任务在同一个 Buildr 自举 Workspace 中独立开发、独立验证，并在集成后安全收敛主工作区。",
       "conclusion": "保留一个整体任务看板，后续按职责拆成多个小 Change。",
-      "currentFocus": "正在实现跨任务验证资源协调：Project 声明资源策略，多个验证进程共享容量租约并只清理自己的占用。",
-      "userAttention": "当前无实施阻塞；Change 已进入独立任务环境。",
+      "currentFocus": "批次 3 已交付；下一步确认 optimize-task-finish-convergence 的正式范围，收敛集成后的主工作区检查。",
+      "userAttention": "跨任务资源协调已通过受影响验证；完整 Candidate 仅被 dev 既有 managed-mutations 六处违规阻塞。",
       "highlights": {
         "done": {
           "title": "已有基础",
@@ -192,7 +192,7 @@
         },
         "current": {
           "title": "当前工作",
-          "text": "让独立资源并行、有限资源排队、外部共享状态显式授权。"
+          "text": "确认主工作区收敛范围，减少集成后的重复检查和路径猜测。"
         },
         "next": {
           "title": "后续方向",
@@ -276,9 +276,9 @@
       },
       {
         "id": "coordinate-concurrent-verification-resources",
-        "status": "active",
-        "path": "openspec/changes/coordinate-concurrent-verification-resources/",
-        "summary": "为 Project 验证声明资源策略，并协调多个 task environment 的有限容量验证资源。",
+        "status": "archived",
+        "path": "openspec/changes/archive/2026-07-27-coordinate-concurrent-verification-resources/",
+        "summary": "Project 已支持四种验证资源策略；多个 task environment 通过 Workspace 容量租约协调共享资源，并保留归属、等待、恢复和释放证据。",
         "batchIds": [
           "verification-resource-coordination"
         ]
@@ -337,8 +337,8 @@
         },
         {
           "id": "verification-resource-coordination",
-          "status": "current",
-          "label": "下一批次",
+          "status": "done",
+          "label": "已完成",
           "title": "批次 3 · 跨任务验证资源协调",
           "summary": "让每项验证声明运行位置、占用资源、隔离方式和清理方式，并在多个任务之间统一协调。",
           "deliverable": "临时目录、端口和测试数据按任务隔离；浏览器、Docker 和重型验证按容量排队；未知共享副作用停止执行。",
@@ -354,8 +354,8 @@
         },
         {
           "id": "workspace-convergence",
-          "status": "next",
-          "label": "待确认范围",
+          "status": "current",
+          "label": "当前批次",
           "title": "批次 4 · 主工作区收敛检查",
           "summary": "任务集成后，只在保留的主工作区检查真实运行资产和默认入口，不机械重复相同候选的完整验证。",
           "deliverable": "目标分支、运行资产、doctor、默认 CLI 和本机应用按实际影响收敛，并形成可核实结果。",
@@ -393,7 +393,7 @@
           "status": "next",
           "label": "按批次创建",
           "title": "尚未创建的 Change 身份",
-          "summary": "CLI 调用信息和验证资源协调目前只有已确认方向，尚无真实 OpenSpec Change。",
+          "summary": "前两项优化方向均已创建并交付真实 OpenSpec Change；后续批次仍按进入条件创建或确认 Change。",
           "entryCondition": "进入对应批次时先完成 task triage、任务环境创建和 OpenSpec proposal。",
           "unaffectedBatchIds": [
             "foundation",
