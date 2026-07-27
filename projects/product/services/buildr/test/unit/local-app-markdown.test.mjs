@@ -170,6 +170,25 @@ test('renderMarkdown 渲染行内代码、围栏代码块、链接与表格', as
   assert.equal(root.querySelectorAll('table td').length, 2);
 });
 
+test('renderMarkdown 渲染任务勾选列表与分隔线', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown([
+    '- [x] 已完成',
+    '- [ ] 未完成',
+    '',
+    '---',
+    '',
+    '后续说明',
+  ].join('\n'));
+  assert.equal(root.querySelectorAll('li').length, 2);
+  assert.equal(root.querySelectorAll('input').length, 2);
+  assert.equal(root.querySelectorAll('input')[0].checked, true);
+  assert.equal(root.querySelectorAll('input')[1].checked, false);
+  assert.equal(root.querySelectorAll('li')[0].className.includes('task-list-item'), true);
+  assert.equal(root.querySelectorAll('ul')[0].className.includes('task-list'), true);
+  assert.equal(root.querySelectorAll('hr').length, 1);
+});
+
 test('renderMarkdown 以文本节点转义危险内容且拒绝非 http(s) 链接', async () => {
   const { renderMarkdown } = await loadRenderer();
   const root = renderMarkdown([

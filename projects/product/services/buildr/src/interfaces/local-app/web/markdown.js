@@ -68,12 +68,31 @@ function createHeading(level, text, doc) {
 
 function createList(ordered, items, doc) {
   const list = doc.createElement(ordered ? 'ol' : 'ul');
+  let hasTask = false;
   for (const item of items) {
     const li = doc.createElement('li');
-    appendInline(li, item, doc);
+    const task = String(item).match(/^\[([ xX])\]\s+(.+)$/);
+    if (task) {
+      hasTask = true;
+      li.className = 'task-list-item';
+      const checkbox = doc.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.disabled = true;
+      checkbox.checked = task[1].toLowerCase() === 'x';
+      const label = doc.createElement('span');
+      appendInline(label, task[2], doc);
+      li.append(checkbox, label);
+    } else {
+      appendInline(li, item, doc);
+    }
     list.append(li);
   }
+  if (hasTask) list.className = `${list.className} task-list`.trim();
   return list;
+}
+
+function createHorizontalRule(doc) {
+  return doc.createElement('hr');
 }
 
 function createCodeBlock(language, code, doc) {
@@ -146,6 +165,12 @@ export function renderMarkdown(markdown, doc = globalThis.document) {
         index += 1;
       }
       root.append(createTable(header, rows, doc));
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line.trim())) {
+      root.append(createHorizontalRule(doc));
+      index += 1;
       continue;
     }
 

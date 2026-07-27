@@ -1,4 +1,4 @@
-import { renderMarkdown } from '../markdown.js';
+import { renderMarkdown } from '/markdown.js';
 
 function artifactPanel(label, artifact) {
   const article = document.createElement('article'); article.className = 'artifact-panel';

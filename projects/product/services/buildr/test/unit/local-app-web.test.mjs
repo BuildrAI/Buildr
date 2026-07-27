@@ -65,7 +65,7 @@ test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () 
   const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
   const markdown = fs.readFileSync('src/interfaces/local-app/web/markdown.js', 'utf8');
   assert.ok(source.indexOf('id="change-brief"') < source.indexOf('technical-artifacts-panel'));
-  assert.match(source, /import \{ renderMarkdown \} from '\.\.\/markdown\.js'/);
+  assert.match(source, /import \{ renderMarkdown \} from '\/markdown\.js'/);
   assert.match(source, /briefPanel\(change\.brief\)/);
   assert.match(source, /这个变更还没有人类可读 Brief/);
   assert.match(source, /renderMarkdown\(artifact\.content\)/);
