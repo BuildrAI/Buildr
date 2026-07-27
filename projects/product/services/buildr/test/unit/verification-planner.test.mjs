@@ -27,7 +27,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
     'unit', 'contract', 'integration-fast', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
-    'integration-candidate-recovery', 'integration-candidate-release', 'candidate-tarball', 'open-source-candidate',
+    'integration-candidate-recovery', 'integration-candidate-release', 'concurrent-task-acceptance', 'candidate-tarball', 'open-source-candidate',
     'openspec-candidate-audit', 'managed-mutations', 'browser-shell', 'browser-project', 'browser-service', 'browser-change', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
     'package-runtime', 'runtime-adapter-parity', 'workspace-lifecycle', 'ownership-recovery', 'runtime-reconciliation',

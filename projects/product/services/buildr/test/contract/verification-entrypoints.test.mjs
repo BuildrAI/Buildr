@@ -108,6 +108,7 @@ test('candidate verification retains every release gate and split package steps'
     'fast integration tests',
     'Candidate integration: builtin recovery and migration',
     'Candidate integration: release Git convergence',
+    'Concurrent task workflow acceptance',
     'CLI modular architecture',
     'OpenSpec canonical spec quality',
     'openspec strict validation',
@@ -141,8 +142,22 @@ test('candidate verification retains every release gate and split package steps'
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   assert.deepEqual(candidatePlan.steps.filter((step) => step.resources?.includes('workspace-saturating')).map((step) => step.id), [
-    'integration-candidate-recovery', 'integration-candidate-release', 'runtime-adapter-parity',
+    'integration-candidate-recovery', 'integration-candidate-release', 'concurrent-task-acceptance', 'runtime-adapter-parity',
   ]);
+});
+
+test('双任务并发验收输出完整的组合证据并执行归属清理', () => {
+  const source = read('test/verification/concurrency/task-acceptance.mjs');
+  for (const phrase of [
+    'buildr.concurrent-task-acceptance/v1', 'cliInvocation', 'app', 'preview',
+    'resourceCoordination', 'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
+  ]) assert.ok(source.includes(phrase), phrase);
+  assert.ok(source.includes("profiles: ['candidate']") === false);
+  const entry = verificationSteps.find((step) => step.id === 'concurrent-task-acceptance');
+  assert.equal(entry.executor.file, 'test/verification/concurrency/task-acceptance.mjs');
+  assert.deepEqual(entry.profiles, ['candidate']);
+  assert.ok(entry.resources.includes('workspace-saturating'));
+  assert.ok(entry.budgetMs > 0);
 });
 
 test('package verifier selectors are stable, focused, and fail closed', () => {
