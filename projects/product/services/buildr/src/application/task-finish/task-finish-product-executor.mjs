@@ -43,11 +43,12 @@ function commandObservation(id, command, args, cwd, result, startedAt, durationM
 function runCommand(id, command, args, cwd, options = {}) {
   const started = process.hrtime.bigint();
   const startedAt = new Date().toISOString();
+  const runtimePath = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}`;
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
     maxBuffer: MAX_OUTPUT_BYTES,
-    env: options.env || process.env,
+    env: options.env || { ...process.env, BUILDR_NODE: process.execPath, PATH: runtimePath },
   });
   const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
   return {
@@ -97,6 +98,21 @@ function projectRecord(runtime, workspaceRoot, executionRoot, projectCode) {
   const root = path.resolve(executionRoot, project.source.path);
   if (!inside(executionRoot, root)) throw new Error(`Project source escapes execution root: ${project.source.path}`);
   return { project, root };
+}
+
+function finishChangeRoot(projectRoot, change) {
+  if (!change || path.basename(change) !== change) throw new Error(`Invalid OpenSpec change identity: ${change}`);
+  const changesRoot = path.join(projectRoot, 'openspec', 'changes');
+  const activeRoot = path.join(changesRoot, change);
+  if (fs.existsSync(activeRoot)) return { root: activeRoot, archived: false };
+  const archiveRoot = path.join(changesRoot, 'archive');
+  const matches = fs.existsSync(archiveRoot)
+    ? fs.readdirSync(archiveRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.endsWith(`-${change}`) && fs.existsSync(path.join(archiveRoot, entry.name, '.openspec.yaml')))
+      .map((entry) => path.join(archiveRoot, entry.name))
+    : [];
+  if (matches.length !== 1) return null;
+  return { root: matches[0], archived: true };
 }
 
 function addFinding(findings, check, severity, code, message, extra = {}) {
@@ -203,20 +219,25 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       let changeRoot = null;
       try {
         ({ root: projectRoot } = projectRecord(runtime, run.identity.workspaceRoot, environmentRoot, run.identity.project));
-        changeRoot = path.join(projectRoot, 'openspec', 'changes', run.identity.change);
-        if (!fs.existsSync(changeRoot)) addFinding(findings, 'change', 'error', 'task-finish.change-not-active', `Active Change is unavailable: ${run.identity.change}`);
+        const resolvedChange = finishChangeRoot(projectRoot, run.identity.change);
+        changeRoot = resolvedChange?.root || null;
+        if (!changeRoot) addFinding(findings, 'change', 'error', 'task-finish.change-unavailable', `Active or uniquely archived Change is unavailable: ${run.identity.change}`);
         else {
           checkChangeTasks(changeRoot, findings);
           checkKnowledgeImpact(changeRoot, findings);
-          const validated = runJsonCommand('preflight-openspec-validate', openspecCommand, ['validate', run.identity.change, '--strict', '--json'], projectRoot);
+          const invocation = context?.cliInvocation;
+          const validated = resolvedChange.archived
+            ? runJsonCommand('preflight-openspec-audit', invocation.command, invocationArgs(invocation, ['openspec', 'audit', run.identity.change, '--project', run.identity.project, '--target', environmentRoot, '--json']), environmentRoot)
+            : runJsonCommand('preflight-openspec-validate', openspecCommand, ['validate', run.identity.change, '--strict', '--json'], projectRoot);
           operations.push(validated.observation);
-          if (validated.result.status !== 0 || validated.payload?.summary?.failed > 0) addFinding(findings, 'openspec-validation', 'error', 'task-finish.openspec-invalid', 'OpenSpec strict validation failed.', { exitCode: validated.result.status, diagnostic: validated.observation.stderr });
-          else addFinding(findings, 'openspec-validation', 'ok', 'task-finish.openspec-valid', 'OpenSpec strict validation passed.');
+          const validationFailed = validated.result.status !== 0 || (resolvedChange.archived ? validated.payload?.status !== 'passed' : validated.payload?.summary?.failed > 0);
+          if (validationFailed) addFinding(findings, 'openspec-validation', 'error', 'task-finish.openspec-invalid', resolvedChange.archived ? 'Archived OpenSpec convergence audit failed.' : 'OpenSpec strict validation failed.', { exitCode: validated.result.status, diagnostic: validated.payload?.diagnostic || validated.observation.stderr });
+          else addFinding(findings, 'openspec-validation', 'ok', 'task-finish.openspec-valid', resolvedChange.archived ? 'Archived OpenSpec convergence audit passed.' : 'OpenSpec strict validation passed.');
           try {
             const delta = runtime.parseOpenSpecChangeDelta(changeRoot);
             const proposal = runtime.parseOpenSpecProposalCapabilities(changeRoot);
             const result = runtime.createOpenSpecContractResult('preflight', run.identity.change, run.identity.project, 'current');
-            runtime.detectOpenSpecActiveConflicts(projectRoot, run.identity.change, delta, result);
+            if (!resolvedChange.archived) runtime.detectOpenSpecActiveConflicts(projectRoot, run.identity.change, delta, result);
             runtime.validateOpenSpecProposalAlignment(projectRoot, changeRoot, delta, null, result);
             if (!runtime.finishOpenSpecContractResult(result).ok) addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-blocked', 'OpenSpec convergence pure plan is blocked.', { conflicts: result.conflicts, findings: result.findings });
             else addFinding(findings, 'openspec-plan', 'ok', 'task-finish.openspec-plan-ready', `OpenSpec delta declares ${proposal.modified.size + proposal.new.size} capability change(s).`);

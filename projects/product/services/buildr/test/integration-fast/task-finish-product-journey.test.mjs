@@ -28,6 +28,7 @@ const args = process.argv.slice(2);
 const option = (name) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : null; };
 const output = (value) => process.stdout.write(JSON.stringify(value) + '\\n');
 if (args[0] === 'version') output({ schemaVersion: 'buildr.version/v1', version: '2.0.0-test' });
+else if (args[0] === 'openspec' && args[1] === 'audit') output({ schemaVersion: 'buildr.openspec-audit/v1', status: 'passed' });
 else if (args[0] === 'openspec' && args[1] === 'converge') {
   const target = option('--target');
   const active = path.join(target, 'projects', 'product', 'openspec', 'changes', args[2]);
@@ -71,6 +72,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
   const changeRoot = path.join(seed, 'projects', 'product', 'openspec', 'changes', 'finish-journey');
   fs.mkdirSync(path.join(changeRoot, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] implementation complete\n');
   fs.writeFileSync(path.join(changeRoot, '.buildr', 'knowledge-impact.yml'), 'schemaVersion: buildr.knowledge-impact/v1\nimpacts: []\nunresolvedItems: []\n');
   fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v1\ncapabilities:\n  - id: product.affected\n');
@@ -93,6 +95,11 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
 
   const openspec = path.join(fixture, 'bin', 'openspec');
   writeExecutable(openspec, fakeOpenSpec);
+  const hostileBin = path.join(fixture, 'hostile-bin');
+  writeExecutable(path.join(hostileBin, 'node'), '#!/bin/sh\necho "unexpected incompatible Node" >&2\nexit 91\n');
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
+  t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
     resolveTaskEnvironmentContext: () => ({
       taskId: task,
@@ -129,6 +136,13 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
     },
   });
   const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot, openspecCommand: openspec });
+  const activeChange = path.join(environmentRoot, 'projects', 'product', 'openspec', 'changes', 'finish-journey');
+  const archivedChange = path.join(environmentRoot, 'projects', 'product', 'openspec', 'changes', 'archive', '2026-07-28-finish-journey');
+  fs.mkdirSync(path.dirname(archivedChange), { recursive: true });
+  fs.renameSync(activeChange, archivedChange);
+  const archivedPreflight = await handlers.preflight({ run });
+  assert.equal(archivedPreflight.status, 'passed', JSON.stringify(archivedPreflight, null, 2));
+  fs.renameSync(archivedChange, activeChange);
   const result = await executeFinishRun({ root: environmentRoot, run, handlers });
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
