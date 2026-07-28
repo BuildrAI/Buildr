@@ -12,6 +12,25 @@ function fixture(t) {
   return root;
 }
 
+function retainedFixture(t, taskId = 'retained-root-run') {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-retained-root-'));
+  const root = path.join(workspaceRoot, '.worktrees', taskId);
+  const gitDirectory = path.join(workspaceRoot, '.git');
+  const worktreeGitDirectory = path.join(gitDirectory, 'worktrees', taskId);
+  fs.mkdirSync(root, { recursive: true });
+  fs.mkdirSync(worktreeGitDirectory, { recursive: true });
+  fs.writeFileSync(path.join(root, '.git'), `gitdir: ${worktreeGitDirectory}\n`);
+  fs.writeFileSync(path.join(worktreeGitDirectory, 'commondir'), '../..\n');
+  const receiptDirectory = path.join(gitDirectory, 'buildr', 'task-environments');
+  fs.mkdirSync(receiptDirectory, { recursive: true });
+  fs.writeFileSync(path.join(receiptDirectory, `${taskId}.json`), `${JSON.stringify({
+    schemaVersion: 'buildr.task-environment-receipt/v1', taskId, agent: 'codex', workspaceRoot, environmentRoot: root,
+    state: 'ready', repositories: [{ selector: 'workspace', checkoutPath: root }],
+  }, null, 2)}\n`);
+  t.after(() => fs.rmSync(workspaceRoot, { recursive: true, force: true }));
+  return { root, workspaceRoot, taskId };
+}
+
 function create(root, runId = 'finish-1', targetBranch = 'dev') {
   return createFinishRun({ root, runId, task: runId, change: 'change-1', targetBranch });
 }
@@ -425,6 +444,53 @@ test('registry retained convergence 只按 changed paths 执行必要 stages', a
     const retainedStep = readFinishRun({ root, runId }).steps.find((item) => item.id === 'retained-convergence');
     assert.equal(retainedStep.executionPlan.metadata.impact.requiresRuntimeSync, expected.includes('sync'));
   }
+});
+
+test('runtime install accepts only the receipt-bound retained Workspace outside the task root', async (t) => {
+  const { root, workspaceRoot, taskId } = retainedFixture(t);
+  create(root, taskId);
+  while (inspectFinishRun(readFinishRun({ root, runId: taskId })).currentStep !== 'runtime-install') passCurrent(root, taskId);
+  const source = path.join(workspaceRoot, 'projects/product/services/buildr/bin/buildr.mjs');
+  const installer = path.join(workspaceRoot, 'projects/product/services/buildr/scripts/install-buildr-cli');
+  fs.mkdirSync(path.dirname(source), { recursive: true });
+  fs.mkdirSync(path.dirname(installer), { recursive: true });
+  fs.writeFileSync(source, '#!/usr/bin/env node\n');
+  fs.writeFileSync(installer, '#!/bin/sh\n');
+  const context = {
+    retainedWorkspaceRoot: workspaceRoot,
+    retainedCliInvocation: { command: process.execPath, argsPrefix: [source] },
+    retainedRuntimeIdentity: { nodeExecutable: process.execPath, nodeMajor: Number(process.versions.node.split('.')[0]), cliSource: source, targetRoot: workspaceRoot },
+    changedPaths: ['projects/product/services/buildr/src/application/task-finish/task-finish-run.mjs'],
+  };
+  const commands = [];
+  const result = await executeSafeFinishRun({
+    root, runId: taskId, actionContext: context,
+    runCommand: async (command, args) => {
+      commands.push([command, ...args]);
+      if (args[0] === '-e') return { status: 0, stdout: JSON.stringify({ nodeExecutable: process.execPath, nodeMajor: Number(process.versions.node.split('.')[0]) }), stderr: '' };
+      if (args.includes('version')) return { status: 0, stdout: JSON.stringify({ schemaVersion: 'buildr.version/v1', version: 'test' }), stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
+    },
+  });
+  assert.equal(result.currentStep, 'asset-review-late');
+  assert.equal(result.safeExecution.executedSteps[0].actionId, 'runtime-install.receipt-bound');
+  assert.equal(commands.length, 3);
+  assert.ok(commands.every(([command]) => command === process.execPath || command === installer));
+
+  const otherRoot = path.join(workspaceRoot, 'other-retained');
+  const otherSource = path.join(otherRoot, 'projects/product/services/buildr/bin/buildr.mjs');
+  fs.mkdirSync(path.dirname(otherSource), { recursive: true });
+  fs.writeFileSync(otherSource, '#!/usr/bin/env node\n');
+  createFinishRun({ root, runId: 'wrong-retained-root', task: taskId, change: null, targetBranch: 'dev' });
+  while (inspectFinishRun(readFinishRun({ root, runId: 'wrong-retained-root' })).currentStep !== 'runtime-install') passCurrent(root, 'wrong-retained-root');
+  await assert.rejects(() => executeSafeFinishRun({
+    root, runId: 'wrong-retained-root', actionContext: {
+      ...context, retainedWorkspaceRoot: otherRoot,
+      retainedCliInvocation: { command: process.execPath, argsPrefix: [otherSource] },
+      retainedRuntimeIdentity: { ...context.retainedRuntimeIdentity, cliSource: otherSource, targetRoot: otherRoot },
+    },
+    runCommand: async () => ({ status: 0, stdout: '', stderr: '' }),
+  }), /does not match the task environment receipt/);
 });
 
 test('retained convergence 失败只阻塞自身且不重复 push 或验证', async (t) => {

@@ -234,7 +234,7 @@ function resolveRuntimeInstall({ root, action, context }) {
     stages.push({ id: 'default-cli-install', commands: [executablePlan({ root: retainedRoot, action, command: installer, args: installArgs, safeHandler: 'buildr-cli-install', evidenceId: 'retained-cli-install', sharedMutation: true })] });
     stages.push({ id: 'installed-cli-check', commands: [executablePlan({ root: retainedRoot, action, command: nodeExecutable, args: [cliSource, 'version', '--json'], safeHandler: 'buildr-cli-version', evidenceId: 'retained-cli-version', jsonRequired: ['schemaVersion', 'version'] })] });
   }
-  return { plan: { ...executablePlan({ root: retainedRoot, action, command: nodeExecutable, args: [], safeHandler: 'runtime-install', evidenceId: `registry-runtime-install-${identity.nodeMajor}`, sharedMutation: impact.requiresCliInstall, stages }), metadata: { impact, identity: { nodeExecutable, nodeMajor: identity.nodeMajor, cliSource, targetRoot }, skipReasons: { cliInstall: impact.requiresCliInstall ? null : 'default-cli-not-affected', localAppInstall: 'local-app-not-affected' } } } };
+  return { plan: { ...executablePlan({ root: retainedRoot, action, command: nodeExecutable, args: [], safeHandler: 'runtime-install', evidenceId: `registry-runtime-install-${identity.nodeMajor}`, sharedMutation: impact.requiresCliInstall, stages }), metadata: { retainedWorkspaceRoot: retainedRoot, impact, identity: { nodeExecutable, nodeMajor: identity.nodeMajor, cliSource, targetRoot }, skipReasons: { cliInstall: impact.requiresCliInstall ? null : 'default-cli-not-affected', localAppInstall: 'local-app-not-affected' } } } };
 }
 
 function fingerprint({ run, action, plan, context }) {

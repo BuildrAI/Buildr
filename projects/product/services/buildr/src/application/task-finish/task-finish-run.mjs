@@ -190,22 +190,60 @@ function isWithin(root, candidate) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-export function validateFinishExecutionPlan({ root, plan }) {
+function isWithinExecutionRoots(roots, candidate) {
+  return roots.some((root) => isWithin(root, candidate));
+}
+
+function gitCommonDirectory(root) {
+  const marker = path.join(path.resolve(root), '.git');
+  if (fs.statSync(marker).isDirectory()) return fs.realpathSync(marker);
+  const match = fs.readFileSync(marker, 'utf8').trim().match(/^gitdir:\s*(.+)$/);
+  if (!match) throw new Error('task environment Git metadata is invalid.');
+  const gitDirectory = fs.realpathSync(path.resolve(path.dirname(marker), match[1]));
+  const commonFile = path.join(gitDirectory, 'commondir');
+  return fs.realpathSync(fs.existsSync(commonFile) ? path.resolve(gitDirectory, fs.readFileSync(commonFile, 'utf8').trim()) : gitDirectory);
+}
+
+function receiptBoundRetainedExecutionRoots({ root, run, resolution, plan }) {
+  const roots = [path.resolve(root)];
+  const realEnvironmentRoot = fs.realpathSync(root);
+  if (resolution?.action?.executionSurface !== 'retained-checkout') return roots;
+  if (plan.planSource !== 'registry') throw new Error('retained execution requires a registry-owned plan.');
+  const declaredRoot = plan.metadata?.retainedWorkspaceRoot || plan.metadata?.identity?.targetRoot || null;
+  if (declaredRoot && fs.realpathSync(declaredRoot) === realEnvironmentRoot) return roots;
+  if (!FINISH_RUN_ID_PATTERN.test(String(run.task || ''))) throw new Error('retained execution requires a valid task environment id.');
+  const receiptDirectory = path.join(gitCommonDirectory(root), 'buildr', 'task-environments');
+  const receiptFile = path.resolve(receiptDirectory, `${run.task}.json`);
+  if (path.dirname(receiptFile) !== receiptDirectory) throw new Error('retained execution receipt path escapes the task environment registry.');
+  if (!fs.existsSync(receiptFile)) throw new Error(`task environment receipt is missing for retained execution: ${run.task}`);
+  const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+  const environmentRoot = fs.realpathSync(receipt.environmentRoot || '');
+  const workspaceRoot = fs.realpathSync(receipt.workspaceRoot || '');
+  if (receipt.schemaVersion !== 'buildr.task-environment-receipt/v1' || receipt.state !== 'ready' || receipt.taskId !== run.task
+    || environmentRoot !== realEnvironmentRoot || !declaredRoot || fs.realpathSync(declaredRoot) !== workspaceRoot) {
+    throw new Error('retained execution root does not match the task environment receipt.');
+  }
+  if (run.steps.find((item) => item.id === 'integration-push')?.status !== 'passed') throw new Error('retained execution requires a passed integration-push step.');
+  return [...new Set([...roots, path.resolve(receipt.workspaceRoot), workspaceRoot])];
+}
+
+export function validateFinishExecutionPlan({ root, plan, allowedExecutionRoots = [root] }) {
   if (plan == null) return null;
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('execution plan must be an object.');
+  const executionRoots = [...new Set(allowedExecutionRoots.map((entry) => path.resolve(entry)))];
   const cwd = path.resolve(plan.cwd || root);
-  if (!isWithin(root, cwd)) throw new Error(`execution plan cwd is outside the allowed execution root: ${cwd}`);
+  if (!isWithinExecutionRoots(executionRoots, cwd)) throw new Error(`execution plan cwd is outside the allowed execution roots: ${cwd}`);
   const command = plan.command ? path.resolve(plan.command) : null;
   if (command && (!path.isAbsolute(plan.command) || !fs.existsSync(command))) throw new Error(`execution plan command must be an existing absolute path: ${plan.command}`);
   const commandSource = plan.commandSource || 'environment-local';
-  if (command && commandSource === 'environment-local' && !isWithin(root, command)) throw new Error(`execution plan command is outside the receipt-bound environment: ${command}`);
+  if (command && commandSource === 'environment-local' && !isWithinExecutionRoots(executionRoots, command)) throw new Error(`execution plan command is outside the receipt-bound execution roots: ${command}`);
   if (!['environment-local', 'external-declared'].includes(commandSource)) throw new Error(`execution plan command source is unsupported: ${commandSource}`);
   const args = Array.isArray(plan.args) && plan.args.every((value) => typeof value === 'string') ? [...plan.args] : [];
   if (plan.args && args.length !== plan.args.length) throw new Error('execution plan args must be strings.');
   let packageRoot = null;
   if (plan.npmScript) {
     packageRoot = path.resolve(plan.packageRoot || cwd);
-    if (!isWithin(root, packageRoot)) throw new Error(`execution plan package root is outside the allowed execution root: ${packageRoot}`);
+    if (!isWithinExecutionRoots(executionRoots, packageRoot)) throw new Error(`execution plan package root is outside the allowed execution roots: ${packageRoot}`);
     const manifestPath = path.join(packageRoot, 'package.json');
     if (!fs.existsSync(manifestPath)) throw new Error(`execution plan package manifest does not exist: ${manifestPath}`);
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -235,12 +273,12 @@ export function validateFinishExecutionPlan({ root, plan }) {
     jsonRequired: Array.isArray(plan.jsonRequired) && plan.jsonRequired.every((entry) => typeof entry === 'string' && entry.trim())
       ? [...new Set(plan.jsonRequired)]
       : [],
-    observations: Array.isArray(plan.observations) ? plan.observations.map((entry) => validateFinishExecutionPlan({ root, plan: { ...entry, sharedMutation: false, safeAuto: true } })) : [],
+    observations: Array.isArray(plan.observations) ? plan.observations.map((entry) => validateFinishExecutionPlan({ root, allowedExecutionRoots: executionRoots, plan: { ...entry, sharedMutation: false, safeAuto: true } })) : [],
     stages: Array.isArray(plan.stages) ? plan.stages.map((entry) => ({
       id: typeof entry.id === 'string' && entry.id.trim() ? entry.id : null,
       parallel: entry.parallel === true,
       commands: Array.isArray(entry.commands)
-        ? entry.commands.map((commandPlan) => validateFinishExecutionPlan({ root, plan: { ...commandPlan, sharedMutation: false, safeAuto: true } }))
+        ? entry.commands.map((commandPlan) => validateFinishExecutionPlan({ root, allowedExecutionRoots: executionRoots, plan: { ...commandPlan, sharedMutation: false, safeAuto: true } }))
         : [],
     })) : [],
   };
@@ -767,11 +805,11 @@ export function compactFinishCheckpoint(checkpoint) {
   };
 }
 
-export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, refTransition = null, executionPlan = null, clock = Date.now, leaseTtlMs = 600_000 }) {
+export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, refTransition = null, executionPlan = null, allowedExecutionRoots = [root], clock = Date.now, leaseTtlMs = 600_000 }) {
   const run = readFinishRun({ root, runId });
   const plannedItem = nextStep(run);
   let normalizedPlan;
-  try { normalizedPlan = validateFinishExecutionPlan({ root, plan: executionPlan ?? plannedItem?.executionPlan }); }
+  try { normalizedPlan = validateFinishExecutionPlan({ root, allowedExecutionRoots, plan: executionPlan ?? plannedItem?.executionPlan }); }
   catch (error) {
     if (outcome || !plannedItem || plannedItem.status === 'running') throw error;
     plannedItem.status = 'blocked';
@@ -1053,7 +1091,9 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
         : resolution.status === 'input-required' ? 'action-input-required' : 'agent-reasoning-required';
       return { ...checkpoint, actionResolution: resolution, safeExecution: { status: 'stopped', reason, step, executedSteps, durationMs: clock() - startedAt } };
     }
-    const plan = validateFinishExecutionPlan({ root, plan: explicitPlan || resolution.plan });
+    const rawPlan = explicitPlan || resolution.plan;
+    const allowedExecutionRoots = explicitPlan ? [root] : receiptBoundRetainedExecutionRoots({ root, run: readFinishRun({ root, runId }), resolution, plan: rawPlan });
+    const plan = validateFinishExecutionPlan({ root, allowedExecutionRoots, plan: rawPlan });
     const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
     const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge', 'buildr-cli-install'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence', 'runtime-install'].includes(plan?.safeHandler);
     if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root, Boolean(resolution)))) {
@@ -1061,7 +1101,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     }
     const fingerprint = fingerprints[step] || resolution?.fingerprint;
     if (!fingerprint) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'fingerprint-missing', step, executedSteps, durationMs: clock() - startedAt } };
-    const claimed = advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, executionPlan: plan, clock });
+    const claimed = advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, executionPlan: plan, allowedExecutionRoots, clock });
     const stageResults = [];
     const runOne = async (entry) => {
       const commandStarted = clock();
@@ -1114,7 +1154,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
         reason: recordedDiagnostic?.primaryFailure?.check || result.stderr || (result.assertionPassed ? `command exited ${result.status}` : 'structured success assertion failed'),
         primaryFailure: recordedDiagnostic?.primaryFailure || null,
         warnings: recordedDiagnostic?.warnings || [],
-      }, clock,
+      }, allowedExecutionRoots, clock,
     });
     const completedAttempt = completed.timing.attempts.filter((attempt) => attempt.step === step).at(-1);
     executedSteps.push({ step, actionId: plan.actionId, planSource: plan.planSource, status: passed ? 'passed' : 'blocked', durationMs: completedAttempt?.durationMs ?? null });
