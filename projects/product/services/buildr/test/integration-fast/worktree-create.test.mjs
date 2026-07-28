@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -110,6 +111,31 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.deepEqual(reused.bootstrap.sync, { status: 'skipped', reason: 'reused-without-tree-transition' });
   });
 
+  test('requires canonical sync before rendering runtime when managed source would converge', () => {
+    const coreFile = path.join(workspace, 'rules', 'buildr', 'core.md');
+    const receiptsFile = path.join(workspace, '.buildr', 'builtin-receipts.json');
+    fs.appendFileSync(coreFile, '\n<!-- previous managed source -->\n');
+    const receipts = JSON.parse(fs.readFileSync(receiptsFile, 'utf8'));
+    const coreReceipt = receipts.builtins.find((item) => item.type === 'rule' && item.id === 'buildr-core');
+    assert.ok(coreReceipt);
+    const sha256 = (value) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
+    coreReceipt.files = [{ path: 'core.md', integrity: sha256(fs.readFileSync(coreFile)) }];
+    coreReceipt.integrity = sha256(JSON.stringify(coreReceipt.files));
+    fs.writeFileSync(receiptsFile, `${JSON.stringify(receipts, null, 2)}\n`);
+    git(['add', coreFile, receiptsFile]);
+    git(['commit', '-m', 'simulate previous managed source']);
+
+    const blocked = runBuildr(['worktree', 'create', 'source-stale', '--agent', 'codex', '--branch', 'codex/source-stale', '--start-point', 'main', '--target', workspace, '--json'], 1);
+    assert.equal(blocked.blocked.code, 'worktree.canonical_sync_required');
+    assert.deepEqual(blocked.bootstrap.sync, { status: 'blocked', reason: 'canonical-source-sync-required' });
+    assert.equal(gitAt(blocked.environment.root, ['status', '--porcelain']), '');
+
+    const synced = spawnSync(process.execPath, [cli, 'sync', 'codex', '--target', workspace], { cwd: productRoot, encoding: 'utf8' });
+    assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+    git(['add', '-A']);
+    git(['commit', '-m', 'restore current managed source']);
+  });
+
   test('skips sync when tracked runtime is already healthy', () => {
     git(['add', '-f', '.agents']);
     git(['commit', '-m', 'track runtime fixture']);
@@ -180,6 +206,11 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     const serviceRoot = path.join(projectRoot, 'services', 'api');
     gitAt(serviceRoot, ['config', 'user.name', 'Buildr Test']);
     gitAt(serviceRoot, ['config', 'user.email', 'buildr-test@example.com']);
+    const workerCreated = spawnSync(process.execPath, [cli, 'service', 'create', 'nested/worker', remoteUrl, '--target', workspace, '--integration-branch', 'dev', '--name', 'Worker', '--description', 'Omitted worker service', '--type', 'backend'], { cwd: productRoot, encoding: 'utf8' });
+    assert.equal(workerCreated.status, 0, workerCreated.stderr);
+    const workerRoot = path.join(projectRoot, 'services', 'worker');
+    gitAt(workerRoot, ['config', 'user.name', 'Buildr Test']);
+    gitAt(workerRoot, ['config', 'user.email', 'buildr-test@example.com']);
     gitAt(projectRoot, ['add', '-A']);
     gitAt(projectRoot, ['commit', '-m', 'project baseline']);
     const synced = spawnSync(process.execPath, [cli, 'sync', 'codex', '--target', workspace], { cwd: productRoot, encoding: 'utf8' });
@@ -188,6 +219,10 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
       gitAt(serviceRoot, ['add', '-A']);
       gitAt(serviceRoot, ['commit', '-m', 'service runtime baseline']);
     }
+    if (gitAt(workerRoot, ['status', '--porcelain'])) {
+      gitAt(workerRoot, ['add', '-A']);
+      gitAt(workerRoot, ['commit', '-m', 'worker runtime baseline']);
+    }
     if (gitAt(projectRoot, ['status', '--porcelain'])) {
       gitAt(projectRoot, ['add', '-A']);
       gitAt(projectRoot, ['commit', '-m', 'project runtime baseline']);
@@ -195,9 +230,19 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     git(['add', '-A']);
     git(['add', '-f', '.agents']);
     git(['commit', '-m', 'register nested repositories']);
+    git(['rm', '-r', '--cached', '.agents']);
+    git(['commit', '-m', 'leave runtime untracked for task bootstrap']);
 
     const created = runBuildr(['worktree', 'create', 'multi', '--agent', 'codex', '--branch', 'codex/multi', '--start-point', 'main', '--include', 'project:nested', '--include', 'service:nested/api', '--target', workspace, '--json']);
     assert.equal(created.ready, true);
+    assert.deepEqual(created.bootstrap.sync, { status: 'applied', reason: 'runtime-stale-only' });
+    assert.equal(created.bootstrap.doctorAfter.health.ready, false);
+    assert.equal(created.bootstrap.doctorAfter.health.environmentReady, true);
+    assert.deepEqual(created.bootstrap.doctorAfter.findings.map((item) => [item.code, item.environmentContext]), [
+      ['project.git_branch_drift', 'receipt-task-branch'],
+      ['service.branch_mismatch', 'receipt-task-branch'],
+      ['service.git.missing', 'repository-not-selected'],
+    ]);
     assert.deepEqual(created.repositories.map((item) => item.selector), ['workspace', 'project:nested', 'service:nested/api']);
     assert.equal(created.repositories.every((item) => item.state === 'created'), true);
     assert.equal(created.repositories[1].checkoutPath, path.join(created.environment.root, 'projects', 'nested'));
@@ -267,15 +312,15 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(runBuildr(['worktree', 'inspect', 'parallel', '--target', workspace, '--json']).ready, true);
   });
 
-  test('retains a created checkout and blocks sync for non-runtime doctor findings', () => {
+  test('retains a created checkout and requires canonical sync for managed source findings', () => {
     fs.rmSync(path.join(workspace, 'rules', 'buildr', 'core.md'));
     git(['add', '-A']);
     git(['commit', '-m', 'break workspace fixture']);
     const unsafe = runBuildr(['worktree', 'create', 'unsafe', '--agent', 'codex', '--branch', 'codex/unsafe', '--start-point', 'main', '--target', workspace, '--json'], 1);
     assert.equal(unsafe.state, 'blocked');
     assert.equal(unsafe.treeChanged, true);
-    assert.equal(unsafe.bootstrap.sync.status, 'blocked');
-    assert.equal(unsafe.blocked.code, 'worktree.auto_sync_unsafe');
+    assert.deepEqual(unsafe.bootstrap.sync, { status: 'blocked', reason: 'canonical-source-sync-required' });
+    assert.equal(unsafe.blocked.code, 'worktree.canonical_sync_required');
     assert.equal(fs.existsSync(unsafe.worktree.path), true);
     assert.ok(unsafe.bootstrap.doctorBefore.findings.some((finding) => finding.code !== 'runtime.codex_stale'));
   });

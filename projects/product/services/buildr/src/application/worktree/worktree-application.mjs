@@ -132,30 +132,80 @@ export function parseWorktreeList(text) {
   });
 }
 
-export function isSafeRuntimeStaleOnly({ report, agent, identity, expectedBranch, expectedHead, allowedCodes = [] }) {
-  const actionable = (report?.findings || []).filter((finding) => finding.userActionRequired === true);
+function normalizedFindingPath(value) {
+  return String(value || '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '');
+}
+
+export function evaluateTaskEnvironmentDoctor({ report, repositories }) {
+  const selected = new Map((repositories || []).map((item) => [normalizedFindingPath(item.sourcePath), item]));
+  const contextualFindings = [];
+  const actionableFindings = [];
+  for (const finding of report?.findings || []) {
+    const sourcePath = normalizedFindingPath(finding.path);
+    const member = selected.get(sourcePath);
+    const omittedService = finding.code === 'service.git.missing' && !member;
+    const expectedTaskBranch = (
+      (finding.code === 'service.branch_mismatch' && member?.entityType === 'service')
+      || (finding.code === 'project.git_branch_drift' && member?.entityType === 'project')
+    ) && finding.actual === member.branch;
+    if (omittedService || expectedTaskBranch) {
+      contextualFindings.push({ finding, reason: omittedService ? 'repository-not-selected' : 'receipt-task-branch' });
+      continue;
+    }
+    if (['error', 'warning'].includes(finding.status) && finding.userActionRequired !== false) actionableFindings.push(finding);
+  }
+  const workspaceValid = report?.health?.workspaceValid === true;
+  return {
+    ready: workspaceValid && actionableFindings.length === 0,
+    workspaceValid,
+    actionableFindings,
+    contextualFindings,
+  };
+}
+
+export function syncSourcePlanRequiresCanonicalSync(plan) {
+  if (!plan) return true;
+  if (plan.workspace?.required || plan.projects?.required) return true;
+  if ((plan.builtins?.findings || []).some((finding) =>
+    finding.converge === true
+    || finding.replacementFrom
+    || !['installed', 'uninstalled', 'available'].includes(finding.status))) return true;
+  if ((plan.components?.errors || []).length > 0) return true;
+  return (plan.components?.plans || []).some(({ record, plan: componentPlan }) =>
+    componentPlan?.restoring
+    || !componentPlan?.existingEntry
+    || JSON.stringify(componentPlan?.oldDefinition) !== JSON.stringify(record?.definition));
+}
+
+export function isSafeRuntimeStaleOnly({ report, agent, identity, expectedBranch, expectedHead, environmentEvaluation = null }) {
+  const actionable = environmentEvaluation?.actionableFindings
+    || (report?.findings || []).filter((finding) => ['error', 'warning'].includes(finding.status) && finding.userActionRequired !== false);
   const staleCode = `runtime.${agent.replaceAll('-', '_')}_stale`;
-  const disallowedErrors = (report?.findings || []).filter((finding) => finding.status === 'error' && finding.code !== staleCode && !allowedCodes.includes(finding.code));
-  return (report?.ok === true || (allowedCodes.length > 0 && disallowedErrors.length === 0))
-    && report.health?.workspaceValid === true
+  return report?.health?.workspaceValid === true
     && report.mutations?.blocked !== true
-    && actionable.length > 0
-    && actionable.every((finding) => finding.code === staleCode || allowedCodes.includes(finding.code))
+    && actionable.length === 1
+    && actionable[0].code === staleCode
     && identity?.clean === true
     && identity.branch === expectedBranch
     && identity.head === expectedHead;
 }
 
-function doctorSummary(report) {
+function doctorSummary(report, environmentEvaluation = null) {
   if (!report) return null;
   return {
     ok: report.ok,
-    health: report.health,
+    health: environmentEvaluation ? {
+      ...report.health,
+      environmentReady: environmentEvaluation.ready,
+      environmentActionRequired: environmentEvaluation.actionableFindings.length > 0,
+      environmentActionableCount: environmentEvaluation.actionableFindings.length,
+    } : report.health,
     findings: (report.findings || []).map((finding) => ({
       status: finding.status,
       code: finding.code,
       message: finding.message,
       path: finding.path || null,
+      environmentContext: environmentEvaluation?.contextualFindings.find((item) => item.finding === finding)?.reason || null,
     })),
   };
 }
@@ -470,6 +520,19 @@ export function registerWorktreeApplication(runtime) {
     };
   }
 
+  function ensureTaskEnvironmentProjectBaselines(plan) {
+    const projects = runtime.readProjectRegistryRecord(plan.environmentRoot).projects;
+    const selectedProjects = new Set(plan.repositories.filter((item) => item.entityType === 'project').map((item) => item.sourcePath));
+    for (const project of Object.values(projects)) {
+      if (project.source.type !== 'workspace' && !selectedProjects.has(project.source.path)) continue;
+      const projectRoot = path.join(plan.environmentRoot, project.source.path);
+      if (!fs.existsSync(projectRoot)) continue;
+      for (const relative of ['openspec/specs', 'openspec/knowledge', 'openspec/changes', 'services']) {
+        fs.mkdirSync(path.join(projectRoot, relative), { recursive: true });
+      }
+    }
+  }
+
   function baseResult({ workspaceRoot, taskId = null, agent = null, branch = null, environmentRoot = null }) {
     return {
       workspaceRoot,
@@ -517,18 +580,17 @@ export function registerWorktreeApplication(runtime) {
 
   function bootstrapRoot(base, plan, rootIdentity) {
     const before = readDoctor(plan.agent, plan.environmentRoot);
-    base.bootstrap.doctorBefore = doctorSummary(before.report);
     if (!before.report) return blockedResult(base, 'worktree.doctor_failed', (before.result.stderr || 'Doctor did not return valid JSON.').trim(), [`Inspect ${plan.environmentRoot}`]);
-    if (before.report.health?.ready === true) {
-      base.bootstrap.sync = { status: 'skipped', reason: 'doctor-ready' };
-      base.bootstrap.doctorAfter = doctorSummary(before.report);
-      return base;
+    const beforeEnvironment = evaluateTaskEnvironmentDoctor({ report: before.report, repositories: plan.repositories });
+    base.bootstrap.doctorBefore = doctorSummary(before.report, beforeEnvironment);
+    const sourcePlan = runtime.buildSyncSourcePlan(plan.environmentRoot, plan.agent);
+    if (syncSourcePlanRequiresCanonicalSync(sourcePlan)) {
+      base.bootstrap.sync = { status: 'blocked', reason: 'canonical-source-sync-required' };
+      return blockedResult(base, 'worktree.canonical_sync_required', 'Workspace source assets require canonical sync before the task environment runtime can be rendered safely.', [`Run buildr sync ${plan.agent} --target ${plan.workspaceRoot}`]);
     }
-    const expectedTaskDrift = new Set(['project.git_branch_drift', 'service.branch_mismatch']);
-    const actionable = before.report.findings || [];
-    if (plan.repositories.length > 1 && actionable.length > 0 && actionable.every((finding) => expectedTaskDrift.has(finding.code)) && !(before.report.findings || []).some((finding) => finding.status === 'error')) {
-      base.bootstrap.sync = { status: 'skipped', reason: 'task-environment-branch-drift' };
-      base.bootstrap.doctorAfter = doctorSummary(before.report);
+    if (beforeEnvironment.ready) {
+      base.bootstrap.sync = { status: 'skipped', reason: before.report.health?.ready === true ? 'doctor-ready' : 'task-environment-ready' };
+      base.bootstrap.doctorAfter = doctorSummary(before.report, beforeEnvironment);
       return base;
     }
     const identity = worktreeIdentity(plan.environmentRoot);
@@ -538,15 +600,16 @@ export function registerWorktreeApplication(runtime) {
       identity,
       expectedBranch: plan.branch,
       expectedHead: rootIdentity.head,
-      allowedCodes: plan.repositories.length > 1 ? [...expectedTaskDrift] : [],
+      environmentEvaluation: beforeEnvironment,
     })) {
       base.bootstrap.sync = { status: 'blocked', reason: 'doctor-findings-not-safe-for-automatic-sync' };
       return blockedResult(base, 'worktree.auto_sync_unsafe', 'Doctor findings are not limited to the selected Agent runtime stale allowlist.', before.report.nextSteps?.flatMap((step) => step.commands || step.command || []) || []);
     }
-    const synced = buildr(['sync', plan.agent, '--target', plan.environmentRoot]);
-    if (synced.status !== 0) {
-      base.bootstrap.sync = { status: 'blocked', reason: 'sync-failed' };
-      return blockedResult(base, 'worktree.sync_failed', (synced.stderr || synced.stdout || 'buildr sync failed').trim(), [`Inspect ${plan.environmentRoot}`]);
+    try {
+      runtime.renderRuntime(plan.agent, ['--target', plan.environmentRoot], { productSkill: true });
+    } catch (error) {
+      base.bootstrap.sync = { status: 'blocked', reason: 'runtime-render-failed' };
+      return blockedResult(base, 'worktree.runtime_render_failed', error.message || 'Buildr runtime render failed.', [`Inspect ${plan.environmentRoot}`]);
     }
     base.bootstrap.sync = { status: 'applied', reason: 'runtime-stale-only' };
     const finalIdentity = worktreeIdentity(plan.environmentRoot);
@@ -554,8 +617,10 @@ export function registerWorktreeApplication(runtime) {
       return blockedResult(base, 'worktree.post_sync_identity_changed', 'Workspace sync changed Git identity or left tracked changes; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
     }
     const after = readDoctor(plan.agent, plan.environmentRoot);
-    base.bootstrap.doctorAfter = doctorSummary(after.report);
-    if (!after.report || after.report.health?.ready !== true) return blockedResult(base, 'worktree.post_sync_doctor_failed', 'Final doctor did not report a ready Workspace; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
+    if (!after.report) return blockedResult(base, 'worktree.post_sync_doctor_failed', 'Final doctor did not return a valid report; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
+    const afterEnvironment = evaluateTaskEnvironmentDoctor({ report: after.report, repositories: plan.repositories });
+    base.bootstrap.doctorAfter = doctorSummary(after.report, afterEnvironment);
+    if (!afterEnvironment.ready) return blockedResult(base, 'worktree.post_sync_doctor_failed', 'Final doctor did not report an execution-ready task environment; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
     return base;
   }
 
@@ -623,18 +688,14 @@ export function registerWorktreeApplication(runtime) {
           });
           return printCreateResult(base, json);
         }
-        if (item.entityType === 'project') {
-          for (const relative of ['openspec/specs', 'openspec/knowledge', 'openspec/changes', 'services']) {
-            fs.mkdirSync(path.join(item.checkoutPath, relative), { recursive: true });
-          }
-        }
         repositoryResults.push(publicRepository(item, state, identity));
         if (item.selector === 'workspace') {
           base = { ...base, treeChanged, repositories: repositoryResults, worktree: { path: environmentRoot, branch, head: identity.head } };
         }
       }
+      ensureTaskEnvironmentProjectBaselines(plan);
       const rootIdentity = repositoryResults[0];
-      base = plan.repositories[0].preflightState === 'create'
+      base = treeChanged
         ? bootstrapRoot({ ...base, repositories: repositoryResults }, plan, worktreeIdentity(environmentRoot))
         : { ...base, repositories: repositoryResults, bootstrap: { doctorBefore: null, sync: { status: 'skipped', reason: 'reused-without-tree-transition' }, doctorAfter: null } };
       if (base.blocked) {

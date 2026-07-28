@@ -452,6 +452,8 @@ export function createScopeDiagnostics(deps) {
           if (observed.currentBranch && observed.currentBranch !== registryEntry.source.git.integrationBranch) {
             addDoctorFinding(result, 'warning', 'project.git_branch_drift', `Project 当前分支 ${observed.currentBranch} 不同于 integration branch ${registryEntry.source.git.integrationBranch}：${item.project}`, {
               path: project.path,
+              expected: registryEntry.source.git.integrationBranch,
+              actual: observed.currentBranch,
               suggestion: '先判断是否处于活跃任务分支；收尾时在 clean、ownership 和集成检查通过后安全返回，不要盲目 checkout 或 stash。',
             });
           }
