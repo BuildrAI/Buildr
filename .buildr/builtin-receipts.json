@@ -57,7 +57,7 @@
       "type": "skill",
       "id": "task-asset-review",
       "target": "skills/buildr/task-asset-review",
-      "integrity": "sha256-d8c0ee8a4b2c27f32344a974a23f59f81c65bcd9981b01e1a4f10e0c74098a1c",
+      "integrity": "sha256-f4677c5d717a0683f88dccdf3b37729f74d8ea8b75840a910e3cf83d7795ba83",
       "files": [
         {
           "path": "SKILL.md",
@@ -69,7 +69,7 @@
         },
         {
           "path": "scripts/observation.mjs",
-          "integrity": "sha256-78351d2e3a191916b271f64a619451fb6500360216685287902e316df0e6ac56"
+          "integrity": "sha256-8f48d14ce7e577da65ab4727fd3032a5b38c8a366cdf608282f8fbfcc7169d70"
         },
         {
           "path": "templates/asset-maintenance-record.md",
