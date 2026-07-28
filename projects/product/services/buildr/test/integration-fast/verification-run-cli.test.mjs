@@ -63,10 +63,45 @@ test('verification run executes Project Candidate concurrently and emits identit
   assert.equal(payload.status, 'passed');
   assert.equal(payload.candidateCompleteness, 'confirmed');
   assert.match(payload.evidenceIdentity, /^sha256-/);
+  assert.deepEqual(payload.evidenceLifecycle, {
+    schemaVersion: 'buildr.verification-evidence-lifecycle/v1',
+    runId: payload.runId,
+    evidenceRetention: 'transient',
+    cleanupAfter: 'all-consumers-complete',
+    cleanupStatus: 'retained',
+    cleanupReference: path.dirname(payload.evidenceReference),
+    summaryPath: payload.evidenceReference,
+  });
+  assert.equal(payload.evidenceRetention, undefined);
+  assert.equal(payload.cleanupReference, undefined);
   assert.equal(payload.checks.length, 2);
   const [first, second] = payload.checks;
   assert.ok(Date.parse(first.startedAt) < Date.parse(second.finishedAt) && Date.parse(second.startedAt) < Date.parse(first.finishedAt));
   assert.equal(JSON.parse(fs.readFileSync(payload.evidenceReference, 'utf8')).evidenceIdentity, payload.evidenceIdentity);
+  const cleanup = runBuildr(['verification', 'cleanup', '--summary', payload.evidenceReference, '--json']);
+  assert.equal(cleanup.status, 0, cleanup.stderr || cleanup.stdout);
+  assert.equal(JSON.parse(cleanup.stdout).code, 'cleanup.removed');
+  assert.equal(fs.existsSync(payload.evidenceLifecycle.cleanupReference), false);
+  const repeated = runBuildr(['verification', 'cleanup', '--summary', payload.evidenceReference, '--json']);
+  assert.equal(repeated.status, 0, repeated.stderr || repeated.stdout);
+  assert.equal(JSON.parse(repeated.stdout).code, 'cleanup.already_absent');
+});
+
+test('verification cleanup preserves caller-managed evidence', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v1', mode: 'authoritative', resources: [],
+    capabilities: [declaredCapability('demo.only', 'void 0')],
+  }));
+  const output = path.join(root, 'verification-summary.json');
+  const run = runBuildr(['verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', root, '--output', output, '--json']);
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.equal(JSON.parse(run.stdout).evidenceLifecycle.evidenceRetention, 'caller-managed');
+  const cleanup = runBuildr(['verification', 'cleanup', '--summary', output, '--json']);
+  assert.equal(cleanup.status, 1);
+  assert.equal(JSON.parse(cleanup.stdout).code, 'retention.not_transient');
+  assert.equal(fs.existsSync(output), true);
 });
 
 test('verification run returns one JSON envelope for invalid requests', (t) => {

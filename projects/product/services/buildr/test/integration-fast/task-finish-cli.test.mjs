@@ -167,3 +167,43 @@ test('task finish recover消费版本化manifest并连续执行safe plans', (t) 
   assert.equal(checkpoint.recovery.transition.type, 'implementation-changed');
   assert.equal(checkpoint.safeExecution.executedSteps[0].step, 'context');
 });
+
+test('task finish action-specific missing parameters return canonical structured diagnostics', () => {
+  for (const args of [
+    ['renew', '--run', 'missing-required'],
+    ['recover', '--run', 'missing-required'],
+    ['cleanup-prepare', '--run', 'missing-required', '--attempt', 'token'],
+    ['cleanup-finalize', '--run', 'missing-required'],
+  ]) {
+    const result = spawnSync(process.execPath, [cli, 'task', 'finish', ...args, '--json'], { encoding: 'utf8' });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.error.code, 'task_finish.missing_parameter');
+    assert.match(payload.help, /^buildr help task finish /);
+    assert.deepEqual(payload.suggestions, [payload.help]);
+  }
+});
+
+test('task finish new run requires task identity and target branch', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-required-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const args of [
+    ['advance', '--run', 'missing-task', '--target-branch', 'dev'],
+    ['run', '--run', 'missing-branch', '--task', 'required-task'],
+  ]) {
+    const result = spawnSync(process.execPath, [cli, 'task', 'finish', ...args, '--target', root, '--json'], { encoding: 'utf8' });
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.error.code, 'task_finish.missing_parameter');
+    assert.match(payload.error.message, /--(?:task|target-branch)/);
+    assert.deepEqual(payload.suggestions, [payload.help]);
+  }
+});
+
+test('task finish advance help lists complete parameters, surface and effects', () => {
+  const result = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'advance'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  for (const expected of ['--execution-plan', '--ref-transition', '--resolution-authorization', 'Execution surface', '安全副作用', '互斥参数']) {
+    assert.match(result.stdout, new RegExp(expected));
+  }
+});

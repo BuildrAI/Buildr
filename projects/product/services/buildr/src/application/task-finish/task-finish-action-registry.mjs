@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
 export const FINISH_ACTION_REGISTRY_SCHEMA = 'buildr.task-finish-action-registry/v1';
@@ -11,6 +12,12 @@ const provider = (step, capability, action, executionSurface, evidence, effects 
   evidenceProjection: { finishStep: step, required: evidence },
   fallbackPolicy: 'agent-reasoning-required-on-provider-semantic-branch',
   providerHandoff: { capability, provider: providerId, action, requiredEvidence: evidence },
+});
+
+const executableProvider = (entry) => actionEntry({
+  kind: 'provider-executable', applicability: 'selected-provider-with-product-handler',
+  fallbackPolicy: 'agent-provider-required-on-provider-semantic-branch',
+  ...entry,
 });
 
 function actionEntry(entry) {
@@ -49,7 +56,14 @@ export const FINISH_ACTIONS = Object.freeze([
     evidenceProjection: { finishStep: 'runtime-convergence', required: ['doctor result', 'sync result'] },
     resolver: resolveRuntimeConvergence,
   }),
-  provider('formal-assurance', 'buildr.task-verification@2', 'verify-required', 'task-checkout', ['candidate identity', 'verification summary']),
+  executableProvider({
+    id: 'formal-assurance.verification', step: 'formal-assurance', executionSurface: 'task-checkout',
+    effects: ['verification-local-temporary'], requiredContext: ['cliInvocation', 'project', 'candidateIdentity'],
+    resultContract: { outcome: ['passed', 'blocked'], processExit: 0, requiredFields: ['schemaVersion', 'status', 'evidenceIdentity', 'evidenceLifecycle'], status: 'passed' },
+    evidenceProjection: { finishStep: 'formal-assurance', required: ['candidate identity', 'verification summary', 'evidence lifecycle'] },
+    providerHandoff: { capability: 'buildr.task-verification@2', provider: null, action: 'verify-required', requiredEvidence: ['candidate identity', 'verification summary'] },
+    resolver: resolveFormalAssurance,
+  }),
   provider('asset-review', 'buildr.task-asset-review@3', 'finalize', 'task-checkout', ['review status', 'observation revision']),
   actionEntry({
     id: 'archive.legacy-provider', step: 'archive', kind: 'agent-provider', applicability: 'legacy-finish-run-only', executionSurface: 'retained-checkout',
@@ -67,7 +81,14 @@ export const FINISH_ACTIONS = Object.freeze([
     evidenceProjection: { finishStep: 'retained-convergence', required: ['retained identity', 'impact classification', 'doctor result', 'sync applicability'] },
     resolver: resolveRetainedConvergence,
   }),
-  provider('runtime-install', 'buildr.task-finish@1', 'install-affected-retained-entrypoints', 'retained-checkout', ['retained impact', 'runtime identity', 'not-applicable reasons'], ['runtime-install'], 'task-finish'),
+  executableProvider({
+    id: 'runtime-install.receipt-bound', step: 'runtime-install', executionSurface: 'retained-checkout',
+    effects: ['runtime-install'], requiredContext: ['retainedWorkspaceRoot', 'retainedCliInvocation', 'retainedRuntimeIdentity', 'changedPaths'],
+    resultContract: { outcome: ['passed', 'blocked'], processExit: 0 },
+    evidenceProjection: { finishStep: 'runtime-install', required: ['retained impact', 'runtime identity', 'not-applicable reasons'] },
+    providerHandoff: { capability: 'buildr.task-finish@1', provider: 'task-finish', action: 'install-affected-retained-entrypoints', requiredEvidence: ['retained impact', 'runtime identity', 'not-applicable reasons'] },
+    resolver: resolveRuntimeInstall,
+  }),
   provider('asset-review-late', 'buildr.task-asset-review@3', 'finalize-if-revised', 'retained-checkout', ['review status', 'observation revision']),
   provider('cleanup', 'buildr.task-worktree-lifecycle@2', 'cleanup', 'retained-checkout', ['cleanup readiness', 'durable receipt'], ['local-environment-cleanup']),
 ]);
@@ -88,10 +109,10 @@ function declaredCliInvocation(context) {
   return null;
 }
 
-function executablePlan({ root, action, command, args, safeHandler, evidenceId, sharedMutation = false, jsonAssertion = null, stages = [] }) {
+function executablePlan({ root, action, command, args, safeHandler, evidenceId, sharedMutation = false, jsonAssertion = null, jsonRequired = [], stages = [] }) {
   return {
     cwd: path.resolve(root), command, commandSource: path.resolve(command).startsWith(`${path.resolve(root)}${path.sep}`) ? 'environment-local' : 'external-declared',
-    args, sharedMutation, safeAuto: true, safeHandler, evidenceId, jsonAssertion, stages,
+    args, sharedMutation, safeAuto: true, safeHandler, evidenceId, jsonAssertion, jsonRequired, stages,
     actionId: action.id, registryVersion: FINISH_ACTION_REGISTRY_VERSION, planSource: 'registry',
   };
 }
@@ -127,13 +148,26 @@ function resolveRuntimeConvergence({ root, action, context }) {
   }) };
 }
 
+function resolveFormalAssurance({ root, run, action, context }) {
+  const invocation = declaredCliInvocation(context);
+  const missing = [...(!invocation ? ['cliInvocation'] : []), ...(!context.project ? ['project'] : []), ...(!context.candidateIdentity ? ['candidateIdentity'] : [])];
+  if (missing.length) return { missing };
+  const level = context.requiredAssurance === 'candidate' ? 'candidate' : 'affected';
+  const args = [...invocation.argsPrefix, 'verification', 'run', '--project', context.project, '--level', level, '--target', path.resolve(root), '--candidate-fingerprint', context.candidateIdentity, '--json'];
+  if (run.task && context.agent) args.push('--environment', run.task, '--owner', context.agent);
+  return { fingerprint: context.candidateIdentity, plan: executablePlan({
+    root, action, command: invocation.command, args, safeHandler: 'buildr-verification-run', evidenceId: `registry-verification-${context.candidateIdentity}`,
+    jsonAssertion: { path: 'status', equals: 'passed' }, jsonRequired: action.resultContract.requiredFields,
+  }) };
+}
+
 const stripProductPrefix = (value) => String(value || '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^projects\/product\//, '');
 
 export function classifyRetainedConvergencePaths(paths = []) {
   const result = { runtime: [], cli: [], localApp: [], unknown: [] };
   const normalized = [...new Set(paths.map(stripProductPrefix).filter(Boolean))].sort();
   const runtimePattern = /^(?:rules\/|skills\/|components\/|commands\/|capabilities\.yml$|commands\.yml$|services\/buildr\/package\/targets\/workspace\/|services\/buildr\/package\/manifest\.yml$)/;
-  const cliPattern = /^(?:buildr$|services\/buildr\/(?:bin\/|src\/interfaces\/cli\/|scripts\/(?:install|uninstall)-buildr-cli$|package\.json$|package-lock\.json$))/;
+  const cliPattern = /^(?:buildr$|services\/buildr\/(?:bin\/|src\/.*\.mjs$|scripts\/(?:install|uninstall)-buildr-cli$|package\.json$|package-lock\.json$))/;
   const localAppPattern = /^services\/buildr\/(?:src\/interfaces\/local-app\/(?:runtime|http)\/|src\/application\/local-app|scripts\/(?:install|uninstall)-local-app)/;
   for (const candidate of normalized) {
     let matched = false;
@@ -174,6 +208,35 @@ function resolveRetainedConvergence({ root, action, context }) {
   } };
 }
 
+function resolveRuntimeInstall({ root, action, context }) {
+  const retainedRoot = context.retainedWorkspaceRoot ? path.resolve(context.retainedWorkspaceRoot) : null;
+  const invocation = context.retainedCliInvocation?.command ? { command: path.resolve(context.retainedCliInvocation.command), argsPrefix: [...(context.retainedCliInvocation.argsPrefix || [])] } : null;
+  const identity = context.retainedRuntimeIdentity;
+  const changedPaths = Array.isArray(context.changedPaths) && context.changedPaths.every((entry) => typeof entry === 'string') ? context.changedPaths : null;
+  const missing = [...(!retainedRoot ? ['retainedWorkspaceRoot'] : []), ...(!invocation ? ['retainedCliInvocation'] : []), ...(!identity ? ['retainedRuntimeIdentity'] : []), ...(!changedPaths ? ['changedPaths'] : [])];
+  if (missing.length) return { missing };
+  const expectedSource = path.join(retainedRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
+  const nodeExecutable = path.resolve(identity.nodeExecutable || '');
+  const cliSource = path.resolve(identity.cliSource || '');
+  const targetRoot = path.resolve(identity.targetRoot || '');
+  const invocationSource = invocation.argsPrefix[0] ? path.resolve(invocation.argsPrefix[0]) : null;
+  if (!nodeExecutable || !fs.existsSync(nodeExecutable) || invocation.command !== nodeExecutable || cliSource !== expectedSource || invocationSource !== cliSource || targetRoot !== retainedRoot || !Number.isInteger(identity.nodeMajor) || identity.nodeMajor < 20) {
+    return { handoff: { reason: 'retained-runtime-identity-mismatch', requiredEvidence: ['node executable', 'node major >= 20', 'retained CLI source', 'retained target identity'] } };
+  }
+  const impact = classifyRetainedConvergencePaths(changedPaths);
+  if (impact.requiresLocalAppInstall) return { handoff: { reason: 'local-app-install-has-no-stable-product-handler', requiredEvidence: action.providerHandoff.requiredEvidence } };
+  const nodeProbe = executablePlan({ root: retainedRoot, action, command: nodeExecutable, args: ['-e', 'process.stdout.write(JSON.stringify({nodeExecutable:process.execPath,nodeMajor:Number(process.versions.node.split(".")[0])}))'], safeHandler: 'node-runtime-identity', evidenceId: 'retained-node-identity', jsonAssertion: { path: 'nodeMajor', equals: identity.nodeMajor }, jsonRequired: ['nodeExecutable', 'nodeMajor'] });
+  const stages = [{ id: 'runtime-identity-before', commands: [nodeProbe] }];
+  if (impact.requiresCliInstall) {
+    const installer = path.join(retainedRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli');
+    const installArgs = ['--node-executable', nodeExecutable];
+    if (context.cliInstallDir) installArgs.push('--install-dir', path.resolve(context.cliInstallDir));
+    stages.push({ id: 'default-cli-install', commands: [executablePlan({ root: retainedRoot, action, command: installer, args: installArgs, safeHandler: 'buildr-cli-install', evidenceId: 'retained-cli-install', sharedMutation: true })] });
+    stages.push({ id: 'installed-cli-check', commands: [executablePlan({ root: retainedRoot, action, command: nodeExecutable, args: [cliSource, 'version', '--json'], safeHandler: 'buildr-cli-version', evidenceId: 'retained-cli-version', jsonRequired: ['schemaVersion', 'version'] })] });
+  }
+  return { plan: { ...executablePlan({ root: retainedRoot, action, command: nodeExecutable, args: [], safeHandler: 'runtime-install', evidenceId: `registry-runtime-install-${identity.nodeMajor}`, sharedMutation: impact.requiresCliInstall, stages }), metadata: { impact, identity: { nodeExecutable, nodeMajor: identity.nodeMajor, cliSource, targetRoot }, skipReasons: { cliInstall: impact.requiresCliInstall ? null : 'default-cli-not-affected', localAppInstall: 'local-app-not-affected' } } } };
+}
+
 function fingerprint({ run, action, plan, context }) {
   return `registry-v${FINISH_ACTION_REGISTRY_VERSION}-${crypto.createHash('sha256').update(JSON.stringify({
     run: { runId: run.runId, task: run.task, change: run.change, target: run.target }, action: action.id, plan, context,
@@ -197,6 +260,10 @@ export function resolveFinishAction({ root, run, step, context = {}, actions = F
     status: 'agent-provider-required', step, action: publicAction(action), providerHandoff: action.providerHandoff, planSource: 'registry',
   };
   const resolved = action.resolver({ root, run, action, context });
+  if (resolved.handoff) return {
+    schemaVersion: 'buildr.task-finish-action-resolution/v1', registryVersion: FINISH_ACTION_REGISTRY_VERSION,
+    status: 'agent-provider-required', step, action: publicAction(action), providerHandoff: { ...action.providerHandoff, ...resolved.handoff }, planSource: 'registry',
+  };
   if (resolved.missing?.length) return {
     schemaVersion: 'buildr.task-finish-action-resolution/v1', registryVersion: FINISH_ACTION_REGISTRY_VERSION,
     status: 'input-required', step, action: publicAction(action), requiredInputs: [...new Set(resolved.missing)], planSource: 'registry',
@@ -204,6 +271,6 @@ export function resolveFinishAction({ root, run, step, context = {}, actions = F
   return {
     schemaVersion: 'buildr.task-finish-action-resolution/v1', registryVersion: FINISH_ACTION_REGISTRY_VERSION,
     status: 'ready', step, action: publicAction(action), plan: resolved.plan,
-    fingerprint: fingerprint({ run, action, plan: resolved.plan, context }), planSource: 'registry',
+    fingerprint: resolved.fingerprint || fingerprint({ run, action, plan: resolved.plan, context }), planSource: 'registry',
   };
 }

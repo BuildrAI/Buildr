@@ -29,7 +29,8 @@ function atomicWriteFile(file, content) {
 
 export function isLightweightTaskFinishCommand(argv = process.argv) {
   const args = argv.slice(2);
-  return args[0] === 'task' && args[1] === 'finish' && ['inspect', 'advance', 'recover'].includes(args[2]);
+  return !args.some((arg) => arg === '--help' || arg === '-h')
+    && args[0] === 'task' && args[1] === 'finish' && ['inspect', 'advance', 'recover'].includes(args[2]);
 }
 
 export async function runLightweightTaskFinish(argv = process.argv) {

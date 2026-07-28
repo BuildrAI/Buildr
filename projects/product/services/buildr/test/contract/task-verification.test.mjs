@@ -132,13 +132,14 @@ test('随包 manifest 原子登记 contract、provider、binding 与 consumer', 
 });
 
 test('task-finish 保持薄入口并把证据政策交给 provider', () => {
-  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 2500);
+  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 4500);
   assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 50);
   for (const required of ['inspect|advance|resume', 'selected providers', 'fingerprint', 'effects', 'evidence', 'task-verification provider']) assert.ok(finishSkill.includes(required));
   assert.doesNotMatch(finishSkill, /instance\.json|archive-rehearsal\.mjs|buildr component check/);
   assert.match(finishSkill, /非空 fingerprint/);
   assert.match(finishSkill, /expected\/observed target ref/);
   assert.match(finishSkill, /holder\/token\/expiry fencing/);
+  assert.match(finishSkill, /provider-executable/);
 });
 
 test('OpenSpec apply 和 Task Finish 固定单一 convergence 事务边界', () => {

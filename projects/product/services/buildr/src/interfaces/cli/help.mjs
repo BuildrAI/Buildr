@@ -224,6 +224,11 @@ export function registerCommandHelp(runtime) {
       'coordinated 资源通过 Git common-dir lease 跨 task 排队；external 资源必须逐项 --authorize-resource。该命令执行验证，不创建任务或调度 Agent。',
       '默认 evidence 为 transient；--output 指定 caller-managed summary。--json 返回 buildr.verification-run/v1。',
     ],
+    'verification cleanup': [
+      'Usage: buildr verification cleanup --summary <file> [--json]',
+      '',
+      '只清理 buildr.verification-run/v1 声明的 provider-owned transient run directory；caller-managed、identity 不匹配、越界或不可证明的 legacy evidence 一律保留。',
+    ],
     doctor: [
       'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
       '',
@@ -402,6 +407,27 @@ export function registerCommandHelp(runtime) {
     ],
   };
 
+  const finishHelp = {
+    actions: { usage: 'Usage: buildr task finish actions [--run <id> --action-context <json>] [--target <workspace>] [--detail <compact|full>] [--json]', required: '无；带 --run 时读取对应 checkpoint。', surface: '目标 Workspace，只读。', effects: '无；仅列出 registry 或当前 action resolution。' },
+    inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <workspace>] [--detail <compact|full>] [--json]', required: '--run。', surface: 'checkpoint 所在 Workspace，只读。', effects: '无；full detail 过大时可写 task-owned diagnostic。' },
+    advance: { usage: 'Usage: buildr task finish advance --run <id> [--task <id> --change <id> --target-branch <branch> --remote <name>] [--repair-authorization <json>] [--fingerprint <step>=<value> ...] [--outcome <passed|blocked>] [--attempt <token>] [--effect <json>] [--evidence <json>] [--blocked <json>] [--session <json>] [--expected-target-ref <ref>] [--observed-target-ref <ref>] [--ref-transition <json>] [--execution-plan <json>] [--resolution-authorization <json>] [--target <workspace>] [--detail <compact|full>] [--json]', required: '--run；新建 run 时还需要 --task 和 --target-branch。', surface: '当前 task environment。', effects: '只推进一个 checkpoint；不直接执行 provider command。' },
+    resume: { usage: 'Usage: buildr task finish resume --run <id> [--fingerprint <step>=<value> ...] [--outcome <passed|blocked>] [--attempt <token>] [--effect <json>] [--evidence <json>] [--blocked <json>] [--session <json>] [--expected-target-ref <ref>] [--observed-target-ref <ref>] [--ref-transition <json>] [--execution-plan <json>] [--resolution-authorization <json>] [--target <workspace>] [--detail <compact|full>] [--json]', required: '--run。', surface: '当前 task environment。', effects: '按 retry policy 恢复 blocked/stale checkpoint；不直接执行 provider command。' },
+    renew: { usage: 'Usage: buildr task finish renew --run <id> --attempt <token> [--target <workspace>] [--detail <compact|full>] [--json]', required: '--run、--attempt。', surface: '当前 task environment。', effects: '仅续租当前 attempt 持有的短 lease。' },
+    run: { usage: 'Usage: buildr task finish run --run <id> [--task <id> --change <id> --target-branch <branch> --remote <name>] [--repair-authorization <json>] [--action-context <json>] [--execution-plans <json>] [--fingerprint <step>=<value> ...] [--target <workspace>] [--detail <compact|full>] [--json]', required: '--run；新建 run 时还需要 --task 和 --target-branch。', surface: '当前 task environment；registered action 可声明 retained checkout。', effects: '连续执行 safe registered handlers，遇语义、授权或输入边界即停止。' },
+    recover: { usage: 'Usage: buildr task finish recover --run <id> --recovery <json> [--target <workspace>] [--detail <compact|full>] [--json]', required: '--run、--recovery。', surface: '当前 task environment。', effects: '按类型化 recovery manifest 更新 checkpoint 和失效依赖。' },
+    'cleanup-prepare': { usage: 'Usage: buildr task finish cleanup-prepare --run <id> --attempt <token> --evidence <json> [--target <workspace>] [--detail <compact|full>] [--json]', required: '--run、--attempt、--evidence。', surface: '待删除 task environment。', effects: '写 durable completion receipt 并标记 prepared，不删除 worktree。' },
+    'cleanup-finalize': { usage: 'Usage: buildr task finish cleanup-finalize --run <id> --evidence <json> [--target <retained-workspace>] [--detail <compact|full>] [--json]', required: '--run、--evidence。', surface: 'retained canonical Workspace。', effects: '确认 task-owned 删除事实并完成 receipt；不自行扩大清理范围。' },
+  };
+  for (const [action, help] of Object.entries(finishHelp)) HELP_TOPICS[`task finish ${action}`] = [
+    help.usage,
+    '',
+    `必需参数：${help.required}`,
+    '互斥参数：无；outcome、evidence、effect 等仍须满足当前 checkpoint 的状态契约。',
+    `Execution surface：${help.surface}`,
+    `安全副作用：${help.effects}`,
+    '该 action 使用持久化 checkpoint、identity-bound fingerprint 与 attempt lease；先用 inspect 查看 nextAction。',
+  ];
+
   function commandTopic(rawArgs) {
     const [domain, action, runtime] = rawArgs.filter((arg) => !['--help', '-h'].includes(arg));
     if (!domain) return 'root';
@@ -413,6 +439,8 @@ export function registerCommandHelp(runtime) {
     if (domain === 'worktree' && action === 'inspect') return 'worktree inspect';
     if (domain === 'worktree' && action === 'context') return 'worktree context';
     if (domain === 'verification' && action === 'run') return 'verification run';
+    if (domain === 'verification' && action === 'cleanup') return 'verification cleanup';
+    if (domain === 'task' && action === 'finish' && Object.hasOwn(finishHelp, runtime)) return `task finish ${runtime}`;
     if (domain === 'runtime' && action === 'list') return 'runtime list';
     if (domain === 'mutation' && action === 'recover') return 'mutation recover';
     if (domain === 'runtime' && action === 'check') return 'runtime check';

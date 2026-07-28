@@ -393,7 +393,7 @@ test('registry runtime convergence staged plan 可由真实 run executor 执行'
     root, runId: 'finish-1', actionContext: { agent: 'codex', cliSource: executable },
     runCommand: async (command, args) => { commands.push([command, ...args]); return { status: 0, stdout: '{}', stderr: '' }; },
   });
-  assert.equal(result.safeExecution.reason, 'agent-provider-required');
+  assert.equal(result.safeExecution.reason, 'action-input-required');
   assert.equal(result.currentStep, 'formal-assurance');
   assert.deepEqual(commands.map((entry) => entry.slice(1, 3)), [['doctor', '--agent'], ['sync', 'codex'], ['doctor', '--agent']]);
   assert.equal(result.steps.find((item) => item.id === 'runtime-convergence').status, 'passed');
@@ -421,7 +421,7 @@ test('registry retained convergence 只按 changed paths 执行必要 stages', a
     });
     assert.deepEqual(commands, expected);
     assert.equal(result.currentStep, 'runtime-install');
-    assert.equal(result.safeExecution.reason, 'agent-provider-required');
+    assert.equal(result.safeExecution.reason, 'action-input-required');
     const retainedStep = readFinishRun({ root, runId }).steps.find((item) => item.id === 'retained-convergence');
     assert.equal(retainedStep.executionPlan.metadata.impact.requiresRuntimeSync, expected.includes('sync'));
   }
@@ -492,6 +492,30 @@ test('formal verification composite 并行执行 required capabilities', async (
   const summedCommandDurationMs = formal.evidence[0].observations.reduce((total, observation) => total + observation.durationMs, 0);
   assert.ok(formal.attempts[0].executionDurationMs < summedCommandDurationMs, 'parallel stage must use stage wall-clock instead of summing both commands');
   assert.equal(result.timing.initialVerificationMs, formal.attempts[0].executionDurationMs);
+});
+
+test('registry formal provider 连续执行并校验 production summary result contract', async (t) => {
+  for (const [runId, completeSummary, expectedStatus] of [['formal-ready', true, 'passed'], ['formal-missing-field', false, 'blocked']]) {
+    const root = fixture(t); create(root, runId);
+    while (inspectFinishRun(readFinishRun({ root, runId })).currentStep !== 'formal-assurance') passCurrent(root, runId);
+    const executable = path.join(root, 'projects/product/buildr');
+    fs.mkdirSync(path.dirname(executable), { recursive: true });
+    fs.writeFileSync(executable, '#!/bin/sh\n');
+    const candidateIdentity = `candidate-${runId}`;
+    const summary = {
+      schemaVersion: 'buildr.verification-run/v1', status: 'passed', durationMs: 12,
+      source: { candidateFingerprint: candidateIdentity }, evidenceIdentity: `evidence-${runId}`,
+      evidenceReference: `/tmp/${runId}/summary.json`, runId: `verification-${runId}`,
+      ...(completeSummary ? { evidenceLifecycle: { schemaVersion: 'buildr.verification-evidence-lifecycle/v1', runId: `verification-${runId}`, evidenceRetention: 'transient', cleanupAfter: 'all-consumers-complete', cleanupStatus: 'retained', cleanupReference: `/tmp/${runId}`, summaryPath: `/tmp/${runId}/summary.json` } } : {}),
+    };
+    const result = await executeSafeFinishRun({
+      root, runId, actionContext: { cliSource: executable, project: 'product', candidateIdentity },
+      runCommand: async () => ({ status: 0, stdout: JSON.stringify(summary), stderr: '' }),
+    });
+    assert.equal(readFinishRun({ root, runId }).steps.find((item) => item.id === 'formal-assurance').status, expectedStatus);
+    assert.equal(result.safeExecution.reason, completeSummary ? 'agent-provider-required' : 'safe-action-failed');
+    if (completeSummary) assert.equal(result.currentStep, 'asset-review');
+  }
 });
 
 test('外部formal assurance必须消费候选匹配的verification timing summary', (t) => {

@@ -7,3 +7,20 @@ export async function runCli(argv = process.argv) {
   const { dispatch } = await import('./registry.mjs');
   return dispatch(argv);
 }
+
+export function reportCliFailure(error, argv = process.argv) {
+  const structuredInputError = typeof error.code === 'string' && error.code.startsWith('task_finish.');
+  if (argv.includes('--json') && structuredInputError) {
+    console.log(JSON.stringify({
+      schemaVersion: 'buildr.cli-error/v1',
+      error: { code: error.code, message: error.message },
+      suggestions: error.nextAction ? [error.nextAction] : [],
+      help: error.usage || 'buildr --help',
+    }, null, 2));
+  } else {
+    console.error(process.env.BUILDR_DEBUG_STACK === '1' && error.stack ? error.stack : `${error.code ? `[${error.code}] ` : ''}${error.message}`);
+    if (error.usage) console.error(`Usage: ${error.usage}`);
+    if (error.nextAction) console.error(`Next: ${error.nextAction}`);
+  }
+  process.exit(structuredInputError ? 2 : 1);
+}

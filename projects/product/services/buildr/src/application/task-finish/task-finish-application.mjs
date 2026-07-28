@@ -3,6 +3,39 @@ import { listFinishActions, resolveFinishAction } from './task-finish-action-reg
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+function taskFinishInputError(code, message, action) {
+  const error = new Error(message);
+  Object.assign(error, { code, usage: `buildr help task finish ${action}`, nextAction: `buildr help task finish ${action}` });
+  return error;
+}
+
+function assertTaskFinishArgs(action, args) {
+  const common = ['--run', '--target', '--detail', '--json'];
+  const byAction = {
+    actions: ['--action-context'], inspect: ['--detail'], renew: ['--attempt'],
+    run: ['--task', '--change', '--target-branch', '--remote', '--repair-authorization', '--fingerprint', '--execution-plans', '--action-context'],
+    recover: ['--recovery'], 'cleanup-prepare': ['--attempt', '--evidence'], 'cleanup-finalize': ['--evidence'],
+    advance: ['--task', '--change', '--target-branch', '--remote', '--repair-authorization', '--fingerprint', '--outcome', '--attempt', '--effect', '--evidence', '--blocked', '--session', '--expected-target-ref', '--observed-target-ref', '--ref-transition', '--execution-plan', '--resolution-authorization'],
+    resume: ['--fingerprint', '--outcome', '--attempt', '--effect', '--evidence', '--blocked', '--session', '--expected-target-ref', '--observed-target-ref', '--ref-transition', '--execution-plan', '--resolution-authorization'],
+  };
+  const allowed = new Set([...common, ...(byAction[action] || [])]);
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args[index];
+    if (!option.startsWith('--') || !allowed.has(option)) throw taskFinishInputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
+    if (option === '--json') continue;
+    const value = args[index + 1];
+    if (!value || value.startsWith('--')) throw taskFinishInputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
+    index += 1;
+  }
+  const requiredByAction = {
+    renew: ['--attempt'], recover: ['--recovery'],
+    'cleanup-prepare': ['--attempt', '--evidence'], 'cleanup-finalize': ['--evidence'],
+  };
+  for (const option of requiredByAction[action] || []) {
+    if (!args.includes(option)) throw taskFinishInputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
+  }
+}
+
 function values(args, name) {
   const result = [];
   for (let index = 0; index < args.length; index += 1) if (args[index] === name) result.push(args[index + 1]);
@@ -28,11 +61,12 @@ export function registerTaskFinishApplication(runtime) {
   const atomicWriteFile = (...args) => runtime.atomicWriteFile(...args);
 
   function taskFinish(action, args) {
+    assertTaskFinishArgs(action, args);
     const command = withResolvedTarget(args);
     const root = command.targetRoot;
     const runId = optionValue(command.args, '--run');
     if (action === 'actions' && !runId) return print(listFinishActions(), command.args, root);
-    if (!runId) throw new Error('Missing value for --run');
+    if (!runId) throw taskFinishInputError('task_finish.missing_parameter', 'Missing value for --run', action);
     if (action === 'actions') {
       const checkpoint = inspectFinishRun(readFinishRun({ root, runId }));
       const context = jsonValue(optionValue(command.args, '--action-context', null), '--action-context') || {};
@@ -45,6 +79,9 @@ export function registerTaskFinishApplication(runtime) {
     try { run = readFinishRun({ root, runId }); }
     catch (error) {
       if (!['advance', 'run'].includes(action)) throw error;
+      for (const option of ['--task', '--target-branch']) {
+        if (!optionValue(command.args, option, null)) throw taskFinishInputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
+      }
       run = createFinishRun({
         root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null),
         targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin'),

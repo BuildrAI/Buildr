@@ -5,7 +5,7 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的薄入口。“收尾”的一次性授权只覆盖 delivery closeout；候选修复不属于收尾。
+本 Skill 是 `buildr.task-finish/v1` 薄入口。“收尾”的一次性授权只覆盖 closeout；候选修复不属于收尾。
 
 ## 开始
 
@@ -15,9 +15,9 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 ## 推进
 
-Registry 自动执行 `product-executable`；按 handoff 调用 selected providers；只补 `input-required`。只有登记外语义分支交给 Agent，显式 plan 仅作兼容恢复。
+Registry 自动执行 `product-executable`，只对有稳定 handler、结构化输入/effects 和完整 result contract 的 selected provider 执行 `provider-executable`；其余 selected providers 走 handoff。结果缺字段、identity 漂移或语义分支立即停止，显式 plan 仅兼容恢复。
 
-每步保存非空 fingerprint、effects、evidence、attempt timing 和失效依赖。`resume` 只重跑 blocked/stale 及其下游；语义冲突和状态无法证明必须等待可验证的新输入，重要集成冲突还可使用绑定阻塞身份的显式授权，正式保证失败只能使用修复授权与类型化恢复。不得用普通 `resume` 或调用方自报 passed 覆盖产品阻塞，也不得重复已证明的验证、push 或清理前动作。
+每步保存非空 fingerprint、effects、evidence、timing 和失效依赖。`resume` 只重跑 blocked/stale 及其下游；语义冲突和状态无法证明须等待可验证输入，重要集成冲突可使用绑定阻塞身份的授权，正式保证失败只能使用修复授权与类型化恢复。不得用普通 `resume` 或调用方自报 passed 覆盖阻塞，也不得重复已证明的验证、push 或清理前动作。
 
 Identity 变化用 recovery manifest 一次提交 before/after facts 与 proof；未知变化 fail closed。正式保证只在 canonical、target、runtime 收敛后执行，并由 task-verification provider 持有。
 
@@ -29,9 +29,9 @@ Identity 变化用 recovery manifest 一次提交 before/after facts 与 proof�
 
 确定性 OpenSpec 收敛由产品 action 内部完成并只返回 passed、blocked 或 recovery-unprovable。Agent 只处理语义冲突或人工事实核对；需要解释状态无法证明时只读取产品返回的逐文件 before、expected、actual 摘要，不恢复 canonical、不刷新 baseline、不选择内部 stage。
 
-共享写使用 holder/token/expiry fencing 短 lease，不创建 Workspace 全局锁。Running step 失效时终结 attempt，并只释放仍由当前 token 持有的 lease。
+共享写使用 holder/token/expiry fencing 短 lease，不创建 Workspace 全局锁。Running step 失效时终结 attempt，只释放当前 token 的 lease。
 
-Integration-push 必须保留 expected/observed target ref。随后以 retained root、绝对 CLI、Agent 和完整 changed paths 运行 retained-convergence；它始终 doctor，只在 runtime 资产受影响时 sync，且不重跑 Candidate。
+Integration-push 必须保留 expected/observed target ref。随后以 retained root、绝对 CLI、Agent 和完整 changed paths 运行 retained-convergence；它始终 doctor，只在 runtime 资产受影响时 sync，且不重跑 Candidate。Buildr Service 的生产 `src/**/*.mjs` 视为默认 CLI 影响；runtime-install 从 receipt 传递并重验 Node executable/major、CLI source 和 target identity，禁止让 login shell PATH 覆盖已验证 runtime。
 
 ## 授权与停止
 
@@ -45,4 +45,4 @@ asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化�
 
 Cleanup 先在 task environment 内 prepare，把 completion receipt 写入 canonical Workspace；实际删除 task-owned process、worktree 和 branch 后，从 retained checkout finalize。Prepare 不得表述为 complete。
 
-最终报告验证、交付、retained convergence、runtime、清理、receipt 和风险；分别计量 verification、repair、re-verification、closeout-only 与 end-to-end。正式验证时间只消费产品实测或候选身份匹配的验证器摘要，检查点等待和不可观察区间单列，不从中推断 token、调用数或验证执行时间。
+最终报告验证、交付、retained convergence、runtime、清理、receipt 和风险；分别计量 verification、repair、re-verification、closeout-only 与 end-to-end。正式验证时间只消费产品实测或候选匹配的验证器摘要，等待和不可观察区间单列，不推断 token、调用数或验证时间。

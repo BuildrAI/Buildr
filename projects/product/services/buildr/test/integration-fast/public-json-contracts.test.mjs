@@ -95,6 +95,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskFinishResolutionAuthorization',
     'update',
     'updateCheck',
+    'verificationEvidenceCleanup',
     'verificationRun',
     'version',
     'worktreeCleanup',

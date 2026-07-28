@@ -24,7 +24,7 @@ description: 用户要求测试、验证、耗时报告、初始化或更新测�
 
 Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有发现行为：继续读取 AGENTS、POM、项目文档和已有测试命令；不因缺少新声明产生失败、阻塞或 warning，不自动启动新的 Spring、端到端、容器、数据库或外部环境。声明存在时先按 `references/project-verification-v1.md` 核对；无效声明不得执行。
 
-声明有效且能力可由 argv/cwd 执行时，默认通过 receipt-bound 或当前已安装的 `buildr verification run --project <code> --level <affected|candidate> --target <workspace> --json` 调用正式产品 executor；在 task environment 中追加匹配 context 的 `--environment` 与 `--owner`。消费其 `buildr.verification-run/v1` summary，不从 `test/verification` 导入编排代码，也不由 Agent 手工实现 DAG 或 lease。
+声明有效且能力可由 argv/cwd 执行时，默认通过 receipt-bound 或当前已安装的 `buildr verification run --project <code> --level <affected|candidate> --target <workspace> --json` 调用正式产品 executor；在 task environment 中追加匹配 context 的 `--environment` 与 `--owner`，Task Finish consumer 同时传入 `--candidate-fingerprint`。消费其 `buildr.verification-run/v1` summary 和唯一 `buildr.verification-evidence-lifecycle/v1` 对象，不从 `test/verification` 导入编排代码，也不由 Agent 手工实现 DAG 或 lease。
 
 声明的 `mode: augment` 表示已确认能力增强 legacy policy discovery，未声明范围仍继续发现；`mode: authoritative` 表示团队确认声明是 Project 测试政策 authority。具体命令由当前 workspace 或 Project 定义。不得把 Buildr Product 的 package check、临时 workspace E2E、`npm run test:candidate` 或 timing schema固定为其他项目的默认入口。
 
@@ -131,6 +131,7 @@ supersedesEvidence: <可选；被本次 run 替代的前序 evidence reference>
 invalidationReason: <可选；implementation-changed | target-race | verification-failed>
 supersessionRelationship: <可选；前序状态、失败项与当前 run reference>
 evidenceReference: <summary 绝对路径或当前会话 evidence>
+evidenceLifecycle: <buildr.verification-evidence-lifecycle/v1；runId、retention、cleanupAfter/status/reference、summaryPath>
 evidenceRetention: transient | caller-managed | session-only
 cleanupAfter: consumer-finished | caller-policy | not-applicable
 cleanupStatus: retained | cleaned | not-applicable
@@ -142,9 +143,9 @@ verificationResultMetadataTransition: <可选；subtype、source/target identity
 
 ## 7. Evidence 保留与清理
 
-- verifier 在系统临时目录创建 summary/diagnostics 时标记 `evidenceRetention: transient`。系统临时目录不是长期存储；provider 必须返回精确 `cleanupReference`，但在当前有效 Candidate evidence 仍可能被 Task Finish 或其他 consumer 使用时保持 `cleanupStatus: retained`。
+- verifier 在系统临时目录创建 summary/diagnostics 时通过唯一 `evidenceLifecycle` 标记 `evidenceRetention: transient`。系统临时目录不是长期存储；provider 必须返回精确 run directory `cleanupReference` 与其内部 `summaryPath`，但在当前有效 Candidate evidence 仍可能被 Task Finish 或其他 consumer 使用时保持 `cleanupStatus: retained`。新 summary 不重复输出扁平 lifecycle 字段。
 - 调用方显式指定稳定输出路径或 CI 上传 artifact 时标记 `caller-managed`；provider 不擅自删除，也不把该路径纳入默认任务清理。
-- 只有当前验证摘要已经进入用户报告或 consumer evidence、没有后续 consumer，且 cleanup reference 可证明属于 provider 创建的单次 transient run 时才清理。删除必须针对精确 run 目录，禁止使用未解析变量、glob、workspace root 或系统临时目录根。
+- 只有当前验证摘要已经进入用户报告或 consumer evidence、没有后续 consumer，且 cleanup reference 可证明属于 provider 创建的单次 transient run 时才通过公开 `buildr verification cleanup --summary <file>` 清理。删除必须核对 summary schema、run identity、目录前缀和临时根边界并针对精确 run 目录，禁止使用未解析变量、glob、workspace root 或系统临时目录根；caller-managed、symlink、越界和不可证明状态保留现场。
 - 新 Candidate evidence 核对通过后，可以清理同一任务中已被替代且不再被引用的旧成功 transient run；失败 evidence 保留到诊断结束或被新 evidence 替代。
 - Task Finish 在捕获最终摘要、完成集成与推送并确认没有后续 consumer 后，请求 selected provider 清理 transient evidence。清理失败不回滚已完成交付，返回 `cleanupStatus: retained`、实际路径和原因。
 - transient evidence 清理后，最终报告保留已捕获的状态、候选、范围、耗时和失败/跳过摘要，并说明 `cleanupStatus: cleaned`；不得继续把已删除路径表述为长期可访问证据。`task-worktree` 不负责这项清理。

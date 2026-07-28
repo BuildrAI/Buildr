@@ -232,6 +232,9 @@ export function validateFinishExecutionPlan({ root, plan }) {
     jsonAssertion: plan.jsonAssertion && typeof plan.jsonAssertion.path === 'string'
       ? { path: plan.jsonAssertion.path, equals: plan.jsonAssertion.equals }
       : null,
+    jsonRequired: Array.isArray(plan.jsonRequired) && plan.jsonRequired.every((entry) => typeof entry === 'string' && entry.trim())
+      ? [...new Set(plan.jsonRequired)]
+      : [],
     observations: Array.isArray(plan.observations) ? plan.observations.map((entry) => validateFinishExecutionPlan({ root, plan: { ...entry, sharedMutation: false, safeAuto: true } })) : [],
     stages: Array.isArray(plan.stages) ? plan.stages.map((entry) => ({
       id: typeof entry.id === 'string' && entry.id.trim() ? entry.id : null,
@@ -245,6 +248,7 @@ export function validateFinishExecutionPlan({ root, plan }) {
 
 function effectiveFingerprint(fingerprint, plan) {
   if (!plan) return fingerprint;
+  if (plan.actionId === 'formal-assurance.verification') return fingerprint;
   return `${fingerprint || ''}:plan-${digest(JSON.stringify(plan))}`;
 }
 
@@ -992,6 +996,23 @@ function appendCommandObservations({ root, runId, stepId, attemptToken, descript
   return ids;
 }
 
+function buildrSubcommandOffset(plan, root) {
+  const localBuildr = path.resolve(root, 'projects/product/buildr');
+  if (plan.command === localBuildr) return 0;
+  const isPackageCli = (candidate) => {
+    try {
+      const resolved = fs.realpathSync(candidate);
+      if (path.basename(resolved) !== 'buildr.mjs' || path.basename(path.dirname(resolved)) !== 'bin') return false;
+      const manifest = JSON.parse(fs.readFileSync(path.join(path.dirname(resolved), '..', 'package.json'), 'utf8'));
+      return ['@buildr-ai/buildr', '@buildr/cli'].includes(manifest.name);
+    } catch { return false; }
+  };
+  if (isPackageCli(plan.command)) return 0;
+  let runtimeName = '';
+  try { runtimeName = path.basename(fs.realpathSync(plan.command)); } catch { return -1; }
+  return /^(?:node|nodejs)$/.test(runtimeName) && isPackageCli(plan.args[0]) ? 1 : -1;
+}
+
 function registeredSafeHandler(plan, root, registryOwned = false) {
   const executable = path.basename(plan.command || '');
   if (plan.safeHandler === 'process-probe') return ['true', 'false'].includes(executable) && plan.args.length === 0;
@@ -1003,8 +1024,16 @@ function registeredSafeHandler(plan, root, registryOwned = false) {
   if (plan.safeHandler === 'buildr-worktree-context') return plan.args[0] === 'worktree' && plan.args[1] === 'context' && plan.args.includes('--target') && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-openspec-check') return plan.args[0] === 'openspec' && plan.args[1] === 'check' && plan.args.includes('--json');
   if (plan.safeHandler === 'buildr-openspec-converge') return plan.args[0] === 'openspec' && plan.args[1] === 'converge' && plan.args.includes('--json') && plan.args.includes('--target') && plan.args.includes('--project');
+  if (plan.safeHandler === 'buildr-verification-run') {
+    const offset = buildrSubcommandOffset(plan, root);
+    return offset >= 0 && plan.args[offset] === 'verification' && plan.args[offset + 1] === 'run'
+      && plan.args.includes('--json') && plan.args.includes('--target') && plan.args.includes('--project');
+  }
   if (plan.safeHandler === 'buildr-runtime-sync') return plan.args[0] === 'sync' && plan.args.includes('--target');
-  if (['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root, registryOwned)));
+  if (plan.safeHandler === 'node-runtime-identity') return path.isAbsolute(plan.command) && plan.args[0] === '-e';
+  if (plan.safeHandler === 'buildr-cli-install') return plan.command === path.resolve(plan.cwd, 'projects/product/services/buildr/scripts/install-buildr-cli') && plan.args.includes('--node-executable');
+  if (plan.safeHandler === 'buildr-cli-version') return path.isAbsolute(plan.command) && plan.args.includes('version') && plan.args.includes('--json');
+  if (['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence', 'runtime-install'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root, registryOwned)));
   return false;
 }
 
@@ -1026,7 +1055,7 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     }
     const plan = validateFinishExecutionPlan({ root, plan: explicitPlan || resolution.plan });
     const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
-    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence'].includes(plan?.safeHandler);
+    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge', 'buildr-cli-install'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence', 'runtime-install'].includes(plan?.safeHandler);
     if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root, Boolean(resolution)))) {
       return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'safe-plan-unavailable', step, executedSteps, durationMs: clock() - startedAt } };
     }
@@ -1056,11 +1085,14 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
       const stdout = String(result.stdout || '').trim();
       const stderr = String(result.stderr || '').trim();
       let assertionPassed = true;
-      if (result.status === 0 && descriptor.jsonAssertion) {
+      if (result.status === 0 && (descriptor.jsonAssertion || descriptor.jsonRequired?.length)) {
         try {
           const payload = JSON.parse(stdout);
-          const actual = descriptor.jsonAssertion.path.split('.').filter(Boolean).reduce((value, key) => value?.[key], payload);
-          assertionPassed = Object.is(actual, descriptor.jsonAssertion.equals);
+          if (descriptor.jsonAssertion) {
+            const actual = descriptor.jsonAssertion.path.split('.').filter(Boolean).reduce((value, key) => value?.[key], payload);
+            assertionPassed = Object.is(actual, descriptor.jsonAssertion.equals);
+          }
+          if (assertionPassed && descriptor.jsonRequired?.length) assertionPassed = descriptor.jsonRequired.every((key) => payload[key] !== undefined && payload[key] !== null);
         } catch { assertionPassed = false; }
       }
       return { ...result, stdout, stderr, assertionPassed };
@@ -1070,7 +1102,10 @@ export async function executeSafeFinishRun({ root, runId, fingerprints = {}, exe
     const observationIds = appendCommandObservations({ root, runId, stepId: step, attemptToken: claimed.nextAction.attemptToken, descriptors: commandDescriptors, assessed, stageResults, clock });
     const recordedDiagnostic = inspectFinishRun(readFinishRun({ root, runId })).diagnostics;
     const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
-    const evidence = { id: plan.evidenceId, actionId: plan.actionId, planSource: plan.planSource, registryVersion: plan.registryVersion, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, durationMs: entry.durationMs, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })) };
+    const verificationSummary = step === 'formal-assurance' && passed
+      ? (() => { try { const value = JSON.parse(assessed[0].stdout); return ['buildr.verification-run/v1', 'buildr.verification-timing/v1'].includes(value?.schemaVersion) ? value : null; } catch { return null; } })()
+      : null;
+    const evidence = { id: plan.evidenceId, actionId: plan.actionId, planSource: plan.planSource, registryVersion: plan.registryVersion, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, durationMs: entry.durationMs, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })), ...(verificationSummary ? { verificationSummary } : {}) };
     const completed = advanceFinishRun({
       root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
       attemptToken: claimed.nextAction.attemptToken, evidence,

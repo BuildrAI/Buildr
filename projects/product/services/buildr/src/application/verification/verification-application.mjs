@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
@@ -11,6 +10,7 @@ import { createProjectVerificationPlan } from './project-plan.mjs';
 import { runVerificationDag } from './dag-scheduler.mjs';
 import { executeVerificationCommand } from './process-executor.mjs';
 import { createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.mjs';
+import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle } from './evidence-lifecycle.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
@@ -75,12 +75,6 @@ function sanitizeCheck(result) {
     stderr: result.stderr || '',
     resourceCoordination: result.resourceCoordination || null,
   };
-}
-
-function resolveEvidencePath(output) {
-  const file = output || path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-run-')), 'summary.json');
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  return file;
 }
 
 export function registerVerificationApplication(runtime) {
@@ -178,25 +172,20 @@ export function registerVerificationApplication(runtime) {
       failures: checks.filter((check) => check.status === 'failed').map((check) => check.id),
       skips: checks.filter((check) => check.status === 'blocked').map((check) => ({ id: check.id, reason: check.reason })),
       evidenceIdentity,
-      evidenceRetention: output ? 'caller-managed' : 'transient',
-      cleanupAfter: output ? 'caller' : 'all-consumers-complete',
-      cleanupStatus: 'retained',
-      cleanupReference: null,
       candidateStable,
       runId,
       source: taskFinishFingerprint ? { candidateFingerprint: taskFinishFingerprint } : null,
       totalDurationMs: durationMs,
       run: { id: runId },
-      summaryPath: null,
     };
-    const evidenceReference = resolveEvidencePath(output ? path.resolve(output) : null);
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationRun, { ...base, evidenceReference, summaryPath: evidenceReference, cleanupReference: output ? null : evidenceReference });
-    runtime.atomicWriteFile(evidenceReference, `${JSON.stringify(payload, null, 2)}\n`);
+    const evidence = createVerificationEvidenceLifecycle(runId, output ? path.resolve(output) : null);
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationRun, { ...base, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle });
+    runtime.atomicWriteFile(evidence.summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
     if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
       console.log(`${level === 'candidate' ? '完整候选验证' : '受影响验证'}: ${payload.status}`);
       console.log(`Project: ${projectCode}; checks: ${checks.length}; duration: ${durationMs} ms`);
-      console.log(`Evidence: ${evidenceReference}`);
+      console.log(`Evidence: ${evidence.summaryPath}`);
     }
     if (!passed) process.exitCode = 1;
     return payload;
@@ -217,8 +206,7 @@ export function registerVerificationApplication(runtime) {
         skips: [],
         evidenceIdentity: null,
         evidenceReference: null,
-        evidenceRetention: null,
-        cleanupStatus: 'not-started',
+        evidenceLifecycle: null,
         error: { code: error.code || 'verification.invalid_request', message: error.message },
       });
       process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
@@ -227,6 +215,23 @@ export function registerVerificationApplication(runtime) {
     }
   }
 
-  Object.assign(runtime, { verificationRun: verificationRunCommand });
+  function verificationCleanup(args) {
+    const json = args.includes('--json');
+    const summaryPath = runtime.optionValue(args, '--summary', null);
+    runtime.assertNoUnknownOptions(args, new Set(['--summary', '--json']), new Set(['--json']));
+    if (runtime.positionalArgs(args).length) throw new Error('verification cleanup does not accept positional arguments.');
+    if (!summaryPath) throw new Error('verification cleanup requires --summary <file>.');
+    const resolved = path.resolve(summaryPath);
+    const result = fs.existsSync(resolved)
+      ? cleanupVerificationEvidence(JSON.parse(fs.readFileSync(resolved, 'utf8')), { removePath: runtime.removePath })
+      : cleanupAbsentVerificationEvidence(resolved);
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationEvidenceCleanup, { operation: 'cleanup', summaryPath: resolved, ...result });
+    if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else console.log(`Verification evidence cleanup: ${payload.status} (${payload.code})`);
+    if (!result.ok) process.exitCode = 1;
+    return payload;
+  }
+
+  Object.assign(runtime, { verificationRun: verificationRunCommand, verificationCleanup });
   return runtime;
 }
