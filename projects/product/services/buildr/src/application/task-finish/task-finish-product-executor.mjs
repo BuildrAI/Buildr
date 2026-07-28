@@ -48,7 +48,7 @@ function runCommand(id, command, args, cwd, options = {}) {
     cwd,
     encoding: 'utf8',
     maxBuffer: MAX_OUTPUT_BYTES,
-    env: options.env || { ...process.env, BUILDR_NODE: process.execPath, PATH: runtimePath },
+    env: options.env || { ...process.env, PATH: runtimePath },
   });
   const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
   return {
