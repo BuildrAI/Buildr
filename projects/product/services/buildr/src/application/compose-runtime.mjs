@@ -23,6 +23,7 @@ import { registerServiceApplication } from './service/service-application.mjs';
 import { registerChangeApplication } from './change/change-application.mjs';
 import { registerWorktreeApplication } from './worktree/worktree-application.mjs';
 import { registerTaskFinishApplication } from './task-finish/task-finish-application.mjs';
+import { registerVerificationApplication } from './verification/verification-application.mjs';
 import * as platform from '../infrastructure/platform.mjs';
 
 const REGISTRATIONS = [
@@ -50,6 +51,7 @@ const REGISTRATIONS = [
   registerApplicationCliUpdate,
   registerApplicationRuntime,
   registerWorktreeApplication,
+  registerVerificationApplication,
   registerTaskFinishApplication,
 ];
 

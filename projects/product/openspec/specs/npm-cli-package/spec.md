@@ -4,6 +4,7 @@
 
 定义 Buildr CLI 作为 npm package 本地打包、安装和验证的行为，确保用户不依赖开发 checkout 也能通过安装后的 `buildr` 命令完成 Buildr workspace onboarding。
 ## Requirements
+
 ### Requirement: npm tarball exposes buildr command
 Buildr MUST 在 Product root 下提供 npm package metadata，使维护者能够创建以 `bin/buildr.mjs` 暴露 `buildr` executable command 的本地 npm tarball。
 
@@ -155,6 +156,7 @@ Buildr MUST 将 `projects/product/services/buildr` 作为 development checkout �
 - **WHEN** 维护者运行 Buildr Service 的 `scripts/install-buildr-cli`
 - **THEN** 安装链接 MUST 指向 Service `bin/buildr.mjs`
 - **AND** 冲突检查 MUST 识别旧 Project package root 与新 Service package root 的 Buildr-managed identity
+
 ### Requirement: CLI 与平台 Launcher 必须共享产品身份但保持安装事实独立
 Buildr MUST 让 npm CLI、官方平台 launcher 和开发 launcher 共享可比较的产品版本与 App protocol identity，并 MUST 分别报告各渠道真实的安装来源和位置。
 
@@ -232,3 +234,15 @@ Buildr product Candidate MUST 验证 macOS 和 Windows launcher 的结构、iden
 - **WHEN** verification 模拟连续安装两个不同 checkout identity 的开发 launcher
 - **THEN** verification MUST 证明新版本在独立 staging 通过后才替换旧版本
 - **AND** MUST 证明运行中覆盖被阻止、失败可回滚且正式 launcher 保持不变
+
+### Requirement: 已安装 package 必须包含通用验证 runtime
+Buildr npm package MUST 包含 `verification run` 的 policy parser、planner、DAG scheduler、executor、resource coordinator 与 evidence lifecycle dependency closure，并 MUST 继续排除 `test/verification`；package parity MUST 在没有 Buildr 开发 checkout 的普通 Workspace 中执行代表性验证计划。
+
+#### Scenario: Tarball CLI 执行普通 Workspace 验证
+- **WHEN** Candidate 将 tarball 安装到临时 prefix，并在独立普通 Workspace 中运行 `buildr verification run`
+- **THEN** 命令 MUST 完成 Project policy 解析、并发执行、资源协调和结构化结果输出
+- **AND** import graph、命令 cwd 和 evidence reference MUST 不依赖开发 checkout
+
+#### Scenario: Package inventory 遗漏验证依赖
+- **WHEN** `verification run` 的任一静态 runtime dependency 未进入 tarball，或 runtime import 指向 `test/`
+- **THEN** package check MUST 失败并报告缺失或越界依赖

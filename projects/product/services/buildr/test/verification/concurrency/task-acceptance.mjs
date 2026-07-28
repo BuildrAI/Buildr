@@ -24,6 +24,7 @@ const summary = {
   status: 'failed',
   tasks: [], cliExecutions: [], previews: [], previewConcurrency: null,
   resourceCoordination: null, targetRace: null, failureDiagnostics: null,
+  verificationRuns: [],
   cleanup: { previews: [], resources: [], worktrees: [], branches: [], receipts: [] },
   retainedDoctor: null, durationMs: 0,
 };
@@ -97,6 +98,7 @@ function passFinishStep(runId, root, step, fingerprint) {
     run: { id: `${runId}-formal-assurance` },
     source: { candidateFingerprint: fingerprint },
     totalDurationMs: 1,
+    evidenceIdentity: `${runId}-${step}-${fingerprint}`,
     summaryPath: path.join(root, '.buildr', 'verification', `${runId}-formal-assurance.json`),
   } : null;
   return finishCommand('advance', runId, root, [
@@ -148,6 +150,21 @@ try {
   const nestedRoot = path.join(workspace, 'projects', 'nested');
   git(nestedRoot, ['config', 'user.email', 'buildr-test@example.com']);
   git(nestedRoot, ['config', 'user.name', 'Buildr Test']);
+  const verificationCapability = (id, delayMs, resourceClaims) => ({
+    id, title: id, command: { argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' },
+    maturity: 'stable', stages: ['candidate'], enforcement: { candidate: 'required' },
+    applicability: { paths: ['**'], risks: [] }, coverage: { kind: 'acceptance', owns: [id] },
+    environment: { requires: ['node'], services: [] }, effects: { level: 'local-temporary', writes: [], externalSystems: false },
+    authorization: 'implicit', resourceClaims, dependsOn: [], supersedes: [], sources: ['concurrent-task-acceptance'],
+  });
+  fs.writeFileSync(path.join(nestedRoot, 'verification.yml'), `${JSON.stringify({
+    schemaVersion: 'buildr.project-verification/v1', mode: 'authoritative',
+    resources: [
+      { id: 'task-temp', title: 'Task temp', strategy: 'isolated', cleanup: 'provider-owned', authorization: 'implicit' },
+      { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' },
+    ],
+    capabilities: [verificationCapability('nested.parallel-a', 80, ['task-temp']), verificationCapability('nested.parallel-b', 80, ['task-temp']), verificationCapability('nested.coordinated', 160, ['shared-slot'])],
+  }, null, 2)}\n`);
   assert.equal(runBuildr(['sync', 'codex', '--target', workspace]).status, 0);
   commitIfDirty(nestedRoot, 'nested runtime fixture');
   git(workspace, ['add', '-f', '.agents']);
@@ -165,6 +182,22 @@ try {
 
   summary.cliExecutions.push(runTaskInvocation(summary.tasks[0], workspace));
   summary.cliExecutions.push(runTaskInvocation(summary.tasks[1], summary.tasks[1].repositories[1].checkoutPath));
+
+  const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
+    ...task.cliInvocation.argsPrefix,
+    'verification', 'run', '--project', 'nested', '--level', 'candidate', '--target', task.environmentRoot,
+    '--environment', task.taskId, '--owner', 'codex', '--json',
+  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: 15_000 }));
+  const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
+  assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);
+  summary.verificationRuns = verificationResults.map((result, index) => {
+    const payload = parseSuccessfulJson(result, `verification ${taskIds[index]}`);
+    assert.equal(payload.candidateCompleteness, 'confirmed');
+    assert.match(payload.evidenceIdentity, /^sha256-/);
+    return { taskId: taskIds[index], evidenceIdentity: payload.evidenceIdentity, environment: payload.environment, durationMs: payload.durationMs, checks: payload.checks };
+  });
+  assert.equal(summary.verificationRuns.every((run) => run.environment.taskId === run.taskId), true);
+  assert.equal(summary.verificationRuns.some((run) => run.checks.find((check) => check.id === 'nested.coordinated').resourceCoordination.waitDurationMs > 50), true);
 
   const previewRuns = summary.tasks.map((task) => {
     const instance = `${task.taskId}-preview`;
@@ -185,6 +218,12 @@ try {
   assert.notEqual(summary.previews[0].port, summary.previews[1].port);
   assert.deepEqual(summary.previews.map((item) => item.owner.taskId), taskIds);
   assert.equal(summary.previews.every((item) => fs.existsSync(item.stateRoot)), true);
+  const prematureCleanup = runBuildr(['worktree', 'cleanup', taskIds[0], '--agent', 'codex', '--integrated-ref', 'workspace=dev', '--integrated-ref', 'project:nested=dev', '--target', workspace, '--json']);
+  assert.notEqual(prematureCleanup.status, 0);
+  const prematureCleanupResult = JSON.parse(prematureCleanup.stdout);
+  assert.equal(prematureCleanupResult.blocked.code, 'worktree.cleanup_runtime_active');
+  assert.equal(fs.existsSync(summary.tasks[0].environmentRoot), true);
+  summary.cleanup.receipts.push({ taskId: taskIds[0], runtimeGuard: prematureCleanupResult.blocked.code, environmentPreserved: true });
   summary.previewConcurrency = { overlapped: true, processes: previewResults.map(({ owner, pid, startedAt, finishedAt, durationMs, exitCode, signal }) => ({ owner, pid, startedAt, finishedAt, durationMs, exitCode, signal })) };
   if (process.env.BUILDR_ACCEPTANCE_INJECT_FAILURE === 'after-previews') throw new Error('Injected acceptance failure after concurrent previews');
 
@@ -260,7 +299,16 @@ try {
     }
   }
   for (const instance of [...previews].reverse()) {
-    const stopped = runBuildr(['app', 'preview', 'stop', instance, '--json']);
+    const taskId = instance.replace(/-preview$/, '');
+    const task = summary.tasks.find((item) => item.taskId === taskId);
+    const other = summary.tasks.find((item) => item.taskId !== taskId);
+    if (task && other) {
+      const wrongOwner = runBuildr(['app', 'preview', 'stop', instance, '--target', other.environmentRoot, '--task', other.taskId, '--owner', 'codex', '--json']);
+      summary.cleanup.previews.push({ instance, status: wrongOwner.status === 0 ? 'owner-guard-failed' : 'wrong-owner-rejected', diagnostic: (wrongOwner.stderr || wrongOwner.stdout).trim() });
+    }
+    const stopped = task
+      ? runBuildr(['app', 'preview', 'stop', instance, '--target', task.environmentRoot, '--task', task.taskId, '--owner', 'codex', '--json'])
+      : runBuildr(['app', 'preview', 'stop', instance, '--json']);
     summary.cleanup.previews.push({ instance, status: stopped.status === 0 ? 'stopped' : 'failed', diagnostic: stopped.status === 0 ? null : (stopped.stderr || stopped.stdout).trim() });
   }
   if (fs.existsSync(workspace)) {
@@ -291,11 +339,13 @@ try {
     } else summary.retainedDoctor = { ok: false, message: doctor.stderr };
   }
   summary.durationMs = Date.now() - startedAt;
-  const cleanupPassed = summary.cleanup.previews.every((item) => item.status === 'stopped')
+  const cleanupPassed = summary.cleanup.previews.every((item) => ['stopped', 'wrong-owner-rejected'].includes(item.status))
+    && summary.cleanup.previews.filter((item) => item.status === 'wrong-owner-rejected').length === taskIds.length
     && summary.cleanup.resources.every((item) => ['released', 'not-applicable'].includes(item.status))
     && summary.cleanup.worktrees.length === taskIds.length
     && summary.cleanup.worktrees.every((item) => item.status === 'removed')
     && summary.cleanup.receipts.some((item) => item.ownerGuard === 'worktree.cleanup_owner_mismatch' && item.environmentPreserved === true)
+    && summary.cleanup.receipts.some((item) => item.runtimeGuard === 'worktree.cleanup_runtime_active' && item.environmentPreserved === true)
     && summary.cleanup.receipts.some((item) => item.taskId === taskIds[1] && item.preservedAfterOtherCleanup === true)
     && summary.cleanup.receipts.filter((item) => item.environment).every((item) => item.environment === 'removed');
   if (!cleanupPassed || summary.retainedDoctor?.ready !== true) {

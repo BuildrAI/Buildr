@@ -38,6 +38,7 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 | `buildr worktree create <task-id> --agent <agent> --branch <branch> [--include ...]` | 创建或幂等复用 `<workspace>/.worktrees/<task-id>`；默认根仓库，重复 `--include project:<code>` / `service:<project>/<service>` 加入 nested independent Git repositories；返回与 receipt 绑定的绝对 `cliInvocation`。 |
 | `buildr worktree cleanup <task-id> --agent <agent> --integrated-ref <selector>=<ref> ...` | 从 retained Workspace 按 receipt 清理本地任务环境；删除前统一核对 owner、完整成员、clean 与每仓 integrated ref，按 nested-first 删除本地 worktree、任务分支和 receipts，不删除远端或强制丢弃工作。 |
 | `buildr worktree inspect/context/adopt` | 按 receipt 检查完整 repository set、CLI source/invocation 和 runtime identity；`context` 返回绝对 command 与固定 args prefix，调用方不根据 cwd 或产品相对位置拼入口。专项 runtime 机制验收才使用 host-visible session adoption evidence；任一绑定不匹配时 fail closed。 |
+| `buildr verification run --project <code> --level affected\|candidate` | 执行 Project `verification.yml`：按依赖与显式 supersedes 构造 DAG，并发运行资源兼容能力，以 Git common-dir lease 协调跨 task 容量，返回候选绑定的 `buildr.verification-run/v1` evidence。 |
 | `buildr task finish actions/inspect/advance/resume/run/recover` | `actions`查询版本化action registry与当前resolution；`run`默认从registry生成确定性计划和fingerprint，标准语义步骤返回provider handoff，只有未覆盖、歧义或登记外分支返回Agent reasoning fallback。OpenSpec `post-sync` 后 delta 再变化时，`contract-convergence` 会核验旧 receipt/baseline/sync plan/canonical/executable 证明链并自动恢复、重建基线和重新收敛；语义漂移返回 `semantic-resolution-required`，证明缺失返回 `recovery-unprovable`，均不静默改写。integration-push 后的 `retained-convergence` 消费 retained Workspace、绝对 CLI invocation、Agent 与完整 changed paths，始终执行最终 doctor，只在 runtime 资产受影响时 sync；CLI/Local App impact 只交给后续安装 provider，不重复 Candidate。显式plans仅作兼容或恢复。formal assurance失败默认返回identity-bound repair decision并停止；仅当`recover --repair-authorization <json>`明确绑定task/change、failure identity与allowed scopes时，才消费版本化before/after identities与transition proof继续re-verification。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
@@ -60,7 +61,7 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 
 `worktree create` 要求 Agent 显式提供 task id、task branch、root start point、当前 Agent、workspace root 和完整 repository selectors。`buildr.worktree-create/v2` 返回 environment、repository plan、逐仓 identity/state、runtime expectation、`handoff-required`、隔离披露和兼容的 root `worktree`/bootstrap 字段；相同 plan 幂等复用，不同 plan、occupied/tracked path、remote/branch ownership 或 identity 冲突均 fail closed。新 session 使用 `worktree adopt` 提交 session root/handle、adoption mode 与 event time；Buildr 将 environment evidence 标为 `buildr-verified`，将 host 声明标为 `agent-attested`。随后只有带同一 session evidence 的 `worktree context` 返回 `executionReady: true` 才能进入实现。部分创建失败保留 receipt、checkout 和分支。Git working tree/index 被隔离，但 objects/refs 共享。外部依赖沿用 Project 既有环境；只有并发任务会修改同一共享状态时，才要求使用项目已有租户、测试账号、数据前缀或串行验证边界。
 
-`worktree cleanup` 只处理 receipt 精确登记的本地环境。调用方必须为每个 repository selector 提供一个 integrated ref；Buildr 在任何删除前证明任务 HEAD 已被该 ref 包含并核对 checkout clean、branch/owner/receipt 一致。通过后先删除最深 nested worktree，再删除 root、本地任务分支、adoption receipt 和 environment receipt。命令不停止未知 task-owned 进程，因此 Task Finish 必须先完成 preview、租约和其他本机资源清理；它也不接受 `--force`、不删除远端分支或放弃未集成提交。
+`worktree cleanup` 只处理 receipt 精确登记的本地环境。调用方必须为每个 repository selector 提供一个 integrated ref；Buildr 在任何删除前先枚举 task-owned preview/process 与有效验证 lease，再证明任务 HEAD 已被该 ref 包含并核对 checkout clean、branch/owner/receipt 一致。任一运行状态或归属记录仍存在时整体 fail closed；Task Finish 必须先由真实 owner 使用 receipt-bound `app preview stop` 和验证 cleanup 释放资源。通过后先删除最深 nested worktree，再删除 root、本地任务分支、adoption receipt 和 environment receipt。命令不接受 `--force`、不删除远端分支或放弃未集成提交。
 
 ## Runtime 与诊断
 
@@ -91,6 +92,8 @@ Buildr 不 render 或安装 Commands，不保存 binary、token、cookie、登�
 ## Project 测试能力声明
 
 `projects/<project>/verification.yml` 使用 `buildr.project-verification/v1`，可选声明任意测试能力的 argv、cwd、成熟度、Minimal/Affected/Candidate 阶段、门禁强度、适用路径、覆盖、环境、副作用、授权和依赖关系。可选 `resources` 目录使用 `isolated`、`namespaced`、`coordinated`、`external` 表达 task-local、命名隔离、跨任务容量和外部授权边界，能力通过 `resourceClaims` 引用。它是 Project 测试事实，不是 `capabilities.yml` 中的 Skill binding，也不会被投射到 Service repo。
+
+有有效声明时，`buildr verification run` 是 checkout 与 npm 安装后共享的正式执行入口。`affected` 选择该阶段 stable required 能力；`candidate` 保留完整 required gate；依赖失败会阻塞下游，只有显式 `supersedes` 才去重。单次 run 内独立能力并发，`coordinated` 资源在同一 Git common-dir 的 task runs 之间排队，`external` 资源必须显式授权。命令不创建任务、不调度 Agent，也不把 Buildr Product registry 当作其他 Project 默认值。
 
 没有该文件时，doctor 不产生 finding，`task-verification` 继续从 AGENTS、POM、项目文档和已有测试入口发现政策。文件存在时 doctor 只做结构、路径和能力图校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”即可生成/增量补充候选；新增能力默认 discovered 或 trial/advisory，不会自动成为 Candidate required gate。
 

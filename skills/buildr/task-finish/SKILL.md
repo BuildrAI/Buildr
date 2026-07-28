@@ -17,7 +17,7 @@ description: 用户要求“收尾”、完成任务或自动完成已验证 Cha
 
 Registry 自动执行 `product-executable`；按 handoff 调用 selected providers；只补 `input-required`。只有登记外语义分支交给 Agent，显式 plan 仅作兼容恢复。
 
-每步保存非空 fingerprint、effects、evidence、attempt timing 和失效依赖。`resume` 只重跑允许重试的 blocked/stale 及其下游；语义冲突和状态无法证明必须等待可验证的新输入，重要集成冲突还可使用绑定阻塞身份的显式授权，正式保证失败只能使用修复授权与类型化恢复。不得用普通 `resume` 或调用方自报 passed 覆盖产品阻塞，也不得重复已证明的验证、push 或清理前动作。
+每步保存非空 fingerprint、effects、evidence、attempt timing 和失效依赖。`resume` 只重跑 blocked/stale 及其下游；语义冲突和状态无法证明必须等待可验证的新输入，重要集成冲突还可使用绑定阻塞身份的显式授权，正式保证失败只能使用修复授权与类型化恢复。不得用普通 `resume` 或调用方自报 passed 覆盖产品阻塞，也不得重复已证明的验证、push 或清理前动作。
 
 Identity 变化用 recovery manifest 一次提交 before/after facts 与 proof；未知变化 fail closed。正式保证只在 canonical、target、runtime 收敛后执行，并由 task-verification provider 持有。
 
@@ -27,7 +27,7 @@ Identity 变化用 recovery manifest 一次提交 before/after facts 与 proof�
 
 <!-- buildr:skill-contributions post-spec-sync -->
 
-确定性 OpenSpec 收敛由产品 action 内部完成并只返回 passed、blocked 或 recovery-unprovable。Agent 只处理语义冲突或人工事实核对；需要解释状态无法证明时只运行 `buildr openspec audit` 读取逐文件 before、expected、actual 摘要，不恢复 canonical、不刷新 baseline、不选择内部 stage。
+确定性 OpenSpec 收敛由产品 action 内部完成并只返回 passed、blocked 或 recovery-unprovable。Agent 只处理语义冲突或人工事实核对；需要解释状态无法证明时只读取产品返回的逐文件 before、expected、actual 摘要，不恢复 canonical、不刷新 baseline、不选择内部 stage。
 
 共享写使用 holder/token/expiry fencing 短 lease，不创建 Workspace 全局锁。Running step 失效时终结 attempt，并只释放仍由当前 token 持有的 lease。
 

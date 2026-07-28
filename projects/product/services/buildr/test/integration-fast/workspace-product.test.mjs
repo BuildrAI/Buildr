@@ -9,6 +9,7 @@ import YAML from 'yaml';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { readPreviewOwner, stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -451,8 +452,12 @@ test('task preview 并行隔离 worktree、输出身份并只停止自身实例'
     repositories: [{ selector: 'workspace', checkoutPath: first, branch: 'dev', head: execFileSync('git', ['-C', first, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() }],
   }, null, 2)}\n`);
   const started = [];
-  t.after(() => {
-    for (const name of started) runBuildr(['app', 'preview', 'stop', name, '--json'], { env });
+  t.after(async () => {
+    for (const name of started) {
+      const previewOwner = readPreviewOwner(name, appData);
+      const caller = previewOwner?.identityMode === 'task-environment' ? { taskId: previewOwner.taskId, owner: previewOwner.owner, environmentRoot: previewOwner.environmentRoot, receiptIdentity: previewOwner.receiptIdentity } : null;
+      try { await stopPreview(name, { dataRoot: appData, caller }); } catch { /* assertion path retains diagnostic */ }
+    }
   });
 
   const firstStart = runBuildr(['app', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json'], { env });
@@ -488,10 +493,9 @@ test('task preview 并行隔离 worktree、输出身份并只停止自身实例'
   assert.equal(listed.status, 0, listed.stderr);
   assert.deepEqual(JSON.parse(listed.stdout).previews.map((item) => item.instance).sort(), ['first-task', 'second-task']);
 
-  const stopped = runBuildr(['app', 'preview', 'stop', 'first-task', '--json'], { env });
-  assert.equal(stopped.status, 0, stopped.stderr);
+  const stopped = await stopPreview('first-task', { dataRoot: appData, caller: { taskId: firstPreview.owner.taskId, owner: firstPreview.owner.owner, environmentRoot: firstPreview.owner.environmentRoot, receiptIdentity: firstPreview.owner.receiptIdentity } });
   started.splice(started.indexOf('first-task'), 1);
-  assert.equal(JSON.parse(stopped.stdout).status, 'stopped');
+  assert.equal(stopped.status, 'stopped');
   const remaining = JSON.parse(runBuildr(['app', 'preview', 'list', '--json'], { env }).stdout).previews;
   assert.deepEqual(remaining.map((item) => item.instance), ['second-task']);
   const secondPid = secondPreview.pid;

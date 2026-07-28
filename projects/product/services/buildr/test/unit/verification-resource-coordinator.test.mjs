@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createVerificationResourceCoordinator } from '../../test/verification/resource-coordinator.mjs';
+import { createVerificationResourceCoordinator } from '../../src/application/verification/resource-coordinator.mjs';
 
 function fixture(context) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-resource-coordinator-'));

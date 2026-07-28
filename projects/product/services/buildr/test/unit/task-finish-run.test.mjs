@@ -488,8 +488,9 @@ test('formal verification composite 并行执行 required capabilities', async (
   const formal = readFinishRun({ root, runId: 'finish-1' }).steps.find((item) => item.id === 'formal-assurance');
   assert.equal(formal.evidence[0].observationCount, 2);
   assert.equal(formal.attempts[0].timingSource, 'product-observation');
-  assert.ok(formal.attempts[0].executionDurationMs >= 10);
-  assert.ok(formal.attempts[0].executionDurationMs < 30, 'parallel stage must use stage wall-clock instead of summing both commands');
+  assert.ok(formal.attempts[0].executionDurationMs > 0);
+  const summedCommandDurationMs = formal.evidence[0].observations.reduce((total, observation) => total + observation.durationMs, 0);
+  assert.ok(formal.attempts[0].executionDurationMs < summedCommandDurationMs, 'parallel stage must use stage wall-clock instead of summing both commands');
   assert.equal(result.timing.initialVerificationMs, formal.attempts[0].executionDurationMs);
 });
 
@@ -635,6 +636,23 @@ test('正式保证计时只接受候选绑定的验证摘要，不把checkpoint�
   assert.equal(completed.timing.initialVerificationMs, 1_200);
   assert.equal(completed.timing.providerExecutionMs, 1_200);
   assert.equal(completed.timing.checkpointWaitMs >= 7_800, true);
+  assert.deepEqual(completed.timing.formalAssuranceTimingSources, ['verifier-reported']);
+});
+
+test('正式保证接受 production verification run evidence', (t) => {
+  const root = fixture(t); create(root);
+  while (inspectFinishRun(readFinishRun({ root, runId: 'finish-1' })).currentStep !== 'formal-assurance') passCurrent(root, 'finish-1');
+  const claimed = advanceFinishRun({ root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-production' } });
+  const completed = advanceFinishRun({
+    root, runId: 'finish-1', fingerprints: { 'formal-assurance': 'candidate-production' }, outcome: 'passed',
+    attemptToken: claimed.nextAction.attemptToken,
+    evidence: { id: 'production-summary', verificationSummary: {
+      schemaVersion: 'buildr.verification-run/v1', status: 'passed', durationMs: 321,
+      evidenceIdentity: 'sha256-production', source: { candidateFingerprint: 'candidate-production' },
+      runId: 'verification-production', evidenceReference: '/tmp/verification-production.json',
+    } },
+  });
+  assert.equal(completed.timing.initialVerificationMs, 321);
   assert.deepEqual(completed.timing.formalAssuranceTimingSources, ['verifier-reported']);
 });
 

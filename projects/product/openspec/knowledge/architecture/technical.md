@@ -24,5 +24,6 @@ Workspace、Project、Service、Rules、Skills、Commands 和 Components 由各�
 
 ## 验证
 
-Project `verification.yml` 定义或增强验证政策。实现循环使用 minimal feedback，任务组完成后运行 affected，最终冻结 tree 运行 Candidate；evidence 绑定 candidate identity，内容变化后失效。
+Project `verification.yml` 定义或增强验证政策。实现循环使用 minimal feedback，任务组完成后运行 affected，最终冻结 tree 运行 Candidate；evidence 绑定 candidate identity，内容变化后失效。正式 `buildr verification run` 位于可发布 `src/application/verification`，从已登记 Project 解析 policy，按依赖与显式 supersedes 构造 DAG，并发执行兼容能力；checkout 与 npm 安装后 CLI 共用该实现，不依赖 `test/verification`。
 
+验证 scheduler 管理单 run readiness/并行，resource coordinator 管理跨 task 共享容量：`isolated` 保持 task-local，`namespaced` 从 task/environment/run 派生命名空间，`coordinated` 在 Git common-dir 保存带 heartbeat/expiry/token 的 lease，`external` 要求显式授权。结果使用进程外单调时钟记录真实 wall-clock，并以 policy、environment、repository candidates 与 checks 形成 `evidenceIdentity`。Buildr 不创建或调度 Agent/task。

@@ -402,9 +402,19 @@ export function registerLocalWorkspaceAppInterface(runtime) {
     }
     if (action === 'stop') {
       const [name, ...options] = args;
-      if (!name) throw new Error('Usage: buildr app preview stop <instance> [--json]');
-      runtime.assertNoUnknownOptions(options, new Set(['--json']), new Set(['--json']));
-      const result = await stopPreview(name);
+      if (!name) throw new Error('Usage: buildr app preview stop <instance> [--target <task-environment>] [--task <task-id>] [--owner <agent>] [--json]');
+      runtime.assertNoUnknownOptions(options, new Set(['--target', '--task', '--owner', '--json']), new Set(['--json']));
+      const target = runtime.optionValue(options, '--target', null);
+      const taskId = runtime.optionValue(options, '--task', null);
+      const owner = runtime.optionValue(options, '--owner', null);
+      let caller = null;
+      if (target || taskId || owner) {
+        if (!target || !taskId || !owner) throw new Error('Task preview stop requires --target, --task and --owner together.');
+        const context = runtime.resolveTaskEnvironmentContext(path.resolve(target));
+        if (!context?.executionReady) throw new Error(context?.blocked?.message || 'Task preview stop requires an execution-ready task environment receipt.');
+        caller = { taskId, owner, environmentRoot: context.environmentRoot, receiptIdentity: context.environmentEvidence?.planDigest || null };
+      }
+      const result = await stopPreview(name, { caller });
       if (options.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
       else console.log(`Buildr 开发预览已停止：${result.instance}`);
       return result;

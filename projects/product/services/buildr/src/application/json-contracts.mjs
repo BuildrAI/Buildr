@@ -28,6 +28,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskFinishCompletion: 'buildr.task-finish-completion/v1',
   worktreeCreate: 'buildr.worktree-create/v2',
   worktreeCleanup: 'buildr.worktree-cleanup/v1',
+  verificationRun: 'buildr.verification-run/v1',
 });
 
 export function withJsonSchema(schemaVersion, payload) {

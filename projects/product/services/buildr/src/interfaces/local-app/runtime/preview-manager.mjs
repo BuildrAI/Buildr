@@ -73,7 +73,9 @@ export function previewOwnerForWorktree(name, targetRoot, productCheckout = null
   return {
     schemaVersion: PREVIEW_SCHEMA, instance: assertPreviewName(name), worktree, repository, branch, head, dirty,
     taskId: environment?.taskId || null,
+    owner: environment?.agent || null,
     environmentRoot: environment?.environmentRoot || worktree,
+    receiptIdentity: environment?.planDigest || null,
     productCheckout: productCheckout ? path.resolve(productCheckout) : null,
     repositorySet: environment?.repositories?.map((item) => ({ selector: item.selector, checkoutPath: item.checkoutPath, branch: item.branch, head: item.head })) || [{ selector: 'workspace', checkoutPath: worktree, branch, head }],
     identityMode: environment ? 'task-environment' : 'legacy-worktree',
@@ -81,7 +83,25 @@ export function previewOwnerForWorktree(name, targetRoot, productCheckout = null
 }
 
 function samePreviewOwner(left, right) {
-  return Boolean(left && right && path.resolve(left.environmentRoot || left.worktree) === path.resolve(right.environmentRoot || right.worktree));
+  return Boolean(left && right
+    && path.resolve(left.environmentRoot || left.worktree) === path.resolve(right.environmentRoot || right.worktree)
+    && (left.taskId || null) === (right.taskId || null)
+    && (left.owner || null) === (right.owner || null)
+    && (left.receiptIdentity || null) === (right.receiptIdentity || null));
+}
+
+export function assertPreviewStopOwner(owner, caller) {
+  if (owner.identityMode !== 'task-environment') return;
+  if (!caller
+    || caller.taskId !== owner.taskId
+    || caller.owner !== owner.owner
+    || path.resolve(caller.environmentRoot) !== path.resolve(owner.environmentRoot)
+    || caller.receiptIdentity !== owner.receiptIdentity) {
+    const error = new Error(`预览实例 ${owner.instance} 的 task environment owner 或 receipt 不匹配。`);
+    error.code = 'preview_stop_owner_mismatch';
+    error.details = { instance: owner.instance, expected: { taskId: owner.taskId, owner: owner.owner, environmentRoot: owner.environmentRoot, receiptIdentity: owner.receiptIdentity } };
+    throw error;
+  }
 }
 
 export function readPreviewOwner(name, dataRoot) {
@@ -184,7 +204,9 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
     error.code = 'preview_start_timeout';
     throw error;
   }
-  const result = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner, url: started.url, pid: started.pid };
+  const managedOwner = { ...owner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
+  writeOwner(runtime, managedOwner, dataRoot);
+  const result = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid };
   if (!args.includes('--no-open')) openDefaultBrowser(started.url);
   return result;
 }
@@ -204,7 +226,7 @@ export async function listPreviews({ dataRoot = localAppDataRoot() } = {}) {
   return { schemaVersion: PREVIEW_SCHEMA, previews };
 }
 
-export async function stopPreview(name, { dataRoot = localAppDataRoot() } = {}) {
+export async function stopPreview(name, { dataRoot = localAppDataRoot(), caller = null } = {}) {
   const instance = assertPreviewName(name);
   const owner = readPreviewOwner(instance, dataRoot);
   if (!owner) {
@@ -212,6 +234,7 @@ export async function stopPreview(name, { dataRoot = localAppDataRoot() } = {}) 
     error.code = 'preview_not_found';
     throw error;
   }
+  assertPreviewStopOwner(owner, caller);
   const state = readPreviewInstance(instance, dataRoot);
   const healthy = await healthyLocalAppInstance(state);
   if (healthy) {

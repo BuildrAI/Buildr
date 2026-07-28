@@ -1,0 +1,34 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: productize-concurrent-workspace-verification
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/productize-concurrent-workspace-verification/brief.md
+    reason: 变更新增普通 Workspace 验证入口、并发资源执行流程和 task-owned runtime 清理门禁。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/productize-concurrent-workspace-verification/proposal.md
+      - openspec/changes/productize-concurrent-workspace-verification/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 通用验证编排从 checkout-only test 生命周期迁入可发布 runtime，并新增 CLI、lease 与 evidence 边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/productize-concurrent-workspace-verification/specs/task-verification/spec.md
+      - openspec/changes/productize-concurrent-workspace-verification/specs/npm-cli-package/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 新增 verification run、Task Finish provider 集成和 runtime ownership preflight。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/productize-concurrent-workspace-verification/specs/cli-product-surface/spec.md
+      - openspec/changes/productize-concurrent-workspace-verification/specs/task-environments/spec.md
+      - openspec/changes/productize-concurrent-workspace-verification/specs/worktree-local-app-preview/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 本次沿用既有 task environment、Candidate、evidenceIdentity 与 resource lease 术语，无需新增术语。
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

@@ -162,14 +162,27 @@ function decorateBlocked(run, item, blocked) {
   return normalized;
 }
 
+function verificationTimingView(summary) {
+  if (!summary || !['buildr.verification-timing/v1', 'buildr.verification-run/v1'].includes(summary.schemaVersion)) return null;
+  return {
+    schemaVersion: summary.schemaVersion,
+    status: summary.status,
+    durationMs: summary.schemaVersion === 'buildr.verification-run/v1' ? summary.durationMs : summary.totalDurationMs,
+    candidateFingerprint: summary.source?.candidateFingerprint,
+    evidenceIdentity: summary.evidenceIdentity,
+    runId: summary.run?.id || summary.runId || null,
+    summaryPath: summary.summaryPath || summary.evidenceReference || null,
+  };
+}
+
 function trustedVerificationTiming(item, evidence, outcome) {
   if (item.id !== 'formal-assurance' || outcome !== 'passed') return null;
-  const summary = evidence?.verificationSummary;
-  if (!summary || summary.schemaVersion !== 'buildr.verification-timing/v1' || summary.status !== 'passed') return null;
-  if (summary.source?.candidateFingerprint !== item.inputFingerprint) throw new Error('Verification timing summary candidate identity does not match the formal assurance input.');
-  if (!Number.isFinite(summary.totalDurationMs) || summary.totalDurationMs < 0) throw new Error('Verification timing summary requires a non-negative totalDurationMs.');
-  if (typeof summary.evidenceIdentity !== 'string' || !summary.evidenceIdentity.trim()) throw new Error('Verification timing summary requires a stable evidenceIdentity.');
-  return { source: 'verifier-reported', durationMs: summary.totalDurationMs, evidenceIdentity: summary.evidenceIdentity };
+  const timing = verificationTimingView(evidence?.verificationSummary);
+  if (!timing || timing.status !== 'passed') return null;
+  if (timing.candidateFingerprint !== item.inputFingerprint) throw new Error('Verification timing summary candidate identity does not match the formal assurance input.');
+  if (!Number.isFinite(timing.durationMs) || timing.durationMs < 0) throw new Error('Verification timing summary requires a non-negative duration.');
+  if (typeof timing.evidenceIdentity !== 'string' || !timing.evidenceIdentity.trim()) throw new Error('Verification timing summary requires a stable evidenceIdentity.');
+  return { source: 'verifier-reported', durationMs: timing.durationMs, evidenceIdentity: timing.evidenceIdentity };
 }
 
 function isWithin(root, candidate) {
@@ -520,29 +533,33 @@ function validStepEffects(item) {
 function observedExecutionTiming(evidence, durationMs, item, fingerprint, outcome) {
   const verification = evidence?.verificationSummary;
   if (verification) {
+    const timing = verificationTimingView(verification);
     const acceptedStatuses = outcome === 'passed' ? ['passed'] : outcome === 'blocked' ? ['failed', 'incomplete'] : [];
     if (item.id !== 'formal-assurance'
-      || verification.schemaVersion !== 'buildr.verification-timing/v1'
-      || !acceptedStatuses.includes(verification.status)
-      || !Number.isFinite(verification.totalDurationMs)
-      || verification.totalDurationMs < 0
-      || verification.source?.candidateFingerprint !== fingerprint
-      || typeof verification.evidenceIdentity !== 'string'
-      || !verification.evidenceIdentity.trim()) {
-      throw new Error(`formal-assurance ${outcome} completion requires a ${acceptedStatuses.join('|') || 'supported'} buildr.verification-timing/v1 summary matching the current candidate fingerprint.`);
+      || !timing
+      || !acceptedStatuses.includes(timing.status)
+      || !Number.isFinite(timing.durationMs)
+      || timing.durationMs < 0
+      || timing.candidateFingerprint !== fingerprint
+      || typeof timing.evidenceIdentity !== 'string'
+      || !timing.evidenceIdentity.trim()) {
+      const expectedSchema = verification.schemaVersion === 'buildr.verification-run/v1'
+        ? 'trusted buildr.verification-run/v1 summary'
+        : `${acceptedStatuses.join('|') || 'supported'} buildr.verification-timing/v1 summary`;
+      throw new Error(`formal-assurance ${outcome} completion requires a ${expectedSchema} matching the current candidate fingerprint.`);
     }
     return {
-      executionDurationMs: verification.totalDurationMs,
-      orchestrationDurationMs: Math.max(0, durationMs - verification.totalDurationMs),
+      executionDurationMs: timing.durationMs,
+      orchestrationDurationMs: Math.max(0, durationMs - timing.durationMs),
       unobservedDurationMs: 0,
       timingSource: 'verification-summary',
       timingEvidence: {
-        schemaVersion: verification.schemaVersion,
-        status: verification.status,
-        runId: verification.run?.id || null,
-        evidenceIdentity: verification.evidenceIdentity,
-        summaryPath: typeof verification.summaryPath === 'string' ? verification.summaryPath : null,
-        candidateFingerprint: verification.source.candidateFingerprint,
+        schemaVersion: timing.schemaVersion,
+        status: timing.status,
+        runId: timing.runId,
+        evidenceIdentity: timing.evidenceIdentity,
+        summaryPath: timing.summaryPath,
+        candidateFingerprint: timing.candidateFingerprint,
       },
     };
   }

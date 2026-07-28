@@ -2,10 +2,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
+import { localAppDataRoot } from '../../infrastructure/filesystem/workspace-registry-repository.mjs';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v1';
@@ -16,6 +17,50 @@ const ROOT_EVIDENCE_SOURCES = new Set(['host-context', 'runtime-host']);
 function inside(parent, child) {
   const relative = path.relative(parent, child);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
+export function taskRuntimeBlockers(workspaceRoot, receipt) {
+  const blockers = [];
+  const previewRoot = path.join(localAppDataRoot(), 'previews');
+  if (fs.existsSync(previewRoot)) {
+    for (const entry of fs.readdirSync(previewRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const ownerFile = path.join(previewRoot, entry.name, 'preview.json');
+      const instanceFile = path.join(previewRoot, entry.name, 'instance.json');
+      try {
+        const owner = JSON.parse(fs.readFileSync(ownerFile, 'utf8'));
+        if (owner.schemaVersion !== 'buildr.local-app-preview/v1' || owner.taskId !== receipt.taskId || path.resolve(owner.environmentRoot) !== path.resolve(receipt.environmentRoot)) continue;
+        const instance = fs.existsSync(instanceFile) ? JSON.parse(fs.readFileSync(instanceFile, 'utf8')) : null;
+        blockers.push({ kind: 'preview', id: entry.name, pid: instance?.pid || owner.managedProcess?.pid || null, state: processIsAlive(instance?.pid || owner.managedProcess?.pid) ? 'running' : 'ownership-record-retained' });
+      } catch { /* unrelated or incomplete preview state */ }
+    }
+  }
+  let common = null;
+  try { common = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: workspaceRoot, encoding: 'utf8' }).trim(); } catch { /* retained root validation reports Git errors */ }
+  const leaseRoot = common ? path.join(path.resolve(workspaceRoot, common), 'buildr', 'verification-resources') : null;
+  if (leaseRoot && fs.existsSync(leaseRoot)) {
+    const visit = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const current = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(current);
+        else if (entry.name === 'lease.json') {
+          try {
+            const lease = JSON.parse(fs.readFileSync(current, 'utf8'));
+            if (lease.schemaVersion === 'buildr.verification-resource-lease/v1' && lease.taskId === receipt.taskId && Date.parse(lease.expiresAt) > Date.now()) {
+              blockers.push({ kind: 'verification-lease', id: lease.resource, runId: lease.runId, slot: lease.slot, state: 'active' });
+            }
+          } catch { /* malformed unrelated state is handled by its owner */ }
+        }
+      }
+    };
+    visit(leaseRoot);
+  }
+  return blockers;
 }
 
 export function resolveExecutionCliSource({ workspaceRoot, environmentRoot, productRoot: activeProductRoot }) {
@@ -801,7 +846,7 @@ export function registerWorktreeApplication(runtime) {
     return payload;
   }
 
-  function cleanupBlocked({ workspaceRoot, taskId, receipt = null, code, message, repositories = [], branches = [] }, json) {
+  function cleanupBlocked({ workspaceRoot, taskId, receipt = null, code, message, repositories = [], branches = [], runtimeResources = [] }, json) {
     return printCleanup({
       taskId,
       owner: receipt?.agent || null,
@@ -810,6 +855,7 @@ export function registerWorktreeApplication(runtime) {
       status: 'blocked',
       repositories,
       branches,
+      runtimeResources,
       receipts: { environment: 'retained', adoption: 'retained' },
       blocked: { code, message },
       nextActions: [message],
@@ -834,6 +880,17 @@ export function registerWorktreeApplication(runtime) {
     if (agent !== receipt.agent) return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_owner_mismatch', message: `Cleanup Agent does not match environment owner: ${agent}.` }, json);
     if (path.resolve(receipt.workspaceRoot) !== workspaceRoot || path.resolve(receipt.environmentRoot) !== path.join(workspaceRoot, '.worktrees', taskId)) {
       return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_receipt_identity_mismatch', message: 'Task environment receipt does not match the canonical Workspace or environment path.' }, json);
+    }
+    const runtimeResources = taskRuntimeBlockers(workspaceRoot, receipt);
+    if (runtimeResources.length > 0) {
+      return cleanupBlocked({
+        workspaceRoot,
+        taskId,
+        receipt,
+        code: 'worktree.cleanup_runtime_active',
+        message: `Task-owned runtime resources must be stopped before cleanup: ${runtimeResources.map((item) => `${item.kind}:${item.id}`).join(', ')}.`,
+        runtimeResources,
+      }, json);
     }
 
     const integratedRefs = new Map();
@@ -988,11 +1045,19 @@ export function registerWorktreeApplication(runtime) {
     return printContext(contextFromReceipt(receipt, requestedPath, session), json, true);
   }
 
+  function resolveTaskEnvironmentContext(requestedPath) {
+    const resolved = path.resolve(requestedPath);
+    if (!fs.existsSync(resolved)) throw new Error(`Context target does not exist: ${resolved}`);
+    const receipt = findEnvironmentReceipt(resolved);
+    return receipt ? contextFromReceipt(receipt, resolved) : null;
+  }
+
   Object.assign(runtime, {
     createTaskWorktree,
     cleanupTaskEnvironment,
     inspectTaskEnvironment,
     taskEnvironmentContext,
+    resolveTaskEnvironmentContext,
     adoptTaskEnvironment,
     parseWorktreeList,
   });

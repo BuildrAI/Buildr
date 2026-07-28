@@ -21,8 +21,11 @@
 | `test:changed` | 根据 Git diff 或显式 Product 路径生成最小可解释 DAG |
 | `test:candidate` | 无条件选择完整 candidate profile，不读取 diff |
 | `test:focus` | 按 step id 或 `group:<group>` 定位和重跑失败，不自动附加 Fast |
+| `buildr verification run` | 面向任意已登记 Project 执行 `verification.yml` 的 affected/Candidate DAG；随 npm runtime 发布，不依赖 Product checkout-only registry |
 
 所有入口共享 `test/verification/registry.mjs` 中的 step identity、executor、inputs、真实依赖、profile/group、预算、并发类别和资源约束。`integration-candidate-recovery`、`integration-candidate-release` 与 `runtime-adapter-parity` 是 `workspace-saturating` owner；默认 local/CI execution profile 令其互斥，`ci-workspace-limited` 只用于同 tree 对照。未知 profile 或非法上限在启动 verifier 前 fail closed。`test:changed` 对未被任何 input 或显式 ignore 覆盖的 Product 路径 fail closed；Candidate 的完整性按 required gate identity 验证，不冻结 step 数量。
+
+Product 专用 selector/registry 仍留在 `test/verification`；通用 DAG scheduler、process executor、resource coordinator 与 evidence builder 位于 `src/application/verification`。Product verifier 通过薄 adapter 复用 scheduler/lease，普通 Workspace 通过 `buildr verification run` 消费 Project 声明。二者共享并发和 owner 语义，但 Product 私有 gate 不会成为其他 Project 的默认 policy。
 
 Runtime adapter contract 始终遍历全部 supported adapters，并生成 `native-recursive`、`per-source-reference`、`same-directory-vendor`、`central-vendor`、`root-index-bridge` 覆盖矩阵；昂贵 parity 生命周期只运行每个实现族的稳定代表。共享只读 Product source，但 mutation workspace、receipt 和 target namespace 保持隔离。
 

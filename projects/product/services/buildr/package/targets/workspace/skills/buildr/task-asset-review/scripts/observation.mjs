@@ -328,7 +328,9 @@ function validateProductCompletion(record, ctx, completion) {
   const artifact = assertWorkspacePath(ctx.root, objectText(completion, 'artifact'), 'artifact');
   const normalized = artifact.absolute.replaceAll('\\', '/');
   const expectedSuffixes = [`/openspec/changes/${change}/proposal.md`, `/openspec/changes/${change}/design.md`];
-  if (!expectedSuffixes.some((suffix) => normalized.endsWith(suffix))) fail('Product completion artifact must be proposal.md or design.md in the completed change', 'observation_evidence_invalid');
+  const escapedChange = change.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const archivedArtifact = new RegExp(`/openspec/changes/archive/[^/]+-${escapedChange}/(?:proposal|design)\\.md$`).test(normalized);
+  if (!expectedSuffixes.some((suffix) => normalized.endsWith(suffix)) && !archivedArtifact) fail('Product completion artifact must be proposal.md or design.md in the completed or archived change', 'observation_evidence_invalid');
 }
 
 function validateNoChangeCompletion(record, completion) {

@@ -24,6 +24,8 @@ description: 用户要求测试、验证、耗时报告、初始化或更新测�
 
 Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有发现行为：继续读取 AGENTS、POM、项目文档和已有测试命令；不因缺少新声明产生失败、阻塞或 warning，不自动启动新的 Spring、端到端、容器、数据库或外部环境。声明存在时先按 `references/project-verification-v1.md` 核对；无效声明不得执行。
 
+声明有效且能力可由 argv/cwd 执行时，默认通过 receipt-bound 或当前已安装的 `buildr verification run --project <code> --level <affected|candidate> --target <workspace> --json` 调用正式产品 executor；在 task environment 中追加匹配 context 的 `--environment` 与 `--owner`。消费其 `buildr.verification-run/v1` summary，不从 `test/verification` 导入编排代码，也不由 Agent 手工实现 DAG 或 lease。
+
 声明的 `mode: augment` 表示已确认能力增强 legacy policy discovery，未声明范围仍继续发现；`mode: authoritative` 表示团队确认声明是 Project 测试政策 authority。具体命令由当前 workspace 或 Project 定义。不得把 Buildr Product 的 package check、临时 workspace E2E、`npm run test:candidate` 或 timing schema固定为其他项目的默认入口。
 
 需要 Candidate 但找不到适用 Candidate policy 时返回 `status: incomplete`，说明缺失的政策、入口或候选 identity；不得把 `minimal` 或 `affected` 结果表述为完整候选验证。

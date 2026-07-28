@@ -22,6 +22,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
+    console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--output <file>] [--json]');
     console.error('  buildr task finish <actions|inspect|advance|resume|renew|run|recover|cleanup-prepare|cleanup-finalize> [--run <id>] [--task <id> --change <id> --target-branch <branch>] [--action-context <json>] [--fingerprint <step>=<value> ...] [--execution-plan <json> | --execution-plans <json>] [--recovery <json>] [--repair-authorization <json>] [--resolution-authorization <json>] [--ref-transition <json>] [--detail <compact|full>] [--json]');
     console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
@@ -78,6 +79,7 @@ export function registerCommandHelp(runtime) {
       '  worktree inspect     检查 task environment 的仓库集合、身份和隔离边界。',
       '  worktree context     判断当前路径是否属于可执行的 task environment。',
       '  worktree adopt       核验并记录 Agent session 对 task environment runtime 的采用证据。',
+      '  verification run     按 Project verification.yml 执行受影响或完整候选验证。',
       '  task finish          持久化检查、推进或恢复可重入的任务收尾 run。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
@@ -138,9 +140,9 @@ export function registerCommandHelp(runtime) {
       '列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。',
     ],
     'app preview stop': [
-      'Usage: buildr app preview stop <instance> [--json]',
+      'Usage: buildr app preview stop <instance> [--target <task-environment> --task <task-id> --owner <agent>] [--json]',
       '',
-      '使用该 preview 的实例 secret 安全停止它，或仅清理其陈旧记录；不会停止默认本机应用或其他 preview。',
+      'task preview 必须同时提供 receipt-bound environment、task 与 owner 并完全匹配；独立 retained preview 保持实例级停止。错误 owner 不会收到停止信号。',
     ],
     'app launcher install': [
       'Usage: buildr app launcher install [--channel <release|development>] [--target <dir>] [--json]',
@@ -213,6 +215,14 @@ export function registerCommandHelp(runtime) {
       '仅为 runtime 发现、加载或激活机制变更且专项验收明确要求时，记录 Agent/runtime host 提供的 activation evidence。普通 Rule/Skill 内容修改不需要。',
       'Buildr 直接核验 environment evidence；session evidence 标记为 agent-attested，不表示 Buildr 内省或密码学认证 Agent session。',
       '该 evidence 不参与普通 executionReady，也不表示 Buildr 能自动 reload、启动或 handoff Agent session。',
+    ],
+    'verification run': [
+      'Usage: buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--concurrency <n>] [--include-advisory] [--output <file>] [--candidate-fingerprint <identity>] [--json]',
+      '',
+      '读取已登记 Project 的 verification.yml，按依赖和显式 supersedes 构造 DAG，并发执行资源兼容的能力。',
+      '在 task environment 中运行时自动绑定 receipt、owner、repository set 和 allowed execution roots；显式 --environment/--owner 必须完全匹配。',
+      'coordinated 资源通过 Git common-dir lease 跨 task 排队；external 资源必须逐项 --authorize-resource。该命令执行验证，不创建任务或调度 Agent。',
+      '默认 evidence 为 transient；--output 指定 caller-managed summary。--json 返回 buildr.verification-run/v1。',
     ],
     doctor: [
       'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
@@ -402,6 +412,7 @@ export function registerCommandHelp(runtime) {
     if (domain === 'worktree' && action === 'cleanup') return 'worktree cleanup';
     if (domain === 'worktree' && action === 'inspect') return 'worktree inspect';
     if (domain === 'worktree' && action === 'context') return 'worktree context';
+    if (domain === 'verification' && action === 'run') return 'verification run';
     if (domain === 'runtime' && action === 'list') return 'runtime list';
     if (domain === 'mutation' && action === 'recover') return 'mutation recover';
     if (domain === 'runtime' && action === 'check') return 'runtime check';

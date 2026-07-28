@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn as spawnChild, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readSharedCandidatePackage } from '../release/candidate-package.mjs';
 
@@ -14,6 +14,17 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-parity-'));
 
 function spawn(command, args, options = {}) {
   return spawnSync(command, args, { cwd: options.cwd || productRoot, encoding: 'utf8', env: process.env });
+}
+
+function spawnAsync(command, args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawnChild(command, args, { cwd: options.cwd || productRoot, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status, signal) => resolve({ status, signal, stdout, stderr }));
+  });
 }
 
 function runCheckout(args) {
@@ -80,14 +91,70 @@ try {
   const checkoutWorkspace = path.join(root, 'checkout-workspace');
   const packagedWorkspace = path.join(root, 'packaged-workspace');
   for (const [runner, workspace] of [[runCheckout, checkoutWorkspace], [runPackaged, packagedWorkspace]]) {
-    let result = runner(['init', '--agent', 'codex', '--target', workspace, '--name', 'parity', '--profile', 'team']);
+    let result = runner(['init', '--agent', 'codex', '--target', workspace, '--name', 'parity', '--description', 'Package parity workspace', '--profile', 'team']);
     assert.equal(result.status, 0, result.stderr);
-    result = runner(['project', 'create', 'demo', '--target', workspace]);
+    result = runner(['project', 'create', 'demo', '--target', workspace, '--name', 'Demo', '--description', 'Package parity Project']);
     assert.equal(result.status, 0, result.stderr);
+    result = runner(['sync', 'codex', '--target', workspace]);
+    assert.equal(result.status, 0, result.stderr);
+    const capability = (id) => ({
+      id, title: id, command: { argv: [process.execPath, '-e', 'setTimeout(() => {}, 25)'], cwd: '.' },
+      maturity: 'stable', stages: ['candidate'], enforcement: { candidate: 'required' },
+      applicability: { paths: ['**'], risks: [] }, coverage: { kind: 'test', owns: [id] },
+      environment: { requires: ['node'], services: [] }, effects: { level: 'local-temporary', writes: [], externalSystems: false },
+      authorization: 'implicit', resourceClaims: ['task-temp'], dependsOn: [], supersedes: [], sources: ['package-parity'],
+    });
+    fs.writeFileSync(path.join(workspace, 'projects', 'demo', 'verification.yml'), `${JSON.stringify({
+      schemaVersion: 'buildr.project-verification/v1', mode: 'authoritative',
+      resources: [
+        { id: 'task-temp', title: 'Task temp', strategy: 'isolated', cleanup: 'provider-owned', authorization: 'implicit' },
+        { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' },
+      ],
+      capabilities: [capability('demo.one'), capability('demo.two'), { ...capability('demo.shared'), resourceClaims: ['shared-slot'], command: { argv: [process.execPath, '-e', 'setTimeout(() => {}, 80)'], cwd: '.' } }],
+    }, null, 2)}\n`);
+    result = runner(['verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', workspace, '--json']);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const verification = JSON.parse(result.stdout);
+    assert.equal(verification.schemaVersion, 'buildr.verification-run/v1');
+    assert.equal(verification.candidateCompleteness, 'confirmed');
+    assert.deepEqual(verification.checks.map((check) => check.id), ['demo.one', 'demo.two', 'demo.shared']);
+    assert.ok(Date.parse(verification.checks[0].startedAt) < Date.parse(verification.checks[1].finishedAt));
   }
   assert.deepEqual(normalizeWorkspaceSnapshot(snapshot(packagedWorkspace)), normalizeWorkspaceSnapshot(snapshot(checkoutWorkspace)));
 
-  console.log('CLI package parity verification passed: help, failures, JSON discovery, and workspace mutations match checkout and npm tarball entrypoints.');
+  spawn('git', ['init', '--initial-branch=dev', packagedWorkspace]);
+  spawn('git', ['-C', packagedWorkspace, 'config', 'user.email', 'buildr-test@example.com']);
+  spawn('git', ['-C', packagedWorkspace, 'config', 'user.name', 'Buildr Test']);
+  spawn('git', ['-C', packagedWorkspace, 'add', '.']);
+  const committed = spawn('git', ['-C', packagedWorkspace, 'commit', '-m', 'packaged concurrent verification fixture']);
+  assert.equal(committed.status, 0, committed.stderr);
+  const taskIds = ['package-task-a', 'package-task-b'];
+  const tasks = taskIds.map((taskId) => {
+    const created = runPackaged(['worktree', 'create', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', packagedWorkspace, '--json']);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    return JSON.parse(created.stdout);
+  });
+  const concurrent = await Promise.all(tasks.map((task, index) => spawnAsync(task.cliInvocation.command, [
+    ...task.cliInvocation.argsPrefix,
+    'verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', task.environment.root,
+    '--environment', taskIds[index], '--owner', 'codex', '--json',
+  ], { cwd: task.environment.root })));
+  const summaries = concurrent.map((result, index) => {
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.schemaVersion, 'buildr.verification-run/v1');
+    assert.equal(payload.environment.taskId, taskIds[index]);
+    assert.equal(payload.candidateCompleteness, 'confirmed');
+    assert.match(payload.evidenceIdentity, /^sha256-/);
+    return payload;
+  });
+  assert.equal(summaries.some((summary) => summary.checks.find((check) => check.id === 'demo.shared').resourceCoordination.waitDurationMs > 20), true);
+  for (const taskId of taskIds) {
+    const cleaned = runPackaged(['worktree', 'cleanup', taskId, '--agent', 'codex', '--integrated-ref', 'workspace=dev', '--target', packagedWorkspace, '--json']);
+    assert.equal(cleaned.status, 0, cleaned.stderr || cleaned.stdout);
+  }
+
+  console.log('CLI package parity verification passed: help, failures, JSON discovery, workspace mutations, generic Project verification, and packaged dual-task coordination match checkout and npm tarball entrypoints.');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

@@ -38,6 +38,9 @@ const allowed = new Map([
   ['src/interfaces/local-app/runtime/preview-manager.mjs', new Set(['clearOwner'])],
   ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
   ['src/application/task-finish/task-finish-run.mjs', new Set(['atomicWriteJson', 'removeLeasePath'])],
+  ['src/application/verification/resource-coordinator.mjs', new Set([
+    'atomicWriteJson', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
+  ])],
   ['src/interfaces/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/application/domains/workspace.mjs', new Set(['createProject', 'createService'])],
   ['src/application/domains/rules.mjs', new Set(['rulesRemoveUnsafe'])],
