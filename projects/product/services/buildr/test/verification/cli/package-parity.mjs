@@ -148,7 +148,17 @@ try {
     assert.match(payload.evidenceIdentity, /^sha256-/);
     return payload;
   });
-  assert.equal(summaries.some((summary) => summary.checks.find((check) => check.id === 'demo.shared').resourceCoordination.waitDurationMs > 20), true);
+  summaries.forEach((summary, index) => {
+    const coordination = summary.checks.find((check) => check.id === 'demo.shared').resourceCoordination;
+    assert.equal(coordination.claims.some((claim) => claim.resource === 'shared-slot'
+      && claim.strategy === 'coordinated'
+      && claim.slot === 0
+      && claim.status === 'acquired'
+      && claim.owner.taskId === taskIds[index]), true);
+    assert.equal(coordination.release.some((claim) => claim.resource === 'shared-slot'
+      && claim.slot === 0
+      && claim.status === 'released'), true);
+  });
   for (const taskId of taskIds) {
     const cleaned = runPackaged(['worktree', 'cleanup', taskId, '--agent', 'codex', '--integrated-ref', 'workspace=dev', '--target', packagedWorkspace, '--json']);
     assert.equal(cleaned.status, 0, cleaned.stderr || cleaned.stdout);

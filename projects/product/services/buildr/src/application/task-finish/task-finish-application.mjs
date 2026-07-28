@@ -1,136 +1,103 @@
-import { advanceFinishRun, compactFinishCheckpoint, createFinishRun, executeSafeFinishRun, finalizeFinishCleanup, inspectFinishRun, prepareFinishCleanup, readFinishRun, recoverFinishRun, renewFinishLease, resumeFinishRun } from './task-finish-run.mjs';
-import { listFinishActions, resolveFinishAction } from './task-finish-action-registry.mjs';
-import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
-function taskFinishInputError(code, message, action) {
+import { executeFinishRun, inspectFinishRun, readFinishRun, resolveFinishRun } from './task-finish-run.mjs';
+
+function inputError(code, message, action) {
   const error = new Error(message);
   Object.assign(error, { code, usage: `buildr help task finish ${action}`, nextAction: `buildr help task finish ${action}` });
   return error;
 }
 
-function assertTaskFinishArgs(action, args) {
-  const common = ['--run', '--target', '--detail', '--json'];
-  const byAction = {
-    actions: ['--action-context'], inspect: ['--detail'], renew: ['--attempt'],
-    run: ['--task', '--change', '--target-branch', '--remote', '--repair-authorization', '--fingerprint', '--execution-plans', '--action-context'],
-    recover: ['--recovery'], 'cleanup-prepare': ['--attempt', '--evidence'], 'cleanup-finalize': ['--evidence'],
-    advance: ['--task', '--change', '--target-branch', '--remote', '--repair-authorization', '--fingerprint', '--outcome', '--attempt', '--effect', '--evidence', '--blocked', '--session', '--expected-target-ref', '--observed-target-ref', '--ref-transition', '--execution-plan', '--resolution-authorization'],
-    resume: ['--fingerprint', '--outcome', '--attempt', '--effect', '--evidence', '--blocked', '--session', '--expected-target-ref', '--observed-target-ref', '--ref-transition', '--execution-plan', '--resolution-authorization'],
+function assertArgs(action, args) {
+  const allowedByAction = {
+    run: new Set(['--run', '--change', '--project', '--agent', '--target-branch', '--remote', '--required-assurance', '--verification-summary', '--resume', '--target', '--detail', '--json']),
+    inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
-  const allowed = new Set([...common, ...(byAction[action] || [])]);
+  const allowed = allowedByAction[action];
+  if (!allowed) throw inputError('task_finish.unsupported_action', `Task Finish only supports run and inspect: ${action || '<missing>'}`, 'run');
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
-    if (!option.startsWith('--') || !allowed.has(option)) throw taskFinishInputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
+    if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
     if (option === '--json') continue;
     const value = args[index + 1];
-    if (!value || value.startsWith('--')) throw taskFinishInputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
+    if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
     index += 1;
   }
-  const requiredByAction = {
-    renew: ['--attempt'], recover: ['--recovery'],
-    'cleanup-prepare': ['--attempt', '--evidence'], 'cleanup-finalize': ['--evidence'],
-  };
-  for (const option of requiredByAction[action] || []) {
-    if (!args.includes(option)) throw taskFinishInputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
-  }
-}
-
-function values(args, name) {
-  const result = [];
-  for (let index = 0; index < args.length; index += 1) if (args[index] === name) result.push(args[index + 1]);
-  return result;
-}
-
-function jsonValue(value, label) {
-  if (!value) return null;
-  try { return JSON.parse(value); } catch { throw new Error(`${label} must be valid JSON`); }
-}
-
-function fingerprints(args) {
-  return Object.fromEntries(values(args, '--fingerprint').map((entry) => {
-    const separator = entry.indexOf('=');
-    if (separator < 1) throw new Error('--fingerprint must use <step>=<value>');
-    return [entry.slice(0, separator), entry.slice(separator + 1)];
-  }));
 }
 
 export function registerTaskFinishApplication(runtime) {
   const optionValue = (...args) => runtime.optionValue(...args);
   const withResolvedTarget = (...args) => runtime.withResolvedTarget(...args);
-  const atomicWriteFile = (...args) => runtime.atomicWriteFile(...args);
 
-  function taskFinish(action, args) {
-    assertTaskFinishArgs(action, args);
-    const command = withResolvedTarget(args);
+  async function run(command) {
     const root = command.targetRoot;
-    const runId = optionValue(command.args, '--run');
-    if (action === 'actions' && !runId) return print(listFinishActions(), command.args, root);
-    if (!runId) throw taskFinishInputError('task_finish.missing_parameter', 'Missing value for --run', action);
-    if (action === 'actions') {
-      const checkpoint = inspectFinishRun(readFinishRun({ root, runId }));
-      const context = jsonValue(optionValue(command.args, '--action-context', null), '--action-context') || {};
-      return print({ ...listFinishActions(), runId, currentStep: checkpoint.currentStep, resolution: checkpoint.currentStep ? resolveFinishAction({ root, run: readFinishRun({ root, runId }), step: checkpoint.currentStep, context }) : null }, command.args, root);
+    const runId = optionValue(command.args, '--run', null);
+    const resumeToken = optionValue(command.args, '--resume', null);
+    let finishRun = null;
+    if (runId) {
+      try { finishRun = readFinishRun({ root, runId }); } catch { /* create below */ }
     }
-    if (action === 'cleanup-finalize') return print(finalizeFinishCleanup({ root, runId, evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args, root);
-    if (action === 'inspect') return print(inspectFinishRun(readFinishRun({ root, runId })), command.args, root);
-    if (action === 'renew') return print(renewFinishLease({ root, runId, attemptToken: optionValue(command.args, '--attempt') }), command.args, root);
-    let run;
-    try { run = readFinishRun({ root, runId }); }
-    catch (error) {
-      if (!['advance', 'run'].includes(action)) throw error;
-      for (const option of ['--task', '--target-branch']) {
-        if (!optionValue(command.args, option, null)) throw taskFinishInputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
-      }
-      run = createFinishRun({
-        root, runId, task: optionValue(command.args, '--task'), change: optionValue(command.args, '--change', null),
-        targetBranch: optionValue(command.args, '--target-branch'), remote: optionValue(command.args, '--remote', 'origin'),
-        repairAuthorization: jsonValue(optionValue(command.args, '--repair-authorization', null), '--repair-authorization'),
+    if (!finishRun) {
+      const context = runtime.resolveTaskEnvironmentContext?.(root) || null;
+      if (!context?.taskId || !context.environmentRoot || !context.workspaceRoot) throw inputError('task_finish.not_task_environment', 'Task Finish run requires a receipt-bound task environment.', 'run');
+      const change = optionValue(command.args, '--change', null);
+      const project = optionValue(command.args, '--project', null);
+      if (!change || !project) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --change and --project.', 'run');
+      const repository = context.repositories?.find((entry) => entry.selector === context.membership?.selector) || context.repositories?.[0] || {};
+      const targetBranch = optionValue(command.args, '--target-branch', repository.startPoint || null);
+      if (!targetBranch) throw inputError('task_finish.target_branch_unavailable', 'Task Finish could not derive the target branch; pass --target-branch.', 'run');
+      finishRun = resolveFinishRun({
+        root,
+        runId,
+        resumeToken,
+        identity: {
+          task: context.taskId,
+          change,
+          project,
+          agent: optionValue(command.args, '--agent', context.owner),
+          targetBranch,
+          remote: optionValue(command.args, '--remote', repository.remote || null),
+          environmentRoot: context.environmentRoot,
+          workspaceRoot: context.workspaceRoot,
+          requiredAssurance: optionValue(command.args, '--required-assurance', 'affected'),
+        },
       });
+    } else if (path.resolve(finishRun.identity.environmentRoot) !== path.resolve(root)) {
+      const cleanup = finishRun.phases.find((phase) => phase.id === 'cleanup');
+      const retainedCleanupRecovery = path.resolve(finishRun.identity.workspaceRoot) === path.resolve(root)
+        && !fs.existsSync(finishRun.identity.environmentRoot)
+        && Boolean(finishRun.delivery?.candidateRef)
+        && ['running', 'blocked'].includes(cleanup?.status);
+      if (!retainedCleanupRecovery) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different task environment.', 'run');
     }
-    if (action === 'run') return executeSafeFinishRun({ root, runId: run.runId, fingerprints: fingerprints(command.args), executionPlans: jsonValue(optionValue(command.args, '--execution-plans', null), '--execution-plans') || {}, actionContext: jsonValue(optionValue(command.args, '--action-context', null), '--action-context') || {} }).then((result) => print(result, command.args, root));
-    if (action === 'recover') return recoverFinishRun({ root, runId: run.runId, manifest: jsonValue(optionValue(command.args, '--recovery', null), '--recovery') }).then((result) => print(result, command.args, root));
-    if (action === 'cleanup-prepare') return print(prepareFinishCleanup({ root, runId: run.runId, attemptToken: optionValue(command.args, '--attempt'), evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence') }), command.args, root);
-    const options = {
-      root, runId: run.runId, fingerprints: fingerprints(command.args),
-      outcome: optionValue(command.args, '--outcome', null), attemptToken: optionValue(command.args, '--attempt', null),
-      effect: jsonValue(optionValue(command.args, '--effect', null), '--effect'), evidence: jsonValue(optionValue(command.args, '--evidence', null), '--evidence'),
-      blocked: jsonValue(optionValue(command.args, '--blocked', null), '--blocked'),
-      session: jsonValue(optionValue(command.args, '--session', null), '--session'),
-      expectedTargetRef: optionValue(command.args, '--expected-target-ref', null),
-      observedTargetRef: optionValue(command.args, '--observed-target-ref', null),
-      refTransition: jsonValue(optionValue(command.args, '--ref-transition', null), '--ref-transition'),
-      executionPlan: jsonValue(optionValue(command.args, '--execution-plan', null), '--execution-plan'),
-      resolutionAuthorization: jsonValue(optionValue(command.args, '--resolution-authorization', null), '--resolution-authorization'),
-    };
-    return print(action === 'resume' ? resumeFinishRun(options) : advanceFinishRun(options), command.args, root);
+    const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
+    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, existingVerificationSummary: optionValue(command.args, '--verification-summary', null) });
+    return print(await executeFinishRun({ root, run: finishRun, handlers, resumeToken }), command.args);
   }
 
-  function print(result, args, root) {
-    if (args.includes('--json')) {
-      const checkpoint = Array.isArray(result.completedEffects) && result.timing;
-      const full = args.includes('--detail') && optionValue(args, '--detail') === 'full';
-      let payload = checkpoint && !full ? compactFinishCheckpoint(result) : result;
-      const serialized = JSON.stringify(payload, null, 2);
-      if (full && serialized.length > 32_768) {
-        const directory = path.join(root, '.buildr', 'task-finish', 'diagnostics');
-        const file = path.join(directory, `${result.runId}-full.json`);
-        atomicWriteFile(file, `${serialized}\n`);
-        payload = { ...compactFinishCheckpoint(result), diagnostics: { path: file, sha256: crypto.createHash('sha256').update(serialized).digest('hex'), bytes: Buffer.byteLength(serialized), preview: serialized.slice(0, 2000), truncated: true } };
-      }
-      console.log(JSON.stringify(payload, null, 2));
-    }
+  function inspect(command) {
+    const runId = optionValue(command.args, '--run', null);
+    if (!runId) throw inputError('task_finish.missing_parameter', 'Task Finish inspect requires --run.', 'inspect');
+    return print(inspectFinishRun({ root: command.targetRoot, runId }), command.args);
+  }
+
+  function print(result, args) {
+    if (args.includes('--json')) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else {
-      if (result.schemaVersion === 'buildr.task-finish-action-registry/v1') {
-        console.log(`Task Finish action registry v${result.registryVersion}: ${result.actions.length} actions`);
-        if (result.resolution) console.log(`Current: ${result.currentStep} - ${result.resolution.status}`);
-        return result;
-      }
       console.log(`Task Finish run ${result.runId}: ${result.status}`);
-      console.log(result.nextAction ? `Next: ${result.nextAction.step} - ${result.nextAction.action}` : 'Next: none');
-      if (result.blocked?.length) console.log(`Blocked: ${result.blocked.map((item) => `${item.step}: ${item.reason || item.code}`).join('; ')}`);
+      if (result.primaryFailure) console.log(`Failure: ${result.primaryFailure.phase}/${result.primaryFailure.operation || result.primaryFailure.check || 'unknown'} - ${result.primaryFailure.message}`);
+      if (result.nextWorkflow) console.log(`Next workflow: ${result.nextWorkflow}`);
+      else if (result.nextAction) console.log(`Next: ${result.nextAction}`);
+      else console.log('Next: none');
     }
     return result;
+  }
+
+  async function taskFinish(action, args) {
+    assertArgs(action, args);
+    const command = withResolvedTarget(args);
+    return action === 'run' ? run(command) : inspect(command);
   }
 
   Object.assign(runtime, { taskFinish });

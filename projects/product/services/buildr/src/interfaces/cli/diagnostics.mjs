@@ -39,13 +39,11 @@ export function printCliError(rawArgs, { candidates, helpTopic = false } = {}) {
   const unknownOption = !helpTopic && inputArgs.length === 1 && inputArgs[0].startsWith('-');
   const code = helpTopic ? 'cli.unknown_help_topic' : unknownOption ? 'cli.unknown_option' : 'cli.unknown_command';
   const label = helpTopic ? 'help topic' : unknownOption ? 'option' : 'command';
-  const suggestions = input === 'task finish status'
-    ? ['task finish inspect --run <id>']
-    : unknownOption && input === '-v'
+  const suggestions = unknownOption && input === '-v'
     ? ['--version', '-V']
     : commandSuggestions(input, candidates || []);
   const message = `Unknown ${label}: ${input || '(empty)'}`;
-  const help = input === 'task finish status' ? 'buildr help task finish inspect' : 'buildr --help';
+  const help = 'buildr --help';
   if (json) {
     console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.cliError, {
       error: { code, message, input },

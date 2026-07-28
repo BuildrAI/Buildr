@@ -30,12 +30,12 @@ function atomicWriteFile(file, content) {
 export function isLightweightTaskFinishCommand(argv = process.argv) {
   const args = argv.slice(2);
   return !args.some((arg) => arg === '--help' || arg === '-h')
-    && args[0] === 'task' && args[1] === 'finish' && ['inspect', 'advance', 'recover'].includes(args[2]);
+    && args[0] === 'task' && args[1] === 'finish' && args[2] === 'inspect';
 }
 
 export async function runLightweightTaskFinish(argv = process.argv) {
   const action = argv[4];
-  if (!['inspect', 'advance', 'recover'].includes(action)) throw new Error(`Unsupported lightweight Task Finish action: ${action || '<missing>'}`);
+  if (action !== 'inspect') throw new Error(`Unsupported lightweight Task Finish action: ${action || '<missing>'}`);
   const runtime = { optionValue, withResolvedTarget, atomicWriteFile };
   registerTaskFinishApplication(runtime);
   return await runtime.taskFinish(action, argv.slice(5));

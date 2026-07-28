@@ -72,6 +72,13 @@
 - 避免混用：Change archive 是历史与 provenance，不是 Project 当前事实源。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## 收尾就绪候选（Finish-ready Candidate）
+
+- 定义：研发实现、自审、必要审查、开发验证和 current knowledge 已完成，允许 Task Finish 只做确定性收敛、冻结、最终保证、交付与清理的候选。
+- 适用范围：Task Finish 的输入资格与研发/收尾责任边界。
+- 避免混用：不等于“代码大致完成”，也不表示 Task Finish 可以修复产品缺陷；收尾发现产品缺陷时必须退出并回到研发、审查和测试验证流程。
+- 来源：[Task Finish 执行规范](../specs/task-finish-execution/spec.md)
+
 ## 受控同步（Controlled Sync）
 
 - 定义：active Change 在当前会话成功取得 pre-sync receipt 后，由 Agent 按 delta 更新 canonical specs、再通过 post-sync guard 的同步阶段。
@@ -82,6 +89,6 @@
 ## 仅 runtime 投影变更（Runtime Projection-only Delta）
 
 - 定义：已验证 implementation source 在保留 checkout 上执行 Buildr runtime sync 后，仅产生受管 runtime projection 与对应 receipt 的 delivery 差异。
-- 适用范围：Task Finish 对 verification evidence 的严格 closeout-metadata-only subtype 判断。
+- 适用范围：描述 retained Workspace sync 后可精确归因的 runtime 投影差异；新 Task Finish 会在 prepare 完成全部候选 mutation 后统一冻结和验证，不用该术语绕过冻结候选的最终保证。
 - 避免混用：lockfile、source、非受管 generated asset、手工修复或无法精确归因的 diff 都是 implementation-changed，不可复用原验证证据。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)

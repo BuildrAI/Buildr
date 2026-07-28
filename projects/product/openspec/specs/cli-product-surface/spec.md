@@ -264,28 +264,33 @@ Buildr MUST 将 `buildr verification run` 登记为 public CLI，支持显式 `-
 - **THEN** 命令 MUST 返回登记的机器可读错误并以非零状态退出
 - **AND** stdout MUST 保持单一 JSON 对象且不得混入 worker 文本
 
-### Requirement: Workflow internal 命令必须提供完整主题帮助
-Buildr CLI MUST 为 Task Finish 全部 action 以及 worktree inspect/cleanup 提供 canonical 主题帮助，并 MUST 在解析业务必需参数前处理 `--help`、`-h` 和 `help <command...>`。帮助 MUST 明确每个 action 的必需参数、互斥参数、execution surface 和安全副作用。
+### Requirement: Task Finish canonical CLI 必须只有 run 与 inspect
+Buildr CLI MUST 只提供 `task finish run` 和 `task finish inspect`：`run` 从 task environment/change/Project context 解析执行所需 identity 并连续执行五阶段，`inspect` 只读返回当前 run 状态。当前客户端 MUST NOT 注册、加载或执行 `actions|advance|resume|renew|recover|cleanup-prepare|cleanup-finalize`，也 MUST NOT 接受调用方提供的 evidence/fingerprint/execution-plan/recovery 参数。
 
-#### Scenario: 查询 Task Finish action 帮助
-- **WHEN** 用户运行 `buildr task finish advance --help` 或 `buildr help task finish advance`
-- **THEN** CLI MUST 输出同一 canonical usage 并以 0 退出
-- **AND** MUST NOT 先要求 `--run`、读取 checkpoint 或修改 Workspace
+#### Scenario: 查询 canonical Task Finish 帮助
+- **WHEN** 用户运行 `buildr help task finish`、`buildr task finish run --help` 或 `buildr task finish inspect --help`
+- **THEN** 输出 MUST 只把 run/inspect 表述为 canonical actions，并列出 task/change/project/agent/target 与可选产品 resume token
+- **AND** MUST NOT 要求调用方理解 step、attempt、lease、action registry 或 recovery manifest
 
-#### Scenario: 查询 worktree inspect 与 cleanup 帮助
-- **WHEN** 用户分别查询 `worktree inspect` 和 `worktree cleanup` 帮助
-- **THEN** 输出 MUST 明确 task id、`--agent`、`--integrated-ref` 和 `--target` 在各命令中的适用性
-- **AND** 不适用参数 MUST 被明确省略或标注，而不是要求调用方从错误诊断猜测
+#### Scenario: 调用旧 action
+- **WHEN** 调用方使用旧 maintenance action
+- **THEN** CLI MUST 作为不存在或不支持的 action 拒绝
+- **AND** MUST NOT 加载旧 reader/executor 或创建旧 run
 
-### Requirement: Workflow diagnostic 必须返回可直接执行的下一动作
-Task Finish 和 worktree lifecycle 的未知 action、缺失参数及不适用参数诊断 MUST 返回稳定错误代码、canonical command suggestion 和对应 help topic。建议 MUST 使用真实支持的参数形式。
+#### Scenario: Canonical store 中存在旧 run shape
+- **WHEN** 当前客户端运行或检查 Task Finish 且 canonical store 中仍有旧 checkpoint、lease 或 completion shape
+- **THEN** 自动选择 MUST 跳过旧 shape，显式 inspect MUST fail closed
+- **AND** MUST NOT 加载旧 reader、生成迁移 receipt 或把旧 passed evidence 映射为新 phase
 
-#### Scenario: 使用不存在的 Task Finish action
-- **WHEN** 用户运行 `buildr task finish status`
-- **THEN** CLI MUST 建议 `buildr task finish inspect --run <id>` 和对应 help topic
-- **AND** MUST NOT 只返回无参数上下文的相近 action 名称
+### Requirement: Task Finish CLI 失败必须直接定位并给出唯一 workflow
+Task Finish JSON error/result MUST 优先返回真实 `phase`、`operation|check`、`failureClass`、`code|status|exit`、bounded diagnostic identity 和唯一 `nextWorkflow|nextAction`。产品缺陷 MUST 指向 `task-development`，同一 frozen candidate 可恢复的暂态阻塞 MUST 返回产品生成的 resume token；未知参数与缺失 context MUST 返回 canonical run/inspect help topic。
 
-#### Scenario: Inspect 携带 cleanup 专属参数
-- **WHEN** 用户为 `worktree inspect` 传入 `--agent`
-- **THEN** CLI MUST 指明该参数仅适用于 create/cleanup 或给出正确 inspect usage
-- **AND** 诊断 MUST 保持零 Workspace 副作用
+#### Scenario: Verification 子检查失败
+- **WHEN** 正式 verification executor 的具体 check 非零退出
+- **THEN** Task Finish compact JSON MUST 直接投射该 check/stage 和 diagnostic
+- **AND** MUST NOT 只返回顶层 `verifier.nonzero-exit`、`primaryFailure: null` 或让 Agent搜索日志猜测原因
+
+#### Scenario: Target race 可恢复
+- **WHEN** frozen candidate 未变但目标 ref 在 push 前漂移
+- **THEN** CLI MUST 返回 `phase: deliver`、`code: target-race` 和产品生成的 resume token
+- **AND** nextAction MUST 是重复 canonical run/resume，而不是手写 recovery JSON

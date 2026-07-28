@@ -47,7 +47,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 非简单 Workspace 任务开始后的轻量资产观察、任务复盘、人工决定和新任务交接 | `buildr.task-asset-review/v3` selected provider；optional 不可用时按 consumer 声明降级 |
 | 运行测试、验证改动、判断开发验证是否完成、报告验证耗时、初始化/更新测试声明、推进测试能力成熟度，或实现任务到达验证/完成节点 | `buildr.task-verification/v2` selected provider；用户无需主动点名该能力 |
 | 创建、定位、保留、迁移入口或清理单仓/多仓 task environment | `buildr.task-worktree-lifecycle/v2` selected provider |
-| 完成已验证任务、自动归档集成并清理 task worktree | `buildr.task-finish/v1` selected provider |
+| 完成已验证任务、自动归档集成并清理 task environment | `buildr.task-finish/v1` selected provider；产品缺陷退出收尾并返回研发流程 |
 | 提交、拉取、合并、rebase、checkout/switch、reset、推送、发布或其他单项 Git 操作 | `buildr.git-single-operation/v1` selected provider |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
 | 沉淀每次会话必须遵守的约束 | 规则（Rules） |

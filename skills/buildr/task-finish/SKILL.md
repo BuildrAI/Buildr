@@ -1,48 +1,65 @@
 ---
 name: task-finish
-description: 用户要求“收尾”、完成任务或自动完成已验证 Change 的归档、集成、推送与安全本地清理时使用；通过持久化 finish run 渐进执行并支持跨 session 恢复。
+description: 用户要求“收尾”、完成已验证任务，或自动执行 Change 收敛、目标分支交付与 task environment 安全清理时使用；只接收已具备收尾资格的候选，产品缺陷返回研发流程。
 ---
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 薄入口。“收尾”的一次性授权只覆盖 closeout；候选修复不属于收尾。
+本 Skill 是 `buildr.task-finish/v1` 的薄入口。它调用产品的固定五阶段执行器，不由 Agent 编排阶段、补 evidence 或设计 recovery。
 
-## 开始
+## 边界
 
-确认 task/change、目标分支、远端和排除动作，默认只 push 已集成目标分支。创建或继续 run id，使用明确 target/workdir 与 receipt-bound CLI。
+“修复产品缺陷”不是收尾动作。开始前应已完成研发、自审、必要审查、开发验证和 current knowledge 维护；Finish 内的最终 assurance 只确认 frozen candidate 是否可交付。
 
-用 `buildr task finish inspect|advance|resume|renew|run|recover` 持久化推进；`actions` 只读查询 action registry。先查 action resolution，再提交结构化事实。
+最终 assurance、OpenSpec convergence、target convergence 或候选稳定性发现产品缺陷时，报告产品返回的具体失败并结束当前 Finish。回到研发、审查和测试验证流程修正当前实现，形成新的 finish-ready candidate 后再开始新的 Finish；不得在当前 run 修改实现、申请 repair authorization 或重新验证。
 
-## 推进
+收尾授权只覆盖常规 Change 收敛、生成资产收敛、candidate commit、目标分支集成/push、retained runtime 更新和 task-owned 本地清理。force push、改写共享历史、丢弃用户改动、远端任务分支操作和语义冲突决策仍不授权。
 
-Registry 自动执行 `product-executable`，只对有稳定 handler、结构化输入/effects 和完整 result contract 的 selected provider 执行 `provider-executable`；其余 selected providers 走 handoff。结果缺字段、identity 漂移或语义分支立即停止，显式 plan 仅兼容恢复。
+## 调用前
 
-每步保存非空 fingerprint、effects、evidence、timing 和失效依赖。`resume` 只重跑 blocked/stale 及其下游；语义冲突和状态无法证明须等待可验证输入，重要集成冲突可使用绑定阻塞身份的授权，正式保证失败只能使用修复授权与类型化恢复。不得用普通 `resume` 或调用方自报 passed 覆盖阻塞，也不得重复已证明的验证、push 或清理前动作。
+1. 确认当前目录属于 receipt-bound task environment，并读取 task/change、Project、Agent 与目标分支事实。
+2. 检查本任务的 asset observation；如存在，先调用 selected `buildr.task-asset-review@3` provider finalize。结果为 `awaiting-human` 时停止，不进入产品 Finish run。
+3. 确认用户没有排除 push、retained install 或 cleanup 等正常动作；排除项会改变交付语义时停止并说明当前执行器不支持拆分执行。
 
-Identity 变化用 recovery manifest 一次提交 before/after facts 与 proof；未知变化 fail closed。正式保证只在 canonical、target、runtime 收敛后执行，并由 task-verification provider 持有。
+不要替产品收集 fingerprint、attempt、effect、evidence、execution plan、repair authorization 或 recovery manifest。
 
-<!-- buildr:skill-contributions pre-verification -->
+## 执行
 
-<!-- buildr:skill-contributions pre-spec-sync -->
+在 task environment 内用 receipt-bound CLI 调用一次：
 
-<!-- buildr:skill-contributions post-spec-sync -->
+```bash
+buildr task finish run --change <change-id> --project <project-code> --target <task-environment> --json
+```
 
-确定性 OpenSpec 收敛由产品 action 内部完成并只返回 passed、blocked 或 recovery-unprovable。Agent 只处理语义冲突或人工事实核对；需要解释状态无法证明时只读取产品返回的逐文件 before、expected、actual 摘要，不恢复 canonical、不刷新 baseline、不选择内部 stage。
+只有 Project policy 要求完整候选保证时增加 `--required-assurance candidate`。只有已有验证摘要明确绑定同一 frozen candidate identity 与 assurance 时才传 `--verification-summary <file>`；否则让产品执行一次最终 assurance。
 
-共享写使用 holder/token/expiry fencing 短 lease，不创建 Workspace 全局锁。Running step 失效时终结 attempt，只释放当前 token 的 lease。
+产品依次执行：
 
-Integration-push 必须保留 expected/observed target ref。随后以 retained root、绝对 CLI、Agent 和完整 changed paths 运行 retained-convergence；它始终 doctor，只在 runtime 资产受影响时 sync，且不重跑 Candidate。Buildr Service 的生产 `src/**/*.mjs` 视为默认 CLI 影响；runtime-install 从 receipt 传递并重验 Node executable/major、CLI source 和 target identity，禁止让 login shell PATH 覆盖已验证 runtime。
+```text
+preflight → prepare → verify → deliver → cleanup
+```
 
-## 授权与停止
+- `failed` 且 `nextWorkflow: task-development`：报告具体 phase/operation/check，结束收尾并回到研发；不恢复当前 run。
+- `blocked`：只使用结果中的 `runId` 与 `resume.token` 重复同一 canonical 命令。不得手写或修改 token，也不得重做已通过阶段。
+- `complete`：报告 verification、delivery、completion receipt 与 metrics。
 
-收尾授权归档、提交、目标分支集成/push、入口迁移和安全清理；不授权候选修复、远端任务分支操作、force push、丢弃改动、改写共享历史或语义冲突决策。
+恢复命令：
 
-Formal assurance 失败先报告主缺陷；只有匹配 failure identity 和 allowed scopes 的 repair authorization 才能修复重验。范围扩大、证据陈旧或状态无法证明时停止。
+```bash
+buildr task finish run --run <run-id> --resume <product-token> --target <task-environment> --json
+```
 
-asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化执行 late review。optional provider 不可用则记录降级，不得删除其他任务状态。
+只读查看：
 
-## 完成
+```bash
+buildr task finish inspect --run <run-id> --target <workspace-or-task-environment> --json
+```
 
-Cleanup 先在 task environment 内 prepare，把 completion receipt 写入 canonical Workspace；实际删除 task-owned process、worktree 和 branch 后，从 retained checkout finalize。Prepare 不得表述为 complete。
+客户端直接使用唯一 canonical `runs`、`completed` 与 lease namespace，不创建版本化运行目录。旧 run shape 不可恢复；不得加载、解释、迁移或执行旧协议。
 
-最终报告验证、交付、retained convergence、runtime、清理、receipt 和风险；分别计量 verification、repair、re-verification、closeout-only 与 end-to-end。正式验证时间只消费产品实测或候选匹配的验证器摘要，等待和不可观察区间单列，不推断 token、调用数或验证时间。
+## 完成标准
+
+- 五个固定阶段全部 `passed` 或 `not-applicable`；
+- frozen candidate 与正式验证、交付和 cleanup receipt identity 一致；
+- 正常路径 `canonicalCliInvocations = 1`、`agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions <= 1`；
+- 没有把研发返工、修复或重新验证计入 Finish 时间。

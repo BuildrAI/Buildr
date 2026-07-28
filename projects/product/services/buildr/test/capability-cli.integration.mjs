@@ -103,8 +103,8 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   assert.doesNotMatch(JSON.stringify(readyDoctor.capabilities), /sourceFile|absolutePath|skillContributions/);
   const humanDoctor = await run(['doctor', '--target', root, '--scope', '.']);
   assert.match(humanDoctor.stdout, /Capability readiness（ready 只表示结构可路由）：/);
-  assert.match(humanDoctor.stdout, /buildr\.git-task-integration@1 mode=required readiness=ready reason=none selected=internal-git/);
-  assert.match(humanDoctor.stdout, /buildr\.task-verification@2 mode=required readiness=ready reason=none selected=internal-verification/);
+  assert.doesNotMatch(humanDoctor.stdout, /task-finish[\s\S]*buildr\.git-task-integration@1/);
+  assert.doesNotMatch(humanDoctor.stdout, /task-finish[\s\S]*buildr\.task-verification@2/);
 
   await run(['builtin', 'restore', 'git-ops', '--target', root]);
   assert.equal(manifest(root).skills.find((item) => item.id === 'git-ops').state, 'installed');
@@ -119,24 +119,24 @@ test('CLI 集成验证 optional provider 卸载后 consumer 降级', { concurren
   assert.equal(consumer(await doctor(root), '.', 'task-finish').readiness, 'degraded');
 });
 
-test('CLI 集成验证 provider 歧义、legacy Project 拒绝与 Project override', { concurrency: true }, async (t) => {
+test('CLI 集成验证未消费 binding、legacy Project 拒绝与 Project override', { concurrency: true }, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-project-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   await run(['init', '--target', root, '--name', 'capability-project', '--profile', 'personal']);
   const internalSource = writeSkill(root, 'internal-git');
   await run(['skills', 'add', '--source', internalSource, '--target', root, '--provides', 'buildr.git-task-integration@1']);
   const unbind = await run(['skills', 'unbind', 'buildr.git-task-integration@1', '--scope', '.', '--target', root]);
-  assert.match(unbind.stdout, /\[required\].*task-finish.*buildr\.git-task-integration@1/);
-  const ambiguous = consumer(await doctor(root, '.', 1), '.', 'task-finish');
-  assert.equal(ambiguous.readiness, 'blocked');
-  assert.equal(ambiguous.dependencies.find((item) => item.capability === 'buildr.git-task-integration').reason, 'ambiguous_provider');
+  assert.doesNotMatch(unbind.stdout, /task-finish.*buildr\.git-task-integration@1/);
+  const workspaceFinish = consumer(await doctor(root), '.', 'task-finish');
+  assert.equal(workspaceFinish.readiness, 'ready');
+  assert.equal(workspaceFinish.dependencies.some((item) => item.capability === 'buildr.git-task-integration'), false);
 
   await run(['project', 'create', 'demo', '--target', root]);
   assert.equal(fs.existsSync(path.join(root, 'projects', 'demo', 'skills')), false, 'new Project must not create a Skill source scope');
   const projectManifestPath = path.join(root, 'projects', 'demo', 'skills', 'manifest.yml');
   fs.mkdirSync(path.dirname(projectManifestPath), { recursive: true });
   fs.writeFileSync(projectManifestPath, 'schemaVersion: buildr.skills/v1\nskills: []\n');
-  assert.ok((await doctor(root, 'projects/demo', 1)).findings.some((finding) => finding.code === 'skills.project_assets_legacy'));
+  assert.ok((await doctor(root, 'projects/demo')).findings.some((finding) => finding.code === 'skills.project_assets_legacy'));
   const projectSource = writeSkill(root, 'project-git');
   await run([
     'skills', 'add', '--source', projectSource, '--scope', 'projects/demo', '--target', root,
@@ -145,9 +145,9 @@ test('CLI 集成验证 provider 歧义、legacy Project 拒绝与 Project overri
   assert.equal(YAML.parse(fs.readFileSync(projectManifestPath, 'utf8')).schemaVersion, 'buildr.skills/v1', 'rejected Project source mutation must write nothing');
   await run(['skills', 'add', '--source', projectSource, '--target', root, '--provides', 'buildr.git-task-integration@1']);
   await run(['skills', 'bind', 'buildr.git-task-integration@1', '--provider', 'project-git', '--scope', 'projects/demo', '--target', root]);
-  const projectFinish = consumer(await doctor(root, 'projects/demo', 1), 'projects/demo', 'task-finish');
-  assert.equal(projectFinish.readiness, 'ready', 'Project binding resolves the required provider while optional review remains installed');
-  assert.equal(projectFinish.dependencies.find((item) => item.capability === 'buildr.git-task-integration').selectedProvider.id, 'project-git');
+  const projectFinish = consumer(await doctor(root, 'projects/demo'), 'projects/demo', 'task-finish');
+  assert.equal(projectFinish.readiness, 'ready', 'Product-owned Finish execution does not depend on Agent Git bindings');
+  assert.equal(projectFinish.dependencies.some((item) => item.capability === 'buildr.git-task-integration'), false);
 
   const projectCapabilities = YAML.parse(fs.readFileSync(path.join(root, 'projects', 'demo', 'capabilities.yml'), 'utf8'));
   assert.equal(projectCapabilities.schemaVersion, 'buildr.project-capabilities/v1');

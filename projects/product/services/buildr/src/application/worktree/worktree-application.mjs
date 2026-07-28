@@ -63,6 +63,28 @@ export function taskRuntimeBlockers(workspaceRoot, receipt) {
   return blockers;
 }
 
+export function probeTaskEnvironmentExecutionCli(currentCli, cwd) {
+  const startedAt = new Date().toISOString();
+  const result = spawnSync(currentCli.invocation.command, [...(currentCli.invocation.argsPrefix || []), 'version', '--json'], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  let payload = null;
+  try { payload = JSON.parse(result.stdout || ''); } catch { /* reported below */ }
+  const passed = result.status === 0 && typeof payload?.version === 'string' && payload.version.length > 0;
+  return {
+    status: passed ? 'passed' : 'failed',
+    exitCode: Number.isInteger(result.status) ? result.status : 1,
+    version: payload?.version || null,
+    startedAt,
+    diagnostic: passed ? null : {
+      message: (result.stderr || result.error?.message || 'Receipt-bound CLI did not return valid version JSON.').trim(),
+      stdout: String(result.stdout || '').slice(0, 1000),
+    },
+  };
+}
+
 export function resolveExecutionCliSource({ workspaceRoot, environmentRoot, productRoot: activeProductRoot }) {
   const resolvedWorkspaceRoot = path.resolve(workspaceRoot);
   const resolvedEnvironmentRoot = path.resolve(environmentRoot);
@@ -574,7 +596,7 @@ export function registerWorktreeApplication(runtime) {
       console.log(`Bootstrap: doctor=${result.bootstrap.doctorBefore ? 'checked' : 'skipped'} sync=${result.bootstrap.sync.status} ready=${result.ready}`);
       for (const action of result.nextActions) console.log(`Next: ${action}`);
     }
-    if (!result.ready) process.exitCode = 1;
+    if (!result.ready || result.executionReady === false) process.exitCode = 1;
     return payload;
   }
 
@@ -724,6 +746,7 @@ export function registerWorktreeApplication(runtime) {
         updatedAt: new Date().toISOString(),
       };
       writeReceipt(workspaceRoot, receipt);
+      const cliProbe = probeTaskEnvironmentExecutionCli(receipt.executionCli, environmentRoot);
       return printCreateResult({
         ...base,
         repository: workspaceRoot,
@@ -733,10 +756,11 @@ export function registerWorktreeApplication(runtime) {
         state: treeChanged ? 'created' : 'reused',
         treeChanged,
         ready: true,
-        executionReady: true,
+        executionReady: cliProbe.status === 'passed',
         cliSource: receipt.executionCli.source,
         cliInvocation: receipt.executionCli.invocation,
-        executionBinding: {
+        cliProbe,
+        executionBinding: cliProbe.status === 'passed' ? {
           assurance: 'buildr-verified',
           target: environmentRoot,
           workdir: environmentRoot,
@@ -747,11 +771,11 @@ export function registerWorktreeApplication(runtime) {
           cliIdentity: receipt.executionCli.identity,
           checkoutLocal: receipt.executionCli.sourceKind === 'environment-local',
           runtimeProjectionIdentity: expectedRuntime.projectionIdentity,
-        },
+        } : null,
         runtimeExpectation: expectedRuntime,
         adoption: { status: 'not-required', receipt: null, currentSessionMatch: null },
-        blocked: null,
-        nextActions: [],
+        blocked: cliProbe.status === 'passed' ? null : { code: 'worktree.execution_cli_unavailable', message: 'Receipt-bound CLI exists but failed the executable version probe.' },
+        nextActions: cliProbe.status === 'passed' ? [] : ['Install the task checkout product dependencies, then rerun worktree context with the receipt-bound CLI.'],
       }, json);
     } catch (error) {
       return printCreateResult(blockedResult(base, 'worktree.preflight_failed', error.message), json);
@@ -826,9 +850,11 @@ export function registerWorktreeApplication(runtime) {
       const cliInvocation = currentCli.invocation;
     const cliWithinEnvironment = currentCli.sourceKind === 'environment-local';
     const cliIdentityMatches = executionCliMatches(receipt, currentCli);
+    const cliProbe = cliIdentityMatches ? probeTaskEnvironmentExecutionCli(currentCli, membership?.checkoutPath || receipt.environmentRoot) : null;
+    const cliExecutable = cliProbe?.status === 'passed';
     const runtimeIdentityMatches = Boolean(expectedRuntime && (!receipt.runtimeExpectation
       || receipt.runtimeExpectation.projectionIdentity === expectedRuntime.projectionIdentity));
-    const executionReady = ready && expectedRuntime?.projectionReady === true && runtimeIdentityMatches && cliIdentityMatches;
+    const executionReady = ready && expectedRuntime?.projectionReady === true && runtimeIdentityMatches && cliIdentityMatches && cliExecutable;
     const receiptCliSourceMatches = receipt.executionCli?.source === currentCli.source;
     const rootRepository = receipt.repositories.find((item) => item.selector === 'workspace') || receipt.repositories[0];
     const refreshCliBindingAction = receiptCliSourceMatches && rootRepository
@@ -847,6 +873,7 @@ export function registerWorktreeApplication(runtime) {
       cliInvocation,
       cliWithinEnvironment,
       cliIdentityMatches,
+      cliProbe,
       runtimeIdentityMatches,
       state: ready ? 'ready' : 'blocked',
       ready,
@@ -862,10 +889,14 @@ export function registerWorktreeApplication(runtime) {
           ? { code: 'worktree.execution_runtime_stale', message: 'Checkout-local runtime projection identity no longer matches the task environment receipt.' }
           : !cliIdentityMatches
             ? { code: 'worktree.execution_cli_mismatch', message: 'The current Buildr CLI identity does not match the task environment receipt.' }
+            : !cliExecutable
+              ? { code: 'worktree.execution_cli_unavailable', message: 'Receipt-bound CLI exists but failed the executable version probe.' }
             : null,
-      nextActions: ready && runtimeIdentityMatches && cliIdentityMatches
+      nextActions: ready && runtimeIdentityMatches && cliIdentityMatches && cliExecutable
         ? []
-        : [refreshCliBindingAction || `Run buildr worktree inspect ${receipt.taskId} --target ${receipt.workspaceRoot} --json`],
+        : [!cliExecutable && cliIdentityMatches
+          ? 'Install the task checkout product dependencies, then rerun worktree context with the receipt-bound CLI.'
+          : refreshCliBindingAction || `Run buildr worktree inspect ${receipt.taskId} --target ${receipt.workspaceRoot} --json`],
     };
   }
 

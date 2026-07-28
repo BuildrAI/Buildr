@@ -1,1 +1,0 @@
-`openspec converge` 写入后只确认所有 canonical digest 等于 receipt 的 expected digest，并用当前绑定 executable 对真实 Project运行 strict validation。成功后执行 `archive --skip-specs`；archive 失败保持 `applied-and-matched`，重试不恢复 canonical。任一文件既不等于 before 也不等于 expected，或出现混合状态时返回 `recovery-unprovable` 并停止后续交付动作。

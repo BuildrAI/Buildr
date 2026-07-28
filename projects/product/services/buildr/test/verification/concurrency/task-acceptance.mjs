@@ -80,45 +80,6 @@ function runTaskInvocation(task, cwd) {
   return { taskId: task.taskId, cwd, command: task.cliInvocation.command, membership: context.membership.selector, cliIdentity: context.executionBinding.cliIdentity, executionReady: context.executionReady };
 }
 
-function finishCommand(action, runId, root, args = [], expectedStatus = 0) {
-  const result = runBuildr(['task', 'finish', action, '--run', runId, '--target', root, '--json', ...args]);
-  assert.equal(result.status, expectedStatus, result.stderr || result.stdout);
-  return JSON.parse(result.stdout);
-}
-
-function finishInspect(runId, root, full = false) {
-  return finishCommand('inspect', runId, root, full ? ['--detail', 'full'] : []);
-}
-
-function passFinishStep(runId, root, step, fingerprint) {
-  const claimed = finishCommand('advance', runId, root, ['--fingerprint', `${step}=${fingerprint}`]);
-  const verificationSummary = step === 'formal-assurance' ? {
-    schemaVersion: 'buildr.verification-timing/v1',
-    status: 'passed',
-    run: { id: `${runId}-formal-assurance` },
-    source: { candidateFingerprint: fingerprint },
-    totalDurationMs: 1,
-    evidenceIdentity: `${runId}-${step}-${fingerprint}`,
-    summaryPath: path.join(root, '.buildr', 'verification', `${runId}-formal-assurance.json`),
-  } : null;
-  return finishCommand('advance', runId, root, [
-    '--fingerprint', `${step}=${fingerprint}`,
-    '--outcome', 'passed',
-    '--attempt', claimed.nextAction.attemptToken,
-    '--evidence', JSON.stringify({ id: `${runId}-${step}-evidence`, ...(verificationSummary ? { verificationSummary } : {}) }),
-  ]);
-}
-
-function passUntil(runId, root, targetStep) {
-  let checkpoint = finishInspect(runId, root, true);
-  while (checkpoint.currentStep !== targetStep) {
-    assert.ok(checkpoint.currentStep, `finish run ended before ${targetStep}`);
-    passFinishStep(runId, root, checkpoint.currentStep, `${runId}-${checkpoint.currentStep}-${checkpoint.steps.find((item) => item.id === checkpoint.currentStep).attempt + 1}`);
-    checkpoint = finishInspect(runId, root, true);
-  }
-  return checkpoint;
-}
-
 function releaseWorkers() {
   for (const worker of workers) {
     if (worker.child.exitCode === null && !fs.existsSync(worker.releaseFile)) fs.writeFileSync(worker.releaseFile, 'release\n');
@@ -263,28 +224,10 @@ try {
   assert.match(failedDiagnostic.stderr, /expected worker failure/);
   summary.failureDiagnostics = { status: 'captured', owner: failedDiagnostic.owner, exitCode: failedDiagnostic.exitCode, signal: failedDiagnostic.signal, timedOut: failedDiagnostic.timedOut, stdout: failedDiagnostic.stdout, stderr: failedDiagnostic.stderr };
 
-  const finishRoot = summary.tasks[0].environmentRoot;
-  const finishRunId = 'acceptance-target-race';
-  let checkpoint = finishCommand('advance', finishRunId, finishRoot, ['--task', taskIds[0], '--change', 'acceptance', '--target-branch', 'dev', '--fingerprint', 'context=initial-context']);
-  finishCommand('advance', finishRunId, finishRoot, ['--fingerprint', 'context=initial-context', '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--evidence', JSON.stringify({ id: 'initial-context-evidence' })]);
-  passUntil(finishRunId, finishRoot, 'integration-push');
-  const beforeRace = finishInspect(finishRunId, finishRoot, true);
-  checkpoint = finishCommand('advance', finishRunId, finishRoot, ['--fingerprint', 'integration-push=candidate-a']);
-  const raced = finishCommand('advance', finishRunId, finishRoot, ['--fingerprint', 'integration-push=candidate-a', '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--evidence', JSON.stringify({ id: 'target-observation' }), '--expected-target-ref', 'base-ref', '--observed-target-ref', 'task-b-ref']);
-  assert.equal(raced.blocked[0].code, 'target-race');
-  const racedFull = finishInspect(finishRunId, finishRoot, true);
-  assert.equal(racedFull.steps.find((item) => item.id === 'integration-push').effects.length, 0);
-
-  checkpoint = finishCommand('resume', finishRunId, finishRoot, ['--fingerprint', 'target-convergence=recovered-target']);
-  finishCommand('advance', finishRunId, finishRoot, ['--fingerprint', 'target-convergence=recovered-target', '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--evidence', JSON.stringify({ id: 'recovered-target-evidence' })]);
-  passUntil(finishRunId, finishRoot, 'integration-push');
-  checkpoint = finishCommand('advance', finishRunId, finishRoot, ['--fingerprint', 'integration-push=candidate-b']);
-  finishCommand('advance', finishRunId, finishRoot, ['--fingerprint', 'integration-push=candidate-b', '--outcome', 'passed', '--attempt', checkpoint.nextAction.attemptToken, '--evidence', JSON.stringify({ id: 'recovered-push-evidence' }), '--ref-transition', JSON.stringify({ expectedBeforePush: 'task-b-ref', observedBeforePush: 'task-b-ref', expectedAfterPush: 'candidate-b', observedAfterPush: 'candidate-b' })]);
-  const afterRecovery = finishInspect(finishRunId, finishRoot, true);
-  const beforeTargetIndex = beforeRace.steps.findIndex((item) => item.id === 'target-convergence');
-  assert.equal(afterRecovery.steps.slice(0, beforeTargetIndex).every((item, index) => item.attempt === beforeRace.steps[index].attempt), true);
-  assert.equal(afterRecovery.steps.find((item) => item.id === 'target-convergence').attempt, beforeRace.steps.find((item) => item.id === 'target-convergence').attempt + 1);
-  summary.targetRace = { status: 'recovered', code: raced.blocked[0].code, expected: 'base-ref', observed: 'task-b-ref', targetOverwritten: false, resumedFrom: 'target-convergence', preservedSteps: beforeRace.steps.slice(0, beforeTargetIndex).map((item) => item.id), recoveryCurrentStep: afterRecovery.currentStep };
+  summary.targetRace = {
+    status: 'owned-by-task-finish-journey',
+    reason: 'Concurrent task acceptance no longer drives the removed caller-authored Finish protocol; v2 target-race recovery is covered by the product executor tests.',
+  };
 
   summary.status = 'passed';
 } catch (error) {

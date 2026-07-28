@@ -33,15 +33,15 @@ test('能力说明区分入口发现、目录、consumer graph、产品入口内
   assert.match(capabilityDocs, /只有 manifest `requires` 才形成静态 consumer dependency edge/);
 });
 
-test('Git 任务集成实例覆盖 capability 的完整结构', () => {
+test('Git 任务集成实例区分 Agent capability 与产品 Task Finish executor', () => {
   assert.match(capabilityDocs, /完整实例：`buildr\.git-task-integration\/v1`/);
   assert.match(capabilityDocs, /Contract/);
   assert.match(capabilityDocs, /Manifest 注册、provider、consumer 与 binding/);
   assert.match(capabilityDocs, /Resolver 与 readiness/);
   assert.match(capabilityDocs, /Runtime evidence/);
   assert.match(capabilityDocs, /用户替换实现/);
-  assert.match(capabilityDocs, /这个过程是 Agent 调解的工作协作/);
-  assert.match(capabilityDocs, /binding ready 仍不代表用户说“收尾”时一定能命中新 provider/);
+  assert.match(capabilityDocs, /独立 Git 任务仍由 `git-ops` provider/);
+  assert.match(capabilityDocs, /它不决定 `task-finish\/v1` 产品执行器是否可运行/);
 });
 
 test('Core 要求 Skill 变更前检查跨 Skill 影响', () => {

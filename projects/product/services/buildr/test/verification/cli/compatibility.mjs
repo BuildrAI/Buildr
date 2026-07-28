@@ -22,7 +22,7 @@ const helpTopics = [
   [], ['version'], ['init'], ['project', 'create'], ['service', 'create'], ['doctor'],
   ['worktree', 'create'], ['worktree', 'cleanup'], ['worktree', 'inspect'],
   ['verification', 'run'], ['verification', 'cleanup'],
-  ...['actions', 'inspect', 'advance', 'resume', 'renew', 'run', 'recover', 'cleanup-prepare', 'cleanup-finalize'].map((action) => ['task', 'finish', action]),
+  ...['inspect', 'run'].map((action) => ['task', 'finish', action]),
   ['mutation', 'recover'], ['runtime', 'list'], ['runtime', 'check'],
   ['commands', 'add'], ['commands', 'remove'], ['commands', 'check'],
   ['openspec', 'baseline', 'create'], ['openspec', 'check'], ['openspec', 'converge'], ['openspec', 'audit'],
@@ -90,8 +90,8 @@ assert.deepEqual(JSON.parse(unknownJson.stdout).suggestions, ['doctor']);
 const finishStatus = run(['task', 'finish', 'status', '--json']);
 assert.equal(finishStatus.status, 2);
 assert.equal(JSON.parse(finishStatus.stdout).error.code, 'cli.unknown_command');
-assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish inspect --run <id>']);
-assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr help task finish inspect');
+assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish run', 'task finish inspect']);
+assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr --help');
 
 const invalidInspect = run(['worktree', 'inspect', 'demo', '--agent', 'codex']);
 assert.notEqual(invalidInspect.status, 0);

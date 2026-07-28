@@ -3,27 +3,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { FINISH_STEPS } from '../../src/application/task-finish/task-finish-run.mjs';
+import { FINISH_PHASES } from '../../src/application/task-finish/task-finish-run.mjs';
 import { LEGACY_CONVERGENCE_REGISTRY, legacyConvergenceRetirementStatus } from '../../src/application/openspec/legacy-convergence.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
-const convergenceContribution = read('package/targets/workspace/components/buildr/openspec/contributions/task-finish-pre-sync.md');
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v2.md');
 
-test('Task Finish 把完整 contract convergence 放在 final assurance 前', () => {
-  const ids = FINISH_STEPS.map((item) => item.id);
-  assert.ok(ids.indexOf('contract-convergence') < ids.indexOf('formal-assurance'));
-  assert.equal(ids.includes('archive'), false);
-  assert.ok(ids.indexOf('target-convergence') < ids.indexOf('formal-assurance'));
-  assert.ok(ids.indexOf('runtime-convergence') < ids.indexOf('formal-assurance'));
-  assert.ok(ids.indexOf('formal-assurance') < ids.indexOf('integration-push'));
-  assert.ok(ids.indexOf('integration-push') < ids.indexOf('retained-convergence'));
-  assert.match(finish, /正式保证只在 canonical、target、runtime 收敛后执行/);
-  assert.match(convergenceContribution, /archive --skip-specs/);
+test('Task Finish 新协议只有五阶段且产品缺陷退出收尾', () => {
+  assert.deepEqual(FINISH_PHASES, ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
+  assert.match(finish, /“修复产品缺陷”不是收尾动作/);
+  assert.match(finish, /不得在当前 run 修改实现.*重新验证/);
+  assert.match(finish, /nextWorkflow: task-development/);
 });
 
 test('verification evidence 表达 archive-sensitive 与 supersession', () => {
@@ -62,15 +56,18 @@ test('新 convergence 路径只有一份长期 receipt 且恢复不依赖 stage'
   for (const disposition of ['planned-not-applied', 'applied-and-matched', 'state-unknown', 'archived']) assert.ok(model.includes(disposition));
 });
 
-test('Task Finish checkpoint 使用轻量 bootstrap，完整 domain 延迟加载', () => {
+test('Task Finish inspect 使用轻量 bootstrap，执行 domain 只在 run 延迟加载', () => {
   const main = read('src/interfaces/cli/main.mjs');
   const bootstrap = read('src/interfaces/cli/task-finish-bootstrap.mjs');
-  const finishRun = read('src/application/task-finish/task-finish-run.mjs');
+  const application = read('src/application/task-finish/task-finish-application.mjs');
   assert.match(main, /runLightweightTaskFinish/);
   assert.match(main, /await import\('\.\/registry\.mjs'\)/);
   assert.doesNotMatch(bootstrap, /domains\/openspec|domains\/git|domains\/runtime/);
   assert.match(bootstrap, /registerTaskFinishApplication/);
-  assert.match(finishRun, /releaseOwnedLease/);
+  assert.match(bootstrap, /action !== 'inspect'/);
+  assert.match(application, /await import\('\.\/task-finish-product-executor\.mjs'\)/);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-run.mjs')), true);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-action-registry.mjs')), false);
 });
 
 test('旧 OpenSpec 阶段接口受显式消费者和兼容窗口门禁约束', () => {

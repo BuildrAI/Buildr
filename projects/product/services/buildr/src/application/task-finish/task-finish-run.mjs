@@ -1,57 +1,25 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { resolveFinishAction } from './task-finish-action-registry.mjs';
-
-const execFileAsync = promisify(execFile);
 
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v1';
-export const FINISH_RECOVERY_SCHEMA = 'buildr.task-finish-recovery/v1';
-export const FINISH_REPAIR_AUTHORIZATION_SCHEMA = 'buildr.task-finish-repair-authorization/v1';
-export const FINISH_RESOLUTION_AUTHORIZATION_SCHEMA = 'buildr.task-finish-resolution-authorization/v1';
-export const FINISH_PLAN_VERSION = 1;
-const FINISH_RUN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
+export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v1';
+export const FINISH_PHASES = Object.freeze(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
+export const FINISH_PHASE_STATUSES = Object.freeze(['pending', 'running', 'passed', 'blocked', 'failed', 'not-applicable']);
 
-export const FINISH_STEPS = Object.freeze([
-  step('context', '核对 task environment execution binding 与 provider readiness'),
-  step('current-knowledge', '收敛并检查 current knowledge', ['context']),
-  step('contract-convergence', '完成 managed assets、OpenSpec 与 canonical convergence', ['current-knowledge']),
-  step('candidate-commit', '建立 convergence candidate commit', ['contract-convergence']),
-  step('target-convergence', 'fetch/rebase 目标分支并记录远端 observation', ['candidate-commit'], 'target-branch'),
-  step('runtime-convergence', '执行 tree transition doctor 与 runtime sync', ['target-convergence'], 'runtime-sync'),
-  step('formal-assurance', '调用 selected task-verification provider 执行 required assurance', ['runtime-convergence']),
-  step('asset-review', '调用 selected task-asset-review provider finalize', ['formal-assurance']),
-  step('integration-push', '乐观核对目标 ref，集成并 push 目标分支', ['asset-review'], 'target-branch'),
-  step('retained-convergence', '按影响收敛 retained Workspace runtime', ['integration-push'], 'runtime-sync'),
-  step('runtime-install', '按 retained impact 迁移默认 CLI/Local App 入口', ['retained-convergence'], 'runtime-install'),
-  step('asset-review-late', '仅在首次 finalize 后 observation revision 变化时再次调用 asset-review provider', ['runtime-install']),
-  step('cleanup', '清理 task-owned transient evidence 与本地 environment', ['asset-review-late'], 'canonical-checkout'),
-]);
+const RUN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 
-function step(id, action, dependsOn = [], sharedResource = null) {
-  return { id, action, dependsOn, sharedResource, invalidates: [], retryPolicy: { strategy: 'resume', maxAttempts: null } };
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
-function now(clock) { return new Date(clock()).toISOString(); }
-function digest(value) { return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 24); }
-function runRoot(root) { return path.resolve(root, '.buildr', 'task-finish', 'runs'); }
-function runFile(root, runId) {
-  if (!FINISH_RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish run id must use lowercase letters, numbers, dots, underscores, or hyphens.');
-  const directory = runRoot(root);
-  const file = path.resolve(directory, `${runId}.json`);
-  if (path.dirname(file) !== directory) throw new Error('Task Finish run path escapes the canonical runs root.');
-  return file;
+function now(clock) {
+  return new Date(clock()).toISOString();
 }
-function leaseRoot(root) { return path.join(root, '.buildr', 'task-finish', 'leases'); }
-function completionRoot(root) {
-  const marker = `${path.sep}.worktrees${path.sep}`;
-  const index = path.resolve(root).indexOf(marker);
-  const workspace = index >= 0 ? path.resolve(root).slice(0, index) : path.resolve(root);
-  return path.join(workspace, '.buildr', 'task-finish', 'completed');
+
+function sha256(value) {
+  return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
 }
-function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
 function atomicWriteJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -60,1104 +28,370 @@ function atomicWriteJson(file, value) {
   fs.renameSync(temporary, file);
 }
 
-export function createFinishRun({ root, runId, task, change = null, targetBranch, remote = 'origin', session = null, repairAuthorization = null, clock = Date.now }) {
-  if (!runId || !task || !targetBranch) throw new Error('runId, task and targetBranch are required');
-  const file = runFile(root, runId);
-  if (fs.existsSync(file)) return readFinishRun({ root, runId });
+export function canonicalFinishWorkspaceRoot(root) {
+  const resolved = path.resolve(root);
+  const marker = `${path.sep}.worktrees${path.sep}`;
+  const index = resolved.indexOf(marker);
+  return index >= 0 ? resolved.slice(0, index) : resolved;
+}
+
+export function finishRunRoot(root) {
+  return path.join(canonicalFinishWorkspaceRoot(root), '.buildr', 'task-finish', 'runs');
+}
+
+export function finishRunFile(root, runId) {
+  if (!RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish run id must use lowercase letters, numbers, dots, underscores, or hyphens.');
+  const directory = finishRunRoot(root);
+  const file = path.resolve(directory, `${runId}.json`);
+  if (path.dirname(file) !== directory) throw new Error('Task Finish run path escapes the canonical run root.');
+  return file;
+}
+
+export function acquireFinishTargetLease({ file, run, clock = Date.now }) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const token = crypto.randomUUID();
+  const currentTime = clock();
+  const value = {
+    schemaVersion: 'buildr.task-finish-target-lease/v1',
+    runId: run.runId,
+    task: run.identity.task,
+    targetBranch: run.identity.targetBranch,
+    token,
+    acquiredAt: new Date(currentTime).toISOString(),
+    expiresAt: new Date(currentTime + 60_000).toISOString(),
+  };
+  try {
+    const descriptor = fs.openSync(file, 'wx');
+    try { fs.writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`); } finally { fs.closeSync(descriptor); }
+    return { file, token, value };
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    let existing = null;
+    try { existing = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* malformed is still occupied */ }
+    if (existing && Date.parse(existing.expiresAt) <= currentTime) {
+      fs.unlinkSync(file);
+      return acquireFinishTargetLease({ file, run, clock });
+    }
+    return { blocked: true, file, existing };
+  }
+}
+
+export function releaseFinishTargetLease(lease) {
+  if (!lease?.file || !lease.token || !fs.existsSync(lease.file)) return;
+  try {
+    const current = JSON.parse(fs.readFileSync(lease.file, 'utf8'));
+    if (current.token === lease.token) fs.unlinkSync(lease.file);
+  } catch { /* retain malformed or replaced lease */ }
+}
+
+export function writeFinishCompletion({ root, runId, completion }) {
+  if (!RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish completion run id is invalid.');
+  const directory = path.join(canonicalFinishWorkspaceRoot(root), '.buildr', 'task-finish', 'completed');
+  const file = path.resolve(directory, `${runId}.json`);
+  if (path.dirname(file) !== directory) throw new Error('Task Finish completion path escapes the canonical completion root.');
+  atomicWriteJson(file, completion);
+  return file;
+}
+
+function phase(id) {
+  return {
+    id,
+    status: 'pending',
+    attempts: 0,
+    startedAt: null,
+    completedAt: null,
+    durationMs: 0,
+    inputIdentity: null,
+    outputIdentity: null,
+    checks: [],
+    operations: [],
+    observations: [],
+    output: null,
+    failure: null,
+  };
+}
+
+function normalizeIdentity(input) {
+  const required = ['task', 'change', 'project', 'agent', 'targetBranch', 'environmentRoot', 'workspaceRoot'];
+  for (const field of required) {
+    if (typeof input?.[field] !== 'string' || !input[field].trim()) throw new Error(`Task Finish requires ${field}.`);
+  }
+  return {
+    task: input.task,
+    change: input.change,
+    project: input.project,
+    agent: input.agent,
+    targetBranch: input.targetBranch,
+    remote: typeof input.remote === 'string' && input.remote.trim() ? input.remote : null,
+    environmentRoot: path.resolve(input.environmentRoot),
+    workspaceRoot: path.resolve(input.workspaceRoot),
+    requiredAssurance: input.requiredAssurance === 'candidate' ? 'candidate' : 'affected',
+  };
+}
+
+function generateRunId(identity, clock) {
+  const stamp = new Date(clock()).toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+  return `${identity.task}-${stamp}-${crypto.randomBytes(4).toString('hex')}`;
+}
+
+export function createFinishRun({ root, identity, runId = null, clock = Date.now }) {
+  const normalized = normalizeIdentity(identity);
+  const actualRunId = runId || generateRunId(normalized, clock);
+  const file = finishRunFile(root, actualRunId);
+  if (fs.existsSync(file)) return readFinishRun({ root, runId: actualRunId });
   const createdAt = now(clock);
   const run = {
     schemaVersion: FINISH_RUN_SCHEMA,
-    planVersion: FINISH_PLAN_VERSION,
-    runId, task, change, target: { branch: targetBranch, remote },
-    status: 'active', createdAt, updatedAt: createdAt,
-    sessions: session ? [session] : [],
-    recoveries: [], observationLedger: [], resolutionAuthorizations: [], repairAuthorizations: repairAuthorization ? [normalizeRepairAuthorization(repairAuthorization, { task, change })] : [],
-    steps: FINISH_STEPS.map((definition) => ({
-      ...clone(definition), status: 'pending', attempt: 0, attemptToken: null,
-      inputFingerprint: null, effects: [], evidence: [], blocked: null,
-      startedAt: null, completedAt: null, lease: null, executionPlan: null, attempts: [],
-    })),
+    runId: actualRunId,
+    status: 'active',
+    identity: normalized,
+    identityDigest: sha256(normalized),
+    createdAt,
+    updatedAt: createdAt,
+    completedAt: null,
+    invocations: 0,
+    frozenCandidate: null,
+    verification: null,
+    delivery: null,
+    completion: null,
+    resume: null,
+    primaryFailure: null,
+    phases: FINISH_PHASES.map(phase),
   };
   atomicWriteJson(file, run);
-  return run;
+  return clone(run);
 }
 
 export function readFinishRun({ root, runId }) {
-  const file = runFile(root, runId);
+  const file = finishRunFile(root, runId);
   if (!fs.existsSync(file)) throw new Error(`Unknown Task Finish run: ${runId}`);
   const run = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error(`Unsupported Task Finish run schema: ${run.schemaVersion}`);
-  if (run.status !== 'complete') {
-    for (const definition of FINISH_STEPS) {
-      if (!run.steps.some((item) => item.id === definition.id)) {
-        run.steps.splice(FINISH_STEPS.findIndex((item) => item.id === definition.id), 0, {
-          ...clone(definition), status: 'pending', attempt: 0, attemptToken: null, inputFingerprint: null,
-          effects: [], evidence: [], blocked: null, startedAt: null, completedAt: null, lease: null, executionPlan: null, attempts: [],
-        });
-      }
-    }
-    for (const definition of FINISH_STEPS) run.steps.find((item) => item.id === definition.id).dependsOn = [...definition.dependsOn];
-  }
-  for (const item of run.steps) {
-    item.executionPlan ??= null;
-    item.attempts ??= [];
-  }
-  run.recoveries ??= [];
-  run.observationLedger ??= [];
-  run.repairAuthorizations ??= [];
-  run.resolutionAuthorizations ??= [];
-  for (const item of run.steps) {
-    if (item.status === 'blocked') item.blocked = decorateBlocked(run, item, item.blocked || { code: 'provider-blocked', reason: 'Provider action blocked' });
+  if (!Array.isArray(run.phases) || FINISH_PHASES.some((id) => !run.phases.some((item) => item.id === id))) {
+    throw new Error(`Task Finish run has an invalid phase model: ${runId}`);
   }
   return run;
 }
 
-function normalizeRepairAuthorization(value, identity) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('repair authorization must be an object.');
-  if (value.schemaVersion !== FINISH_REPAIR_AUTHORIZATION_SCHEMA) throw new Error(`Unsupported repair authorization schema: ${value.schemaVersion}`);
-  if (value.task !== identity.task || (value.change ?? null) !== (identity.change ?? null)) throw new Error('repair authorization task/change identity mismatch.');
-  if (typeof value.failureIdentity !== 'string' || !value.failureIdentity.trim()) throw new Error('repair authorization requires failureIdentity.');
-  if (!Array.isArray(value.allowedScopes) || value.allowedScopes.length === 0 || value.allowedScopes.some((entry) => typeof entry !== 'string' || !entry.trim())) {
-    throw new Error('repair authorization requires non-empty allowedScopes.');
-  }
-  return { ...clone(value), authorizedAt: value.authorizedAt || new Date().toISOString() };
+function writeRun(root, run, clock) {
+  run.updatedAt = now(clock);
+  atomicWriteJson(finishRunFile(root, run.runId), run);
 }
 
-function pathAllowed(candidate, scopes) {
-  const normalized = String(candidate || '').replaceAll('\\', '/').replace(/^\.\//, '');
-  return scopes.some((scope) => {
-    const prefix = scope.replaceAll('\\', '/').replace(/^\.\//, '').replace(/\*\*?$/, '').replace(/\/$/, '');
-    return normalized === prefix || normalized.startsWith(`${prefix}/`);
+function resumableRunCandidates(root, identity) {
+  const directory = finishRunRoot(root);
+  if (!fs.existsSync(directory)) return [];
+  const expected = sha256(normalizeIdentity(identity));
+  return fs.readdirSync(directory)
+    .filter((name) => name.endsWith('.json'))
+    .flatMap((name) => {
+      try {
+        const value = JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
+        return value.schemaVersion === FINISH_RUN_SCHEMA && value.identityDigest === expected && value.status === 'blocked' ? [value] : [];
+      } catch {
+        return [];
+      }
+    })
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+}
+
+export function resolveFinishRun({ root, identity, runId = null, resumeToken = null, clock = Date.now }) {
+  if (runId) {
+    const run = readFinishRun({ root, runId });
+    if (run.identityDigest !== sha256(normalizeIdentity(identity))) throw new Error('Task Finish run identity does not match the requested task/change/target.');
+    if (resumeToken && run.resume?.token !== resumeToken) throw new Error('Task Finish resume token does not match the current blocked state.');
+    return run;
+  }
+  const reusable = resumableRunCandidates(root, identity).find((run) => !resumeToken || run.resume?.token === resumeToken);
+  return reusable || createFinishRun({ root, identity, clock });
+}
+
+function normalizeFailure(value, phaseId, fallbackCode = 'task-finish.phase-failed') {
+  const failure = value && typeof value === 'object' ? clone(value) : {};
+  return {
+    phase: phaseId,
+    operation: failure.operation || failure.check || null,
+    check: failure.check || null,
+    failureClass: failure.failureClass || 'product-execution-failure',
+    code: failure.code || fallbackCode,
+    status: failure.status || 'failed',
+    exitCode: Number.isInteger(failure.exitCode) ? failure.exitCode : null,
+    message: failure.message || 'Task Finish phase failed.',
+    findings: Array.isArray(failure.findings) ? failure.findings.slice(0, 20) : [],
+    diagnostic: failure.diagnostic || null,
+  };
+}
+
+function normalizePhaseResult(result, phaseId) {
+  const value = result && typeof result === 'object' ? result : {};
+  const status = FINISH_PHASE_STATUSES.includes(value.status) ? value.status : 'failed';
+  return {
+    status,
+    checks: Array.isArray(value.checks) ? value.checks : [],
+    operations: Array.isArray(value.operations) ? value.operations : [],
+    observations: Array.isArray(value.observations) ? value.observations : [],
+    output: value.output ?? null,
+    inputIdentity: value.inputIdentity || null,
+    outputIdentity: value.outputIdentity || null,
+    failure: ['blocked', 'failed'].includes(status)
+      ? normalizeFailure(value.failure, phaseId, status === 'blocked' ? 'task-finish.phase-blocked' : 'task-finish.phase-failed')
+      : null,
+  };
+}
+
+function resumeTokenFor(run, phaseId, failure) {
+  return sha256({
+    schemaVersion: FINISH_RUN_SCHEMA,
+    runId: run.runId,
+    identity: run.identityDigest,
+    candidate: run.frozenCandidate?.identity || null,
+    phase: phaseId,
+    failure: { code: failure.code, operation: failure.operation, diagnostic: failure.diagnostic?.digest || null },
   });
 }
 
-function normalizeResolutionAuthorization(value, run, item) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('resolution authorization must be an object.');
-  if (value.schemaVersion !== FINISH_RESOLUTION_AUTHORIZATION_SCHEMA) throw new Error(`Unsupported resolution authorization schema: ${value.schemaVersion}`);
-  if (value.task !== run.task || (value.change ?? null) !== (run.change ?? null) || value.step !== item.id) throw new Error('resolution authorization task/change/step identity mismatch.');
-  if (value.blockIdentity !== item.blocked?.blockIdentity) throw new Error('resolution authorization blockIdentity mismatch.');
-  if (!['semantic-resolution', 'integration-resolution'].includes(value.kind)) throw new Error(`Unsupported resolution authorization kind: ${value.kind}`);
-  if (typeof value.evidenceId !== 'string' || !value.evidenceId.trim()) throw new Error('resolution authorization requires evidenceId.');
-  return { ...clone(value), authorizedAt: value.authorizedAt || new Date().toISOString() };
+function applyPhaseOutput(run, phaseId, output) {
+  if (phaseId === 'prepare' && output?.frozenCandidate) run.frozenCandidate = clone(output.frozenCandidate);
+  if (phaseId === 'verify' && output?.verification) run.verification = clone(output.verification);
+  if (phaseId === 'deliver' && output?.delivery) run.delivery = clone(output.delivery);
+  if (phaseId === 'cleanup' && output?.completion) run.completion = clone(output.completion);
 }
 
-function resumePolicyFor(item, blocked = {}) {
-  if (item.id === 'formal-assurance') return 'repair-recovery-only';
-  const code = String(blocked.code || 'provider-blocked');
-  if (item.id === 'target-convergence' && /(?:merge|rebase|semantic|integration).*conflict|semantic-integration-required/.test(code)) return 'authorization-or-input-change';
-  if (item.id === 'contract-convergence' && /conflict|ambiguous|state-unknown|recovery-unprovable|semantic/.test(code)) return 'input-change';
-  if (['target-race', 'state-unknown', 'recovery-unprovable'].includes(code)) return code === 'target-race' ? 'authorization-or-input-change' : 'input-change';
-  if (['lease-held', 'lease-expired', 'lease-lost', 'archive-failed', 'openspec-executable-unavailable', 'execution-plan-invalid'].includes(code)) return 'retry';
-  return 'authorization-or-input-change';
+export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now }) {
+  if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error('Task Finish executor requires a current run.');
+  if (['failed', 'complete'].includes(run.status)) return finishResult(run, clock);
+  if (run.status === 'blocked' && (!resumeToken || resumeToken !== run.resume?.token)) {
+    throw new Error('Task Finish blocked run requires its current product-generated resume token.');
+  }
+  run.invocations += 1;
+  run.status = 'active';
+  run.primaryFailure = null;
+  run.resume = null;
+  writeRun(root, run, clock);
+
+  for (const phaseId of FINISH_PHASES) {
+    const item = run.phases.find((candidate) => candidate.id === phaseId);
+    if (['passed', 'not-applicable'].includes(item.status)) continue;
+    if (typeof handlers?.[phaseId] !== 'function') throw new Error(`Task Finish handler is missing: ${phaseId}`);
+    item.status = 'running';
+    item.attempts += 1;
+    item.startedAt = now(clock);
+    item.completedAt = null;
+    item.failure = null;
+    const started = clock();
+    writeRun(root, run, clock);
+    let normalized;
+    try {
+      normalized = normalizePhaseResult(await handlers[phaseId]({ root, run: clone(run), phase: clone(item) }), phaseId);
+    } catch (error) {
+      normalized = normalizePhaseResult({
+        status: error?.resumable === true ? 'blocked' : 'failed',
+        failure: {
+          operation: error?.operation || null,
+          check: error?.check || null,
+          failureClass: error?.failureClass || 'product-execution-failure',
+          code: error?.code || 'task-finish.unhandled-error',
+          status: 'failed',
+          exitCode: error?.exitCode,
+          message: error?.message || String(error),
+          findings: error?.findings || [],
+          diagnostic: error?.diagnostic || null,
+        },
+      }, phaseId);
+    }
+    item.status = normalized.status;
+    item.completedAt = now(clock);
+    item.durationMs += Math.max(0, clock() - started);
+    item.inputIdentity = normalized.inputIdentity;
+    item.outputIdentity = normalized.outputIdentity;
+    item.checks = clone(normalized.checks);
+    item.operations = clone(normalized.operations);
+    item.observations = clone(normalized.observations);
+    item.output = clone(normalized.output);
+    item.failure = normalized.failure;
+    applyPhaseOutput(run, phaseId, normalized.output);
+    if (normalized.status === 'blocked') {
+      run.status = 'blocked';
+      run.primaryFailure = clone(normalized.failure);
+      run.resume = {
+        phase: phaseId,
+        token: resumeTokenFor(run, phaseId, normalized.failure),
+        generatedAt: now(clock),
+        candidateIdentity: run.frozenCandidate?.identity || null,
+      };
+      writeRun(root, run, clock);
+      return finishResult(run, clock);
+    }
+    if (normalized.status === 'failed') {
+      run.status = 'failed';
+      run.primaryFailure = clone(normalized.failure);
+      run.resume = null;
+      writeRun(root, run, clock);
+      return finishResult(run, clock);
+    }
+    writeRun(root, run, clock);
+  }
+  run.status = 'complete';
+  run.completedAt = now(clock);
+  run.primaryFailure = null;
+  run.resume = null;
+  writeRun(root, run, clock);
+  return finishResult(run, clock);
 }
 
-function decorateBlocked(run, item, blocked) {
-  if (blocked?.blockIdentity && blocked?.resumePolicy) return blocked;
-  const normalized = { ...clone(blocked || {}) };
-  normalized.resumePolicy = resumePolicyFor(item, normalized);
-  normalized.blockIdentity = `sha256-${crypto.createHash('sha256').update(JSON.stringify({
-    runId: run.runId, step: item.id, inputFingerprint: item.inputFingerprint,
-    code: normalized.code || 'provider-blocked', actionId: item.executionPlan?.actionId || null,
-  })).digest('hex')}`;
-  return normalized;
-}
-
-function verificationTimingView(summary) {
-  if (!summary || !['buildr.verification-timing/v1', 'buildr.verification-run/v1'].includes(summary.schemaVersion)) return null;
+function publicPhase(item) {
   return {
-    schemaVersion: summary.schemaVersion,
-    status: summary.status,
-    durationMs: summary.schemaVersion === 'buildr.verification-run/v1' ? summary.durationMs : summary.totalDurationMs,
-    candidateFingerprint: summary.source?.candidateFingerprint,
-    evidenceIdentity: summary.evidenceIdentity,
-    runId: summary.run?.id || summary.runId || null,
-    summaryPath: summary.summaryPath || summary.evidenceReference || null,
+    id: item.id,
+    status: item.status,
+    attempts: item.attempts,
+    startedAt: item.startedAt,
+    completedAt: item.completedAt,
+    durationMs: item.durationMs,
+    inputIdentity: item.inputIdentity,
+    outputIdentity: item.outputIdentity,
+    checks: item.checks,
+    operations: item.operations,
+    failure: item.failure,
   };
 }
 
-function trustedVerificationTiming(item, evidence, outcome) {
-  if (item.id !== 'formal-assurance' || outcome !== 'passed') return null;
-  const timing = verificationTimingView(evidence?.verificationSummary);
-  if (!timing || timing.status !== 'passed') return null;
-  if (timing.candidateFingerprint !== item.inputFingerprint) throw new Error('Verification timing summary candidate identity does not match the formal assurance input.');
-  if (!Number.isFinite(timing.durationMs) || timing.durationMs < 0) throw new Error('Verification timing summary requires a non-negative duration.');
-  if (typeof timing.evidenceIdentity !== 'string' || !timing.evidenceIdentity.trim()) throw new Error('Verification timing summary requires a stable evidenceIdentity.');
-  return { source: 'verifier-reported', durationMs: timing.durationMs, evidenceIdentity: timing.evidenceIdentity };
-}
-
-function isWithin(root, candidate) {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function isWithinExecutionRoots(roots, candidate) {
-  return roots.some((root) => isWithin(root, candidate));
-}
-
-function gitCommonDirectory(root) {
-  const marker = path.join(path.resolve(root), '.git');
-  if (fs.statSync(marker).isDirectory()) return fs.realpathSync(marker);
-  const match = fs.readFileSync(marker, 'utf8').trim().match(/^gitdir:\s*(.+)$/);
-  if (!match) throw new Error('task environment Git metadata is invalid.');
-  const gitDirectory = fs.realpathSync(path.resolve(path.dirname(marker), match[1]));
-  const commonFile = path.join(gitDirectory, 'commondir');
-  return fs.realpathSync(fs.existsSync(commonFile) ? path.resolve(gitDirectory, fs.readFileSync(commonFile, 'utf8').trim()) : gitDirectory);
-}
-
-function receiptBoundRetainedExecutionRoots({ root, run, resolution, plan }) {
-  const roots = [path.resolve(root)];
-  const realEnvironmentRoot = fs.realpathSync(root);
-  if (resolution?.action?.executionSurface !== 'retained-checkout') return roots;
-  if (plan.planSource !== 'registry') throw new Error('retained execution requires a registry-owned plan.');
-  const declaredRoot = plan.metadata?.retainedWorkspaceRoot || plan.metadata?.identity?.targetRoot || null;
-  if (declaredRoot && fs.realpathSync(declaredRoot) === realEnvironmentRoot) return roots;
-  if (!FINISH_RUN_ID_PATTERN.test(String(run.task || ''))) throw new Error('retained execution requires a valid task environment id.');
-  const receiptDirectory = path.join(gitCommonDirectory(root), 'buildr', 'task-environments');
-  const receiptFile = path.resolve(receiptDirectory, `${run.task}.json`);
-  if (path.dirname(receiptFile) !== receiptDirectory) throw new Error('retained execution receipt path escapes the task environment registry.');
-  if (!fs.existsSync(receiptFile)) throw new Error(`task environment receipt is missing for retained execution: ${run.task}`);
-  const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
-  const environmentRoot = fs.realpathSync(receipt.environmentRoot || '');
-  const workspaceRoot = fs.realpathSync(receipt.workspaceRoot || '');
-  if (receipt.schemaVersion !== 'buildr.task-environment-receipt/v1' || receipt.state !== 'ready' || receipt.taskId !== run.task
-    || environmentRoot !== realEnvironmentRoot || !declaredRoot || fs.realpathSync(declaredRoot) !== workspaceRoot) {
-    throw new Error('retained execution root does not match the task environment receipt.');
-  }
-  if (run.steps.find((item) => item.id === 'integration-push')?.status !== 'passed') throw new Error('retained execution requires a passed integration-push step.');
-  return [...new Set([...roots, path.resolve(receipt.workspaceRoot), workspaceRoot])];
-}
-
-export function validateFinishExecutionPlan({ root, plan, allowedExecutionRoots = [root] }) {
-  if (plan == null) return null;
-  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('execution plan must be an object.');
-  const executionRoots = [...new Set(allowedExecutionRoots.map((entry) => path.resolve(entry)))];
-  const cwd = path.resolve(plan.cwd || root);
-  if (!isWithinExecutionRoots(executionRoots, cwd)) throw new Error(`execution plan cwd is outside the allowed execution roots: ${cwd}`);
-  const command = plan.command ? path.resolve(plan.command) : null;
-  if (command && (!path.isAbsolute(plan.command) || !fs.existsSync(command))) throw new Error(`execution plan command must be an existing absolute path: ${plan.command}`);
-  const commandSource = plan.commandSource || 'environment-local';
-  if (command && commandSource === 'environment-local' && !isWithinExecutionRoots(executionRoots, command)) throw new Error(`execution plan command is outside the receipt-bound execution roots: ${command}`);
-  if (!['environment-local', 'external-declared'].includes(commandSource)) throw new Error(`execution plan command source is unsupported: ${commandSource}`);
-  const args = Array.isArray(plan.args) && plan.args.every((value) => typeof value === 'string') ? [...plan.args] : [];
-  if (plan.args && args.length !== plan.args.length) throw new Error('execution plan args must be strings.');
-  let packageRoot = null;
-  if (plan.npmScript) {
-    packageRoot = path.resolve(plan.packageRoot || cwd);
-    if (!isWithinExecutionRoots(executionRoots, packageRoot)) throw new Error(`execution plan package root is outside the allowed execution roots: ${packageRoot}`);
-    const manifestPath = path.join(packageRoot, 'package.json');
-    if (!fs.existsSync(manifestPath)) throw new Error(`execution plan package manifest does not exist: ${manifestPath}`);
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    if (!manifest.scripts?.[plan.npmScript]) {
-      const available = Object.keys(manifest.scripts || {}).sort().join(', ') || 'none';
-      throw new Error(`execution plan npm script does not exist: ${plan.npmScript}; available: ${available}`);
-    }
-  }
-  if (plan.verificationSelector && (!Array.isArray(plan.availableSelectors) || !plan.availableSelectors.includes(plan.verificationSelector))) {
-    throw new Error(`execution plan verification selector is not declared: ${plan.verificationSelector}`);
-  }
-  return {
-    cwd, command, commandSource, args, packageRoot, npmScript: plan.npmScript || null,
-    verificationSelector: plan.verificationSelector || null,
-    availableSelectors: Array.isArray(plan.availableSelectors) ? [...plan.availableSelectors] : null,
-    sharedMutation: plan.sharedMutation !== false,
-    safeAuto: plan.safeAuto === true,
-    safeHandler: typeof plan.safeHandler === 'string' ? plan.safeHandler : null,
-    evidenceId: typeof plan.evidenceId === 'string' ? plan.evidenceId : null,
-    actionId: typeof plan.actionId === 'string' ? plan.actionId : null,
-    registryVersion: Number.isInteger(plan.registryVersion) ? plan.registryVersion : null,
-    planSource: plan.planSource === 'registry' ? 'registry' : 'caller-supplied',
-    metadata: plan.metadata && typeof plan.metadata === 'object' && !Array.isArray(plan.metadata) ? clone(plan.metadata) : null,
-    jsonAssertion: plan.jsonAssertion && typeof plan.jsonAssertion.path === 'string'
-      ? { path: plan.jsonAssertion.path, equals: plan.jsonAssertion.equals }
+export function finishResult(run, clock = Date.now) {
+  const phaseDurationMs = run.phases.reduce((total, item) => total + (item.durationMs || 0), 0);
+  const commandObservations = run.phases.reduce((total, item) => total + (item.operations || []).filter((entry) => entry.kind === 'command').length, 0);
+  const formalVerificationExecutions = Number(run.verification?.executions || 0);
+  const result = {
+    schemaVersion: FINISH_RESULT_SCHEMA,
+    runId: run.runId,
+    status: run.status,
+    identity: clone(run.identity),
+    candidate: clone(run.frozenCandidate),
+    phases: run.phases.map(publicPhase),
+    primaryFailure: clone(run.primaryFailure),
+    resume: clone(run.resume),
+    nextWorkflow: run.status === 'failed'
+      ? (run.primaryFailure?.failureClass === 'upstream-candidate-defect' ? 'task-development' : 'task-finish-investigation')
       : null,
-    jsonRequired: Array.isArray(plan.jsonRequired) && plan.jsonRequired.every((entry) => typeof entry === 'string' && entry.trim())
-      ? [...new Set(plan.jsonRequired)]
-      : [],
-    observations: Array.isArray(plan.observations) ? plan.observations.map((entry) => validateFinishExecutionPlan({ root, allowedExecutionRoots: executionRoots, plan: { ...entry, sharedMutation: false, safeAuto: true } })) : [],
-    stages: Array.isArray(plan.stages) ? plan.stages.map((entry) => ({
-      id: typeof entry.id === 'string' && entry.id.trim() ? entry.id : null,
-      parallel: entry.parallel === true,
-      commands: Array.isArray(entry.commands)
-        ? entry.commands.map((commandPlan) => validateFinishExecutionPlan({ root, allowedExecutionRoots: executionRoots, plan: { ...commandPlan, sharedMutation: false, safeAuto: true } }))
-        : [],
-    })) : [],
+    nextAction: run.status === 'blocked' ? 'repeat-task-finish-run-with-resume-token' : null,
+    verification: clone(run.verification),
+    delivery: clone(run.delivery),
+    completion: clone(run.completion),
+    metrics: {
+      canonicalCliInvocations: run.invocations,
+      agentProviderCompletions: 0,
+      manualRecoveryManifests: 0,
+      formalVerificationExecutions,
+      productCommandObservations: commandObservations,
+      productExecutionMs: phaseDurationMs,
+      wallClockMs: Math.max(0, clock() - Date.parse(run.createdAt)),
+      coverage: 'product-complete',
+    },
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    completedAt: run.completedAt,
   };
-}
-
-function effectiveFingerprint(fingerprint, plan) {
-  if (!plan) return fingerprint;
-  if (plan.actionId === 'formal-assurance.verification') return fingerprint;
-  return `${fingerprint || ''}:plan-${digest(JSON.stringify(plan))}`;
-}
-
-function descendants(run, stepId) {
-  const result = new Set();
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const candidate of run.steps) {
-      if (!result.has(candidate.id) && candidate.dependsOn.some((dependency) => dependency === stepId || result.has(dependency))) {
-        result.add(candidate.id); changed = true;
-      }
-    }
-  }
   return result;
 }
 
-function finishAttempt(item, outcome, attribution, clock) {
-  const token = item.attemptToken;
-  const attempt = item.attempts?.find((entry) => entry.token === token && entry.finishedAt == null);
-  const finishedAt = now(clock);
-  if (attempt) Object.assign(attempt, { finishedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome, attribution });
-  item.lastAttemptToken = token || item.lastAttemptToken;
-  item.attemptToken = null;
-  item.completedAt = finishedAt;
-}
-
-function releaseOwnedLease(item) {
-  if (!item.lease?.directory) { item.lease = null; return; }
-  const file = path.join(item.lease.directory, 'lease.json');
-  let existing = null;
-  try { existing = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
-  if (leaseIdentityMatches(existing, item)) removeLeasePath(item.lease.directory);
-  item.lease = null;
-}
-
-function invalidate(run, stepId, reason, includeSelf = true, clock = Date.now) {
-  const ids = descendants(run, stepId);
-  if (includeSelf) ids.add(stepId);
-  for (const id of ids) {
-    const item = run.steps.find((candidate) => candidate.id === id);
-    if (item.status === 'passed' || item.status === 'blocked' || item.status === 'running') {
-      if (item.status === 'running') {
-        releaseOwnedLease(item);
-        finishAttempt(item, 'stale', 'input-changed', clock);
-      }
-      item.status = 'stale';
-      item.blocked = { code: 'input-changed', reason, invalidatedBy: stepId };
-      item.attemptToken = null; item.lease = null;
-    }
-  }
-}
-
-export function refreshFinishInputs(run, fingerprints = {}, clock = Date.now) {
-  for (const [stepId, fingerprint] of Object.entries(fingerprints)) {
-    const item = run.steps.find((candidate) => candidate.id === stepId);
-    if (!item) throw new Error(`Unknown Task Finish step: ${stepId}`);
-    if (item.inputFingerprint && item.inputFingerprint !== fingerprint) invalidate(run, stepId, `input fingerprint changed from ${item.inputFingerprint} to ${fingerprint}`, true, clock);
-    item.inputFingerprint = fingerprint;
-  }
-  return run;
-}
-
-function normalizeRecoveryManifest(manifest) {
-  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('recovery manifest must be an object.');
-  if (manifest.schemaVersion !== FINISH_RECOVERY_SCHEMA) throw new Error(`Unsupported Task Finish recovery schema: ${manifest.schemaVersion}`);
-  if (!manifest.identities?.before || !manifest.identities?.after || !manifest.fingerprints || typeof manifest.fingerprints !== 'object') {
-    throw new Error('recovery manifest requires before/after identities and fingerprints.');
-  }
-  const requested = manifest.transition?.type;
-  let type = ['implementation-changed', 'archive-sensitive-metadata', 'runtime-projection-only'].includes(requested)
-    ? requested : 'implementation-changed';
-  let classification = requested === type ? 'verified' : 'fail-closed';
-  if (type === 'runtime-projection-only') {
-    const changed = manifest.transition?.changedPaths;
-    const allowed = manifest.transition?.allowedPaths;
-    const proof = manifest.transition?.sourceDigest && manifest.transition?.projectionDigest
-      && Array.isArray(changed) && changed.length > 0 && Array.isArray(allowed)
-      && changed.every((entry) => allowed.includes(entry));
-    if (!proof) { type = 'implementation-changed'; classification = 'fail-closed'; }
-  }
-  if (type === 'archive-sensitive-metadata' && (!manifest.transition?.providerPolicy || !manifest.transition?.evidenceId)) {
-    type = 'implementation-changed'; classification = 'fail-closed';
-  }
-  return { ...clone(manifest), transition: { ...clone(manifest.transition || {}), requestedType: requested || null, type, classification } };
-}
-
-function recoveryBoundary(manifest) {
-  const before = manifest.identities.before;
-  const after = manifest.identities.after;
-  const changed = (key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null);
-  if (manifest.transition.type === 'runtime-projection-only') return changed('runtime') ? 'runtime-convergence' : null;
-  if (manifest.transition.type === 'archive-sensitive-metadata') return changed('change') ? 'contract-convergence' : null;
-  for (const [identity, stepId] of [['environment', 'context'], ['change', 'current-knowledge'], ['candidate', 'contract-convergence'], ['target', 'target-convergence'], ['runtime', 'runtime-convergence'], ['assurance', 'formal-assurance']]) {
-    if (changed(identity)) return stepId;
-  }
-  return null;
-}
-
-export async function recoverFinishRun({ root, runId, manifest, runCommand = defaultSafeCommand, clock = Date.now }) {
-  const normalized = normalizeRecoveryManifest(manifest);
-  const run = readFinishRun({ root, runId });
-  const formal = run.steps.find((item) => item.id === 'formal-assurance');
-  const failedFormal = formal?.status === 'blocked' && formal.lastCompletion?.outcome === 'blocked';
-  if (failedFormal && normalized.transition.type === 'implementation-changed') {
-    const supplied = normalized.repairAuthorization
-      ? normalizeRepairAuthorization(normalized.repairAuthorization, { task: run.task, change: run.change })
-      : null;
-    const authorization = supplied || run.repairAuthorizations.find((entry) => entry.failureIdentity === formal.inputFingerprint);
-    if (!authorization || authorization.failureIdentity !== formal.inputFingerprint) throw new Error('Formal assurance failed; an identity-bound repair authorization is required before implementation recovery.');
-    const changedPaths = normalized.transition.changedPaths || [];
-    if (!Array.isArray(changedPaths) || changedPaths.length === 0 || changedPaths.some((entry) => !pathAllowed(entry, authorization.allowedScopes))) {
-      throw new Error('Repair transition changedPaths exceed the authorized repair scope.');
-    }
-    if (!run.repairAuthorizations.some((entry) => entry.id === authorization.id)) run.repairAuthorizations.push(authorization);
-    normalized.repairAuthorization = authorization;
-  }
-  const boundary = recoveryBoundary(normalized);
-  if (boundary) invalidate(run, boundary, `recovery ${normalized.transition.type}: ${normalized.transition.evidenceId || 'identity transition'}`, true, clock);
-  refreshFinishInputs(run, normalized.fingerprints, clock);
-  for (const item of run.steps) {
-    const retryableBlock = item.status === 'blocked' && (item.blocked?.resumePolicy || resumePolicyFor(item, item.blocked)) === 'retry';
-    if (retryableBlock || (item.status === 'stale' && item.dependsOn.every((dependency) => run.steps.find((candidate) => candidate.id === dependency)?.status === 'passed'))) {
-      item.status = 'pending'; item.blocked = null;
-    }
-  }
-  const recovery = {
-    id: normalized.id || `recovery-${digest(JSON.stringify(normalized))}`,
-    schemaVersion: FINISH_RECOVERY_SCHEMA, recordedAt: now(clock), boundary,
-    transition: normalized.transition, identities: normalized.identities, repairAuthorization: normalized.repairAuthorization || null,
-  };
-  if (!run.recoveries.some((entry) => entry.id === recovery.id)) run.recoveries.push(recovery);
-  run.observationLedger.push({
-    schemaVersion: 'buildr.task-finish-observation/v1', kind: 'recovery', id: recovery.id,
-    startedAt: recovery.recordedAt, finishedAt: recovery.recordedAt, durationMs: 0,
-    commandIdentity: 'task-finish:recover', cwdIdentity: digest(path.resolve(root)), exitCode: 0,
-    stdoutBytes: 0, stderrBytes: 0, transitionType: normalized.transition.type, boundary,
-  });
-  run.updatedAt = now(clock);
-  atomicWriteJson(runFile(root, runId), run);
-  const result = await executeSafeFinishRun({ root, runId, fingerprints: normalized.fingerprints, executionPlans: normalized.executionPlans || {}, runCommand, clock, stopBefore: 'formal-assurance' });
-  return { ...result, recovery };
-}
-
-function leaseKey(run, item) {
-  if (item.sharedResource === 'target-branch') return `${item.sharedResource}:${run.target.remote}/${run.target.branch}`;
-  if (item.sharedResource === 'canonical-checkout') return `${item.sharedResource}:${run.target.branch}`;
-  return item.sharedResource ? `${item.sharedResource}:workspace` : null;
-}
-
-function removeLeasePath(target) {
-  fs.rmSync(target, { recursive: true, force: true });
-}
-
-function withLeaseMutationLock(directory, callback) {
-  const lock = `${directory}.lock`;
-  try { fs.mkdirSync(lock); }
-  catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    const busy = new Error('Shared resource lease metadata is being updated by another run.');
-    busy.code = 'task_finish.lease_busy';
-    throw busy;
-  }
-  try { return callback(); }
-  finally { removeLeasePath(lock); }
-}
-
-function leaseIdentityMatches(existing, item) {
-  return Boolean(existing
-    && existing.key === item.lease?.key
-    && existing.runId === item.lease?.runId
-    && existing.step === item.lease?.step
-    && existing.token === item.lease?.token);
-}
-
-function acquireLease({ root, run, item, token, clock, leaseTtlMs }) {
-  const key = leaseKey(run, item);
-  if (!key) return null;
-  const directory = path.join(leaseRoot(root), digest(key));
-  const file = path.join(directory, 'lease.json');
-  const timestamp = clock();
-  fs.mkdirSync(path.dirname(directory), { recursive: true });
-  return withLeaseMutationLock(directory, () => {
-    if (fs.existsSync(directory)) {
-      let existing = null;
-      try { existing = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
-      if (existing && Date.parse(existing.expiresAt) > timestamp) {
-        const blocked = new Error(`Shared resource lease is held by run ${existing.runId} until ${existing.expiresAt}`);
-        blocked.code = 'task_finish.lease_held'; blocked.lease = existing; throw blocked;
-      }
-      removeLeasePath(directory);
-    }
-    fs.mkdirSync(directory);
-    const lease = { schemaVersion: 'buildr.task-finish-lease/v1', key, runId: run.runId, step: item.id, token, acquiredAt: now(clock), expiresAt: new Date(timestamp + leaseTtlMs).toISOString() };
-    atomicWriteJson(file, lease);
-    return { ...lease, directory };
-  });
-}
-
-function consumeLease(item, clock) {
-  if (!item.lease?.directory) return { ok: true };
-  const directory = item.lease.directory;
-  return withLeaseMutationLock(directory, () => {
-    let existing = null;
-    try { existing = JSON.parse(fs.readFileSync(path.join(directory, 'lease.json'), 'utf8')); } catch {}
-    if (!leaseIdentityMatches(existing, item)) return { ok: false, code: 'lease-lost', reason: 'Shared resource lease is no longer owned by this attempt.', current: existing };
-    if (Date.parse(existing.expiresAt) <= clock()) return { ok: false, code: 'lease-expired', reason: `Shared resource lease expired at ${existing.expiresAt}.`, current: existing };
-    removeLeasePath(directory);
-    return { ok: true };
-  });
-}
-
-function clearLease(item) {
-  item.lease = null;
-}
-
-export function renewFinishLease({ root, runId, attemptToken, clock = Date.now, leaseTtlMs = 600_000 }) {
-  const run = readFinishRun({ root, runId });
-  const item = nextStep(run);
-  if (!item || item.status !== 'running' || item.attemptToken !== attemptToken || !item.lease?.directory) throw new Error('Current running attempt does not own a renewable lease.');
-  const directory = item.lease.directory;
-  const result = withLeaseMutationLock(directory, () => {
-    let existing = null;
-    try { existing = JSON.parse(fs.readFileSync(path.join(directory, 'lease.json'), 'utf8')); } catch {}
-    if (!leaseIdentityMatches(existing, item)) return { ok: false, code: 'lease-lost', current: existing };
-    if (Date.parse(existing.expiresAt) <= clock()) return { ok: false, code: 'lease-expired', current: existing };
-    const renewed = { ...existing, expiresAt: new Date(clock() + leaseTtlMs).toISOString(), renewalCount: (existing.renewalCount || 0) + 1, renewedAt: now(clock) };
-    atomicWriteJson(path.join(directory, 'lease.json'), renewed);
-    return { ok: true, lease: renewed };
-  });
-  if (!result.ok) {
-    const error = new Error(result.code === 'lease-expired' ? 'Shared resource lease has expired.' : 'Shared resource lease is no longer owned by this attempt.');
-    error.code = `task_finish.${result.code}`;
-    error.lease = result.current || null;
-    throw error;
-  }
-  item.lease = { ...item.lease, ...result.lease };
-  item.evidence.push({ id: `lease-renewal-${item.id}-${result.lease.renewalCount}`, type: 'lease-renewal', expiresAt: result.lease.expiresAt });
-  run.updatedAt = now(clock);
-  atomicWriteJson(runFile(root, runId), run);
-  return inspectFinishRun(run);
-}
-
-function assertEvidence(value, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.id !== 'string' || !value.id.trim()) throw new Error(`${label} must be an object with a stable non-empty id.`);
-}
-
-function completionIdentity({ item, fingerprint, effect, evidence, outcome }) {
-  return {
-    attemptToken: item.attemptToken,
-    inputFingerprint: fingerprint,
-    effectIds: effect ? [effect.id] : [],
-    evidenceIds: evidence ? [evidence.id] : [],
-    outcome,
-  };
-}
-
-function sameCompletion(left, right) {
-  return Boolean(left && right
-    && left.attemptToken === right.attemptToken
-    && left.inputFingerprint === right.inputFingerprint
-    && left.outcome === right.outcome
-    && JSON.stringify(left.effectIds) === JSON.stringify(right.effectIds)
-    && JSON.stringify(left.evidenceIds) === JSON.stringify(right.evidenceIds));
-}
-
-function nextStep(run) {
-  return run.steps.find((item) => ['pending', 'stale', 'blocked', 'running', 'prepared'].includes(item.status));
-}
-
-function evidencePassed(entry) {
-  return entry?.exitCode == null || (entry.exitCode === 0 && entry.assertionPassed !== false);
-}
-
-function validStepEvidence(item) {
-  if (!item) return [];
-  const ids = new Set(item.lastCompletion?.evidenceIds || []);
-  return item.status === 'passed' ? item.evidence.filter((entry) => ids.has(entry.id) && evidencePassed(entry)) : [];
-}
-
-function validStepEffects(item) {
-  const ids = new Set(item.lastCompletion?.effectIds || []);
-  return item.status === 'passed' ? item.effects.filter((entry) => ids.has(entry.id)) : [];
-}
-
-function observedExecutionTiming(evidence, durationMs, item, fingerprint, outcome) {
-  const verification = evidence?.verificationSummary;
-  if (verification) {
-    const timing = verificationTimingView(verification);
-    const acceptedStatuses = outcome === 'passed' ? ['passed'] : outcome === 'blocked' ? ['failed', 'incomplete'] : [];
-    if (item.id !== 'formal-assurance'
-      || !timing
-      || !acceptedStatuses.includes(timing.status)
-      || !Number.isFinite(timing.durationMs)
-      || timing.durationMs < 0
-      || timing.candidateFingerprint !== fingerprint
-      || typeof timing.evidenceIdentity !== 'string'
-      || !timing.evidenceIdentity.trim()) {
-      const expectedSchema = verification.schemaVersion === 'buildr.verification-run/v1'
-        ? 'trusted buildr.verification-run/v1 summary'
-        : `${acceptedStatuses.join('|') || 'supported'} buildr.verification-timing/v1 summary`;
-      throw new Error(`formal-assurance ${outcome} completion requires a ${expectedSchema} matching the current candidate fingerprint.`);
-    }
-    return {
-      executionDurationMs: timing.durationMs,
-      orchestrationDurationMs: Math.max(0, durationMs - timing.durationMs),
-      unobservedDurationMs: 0,
-      timingSource: 'verification-summary',
-      timingEvidence: {
-        schemaVersion: timing.schemaVersion,
-        status: timing.status,
-        runId: timing.runId,
-        evidenceIdentity: timing.evidenceIdentity,
-        summaryPath: timing.summaryPath,
-        candidateFingerprint: timing.candidateFingerprint,
-      },
-    };
-  }
-  const observationIds = Array.isArray(evidence?.observationIds) ? evidence.observationIds : [];
-  if (item.id === 'formal-assurance' && observationIds.length === 0) {
-    throw new Error('formal-assurance requires product observations or a trusted verificationSummary.');
-  }
-  if (observationIds.length === 0) return {
-    executionDurationMs: null,
-    orchestrationDurationMs: null,
-    unobservedDurationMs: durationMs,
-    timingSource: 'external-unobserved',
-  };
-  const stages = Array.isArray(evidence?.stages) ? evidence.stages : [];
-  const executionDurationMs = stages.length
-    ? stages.reduce((total, stage) => total + (Number.isFinite(stage.durationMs) ? stage.durationMs : 0), 0)
-    : Array.isArray(evidence?.observations)
-      ? evidence.observations.reduce((total, observation) => total + (Number.isFinite(observation.durationMs) ? observation.durationMs : 0), 0)
-      : durationMs;
-  return {
-    executionDurationMs,
-    orchestrationDurationMs: Math.max(0, durationMs - executionDurationMs),
-    unobservedDurationMs: 0,
-    timingSource: 'product-observation',
-  };
-}
-
-function attemptExecutionTiming(run, step, attempt) {
-  if (Number.isFinite(attempt.executionDurationMs)) {
-    const source = attempt.timingSource === 'verification-summary'
-      ? 'verifier-reported'
-      : attempt.timingSource === 'product-observation'
-        ? 'product-observed'
-        : attempt.timingSource || 'external-unobserved';
-    return { durationMs: attempt.executionDurationMs, source };
-  }
-  const commandMs = (run.observationLedger || []).filter((entry) => attempt.observationIds?.includes(entry.id)).reduce((total, entry) => total + (entry.durationMs || 0), 0);
-  if (commandMs > 0) return { durationMs: commandMs, source: 'product-observed' };
-  if (attempt.providerTiming?.source === 'verifier-reported') return attempt.providerTiming;
-  return { durationMs: 0, source: 'external-unobserved' };
-}
-
-function phaseTiming(run, finished) {
-  const formal = run.steps.find((item) => item.id === 'formal-assurance');
-  const formalAttempts = (formal?.attempts || []).filter((attempt) => Number.isFinite(attempt.durationMs));
-  const successful = [...formalAttempts].reverse().find((attempt) => attempt.outcome === 'passed');
-  const repairs = (run.recoveries || []).filter((entry) => entry.repairAuthorization);
-  const repairMs = repairs.reduce((total, entry) => {
-    const start = Date.parse(entry.repairAuthorization.authorizedAt);
-    const end = Date.parse(entry.recordedAt);
-    return total + (Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : 0);
-  }, 0);
-  const closeoutStart = successful?.finishedAt ? Date.parse(successful.finishedAt) : null;
-  const execution = formalAttempts.map((attempt) => attemptExecutionTiming(run, formal, attempt));
-  return {
-    initialVerificationMs: execution[0]?.durationMs || 0,
-    repairMs,
-    reverificationMs: execution.slice(1).reduce((total, entry) => total + entry.durationMs, 0),
-    closeoutMs: Number.isFinite(closeoutStart) ? Math.max(0, finished - closeoutStart) : 0,
-    phaseCoverage: repairs.length ? 'verification-repair-reverification-closeout' : successful ? 'verification-closeout' : 'verification-incomplete',
-    formalAssuranceTimingSources: execution.map((entry) => entry.source),
-  };
-}
-
-export function inspectFinishRun(run) {
-  const current = nextStep(run) || null;
-  const attempts = run.steps.flatMap((item) => (item.attempts || []).map((attempt) => ({ step: item.id, ...attempt })));
-  const completedDurations = attempts.filter((attempt) => Number.isFinite(attempt.durationMs));
-  const retryAttempts = completedDurations.filter((attempt) => attempt.number > 1);
-  const wastedAttempts = completedDurations.filter((attempt) => attempt.outcome === 'blocked' || attempt.outcome === 'failed');
-  const started = Date.parse(run.createdAt);
-  const finished = run.status === 'complete' ? Date.parse(run.updatedAt) : Date.now();
-  const ledger = run.observationLedger || [];
-  const commandLedger = ledger.filter((entry) => entry.kind === 'command');
-  const productObservedAttempts = completedDurations.filter((attempt) => attempt.timingSource === 'product-observation');
-  const providerObservedAttempts = completedDurations.filter((attempt) => attempt.timingSource === 'verification-summary');
-  const observedAttempts = [...productObservedAttempts, ...providerObservedAttempts];
-  const legacyAttempts = completedDurations.filter((attempt) => attempt.timingSource == null);
-  const unobservedAttempts = completedDurations.filter((attempt) => attempt.timingSource === 'external-unobserved');
-  const productExecutionMs = productObservedAttempts.reduce((total, attempt) => total + (attempt.executionDurationMs || 0), 0);
-  const providerExecutionMs = providerObservedAttempts.reduce((total, attempt) => total + (attempt.executionDurationMs || 0), 0)
-    + legacyAttempts.reduce((total, attempt) => total + (attempt.providerTiming?.source === 'verifier-reported' ? attempt.providerTiming.durationMs : 0), 0);
-  const checkpointWaitMs = completedDurations.reduce((total, attempt) => {
-    const observed = attemptExecutionTiming(run, run.steps.find((item) => item.id === attempt.step), attempt).durationMs;
-    return total + Math.max(0, (attempt.durationMs || 0) - observed);
-  }, 0);
-  const unobservedIntervals = run.steps.filter((item) => (item.attempts || []).some((attempt) => attempt.finishedAt && !['product-observation', 'verification-summary'].includes(attempt.timingSource))).map((item) => item.id);
-  return {
-    schemaVersion: 'buildr.task-finish-checkpoint/v1', runId: run.runId, task: run.task, change: run.change,
-    status: run.status, currentStep: current?.id || null,
-    completedEffects: run.steps.flatMap((item) => validStepEffects(item).map((effect) => ({ step: item.id, ...effect }))),
-    validEvidence: run.steps.flatMap((item) => validStepEvidence(item).map((evidence) => ({ step: item.id, ...evidence }))),
-    blocked: run.steps.filter((item) => item.status === 'blocked').map((item) => ({ step: item.id, ...item.blocked })),
-    staleSteps: run.steps.filter((item) => item.status === 'stale').map((item) => item.id),
-    timing: {
-      wallClockMs: Math.max(0, finished - started),
-      endToEndWallClockMs: Math.max(0, finished - started),
-      ...phaseTiming(run, finished),
-      attemptCount: attempts.length,
-      retryCount: retryAttempts.length,
-      attributableWasteMs: wastedAttempts.reduce((total, attempt) => total + attempt.durationMs, 0),
-      productExecutionMs,
-      providerExecutionMs,
-      checkpointWaitMs,
-      orchestrationGapMs: Math.max(0, finished - started - productExecutionMs - providerExecutionMs),
-      unobservedExecutionMs: unobservedAttempts.reduce((total, attempt) => total + attempt.durationMs, 0),
-      invocationCount: commandLedger.length,
-      outputBytes: commandLedger.reduce((total, entry) => total + (entry.stdoutBytes || 0) + (entry.stderrBytes || 0), 0),
-      coverage: observedAttempts.length === 0 ? (legacyAttempts.length ? 'legacy-unclassified' : 'external-unobserved') : unobservedIntervals.length ? 'product-partial' : 'product-complete',
-      unobservedIntervals,
-      attempts,
-    },
-    nextAction: current ? { step: current.id, status: current.status, action: current.action, attemptToken: current.status === 'running' ? current.attemptToken : null, retryPolicy: current.retryPolicy, resumePolicy: current.blocked?.resumePolicy || null, blockIdentity: current.blocked?.blockIdentity || null, lease: current.lease } : null,
-    diagnostics: run.lastDiagnostic || null,
-    repairDecision: current?.id === 'formal-assurance' && current.status === 'blocked' ? {
-      schemaVersion: 'buildr.task-finish-repair-decision/v1', status: 'required', failureIdentity: current.inputFingerprint,
-      authorized: run.repairAuthorizations.some((entry) => entry.failureIdentity === current.inputFingerprint),
-      reason: current.blocked?.reason || current.blocked?.code || 'formal assurance failed',
-      nextActions: ['向用户报告缺陷、影响、repair scope与重新验证成本', '取得identity-bound repair authorization后提交typed recovery'],
-    } : null,
-    steps: run.steps.map(({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan }) => ({ id, status, attempt, inputFingerprint, effects, evidence, blocked, dependsOn, lease, executionPlan })),
-  };
-}
-
-function completionFile(root, runId) {
-  if (!FINISH_RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish run id is invalid.');
-  return path.join(completionRoot(root), `${runId}.json`);
-}
-
-export function prepareFinishCleanup({ root, runId, attemptToken, evidence, clock = Date.now }) {
-  assertEvidence(evidence, 'evidence');
-  const run = readFinishRun({ root, runId });
-  const item = nextStep(run);
-  if (!item || item.id !== 'cleanup' || item.status !== 'running' || item.attemptToken !== attemptToken) throw new Error('cleanup prepare requires the current running cleanup attempt.');
-  const receiptFile = completionFile(root, runId);
-  const preparedAt = now(clock);
-  releaseOwnedLease(item);
-  finishAttempt(item, 'prepared', 'none', clock);
-  item.status = 'prepared';
-  item.blocked = { code: 'cleanup-finalize-required', reason: 'Cleanup is prepared; finalize from the retained canonical Workspace after task-owned deletion succeeds.' };
-  item.evidence.push(evidence);
-  const checkpoint = inspectFinishRun(run);
-  const receipt = {
-    schemaVersion: 'buildr.task-finish-completion/v1', status: 'prepared', runId, task: run.task, change: run.change,
-    target: run.target, preparedAt, environmentRoot: path.resolve(root), cleanupEvidence: evidence,
-    effects: run.steps.flatMap((candidate) => validStepEffects(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
-    verificationEvidence: validStepEvidence(run.steps.find((candidate) => candidate.id === 'formal-assurance')),
-    archiveEvidence: validStepEvidence(run.steps.find((candidate) => candidate.id === 'archive')),
-    repairAuthorizations: run.repairAuthorizations || [],
-    recoveries: run.recoveries || [],
-    observationLedger: run.observationLedger,
-    timing: {
-      ...checkpoint.timing,
-      toolRoundTripCount: checkpoint.timing.invocationCount,
-      outputBytes: checkpoint.timing.outputBytes,
-      preparedAt,
-    },
-  };
-  atomicWriteJson(receiptFile, receipt);
-  run.completionReceipt = receiptFile;
-  run.updatedAt = preparedAt;
-  atomicWriteJson(runFile(root, runId), run);
-  return { ...compactFinishCheckpoint(inspectFinishRun(run)), completionReceipt: receiptFile, cleanup: { status: 'prepared' } };
-}
-
-export function finalizeFinishCleanup({ root, runId, evidence, clock = Date.now }) {
-  assertEvidence(evidence, 'evidence');
-  const receiptFile = completionFile(root, runId);
-  if (!fs.existsSync(receiptFile)) throw new Error(`Prepared Task Finish completion receipt not found: ${runId}`);
-  const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
-  if (receipt.schemaVersion !== 'buildr.task-finish-completion/v1' || receipt.status !== 'prepared') throw new Error('Task Finish completion receipt is not prepared.');
-  if (evidence.environmentRemoved !== true && evidence.environmentRetained !== true) throw new Error('cleanup finalize evidence must confirm environmentRemoved or environmentRetained.');
-  const completedAt = now(clock);
-  const finalizeMs = Math.max(0, Date.parse(completedAt) - Date.parse(receipt.preparedAt));
-  const wallClockMs = finalizeMs + (receipt.timing?.wallClockMs || 0);
-  const completed = { ...receipt, status: 'complete', completedAt, finalCleanupEvidence: evidence, timing: {
-    ...receipt.timing, completedAt, wallClockMs, endToEndWallClockMs: wallClockMs,
-    closeoutMs: (receipt.timing?.closeoutMs || 0) + finalizeMs,
-    orchestrationGapMs: (receipt.timing?.orchestrationGapMs || 0) + finalizeMs,
-  } };
-  atomicWriteJson(receiptFile, completed);
-  return { schemaVersion: 'buildr.task-finish-completion-result/v1', runId, status: 'complete', completionReceipt: receiptFile, cleanup: evidence };
-}
-
-export function compactFinishCheckpoint(checkpoint) {
-  return {
-    schemaVersion: 'buildr.task-finish-checkpoint-summary/v1',
-    runId: checkpoint.runId, task: checkpoint.task, change: checkpoint.change,
-    status: checkpoint.status, currentStep: checkpoint.currentStep,
-    completedEffectCount: checkpoint.completedEffects.length,
-    validEvidenceCount: checkpoint.validEvidence.length,
-    blocked: checkpoint.blocked,
-    staleSteps: checkpoint.staleSteps,
-    timing: { ...checkpoint.timing, attempts: undefined },
-    nextAction: checkpoint.nextAction,
-    diagnostics: checkpoint.diagnostics || null,
-    repairDecision: checkpoint.repairDecision || null,
-    ...(checkpoint.actionResolution ? { actionResolution: checkpoint.actionResolution } : {}),
-    ...(checkpoint.safeExecution ? { safeExecution: checkpoint.safeExecution } : {}),
-    ...(checkpoint.recovery ? { recovery: checkpoint.recovery } : {}),
-  };
-}
-
-export function advanceFinishRun({ root, runId, fingerprints = {}, outcome = null, attemptToken = null, effect = null, evidence = null, blocked = null, session = null, expectedTargetRef = null, observedTargetRef = null, refTransition = null, executionPlan = null, allowedExecutionRoots = [root], clock = Date.now, leaseTtlMs = 600_000 }) {
-  const run = readFinishRun({ root, runId });
-  const plannedItem = nextStep(run);
-  let normalizedPlan;
-  try { normalizedPlan = validateFinishExecutionPlan({ root, allowedExecutionRoots, plan: executionPlan ?? plannedItem?.executionPlan }); }
-  catch (error) {
-    if (outcome || !plannedItem || plannedItem.status === 'running') throw error;
-    plannedItem.status = 'blocked';
-    plannedItem.blocked = decorateBlocked(run, plannedItem, { code: 'execution-plan-invalid', reason: error.message });
-    plannedItem.completedAt = now(clock);
-    run.updatedAt = plannedItem.completedAt;
-    atomicWriteJson(runFile(root, runId), run);
-    return inspectFinishRun(run);
-  }
-  const normalizedFingerprints = { ...fingerprints };
-  if (plannedItem && Object.hasOwn(normalizedFingerprints, plannedItem.id) && normalizedFingerprints[plannedItem.id] !== plannedItem.inputFingerprint) normalizedFingerprints[plannedItem.id] = effectiveFingerprint(normalizedFingerprints[plannedItem.id], normalizedPlan);
-  refreshFinishInputs(run, normalizedFingerprints, clock);
-  if (session && !run.sessions.some((item) => item.handle === session.handle)) run.sessions.push(session);
-  let item = nextStep(run);
-  if (!item) return inspectFinishRun(run);
-
-  if (outcome) {
-    if (!['passed', 'blocked'].includes(outcome)) throw new Error(`Unsupported Task Finish outcome: ${outcome}`);
-    const completedAttempt = run.steps.find((candidate) => candidate.status === 'passed' && candidate.lastAttemptToken === attemptToken);
-    if (completedAttempt) {
-      const repeatedFingerprint = normalizedFingerprints[completedAttempt.id] ?? completedAttempt.inputFingerprint;
-      if (effect) assertEvidence(effect, 'effect');
-      if (evidence) assertEvidence(evidence, 'evidence');
-      const repeated = { attemptToken, inputFingerprint: repeatedFingerprint, effectIds: effect ? [effect.id] : [], evidenceIds: evidence ? [evidence.id] : [], outcome };
-      if (!sameCompletion(completedAttempt.lastCompletion, repeated)) throw new Error(`Repeated completion for step ${completedAttempt.id} does not match the recorded result identity.`);
-      return inspectFinishRun(run);
-    }
-    if (item.status !== 'running') {
-      if (item.status === 'passed' && item.attemptToken === attemptToken) return inspectFinishRun(run);
-      throw new Error(`Step ${item.id} is ${item.status}; no running attempt can accept ${outcome}`);
-    }
-    if (!attemptToken || item.attemptToken !== attemptToken) throw new Error(`Attempt token mismatch for step ${item.id}`);
-    const submittedFingerprint = normalizedFingerprints[item.id] ?? item.inputFingerprint;
-    if (submittedFingerprint !== item.inputFingerprint) throw new Error(`Input fingerprint mismatch for step ${item.id}`);
-    if (outcome === 'passed') {
-      if (typeof item.inputFingerprint !== 'string' || !item.inputFingerprint.trim()) throw new Error(`Step ${item.id} requires a non-empty input fingerprint before it can pass.`);
-      assertEvidence(evidence, 'evidence');
-      if (effect) assertEvidence(effect, 'effect');
-      if (item.id === 'integration-push' && !refTransition && (!expectedTargetRef || !observedTargetRef)) throw new Error('integration-push requires refTransition or legacy expectedTargetRef/observedTargetRef observations.');
-    }
-    const leaseResult = consumeLease(item, clock);
-    if (!leaseResult.ok) {
-      clearLease(item);
-      item.status = 'blocked';
-      item.blocked = decorateBlocked(run, item, { code: leaseResult.code, reason: leaseResult.reason, currentLease: leaseResult.current || null });
-      item.lastAttemptToken = item.attemptToken; item.attemptToken = null; item.completedAt = now(clock);
-      const attempt = item.attempts.find((entry) => entry.token === attemptToken);
-      if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome: 'blocked', attribution: leaseResult.code });
-      run.updatedAt = now(clock);
-      atomicWriteJson(runFile(root, runId), run);
-      return inspectFinishRun(run);
-    }
-    clearLease(item);
-    const transition = item.id === 'integration-push' ? refTransition : null;
-    if (transition) {
-      for (const key of ['expectedBeforePush', 'observedBeforePush', 'expectedAfterPush', 'observedAfterPush']) {
-        if (typeof transition[key] !== 'string' || !transition[key]) throw new Error(`integration-push ref transition requires ${key}.`);
-      }
-    }
-    const beforeRace = transition
-      ? transition.observedBeforePush !== transition.expectedBeforePush && transition.observedBeforePush !== transition.expectedAfterPush
-      : item.id === 'integration-push' && expectedTargetRef !== observedTargetRef;
-    const afterMismatch = transition && transition.observedAfterPush !== transition.expectedAfterPush;
-    if (item.id === 'integration-push' && (beforeRace || afterMismatch)) {
-      const expected = transition ? (beforeRace ? transition.expectedBeforePush : transition.expectedAfterPush) : expectedTargetRef;
-      const observed = transition ? (beforeRace ? transition.observedBeforePush : transition.observedAfterPush) : observedTargetRef;
-      invalidate(run, 'target-convergence', `target-race: expected ${expected}, observed ${observed}`, true, clock);
-      item.status = 'blocked';
-      item.blocked = decorateBlocked(run, item, { code: 'target-race', reason: 'Remote target ref changed outside the declared transition', expectedTargetRef: expected, observedTargetRef: observed, refTransition: transition });
-      item.lastAttemptToken = item.attemptToken; item.attemptToken = null; item.completedAt = now(clock);
-      const attempt = item.attempts.find((entry) => entry.token === attemptToken);
-      if (attempt) Object.assign(attempt, { finishedAt: item.completedAt, durationMs: Math.max(0, clock() - Date.parse(attempt.startedAt)), outcome: 'blocked', attribution: 'target-race' });
-      run.updatedAt = now(clock);
-      atomicWriteJson(runFile(root, runId), run);
-      return inspectFinishRun(run);
-    }
-    if (effect && !item.effects.some((entry) => entry.id === effect.id)) item.effects.push(effect);
-    const completedEvidence = transition ? { ...evidence, refTransition: transition, idempotent: transition.observedBeforePush === transition.expectedAfterPush } : evidence;
-    if (completedEvidence && !item.evidence.some((entry) => entry.id === completedEvidence.id)) item.evidence.push(completedEvidence);
-    item.completedAt = now(clock);
-    const attempt = item.attempts.find((entry) => entry.token === attemptToken);
-    if (attempt) {
-      const durationMs = Math.max(0, clock() - Date.parse(attempt.startedAt));
-      const executionTiming = observedExecutionTiming(completedEvidence, durationMs, item, submittedFingerprint, outcome);
-      const providerTiming = trustedVerificationTiming(item, completedEvidence, outcome);
-      Object.assign(attempt, {
-        finishedAt: item.completedAt, durationMs, outcome,
-        attribution: outcome === 'blocked' ? (blocked?.code || 'provider-blocked') : 'none',
-        ...executionTiming,
-        ...(providerTiming ? { providerTiming } : {}),
-      });
-    }
-    item.lastAttemptToken = item.attemptToken;
-    item.lastCompletion = completionIdentity({ item, fingerprint: submittedFingerprint, effect, evidence: completedEvidence, outcome });
-    item.attemptToken = null;
-    if (outcome === 'passed') { item.status = 'passed'; item.blocked = null; run.lastDiagnostic = null; }
-    else if (outcome === 'blocked') { item.status = 'blocked'; item.blocked = decorateBlocked(run, item, blocked || { code: 'provider-blocked', reason: 'Provider action blocked' }); }
-  } else {
-    if (item.status === 'running') return inspectFinishRun(run);
-    if (item.status === 'blocked') return inspectFinishRun(run);
-    if (!item.dependsOn.every((dependency) => run.steps.find((candidate) => candidate.id === dependency)?.status === 'passed')) return inspectFinishRun(run);
-    if (item.status === 'stale') item.status = 'pending';
-    item.executionPlan = normalizedPlan;
-    item.attempt += 1;
-    item.attemptToken = crypto.randomUUID();
-    item.lease = normalizedPlan?.sharedMutation === false ? null : acquireLease({ root, run, item, token: item.attemptToken, clock, leaseTtlMs });
-    item.status = 'running'; item.startedAt = now(clock); item.blocked = null;
-    item.attempts.push({ number: item.attempt, token: item.attemptToken, startedAt: item.startedAt, finishedAt: null, durationMs: null, outcome: 'running', attribution: item.attempt > 1 ? 'retry' : 'none', executionPlan: normalizedPlan });
-  }
-  const wouldComplete = run.steps.every((candidate) => candidate.status === 'passed');
-  if (wouldComplete) {
-    const unfinished = run.steps.flatMap((candidate) => candidate.attempts || []).filter((attempt) => attempt.finishedAt == null);
-    const retainedLease = run.steps.find((candidate) => candidate.lease);
-    if (unfinished.length || retainedLease) {
-      item.status = 'blocked';
-      item.blocked = decorateBlocked(run, item, { code: 'finish-invariant-failed', reason: `Cannot complete with ${unfinished.length} unfinished attempt(s)${retainedLease ? ` or retained lease on ${retainedLease.id}` : ''}.` });
-      run.status = 'active';
-    } else {
-      run.status = 'complete';
-      const receipt = {
-        schemaVersion: 'buildr.task-finish-completion/v1', runId: run.runId, task: run.task, change: run.change,
-        target: run.target, completedAt: now(clock),
-        effects: run.steps.flatMap((candidate) => validStepEffects(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
-        evidence: run.steps.flatMap((candidate) => validStepEvidence(candidate).map((entry) => ({ step: candidate.id, id: entry.id }))),
-        observationLedger: run.observationLedger,
-        timing: (() => { const timing = inspectFinishRun({ ...run, updatedAt: now(clock) }).timing; return { ...timing, attempts: undefined }; })(),
-      };
-      const receiptFile = path.join(completionRoot(root), `${run.runId}.json`);
-      atomicWriteJson(receiptFile, receipt);
-      run.completionReceipt = receiptFile;
-    }
-  } else run.status = 'active';
-  run.updatedAt = now(clock);
-  atomicWriteJson(runFile(root, runId), run);
-  return inspectFinishRun(run);
-}
-
-export function resumeFinishRun(options) {
-  const run = refreshFinishInputs(readFinishRun(options), options.fingerprints || {}, options.clock || Date.now);
-  const current = nextStep(run);
-  if (current?.status === 'blocked') {
-    const policy = current.blocked?.resumePolicy || resumePolicyFor(current, current.blocked);
-    if (policy === 'repair-recovery-only') throw new Error('Formal assurance failure requires identity-bound repair authorization and typed recovery; ordinary resume is not allowed.');
-    if (policy === 'input-change') throw new Error(`Step ${current.id} remains blocked until its verified input fingerprint changes.`);
-    if (policy === 'authorization-or-input-change') {
-      const supplied = normalizeResolutionAuthorization(options.resolutionAuthorization, run, current);
-      if (!run.resolutionAuthorizations.some((entry) => entry.blockIdentity === supplied.blockIdentity && entry.evidenceId === supplied.evidenceId)) run.resolutionAuthorizations.push(supplied);
-    }
-    current.status = 'pending'; current.blocked = null;
-  }
-  for (const item of run.steps) {
-    if (item.status === 'stale' && item.dependsOn.every((dependency) => run.steps.find((candidate) => candidate.id === dependency)?.status === 'passed')) {
-      item.status = 'pending'; item.blocked = null;
-    }
-  }
-  run.updatedAt = now(options.clock || Date.now);
-  atomicWriteJson(runFile(options.root, options.runId), run);
-  return advanceFinishRun(options);
-}
-
-async function defaultSafeCommand(command, args, options) {
-  try { const result = await execFileAsync(command, args, options); return { status: 0, ...result }; }
-  catch (error) { return { status: Number.isInteger(error.code) ? error.code : 1, stdout: error.stdout || '', stderr: error.stderr || error.message }; }
-}
-
-function parseChildDiagnostic(stdout, stderr) {
-  for (const source of [stdout, stderr]) {
-    try {
-      const child = JSON.parse(source);
-      if (child && typeof child === 'object') return {
-        structured: true, schemaVersion: child.schemaVersion || null, status: child.status || null,
-        code: child.code || child.blocked?.code || child.error?.code || null,
-        findings: Array.isArray(child.findings) ? child.findings.slice(0, 20) : [],
-        nextActions: Array.isArray(child.nextActions) ? child.nextActions.slice(0, 20) : child.nextAction ? [child.nextAction] : [],
-      };
-    } catch {}
-  }
-  const combined = `${stdout || ''}\n${stderr || ''}`;
-  const failedSummary = combined.match(/\[(verify[^\]]*)\]\s+failed:\s*([^\n]+)/i);
-  const failedTest = combined.match(/^\s*[✖✕x]\s+(.+)$/m);
-  const assertion = combined.match(/AssertionError[^\n]*|ERR_ASSERTION[^\n]*/);
-  const warnings = combined.split(/\r?\n/).filter((line) => /\bwarning\b/i.test(line)).slice(0, 20);
-  const primaryFailure = failedSummary || failedTest || assertion ? {
-    stage: failedSummary?.[1] || null,
-    check: failedSummary?.[2]?.trim() || failedTest?.[1]?.trim() || assertion?.[0]?.trim() || null,
-    excerpt: (failedTest?.[0] || assertion?.[0] || failedSummary?.[0] || '').slice(0, 1000),
-  } : null;
-  return { structured: false, primaryFailure, warnings };
-}
-
-function appendCommandObservations({ root, runId, stepId, attemptToken, descriptors, assessed, stageResults, clock }) {
-  const run = readFinishRun({ root, runId });
-  const attempt = run.steps.find((item) => item.id === stepId)?.attempts.find((entry) => entry.token === attemptToken);
-  const ids = [];
-  const stagesByIndex = stageResults.flatMap((stage) => stage.results.map(() => stage.id));
-  assessed.forEach((entry, index) => {
-    const descriptor = descriptors[index];
-    const stage = stagesByIndex[index] || null;
-    const id = `observation-${digest(`${runId}:${attemptToken}:${index}`)}`;
-    const diagnosticDirectory = path.join(completionRoot(root), 'diagnostics', runId);
-    const diagnosticFile = path.join(diagnosticDirectory, `${id}.json`);
-    const diagnosticBody = `${JSON.stringify({ stdout: entry.stdout, stderr: entry.stderr }, null, 2)}\n`;
-    atomicWriteJson(diagnosticFile, { stdout: entry.stdout, stderr: entry.stderr });
-    ids.push(id);
-    run.observationLedger.push({
-      schemaVersion: 'buildr.task-finish-observation/v1', kind: 'command', id, step: stepId, attemptToken, stage,
-      commandIdentity: digest(JSON.stringify([descriptor?.command, descriptor?.args || []])), cwdIdentity: digest(descriptor?.cwd || root),
-      startedAt: entry.startedAt || attempt?.startedAt || now(clock), finishedAt: entry.finishedAt || now(clock), durationMs: entry.durationMs || 0,
-      exitCode: entry.status, assertionPassed: entry.assertionPassed,
-      stdoutBytes: Buffer.byteLength(entry.stdout), stderrBytes: Buffer.byteLength(entry.stderr),
-      stdout: { preview: entry.stdout.slice(0, 1000), truncated: entry.stdout.length > 1000, sha256: crypto.createHash('sha256').update(entry.stdout).digest('hex') },
-      stderr: { preview: entry.stderr.slice(0, 1000), truncated: entry.stderr.length > 1000, sha256: crypto.createHash('sha256').update(entry.stderr).digest('hex') },
-      child: parseChildDiagnostic(entry.stdout, entry.stderr),
-      diagnostic: { path: diagnosticFile, bytes: Buffer.byteLength(diagnosticBody), sha256: crypto.createHash('sha256').update(diagnosticBody).digest('hex') },
-    });
-  });
-  if (attempt) attempt.observationIds = ids;
-  const failed = run.observationLedger.filter((entry) => ids.includes(entry.id)).find((entry) => entry.exitCode !== 0 || entry.assertionPassed === false);
-  if (failed) run.lastDiagnostic = { step: stepId, stage: failed.stage, exitCode: failed.exitCode, ...failed.child, stdout: failed.stdout, stderr: failed.stderr, diagnostic: failed.diagnostic };
-  else if (run.lastDiagnostic?.step === stepId) run.lastDiagnostic = null;
-  atomicWriteJson(runFile(root, runId), run);
-  return ids;
-}
-
-function buildrSubcommandOffset(plan, root) {
-  const localBuildr = path.resolve(root, 'projects/product/buildr');
-  if (plan.command === localBuildr) return 0;
-  const isPackageCli = (candidate) => {
-    try {
-      const resolved = fs.realpathSync(candidate);
-      if (path.basename(resolved) !== 'buildr.mjs' || path.basename(path.dirname(resolved)) !== 'bin') return false;
-      const manifest = JSON.parse(fs.readFileSync(path.join(path.dirname(resolved), '..', 'package.json'), 'utf8'));
-      return ['@buildr-ai/buildr', '@buildr/cli'].includes(manifest.name);
-    } catch { return false; }
-  };
-  if (isPackageCli(plan.command)) return 0;
-  let runtimeName = '';
-  try { runtimeName = path.basename(fs.realpathSync(plan.command)); } catch { return -1; }
-  return /^(?:node|nodejs)$/.test(runtimeName) && isPackageCli(plan.args[0]) ? 1 : -1;
-}
-
-function registeredSafeHandler(plan, root, registryOwned = false) {
-  const executable = path.basename(plan.command || '');
-  if (plan.safeHandler === 'process-probe') return ['true', 'false'].includes(executable) && plan.args.length === 0;
-  if (plan.safeHandler === 'verification-capability') return ['node', 'npm'].includes(executable) && (plan.npmScript || plan.args[0] === '--test');
-  if (plan.safeHandler === 'git-observation') return executable === 'git' && ['status', 'rev-parse', 'merge-base', 'diff', 'ls-remote'].includes(plan.args[0]);
-  const localBuildr = path.resolve(root, 'projects/product/buildr');
-  if (plan.command !== localBuildr && !registryOwned) return false;
-  if (plan.safeHandler === 'buildr-doctor') return plan.args[0] === 'doctor' && plan.args.includes('--json');
-  if (plan.safeHandler === 'buildr-worktree-context') return plan.args[0] === 'worktree' && plan.args[1] === 'context' && plan.args.includes('--target') && plan.args.includes('--json');
-  if (plan.safeHandler === 'buildr-openspec-check') return plan.args[0] === 'openspec' && plan.args[1] === 'check' && plan.args.includes('--json');
-  if (plan.safeHandler === 'buildr-openspec-converge') return plan.args[0] === 'openspec' && plan.args[1] === 'converge' && plan.args.includes('--json') && plan.args.includes('--target') && plan.args.includes('--project');
-  if (plan.safeHandler === 'buildr-verification-run') {
-    const offset = buildrSubcommandOffset(plan, root);
-    return offset >= 0 && plan.args[offset] === 'verification' && plan.args[offset + 1] === 'run'
-      && plan.args.includes('--json') && plan.args.includes('--target') && plan.args.includes('--project');
-  }
-  if (plan.safeHandler === 'buildr-runtime-sync') return plan.args[0] === 'sync' && plan.args.includes('--target');
-  if (plan.safeHandler === 'node-runtime-identity') return path.isAbsolute(plan.command) && plan.args[0] === '-e';
-  if (plan.safeHandler === 'buildr-cli-install') return plan.command === path.resolve(plan.cwd, 'projects/product/services/buildr/scripts/install-buildr-cli') && plan.args.includes('--node-executable');
-  if (plan.safeHandler === 'buildr-cli-version') return path.isAbsolute(plan.command) && plan.args.includes('version') && plan.args.includes('--json');
-  if (['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence', 'runtime-install'].includes(plan.safeHandler)) return plan.stages.length > 0 && plan.stages.every((stage) => stage.id && stage.commands.length > 0 && stage.commands.every((entry) => registeredSafeHandler(entry, root, registryOwned)));
-  return false;
-}
-
-export async function executeSafeFinishRun({ root, runId, fingerprints = {}, executionPlans = {}, actionContext = {}, runCommand = defaultSafeCommand, clock = Date.now, stopBefore = null }) {
-  const startedAt = clock();
-  const executedSteps = [];
-  while (true) {
-    const checkpoint = inspectFinishRun(readFinishRun({ root, runId }));
-    if (checkpoint.status === 'complete' || !checkpoint.nextAction) return { ...checkpoint, safeExecution: { status: 'complete', executedSteps, durationMs: clock() - startedAt } };
-    const step = checkpoint.nextAction.step;
-    if (step === stopBefore) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'required-boundary', step, executedSteps, durationMs: clock() - startedAt } };
-    if (checkpoint.nextAction.status === 'running' || checkpoint.nextAction.status === 'blocked') return { ...checkpoint, safeExecution: { status: 'stopped', reason: checkpoint.nextAction.status === 'blocked' ? 'resume-required' : 'step-already-running', step, executedSteps, durationMs: clock() - startedAt } };
-    const explicitPlan = executionPlans[step];
-    const resolution = explicitPlan ? null : resolveFinishAction({ root, run: readFinishRun({ root, runId }), step, context: actionContext });
-    if (!explicitPlan && resolution.status !== 'ready') {
-      const reason = resolution.status === 'agent-provider-required' ? 'agent-provider-required'
-        : resolution.status === 'input-required' ? 'action-input-required' : 'agent-reasoning-required';
-      return { ...checkpoint, actionResolution: resolution, safeExecution: { status: 'stopped', reason, step, executedSteps, durationMs: clock() - startedAt } };
-    }
-    const rawPlan = explicitPlan || resolution.plan;
-    const allowedExecutionRoots = explicitPlan ? [root] : receiptBoundRetainedExecutionRoots({ root, run: readFinishRun({ root, runId }), resolution, plan: rawPlan });
-    const plan = validateFinishExecutionPlan({ root, allowedExecutionRoots, plan: rawPlan });
-    const commands = plan?.observations.length ? plan.observations : plan?.stages.length ? [] : plan ? [plan] : [];
-    const allowedSharedMutation = (commands.length === 1 && ['buildr-runtime-sync', 'buildr-openspec-converge', 'buildr-cli-install'].includes(plan?.safeHandler)) || ['openspec-convergence', 'formal-verification', 'runtime-convergence', 'retained-convergence', 'runtime-install'].includes(plan?.safeHandler);
-    if (!plan?.safeAuto || (plan.sharedMutation && !allowedSharedMutation) || !plan.evidenceId || commands.some((entry) => !registeredSafeHandler(entry, root, Boolean(resolution)))) {
-      return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'safe-plan-unavailable', step, executedSteps, durationMs: clock() - startedAt } };
-    }
-    const fingerprint = fingerprints[step] || resolution?.fingerprint;
-    if (!fingerprint) return { ...checkpoint, safeExecution: { status: 'stopped', reason: 'fingerprint-missing', step, executedSteps, durationMs: clock() - startedAt } };
-    const claimed = advanceFinishRun({ root, runId, fingerprints: { [step]: fingerprint }, executionPlan: plan, allowedExecutionRoots, clock });
-    const stageResults = [];
-    const runOne = async (entry) => {
-      const commandStarted = clock();
-      const result = await runCommand(entry.command, entry.args, { cwd: entry.cwd, encoding: 'utf8' });
-      const commandFinished = clock();
-      return { ...result, startedAt: new Date(commandStarted).toISOString(), finishedAt: new Date(commandFinished).toISOString(), durationMs: commandFinished - commandStarted };
-    };
-    if (plan.stages.length) {
-      for (const stage of plan.stages) {
-        const stageStarted = clock();
-        const results = stage.parallel ? await Promise.all(stage.commands.map(runOne)) : [];
-        if (!stage.parallel) for (const command of stage.commands) results.push(await runOne(command));
-        stageResults.push({ id: stage.id, durationMs: clock() - stageStarted, results });
-        if (results.some((result) => result.status !== 0)) break;
-      }
-    }
-    const results = plan.stages.length ? stageResults.flatMap((stage) => stage.results) : await Promise.all(commands.map(runOne));
-    const commandDescriptors = plan.stages.length ? plan.stages.flatMap((stage) => stage.commands) : commands;
-    const assessed = results.map((result, index) => {
-      const descriptor = commandDescriptors[index];
-      const stdout = String(result.stdout || '').trim();
-      const stderr = String(result.stderr || '').trim();
-      let assertionPassed = true;
-      if (result.status === 0 && (descriptor.jsonAssertion || descriptor.jsonRequired?.length)) {
-        try {
-          const payload = JSON.parse(stdout);
-          if (descriptor.jsonAssertion) {
-            const actual = descriptor.jsonAssertion.path.split('.').filter(Boolean).reduce((value, key) => value?.[key], payload);
-            assertionPassed = Object.is(actual, descriptor.jsonAssertion.equals);
-          }
-          if (assertionPassed && descriptor.jsonRequired?.length) assertionPassed = descriptor.jsonRequired.every((key) => payload[key] !== undefined && payload[key] !== null);
-        } catch { assertionPassed = false; }
-      }
-      return { ...result, stdout, stderr, assertionPassed };
-    });
-    const result = assessed.find((entry) => entry.status !== 0 || !entry.assertionPassed) || assessed[0];
-    const passed = assessed.every((entry) => entry.status === 0 && entry.assertionPassed);
-    const observationIds = appendCommandObservations({ root, runId, stepId: step, attemptToken: claimed.nextAction.attemptToken, descriptors: commandDescriptors, assessed, stageResults, clock });
-    const recordedDiagnostic = inspectFinishRun(readFinishRun({ root, runId })).diagnostics;
-    const summarize = (value) => ({ preview: value.slice(0, 1000), truncated: value.length > 1000, sha256: crypto.createHash('sha256').update(value).digest('hex') });
-    const verificationSummary = step === 'formal-assurance' && passed
-      ? (() => { try { const value = JSON.parse(assessed[0].stdout); return ['buildr.verification-run/v1', 'buildr.verification-timing/v1'].includes(value?.schemaVersion) ? value : null; } catch { return null; } })()
-      : null;
-    const evidence = { id: plan.evidenceId, actionId: plan.actionId, planSource: plan.planSource, registryVersion: plan.registryVersion, exitCode: result.status, assertionPassed: result.assertionPassed, observationCount: assessed.length, observationIds, stages: stageResults.map(({ id, durationMs, results }) => ({ id, durationMs, status: results.every((entry) => entry.status === 0) ? 'passed' : 'blocked' })), observations: assessed.map((entry, index) => ({ index, durationMs: entry.durationMs, exitCode: entry.status, assertionPassed: entry.assertionPassed, command: commandDescriptors[index]?.command, stdout: summarize(entry.stdout), stderr: summarize(entry.stderr) })), ...(verificationSummary ? { verificationSummary } : {}) };
-    const completed = advanceFinishRun({
-      root, runId, fingerprints: { [step]: fingerprint }, outcome: passed ? 'passed' : 'blocked',
-      attemptToken: claimed.nextAction.attemptToken, evidence,
-      blocked: passed ? null : {
-        code: recordedDiagnostic?.code || 'safe-action-failed',
-        reason: recordedDiagnostic?.primaryFailure?.check || result.stderr || (result.assertionPassed ? `command exited ${result.status}` : 'structured success assertion failed'),
-        primaryFailure: recordedDiagnostic?.primaryFailure || null,
-        warnings: recordedDiagnostic?.warnings || [],
-      }, allowedExecutionRoots, clock,
-    });
-    const completedAttempt = completed.timing.attempts.filter((attempt) => attempt.step === step).at(-1);
-    executedSteps.push({ step, actionId: plan.actionId, planSource: plan.planSource, status: passed ? 'passed' : 'blocked', durationMs: completedAttempt?.durationMs ?? null });
-    if (!passed) return { ...completed, safeExecution: { status: 'stopped', reason: 'safe-action-failed', step, executedSteps, durationMs: clock() - startedAt } };
-  }
+export function inspectFinishRun({ root, runId, clock = Date.now }) {
+  return finishResult(readFinishRun({ root, runId }), clock);
 }
