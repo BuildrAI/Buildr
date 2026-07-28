@@ -37,6 +37,7 @@ else if (args[0] === 'openspec' && args[1] === 'converge') {
   fs.renameSync(active, archived);
   output({ schemaVersion: 'buildr.openspec-converge/v1', status: 'passed', receipt: path.join(archived, '.buildr-convergence.yml') });
 } else if (args[0] === 'sync') process.exit(0);
+else if (args[0] === 'worktree' && args[1] === 'create') output({ schemaVersion: 'buildr.worktree-create/v2', state: 'reused', ready: true, executionReady: true });
 else if (args[0] === 'verification' && args[1] === 'run') {
   const fingerprint = option('--candidate-fingerprint');
   output({

@@ -343,6 +343,20 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         if (verifyFixedPoint.result.status !== 0 || !currentGitIdentity(environmentRoot).clean) return { status: 'failed', operations, failure: { operation: 'runtime-fixed-point', failureClass: 'upstream-candidate-defect', code: 'task-finish.fixed-point-unstable', message: 'Runtime generation is not stable after the mechanical fixed-point commit.', diagnostic: verifyFixedPoint.observation.stderr } };
       }
 
+      const rootRepository = context.repositories.find((item) => item.selector === 'workspace') || context.repositories[0];
+      const rebindArgs = [
+        'worktree', 'create', run.identity.task,
+        '--agent', run.identity.agent,
+        '--branch', rootRepository.branch,
+        '--start-point', rootRepository.startPoint || run.identity.targetBranch,
+        '--target', run.identity.workspaceRoot,
+      ];
+      for (const repository of context.repositories.filter((item) => item.selector !== rootRepository.selector)) rebindArgs.push('--include', repository.selector);
+      rebindArgs.push('--json');
+      const rebound = runJsonCommand('prepare-environment-rebind', invocation.command, invocationArgs(invocation, rebindArgs), environmentRoot);
+      operations.push(rebound.observation);
+      if (rebound.result.status !== 0 || rebound.payload?.executionReady !== true) return { status: 'failed', operations, failure: { operation: 'environment-rebind', failureClass: 'product-execution-failure', code: 'task-finish.environment-rebind-failed', exitCode: rebound.result.status, message: 'Task environment receipt did not bind the prepared candidate CLI identity.', diagnostic: rebound.payload?.blocked || rebound.observation.stderr } };
+
       const identity = currentGitIdentity(environmentRoot);
       if (!identity.clean || !identity.head || !identity.tree) return { status: 'failed', operations, failure: { operation: 'candidate-freeze', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-not-clean', message: 'Candidate must be clean before freeze.' } };
       const changedPathsText = gitText(environmentRoot, ['diff', '--name-only', `${targetRef}...HEAD`]) || '';
