@@ -77,6 +77,21 @@ function sanitizeCheck(result) {
   };
 }
 
+function bindWorkspaceNodeCommand(step, workspaceNode) {
+  const [command, ...args] = step.command.argv;
+  const executable = path.basename(command).toLowerCase();
+  if (['node', 'node.exe'].includes(executable)) {
+    return { ...step, command: { ...step.command, argv: [workspaceNode.executable, ...args] } };
+  }
+  if (['npm', 'npm.cmd'].includes(executable)) {
+    return { ...step, command: { ...step.command, argv: [workspaceNode.npmExecutable, ...args] } };
+  }
+  if (['npx', 'npx.cmd'].includes(executable)) {
+    return { ...step, command: { ...step.command, argv: [workspaceNode.paths.npx, ...args] } };
+  }
+  return step;
+}
+
 export function registerVerificationApplication(runtime) {
   async function verificationRun(args) {
     const json = args.includes('--json');
@@ -115,6 +130,8 @@ export function registerVerificationApplication(runtime) {
       if (requestedOwner && requestedOwner !== context.owner) throw new Error(`Task environment owner mismatch: ${requestedOwner}.`);
     }
     if (context && !context.executionReady) throw new Error(context.blocked?.message || 'Task environment is not execution-ready.');
+    const workspaceNode = runtime.workspaceNodeExecution(targetRoot);
+    if (!workspaceNode.ready) throw new Error(`Workspace Node runtime is not ready: ${workspaceNode.status}. Run buildr sync before verification.`);
 
     const plan = createProjectVerificationPlan(declaration, { level, includeAdvisory });
     if (plan.uncoveredRequired.length) throw new Error(`Required verification capabilities are not selected: ${plan.uncoveredRequired.join(', ')}`);
@@ -144,7 +161,7 @@ export function registerVerificationApplication(runtime) {
       concurrency,
       resourceCoordinator: coordinator,
       authorizedResources,
-      execute: (step, execution) => executeVerificationCommand(step, { cwd: step.executionCwd, env: execution.resourceEnvironment }),
+      execute: (step, execution) => executeVerificationCommand(bindWorkspaceNodeCommand(step, workspaceNode), { cwd: step.executionCwd, env: { ...workspaceNode.environment, ...execution.resourceEnvironment } }),
     });
     const after = context?.repositories?.map((repository) => ({ selector: repository.selector, ...candidateIdentity(repository.checkoutPath) })) || [{ selector: 'project', ...candidateIdentity(projectRoot) }];
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
@@ -152,7 +169,7 @@ export function registerVerificationApplication(runtime) {
     const candidateStable = digest(before) === digest(after);
     const passed = candidateStable && checks.every((check) => check.status === 'passed');
     const candidateCompleteness = level === 'candidate' && passed && plan.required.every((id) => checks.some((check) => check.id === id && check.status === 'passed') || plan.superseded.some((entry) => entry.capability === id)) ? 'confirmed' : level === 'candidate' ? 'incomplete' : 'not-requested';
-    const identityMaterial = { schemaVersion: PUBLIC_JSON_SCHEMAS.verificationRun, project: projectCode, policy: digest(declarationContent), level, environment: context ? { taskId: context.taskId, owner: context.owner, environmentRoot: context.environmentRoot } : null, candidates: after, checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })) };
+    const identityMaterial = { schemaVersion: PUBLIC_JSON_SCHEMAS.verificationRun, project: projectCode, policy: digest(declarationContent), level, environment: context ? { taskId: context.taskId, owner: context.owner, environmentRoot: context.environmentRoot } : null, workspaceNode: workspaceNode.identity, candidates: after, checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })) };
     const evidenceIdentity = digest(identityMaterial);
     const base = {
       operation: 'execute',
@@ -161,6 +178,7 @@ export function registerVerificationApplication(runtime) {
       project: { code: projectCode, root: projectRoot },
       policy: { mode: declaration.mode, path: declarationPath, fingerprint: digest(declarationContent) },
       environment: context ? { taskId: context.taskId, owner: context.owner, root: context.environmentRoot, allowedExecutionRoots: context.allowedExecutionRoots } : null,
+      workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable, actualVersion: workspaceNode.actualVersion },
       candidateIdentity: after,
       plan: { selected: plan.steps.map((step) => ({ id: step.id, reasons: step.reasons, dependsOn: step.dependsOn || [], resourceClaims: step.resourceClaims || [] })), required: plan.required, superseded: plan.superseded },
       checks,

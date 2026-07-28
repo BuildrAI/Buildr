@@ -25,5 +25,5 @@ test('CLI installer prefers receipt-bound Node over an unsupported shell default
 
   const installed = spawnSync(INSTALLER, ['--node-executable', process.execPath, '--install-dir', installDir], { cwd: PRODUCT_ROOT, env, encoding: 'utf8' });
   assert.equal(installed.status, 0, installed.stderr || installed.stdout);
-  assert.equal(fs.realpathSync(path.join(installDir, 'buildr')), path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs'));
+  assert.equal(fs.realpathSync(path.join(installDir, 'buildr')), path.join(PRODUCT_ROOT, 'scripts', 'run-development-cli'));
 });

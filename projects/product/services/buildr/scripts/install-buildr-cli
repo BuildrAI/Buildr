@@ -2,7 +2,7 @@
 set -euo pipefail
 
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source_bin="$product_root/bin/buildr.mjs"
+source_bin="$product_root/scripts/run-development-cli"
 legacy_source_bin="$(cd "$product_root/../.." && pwd)/bin/buildr.mjs"
 install_dir="${BUILDR_CLI_INSTALL_DIR:-$HOME/.local/bin}"
 target_bin="$install_dir/buildr"

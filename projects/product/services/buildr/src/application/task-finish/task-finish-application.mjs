@@ -45,6 +45,8 @@ export function registerTaskFinishApplication(runtime) {
       const project = optionValue(command.args, '--project', null);
       if (!change || !project) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --change and --project.', 'run');
       const repository = context.repositories?.find((entry) => entry.selector === context.membership?.selector) || context.repositories?.[0] || {};
+      const workspaceNodeIdentity = context.executionBinding?.workspaceNode?.identity?.digest;
+      if (!workspaceNodeIdentity) throw inputError('task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.', 'run');
       const targetBranch = optionValue(command.args, '--target-branch', repository.startPoint || null);
       if (!targetBranch) throw inputError('task_finish.target_branch_unavailable', 'Task Finish could not derive the target branch; pass --target-branch.', 'run');
       finishRun = resolveFinishRun({
@@ -61,6 +63,7 @@ export function registerTaskFinishApplication(runtime) {
           environmentRoot: context.environmentRoot,
           workspaceRoot: context.workspaceRoot,
           requiredAssurance: optionValue(command.args, '--required-assurance', 'affected'),
+          workspaceNodeIdentity,
         },
       });
     } else if (path.resolve(finishRun.identity.environmentRoot) !== path.resolve(root)) {

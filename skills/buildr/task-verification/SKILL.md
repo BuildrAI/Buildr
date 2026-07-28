@@ -17,7 +17,7 @@ description: 用户要求测试、验证、耗时报告、初始化或更新测�
 - operation：`inspect` 只核对已有 evidence，`execute` 才运行验证命令，`cleanup` 只处理 evidence 生命周期。不得因为 consumer 调用 provider 就默认选择 `execute`。
 - 正式保证由本 provider 决定：普通开发与普通收尾返回 `requiredAssurance: affected`；发布、高风险或用户明确要求完整验证返回 `requiredAssurance: candidate`。consumer 不替 provider 选测试或级别。
 - 当前候选 identity 和已有验证 evidence。Git 候选优先记录 repository root、tree 或包含未提交内容的稳定 fingerprint；非 Git 候选记录当前工具可证明的 snapshot identity。无法建立可比较 identity 时，将 evidence 标记为不可跨状态复用。
-- consumer 声明 task environment 时，必须提供 environment receipt、repository membership/identity、allowed execution roots、receipt-bound CLI/runtime projection identity 与明确 target/workdir；自举环境使用 environment-local CLI，普通消费 workspace 可使用 receipt 绑定的 external-product CLI。只有 context 返回 `executionReady: true` 才执行正式验证，不得要求 session root 等于 environment root。
+- consumer 声明 task environment 时，必须提供 environment receipt、repository membership/identity、allowed execution roots、receipt-bound CLI/runtime projection identity、Workspace Node identity 与明确 target/workdir；自举环境使用 environment-local CLI，普通消费 workspace 可使用 receipt 绑定的 external-product CLI。只有 context 返回 `executionReady: true` 才执行正式验证，不得要求 session root 等于 environment root。
 - 变更路径是否命中 Change lifecycle、Change path resolution 或 OpenSpec sync/archive；命中时记录 `archive-sensitive` signal，并从 Project policy 选择 active/archive capability。无法确认覆盖时在 `coverageSummary` 披露 gap；OpenSpec archive rehearsal 不等于应用层测试覆盖。
 - 重新执行是否携带可验证的前序 evidence 与 `implementation-changed`、`target-race` 或 `verification-failed` 原因；存在时保留前序 run 的独立状态与耗时，在新 result 中返回 `supersedesEvidence`、`invalidationReason` 和 `supersessionRelationship`。
 - 按 authority 顺序读取当前 scope 的 Rules/AGENTS、明确 Project context 及可选 `projects/<project>/verification.yml`、OpenSpec change/tasks、项目开发或发布文档、公开脚本与帮助。只读取任务相关范围，不按技术栈名称猜测命令。
@@ -73,7 +73,7 @@ Project 声明验证资源时，按 `references/project-verification-v1.md` 解�
 
 ## 4. 执行与 wall-clock
 
-每次验证作为一次 execution 记录真实整体 wall-clock：
+每次验证作为一次 execution 记录真实整体 wall-clock。node、npm、测试和子进程统一使用 Workspace 声明 identity 对应的受管 Node environment；不得从普通 `PATH` 重新选择 Node：
 
 - 只有 operation 为 `execute` 时启动验证命令。`inspect` 和 `cleanup` 的 `taskVerificationExecuteCalls`、`candidateExecutorCalls` 必须为 `0`，其自身核对/清理耗时不得冒充验证耗时。
 
@@ -89,7 +89,7 @@ Project 声明验证资源时，按 `references/project-verification-v1.md` 解�
 ## 5. Candidate evidence 有效性
 
 - evidence 必须记录验证时的候选 identity、dirty/snapshot 状态和 policy sources。
-- task environment evidence 还必须记录 execution binding 与 runtime projection identity；任一 environment、repository、target/workdir 或 CLI identity stale/mismatch 时 evidence 不可复用。普通 Rule/Skill 内容修改不要求 activation evidence；只有任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制已在真实 Agent host 生效时才记录。
+- task environment evidence 还必须记录 execution binding、runtime projection identity 与 Workspace Node identity；任一 environment、repository、target/workdir、CLI 或 Workspace Node identity stale/mismatch 时 evidence 不可复用。旧 evidence 缺少 Node identity 时也不可复用。普通 Rule/Skill 内容修改不要求 activation evidence；只有任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制已在真实 Agent host 生效时才记录。
 - commit、checkout、分支名或 push 变化但候选内容等价时，可以复用 evidence。
 - rebase 冲突解决、后续编辑、生成资产更新或其他内容变化后，旧 evidence 失效。
 - Project policy 可以把同一会话内、刚成功的最终 Candidate 任务唯一 `- [ ]` → `- [x]` 变化定义为 `verification-result-metadata-only`。此时 Candidate evidence 仍绑定 source implementation identity；consumer 只能组合独立的 source/target identity、change/task identity 和精确 marker transition，不得改写 `candidateIdentity` 或声称 Candidate 直接验证 target delivery tree。
@@ -108,6 +108,7 @@ status: passed | failed | incomplete
 policySources: <实际采用的规则、Project 或文档>
 policyMode: legacy | augment | authoritative
 candidateIdentity: <repository/snapshot 与 tree/fingerprint>
+workspaceNodeIdentity: <version/platform/arch/digest>
 availableCapabilities: <已解析能力及 maturity/stages>
 selectedCapabilities: <本阶段实际选择的能力>
 skippedCapabilities: <跳过能力 id 与原因>

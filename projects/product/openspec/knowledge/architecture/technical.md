@@ -22,9 +22,11 @@
 
 Workspace、Project、Service、Rules、Skills、Commands 和 Components 由各自 manifests/registries 维护稳定 identity。Buildr 对路径、symlink、ownership、transaction、integrity 和并发 mutation fail closed；runtime 是可重建投影，不是源资产。
 
+Workspace manifest 的 `runtime.node.version` 是实际采用的精确 Node toolchain 声明，属于 Workspace Domain；`package.json#engines.node` 只表达 Buildr 产品兼容范围。Buildr 在本机应用数据目录按 version/platform/arch 管理可恢复 runtime，`init` 首次确定并准备，`sync` 只按声明收敛，`doctor` 只读诊断。CLI、npm、验证、Candidate 和 Finish 均消费同一 Workspace Node identity，不允许 Agent runtime 或普通 `PATH` 重新选择版本。
+
 ## 验证
 
-Project `verification.yml` 定义或增强验证政策。实现循环使用 minimal feedback，任务组完成后运行 affected，最终冻结 tree 运行 Candidate；evidence 绑定 candidate identity，内容变化后失效。正式 `buildr verification run` 位于可发布 `src/application/verification`，从已登记 Project 解析 policy，按依赖与显式 supersedes 构造 DAG，并发执行兼容能力；checkout 与 npm 安装后 CLI 共用该实现，不依赖 `test/verification`。
+Project `verification.yml` 定义或增强验证政策。实现循环使用 minimal feedback，任务组完成后运行 affected，最终冻结 tree 运行 Candidate；evidence 同时绑定 candidate identity 与 Workspace Node identity，任一变化后失效。正式 `buildr verification run` 位于可发布 `src/application/verification`，从已登记 Project 解析 policy，按依赖与显式 supersedes 构造 DAG，并发执行兼容能力；checkout 与 npm 安装后 CLI 共用该实现，不依赖 `test/verification`。
 
 Production verification summary 只公开一个 `buildr.verification-evidence-lifecycle/v1` 对象，execute、Task Finish consumer 与 `verification cleanup` 共享 run identity、summary path 和 provider-owned directory 边界。Cleanup 只删除系统临时根下、名称和 summary containment 均匹配的单次 transient run；首次删除后的相同公开调用只在精确 summary 路径及整个 run directory 已不存在时幂等返回 `already-absent`。Caller-managed、symlink、越界、父目录仍存在或不可证明的 legacy summary 保留现场。
 

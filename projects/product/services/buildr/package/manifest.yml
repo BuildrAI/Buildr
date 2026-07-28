@@ -388,6 +388,7 @@ templateVariables:
   - description
   - profile
   - workspaceId
+  - nodeVersion
   - project
   - projectId
 

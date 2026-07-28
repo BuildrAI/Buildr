@@ -43,6 +43,7 @@ else if (args[0] === 'verification' && args[1] === 'run') {
   output({
     schemaVersion: 'buildr.verification-run/v1', status: 'passed', level: option('--level'),
     requiredAssurance: option('--level'), source: { candidateFingerprint: fingerprint },
+    workspaceNode: { identity: { digest: 'sha256-workspace-node', version: '22.4.1' } },
     evidenceIdentity: 'evidence-' + fingerprint, evidenceReference: null, totalDurationMs: 7,
   });
 } else if (args[0] === 'doctor') output({ schemaVersion: 'buildr.doctor/v1', health: { ready: true }, findings: [] });
@@ -120,6 +121,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
     detectOpenSpecActiveConflicts: () => {},
     validateOpenSpecProposalAlignment: () => {},
     finishOpenSpecContractResult: (result) => ({ ...result, ok: true }),
+    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
   };
   const run = createFinishRun({
     root: environmentRoot,
@@ -134,6 +136,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
       environmentRoot,
       workspaceRoot: retained,
       requiredAssurance: 'affected',
+      workspaceNodeIdentity: 'sha256-workspace-node',
     },
   });
   const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot, openspecCommand: openspec });

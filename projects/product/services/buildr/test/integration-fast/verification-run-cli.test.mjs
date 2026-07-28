@@ -62,6 +62,9 @@ test('verification run executes Project Candidate concurrently and emits identit
   assert.equal(payload.schemaVersion, 'buildr.verification-run/v1');
   assert.equal(payload.status, 'passed');
   assert.equal(payload.candidateCompleteness, 'confirmed');
+  assert.equal(payload.workspaceNode.actualVersion, process.versions.node);
+  assert.equal(payload.workspaceNode.identity.version, process.versions.node);
+  assert.match(payload.workspaceNode.identity.digest, /^sha256-/);
   assert.match(payload.evidenceIdentity, /^sha256-/);
   assert.deepEqual(payload.evidenceLifecycle, {
     schemaVersion: 'buildr.verification-evidence-lifecycle/v1',
@@ -85,6 +88,28 @@ test('verification run executes Project Candidate concurrently and emits identit
   const repeated = runBuildr(['verification', 'cleanup', '--summary', payload.evidenceReference, '--json']);
   assert.equal(repeated.status, 0, repeated.stderr || repeated.stdout);
   assert.equal(JSON.parse(repeated.stdout).code, 'cleanup.already_absent');
+});
+
+test('verification replaces an absolute PATH-selected Node 18 command with Workspace Node', (t) => {
+  const root = fixture(t);
+  const fakeBin = path.join(root, 'fake-bin');
+  const fakeNode = path.join(fakeBin, 'node');
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(fakeNode, '#!/bin/sh\necho 18.20.0\nexit 18\n');
+  fs.chmodSync(fakeNode, 0o755);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v1', mode: 'authoritative', resources: [],
+    capabilities: [declaredCapability('demo.node', 'if (process.versions.node !== process.env.BUILDR_WORKSPACE_NODE_VERSION) process.exit(9)', {
+      command: { argv: [fakeNode, '-e', 'if (process.versions.node !== process.env.BUILDR_WORKSPACE_NODE_VERSION) process.exit(9)'], cwd: '.' },
+    })],
+  }));
+  const result = runBuildr(['verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', root, '--json']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'passed');
+  assert.equal(payload.checks[0].exitCode, 0);
+  assert.equal(payload.workspaceNode.identity.version, process.versions.node);
 });
 
 test('verification cleanup preserves caller-managed evidence', (t) => {

@@ -57,6 +57,7 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(created.bootstrap.doctorAfter.health.ready, true);
     assert.equal(created.ready, true);
     assert.equal(created.executionReady, true);
+    assert.equal(created.workspaceNode.identity.version, process.versions.node);
     assert.equal(created.cliInvocation.command, process.execPath);
     assert.deepEqual(created.cliInvocation.argsPrefix, [cli]);
     assert.equal(created.runtimeExpectation.activation.rules, 'path-read');
@@ -75,6 +76,8 @@ describe('worktree create CLI', { concurrency: 1 }, () => {
     assert.equal(cwdOnly.executionBinding.checkoutLocal, false);
     assert.deepEqual(cwdOnly.cliInvocation, created.cliInvocation);
     assert.deepEqual(cwdOnly.executionBinding.cliInvocation, created.cliInvocation);
+    assert.equal(cwdOnly.workspaceNodeIdentityMatches, true);
+    assert.equal(cwdOnly.executionBinding.workspaceNode.identity.version, process.versions.node);
     const adopted = runBuildr(['worktree', 'adopt', '--agent', 'codex', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'codex-demo-session', '--root-evidence-source', 'host-context', '--mode', 'new-session', '--started-at', new Date().toISOString(), '--json']);
     assert.equal(adopted.schemaVersion, 'buildr.task-environment-adoption/v1');
     assert.equal(adopted.environmentEvidence.assurance, 'buildr-verified');

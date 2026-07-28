@@ -195,6 +195,11 @@ function targetLeasePath(root, targetBranch) {
 export function createTaskFinishProductHandlers({ runtime, root, existingVerificationSummary = null, openspecCommand = 'openspec' }) {
   const environmentRoot = path.resolve(root);
 
+  function currentWorkspaceNode(run) {
+    const observed = runtime.workspaceNodeExecution(environmentRoot);
+    return { ...observed, matches: Boolean(observed.ready && run.identity.workspaceNodeIdentity && observed.identity?.digest === run.identity.workspaceNodeIdentity) };
+  }
+
   return {
     async preflight({ run }) {
       const findings = [];
@@ -214,6 +219,9 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
           } else addFinding(findings, 'environment-cli-probe', 'ok', 'task-finish.environment-cli-executable', `Receipt-bound CLI ${probe.payload.version} is executable.`);
         } else addFinding(findings, 'environment-cli-probe', 'error', 'task-finish.environment-cli-missing', 'Task environment has no receipt-bound CLI invocation.');
       }
+      const workspaceNode = currentWorkspaceNode(run);
+      if (!workspaceNode.matches) addFinding(findings, 'workspace-node', 'error', 'task-finish.workspace-node-drift', 'Workspace Node identity does not match the Task Finish run.', { expected: run.identity.workspaceNodeIdentity, actual: workspaceNode.identity?.digest || null, status: workspaceNode.status });
+      else addFinding(findings, 'workspace-node', 'ok', 'task-finish.workspace-node-ready', `Workspace Node ${workspaceNode.identity.version} is ready.`);
 
       let projectRoot = null;
       let changeRoot = null;
@@ -278,7 +286,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         status: 'passed',
         checks: findings,
         operations,
-        inputIdentity: digest({ context: context?.environmentEvidence, task: taskIdentity, retained: retainedIdentity }),
+        inputIdentity: digest({ context: context?.environmentEvidence, workspaceNode: workspaceNode.identity, task: taskIdentity, retained: retainedIdentity }),
         outputIdentity: digest(findings),
         output: { context, projectRoot, changeRoot, taskIdentity, retainedRoot: retained, retainedIdentity },
       };
@@ -286,6 +294,8 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
 
     async prepare({ run }) {
       const operations = [];
+      const workspaceNode = currentWorkspaceNode(run);
+      if (!workspaceNode.matches) return { status: 'failed', failure: { operation: 'workspace-node', failureClass: 'upstream-candidate-defect', code: 'task-finish.workspace-node-drift', message: 'Workspace Node identity changed before candidate preparation.' } };
       const context = runtime.resolveTaskEnvironmentContext(environmentRoot);
       if (!context?.executionReady) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task environment is not execution-ready.' } };
       const invocation = context.cliInvocation;
@@ -362,13 +372,14 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       const changedPathsText = gitText(environmentRoot, ['diff', '--name-only', `${targetRef}...HEAD`]) || '';
       const changedPaths = changedPathsText.split('\n').filter(Boolean).sort();
       const frozenCandidate = {
-        identity: digest({ ...identity, expectedTargetRef, changedPaths, change: run.identity.change }),
+        identity: digest({ ...identity, expectedTargetRef, changedPaths, change: run.identity.change, workspaceNodeIdentity: run.identity.workspaceNodeIdentity }),
         head: identity.head,
         tree: identity.tree,
         branch: identity.branch,
         expectedTargetRef,
         targetRef,
         changedPaths,
+        workspaceNodeIdentity: run.identity.workspaceNodeIdentity,
         frozenAt: new Date().toISOString(),
       };
       return { status: 'passed', operations, inputIdentity: run.identityDigest, outputIdentity: frozenCandidate.identity, output: { frozenCandidate, convergence: { status: converge.payload.status, receipt: converge.payload.receipt || null } } };
@@ -376,13 +387,15 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
 
     async verify({ run }) {
       const operations = [];
+      const workspaceNode = currentWorkspaceNode(run);
+      if (!workspaceNode.matches || run.frozenCandidate?.workspaceNodeIdentity !== run.identity.workspaceNodeIdentity) return { status: 'failed', failure: { operation: 'workspace-node', failureClass: 'upstream-candidate-defect', code: 'task-finish.workspace-node-drift', message: 'Workspace Node identity changed after candidate freeze.' } };
       const observed = observeFrozen(environmentRoot, run.frozenCandidate);
       if (!observed.matches) return { status: 'failed', failure: { operation: 'candidate-freeze', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-changed-after-freeze', message: 'Candidate identity changed after freeze.', findings: [observed.current] } };
 
       if (existingVerificationSummary && fs.existsSync(existingVerificationSummary)) {
         try {
           const evidence = JSON.parse(fs.readFileSync(existingVerificationSummary, 'utf8'));
-          if (evidence.status === 'passed' && evidence.requiredAssurance === run.identity.requiredAssurance && evidence.source?.candidateFingerprint === run.frozenCandidate.identity) {
+          if (evidence.status === 'passed' && evidence.requiredAssurance === run.identity.requiredAssurance && evidence.source?.candidateFingerprint === run.frozenCandidate.identity && evidence.workspaceNode?.identity?.digest === run.identity.workspaceNodeIdentity) {
             return { status: 'passed', inputIdentity: run.frozenCandidate.identity, outputIdentity: evidence.evidenceIdentity, output: { verification: { executions: 0, reused: true, status: 'passed', evidenceIdentity: evidence.evidenceIdentity, summaryPath: existingVerificationSummary, durationMs: evidence.durationMs ?? evidence.totalDurationMs ?? 0 } } };
           }
         } catch { /* execute fresh assurance */ }
@@ -417,11 +430,16 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
           },
         };
       }
+      if (payload?.workspaceNode?.identity?.digest !== run.identity.workspaceNodeIdentity) {
+        return { status: 'failed', operations, failure: { operation: 'verification', failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-node-identity-mismatch', message: 'Formal verification evidence does not match the frozen Workspace Node identity.', diagnostic: { expected: run.identity.workspaceNodeIdentity, actual: payload?.workspaceNode?.identity?.digest || null } } };
+      }
       return { status: 'passed', operations, inputIdentity: run.frozenCandidate.identity, outputIdentity: payload.evidenceIdentity, output: { verification: { executions: 1, reused: false, status: 'passed', evidenceIdentity: payload.evidenceIdentity, summaryPath: payload.evidenceReference, durationMs: payload.durationMs ?? payload.totalDurationMs ?? verified.observation.durationMs } } };
     },
 
     async deliver({ run }) {
       const operations = [];
+      const workspaceNode = currentWorkspaceNode(run);
+      if (!workspaceNode.matches || run.frozenCandidate?.workspaceNodeIdentity !== run.identity.workspaceNodeIdentity) return { status: 'failed', failure: { operation: 'workspace-node', failureClass: 'upstream-candidate-defect', code: 'task-finish.workspace-node-drift', message: 'Workspace Node identity changed before delivery.' } };
       const observed = observeFrozen(environmentRoot, run.frozenCandidate);
       if (!observed.matches) return { status: 'failed', failure: { operation: 'candidate-freeze', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-changed-after-freeze', message: 'Candidate identity changed before delivery.', findings: [observed.current] } };
       const retainedRoot = canonicalFinishWorkspaceRoot(environmentRoot);

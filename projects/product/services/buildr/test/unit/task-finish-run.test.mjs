@@ -31,6 +31,7 @@ function identity(root, task = 'finish-v2') {
     environmentRoot: root,
     workspaceRoot: root,
     requiredAssurance: 'affected',
+    workspaceNodeIdentity: 'sha256-workspace-node',
   };
 }
 
@@ -85,6 +86,43 @@ test('最终验证发现产品缺陷会终止收尾并返回研发流程', async
   assert.deepEqual(calls, ['preflight', 'prepare', 'verify']);
   assert.equal(result.phases.find((phase) => phase.id === 'deliver').attempts, 0);
   assert.equal(result.resume, null);
+});
+
+test('Finish 不复用缺少 Workspace Node identity 的旧验证证据', async (t) => {
+  const root = fixture(t);
+  const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  assert.equal(git('init', '-b', 'codex/node-evidence').status, 0);
+  assert.equal(git('config', 'user.name', 'Buildr Test').status, 0);
+  assert.equal(git('config', 'user.email', 'buildr-test@example.com').status, 0);
+  fs.writeFileSync(path.join(root, 'README.md'), '# candidate\n');
+  fs.writeFileSync(path.join(root, '.gitignore'), '.buildr/\n');
+  assert.equal(git('add', 'README.md', '.gitignore').status, 0);
+  assert.equal(git('commit', '-m', 'candidate').status, 0);
+  const head = git('rev-parse', 'HEAD').stdout.trim();
+  const tree = git('rev-parse', 'HEAD^{tree}').stdout.trim();
+  const summary = path.join(fixture(t), 'verification.json');
+  fs.writeFileSync(summary, JSON.stringify({
+    status: 'passed', requiredAssurance: 'affected', source: { candidateFingerprint: 'frozen-node-candidate' }, evidenceIdentity: 'sha256-old-evidence',
+  }));
+  const runtime = {
+    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' } }),
+    resolveTaskEnvironmentContext: () => ({ executionReady: false, blocked: { message: 'verification should execute instead of reusing legacy evidence' } }),
+  };
+  const run = createFinishRun({ root, runId: 'node-evidence', identity: identity(root, 'node-evidence') });
+  run.frozenCandidate = { identity: 'frozen-node-candidate', head, tree, branch: 'codex/node-evidence', workspaceNodeIdentity: 'sha256-workspace-node' };
+  const handlers = createTaskFinishProductHandlers({ runtime, root, existingVerificationSummary: summary });
+  const legacy = await handlers.verify({ run });
+  assert.equal(legacy.status, 'failed');
+  assert.equal(legacy.failure.code, 'task-finish.candidate-context-invalid');
+
+  fs.writeFileSync(summary, JSON.stringify({
+    status: 'passed', requiredAssurance: 'affected', source: { candidateFingerprint: 'frozen-node-candidate' }, evidenceIdentity: 'sha256-current-evidence',
+    workspaceNode: { identity: { digest: 'sha256-workspace-node' } },
+  }));
+  const reusable = await handlers.verify({ run });
+  assert.equal(reusable.status, 'passed');
+  assert.equal(reusable.output.verification.reused, true);
+  assert.equal(reusable.output.verification.executions, 0);
 });
 
 test('target race 由产品生成恢复令牌且不重跑已通过阶段', async (t) => {
@@ -155,6 +193,7 @@ test('preflight 一次聚合候选、环境、OpenSpec、知识、验证和 reta
     resolveTaskEnvironmentContext: () => ({ executionReady: false, blocked: { code: 'worktree.execution_cli_unavailable', message: 'CLI dependency is missing.' }, repositories: [{ branch: 'dev' }] }),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
     parseOpenSpecChangeDelta: () => { throw new Error('delta is invalid'); },
+    workspaceNodeExecution: () => ({ ready: false, status: 'missing', identity: null }),
   };
   const run = createFinishRun({ root, runId: 'aggregate', identity: identity(root, 'aggregate') });
   const result = await createTaskFinishProductHandlers({ runtime, root }).preflight({ run });
@@ -162,6 +201,7 @@ test('preflight 一次聚合候选、环境、OpenSpec、知识、验证和 reta
   const codes = new Set(result.checks.filter((check) => check.severity === 'error').map((check) => check.code));
   for (const code of [
     'worktree.execution_cli_unavailable',
+    'task-finish.workspace-node-drift',
     'task-finish.environment-cli-missing',
     'task-finish.tasks-incomplete',
     'task-finish.knowledge-impact-missing',

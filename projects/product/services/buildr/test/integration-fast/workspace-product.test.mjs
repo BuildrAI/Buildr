@@ -8,6 +8,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { readPreviewOwner, stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
 
@@ -65,6 +66,35 @@ test('init 生成 canonical Workspace，并让两个 Manifest 复用同一 UUID'
   assert.match(workspace.id, /^[0-9a-f-]{36}$/);
   assert.equal(workspace.id, skills.workspaceId);
   assert.equal(workspace.description, 'Demo workspace');
+  assert.equal(workspace.runtime.node.version, process.versions.node);
+});
+
+test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复且不改版本', (t) => {
+  const appData = path.join(temporaryRoot(t), 'node-app-data');
+  const root = path.join(temporaryRoot(t), 'workspace');
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+  let result = runBuildr(['init', '--target', root, '--name', 'node-recovery', '--description', 'Node recovery workspace'], { env });
+  assert.equal(result.status, 0, result.stderr);
+  const manifest = path.join(root, '.buildr', 'workspace.yml');
+  const declared = YAML.parse(fs.readFileSync(manifest, 'utf8')).runtime.node.version;
+  const before = fs.readFileSync(manifest, 'utf8');
+  const managed = workspaceNodeRuntimePaths(declared, { dataRoot: appData });
+  fs.rmSync(managed.root, { recursive: true, force: true });
+
+  result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json'], { env });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.ok(report.findings.some((finding) => finding.code === 'workspace.node_runtime_missing' && /sync/.test(finding.command)));
+  assert.equal(fs.existsSync(managed.node), false, 'doctor 必须保持只读');
+  assert.equal(fs.readFileSync(manifest, 'utf8'), before);
+
+  result = runBuildr(['sync', 'codex', '--target', root], { env });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.existsSync(managed.node), true);
+  assert.equal(YAML.parse(fs.readFileSync(manifest, 'utf8')).runtime.node.version, declared);
+  result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json'], { env });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(JSON.parse(result.stdout).workspaceNode.identity.version, declared);
 });
 
 test('未提供 description 时 init 写入 TODO，doctor 返回可见诊断', (t) => {
@@ -214,7 +244,7 @@ test('legacy migration 复用 Skills UUID，失败时回滚，identity 冲突零
 
   const conflictRoot = path.join(temporaryRoot(t), 'conflict');
   writeLegacyWorkspace(conflictRoot, crypto.randomUUID());
-  const canonical = runtime.renderWorkspaceManifest({ workspace: { id: crypto.randomUUID(), name: 'Conflict', description: 'Conflict workspace' } });
+  const canonical = runtime.renderWorkspaceManifest({ workspace: { id: crypto.randomUUID(), name: 'Conflict', description: 'Conflict workspace', runtime: { node: { version: process.versions.node } } } });
   fs.writeFileSync(path.join(conflictRoot, '.buildr', 'workspace.yml'), canonical);
   const conflictMetadataHash = sha256(path.join(conflictRoot, '.buildr', 'workspace.yml'));
   const conflictSkillsHash = sha256(path.join(conflictRoot, 'skills', 'manifest.yml'));

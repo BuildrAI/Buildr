@@ -79,6 +79,18 @@
 - 避免混用：不等于“代码大致完成”，也不表示 Task Finish 可以修复产品缺陷；收尾发现产品缺陷时必须退出并回到研发、审查和测试验证流程。
 - 来源：[Task Finish 执行规范](../specs/task-finish-execution/spec.md)
 
+## Workspace Node Version
+
+- 定义：Workspace 在 `.buildr/workspace.yml` 中明确采用的精确 Node.js toolchain 版本，由 `init` 首次确定，之后只能通过显式 Workspace 配置变更升级或降级。
+- 适用范围：Buildr CLI、npm、测试、Verification、Candidate 与 Finish 的统一 Node 选择。
+- 避免混用：不是 `package.json#engines.node` 的产品兼容范围，也不是 Agent runtime 可自行保存或决定的版本。
+
+## Workspace Node Identity
+
+- 定义：由 Workspace identity、精确 Node version、platform 与 architecture 组成的稳定摘要，用于绑定 task environment、验证 evidence 与 Finish frozen candidate。
+- 适用范围：检查本机受管 runtime 与 Workspace 声明是否一致，以及决定旧 evidence 是否可复用。
+- 避免混用：不包含某台机器的临时绝对路径，也不等于 Agent runtime identity。
+
 ## 受控同步（Controlled Sync）
 
 - 定义：active Change 在当前会话成功取得 pre-sync receipt 后，由 Agent 按 delta 更新 canonical specs、再通过 post-sync guard 的同步阶段。

@@ -17,7 +17,7 @@ description: 用户要求“收尾”、完成已验证任务，或自动执行 
 
 ## 调用前
 
-1. 确认当前目录属于 receipt-bound task environment，并读取 task/change、Project、Agent 与目标分支事实。
+1. 确认当前目录属于 receipt-bound task environment，并读取 task/change、Project、Agent、Workspace Node identity 与目标分支事实；`executionReady` 必须已核对 Node identity。
 2. 检查本任务的 asset observation；如存在，先调用 selected `buildr.task-asset-review@3` provider finalize。结果为 `awaiting-human` 时停止，不进入产品 Finish run。
 3. 确认用户没有排除 push、retained install 或 cleanup 等正常动作；排除项会改变交付语义时停止并说明当前执行器不支持拆分执行。
 
@@ -31,7 +31,7 @@ description: 用户要求“收尾”、完成已验证任务，或自动执行 
 buildr task finish run --change <change-id> --project <project-code> --target <task-environment> --json
 ```
 
-只有 Project policy 要求完整候选保证时增加 `--required-assurance candidate`。只有已有验证摘要明确绑定同一 frozen candidate identity 与 assurance 时才传 `--verification-summary <file>`；否则让产品执行一次最终 assurance。
+只有 Project policy 要求完整候选保证时增加 `--required-assurance candidate`。只有已有验证摘要明确绑定同一 frozen candidate identity、Workspace Node identity 与 assurance 时才传 `--verification-summary <file>`；否则让产品执行一次最终 assurance。
 
 产品依次执行：
 
@@ -60,6 +60,6 @@ buildr task finish inspect --run <run-id> --target <workspace-or-task-environmen
 ## 完成标准
 
 - 五个固定阶段全部 `passed` 或 `not-applicable`；
-- frozen candidate 与正式验证、交付和 cleanup receipt identity 一致；
+- frozen candidate 与正式验证、交付和 cleanup receipt identity 一致，且 Workspace Node identity 从 freeze 到 deliver 未漂移；
 - 正常路径 `canonicalCliInvocations = 1`、`agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions <= 1`；
 - 没有把研发返工、修复或重新验证计入 Finish 时间。

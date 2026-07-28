@@ -29,7 +29,7 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 
 | 命令 | 用途 |
 |---|---|
-| `buildr init [--agent <agent>]` | 初始化 Organization/Root；传入 `--agent` 时一次完成 runtime 与最终 doctor，不传时只写源资产。 |
+| `buildr init [--agent <agent>]` | 初始化 Organization/Root，写入当前受支持 CLI 的精确 Workspace Node version 并准备受管 runtime；传入 `--agent` 时一次完成 Agent runtime 与最终 doctor。 |
 | `buildr app [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
 | `buildr app preview start|list|stop` | Agent 为 task environment 启动、查看或停止隔离的开发预览；owner 绑定 task id、environment root、Product checkout 和 repository set，不替换默认应用或 `Buildr Dev.app`。 |
 | `buildr app launcher install/status/uninstall` | 安装、诊断或卸载 release/development launcher；使用新 staging 验证后切换，保留 Workspace Registry 和源资产。 |
@@ -37,8 +37,8 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
 | `buildr worktree create <task-id> --agent <agent> --branch <branch> [--include ...]` | 创建或幂等复用 `<workspace>/.worktrees/<task-id>`；默认根仓库，重复 `--include project:<code>` / `service:<project>/<service>` 加入 nested independent Git repositories；返回与 receipt 绑定的绝对 `cliInvocation`。 |
 | `buildr worktree cleanup <task-id> --agent <agent> --integrated-ref <selector>=<ref> ...` | 从 retained Workspace 按 receipt 清理本地任务环境；删除前统一核对 owner、完整成员、clean 与每仓 integrated ref，按 nested-first 删除本地 worktree、任务分支和 receipts，不删除远端或强制丢弃工作。 |
-| `buildr worktree inspect/context/adopt` | 按 receipt 检查完整 repository set、CLI source/invocation 和 runtime identity；`context` 返回绝对 command 与固定 args prefix，调用方不根据 cwd 或产品相对位置拼入口。专项 runtime 机制验收才使用 host-visible session adoption evidence；任一绑定不匹配时 fail closed。 |
-| `buildr verification run --project <code> --level affected\|candidate` | 执行 Project `verification.yml`：按依赖与显式 supersedes 构造 DAG，并发运行资源兼容能力，以 Git common-dir lease 协调跨 task 容量，返回候选绑定的 `buildr.verification-run/v1` evidence。 |
+| `buildr worktree inspect/context/adopt` | 按 receipt 检查完整 repository set、CLI source/invocation、runtime projection 和 Workspace Node identity；`context` 返回绝对 command 与固定 args prefix，调用方不根据 cwd 或产品相对位置拼入口。专项 runtime 机制验收才使用 host-visible session adoption evidence；任一绑定不匹配时 fail closed。 |
+| `buildr verification run --project <code> --level affected\|candidate` | 使用 Workspace 受管 Node 执行 Project `verification.yml`：按依赖与显式 supersedes 构造 DAG，并发运行资源兼容能力，以 Git common-dir lease 协调跨 task 容量，返回同时绑定候选与 Workspace Node identity 的 evidence。 |
 | `buildr task finish run\|inspect` | `run` 从 receipt-bound task environment 单次执行 `preflight → prepare → verify → deliver → cleanup`；产品内部完成 OpenSpec/runtime 收敛、提交与 rebase、候选冻结、至多一次 required assurance、fenced fast-forward/push、retained sync/install 和 task-owned cleanup。产品缺陷返回具体 phase/check 并结束当前 run；只有 target、network、retained 或 cleanup 暂态阻塞接受产品生成的 resume token。`inspect` 只读返回五阶段、primary failure、交付/完成证据和效率指标。当前客户端拒绝旧 action、caller evidence/fingerprint、repair authorization 与 recovery manifest，直接使用唯一 canonical run store，不创建版本化运行目录。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
@@ -68,9 +68,9 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 | 命令 | 用途 |
 |---|---|
 | `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
-| `buildr doctor` | 聚合 workspace、registries、Components 和 Commands；未传 `--agent` 时只诊断有受管证据的 runtime inventory，Agent 默认传 `--agent` 与 `--json` 获得当前 runtime readiness。 |
+| `buildr doctor` | 只读聚合 workspace、Workspace Node 声明/runtime/CLI/npm/验证环境、registries、Components 和 Commands；Node 缺失或漂移时建议运行 `sync`，不直接修复。 |
 | `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力并准备完整当前 Agent runtime；不更新 CLI，也不隐式执行 Git 更新。 |
+| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime；不改变已有 Node 声明、不更新 CLI，也不隐式执行 Git 更新。 |
 | `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
 | `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |

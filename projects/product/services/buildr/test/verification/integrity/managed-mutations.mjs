@@ -32,6 +32,9 @@ const allowed = new Map([
     'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
+  ['src/infrastructure/filesystem/workspace-node-runtime.mjs', new Set([
+    'downloadFile', 'installFromOfficial', 'installFromCurrent', 'ensureWorkspaceNodeRuntime',
+  ])],
   ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
     'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
   ])],

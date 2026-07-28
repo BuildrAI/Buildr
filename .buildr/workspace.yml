@@ -2,5 +2,8 @@ schemaVersion: buildr.workspace/v1
 id: f2f40b71-2382-5906-82bd-76a7927b59f3
 name: Buildr
 description: Buildr 产品的自举 Workspace，用 Buildr 开发 Buildr。
+runtime:
+  node:
+    version: 23.10.0
 kind: organization
 profile: team

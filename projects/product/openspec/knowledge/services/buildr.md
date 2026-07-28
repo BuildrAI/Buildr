@@ -18,9 +18,11 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 - Task environment 使用本机 environment receipt、repository membership/identity、allowed roots、明确 target/workdir 与 receipt-bound CLI/runtime projection 建立 execution binding。CLI binding 同时保存源码身份和结构化绝对 invocation；自举 workspace 的 invocation 指向 task checkout 内已有 Node-aware bridge，普通消费 workspace 使用已声明的 external-product Node/entry，不假设产品位于 Workspace 固定目录。Agent 和标准消费者只追加子命令参数，不再根据 cwd 或 `cliSource` 拼入口。
 - 普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence；发布资产已投射到 Agent runtime。`worktree adopt` 仅在任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时保存同时匹配 session root 与 handle 的 `agent-attested` evidence，Buildr 不内省或自动 handoff Agent host。
 
+Workspace Node identity 进入 task environment receipt/context 与 `executionReady`，并绑定 verification evidence、Finish frozen candidate、resume token 与 reuse 判断。Agent runtime 只能消费该 identity，不能选择或保存 Node version；验证 executor 为 node、npm、测试和子进程统一注入受管环境，freeze、verify、resume 或 deliver 前发现漂移时终止。
+
 ## 运行与验证
 
-Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。开发 checkout 的 `projects/product/buildr` 会优先使用显式 `BUILDR_NODE`，否则从 PATH 和 Agent runtime 相邻的 bundled 位置选择 Node 20+；找不到兼容 runtime 时会提示最低版本以及 override/PATH 恢复动作。npm 安装入口继续由 package `engines.node` 约束。
+Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。Workspace 在 `.buildr/workspace.yml` 维护精确 `runtime.node.version`；`init` 采用当前受支持 CLI Node 并准备本机受管 runtime，`sync` 按声明恢复且不改版本，`doctor` 只读核对声明、Node/npm/CLI/验证环境并建议 `sync`。开发与安装入口的普通命令固定使用该 runtime；仅 `init`、`doctor`、`sync` 可在 runtime 缺失时使用兼容 bootstrap Node。npm package 的 `engines.node` 继续只表达产品兼容范围。
 
 验证分为静态/package、unit、fast integration、active/archive lifecycle、browser integration 与完整 Candidate，并输出 identity-bound timing evidence。`buildr verification run --project <code> --level affected|candidate` 是普通 Workspace 和 Task Finish provider 共用的正式执行入口，随 npm `src/` runtime 发布，不依赖 checkout-only tests。Project 可在 `verification.yml` 登记 `isolated`、`namespaced`、`coordinated`、`external` 四类验证资源并由能力引用；多个 task verification 进程通过 Git common-dir 下的 Workspace 共享容量槽协调 `coordinated` 资源，租约以 task/environment/run/token 归属、heartbeat、expiry 和原子接管保护，等待、恢复与精确释放进入 `buildr.verification-run/v1` evidence。该机制只协调验证执行，不调度 Agent 或任务。
 

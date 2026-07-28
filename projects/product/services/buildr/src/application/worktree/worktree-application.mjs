@@ -731,6 +731,10 @@ export function registerWorktreeApplication(runtime) {
       if (!expectedRuntime.projectionReady) {
         return printCreateResult(blockedResult(base, 'worktree.runtime_projection_not_ready', 'Checkout-local runtime projection is not ready for task execution.', [`Run buildr doctor --agent ${agent} --target ${environmentRoot} --json`]), json);
       }
+      const workspaceNode = runtime.workspaceNodeExecution(environmentRoot);
+      if (!workspaceNode.ready) {
+        return printCreateResult(blockedResult(base, 'worktree.workspace_node_not_ready', 'Workspace Node runtime is not ready for task execution.', [`Run buildr sync ${agent} --target ${environmentRoot}`]), json);
+      }
       receipt = {
         schemaVersion: RECEIPT_SCHEMA,
         taskId,
@@ -741,6 +745,7 @@ export function registerWorktreeApplication(runtime) {
         state: 'ready',
         repositories: repositoryResults,
         runtimeExpectation: expectedRuntime,
+        workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable },
         executionCli: expectedExecutionCliEvidence(workspaceRoot, environmentRoot),
         isolation: isolation(),
         updatedAt: new Date().toISOString(),
@@ -771,8 +776,10 @@ export function registerWorktreeApplication(runtime) {
           cliIdentity: receipt.executionCli.identity,
           checkoutLocal: receipt.executionCli.sourceKind === 'environment-local',
           runtimeProjectionIdentity: expectedRuntime.projectionIdentity,
+          workspaceNode: receipt.workspaceNode,
         } : null,
         runtimeExpectation: expectedRuntime,
+        workspaceNode: receipt.workspaceNode,
         adoption: { status: 'not-required', receipt: null, currentSessionMatch: null },
         blocked: cliProbe.status === 'passed' ? null : { code: 'worktree.execution_cli_unavailable', message: 'Receipt-bound CLI exists but failed the executable version probe.' },
         nextActions: cliProbe.status === 'passed' ? [] : ['Install the task checkout product dependencies, then rerun worktree context with the receipt-bound CLI.'],
@@ -854,7 +861,15 @@ export function registerWorktreeApplication(runtime) {
     const cliExecutable = cliProbe?.status === 'passed';
     const runtimeIdentityMatches = Boolean(expectedRuntime && (!receipt.runtimeExpectation
       || receipt.runtimeExpectation.projectionIdentity === expectedRuntime.projectionIdentity));
-    const executionReady = ready && expectedRuntime?.projectionReady === true && runtimeIdentityMatches && cliIdentityMatches && cliExecutable;
+    const workspaceNode = ready ? runtime.workspaceNodeExecution(receipt.environmentRoot) : null;
+    // Receipts created before Workspace Node governance are accepted once and
+    // bound to the currently declared identity in the returned execution context.
+    // Every newly created or reused environment writes the identity explicitly.
+    const legacyWorkspaceNodeReceipt = !receipt.workspaceNode;
+    const workspaceNodeIdentityMatches = Boolean(workspaceNode?.ready && (
+      legacyWorkspaceNodeReceipt || receipt.workspaceNode.identity?.digest === workspaceNode.identity?.digest
+    ));
+    const executionReady = ready && expectedRuntime?.projectionReady === true && runtimeIdentityMatches && workspaceNodeIdentityMatches && cliIdentityMatches && cliExecutable;
     const receiptCliSourceMatches = receipt.executionCli?.source === currentCli.source;
     const rootRepository = receipt.repositories.find((item) => item.selector === 'workspace') || receipt.repositories[0];
     const refreshCliBindingAction = receiptCliSourceMatches && rootRepository
@@ -875,11 +890,14 @@ export function registerWorktreeApplication(runtime) {
       cliIdentityMatches,
       cliProbe,
       runtimeIdentityMatches,
+      workspaceNodeIdentityMatches,
+      legacyWorkspaceNodeReceipt,
+      workspaceNode: workspaceNode ? { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable, status: workspaceNode.status } : null,
       state: ready ? 'ready' : 'blocked',
       ready,
       executionReady,
-      executionBinding: executionReady ? { assurance: 'buildr-verified', target: requestPath, workdir: membership.checkoutPath, membership: membership.selector, cliSource, cliInvocation, cliSourceKind: currentCli.sourceKind, cliIdentity: currentCli.identity, checkoutLocal: cliWithinEnvironment, runtimeProjectionIdentity: expectedRuntime.projectionIdentity } : null,
-      environmentEvidence: expectedRuntime ? { assurance: 'buildr-verified', planDigest: receipt.planDigest, runtimeExpectation: expectedRuntime } : null,
+      executionBinding: executionReady ? { assurance: 'buildr-verified', target: requestPath, workdir: membership.checkoutPath, membership: membership.selector, cliSource, cliInvocation, cliSourceKind: currentCli.sourceKind, cliIdentity: currentCli.identity, checkoutLocal: cliWithinEnvironment, runtimeProjectionIdentity: expectedRuntime.projectionIdentity, workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable } } : null,
+      environmentEvidence: expectedRuntime ? { assurance: 'buildr-verified', planDigest: receipt.planDigest, runtimeExpectation: expectedRuntime, workspaceNode: workspaceNode ? { identity: workspaceNode.identity, executable: workspaceNode.executable, status: workspaceNode.status } : null } : null,
       sessionEvidence: adoption.receipt?.sessionEvidence || null,
       adoption,
       isolation: receipt.isolation || isolation(),
@@ -887,14 +905,18 @@ export function registerWorktreeApplication(runtime) {
         ? { code: membership ? 'worktree.context_identity_mismatch' : 'worktree.context_path_mismatch', message: membership ? 'One or more task environment repository identities do not match the receipt.' : 'Requested path is outside the task environment repository set.' }
         : !runtimeIdentityMatches
           ? { code: 'worktree.execution_runtime_stale', message: 'Checkout-local runtime projection identity no longer matches the task environment receipt.' }
+          : !workspaceNodeIdentityMatches
+            ? { code: 'worktree.execution_workspace_node_stale', message: 'Workspace Node identity or executable no longer matches the task environment receipt.' }
           : !cliIdentityMatches
             ? { code: 'worktree.execution_cli_mismatch', message: 'The current Buildr CLI identity does not match the task environment receipt.' }
             : !cliExecutable
               ? { code: 'worktree.execution_cli_unavailable', message: 'Receipt-bound CLI exists but failed the executable version probe.' }
             : null,
-      nextActions: ready && runtimeIdentityMatches && cliIdentityMatches && cliExecutable
+      nextActions: ready && runtimeIdentityMatches && workspaceNodeIdentityMatches && cliIdentityMatches && cliExecutable
         ? []
-        : [!cliExecutable && cliIdentityMatches
+        : [!workspaceNodeIdentityMatches
+          ? `Run buildr sync ${receipt.agent} --target ${receipt.environmentRoot}, then reuse the task environment to refresh its receipt.`
+          : !cliExecutable && cliIdentityMatches
           ? 'Install the task checkout product dependencies, then rerun worktree context with the receipt-bound CLI.'
           : refreshCliBindingAction || `Run buildr worktree inspect ${receipt.taskId} --target ${receipt.workspaceRoot} --json`],
     };
