@@ -43,7 +43,7 @@ export function registerTaskFinishApplication(runtime) {
       if (!context?.taskId || !context.environmentRoot || !context.workspaceRoot) throw inputError('task_finish.not_task_environment', 'Task Finish run requires a receipt-bound task environment.', 'run');
       const change = optionValue(command.args, '--change', null);
       const project = optionValue(command.args, '--project', null);
-      if (!change || !project) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --change and --project.', 'run');
+      if (!project) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --project; --change is required only for Change candidates.', 'run');
       const repository = context.repositories?.find((entry) => entry.selector === context.membership?.selector) || context.repositories?.[0] || {};
       const workspaceNodeIdentity = context.executionBinding?.workspaceNode?.identity?.digest;
       if (!workspaceNodeIdentity) throw inputError('task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.', 'run');
@@ -55,6 +55,7 @@ export function registerTaskFinishApplication(runtime) {
         resumeToken,
         identity: {
           task: context.taskId,
+          candidateKind: change ? 'change' : 'code-only',
           change,
           project,
           agent: optionValue(command.args, '--agent', context.owner),

@@ -112,13 +112,18 @@ function phase(id) {
 }
 
 function normalizeIdentity(input) {
-  const required = ['task', 'change', 'project', 'agent', 'targetBranch', 'environmentRoot', 'workspaceRoot'];
+  const required = ['task', 'project', 'agent', 'targetBranch', 'environmentRoot', 'workspaceRoot'];
   for (const field of required) {
     if (typeof input?.[field] !== 'string' || !input[field].trim()) throw new Error(`Task Finish requires ${field}.`);
   }
+  const candidateKind = input.candidateKind || (typeof input.change === 'string' && input.change.trim() ? 'change' : 'code-only');
+  if (!['change', 'code-only'].includes(candidateKind)) throw new Error(`Unsupported Task Finish candidate kind: ${candidateKind}`);
+  if (candidateKind === 'change' && (typeof input.change !== 'string' || !input.change.trim())) throw new Error('Task Finish change candidate requires change.');
+  if (candidateKind === 'code-only' && input.change != null && String(input.change).trim()) throw new Error('Task Finish code-only candidate cannot declare change.');
   return {
     task: input.task,
-    change: input.change,
+    candidateKind,
+    change: candidateKind === 'change' ? input.change : null,
     project: input.project,
     agent: input.agent,
     targetBranch: input.targetBranch,
@@ -171,6 +176,11 @@ export function readFinishRun({ root, runId }) {
   if (!Array.isArray(run.phases) || FINISH_PHASES.some((id) => !run.phases.some((item) => item.id === id))) {
     throw new Error(`Task Finish run has an invalid phase model: ${runId}`);
   }
+  if (!['change', 'code-only'].includes(run.identity?.candidateKind)
+    || (run.identity.candidateKind === 'change' && (typeof run.identity.change !== 'string' || !run.identity.change))
+    || (run.identity.candidateKind === 'code-only' && run.identity.change !== null)) {
+    throw new Error(`Task Finish run has an invalid candidate identity: ${runId}`);
+  }
   return run;
 }
 
@@ -199,7 +209,7 @@ function resumableRunCandidates(root, identity) {
 export function resolveFinishRun({ root, identity, runId = null, resumeToken = null, clock = Date.now }) {
   if (runId) {
     const run = readFinishRun({ root, runId });
-    if (run.identityDigest !== sha256(normalizeIdentity(identity))) throw new Error('Task Finish run identity does not match the requested task/change/target.');
+    if (run.identityDigest !== sha256(normalizeIdentity(identity))) throw new Error('Task Finish run identity does not match the requested task/candidate/target.');
     if (resumeToken && run.resume?.token !== resumeToken) throw new Error('Task Finish resume token does not match the current blocked state.');
     return run;
   }

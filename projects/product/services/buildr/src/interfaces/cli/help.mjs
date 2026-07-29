@@ -23,7 +23,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
     console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--output <file>] [--json]');
-    console.error('  buildr task finish run --change <id> --project <code> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--json]');
+    console.error('  buildr task finish run --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--json]');
     console.error('  buildr task finish inspect --run <id> [--target <workspace-or-task-environment>] [--json]');
     console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
@@ -410,7 +410,7 @@ export function registerCommandHelp(runtime) {
 
   const finishHelp = {
     inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <workspace-or-task-environment>] [--detail <compact|full>] [--json]', required: '--run。', exclusive: '无。', surface: 'canonical Workspace 中的 durable finish run，只读。', effects: '无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。' },
-    run: { usage: 'Usage: buildr task finish run --change <id> --project <code> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--detail <compact|full>] [--json]', required: '首次运行需要 --change、--project 和 receipt-bound task environment；target branch 默认来自环境 start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'task checkout、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver、cleanup；产品缺陷终止 run 并返回 task-development，不在收尾中修复。' },
+    run: { usage: 'Usage: buildr task finish run --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--detail <compact|full>] [--json]', required: '首次运行需要 --project 和 receipt-bound task environment；task identity 来自 environment receipt，--change 只对 Change 候选必需，省略时创建 code-only 候选；target branch 默认来自环境 start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'task checkout、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver、cleanup；产品缺陷终止 run 并返回 task-development，不在收尾中修复。' },
   };
   for (const [action, help] of Object.entries(finishHelp)) HELP_TOPICS[`task finish ${action}`] = [
     help.usage,

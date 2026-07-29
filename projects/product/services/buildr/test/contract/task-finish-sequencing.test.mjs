@@ -12,12 +12,26 @@ const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'ut
 const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v2.md');
+const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
+const packageManifest = read('package/manifest.yml');
+const workspaceSkills = read('package/targets/workspace/skills/manifest.yml');
 
 test('Task Finish 新协议只有五阶段且产品缺陷退出收尾', () => {
   assert.deepEqual(FINISH_PHASES, ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
   assert.match(finish, /“修复产品缺陷”不是收尾动作/);
   assert.match(finish, /不得在当前 run 修改实现.*重新验证/);
   assert.match(finish, /nextWorkflow: task-development/);
+});
+
+test('Task Finish 同时治理 code-only 产品 run 与 retained metadata-only handoff', () => {
+  for (const source of [finish, finishContract]) {
+    for (const phrase of ['code-only', 'metadata-only', 'buildr.git-single-operation@1', 'git add -A', 'git-single-operation-handoff']) assert.ok(source.includes(phrase), phrase);
+  }
+  assert.match(finish, /--project <project-code> \[--change <change-id>\]/);
+  assert.match(finishContract, /普通产品 run 不依赖该 provider/);
+  for (const manifest of [packageManifest, workspaceSkills]) {
+    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.git-single-operation[\s\S]*version: 1[\s\S]*mode: optional/);
+  }
 });
 
 test('verification evidence 表达 archive-sensitive 与 supersession', () => {

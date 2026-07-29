@@ -109,7 +109,10 @@ test('随包 manifest 原子登记 contract、provider、binding 与 consumer', 
   assert.match(packagedSkill.description, /用户无需主动点名本 Skill/);
   const finish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-verification'), false);
-  assert.deepEqual(finish.requires, [{ capability: 'buildr.task-asset-review', version: 3, mode: 'optional' }]);
+  assert.deepEqual(finish.requires, [
+    { capability: 'buildr.git-single-operation', version: 1, mode: 'optional' },
+    { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
+  ]);
 
   assert.equal(workspaceManifest.bindings.find((item) => item.capability === 'buildr.task-verification').provider, 'task-verification');
   const workspaceSkill = workspaceManifest.skills.find((item) => item.id === 'task-verification');

@@ -65,7 +65,7 @@ infrastructure/runtime/render-claude-code.mjs
 
 CLI command 只在 `src/interfaces/cli/registry.mjs` 登记一次。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
 
-Task Finish 的 CLI adapter 只解析 `run|inspect`。`task-finish-run.mjs` 持有唯一 canonical run store、freeze、产品 resume token 与结果投射，`task-finish-product-executor.mjs` 组合确定性的 OpenSpec、verification、Git、runtime 和 worktree 动作；没有 action registry、caller completion、typed recovery parser 或旧协议 reader。执行动作记录 cwd、exit、duration、有界输出与 digest，顶层结果直接投射具体 primary failure。当前实现直接替换旧执行器，不建立并行版本目录或兼容分支。
+Task Finish 的 CLI adapter 只解析 `run|inspect`。首次 run 从 environment receipt 取得 task identity，要求 Project，并按可选 Change 形成 `candidateKind: change|code-only`；不会接受第二份 caller task identity。`task-finish-run.mjs` 持有唯一 canonical run store、freeze、产品 resume token 与结果投射，`task-finish-product-executor.mjs` 对 Change 条件执行 OpenSpec check/convergence，并为两类候选组合 verification、Git、runtime 和 worktree 动作。没有 action registry、caller completion、typed recovery parser 或旧协议 reader。执行动作记录 cwd、exit、duration、有界输出与 digest，顶层结果直接投射具体 primary failure。当前实现直接替换旧执行器，不建立并行版本目录或兼容分支；retained metadata-only 的精确 Git handoff 属于 Task Finish Skill，不进入 CLI 产品 executor。
 
 ## Product verifier 与仓库 verification
 

@@ -81,5 +81,7 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   const helpText = `${runHelp.stdout}\n${inspectHelp.stdout}`;
   assert.match(helpText, /task finish run/);
   assert.match(helpText, /task finish inspect/);
+  assert.match(helpText, /--project <code> \[--change <id>\]/);
+  assert.match(helpText, /--change 只对 Change 候选必需/);
   assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);
 });

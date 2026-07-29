@@ -1,0 +1,27 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: support-code-only-task-finish
+operation: reconcile
+treeIdentity: implementation-working-tree@b971e515918d581d3b2111a85873d2b531c802f1614d39f16d88e65c5ed35b8f
+impacts:
+  - type: brief
+    target: openspec/changes/support-code-only-task-finish/brief.md
+    reason: Change 需要人类可读的候选分类、核心流程、安全取舍和验收摘要
+    status: updated
+    sourceIdentities:
+      - openspec/changes/support-code-only-task-finish/proposal.md
+      - openspec/changes/support-code-only-task-finish/design.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: code-only environment 与 retained metadata-only 的收尾分支改变现有 Change-only 流程说明
+    status: updated
+    sourceIdentities:
+      - openspec/changes/support-code-only-task-finish/specs/agent-task-workflows/spec.md
+      - openspec/changes/support-code-only-task-finish/specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Finish run identity、条件式 OpenSpec operation 和 CLI 输入发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/support-code-only-task-finish/specs/task-finish-execution/spec.md
+      - openspec/changes/support-code-only-task-finish/specs/cli-product-surface/spec.md
+unresolvedItems: []

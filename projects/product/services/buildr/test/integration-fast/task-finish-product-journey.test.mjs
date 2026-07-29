@@ -164,3 +164,94 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.candidate.head);
   assert.equal(fs.existsSync(result.completion.receipt), true);
 });
+
+test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-code-only-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const seed = path.join(fixture, 'seed');
+  const remote = path.join(fixture, 'remote.git');
+  const retained = path.join(fixture, 'workspace');
+  fs.mkdirSync(seed);
+  command(seed, 'git', ['init', '-b', 'dev']);
+  command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
+  fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
+  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v1\ncapabilities:\n  - id: product.affected\n');
+  fs.writeFileSync(path.join(seed, 'README.md'), '# Code-only Task Finish journey\n');
+  command(seed, 'git', ['add', '-A']);
+  command(seed, 'git', ['commit', '-m', 'baseline']);
+  command(fixture, 'git', ['init', '--bare', remote]);
+  command(seed, 'git', ['remote', 'add', 'origin', remote]);
+  command(seed, 'git', ['push', '-u', 'origin', 'dev']);
+  command(fixture, 'git', ['clone', '--branch', 'dev', remote, retained]);
+  command(retained, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(retained, 'git', ['config', 'user.email', 'journey@example.com']);
+
+  const task = 'finish-code-only-task';
+  const environmentRoot = path.join(retained, '.worktrees', task);
+  command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
+  fs.writeFileSync(path.join(environmentRoot, 'code-only.txt'), 'finished without a Change\n');
+  command(environmentRoot, 'git', ['add', 'code-only.txt']);
+  command(environmentRoot, 'git', ['commit', '-m', 'implement code-only candidate']);
+
+  const hostileBin = path.join(fixture, 'hostile-bin');
+  writeExecutable(path.join(hostileBin, 'node'), '#!/bin/sh\necho "unexpected incompatible Node" >&2\nexit 91\n');
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
+  t.after(() => { process.env.PATH = originalPath; });
+  const runtime = {
+    resolveTaskEnvironmentContext: () => ({
+      taskId: task,
+      owner: 'codex',
+      executionReady: true,
+      environmentRoot,
+      workspaceRoot: retained,
+      environmentEvidence: { receipt: 'fixture-receipt', cli: 'fixture-cli' },
+      membership: { checkoutPath: environmentRoot, selector: 'workspace' },
+      repositories: [{ selector: 'workspace', branch: `codex/${task}`, remote: 'origin', startPoint: 'dev' }],
+      cliInvocation: { command: path.join(environmentRoot, 'projects', 'product', 'buildr'), argsPrefix: [] },
+    }),
+    readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
+    parseOpenSpecChangeDelta: () => { throw new Error('OpenSpec delta parser must not run'); },
+    parseOpenSpecProposalCapabilities: () => { throw new Error('OpenSpec proposal parser must not run'); },
+    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
+  };
+  const run = createFinishRun({
+    root: environmentRoot,
+    runId: 'product-code-only-journey',
+    identity: {
+      task,
+      candidateKind: 'code-only',
+      change: null,
+      project: 'product',
+      agent: 'codex',
+      targetBranch: 'dev',
+      remote: 'origin',
+      environmentRoot,
+      workspaceRoot: retained,
+      requiredAssurance: 'affected',
+      workspaceNodeIdentity: 'sha256-workspace-node',
+    },
+  });
+  const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot, openspecCommand: path.join(fixture, 'must-not-run-openspec') });
+  const result = await executeFinishRun({ root: environmentRoot, run, handlers });
+
+  assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
+  assert.equal(result.identity.candidateKind, 'code-only');
+  assert.equal(result.identity.change, null);
+  assert.equal(result.candidate.task, task);
+  assert.equal(result.candidate.candidateKind, 'code-only');
+  assert.equal(result.candidate.change, null);
+  assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
+    ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
+  ]);
+  const operations = result.phases.flatMap((phase) => phase.operations);
+  assert.equal(operations.some((operation) => operation.id.includes('openspec') || operation.args?.includes('openspec')), false);
+  assert.equal(fs.existsSync(environmentRoot), false);
+  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.candidate.head);
+  const completion = JSON.parse(fs.readFileSync(result.completion.receipt, 'utf8'));
+  assert.equal(completion.candidateKind, 'code-only');
+  assert.equal(completion.change, null);
+  assert.equal(completion.workspaceNodeIdentity, 'sha256-workspace-node');
+});

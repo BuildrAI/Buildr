@@ -227,31 +227,42 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       let changeRoot = null;
       try {
         ({ root: projectRoot } = projectRecord(runtime, run.identity.workspaceRoot, environmentRoot, run.identity.project));
-        const resolvedChange = finishChangeRoot(projectRoot, run.identity.change);
-        changeRoot = resolvedChange?.root || null;
-        if (!changeRoot) addFinding(findings, 'change', 'error', 'task-finish.change-unavailable', `Active or uniquely archived Change is unavailable: ${run.identity.change}`);
-        else {
-          checkChangeTasks(changeRoot, findings);
-          checkKnowledgeImpact(changeRoot, findings);
-          const invocation = context?.cliInvocation;
-          const validated = resolvedChange.archived
-            ? runJsonCommand('preflight-openspec-audit', invocation.command, invocationArgs(invocation, ['openspec', 'audit', run.identity.change, '--project', run.identity.project, '--target', environmentRoot, '--json']), environmentRoot)
-            : runJsonCommand('preflight-openspec-validate', openspecCommand, ['validate', run.identity.change, '--strict', '--json'], projectRoot);
-          operations.push(validated.observation);
-          const validationFailed = validated.result.status !== 0 || (resolvedChange.archived ? validated.payload?.status !== 'passed' : validated.payload?.summary?.failed > 0);
-          if (validationFailed) addFinding(findings, 'openspec-validation', 'error', 'task-finish.openspec-invalid', resolvedChange.archived ? 'Archived OpenSpec convergence audit failed.' : 'OpenSpec strict validation failed.', { exitCode: validated.result.status, diagnostic: validated.payload?.diagnostic || validated.observation.stderr });
-          else addFinding(findings, 'openspec-validation', 'ok', 'task-finish.openspec-valid', resolvedChange.archived ? 'Archived OpenSpec convergence audit passed.' : 'OpenSpec strict validation passed.');
-          try {
-            const delta = runtime.parseOpenSpecChangeDelta(changeRoot);
-            const proposal = runtime.parseOpenSpecProposalCapabilities(changeRoot);
-            const result = runtime.createOpenSpecContractResult('preflight', run.identity.change, run.identity.project, 'current');
-            if (!resolvedChange.archived) runtime.detectOpenSpecActiveConflicts(projectRoot, run.identity.change, delta, result);
-            runtime.validateOpenSpecProposalAlignment(projectRoot, changeRoot, delta, null, result);
-            if (!runtime.finishOpenSpecContractResult(result).ok) addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-blocked', 'OpenSpec convergence pure plan is blocked.', { conflicts: result.conflicts, findings: result.findings });
-            else addFinding(findings, 'openspec-plan', 'ok', 'task-finish.openspec-plan-ready', `OpenSpec delta declares ${proposal.modified.size + proposal.new.size} capability change(s).`);
-          } catch (error) {
-            addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-invalid', error.message);
+        if (run.identity.candidateKind === 'change') {
+          const resolvedChange = finishChangeRoot(projectRoot, run.identity.change);
+          changeRoot = resolvedChange?.root || null;
+          if (!changeRoot) addFinding(findings, 'change', 'error', 'task-finish.change-unavailable', `Active or uniquely archived Change is unavailable: ${run.identity.change}`);
+          else {
+            addFinding(findings, 'change', 'ok', 'task-finish.change-ready', `Change ${run.identity.change} is available.`);
+            checkChangeTasks(changeRoot, findings);
+            checkKnowledgeImpact(changeRoot, findings);
+            const invocation = context?.cliInvocation;
+            const validated = resolvedChange.archived
+              ? runJsonCommand('preflight-openspec-audit', invocation.command, invocationArgs(invocation, ['openspec', 'audit', run.identity.change, '--project', run.identity.project, '--target', environmentRoot, '--json']), environmentRoot)
+              : runJsonCommand('preflight-openspec-validate', openspecCommand, ['validate', run.identity.change, '--strict', '--json'], projectRoot);
+            operations.push(validated.observation);
+            const validationFailed = validated.result.status !== 0 || (resolvedChange.archived ? validated.payload?.status !== 'passed' : validated.payload?.summary?.failed > 0);
+            if (validationFailed) addFinding(findings, 'openspec-validation', 'error', 'task-finish.openspec-invalid', resolvedChange.archived ? 'Archived OpenSpec convergence audit failed.' : 'OpenSpec strict validation failed.', { exitCode: validated.result.status, diagnostic: validated.payload?.diagnostic || validated.observation.stderr });
+            else addFinding(findings, 'openspec-validation', 'ok', 'task-finish.openspec-valid', resolvedChange.archived ? 'Archived OpenSpec convergence audit passed.' : 'OpenSpec strict validation passed.');
+            try {
+              const delta = runtime.parseOpenSpecChangeDelta(changeRoot);
+              const proposal = runtime.parseOpenSpecProposalCapabilities(changeRoot);
+              const result = runtime.createOpenSpecContractResult('preflight', run.identity.change, run.identity.project, 'current');
+              if (!resolvedChange.archived) runtime.detectOpenSpecActiveConflicts(projectRoot, run.identity.change, delta, result);
+              runtime.validateOpenSpecProposalAlignment(projectRoot, changeRoot, delta, null, result);
+              if (!runtime.finishOpenSpecContractResult(result).ok) addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-blocked', 'OpenSpec convergence pure plan is blocked.', { conflicts: result.conflicts, findings: result.findings });
+              else addFinding(findings, 'openspec-plan', 'ok', 'task-finish.openspec-plan-ready', `OpenSpec delta declares ${proposal.modified.size + proposal.new.size} capability change(s).`);
+            } catch (error) {
+              addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-invalid', error.message);
+            }
           }
+        } else {
+          for (const [check, code, message] of [
+            ['change', 'task-finish.change-not-applicable', 'Code-only candidate has no OpenSpec Change.'],
+            ['change-tasks', 'task-finish.change-tasks-not-applicable', 'Change tasks are not applicable to a code-only candidate.'],
+            ['current-knowledge', 'task-finish.knowledge-impact-not-applicable', 'Change knowledge impact evidence is not applicable to a code-only candidate.'],
+            ['openspec-validation', 'task-finish.openspec-validation-not-applicable', 'OpenSpec validation is not applicable to a code-only candidate.'],
+            ['openspec-plan', 'task-finish.openspec-plan-not-applicable', 'OpenSpec convergence planning is not applicable to a code-only candidate.'],
+          ]) addFinding(findings, check, 'ok', code, message, { status: 'not-applicable' });
         }
         const verificationFile = path.join(projectRoot, 'verification.yml');
         if (!fs.existsSync(verificationFile)) addFinding(findings, 'verification-policy', 'error', 'task-finish.verification-policy-missing', 'Project verification policy is missing.');
@@ -299,10 +310,14 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       const context = runtime.resolveTaskEnvironmentContext(environmentRoot);
       if (!context?.executionReady) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task environment is not execution-ready.' } };
       const invocation = context.cliInvocation;
-      const converge = runJsonCommand('prepare-openspec-converge', invocation.command, invocationArgs(invocation, ['openspec', 'converge', run.identity.change, '--project', run.identity.project, '--target', environmentRoot, '--json']), environmentRoot);
-      operations.push(converge.observation);
-      if (converge.result.status !== 0 || converge.payload?.status !== 'passed') {
-        return { status: 'failed', operations, failure: { operation: 'openspec-converge', failureClass: 'upstream-candidate-defect', code: converge.payload?.diagnostic?.code || 'task-finish.openspec-convergence-failed', exitCode: converge.result.status, message: converge.payload?.diagnostic?.message || 'OpenSpec convergence failed.', diagnostic: converge.payload?.diagnostic || converge.observation.stderr } };
+      let convergence = { status: 'not-applicable', receipt: null };
+      if (run.identity.candidateKind === 'change') {
+        const converge = runJsonCommand('prepare-openspec-converge', invocation.command, invocationArgs(invocation, ['openspec', 'converge', run.identity.change, '--project', run.identity.project, '--target', environmentRoot, '--json']), environmentRoot);
+        operations.push(converge.observation);
+        if (converge.result.status !== 0 || converge.payload?.status !== 'passed') {
+          return { status: 'failed', operations, failure: { operation: 'openspec-converge', failureClass: 'upstream-candidate-defect', code: converge.payload?.diagnostic?.code || 'task-finish.openspec-convergence-failed', exitCode: converge.result.status, message: converge.payload?.diagnostic?.message || 'OpenSpec convergence failed.', diagnostic: converge.payload?.diagnostic || converge.observation.stderr } };
+        }
+        convergence = { status: converge.payload.status, receipt: converge.payload.receipt || null };
       }
 
       const sync = runCommand('prepare-runtime-sync', invocation.command, invocationArgs(invocation, ['sync', run.identity.agent, '--target', environmentRoot]), environmentRoot);
@@ -314,7 +329,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       if (add.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'candidate-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-add-failed', exitCode: add.result.status, message: 'Unable to stage candidate.', diagnostic: add.observation.stderr } };
       const staged = gitText(environmentRoot, ['diff', '--cached', '--name-only']);
       if (staged) {
-        const commit = git(environmentRoot, 'prepare-candidate-commit', ['commit', '-m', `收尾 ${run.identity.change}`]);
+        const commit = git(environmentRoot, 'prepare-candidate-commit', ['commit', '-m', `收尾 ${run.identity.change || run.identity.task}`]);
         operations.push(commit.observation);
         if (commit.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'candidate-commit', failureClass: 'product-execution-failure', code: 'task-finish.commit-failed', exitCode: commit.result.status, message: 'Unable to commit converged candidate.', diagnostic: commit.observation.stderr } };
       }
@@ -345,7 +360,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       if (!postSyncStatus.clean) {
         const stagedAgain = git(environmentRoot, 'prepare-fixed-point-add', ['add', '-A']);
         operations.push(stagedAgain.observation);
-        const committedAgain = git(environmentRoot, 'prepare-fixed-point-commit', ['commit', '-m', `收敛 ${run.identity.change} 生成资产`]);
+        const committedAgain = git(environmentRoot, 'prepare-fixed-point-commit', ['commit', '-m', `收敛 ${run.identity.change || run.identity.task} 生成资产`]);
         operations.push(committedAgain.observation);
         if (stagedAgain.result.status !== 0 || committedAgain.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'runtime-fixed-point', failureClass: 'product-execution-failure', code: 'task-finish.fixed-point-commit-failed', message: 'Unable to commit mechanical fixed-point assets.', diagnostic: committedAgain.observation.stderr } };
         const verifyFixedPoint = runCommand('prepare-runtime-fixed-point-check', invocation.command, invocationArgs(invocation, ['sync', run.identity.agent, '--target', environmentRoot]), environmentRoot);
@@ -372,7 +387,10 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       const changedPathsText = gitText(environmentRoot, ['diff', '--name-only', `${targetRef}...HEAD`]) || '';
       const changedPaths = changedPathsText.split('\n').filter(Boolean).sort();
       const frozenCandidate = {
-        identity: digest({ ...identity, expectedTargetRef, changedPaths, change: run.identity.change, workspaceNodeIdentity: run.identity.workspaceNodeIdentity }),
+        identity: digest({ ...identity, expectedTargetRef, changedPaths, task: run.identity.task, candidateKind: run.identity.candidateKind, change: run.identity.change, workspaceNodeIdentity: run.identity.workspaceNodeIdentity }),
+        task: run.identity.task,
+        candidateKind: run.identity.candidateKind,
+        change: run.identity.change,
         head: identity.head,
         tree: identity.tree,
         branch: identity.branch,
@@ -382,7 +400,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         workspaceNodeIdentity: run.identity.workspaceNodeIdentity,
         frozenAt: new Date().toISOString(),
       };
-      return { status: 'passed', operations, inputIdentity: run.identityDigest, outputIdentity: frozenCandidate.identity, output: { frozenCandidate, convergence: { status: converge.payload.status, receipt: converge.payload.receipt || null } } };
+      return { status: 'passed', operations, inputIdentity: run.identityDigest, outputIdentity: frozenCandidate.identity, output: { frozenCandidate, convergence } };
     },
 
     async verify({ run }) {
@@ -508,10 +526,12 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         schemaVersion: 'buildr.task-finish-completion/v1',
         runId: run.runId,
         task: run.identity.task,
+        candidateKind: run.identity.candidateKind,
         change: run.identity.change,
         candidateIdentity: run.frozenCandidate.identity,
         candidateRef: run.frozenCandidate.head,
         targetBranch: run.identity.targetBranch,
+        workspaceNodeIdentity: run.identity.workspaceNodeIdentity,
         status: 'prepared',
         preparedAt: new Date().toISOString(),
       };

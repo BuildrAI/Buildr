@@ -173,7 +173,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求“收尾”、完成已验证任务，或自动执行 Change 收敛、目标分支交付与 task environment 安全清理时使用；只接收已具备收尾资格的候选，产品缺陷返回研发流程。
+    description: 用户要求“收尾”或交付已验证的 Change/code-only 候选时使用；retained metadata-only 可安全交接 Git 单项操作，产品缺陷返回研发流程。
     enabled: true
     required: false
     state: installed
@@ -183,6 +183,9 @@ skills:
       - capability: buildr.task-finish
         version: 1
     requires:
+      - capability: buildr.git-single-operation
+        version: 1
+        mode: optional
       - capability: buildr.task-asset-review
         version: 3
         mode: optional

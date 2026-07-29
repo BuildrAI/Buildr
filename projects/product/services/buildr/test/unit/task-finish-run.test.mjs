@@ -58,6 +58,61 @@ test('正常路径由单次产品调用完成五个固定阶段', async (t) => {
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 1);
+  assert.equal(result.identity.candidateKind, 'change');
+  assert.equal(result.identity.change, 'simplify-finish');
+});
+
+test('code-only run 以 task 为主身份并保持 Change 可空', (t) => {
+  const root = fixture(t);
+  const run = createFinishRun({
+    root,
+    runId: 'code-only',
+    identity: { ...identity(root, 'code-only'), candidateKind: 'code-only', change: null },
+  });
+  assert.equal(run.identity.task, 'code-only');
+  assert.equal(run.identity.candidateKind, 'code-only');
+  assert.equal(run.identity.change, null);
+  assert.throws(
+    () => createFinishRun({ root, runId: 'invalid-change', identity: { ...identity(root), candidateKind: 'change', change: null } }),
+    /change candidate requires change/,
+  );
+  assert.throws(
+    () => createFinishRun({ root, runId: 'invalid-code-only', identity: { ...identity(root), candidateKind: 'code-only' } }),
+    /code-only candidate cannot declare change/,
+  );
+});
+
+test('code-only preflight 将 Change 与 OpenSpec 检查稳定标记为不适用', async (t) => {
+  const root = fixture(t);
+  const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  assert.equal(git('init', '-b', 'dev').status, 0);
+  assert.equal(git('config', 'user.name', 'Buildr Test').status, 0);
+  assert.equal(git('config', 'user.email', 'buildr-test@example.com').status, 0);
+  fs.mkdirSync(path.join(root, 'projects', 'product'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.gitignore'), '.buildr/\n');
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v1\ncapabilities:\n  - id: product.affected\n');
+  const cli = path.join(root, 'fake-buildr.cjs');
+  fs.writeFileSync(cli, 'process.stdout.write(JSON.stringify({ version: "2.0.0-test" }) + "\\n");\n');
+  assert.equal(git('add', '-A').status, 0);
+  assert.equal(git('commit', '-m', 'baseline').status, 0);
+  const runtime = {
+    resolveTaskEnvironmentContext: () => ({
+      executionReady: true,
+      environmentEvidence: { receipt: 'fixture' },
+      membership: { checkoutPath: root, selector: 'workspace' },
+      repositories: [{ selector: 'workspace', branch: 'dev' }],
+      cliInvocation: { command: process.execPath, argsPrefix: [cli] },
+    }),
+    readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
+    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' } }),
+    parseOpenSpecChangeDelta: () => { throw new Error('OpenSpec parser must not run for code-only'); },
+  };
+  const run = createFinishRun({ root, runId: 'code-only-preflight', identity: { ...identity(root, 'code-only-preflight'), candidateKind: 'code-only', change: null } });
+  const result = await createTaskFinishProductHandlers({ runtime, root, openspecCommand: '/must-not-run' }).preflight({ run });
+  assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
+  const notApplicable = result.checks.filter((check) => check.status === 'not-applicable');
+  assert.deepEqual(notApplicable.map((check) => check.check), ['change', 'change-tasks', 'current-knowledge', 'openspec-validation', 'openspec-plan']);
+  assert.equal(result.operations.some((operation) => /openspec/.test(operation.id)), false);
 });
 
 test('最终验证发现产品缺陷会终止收尾并返回研发流程', async (t) => {
