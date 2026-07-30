@@ -852,7 +852,26 @@ export function registerDomainsCommands(runtime) {
         encoding: 'utf8',
         timeout: 5000,
         windowsHide: true,
+        shell: process.platform === 'win32',
       });
+      if (versionCheck.error?.code === 'ENOENT') {
+        item.status = 'warning';
+        item.reason = 'command_version_probe_spawn_failed';
+        item.message = `无法启动版本探测命令 ${command.id}。`;
+        item.difference = { expected: command.version.constraint, actual: versionCheck.error.message };
+        addCommandsFinding(result, 'warning', 'commands.version_probe_spawn_failed', item.message, {
+          path: sources[0],
+          sources,
+          commandId: command.id,
+          executable: command.executable,
+          versionArgs: command.version.args,
+          installHint: command.installHint || null,
+          reason: item.reason,
+          provenance: effective.provenance,
+          suggestion: command.installHint || '确认该命令可执行，并在必要时使用 shell 或 cmd.exe 重新探测版本。',
+        });
+        continue;
+      }
       const output = `${versionCheck.stdout || ''}\n${versionCheck.stderr || ''}`.trim();
       const currentVersion = parseVersion(output);
       if (!currentVersion) {

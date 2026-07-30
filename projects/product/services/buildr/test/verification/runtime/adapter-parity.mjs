@@ -12,6 +12,9 @@ import { RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../s
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-parity-'));
+const testAppDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-parity-appdata-'));
+const testNodeRuntimeSourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-parity-node-runtime-'));
+fs.cpSync(path.dirname(process.execPath), testNodeRuntimeSourceRoot, { recursive: true, dereference: true });
 const commandTimings = new Map();
 
 function recordCommandTiming(args, startedAt) {
@@ -22,7 +25,18 @@ function recordCommandTiming(args, startedAt) {
 
 function run(args, options = {}) {
   const startedAt = Date.now();
-  const result = spawnSync(process.execPath, [buildr, ...args], { cwd: productRoot, encoding: 'utf8', env: { ...process.env, ...(options.env || {}) } });
+  const result = spawnSync(process.execPath, [buildr, ...args], {
+    cwd: productRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      BUILDR_NODE_RUNTIME_SOURCE_ROOT: testNodeRuntimeSourceRoot,
+      BUILDR_APP_DATA_DIR: testAppDataRoot,
+      LOCALAPPDATA: testAppDataRoot,
+      APPDATA: testAppDataRoot,
+      ...(options.env || {}),
+    },
+  });
   recordCommandTiming(args, startedAt);
   if (!options.allowFailure && result.status !== 0) throw new Error(`${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
   return result;
@@ -31,7 +45,17 @@ function run(args, options = {}) {
 function runAsync(args, options = {}) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
-    const child = spawn(process.execPath, [buildr, ...args], { cwd: productRoot, env: { ...process.env, ...(options.env || {}) } });
+    const child = spawn(process.execPath, [buildr, ...args], {
+      cwd: productRoot,
+      env: {
+        ...process.env,
+        BUILDR_NODE_RUNTIME_SOURCE_ROOT: testNodeRuntimeSourceRoot,
+        BUILDR_APP_DATA_DIR: testAppDataRoot,
+        LOCALAPPDATA: testAppDataRoot,
+        APPDATA: testAppDataRoot,
+        ...(options.env || {}),
+      },
+    });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8');
@@ -75,7 +99,7 @@ async function verifySkillSymlinkGuard() {
   const symlinkOutside = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-outside-'));
   await runAsync(['init', '--target', symlinkWorkspace, '--name', 'runtime-symlink']);
   fs.mkdirSync(path.join(symlinkWorkspace, '.agents'), { recursive: true });
-  fs.symlinkSync(symlinkOutside, path.join(symlinkWorkspace, '.agents', 'skills'), 'dir');
+  fs.symlinkSync(symlinkOutside, path.join(symlinkWorkspace, '.agents', 'skills'), process.platform === 'win32' ? 'junction' : 'dir');
   const symlinkInstall = await runAsync(['skill', 'install', 'codex', '--target', symlinkWorkspace], { allowFailure: true });
   assert.notEqual(symlinkInstall.status, 0, 'runtime install must reject a target path that crosses a symbolic link');
   assert.equal(fs.existsSync(path.join(symlinkOutside, 'buildr', 'SKILL.md')), false, 'runtime install must not write outside the workspace through a symbolic link');
@@ -85,7 +109,7 @@ async function verifyRulesSymlinkGuard() {
   const rulesSymlinkWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-rules-symlink-'));
   const rulesSymlinkOutside = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-rules-outside-'));
   await runAsync(['init', '--target', rulesSymlinkWorkspace, '--name', 'runtime-rules-symlink']);
-  fs.symlinkSync(rulesSymlinkOutside, path.join(rulesSymlinkWorkspace, '.cursor'), 'dir');
+  fs.symlinkSync(rulesSymlinkOutside, path.join(rulesSymlinkWorkspace, '.cursor'), process.platform === 'win32' ? 'junction' : 'dir');
   const symlinkRulesRender = await runAsync(['rules', 'render', 'cursor', '--scope', '.', '--target', rulesSymlinkWorkspace], { allowFailure: true });
   assert.notEqual(symlinkRulesRender.status, 0, 'runtime rules render must reject a target path that crosses a symbolic link');
   assert.equal(fs.existsSync(path.join(rulesSymlinkOutside, 'rules', 'buildr.mdc')), false, 'rules render must not write outside the workspace through a symbolic link');
@@ -193,7 +217,9 @@ for (const agent of supportedAdapters) {
     assert.ok(fs.existsSync(path.join(completeRuntime, ...relative.split('/'))), `${agent} must render ${relative}`);
   }
   assert.deepEqual(fs.readFileSync(path.join(completeRuntime, 'assets', 'sample.bin')), Buffer.from([0, 255, 16, 128]), `${agent} must preserve binary bytes`);
-  assert.equal((fs.statSync(path.join(completeRuntime, 'scripts', 'run.sh')).mode & 0o100) === 0o100, true, `${agent} must preserve owner executable intent`);
+  if (process.platform !== 'win32') {
+    assert.equal((fs.statSync(path.join(completeRuntime, 'scripts', 'run.sh')).mode & 0o100) === 0o100, true, `${agent} must preserve owner executable intent`);
+  }
   assert.ok(fs.existsSync(path.join(workspace, root, 'buildr', 'skill-projection-receipts', agent, 'complete-runtime-skill.json')), `${agent} must record an adapter-specific projection receipt`);
   const adapterDoctor = JSON.parse(run(['doctor', '--agent', agent, '--target', workspace, '--json']).stdout);
   assert.equal(adapterDoctor.agentRuntime.requested, agent, `${agent} doctor must inspect the requested adapter`);

@@ -134,6 +134,12 @@ assert.deepEqual(RUNTIME_ADAPTERS['trae-work'].traits.checker.prerequisites || [
 assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.rules.maxChars, 8000);
 assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.skills.root, '.codebuddy');
 assert.deepEqual(RUNTIME_ADAPTERS.workbuddy.traits.surfaces, [{ kind: 'desktop' }, { kind: 'cli', variant: 'desktop-bundled' }]);
+if (process.platform === 'darwin') {
+  assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.checker.versionProbe.kind, 'command');
+} else {
+  assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.checker.installationProbe.kind, 'manual');
+  assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.checker.versionProbe.kind, 'manual');
+}
 assert.deepEqual(Object.keys(RUNTIME_ADAPTERS.workbuddy.evidence).sort(), ['rules', 'skills']);
 assert.ok(adapterDoc.includes('`.codebuddy/skills`'));
 
@@ -211,7 +217,7 @@ assert.throws(() => validateRuntimePlan({ ...valid, writes: [{ targetFile: path.
 const symlinkPlanRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-plan-symlink-'));
 const symlinkPlanOutside = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-plan-outside-'));
 fs.mkdirSync(path.join(symlinkPlanRoot, '.agents'), { recursive: true });
-fs.symlinkSync(symlinkPlanOutside, path.join(symlinkPlanRoot, '.agents', 'skills'), 'dir');
+fs.symlinkSync(symlinkPlanOutside, path.join(symlinkPlanRoot, '.agents', 'skills'), process.platform === 'win32' ? 'junction' : 'dir');
 const symlinkPlanTarget = path.join(symlinkPlanRoot, '.agents', 'skills', 'demo', 'SKILL.md');
 assert.throws(() => validateRuntimePlan({ ...valid, targetRoot: symlinkPlanRoot, writes: [{ targetFile: symlinkPlanTarget, content: 'bad' }] }, codex), /crosses a symbolic link/);
 assert.throws(() => validateRuntimePlan({ ...valid, targetRoot: symlinkPlanRoot, removals: [{ targetFile: symlinkPlanTarget }] }, codex), /crosses a symbolic link/);
@@ -254,7 +260,7 @@ const binaryPlan = createRuntimePlan({
 });
 const binaryResult = reconcileRuntimePlan(binaryPlan);
 assert.deepEqual(fs.readFileSync(binaryFile), Buffer.from([0, 255, 16]));
-assert.equal((fs.statSync(binaryFile).mode & 0o100) === 0o100, true);
+if (process.platform !== 'win32') assert.equal((fs.statSync(binaryFile).mode & 0o100) === 0o100, true);
 assert.equal(fs.existsSync(staleFile), false);
 assert.equal(binaryResult.changed.at(-1), receiptFile, 'commitLast receipt must be written after payload files and stale removals');
 

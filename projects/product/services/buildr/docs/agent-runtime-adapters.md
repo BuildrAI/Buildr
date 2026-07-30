@@ -88,7 +88,7 @@ Buildr 当前不定义或维护真实 Agent marker smoke、品牌通过状态或
 - Buildr 生成 root `CODEBUDDY.md`，其中包含 imperative ancestor-chain 读取指令和 source index；内容不得超过 WorkBuddy 5.2.5 已观察到的 8,000 字符 project guidance 上限。
 - WorkBuddy 5.2.5 安装源码的 first-match 顺序是 `CODEBUDDY.md`、`.codebuddy/CODEBUDDY.md`、`AGENTS.md`，只读取 workspace root 第一个存在的入口。非 Buildr 管理的 `CODEBUDDY.md` 会触发 conflict，Buildr 不覆盖也不静默降级。
 - Skills 与 install plans 使用 `.codebuddy/`。WorkBuddy 5.2.5 内置的 CodeBuddy CLI 2.106.4 文档和 Skills panel 源码都将当前工作目录的 workspace destination Skills root 声明为 `.codebuddy/skills/`；`.workbuddy/skills` 只出现在 sandbox 可写路径中，不能据此认定为发现入口。Rules 与 Skills 修改后都要开启新任务。
-- checker 读取 `/Applications/WorkBuddy.app` 的 bundle id/版本，并检查 bridge、Skills 和 install plans 的 projection 状态。
+- checker 在 macOS 读取 `/Applications/WorkBuddy.app` 的 bundle id/版本；其他平台只保留手动版本确认指引，并检查 bridge、Skills 和 install plans 的 projection 状态。
 - 兼容证据来自本机 app.asar 源码、随应用交付的 CodeBuddy CLI 文档/源码和运行时 intake；官方公开文档只覆盖产品与 Marketplace，未公开 project guidance 与工作目录 Skills discovery 的完整实现。
 
 ## Checker 与限制

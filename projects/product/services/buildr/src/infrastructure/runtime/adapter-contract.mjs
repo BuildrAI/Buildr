@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import {
   ownerExecutable,
   runtimeFileMatches,
@@ -454,11 +455,17 @@ const DESCRIPTORS = [
       skills: { kind: 'vendor-root', implementation: 'filesystem-skills', root: '.codebuddy' },
       surfaces: [{ kind: 'desktop' }, { kind: 'cli', variant: 'desktop-bundled' }],
       activation: { rules: 'session-start', skills: 'session-start', reloadGuidance: 'Start a new WorkBuddy task after adding or changing Rules or Skills.' },
-      checker: {
-        kind: 'projection', implementation: 'projection', resultKey: 'workbuddy',
-        installationProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
-        versionProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
-      },
+      checker: process.platform === 'darwin'
+        ? {
+            kind: 'projection', implementation: 'projection', resultKey: 'workbuddy',
+            installationProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+            versionProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+          }
+        : {
+            kind: 'projection', implementation: 'projection', resultKey: 'workbuddy',
+            installationProbe: { kind: 'manual', guidance: 'Confirm WorkBuddy is installed on this platform and record the launcher path or installation location.' },
+            versionProbe: { kind: 'manual', guidance: 'Record the WorkBuddy version from the application About dialog or installer metadata on this platform.' },
+          },
     },
     recommendedCommands: recommendedCommands('workbuddy'),
     evidence: { rules: 'installed-source-code', skills: 'installed-product-docs-and-source' },

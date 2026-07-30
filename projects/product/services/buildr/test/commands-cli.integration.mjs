@@ -7,9 +7,22 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 const buildr = path.resolve('bin/buildr.mjs');
+const testAppDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-appdata-'));
+const testNodeRuntimeSourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-node-runtime-'));
+fs.cpSync(path.dirname(process.execPath), testNodeRuntimeSourceRoot, { recursive: true, dereference: true });
 
-function run(args, expected = 0) {
-  const result = spawnSync(process.execPath, [buildr, ...args], { encoding: 'utf8' });
+function run(args, expected = 0, env = {}) {
+  const result = spawnSync(process.execPath, [buildr, ...args], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      BUILDR_NODE_RUNTIME_SOURCE_ROOT: testNodeRuntimeSourceRoot,
+      BUILDR_APP_DATA_DIR: testAppDataRoot,
+      LOCALAPPDATA: testAppDataRoot,
+      APPDATA: testAppDataRoot,
+      ...env,
+    },
+  });
   assert.equal(result.status, expected, `buildr ${args.join(' ')}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   return result;
 }
@@ -110,4 +123,31 @@ test('Command 与 Component removal 在 Project 反向引用存在时零写入',
   run(['commands', 'remove', 'plain-tool', '--target', root]);
   run(['commands', 'remove', 'orphan-tool', '--target', root]);
   assert.deepEqual(YAML.parse(fs.readFileSync(commandManifest, 'utf8')).commands, []);
+});
+
+test('Windows shim version probe can resolve .cmd wrappers', (t) => {
+  if (process.platform !== 'win32') return;
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-commands-win-shim-'));
+  const shimDir = path.join(root, 'bin');
+  const originalPath = process.env.PATH;
+  fs.mkdirSync(shimDir, { recursive: true });
+  t.after(() => {
+    process.env.PATH = originalPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  fs.writeFileSync(
+    path.join(shimDir, 'shimtool.cmd'),
+    '@echo off\r\nif "%~1"=="--version" (\r\n  echo 1.2.3\r\n  exit /b 0\r\n)\r\necho shimtool\r\n',
+  );
+  process.env.PATH = `${shimDir};${originalPath || ''}`;
+
+  run(['init', '--target', root, '--name', 'commands-win-shim', '--profile', 'personal']);
+  run(['commands', 'add', 'shimtool', '--purpose', 'Windows shim fixture', '--executable', 'shimtool', '--version-constraint', '=1.2.3', '--version-args', '--version', '--target', root]);
+
+  const result = check(root);
+  const observation = result.observations.find((item) => item.id === 'shimtool');
+  assert.equal(observation?.version?.current, '1.2.3');
+  assert.equal(result.findings.some((item) => item.commandId === 'shimtool'), false);
 });
