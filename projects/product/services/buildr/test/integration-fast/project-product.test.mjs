@@ -59,6 +59,45 @@ test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
+test('Project create 重入保留已有 v1 与 v2 Service registry', (t) => {
+  const root = initWorkspace(t);
+  const legacyManifest = path.join(root, 'projects', 'legacy', 'services', 'manifest.yml');
+  fs.mkdirSync(path.dirname(legacyManifest), { recursive: true });
+  const legacyContent = [
+    'schemaVersion: buildr.services/v1',
+    'project: legacy',
+    'services:',
+    '  api:',
+    '    title: Legacy API',
+    '    description: Legacy service',
+    '    type: backend',
+    '    path: services/api',
+    '    repo:',
+    '      kind: workspace',
+    '',
+  ].join('\n');
+  fs.writeFileSync(legacyManifest, legacyContent);
+
+  let result = runBuildr(['project', 'create', 'legacy', '--target', root, '--name', 'Legacy', '--description', 'Legacy project']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(legacyManifest, 'utf8'), legacyContent);
+
+  result = runBuildr(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Demo project']);
+  assert.equal(result.status, 0, result.stderr);
+  const source = path.join(tempRoot(t), 'source');
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, 'README.md'), '# api\n');
+  result = runBuildr(['service', 'create', 'demo/api', source, '--target', root, '--name', 'API', '--description', 'API service', '--type', 'backend']);
+  assert.equal(result.status, 0, result.stderr);
+  const canonicalManifest = path.join(root, 'projects', 'demo', 'services', 'manifest.yml');
+  const canonicalContent = fs.readFileSync(canonicalManifest, 'utf8');
+
+  result = runBuildr(['project', 'create', 'demo', '--target', root, '--name', 'Demo renamed', '--description', 'Updated project']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(canonicalManifest, 'utf8'), canonicalContent);
+  assert.equal(createRuntime().projectDetail(root, 'demo').project.name, 'Demo renamed');
+});
+
 test('v1 Project registry 读取零写入，显式 migration 原子且幂等', (t) => {
   const root = initWorkspace(t);
   const manifest = path.join(root, 'projects', 'manifest.yml');

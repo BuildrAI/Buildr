@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "productize-concurrent-workspace-verification",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-d271e0d9eabb741aed4f42f5c6e9ca68b8fd7bc0654dd8bbf9e6f86ee4492062",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "cli-product-surface",
+      "title": "Project 验证执行必须成为公开 CLI 表面",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "双任务验收必须消费正式 Workspace 验证入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "双任务验收必须覆盖 runtime 所有权负向清理",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "npm-cli-package",
+      "title": "已安装 package 必须包含通用验证 runtime",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "public-json-contracts",
+      "title": "Verification run 必须提供稳定公开 JSON identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 清理必须证明 owned runtime 已停止",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Buildr 必须提供可发布的 Project 验证执行器",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "正式执行器必须并发调度 DAG 并协调跨任务资源",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "正式执行器必须生成可复用且可清理的 evidence",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "worktree-local-app-preview",
+      "title": "Preview stop 必须绑定 task environment 所有权",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

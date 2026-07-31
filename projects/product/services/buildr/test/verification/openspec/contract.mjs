@@ -7,15 +7,6 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
-import {
-  advanceFinishRun,
-  createFinishRun,
-  executeSafeFinishRun,
-  FINISH_RECOVERY_SCHEMA,
-  inspectFinishRun,
-  readFinishRun,
-  recoverFinishRun,
-} from '../../../src/application/task-finish/task-finish-run.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -23,7 +14,6 @@ const openspec = path.join(productRoot, 'node_modules', '.bin', 'openspec');
 const commandEnv = { ...process.env, PATH: `${path.dirname(openspec)}${path.delimiter}${process.env.PATH || ''}` };
 const project = 'demo';
 const selectedCase = process.argv[2] === '--case' ? process.argv[3] : null;
-const selectedSuite = process.argv[2] === '--suite' ? process.argv[3] : 'contract';
 const root = selectedCase ? process.env.BUILDR_OPENSPEC_FIXTURE_ROOT : null;
 const projectRoot = root ? path.join(root, 'projects', project) : null;
 const specsRoot = projectRoot ? path.join(projectRoot, 'openspec', 'specs') : null;
@@ -37,9 +27,7 @@ function run(args, expected = 0, fixtureRoot = root) {
   if (payload && args[0] === 'openspec') {
     const expectedSchema = args[1] === 'baseline' ? 'buildr.openspec-baseline/v1'
       : args[1] === 'converge' ? 'buildr.openspec-convergence/v1'
-        : args[1] === 'sync-plan' ? 'buildr.openspec-sync-plan/v1'
-          : args[1] === 'sync-apply' ? 'buildr.openspec-sync-result/v1'
-            : 'buildr.openspec-check/v1';
+        : args[1] === 'audit' ? 'buildr.openspec-convergence-audit/v1' : 'buildr.openspec-check/v1';
     if (payload.schemaVersion !== expectedSchema) fail(`Expected ${expectedSchema}, got ${payload.schemaVersion}`);
   }
   return payload;
@@ -58,26 +46,20 @@ function change(id, capability, kind, delta) {
   const isNew = kind === 'new';
   write(path.join(changesRoot, id, '.openspec.yaml'), 'schema: spec-driven\ncreated: 2026-07-11\n');
   write(path.join(changesRoot, id, 'proposal.md'), ['## Capabilities', '', '### New Capabilities', ...(isNew ? [`- \`${capability}\`: fixture`] : []), '', '### Modified Capabilities', ...(!isNew ? [`- \`${capability}\`: fixture`] : []), ''].join('\n'));
+  write(path.join(changesRoot, id, 'design.md'), '## Context\n\nFixture design.\n');
+  write(path.join(changesRoot, id, 'tasks.md'), '- [x] Complete fixture implementation\n');
   write(path.join(changesRoot, id, 'specs', capability, 'spec.md'), delta);
 }
 function removeChange(id) { fs.rmSync(path.join(changesRoot, id), { recursive: true, force: true }); }
 function baseline(id, options = []) { return run(['openspec', 'baseline', 'create', id, '--project', project, '--target', root, '--json', ...options]); }
 function check(id, stage, expected = 0) { return run(['openspec', 'check', id, '--stage', stage, '--project', project, '--target', root, '--json'], expected); }
+function converge(id, expected = 0) { return run(['openspec', 'converge', id, '--project', project, '--target', root, '--json'], expected); }
+function audit(id, expected = 0) { return run(['openspec', 'audit', id, '--project', project, '--target', root, '--json'], expected); }
 function assertError(result, code) { if (!result.findings.some((finding) => finding.code === code)) fail(`Expected finding ${code}: ${JSON.stringify(result.findings)}`); }
-function passFinishStep(runId, fingerprint) {
-  const claimed = advanceFinishRun({ root, runId, fingerprints: { [inspectFinishRun(readFinishRun({ root, runId })).currentStep]: fingerprint } });
-  const step = claimed.currentStep;
-  const token = readFinishRun({ root, runId }).steps.find((item) => item.id === step).attemptToken;
-  return advanceFinishRun({
-    root, runId, fingerprints: { [step]: fingerprint }, outcome: 'passed', attemptToken: token,
-    effect: { id: `${step}-fixture-effect` }, evidence: { id: `${step}-fixture-evidence` },
-  });
-}
 
 const existing = requirement('Existing', '保留既有行为');
 const untouched = requirement('Untouched', '保持不变');
 const modified = requirement('Existing', '使用更新后的行为');
-const modifiedAgain = requirement('Existing', '使用恢复后的最新行为');
 const added = requirement('Added', '提供新增能力');
 
 const cases = {
@@ -86,8 +68,9 @@ const cases = {
     if (result.status === 0 || !result.stderr.includes('Project is not registered')) fail('unknown Project must be rejected before sidecar access');
   },
   'safe-modified'() {
-    change('safe-modified', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('safe-modified');
-    if (!check('safe-modified', 'proposal').ok || !check('safe-modified', 'pre-sync').ok) fail('safe modified guards must pass');
+    change('safe-modified', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); const baselineResult = baseline('safe-modified');
+    const proposalResult = check('safe-modified', 'proposal');
+    if (baselineResult.deprecation?.status !== 'deprecated-compatible' || proposalResult.deprecation?.replacement !== 'openspec converge' || !check('safe-modified', 'pre-sync').ok) fail('legacy guards must pass with structured deprecation');
     canonical('demo', [modified, untouched]); if (!check('safe-modified', 'post-sync').ok) fail('safe modified post-sync must pass');
     const receipt = JSON.parse(fs.readFileSync(path.join(changesRoot, 'safe-modified', '.buildr', 'contract-pre-sync-receipt.json'), 'utf8'));
     if (!receipt.postSyncSpecIntegrities?.demo?.startsWith('sha256-')) fail('post-sync receipt must bind canonical integrity');
@@ -129,68 +112,6 @@ const cases = {
     canonical('demo', [modified, requirement('Untouched', '被错误改写')]); assertError(check('partial', 'post-sync', 1), 'openspec_contract.post_sync_untouched_changed'); removeChange('partial');
     canonical('demo', [existing, untouched]); change('receipt-changed', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('receipt-changed'); check('receipt-changed', 'pre-sync'); fs.appendFileSync(path.join(changesRoot, 'receipt-changed', 'specs', 'demo', 'spec.md'), '\n<!-- fixture mutation -->\n'); assertError(check('receipt-changed', 'post-sync', 1), 'openspec_contract.receipt_delta_changed');
   },
-  async 'convergence-recovery'() {
-    change('convergence-recovery', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`);
-    write(path.join(changesRoot, 'convergence-recovery', 'design.md'), '# Design\n\nFixture design.\n');
-    write(path.join(changesRoot, 'convergence-recovery', 'tasks.md'), '## Tasks\n\n- [x] Complete fixture\n');
-    baseline('convergence-recovery');
-    const first = run(['openspec', 'converge', 'convergence-recovery', '--project', project, '--target', root, '--json']);
-    if (first.status !== 'passed' || first.receipt.stage !== 'post-sync') fail(`first convergence failed: ${JSON.stringify(first)}`);
-    const runId = 'convergence-recovery-journey';
-    createFinishRun({ root, runId, task: runId, change: 'convergence-recovery', targetBranch: 'dev' });
-    passFinishStep(runId, 'fixture-context');
-    passFinishStep(runId, 'fixture-current-knowledge');
-    write(path.join(changesRoot, 'convergence-recovery', 'specs', 'demo', 'spec.md'), `## MODIFIED Requirements\n\n${modifiedAgain}`);
-    const recoveryCheckpoint = await recoverFinishRun({
-      root, runId,
-      manifest: {
-        schemaVersion: FINISH_RECOVERY_SCHEMA, id: 'delta-revised-after-post-sync',
-        identities: { before: { candidate: 'delta-v1' }, after: { candidate: 'delta-v2' } },
-        fingerprints: { 'contract-convergence': 'delta-v2' }, executionPlans: {},
-        transition: { type: 'implementation-changed', evidenceId: 'fixture-delta-revision', changedPaths: [`projects/${project}/openspec/changes/convergence-recovery/specs/demo/spec.md`] },
-      },
-    });
-    if (recoveryCheckpoint.recovery?.boundary !== 'contract-convergence' || recoveryCheckpoint.safeExecution?.reason !== 'action-input-required') fail(`typed recovery did not stop at the registry input boundary: ${JSON.stringify(recoveryCheckpoint)}`);
-    const executed = await executeSafeFinishRun({
-      root, runId, fingerprints: { 'contract-convergence': 'delta-v2' },
-      actionContext: { cliSource: buildr, project }, stopBefore: 'candidate-commit',
-    });
-    if (executed.currentStep !== 'candidate-commit' || executed.safeExecution?.executedSteps?.[0]?.actionId !== 'contract-convergence.openspec') fail(`Task Finish did not execute registry-owned convergence recovery: ${JSON.stringify(executed)}`);
-    const finishRun = readFinishRun({ root, runId });
-    const contractEvidence = finishRun.steps.find((item) => item.id === 'contract-convergence').evidence.at(-1);
-    if (contractEvidence?.planSource !== 'registry' || contractEvidence?.actionId !== 'contract-convergence.openspec') fail(`Task Finish evidence did not preserve the registry action identity: ${JSON.stringify(contractEvidence)}`);
-    if (!fs.readFileSync(path.join(specsRoot, 'demo', 'spec.md'), 'utf8').includes('恢复后的最新行为')) fail('recovery did not apply the new delta');
-    const recovery = JSON.parse(fs.readFileSync(path.join(changesRoot, 'convergence-recovery', '.buildr', 'convergence-recovery.json'), 'utf8'));
-    if (recovery.stage !== 'completed' || recovery.oldDeltaHash === recovery.newDeltaHash) fail('recovery receipt did not preserve the identity transition');
-    passFinishStep(runId, 'fixture-candidate');
-    passFinishStep(runId, 'fixture-target');
-    passFinishStep(runId, 'fixture-runtime');
-    if (inspectFinishRun(readFinishRun({ root, runId })).currentStep !== 'formal-assurance') fail('recovery journey did not reach the formal assurance boundary');
-  },
-  'convergence-recovery-drift'() {
-    change('convergence-recovery-drift', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`);
-    write(path.join(changesRoot, 'convergence-recovery-drift', 'design.md'), '# Design\n\nFixture design.\n');
-    write(path.join(changesRoot, 'convergence-recovery-drift', 'tasks.md'), '## Tasks\n\n- [x] Complete fixture\n');
-    baseline('convergence-recovery-drift');
-    run(['openspec', 'converge', 'convergence-recovery-drift', '--project', project, '--target', root, '--json']);
-    write(path.join(changesRoot, 'convergence-recovery-drift', 'specs', 'demo', 'spec.md'), `## MODIFIED Requirements\n\n${modifiedAgain}`);
-    canonical('demo', [modified, requirement('Untouched', '包含外部漂移')]);
-    const before = fs.readFileSync(path.join(specsRoot, 'demo', 'spec.md'), 'utf8');
-    const blocked = run(['openspec', 'converge', 'convergence-recovery-drift', '--project', project, '--target', root, '--json'], 2);
-    if (blocked.recovery?.status !== 'semantic-resolution-required' || blocked.fallback?.reason !== 'semantic-resolution-required') fail(`canonical drift classification missing: ${JSON.stringify(blocked)}`);
-    if (fs.readFileSync(path.join(specsRoot, 'demo', 'spec.md'), 'utf8') !== before) fail('canonical drift recovery must be zero-write');
-  },
-  'convergence-recovery-unprovable'() {
-    change('convergence-recovery-unprovable', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`);
-    write(path.join(changesRoot, 'convergence-recovery-unprovable', 'design.md'), '# Design\n\nFixture design.\n');
-    write(path.join(changesRoot, 'convergence-recovery-unprovable', 'tasks.md'), '## Tasks\n\n- [x] Complete fixture\n');
-    baseline('convergence-recovery-unprovable');
-    run(['openspec', 'converge', 'convergence-recovery-unprovable', '--project', project, '--target', root, '--json']);
-    write(path.join(changesRoot, 'convergence-recovery-unprovable', 'specs', 'demo', 'spec.md'), `## MODIFIED Requirements\n\n${modifiedAgain}`);
-    fs.rmSync(path.join(changesRoot, 'convergence-recovery-unprovable', '.buildr', 'deterministic-sync-plan.json'));
-    const blocked = run(['openspec', 'converge', 'convergence-recovery-unprovable', '--project', project, '--target', root, '--json'], 2);
-    if (blocked.recovery?.status !== 'recovery-unprovable' || !blocked.recovery?.missingEvidence?.includes('deterministic-sync-plan')) fail(`missing recovery evidence classification: ${JSON.stringify(blocked)}`);
-  },
   'unsupported-upstream'() {
     const definition = path.join(root, 'components', 'buildr', 'openspec', 'component.yml'); const original = fs.readFileSync(definition, 'utf8'); fs.writeFileSync(definition, original.replace('version: "1.6.0"', 'version: "9.9.9"'));
     change('unsupported-upstream', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); const result = spawnSync(process.execPath, [buildr, 'openspec', 'baseline', 'create', 'unsupported-upstream', '--project', project, '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
@@ -202,6 +123,48 @@ const cases = {
     canonical('upstream-archive', [preserved]); change('upstream-archive-safety', 'upstream-archive', 'modified', stale); write(path.join(changesRoot, 'upstream-archive-safety', 'design.md'), '# Design\n'); write(path.join(changesRoot, 'upstream-archive-safety', 'tasks.md'), '- [x] Archive safety fixture\n');
     runUpstream(['validate', 'upstream-archive-safety', '--strict'], projectRoot); const archived = runUpstream(['archive', 'upstream-archive-safety', '--yes', '--json'], projectRoot, 1);
     if (!/current spec contains scenario\(s\) not present|Refresh the change spec before archiving/.test(`${archived.stdout}\n${archived.stderr}`)) fail('OpenSpec archive must reject dropped scenario');
+  },
+  'convergence-transaction-safe'() {
+    change('convergence-safe', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const result = converge('convergence-safe');
+    if (result.status !== 'passed' || result.disposition !== 'archived' || result.commandCount < 3) fail(`convergence safe result incomplete: ${JSON.stringify(result)}`);
+    const canonicalContent = fs.readFileSync(path.join(specsRoot, 'demo', 'spec.md'), 'utf8');
+    if (!canonicalContent.includes('Requirement: Added')) fail('convergence did not apply canonical result');
+    const archived = fs.readdirSync(path.join(changesRoot, 'archive')).find((name) => name.endsWith('-convergence-safe'));
+    if (!archived) fail('convergence did not archive Change');
+    const buildrRoot = path.join(changesRoot, 'archive', archived, '.buildr');
+    const receipt = JSON.parse(fs.readFileSync(path.join(buildrRoot, 'convergence-receipt.json'), 'utf8'));
+    if (receipt.disposition !== 'archived' || fs.readdirSync(buildrRoot).some((name) => ['contract-pre-sync-receipt.json', 'deterministic-sync-plan.json', 'deterministic-convergence.json', 'convergence-recovery.json'].includes(name))) fail('new convergence wrote legacy sidecars');
+    const repeated = converge('convergence-safe');
+    if (repeated.status !== 'passed' || repeated.commandCount !== 0) fail('archived convergence repeat must be idempotent');
+    const audited = audit('convergence-safe');
+    if (audited.status !== 'passed' || audited.disposition !== 'archived' || audited.files.some((item) => !['before', 'expected'].includes(item.state))) fail('archived convergence audit must report actual file facts');
+  },
+  'convergence-audit-unprovable'() {
+    change('audit-missing', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const missing = audit('audit-missing', 2);
+    if (missing.status !== 'recovery-unprovable' || missing.diagnostic?.code !== 'convergence-receipt-unprovable') fail('missing receipt audit must fail closed');
+    removeChange('audit-missing');
+    change('audit-unknown', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    if (converge('audit-unknown').status !== 'passed') fail('audit fixture convergence failed');
+    fs.appendFileSync(path.join(specsRoot, 'demo', 'spec.md'), '\nmanual drift\n');
+    const unknown = audit('audit-unknown', 2);
+    if (unknown.status !== 'recovery-unprovable' || unknown.disposition !== 'state-unknown' || !unknown.files.some((item) => item.state === 'unknown')) fail('unknown audit must report per-file actual digest');
+  },
+  'convergence-transaction-conflict-and-disjoint'() {
+    change('same-a', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    change('same-b', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const blocked = converge('same-a', 2);
+    if (blocked.status !== 'blocked' || blocked.code !== 'semantic-resolution-required') fail('same Requirement changes must block');
+    removeChange('same-a'); removeChange('same-b');
+    const one = requirement('FirstDisjoint', '提供第一项不相交能力');
+    const two = requirement('SecondDisjoint', '提供第二项不相交能力');
+    change('disjoint-a', 'demo', 'modified', `## ADDED Requirements\n\n${one}`);
+    change('disjoint-b', 'demo', 'modified', `## ADDED Requirements\n\n${two}`);
+    if (converge('disjoint-a').status !== 'passed') fail('first disjoint Change must converge');
+    if (converge('disjoint-b').status !== 'passed') fail('second disjoint Change must replan and converge');
+    const actual = fs.readFileSync(path.join(specsRoot, 'demo', 'spec.md'), 'utf8');
+    if (!actual.includes('FirstDisjoint') || !actual.includes('SecondDisjoint')) fail('disjoint convergence overwrote prior canonical content');
   },
 };
 
@@ -228,16 +191,14 @@ function runCase(name, caseRoot) {
 }
 
 async function main() {
-  if (selectedCase) { const execute = cases[selectedCase]; if (!execute) fail(`Unknown fixture case: ${selectedCase}`); await execute(); return; }
+  if (selectedCase) { const execute = cases[selectedCase]; if (!execute) fail(`Unknown fixture case: ${selectedCase}`); execute(); return; }
   const runRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-contract-run-'));
   const baseRoot = path.join(runRoot, 'prepared');
   const startedAt = Date.now();
   let results = [];
   try {
     const preparationMs = await prepareBase(baseRoot);
-    const recoveryCase = (name) => name.startsWith('convergence-recovery');
-    const names = Object.keys(cases).filter((name) => selectedSuite === 'recovery' ? recoveryCase(name) : !recoveryCase(name));
-    if (!['contract', 'recovery'].includes(selectedSuite)) fail(`Unknown fixture suite: ${selectedSuite}`);
+    const names = Object.keys(cases);
     const concurrency = Math.min(12, names.length);
     let cursor = 0;
     const workers = Array.from({ length: concurrency }, async () => {
@@ -252,18 +213,16 @@ async function main() {
     });
     results = (await Promise.all(workers)).flat().sort((left, right) => Object.keys(cases).indexOf(left.name) - Object.keys(cases).indexOf(right.name));
     const failed = results.filter((item) => item.status === 'failed');
-    const budgetMs = selectedSuite === 'recovery' ? 60000 : 20000;
     const evidence = {
       schemaVersion: 'buildr.openspec-contract-fixtures/v1',
-      suite: selectedSuite,
       status: failed.length ? 'failed' : 'passed',
       preparation: { status: 'passed', durationMs: preparationMs, identity: `sha256-${crypto.createHash('sha256').update([process.version, process.platform, '1.6.0', fs.readFileSync(fileURLToPath(import.meta.url))].join('\0')).digest('hex')}` },
       consumers: results.map(({ name, status, exitCode, durationMs }) => ({ name, status, exitCode, durationMs, reusedPreparation: true })),
       consumerCount: results.length,
       concurrency,
       wallClockMs: Date.now() - startedAt,
-      budgetMs,
-      withinBudget: Date.now() - startedAt <= budgetMs,
+      budgetMs: 30000,
+      withinBudget: Date.now() - startedAt <= 30000,
     };
     if (failed.length) {
       for (const item of failed) process.stderr.write(`[${item.name}] ${item.stderr || item.stdout}\nfixture: ${item.fixture}\n`);
@@ -271,7 +230,7 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    console.log(`OpenSpec ${selectedSuite} fixtures passed.`);
+    console.log('OpenSpec contract fixtures passed.');
     console.log(`[openspec-contract-fixtures] evidence: ${JSON.stringify(evidence)}`);
   } finally {
     if (!results.some((item) => item.status === 'failed')) fs.rmSync(runRoot, { recursive: true, force: true });

@@ -522,10 +522,20 @@ export function registerDomainsWorkspace(runtime) {
           description,
           source,
         });
-        runtime.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
         const serviceRegistryPath = servicesManifestPath(projectRoot);
-        runtime.writeServiceRegistry(serviceRegistryPath, entity.id, {});
-        if (!created.includes(toPosixRelative(targetRoot, serviceRegistryPath))) created.push(toPosixRelative(targetRoot, serviceRegistryPath));
+        const serviceRegistryExists = existsFile(serviceRegistryPath);
+        if (serviceRegistryExists) {
+          runtime.parseServicesManifest(fs.readFileSync(serviceRegistryPath, 'utf8'), {
+            workspaceId: registryRecord.workspace.workspace.id,
+            projectId: entity.id,
+            projectCode: project,
+          });
+        }
+        runtime.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
+        if (!serviceRegistryExists) {
+          runtime.writeServiceRegistry(serviceRegistryPath, entity.id, {});
+          created.push(toPosixRelative(targetRoot, serviceRegistryPath));
+        }
         const registryPath = registryRecord.manifestPath;
         changed.push(toPosixRelative(targetRoot, registryPath));
         changed.push(...ensureGitBoundaries(targetRoot, [{ type: 'project', project, assetRoot: projectRoot }]));

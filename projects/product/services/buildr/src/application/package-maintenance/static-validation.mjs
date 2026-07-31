@@ -817,23 +817,21 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-finish') {
         for (const requiredText of [
-          '一次性授权',
-          'buildr task finish inspect|advance|resume|renew',
-          'fingerprint',
-          'effects',
-          'evidence',
-          '只重跑 blocked/stale 及其下游',
-          'Workspace 全局锁',
-          'selected providers',
-          '<!-- buildr:skill-contributions pre-spec-sync -->',
-          '<!-- buildr:skill-contributions post-spec-sync -->',
+          'buildr.task-finish/v1',
+          '“修复产品缺陷”不是收尾动作',
+          'preflight → prepare → verify → deliver → cleanup',
+          'nextWorkflow: task-development',
+          '不得在当前 run 修改实现',
+          '不得手写或修改 token',
+          'agentProviderCompletions = 0',
+          'formalVerificationExecutions <= 1',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-finish Skill must include ${JSON.stringify(requiredText)}.`);
         }
         const lineCount = skillContent.trimEnd().split(/\r?\n/).length;
         const characterCount = [...skillContent].length;
-        if (lineCount < 30 || lineCount > 50) problems.push(`task-finish Skill must remain thin: expected 30-50 lines, received ${lineCount}.`);
-        if (characterCount < 1500 || characterCount > 2500) problems.push(`task-finish Skill must remain thin: expected 1500-2500 Unicode characters, received ${characterCount}.`);
+        if (lineCount < 40 || lineCount > 80) problems.push(`task-finish Skill must remain thin: expected 40-80 lines, received ${lineCount}.`);
+        if (characterCount < 1500 || characterCount > 4000) problems.push(`task-finish Skill must remain thin: expected 1500-4000 Unicode characters, received ${characterCount}.`);
         for (const forbiddenPolicy of ['fast-forward-only', '默认 rebase 到最新目标分支', '不创建 merge commit']) {
           if (skillContent.includes(forbiddenPolicy)) problems.push(`task-finish must not copy Git provider policy: ${forbiddenPolicy}`);
         }
@@ -928,7 +926,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec baseline create', '--stage pre-sync', '--stage post-sync', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec converge', 'passed|blocked|recovery-unprovable', 'archive --skip-specs', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }

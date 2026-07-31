@@ -239,3 +239,22 @@ test('product-absorbed completion 核验匹配 change 的 proposal 或 design', 
   run('complete', root, appData, [...identity, '--outcome', 'product-absorbed', '--completion', JSON.stringify({ task: 'product-task', change: 'asset-review-product', artifact: relativeArtifact })]);
   assert.deepEqual(run('list', root, appData).files, []);
 });
+
+test('product-absorbed completion 接受 Task Finish 已归档 Change 的证据', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-asset-observation-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, 'workspace');
+  const appData = path.join(base, 'app-data');
+  workspace(root, ID_A);
+  const identity = ['--observation-id', 'archived-product-observation', '--owner', 'root-agent'];
+  run('start', root, appData, [...identity, '--source', '{"task":"source-task"}']);
+  run('finalize', root, appData, [...identity, '--candidate-type', 'product-followup', '--coverage', 'absent', '--evidence-summary', 'missing product support', '--review', 'product candidate']);
+  run('accept', root, appData, [...identity, '--candidate-type', 'product-followup', '--summary', 'add product support']);
+  run('handoff', root, appData, [...identity, '--destination', '{"task":"product-task","sourceTask":"source-task","change":"asset-review-product"}']);
+
+  const relativeArtifact = 'projects/product/openspec/changes/archive/2026-07-28-asset-review-product/design.md';
+  fs.mkdirSync(path.dirname(path.join(root, relativeArtifact)), { recursive: true });
+  fs.writeFileSync(path.join(root, relativeArtifact), '# Design\n');
+  run('complete', root, appData, [...identity, '--outcome', 'product-absorbed', '--completion', JSON.stringify({ task: 'product-task', change: 'asset-review-product', artifact: relativeArtifact })]);
+  assert.deepEqual(run('list', root, appData).files, []);
+});

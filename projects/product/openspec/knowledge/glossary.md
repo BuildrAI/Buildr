@@ -72,6 +72,25 @@
 - 避免混用：Change archive 是历史与 provenance，不是 Project 当前事实源。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## 收尾就绪候选（Finish-ready Candidate）
+
+- 定义：研发实现、自审、必要审查、开发验证和 current knowledge 已完成，允许 Task Finish 只做确定性收敛、冻结、最终保证、交付与清理的候选。
+- 适用范围：Task Finish 的输入资格与研发/收尾责任边界。
+- 避免混用：不等于“代码大致完成”，也不表示 Task Finish 可以修复产品缺陷；收尾发现产品缺陷时必须退出并回到研发、审查和测试验证流程。
+- 来源：[Task Finish 执行规范](../specs/task-finish-execution/spec.md)
+
+## Workspace Node Version
+
+- 定义：Workspace 在 `.buildr/workspace.yml` 中明确采用的精确 Node.js toolchain 版本，由 `init` 首次确定，之后只能通过显式 Workspace 配置变更升级或降级。
+- 适用范围：Buildr CLI、npm、测试、Verification、Candidate 与 Finish 的统一 Node 选择。
+- 避免混用：不是 `package.json#engines.node` 的产品兼容范围，也不是 Agent runtime 可自行保存或决定的版本。
+
+## Workspace Node Identity
+
+- 定义：由 Workspace identity、精确 Node version、platform 与 architecture 组成的稳定摘要，用于绑定 task environment、验证 evidence 与 Finish frozen candidate。
+- 适用范围：检查本机受管 runtime 与 Workspace 声明是否一致，以及决定旧 evidence 是否可复用。
+- 避免混用：不包含某台机器的临时绝对路径，也不等于 Agent runtime identity。
+
 ## 受控同步（Controlled Sync）
 
 - 定义：active Change 在当前会话成功取得 pre-sync receipt 后，由 Agent 按 delta 更新 canonical specs、再通过 post-sync guard 的同步阶段。
@@ -82,6 +101,6 @@
 ## 仅 runtime 投影变更（Runtime Projection-only Delta）
 
 - 定义：已验证 implementation source 在保留 checkout 上执行 Buildr runtime sync 后，仅产生受管 runtime projection 与对应 receipt 的 delivery 差异。
-- 适用范围：Task Finish 对 verification evidence 的严格 closeout-metadata-only subtype 判断。
+- 适用范围：描述 retained Workspace sync 后可精确归因的 runtime 投影差异；新 Task Finish 会在 prepare 完成全部候选 mutation 后统一冻结和验证，不用该术语绕过冻结候选的最终保证。
 - 避免混用：lockfile、source、非受管 generated asset、手工修复或无法精确归因的 diff 都是 implementation-changed，不可复用原验证证据。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)

@@ -10,7 +10,7 @@ Agent 判断的不是用户是否说出 capability 名字，而是目标行为�
 
 用户意图首先由 Agent runtime 的原生 Skill 发现机制处理：runtime 暴露 Skill description，Agent 根据用户目标选择并加载入口 Skill。Buildr CLI 不拦截 prompt，也不存在一个始终先于所有 Skills 运行的全局 capability dispatcher。入口 Skill 加载后，才读取 Buildr 注入的 binding evidence 解析其 capability dependencies。
 
-产品入口 Buildr Skill 只在自身因 Buildr 管理意图被 Agent 命中后充当内部能力路由者，例如更新 workspace、调整工作方式或诊断 Buildr 能力。它不是“收尾”等所有专业意图的统一前置入口。`task-finish` 是编排型 consumer，其 manifest `requires` 参与整体 `ready`、`blocked` 或 `degraded` 计算。它分别依赖任务验证、Git integration 和 worktree lifecycle 的稳定结果证据，而不复制三个 providers 的政策；单项 capability 不可用不会阻塞 Buildr 的 init、doctor 或 Project 管理等无关能力。
+产品入口 Buildr Skill 只在自身因 Buildr 管理意图被 Agent 命中后充当内部能力路由者，例如更新 workspace、调整工作方式或诊断 Buildr 能力。它不是“收尾”等所有专业意图的统一前置入口。`task-finish/v1` 是产品执行器的薄入口，task environment 中的 Git、verification、worktree 与 current knowledge 由产品领域服务或输入资格维护；产品 run 外独立 finalize 的 asset review 保留 optional dependency，retained metadata-only 的精确 commit/push handoff 另声明 optional `buildr.git-single-operation/v1`，只在该 fallback 分支提升为 required。
 
 ## 五种相关但不同的关系
 
@@ -29,14 +29,10 @@ Agent 判断的不是用户是否说出 capability 名字，而是目标行为�
 这项能力负责“将已验证任务安全集成到目标分支”。它的完整结构如下：
 
 ```text
-用户说“收尾”
-  ↓ Agent runtime 根据 Skill description 发现入口
-加载 task-finish
-  ↓ 读取 task-finish runtime 中的 Buildr Capability Bindings
-required dependency = buildr.git-task-integration/v1
-  ↓ workspace binding
-selected provider = git-ops
-  ↓ Agent 读取 contract + git-ops playbook + 当前 Git 状态
+用户要求独立 Git 集成动作
+  ↓ Agent runtime 根据 Skill description 发现 git-ops
+读取 buildr.git-task-integration/v1 contract 与当前 Git 状态
+  ↓
 提交、集成、推送或在需要语义决策时停止
   ↓ result evidence
 commit、目标 ref、输入/最终 content identity、tree 等价性信号、远端结果、treeChanged
@@ -68,27 +64,21 @@ skills:
       - capability: buildr.git-task-integration
         version: 1
 
-  - id: task-finish
-    requires:
-      - capability: buildr.git-task-integration
-        version: 1
-        mode: required
-
 bindings:
   - capability: buildr.git-task-integration
     version: 1
     provider: git-ops
 ```
 
-这里 `task-finish` 没有声明“调用 `git-ops`”或“调用 `task-verification`”。它只声明：缺少 `buildr.task-verification/v2` 返回的 `requiredAssurance`、匹配 identity、状态与真实耗时证据，或缺少 `buildr.git-task-integration/v1` 的最低保证和结果证据时，完整收尾不能安全继续。
+`task-finish/v1` 不消费完整 `git-task-integration`，其 task environment 路径通过产品 application service 执行固定 Git transition，并由自身 contract 约束 fast-forward、push、freeze 与结果证据。只有 retained metadata-only handoff 把 optional `git-single-operation` dependency 提升为 required；独立 Git 任务仍由 `git-ops` provider 和对应 contract 处理。
 
 任务验证单独建模，是因为它既可以在 task environment 中执行，也可以在当前分支、无 Git 项目或非代码候选中执行。`buildr.task-worktree-lifecycle/v2` 保护单仓或多仓 repository plan、checkout placement、execution roots、retention 与 cleanup；`buildr.task-verification/v2` 保护可选 Project 测试声明与 legacy policy 解析、affected/candidate 正式保证、完整 repository candidate identity、wall-clock、用户报告和落盘 evidence 生命周期。Project `verification.yml` 是测试能力事实，不是 Skill provider/binding，因此不进入 `capabilities.yml`。没有声明时 contract 保证零配置 legacy 行为；声明存在时 provider 按成熟度、阶段、环境、副作用和授权返回能力选择证据。验证 provider 负责 transient evidence 的安全删除实现，Task Finish 只决定 consumer 已使用完毕的时点；worktree provider 不清理与 checkout 无关的证据。两者互不要求固定 provider identity。
 
-顶层验证 provider 不是只有用户主动说“验证”才加载。用户直接要求测试、耗时报告、初始化/更新测试声明或推进测试能力成熟度时由 description 发现；实现任务到达验证节点、Agent 准备声称完成时由适用 Rule 的完成边界触发；Task Finish 则在“收尾”入口加载后通过 required binding 调用 selected provider。binding 选择 provider，但不会替代这些意图发现和完成边界。
+顶层验证 provider 不是只有用户主动说“验证”才加载。用户直接要求测试、耗时报告、初始化/更新测试声明或推进测试能力成熟度时由 description 发现；实现任务到达验证节点、Agent 准备声称完成时由适用 Rule 的完成边界触发。Task Finish 的最终 assurance 由产品 executor 调用 verification application service，不触发 Agent provider handoff。
 
 ### 3. Resolver 与 readiness
 
-Buildr 从当前 scope 向 workspace root 查找最近的显式 binding，校验 contract version、provider `provides`、runtime 可用性和 provider 自身的 required dependencies。当前 binding 选择 `git-ops`，所以 `task-finish` 的这条 dependency 为 `ready`；binding 缺失、歧义、版本不兼容或 provider blocked 时，`task-finish` 相应变为 `blocked`。
+Buildr 从当前 scope 向 workspace root 查找最近的显式 binding，校验 contract version、provider `provides`、runtime 可用性和 provider 自身的 required dependencies。当前 binding 选择 `git-ops`，供独立 Git 能力消费者、顶层意图或 retained metadata-only handoff 使用；它不决定 `task-finish/v1` 产品执行器是否可运行，只有命中 handoff 时 provider 不 ready 才 blocked。
 
 ### 4. Runtime evidence
 
@@ -96,17 +86,17 @@ render/sync 会在 `task-finish` 的 runtime 派生版本中注入受管 binding
 
 ### 5. Agent 实际执行
 
-当用户说“收尾”时，Agent runtime 先根据 description 命中并加载 `task-finish`；这一步不经过产品入口 Buildr Skill。`task-finish` 随后读取受管 binding block，执行相应阶段前再读取已解析 contract 和 selected provider。Agent 根据当前仓库、授权和 candidate identity 执行专业动作，并把各 provider 返回的最小 evidence 交还给收尾编排；Git provider 不执行 Candidate 验证，worktree provider 不监控普通内容编辑，验证 provider/consumer 决定继续、复用、重验或停止。这个过程是 Agent 调解的工作协作，不是 `task-finish.gitOps()` 一类方法调用。
+当用户说“收尾”时，Agent runtime 根据 description 命中并加载 `task-finish`。receipt-bound Change/code-only 候选只调用一次 `buildr task finish run`；五阶段动作、证据投射和暂态恢复由产品执行器持有，Agent 不逐阶段调用 provider。context 为 `worktree.not_task_environment` 的 retained metadata-only 候选只有在精确 task paths、验证 identity 和目标 ref 可证明时，才把 commit 与 push 分别交给 selected `git-single-operation` provider；provider 不得 stage 无关 dirty state。产品缺陷直接结束 Finish 并回到研发流程。
 
-对 `buildr.task-verification/v2`，调用 provider 还必须携带 operation、任务/change、发布意图、风险信号、变更路径、候选 identity 与已有 evidence。`inspect` 只核对已有 evidence，`execute` 才启动验证，`cleanup` 只处理已消费 evidence。provider 返回 `requiredAssurance: affected | candidate`；Task Finish 只核对 evidence 是否满足该保证。实现内容变化时重新执行同一 required assurance，不机械升级为 Candidate。`same-content` 或可归因 `closeout-metadata-only` transition 使用 `inspect`，两个 executor 调用计数均为 0。
+产品中的 verification 领域服务仍遵守 `buildr.task-verification/v2`：已有证据只有在 frozen identity 与 required assurance 完全匹配时复用，否则执行一次正式保证；失败终止 Finish，不在同一 run 修复或重验。transient evidence 在交付完成后由 cleanup 请求 provider 安全清理。
 
 对 optional `buildr.task-asset-review/v3`，provider 从非简单 Workspace 任务期间开始维护 canonical Workspace 的 `.buildr/asset-review/inbox/` observation，并独占信号筛选、资格审查、人工决定和新任务交接政策。该运行期目录必须由根 `.gitignore` 排除；长期维护历史仍只随真实资产修改提交到 `asset-maintenance/`。Task Finish consumer 只传递 Workspace/task identity 与最终证据引用并触发 finalize；它不复制 provider 的门禁。v3 允许写当前 owner 的本地 observation、迁移匹配的 v2 用户级草稿，并要求独立任务 handoff 与类型化完成证据，因此不能用 v1/v2 contract 替代。
 
 ### 6. 用户替换实现
 
-若组织创建 `internal-git` 并声明提供同一 contract，安装它不会改变当前流程。Agent 先验证 `internal-git` 与 `task-finish` 的组合，再把 binding 显式切换为 `internal-git`。只要 contract guarantees 和 result evidence 保持兼容，内部实现可以使用 feature + PR、merge queue 或其他组织策略，`task-finish` 无需修改。
+若组织创建 `internal-git` 并声明提供同一 contract，安装它不会改变用户的“收尾”入口。产品执行器只能使用已具备稳定确定性 application service 的实现；需要 Agent completion 或改变 fast-forward/push 授权语义的 provider 不能被直接接入固定正常路径。
 
-这里替换的是 `task-finish` 加载后的依赖 provider，所以不需要修改“收尾”意图的入口 description。如果替换的是 `buildr.task-finish/v1` 自身，binding ready 仍不代表用户说“收尾”时一定能命中新 provider；能力适配还必须确认新 provider 已投射到当前 runtime、description 覆盖“收尾”意图，并处理旧 `task-finish` 或其他入口造成的触发歧义。
+Task Finish 随 Buildr Client 整体直接替换，沿用 `buildr.task-finish/v1` identity 并由单命令五阶段语义覆盖旧实现；runtime description 必须继续覆盖“收尾”意图。客户端不保留旧 reader/executor，也不建立并行 capability、run store 或状态迁移模块。需要回滚时安装上一个客户端版本。
 
 这里有两个不同的版本概念：
 

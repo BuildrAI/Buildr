@@ -52,10 +52,10 @@ Project 服务通过 `services/manifest.yml` 维护 Service registry，默认 re
 
 ## 本地 CLI 同步
 
-- 改动涉及 Buildr 产品 CLI 入口或实现（`buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、安装/卸载脚本或 npm CLI 映射）时，完成相关验证后必须从包含本次变更的 Product checkout 自动运行 `scripts/install-buildr-cli`，刷新本机 `buildr` 开发入口，无需再次等待用户提醒。
-- 安装后必须运行 `command -v buildr`、`buildr --help` 和 `buildr doctor --agent <agent> --target <workspace-root> --json`，确认本机入口和目标 workspace 状态有效。
-- task worktree 中的候选 CLI 只验证临时 workspace 或 task worktree；本机入口如仍指向即将清理的 task worktree，清理前必须重新安装到仍保留的 workspace checkout。
-- 如目标位置存在非 Buildr 管理的文件或命令冲突，停止自动安装并明确报告，不得覆盖；如果本机 `buildr` 指向 task worktree，清理该 worktree 前必须重新安装到仍保留的 workspace checkout 并验证。
+- task environment 必须使用其 receipt 返回的绝对 CLI invocation；不得运行主机全局安装脚本，也不得修改 `~/.local/bin/buildr`。需要验证安装行为时，只能通过 `BUILDR_CLI_INSTALL_DIR` 指向任务专用临时目录。
+- 改动涉及 Buildr 产品 CLI 入口或实现（`buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、安装/卸载脚本或 npm CLI 映射）时，候选验证与集成完成后，必须从仍保留的 Product checkout 自动运行一次 `scripts/install-buildr-cli`，刷新本机默认开发入口，无需再次等待用户提醒。
+- 安装后必须运行 `command -v buildr`、`buildr --help` 和 `buildr doctor --agent <agent> --target <workspace-root> --json`，确认默认入口绑定仍保留的 checkout，且目标 workspace 状态有效。
+- 如目标位置存在非 Buildr 管理的文件或命令冲突，停止自动安装并明确报告，不得覆盖。
 
 ## 验证入口
 

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "support-code-only-task-finish",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-8a0121cff2ab4328fd22787bf1c1e0264a5f5ef5aa7428f9099a0375daf4d569",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish handoff 必须保持 Git 单项能力边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish Skill 必须收窄为授权与单命令入口",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish Skill 必须收窄为授权与单命令入口\nBuildr MUST 提供实现 `buildr.task-finish/v1` 的 Task Finish Skill。Skill MUST 解析用户的收尾意图、披露常规 commit/convergence/verification/integration/push/retained/cleanup 授权与明确排除项，然后调用一次 canonical `buildr task finish run`；正常路径 MUST NOT 领取或完成产品 checkpoint、调用多个 provider 后重组 evidence、构造 recovery JSON 或在对话中维护 workflow 状态。\n\n#### Scenario: 用户要求收尾\n- **WHEN** 用户在 canonical task environment 中明确要求收尾\n- **THEN** Agent MUST 披露目标 task/change、目标分支、远端、常规副作用和未授权动作\n- **AND** 在没有待人工语义决定时 MUST 只启动一次 canonical Task Finish executor 并消费其最终结果\n\n#### Scenario: 产品返回完整结果\n- **WHEN** current result 为 complete\n- **THEN** Skill MUST 直接报告交付、验证、retained、cleanup 与效率证据\n- **AND** MUST NOT 为确认已完成动作再次调用 inspect、provider completion 或同等验证命令\n"
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Task Finish canonical CLI 必须只有 run 与 inspect",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish canonical CLI 必须只有 run 与 inspect\nBuildr CLI MUST 只提供 `task finish run` 和 `task finish inspect`：`run` 从 task environment/change/Project context 解析执行所需 identity 并连续执行五阶段，`inspect` 只读返回当前 run 状态。当前客户端 MUST NOT 注册、加载或执行 `actions|advance|resume|renew|recover|cleanup-prepare|cleanup-finalize`，也 MUST NOT 接受调用方提供的 evidence/fingerprint/execution-plan/recovery 参数。\n\n#### Scenario: 查询 canonical Task Finish 帮助\n- **WHEN** 用户运行 `buildr help task finish`、`buildr task finish run --help` 或 `buildr task finish inspect --help`\n- **THEN** 输出 MUST 只把 run/inspect 表述为 canonical actions，并列出 task/change/project/agent/target 与可选产品 resume token\n- **AND** MUST NOT 要求调用方理解 step、attempt、lease、action registry 或 recovery manifest\n\n#### Scenario: 调用旧 action\n- **WHEN** 调用方使用旧 maintenance action\n- **THEN** CLI MUST 作为不存在或不支持的 action 拒绝\n- **AND** MUST NOT 加载旧 reader/executor 或创建旧 run\n\n#### Scenario: Canonical store 中存在旧 run shape\n- **WHEN** 当前客户端运行或检查 Task Finish 且 canonical store 中仍有旧 checkpoint、lease 或 completion shape\n- **THEN** 自动选择 MUST 跳过旧 shape，显式 inspect MUST fail closed\n- **AND** MUST NOT 加载旧 reader、生成迁移 receipt 或把旧 passed evidence 映射为新 phase\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须支持无 Change 的 code-only 候选",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Code-only run 必须明确记录 Change 动作不适用",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

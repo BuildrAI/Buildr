@@ -99,6 +99,8 @@ function normalizedSteps(results) {
     ...(result.blockedAt ? { blockedAt: result.blockedAt } : {}),
     ...(result.queueDurationMs == null ? {} : { queueDurationMs: Number(result.queueDurationMs) }),
     ...(result.resourceCoordination ? { resourceCoordination: result.resourceCoordination } : {}),
+    ...(result.failureCode ? { failureCode: result.failureCode } : {}),
+    ...(result.processCleanup ? { processCleanup: result.processCleanup } : {}),
   }));
 }
 

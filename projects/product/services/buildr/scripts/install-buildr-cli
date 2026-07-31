@@ -2,23 +2,48 @@
 set -euo pipefail
 
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source_bin="$product_root/bin/buildr.mjs"
+source_bin="$product_root/scripts/run-development-cli"
 legacy_source_bin="$(cd "$product_root/../.." && pwd)/bin/buildr.mjs"
 install_dir="${BUILDR_CLI_INSTALL_DIR:-$HOME/.local/bin}"
 target_bin="$install_dir/buildr"
+node_executable="${BUILDR_NODE_EXECUTABLE:-}"
 
-if ! command -v node >/dev/null 2>&1; then
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --node-executable)
+      [[ $# -ge 2 ]] || { echo "Missing value for --node-executable." >&2; exit 2; }
+      node_executable="$2"
+      shift 2
+      ;;
+    --install-dir)
+      [[ $# -ge 2 ]] || { echo "Missing value for --install-dir." >&2; exit 2; }
+      install_dir="$2"
+      target_bin="$install_dir/buildr"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$node_executable" ]]; then
+  node_executable="$(command -v node || true)"
+fi
+
+if [[ -z "$node_executable" || ! -x "$node_executable" ]]; then
   echo "Buildr requires Node.js 20 or newer." >&2
   exit 1
 fi
 
-node_major="$(node -p 'Number(process.versions.node.split(".")[0])')"
+node_major="$("$node_executable" -p 'Number(process.versions.node.split(".")[0])')"
 if [[ "$node_major" -lt 20 ]]; then
-  echo "Buildr requires Node.js 20 or newer; current version: $(node --version)" >&2
+  echo "Buildr requires Node.js 20 or newer; current version: $("$node_executable" --version)" >&2
   exit 1
 fi
 
-if ! (cd "$product_root" && node --input-type=module -e "import('yaml')" >/dev/null 2>&1); then
+if ! (cd "$product_root" && "$node_executable" --input-type=module -e "import('yaml')" >/dev/null 2>&1); then
   if ! command -v npm >/dev/null 2>&1; then
     echo "Buildr runtime dependencies are missing and npm is unavailable." >&2
     exit 1

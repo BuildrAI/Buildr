@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "repair-verification-completion-recovery",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-f47c9a32f59b6d3b1f838cb029d6a5f1d9e0d33c0d389aceb551bade4c14361a",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-verification",
+      "title": "Verification step 必须在直接子进程退出后有界收敛",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Verification execution 必须为收敛失败生成可信 summary",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

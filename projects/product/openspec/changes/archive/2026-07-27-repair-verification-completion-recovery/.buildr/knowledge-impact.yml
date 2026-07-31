@@ -1,0 +1,28 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: repair-verification-completion-recovery
+operation: reconcile
+treeIdentity: implementation-current
+impacts:
+  - type: brief
+    target: openspec/changes/repair-verification-completion-recovery/brief.md
+    reason: 需要向普通用户解释真实 verifier 悬挂、owned cleanup 边界和非通过 summary 验收
+    status: updated
+    sourceIdentities:
+      - openspec/changes/repair-verification-completion-recovery/proposal.md
+      - openspec/changes/repair-verification-completion-recovery/design.md
+      - openspec/changes/repair-verification-completion-recovery/specs/task-verification/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 本次只修复内部 verification runner 生命周期，不改变 Buildr Service 公开职责、CLI 或用户流程
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/repair-verification-completion-recovery/specs/task-verification/spec.md
+      - services/buildr/test/verification/timing/parallel-runner.mjs
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: process group、stdio close 与 grace period 是实现术语，不新增或重定义长期产品概念
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/repair-verification-completion-recovery/design.md
+      - services/buildr/test/integration-fast/verification-timing.test.mjs
+unresolvedItems: []

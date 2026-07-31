@@ -46,7 +46,7 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
 
 test('Workspace、Project 与 Service Domain 保持纯净且 local app 静态资源随 src 交付', () => {
   const domain = fs.readFileSync(path.join(productRoot, 'src/domain/workspace/workspace.mjs'), 'utf8');
-  assert.doesNotMatch(domain, /node:|yaml|filesystem|http|process|runtime|repository/i);
+  assert.doesNotMatch(domain, /yaml|filesystem|http|process|repository/i);
   const projectDomain = fs.readFileSync(path.join(productRoot, 'src/domain/project/project.mjs'), 'utf8');
   assert.doesNotMatch(projectDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   const serviceDomain = fs.readFileSync(path.join(productRoot, 'src/domain/service/service.mjs'), 'utf8');

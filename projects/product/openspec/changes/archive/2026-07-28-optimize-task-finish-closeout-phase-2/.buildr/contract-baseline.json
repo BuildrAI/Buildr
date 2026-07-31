@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-closeout-phase-2",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-843af85bba1cd3fd766f30bbbb2d820c9398aba00830115789d06648e501a0e8",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "buildr-cli-self-update",
+      "title": "自举 CLI 刷新必须使用已验证 runtime identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Workflow internal 命令必须提供完整主题帮助",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Workflow diagnostic 必须返回可直接执行的下一动作",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须连续执行可机械验证的 provider action",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Retained impact 分类必须覆盖默认 CLI 实现",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须传递 retained runtime identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 正常路径必须报告自动化效率证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Production verification 必须使用单一 evidence lifecycle 契约",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Verification cleanup 必须是可安装的产品操作",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

@@ -32,12 +32,21 @@ const allowed = new Map([
     'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
+  ['src/infrastructure/filesystem/workspace-node-runtime.mjs', new Set([
+    'downloadFile', 'installFromOfficial', 'installFromCurrent', 'ensureWorkspaceNodeRuntime',
+  ])],
   ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
     'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
   ])],
   ['src/interfaces/local-app/runtime/preview-manager.mjs', new Set(['clearOwner'])],
   ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
-  ['src/application/task-finish/task-finish-run.mjs', new Set(['atomicWriteJson', 'removeLeasePath'])],
+  ['src/application/task-finish/task-finish-run.mjs', new Set([
+    'atomicWriteJson', 'acquireFinishTargetLease', 'releaseFinishTargetLease',
+  ])],
+  ['src/application/verification/resource-coordinator.mjs', new Set([
+    'atomicWriteJson', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
+  ])],
+  ['src/interfaces/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/application/domains/workspace.mjs', new Set(['createProject', 'createService'])],
   ['src/application/domains/rules.mjs', new Set(['rulesRemoveUnsafe'])],
   ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe', 'applyProjectSkillMigration'])],

@@ -114,7 +114,7 @@ capabilities:
       risks: ["Change lifecycle、Change path resolution、OpenSpec sync/archive workflow"]
     coverage:
       kind: contract
-      owns: ["active 或唯一 archived Change 定位、archive rehearsal 隔离与 Task Finish 生命周期顺序"]
+      owns: ["active 或唯一 archived Change 定位、单一 OpenSpec convergence 事务与 Task Finish 生命周期顺序"]
     environment:
       requires: [node]
       services: []
@@ -127,3 +127,30 @@ capabilities:
     dependsOn: []
     supersedes: []
     sources: ["services/buildr/test/contract/current-knowledge-governance.test.mjs", "services/buildr/test/contract/task-finish-sequencing.test.mjs"]
+  - id: product.openspec-convergence-journey
+    title: Buildr OpenSpec 确定性收敛完整 Journey
+    command:
+      argv: ["npm", "run", "test:openspec:convergence"]
+      cwd: services/buildr
+    maturity: stable
+    stages: [affected]
+    enforcement:
+      affected: required
+    applicability:
+      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/application/openspec/**", "services/buildr/src/application/domains/openspec.mjs", "services/buildr/src/interfaces/cli/**", "services/buildr/src/application/task-finish/**", "services/buildr/test/verification/openspec/**"]
+      risks: ["OpenSpec canonical 写入、断点恢复、并发 Change、archive --skip-specs 或 checkpoint bootstrap"]
+    coverage:
+      kind: end-to-end
+      owns: ["单一 receipt、隔离 strict validation、条件式应用、写后确认、文件事实恢复、归档重试、并发 Change 与损坏 domain checkpoint"]
+    environment:
+      requires: [node, npm]
+      services: []
+    effects:
+      level: local-temporary
+      writes: ["系统临时目录中的完整 OpenSpec Project、Change、finish run 与 receipts"]
+      externalSystems: false
+    authorization: implicit
+    resourceClaims: [task-temporary]
+    dependsOn: []
+    supersedes: []
+    sources: ["services/buildr/test/unit/openspec-convergence-transaction.test.mjs", "services/buildr/test/integration-fast/task-finish-cli.test.mjs", "services/buildr/test/verification/openspec/contract.mjs"]

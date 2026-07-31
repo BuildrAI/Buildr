@@ -1,0 +1,605 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "refactor-task-finish-executor",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-04bec7dbec045f049edfea28a2756b728989fd242186ca904dc5a9a3738bd611",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish Skill 必须收窄为授权与单命令入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish workflow 必须把产品缺陷退回研发",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "任务资产审查不得扩展 Finish 执行器",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 自动编排已验证任务收尾",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 自动编排已验证任务收尾\nBuildr MUST 提供实现 `buildr.task-finish/v1` 的 `task-finish` 默认 workspace Skill，将用户当前轮次明确的“收尾”意图作为受限的一次性授权，并通过绑定的 `buildr.task-verification/v2`、`buildr.task-worktree-lifecycle/v1` 和 `buildr.git-task-integration/v1` providers 自动完成可安全确定的剩余任务动作；Task Finish MUST NOT 固定所有任务均要求 Candidate。\n\n#### Scenario: 收尾前置检查\n- **WHEN** 用户在 canonical task worktree 中要求收尾\n- **THEN** Agent MUST 解析当前 task/change、仓库边界、目标分支、远端、工作区改动、发布意图、已知验证 evidence 和三个 required providers\n- **AND** Agent MUST 在 Git 写操作前披露 selected provider identities、实际验证/集成/清理策略、提交范围、目标分支、远端和清理范围\n- **AND** 存在无关 dirty changes、多个无法消歧的 change/目标分支、required provider readiness 为 `blocked` 或不可信验证状态时，Agent MUST 在破坏性动作前停止\n\n#### Scenario: 普通收尾要求 affected 保证\n- **WHEN** Task Finish 提交非发布、未命中 Project 高风险政策的任务上下文\n- **THEN** selected verification provider MUST 返回 `requiredAssurance: affected`\n- **AND** Task Finish MUST 只在成功 evidence 的 level 匹配 affected、candidate identity 匹配且 evidence 可复用时继续\n\n#### Scenario: 发布高风险或显式完整收尾要求 candidate 保证\n- **WHEN** Task Finish 提交发布任务、Project 高风险任务或用户明确要求完整验证的上下文\n- **THEN** selected verification provider MUST 返回 `requiredAssurance: candidate`\n- **AND** Task Finish MUST 只在成功 Candidate evidence 完整、identity 匹配且可复用时继续\n\n#### Scenario: 收尾复用可信 evidence\n- **WHEN** 当前候选已有 selected verification provider 产生或核对的成功 evidence，且 level 满足 `requiredAssurance`、candidate identity 未改变\n- **THEN** Task Finish MUST 复用该 evidence\n- **AND** Task Finish MUST NOT 重复运行相同验证\n- **AND** provider evidence inspection MUST NOT 被计作 verification execution\n\n#### Scenario: 收尾补齐验证 evidence\n- **WHEN** 所需 evidence 缺失、级别不足、不可读、不可复用或与当前候选 identity 不匹配\n- **THEN** Task Finish MUST 调用 selected task-verification provider 对当前最终候选执行 `requiredAssurance` 对应的项目验证\n- **AND** 新验证失败或仍不完整时 MUST 停止 integrate、push 和 cleanup\n\n#### Scenario: Closeout metadata 改变 delivery tree\n- **WHEN** delivery tree 与已验证 implementation identity 的差异完全来自可归因的 OpenSpec sync/archive、归档格式规范、Project 明确定义的 closeout-only artifacts，或符合 runtime projection-only 条件的 Buildr sync 投影与 receipt\n- **THEN** Task Finish MUST 将 transition 标记为 `closeout-metadata-only`，保留原 evidence，并运行 closeout workflow 已要求的 focused checks\n- **AND** Task Finish MUST NOT 调用 task-verification `execute`，最终报告 MUST 分别说明已验证 identity、delivery tree identity 和 closeout delta checks\n\n#### Scenario: Buildr runtime projection-only delivery delta\n- **WHEN** implementation source 已由可复用 evidence 覆盖，已集成保留 checkout 上的 `buildr sync` 只修改受管 runtime projection 与对应 receipt，且 `git diff`、component integrity 与 doctor 均证明没有其他 source 或生成资产变化\n- **THEN** Task Finish MUST 将该 delta 作为 `closeout-metadata-only` 处理并复用原 verification evidence\n- **AND** MUST 运行并记录 runtime/receipt focused checks、sync 来源、implementationCandidateIdentity 和 deliveryTreeIdentity\n\n#### Scenario: 实现内容改变时重新验证同一所需保证\n- **WHEN** provider integration、冲突解决、lockfile 或非 projection-only 的生成资产更新、其他步骤改变 implementation content，或差异无法完全证明属于 closeout-only scope\n- **THEN** Task Finish MUST 将 transition 标记为 `implementation-changed`，使原 evidence 失效，并在集成前请求新的 `requiredAssurance`\n- **AND** 普通任务 MUST 重跑 affected，发布、高风险或显式完整验证任务 MUST 重跑 candidate，新验证失败时 MUST 停止尚未执行的 integrate、push 和 cleanup\n\n#### Scenario: 完成 OpenSpec 归档\n- **WHEN** 当前任务包含 artifacts 和 tasks 均完成的 active OpenSpec change\n- **THEN** Task Finish MUST 先通过 pre-sync guard，再执行 canonical sync，并在 post-sync guard 通过后归档 change\n- **AND** Task Finish MUST 通过外部可用的 OpenSpec CLI/Skills 完成该步骤，不修改外部 `openspec-*` Skill 源\n- **AND** OpenSpec strict、contract guard 和 `git diff --check` MUST 作为 closeout workflow checks 记录，不得计作 verification executor invocation\n\n#### Scenario: 归档后规范 EOF 空白行\n- **WHEN** OpenSpec archive 或 specs sync 后 `git diff --check` 仅报告本次修改的 OpenSpec Markdown 文件存在 `new blank line at EOF`\n- **THEN** Task Finish MUST 将这些文件规范为恰好一个结尾换行\n- **AND** Task Finish MUST 重新运行 `git diff --check` 和 OpenSpec strict validation\n\n#### Scenario: 归档后存在其他格式问题\n- **WHEN** `git diff --check` 报告非 EOF 空白行、非 OpenSpec 文件或无法确认来源的问题\n- **THEN** Task Finish MUST 停止自动修复\n- **AND** Agent MUST 报告问题并等待用户决定\n\n#### Scenario: 收尾授权覆盖 provider 声明的常规动作\n- **WHEN** 前置检查、所需验证和归档相关检查通过\n- **THEN** 用户的“收尾” MUST 授权提交当前任务范围、调用已绑定 task-integration provider 完成其 contract 与执行前披露中声明的常规集成动作、推送已确认目标分支，以及删除已安全合入的本地 worktree 和本地任务分支\n- **AND** Task Finish MUST 遵循 provider contracts，且 MUST NOT 复制或覆盖 verification、Git integration 或 worktree lifecycle provider 的内部 policy\n\n#### Scenario: 默认 Git provider 保持现有集成策略\n- **WHEN** `git-ops` 是已绑定的 `buildr.git-task-integration/v1` provider\n- **THEN** 默认 task integration MUST 继续使用无语义冲突的必要 rebase 和 fast-forward-only 集成\n- **AND** MUST NOT 因验证保证变化扩大 Git 授权\n\n#### Scenario: 默认收尾授权的固定排除项\n- **WHEN** 收尾需要 force push、删除远端任务分支、丢弃改动、改写共享分支历史或解决语义冲突\n- **THEN** “收尾” MUST NOT 授权这些动作\n- **AND** Agent MUST 停止并取得用户对具体动作的明确授权或决策\n\n#### Scenario: Optional 资产审查 provider 缺失\n- **WHEN** `buildr.task-asset-review/v1` optional dependency 未绑定\n- **THEN** Task Finish MUST 跳过资产审查阶段并明确记录该降级\n- **AND** 收尾的其他 required 阶段 MUST 继续执行\n\n#### Scenario: 安全清理 task worktree\n- **WHEN** 目标分支已包含任务提交、远端目标分支已推送且 task worktree 干净\n- **THEN** Task Finish MUST 调用已绑定 worktree-lifecycle provider 确认 cleanup preconditions 和本机入口迁移要求\n- **AND** Task Finish MUST 按 provider contract 清理并检查清理后的 worktree 列表和仓库状态\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 在相关资产变更中先完成收尾就绪检查",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 在相关资产变更中先完成收尾就绪检查\nBuildr `task-finish` MUST 在将当前实现 tree 交给 selected task-verification provider 之前，对触及受管 Component、Skill、Command、lockfile、外部命令声明或 OpenSpec 升级信号的任务执行 closeout readiness checkpoint。checkpoint MUST 报告触发信号、实际检查、跳过理由和阻塞的下一步，且 MUST NOT 把该 workflow check 计作 task-verification provider 的 `execute` 或 Candidate executor invocation。\n\n#### Scenario: 相关资产变更具有可收敛的本地依赖\n- **WHEN** checkpoint 发现当前 Project 已由 lockfile 声明的 checkout-local dependency 与声明版本不一致，且 Project 既有环境准备入口允许在 canonical task environment 中执行依赖安装\n- **THEN** Task Finish MUST 在 Candidate 前通过该 Project 的既有入口收敛本地依赖并重新核对版本\n- **AND** 任何依赖安装失败 MUST 阻止 Candidate、archive、integrate、push 和 cleanup\n\n#### Scenario: 外部 CLI 版本不匹配\n- **WHEN** checkpoint 发现受管资产声明的外部 CLI 版本与当前可用 command 不匹配\n- **THEN** Task Finish MUST 停止后续收尾并报告声明版本、实际版本和可执行修复路径\n- **AND** “收尾” MUST NOT 隐式授权安装、升级或降级用户级或系统级外部 CLI\n\n#### Scenario: 生成完整性或格式尚未收敛\n- **WHEN** checkpoint 检测到相关受管资产的 Component integrity/receipt 不匹配，或 `git diff --check` 报告可归因于当前任务的格式问题\n- **THEN** Task Finish MUST 在 Candidate 前完成允许的修复并重新执行对应检查\n- **AND** 无法证明修复范围或重新检查失败时 MUST 停止后续收尾\n\n#### Scenario: 普通任务没有相关资产信号\n- **WHEN** 当前任务不触及受管资产、lockfile、外部命令声明或 OpenSpec 升级信号\n- **THEN** Task Finish MUST 记录 checkpoint 未触发的理由\n- **AND** MUST 继续遵循既有 requiredAssurance、OpenSpec、Git integration 和 worktree lifecycle 流程\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 在 OpenSpec archive 后检查空 active-change scaffold",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 在 OpenSpec archive 后检查空 active-change scaffold\nBuildr `task-finish` MUST 在完成 active OpenSpec change archive 后，以当前 OpenSpec CLI 的 status 与 strict validation 检查 archive 结果；该检查属于 closeout workflow check，不得替代 canonical spec sync/post-sync contract guard 或 task-verification evidence。\n\n#### Scenario: archive 后遗留本次 change 的空 scaffold\n- **WHEN** archive 后当前 CLI 仍将本次 change 识别为 active，且逐层检查证明遗留目录及其子目录均为空\n- **THEN** Task Finish MUST 只删除该已证明为空的 scaffold 并再次运行 OpenSpec strict validation\n- **AND** 最终报告 MUST 记录残留路径、空目录证据和复查结果\n\n#### Scenario: archive 后残留非空或无法归因的状态\n- **WHEN** active change 残留非空内容、属于其他 change，或无法证明由本次 archive 产生\n- **THEN** Task Finish MUST 停止自动清理并报告状态与下一步\n- **AND** MUST NOT 用目录名、空的父目录假设或批量删除扩大清理范围\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 归档已手动同步的 OpenSpec change 时跳过重复 spec update",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 归档已手动同步的 OpenSpec change 时跳过重复 spec update\n当 Task Finish 已在当前会话中通过 agent-driven 路径同步 active change 的 canonical specs，且 `post-sync` contract guard 返回 `ok: true` 时，Task Finish MUST 使用当前 OpenSpec CLI 的 `archive --skip-specs` 归档该 change。该选项只跳过重复 spec update，不得跳过 strict validation、archive 后状态检查或现有 closeout workflow checks。\n\n#### Scenario: 已同步且 post-sync 通过的 change\n- **WHEN** 当前会话已记录 canonical spec sync 和 `post-sync` guard 的成功结果\n- **THEN** Task Finish MUST 使用 `openspec archive <change> --skip-specs --yes`\n- **AND** MUST 记录 canonical specs 已同步、archive 未重复更新 specs 以及后续 strict validation 结果\n\n#### Scenario: 缺少已同步证据或 post-sync 失败\n- **WHEN** canonical sync 尚未完成、无法证明属于当前会话，或 `post-sync` guard 未通过\n- **THEN** Task Finish MUST NOT 使用 `--skip-specs`\n- **AND** MUST 停止或按既有默认 archive/sync 流程处理，不得以该选项绕过 guard\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 默认不推送远端任务分支",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 默认不推送远端任务分支\nBuildr Task Finish MUST 将当前轮次“收尾”授权中的默认推送范围限制为包含已集成任务内容的目标分支。Task Finish 与兼容的 Git 任务集成 provider MUST NOT 因任务分支存在、已提交或已合入而自动创建或推送对应的远端任务分支。\n\n#### Scenario: 普通收尾只推送目标分支\n- **WHEN** 用户要求收尾，任务分支已经安全集成到已确认的目标分支，且用户没有明确要求远端任务分支\n- **THEN** Agent MUST 只披露并推送目标分支\n- **AND** MUST NOT 执行 `git push -u <remote> <task-branch>` 或其他会创建、更新远端任务分支的动作\n- **AND** 最终收尾结果 MUST 说明目标分支推送结果与任务分支未推送状态\n\n#### Scenario: 用户明确要求远端任务分支\n- **WHEN** 用户在当前轮次明确要求为 PR、远程备份、交接或其他具体目的推送任务分支\n- **THEN** Agent MAY 在执行前披露任务分支、远端、目的和待推送提交后推送该分支\n- **AND** MUST 继续遵守 force push、远端删除和共享历史改写的既有授权边界\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须报告可信的完整验证 timing 证据",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须报告可信的完整验证 timing 证据\nBuildr `task-finish` MUST 消费 selected task-verification provider 返回的 `requiredAssurance` 与匹配 evidence，并将验证状态和 timing 作为收尾 Result Evidence 的一部分。\n\n#### Scenario: 所需验证成功\n- **WHEN** `task-finish` 使用当前候选 identity、满足 requiredAssurance 的成功 evidence\n- **THEN** `task-finish` MUST 核对 status、level、requiredAssurance、candidate identity 和 timing source\n- **AND** 最终报告 MUST 说明受影响验证或完整候选验证、总耗时、最慢检查、失败项、跳过项和 evidence reference\n\n#### Scenario: Buildr Product 提供 verifier summary\n- **WHEN** 当前 Project 是 Buildr Product 且 verifier 输出 `buildr.verification-timing/v1` summary\n- **THEN** `task-finish` MUST 使用产品专项 verifier 核对 summary status、run kind、source identity 和 candidate fingerprint\n- **AND** 核对通过后 MUST 将 timing source 记录为 `verifier-reported`\n\n#### Scenario: timing evidence 不可信\n- **WHEN** evidence 缺失、不可读、已被其他 run 覆盖或 identity 无法匹配当前候选\n- **THEN** `task-finish` MUST NOT 引用其他 run 的耗时或根据并行检查耗时推算整体 wall-clock\n- **AND** 在仍可安全重跑时 MUST 请求 selected task-verification provider 生成满足 requiredAssurance 的可信 evidence，否则停止完整收尾\n\n#### Scenario: 收尾消费后清理 transient evidence\n- **WHEN** 最终 evidence 标记为 transient，摘要已捕获、集成与推送完成且没有后续 consumer\n- **THEN** Task Finish MUST 请求 selected verification provider 清理该 evidence\n- **AND** 最终报告 MUST 说明 cleanup status；清理失败时报告保留路径与原因，不回滚已完成交付\n\n#### Scenario: evidence 级别低于所需保证\n- **WHEN** 当前 evidence level 低于 `requiredAssurance`\n- **THEN** Task Finish MUST NOT 将其表述为满足收尾门禁\n- **AND** MUST 请求补齐验证或报告 incomplete\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "内置任务资产审查与任务收尾保持分层",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: 内置任务资产审查与任务收尾保持分层\nBuildr MUST 将持续观察、资格审查、候选分类、人工决定和去向交接交给 selected `buildr.task-asset-review/v2` provider；`task-finish` MUST 只在 cleanup 前触发 finalize 并等待 provider 结果。\n\n#### Scenario: Task Finish 触发 finalize\n- **WHEN** `task-finish` 已确认当前任务语义、候选 tree 和验证证据有效\n- **THEN** `task-finish` MUST 调用 selected asset-review provider finalize\n- **AND** `task-finish` MUST NOT 汇总观察信号、执行资格门禁或判断最终应沉淀什么\n\n#### Scenario: 没有 observation\n- **WHEN** provider finalize 返回 `no-observation` 或 `discarded`\n- **THEN** `task-finish` MUST 继续正常收尾\n\n#### Scenario: 等待人工决定\n- **WHEN** provider finalize 返回 `awaiting-human`\n- **THEN** `task-finish` MUST 在 worktree cleanup 前等待用户 accept 或 reject\n- **AND** accept MUST 只创建后续新任务 handoff，不得改变原任务范围\n\n#### Scenario: Optional provider 不可用\n- **WHEN** v2 provider 未绑定、已卸载或执行失败\n- **THEN** `task-finish` MUST 报告降级并继续既有收尾\n- **AND** `task-finish` MUST NOT 自行实现备用资产审查\n\n#### Scenario: 当前能力不依赖任务 Hook\n- **WHEN** Buildr 执行任务资产观察和审查\n- **THEN** Buildr MUST 使用 Agent 已可见节点和 Skill 内部资源\n- **AND** Buildr MUST NOT 要求 runtime Hook、daemon、watcher、事件总线或完整轨迹存储\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须把当前认知检查作为验证前门禁",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须把当前认知检查作为验证前门禁\nTask Finish MUST 在把 implementation tree 交给 selected task-verification provider 前，调用 selected `buildr.current-knowledge-maintenance/v1` provider 执行 inspect。只有 assess impacts 已处理、Brief 与权威 artifacts 一致、current knowledge 对应最终 tree 且 terminology 没有 unresolved conflict 时，Task Finish 才能继续所需 assurance、spec sync、archive 和 integration。\n\n#### Scenario: Inspect 确认已对齐且不修改内容\n- **WHEN** provider 返回 aligned result 且 source identities 匹配当前 tree\n- **THEN** Task Finish MUST 记录 evidence 并继续既有 requiredAssurance 流程\n- **AND** inspection MUST NOT 被计作 task-verification provider execution\n\n#### Scenario: Fallback reconcile 修改 delivery content\n- **WHEN** inspect 发现可在当前授权内修复的问题并由 provider reconcile 修改 Brief、knowledge、spec 或其他 delivery content\n- **THEN** Task Finish MUST 将 transition 归类为 `implementation-changed`\n- **AND** 任何旧 verification evidence MUST 失效\n- **AND** Task Finish MUST 对更新后的最终 tree 重新执行所需 assurance\n\n#### Scenario: Inspect 返回 unresolved\n- **WHEN** provider 返回未处理 impact、事实冲突、Brief 漂移或 unresolved terminology\n- **THEN** Task Finish MUST 停止 verification、sync、archive、Git integration、push 和 cleanup\n- **AND** 最终状态 MUST 报告实际冲突、受影响资产和可执行下一步\n\n#### Scenario: Archive 后发现知识问题\n- **WHEN** archive 后检查发现历史 Change 或 current knowledge 存在需要修订的问题\n- **THEN** Agent MUST 保持 archive 不变并创建或路由后续任务处理当前事实\n- **AND** MUST NOT 在 archive 阶段回写已归档 Change 或隐式修改 knowledge\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证前收敛 delivery tree",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须在最终保证前收敛 delivery tree\nTask Finish MUST 在调用 selected task-verification provider 执行最终 required assurance 前完成所有当前可预见的 implementation 与 delivery tree 收敛动作，并 MUST 将之后允许发生的动作限制为有独立证据的 closeout-only transition。Delivery convergence MUST 包含适用的 current knowledge 收敛、受管资产完整性、OpenSpec sync compatibility、canonical spec sync、候选提交、目标分支 fetch/rebase 和 tree transition runtime 对齐；不得在明知这些动作尚未完成时把一次 Candidate 表述为最终验证。对于含 delta specs 的 Change，成功 pre-sync 生成的 receipt MUST 是进入 canonical sync 的唯一授权；receipt、delta 或 canonical facts 变化时，Task Finish MUST 返回对应门禁，而不得沿用旧 receipt 或手写推断同步结果。\n\n#### Scenario: 高风险 Product task 准备最终 Candidate\n- **WHEN** Task Finish 为 Buildr Product 解析出 `requiredAssurance: candidate`\n- **THEN** Task Finish MUST 先完成适用的 OpenSpec sync、候选提交、目标分支 fetch/rebase、doctor 和 runtime sync\n- **AND** MUST 在上述动作收敛且 implementation identity 冻结后才执行最终 Candidate\n\n#### Scenario: 普通任务只要求 affected 保证\n- **WHEN** verification provider 返回 `requiredAssurance: affected`\n- **THEN** Task Finish MUST 使用同一 delivery convergence 顺序准备最终 implementation identity\n- **AND** MUST NOT 因本 Requirement 将普通收尾机械升级为 Candidate\n\n#### Scenario: pre-sync 后才允许写入 canonical spec\n- **WHEN** active Change 包含 delta specs 且 canonical specs 尚未同步\n- **THEN** Task Finish MUST 先取得当前 delta 与 canonical facts 对应的成功 pre-sync receipt\n- **AND** 只有该 receipt 仍匹配时才可执行 canonical sync\n- **AND** pre-sync 前或 receipt 失效后的 canonical 修改 MUST 阻止 archive、verification 和 Git integration\n\n#### Scenario: 最终保证后只发生 closeout-only transition\n- **WHEN** 最终 required assurance 已成功且后续只执行最终验证任务 checkbox、已预演的 archive、归档格式收敛、候选提交 amend、目标分支 fast-forward 或 push\n- **THEN** Task Finish MUST 为每项动作记录来源、精确 diff、tree-equivalence 与 focused checks\n- **AND** 任一无法证明为 closeout-only 的变化 MUST 使旧 evidence 失效\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证前预演 OpenSpec archive compatibility",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须在最终保证前预演 OpenSpec archive compatibility\n当已完成 active Change 包含 delta specs 时，Task Finish MUST 在真实 canonical sync 和最终 required assurance 前，通过当前 OpenSpec CLI 在隔离 planning copy 中执行 archive rehearsal，以检查场景保全、delta merge、新 capability 建立和 archive compatibility。Rehearsal MUST 是可清理的 workflow check，不得修改真实 Change、canonical specs 或外部 OpenSpec Skill，也不得替代 Buildr pre-sync/post-sync guard。调用 rehearsal 的 OpenSpec executable MUST 在复制 planning root 前解析为绝对、可执行且与当前 Project 声明相符的路径。\n\n#### Scenario: Rehearsal 发现场景 identity 风险\n- **WHEN** OpenSpec archive rehearsal 报告 MODIFIED Requirement 会遗漏或重命名既有 Scenario\n- **THEN** Task Finish MUST 停止真实 sync 和最终 required assurance\n- **AND** 修正 delta 后 MUST 重新运行 strict validation、baseline/proposal check 和 pre-sync\n\n#### Scenario: Rehearsal 成功\n- **WHEN** 隔离副本完成 archive 且生成的 canonical specs 通过预期检查\n- **THEN** Task Finish MUST 记录 OpenSpec version、Change identity、临时 owner、结果摘要和 cleanup 状态\n- **AND** 真实 sync 仍 MUST 依次通过 pre-sync、agent-driven sync 与 post-sync\n\n#### Scenario: 相对 executable 不得在隔离副本猜测解析\n- **WHEN** Task Finish 只能得到相对 OpenSpec executable 路径或路径在复制前不可执行\n- **THEN** rehearsal MUST 在复制 planning root 前失败并报告 executable resolution action\n- **AND** MUST NOT 在隔离副本中按当前目录猜测另一个 executable\n\n#### Scenario: Change 没有 delta specs\n- **WHEN** active Change 不包含 delta specs\n- **THEN** Task Finish MAY 跳过 archive rehearsal\n- **AND** MUST 记录不适用理由而不是伪造 rehearsal success\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证后检测目标分支竞态",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须在最终保证后检测目标分支竞态\nTask Finish MUST 在 delivery convergence 阶段记录 fetch/rebase 所使用的目标 ref，并 MUST 在最终 required assurance 成功后、集成前重新读取远端目标 ref。目标 ref 变化时 MUST 返回 convergence 阶段；不得在已验证候选上静默 rebase、force push 或继续复用旧 evidence。\n\n#### Scenario: 目标 ref 保持稳定\n- **WHEN** 最终保证后的远端目标 ref 与 convergence observation 一致\n- **THEN** Git provider MAY 按既有策略 fast-forward 目标分支并 push\n- **AND** Task Finish MUST 核对 delivery tree 与已验证 implementation tree 或允许的 closeout-only delta 一致\n\n#### Scenario: 目标 ref 在 Candidate 后变化\n- **WHEN** 最终保证后发现远端目标分支已前进\n- **THEN** Task Finish MUST 停止尚未执行的集成与 push，并返回 delivery convergence 执行 fetch/rebase\n- **AND** rebase 后 MUST 对新 implementation identity 重新请求相同 required assurance\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须报告验证失效链和重复执行成本",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须报告验证失效链和重复执行成本\n当一次收尾执行多次正式验证时，Task Finish MUST 记录每次 evidence 的候选 identity、run reference、状态、真实 wall-clock、失效或失败原因和替代关系，并 MUST 在最终报告汇总 execute count、Candidate executor count、失效次数与重复验证总耗时。最终报告还 MUST 将正式验证的 wall-clock、收敛 workflow checks 与由 sync mismatch、`implementation-changed`、`target-race` 或 verification failure 造成的可归因重试成本分开报告；不得把不同命令或并行子检查耗时相加为单一验证 wall-clock。\n\n#### Scenario: Rebase 使成功 Candidate 失效\n- **WHEN** 成功 Candidate 后发生改变 implementation identity 的 rebase 或冲突解决\n- **THEN** Task Finish MUST 记录 `implementation-changed` 失效事件和原 run 耗时\n- **AND** 最终报告 MUST 将新 Candidate 与旧 run 分开，不得只报告最后一轮耗时\n\n#### Scenario: Candidate 失败后修复\n- **WHEN** Candidate 失败且修复改变 implementation content\n- **THEN** Task Finish MUST 记录失败检查、失败 run 耗时、修复后的新 identity 和替代 run\n- **AND** 重跑成功 MUST NOT 隐藏本次收尾已经付出的失败验证成本\n\n#### Scenario: 同步诊断不被归为验证耗时\n- **WHEN** post-sync mismatch、rehearsal executable resolution 或 receipt stale 导致收尾返回 delivery convergence\n- **THEN** Task Finish MUST 报告对应 workflow check 的实际耗时与返回原因\n- **AND** MUST NOT 将该耗时或未启动的验证表述为 task-verification execution\n\n#### Scenario: 最终保证一次通过且未失效\n- **WHEN** 收尾只执行一次正式验证且后续没有 implementation change\n- **THEN** Task Finish MUST 报告 execute count 为一、失效次数为零\n- **AND** MUST NOT 为满足格式创建虚构的历史 run\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 使用持久化执行架构",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 使用持久化执行架构\nBuildr MUST 提供实现 `buildr.task-finish/v1` 的薄 `task-finish` Workspace Skill，把当前轮次明确的“收尾”作为受限授权，并使用持久化 finish run 编排 selected verification、Git integration、worktree lifecycle、asset review 与 current knowledge providers。Skill MUST NOT 复制 provider policy 或依赖单个 Agent session 保存步骤进度。\n\n#### Scenario: 默认在同一用户对话继续\n- **WHEN** finish run 的 environment execution binding 有效\n- **THEN** Task Finish MUST 在同一用户对话继续同一 task/change/run\n- **AND** 后台 session MUST 只是可选执行载体，不得成为 task environment 成立条件\n\n#### Scenario: provider 步骤失败后恢复\n- **WHEN** 某个 provider action blocked 且早期副作用已经 passed\n- **THEN** Task Finish MUST 保存 checkpoint 并从 blocked/stale 边界恢复\n- **AND** MUST NOT 要求 Agent 从头复述或重跑整个 Skill\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须事务式推进 OpenSpec convergence",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须事务式推进 OpenSpec convergence\nTask Finish MUST 把 OpenSpec deterministic convergence 作为单一产品事务调用。产品 MUST 在内部完成输入确定、冲突扫描、确定性规划、隔离严格验证、条件式原子应用、写后确认与 `archive --skip-specs`，并以 canonical before/expected 实际 digest 处理断点恢复。Task Finish 与 Agent MUST NOT 通过 baseline、pre-sync、post-sync 或 recovery stage 状态编排正常路径。\n\n#### Scenario: delta 存在多个不兼容问题\n- **WHEN** 多个 MODIFIED Requirement 遗漏、重命名、破坏既有 Scenario identity或与active Change冲突\n- **THEN** convergence transaction MUST 在真实 canonical 写入前聚合报告全部可检测问题并返回 `blocked`\n- **AND** MUST NOT 每次只返回第一个问题后要求重复内部命令\n\n#### Scenario: canonical 在 pre-sync 后漂移\n- **WHEN** plan或projected validation后canonical before digest、delta identity或OpenSpec executable identity改变\n- **THEN** transaction MUST放弃旧执行资格并重新观察/规划或验证\n- **AND** MUST NOT覆盖并发内容、刷新baseline或继续旧apply\n\n#### Scenario: 应用后进程中断\n- **WHEN** canonical已全部等于receipt expected digests但写后receipt或confirmation尚未完成\n- **THEN** 下一次transaction MUST识别`applied-and-matched`并继续confirmation\n- **AND** MUST NOT恢复canonical、重建baseline或重复apply\n\n#### Scenario: post-sync 失败\n- **WHEN** canonical已应用但写后严格验证或确认失败\n- **THEN** transaction MUST 保留真实文件和回执事实并返回 `recovery-unprovable`\n- **AND** MUST NOT 恢复 canonical、刷新 baseline 或伪造 post-sync 通过\n\n#### Scenario: 状态无法证明\n- **WHEN** canonical文件既不全部匹配before也不全部匹配expected\n- **THEN** transaction MUST返回`recovery-unprovable`\n- **AND** Task Finish与Agent MUST停止自动覆盖并保留人工检查现场\n"
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Task Finish canonical CLI 必须只有 run 与 inspect",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Task Finish CLI 失败必须直接定位并给出唯一 workflow",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Workflow internal 命令必须提供完整主题帮助",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Workflow internal 命令必须提供完整主题帮助\nBuildr CLI MUST 为 Task Finish 全部 action 以及 worktree inspect/cleanup 提供 canonical 主题帮助，并 MUST 在解析业务必需参数前处理 `--help`、`-h` 和 `help <command...>`。帮助 MUST 明确每个 action 的必需参数、互斥参数、execution surface 和安全副作用。\n\n#### Scenario: 查询 Task Finish action 帮助\n- **WHEN** 用户运行 `buildr task finish advance --help` 或 `buildr help task finish advance`\n- **THEN** CLI MUST 输出同一 canonical usage 并以 0 退出\n- **AND** MUST NOT 先要求 `--run`、读取 checkpoint 或修改 Workspace\n\n#### Scenario: 查询 worktree inspect 与 cleanup 帮助\n- **WHEN** 用户分别查询 `worktree inspect` 和 `worktree cleanup` 帮助\n- **THEN** 输出 MUST 明确 task id、`--agent`、`--integrated-ref` 和 `--target` 在各命令中的适用性\n- **AND** 不适用参数 MUST 被明确省略或标注，而不是要求调用方从错误诊断猜测\n"
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Workflow diagnostic 必须返回可直接执行的下一动作",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Workflow diagnostic 必须返回可直接执行的下一动作\nTask Finish 和 worktree lifecycle 的未知 action、缺失参数及不适用参数诊断 MUST 返回稳定错误代码、canonical command suggestion 和对应 help topic。建议 MUST 使用真实支持的参数形式。\n\n#### Scenario: 使用不存在的 Task Finish action\n- **WHEN** 用户运行 `buildr task finish status`\n- **THEN** CLI MUST 建议 `buildr task finish inspect --run <id>` 和对应 help topic\n- **AND** MUST NOT 只返回无参数上下文的相近 action 名称\n\n#### Scenario: Inspect 携带 cleanup 专属参数\n- **WHEN** 用户为 `worktree inspect` 传入 `--agent`\n- **THEN** CLI MUST 指明该参数仅适用于 create/cleanup 或给出正确 inspect usage\n- **AND** 诊断 MUST 保持零 Workspace 副作用\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 必须核验 execution binding",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task environment 必须核验 execution binding\nBuildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、environment-bound CLI source identity、可直接执行的绝对 CLI invocation、runtime projection identity 和明确 target/workdir 判断 `executionReady`。CLI invocation MUST 使用结构化的绝对 `command` 与固定 `argsPrefix`，并 MUST 与 receipt 中的 source、source kind 和 identity 一同核验。自举 Workspace MUST 使用 environment 内对应的产品 CLI bridge；没有产品源码成员的普通 Workspace MAY 使用 receipt 显式声明的 external-product CLI invocation，且不得假设产品位于 Workspace 的固定相对目录。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。\n\n#### Scenario: canonical workspace 对话操作 task environment\n- **WHEN** Agent session 从 canonical Workspace 启动，并在 create 后使用 task environment 返回的明确 target、成员 checkout workdir 和 environment-local CLI invocation\n- **THEN** context MUST 在 environment、repository、CLI source、CLI invocation 与 runtime identity 匹配时返回 `executionReady: true`\n- **AND** invocation 的 `command` MUST 是 task checkout 内已有 Node-aware 产品入口的绝对路径，调用方从任意 cwd 执行时 MUST NOT 再拼装产品路径\n- **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效\n\n#### Scenario: 普通 Workspace 使用外部产品 CLI\n- **WHEN** Buildr 产品源码不属于目标 Workspace repository set，receipt 已声明 external-product CLI source identity 和 invocation，且命令使用 environment target/workdir\n- **THEN** context MAY 返回 `executionReady: true`\n- **AND** result MUST 披露绝对 command、固定 args prefix、CLI source kind 与 `checkoutLocal: false`，不得伪装为 environment-local CLI 或假设产品目录位置\n\n#### Scenario: 标准消费者执行产品命令\n- **WHEN** Action Registry、验证框架或其他标准消费者需要运行 receipt-bound Buildr 命令\n- **THEN** consumer MUST 使用 context 返回的 CLI invocation，并只追加自身子命令参数\n- **AND** consumer MUST NOT 根据 cwd、`cliSource` 或 Workspace 内固定产品位置猜测命令\n\n#### Scenario: 请求路径或 CLI 越界\n- **WHEN** target/workdir 不属于 allowed execution roots，或当前 CLI source、invocation/runtime projection identity 不匹配 receipt 声明的 environment-bound binding\n- **THEN** context MUST 返回 blocked 并 fail closed\n- **AND** MUST 报告不匹配的 target、workdir、membership、CLI source kind、source identity 或 invocation\n\n#### Scenario: runtime identity 漂移\n- **WHEN** environment identity、repository plan 或 runtime projection identity 不再匹配 receipt\n- **THEN** context MUST 返回 `stale` 或 `blocked`\n- **AND** MUST 要求重新收敛 environment/runtime，而不是创建另一份纯 checkout\n\n#### Scenario: 读取缺少 invocation 的旧 receipt\n- **WHEN** 已有 receipt 仅包含 CLI source identity 而没有结构化 invocation\n- **THEN** Buildr MUST 保持 receipt 可读，并根据已核验的当前产品生成 invocation\n- **AND** 标准输出与后续安全 refresh MUST 使用新 invocation 契约，不得要求调用方继续猜路径\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须是固定五阶段执行器",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Preflight 必须一次聚合廉价门禁",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须只接受 finish-ready candidate",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Prepare 必须收敛并冻结唯一候选",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Verify 必须对冻结候选最多执行一次正式保证",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Deliver 必须只交付冻结候选",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Resume 必须由产品根据真实状态生成",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Cleanup 必须由 retained checkout 完成真实收尾",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Current run 与结果必须直接表达阶段、失败和效率",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "客户端升级必须直接替换 Task Finish 实现",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "正常路径必须满足硬自动化验收",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 使用独立持久化 run 渐进执行",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 使用独立持久化 run 渐进执行\nBuildr MUST 为每次逻辑任务收尾建立独立 finish run，并为每一步持久化 `pending|running|passed|blocked|stale`、输入 fingerprint、effects、evidence、invalidation dependencies 与 retry policy。run MUST 绑定 task/change identity，但 MUST NOT 绑定单个 Agent session。\n\n#### Scenario: 可选执行载体继续同一逻辑任务\n- **WHEN** Agent 选择后台 session 或 subagent 执行某个 finish action\n- **THEN** 新执行载体 MUST 继续相同 task、change 和 finish run identity\n- **AND** 该载体 MUST NOT 成为 task environment 成立或 `executionReady` 的必要条件\n\n#### Scenario: 检查 checkpoint\n- **WHEN** consumer 调用 `buildr task finish inspect`\n- **THEN** 结果 MUST 返回当前步骤、已完成 effects、有效 evidence、阻塞原因、stale steps 和 next action\n- **AND** inspect MUST NOT 改变 run 或取得 lease\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 只恢复失效或阻塞的下游",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish run 只恢复失效或阻塞的下游\nBuildr MUST 通过显式依赖和 fingerprint 精确传播失效；resume MUST 保留输入未变的 passed 步骤，只重试 blocked/stale 及其下游。\n\n#### Scenario: push 成功而 cleanup 失败\n- **WHEN** push 步骤已 passed 且 cleanup blocked\n- **THEN** resume MUST 从 cleanup 继续\n- **AND** MUST NOT 重复 push、integration 或 formal assurance\n\n#### Scenario: rebase 改变最终树\n- **WHEN** target convergence 改变 formal assurance 的输入 fingerprint\n- **THEN** formal assurance 及其下游 MUST 标记 stale\n- **AND** 更早且输入未变的 OpenSpec/current-knowledge 步骤 MUST 保持 passed\n\n#### Scenario: 重复提交同一步成功结果\n- **WHEN** consumer 使用相同 attempt、fingerprint 和 effect identity 再次提交 passed\n- **THEN** Buildr MUST 返回现有 checkpoint\n- **AND** MUST NOT 重复记录副作用\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "正式验证发生在 delivery convergence 之后",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: 正式验证发生在 delivery convergence 之后\nFinish plan MUST 将正式 affected 或 Candidate assurance 放在 canonical/runtime/target convergence 后，并将最终树 identity 纳入输入 fingerprint。required assurance 仍由 selected task-verification provider 决定。\n\n#### Scenario: 普通任务要求 affected\n- **WHEN** selected provider 返回 `requiredAssurance: affected`\n- **THEN** finish run MUST 执行 affected step 而非机械升级 Candidate\n- **AND** 该 step MUST 绑定 convergence 后的最终树 identity\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "并发 finish run 只锁定共享资源",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: 并发 finish run 只锁定共享资源\nBuildr MUST 允许多个 finish run 独立推进且 MUST NOT 使用 Workspace 全局锁。只有 target branch、canonical checkout、runtime sync、默认 Local App/CLI install 等共享资源步骤 MAY 使用短 lease；远端 ref MUST 使用乐观并发 observation。\n\n#### Scenario: 两个不共享资源的 run 并发\n- **WHEN** 两个 run 的当前步骤没有相同 shared resource\n- **THEN** 两者 MUST 都能进入 running\n\n#### Scenario: 共享 target branch\n- **WHEN** 一个 run 已持有未过期的 target branch lease\n- **THEN** 另一个 run MUST 返回 blocked 和 lease owner/expiry\n- **AND** MUST NOT 改写第一个 run 的 checkpoint\n\n#### Scenario: 远端 ref 在验证后前进\n- **WHEN** 集成前观测到 target ref 不等于 convergence 时保存的 expected value\n- **THEN** run MUST 以 `target-race` 阻塞并使 target convergence 下游 stale\n- **AND** MUST NOT push 或 force push\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "CLI 提供 inspect advance resume",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: CLI 提供 inspect advance resume\nBuildr MUST 提供 `buildr task finish inspect|advance|resume`。`advance` MUST 创建或推进 run，`resume` MUST 先恢复 blocked/stale 边界再推进，所有写操作 MUST 原子持久化并返回 machine-readable result evidence。\n\n#### Scenario: advance 领取下一动作\n- **WHEN** 当前步骤为 pending 且其依赖均 passed\n- **THEN** advance MUST 将其标记 running 并返回 attempt token、输入 fingerprint、action 和 retry policy\n\n#### Scenario: blocked 后 resume\n- **WHEN** 当前步骤 blocked 且 consumer 提供了新的有效输入 fingerprint\n- **THEN** resume MUST 将该步骤及需要重算的下游恢复为可执行状态\n- **AND** MUST 保留已完成 effects 历史\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run identity 必须限制在 canonical state root",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish run identity 必须限制在 canonical state root\nBuildr MUST 验证 finish run id 并保证全部 run 读写路径位于当前 Workspace 的 `.buildr/task-finish/runs/` 内。\n\n#### Scenario: run id 包含路径逃逸字符\n- **WHEN** consumer 使用包含路径分隔、`..` 或不受支持字符的 run id\n- **THEN** Buildr MUST 在任何文件读写前拒绝该请求\n- **AND** MUST NOT 在 canonical runs root 之外创建或覆盖文件\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish step completion 必须携带最小可信证据",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish step completion 必须携带最小可信证据\nBuildr MUST 只接受与当前 running attempt、input fingerprint 和结构化 evidence 匹配的 step completion；`integration-push` MUST 另外提交匹配的 expected/observed target ref observation。\n\n#### Scenario: step 缺少 fingerprint 或 evidence\n- **WHEN** consumer 提交 `passed` 但没有非空 input fingerprint 或稳定 evidence identity\n- **THEN** Buildr MUST 拒绝 completion 并保持该 attempt 未通过\n- **AND** MUST NOT 记录 effects 或释放共享 lease\n\n#### Scenario: integration push 缺少远端 observation\n- **WHEN** consumer 为 `integration-push` 提交 `passed`，但缺少 expected 或 observed target ref\n- **THEN** Buildr MUST 拒绝 completion\n- **AND** MUST NOT 把传输动作记录为成功\n\n#### Scenario: 重复提交成功结果\n- **WHEN** consumer 重复提交相同 attempt、fingerprint、effect identities 和 evidence identities\n- **THEN** Buildr MUST 返回现有 checkpoint\n- **AND** MUST NOT 重复记录副作用\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Shared lease 必须使用 fencing identity",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Shared lease 必须使用 fencing identity\nBuildr MUST 用 lease key、run、step 和 attempt token 共同标识共享资源 owner，并 MUST 在 completion、release 和 expired takeover 时核对当前 lease identity。\n\n#### Scenario: 旧 holder 在 lease 被接管后完成\n- **WHEN**旧 lease 已过期且另一 run 已接管资源，原 holder 随后提交 completion\n- **THEN** Buildr MUST 返回 `lease-lost` 或等价 blocked 结果\n- **AND** MUST NOT 删除新 holder 的 lease 或接受原 holder 的成功结果\n\n#### Scenario: lease 在动作执行期间过期\n- **WHEN** holder 提交 completion 时当前 lease 已过期且未被同一 attempt 有效持有\n- **THEN** Buildr MUST fail closed 并要求重新领取或恢复该步骤\n- **AND** 已 passed 的无关上游步骤 MUST 保持不变\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish step 执行计划必须可预检",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish step 执行计划必须可预检\nBuildr Task Finish MUST 支持为 step 提交结构化 execution plan，并在动作开始前核对 command entry、cwd、参数与已声明 script 或 selector。规范化计划 MUST 完整保留 completion 重新验证所需的 selector declaration，并纳入 step input fingerprint 和 evidence；第一阶段预检 MUST NOT 被表述为 Buildr 已代替 Agent 执行 provider action。\n\n#### Scenario: npm script 不存在\n- **WHEN** execution plan 指向当前 package manifest 未声明的 npm script\n- **THEN** Task Finish MUST 在动作执行前返回结构化 blocked 结果\n- **AND** MUST 报告 package root、script 和可用入口，而不是启动失败命令\n\n#### Scenario: cwd 或 executable 越界\n- **WHEN** execution plan 的 cwd 不在 task environment allowed execution roots 内，或 executable identity 与 receipt 不匹配\n- **THEN** Task Finish MUST fail closed\n- **AND** MUST NOT 领取该动作的共享资源 lease\n\n#### Scenario: verification selector plan 完成时重放\n- **WHEN** step 以已声明 `availableSelectors` 中的 selector 领取并持久化规范化 execution plan\n- **THEN** completion MUST 使用同一持久化 declaration 成功重新验证 selector\n- **AND** MUST NOT 因规范化过程丢失 `availableSelectors` 而误报 selector 未声明\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Shared lease 必须支持受 fencing 约束的续租",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Shared lease 必须支持受 fencing 约束的续租\nTask Finish MUST 允许当前 holder 在 lease 未过期时使用相同 run、step、attempt 与 token 显式续租。renew MUST NOT 复活过期 lease、覆盖接管者或改变 fencing identity，并 MUST 记录 renewal evidence。\n\n#### Scenario: 当前 holder 续租\n- **WHEN** 当前 attempt 在 lease 到期前提交匹配 identity 的 renew\n- **THEN** Task Finish MUST 原子延长 expiry 并保留相同 fencing token\n- **AND** inspect MUST 返回更新后的 expiry 与 renewal count\n\n#### Scenario: 过期 holder 请求续租\n- **WHEN** lease 已过期或已由另一 attempt 接管\n- **THEN** Task Finish MUST 返回 `lease-expired` 或 `lease-lost`\n- **AND** MUST NOT 修改当前 lease owner\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须报告完整阶段和重试耗时",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish run 必须报告完整阶段和重试耗时\nTask Finish MUST 持久化每次 attempt 的 start、finish、duration、outcome 与 retry attribution，并汇总 happy-path wall-clock、workflow check、formal assurance、blocked/retry 和 attributable waste。不同命令或并行检查耗时 MUST NOT 相加冒充 wall-clock。\n\n#### Scenario: step 阻塞后恢复\n- **WHEN** 一个 step 阻塞、修复后以新 attempt 成功\n- **THEN** inspect MUST 同时保留失败 attempt 与成功 attempt timing\n- **AND** MUST 将失败 attempt 标记为 retry/waste，而不是覆盖历史\n\n#### Scenario: 正常路径没有重试\n- **WHEN** 所有 step 第一次 attempt 均通过\n- **THEN** timing summary MUST 报告 retry count 为零且 attributable waste 为零\n- **AND** MUST 返回 run 的真实 wall-clock\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须支持晚期资产审查",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish run 必须支持晚期资产审查\n当首次 asset review finalize 后 archive、integration 或 cleanup 产生新的 observation revision 时，Task Finish MUST 在清理 observation 前重新调用 selected asset-review provider。没有新 revision 时 MUST 确定性跳过 late finalize。\n\n#### Scenario: archive 暴露新长期信号\n- **WHEN** archive 阶段写入了晚于首次 finalize 的 observation revision\n- **THEN** finish run MUST 在 cleanup 前执行 late asset review\n- **AND** provider 返回 `awaiting-human` 时 MUST 保留 environment 并等待决定\n\n#### Scenario: 没有晚期信号\n- **WHEN** 首次 finalize 后 observation revision 未变化\n- **THEN** finish run MUST 跳过重复资格审查\n- **AND** MUST 记录 `not-applicable` evidence\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须支持安全自动执行",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish run 必须支持安全自动执行\nBuildr MUST 提供 safe execution 入口，在同一持久化 finish run 上自动推进已登记、可预检且授权边界确定的步骤。执行器 MUST 复用现有 attempt、fingerprint、lease、evidence 和 invalidation 语义，不得建立第二套完成状态。\n\n#### Scenario: 正常路径自动推进\n- **WHEN** 当前及后续步骤都有匹配的 safe handler、有效 execution binding 和所需授权\n- **THEN** executor MUST 依次执行动作并提交结构化 completion，直到完成或到达非自动步骤\n- **AND** result MUST 报告实际执行步骤、effects、evidence 和 wall-clock\n\n#### Scenario: 遇到不安全或失败步骤\n- **WHEN** handler 未登记、预检失败、identity 漂移、授权不足或动作失败\n- **THEN** executor MUST 停止在当前 checkpoint 并返回 blocked/next action\n- **AND** MUST NOT 重复已 passed effects 或自动扩大授权\n\n#### Scenario: 并行只读 observation\n- **WHEN** 同一步包含多个无依赖且无写副作用的 observation\n- **THEN** executor MAY 并行执行这些 observation\n- **AND** shared writes MUST 继续受现有 lease 与 fencing 约束\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须支持 identity-bound 多阶段编排",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish run 必须支持 identity-bound 多阶段编排\nTask Finish MUST 允许已登记 composite handler 在同一持久化 run 内推进多个有序子阶段，并 MUST 为每个子阶段记录 identity、outcome、duration 与失败边界。Composite success MUST 由各阶段契约共同决定，不得由单个进程退出码或调用方自证替代。\n\n#### Scenario: OpenSpec convergence 正常完成\n- **WHEN** rehearsal、pre-sync、canonical sync 和 post-sync 的 change、digest 与 executable identity 全部一致且通过\n- **THEN** handler MUST 连续推进同一 convergence attempt并持久化各阶段 evidence\n- **AND** Agent MUST NOT 手工创建或搬运 convergence receipt 才能继续\n\n#### Scenario: 中间阶段出现语义冲突\n- **WHEN** compatibility scan、guard 或 canonical sync发现需要语义判断的冲突\n- **THEN** handler MUST 停止在最后成功阶段并返回 actionable blocked result\n- **AND** MUST NOT 跳过阶段、刷新事后基线或把整个 composite 标记 passed\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Integration push 必须表达完整 ref transition",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Integration push 必须表达完整 ref transition\nTask Finish MUST 区分 push 前期望与实际 observation、push 后期望与实际 observation，并由同一 Git action evidence绑定 candidate identity。系统 MUST 只把 push 前外部漂移判为 `target-race`，不得把当前 run 自身成功更新 target ref 判为竞态。\n\n#### Scenario: 当前 run 成功推进目标 ref\n- **WHEN** observed before 等于 expected before，push 后 observed ref 等于 candidate 与 expected after\n- **THEN** integration push MUST passed并记录完整 ref transition\n- **AND** MUST NOT 使 formal assurance 或其他下游 evidence stale\n\n#### Scenario: 远端已等于当前 candidate\n- **WHEN** push 前 observed ref 已等于 candidate且 candidate content identity匹配\n- **THEN** handler MUST 将动作视为幂等成功而不重复 push\n- **AND** MUST 保留远端已收敛 evidence\n\n#### Scenario: 外部更新目标 ref\n- **WHEN** push 前 observed ref 不等于 convergence 保存的 expected before且也不等于当前 candidate\n- **THEN** run MUST 以 `target-race` 阻塞并停止 push\n- **AND** 只按真实 candidate变化范围失效下游 evidence\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Invalidation 必须原子终结 attempt 与 lease",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Invalidation 必须原子终结 attempt 与 lease\n当 step 变为 stale、blocked 或被恢复时，Task Finish MUST 原子更新 attempt outcome、finishedAt、duration 和 lease ownership。Complete run MUST NOT 包含 running attempt、未释放 task-owned lease 或未处理 stale/blocked step。\n\n#### Scenario: running step 被上游 invalidation\n- **WHEN** 上游 input变化使当前 running step stale\n- **THEN** 状态机 MUST 终结该 attempt并释放仍由它持有的 lease\n- **AND** resume MUST 能由同一 run重新领取而不被自身残留 lease阻塞\n\n#### Scenario: run 准备完成\n- **WHEN** cleanup completion将使 run进入 complete\n- **THEN** 状态机 MUST 核对没有未结束 attempt、残留 lease或未处理 step\n- **AND** 任一不变量失败时 MUST 保持 blocked并返回精确修复动作\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Cleanup completion 必须绑定真实删除与 durable receipt",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Cleanup completion 必须绑定真实删除与 durable receipt\nTask Finish MUST 区分 cleanup readiness 与 completion。只有 task-owned process、environment、branch和 transient evidence 的授权动作已实际完成或明确保留后，cleanup才能 passed；删除 task environment 前 MUST 在 canonical Workspace 保存 durable completion receipt。\n\n#### Scenario: environment 删除失败\n- **WHEN** worktree、branch或 task-owned process cleanup失败\n- **THEN** cleanup MUST 保持 blocked并保留已完成远端 effects\n- **AND** run MUST NOT 预先标记 complete\n\n#### Scenario: environment 即将删除\n- **WHEN** cleanup前置条件满足且 environment-local run state将随 checkout删除\n- **THEN** Task Finish MUST 先持久化 canonical completion receipt再执行删除\n- **AND** receipt MUST 包含最终 refs、验证、archive、cleanup、timing和诊断引用\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish CLI 默认返回 compact progress evidence",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish CLI 默认返回 compact progress evidence\nTask Finish CLI MUST 为正常 `run|advance|resume` 返回可机器解析的 checkpoint delta、next action、blocked 与 timing summary，并 MUST 提供显式 full detail诊断。Compact输出 MUST 保留安全判断所需 identity，不得通过省略失败细节降低可审计性。\n\n#### Scenario: 正常步骤通过\n- **WHEN** safe executor连续完成一个或多个步骤且没有失败\n- **THEN** 默认输出 MUST 聚合本轮 executed steps、关键 effects、duration和 next action\n- **AND** MUST NOT 重复输出全部历史 steps、attempts和逐资产成功项\n\n#### Scenario: 调用方请求完整诊断\n- **WHEN** consumer显式请求 full detail或步骤失败\n- **THEN** CLI MUST 返回或引用完整 attempts、leases、evidence和 actionable findings\n- **AND** compact与full结果 MUST 共享同一 run identity和状态事实\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish timing 必须区分执行与编排成本",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish timing 必须区分执行与编排成本\nTask Finish MUST 报告 command execution、provider orchestration、Agent/tool round trip、blocked recovery、attributable waste和端到端 wall-clock的可用计时边界。Attempt duration MUST 覆盖对应 provider动作的真实执行窗口，不得只记录领取或提交 evidence的时间。\n\n#### Scenario: Formal verification由provider执行\n- **WHEN** formal-assurance attempt启动 required capabilities并在完成后提交 summary\n- **THEN** attempt start/finish MUST 包围真实 verifier execution\n- **AND** timing MUST 使用跨平台单调时钟而非调用方手写 duration\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish必须消费产品持有的convergence orchestrator",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish必须消费产品持有的convergence orchestrator\n\nTask Finish MUST 通过唯一 product-executable action 调用 `buildr openspec converge`，并且只消费 `passed`、`blocked` 或 `recovery-unprovable`、单一 receipt identity、effects、duration 与 command count。Task Finish MUST NOT 理解或持久化 rehearsal、baseline、pre-sync、plan、apply、post-sync、canonical restore 或 recovery stages。\n\n#### Scenario: Safe convergence一次推进\n\n- **WHEN** planner、projected validation、conditional apply、confirmation 与 `archive --skip-specs` 均可安全完成\n- **THEN** Task Finish executor MUST 在同一 convergence attempt 内调用一次产品 action 并接收 `passed`\n- **AND** checkpoint MUST 记录最终 receipt identity 与聚合执行摘要\n\n#### Scenario: Planner要求语义处理\n\n- **WHEN** orchestrator 返回 `blocked`\n- **THEN** run MUST 保持 contract-convergence blocked并指向Agent/用户处理最小语义冲突\n- **AND** resume MUST 重新调用同一 product action而不得要求Agent拼装内部命令\n\n#### Scenario: 恢复状态无法证明\n\n- **WHEN** orchestrator 返回 `recovery-unprovable`\n- **THEN** run MUST 停止尚未执行的正式验证、archive集成与push\n- **AND** checkpoint MUST 保留实际文件摘要和人工检查下一动作\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish入口必须解析权威execution roots",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish入口必须解析权威execution roots\nTask Finish MUST从明确Workspace target、Project selector、task environment receipt和repository membership解析Workspace、Product、Service与command cwd。调用方相对路径或当前shell cwd MUST NOT替代这些authority。\n\n#### Scenario: 从Service目录调用Workspace动作\n- **WHEN**consumer在allowed Service cwd调用finish且提供Workspace target与Project context\n- **THEN**系统 MUST解析同一canonical finish run与正确Product/Service roots\n- **AND**MUST NOT因调用方少退或多退目录而创建嵌套Workspace状态\n\n#### Scenario: Root无法唯一解析\n- **WHEN**target、Project registry、membership或receipt identity不一致\n- **THEN**系统 MUST在文件写入或命令启动前blocked\n- **AND**result MUST返回resolved candidates与唯一修复动作\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Completion receipt必须持久化完整效率证据",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Completion receipt必须持久化完整效率证据\nCanonical completion receipt MUST包含run created/completed time、端到端wall-clock、各step/attempt execution timing、retry count、blocked recovery、attributable waste、formal verification timing、tool round-trip计数和输出量近似指标。删除task environment后这些证据MUST仍可访问。\n\n#### Scenario: Environment删除后审查效率\n- **WHEN**cleanup finalize已删除task environment\n- **THEN**canonical receipt MUST允许consumer重建关键阶段耗时与重试来源\n- **AND**MUST NOT只保留formal verification单项duration\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Full detail必须使用有界诊断引用",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Full detail必须使用有界诊断引用\n正常compact result MUST仅内联当前状态、阶段摘要、失败项与timing totals；完整attempts、command previews和测试输出MUST写入run-owned diagnostics并返回稳定digest/path，除非调用方明确读取该引用。\n\n#### Scenario: Consumer请求full detail\n- **WHEN**历史steps、attempts或command output超过内联预算\n- **THEN**CLI MUST返回诊断引用与有界preview\n- **AND**MUST NOT把全部历史重复注入主JSON响应\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish benchmark必须测量执行与Agent编排",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish benchmark必须测量执行与Agent编排\nBuildr MUST提供真实finish benchmark evidence，分别记录产品命令执行、provider/composite execution、Agent/tool round-trip、blocked recovery、输出字节或Token近似量和端到端wall-clock。\n\n#### Scenario: 比较连续两轮finish\n- **WHEN**同类普通Change完成真实收尾\n- **THEN**结果 MUST能比较formal verification、OpenSpec convergence、Git/runtime/cleanup与Agent编排成本\n- **AND**MUST明确披露未被产品自动化的阶段\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run必须支持原子identity recovery",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Finish run必须支持原子identity recovery\nBuildr MUST提供版本化identity recovery入口，在同一finish run中一次消费旧/新environment、candidate、target、runtime、change与assurance identities，原子计算失效范围、终结受影响attempt/lease、保留仍有效evidence，并自动推进已登记的确定性步骤。Recovery MUST复用现有step、fingerprint、effect、evidence与safe executor语义，不得建立第二套完成状态。\n\n#### Scenario: Implementation修订改变candidate与checkout-local CLI\n- **WHEN** consumer提交可核验的implementation-changed transition及完整新identities\n- **THEN** recovery MUST一次计算真正需要重建的最早边界与下游\n- **AND** MUST自动推进可安全重建的context、knowledge、convergence、candidate、target与runtime步骤，停在required formal assurance\n\n#### Scenario: Runtime projection only转换\n- **WHEN** source/projection digests与允许路径集合证明变化仅为政策允许的`runtime-projection-only`\n- **THEN** recovery MUST保留仍与implementation candidate绑定的正式保证\n- **AND** MUST记录transition evidence而不是仅接受调用方分类字符串\n\n#### Scenario: 未知或证据不完整的转换\n- **WHEN** changed paths、source identity或provider policy不能证明受限transition\n- **THEN** recovery MUST按implementation-changed fail closed计算失效\n- **AND** MUST NOT复用可能失效的formal assurance\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Compact failure必须保留可恢复的结构化诊断",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Compact failure必须保留可恢复的结构化诊断\nTask Finish compact result MUST从失败observation保留失败step/stage、child result的稳定code/status、bounded findings/nextActions与durable full diagnostic reference。通用process error message MUST NOT替代可解析的child stdout/stderr结果；full detail仍MUST有界且digest绑定。\n\n#### Scenario: Child CLI返回结构化blocked JSON\n- **WHEN** safe handler的child process非零退出但stdout包含登记schema的blocked result\n- **THEN** compact result MUST显示child code/status、失败stage与next action\n- **AND** MUST提供完整diagnostic path/digest而不是只返回`Command failed`\n\n#### Scenario: Child输出不是登记JSON\n- **WHEN**child stdout/stderr不能解析为受支持schema\n- **THEN**compact result MUST返回bounded preview、byte count、digest和process exit\n- **AND** MUST明确标记diagnostic为unstructured\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Completion metrics必须声明可观察coverage",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Completion metrics必须声明可观察coverage\nTask Finish MUST通过run-local append-only observation ledger汇总Buildr-owned command、safe handler、verification stage与recovery action的start/finish、cwd/command identity、exit、原始stdout/stderr byte count和diagnostic reference。Completion receipt MUST区分产品可观察执行、Agent orchestration gap与外部不可观察调用，并声明`product-complete|product-partial|external-unobserved` coverage；部分计数MUST NOT表述为完整tool round trips或token消耗。\n\n#### Scenario: 全部动作由登记executor执行\n- **WHEN**finish run的命令均由Buildr-owned wrapper记录且ledger连续\n- **THEN**completion metrics MUST标记`product-complete`\n- **AND**MUST返回真实invocation count、output bytes、product wall-clock、queue与retry waste\n\n#### Scenario: Agent在checkpoint间手工执行外部动作\n- **WHEN**run只能观察到checkpoint时间而不能观察Agent/tool调用\n- **THEN**completion metrics MUST把对应区间标记为unobserved orchestration gap\n- **AND**MUST NOT用已记录observation数量冒充全部tool round trips或Agent token\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Recovery性能必须进入真实finish benchmark",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Recovery性能必须进入真实finish benchmark\nBuildr MUST提供identity-bound真实finish benchmark，至少覆盖首次成功、candidate修订恢复、formal assurance失败后修复和runtime projection closeout，并报告端到端wall-clock、产品执行、orchestration gap、retry waste、invocation与output metrics coverage。\n\n#### Scenario: 无重试正常路径\n- **WHEN**benchmark以固定work class首次通过全部finish步骤\n- **THEN**结果 MUST独立报告OpenSpec convergence、formal assurance和其他closeout wall-clock\n- **AND**正常路径目标 MUST约为3分钟且不得通过跳过required assurance达成\n\n#### Scenario: Candidate修订后恢复\n- **WHEN**benchmark改变implementation candidate并提交typed recovery manifest\n- **THEN**结果 MUST报告recovery产品调用次数、重建步骤和到formal assurance的wall-clock\n- **AND**MUST证明没有重复已通过且identity未变的副作用\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须在正式保证失败后等待 repair 决策",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须在正式保证失败后等待 repair 决策\n当正式保证发现实现、契约、测试或历史资产缺陷时，Task Finish MUST 将 run 保持为 blocked 并返回结构化 repair decision；没有绑定当前 task/change、失败 identity 与允许 scope 的明确用户授权时，Task Finish 和 Agent MUST NOT 修改 delivery tree、自动修复缺陷或继续归档、集成、推送与清理。\n\n#### Scenario: 未预授权的正式保证失败\n- **WHEN** 用户只授权“收尾”，正式保证对当前 candidate 返回失败\n- **THEN** run MUST 停在 formal assurance boundary并报告缺陷、影响、建议修复范围与重新验证成本\n- **AND** delivery tree MUST保持不变，后续closeout步骤MUST NOT启动\n\n#### Scenario: 用户授权修复并继续\n- **WHEN** 用户在失败前或失败后明确授权当前scope内“修复并继续”\n- **THEN** Task Finish MUST记录versioned repair authorization与repair candidate transition\n- **AND** 修复后MUST使旧formal evidence失效并执行re-verification\n- **AND** 语义冲突、跨任务历史资产修改或授权范围扩大时MUST再次停止请求决定\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须区分 workflow 与 closeout-only timing",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须区分 workflow 与 closeout-only timing\nCanonical completion receipt MUST保留端到端workflow wall-clock，并 MUST独立记录首次verification、repair、re-verification和closeout-only阶段；closeout-only MUST从最后一个有效正式保证通过后开始，到cleanup complete结束，不得包含验证执行、缺陷诊断、实现修复或重新验证。\n\n#### Scenario: 无缺陷的正常收尾\n- **WHEN** 首次正式保证通过并完成资产审查、归档、集成推送、runtime install与cleanup\n- **THEN** receipt MUST分别报告verificationMs、closeoutMs与endToEndWallClockMs\n- **AND** 不可观察间隔MUST按coverage报告，不得推断为产品执行或token消耗\n\n#### Scenario: 验证失败后修复完成\n- **WHEN** 同一finish run包含formal failure、已授权repair、candidate transition和re-verification\n- **THEN** receipt MUST分别报告verificationMs、repairMs、reverificationMs、closeoutMs与attributableWasteMs\n- **AND** 用户摘要MUST将该过程表述为“验收—修复—重新验收—收尾”，不得把全部wall-clock称为纯收尾耗时\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish compact diagnostic 必须优先暴露真实失败",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish compact diagnostic 必须优先暴露真实失败\n当Buildr-owned child command以非零状态结束时，compact diagnostic MUST优先返回可解析的failed stage、failed check/test、exit code、bounded findings和repair decision，再附加非阻塞warning；无法结构化解析时 MUST保留digest绑定的完整diagnostic并明确解析缺口，不得仅用warning解释失败。\n\n#### Scenario: 测试失败同时产生预算warning\n- **WHEN** formal verification输出一个contract test failure和多个非阻塞budget warnings\n- **THEN** compact result的primaryFailure MUST指向contract test failure\n- **AND** warnings MUST作为次级字段保留，不得取代failure reason\n\n#### Scenario: 大输出无法完全解析\n- **WHEN** child output超过compact上限且没有登记的结构化summary\n- **THEN** compact result MUST返回exit code、可确定stage、bounded failure excerpt和diagnostic path/digest\n- **AND** MUST标记`structured: false`与明确next action\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须持有版本化 action registry",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须持有版本化 action registry\nBuildr MUST 为全部标准 finish step 登记稳定 action entry，并为每个 entry 声明执行种类、适用条件、执行 surface、授权边界、effects、结果契约、evidence projection 与 fallback policy。Registry MUST 是 Task Finish application 的产品事实，不得要求 Agent 从 Skill 文本、cwd、`cliSource` 或历史命令猜测 execution plan。`product-executable` entry MUST 消费 task environment 已核验的结构化 CLI invocation，并将固定参数前缀与动作参数组合为确定 argv。\n\n#### Scenario: 标准步骤均有登记动作\n- **WHEN** 产品加载当前 finish plan\n- **THEN** 每个 `FINISH_STEPS` identity MUST 至少解析到一个唯一 action entry\n- **AND** contract test MUST 在新增 step 未登记时失败\n\n#### Scenario: 登记动作生成执行计划\n- **WHEN** 当前 step 匹配 `product-executable` entry 且所需 context 包含 receipt-bound CLI invocation\n- **THEN** resolver MUST 使用 invocation 的绝对 command 与固定 args prefix 生成 cwd、argv、effect、assertion、evidence 和 fingerprint\n- **AND** 调用方 MUST NOT 需要提供 `--execution-plans`、逐 step fingerprint 或重新推断 CLI 路径\n\n#### Scenario: 历史 caller 仅提供 CLI source\n- **WHEN** 迁移期间历史 caller 仍显式提供可执行的绝对 `cliSource`\n- **THEN** resolver MAY 将其作为无固定参数前缀的兼容 invocation 使用\n- **AND** 标准 task environment consumer MUST 使用 `cliInvocation`，Registry MUST NOT 根据 Workspace root 猜测默认产品路径\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须区分登记 provider 与 Agent 推理 fallback",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须区分登记 provider 与 Agent 推理 fallback\nRegistry resolution MUST 区分产品可执行动作、已登记的语义 provider handoff、缺少结构化输入和真正登记外行为。只有不存在唯一登记动作或执行进入登记外语义分支时，Task Finish MUST 返回 `agent-reasoning-required`。\n\n#### Scenario: 标准语义 provider 动作\n- **WHEN** 当前 step 的登记种类为 `agent-provider`\n- **THEN** result MUST 返回 capability、provider action、所需输入/evidence、执行 surface 与继续方式\n- **AND** MUST NOT 把该正常交接描述为命令未知或要求 Agent 猜测 CLI\n\n#### Scenario: Registry 没有覆盖行为\n- **WHEN** 当前 step、运行时分支或多个匹配结果无法由 registry 唯一处理\n- **THEN** result MUST 返回 `agent-reasoning-required`、原因、当前 identity、已核对 entries 与未执行 effects\n- **AND** executor MUST 停在最后成功 checkpoint，不得猜测命令、扩大授权或写入 delivery tree\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须提供 action registry 查询入口",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须提供 action registry 查询入口\nBuildr MUST 提供只读 `buildr task finish actions` 查询；它 MUST 支持列出版本化 registry，并可结合 finish run 返回当前 step resolution、输入缺口、执行 preview 或 provider handoff。查询 MUST NOT 领取 attempt、执行 action 或修改 run。\n\n#### Scenario: 查询当前 run 的下一动作\n- **WHEN** consumer 使用 run identity 查询 actions\n- **THEN** JSON MUST 返回 registry schema/version、当前 step、resolution status、selected action 与 plan source\n- **AND** 查询前后 finish checkpoint MUST 保持一致\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Registry 驱动执行必须兼容现有 finish evidence",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Registry 驱动执行必须兼容现有 finish evidence\n`task finish run` MUST 优先使用 registry 解析没有显式 plan 的当前 step，并 MUST 复用既有 attempt、lease、fingerprint、observation ledger、diagnostic、recovery 与 completion receipt。显式 caller plan MAY 保留兼容，但输出 MUST 标明 `registry` 或 `caller-supplied` 来源。\n\n#### Scenario: Registry 自动执行连续动作\n- **WHEN** 连续当前步骤均为 ready 的 `product-executable` action\n- **THEN** executor MUST 自动生成 fingerprint、执行并提交 completion，直到遇到 provider handoff、输入缺口、失败或 Agent reasoning fallback\n- **AND** safe execution summary MUST 报告 action id、plan source、实际步骤与 wall-clock\n\n#### Scenario: Caller plan 兼容路径\n- **WHEN** 历史 consumer 显式提交有效 execution plan 与 fingerprint\n- **THEN** executor MUST 继续按既有安全约束执行\n- **AND** evidence MUST 标记 plan source 为 `caller-supplied`，不得冒充 registry coverage\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须在集成后收敛 retained Workspace",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须在集成后收敛 retained Workspace\nTask Finish MUST 在 integration 与 push 已通过后、清理 task environment 前执行独立的 retained Workspace convergence step。该步骤 MUST 使用明确的 retained Workspace root、retained checkout 绝对 CLI invocation、Agent identity 与完整 changed paths，MUST NOT 使用当前 cwd、task checkout 路径猜测或重新运行正式 Candidate。\n\n#### Scenario: 普通实现不影响 runtime 或默认入口\n- **WHEN** integration-push 已通过且 changed paths 不命中 runtime、默认 CLI 或 Local App 入口\n- **THEN** retained convergence MUST 只执行 retained Workspace doctor 并记录其他动作 not-applicable\n- **AND** MUST NOT 运行 sync、CLI 安装、Local App 安装或完整验证\n\n#### Scenario: runtime 资产受影响\n- **WHEN** changed paths 命中 Rules、Skills、Components、Commands、runtime targets 或对应 manifests\n- **THEN** retained convergence MUST 使用 retained CLI 对 retained Workspace 执行 doctor-before、sync 和 doctor-after\n- **AND** doctor-after MUST 证明当前 Agent runtime ready\n\n#### Scenario: 默认入口受影响\n- **WHEN** changed paths 命中默认 CLI 或 Local App launcher/runtime 入口\n- **THEN** retained convergence evidence MUST 把精确入口影响交给 runtime-install provider\n- **AND** 未受影响的入口 MUST 返回 not-applicable 而不是重复安装\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Retained convergence 必须支持精确恢复",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Retained convergence 必须支持精确恢复\nRetained convergence MUST 把 retained root、CLI identity、target observation、changed paths 与影响计划纳入 step fingerprint，并 MUST 只使自身、runtime-install 与 cleanup 下游失效。已通过的 Candidate、integration 和 push MUST 保持有效。\n\n#### Scenario: retained doctor 失败\n- **WHEN** doctor-before、sync 或 doctor-after 失败\n- **THEN** finish run MUST 在 retained-convergence blocked 并保存失败阶段证据\n- **AND** resume MUST NOT 重复 formal assurance、integration 或 push\n\n#### Scenario: 输入不足\n- **WHEN** retained root、retained CLI invocation、Agent identity 或 changed paths 缺失\n- **THEN** Action Registry MUST 返回 input-required 并且零命令执行\n- **AND** MUST NOT 从 task receipt、cwd 或 Git 全量扫描猜测缺失输入\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Retained convergence evidence 必须披露影响与动作",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Retained convergence evidence 必须披露影响与动作\nRetained convergence evidence MUST 记录 retained Workspace 与 CLI identity、changed paths 摘要、runtime/CLI/Local App impact、未分类路径、实际 stages、跳过原因和最终 doctor 状态。未知路径 MUST 可见，但 MUST NOT 自动扩大为默认入口安装。\n\n#### Scenario: 路径未分类\n- **WHEN** changed paths 包含未被当前影响规则识别的 Product 路径\n- **THEN** evidence MUST 记录 unknown paths 并继续执行 retained doctor\n- **AND** MUST NOT 因未知路径自动运行全部 sync、安装或 Candidate\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须为可预期收敛阻塞提供恢复出口",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须为可预期收敛阻塞提供恢复出口\n\nTask Finish MUST 将 OpenSpec 收敛中的可预期身份变化分类为产品可执行恢复、语义处理交接或证据不足的明确终止；MUST NOT 只返回没有后续动作的通用阻塞。动作注册表 MUST 持有对应动作、授权、effects、输入和结果证据。\n\n#### Scenario: post-sync 后实现变化使收敛凭证过期\n\n- **WHEN** finish run 已完成旧 delta 的 `post-sync`，随后以可核验的 `implementation-changed` transition 更新 change 和候选身份\n- **THEN** `contract-convergence` action MUST 解析产品持有的 stale receipt recovery\n- **AND** recovery 可证明安全时 MUST 自动恢复并重新执行 convergence，而不是要求 Agent 删除、移动或重建 receipt\n\n#### Scenario: 恢复需要语义判断\n\n- **WHEN** 当前 canonical 与旧同步结果不一致，或 Requirement、active Change 之间存在语义冲突\n- **THEN** action resolution MUST 返回 `semantic-resolution-required`、冲突 identity、未执行 effects 和最小处理上下文\n- **AND** finish run MUST 保留最后成功 checkpoint，不得猜测恢复内容\n\n#### Scenario: 恢复证据不足\n\n- **WHEN** 旧 baseline、sync plan、receipt 或 executable identity 无法共同证明恢复前后状态\n- **THEN** action resolution MUST 返回 `recovery-unprovable` 和缺失证据\n- **AND** canonical、baseline、receipt、archive、Git 与正式验证 MUST 保持未执行\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须验证真实收敛恢复旅程",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须验证真实收敛恢复旅程\n\nBuildr MUST 以真实 Task Finish 状态机、动作注册表、OpenSpec application service 和文件凭证验证收敛恢复的完整旅程；局部门禁测试或通用成功进程 MUST NOT 替代该完成证据。\n\n#### Scenario: 类型化恢复重新到达正式验证边界\n\n- **WHEN** 测试 fixture 首次完成 `post-sync`，随后修改实现和 delta 并提交 `implementation-changed` recovery\n- **THEN** 同一 finish run MUST 通过 registry 恢复 `contract-convergence` 并重新到达 required formal assurance boundary\n- **AND** 测试 MUST 证明旧有效 evidence 已失效、未变 effects 未重复且新 convergence receipt 绑定当前 identity\n\n#### Scenario: 每个负向门禁具有对应完成结论\n\n- **WHEN** 产品为可预期 convergence blocker 增加或保留负向测试\n- **THEN** 同一测试集合 MUST 覆盖其安全恢复、语义交接或明确不可恢复结论\n- **AND** 仅断言命令失败 MUST NOT 作为该 blocker 的完整验收\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须只投射当前成功身份的 evidence 与 effect",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须只投射当前成功身份的 evidence 与 effect\n\nTask Finish checkpoint、prepared completion receipt 与 final completion receipt MUST 只把步骤最后一次成功 completion identity 引用的 evidence 和 effect 作为当前有效结果。历史 evidence 与 effect MAY 保留用于审计，但步骤 stale、blocked、running 或其 input identity 已失效时 MUST NOT 出现在 `validEvidence`、`completedEffects` 或 completion receipt 的有效结果中。\n\n#### Scenario: 候选身份变化使旧验证 evidence 失效\n\n- **WHEN** 已通过 formal assurance 的 finish run 因 candidate、target、runtime 或 assurance identity 变化而失效该步骤\n- **THEN** checkpoint 和 completion receipt MUST 不再投射旧 formal assurance evidence\n- **AND** 重新验证通过后 MUST 只投射新 completion identity 引用的 evidence\n\n#### Scenario: 重试历史不污染当前 completion\n\n- **WHEN** 同一步存在早期 blocked 或 passed attempt，并由后续 attempt 成为最后一次成功 completion\n- **THEN** 当前有效 evidence 与 effect MUST 只包含后续成功 completion 引用的记录\n- **AND** 早期记录 MUST 仅通过历史 attempt 或 observation ledger 追溯\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须区分产品观测执行耗时与编排耗时",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须区分产品观测执行耗时与编排耗时\n\nTask Finish MUST 使用产品写入且绑定 attempt token 的 command/stage observation 计算自动执行步骤的 provider execution duration，并 MUST 将 attempt wall-clock 中未被产品执行 observation 覆盖的部分报告为 orchestration duration。外部 provider 没有产品 observation 时 MUST 标记为 unobserved，MUST NOT 将 claim 到 complete 的间隔声称为真实 provider execution duration。\n\n#### Scenario: 自动正式验证使用 observation 计时\n\n- **WHEN** formal assurance 由安全 executor 执行并生成绑定当前 attempt 的 command/stage observations\n- **THEN** attempt MUST 记录 `executionDurationMs`、`orchestrationDurationMs` 与产品 observation timing source\n- **AND** `initialVerificationMs` 或 `reverificationMs` MUST 使用该 execution duration\n\n#### Scenario: 外部正式验证使用可信 summary\n\n- **WHEN** formal assurance 由 selected verification provider 在 Task Finish executor 外部完成\n- **THEN** completion evidence MUST 携带 passed `buildr.verification-timing/v1` summary\n- **AND** summary candidate fingerprint MUST 匹配当前 formal assurance input identity\n- **AND** `initialVerificationMs` 或 `reverificationMs` MUST 使用 summary `totalDurationMs`，而非 claim 到 complete 的间隔\n- **AND** summary `totalDurationMs` MUST 计入 provider execution、从 orchestration gap 扣除且 MUST NOT 出现在 unobserved intervals\n- **AND** 缺少 summary 或身份不匹配时 completion MUST 被拒绝\n\n#### Scenario: 外部正式验证失败只能完成 blocked attempt\n\n- **WHEN** selected verification provider 产出绑定当前 candidate fingerprint 的 `failed` 或 `incomplete` `buildr.verification-timing/v1` summary\n- **THEN** Task Finish MUST 只允许该 summary 完成 formal assurance 的 blocked attempt\n- **AND** blocked attempt MUST 保持 repair decision required，MUST NOT 推进后续交付步骤\n- **AND** passed completion MUST 只接受 status 为 `passed` 的可信 summary\n- **AND** status 为 `passed` 的 summary MUST NOT 用于完成 blocked attempt\n\n#### Scenario: 外部 provider 没有产品 observation\n\n- **WHEN** Agent 手工 claim 并 complete 一个没有产品 command observation 的步骤\n- **THEN** Task Finish MUST 保留 attempt wall-clock\n- **AND** execution timing coverage MUST 将该区间报告为 external-unobserved\n- **AND** MUST NOT 把该 wall-clock 归类为 product execution\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "已解决诊断不得继续作为当前故障",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: 已解决诊断不得继续作为当前故障\n\nTask Finish MUST 将 current diagnostic 与历史 diagnostic artifact 分离。后续成功执行已经解决相关失败时，compact 与 full checkpoint MUST 清除 current diagnostic；历史 observation ledger 和 diagnostic artifact MUST 保持可追溯。\n\n#### Scenario: 同一步恢复成功清除诊断\n\n- **WHEN** 自动执行失败写入 current diagnostic，随后该步骤以新有效身份成功完成\n- **THEN** checkpoint `diagnostics` MUST 为 null\n- **AND** 早期失败的 observation 与 diagnostic artifact MUST 仍保留在历史 ledger 中\n\n#### Scenario: 下游成功推进覆盖已解决诊断\n\n- **WHEN** recovery 已使产生诊断的旧步骤失效并重新通过，finish run 继续成功推进下游步骤\n- **THEN** compact checkpoint MUST NOT 继续显示旧诊断为当前故障\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish checkpoint必须使用轻量CLI bootstrap",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish checkpoint必须使用轻量CLI bootstrap\nBuildr MUST 为 `task finish inspect|advance|recover` 的 checkpoint 状态写入提供不加载 OpenSpec、Git、runtime 或其他产品 domain 的轻量 CLI bootstrap。该 bootstrap MUST 只加载 finish run store、atomic writer、lease ownership 和 compact result 所需模块。\n\n#### Scenario: OpenSpec模块存在语法错误\n- **WHEN** 完整 OpenSpec domain 因语法错误或 Git 冲突标记无法加载\n- **THEN** Task Finish checkpoint 命令 MUST 仍能启动并把 contract-convergence记录为 blocked\n- **AND** 命令 MUST 返回可恢复的 compact checkpoint而不是 bootstrap 崩溃\n\n#### Scenario: blocked attempt持有lease\n- **WHEN** 损坏 domain 导致当前 contract-convergence attempt无法继续且lease仍属于该attempt\n- **THEN** 轻量 checkpoint MUST 原子终结 attempt并释放identity匹配的lease\n- **AND** MUST NOT删除其他run或attempt持有的lease\n\n#### Scenario: 轻量入口尝试扩大副作用\n- **WHEN** 调用方要求轻量 bootstrap执行converge、Git、provider或canonical写入\n- **THEN** bootstrap MUST拒绝该动作并保持产品 domain未加载\n- **AND** 必须要求通过完整CLI入口执行实际产品动作\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须产品化执行停止边界",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须产品化执行停止边界\nBuildr MUST 为语义冲突、无法证明状态、正式保证失败和重要集成冲突持久化绑定 run、step、输入摘要、阻塞代码与动作身份的 `blockIdentity` 及恢复策略。普通 `resume` MUST NOT 清除这些停止边界；只有策略允许的可验证输入变化、绑定当前 `blockIdentity` 的显式授权，或正式保证专用的修复授权与类型化恢复才能创建新 attempt。\n\n#### Scenario: 同一语义冲突被普通恢复\n- **WHEN** 产品执行的 OpenSpec 收敛因语义冲突阻塞，输入摘要没有变化且调用方执行普通 `resume`\n- **THEN** Task Finish MUST 保持原步骤 blocked 并保留原失败 attempt\n- **AND** MUST NOT 发放新 attempt token 或接受调用方自报的 passed evidence\n\n#### Scenario: delta 已形成新输入\n- **WHEN** Agent 或用户处理语义冲突后，产品观测到当前步骤输入摘要已经变化\n- **THEN** `resume` MUST 使旧阻塞失效并以新输入创建新 attempt\n- **AND** 新 attempt MUST NOT 覆盖旧阻塞身份和失败证据\n\n#### Scenario: 正式保证失败\n- **WHEN** formal-assurance 已以失败身份阻塞\n- **THEN** 普通恢复和通用解决授权 MUST 被拒绝\n- **AND** 只有绑定失败身份与允许修改范围的修复授权及类型化恢复 MAY 推进实现变化\n\n#### Scenario: 重要集成冲突\n- **WHEN** target convergence 报告需要语义处理的重要 rebase 或 merge 冲突\n- **THEN** run MUST 停止并要求新 candidate/target 事实或绑定阻塞身份的集成解决授权\n- **AND** Task Finish MUST NOT 自动选择冲突内容\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须区分执行计时与检查点等待",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须区分执行计时与检查点等待\nTask Finish MUST 只把产品命令实测或与当前候选身份匹配的 `buildr.verification-timing/v1` 摘要计入 provider execution；普通 completion 的调用方手写时长和 attempt 检查点等待 MUST NOT 计入正式验证时间。检查结果 MUST 分别报告产品执行、提供者执行、检查点等待、不可观测区间和计时覆盖来源。\n\n#### Scenario: 外部验证提供受信摘要\n- **WHEN** formal-assurance completion 携带状态通过、候选身份匹配且有稳定摘要身份的验证计时摘要\n- **THEN** initial verification 或 re-verification MUST 使用摘要的 `totalDurationMs`\n- **AND** 领取 attempt 到提交 completion 的其余时间 MUST 归入 checkpoint wait 或不可观测区间\n\n#### Scenario: 调用方只提交普通 duration\n- **WHEN** completion evidence 只包含调用方手写 `durationMs`，没有受信验证摘要或产品命令观测\n- **THEN** Task Finish MUST NOT 将该数值计入正式验证耗时\n- **AND** timing coverage MUST 标记该执行为外部不可观测\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 正式验证必须审计完整候选差异",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 正式验证必须审计完整候选差异\n\nTask Finish 的 selected verification provider MUST 相对声明的目标基线审计完整候选中的 OpenSpec canonical Requirement 差异，包括已提交、已暂存、未暂存和未跟踪内容。Provider MUST NOT 只比较 `HEAD` 与工作树，并 MUST 只接受当前候选携带且 canonical digest 匹配的受支持 convergence receipt。\n\n#### Scenario: canonical 回退已进入候选提交\n\n- **WHEN** rebase 冲突解决使 canonical Requirement 回退且该回退已提交到候选 `HEAD`\n- **THEN** candidate audit MUST 通过目标基线与候选提交的差异发现该回退\n- **AND** 缺少当前候选匹配的 convergence receipt 时 formal assurance MUST 失败\n\n#### Scenario: 新收敛回执覆盖候选 canonical\n\n- **WHEN** `buildr openspec converge` 产生 `buildr.openspec-convergence-receipt/v3` 且其 expected digest 匹配当前 canonical\n- **THEN** candidate audit MUST 将该 capability 视为已由当前候选收敛\n- **AND** receipt、archive path 或 digest 不匹配时 MUST fail closed\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须连续执行可机械验证的 provider action",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须连续执行可机械验证的 provider action\nTask Finish MUST 允许 action registry 将具有稳定 product handler、结构化授权、effects、输入和 result contract 的 selected provider 动作登记为 `provider-executable`，并 MUST 在正常无冲突路径连续执行这些动作。只有需要语义判断、缺少输入、授权不足、结果无法验证或 provider 没有 product handler 时才 MUST 停止并返回明确 handoff。\n\n#### Scenario: 连续执行确定 provider\n- **WHEN** 当前及后续步骤的 selected provider 均提供已登记 product handler，输入、授权和 lease 可验证，且结果均通过 contract assertion\n- **THEN** `task finish run` MUST 自动领取 attempt、执行 provider、记录 observation/evidence/effect 并推进 checkpoint\n- **AND** MUST 直到真实停止边界才返回，不要求 Agent 逐步 claim 和 complete\n\n#### Scenario: Provider 进入语义分支\n- **WHEN** provider 返回 Git 内容冲突、OpenSpec 语义冲突、修复决策或其他需要人类判断的结果\n- **THEN** executor MUST 保留最后成功 checkpoint 并返回 `agent-provider-required` 或更具体的稳定停止状态\n- **AND** MUST NOT 猜测决定、扩大授权或把未执行 effect 标记完成\n\n#### Scenario: Provider 结果不可核验\n- **WHEN** product handler 的结果缺少 contract 要求的 identity、ref transition、verification summary 或 cleanup receipt\n- **THEN** 当前 attempt MUST blocked 且保存 bounded diagnostic\n- **AND** 后续步骤 MUST NOT 执行\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Retained impact 分类必须覆盖默认 CLI 实现",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Retained impact 分类必须覆盖默认 CLI 实现\nRetained convergence MUST 使用 Product-relative canonical path policy 分类默认入口影响，并 MUST 将 Buildr CLI 入口、安装映射和生产 `services/buildr/src/**/*.mjs` 视为默认 CLI 影响。测试、fixtures、OpenSpec artifacts 和真正未知路径 MUST NOT 仅因位于 Product 内就触发入口安装。\n\n#### Scenario: Application domain 源码变化\n- **WHEN** changed paths 包含 `projects/product/services/buildr/src/application/**/*.mjs`\n- **THEN** retained impact MUST 设置 `requiresCliInstall: true` 并把精确路径交给 runtime-install provider\n- **AND** MUST NOT 将该路径报告为 `default-cli-not-affected`\n\n#### Scenario: 只有测试变化\n- **WHEN** changed paths 只包含 `services/buildr/test/**`\n- **THEN** retained convergence MUST 运行 doctor 并将 CLI install 标记为 not-applicable\n- **AND** MUST NOT 重装默认 CLI\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须传递 retained runtime identity",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须传递 retained runtime identity\nTask Finish MUST 将 retained checkout 已核验的 Node executable、版本、CLI source 和 target identity 传给 runtime-install provider，并 MUST 在安装前后记录实际使用的 runtime identity。交互 shell PATH MUST NOT 覆盖 receipt-bound runtime。\n\n#### Scenario: Shell 默认 Node 不受支持\n- **WHEN** retained receipt 提供受支持 Node executable，而交互 shell PATH 首个 Node 版本低于产品最低要求\n- **THEN** runtime-install MUST 使用 receipt-bound Node 完成安装与 post-install doctor\n- **AND** MUST NOT 先以不受支持 Node 启动一次失败尝试\n\n#### Scenario: Runtime identity 已漂移\n- **WHEN** 安装前观察到 Node executable、版本或 CLI source 与 retained fingerprint 不一致\n- **THEN** runtime-install MUST 阻塞并返回 before/observed identity 与 next action\n- **AND** MUST NOT 使用任意 PATH fallback 静默继续\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 正常路径必须报告自动化效率证据",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 正常路径必须报告自动化效率证据\nBuildr MUST 通过真实无冲突 Task Finish journey 记录 product/provider execution coverage、Agent handoff 数、CLI invocation 数、checkpoint wait、orchestration gap 和 end-to-end wall-clock。验证 MUST 以动作覆盖与往返结构作为稳定验收，不得用固定绝对耗时掩盖机器差异。\n\n#### Scenario: 无冲突代码任务完成收尾\n- **WHEN** 候选验证通过、目标 ref 未漂移、provider 均返回确定结果且 cleanup 可证明安全\n- **THEN** completion receipt MUST 列出自动执行的 provider actions、真实停止边界数量和未观测区间\n- **AND** journey test MUST 证明正常路径没有逐步骤 Agent completion\n"
+    },
+    {
+      "capability": "task-verification",
+      "title": "验证在完成节点自动触发",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 验证在完成节点自动触发\nTask verification provider MUST 同时支持用户直接验证意图、实现工作流自动验证节点和 Task Finish consumer，并 MUST NOT 要求用户主动说出 Skill、capability 或内部验证级别名称。\n\n#### Scenario: 用户直接要求验证\n- **WHEN** 用户要求运行测试、验证改动、判断验证是否完成或报告验证耗时\n- **THEN** Agent runtime MUST 能根据 provider description 发现 task-verification 入口\n- **AND** provider MUST 按当前任务阶段和 Project policy执行最低充分验证\n\n#### Scenario: Agent 准备声称实现完成\n- **WHEN** 实现型任务的候选已经稳定且 Agent 准备向用户声称实现完成\n- **THEN** Agent MUST 在完成回复前调用 selected task-verification provider 获得与当前候选一致的 evidence\n- **AND** 普通任务默认请求 affected，发布、高风险或显式完整验证请求 candidate\n\n#### Scenario: Task Finish 消费验证能力\n- **WHEN** 用户要求收尾且 Task Finish 提交任务、发布意图、改动范围、候选 identity 和已有 evidence\n- **THEN** Task Finish MUST 通过 capability binding 调用 selected task-verification provider\n- **AND** provider MUST 返回 `requiredAssurance` 和匹配该保证的执行或复用结论，binding MUST NOT 被解释为顶层意图发现机制\n"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: strengthen-concurrent-task-composition-acceptance
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/strengthen-concurrent-task-composition-acceptance/brief.md
+    reason: 组合验收补强的范围、价值和非目标需要人类可读入口
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/concurrent-task-acceptance/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Candidate 组合门禁将新增真实 CLI、多仓、恢复和产品化清理证据
+    status: updated
+    sourceIdentities:
+      - specs/concurrent-task-acceptance/spec.md
+      - specs/task-environments/spec.md
+      - services/buildr/test/verification/concurrency/task-acceptance.mjs
+      - services/buildr/src/application/worktree/worktree-application.mjs
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 本 Change 沿用既有任务环境、repository membership、Candidate、Local App 和 target-race 术语
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

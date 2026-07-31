@@ -107,39 +107,55 @@ Buildr MUST 提供机器可读的 create/inspect/context 结果，至少记录 t
 - **AND** top-level readiness MUST 在任一 required repository blocked 时为 false
 
 ### Requirement: Task environment 清理必须保护全部成员和其他任务
-Buildr MUST 只在当前 environment 的全部 repository changes 已安全集成或获得明确放弃授权、checkouts 可清理且任务拥有的本机资源已停止后清理。清理 MUST 按 nested repositories 后 root 的顺序执行，并 MUST NOT 修改其他 task environments。
+Buildr MUST 提供 receipt-bound 的本地 task environment 清理入口，并 MUST 只在当前 environment 的全部 repository changes 已安全集成、checkouts 干净且任务拥有的本机资源已停止后清理。清理 MUST 在任何删除前统一核对 task、owner、receipt、repository identity、每仓 integrated ref 和其他 environment ownership，按 nested repositories 后 root 的顺序执行，并 MUST NOT 修改其他 task environments 或远端分支。
 
 #### Scenario: 多仓环境安全清理
-- **WHEN** 全部成员 repositories 已集成、干净且没有阻塞本机资源
-- **THEN** Buildr MUST 先移除 nested repository worktrees，再移除 root worktree 和本地 receipt
-- **AND** MUST 返回每个 repository 与 environment 的 removed evidence
+- **WHEN** 调用方提供匹配 receipt owner 的 Agent 和每个成员 repository 的 integrated ref，且全部任务分支已被对应 ref 包含、checkouts 干净并且没有阻塞本机资源
+- **THEN** Buildr MUST 先移除 nested repository worktrees，再移除 root worktree、本地任务分支、adoption receipt 和 environment receipt
+- **AND** MUST 返回每个 repository、branch、receipt 与 environment 的 removed evidence
 
 #### Scenario: 一个成员 repository 仍未完成
-- **WHEN** 任一 repository dirty、未集成、branch identity 不明或仍被 task-owned process 使用
-- **THEN** Buildr MUST 保留整个 task environment
+- **WHEN** 任一 repository dirty、未被声明 integrated ref 包含、branch identity 不明或仍被 task-owned process 使用
+- **THEN** Buildr MUST 在任何删除前保留整个 task environment
 - **AND** MUST 报告阻塞 repository/resource，且不得部分删除其他仍用于恢复的成员
+
+#### Scenario: owner 或 receipt 不匹配
+- **WHEN** 调用方 Agent 与 receipt owner 不一致、task receipt 缺失或 integrated ref selector 与 receipt repository set 不一致
+- **THEN** Buildr MUST fail closed 并保持所有 checkout、branch 和本地 receipt 不变
+- **AND** result MUST 返回确定性的 blocked code 和未执行清理项
 
 #### Scenario: 存在其他并发 task environment
 - **WHEN** 同一 Workspace 或任一 source repository 还拥有其他 task worktrees
-- **THEN** Buildr MUST 保持其 checkouts、branches、receipts、preview、ports 和状态目录不变
+- **THEN** Buildr MUST 只删除当前 receipt 精确登记的 checkout 和 branch
+- **AND** MUST 保持其他任务的 checkouts、branches、receipts、preview、ports 和状态目录不变
+
+#### Scenario: 请求删除远端或放弃未集成工作
+- **WHEN** 清理需要删除远端任务分支、强制移除 dirty checkout 或放弃未被目标 ref 包含的提交
+- **THEN** 本地 task environment 清理入口 MUST 拒绝该请求
+- **AND** MUST NOT 将普通 cleanup 授权扩大为远端删除、强制删除或丢弃工作授权
 
 ### Requirement: Task environment 必须核验 execution binding
-Buildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、environment-bound CLI source identity、可直接执行的绝对 CLI invocation、runtime projection identity 和明确 target/workdir 判断 `executionReady`。CLI invocation MUST 使用结构化的绝对 `command` 与固定 `argsPrefix`，并 MUST 与 receipt 中的 source、source kind 和 identity 一同核验。自举 Workspace MUST 使用 environment 内对应的产品 CLI bridge；没有产品源码成员的普通 Workspace MAY 使用 receipt 显式声明的 external-product CLI invocation，且不得假设产品位于 Workspace 的固定相对目录。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。
+Buildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、environment-bound CLI source identity、可直接执行的绝对 CLI invocation、runtime projection identity、明确 target/workdir 和成功的 receipt-bound CLI executable probe 判断 `executionReady`。CLI invocation MUST 使用结构化的绝对 `command` 与固定 `argsPrefix`，并 MUST 与 receipt 中的 source、source kind 和 identity 一同核验；probe MUST 真实启动该 invocation 的轻量只读 `version` 或等价 bootstrap，不得只检查文件存在、digest 或 executable bit。自举 Workspace MUST 使用 environment 内对应的产品 CLI bridge；没有产品源码成员的普通 Workspace MAY 使用 receipt 显式声明的 external-product CLI invocation，且不得假设产品位于 Workspace 的固定相对目录。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。
 
 #### Scenario: canonical workspace 对话操作 task environment
 - **WHEN** Agent session 从 canonical Workspace 启动，并在 create 后使用 task environment 返回的明确 target、成员 checkout workdir 和 environment-local CLI invocation
-- **THEN** context MUST 在 environment、repository、CLI source、CLI invocation 与 runtime identity 匹配时返回 `executionReady: true`
+- **THEN** context MUST 仅在 environment、repository、CLI source、CLI invocation、runtime identity 与真实 executable probe 均通过时返回 `executionReady: true`
 - **AND** invocation 的 `command` MUST 是 task checkout 内已有 Node-aware 产品入口的绝对路径，调用方从任意 cwd 执行时 MUST NOT 再拼装产品路径
 - **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效
 
+#### Scenario: CLI 文件存在但依赖缺失
+- **WHEN** receipt-bound CLI 路径与 digest 匹配，但真实 probe 因 package、runtime 或 loader 依赖缺失而无法启动
+- **THEN** create/context MUST 返回 `executionReady: false`、稳定 failure code、原始 exit 与恢复动作
+- **AND** MUST NOT 把路径身份或之前的 doctor 结果冒充为 CLI 可执行证据
+
 #### Scenario: 普通 Workspace 使用外部产品 CLI
-- **WHEN** Buildr 产品源码不属于目标 Workspace repository set，receipt 已声明 external-product CLI source identity 和 invocation，且命令使用 environment target/workdir
+- **WHEN** Buildr 产品源码不属于目标 Workspace repository set，receipt 已声明 external-product CLI source identity 和 invocation，命令使用 environment target/workdir且 executable probe 成功
 - **THEN** context MAY 返回 `executionReady: true`
-- **AND** result MUST 披露绝对 command、固定 args prefix、CLI source kind 与 `checkoutLocal: false`，不得伪装为 environment-local CLI 或假设产品目录位置
+- **AND** result MUST 披露绝对 command、固定 args prefix、CLI source kind、probe evidence 与 `checkoutLocal: false`，不得伪装为 environment-local CLI 或假设产品目录位置
 
 #### Scenario: 标准消费者执行产品命令
-- **WHEN** Action Registry、验证框架或其他标准消费者需要运行 receipt-bound Buildr 命令
-- **THEN** consumer MUST 使用 context 返回的 CLI invocation，并只追加自身子命令参数
+- **WHEN** Task Finish、验证框架或其他标准消费者需要运行 receipt-bound Buildr 命令
+- **THEN** consumer MUST 使用 context 返回且已通过 probe 的 CLI invocation，并只追加自身子命令参数
 - **AND** consumer MUST NOT 根据 cwd、`cliSource` 或 Workspace 内固定产品位置猜测命令
 
 #### Scenario: 请求路径或 CLI 越界
@@ -148,13 +164,13 @@ Buildr MUST 以 environment receipt、repository membership/identity、allowed e
 - **AND** MUST 报告不匹配的 target、workdir、membership、CLI source kind、source identity 或 invocation
 
 #### Scenario: runtime identity 漂移
-- **WHEN** environment identity、repository plan 或 runtime projection identity 不再匹配 receipt
-- **THEN** context MUST 返回 `stale` 或 `blocked`
-- **AND** MUST 要求重新收敛 environment/runtime，而不是创建另一份纯 checkout
+- **WHEN** environment identity、repository plan、runtime projection identity 或 executable probe 不再匹配 receipt
+- **THEN** context MUST 返回 `stale`、`blocked` 或 `executionReady: false`
+- **AND** MUST 要求重新收敛 environment/runtime/dependencies，而不是创建另一份纯 checkout
 
 #### Scenario: 读取缺少 invocation 的旧 receipt
 - **WHEN** 已有 receipt 仅包含 CLI source identity 而没有结构化 invocation
-- **THEN** Buildr MUST 保持 receipt 可读，并根据已核验的当前产品生成 invocation
+- **THEN** Buildr MUST 保持 receipt 可读，根据已核验的当前产品生成 invocation并执行 probe
 - **AND** 标准输出与后续安全 refresh MUST 使用新 invocation 契约，不得要求调用方继续猜路径
 
 ### Requirement: Runtime activation evidence 必须是按影响触发的特例
@@ -189,3 +205,28 @@ Buildr MUST 将 adoption receipt 作为 task environment-owned local state 管�
 - **THEN** Buildr MUST 随 environment 清理对应 adoption receipt
 - **AND** 主 Workspace runtime MUST 仍从 retained checkout sync 并重新 doctor
 - **AND** Buildr MUST NOT 从未合并 task checkout 更新原 Workspace runtime
+
+### Requirement: Task environment 清理必须证明 owned runtime 已停止
+Buildr MUST 在删除任何 task environment checkout、receipt 或本地任务分支前，枚举并核对该 environment 拥有的本机 preview、受管进程和验证租约；任一运行中资源存在、无法证明归属或 cleanup token 不匹配时 MUST fail closed，并 MUST 保留全部环境内容用于恢复。
+
+#### Scenario: 运行中 preview 阻止 worktree cleanup
+- **WHEN** `worktree cleanup` 发现 receipt 所属 environment 仍有存活 preview 或受管进程
+- **THEN** 命令 MUST 在删除任何 repository worktree 前失败
+- **AND** 诊断 MUST 返回资源 identity、owner、environment 与正确的产品化停止动作
+
+#### Scenario: 环境资源已经清理
+- **WHEN** 所有 task-owned preview、进程与 lease 都已通过归属检查停止或释放
+- **THEN** `worktree cleanup` MAY 继续既有 clean、integrated-ref 与 repository membership 门禁
+- **AND** cleanup evidence MUST 记录 runtime preflight 已通过
+
+### Requirement: Task environment execution binding 必须包含 Workspace Node identity
+Task environment receipt/context MUST 包含创建时的 Workspace Node identity、受管 executable 与 probe evidence；`executionReady` MUST 要求当前声明/runtime/CLI invocation 与该 identity 一致。
+
+#### Scenario: 创建可执行 task environment
+- **WHEN** task checkout、runtime projection、receipt-bound CLI 与 Workspace Node runtime 均匹配
+- **THEN** context MUST 返回 `executionReady: true` 和 Node identity/executable evidence
+
+#### Scenario: Node runtime 被删除或声明改变
+- **WHEN** receipt 中的 Node identity 不再匹配当前声明或 executable probe 失败
+- **THEN** context MUST 返回 stale/blocked 和 `executionReady: false`
+- **AND** MUST 建议从 Workspace 声明执行 `sync`，不得由 Agent adapter 选择替代版本

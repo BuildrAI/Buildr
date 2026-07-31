@@ -14,6 +14,6 @@
 - `task-asset-review/v3` 依赖 Agent 在非简单任务中加载 Skill 并主动写入精炼 observation；没有 runtime Hook、daemon、watcher、事件总线或自动全量采集。它不读取隐藏推理，也不持久化完整对话、工具日志或逐节点任务轨迹。运行期 observation 只保存在 canonical Workspace 的 untracked `.buildr/asset-review/`，MVP 使用单任务 owner 与原子替换，不提供 CAS、复杂锁、数据库、全局索引或资产改名/拆分/合并历史。
 - Service branch intent 不负责 pull、merge、rebase 或长期分支同步；它只控制首次 clone、metadata 和 drift 诊断。
 - `@buildr-ai/buildr@0.1.0-rc.6` 是当前已发布 RC，`next` 指向该版本；`0.1.0-rc.7` 正在准备，尚未发布。`latest` 仍可能指向历史 prerelease，它不代表稳定版。稳定版 `0.1.0` 尚未发布，公开试用应显式安装 `@next`。`0.1.0-rc.4` 因发布范围错误已弃用。
-- `package check/build` 与 `openspec baseline/check` 是维护/workflow 表面，不建议普通 workspace 直接依赖。
+- `package check/build` 是维护表面；旧 OpenSpec 阶段命令仅作弃用兼容。普通 workspace 使用 `openspec converge`，状态无法证明时使用只读 `openspec audit`。
 
 遇到 unsupported runtime 或不能确定的资产边界时，Agent 应停止自动变更、保留源资产，并报告可执行下一步。

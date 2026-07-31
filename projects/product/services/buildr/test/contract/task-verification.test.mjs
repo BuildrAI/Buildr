@@ -86,7 +86,7 @@ test('Git integration 只返回内容转换证据，不拥有 Candidate 验证�
   assert.doesNotMatch(gitOpsSkill, /复用已有验证结果/);
 });
 
-test('默认收尾只推送目标分支，远端任务分支需要明确要求', () => {
+test('默认收尾只交付目标分支，远端任务分支保持未授权', () => {
   for (const required of [
     '默认只推送已集成的目标分支', '远端任务分支只有在用户当前轮次明确要求',
     '任务分支未推送状态或明确授权的远端结果',
@@ -94,8 +94,8 @@ test('默认收尾只推送目标分支，远端任务分支需要明确要求',
   for (const required of [
     '默认 push 只面向已集成的目标分支', '才可推送任务分支',
   ]) assert.ok(gitOpsSkill.includes(required), `git-ops must include ${required}`);
-  assert.match(finishSkill, /默认只 push 已集成目标分支/);
-  assert.match(finishSkill, /不授权.*远端任务分支操作/);
+  assert.match(finishSkill, /目标分支集成\/push/);
+  assert.match(finishSkill, /远端任务分支操作.*仍不授权/);
 });
 
 test('随包 manifest 原子登记 contract、provider、binding 与 consumer', () => {
@@ -108,7 +108,11 @@ test('随包 manifest 原子登记 contract、provider、binding 与 consumer', 
   assert.match(packagedSkill.description, /初始化或更新测试声明/);
   assert.match(packagedSkill.description, /用户无需主动点名本 Skill/);
   const finish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
-  assert.ok(finish.requires.some((item) => item.capability === 'buildr.task-verification' && item.mode === 'required'));
+  assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-verification'), false);
+  assert.deepEqual(finish.requires, [
+    { capability: 'buildr.git-single-operation', version: 1, mode: 'optional' },
+    { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
+  ]);
 
   assert.equal(workspaceManifest.bindings.find((item) => item.capability === 'buildr.task-verification').provider, 'task-verification');
   const workspaceSkill = workspaceManifest.skills.find((item) => item.id === 'task-verification');
@@ -131,23 +135,25 @@ test('随包 manifest 原子登记 contract、provider、binding 与 consumer', 
   ]);
 });
 
-test('task-finish 保持薄入口并把证据政策交给 provider', () => {
-  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 2500);
-  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 50);
-  for (const required of ['inspect|advance|resume', 'selected providers', 'fingerprint', 'effects', 'evidence', 'task-verification provider']) assert.ok(finishSkill.includes(required));
+test('task-finish 保持薄入口并把确定性执行交给产品', () => {
+  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 4500);
+  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 80);
+  for (const required of ['buildr.task-finish/v1', 'preflight → prepare → verify → deliver → cleanup', 'canonicalCliInvocations = 1', 'agentProviderCompletions = 0', 'formalVerificationExecutions <= 1']) assert.ok(finishSkill.includes(required));
   assert.doesNotMatch(finishSkill, /instance\.json|archive-rehearsal\.mjs|buildr component check/);
-  assert.match(finishSkill, /非空 fingerprint/);
-  assert.match(finishSkill, /expected\/observed target ref/);
-  assert.match(finishSkill, /holder\/token\/expiry fencing/);
+  assert.match(finishSkill, /不要替产品收集 fingerprint/);
+  assert.match(finishSkill, /不由 Agent 编排阶段、补 evidence 或设计 recovery/);
+  assert.match(finishSkill, /唯一 canonical `runs`、`completed` 与 lease namespace/);
+  assert.match(finishSkill, /不创建版本化运行目录/);
 });
 
-test('OpenSpec apply 和 Task Finish 固定 canonical sync 的 guard 时序', () => {
+test('OpenSpec apply 和 Task Finish 固定单一 convergence 事务边界', () => {
   for (const required of [
-    '不得在当前会话的 `pre-sync` contract guard 成功前', 'delta 预写入 canonical specs',
-    'pre-sync 成功后', 'post-sync guard',
-  ]) assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve sync sequencing: ${required}`);
+    '不把 delta 预写入 canonical specs', 'buildr openspec converge',
+    '不得手工恢复 canonical', '选择内部 stage',
+  ]) assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve convergence boundary: ${required}`);
 
-  assert.match(finishSkill, /canonical、target、runtime 收敛后执行/);
+  assert.match(finishSkill, /OpenSpec convergence/);
+  assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);
 });
 
 test('已有 Candidate 进入收尾时按 transition class 去重 executor 调用', () => {

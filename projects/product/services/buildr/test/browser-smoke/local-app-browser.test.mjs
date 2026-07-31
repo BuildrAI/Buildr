@@ -198,6 +198,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
     assert.equal(await page.getByText('技术信息', { exact: true }).count(), 1);
     await page.locator('#project-description').fill('已在独立编辑页更新');
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('project-save-state')?.textContent === '保存成功');
     assert.equal(await page.locator('#project-save-state').innerText(), '保存成功');
   });
 
@@ -228,6 +229,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
     assert.equal(await page.getByText('技术信息', { exact: true }).count(), 1);
     await page.locator('#service-description').fill('已在独立详情页更新');
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('service-save-state')?.textContent === '保存成功');
     assert.equal(await page.locator('#service-save-state').innerText(), '保存成功');
     await page.reload();
     assert.equal(await page.locator('#service-description').inputValue(), '已在独立详情页更新');
