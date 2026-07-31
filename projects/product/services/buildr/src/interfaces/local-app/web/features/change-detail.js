@@ -1,5 +1,57 @@
 import { renderMarkdown } from '/markdown.js';
 
+function contentView(raw, { contentClass }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'content-view';
+
+  const toggle = document.createElement('div');
+  toggle.className = 'content-view-toggle';
+  toggle.setAttribute('role', 'group');
+  toggle.setAttribute('aria-label', '内容视图');
+
+  const renderedButton = document.createElement('button');
+  renderedButton.type = 'button';
+  renderedButton.className = 'content-view-option is-active';
+  renderedButton.setAttribute('aria-pressed', 'true');
+  renderedButton.textContent = '渲染';
+
+  const sourceButton = document.createElement('button');
+  sourceButton.type = 'button';
+  sourceButton.className = 'content-view-option';
+  sourceButton.setAttribute('aria-pressed', 'false');
+  sourceButton.textContent = '原文';
+
+  toggle.append(renderedButton, sourceButton);
+
+  const rendered = renderMarkdown(raw);
+  rendered.classList.add(contentClass, 'content-view-pane', 'is-active');
+  rendered.setAttribute('data-view', 'rendered');
+
+  const source = document.createElement('pre');
+  source.className = `${contentClass} content-view-pane content-view-source`;
+  source.setAttribute('data-view', 'source');
+  source.hidden = true;
+  source.textContent = String(raw ?? '');
+
+  function setView(mode) {
+    const renderedMode = mode === 'rendered';
+    renderedButton.classList.toggle('is-active', renderedMode);
+    sourceButton.classList.toggle('is-active', !renderedMode);
+    renderedButton.setAttribute('aria-pressed', renderedMode ? 'true' : 'false');
+    sourceButton.setAttribute('aria-pressed', renderedMode ? 'false' : 'true');
+    rendered.classList.toggle('is-active', renderedMode);
+    source.classList.toggle('is-active', !renderedMode);
+    rendered.hidden = !renderedMode;
+    source.hidden = renderedMode;
+  }
+
+  renderedButton.addEventListener('click', () => setView('rendered'));
+  sourceButton.addEventListener('click', () => setView('source'));
+
+  wrap.append(toggle, rendered, source);
+  return wrap;
+}
+
 function artifactPanel(label, artifact) {
   const article = document.createElement('article'); article.className = 'artifact-panel';
   const heading = document.createElement('div'); heading.className = 'artifact-heading';
@@ -7,9 +59,7 @@ function artifactPanel(label, artifact) {
   const path = document.createElement('small'); path.textContent = artifact.path;
   heading.append(title, path); article.append(heading);
   if (artifact.exists) {
-    const content = renderMarkdown(artifact.content);
-    content.classList.add('artifact-content');
-    article.append(content);
+    article.append(contentView(artifact.content, { contentClass: 'artifact-content' }));
   } else {
     const missing = document.createElement('p'); missing.className = 'artifact-missing'; missing.textContent = '未声明'; article.append(missing);
   }
@@ -31,8 +81,7 @@ function briefPanel(brief) {
     const source = document.createElement('small'); source.textContent = brief.path;
     missing.append(message, source); section.append(missing); return section;
   }
-  const content = renderMarkdown(brief.content);
-  content.classList.add('brief-content');
+  const content = contentView(brief.content, { contentClass: 'brief-content' });
   const source = document.createElement('small'); source.className = 'brief-source'; source.textContent = brief.path;
   section.append(content, source); return section;
 }

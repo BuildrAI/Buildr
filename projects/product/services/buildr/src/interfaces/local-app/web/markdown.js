@@ -1,6 +1,8 @@
 function isSafeHref(href) {
+  const value = String(href ?? '').trim();
+  if (!/^https?:\/\//i.test(value)) return false;
   try {
-    const url = new URL(href, 'https://example.invalid');
+    const url = new URL(value);
     return url.protocol === 'http:' || url.protocol === 'https:';
   } catch {
     return false;

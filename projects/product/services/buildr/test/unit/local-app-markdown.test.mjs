@@ -189,12 +189,16 @@ test('renderMarkdown 渲染任务勾选列表与分隔线', async () => {
   assert.equal(root.querySelectorAll('hr').length, 1);
 });
 
-test('renderMarkdown 以文本节点转义危险内容且拒绝非 http(s) 链接', async () => {
+test('renderMarkdown 以文本节点转义危险内容且拒绝非绝对 http(s) 链接', async () => {
   const { renderMarkdown } = await loadRenderer();
   const root = renderMarkdown([
     '<script>alert(1)</script>',
     '',
     '[坏链接](javascript:alert(1))',
+    '',
+    '[相对链接](../readme.md)',
+    '',
+    '[协议相对](//example.com/docs)',
     '',
     '正常 <b>标签字面量</b>',
   ].join('\n'));
@@ -202,5 +206,7 @@ test('renderMarkdown 以文本节点转义危险内容且拒绝非 http(s) 链�
   assert.equal(root.querySelectorAll('b').length, 0);
   assert.match(textOf(root), /<script>alert\(1\)<\/script>/);
   assert.match(textOf(root), /正常 <b>标签字面量<\/b>/);
+  assert.match(textOf(root), /\[相对链接\]\(\.\.\/readme\.md\)/);
+  assert.match(textOf(root), /\[协议相对\]\(\/\/example\.com\/docs\)/);
   assert.equal(root.querySelector('a'), null);
 });
