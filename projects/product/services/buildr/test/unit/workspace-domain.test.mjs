@@ -6,12 +6,13 @@ import { resolveWorkspaceIdentity } from '../../src/application/workspace/worksp
 
 const WORKSPACE_ID = 'f2f40b71-2382-5906-82bd-76a7927b59f3';
 
-test('Workspace Domain 使用稳定 UUID、name 和 description', () => {
-  const workspace = createWorkspace({ id: WORKSPACE_ID, name: ' Buildr ', description: ' Product workspace ' });
-  assert.deepEqual(workspace, { id: WORKSPACE_ID, name: 'Buildr', description: 'Product workspace' });
+test('Workspace Domain 使用稳定 UUID、metadata 和精确 Node toolchain', () => {
+  const runtime = { node: { version: '22.4.1' } };
+  const workspace = createWorkspace({ id: WORKSPACE_ID, name: ' Buildr ', description: ' Product workspace ', runtime });
+  assert.deepEqual(workspace, { id: WORKSPACE_ID, name: 'Buildr', description: 'Product workspace', runtime });
   assert.equal(isWorkspaceId(workspace.id), true);
-  assert.throws(() => createWorkspace({ id: 'workspace', name: 'Buildr', description: 'Description' }), /must be a UUID/);
-  assert.throws(() => createWorkspace({ id: WORKSPACE_ID, name: '', description: 'Description' }), /name must be a non-empty string/);
+  assert.throws(() => createWorkspace({ id: 'workspace', name: 'Buildr', description: 'Description', runtime }), /must be a UUID/);
+  assert.throws(() => createWorkspace({ id: WORKSPACE_ID, name: '', description: 'Description', runtime }), /name must be a non-empty string/);
 });
 
 test('Workspace identity 复用已有 UUID、按需生成并拒绝冲突', () => {

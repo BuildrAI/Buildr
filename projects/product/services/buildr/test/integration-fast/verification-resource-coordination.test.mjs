@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import test from 'node:test';
+
+import { parseSuccessfulJson, spawnSupervised } from '../helpers/child-process-supervisor.mjs';
 
 const worker = path.resolve('test/fixtures/verification-resource-worker.mjs');
 const waitFor = async (predicate, timeoutMs = 3_000) => {
@@ -15,13 +16,7 @@ const waitFor = async (predicate, timeoutMs = 3_000) => {
 };
 
 function runWorker(root, taskId, acquiredFile, releaseFile) {
-  const child = spawn(process.execPath, [worker, root, taskId, acquiredFile, releaseFile], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (chunk) => { stdout += chunk; });
-  child.stderr.on('data', (chunk) => { stderr += chunk; });
-  const completed = new Promise((resolve, reject) => child.on('close', (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr || `worker exited ${code}`))));
-  return { child, completed };
+  return spawnSupervised(process.execPath, [worker, root, taskId, acquiredFile, releaseFile], { owner: { taskId, runId: `run-${taskId}` }, timeoutMs: 5_000 });
 }
 
 test('独立进程共享 Workspace 容量槽并按 owner 释放', async (t) => {
@@ -43,11 +38,11 @@ test('独立进程共享 Workspace 容量槽并按 owner 释放', async (t) => {
   assert.equal(fs.existsSync(secondAcquired), false);
 
   fs.writeFileSync(firstRelease, 'release\n');
-  await first.completed;
+  parseSuccessfulJson(await first.completed, 'first resource worker');
   await waitFor(() => fs.existsSync(secondAcquired));
   const secondClaim = JSON.parse(fs.readFileSync(secondAcquired, 'utf8'));
   assert.equal(secondClaim.owner.taskId, 'task-b');
   fs.writeFileSync(secondRelease, 'release\n');
-  const released = JSON.parse(await second.completed);
+  const released = parseSuccessfulJson(await second.completed, 'second resource worker');
   assert.equal(released[0].status, 'released');
 });

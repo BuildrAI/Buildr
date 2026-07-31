@@ -46,6 +46,7 @@
     "test:unit": "node --test test/unit/*.test.mjs",
     "test:contract": "node --test test/contract/*.test.mjs",
     "test:integration:fast": "node --test test/integration-fast/*.test.mjs",
+    "test:openspec:convergence": "node --test test/unit/openspec-convergence-transaction.test.mjs test/integration-fast/task-finish-cli.test.mjs && node test/verification/openspec/contract.mjs",
     "test:browser:smoke": "node --test test/browser-smoke/*.test.mjs",
     "test:browser:shell": "node test/browser-smoke/local-app-browser.test.mjs shell",
     "test:browser:project": "node test/browser-smoke/local-app-browser.test.mjs project",

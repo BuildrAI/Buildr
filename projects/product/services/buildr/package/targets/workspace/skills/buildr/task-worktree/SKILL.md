@@ -28,7 +28,7 @@ Project/Service 规则优先于本表。
 
 1. **Plan**：用 registry 与 Git boundary 确认 Workspace、task、owner、分支和完整 repository set；不同 plan 不得复用。
 2. **Create/Reuse**：root 固定为 `<workspace-root>/.worktrees/<task-id>`，不得静默回退到 `/tmp`。调用 `buildr worktree create <task-id>`；产品入口统一预检 root 与 nested checkouts，部分失败保留现场和 receipt。复用只跳过 create-time doctor/sync，仍执行 context 和本次动作需要的状态检查。
-3. **Execution binding**：create/reuse 返回 environment receipt、repository membership/identity、`allowedExecutionRoots` 与 receipt-bound CLI/runtime projection identity。Buildr 自举 workspace 使用 environment-local 产品 CLI；普通消费 workspace 可继续使用 receipt 绑定的 external-product CLI。Agent 可从 canonical Workspace 启动的原对话，用明确 target/workdir 操作 environment；`executionReady` 不要求 session root 相等。
+3. **Execution binding**：create/reuse 返回 environment receipt、repository membership/identity、`allowedExecutionRoots`、receipt-bound CLI/runtime projection identity 与 Workspace Node identity/executable。Buildr 自举 workspace 使用 environment-local 产品 CLI；普通消费 workspace 可继续使用 receipt 绑定的 external-product CLI。Agent 可从 canonical Workspace 启动的原对话，用明确 target/workdir 操作 environment；`executionReady` 不要求 session root 相等。
 4. **Activation special case**：普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence。只有任务本身修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制已在真实 Agent host 生效时，才按 adapter 记录 activation evidence。`worktree adopt` 只保存 root 与 handle 均匹配的 agent-attested evidence；Buildr 不内省或自动 handoff Agent host，证据缺口不得伪造，也不阻塞普通执行。
 5. **Use**：artifacts、编辑、构建、测试和合并前验证只在 `allowedExecutionRoots` 内执行并使用 receipt-bound CLI。同一 environment 同时只有一个 owner Agent 写入，不从未合并 task checkout 更新主自举 workspace。
 6. **Retain/Cleanup**：普通任务在上线、归档、明确收尾或用户要求清理前默认保留。发布 environment 在远端 ref 匹配候选、checkout clean、没有后续本地动作且当前发布流程已授权时，删除本地 worktrees、environment receipt、对应 adoption receipt 和已由远端承载的本地分支；否则保留并说明下一动作。主 Workspace runtime 只从 retained checkout sync；不得据此删除远端分支。
@@ -39,7 +39,7 @@ Git worktree 只隔离 working tree/index；Git metadata 仍共享。`<workspace
 
 准备验证或收尾时，返回三类事实：
 
-- environment identity：task id、owner、canonical root、receipt、membership、`allowedExecutionRoots`、runtime expectation 与 execution binding evidence；
+- environment identity：task id、owner、canonical root、receipt、membership、`allowedExecutionRoots`、runtime expectation、Workspace Node identity 与 execution binding evidence；
 - repository state：完整 repository plan，以及各 checkout 的 branch、HEAD、clean 状态和可确认 tree/fingerprint 输入；
 - lifecycle result：created、reused、retained、removed、blocked 和本次动作产生的 `treeChanged`。
 

@@ -54,6 +54,7 @@ export const verificationSteps = Object.freeze([
     'src/application/package-maintenance/builtin-replacement.mjs',
     'src/application/task-finish/**',
     'src/application/openspec/**',
+    'src/application/verification/**',
     'src/infrastructure/runtime/adapter-contract.mjs',
     'src/infrastructure/runtime/skills/arguments.mjs',
     'src/infrastructure/runtime/skills/capabilities.mjs',
@@ -106,6 +107,7 @@ export const verificationSteps = Object.freeze([
     'src/application/service/**',
     'src/application/worktree/**',
     'src/application/task-finish/**',
+    'src/application/verification/**',
     'src/application/workspace/**',
     'src/application/doctor.mjs',
     'src/application/runtime.mjs',
@@ -148,6 +150,11 @@ export const verificationSteps = Object.freeze([
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, profiles: ['candidate'], groups: ['release'], inputs: [
     'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-convergence.mjs',
   ], budgetMs: 15000, schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], inputs: [
+    'test/verification/concurrency/**', 'test/fixtures/verification-resource-worker.mjs', 'test/helpers/child-process-supervisor.mjs',
+    'src/application/worktree/**', 'src/application/task-finish/**', 'src/application/verification/**', 'src/interfaces/local-app/runtime/preview-manager.mjs',
+    'openspec/specs/concurrent-task-acceptance/**', 'openspec/specs/task-environments/**',
+  ], budgetMs: 30000, schedulingCostMs: 20000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
 
   step({ id: 'candidate-tarball', name: 'candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate'], inputs: ['package.json', 'package-lock.json', 'buildr', 'bin/buildr.mjs', 'scripts/install-buildr-cli', 'scripts/uninstall-buildr-cli'] }),
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'], inputs: ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/**', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'docs/agent-runtime-adapters.md'], dependsOn: ['candidate-tarball'] }),
@@ -171,6 +178,7 @@ export const verificationSteps = Object.freeze([
   ], budgetMs: 25000, schedulingCostMs: 19000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'commands-cli-integration', name: 'Commands context CLI integration', executor: { type: 'node', file: 'test/commands-cli.integration.mjs' }, profiles: ['candidate'], groups: ['cli', 'package'], inputs: ['commands.yml', 'test/commands-cli.integration.mjs', 'src/application/domains/commands.mjs', 'src/application/domains/components.mjs', 'src/application/domains/workspace.mjs', 'src/application/doctor/**', 'src/interfaces/cli/help.mjs', 'package/targets/workspace/commands/**', 'package/targets/workspace/projects/commands.yml'], budgetMs: 10000, schedulingCostMs: 10000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'openspec-contract-fixtures', name: 'OpenSpec contract fixtures', executor: { type: 'node', file: 'test/verification/openspec/contract.mjs' }, profiles: ['candidate'], groups: ['openspec'], inputs: ['src/application/domains/openspec.mjs', 'src/application/openspec/**', 'test/verification/openspec/**', 'openspec/**', 'package/targets/workspace/skills/buildr/openspec-contract-guard/**'], budgetMs: 20000, concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'openspec-convergence-recovery', name: 'OpenSpec convergence recovery journey', executor: { type: 'node', file: 'test/verification/openspec/contract.mjs', args: ['--suite', 'recovery'] }, profiles: ['candidate'], groups: ['openspec', 'recovery'], inputs: ['src/application/domains/openspec.mjs', 'src/application/openspec/**', 'src/application/task-finish/**', 'test/verification/openspec/**', 'openspec/**', 'package/targets/workspace/skills/buildr/openspec-contract-guard/**', 'package/targets/workspace/skills/buildr/task-finish/**'], budgetMs: 60000, schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'package-static', ...packageVerifier('static'), profiles: ['candidate'], groups: ['package'], inputs: ['package/**', 'package.json', 'package-lock.json', 'src/application/package-maintenance/**', 'test/verification/package/**'], budgetMs: 5000 }),
   step({ id: 'package-workspace', ...packageVerifier('workspace'), profiles: ['candidate'], groups: ['package'], inputs: ['package/targets/workspace/manifest.yml', 'package/targets/workspace/components/**', 'src/application/domains/workspace.mjs', 'src/application/workspace-operations.mjs', 'src/application/package-maintenance/**'], budgetMs: 6000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-commands', ...packageVerifier('commands'), profiles: ['candidate'], groups: ['package'], inputs: ['package/targets/workspace/commands/**', 'src/application/domains/commands.mjs', 'src/application/package-maintenance/**'], budgetMs: 7000, concurrencyClass: 'workspace-heavy' }),

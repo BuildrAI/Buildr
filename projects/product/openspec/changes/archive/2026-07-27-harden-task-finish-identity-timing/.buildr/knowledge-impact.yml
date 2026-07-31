@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: harden-task-finish-identity-timing
+operation: reconcile
+treeIdentity: implementation-working-tree@legacy-v2-append-only-replanning
+impacts:
+  - type: brief
+    target: openspec/changes/harden-task-finish-identity-timing/brief.md
+    reason: 正式 Change 需要提供人类可读的身份、计时、诊断边界与验收入口
+    status: updated
+    sourceIdentities: [proposal.md, design.md, specs/task-finish-execution/spec.md]
+  - type: service-knowledge
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Finish 当前事实需要说明 completion identity 过滤、summary outcome、产品 observation timing、candidate audit 基线与旧 v2 convergence receipt 的严格迁移边界
+    status: updated
+    sourceIdentities: [specs/task-finish-execution/spec.md, services/buildr/src/application/task-finish/task-finish-run.mjs, services/buildr/src/application/openspec/openspec-converge.mjs, services/buildr/test/verification/openspec/contract-audit.mjs, services/buildr/test/unit/openspec-convergence-transaction.test.mjs]
+  - type: task-board
+    target: openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html
+    reason: 三轮持续优化计划与第一轮 Change identity 需要长期跟踪
+    status: updated
+    sourceIdentities: [proposal.md, phase-8]
+unresolvedItems: []

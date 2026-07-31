@@ -202,12 +202,16 @@ export function registerApplicationRuntime(runtime) {
         if (lockedPlan.signature !== preflight.signature) throw new Error('sync source plan changed after preflight; rerun sync against the current workspace state.');
       },
     });
+    const workspaceRecord = runtime.readWorkspaceRecord(targetRoot);
+    const canAdoptCurrentNode = workspaceRecord.workspace.runtime?.node?.version === process.versions.node;
+    const workspaceNode = runtime.ensureWorkspaceNodeRuntime(workspaceRecord.workspace, { adoptCurrent: canAdoptCurrentNode });
     const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
     const doctorResult = spawnSync(process.execPath, [path.join(productRoot(), 'bin', 'buildr.mjs'), 'doctor', '--agent', agent, '--target', targetRoot, '--json'], {
       cwd: productRoot(),
       encoding: 'utf8',
     });
     console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
+    console.log(`Workspace Node：${workspaceNode.identity.version}（${workspaceNode.action}）`);
     if (updated.changed.length > 0) {
       console.log('产品能力变更：');
       for (const file of updated.changed) console.log(`  ${file}`);

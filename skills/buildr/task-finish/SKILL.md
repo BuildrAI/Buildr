@@ -1,48 +1,64 @@
 ---
 name: task-finish
-description: 用户要求“收尾”、完成任务或自动完成已验证 Change 的归档、集成、推送与安全本地清理时使用；通过持久化 finish run 渐进执行并支持跨 session 恢复。
+description: 用户要求“收尾”或交付已验证的 Change/code-only 候选时使用；retained metadata-only 可安全交接 Git 单项操作，产品缺陷返回研发流程。
 ---
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的薄入口；“收尾”的一次性授权只覆盖delivery closeout。用 `buildr task finish inspect|advance|resume|renew|run|recover` 持久化进度并调用 selected providers；`actions`只读查询产品action registry。候选修复不属于收尾。
+本 Skill 是 `buildr.task-finish/v1` 的薄入口，调用固定五阶段执行器；不由 Agent 编排阶段、补 evidence 或设计 recovery。
 
-## 开始与采用
+## 边界
 
-确认 task/change、目标分支、远端与排除动作；默认只 push 已集成目标分支。创建或继续 run id。
+“修复产品缺陷”不是收尾动作。开始前应已完成研发、审查、开发验证和 current knowledge；最终 assurance 只确认 frozen candidate 可交付性。
 
-使用明确 target/workdir 与 receipt-bound CLI。Rule/Skill 修改不要求新 session。
+发现产品缺陷时报告产品的具体失败并结束 Finish，回到研发修正，形成新候选后重启；不得在当前 run 修改实现、申请 repair authorization 或重新验证。
 
-## 推进
+收尾授权覆盖适用收敛、commit、目标分支集成/push、retained 更新和 task-owned 清理；force push、改写共享历史、丢弃用户改动、远端任务分支操作仍不授权。
 
-先查询`actions --run <id> --json`，再用`run --action-context <json>`提交结构化事实。registry自动执行`product-executable`；按handoff处理`agent-provider-required`；只补`input-required`。仅`agent-reasoning-required`需要Agent推理。显式plans仅兼容/恢复并标记`caller-supplied`。
+## 调用前
 
-identity变化时提交`buildr.task-finish-recovery/v1`的before/after identities、fingerprints与transition proof；registry覆盖时不重复提供plans。未知变化fail closed，runtime-only须有digest/path。formal assurance失败报告主缺陷、repair scope与重验成本；只有授权绑定failure identity且changed paths均在allowed scopes内，才能re-verification。
+1. 用 `buildr worktree context --target <current> --json` 确定 context。task environment 从 receipt 读取 task、可选 Change、Project、Agent、Node identity 与目标分支，并要求 `executionReady`；有 Change 为 `change`，否则任务必须已确认为 `code-only`。
+2. 检查本任务的 asset observation；如存在，先调用 selected `buildr.task-asset-review@3` provider finalize。结果为 `awaiting-human` 时停止，不进入产品 Finish run。
+3. 用户排除 push、retained install 或 cleanup 而改变交付语义时停止；执行器不支持拆分。
 
-OpenSpec convergence 使用 Component 贡献的产品 orchestrator；返回 `semantic-resolution-required` 时才由 Agent 处理最小语义上下文。Skill 不直接编辑 canonical 或拼接验证 duration。正式保证只在 canonical、target、runtime 收敛后执行，由 task-verification provider 持有；identity 匹配的 evidence 不重跑。
+不要替产品收集 fingerprint、evidence、execution plan、repair authorization 或 recovery manifest。
 
-每步提交非空 fingerprint、effects 与 evidence；自动化不绕过状态机证据。
+## Task environment 执行
 
-push 使用 `--ref-transition` 提交 before/after expected/observed refs，保留 expected/observed target ref 兼容语义；自身成功推进和远端已等于 candidate 是成功，只有 push 前外部漂移才是 `target-race`。
+在 task environment 内用 receipt-bound CLI 调用一次：
 
-<!-- buildr:skill-contributions pre-verification -->
+```bash
+buildr task finish run --project <project-code> [--change <change-id>] --target <task-environment> --json
+```
 
-<!-- buildr:skill-contributions pre-spec-sync -->
+Project policy 要求时增加 `--required-assurance candidate`。只有已有摘要绑定同一 frozen candidate、Node identity 与 assurance 时才传 `--verification-summary`；否则由产品执行最终 assurance。
 
-<!-- buildr:skill-contributions post-spec-sync -->
+产品依次执行：
 
-`resume` 只重跑 blocked/stale 及其下游；共享写使用 holder/token/expiry fencing 短 lease，可 `renew`，不创建 Workspace 全局锁。running step失效时同时终结 attempt与自有lease。
+```text
+preflight → prepare → verify → deliver → cleanup
+```
 
-含 delta 时由产品执行 rehearsal → pre-sync → deterministic apply → strict → post-sync；identity 变化返回 pre-sync，禁止事后 baseline。
+- `failed` 且 `nextWorkflow: task-development`：报告 phase/operation/check，返回研发；不恢复 run。
+- `blocked`：只使用结果中的 `runId` 与 `resume.token` 重复同一 canonical 命令。不得手写或修改 token，也不得重做已通过阶段。
+- `complete`：报告 verification、delivery、receipt 与 metrics。
 
-## 授权与停止
+code-only 以 receipt task 为主身份；产品将 Change checks/OpenSpec convergence 报为 `not-applicable`，Agent 不创建虚假 Change。
 
-“收尾”授权归档、提交、目标分支集成/push、入口迁移和安全清理；不授权候选修复、force push、远端任务分支操作、丢弃改动、改写共享历史或语义冲突。failure identity变化、scope扩大或授权缺失时停止。
+恢复只用 `buildr task finish run --run <run-id> --resume <product-token> --target <task-environment> --json`；只读查看用 `buildr task finish inspect --run <run-id> --target <workspace-or-task-environment> --json`。
 
-asset review 返回 `awaiting-human` 时在 cleanup 前等待；revision 变化执行 late review。optional provider 不可用则记录降级。不得删除其他任务状态。
+客户端使用唯一 canonical `runs`、`completed` 与 lease namespace，不创建版本化运行目录；旧 shape 不恢复或迁移。
 
-## 完成
+## Retained metadata-only 交接
 
-cleanup 先在task environment内执行 `cleanup-prepare`，把prepared completion receipt写入canonical Workspace；实际删除task-owned process、worktree和branch后，从retained checkout执行 `cleanup-finalize`。prepare不得表述为complete，cleanup失败不得重做远端动作。
+context 为 `worktree.not_task_environment` 时产品执行器不适用。仅当任务明确为 metadata-only、位置是 retained Workspace、任务 paths 可从本轮证据精确列出、验证匹配当前内容且 branch/remote 明确时继续，否则 blocked。
 
-完成后报告验证、交付、runtime、清理、receipt与风险；分开计量verification、repair、re-verification、closeout-only和end-to-end。不可观察间隔不推断token；compact先给primary failure/repair decision。
+披露任务 paths、排除的 dirty paths、commit message、目标分支与 push 影响，确认 selected `buildr.git-single-operation@1` provider ready，再分别交接精确 commit 和 push。provider 只能 stage 任务 paths，不得 `git add -A`、stash、回滚或提交无关状态；每步返回 repository、ref/commit/remote 与 `treeChanged`，最终报告 `completionMode: git-single-operation-handoff`。provider 或 identity 不可证明时不得手写 Git 回退。
+
+## 完成标准
+
+- 五个固定阶段全部 `passed` 或 `not-applicable`；
+- frozen candidate 与正式验证、交付和 cleanup receipt identity 一致，且 Workspace Node identity 从 freeze 到 deliver 未漂移；
+- 正常路径 `canonicalCliInvocations = 1`、`agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions <= 1`；
+- 没有把研发返工、修复或重新验证计入 Finish 时间。
+- metadata-only handoff 保留无关 dirty changes，返回逐项 Git evidence。

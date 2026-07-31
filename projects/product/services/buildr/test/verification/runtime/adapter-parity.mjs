@@ -221,10 +221,13 @@ for (const [agent, root] of paritySkillRoots) {
 
 const codexBuildr = fs.readFileSync(path.join(workspace, '.agents', 'skills', 'task-finish', 'SKILL.md'), 'utf8');
 const claudeBuildr = fs.readFileSync(path.join(workspace, '.claude', 'skills', 'task-finish', 'SKILL.md'), 'utf8');
-assert.ok(codexBuildr.includes('buildr:contribution openspec#pre-spec-sync'));
-assert.ok(claudeBuildr.includes('buildr:contribution openspec#pre-spec-sync'));
-assert.ok(codexBuildr.includes('asset review 返回 `awaiting-human` 时在 cleanup 前等待'));
-assert.ok(claudeBuildr.includes('asset review 返回 `awaiting-human` 时在 cleanup 前等待'));
+for (const renderedFinish of [codexBuildr, claudeBuildr]) {
+  assert.ok(renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
+  assert.ok(renderedFinish.includes('不由 Agent 编排阶段、补 evidence 或设计 recovery'));
+  assert.ok(renderedFinish.includes('asset observation'));
+  assert.ok(renderedFinish.includes('不创建版本化运行目录'));
+  assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));
+}
 
 const betaCursorRule = path.join(workspace, 'projects', 'scope-beta', '.cursor', 'rules', 'buildr.mdc');
 const qoderDirectory = path.join(workspace, '.qoder', 'rules', 'buildr');

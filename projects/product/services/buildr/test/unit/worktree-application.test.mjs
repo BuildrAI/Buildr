@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { isSafeRuntimeStaleOnly, parseWorktreeList, resolveExecutionCliInvocation, resolveExecutionCliSource } from '../../src/application/worktree/worktree-application.mjs';
+import {
+  evaluateTaskEnvironmentDoctor,
+  isSafeRuntimeStaleOnly,
+  parseWorktreeList,
+  resolveExecutionCliInvocation,
+  resolveExecutionCliSource,
+  syncSourcePlanRequiresCanonicalSync,
+} from '../../src/application/worktree/worktree-application.mjs';
 
 describe('worktree application', () => {
   test('parses porcelain worktree identity', () => {
@@ -26,7 +33,7 @@ describe('worktree application', () => {
         ok: true,
         health: { workspaceValid: true },
         mutations: { blocked: false },
-        findings: [{ code: 'runtime.codex_stale', userActionRequired: true }],
+        findings: [{ status: 'warning', code: 'runtime.codex_stale', userActionRequired: true }],
       },
       agent: 'codex',
       identity: { clean: true, branch: 'codex/demo', head: 'abc123' },
@@ -34,11 +41,52 @@ describe('worktree application', () => {
       expectedHead: 'abc123',
     };
     assert.equal(isSafeRuntimeStaleOnly(base), true);
-    assert.equal(isSafeRuntimeStaleOnly({ ...base, report: { ...base.report, findings: [{ code: 'commands.missing', userActionRequired: true }] } }), false);
-    assert.equal(isSafeRuntimeStaleOnly({ ...base, report: { ...base.report, findings: [...base.report.findings, { code: 'runtime.codex_warning', userActionRequired: true }] } }), false);
+    assert.equal(isSafeRuntimeStaleOnly({ ...base, report: { ...base.report, findings: [{ status: 'warning', code: 'commands.missing', userActionRequired: true }] } }), false);
+    assert.equal(isSafeRuntimeStaleOnly({ ...base, report: { ...base.report, findings: [...base.report.findings, { status: 'warning', code: 'runtime.codex_warning', userActionRequired: true }] } }), false);
     assert.equal(isSafeRuntimeStaleOnly({ ...base, identity: { ...base.identity, clean: false } }), false);
     assert.equal(isSafeRuntimeStaleOnly({ ...base, identity: { ...base.identity, head: 'changed' } }), false);
     assert.equal(isSafeRuntimeStaleOnly({ ...base, report: { ...base.report, mutations: { blocked: true } } }), false);
+  });
+
+  test('classifies omitted repositories and receipt task branches as contextual findings', () => {
+    const report = {
+      health: { workspaceValid: true },
+      findings: [
+        { status: 'warning', code: 'service.git.missing', path: 'projects/app/services/worker' },
+        { status: 'warning', code: 'service.branch_mismatch', path: 'projects/app/services/api', actual: 'tasks/demo' },
+        { status: 'warning', code: 'runtime.codex_stale', path: '.', userActionRequired: true },
+      ],
+    };
+    const evaluation = evaluateTaskEnvironmentDoctor({
+      report,
+      repositories: [
+        { entityType: 'workspace', sourcePath: '.', branch: 'tasks/demo' },
+        { entityType: 'service', sourcePath: 'projects/app/services/api', branch: 'tasks/demo' },
+      ],
+    });
+    assert.equal(evaluation.ready, false);
+    assert.deepEqual(evaluation.contextualFindings.map((item) => item.reason), ['repository-not-selected', 'receipt-task-branch']);
+    assert.deepEqual(evaluation.actionableFindings.map((item) => item.code), ['runtime.codex_stale']);
+
+    const drifted = evaluateTaskEnvironmentDoctor({
+      report: { ...report, findings: [{ ...report.findings[1], actual: 'tasks/other' }] },
+      repositories: [{ entityType: 'service', sourcePath: 'projects/app/services/api', branch: 'tasks/demo' }],
+    });
+    assert.equal(drifted.ready, false);
+    assert.deepEqual(drifted.actionableFindings.map((item) => item.code), ['service.branch_mismatch']);
+  });
+
+  test('requires canonical sync when the source plan would converge managed source assets', () => {
+    const aligned = {
+      workspace: { required: false },
+      projects: { required: false },
+      builtins: { findings: [{ status: 'installed', converge: false }] },
+      components: { errors: [], plans: [{ record: { definition: { id: 'base' } }, plan: { existingEntry: {}, oldDefinition: { id: 'base' }, restoring: false } }] },
+    };
+    assert.equal(syncSourcePlanRequiresCanonicalSync(aligned), false);
+    assert.equal(syncSourcePlanRequiresCanonicalSync({ ...aligned, builtins: { findings: [{ status: 'installed', converge: true }] } }), true);
+    assert.equal(syncSourcePlanRequiresCanonicalSync({ ...aligned, workspace: { required: true } }), true);
+    assert.equal(syncSourcePlanRequiresCanonicalSync({ ...aligned, components: { errors: [], plans: [{ record: { definition: { id: 'new' } }, plan: { existingEntry: {}, oldDefinition: { id: 'old' }, restoring: false } }] } }), true);
   });
 
   test('binds self-hosted environments to their local CLI and consumers to the external product CLI', () => {

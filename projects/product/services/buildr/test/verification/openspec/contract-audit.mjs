@@ -6,8 +6,11 @@ import process from 'node:process';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { resolveVerificationBase } from '../changed-paths.mjs';
 
 const productRoot = path.resolve(process.env.BUILDR_PROJECT_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..'));
+const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: productRoot, encoding: 'utf8' }).trim();
+const verificationBase = resolveVerificationBase(gitRoot, process.env.BUILDR_VERIFICATION_BASE || null);
 const gitPrefix = execFileSync('git', ['rev-parse', '--show-prefix'], { cwd: productRoot, encoding: 'utf8' }).trim();
 function gitPathList(args) {
   return execFileSync('git', args, {
@@ -25,10 +28,15 @@ function withoutPurposeBody(markdown) {
   return String(markdown).replace(/(^## Purpose\s*$)[\s\S]*?(?=^##\s+)/m, '$1\n');
 }
 
+function normalizedIntegrity(content) {
+  const normalized = String(content).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '\n');
+  return `sha256-${crypto.createHash('sha256').update(normalized).digest('hex')}`;
+}
+
 function isPurposeOnlyMaintenance(file) {
   let previous;
   try {
-    previous = execFileSync('git', ['show', `HEAD:${gitPrefix}${file}`], { cwd: productRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    previous = execFileSync('git', ['show', `${verificationBase}:${gitPrefix}${file}`], { cwd: productRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch {
     return false;
   }
@@ -37,6 +45,7 @@ function isPurposeOnlyMaintenance(file) {
 }
 
 const candidatePaths = [...new Set([
+  ...gitPathList(['diff', '--relative', '--name-only', `${verificationBase}...HEAD`, '--', 'openspec/specs', 'openspec/changes']),
   ...gitPathList(['diff', '--relative', '--name-only', 'HEAD', '--', 'openspec/specs']),
   ...gitPathList(['diff', '--relative', '--name-only', 'HEAD', '--', 'openspec/changes']),
   ...gitPathList(['ls-files', '--others', '--exclude-standard', '--', 'openspec/specs', 'openspec/changes']),
@@ -64,12 +73,13 @@ for (const root of [path.join(productRoot, 'openspec', 'changes'), path.join(pro
   if (!fs.existsSync(root)) continue;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === 'archive') continue;
-    const receipt = path.join(root, entry.name, '.buildr', 'contract-pre-sync-receipt.json');
-    if (!fs.existsSync(receipt)) continue;
-    const relativeReceipt = path.relative(productRoot, receipt).split(path.sep).join('/');
-    if (!candidatePathSet.has(relativeReceipt)) continue;
-    try {
-      const value = JSON.parse(fs.readFileSync(receipt, 'utf8'));
+    for (const receiptName of ['contract-pre-sync-receipt.json', 'convergence-receipt.json']) {
+      const receipt = path.join(root, entry.name, '.buildr', receiptName);
+      if (!fs.existsSync(receipt)) continue;
+      const relativeReceipt = path.relative(productRoot, receipt).split(path.sep).join('/');
+      if (!candidatePathSet.has(relativeReceipt)) continue;
+      try {
+        const value = JSON.parse(fs.readFileSync(receipt, 'utf8'));
       const expectedEntry = root.endsWith(`${path.sep}archive`)
         ? new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${escapeRegExp(value.change || '')}$`)
         : new RegExp(`^${escapeRegExp(value.change || '')}$`);
@@ -87,15 +97,28 @@ for (const root of [path.join(productRoot, 'openspec', 'changes'), path.join(pro
           const deltaFile = path.join(root, entry.name, 'specs', capability, 'spec.md');
           const canonicalFile = path.join(productRoot, 'openspec', 'specs', capability, 'spec.md');
           if (!fs.existsSync(deltaFile) || !fs.existsSync(canonicalFile) || typeof expectedIntegrity !== 'string') continue;
-          const content = fs.readFileSync(canonicalFile, 'utf8').replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '\n');
-          const actualIntegrity = `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
+          const actualIntegrity = normalizedIntegrity(fs.readFileSync(canonicalFile, 'utf8'));
           if (actualIntegrity === expectedIntegrity) capabilities.push(capability);
         }
         receipts.push({ change: value.change, capabilities });
+      } else if (value.schemaVersion === 'buildr.openspec-convergence-receipt/v3'
+        && value.disposition === 'archived'
+        && Array.isArray(value.files)) {
+        const capabilities = [];
+        for (const file of value.files) {
+          const match = typeof file?.path === 'string' ? file.path.match(/^openspec\/specs\/([^/]+)\/spec\.md$/) : null;
+          if (!match || typeof file.expectedDigest !== 'string') continue;
+          const deltaFile = path.join(root, entry.name, 'specs', match[1], 'spec.md');
+          const canonicalFile = path.join(productRoot, file.path);
+          if (!fs.existsSync(deltaFile) || !fs.existsSync(canonicalFile)) continue;
+          if (normalizedIntegrity(fs.readFileSync(canonicalFile, 'utf8')) === file.expectedDigest) capabilities.push(match[1]);
+        }
+        receipts.push({ change: value.change, capabilities });
       }
-    } catch {
-      console.error(`OpenSpec contract audit found invalid receipt: ${path.relative(productRoot, receipt)}`);
-      process.exit(1);
+      } catch {
+        console.error(`OpenSpec contract audit found invalid receipt: ${path.relative(productRoot, receipt)}`);
+        process.exit(1);
+      }
     }
   }
 }

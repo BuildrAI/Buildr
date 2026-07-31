@@ -175,7 +175,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       const liveSnapshot = builtinSnapshot(targetFile, 'rule');
       const state = resolveBuiltinState({ type: 'rule', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('rule', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status, path: builtin.target });
+      findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true });
 
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'rule', status: 'ready', replacementFrom: null, path: builtin.target, reason: null });
@@ -252,7 +252,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot })) continue;
       const state = resolveBuiltinState({ type: 'skill', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('skill', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status, path: builtin.target });
+      findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true });
 
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'skill', status: 'ready', replacementFrom: null, path: builtin.target, reason: null });
@@ -303,7 +303,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       const liveSnapshot = existing ? builtinSnapshot(existing, 'command') : null;
       const state = resolveBuiltinState({ type: 'command', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('command', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'command', id: builtin.id, required: builtin.required === true, status, path: 'commands/manifest.yml' });
+      findings.push({ type: 'command', id: builtin.id, required: builtin.required === true, status, path: 'commands/manifest.yml', converge: state.converge === true });
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'command', status: 'ready', replacementFrom: null, path: 'commands/manifest.yml', reason: null });
         continue;

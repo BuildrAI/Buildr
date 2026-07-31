@@ -2,7 +2,7 @@
 
 本文用于区分“Buildr 产品 MVP 已完成”和“公开发布前还需要补齐的事项”。MVP 完成表示本地产品闭环成立；公开发布需要额外的开源、分发和示例材料收口。
 
-`package check/build` 是 Buildr 产品 maintenance 命令，`openspec baseline/check` 是 change workflow internal 命令；它们仍可直接执行并在 CLI help 中明确分区，但不属于普通 workspace onboarding 的日常命令。该分类描述产品用途，不是权限或安全限制。
+`package check/build` 是 Buildr 产品 maintenance 命令。OpenSpec 新路径只使用 `converge` 与只读 `audit`；历史阶段命令仍可兼容执行，但必须返回弃用信息且不得有当前产品消费者。该分类描述产品用途，不是权限或安全限制。
 
 ## 已完成 MVP
 
@@ -12,7 +12,7 @@
 - `doctor --agent <agent> --json` 输出面向当前 Agent runtime 的 Agent-readable 诊断结果。
 - `commands add/remove/check` 维护 root 级命令行工具清单。
 - `component list/check/install/uninstall` 管理 workspace 级统一生命周期资产；OpenSpec Component、嵌套 Commands collection、Buildr 自有契约门禁 sidebar 与声明式 Skill Contribution 已纳入 package 与 E2E 验证。
-- `buildr openspec baseline create` 与 `buildr openspec check` 保护 OpenSpec change 的 proposal、同步前和同步后契约边界；fixture corpus 覆盖并行冲突、陈旧基线和破坏性同步结果。
+- `buildr openspec converge` 产品化执行 OpenSpec change 的规划、隔离验证、条件应用、确认与仅移动归档；`buildr openspec audit` 只读解释状态不明，fixture corpus 同时覆盖并行冲突、文件漂移和历史入口弃用兼容。
 - `skills add/remove` 只维护 workspace Skill source；`skills render --destination workspace|user` 显式选择 runtime destination，Project 只保存 capability/applicability context。
 - Skill Contribution 只在 runtime render 时组合自然语言 fragments；检查安装后注入、卸载后移除、通用 Skill 源不变，以及无效 slot/integrity fail closed。
 - `skill install <agent>` 为七个 supported adapters 安装 Buildr 产品内置 Agent Skill。
@@ -139,4 +139,4 @@ Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与
 
 实际自举 workspace 如需消费新版产品资产，可独立执行 sync，并在状态变更后运行当前 Agent doctor；CLI update 只更新当前 Product checkout 或 registry package。这不是第二轮产品 E2E。上述验证只证明当前本地产品包和 MVP 主路径成立；公开发布仍需要完成上面的发布材料和分发流程。
 
-使用 `task-finish` 自动收尾时，canonical specs sync 前必须通过 pre-sync 契约检查，sync 后、archive 前必须通过 post-sync 检查；之后运行 `git diff --check`。只有本次 OpenSpec Markdown 变更的 `new blank line at EOF` 可以自动规范为恰好一个结尾换行，其他格式问题必须停止。已有可信 Candidate 进入收尾时，同时保存 `implementationCandidateIdentity` 并记录最终 `deliveryTreeIdentity`：相同内容或可证明只包含本次 OpenSpec sync/archive 等收尾元数据的 transition 只运行这些 closeout delta checks，不再次调用 task-verification `execute` 或 Candidate executor；实现内容改变，或无法证明为收尾元数据时，旧证据失效并重新执行 Candidate。归档后的相关校验通过后，后续相同 tree 的 commit、fast-forward、push 和本地清理继续复用已有验证结果。
+使用 `task-finish` 自动收尾时，候选必须先达到 finish-ready：研发、自审、必要审查、开发验证与 current knowledge 已完成。产品在 `preflight` 一次聚合问题，在 `prepare` 内完成 OpenSpec convergence、runtime fixed point、提交/rebase 并冻结最终候选，然后对该 frozen identity 至多运行一次当前发布政策要求的 assurance。任何产品缺陷、语义冲突或验证失败都结束本次 Finish 并返回研发流程修正当前实现；不得在同一 run 修复或重新验证。只有 frozen tree 不变时，后续 fast-forward、push、retained install 与 cleanup 才能继续复用最终证据。

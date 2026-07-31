@@ -29,15 +29,17 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 
 | 命令 | 用途 |
 |---|---|
-| `buildr init [--agent <agent>]` | 初始化 Organization/Root；传入 `--agent` 时一次完成 runtime 与最终 doctor，不传时只写源资产。 |
+| `buildr init [--agent <agent>]` | 初始化 Organization/Root，写入当前受支持 CLI 的精确 Workspace Node version 并准备受管 runtime；传入 `--agent` 时一次完成 Agent runtime 与最终 doctor。 |
 | `buildr app [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
 | `buildr app preview start|list|stop` | Agent 为 task environment 启动、查看或停止隔离的开发预览；owner 绑定 task id、environment root、Product checkout 和 repository set，不替换默认应用或 `Buildr Dev.app`。 |
 | `buildr app launcher install/status/uninstall` | 安装、诊断或卸载 release/development launcher；使用新 staging 验证后切换，保留 Workspace Registry 和源资产。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
 | `buildr worktree create <task-id> --agent <agent> --branch <branch> [--include ...]` | 创建或幂等复用 `<workspace>/.worktrees/<task-id>`；默认根仓库，重复 `--include project:<code>` / `service:<project>/<service>` 加入 nested independent Git repositories；返回与 receipt 绑定的绝对 `cliInvocation`。 |
-| `buildr worktree inspect/context/adopt` | 按 receipt 检查完整 repository set、CLI source/invocation 和 runtime identity；`context` 返回绝对 command 与固定 args prefix，调用方不根据 cwd 或产品相对位置拼入口。专项 runtime 机制验收才使用 host-visible session adoption evidence；任一绑定不匹配时 fail closed。 |
-| `buildr task finish actions/inspect/advance/resume/run/recover` | `actions`查询版本化action registry与当前resolution；`run`默认从registry生成确定性计划和fingerprint，标准语义步骤返回provider handoff，只有未覆盖、歧义或登记外分支返回Agent reasoning fallback。显式plans仅作兼容或恢复。formal assurance失败默认返回identity-bound repair decision并停止；仅当`recover --repair-authorization <json>`明确绑定task/change、failure identity与allowed scopes时，才消费版本化before/after identities与transition proof继续re-verification。 |
+| `buildr worktree cleanup <task-id> --agent <agent> --integrated-ref <selector>=<ref> ...` | 从 retained Workspace 按 receipt 清理本地任务环境；删除前统一核对 owner、完整成员、clean 与每仓 integrated ref，按 nested-first 删除本地 worktree、任务分支和 receipts，不删除远端或强制丢弃工作。 |
+| `buildr worktree inspect/context/adopt` | 按 receipt 检查完整 repository set、CLI source/invocation、runtime projection 和 Workspace Node identity；`context` 返回绝对 command 与固定 args prefix，调用方不根据 cwd 或产品相对位置拼入口。专项 runtime 机制验收才使用 host-visible session adoption evidence；任一绑定不匹配时 fail closed。 |
+| `buildr verification run --project <code> --level affected\|candidate` | 使用 Workspace 受管 Node 执行 Project `verification.yml`：按依赖与显式 supersedes 构造 DAG，并发运行资源兼容能力，以 Git common-dir lease 协调跨 task 容量，返回同时绑定候选与 Workspace Node identity 的 evidence。 |
+| `buildr task finish run\|inspect` | 首次 `run` 需要 receipt-bound task environment 与 `--project`；task identity 来自 receipt，`--change` 仅 Change 候选必需，省略时创建 code-only 候选。两类候选单次执行 `preflight → prepare → verify → deliver → cleanup`，code-only 将 Change/OpenSpec 专属动作记录为 `not-applicable`，其余 runtime sync、提交/rebase、冻结、required assurance、fenced fast-forward/push、retained convergence 和 cleanup 保持一致。产品缺陷结束 run；只有 target、network、retained 或 cleanup 暂态阻塞接受产品生成的 resume token。`inspect` 只读返回 candidate kind、可空 Change、Node identity、五阶段和交付/完成证据。客户端拒绝旧 action 和 caller-authored 协议，使用唯一 canonical store。retained metadata-only 不进入产品 run，由 Task Finish Skill 在精确 paths 与验证/target identity 可证明时安全交接 Git 单项操作。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
@@ -59,14 +61,16 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 
 `worktree create` 要求 Agent 显式提供 task id、task branch、root start point、当前 Agent、workspace root 和完整 repository selectors。`buildr.worktree-create/v2` 返回 environment、repository plan、逐仓 identity/state、runtime expectation、`handoff-required`、隔离披露和兼容的 root `worktree`/bootstrap 字段；相同 plan 幂等复用，不同 plan、occupied/tracked path、remote/branch ownership 或 identity 冲突均 fail closed。新 session 使用 `worktree adopt` 提交 session root/handle、adoption mode 与 event time；Buildr 将 environment evidence 标为 `buildr-verified`，将 host 声明标为 `agent-attested`。随后只有带同一 session evidence 的 `worktree context` 返回 `executionReady: true` 才能进入实现。部分创建失败保留 receipt、checkout 和分支。Git working tree/index 被隔离，但 objects/refs 共享。外部依赖沿用 Project 既有环境；只有并发任务会修改同一共享状态时，才要求使用项目已有租户、测试账号、数据前缀或串行验证边界。
 
+`worktree cleanup` 只处理 receipt 精确登记的本地环境。调用方必须为每个 repository selector 提供一个 integrated ref；Buildr 在任何删除前先枚举 task-owned preview/process 与有效验证 lease，再证明任务 HEAD 已被该 ref 包含并核对 checkout clean、branch/owner/receipt 一致。任一运行状态或归属记录仍存在时整体 fail closed；Task Finish 必须先由真实 owner 使用 receipt-bound `app preview stop` 和验证 cleanup 释放资源。通过后先删除最深 nested worktree，再删除 root、本地任务分支、adoption receipt 和 environment receipt。命令不接受 `--force`、不删除远端分支或放弃未集成提交。
+
 ## Runtime 与诊断
 
 | 命令 | 用途 |
 |---|---|
 | `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
-| `buildr doctor` | 聚合 workspace、registries、Components 和 Commands；未传 `--agent` 时只诊断有受管证据的 runtime inventory，Agent 默认传 `--agent` 与 `--json` 获得当前 runtime readiness。 |
+| `buildr doctor` | 只读聚合 workspace、Workspace Node 声明/runtime/CLI/npm/验证环境、registries、Components 和 Commands；Node 缺失或漂移时建议运行 `sync`，不直接修复。 |
 | `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力并准备完整当前 Agent runtime；不更新 CLI，也不隐式执行 Git 更新。 |
+| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime；不改变已有 Node 声明、不更新 CLI，也不隐式执行 Git 更新。 |
 | `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
 | `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |
@@ -89,6 +93,8 @@ Buildr 不 render 或安装 Commands，不保存 binary、token、cookie、登�
 
 `projects/<project>/verification.yml` 使用 `buildr.project-verification/v1`，可选声明任意测试能力的 argv、cwd、成熟度、Minimal/Affected/Candidate 阶段、门禁强度、适用路径、覆盖、环境、副作用、授权和依赖关系。可选 `resources` 目录使用 `isolated`、`namespaced`、`coordinated`、`external` 表达 task-local、命名隔离、跨任务容量和外部授权边界，能力通过 `resourceClaims` 引用。它是 Project 测试事实，不是 `capabilities.yml` 中的 Skill binding，也不会被投射到 Service repo。
 
+有有效声明时，`buildr verification run` 是 checkout 与 npm 安装后共享的正式执行入口。`affected` 选择该阶段 stable required 能力；`candidate` 保留完整 required gate；依赖失败会阻塞下游，只有显式 `supersedes` 才去重。单次 run 内独立能力并发，`coordinated` 资源在同一 Git common-dir 的 task runs 之间排队，`external` 资源必须显式授权。命令不创建任务、不调度 Agent，也不把 Buildr Product registry 当作其他 Project 默认值。
+
 没有该文件时，doctor 不产生 finding，`task-verification` 继续从 AGENTS、POM、项目文档和已有测试入口发现政策。文件存在时 doctor 只做结构、路径和能力图校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”即可生成/增量补充候选；新增能力默认 discovered 或 trial/advisory，不会自动成为 Candidate required gate。
 
 ## Skill capability contracts
@@ -100,7 +106,9 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 ## Product maintenance / workflow internal
 
 - `buildr package check/build`：产品 package 维护和构建，不是普通 workspace 日常命令。
-- `buildr openspec baseline create/check`：Buildr OpenSpec workflow 契约门禁，由相关 Skills 编排。
+- `buildr openspec converge <change> --project <project> --target <workspace> --json`：Buildr OpenSpec 单一收敛事务；内部完成规划、隔离 strict validation、条件式 canonical 应用、写后确认与 `archive --skip-specs`，结果为 `passed|blocked|recovery-unprovable`。
+- `buildr openspec audit <change> --project <project> --target <workspace> --json`：只读比较唯一回执中的 before/expected 与当前实际摘要；不写 canonical、回执或归档。
+- 历史 baseline、阶段 check、sync plan/apply 命令只在旧调用命中时执行并返回结构化弃用信息；新 Task Finish 和新 Change 不再消费或写入对应阶段 sidecar，达到零当前消费者与兼容窗口后删除。
 - `buildr bootstrap guide`：产品 Skill 不可用时的纯文本兜底说明。
 
 这些命令可执行，但不构成普通用户需要记忆的 public asset API。

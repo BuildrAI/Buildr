@@ -4,6 +4,7 @@
 
 定义 Buildr 对受管源资产 mutation 的 identity、路径、所有权、预检、原子提交、失败恢复、YAML 语义和生产写入入口安全保证。
 ## Requirements
+
 ### Requirement: Buildr 使用严格资产 identity
 Buildr MUST 对用于路径、registry key、Component、Project、Service、Rule、Skill、Command collection 和 OpenSpec change/capability 的资产 identity 使用统一严格校验。
 
@@ -118,12 +119,17 @@ Buildr MUST 将长期源资产 transaction 与可重建 Agent runtime reconcile 
 - **AND** Buildr MUST 提供 render、sync 或 doctor 修复动作而不是回滚源资产
 
 ### Requirement: 生产 mutation 只能使用受审阅写入入口
-Buildr MUST 通过产品验证防止新的生产命令绕过安全路径、atomic writer 和 transaction primitives 执行未审阅的直接删除、复制或写入。
+Buildr MUST 通过产品验证防止新的生产命令绕过安全路径、atomic writer、transaction primitives 和可注入文件系统入口执行未审阅的直接删除、复制或写入。
 
 #### Scenario: 验证发现直接危险写入
 - **WHEN** package check 扫描到生产 mutation 路径新增未列入显式 allowlist 的直接 `rm`、递归 copy 或非原子 write
 - **THEN** 产品验证 MUST 失败
 - **AND** finding MUST 指向文件和操作类型
+
+#### Scenario: 临时投射和诊断文件发生 mutation
+- **WHEN** 生产 application 为隔离验证创建或清理临时投射，或者把大型诊断结果写入文件
+- **THEN** 这些 mutation MUST 使用受审阅且可注入的文件系统入口
+- **AND** 临时文件清理 MUST 只作用于当前流程创建的精确临时根目录
 
 ### Requirement: sync 的源资产更新必须使用安全事务
 Buildr MUST 让 `sync` 对 Builtin、Builtin 安装回执、Component 和其他受管源资产的更新使用一个由只读 plan 驱动的 workspace mutation 事务，并只 snapshot 与恢复 plan 声明的精确受管路径。

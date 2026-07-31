@@ -141,22 +141,37 @@ Task verification provider MUST 区分 `inspect`、`execute` 和 `cleanup` opera
 - **AND** Result Evidence MUST 记录本次 operation 和实际 executor invocation count
 
 ### Requirement: 验证在完成节点自动触发
-Task verification provider MUST 同时支持用户直接验证意图、实现工作流自动验证节点和 Task Finish consumer，并 MUST NOT 要求用户主动说出 Skill、capability 或内部验证级别名称。
+Task verification provider MUST 同时支持用户直接验证意图、实现/审查 workflow 的完成节点和 Task Finish 对 frozen candidate 的最终保证，且 MUST NOT 要求用户主动说出 Skill、capability 或内部验证级别名称。实现、审查与前序测试验证 MUST 在进入 Task Finish 前形成 finish-ready candidate；Task Finish MAY 复用完全匹配 evidence 或至多执行一次 required assurance，但任何失败 MUST 终止当前 Finish 并回到研发流程，MUST NOT 在同一 Finish run 中 repair 或 re-verify。
 
 #### Scenario: 用户直接要求验证
 - **WHEN** 用户要求运行测试、验证改动、判断验证是否完成或报告验证耗时
 - **THEN** Agent runtime MUST 能根据 provider description 发现 task-verification 入口
-- **AND** provider MUST 按当前任务阶段和 Project policy执行最低充分验证
+- **AND** provider MUST 按当前任务阶段和 Project policy 执行最低充分验证
 
-#### Scenario: Agent 准备声称实现完成
-- **WHEN** 实现型任务的候选已经稳定且 Agent 准备向用户声称实现完成
-- **THEN** Agent MUST 在完成回复前调用 selected task-verification provider 获得与当前候选一致的 evidence
-- **AND** 普通任务默认请求 affected，发布、高风险或显式完整验证请求 candidate
+#### Scenario: Agent 准备提交 finish-ready candidate
+- **WHEN** 实现内容、审查修订和前序测试已经稳定，Agent 准备进入 Task Finish
+- **THEN** Agent MUST 先确认当前候选没有已知产品缺陷且验证 evidence 与候选一致
+- **AND** 未完成的研发、审查、测试补齐或修复 MUST 留在研发 workflow，不得转交 Task Finish 处理
 
-#### Scenario: Task Finish 消费验证能力
-- **WHEN** 用户要求收尾且 Task Finish 提交任务、发布意图、改动范围、候选 identity 和已有 evidence
-- **THEN** Task Finish MUST 通过 capability binding 调用 selected task-verification provider
-- **AND** provider MUST 返回 `requiredAssurance` 和匹配该保证的执行或复用结论，binding MUST NOT 被解释为顶层意图发现机制
+#### Scenario: Task Finish 复用匹配 evidence
+- **WHEN** frozen candidate 已有 selected task-verification provider 产生的成功 evidence，且 policy、required assurance 和 candidate identity 完整匹配
+- **THEN** Task Finish MUST 复用该 evidence并记录正式 executor invocation 为 0
+- **AND** provider inspection MUST NOT 被计为 verification execution
+
+#### Scenario: Task Finish 执行最终保证
+- **WHEN** frozen candidate 缺少可复用 evidence，但其他 preflight/prepare 门禁均证明候选 finish-ready
+- **THEN** Task Finish MUST 对 frozen candidate 至多执行一次 required assurance
+- **AND** 成功 evidence MUST 绑定 freeze identity，任何 candidate 变化 MUST 使当前 Finish terminal failed
+
+#### Scenario: Task Finish 最终保证失败
+- **WHEN** 最终 required assurance 返回 failed、incomplete 或发现产品缺陷
+- **THEN** provider MUST 返回具体 failed check/stage、failure identity、diagnostic 和 verifier wall-clock
+- **AND** Task Finish MUST 返回 `upstream-candidate-defect` 与 `task-development` handoff，不得请求 repair authorization、同 run recovery 或 re-verification
+
+#### Scenario: 修复后重新验证
+- **WHEN** 研发 workflow 根据上一 Finish failure 完成修复、审查和测试
+- **THEN** provider MUST 将修改后的内容视为新的 candidate，并重新建立相应验证 evidence
+- **AND** 新 verification timing MUST 属于研发流程，不得累计到上一 Finish run 的 wall-clock 或 formal execution count
 
 ### Requirement: 落盘验证证据具有显式生命周期
 Task verification provider MUST 为落盘 evidence 返回 `evidenceRetention`、`cleanupAfter`、`cleanupStatus` 和可用时的 `cleanupReference`，并 MUST 在所有消费者使用完毕前保留当前有效 Candidate evidence。
@@ -434,3 +449,126 @@ Verification evidence MUST 分别记录本地 DAG queue 与跨任务 resource wa
 - **WHEN** slot 当前 owner/token 已改变或属于另一个 task
 - **THEN** provider MUST 保留该 slot并返回 ownership mismatch
 - **AND** MUST NOT 删除其他 task environment 的资源、租约或诊断
+
+### Requirement: Verification step 必须在直接子进程退出后有界收敛
+Task verification provider MUST 将直接子进程退出与 stdio 完全关闭视为两个独立生命周期边界。直接子进程退出后，provider MUST 精确清理当前 step 拥有的 process group 与已观察后代，并 MUST 在有界 grace period 内等待 `close`；`close` 未到达时 MUST 以 failed 或 incomplete 终态返回，不得无限等待。
+
+#### Scenario: 后代持有 stdio
+- **WHEN** verification command 的直接子进程已经退出，但其 task-owned 后代仍持有 stdout 或 stderr 管道
+- **THEN** provider MUST 终止当前 step 拥有的 process group 或已观察后代，并在有界时间内结束 step
+- **AND** MUST NOT 清理其他 task、run 或未证明 ownership 的进程
+
+#### Scenario: close 在 grace period 内到达
+- **WHEN** 直接子进程退出后，owned cleanup 完成且 stdio 在 grace period 内正常关闭
+- **THEN** provider MUST 使用真实 exit code、完整已收集输出和 process cleanup evidence 生成 step result
+- **AND** MUST NOT 因 exit/close 事件竞态重复清理或重复 settle
+
+#### Scenario: close 超时
+- **WHEN** 直接子进程退出且 owned cleanup 后 `close` 仍未在 grace period 内到达
+- **THEN** provider MUST 以 failed 或 incomplete result 结束 step，并记录 `process-close-timeout` 或等价稳定诊断、真实 duration 与 cleanup result
+- **AND** 上层 verification execution MUST 继续生成非通过的统一 timing summary，而不是保留无 summary 的悬挂进程
+
+### Requirement: Verification execution 必须为收敛失败生成可信 summary
+当 verification step 因异常、process cleanup failure 或 exit-to-close timeout 进入非通过终态时，task verification provider MUST 让聚合执行结束并写出与当前 run、candidate 和已完成 checks 绑定的 `failed|incomplete` summary。Summary MUST 保留主失败、其他已完成检查、整体 wall-clock、process ownership 与恢复动作。
+
+#### Scenario: 所有检查已写诊断但一个 step 未正常 close
+- **WHEN** 各 capability 已产出诊断，而其中一个 step 因 close timeout 被判定为非通过
+- **THEN** 聚合执行 MUST 返回并生成统一非通过 summary
+- **AND** summary MUST NOT 把已完成检查相加冒充整体 wall-clock或把 cleanup warning取代主失败
+
+#### Scenario: summary 被正式 consumer 使用
+- **WHEN** Task Finish 或其他 consumer 读取该非通过 summary
+- **THEN** summary MUST 提供稳定 schema、run/candidate identity、status、duration、失败项和 evidence reference
+- **AND** consumer MUST NOT 将其作为 passed assurance 推进后续交付步骤
+
+### Requirement: Buildr 必须提供可发布的 Project 验证执行器
+Buildr MUST 在产品 `src/` runtime 中提供正式验证执行器，并通过 `buildr verification run` 对任意已登记 Project 执行 `verification.yml` 声明的 `affected` 或 `candidate` 保证；该入口 MUST 能从 checkout CLI 与已安装 npm CLI 使用，且 MUST NOT 依赖 Buildr 开发仓库的 `test/`、`scripts/` 或产品专用 registry。
+
+#### Scenario: 普通 Workspace 使用已安装 CLI 验证 Project
+- **WHEN** 普通 Buildr Workspace 登记 Project、声明 `verification.yml`，并通过已安装 package 运行 `buildr verification run --project <code> --level affected|candidate --json`
+- **THEN** Buildr MUST 从该 Project 解析适用能力并执行所请求保证
+- **AND** 执行 MUST 不读取 Buildr 产品 checkout 的测试编排文件
+
+#### Scenario: 调用方提供 task environment context
+- **WHEN** 调用方同时提供 canonical task environment identity
+- **THEN** 执行器 MUST 核对 owner、receipt、repository membership、allowed execution roots 和当前 candidates 后再启动命令
+- **AND** 任一上下文不匹配时 MUST fail closed 且不得启动验证 worker
+
+### Requirement: 正式执行器必须并发调度 DAG 并协调跨任务资源
+验证执行器 MUST 按 `verification.yml` 的依赖、适用范围与 supersedes 生成有向无环计划，在同一 run 内并发执行已就绪且资源兼容的能力，并 MUST 对 `isolated`、`namespaced`、`coordinated`、`external` 资源策略采用可解释的执行与等待语义。
+
+#### Scenario: 独立能力在同一 run 并发执行
+- **WHEN** 两个已就绪能力没有依赖关系且资源策略允许并行
+- **THEN** 执行器 MUST 允许二者重叠执行
+- **AND** overall duration MUST 使用进程外单调时钟测量，不得相加 worker duration 冒充 wall-clock
+
+#### Scenario: 两个 task 竞争 coordinated 资源
+- **WHEN** 两个验证 run 在同一 Git common-dir 范围竞争相同 coordinated resource key
+- **THEN** Buildr MUST 使用包含 task、environment、run、token、heartbeat 与 expiry 的跨进程 lease 串行化持有者
+- **AND** 等待、取得、续租、精确释放和过期接管 MUST 进入结构化 evidence
+
+#### Scenario: supersedes 消除重复检查
+- **WHEN** 被选中的可信上层能力显式 supersedes 同一候选上的底层能力
+- **THEN** 计划 MUST 只执行上层能力并记录底层能力的 superseded 决策
+- **AND** 未声明 supersedes 的 Candidate required gate MUST NOT 被推断删除
+
+### Requirement: 正式执行器必须生成可复用且可清理的 evidence
+验证执行器 MUST 输出绑定 Project policy、所请求保证、task context（如有）、repository candidates、实际 cwd、命令终态、资源事件、真实 wall-clock 与 evidence lifecycle 的版本化摘要；Task Finish provider MUST 能对该摘要执行 `inspect`、按需 `execute` 并在所有 consumer 完成后 `cleanup`。
+
+#### Scenario: Candidate run 成功
+- **WHEN** 所有 Candidate required gate 完整结束且 candidate identity 与执行后内容一致
+- **THEN** summary MUST 返回 `candidateCompleteness: confirmed`、非空 `evidenceIdentity`、每项终态和 evidence reference
+- **AND** Task Finish MUST 能在候选未变化时复用该 evidence 而不重复启动 executor
+
+#### Scenario: worker 缺少完整终态
+- **WHEN** worker 超时、异常退出或没有产生可解析的完整结果
+- **THEN** run MUST 失败并记录 exit code、signal、stdout、stderr、owner 和已取得资源
+- **AND** cleanup MUST 精确释放本 run 持有的 lease，且不得释放其他 task 的资源
+
+### Requirement: Production verification 必须使用单一 evidence lifecycle 契约
+Verification application 与 selected task-verification provider MUST 为同一 run 生产和消费唯一的版本化 evidence lifecycle，包含 retention、cleanup policy、cleanup status、provider-owned cleanup reference、summary path 与 run identity。新 summary MUST NOT 同时输出相互独立的扁平和嵌套 lifecycle 事实。
+
+#### Scenario: 生成 transient evidence
+- **WHEN** `verification run` 未收到 caller-managed output 且创建 provider-owned run directory
+- **THEN** summary MUST 标记 transient retention、所有 consumer 完成后清理、retained status 和精确 run directory
+- **AND** summary path MUST 位于该目录边界内并绑定同一 run identity
+
+#### Scenario: Task Finish 消费 verification summary
+- **WHEN** Task Finish formal assurance 接受当前 Candidate 的 passed summary
+- **THEN** provider MUST 保留 lifecycle 原文并在 cleanup readiness 中引用同一 identity
+- **AND** MUST NOT 重新推断目录命名或把 summary 改写成另一种 lifecycle schema
+
+### Requirement: Verification cleanup 必须是可安装的产品操作
+Selected task-verification provider MUST 提供公开可调用的 `cleanup` operation，按 summary lifecycle 验证 schema、retention、run identity、summary containment 和 provider-owned directory boundary 后，仅删除对应 transient run。测试目录 helper MUST NOT 成为普通 Workspace 或 Task Finish 的唯一清理入口。
+
+#### Scenario: 清理有效 transient run
+- **WHEN** 所有 consumer 已完成且 summary 证明 cleanup reference 是当前 provider-owned transient run directory
+- **THEN** cleanup MUST 删除该精确目录并返回版本化 `cleaned` evidence
+- **AND** 重复 cleanup MUST 幂等返回 already absent
+
+#### Scenario: 兼容旧扁平 lifecycle
+- **WHEN** provider 读取受支持版本的旧 summary，生命周期字段是扁平形式且边界仍可唯一证明
+- **THEN** cleanup MAY 规范化为 canonical lifecycle 后执行并记录 compatibility source
+- **AND** 无法证明时 MUST 返回 retained，不得要求 Agent 手工扩大删除范围
+
+#### Scenario: Cleanup reference 越界
+- **WHEN** cleanup reference 不在临时根下、不是当前 run directory、是符号链接或不包含绑定 summary
+- **THEN** provider MUST 保留现场并返回稳定 boundary diagnostic
+- **AND** MUST NOT 删除 reference 或其父目录
+
+### Requirement: 正式验证必须绑定 Workspace Node identity
+Buildr Verification MUST 使用 Workspace Node execution environment 启动 `node`、`npm`、测试和子进程，并 MUST 把 Node identity 纳入 `buildr.verification-run/v1` evidence identity、公开结果和复用条件。
+
+#### Scenario: PATH 前置其他 Node
+- **WHEN** Workspace 声明 Node V 且普通 PATH 前方存在 Node 18 或其他版本
+- **THEN** affected/Candidate verification 的 CLI、npm、测试与子进程 MUST 使用受管 Node V
+- **AND** evidence MUST 记录 Node V identity 与实际 probe
+
+#### Scenario: 复用匹配 evidence
+- **WHEN** candidate、policy、assurance 与 Workspace Node identity 均和已通过 evidence 匹配
+- **THEN** consumer MAY 复用该 evidence
+
+#### Scenario: Node identity 漂移
+- **WHEN** 当前 Workspace Node identity 与已有 evidence 不同、缺失或无法证明
+- **THEN** 旧 evidence MUST NOT 可复用
+- **AND** result MUST 给出 Node identity invalidation reason 并要求重新收敛和验证

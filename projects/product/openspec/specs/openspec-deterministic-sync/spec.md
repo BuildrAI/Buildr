@@ -7,22 +7,27 @@
 ## Requirements
 
 ### Requirement: Sync planner必须证明唯一结果
-Buildr MUST 提供只读deterministic sync planner，比较change delta、contract baseline与当前canonical facts，并为每个operation返回`safe`、`already-applied`或`blocked`、稳定identity、输入digests、expected digest和decision reason。Planner MUST NOT依据Agent或模型置信度判定确定性。
+Buildr MUST 提供纯 deterministic sync planner，比较 change delta、当前 canonical facts、active Change touches 与 OpenSpec executable/algorithm identity，并为每个 operation 返回 `safe`、`already-applied` 或 `blocked`、稳定 convergence/plan identity、before/expected digests、完整 expected content 和 decision reason。Planner MUST NOT 依赖持久化 contract baseline、Agent 或模型置信度判定确定性，且相同规范化输入 MUST 产生相同 plan。
 
 #### Scenario: 完整ADDED Requirement不存在
-- **WHEN** delta提供结构完整且identity唯一的ADDED Requirement，当前canonical中不存在同名Requirement
-- **THEN** planner MUST生成唯一append operation与expected canonical digest
-- **AND** plan MUST标记该operation为`safe`
+- **WHEN** delta 提供结构完整且 identity 唯一的 ADDED Requirement，当前 canonical 中不存在同名 Requirement
+- **THEN** planner MUST 生成唯一 append operation 与 expected canonical digest
+- **AND** plan MUST 标记该 operation 为 `safe`
 
 #### Scenario: ADDED Requirement已存在且内容相同
-- **WHEN** canonical中同名Requirement的规范内容已等于delta预期结果
-- **THEN** planner MUST标记operation为`already-applied`
-- **AND** apply MUST NOT重复写入
+- **WHEN** canonical 中同名 Requirement 的规范内容已等于 delta 预期结果
+- **THEN** planner MUST 标记 operation 为 `already-applied`
+- **AND** apply MUST NOT 重复写入
 
 #### Scenario: 输入存在语义歧义
-- **WHEN** identity重复、baseline drift、partial MODIFIED无法证明Scenario保全、rename目标已存在或删除对象无法唯一定位
-- **THEN** planner MUST返回`blocked`与`semantic-resolution-required`
-- **AND** MUST NOT生成可执行写入operation
+- **WHEN** identity 重复、partial MODIFIED 无法证明 Scenario 保全、rename 目标已存在、删除对象无法唯一定位或 active Change 触达同一 Requirement
+- **THEN** planner MUST 返回 `blocked` 与 `semantic-resolution-required`
+- **AND** MUST NOT 生成可执行写入 operation
+
+#### Scenario: 相同输入重复规划
+- **WHEN** change、delta、canonical、active Change、executable 与 algorithm identity 均未变化
+- **THEN** planner MUST 产生相同 convergence identity、plan identity、operations 与 expected digests
+- **AND** planner MUST 不读取或写入阶段型 sidecar
 
 ### Requirement: Deterministic operation必须使用保守白名单
 Planner MUST只自动接受能由结构与baseline证明唯一结果的完整ADDED、唯一REMOVED、无冲突RENAMED、baseline/current匹配的完整MODIFIED，以及identity唯一且内容完整的Scenario增改。未明确声明的Scenario缺失 MUST NOT被推断为删除。
@@ -38,30 +43,35 @@ Planner MUST只自动接受能由结构与baseline证明唯一结果的完整ADD
 - **AND** result MUST列出受影响Requirement和需要Agent判断的最小上下文
 
 ### Requirement: Sync apply必须原子且identity-bound
-Buildr MUST提供sync apply入口，只消费未过期且identity匹配的plan receipt；写入前MUST重验change、delta、baseline、canonical与expected file digests。任一operation blocked或identity变化时整批MUST零写入。
+Buildr MUST 通过 canonical applier 只消费当前 convergence identity 对应且通过隔离验证的内存 plan；写入前 MUST 重验 change delta、OpenSpec executable identity 和全部 canonical before digests。任一 operation blocked 或任一输入变化时整批 MUST 零写入并重新观察/规划，不得修补旧 plan 或刷新旧 baseline。
 
 #### Scenario: Safe批次成功应用
-- **WHEN**全部operations为safe/already-applied且receipt identity仍匹配
-- **THEN**apply MUST先生成并验证完整expected files，再以原子替换提交
-- **AND**result MUST返回actual digests、effects和passed receipt
+- **WHEN** 全部 operations 为 safe/already-applied、projected validation 通过且写入前 identity 仍匹配
+- **THEN** applier MUST 先准备并核验全部临时文件，再以条件式原子替换提交
+- **AND** result MUST 返回 actual digests、effects 和 plan identity
 
 #### Scenario: Apply前canonical漂移
-- **WHEN**plan生成后canonical digest发生变化
-- **THEN**apply MUST返回`receipt-stale`并保持全部canonical文件不变
-- **AND**consumer MUST回到plan/pre-sync边界而不是刷新事后授权
+- **WHEN** plan 生成后任一 canonical before digest 发生变化
+- **THEN** applier MUST 返回输入漂移并保持全部 canonical 文件不变
+- **AND** orchestrator MUST 观察当前事实后重新规划，不得刷新事后授权
 
 #### Scenario: 中间文件写入失败
-- **WHEN**temporary生成、验证或rename准备阶段任一步骤失败
-- **THEN**apply MUST不提交任何canonical目标变化
-- **AND**result MUST保留失败阶段与安全恢复引用
+- **WHEN** temporary 生成、验证或 rename 准备阶段任一步骤失败
+- **THEN** applier MUST 在首个 canonical replace 前保持整批零写入
+- **AND** 若 replace 已开始后进程中断，下一次 MUST 由 observer 比较真实文件而不是信任内部 stage
 
 ### Requirement: Deterministic sync必须提供Agent fallback证据
-当plan blocked时，Buildr MUST返回`semantic-resolution-required`、blocked operations、权威输入引用和未执行effects；Agent-driven fallback完成后仍MUST重新经过strict validation与post-sync guard。
+当 plan blocked 时，Buildr MUST 返回 `blocked`、blocked operations、权威输入引用和未执行 effects；当真实文件无法由 receipt 的 before/expected digests 证明时 MUST 返回 `recovery-unprovable`。Agent 只处理这两类结果，不得参与内部 plan、validation、apply、confirmation 或 receipt 编排。
 
 #### Scenario: Task Finish遇到blocked plan
-- **WHEN**convergence orchestrator收到blocked deterministic plan
-- **THEN**Task Finish MUST停在最后成功阶段并返回Agent fallback action
-- **AND**MUST NOT把convergence composite或canonical sync标记passed
+- **WHEN** convergence transaction 检测到同一 Requirement 并发修改、结构歧义或 expected strict validation 失败
+- **THEN** Task Finish MUST 接收 `blocked` 与最小语义处理上下文
+- **AND** MUST NOT 把 convergence 或 canonical sync 标记 passed
+
+#### Scenario: Task Finish遇到不可证明状态
+- **WHEN** canonical 文件既不完整匹配 receipt before digests 也不完整匹配 expected digests
+- **THEN** Task Finish MUST 接收 `recovery-unprovable` 并停止自动处理
+- **AND** Buildr MUST NOT 覆盖当前 canonical 内容
 
 ### Requirement: Deterministic apply必须在提交前验证完整expected Project
 Buildr MUST 在替换真实canonical前，把本批次全部expected OpenSpec files投射到task-owned temporary Project surface，并使用receipt绑定的OpenSpec executable/version执行strict validation。只有expected surface验证通过且input/output digests仍匹配时才能原子提交；失败时整批MUST零写入并返回validation diagnostic与Agent fallback。
@@ -85,19 +95,96 @@ Planner MUST只从proposal中对应New Capability的唯一非空描述取得新c
 - **AND** MUST NOT创建部分canonical capability
 
 ### Requirement: 持久化OpenSpec convergence receipt必须可移植
-Buildr MUST将运行时OpenSpec executable定位与持久化identity分离。任何进入Workspace或Project候选树的新增或重写convergence receipt MUST只保存portable source reference、OpenSpec version和可核验executable/package identity，MUST NOT保存用户home、task worktree、临时目录或其他机器绝对路径。
+Buildr MUST 将运行时 OpenSpec executable 定位与持久化 identity 分离，并且新的 deterministic convergence 正常路径 MUST 只写一份 `.buildr/convergence-receipt.json`。Receipt MUST 保存 portable executable identity、convergence/plan identity、algorithm version、delta identity、每个 canonical 文件的完整 before/expected content 与 digests、disposition、验证/应用/确认/归档结果和时间，MUST NOT 保存机器绝对路径或长期内部 stage transitions。
 
 #### Scenario: Task checkout执行convergence
-- **WHEN** orchestrator使用task checkout内的绝对OpenSpec executable完成plan、apply和strict validation
-- **THEN** 运行期间MUST核对同一executable identity
-- **AND** 落盘receipt MUST使用相对Product/Service reference或逻辑source identity，不得包含task checkout绝对路径
+- **WHEN** orchestrator 使用 task checkout 内的绝对 OpenSpec executable 完成 projected validation、apply 和 confirmation
+- **THEN** 运行期间 MUST 核对同一 executable identity
+- **AND** 落盘 receipt MUST 使用相对 Product/Service reference 或逻辑 source identity
+
+#### Scenario: 应用完成但receipt更新前退出
+- **WHEN** canonical 已全部等于 expected digests，但 receipt disposition 仍为 `planned-not-applied`
+- **THEN** observer MUST 将实际状态识别为 `applied-and-matched`
+- **AND** resume MUST 执行写后确认而不得重复写入或恢复 canonical
 
 #### Scenario: 读取历史绝对路径receipt
-- **WHEN** Buildr读取旧schema中包含绝对`openspecExecutable`的历史receipt
-- **THEN** reader MAY兼容解析该receipt用于诊断
-- **AND** 任何更新或新生成结果MUST迁移为portable schema，不得复制旧绝对路径
+- **WHEN** Buildr 读取旧 schema 的 convergence、baseline、pre-sync、sync-plan 或 recovery sidecar
+- **THEN** reader MAY 只读解析完整 identity chain 用于迁移判断
+- **AND** 任何新写入 MUST 只生成 portable 单一 receipt；证据不足 MUST 返回 `recovery-unprovable`
 
 #### Scenario: 开源候选覆盖持久化receipt
-- **WHEN** open-source candidate或contract fixture检查tracked active/archive convergence receipts
-- **THEN** verification MUST拒绝新生成的机器/用户绝对路径并报告具体receipt字段
-- **AND** portable receipt MUST保留足够identity证明同一OpenSpec executable/version参与确定性流程
+- **WHEN** open-source candidate 或 contract fixture 检查 tracked active/archive convergence receipts
+- **THEN** verification MUST 拒绝新生成的机器绝对路径、旧阶段型 sidecar 和重复 identity
+- **AND** 单一 receipt MUST 保留足够事实证明 executable 与 canonical before/expected 结果
+
+### Requirement: Convergence observer必须根据真实文件恢复
+Buildr MUST 使用 convergence receipt 的 before/expected digests 观察 canonical 实际状态，并且只产生 `planned-not-applied`、`applied-and-matched`、`state-unknown` 或 `archived` disposition。Observer MUST NOT 根据上次声明的内部 stage 推断恢复动作。
+
+#### Scenario: canonical全部等于before
+- **WHEN** receipt 中所有 canonical 文件当前 digest 均等于 beforeDigest
+- **THEN** observer MUST 返回 `planned-not-applied`
+- **AND** orchestrator MUST 重新核验 executable/validation 后条件式应用
+
+#### Scenario: canonical全部等于expected
+- **WHEN** receipt 中所有 canonical 文件当前 digest 均等于 expectedDigest
+- **THEN** observer MUST 返回 `applied-and-matched`
+- **AND** orchestrator MUST 只执行写后确认和后续归档
+
+#### Scenario: canonical处于混合或未知状态
+- **WHEN** 文件集合同时包含 before/expected 状态或任一文件两者都不匹配
+- **THEN** observer MUST 返回 `state-unknown`
+- **AND** public result MUST 为 `recovery-unprovable` 且零自动覆盖
+
+#### Scenario: delta或executable变化
+- **WHEN** delta identity 变化
+- **THEN** orchestrator MUST 丢弃旧 plan 执行资格并基于当前 canonical 重新规划
+- **AND** executable identity 变化时 MUST 重跑 projected validation 和写后 strict confirmation
+
+### Requirement: Convergence transaction必须确认后单独归档
+Buildr MUST 在 canonical actual digests 全部等于 expected digests且真实 Project 通过绑定 executable 的 strict validation 后，执行 `openspec archive <change> --yes --skip-specs`。Archive MUST 只移动 Change，不得再次修改 canonical。
+
+#### Scenario: 正常同步并归档
+- **WHEN** projected validation、条件式应用和写后确认全部通过
+- **THEN** transaction MUST 以 `--skip-specs` 归档 Change并返回 `passed`
+- **AND** receipt disposition MUST 更新为 `archived`
+
+#### Scenario: 归档失败后重试
+- **WHEN** canonical 已 confirmed 但 archive 命令失败
+- **THEN** receipt MUST 保持 `applied-and-matched` 并记录 archive failure
+- **AND** 下次 converge MUST 只重新确认 canonical 并重试 archive，不得恢复或重写 canonical
+
+#### Scenario: 重复执行converge
+- **WHEN** Change 已归档且 canonical 仍匹配 expected digests
+- **THEN** converge MUST 幂等返回 `passed`
+- **AND** MUST NOT 重复 apply 或创建旧 sidecar
+
+### Requirement: OpenSpec 收敛必须提供只读文件事实审计
+Buildr MUST 提供只读审计入口，使用唯一收敛回执中的 before/expected 摘要和当前正式文件事实逐文件分类。审计 MUST 只返回 Project 相对路径与摘要，不得写正式文件、刷新回执、创建旁路状态、归档 Change 或推断未被文件事实证明的恢复阶段。
+
+#### Scenario: 部分文件异常变化
+- **WHEN** 一部分正式文件等于 expected 而另一部分既不等于 before 也不等于 expected
+- **THEN** 审计 MUST 返回 `recovery-unprovable` 和 `state-unknown`
+- **AND** 每个文件 MUST 展示 before、expected、actual 摘要及 `before|expected|unknown` 分类
+
+#### Scenario: 应用完成但回执未更新
+- **WHEN** 所有正式文件均等于 expected 摘要而回执仍为 planned-not-applied
+- **THEN** 审计 MUST 将实际事实分类为 `applied-and-matched`
+- **AND** MUST NOT 为了修正声明而写回执
+
+#### Scenario: 回执无效或缺失
+- **WHEN** Buildr 无法读取或验证唯一收敛回执
+- **THEN** 审计 MUST 返回 `recovery-unprovable` 和最小诊断
+- **AND** MUST NOT 回退到 baseline、pre-sync receipt、sync plan 或 recovery receipt 生成新的授权事实
+
+### Requirement: 历史收敛接口必须按零消费者门禁退役
+Buildr MUST 维护历史 `baseline`、`check`、`sync-plan`、`sync-apply` 及旧旁路状态的单一退役登记。兼容入口在移除前 MUST 返回结构化弃用信息和 `converge` 或 `audit` 替代入口；新正常路径 MUST NOT 消费或生成旧旁路状态。只有当前产品、受管 Rules、Skills、Components、Commands 和非历史文档达到零消费者，且兼容窗口满足时，登记才可报告可删除。
+
+#### Scenario: 旧命令仍被兼容调用
+- **WHEN** consumer 调用仍处于兼容窗口的旧命令
+- **THEN** Buildr MUST 保持既有行为并返回弃用状态、替代命令与移除条件
+- **AND** 文本输出 MUST 明确提示该入口不会用于新的 Task Finish 路径
+
+#### Scenario: 当前产品重新依赖旧命令
+- **WHEN** 契约扫描发现非兼容实现或非历史夹具重新调用旧命令或依赖旧旁路文件
+- **THEN** 正式验证 MUST 失败并报告消费者位置
+- **AND** 退役登记 MUST NOT 报告可删除

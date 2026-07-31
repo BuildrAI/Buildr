@@ -5,6 +5,7 @@
 定义 Buildr 候选版本的 Node/操作系统验证范围、正式 tarball 生命周期 smoke，以及可观察但不阻塞的验证耗时记录。
 
 ## Requirements
+
 ### Requirement: CI 必须覆盖最低 Node、当前 Node 和目标桌面平台
 Buildr CI MUST 在 Linux Node 20 和 Node 22 上运行完整产品候选验证，并 MUST 在 macOS、Windows Node 22 上运行可移植 release smoke；CI MUST NOT 为已经由 Linux Node 22 完整验证覆盖的相同 release lifecycle 建立独立 Linux smoke job。
 
@@ -383,6 +384,7 @@ Buildr Workspace E2E MUST 只保留必须通过多条真实命令、多个产品
 - **AND** 全 adapter 生命周期 MUST 由 runtime parity 持有
 - **AND** onboarding 异常分支 MUST 由 onboarding integration 持有
 - **AND** tarball inventory 和安装后发布生命周期 MUST 分别由 package/open-source verifier 与 release smoke 持有
+
 ### Requirement: Candidate 必须观测独立 package 验证阶段
 Buildr Candidate MUST 将 package static、package workspace smoke 和 package domain integration 作为独立 verification steps 编排，并 MUST 为每个 step 保留稳定 identity、耗时预算和失败诊断。
 
@@ -579,3 +581,11 @@ Buildr Changed verification MUST 使用与 Candidate 相同的 timing schema fam
 - **WHEN** Changed verification 成功或失败并完成 summary 写入
 - **THEN** summary 与 diagnostics MUST 保留在本次唯一 evidence directory
 - **AND** 候选 package 等短生命周期执行制品 MUST 继续清理
+
+### Requirement: Candidate 包含双任务并发整体验收
+Buildr Product Candidate MUST 将 `concurrent-task-acceptance` 登记为 required verification step，并 MUST 使用独立 executor 和预算执行，不得由其他单项测试的通过状态推断该组合验收通过。
+
+#### Scenario: 执行完整候选验证
+- **WHEN** 维护者执行 Product Candidate 验证
+- **THEN** verification registry MUST 选择 `concurrent-task-acceptance`
+- **AND** 该步骤失败或证据不完整时 Candidate MUST 失败

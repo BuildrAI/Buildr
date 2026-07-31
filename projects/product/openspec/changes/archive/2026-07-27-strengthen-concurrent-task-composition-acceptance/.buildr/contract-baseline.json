@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "strengthen-concurrent-task-composition-acceptance",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-e5667ad449e2ab8b5f951d08f68aa61a22ee7ae037d4d05b7e70f724e5970764",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "双任务并发组合验收",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 双任务并发组合验收\nBuildr MUST 提供可重复的双任务并发组合验收，在同一临时 Workspace 中使用两个真实 task environment 覆盖各自 CLI invocation、Local App 预览、验证资源协调、目标分支竞态和归属清理，并 MUST 输出可归因到两个任务的结构化证据。\n\n#### Scenario: 两个任务并发运行且互不串扰\n- **WHEN** Candidate 验收创建两个任务环境并同时启动各自预览和验证 run\n- **THEN** 两个任务 MUST 使用各自 receipt 绑定的 checkout 与绝对 CLI invocation，并使用不同的状态目录、实例身份和端口\n- **AND** 普通消费 Workspace MAY 共享同一外部产品 CLI identity，但 invocation 的 environment binding MUST 可区分且不得依赖 cwd\n- **AND** 可并行资源 MUST 并行执行，共享容量资源 MUST 按声明排队并记录归属和等待证据\n\n#### Scenario: 目标分支发生竞态\n- **WHEN** 一个任务完成目标 ref observation 后另一个任务推进同一目标分支\n- **THEN** 前一个任务 MUST 返回 `target-race` 并停止覆盖新的目标 ref\n- **AND** 恢复 MUST 只重跑失效步骤及其下游\n\n#### Scenario: 整体验收完成清理\n- **WHEN** 双任务场景成功或失败后进入清理\n- **THEN** Buildr MUST 只停止和删除各任务拥有的预览、租约、worktree 与本地任务分支\n- **AND** retained checkout MUST 保持健康且不得残留任务运行状态\n"
+    },
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "并发验收证据",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 并发验收证据\n整体验收 MUST 返回版本化摘要，记录两个任务的环境与 CLI identity、预览端口、资源协调、目标竞态、清理结果、retained doctor 和真实 wall-clock；任一必需阶段缺失时 MUST 失败而非推断通过。\n\n#### Scenario: Candidate 消费验收结果\n- **WHEN** Product Candidate 执行双任务并发整体验收\n- **THEN** Candidate MUST 把该步骤作为 required gate\n- **AND** 摘要 MUST 明确列出通过、失败、跳过阶段和精确清理状态\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 清理必须保护全部成员和其他任务",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task environment 清理必须保护全部成员和其他任务\nBuildr MUST 只在当前 environment 的全部 repository changes 已安全集成或获得明确放弃授权、checkouts 可清理且任务拥有的本机资源已停止后清理。清理 MUST 按 nested repositories 后 root 的顺序执行，并 MUST NOT 修改其他 task environments。\n\n#### Scenario: 多仓环境安全清理\n- **WHEN** 全部成员 repositories 已集成、干净且没有阻塞本机资源\n- **THEN** Buildr MUST 先移除 nested repository worktrees，再移除 root worktree 和本地 receipt\n- **AND** MUST 返回每个 repository 与 environment 的 removed evidence\n\n#### Scenario: 一个成员 repository 仍未完成\n- **WHEN** 任一 repository dirty、未集成、branch identity 不明或仍被 task-owned process 使用\n- **THEN** Buildr MUST 保留整个 task environment\n- **AND** MUST 报告阻塞 repository/resource，且不得部分删除其他仍用于恢复的成员\n\n#### Scenario: 存在其他并发 task environment\n- **WHEN** 同一 Workspace 或任一 source repository 还拥有其他 task worktrees\n- **THEN** Buildr MUST 保持其 checkouts、branches、receipts、preview、ports 和状态目录不变\n"
+    }
+  ]
+}

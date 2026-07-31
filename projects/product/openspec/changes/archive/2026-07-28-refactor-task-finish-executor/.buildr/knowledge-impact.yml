@@ -1,0 +1,34 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-task-finish-executor
+operation: reconcile
+treeIdentity: implementation-working-tree@03870b89972f6a297f2d7d0bbd54139494256473
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-task-finish-executor/brief.md
+    reason: 正式架构重构需要稳定的人类可读目标、边界、流程和验收摘要
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Task Finish 从 checkpoint/action registry 改为五阶段 application executor，并改变与 verification、Git、runtime 和 worktree 的组合边界
+    status: updated
+    sourceIdentities:
+      - design.md
+      - specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Task Finish 运行结构、CLI 和失败/恢复语义发生变化
+    status: updated
+    sourceIdentities:
+      - design.md
+      - specs/cli-product-surface/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: finish-ready candidate 是区分研发与收尾责任的新稳定边界术语
+    status: updated
+    sourceIdentities:
+      - specs/task-finish-execution/spec.md
+      - specs/agent-task-workflows/spec.md
+unresolvedItems: []

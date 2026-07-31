@@ -62,7 +62,8 @@ try {
   run(path.join(copiedService, 'scripts', 'install-buildr-cli'), [], { cwd: copiedService, env });
   const buildr = path.join(installBin, 'buildr');
   assert.equal(fs.existsSync(buildr), true, 'installer must create the buildr command');
-  assert.equal(fs.realpathSync(buildr), fs.realpathSync(path.join(copiedService, 'bin', 'buildr.mjs')), 'installer must migrate the removed canonical Project entry to the Service entry');
+  assert.equal(fs.realpathSync(buildr), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')), 'installer must target the Node-aware Service launcher');
+  run(buildr, ['sync', 'codex', '--target', checkout], { cwd: checkout, env });
   const runtime = JSON.parse(run(buildr, ['runtime', 'list', '--json'], { cwd: checkout, env, capture: true }));
   assert(runtime.supportedAgents.includes('codex'));
   const update = JSON.parse(run(buildr, ['update', 'check', '--json'], { cwd: checkout, env, capture: true }));
@@ -73,7 +74,7 @@ try {
   assert.equal(fs.existsSync(buildr), false, 'uninstaller must remove the symlink managed by this checkout');
   run(path.join(copiedService, 'scripts', 'uninstall-buildr-cli'), [], { cwd: copiedService, env });
   run(path.join(copiedService, 'scripts', 'install-buildr-cli'), [], { cwd: copiedService, env });
-  assert.equal(fs.realpathSync(buildr), fs.realpathSync(path.join(copiedService, 'bin', 'buildr.mjs')), 'reinstall must target the candidate bin entry');
+  assert.equal(fs.realpathSync(buildr), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')), 'reinstall must target the candidate Node-aware launcher');
 
   console.log('Repository onboarding verification passed: clean checkout, development CLI install/uninstall/reinstall, runtime discovery, and update source.');
 } finally {

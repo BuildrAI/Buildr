@@ -74,9 +74,9 @@ test('provider 独占资格审查、分类和人工交接政策', () => {
   ]) assert.ok(reviewSkill.includes(required), `review Skill must include ${required}`);
 });
 
-test('Task Finish 只触发 finalize 并等待 provider 结果', () => {
-  assert.match(finishSkill, /asset review 返回 `awaiting-human` 时在 cleanup 前等待/);
-  assert.match(finishSkill, /optional provider 不可用则记录降级/);
+test('Task Finish 只在产品 run 前触发 finalize 并等待 provider 结果', () => {
+  assert.match(finishSkill, /结果为 `awaiting-human` 时停止，不进入产品 Finish run/);
+  assert.match(finishSkill, /selected `buildr\.task-asset-review@3` provider finalize/);
   assert.doesNotMatch(finishSkill, /强信号|Rule\/Skill 候选|轻量资格判断/);
   assert.match(workspaceSkills, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-asset-review[\s\S]*version: 3[\s\S]*mode: optional/);
 });

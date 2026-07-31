@@ -13,6 +13,10 @@ function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
 
+export function deterministicSyncContentDigest(value) {
+  return digest(normalize(value));
+}
+
 export function parseCanonicalSpec(content) {
   const source = normalize(content);
   const matches = [...source.matchAll(/^### Requirement:\s*(.+?)\s*$/gm)];
@@ -42,8 +46,32 @@ function scenarioIdentities(block) {
   return { names, unique: new Set(names).size === names.length };
 }
 
-function planIdentity(plan) {
+export function deterministicSyncPlanIdentity(plan) {
   return digest(JSON.stringify({ change: plan.change, project: plan.project, deltaHash: plan.deltaHash, files: plan.files, operations: plan.operations }));
+}
+
+export function reverseDeterministicSyncPlan(plan) {
+  if (plan.schemaVersion !== DETERMINISTIC_SYNC_PLAN_SCHEMA || plan.identity !== deterministicSyncPlanIdentity(plan)) {
+    throw new Error('OpenSpec deterministic sync receipt is stale or invalid.');
+  }
+  const reversed = {
+    schemaVersion: DETERMINISTIC_SYNC_PLAN_SCHEMA,
+    change: plan.change,
+    project: plan.project,
+    deltaHash: plan.deltaHash,
+    status: 'safe',
+    operations: (plan.operations || []).map((item) => ({ ...item, recovery: 'restore-before' })),
+    blocked: [],
+    files: (plan.files || []).map((item) => ({
+      path: item.path,
+      beforeDigest: item.expectedDigest,
+      expectedDigest: item.beforeDigest,
+      before: item.expected,
+      expected: item.before,
+    })),
+  };
+  reversed.identity = deterministicSyncPlanIdentity(reversed);
+  return reversed;
 }
 
 export function createDeterministicSyncPlan({ change, project, projectRoot, delta, baseline, capabilityPurposes = new Map() }) {
@@ -103,12 +131,12 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
     files.push({ path: path.relative(projectRoot, file).split(path.sep).join('/'), beforeDigest: digest(before), expectedDigest: digest(after), before, expected: after });
   }
   const plan = { schemaVersion: DETERMINISTIC_SYNC_PLAN_SCHEMA, change, project, deltaHash: delta.hash, status: blocked.length ? 'blocked' : operations.every((item) => item.status === 'already-applied') ? 'already-applied' : 'safe', operations, blocked, files };
-  plan.identity = planIdentity(plan);
+  plan.identity = deterministicSyncPlanIdentity(plan);
   return plan;
 }
 
 export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity = plan.identity, io = fs, validateExpected = null }) {
-  if (plan.schemaVersion !== DETERMINISTIC_SYNC_PLAN_SCHEMA || plan.identity !== expectedIdentity || planIdentity(plan) !== plan.identity) throw new Error('OpenSpec deterministic sync receipt is stale or invalid.');
+  if (plan.schemaVersion !== DETERMINISTIC_SYNC_PLAN_SCHEMA || plan.identity !== expectedIdentity || deterministicSyncPlanIdentity(plan) !== plan.identity) throw new Error('OpenSpec deterministic sync receipt is stale or invalid.');
   if (plan.status === 'blocked') return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'blocked', identity: plan.identity, effects: [], blocked: plan.blocked };
   const prepared = [];
   for (const item of plan.files) {

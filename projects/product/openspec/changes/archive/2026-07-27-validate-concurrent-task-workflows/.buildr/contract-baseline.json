@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "validate-concurrent-task-workflows",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-2418c4b5805f0178e94b10d78e1e58c46692459cbd2efce4a94bbdd2fabd07ee",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "双任务并发组合验收",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "并发验收证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "product-verification-quality",
+      "title": "Candidate 包含双任务并发整体验收",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

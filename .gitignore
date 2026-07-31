@@ -13,6 +13,7 @@
 # Buildr transaction state
 /.buildr/mutations/
 CLAUDE.md
+CLAUDE.local.md
 # Task asset review runtime state
 /.buildr/asset-review/
 /.buildr/task-finish/

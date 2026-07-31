@@ -1,3 +1,0 @@
-在冻结 implementation Candidate 并调用 selected task-verification provider 前，读取 required `buildr.current-knowledge-maintenance/v1` binding、contract 和 selected provider，执行 `inspect`。只有全部 assessed impacts 已处理、Brief 与 proposal/design/specs/tasks 一致、current knowledge 对应当前 tree 且 terminology 无 unresolved 时才能继续。
-
-若 inspect 建议并授权 fallback `reconcile` 且产生任何 delivery content 修改，将 transition 归类为 `implementation-changed`，使旧 verification evidence 失效，再对更新后的 tree 请求相同 `requiredAssurance`。结果 unresolved 时停止 verification、sync、archive、Git integration、push 和 cleanup。该 inspect 属于 closeout workflow check，不计作 task-verification `execute`。

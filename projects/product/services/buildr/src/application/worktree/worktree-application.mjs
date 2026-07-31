@@ -2,10 +2,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
+import { localAppDataRoot } from '../../infrastructure/filesystem/workspace-registry-repository.mjs';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v1';
@@ -16,6 +17,72 @@ const ROOT_EVIDENCE_SOURCES = new Set(['host-context', 'runtime-host']);
 function inside(parent, child) {
   const relative = path.relative(parent, child);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
+export function taskRuntimeBlockers(workspaceRoot, receipt) {
+  const blockers = [];
+  const previewRoot = path.join(localAppDataRoot(), 'previews');
+  if (fs.existsSync(previewRoot)) {
+    for (const entry of fs.readdirSync(previewRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const ownerFile = path.join(previewRoot, entry.name, 'preview.json');
+      const instanceFile = path.join(previewRoot, entry.name, 'instance.json');
+      try {
+        const owner = JSON.parse(fs.readFileSync(ownerFile, 'utf8'));
+        if (owner.schemaVersion !== 'buildr.local-app-preview/v1' || owner.taskId !== receipt.taskId || path.resolve(owner.environmentRoot) !== path.resolve(receipt.environmentRoot)) continue;
+        const instance = fs.existsSync(instanceFile) ? JSON.parse(fs.readFileSync(instanceFile, 'utf8')) : null;
+        blockers.push({ kind: 'preview', id: entry.name, pid: instance?.pid || owner.managedProcess?.pid || null, state: processIsAlive(instance?.pid || owner.managedProcess?.pid) ? 'running' : 'ownership-record-retained' });
+      } catch { /* unrelated or incomplete preview state */ }
+    }
+  }
+  let common = null;
+  try { common = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: workspaceRoot, encoding: 'utf8' }).trim(); } catch { /* retained root validation reports Git errors */ }
+  const leaseRoot = common ? path.join(path.resolve(workspaceRoot, common), 'buildr', 'verification-resources') : null;
+  if (leaseRoot && fs.existsSync(leaseRoot)) {
+    const visit = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const current = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(current);
+        else if (entry.name === 'lease.json') {
+          try {
+            const lease = JSON.parse(fs.readFileSync(current, 'utf8'));
+            if (lease.schemaVersion === 'buildr.verification-resource-lease/v1' && lease.taskId === receipt.taskId && Date.parse(lease.expiresAt) > Date.now()) {
+              blockers.push({ kind: 'verification-lease', id: lease.resource, runId: lease.runId, slot: lease.slot, state: 'active' });
+            }
+          } catch { /* malformed unrelated state is handled by its owner */ }
+        }
+      }
+    };
+    visit(leaseRoot);
+  }
+  return blockers;
+}
+
+export function probeTaskEnvironmentExecutionCli(currentCli, cwd) {
+  const startedAt = new Date().toISOString();
+  const result = spawnSync(currentCli.invocation.command, [...(currentCli.invocation.argsPrefix || []), 'version', '--json'], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  let payload = null;
+  try { payload = JSON.parse(result.stdout || ''); } catch { /* reported below */ }
+  const passed = result.status === 0 && typeof payload?.version === 'string' && payload.version.length > 0;
+  return {
+    status: passed ? 'passed' : 'failed',
+    exitCode: Number.isInteger(result.status) ? result.status : 1,
+    version: payload?.version || null,
+    startedAt,
+    diagnostic: passed ? null : {
+      message: (result.stderr || result.error?.message || 'Receipt-bound CLI did not return valid version JSON.').trim(),
+      stdout: String(result.stdout || '').slice(0, 1000),
+    },
+  };
 }
 
 export function resolveExecutionCliSource({ workspaceRoot, environmentRoot, productRoot: activeProductRoot }) {
@@ -87,30 +154,80 @@ export function parseWorktreeList(text) {
   });
 }
 
-export function isSafeRuntimeStaleOnly({ report, agent, identity, expectedBranch, expectedHead, allowedCodes = [] }) {
-  const actionable = (report?.findings || []).filter((finding) => finding.userActionRequired === true);
+function normalizedFindingPath(value) {
+  return String(value || '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '');
+}
+
+export function evaluateTaskEnvironmentDoctor({ report, repositories }) {
+  const selected = new Map((repositories || []).map((item) => [normalizedFindingPath(item.sourcePath), item]));
+  const contextualFindings = [];
+  const actionableFindings = [];
+  for (const finding of report?.findings || []) {
+    const sourcePath = normalizedFindingPath(finding.path);
+    const member = selected.get(sourcePath);
+    const omittedService = finding.code === 'service.git.missing' && !member;
+    const expectedTaskBranch = (
+      (finding.code === 'service.branch_mismatch' && member?.entityType === 'service')
+      || (finding.code === 'project.git_branch_drift' && member?.entityType === 'project')
+    ) && finding.actual === member.branch;
+    if (omittedService || expectedTaskBranch) {
+      contextualFindings.push({ finding, reason: omittedService ? 'repository-not-selected' : 'receipt-task-branch' });
+      continue;
+    }
+    if (['error', 'warning'].includes(finding.status) && finding.userActionRequired !== false) actionableFindings.push(finding);
+  }
+  const workspaceValid = report?.health?.workspaceValid === true;
+  return {
+    ready: workspaceValid && actionableFindings.length === 0,
+    workspaceValid,
+    actionableFindings,
+    contextualFindings,
+  };
+}
+
+export function syncSourcePlanRequiresCanonicalSync(plan) {
+  if (!plan) return true;
+  if (plan.workspace?.required || plan.projects?.required) return true;
+  if ((plan.builtins?.findings || []).some((finding) =>
+    finding.converge === true
+    || finding.replacementFrom
+    || !['installed', 'uninstalled', 'available'].includes(finding.status))) return true;
+  if ((plan.components?.errors || []).length > 0) return true;
+  return (plan.components?.plans || []).some(({ record, plan: componentPlan }) =>
+    componentPlan?.restoring
+    || !componentPlan?.existingEntry
+    || JSON.stringify(componentPlan?.oldDefinition) !== JSON.stringify(record?.definition));
+}
+
+export function isSafeRuntimeStaleOnly({ report, agent, identity, expectedBranch, expectedHead, environmentEvaluation = null }) {
+  const actionable = environmentEvaluation?.actionableFindings
+    || (report?.findings || []).filter((finding) => ['error', 'warning'].includes(finding.status) && finding.userActionRequired !== false);
   const staleCode = `runtime.${agent.replaceAll('-', '_')}_stale`;
-  const disallowedErrors = (report?.findings || []).filter((finding) => finding.status === 'error' && finding.code !== staleCode && !allowedCodes.includes(finding.code));
-  return (report?.ok === true || (allowedCodes.length > 0 && disallowedErrors.length === 0))
-    && report.health?.workspaceValid === true
+  return report?.health?.workspaceValid === true
     && report.mutations?.blocked !== true
-    && actionable.length > 0
-    && actionable.every((finding) => finding.code === staleCode || allowedCodes.includes(finding.code))
+    && actionable.length === 1
+    && actionable[0].code === staleCode
     && identity?.clean === true
     && identity.branch === expectedBranch
     && identity.head === expectedHead;
 }
 
-function doctorSummary(report) {
+function doctorSummary(report, environmentEvaluation = null) {
   if (!report) return null;
   return {
     ok: report.ok,
-    health: report.health,
+    health: environmentEvaluation ? {
+      ...report.health,
+      environmentReady: environmentEvaluation.ready,
+      environmentActionRequired: environmentEvaluation.actionableFindings.length > 0,
+      environmentActionableCount: environmentEvaluation.actionableFindings.length,
+    } : report.health,
     findings: (report.findings || []).map((finding) => ({
       status: finding.status,
       code: finding.code,
       message: finding.message,
       path: finding.path || null,
+      environmentContext: environmentEvaluation?.contextualFindings.find((item) => item.finding === finding)?.reason || null,
     })),
   };
 }
@@ -122,6 +239,7 @@ export function registerWorktreeApplication(runtime) {
   const isSupportedAgent = (...args) => runtime.isSupportedAgent(...args);
   const productRoot = (...args) => runtime.productRoot(...args);
   const atomicWriteJson = (...args) => runtime.atomicWriteJson(...args);
+  const removePath = (...args) => runtime.removePath(...args);
 
   function git(cwd, args, options = {}) {
     return spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', ...options });
@@ -424,6 +542,19 @@ export function registerWorktreeApplication(runtime) {
     };
   }
 
+  function ensureTaskEnvironmentProjectBaselines(plan) {
+    const projects = runtime.readProjectRegistryRecord(plan.environmentRoot).projects;
+    const selectedProjects = new Set(plan.repositories.filter((item) => item.entityType === 'project').map((item) => item.sourcePath));
+    for (const project of Object.values(projects)) {
+      if (project.source.type !== 'workspace' && !selectedProjects.has(project.source.path)) continue;
+      const projectRoot = path.join(plan.environmentRoot, project.source.path);
+      if (!fs.existsSync(projectRoot)) continue;
+      for (const relative of ['openspec/specs', 'openspec/knowledge', 'openspec/changes', 'services']) {
+        fs.mkdirSync(path.join(projectRoot, relative), { recursive: true });
+      }
+    }
+  }
+
   function baseResult({ workspaceRoot, taskId = null, agent = null, branch = null, environmentRoot = null }) {
     return {
       workspaceRoot,
@@ -465,24 +596,23 @@ export function registerWorktreeApplication(runtime) {
       console.log(`Bootstrap: doctor=${result.bootstrap.doctorBefore ? 'checked' : 'skipped'} sync=${result.bootstrap.sync.status} ready=${result.ready}`);
       for (const action of result.nextActions) console.log(`Next: ${action}`);
     }
-    if (!result.ready) process.exitCode = 1;
+    if (!result.ready || result.executionReady === false) process.exitCode = 1;
     return payload;
   }
 
   function bootstrapRoot(base, plan, rootIdentity) {
     const before = readDoctor(plan.agent, plan.environmentRoot);
-    base.bootstrap.doctorBefore = doctorSummary(before.report);
     if (!before.report) return blockedResult(base, 'worktree.doctor_failed', (before.result.stderr || 'Doctor did not return valid JSON.').trim(), [`Inspect ${plan.environmentRoot}`]);
-    if (before.report.health?.ready === true) {
-      base.bootstrap.sync = { status: 'skipped', reason: 'doctor-ready' };
-      base.bootstrap.doctorAfter = doctorSummary(before.report);
-      return base;
+    const beforeEnvironment = evaluateTaskEnvironmentDoctor({ report: before.report, repositories: plan.repositories });
+    base.bootstrap.doctorBefore = doctorSummary(before.report, beforeEnvironment);
+    const sourcePlan = runtime.buildSyncSourcePlan(plan.environmentRoot, plan.agent);
+    if (syncSourcePlanRequiresCanonicalSync(sourcePlan)) {
+      base.bootstrap.sync = { status: 'blocked', reason: 'canonical-source-sync-required' };
+      return blockedResult(base, 'worktree.canonical_sync_required', 'Workspace source assets require canonical sync before the task environment runtime can be rendered safely.', [`Run buildr sync ${plan.agent} --target ${plan.workspaceRoot}`]);
     }
-    const expectedTaskDrift = new Set(['project.git_branch_drift', 'service.branch_mismatch']);
-    const actionable = before.report.findings || [];
-    if (plan.repositories.length > 1 && actionable.length > 0 && actionable.every((finding) => expectedTaskDrift.has(finding.code)) && !(before.report.findings || []).some((finding) => finding.status === 'error')) {
-      base.bootstrap.sync = { status: 'skipped', reason: 'task-environment-branch-drift' };
-      base.bootstrap.doctorAfter = doctorSummary(before.report);
+    if (beforeEnvironment.ready) {
+      base.bootstrap.sync = { status: 'skipped', reason: before.report.health?.ready === true ? 'doctor-ready' : 'task-environment-ready' };
+      base.bootstrap.doctorAfter = doctorSummary(before.report, beforeEnvironment);
       return base;
     }
     const identity = worktreeIdentity(plan.environmentRoot);
@@ -492,15 +622,16 @@ export function registerWorktreeApplication(runtime) {
       identity,
       expectedBranch: plan.branch,
       expectedHead: rootIdentity.head,
-      allowedCodes: plan.repositories.length > 1 ? [...expectedTaskDrift] : [],
+      environmentEvaluation: beforeEnvironment,
     })) {
       base.bootstrap.sync = { status: 'blocked', reason: 'doctor-findings-not-safe-for-automatic-sync' };
       return blockedResult(base, 'worktree.auto_sync_unsafe', 'Doctor findings are not limited to the selected Agent runtime stale allowlist.', before.report.nextSteps?.flatMap((step) => step.commands || step.command || []) || []);
     }
-    const synced = buildr(['sync', plan.agent, '--target', plan.environmentRoot]);
-    if (synced.status !== 0) {
-      base.bootstrap.sync = { status: 'blocked', reason: 'sync-failed' };
-      return blockedResult(base, 'worktree.sync_failed', (synced.stderr || synced.stdout || 'buildr sync failed').trim(), [`Inspect ${plan.environmentRoot}`]);
+    try {
+      runtime.renderRuntime(plan.agent, ['--target', plan.environmentRoot], { productSkill: true });
+    } catch (error) {
+      base.bootstrap.sync = { status: 'blocked', reason: 'runtime-render-failed' };
+      return blockedResult(base, 'worktree.runtime_render_failed', error.message || 'Buildr runtime render failed.', [`Inspect ${plan.environmentRoot}`]);
     }
     base.bootstrap.sync = { status: 'applied', reason: 'runtime-stale-only' };
     const finalIdentity = worktreeIdentity(plan.environmentRoot);
@@ -508,8 +639,10 @@ export function registerWorktreeApplication(runtime) {
       return blockedResult(base, 'worktree.post_sync_identity_changed', 'Workspace sync changed Git identity or left tracked changes; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
     }
     const after = readDoctor(plan.agent, plan.environmentRoot);
-    base.bootstrap.doctorAfter = doctorSummary(after.report);
-    if (!after.report || after.report.health?.ready !== true) return blockedResult(base, 'worktree.post_sync_doctor_failed', 'Final doctor did not report a ready Workspace; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
+    if (!after.report) return blockedResult(base, 'worktree.post_sync_doctor_failed', 'Final doctor did not return a valid report; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
+    const afterEnvironment = evaluateTaskEnvironmentDoctor({ report: after.report, repositories: plan.repositories });
+    base.bootstrap.doctorAfter = doctorSummary(after.report, afterEnvironment);
+    if (!afterEnvironment.ready) return blockedResult(base, 'worktree.post_sync_doctor_failed', 'Final doctor did not report an execution-ready task environment; task environment was retained.', [`Inspect ${plan.environmentRoot}`]);
     return base;
   }
 
@@ -577,18 +710,14 @@ export function registerWorktreeApplication(runtime) {
           });
           return printCreateResult(base, json);
         }
-        if (item.entityType === 'project') {
-          for (const relative of ['openspec/specs', 'openspec/knowledge', 'openspec/changes', 'services']) {
-            fs.mkdirSync(path.join(item.checkoutPath, relative), { recursive: true });
-          }
-        }
         repositoryResults.push(publicRepository(item, state, identity));
         if (item.selector === 'workspace') {
           base = { ...base, treeChanged, repositories: repositoryResults, worktree: { path: environmentRoot, branch, head: identity.head } };
         }
       }
+      ensureTaskEnvironmentProjectBaselines(plan);
       const rootIdentity = repositoryResults[0];
-      base = plan.repositories[0].preflightState === 'create'
+      base = treeChanged
         ? bootstrapRoot({ ...base, repositories: repositoryResults }, plan, worktreeIdentity(environmentRoot))
         : { ...base, repositories: repositoryResults, bootstrap: { doctorBefore: null, sync: { status: 'skipped', reason: 'reused-without-tree-transition' }, doctorAfter: null } };
       if (base.blocked) {
@@ -602,6 +731,10 @@ export function registerWorktreeApplication(runtime) {
       if (!expectedRuntime.projectionReady) {
         return printCreateResult(blockedResult(base, 'worktree.runtime_projection_not_ready', 'Checkout-local runtime projection is not ready for task execution.', [`Run buildr doctor --agent ${agent} --target ${environmentRoot} --json`]), json);
       }
+      const workspaceNode = runtime.workspaceNodeExecution(environmentRoot);
+      if (!workspaceNode.ready) {
+        return printCreateResult(blockedResult(base, 'worktree.workspace_node_not_ready', 'Workspace Node runtime is not ready for task execution.', [`Run buildr sync ${agent} --target ${environmentRoot}`]), json);
+      }
       receipt = {
         schemaVersion: RECEIPT_SCHEMA,
         taskId,
@@ -612,11 +745,13 @@ export function registerWorktreeApplication(runtime) {
         state: 'ready',
         repositories: repositoryResults,
         runtimeExpectation: expectedRuntime,
+        workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable },
         executionCli: expectedExecutionCliEvidence(workspaceRoot, environmentRoot),
         isolation: isolation(),
         updatedAt: new Date().toISOString(),
       };
       writeReceipt(workspaceRoot, receipt);
+      const cliProbe = probeTaskEnvironmentExecutionCli(receipt.executionCli, environmentRoot);
       return printCreateResult({
         ...base,
         repository: workspaceRoot,
@@ -626,10 +761,11 @@ export function registerWorktreeApplication(runtime) {
         state: treeChanged ? 'created' : 'reused',
         treeChanged,
         ready: true,
-        executionReady: true,
+        executionReady: cliProbe.status === 'passed',
         cliSource: receipt.executionCli.source,
         cliInvocation: receipt.executionCli.invocation,
-        executionBinding: {
+        cliProbe,
+        executionBinding: cliProbe.status === 'passed' ? {
           assurance: 'buildr-verified',
           target: environmentRoot,
           workdir: environmentRoot,
@@ -640,11 +776,13 @@ export function registerWorktreeApplication(runtime) {
           cliIdentity: receipt.executionCli.identity,
           checkoutLocal: receipt.executionCli.sourceKind === 'environment-local',
           runtimeProjectionIdentity: expectedRuntime.projectionIdentity,
-        },
+          workspaceNode: receipt.workspaceNode,
+        } : null,
         runtimeExpectation: expectedRuntime,
+        workspaceNode: receipt.workspaceNode,
         adoption: { status: 'not-required', receipt: null, currentSessionMatch: null },
-        blocked: null,
-        nextActions: [],
+        blocked: cliProbe.status === 'passed' ? null : { code: 'worktree.execution_cli_unavailable', message: 'Receipt-bound CLI exists but failed the executable version probe.' },
+        nextActions: cliProbe.status === 'passed' ? [] : ['Install the task checkout product dependencies, then rerun worktree context with the receipt-bound CLI.'],
       }, json);
     } catch (error) {
       return printCreateResult(blockedResult(base, 'worktree.preflight_failed', error.message), json);
@@ -719,9 +857,19 @@ export function registerWorktreeApplication(runtime) {
       const cliInvocation = currentCli.invocation;
     const cliWithinEnvironment = currentCli.sourceKind === 'environment-local';
     const cliIdentityMatches = executionCliMatches(receipt, currentCli);
+    const cliProbe = cliIdentityMatches ? probeTaskEnvironmentExecutionCli(currentCli, membership?.checkoutPath || receipt.environmentRoot) : null;
+    const cliExecutable = cliProbe?.status === 'passed';
     const runtimeIdentityMatches = Boolean(expectedRuntime && (!receipt.runtimeExpectation
       || receipt.runtimeExpectation.projectionIdentity === expectedRuntime.projectionIdentity));
-    const executionReady = ready && expectedRuntime?.projectionReady === true && runtimeIdentityMatches && cliIdentityMatches;
+    const workspaceNode = ready ? runtime.workspaceNodeExecution(receipt.environmentRoot) : null;
+    // Receipts created before Workspace Node governance are accepted once and
+    // bound to the currently declared identity in the returned execution context.
+    // Every newly created or reused environment writes the identity explicitly.
+    const legacyWorkspaceNodeReceipt = !receipt.workspaceNode;
+    const workspaceNodeIdentityMatches = Boolean(workspaceNode?.ready && (
+      legacyWorkspaceNodeReceipt || receipt.workspaceNode.identity?.digest === workspaceNode.identity?.digest
+    ));
+    const executionReady = ready && expectedRuntime?.projectionReady === true && runtimeIdentityMatches && workspaceNodeIdentityMatches && cliIdentityMatches && cliExecutable;
     const receiptCliSourceMatches = receipt.executionCli?.source === currentCli.source;
     const rootRepository = receipt.repositories.find((item) => item.selector === 'workspace') || receipt.repositories[0];
     const refreshCliBindingAction = receiptCliSourceMatches && rootRepository
@@ -740,12 +888,16 @@ export function registerWorktreeApplication(runtime) {
       cliInvocation,
       cliWithinEnvironment,
       cliIdentityMatches,
+      cliProbe,
       runtimeIdentityMatches,
+      workspaceNodeIdentityMatches,
+      legacyWorkspaceNodeReceipt,
+      workspaceNode: workspaceNode ? { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable, status: workspaceNode.status } : null,
       state: ready ? 'ready' : 'blocked',
       ready,
       executionReady,
-      executionBinding: executionReady ? { assurance: 'buildr-verified', target: requestPath, workdir: membership.checkoutPath, membership: membership.selector, cliSource, cliInvocation, cliSourceKind: currentCli.sourceKind, cliIdentity: currentCli.identity, checkoutLocal: cliWithinEnvironment, runtimeProjectionIdentity: expectedRuntime.projectionIdentity } : null,
-      environmentEvidence: expectedRuntime ? { assurance: 'buildr-verified', planDigest: receipt.planDigest, runtimeExpectation: expectedRuntime } : null,
+      executionBinding: executionReady ? { assurance: 'buildr-verified', target: requestPath, workdir: membership.checkoutPath, membership: membership.selector, cliSource, cliInvocation, cliSourceKind: currentCli.sourceKind, cliIdentity: currentCli.identity, checkoutLocal: cliWithinEnvironment, runtimeProjectionIdentity: expectedRuntime.projectionIdentity, workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable } } : null,
+      environmentEvidence: expectedRuntime ? { assurance: 'buildr-verified', planDigest: receipt.planDigest, runtimeExpectation: expectedRuntime, workspaceNode: workspaceNode ? { identity: workspaceNode.identity, executable: workspaceNode.executable, status: workspaceNode.status } : null } : null,
       sessionEvidence: adoption.receipt?.sessionEvidence || null,
       adoption,
       isolation: receipt.isolation || isolation(),
@@ -753,12 +905,20 @@ export function registerWorktreeApplication(runtime) {
         ? { code: membership ? 'worktree.context_identity_mismatch' : 'worktree.context_path_mismatch', message: membership ? 'One or more task environment repository identities do not match the receipt.' : 'Requested path is outside the task environment repository set.' }
         : !runtimeIdentityMatches
           ? { code: 'worktree.execution_runtime_stale', message: 'Checkout-local runtime projection identity no longer matches the task environment receipt.' }
+          : !workspaceNodeIdentityMatches
+            ? { code: 'worktree.execution_workspace_node_stale', message: 'Workspace Node identity or executable no longer matches the task environment receipt.' }
           : !cliIdentityMatches
             ? { code: 'worktree.execution_cli_mismatch', message: 'The current Buildr CLI identity does not match the task environment receipt.' }
+            : !cliExecutable
+              ? { code: 'worktree.execution_cli_unavailable', message: 'Receipt-bound CLI exists but failed the executable version probe.' }
             : null,
-      nextActions: ready && runtimeIdentityMatches && cliIdentityMatches
+      nextActions: ready && runtimeIdentityMatches && workspaceNodeIdentityMatches && cliIdentityMatches && cliExecutable
         ? []
-        : [refreshCliBindingAction || `Run buildr worktree inspect ${receipt.taskId} --target ${receipt.workspaceRoot} --json`],
+        : [!workspaceNodeIdentityMatches
+          ? `Run buildr sync ${receipt.agent} --target ${receipt.environmentRoot}, then reuse the task environment to refresh its receipt.`
+          : !cliExecutable && cliIdentityMatches
+          ? 'Install the task checkout product dependencies, then rerun worktree context with the receipt-bound CLI.'
+          : refreshCliBindingAction || `Run buildr worktree inspect ${receipt.taskId} --target ${receipt.workspaceRoot} --json`],
     };
   }
 
@@ -789,6 +949,143 @@ export function registerWorktreeApplication(runtime) {
       state: 'blocked', ready: false, isolation: isolation(), blocked: { code: 'worktree.receipt_missing', message: 'Task environment receipt was not found.' }, nextActions: [],
     }, json);
     return printContext(contextFromReceipt(receipt), json, false);
+  }
+
+  function printCleanup(result, json) {
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.worktreeCleanup, result);
+    if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else if (result.status === 'removed') console.log(`Task environment removed: ${result.environmentRoot}`);
+    else console.error(`Task environment cleanup blocked: ${result.blocked?.message || 'unknown reason'}`);
+    if (result.status !== 'removed') process.exitCode = 1;
+    return payload;
+  }
+
+  function cleanupBlocked({ workspaceRoot, taskId, receipt = null, code, message, repositories = [], branches = [], runtimeResources = [] }, json) {
+    return printCleanup({
+      taskId,
+      owner: receipt?.agent || null,
+      workspaceRoot,
+      environmentRoot: receipt?.environmentRoot || null,
+      status: 'blocked',
+      repositories,
+      branches,
+      runtimeResources,
+      receipts: { environment: 'retained', adoption: 'retained' },
+      blocked: { code, message },
+      nextActions: [message],
+    }, json);
+  }
+
+  function cleanupTaskEnvironment(args) {
+    const json = args.includes('--json');
+    const allowed = new Set(['--agent', '--target', '--integrated-ref', '--json']);
+    assertNoUnknownOptions(args, allowed, new Set(['--json']));
+    const positions = positionalArgs(args);
+    if (positions.length !== 1) throw new Error('worktree cleanup requires exactly one <task-id>.');
+    const taskId = positions[0];
+    if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
+    const workspaceRoot = fs.realpathSync(path.resolve(optionValue(args, '--target', process.cwd())));
+    const repository = gitText(workspaceRoot, ['rev-parse', '--show-toplevel']);
+    if (!repository || path.resolve(repository) !== workspaceRoot) throw new Error('worktree cleanup requires --target to be the retained Workspace root Git repository.');
+    const receipt = readReceipt(workspaceRoot, taskId);
+    if (!receipt) return cleanupBlocked({ workspaceRoot, taskId, code: 'worktree.cleanup_receipt_missing', message: 'Task environment receipt was not found.' }, json);
+    const agent = optionValue(args, '--agent', null);
+    if (!agent || !isSupportedAgent(agent)) throw new Error('worktree cleanup requires a supported --agent.');
+    if (agent !== receipt.agent) return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_owner_mismatch', message: `Cleanup Agent does not match environment owner: ${agent}.` }, json);
+    if (path.resolve(receipt.workspaceRoot) !== workspaceRoot || path.resolve(receipt.environmentRoot) !== path.join(workspaceRoot, '.worktrees', taskId)) {
+      return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_receipt_identity_mismatch', message: 'Task environment receipt does not match the canonical Workspace or environment path.' }, json);
+    }
+    const runtimeResources = taskRuntimeBlockers(workspaceRoot, receipt);
+    if (runtimeResources.length > 0) {
+      return cleanupBlocked({
+        workspaceRoot,
+        taskId,
+        receipt,
+        code: 'worktree.cleanup_runtime_active',
+        message: `Task-owned runtime resources must be stopped before cleanup: ${runtimeResources.map((item) => `${item.kind}:${item.id}`).join(', ')}.`,
+        runtimeResources,
+      }, json);
+    }
+
+    const integratedRefs = new Map();
+    try {
+      for (const value of optionValues(args, '--integrated-ref')) {
+        const separator = value.indexOf('=');
+        if (separator < 1 || separator === value.length - 1) throw new Error('--integrated-ref must use <selector>=<ref>.');
+        const selector = value.slice(0, separator);
+        if (integratedRefs.has(selector)) throw new Error(`Duplicate integrated ref selector: ${selector}`);
+        integratedRefs.set(selector, value.slice(separator + 1));
+      }
+    } catch (error) {
+      return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_integrated_refs_invalid', message: error.message }, json);
+    }
+    const selectors = receipt.repositories.map((item) => item.selector).sort();
+    const suppliedSelectors = [...integratedRefs.keys()].sort();
+    if (JSON.stringify(selectors) !== JSON.stringify(suppliedSelectors)) {
+      return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_integrated_refs_incomplete', message: `Integrated refs must exactly cover receipt selectors: ${selectors.join(', ')}.` }, json);
+    }
+
+    const repositoryEvidence = [];
+    for (const record of receipt.repositories) {
+      if (!fs.existsSync(record.checkoutPath)) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_checkout_missing', message: `Task checkout is missing: ${record.selector}.`, repositories: repositoryEvidence }, json);
+      }
+      const identity = worktreeIdentity(record.checkoutPath);
+      if (!identity || identity.repository !== path.resolve(record.checkoutPath) || identity.branch !== record.branch) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_identity_mismatch', message: `Task checkout identity does not match receipt: ${record.selector}.`, repositories: repositoryEvidence }, json);
+      }
+      if (!identity.clean) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_dirty', message: `Task checkout is dirty: ${record.selector}.`, repositories: [...repositoryEvidence, { selector: record.selector, status: 'blocked', head: identity.head, branch: identity.branch, clean: false }] }, json);
+      }
+      const integratedRef = integratedRefs.get(record.selector);
+      const target = gitText(record.sourceRepository, ['rev-parse', '--verify', `${integratedRef}^{commit}`]);
+      if (!target) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_integrated_ref_missing', message: `Integrated ref is unavailable for ${record.selector}: ${integratedRef}.`, repositories: repositoryEvidence }, json);
+      }
+      if (git(record.sourceRepository, ['merge-base', '--is-ancestor', identity.head, target]).status !== 0) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_not_integrated', message: `Task HEAD is not contained by ${record.selector} integrated ref ${integratedRef}.`, repositories: [...repositoryEvidence, { selector: record.selector, status: 'blocked', head: identity.head, branch: identity.branch, clean: true, integratedRef, integratedHead: target }] }, json);
+      }
+      const registered = parseWorktreeList(git(record.sourceRepository, ['worktree', 'list', '--porcelain']).stdout)
+        .find((entry) => path.resolve(entry.path) === path.resolve(record.checkoutPath));
+      if (!registered || registered.branch !== record.branch) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_registration_mismatch', message: `Git worktree registration does not match receipt: ${record.selector}.`, repositories: repositoryEvidence }, json);
+      }
+      repositoryEvidence.push({ selector: record.selector, status: 'ready', checkoutPath: record.checkoutPath, branch: record.branch, head: identity.head, clean: true, integratedRef, integratedHead: target });
+    }
+
+    const removedRepositories = [];
+    const removedBranches = [];
+    for (const evidence of [...repositoryEvidence].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
+      const record = receipt.repositories.find((item) => item.selector === evidence.selector);
+      const removed = git(record.sourceRepository, ['worktree', 'remove', record.checkoutPath]);
+      if (removed.status !== 0) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_remove_failed', message: `Failed to remove ${record.selector} worktree: ${(removed.stderr || removed.stdout).trim()}`, repositories: [...removedRepositories, { ...evidence, status: 'remove-failed' }], branches: removedBranches }, json);
+      }
+      removedRepositories.push({ ...evidence, status: 'removed' });
+      const deleted = git(record.sourceRepository, ['update-ref', '-d', `refs/heads/${record.branch}`, evidence.head]);
+      if (deleted.status !== 0) {
+        return cleanupBlocked({ workspaceRoot, taskId, receipt, code: 'worktree.cleanup_branch_remove_failed', message: `Failed to remove ${record.selector} local branch: ${(deleted.stderr || deleted.stdout).trim()}`, repositories: removedRepositories, branches: [...removedBranches, { selector: record.selector, branch: record.branch, status: 'remove-failed' }] }, json);
+      }
+      removedBranches.push({ selector: record.selector, branch: record.branch, head: evidence.head, status: 'removed' });
+    }
+
+    const adoptionFile = adoptionReceiptPath(workspaceRoot, taskId);
+    const environmentFile = receiptPath(workspaceRoot, taskId);
+    const adoptionStatus = fs.existsSync(adoptionFile) ? 'removed' : 'not-present';
+    if (fs.existsSync(adoptionFile)) removePath(adoptionFile);
+    removePath(environmentFile);
+    return printCleanup({
+      taskId,
+      owner: receipt.agent,
+      workspaceRoot,
+      environmentRoot: receipt.environmentRoot,
+      status: 'removed',
+      repositories: removedRepositories,
+      branches: removedBranches,
+      receipts: { environment: 'removed', adoption: adoptionStatus },
+      blocked: null,
+      nextActions: [],
+    }, json);
   }
 
   function adoptTaskEnvironment(args) {
@@ -862,10 +1159,19 @@ export function registerWorktreeApplication(runtime) {
     return printContext(contextFromReceipt(receipt, requestedPath, session), json, true);
   }
 
+  function resolveTaskEnvironmentContext(requestedPath) {
+    const resolved = path.resolve(requestedPath);
+    if (!fs.existsSync(resolved)) throw new Error(`Context target does not exist: ${resolved}`);
+    const receipt = findEnvironmentReceipt(resolved);
+    return receipt ? contextFromReceipt(receipt, resolved) : null;
+  }
+
   Object.assign(runtime, {
     createTaskWorktree,
+    cleanupTaskEnvironment,
     inspectTaskEnvironment,
     taskEnvironmentContext,
+    resolveTaskEnvironmentContext,
     adoptTaskEnvironment,
     parseWorktreeList,
   });

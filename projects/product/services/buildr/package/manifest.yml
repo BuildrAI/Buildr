@@ -48,7 +48,7 @@ capabilityContracts:
     target: skills/contracts/buildr/task-verification/v2.md
   - id: buildr.task-finish
     version: 1
-    description: 编排已验证任务的归档、集成、推送与本地收尾。
+    description: 通过固定五阶段执行器完成已具备收尾资格候选的交付，不在收尾中修复产品缺陷。
     path: package/targets/workspace/skills/contracts/buildr/task-finish/v1.md
     target: skills/contracts/buildr/task-finish/v1.md
   - id: buildr.task-asset-review
@@ -192,24 +192,15 @@ builtins:
     - id: task-finish
       path: package/targets/workspace/skills/buildr/task-finish
       target: skills/buildr/task-finish
-      description: 用户要求“收尾”、完成任务或自动完成已验证 Change 的归档、集成、推送与安全本地清理时使用；通过持久化 finish run 渐进执行并支持跨 session 恢复。
+      description: 用户要求“收尾”或交付已验证的 Change/code-only 候选时使用；retained metadata-only 可安全交接 Git 单项操作，产品缺陷返回研发流程。
       required: false
       provides:
         - capability: buildr.task-finish
           version: 1
       requires:
-        - capability: buildr.current-knowledge-maintenance
+        - capability: buildr.git-single-operation
           version: 1
-          mode: required
-        - capability: buildr.task-verification
-          version: 2
-          mode: required
-        - capability: buildr.task-worktree-lifecycle
-          version: 2
-          mode: required
-        - capability: buildr.git-task-integration
-          version: 1
-          mode: required
+          mode: optional
         - capability: buildr.task-asset-review
           version: 3
           mode: optional
@@ -379,7 +370,6 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-verification/references/project-verification-v1.md => skills/buildr/task-verification/references/project-verification-v1.md copy
   - package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
   - package/targets/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-finish/scripts/archive-rehearsal.mjs => skills/buildr/task-finish/scripts/archive-rehearsal.mjs copy
   - package/targets/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - package/targets/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
   - package/targets/workspace/skills/buildr/git-ops/SKILL.md => skills/buildr/git-ops/SKILL.md copy
@@ -401,6 +391,7 @@ templateVariables:
   - description
   - profile
   - workspaceId
+  - nodeVersion
   - project
   - projectId
 

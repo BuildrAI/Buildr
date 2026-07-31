@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-user-facing-terminology",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-87de7edc876c12f06b5a7f97113320379433391afea26c69eebc7c61b61ef39b",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "workspace-first-runtime-projection",
+      "title": "Buildr Core 要求简明表达",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Buildr Core 要求简明表达\nBuildr required Core MUST 要求 Agent 面向用户时优先使用常用、直接和简练的语言，避免使用不必要的专业术语。\n\n#### Scenario: Agent 说明方案或结果\n- **WHEN** Agent 向用户说明问题、方案、进度或结果\n- **THEN** Agent MUST 优先使用用户容易理解的简练语言\n- **AND** 只有准确表达所必需时才使用专业术语，并在需要时解释\n"
+    }
+  ]
+}

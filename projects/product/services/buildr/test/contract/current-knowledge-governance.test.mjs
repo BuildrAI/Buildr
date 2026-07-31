@@ -35,16 +35,24 @@ test('terminology 与 current knowledge contracts 具有稳定 identity 和固�
   assert.match(read(knowledgeV2), /`maintain` 不得创建该 sidecar/);
 });
 
-test('默认 providers、bindings 与 Task Finish required dependency 可解析为 ready', () => {
+test('默认 providers 与 bindings 可解析，Task Finish optional dependencies 不阻塞产品正常路径', () => {
   const graph = resolveSkillCapabilityGraph(WORKSPACE_TARGET, null, { runtime: 'codex' });
   const knowledge = graph.consumers.find((item) => item.consumer === 'current-knowledge-maintenance');
   const finish = graph.consumers.find((item) => item.consumer === 'task-finish');
   assert.ok(knowledge);
   assert.equal(knowledge.readiness, 'ready');
   assert.equal(knowledge.dependencies[0].selectedProvider.id, 'terminology-governance');
-  assert.ok(finish.dependencies.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.mode === 'required'));
-  assert.equal(finish.dependencies.find((item) => item.capability === 'buildr.current-knowledge-maintenance').selectedProvider.id, 'current-knowledge-maintenance');
+  assert.deepEqual(finish.dependencies.map((item) => [item.capability, item.mode]), [
+    ['buildr.git-single-operation', 'optional'],
+    ['buildr.task-asset-review', 'optional'],
+  ]);
   assert.equal(finish.readiness, 'ready');
+  const packageManifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const packagedFinish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
+  assert.deepEqual(packagedFinish.requires, [
+    { capability: 'buildr.git-single-operation', version: 1, mode: 'optional' },
+    { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
+  ]);
   const triage = graph.consumers.find((item) => item.consumer === 'task-triage');
   assert.equal(triage.readiness, 'ready');
   assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 2 && item.mode === 'optional'));
@@ -72,7 +80,7 @@ test('OpenSpec consumers 只声明 capability dependencies，archive 保持无�
   for (const id of ['openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs']) {
     assert.equal(dependency(id, 'buildr.current-knowledge-maintenance', 'required'), true, id);
   }
-  assert.equal(dependency('task-finish', 'buildr.current-knowledge-maintenance', 'required'), true);
+  assert.equal(dependency('task-finish', 'buildr.current-knowledge-maintenance', 'required'), false);
   assert.equal(skills.get('openspec-archive-change').requires, undefined);
 });
 
@@ -81,7 +89,7 @@ test('OpenSpec Component 通过 contributions 组合且不改写 external Skill 
   const fragments = component.contributions.skillFragments;
   assert.ok(fragments.some((item) => item.startsWith('openspec-explore@prepend=')));
   assert.ok(fragments.some((item) => item.startsWith('openspec-sync-specs@prepend=')));
-  assert.ok(fragments.some((item) => item.startsWith('task-finish#pre-verification=')));
+  assert.equal(fragments.some((item) => item.startsWith('task-finish#')), false);
   for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) {
     const source = read(path.join(WORKSPACE_TARGET, `skills/openspec/${id}/SKILL.md`));
     assert.match(source, /generatedBy: "1\.6\.0"/);

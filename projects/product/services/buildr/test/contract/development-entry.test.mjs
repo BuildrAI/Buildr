@@ -22,11 +22,15 @@ echo "${marker}|$*"
 }
 
 function run(entry, args, env) {
+  const cwd = env.BUILDR_TEST_CWD || os.tmpdir();
+  const executionEnv = { ...env };
+  delete executionEnv.BUILDR_TEST_CWD;
   return spawnSync(entry, args, {
     encoding: 'utf8',
+    cwd,
     env: {
       ...process.env,
-      ...env,
+      ...executionEnv,
     },
   });
 }
@@ -41,6 +45,36 @@ test('Project bridge 使用 PATH 中首个兼容 Node 启动 Service CLI', () =>
   const result = run(projectBridge, ['doctor', '--json'], { PATH: `${oldBin}:${currentBin}` });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^current\|.*bin\/buildr\.mjs doctor --json\n$/u);
+});
+
+test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Node', () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-workspace-'));
+  const workspace = path.join(fixture, 'workspace');
+  const appData = path.join(fixture, 'app-data');
+  const managed = path.join(appData, 'runtimes/node/22.4.1/darwin-arm64/bin/node');
+  const pathNode = path.join(fixture, 'path/node');
+  fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 22.4.1\n');
+  fakeNode(managed, '22.4.1', 'managed');
+  fakeNode(pathNode, '24.0.0', 'path');
+  const result = run(runner, ['--help'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: appData, PATH: `${path.dirname(pathNode)}:/usr/bin:/bin` });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^managed\|.*bin\/buildr\.mjs --help\n$/u);
+});
+
+test('受管 Node 缺失时仅 doctor/sync 可使用 bootstrap Node', () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-recovery-'));
+  const workspace = path.join(fixture, 'workspace');
+  const bootstrap = path.join(fixture, 'path/node');
+  fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 22.4.1\n');
+  fakeNode(bootstrap, '24.0.0', 'bootstrap');
+  const blocked = run(runner, ['project', 'create', 'demo'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(bootstrap)}:/usr/bin:/bin` });
+  assert.equal(blocked.status, 1);
+  assert.match(blocked.stderr, /Workspace Node runtime 22\.4\.1 is unavailable.*sync/u);
+  const recovery = run(runner, ['doctor', '--json'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(bootstrap)}:/usr/bin:/bin` });
+  assert.equal(recovery.status, 0, recovery.stderr);
+  assert.match(recovery.stdout, /^bootstrap\|.*doctor --json\n$/u);
 });
 
 test('BUILDR_NODE 优先于 PATH 且不兼容 override 会 fail fast', () => {

@@ -25,7 +25,9 @@ function run(args, expected = 0, fixtureRoot = root) {
   if (result.status !== expected) fail(`buildr ${args.join(' ')} exited ${result.status}, expected ${expected}: ${(result.stderr || result.stdout).trim()}`);
   const payload = args.includes('--json') && result.stdout.trim() ? JSON.parse(result.stdout) : null;
   if (payload && args[0] === 'openspec') {
-    const expectedSchema = args[1] === 'baseline' ? 'buildr.openspec-baseline/v1' : 'buildr.openspec-check/v1';
+    const expectedSchema = args[1] === 'baseline' ? 'buildr.openspec-baseline/v1'
+      : args[1] === 'converge' ? 'buildr.openspec-convergence/v1'
+        : args[1] === 'audit' ? 'buildr.openspec-convergence-audit/v1' : 'buildr.openspec-check/v1';
     if (payload.schemaVersion !== expectedSchema) fail(`Expected ${expectedSchema}, got ${payload.schemaVersion}`);
   }
   return payload;
@@ -44,11 +46,15 @@ function change(id, capability, kind, delta) {
   const isNew = kind === 'new';
   write(path.join(changesRoot, id, '.openspec.yaml'), 'schema: spec-driven\ncreated: 2026-07-11\n');
   write(path.join(changesRoot, id, 'proposal.md'), ['## Capabilities', '', '### New Capabilities', ...(isNew ? [`- \`${capability}\`: fixture`] : []), '', '### Modified Capabilities', ...(!isNew ? [`- \`${capability}\`: fixture`] : []), ''].join('\n'));
+  write(path.join(changesRoot, id, 'design.md'), '## Context\n\nFixture design.\n');
+  write(path.join(changesRoot, id, 'tasks.md'), '- [x] Complete fixture implementation\n');
   write(path.join(changesRoot, id, 'specs', capability, 'spec.md'), delta);
 }
 function removeChange(id) { fs.rmSync(path.join(changesRoot, id), { recursive: true, force: true }); }
 function baseline(id, options = []) { return run(['openspec', 'baseline', 'create', id, '--project', project, '--target', root, '--json', ...options]); }
 function check(id, stage, expected = 0) { return run(['openspec', 'check', id, '--stage', stage, '--project', project, '--target', root, '--json'], expected); }
+function converge(id, expected = 0) { return run(['openspec', 'converge', id, '--project', project, '--target', root, '--json'], expected); }
+function audit(id, expected = 0) { return run(['openspec', 'audit', id, '--project', project, '--target', root, '--json'], expected); }
 function assertError(result, code) { if (!result.findings.some((finding) => finding.code === code)) fail(`Expected finding ${code}: ${JSON.stringify(result.findings)}`); }
 
 const existing = requirement('Existing', '保留既有行为');
@@ -62,8 +68,9 @@ const cases = {
     if (result.status === 0 || !result.stderr.includes('Project is not registered')) fail('unknown Project must be rejected before sidecar access');
   },
   'safe-modified'() {
-    change('safe-modified', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('safe-modified');
-    if (!check('safe-modified', 'proposal').ok || !check('safe-modified', 'pre-sync').ok) fail('safe modified guards must pass');
+    change('safe-modified', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); const baselineResult = baseline('safe-modified');
+    const proposalResult = check('safe-modified', 'proposal');
+    if (baselineResult.deprecation?.status !== 'deprecated-compatible' || proposalResult.deprecation?.replacement !== 'openspec converge' || !check('safe-modified', 'pre-sync').ok) fail('legacy guards must pass with structured deprecation');
     canonical('demo', [modified, untouched]); if (!check('safe-modified', 'post-sync').ok) fail('safe modified post-sync must pass');
     const receipt = JSON.parse(fs.readFileSync(path.join(changesRoot, 'safe-modified', '.buildr', 'contract-pre-sync-receipt.json'), 'utf8'));
     if (!receipt.postSyncSpecIntegrities?.demo?.startsWith('sha256-')) fail('post-sync receipt must bind canonical integrity');
@@ -116,6 +123,48 @@ const cases = {
     canonical('upstream-archive', [preserved]); change('upstream-archive-safety', 'upstream-archive', 'modified', stale); write(path.join(changesRoot, 'upstream-archive-safety', 'design.md'), '# Design\n'); write(path.join(changesRoot, 'upstream-archive-safety', 'tasks.md'), '- [x] Archive safety fixture\n');
     runUpstream(['validate', 'upstream-archive-safety', '--strict'], projectRoot); const archived = runUpstream(['archive', 'upstream-archive-safety', '--yes', '--json'], projectRoot, 1);
     if (!/current spec contains scenario\(s\) not present|Refresh the change spec before archiving/.test(`${archived.stdout}\n${archived.stderr}`)) fail('OpenSpec archive must reject dropped scenario');
+  },
+  'convergence-transaction-safe'() {
+    change('convergence-safe', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const result = converge('convergence-safe');
+    if (result.status !== 'passed' || result.disposition !== 'archived' || result.commandCount < 3) fail(`convergence safe result incomplete: ${JSON.stringify(result)}`);
+    const canonicalContent = fs.readFileSync(path.join(specsRoot, 'demo', 'spec.md'), 'utf8');
+    if (!canonicalContent.includes('Requirement: Added')) fail('convergence did not apply canonical result');
+    const archived = fs.readdirSync(path.join(changesRoot, 'archive')).find((name) => name.endsWith('-convergence-safe'));
+    if (!archived) fail('convergence did not archive Change');
+    const buildrRoot = path.join(changesRoot, 'archive', archived, '.buildr');
+    const receipt = JSON.parse(fs.readFileSync(path.join(buildrRoot, 'convergence-receipt.json'), 'utf8'));
+    if (receipt.disposition !== 'archived' || fs.readdirSync(buildrRoot).some((name) => ['contract-pre-sync-receipt.json', 'deterministic-sync-plan.json', 'deterministic-convergence.json', 'convergence-recovery.json'].includes(name))) fail('new convergence wrote legacy sidecars');
+    const repeated = converge('convergence-safe');
+    if (repeated.status !== 'passed' || repeated.commandCount !== 0) fail('archived convergence repeat must be idempotent');
+    const audited = audit('convergence-safe');
+    if (audited.status !== 'passed' || audited.disposition !== 'archived' || audited.files.some((item) => !['before', 'expected'].includes(item.state))) fail('archived convergence audit must report actual file facts');
+  },
+  'convergence-audit-unprovable'() {
+    change('audit-missing', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const missing = audit('audit-missing', 2);
+    if (missing.status !== 'recovery-unprovable' || missing.diagnostic?.code !== 'convergence-receipt-unprovable') fail('missing receipt audit must fail closed');
+    removeChange('audit-missing');
+    change('audit-unknown', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    if (converge('audit-unknown').status !== 'passed') fail('audit fixture convergence failed');
+    fs.appendFileSync(path.join(specsRoot, 'demo', 'spec.md'), '\nmanual drift\n');
+    const unknown = audit('audit-unknown', 2);
+    if (unknown.status !== 'recovery-unprovable' || unknown.disposition !== 'state-unknown' || !unknown.files.some((item) => item.state === 'unknown')) fail('unknown audit must report per-file actual digest');
+  },
+  'convergence-transaction-conflict-and-disjoint'() {
+    change('same-a', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    change('same-b', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const blocked = converge('same-a', 2);
+    if (blocked.status !== 'blocked' || blocked.code !== 'semantic-resolution-required') fail('same Requirement changes must block');
+    removeChange('same-a'); removeChange('same-b');
+    const one = requirement('FirstDisjoint', '提供第一项不相交能力');
+    const two = requirement('SecondDisjoint', '提供第二项不相交能力');
+    change('disjoint-a', 'demo', 'modified', `## ADDED Requirements\n\n${one}`);
+    change('disjoint-b', 'demo', 'modified', `## ADDED Requirements\n\n${two}`);
+    if (converge('disjoint-a').status !== 'passed') fail('first disjoint Change must converge');
+    if (converge('disjoint-b').status !== 'passed') fail('second disjoint Change must replan and converge');
+    const actual = fs.readFileSync(path.join(specsRoot, 'demo', 'spec.md'), 'utf8');
+    if (!actual.includes('FirstDisjoint') || !actual.includes('SecondDisjoint')) fail('disjoint convergence overwrote prior canonical content');
   },
 };
 
@@ -172,8 +221,8 @@ async function main() {
       consumerCount: results.length,
       concurrency,
       wallClockMs: Date.now() - startedAt,
-      budgetMs: 20000,
-      withinBudget: Date.now() - startedAt <= 20000,
+      budgetMs: 30000,
+      withinBudget: Date.now() - startedAt <= 30000,
     };
     if (failed.length) {
       for (const item of failed) process.stderr.write(`[${item.name}] ${item.stderr || item.stdout}\nfixture: ${item.fixture}\n`);

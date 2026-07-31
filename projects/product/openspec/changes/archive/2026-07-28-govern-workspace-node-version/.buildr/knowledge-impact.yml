@@ -1,0 +1,33 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: govern-workspace-node-version
+operation: reconcile
+treeIdentity: 1413e126732228477c3c3e746d9249d85aeeb7b8
+impacts:
+  - type: brief
+    target: openspec/changes/govern-workspace-node-version/brief.md
+    reason: Change 需要人类可读的范围、核心恢复流程与验收摘要
+    status: updated
+    sourceIdentities:
+      - openspec/changes/govern-workspace-node-version/proposal.md
+      - openspec/changes/govern-workspace-node-version/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Workspace Node 声明、受管 runtime 与跨执行器 identity 是新的 runtime/data ownership 边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/govern-workspace-node-version/specs/workspace-node-toolchain/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 CLI、sync、doctor、verification 与 Finish 运行要求发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/govern-workspace-node-version/specs/npm-cli-package/spec.md
+      - openspec/changes/govern-workspace-node-version/specs/task-verification/spec.md
+      - openspec/changes/govern-workspace-node-version/specs/task-finish-execution/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 需要区分 Workspace Node version、Workspace Node identity、产品兼容范围与 Agent runtime identity
+    status: updated
+    sourceIdentities:
+      - openspec/changes/govern-workspace-node-version/design.md
+unresolvedItems: []

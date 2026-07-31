@@ -18,11 +18,14 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr project create <code> [--target <dir>] [--name <text>] [--description <text>] [--repo <git-url>] [--remote <name>] [--integration-branch <branch>]');
     console.error('  buildr service create <project>/<service> <repo-ref> [--target <dir>] [--name <text>] [--description <text>] [--type <type>] [--remote <name>] [--integration-branch <branch>] [--json]');
     console.error(`  buildr worktree create <task-id> --agent <${runtimeIds}> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]`);
+    console.error(`  buildr worktree cleanup <task-id> --agent <${runtimeIds}> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]`);
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
-    console.error('  buildr task finish <actions|inspect|advance|resume|renew|run|recover|cleanup-prepare|cleanup-finalize> [--run <id>] [--task <id> --change <id> --target-branch <branch>] [--action-context <json>] [--fingerprint <step>=<value> ...] [--execution-plan <json> | --execution-plans <json>] [--recovery <json>] [--repair-authorization <json>] [--ref-transition <json>] [--detail <compact|full>] [--json]');
-    console.error('  buildr openspec <sync-plan|sync-apply|converge> <change> --project <project> [--target <workspace>] [--json]');
+    console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--output <file>] [--json]');
+    console.error('  buildr task finish run --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--json]');
+    console.error('  buildr task finish inspect --run <id> [--target <workspace-or-task-environment>] [--json]');
+    console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
     console.error('  buildr mutation recover <transaction-id> [--target <dir>]');
     console.error('  buildr commands add <id> --purpose <text> [--target <dir>] [--collection <path>] [--executable <name>] [--name <text>] [--description <text>] [--version-constraint <constraint>] [--version-args <args>] [--install-hint <text>] [--replace]');
@@ -73,10 +76,12 @@ export function registerCommandHelp(runtime) {
       '  project create       创建或登记 Project。',
       '  service create       创建或登记 Service。',
       '  worktree create      创建或复用单仓或多仓 canonical task environment。',
+      '  worktree cleanup     按 receipt、owner 和 integrated ref 安全清理本地任务环境。',
       '  worktree inspect     检查 task environment 的仓库集合、身份和隔离边界。',
       '  worktree context     判断当前路径是否属于可执行的 task environment。',
       '  worktree adopt       核验并记录 Agent session 对 task environment runtime 的采用证据。',
-      '  task finish          持久化检查、推进或恢复可重入的任务收尾 run。',
+      '  verification run     按 Project verification.yml 执行受影响或完整候选验证。',
+      '  task finish          产品执行 preflight → prepare → verify → deliver → cleanup 固定收尾。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
       '  runtime list         列出 Buildr 支持的 Agent runtime adapter。',
@@ -94,7 +99,7 @@ export function registerCommandHelp(runtime) {
       '',
       'Product maintenance / workflow internals:',
       '  package check/build  校验或构建 Buildr 产品包。',
-      '  openspec baseline/check  供 Buildr OpenSpec workflow 管理契约基线与同步门禁。',
+      '  openspec converge/audit  执行单一收敛事务或只读审计；旧阶段命令仅作弃用兼容。',
       '',
       '表面分类说明用途与支持边界，不是权限或安全限制；以上命令仍可执行并可查看主题帮助。',
     ],
@@ -136,9 +141,9 @@ export function registerCommandHelp(runtime) {
       '列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。',
     ],
     'app preview stop': [
-      'Usage: buildr app preview stop <instance> [--json]',
+      'Usage: buildr app preview stop <instance> [--target <task-environment> --task <task-id> --owner <agent>] [--json]',
       '',
-      '使用该 preview 的实例 secret 安全停止它，或仅清理其陈旧记录；不会停止默认本机应用或其他 preview。',
+      'task preview 必须同时提供 receipt-bound environment、task 与 owner 并完全匹配；独立 retained preview 保持实例级停止。错误 owner 不会收到停止信号。',
     ],
     'app launcher install': [
       'Usage: buildr app launcher install [--channel <release|development>] [--target <dir>] [--json]',
@@ -187,6 +192,13 @@ export function registerCommandHelp(runtime) {
       'working tree/index 可隔离；Git objects/refs 仍共享。外部依赖沿用 Project 既有环境；只有多个任务会修改同一共享状态时才需要既有租户、账号、数据前缀、串行化或显式授权边界。',
       '该命令不承担任务理解、OpenSpec 选择、merge、rebase、push 或 cleanup policy。',
     ],
+    'worktree cleanup': [
+      `Usage: buildr worktree cleanup <task-id> --agent <${SUPPORTED_AGENT_IDS.join('|')}> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]`,
+      '',
+      '根据 task environment receipt 在写入前统一核对 owner、全部成员 checkout/branch/clean identity，以及每仓任务 HEAD 已被声明的 integrated ref 包含。',
+      '每个 receipt repository selector 必须恰好提供一个 --integrated-ref；通过后按 nested-first 删除本地 worktree，再以精确旧 HEAD 删除已集成的本地任务分支和 receipts。',
+      '该命令不停止 task-owned 进程、不删除远端分支、不强制删除 dirty checkout，也不授权放弃未集成提交；调用前必须先完成资源停止与集成。',
+    ],
     'worktree inspect': [
       'Usage: buildr worktree inspect <task-id> [--target <workspace>] [--json]',
       '',
@@ -204,6 +216,19 @@ export function registerCommandHelp(runtime) {
       '仅为 runtime 发现、加载或激活机制变更且专项验收明确要求时，记录 Agent/runtime host 提供的 activation evidence。普通 Rule/Skill 内容修改不需要。',
       'Buildr 直接核验 environment evidence；session evidence 标记为 agent-attested，不表示 Buildr 内省或密码学认证 Agent session。',
       '该 evidence 不参与普通 executionReady，也不表示 Buildr 能自动 reload、启动或 handoff Agent session。',
+    ],
+    'verification run': [
+      'Usage: buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--concurrency <n>] [--include-advisory] [--output <file>] [--candidate-fingerprint <identity>] [--json]',
+      '',
+      '读取已登记 Project 的 verification.yml，按依赖和显式 supersedes 构造 DAG，并发执行资源兼容的能力。',
+      '在 task environment 中运行时自动绑定 receipt、owner、repository set 和 allowed execution roots；显式 --environment/--owner 必须完全匹配。',
+      'coordinated 资源通过 Git common-dir lease 跨 task 排队；external 资源必须逐项 --authorize-resource。该命令执行验证，不创建任务或调度 Agent。',
+      '默认 evidence 为 transient；--output 指定 caller-managed summary。--json 返回 buildr.verification-run/v1。',
+    ],
+    'verification cleanup': [
+      'Usage: buildr verification cleanup --summary <file> [--json]',
+      '',
+      '只清理 buildr.verification-run/v1 声明的 provider-owned transient run directory；caller-managed、identity 不匹配、越界或不可证明的 legacy evidence 一律保留。',
     ],
     doctor: [
       'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
@@ -292,12 +317,22 @@ export function registerCommandHelp(runtime) {
     'openspec baseline create': [
       'Usage: buildr openspec baseline create <change> --project <project> [--target <dir>] [--adopt-current] [--update] [--json]',
       '',
-      '供 Buildr OpenSpec workflow 为 active change 显式创建或更新 Requirement 契约基线。不会安装或升级外部 OpenSpec CLI。',
+      '弃用兼容入口：为旧 workflow 创建 Requirement 契约基线；新 Task Finish 使用 openspec converge。',
     ],
     'openspec check': [
       'Usage: buildr openspec check <change> --stage <proposal|pre-sync|post-sync> --project <project> [--target <dir>] [--json]',
       '',
-      '供 Buildr OpenSpec workflow 检查 proposal、基线、活动 change 冲突和同步结果。',
+      '弃用兼容入口：检查旧 proposal、基线和阶段结果；新 Task Finish 使用 openspec converge。',
+    ],
+    'openspec converge': [
+      'Usage: buildr openspec converge <change> --project <project> [--target <dir>] [--json]',
+      '',
+      '产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。',
+    ],
+    'openspec audit': [
+      'Usage: buildr openspec audit <change> --project <project> [--target <dir>] [--json]',
+      '',
+      '只读比较唯一收敛回执的 before/expected 与当前实际摘要；不会写 canonical、回执或归档。',
     ],
     'component list': [
       'Usage: buildr component list [--target <dir>] [--json]',
@@ -373,6 +408,20 @@ export function registerCommandHelp(runtime) {
     ],
   };
 
+  const finishHelp = {
+    inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <workspace-or-task-environment>] [--detail <compact|full>] [--json]', required: '--run。', exclusive: '无。', surface: 'canonical Workspace 中的 durable finish run，只读。', effects: '无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。' },
+    run: { usage: 'Usage: buildr task finish run --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--detail <compact|full>] [--json]', required: '首次运行需要 --project 和 receipt-bound task environment；task identity 来自 environment receipt，--change 只对 Change 候选必需，省略时创建 code-only 候选；target branch 默认来自环境 start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'task checkout、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver、cleanup；产品缺陷终止 run 并返回 task-development，不在收尾中修复。' },
+  };
+  for (const [action, help] of Object.entries(finishHelp)) HELP_TOPICS[`task finish ${action}`] = [
+    help.usage,
+    '',
+    `必需参数：${help.required}`,
+    `互斥参数：${help.exclusive}`,
+    `Execution surface：${help.surface}`,
+    `安全副作用：${help.effects}`,
+    '新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。',
+  ];
+
   function commandTopic(rawArgs) {
     const [domain, action, runtime] = rawArgs.filter((arg) => !['--help', '-h'].includes(arg));
     if (!domain) return 'root';
@@ -380,8 +429,12 @@ export function registerCommandHelp(runtime) {
     if (domain === 'project' && action === 'create') return 'project create';
     if (domain === 'service' && action === 'create') return 'service create';
     if (domain === 'worktree' && action === 'create') return 'worktree create';
+    if (domain === 'worktree' && action === 'cleanup') return 'worktree cleanup';
     if (domain === 'worktree' && action === 'inspect') return 'worktree inspect';
     if (domain === 'worktree' && action === 'context') return 'worktree context';
+    if (domain === 'verification' && action === 'run') return 'verification run';
+    if (domain === 'verification' && action === 'cleanup') return 'verification cleanup';
+    if (domain === 'task' && action === 'finish' && Object.hasOwn(finishHelp, runtime)) return `task finish ${runtime}`;
     if (domain === 'runtime' && action === 'list') return 'runtime list';
     if (domain === 'mutation' && action === 'recover') return 'mutation recover';
     if (domain === 'runtime' && action === 'check') return 'runtime check';
@@ -391,6 +444,7 @@ export function registerCommandHelp(runtime) {
     if (domain === 'commands' && ['add', 'remove', 'check'].includes(action)) return `commands ${action}`;
     if (domain === 'openspec' && action === 'baseline' && runtime === 'create') return 'openspec baseline create';
     if (domain === 'openspec' && action === 'check') return 'openspec check';
+    if (domain === 'openspec' && ['converge', 'audit'].includes(action)) return `openspec ${action}`;
     if (domain === 'component' && ['list', 'check', 'install', 'uninstall'].includes(action)) return `component ${action}`;
     if (domain === 'rules' && ['add', 'remove'].includes(action)) return `rules ${action}`;
     if (domain === 'builtin' && ['list', 'uninstall', 'restore'].includes(action)) return `builtin ${action}`;
