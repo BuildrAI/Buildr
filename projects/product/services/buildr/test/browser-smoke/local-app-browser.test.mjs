@@ -380,5 +380,28 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 90_000 }, async (t)
     assert.equal(await page.locator('#action-copy-state').innerText(), '变更文件未被修改。');
   });
 
+  if (selected('change')) await t.test('无已登记项目时创建变更显示空态且不可提交', async () => {
+    await page.goto(url);
+    await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
+    const emptyTarget = page.locator('#workspace-grid .workspace-card').filter({ has: page.locator('h2').filter({ hasText: /^other-workspace$/ }) });
+    await unique(emptyTarget, '无项目工作空间卡片');
+    await emptyTarget.getByRole('link', { name: '进入工作空间' }).click();
+    await page.waitForURL(/\/workspaces\/[^/]+\/?$/);
+    const emptyWorkspaceUrl = page.url().replace(/\/?$/, '');
+    await page.goto(`${emptyWorkspaceUrl}/changes`);
+    await unique(page.getByRole('button', { name: '让 Agent 创建变更', exact: true }), '无项目时创建变更操作');
+    await page.getByRole('button', { name: '让 Agent 创建变更', exact: true }).click();
+    await page.locator('#action-project').waitFor({ state: 'visible' });
+    await page.locator('#action-project option', { hasText: '请先创建项目' }).waitFor({ state: 'attached' });
+    assert.equal(await page.locator('#action-project').evaluate((element) => element.tagName), 'SELECT');
+    assert.equal(await page.locator('#action-project option').count(), 1);
+    assert.equal(await page.locator('#action-project option').first().textContent(), '请先创建项目');
+    assert.equal(await page.locator('#action-project').inputValue(), '');
+    await page.locator('#action-goal').fill('尝试在无项目工作空间创建变更');
+    assert.equal(await page.locator('#agent-action-form').evaluate((form) => form.reportValidity()), false, '无所属项目时表单不得通过校验');
+    assert.equal(await page.locator('#action-prompt-output').count(), 0);
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
+  });
+
   assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
 });
