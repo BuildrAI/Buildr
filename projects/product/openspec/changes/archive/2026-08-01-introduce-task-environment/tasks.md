@@ -26,7 +26,7 @@
 - [x] 3.5 实现 A 类迁移：正式 Task + identity-matching live worktree 生成 v2 Receipt/Git evidence、重新 probe，成功后删除旧 receipt/adoption state
 - [x] 3.6 实现 B/C 类清退：无 Task 的 live worktree 只保留 Git evidence并删除旧环境 receipt；无 live resource 的 stale receipt 在证明后删除；均不创建 Task/v2 Receipt
 - [x] 3.7 实现 D 类阻断：identity/ownership 冲突时原样保留 bytes/资源，阻止该 Workspace authority 切换并返回唯一解决动作
-- [ ] 3.8 切换前重新枚举 retained Workspace 的真实 v1 receipts（探索快照为 33 份），记录逐项 A/B/C/D 分类和迁移结果；候选已记录只读分类 A=1/B=1/C=31/D=0，实际迁移结果待 retained cutover 回填
+- [x] 3.8 切换前重新枚举 retained Workspace 的真实 v1 receipts（探索快照为 33 份），记录逐项 A/B/C/D 分类和迁移结果；retained cutover 已完成，实际迁移结果为 A=1/B=1/C=31/D=0
 
 ## 4. 确定性 prepare、ready 与恢复
 
@@ -63,4 +63,4 @@
 - [x] 7.6 更新 Change Brief 并运行 current knowledge assess；实现稳定后更新 glossary、overview、产品/技术架构、OpenSpec lifecycle flow 和 Buildr Service，只描述已交付事实
 - [x] 7.7 在 retained Roadmap 未提交更新已由其原任务安全进入 source 后，修正 P0.2 的 Application/CLI/Local App/Change Resolver、`environment.json`/窄 provider evidence、worktree 术语、P1.2 边界与一次性迁移表述；不得覆盖当前 retained 修改
 - [x] 7.8 完成实现与 knowledge reconcile 后运行 OpenSpec strict、proposal/implementation contract guard、affected/Candidate verification 和本任务验证工作区 runtime 验收；确认 retained/peer checkout/runtime 全程未被候选提前修改
-- [ ] 7.9 候选集成后仅从 retained Product source 执行 sync/render/doctor；重新应用并复核 A=1/B=1/C=31/D=0 迁移结果，将 `product/introduce-task-environment` 写入正式 Task Record，再通过 residual gate 后声明 P0.2 authority 生效
+- [x] 7.9 候选集成后仅从 retained Product source 执行 sync/render/doctor；已复核 A=1/B=1/C=31/D=0 迁移结果、将 `product/introduce-task-environment` 写入正式 Task Record，并通过 Doctor 与 package residual gate，P0.2 authority 已生效

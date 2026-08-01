@@ -7,34 +7,34 @@
 ## Requirements
 
 ### Requirement: 双任务并发组合验收
-Buildr MUST 提供可重复的双任务并发组合验收，在同一临时 Workspace 中使用两个真实 task environment 覆盖 receipt 绑定 CLI 的实际执行、包含嵌套独立仓库的完整 repository membership、Local App 预览并发启动、验证资源协调、目标分支竞态、可恢复收尾和产品化归属清理，并 MUST 输出可归因到两个任务的结构化证据。
+Buildr MUST 提供可重复的双正式 Task 组合验收，在同一临时 canonical Workspace 中使用两个 Task Environment，覆盖 Environment Receipt 绑定 CLI 的实际执行、包含嵌套独立仓库的完整 scope、Local App Preview 并发启动、验证资源协调、目标分支竞态、可恢复收尾和 Environment cleanup，并 MUST 输出可归因到两个 Task 的结构化证据。
 
 #### Scenario: 两个任务从不同执行目录运行专属 CLI
-- **WHEN** Candidate 验收创建两个任务环境，并分别从 Workspace、Product 或 Service cwd 调用 receipt 返回的绝对 CLI invocation
-- **THEN** 每个 invocation MUST 实际执行成功并绑定自己的 task environment、checkout、CLI identity 和允许执行范围
-- **AND** 调用 MUST 不依赖 cwd，也不得解析或误用另一任务的 checkout
+- **WHEN** Candidate 验收创建两个正式 Task、分别准备 ready Task Environment，并从 canonical Workspace 或其中一个 Project 执行根调用 Environment Receipt 返回的绝对 CLI invocation
+- **THEN** 每个 invocation MUST 实际执行成功，并通过 `task environment inspect <task-id> --target <canonical-workspace>` 绑定自己的 Task、scope、controller identity 和允许执行范围
+- **AND** 调用 MUST 不依赖 cwd、`worktree context` 或 caller/session adoption，也不得解析或误用另一 Task 的执行根
 
 #### Scenario: 多仓任务环境保持完整成员边界
-- **WHEN** 临时 Workspace 登记入口仓库和至少一个嵌套独立仓库，并为两个任务创建相同 repository plan 的环境
-- **THEN** 每个环境 MUST 在 canonical source path 包含各自的嵌套 checkout
-- **AND** receipt、context 与 CLI 执行证据 MUST 列出完整且互不串扰的 repository membership 和 allowed execution roots
+- **WHEN** 临时 Workspace 登记入口仓库和至少一个嵌套独立仓库，并为两个 Task 准备相同 scope plan 的环境
+- **THEN** 每个环境 MUST 在 canonical `source.path` 包含各自的嵌套 checkout
+- **AND** Environment Receipt 与 CLI 执行证据 MUST 列出完整且互不串扰的 scope、Git provider evidence 和 allowed execution roots
 
 #### Scenario: 两个任务并发运行且互不串扰
-- **WHEN** Candidate 验收并发启动两个任务各自的预览和验证 run
-- **THEN** 两个任务 MUST 使用各自 receipt 绑定的 checkout 与绝对 CLI invocation，并使用不同的状态目录、实例身份和端口
-- **AND** 普通消费 Workspace MAY 共享同一外部产品 CLI identity，但 invocation 的 environment binding MUST 可区分且不得依赖 cwd
-- **AND** 可并行资源 MUST 同时执行，共享容量资源 MUST 按声明排队并记录归属和等待证据
+- **WHEN** Candidate 验收并发启动两个 Task 各自的 Preview 和正式 `verification run`
+- **THEN** 两个 Task MUST 使用各自 Environment Receipt 绑定的执行根与绝对 CLI invocation，并使用不同的状态目录、实例身份和端口
+- **AND** 普通消费 Workspace MAY 共享同一稳定 controller identity，但 environment binding MUST 通过 Task ID 和 canonical Workspace 明确区分，且不得依赖 cwd
+- **AND** 可并行资源 MUST 同时执行，共享容量资源 MUST 按声明排队并记录 Task 归属和等待证据
 
 #### Scenario: 目标分支发生竞态
-- **WHEN** 一个任务完成目标 ref observation 后另一个任务推进同一目标分支
-- **THEN** 前一个任务 MUST 返回 `target-race` 并停止覆盖新的目标 ref
+- **WHEN** 一个 Task 完成目标 ref observation 后另一个 Task 推进同一目标分支
+- **THEN** 前一个 Task MUST 返回 `target-race` 并停止覆盖新的目标 ref
 - **AND** 通过正式收尾恢复入口继续时，MUST 只重跑失效步骤及其下游，并保留已通过且仍有效的步骤证据
 
 #### Scenario: 整体验收完成清理
-- **WHEN** 双任务场景成功或失败后进入清理
-- **THEN** Buildr MUST 通过产品清理入口只停止和删除各任务拥有的预览、租约、worktree 与本地任务分支
-- **AND** 对不匹配的 owner、environment 或 receipt MUST fail closed，不得由验收脚本绕过产品归属检查直接删除
-- **AND** retained checkout MUST 保持健康且不得残留任务运行状态
+- **WHEN** 双 Task 场景成功或失败后进入清理
+- **THEN** Buildr MUST 先通过产品资源入口停止或释放各 Task 拥有的 Preview 与验证资源，再在 Task 完成或明确放弃后调用 `task environment cleanup`
+- **AND** Environment cleanup MUST 编排 provider cleanup；验收脚本不得绕过 Environment Receipt 直接删除 checkout、任务分支或其他 Task 的资源
+- **AND** 清理任一 Task 后，另一 Task 的环境 MUST 仍可检查，retained checkout MUST 保持健康且不得残留任务运行状态
 
 ### Requirement: 并发验收证据
 整体验收 MUST 返回版本化摘要，记录两个任务的环境、实际 CLI 执行与 identity、多仓 membership、预览并发与端口、资源协调、目标竞态和恢复、产品清理结果、retained doctor 和真实 wall-clock；任一必需阶段缺失、子进程无完整终态或结构化输出不可解析时 MUST 失败并提供确定性诊断，而非推断通过。
@@ -59,9 +59,9 @@ Candidate 双任务组合验收 MUST 在普通临时 Buildr Workspace 中使用 
 - **AND** 两份摘要 MUST 分别绑定自己的 environment、candidate 与非空 `evidenceIdentity`
 
 ### Requirement: 双任务验收必须覆盖 runtime 所有权负向清理
-Candidate 双任务组合验收 MUST 证明错误 owner 无法停止另一 task 的 preview，且运行中 task-owned preview/process 会阻止 worktree cleanup；最终清理 MUST 通过产品入口由真实 owner 完成。
+Candidate 双任务组合验收 MUST 证明错误 Task 无法停止另一 Task 的 Preview，且 active Task 未取得完成或明确放弃资格时无法执行 Environment cleanup；最终清理 MUST 由 Task Environment 通过已登记的资源与 provider evidence 完成。
 
 #### Scenario: 错误 owner 与提前清理均被拒绝
-- **WHEN** task A 尝试停止 task B 的 preview，或 task B 在 preview 存活时请求 cleanup environment
-- **THEN** 两个动作 MUST 在不改变 task B 运行状态或 checkout 的情况下失败
-- **AND** task B 使用正确 receipt 停止 preview 后，正式 cleanup MUST 成功且 retained Workspace 保持健康
+- **WHEN** Task A 尝试停止 Task B 的 Preview，或 active Task B 在 Preview 存活时请求 `task environment cleanup`
+- **THEN** 两个动作 MUST 在不改变 Task B 资源、Environment Receipt 或 checkout 的情况下失败
+- **AND** Task B 使用正确 Task identity 停止 Preview，并完成或明确放弃后，Environment cleanup MUST 成功且 retained Workspace 保持健康

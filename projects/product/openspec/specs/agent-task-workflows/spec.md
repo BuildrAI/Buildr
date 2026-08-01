@@ -186,67 +186,6 @@ Buildr Git Ops Skill MUST 对任务分支采用 rebase-first、fast-forward-only
 - **THEN** Agent MUST 停止并报告冲突
 - **AND** Agent MUST 等待用户确认后继续
 
-### Requirement: Task worktree 提供 change 单写入与验证证据边界
-Buildr task triage 和 OpenSpec propose guidance MUST 在首次写入预计进入实现的 OpenSpec change artifacts 前完成执行位置判断，并在需要隔离开发时先创建或复用 canonical task environment；采用 environment 后必须保持唯一任务写入位置和显式 repository set。worktree lifecycle 与 Git integration providers MUST 只返回各自动作产生的 environment/candidate identity 和 transition evidence，由独立 task-verification capability 管理验证政策与 Candidate evidence。
-
-#### Scenario: Task triage 独立判断执行形态和任务位置
-- **WHEN** Agent 使用 task triage 判断修改、修复、实现或文档任务
-- **THEN** task triage MUST 在语义路径之外独立判断执行形态为 implementation、metadata-only 或待确认
-- **AND** it MUST 输出 task environment 创建、复用、不需要或待确认的任务位置结论、repository set 及依据
-
-#### Scenario: 实现型 change 在 propose 前创建 task environment
-- **WHEN** task triage 选择 change-flow，且任务预计包含代码修改、构建、测试或长期实现上下文
-- **THEN** Agent MUST 在创建 OpenSpec change artifacts 前创建或复用 canonical task environment
-- **AND** proposal、design、specs、tasks、实现和候选验证 MUST 只写入该 environment 的允许执行根
-
-#### Scenario: 直接 propose 仍执行 task environment 门禁
-- **WHEN** 用户意图直接命中 installed OpenSpec propose Skill
-- **THEN** Buildr OpenSpec contribution MUST 在 `openspec new change` 或其他 artifact 写入前判断任务是否预计进入代码修改、构建、测试或长期开发上下文
-- **AND** 需要隔离开发时 MUST 先创建或复用 canonical task environment 并在该 environment 中继续 propose
-- **AND** 无法判断执行形态或 repository set 时 MUST 先澄清而不是提前创建 artifacts
-
-#### Scenario: 纯元内容任务不创建 task environment
-- **WHEN** 任务明确只维护 OpenSpec artifacts、规则、Skills、文档或模板，且不进入代码实现、构建或测试
-- **THEN** Agent MAY 在当前 Workspace 直接维护这些元内容
-- **AND** Agent MUST 在任务升级为实现前重新执行 task environment 决策
-
-#### Scenario: code-only 实现仍使用 task environment
-- **WHEN** task triage 选择 code-only 且任务预计进入代码修改、构建、测试或长期开发上下文
-- **THEN** Agent MUST 创建或复用 canonical task environment
-- **AND** Agent MUST NOT 因为不创建 OpenSpec change 而跳过任务隔离和 repository set 判断
-
-#### Scenario: artifacts 任务升级为实现
-- **WHEN** 未使用 task environment 的 OpenSpec 任务后来需要代码实现、构建或测试
-- **THEN** Agent MUST 先创建或复用 task environment 并将 change artifacts 收敛到该唯一位置
-- **AND** Agent MUST 清除原工作区的重复副本并确认原 Workspace checkout 没有该任务的开发改动后再继续
-
-#### Scenario: 开发命令使用 environment context
-- **WHEN** Agent 在 task environment 中执行 Buildr CLI、代码生成、构建、测试或启动 task-owned 本机进程
-- **THEN** Agent MUST 使用 environment root 或目标成员 repository checkout 作为明确 workdir
-- **AND** Buildr CLI target、checkout-local CLI source 和 task environment context MUST 相互匹配
-- **AND** context mismatch MUST 在结果进入正式验证或收尾前 fail closed
-
-#### Scenario: 最终候选 identity 交给验证 provider
-- **WHEN** task environment 中的全部内容修改已经结束并准备验证最终候选
-- **THEN** task-worktree provider MUST 提供当前 environment identity、repository set、各 checkout 的 clean/dirty 状态和可确认 tree/fingerprint identity 输入
-- **AND** selected task-verification provider MUST 负责建立最终 multi-repository candidate identity、执行项目要求的验证并返回绑定该 environment 的 evidence
-
-#### Scenario: Git 集成改变候选内容
-- **WHEN** 任一 repository 的 rebase、冲突解决、merge、reset 或其他 Git integration 操作使集成后的内容 identity 不同于输入 candidate
-- **THEN** selected Git provider MUST 返回该 repository 操作前后 identity 和 `treeChanged` evidence
-- **AND** selected Git provider MUST NOT 执行 Candidate 验证或决定既有 evidence 是否可复用
-- **AND** selected task-verification provider or its consumer MUST 根据当前 environment repository candidate set 决定 evidence 失效与重新验证
-
-#### Scenario: Worktree provider 只报告 lifecycle transition
-- **WHEN** task-worktree provider 创建、复用、检查、保留或清理 canonical task environment
-- **THEN** it MUST 返回 lifecycle state、environment root、repository set、任务分支和由本次 checkout 操作产生的 transition evidence
-- **AND** it MUST NOT 监控普通编辑、判断 Git integration 内容等价性或决定验证复用与重跑
-
-#### Scenario: 上游 OpenSpec Skill 保持原文
-- **WHEN** Buildr 为 OpenSpec propose 增加执行位置门禁
-- **THEN** Buildr MUST 通过 Component-owned Skill contribution 组合该 guidance
-- **AND** Buildr MUST NOT 修改外部 `openspec-propose` Skill 的上游正文
-
 ### Requirement: OpenSpec apply 保持 canonical specs 直到受控同步阶段
 Buildr OpenSpec apply guidance MUST 要求 Agent 在 active change 的实现阶段只修改 change artifacts 与实现内容，MUST NOT 在当前会话的 `pre-sync` contract guard 成功前写入该 change 的 canonical specs。Agent MUST 在 pre-sync 成功后执行 agent-driven canonical sync，并在 `post-sync` guard 返回 `ok: true` 后才使用 `openspec archive <change> --skip-specs --yes`。
 
@@ -611,22 +550,22 @@ Buildr OpenSpec workflow MUST 在 propose/update 阶段 assess，在 apply 阶�
 - **AND** archive 完成后 MUST NOT 触发 glossary、overview、architecture、flows 或 services 写入
 
 ### Requirement: 实现型 workflow 必须绑定 task execution context
-Buildr 的 task triage、task-worktree 与 OpenSpec Skills MUST 在写入前核对 canonical task environment 与明确 execution binding。普通 workflow MUST NOT 以 session root 等于 environment root 或 session adoption receipt 作为执行前置条件。
+Buildr 的 task triage、Task Environment 与 OpenSpec Skills MUST 在写入前核对 matching Environment Receipt、实际 execution binding 和稳定 controller identity。普通 workflow MUST NOT 以 session root 等于 environment root 或 Agent session adoption receipt 作为执行前置条件。
 
-#### Scenario: Triage 创建 environment 后在原对话继续
-- **WHEN** task triage 创建 canonical task environment，且当前 Agent 能使用明确 target/workdir 和 checkout-local CLI
-- **THEN** task-worktree provider MUST 返回 task、change、environment、repository set、allowed execution roots 与 runtime projection identity
-- **AND** 当前用户对话 MUST 能在 context 返回 `executionReady: true` 后继续写入
+#### Scenario: Triage 准备 Environment 后在原对话继续
+- **WHEN** task triage 取得 matching `ready` Environment Receipt，且当前 Agent 能使用结果中的明确 target/workdir 与执行 CLI
+- **THEN** Task Environment MUST 返回 task、Workspace、工作范围、允许执行根、controller/CLI 与 runtime projection identity
+- **AND** 当前用户对话 MUST 能在 binding 通过后继续写入，不要求迁移 Agent session
 
-#### Scenario: 明确工作目录绑定 environment
-- **WHEN** 命令 target、workdir、repository membership 和 checkout-local CLI identity 匹配 environment receipt
+#### Scenario: 明确工作目录绑定 Environment
+- **WHEN** 命令 target、workdir、scope membership、执行 CLI、Runtime/依赖和 projection identity 匹配 Environment Receipt 的最新真实 probe
 - **THEN** workflow MUST 将其视为有效 execution binding
 - **AND** MUST NOT 因 Agent session 从 canonical Workspace 启动而阻塞 proposal、实现、构建、测试或验证
 
 #### Scenario: Execution binding 漂移
-- **WHEN** target、workdir、repository identity 或 runtime projection 与 environment receipt 不匹配
+- **WHEN** target、workdir、scope/provider identity、Runtime/CLI、依赖或 runtime projection 不再匹配 receipt
 - **THEN** workflow MUST fail closed 并报告精确差异
-- **AND** MUST NOT 通过创建第二份纯 checkout 规避 identity mismatch
+- **AND** MUST NOT 通过直接调用 worktree provider、创建第二份 checkout 或沿用旧 `ready` 规避 mismatch
 
 ### Requirement: Workflow 按任务影响验证 adapter activation
 只有任务修改 runtime adapter 的 discovery、loading、activation mode、投射路径或相关 metadata，且专项验收要求证明新机制已激活时，workflow MUST 消费 adapter activation metadata。普通 Rule/Skill 内容、contract 或 description 修改 MUST NOT 触发新 session 门禁；该专项 evidence MUST NOT 阻塞普通 workflow。
@@ -843,3 +782,72 @@ P0.1 实现完成、集成并投射到 retained runtime 后，新正式 Task MUS
 - **WHEN** 后续 Change 实现与现有模块事实重叠的新 authority
 - **THEN** 该 Change MUST 同时迁移或保留必要历史读取、切换 consumer/routing 并删除或关闭旧 mutation path
 - **AND** MUST NOT 把已知清退工作统一延迟到完整主闭环之后
+
+### Requirement: task-environment Skill 必须作为环境生命周期入口
+Buildr MUST 交付名为 `task-environment` 的 workspace Skill，并 MUST 用精确 routing description 将它限制在正式 Task 的环境准备、检查、串行恢复和 cleanup。Skill MUST 通过公共 `buildr task environment prepare|inspect|cleanup` CLI 消费 selected `buildr.task-environment/v1`；它 MUST NOT 成为 Task dispatcher、Git 集成入口、验证执行器，也 MUST NOT 指导 Agent 手写 Receipt 或调用内部资源动作。
+
+#### Scenario: 正式 Task 请求准备或恢复环境
+- **WHEN** 用户或上游 Skill 要求为已有 Task 准备、检查、恢复或清理执行环境
+- **THEN** Agent MUST 使用 `task-environment` 调用对应公共 CLI，并报告 Task ID、`ready / blocked`、实际执行位置、关键 resources/effects 与 next action
+- **AND** MUST NOT 直接手写 Environment Receipt 或把 `task-worktree` 结果当作最终环境结论
+
+#### Scenario: 用户明确管理 Git worktree
+- **WHEN** 用户只要求创建、检查、保留或删除特定 Git worktree/本地任务分支
+- **THEN** `task-worktree` MAY 作为窄 Git provider Skill 处理该意图
+- **AND** MUST NOT 抢占 Task Environment 的 Runtime、依赖、projection、资源、恢复或总 cleanup authority
+
+#### Scenario: Task 外临时操作
+- **WHEN** 请求只是纯讨论、只读探索、单次测试、临时服务或 Agent host task/thread 管理
+- **THEN** `task-environment` MUST NOT 仅因存在本机执行效果而自动创建正式 Task/receipt
+- **AND** 适用入口 MUST 保持原有语义
+
+### Requirement: 正式持久交付必须经过 Task Environment ready 门槛
+Buildr task triage、OpenSpec propose contribution 与已知正式执行入口 MUST 在首次修改交付物、构建、测试或创建 Task-owned 持久资源前取得 matching `ready` Environment Receipt。任务位置判断 MUST 与 change-flow/code-only 语义判断正交；采用环境后，proposal、design、specs、tasks、实现和候选验证 MUST 只写入 receipt 允许的执行根。
+
+#### Scenario: Triage 选择 Change Flow
+- **WHEN** Task Record 已建立，task-triage 选择 change-flow 且即将创建首份预计进入实现的 OpenSpec artifact
+- **THEN** Agent MUST 先通过 Task Environment 准备或恢复实际执行位置
+- **AND** 只有 `ready` 后才 MUST 在该允许根创建 Change artifacts
+
+#### Scenario: 直接命中 OpenSpec propose
+- **WHEN** 用户意图直接命中 installed `openspec-propose`，且任务预计修改代码、构建、测试或保留长期实现上下文
+- **THEN** Buildr-owned contribution MUST 在 `openspec new change` 前核对正式 Task 与 `ready` Environment Receipt
+- **AND** MUST 通过 `task-environment` 而不是直接调用 Git worktree provider
+
+#### Scenario: Code-only 实现
+- **WHEN** 正式 Task 不需要 OpenSpec Change 但即将进入代码修改、构建或测试
+- **THEN** Agent MUST 取得同样的 `ready` Environment Receipt
+- **AND** MUST NOT 因没有 Change 而跳过实际执行根、依赖与资源边界
+
+#### Scenario: 只有 lifecycle metadata 写入
+- **WHEN** 已有 Task 的 Environment/Development/Verification/Finish/Retrospective Skill 只在 canonical Workspace 维护自己的 receipt/result，且不触发新的执行环境效果
+- **THEN** workflow MUST NOT 为该 metadata 写入重新准备或恢复已清理环境
+- **AND** MUST 保持各专业 writer 的 canonical metadata authority
+
+#### Scenario: Candidate 交给 Task Verification
+- **WHEN** Environment 中的内容修改结束并形成待验证候选
+- **THEN** Task Environment MUST 提供 Task、工作范围、执行根、provider evidence refs 与 runtime source/projection identity
+- **AND** Task Verification MUST 独占 Candidate identity、验证政策、实际执行和 evidence，包括适用的 Agent session proof
+
+### Requirement: 任务 Skills 必须消费新的 Environment capability topology
+Buildr package/runtime capability graph MUST 让 `task-environment` 提供 `buildr.task-environment/v1`，让 `task-worktree` 只提供 `buildr.git-worktree-provider/v1`，并 MUST 将所有正式 Environment consumers 从 `buildr.task-worktree-lifecycle@2` 切到新契约。Git provider dependency MAY 对无需 Git 的 Task Environment 降级，但在请求 Git isolation 时 MUST 成为该次 prepare 的硬前置条件。
+
+#### Scenario: task-triage 进入正式执行
+- **WHEN** `task-triage` 已确认 formal execution 分支
+- **THEN** 它 MUST optional 消费 `buildr.task-environment/v1` 并在该分支要求 selected provider ready
+- **AND** 纯讨论、只读或 Task 外分支 MUST 不因 Environment provider 缺失而阻塞
+
+#### Scenario: Task Environment 选择 Git isolation
+- **WHEN** receipt plan 需要一个或多个 Git worktrees
+- **THEN** `task-environment` MUST 解析 selected `buildr.git-worktree-provider/v1` 并只消费其 Git evidence
+- **AND** provider missing/ambiguous/blocked MUST 使该次 environment prepare 返回 `blocked`
+
+#### Scenario: Task Finish 清理环境
+- **WHEN** Task Finish 已完成适用交付并进入 cleanup
+- **THEN** Task Finish MUST 调用 selected `buildr.task-environment/v1` 交接 delivery/cleanup eligibility
+- **AND** MUST NOT 直接依赖 `buildr.task-worktree-lifecycle@2`、扫描环境资源或调用 provider cleanup
+
+#### Scenario: provider 替换
+- **WHEN** compatible internal providers 替换默认 `task-environment` 或 `task-worktree`
+- **THEN** consumers MUST 按 capability identity 与 binding 继续工作
+- **AND** MUST NOT 根据默认 Skill id、目录名或旧 receipt schema 硬编码调用
