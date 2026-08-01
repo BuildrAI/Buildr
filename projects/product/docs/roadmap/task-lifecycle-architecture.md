@@ -70,7 +70,7 @@ flowchart TB
     B["Task Board<br/>可选的跨 Task 协调"] -. "只关联 Task ID" .-> M
 ```
 
-主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 与 Local App 分别是 Agent 与人的客户端，都不接收 Environment、Development、Review、Verification、Finish、Board 或 Retrospective 内容。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
+主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 只接收 Task Record 内容，Local App 则在同一 Task 详情中组合各模块的只读投影。P0.2 先增加独立“环境”页签，但 Environment、Development、Review、Verification、Finish、Board 或 Retrospective 内容都不写入 Task Record。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
 
 ## 系统基础
 
@@ -97,7 +97,7 @@ flowchart TB
 | Git Operations | 定义单项 Git 行为、安全默认值、硬边界和最小 evidence；不负责流程编排 |
 | Task Board | 在 Workspace 范围组织多个 Task 的整体目标、规划、依赖和跨 Task 决策 |
 | Task Retrospective | 在任务中按高价值线索持续观察，并在任务终态后形成面向未来工作的复盘结论与改进候选 |
-| Local App | P0.1 提供 Task 最小列表、详情和受控管理；P1 再增加 Structured Board 与专业记录投影 |
+| Local App | P0.1 提供 Task 最小列表、详情和受控管理；P0.2 增加当前机器的只读“环境”页签；P1 再增加 Structured Board 与其他专业结果投影 |
 
 ## Workspace Foundation
 
@@ -213,9 +213,9 @@ Task Triage 是可选上游。无论是否经过 Triage，正式 Task 首次修�
 
 ### Environment Receipt
 
-每个 Task ID 只维护一份 Environment Receipt。它是 Workspace 本机状态中的动态资源清单和控制记录，由 Task Environment 独占写入，保存在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.*` 且不进入 Git；同一 Workspace 的共享执行根、task worktree 和不同 Agent session 必须能解析到同一份记录。不同 Task 不共用 receipt 或 Task-owned 资源归属；它们只有在实际使用同一执行根、Git repository 或其他共享写入面时才产生共享边界。具体扩展名和业务字段在本模块 Change 中确定，文件写入遵守下文统一的“最低文件写入纪律”。Receipt 不是 Source Authority 或 Task Context，也不代替对真实环境的核验。
+每个 Task ID 只维护一份 Environment Receipt。它是 Workspace 本机状态中的动态资源清单和控制记录，由 Task Environment Application 独占写入，使用 `buildr.task-environment-receipt/v2` 并保存在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.json`，该文件不进入 Git；同一 Workspace 的共享执行根、task worktree 和不同 Agent session 必须能解析到同一份记录。不同 Task 不共用 receipt 或 Task-owned 资源归属；它们只有在实际使用同一执行根、Git repository 或其他共享写入面时才产生共享边界。文件写入遵守下文统一的“最低文件写入纪律”。Receipt 不是 Source Authority 或 Task Context，也不代替对真实环境的核验。
 
-Task Environment Receipt 是 Task 级环境事实的唯一汇总入口。现有 worktree receipt 或以后其他环境 provider 的资源回执只作为被引用的 provider evidence，继续由对应 provider 维护；它们不与 Task Environment Receipt 竞争 `ready`、恢复和 cleanup 的生命周期 authority，也不要求批量迁移为新的 Task 记录。第一版迁移只审计仍真实存在的旧环境和未终态运行。
+Task Environment Receipt 是 Task 级环境事实的唯一汇总入口。长期保留的 Git 证据使用新的窄 `buildr.git-worktree-evidence/v1`，只记录 repository、checkout、branch、HEAD、clean 和 Git effects，并由 Git worktree provider 维护。旧 worktree-centric v1 receipt 只用于一次性迁移输入：匹配正式 Task 的活跃环境转换为 v2 Receipt 与窄 Git evidence；无 Task 的 live worktree 只保留窄 Git evidence；无真实资源的陈旧 receipt 删除；identity/ownership 冲突则原样保留并阻止 authority 切换。旧 receipt 不作为永久兼容 reader 或第二套 authority 留下。
 
 | 信息 | 最小内容 |
 |---|---|
@@ -234,7 +234,7 @@ Receipt 不保存 Agent session 上下文、任务计划、开发进度、完整
 - Task Environment 根据当前 Workspace、Project、Service 的权威事实准备环境；事实缺失或冲突时返回 `blocked`，不按惯例猜测，也不新增通用 environment 声明。
 - Git 不是 Environment Receipt 或 `ready` 的前提。没有 Git 的 Workspace 或工作范围仍使用 Task Environment，只是不具备 Git worktree 提供的物理隔离和历史恢复能力。
 - Git 仓库需要隔离时，可使用 Git worktree provider 创建、复用、检查和删除 worktree；provider 只返回路径、repository、branch、HEAD、clean 等 Git evidence。是否采用 worktree 由当前 Workspace 事实和任务需要决定，不由 Task Environment 硬编码。
-- 自举 Workspace 使用 Git worktree provider 时，`.worktrees/` 是多个任务环境的容器；每个 `.worktrees/<task-id>` 是该 Task 的 checkout 与执行根，也可作为**任务验证工作区（Task Validation Workspace）**根。workspace-scoped Agent runtime 渲染在这个根下面，用于独立验证候选能力；它不是主 Workspace、canonical metadata authority 或“开发 Workspace”。
+- 自举 Workspace 使用 Git worktree provider 时，`.worktrees/` 是多个任务环境的容器；每个 `.worktrees/<task-id>` 是该 Task 的 checkout 与执行根，也可作为**任务验证工作区（Task Validation Workspace）**根。workspace-scoped Agent runtime 可以投射在这个根下面，用于独立验证候选能力；worktree 不是主 Workspace、retained Workspace、canonical metadata authority、Agent runtime 本身，也不称为“开发 Workspace”。
 - 适用的 Runtime、Workspace 所需 CLI 和依赖由 Task Environment 在实际执行根中准备并登记。Node 项目的每个 task worktree 根据自己的 lockfile 独立准备 `node_modules`；只共享 package manager 下载缓存，不复用或链接其他 checkout 的 `node_modules`。
 - Buildr 自举任务使用 Workspace Foundation 提供的 retained 稳定控制入口创建、恢复和清理环境；worktree 内的 Buildr CLI 是 Development / Verification 的候选对象，不能负责创建、认领或清理自己的环境。环境 ready 后，候选 CLI 可以把候选 runtime 投射到 receipt 绑定的自身任务验证 Workspace，也可以在验证 Workspace 内使用隔离的模拟用户目录测试 user destination；但不能写入 retained Workspace、另一个 Task 的 worktree 或验证 Workspace 外的共享用户 runtime。模拟投射不等于真实 Agent runtime 已生效。
 - `ready` 必须来自实际执行根中的最小真实探测，核验执行位置、适用的 Runtime / CLI 和依赖是否满足运行需要；Git 仓库再核验 checkout identity。`ready` 表示环境已知且可执行，不承诺已经物理隔离，也不代替项目测试。
@@ -251,6 +251,7 @@ Receipt 不保存 Agent session 上下文、任务计划、开发进度、完整
 - Buildr 的最小保证是让 Agent 看见 active receipts、共享执行根、已知占用与清理责任，并在需要时登记 Task-owned 写入范围。Agent 必须结合这些记录和真实文件系统维护各 Task 的修改边界与冲突。
 - 共享执行根的占用跟随 Task receipt，不跟随 Agent session。session 结束、崩溃或超时不会自动释放；只有 Task 完成、明确放弃或迁移，且相关范围可安全复用时才解除。
 - 使用共享执行根不以整个目录 clean 作为绝对前提，但 Agent 不得接管、暂存、覆盖或清理来源不明的既有改动。范围重叠或归属不清时先分析真实影响；涉及语义、授权、重大风险或无法安全恢复的决定时交给用户，无法证明归属时不得执行破坏性清理。
+- 第一版不建设共享执行根的通用文件 write-set。Environment cleanup 只确定性停止已登记资源并解除占用；没有 provider evidence 能证明源码归属时保留共享源码，并在结果中明确标记 retained，不把“未删除”误报成自动回滚。
 
 ### 多 repo 扩展
 
@@ -269,7 +270,7 @@ Receipt 不保存 Agent session 上下文、任务计划、开发进度、完整
 
 ### 建设形态
 
-当前保持 **Skill-only + 最小交接契约**：Task Environment Skill 负责编排准备、探测、receipt 更新、恢复和清理；交接契约只定义 Task ID、`ready / blocked`、环境引用、资源处置和 cleanup 结果等跨模块必要事实。现在不建设独立 Task Core、公共命令、状态机、锁、CAS 或通用环境调度器；具体业务字段、文件扩展名、内部实现和稳定功能入口在本模块 Change 中根据真实需要确定。
+第一版采用 **共享 Task Environment Application + 薄公共 CLI + Task Environment Skill**。Application 是唯一 Environment writer，确定性实现 `prepare`、`inspect`、内部资源登记/释放和 `cleanup`；公共 CLI 只开放 `buildr task environment prepare|inspect|cleanup <task-id>`，Skill 负责按任务意图调用它们。交接契约只定义 Task ID、`ready / blocked / unavailable / cleaned`、环境引用、资源处置和 cleanup 结果等跨模块必要事实。现在不建设独立 Task Core、通用状态机、锁、CAS、租约或环境调度器，也不把内部资源动作公开为 CLI。
 
 ## Workspace 中的 Task 记录
 
@@ -322,6 +323,8 @@ updatedAt: 2026-08-01T10:00:00.000Z
 
 Task Manager 不读取 Environment Receipt，也不提供结构化字段记录 worktree、branch、runtime、CLI、依赖、进程、端口、资源、凭证、完整日志或专业 record revision。从 task environment 调用时，上游只向它提供已经确认的 canonical Workspace target；v1 不对 title/intent/result 做启发式文本扫描。
 
+P0.2 保留 Task Record 的 closed-schema 和领域校验，但把“Change 是否存在于 retained Project”的位置判断替换为共享的**任务范围 Change 引用解析器（Task-scoped Change Reference Resolver）**。解析器只接收 canonical Workspace、Task ID 与 `project/change`，先读取匹配 Task Environment 的 Project 执行根，再回退 retained Project；它不是新的 authority，也不保存路径或来源到 Task Record。全局 Change 列表仍只索引 retained Project。
+
 ### 产品动作与客户端边界
 
 通过 Agent 工作时，Agent 负责理解用户意图、判断是否已经形成正式 Task，并提供 title、intent、业务 scope 与真实 Change 引用；人也可以在 Local App 直接表达这些顶层事实。Buildr Application 对所有客户端固化以下动作：
@@ -347,6 +350,12 @@ Local App 通过 Workspace-scoped API 调用 Task Record Application，继续只
 
 Application read model 返回当前 canonical bytes 的 `recordDigest`；Local App mutation 必须携带页面读取到的摘要。摘要变化时返回冲突并要求刷新，不覆盖、不自动合并。`recordDigest` 不是 `task.yml` 字段，也不是通用协同编辑协议。
 
+### P0.2 Local App 环境页签
+
+P0.2 在既有 Task 详情中增加独立、只读的“环境”页签。页面通过 Workspace-scoped API 调用 Task Environment Application `inspect`，展示当前机器的 `observedAt`、receipt 可用性、`ready / blocked / drift / unavailable`、scope/root、Runtime/CLI/依赖、runtime projection identity、Git provider evidence、动态资源与 cleanup 摘要。打开页签、页面重新获得焦点或手动刷新时执行一次有界 probe；首版不增加 WebSocket、后台持续轮询或 prepare/cleanup 按钮。
+
+HTTP/Web 层只接收已登记的 `workspaceId` 与真实 Task ID，拒绝 `target/root/path` 和 receipt bytes，不直接解析 Environment Receipt，也不从 branch/worktree 名猜测环境。Environment 暂不可用时仍展示 Task Record，并明确显示本机不可用或下一动作；任何环境事实都不复制到 `task.yml`。
+
 ### 主 Workspace 存放边界
 
 Task Record 与后续专业记录都位于 canonical Workspace，但每类记录有自己的唯一 writer：
@@ -358,7 +367,7 @@ Task Record 与后续专业记录都位于 canonical Workspace，但每类记录
 ├── tasks/
 │   └── <task-id>/
 │       ├── task.yml
-│       ├── environment.*
+│       ├── environment.json
 │       ├── development.*
 │       ├── verification.*
 │       ├── reviews/
@@ -450,13 +459,13 @@ Task Retrospective 的 `open` 候选不会自动进入 Board、创建 Task 或�
 
 ### Local App 与建设形态
 
-P0.1 已先交付最小 Task 列表、详情与 Task Record 管理；P1 不再负责“第一次让 Local App 看见 Task”。P1 采用 **Task Board Skill + Workspace structured record + Local App dynamic projection**：Board structured record 是唯一 Board source；Local App 在已有 Task 页面上增加 Board 页面，以及已交付专业 Result 和当前机器 Environment Receipt 的只读投影。Environment 信息必须明确来自当前机器，缺少 receipt 时显示“本机不可用”，不能据此改变 Task Record。页面打开不调用 Agent 重新生成 Task Overview，也不生成新的静态 HTML 事实源。
+P0.1 已交付最小 Task 列表、详情与 Task Record 管理，P0.2 再交付当前机器 Environment 的只读页签；P1 不重做这两部分。P1 采用 **Task Board Skill + Workspace structured record + Local App dynamic projection**：Board structured record 是唯一 Board source；Local App 在已有 Task 页面上增加 Board 页面，并按已交付模块增加 Development、Review、Verification、Finish 等其他专业 Result 的只读投影。页面打开不调用 Agent 重新生成 Task Overview，也不生成新的静态 HTML 事实源。
 
-Local App 对 Task-owned 字段继续调用 P0.1 Task Record Application；对 Board-owned 标题、目标、规划描述、顺序、分组和依赖调用 P1.1 Board writer；Environment、Development、Review、Verification、Finish 与 Retrospective facts 保持只读。保存成功后的 Task/Board 字段是用户明确提供的正式事实，不需要 Agent 再批准；但接受专业风险、判断 Board/Task 语义偏离或推进研发仍由人和 Agent 完成。任何写入发生冲突时要求刷新，不自动合并或猜测修复。
+Local App 对 Task-owned 字段继续调用 P0.1 Task Record Application，对 Environment 继续调用 P0.2 Task Environment Application `inspect`；对 Board-owned 标题、目标、规划描述、顺序、分组和依赖调用 P1.1 Board writer。Environment、Development、Review、Verification、Finish 与 Retrospective facts 保持只读。保存成功后的 Task/Board 字段是用户明确提供的正式事实，不需要 Agent 再批准；但接受专业风险、判断 Board/Task 语义偏离或推进研发仍由人和 Agent 完成。任何写入发生冲突时要求刷新，不自动合并或猜测修复。
 
 Task 外的临时测试、服务和 API 操作没有 Task ID、Receipt 或 Workspace 记录，因此不进入 Task / Board 页面，也不由 Local App 接管；用户要求保留的进程仍只由当前 Agent 在回复中披露事实和清理方式。
 
-P1.1 同一个 Change 中停止所有新静态 HTML 写入，迁移必要入口并删除旧 generator/template/binding/mutation path；历史 HTML 是否保留只读只按真实读取需求决定。P1 不建设 Board Environment、Review、Verification、Finish、Retrospective、数据库、独立执行器或通用状态机。Board 业务字段、文件扩展名、冲突保护，以及专业投影的页面交互由 P1 模块 Change 确定；不得重做 P0.1 Task writer。
+P1.1 同一个 Change 中停止所有新静态 HTML 写入，迁移必要入口并删除旧 generator/template/binding/mutation path；历史 HTML 是否保留只读只按真实读取需求决定。P1 不重建 Environment reader/API，也不建设 Board Environment、Review、Verification、Finish、Retrospective、数据库、独立执行器或通用状态机。Board 业务字段、文件扩展名、冲突保护，以及其他专业投影的页面交互由 P1 模块 Change 确定；不得重做 P0.1 Task writer 或 P0.2 Environment 投影。
 
 ## Task Development
 
@@ -1009,13 +1018,14 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | Task CLI 只做参数/输出适配，Application 保持共享 use case | P0.1 Task Record | 当前 Change 拆分 CLI interface |
 | 候选 source 可投射自身任务验证 Workspace，并可在其内部测试隔离的模拟用户 runtime；不得写 retained、peer checkout 或外部共享用户 runtime | P0.1 自举安全边界 | 当前 Change 以 checkout 拓扑与 runtime target 路径关系增加确定性写前保护；不写入 Task Record |
 | `.worktrees/` 容纳多个任务；每个 `.worktrees/<task-id>` 可同时作为 checkout、执行根和任务验证 Workspace 根 | P0.2 Task Environment | Roadmap 记录；由 Environment Receipt/provider 改造 Change 实现 |
-| Environment Receipt 统一 ready、恢复、runtime projection、动态资源和 cleanup；旧 worktree receipt 只作 provider evidence | P0.2 Task Environment | Roadmap 记录；不提前加入 `task.yml` |
+| Environment Receipt 统一 ready、恢复、runtime projection、动态资源和 cleanup；旧 worktree-centric v1 receipt 一次性迁移退出，长期只保留新的窄 Git provider evidence | P0.2 Task Environment | Roadmap 记录；不加入 `task.yml`，同 Change 完成迁移和旧 writer/routing 清退 |
 | worktree 只隔离工作树/index；Git refs、进程、端口、用户级 runtime、凭证等仍可能共享 | P0.2 Task Environment | Roadmap 记录；后续按真实资源协调 |
 | Agent runtime 行为必须由独立 session 证明，并绑定 source/projection/environment identity | P0.4 Task Verification | Roadmap 记录；不把 projection ready 冒充验证通过 |
 | worktree、任务验证 Workspace、task-scoped runtime 和 session 是执行资源，不是交付 Candidate | P0.5 Task Development / Candidate | Roadmap 记录；后续 Candidate contract 固化 |
 | 生命周期 metadata 只从 canonical exact owned paths 发布；不发布 `.worktrees`/本机 Environment/runtime；历史引用退役后的可读性另行设计 | P0.7 Task Metadata Publication | Roadmap 记录；P0.1 不增加 publication 状态或快照字段 |
 | 自举主 Workspace 的正式 runtime 激活只能发生在内容进入 retained source 之后 | P0.8 Task Finish / Workspace Foundation | P0.1 只阻止候选越权投射；最终交付与 retained sync/doctor 仍由交付边界完成 |
-| Local App 后续展示本机 Environment/runtime 与专业结果时调用各模块 reader，不复制进 Task Record | P1.2 Local App 专业投影 | 延续既有边界；后续只读投影与本机不可用状态实现 |
+| Local App 在 Task 详情展示当前机器 Environment 时调用 Environment Application，不复制进 Task Record | P0.2 Task Environment | 本 Change 交付独立只读“环境”页签、Workspace-scoped API 与本机不可用状态 |
+| Local App 后续展示 Board 与其他专业结果时调用各模块 reader，不复制进 Task Record | P1.2 Local App 专业投影 | 延续既有边界；不重建 P0.2 Environment reader/API |
 
 ### 开发交付跟踪
 
@@ -1024,7 +1034,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | 顺序 | 模块 / Change | 当前状态 | 已交付并生效内容 | 对应旧能力处置 |
 |---|---|---|---|---|
 | P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | 已交付并生效（2026-08-01，`dev@2448db0`） | 已交付稳定 Task ID、最小 `task.yml`、唯一 Task Record Application、`task-manager`、CLI 五个确定性动作和 Local App Task 列表/详情/受控管理；已投射 retained Codex runtime 并通过 Doctor | 无旧 Task Record store；已更新 task-triage 正式分支并复用现有 Local App shell/API 安全边界 |
-| P0.2 | Task Environment `introduce-task-environment` | 未开始；任务验证 Workspace 与 runtime 边界已在 Roadmap 收敛 | 无 | 同 Change 改造 task-worktree/environment authority，保留必要 Git provider，并把旧 receipt 降为 provider evidence |
+| P0.2 | Task Environment `introduce-task-environment` | 候选实现与 Candidate 验证完成，待集成和 retained authority 切换 | 无 | 同 Change 交付 Application/CLI/Skill、Environment Receipt、Local App 环境页签、Task-scoped Change Resolver 和窄 Git provider；一次性迁移旧 receipt，并删除旧 environment writer/routing/JSON/help/consumer 残留 |
 | P0.3 | Task Review Result `introduce-task-review-results` | 未开始 | 无 | 同 Change 收敛任何重叠 Review routing/record |
 | P0.4 | Task Verification Result `introduce-task-verification-results` | 未开始 | 无 | 同 Change 迁移当前 verification lifecycle，保留必要 runner/资源协调 |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | 未开始 | 无 | 同 Change 收敛重叠 Candidate/研发 handoff |
@@ -1057,7 +1067,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | 顺序 | 单一模块与建议 Change | 本次只完成 | 最小模块验收与旧能力处置 |
 |---|---|---|---|
 | P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | Task ID、最小 `task.yml`、唯一 Task Record Application、`task-manager`、产品化 create/inspect/update/complete/abandon、Local App Task 列表/详情/创建/编辑/完成/放弃、三态/no-change、`0..N` 个 `project/change`；不含 Environment、专业 references、持久 revision、跨 Task Change ownership 或 publication 分类 | CLI 与 Local App 复用同一 writer；创建并跨 context 恢复；禁止字段与损坏记录 fail closed；陈旧页面冲突刷新；终态不可重开；Change 当前记录内无重复；task-triage 正式分支首次写入前建立 Task Record；集成并 retained render/App 验证后直接生效 |
-| P0.2 | Task Environment `introduce-task-environment` | Task 级 Environment Receipt、`.worktrees/<task-id>` 任务验证 Workspace、真实 ready 探测、task-scoped runtime projection identity、串行恢复、资源登记和 cleanup | 创建 Task → stable foundation 准备环境 → 候选投射自身 runtime → 跨 session 恢复 → cleanup；同 Change 将现有 task-worktree lifecycle 降为窄 Git/provider evidence，迁移活跃环境并关闭旧 environment mutation/routing；不把 worktree 称为主/开发 Workspace |
+| P0.2 | Task Environment `introduce-task-environment` | Task 级 Environment Receipt、唯一 Application、薄公共 CLI/Skill、`.worktrees/<task-id>` 任务验证 Workspace、真实 ready 探测、task-scoped runtime projection identity、Task-scoped Change Resolver、Local App 只读环境页签、串行恢复、资源登记和 cleanup | 创建 Task → stable foundation 准备环境 → 候选 Change 可被 Task 范围解析 → Local App 查看本机环境 → 候选投射自身 runtime → 跨 session 恢复 → Finish/放弃 cleanup；同 Change 将 task-worktree 收窄为 Git provider，按 A/B/C/D 一次性迁移旧 v1 receipt，并删除旧 environment mutation/routing/help/JSON/consumer；不把 worktree 称为主/retained/开发 Workspace 或 Agent runtime |
 | P0.3 | Task Review `introduce-task-review-results` | Planning/Completion Review Result、目标 identity、覆盖与失效；不编排 Development 或 Candidate | 两类 Result 绑定明确目标；中断不覆盖 current；同 Change 删除或迁移冲突的旧 Review route/store/test |
 | P0.4 | Task Verification `introduce-task-verification-results` | Verification Result、政策上下文、事实结果与推进决定；Agent runtime 变更按需绑定独立 session 的 source/projection/environment identity；保留必要 runner/DAG/资源协调 | 真实 runner/Agent session 可形成新 Result，目标、runtime projection 或环境事实变化使旧结果失效；同 Change 切换现有 verification consumer/CLI/binding，删除旧 lifecycle mutation/schema，保留执行安全不变量 |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | Development Receipt、`0..N` Change 处置、Candidate identity/generation、Result 编排与 handoff；明确 worktree/runtime/session 只是执行资源 | Environment ready → Planning Review → 实现 → Verification/Completion Review → generation 1 handoff；Candidate 以内容与上下文冻结，不以任务验证 Workspace 存在代替；同 Change 收敛任何重叠 Candidate/研发 handoff |
@@ -1072,7 +1082,7 @@ P0.1 到 P0.8 分别在各自交付时切换自己拥有的 authority。过渡�
 | 顺序 | 单一模块与建议 Change | 本次只完成 | 最小模块验收与旧能力处置 |
 |---|---|---|---|
 | P1.1 | Structured Task Board `introduce-structured-task-board` | `.buildr/boards/<board-id>.*`、最小 Board writer、Task ID 关联、规划与依赖 | Board 不覆盖 Task 状态或专业 Result；同 Change 停止所有新 HTML 生成，迁移必要入口并删除旧 task-board generator/template/binding/mutation tests；历史 HTML 是否保留只读按真实需要决定 |
-| P1.2 | Local App Board / 专业投影 `project-task-lifecycle-in-local-app` | 在 P0.1 Task 页面基础上增加 Board 列表/详情/编辑，以及已交付 Environment/Review/Verification/Finish 等 records 的只读投影；Environment/runtime 明确标为当前机器事实 | Task-owned 编辑继续通过 P0.1 Application，Board-owned 编辑只通过 P1.1 writer，专业 Receipt/Result 写入被拒绝；本机无 receipt 时显示不可用而不改 Task Record；保存冲突可见；迁移或删除冲突旧页面/API |
+| P1.2 | Local App Board / 专业投影 `project-task-lifecycle-in-local-app` | 在 P0.1/P0.2 Task 页面基础上增加 Board 列表/详情/编辑，以及已交付 Review/Verification/Finish 等其他专业 records 的只读投影；不重建 Environment 页签/API | Task-owned 编辑继续通过 P0.1 Application，Environment 继续只读调用 P0.2 Application，Board-owned 编辑只通过 P1.1 writer，其他专业 Receipt/Result 写入被拒绝；保存冲突可见；迁移或删除冲突旧页面/API |
 
 如果 P1 Local App Change 仍过大，可以先完成 Board 与专业 records 的只读投影，再以第二个 Local App 子 Change 开放 Board-owned 编辑；两个子 Change 仍顺序推进，且都复用 P0.1 Task 页面和 Application。
 

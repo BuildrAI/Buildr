@@ -16,7 +16,7 @@ buildr doctor --agent <agent> --target <workspace> --json
 
 adapter id 不做 alias 或 fallback。目标 Agent 不在列表中时必须停止自动投射并反馈，而不是借用“兼容”的 adapter。
 
-task environment 还会把 adapter activation、checkout-local runtime source root 和 projection identity 组成 `runtimeExpectation`。projection ready 只证明文件系统状态；实现型任务必须让 Agent runtime 以 environment root 启动或重新进入 session，使用 `worktree adopt` 提交 host-visible session root/handle，再由 `worktree context` 重核 `executionReady: true`。Buildr 直接核验的 environment evidence 标为 `buildr-verified`；session evidence 标为 `agent-attested`，不表示 Buildr 内省或密码学认证 Agent session。
+Task Environment 会把 adapter、runtime source root 与 projection identity 写入 Environment Receipt，并通过真实 `runtime check` probe 形成 ready 的一部分。projection ready 只证明任务验证工作区中的文件系统投射；它不证明真实 Agent session 已加载候选内容。真实 session 采用证据只在 runtime 发现、加载或激活机制发生变化且专项验证需要时，由 P0.4 Task Verification 处理，不进入 P0.2 ready 门禁。
 
 ## 支持矩阵
 
@@ -48,7 +48,7 @@ Buildr 当前不定义或维护真实 Agent marker smoke、品牌通过状态或
 
 - Codex 原生递归读取 `AGENTS.md`，Buildr 不生成 Rules 文件；Skills/install plans 使用 `.agents/`。
 - Rules 在访问路径时生效，Skills 以新会话发现为准；checker 同时检查 native Rules source 和 Skills projection。
-- task worktree sync 后必须以 environment root 启动或重新进入 Codex task/session；shell `cd`、改变工具 `cwd`、doctor 成功或手工读取 Skill 都不表示当前 session 已重发现 checkout-local Skills。
+- 候选 Rule、Skill、CLI 与 runtime 可以在 Receipt 绑定的任务验证工作区投射和测试；只有候选集成到 retained source 后，正式 runtime 才能通过 retained `sync/render` 生效。普通内容修改不要求 P0.2 证明当前 Codex session 已重发现 Skills。
 - Codex Skills extension profile 只校验 package Skill 已提供的 `agents/openai.yaml`；没有该文件时继续从 `SKILL.md` 发现 Skill，不生成 fallback 文件。
 - 证据状态为既有 adapter contract/parity、当前 Buildr 自举运行时与产品验证基线。
 
@@ -93,6 +93,6 @@ Buildr 当前不定义或维护真实 Agent marker smoke、品牌通过状态或
 
 ## Checker 与限制
 
-`runtime check`/doctor 分别报告 projection、安装/版本 probe、runtime source/projection identity 和 activation/reload guidance。它们能证明 Buildr 计划是否完整、目标是否 missing/stale/conflict/orphan，但不能从文件系统单独证明 GUI Agent 已加载内容；session consumption 在 adoption 前保持 `unknown`，缺少真实 Agent 验证本身不产生当前用户必须处理的 warning。
+`runtime check`/doctor 分别报告 projection、安装/版本 probe、runtime source/projection identity 和 activation/reload guidance。它们能证明 Buildr 计划是否完整、目标是否 missing/stale/conflict/orphan，但不能从文件系统单独证明 GUI Agent 已加载内容。需要真实 session 证据时交给 Task Verification；缺少这类证据本身不阻塞普通 Environment ready。
 
 - 所有 runtime 目标都受统一路径保护、symlink 防护、零写入冲突预检、managed ownership、orphan cleanup 和幂等 reconcile 约束。

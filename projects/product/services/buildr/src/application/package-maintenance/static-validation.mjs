@@ -186,6 +186,45 @@ export function createPackageStaticValidator(deps) {
     }
   }
 
+  function validateTaskEnvironmentAuthorityResidue(context) {
+    const { root, problems } = context;
+    const allowedLegacyFiles = new Set([
+      path.join(root, 'src', 'application', 'task-environment', 'legacy-migration.mjs'),
+      path.join(root, 'src', 'application', 'package-maintenance', 'static-validation.mjs'),
+      path.join(root, 'package', 'manifest.yml'),
+    ].map((file) => path.resolve(file)));
+    const forbidden = [
+      'buildr.task-worktree-lifecycle',
+      'buildr.task-environment-receipt/v1',
+      'buildr.task-environment-adoption',
+      'buildr.task-environment-context',
+      'buildr.worktree-create/',
+      'buildr.worktree-cleanup/',
+      'resolveTaskEnvironmentContext',
+      'createTaskWorktree',
+      'adoptTaskEnvironment',
+      'taskEnvironmentContext',
+      'worktree context',
+      'worktree adopt',
+      'executionReady',
+    ];
+    for (const directory of ['bin', 'src', 'package', 'docs'].map((relative) => path.join(root, relative)).filter(existsDirectory)) {
+      for (const file of collectFiles(directory)) {
+        if (allowedLegacyFiles.has(path.resolve(file))) continue;
+        const content = fs.readFileSync(file, 'utf8');
+        for (const pattern of forbidden) {
+          if (content.includes(pattern)) problems.push(`Legacy Task Environment authority residue ${JSON.stringify(pattern)} found in ${toPosixRelative(root, file)}.`);
+        }
+      }
+    }
+    for (const relative of [
+      'src/application/worktree/worktree-application.mjs',
+      'package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md',
+    ]) {
+      if (existsFile(path.join(root, relative))) problems.push(`Legacy Task Environment authority file must be removed: ${relative}`);
+    }
+  }
+
   function parseJsonOutput(label, output) {
     try {
       return JSON.parse(output);
@@ -291,7 +330,7 @@ export function createPackageStaticValidator(deps) {
           for (const requiredText of [
             '执行 `openspec new change` 或写入任何 change artifacts 前',
             '代码修改、构建、测试或需要长期开发上下文',
-            '先使用 `task-worktree` 声明完整 repository set',
+            '使用 `task-environment` 按 Task ID 准备完整 repository set',
             '无法判断是否会进入实现时，先澄清执行范围',
             '不修改外部 `openspec-propose` Skill 的上游正文',
           ]) {
@@ -302,7 +341,7 @@ export function createPackageStaticValidator(deps) {
           for (const requiredText of [
             '只修订既有 planning artifacts',
             '不授予实现、同步或归档权限',
-            '重新执行 `task-worktree` 决策',
+            '重新运行 Task Environment `prepare`',
             '`openspec-apply-change`',
           ]) {
             if (!updateContent.includes(requiredText)) problems.push(`OpenSpec update sidebar must include ${JSON.stringify(requiredText)}.`);
@@ -500,6 +539,22 @@ export function createPackageStaticValidator(deps) {
         problems.push(error.message);
       }
     }
+    const retirementIds = new Set();
+    for (const [contractIndex, contract] of (manifest.capabilityContracts || []).entries()) {
+      for (const [index, retirement] of (contract.replaces || []).entries()) {
+        const label = `capabilityContracts[${contractIndex}].replaces[${index}]`;
+        try {
+          validateCapabilityIdentity(retirement.id, retirement.version, label);
+          const key = capabilityKey(retirement.id, retirement.version);
+          if (contractIds.has(key)) throw new Error(`${label} cannot retire a currently declared contract: ${key}`);
+          if (retirementIds.has(key)) throw new Error(`Duplicate package capability retirement: ${key}`);
+          if (!retirement.target?.startsWith('skills/contracts/') || !retirement.description || !retirement.provider || !/^sha256-[a-f0-9]{64}$/.test(retirement.integrity || '')) throw new Error(`${label} must include a safe target, description, provider, and SHA-256 integrity`);
+          retirementIds.add(key);
+        } catch (error) {
+          problems.push(error.message);
+        }
+      }
+    }
     const bindingIds = new Set();
     for (const [index, binding] of (manifest.initialSkillBindings || []).entries()) {
       const label = `initialSkillBindings[${index}]`;
@@ -640,7 +695,7 @@ export function createPackageStaticValidator(deps) {
       try {
         const metadata = parseSkillFrontmatter(skillFile);
         if (metadata.name !== skill.id) problems.push(`${label}.id must match SKILL.md frontmatter name: ${skill.id} != ${metadata.name}`);
-        if (['task-triage', 'task-manager', 'task-worktree', 'task-board', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
+        if (['task-triage', 'task-manager', 'task-environment', 'task-worktree', 'task-board', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
           problems.push(`${label}.description must exactly match SKILL.md frontmatter description.`);
         }
       } catch (error) {
@@ -665,55 +720,44 @@ export function createPackageStaticValidator(deps) {
           problems.push('capability-adaptation is a management Skill and must not declare provides/requires.');
         }
       }
+      if (skill.id === 'task-environment') {
+        for (const requiredText of [
+          '本 Skill 是 `buildr.task-environment/v1` 的默认 provider',
+          'buildr task environment prepare <task-id>',
+          'buildr task environment inspect <task-id>',
+          'buildr task environment cleanup <task-id>',
+          '`prepare` 同时承担首次准备和幂等恢复',
+          'Environment Receipt 独占 Runtime、CLI、依赖、projection、动态资源、ready、恢复和总 cleanup',
+          '真实 Agent session 是否采用候选 runtime 属于 Task Verification',
+          '不要从 cwd、分支、同一 HEAD 或旧 worktree receipt 猜 ownership',
+        ]) {
+          if (!skillContent.includes(requiredText)) problems.push(`task-environment Skill must include ${JSON.stringify(requiredText)}.`);
+        }
+        if (!skill.provides?.some((entry) => entry.capability === 'buildr.task-environment' && entry.version === 1)) {
+          problems.push('task-environment must provide buildr.task-environment@1.');
+        }
+        for (const forbiddenText of ['resource register', 'resource release', 'worktree context', 'worktree adopt', 'Task Record 中保存']) {
+          if (skillContent.includes(forbiddenText)) problems.push(`task-environment Skill must not expose ${JSON.stringify(forbiddenText)}.`);
+        }
+      }
       if (skill.id === 'task-worktree') {
         for (const requiredText of [
-          'description: 用户要求创建、定位、复用、保留或清理 task worktree/change-id/本地任务分支',
-          '## 1. 职责边界',
-          '## 2. 决策',
-          '## 3. 生命周期',
-          '## 4. 协作交接',
-          '## 5. 授权与停止条件',
-          '| `create` |',
-          '| `reuse` |',
-          '| `none` |',
-          '| `blocked` |',
-          'Project/Service 规则优先于本表',
+          '本 Skill 是 `buildr.git-worktree-provider/v1` 的默认 provider',
+          'buildr worktree create <task-id>',
+          'buildr worktree inspect <task-id>',
+          'buildr worktree cleanup <task-id>',
           '<workspace-root>/.worktrees/<task-id>',
-          '不得静默回退到 `/tmp`',
-          'propose 和创建 change artifacts 前',
-          '核对已有 artifacts 的 ownership、内容和唯一目标',
-          '无法证明时停止删除或覆盖',
-          '`buildr worktree create <task-id>',
-          '产品入口统一预检 root 与 nested checkouts',
-          '部分失败保留现场和 receipt',
-          '只跳过 create-time doctor/sync',
-          '仍执行 context 和本次动作需要的状态检查',
-          '`allowedExecutionRoots`',
-          '同一 environment 同时只有一个 owner Agent 写入',
-          '不从未合并 task checkout 更新主自举 workspace',
-          '<workspace-root>/.worktrees/',
-          '发布 environment 在远端 ref 匹配候选',
-          '不得据此删除远端分支',
-          'environment identity',
-          'repository state',
-          'lifecycle result',
-          '`treeChanged`',
-          '不监控普通编辑',
-          'selected `buildr.task-verification/v2` provider',
-          '删除远端分支、丢弃工作或清理外部资源始终需要当前轮次单独明确授权',
-          'required Core workspace-transition invariant',
-          '不依赖 `git-ops`',
+          '只包含 repository selector',
+          '只保留 Git provider evidence',
+          '不判断 Task 是否 ready',
+          '不准备 Runtime、CLI、依赖或 projection',
+          '不记录 Agent session',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-worktree Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        for (const uniqueText of ['## 1. 职责边界', '## 2. 决策', '## 3. 生命周期', '## 4. 协作交接', '## 5. 授权与停止条件']) {
-          const count = skillContent.split(uniqueText).length - 1;
-          if (count !== 1) problems.push(`task-worktree Skill must include ${JSON.stringify(uniqueText)} exactly once, found ${count}.`);
+        if (!skill.provides?.some((entry) => entry.capability === 'buildr.git-worktree-provider' && entry.version === 1)) {
+          problems.push('task-worktree must provide buildr.git-worktree-provider@1.');
         }
-        if (skillContent.includes('## Guardrails')) problems.push('task-worktree Skill must integrate guardrails into lifecycle and stop conditions.');
-        const body = skillContent.slice(skillContent.indexOf('# Task Worktree Skill'));
-        const nonWhitespaceCharacters = body.replace(/\s/g, '').length;
-        if (nonWhitespaceCharacters > 3400) problems.push(`task-worktree Skill body must stay concise: ${nonWhitespaceCharacters} non-whitespace characters > 3400.`);
         try {
           const { description = '' } = parseSkillFrontmatter(skillFile);
           const sentenceStops = description.match(/[。！？]/g)?.length || 0;
@@ -721,15 +765,8 @@ export function createPackageStaticValidator(deps) {
         } catch {
           // Frontmatter errors are reported by the shared validation above.
         }
-        for (const forbiddenText of [
-          '复用既有 worktree且没有发生 tree 转换时不重复检查',
-          '把已有 artifacts 收敛到该唯一位置并清除原工作区重复副本',
-          'canonical environment root、receipt、完整 repository set、每仓 checkout/branch/HEAD/clean 状态',
-          '改变候选内容时必须返回 `treeChanged: true`，旧 evidence 随即失效',
-          '不因 checkout 或 commit hash 改变而机械重复验证',
-          '候选 tree 已改变时沿用旧验证结果',
-        ]) {
-          if (skillContent.includes(forbiddenText)) problems.push(`task-worktree Skill must not own verification decision ${JSON.stringify(forbiddenText)}.`);
+        for (const forbiddenText of ['executionReady', 'runtime projection identity 与 Workspace Node', 'worktree adopt', 'Environment Receipt 的默认 provider']) {
+          if (skillContent.includes(forbiddenText)) problems.push(`task-worktree Skill must not own Environment authority ${JSON.stringify(forbiddenText)}.`);
         }
       }
       if (skill.id === 'task-manager') {
@@ -797,9 +834,9 @@ export function createPackageStaticValidator(deps) {
           'taskVerificationExecuteCalls',
           'candidateExecutorCalls',
           '用户无需主动点名本 Skill',
-          'task-worktree` 不负责这项清理',
+          'Git/worktree provider 不负责这项清理',
           '完整候选验证尚未执行',
-          '不依赖 `task-worktree`、`git-ops`',
+          '不依赖任何固定 Environment、Git 或 worktree provider id',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-verification Skill must include ${JSON.stringify(requiredText)}.`);
         }
@@ -924,7 +961,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-worktree-lifecycle/v2`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-verification/v2` provider', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
+        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-verification/v2` provider', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');
@@ -979,6 +1016,9 @@ export function createPackageStaticValidator(deps) {
     }
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-verification' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-verification.');
+    }
+    if (!manifest.builtins.skills.some((skill) => skill.id === 'task-environment' && skill.required === false)) {
+      problems.push('builtins.skills must declare optional task-environment.');
     }
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-board' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-board.');
@@ -1128,6 +1168,7 @@ export function createPackageStaticValidator(deps) {
 
   function validatePackageStatic(context) {
     validatePackageMetadata(context);
+    validateTaskEnvironmentAuthorityResidue(context);
     validateMappedEntries(context);
     validatePackageComponents(context);
     const skillSourceIds = validatePackageSkills(context);

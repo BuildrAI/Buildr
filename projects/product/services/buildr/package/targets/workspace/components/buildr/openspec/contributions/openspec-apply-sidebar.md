@@ -1,8 +1,8 @@
 ## Buildr OpenSpec Sidebar
 
-应用 change 前先向用户说明正在使用 OpenSpec、`apply` action、change id 及其选择或推断来源。OpenSpec status 解析上下文后，在编辑前报告实际 `changeRoot`；采用 task worktree 时同时报告 canonical 路径与分支。
+应用 change 前先向用户说明正在使用 OpenSpec、`apply` action、change id 及其选择或推断来源。OpenSpec status 解析上下文后，在编辑前报告实际 `changeRoot`；正式实现任务同时报告 Task ID 与 Task Environment 的实际工作根。
 
-采用 task environment 时，编辑前必须用 receipt-bound CLI 对明确 target/workdir 运行 `worktree context`，确认 membership、allowed roots、CLI source/identity、runtime projection identity 与 receipt 匹配且 `executionReady: true`。普通 Rule/Skill 内容修改不要求 session activation；只有本任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时才验证。
+采用 Task Environment 时，编辑前运行 `buildr task environment inspect <task-id> --target <canonical-workspace> --json`，只消费成功结果中的 `execution.workdir`、`allowedExecutionRoots`、controller 与 `cliInvocation`；不得从 cwd、branch、同一 HEAD 或 Git evidence 猜 ownership。普通 Rule/Skill 内容修改不要求 session activation；只有本任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时才交给 Task Verification。
 
 实现 active change 时只编辑 change artifacts 与实现内容，不把 delta 预写入 canonical specs。Canonical sync/archive 只由 Task Finish 的单一 `buildr openspec converge` 事务执行；不得手工恢复 canonical、刷新 baseline、选择内部 stage 或直接运行 `--skip-specs` 掩盖事务失败。
 

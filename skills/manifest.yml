@@ -25,8 +25,8 @@ skills:
       - capability: buildr.current-knowledge-maintenance
         version: 2
         mode: optional
-      - capability: buildr.task-worktree-lifecycle
-        version: 2
+      - capability: buildr.task-environment
+        version: 1
         mode: optional
       - capability: buildr.task-board-maintenance
         version: 1
@@ -36,7 +36,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-worktree
     source: buildr
     path: buildr/task-worktree
-    description: 用户要求创建、定位、复用、保留或清理 task worktree/change-id/本地任务分支，或实现型任务需要确定隔离 checkout 时使用；负责 canonical task environment 生命周期，不负责业务分流、Git 集成或验证。
+    description: 用户明确要求创建、检查或清理 Task 的 Git worktree 与本地任务分支，或 Task Environment 需要 Git checkout provider 时使用；不负责环境 ready、恢复、Runtime、资源或总 cleanup。
     enabled: true
     required: false
     state: installed
@@ -50,8 +50,8 @@ skills:
       - workbuddy
     runtimePath: task-worktree
     provides:
-      - capability: buildr.task-worktree-lifecycle
-        version: 2
+      - capability: buildr.git-worktree-provider
+        version: 1
   - id: git-ops
     assetIdentity: buildr:skill:git-ops
     sourceIdentity: package:skills/buildr/git-ops
@@ -99,6 +99,9 @@ skills:
       - capability: buildr.task-finish
         version: 1
     requires:
+      - capability: buildr.task-environment
+        version: 1
+        mode: required
       - capability: buildr.git-single-operation
         version: 1
         mode: optional
@@ -406,6 +409,27 @@ skills:
     provides:
       - capability: buildr.task-record
         version: 1
+  - id: task-environment
+    assetIdentity: buildr:skill:task-environment
+    sourceIdentity: package:skills/buildr/task-environment
+    source: buildr
+    path: buildr/task-environment
+    description: 正式 Task 需要准备、检查、恢复或清理实际执行环境，或按 Task ID 取得 Environment Receipt 的当前机器事实时使用；不用于任务分流、Task Record、验证结论或 Git 集成。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: task-environment
+    provides:
+      - capability: buildr.task-environment
+        version: 1
 contracts:
   - id: buildr.git-single-operation
     version: 1
@@ -419,10 +443,6 @@ contracts:
     version: 1
     path: contracts/buildr/git-workspace-update/v1.md
     description: 在 workspace sync 前安全更新 Git checkout。
-  - id: buildr.task-worktree-lifecycle
-    version: 1
-    path: contracts/buildr/task-worktree-lifecycle/v1.md
-    description: 管理任务 worktree 的放置、保留和安全清理。
   - id: buildr.task-asset-review
     version: 1
     path: contracts/buildr/task-asset-review/v1.md
@@ -431,10 +451,6 @@ contracts:
     version: 2
     path: contracts/buildr/task-verification/v2.md
     description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
-  - id: buildr.task-worktree-lifecycle
-    version: 2
-    path: contracts/buildr/task-worktree-lifecycle/v2.md
-    description: 管理单仓或多仓 task environment 的放置、执行边界、保留和安全清理。
   - id: buildr.task-asset-review
     version: 2
     path: contracts/buildr/task-asset-review/v2.md
@@ -467,6 +483,14 @@ contracts:
     version: 1
     path: contracts/buildr/task-record/v1.md
     description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
+  - id: buildr.task-environment
+    version: 1
+    path: contracts/buildr/task-environment/v1.md
+    description: 管理正式 Task 的实际执行环境和唯一 Environment Receipt。
+  - id: buildr.git-worktree-provider
+    version: 1
+    path: contracts/buildr/git-worktree-provider/v1.md
+    description: 管理 Task 的 Git worktree 并返回窄 Git provider evidence。
 bindings:
   - capability: buildr.git-single-operation
     version: 1
@@ -477,18 +501,12 @@ bindings:
   - capability: buildr.git-workspace-update
     version: 1
     provider: git-ops
-  - capability: buildr.task-worktree-lifecycle
-    version: 1
-    provider: task-worktree
   - capability: buildr.task-asset-review
     version: 1
     provider: task-asset-review
   - capability: buildr.task-verification
     version: 2
     provider: task-verification
-  - capability: buildr.task-worktree-lifecycle
-    version: 2
-    provider: task-worktree
   - capability: buildr.task-asset-review
     version: 2
     provider: task-asset-review
@@ -513,4 +531,10 @@ bindings:
   - capability: buildr.task-record
     version: 1
     provider: task-manager
+  - capability: buildr.task-environment
+    version: 1
+    provider: task-environment
+  - capability: buildr.git-worktree-provider
+    version: 1
+    provider: task-worktree
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

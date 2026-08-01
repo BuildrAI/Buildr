@@ -22,9 +22,9 @@ import { createBuiltinReceipts } from './package-maintenance/builtin-receipts.mj
 import { createBuiltinReplacement } from './package-maintenance/builtin-replacement.mjs';
 import { createPackageSyncPlan } from './package-maintenance/sync-plan.mjs';
 import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.mjs';
+import { createCapabilityRetirement } from './package-maintenance/capability-retirement.mjs';
 import { PACKAGE_VERIFIER_ENV, selectPackageVerifiers } from './package-maintenance/verification-registry.mjs';
 import { validateSkillPublication } from '../infrastructure/runtime/skills/publication.mjs';
-
 export function registerApplicationPackageMaintenance(runtime) {
   const doctor = (...args) => runtime.doctor(...args);
   const parseCommandsManifestYaml = (...args) => runtime.parseCommandsManifestYaml(...args);
@@ -88,6 +88,7 @@ export function registerApplicationPackageMaintenance(runtime) {
   const ensureRootRequiredBlock = (...args) => runtime.ensureRootRequiredBlock(...args);
   const copyFileIfChanged = (...args) => runtime.copyFileIfChanged(...args);
   const copyDirectoryIfChanged = (...args) => runtime.copyDirectoryIfChanged(...args);
+  const removePath = (...args) => runtime.removePath(...args);
   const assertInitializedBuildrWorkspace = (...args) => runtime.assertInitializedBuildrWorkspace(...args);
 
   const {
@@ -99,6 +100,7 @@ export function registerApplicationPackageMaintenance(runtime) {
     resolveState: resolveBuiltinState,
   } = createBuiltinReceipts({ atomicWriteJson, collectFiles, crypto, ensureDirectory, existsDirectory, existsFile, fs, isPlainObject, path, toPosixRelative });
   const { handleSkillReplacement } = createBuiltinReplacement({ builtinReceiptKey, builtinSnapshot, copyDirectoryIfChanged, existsDirectory, path });
+  const { applyCapabilityRetirements } = createCapabilityRetirement({ assertSafeAssetTarget, crypto, existsFile, fs, path, removePath });
 
   const { packageBuiltinMutationPaths, builtinSyncPlanSignature } = createPackageSyncPlan({ assertSafeSyncMutationPaths, missingAncestorForMutation, mutationPathFingerprint, packageRegistryMutationPaths, path, readPackageManifest, targetPathFromBuiltin, toPosixRelative });
 
@@ -175,7 +177,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       const liveSnapshot = builtinSnapshot(targetFile, 'rule');
       const state = resolveBuiltinState({ type: 'rule', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('rule', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true });
+      findings.push({ type: 'rule', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true || (isNew && !liveSnapshot) });
 
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'rule', status: 'ready', replacementFrom: null, path: builtin.target, reason: null });
@@ -214,8 +216,10 @@ export function registerApplicationPackageMaintenance(runtime) {
     const skillsManifest = readSkillsManifestForWrite(targetRoot);
     const skillsDocument = manifestDocumentFor(skillsManifest);
     const skillsById = new Map(skillsManifest.map((skill, index) => [skill.id, { skill, index }]));
+    const contracts = [...(skillsDocument.contracts || [])];
+    const bindings = [...(skillsDocument.bindings || [])];
+    applyCapabilityRetirements({ targetRoot, manifest, contracts, bindings, findings, changed, checkOnly });
     if (!checkOnly) {
-      const contracts = [...(skillsDocument.contracts || [])];
       for (const contract of manifest.capabilityContracts || []) {
         const sourceFile = path.join(productRoot(), contract.path);
         const targetFile = path.join(targetRoot, contract.target);
@@ -226,7 +230,6 @@ export function registerApplicationPackageMaintenance(runtime) {
         else contracts[index] = desired;
       }
       if (contracts.length) skillsDocument.contracts = contracts;
-      const bindings = [...(skillsDocument.bindings || [])];
       for (const binding of manifest.initialSkillBindings || []) {
         if (bindings.some((item) => item.capability === binding.capability && item.version === binding.version)) continue;
         const provider = skillsById.get(binding.provider)?.skill;
@@ -252,7 +255,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot })) continue;
       const state = resolveBuiltinState({ type: 'skill', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('skill', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true });
+      findings.push({ type: 'skill', id: builtin.id, required: builtin.required === true, status, path: builtin.target, converge: state.converge === true || (isNew && !liveSnapshot) });
 
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'skill', status: 'ready', replacementFrom: null, path: builtin.target, reason: null });
@@ -303,7 +306,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       const liveSnapshot = existing ? builtinSnapshot(existing, 'command') : null;
       const state = resolveBuiltinState({ type: 'command', builtin, liveSnapshot, newSnapshot, oldReceipt: receiptByKey.get(builtinReceiptKey('command', builtin.id)), isRestore, required: builtin.required === true });
       const status = isUninstalled && !isRestore ? 'uninstalled' : state.status;
-      findings.push({ type: 'command', id: builtin.id, required: builtin.required === true, status, path: 'commands/manifest.yml', converge: state.converge === true });
+      findings.push({ type: 'command', id: builtin.id, required: builtin.required === true, status, path: 'commands/manifest.yml', converge: state.converge === true || (isNew && !liveSnapshot) });
       if (checkOnly) {
         if (isRestore) restoreOutcomes.push({ id: builtin.id, type: 'command', status: 'ready', replacementFrom: null, path: 'commands/manifest.yml', reason: null });
         continue;

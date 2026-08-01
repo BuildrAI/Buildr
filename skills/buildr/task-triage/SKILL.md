@@ -5,7 +5,7 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 
 # Task Triage Skill
 
-本 Skill 只核对任务事实、作出正交决策并交接专业动作；不复制 worktree、任务看板、OpenSpec 或验证手册，也不建立确定性路由器。
+本 Skill 只核对任务事实、作出正交决策并交接专业动作；不复制 Task Environment、任务看板、OpenSpec 或验证手册，也不建立确定性路由器。
 
 ## 1. 核对任务事实
 
@@ -37,7 +37,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 - `metadata-only`：仅维护 OpenSpec artifacts、Rules、Skills、文档或模板，不进入代码、构建或测试。
 - `unknown`：信息不足；先澄清，不提前写 Change artifacts 或当前事实。
 
-该轴独立于语义治理：`code-only + implementation` 仍需要 task environment；`change-flow + metadata-only` 可以不创建 worktree；后来进入实现时重新判断并收敛到唯一环境。
+该轴独立于语义治理：正式持久交付都需要 Task Environment；`metadata-only` 可以使用共享执行根，不必创建 Git worktree；进入实现时仍复用同一 Receipt 或由 Environment 确定性恢复。
 
 ### 任务跟踪
 
@@ -54,11 +54,11 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
 | 正式持久交付 | `buildr.task-record/v1` 的 `create` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次持久交付写入前返回 `created|inspected`、path 和 effects | provider 不 ready 或 blocked 时停止正式交付写入；讨论、只读和 metadata maintenance 不依赖 |
-| `implementation` | `buildr.task-worktree-lifecycle/v2` | 完整 repository set；在写入前创建或复用 canonical task environment，并用明确 target/workdir、membership 与 receipt-bound CLI 取得 `executionReady: true` | 只阻塞 execution |
+| 正式执行位置 | `buildr.task-environment/v1` 的 `prepare` 或 `inspect` | Task ID、canonical Workspace 与完整 repository set；首次持久交付写入前取得 `ready`、实际 execution roots、validation root 和执行 CLI | 只阻塞 execution；不回退到 cwd 或旧 receipt |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 | `create-board|continue-board` | `buildr.task-board-maintenance/v1` | task identity、真实 Change ids 或 `none`；返回 `created|updated|aligned`、路径和时间 | `blocked` 只影响 tracking |
 
-正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择位置；创建、doctor、sync、保留和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change；看板 provider 不可用时，不得把文件存在冒充创建成功。
+正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change；看板 provider 不可用时，不得把文件存在冒充创建成功。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
@@ -74,7 +74,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 - 执行形态：implementation / metadata-only / unknown
 - Repository set：<selectors 或 unresolved>
 - Task Record：create / inspect / none / blocked
-- Task environment：create / reuse / none / blocked
+- Task Environment：prepare / inspect / none / blocked
 - 任务跟踪：none / create-board / continue-board / blocked
 - 事实依据：<最小 authority/evidence>
 - 未决事项：<none 或冲突/授权问题>
@@ -86,6 +86,6 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 ## Guardrails
 
 - 不为过去事实补造 Change 历史，不把任务看板或 current knowledge 变成第二套规范。
-- 不在正式 Task 的首次持久交付写入后才补做 Task Record 或 task environment 决策。
+- 不在正式 Task 的首次持久交付写入后才补做 Task Record 或 Task Environment 决策。
 - 不使用未经 authority 或 CLI 确认的路径、状态、进度和完成结论。
 - 不把集中验证解释为跳过最终 required assurance。

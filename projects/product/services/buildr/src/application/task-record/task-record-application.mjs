@@ -59,8 +59,8 @@ function relative(root, file) {
   return path.relative(root, file).split(path.sep).join('/');
 }
 
-function readModel(persistence) {
-  return { path: persistence.file, record: persistence.record, recordDigest: persistence.recordDigest };
+function readModel(persistence, changeReferences = []) {
+  return { path: persistence.file, record: persistence.record, recordDigest: persistence.recordDigest, changeReferences };
 }
 
 function effect(type, root, file) {
@@ -68,7 +68,7 @@ function effect(type, root, file) {
 }
 
 export function registerTaskRecordApplication(runtime) {
-  function validateReferences(targetRoot, record) {
+  function validateScopeReferences(targetRoot, record) {
     const projects = runtime.readProjectRegistryRecord(targetRoot);
     if (projects.registry.migrationRequired) throw taskRecordError('task_record_project_registry_migration_required', 'Project registry 需要先完成 canonical 迁移。', 409, undefined, '先运行 canonical buildr sync <agent>。');
     const requiredProjects = new Set([
@@ -86,19 +86,32 @@ export function registerTaskRecordApplication(runtime) {
         throw taskRecordError('task_record_service_not_found', `Service 不存在：${service.project}/${service.service}。`, 409, service, '修正 Task scope 或先登记 Service。');
       }
     }
-    const changesByProject = new Map();
-    for (const change of record.changes) {
-      if (!changesByProject.has(change.project)) changesByProject.set(change.project, runtime.listProjectChanges(targetRoot, change.project).changes);
-      if (!changesByProject.get(change.project).some((candidate) => candidate.code === change.change)) {
-        throw taskRecordError('task_record_change_not_found', `OpenSpec Change 不存在：${change.project}/${change.change}。`, 409, change, '修正 Change 引用或先创建对应 Change。');
-      }
-    }
     return record;
+  }
+
+  function resolveChangeReferences(targetRoot, taskId, changes, options = {}) {
+    return changes.map((change) => {
+      try {
+        return runtime.resolveTaskScopedChange(targetRoot, taskId, change, options);
+      } catch (error) {
+        return {
+          schemaVersion: 'buildr.task-scoped-change-reference/v1', taskId, reference: change, availability: 'unavailable', workingCopy: null, retainedBaseline: null,
+          diagnostic: { code: error.code || 'task_change_unavailable', message: error.message, details: error.details },
+        };
+      }
+    });
+  }
+
+  function assertChangeReferencesAvailable(targetRoot, taskId, changes, options = {}) {
+    const resolutions = resolveChangeReferences(targetRoot, taskId, changes, options);
+    const unavailable = resolutions.find((item) => item.availability !== 'available');
+    if (unavailable) throw taskRecordError('task_record_change_not_found', `OpenSpec Change 不存在或当前不可解析：${unavailable.reference.project}/${unavailable.reference.change}。`, 409, unavailable, '修正 Change 引用，或先在该 Task Environment/retained Project 中创建对应 Change。');
+    return resolutions;
   }
 
   function readCurrent(targetRoot, taskId) {
     const persistence = runtime.readTaskRecordPersistence(targetRoot, taskId);
-    validateReferences(persistence.root, persistence.record);
+    validateScopeReferences(persistence.root, persistence.record);
     return persistence;
   }
 
@@ -110,6 +123,7 @@ export function registerTaskRecordApplication(runtime) {
       path: persistence.file,
       record: persistence.record,
       recordDigest: persistence.recordDigest,
+      changeReferences: resolveChangeReferences(persistence.root, persistence.record.taskId, persistence.record.changes),
       diagnostic: null,
       effects,
       nextActions: [],
@@ -130,8 +144,8 @@ export function registerTaskRecordApplication(runtime) {
     const diagnostics = [...persistence.diagnostics];
     for (const record of persistence.records) {
       try {
-        validateReferences(persistence.root, record.record);
-        tasks.push(readModel(record));
+        validateScopeReferences(persistence.root, record.record);
+        tasks.push(readModel(record, resolveChangeReferences(persistence.root, record.record.taskId, record.record.changes)));
       } catch (error) {
         diagnostics.push({ taskId: record.record.taskId, code: error.code || 'task_record_invalid', message: error.message, details: error.details });
       }
@@ -161,7 +175,8 @@ export function registerTaskRecordApplication(runtime) {
       status: 'active', result: null, createdAt: timestamp, updatedAt: timestamp,
     }, { expectedTaskId: taskId });
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
-    validateReferences(root, record);
+    validateScopeReferences(root, record);
+    assertChangeReferencesAvailable(root, taskId, record.changes, { allowMissingTask: true });
     try {
       const written = runtime.createTaskRecordPersistence(root, record);
       return result('create', 'created', written, [effect('created', root, written.file)]);
@@ -212,14 +227,15 @@ export function registerTaskRecordApplication(runtime) {
     return values;
   }
 
-  function mutate(targetRoot, taskId, operation, input, build) {
+  function mutate(targetRoot, taskId, operation, input, build, addedChanges = []) {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     try {
       const current = readCurrent(root, taskId);
       assertExpectedDigest(current, input.expectedRecordDigest);
       if (current.record.status !== 'active') throw taskRecordError('task_record_terminal', `Task ${taskId} 已是 ${current.record.status}，不能再次修改或结束。`, 409, { status: current.record.status }, `运行 buildr task inspect ${taskId} 查看终态结果。`);
       const candidate = normalizeTaskRecord(build(current.record), { expectedTaskId: taskId });
-      validateReferences(root, candidate);
+      validateScopeReferences(root, candidate);
+      assertChangeReferencesAvailable(root, taskId, addedChanges);
       const same = JSON.stringify({ ...candidate, updatedAt: current.record.updatedAt }) === JSON.stringify(current.record);
       if (same) return result(operation, operation === 'update' ? 'updated' : operation === 'complete' ? 'completed' : 'abandoned', current, []);
       const written = runtime.writeTaskRecordPersistence(root, { ...candidate, updatedAt: nowIso() });
@@ -241,7 +257,7 @@ export function registerTaskRecordApplication(runtime) {
         services: applyCollection(current.scope.services, operations.addServices, operations.removeServices, (item) => referenceKey(item, 'service'), 'Service scope'),
       },
       changes: applyCollection(current.changes, operations.addChanges, operations.removeChanges, (item) => referenceKey(item, 'change'), 'Change references'),
-    }));
+    }), operations.addChanges);
   }
 
   function completeTaskRecord(targetRoot, taskId, input) {

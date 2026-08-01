@@ -23,7 +23,6 @@ function writeExecutable(file, content) {
 const fakeBuildr = `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const option = (name) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : null; };
 const output = (value) => process.stdout.write(JSON.stringify(value) + '\\n');
@@ -37,7 +36,6 @@ else if (args[0] === 'openspec' && args[1] === 'converge') {
   fs.renameSync(active, archived);
   output({ schemaVersion: 'buildr.openspec-converge/v1', status: 'passed', receipt: path.join(archived, '.buildr-convergence.yml') });
 } else if (args[0] === 'sync') process.exit(0);
-else if (args[0] === 'worktree' && args[1] === 'create') output({ schemaVersion: 'buildr.worktree-create/v2', state: 'reused', ready: true, executionReady: true });
 else if (args[0] === 'verification' && args[1] === 'run') {
   const fingerprint = option('--candidate-fingerprint');
   output({
@@ -47,18 +45,53 @@ else if (args[0] === 'verification' && args[1] === 'run') {
     evidenceIdentity: 'evidence-' + fingerprint, evidenceReference: null, totalDurationMs: 7,
   });
 } else if (args[0] === 'doctor') output({ schemaVersion: 'buildr.doctor/v1', health: { ready: true }, findings: [] });
-else if (args[0] === 'worktree' && args[1] === 'cleanup') {
-  const retained = option('--target');
-  const environment = path.join(retained, '.worktrees', args[2]);
-  const removed = spawnSync('git', ['worktree', 'remove', '--force', environment], { cwd: retained, encoding: 'utf8' });
-  if (removed.status !== 0) { process.stderr.write(removed.stderr); process.exit(removed.status || 1); }
-  output({ schemaVersion: 'buildr.worktree-cleanup/v1', status: 'removed', task: args[2], environmentRoot: environment });
-} else { process.stderr.write('unsupported fake Buildr invocation: ' + args.join(' ')); process.exit(2); }
+else { process.stderr.write('unsupported fake Buildr invocation: ' + args.join(' ')); process.exit(2); }
 `;
 
 const fakeOpenSpec = `#!/usr/bin/env node
 process.stdout.write(JSON.stringify({ summary: { passed: 1, failed: 0 } }) + '\\n');
 `;
+
+function taskEnvironmentFixture({ task, environmentRoot, retained }) {
+  const execution = () => ({
+    ready: true,
+    taskId: task,
+    workspaceRoot: retained,
+    environmentRoot,
+    validationRoot: environmentRoot,
+    executionRoots: [environmentRoot],
+    allowedExecutionRoots: [environmentRoot],
+    controller: { identity: 'fixture-controller', adapter: 'codex' },
+    controllerInvocation: { command: process.execPath, argsPrefix: [], kind: 'stable-controller' },
+    cliInvocation: {
+      command: path.join(environmentRoot, 'projects', 'product', 'buildr'),
+      argsPrefix: [],
+      sourceRoot: path.join(environmentRoot, 'projects', 'product', 'services', 'buildr'),
+      kind: 'task-environment-candidate',
+    },
+    repositories: [{
+      selector: 'workspace',
+      checkoutPath: environmentRoot,
+      branch: `codex/${task}`,
+      remote: 'origin',
+      startPoint: 'dev',
+      state: 'ready',
+    }],
+    scopes: [{ selector: 'workspace', executionRoot: environmentRoot, validationRoot: environmentRoot, shared: false }],
+    resources: [],
+  });
+  return {
+    resolveTaskEnvironmentExecution: execution,
+    prepareTaskEnvironment: () => ({ status: 'ready', effects: [], diagnostic: null }),
+    cleanupTaskEnvironment: async (workspaceRoot, taskId, authorization) => {
+      assert.equal(path.resolve(workspaceRoot), path.resolve(retained));
+      assert.equal(taskId, task);
+      assert.equal(authorization?.type, 'finish');
+      command(retained, 'git', ['worktree', 'remove', '--force', environmentRoot]);
+      return { status: 'cleaned', effects: [{ type: 'git-worktree-removed', path: environmentRoot }], diagnostic: null };
+    },
+  };
+}
 
 test('真实产品执行器单次完成 commit、push、retained transition 与 task cleanup', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-journey-'));
@@ -103,17 +136,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
-    resolveTaskEnvironmentContext: () => ({
-      taskId: task,
-      owner: 'codex',
-      executionReady: true,
-      environmentRoot,
-      workspaceRoot: retained,
-      environmentEvidence: { receipt: 'fixture-receipt', cli: 'fixture-cli' },
-      membership: { checkoutPath: environmentRoot, selector: 'workspace' },
-      repositories: [{ selector: 'workspace', branch: `codex/${task}`, remote: 'origin', startPoint: 'dev' }],
-      cliInvocation: { command: path.join(environmentRoot, 'projects', 'product', 'buildr'), argsPrefix: [] },
-    }),
+    ...taskEnvironmentFixture({ task, environmentRoot, retained }),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
     parseOpenSpecChangeDelta: () => ({ capabilities: new Map() }),
     parseOpenSpecProposalCapabilities: () => ({ modified: new Set(['task-finish-execution']), new: new Set() }),
@@ -201,17 +224,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
-    resolveTaskEnvironmentContext: () => ({
-      taskId: task,
-      owner: 'codex',
-      executionReady: true,
-      environmentRoot,
-      workspaceRoot: retained,
-      environmentEvidence: { receipt: 'fixture-receipt', cli: 'fixture-cli' },
-      membership: { checkoutPath: environmentRoot, selector: 'workspace' },
-      repositories: [{ selector: 'workspace', branch: `codex/${task}`, remote: 'origin', startPoint: 'dev' }],
-      cliInvocation: { command: path.join(environmentRoot, 'projects', 'product', 'buildr'), argsPrefix: [] },
-    }),
+    ...taskEnvironmentFixture({ task, environmentRoot, retained }),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
     parseOpenSpecChangeDelta: () => { throw new Error('OpenSpec delta parser must not run'); },
     parseOpenSpecProposalCapabilities: () => { throw new Error('OpenSpec proposal parser must not run'); },
@@ -247,7 +260,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
   ]);
   const operations = result.phases.flatMap((phase) => phase.operations);
-  assert.equal(operations.some((operation) => operation.id.includes('openspec') || operation.args?.includes('openspec')), false);
+  assert.equal(operations.some((operation) => operation.id?.includes('openspec') || operation.args?.includes('openspec')), false);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.candidate.head);
   const completion = JSON.parse(fs.readFileSync(result.completion.receipt, 'utf8'));

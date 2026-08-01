@@ -48,21 +48,38 @@ function briefPanel(brief) {
 }
 
 export async function renderChangeDetail({ root, api, onWorkspace, onBreadcrumb, openAgentAction, params }) {
-  const { projectCode, changeRef } = params;
-  root.innerHTML = `<section class="page-header change-detail-header"><a class="back-link" href="/changes" data-route>← 返回变更目录</a><div class="page-header-row"><div><p class="eyebrow">变更</p><h1 id="change-detail-name">正在读取…</h1><p id="change-detail-copy" class="page-copy">先了解变更，再按需查看技术产物。</p></div><div class="panel-actions"><button id="continue-change" class="button primary" type="button">继续推进</button><button id="review-change" class="button secondary" type="button">交给 Agent 审查</button></div></div></section><section class="metric-grid change-metrics"><article class="metric-card identity-card"><span>变更 ID</span><strong id="change-detail-code">—</strong><small id="change-detail-project">—</small></article><article class="metric-card"><span>生命周期</span><strong id="change-detail-lifecycle">—</strong><small>来自实际目录位置</small></article><article class="metric-card"><span>任务进度</span><strong id="change-detail-progress">—</strong><small id="change-detail-updated">—</small></article></section><div id="change-brief"></div><section class="panel technical-artifacts-panel"><div class="panel-heading"><div><p class="eyebrow">深入技术细节</p><h2>OpenSpec 产物</h2></div><span class="state">只读</span></div><div id="change-artifacts" class="artifact-list"></div></section>`;
+  const { projectCode, taskId } = params;
+  const changeRef = params.changeRef || params.changeCode;
+  const taskScoped = Boolean(taskId);
+  const backPath = taskScoped ? `/tasks/${encodeURIComponent(taskId)}` : '/changes';
+  const endpoint = taskScoped
+    ? `/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(projectCode)}/${encodeURIComponent(changeRef)}`
+    : `/api/v1/projects/${encodeURIComponent(projectCode)}/changes/${encodeURIComponent(changeRef)}`;
+  root.innerHTML = `<section class="page-header change-detail-header"><a class="back-link" href="${backPath}" data-route>← ${taskScoped ? '返回任务详情' : '返回变更目录'}</a><div class="page-header-row"><div><p class="eyebrow">${taskScoped ? '任务关联变更' : '变更'}</p><h1 id="change-detail-name">正在读取…</h1><p id="change-detail-copy" class="page-copy">先了解变更，再按需查看技术产物。</p></div><div class="panel-actions"><button id="continue-change" class="button primary" type="button">继续推进</button><button id="review-change" class="button secondary" type="button">交给 Agent 审查</button></div></div></section><section class="metric-grid change-metrics"><article class="metric-card identity-card"><span>变更 ID</span><strong id="change-detail-code">—</strong><small id="change-detail-project">—</small></article><article class="metric-card"><span>生命周期</span><strong id="change-detail-lifecycle">—</strong><small id="change-detail-provenance">来自实际目录位置</small></article><article class="metric-card"><span>任务进度</span><strong id="change-detail-progress">—</strong><small id="change-detail-updated">—</small></article></section><section id="task-change-provenance" class="panel task-change-provenance hidden"><div class="panel-heading"><div><p class="eyebrow">Task-scoped Resolver</p><h2>读取来源</h2></div><span class="state">只读</span></div><dl id="task-change-provenance-facts" class="read-facts"></dl></section><div id="change-brief"></div><section class="panel technical-artifacts-panel"><div class="panel-heading"><div><p class="eyebrow">深入技术细节</p><h2>OpenSpec 产物</h2></div><span class="state">只读</span></div><div id="change-artifacts" class="artifact-list"></div></section>`;
   try {
-    const [workspace, data] = await Promise.all([api('/api/v1/workspace'), api(`/api/v1/projects/${encodeURIComponent(projectCode)}/changes/${encodeURIComponent(changeRef)}`)]); onWorkspace(workspace);
-    const change = data.change;
-    document.getElementById('change-detail-name').textContent = change.name; document.getElementById('change-detail-copy').textContent = `查看 ${change.project.name} 中的真实 OpenSpec 变更；页面不直接修改文件。`; onBreadcrumb(['项目', change.project.name, '变更', change.name]);
+    const [workspace, data] = await Promise.all([api('/api/v1/workspace'), api(endpoint)]); onWorkspace(workspace);
+    const resolution = taskScoped ? data.resolution : null;
+    const change = taskScoped ? resolution.workingCopy.change : data.change;
+    const provenance = resolution?.workingCopy?.provenance || (change.lifecycle === 'archived' ? 'retained-archive' : 'retained-active');
+    document.getElementById('change-detail-name').textContent = change.name; document.getElementById('change-detail-copy').textContent = taskScoped ? `按 Task ${taskId} 的受信任执行根读取；页面不接收 filesystem path。` : `查看 ${change.project.name} 中的真实 OpenSpec 变更；页面不直接修改文件。`; onBreadcrumb(taskScoped ? ['任务', taskId, '变更', change.name] : ['项目', change.project.name, '变更', change.name]);
     document.getElementById('change-detail-code').textContent = change.code; document.getElementById('change-detail-project').textContent = `${change.project.name}（${change.project.code}）`;
     document.getElementById('change-detail-lifecycle').textContent = change.lifecycle === 'active' ? '进行中' : '已归档';
+    document.getElementById('change-detail-provenance').textContent = provenance === 'task-environment-candidate' ? '任务环境候选' : provenance === 'retained-archive' ? 'Retained 已归档' : 'Retained 进行中';
     document.getElementById('change-detail-progress').textContent = change.progress.exists ? `${change.progress.completed} / ${change.progress.total}` : '未声明';
     document.getElementById('change-detail-updated').textContent = `更新于 ${new Date(change.updatedAt).toLocaleString('zh-CN')}`;
+    if (taskScoped) {
+      const panel = document.getElementById('task-change-provenance'); panel.classList.remove('hidden');
+      const facts = document.getElementById('task-change-provenance-facts');
+      const row = (label, value) => { const node = document.createElement('div'); const dt = document.createElement('dt'); const dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; node.append(dt, dd); return node; };
+      facts.append(row('Working copy', `${resolution.workingCopy.provenance} · ${resolution.workingCopy.root}`));
+      facts.append(row('Retained baseline', resolution.retainedBaseline ? `${resolution.retainedBaseline.provenance} · ${resolution.retainedBaseline.root}` : '无独立 retained baseline'));
+      document.querySelector('.panel-actions').classList.add('hidden');
+    }
     document.getElementById('change-brief').append(briefPanel(change.brief));
     const container = document.getElementById('change-artifacts'); container.append(artifactPanel('提案', change.artifacts.proposal), artifactPanel('设计', change.artifacts.design));
     for (const spec of change.artifacts.specs) container.append(artifactPanel(`规格 · ${spec.capability}`, spec));
     container.append(artifactPanel('任务', change.artifacts.tasks));
     const continueButton = document.getElementById('continue-change'); continueButton.classList.toggle('hidden', change.lifecycle !== 'active'); continueButton.addEventListener('click', () => openAgentAction('change', { projectCode, ref: changeRef, action: 'continue' }));
     document.getElementById('review-change').addEventListener('click', () => openAgentAction('change', { projectCode, ref: changeRef, action: 'review' }));
-  } catch (error) { root.innerHTML = `<section class="page-header"><p class="eyebrow">变更</p><h1>变更不存在</h1><p class="page-copy"></p></section><a class="button secondary" href="/changes" data-route>返回变更目录</a>`; root.querySelector('.page-copy').textContent = error.message; }
+  } catch (error) { root.innerHTML = `<section class="page-header"><p class="eyebrow">变更</p><h1>变更不可用</h1><p class="page-copy"></p></section><a class="button secondary" href="${backPath}" data-route>返回${taskScoped ? '任务详情' : '变更目录'}</a>`; root.querySelector('.page-copy').textContent = error.message; }
 }

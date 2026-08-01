@@ -46,8 +46,9 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 复杂、长期、跨批次或有交叉依赖的任务看板、change 关联与持续进度入口 | `task-board` Skill |
 | 非简单 Workspace 任务开始后的轻量资产观察、任务复盘、人工决定和新任务交接 | `buildr.task-asset-review/v3` selected provider；optional 不可用时按 consumer 声明降级 |
 | 运行测试、验证改动、判断开发验证是否完成、报告验证耗时、初始化/更新测试声明、推进测试能力成熟度，或实现任务到达验证/完成节点 | `buildr.task-verification/v2` selected provider；用户无需主动点名该能力 |
-| 创建、定位、保留、迁移入口或清理单仓/多仓 task environment | `buildr.task-worktree-lifecycle/v2` selected provider |
-| 完成已验证任务、自动归档集成并清理 task environment | `buildr.task-finish/v1` selected provider；产品缺陷退出收尾并返回研发流程 |
+| 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
+| 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
+| 完成已验证任务、自动归档集成并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；产品缺陷退出收尾并返回研发流程 |
 | 提交、拉取、合并、rebase、checkout/switch、reset、推送、发布或其他单项 Git 操作 | `buildr.git-single-operation/v1` selected provider |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
 | 沉淀每次会话必须遵守的约束 | 规则（Rules） |
@@ -56,8 +57,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 当前 Agent 找不到已声明规则或技能 | Agent runtime 渲染 |
 | 为 Buildr 增加新的 Agent runtime adapter | runtime trait intake + OpenSpec change |
 | 采用内部流程、调整工作方式、修改或替换 Skill 行为 | `capability-adaptation` Skill；先识别跨 Skill 稳定依赖边界，再开发、验证和激活 |
-产品入口 Buildr Skill 只对自身已命中的 Buildr 管理意图执行内部能力路由，不是同时 required 依赖全部 capabilities 的 workspace consumer。只有某类 Buildr 管理意图命中本 Skill 后，才把对应 capability 作为本次动作的 required dependency；单项 capability blocked 不得阻塞 init、doctor、Project/Service 或其他无关 Buildr 管理动作。顶层 capability 的 binding 只选择 provider，不自动产生 Agent 意图命中；替换顶层入口时必须由能力适配同时验证 selected provider 的 runtime 可发现性、description 覆盖和触发歧义。
-创建 canonical task worktree 时，使用 `buildr worktree create <task-id> --agent <agent> --branch <branch> --start-point <ref> --target <workspace-root> --json`，由产品确定性执行创建后 doctor；只有刚创建 checkout 的全部 actionable findings 仅为当前 Agent runtime stale、Git clean 且 identity 未变化时，命令才在 create 授权内自动 sync 并运行最终 doctor。其他问题 fail closed 并保留现场；复用 worktree 不重复检查。除上述封闭流程外，任一 provider 返回 `treeChanged: true` 后，遵守 required Core workspace-transition invariant：在已初始化 Buildr workspace 中针对当前 Agent 和 workspace root 运行 doctor。doctor 指出 workspace sync 是合适修复动作时，询问用户是否由 Agent 立即同步，同时提供准确手动命令作为备选；确认后由 Agent 执行 sync 并验证。当前 session 是否重新发现新资产由 Agent runtime 决定。“更新 workspace”或“同步 workspace”已包含 Git 更新与 Buildr sync 授权，不重复询问 sync；遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态时停止，不自动 stash、rebase、覆盖，也不继续 sync。
+产品入口 Buildr Skill 只对自身已命中的 Buildr 管理意图执行内部能力路由，不是同时 required 依赖全部 capabilities 的 workspace consumer。只有某类 Buildr 管理意图命中本 Skill 后，才把对应 capability 作为本次动作的 required dependency；单项 capability blocked 不得阻塞 init、doctor、Project/Service 或其他无关 Buildr 管理动作。顶层 capability 的 binding 只选择 provider，不自动产生 Agent 意图命中；替换顶层入口时必须由能力适配同时验证 selected provider 的 runtime 可发现性、description 覆盖和触发歧义。正式 Task 开始持久交付前，使用 `buildr task environment prepare <task-id> --agent <agent> --target <canonical-workspace> --json`；`prepare` 确定性完成实际执行位置、Runtime、Workspace CLI、依赖、runtime projection 和真实 probes，重复调用承担恢复。只有结果为 `ready` 才在返回的执行根中继续。Git worktree 只是可组合 provider；其 evidence 不代表环境 ready。任一 provider 返回 `treeChanged: true` 后，遵守 required Core workspace-transition invariant：在对应已初始化 Buildr workspace 中针对当前 Agent 和 workspace root 运行 doctor。doctor 指出 workspace sync 是合适修复动作时，询问用户是否由 Agent 立即同步，同时提供准确手动命令作为备选；确认后由 Agent 执行 sync 并验证。当前 session 是否重新发现新资产由 Agent runtime 决定。“更新 workspace”或“同步 workspace”已包含 Git 更新与 Buildr sync 授权，不重复询问 sync；遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态时停止，不自动 stash、rebase、覆盖，也不继续 sync。
 
 ## 资产维护
 

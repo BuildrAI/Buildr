@@ -1,0 +1,346 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "introduce-task-environment",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-3cc53e3a627aed58ad30d27f973de9ff7c0fc3e007f8012e0af9f0921ca7ad07",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "task-environment Skill 必须作为环境生命周期入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "正式持久交付必须经过 Task Environment ready 门槛",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "任务 Skills 必须消费新的 Environment capability topology",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "实现型 workflow 必须绑定 task execution context",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 实现型 workflow 必须绑定 task execution context\nBuildr 的 task triage、task-worktree 与 OpenSpec Skills MUST 在写入前核对 canonical task environment 与明确 execution binding。普通 workflow MUST NOT 以 session root 等于 environment root 或 session adoption receipt 作为执行前置条件。\n\n#### Scenario: Triage 创建 environment 后在原对话继续\n- **WHEN** task triage 创建 canonical task environment，且当前 Agent 能使用明确 target/workdir 和 checkout-local CLI\n- **THEN** task-worktree provider MUST 返回 task、change、environment、repository set、allowed execution roots 与 runtime projection identity\n- **AND** 当前用户对话 MUST 能在 context 返回 `executionReady: true` 后继续写入\n\n#### Scenario: 明确工作目录绑定 environment\n- **WHEN** 命令 target、workdir、repository membership 和 checkout-local CLI identity 匹配 environment receipt\n- **THEN** workflow MUST 将其视为有效 execution binding\n- **AND** MUST NOT 因 Agent session 从 canonical Workspace 启动而阻塞 proposal、实现、构建、测试或验证\n\n#### Scenario: Execution binding 漂移\n- **WHEN** target、workdir、repository identity 或 runtime projection 与 environment receipt 不匹配\n- **THEN** workflow MUST fail closed 并报告精确差异\n- **AND** MUST NOT 通过创建第二份纯 checkout 规避 identity mismatch\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task worktree 提供 change 单写入与验证证据边界",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task worktree 提供 change 单写入与验证证据边界\nBuildr task triage 和 OpenSpec propose guidance MUST 在首次写入预计进入实现的 OpenSpec change artifacts 前完成执行位置判断，并在需要隔离开发时先创建或复用 canonical task environment；采用 environment 后必须保持唯一任务写入位置和显式 repository set。worktree lifecycle 与 Git integration providers MUST 只返回各自动作产生的 environment/candidate identity 和 transition evidence，由独立 task-verification capability 管理验证政策与 Candidate evidence。\n\n#### Scenario: Task triage 独立判断执行形态和任务位置\n- **WHEN** Agent 使用 task triage 判断修改、修复、实现或文档任务\n- **THEN** task triage MUST 在语义路径之外独立判断执行形态为 implementation、metadata-only 或待确认\n- **AND** it MUST 输出 task environment 创建、复用、不需要或待确认的任务位置结论、repository set 及依据\n\n#### Scenario: 实现型 change 在 propose 前创建 task environment\n- **WHEN** task triage 选择 change-flow，且任务预计包含代码修改、构建、测试或长期实现上下文\n- **THEN** Agent MUST 在创建 OpenSpec change artifacts 前创建或复用 canonical task environment\n- **AND** proposal、design、specs、tasks、实现和候选验证 MUST 只写入该 environment 的允许执行根\n\n#### Scenario: 直接 propose 仍执行 task environment 门禁\n- **WHEN** 用户意图直接命中 installed OpenSpec propose Skill\n- **THEN** Buildr OpenSpec contribution MUST 在 `openspec new change` 或其他 artifact 写入前判断任务是否预计进入代码修改、构建、测试或长期开发上下文\n- **AND** 需要隔离开发时 MUST 先创建或复用 canonical task environment 并在该 environment 中继续 propose\n- **AND** 无法判断执行形态或 repository set 时 MUST 先澄清而不是提前创建 artifacts\n\n#### Scenario: 纯元内容任务不创建 task environment\n- **WHEN** 任务明确只维护 OpenSpec artifacts、规则、Skills、文档或模板，且不进入代码实现、构建或测试\n- **THEN** Agent MAY 在当前 Workspace 直接维护这些元内容\n- **AND** Agent MUST 在任务升级为实现前重新执行 task environment 决策\n\n#### Scenario: code-only 实现仍使用 task environment\n- **WHEN** task triage 选择 code-only 且任务预计进入代码修改、构建、测试或长期开发上下文\n- **THEN** Agent MUST 创建或复用 canonical task environment\n- **AND** Agent MUST NOT 因为不创建 OpenSpec change 而跳过任务隔离和 repository set 判断\n\n#### Scenario: artifacts 任务升级为实现\n- **WHEN** 未使用 task environment 的 OpenSpec 任务后来需要代码实现、构建或测试\n- **THEN** Agent MUST 先创建或复用 task environment 并将 change artifacts 收敛到该唯一位置\n- **AND** Agent MUST 清除原工作区的重复副本并确认原 Workspace checkout 没有该任务的开发改动后再继续\n\n#### Scenario: 开发命令使用 environment context\n- **WHEN** Agent 在 task environment 中执行 Buildr CLI、代码生成、构建、测试或启动 task-owned 本机进程\n- **THEN** Agent MUST 使用 environment root 或目标成员 repository checkout 作为明确 workdir\n- **AND** Buildr CLI target、checkout-local CLI source 和 task environment context MUST 相互匹配\n- **AND** context mismatch MUST 在结果进入正式验证或收尾前 fail closed\n\n#### Scenario: 最终候选 identity 交给验证 provider\n- **WHEN** task environment 中的全部内容修改已经结束并准备验证最终候选\n- **THEN** task-worktree provider MUST 提供当前 environment identity、repository set、各 checkout 的 clean/dirty 状态和可确认 tree/fingerprint identity 输入\n- **AND** selected task-verification provider MUST 负责建立最终 multi-repository candidate identity、执行项目要求的验证并返回绑定该 environment 的 evidence\n\n#### Scenario: Git 集成改变候选内容\n- **WHEN** 任一 repository 的 rebase、冲突解决、merge、reset 或其他 Git integration 操作使集成后的内容 identity 不同于输入 candidate\n- **THEN** selected Git provider MUST 返回该 repository 操作前后 identity 和 `treeChanged` evidence\n- **AND** selected Git provider MUST NOT 执行 Candidate 验证或决定既有 evidence 是否可复用\n- **AND** selected task-verification provider or its consumer MUST 根据当前 environment repository candidate set 决定 evidence 失效与重新验证\n\n#### Scenario: Worktree provider 只报告 lifecycle transition\n- **WHEN** task-worktree provider 创建、复用、检查、保留或清理 canonical task environment\n- **THEN** it MUST 返回 lifecycle state、environment root、repository set、任务分支和由本次 checkout 操作产生的 transition evidence\n- **AND** it MUST NOT 监控普通编辑、判断 Git integration 内容等价性或决定验证复用与重跑\n\n#### Scenario: 上游 OpenSpec Skill 保持原文\n- **WHEN** Buildr 为 OpenSpec propose 增加执行位置门禁\n- **THEN** Buildr MUST 通过 Component-owned Skill contribution 组合该 guidance\n- **AND** Buildr MUST NOT 修改外部 `openspec-propose` Skill 的上游正文\n"
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "Package 必须原子交付 Task Environment authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "产品验证必须覆盖 Environment authority 迁移与清理",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "产品验证覆盖 task worktree 隔离与证据复用",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 产品验证覆盖 task worktree 隔离与证据复用\nBuildr package verification MUST 防止 task-worktree guidance回退为change artifacts双写、合并前污染主自举workspace，或让Git/worktree providers重新拥有Candidate验证政策与evidence复用决策。\n\n#### Scenario: 校验 change 创建时机\n- **WHEN** Buildr验证随包task-worktree Skill\n- **THEN** 验证 MUST确认实现型OpenSpec change在propose前创建或复用task worktree\n- **AND** 验证 MUST确认采用worktree后artifacts、实现和候选验证只有一个写入位置\n\n#### Scenario: 校验 provider 只交接候选事实\n- **WHEN** Buildr验证Product Project开发规则、task-worktree Skill和git-ops Skill\n- **THEN** 验证 MUST确认task-worktree只提供canonical checkout、clean/dirty状态和lifecycle transition evidence\n- **AND** 验证 MUST确认git-ops只提供Git策略、refs影响、操作前后content identity和tree等价性信号\n- **AND** 验证 MUST确认Candidate验证执行、evidence有效性、复用和重跑决策只由selected task-verification provider或其consumer负责\n\n#### Scenario: 校验 Skill 文本没有重复职责\n- **WHEN** Buildr执行package静态验证和任务能力专项测试\n- **THEN** verifier MUST拒绝task-worktree中的重复自举sync/CLI入口段落\n- **AND** verifier MUST拒绝git-ops或task-worktree重新声明Candidate验证命令、验证级别或最终evidence复用决策\n- **AND** verifier MUST确认现有capability identity、version、provider和binding拓扑保持不变\n\n#### Scenario: 候选验证保持主工作区干净\n- **WHEN** 产品E2E从task worktree checkout验证未合并候选版本\n- **THEN** 验证 MUST使用临时workspace或task worktree目标\n- **AND** 验证前后的主开发工作区status MUST保持不变\n\n#### Scenario: 不要求 post-merge 重复 E2E\n- **WHEN** Buildr验证产品开发流程文本\n- **THEN** 验证 MUST确认相同candidate identity集成后不要求在主开发分支重复产品E2E\n- **AND** 验证 MUST区分实际workspace update/sync后的doctor与产品E2E\n"
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "随包 task-worktree guidance 必须简洁且结构化",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 随包 task-worktree guidance 必须简洁且结构化\nBuildr package MUST 以单一 routing description 和结构化正文交付 `task-worktree` guidance；description MUST 只表达触发意图与职责边界，正文 MUST 按决策、生命周期、协作交接、授权与停止条件组织，且 MUST NOT 重复 capability contract 的完整字段或在 Guardrails 中再次复述前文规则。\n\n#### Scenario: 静态验证简洁结构\n- **WHEN** Buildr 验证随包 `task-worktree` Skill\n- **THEN** verifier MUST 确认 description 为单句 routing index\n- **AND** verifier MUST 确认正文明确区分 create、reuse、none 与 blocked\n- **AND** verifier MUST 拒绝重复的 contract evidence 清单、doctor/sync 入口段落和独立重复 Guardrails\n\n#### Scenario: 复用仍执行当前状态门禁\n- **WHEN** provider 复用 plan 完全一致且没有 tree transition 的既有 task environment\n- **THEN** guidance MUST 只跳过 create-time doctor 与自动 sync\n- **AND** guidance MUST 仍要求核对当前 context、membership、repository identities、CLI source 和本次动作需要的 clean/integration 状态\n\n#### Scenario: 元内容升级为实现任务\n- **WHEN** 未使用 task environment 的元内容任务后来进入代码修改、构建或测试\n- **THEN** guidance MUST 要求先创建或复用 canonical task environment\n- **AND** guidance MUST 只在证明 artifacts ownership、内容和唯一目标后收敛副本\n- **AND** 无法证明为任务自有重复副本时 MUST 停止删除或覆盖\n\n#### Scenario: capability 拓扑保持兼容\n- **WHEN** Buildr 交付优化后的 `task-worktree` Skill\n- **THEN** `buildr.task-worktree-lifecycle/v2` identity、provider、bindings、consumer readiness 和 CLI 行为 MUST 保持不变\n"
+    },
+    {
+      "capability": "change-asset-indexing",
+      "title": "Task-scoped Change 引用必须从受信任任务范围解析",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "change-asset-indexing",
+      "title": "Task-scoped Change 投影不得改变全局 retained 索引",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Task Environment 必须提供三个薄公共 CLI action",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Worktree CLI 必须与 Task Environment CLI 分离",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "双任务并发组合验收",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 双任务并发组合验收\nBuildr MUST 提供可重复的双任务并发组合验收，在同一临时 Workspace 中使用两个真实 task environment 覆盖 receipt 绑定 CLI 的实际执行、包含嵌套独立仓库的完整 repository membership、Local App 预览并发启动、验证资源协调、目标分支竞态、可恢复收尾和产品化归属清理，并 MUST 输出可归因到两个任务的结构化证据。\n\n#### Scenario: 两个任务从不同执行目录运行专属 CLI\n- **WHEN** Candidate 验收创建两个任务环境，并分别从 Workspace、Product 或 Service cwd 调用 receipt 返回的绝对 CLI invocation\n- **THEN** 每个 invocation MUST 实际执行成功并绑定自己的 task environment、checkout、CLI identity 和允许执行范围\n- **AND** 调用 MUST 不依赖 cwd，也不得解析或误用另一任务的 checkout\n\n#### Scenario: 多仓任务环境保持完整成员边界\n- **WHEN** 临时 Workspace 登记入口仓库和至少一个嵌套独立仓库，并为两个任务创建相同 repository plan 的环境\n- **THEN** 每个环境 MUST 在 canonical source path 包含各自的嵌套 checkout\n- **AND** receipt、context 与 CLI 执行证据 MUST 列出完整且互不串扰的 repository membership 和 allowed execution roots\n\n#### Scenario: 两个任务并发运行且互不串扰\n- **WHEN** Candidate 验收并发启动两个任务各自的预览和验证 run\n- **THEN** 两个任务 MUST 使用各自 receipt 绑定的 checkout 与绝对 CLI invocation，并使用不同的状态目录、实例身份和端口\n- **AND** 普通消费 Workspace MAY 共享同一外部产品 CLI identity，但 invocation 的 environment binding MUST 可区分且不得依赖 cwd\n- **AND** 可并行资源 MUST 同时执行，共享容量资源 MUST 按声明排队并记录归属和等待证据\n\n#### Scenario: 目标分支发生竞态\n- **WHEN** 一个任务完成目标 ref observation 后另一个任务推进同一目标分支\n- **THEN** 前一个任务 MUST 返回 `target-race` 并停止覆盖新的目标 ref\n- **AND** 通过正式收尾恢复入口继续时，MUST 只重跑失效步骤及其下游，并保留已通过且仍有效的步骤证据\n\n#### Scenario: 整体验收完成清理\n- **WHEN** 双任务场景成功或失败后进入清理\n- **THEN** Buildr MUST 通过产品清理入口只停止和删除各任务拥有的预览、租约、worktree 与本地任务分支\n- **AND** 对不匹配的 owner、environment 或 receipt MUST fail closed，不得由验收脚本绕过产品归属检查直接删除\n- **AND** retained checkout MUST 保持健康且不得残留任务运行状态\n"
+    },
+    {
+      "capability": "concurrent-task-acceptance",
+      "title": "双任务验收必须覆盖 runtime 所有权负向清理",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 双任务验收必须覆盖 runtime 所有权负向清理\nCandidate 双任务组合验收 MUST 证明错误 owner 无法停止另一 task 的 preview，且运行中 task-owned preview/process 会阻止 worktree cleanup；最终清理 MUST 通过产品入口由真实 owner 完成。\n\n#### Scenario: 错误 owner 与提前清理均被拒绝\n- **WHEN** task A 尝试停止 task B 的 preview，或 task B 在 preview 存活时请求 cleanup environment\n- **THEN** 两个动作 MUST 在不改变 task B 运行状态或 checkout 的情况下失败\n- **AND** task B 使用正确 receipt 停止 preview 后，正式 cleanup MUST 成功且 retained Workspace 保持健康\n"
+    },
+    {
+      "capability": "public-json-contracts",
+      "title": "Task Environment CLI 必须提供稳定公开 JSON identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "public-json-contracts",
+      "title": "Git worktree provider CLI 必须使用窄公开 JSON identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "正式 Task 必须先取得 ready Task Environment",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task Environment Application 必须提供唯一确定性操作边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Environment Receipt 必须是唯一环境 authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task Environment 必须记录实际执行位置而非固定 mode",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Git worktree provider 必须只返回窄 Git evidence",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Environment prepare 必须确定性准备并真实探测执行基础",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task Validation Workspace 必须隔离候选 runtime 投射",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task-owned 持久资源必须立即登记并由 provider 清理",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Environment restore 必须按 Task ID 串行复核真实事实",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task Environment 必须统一编排安全 cleanup",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "P0.2 必须原子切换旧 environment authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Buildr 必须将 task worktree 建模为可核验的任务环境",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Buildr 必须将 task worktree 建模为可核验的任务环境\nBuildr MUST 为每个 task id 维护唯一 canonical task environment；该环境 MUST 以 `<workspace>/.worktrees/<task-id>` 为根，包含 Workspace 根 repository worktree，并可包含任务显式选择的独立 Project/Service repository worktrees。\n\n#### Scenario: 创建默认单仓任务环境\n- **WHEN** Agent 创建 task environment 且没有选择独立 Project/Service repository\n- **THEN** Buildr MUST 在 canonical environment root 创建 Workspace 根 repository worktree\n- **AND** MUST 返回只包含该 root repository 的 environment identity\n\n#### Scenario: 创建多仓任务环境\n- **WHEN** Agent 显式选择一个或多个 Git Project/Service repository\n- **THEN** Buildr MUST 将每个 repository worktree 创建在 environment root 下对应的 canonical `source.path`\n- **AND** MUST 保持每个 repository 的独立 Git boundary、branch、HEAD 和 remote identity\n- **AND** MUST NOT 将多个 repositories 合并为一个 Git repository、submodule 或共享 index\n\n#### Scenario: Codex 使用多仓任务环境\n- **WHEN** Codex chat 以 task environment root 作为本地 project/worktree 目录\n- **THEN** Agent MUST 能在同一目录树中访问 Workspace root 和全部选中 repository checkouts\n- **AND** Buildr MUST NOT 声称 Codex 的单 repository Git UI 原生聚合了全部 nested repositories\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "多仓 repository set 必须显式、稳定且可验证",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: 多仓 repository set 必须显式、稳定且可验证\nBuildr MUST 只物化 Agent 显式选择的 repository entities，并 MUST 从 canonical Project/Service registries 与实际 Git boundary 共同解析 repository plan；不得自动包含 Workspace 中全部 repositories 或根据 remote URL 猜测任务范围。\n\n#### Scenario: 从 Service selector 解析 repository\n- **WHEN** Agent 选择 `service:<project>/<service>`\n- **THEN** Buildr MUST 从 canonical Service Domain 解析 `source.path`、declared remote 和 `integrationBranch`\n- **AND** MUST 使用实际 repository root 与 remote URL 核对该声明后才能创建 worktree\n\n#### Scenario: 两个 Service 使用相同 remote URL\n- **WHEN** 两个显式选择的 Service source paths 指向相同 remote URL 但具有独立本地 repositories 或 integration branches\n- **THEN** Buildr MUST 按 source path 和实际 repository boundary 分别处理\n- **AND** MUST NOT 仅因 remote URL 相同而合并、去重或复用错误 checkout\n\n#### Scenario: selector 不是有效 Git entity\n- **WHEN** selector 不存在、source 不是独立 Git repository、path 越界或实际 remote 与声明冲突\n- **THEN** Buildr MUST 在创建任何新 worktree 前 fail closed\n- **AND** MUST 返回失败 selector、声明/实际 identity 和可执行 next actions\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Repository worktrees 必须保持 canonical Workspace 布局",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Repository worktrees 必须保持 canonical Workspace 布局\n独立 Project/Service repository worktree MUST 位于 task environment 内与其 canonical `source.path` 相同的相对路径；Buildr MUST 在写入前证明目标路径没有被父 repository 跟踪、没有被其他 task/repository 占用且不会逃逸 environment root。\n\n#### Scenario: nested Service 目标未被父仓跟踪\n- **WHEN** root task checkout 的 canonical Service path 未被父 repository index 跟踪且未被占用\n- **THEN** Buildr MUST 允许在该路径创建独立 Service repository worktree\n- **AND** 原 Workspace 的 Service checkout MUST 保持不变\n\n#### Scenario: nested target 与 tracked path 冲突\n- **WHEN** 目标 path 已由 root 或 Project repository 跟踪、已注册给其他 worktree 或包含未知文件\n- **THEN** Buildr MUST 在该 target 零写入失败\n- **AND** MUST NOT 以扁平 fallback、symlink、覆盖或删除目标内容规避冲突\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 创建必须完整预检并可恢复",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment 创建必须完整预检并可恢复\nBuildr MUST 在任何 `git worktree add` 前解析并验证完整 repository plan。跨 repository 创建无法原子完成时，Buildr MUST 保留成功步骤、记录 blocked environment receipt 并支持相同 plan 幂等恢复；不得自动删除已创建 checkout 或用户分支。\n\n#### Scenario: 全部 repository 预检通过\n- **WHEN** repository paths、remotes、start points、task branches 和 branch ownership 全部有效\n- **THEN** Buildr MUST 按 root 后 nested repositories 的确定顺序创建 worktrees\n- **AND** 成功结果 MUST 返回 `ready: true` 和每个 repository 的 identity\n\n#### Scenario: 中途创建失败\n- **WHEN** 一个 nested repository 在 root 或其他 repository 已创建后失败\n- **THEN** Buildr MUST 将 environment 标记为 `blocked`\n- **AND** MUST 保留并报告每个 repository 的 created/reused/blocked 状态和 next actions\n- **AND** 相同 plan 重试 MUST 幂等复用已正确创建的 checkouts\n\n#### Scenario: 相同 task id 使用不同 repository plan\n- **WHEN** 已有 task environment receipt 的 repository set、branch 或 start point 与新请求不一致\n- **THEN** Buildr MUST 拒绝静默复用或改写 environment\n- **AND** MUST 要求显式恢复、扩展或使用新的 task id\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 必须提供统一 execution context identity",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment 必须提供统一 execution context identity\nBuildr MUST 提供机器可读的 create/inspect/context 结果，至少记录 task、owner Agent、source Workspace、environment root、repository set、每个 source/checkout repository identity、允许执行根、CLI source、lifecycle state 和隔离级别。\n\n#### Scenario: 从 environment 内检查 context\n- **WHEN** Agent 从 environment root 或任一成员 repository path 请求 context\n- **THEN** Buildr MUST 返回同一 task environment identity\n- **AND** MUST 标识当前路径所属 repository、其 checkout root、branch、HEAD 和 dirty 状态\n\n#### Scenario: 从主工作区冒充任务 context\n- **WHEN** 请求路径位于原 Workspace checkout、其他 task environment 或未登记路径\n- **THEN** Buildr MUST 返回 context mismatch 并 fail closed\n- **AND** MUST NOT 将分支名、remote URL 或相同 HEAD 当作 environment ownership 证明\n\n#### Scenario: 报告隔离级别\n- **WHEN** Buildr 返回 task environment context\n- **THEN** result MUST 说明 working tree/index 与 Buildr-owned runtime state 的隔离状态\n- **AND** MUST 明确 Git objects/refs/worktree metadata 为 repository shared state\n- **AND** 外部依赖 MUST 标记为 Project-owned environment；只有多个任务可能修改同一共享状态时，才 MUST 要求项目已有租户、账号、数据前缀、串行化或显式授权边界\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment CLI JSON 必须表达多仓事实",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment CLI JSON 必须表达多仓事实\n`buildr worktree create --json` MUST 返回 task-environment-aware public schema，包含 environment 与 repositories 集合；schema MUST 保留单仓调用的等价顶层生命周期字段，并 MUST 以新 schema identity 暴露不兼容变化。\n\n#### Scenario: 单仓 v2 JSON\n- **WHEN** 调用方创建默认单仓环境并请求 JSON\n- **THEN** result MUST 使用 `buildr.worktree-create/v2`\n- **AND** `repositories` MUST 包含一个 Workspace root entry\n- **AND** `state`、`treeChanged`、`ready`、`bootstrap`、`blocked` 与 `nextActions` MUST 保持明确\n\n#### Scenario: 多仓 v2 JSON\n- **WHEN** 调用方创建或复用多仓环境并请求 JSON\n- **THEN** result MUST 为每个 repository 返回 entity selector、source path、source repository、checkout path、branch、start point、HEAD、clean 和 lifecycle state\n- **AND** top-level readiness MUST 在任一 required repository blocked 时为 false\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 清理必须保护全部成员和其他任务",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment 清理必须保护全部成员和其他任务\nBuildr MUST 提供 receipt-bound 的本地 task environment 清理入口，并 MUST 只在当前 environment 的全部 repository changes 已安全集成、checkouts 干净且任务拥有的本机资源已停止后清理。清理 MUST 在任何删除前统一核对 task、owner、receipt、repository identity、每仓 integrated ref 和其他 environment ownership，按 nested repositories 后 root 的顺序执行，并 MUST NOT 修改其他 task environments 或远端分支。\n\n#### Scenario: 多仓环境安全清理\n- **WHEN** 调用方提供匹配 receipt owner 的 Agent 和每个成员 repository 的 integrated ref，且全部任务分支已被对应 ref 包含、checkouts 干净并且没有阻塞本机资源\n- **THEN** Buildr MUST 先移除 nested repository worktrees，再移除 root worktree、本地任务分支、adoption receipt 和 environment receipt\n- **AND** MUST 返回每个 repository、branch、receipt 与 environment 的 removed evidence\n\n#### Scenario: 一个成员 repository 仍未完成\n- **WHEN** 任一 repository dirty、未被声明 integrated ref 包含、branch identity 不明或仍被 task-owned process 使用\n- **THEN** Buildr MUST 在任何删除前保留整个 task environment\n- **AND** MUST 报告阻塞 repository/resource，且不得部分删除其他仍用于恢复的成员\n\n#### Scenario: owner 或 receipt 不匹配\n- **WHEN** 调用方 Agent 与 receipt owner 不一致、task receipt 缺失或 integrated ref selector 与 receipt repository set 不一致\n- **THEN** Buildr MUST fail closed 并保持所有 checkout、branch 和本地 receipt 不变\n- **AND** result MUST 返回确定性的 blocked code 和未执行清理项\n\n#### Scenario: 存在其他并发 task environment\n- **WHEN** 同一 Workspace 或任一 source repository 还拥有其他 task worktrees\n- **THEN** Buildr MUST 只删除当前 receipt 精确登记的 checkout 和 branch\n- **AND** MUST 保持其他任务的 checkouts、branches、receipts、preview、ports 和状态目录不变\n\n#### Scenario: 请求删除远端或放弃未集成工作\n- **WHEN** 清理需要删除远端任务分支、强制移除 dirty checkout 或放弃未被目标 ref 包含的提交\n- **THEN** 本地 task environment 清理入口 MUST 拒绝该请求\n- **AND** MUST NOT 将普通 cleanup 授权扩大为远端删除、强制删除或丢弃工作授权\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 必须核验 execution binding",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment 必须核验 execution binding\nBuildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、environment-bound CLI source identity、可直接执行的绝对 CLI invocation、runtime projection identity、明确 target/workdir 和成功的 receipt-bound CLI executable probe 判断 `executionReady`。CLI invocation MUST 使用结构化的绝对 `command` 与固定 `argsPrefix`，并 MUST 与 receipt 中的 source、source kind 和 identity 一同核验；probe MUST 真实启动该 invocation 的轻量只读 `version` 或等价 bootstrap，不得只检查文件存在、digest 或 executable bit。自举 Workspace MUST 使用 environment 内对应的产品 CLI bridge；没有产品源码成员的普通 Workspace MAY 使用 receipt 显式声明的 external-product CLI invocation，且不得假设产品位于 Workspace 的固定相对目录。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。\n\n#### Scenario: canonical workspace 对话操作 task environment\n- **WHEN** Agent session 从 canonical Workspace 启动，并在 create 后使用 task environment 返回的明确 target、成员 checkout workdir 和 environment-local CLI invocation\n- **THEN** context MUST 仅在 environment、repository、CLI source、CLI invocation、runtime identity 与真实 executable probe 均通过时返回 `executionReady: true`\n- **AND** invocation 的 `command` MUST 是 task checkout 内已有 Node-aware 产品入口的绝对路径，调用方从任意 cwd 执行时 MUST NOT 再拼装产品路径\n- **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效\n\n#### Scenario: CLI 文件存在但依赖缺失\n- **WHEN** receipt-bound CLI 路径与 digest 匹配，但真实 probe 因 package、runtime 或 loader 依赖缺失而无法启动\n- **THEN** create/context MUST 返回 `executionReady: false`、稳定 failure code、原始 exit 与恢复动作\n- **AND** MUST NOT 把路径身份或之前的 doctor 结果冒充为 CLI 可执行证据\n\n#### Scenario: 普通 Workspace 使用外部产品 CLI\n- **WHEN** Buildr 产品源码不属于目标 Workspace repository set，receipt 已声明 external-product CLI source identity 和 invocation，命令使用 environment target/workdir且 executable probe 成功\n- **THEN** context MAY 返回 `executionReady: true`\n- **AND** result MUST 披露绝对 command、固定 args prefix、CLI source kind、probe evidence 与 `checkoutLocal: false`，不得伪装为 environment-local CLI 或假设产品目录位置\n\n#### Scenario: 标准消费者执行产品命令\n- **WHEN** Task Finish、验证框架或其他标准消费者需要运行 receipt-bound Buildr 命令\n- **THEN** consumer MUST 使用 context 返回且已通过 probe 的 CLI invocation，并只追加自身子命令参数\n- **AND** consumer MUST NOT 根据 cwd、`cliSource` 或 Workspace 内固定产品位置猜测命令\n\n#### Scenario: 请求路径或 CLI 越界\n- **WHEN** target/workdir 不属于 allowed execution roots，或当前 CLI source、invocation/runtime projection identity 不匹配 receipt 声明的 environment-bound binding\n- **THEN** context MUST 返回 blocked 并 fail closed\n- **AND** MUST 报告不匹配的 target、workdir、membership、CLI source kind、source identity 或 invocation\n\n#### Scenario: runtime identity 漂移\n- **WHEN** environment identity、repository plan、runtime projection identity 或 executable probe 不再匹配 receipt\n- **THEN** context MUST 返回 `stale`、`blocked` 或 `executionReady: false`\n- **AND** MUST 要求重新收敛 environment/runtime/dependencies，而不是创建另一份纯 checkout\n\n#### Scenario: 读取缺少 invocation 的旧 receipt\n- **WHEN** 已有 receipt 仅包含 CLI source identity 而没有结构化 invocation\n- **THEN** Buildr MUST 保持 receipt 可读，根据已核验的当前产品生成 invocation并执行 probe\n- **AND** 标准输出与后续安全 refresh MUST 使用新 invocation 契约，不得要求调用方继续猜路径\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Runtime activation evidence 必须是按影响触发的特例",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Runtime activation evidence 必须是按影响触发的特例\nBuildr MUST 只在任务修改 Agent runtime 的 discovery、loading、activation mode、投射路径或相关 metadata，且验收明确要求证明新机制已由 Agent 激活时检查 adapter-specific activation。普通 Rule/Skill 内容修改 MUST 使用源资产、render/sync、runtime projection 与 doctor evidence，不得因此要求新 session。该 evidence MUST 与普通 execution readiness 分离。\n\n#### Scenario: 普通 Rule 或 Skill 内容修改\n- **WHEN** 任务只修改 Rule/Skill 内容、capability contract 或 routing description，没有改变 runtime discovery/loading/activation 机制\n- **THEN** Buildr MUST NOT 要求新 session、reload、re-enter 或 adoption receipt 作为完成条件\n- **AND** create/reuse 结果 MUST NOT 返回 session handoff next action\n\n#### Scenario: Agent 提交 activation evidence\n- **WHEN** runtime 机制变更的专项验收提交 reload 或新 session activation evidence\n- **THEN** result MUST 将 environment evidence 标为 `buildr-verified`，将 host evidence 标为 `agent-attested`\n- **AND** receipt 与再次核验 MUST 同时绑定规范化 session root 和 session handle\n- **AND** MUST 明确 Buildr 没有直接内省或自动启动 Agent host\n\n#### Scenario: activation session identity 改变\n- **WHEN** 当前 session root 或 handle 与 adoption receipt 不匹配\n- **THEN** Buildr MUST 返回 activation evidence mismatch\n- **AND** 普通 `executionReady` MAY 保持有效，但专项 activation proof MUST NOT 返回 verified\n\n#### Scenario: Codex 无法绑定既有 environment\n- **WHEN** runtime 机制专项验收要求 Codex session-start evidence，但当前 App 不能把新 session 绑定到既有 Buildr worktree\n- **THEN** Buildr MUST 报告 activation evidence 缺口\n- **AND** MUST NOT 创建指向该 worktree 的另一份纯 checkout或把 adoption receipt 包装成自动 handoff\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 清理必须移除本地 adoption state",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment 清理必须移除本地 adoption state\nBuildr MUST 将 adoption receipt 作为 task environment-owned local state 管理，并 MUST 只在 environment 满足既有安全清理前置条件时一并清理；它不得改变 retained checkout 的主 runtime sync 边界。\n\n#### Scenario: 安全集成后清理 environment\n- **WHEN** task environment 已安全集成、成员 checkout 可删除且 task-owned resources 已停止\n- **THEN** Buildr MUST 随 environment 清理对应 adoption receipt\n- **AND** 主 Workspace runtime MUST 仍从 retained checkout sync 并重新 doctor\n- **AND** Buildr MUST NOT 从未合并 task checkout 更新原 Workspace runtime\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 清理必须证明 owned runtime 已停止",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment 清理必须证明 owned runtime 已停止\nBuildr MUST 在删除任何 task environment checkout、receipt 或本地任务分支前，枚举并核对该 environment 拥有的本机 preview、受管进程和验证租约；任一运行中资源存在、无法证明归属或 cleanup token 不匹配时 MUST fail closed，并 MUST 保留全部环境内容用于恢复。\n\n#### Scenario: 运行中 preview 阻止 worktree cleanup\n- **WHEN** `worktree cleanup` 发现 receipt 所属 environment 仍有存活 preview 或受管进程\n- **THEN** 命令 MUST 在删除任何 repository worktree 前失败\n- **AND** 诊断 MUST 返回资源 identity、owner、environment 与正确的产品化停止动作\n\n#### Scenario: 环境资源已经清理\n- **WHEN** 所有 task-owned preview、进程与 lease 都已通过归属检查停止或释放\n- **THEN** `worktree cleanup` MAY 继续既有 clean、integrated-ref 与 repository membership 门禁\n- **AND** cleanup evidence MUST 记录 runtime preflight 已通过\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment execution binding 必须包含 Workspace Node identity",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Task environment execution binding 必须包含 Workspace Node identity\nTask environment receipt/context MUST 包含创建时的 Workspace Node identity、受管 executable 与 probe evidence；`executionReady` MUST 要求当前声明/runtime/CLI invocation 与该 identity 一致。\n\n#### Scenario: 创建可执行 task environment\n- **WHEN** task checkout、runtime projection、receipt-bound CLI 与 Workspace Node runtime 均匹配\n- **THEN** context MUST 返回 `executionReady: true` 和 Node identity/executable evidence\n\n#### Scenario: Node runtime 被删除或声明改变\n- **WHEN** receipt 中的 Node identity 不再匹配当前声明或 executable probe 失败\n- **THEN** context MUST 返回 stale/blocked 和 `executionReady: false`\n- **AND** MUST 建议从 Workspace 声明执行 `sync`，不得由 Agent adapter 选择替代版本\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Cleanup 必须由 retained checkout 完成真实收尾",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Cleanup 必须由 retained checkout 完成真实收尾\n`cleanup` MUST 在 retained checkout 先写 durable completion，再清理 verification transient evidence、task-owned runtime/process 和本地 task environment/branch。删除前 MUST 证明 integration/push 已完成、repository clean、资源 owner 匹配且其他任务不受影响；无法证明时 MUST 保留现场并只阻塞 cleanup。\n\n#### Scenario: 资源可安全清理\n- **WHEN** frozen candidate 已交付、completion receipt durable 且所有 task-owned 资源可证明\n- **THEN** retained finalizer MUST 删除允许的本地资源并完成 run\n- **AND** completion MUST 记录 removed/retained resources 与 cleanup status\n\n#### Scenario: Task-owned 进程仍在运行\n- **WHEN** cleanup 观察到匹配 owner 的 preview 或 runtime 尚未停止\n- **THEN** cleanup MUST 返回 resumable blocked 并保留 environment\n- **AND** MUST NOT 重跑 prepare、verify 或 deliver，也不得终止未知进程\n"
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App Task Environment API 必须保持 Workspace 读取安全边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App 必须展示并适当管理 Task Record",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Local App 必须展示并适当管理 Task Record\nBuildr Local App MUST 在已登记 Workspace 下提供 Task 核心导航、列表和详情，并 MUST 允许人通过 Task Record Application 创建 Task、编辑 active Task 以及明确完成或放弃 Task。P0.1 页面 MUST NOT 聚合或修改尚未交付的 Task Environment 与其他专业记录。\n\n#### Scenario: 浏览 Workspace Task 列表\n- **WHEN** 用户进入 `/workspaces/:workspaceId/tasks`\n- **THEN** 页面 MUST 从当前已登记 Workspace 列出真实 Task ID、title、intent、Project/Service scope、status 和 `updatedAt`\n- **AND** 空集合、损坏记录和不可用 Workspace MUST 分别显示可解释状态，不得虚构或静默跳过损坏 Task\n\n#### Scenario: 查看 Task 详情\n- **WHEN** 用户进入 `/workspaces/:workspaceId/tasks/:taskId`\n- **THEN** 页面 MUST 展示该 Task 的完整最小 Task Record 与 terminal result（如有）\n- **AND** MUST NOT 从 worktree、branch、Environment、Review、Verification、Finish、Board 或 Retrospective 推断额外 lifecycle 状态\n\n#### Scenario: 从 Local App 创建或编辑 Task\n- **WHEN** 用户提交合法 Task ID、title、intent、scope 与 Change references，或编辑 active Task 的这些字段\n- **THEN** HTTP interface MUST 调用对应 create/update Application action 并返回最新 record\n- **AND** 页面 MUST 使用与 CLI 相同的 identity、reference、closed schema 与 state validation\n\n#### Scenario: 从 Local App 完成或放弃 Task\n- **WHEN** 用户对 active Task 选择完成或放弃\n- **THEN** 页面 MUST 要求明确确认并提交非空 summary/reason；完成时 MUST 让用户明确选择是否为 no-change\n- **AND** 确认文案 MUST 说明该动作只更新 Task 顶层状态，不执行 Finish、Git、Verification、Environment cleanup 或其他专业动作\n\n#### Scenario: Local App 打开 terminal Task\n- **WHEN** Task status 已是 completed 或 abandoned\n- **THEN** 页面 MUST 将顶层业务字段和终态动作显示为只读/不可用\n- **AND** MUST NOT 提供重开、复制为 active 或绕过 Application validator 的入口\n"
+    },
+    {
+      "capability": "task-record",
+      "title": "Change 引用必须在当前记录内可解析且无重复",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Change 引用必须在当前记录内可解析且无重复\nTask Record MUST 使用 `{project, change}` 限定 OpenSpec Change；Application MUST 通过 Project registry 解析 OpenSpec root、确认被引用 Change 存在，并 MUST 只在当前记录内去重。\n\n#### Scenario: Task 没有关联 Change\n- **WHEN** 正式 Task 不需要 OpenSpec Change，或 Change 尚未创建\n- **THEN** writer MUST 接受空 `changes` 集合\n- **AND** MUST NOT 创建、推断或选择虚假 Change\n\n#### Scenario: 同一 Task 关联多个 Change\n- **WHEN** 一个 Task 关联一个或多个 Project 中的多个真实 Change\n- **THEN** writer MUST 保存去重后的 `0..N` 个 `project/change` 引用\n- **AND** 跨 Project 同名 Change MUST 通过 Project code 无歧义区分\n\n#### Scenario: 当前记录重复引用\n- **WHEN** create/update 尝试在同一 Task Record 中加入重复 `project/change`\n- **THEN** Application MUST 返回稳定的 aligned/no-op 或 duplicate diagnostic\n- **AND** MUST NOT 保存重复条目\n\n#### Scenario: 其他 Task 引用相同 Change\n- **WHEN** Workspace 中另一 Task Record 也引用相同 `project/change`\n- **THEN** P0.1 MUST NOT 扫描其他记录或声明跨 Task ownership 冲突\n- **AND** 当前操作 MUST 只依据当前记录和真实 Project/Change identity\n"
+    },
+    {
+      "capability": "workspace-first-runtime-projection",
+      "title": "Runtime projection 必须提供 execution binding 与条件式 activation expectation",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Runtime projection 必须提供 execution binding 与条件式 activation expectation\nBuildr runtime adapter plan 与公开 runtime evidence MUST 提供 task environment 可消费的 adapter identity、runtime source root、projection identity 和 Rules/Skills activation metadata。projection identity MUST 参与普通 execution binding；session activation evidence MUST 只在 runtime discovery、loading、activation mode、投射路径或相关 metadata 发生变化且专项验收明确要求 activation proof 时检查。普通 Rule/Skill 内容修改 MUST NOT 因 Skills activation mode 为 `session-start` 而要求新 session。公开 evidence MUST 描述 Buildr 可证明的投射事实，不得声称目标 Agent 已在当前 session 加载 runtime。\n\n#### Scenario: Session-start Skills 已投射到 task checkout\n- **WHEN** Buildr 为 task environment 成功投射一个 Skills activation 为 `session-start` 的 runtime\n- **THEN** runtime evidence MUST 返回 runtime source root、projection identity 与 activation metadata\n- **AND** 普通 proposal、implementation、verification 与 finish MUST NOT 等待 session adoption evidence\n\n#### Scenario: Runtime projection identity 改变\n- **WHEN** task environment 的 sync/render 改变了影响 Rules 或 Skills discovery 的 projection identity\n- **THEN** runtime evidence MUST 使既有 execution binding 失效\n- **AND** 只有当前专项验收要求 activation proof 时，既有 activation receipt 才 MUST 同时可被识别为 stale\n\n#### Scenario: Filesystem 无法证明 session consumption\n- **WHEN** runtime check 只能证明投射内容与期望状态一致\n- **THEN** result MUST 报告 projection ready 与 session consumption unknown\n- **AND** MUST NOT 仅凭文件存在、content identity 或 checker success 报告 session adopted\n"
+    },
+    {
+      "capability": "workspace-first-runtime-projection",
+      "title": "Codex runtime evidence 必须保持 path-read 与 session-start 边界",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Codex runtime evidence 必须保持 path-read 与 session-start 边界\nCodex adapter MUST 继续将 Rules activation 声明为 `path-read`、Skills activation 声明为 `session-start`，并 MUST 将 activation guidance 标记为条件式验收信息，而不是普通 task environment readiness 门禁。\n\n#### Scenario: Codex task environment runtime 准备完成\n- **WHEN** checkout-local Codex runtime 已通过 sync 与 doctor\n- **THEN** Buildr MUST 报告 Rules 和 Skills 各自的 activation mode、runtime source root 与 projection identity\n- **AND** 只有验收明确要求证明 checkout-local Skills 已被 Agent 激活时，才 MUST 请求 host 可提供的 reload/session evidence；无法绑定既有 environment 时 MUST 如实报告缺口\n"
+    },
+    {
+      "capability": "worktree-local-app-preview",
+      "title": "Task Preview 必须登记为 Environment 动态资源",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "worktree-local-app-preview",
+      "title": "Preview stop 必须绑定 task environment 所有权",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Preview stop 必须绑定 task environment 所有权\n对 task worktree 创建的 Local App preview，`app preview stop` MUST 要求并核对调用方提供的 task、environment、owner 与 receipt identity，并 MUST 仅停止完全匹配且 secret 有效的实例；独立 retained Workspace preview MAY 保持既有实例级停止语义。\n\n#### Scenario: 正确 owner 停止 task preview\n- **WHEN** 调用方使用 receipt 绑定 CLI 并提供与实例 metadata 一致的 task、environment、owner 和 receipt\n- **THEN** Buildr MUST 停止该 preview、确认进程终止并删除本实例状态\n- **AND** JSON 结果 MUST 记录已核对的 ownership identity\n\n#### Scenario: 错误 owner 尝试停止 preview\n- **WHEN** 调用方的 task、environment、owner 或 receipt 任一项与实例 metadata 不一致\n- **THEN** Buildr MUST fail closed 且不得向进程发送停止信号\n- **AND** 实例 MUST 继续可被真实 owner 检查和停止\n"
+    }
+  ]
+}

@@ -1,346 +1,207 @@
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { after, before, describe, test } from 'node:test';
+import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const cli = path.join(productRoot, 'bin', 'buildr.mjs');
-let workspace;
 
-function runBuildr(args, expectedStatus = 0, env = process.env) {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd: productRoot, encoding: 'utf8', env });
+function command(cwd, executable, args, expectedStatus = 0, env = process.env) {
+  const result = spawnSync(executable, args, { cwd, encoding: 'utf8', env });
   assert.equal(result.status, expectedStatus, result.stderr || result.stdout);
-  return JSON.parse(result.stdout);
+  return result;
 }
 
-function git(args) {
-  const result = spawnSync('git', ['-C', workspace, ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  return result.stdout.trim();
+function buildr(args, expectedStatus = 0, env = process.env) {
+  const result = command(productRoot, process.execPath, [cli, ...args], expectedStatus, env);
+  return result.stdout.trim() ? JSON.parse(result.stdout) : null;
 }
 
-function gitAt(cwd, args) {
-  const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  return result.stdout.trim();
+function fixtureWorkspace(t, { git = true } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-environment-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  command(productRoot, process.execPath, [cli, 'init', '--agent', 'codex', '--target', root, '--name', 'environment-fixture', '--description', 'Task Environment fixture', '--profile', 'team']);
+  if (git) {
+    command(root, 'git', ['init', '-b', 'main']);
+    command(root, 'git', ['config', 'user.name', 'Buildr Test']);
+    command(root, 'git', ['config', 'user.email', 'buildr-test@example.com']);
+    command(root, 'git', ['add', '.']);
+    command(root, 'git', ['commit', '-m', 'baseline']);
+  }
+  return fs.realpathSync(root);
 }
 
-describe('worktree create CLI', { concurrency: 1 }, () => {
-  before(() => {
-    workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-worktree-integration-'));
-    const initialized = spawnSync(process.execPath, [cli, 'init', '--agent', 'codex', '--target', workspace, '--name', 'worktree-fixture', '--description', 'worktree fixture', '--profile', 'team'], { cwd: productRoot, encoding: 'utf8' });
-    assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
-    git(['init', '-b', 'main']);
-    git(['config', 'user.name', 'Buildr Test']);
-    git(['config', 'user.email', 'buildr-test@example.com']);
-    git(['add', '.']);
-    git(['commit', '-m', 'baseline']);
-  });
+function createTask(root, taskId) {
+  return buildr(['task', 'create', taskId, '--title', `Task ${taskId}`, '--intent', '验证 P0.2 Task Environment', '--target', root, '--json']);
+}
 
-  after(() => {
-    fs.rmSync(workspace, { recursive: true, force: true });
-  });
+test('worktree CLI 只维护窄 Git provider evidence', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'git-provider';
+  const created = buildr(['worktree', 'create', taskId, '--branch', `codex/${taskId}`, '--start-point', 'main', '--target', root, '--json']);
+  assert.equal(created.schemaVersion, 'buildr.git-worktree-result/v1');
+  assert.equal(created.operation, 'create');
+  assert.equal(created.status, 'ready');
+  assert.deepEqual(created.repositories.map((item) => item.selector), ['workspace']);
+  assert.equal(created.repositories[0].checkoutPath, path.join(root, '.worktrees', taskId));
+  assert.equal(created.repositories[0].registered, true);
+  assert.equal(fs.existsSync(created.evidencePath), true);
 
-  test('creates, diagnoses, auto-syncs runtime stale, then reuses without another bootstrap', () => {
-    const created = runBuildr(['worktree', 'create', 'demo', '--agent', 'codex', '--branch', 'codex/demo', '--start-point', 'main', '--target', workspace, '--json']);
-    assert.equal(created.schemaVersion, 'buildr.worktree-create/v2');
-    assert.equal(created.state, 'created');
-    assert.equal(created.treeChanged, true);
-    assert.equal(created.bootstrap.doctorBefore.health.ready, false);
-    assert.deepEqual(created.bootstrap.doctorBefore.findings.map((finding) => finding.code), ['runtime.codex_stale']);
-    assert.deepEqual(created.bootstrap.sync, { status: 'applied', reason: 'runtime-stale-only' });
-    assert.equal(created.bootstrap.doctorAfter.health.ready, true);
-    assert.equal(created.ready, true);
-    assert.equal(created.executionReady, true);
-    assert.equal(created.workspaceNode.identity.version, process.versions.node);
-    assert.equal(created.cliInvocation.command, process.execPath);
-    assert.deepEqual(created.cliInvocation.argsPrefix, [cli]);
-    assert.equal(created.runtimeExpectation.activation.rules, 'path-read');
-    assert.equal(created.runtimeExpectation.activation.skills, 'session-start');
-    assert.equal(created.runtimeExpectation.sessionConsumption, 'unknown');
-    assert.equal(created.adoption.status, 'not-required');
-    assert.deepEqual(created.nextActions, []);
-    assert.equal(git(['-C', created.worktree.path, 'status', '--porcelain']), '');
+  const evidence = JSON.parse(fs.readFileSync(created.evidencePath, 'utf8'));
+  assert.equal(evidence.schemaVersion, 'buildr.git-worktree-evidence/v1');
+  for (const forbidden of ['ready', 'runtime', 'dependencies', 'projection', 'resources', 'controller', 'session', 'cleanup']) {
+    assert.equal(Object.hasOwn(evidence, forbidden), false, forbidden);
+  }
+  const evidenceBytes = fs.readFileSync(created.evidencePath, 'utf8');
+  fs.writeFileSync(created.evidencePath, `${JSON.stringify({ ...evidence, ready: true }, null, 2)}\n`);
+  const invalidEvidence = buildr(['worktree', 'inspect', taskId, '--target', root, '--json'], 1);
+  assert.equal(invalidEvidence.diagnostic.code, 'git_worktree_inspect_failed');
+  fs.writeFileSync(created.evidencePath, evidenceBytes);
+  assert.equal(fs.existsSync(path.join(root, '.buildr', 'tasks', taskId, 'environment.json')), false);
 
-    const cwdOnly = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--json']);
-    assert.equal(cwdOnly.ready, true);
-    assert.equal(cwdOnly.executionReady, true);
-    assert.equal(cwdOnly.adoption.status, 'not-verified');
-    assert.equal(cwdOnly.executionBinding.workdir, created.worktree.path);
-    assert.equal(cwdOnly.executionBinding.cliSourceKind, 'external-product');
-    assert.equal(cwdOnly.executionBinding.checkoutLocal, false);
-    assert.deepEqual(cwdOnly.cliInvocation, created.cliInvocation);
-    assert.deepEqual(cwdOnly.executionBinding.cliInvocation, created.cliInvocation);
-    assert.equal(cwdOnly.workspaceNodeIdentityMatches, true);
-    assert.equal(cwdOnly.executionBinding.workspaceNode.identity.version, process.versions.node);
-    const adopted = runBuildr(['worktree', 'adopt', '--agent', 'codex', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'codex-demo-session', '--root-evidence-source', 'host-context', '--mode', 'new-session', '--started-at', new Date().toISOString(), '--json']);
-    assert.equal(adopted.schemaVersion, 'buildr.task-environment-adoption/v1');
-    assert.equal(adopted.environmentEvidence.assurance, 'buildr-verified');
-    assert.equal(adopted.sessionEvidence.assurance, 'agent-attested');
-    const adoptedContext = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'codex-demo-session', '--json']);
-    assert.equal(adoptedContext.executionReady, true);
-    assert.equal(adoptedContext.adoption.status, 'activation-verified');
-    const wrongRoot = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', created.worktree.path, '--session-handle', 'codex-demo-session', '--json']);
-    assert.equal(wrongRoot.adoption.blocked.code, 'worktree.activation_session_mismatch');
-    const wrongSession = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', workspace, '--session-handle', 'other-session', '--json']);
-    assert.equal(wrongSession.executionReady, true);
-    assert.equal(wrongSession.adoption.blocked.code, 'worktree.activation_session_mismatch');
-    const agentsFile = path.join(created.worktree.path, 'AGENTS.md');
-    const agentsBefore = fs.readFileSync(agentsFile, 'utf8');
-    fs.writeFileSync(agentsFile, `${agentsBefore.trimEnd()}\n\n<!-- adoption drift fixture -->\n`);
-    const staleRuntime = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--session-root', created.worktree.path, '--session-handle', 'codex-demo-session', '--json'], 1);
-    assert.equal(staleRuntime.adoption.status, 'stale');
-    assert.equal(staleRuntime.adoption.blocked.code, 'worktree.adoption_runtime_stale');
-    fs.writeFileSync(agentsFile, agentsBefore);
+  const inspected = buildr(['worktree', 'inspect', taskId, '--target', root, '--json']);
+  assert.equal(inspected.status, 'ready');
+  assert.equal(inspected.repositories[0].state, 'ready');
 
-    const common = git(['rev-parse', '--git-common-dir']);
-    const receiptFile = path.join(path.resolve(workspace, common), 'buildr', 'task-environments', 'demo.json');
-    const legacyReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
-    delete legacyReceipt.executionCli.invocation;
-    fs.writeFileSync(receiptFile, `${JSON.stringify(legacyReceipt, null, 2)}\n`);
-    const legacyInvocationContext = runBuildr(['worktree', 'context', '--target', created.worktree.path, '--json']);
-    assert.equal(legacyInvocationContext.executionReady, true);
-    assert.deepEqual(legacyInvocationContext.cliInvocation, created.cliInvocation);
+  const missingDelivery = buildr(['worktree', 'cleanup', taskId, '--target', root, '--json'], 1);
+  assert.equal(missingDelivery.diagnostic.code, 'git_worktree_integrated_ref_missing');
+  assert.equal(fs.existsSync(created.repositories[0].checkoutPath), true);
 
-    const reused = runBuildr(['worktree', 'create', 'demo', '--agent', 'codex', '--branch', 'codex/demo', '--start-point', 'main', '--target', workspace, '--json']);
-    assert.equal(reused.state, 'reused');
-    assert.equal(reused.treeChanged, false);
-    assert.equal(reused.bootstrap.doctorBefore, null);
-    assert.deepEqual(reused.bootstrap.sync, { status: 'skipped', reason: 'reused-without-tree-transition' });
-  });
+  const cleaned = buildr(['worktree', 'cleanup', taskId, '--integrated-ref', 'workspace=main', '--target', root, '--json']);
+  assert.equal(cleaned.status, 'cleaned');
+  assert.equal(cleaned.repositories[0].state, 'removed');
+  assert.equal(fs.existsSync(created.repositories[0].checkoutPath), false);
+  assert.equal(fs.existsSync(created.evidencePath), false);
+});
 
-  test('requires canonical sync before rendering runtime when managed source would converge', () => {
-    const coreFile = path.join(workspace, 'rules', 'buildr', 'core.md');
-    const receiptsFile = path.join(workspace, '.buildr', 'builtin-receipts.json');
-    fs.appendFileSync(coreFile, '\n<!-- previous managed source -->\n');
-    const receipts = JSON.parse(fs.readFileSync(receiptsFile, 'utf8'));
-    const coreReceipt = receipts.builtins.find((item) => item.type === 'rule' && item.id === 'buildr-core');
-    assert.ok(coreReceipt);
-    const sha256 = (value) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
-    coreReceipt.files = [{ path: 'core.md', integrity: sha256(fs.readFileSync(coreFile)) }];
-    coreReceipt.integrity = sha256(JSON.stringify(coreReceipt.files));
-    fs.writeFileSync(receiptsFile, `${JSON.stringify(receipts, null, 2)}\n`);
-    git(['add', coreFile, receiptsFile]);
-    git(['commit', '-m', 'simulate previous managed source']);
+test('worktree provider plan 冲突在新 Git mutation 前 fail closed', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'provider-conflict';
+  const occupied = path.join(root, '.worktrees', taskId);
+  fs.mkdirSync(occupied, { recursive: true });
+  fs.writeFileSync(path.join(occupied, 'owner.txt'), 'foreign\n');
+  const blocked = buildr(['worktree', 'create', taskId, '--branch', `codex/${taskId}`, '--start-point', 'main', '--target', root, '--json'], 1);
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'git_worktree_preflight_failed');
+  assert.deepEqual(blocked.effects, []);
+  assert.equal(fs.readFileSync(path.join(occupied, 'owner.txt'), 'utf8'), 'foreign\n');
+  assert.equal(command(root, 'git', ['show-ref', '--verify', '--quiet', `refs/heads/codex/${taskId}`], 1).status, 1);
+});
 
-    const blocked = runBuildr(['worktree', 'create', 'source-stale', '--agent', 'codex', '--branch', 'codex/source-stale', '--start-point', 'main', '--target', workspace, '--json'], 1);
-    assert.equal(blocked.blocked.code, 'worktree.canonical_sync_required');
-    assert.deepEqual(blocked.bootstrap.sync, { status: 'blocked', reason: 'canonical-source-sync-required' });
-    assert.equal(gitAt(blocked.environment.root, ['status', '--porcelain']), '');
+test('Git provider cleanup 可从 worktree 已删除但本地分支尚未删除的部分效果恢复', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'provider-cleanup-resume';
+  const created = buildr(['worktree', 'create', taskId, '--branch', `codex/${taskId}`, '--start-point', 'main', '--target', root, '--json']);
+  const injected = buildr(['worktree', 'cleanup', taskId, '--integrated-ref', 'workspace=main', '--target', root, '--json'], 1, { ...process.env, BUILDR_FAULT_WORKTREE_BRANCH_REMOVE_SELECTOR: 'workspace' });
+  assert.equal(injected.diagnostic.code, 'git_worktree_branch_remove_failed');
+  assert.equal(fs.existsSync(created.repositories[0].checkoutPath), false);
+  assert.equal(fs.existsSync(created.evidencePath), true);
+  assert.equal(command(root, 'git', ['show-ref', '--verify', '--quiet', `refs/heads/codex/${taskId}`]).status, 0);
 
-    const synced = spawnSync(process.execPath, [cli, 'sync', 'codex', '--target', workspace], { cwd: productRoot, encoding: 'utf8' });
-    assert.equal(synced.status, 0, synced.stderr || synced.stdout);
-    git(['add', '-A']);
-    git(['commit', '-m', 'restore current managed source']);
-  });
+  const resumed = buildr(['worktree', 'cleanup', taskId, '--integrated-ref', 'workspace=main', '--target', root, '--json']);
+  assert.equal(resumed.status, 'cleaned');
+  assert.equal(resumed.effects.some((effect) => effect.type === 'worktree-absence-confirmed'), true);
+  assert.equal(command(root, 'git', ['show-ref', '--verify', '--quiet', `refs/heads/codex/${taskId}`], 1).status, 1);
+  assert.equal(fs.existsSync(created.evidencePath), false);
+});
 
-  test('skips sync when tracked runtime is already healthy', () => {
-    git(['add', '-f', '.agents']);
-    git(['commit', '-m', 'track runtime fixture']);
-    const healthy = runBuildr(['worktree', 'create', 'healthy', '--agent', 'codex', '--branch', 'codex/healthy', '--start-point', 'main', '--target', workspace, '--json']);
-    assert.equal(healthy.state, 'created');
-    assert.equal(healthy.bootstrap.doctorBefore.health.ready, true);
-    assert.deepEqual(healthy.bootstrap.sync, { status: 'skipped', reason: 'doctor-ready' });
-    assert.equal(healthy.bootstrap.doctorAfter.health.ready, true);
-    const common = git(['rev-parse', '--git-common-dir']);
-    const receiptFile = path.join(path.resolve(workspace, common), 'buildr', 'task-environments', 'healthy.json');
-    const legacyReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
-    delete legacyReceipt.runtimeExpectation;
-    fs.writeFileSync(receiptFile, `${JSON.stringify(legacyReceipt, null, 2)}\n`);
-    const legacyContext = runBuildr(['worktree', 'context', '--target', healthy.environment.root, '--json']);
-    assert.equal(legacyContext.ready, true);
-    assert.equal(legacyContext.adoption.status, 'legacy-activation-unverified');
-    assert.equal(legacyContext.executionReady, true);
-  });
+test('共享 Task Environment 以正式 Task 为门禁并独占 ready、恢复与 cleanup', (t) => {
+  const root = fixtureWorkspace(t, { git: false });
+  const taskId = 'shared-environment';
+  const unavailable = buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json'], 1);
+  assert.equal(unavailable.status, 'blocked');
+  assert.equal(unavailable.diagnostic.code, 'task_record_not_found');
 
-  test('cleanup validates owner and integrated refs before removing the receipt-bound environment', () => {
-    const created = runBuildr(['worktree', 'create', 'cleanup-safe', '--agent', 'codex', '--branch', 'codex/cleanup-safe', '--start-point', 'main', '--target', workspace, '--json']);
-    assert.equal(created.ready, true);
+  const task = createTask(root, taskId);
+  const taskBytes = fs.readFileSync(task.path, 'utf8');
+  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--shared', '--agent', 'codex', '--target', root, '--json']);
+  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v1');
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  assert.equal(prepared.environment.status, 'ready');
+  assert.equal(prepared.environment.scopes[0].executionRoot, root);
+  assert.equal(prepared.environment.scopes[0].validationRoot, root);
+  assert.equal(prepared.environment.scopes[0].shared, true);
+  assert.equal(prepared.environment.scopes[0].provider, null);
+  assert.equal(prepared.execution.ready, true);
+  assert.equal(prepared.execution.workdir, root);
+  assert.deepEqual(prepared.execution.allowedExecutionRoots, [root]);
+  assert.equal(path.isAbsolute(prepared.execution.cliInvocation.command), true);
+  assert.equal(fs.readFileSync(task.path, 'utf8'), taskBytes);
 
-    const wrongOwner = runBuildr(['worktree', 'cleanup', 'cleanup-safe', '--agent', 'claude-code', '--integrated-ref', 'workspace=main', '--target', workspace, '--json'], 1);
-    assert.equal(wrongOwner.blocked.code, 'worktree.cleanup_owner_mismatch');
-    assert.equal(fs.existsSync(created.environment.root), true);
+  const restored = buildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--target', root, '--json']);
+  assert.equal(restored.status, 'ready');
+  assert.equal(restored.environment.controller.identity, prepared.environment.controller.identity);
+  const inspected = buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json']);
+  assert.equal(inspected.status, 'ready');
+  assert.equal(inspected.source, 'current-machine');
+  assert.ok(inspected.observedAt);
 
-    const missingRef = runBuildr(['worktree', 'cleanup', 'cleanup-safe', '--agent', 'codex', '--target', workspace, '--json'], 1);
-    assert.equal(missingRef.blocked.code, 'worktree.cleanup_integrated_refs_incomplete');
-    assert.equal(fs.existsSync(created.environment.root), true);
+  const unauthorized = buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json'], 1);
+  assert.equal(unauthorized.diagnostic.code, 'task_environment_cleanup_unauthorized');
+  buildr(['task', 'abandon', taskId, '--reason', 'integration fixture complete', '--target', root, '--json']);
+  const cleaned = buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);
+  assert.equal(cleaned.status, 'cleaned');
+  assert.equal(cleaned.environment.latest.cleanup.status, 'cleaned');
+  assert.equal(cleaned.effects.some((effect) => effect.type === 'shared-scope-retained' && effect.selector === 'workspace'), true);
+  assert.match(cleaned.environment.latest.cleanup.summary, /共享执行根已保留/);
+  assert.equal(fs.existsSync(task.path), true);
+});
 
-    const cleaned = runBuildr(['worktree', 'cleanup', 'cleanup-safe', '--agent', 'codex', '--integrated-ref', 'workspace=main', '--target', workspace, '--json']);
-    assert.equal(cleaned.schemaVersion, 'buildr.worktree-cleanup/v1');
-    assert.equal(cleaned.status, 'removed');
-    assert.equal(cleaned.repositories[0].status, 'removed');
-    assert.equal(cleaned.branches[0].status, 'removed');
-    assert.equal(cleaned.receipts.environment, 'removed');
-    assert.equal(fs.existsSync(created.environment.root), false);
-    assert.equal(spawnSync('git', ['-C', workspace, 'show-ref', '--verify', '--quiet', 'refs/heads/codex/cleanup-safe']).status, 1);
-    const inspected = runBuildr(['worktree', 'inspect', 'cleanup-safe', '--target', workspace, '--json'], 1);
-    assert.equal(inspected.blocked.code, 'worktree.receipt_missing');
-  });
+test('共享执行根只允许一个未清理 Task 占用，清理后下一 Task 才能准备', (t) => {
+  const root = fixtureWorkspace(t, { git: false });
+  createTask(root, 'shared-owner');
+  createTask(root, 'shared-waiter');
+  const owner = buildr(['task', 'environment', 'prepare', 'shared-owner', '--shared', '--target', root, '--json']);
+  assert.equal(owner.status, 'ready');
 
-  test('creates one environment with nested Project and Service repositories and resolves context', (t) => {
-    const sourceBase = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-worktree-multi-source-'));
-    t.after(() => fs.rmSync(sourceBase, { recursive: true, force: true }));
-    const seed = path.join(sourceBase, 'seed');
-    fs.mkdirSync(seed);
-    gitAt(seed, ['init', '-b', 'dev']);
-    gitAt(seed, ['config', 'user.name', 'Buildr Test']);
-    gitAt(seed, ['config', 'user.email', 'buildr-test@example.com']);
-    fs.writeFileSync(path.join(seed, 'README.md'), '# shared source\n');
-    gitAt(seed, ['add', 'README.md']);
-    gitAt(seed, ['commit', '-m', 'seed']);
-    const remote = path.join(sourceBase, 'shared.git');
-    const bare = spawnSync('git', ['clone', '--bare', seed, remote], { encoding: 'utf8' });
-    assert.equal(bare.status, 0, bare.stderr);
+  const blocked = buildr(['task', 'environment', 'prepare', 'shared-waiter', '--shared', '--target', root, '--json'], 1);
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'task_environment_shared_occupancy_conflict');
+  assert.equal(blocked.diagnostic.details.occupied.taskId, 'shared-owner');
+  assert.equal(fs.existsSync(path.join(root, '.buildr', 'tasks', 'shared-waiter', 'environment.json')), false);
 
-    const remoteUrl = `file://${remote}`;
-    const projectCreated = spawnSync(process.execPath, [cli, 'project', 'create', 'nested', '--target', workspace, '--repo', remoteUrl, '--integration-branch', 'dev', '--name', 'Nested', '--description', 'Nested repository'], { cwd: productRoot, encoding: 'utf8' });
-    assert.equal(projectCreated.status, 0, projectCreated.stderr);
-    const projectRoot = path.join(workspace, 'projects', 'nested');
-    gitAt(projectRoot, ['config', 'user.name', 'Buildr Test']);
-    gitAt(projectRoot, ['config', 'user.email', 'buildr-test@example.com']);
+  buildr(['task', 'abandon', 'shared-owner', '--reason', 'release shared root', '--target', root, '--json']);
+  buildr(['task', 'environment', 'cleanup', 'shared-owner', '--target', root, '--json']);
+  const resumed = buildr(['task', 'environment', 'prepare', 'shared-waiter', '--shared', '--target', root, '--json']);
+  assert.equal(resumed.status, 'ready');
+  buildr(['task', 'abandon', 'shared-waiter', '--reason', 'fixture complete', '--target', root, '--json']);
+  buildr(['task', 'environment', 'cleanup', 'shared-waiter', '--target', root, '--json']);
+});
 
-    const serviceCreated = spawnSync(process.execPath, [cli, 'service', 'create', 'nested/api', remoteUrl, '--target', workspace, '--integration-branch', 'dev', '--name', 'API', '--description', 'Nested service', '--type', 'backend'], { cwd: productRoot, encoding: 'utf8' });
-    assert.equal(serviceCreated.status, 0, serviceCreated.stderr);
-    const serviceRoot = path.join(projectRoot, 'services', 'api');
-    gitAt(serviceRoot, ['config', 'user.name', 'Buildr Test']);
-    gitAt(serviceRoot, ['config', 'user.email', 'buildr-test@example.com']);
-    const workerCreated = spawnSync(process.execPath, [cli, 'service', 'create', 'nested/worker', remoteUrl, '--target', workspace, '--integration-branch', 'dev', '--name', 'Worker', '--description', 'Omitted worker service', '--type', 'backend'], { cwd: productRoot, encoding: 'utf8' });
-    assert.equal(workerCreated.status, 0, workerCreated.stderr);
-    const workerRoot = path.join(projectRoot, 'services', 'worker');
-    gitAt(workerRoot, ['config', 'user.name', 'Buildr Test']);
-    gitAt(workerRoot, ['config', 'user.email', 'buildr-test@example.com']);
-    gitAt(projectRoot, ['add', '-A']);
-    gitAt(projectRoot, ['commit', '-m', 'project baseline']);
-    const synced = spawnSync(process.execPath, [cli, 'sync', 'codex', '--target', workspace], { cwd: productRoot, encoding: 'utf8' });
-    assert.equal(synced.status, 0, synced.stderr || synced.stdout);
-    if (gitAt(serviceRoot, ['status', '--porcelain'])) {
-      gitAt(serviceRoot, ['add', '-A']);
-      gitAt(serviceRoot, ['commit', '-m', 'service runtime baseline']);
-    }
-    if (gitAt(workerRoot, ['status', '--porcelain'])) {
-      gitAt(workerRoot, ['add', '-A']);
-      gitAt(workerRoot, ['commit', '-m', 'worker runtime baseline']);
-    }
-    if (gitAt(projectRoot, ['status', '--porcelain'])) {
-      gitAt(projectRoot, ['add', '-A']);
-      gitAt(projectRoot, ['commit', '-m', 'project runtime baseline']);
-    }
-    git(['add', '-A']);
-    git(['add', '-f', '.agents']);
-    git(['commit', '-m', 'register nested repositories']);
-    git(['rm', '-r', '--cached', '.agents']);
-    git(['commit', '-m', 'leave runtime untracked for task bootstrap']);
+test('Git-backed Task Environment 组合 provider 并把 Git evidence 保持为窄引用', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'git-environment';
+  createTask(root, taskId);
+  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'main', '--target', root, '--json']);
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  const scope = prepared.environment.scopes[0];
+  assert.equal(scope.executionRoot, path.join(root, '.worktrees', taskId));
+  assert.equal(scope.validationRoot, path.join(root, '.worktrees', taskId));
+  assert.equal(scope.shared, false);
+  assert.equal(scope.provider.capability, 'buildr.git-worktree-provider/v1');
+  assert.equal(prepared.execution.workdir, scope.validationRoot);
+  assert.equal(prepared.execution.cliInvocation.kind, 'stable-controller');
+  assert.equal(fs.existsSync(scope.provider.evidence), true);
+  const provider = buildr(['worktree', 'inspect', taskId, '--target', root, '--json']);
+  assert.equal(provider.status, 'ready');
+  assert.equal(provider.repositories[0].checkoutPath, scope.executionRoot);
 
-    const created = runBuildr(['worktree', 'create', 'multi', '--agent', 'codex', '--branch', 'codex/multi', '--start-point', 'main', '--include', 'project:nested', '--include', 'service:nested/api', '--target', workspace, '--json']);
-    assert.equal(created.ready, true);
-    assert.deepEqual(created.bootstrap.sync, { status: 'applied', reason: 'runtime-stale-only' });
-    assert.equal(created.bootstrap.doctorAfter.health.ready, false);
-    assert.equal(created.bootstrap.doctorAfter.health.environmentReady, true);
-    assert.deepEqual(created.bootstrap.doctorAfter.findings.map((item) => [item.code, item.environmentContext]), [
-      ['project.git_branch_drift', 'receipt-task-branch'],
-      ['service.branch_mismatch', 'receipt-task-branch'],
-      ['service.git.missing', 'repository-not-selected'],
-    ]);
-    assert.deepEqual(created.repositories.map((item) => item.selector), ['workspace', 'project:nested', 'service:nested/api']);
-    assert.equal(created.repositories.every((item) => item.state === 'created'), true);
-    assert.equal(created.repositories[1].checkoutPath, path.join(created.environment.root, 'projects', 'nested'));
-    assert.equal(created.repositories[2].checkoutPath, path.join(created.environment.root, 'projects', 'nested', 'services', 'api'));
+  const restored = buildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--target', root, '--json']);
+  assert.equal(restored.status, 'ready');
+  assert.equal(restored.environment.scopes[0].executionRoot, scope.executionRoot);
+  const switched = buildr(['task', 'environment', 'prepare', taskId, '--shared', '--target', root, '--json'], 1);
+  assert.equal(switched.diagnostic.code, 'task_environment_plan_mismatch');
+  assert.equal(buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json']).status, 'ready');
 
-    const preAdoptionContext = runBuildr(['worktree', 'context', '--target', created.repositories[2].checkoutPath, '--json']);
-    assert.equal(preAdoptionContext.executionReady, true);
-    const context = runBuildr(['worktree', 'context', '--target', created.repositories[2].checkoutPath, '--json']);
-    assert.equal(context.schemaVersion, 'buildr.task-environment-context/v1');
-    assert.equal(context.ready, true);
-    assert.equal(context.taskId, 'multi');
-    assert.equal(context.executionReady, true);
-    assert.equal(context.membership.selector, 'service:nested/api');
-    assert.deepEqual(context.allowedExecutionRoots, created.repositories.map((item) => item.checkoutPath));
-
-    const inspected = runBuildr(['worktree', 'inspect', 'multi', '--target', workspace, '--json']);
-    assert.equal(inspected.ready, true);
-    assert.equal(inspected.repositories.length, 3);
-
-    const mainContext = runBuildr(['worktree', 'context', '--target', workspace, '--json'], 1);
-    assert.equal(mainContext.ready, false);
-    assert.equal(mainContext.blocked.code, 'worktree.not_task_environment');
-
-    const changedPlan = runBuildr(['worktree', 'create', 'multi', '--agent', 'codex', '--branch', 'codex/multi', '--start-point', 'main', '--include', 'project:nested', '--target', workspace, '--json'], 1);
-    assert.equal(changedPlan.treeChanged, false);
-    assert.match(changedPlan.blocked.message, /different repository plan/);
-    assert.equal(runBuildr(['worktree', 'inspect', 'multi', '--target', workspace, '--json']).ready, true);
-
-    const missingParent = runBuildr(['worktree', 'create', 'missing-parent', '--agent', 'codex', '--branch', 'codex/missing-parent', '--start-point', 'main', '--include', 'service:nested/api', '--target', workspace, '--json'], 1);
-    assert.equal(missingParent.treeChanged, false);
-    assert.match(missingParent.blocked.message, /requires explicit selector project:nested/);
-    assert.equal(fs.existsSync(path.join(workspace, '.worktrees', 'missing-parent')), false);
-
-    const parallel = runBuildr(['worktree', 'create', 'parallel', '--agent', 'codex', '--branch', 'codex/parallel', '--start-point', 'main', '--include', 'project:nested', '--include', 'service:nested/api', '--target', workspace, '--json']);
-    assert.equal(parallel.ready, true);
-    const parallelContext = runBuildr(['worktree', 'context', '--target', parallel.environment.root, '--json']);
-    assert.equal(parallelContext.taskId, 'parallel');
-    assert.equal(parallelContext.executionReady, true);
-    assert.equal(runBuildr(['worktree', 'inspect', 'multi', '--target', workspace, '--json']).ready, true);
-
-    const partialArgs = ['worktree', 'create', 'partial', '--agent', 'codex', '--branch', 'codex/partial', '--start-point', 'main', '--include', 'project:nested', '--include', 'service:nested/api', '--target', workspace, '--json'];
-    const partial = runBuildr(partialArgs, 1, { ...process.env, BUILDR_FAULT_WORKTREE_ADD_SELECTOR: 'project:nested' });
-    assert.equal(partial.blocked.code, 'worktree.partial_create_failed');
-    assert.equal(partial.repositories[0].state, 'created');
-    assert.equal(fs.existsSync(path.join(workspace, '.worktrees', 'partial')), true);
-    const recovered = runBuildr(partialArgs);
-    assert.equal(recovered.ready, true);
-    assert.equal(recovered.repositories[0].state, 'reused');
-    assert.equal(recovered.repositories.slice(1).every((item) => item.state === 'created'), true);
-
-    const projectManifest = path.join(workspace, 'projects', 'manifest.yml');
-    const manifestBefore = fs.readFileSync(projectManifest, 'utf8');
-    fs.writeFileSync(projectManifest, manifestBefore.replace(remoteUrl, 'file:///invalid/other.git'));
-    try {
-      const remoteMismatch = runBuildr(['worktree', 'create', 'remote-mismatch', '--agent', 'codex', '--branch', 'codex/remote-mismatch', '--start-point', 'main', '--include', 'project:nested', '--target', workspace, '--json'], 1);
-      assert.equal(remoteMismatch.treeChanged, false);
-      assert.match(remoteMismatch.blocked.message, /remote identity conflicts/);
-      assert.equal(fs.existsSync(path.join(workspace, '.worktrees', 'remote-mismatch')), false);
-    } finally {
-      fs.writeFileSync(projectManifest, manifestBefore);
-    }
-
-    gitAt(serviceRoot, ['worktree', 'remove', '--force', recovered.repositories[2].checkoutPath]);
-    const missingRepository = runBuildr(['worktree', 'context', '--target', recovered.environment.root, '--json'], 1);
-    assert.equal(missingRepository.ready, false);
-    assert.equal(missingRepository.blocked.code, 'worktree.context_identity_mismatch');
-    assert.equal(runBuildr(['worktree', 'inspect', 'parallel', '--target', workspace, '--json']).ready, true);
-  });
-
-  test('retains a created checkout and requires canonical sync for managed source findings', () => {
-    fs.rmSync(path.join(workspace, 'rules', 'buildr', 'core.md'));
-    git(['add', '-A']);
-    git(['commit', '-m', 'break workspace fixture']);
-    const unsafe = runBuildr(['worktree', 'create', 'unsafe', '--agent', 'codex', '--branch', 'codex/unsafe', '--start-point', 'main', '--target', workspace, '--json'], 1);
-    assert.equal(unsafe.state, 'blocked');
-    assert.equal(unsafe.treeChanged, true);
-    assert.deepEqual(unsafe.bootstrap.sync, { status: 'blocked', reason: 'canonical-source-sync-required' });
-    assert.equal(unsafe.blocked.code, 'worktree.canonical_sync_required');
-    assert.equal(fs.existsSync(unsafe.worktree.path), true);
-    assert.ok(unsafe.bootstrap.doctorBefore.findings.some((finding) => finding.code !== 'runtime.codex_stale'));
-  });
-
-  test('fails closed before writes for occupied path and branch identity conflict', () => {
-    const occupied = path.join(workspace, '.worktrees', 'occupied');
-    fs.mkdirSync(occupied, { recursive: true });
-    const occupiedResult = runBuildr(['worktree', 'create', 'occupied', '--agent', 'codex', '--branch', 'codex/occupied', '--start-point', 'main', '--target', workspace, '--json'], 1);
-    assert.equal(occupiedResult.state, 'blocked');
-    assert.equal(occupiedResult.treeChanged, false);
-    assert.match(occupiedResult.blocked.message, /occupied but not registered/);
-    assert.equal(git(['branch', '--list', 'codex/occupied']), '');
-
-    const conflict = runBuildr(['worktree', 'create', 'other', '--agent', 'codex', '--branch', 'codex/demo', '--start-point', 'main', '--target', workspace, '--json'], 1);
-    assert.equal(conflict.state, 'blocked');
-    assert.equal(conflict.treeChanged, false);
-    assert.match(conflict.blocked.message, /already checked out/);
-    assert.equal(fs.existsSync(path.join(workspace, '.worktrees', 'other')), false);
-  });
+  buildr(['task', 'abandon', taskId, '--reason', 'integration fixture complete', '--target', root, '--json']);
+  const cleaned = buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);
+  assert.equal(cleaned.status, 'cleaned');
+  assert.equal(fs.existsSync(scope.executionRoot), false);
+  assert.equal(fs.existsSync(scope.provider.evidence), false);
+  const receipt = JSON.parse(fs.readFileSync(path.join(root, '.buildr', 'tasks', taskId, 'environment.json'), 'utf8'));
+  assert.equal(receipt.status, 'cleaned');
 });

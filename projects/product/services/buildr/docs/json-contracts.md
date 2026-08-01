@@ -27,13 +27,16 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `openspec check` | `buildr.openspec-check/v1` |
 | `openspec converge` | `buildr.openspec-convergence/v1` |
 | `openspec audit` | `buildr.openspec-convergence-audit/v1` |
-| `worktree create` | `buildr.worktree-create/v2` |
-| `worktree inspect/context` | `buildr.task-environment-context/v1` |
-| `worktree adopt` | `buildr.task-environment-adoption/v1` |
+| `task environment prepare/inspect/cleanup` | `buildr.task-environment-result/v1` |
+| `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
 | `verification run` | `buildr.verification-run/v1` |
 | `task create/inspect/update/complete/abandon` | `buildr.task-record-result/v1` |
+| `task finish run/inspect` | `buildr.task-finish-result/v1` |
+| `app preview start/list/stop` | `buildr.local-app-preview/v1` |
 
-`buildr.worktree-create/v2` 的 `state` 为 `created`、`reused` 或 `blocked`，`environment` 披露 environment root/owner/isolation，`repositories` 返回完整 plan 的逐仓 checkout/branch/HEAD/clean/state。`treeChanged` 表示本次调用是否创建任一 checkout；`bootstrap` 保留根 Workspace 的 doctor/sync 决策；`runtimeExpectation`、`adoption`、`cliInvocation` 与 `executionBinding` 是向后兼容新增字段。`cliInvocation.command` 是绝对可执行入口，`argsPrefix` 是消费者必须置于子命令之前的固定参数；自举环境使用 checkout-local bridge，外部产品不依赖目标 Workspace 的布局。`buildr.task-environment-adoption/v1` 返回 Buildr-verified environment/runtime evidence 与 agent-attested session evidence。`buildr.task-environment-context/v1` 返回当前 membership、`allowedExecutionRoots`、CLI source/invocation、全仓 identity、adoption 和 `executionReady`；environment 或 execution binding 不 ready 时非零退出并保留现场。
+`buildr.task-environment-result/v1` 统一返回 `operation`、`status`、Task ID、Receipt availability/path、`current-machine`、`observedAt`、Environment read model、ready 时的 `execution` binding、diagnostic、effects 与 next actions。`execution` 包含明确 workdir、execution/allowed roots、controller identity 与绝对 `cliInvocation`。read model 展示 probes 和非敏感资源事实，不暴露资源 cleanup handle 或 controller CLI 私有路径。`unavailable` 表示当前机器没有 Receipt；`blocked` 表示当前 probe、identity、占用或授权不满足；`cleaned` 保留最小处置摘要。
+
+`buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
 
 `buildr.verification-run/v1` 返回 operation/status、required assurance、Project policy fingerprint、可选 task environment binding、repository candidate identity、计划选择与 supersedes、逐项命令终态、资源等待/lease/释放、真实整体 wall-clock、Candidate completeness、`evidenceIdentity`、reference 和 lifecycle。required check 或请求校验失败仍输出同一单一 JSON envelope 并非零退出；worker stdout/stderr 只作为有界字段进入 checks，不与顶层 JSON 混排。
 

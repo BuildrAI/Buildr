@@ -177,15 +177,20 @@ try {
   assert.equal(committed.status, 0, committed.stderr);
   const taskIds = ['package-task-a', 'package-task-b'];
   const tasks = taskIds.map((taskId) => {
-    const created = runPackaged(['worktree', 'create', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', packagedWorkspace, '--json']);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    return JSON.parse(created.stdout);
+    const record = runPackaged(['task', 'create', taskId, '--title', taskId, '--intent', '验证 packaged Task Environment 并发', '--project', 'demo', '--target', packagedWorkspace, '--json']);
+    assert.equal(record.status, 0, record.stderr || record.stdout);
+    const prepared = runPackaged(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', packagedWorkspace, '--json']);
+    assert.equal(prepared.status, 0, prepared.stderr || prepared.stdout);
+    const payload = JSON.parse(prepared.stdout);
+    assert.equal(payload.status, 'ready');
+    assert.equal(payload.execution.ready, true);
+    return payload;
   });
-  const concurrent = await Promise.all(tasks.map((task, index) => spawnAsync(task.cliInvocation.command, [
-    ...task.cliInvocation.argsPrefix,
-    'verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', task.environment.root,
-    '--environment', taskIds[index], '--owner', 'codex', '--json',
-  ], { cwd: task.environment.root })));
+  const concurrent = await Promise.all(tasks.map((task, index) => spawnAsync(task.execution.cliInvocation.command, [
+    ...task.execution.cliInvocation.argsPrefix,
+    'verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', task.execution.workdir,
+    '--environment', taskIds[index], '--workspace', packagedWorkspace, '--json',
+  ], { cwd: task.execution.workdir })));
   const summaries = concurrent.map((result, index) => {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const payload = JSON.parse(result.stdout);
@@ -207,8 +212,11 @@ try {
       && claim.status === 'released'), true);
   });
   for (const taskId of taskIds) {
-    const cleaned = runPackaged(['worktree', 'cleanup', taskId, '--agent', 'codex', '--integrated-ref', 'workspace=dev', '--target', packagedWorkspace, '--json']);
+    const abandoned = runPackaged(['task', 'abandon', taskId, '--reason', 'package parity fixture complete', '--target', packagedWorkspace, '--json']);
+    assert.equal(abandoned.status, 0, abandoned.stderr || abandoned.stdout);
+    const cleaned = runPackaged(['task', 'environment', 'cleanup', taskId, '--target', packagedWorkspace, '--json']);
     assert.equal(cleaned.status, 0, cleaned.stderr || cleaned.stdout);
+    assert.equal(JSON.parse(cleaned.stdout).status, 'cleaned');
   }
 
   console.log('CLI package parity verification passed: help, failures, JSON discovery, workspace mutations, generic Project verification, and packaged dual-task coordination match checkout and npm tarball entrypoints.');

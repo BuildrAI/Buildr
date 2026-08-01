@@ -6,6 +6,8 @@ import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../local-app/http/server.mjs';
 import { registerLauncherInterface } from './launcher.mjs';
 import { taskRecordCommand } from './task-record.mjs';
+import { taskEnvironmentCommand } from './task-environment.mjs';
+import { gitWorktreeCommand } from './git-worktree.mjs';
 
 export const COMMAND_REGISTRY = [
   { key: 'init', match: ({ domain }) => domain === 'init', run: (r, c) => r.initBuildr(c.argv.slice(3)) },
@@ -21,11 +23,9 @@ export const COMMAND_REGISTRY = [
   { key: 'package build', match: ({ domain, action }) => domain === 'package' && action === 'build', run: (r, c) => r.packageBuild(c.argv.slice(4)) },
   { key: 'project create', match: ({ domain, action }) => domain === 'project' && action === 'create', run: (r, c) => r.createProject(c.argv.slice(4)) },
   { key: 'service create', match: ({ domain, action }) => domain === 'service' && action === 'create', run: (r, c) => r.createService(c.argv.slice(4)) },
-  { key: 'worktree create', match: ({ domain, action }) => domain === 'worktree' && action === 'create', run: (r, c) => r.createTaskWorktree(c.argv.slice(4)) },
-  { key: 'worktree cleanup', match: ({ domain, action }) => domain === 'worktree' && action === 'cleanup', run: (r, c) => r.cleanupTaskEnvironment(c.argv.slice(4)) },
-  { key: 'worktree inspect', match: ({ domain, action }) => domain === 'worktree' && action === 'inspect', run: (r, c) => r.inspectTaskEnvironment(c.argv.slice(4)) },
-  { key: 'worktree context', match: ({ domain, action }) => domain === 'worktree' && action === 'context', run: (r, c) => r.taskEnvironmentContext(c.argv.slice(4)) },
-  { key: 'worktree adopt', match: ({ domain, action }) => domain === 'worktree' && action === 'adopt', run: (r, c) => r.adoptTaskEnvironment(c.argv.slice(4)) },
+  { key: 'worktree create', match: ({ domain, action }) => domain === 'worktree' && action === 'create', run: (r, c) => gitWorktreeCommand(r, 'create', c.argv.slice(4)) },
+  { key: 'worktree cleanup', match: ({ domain, action }) => domain === 'worktree' && action === 'cleanup', run: (r, c) => gitWorktreeCommand(r, 'cleanup', c.argv.slice(4)) },
+  { key: 'worktree inspect', match: ({ domain, action }) => domain === 'worktree' && action === 'inspect', run: (r, c) => gitWorktreeCommand(r, 'inspect', c.argv.slice(4)) },
   { key: 'verification run', match: ({ domain, action }) => domain === 'verification' && action === 'run', run: (r, c) => r.verificationRun(c.argv.slice(4)) },
   { key: 'verification cleanup', match: ({ domain, action }) => domain === 'verification' && action === 'cleanup', run: (r, c) => r.verificationCleanup(c.argv.slice(4)) },
   { key: 'task create', match: ({ domain, action }) => domain === 'task' && action === 'create', run: (r, c) => taskRecordCommand(r, 'create', c.argv.slice(4)) },
@@ -33,6 +33,9 @@ export const COMMAND_REGISTRY = [
   { key: 'task update', match: ({ domain, action }) => domain === 'task' && action === 'update', run: (r, c) => taskRecordCommand(r, 'update', c.argv.slice(4)) },
   { key: 'task complete', match: ({ domain, action }) => domain === 'task' && action === 'complete', run: (r, c) => taskRecordCommand(r, 'complete', c.argv.slice(4)) },
   { key: 'task abandon', match: ({ domain, action }) => domain === 'task' && action === 'abandon', run: (r, c) => taskRecordCommand(r, 'abandon', c.argv.slice(4)) },
+  { key: 'task environment prepare', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'prepare', run: (r, c) => taskEnvironmentCommand(r, 'prepare', c.argv.slice(5)) },
+  { key: 'task environment inspect', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'inspect', run: (r, c) => taskEnvironmentCommand(r, 'inspect', c.argv.slice(5)) },
+  { key: 'task environment cleanup', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'cleanup', run: (r, c) => taskEnvironmentCommand(r, 'cleanup', c.argv.slice(5)) },
   { key: 'task finish inspect', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect', run: (r, c) => r.taskFinish('inspect', c.argv.slice(5)) },
   { key: 'task finish run', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run', run: (r, c) => r.taskFinish('run', c.argv.slice(5)) },
   { key: 'doctor', match: ({ domain }) => domain === 'doctor', run: (r, c) => r.doctor(c.argv.slice(3)) },

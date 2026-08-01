@@ -76,6 +76,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'componentCheck',
     'componentList',
     'doctor',
+    'gitWorktreeResult',
     'launcherStatus',
     'localAppPreview',
     'openspecAudit',
@@ -85,8 +86,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'openspecSyncApply',
     'openspecSyncPlan',
     'runtimeList',
-    'taskEnvironmentAdoption',
-    'taskEnvironmentContext',
+    'taskEnvironmentResult',
     'taskFinishResult',
     'taskFinishRun',
     'taskRecordResult',
@@ -95,8 +95,6 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'verificationEvidenceCleanup',
     'verificationRun',
     'version',
-    'worktreeCleanup',
-    'worktreeCreate',
   ]);
 });
 

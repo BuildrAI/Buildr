@@ -5,7 +5,7 @@ function bounded(value, limit = 8_192) {
   return text.length <= limit ? text : `${text.slice(0, limit)}\n...[truncated ${text.length - limit} bytes]`;
 }
 
-export function spawnSupervised(command, args, { cwd, env = process.env, owner, timeoutMs = 30_000 } = {}) {
+export function spawnSupervised(command, args, { cwd, env = process.env, owner, timeoutMs = 30_000, outputLimit = 8_192 } = {}) {
   const startedAt = Date.now();
   const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.setEncoding('utf8');
@@ -33,8 +33,8 @@ export function spawnSupervised(command, args, { cwd, env = process.env, owner, 
       exitCode,
       signal,
       timedOut,
-      stdout: bounded(stdout),
-      stderr: bounded(stderr),
+      stdout: bounded(stdout, outputLimit),
+      stderr: bounded(stderr, outputLimit),
     });
   }));
   return { child, completed, owner: owner || null, startedAt };

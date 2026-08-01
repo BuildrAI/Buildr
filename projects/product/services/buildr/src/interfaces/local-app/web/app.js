@@ -46,6 +46,14 @@ const routeDefinitions = {
     },
     render: renderTaskDetail,
   },
+  '/tasks/:taskId/changes/:projectCode/:changeCode': {
+    id: 'tasks', label: '任务关联变更',
+    match(pathname) {
+      const match = pathname.match(/^\/tasks\/([a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)\/changes\/([A-Za-z0-9][A-Za-z0-9._-]*)\/([a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)$/);
+      return match ? { taskId: decodeURIComponent(match[1]), projectCode: decodeURIComponent(match[2]), changeCode: decodeURIComponent(match[3]) } : null;
+    },
+    render: renderChangeDetail,
+  },
   '/projects': { id: 'projects', label: '项目', render: renderProjects },
   '/projects/:projectCode': {
     id: 'projects', label: '项目详情',

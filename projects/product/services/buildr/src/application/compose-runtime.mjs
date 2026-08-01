@@ -4,6 +4,7 @@ import { registerWorkspaceRegistryRepository } from '../infrastructure/filesyste
 import { registerProjectManifestRepository } from '../infrastructure/filesystem/project-manifest-repository.mjs';
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
 import { registerTaskRecordRepository } from '../infrastructure/filesystem/task-record-repository.mjs';
+import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerDomainsRuntime } from './domains/runtime.mjs';
 import { registerDomainsWorkspace } from './domains/workspace.mjs';
@@ -23,9 +24,11 @@ import { registerWorkspaceNodeRuntime } from '../infrastructure/filesystem/works
 import { registerProjectApplication } from './project/project-application.mjs';
 import { registerServiceApplication } from './service/service-application.mjs';
 import { registerChangeApplication } from './change/change-application.mjs';
-import { registerWorktreeApplication } from './worktree/worktree-application.mjs';
+import { registerGitWorktreeProvider } from './worktree/git-worktree-provider.mjs';
 import { registerTaskFinishApplication } from './task-finish/task-finish-application.mjs';
 import { registerTaskRecordApplication } from './task-record/task-record-application.mjs';
+import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
+import { registerTaskEnvironmentLegacyMigration } from './task-environment/legacy-migration.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
 import * as platform from '../infrastructure/platform.mjs';
 
@@ -38,6 +41,7 @@ const REGISTRATIONS = [
   registerProjectManifestRepository,
   registerServiceManifestRepository,
   registerTaskRecordRepository,
+  registerTaskEnvironmentRepository,
   registerProjectGitObserver,
   registerDomainsComponents,
   registerDomainsCommands,
@@ -55,7 +59,9 @@ const REGISTRATIONS = [
   registerApplicationWorkspaceOperations,
   registerApplicationCliUpdate,
   registerApplicationRuntime,
-  registerWorktreeApplication,
+  registerGitWorktreeProvider,
+  registerTaskEnvironmentApplication,
+  registerTaskEnvironmentLegacyMigration,
   registerTaskRecordApplication,
   registerVerificationApplication,
   registerTaskFinishApplication,

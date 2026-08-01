@@ -111,6 +111,78 @@ test('引用、closed input、损坏 YAML、陈旧 digest 与原子替换失败�
   assert.notEqual(original, currentBytes);
 });
 
+test('Task-scoped Change Resolver 分开表达候选、retained baseline、归档与不可用引用', { timeout: 45_000 }, async (t) => {
+  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-change-resolver-app-'));
+  process.env.BUILDR_APP_DATA_DIR = appData;
+  t.after(() => {
+    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  });
+  const { root } = fixture(t, 'task-change-resolver');
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  };
+  git('init', '--initial-branch=dev');
+  git('config', 'user.email', 'buildr-test@example.com');
+  git('config', 'user.name', 'Buildr Test');
+  git('add', '.');
+  git('commit', '-m', 'fixture');
+  json(['task', 'create', 'resolver-task', '--title', 'Resolver Task', '--intent', '读取任务环境 Change', '--target', root]);
+  git('add', '.buildr/tasks/resolver-task/task.yml');
+  git('commit', '-m', 'create resolver task');
+
+  const prepared = json(['task', 'environment', 'prepare', 'resolver-task', '--branch', 'codex/resolver-task', '--start-point', 'dev', '--target', root]);
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  const environmentRoot = prepared.environment.scopes[0].validationRoot;
+  const candidateChanges = path.join(environmentRoot, 'projects', 'demo', 'openspec', 'changes');
+  const writeCandidate = (directory, content) => {
+    const changeRoot = path.join(candidateChanges, directory);
+    fs.mkdirSync(changeRoot, { recursive: true });
+    fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
+    fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${content}\n`);
+  };
+  writeCandidate('candidate-only', 'candidate only');
+  writeCandidate(path.join('archive', '2026-08-01-candidate-archived'), 'candidate archived');
+  fs.writeFileSync(path.join(candidateChanges, 'same-change', 'proposal.md'), '# candidate version\n');
+
+  const linked = json(['task', 'update', 'resolver-task', '--add-change', 'demo/candidate-only', '--add-change', 'demo/candidate-archived', '--add-change', 'demo/same-change', '--target', root]);
+  const byReference = new Map(linked.changeReferences.map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
+  assert.equal(byReference.get('demo/candidate-only').workingCopy.provenance, 'task-environment-candidate');
+  assert.equal(byReference.get('demo/candidate-archived').workingCopy.change.lifecycle, 'archived');
+  assert.equal(byReference.get('demo/same-change').workingCopy.provenance, 'task-environment-candidate');
+  assert.equal(byReference.get('demo/same-change').retainedBaseline.provenance, 'retained-baseline');
+  assert.equal(createRuntime().listProjectChanges(root, 'demo').changes.some((change) => change.code === 'candidate-only'), false, 'Workspace 全局 Change 列表保持 retained-only');
+
+  const runtime = createRuntime();
+  const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
+  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
+  const { url, initialWorkspaceId } = await instance.ready;
+  let response = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/resolver-task/changes/demo/same-change`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  const detail = await response.json();
+  assert.equal(detail.resolution.workingCopy.provenance, 'task-environment-candidate');
+  assert.equal(detail.resolution.retainedBaseline.provenance, 'retained-baseline');
+  assert.equal(detail.resolution.workingCopy.change.artifacts.proposal.content, '# candidate version\n');
+
+  fs.rmSync(path.join(candidateChanges, 'candidate-only'), { recursive: true });
+  const unavailable = json(['task', 'inspect', 'resolver-task', '--target', root]);
+  const unavailableReference = unavailable.changeReferences.find((item) => item.reference.change === 'candidate-only');
+  assert.equal(unavailableReference.availability, 'unavailable');
+  assert.equal(unavailableReference.diagnostic.code, 'task_change_unavailable');
+  const unrelatedUpdate = json(['task', 'update', 'resolver-task', '--title', '仍可更新', '--target', root]);
+  assert.equal(unrelatedUpdate.record.title, '仍可更新');
+  const removed = json(['task', 'update', 'resolver-task', '--remove-change', 'demo/candidate-only', '--target', root]);
+  assert.equal(removed.record.changes.some((item) => item.change === 'candidate-only'), false);
+
+  json(['task', 'abandon', 'resolver-task', '--reason', 'resolver fixture complete', '--target', root]);
+  const cleaned = json(['task', 'environment', 'cleanup', 'resolver-task', '--target', root]);
+  assert.equal(cleaned.status, 'cleaned');
+});
+
 test('Task Record target 必须是 canonical Workspace，不能是 linked worktree checkout', (t) => {
   const { base, root } = fixture(t, 'task-canonical');
   run(['task', 'create', 'canonical-task', '--title', 'Canonical', '--intent', '写入 retained root', '--target', root]);
@@ -138,13 +210,17 @@ test('Local App Task API 保持 workspaceId、Origin/session/JSON/body/字段边
   const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks`;
   const writeHeaders = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
   const request = async (resource, options = {}) => {
-    const response = await fetch(resource, options); return { status: response.status, body: await response.json() };
+    const response = await fetch(resource, options); return { status: response.status, headers: response.headers, body: await response.json() };
   };
 
   let response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-task', title: '页面任务', intent: '通过共享 Application 创建', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] }) });
   assert.equal(response.status, 201); assert.equal(response.body.status, 'created'); const staleDigest = response.body.recordDigest;
   response = await request(endpoint); assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-task']);
   const taskEndpoint = `${endpoint}/app-task`;
+  response = await request(`${taskEndpoint}/environment`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-environment-result/v1'); assert.equal(response.body.status, 'unavailable'); assert.equal(response.body.source, 'current-machine'); assert.equal(response.headers.get('cache-control'), 'no-store');
+  response = await request(`${taskEndpoint}/environment?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
+  response = await request(`${endpoint}/missing-task/environment`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');
+  response = await request(`${taskEndpoint}/changes/demo/same-change`); assert.equal(response.status, 200); assert.equal(response.body.resolution.workingCopy.provenance, 'retained-active'); assert.equal(response.body.resolution.workingCopy.change.code, 'same-change');
   response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: staleDigest, title: '页面已更新' }) });
   assert.equal(response.status, 200); assert.equal(response.body.record.title, '页面已更新');
   response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: staleDigest, title: '陈旧覆盖' }) });

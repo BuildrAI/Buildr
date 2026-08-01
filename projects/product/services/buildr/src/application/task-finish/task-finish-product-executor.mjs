@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
 
 import { classifyRetainedConvergencePaths } from './task-finish-impact.mjs';
-import { acquireFinishTargetLease, canonicalFinishWorkspaceRoot, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
+import { acquireFinishTargetLease, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
 
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
@@ -195,6 +195,10 @@ function targetLeasePath(root, targetBranch) {
 export function createTaskFinishProductHandlers({ runtime, root, existingVerificationSummary = null, openspecCommand = 'openspec' }) {
   const environmentRoot = path.resolve(root);
 
+  function taskEnvironment(run) {
+    return runtime.resolveTaskEnvironmentExecution(run.identity.workspaceRoot, run.identity.task);
+  }
+
   function currentWorkspaceNode(run) {
     const observed = runtime.workspaceNodeExecution(environmentRoot);
     return { ...observed, matches: Boolean(observed.ready && run.identity.workspaceNodeIdentity && observed.identity?.digest === run.identity.workspaceNodeIdentity) };
@@ -204,15 +208,15 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
     async preflight({ run }) {
       const findings = [];
       const operations = [];
-      const context = runtime.resolveTaskEnvironmentContext(environmentRoot);
-      if (!context) {
-        addFinding(findings, 'environment-context', 'error', 'task-finish.not-task-environment', 'Task Finish requires a canonical task environment.');
+      const context = taskEnvironment(run);
+      if (!context?.ready) {
+        addFinding(findings, 'environment-context', 'error', context?.blocked?.code || 'task-finish.not-task-environment', context?.blocked?.message || 'Task Finish requires a ready Task Environment.');
+        addFinding(findings, 'environment-cli-probe', 'error', 'task-finish.environment-cli-missing', 'Task Environment has no executable CLI binding.');
       } else {
-        if (!context.executionReady) addFinding(findings, 'environment-context', 'error', context.blocked?.code || 'task-finish.environment-not-ready', context.blocked?.message || 'Task environment is not execution-ready.', { failureClass: 'transient-external-condition' });
-        else addFinding(findings, 'environment-context', 'ok', 'task-finish.environment-ready', 'Task environment binding is ready.');
+        addFinding(findings, 'environment-context', 'ok', 'task-finish.environment-ready', 'Task Environment binding is ready.');
         const invocation = context.cliInvocation;
         if (invocation?.command) {
-          const probe = runJsonCommand('preflight-cli-probe', invocation.command, invocationArgs(invocation, ['version', '--json']), context.membership?.checkoutPath || environmentRoot);
+          const probe = runJsonCommand('preflight-cli-probe', invocation.command, invocationArgs(invocation, ['version', '--json']), environmentRoot);
           operations.push(probe.observation);
           if (probe.result.status !== 0 || !probe.payload?.version) {
             addFinding(findings, 'environment-cli-probe', 'error', 'task-finish.environment-cli-unexecutable', 'Receipt-bound CLI executable probe failed.', { exitCode: probe.result.status, diagnostic: probe.observation.stderr });
@@ -282,7 +286,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       else if (context?.repositories?.[0]?.branch && taskIdentity.branch !== context.repositories[0].branch) addFinding(findings, 'git-task', 'error', 'task-finish.task-branch-mismatch', 'Task branch does not match environment receipt.');
       else addFinding(findings, 'git-task', 'ok', 'task-finish.task-git-ready', `Task branch ${taskIdentity.branch} is ready for prepare.`);
 
-      const retained = canonicalFinishWorkspaceRoot(environmentRoot);
+      const retained = run.identity.workspaceRoot;
       const retainedIdentity = currentGitIdentity(retained);
       if (!retainedIdentity.head || retainedIdentity.branch !== run.identity.targetBranch) addFinding(findings, 'retained-workspace', 'error', 'task-finish.retained-target-mismatch', `Retained Workspace must be on target branch ${run.identity.targetBranch}.`, { failureClass: 'transient-external-condition' });
       else if (!retainedIdentity.clean) addFinding(findings, 'retained-workspace', 'error', 'task-finish.retained-workspace-dirty', 'Retained Workspace has unrelated uncommitted changes.', { failureClass: 'transient-external-condition' });
@@ -297,7 +301,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         status: 'passed',
         checks: findings,
         operations,
-        inputIdentity: digest({ context: context?.environmentEvidence, workspaceNode: workspaceNode.identity, task: taskIdentity, retained: retainedIdentity }),
+        inputIdentity: digest({ context: context ? { taskId: context.taskId, controller: context.controller, scopes: context.scopes } : null, workspaceNode: workspaceNode.identity, task: taskIdentity, retained: retainedIdentity }),
         outputIdentity: digest(findings),
         output: { context, projectRoot, changeRoot, taskIdentity, retainedRoot: retained, retainedIdentity },
       };
@@ -307,8 +311,8 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       const operations = [];
       const workspaceNode = currentWorkspaceNode(run);
       if (!workspaceNode.matches) return { status: 'failed', failure: { operation: 'workspace-node', failureClass: 'upstream-candidate-defect', code: 'task-finish.workspace-node-drift', message: 'Workspace Node identity changed before candidate preparation.' } };
-      const context = runtime.resolveTaskEnvironmentContext(environmentRoot);
-      if (!context?.executionReady) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task environment is not execution-ready.' } };
+      const context = taskEnvironment(run);
+      if (!context?.ready) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task environment is not execution-ready.' } };
       const invocation = context.cliInvocation;
       let convergence = { status: 'not-applicable', receipt: null };
       if (run.identity.candidateKind === 'change') {
@@ -368,19 +372,9 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         if (verifyFixedPoint.result.status !== 0 || !currentGitIdentity(environmentRoot).clean) return { status: 'failed', operations, failure: { operation: 'runtime-fixed-point', failureClass: 'upstream-candidate-defect', code: 'task-finish.fixed-point-unstable', message: 'Runtime generation is not stable after the mechanical fixed-point commit.', diagnostic: verifyFixedPoint.observation.stderr } };
       }
 
-      const rootRepository = context.repositories.find((item) => item.selector === 'workspace') || context.repositories[0];
-      const rebindArgs = [
-        'worktree', 'create', run.identity.task,
-        '--agent', run.identity.agent,
-        '--branch', rootRepository.branch,
-        '--start-point', rootRepository.startPoint || run.identity.targetBranch,
-        '--target', run.identity.workspaceRoot,
-      ];
-      for (const repository of context.repositories.filter((item) => item.selector !== rootRepository.selector)) rebindArgs.push('--include', repository.selector);
-      rebindArgs.push('--json');
-      const rebound = runJsonCommand('prepare-environment-rebind', invocation.command, invocationArgs(invocation, rebindArgs), environmentRoot);
-      operations.push(rebound.observation);
-      if (rebound.result.status !== 0 || rebound.payload?.executionReady !== true) return { status: 'failed', operations, failure: { operation: 'environment-rebind', failureClass: 'product-execution-failure', code: 'task-finish.environment-rebind-failed', exitCode: rebound.result.status, message: 'Task environment receipt did not bind the prepared candidate CLI identity.', diagnostic: rebound.payload?.blocked || rebound.observation.stderr } };
+      const rebound = runtime.prepareTaskEnvironment(run.identity.workspaceRoot, run.identity.task, { adapter: run.identity.agent });
+      operations.push({ operation: 'prepare-environment-refresh', status: rebound.status, effects: rebound.effects, diagnostic: rebound.diagnostic });
+      if (rebound.status !== 'ready') return { status: 'failed', operations, failure: { operation: 'environment-refresh', failureClass: 'product-execution-failure', code: rebound.diagnostic?.code || 'task-finish.environment-refresh-failed', message: rebound.diagnostic?.message || 'Task Environment did not refresh the prepared candidate identity.', diagnostic: rebound.diagnostic } };
 
       const identity = currentGitIdentity(environmentRoot);
       if (!identity.clean || !identity.head || !identity.tree) return { status: 'failed', operations, failure: { operation: 'candidate-freeze', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-not-clean', message: 'Candidate must be clean before freeze.' } };
@@ -419,12 +413,12 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         } catch { /* execute fresh assurance */ }
       }
 
-      const context = runtime.resolveTaskEnvironmentContext(environmentRoot);
-      if (!context?.executionReady) return { status: 'failed', failure: { operation: 'verification-context', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-context-invalid', message: context?.blocked?.message || 'Verification context is not executable.' } };
+      const context = taskEnvironment(run);
+      if (!context?.ready) return { status: 'failed', failure: { operation: 'verification-context', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-context-invalid', message: context?.blocked?.message || 'Verification context is not executable.' } };
       const invocation = context.cliInvocation;
       const verified = runJsonCommand('verify-required-assurance', invocation.command, invocationArgs(invocation, [
         'verification', 'run', '--project', run.identity.project, '--level', run.identity.requiredAssurance,
-        '--target', environmentRoot, '--environment', run.identity.task, '--owner', run.identity.agent,
+        '--target', environmentRoot, '--environment', run.identity.task, '--workspace', run.identity.workspaceRoot,
         '--candidate-fingerprint', run.frozenCandidate.identity, '--json',
       ]), environmentRoot);
       operations.push(verified.observation);
@@ -460,7 +454,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       if (!workspaceNode.matches || run.frozenCandidate?.workspaceNodeIdentity !== run.identity.workspaceNodeIdentity) return { status: 'failed', failure: { operation: 'workspace-node', failureClass: 'upstream-candidate-defect', code: 'task-finish.workspace-node-drift', message: 'Workspace Node identity changed before delivery.' } };
       const observed = observeFrozen(environmentRoot, run.frozenCandidate);
       if (!observed.matches) return { status: 'failed', failure: { operation: 'candidate-freeze', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-changed-after-freeze', message: 'Candidate identity changed before delivery.', findings: [observed.current] } };
-      const retainedRoot = canonicalFinishWorkspaceRoot(environmentRoot);
+      const retainedRoot = run.identity.workspaceRoot;
       const lease = acquireFinishTargetLease({ file: targetLeasePath(retainedRoot, run.identity.targetBranch), run });
       if (lease.blocked) return { status: 'blocked', failure: { operation: 'target-lease', failureClass: 'transient-external-condition', code: 'task-finish.target-lease-held', message: 'Target branch lease is held by another Finish run.', findings: [lease.existing] } };
       try {
@@ -501,8 +495,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         operations.push(doctor.observation);
         if (doctor.result.status !== 0 || doctor.payload?.health?.ready !== true) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-doctor-failed', exitCode: doctor.result.status, message: 'Retained Workspace doctor is not ready.', diagnostic: doctor.payload?.findings || doctor.observation.stderr }, output: { delivery: { status: 'delivered-retained-blocked', candidateRef: run.frozenCandidate.head } } };
         if (impact.requiresCliInstall || impact.requiresLocalAppInstall) {
-          const context = runtime.resolveTaskEnvironmentContext(environmentRoot);
-          const nodeExecutable = context?.cliInvocation?.argsPrefix?.length ? context.cliInvocation.command : process.execPath;
+          const nodeExecutable = process.execPath;
           const installer = path.join(retainedRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli');
           const installed = runCommand('deliver-cli-install', installer, ['--node-executable', nodeExecutable], retainedRoot);
           operations.push(installed.observation);
@@ -521,7 +514,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
     async cleanup({ run }) {
       const operations = [];
       if (run.delivery?.candidateRef !== run.frozenCandidate?.head) return { status: 'blocked', failure: { operation: 'cleanup-readiness', failureClass: 'transient-external-condition', code: 'task-finish.delivery-not-complete', message: 'Cleanup requires completed delivery evidence.' } };
-      const retainedRoot = canonicalFinishWorkspaceRoot(environmentRoot);
+      const retainedRoot = run.identity.workspaceRoot;
       const prepared = {
         schemaVersion: 'buildr.task-finish-completion/v1',
         runId: run.runId,
@@ -544,18 +537,16 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
           return { status: 'blocked', operations, failure: { operation: 'verification-cleanup', failureClass: 'transient-external-condition', code: 'task-finish.verification-cleanup-failed', exitCode: cleaned.result.status, message: 'Verification evidence cleanup failed.', diagnostic: cleaned.payload || cleaned.observation.stderr } };
         }
       }
-      const retainedCli = path.join(retainedRoot, 'projects', 'product', 'buildr');
-      const cleanedEnvironment = runJsonCommand('cleanup-task-environment', retainedCli, [
-        'worktree', 'cleanup', run.identity.task, '--agent', run.identity.agent,
-        '--integrated-ref', `workspace=${run.identity.targetBranch}`, '--target', retainedRoot, '--json',
-      ], retainedRoot);
-      operations.push(cleanedEnvironment.observation);
-      if (cleanedEnvironment.result.status !== 0 || cleanedEnvironment.payload?.status !== 'removed') {
-        return { status: 'blocked', operations, failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: cleanedEnvironment.payload?.blocked?.code || 'task-finish.environment-cleanup-failed', exitCode: cleanedEnvironment.result.status, message: cleanedEnvironment.payload?.blocked?.message || 'Task environment cleanup failed.', diagnostic: cleanedEnvironment.payload || cleanedEnvironment.observation.stderr } };
+      const context = taskEnvironment(run);
+      const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
+      const cleanedEnvironment = await runtime.cleanupTaskEnvironment(retainedRoot, run.identity.task, { type: 'finish', deliveries });
+      operations.push({ operation: 'cleanup-task-environment', status: cleanedEnvironment.status, effects: cleanedEnvironment.effects, diagnostic: cleanedEnvironment.diagnostic });
+      if (cleanedEnvironment.status !== 'cleaned') {
+        return { status: 'blocked', operations, failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: cleanedEnvironment.diagnostic?.code || 'task-finish.environment-cleanup-failed', message: cleanedEnvironment.diagnostic?.message || 'Task Environment cleanup failed.', diagnostic: cleanedEnvironment } };
       }
-      const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment.payload };
+      const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
       writeFinishCompletion({ root: retainedRoot, runId: run.runId, completion: complete });
-      return { status: 'passed', operations, inputIdentity: run.delivery.candidateRef, outputIdentity: digest(complete), output: { completion: { status: 'complete', receipt: completionFile, cleanup: cleanedEnvironment.payload } } };
+      return { status: 'passed', operations, inputIdentity: run.delivery.candidateRef, outputIdentity: digest(complete), output: { completion: { status: 'complete', receipt: completionFile, cleanup: cleanedEnvironment } } };
     },
   };
 }

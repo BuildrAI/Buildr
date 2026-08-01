@@ -5,7 +5,7 @@ description: 用户要求测试、验证、耗时报告、初始化或更新测�
 
 # Task Verification Skill
 
-本 Skill 是 `buildr.task-verification/v2` 的默认 provider。它负责发现当前 workspace 或 Project 已定义的验证政策，决定正式所需保证，以最低充分范围执行验证，把结果绑定到候选身份，测量验证自身的 wall-clock，并向直接调用者或 finish consumer 返回统一证据。它不拥有 task worktree placement、Git integration、部署或业务验收 policy。
+本 Skill 是 `buildr.task-verification/v2` 的默认 provider。它负责发现当前 Workspace 或 Project 已定义的验证政策，决定正式所需保证，以最低充分范围执行验证，把结果绑定到候选身份，测量验证自身的 wall-clock，并向直接调用者或 Finish consumer 返回统一证据。它不拥有 Task Environment、Git integration、部署或业务验收 policy。
 
 本 Skill 不是只在用户主动说“验证”时使用：用户直接要求测试、检查或耗时报告时由 runtime description 发现；实现型任务到达验证节点或 Agent 准备声称完成时，由适用 Rule 的完成边界触发；Task Finish 需要正式 evidence 时通过 capability binding 调用 selected provider。binding 只选择实现，不替代首次意图发现。
 
@@ -17,14 +17,14 @@ description: 用户要求测试、验证、耗时报告、初始化或更新测�
 - operation：`inspect` 只核对已有 evidence，`execute` 才运行验证命令，`cleanup` 只处理 evidence 生命周期。不得因为 consumer 调用 provider 就默认选择 `execute`。
 - 正式保证由本 provider 决定：普通开发与普通收尾返回 `requiredAssurance: affected`；发布、高风险或用户明确要求完整验证返回 `requiredAssurance: candidate`。consumer 不替 provider 选测试或级别。
 - 当前候选 identity 和已有验证 evidence。Git 候选优先记录 repository root、tree 或包含未提交内容的稳定 fingerprint；非 Git 候选记录当前工具可证明的 snapshot identity。无法建立可比较 identity 时，将 evidence 标记为不可跨状态复用。
-- consumer 声明 task environment 时，必须提供 environment receipt、repository membership/identity、allowed execution roots、receipt-bound CLI/runtime projection identity、Workspace Node identity 与明确 target/workdir；自举环境使用 environment-local CLI，普通消费 workspace 可使用 receipt 绑定的 external-product CLI。只有 context 返回 `executionReady: true` 才执行正式验证，不得要求 session root 等于 environment root。
+- consumer 使用 Task Environment 时，必须提供 Task ID、canonical Workspace，以及 Environment 最新 read model 中的 scope/environment/source/projection identity、allowed execution roots、Workspace Node identity 与明确 target/workdir。不得提交原始 Receipt、从 cwd 推断环境或把真实 Agent session 采用当作 P0.2 前置条件。
 - 变更路径是否命中 Change lifecycle、Change path resolution 或 OpenSpec sync/archive；命中时记录 `archive-sensitive` signal，并从 Project policy 选择 active/archive capability。无法确认覆盖时在 `coverageSummary` 披露 gap；OpenSpec archive rehearsal 不等于应用层测试覆盖。
 - 重新执行是否携带可验证的前序 evidence 与 `implementation-changed`、`target-race` 或 `verification-failed` 原因；存在时保留前序 run 的独立状态与耗时，在新 result 中返回 `supersedesEvidence`、`invalidationReason` 和 `supersessionRelationship`。
 - 按 authority 顺序读取当前 scope 的 Rules/AGENTS、明确 Project context 及可选 `projects/<project>/verification.yml`、OpenSpec change/tasks、项目开发或发布文档、公开脚本与帮助。只读取任务相关范围，不按技术栈名称猜测命令。
 
 Project 测试声明不存在时使用 `policyMode: legacy`，完全保持现有发现行为：继续读取 AGENTS、POM、项目文档和已有测试命令；不因缺少新声明产生失败、阻塞或 warning，不自动启动新的 Spring、端到端、容器、数据库或外部环境。声明存在时先按 `references/project-verification-v1.md` 核对；无效声明不得执行。
 
-声明有效且能力可由 argv/cwd 执行时，默认通过 receipt-bound 或当前已安装的 `buildr verification run --project <code> --level <affected|candidate> --target <workspace> --json` 调用正式产品 executor；在 task environment 中追加匹配 context 的 `--environment` 与 `--owner`，Task Finish consumer 同时传入 `--candidate-fingerprint`。消费其 `buildr.verification-run/v1` summary 和唯一 `buildr.verification-evidence-lifecycle/v1` 对象，不从 `test/verification` 导入编排代码，也不由 Agent 手工实现 DAG 或 lease。
+声明有效且能力可由 argv/cwd 执行时，默认通过 Environment 指定或当前已安装的 `buildr verification run --project <code> --level <affected|candidate> --target <execution-root> --json` 调用正式产品 executor；使用 Task Environment 时追加 `--environment <task-id> --workspace <canonical-workspace>`，Task Finish consumer 同时传入 `--candidate-fingerprint`。消费其 `buildr.verification-run/v1` summary 和唯一 `buildr.verification-evidence-lifecycle/v1` 对象，不从 `test/verification` 导入编排代码，也不由 Agent 手工实现 DAG 或 lease。
 
 声明的 `mode: augment` 表示已确认能力增强 legacy policy discovery，未声明范围仍继续发现；`mode: authoritative` 表示团队确认声明是 Project 测试政策 authority。具体命令由当前 workspace 或 Project 定义。不得把 Buildr Product 的 package check、临时 workspace E2E、`npm run test:candidate` 或 timing schema固定为其他项目的默认入口。
 
@@ -89,7 +89,7 @@ Project 声明验证资源时，按 `references/project-verification-v1.md` 解�
 ## 5. Candidate evidence 有效性
 
 - evidence 必须记录验证时的候选 identity、dirty/snapshot 状态和 policy sources。
-- task environment evidence 还必须记录 execution binding、runtime projection identity 与 Workspace Node identity；任一 environment、repository、target/workdir、CLI 或 Workspace Node identity stale/mismatch 时 evidence 不可复用。旧 evidence 缺少 Node identity 时也不可复用。普通 Rule/Skill 内容修改不要求 activation evidence；只有任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制已在真实 Agent host 生效时才记录。
+- Task Environment evidence 还必须记录 Task/scope/environment/source/projection identity、execution binding 与 Workspace Node identity；任一 identity、target/workdir、CLI 或 Workspace Node identity stale/mismatch 时 evidence 不可复用。旧 evidence 缺少 Node identity 时也不可复用。真实 Agent session 采用证明只在本 Verification 模块的专项验收需要时记录，不反写 Environment ready。
 - commit、checkout、分支名或 push 变化但候选内容等价时，可以复用 evidence。
 - rebase 冲突解决、后续编辑、生成资产更新或其他内容变化后，旧 evidence 失效。
 - Project policy 可以把同一会话内、刚成功的最终 Candidate 任务唯一 `- [ ]` → `- [x]` 变化定义为 `verification-result-metadata-only`。此时 Candidate evidence 仍绑定 source implementation identity；consumer 只能组合独立的 source/target identity、change/task identity 和精确 marker transition，不得改写 `candidateIdentity` 或声称 Candidate 直接验证 target delivery tree。
@@ -149,7 +149,7 @@ verificationResultMetadataTransition: <可选；subtype、source/target identity
 - 只有当前验证摘要已经进入用户报告或 consumer evidence、没有后续 consumer，且 cleanup reference 可证明属于 provider 创建的单次 transient run 时才通过公开 `buildr verification cleanup --summary <file>` 清理。删除必须核对 summary schema、run identity、目录前缀和临时根边界并针对精确 run 目录，禁止使用未解析变量、glob、workspace root 或系统临时目录根；caller-managed、symlink、越界和不可证明状态保留现场。
 - 新 Candidate evidence 核对通过后，可以清理同一任务中已被替代且不再被引用的旧成功 transient run；失败 evidence 保留到诊断结束或被新 evidence 替代。
 - Task Finish 在捕获最终摘要、完成集成与推送并确认没有后续 consumer 后，请求 selected provider 清理 transient evidence。清理失败不回滚已完成交付，返回 `cleanupStatus: retained`、实际路径和原因。
-- transient evidence 清理后，最终报告保留已捕获的状态、候选、范围、耗时和失败/跳过摘要，并说明 `cleanupStatus: cleaned`；不得继续把已删除路径表述为长期可访问证据。`task-worktree` 不负责这项清理。
+- transient evidence 清理后，最终报告保留已捕获的状态、候选、范围、耗时和失败/跳过摘要，并说明 `cleanupStatus: cleaned`；不得继续把已删除路径表述为长期可访问证据。Git/worktree provider 不负责这项清理。
 
 ## 8. 面向用户报告
 
@@ -177,7 +177,7 @@ verificationResultMetadataTransition: <可选；subtype、source/target identity
 - 不把缺少 `verification.yml` 当作迁移欠账、失败或阻塞；不在初始化/刷新声明时自动执行新环境测试。
 - 不把 discovered/trial 自动升级为 stable/required，不以成功次数替代团队对覆盖和阻断价值的确认。
 - 不把团队名、服务名或固定测试层级写进通用 Skill；Project 特有事实只进入该 Project 声明。
-- 不依赖 `task-worktree`、`git-ops` 或任何固定 provider id；有 worktree 时只消费调用方提供的候选边界与 identity。
+- 不依赖任何固定 Environment、Git 或 worktree provider id；只消费调用方提供的候选边界与 identity。
 - 不把测试通过等同于业务验收、上线、归档、提交、推送或清理授权。
 - 不重复启动仍在运行的验证，不相加并行步骤推算整体耗时。
 - 不由 Agent 手工协调并发任务的共享验证资源，不清理归属其他任务或 run 的资源槽。

@@ -64,25 +64,20 @@ test('任务看板 provider 与 capability contract 返回稳定结果证据', (
 test('任务看板只由 retained Workspace checkout 持有', () => {
   const contract = read('package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md');
   assert.match(boardSkill, /只在 retained Workspace checkout/);
-  assert.match(boardSkill, /不把 task environment checkout 当作看板 authority/);
-  assert.match(boardSkill, /不得在其中创建、复制或更新任务看板/);
-  assert.match(contract, /关联 task environment 只能作为事实来源/);
-  assert.match(contract, /不得写入关联 task environment/);
+  assert.match(boardSkill, /不把任务验证工作区当作看板 authority/);
+  assert.match(boardSkill, /不得在任务验证工作区创建、复制或更新任务看板/);
+  assert.match(contract, /关联 Task Environment 只能作为事实来源/);
+  assert.match(contract, /不得写入关联任务验证工作区/);
 });
 
-test('task environment 通过 worktree context 确定性解析 retained Workspace', () => {
+test('任务看板用 canonical Workspace 与 Task Record 定位，Environment 只读可选', () => {
   const contract = read('package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md');
-  assert.match(boardSkill, /`buildr worktree context --target <environment-root> --json`/);
-  assert.match(boardSkill, /只消费成功 result 的 `workspaceRoot`/);
-  assert.match(contract, /唯一来自 `worktree context\.workspaceRoot`/);
-  for (const forbidden of [
-    /environment receipt 或显式 Workspace identity/,
-    /从显式 Workspace identity 或 task environment receipt/,
-  ]) {
-    assert.doesNotMatch(boardSkill, forbidden);
-    assert.doesNotMatch(contract, forbidden);
-  }
-  assert.match(contract, /不得读取 receipt 结构、扫描路径或接受显式 Workspace identity/);
+  assert.match(boardSkill, /canonical Workspace 和 Task ID 调用 Task Manager `inspect`/);
+  assert.match(boardSkill, /需要环境事实时只调用 Task Environment `inspect`/);
+  assert.match(contract, /retained root 只能来自 consumer 的明确 Workspace identity，并通过 Task Manager 复核/);
+  assert.match(contract, /不得读取 Receipt 结构或扫描路径猜 retained root/);
+  assert.doesNotMatch(boardSkill, /worktree context|读取.*Receipt/);
+  assert.doesNotMatch(contract, /worktree context/);
 });
 
 test('任务看板从 runtime Skill 自身复制完整目录中的模板', () => {

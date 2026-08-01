@@ -53,6 +53,7 @@ export const verificationSteps = Object.freeze([
     'src/application/package-maintenance/verification-registry.mjs',
     'src/application/package-maintenance/builtin-replacement.mjs',
     'src/application/task-finish/**',
+    'src/application/task-environment/**',
     'src/application/openspec/**',
     'src/application/verification/**',
     'src/infrastructure/runtime/adapter-contract.mjs',

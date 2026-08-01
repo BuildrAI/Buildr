@@ -1,0 +1,71 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+import { spawnSync } from 'node:child_process';
+import test from 'node:test';
+import YAML from 'yaml';
+
+const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
+const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
+const LEGACY = [
+  { version: 1, description: '管理任务 worktree 的放置、保留和安全清理。' },
+  { version: 2, description: '管理单仓或多仓 task environment 的放置、执行边界、保留和安全清理。' },
+];
+
+function run(args) {
+  return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
+}
+
+function fixtureRoot(t) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-retirement-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, 'workspace');
+  const initialized = run(['init', '--target', root, '--name', 'retirement', '--description', 'Capability retirement fixture', '--profile', 'team']);
+  assert.equal(initialized.status, 0, initialized.stderr);
+  return root;
+}
+
+function injectLegacy(root) {
+  const manifestFile = path.join(root, 'skills', 'manifest.yml');
+  const manifest = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  for (const item of LEGACY) {
+    const relative = `contracts/buildr/task-worktree-lifecycle/v${item.version}.md`;
+    manifest.contracts.push({ id: 'buildr.task-worktree-lifecycle', version: item.version, path: relative, description: item.description });
+    manifest.bindings.push({ capability: 'buildr.task-worktree-lifecycle', version: item.version, provider: 'task-worktree' });
+    const target = path.join(root, 'skills', relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(PRODUCT_ROOT, 'test', 'fixtures', `legacy-task-worktree-contract-v${item.version}.md`), target);
+  }
+  fs.writeFileSync(manifestFile, YAML.stringify(manifest));
+  return manifestFile;
+}
+
+test('sync 只在旧 contract、binding 与文件 identity 匹配时完整退休旧 authority', (t) => {
+  const root = fixtureRoot(t);
+  injectLegacy(root);
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  const manifest = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
+  assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-worktree-lifecycle'), false);
+  assert.equal(manifest.bindings.some((item) => item.capability === 'buildr.task-worktree-lifecycle'), false);
+  for (const item of LEGACY) assert.equal(fs.existsSync(path.join(root, 'skills', 'contracts', 'buildr', 'task-worktree-lifecycle', `v${item.version}.md`)), false);
+});
+
+test('旧 contract 文件漂移时 sync 在任何退休 mutation 前阻断', (t) => {
+  const root = fixtureRoot(t);
+  const manifestFile = injectLegacy(root);
+  const v2 = path.join(root, 'skills', 'contracts', 'buildr', 'task-worktree-lifecycle', 'v2.md');
+  fs.appendFileSync(v2, '\n本地修改必须保留。\n');
+  const manifestBefore = fs.readFileSync(manifestFile);
+  const v1 = path.join(root, 'skills', 'contracts', 'buildr', 'task-worktree-lifecycle', 'v1.md');
+  const v1Before = fs.readFileSync(v1);
+  const v2Before = fs.readFileSync(v2);
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.notEqual(synced.status, 0);
+  assert.match(`${synced.stderr}\n${synced.stdout}`, /Capability retirement file has drifted/);
+  assert.deepEqual(fs.readFileSync(manifestFile), manifestBefore);
+  assert.deepEqual(fs.readFileSync(v1), v1Before);
+  assert.deepEqual(fs.readFileSync(v2), v2Before);
+});

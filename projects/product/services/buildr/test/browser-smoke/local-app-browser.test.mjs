@@ -73,6 +73,7 @@ function createFixture(root) {
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  runBuildr(['task', 'environment', 'prepare', 'browser-task', '--shared', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
 
@@ -88,7 +89,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true });
 }
 
-test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t) => {
+test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 90_000 }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
   const workspaceRoot = path.join(base, 'workspace');
   let browser;
@@ -267,8 +268,9 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
     assert.equal(await page.locator('#task-detail-status').innerText(), '进行中');
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');
-    assert.equal(await page.locator('#task-detail-changes').innerText(), 'demo/browser-flow');
-    assert.equal(await page.getByText('Task Environment', { exact: true }).count(), 0);
+    assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
+    assert.match(await page.locator('#task-detail-changes').innerText(), /Retained · 进行中/);
+    await unique(page.getByRole('button', { name: '环境', exact: true }), '任务环境页签');
 
     await page.locator('#task-complete-summary').fill('页面确认完成');
     await page.locator('#task-complete-no-change').selectOption('false');
@@ -280,6 +282,33 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });
+    const taskChange = page.locator('#task-detail-changes a').filter({ hasText: 'demo/browser-flow' });
+    await unique(taskChange, '任务关联 Change');
+    assert.match(await taskChange.innerText(), /任务环境候选 · 进行中/);
+    await taskChange.click();
+    await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
+    assert.equal(await page.locator('#change-detail-code').innerText(), 'browser-flow');
+    assert.equal(await page.locator('#change-detail-provenance').innerText(), '任务环境候选');
+    await page.locator('#task-change-provenance').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-change-provenance-facts').innerText(), /Working copy/);
+    assert.match(await page.locator('#task-change-provenance-facts').innerText(), /Retained baseline/);
+    assert.equal(await page.locator('.panel-actions').isHidden(), true, '任务关联 Change 详情保持只读');
+    await page.locator('.back-link').click();
+    await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
+
+    await page.getByRole('button', { name: '环境', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('task-environment-status')?.textContent === '可执行');
+    assert.equal(await page.locator('#task-environment-source').innerText(), 'current-machine');
+    assert.match(await page.locator('#task-environment-receipt').innerText(), /^可用 · /);
+    assert.ok(await page.locator('#task-environment-scopes .environment-scope-card').count() >= 2, '应展示稳定控制面与实际工作范围');
+    assert.match(await page.locator('#task-environment-scopes').innerText(), /共享根/);
+    assert.match(await page.locator('#task-environment-resources').innerText(), /没有已登记的 Task-owned 动态资源/);
+    assert.equal(await page.locator('#task-environment-panel button').count(), 1, '环境页签只提供只读刷新');
+    await page.getByRole('button', { name: '刷新当前事实', exact: true }).click();
+    await page.waitForFunction(() => !document.getElementById('task-environment-refresh')?.disabled);
+    assert.equal(await page.locator('#task-environment-status').innerText(), '可执行');
+    await page.getByRole('button', { name: '概览', exact: true }).click();
+
     runtime.updateTaskRecord(workspaceRoot, 'browser-task', { intent: '另一客户端已经更新' });
     await page.locator('#task-edit-title').fill('陈旧页面不得覆盖');
     await page.getByRole('button', { name: '保存 Task Record', exact: true }).click();

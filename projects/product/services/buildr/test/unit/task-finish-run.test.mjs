@@ -96,10 +96,11 @@ test('code-only preflight 将 Change 与 OpenSpec 检查稳定标记为不适用
   assert.equal(git('add', '-A').status, 0);
   assert.equal(git('commit', '-m', 'baseline').status, 0);
   const runtime = {
-    resolveTaskEnvironmentContext: () => ({
-      executionReady: true,
-      environmentEvidence: { receipt: 'fixture' },
-      membership: { checkoutPath: root, selector: 'workspace' },
+    resolveTaskEnvironmentExecution: () => ({
+      ready: true,
+      taskId: 'code-only-preflight',
+      workspaceRoot: root,
+      validationRoot: root,
       repositories: [{ selector: 'workspace', branch: 'dev' }],
       cliInvocation: { command: process.execPath, argsPrefix: [cli] },
     }),
@@ -161,7 +162,7 @@ test('Finish 不复用缺少 Workspace Node identity 的旧验证证据', async 
   }));
   const runtime = {
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' } }),
-    resolveTaskEnvironmentContext: () => ({ executionReady: false, blocked: { message: 'verification should execute instead of reusing legacy evidence' } }),
+    resolveTaskEnvironmentExecution: () => ({ ready: false, blocked: { code: 'task_environment_probe_blocked', message: 'verification should execute instead of reusing legacy evidence' } }),
   };
   const run = createFinishRun({ root, runId: 'node-evidence', identity: identity(root, 'node-evidence') });
   run.frozenCandidate = { identity: 'frozen-node-candidate', head, tree, branch: 'codex/node-evidence', workspaceNodeIdentity: 'sha256-workspace-node' };
@@ -245,7 +246,7 @@ test('preflight 一次聚合候选、环境、OpenSpec、知识、验证和 reta
   fs.mkdirSync(changeRoot, { recursive: true });
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [ ] unfinished\n');
   const runtime = {
-    resolveTaskEnvironmentContext: () => ({ executionReady: false, blocked: { code: 'worktree.execution_cli_unavailable', message: 'CLI dependency is missing.' }, repositories: [{ branch: 'dev' }] }),
+    resolveTaskEnvironmentExecution: () => ({ ready: false, blocked: { code: 'task_environment_cli_unavailable', message: 'CLI dependency is missing.' }, repositories: [{ branch: 'dev' }] }),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
     parseOpenSpecChangeDelta: () => { throw new Error('delta is invalid'); },
     workspaceNodeExecution: () => ({ ready: false, status: 'missing', identity: null }),
@@ -255,7 +256,7 @@ test('preflight 一次聚合候选、环境、OpenSpec、知识、验证和 reta
   assert.equal(result.status, 'failed');
   const codes = new Set(result.checks.filter((check) => check.severity === 'error').map((check) => check.code));
   for (const code of [
-    'worktree.execution_cli_unavailable',
+    'task_environment_cli_unavailable',
     'task-finish.workspace-node-drift',
     'task-finish.environment-cli-missing',
     'task-finish.tasks-incomplete',

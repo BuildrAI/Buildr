@@ -175,7 +175,7 @@ export function registerApplicationRuntime(runtime) {
     const components = syncPackageComponents(targetRoot, { checkOnly: true });
     const affectedPaths = assertSafeSyncMutationPaths(targetRoot, [...workspace.affectedPaths, ...projects.affectedPaths, ...builtins.affectedPaths, ...components.affectedPaths]);
     const needsDecision = [
-      ...builtins.findings.filter((finding) => !finding.component && !finding.required && ['modified', 'missing'].includes(finding.status)),
+      ...builtins.findings.filter((finding) => !finding.component && !finding.required && !finding.converge && ['modified', 'missing'].includes(finding.status)),
       ...replacementRuntimePreflight(targetRoot, agent, builtins.findings),
     ];
     return {
@@ -198,6 +198,12 @@ export function registerApplicationRuntime(runtime) {
     }
   }
 
+  function assertEnvironmentMigrationReady(migration) {
+    if (migration?.status !== 'blocked') return;
+    const conflicts = migration.entries.filter((entry) => entry.classification === 'D').map((entry) => `${entry.taskId}: ${entry.reason}`);
+    throw new Error(`sync 暂停：旧 Task Environment authority 无法安全迁移。${conflicts.length ? `\n- ${conflicts.join('\n- ')}` : `\n- ${migration.diagnostic?.message || '检查 migration evidence。'}`}`);
+  }
+
   function syncRuntime(agent, args) {
     const adapter = getRuntimeAdapter(agent);
     const syncArgs = [...args];
@@ -205,8 +211,12 @@ export function registerApplicationRuntime(runtime) {
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
     assertRuntimeProjectionTarget(targetRoot);
     assertInitializedBuildrWorkspace(targetRoot);
+    const environmentMigrationPlan = runtime.migrateLegacyTaskEnvironments?.(targetRoot, { apply: false }) || null;
+    assertEnvironmentMigrationReady(environmentMigrationPlan);
     const preflight = buildSyncSourcePlan(targetRoot, agent);
     assertSyncSourcePlanReady(preflight);
+    const environmentMigration = runtime.migrateLegacyTaskEnvironments?.(targetRoot, { apply: true }) || null;
+    assertEnvironmentMigrationReady(environmentMigration);
     let lockedPlan = null;
     const updated = withWorkspaceMutation(targetRoot, `buildr.sync:${agent}`, preflight.affectedPaths, () => {
       const workspaceMigration = migrateWorkspaceMetadata(targetRoot);
@@ -216,7 +226,7 @@ export function registerApplicationRuntime(runtime) {
       if (components.errors.length) {
         throw new Error(`sync 暂停：Component 源资产存在冲突。\n- ${components.errors.map((item) => item.error).join('\n- ')}`);
       }
-      const needsDecision = sourceUpdate.findings.filter((finding) => !finding.component && !finding.required && ['modified', 'missing'].includes(finding.status));
+      const needsDecision = sourceUpdate.findings.filter((finding) => !finding.component && !finding.required && !finding.converge && ['modified', 'missing'].includes(finding.status));
       if (needsDecision.length) {
         throw new Error(`sync 暂停：以下 optional Buildr 内置能力需要用户决策。\n- ${needsDecision.map((item) => `${item.type}:${item.id} (${item.status})`).join('\n- ')}`);
       }
@@ -240,6 +250,7 @@ export function registerApplicationRuntime(runtime) {
       encoding: 'utf8',
     });
     console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
+    if (environmentMigration?.status === 'migrated' && environmentMigration.counts.total > 0) console.log(`Task Environment 迁移：A=${environmentMigration.counts.A} B=${environmentMigration.counts.B} C=${environmentMigration.counts.C} D=${environmentMigration.counts.D}`);
     console.log(`Workspace Node：${workspaceNode.identity.version}（${workspaceNode.action}）`);
     if (updated.changed.length > 0) {
       console.log('产品能力变更：');
