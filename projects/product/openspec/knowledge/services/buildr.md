@@ -2,25 +2,28 @@
 
 ## 职责
 
-Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service domain、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证编排、package 和发布。
+Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record domain、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证编排、package 和发布。
 
 ## 接口与入口
 
 - CLI：`projects/product/buildr`（开发 checkout）及 npm `buildr` 命令。
-- Local App：loopback HTTP 与浏览器界面；Workspace 是全局目录，Project、Service、Change 使用稳定详情路由。
+- Local App：loopback HTTP 与浏览器界面；Workspace 是全局目录，Project、Service、Task Record、Change 使用稳定详情路由，Task Record 提供受控管理动作。
 - Package：`services/buildr/package/manifest.yml` 定义发布边界、workspace/project baseline、builtins、contracts、bindings 和 Components。
 
 ## 数据与依赖
 
 - Workspace/Project/Service、Rules、Skills、Commands 和 Components 使用 YAML manifests/registries。
+- Task Record 使用 canonical `.buildr/tasks/<task-id>/task.yml` 与 closed `buildr.task-record/v1` schema；repository 只拥有该文件，按 Git topology 拒绝 linked-worktree authority，并保留同目录其他专业模块文件。Task Record 只保存最小顶层事实，不保存 Task Environment 或其他专业模块字段。
 - OpenSpec 依赖 `@fission-ai/openspec` 1.6.0；Buildr 补充跨 Change conflict evidence、文件事实驱动的确定性收敛事务和 runtime contributions。历史 baseline/阶段 sidecar 只作兼容诊断。
-- Local App Change read model 从 Project canonical planning root 只读索引 active/archive artifacts；Brief 是 Buildr companion，不改变 OpenSpec schema。
+- Local App Task API 先把已登记 `workspaceId` 解析为 canonical root，再调用 Task Record Application；mutation 复用 same-origin、session、JSON、body limit、字段白名单和路径拒绝边界，并用响应级 `recordDigest` 拒绝陈旧页面。Change read model 继续从 Project canonical planning root 只读索引 active/archive artifacts；Brief 是 Buildr companion，不改变 OpenSpec schema。
 - Task environment 使用本机 environment receipt、repository membership/identity、allowed roots、明确 target/workdir 与 receipt-bound CLI/runtime projection 建立 execution binding。CLI binding 同时保存源码身份和结构化绝对 invocation；自举 workspace 的 invocation 指向 task checkout 内已有 Node-aware bridge，普通消费 workspace 使用已声明的 external-product Node/entry，不假设产品位于 Workspace 固定目录。Agent 和标准消费者只追加子命令参数，不再根据 cwd 或 `cliSource` 拼入口。
 - 普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence；发布资产已投射到 Agent runtime。`worktree adopt` 仅在任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时保存同时匹配 session root 与 handle 的 `agent-attested` evidence，Buildr 不内省或自动 handoff Agent host。
 
 Workspace Node identity 进入 task environment receipt/context 与 `executionReady`，并绑定 verification evidence、Finish frozen candidate、resume token 与 reuse 判断。Agent runtime 只能消费该 identity，不能选择或保存 Node version；验证 executor 为 node、npm、测试和子进程统一注入受管环境，freeze、verify、resume 或 deliver 前发现漂移时终止。
 
 ## 运行与验证
+
+Task Record 的 Domain/Application/filesystem repository 构成单一 writer；独立 CLI interface 公开 `task create|inspect|update|complete|abandon`，Local App 提供列表、详情、创建、编辑和明确终态确认，两者不直接编辑 YAML。随包 `task-manager` Skill 提供并默认绑定 `buildr.task-record/v1`，`task-triage` 在正式持久交付首次写入前 optional 消费；Task Environment、Development、Review、Verification、Git、Finish、Board 和 Retrospective 保留各自 authority。候选 Product checkout 可渲染自身 task worktree runtime，但产品会阻止它写入同一 Git common-dir 下的 retained 或 peer checkout。
 
 Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。Workspace 在 `.buildr/workspace.yml` 维护精确 `runtime.node.version`；`init` 采用当前受支持 CLI Node 并准备本机受管 runtime，`sync` 按声明恢复且不改版本，`doctor` 只读核对声明、Node/npm/CLI/验证环境并建议 `sync`。开发与安装入口的普通命令固定使用该 runtime；仅 `init`、`doctor`、`sync` 可在 runtime 缺失时使用兼容 bootstrap Node。npm package 的 `engines.node` 继续只表达产品兼容范围。
 

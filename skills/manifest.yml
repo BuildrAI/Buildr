@@ -19,6 +19,9 @@ skills:
       - workbuddy
     runtimePath: task-triage
     requires:
+      - capability: buildr.task-record
+        version: 1
+        mode: optional
       - capability: buildr.current-knowledge-maintenance
         version: 2
         mode: optional
@@ -382,6 +385,27 @@ skills:
       - capability: buildr.terminology-governance
         version: 1
         mode: required
+  - id: task-manager
+    assetIdentity: buildr:skill:task-manager
+    sourceIdentity: package:skills/buildr/task-manager
+    source: buildr
+    path: buildr/task-manager
+    description: 用户明确要求创建、查看、更新、完成或放弃正式 Task Record，或按 Task ID 恢复正式任务顶层事实时使用；不用于普通任务分流、只读探索、Task Environment 或任何专业阶段动作。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: task-manager
+    provides:
+      - capability: buildr.task-record
+        version: 1
 contracts:
   - id: buildr.git-single-operation
     version: 1
@@ -439,6 +463,10 @@ contracts:
     version: 1
     path: contracts/buildr/task-finish/v1.md
     description: 通过固定五阶段执行器完成已具备收尾资格候选的交付，不在收尾中修复产品缺陷。
+  - id: buildr.task-record
+    version: 1
+    path: contracts/buildr/task-record/v1.md
+    description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
 bindings:
   - capability: buildr.git-single-operation
     version: 1
@@ -482,4 +510,7 @@ bindings:
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
+  - capability: buildr.task-record
+    version: 1
+    provider: task-manager
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

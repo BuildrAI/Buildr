@@ -76,6 +76,8 @@ bindings:
 
 顶层验证 provider 不是只有用户主动说“验证”才加载。用户直接要求测试、耗时报告、初始化/更新测试声明或推进测试能力成熟度时由 description 发现；实现任务到达验证节点、Agent 准备声称完成时由适用 Rule 的完成边界触发。Task Finish 的最终 assurance 由产品 executor 调用 verification application service，不触发 Agent provider handoff。
 
+`buildr.task-record/v1` 是正式 Task 顶层记录的薄能力边界，默认由 `task-manager` 提供并绑定。它只保证通过产品 create/inspect/update/complete/abandon action 创建或恢复 Task ID、标题、意图、Project/Service scope、Change 引用与顶层终态；不得读取或复制 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 事实。`task-triage` 以 optional dependency 消费该能力：讨论、只读探索和非持久路径保持可用；只有已经对齐、即将首次写入的持久交付在 provider ready 时先创建或恢复 Task Record，provider not-ready 时明确 degraded/blocked，而不让 Agent 直接写 YAML。Local App 是同一 Application 的人类客户端，不是 capability provider 或第二份 authority。
+
 ### 3. Resolver 与 readiness
 
 Buildr 从当前 scope 向 workspace root 查找最近的显式 binding，校验 contract version、provider `provides`、runtime 可用性和 provider 自身的 required dependencies。当前 binding 选择 `git-ops`，供独立 Git 能力消费者、顶层意图或 retained metadata-only handoff 使用；它不决定 `task-finish/v1` 产品执行器是否可运行，只有命中 handoff 时 provider 不 ready 才 blocked。

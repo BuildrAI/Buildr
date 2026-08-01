@@ -5,6 +5,7 @@ import { isVersionRequest, printVersion } from './identity.mjs';
 import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../local-app/http/server.mjs';
 import { registerLauncherInterface } from './launcher.mjs';
+import { taskRecordCommand } from './task-record.mjs';
 
 export const COMMAND_REGISTRY = [
   { key: 'init', match: ({ domain }) => domain === 'init', run: (r, c) => r.initBuildr(c.argv.slice(3)) },
@@ -27,6 +28,11 @@ export const COMMAND_REGISTRY = [
   { key: 'worktree adopt', match: ({ domain, action }) => domain === 'worktree' && action === 'adopt', run: (r, c) => r.adoptTaskEnvironment(c.argv.slice(4)) },
   { key: 'verification run', match: ({ domain, action }) => domain === 'verification' && action === 'run', run: (r, c) => r.verificationRun(c.argv.slice(4)) },
   { key: 'verification cleanup', match: ({ domain, action }) => domain === 'verification' && action === 'cleanup', run: (r, c) => r.verificationCleanup(c.argv.slice(4)) },
+  { key: 'task create', match: ({ domain, action }) => domain === 'task' && action === 'create', run: (r, c) => taskRecordCommand(r, 'create', c.argv.slice(4)) },
+  { key: 'task inspect', match: ({ domain, action }) => domain === 'task' && action === 'inspect', run: (r, c) => taskRecordCommand(r, 'inspect', c.argv.slice(4)) },
+  { key: 'task update', match: ({ domain, action }) => domain === 'task' && action === 'update', run: (r, c) => taskRecordCommand(r, 'update', c.argv.slice(4)) },
+  { key: 'task complete', match: ({ domain, action }) => domain === 'task' && action === 'complete', run: (r, c) => taskRecordCommand(r, 'complete', c.argv.slice(4)) },
+  { key: 'task abandon', match: ({ domain, action }) => domain === 'task' && action === 'abandon', run: (r, c) => taskRecordCommand(r, 'abandon', c.argv.slice(4)) },
   { key: 'task finish inspect', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect', run: (r, c) => r.taskFinish('inspect', c.argv.slice(5)) },
   { key: 'task finish run', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run', run: (r, c) => r.taskFinish('run', c.argv.slice(5)) },
   { key: 'doctor', match: ({ domain }) => domain === 'doctor', run: (r, c) => r.doctor(c.argv.slice(3)) },

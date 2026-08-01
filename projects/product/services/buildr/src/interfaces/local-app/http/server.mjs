@@ -27,7 +27,8 @@ import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
-const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
+const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
+const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/tasks(?:/${TASK_ID})?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
 const STATIC_ASSETS = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/api-client.js', ['api-client.js', 'text/javascript; charset=utf-8']],
@@ -35,6 +36,8 @@ const STATIC_ASSETS = new Map([
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/features/workspaces.js', ['features/workspaces.js', 'text/javascript; charset=utf-8']],
   ['/features/workspace.js', ['features/workspace.js', 'text/javascript; charset=utf-8']],
+  ['/features/tasks.js', ['features/tasks.js', 'text/javascript; charset=utf-8']],
+  ['/features/task-detail.js', ['features/task-detail.js', 'text/javascript; charset=utf-8']],
   ['/features/projects.js', ['features/projects.js', 'text/javascript; charset=utf-8']],
   ['/features/project-detail.js', ['features/project-detail.js', 'text/javascript; charset=utf-8']],
   ['/features/project-edit.js', ['features/project-edit.js', 'text/javascript; charset=utf-8']],
@@ -129,6 +132,32 @@ function assertWriteRequest(request, origin, sessionToken) {
     error.status = 415;
     throw error;
   }
+}
+
+async function readAllowedJsonBody(request, allowed, label) {
+  const input = await readJsonBody(request);
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error(`${label} 请求必须是 JSON object。`);
+    error.code = 'task_api_input_invalid';
+    error.status = 400;
+    throw error;
+  }
+  for (const field of Object.keys(input)) {
+    if (['target', 'root', 'path'].includes(field)) {
+      const error = new Error('Task API 不接受 filesystem path。');
+      error.code = 'target_forbidden';
+      error.status = 400;
+      throw error;
+    }
+    if (!allowed.has(field)) {
+      const error = new Error(`${label} 不支持字段：${field}。`);
+      error.code = 'task_api_field_forbidden';
+      error.status = 400;
+      error.details = { field };
+      throw error;
+    }
+  }
+  return input;
 }
 
 function staticFile(name) {
@@ -258,6 +287,43 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           return jsonResponse(response, 200, runtime.updateWorkspaceMetadata(root, await readJsonBody(request)));
         }
         if (request.method === 'GET' && suffix === '/projects') return jsonResponse(response, 200, runtime.listProjects(root));
+        const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
+        if (taskApi && requestUrl.searchParams.size > 0) {
+          const error = new Error('Task API 不接受 query 参数。');
+          error.code = 'task_api_query_forbidden';
+          error.status = 400;
+          throw error;
+        }
+        if (request.method === 'GET' && suffix === '/tasks') return jsonResponse(response, 200, runtime.listTaskRecords(root));
+        if (request.method === 'POST' && suffix === '/tasks') {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes']), 'Task create');
+          return jsonResponse(response, 201, runtime.createTaskRecord(root, input));
+        }
+        const taskMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})$`));
+        if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecord(root, taskMatch[1]));
+        if (request.method === 'PATCH' && taskMatch) {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');
+          if (!Object.hasOwn(input, 'expectedRecordDigest')) {
+            const error = new Error('Task update 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error;
+          }
+          return jsonResponse(response, 200, runtime.updateTaskRecord(root, taskMatch[1], input));
+        }
+        const taskCompleteMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/complete$`));
+        if (request.method === 'POST' && taskCompleteMatch) {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'summary', 'noChange']), 'Task complete');
+          if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task complete 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
+          return jsonResponse(response, 200, runtime.completeTaskRecord(root, taskCompleteMatch[1], input));
+        }
+        const taskAbandonMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/abandon$`));
+        if (request.method === 'POST' && taskAbandonMatch) {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'reason']), 'Task abandon');
+          if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task abandon 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
+          return jsonResponse(response, 200, runtime.abandonTaskRecord(root, taskAbandonMatch[1], input));
+        }
         if (request.method === 'GET' && suffix === '/changes') return jsonResponse(response, 200, runtime.listChanges(root));
         const projectMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
         if (request.method === 'GET' && projectMatch) return jsonResponse(response, 200, runtime.projectDetail(root, projectMatch[1]));

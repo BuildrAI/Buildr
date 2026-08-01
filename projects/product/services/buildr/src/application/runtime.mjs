@@ -9,6 +9,7 @@ import { getRuntimeAdapter, reconcileRuntimePlan } from '../infrastructure/runti
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../infrastructure/runtime/skills/inventory.mjs';
 import { parseSkillProjectionReceipt, sha256Integrity } from '../infrastructure/runtime/skills/projection-files.mjs';
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
+import { observeGitCheckoutIdentity } from '../infrastructure/git/checkout-identity.mjs';
 
 export function registerApplicationRuntime(runtime) {
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
@@ -28,6 +29,30 @@ export function registerApplicationRuntime(runtime) {
   const projectMigrationPlan = (...args) => runtime.projectMigrationPlan(...args);
   const migrateProjectRegistry = (...args) => runtime.migrateProjectRegistry(...args);
 
+  function pathIsWithin(root, candidate) {
+    const relative = path.relative(path.resolve(root), path.resolve(candidate));
+    return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+  }
+
+  function assertRuntimeProjectionTarget(targetRoot, options = {}) {
+    const source = observeGitCheckoutIdentity(productRoot());
+    if (!source?.linkedWorktree) return { source, target: observeGitCheckoutIdentity(targetRoot) };
+    if (options.destination === 'user' && (!options.runtimeTargetRoot || !pathIsWithin(targetRoot, options.runtimeTargetRoot))) {
+      const error = new Error('候选 Product checkout 不能更新共享的用户级 Agent runtime；请使用自身任务验证 Workspace。');
+      error.code = 'runtime.candidate_shared_target';
+      error.details = { source: source.checkoutRoot, target: options.runtimeTargetRoot || 'user' };
+      throw error;
+    }
+    const target = observeGitCheckoutIdentity(targetRoot);
+    if (target && source.gitCommonDirectory === target.gitCommonDirectory && source.checkoutRoot !== target.checkoutRoot) {
+      const error = new Error('候选 Product checkout 只能渲染自己的任务验证 Workspace；不能更新 retained Workspace 或另一个 task worktree 的 Agent runtime。');
+      error.code = 'runtime.candidate_cross_checkout_target';
+      error.details = { source: source.checkoutRoot, target: target.checkoutRoot };
+      throw error;
+    }
+    return { source, target };
+  }
+
   function renderRuntime(agent, args, options = {}) {
     const renderArgs = [...args];
     if (!renderArgs.includes('--scope')) {
@@ -35,6 +60,7 @@ export function registerApplicationRuntime(runtime) {
     }
     const renderCommand = withResolvedTarget(renderArgs);
     const { targetRoot } = renderCommand;
+    assertRuntimeProjectionTarget(targetRoot);
     const requestedScope = optionValue(renderCommand.args, '--scope', '.');
     const scopeInfo = resolveRuleScope(targetRoot, requestedScope);
     const skillScope = skillScopeForRuleScope(scopeInfo.scope);
@@ -49,14 +75,15 @@ export function registerApplicationRuntime(runtime) {
     const skillScope = optionValue(renderCommand.args, '--scope', '.');
     const destination = optionValue(renderCommand.args, '--destination', 'workspace');
     if (!['workspace', 'user'].includes(destination)) throw new Error(`Unsupported Skill destination: ${destination}. Use workspace or user.`);
+    const runtimeTargetRoot = destination === 'workspace' ? renderCommand.targetRoot : os.homedir();
+    if (!runtimeTargetRoot) throw new Error(`Cannot determine user home for Skill destination ${destination}.`);
+    assertRuntimeProjectionTarget(renderCommand.targetRoot, { destination, runtimeTargetRoot });
     if (skillScope !== '.') {
       const error = new Error(`Legacy Project Skill render scope is no longer supported: ${skillScope}. Run buildr skills migrate-project-assets --target ${renderCommand.targetRoot} --check, then use --destination ${destination}.`);
       error.code = 'skills.project_scope_unsupported';
       throw error;
     }
     if (args.includes('--scope')) console.error('Warning: --scope . is deprecated for skills render; use --destination workspace or --destination user.');
-    const runtimeTargetRoot = destination === 'workspace' ? renderCommand.targetRoot : os.homedir();
-    if (!runtimeTargetRoot) throw new Error(`Cannot determine user home for Skill destination ${destination}.`);
     const orphanPlan = destination === 'workspace' ? buildRuntimeOrphanRemovalPlan(renderCommand.targetRoot, agent, '.').map((item) => ({ ...item, targetFile: item.path })) : [];
     const assembled = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: runtimeTargetRoot, scope: '.', adapterId: agent, destination, selection: { workspaceSkills: true }, removals: orphanPlan });
     let plan = assembled.plan;
@@ -110,6 +137,7 @@ export function registerApplicationRuntime(runtime) {
 
   function renderRulesRuntime(agent, args) {
     const renderCommand = withResolvedTarget(args);
+    assertRuntimeProjectionTarget(renderCommand.targetRoot);
     const scope = optionValue(renderCommand.args, '--scope', '.');
     const { plan } = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: renderCommand.targetRoot, scope, adapterId: agent, selection: { rules: true } });
     reconcileRuntimePlan(plan);
@@ -175,6 +203,7 @@ export function registerApplicationRuntime(runtime) {
     const syncArgs = [...args];
     if (!syncArgs.includes('--scope')) syncArgs.push('--scope', '.');
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
+    assertRuntimeProjectionTarget(targetRoot);
     assertInitializedBuildrWorkspace(targetRoot);
     const preflight = buildSyncSourcePlan(targetRoot, agent);
     assertSyncSourcePlanReady(preflight);
@@ -234,6 +263,6 @@ export function registerApplicationRuntime(runtime) {
     console.log('doctor 通过。');
   }
 
-  Object.assign(runtime, { renderRuntime, renderSkillsRuntime, renderRulesRuntime, buildSyncSourcePlan, assertSyncSourcePlanReady, syncRuntime });
+  Object.assign(runtime, { assertRuntimeProjectionTarget, renderRuntime, renderSkillsRuntime, renderRulesRuntime, buildSyncSourcePlan, assertSyncSourcePlanReady, syncRuntime });
   return runtime;
 }

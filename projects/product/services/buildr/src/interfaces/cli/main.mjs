@@ -9,7 +9,7 @@ export async function runCli(argv = process.argv) {
 }
 
 export function reportCliFailure(error, argv = process.argv) {
-  const structuredInputError = typeof error.code === 'string' && error.code.startsWith('task_finish.');
+  const structuredInputError = typeof error.code === 'string' && (error.code.startsWith('task_finish.') || error.code.startsWith('task_record_cli.'));
   if (argv.includes('--json') && structuredInputError) {
     console.log(JSON.stringify({
       schemaVersion: 'buildr.cli-error/v1',

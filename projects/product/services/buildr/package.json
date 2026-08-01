@@ -51,6 +51,7 @@
     "test:browser:shell": "node test/browser-smoke/local-app-browser.test.mjs shell",
     "test:browser:project": "node test/browser-smoke/local-app-browser.test.mjs project",
     "test:browser:service": "node test/browser-smoke/local-app-browser.test.mjs service",
+    "test:browser:task": "node test/browser-smoke/local-app-browser.test.mjs task",
     "test:browser:change": "node test/browser-smoke/local-app-browser.test.mjs change",
     "test:integration:candidate:recovery": "node --test test/integration-candidate-recovery/*.test.mjs",
     "test:integration:candidate:release": "node --test test/integration-candidate-release/*.test.mjs",

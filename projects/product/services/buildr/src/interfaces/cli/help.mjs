@@ -23,6 +23,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree context [--target <path>] [--json]');
     console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
     console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--output <file>] [--json]');
+    console.error('  buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]');
     console.error('  buildr task finish run --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--json]');
     console.error('  buildr task finish inspect --run <id> [--target <workspace-or-task-environment>] [--json]');
     console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
@@ -81,6 +82,7 @@ export function registerCommandHelp(runtime) {
       '  worktree context     判断当前路径是否属于可执行的 task environment。',
       '  worktree adopt       核验并记录 Agent session 对 task environment runtime 的采用证据。',
       '  verification run     按 Project verification.yml 执行受影响或完整候选验证。',
+      '  task create/inspect/update/complete/abandon  管理 canonical Workspace 的最小 Task Record。',
       '  task finish          产品执行 preflight → prepare → verify → deliver → cleanup 固定收尾。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
@@ -181,6 +183,42 @@ export function registerCommandHelp(runtime) {
       'Git remote 与 integration branch 是稳定声明；current branch、HEAD、dirty 和 upstream 状态只实时观察。',
       '--title 和 --branch 继续作为 --name、--integration-branch 的 legacy compatibility 输入。',
       'Service 规则入口是 Service 目录中的 AGENTS.md，不在 Service registry 中记录规则路径。',
+    ],
+    task: [
+      'Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]',
+      '',
+      'Task Manager 只管理 canonical Workspace 中的顶层 Task Record：创建、查看、明确更新、完成或放弃。',
+      '它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。',
+      'Agent 和 Local App 都调用同一个 Task Record Application；不要直接编辑 .buildr/tasks/<task-id>/task.yml。',
+    ],
+    'task create': [
+      'Usage: buildr task create <task-id> --title <text> --intent <text> [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
+      '',
+      '必需参数：唯一 task-id、--title、--intent。--project、--service、--change 可重复；引用必须已登记或真实存在。',
+      '副作用：仅创建 .buildr/tasks/<task-id>/task.yml；不创建 Environment、Change、branch、commit 或专业记录。',
+    ],
+    'task inspect': [
+      'Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]',
+      '',
+      '只读返回 Task Record、canonical path 和响应级 recordDigest；不更新时间或任何字段。',
+    ],
+    'task update': [
+      'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
+      '',
+      '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。只允许修改 active Task。',
+      '不接受 --input、patch、完整 next-state、expected revision 或专业模块字段。',
+    ],
+    'task complete': [
+      'Usage: buildr task complete <task-id> --summary <text> [--no-change] [--target <canonical-workspace>] [--json]',
+      '',
+      '把 active Task 单向标记为 completed；省略 --no-change 表示本 Task 有交付变更。',
+      '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。',
+    ],
+    'task abandon': [
+      'Usage: buildr task abandon <task-id> --reason <text> [--target <canonical-workspace>] [--json]',
+      '',
+      '把 active Task 单向标记为 abandoned；终态不可重开或继续修改。',
+      '该动作只更新顶层 Task Record，不执行 Environment cleanup、Git 或其他专业动作。',
     ],
     'worktree create': [
       `Usage: buildr worktree create <task-id> --agent <${SUPPORTED_AGENT_IDS.join('|')}> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]`,
@@ -428,6 +466,8 @@ export function registerCommandHelp(runtime) {
     if (domain === 'version') return 'version';
     if (domain === 'project' && action === 'create') return 'project create';
     if (domain === 'service' && action === 'create') return 'service create';
+    if (domain === 'task' && !action) return 'task';
+    if (domain === 'task' && ['create', 'inspect', 'update', 'complete', 'abandon'].includes(action)) return `task ${action}`;
     if (domain === 'worktree' && action === 'create') return 'worktree create';
     if (domain === 'worktree' && action === 'cleanup') return 'worktree cleanup';
     if (domain === 'worktree' && action === 'inspect') return 'worktree inspect';

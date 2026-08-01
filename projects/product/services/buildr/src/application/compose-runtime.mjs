@@ -3,6 +3,7 @@ import { registerWorkspaceManifestRepository } from '../infrastructure/filesyste
 import { registerWorkspaceRegistryRepository } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
 import { registerProjectManifestRepository } from '../infrastructure/filesystem/project-manifest-repository.mjs';
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
+import { registerTaskRecordRepository } from '../infrastructure/filesystem/task-record-repository.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerDomainsRuntime } from './domains/runtime.mjs';
 import { registerDomainsWorkspace } from './domains/workspace.mjs';
@@ -24,6 +25,7 @@ import { registerServiceApplication } from './service/service-application.mjs';
 import { registerChangeApplication } from './change/change-application.mjs';
 import { registerWorktreeApplication } from './worktree/worktree-application.mjs';
 import { registerTaskFinishApplication } from './task-finish/task-finish-application.mjs';
+import { registerTaskRecordApplication } from './task-record/task-record-application.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
 import * as platform from '../infrastructure/platform.mjs';
 
@@ -35,6 +37,7 @@ const REGISTRATIONS = [
   registerDomainsWorkspace,
   registerProjectManifestRepository,
   registerServiceManifestRepository,
+  registerTaskRecordRepository,
   registerProjectGitObserver,
   registerDomainsComponents,
   registerDomainsCommands,
@@ -53,6 +56,7 @@ const REGISTRATIONS = [
   registerApplicationCliUpdate,
   registerApplicationRuntime,
   registerWorktreeApplication,
+  registerTaskRecordApplication,
   registerVerificationApplication,
   registerTaskFinishApplication,
 ];

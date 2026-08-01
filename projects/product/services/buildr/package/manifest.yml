@@ -41,6 +41,11 @@ capabilityContracts:
     description: 管理单仓或多仓 task environment 的放置、执行边界、保留和安全清理。
     path: package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md
     target: skills/contracts/buildr/task-worktree-lifecycle/v2.md
+  - id: buildr.task-record
+    version: 1
+    description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
+    path: package/targets/workspace/skills/contracts/buildr/task-record/v1.md
+    target: skills/contracts/buildr/task-record/v1.md
   - id: buildr.task-verification
     version: 2
     description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
@@ -90,6 +95,9 @@ initialSkillBindings:
   - capability: buildr.task-worktree-lifecycle
     version: 2
     provider: task-worktree
+  - capability: buildr.task-record
+    version: 1
+    provider: task-manager
   - capability: buildr.task-verification
     version: 2
     provider: task-verification
@@ -126,6 +134,9 @@ builtins:
       description: 用户提出修复、实现、重构、优化、文档/测试或契约语义调整，或询问任务应走代码修改、当前事实维护还是 OpenSpec Change 时使用。
       required: false
       requires:
+        - capability: buildr.task-record
+          version: 1
+          mode: optional
         - capability: buildr.current-knowledge-maintenance
           version: 2
           mode: optional
@@ -135,6 +146,15 @@ builtins:
         - capability: buildr.task-board-maintenance
           version: 1
           mode: optional
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: task-manager
+      path: package/targets/workspace/skills/buildr/task-manager
+      target: skills/buildr/task-manager
+      description: 用户明确要求创建、查看、更新、完成或放弃正式 Task Record，或按 Task ID 恢复正式任务顶层事实时使用；不用于普通任务分流、只读探索、Task Environment 或任何专业阶段动作。
+      required: false
+      provides:
+        - capability: buildr.task-record
+          version: 1
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-board
       path: package/targets/workspace/skills/buildr/task-board
@@ -345,6 +365,7 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md => skills/contracts/buildr/git-task-integration/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/git-workspace-update/v1.md => skills/contracts/buildr/git-workspace-update/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md => skills/contracts/buildr/task-worktree-lifecycle/v2.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-record/v1.md => skills/contracts/buildr/task-record/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-verification/v2.md => skills/contracts/buildr/task-verification/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v1.md => skills/contracts/buildr/task-asset-review/v1.md copy
@@ -355,6 +376,8 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md => skills/contracts/buildr/task-board-maintenance/v1.md copy
   - package/targets/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-manager/SKILL.md => skills/buildr/task-manager/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-manager/agents/openai.yaml => skills/buildr/task-manager/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-board/SKILL.md => skills/buildr/task-board/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-board/agents/openai.yaml => skills/buildr/task-board/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-board/assets/task-board-template.html => skills/buildr/task-board/assets/task-board-template.html copy

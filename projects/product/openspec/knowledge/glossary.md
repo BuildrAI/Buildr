@@ -72,6 +72,27 @@
 - 避免混用：Change archive 是历史与 provenance，不是 Project 当前事实源。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## 正式任务（Formal Task）
+
+- 定义：目标与持久交付意图已经对齐，并以稳定 Task ID 进入 Buildr 生命周期管理的任务。
+- 适用范围：准备产生代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他可交付持久变化的工作。
+- 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务。
+- 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 任务记录（Task Record）
+
+- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、Project/Service scope、0..N 个限定 Change、状态、终态摘要和系统时间。
+- 适用范围：`.buildr/tasks/<task-id>/task.yml` 及 Task Record Application 的 create、inspect、update、complete、abandon 动作。
+- 避免混用：不保存或索引 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 的专业事实；响应级 `recordDigest` 也不是持久字段。
+- 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 任务管理器（Task Manager）
+
+- 定义：`buildr.task-record/v1` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复和维护 Task Record。
+- 适用范围：用户明确管理正式 Task Record，或 `task-triage` 判断正式持久交付即将首次写入的时点。
+- 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Local App 是同一 Application 的人类客户端，不通过 Task Manager 写入。
+- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md)
+
 ## 收尾就绪候选（Finish-ready Candidate）
 
 - 定义：研发实现、自审、必要审查、开发验证和 current knowledge 已完成，允许 Task Finish 只做确定性收敛、冻结、最终保证、交付与清理的候选。

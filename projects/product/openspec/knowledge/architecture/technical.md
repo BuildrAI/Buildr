@@ -8,19 +8,22 @@
 
 ## 运行结构
 
-- CLI 解析 Workspace/Project/Service manifests，执行确定性 source mutation、render、doctor、package 和 Local App lifecycle。
+- CLI 解析 Workspace/Project/Service manifests 与 Task Record，执行确定性 source mutation、render、doctor、package 和 Local App lifecycle。
 - Runtime adapter 将受管 Rules、Skills、contributions 和 capability binding evidence 投射到 Agent 原生入口；Project 普通知识和 Service repo 保持源资产，不复制进 runtime。
-- Local App 只监听 loopback，以 Workspace registry 为全局目录，通过 application/domain 层读取 Project、Service 和 Change；生命周期写操作交给 Agent prompt。
+- Local App 只监听 loopback，以 Workspace registry 为全局目录，通过 application/domain 层读取和受控管理 Project、Service 与 Task Record，并只读展示 Change；Change 生命周期和尚未交付的 Task 专业动作仍交给 Agent/对应模块。
 
 ## Capability 与 Component
 
 - `skills/manifest.yml` 注册 capability contracts、providers、consumers 和 workspace default bindings。
 - Consumer 依赖 capability identity，不依赖 provider Skill id；required/optional 分别产生 blocked/degraded readiness。
+- `task-manager` 提供并默认绑定 `buildr.task-record/v1`；`task-triage` 只在正式持久交付分支 optional 消费，provider 不 ready 不影响讨论或只读分支。
 - OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 contract guard、terminology 和 current knowledge 门禁，不修改上游 Skill source bytes。
 
 ## 数据与完整性
 
 Workspace、Project、Service、Rules、Skills、Commands 和 Components 由各自 manifests/registries 维护稳定 identity。Buildr 对路径、symlink、ownership、transaction、integrity 和并发 mutation fail closed；runtime 是可重建投影，不是源资产。
+
+Task Record 由 `domain/task-record` 验证 closed schema，`application/task-record` 持有五个 lifecycle action、引用校验和 read/result model，filesystem repository 只维护 canonical `.buildr/tasks/<task-id>/task.yml`。CLI interface 只解析 action 参数、调用 Application 并适配输出/退出码；Local App HTTP/Web 共用该 Application，interface 不直接解析或写 YAML。Repository 以 Git topology 拒绝 linked-worktree Task Record target，只对 `task.yml` 做同目录原子替换，不对整个 Task 目录做 transaction/rollback，也不改写专业 sibling。Local App mutation 携带读取时的响应级 `recordDigest`；不匹配时 fail closed 并要求刷新，digest 不持久化，也不表示 revision、锁或自动合并。
 
 Workspace manifest 的 `runtime.node.version` 是实际采用的精确 Node toolchain 声明，属于 Workspace Domain；`package.json#engines.node` 只表达 Buildr 产品兼容范围。Buildr 在本机应用数据目录按 version/platform/arch 管理可恢复 runtime，`init` 首次确定并准备，`sync` 只按声明收敛，`doctor` 只读诊断。CLI、npm、验证、Candidate 和 Finish 均消费同一 Workspace Node identity，不允许 Agent runtime 或普通 `PATH` 重新选择版本。
 

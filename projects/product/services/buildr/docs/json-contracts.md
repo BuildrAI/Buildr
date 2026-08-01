@@ -31,10 +31,13 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `worktree inspect/context` | `buildr.task-environment-context/v1` |
 | `worktree adopt` | `buildr.task-environment-adoption/v1` |
 | `verification run` | `buildr.verification-run/v1` |
+| `task create/inspect/update/complete/abandon` | `buildr.task-record-result/v1` |
 
 `buildr.worktree-create/v2` 的 `state` 为 `created`、`reused` 或 `blocked`，`environment` 披露 environment root/owner/isolation，`repositories` 返回完整 plan 的逐仓 checkout/branch/HEAD/clean/state。`treeChanged` 表示本次调用是否创建任一 checkout；`bootstrap` 保留根 Workspace 的 doctor/sync 决策；`runtimeExpectation`、`adoption`、`cliInvocation` 与 `executionBinding` 是向后兼容新增字段。`cliInvocation.command` 是绝对可执行入口，`argsPrefix` 是消费者必须置于子命令之前的固定参数；自举环境使用 checkout-local bridge，外部产品不依赖目标 Workspace 的布局。`buildr.task-environment-adoption/v1` 返回 Buildr-verified environment/runtime evidence 与 agent-attested session evidence。`buildr.task-environment-context/v1` 返回当前 membership、`allowedExecutionRoots`、CLI source/invocation、全仓 identity、adoption 和 `executionReady`；environment 或 execution binding 不 ready 时非零退出并保留现场。
 
 `buildr.verification-run/v1` 返回 operation/status、required assurance、Project policy fingerprint、可选 task environment binding、repository candidate identity、计划选择与 supersedes、逐项命令终态、资源等待/lease/释放、真实整体 wall-clock、Candidate completeness、`evidenceIdentity`、reference 和 lifecycle。required check 或请求校验失败仍输出同一单一 JSON envelope 并非零退出；worker stdout/stderr 只作为有界字段进入 checks，不与顶层 JSON 混排。
+
+`buildr.task-record-result/v1` 统一覆盖五个 Task Record 动作。成功时返回 `operation`、`status`、`taskId`、canonical `path`、closed v1 `record`、响应级 `recordDigest`、`effects` 与 `nextActions`；`diagnostic` 为 `null`。业务拒绝仍返回同一 envelope、`status: blocked`、稳定 diagnostic 和非零退出，且不得产生 mutation effects。CLI 参数或路由语法错误继续使用 `buildr.cli-error/v1`。`recordDigest` 只描述本次读取的 canonical bytes，不进入 Task Record 持久 schema。
 
 ## Doctor v1 结果语义
 

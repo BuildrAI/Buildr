@@ -115,13 +115,29 @@
     },
     {
       "type": "skill",
-      "id": "task-triage",
-      "target": "skills/buildr/task-triage",
-      "integrity": "sha256-4301061910b1845687a6177161357b905fc9968c2884d88efdba9d34fa94c98b",
+      "id": "task-manager",
+      "target": "skills/buildr/task-manager",
+      "integrity": "sha256-69c5650ae3f00727bdf22c094fd7b1108f256f638d3389f7ea3f0fd0466d1ab1",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8c35f4b1cae9ff8479dc3597094e18db8f1e6549e3dea915a716fd28110d3f5f"
+          "integrity": "sha256-b1d916c197531b757014af3105c3f0f044864013759ea5a5b115902a90fc713a"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "integrity": "sha256-0a4ba250d852baf21371abf44b6f5369be1fefda5ea7cc26a5da4037d62023b7"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "task-triage",
+      "target": "skills/buildr/task-triage",
+      "integrity": "sha256-1c00bf81bd84d1ee4c66e98e737efd6800d141e493e57ac01e039e7e890e4f98",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-e2d3535281dd5ac437b1f25b8d3d65558311102cebd28909a1d06110afd80c23"
         }
       ]
     },

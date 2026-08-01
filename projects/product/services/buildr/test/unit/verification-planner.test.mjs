@@ -28,7 +28,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
     'unit', 'contract', 'integration-fast', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'integration-candidate-recovery', 'integration-candidate-release', 'concurrent-task-acceptance', 'candidate-tarball', 'open-source-candidate',
-    'openspec-candidate-audit', 'managed-mutations', 'browser-shell', 'browser-project', 'browser-service', 'browser-change', 'capability-cli-integration', 'commands-cli-integration',
+    'openspec-candidate-audit', 'managed-mutations', 'browser-shell', 'browser-project', 'browser-service', 'browser-task', 'browser-change', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'openspec-convergence-recovery', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
     'package-runtime', 'runtime-adapter-parity', 'workspace-lifecycle', 'ownership-recovery', 'runtime-reconciliation',
     'repository-onboarding', 'init-onboarding', 'cli-compatibility', 'cli-package-parity', 'service-branch-contract',
@@ -103,6 +103,7 @@ test('local app Changed 路由只选择对应 integration 边界', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/router.js'] })), ['unit', 'browser-shell']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/projects.js'] })), ['browser-project']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/services.js'] })), ['browser-service']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/tasks.js'] })), ['browser-task']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/changes.js'] })), ['browser-change']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/app.js'] })), ['browser-shell']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/workspaces.js'] })), ['browser-shell']);

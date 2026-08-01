@@ -87,6 +87,7 @@ test('worktree provider 保持环境职责且 triage 只声明分支级 optional
   assert.deepEqual(packagedTriage.provides || [], []);
   assert.deepEqual(workspaceTriage.provides || [], []);
   const expected = [
+    { capability: 'buildr.task-record', version: 1, mode: 'optional' },
     { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'optional' },
     { capability: 'buildr.task-worktree-lifecycle', version: 2, mode: 'optional' },
     { capability: 'buildr.task-board-maintenance', version: 1, mode: 'optional' },
