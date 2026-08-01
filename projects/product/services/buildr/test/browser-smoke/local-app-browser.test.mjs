@@ -261,7 +261,46 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 45_000 }, async (t)
     assert.equal(await page.locator('#action-project').evaluate((element) => element.tagName), 'SELECT');
     assert.equal(await page.locator('#action-project option').count(), 2);
     assert.equal(await page.locator('#action-project').inputValue(), 'demo');
+    await page.locator('#action-project').selectOption('other');
+    await page.locator('#action-goal').fill('为另一项目创建变更契约');
+    await page.getByRole('button', { name: '生成变更指令', exact: true }).click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /项目“另一项目（other）”/);
     await page.getByRole('button', { name: '关闭', exact: true }).click();
+
+    let releaseProjects;
+    const projectsGate = new Promise((resolve) => { releaseProjects = resolve; });
+    let staleFulfilled = false;
+    const projectsRoute = /\/api\/v1\/workspaces\/[^/]+\/projects$/;
+    await page.route(projectsRoute, async (route) => {
+      await projectsGate;
+      staleFulfilled = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          projects: [
+            { code: 'stale-demo', name: '过期项目' },
+            { code: 'stale-other', name: '过期另一项目' },
+          ],
+        }),
+      });
+    });
+    await page.getByRole('button', { name: '让 Agent 创建变更', exact: true }).click();
+    await page.locator('#action-project').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#action-project option').first().innerText(), '正在读取已登记项目…');
+    await page.locator('[data-back]').click();
+    await page.locator('[data-action="project"]').click();
+    await page.locator('#action-name').waitFor({ state: 'visible' });
+    releaseProjects();
+    for (let attempt = 0; attempt < 40 && !staleFulfilled; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(staleFulfilled, true);
+    assert.equal(await page.locator('#action-name').count(), 1);
+    assert.equal(await page.locator('#action-project').count(), 0);
+    assert.equal(await page.locator('#agent-action-error').evaluate((element) => element.classList.contains('hidden')), true);
+    await page.unroute(projectsRoute);
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
+
     const row = page.locator('#change-table-body tr').filter({ hasText: 'browser-flow' });
     await unique(row, '进行中变更行');
     const detail = row.getByRole('link', { name: '详情', exact: true });
