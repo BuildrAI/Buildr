@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "constrain-change-create-project-select",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-e6e562f0ba3bffa7e10339356f97e15d8201abdf5ba32a8e56e78b64d07512be",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "local-workspace-application",
+      "title": "本机应用必须提供 Change 管理视图",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 本机应用必须提供 Change 管理视图\nBuildr 本机应用 MUST 在资源导航中提供独立的变更（Change）管理视图，并 MUST 使用明确的表格操作栏、过滤和详情入口展示真实 Project Change。\n\n#### Scenario: 打开 Change 表格\n- **WHEN** 用户访问 `/changes`\n- **THEN** 页面 MUST 展示 Change 名称、所属项目、生命周期、任务进度、更新时间和操作栏\n- **AND** 页面 MUST 提供项目与 active/archived 生命周期过滤\n\n#### Scenario: 使用表格操作栏\n- **WHEN** 用户查看任一 Change 行\n- **THEN** 操作栏 MUST 提供详情和交给 Agent 的明确行为\n- **AND** 表格行本身 MUST NOT 是唯一的信息或行为入口\n\n#### Scenario: 创建 Change\n- **WHEN** 用户点击“创建变更”\n- **THEN** 页面 MUST 使用抽屉或弹窗收集所属项目与目标说明\n- **AND** MUST 展示可复制的 Agent prompt，不得直接写入 OpenSpec\n"
+    }
+  ]
+}

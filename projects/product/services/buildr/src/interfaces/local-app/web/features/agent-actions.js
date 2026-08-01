@@ -137,9 +137,14 @@ export function setupAgentActions({ api }) {
       return;
     }
     content.innerHTML = `${formHeader('变更')}<form id="agent-action-form"><label>所属项目<select id="action-project" required><option value="">正在读取已登记项目…</option></select></label><label>变更目标<textarea id="action-goal" rows="6" required placeholder="描述要解决的问题、期望结果与重要边界"></textarea></label><div class="actions"><button class="button primary" type="submit">生成变更指令</button></div></form>`;
+    const form = document.getElementById('agent-action-form');
+    const select = document.getElementById('action-project');
+    const errorBox = document.getElementById('agent-action-error');
+    const isCurrentForm = () => form.isConnected && document.getElementById('agent-action-form') === form;
+    bindForm('change', () => api('/api/v1/prompts/change-create', { method: 'POST', body: JSON.stringify({ projectCode: value('action-project'), goal: value('action-goal') }) }));
     try {
       const projects = await api('/api/v1/projects');
-      const select = document.getElementById('action-project');
+      if (!isCurrentForm()) return;
       select.replaceChildren();
       for (const project of projects.projects) {
         const option = document.createElement('option');
@@ -155,10 +160,10 @@ export function setupAgentActions({ api }) {
         select.append(option);
       }
     } catch (error) {
-      document.getElementById('agent-action-error').textContent = error.message;
-      document.getElementById('agent-action-error').classList.remove('hidden');
+      if (!isCurrentForm()) return;
+      errorBox.textContent = error.message;
+      errorBox.classList.remove('hidden');
     }
-    bindForm('change', () => api('/api/v1/prompts/change-create', { method: 'POST', body: JSON.stringify({ projectCode: value('action-project'), goal: value('action-goal') }) }));
   }
 
   function open(action, context = {}) {
