@@ -82,7 +82,7 @@ flowchart TB
 
 | 模块 | 核心目的 | 状态 |
 |---|---|---|
-| Task Manager / Task Record / Local App | 通过共享 Application 创建、展示和维护正式 Task 的最小顶层记录 | P0.1 实现与 Candidate 验证已完成；交付和 retained 激活以 Task Finish completion receipt 为准 |
+| Task Manager / Task Record / Local App | 通过共享 Application 创建、展示和维护正式 Task 的最小顶层记录 | P0.1 已交付并生效（2026-08-01） |
 | Task Triage | 判断任务应走什么路径 | 已确认；P0.1 接入 Task Manager |
 | Task Environment | 建立并维护可执行、可核验、可清理的任务环境 | 已确认 |
 | Task Development | 对形成交付变更的正式 Task，在 ready environment 中围绕已对齐 Task Intent 推进研发并形成 Candidate | 已确认 |
@@ -1023,7 +1023,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 
 | 顺序 | 模块 / Change | 当前状态 | 已交付并生效内容 | 对应旧能力处置 |
 |---|---|---|---|---|
-| P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | 实现与 Candidate 验证已完成；交付和 retained 激活以 Task Finish completion receipt 为准 | completion receipt 确认后生效；本表不替代 lifecycle authority | 无旧 Task Record store；已更新 task-triage 正式分支并复用现有 Local App shell/API 安全边界 |
+| P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | 已交付并生效（2026-08-01，`dev@2448db0`） | 已交付稳定 Task ID、最小 `task.yml`、唯一 Task Record Application、`task-manager`、CLI 五个确定性动作和 Local App Task 列表/详情/受控管理；已投射 retained Codex runtime 并通过 Doctor | 无旧 Task Record store；已更新 task-triage 正式分支并复用现有 Local App shell/API 安全边界 |
 | P0.2 | Task Environment `introduce-task-environment` | 未开始；任务验证 Workspace 与 runtime 边界已在 Roadmap 收敛 | 无 | 同 Change 改造 task-worktree/environment authority，保留必要 Git provider，并把旧 receipt 降为 provider evidence |
 | P0.3 | Task Review Result `introduce-task-review-results` | 未开始 | 无 | 同 Change 收敛任何重叠 Review routing/record |
 | P0.4 | Task Verification Result `introduce-task-verification-results` | 未开始 | 无 | 同 Change 迁移当前 verification lifecycle，保留必要 runner/资源协调 |

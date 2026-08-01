@@ -1,6 +1,6 @@
 # Buildr Roadmap 资料
 
-本目录保存仍有价值、但尚未实现的 Buildr 产品方向。这里的内容用于保留设计意图和帮助后续探索，不是当前产品承诺，也不是已经批准的实施计划。
+本目录保存仍有价值的 Buildr 产品方向，以及少量跨阶段交付跟踪文档。未实现内容用于保留设计意图和帮助后续探索，不是当前产品承诺，也不是已经批准的实施计划；跟踪文档中明确标记为“已交付并生效”的里程碑仍须以 canonical specs、current-state knowledge 和实现为准。
 
 ## 与产品事实的边界
 
@@ -16,7 +16,7 @@ Roadmap 文档不是 Rule、Skill、Agent runtime 资产或当前能力说明，
 
 ## 当前方向资料
 
-- [任务生命周期架构讨论稿](task-lifecycle-architecture.md)：以正常任务推进过程为主线，逐块审阅 Workspace Foundation、Task Triage、Environment、Development、Finish 及辅助能力的当前建设、职责边界与优化方向。
+- [任务生命周期架构讨论与交付跟踪](task-lifecycle-architecture.md)：以正常任务推进过程为主线，记录 Workspace Foundation、Task Triage、Environment、Development、Finish 及辅助能力的目标边界，并通过文末表格跟踪逐模块交付；P0.1 Task Manager / Task Record / Local App 已交付并生效，下一模块为 P0.2 Task Environment。
 - [Agent 时代的工作基础设施](agent-work-infrastructure.md)：以 Agent 为语义与执行中心，说明 Enterprise、多 Workspace、外部数据源、三类交互界面，以及 OpenHands、ACP、Multica、OpenClacky 等生态能力如何拆分到 Buildr、Agent 和可选运行设施。
 - [Agent 自编排与上下文接续](agent-context-orchestration.md)：Agent 按任务跨 Workspace 检索并动态加载 Rules、Skills 和工具，自行维护 Task DAG；Buildr 只提供工作资产与可接续状态。重要性 t0，紧急性 t1。
 - [历史角色能力拆解](agent-roles/)：早期岗位化职责草案；只作为动态 Rules、Skills、Packages 和能力契约的拆解素材，不构成固定 Agent 身份。
