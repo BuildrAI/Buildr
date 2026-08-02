@@ -1,0 +1,16 @@
+schemaVersion: buildr.task-review-result/v1
+taskId: introduce-task-review-results
+reviewType: completion
+targetIdentity: git-commit:7764a99cdfdc42875d64f119d0e2215df34ebba0
+method: self
+reviewed:
+  - data-model-and-authority
+  - atomic-writer-and-applicability
+  - routing-and-consumers
+  - local-app-and-tests
+uncovered: []
+findings: []
+conclusion:
+  outcome: ready
+  summary: 实现后主动审查完成：P0.3 保持一个 task-review 能力与两个可选 current Result 槽位；未发现 P0/P1 问题，候选验证、交付与 retained 安装均已通过。
+completedAt: 2026-08-02T08:54:42.976Z

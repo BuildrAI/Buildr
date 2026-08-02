@@ -1,0 +1,19 @@
+schemaVersion: buildr.task-record/v1
+taskId: introduce-task-review-results
+title: 引入任务审查结果
+intent: 以一个 task-review 能力和两个可选 current Result 槽位，建立可移植、Git 跟踪的最小 Task Review Result 数据模型、目标适用性、唯一写入与 Local App 查看，并清退冲突旧 authority；不引入 Task Development、Candidate generation 或通用状态机。
+scope:
+  projects:
+    - product
+  services:
+    - project: product
+      service: buildr
+changes:
+  - project: product
+    change: introduce-task-review-results
+status: completed
+result:
+  summary: P0.3 Task Review Result 已交付并生效：一个 task-review authority 管理 Planning/Completion 两个可选 current Result，支持明确目标 identity、最小 Review 数据模型、派生适用性、CLI/Skill/Local App 读写；冲突旧 authority 已清退，Change 已归档，Candidate verification、retained 安装、Doctor、真实 Completion Result E2E 与正式 Finish 均通过。
+  noChange: false
+createdAt: 2026-08-02T03:02:36.032Z
+updatedAt: 2026-08-02T08:55:18.584Z
