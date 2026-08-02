@@ -129,16 +129,41 @@ export function setupAgentActions({ api }) {
     bindForm('start', () => api('/api/v1/prompts/start-work', { method: 'POST', body: JSON.stringify({ projectCode: value('action-project'), serviceCode: value('action-service'), goal: value('action-goal') }) }), '任务尚未在 Buildr App 中开始或完成。');
   }
 
-  function renderChangeForm(context) {
+  async function renderChangeForm(context) {
     if (context.ref && context.action) {
       const actionLabel = context.action === 'review' ? '审查' : '继续推进';
       content.innerHTML = `${formHeader('变更', actionLabel)}<form id="agent-action-form"><div class="context-help">${actionLabel}项目 <strong>${context.projectCode}</strong> 中的变更。Buildr 只生成指令，不直接修改变更文件。</div><div class="actions"><button class="button primary" type="submit">生成${actionLabel}指令</button></div></form>`;
       bindForm('change', () => api('/api/v1/prompts/change-action', { method: 'POST', body: JSON.stringify({ projectCode: context.projectCode, ref: context.ref, action: context.action }) }), '变更文件未被修改。');
       return;
     }
-    content.innerHTML = `${formHeader('变更')}<form id="agent-action-form"><label>所属项目<input id="action-project" autocomplete="off" required></label><label>变更目标<textarea id="action-goal" rows="6" required placeholder="描述要解决的问题、期望结果与重要边界"></textarea></label><div class="actions"><button class="button primary" type="submit">生成变更指令</button></div></form>`;
-    document.getElementById('action-project').value = context.projectCode || '';
+    content.innerHTML = `${formHeader('变更')}<form id="agent-action-form"><label>所属项目<select id="action-project" required><option value="">正在读取已登记项目…</option></select></label><label>变更目标<textarea id="action-goal" rows="6" required placeholder="描述要解决的问题、期望结果与重要边界"></textarea></label><div class="actions"><button class="button primary" type="submit">生成变更指令</button></div></form>`;
+    const form = document.getElementById('agent-action-form');
+    const select = document.getElementById('action-project');
+    const errorBox = document.getElementById('agent-action-error');
+    const isCurrentForm = () => form.isConnected && document.getElementById('agent-action-form') === form;
     bindForm('change', () => api('/api/v1/prompts/change-create', { method: 'POST', body: JSON.stringify({ projectCode: value('action-project'), goal: value('action-goal') }) }));
+    try {
+      const projects = await api('/api/v1/projects');
+      if (!isCurrentForm()) return;
+      select.replaceChildren();
+      for (const project of projects.projects) {
+        const option = document.createElement('option');
+        option.value = project.code;
+        option.textContent = `${project.name}（${project.code}）`;
+        select.append(option);
+      }
+      if (context.projectCode && projects.projects.some((project) => project.code === context.projectCode)) select.value = context.projectCode;
+      if (!projects.projects.length) {
+        const option = document.createElement('option');
+        option.textContent = '请先创建项目';
+        option.value = '';
+        select.append(option);
+      }
+    } catch (error) {
+      if (!isCurrentForm()) return;
+      errorBox.textContent = error.message;
+      errorBox.classList.remove('hidden');
+    }
   }
 
   function open(action, context = {}) {
@@ -147,7 +172,7 @@ export function setupAgentActions({ api }) {
     else if (action === 'project') renderProjectForm();
     else if (action === 'service') void renderServiceForm(context);
     else if (action === 'start') void renderStartWorkForm(context);
-    else if (action === 'change') renderChangeForm(context);
+    else if (action === 'change') void renderChangeForm(context);
     else renderChooser(context);
     setOpen(true);
     content.querySelector('input, button')?.focus();
