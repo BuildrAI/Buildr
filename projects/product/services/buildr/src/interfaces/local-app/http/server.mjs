@@ -34,6 +34,7 @@ const STATIC_ASSETS = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/api-client.js', ['api-client.js', 'text/javascript; charset=utf-8']],
   ['/router.js', ['router.js', 'text/javascript; charset=utf-8']],
+  ['/markdown.js', ['markdown.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/features/workspaces.js', ['features/workspaces.js', 'text/javascript; charset=utf-8']],
   ['/features/workspace.js', ['features/workspace.js', 'text/javascript; charset=utf-8']],
