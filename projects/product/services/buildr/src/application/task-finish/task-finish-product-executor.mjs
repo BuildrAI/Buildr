@@ -301,7 +301,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         status: 'passed',
         checks: findings,
         operations,
-        inputIdentity: digest({ context: context ? { taskId: context.taskId, controller: context.controller, scopes: context.scopes } : null, workspaceNode: workspaceNode.identity, task: taskIdentity, retained: retainedIdentity }),
+        inputIdentity: digest({ context: context ? { taskId: context.taskId, controllerAdapter: context.controller?.adapter || run.identity.agent, scopes: context.scopes } : null, workspaceNode: workspaceNode.identity, task: taskIdentity, retained: retainedIdentity }),
         outputIdentity: digest(findings),
         output: { context, projectRoot, changeRoot, taskIdentity, retainedRoot: retained, retainedIdentity },
       };

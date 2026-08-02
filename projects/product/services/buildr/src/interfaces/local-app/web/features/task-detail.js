@@ -149,11 +149,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     const controller = data.environment.controller;
     const controllerCard = document.createElement('article'); controllerCard.className = 'environment-scope-card controller-card';
     const controllerHeading = document.createElement('div'); controllerHeading.className = 'environment-scope-heading';
-    const controllerTitle = document.createElement('h3'); controllerTitle.textContent = '稳定控制面（Controller）';
+    const controllerTitle = document.createElement('h3'); controllerTitle.textContent = 'Environment Manager';
     const adapter = document.createElement('span'); adapter.className = 'state'; adapter.textContent = controller.adapter;
     controllerHeading.append(controllerTitle, adapter);
     const controllerFacts = document.createElement('dl'); controllerFacts.className = 'read-facts';
-    controllerFacts.append(fact('Product source', controller.sourceRoot), fact('Controller identity', controller.identity));
+    controllerFacts.append(fact('Product source', controller.sourceRoot), fact('Receipt 创建指纹', controller.identity));
     controllerCard.append(controllerHeading, controllerFacts); scopes.append(controllerCard);
     for (const scope of data.environment.scopes) {
       const card = document.createElement('article'); card.className = 'environment-scope-card';

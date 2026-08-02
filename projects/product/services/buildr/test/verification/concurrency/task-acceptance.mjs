@@ -77,8 +77,7 @@ function runTaskInvocation(task, cwd) {
   assert.equal(inspected.status, 'ready');
   assert.deepEqual(inspected.environment.scopes.map((scope) => scope.selector), ['workspace', 'project:nested']);
   assert.deepEqual(inspected.execution.allowedExecutionRoots, task.allowedExecutionRoots);
-  assert.equal(inspected.environment.controller.identity, task.controllerIdentity);
-  return { taskId: task.taskId, cwd, command: task.cliInvocation.command, scopes: inspected.environment.scopes.map((scope) => scope.selector), controllerIdentity: inspected.environment.controller.identity, ready: inspected.execution.ready };
+  return { taskId: task.taskId, cwd, command: task.cliInvocation.command, scopes: inspected.environment.scopes.map((scope) => scope.selector), ready: inspected.execution.ready };
 }
 
 function releaseWorkers() {
@@ -145,7 +144,6 @@ try {
       repositories: prepared.environment.scopes.map((scope) => ({ selector: scope.selector, checkoutPath: scope.executionRoot })),
       allowedExecutionRoots: prepared.execution.allowedExecutionRoots,
       cliInvocation: prepared.execution.cliInvocation,
-      controllerIdentity: prepared.environment.controller.identity,
     });
   }
   assert.notEqual(summary.tasks[0].environmentRoot, summary.tasks[1].environmentRoot);

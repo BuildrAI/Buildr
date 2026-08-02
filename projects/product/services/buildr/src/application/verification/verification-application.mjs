@@ -92,6 +92,31 @@ function bindWorkspaceNodeCommand(step, workspaceNode) {
   return step;
 }
 
+export function verificationEvidenceIdentityMaterial({ project, policy, level, context, workspaceNodeIdentity, candidates, checks }) {
+  return {
+    schemaVersion: PUBLIC_JSON_SCHEMAS.verificationRun,
+    project,
+    policy,
+    level,
+    environment: context ? {
+      taskId: context.taskId,
+      environmentRoot: context.environmentRoot,
+      workspaceRoot: context.workspaceRoot,
+      scopes: context.scopes.map((scope) => ({
+        selector: scope.selector,
+        executionRoot: scope.executionRoot,
+        runtimeIdentity: scope.runtime.identity,
+        cliIdentity: scope.cli.identity,
+        dependenciesIdentity: scope.dependencies.identity,
+        projectionIdentity: scope.projection.identity,
+      })),
+    } : null,
+    workspaceNode: workspaceNodeIdentity,
+    candidates,
+    checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })),
+  };
+}
+
 export function registerVerificationApplication(runtime) {
   async function verificationRun(args) {
     const json = args.includes('--json');
@@ -166,7 +191,15 @@ export function registerVerificationApplication(runtime) {
     const candidateStable = digest(before) === digest(after);
     const passed = candidateStable && checks.every((check) => check.status === 'passed');
     const candidateCompleteness = level === 'candidate' && passed && plan.required.every((id) => checks.some((check) => check.id === id && check.status === 'passed') || plan.superseded.some((entry) => entry.capability === id)) ? 'confirmed' : level === 'candidate' ? 'incomplete' : 'not-requested';
-    const identityMaterial = { schemaVersion: PUBLIC_JSON_SCHEMAS.verificationRun, project: projectCode, policy: digest(declarationContent), level, environment: context ? { taskId: context.taskId, environmentRoot: context.environmentRoot, workspaceRoot: context.workspaceRoot, sourceIdentity: context.controller.identity, projectionIdentity: context.scopes.map((scope) => ({ selector: scope.selector, identity: scope.projection.identity })) } : null, workspaceNode: workspaceNode.identity, candidates: after, checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })) };
+    const identityMaterial = verificationEvidenceIdentityMaterial({
+      project: projectCode,
+      policy: digest(declarationContent),
+      level,
+      context,
+      workspaceNodeIdentity: workspaceNode.identity,
+      candidates: after,
+      checks,
+    });
     const evidenceIdentity = digest(identityMaterial);
     const base = {
       operation: 'execute',

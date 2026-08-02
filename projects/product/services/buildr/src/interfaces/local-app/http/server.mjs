@@ -504,7 +504,15 @@ export function registerLocalWorkspaceAppInterface(runtime) {
         runtime.assertTaskEnvironmentController(workspaceRoot, taskId);
         environmentResource = context.resources.find((resource) => resource.provider === 'local-app-preview' && resource.handle?.instance === name && resource.status !== 'released');
         if (!environmentResource) { const error = new Error(`Environment 没有 matching preview resource：${name}。`); error.code = 'preview_environment_resource_missing'; throw error; }
-        caller = { taskId, workspaceRoot: context.workspaceRoot, environmentRoot: context.validationRoot, controllerIdentity: context.controller.identity, resourceId: environmentResource.id };
+        caller = {
+          taskId,
+          workspaceRoot: context.workspaceRoot,
+          environmentRoot: context.validationRoot,
+          resourceId: environmentResource.id,
+          resourceProvider: environmentResource.provider,
+          resourceHandle: environmentResource.handle,
+          resourceProviderIdentity: environmentResource.identity.providerIdentity,
+        };
       }
       const result = await stopPreview(name, { caller, retainOwner: Boolean(environmentResource) });
       if (environmentResource) {

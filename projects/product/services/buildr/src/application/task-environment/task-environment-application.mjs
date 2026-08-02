@@ -10,6 +10,7 @@ import { spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
+const ENVIRONMENT_MANAGER_SOURCE_PATHS = ['bin', 'src', 'package', 'package.json', 'package-lock.json'];
 
 function inside(parent, child) {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
@@ -40,7 +41,7 @@ function digestFiles(root) {
       hash.update('\0');
     }
   };
-  for (const relative of ['bin', 'src', 'package', 'package.json', 'package-lock.json']) visit(path.join(root, relative));
+  for (const relative of ENVIRONMENT_MANAGER_SOURCE_PATHS) visit(path.join(root, relative));
   return `sha256-${hash.digest('hex')}`;
 }
 
@@ -49,12 +50,16 @@ function probe(status, identity = null, diagnostic = null, observedAt = now()) {
 }
 
 export function registerTaskEnvironmentApplication(runtime) {
-  function currentControllerIdentity(workspaceRoot, adapter) {
+  function candidateController(sourceCheckout, workspaceCheckout) {
+    return Boolean(sourceCheckout?.linkedWorktree && workspaceCheckout && sourceCheckout.gitCommonDirectory === workspaceCheckout.gitCommonDirectory);
+  }
+
+  function currentEnvironmentManager(workspaceRoot, adapter) {
     const sourceRoot = path.resolve(runtime.productRoot());
     const sourceCheckout = observeGitCheckoutIdentity(sourceRoot);
     const workspaceCheckout = observeGitCheckoutIdentity(workspaceRoot);
-    if (sourceCheckout?.linkedWorktree && workspaceCheckout && sourceCheckout.gitCommonDirectory === workspaceCheckout.gitCommonDirectory) {
-      throw taskEnvironmentError('task_environment_candidate_controller_forbidden', '候选 Product checkout 不能创建、恢复或清理自己的 Task Environment。', 409, { sourceRoot, workspaceRoot }, '从 retained Workspace Foundation 的稳定 Buildr CLI 重试。');
+    if (candidateController(sourceCheckout, workspaceCheckout)) {
+      throw taskEnvironmentError('task_environment_candidate_controller_forbidden', '候选 Product checkout 不能创建、恢复、认领、释放或清理自己的 Task Environment。', 409, { sourceRoot, workspaceRoot }, '从 canonical retained Workspace 的 Buildr CLI 重试。');
     }
     return {
       sourceRoot,
@@ -66,63 +71,65 @@ export function registerTaskEnvironmentApplication(runtime) {
     };
   }
 
+  function assertEnvironmentManagerSourceClean(manager) {
+    const checkout = manager.sourceCheckout;
+    if (!checkout) return manager;
+    const relativeSource = path.relative(checkout.checkoutRoot, manager.sourceRoot);
+    if (path.isAbsolute(relativeSource) || relativeSource === '..' || relativeSource.startsWith(`..${path.sep}`)) {
+      throw taskEnvironmentError('task_environment_manager_source_untrusted', '无法证明当前 Environment Manager source 属于其 Git checkout。', 409, {
+        sourceRoot: manager.sourceRoot,
+        checkoutRoot: checkout.checkoutRoot,
+      }, '从可信 retained Buildr source 重试。');
+    }
+    const pathspecs = ENVIRONMENT_MANAGER_SOURCE_PATHS.map((relative) => (relativeSource ? path.join(relativeSource, relative) : relative).split(path.sep).join('/'));
+    const observed = spawnSync('git', ['-C', checkout.checkoutRoot, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...pathspecs], { encoding: 'utf8', timeout: 5000 });
+    if (observed.status !== 0) {
+      throw taskEnvironmentError('task_environment_manager_source_untrusted', '无法取得当前 Environment Manager source 的 Git clean evidence。', 409, {
+        sourceRoot: manager.sourceRoot,
+        checkoutRoot: checkout.checkoutRoot,
+        diagnostic: (observed.stderr || observed.stdout || 'git status failed').trim().slice(0, 2000),
+      }, '修复 Git checkout 后从可信 retained Buildr source 重试。');
+    }
+    const changes = (observed.stdout || '').split('\0').filter(Boolean);
+    if (changes.length) {
+      throw taskEnvironmentError('task_environment_manager_dirty', '当前 Environment Manager source 存在未提交变化。', 409, {
+        sourceRoot: manager.sourceRoot,
+        changes,
+      }, '提交或清理 bin/src/package/package metadata 的变化后，从 retained Buildr 重试。');
+    }
+    return manager;
+  }
+
   function receiptController(receipt) {
     const sourceRoot = path.resolve(receipt.controller.sourceRoot);
-    const observedIdentity = fs.existsSync(sourceRoot) ? digestFiles(sourceRoot) : null;
     return {
       sourceRoot,
       cliSource: path.resolve(receipt.controller.cliSource),
       identity: receipt.controller.identity,
-      observedIdentity,
       adapter: receipt.controller.adapter,
       sourceCheckout: observeGitCheckoutIdentity(sourceRoot),
       workspaceCheckout: observeGitCheckoutIdentity(receipt.workspace.root),
     };
   }
 
-  function assertStableController(workspaceRoot, receipt = null, adapter = null) {
+  function assertEnvironmentManager(workspaceRoot, receipt = null, adapter = null) {
     const expectedAdapter = receipt?.controller.adapter || adapter || 'codex';
-    const current = currentControllerIdentity(workspaceRoot, expectedAdapter);
-    if (receipt && (path.resolve(receipt.controller.sourceRoot) !== current.sourceRoot || receipt.controller.identity !== current.identity)) {
-      throw taskEnvironmentError('task_environment_controller_drift', '当前 Buildr 不是该 Environment Receipt 登记的稳定 controller。', 409, {
-        expected: { sourceRoot: receipt.controller.sourceRoot, identity: receipt.controller.identity },
-        actual: { sourceRoot: current.sourceRoot, identity: current.identity },
-      }, '回到登记该 Environment 的 retained Workspace Foundation 后重试。');
+    const current = currentEnvironmentManager(workspaceRoot, expectedAdapter);
+    if (receipt && (path.resolve(receipt.controller.sourceRoot) !== current.sourceRoot || receipt.controller.adapter !== current.adapter)) {
+      throw taskEnvironmentError('task_environment_manager_mismatch', '当前 Buildr 不是该 Environment Receipt 登记的 retained Environment Manager。', 409, {
+        expected: { sourceRoot: receipt.controller.sourceRoot, adapter: receipt.controller.adapter },
+        actual: { sourceRoot: current.sourceRoot, adapter: current.adapter },
+      }, '回到登记该 Environment 的 canonical retained Buildr source 后重试。');
     }
-    return current;
+    return assertEnvironmentManagerSourceClean(current);
   }
 
-  function deliveredControllerMatches(workspaceRoot, controller, authorization) {
-    const candidateRef = authorization?.candidateRef;
-    if (authorization?.type !== 'finish' || typeof candidateRef !== 'string' || !/^[0-9a-f]{40,64}$/.test(candidateRef)) return false;
-    const checkout = controller.sourceCheckout;
-    if (!checkout || checkout.linkedWorktree || path.resolve(checkout.checkoutRoot) !== path.resolve(workspaceRoot)) return false;
-    const relativeSource = path.relative(workspaceRoot, controller.sourceRoot);
-    if (path.isAbsolute(relativeSource) || relativeSource === '..' || relativeSource.startsWith(`..${path.sep}`)) return false;
-    const deliveredHistory = spawnSync('git', ['-C', workspaceRoot, 'merge-base', '--is-ancestor', candidateRef, 'HEAD'], { encoding: 'utf8', timeout: 5000 });
-    if (deliveredHistory.status !== 0) return false;
-    const observedTree = spawnSync('git', ['-C', workspaceRoot, 'status', '--porcelain=v1', '--untracked-files=all', '--', relativeSource || '.'], { encoding: 'utf8', timeout: 5000 });
-    return observedTree.status === 0 && observedTree.stdout.trim() === '';
-  }
-
-  function reconcileFinishController(workspaceRoot, persistence, authorization, effects) {
-    try {
-      assertStableController(workspaceRoot, persistence.receipt);
-      return persistence;
-    } catch (error) {
-      if (error.code !== 'task_environment_controller_drift') throw error;
-      const current = currentControllerIdentity(workspaceRoot, persistence.receipt.controller.adapter);
-      if (path.resolve(persistence.receipt.controller.sourceRoot) !== current.sourceRoot || !deliveredControllerMatches(workspaceRoot, current, authorization)) throw error;
-      const previousIdentity = persistence.receipt.controller.identity;
-      const updatedAt = now();
-      const updated = runtime.writeTaskEnvironmentPersistence(workspaceRoot, {
-        ...persistence.receipt,
-        controller: { ...persistence.receipt.controller, identity: current.identity },
-        updatedAt,
-      });
-      effects.push({ type: 'controller-handoff', previousIdentity, identity: current.identity, candidateRef: authorization.candidateRef });
-      return updated;
-    }
+  function environmentInspector(workspaceRoot, receipt) {
+    const sourceRoot = path.resolve(runtime.productRoot());
+    const sourceCheckout = observeGitCheckoutIdentity(sourceRoot);
+    const workspaceCheckout = observeGitCheckoutIdentity(workspaceRoot);
+    if (candidateController(sourceCheckout, workspaceCheckout)) return receiptController(receipt);
+    return assertEnvironmentManager(workspaceRoot, receipt);
   }
 
   function candidateCli(controller, workspaceRoot, executionRoot) {
@@ -257,7 +264,8 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function prepareProjection(adapter, validationRoot, cli, workspaceNode, effects) {
-    let checked = checkRuntimeAdapter(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
+    const check = runtime.checkRuntimeAdapter || checkRuntimeAdapter;
+    let checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
     if (cli.kind === 'task-environment-candidate' || !checked.runtimeSourceEvidence?.projectionReady) {
       try {
         if (cli.kind === 'task-environment-candidate') {
@@ -265,7 +273,7 @@ export function registerTaskEnvironmentApplication(runtime) {
           if (rendered.status !== 0) return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, (rendered.stderr || rendered.stdout || 'Candidate runtime projection failed.').trim().slice(0, 2000));
         } else runtime.renderRuntime(adapter, ['--target', validationRoot], { productSkill: true });
         effects.push({ type: 'runtime-projected', adapter, target: validationRoot, source: cli.kind });
-        checked = checkRuntimeAdapter(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
+        checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
       } catch (error) {
         return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, error.message);
       }
@@ -275,7 +283,8 @@ export function registerTaskEnvironmentApplication(runtime) {
 
   function observeProjection(adapter, validationRoot) {
     try {
-      const checked = checkRuntimeAdapter(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
+      const check = runtime.checkRuntimeAdapter || checkRuntimeAdapter;
+      const checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
       return checked.runtimeSourceEvidence?.projectionReady ? probe('ready', checked.runtimeSourceEvidence.projectionIdentity) : probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, 'Agent runtime projection 已漂移或不完整。');
     } catch (error) {
       return probe('blocked', null, error.message);
@@ -313,7 +322,6 @@ export function registerTaskEnvironmentApplication(runtime) {
           taskId: receipt.taskId,
           workspaceRoot: receipt.workspace.root,
           environmentRoot: receipt.scopes[0].validationRoot,
-          controllerIdentity: receipt.controller.identity,
         });
         return { ...resource, status: observed.status === 'ready' ? 'running' : 'stale', probe: observed, updatedAt: observed.observedAt };
       } catch (error) {
@@ -369,8 +377,9 @@ export function registerTaskEnvironmentApplication(runtime) {
       persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
       if (persistence?.receipt.status === 'cleaned') throw taskEnvironmentError('task_environment_already_cleaned', `Task Environment 已清理：${taskId}。`, 409, undefined, '新范围请创建新的正式 Task。');
       const adapter = persistence?.receipt.controller.adapter || options.adapter || 'codex';
+      if (persistence && options.adapter && options.adapter !== persistence.receipt.controller.adapter) throw taskEnvironmentError('task_environment_manager_mismatch', '恢复参数中的 adapter 与 Environment Receipt 登记值不一致。', 409, { expected: persistence.receipt.controller.adapter, actual: options.adapter });
       if (!runtime.isSupportedAgent(adapter)) throw taskEnvironmentError('task_environment_adapter_unsupported', `Agent runtime 不受支持：${adapter}。`, 409);
-      const controller = assertStableController(root, persistence?.receipt || null, adapter);
+      const controller = assertEnvironmentManager(root, persistence?.receipt || null, adapter);
       const scopes = taskScopes(root, taskPersistence.record);
       const createdAt = persistence?.receipt.createdAt || now();
       const existingUsesGit = Boolean(persistence?.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER));
@@ -393,7 +402,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
         taskId,
         workspace: { id: runtime.readWorkspaceRecord(root).workspace.id, root },
-        controller: { sourceRoot: controller.sourceRoot, cliSource: controller.cliSource, identity: controller.identity, adapter },
+        controller: persistence?.receipt.controller || { sourceRoot: controller.sourceRoot, cliSource: controller.cliSource, identity: controller.identity, adapter },
         status: 'blocked',
         scopes: initialScopes,
         resources: persistence?.receipt.resources || [],
@@ -439,10 +448,11 @@ export function registerTaskEnvironmentApplication(runtime) {
 
   function inspectTaskEnvironment(targetRoot, taskId) {
     let root = path.resolve(targetRoot);
+    let persistence = null;
     try {
       root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(root));
       runtime.readTaskRecordPersistence(root, taskId);
-      const persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
+      persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
       if (!persistence) return environmentResult('inspect', 'unavailable', root, taskId, null, null, { code: 'task_environment_no_receipt', message: '当前机器没有该 Task 的 Environment Receipt。' }, [], [`运行 buildr task environment prepare ${taskId}。`]);
       if (persistence.receipt.status === 'cleaned') return environmentResult('inspect', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
       const providerScopes = persistence.receipt.scopes.filter((scope) => scope.provider);
@@ -453,29 +463,28 @@ export function registerTaskEnvironmentApplication(runtime) {
         providerReady = provider.status === 'ready';
         providerDiagnostic = provider.diagnostic?.message || null;
       }
-      const controller = receiptController(persistence.receipt);
+      const controller = environmentInspector(root, persistence.receipt);
       const foundations = prepareFoundations(persistence.receipt, controller, [], { mutate: false });
       const scopes = foundations.scopes.map((scope) => ({ ...scope }));
       const resources = observeResources(persistence.receipt);
       const resourcesReady = resources.every((resource) => resource.status !== 'stale');
       const observedReceipt = { ...persistence.receipt, scopes, resources };
-      const controllerReady = controller.observedIdentity === controller.identity;
-      const ready = persistence.receipt.status === 'ready' && controllerReady && providerReady && foundations.ready && resourcesReady;
+      const ready = persistence.receipt.status === 'ready' && providerReady && foundations.ready && resourcesReady;
       const resourceDiagnostic = resources.find((resource) => resource.status === 'stale')?.probe.diagnostic || null;
       const diagnostic = ready ? null : {
-        code: !controllerReady ? 'task_environment_controller_drift' : providerReady ? 'task_environment_drift' : 'task_environment_provider_drift',
-        message: !controllerReady ? 'Environment Receipt 登记的稳定 controller source identity 已漂移。' : providerDiagnostic || foundations.diagnostic || resourceDiagnostic || persistence.receipt.latest.ready.diagnostic || 'Environment 当前不可执行。',
+        code: providerReady ? 'task_environment_drift' : 'task_environment_provider_drift',
+        message: providerDiagnostic || foundations.diagnostic || resourceDiagnostic || persistence.receipt.latest.ready.diagnostic || 'Environment 当前不可执行。',
       };
       return environmentResult('inspect', ready ? 'ready' : 'blocked', root, taskId, persistence, taskEnvironmentReadModel(observedReceipt), diagnostic, [], ready ? [] : ['重新运行 prepare 以恢复可确定修复的执行基础。']);
     } catch (error) {
-      return blocked('inspect', root, taskId, error);
+      return blocked('inspect', root, taskId, error, persistence);
     }
   }
 
   function registerTaskEnvironmentResource(targetRoot, taskId, input) {
     const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(targetRoot));
     const persistence = runtime.readTaskEnvironmentPersistence(root, taskId);
-    assertStableController(root, persistence.receipt);
+    assertEnvironmentManager(root, persistence.receipt);
     if (persistence.receipt.status !== 'ready') throw taskEnvironmentError('task_environment_not_ready', 'Environment 未 ready，不能登记持久资源。', 409);
     const allowed = new Set(['id', 'kind', 'scope', 'provider', 'identity', 'handle', 'probe']);
     for (const key of Object.keys(input || {})) if (!allowed.has(key)) throw taskEnvironmentError('task_environment_resource_field_forbidden', `资源登记不支持字段：${key}。`, 400, { field: key });
@@ -490,7 +499,7 @@ export function registerTaskEnvironmentApplication(runtime) {
   function releaseTaskEnvironmentResource(targetRoot, taskId, input) {
     const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(targetRoot));
     const persistence = runtime.readTaskEnvironmentPersistence(root, taskId);
-    assertStableController(root, persistence.receipt);
+    assertEnvironmentManager(root, persistence.receipt);
     const allowed = new Set(['id', 'provider', 'probe']);
     for (const key of Object.keys(input || {})) if (!allowed.has(key)) throw taskEnvironmentError('task_environment_resource_field_forbidden', `资源释放不支持字段：${key}。`, 400, { field: key });
     const current = persistence.receipt.resources.find((item) => item.id === input.id);
@@ -505,6 +514,8 @@ export function registerTaskEnvironmentApplication(runtime) {
   async function cleanupTaskEnvironment(targetRoot, taskId, authorization = null) {
     let root = path.resolve(targetRoot);
     let persistence = null;
+    let cleanupAuthorized = false;
+    let managerAuthorized = false;
     const effects = [];
     try {
       root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(root));
@@ -515,14 +526,15 @@ export function registerTaskEnvironmentApplication(runtime) {
       const abandon = authorization?.type === 'abandon' || (authorization === null && task.status === 'abandoned');
       const finish = authorization?.type === 'finish' && authorization.deliveries && typeof authorization.deliveries === 'object';
       if (!abandon && !finish) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要 Task Finish handoff 或已持久化的明确 abandon 终态。', 409, undefined, '先完成 Task Finish 交付，或明确 abandon Task。');
-      persistence = finish ? reconcileFinishController(root, persistence, authorization, effects) : (assertStableController(root, persistence.receipt), persistence);
+      cleanupAuthorized = true;
+      assertEnvironmentManager(root, persistence.receipt);
+      managerAuthorized = true;
       const activeResources = persistence.receipt.resources.filter((resource) => resource.status !== 'released').sort((left, right) => left.id.localeCompare(right.id));
       for (const resource of activeResources) {
         const providerResult = await runtime.cleanupTaskEnvironmentResource(resource, {
           taskId,
           workspaceRoot: root,
           environmentRoot: persistence.receipt.scopes[0].validationRoot,
-          controllerIdentity: persistence.receipt.controller.identity,
         });
         const releasedAt = now();
         const resources = persistence.receipt.resources.map((item) => item.id === resource.id ? { ...item, status: 'released', probe: providerResult.probe, updatedAt: releasedAt } : item);
@@ -546,7 +558,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       effects.push({ type: 'receipt-finalized', path: persistence.file });
       return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), null, effects);
     } catch (error) {
-      if (persistence) {
+      if (persistence && (!cleanupAuthorized || managerAuthorized)) {
         try {
           const completedAt = now();
           persistence = runtime.writeTaskEnvironmentPersistence(root, { ...persistence.receipt, latest: { ...persistence.receipt.latest, cleanup: { status: 'blocked', completedAt, summary: error.message } }, updatedAt: completedAt });
@@ -585,7 +597,7 @@ export function registerTaskEnvironmentApplication(runtime) {
   function assertTaskEnvironmentController(targetRoot, taskId) {
     const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(targetRoot));
     const persistence = runtime.readTaskEnvironmentPersistence(root, taskId);
-    return assertStableController(root, persistence.receipt);
+    return assertEnvironmentManager(root, persistence.receipt);
   }
 
   Object.assign(runtime, {

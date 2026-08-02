@@ -95,9 +95,9 @@
 
 ## 任务环境（Task Environment）
 
-- 定义：某个正式 Task 在当前机器上可执行、可恢复和可清理的实际工作环境，由同一 Task ID 和唯一环境回执确定。
+- 定义：某个正式 Task 在当前机器上可执行、可恢复和可清理的实际工作环境，由同一 Task ID、唯一环境回执及其中的实际 checkout/provider/probe facts 确定。
 - 适用范围：共享执行根或 `.worktrees/<task-id>` checkout、Workspace Node/CLI/依赖、Agent runtime 投射、动态资源和 cleanup。
-- 避免混用：不是 Workspace、保留工作区、Agent runtime 或 Task Record；Git worktree 只是可选 provider。
+- 避免混用：不是 Workspace、保留工作区、Agent runtime 或 Task Record；Git worktree 只是可选 provider，retained Buildr 的实现版本也不是该 Environment 的源码版本。
 - 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
 
 ## 保留工作区 Buildr 环境管理器（Retained Buildr Environment Manager）
@@ -109,9 +109,30 @@
 
 ## 环境回执（Environment Receipt）
 
-- 定义：Task Environment Application 在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.json` 维护的本机事实，独占 ready/blocked、执行根、真实 probes、资源和 cleanup 结果。
+- 定义：Task Environment Application 在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.json` 维护的本机事实，独占 ready/blocked、Task checkout/provider、执行根、真实 probes、资源和 cleanup 结果。
 - 适用范围：按 Task ID prepare/inspect/cleanup，以及 Verification、Preview、Finish 等正式消费者的执行绑定。
-- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt。
+- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt；其中的 controller identity 只是创建指纹，不是 lifecycle generation。
+- 来源：[Task Environment specification](../specs/task-environments/spec.md)
+
+## Task checkout
+
+- 定义：Task Environment 为某个工作范围登记并实际探测的源码 checkout；Git 场景由 start point、branch、HEAD、checkout/registration/clean 等 provider evidence 表达当前版本。
+- 适用范围：Task Development、Environment probe、Candidate、Review、Verification 与 Finish 的源码执行边界。
+- 避免混用：不等于 canonical retained Workspace checkout；retained Workspace 前进不会自动更新、rebase 或失效 Task checkout。
+- 来源：[Task Environment specification](../specs/task-environments/spec.md)
+
+## 环境管理器（Environment Manager）
+
+- 定义：从 canonical retained Workspace 的可信 Buildr source 执行 Task Environment mutation 的 Buildr；Git-backed source 必须对规定实现输入保持 clean。
+- 适用范围：Environment prepare、Task-owned resource register/release 与已授权 cleanup。
+- 避免混用：不是 Task checkout 的版本基础，不拥有 Candidate、Review 或 Verification evidence；candidate Buildr 可只读 inspect，但不能管理自己的 Environment。
+- 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
+
+## 控制器实现指纹（Controller Identity）
+
+- 定义：Environment Receipt 创建时记录的 Buildr 实现 content fingerprint，保留用于兼容展示或诊断。
+- 适用范围：`buildr.task-environment-receipt/v2` 的 `controller.identity` 字段与公开 read model。
+- 避免混用：不表示 Task checkout 版本、Environment ready、动态资源 ownership、Verification applicability 或 lifecycle generation；retained Buildr 升级后不自动改写。
 - 来源：[Task Environment specification](../specs/task-environments/spec.md)
 
 ## 任务验证工作区（Task Validation Workspace）

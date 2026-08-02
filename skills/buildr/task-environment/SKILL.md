@@ -29,4 +29,4 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 
 ## 停止条件
 
-Task/Workspace 不匹配、Receipt 缺失或损坏、controller/provider/resource identity 漂移、必需 probe blocked、执行根越界或 cleanup 未授权时停止，保留现场并报告 diagnostic 与 next action。不要从 cwd、分支、同一 HEAD 或旧 worktree receipt 猜 ownership。
+Task/Workspace 不匹配、Receipt 缺失或损坏、retained Environment Manager 不可信或源码 dirty、provider/resource identity 漂移、必需 probe blocked、执行根越界或 cleanup 未授权时停止，保留现场并报告 diagnostic 与 next action。Task checkout/provider evidence 决定源码版本；不要从 cwd、分支、同一 HEAD 或旧 worktree receipt 猜 ownership，retained Buildr hash 同样不是 ownership；也不要由 Environment 自动 fetch/rebase。

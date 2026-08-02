@@ -18,7 +18,7 @@ description: 用户要求“收尾”或交付已验证的 Change/code-only 候�
 ## 调用前
 
 1. 明确正式 Task ID 与 canonical Workspace；调用 `buildr task environment inspect <task-id> --target <canonical-workspace> --json`，必须得到 matching `ready`。
-2. 核对 Environment 返回的实际 scope、validation root、执行 CLI 与 controller identity；不从 cwd、分支或旧 worktree receipt 推断。
+2. 核对 Environment 返回的实际 scope、validation root、provider/Task checkout evidence 与执行 CLI；不从 retained Buildr hash、cwd、分支或旧 worktree receipt 推断。
 3. 检查本任务的 asset observation；如存在，先调用 selected `buildr.task-asset-review@3` provider finalize。结果为 `awaiting-human` 时停止，不进入产品 Finish run。
 4. 用户排除 push、retained install 或 cleanup 而改变交付语义时停止；执行器不支持拆分。
 
@@ -27,7 +27,7 @@ Agent 不创建版本化运行目录；产品只写入自身 canonical Finish Re
 
 ## 执行
 
-从 Environment 登记的稳定 controller 调用一次：
+从 canonical retained Workspace 的可信 Environment Manager 调用一次：
 
 ```bash
 buildr task finish run --task <task-id> --project <project-code> [--change <change-id>] --target <canonical-workspace> --json

@@ -9,6 +9,7 @@ import { healthyLocalAppInstance, openDefaultBrowser } from './instance-manager.
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PREVIEW_RESOURCE_PROVIDER = 'local-app-preview';
 
 export function assertPreviewName(value) {
   const name = String(value || '');
@@ -61,8 +62,10 @@ export function previewOwnerForWorktree(name, targetRoot, productCheckout = null
     taskId: taskEnvironment?.taskId || null,
     workspaceRoot: taskEnvironment?.workspaceRoot || null,
     environmentRoot: taskEnvironment?.environmentRoot || worktree,
-    controllerIdentity: taskEnvironment?.controllerIdentity || null,
     resourceId: taskEnvironment?.resourceId || null,
+    resourceProvider: taskEnvironment?.resourceProvider || null,
+    resourceHandle: taskEnvironment?.resourceHandle || null,
+    resourceProviderIdentity: null,
     scope: taskEnvironment?.scope || null,
     productCheckout: productCheckout ? path.resolve(productCheckout) : null,
     repositorySet: taskEnvironment?.repositorySet || [{ selector: 'workspace', checkoutPath: worktree, branch, head }],
@@ -75,8 +78,16 @@ function samePreviewOwner(left, right) {
     && path.resolve(left.environmentRoot || left.worktree) === path.resolve(right.environmentRoot || right.worktree)
     && (left.taskId || null) === (right.taskId || null)
     && (left.workspaceRoot || null) === (right.workspaceRoot || null)
-    && (left.controllerIdentity || null) === (right.controllerIdentity || null)
+    && (left.resourceProvider || PREVIEW_RESOURCE_PROVIDER) === (right.resourceProvider || PREVIEW_RESOURCE_PROVIDER)
+    && (left.resourceHandle?.instance || left.instance) === (right.resourceHandle?.instance || right.instance)
     && (left.resourceId || null) === (right.resourceId || null));
+}
+
+function ownerResourceProviderIdentity(owner) {
+  const pid = owner.managedProcess?.pid;
+  const derived = pid && owner.head ? `${owner.instance}:${pid}:${owner.head}` : null;
+  if (owner.resourceProviderIdentity && derived && owner.resourceProviderIdentity !== derived) return null;
+  return owner.resourceProviderIdentity || derived;
 }
 
 export function assertPreviewStopOwner(owner, caller) {
@@ -87,11 +98,13 @@ export function assertPreviewStopOwner(owner, caller) {
     || typeof caller.environmentRoot !== 'string'
     || path.resolve(caller.workspaceRoot) !== path.resolve(owner.workspaceRoot)
     || path.resolve(caller.environmentRoot) !== path.resolve(owner.environmentRoot)
-    || caller.controllerIdentity !== owner.controllerIdentity
-    || caller.resourceId !== owner.resourceId) {
+    || caller.resourceId !== owner.resourceId
+    || caller.resourceProvider !== (owner.resourceProvider || PREVIEW_RESOURCE_PROVIDER)
+    || caller.resourceHandle?.instance !== (owner.resourceHandle?.instance || owner.instance)
+    || caller.resourceProviderIdentity !== ownerResourceProviderIdentity(owner)) {
     const error = new Error(`预览实例 ${owner.instance} 的 task environment owner 或 receipt 不匹配。`);
     error.code = 'preview_stop_owner_mismatch';
-    error.details = { instance: owner.instance, expected: { taskId: owner.taskId, workspaceRoot: owner.workspaceRoot, environmentRoot: owner.environmentRoot, controllerIdentity: owner.controllerIdentity, resourceId: owner.resourceId } };
+    error.details = { instance: owner.instance, expected: { taskId: owner.taskId, workspaceRoot: owner.workspaceRoot, environmentRoot: owner.environmentRoot, resourceId: owner.resourceId, resourceProvider: owner.resourceProvider || PREVIEW_RESOURCE_PROVIDER, resourceHandle: owner.resourceHandle || { instance: owner.instance }, resourceProviderIdentity: ownerResourceProviderIdentity(owner) } };
     throw error;
   }
 }
@@ -156,8 +169,10 @@ function taskPreviewCaller(owner) {
     taskId: owner.taskId,
     workspaceRoot: owner.workspaceRoot,
     environmentRoot: owner.environmentRoot,
-    controllerIdentity: owner.controllerIdentity,
     resourceId: owner.resourceId,
+    resourceProvider: owner.resourceProvider || PREVIEW_RESOURCE_PROVIDER,
+    resourceHandle: owner.resourceHandle || { instance: owner.instance },
+    resourceProviderIdentity: ownerResourceProviderIdentity(owner),
   };
 }
 
@@ -167,16 +182,16 @@ function taskPreviewResource(owner, instance) {
     id: owner.resourceId,
     kind: 'preview',
     scope: owner.scope,
-    provider: 'local-app-preview',
+    provider: PREVIEW_RESOURCE_PROVIDER,
     identity: {
       productCheckout: owner.productCheckout,
       url: instance.url,
       port: Number(url.port),
       pid: instance.pid,
-      providerIdentity: `${owner.instance}:${instance.pid}:${owner.head}`,
+      providerIdentity: ownerResourceProviderIdentity(owner),
     },
     handle: { instance: owner.instance },
-    probe: { status: 'ready', identity: `${owner.instance}:${instance.pid}:${owner.head}`, observedAt: new Date().toISOString(), diagnostic: null },
+    probe: { status: 'ready', identity: ownerResourceProviderIdentity(owner), observedAt: new Date().toISOString(), diagnostic: null },
   };
 }
 
@@ -187,28 +202,30 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   const taskId = runtime.optionValue(args, '--task', null);
   let targetRoot = requestedRoot;
   let taskEnvironment = null;
+  let taskExecution = null;
   let appInvocation = { command: process.execPath, argsPrefix: [cliPath], sourceRoot: path.resolve(path.dirname(cliPath), '..') };
   if (taskId) {
     const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
-    const execution = runtime.resolveTaskEnvironmentExecution(workspaceRoot, taskId);
-    if (!execution.ready) {
-      const error = new Error(execution.blocked?.message || `Task Environment 未 ready：${taskId}。`);
-      error.code = execution.blocked?.code || 'preview_environment_not_ready';
+    taskExecution = runtime.resolveTaskEnvironmentExecution(workspaceRoot, taskId);
+    if (!taskExecution.ready) {
+      const error = new Error(taskExecution.blocked?.message || `Task Environment 未 ready：${taskId}。`);
+      error.code = taskExecution.blocked?.code || 'preview_environment_not_ready';
       throw error;
     }
-    const workspaceScope = execution.scopes.find((scope) => scope.selector === 'workspace');
+    const workspaceScope = taskExecution.scopes.find((scope) => scope.selector === 'workspace');
     if (!workspaceScope) { const error = new Error('Task Environment 缺少 workspace scope。'); error.code = 'preview_environment_scope_missing'; throw error; }
-    targetRoot = execution.validationRoot;
+    targetRoot = taskExecution.validationRoot;
     runtime.assertTaskEnvironmentController(workspaceRoot, taskId);
-    appInvocation = execution.cliInvocation;
+    appInvocation = taskExecution.cliInvocation;
     taskEnvironment = {
       taskId,
       workspaceRoot,
-      environmentRoot: execution.validationRoot,
-      controllerIdentity: execution.controller.identity,
+      environmentRoot: taskExecution.validationRoot,
       resourceId: `preview:${instance}`,
+      resourceProvider: PREVIEW_RESOURCE_PROVIDER,
+      resourceHandle: { instance },
       scope: workspaceScope.selector,
-      repositorySet: execution.scopes.map((scope) => ({ selector: scope.selector, checkoutPath: scope.executionRoot, shared: scope.shared })),
+      repositorySet: taskExecution.scopes.map((scope) => ({ selector: scope.selector, checkoutPath: scope.executionRoot, shared: scope.shared })),
     };
   } else runtime.assertInitializedBuildrWorkspace(targetRoot);
   const rawPort = runtime.optionValue(args, '--port', '0');
@@ -227,7 +244,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   if (healthy) {
     let environmentResource = null;
     if (taskId) {
-      environmentResource = runtime.inspectTaskEnvironment(requestedRoot, taskId).environment?.resources.find((resource) => resource.id === owner.resourceId && resource.status === 'running') || null;
+      environmentResource = taskExecution.resources.find((resource) => resource.id === owner.resourceId && resource.status === 'running' && previewResourceMatch(resource, existingOwner, healthy)) || null;
       if (!environmentResource) { const error = new Error(`健康 preview ${instance} 没有 matching Environment resource；拒绝猜测或补领 ownership。`); error.code = 'preview_environment_resource_missing'; throw error; }
     }
     const result = { schemaVersion: PREVIEW_SCHEMA, status: 'reused', owner: existingOwner, url: healthy.url, pid: healthy.pid, environmentResource };
@@ -256,7 +273,11 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
     error.code = 'preview_start_timeout';
     throw error;
   }
-  const managedOwner = { ...owner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
+  const managedOwner = {
+    ...owner,
+    managedProcess: { pid: started.pid, url: started.url, state: 'healthy' },
+    resourceProviderIdentity: `${owner.instance}:${started.pid}:${owner.head}`,
+  };
   writeOwner(runtime, managedOwner, dataRoot);
   let environmentResource = null;
   if (taskId) {
@@ -323,12 +344,13 @@ function previewOwnerResourceMatch(resource, owner) {
   const pid = owner.managedProcess?.pid;
   const url = owner.managedProcess?.url;
   const expectedProviderIdentity = `${owner.instance}:${pid}:${owner.head}`;
-  return resource.provider === 'local-app-preview'
-    && resource.handle.instance === owner.instance
+  return resource.provider === (owner.resourceProvider || PREVIEW_RESOURCE_PROVIDER)
+    && resource.handle.instance === (owner.resourceHandle?.instance || owner.instance)
     && resource.id === owner.resourceId
     && resource.identity.pid === pid
     && resource.identity.url === url
-    && resource.identity.providerIdentity === expectedProviderIdentity;
+    && resource.identity.providerIdentity === expectedProviderIdentity
+    && ownerResourceProviderIdentity(owner) === expectedProviderIdentity;
 }
 
 function previewResourceMatch(resource, owner, instance) {
@@ -355,20 +377,22 @@ export async function cleanupPreviewResource(resource, context, { dataRoot = loc
     taskId: context.taskId,
     workspaceRoot: context.workspaceRoot,
     environmentRoot: context.environmentRoot,
-    controllerIdentity: context.controllerIdentity,
     resourceId: resource.id,
+    resourceProvider: resource.provider,
+    resourceHandle: resource.handle,
+    resourceProviderIdentity: resource.identity.providerIdentity,
   });
   const stopped = await stopPreview(resource.handle.instance, { dataRoot, caller: taskPreviewCaller(owner) });
-  return { provider: 'local-app-preview', stopped, probe: { status: 'blocked', identity: resource.identity.providerIdentity, observedAt: new Date().toISOString(), diagnostic: 'Preview 已停止并释放。' } };
+  return { provider: PREVIEW_RESOURCE_PROVIDER, stopped, probe: { status: 'blocked', identity: resource.identity.providerIdentity, observedAt: new Date().toISOString(), diagnostic: 'Preview 已停止并释放。' } };
 }
 
 export function registerLocalAppPreviewResourceProvider(runtime) {
   runtime.probeTaskEnvironmentResource = (resource) => {
-    if (resource.provider !== 'local-app-preview') { const error = new Error(`未知 Task Environment resource provider：${resource.provider}。`); error.code = 'task_environment_resource_provider_unknown'; throw error; }
+    if (resource.provider !== PREVIEW_RESOURCE_PROVIDER) { const error = new Error(`未知 Task Environment resource provider：${resource.provider}。`); error.code = 'task_environment_resource_provider_unknown'; throw error; }
     return probePreviewResource(resource);
   };
   runtime.cleanupTaskEnvironmentResource = async (resource, context) => {
-    if (resource.provider !== 'local-app-preview') { const error = new Error(`未知 Task Environment resource provider：${resource.provider}。`); error.code = 'task_environment_resource_provider_unknown'; throw error; }
+    if (resource.provider !== PREVIEW_RESOURCE_PROVIDER) { const error = new Error(`未知 Task Environment resource provider：${resource.provider}。`); error.code = 'task_environment_resource_provider_unknown'; throw error; }
     return cleanupPreviewResource(resource, context);
   };
   return runtime;
