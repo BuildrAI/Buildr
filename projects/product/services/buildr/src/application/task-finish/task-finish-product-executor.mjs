@@ -505,7 +505,21 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
           operations.push(checked.observation);
           if (checked.result.status !== 0 || !checked.payload?.version) return { status: 'blocked', operations, failure: { operation: 'runtime-install', failureClass: 'transient-external-condition', code: 'task-finish.cli-install-check-failed', exitCode: checked.result.status, message: 'Installed Buildr runtime version check failed.', diagnostic: checked.observation.stderr }, output: { delivery: { status: 'delivered-install-blocked', candidateRef: run.frozenCandidate.head } } };
         }
-        return { status: 'passed', operations, inputIdentity: run.frozenCandidate.identity, outputIdentity: run.frozenCandidate.head, output: { delivery: { status: 'delivered', expectedTargetRef: run.frozenCandidate.expectedTargetRef, observedTargetRef, candidateRef: run.frozenCandidate.head, remoteAfterRef: run.frozenCandidate.head, impact, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery: impact.requiresLocalAppInstall ? 'bundled-with-cli-runtime' : 'not-applicable' } } };
+        let localAppLauncher = null;
+        if (impact.requiresLocalAppInstall) {
+          const installed = runJsonCommand('deliver-local-app-install', retainedCli, ['app', 'launcher', 'install', '--channel', 'development', '--json'], retainedRoot);
+          operations.push(installed.observation);
+          if (installed.result.status !== 0 || installed.payload?.installed !== true) return { status: 'blocked', operations, failure: { operation: 'local-app-install', failureClass: 'transient-external-condition', code: 'task-finish.local-app-install-failed', exitCode: installed.result.status, message: 'Buildr development launcher installation failed.', diagnostic: installed.payload || installed.observation.stderr }, output: { delivery: { status: 'delivered-install-blocked', candidateRef: run.frozenCandidate.head } } };
+          const checked = runJsonCommand('deliver-local-app-install-check', retainedCli, ['app', 'launcher', 'status', '--channel', 'development', '--json'], retainedRoot);
+          operations.push(checked.observation);
+          const status = checked.payload;
+          const identity = status?.identity;
+          if (checked.result.status !== 0 || status?.installed !== true || identity?.channel !== 'development' || identity?.source !== 'checkout' || identity?.checkout?.head !== run.frozenCandidate.head) {
+            return { status: 'blocked', operations, failure: { operation: 'local-app-install', failureClass: 'transient-external-condition', code: 'task-finish.local-app-install-check-failed', exitCode: checked.result.status, message: 'Buildr development launcher identity does not match the delivered candidate.', diagnostic: status || checked.observation.stderr }, output: { delivery: { status: 'delivered-install-blocked', candidateRef: run.frozenCandidate.head } } };
+          }
+          localAppLauncher = { status: 'passed', channel: identity.channel, target: status.target, buildId: identity.buildId, checkoutHead: identity.checkout.head };
+        }
+        return { status: 'passed', operations, inputIdentity: run.frozenCandidate.identity, outputIdentity: run.frozenCandidate.head, output: { delivery: { status: 'delivered', expectedTargetRef: run.frozenCandidate.expectedTargetRef, observedTargetRef, candidateRef: run.frozenCandidate.head, remoteAfterRef: run.frozenCandidate.head, impact, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery: localAppLauncher || 'not-applicable' } } };
       } finally {
         releaseFinishTargetLease(lease);
       }

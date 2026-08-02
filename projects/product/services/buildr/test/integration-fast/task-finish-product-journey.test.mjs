@@ -23,6 +23,7 @@ function writeExecutable(file, content) {
 const fakeBuildr = `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const option = (name) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : null; };
 const output = (value) => process.stdout.write(JSON.stringify(value) + '\\n');
@@ -36,6 +37,14 @@ else if (args[0] === 'openspec' && args[1] === 'converge') {
   fs.renameSync(active, archived);
   output({ schemaVersion: 'buildr.openspec-converge/v1', status: 'passed', receipt: path.join(archived, '.buildr-convergence.yml') });
 } else if (args[0] === 'sync') process.exit(0);
+else if (args[0] === 'app' && args[1] === 'launcher' && ['install', 'status'].includes(args[2])) {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  output({
+    schemaVersion: 'buildr.launcher-status/v1', platform: 'darwin', channel: 'development',
+    target: '/Applications/Buildr Dev.app', installed: true,
+    identity: { schemaVersion: 'buildr.launcher-identity/v1', channel: 'development', source: 'checkout', buildId: head.slice(0, 12) + '-fixture', checkout: { head, dirty: false } },
+  });
+}
 else if (args[0] === 'verification' && args[1] === 'run') {
   const fingerprint = option('--candidate-fingerprint');
   output({
@@ -200,6 +209,8 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
+  writeExecutable(path.join(seed, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs'), '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ schemaVersion: "buildr.version/v1", version: "2.0.0-test" }) + "\\n");\n');
+  writeExecutable(path.join(seed, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli'), '#!/bin/sh\nexit 0\n');
   fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v1\ncapabilities:\n  - id: product.affected\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# Code-only Task Finish journey\n');
   command(seed, 'git', ['add', '-A']);
@@ -214,8 +225,10 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const task = 'finish-code-only-task';
   const environmentRoot = path.join(retained, '.worktrees', task);
   command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
-  fs.writeFileSync(path.join(environmentRoot, 'code-only.txt'), 'finished without a Change\n');
-  command(environmentRoot, 'git', ['add', 'code-only.txt']);
+  const localAppChange = path.join(environmentRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'local-app', 'runtime', 'code-only.mjs');
+  fs.mkdirSync(path.dirname(localAppChange), { recursive: true });
+  fs.writeFileSync(localAppChange, 'export const finishedWithoutChange = true;\n');
+  command(environmentRoot, 'git', ['add', path.relative(environmentRoot, localAppChange)]);
   command(environmentRoot, 'git', ['commit', '-m', 'implement code-only candidate']);
 
   const hostileBin = path.join(fixture, 'hostile-bin');
@@ -261,6 +274,9 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   ]);
   const operations = result.phases.flatMap((phase) => phase.operations);
   assert.equal(operations.some((operation) => operation.id?.includes('openspec') || operation.args?.includes('openspec')), false);
+  assert.deepEqual(operations.filter((operation) => operation.id?.startsWith('deliver-local-app-')).map((operation) => operation.id), ['deliver-local-app-install', 'deliver-local-app-install-check']);
+  assert.equal(result.delivery.localAppDelivery.status, 'passed');
+  assert.equal(result.delivery.localAppDelivery.checkoutHead, result.candidate.head);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.candidate.head);
   const completion = JSON.parse(fs.readFileSync(result.completion.receipt, 'utf8'));
