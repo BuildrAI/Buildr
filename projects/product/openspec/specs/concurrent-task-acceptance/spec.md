@@ -11,8 +11,8 @@ Buildr MUST 提供可重复的双正式 Task 组合验收，在同一临时 cano
 
 #### Scenario: 两个任务从不同执行目录运行专属 CLI
 - **WHEN** Candidate 验收创建两个正式 Task、分别准备 ready Task Environment，并从 canonical Workspace 或其中一个 Project 执行根调用 Environment Receipt 返回的绝对 CLI invocation
-- **THEN** 每个 invocation MUST 实际执行成功，并通过 `task environment inspect <task-id> --target <canonical-workspace>` 绑定自己的 Task、scope、controller identity 和允许执行范围
-- **AND** 调用 MUST 不依赖 cwd、`worktree context` 或 caller/session adoption，也不得解析或误用另一 Task 的执行根
+- **THEN** 每个 invocation MUST 实际执行成功，并通过 `task environment inspect <task-id> --target <canonical-workspace>` 绑定自己的 Task、Workspace、scope、Task checkout/provider evidence 和允许执行范围
+- **AND** 调用 MUST 不依赖 retained controller content hash、cwd、`worktree context` 或 caller/session adoption，也不得解析或误用另一 Task 的执行根
 
 #### Scenario: 多仓任务环境保持完整成员边界
 - **WHEN** 临时 Workspace 登记入口仓库和至少一个嵌套独立仓库，并为两个 Task 准备相同 scope plan 的环境
@@ -22,7 +22,7 @@ Buildr MUST 提供可重复的双正式 Task 组合验收，在同一临时 cano
 #### Scenario: 两个任务并发运行且互不串扰
 - **WHEN** Candidate 验收并发启动两个 Task 各自的 Preview 和正式 `verification run`
 - **THEN** 两个 Task MUST 使用各自 Environment Receipt 绑定的执行根与绝对 CLI invocation，并使用不同的状态目录、实例身份和端口
-- **AND** 普通消费 Workspace MAY 共享同一稳定 controller identity，但 environment binding MUST 通过 Task ID 和 canonical Workspace 明确区分，且不得依赖 cwd
+- **AND** 普通消费 Workspace MAY 共享同一 retained Environment Manager，但 environment binding MUST 通过 Task ID、canonical Workspace、scope/provider 与 Environment root 明确区分，且不得依赖 manager content hash 或 cwd
 - **AND** 可并行资源 MUST 同时执行，共享容量资源 MUST 按声明排队并记录 Task 归属和等待证据
 
 #### Scenario: 目标分支发生竞态

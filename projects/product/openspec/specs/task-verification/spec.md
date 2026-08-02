@@ -220,18 +220,23 @@ Task verification provider MUST 继续将 Candidate evidence 绑定实际验证�
 - **AND** 跨会话丢失该证据后 MUST NOT 从路径或 checkbox 状态反推可复用性
 
 ### Requirement: Task environment 验证证据必须绑定实际执行上下文
-当 consumer 提供 task environment context 时，task-verification provider MUST 在启动正式验证前核对 environment owner、repository set、允许执行根和当前 candidates，并 MUST 将实际命令 cwd 与 multi-repository candidate identity 写入 evidence。无法证明一致时 MUST 返回 `incomplete`，不得执行错误 checkout 的正式验证或复用其 evidence。
+当 consumer 提供 task environment context 时，task-verification provider MUST 在启动正式验证前核对 environment owner、repository set、允许执行根和当前 candidates，并 MUST 将实际命令 cwd、multi-repository candidate identity、Runtime、candidate CLI、依赖、projection identity 与 check identity 写入 evidence。无法证明一致时 MUST 返回 `incomplete`，不得执行错误 checkout 的正式验证或复用其 evidence。Retained Environment Manager 的 controller content identity MUST NOT 单独进入 evidence applicability 或使既有 evidence 失效。
 
 #### Scenario: 单仓 environment 验证
 - **WHEN** task environment 只包含 Workspace root repository
-- **THEN** evidence MUST 记录 task id、environment root、execution root、repository checkout、branch、HEAD、dirty/fingerprint 和 context identity
+- **THEN** evidence MUST 记录 task id、environment root、execution root、repository checkout、branch、HEAD、dirty/fingerprint、candidate CLI/projection 与 Workspace Node identity
 - **AND** candidate identity MUST 来自该 environment checkout 而不是原 Workspace checkout
 
 #### Scenario: 多仓 environment 验证
 - **WHEN** 所需验证覆盖多个 environment member repositories
 - **THEN** evidence MUST 记录有序 repository candidate set 及每项的 checkout root、branch、HEAD 和 tree/fingerprint
 - **AND** 每个 check MUST 记录实际 cwd 或可核验的 execution root
-- **AND** `reusable: true` MUST 要求当前 environment identity 与全部 required repository candidates 仍匹配
+- **AND** `reusable: true` MUST 要求当前 Environment roots、projection/check identity 与全部 required repository candidates 仍匹配
+
+#### Scenario: retained manager 无关升级
+- **WHEN** Candidate、Project policy、Environment/execution roots、candidate CLI/projection、Workspace Node 与 checks 均未变化，只有 retained Buildr controller content identity 改变
+- **THEN** Verification evidence applicability MUST 保持不受影响
+- **AND** provider/consumer MUST NOT 仅因 Receipt 创建指纹与当前 manager hash 不同而要求重新验证
 
 #### Scenario: 命令 cwd 位于环境外
 - **WHEN** 验证计划的 cwd 解析到原 Workspace checkout、其他 task environment 或未登记路径
