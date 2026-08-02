@@ -78,14 +78,14 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   for (const capability of ['buildr.git-single-operation@1', 'buildr.git-task-integration@1', 'buildr.git-workspace-update@1']) {
     await run(['skills', 'bind', capability, '--provider', 'internal-git', '--scope', '.', '--target', root]);
   }
-  const internalWorktreeSource = writeSkill(root, 'internal-worktree');
+  const internalEnvironmentSource = writeSkill(root, 'internal-environment');
   await run([
-    'skills', 'add', '--source', internalWorktreeSource, '--scope', '.', '--target', root,
-    '--provides', 'buildr.task-worktree-lifecycle@2',
+    'skills', 'add', '--source', internalEnvironmentSource, '--scope', '.', '--target', root,
+    '--provides', 'buildr.task-environment@1',
   ]);
-  assert.equal(manifest(root).bindings.find((item) => item.capability === 'buildr.task-worktree-lifecycle').provider, 'task-worktree');
-  await run(['skills', 'bind', 'buildr.task-worktree-lifecycle@2', '--provider', 'internal-worktree', '--scope', '.', '--target', root]);
-  await run(['builtin', 'uninstall', 'task-worktree', '--target', root, '--reason', 'internal replacement']);
+  assert.equal(manifest(root).bindings.find((item) => item.capability === 'buildr.task-environment').provider, 'task-environment');
+  await run(['skills', 'bind', 'buildr.task-environment@1', '--provider', 'internal-environment', '--scope', '.', '--target', root]);
+  await run(['builtin', 'uninstall', 'task-environment', '--target', root, '--reason', 'internal replacement']);
   const internalVerificationSource = writeSkill(root, 'internal-verification');
   await run([
     'skills', 'add', '--source', internalVerificationSource, '--scope', '.', '--target', root,

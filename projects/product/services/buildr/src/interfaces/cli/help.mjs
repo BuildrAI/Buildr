@@ -17,14 +17,15 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr app launcher <install|status|uninstall> [--channel <release|development>] [--target <dir>] [--json]');
     console.error('  buildr project create <code> [--target <dir>] [--name <text>] [--description <text>] [--repo <git-url>] [--remote <name>] [--integration-branch <branch>]');
     console.error('  buildr service create <project>/<service> <repo-ref> [--target <dir>] [--name <text>] [--description <text>] [--type <type>] [--remote <name>] [--integration-branch <branch>] [--json]');
-    console.error(`  buildr worktree create <task-id> --agent <${runtimeIds}> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]`);
-    console.error(`  buildr worktree cleanup <task-id> --agent <${runtimeIds}> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]`);
+    console.error('  buildr worktree create <task-id> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]');
+    console.error('  buildr worktree cleanup <task-id> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]');
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
-    console.error('  buildr worktree context [--target <path>] [--json]');
-    console.error('  buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]');
-    console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--output <file>] [--json]');
-    console.error('  buildr task finish run --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--json]');
-    console.error('  buildr task finish inspect --run <id> [--target <workspace-or-task-environment>] [--json]');
+    console.error(`  buildr task environment prepare <task-id> [--agent <${runtimeIds}>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]`);
+    console.error('  buildr task environment inspect|cleanup <task-id> [--target <canonical-workspace>] [--json]');
+    console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-resource <id> ...] [--output <file>] [--json]');
+    console.error('  buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]');
+    console.error('  buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--json]');
+    console.error('  buildr task finish inspect --run <id> [--target <canonical-workspace>] [--json]');
     console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
     console.error('  buildr mutation recover <transaction-id> [--target <dir>]');
@@ -70,17 +71,15 @@ export function registerCommandHelp(runtime) {
       'Public workspace commands:',
       '  init                 初始化 Buildr workspace；传入 --agent 时一次完成 runtime 与最终 doctor。',
       '  app                  启动仅限本机访问的 Buildr Workspace 可视化应用。',
-      '  app preview          为 task worktree 启动、查看或停止隔离的开发预览。',
+      '  app preview          为 Task Environment 或独立 checkout 启动、查看和停止隔离预览。',
       '  app launcher         安装、检查或卸载当前平台的 Buildr launcher。',
       '  version              输出当前 Buildr CLI package version；支持 --json。',
       '  project create       创建或登记 Project。',
       '  service create       创建或登记 Service。',
-      '  worktree create      创建或复用单仓或多仓 canonical task environment。',
-      '  worktree cleanup     按 receipt、owner 和 integrated ref 安全清理本地任务环境。',
-      '  worktree inspect     检查 task environment 的仓库集合、身份和隔离边界。',
-      '  worktree context     判断当前路径是否属于可执行的 task environment。',
-      '  worktree adopt       核验并记录 Agent session 对 task environment runtime 的采用证据。',
+      '  worktree create/inspect/cleanup  只管理 Git checkout、branch 和 provider evidence。',
+      '  task environment     按正式 Task 准备、检查或清理唯一 Environment Receipt。',
       '  verification run     按 Project verification.yml 执行受影响或完整候选验证。',
+      '  task create/inspect/update/complete/abandon  管理 canonical Workspace 的最小 Task Record。',
       '  task finish          产品执行 preflight → prepare → verify → deliver → cleanup 固定收尾。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
@@ -122,18 +121,18 @@ export function registerCommandHelp(runtime) {
       '页面不会 checkout、stash、merge 或改写 Project Git source。',
       '旧 Workspace metadata 可以只读查看，完成 canonical sync 迁移后才能从页面保存。',
       '本机登记列表只保存 Workspace root；事实仍来自各 Workspace，应用不提供远程服务或 Agent session connector。',
-      'task worktree 的并行验收使用 app preview；每个 preview 具有独立状态和 loopback URL，不会改变默认应用或 Buildr Dev.app。',
+      '任务验证工作区的并行验收可使用 app preview；每个 preview 具有独立状态和 loopback URL，不会改变默认应用或 Buildr Dev.app。',
     ],
     'app preview start': [
-      'Usage: buildr app preview start <instance> [--target <workspace>] [--port <port>] [--no-open] [--json]',
+      'Usage: buildr app preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]',
       '',
-      '从当前 task worktree 启动或复用独立的 Buildr 开发预览。输出实例名、URL、worktree、分支、HEAD 与 dirty 身份，供 Agent 交接验收链接。',
-      '实例名不能被其他 worktree 的健康预览接管；该命令不会安装、替换或停止 Buildr Dev.app、全局开发 CLI 或默认本机应用。',
+      '提供 --task 时，从该 Task Environment 的任务验证工作区启动，并在健康后登记为 Environment 动态资源；登记失败会认证停止刚创建的实例。',
+      '不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认本机应用。',
     ],
     'app preview': [
       'Usage: buildr app preview <start|list|stop> ...',
       '',
-      'task worktree 的开发预览以实例名隔离本地状态与 loopback URL；使用 start 获取验收链接，使用 list 查看归属，使用 stop 只停止指定实例。',
+      '预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。',
     ],
     'app preview list': [
       'Usage: buildr app preview list [--json]',
@@ -141,9 +140,9 @@ export function registerCommandHelp(runtime) {
       '列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。',
     ],
     'app preview stop': [
-      'Usage: buildr app preview stop <instance> [--target <task-environment> --task <task-id> --owner <agent>] [--json]',
+      'Usage: buildr app preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]',
       '',
-      'task preview 必须同时提供 receipt-bound environment、task 与 owner 并完全匹配；独立 retained preview 保持实例级停止。错误 owner 不会收到停止信号。',
+      'Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Environment resource、preview metadata 和进程 secret 完全匹配；停止后释放同一资源。独立 preview 保持实例级停止。',
     ],
     'app launcher install': [
       'Usage: buildr app launcher install [--channel <release|development>] [--target <dir>] [--json]',
@@ -182,46 +181,87 @@ export function registerCommandHelp(runtime) {
       '--title 和 --branch 继续作为 --name、--integration-branch 的 legacy compatibility 输入。',
       'Service 规则入口是 Service 目录中的 AGENTS.md，不在 Service registry 中记录规则路径。',
     ],
-    'worktree create': [
-      `Usage: buildr worktree create <task-id> --agent <${SUPPORTED_AGENT_IDS.join('|')}> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]`,
+    task: [
+      'Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]',
       '',
-      '默认只包含 Workspace 根仓库；重复 --include 可显式加入独立 Git Project 或 Service，并按 canonical source.path 嵌套到同一环境根。',
-      '全部仓库在写入前统一预检；registry、路径、remote、branch 或 worktree identity 冲突都会 fail closed。部分创建失败时保留现场并记录 receipt。',
-      '新建根 checkout 一定运行 doctor；仅当 actionable findings 都是当前 Agent runtime stale、checkout clean 且 identity 未变化时自动 sync，并以最终 doctor 收敛。',
-      '复用同一 repository set/branch 的既有环境时返回 reused，不重复 doctor 或 sync。',
-      'working tree/index 可隔离；Git objects/refs 仍共享。外部依赖沿用 Project 既有环境；只有多个任务会修改同一共享状态时才需要既有租户、账号、数据前缀、串行化或显式授权边界。',
-      '该命令不承担任务理解、OpenSpec 选择、merge、rebase、push 或 cleanup policy。',
+      'Task Manager 只管理 canonical Workspace 中的顶层 Task Record：创建、查看、明确更新、完成或放弃。',
+      '它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。',
+      'Agent 和 Local App 都调用同一个 Task Record Application；不要直接编辑 .buildr/tasks/<task-id>/task.yml。',
+    ],
+    'task environment': [
+      'Usage: buildr task environment <prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]',
+      '',
+      'Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。',
+      'prepare 幂等承担首次准备与恢复；inspect 只读复核当前机器；cleanup 只接受 Task Finish handoff 或已持久化的 abandon 终态。',
+    ],
+    'task environment prepare': [
+      `Usage: buildr task environment prepare <task-id> [--agent <${SUPPORTED_AGENT_IDS.join('|')}>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]`,
+      '',
+      '按正式 Task scope 准备 checkout 或共享执行根、Workspace Node/CLI/依赖和 runtime projection，并在每次返回前执行真实 probe。',
+      '默认使用 Git worktree；--shared 仅在明确共享根时使用。候选 Product CLI 只能准备自身任务验证工作区，不能控制 retained/peer 环境。',
+    ],
+    'task environment inspect': [
+      'Usage: buildr task environment inspect <task-id> [--target <canonical-workspace>] [--json]',
+      '',
+      '只读返回当前机器的 Environment Receipt availability、observedAt、scope/root、执行基础、provider、资源和 cleanup 摘要。',
+    ],
+    'task environment cleanup': [
+      'Usage: buildr task environment cleanup <task-id> [--target <canonical-workspace>] [--json]',
+      '',
+      '按 provider 依赖先停止 Task-owned 资源，再清理可证明属于该 Task 的 Git checkout；成功后保留最小处置摘要。',
+      '公共 CLI 只允许已持久化的 abandoned Task；正常完成由 Task Finish 内部提交交付 identity。',
+    ],
+    'task create': [
+      'Usage: buildr task create <task-id> --title <text> --intent <text> [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
+      '',
+      '必需参数：唯一 task-id、--title、--intent。--project、--service、--change 可重复；引用必须已登记或真实存在。',
+      '副作用：仅创建 .buildr/tasks/<task-id>/task.yml；不创建 Environment、Change、branch、commit 或专业记录。',
+    ],
+    'task inspect': [
+      'Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]',
+      '',
+      '只读返回 Task Record、canonical path 和响应级 recordDigest；不更新时间或任何字段。',
+    ],
+    'task update': [
+      'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
+      '',
+      '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。只允许修改 active Task。',
+      '不接受 --input、patch、完整 next-state、expected revision 或专业模块字段。',
+    ],
+    'task complete': [
+      'Usage: buildr task complete <task-id> --summary <text> [--no-change] [--target <canonical-workspace>] [--json]',
+      '',
+      '把 active Task 单向标记为 completed；省略 --no-change 表示本 Task 有交付变更。',
+      '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。',
+    ],
+    'task abandon': [
+      'Usage: buildr task abandon <task-id> --reason <text> [--target <canonical-workspace>] [--json]',
+      '',
+      '把 active Task 单向标记为 abandoned；终态不可重开或继续修改。',
+      '该动作只更新顶层 Task Record，不执行 Environment cleanup、Git 或其他专业动作。',
+    ],
+    'worktree create': [
+      'Usage: buildr worktree create <task-id> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]',
+      '',
+      '这是窄 Git provider 命令：只规划并创建显式 repository checkout/branch，写入 Git common-dir provider evidence。',
+      '全部仓库在写入前统一预检；部分创建失败保留已创建 checkout 和 evidence，供同一计划恢复。它不判断 Environment ready，也不准备 Runtime/CLI/依赖/projection。',
     ],
     'worktree cleanup': [
-      `Usage: buildr worktree cleanup <task-id> --agent <${SUPPORTED_AGENT_IDS.join('|')}> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]`,
+      'Usage: buildr worktree cleanup <task-id> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]',
       '',
-      '根据 task environment receipt 在写入前统一核对 owner、全部成员 checkout/branch/clean identity，以及每仓任务 HEAD 已被声明的 integrated ref 包含。',
-      '每个 receipt repository selector 必须恰好提供一个 --integrated-ref；通过后按 nested-first 删除本地 worktree，再以精确旧 HEAD 删除已集成的本地任务分支和 receipts。',
-      '该命令不停止 task-owned 进程、不删除远端分支、不强制删除 dirty checkout，也不授权放弃未集成提交；调用前必须先完成资源停止与集成。',
+      '只根据 Git provider evidence 核对 checkout/branch/clean/registration 与 integrated ref，再 nested-first 删除 worktree、本地任务分支和 provider evidence。',
+      '它不读取 Environment Receipt、不停止动态资源、不决定总 cleanup，也不删除远端分支。正式 workflow 由 Task Environment Application 编排。',
     ],
     'worktree inspect': [
       'Usage: buildr worktree inspect <task-id> [--target <workspace>] [--json]',
       '',
-      '根据 receipt 检查全部成员仓库的 checkout、branch 和 identity；任一成员不匹配即 fail closed。',
-    ],
-    'worktree context': [
-      'Usage: buildr worktree context [--target <path>] [--session-root <path>] [--session-handle <id>] [--json]',
-      '',
-      '判断明确 target/workdir 是否位于 task environment 的允许执行根内，并报告成员仓库、receipt-bound CLI、runtime projection、可选 activation evidence 和隔离边界。',
-      'executionReady 由 environment binding 决定；Agent session root 不要求等于 environment root。',
-    ],
-    'worktree adopt': [
-      'Usage: buildr worktree adopt --agent <agent> --session-root <path> --session-handle <id> --root-evidence-source <host-context|runtime-host> --mode <new-session|reentered|reload> --started-at <iso-time> [--target <path>] [--json]',
-      '',
-      '仅为 runtime 发现、加载或激活机制变更且专项验收明确要求时，记录 Agent/runtime host 提供的 activation evidence。普通 Rule/Skill 内容修改不需要。',
-      'Buildr 直接核验 environment evidence；session evidence 标记为 agent-attested，不表示 Buildr 内省或密码学认证 Agent session。',
-      '该 evidence 不参与普通 executionReady，也不表示 Buildr 能自动 reload、启动或 handoff Agent session。',
+      '根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。',
     ],
     'verification run': [
-      'Usage: buildr verification run --project <code> --level <affected|candidate> [--target <workspace>] [--environment <task-id> --owner <agent>] [--authorize-resource <id> ...] [--concurrency <n>] [--include-advisory] [--output <file>] [--candidate-fingerprint <identity>] [--json]',
+      'Usage: buildr verification run --project <code> --level <affected|candidate> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-resource <id> ...] [--concurrency <n>] [--include-advisory] [--output <file>] [--candidate-fingerprint <identity>] [--json]',
       '',
       '读取已登记 Project 的 verification.yml，按依赖和显式 supersedes 构造 DAG，并发执行资源兼容的能力。',
-      '在 task environment 中运行时自动绑定 receipt、owner、repository set 和 allowed execution roots；显式 --environment/--owner 必须完全匹配。',
+      '采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。',
       'coordinated 资源通过 Git common-dir lease 跨 task 排队；external 资源必须逐项 --authorize-resource。该命令执行验证，不创建任务或调度 Agent。',
       '默认 evidence 为 transient；--output 指定 caller-managed summary。--json 返回 buildr.verification-run/v1。',
     ],
@@ -409,8 +449,8 @@ export function registerCommandHelp(runtime) {
   };
 
   const finishHelp = {
-    inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <workspace-or-task-environment>] [--detail <compact|full>] [--json]', required: '--run。', exclusive: '无。', surface: 'canonical Workspace 中的 durable finish run，只读。', effects: '无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。' },
-    run: { usage: 'Usage: buildr task finish run --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <task-environment>] [--detail <compact|full>] [--json]', required: '首次运行需要 --project 和 receipt-bound task environment；task identity 来自 environment receipt，--change 只对 Change 候选必需，省略时创建 code-only 候选；target branch 默认来自环境 start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'task checkout、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver、cleanup；产品缺陷终止 run 并返回 task-development，不在收尾中修复。' },
+    inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '--run。', exclusive: '无。', surface: 'canonical Workspace 中的 durable finish run，只读。', effects: '无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。' },
+    run: { usage: 'Usage: buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '首次运行需要 --task、--project 与 ready Task Environment；--change 只对 Change 候选必需，省略时创建 code-only 候选；target branch 默认来自 Git provider start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'Task Environment 执行根、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver；完成交付后只向 Environment 提交 delivery identity/cleanup eligibility，并消费其 cleanup result。' },
   };
   for (const [action, help] of Object.entries(finishHelp)) HELP_TOPICS[`task finish ${action}`] = [
     help.usage,
@@ -428,10 +468,13 @@ export function registerCommandHelp(runtime) {
     if (domain === 'version') return 'version';
     if (domain === 'project' && action === 'create') return 'project create';
     if (domain === 'service' && action === 'create') return 'service create';
+    if (domain === 'task' && !action) return 'task';
+    if (domain === 'task' && ['create', 'inspect', 'update', 'complete', 'abandon'].includes(action)) return `task ${action}`;
+    if (domain === 'task' && action === 'environment' && !runtime) return 'task environment';
+    if (domain === 'task' && action === 'environment' && ['prepare', 'inspect', 'cleanup'].includes(runtime)) return `task environment ${runtime}`;
     if (domain === 'worktree' && action === 'create') return 'worktree create';
     if (domain === 'worktree' && action === 'cleanup') return 'worktree cleanup';
     if (domain === 'worktree' && action === 'inspect') return 'worktree inspect';
-    if (domain === 'worktree' && action === 'context') return 'worktree context';
     if (domain === 'verification' && action === 'run') return 'verification run';
     if (domain === 'verification' && action === 'cleanup') return 'verification cleanup';
     if (domain === 'task' && action === 'finish' && Object.hasOwn(finishHelp, runtime)) return `task finish ${runtime}`;

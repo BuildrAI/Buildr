@@ -54,11 +54,14 @@ if (!entryContent.includes("from '../src/interfaces/cli/main.mjs'")) problems.pu
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime = [
-  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs',
+  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs', 'interfaces/cli/task-record.mjs',
+  'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
   'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web/app.js',
   'application/compose-runtime.mjs', 'application/doctor.mjs', 'application/package-maintenance.mjs',
   'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
-  'application/worktree/worktree-application.mjs',
+  'application/worktree/git-worktree-provider.mjs',
+  'application/task-environment/task-environment-application.mjs', 'application/task-environment/legacy-migration.mjs',
+  'domain/task-environment/task-environment.mjs', 'infrastructure/filesystem/task-environment-repository.mjs',
   'application/task-finish/task-finish-application.mjs', 'application/task-finish/task-finish-run.mjs',
   'application/task-finish/task-finish-product-executor.mjs', 'application/task-finish/task-finish-impact.mjs',
   'application/domains/workspace.mjs', 'application/domains/rules.mjs', 'application/domains/skills.mjs',
@@ -194,7 +197,7 @@ if (fs.existsSync(registry)) {
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicates.length) problems.push(`duplicate command registry keys: ${[...new Set(duplicates)].join(', ')}`);
   const expectedKeys = [
-    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree cleanup', 'worktree inspect', 'worktree context', 'worktree adopt', 'verification run', 'verification cleanup', 'task finish inspect', 'task finish run',
+    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree cleanup', 'worktree inspect', 'verification run', 'verification cleanup', 'task create', 'task inspect', 'task update', 'task complete', 'task abandon', 'task environment prepare', 'task environment inspect', 'task environment cleanup', 'task finish inspect', 'task finish run',
     'doctor', 'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove',
     'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'openspec converge', 'openspec audit', 'component list', 'component check', 'component install',
     'component uninstall', 'rules add', 'rules remove', 'builtin list', 'builtin uninstall', 'builtin restore',
@@ -202,6 +205,51 @@ if (fs.existsSync(registry)) {
     'skills migrate-project-assets', 'skill install', 'runtime check', 'skills render', 'rules render',
   ];
   if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) problems.push('command registry keys differ from the supported CLI surface');
+}
+
+const taskRecordApplication = path.join(sourceRoot, 'application', 'task-record', 'task-record-application.mjs');
+const taskRecordInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-record.mjs');
+if (fs.existsSync(taskRecordApplication)) {
+  const source = fs.readFileSync(taskRecordApplication, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|parseCli|taskRecordCommand/.test(source)) {
+    problems.push('Task Record Application must not own CLI parsing, output, or process exit state');
+  }
+}
+if (fs.existsSync(taskRecordInterface)) {
+  const source = fs.readFileSync(taskRecordInterface, 'utf8');
+  if (!source.includes('export function taskRecordCommand') || !source.includes('runtime.createTaskRecord')) {
+    problems.push('Task Record CLI interface must adapt registry actions to the shared Application');
+  }
+}
+
+const taskEnvironmentApplication = path.join(sourceRoot, 'application', 'task-environment', 'task-environment-application.mjs');
+const taskEnvironmentInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-environment.mjs');
+if (fs.existsSync(taskEnvironmentApplication)) {
+  const source = fs.readFileSync(taskEnvironmentApplication, 'utf8');
+  if (/process\.(?:stdout|stderr|exitCode)|taskEnvironmentCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
+    problems.push('Task Environment Application must not own CLI parsing, output, or process exit state');
+  }
+}
+if (fs.existsSync(taskEnvironmentInterface)) {
+  const source = fs.readFileSync(taskEnvironmentInterface, 'utf8');
+  if (!source.includes('export async function taskEnvironmentCommand') || !source.includes('runtime.prepareTaskEnvironment')) {
+    problems.push('Task Environment CLI interface must adapt registry actions to the shared Application');
+  }
+}
+
+const gitWorktreeProvider = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');
+const gitWorktreeInterface = path.join(sourceRoot, 'interfaces', 'cli', 'git-worktree.mjs');
+if (fs.existsSync(gitWorktreeProvider)) {
+  const source = fs.readFileSync(gitWorktreeProvider, 'utf8');
+  if (/process\.(?:stdout|stderr|exitCode)|gitWorktreeCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
+    problems.push('Git worktree provider must not own CLI parsing, output, or process exit state');
+  }
+}
+if (fs.existsSync(gitWorktreeInterface)) {
+  const source = fs.readFileSync(gitWorktreeInterface, 'utf8');
+  if (!source.includes('export function gitWorktreeCommand') || !source.includes('runtime.prepareGitWorktrees')) {
+    problems.push('Git worktree CLI interface must adapt registry actions to the narrow provider Application');
+  }
 }
 
 const legacyRootToken = ['to', 'ols/'].join('');

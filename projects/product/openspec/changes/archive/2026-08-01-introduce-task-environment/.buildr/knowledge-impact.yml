@@ -1,0 +1,101 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: introduce-task-environment
+operation: reconcile
+treeIdentity: implementation-working-tree@2448db0d83ba
+impacts:
+  - type: brief
+    target: openspec/changes/introduce-task-environment/brief.md
+    reason: 正式 Change 需要面向审查者说明 Environment Receipt authority、Application/CLI、Local App、Task-scoped Change 解析、Git provider、任务验证工作区、一次性迁移和非目标
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/proposal.md
+      - openspec/changes/introduce-task-environment/design.md
+      - openspec/changes/introduce-task-environment/specs/task-environments/spec.md
+      - openspec/changes/introduce-task-environment/specs/task-record/spec.md
+      - openspec/changes/introduce-task-environment/specs/change-asset-indexing/spec.md
+      - openspec/changes/introduce-task-environment/specs/concurrent-task-acceptance/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 实现后需要新增任务环境、环境回执、任务验证工作区、任务范围 Change 引用解析器和 Git worktree provider 的中英文定义，并清除 worktree/Workspace/runtime 混用
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/design.md
+      - openspec/changes/introduce-task-environment/specs/task-environments/spec.md
+      - openspec/changes/introduce-task-environment/specs/change-asset-indexing/spec.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: P0.2 生效后正式持久交付将在 Task Record 后经过新的 Task Environment ready 门槛
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/specs/agent-task-workflows/spec.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 产品模块需要表达 Task Environment 与 Task Record、Local App、Change resolver、Development、Verification、Finish 以及 provider 的唯一 authority 边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/design.md
+      - openspec/changes/introduce-task-environment/specs/task-environments/spec.md
+      - openspec/changes/introduce-task-environment/specs/task-record/spec.md
+      - openspec/changes/introduce-task-environment/specs/change-asset-indexing/spec.md
+      - openspec/changes/introduce-task-environment/specs/concurrent-task-acceptance/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Buildr Service 将新增 Environment Receipt writer/Application、薄 CLI、Local App reader/API、Task-scoped Change resolver、稳定 controller、Git evidence 和资源/cleanup provider 接线
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/design.md
+      - openspec/changes/introduce-task-environment/specs/buildr-package-assets/spec.md
+      - openspec/changes/introduce-task-environment/specs/cli-product-surface/spec.md
+      - openspec/changes/introduce-task-environment/specs/public-json-contracts/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 实现后 Change Flow 将在正式 Task Record 后、首次持久写入前取得 ready Environment Receipt，并由 Environment 接收 Finish cleanup handoff
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/specs/agent-task-workflows/spec.md
+      - openspec/changes/introduce-task-environment/specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Task/Change 读取、Local App、worktree、Preview、Runtime/依赖准备、Finish cleanup 和 package capability topology 将切换 authority
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/specs/task-environments/spec.md
+      - openspec/changes/introduce-task-environment/specs/worktree-local-app-preview/spec.md
+      - openspec/changes/introduce-task-environment/specs/task-finish-execution/spec.md
+      - openspec/changes/introduce-task-environment/specs/task-record/spec.md
+      - openspec/changes/introduce-task-environment/specs/change-asset-indexing/spec.md
+  - type: product-architecture
+    target: docs/buildr-product.md
+    reason: 当前产品说明需要把正式 Task Environment、窄 Git provider、Local App 环境页、任务验证工作区和集成后 runtime 激活写成已交付事实
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-environment/design.md
+      - openspec/changes/introduce-task-environment/specs/task-environments/spec.md
+      - openspec/changes/introduce-task-environment/specs/task-record/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Task Environment
+    - Environment Receipt
+    - Task Validation Workspace
+    - Task-scoped Change Reference Resolver
+    - Task Environment Application
+    - Git worktree provider
+    - canonical Workspace
+    - retained Workspace
+    - Agent runtime
+  canonicalTerms: 任务环境（Task Environment）、环境回执（Environment Receipt）、任务环境应用（Task Environment Application）、任务验证工作区（Task Validation Workspace）、任务范围 Change 引用解析器（Task-scoped Change Reference Resolver）、Git 工作树提供方（Git worktree provider）、保留工作区（retained Workspace）、Agent 运行时（Agent runtime）
+  changedAssets:
+    - openspec/knowledge/glossary.md
+    - openspec/knowledge/overview.md
+    - openspec/knowledge/architecture/product.md
+    - openspec/knowledge/architecture/technical.md
+    - openspec/knowledge/flows/openspec-change-lifecycle.md
+    - openspec/knowledge/services/buildr.md
+    - docs/buildr-product.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/changes/introduce-task-environment/design.md
+    - openspec/changes/introduce-task-environment/specs/task-environments/spec.md
+    - openspec/changes/introduce-task-environment/specs/change-asset-indexing/spec.md
+unresolvedItems: []

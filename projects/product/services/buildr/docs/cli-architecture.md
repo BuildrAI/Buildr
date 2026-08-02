@@ -9,12 +9,14 @@ bin/                         npm executable 薄入口
 src/
   domain/
     workspace/               Workspace 实体、UUID 格式与纯字段约束
+    task-record/             Task Record closed schema、状态与纯字段约束
   application/               用例、跨模块组合和产品 verifier
     domains/                 现有领域操作 handler；尚非纯领域模型
+    task-record/             五个 Task Record action、引用校验与 read/result model
     workspace/               Workspace 查询、修改、迁移和 prompt 用例
     worktree/                Canonical task checkout 与创建后环境 bootstrap 用例
   infrastructure/            filesystem、network、platform、Agent runtime adapters
-    filesystem/              Manifest repository、路径、YAML、revision 与 transaction primitive
+    filesystem/              Manifest/Task Record repository、路径、YAML、revision 与 transaction primitive
   interfaces/
     cli/                     CLI registry、help、参数与输出 adapter
     local-app/               loopback HTTP 与离线 Workspace Web 页面
@@ -64,6 +66,8 @@ infrastructure/runtime/render-claude-code.mjs
 ```
 
 CLI command 只在 `src/interfaces/cli/registry.mjs` 登记一次。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+
+Task Record 是当前完成垂直切片的领域：`domain/task-record` 只验证 closed v1 record 与状态，`application/task-record` 拥有 create/inspect/update/complete/abandon、registry/Change 引用解析和响应级 digest 前置条件，`interfaces/cli/task-record.mjs` 只拥有 argv/输出/退出码适配，`infrastructure/filesystem/task-record-repository.mjs` 只拥有 canonical `.buildr/tasks/<task-id>/task.yml` 的 parse/render/atomic replace。Repository 通过 Git topology 判断 linked worktree，不把整个 Task 目录纳入 transaction/rollback，已有 sibling 一律保持不变。CLI 与 Local App HTTP/Web 都只适配同一 Application；Web feature 不读取 YAML，HTTP interface 不接受 caller 提供的 filesystem path。Task Environment、Development、Review、Verification、Git、Finish、Board 与 Retrospective 仍由各自模块拥有，不能进入 Task Record repository。
 
 Task Finish 的 CLI adapter 只解析 `run|inspect`。首次 run 从 environment receipt 取得 task identity，要求 Project，并按可选 Change 形成 `candidateKind: change|code-only`；不会接受第二份 caller task identity。`task-finish-run.mjs` 持有唯一 canonical run store、freeze、产品 resume token 与结果投射，`task-finish-product-executor.mjs` 对 Change 条件执行 OpenSpec check/convergence，并为两类候选组合 verification、Git、runtime 和 worktree 动作。没有 action registry、caller completion、typed recovery parser 或旧协议 reader。执行动作记录 cwd、exit、duration、有界输出与 digest，顶层结果直接投射具体 primary failure。当前实现直接替换旧执行器，不建立并行版本目录或兼容分支；retained metadata-only 的精确 Git handoff 属于 Task Finish Skill，不进入 CLI 产品 executor。
 

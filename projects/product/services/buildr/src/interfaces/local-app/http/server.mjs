@@ -18,6 +18,7 @@ import {
 import {
   listPreviews,
   readPreviewIdentityFromEnvironment,
+  registerLocalAppPreviewResourceProvider,
   startPreview,
   stopPreview,
 } from '../runtime/preview-manager.mjs';
@@ -27,7 +28,8 @@ import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
-const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
+const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
+const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
 const STATIC_ASSETS = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/api-client.js', ['api-client.js', 'text/javascript; charset=utf-8']],
@@ -36,6 +38,8 @@ const STATIC_ASSETS = new Map([
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/features/workspaces.js', ['features/workspaces.js', 'text/javascript; charset=utf-8']],
   ['/features/workspace.js', ['features/workspace.js', 'text/javascript; charset=utf-8']],
+  ['/features/tasks.js', ['features/tasks.js', 'text/javascript; charset=utf-8']],
+  ['/features/task-detail.js', ['features/task-detail.js', 'text/javascript; charset=utf-8']],
   ['/features/projects.js', ['features/projects.js', 'text/javascript; charset=utf-8']],
   ['/features/project-detail.js', ['features/project-detail.js', 'text/javascript; charset=utf-8']],
   ['/features/project-edit.js', ['features/project-edit.js', 'text/javascript; charset=utf-8']],
@@ -130,6 +134,32 @@ function assertWriteRequest(request, origin, sessionToken) {
     error.status = 415;
     throw error;
   }
+}
+
+async function readAllowedJsonBody(request, allowed, label) {
+  const input = await readJsonBody(request);
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    const error = new Error(`${label} 请求必须是 JSON object。`);
+    error.code = 'task_api_input_invalid';
+    error.status = 400;
+    throw error;
+  }
+  for (const field of Object.keys(input)) {
+    if (['target', 'root', 'path'].includes(field)) {
+      const error = new Error('Task API 不接受 filesystem path。');
+      error.code = 'target_forbidden';
+      error.status = 400;
+      throw error;
+    }
+    if (!allowed.has(field)) {
+      const error = new Error(`${label} 不支持字段：${field}。`);
+      error.code = 'task_api_field_forbidden';
+      error.status = 400;
+      error.details = { field };
+      throw error;
+    }
+  }
+  return input;
 }
 
 function staticFile(name) {
@@ -259,6 +289,53 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           return jsonResponse(response, 200, runtime.updateWorkspaceMetadata(root, await readJsonBody(request)));
         }
         if (request.method === 'GET' && suffix === '/projects') return jsonResponse(response, 200, runtime.listProjects(root));
+        const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
+        if (taskApi && requestUrl.searchParams.size > 0) {
+          const error = new Error('Task API 不接受 query 参数。');
+          error.code = 'task_api_query_forbidden';
+          error.status = 400;
+          throw error;
+        }
+        if (request.method === 'GET' && suffix === '/tasks') return jsonResponse(response, 200, runtime.listTaskRecords(root));
+        if (request.method === 'POST' && suffix === '/tasks') {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes']), 'Task create');
+          return jsonResponse(response, 201, runtime.createTaskRecord(root, input));
+        }
+        const taskMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})$`));
+        if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecord(root, taskMatch[1]));
+        if (request.method === 'PATCH' && taskMatch) {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');
+          if (!Object.hasOwn(input, 'expectedRecordDigest')) {
+            const error = new Error('Task update 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error;
+          }
+          return jsonResponse(response, 200, runtime.updateTaskRecord(root, taskMatch[1], input));
+        }
+        const taskEnvironmentMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/environment$`));
+        if (request.method === 'GET' && taskEnvironmentMatch) {
+          runtime.inspectTaskRecord(root, taskEnvironmentMatch[1]);
+          return jsonResponse(response, 200, runtime.inspectTaskEnvironment(root, taskEnvironmentMatch[1]));
+        }
+        const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
+        if (request.method === 'GET' && taskChangeMatch) {
+          runtime.inspectTaskRecord(root, taskChangeMatch[1]);
+          return jsonResponse(response, 200, runtime.taskScopedChangeDetail(root, taskChangeMatch[1], taskChangeMatch[2], taskChangeMatch[3]));
+        }
+        const taskCompleteMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/complete$`));
+        if (request.method === 'POST' && taskCompleteMatch) {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'summary', 'noChange']), 'Task complete');
+          if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task complete 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
+          return jsonResponse(response, 200, runtime.completeTaskRecord(root, taskCompleteMatch[1], input));
+        }
+        const taskAbandonMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/abandon$`));
+        if (request.method === 'POST' && taskAbandonMatch) {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'reason']), 'Task abandon');
+          if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task abandon 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
+          return jsonResponse(response, 200, runtime.abandonTaskRecord(root, taskAbandonMatch[1], input));
+        }
         if (request.method === 'GET' && suffix === '/changes') return jsonResponse(response, 200, runtime.listChanges(root));
         const projectMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
         if (request.method === 'GET' && projectMatch) return jsonResponse(response, 200, runtime.projectDetail(root, projectMatch[1]));
@@ -316,6 +393,7 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
 }
 
 export function registerLocalWorkspaceAppInterface(runtime) {
+  registerLocalAppPreviewResourceProvider(runtime);
   async function startLocalWorkspaceApp(args) {
     runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open']), new Set(['--no-open']));
     const targetValue = runtime.optionValue(args, '--target', null);
@@ -387,7 +465,7 @@ export function registerLocalWorkspaceAppInterface(runtime) {
   async function manageLocalAppPreview(action, args) {
     if (action === 'start') {
       const [name, ...options] = args;
-      if (!name) throw new Error('Usage: buildr app preview start <instance> [--target <workspace>] [--port <port>] [--no-open] [--json]');
+      if (!name) throw new Error('Usage: buildr app preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]');
       const result = await startPreview(runtime, name, options);
       if (options.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
       else console.log(`Buildr 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}`);
@@ -403,19 +481,27 @@ export function registerLocalWorkspaceAppInterface(runtime) {
     }
     if (action === 'stop') {
       const [name, ...options] = args;
-      if (!name) throw new Error('Usage: buildr app preview stop <instance> [--target <task-environment>] [--task <task-id>] [--owner <agent>] [--json]');
-      runtime.assertNoUnknownOptions(options, new Set(['--target', '--task', '--owner', '--json']), new Set(['--json']));
+      if (!name) throw new Error('Usage: buildr app preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]');
+      runtime.assertNoUnknownOptions(options, new Set(['--target', '--task', '--json']), new Set(['--json']));
       const target = runtime.optionValue(options, '--target', null);
       const taskId = runtime.optionValue(options, '--task', null);
-      const owner = runtime.optionValue(options, '--owner', null);
       let caller = null;
-      if (target || taskId || owner) {
-        if (!target || !taskId || !owner) throw new Error('Task preview stop requires --target, --task and --owner together.');
-        const context = runtime.resolveTaskEnvironmentContext(path.resolve(target));
-        if (!context?.executionReady) throw new Error(context?.blocked?.message || 'Task preview stop requires an execution-ready task environment receipt.');
-        caller = { taskId, owner, environmentRoot: context.environmentRoot, receiptIdentity: context.environmentEvidence?.planDigest || null };
+      let environmentResource = null;
+      if (target || taskId) {
+        if (!target || !taskId) throw new Error('Task preview stop requires --target and --task together.');
+        const workspaceRoot = path.resolve(target);
+        const context = runtime.resolveTaskEnvironmentExecution(workspaceRoot, taskId);
+        if (!context?.ready) throw new Error(context?.blocked?.message || 'Task preview stop requires a ready Task Environment.');
+        runtime.assertTaskEnvironmentController(workspaceRoot, taskId);
+        environmentResource = context.resources.find((resource) => resource.provider === 'local-app-preview' && resource.handle?.instance === name && resource.status !== 'released');
+        if (!environmentResource) { const error = new Error(`Environment 没有 matching preview resource：${name}。`); error.code = 'preview_environment_resource_missing'; throw error; }
+        caller = { taskId, workspaceRoot: context.workspaceRoot, environmentRoot: context.validationRoot, controllerIdentity: context.controller.identity, resourceId: environmentResource.id };
       }
-      const result = await stopPreview(name, { caller });
+      const result = await stopPreview(name, { caller, retainOwner: Boolean(environmentResource) });
+      if (environmentResource) {
+        result.environmentResource = runtime.releaseTaskEnvironmentResource(path.resolve(target), taskId, { id: environmentResource.id, provider: 'local-app-preview', probe: { status: 'blocked', identity: environmentResource.identity.providerIdentity, observedAt: new Date().toISOString(), diagnostic: 'Preview 已由 provider 认证停止。' } }).resource;
+        await stopPreview(name, { caller });
+      }
       if (options.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
       else console.log(`Buildr 开发预览已停止：${result.instance}`);
       return result;

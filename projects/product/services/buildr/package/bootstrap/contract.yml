@@ -93,7 +93,7 @@ buildrSkillRequiredText:
   - buildr update
   - buildr builtin list
   - 请联系 Buildr 作者反馈该 Agent
-  - task-worktree
+  - task-environment
   - task-verification
   - task-finish
   - task-board
@@ -101,6 +101,8 @@ buildrSkillRequiredText:
   - capability-adaptation
   - buildr.git-single-operation/v1
   - buildr.git-workspace-update/v1
+  - buildr.task-environment/v1
+  - buildr.git-worktree-provider/v1
   - buildr.task-verification/v2
   - components/manifest.yml
   - buildr component install

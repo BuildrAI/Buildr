@@ -25,7 +25,7 @@ const summary = {
   tasks: [], cliExecutions: [], previews: [], previewConcurrency: null,
   resourceCoordination: null, targetRace: null, failureDiagnostics: null,
   verificationRuns: [],
-  cleanup: { previews: [], resources: [], worktrees: [], branches: [], receipts: [] },
+  cleanup: { previews: [], resources: [], environments: [], branches: [], receipts: [] },
   retainedDoctor: null, durationMs: 0,
 };
 
@@ -70,14 +70,15 @@ function runWorker(root, taskId, acquiredFile, releaseFile) {
 function runTaskInvocation(task, cwd) {
   const result = spawnSync(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
-    'worktree', 'context', '--target', task.repositories.find((item) => item.selector === 'project:nested').checkoutPath, '--json',
+    'task', 'environment', 'inspect', task.taskId, '--target', workspace, '--json',
   ], { cwd, env, encoding: 'utf8', timeout: 10_000 });
-  const context = requireSuccess(result, `CLI invocation ${task.taskId}`);
-  assert.equal(context.taskId, task.taskId);
-  assert.equal(context.membership.selector, 'project:nested');
-  assert.deepEqual(context.allowedExecutionRoots, task.repositories.map((item) => item.checkoutPath));
-  assert.equal(context.executionBinding.cliIdentity, task.cliIdentity);
-  return { taskId: task.taskId, cwd, command: task.cliInvocation.command, membership: context.membership.selector, cliIdentity: context.executionBinding.cliIdentity, executionReady: context.executionReady };
+  const inspected = requireSuccess(result, `CLI invocation ${task.taskId}`);
+  assert.equal(inspected.taskId, task.taskId);
+  assert.equal(inspected.status, 'ready');
+  assert.deepEqual(inspected.environment.scopes.map((scope) => scope.selector), ['workspace', 'project:nested']);
+  assert.deepEqual(inspected.execution.allowedExecutionRoots, task.allowedExecutionRoots);
+  assert.equal(inspected.environment.controller.identity, task.controllerIdentity);
+  return { taskId: task.taskId, cwd, command: task.cliInvocation.command, scopes: inspected.environment.scopes.map((scope) => scope.selector), controllerIdentity: inspected.environment.controller.identity, ready: inspected.execution.ready };
 }
 
 function releaseWorkers() {
@@ -132,11 +133,20 @@ try {
   commitIfDirty(workspace, 'register nested repository');
 
   for (const taskId of taskIds) {
-    const created = requireSuccess(runBuildr(['worktree', 'create', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--include', 'project:nested', '--target', workspace, '--json']), `create ${taskId}`);
-    assert.equal(created.executionReady, true);
-    assert.equal(path.isAbsolute(created.cliInvocation.command), true);
-    assert.deepEqual(created.repositories.map((item) => item.selector), ['workspace', 'project:nested']);
-    summary.tasks.push({ taskId, environmentRoot: created.environment.root, repositories: created.repositories, allowedExecutionRoots: created.repositories.map((item) => item.checkoutPath), cliInvocation: created.cliInvocation, cliIdentity: created.executionBinding.cliIdentity });
+    requireSuccess(runBuildr(['task', 'create', taskId, '--title', taskId, '--intent', '验证双 Task Environment 并发', '--project', 'nested', '--target', workspace, '--json']), `create Task ${taskId}`);
+    const prepared = requireSuccess(runBuildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', workspace, '--json']), `prepare ${taskId}`);
+    assert.equal(prepared.status, 'ready');
+    assert.equal(prepared.execution.ready, true);
+    assert.equal(path.isAbsolute(prepared.execution.cliInvocation.command), true);
+    assert.deepEqual(prepared.environment.scopes.map((scope) => scope.selector), ['workspace', 'project:nested']);
+    summary.tasks.push({
+      taskId,
+      environmentRoot: prepared.execution.workdir,
+      repositories: prepared.environment.scopes.map((scope) => ({ selector: scope.selector, checkoutPath: scope.executionRoot })),
+      allowedExecutionRoots: prepared.execution.allowedExecutionRoots,
+      cliInvocation: prepared.execution.cliInvocation,
+      controllerIdentity: prepared.environment.controller.identity,
+    });
   }
   assert.notEqual(summary.tasks[0].environmentRoot, summary.tasks[1].environmentRoot);
   assert.notEqual(summary.tasks[0].repositories[1].checkoutPath, summary.tasks[1].repositories[1].checkoutPath);
@@ -147,8 +157,8 @@ try {
   const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
     'verification', 'run', '--project', 'nested', '--level', 'candidate', '--target', task.environmentRoot,
-    '--environment', task.taskId, '--owner', 'codex', '--json',
-  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: 15_000 }));
+    '--environment', task.taskId, '--workspace', workspace, '--json',
+  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: 15_000, outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);
   summary.verificationRuns = verificationResults.map((result, index) => {
@@ -163,7 +173,7 @@ try {
   const previewRuns = summary.tasks.map((task) => {
     const instance = `${task.taskId}-preview`;
     previews.push(instance);
-    return spawnSupervised(process.execPath, [BUILDR, 'app', 'preview', 'start', instance, '--target', task.environmentRoot, '--no-open', '--json'], {
+    return spawnSupervised(process.execPath, [BUILDR, 'app', 'preview', 'start', instance, '--task', task.taskId, '--target', workspace, '--no-open', '--json'], {
       cwd: task.repositories[1].checkoutPath,
       env,
       owner: { taskId: task.taskId, instance },
@@ -179,12 +189,13 @@ try {
   assert.notEqual(summary.previews[0].port, summary.previews[1].port);
   assert.deepEqual(summary.previews.map((item) => item.owner.taskId), taskIds);
   assert.equal(summary.previews.every((item) => fs.existsSync(item.stateRoot)), true);
-  const prematureCleanup = runBuildr(['worktree', 'cleanup', taskIds[0], '--agent', 'codex', '--integrated-ref', 'workspace=dev', '--integrated-ref', 'project:nested=dev', '--target', workspace, '--json']);
+  const prematureCleanup = runBuildr(['task', 'environment', 'cleanup', taskIds[0], '--target', workspace, '--json']);
   assert.notEqual(prematureCleanup.status, 0);
   const prematureCleanupResult = JSON.parse(prematureCleanup.stdout);
-  assert.equal(prematureCleanupResult.blocked.code, 'worktree.cleanup_runtime_active');
+  assert.equal(prematureCleanupResult.diagnostic.code, 'task_environment_cleanup_unauthorized');
   assert.equal(fs.existsSync(summary.tasks[0].environmentRoot), true);
-  summary.cleanup.receipts.push({ taskId: taskIds[0], runtimeGuard: prematureCleanupResult.blocked.code, environmentPreserved: true });
+  assert.equal(requireSuccess(runBuildr(['task', 'environment', 'inspect', taskIds[0], '--target', workspace, '--json']), 'inspect active resource').environment.resources.some((resource) => resource.kind === 'preview' && resource.status === 'running'), true);
+  summary.cleanup.receipts.push({ taskId: taskIds[0], authorizationGuard: prematureCleanupResult.diagnostic.code, environmentPreserved: true });
   summary.previewConcurrency = { overlapped: true, processes: previewResults.map(({ owner, pid, startedAt, finishedAt, durationMs, exitCode, signal }) => ({ owner, pid, startedAt, finishedAt, durationMs, exitCode, signal })) };
   if (process.env.BUILDR_ACCEPTANCE_INJECT_FAILURE === 'after-previews') throw new Error('Injected acceptance failure after concurrent previews');
 
@@ -246,32 +257,28 @@ try {
     const task = summary.tasks.find((item) => item.taskId === taskId);
     const other = summary.tasks.find((item) => item.taskId !== taskId);
     if (task && other) {
-      const wrongOwner = runBuildr(['app', 'preview', 'stop', instance, '--target', other.environmentRoot, '--task', other.taskId, '--owner', 'codex', '--json']);
+      const wrongOwner = runBuildr(['app', 'preview', 'stop', instance, '--target', workspace, '--task', other.taskId, '--json']);
       summary.cleanup.previews.push({ instance, status: wrongOwner.status === 0 ? 'owner-guard-failed' : 'wrong-owner-rejected', diagnostic: (wrongOwner.stderr || wrongOwner.stdout).trim() });
     }
     const stopped = task
-      ? runBuildr(['app', 'preview', 'stop', instance, '--target', task.environmentRoot, '--task', task.taskId, '--owner', 'codex', '--json'])
+      ? runBuildr(['app', 'preview', 'stop', instance, '--target', workspace, '--task', task.taskId, '--json'])
       : runBuildr(['app', 'preview', 'stop', instance, '--json']);
     summary.cleanup.previews.push({ instance, status: stopped.status === 0 ? 'stopped' : 'failed', diagnostic: stopped.status === 0 ? null : (stopped.stderr || stopped.stdout).trim() });
   }
   if (fs.existsSync(workspace)) {
     for (const task of summary.tasks) {
       if (!fs.existsSync(task.environmentRoot)) continue;
-      if (task.taskId === taskIds[0]) {
-        const wrongOwner = runBuildr(['worktree', 'cleanup', task.taskId, '--agent', 'claude-code', '--integrated-ref', 'workspace=dev', '--integrated-ref', 'project:nested=dev', '--target', workspace, '--json']);
-        let negative = null;
-        try { negative = JSON.parse(wrongOwner.stdout); } catch {}
-        summary.cleanup.receipts.push({ taskId: task.taskId, ownerGuard: negative?.blocked?.code || 'missing-diagnostic', environmentPreserved: fs.existsSync(task.environmentRoot) });
-      }
-      const cleaned = runBuildr(['worktree', 'cleanup', task.taskId, '--agent', 'codex', '--integrated-ref', 'workspace=dev', '--integrated-ref', 'project:nested=dev', '--target', workspace, '--json']);
+      const record = runBuildr(['task', 'inspect', task.taskId, '--target', workspace, '--json']);
+      if (record.status === 0 && JSON.parse(record.stdout).record.status === 'active') runBuildr(['task', 'abandon', task.taskId, '--reason', 'concurrent acceptance fixture complete', '--target', workspace, '--json']);
+      const cleaned = runBuildr(['task', 'environment', 'cleanup', task.taskId, '--target', workspace, '--json']);
       let result = null;
       try { result = JSON.parse(cleaned.stdout); } catch {}
-      summary.cleanup.worktrees.push({ taskId: task.taskId, status: result?.status || 'failed', repositories: result?.repositories || [], diagnostic: cleaned.status === 0 ? null : (cleaned.stderr || cleaned.stdout).trim() });
-      summary.cleanup.branches.push(...(result?.branches || []));
-      summary.cleanup.receipts.push({ taskId: task.taskId, environment: result?.receipts?.environment || 'failed', adoption: result?.receipts?.adoption || 'unknown' });
+      summary.cleanup.environments.push({ taskId: task.taskId, status: result?.status || 'failed', effects: result?.effects || [], diagnostic: cleaned.status === 0 ? null : (cleaned.stderr || cleaned.stdout).trim() });
+      summary.cleanup.branches.push(...(result?.effects || []).filter((effect) => effect.type === 'local-branch-removed'));
+      summary.cleanup.receipts.push({ taskId: task.taskId, environment: result?.environment?.latest?.cleanup?.status || 'failed' });
       if (task.taskId === taskIds[0]) {
         const other = summary.tasks.find((item) => item.taskId === taskIds[1]);
-        const inspected = runBuildr(['worktree', 'inspect', other.taskId, '--target', workspace, '--json']);
+        const inspected = runBuildr(['task', 'environment', 'inspect', other.taskId, '--target', workspace, '--json']);
         summary.cleanup.receipts.push({ taskId: other.taskId, preservedAfterOtherCleanup: inspected.status === 0 && fs.existsSync(other.environmentRoot) });
       }
     }
@@ -285,12 +292,11 @@ try {
   const cleanupPassed = summary.cleanup.previews.every((item) => ['stopped', 'wrong-owner-rejected'].includes(item.status))
     && summary.cleanup.previews.filter((item) => item.status === 'wrong-owner-rejected').length === taskIds.length
     && summary.cleanup.resources.every((item) => ['released', 'not-applicable'].includes(item.status))
-    && summary.cleanup.worktrees.length === taskIds.length
-    && summary.cleanup.worktrees.every((item) => item.status === 'removed')
-    && summary.cleanup.receipts.some((item) => item.ownerGuard === 'worktree.cleanup_owner_mismatch' && item.environmentPreserved === true)
-    && summary.cleanup.receipts.some((item) => item.runtimeGuard === 'worktree.cleanup_runtime_active' && item.environmentPreserved === true)
+    && summary.cleanup.environments.length === taskIds.length
+    && summary.cleanup.environments.every((item) => item.status === 'cleaned')
+    && summary.cleanup.receipts.some((item) => item.authorizationGuard === 'task_environment_cleanup_unauthorized' && item.environmentPreserved === true)
     && summary.cleanup.receipts.some((item) => item.taskId === taskIds[1] && item.preservedAfterOtherCleanup === true)
-    && summary.cleanup.receipts.filter((item) => item.environment).every((item) => item.environment === 'removed');
+    && summary.cleanup.receipts.filter((item) => item.environment).every((item) => item.environment === 'cleaned');
   if (!cleanupPassed || summary.retainedDoctor?.ready !== true) {
     summary.status = 'failed';
     process.exitCode = 1;

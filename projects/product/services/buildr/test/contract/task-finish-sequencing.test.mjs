@@ -23,13 +23,13 @@ test('Task Finish 新协议只有五阶段且产品缺陷退出收尾', () => {
   assert.match(finish, /nextWorkflow: task-development/);
 });
 
-test('Task Finish 同时治理 code-only 产品 run 与 retained metadata-only handoff', () => {
-  for (const source of [finish, finishContract]) {
-    for (const phrase of ['code-only', 'metadata-only', 'buildr.git-single-operation@1', 'git add -A', 'git-single-operation-handoff']) assert.ok(source.includes(phrase), phrase);
-  }
-  assert.match(finish, /--project <project-code> \[--change <change-id>\]/);
-  assert.match(finishContract, /普通产品 run 不依赖该 provider/);
+test('Task Finish 产品 run 必须消费 Task Environment，metadata-only Git 交接仍保持窄边界', () => {
+  for (const phrase of ['code-only', 'metadata-only', 'buildr.git-single-operation@1', 'git add -A', 'git-single-operation-handoff']) assert.ok(finishContract.includes(phrase), phrase);
+  assert.match(finish, /--task <task-id> --project <project-code> \[--change <change-id>\]/);
+  assert.match(finish, /task environment inspect <task-id> --target <canonical-workspace>/);
+  assert.match(finishContract, /普通产品 run 必须消费 `buildr\.task-environment\/v1`/);
   for (const manifest of [packageManifest, workspaceSkills]) {
+    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-environment[\s\S]*version: 1[\s\S]*mode: required/);
     assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.git-single-operation[\s\S]*version: 1[\s\S]*mode: optional/);
   }
 });

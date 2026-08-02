@@ -70,9 +70,18 @@ test('当前客户端拒绝旧 action 与 caller-authored 协议参数', (t) => 
 
 test('canonical run 要求 receipt-bound task environment，帮助只列 run 与 inspect', (t) => {
   const root = fixture(t);
-  const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--change', 'finish-current', '--project', 'product', '--target', root, '--json'], { encoding: 'utf8' });
+  const initialized = spawnSync(process.execPath, [cli, 'init', '--target', root, '--name', 'finish-cli', '--description', 'Task Finish CLI fixture', '--profile', 'team'], { encoding: 'utf8' });
+  assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
+
+  const missingTask = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--change', 'finish-current', '--project', 'product', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(missingTask.status, 2, missingTask.stderr || missingTask.stdout);
+  assert.equal(JSON.parse(missingTask.stdout).error.code, 'task_finish.missing_parameter');
+
+  const created = spawnSync(process.execPath, [cli, 'task', 'create', 'finish-cli-task', '--title', 'Finish CLI Task', '--intent', '验证 Task Environment 门禁', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(created.status, 0, created.stderr || created.stdout);
+  const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--change', 'finish-current', '--project', 'product', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(rejected.status, 2, rejected.stderr || rejected.stdout);
-  assert.equal(JSON.parse(rejected.stdout).error.code, 'task_finish.not_task_environment');
+  assert.equal(JSON.parse(rejected.stdout).error.code, 'task_environment_no_receipt');
 
   const runHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'run'], { encoding: 'utf8' });
   const inspectHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'inspect'], { encoding: 'utf8' });
@@ -81,7 +90,7 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   const helpText = `${runHelp.stdout}\n${inspectHelp.stdout}`;
   assert.match(helpText, /task finish run/);
   assert.match(helpText, /task finish inspect/);
-  assert.match(helpText, /--project <code> \[--change <id>\]/);
+  assert.match(helpText, /--task <task-id> --project <code> \[--change <id>\]/);
   assert.match(helpText, /--change 只对 Change 候选必需/);
   assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);
 });

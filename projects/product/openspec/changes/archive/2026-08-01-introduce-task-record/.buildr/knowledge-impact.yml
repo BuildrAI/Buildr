@@ -1,0 +1,92 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: introduce-task-record
+operation: reconcile
+treeIdentity: implementation-working-tree-sha256-927cd423fbf47a90c0c60785ff2b1298c40f7e88f9ece7a90644c8f99d8b8a90
+impacts:
+  - type: brief
+    target: openspec/changes/introduce-task-record/brief.md
+    reason: 正式 Change 需要面向人表达 Task Manager 命名、最小 v1、Local App 展示与管理、精确 task.yml ownership、专业模块禁区、逐模块迁移和候选/retained 自举边界
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/task-record/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 正式任务、任务记录与任务管理器是新的公开产品术语，必须与 Task Context、OpenSpec Change、Agent task/thread 和专业模块区分
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-record/design.md
+      - openspec/changes/introduce-task-record/specs/task-record/spec.md
+      - services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: Task workflow 将以 Task Record Application 和 Task Record 作为新正式 Task 的顶层事实入口，并在 Local App 提供人的最小入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-record/specs/agent-task-workflows/spec.md
+      - services/buildr/src/application/task-record/task-record-application.mjs
+      - services/buildr/src/interfaces/local-app/web/features/tasks.js
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 产品模型需要说明 Agent 与人分别通过 task-manager 和 Local App 使用同一 Application，以及专业模块按 Task ID 保持独立 authority
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-record/design.md
+      - openspec/changes/introduce-task-record/specs/task-record/spec.md
+      - openspec/changes/introduce-task-record/specs/agent-task-workflows/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Buildr Service 将新增 Task Record Application/repository、独立 CLI interface 及 Workspace-scoped Local App API，需记录精确文件 ownership、HTTP 安全、响应级 digest 与候选 runtime target 边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-record/specs/task-record/spec.md
+      - services/buildr/src/application/task-record/task-record-application.mjs
+      - services/buildr/src/infrastructure/filesystem/task-record-repository.mjs
+      - services/buildr/src/infrastructure/git/checkout-identity.mjs
+      - services/buildr/src/interfaces/cli/task-record.mjs
+      - services/buildr/src/application/runtime.mjs
+      - services/buildr/src/interfaces/local-app/http/server.mjs
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 正式 Change 首次写入前将新增 Task Record 前置条件，且 Local App 创建的 Task 可由 Agent 按同一 Task ID 恢复
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-record/specs/agent-task-workflows/spec.md
+      - services/buildr/package/targets/workspace/skills/buildr/task-triage/SKILL.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 将新增最小 Task Record Domain/Application/filesystem repository、独立 CLI interface、五个 CLI action、Local App Task routes/API/UI、候选 runtime target 保护和随包 Task Manager capability
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-record/specs/cli-product-surface/spec.md
+      - openspec/changes/introduce-task-record/specs/task-record/spec.md
+      - services/buildr/src/application/task-record/task-record-application.mjs
+      - services/buildr/src/interfaces/cli/task-record.mjs
+      - services/buildr/src/application/runtime.mjs
+      - services/buildr/src/interfaces/local-app/http/server.mjs
+      - services/buildr/package/manifest.yml
+terminology:
+  status: updated
+  termsConsulted:
+    - Task
+    - Formal Task
+    - Task Record
+    - Task Manager
+    - Task Environment
+    - Task Validation Workspace
+    - Local App
+  canonicalTerms: 正式任务（Formal Task）、任务记录（Task Record）、任务管理器（Task Manager）；任务验证工作区（Task Validation Workspace）仅作为 P0.2 Roadmap 术语，Task Environment 与专业阶段保持独立 authority
+  changedAssets:
+    - openspec/knowledge/glossary.md
+    - openspec/knowledge/overview.md
+    - openspec/knowledge/architecture/product.md
+    - openspec/knowledge/architecture/technical.md
+    - openspec/knowledge/flows/openspec-change-lifecycle.md
+    - openspec/knowledge/services/buildr.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/changes/introduce-task-record/design.md
+    - openspec/changes/introduce-task-record/specs/task-record/spec.md
+    - services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md
+unresolvedItems: []

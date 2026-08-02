@@ -108,17 +108,27 @@ Task Finish MUST 根据 current run、freeze record、command observations、tar
 - **AND** MUST NOT 要求 Agent 猜测或手写 recovery JSON
 
 ### Requirement: Cleanup 必须由 retained checkout 完成真实收尾
-`cleanup` MUST 在 retained checkout 先写 durable completion，再清理 verification transient evidence、task-owned runtime/process 和本地 task environment/branch。删除前 MUST 证明 integration/push 已完成、repository clean、资源 owner 匹配且其他任务不受影响；无法证明时 MUST 保留现场并只阻塞 cleanup。
+`cleanup` MUST 由 retained finalizer 先写 durable Finish completion/delivery facts，再通过 Environment Receipt 中的稳定 controller 向 selected `buildr.task-environment/v1` provider 提交每个工作范围的 delivery identity 与 cleanup eligibility。Task Environment MUST 独占资源停止、provider cleanup、共享根解除占用和 Environment cleanup result；Task Finish MUST 只记录 handoff/result summary，MUST NOT 直接扫描资源、调用 worktree cleanup、删除 branch/checkout 或写第二份环境结论。
 
 #### Scenario: 资源可安全清理
-- **WHEN** frozen candidate 已交付、completion receipt durable 且所有 task-owned 资源可证明
-- **THEN** retained finalizer MUST 删除允许的本地资源并完成 run
-- **AND** completion MUST 记录 removed/retained resources 与 cleanup status
+- **WHEN** frozen candidate 已交付、Finish completion durable，且 Environment 复核全部 Task-owned 资源/provider evidence 可安全处置
+- **THEN** Task Environment MUST 停止动态资源、调用适用 provider cleanup 并返回 removed/retained evidence
+- **AND** Finish cleanup stage MUST 记录 Environment result reference/status 后完成 run
 
-#### Scenario: Task-owned 进程仍在运行
-- **WHEN** cleanup 观察到匹配 owner 的 preview 或 runtime 尚未停止
-- **THEN** cleanup MUST 返回 resumable blocked 并保留 environment
-- **AND** MUST NOT 重跑 prepare、verify 或 deliver，也不得终止未知进程
+#### Scenario: Task-owned 资源仍在运行或无法证明
+- **WHEN** Environment cleanup 观察到 matching preview/runtime 未停止、provider identity 不匹配、shared root ownership 不明或其他 Task 仍占用资源
+- **THEN** Environment MUST 返回 resumable `blocked` 并保留现场
+- **AND** Finish MUST 只保留 cleanup resume point，不得重跑 prepare、verify、deliver 或自行终止/删除资源
+
+#### Scenario: Finish 尝试直接调用 Git provider
+- **WHEN** Finish cleanup path 绕过 Task Environment 请求 `worktree cleanup`、删除 branch/checkout 或解释 provider evidence
+- **THEN** product verification MUST fail 并指出越过 Environment authority 的调用路径
+- **AND** Git provider MUST 只接受 Task Environment 提供的 matching cleanup handoff
+
+#### Scenario: Environment 已清理但 Finish 尚未完成
+- **WHEN** Environment Receipt 已记录 matching complete cleanup，而 Finish run 因 retained metadata 写入等后续暂态条件中断
+- **THEN** resume MUST 复用同一 Environment result，不得再次停止资源或调用 provider cleanup
+- **AND** Finish MUST 只完成自己尚未持久化的 result/completion 动作
 
 ### Requirement: Current run 与结果必须直接表达阶段、失败和效率
 Canonical Task Finish MUST 写入 `buildr.task-finish-run/v1` 并返回 compact `buildr.task-finish-result/v1`。结果 MUST 包含 task/change/candidate/target identity、五阶段状态与 timing、当前 primary failure、bounded diagnostic、resume/development handoff、formal verification execution count、product command observations、CLI invocation count、Agent provider completion count、manual recovery count、wall-clock coverage 和 cleanup/completion。Full detail MUST 通过有界 digest 绑定引用提供，不得让大日志淹没 compact failure。

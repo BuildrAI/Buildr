@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 
 import { executeFinishRun, inspectFinishRun, readFinishRun, resolveFinishRun } from './task-finish-run.mjs';
@@ -11,7 +10,7 @@ function inputError(code, message, action) {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--change', '--project', '--agent', '--target-branch', '--remote', '--required-assurance', '--verification-summary', '--resume', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--change', '--project', '--agent', '--target-branch', '--remote', '--required-assurance', '--verification-summary', '--resume', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -39,42 +38,39 @@ export function registerTaskFinishApplication(runtime) {
       try { finishRun = readFinishRun({ root, runId }); } catch { /* create below */ }
     }
     if (!finishRun) {
-      const context = runtime.resolveTaskEnvironmentContext?.(root) || null;
-      if (!context?.taskId || !context.environmentRoot || !context.workspaceRoot) throw inputError('task_finish.not_task_environment', 'Task Finish run requires a receipt-bound task environment.', 'run');
+      const task = optionValue(command.args, '--task', null);
+      if (!task) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --task <task-id>.', 'run');
+      const context = runtime.resolveTaskEnvironmentExecution(root, task);
+      if (!context?.ready) throw inputError(context?.blocked?.code || 'task_finish.not_task_environment', context?.blocked?.message || 'Task Finish requires a ready Task Environment.', 'run');
       const change = optionValue(command.args, '--change', null);
       const project = optionValue(command.args, '--project', null);
       if (!project) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --project; --change is required only for Change candidates.', 'run');
-      const repository = context.repositories?.find((entry) => entry.selector === context.membership?.selector) || context.repositories?.[0] || {};
-      const workspaceNodeIdentity = context.executionBinding?.workspaceNode?.identity?.digest;
+      const repository = context.repositories?.find((entry) => entry.selector === 'workspace') || context.repositories?.[0] || {};
+      const workspaceNodeIdentity = runtime.workspaceNodeExecution(context.validationRoot).identity?.digest;
       if (!workspaceNodeIdentity) throw inputError('task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.', 'run');
       const targetBranch = optionValue(command.args, '--target-branch', repository.startPoint || null);
       if (!targetBranch) throw inputError('task_finish.target_branch_unavailable', 'Task Finish could not derive the target branch; pass --target-branch.', 'run');
+      const requestedAgent = optionValue(command.args, '--agent', context.controller.adapter);
+      if (requestedAgent !== context.controller.adapter) throw inputError('task_finish.environment_mismatch', 'Task Finish agent must match the Task Environment adapter.', 'run');
       finishRun = resolveFinishRun({
         root,
         runId,
         resumeToken,
         identity: {
-          task: context.taskId,
+          task,
           candidateKind: change ? 'change' : 'code-only',
           change,
           project,
-          agent: optionValue(command.args, '--agent', context.owner),
+          agent: requestedAgent,
           targetBranch,
           remote: optionValue(command.args, '--remote', repository.remote || null),
-          environmentRoot: context.environmentRoot,
+          environmentRoot: context.validationRoot,
           workspaceRoot: context.workspaceRoot,
           requiredAssurance: optionValue(command.args, '--required-assurance', 'affected'),
           workspaceNodeIdentity,
         },
       });
-    } else if (path.resolve(finishRun.identity.environmentRoot) !== path.resolve(root)) {
-      const cleanup = finishRun.phases.find((phase) => phase.id === 'cleanup');
-      const retainedCleanupRecovery = path.resolve(finishRun.identity.workspaceRoot) === path.resolve(root)
-        && !fs.existsSync(finishRun.identity.environmentRoot)
-        && Boolean(finishRun.delivery?.candidateRef)
-        && ['running', 'blocked'].includes(cleanup?.status);
-      if (!retainedCleanupRecovery) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different task environment.', 'run');
-    }
+    } else if (path.resolve(finishRun.identity.workspaceRoot) !== path.resolve(root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
     const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
     const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, existingVerificationSummary: optionValue(command.args, '--verification-summary', null) });
     return print(await executeFinishRun({ root, run: finishRun, handlers, resumeToken }), command.args);

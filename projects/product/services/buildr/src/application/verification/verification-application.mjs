@@ -99,13 +99,13 @@ export function registerVerificationApplication(runtime) {
     const projectCode = runtime.optionValue(args, '--project', null);
     const targetRoot = fs.realpathSync(path.resolve(runtime.optionValue(args, '--target', process.cwd())));
     const requestedEnvironment = runtime.optionValue(args, '--environment', null);
-    const requestedOwner = runtime.optionValue(args, '--owner', null);
+    const requestedWorkspace = runtime.optionValue(args, '--workspace', null);
     const output = runtime.optionValue(args, '--output', null);
     const taskFinishFingerprint = runtime.optionValue(args, '--candidate-fingerprint', null);
     const includeAdvisory = args.includes('--include-advisory');
     const authorizedResources = optionValues(args, '--authorize-resource');
     const concurrency = Number(runtime.optionValue(args, '--concurrency', '4'));
-    runtime.assertNoUnknownOptions(args, new Set(['--project', '--level', '--target', '--environment', '--owner', '--output', '--candidate-fingerprint', '--authorize-resource', '--concurrency', '--include-advisory', '--json']), new Set(['--include-advisory', '--json']));
+    runtime.assertNoUnknownOptions(args, new Set(['--project', '--level', '--target', '--environment', '--workspace', '--output', '--candidate-fingerprint', '--authorize-resource', '--concurrency', '--include-advisory', '--json']), new Set(['--include-advisory', '--json']));
     if (runtime.positionalArgs(args).length) throw new Error('verification run does not accept positional arguments.');
     if (!projectCode) throw new Error('verification run requires --project <code>.');
     if (!['affected', 'candidate'].includes(level)) throw new Error('verification run requires --level affected or candidate.');
@@ -123,13 +123,10 @@ export function registerVerificationApplication(runtime) {
     const validationErrors = validateProjectVerification(declaration);
     if (validationErrors.length) throw new Error(`Project verification policy is invalid:\n- ${validationErrors.join('\n- ')}`);
 
-    const context = runtime.resolveTaskEnvironmentContext?.(targetRoot) || null;
-    if (requestedEnvironment || requestedOwner) {
-      if (!context?.executionReady) throw new Error('Requested task environment binding is not execution-ready.');
-      if (requestedEnvironment && requestedEnvironment !== context.taskId) throw new Error(`Task environment identity mismatch: ${requestedEnvironment}.`);
-      if (requestedOwner && requestedOwner !== context.owner) throw new Error(`Task environment owner mismatch: ${requestedOwner}.`);
-    }
-    if (context && !context.executionReady) throw new Error(context.blocked?.message || 'Task environment is not execution-ready.');
+    if (Boolean(requestedEnvironment) !== Boolean(requestedWorkspace)) throw new Error('Task Environment verification requires --environment <task-id> and --workspace <canonical-workspace> together.');
+    const context = requestedEnvironment ? runtime.resolveTaskEnvironmentExecution(path.resolve(requestedWorkspace), requestedEnvironment) : null;
+    if (context && !context.ready) throw new Error(context.blocked?.message || 'Requested Task Environment binding is not ready.');
+    if (context && !context.allowedExecutionRoots.some((root) => inside(root, targetRoot))) throw new Error('Verification target is outside the requested Task Environment execution roots.');
     const workspaceNode = runtime.workspaceNodeExecution(targetRoot);
     if (!workspaceNode.ready) throw new Error(`Workspace Node runtime is not ready: ${workspaceNode.status}. Run buildr sync before verification.`);
 
@@ -169,7 +166,7 @@ export function registerVerificationApplication(runtime) {
     const candidateStable = digest(before) === digest(after);
     const passed = candidateStable && checks.every((check) => check.status === 'passed');
     const candidateCompleteness = level === 'candidate' && passed && plan.required.every((id) => checks.some((check) => check.id === id && check.status === 'passed') || plan.superseded.some((entry) => entry.capability === id)) ? 'confirmed' : level === 'candidate' ? 'incomplete' : 'not-requested';
-    const identityMaterial = { schemaVersion: PUBLIC_JSON_SCHEMAS.verificationRun, project: projectCode, policy: digest(declarationContent), level, environment: context ? { taskId: context.taskId, owner: context.owner, environmentRoot: context.environmentRoot } : null, workspaceNode: workspaceNode.identity, candidates: after, checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })) };
+    const identityMaterial = { schemaVersion: PUBLIC_JSON_SCHEMAS.verificationRun, project: projectCode, policy: digest(declarationContent), level, environment: context ? { taskId: context.taskId, environmentRoot: context.environmentRoot, workspaceRoot: context.workspaceRoot, sourceIdentity: context.controller.identity, projectionIdentity: context.scopes.map((scope) => ({ selector: scope.selector, identity: scope.projection.identity })) } : null, workspaceNode: workspaceNode.identity, candidates: after, checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })) };
     const evidenceIdentity = digest(identityMaterial);
     const base = {
       operation: 'execute',
@@ -177,7 +174,7 @@ export function registerVerificationApplication(runtime) {
       requiredAssurance: level,
       project: { code: projectCode, root: projectRoot },
       policy: { mode: declaration.mode, path: declarationPath, fingerprint: digest(declarationContent) },
-      environment: context ? { taskId: context.taskId, owner: context.owner, root: context.environmentRoot, allowedExecutionRoots: context.allowedExecutionRoots } : null,
+      environment: context ? { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot, scopes: context.scopes.map((scope) => ({ selector: scope.selector, executionRoot: scope.executionRoot, sourceIdentity: scope.cli.identity, projectionIdentity: scope.projection.identity })), allowedExecutionRoots: context.allowedExecutionRoots } : null,
       workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable, actualVersion: workspaceNode.actualVersion },
       candidateIdentity: after,
       plan: { selected: plan.steps.map((step) => ({ id: step.id, reasons: step.reasons, dependsOn: step.dependsOn || [], resourceClaims: step.resourceClaims || [] })), required: plan.required, superseded: plan.superseded },

@@ -31,6 +31,12 @@ export function createPackageSyncPlan({
         if (predecessorMissingParent) affected.add(predecessorMissingParent);
       }
     }
+    for (const retirement of (manifest.capabilityContracts || []).flatMap((contract) => contract.replaces || [])) {
+      const target = path.join(targetRoot, retirement.target);
+      affected.add(target);
+      const missingParent = missingAncestorForMutation(targetRoot, path.dirname(target));
+      if (missingParent) affected.add(missingParent);
+    }
     return assertSafeSyncMutationPaths(targetRoot, [...affected]);
   }
 

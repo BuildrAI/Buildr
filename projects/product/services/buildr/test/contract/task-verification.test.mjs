@@ -13,9 +13,12 @@ const verificationSkill = read('package/targets/workspace/skills/buildr/task-ver
 const verificationReference = read('package/targets/workspace/skills/buildr/task-verification/references/project-verification-v1.md');
 const verificationTemplate = read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml');
 const worktreeSkill = read('package/targets/workspace/skills/buildr/task-worktree/SKILL.md');
+const environmentSkill = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
+const environmentContract = read('package/targets/workspace/skills/contracts/buildr/task-environment/v1.md');
 const gitIntegrationContract = read('package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md');
 const gitOpsSkill = read('package/targets/workspace/skills/buildr/git-ops/SKILL.md');
 const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
+const finishExecutor = read('src/application/task-finish/task-finish-product-executor.mjs');
 const openSpecApplySidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
@@ -43,7 +46,7 @@ test('默认 provider 区分内部反馈与两级正式保证', () => {
     'wait、poll 或 resume 同一进程', 'totalDurationMs', 'timingSource',
     'slowestCheck', 'failedChecks', 'skippedChecks', 'evidenceReference',
     'evidenceRetention', 'cleanupAfter', 'cleanupStatus', 'cleanupReference',
-    '用户无需主动点名本 Skill', 'task-worktree` 不负责这项清理',
+    '用户无需主动点名本 Skill', 'Git/worktree provider 不负责这项清理',
     '完整候选验证尚未执行', 'inspect', 'execute', 'cleanup',
     'taskVerificationExecuteCalls', 'candidateExecutorCalls',
     'policyMode: legacy', 'mode: augment', 'mode: authoritative',
@@ -61,17 +64,16 @@ test('默认 provider 区分内部反馈与两级正式保证', () => {
   assert.equal(template.capabilities[0].authorization, 'explicit');
 });
 
-test('worktree lifecycle 与任务验证职责解耦', () => {
-  assert.match(worktreeSkill, /## 4\. 协作交接/);
-  assert.match(worktreeSkill, /验证属于 `task-verification`/);
-  assert.doesNotMatch(worktreeSkill, /实现期间采用三级验证门禁/);
-  assert.doesNotMatch(worktreeSkill, /单任务最小反馈：/);
-  assert.match(worktreeSkill, /不监控普通编辑/);
-  assert.match(worktreeSkill, /不决定 Candidate evidence 的有效、复用或重跑/);
-  assert.equal(worktreeSkill.split('实际自举 workspace 的 sync 是独立的状态变更').length - 1, 0);
-  assert.equal(worktreeSkill.split('本机 `buildr` 若指向即将删除的 task worktree').length - 1, 0);
-  assert.match(worktreeSkill, /迁移或停止 task-owned 本机入口与进程/);
-  assert.doesNotMatch(worktreeSkill, /旧 evidence 随即失效/);
+test('Task Environment、Git worktree provider 与任务验证职责解耦', () => {
+  assert.match(worktreeSkill, /`buildr\.git-worktree-provider\/v1` 的默认 provider/);
+  assert.match(worktreeSkill, /只管理 Git checkout 和窄 Git evidence/);
+  assert.match(worktreeSkill, /不判断 Task 是否 ready/);
+  assert.match(worktreeSkill, /不准备 Runtime、CLI、依赖或 projection/);
+  assert.match(worktreeSkill, /验证交给 `task-verification`/);
+  assert.doesNotMatch(worktreeSkill, /executionReady|worktree adopt|Agent session adoption/);
+  assert.match(environmentSkill, /`buildr\.task-environment\/v1` 的默认 provider/);
+  assert.match(environmentContract, /真实 Agent session 采用证据由 Task Verification 管理/);
+  assert.match(verificationSkill, /不依赖任何固定 Environment、Git 或 worktree provider id/);
 });
 
 test('Git integration 只返回内容转换证据，不拥有 Candidate 验证决策', () => {
@@ -94,7 +96,7 @@ test('默认收尾只交付目标分支，远端任务分支保持未授权', ()
   for (const required of [
     '默认 push 只面向已集成的目标分支', '才可推送任务分支',
   ]) assert.ok(gitOpsSkill.includes(required), `git-ops must include ${required}`);
-  assert.match(finishSkill, /目标分支集成\/push/);
+  assert.match(finishSkill, /目标分支交付/);
   assert.match(finishSkill, /远端任务分支操作.*仍不授权/);
 });
 
@@ -110,6 +112,7 @@ test('随包 manifest 原子登记 contract、provider、binding 与 consumer', 
   const finish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-verification'), false);
   assert.deepEqual(finish.requires, [
+    { capability: 'buildr.task-environment', version: 1, mode: 'required' },
     { capability: 'buildr.git-single-operation', version: 1, mode: 'optional' },
     { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
   ]);
@@ -120,19 +123,24 @@ test('随包 manifest 原子登记 contract、provider、binding 与 consumer', 
   assert.equal(workspaceSkill.description, packagedSkill.description);
 
   const gitContract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.git-task-integration');
-  const worktreeContract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-worktree-lifecycle');
+  const environmentContractEntry = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-environment');
+  const worktreeContract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.git-worktree-provider');
   assert.equal(gitContract.version, 1);
-  assert.equal(worktreeContract.version, 2);
+  assert.equal(environmentContractEntry.version, 1);
+  assert.equal(worktreeContract.version, 1);
   assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.git-task-integration').provider, 'git-ops');
-  assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-worktree-lifecycle').provider, 'task-worktree');
+  assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-environment').provider, 'task-environment');
+  assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.git-worktree-provider').provider, 'task-worktree');
   assert.deepEqual(packageManifest.builtins.skills.find((item) => item.id === 'git-ops').provides.map((item) => item.capability), [
     'buildr.git-single-operation',
     'buildr.git-task-integration',
     'buildr.git-workspace-update',
   ]);
   assert.deepEqual(packageManifest.builtins.skills.find((item) => item.id === 'task-worktree').provides.map((item) => item.capability), [
-    'buildr.task-worktree-lifecycle',
+    'buildr.git-worktree-provider',
   ]);
+  assert.deepEqual(packageManifest.builtins.skills.find((item) => item.id === 'task-environment').provides.map((item) => item.capability), ['buildr.task-environment']);
+  assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-worktree-lifecycle'), false);
 });
 
 test('task-finish 保持薄入口并把确定性执行交给产品', () => {
@@ -142,8 +150,8 @@ test('task-finish 保持薄入口并把确定性执行交给产品', () => {
   assert.doesNotMatch(finishSkill, /instance\.json|archive-rehearsal\.mjs|buildr component check/);
   assert.match(finishSkill, /不要替产品收集 fingerprint/);
   assert.match(finishSkill, /不由 Agent 编排阶段、补 evidence 或设计 recovery/);
-  assert.match(finishSkill, /唯一 canonical `runs`、`completed` 与 lease namespace/);
-  assert.match(finishSkill, /不创建版本化运行目录/);
+  assert.match(finishSkill, /Environment 独占资源停止、Git provider cleanup/);
+  assert.doesNotMatch(finishSkill, /worktree context|worktree cleanup --|--owner/);
 });
 
 test('OpenSpec apply 和 Task Finish 固定单一 convergence 事务边界', () => {
@@ -152,7 +160,7 @@ test('OpenSpec apply 和 Task Finish 固定单一 convergence 事务边界', () 
     '不得手工恢复 canonical', '选择内部 stage',
   ]) assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve convergence boundary: ${required}`);
 
-  assert.match(finishSkill, /OpenSpec convergence/);
+  assert.match(finishExecutor, /'openspec', 'converge'/);
   assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);
 });
 
@@ -228,7 +236,9 @@ test('Candidate task checkbox 复用必须由 Buildr sidebar 和 provider consum
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
 });
 
-test('产品入口分别路由验证与 worktree lifecycle 意图', () => {
+test('产品入口分别路由验证、Task Environment 与 Git worktree provider 意图', () => {
   assert.match(buildrSkill, /初始化\/更新测试声明、推进测试能力成熟度，或实现任务到达验证\/完成节点 \| `buildr\.task-verification\/v2` selected provider；用户无需主动点名该能力/);
-  assert.match(buildrSkill, /清理单仓\/多仓 task environment \| `buildr\.task-worktree-lifecycle\/v2` selected provider/);
+  assert.match(buildrSkill, /正式 Task 准备、检查、恢复或清理实际执行环境 \| `buildr\.task-environment\/v1` selected provider/);
+  assert.match(buildrSkill, /Git worktree\/provider evidence \| `buildr\.git-worktree-provider\/v1` selected provider/);
+  assert.doesNotMatch(buildrSkill, /buildr\.task-worktree-lifecycle/);
 });

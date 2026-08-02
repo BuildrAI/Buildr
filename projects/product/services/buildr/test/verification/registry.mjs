@@ -53,6 +53,7 @@ export const verificationSteps = Object.freeze([
     'src/application/package-maintenance/verification-registry.mjs',
     'src/application/package-maintenance/builtin-replacement.mjs',
     'src/application/task-finish/**',
+    'src/application/task-environment/**',
     'src/application/openspec/**',
     'src/application/verification/**',
     'src/infrastructure/runtime/adapter-contract.mjs',
@@ -105,6 +106,7 @@ export const verificationSteps = Object.freeze([
     'src/application/change/**',
     'src/application/project/**',
     'src/application/service/**',
+    'src/application/task-record/**',
     'src/application/worktree/**',
     'src/application/task-finish/**',
     'src/application/verification/**',
@@ -164,6 +166,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'browser-shell', name: 'Browser integration: application shell', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['shell'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/app.js', 'src/interfaces/local-app/web/router.js', 'src/interfaces/local-app/web/index.html', 'src/interfaces/local-app/web/styles.css', 'src/interfaces/local-app/web/features/workspace.js', 'src/interfaces/local-app/web/features/workspaces.js'], budgetMs: 45000, concurrencyClass: 'exclusive', resources: ['browser'] }),
   step({ id: 'browser-project', name: 'Browser integration: Project flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['project'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/projects.js', 'src/interfaces/local-app/web/features/project-detail.js', 'src/interfaces/local-app/web/features/project-edit.js'], budgetMs: 45000, concurrencyClass: 'exclusive', resources: ['browser'] }),
   step({ id: 'browser-service', name: 'Browser integration: Service flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['service'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/services.js', 'src/interfaces/local-app/web/features/service-detail.js', 'src/interfaces/local-app/web/features/service-edit.js'], budgetMs: 45000, concurrencyClass: 'exclusive', resources: ['browser'] }),
+  step({ id: 'browser-task', name: 'Browser integration: Task Record flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['task'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/tasks.js', 'src/interfaces/local-app/web/features/task-detail.js'], budgetMs: 45000, concurrencyClass: 'exclusive', resources: ['browser'] }),
   step({ id: 'browser-change', name: 'Browser integration: Change flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['change'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/changes.js', 'src/interfaces/local-app/web/features/change-detail.js', 'src/interfaces/local-app/web/features/agent-actions.js', 'src/interfaces/local-app/web/markdown.js', 'src/interfaces/local-app/web/styles.css'], budgetMs: 45000, concurrencyClass: 'exclusive', resources: ['browser'] }),
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.mjs' }, profiles: ['candidate'], inputs: [

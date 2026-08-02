@@ -83,6 +83,7 @@ h3 { margin-bottom: 0; font-size: 16px; }
 .button.primary { color: #fff; background: var(--green); }
 .button.primary:hover:not(:disabled) { background: var(--green-dark); }
 .button.secondary { color: var(--green-dark); border-color: #cae0d1; background: var(--green-soft); }
+.button.danger { color: #fff; background: var(--red); }
 .text-button, .table-action { border: 0; padding: 4px 0; color: var(--green); background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; text-decoration: none; }
 .text-button:hover, .table-action:hover { color: var(--green-dark); text-decoration: underline; }
 .state, .lifecycle-badge { display: inline-flex; align-items: center; width: fit-content; min-height: 24px; padding: 3px 8px; border: 1px solid #cee1d5; border-radius: 999px; color: var(--green-dark); background: var(--green-soft); font-size: 10px; font-weight: 750; white-space: nowrap; }
@@ -181,6 +182,7 @@ dd { margin: 0; overflow-wrap: anywhere; font: 10px/1.45 ui-monospace, SFMono-Re
 .asset-preview-grid small { color: var(--muted); font-size: 10px; }
 .change-filters { display: grid; grid-template-columns: repeat(2, minmax(180px, 280px)); }
 .change-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.task-change-provenance { margin-bottom: 16px; }
 .change-brief-panel { margin-bottom: 16px; border-color: #b8d7c4; background: linear-gradient(135deg, #f6fbf8, #fff); }
 .brief-content { display: grid; gap: 10px; max-width: 900px; padding: 4px 20px 20px; }
 .content-view { display: grid; gap: 8px; }
@@ -234,6 +236,41 @@ input:disabled, textarea:disabled, select:disabled { color: #7c8881; background:
 .finding { padding: 8px 10px; border-radius: 6px; color: var(--amber); background: var(--amber-soft); font-size: 11px; line-height: 1.45; }
 .finding.error { color: var(--red); background: #fdeaea; }
 .context-help { margin: 12px 0 0; padding: 10px; border-radius: 6px; color: var(--muted); background: #f4f7f5; font-size: 11px; line-height: 1.5; }
+.task-create-panel { margin-bottom: 24px; }
+.detail-tabs { display: flex; gap: 4px; margin: 18px 0 20px; border-bottom: 1px solid var(--line); }
+.detail-tab { margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; padding: 10px 16px; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 800; }
+.detail-tab:hover { color: var(--ink); }
+.detail-tab.active { border-bottom-color: var(--green); color: var(--green); }
+.task-change-links { display: grid; gap: 7px; }
+.task-change-link { display: grid; gap: 2px; width: fit-content; color: inherit; text-decoration: none; }
+.task-change-link.available:hover strong { color: var(--green); text-decoration: underline; }
+.task-change-link small { color: var(--muted); font-size: 10px; }
+.task-change-link.unavailable strong { color: var(--muted); }
+.environment-summary { margin-bottom: 16px; }
+.environment-diagnostic { margin-top: 14px; padding: 12px 14px; border-radius: 6px; color: var(--amber); background: var(--amber-soft); font-size: 11px; line-height: 1.55; }
+.environment-diagnostic p { margin: 0; }
+.environment-diagnostic ul { margin: 8px 0 0; padding-left: 18px; }
+.environment-detail { display: grid; gap: 16px; }
+.environment-scope-list, .environment-resource-list { display: grid; gap: 12px; }
+.environment-scope-card, .environment-resource { overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfb; }
+.environment-scope-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border-bottom: 1px solid var(--line); background: #f5f7f5; }
+.environment-scope-heading h3 { margin: 0; font-size: 13px; }
+.environment-scope-card .read-facts { padding: 0 12px; }
+.environment-scope-card .read-facts div { grid-template-columns: 160px minmax(0, 1fr); }
+.controller-card { border-color: #b8d7c4; }
+.environment-probe-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.environment-probe { display: grid; gap: 4px; min-width: 0; padding: 12px; border-left: 1px solid var(--line); }
+.environment-probe:first-child { border-left: 0; }
+.environment-probe > span, .environment-probe > small { color: var(--muted); font-size: 10px; }
+.environment-probe > strong { color: var(--ink); font-size: 12px; }
+.environment-probe.blocked > strong { color: var(--red); }
+.environment-probe > small { overflow-wrap: anywhere; line-height: 1.45; }
+.environment-resource { padding: 12px; }
+.environment-resource > strong { font-size: 13px; }
+.task-actions { display: grid; gap: 24px; margin-top: 24px; }
+.terminal-action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.terminal-action-grid form { align-content: start; padding: 16px; border: 1px solid var(--line); border-radius: 6px; }
+.terminal-action-grid h3 { margin: 0; font-size: 14px; }
 
 .prompt-grid { grid-template-columns: 1fr 1fr; }
 .full { grid-column: 1 / -1; }
@@ -293,12 +330,15 @@ details summary { cursor: pointer; color: var(--ink); font-size: 12px; font-weig
   h1 { font-size: 30px; }
   .resource-toolbar, .detail-title-row, .page-header-row { display: grid; align-items: start; gap: 16px; }
   .toolbar-actions { justify-content: space-between; }
-  .workspace-grid, .metric-grid, .content-grid, .detail-layout, .edit-layout, .overview-strip, .project-service-list, .asset-preview-grid, .change-filters, .change-metrics, .prompt-grid, .related-resource-links { grid-template-columns: 1fr; }
+  .workspace-grid, .metric-grid, .content-grid, .detail-layout, .edit-layout, .overview-strip, .project-service-list, .asset-preview-grid, .change-filters, .change-metrics, .prompt-grid, .related-resource-links, .terminal-action-grid, .environment-probe-grid { grid-template-columns: 1fr; }
   .overview-strip div { border-top: 1px solid var(--line); border-left: 0; }
   .overview-strip div:first-child { border-top: 0; }
   .related-resource-link { border-top: 1px solid var(--line); border-left: 0; }
   .related-resource-link:first-child { border-top: 0; }
   .read-facts div { grid-template-columns: 1fr; gap: 4px; }
+  .environment-scope-card .read-facts div { grid-template-columns: 1fr; }
+  .environment-probe { border-top: 1px solid var(--line); border-left: 0; }
+  .environment-probe:first-child { border-top: 0; }
   .list-controls { display: grid; }
   .list-controls label { max-width: none; }
   .panel { padding: 14px; }

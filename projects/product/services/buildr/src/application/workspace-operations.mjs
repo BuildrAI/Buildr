@@ -364,6 +364,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '# Task asset review runtime state',
       '/.buildr/asset-review/',
       '/.buildr/task-finish/',
+      '# Task Environment machine-local receipts',
+      '/.buildr/tasks/*/environment.json',
       '# Task worktrees',
       '/.worktrees/',
     ]);

@@ -40,20 +40,7 @@ function readGit(root, args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 }
 
-function taskEnvironmentOwner(worktree) {
-  try {
-    const common = readGit(worktree, ['rev-parse', '--git-common-dir']);
-    const directory = path.join(path.resolve(worktree, common), 'buildr', 'task-environments');
-    if (!fs.existsSync(directory)) return null;
-    for (const entry of fs.readdirSync(directory).filter((value) => value.endsWith('.json'))) {
-      const receipt = readJson(path.join(directory, entry));
-      if (receipt?.schemaVersion === 'buildr.task-environment-receipt/v1' && path.resolve(receipt.environmentRoot) === worktree) return receipt;
-    }
-  } catch { /* legacy worktree */ }
-  return null;
-}
-
-export function previewOwnerForWorktree(name, targetRoot, productCheckout = null) {
+export function previewOwnerForWorktree(name, targetRoot, productCheckout = null, taskEnvironment = null) {
   const worktree = path.resolve(targetRoot);
   let repository;
   let branch;
@@ -69,16 +56,17 @@ export function previewOwnerForWorktree(name, targetRoot, productCheckout = null
     error.code = 'preview_worktree_git_required';
     throw error;
   }
-  const environment = taskEnvironmentOwner(worktree);
   return {
     schemaVersion: PREVIEW_SCHEMA, instance: assertPreviewName(name), worktree, repository, branch, head, dirty,
-    taskId: environment?.taskId || null,
-    owner: environment?.agent || null,
-    environmentRoot: environment?.environmentRoot || worktree,
-    receiptIdentity: environment?.planDigest || null,
+    taskId: taskEnvironment?.taskId || null,
+    workspaceRoot: taskEnvironment?.workspaceRoot || null,
+    environmentRoot: taskEnvironment?.environmentRoot || worktree,
+    controllerIdentity: taskEnvironment?.controllerIdentity || null,
+    resourceId: taskEnvironment?.resourceId || null,
+    scope: taskEnvironment?.scope || null,
     productCheckout: productCheckout ? path.resolve(productCheckout) : null,
-    repositorySet: environment?.repositories?.map((item) => ({ selector: item.selector, checkoutPath: item.checkoutPath, branch: item.branch, head: item.head })) || [{ selector: 'workspace', checkoutPath: worktree, branch, head }],
-    identityMode: environment ? 'task-environment' : 'legacy-worktree',
+    repositorySet: taskEnvironment?.repositorySet || [{ selector: 'workspace', checkoutPath: worktree, branch, head }],
+    identityMode: taskEnvironment ? 'task-environment-v2' : 'standalone-checkout',
   };
 }
 
@@ -86,20 +74,24 @@ function samePreviewOwner(left, right) {
   return Boolean(left && right
     && path.resolve(left.environmentRoot || left.worktree) === path.resolve(right.environmentRoot || right.worktree)
     && (left.taskId || null) === (right.taskId || null)
-    && (left.owner || null) === (right.owner || null)
-    && (left.receiptIdentity || null) === (right.receiptIdentity || null));
+    && (left.workspaceRoot || null) === (right.workspaceRoot || null)
+    && (left.controllerIdentity || null) === (right.controllerIdentity || null)
+    && (left.resourceId || null) === (right.resourceId || null));
 }
 
 export function assertPreviewStopOwner(owner, caller) {
-  if (owner.identityMode !== 'task-environment') return;
+  if (owner.identityMode !== 'task-environment-v2') return;
   if (!caller
     || caller.taskId !== owner.taskId
-    || caller.owner !== owner.owner
+    || typeof caller.workspaceRoot !== 'string'
+    || typeof caller.environmentRoot !== 'string'
+    || path.resolve(caller.workspaceRoot) !== path.resolve(owner.workspaceRoot)
     || path.resolve(caller.environmentRoot) !== path.resolve(owner.environmentRoot)
-    || caller.receiptIdentity !== owner.receiptIdentity) {
+    || caller.controllerIdentity !== owner.controllerIdentity
+    || caller.resourceId !== owner.resourceId) {
     const error = new Error(`预览实例 ${owner.instance} 的 task environment owner 或 receipt 不匹配。`);
     error.code = 'preview_stop_owner_mismatch';
-    error.details = { instance: owner.instance, expected: { taskId: owner.taskId, owner: owner.owner, environmentRoot: owner.environmentRoot, receiptIdentity: owner.receiptIdentity } };
+    error.details = { instance: owner.instance, expected: { taskId: owner.taskId, workspaceRoot: owner.workspaceRoot, environmentRoot: owner.environmentRoot, controllerIdentity: owner.controllerIdentity, resourceId: owner.resourceId } };
     throw error;
   }
 }
@@ -159,15 +151,70 @@ export function readPreviewIdentityFromEnvironment(env = process.env) {
   } catch { return null; }
 }
 
+function taskPreviewCaller(owner) {
+  return {
+    taskId: owner.taskId,
+    workspaceRoot: owner.workspaceRoot,
+    environmentRoot: owner.environmentRoot,
+    controllerIdentity: owner.controllerIdentity,
+    resourceId: owner.resourceId,
+  };
+}
+
+function taskPreviewResource(owner, instance) {
+  const url = new URL(instance.url);
+  return {
+    id: owner.resourceId,
+    kind: 'preview',
+    scope: owner.scope,
+    provider: 'local-app-preview',
+    identity: {
+      productCheckout: owner.productCheckout,
+      url: instance.url,
+      port: Number(url.port),
+      pid: instance.pid,
+      providerIdentity: `${owner.instance}:${instance.pid}:${owner.head}`,
+    },
+    handle: { instance: owner.instance },
+    probe: { status: 'ready', identity: `${owner.instance}:${instance.pid}:${owner.head}`, observedAt: new Date().toISOString(), diagnostic: null },
+  };
+}
+
 export async function startPreview(runtime, name, args, { cliPath = process.argv[1], dataRoot = localAppDataRoot() } = {}) {
   const instance = assertPreviewName(name);
-  runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--json']), new Set(['--no-open', '--json']));
-  const targetRoot = path.resolve(runtime.optionValue(args, '--target', process.cwd()));
-  runtime.assertInitializedBuildrWorkspace(targetRoot);
+  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--no-open', '--json']), new Set(['--no-open', '--json']));
+  const requestedRoot = path.resolve(runtime.optionValue(args, '--target', process.cwd()));
+  const taskId = runtime.optionValue(args, '--task', null);
+  let targetRoot = requestedRoot;
+  let taskEnvironment = null;
+  let appInvocation = { command: process.execPath, argsPrefix: [cliPath], sourceRoot: path.resolve(path.dirname(cliPath), '..') };
+  if (taskId) {
+    const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
+    const execution = runtime.resolveTaskEnvironmentExecution(workspaceRoot, taskId);
+    if (!execution.ready) {
+      const error = new Error(execution.blocked?.message || `Task Environment 未 ready：${taskId}。`);
+      error.code = execution.blocked?.code || 'preview_environment_not_ready';
+      throw error;
+    }
+    const workspaceScope = execution.scopes.find((scope) => scope.selector === 'workspace');
+    if (!workspaceScope) { const error = new Error('Task Environment 缺少 workspace scope。'); error.code = 'preview_environment_scope_missing'; throw error; }
+    targetRoot = execution.validationRoot;
+    runtime.assertTaskEnvironmentController(workspaceRoot, taskId);
+    appInvocation = execution.cliInvocation;
+    taskEnvironment = {
+      taskId,
+      workspaceRoot,
+      environmentRoot: execution.validationRoot,
+      controllerIdentity: execution.controller.identity,
+      resourceId: `preview:${instance}`,
+      scope: workspaceScope.selector,
+      repositorySet: execution.scopes.map((scope) => ({ selector: scope.selector, checkoutPath: scope.executionRoot, shared: scope.shared })),
+    };
+  } else runtime.assertInitializedBuildrWorkspace(targetRoot);
   const rawPort = runtime.optionValue(args, '--port', '0');
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
-  const owner = previewOwnerForWorktree(instance, targetRoot, path.resolve(path.dirname(cliPath), '..'));
+  const owner = previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskEnvironment);
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
   const healthy = await healthyLocalAppInstance(existingInstance);
@@ -178,7 +225,12 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
     throw error;
   }
   if (healthy) {
-    const result = { schemaVersion: PREVIEW_SCHEMA, status: 'reused', owner: existingOwner, url: healthy.url, pid: healthy.pid };
+    let environmentResource = null;
+    if (taskId) {
+      environmentResource = runtime.inspectTaskEnvironment(requestedRoot, taskId).environment?.resources.find((resource) => resource.id === owner.resourceId && resource.status === 'running') || null;
+      if (!environmentResource) { const error = new Error(`健康 preview ${instance} 没有 matching Environment resource；拒绝猜测或补领 ownership。`); error.code = 'preview_environment_resource_missing'; throw error; }
+    }
+    const result = { schemaVersion: PREVIEW_SCHEMA, status: 'reused', owner: existingOwner, url: healthy.url, pid: healthy.pid, environmentResource };
     if (!args.includes('--no-open')) openDefaultBrowser(healthy.url);
     return result;
   }
@@ -191,7 +243,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   const root = previewDataRoot(instance, dataRoot);
   fs.mkdirSync(root, { recursive: true });
   writeOwner(runtime, owner, dataRoot);
-  const child = spawn(process.execPath, [cliPath, 'app', '--target', targetRoot, '--port', String(port), '--no-open'], {
+  const child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'app', '--target', targetRoot, '--port', String(port), '--no-open'], {
     cwd: targetRoot,
     detached: true,
     stdio: 'ignore',
@@ -206,7 +258,20 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   }
   const managedOwner = { ...owner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
   writeOwner(runtime, managedOwner, dataRoot);
-  const result = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid };
+  let environmentResource = null;
+  if (taskId) {
+    try {
+      environmentResource = runtime.registerTaskEnvironmentResource(requestedRoot, taskId, taskPreviewResource(managedOwner, started)).resource;
+    } catch (error) {
+      let cleanupError = null;
+      try { await stopPreview(instance, { dataRoot, caller: taskPreviewCaller(managedOwner) }); } catch (stopError) { cleanupError = stopError; }
+      const blocked = new Error(cleanupError ? `Preview Environment 登记失败，且实例回收失败：${error.message}; ${cleanupError.message}` : `Preview Environment 登记失败，实例已回收：${error.message}`);
+      blocked.code = cleanupError ? 'preview_environment_register_cleanup_failed' : 'preview_environment_register_failed';
+      blocked.details = { taskId, instance, registration: error.code || error.message, cleanup: cleanupError ? cleanupError.code || cleanupError.message : 'confirmed' };
+      throw blocked;
+    }
+  }
+  const result = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid, environmentResource };
   if (!args.includes('--no-open')) openDefaultBrowser(started.url);
   return result;
 }
@@ -226,7 +291,7 @@ export async function listPreviews({ dataRoot = localAppDataRoot() } = {}) {
   return { schemaVersion: PREVIEW_SCHEMA, previews };
 }
 
-export async function stopPreview(name, { dataRoot = localAppDataRoot(), caller = null } = {}) {
+export async function stopPreview(name, { dataRoot = localAppDataRoot(), caller = null, retainOwner = false } = {}) {
   const instance = assertPreviewName(name);
   const owner = readPreviewOwner(instance, dataRoot);
   if (!owner) {
@@ -249,6 +314,62 @@ export async function stopPreview(name, { dataRoot = localAppDataRoot(), caller 
       throw error;
     }
   }
-  clearOwner(instance, dataRoot);
+  if (!retainOwner) clearOwner(instance, dataRoot);
   return { schemaVersion: PREVIEW_SCHEMA, status: healthy ? 'stopped' : 'stale_cleaned', instance, owner };
+}
+
+function previewOwnerResourceMatch(resource, owner) {
+  if (!owner || owner.identityMode !== 'task-environment-v2') return false;
+  const pid = owner.managedProcess?.pid;
+  const url = owner.managedProcess?.url;
+  const expectedProviderIdentity = `${owner.instance}:${pid}:${owner.head}`;
+  return resource.provider === 'local-app-preview'
+    && resource.handle.instance === owner.instance
+    && resource.id === owner.resourceId
+    && resource.identity.pid === pid
+    && resource.identity.url === url
+    && resource.identity.providerIdentity === expectedProviderIdentity;
+}
+
+function previewResourceMatch(resource, owner, instance) {
+  return Boolean(instance && previewOwnerResourceMatch(resource, owner) && resource.identity.pid === instance.pid && resource.identity.url === instance.url);
+}
+
+export function probePreviewResource(resource, { dataRoot = localAppDataRoot() } = {}) {
+  const observedAt = new Date().toISOString();
+  const owner = readPreviewOwner(resource.handle.instance, dataRoot);
+  const instance = readPreviewInstance(resource.handle.instance, dataRoot);
+  if (!previewResourceMatch(resource, owner, instance)) return { status: 'blocked', identity: resource.identity.providerIdentity, observedAt, diagnostic: 'Preview metadata 与 Environment resource identity 不匹配或已缺失。' };
+  try { process.kill(instance.pid, 0); } catch { return { status: 'blocked', identity: resource.identity.providerIdentity, observedAt, diagnostic: 'Preview 进程当前不存在。' }; }
+  return { status: 'ready', identity: resource.identity.providerIdentity, observedAt, diagnostic: null };
+}
+
+export async function cleanupPreviewResource(resource, context, { dataRoot = localAppDataRoot() } = {}) {
+  const owner = readPreviewOwner(resource.handle.instance, dataRoot);
+  if (!previewOwnerResourceMatch(resource, owner)) {
+    const error = new Error(`Preview resource identity 不匹配：${resource.id}。`);
+    error.code = 'preview_environment_resource_mismatch';
+    throw error;
+  }
+  assertPreviewStopOwner(owner, {
+    taskId: context.taskId,
+    workspaceRoot: context.workspaceRoot,
+    environmentRoot: context.environmentRoot,
+    controllerIdentity: context.controllerIdentity,
+    resourceId: resource.id,
+  });
+  const stopped = await stopPreview(resource.handle.instance, { dataRoot, caller: taskPreviewCaller(owner) });
+  return { provider: 'local-app-preview', stopped, probe: { status: 'blocked', identity: resource.identity.providerIdentity, observedAt: new Date().toISOString(), diagnostic: 'Preview 已停止并释放。' } };
+}
+
+export function registerLocalAppPreviewResourceProvider(runtime) {
+  runtime.probeTaskEnvironmentResource = (resource) => {
+    if (resource.provider !== 'local-app-preview') { const error = new Error(`未知 Task Environment resource provider：${resource.provider}。`); error.code = 'task_environment_resource_provider_unknown'; throw error; }
+    return probePreviewResource(resource);
+  };
+  runtime.cleanupTaskEnvironmentResource = async (resource, context) => {
+    if (resource.provider !== 'local-app-preview') { const error = new Error(`未知 Task Environment resource provider：${resource.provider}。`); error.code = 'task_environment_resource_provider_unknown'; throw error; }
+    return cleanupPreviewResource(resource, context);
+  };
+  return runtime;
 }

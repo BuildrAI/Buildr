@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "introduce-task-record",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-3b973baf14d7ffa36a8782ff07d3c0ec264af815908d462b3878ca66bd7d74dd",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "task-manager Skill 必须作为 Task Record 的薄管理入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "正式执行必须先建立 Task Record",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "人、Agent 与产品必须分担语义和确定性逻辑",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "P0.1 必须切换 Task Record authority，但不抢占专业 authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "Package 必须原子交付 Task Manager 能力",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "task-manager routing 与职责边界必须由 package verification 保护",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "task-triage 必须条件消费 Task Record capability",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "候选 package 变更不得提前激活 retained runtime",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "产品验证必须覆盖 Task Manager package、CLI 与 Local App parity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "Task Record 必须提供五个明确 CLI action",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "public-json-contracts",
+      "title": "Task Record CLI 必须提供稳定公开 JSON identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Buildr 必须区分正式 Task 与普通交互",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Task Record 必须拥有 canonical Workspace 路径",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Task Record v1 必须只保存首版顶层事实",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Task Record mutation 必须由产品动作完成",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App 必须展示并适当管理 Task Record",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App Task API 必须保持 Workspace 写安全边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Task 顶层状态与结果必须保持单向语义",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Change 引用必须在当前记录内可解析且无重复",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "单文件写入必须保留最后一份有效记录并拒绝陈旧页面",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

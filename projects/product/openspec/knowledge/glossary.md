@@ -72,6 +72,62 @@
 - 避免混用：Change archive 是历史与 provenance，不是 Project 当前事实源。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## 正式任务（Formal Task）
+
+- 定义：目标与持久交付意图已经对齐，并以稳定 Task ID 进入 Buildr 生命周期管理的任务。
+- 适用范围：准备产生代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他可交付持久变化的工作。
+- 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务。
+- 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 任务记录（Task Record）
+
+- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、Project/Service scope、0..N 个限定 Change、状态、终态摘要和系统时间。
+- 适用范围：`.buildr/tasks/<task-id>/task.yml` 及 Task Record Application 的 create、inspect、update、complete、abandon 动作。
+- 避免混用：不保存或索引 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 的专业事实；响应级 `recordDigest` 也不是持久字段。
+- 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 任务管理器（Task Manager）
+
+- 定义：`buildr.task-record/v1` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复和维护 Task Record。
+- 适用范围：用户明确管理正式 Task Record，或 `task-triage` 判断正式持久交付即将首次写入的时点。
+- 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Local App 是同一 Application 的人类客户端，不通过 Task Manager 写入。
+- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md)
+
+## 任务环境（Task Environment）
+
+- 定义：某个正式 Task 在当前机器上可执行、可恢复和可清理的实际工作环境，由同一 Task ID 和唯一环境回执确定。
+- 适用范围：共享执行根或 `.worktrees/<task-id>` checkout、Workspace Node/CLI/依赖、Agent runtime 投射、动态资源和 cleanup。
+- 避免混用：不是 Workspace、保留工作区、Agent runtime 或 Task Record；Git worktree 只是可选 provider。
+- 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
+
+## 环境回执（Environment Receipt）
+
+- 定义：Task Environment Application 在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.json` 维护的本机事实，独占 ready/blocked、执行根、真实 probes、资源和 cleanup 结果。
+- 适用范围：按 Task ID prepare/inspect/cleanup，以及 Verification、Preview、Finish 等正式消费者的执行绑定。
+- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt。
+- 来源：[Task Environment specification](../specs/task-environments/spec.md)
+
+## 任务验证工作区（Task Validation Workspace）
+
+- 定义：某个 Task Environment 中用于验证该任务候选能力和实现的实际工作区根；Git 场景通常是 `.worktrees/<task-id>`，共享根场景可以与 canonical Workspace 相同。
+- 适用范围：候选 Skill、CLI、功能、runtime 和实现的任务内验证。
+- 避免混用：不称为“开发 Workspace”，也不因候选在其中通过就表示 retained runtime 已同步生效。
+- 来源：[Task Environment specification](../specs/task-environments/spec.md)
+
+## Git 工作树提供方（Git worktree provider）
+
+- 定义：`buildr.git-worktree-provider/v1` 的窄 provider，只创建、检查和清理 Git checkout/branch，并保存 repository、HEAD、clean、registration 与 Git effects evidence。
+- 适用范围：Task Environment 需要隔离 Git checkout，或用户明确管理 task worktree 时。
+- 避免混用：不判断 Environment ready，不拥有 Runtime/CLI/依赖、projection、动态资源、恢复或总 cleanup。
+- 来源：[Git worktree provider contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md)
+
+## 任务范围 Change 引用解析器（Task-scoped Change Reference Resolver）
+
+- 定义：按 canonical Workspace、Task ID 和限定 `{project, change}` 从 matching Task Environment 候选或 retained Project 安全解析 Change 的共享只读能力。
+- 适用范围：Task Record 引用校验和 Task 详情中的关联 Change。
+- 避免混用：不接受调用方路径，不扫描全部 Task Environment，也不改变全局 retained-only Change 索引。
+- 来源：[Change asset indexing specification](../specs/change-asset-indexing/spec.md)
+
 ## 收尾就绪候选（Finish-ready Candidate）
 
 - 定义：研发实现、自审、必要审查、开发验证和 current knowledge 已完成，允许 Task Finish 只做确定性收敛、冻结、最终保证、交付与清理的候选。
