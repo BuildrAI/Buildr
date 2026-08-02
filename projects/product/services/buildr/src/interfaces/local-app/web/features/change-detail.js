@@ -23,7 +23,7 @@ function contentView(raw, { contentClass }) {
 
   toggle.append(renderedButton, sourceButton);
 
-  const rendered = renderMarkdown(raw);
+  const rendered = renderMarkdown(raw, { headingOffset: 1, allowRelativeLinks: true });
   rendered.classList.add(contentClass, 'content-view-pane', 'is-active');
   rendered.setAttribute('data-view', 'rendered');
 

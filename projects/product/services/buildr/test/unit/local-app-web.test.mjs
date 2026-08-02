@@ -70,13 +70,17 @@ test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () 
   assert.match(source, /这个变更还没有人类可读 Brief/);
   assert.match(source, /contentView\(artifact\.content/);
   assert.match(source, /contentView\(brief\.content/);
+  assert.match(source, /headingOffset:\s*1/);
+  assert.match(source, /allowRelativeLinks:\s*true/);
   assert.match(source, /textContent = '渲染'/);
   assert.match(source, /textContent = '原文'/);
   assert.match(source, /content-view-source/);
   assert.doesNotMatch(source, /brief\.content.*innerHTML/);
   assert.doesNotMatch(source, /artifact\.content.*innerHTML/);
   assert.doesNotMatch(markdown, /innerHTML/);
-  assert.match(markdown, /!\/\^https\?:\\\/\\\//);
+  assert.match(markdown, /headingOffset/);
+  assert.match(markdown, /allowRelativeLinks/);
+  assert.match(markdown, /resolveSafeHref/);
   assert.match(styles, /\.change-brief-panel/);
   assert.match(styles, /\.brief-content/);
   assert.match(styles, /\.markdown-body/);

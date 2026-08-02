@@ -1,12 +1,36 @@
-function isSafeHref(href) {
+function resolveSafeHref(href, { allowRelativeLinks = false } = {}) {
   const value = String(href ?? '').trim();
-  if (!/^https?:\/\//i.test(value)) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
+  if (!value) return null;
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return { href: value, external: true };
+      }
+    } catch {
+      return null;
+    }
+    return null;
   }
+
+  if (!allowRelativeLinks) return null;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) return null;
+  if (value.startsWith('//') || value.startsWith('/') || value.includes('\\')) return null;
+
+  const hashIndex = value.indexOf('#');
+  const queryIndex = value.indexOf('?');
+  let pathEnd = value.length;
+  if (hashIndex >= 0) pathEnd = Math.min(pathEnd, hashIndex);
+  if (queryIndex >= 0) pathEnd = Math.min(pathEnd, queryIndex);
+  const pathPart = value.slice(0, pathEnd);
+  const suffix = value.slice(pathEnd);
+  const segments = pathPart.split('/');
+  if (segments.some((segment) => segment === '..')) return null;
+
+  const normalizedPath = segments.filter((segment) => segment && segment !== '.').join('/');
+  if (!normalizedPath && !suffix.startsWith('#')) return null;
+  return { href: `${normalizedPath}${suffix}`, external: false };
 }
 
 function splitTableRow(line) {
@@ -19,7 +43,7 @@ function isTableSeparator(line) {
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
-function appendInline(parent, text, doc) {
+function appendInline(parent, text, doc, linkOptions) {
   const pattern = /(`+)([^`]+?)\1|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
   let lastIndex = 0;
   let match;
@@ -39,16 +63,21 @@ function appendInline(parent, text, doc) {
       parent.append(em);
     } else {
       const label = match[5];
-      const href = match[6];
-      if (isSafeHref(href)) {
+      const resolved = resolveSafeHref(match[6], linkOptions);
+      if (resolved) {
         const link = doc.createElement('a');
-        link.setAttribute('href', href);
-        link.setAttribute('rel', 'noopener noreferrer');
-        link.setAttribute('target', '_blank');
+        link.setAttribute('href', resolved.href);
+        if (resolved.external) {
+          link.setAttribute('rel', 'noopener noreferrer');
+          link.setAttribute('target', '_blank');
+        } else {
+          link.className = 'markdown-relative-link';
+          link.setAttribute('title', `Change 内相对路径：${resolved.href}`);
+        }
         link.textContent = label;
         parent.append(link);
       } else {
-        parent.append(doc.createTextNode(`[${label}](${href})`));
+        parent.append(doc.createTextNode(`[${label}](${match[6]})`));
       }
     }
     lastIndex = match.index + match[0].length;
@@ -56,19 +85,19 @@ function appendInline(parent, text, doc) {
   if (lastIndex < text.length) parent.append(doc.createTextNode(text.slice(lastIndex)));
 }
 
-function createParagraph(text, doc) {
+function createParagraph(text, doc, linkOptions) {
   const paragraph = doc.createElement('p');
-  appendInline(paragraph, text, doc);
+  appendInline(paragraph, text, doc, linkOptions);
   return paragraph;
 }
 
-function createHeading(level, text, doc) {
-  const heading = doc.createElement(`h${Math.min(Math.max(level, 1), 6)}`);
-  appendInline(heading, text, doc);
+function createHeading(level, text, doc, headingOffset, linkOptions) {
+  const heading = doc.createElement(`h${Math.min(Math.max(level + headingOffset, 1), 6)}`);
+  appendInline(heading, text, doc, linkOptions);
   return heading;
 }
 
-function createList(ordered, items, doc) {
+function createList(ordered, items, doc, linkOptions) {
   const list = doc.createElement(ordered ? 'ol' : 'ul');
   let hasTask = false;
   for (const item of items) {
@@ -82,10 +111,10 @@ function createList(ordered, items, doc) {
       checkbox.disabled = true;
       checkbox.checked = task[1].toLowerCase() === 'x';
       const label = doc.createElement('span');
-      appendInline(label, task[2], doc);
+      appendInline(label, task[2], doc, linkOptions);
       li.append(checkbox, label);
     } else {
-      appendInline(li, item, doc);
+      appendInline(li, item, doc, linkOptions);
     }
     list.append(li);
   }
@@ -106,13 +135,13 @@ function createCodeBlock(language, code, doc) {
   return pre;
 }
 
-function createTable(header, rows, doc) {
+function createTable(header, rows, doc, linkOptions) {
   const table = doc.createElement('table');
   const thead = doc.createElement('thead');
   const headRow = doc.createElement('tr');
   for (const cell of header) {
     const th = doc.createElement('th');
-    appendInline(th, cell, doc);
+    appendInline(th, cell, doc, linkOptions);
     headRow.append(th);
   }
   thead.append(headRow);
@@ -122,7 +151,7 @@ function createTable(header, rows, doc) {
     const tr = doc.createElement('tr');
     for (const cell of row) {
       const td = doc.createElement('td');
-      appendInline(td, cell, doc);
+      appendInline(td, cell, doc, linkOptions);
       tr.append(td);
     }
     tbody.append(tr);
@@ -131,7 +160,29 @@ function createTable(header, rows, doc) {
   return table;
 }
 
-export function renderMarkdown(markdown, doc = globalThis.document) {
+function normalizeRenderArgs(docOrOptions, maybeOptions) {
+  if (docOrOptions && typeof docOrOptions.createElement === 'function') {
+    return {
+      doc: docOrOptions,
+      options: maybeOptions && typeof maybeOptions === 'object' ? maybeOptions : {},
+    };
+  }
+  if (docOrOptions && typeof docOrOptions === 'object') {
+    return {
+      doc: docOrOptions.document || globalThis.document,
+      options: docOrOptions,
+    };
+  }
+  return {
+    doc: globalThis.document,
+    options: maybeOptions && typeof maybeOptions === 'object' ? maybeOptions : {},
+  };
+}
+
+export function renderMarkdown(markdown, docOrOptions = globalThis.document, maybeOptions = {}) {
+  const { doc, options } = normalizeRenderArgs(docOrOptions, maybeOptions);
+  const headingOffset = Math.max(0, Number.isFinite(options.headingOffset) ? options.headingOffset : 0);
+  const linkOptions = { allowRelativeLinks: Boolean(options.allowRelativeLinks) };
   const root = doc.createElement('div');
   root.className = 'markdown-body';
   const lines = String(markdown ?? '').replace(/\r\n/g, '\n').split('\n');
@@ -166,7 +217,7 @@ export function renderMarkdown(markdown, doc = globalThis.document) {
         rows.push(splitTableRow(lines[index]));
         index += 1;
       }
-      root.append(createTable(header, rows, doc));
+      root.append(createTable(header, rows, doc, linkOptions));
       continue;
     }
 
@@ -178,7 +229,7 @@ export function renderMarkdown(markdown, doc = globalThis.document) {
 
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
-      root.append(createHeading(heading[1].length, heading[2].trim(), doc));
+      root.append(createHeading(heading[1].length, heading[2].trim(), doc, headingOffset, linkOptions));
       index += 1;
       continue;
     }
@@ -192,7 +243,7 @@ export function renderMarkdown(markdown, doc = globalThis.document) {
         items.push(item[1]);
         index += 1;
       }
-      root.append(createList(false, items, doc));
+      root.append(createList(false, items, doc, linkOptions));
       continue;
     }
 
@@ -205,7 +256,7 @@ export function renderMarkdown(markdown, doc = globalThis.document) {
         items.push(item[1]);
         index += 1;
       }
-      root.append(createList(true, items, doc));
+      root.append(createList(true, items, doc, linkOptions));
       continue;
     }
 
@@ -218,7 +269,7 @@ export function renderMarkdown(markdown, doc = globalThis.document) {
       paragraphLines.push(next.trim());
       index += 1;
     }
-    root.append(createParagraph(paragraphLines.join(' '), doc));
+    root.append(createParagraph(paragraphLines.join(' '), doc, linkOptions));
   }
 
   return root;

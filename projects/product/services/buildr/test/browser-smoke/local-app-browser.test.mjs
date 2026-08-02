@@ -365,7 +365,9 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 90_000 }, async (t)
     assert.equal(await page.locator('#change-artifacts .artifact-content.markdown-body').count(), 4);
     assert.equal(await page.locator('#change-artifacts .content-view-source').count(), 4);
     assert.match(await page.locator('#change-artifacts .artifact-content.markdown-body').first().innerText(), /浏览器流程|验证本机应用/);
-    assert.ok(await page.locator('#change-artifacts .artifact-content.markdown-body h1').count() > 0);
+    assert.equal(await page.locator('#change-artifacts .artifact-content.markdown-body h1').count(), 0, '产物 Markdown 不得再渲染页面级 h1');
+    assert.ok(await page.locator('#change-artifacts .artifact-content.markdown-body h2').count() > 0);
+    assert.equal(await page.locator('#change-detail-name').evaluate((element) => element.tagName), 'H1');
     assert.equal(await page.locator('#change-artifacts .artifact-panel > pre').count(), 0);
     assert.ok(await page.locator('#change-artifacts .task-list-item input[type="checkbox"]').count() >= 2);
     const firstArtifact = page.locator('#change-artifacts .artifact-panel').first();
