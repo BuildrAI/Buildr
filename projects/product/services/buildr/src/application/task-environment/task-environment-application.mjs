@@ -99,8 +99,8 @@ export function registerTaskEnvironmentApplication(runtime) {
     if (!checkout || checkout.linkedWorktree || path.resolve(checkout.checkoutRoot) !== path.resolve(workspaceRoot)) return false;
     const relativeSource = path.relative(workspaceRoot, controller.sourceRoot);
     if (path.isAbsolute(relativeSource) || relativeSource === '..' || relativeSource.startsWith(`..${path.sep}`)) return false;
-    const observedHead = spawnSync('git', ['-C', workspaceRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 5000 });
-    if (observedHead.status !== 0 || observedHead.stdout.trim() !== candidateRef) return false;
+    const deliveredHistory = spawnSync('git', ['-C', workspaceRoot, 'merge-base', '--is-ancestor', candidateRef, 'HEAD'], { encoding: 'utf8', timeout: 5000 });
+    if (deliveredHistory.status !== 0) return false;
     const observedTree = spawnSync('git', ['-C', workspaceRoot, 'status', '--porcelain=v1', '--untracked-files=all', '--', relativeSource || '.'], { encoding: 'utf8', timeout: 5000 });
     return observedTree.status === 0 && observedTree.stdout.trim() === '';
   }

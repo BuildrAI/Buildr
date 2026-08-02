@@ -62,8 +62,11 @@ function fixture(t) {
   return { root, controllerRoot, head, runtime, receipt: () => receipt };
 }
 
-test('Finish 已交付的 retained HEAD 可以确定性接管升级后的 controller identity', async (t) => {
+test('Finish 已交付 commit 仍在 retained 历史中时可以确定性接管升级后的 controller identity', async (t) => {
   const current = fixture(t);
+  fs.writeFileSync(path.join(current.root, 'README.md'), 'retained target advanced\n');
+  git(current.root, ['add', 'README.md']);
+  git(current.root, ['commit', '-m', 'advance retained target']);
   const result = await current.runtime.cleanupTaskEnvironment(current.root, 'controller-handoff', {
     type: 'finish', deliveries: { workspace: 'dev' }, candidateRef: current.head,
   });
@@ -74,7 +77,7 @@ test('Finish 已交付的 retained HEAD 可以确定性接管升级后的 contro
   assert.equal(result.effects[0].candidateRef, current.head);
 });
 
-test('不能证明为当前 retained HEAD 或 controller source dirty 时继续拒绝接管', async (t) => {
+test('不能证明 candidate 位于 retained 历史或 controller source dirty 时继续拒绝接管', async (t) => {
   await t.test('candidate ref 不匹配', async (subtest) => {
     const current = fixture(subtest);
     const result = await current.runtime.cleanupTaskEnvironment(current.root, 'controller-handoff', {
