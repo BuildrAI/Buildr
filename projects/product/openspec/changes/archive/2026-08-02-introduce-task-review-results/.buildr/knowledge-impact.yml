@@ -1,0 +1,109 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: introduce-task-review-results
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/introduce-task-review-results/brief.md
+    reason: 正式 Change 需要面向审查者说明可选双槽位、最小 Result 模型、无 revision、派生 applicability、Local App 与现有 review authority 边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/proposal.md
+      - openspec/changes/introduce-task-review-results/design.md
+      - openspec/changes/introduce-task-review-results/specs/task-review-results/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 实现生效后需要定义任务审查、审查结果、方案审查、完成审查，并记录本轮确认的保留工作区环境管理器、交付目标前进和 Workspace Metadata Store 术语边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/design.md
+      - openspec/changes/introduce-task-review-results/specs/task-review-results/spec.md
+      - openspec/changes/introduce-task-review-results/specs/agent-task-workflows/spec.md
+      - openspec/specs/task-environments/spec.md
+      - docs/roadmap/task-lifecycle-architecture.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: P0.3 生效后 Task workflow 和 Local App 将新增独立 Task Review capability/read model，但两类 Result 仍为可选且不写入 Task Record
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/specs/agent-task-workflows/spec.md
+      - openspec/changes/introduce-task-review-results/specs/task-record/spec.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 产品模块需要表达 Task Review 与 Task Record、Environment、未来 Development、Verification、Finish 和 Task Asset Review 的独立 authority
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/design.md
+      - openspec/changes/introduce-task-review-results/specs/task-review-results/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Buildr Service 将新增 Result Domain/repository/Application、薄 CLI、Local App reader/API、response digest 与精确原子 slot writer
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/design.md
+      - openspec/changes/introduce-task-review-results/specs/buildr-package-assets/spec.md
+      - openspec/changes/introduce-task-review-results/specs/public-json-contracts/spec.md
+      - services/buildr/src/application/task-review/task-review-application.mjs
+      - services/buildr/src/infrastructure/filesystem/task-review-repository.mjs
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 实现后 Change flow 可通过同一 Task Review Skill形成可选 Planning Result，并让 Task-scoped Change review 进入该 route；Completion/Candidate 门禁仍等待 P0.5
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/specs/agent-task-workflows/spec.md
+      - openspec/changes/introduce-task-review-results/specs/change-asset-indexing/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Task metadata、CLI、Local App、package capability topology 与 task-scoped Change action 将增加 Task Review Application
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/specs/task-review-results/spec.md
+      - openspec/changes/introduce-task-review-results/specs/task-record/spec.md
+      - openspec/changes/introduce-task-review-results/specs/buildr-package-assets/spec.md
+      - services/buildr/src/interfaces/cli/task-review.mjs
+      - services/buildr/src/interfaces/local-app/http/server.mjs
+  - type: product-architecture
+    target: docs/buildr-product.md
+    reason: P0.3 retained 生效后产品说明需要增加 Task Review Result、Local App 审查页签和与 task-asset-review/Verification 的边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/design.md
+      - openspec/changes/introduce-task-review-results/specs/task-record/spec.md
+  - type: product-architecture
+    target: docs/roadmap/task-lifecycle-architecture.md
+    reason: 当前 roadmap 需要移除 Review Result revision 与默认必填假设，并记录环境管理入口与任务来源基线分离、target advancement 决策边界及 .buildr clean/publication 分层
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-review-results/design.md
+      - openspec/changes/introduce-task-review-results/specs/task-review-results/spec.md
+      - openspec/specs/task-environments/spec.md
+      - openspec/specs/task-finish-execution/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Task Review
+    - Review Result
+    - Planning Review
+    - Completion Review
+    - Task Asset Review
+    - Receipt
+    - current Result slot
+    - Retained Buildr Environment Manager
+    - Target Advancement
+    - Workspace Metadata Store
+  canonicalTerms: 任务审查（Task Review）、审查结果（Review Result）、方案审查（Planning Review）、完成审查（Completion Review）、任务资产审查（Task Asset Review）、回执（Receipt）、当前结果槽位（current Result slot）、保留工作区 Buildr 环境管理器（Retained Buildr Environment Manager）、交付目标前进（Target Advancement）、工作区元数据存储（Workspace Metadata Store）
+  changedAssets:
+    - openspec/knowledge/glossary.md
+    - openspec/knowledge/overview.md
+    - openspec/knowledge/architecture/product.md
+    - openspec/knowledge/architecture/technical.md
+    - openspec/knowledge/flows/openspec-change-lifecycle.md
+    - openspec/knowledge/services/buildr.md
+    - docs/buildr-product.md
+    - docs/roadmap/task-lifecycle-architecture.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - docs/roadmap/task-lifecycle-architecture.md
+    - openspec/changes/introduce-task-review-results/design.md
+    - openspec/changes/introduce-task-review-results/specs/task-review-results/spec.md
+unresolvedItems: []

@@ -64,6 +64,11 @@ capabilityContracts:
     description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
     path: package/targets/workspace/skills/contracts/buildr/task-record/v1.md
     target: skills/contracts/buildr/task-record/v1.md
+  - id: buildr.task-review
+    version: 1
+    description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
+    path: package/targets/workspace/skills/contracts/buildr/task-review/v1.md
+    target: skills/contracts/buildr/task-review/v1.md
   - id: buildr.task-verification
     version: 2
     description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
@@ -119,6 +124,9 @@ initialSkillBindings:
   - capability: buildr.task-record
     version: 1
     provider: task-manager
+  - capability: buildr.task-review
+    version: 1
+    provider: task-review
   - capability: buildr.task-verification
     version: 2
     provider: task-verification
@@ -175,6 +183,15 @@ builtins:
       required: false
       provides:
         - capability: buildr.task-record
+          version: 1
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: task-review
+      path: package/targets/workspace/skills/buildr/task-review
+      target: skills/buildr/task-review
+      description: 用户要求审查正式 Task 的计划或完成候选、查看已有 Task Review Result，或实现任务在计划/完成节点需要形成轻量审查 evidence 时使用；不用于资产沉淀复盘、Task Verification 或通用代码 Review。
+      required: false
+      provides:
+        - capability: buildr.task-review
           version: 1
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-board
@@ -400,6 +417,7 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-record/v1.md => skills/contracts/buildr/task-record/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-review/v1.md => skills/contracts/buildr/task-review/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-verification/v2.md => skills/contracts/buildr/task-verification/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v1.md => skills/contracts/buildr/task-asset-review/v1.md copy
@@ -412,6 +430,8 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-manager/SKILL.md => skills/buildr/task-manager/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-manager/agents/openai.yaml => skills/buildr/task-manager/agents/openai.yaml copy
+  - package/targets/workspace/skills/buildr/task-review/SKILL.md => skills/buildr/task-review/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-review/agents/openai.yaml => skills/buildr/task-review/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-board/SKILL.md => skills/buildr/task-board/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-board/agents/openai.yaml => skills/buildr/task-board/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-board/assets/task-board-template.html => skills/buildr/task-board/assets/task-board-template.html copy

@@ -112,13 +112,18 @@ export async function renderChangeDetail({ root, api, onWorkspace, onBreadcrumb,
       const row = (label, value) => { const node = document.createElement('div'); const dt = document.createElement('dt'); const dd = document.createElement('dd'); dt.textContent = label; dd.textContent = value; node.append(dt, dd); return node; };
       facts.append(row('Working copy', `${resolution.workingCopy.provenance} · ${resolution.workingCopy.root}`));
       facts.append(row('Retained baseline', resolution.retainedBaseline ? `${resolution.retainedBaseline.provenance} · ${resolution.retainedBaseline.root}` : '无独立 retained baseline'));
-      document.querySelector('.panel-actions').classList.add('hidden');
     }
     document.getElementById('change-brief').append(briefPanel(change.brief));
     const container = document.getElementById('change-artifacts'); container.append(artifactPanel('提案', change.artifacts.proposal), artifactPanel('设计', change.artifacts.design));
     for (const spec of change.artifacts.specs) container.append(artifactPanel(`规格 · ${spec.capability}`, spec));
     container.append(artifactPanel('任务', change.artifacts.tasks));
-    const continueButton = document.getElementById('continue-change'); continueButton.classList.toggle('hidden', change.lifecycle !== 'active'); continueButton.addEventListener('click', () => openAgentAction('change', { projectCode, ref: changeRef, action: 'continue' }));
-    document.getElementById('review-change').addEventListener('click', () => openAgentAction('change', { projectCode, ref: changeRef, action: 'review' }));
+    const continueButton = document.getElementById('continue-change');
+    continueButton.classList.toggle('hidden', taskScoped || change.lifecycle !== 'active');
+    if (!taskScoped) continueButton.addEventListener('click', () => openAgentAction('change', { projectCode, ref: changeRef, action: 'continue' }));
+    const reviewButton = document.getElementById('review-change');
+    reviewButton.textContent = taskScoped ? 'Planning Review' : '交给 Agent 审查';
+    reviewButton.addEventListener('click', () => taskScoped
+      ? openAgentAction('task-review', { taskId, reviewType: 'planning', projectCode, change: change.code })
+      : openAgentAction('change', { projectCode, ref: changeRef, action: 'review' }));
   } catch (error) { root.innerHTML = `<section class="page-header"><p class="eyebrow">变更</p><h1>变更不可用</h1><p class="page-copy"></p></section><a class="button secondary" href="${backPath}" data-route>返回${taskScoped ? '任务详情' : '变更目录'}</a>`; root.querySelector('.page-copy').textContent = error.message; }
 }

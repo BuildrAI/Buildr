@@ -197,7 +197,7 @@ if (fs.existsSync(registry)) {
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicates.length) problems.push(`duplicate command registry keys: ${[...new Set(duplicates)].join(', ')}`);
   const expectedKeys = [
-    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree cleanup', 'worktree inspect', 'verification run', 'verification cleanup', 'task create', 'task inspect', 'task update', 'task complete', 'task abandon', 'task environment prepare', 'task environment inspect', 'task environment cleanup', 'task finish inspect', 'task finish run',
+    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree cleanup', 'worktree inspect', 'verification run', 'verification cleanup', 'task create', 'task inspect', 'task update', 'task complete', 'task abandon', 'task review inspect', 'task review record', 'task environment prepare', 'task environment inspect', 'task environment cleanup', 'task finish inspect', 'task finish run',
     'doctor', 'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove',
     'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'openspec converge', 'openspec audit', 'component list', 'component check', 'component install',
     'component uninstall', 'rules add', 'rules remove', 'builtin list', 'builtin uninstall', 'builtin restore',
@@ -228,6 +228,24 @@ if (fs.existsSync(taskEnvironmentApplication)) {
   const source = fs.readFileSync(taskEnvironmentApplication, 'utf8');
   if (/process\.(?:stdout|stderr|exitCode)|taskEnvironmentCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
     problems.push('Task Environment Application must not own CLI parsing, output, or process exit state');
+  }
+}
+
+const taskReviewApplication = path.join(sourceRoot, 'application', 'task-review', 'task-review-application.mjs');
+const taskReviewInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-review.mjs');
+if (fs.existsSync(taskReviewApplication)) {
+  const source = fs.readFileSync(taskReviewApplication, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|taskReviewCommand|parseTaskReviewCli/.test(source)) {
+    problems.push('Task Review Application must not own CLI parsing, output, or process exit state');
+  }
+  if (!source.includes('runtime.readTaskReviewResultPersistence') || !source.includes('runtime.writeTaskReviewResultPersistence')) {
+    problems.push('Task Review Application must remain the shared reader/writer over the narrow repository');
+  }
+}
+if (fs.existsSync(taskReviewInterface)) {
+  const source = fs.readFileSync(taskReviewInterface, 'utf8');
+  if (!source.includes('export function taskReviewCommand') || !source.includes('runtime.inspectTaskReview') || !source.includes('runtime.recordTaskReview')) {
+    problems.push('Task Review CLI interface must adapt both actions to the shared Application');
   }
 }
 if (fs.existsSync(taskEnvironmentInterface)) {

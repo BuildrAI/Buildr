@@ -66,12 +66,19 @@ function receipt(root, status = 'ready') {
 test('Environment repository 只原子替换 environment.json 并保留 Task sibling files', (t) => {
   const root = fixture(t);
   const runtime = createRuntime();
-  const sibling = path.join(root, '.buildr', 'tasks', 'demo-task', 'review.yml');
-  fs.writeFileSync(sibling, 'owner: task-review\n');
+  const taskDirectory = path.join(root, '.buildr', 'tasks', 'demo-task');
+  const reviewsDirectory = path.join(taskDirectory, 'reviews');
+  fs.mkdirSync(reviewsDirectory);
+  const siblings = new Map([
+    [path.join(taskDirectory, 'review.yml'), 'owner: user-defined-sibling\n'],
+    [path.join(reviewsDirectory, 'planning.yml'), 'slot: planning\n'],
+    [path.join(reviewsDirectory, 'completion.yml'), 'slot: completion\n'],
+  ]);
+  for (const [file, content] of siblings) fs.writeFileSync(file, content);
   const written = runtime.writeTaskEnvironmentPersistence(root, receipt(root));
   assert.equal(written.file, path.join(root, '.buildr', 'tasks', 'demo-task', 'environment.json'));
   assert.equal(written.receipt.status, 'ready');
-  assert.equal(fs.readFileSync(sibling, 'utf8'), 'owner: task-review\n');
+  for (const [file, content] of siblings) assert.equal(fs.readFileSync(file, 'utf8'), content);
 
   const original = fs.readFileSync(written.file, 'utf8');
   const atomicWriteJson = runtime.atomicWriteJson;
@@ -79,7 +86,7 @@ test('Environment repository 只原子替换 environment.json 并保留 Task sib
   assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), status: 'blocked', latest: { ready: { status: 'blocked', observedAt: '2026-08-02T00:01:00.000Z', diagnostic: 'blocked' }, cleanup: null }, updatedAt: '2026-08-02T00:01:00.000Z' }), /injected atomic failure/);
   runtime.atomicWriteJson = atomicWriteJson;
   assert.equal(fs.readFileSync(written.file, 'utf8'), original);
-  assert.equal(fs.readFileSync(sibling, 'utf8'), 'owner: task-review\n');
+  for (const [file, content] of siblings) assert.equal(fs.readFileSync(file, 'utf8'), content);
 });
 
 test('Environment repository 要求正式 Task、canonical Workspace 和匹配 identity', (t) => {

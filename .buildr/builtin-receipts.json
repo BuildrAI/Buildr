@@ -147,6 +147,22 @@
     },
     {
       "type": "skill",
+      "id": "task-review",
+      "target": "skills/buildr/task-review",
+      "integrity": "sha256-adab040e154b73578cef0f63cc15f6c0a713471cb50cc073b4650b42ef760fb1",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-83f63ca7f374540afe7c77f0480f349c9f3817a2d4bd9ec06002adea2e15df0e"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "integrity": "sha256-f16d86974e6c4168b8e1efa473aafc22a8c1299827e61213f7b62e51c54f18d3"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
       "integrity": "sha256-364797254753862455b9e34f683132d73244c87a299224b6cc7d30d39e33768c",

@@ -225,6 +225,78 @@ export function createPackageStaticValidator(deps) {
     }
   }
 
+  function validateTaskReviewAuthority(context) {
+    const { root, manifest, problems } = context;
+    const taskReviewContracts = (manifest.capabilityContracts || []).filter((entry) => entry.id === 'buildr.task-review' && entry.version === 1);
+    if (taskReviewContracts.length !== 1) problems.push('Package must declare exactly one buildr.task-review@1 capability contract.');
+    for (const contract of manifest.capabilityContracts || []) {
+      if (contract.id !== 'buildr.task-review' && /(?:planning|completion)[.-]review|task-review-(?:planning|completion)/i.test(contract.id || '')) {
+        problems.push(`Task Review must not declare a type-specific capability: ${contract.id}.`);
+      }
+    }
+    for (const skill of manifest.builtins?.skills || []) {
+      if (skill.id !== 'task-review' && /(?:planning|completion)[.-]review|task-review-(?:planning|completion)/i.test(skill.id || '')) {
+        problems.push(`Task Review must not declare a type-specific provider: ${skill.id}.`);
+      }
+    }
+
+    const writerCallers = [];
+    const sourceRoot = path.join(root, 'src');
+    if (existsDirectory(sourceRoot)) {
+      for (const file of collectFiles(sourceRoot)) {
+        if (!/\.(?:mjs|js)$/.test(file)) continue;
+        if (path.resolve(file) === path.resolve(root, 'src/application/package-maintenance/static-validation.mjs')) continue;
+        const content = fs.readFileSync(file, 'utf8');
+        if (content.includes('.writeTaskReviewResultPersistence(')) writerCallers.push(toPosixRelative(root, file));
+      }
+    }
+    if (JSON.stringify(writerCallers) !== JSON.stringify(['src/application/task-review/task-review-application.mjs'])) {
+      problems.push(`Task Review Result writer must have exactly one Application caller: ${writerCallers.join(', ') || '<none>'}.`);
+    }
+
+    for (const relative of [
+      'src/domain/task-record/task-record.mjs',
+      'src/application/task-record/task-record-application.mjs',
+      'src/infrastructure/filesystem/task-record-repository.mjs',
+      'src/domain/task-environment/task-environment.mjs',
+      'src/application/task-environment/task-environment-application.mjs',
+      'src/infrastructure/filesystem/task-environment-repository.mjs',
+    ]) {
+      const file = path.join(root, relative);
+      if (!existsFile(file)) continue;
+      const content = fs.readFileSync(file, 'utf8');
+      for (const pattern of ['TaskReviewResult', 'taskReview', 'reviewType', 'reviews/planning.yml', 'reviews/completion.yml']) {
+        if (content.includes(pattern)) problems.push(`${relative} must not own Task Review field ${JSON.stringify(pattern)}.`);
+      }
+    }
+
+    const cli = path.join(root, 'src', 'interfaces', 'cli', 'task-review.mjs');
+    if (!existsFile(cli)) problems.push('Task Review CLI adapter is missing.');
+    else {
+      const content = fs.readFileSync(cli, 'utf8');
+      for (const pattern of ['node:fs', "from 'yaml'", 'YAML.parse', 'YAML.stringify', 'writeFileSync', 'renameSync']) {
+        if (content.includes(pattern)) problems.push(`Task Review CLI must not bypass the shared Application with ${JSON.stringify(pattern)}.`);
+      }
+    }
+
+    const localServer = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'server.mjs');
+    if (!existsFile(localServer)) problems.push('Task Review Local App interface is missing.');
+    else {
+      const content = fs.readFileSync(localServer, 'utf8');
+      for (const required of ['runtime.inspectTaskReview(root, taskReviewsMatch[1])', "suffix === '/prompts/task-review'", 'runtime.generateTaskReviewPrompt(root, input)']) {
+        if (!content.includes(required)) problems.push(`Task Review Local App interface must include ${JSON.stringify(required)}.`);
+      }
+      if (content.includes('runtime.recordTaskReview(')) problems.push('Local App must not expose a direct Task Review Result writer.');
+    }
+
+    const changeDetail = path.join(root, 'src', 'interfaces', 'local-app', 'web', 'features', 'change-detail.js');
+    if (existsFile(changeDetail)) {
+      const content = fs.readFileSync(changeDetail, 'utf8');
+      if (!content.includes("openAgentAction('task-review', { taskId, reviewType: 'planning', projectCode, change: change.code })")) problems.push('Task-scoped Change review must route to Planning Task Review.');
+      if (!content.includes("openAgentAction('change', { projectCode, ref: changeRef, action: 'review' })")) problems.push('Global retained Change review route must remain available.');
+    }
+  }
+
   function parseJsonOutput(label, output) {
     try {
       return JSON.parse(output);
@@ -695,7 +767,7 @@ export function createPackageStaticValidator(deps) {
       try {
         const metadata = parseSkillFrontmatter(skillFile);
         if (metadata.name !== skill.id) problems.push(`${label}.id must match SKILL.md frontmatter name: ${skill.id} != ${metadata.name}`);
-        if (['task-triage', 'task-manager', 'task-environment', 'task-worktree', 'task-board', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
+        if (['task-triage', 'task-manager', 'task-review', 'task-environment', 'task-worktree', 'task-board', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
           problems.push(`${label}.description must exactly match SKILL.md frontmatter description.`);
         }
       } catch (error) {
@@ -804,6 +876,28 @@ export function createPackageStaticValidator(deps) {
           for (const forbiddenText of ['node:fs', "from 'yaml'", 'YAML.parse', 'YAML.stringify', '.buildr/tasks/']) {
             if (content.includes(forbiddenText)) problems.push(`${relative} must not copy Task Record filesystem/YAML logic: ${forbiddenText}.`);
           }
+        }
+      }
+      if (skill.id === 'task-review') {
+        for (const requiredText of [
+          '本 Skill 是 `buildr.task-review/v1` 的默认 provider',
+          '用一个参数化能力完成 Planning Review 或 Completion Review',
+          'buildr task review inspect <task-id>',
+          'buildr task review record <task-id>',
+          '动态执行语义审查',
+          '不要把 OpenSpec artifacts、代码目录、测试命令或 checklist 固定为每个 Task 的必选范围',
+          '同一 Agent 自审使用 `self`',
+          '没有明确 Candidate identity 就停止',
+          '中断时不要调用 record',
+          '不生成总 receipt',
+          '不取代 `task-asset-review`',
+        ]) {
+          if (!skillContent.includes(requiredText)) problems.push(`task-review Skill must include ${JSON.stringify(requiredText)}.`);
+        }
+        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 1);
+        if (!provided) problems.push('task-review must provide buildr.task-review@1.');
+        for (const forbiddenText of ['buildr verification run', 'buildr task finish run', 'git commit', 'git push', 'revision:']) {
+          if (skillContent.includes(forbiddenText)) problems.push(`task-review Skill must not execute or persist ${JSON.stringify(forbiddenText)}.`);
         }
       }
       if (skill.id === 'task-verification') {
@@ -1029,6 +1123,9 @@ export function createPackageStaticValidator(deps) {
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-asset-review' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-asset-review.');
     }
+    if (!manifest.builtins.skills.some((skill) => skill.id === 'task-review' && skill.required === false)) {
+      problems.push('builtins.skills must declare optional task-review.');
+    }
 
     for (const command of manifest.builtins.commands) {
       validateLegacyIntegrities(command, `builtins.commands.${command.id || '<missing>'}`);
@@ -1096,6 +1193,10 @@ export function createPackageStaticValidator(deps) {
         const taskManager = baselineSkills.find((entry) => entry.id === 'task-manager');
         if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1)) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@1.');
+        }
+        const taskReview = baselineSkills.find((entry) => entry.id === 'task-review');
+        if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 1)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@1.');
         }
         const taskAssetReview = baselineSkills.find((entry) => entry.id === 'task-asset-review');
         if (!taskAssetReview || taskAssetReview.source !== 'buildr' || taskAssetReview.state !== 'installed' || taskAssetReview.enabled !== true) {
@@ -1169,6 +1270,7 @@ export function createPackageStaticValidator(deps) {
   function validatePackageStatic(context) {
     validatePackageMetadata(context);
     validateTaskEnvironmentAuthorityResidue(context);
+    validateTaskReviewAuthority(context);
     validateMappedEntries(context);
     validatePackageComponents(context);
     const skillSourceIds = validatePackageSkills(context);

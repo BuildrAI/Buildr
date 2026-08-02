@@ -78,7 +78,7 @@ try {
   const runPackaged = (args) => spawn(packagedCli, args);
   for (const args of [
     [], ['--version'], ['-V'], ['version'], ['version', '--json'],
-    ['help', 'doctor'], ['help', 'app'], ['help', 'init'], ['help', 'task'], ['task', 'create', '--json'], ['service', 'create'], ['doctr'], ['doctr', '--json'],
+    ['help', 'doctor'], ['help', 'app'], ['help', 'init'], ['help', 'task'], ['help', 'task', 'review'], ['help', 'task', 'review', 'inspect'], ['help', 'task', 'review', 'record'], ['task', 'create', '--json'], ['task', 'review', 'inspect', '--json'], ['service', 'create'], ['doctr'], ['doctr', '--json'],
     ['runtime', 'list', '--json'],
   ]) {
     const checkout = runCheckout(args);
@@ -99,6 +99,8 @@ try {
     assert.equal(result.status, 0, result.stderr);
     assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-manager', 'SKILL.md')), 'sync must install task-manager source');
     assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-manager', 'SKILL.md')), 'sync must project task-manager into Codex runtime');
+    assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-review', 'SKILL.md')), 'sync must install task-review source');
+    assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-review', 'SKILL.md')), 'sync must project task-review into Codex runtime');
     const renderedTriage = fs.readFileSync(path.join(workspace, '.agents', 'skills', 'task-triage', 'SKILL.md'), 'utf8');
     assert.match(renderedTriage, /`buildr\.task-record@1`/);
     assert.match(renderedTriage, /selected provider: `task-manager`/);
@@ -143,6 +145,21 @@ try {
       } }
       : payload.diagnostic,
   });
+  const normalizeReviewPayload = (payload, workspace) => ({
+    ...payload,
+    slots: Object.fromEntries(Object.entries(payload.slots).map(([reviewType, slot]) => [reviewType, {
+      ...slot,
+      path: path.isAbsolute(slot.path || '') ? path.relative(workspace, slot.path).split(path.sep).join('/') : slot.path,
+      resultDigest: slot.resultDigest ? '<result-digest>' : null,
+      result: slot.result ? { ...slot.result, completedAt: '<time>' } : null,
+    }])),
+    diagnostic: payload.diagnostic?.details
+      ? { ...payload.diagnostic, details: {
+        ...payload.diagnostic.details,
+        ...(path.isAbsolute(payload.diagnostic.details.path || '') ? { path: path.relative(workspace, payload.diagnostic.details.path).split(path.sep).join('/') } : {}),
+      } }
+      : payload.diagnostic,
+  });
   const taskParity = [];
   for (const [runner, workspace] of [[runCheckout, checkoutWorkspace], [runPackaged, packagedWorkspace]]) {
     const results = [];
@@ -150,19 +167,26 @@ try {
       ['task', 'create', 'parity-task', '--title', 'Parity Task', '--intent', '验证 checkout/npm Task Record parity', '--target', workspace, '--json'],
       ['task', 'inspect', 'parity-task', '--target', workspace, '--json'],
       ['task', 'update', 'parity-task', '--intent', '已更新', '--target', workspace, '--json'],
-      ['task', 'complete', 'parity-task', '--summary', '无需交付变更', '--no-change', '--target', workspace, '--json'],
     ]) {
       const execution = runner(args); assert.equal(execution.status, 0, execution.stderr || execution.stdout); results.push(normalizeTaskPayload(JSON.parse(execution.stdout), workspace));
     }
+    let review = runner(['task', 'review', 'record', 'parity-task', '--type', 'planning', '--target-identity', 'plan:parity-v1', '--method', 'self', '--reviewed', 'task intent', '--outcome', 'ready', '--summary', 'Plan ready', '--target', workspace, '--json']);
+    assert.equal(review.status, 0, review.stderr || review.stdout); results.push(normalizeReviewPayload(JSON.parse(review.stdout), workspace));
+    review = runner(['task', 'review', 'inspect', 'parity-task', '--planning-target', 'plan:parity-v2', '--target', workspace, '--json']);
+    assert.equal(review.status, 0, review.stderr || review.stdout); results.push(normalizeReviewPayload(JSON.parse(review.stdout), workspace));
+    review = runner(['task', 'review', 'record', 'parity-task', '--type', 'completion', '--method', 'self', '--reviewed', 'candidate', '--outcome', 'ready', '--summary', 'Candidate ready', '--target', workspace, '--json']);
+    assert.equal(review.status, 1, review.stderr || review.stdout); results.push(normalizeReviewPayload(JSON.parse(review.stdout), workspace));
+    let execution = runner(['task', 'complete', 'parity-task', '--summary', '无需交付变更', '--no-change', '--target', workspace, '--json']);
+    assert.equal(execution.status, 0, execution.stderr || execution.stdout); results.push(normalizeTaskPayload(JSON.parse(execution.stdout), workspace));
     const blocked = runner(['task', 'update', 'parity-task', '--title', '不可重开', '--target', workspace, '--json']); assert.equal(blocked.status, 1, blocked.stderr || blocked.stdout); results.push(normalizeTaskPayload(JSON.parse(blocked.stdout), workspace));
     const duplicate = runner(['task', 'create', 'parity-task', '--title', '重复', '--intent', '不得覆盖', '--target', workspace, '--json']); assert.equal(duplicate.status, 1, duplicate.stderr || duplicate.stdout); results.push(normalizeTaskPayload(JSON.parse(duplicate.stdout), workspace));
     const invalidReference = runner(['task', 'create', 'invalid-reference-task', '--title', '无效引用', '--intent', '项目不存在', '--project', 'missing', '--target', workspace, '--json']); assert.equal(invalidReference.status, 1, invalidReference.stderr || invalidReference.stdout); results.push(normalizeTaskPayload(JSON.parse(invalidReference.stdout), workspace));
-    const occupiedDirectory = path.join(workspace, '.buildr', 'tasks', 'occupied-parity-task'); fs.mkdirSync(occupiedDirectory); fs.writeFileSync(path.join(occupiedDirectory, 'review.yml'), 'owner: task-review\n');
-    const occupied = runner(['task', 'create', 'occupied-parity-task', '--title', '路径占用', '--intent', '不得覆盖 sibling', '--target', workspace, '--json']); assert.equal(occupied.status, 1, occupied.stderr || occupied.stdout); results.push(normalizeTaskPayload(JSON.parse(occupied.stdout), workspace)); assert.equal(fs.readFileSync(path.join(occupiedDirectory, 'review.yml'), 'utf8'), 'owner: task-review\n');
+    const occupiedDirectory = path.join(workspace, '.buildr', 'tasks', 'occupied-parity-task'); fs.mkdirSync(occupiedDirectory); fs.writeFileSync(path.join(occupiedDirectory, 'review.yml'), 'owner: user-defined-sibling\n');
+    const occupied = runner(['task', 'create', 'occupied-parity-task', '--title', '路径占用', '--intent', '不得覆盖 sibling', '--target', workspace, '--json']); assert.equal(occupied.status, 1, occupied.stderr || occupied.stdout); results.push(normalizeTaskPayload(JSON.parse(occupied.stdout), workspace)); assert.equal(fs.readFileSync(path.join(occupiedDirectory, 'review.yml'), 'utf8'), 'owner: user-defined-sibling\n');
     let corrupt = runner(['task', 'create', 'corrupt-parity-task', '--title', '损坏记录', '--intent', '验证 fail closed', '--target', workspace, '--json']); assert.equal(corrupt.status, 0, corrupt.stderr || corrupt.stdout);
     fs.appendFileSync(path.join(workspace, '.buildr', 'tasks', 'corrupt-parity-task', 'task.yml'), 'revision: 1\n');
     corrupt = runner(['task', 'inspect', 'corrupt-parity-task', '--target', workspace, '--json']); assert.equal(corrupt.status, 1, corrupt.stderr || corrupt.stdout); results.push(normalizeTaskPayload(JSON.parse(corrupt.stdout), workspace));
-    let execution = runner(['task', 'create', 'abandoned-parity-task', '--title', 'Abandoned Task', '--intent', '验证放弃 parity', '--target', workspace, '--json']); assert.equal(execution.status, 0, execution.stderr || execution.stdout);
+    execution = runner(['task', 'create', 'abandoned-parity-task', '--title', 'Abandoned Task', '--intent', '验证放弃 parity', '--target', workspace, '--json']); assert.equal(execution.status, 0, execution.stderr || execution.stdout);
     execution = runner(['task', 'abandon', 'abandoned-parity-task', '--reason', '目标取消', '--target', workspace, '--json']); assert.equal(execution.status, 0, execution.stderr || execution.stdout); results.push(normalizeTaskPayload(JSON.parse(execution.stdout), workspace));
     assert.doesNotMatch(fs.readFileSync(path.join(workspace, '.buildr', 'tasks', 'parity-task', 'task.yml'), 'utf8'), /recordDigest|revision|workspaceId/);
     taskParity.push(results);

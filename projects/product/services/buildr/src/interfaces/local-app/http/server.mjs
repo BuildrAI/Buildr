@@ -317,6 +317,10 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           runtime.inspectTaskRecord(root, taskEnvironmentMatch[1]);
           return jsonResponse(response, 200, runtime.inspectTaskEnvironment(root, taskEnvironmentMatch[1]));
         }
+        const taskReviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/reviews$`));
+        if (request.method === 'GET' && taskReviewsMatch) {
+          return jsonResponse(response, 200, runtime.inspectTaskReview(root, taskReviewsMatch[1]));
+        }
         const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
         if (request.method === 'GET' && taskChangeMatch) {
           runtime.inspectTaskRecord(root, taskChangeMatch[1]);
@@ -374,6 +378,11 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         if (request.method === 'POST' && suffix === '/prompts/change-action') {
           assertWriteRequest(request, origin, sessionToken);
           return jsonResponse(response, 200, runtime.generateChangeActionPrompt(root, await readJsonBody(request)));
+        }
+        if (request.method === 'POST' && suffix === '/prompts/task-review') {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['taskId', 'reviewType', 'projectCode', 'change']), 'Task Review prompt');
+          return jsonResponse(response, 200, runtime.generateTaskReviewPrompt(root, input));
         }
       }
       jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr 本地应用资源不存在。' } });

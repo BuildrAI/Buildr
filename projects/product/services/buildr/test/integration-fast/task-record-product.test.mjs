@@ -81,6 +81,13 @@ test('引用、closed input、损坏 YAML、陈旧 digest 与原子替换失败�
   const environmentFile = path.join(path.dirname(created.path), 'environment.json');
   fs.writeFileSync(environmentFile, '{"owner":"task-environment"}\n');
   const environmentBytes = fs.readFileSync(environmentFile, 'utf8');
+  const reviewsDirectory = path.join(path.dirname(created.path), 'reviews');
+  fs.mkdirSync(reviewsDirectory);
+  const reviewSiblings = new Map([
+    [path.join(reviewsDirectory, 'planning.yml'), 'slot: planning\n'],
+    [path.join(reviewsDirectory, 'completion.yml'), 'slot: completion\n'],
+  ]);
+  for (const [file, content] of reviewSiblings) fs.writeFileSync(file, content);
   assert.throws(() => runtime.updateTaskRecord(root, 'safe-task', { expectedRecordDigest: staleDigest, title: '陈旧页面' }), (error) => error.code === 'task_record_conflict' && Boolean(error.details.currentRecordDigest));
   assert.equal(fs.readFileSync(created.path, 'utf8'), currentBytes);
 
@@ -90,6 +97,7 @@ test('引用、closed input、损坏 YAML、陈旧 digest 与原子替换失败�
   runtime.atomicWriteFile = originalAtomicWrite;
   assert.equal(fs.readFileSync(created.path, 'utf8'), currentBytes, 'failed exact-file replacement must preserve original bytes');
   assert.equal(fs.readFileSync(environmentFile, 'utf8'), environmentBytes, 'Task Record failure must not rewrite sibling professional files');
+  for (const [file, content] of reviewSiblings) assert.equal(fs.readFileSync(file, 'utf8'), content, 'Task Record failure must preserve Task Review slots');
 
   const failedCreateDirectory = path.join(root, '.buildr', 'tasks', 'failed-create');
   runtime.atomicWriteFile = (file, content, encoding) => { if (file === path.join(failedCreateDirectory, 'task.yml')) throw new Error('injected create failure'); return originalAtomicWrite(file, content, encoding); };
@@ -100,9 +108,9 @@ test('引用、closed input、损坏 YAML、陈旧 digest 与原子替换失败�
   const occupiedDirectory = path.join(root, '.buildr', 'tasks', 'occupied-task');
   fs.mkdirSync(occupiedDirectory);
   const reviewFile = path.join(occupiedDirectory, 'review.yml');
-  fs.writeFileSync(reviewFile, 'owner: task-review\n');
-  assert.throws(() => runtime.createTaskRecord(root, { taskId: 'occupied-task', title: '不得覆盖', intent: '保留专业文件', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_path_occupied');
-  assert.equal(fs.readFileSync(reviewFile, 'utf8'), 'owner: task-review\n');
+  fs.writeFileSync(reviewFile, 'owner: user-defined-sibling\n');
+  assert.throws(() => runtime.createTaskRecord(root, { taskId: 'occupied-task', title: '不得覆盖', intent: '保留未知 sibling', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_path_occupied');
+  assert.equal(fs.readFileSync(reviewFile, 'utf8'), 'owner: user-defined-sibling\n');
 
   fs.appendFileSync(created.path, 'revision: 1\n');
   const broken = json(['task', 'inspect', 'safe-task', '--target', root], 1); assert.equal(broken.diagnostic.code, 'task_record_invalid'); assert.equal(broken.record, null);

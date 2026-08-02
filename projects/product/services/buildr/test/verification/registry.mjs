@@ -107,6 +107,7 @@ export const verificationSteps = Object.freeze([
     'src/application/project/**',
     'src/application/service/**',
     'src/application/task-record/**',
+    'src/application/task-review/**',
     'src/application/worktree/**',
     'src/application/task-finish/**',
     'src/application/verification/**',

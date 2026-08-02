@@ -58,12 +58,12 @@ function errorPage(root, message) {
   root.querySelector('.page-copy').textContent = message;
 }
 
-export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, navigate, params }) {
+export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, navigate, openAgentAction, params }) {
   const taskId = params.taskId;
   root.innerHTML = `
     <section class="detail-page-header"><a class="back-link" href="/tasks" data-route>← 返回任务列表</a><div class="detail-title-row"><div><p class="eyebrow">任务</p><h1 id="task-detail-title">正在读取…</h1><p id="task-detail-intent" class="page-copy"></p></div><span id="task-detail-status" class="lifecycle-badge">—</span></div></section>
     <div id="task-detail-alert" class="alert hidden" role="status"></div>
-    <nav class="detail-tabs" aria-label="任务详情"><button class="detail-tab active" type="button" data-task-tab="overview" aria-selected="true">概览</button><button class="detail-tab" type="button" data-task-tab="environment" aria-selected="false">环境</button></nav>
+    <nav class="detail-tabs" aria-label="任务详情"><button class="detail-tab active" type="button" data-task-tab="overview" aria-selected="true">概览</button><button class="detail-tab" type="button" data-task-tab="environment" aria-selected="false">环境</button><button class="detail-tab" type="button" data-task-tab="review" aria-selected="false">审查</button></nav>
     <div id="task-overview-panel" data-task-panel="overview">
     <section class="detail-layout">
       <article class="panel"><div class="panel-heading"><div><h2>Task Record</h2><p class="section-copy">只展示顶层任务事实，不推断专业阶段状态。</p></div></div><dl class="read-facts detail-facts"><div><dt>Task ID</dt><dd id="task-detail-id">—</dd></div><div><dt>Project scope</dt><dd id="task-detail-projects">—</dd></div><div><dt>Service scope</dt><dd id="task-detail-services">—</dd></div><div><dt>OpenSpec Changes</dt><dd id="task-detail-changes">—</dd></div><div><dt>结果</dt><dd id="task-detail-result">进行中</dd></div><div><dt>创建时间</dt><dd id="task-detail-created">—</dd></div><div><dt>更新时间</dt><dd id="task-detail-updated">—</dd></div></dl></article>
@@ -79,6 +79,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
       <article class="panel environment-summary"><div class="panel-heading"><div><p class="eyebrow">当前机器事实</p><h2>Task Environment</h2><p class="section-copy">只读探测当前环境；不会准备、恢复或清理任何资源。</p></div><button id="task-environment-refresh" class="button secondary" type="button">刷新当前事实</button></div><dl class="read-facts"><div><dt>状态</dt><dd id="task-environment-status">尚未读取</dd></div><div><dt>观察时间</dt><dd id="task-environment-observed">—</dd></div><div><dt>来源</dt><dd id="task-environment-source">current-machine</dd></div><div><dt>Environment Receipt</dt><dd id="task-environment-receipt">—</dd></div></dl><div id="task-environment-diagnostic" class="environment-diagnostic hidden"></div></article>
       <div id="task-environment-loading" class="page-loading hidden"><span class="loader"></span><p>正在探测当前环境…</p></div>
       <div id="task-environment-detail" class="environment-detail hidden"><section class="panel"><div class="panel-heading"><div><h2>工作范围与执行基础</h2><p class="section-copy">每个 scope 展示真实执行根、任务验证工作区根与最小 probe。</p></div></div><div id="task-environment-scopes" class="environment-scope-list"></div></section><section class="detail-layout"><article class="panel"><div class="panel-heading"><div><h2>动态资源</h2><p class="section-copy">只展示 Environment Application 返回的非敏感事实。</p></div></div><div id="task-environment-resources"></div></article><aside class="panel facts-panel"><p class="eyebrow">处置事实</p><h2>Cleanup</h2><dl id="task-environment-cleanup" class="fact-list"></dl></aside></section></div>
+    </section>
+    <section id="task-review-panel" class="hidden" data-task-panel="review" aria-live="polite">
+      <article class="panel review-summary"><div class="panel-heading"><div><p class="eyebrow">轻量语义 evidence</p><h2>Task Review Results</h2><p class="section-copy">Planning 与 Completion 是两个可选 current 槽位；这里只读展示，不在页面内编辑 Result。</p></div><button id="task-review-refresh" class="button secondary" type="button">刷新审查结果</button></div><div id="task-review-diagnostic" class="environment-diagnostic hidden"></div></article>
+      <div id="task-review-loading" class="page-loading hidden"><span class="loader"></span><p>正在读取审查结果…</p></div>
+      <div id="task-review-slots" class="review-slot-grid"></div>
     </section>`;
 
   let current;
@@ -113,8 +118,10 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   }
 
   const environmentPanel = document.getElementById('task-environment-panel');
+  const reviewPanel = document.getElementById('task-review-panel');
   let activeTab = 'overview';
   let environmentLoading = false;
+  let reviewLoading = false;
 
   function renderEnvironment(data) {
     if (!environmentPanel.isConnected) return;
@@ -207,6 +214,86 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     }
   }
 
+  function reviewList(title, values, describe = (value) => value) {
+    const section = document.createElement('section'); section.className = 'review-evidence-section';
+    const heading = document.createElement('h4'); heading.textContent = title; section.append(heading);
+    if (!values.length) {
+      const empty = document.createElement('p'); empty.className = 'review-list-empty'; empty.textContent = '无'; section.append(empty); return section;
+    }
+    const list = document.createElement('ul');
+    for (const value of values) { const item = document.createElement('li'); item.textContent = describe(value); list.append(item); }
+    section.append(list); return section;
+  }
+
+  function renderReviewSlot(reviewType, slot) {
+    const card = document.createElement('article'); card.className = `review-slot-card ${slot.present ? slot.applicability : 'missing'}`;
+    const heading = document.createElement('div'); heading.className = 'review-slot-heading';
+    const titleWrap = document.createElement('div');
+    const eyebrow = document.createElement('p'); eyebrow.className = 'eyebrow'; eyebrow.textContent = reviewType === 'planning' ? '计划目标' : '完成候选';
+    const title = document.createElement('h3'); title.textContent = reviewType === 'planning' ? 'Planning Review' : 'Completion Review';
+    titleWrap.append(eyebrow, title);
+    const state = document.createElement('span'); state.className = `state review-state ${slot.present ? slot.applicability : 'missing'}`;
+    state.textContent = !slot.present ? '未记录' : ({ current: '当前适用', stale: '目标已变化', unknown: '适用性未知' })[slot.applicability] || '未知';
+    heading.append(titleWrap, state); card.append(heading);
+
+    if (!slot.present) {
+      const empty = document.createElement('div'); empty.className = 'review-slot-empty'; empty.textContent = '尚未形成完整 Result；不会创建空占位记录。'; card.append(empty);
+    } else {
+      const result = slot.result;
+      const facts = document.createElement('dl'); facts.className = 'read-facts review-facts';
+      facts.append(
+        fact('Target identity', result.targetIdentity),
+        fact('执行方式', ({ self: '自审', 'independent-agent': '独立 Agent', human: '人工' })[result.method] || result.method),
+        fact('完成时间', new Date(result.completedAt).toLocaleString('zh-CN')),
+        fact('Result digest', slot.resultDigest),
+      );
+      const conclusion = document.createElement('div'); conclusion.className = `review-conclusion ${result.conclusion.outcome}`;
+      const outcome = document.createElement('strong'); outcome.textContent = result.conclusion.outcome === 'ready' ? 'Ready' : 'Changes required';
+      const summary = document.createElement('p'); summary.textContent = result.conclusion.summary;
+      conclusion.append(outcome, summary);
+      const evidence = document.createElement('div'); evidence.className = 'review-evidence-grid';
+      evidence.append(
+        reviewList('已审阅', result.reviewed),
+        reviewList('未覆盖', result.uncovered, (item) => `${item.subject}：${item.reason}`),
+        reviewList('Findings', result.findings),
+      );
+      const technical = document.createElement('small'); technical.className = 'review-result-path'; technical.textContent = slot.path;
+      card.append(facts, conclusion, evidence, technical);
+    }
+
+    const actions = document.createElement('div'); actions.className = 'review-slot-actions';
+    const action = document.createElement('button'); action.type = 'button'; action.className = 'button secondary';
+    const active = current?.record.status === 'active'; action.disabled = !active;
+    action.textContent = active ? '交给 Agent 审查' : '终态只读';
+    action.addEventListener('click', () => openAgentAction('task-review', { taskId, reviewType }));
+    actions.append(action); card.append(actions);
+    return card;
+  }
+
+  function renderReview(data) {
+    if (!reviewPanel.isConnected) return;
+    const diagnostic = document.getElementById('task-review-diagnostic'); diagnostic.classList.add('hidden'); diagnostic.textContent = '';
+    const slots = document.getElementById('task-review-slots'); slots.replaceChildren(
+      renderReviewSlot('planning', data.slots.planning),
+      renderReviewSlot('completion', data.slots.completion),
+    );
+  }
+
+  async function refreshReview() {
+    if (reviewLoading || !reviewPanel.isConnected) return;
+    reviewLoading = true;
+    document.getElementById('task-review-loading').classList.remove('hidden');
+    const button = document.getElementById('task-review-refresh'); button.disabled = true;
+    try {
+      renderReview(await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/reviews`));
+    } catch (error) {
+      const diagnostic = document.getElementById('task-review-diagnostic'); diagnostic.classList.remove('hidden'); diagnostic.textContent = `${error.code || 'task_review_read_failed'}：${error.message}`;
+    } finally {
+      reviewLoading = false;
+      if (reviewPanel.isConnected) { document.getElementById('task-review-loading').classList.add('hidden'); button.disabled = false; }
+    }
+  }
+
   function selectTab(tab) {
     activeTab = tab;
     for (const button of document.querySelectorAll('[data-task-tab]')) {
@@ -214,6 +301,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     }
     for (const panel of document.querySelectorAll('[data-task-panel]')) panel.classList.toggle('hidden', panel.dataset.taskPanel !== tab);
     if (tab === 'environment') refreshEnvironment();
+    if (tab === 'review') refreshReview();
   }
 
   async function refresh() {
@@ -229,9 +317,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
 
   for (const button of document.querySelectorAll('[data-task-tab]')) button.addEventListener('click', () => selectTab(button.dataset.taskTab));
   document.getElementById('task-environment-refresh').addEventListener('click', refreshEnvironment);
+  document.getElementById('task-review-refresh').addEventListener('click', refreshReview);
   const refreshOnFocus = () => {
     if (!environmentPanel.isConnected) { window.removeEventListener('focus', refreshOnFocus); return; }
     if (activeTab === 'environment') refreshEnvironment();
+    if (activeTab === 'review') refreshReview();
   };
   window.addEventListener('focus', refreshOnFocus);
 

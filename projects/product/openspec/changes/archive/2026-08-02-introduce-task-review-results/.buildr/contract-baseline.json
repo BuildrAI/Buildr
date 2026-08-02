@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "introduce-task-review-results",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-78bec14aea372cdb1dc667a3dbe63a31868f6c9454d92dada5ba6158e40ee6c7",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "task-review Skill 必须作为 Task Review 语义入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Review 必须如实记录执行方式和覆盖边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "P0.3 不得把两种 Review 变成默认 Task 门禁",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Review 与 Task Asset Review 必须保持独立 authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "Package 必须原子交付 Task Review authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "Package residual gate 必须防止 Task Review 双 authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "候选 Task Review authority 必须在 retained cutover 前保持隔离",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "change-asset-indexing",
+      "title": "Task-scoped Change 审查必须路由到 Planning Review",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "cli-product-surface",
+      "title": "CLI 必须提供最小 Task Review Result 管理入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "public-json-contracts",
+      "title": "Task Review CLI 必须提供稳定 operation JSON identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "public-json-contracts",
+      "title": "Task Review JSON registry 必须与 command registry 同步",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App Task 详情必须组合独立 Task Review 投影",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App Task Review API 必须复用 Application 并保持只读",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-review-results",
+      "title": "Task Review 必须使用一个能力维护两个可选 current Result 槽位",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-review-results",
+      "title": "Review Result 必须使用最小 closed v1 schema",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-review-results",
+      "title": "Task Review Application 必须是唯一 Result writer",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-review-results",
+      "title": "完整 Review 写入必须原子替换且中断不覆盖 current",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-review-results",
+      "title": "Result 适用性必须由 target identity 派生",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-review-results",
+      "title": "Result digest 必须是响应级值 identity 而不是持久 revision",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-review-results",
+      "title": "Review Result 必须保持可移植且不抢占其他 lifecycle authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

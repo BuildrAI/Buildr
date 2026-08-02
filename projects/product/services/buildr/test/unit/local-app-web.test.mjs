@@ -87,3 +87,27 @@ test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () 
   assert.match(styles, /\.artifact-content/);
   assert.match(styles, /\.content-view-toggle/);
 });
+
+test('Task 详情以只读审查页签展示两个 Result 槽位和三种 applicability', () => {
+  const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
+  const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
+  assert.match(source, /data-task-tab="review"/);
+  assert.match(source, /renderReviewSlot\('planning'/);
+  assert.match(source, /renderReviewSlot\('completion'/);
+  assert.match(source, /current: '当前适用', stale: '目标已变化', unknown: '适用性未知'/);
+  assert.match(source, /api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/reviews`\)/);
+  assert.match(source, /openAgentAction\('task-review', \{ taskId, reviewType \}\)/);
+  assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
+  assert.match(styles, /\.review-slot-grid \{[^}]*grid-template-columns: repeat\(2/);
+  assert.match(styles, /\.review-slot-grid \{ grid-template-columns: 1fr; \}/);
+});
+
+test('Task-scoped Change 使用 Planning Review，global Change 保留通用审查 route', () => {
+  const change = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
+  const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');
+  assert.match(change, /openAgentAction\('task-review', \{ taskId, reviewType: 'planning', projectCode, change: change\.code \}\)/);
+  assert.match(change, /openAgentAction\('change', \{ projectCode, ref: changeRef, action: 'review' \}\)/);
+  assert.doesNotMatch(change, /querySelector\('\.panel-actions'\)\.classList\.add\('hidden'\)/);
+  assert.match(actions, /\/api\/v1\/prompts\/task-review/);
+  assert.match(actions, /Review Result 尚未记录/);
+});

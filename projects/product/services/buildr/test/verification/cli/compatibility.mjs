@@ -23,6 +23,7 @@ const helpTopics = [
   ['worktree', 'create'], ['worktree', 'cleanup'], ['worktree', 'inspect'],
   ['verification', 'run'], ['verification', 'cleanup'],
   ['task'], ...['create', 'inspect', 'update', 'complete', 'abandon'].map((action) => ['task', action]),
+  ['task', 'review'], ...['inspect', 'record'].map((action) => ['task', 'review', action]),
   ...['inspect', 'run'].map((action) => ['task', 'finish', action]),
   ['mutation', 'recover'], ['runtime', 'list'], ['runtime', 'check'],
   ['commands', 'add'], ['commands', 'remove'], ['commands', 'check'],

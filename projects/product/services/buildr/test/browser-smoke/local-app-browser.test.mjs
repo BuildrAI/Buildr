@@ -74,6 +74,8 @@ function createFixture(root) {
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   runBuildr(['task', 'environment', 'prepare', 'browser-task', '--shared', '--target', root]);
+  runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
+  runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'completion', '--target-identity', 'candidate:browser-g1', '--method', 'human', '--reviewed', 'candidate:browser-g1', '--uncovered', 'browser visual diff::smoke only', '--finding', '没有阻断问题', '--outcome', 'ready', '--summary', '候选可交付', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
 
@@ -271,6 +273,18 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 90_000 }, async (t)
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /Retained · 进行中/);
     await unique(page.getByRole('button', { name: '环境', exact: true }), '任务环境页签');
+    await page.getByRole('button', { name: '审查', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
+    assert.equal(await page.locator('#task-review-slots .review-slot-card').count(), 2);
+    assert.equal(await page.locator('#task-review-slots').getByText('未记录', { exact: true }).count(), 2);
+    await page.locator('#task-review-slots .review-slot-card').first().getByRole('button', { name: '交给 Agent 审查', exact: true }).click();
+    await page.getByRole('button', { name: '生成审查指令', exact: true }).click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /created-in-app/);
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /Planning Review/);
+    assert.equal(await page.locator('#action-copy-state').innerText(), 'Review Result 尚未记录。');
+    await page.locator('#close-agent-action').click();
+    await page.getByRole('button', { name: '概览', exact: true }).click();
 
     await page.locator('#task-complete-summary').fill('页面确认完成');
     await page.locator('#task-complete-no-change').selectOption('false');
@@ -292,9 +306,24 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 90_000 }, async (t)
     await page.locator('#task-change-provenance').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-change-provenance-facts').innerText(), /Working copy/);
     assert.match(await page.locator('#task-change-provenance-facts').innerText(), /Retained baseline/);
-    assert.equal(await page.locator('.panel-actions').isHidden(), true, '任务关联 Change 详情保持只读');
+    assert.equal(await page.locator('#continue-change').isHidden(), true, 'Task-scoped Change 不保留旧 continue route');
+    const planningReview = page.getByRole('button', { name: 'Planning Review', exact: true });
+    await unique(planningReview, 'Task-scoped Planning Review 操作');
+    await planningReview.click();
+    await page.getByRole('button', { name: '生成审查指令', exact: true }).click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /限定的 Task-scoped Change：demo\/browser-flow/);
+    await page.locator('#close-agent-action').click();
     await page.locator('.back-link').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
+
+    await page.getByRole('button', { name: '审查', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
+    assert.equal(await page.locator('#task-review-slots').getByText('适用性未知', { exact: true }).count(), 2);
+    assert.match(await page.locator('#task-review-slots').innerText(), /plan:browser-v1/);
+    assert.match(await page.locator('#task-review-slots').innerText(), /candidate:browser-g1/);
+    assert.match(await page.locator('#task-review-slots').innerText(), /计划可执行/);
+    assert.match(await page.locator('#task-review-slots').innerText(), /没有阻断问题/);
 
     await page.getByRole('button', { name: '环境', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-environment-status')?.textContent === '可执行');
@@ -335,6 +364,8 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 90_000 }, async (t)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${workspaceUrl}/tasks/browser-task`); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '审查', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'local-app-task-detail-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });

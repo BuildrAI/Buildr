@@ -6,6 +6,7 @@ import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../local-app/http/server.mjs';
 import { registerLauncherInterface } from './launcher.mjs';
 import { taskRecordCommand } from './task-record.mjs';
+import { taskReviewCommand } from './task-review.mjs';
 import { taskEnvironmentCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 
@@ -33,6 +34,8 @@ export const COMMAND_REGISTRY = [
   { key: 'task update', match: ({ domain, action }) => domain === 'task' && action === 'update', run: (r, c) => taskRecordCommand(r, 'update', c.argv.slice(4)) },
   { key: 'task complete', match: ({ domain, action }) => domain === 'task' && action === 'complete', run: (r, c) => taskRecordCommand(r, 'complete', c.argv.slice(4)) },
   { key: 'task abandon', match: ({ domain, action }) => domain === 'task' && action === 'abandon', run: (r, c) => taskRecordCommand(r, 'abandon', c.argv.slice(4)) },
+  { key: 'task review inspect', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'inspect', run: (r, c) => taskReviewCommand(r, 'inspect', c.argv.slice(5)) },
+  { key: 'task review record', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'record', run: (r, c) => taskReviewCommand(r, 'record', c.argv.slice(5)) },
   { key: 'task environment prepare', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'prepare', run: (r, c) => taskEnvironmentCommand(r, 'prepare', c.argv.slice(5)) },
   { key: 'task environment inspect', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'inspect', run: (r, c) => taskEnvironmentCommand(r, 'inspect', c.argv.slice(5)) },
   { key: 'task environment cleanup', match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'cleanup', run: (r, c) => taskEnvironmentCommand(r, 'cleanup', c.argv.slice(5)) },

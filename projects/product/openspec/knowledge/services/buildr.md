@@ -2,21 +2,22 @@
 
 ## 职责
 
-Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment domain、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证编排、package 和发布。
+Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment/Task Review domain、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证编排、package 和发布。
 
 ## 接口与入口
 
 - CLI：`projects/product/buildr`（开发 checkout）及 npm `buildr` 命令。
-- Local App：loopback HTTP 与浏览器界面；Workspace 是全局目录，Project、Service、Task Record、Change 使用稳定详情路由。Task 详情提供独立只读“环境”页签和 Task-scoped Change route，Environment mutation 仍不进入 P0.2 UI。
+- Local App：loopback HTTP 与浏览器界面；Workspace 是全局目录，Project、Service、Task Record、Change 使用稳定详情路由。Task 详情提供独立只读“环境”和“审查”页签及 Task-scoped Change route；Environment mutation 和 Task Review Result CRUD 都不进入 UI，审查只生成 Agent action。
 - Package：`services/buildr/package/manifest.yml` 定义发布边界、workspace/project baseline、builtins、contracts、bindings 和 Components。
 
 ## 数据与依赖
 
 - Workspace/Project/Service、Rules、Skills、Commands 和 Components 使用 YAML manifests/registries。
 - Task Record 使用 canonical `.buildr/tasks/<task-id>/task.yml` 与 closed `buildr.task-record/v1` schema；repository 只拥有该文件，按 Git topology 拒绝 linked-worktree authority，并保留同目录其他专业模块文件。Task Record 只保存最小顶层事实，不保存 Task Environment 或其他专业模块字段。
+- Task Review 使用 canonical `.buildr/tasks/<task-id>/reviews/planning.yml|completion.yml` 与统一 closed `buildr.task-review-result/v1` schema。两个 slot 可独立缺失；同类型完整替换、跨类型隔离，持久模型不含 revision、history、current、applicability 或 digest。Task Review Application 是唯一 writer，Task Record 与 Environment repositories 必须保留这些 sibling。
 - OpenSpec 依赖 `@fission-ai/openspec` 1.6.0；Buildr 补充跨 Change conflict evidence、文件事实驱动的确定性收敛事务和 runtime contributions。历史 baseline/阶段 sidecar 只作兼容诊断。
-- Local App Task API 先把已登记 `workspaceId` 解析为 canonical root，再调用 Task Record Application；mutation 复用 same-origin、session、JSON、body limit、字段白名单和路径拒绝边界，并用响应级 `recordDigest` 拒绝陈旧页面。Environment API 只调用 Application `inspect` 并使用 `no-store`；Change 全局 collection 保持 retained-only，Task 关联详情通过共享 Resolver 从 matching Environment candidate 或 retained Project 读取。
-- Environment Receipt 使用 closed `buildr.task-environment-receipt/v2`，只由 Task Environment Application 写入。它按 Task ID保存 canonical Workspace、稳定 controller、scope/execution/validation roots、Runtime/CLI/依赖/projection probes、已登记动态资源和 cleanup summary。公开 read model 去除资源 handle、secret 与 controller CLI path。
+- Local App Task API 先把已登记 `workspaceId` 解析为 canonical root，再调用 Task Record Application；mutation 复用 same-origin、session、JSON、body limit、字段白名单和路径拒绝边界，并用响应级 `recordDigest` 拒绝陈旧页面。Environment 与 Review API 只调用各自 Application `inspect` 并使用 `no-store`；Review endpoint 不接受 query/target/root/path，也没有直接 writer endpoint。Change 全局 collection 保持 retained-only，Task 关联详情通过共享 Resolver 从 matching Environment candidate 或 retained Project 读取。
+- Environment Receipt 使用 closed `buildr.task-environment-receipt/v2`，只由 Task Environment Application 写入。它按 Task ID 保存 canonical Workspace、保留工作区 Buildr 环境管理器 identity（现有内部字段为 `controller`）、scope/execution/validation roots、Runtime/CLI/依赖/projection probes、已登记动态资源和 cleanup summary。公开 read model 去除资源 handle、secret 与环境管理器 CLI path。
 - Git worktree provider 只在 Git common-dir 保存 `buildr.git-worktree-evidence/v1`，包含 repository plan、checkout/branch/HEAD/clean/registration 和 Git effects。`worktree create|inspect|cleanup` 不返回 Environment ready、Runtime/CLI/依赖、资源、恢复或总 cleanup 结论。
 - 普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence。候选 CLI/runtime 可以在自身 Task Validation Workspace 验证；只有集成到 retained source 后正式 runtime 才同步生效。真实 Agent host session proof 属于 Task Verification，不进入 Environment Receipt。
 
@@ -24,7 +25,7 @@ Workspace Node identity 进入 Environment Receipt 的 Runtime probe 与 executi
 
 ## 运行与验证
 
-Task Record 的 Domain/Application/filesystem repository 构成 `task.yml` 单一 writer；Task Environment 的 Domain/Application/repository 构成 `environment.json` 单一 writer，两者只共享 Task ID 和目录，不共享字段。独立 CLI interface 公开 `task environment prepare|inspect|cleanup`，内部 resource port 供 Local App Preview provider 登记/释放。随包 `task-environment` 与窄 `task-worktree` 分别提供 `buildr.task-environment/v1` 和 `buildr.git-worktree-provider/v1`。候选 Product checkout可运行自身任务验证工作区 CLI/runtime，但产品会阻止它控制 retained 或 peer Environment。
+Task Record 的 Domain/Application/filesystem repository 构成 `task.yml` 单一 writer；Task Environment 的 Domain/Application/repository 构成 `environment.json` 单一 writer；Task Review 的 Domain/Application/repository 构成两个 Result slot 的单一 writer。三者只共享 Task ID 和目录，不共享字段。独立 CLI interface 公开 `task environment prepare|inspect|cleanup` 与薄 `task review inspect|record`；内部 resource port 供 Local App Preview provider 登记/释放。随包 `task-environment`、`task-review` 与窄 `task-worktree` 分别提供 `buildr.task-environment/v1`、`buildr.task-review/v1` 和 `buildr.git-worktree-provider/v1`。Planning/Completion 共用一个 provider，`task-asset-review` 保持独立 capability/store。候选 Product checkout可运行自身任务验证工作区 CLI/runtime，但产品会阻止它控制 retained 或 peer Environment。
 
 Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。Workspace 在 `.buildr/workspace.yml` 维护精确 `runtime.node.version`；`init` 采用当前受支持 CLI Node 并准备本机受管 runtime，`sync` 按声明恢复且不改版本，`doctor` 只读核对声明、Node/npm/CLI/验证环境并建议 `sync`。开发与安装入口的普通命令固定使用该 runtime；仅 `init`、`doctor`、`sync` 可在 runtime 缺失时使用兼容 bootstrap Node。npm package 的 `engines.node` 继续只表达产品兼容范围。
 

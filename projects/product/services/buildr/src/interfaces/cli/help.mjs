@@ -24,6 +24,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr task environment inspect|cleanup <task-id> [--target <canonical-workspace>] [--json]');
     console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-resource <id> ...] [--output <file>] [--json]');
     console.error('  buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]');
+    console.error('  buildr task review <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]');
     console.error('  buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--json]');
     console.error('  buildr task finish inspect --run <id> [--target <canonical-workspace>] [--json]');
     console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
@@ -80,6 +81,7 @@ export function registerCommandHelp(runtime) {
       '  task environment     按正式 Task 准备、检查或清理唯一 Environment Receipt。',
       '  verification run     按 Project verification.yml 执行受影响或完整候选验证。',
       '  task create/inspect/update/complete/abandon  管理 canonical Workspace 的最小 Task Record。',
+      '  task review          读取或记录完整 Task Review Result；不执行语义审查。',
       '  task finish          产品执行 preflight → prepare → verify → deliver → cleanup 固定收尾。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
@@ -187,6 +189,23 @@ export function registerCommandHelp(runtime) {
       'Task Manager 只管理 canonical Workspace 中的顶层 Task Record：创建、查看、明确更新、完成或放弃。',
       '它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。',
       'Agent 和 Local App 都调用同一个 Task Record Application；不要直接编辑 .buildr/tasks/<task-id>/task.yml。',
+    ],
+    'task review': [
+      'Usage: buildr task review <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]',
+      '',
+      'Task Review CLI 只管理已经完整形成的 Planning/Completion Result；两个槽位均可选，它不执行 Review、生成 plan/Candidate identity 或设置 Development gate。',
+      'record 必须由调用方提供明确 target identity；Review 中断时不调用 writer，inspect 通过 identity 比较派生 current/stale/unknown。',
+    ],
+    'task review inspect': [
+      'Usage: buildr task review inspect <task-id> [--planning-target <identity>] [--completion-target <identity>] [--target <canonical-workspace>] [--json]',
+      '',
+      '只读返回 Planning/Completion 两个可选槽位、response-only resultDigest 与派生 applicability；未提供 current target 时已有 Result 显示 unknown。',
+    ],
+    'task review record': [
+      'Usage: buildr task review record <task-id> --type <planning|completion> --target-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <ready|changes-required> --summary <text> [--target <canonical-workspace>] [--json]',
+      '',
+      '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
+      '中断、缺少 target identity、覆盖或结论不完整时不写入；Completion identity 必须由真实 Candidate producer 提供。',
     ],
     'task environment': [
       'Usage: buildr task environment <prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]',
@@ -470,6 +489,8 @@ export function registerCommandHelp(runtime) {
     if (domain === 'service' && action === 'create') return 'service create';
     if (domain === 'task' && !action) return 'task';
     if (domain === 'task' && ['create', 'inspect', 'update', 'complete', 'abandon'].includes(action)) return `task ${action}`;
+    if (domain === 'task' && action === 'review' && !runtime) return 'task review';
+    if (domain === 'task' && action === 'review' && ['inspect', 'record'].includes(runtime)) return `task review ${runtime}`;
     if (domain === 'task' && action === 'environment' && !runtime) return 'task environment';
     if (domain === 'task' && action === 'environment' && ['prepare', 'inspect', 'cleanup'].includes(runtime)) return `task environment ${runtime}`;
     if (domain === 'worktree' && action === 'create') return 'worktree create';

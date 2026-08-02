@@ -4,6 +4,7 @@ const ACTION_LABELS = {
   service: '服务',
   start: '任务',
   change: '变更',
+  'task-review': '任务审查',
 };
 
 export function setupAgentActions({ api }) {
@@ -166,6 +167,14 @@ export function setupAgentActions({ api }) {
     }
   }
 
+  function renderTaskReviewForm(context) {
+    const reviewType = context.reviewType === 'completion' ? 'completion' : 'planning';
+    const typeLabel = reviewType === 'planning' ? 'Planning Review' : 'Completion Review';
+    const change = context.projectCode && context.change ? `${context.projectCode}/${context.change}` : '';
+    content.innerHTML = `${formHeader('任务审查', '准备')}<form id="agent-action-form"><div class="context-help">为正式 Task <strong>${context.taskId}</strong> 准备 ${typeLabel}${change ? `，限定 Task-scoped Change <strong>${change}</strong>` : ''}。Buildr 只生成受约束指令，不在页面内执行审查或写入 Result。</div><div class="actions"><button class="button primary" type="submit">生成审查指令</button></div></form>`;
+    bindForm('task-review', () => api('/api/v1/prompts/task-review', { method: 'POST', body: JSON.stringify({ taskId: context.taskId, reviewType, ...(change ? { projectCode: context.projectCode, change: context.change } : {}) }) }), 'Review Result 尚未记录。');
+  }
+
   function open(action, context = {}) {
     if (action === 'workspace') renderWorkspaceForm();
     else if (action === 'workspace-recovery') renderProvidedPrompt(context.prompt);
@@ -173,6 +182,7 @@ export function setupAgentActions({ api }) {
     else if (action === 'service') void renderServiceForm(context);
     else if (action === 'start') void renderStartWorkForm(context);
     else if (action === 'change') void renderChangeForm(context);
+    else if (action === 'task-review') renderTaskReviewForm(context);
     else renderChooser(context);
     setOpen(true);
     content.querySelector('input, button')?.focus();

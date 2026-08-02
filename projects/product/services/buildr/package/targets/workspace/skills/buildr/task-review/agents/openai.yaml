@@ -1,0 +1,4 @@
+interface:
+  display_name: "任务审查"
+  short_description: "审查正式 Task 的计划或完成候选并记录轻量 Result"
+  default_prompt: "Use $task-review to inspect or complete a planning or completion review for a formal Buildr Task."

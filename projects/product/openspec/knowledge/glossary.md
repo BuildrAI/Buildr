@@ -100,6 +100,13 @@
 - 避免混用：不是 Workspace、保留工作区、Agent runtime 或 Task Record；Git worktree 只是可选 provider。
 - 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
 
+## 保留工作区 Buildr 环境管理器（Retained Buildr Environment Manager）
+
+- 定义：从 canonical retained Workspace 运行 Task Environment Application 的受信 Buildr source/CLI 执行角色，负责环境 prepare、inspect、资源管理和 cleanup。
+- 适用范围：Buildr 自举任务需要由候选 checkout 之外的稳定入口管理 Task Environment 时；Environment Receipt 记录其执行 identity。
+- 避免混用：不是 Task Environment 的 source baseline、Candidate identity、retained target revision 或独立 lifecycle authority；现有 schema/code 中的 `controller` 只是内部实现字段名，不作为产品术语继续扩散。
+- 来源：[Task Environment specification](../specs/task-environments/spec.md) 与 [Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
+
 ## 环境回执（Environment Receipt）
 
 - 定义：Task Environment Application 在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.json` 维护的本机事实，独占 ready/blocked、执行根、真实 probes、资源和 cleanup 结果。
@@ -127,6 +134,48 @@
 - 适用范围：Task Record 引用校验和 Task 详情中的关联 Change。
 - 避免混用：不接受调用方路径，不扫描全部 Task Environment，也不改变全局 retained-only Change 索引。
 - 来源：[Change asset indexing specification](../specs/change-asset-indexing/spec.md)
+
+## 任务审查（Task Review）
+
+- 定义：面向正式 Task 的单一专业审查能力，由一个语义 Skill 动态判断审阅范围并执行 Review，由一个确定性 Application 校验、记录和读取结果。
+- 适用范围：方案审查与完成审查共用同一 capability、Result 模型和 writer；两种类型只是同一能力的不同目标语义。
+- 避免混用：不等于任务验证、任务资产审查、通用 Change review，也不编排 Task Development、Candidate 或生命周期门禁。
+- 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
+
+## 审查结果（Review Result）
+
+- 定义：绑定明确目标 identity 的可移植、Git 跟踪轻量 evidence，记录审查类型、执行方式、reviewed/uncovered、findings、结论和系统完成时间。
+- 适用范围：`.buildr/tasks/<task-id>/reviews/planning.yml|completion.yml` 两个可选 current 槽位；同类型完整替换，不同类型互不覆盖。
+- 避免混用：不是 Receipt、历史日志或状态机；不持久化 revision、current、applicability 或 digest，适用性由读取时目标比较派生。
+- 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
+
+## 方案审查（Planning Review）
+
+- 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result 绑定调用方提供的 plan target identity。
+- 适用范围：实现前方案检查，以及 Task-scoped Change 详情中的审查 Agent action；没有执行时 planning slot 可以不存在。
+- 避免混用：不要求固定为 OpenSpec artifacts，也不把全局 retained-only Change review 改造成 Task Review。
+- 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)
+
+## 完成审查（Completion Review）
+
+- 定义：Task Review 对实现、证据与 Task Intent 整体一致性的审查，Result 必须绑定真实、明确的 Candidate target identity。
+- 适用范围：调用方已经能够证明 Candidate identity 时记录 completion slot；没有 Candidate 或没有执行时该 slot 可以不存在。
+- 避免混用：不生成 Candidate identity，不用 HEAD、dirty tree 或任意 digest 伪造 Candidate，也不替代 Task Verification。
+- 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
+
+## 交付目标前进（Target Advancement）
+
+- 定义：Task Finish 交付 Candidate 期间，目标分支、远端 ref 或非 Git 目标位置出现了新的目标事实。
+- 适用范围：Finish 判断能否在 Candidate 内容/语义和 evidence 仍适用时自主完成机械交付变换，或必须停止并让用户决定是否返回 Development。
+- 避免混用：不是 Task Environment 漂移或自动 source update 事件；retained target 前进本身不要求任务 checkout、Review 或 Verification 自动更新。
+- 来源：[Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
+
+## 工作区元数据存储（Workspace Metadata Store）
+
+- 定义：canonical Workspace 中由 `.buildr/` 承载的文件型 Buildr 数据边界，包含可移植生命周期 metadata 与本机管理事实。
+- 适用范围：源码 clean/readiness 分类与 Task Metadata Publication 的分层处理；前者整体排除 `.buildr/`，后者只按各 writer 的 portable exact owned paths 发布。
+- 避免混用：不等于把 `.buildr/` 全部加入 `.gitignore`、全部纳入 Git、跳过 collision/ownership 检查，或赋予目录级 transaction authority。
+- 来源：[Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
 
 ## 收尾就绪候选（Finish-ready Candidate）
 

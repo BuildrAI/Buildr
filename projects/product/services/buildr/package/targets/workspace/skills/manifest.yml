@@ -25,6 +25,10 @@ contracts:
     version: 1
     path: contracts/buildr/task-record/v1.md
     description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
+  - id: buildr.task-review
+    version: 1
+    path: contracts/buildr/task-review/v1.md
+    description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
   - id: buildr.task-verification
     version: 2
     path: contracts/buildr/task-verification/v2.md
@@ -72,6 +76,9 @@ bindings:
   - capability: buildr.task-record
     version: 1
     provider: task-manager
+  - capability: buildr.task-review
+    version: 1
+    provider: task-review
   - capability: buildr.task-verification
     version: 2
     provider: task-verification
@@ -131,6 +138,20 @@ skills:
     runtimePath: task-manager
     provides:
       - capability: buildr.task-record
+        version: 1
+  - id: task-review
+    assetIdentity: buildr:skill:task-review
+    sourceIdentity: package:workspace:buildr/task-review
+    source: buildr
+    path: buildr/task-review
+    description: 用户要求审查正式 Task 的计划或完成候选、查看已有 Task Review Result，或实现任务在计划/完成节点需要形成轻量审查 evidence 时使用；不用于资产沉淀复盘、Task Verification 或通用代码 Review。
+    enabled: true
+    required: false
+    state: installed
+    runtimes: [claude-code, codex, cursor, qoder, trae, trae-work, workbuddy]
+    runtimePath: task-review
+    provides:
+      - capability: buildr.task-review
         version: 1
   - id: task-board
     assetIdentity: buildr:skill:task-board
