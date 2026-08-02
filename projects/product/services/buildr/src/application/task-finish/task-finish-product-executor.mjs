@@ -553,7 +553,7 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       }
       const context = taskEnvironment(run);
       const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
-      const cleanedEnvironment = await runtime.cleanupTaskEnvironment(retainedRoot, run.identity.task, { type: 'finish', deliveries });
+      const cleanedEnvironment = await runtime.cleanupTaskEnvironment(retainedRoot, run.identity.task, { type: 'finish', deliveries, candidateRef: run.delivery.candidateRef });
       operations.push({ operation: 'cleanup-task-environment', status: cleanedEnvironment.status, effects: cleanedEnvironment.effects, diagnostic: cleanedEnvironment.diagnostic });
       if (cleanedEnvironment.status !== 'cleaned') {
         return { status: 'blocked', operations, failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: cleanedEnvironment.diagnostic?.code || 'task-finish.environment-cleanup-failed', message: cleanedEnvironment.diagnostic?.message || 'Task Environment cleanup failed.', diagnostic: cleanedEnvironment } };

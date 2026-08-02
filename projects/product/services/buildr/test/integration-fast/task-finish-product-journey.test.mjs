@@ -96,6 +96,7 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
       assert.equal(path.resolve(workspaceRoot), path.resolve(retained));
       assert.equal(taskId, task);
       assert.equal(authorization?.type, 'finish');
+      assert.match(authorization?.candidateRef || '', /^[0-9a-f]{40}$/);
       command(retained, 'git', ['worktree', 'remove', '--force', environmentRoot]);
       return { status: 'cleaned', effects: [{ type: 'git-worktree-removed', path: environmentRoot }], diagnostic: null };
     },

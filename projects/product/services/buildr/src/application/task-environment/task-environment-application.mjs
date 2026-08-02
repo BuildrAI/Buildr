@@ -92,6 +92,39 @@ export function registerTaskEnvironmentApplication(runtime) {
     return current;
   }
 
+  function deliveredControllerMatches(workspaceRoot, controller, authorization) {
+    const candidateRef = authorization?.candidateRef;
+    if (authorization?.type !== 'finish' || typeof candidateRef !== 'string' || !/^[0-9a-f]{40,64}$/.test(candidateRef)) return false;
+    const checkout = controller.sourceCheckout;
+    if (!checkout || checkout.linkedWorktree || path.resolve(checkout.checkoutRoot) !== path.resolve(workspaceRoot)) return false;
+    const relativeSource = path.relative(workspaceRoot, controller.sourceRoot);
+    if (path.isAbsolute(relativeSource) || relativeSource === '..' || relativeSource.startsWith(`..${path.sep}`)) return false;
+    const observedHead = spawnSync('git', ['-C', workspaceRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 5000 });
+    if (observedHead.status !== 0 || observedHead.stdout.trim() !== candidateRef) return false;
+    const observedTree = spawnSync('git', ['-C', workspaceRoot, 'status', '--porcelain=v1', '--untracked-files=all', '--', relativeSource || '.'], { encoding: 'utf8', timeout: 5000 });
+    return observedTree.status === 0 && observedTree.stdout.trim() === '';
+  }
+
+  function reconcileFinishController(workspaceRoot, persistence, authorization, effects) {
+    try {
+      assertStableController(workspaceRoot, persistence.receipt);
+      return persistence;
+    } catch (error) {
+      if (error.code !== 'task_environment_controller_drift') throw error;
+      const current = currentControllerIdentity(workspaceRoot, persistence.receipt.controller.adapter);
+      if (path.resolve(persistence.receipt.controller.sourceRoot) !== current.sourceRoot || !deliveredControllerMatches(workspaceRoot, current, authorization)) throw error;
+      const previousIdentity = persistence.receipt.controller.identity;
+      const updatedAt = now();
+      const updated = runtime.writeTaskEnvironmentPersistence(workspaceRoot, {
+        ...persistence.receipt,
+        controller: { ...persistence.receipt.controller, identity: current.identity },
+        updatedAt,
+      });
+      effects.push({ type: 'controller-handoff', previousIdentity, identity: current.identity, candidateRef: authorization.candidateRef });
+      return updated;
+    }
+  }
+
   function candidateCli(controller, workspaceRoot, executionRoot) {
     const controllerCheckout = controller.sourceCheckout;
     const workspaceCheckout = controller.workspaceCheckout;
@@ -479,10 +512,10 @@ export function registerTaskEnvironmentApplication(runtime) {
       persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
       if (!persistence) return environmentResult('cleanup', 'unavailable', root, taskId, null, null, { code: 'task_environment_no_receipt', message: '当前机器没有可清理的 Environment Receipt。' });
       if (persistence.receipt.status === 'cleaned') return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
-      assertStableController(root, persistence.receipt);
       const abandon = authorization?.type === 'abandon' || (authorization === null && task.status === 'abandoned');
       const finish = authorization?.type === 'finish' && authorization.deliveries && typeof authorization.deliveries === 'object';
       if (!abandon && !finish) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要 Task Finish handoff 或已持久化的明确 abandon 终态。', 409, undefined, '先完成 Task Finish 交付，或明确 abandon Task。');
+      persistence = finish ? reconcileFinishController(root, persistence, authorization, effects) : (assertStableController(root, persistence.receipt), persistence);
       const activeResources = persistence.receipt.resources.filter((resource) => resource.status !== 'released').sort((left, right) => left.id.localeCompare(right.id));
       for (const resource of activeResources) {
         const providerResult = await runtime.cleanupTaskEnvironmentResource(resource, {
