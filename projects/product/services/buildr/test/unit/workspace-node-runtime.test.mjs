@@ -24,6 +24,11 @@ function fixtureRuntime(root) {
   fs.writeFileSync(path.join(root, 'bin/npx'), '#!/bin/sh\necho 10.8.0\n', { mode: 0o755 });
 }
 
+function fixtureWindowsRuntime(root) {
+  fs.writeFileSync(path.join(root, 'node.exe'), '#!/bin/sh\nif [ "$1" = "-p" ]; then echo 22.4.1; else echo v22.4.1; fi\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(root, 'npm.cmd'), '#!/bin/sh\necho 10.8.0\n', { mode: 0o755 });
+}
+
 test('Workspace Node identity 不包含机器路径且按 platform/arch 稳定', () => {
   const identity = workspaceNodeIdentity(WORKSPACE, { platform: 'darwin', arch: 'arm64' });
   assert.equal(identity.version, '22.4.1');
@@ -51,4 +56,17 @@ test('受管 runtime 从确定 source 原子准备、复用并在删除后按原
   const restored = ensureWorkspaceNodeRuntime(WORKSPACE, options);
   assert.equal(restored.identity.version, '22.4.1');
   assert.equal(restored.status, 'ready');
+});
+
+test('Windows 受管 runtime 通过 npm.cmd 探测', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-windows-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const source = path.join(root, 'source');
+  const dataRoot = path.join(root, 'data');
+  fs.mkdirSync(source, { recursive: true });
+  fixtureWindowsRuntime(source);
+  const options = { dataRoot, platform: 'win32', arch: 'x64', sourceRoot: source };
+  const installed = ensureWorkspaceNodeRuntime(WORKSPACE, options);
+  assert.equal(installed.status, 'ready');
+  assert.equal(probeWorkspaceNodeRuntime(WORKSPACE, options).npmVersion, '10.8.0');
 });

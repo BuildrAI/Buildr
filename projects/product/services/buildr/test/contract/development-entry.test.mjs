@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
+
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const runner = path.join(serviceRoot, 'scripts/run-development-cli');
 const projectBridge = path.resolve(serviceRoot, '../../buildr');
@@ -51,7 +53,7 @@ test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Nod
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-workspace-'));
   const workspace = path.join(fixture, 'workspace');
   const appData = path.join(fixture, 'app-data');
-  const managed = path.join(appData, 'runtimes/node/22.4.1/darwin-arm64/bin/node');
+  const managed = workspaceNodeRuntimePaths('22.4.1', { dataRoot: appData }).node;
   const pathNode = path.join(fixture, 'path/node');
   fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
   fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 22.4.1\n');
