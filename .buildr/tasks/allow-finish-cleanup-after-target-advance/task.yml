@@ -1,0 +1,17 @@
+schemaVersion: buildr.task-record/v1
+taskId: allow-finish-cleanup-after-target-advance
+title: 允许目标分支前进后恢复环境清理
+intent: 当 Task Finish 已交付的 candidate commit 仍是当前 retained HEAD 的祖先且 controller source clean 时，允许 Environment cleanup 接管当前稳定 controller identity；无关历史、dirty source 和候选 controller 继续 fail closed。
+scope:
+  projects:
+    - product
+  services:
+    - project: product
+      service: buildr
+changes: []
+status: completed
+result:
+  summary: 已允许 delivered candidate 仍位于 retained 历史且 controller source clean 时恢复 cleanup，candidate 81489fd，Finish run allow-finish-cleanup-after-target-advance-20260802013202-258bd390 complete。
+  noChange: false
+createdAt: 2026-08-02T01:30:50.352Z
+updatedAt: 2026-08-02T01:35:18.122Z

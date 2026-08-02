@@ -5,7 +5,7 @@ export function classifyRetainedConvergencePaths(paths = []) {
   const normalized = [...new Set(paths.map(stripProductPrefix).filter(Boolean))].sort();
   const runtimePattern = /^(?:rules\/|skills\/|components\/|commands\/|capabilities\.yml$|commands\.yml$|services\/buildr\/package\/targets\/workspace\/|services\/buildr\/package\/manifest\.yml$)/;
   const cliPattern = /^(?:buildr$|services\/buildr\/(?:bin\/|src\/.*\.mjs$|scripts\/(?:install|uninstall)-buildr-cli$|package\.json$|package-lock\.json$))/;
-  const localAppPattern = /^services\/buildr\/(?:src\/interfaces\/local-app\/(?:runtime|http)\/|src\/application\/local-app|scripts\/(?:install|uninstall)-local-app)/;
+  const localAppPattern = /^services\/buildr\/(?:bin\/|src\/|package\/|package\.json$|package-lock\.json$|LICENSE$)/;
   for (const candidate of normalized) {
     let matched = false;
     if (runtimePattern.test(candidate)) { result.runtime.push(candidate); matched = true; }

@@ -52,6 +52,13 @@ export function workspaceNodeRuntimePaths(version, options = {}) {
   };
 }
 
+function probeRuntimeCommand(executable, args, { platform, ...options } = {}) {
+  return spawnSync(executable, args, {
+    ...options,
+    shell: platform === 'win' && path.extname(executable).toLowerCase() === '.cmd',
+  });
+}
+
 export function probeWorkspaceNodeRuntime(workspace, options = {}) {
   const identity = workspaceNodeIdentity(workspace, options);
   if (!identity) return { status: 'missing-declaration', identity: null, executable: null, npmExecutable: null, actualVersion: null };
@@ -59,10 +66,19 @@ export function probeWorkspaceNodeRuntime(workspace, options = {}) {
   if (!fs.existsSync(paths.node) || !fs.existsSync(paths.npm)) {
     return { status: 'missing', identity, executable: paths.node, npmExecutable: paths.npm, actualVersion: null, paths };
   }
-  const nodeProbe = spawnSync(paths.node, ['-p', 'process.versions.node'], { encoding: 'utf8', timeout: 10_000 });
+  const nodeProbe = probeRuntimeCommand(paths.node, ['-p', 'process.versions.node'], {
+    encoding: 'utf8',
+    timeout: 10_000,
+    platform: paths.platform,
+  });
   const actualVersion = nodeProbe.status === 0 ? nodeProbe.stdout.trim() : null;
   const env = { ...process.env, PATH: `${paths.bin}${path.delimiter}${process.env.PATH || ''}` };
-  const npmProbe = spawnSync(paths.npm, ['--version'], { encoding: 'utf8', timeout: 10_000, env });
+  const npmProbe = probeRuntimeCommand(paths.npm, ['--version'], {
+    encoding: 'utf8',
+    timeout: 10_000,
+    env,
+    platform: paths.platform,
+  });
   const status = actualVersion === identity.version && npmProbe.status === 0 ? 'ready' : 'invalid';
   return {
     status,
@@ -170,8 +186,17 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
       npm: initial.paths.platform === 'win' ? path.join(stage, 'npm.cmd') : path.join(stage, 'bin', 'npm'),
       bin: initial.paths.platform === 'win' ? stage : path.join(stage, 'bin'),
     };
-    const nodeProbe = spawnSync(stagedPaths.node, ['-p', 'process.versions.node'], { encoding: 'utf8', timeout: 10_000 });
-    const npmProbe = spawnSync(stagedPaths.npm, ['--version'], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, PATH: `${stagedPaths.bin}${path.delimiter}${process.env.PATH || ''}` } });
+    const nodeProbe = probeRuntimeCommand(stagedPaths.node, ['-p', 'process.versions.node'], {
+      encoding: 'utf8',
+      timeout: 10_000,
+      platform: initial.paths.platform,
+    });
+    const npmProbe = probeRuntimeCommand(stagedPaths.npm, ['--version'], {
+      encoding: 'utf8',
+      timeout: 10_000,
+      env: { ...process.env, PATH: `${stagedPaths.bin}${path.delimiter}${process.env.PATH || ''}` },
+      platform: initial.paths.platform,
+    });
     if (nodeProbe.status !== 0 || nodeProbe.stdout.trim() !== initial.identity.version || npmProbe.status !== 0) {
       throw new Error(`Prepared Workspace Node runtime failed probe for ${initial.identity.version}.`);
     }
