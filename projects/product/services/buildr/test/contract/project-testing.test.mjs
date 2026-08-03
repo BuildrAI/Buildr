@@ -41,14 +41,17 @@ test('project-testing 是无状态且无 capability binding 的独立 Skill', ()
   assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-testing/references/testing-model-v1.md')));
 });
 
-test('project-testing 使用三轴、事实 owner 与最低充分执行边界', () => {
+test('project-testing 分离测试边界、成本、范围与验证目标', () => {
   for (const required of [
     'Development、Acceptance、Static Conformance、Delivery / Release',
     'Static、Unit、Component、Integration、System',
-    'Quick、Task-affected、Candidate、Release',
+    'Quick', 'affected', 'full', 'Candidate', 'Release',
+    '成本约束', '选择范围', '验证目标',
     '`System` 不等于 Acceptance', '`focus` 只用于失败诊断',
     'primaryEvidenceOwner', '最低充分边界',
   ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
+
+  assert.equal(projectTestingSkill.includes('编排场景：Quick、Task-affected、Candidate、Release'), false);
 
   for (const required of [
     'Node.js 示例', 'Java / Spring 示例', 'Spring context', 'Testcontainers',
@@ -64,7 +67,7 @@ test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(buildrSkill, /运行已有测试.*`buildr\.task-verification\/v3` selected provider；不开发测试/);
   assert.match(taskVerificationSkill, /不用于设计测试框架或开发测试，后者使用 project-testing/);
   assert.match(taskVerificationSkill, /入口命名、成本或分层不合理时报告测试建设 gap/);
-  assert.match(taskVerificationReference, /一个 Candidate 入口内部可以拥有多个 Project-specific step/);
+  assert.match(taskVerificationReference, /一个 Project 入口内部可以拥有多个 Project-specific step/);
 });
 
 test('声明指导不扩展 project verification v2 schema', () => {
@@ -74,5 +77,5 @@ test('声明指导不扩展 project verification v2 schema', () => {
   for (const forbidden of ['primaryIntent', 'executionBoundary', 'orchestrationScenarios', 'targetDuration', 'primaryEvidenceOwner']) {
     assert.equal(capabilityKeys.includes(forbidden), false, `verification template must not add ${forbidden}`);
   }
-  assert.match(taskVerificationReference, /不要把每个测试文件、step、测试意图、执行边界、编排场景或目标耗时复制进本 schema/);
+  assert.match(taskVerificationReference, /不要把每个测试文件、step、测试意图、执行边界、Quick 成本约束、affected\/full 范围、Candidate\/Release 验证目标或目标耗时复制进本 schema/);
 });

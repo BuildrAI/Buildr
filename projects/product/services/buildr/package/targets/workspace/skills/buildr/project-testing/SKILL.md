@@ -1,6 +1,6 @@
 ---
 name: project-testing
-description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，编排 Quick、Task-affected、Candidate、Release，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
+description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，区分测试成本、affected/full 范围与 Candidate/Release 验证目标，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
 ---
 
 # Project Testing Skill
@@ -20,15 +20,20 @@ description: 用户要求为 Project 或 Service 设计、梳理或优化测试�
 
 不要按文件名、`fast`、`unit` 或技术栈惯例猜执行成本和覆盖。没有现成框架时，只在当前实现任务确实需要且授权允许时建立最小测试入口，不借机建设通用平台。
 
-## 2. 用三轴确定边界
+## 2. 分开判断测试边界与编排
 
-分别判断，不把三者合成一种层级：
+测试本身分别判断：
 
 1. 主要意图：Development、Acceptance、Static Conformance、Delivery / Release；
-2. 执行边界：Static、Unit、Component、Integration、System；
-3. 编排场景：Quick、Task-affected、Candidate、Release。
+2. 执行边界：Static、Unit、Component、Integration、System。
 
-`System` 不等于 Acceptance；只有从提案、需求或设计验收标准派生的业务证据才是 Acceptance。`Static` 是独立执行形式。`focus` 只用于失败诊断和定向选择，不是交付编排场景。
+编排另外回答三个独立问题：
+
+1. 成本约束：是否进入可高频运行的 Quick；
+2. 选择范围：本次是显式 focus、按影响面选择 affected，还是完整选择 full；
+3. 验证目标：运行在开发中的目标、冻结 Candidate，还是 Release artifact。
+
+Quick、affected/full、Candidate/Release 不是同一层级的测试类型或互斥场景。冻结 Candidate 可以执行 affected，也可以在明确需要时执行 full。`System` 不等于 Acceptance；只有从提案、需求或设计验收标准派生的业务证据才是 Acceptance。`Static` 是独立执行形式。`focus` 只用于失败诊断和定向选择，不表示交付完整性。
 
 Service 负责自身代码、公开技术契约和独立交付物可判定的事实；Project 负责跨 Service 行为、治理资产、用户旅程及组合 Candidate / Release。辅助证据可以重叠，但每项关键事实只保留一个 `primaryEvidenceOwner`。
 
@@ -47,12 +52,13 @@ Service 负责自身代码、公开技术契约和独立交付物可判定的事
 
 ## 4. 编排开发与交付反馈
 
-- Quick：完整低成本 Static + Unit + Component，以及少量确实低成本的 Integration；目标是高频反馈。
-- Task-affected：按 changed paths、事实 owner 和风险选择当前任务真正受影响的证据；重型但相关的测试不能因不在 Quick 而跳过。
-- Candidate：冻结目标后的完整研发回归与 Project policy 要求的 System、交付门禁，不用 diff 缩小覆盖。
-- Release：在 Candidate 之上验证 package、安装、部署、发布或发布后 smoke 等真实交付边界。
+- Quick 是成本受限的反馈组合：完整低成本 Static + Unit + Component，以及少量确实低成本的 Integration。
+- affected 按 changed paths、事实 owner 和风险选择当前任务真正受影响的证据；重型但相关的测试不能因不在 Quick 而跳过。
+- full 选择 Project 登记的完整回归证据；当 affected 选择机制自身变化或用户明确要求全量回归时使用。
+- Candidate 是冻结验证目标，不自动等于 full；普通 Candidate 可以运行 affected，完整回归 Candidate 运行 full。
+- Release 以真实发布物为目标，按需组合 package、安装、部署、发布或发布后 smoke。
 
-Project 应为入口记录目标耗时并用实际观测校准。入口名称与成本不符时，先报告问题，再在当前任务范围内拆分或重编排。
+Project 应为入口记录目标耗时并用实际观测校准。registry 可以用 profile、changed inputs 和独立 capability 表达实际组合，但不要再复制一份把上述概念混为一轴的分类。入口名称与成本不符时，先报告问题，再在当前任务范围内拆分或重编排。
 
 ## 5. 与 Task Verification 交接
 
@@ -62,4 +68,4 @@ Project Testing 可以新增或调整项目测试、脚本、registry 和说明�
 
 ## 输出
 
-简洁说明：待证明事实、owner、三轴分类、已有入口、实际成本、当前新增或建议测试、各编排场景以及仍存在的 gap。分析请求只给建议；实现请求才修改当前任务授权内的项目资产。
+简洁说明：待证明事实、owner、测试意图、执行边界、已有入口、实际成本、affected/full 选择、验证目标、当前新增或建议测试以及仍存在的 gap。分析请求只给建议；实现请求才修改当前任务授权内的项目资产。

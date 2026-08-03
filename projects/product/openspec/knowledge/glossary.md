@@ -172,9 +172,9 @@
 
 ## 项目测试（Project Testing）
 
-- 定义：面向 Project / Service 的无状态专业指导，帮助 Agent 根据真实技术栈设计测试框架、开发测试并编排反馈；分别判断测试主要意图、执行边界和编排场景。
-- 适用范围：Development、Acceptance、Static Conformance、Delivery / Release 意图；Static、Unit、Component、Integration、System 边界；Quick、Task-affected、Candidate、Release 场景。
-- 避免混用：不是 Task Verification 或测试平台，不创建 Result、Receipt、Application 或 provider contract；System 是执行边界，不自动等于 Acceptance，`focus` 只用于诊断选择；此处 Component 表示组件测试边界，不是 Buildr 受管资产 Component。
+- 定义：面向 Project / Service 的无状态专业指导，帮助 Agent 根据真实技术栈设计测试框架、开发测试并编排反馈；分别判断测试主要意图、执行边界，以及一次编排的成本约束、选择范围和验证目标。
+- 适用范围：Development、Acceptance、Static Conformance、Delivery / Release 意图；Static、Unit、Component、Integration、System 边界；Quick 成本约束；focus、affected、full 范围；开发目标、冻结 Candidate、Release artifact 验证节点。
+- 避免混用：不是 Task Verification 或测试平台，不创建 Result、Receipt、Application 或 provider contract；Quick、affected/full、Candidate/Release 不是同一层级的测试类型，Candidate 不自动等于 full；System 是执行边界，不自动等于 Acceptance，`focus` 只用于诊断选择；此处 Component 表示组件测试边界，不是 Buildr 受管资产 Component。
 - 来源：canonical `openspec/specs/project-testing-guidance/spec.md`（本 Change converge 时建立）
 
 ## 验证能力声明（Verification Capability Declaration）

@@ -906,7 +906,7 @@ export function createPackageStaticValidator(deps) {
           '没有 Result、Receipt、Application、provider contract',
           'Development、Acceptance、Static Conformance、Delivery / Release',
           'Static、Unit、Component、Integration、System',
-          'Quick、Task-affected、Candidate、Release',
+          'Quick、affected/full、Candidate/Release 不是同一层级',
           '`System` 不等于 Acceptance',
           '`focus` 只用于失败诊断',
           'primaryEvidenceOwner',

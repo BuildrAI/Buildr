@@ -3,60 +3,54 @@ import { PACKAGE_VERIFIERS } from '../../src/application/package-maintenance/ver
 const PROJECT_OWNER = 'project:product';
 const SERVICE_OWNER = 'service:product/buildr';
 
-const testing = (ownerScope, primaryIntent, executionBoundary, orchestrationScenarios, targetDurationMs, proves) => Object.freeze({
+const testing = (ownerScope, primaryIntent, executionBoundary, targetDurationMs, proves) => Object.freeze({
   ownerScope,
   primaryIntent,
   executionBoundary,
-  orchestrationScenarios: Object.freeze(orchestrationScenarios),
   targetDurationMs,
   proves,
 });
 
 export const VERIFICATION_STEP_TESTING = Object.freeze({
-  unit: testing(SERVICE_OWNER, 'Development', 'Unit', ['Quick', 'Task-affected', 'Candidate'], 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.'),
-  component: testing(SERVICE_OWNER, 'Development', 'Component', ['Quick', 'Task-affected', 'Candidate'], 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.'),
-  integration: testing(SERVICE_OWNER, 'Development', 'Integration', ['Task-affected', 'Candidate'], 30000, 'Buildr modules behave correctly across real filesystem, Git, or process boundaries.'),
-  'integration-fast': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 100000, 'Buildr public CLI and Workspace lifecycle journeys behave correctly.'),
-  contract: testing(PROJECT_OWNER, 'Static Conformance', 'Integration', ['Quick', 'Task-affected', 'Candidate'], 15000, 'Product source, governance assets, and stable entrypoint contracts conform.'),
-  'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', ['Quick', 'Task-affected', 'Candidate'], 3000, 'CLI modules and wrappers preserve the declared architecture.'),
-  'openspec-spec-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', ['Quick', 'Task-affected', 'Candidate'], 3000, 'Canonical OpenSpec specifications meet Product quality rules.'),
-  'openspec-strict': testing(PROJECT_OWNER, 'Static Conformance', 'Static', ['Quick', 'Task-affected', 'Candidate'], 5000, 'All OpenSpec artifacts pass upstream strict validation.'),
-  'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', ['Quick', 'Task-affected', 'Candidate'], 5000, 'Runtime adapter declarations and lightweight projections satisfy their contract.'),
-  'integration-candidate-recovery': testing(SERVICE_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 25000, 'Builtin recovery and migration journeys preserve user-owned state.'),
-  'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', ['Task-affected', 'Candidate'], 15000, 'Release branch convergence behaves correctly.'),
-  'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', ['Task-affected', 'Candidate'], 30000, 'Concurrent Task workflows satisfy the declared acceptance contract.'),
-  'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', ['Task-affected', 'Candidate'], 10000, 'The Buildr npm candidate artifact can be assembled.'),
-  'open-source-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Static', ['Task-affected', 'Candidate'], 10000, 'The candidate contains the required public release materials.'),
-  'openspec-candidate-audit': testing(PROJECT_OWNER, 'Static Conformance', 'Static', ['Task-affected', 'Candidate'], 5000, 'Candidate OpenSpec contracts are current and internally consistent.'),
-  'managed-mutations': testing(SERVICE_OWNER, 'Static Conformance', 'Static', ['Task-affected', 'Candidate'], 5000, 'Production filesystem mutations remain behind declared owners.'),
-  'browser-shell': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 45000, 'The Local App application shell works through the browser surface.'),
-  'browser-project': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 45000, 'The Local App Project journey works through the browser surface.'),
-  'browser-service': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 45000, 'The Local App Service journey works through the browser surface.'),
-  'browser-task': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 45000, 'The Local App Task journey works through the browser surface.'),
-  'browser-change': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 45000, 'The Local App Change journey works through the browser surface.'),
-  'capability-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', ['Task-affected', 'Candidate'], 25000, 'Capability CLI operations integrate with package and runtime assets.'),
-  'commands-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', ['Task-affected', 'Candidate'], 10000, 'Commands context CLI operations integrate with managed workspace assets.'),
-  'openspec-contract-fixtures': testing(PROJECT_OWNER, 'Development', 'Integration', ['Task-affected', 'Candidate'], 20000, 'OpenSpec application contracts hold across isolated fixture repositories.'),
-  'openspec-convergence-recovery': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 60000, 'OpenSpec convergence and recovery complete through the public lifecycle.'),
-  'package-static': testing(SERVICE_OWNER, 'Delivery / Release', 'Static', ['Task-affected', 'Candidate'], 5000, 'The Buildr package structure is valid.'),
-  'package-workspace': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', ['Task-affected', 'Candidate'], 6000, 'Packaged Workspace assets install and check correctly.'),
-  'package-commands': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', ['Task-affected', 'Candidate'], 7000, 'Packaged Commands assets integrate correctly.'),
-  'package-rules': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', ['Task-affected', 'Candidate'], 8000, 'Packaged Rules assets integrate correctly.'),
-  'package-skills': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', ['Task-affected', 'Candidate'], 12000, 'Packaged Skills assets integrate correctly.'),
-  'package-runtime': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', ['Task-affected', 'Candidate'], 10000, 'Packaged runtime assets integrate correctly.'),
-  'runtime-adapter-parity': testing(SERVICE_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 30000, 'All supported runtime implementation families remain behaviorally aligned.'),
-  'workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 20000, 'A complete Workspace lifecycle succeeds through public entrypoints.'),
-  'ownership-recovery': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 20000, 'Workspace ownership conflicts recover without losing user state.'),
-  'runtime-reconciliation': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 30000, 'Workspace runtime projections reconcile across supported adapters.'),
-  'repository-onboarding': testing(PROJECT_OWNER, 'Delivery / Release', 'System', ['Task-affected', 'Candidate'], 15000, 'A clean repository can install and run Buildr.'),
-  'init-onboarding': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 15000, 'A user can initialize a Workspace through the public CLI.'),
-  'cli-compatibility': testing(SERVICE_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 15000, 'Documented CLI commands remain compatible.'),
-  'cli-package-parity': testing(SERVICE_OWNER, 'Delivery / Release', 'System', ['Task-affected', 'Candidate'], 10000, 'Source and packaged CLI surfaces remain equivalent.'),
-  'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 10000, 'Service branch configuration works in an isolated repository.'),
-  'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', ['Task-affected', 'Candidate'], 5000, 'Remote Skill reads fail within the declared timeout boundary.'),
-  'release-tarball-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', ['Task-affected', 'Candidate', 'Release'], 10000, 'The release tarball installs and serves its public CLI surface.'),
-  'managed-data-integrity': testing(PROJECT_OWNER, 'Development', 'System', ['Task-affected', 'Candidate'], 15000, 'Managed mutations remain atomic and preserve nested repositories.'),
-  'docs-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', ['Task-affected', 'Candidate'], 5000, 'Product documentation links and required content remain valid.'),
+  unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.'),
+  component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.'),
+  integration: testing(SERVICE_OWNER, 'Development', 'Integration', 30000, 'Buildr modules behave correctly across real filesystem, Git, or process boundaries.'),
+  'integration-fast': testing(PROJECT_OWNER, 'Development', 'System', 100000, 'Buildr public CLI and Workspace lifecycle journeys behave correctly.'),
+  contract: testing(PROJECT_OWNER, 'Static Conformance', 'Integration', 15000, 'Product source, governance assets, and stable entrypoint contracts conform.'),
+  'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 3000, 'CLI modules and wrappers preserve the declared architecture.'),
+  'openspec-spec-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 3000, 'Canonical OpenSpec specifications meet Product quality rules.'),
+  'openspec-strict': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'All OpenSpec artifacts pass upstream strict validation.'),
+  'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', 5000, 'Runtime adapter declarations and lightweight projections satisfy their contract.'),
+  'integration-candidate-recovery': testing(SERVICE_OWNER, 'Development', 'System', 25000, 'Builtin recovery and migration journeys preserve user-owned state.'),
+  'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release branch convergence behaves correctly.'),
+  'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 30000, 'Concurrent Task workflows satisfy the declared acceptance contract.'),
+  'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 10000, 'The Buildr npm candidate artifact can be assembled.'),
+  'open-source-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Static', 10000, 'The candidate contains the required public release materials.'),
+  'openspec-candidate-audit': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Candidate OpenSpec contracts are current and internally consistent.'),
+  'managed-mutations': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Production filesystem mutations remain behind declared owners.'),
+  'capability-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 25000, 'Capability CLI operations integrate with package and runtime assets.'),
+  'commands-cli-integration': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Commands context CLI operations integrate with managed workspace assets.'),
+  'openspec-contract-fixtures': testing(PROJECT_OWNER, 'Development', 'Integration', 20000, 'OpenSpec application contracts hold across isolated fixture repositories.'),
+  'openspec-convergence-recovery': testing(PROJECT_OWNER, 'Development', 'System', 60000, 'OpenSpec convergence and recovery complete through the public lifecycle.'),
+  'package-static': testing(SERVICE_OWNER, 'Delivery / Release', 'Static', 5000, 'The Buildr package structure is valid.'),
+  'package-workspace': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 6000, 'Packaged Workspace assets install and check correctly.'),
+  'package-commands': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 7000, 'Packaged Commands assets integrate correctly.'),
+  'package-rules': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 8000, 'Packaged Rules assets integrate correctly.'),
+  'package-skills': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 12000, 'Packaged Skills assets integrate correctly.'),
+  'package-runtime': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 10000, 'Packaged runtime assets integrate correctly.'),
+  'runtime-adapter-parity': testing(SERVICE_OWNER, 'Development', 'System', 30000, 'All supported runtime implementation families remain behaviorally aligned.'),
+  'workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'A complete Workspace lifecycle succeeds through public entrypoints.'),
+  'ownership-recovery': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'Workspace ownership conflicts recover without losing user state.'),
+  'runtime-reconciliation': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Workspace runtime projections reconcile across supported adapters.'),
+  'repository-onboarding': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'A clean repository can install and run Buildr.'),
+  'init-onboarding': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'A user can initialize a Workspace through the public CLI.'),
+  'cli-compatibility': testing(SERVICE_OWNER, 'Development', 'System', 15000, 'Documented CLI commands remain compatible.'),
+  'cli-package-parity': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 10000, 'Source and packaged CLI surfaces remain equivalent.'),
+  'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', 10000, 'Service branch configuration works in an isolated repository.'),
+  'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Remote Skill reads fail within the declared timeout boundary.'),
+  'release-tarball-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 10000, 'The release tarball installs and serves its public CLI surface.'),
+  'managed-data-integrity': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Managed mutations remain atomic and preserve nested repositories.'),
+  'docs-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product documentation links and required content remain valid.'),
 });
 
 const step = (definition) => {
@@ -84,7 +78,7 @@ const packageVerifier = (selector) => {
 const concurrency = (global, workspaceHeavy, workspaceSaturating) => Object.freeze({
   global,
   classes: Object.freeze({ default: global, 'cpu-heavy': 2, 'workspace-heavy': workspaceHeavy, network: 2, exclusive: 1 }),
-  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating, browser: 1 }),
+  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating }),
 });
 
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
@@ -106,6 +100,29 @@ export const VERIFICATION_IGNORED_INPUTS = Object.freeze([
   'node_modules/**',
   '.buildr/**',
   '.gitignore',
+]);
+
+export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
+  'verification.yml',
+  'package.json',
+  'package-lock.json',
+  'scripts/verify-buildr-product',
+  'scripts/verify-buildr-product-fast',
+  'test/verification/candidate.mjs',
+  'test/verification/changed.mjs',
+  'test/verification/changed-paths.mjs',
+  'test/verification/dag-scheduler.mjs',
+  'test/verification/executor.mjs',
+  'test/verification/plan-runner.mjs',
+  'test/verification/planner.mjs',
+  'test/verification/profile.mjs',
+  'test/verification/registry.mjs',
+  'test/verification/resource-coordinator.mjs',
+  'test/verification/timing/**',
+]);
+
+export const VERIFICATION_DELEGATED_INPUTS = Object.freeze([
+  Object.freeze({ owner: 'product.browser-smoke', inputs: Object.freeze(['test/browser-smoke/**']) }),
 ]);
 
 export const verificationSteps = Object.freeze([
@@ -225,7 +242,7 @@ export const verificationSteps = Object.freeze([
     'package/targets/workspace/manifest.yml',
     'package/targets/workspace/skills/buildr/task-board/**',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
-  step({ id: 'integration-candidate-release', name: 'Candidate integration: release Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, profiles: ['candidate'], groups: ['release'], inputs: [
+  step({ id: 'integration-candidate-release', name: 'Candidate integration: release Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
     'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-convergence.mjs',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], inputs: [
@@ -238,12 +255,6 @@ export const verificationSteps = Object.freeze([
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'], inputs: ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/**', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'docs/agent-runtime-adapters.md'], dependsOn: ['candidate-tarball'] }),
   step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.mjs' }, profiles: ['candidate'], groups: ['openspec'], inputs: ['openspec/**'] }),
   step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: ['src/application/package-maintenance/**', 'src/application/workspace-operations.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/runtime/**', 'package.json'] }),
-
-  step({ id: 'browser-shell', name: 'Browser integration: application shell', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['shell'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/app.js', 'src/interfaces/local-app/web/router.js', 'src/interfaces/local-app/web/index.html', 'src/interfaces/local-app/web/styles.css', 'src/interfaces/local-app/web/features/workspace.js', 'src/interfaces/local-app/web/features/workspaces.js'], concurrencyClass: 'exclusive', resources: ['browser'] }),
-  step({ id: 'browser-project', name: 'Browser integration: Project flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['project'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/projects.js', 'src/interfaces/local-app/web/features/project-detail.js', 'src/interfaces/local-app/web/features/project-edit.js'], concurrencyClass: 'exclusive', resources: ['browser'] }),
-  step({ id: 'browser-service', name: 'Browser integration: Service flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['service'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/services.js', 'src/interfaces/local-app/web/features/service-detail.js', 'src/interfaces/local-app/web/features/service-edit.js'], concurrencyClass: 'exclusive', resources: ['browser'] }),
-  step({ id: 'browser-task', name: 'Browser integration: Task Record flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['task'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/tasks.js', 'src/interfaces/local-app/web/features/task-detail.js'], concurrencyClass: 'exclusive', resources: ['browser'] }),
-  step({ id: 'browser-change', name: 'Browser integration: Change flow', executor: { type: 'node', file: 'test/browser-smoke/local-app-browser.test.mjs', args: ['change'] }, profiles: ['candidate'], groups: ['browser'], inputs: ['test/browser-smoke/**', 'src/interfaces/local-app/web/features/changes.js', 'src/interfaces/local-app/web/features/change-detail.js', 'src/interfaces/local-app/web/features/agent-actions.js', 'src/interfaces/local-app/web/markdown.js', 'src/interfaces/local-app/web/styles.css'], concurrencyClass: 'exclusive', resources: ['browser'] }),
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.mjs' }, profiles: ['candidate'], inputs: [
     'test/capability-cli.integration.mjs',
@@ -270,7 +281,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'ownership-recovery', name: 'Workspace E2E: ownership recovery', executor: { type: 'workspace-suite', selector: 'ownership-recovery' }, profiles: ['candidate'], inputs: ['src/application/domains/components.mjs', 'src/application/package-maintenance/**', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/ownership-recovery.mjs'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'runtime-reconciliation', name: 'Workspace E2E: runtime reconciliation', executor: { type: 'workspace-suite', selector: 'runtime-reconciliation' }, profiles: ['candidate'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/runtime-reconciliation.mjs', 'package/targets/runtime/**', 'package/targets/workspace/rules/**'], schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
 
-  step({ id: 'repository-onboarding', name: 'repository onboarding from a clean checkout', executor: { type: 'node', file: 'test/verification/onboarding/repository.mjs' }, profiles: ['candidate'], inputs: ['scripts/install-buildr-cli', 'test/verification/onboarding/repository.mjs', 'services/**', 'package.json', 'package-lock.json', 'README.md'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'repository-onboarding', name: 'repository onboarding from a clean checkout', executor: { type: 'node', file: 'test/verification/onboarding/repository.mjs' }, inputs: ['scripts/install-buildr-cli', 'test/verification/onboarding/repository.mjs', 'services/**', 'package.json', 'package-lock.json', 'README.md'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'init-onboarding', name: 'single-command init onboarding', executor: { type: 'node', file: 'test/verification/onboarding/init.mjs' }, profiles: ['candidate'], inputs: ['src/application/domains/workspace.mjs', 'src/application/workspace-operations.mjs', 'test/verification/onboarding/init.mjs', 'package/targets/workspace/manifest.yml', 'package/targets/workspace/components/**'], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'cli-compatibility', name: 'CLI compatibility', executor: { type: 'node', file: 'test/verification/cli/compatibility.mjs' }, profiles: ['candidate'], groups: ['cli'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
@@ -308,9 +319,8 @@ export const verificationSteps = Object.freeze([
 
 export const VERIFICATION_TEST_INTENTS = Object.freeze(['Development', 'Acceptance', 'Static Conformance', 'Delivery / Release']);
 export const VERIFICATION_EXECUTION_BOUNDARIES = Object.freeze(['Static', 'Unit', 'Component', 'Integration', 'System']);
-export const VERIFICATION_ORCHESTRATION_SCENARIOS = Object.freeze(['Quick', 'Task-affected', 'Candidate', 'Release']);
 export const VERIFICATION_PROFILES = Object.freeze(['fast', 'candidate']);
-export const VERIFICATION_GROUPS = Object.freeze(['public', 'cli', 'runtime', 'package', 'openspec', 'release', 'recovery', 'browser']);
+export const VERIFICATION_GROUPS = Object.freeze(['public', 'cli', 'runtime', 'package', 'openspec', 'release', 'recovery']);
 export const VERIFICATION_EXECUTORS = Object.freeze(['node', 'npm', 'openspec', 'package-selector', 'workspace-suite', 'candidate-artifact']);
 
 export function verificationStepById(id) {

@@ -45,7 +45,7 @@ current Result 只有在 target 与全部 declaration identities 都 `current` �
 
 声明前还必须核对真实测试入口、内部 registry、环境、副作用和可用的近期耗时 evidence；必要且已授权时可以有界运行现有入口取得事实。不得根据 capability id、`fast`、`unit`、目录名或技术栈惯例推断成本与覆盖。
 
-只声明少量、稳定、可独立选择的 capability 接口，不复制每个测试文件或内部 registry step。测试意图、Static/Unit/Component/Integration/System 边界、Quick/Task-affected/Candidate/Release 编排和目标耗时属于 Project Testing 或项目 registry，不进入 `verification.yml` v2。入口命名、成本或分层不合理时报告测试建设 gap，并交给 `project-testing` 或后续实现任务；不要在声明更新中暗中重构测试。
+只声明少量、稳定、可独立选择的 capability 接口，不复制每个测试文件或内部 registry step。测试意图、Static/Unit/Component/Integration/System 边界、Quick 成本约束、affected/full 范围、Candidate/Release 验证目标和目标耗时属于 Project Testing 或项目 registry，不进入 `verification.yml` v2。入口命名、成本或分层不合理时报告测试建设 gap，并交给 `project-testing` 或后续实现任务；不要在声明更新中暗中重构测试。
 
 ## 3. 选择并执行已有能力
 

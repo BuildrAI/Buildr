@@ -20,7 +20,7 @@
 - `rules render`、`runtime check` 和 `skills render` 支持当前 adapter 主路径。
 - Supported runtime adapter 由静态 registry 和声明式 RuntimePlan contract 管理；Component 必须验证自身完整性但不能扩展 adapter。
 - `package check` 和 `package build` 校验、构建 Buildr 产品随包资产。
-- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式候选仍由 `test:candidate` 编排全部 steps。
+- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备再显式运行 `test:candidate` 完整回归。
 - Buildr mutation 具备严格 identity、scope/ownership 路径保护、atomic writer、workspace transaction、失败回滚和 doctor recovery；package output 使用 receipt/integrity 安全替换。
 - bootstrap guide 在 Skill 不可用时提供纯文本兜底入口。
 
@@ -78,7 +78,7 @@ npm run test:focus -- integration-candidate-release
 npm run coverage:unit -- --summary /tmp/buildr-unit-coverage.json
 ```
 
-已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。完整 Unit 因低成本可覆盖全部 `src/**`；重型 Integration/System step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以“最终可由 CLI 到达”为由扩大选择。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。Candidate 仍按完整 profile 无条件运行，不受 Changed inputs 收窄影响：
+已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。完整 Unit 因低成本可覆盖全部 `src/**`；重型 Integration/System step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以“最终可由 CLI 到达”为由扩大选择。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。registry、planner、runner、声明或 timing 等全局 owner 变化时，同一个 Changed plan 扩展为完整回归：
 
 ```bash
 npm run test:changed -- --plan
@@ -87,7 +87,7 @@ npm run test:changed -- docs/buildr-product.md
 npm run --silent test:changed -- --json docs/buildr-product.md
 ```
 
-需要定位失败或人工重跑领域时使用统一 focus 入口。它按 verifier identity 去重 step/group，只展开真实 artifact 依赖，不自动重复 Fast，也不能替代最终候选完整验证：
+需要定位失败或人工重跑领域时使用统一 focus 入口。它按 verifier identity 去重 step/group，只展开真实 artifact 依赖，不自动重复 Fast，也不能替代冻结目标的正式 delivery plan：
 
 ```bash
 npm run test:focus -- --list
@@ -98,7 +98,7 @@ npm run test:focus -- --plan group:openspec
 npm run --silent test:focus -- --json release-tarball-smoke
 ```
 
-完整 Candidate 自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`，但发布使用登记的默认 profile。
+显式完整回归自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`，但发布使用登记的默认 profile。
 
 开发期间需要复现跨组件 workspace 生命周期问题时，通过同一个 focus 入口定点运行独立 Workspace E2E suites：
 
@@ -107,17 +107,17 @@ npm run test:focus -- workspace-lifecycle
 npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
-以下完整验证在所有 rebase、冲突解决和内容修改结束后，对 task worktree 的最终候选 Git tree 执行。commit、相同 tree 集成、push 和 worktree 清理复用该结果，不在主开发分支重复执行；tree 改变时才重新运行受影响的验证。仓库 CI/publish 继续调用兼容入口 `scripts/verify-buildr-product`，其语义与 `test:candidate` 相同。
+正式任务在所有 rebase、冲突解决和内容修改结束后，通过 Task Verification 对最终冻结 Candidate 执行 delivery-required `product.delivery`。普通任务由 changed planner 运行 affected；全局验证 owner 变化时同一 plan 运行 full。Release、用户明确全量要求和 CI/publish 另行调用以下显式完整回归兼容入口：
 
 ```bash
 npm run test:candidate
 ```
 
-完整产品验证会把每个阶段和总耗时写入 `BUILDR_TIMING_OUTPUT` 指定的 JSON 文件；未显式指定时，每次 Candidate/Changed run 都在系统临时目录创建唯一 evidence 目录，其中包含 `timing.json` 和 diagnostics，结束时直接打印绝对路径，不维护可被并发覆盖的固定 `latest` 文件。summary 的 `evidenceLifecycle` 将这类目录标记为 `transient`、`consumer-finished` 后可清理并提供精确 `cleanupReference`；它只在当前任务 consumer 使用期间保留，不是长期证据库。显式设置 `BUILDR_TIMING_OUTPUT` / `BUILDR_DIAGNOSTICS_OUTPUT` 时标记为 `caller-managed`，由调用方保证路径唯一并决定保留期，CI 总是上传这些证据。summary 还记录 run kind/id、来源仓库与 Product root、HEAD、branch、dirty、候选 fingerprint、每个 step 日志路径以及 Node、平台、架构和 CI 环境。Workspace E2E 直接运行失败时默认保留失败 fixture 并打印位置，成功时清理；需要主动保留成功 fixture 时可设置 `BUILDR_WORKSPACE_E2E_KEEP=1`。
+Product delivery/full 验证会把每个阶段和总耗时写入 `BUILDR_TIMING_OUTPUT` 指定的 JSON 文件；未显式指定时，每次 Candidate/Changed run 都在系统临时目录创建唯一 evidence 目录，其中包含 `timing.json` 和 diagnostics，结束时直接打印绝对路径，不维护可被并发覆盖的固定 `latest` 文件。summary 的 `evidenceLifecycle` 将这类目录标记为 `transient`、`consumer-finished` 后可清理并提供精确 `cleanupReference`；它只在当前任务 consumer 使用期间保留，不是长期证据库。显式设置 `BUILDR_TIMING_OUTPUT` / `BUILDR_DIAGNOSTICS_OUTPUT` 时标记为 `caller-managed`，由调用方保证路径唯一并决定保留期，CI 总是上传这些证据。summary 还记录 run kind/id、来源仓库与 Product root、HEAD、branch、dirty、候选 fingerprint、每个 step 日志路径以及 Node、平台、架构和 CI 环境。Workspace E2E 直接运行失败时默认保留失败 fixture 并打印位置，成功时清理；需要主动保留成功 fixture 时可设置 `BUILDR_WORKSPACE_E2E_KEEP=1`。
 
 Candidate 总耗时、Workspace E2E suites 和已识别的高耗时专项阶段声明目标预算；summary 使用 `budgetMs` / `budgetStatus` 标记目标内或超预算，超预算只输出 warning。0.1 不因环境波动或单纯超出目标预算阻塞发布。
 
-完成报告必须读取最终 Candidate 命令打印的 timing summary，核对 status、run kind 和 source identity 与最终候选一致，并说明总耗时、预算状态、最慢阶段、失败阶段（成功时为 none）、retention 和 cleanup status；summary 仍保留时报告路径，已清理时只报告已捕获摘要和清理结果。Changed/Focus summary 不得替代 Candidate，也不得把并行 step duration 相加推算整体 wall-clock。分析并行 Candidate 性能时，使用 step 的 `queuedAt`、`startedAt`、`finishedAt` 和 `queueDurationMs` 区分调度等待与 executor 执行耗时；blocked step 读取 `blockedAt`，不得把 `durationMs: 0` 解释为已执行。
+完成报告必须读取正式 delivery plan 的 timing summary；运行显式完整回归时也读取对应 Candidate summary。两者都要核对 status、run kind 和 source identity 与最终候选一致，并说明总耗时、预算状态、最慢阶段、失败阶段（成功时为 none）、retention 和 cleanup status。Focus summary 不得替代正式 delivery；不得把并行 step duration 相加推算整体 wall-clock。分析并行 full 性能时，使用 step 的 `queuedAt`、`startedAt`、`finishedAt` 和 `queueDurationMs` 区分调度等待与 executor 执行耗时；blocked step 读取 `blockedAt`，不得把 `durationMs: 0` 解释为已执行。
 
 Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与推送且没有后续 consumer 后，使用 `node test/verification/timing/cleanup-evidence.mjs <timing-summary.json>` 清理。该入口只接受位于系统临时目录、名称匹配当前 run kind、summary 归属一致且不是符号链接的精确 evidence 目录；caller-managed evidence 和边界不明路径会 fail closed。
 

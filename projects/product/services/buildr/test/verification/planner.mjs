@@ -1,11 +1,12 @@
 import path from 'node:path';
 import {
   VERIFICATION_CONCURRENCY,
+  VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
+  VERIFICATION_FULL_SCOPE_INPUTS,
   VERIFICATION_GROUPS,
   VERIFICATION_IGNORED_INPUTS,
-  VERIFICATION_ORCHESTRATION_SCENARIOS,
   VERIFICATION_PROFILES,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
@@ -60,18 +61,9 @@ export function validateVerificationRegistry(steps = verificationSteps) {
       if (!VERIFICATION_EXECUTION_BOUNDARIES.includes(classification.executionBoundary)) {
         findings.push({ step: item.id, code: 'invalid_testing_boundary', value: classification.executionBoundary });
       }
-      const scenarios = classification.orchestrationScenarios;
-      if (!Array.isArray(scenarios) || scenarios.length === 0) findings.push({ step: item.id, code: 'missing_testing_scenarios' });
-      else {
-        for (const scenario of scenarios) if (!VERIFICATION_ORCHESTRATION_SCENARIOS.includes(scenario)) {
-          findings.push({ step: item.id, code: 'invalid_testing_scenario', value: scenario });
-        }
-        const quick = scenarios.includes('Quick');
-        if (quick !== (item.profiles ?? []).includes('fast')) findings.push({ step: item.id, code: 'quick_profile_mismatch' });
-        if (quick && classification.executionBoundary === 'System') findings.push({ step: item.id, code: 'quick_system_boundary' });
-        if (quick && classification.targetDurationMs > 15000) findings.push({ step: item.id, code: 'quick_target_too_slow', value: classification.targetDurationMs });
-        if (scenarios.includes('Candidate') !== (item.profiles ?? []).includes('candidate')) findings.push({ step: item.id, code: 'candidate_profile_mismatch' });
-      }
+      const quick = (item.profiles ?? []).includes('fast');
+      if (quick && classification.executionBoundary === 'System') findings.push({ step: item.id, code: 'quick_system_boundary' });
+      if (quick && classification.targetDurationMs > 15000) findings.push({ step: item.id, code: 'quick_target_too_slow', value: classification.targetDurationMs });
       if (!Number.isInteger(classification.targetDurationMs) || classification.targetDurationMs < 1) {
         findings.push({ step: item.id, code: 'invalid_testing_target_duration', value: classification.targetDurationMs });
       }
@@ -157,18 +149,24 @@ export function createVerificationPreflightPlan(request = {}, steps = verificati
 
 export function auditVerificationInputCoverage(paths, steps = verificationSteps) {
   const mapped = [];
+  const delegated = [];
   const ignored = [];
   const unmapped = [];
   for (const rawPath of paths) {
     const productPath = normalizeProductPath(rawPath);
     const owners = steps.filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern))).map((item) => item.id);
+    const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
+      .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
+      .map((item) => item.owner);
     if (owners.length > 0) mapped.push({ path: productPath, owners });
+    else if (delegatedOwners.length > 0) delegated.push({ path: productPath, owners: delegatedOwners });
     else if (VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) ignored.push(productPath);
     else unmapped.push(productPath);
   }
   return Object.freeze({
     ok: unmapped.length === 0,
     mapped: Object.freeze(mapped),
+    delegated: Object.freeze(delegated),
     ignored: Object.freeze(ignored),
     unmapped: Object.freeze(unmapped),
   });
@@ -208,6 +206,9 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const profiles = [...new Set(request.profiles ?? [])];
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
+  const fullScopeMatches = paths.flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
+    .filter((pattern) => matchesInput(productPath, pattern))
+    .map((pattern) => ({ productPath, pattern })));
   for (const id of stepIds) {
     if (!byId.has(id)) throw new Error(`Unknown verification step: ${id}`);
     selected.add(id);
@@ -220,6 +221,12 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `profile ${profile}`]);
     }
   }
+  if (fullScopeMatches.length > 0) {
+    for (const item of steps) if (item.profiles.includes('candidate')) {
+      selected.add(item.id);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => `${productPath} matches full-scope owner ${pattern}`)]);
+    }
+  }
   for (const group of groups) {
     if (!VERIFICATION_GROUPS.includes(group)) throw new Error(`Unknown verification group: ${group}`);
     for (const item of steps) if (item.groups.includes(group)) {
@@ -228,9 +235,14 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     }
   }
   const unmatchedPaths = [];
+  const delegatedPaths = [];
   for (const productPath of paths) {
     const matched = steps.filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)));
-    if (matched.length === 0 && !VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) unmatchedPaths.push(productPath);
+    const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
+      .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
+      .map((item) => item.owner);
+    if (matched.length === 0 && delegatedOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(delegatedOwners) }));
+    else if (matched.length === 0 && !VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) unmatchedPaths.push(productPath);
     for (const item of matched) {
       selected.add(item.id);
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${item.inputs.find((pattern) => matchesInput(productPath, pattern))}`]);
@@ -244,6 +256,7 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),
     stepIds: Object.freeze(stepIds),
+    delegated: Object.freeze(delegatedPaths),
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
   });
 }

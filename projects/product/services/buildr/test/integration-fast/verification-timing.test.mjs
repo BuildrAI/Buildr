@@ -362,7 +362,6 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'integration-fast',
     'capability-cli-integration',
     'integration-candidate-recovery',
-    'integration-candidate-release',
     'runtime-adapter-parity',
     'package-static',
     'package-workspace',

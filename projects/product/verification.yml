@@ -29,8 +29,31 @@ capabilities:
       externalSystems: []
       authorization: implicit
     resourceClaims: []
-  - id: product.candidate
-    title: Buildr Product 完整交付验证
+  - id: product.delivery
+    title: Buildr Product 任务交付验证
+    scope:
+      project: product
+      services: []
+    invocation:
+      kind: command
+      argv: ["npm", "run", "test:changed", "--", "--base", "origin/dev"]
+      cwd: services/buildr
+    applicability:
+      paths: ["**"]
+      conditions:
+        - Product 或 Buildr Service 形成冻结的待交付目标
+    proves:
+      - 冻结目标相对 Product 集成分支的 changed paths 均有 owner，且同一 plan 选择的 affected 或 full 证据通过
+    requiredForDelivery: true
+    environment:
+      requires: [node, npm, git]
+    effects:
+      writes: ["系统临时目录中的验证 fixture、候选 tarball、timing evidence 与 diagnostics"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []
+  - id: product.full-regression
+    title: Buildr Product 显式完整回归
     scope:
       project: product
       services: []
@@ -41,10 +64,10 @@ capabilities:
     applicability:
       paths: ["**"]
       conditions:
-        - Product 或 Buildr Service 形成待交付实现
+        - 用户明确要求完整 Product 回归、准备 Release 或独立核验完整回归入口
     proves:
-      - Product Project 与 Buildr Service 的完整产品测试、package、runtime、workspace lifecycle、发布与 OpenSpec 契约门禁通过
-    requiredForDelivery: true
+      - Product Project 与 Buildr Service 登记为完整回归主证据的全部步骤通过
+    requiredForDelivery: false
     environment:
       requires: [node, npm]
     effects:
@@ -67,7 +90,7 @@ capabilities:
         - 本机应用路由、DOM 交互或 Agent Action 发生变化
     proves:
       - Project、Service、Change 与 Task 页面关键浏览器交互和错误反馈可用
-    requiredForDelivery: false
+    requiredForDelivery: true
     environment:
       requires: [node, npm, chrome]
     effects:

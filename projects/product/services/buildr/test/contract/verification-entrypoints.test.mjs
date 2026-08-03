@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/application/package-maintenance/verification-registry.mjs';
 import { createVerificationPlan } from '../../test/verification/planner.mjs';
-import { verificationSteps } from '../../test/verification/registry.mjs';
+import { VERIFICATION_DELEGATED_INPUTS, verificationSteps } from '../../test/verification/registry.mjs';
 import { workspaceSuites } from '../../test/verification/workspace/suites.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -43,19 +43,30 @@ test('product verification exposes three gates, direct layers, and one focus ent
   }
 });
 
-test('browser smoke 以 v2 optional capability 声明真实环境、范围与资源', () => {
+test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付能力', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
+  const delivery = declaration.capabilities.find((capability) => capability.id === 'product.delivery');
+  const fullRegression = declaration.capabilities.find((capability) => capability.id === 'product.full-regression');
   const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
-  assert.ok(browser);
   assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
+  assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
+  assert.equal(delivery.requiredForDelivery, true);
+  assert.deepEqual(delivery.applicability.paths, ['**']);
+  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
+  assert.equal(fullRegression.requiredForDelivery, false);
+  assert.deepEqual(fullRegression.applicability.paths, ['**']);
+  assert.equal(declaration.capabilities.some((capability) => ['product.task-affected', 'product.candidate'].includes(capability.id)), false);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['npm', 'run', 'test:browser:smoke'], cwd: 'services/buildr' });
-  assert.equal(browser.requiredForDelivery, false);
+  assert.equal(browser.requiredForDelivery, true);
   assert.deepEqual(browser.applicability.paths, ['services/buildr/src/interfaces/local-app/**', 'services/buildr/test/browser-smoke/**']);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
   assert.deepEqual(browser.effects.externalSystems, []);
   assert.equal(browser.effects.authorization, 'implicit');
   assert.deepEqual(browser.resourceClaims, ['browser']);
+  const browserDelegation = VERIFICATION_DELEGATED_INPUTS.find((item) => item.owner === 'product.browser-smoke');
+  assert.ok(browserDelegation);
+  for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
 });
 
@@ -83,7 +94,7 @@ test('focus verification lists selectors and rejects unknown values before execu
   assert.doesNotMatch(`${unknown.stdout}${unknown.stderr}`, /\[focus\]/);
 });
 
-test('candidate verification retains every release gate and split package steps', () => {
+test('candidate verification retains necessary Candidate facts without Browser and Release-only owners', () => {
   const wrapper = read('scripts/verify-buildr-product');
   const candidate = read('test/verification/candidate.mjs');
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
@@ -115,7 +126,6 @@ test('candidate verification retains every release gate and split package steps'
     'repository contract tests',
     'legacy full-system integration tests',
     'Candidate integration: builtin recovery and migration',
-    'Candidate integration: release Git convergence',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
     'OpenSpec canonical spec quality',
@@ -124,7 +134,6 @@ test('candidate verification retains every release gate and split package steps'
     'open-source candidate',
     'OpenSpec contract candidate audit',
     'managed mutations',
-    'repository onboarding from a clean checkout',
     'single-command init onboarding',
     'CLI compatibility',
     'CLI package parity',
@@ -138,6 +147,11 @@ test('candidate verification retains every release gate and split package steps'
     'OpenSpec contract fixtures',
     'documentation quality',
   ]) assert.ok(candidatePlan.steps.some((step) => step.name === stage), `candidate verifier must retain ${stage}`);
+  for (const excluded of [
+    'integration-candidate-release', 'repository-onboarding',
+    'browser-shell', 'browser-project', 'browser-service', 'browser-task', 'browser-change',
+  ]) assert.equal(candidatePlan.steps.some((step) => step.id === excluded), false, `candidate verifier must exclude ${excluded}`);
+  assert.equal(verificationSteps.some((step) => step.id.startsWith('browser-')), false);
   assert.equal(candidatePlan.steps.some((step) => step.id === 'runtime-adapter-smoke-workspace'), false);
   assert.equal(candidatePlan.steps.some((step) => step.name === 'runtime adapter smoke workspace generator'), false);
   assert.equal(fs.existsSync(path.join(productRoot, 'test/verification/runtime/adapter-smoke-workspace.mjs')), false);
@@ -150,7 +164,7 @@ test('candidate verification retains every release gate and split package steps'
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   assert.deepEqual(candidatePlan.steps.filter((step) => step.resources?.includes('workspace-saturating')).map((step) => step.id), [
-    'integration-candidate-recovery', 'integration-candidate-release', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
+    'integration-candidate-recovery', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
   ]);
 });
 

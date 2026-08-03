@@ -186,7 +186,7 @@ builtins:
     - id: project-testing
       path: package/targets/workspace/skills/buildr/project-testing
       target: skills/buildr/project-testing
-      description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，编排 Quick、Task-affected、Candidate、Release，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
+      description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，区分测试成本、affected/full 范围与 Candidate/Release 验证目标，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-manager

@@ -11,6 +11,7 @@ export function printPlan(plan, stream = process.stdout) {
     stream.write('Changed paths:\n');
     for (const item of plan.paths) stream.write(`  ${item}\n`);
   }
+  for (const item of plan.delegated ?? []) stream.write(`Delegated: ${item.path} -> ${item.owners.join(', ')}\n`);
   for (const step of plan.steps) {
     stream.write(`\n${step.id} — ${step.name}\n`);
     for (const reason of step.reasons) stream.write(`  selected: ${reason}\n`);

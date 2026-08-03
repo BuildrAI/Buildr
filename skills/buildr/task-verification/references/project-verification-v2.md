@@ -31,7 +31,7 @@ capabilities: []
 
 初始化或更新前读取真实测试、package/POM scripts、CI、项目约定和内部 registry，并核对入口实际调用的环境、副作用与可用耗时 evidence。名称为 `fast` 或 `unit` 不构成低成本证明；没有当前事实时不要作出成本承诺。
 
-声明只暴露少量、稳定、可独立选择的 capability 接口。一个 Candidate 入口内部可以拥有多个 Project-specific step；不要把每个测试文件、step、测试意图、执行边界、编排场景或目标耗时复制进本 schema。测试框架设计和测试建设交给 `project-testing`；本声明只描述已经存在的能力。
+声明只暴露少量、稳定、可独立选择的 capability 接口。一个 Project 入口内部可以拥有多个 Project-specific step；不要把每个测试文件、step、测试意图、执行边界、Quick 成本约束、affected/full 范围、Candidate/Release 验证目标或目标耗时复制进本 schema。测试框架设计和测试建设交给 `project-testing`；本声明只描述已经存在的能力。
 
 ## Environment、effects 与 resource
 

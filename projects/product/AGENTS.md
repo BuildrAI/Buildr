@@ -37,6 +37,7 @@ Agent 在 `product` Project 中的最小运行规则。
 - 预计包含代码、构建或测试的产品 change 必须在 propose 前创建或复用 task worktree；artifacts、实现和合并前候选验证只写入该 worktree。
 - 合并前候选验证使用临时 workspace 或 task worktree 自身，不从未合并 checkout 更新主自举 workspace。
 - OpenSpec apply 期间按当前目标选择直接相关的已有 capability 做实现反馈；不得在每个普通任务后运行产品总验证或临时 workspace E2E。所有实现、自然语言资产、所需同步和 review 修订完成并冻结交付目标后，才执行 `verification.yml` 中适用且 `requiredForDelivery` 的产品验证能力。
+- Project Testing 中 Quick 只表示成本约束，affected/full 表示选择范围，Candidate/Release 表示验证目标或节点；不得把三者当作同一层级的测试类型。冻结 Candidate 可以执行 affected，只有全局验证 owner 变化或明确完整回归要求时才执行 full。
 - Product Project 的本节与 `verification.yml` 定义“已经有什么能力、何时适用、能证明什么”；selected `buildr.task-verification/v3` provider 负责执行适用能力、测量 transient wall-clock，并通过唯一 Application 维护 Task-scoped current Result。`task-worktree` 只提供 checkout 与 tree identity，不拥有验证政策或 Result。
 - 验证进程仍在运行或暂时无输出时继续等待同一进程，不重复启动相同命令；完整验证失败后的修复循环优先重跑失败项和受影响检查，候选重新稳定后再运行一次最终完整验证。
 - 最终交付验证必须在所有 rebase、冲突解决、OpenSpec 收敛、runtime sync、review 修订和内容修改完成后冻结明确 target identity；current Task Verification Result 同时绑定该 target 与 Project declaration identities。commit、相同内容集成、push 和 worktree 清理不改变 target 时可以复用；tree 或 declaration bytes 发生任何变化后 Result 直接派生为 stale，并针对新目标重新执行适用能力，不保留 checkbox 或 closeout metadata 的特殊复用协议。
@@ -63,6 +64,6 @@ Project 服务通过 `services/manifest.yml` 维护 Service registry，默认 re
 
 - 普通任务从 `services/buildr/` 运行 `npm test` 或 `npm run test:fast`，只承担完整低成本 Unit、Component、Static 及 contract/runtime Integration 的 Quick 反馈；完整 CLI、Git、Workspace 与生命周期 System 测试不得因历史 `fast` 名称进入该入口。
 - 日常改动优先运行 `npm run test:changed`；失败定位使用 `npm run test:focus -- <step-id|group:<group>>`，只展开真实依赖并按 identity 去重。
-- 最终候选冻结后运行 `npm run test:candidate`；`scripts/verify-buildr-product` 是供 CI、publish 和历史集成使用的等价兼容入口。
+- 最终候选冻结后通过 Task Verification 执行 delivery-required `product.delivery`；其 changed plan 根据 owner 选择 affected 或 full。用户明确要求完整 Product 回归、发布准备或验证兼容入口时运行 `npm run test:candidate`；`scripts/verify-buildr-product` 是其等价兼容入口。
 
 Buildr 产品完整验证结束后，Agent 必须读取 timing summary，并向维护者汇报总耗时、最慢阶段、失败阶段（如有）、evidence retention 和 cleanup status。summary 仍保留时报告文件路径；transient evidence 已被 consumer 使用并清理后，不得把失效路径表述为长期引用。耗时仅用于观察趋势；除非 OpenSpec 另有阈值契约，不得仅因耗时增长判定验证失败。该要求仅适用于 Buildr Product Project，不扩展为其他 Buildr workspace 的通用 Skill 流程。

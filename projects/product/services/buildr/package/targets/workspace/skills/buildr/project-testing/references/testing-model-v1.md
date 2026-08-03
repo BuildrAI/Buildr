@@ -2,15 +2,17 @@
 
 本 reference 帮助不同技术栈使用同一组测试判断。Project 的真实代码、测试框架和团队约定始终优先。
 
-## 三个正交维度
+## 测试边界与编排问题
 
-| 维度 | 分类 | 判断问题 |
+| 类别 | 第一版取值 | 判断问题 |
 | --- | --- | --- |
 | 主要意图 | Development、Acceptance、Static Conformance、Delivery / Release | 为什么需要这份证据？ |
 | 执行边界 | Static、Unit、Component、Integration、System | 启动了哪些真实边界？ |
-| 编排场景 | Quick、Task-affected、Candidate、Release | 什么时候应组合运行？ |
+| 成本约束 | Quick 或不受 Quick 预算约束 | 是否适合高频反馈？ |
+| 选择范围 | focus、affected、full | 本次选择多少证据？ |
+| 验证目标 | 开发目标、Candidate、Release artifact | 针对哪个冻结程度和交付物运行？ |
 
-同一测试在每个维度各有一个主要归类。例如真实 CLI + Git 的完整 Workspace 生命周期可以是 `Development + System + Task-affected/Candidate`，并不自动成为 Acceptance。
+主要意图和执行边界属于测试分类；后三项属于一次编排决策，不要求固化成每个测试的单一场景标签。例如真实 CLI + Git 的完整 Workspace 生命周期可以是 `Development + System`，本次在冻结 Candidate 上按 affected 或 full 范围运行，并不自动成为 Acceptance。
 
 ## 执行边界
 
@@ -33,16 +35,17 @@
 
 Browser / Playwright 只是执行手段。技术 smoke 属于 Development / System；只有 requirement-derived case 才属于 Acceptance。
 
-## 编排场景
+## 编排
 
-| 场景 | 第一版边界 |
+| 问题 | 第一版边界 |
 | --- | --- |
-| Quick | 完整低成本 Static、Unit、Component，加少量轻 Integration；应能频繁运行 |
-| Task-affected | 根据变更路径、owner 和风险选择所有直接相关证据，包括必要的重型测试 |
-| Candidate | 冻结候选的完整研发回归与 Project-required System / Delivery gates，不按 diff 缩减 |
-| Release | Candidate 之上的 package、安装、部署、发布与发布后 smoke |
+| Quick | 只组合完整低成本 Static、Unit、Component 和少量轻 Integration；它是成本约束 |
+| affected | 根据变更路径、owner 和风险选择所有直接相关证据，包括必要的重型测试 |
+| full | 选择 Project 登记的完整回归证据；选择机制自身变化或明确全量要求时使用 |
+| Candidate | 表示冻结候选目标；可以承载 affected 或 full，不决定范围 |
+| Release | 表示真实发布物节点；组合 package、安装、部署、发布与发布后 smoke |
 
-`focus` 只重跑具体 step 或领域以定位故障，不声明新的完整性级别。
+`focus` 只重跑具体 step 或领域以定位故障，不声明交付完整性。Project 可以提供 `test:candidate` 这类组合入口，但入口名称不得被提升为所有 Candidate 都必须 full 的通用规则。
 
 ## Project / Service owner
 
@@ -58,12 +61,13 @@ step
 → ownerScope
 → primaryIntent
 → executionBoundary
-→ orchestrationScenarios
 → environment/effects
 → targetDuration
 → applicability/proves
 → primaryEvidenceOwner
 ```
+
+编排再从这些事实决定：哪些低成本步骤进入 Quick、changed inputs 选择哪些 affected owner、哪些步骤构成 full，以及本次验证目标是什么。
 
 `mixed` 只作为“该入口仍需拆分”的审查信号，不是正式测试类型。
 

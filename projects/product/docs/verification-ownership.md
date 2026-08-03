@@ -13,25 +13,27 @@ Buildr 使用 Node.js 内置 `node:test`，测试入口由 `services/buildr/pack
 | `test:unit` | 同进程验证纯逻辑；完整套件属于 Quick |
 | `test:component` | 用 fake 协作者验证单一有界 Application 组装；完整套件属于 Quick |
 | `test:contract` | 主要意图是 Static Conformance；因包含真实开发入口、Git 和临时目录检查，聚合执行边界按低成本 Integration 计 |
-| `test:integration` | 验证真实文件系统、Git 或子进程技术边界；按任务影响或 Candidate 运行 |
+| `test:integration` | 验证真实文件系统、Git 或子进程技术边界；按 affected 或 full 范围运行 |
 | `test:integration:fast` | 历史名称；实际是完整 CLI、Workspace 与生命周期 System 集合，不属于 Quick |
 | `test:changed` / `test:focus` | 按变更 owner 选择开发期反馈，或定向重跑失败步骤 |
-| `test:candidate` | 运行完整 Product、package、runtime、Workspace、浏览器、发布和 OpenSpec 回归 |
+| `test:candidate` | 显式运行 Product 核心完整回归；保留候选包交付门禁，Browser 与 Git 发布流程专项独立 |
 | 专项入口 | 定向验证 Browser、OpenSpec convergence、release 等高成本场景 |
 
 这些是 Buildr 项目内部的测试分层和编排入口。它们可以继续拆分和调整，不是 Task Verification 的公共 schema。
 
-项目测试采用三个正交维度，不把所有验证强行归入 Unit、Component、Integration：
+项目测试先判断测试意图和执行边界，再分别决定成本、范围和验证目标，不把所有概念压成一个层级：
 
-| 维度 | 第一版分类 |
+| 问题 | 第一版分类 |
 | --- | --- |
 | 主要意图 | Development、Acceptance、Static Conformance、Delivery / Release |
 | 执行边界 | Static、Unit、Component、Integration、System |
-| 编排场景 | Quick、Task-affected、Candidate、Release |
+| 成本约束 | Quick 或不受 Quick 预算约束 |
+| 选择范围 | focus、affected、full |
+| 验证目标 | 开发目标、冻结 Candidate、Release artifact |
 
-`System` 是执行边界，不等于 Acceptance；`Static` 是独立执行形式；`focus` 是失败诊断和定向选择，不是交付编排场景。Service 负责自身代码、公开技术契约和独立交付物可判定的事实；Project 负责跨 Service 行为、治理资产、用户旅程及组合 Candidate / Release。允许辅助证据重叠，但每项事实应有一个主要证据 owner。
+Candidate 是验证目标，不自动等于 full：普通冻结 Candidate 可以执行 affected，明确完整回归时执行 full。`System` 是执行边界，不等于 Acceptance；`Static` 是独立执行形式；`focus` 是失败诊断和定向选择，不表示交付完整性。Service 负责自身代码、公开技术契约和独立交付物可判定的事实；Project 负责跨 Service 行为、治理资产、用户旅程及组合交付物。允许辅助证据重叠，但每项事实应有一个主要证据 owner。
 
-首轮只要求 registry step 记录最小审查卡：`ownerScope → primaryIntent → executionBoundary → orchestrationScenarios → environment/effects → targetDuration → applicability/proves → primaryEvidenceOwner`。这些分类属于 Project Testing 指导，不进入 `verification.yml` schema。
+registry step 只记录最小测试事实：`ownerScope → primaryIntent → executionBoundary → environment/effects → targetDuration → applicability/proves → primaryEvidenceOwner`。Quick/full membership 与 affected inputs 使用实际 profile/inputs 表达，不再维护重复的 `orchestrationScenarios`。这些事实属于 Project Testing，不进入 `verification.yml` schema。
 
 ## Task Verification 如何看到这些测试
 
@@ -40,8 +42,9 @@ Task Verification 不登记每个测试文件，也不把 Product 内部 Candida
 | capability | 证明范围 | 交付必需 |
 | --- | --- | ---: |
 | `product.fast` | 低成本 Unit、Component、Static Conformance 与两项轻量 Integration | 否 |
-| `product.candidate` | Product 与 Buildr Service 的完整交付门禁 | 是 |
-| `product.browser-smoke` | Local App 关键浏览器交互 | 否 |
+| `product.delivery` | 冻结目标的 changed paths 有 owner，且同一 plan 选择的 affected/full 证据通过 | 是 |
+| `product.full-regression` | Product 与 Buildr Service 登记的核心完整回归 | 否 |
+| `product.browser-smoke` | Local App 关键浏览器交互 | 适用时是 |
 | `product.archive-lifecycle` | Change active/archive 与 Task Finish 顺序 | 否 |
 | `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |
 
@@ -72,7 +75,7 @@ Task scope + changed paths + implementation risk
 3. 完整输出、耗时、临时目录和诊断属于 transient Execution Evidence；portable Result 只保留目标、声明、实际能力事实、coverage gap 和整体结论。
 4. Task Finish 与 Local App 读取同一个 current Result。target 或 declaration 变化后，旧 Result 自动变为 stale。
 
-当前 `product.candidate` 的 `paths: ["**"]`，所以所有待交付实现最终都匹配完整 Candidate。纯文档是否应继续采用同一政策，需要基于实践另行调整，不能由 Agent 临时跳过。
+当前所有待交付实现都匹配唯一 `product.delivery`。普通路径由 `test:changed` 选择 affected 证据；registry、planner、runner、声明或 timing 等全局 owner 变化时，同一 plan 确定性扩展为 full。完整回归不再通过第二个 required capability 叠加执行。
 
 ## 当前问题
 
@@ -80,8 +83,8 @@ Quick 已恢复为约 6 秒的高频反馈，但测试体系仍有以下问题�
 
 - Component 当前只有一个真实有界组装，覆盖仍薄，但不应为填数量伪造层级；
 - 新 `test:integration` 仍约 19 秒，`integration-fast` 仍是 60–96 秒的粗粒度 System 集合，部分 owner 和事实有重叠；
-- Candidate 包含多个 Workspace、Browser、package 和 release 重场景，资源互斥与依赖关系形成约 282 秒的关键路径；
-- `product.candidate` 对所有路径适用，Project policy 仍偏保守；
+- `integration-fast` 与多个 Workspace/System owner 仍可能重复覆盖，完整回归关键路径仍需按实测继续拆解；
+- Browser 已独立，但 fixture 是否还能进一步复用需要在真实 Local App 任务中验证；
 - 能力名称不能证明成本，Agent 必须检查实际命令，声明指导也需要明确这一点。
 
 这些首先是 Buildr 项目的测试设计和实现问题，不是增加 Task Verification Result history、通用 DAG 或调度平台的理由。
@@ -111,14 +114,14 @@ P0.4 实践基线中，`product.fast` 约 108 秒，`product.candidate` 约 282 
 
 本轮 Change 收敛两条窄线：
 
-1. `project-testing` 指导 Agent 按测试意图、执行边界、Project / Service owner 和 Quick、Task-affected、Candidate、Release 设计与开发测试；它无 Result、Receipt、Application 或 provider contract，Acceptance 第一版只保留需求驱动的设计占位。
+1. `project-testing` 最初按测试意图、执行边界、Project / Service owner 和 Quick、Task-affected、Candidate、Release 设计与开发测试；它无 Result、Receipt、Application 或 provider contract，Acceptance 第一版只保留需求驱动的设计占位。
 2. `task-verification` 增强声明指导：发现项目已有测试、检查真实调用与成本，只按稳定调用边界声明 capability，不复制内部测试分类。
 
 随后使用最小审查卡逐项检查 Buildr registry；只有真实实践证明现有 `verification.yml` schema 或 Task Verification 控制层不足时，才提出对应产品变更。
 
 ## 第三轮：落实边界并收敛 Quick
 
-本轮为每个 registry step 增加 `ownerScope`、三轴分类、目标耗时、证明范围和唯一证据 owner，并由 registry validation fail closed。真实边界按行为迁移，没有删除测试：
+本轮为每个 registry step 增加 `ownerScope`、测试意图、执行边界、当时使用的编排场景、目标耗时、证明范围和唯一证据 owner，并由 registry validation fail closed。真实边界按行为迁移，没有删除测试：
 
 | 入口 | 本轮实测 | 结论 |
 | --- | ---: | --- |
@@ -128,3 +131,18 @@ P0.4 实践基线中，`product.fast` 约 108 秒，`product.candidate` 约 282 
 | `npm test` / `product.fast` | 6.31 秒 | 组合 Unit、Component、Static 及低成本 contract/runtime Integration |
 
 `integration-fast` 保留稳定 id、专项 selector、Task-affected owner 和 Candidate membership，但退出 Quick；`product.candidate` 的完整覆盖未缩小。下一轮优先拆解 Integration/System 的重复 owner 和 Candidate 关键路径，不扩展 Task Verification schema。
+
+## 第四轮：修正编排模型并优化完整回归
+
+实践发现，把 Quick、Task-affected、Candidate、Release 放在同一“编排场景”轴会产生错误设计：条件化 Candidate 和 Task-affected 都在按任务影响选择范围，最终形成重叠 required capabilities。
+
+本轮改为：
+
+- Quick 只表达成本约束；affected/full 表达选择范围；Candidate/Release 表达验证目标或节点；
+- 正式交付只有一个 required `product.delivery`，普通路径选择 affected，全局验证 owner 变化时同一 plan 扩展为 full；
+- `product.full-regression` / `test:candidate` 保留为显式完整回归，不与 delivery 重复执行；
+- Browser 由单一、条件化必需 capability 持有，内部 registry 只保存 delegated path owner，不再保留五个重复 Candidate steps；
+- Release Git convergence 退出核心完整回归并保留 Release focus；clean-checkout onboarding 只保留 affected/focus，发布物安装由 release tarball smoke 持有；
+- registry 删除 `orchestrationScenarios`，避免与实际 profiles、inputs 形成第二套编排事实。
+
+本轮最终耗时和仍可删除的步骤以冻结目标的 delivery/full 实测为准；没有实测前不宣称优化完成。
