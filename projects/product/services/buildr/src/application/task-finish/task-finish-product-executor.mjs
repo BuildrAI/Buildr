@@ -300,16 +300,20 @@ export function createTaskFinishProductHandlers({ runtime, root, openspecCommand
             const validationFailed = validated.result.status !== 0 || (resolvedChange.archived ? validated.payload?.status !== 'passed' : validated.payload?.summary?.failed > 0);
             if (validationFailed) addFinding(findings, 'openspec-validation', 'error', 'task-finish.openspec-invalid', resolvedChange.archived ? 'Archived OpenSpec convergence audit failed.' : 'OpenSpec strict validation failed.', { exitCode: validated.result.status, diagnostic: validated.payload?.diagnostic || validated.observation.stderr });
             else addFinding(findings, 'openspec-validation', 'ok', 'task-finish.openspec-valid', resolvedChange.archived ? 'Archived OpenSpec convergence audit passed.' : 'OpenSpec strict validation passed.');
-            try {
-              const delta = runtime.parseOpenSpecChangeDelta(changeRoot);
-              const proposal = runtime.parseOpenSpecProposalCapabilities(changeRoot);
-              const result = runtime.createOpenSpecContractResult('preflight', run.identity.change, run.identity.project, 'current');
-              if (!resolvedChange.archived) runtime.detectOpenSpecActiveConflicts(projectRoot, run.identity.change, delta, result);
-              runtime.validateOpenSpecProposalAlignment(projectRoot, changeRoot, delta, null, result);
-              if (!runtime.finishOpenSpecContractResult(result).ok) addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-blocked', 'OpenSpec convergence pure plan is blocked.', { conflicts: result.conflicts, findings: result.findings });
-              else addFinding(findings, 'openspec-plan', 'ok', 'task-finish.openspec-plan-ready', `OpenSpec delta declares ${proposal.modified.size + proposal.new.size} capability change(s).`);
-            } catch (error) {
-              addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-invalid', error.message);
+            if (resolvedChange.archived) {
+              addFinding(findings, 'openspec-plan', 'ok', 'task-finish.openspec-plan-converged', 'Archived Change already has a verified convergence receipt; pure planning is not applicable.', { status: 'not-applicable' });
+            } else {
+              try {
+                const delta = runtime.parseOpenSpecChangeDelta(changeRoot);
+                const proposal = runtime.parseOpenSpecProposalCapabilities(changeRoot);
+                const result = runtime.createOpenSpecContractResult('preflight', run.identity.change, run.identity.project, 'current');
+                runtime.detectOpenSpecActiveConflicts(projectRoot, run.identity.change, delta, result);
+                runtime.validateOpenSpecProposalAlignment(projectRoot, changeRoot, delta, null, result);
+                if (!runtime.finishOpenSpecContractResult(result).ok) addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-blocked', 'OpenSpec convergence pure plan is blocked.', { conflicts: result.conflicts, findings: result.findings });
+                else addFinding(findings, 'openspec-plan', 'ok', 'task-finish.openspec-plan-ready', `OpenSpec delta declares ${proposal.modified.size + proposal.new.size} capability change(s).`);
+              } catch (error) {
+                addFinding(findings, 'openspec-plan', 'error', 'task-finish.openspec-plan-invalid', error.message);
+              }
             }
           }
         } else {

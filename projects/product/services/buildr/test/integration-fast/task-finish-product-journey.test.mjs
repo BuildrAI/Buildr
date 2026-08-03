@@ -173,12 +173,19 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   const originalPath = process.env.PATH;
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
+  let planningAllowed = false;
   const runtime = {
     ...taskEnvironmentFixture({ task, environmentRoot, retained }),
     ...taskVerificationFixture(task),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
-    parseOpenSpecChangeDelta: () => ({ capabilities: new Map() }),
-    parseOpenSpecProposalCapabilities: () => ({ modified: new Set(['task-finish-execution']), new: new Set() }),
+    parseOpenSpecChangeDelta: () => {
+      assert.equal(planningAllowed, true, 'archived preflight must rely on convergence audit instead of rebuilding a pure plan');
+      return { capabilities: new Map() };
+    },
+    parseOpenSpecProposalCapabilities: () => {
+      assert.equal(planningAllowed, true, 'archived preflight must not reinterpret New Capabilities against converged canonical specs');
+      return { modified: new Set(['task-finish-execution']), new: new Set() };
+    },
     createOpenSpecContractResult: () => ({ findings: [], conflicts: [] }),
     detectOpenSpecActiveConflicts: () => {},
     validateOpenSpecProposalAlignment: () => {},
@@ -207,6 +214,8 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   fs.renameSync(activeChange, archivedChange);
   const archivedPreflight = await handlers.preflight({ run });
   assert.equal(archivedPreflight.status, 'passed', JSON.stringify(archivedPreflight, null, 2));
+  assert.equal(archivedPreflight.checks.find((item) => item.check === 'openspec-plan')?.code, 'task-finish.openspec-plan-converged');
+  planningAllowed = true;
   fs.renameSync(archivedChange, activeChange);
   const result = await executeFinishRun({ root: environmentRoot, run, handlers });
 
