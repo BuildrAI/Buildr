@@ -23,10 +23,7 @@ function visit(target) {
 
 if (explicit.length > 0) {
   for (const relative of explicit) {
-    const root = relative === 'verification.yml' || relative === 'AGENTS.md' || relative.startsWith('openspec/')
-      ? projectRoot
-      : serviceRoot;
-    visit(path.join(root, relative));
+    visit(path.join(projectRoot, relative));
   }
 } else {
   for (const entry of ['README.md', 'docs', 'package/README.md']) visit(path.join(serviceRoot, entry));

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
@@ -22,11 +22,13 @@ function json(args, expected = 0, env = process.env) {
   return JSON.parse(run([...args, '--json'], expected, env).stdout);
 }
 
-function fixture(t, name = 'task-record') {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${name}-`));
+let baseline = null;
+
+function fixtureBaseline() {
+  if (baseline) return baseline;
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-record-baseline-'));
   const root = path.join(base, 'workspace');
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  run(['init', '--target', root, '--name', name, '--description', `${name} fixture`, '--profile', 'team']);
+  run(['init', '--target', root, '--name', 'task-record-baseline', '--description', 'Task Record shared fixture baseline', '--profile', 'team']);
   run(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Demo Project']);
   run(['project', 'create', 'other', '--target', root, '--name', 'Other', '--description', 'Other Project']);
   const serviceSource = path.join(base, 'service-source'); fs.mkdirSync(serviceSource); fs.writeFileSync(path.join(serviceSource, 'README.md'), '# API\n');
@@ -37,6 +39,19 @@ function fixture(t, name = 'task-record') {
     fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
     fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${change}\n`);
   }
+  baseline = { base, root };
+  return baseline;
+}
+
+after(() => {
+  if (baseline) fs.rmSync(baseline.base, { recursive: true, force: true });
+});
+
+function fixture(t, name = 'task-record') {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${name}-`));
+  const root = path.join(base, 'workspace');
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  fs.cpSync(fixtureBaseline().root, root, { recursive: true });
   return { base, root };
 }
 
@@ -119,7 +134,7 @@ test('引用、closed input、损坏 YAML、陈旧 digest 与原子替换失败�
   assert.notEqual(original, currentBytes);
 });
 
-test('Task-scoped Change Resolver 分开表达候选、retained baseline、归档与不可用引用', { timeout: 45_000 }, async (t) => {
+test('Task-scoped Change Resolver 在 Application 与 Local App 复用候选、baseline 和不可用事实', async (t) => {
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-change-resolver-app-'));
   process.env.BUILDR_APP_DATA_DIR = appData;
@@ -128,24 +143,10 @@ test('Task-scoped Change Resolver 分开表达候选、retained baseline、归�
     else process.env.BUILDR_APP_DATA_DIR = previousAppData;
     fs.rmSync(appData, { recursive: true, force: true });
   });
-  const { root } = fixture(t, 'task-change-resolver');
-  const git = (...args) => {
-    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-  };
-  git('init', '--initial-branch=dev');
-  git('config', 'user.email', 'buildr-test@example.com');
-  git('config', 'user.name', 'Buildr Test');
-  git('add', '.');
-  git('commit', '-m', 'fixture');
-  json(['task', 'create', 'resolver-task', '--title', 'Resolver Task', '--intent', '读取任务环境 Change', '--target', root]);
-  git('add', '.buildr/tasks/resolver-task/task.yml');
-  git('commit', '-m', 'create resolver task');
-
-  const prepared = json(['task', 'environment', 'prepare', 'resolver-task', '--branch', 'codex/resolver-task', '--start-point', 'dev', '--target', root]);
-  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
-  const environmentRoot = prepared.environment.scopes[0].validationRoot;
-  const candidateChanges = path.join(environmentRoot, 'projects', 'demo', 'openspec', 'changes');
+  const { base, root } = fixture(t, 'task-change-resolver');
+  const candidateProjectRoot = path.join(base, 'candidate-demo');
+  fs.cpSync(path.join(root, 'projects', 'demo'), candidateProjectRoot, { recursive: true });
+  const candidateChanges = path.join(candidateProjectRoot, 'openspec', 'changes');
   const writeCandidate = (directory, content) => {
     const changeRoot = path.join(candidateChanges, directory);
     fs.mkdirSync(changeRoot, { recursive: true });
@@ -156,15 +157,22 @@ test('Task-scoped Change Resolver 分开表达候选、retained baseline、归�
   writeCandidate(path.join('archive', '2026-08-01-candidate-archived'), 'candidate archived');
   fs.writeFileSync(path.join(candidateChanges, 'same-change', 'proposal.md'), '# candidate version\n');
 
-  const linked = json(['task', 'update', 'resolver-task', '--add-change', 'demo/candidate-only', '--add-change', 'demo/candidate-archived', '--add-change', 'demo/same-change', '--target', root]);
+  const runtime = createRuntime();
+  runtime.inspectTaskEnvironment = () => ({
+    status: 'ready',
+    environment: {
+      scopes: [{ selector: 'project:demo', executionRoot: candidateProjectRoot, validationRoot: base }],
+    },
+  });
+  runtime.createTaskRecord(root, { taskId: 'resolver-task', title: 'Resolver Task', intent: '读取任务环境 Change', projects: ['demo'], services: [], changes: [] });
+  const linked = runtime.updateTaskRecord(root, 'resolver-task', { addChanges: ['demo/candidate-only', 'demo/candidate-archived', 'demo/same-change'] });
   const byReference = new Map(linked.changeReferences.map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
   assert.equal(byReference.get('demo/candidate-only').workingCopy.provenance, 'task-environment-candidate');
   assert.equal(byReference.get('demo/candidate-archived').workingCopy.change.lifecycle, 'archived');
   assert.equal(byReference.get('demo/same-change').workingCopy.provenance, 'task-environment-candidate');
   assert.equal(byReference.get('demo/same-change').retainedBaseline.provenance, 'retained-baseline');
-  assert.equal(createRuntime().listProjectChanges(root, 'demo').changes.some((change) => change.code === 'candidate-only'), false, 'Workspace 全局 Change 列表保持 retained-only');
+  assert.equal(runtime.listProjectChanges(root, 'demo').changes.some((change) => change.code === 'candidate-only'), false, 'Workspace 全局 Change 列表保持 retained-only');
 
-  const runtime = createRuntime();
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId } = await instance.ready;
@@ -177,18 +185,15 @@ test('Task-scoped Change Resolver 分开表达候选、retained baseline、归�
   assert.equal(detail.resolution.workingCopy.change.artifacts.proposal.content, '# candidate version\n');
 
   fs.rmSync(path.join(candidateChanges, 'candidate-only'), { recursive: true });
-  const unavailable = json(['task', 'inspect', 'resolver-task', '--target', root]);
+  const unavailable = runtime.inspectTaskRecord(root, 'resolver-task');
   const unavailableReference = unavailable.changeReferences.find((item) => item.reference.change === 'candidate-only');
   assert.equal(unavailableReference.availability, 'unavailable');
   assert.equal(unavailableReference.diagnostic.code, 'task_change_unavailable');
-  const unrelatedUpdate = json(['task', 'update', 'resolver-task', '--title', '仍可更新', '--target', root]);
+  const unrelatedUpdate = runtime.updateTaskRecord(root, 'resolver-task', { title: '仍可更新' });
   assert.equal(unrelatedUpdate.record.title, '仍可更新');
-  const removed = json(['task', 'update', 'resolver-task', '--remove-change', 'demo/candidate-only', '--target', root]);
+  const removed = runtime.updateTaskRecord(root, 'resolver-task', { removeChanges: ['demo/candidate-only'] });
   assert.equal(removed.record.changes.some((item) => item.change === 'candidate-only'), false);
-
-  json(['task', 'abandon', 'resolver-task', '--reason', 'resolver fixture complete', '--target', root]);
-  const cleaned = json(['task', 'environment', 'cleanup', 'resolver-task', '--target', root]);
-  assert.equal(cleaned.status, 'cleaned');
+  assert.equal(runtime.abandonTaskRecord(root, 'resolver-task', { reason: 'resolver fixture complete' }).status, 'abandoned');
 });
 
 test('Task Record target 必须是 canonical Workspace，不能是 linked worktree checkout', (t) => {

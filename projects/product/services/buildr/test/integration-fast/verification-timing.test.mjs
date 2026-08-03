@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
+import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, parseProcessLineage, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
 import { candidateStepBudget } from '../../test/verification/timing/budgets.mjs';
 import {
   collectVerificationSourceIdentity,
@@ -313,6 +313,7 @@ test('changed verification writes a persistent run-level timing summary', () => 
     assert.ok(fs.existsSync(diagnosticsOutput));
     assert.match(result.stdout, /\[verify-changed\] timing: total=/);
     assert.match(result.stdout, /\[verify-changed\] failed: none/);
+    assert.match(result.stdout, /Documentation quality passed: 1 file\(s\)\./);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -382,6 +383,12 @@ test('verification process cleanup 只终止 runner-owned process group', () => 
   assert.deepEqual(calls, [{ pid: -4321, signal: 0 }, { pid: -4321, signal: 'SIGTERM' }]);
 });
 
+test('verification process lineage 从 ps 输出保留稳定启动身份', () => {
+  assert.deepEqual(parseProcessLineage('  4321     1 Mon Aug  3 14:25:19 2026\n'), [
+    { pid: 4321, ppid: 1, startedAt: 'Mon Aug  3 14:25:19 2026' },
+  ]);
+});
+
 test('verification process cleanup 持续保留已观察到且随后 reparent 的 descendant ownership', () => {
   const snapshots = [
     [{ pid: 4321, ppid: 1 }, { pid: 4322, ppid: 4321 }, { pid: 9000, ppid: 1 }],
@@ -411,6 +418,40 @@ test('verification process cleanup 持续保留已观察到且随后 reparent �
     { pid: 4323, signal: 0 }, { pid: 4323, signal: 'SIGTERM' },
   ]);
   assert.ok(!calls.some(({ pid }) => pid === 9000), 'unobserved process must not be touched');
+});
+
+test('verification process cleanup 不把 PID reuse 后的无关进程认作 runner descendant', () => {
+  const original = [
+    { pid: 4321, ppid: 1, startedAt: 'root-start' },
+    { pid: 4322, ppid: 4321, startedAt: 'owned-start' },
+  ];
+  const reused = [
+    { pid: 4321, ppid: 1, startedAt: 'root-start' },
+    { pid: 4322, ppid: 1, startedAt: 'reused-start' },
+    { pid: 9000, ppid: 4322, startedAt: 'unrelated-child-start' },
+  ];
+  let snapshot = original;
+  const tracker = createOwnedDescendantTracker(4321, {
+    platform: 'darwin',
+    listProcesses: () => snapshot,
+    setInterval: () => ({ unref() {} }),
+    clearInterval() {},
+  });
+  snapshot = reused;
+  tracker.sample();
+  const lineage = tracker.stop();
+  assert.deepEqual(lineage.ownedPids, [4321]);
+  assert.ok(!lineage.ownedProcesses.some((item) => item.pid === 9000), 'descendant of a reused PID must not become runner-owned');
+
+  const calls = [];
+  const result = cleanupTrackedDescendants(4321, [{ pid: 4322, startedAt: 'owned-start' }], {
+    platform: 'darwin',
+    listProcesses: () => reused,
+    kill: (pid, signal) => calls.push({ pid, signal }),
+  });
+  assert.equal(result.status, 'clean');
+  assert.deepEqual(result.reused, [4322]);
+  assert.deepEqual(calls, []);
 });
 
 test('verification runner 回收真实 detached descendant', async (t) => {

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -21,9 +21,12 @@ function buildr(args, expectedStatus = 0, env = process.env) {
   return result.stdout.trim() ? JSON.parse(result.stdout) : null;
 }
 
-function fixtureWorkspace(t, { git = true } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-environment-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+const fixtureWorkspaces = new Map();
+
+function fixtureWorkspace(_t, { git = true } = {}) {
+  const key = git ? 'git' : 'shared';
+  if (fixtureWorkspaces.has(key)) return fixtureWorkspaces.get(key);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-task-environment-${key}-`));
   command(productRoot, process.execPath, [cli, 'init', '--agent', 'codex', '--target', root, '--name', 'environment-fixture', '--description', 'Task Environment fixture', '--profile', 'team']);
   if (git) {
     command(root, 'git', ['init', '-b', 'main']);
@@ -32,8 +35,14 @@ function fixtureWorkspace(t, { git = true } = {}) {
     command(root, 'git', ['add', '.']);
     command(root, 'git', ['commit', '-m', 'baseline']);
   }
-  return fs.realpathSync(root);
+  const resolved = fs.realpathSync(root);
+  fixtureWorkspaces.set(key, resolved);
+  return resolved;
 }
+
+after(() => {
+  for (const root of fixtureWorkspaces.values()) fs.rmSync(root, { recursive: true, force: true });
+});
 
 function createTask(root, taskId) {
   return buildr(['task', 'create', taskId, '--title', `Task ${taskId}`, '--intent', '验证 P0.2 Task Environment', '--target', root, '--json']);

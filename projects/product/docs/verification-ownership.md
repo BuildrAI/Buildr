@@ -1,111 +1,115 @@
-# Buildr 验证覆盖职责矩阵
+# Buildr 测试能力与 Task Verification 实践
 
-本文记录各类产品契约的主 verifier、允许的边界交叉，以及旧 MVP shell 删除后的覆盖归属。目标不是让每个行为只能出现一次，而是让重复验证具有明确理由。
+本文记录 Buildr 项目当前有哪些测试能力、这些能力怎样声明给 Task Verification、Agent 在具体任务中怎样使用它们，以及测试体系仍需解决的问题和每轮优化结论。
 
-## 证据层与执行入口
+当前行为以 [verification.yml](../verification.yml)、[Task Verification spec](../openspec/specs/task-verification/spec.md) 和 [task-verification Skill](../services/buildr/package/targets/workspace/skills/buildr/task-verification/SKILL.md) 为准。本文是 Buildr 自举实践记录，不建立新的测试政策、Result 或生命周期权威，也不承担通用 Project Testing 指导。
 
-| 层级 | 主职责 | 不承担 |
-| --- | --- | --- |
-| test:unit | 同进程直接调用 parser、validator、planner、diagnostics 和 domain 纯逻辑；允许受控小型文件 fixture | 真实 CLI/Git/npm 子进程、静态文档契约和产品生命周期 |
-| test:contract | 源码结构、manifest、docs、Skills、schema 与 entrypoint declaration 的静态一致性 | 把聚合执行覆盖率标记为 unit coverage |
-| test:integration:fast | 低成本 CLI update、public JSON 与 verification timing/planner 组合 | builtin replacement/migration/recovery 矩阵、多轮真实 Git history、npm pack/install、网络和 Workspace E2E |
-| Candidate integration | builtin recovery/migration 与 release Git convergence 的独立重型 owner | 默认 Fast 反馈 |
-| focused integration | 单领域完整状态变化，包括 package、runtime、OpenSpec、onboarding、network 和 integrity | 跨多个组件且必须共享连续状态的黄金路径 |
-| system acceptance | Workspace E2E、候选 tarball、package parity 和 release lifecycle | 开发期低成本反馈 |
+## Buildr 当前有哪些测试
 
-证据层由以下执行策略组合，不再把 selector 描述为新的测试层：
+Buildr 使用 Node.js 内置 `node:test`，测试入口由 `services/buildr/package.json` 和 Product 内部 registry 组织：
 
-| 入口 | 用途 |
+| 入口 | 当前用途 |
 | --- | --- |
-| `npm test` / `test:fast` | 固定聚合三个低成本 Node 层、架构、OpenSpec 和 runtime contract |
-| `test:changed` | 根据 Git diff 或显式 Product 路径生成最小可解释 DAG |
-| `test:candidate` | 无条件选择完整 candidate profile，不读取 diff |
-| `test:focus` | 按 step id 或 `group:<group>` 定位和重跑失败，不自动附加 Fast |
-| `buildr verification run` | 面向任意已登记 Project 执行 `verification.yml` v2 中调用方显式选择的 command capabilities；随 npm runtime 发布，不依赖 Product checkout-only registry |
+| `test:unit` | 同进程验证纯逻辑和稳定模块边界 |
+| `test:contract` | 静态检查源码、manifest、文档、Skill、schema 与 entrypoint 契约 |
+| `test:integration:fast` | 验证 CLI、文件系统、Git、Task Environment、Local App 等技术边界 |
+| `test:changed` / `test:focus` | 按变更 owner 选择开发期反馈，或定向重跑失败步骤 |
+| `test:candidate` | 运行完整 Product、package、runtime、Workspace、浏览器、发布和 OpenSpec 回归 |
+| 专项入口 | 定向验证 Browser、OpenSpec convergence、release 等高成本场景 |
 
-前四个 npm 入口共享 `test/verification/registry.mjs` 中的 Product step identity、executor、inputs、真实依赖、profile/group、预算、并发类别和资源约束。`integration-candidate-recovery`、`integration-candidate-release` 与 `runtime-adapter-parity` 是 `workspace-saturating` owner；默认 local/CI execution profile 令其互斥，`ci-workspace-limited` 只用于同 tree 对照。未知 profile 或非法上限在启动 verifier 前 fail closed。`test:changed` 对未被任何 input 或显式 ignore 覆盖的 Product 路径 fail closed；`test:candidate` 的完整性按 Product required gate identity 验证，不冻结 step 数量。这些名称是 Buildr Product 的真实测试实现，不是 Task Verification 的通用 assurance 层级。
+这些是 Buildr 项目内部的测试分层和编排入口。它们可以继续拆分和调整，不是 Task Verification 的公共 schema。
 
-Product 专用 selector、registry 与 DAG scheduler 全部留在 `test/verification`。production `src/application/verification` 只保留显式 capability runner、process executor、真实 resource coordinator 与 transient evidence lifecycle；普通 Workspace 通过 `buildr verification run` 消费 Project 声明。Product 私有 DAG、profile 和 gate 不会成为其他 Project 的默认 policy。
+项目测试采用三个正交维度，不把所有验证强行归入 Unit、Component、Integration：
 
-Runtime adapter contract 始终遍历全部 supported adapters，并生成 `native-recursive`、`per-source-reference`、`same-directory-vendor`、`central-vendor`、`root-index-bridge` 覆盖矩阵；昂贵 parity 生命周期只运行每个实现族的稳定代表。共享只读 Product source，但 mutation workspace、receipt 和 target namespace 保持隔离。
+| 维度 | 第一版分类 |
+| --- | --- |
+| 主要意图 | Development、Acceptance、Static Conformance、Delivery / Release |
+| 执行边界 | Static、Unit、Component、Integration、System |
+| 编排场景 | Quick、Task-affected、Candidate、Release |
 
-Product Candidate 与 Changed 入口共享 `test/verification/timing/evidence.mjs`：默认每次 run 使用唯一 transient evidence 目录，summary 记录 run/source identity、Product target fingerprint 和 `evidenceLifecycle`，并在终端直接输出 total、budget、slowest、failed、绝对路径、retention 与 cleanup 状态。显式输出路径标记为 caller-managed；默认 transient run 只保留到 consumer 使用完毕，并由 `cleanup-evidence.mjs` 在严格目录边界内删除。它们都是 Product capability 的 execution evidence；portable Task Result 只提炼 capability outcome 与事实，不复制 timing 文件或完整日志。
+`System` 是执行边界，不等于 Acceptance；`Static` 是独立执行形式；`focus` 是失败诊断和定向选择，不是交付编排场景。Service 负责自身代码、公开技术契约和独立交付物可判定的事实；Project 负责跨 Service 行为、治理资产、用户旅程及组合 Candidate / Release。允许辅助证据重叠，但每项事实应有一个主要证据 owner。
 
-本机应用另提供 `npm run test:browser:smoke`，使用 `playwright-core` 驱动机器已有 Chrome，在随机 loopback 端口和临时 Workspace 中验证项目、服务、变更与任务主流程。该入口不下载浏览器、不访问外部系统，在 Product `verification.yml` v2 中声明为非 delivery-required capability，并真实 claim coordinated browser resource；缺少 Chrome 时 execution 如实失败，不改写为推进决定。
+首轮只要求 registry step 记录最小审查卡：`ownerScope → primaryIntent → executionBoundary → orchestrationScenarios → environment/effects → targetDuration → applicability/proves → primaryEvidenceOwner`。这些分类属于 Project Testing 指导，不进入 `verification.yml` schema。
 
-Task Finish 通过 Task Verification Application inspect current Result。Result 只有在 target/declaration applicability 为 current、结论为 passed 且覆盖全部适用 delivery-required capability 时才复用；单 Project command capability 可由临时 adapter 执行一次并整值记录，多 Project 或 Agent capability 必须已有正式 Result。Finish 不读取旧 Candidate summary、不接收 verification summary 输入，也不创建 Result writer、Candidate generation 或任务推进状态。
+## Task Verification 如何看到这些测试
 
-## Unit coverage 与核心 owner
+Task Verification 不登记每个测试文件，也不把 Product 内部的 42 个 Candidate step 暴露为 42 个能力。`verification.yml` 只声明 Agent 可稳定选择和调用的能力接口：
 
-`npm run coverage:unit -- --summary <path>` 只执行 `test/unit/*.test.mjs`，使用 Node 内置 coverage 输出人类报告和 `buildr.unit-coverage/v1` JSON。它是观测入口，不是额外发布门禁。分层后的首个 unit-only 基线为 30 tests、25 个实际加载的产品模块，line 46.16%、branch 68.42%、function 48.90%；它与分层前 84 tests 的 fast 聚合 line 53.55% 不可直接比较。
+| capability | 证明范围 | 交付必需 |
+| --- | --- | ---: |
+| `product.fast` | unit、静态契约、fast integration、CLI 架构、OpenSpec strict 与 runtime adapter contract | 否 |
+| `product.candidate` | Product 与 Buildr Service 的完整交付门禁 | 是 |
+| `product.browser-smoke` | Local App 关键浏览器交互 | 否 |
+| `product.archive-lifecycle` | Change active/archive 与 Task Finish 顺序 | 否 |
+| `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |
 
-| 核心区域 | 当前直接 unit owner | 其他必要 owner | 后续缺口 |
-| --- | --- | --- | --- |
-| Product selector / DAG / registry；production capability runner / Result | `verification-planner`、`verification-dag-scheduler`、`verification-runtime`、`task-verification-repository` | entrypoint contract、Product Candidate timing、Task Application/CLI/Finish integration | Product DAG 只在 test harness；production Result authority 由独立 domain/repository/Application 持有 |
-| runtime Skills / capability resolver | `runtime-skills`、`capability-contracts`、`capability-runtime` | runtime contract/parity、Workspace reconciliation | checker/projection 生命周期保留 focused integration |
-| package validation | package verifier selector unit | package static 与六个 package focused verifiers | `static-validation` 大模块后续按纯 validator 提取再补，不伪造 unit |
-| builtin replacement / recovery | `builtin-replacement` 状态分类、restore outcome 与 mutation callback matrix | Candidate recovery CLI、transaction、runtime、doctor 黄金路径 | 纯分类不重复创建 Workspace；真实零写入和 rollback 仍由 E2E 持有 |
-| doctor diagnostics | runtime/scope diagnostics unit | CLI compatibility、Workspace final doctor | capability、service diagnostics 可按风险继续补直接 owner |
-| CLI Commands domain | collection、manifest、version 纯逻辑 unit | package Commands integration、workspace lifecycle | mutation、filesystem ownership 保留 focused integration |
-| 其他 CLI domains | 暂无完整直接 owner | package Rules/Skills/runtime、CLI compatibility、Workspace E2E | 优先提取稳定 parser/validator；不直接把 command handler 生命周期塞入 unit |
-| remote/runtime checker | argument/manifest/render-plan 间接 owner | remote timeout、runtime adapter contract/parity | network 和真实 runtime filesystem 保留专项；纯结果归一化可继续提取 |
+每项声明只保留稳定 identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求，以及确有需要的环境、副作用和资源边界。测试不存在时只形成 coverage gap；Task Verification 不替项目开发测试。
 
-当前不设置全局覆盖率发布阈值。先以 unit-only summary 观察趋势和核心 owner；未来阈值应基于新增代码或稳定风险区域，而不是要求所有薄 wrapper、platform adapter 和生命周期编排达到同一百分比。
+Buildr 专用的 selector、registry、DAG、并发和资源协调留在测试实现内部。Task Verification 只消费声明的 capability，不把这些实现细节提升为所有项目必须采用的框架。
 
-## 旧 MVP section 迁移归属
+## Agent 如何验证一个任务
 
-| 旧类别 | 当前主 verifier | Workspace E2E 代表覆盖 | 迁移判断 |
-| --- | --- | --- | --- |
-| Workspace / Project / Service | onboarding integration、service branch、package workspace smoke | workspace-lifecycle | E2E 只保留组合黄金路径；异常、幂等和 branch contract 由 focused verifier 持有 |
-| Commands | package Commands integration | workspace-lifecycle 只做代表性 add | CRUD 和 manifest 细节不继续扩展进 Workspace E2E |
-| Rules | package Rules integration、package runtime integration、runtime adapter parity | lifecycle 代表性 add；reconciliation 验证投射 | CRUD、recursive discovery 和 adapter 投射分属不同 verifier identity |
-| Skills | package Skills integration、runtime adapter parity、remote timeout | lifecycle 代表性 add；ownership 验证拒绝 | source/resolved/remote 与 runtime projection 由 focused verifier 持有 |
-| Builtins | capability CLI integration、managed data integrity、runtime adapter parity | ownership-recovery | E2E 只证明 required 拒绝和 optional uninstall/restore |
-| Components inventory / lifecycle | package static、release smoke、managed data integrity | ownership-recovery、runtime-reconciliation | package 内容、安装后 lifecycle、冲突恢复是不同边界 |
-| Component contributions / upgrades / migration | package static、runtime parity、managed data integrity | reconciliation 只验证 drift 与恢复 | 内容文本、运行时组合、事务/迁移冲突分别由专项持有 |
-| Registry convergence / legacy | package workspace smoke、service branch、managed data integrity | 最终 doctor 仅证明收敛 | schema/迁移属于 focused contract |
-| Runtime discovery / help / doctor filter | CLI compatibility、runtime adapter contract | 黄金路径最终 doctor | help 和 JSON surface 只由 compatibility/contract 全量持有 |
-| Runtime install / projection / reconciliation | runtime adapter parity、adapter smoke fixture contract | reconciliation 保留 Codex 与 Claude bridge | 全实现族 parity 不进入 Workspace E2E |
-| OpenSpec audit fixture | OpenSpec contract fixtures、candidate audit | 无 | fixture 验证算法，candidate audit 验证真实 artifacts |
-| npm tarball / install / onboarding / help | open-source candidate、CLI package parity、release smoke | 无 | inventory、parity、安装后 lifecycle 各有独立 owner |
-| Runtime conflict safeguards | runtime parity、managed data integrity | reconciliation 代表性 drift | adapter 冲突和 transaction 冲突属于不同失败面 |
+Agent 从任务变更和待证明事实出发，而不是根据 `fast`、`unit` 等名称机械选测试：
 
-## 有意保留的边界交叉
+```text
+Task scope + changed paths + implementation risk
+                     ↓
+       开发期运行 unit、changed 或 focus 反馈
+                     ↓
+  冻结 target，匹配 verification.yml 的 scope 与 applicability
+                     ↓
+       执行适用 capability，保留 transient evidence
+                     ↓
+      记录一个绑定 target 与 declaration 的 current Result
+```
 
-- repository onboarding 验证干净开发 checkout、开发 CLI 安装和 update source；init onboarding 持有 checkout CLI 的参数、幂等和冲突恢复；release smoke 独占正式 tarball 安装后生命周期。
-- CLI package parity 比较 checkout 与安装包；release smoke 证明安装后生命周期。
-- OpenSpec fixtures 验证算法和破坏性样本；candidate audit 验证当前候选。
-- capability integration 验证 capability/provider/binding；ownership recovery 验证资产拒绝与恢复。
-- Workspace E2E 的最终 doctor 是收敛断言，不替代 doctor JSON 和 finding contract。
+具体规则是：
 
-## Package verifier 分层
+1. 开发过程中先运行能快速定位问题的项目内部入口；这类反馈不要求每次都写正式 Result。
+2. 形成冻结交付目标后，Agent 读取 `verification.yml`，核对真实命令行为、scope、paths、conditions、环境与授权，再选择适用 capability。
+3. 完整输出、耗时、临时目录和诊断属于 transient Execution Evidence；portable Result 只保留目标、声明、实际能力事实、coverage gap 和整体结论。
+4. Task Finish 与 Local App 读取同一个 current Result。target 或 declaration 变化后，旧 Result 自动变为 stale。
 
-`buildr package check` 继续是完整产品维护入口，但内部覆盖由稳定 registry 组合；Candidate 与 `npm run test:focus -- package-<selector>` 可分别执行和诊断以下 owner：
+当前 `product.candidate` 的 `paths: ["**"]`，所以所有待交付实现最终都匹配完整 Candidate。纯文档是否应继续采用同一政策，需要基于实践另行调整，不能由 Agent 临时跳过。
 
-| Selector | Candidate step | 主职责 | 明确不承担 |
-| --- | --- | --- | --- |
-| static | package static validation | manifest、inventory、随包 baseline、Skill/Rule/Component 内容契约、支持工具存在性 | 临时 workspace、真实 CLI mutation |
-| workspace | package workspace smoke | init/Project baseline、遗留 practices 保留、existing `AGENTS.md` 兼容、最终收敛 | Commands/Rules/Skills CRUD、全 runtime adapter 矩阵 |
-| commands | package Commands integration | 默认 collection、add/check/remove 数据契约 | Workspace 黄金路径和 help 全量兼容 |
-| rules | package Rules integration | add/remove/keep-file、required 保护、doctor 未注册 finding | recursive discovery 和 adapter reconcile |
-| skills | package Skills integration | local/remote/resolved source add/remove | 网络下载和全部 adapter projection |
-| runtime | package runtime integration | recursive Rules discovery、Codex native check、Claude bridge reconcile/metadata | 其他实现族 parity、runtime help |
+## 当前问题
 
-无 selector 的 `buildr package check` 在一个兼容 fixture 中聚合相同断言，避免维护命令因隔离 steps 增加重复初始化；Candidate 使用隔离 fixture 并行执行，保留每步 timing、budget 和 stdout/stderr diagnostics。拆分前基线为 14.77 秒，兼容聚合拆分后为 14.66 秒；隔离 steps 并行实测墙钟约 9.4 秒。
+`product.fast` 目前是相对 Candidate 较快的混合回归，不是单元测试入口。它同时运行 unit、contract、integration-fast、架构、OpenSpec 和 runtime contract，因此任何小改动都可能等待一分钟以上。进一步审查发现：
 
-新增测试时先确定主 owner：同进程单函数和错误分支优先 `test/unit`；源码/manifest/docs 一致性进入 `test/contract`；真实 CLI/Git 子进程但仍低成本的组合进入 `test/integration:fast`；单领域完整状态变化进入 focused integration；只有跨多个命令和组件、且必须共享连续 workspace 状态时才进入 Workspace E2E。
+- 目前缺少独立 Component 层，真实 CLI、Git 和 Environment 生命周期容易混入高频反馈；
+- `integration-fast` owner 过粗，同一组内的重型 fixture 会被整体选择；
+- Candidate 包含多个 Workspace、Browser、package 和 release 重场景，资源互斥与依赖关系形成约 282 秒的关键路径；
+- `product.candidate` 对所有路径适用，Project policy 仍偏保守；
+- 能力名称不能证明成本，Agent 必须检查实际命令，声明指导也需要明确这一点。
 
-## 2026-07-21 Candidate 效率验收
+这些首先是 Buildr 项目的测试设计和实现问题，不是增加 Task Verification Result history、通用 DAG 或调度平台的理由。
 
-优化前的本机基线为 Fast 32.177 秒、单独 runtime parity 25.262 秒、Candidate 53.076 秒；Candidate 并发下原 integration-fast 为 36.479 秒、parity 为 30.722 秒。拆分后 Fast 为 5.814 秒，implementation-family parity 单独为 19.768 秒；recovery 和 release Git owner 可分别 Focus，20 项与 7 项场景均保留并通过。
+## 第一轮优化：恢复 Fast 反馈
 
-同一最终实现 tree 上各运行两轮调度对照：
+P0.4 实践基线中，`product.fast` 约 108 秒，`product.candidate` 约 282 秒；独立 `integration-fast` 为 94.256 秒。首轮定位到的主要成本是重复创建完整生命周期 fixture，而不是 Result Application 的读写。
 
-| profile | Candidate 总耗时 | recovery executor | parity executor | 结论 |
-| --- | --- | --- | --- | --- |
-| `local`，饱和型上限 1 | 58.565 / 58.156 秒，中位 58.361 秒 | 31.202 / 30.715 秒 | 23.304 / 23.389 秒 | 默认；其他非饱和型工作仍可并行 |
-| `ci-workspace-limited`，workspace-heavy 上限 2、饱和型上限 2 | 71.114 / 71.611 秒，中位 71.363 秒 | 31.291 / 31.342 秒 | 21.301 / 21.474 秒 | 对照；两个重项占满 workspace 容量，延迟其余关键路径 |
+本轮处理如下：
 
-默认互斥策略的中位总墙钟比对照低约 18.2%。单个 recovery step 仍可能超过 25 秒观察预算，但正确性结果不受影响；后续以 GitHub runner 多轮数据继续校准预算，不用单次耗时改变 gate 状态。
+| 结论 | 处理 |
+| --- | --- |
+| keep | 保留 Application、CLI、Local App、Task Environment 和 worktree 的真实边界语义 |
+| simplify | Task Record 和 worktree 测试复用隔离基线，减少无语义差异的 Workspace 初始化 |
+| migrate | 把真实候选/retained Change 解析和 Preview 登记失败回收迁入已有 Candidate 并发验收 |
+| fix | runner 用 PID 与启动时间识别进程，只跟踪当前存活 lineage，并复用短周期 `ps` 快照 |
+| fix | `docs-quality` 按 Product 相对路径读取 changed 文档，避免选中 owner 后以 `0 file(s)` 假通过 |
+| defer | Candidate 调度、Browser fixture、声明 applicability 和正式测试分层留给后续迭代 |
 
-同日进一步拆分 recovery 状态分类并复用只读基础 fixture。保留原 20 项 E2E 时，单轮墙钟先由 32.599 秒降到 15.05 秒；将纯分类迁入 unit 后，Candidate E2E 收敛为 11 项真实生命周期黄金路径，原 20 项语义均有 unit/E2E owner。最终冻结实现 tree 的三轮 recovery focus 墙钟为 11.720 / 12.536 / 11.905 秒，中位 11.905 秒、范围 0.816 秒，全部 11/11 通过。25 秒观察预算保留为跨环境余量，`schedulingCostMs` 按当前中位数校准为 12 秒；默认 `workspace-saturating` 互斥不变。
+优化后，独立 `integration-fast` 为 62.777 秒，110/110 通过，比基线下降 33.4%。组合 changed 验证也覆盖 contract、integration-fast、Candidate 并发验收与文档 owner；其墙钟受并发资源竞争影响，不能与独立计时直接比较。
+
+收敛前的组合 changed 验证为 115.136 秒：contract 7.897 秒、integration-fast 91.072 秒、Candidate 并发验收 114.854 秒，全部通过。该次运行同时发现 `docs-quality` 路径归属错误；修复后再用定向测试确认 Product 文档实际进入检查。
+
+本轮没有修改 `verification.yml`、Task Verification Result、交付门禁或业务验收边界，也没有为了提速删除真实生命周期覆盖。
+
+## 下一轮
+
+下一步分两条窄线推进：
+
+1. 用独立 Change 提供无状态的 `project-testing` 指导，说明测试意图、执行边界、Project / Service owner 和 Quick、Task-affected、Candidate、Release 编排；Acceptance 只保留设计占位，不创建 Result、Receipt 或 Application。
+2. 同时增强 `task-verification` 的声明指导：发现项目已有测试、检查真实成本、按稳定调用边界声明 capability，避免把重型端到端测试误放进高频能力。
+
+随后用这套指导继续拆分 Buildr 自身测试。只有真实实践证明现有 `verification.yml` schema 或 Task Verification 控制层不足时，才提出对应产品变更。

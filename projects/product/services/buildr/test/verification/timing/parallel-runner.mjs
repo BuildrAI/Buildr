@@ -47,68 +47,128 @@ export function cleanupOwnedProcessGroup(pid, { platform = process.platform, kil
 
 export function parseProcessLineage(output) {
   return String(output ?? '').split('\n').flatMap((line) => {
-    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
-    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]) }] : [];
+    const match = line.trim().match(/^(\d+)\s+(\d+)(?:\s+(.+))?$/);
+    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), startedAt: match[3]?.trim() || null }] : [];
   });
 }
 
 function defaultListProcesses() {
-  const result = spawnSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' });
+  const result = spawnSync('ps', ['-axo', 'pid=,ppid=,lstart='], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr?.trim() || `ps exited ${result.status}`);
   return parseProcessLineage(result.stdout);
 }
 
+let sharedProcessSnapshot = null;
+let sharedProcessSnapshotAt = 0;
+
+function sharedListProcesses() {
+  const now = Date.now();
+  if (sharedProcessSnapshot && now - sharedProcessSnapshotAt < 40) return sharedProcessSnapshot;
+  sharedProcessSnapshot = defaultListProcesses();
+  sharedProcessSnapshotAt = now;
+  return sharedProcessSnapshot;
+}
+
+function processInstanceKey(processInfo) {
+  return `${processInfo.pid}:${processInfo.startedAt ?? 'unknown'}`;
+}
+
+function isSameProcessInstance(expected, current) {
+  return expected.startedAt === null || expected.startedAt === undefined
+    || current.startedAt === null || current.startedAt === undefined
+    || expected.startedAt === current.startedAt;
+}
+
 export function createOwnedDescendantTracker(rootPid, runtime = {}) {
   const platform = runtime.platform ?? process.platform;
-  const ownedPids = new Set(Number.isInteger(rootPid) ? [rootPid] : []);
-  const listProcesses = runtime.listProcesses ?? defaultListProcesses;
+  const ownedProcesses = new Map();
+  if (Number.isInteger(rootPid)) ownedProcesses.set(rootPid, { pid: rootPid, startedAt: null });
+  const listProcesses = runtime.listProcesses ?? sharedListProcesses;
+  const listFreshProcesses = runtime.listProcesses ?? defaultListProcesses;
   const intervalMs = runtime.lineageSampleIntervalMs ?? 50;
   let timer = null;
   let sampleError = null;
 
-  const sample = () => {
-    if (platform === 'win32' || ownedPids.size === 0) return;
+  const sample = (fresh = false) => {
+    if (platform === 'win32' || ownedProcesses.size === 0) return;
     try {
-      const rows = listProcesses();
+      const rows = (fresh ? listFreshProcesses : listProcesses)();
+      const byPid = new Map(rows.map((row) => [row.pid, row]));
+      const activeOwnedProcesses = new Map();
+      for (const processInfo of ownedProcesses.values()) {
+        const current = byPid.get(processInfo.pid);
+        if (!current || !isSameProcessInstance(processInfo, current)) continue;
+        activeOwnedProcesses.set(current.pid, { pid: current.pid, startedAt: current.startedAt ?? processInfo.startedAt ?? null });
+      }
       let changed = true;
       while (changed) {
         changed = false;
         for (const row of rows) {
-          if (!ownedPids.has(row.pid) && ownedPids.has(row.ppid)) {
-            ownedPids.add(row.pid);
+          if (!activeOwnedProcesses.has(row.pid) && activeOwnedProcesses.has(row.ppid)) {
+            activeOwnedProcesses.set(row.pid, { pid: row.pid, startedAt: row.startedAt ?? null });
             changed = true;
           }
         }
       }
+      ownedProcesses.clear();
+      for (const [pid, processInfo] of activeOwnedProcesses) ownedProcesses.set(pid, processInfo);
     } catch (error) {
       sampleError = error.message;
     }
   };
 
-  if (platform !== 'win32' && ownedPids.size > 0) {
-    sample();
+  if (platform !== 'win32' && ownedProcesses.size > 0) {
+    sample(true);
     timer = (runtime.setInterval ?? setInterval)(sample, intervalMs);
     timer?.unref?.();
   }
 
   return {
-    sample,
+    sample: () => sample(true),
     stop() {
       if (timer !== null) (runtime.clearInterval ?? clearInterval)(timer);
       timer = null;
-      sample();
-      return { ownedPids: [...ownedPids], sampleError };
+      sample(true);
+      const processes = [...ownedProcesses.values()];
+      return { ownedPids: [...new Set([rootPid, ...processes.map((item) => item.pid)].filter(Number.isInteger))], ownedProcesses: processes, sampleError };
     },
   };
 }
 
-export function cleanupTrackedDescendants(rootPid, ownedPids, { platform = process.platform, kill = process.kill } = {}) {
+export function cleanupTrackedDescendants(rootPid, ownedProcesses, { platform = process.platform, kill = process.kill, listProcesses = defaultListProcesses } = {}) {
   if (platform === 'win32') return { status: 'not-applicable', ownership: 'taskkill-tree' };
-  const tracked = [...new Set(ownedPids)].filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== rootPid);
+  const tracked = [...new Map(ownedProcesses
+    .map((item) => typeof item === 'number' ? { pid: item, startedAt: null } : { pid: item.pid, startedAt: item.startedAt ?? null })
+    .filter((item) => Number.isInteger(item.pid) && item.pid > 0 && item.pid !== rootPid)
+    .map((item) => [processInstanceKey(item), item])).values()];
   const terminated = [];
   const alreadyExited = [];
+  const reused = [];
   const failures = [];
-  for (const pid of tracked) {
+  let currentByPid = null;
+  if (tracked.some((item) => item.startedAt !== null)) {
+    try {
+      currentByPid = new Map(listProcesses().map((item) => [item.pid, item]));
+    } catch (error) {
+      return {
+        status: 'failed', ownership: `observed-lineage-${rootPid}`, observed: [...new Set(tracked.map((item) => item.pid))],
+        terminated, alreadyExited, reused, failures: [{ pid: null, error: `process identity inspection failed: ${error.message}` }],
+      };
+    }
+  }
+  for (const processInfo of tracked) {
+    const { pid } = processInfo;
+    if (processInfo.startedAt !== null) {
+      const current = currentByPid.get(pid);
+      if (!current) {
+        alreadyExited.push(pid);
+        continue;
+      }
+      if (!isSameProcessInstance(processInfo, current)) {
+        reused.push(pid);
+        continue;
+      }
+    }
     try {
       kill(pid, 0);
     } catch (error) {
@@ -127,9 +187,10 @@ export function cleanupTrackedDescendants(rootPid, ownedPids, { platform = proce
   return {
     status: failures.length === 0 ? 'clean' : 'failed',
     ownership: `observed-lineage-${rootPid}`,
-    observed: tracked,
+    observed: [...new Set(tracked.map((item) => item.pid))],
     terminated,
     alreadyExited,
+    reused,
     failures,
   };
 }
@@ -152,9 +213,9 @@ export async function runVerificationStep(step, runtime = {}) {
     const cleanup = () => {
       if (cleanupCompleted) return processCleanup;
       cleanupCompleted = true;
-      const lineage = lineageTracker?.stop() ?? { ownedPids: [], sampleError: null };
+      const lineage = lineageTracker?.stop() ?? { ownedPids: [], ownedProcesses: [], sampleError: null };
       const processGroup = cleanupOwnedProcessGroup(child?.pid, runtime);
-      const descendants = cleanupTrackedDescendants(child?.pid, lineage.ownedPids, runtime);
+      const descendants = cleanupTrackedDescendants(child?.pid, lineage.ownedProcesses ?? lineage.ownedPids, runtime);
       processCleanup = {
         status: processGroup.status === 'failed' || descendants.status === 'failed' ? 'failed' : 'clean',
         ownership: 'runner-observed-lineage',

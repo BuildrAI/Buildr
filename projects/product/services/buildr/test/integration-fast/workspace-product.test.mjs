@@ -10,7 +10,7 @@ import YAML from 'yaml';
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
-import { readPreviewOwner, stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
+import { stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -528,61 +528,6 @@ test('独立 checkout preview 并行隔离、输出身份并只停止自身实�
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert.throws(() => process.kill(secondPid, 0), (error) => error.code === 'ESRCH');
-});
-
-test('Task Environment preview 健康后登记、停止后释放，登记失败会认证回收', { timeout: 60_000 }, (t) => {
-  const base = temporaryRoot(t);
-  const appData = path.join(base, 'task-preview-data');
-  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
-  const root = initGitWorkspace(t, { name: 'task-preview', env });
-
-  const createTask = (taskId) => {
-    const created = runBuildr(['task', 'create', taskId, '--title', taskId, '--intent', '验证 Preview 动态资源', '--target', root, '--json'], { env });
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const prepared = runBuildr(['task', 'environment', 'prepare', taskId, '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', root, '--json'], { env });
-    assert.equal(prepared.status, 0, prepared.stderr || prepared.stdout);
-    return JSON.parse(prepared.stdout);
-  };
-  const finishFixture = (taskId) => {
-    const abandoned = runBuildr(['task', 'abandon', taskId, '--reason', 'preview fixture complete', '--target', root, '--json'], { env });
-    assert.equal(abandoned.status, 0, abandoned.stderr || abandoned.stdout);
-    const cleaned = runBuildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json'], { env });
-    assert.equal(cleaned.status, 0, cleaned.stderr || cleaned.stdout);
-  };
-
-  const taskId = 'preview-managed';
-  const prepared = createTask(taskId);
-  const started = runBuildr(['app', 'preview', 'start', 'managed-preview', '--task', taskId, '--target', root, '--no-open', '--json'], { env });
-  assert.equal(started.status, 0, started.stderr || started.stdout);
-  const preview = JSON.parse(started.stdout);
-  assert.equal(preview.owner.identityMode, 'task-environment-v2');
-  assert.equal(preview.owner.taskId, taskId);
-  assert.equal(preview.owner.environmentRoot, prepared.environment.scopes[0].validationRoot);
-  assert.equal(preview.environmentResource.status, 'running');
-
-  const runningEnvironment = JSON.parse(runBuildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json'], { env }).stdout);
-  assert.equal(runningEnvironment.environment.resources.length, 1);
-  assert.equal(runningEnvironment.environment.resources[0].id, 'preview:managed-preview');
-  assert.equal(Object.hasOwn(runningEnvironment.environment.resources[0], 'handle'), false);
-
-  const stopped = runBuildr(['app', 'preview', 'stop', 'managed-preview', '--task', taskId, '--target', root, '--json'], { env });
-  assert.equal(stopped.status, 0, stopped.stderr || stopped.stdout);
-  assert.equal(JSON.parse(stopped.stdout).environmentResource.status, 'released');
-  const releasedEnvironment = JSON.parse(runBuildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json'], { env }).stdout);
-  assert.equal(releasedEnvironment.environment.resources[0].status, 'released');
-  finishFixture(taskId);
-
-  const failedTask = 'preview-register-failure';
-  createTask(failedTask);
-  const failed = runBuildr(['app', 'preview', 'start', 'failed-preview', '--task', failedTask, '--target', root, '--no-open', '--json'], { env: { ...env, BUILDR_FAULT_TASK_ENVIRONMENT_RESOURCE_REGISTER: '1' } });
-  assert.notEqual(failed.status, 0);
-  assert.match(failed.stderr, /Preview Environment 登记失败，实例已回收/);
-  const listed = runBuildr(['app', 'preview', 'list', '--json'], { env });
-  assert.equal(listed.status, 0, listed.stderr);
-  assert.deepEqual(JSON.parse(listed.stdout).previews, []);
-  const failedEnvironment = JSON.parse(runBuildr(['task', 'environment', 'inspect', failedTask, '--target', root, '--json'], { env }).stdout);
-  assert.deepEqual(failedEnvironment.environment.resources, []);
-  finishFixture(failedTask);
 });
 
 test('public CLI 暴露 app 与 init description help', () => {

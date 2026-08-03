@@ -23,6 +23,8 @@ const summary = {
   schemaVersion: 'buildr.concurrent-task-acceptance/v1',
   status: 'failed',
   tasks: [], cliExecutions: [], previews: [], previewConcurrency: null,
+  taskChangeResolution: null,
+  previewRegistrationFailure: null,
   resourceCoordination: null, targetRace: null, failureDiagnostics: null,
   verificationRuns: [],
   cleanup: { previews: [], resources: [], environments: [], branches: [], receipts: [] },
@@ -46,6 +48,13 @@ function commitIfDirty(cwd, message) {
   if (!git(cwd, ['status', '--porcelain'])) return;
   git(cwd, ['add', '-A']);
   git(cwd, ['commit', '-m', message]);
+}
+
+function writeChange(projectRoot, directory, content) {
+  const changeRoot = path.join(projectRoot, 'openspec', 'changes', directory);
+  fs.mkdirSync(changeRoot, { recursive: true });
+  fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
+  fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${content}\n`);
 }
 
 async function waitFor(predicate, label, timeoutMs = 5_000) {
@@ -126,6 +135,7 @@ try {
     ],
     capabilities: [verificationCapability('nested.parallel-a', 80, []), verificationCapability('nested.parallel-b', 80, []), verificationCapability('nested.coordinated', 160, ['shared-slot'])],
   }, null, 2)}\n`);
+  writeChange(nestedRoot, 'same-change', 'retained version');
   assert.equal(runBuildr(['sync', 'codex', '--target', workspace]).status, 0);
   commitIfDirty(nestedRoot, 'nested runtime fixture');
   git(workspace, ['add', '-f', '.agents']);
@@ -148,6 +158,32 @@ try {
   }
   assert.notEqual(summary.tasks[0].environmentRoot, summary.tasks[1].environmentRoot);
   assert.notEqual(summary.tasks[0].repositories[1].checkoutPath, summary.tasks[1].repositories[1].checkoutPath);
+
+  const firstCandidateProject = summary.tasks[0].repositories.find((repository) => repository.selector === 'project:nested').checkoutPath;
+  writeChange(firstCandidateProject, 'candidate-only', 'candidate only');
+  writeChange(firstCandidateProject, path.join('archive', '2026-08-03-candidate-archived'), 'candidate archived');
+  fs.writeFileSync(path.join(firstCandidateProject, 'openspec', 'changes', 'same-change', 'proposal.md'), '# candidate version\n');
+  const linked = requireSuccess(runBuildr([
+    'task', 'update', taskIds[0],
+    '--add-change', 'nested/candidate-only',
+    '--add-change', 'nested/candidate-archived',
+    '--add-change', 'nested/same-change',
+    '--target', workspace, '--json',
+  ]), 'resolve Task-scoped candidate Changes');
+  const linkedByReference = new Map(linked.changeReferences.map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
+  assert.equal(linkedByReference.get('nested/candidate-only').workingCopy.provenance, 'task-environment-candidate');
+  assert.equal(linkedByReference.get('nested/candidate-archived').workingCopy.change.lifecycle, 'archived');
+  assert.equal(linkedByReference.get('nested/same-change').retainedBaseline.provenance, 'retained-baseline');
+  summary.taskChangeResolution = {
+    taskId: taskIds[0],
+    candidateOnly: linkedByReference.get('nested/candidate-only').workingCopy.provenance,
+    archivedLifecycle: linkedByReference.get('nested/candidate-archived').workingCopy.change.lifecycle,
+    retainedBaseline: linkedByReference.get('nested/same-change').retainedBaseline.provenance,
+  };
+  fs.rmSync(path.join(firstCandidateProject, 'openspec', 'changes', 'candidate-only'), { recursive: true });
+  fs.rmSync(path.join(firstCandidateProject, 'openspec', 'changes', 'archive', '2026-08-03-candidate-archived'), { recursive: true });
+  fs.writeFileSync(path.join(firstCandidateProject, 'openspec', 'changes', 'same-change', 'proposal.md'), '# retained version\n');
+  assert.equal(git(firstCandidateProject, ['status', '--porcelain']), '', 'Task-scoped Change acceptance must restore the candidate checkout before later lifecycle checks');
 
   summary.cliExecutions.push(runTaskInvocation(summary.tasks[0], workspace));
   summary.cliExecutions.push(runTaskInvocation(summary.tasks[1], summary.tasks[1].repositories[1].checkoutPath));
@@ -188,6 +224,19 @@ try {
   assert.notEqual(summary.previews[0].port, summary.previews[1].port);
   assert.deepEqual(summary.previews.map((item) => item.owner.taskId), taskIds);
   assert.equal(summary.previews.every((item) => fs.existsSync(item.stateRoot)), true);
+  const failedPreviewInstance = 'acceptance-register-failure';
+  const failedPreview = runBuildr([
+    'app', 'preview', 'start', failedPreviewInstance,
+    '--task', taskIds[0], '--target', workspace, '--no-open', '--json',
+  ], { env: { ...env, BUILDR_FAULT_TASK_ENVIRONMENT_RESOURCE_REGISTER: '1' } });
+  assert.notEqual(failedPreview.status, 0);
+  assert.match(failedPreview.stderr, /Preview Environment 登记失败，实例已回收/);
+  const afterFailedPreview = requireSuccess(runBuildr(['app', 'preview', 'list', '--json']), 'list previews after registration failure');
+  assert.deepEqual(afterFailedPreview.previews.map((item) => item.instance).sort(), [...previews].sort());
+  const environmentAfterFailedPreview = requireSuccess(runBuildr(['task', 'environment', 'inspect', taskIds[0], '--target', workspace, '--json']), 'inspect Environment after preview registration failure');
+  assert.equal(environmentAfterFailedPreview.environment.resources.some((resource) => resource.id === `preview:${failedPreviewInstance}`), false);
+  assert.equal(environmentAfterFailedPreview.environment.resources.some((resource) => resource.id === `preview:${previews[0]}` && resource.status === 'running'), true);
+  summary.previewRegistrationFailure = { taskId: taskIds[0], instance: failedPreviewInstance, processReclaimed: true, existingResourcesPreserved: true };
   const prematureCleanup = runBuildr(['task', 'environment', 'cleanup', taskIds[0], '--target', workspace, '--json']);
   assert.notEqual(prematureCleanup.status, 0);
   const prematureCleanupResult = JSON.parse(prematureCleanup.stdout);

@@ -153,7 +153,7 @@ test('双任务并发验收输出完整的组合证据并执行归属清理', ()
   const source = read('test/verification/concurrency/task-acceptance.mjs');
   for (const phrase of [
     'buildr.concurrent-task-acceptance/v1', 'cliInvocation', 'app', 'preview',
-    'resourceCoordination', 'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
+    'taskChangeResolution', 'previewRegistrationFailure', 'resourceCoordination', 'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
   ]) assert.ok(source.includes(phrase), phrase);
   assert.ok(source.includes("profiles: ['candidate']") === false);
   const entry = verificationSteps.find((step) => step.id === 'concurrent-task-acceptance');
