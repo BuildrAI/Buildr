@@ -193,7 +193,7 @@ test('Finish 只通过 Application 复用 current、passed 且覆盖 required ca
   assert.equal(authorizationRequired.failure.code, 'task-finish.verification-authorization-result-required');
 });
 
-test('target race 由产品生成恢复令牌且不重跑已通过阶段', async (t) => {
+test('target race 由产品生成恢复令牌重新准备候选并验证', async (t) => {
   const root = fixture(t);
   const firstCalls = [];
   const handlers = passingHandlers(firstCalls);
@@ -212,9 +212,29 @@ test('target race 由产品生成恢复令牌且不重跑已通过阶段', async
     executeFinishRun({ root, run: readFinishRun({ root, runId: 'resume' }), handlers: secondHandlers }),
     /product-generated resume token/,
   );
+  secondHandlers.prepare = async ({ run, phase }) => {
+    secondCalls.push('prepare');
+    assert.equal(run.frozenCandidate, null);
+    assert.equal(run.verification, null);
+    assert.equal(run.delivery, null);
+    assert.equal(run.completion, null);
+    assert.equal(phase.output, null);
+    return { status: 'passed', output: { frozenCandidate: { identity: 'candidate-v2', head: 'def', tree: 'tree-v2', branch: 'codex/finish-v2' } } };
+  };
+  secondHandlers.verify = async () => {
+    secondCalls.push('verify');
+    return { status: 'passed', output: { verification: { status: 'passed', executions: 1, resultDigest: 'sha256-result-v2', applicability: 'current' } } };
+  };
   const second = await executeFinishRun({ root, run: readFinishRun({ root, runId: 'resume' }), handlers: secondHandlers, resumeToken: first.resume.token });
   assert.equal(second.status, 'complete');
-  assert.deepEqual(secondCalls, ['deliver', 'cleanup']);
+  assert.deepEqual(secondCalls, ['prepare', 'verify', 'deliver', 'cleanup']);
+  assert.equal(second.candidate.identity, 'candidate-v2');
+  assert.equal(second.verification.resultDigest, 'sha256-result-v2');
+  assert.equal(second.phases.find((phase) => phase.id === 'preflight').attempts, 1);
+  assert.equal(second.phases.find((phase) => phase.id === 'prepare').attempts, 2);
+  assert.equal(second.phases.find((phase) => phase.id === 'verify').attempts, 2);
+  assert.equal(second.phases.find((phase) => phase.id === 'deliver').attempts, 2);
+  assert.equal(second.phases.find((phase) => phase.id === 'cleanup').attempts, 1);
   assert.equal(second.metrics.canonicalCliInvocations, 2);
   assert.equal(second.metrics.manualRecoveryManifests, 0);
   assert.equal(inspectFinishRun({ root, runId: 'resume' }).status, 'complete');

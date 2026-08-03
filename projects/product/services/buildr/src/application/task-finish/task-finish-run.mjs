@@ -267,12 +267,43 @@ function applyPhaseOutput(run, phaseId, output) {
   if (phaseId === 'cleanup' && output?.completion) run.completion = clone(output.completion);
 }
 
+function isTargetRaceRecovery(run) {
+  return run.status === 'blocked'
+    && run.resume?.phase === 'deliver'
+    && run.primaryFailure?.phase === 'deliver'
+    && run.primaryFailure?.code === 'task-finish.target-race';
+}
+
+function resetCandidateDependentPhase(item) {
+  item.status = 'pending';
+  item.startedAt = null;
+  item.completedAt = null;
+  item.inputIdentity = null;
+  item.outputIdentity = null;
+  item.checks = [];
+  item.operations = [];
+  item.observations = [];
+  item.output = null;
+  item.failure = null;
+}
+
+function resetTargetRaceCandidate(run) {
+  for (const phaseId of ['prepare', 'verify', 'deliver', 'cleanup']) {
+    resetCandidateDependentPhase(run.phases.find((item) => item.id === phaseId));
+  }
+  run.frozenCandidate = null;
+  run.verification = null;
+  run.delivery = null;
+  run.completion = null;
+}
+
 export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now }) {
   if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error('Task Finish executor requires a current run.');
   if (['failed', 'complete'].includes(run.status)) return finishResult(run, clock);
   if (run.status === 'blocked' && (!resumeToken || resumeToken !== run.resume?.token)) {
     throw new Error('Task Finish blocked run requires its current product-generated resume token.');
   }
+  if (isTargetRaceRecovery(run)) resetTargetRaceCandidate(run);
   run.invocations += 1;
   run.status = 'active';
   run.primaryFailure = null;

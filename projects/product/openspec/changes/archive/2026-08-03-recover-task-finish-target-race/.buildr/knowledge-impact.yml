@@ -1,0 +1,32 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: recover-task-finish-target-race
+operation: reconcile
+treeIdentity: sha256-31f53bea0ff268614e871f91e64f8ff755bfd1a2c02f414f1032423ee2d74fa1
+impacts:
+  - type: brief
+    target: openspec/changes/recover-task-finish-target-race/brief.md
+    reason: Change 引入 target-race 恢复的候选失效与重新验证边界。
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/recover-task-finish-target-race/proposal.md
+      - openspec/changes/recover-task-finish-target-race/design.md
+      - openspec/changes/recover-task-finish-target-race/specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Task Finish 恢复说明目前错误表述 target-race 不重跑已通过阶段。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-finish-execution/spec.md
+      - openspec/changes/recover-task-finish-target-race/specs/task-finish-execution/spec.md
+      - services/buildr/src/application/task-finish/task-finish-run.mjs
+      - services/buildr/test/integration/task-finish-run.test.mjs
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 生命周期流程需要区分 target-race 的 candidate-dependent recovery 与其他暂态恢复。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-finish-execution/spec.md
+      - openspec/changes/recover-task-finish-target-race/specs/task-finish-execution/spec.md
+      - services/buildr/src/application/task-finish/task-finish-run.mjs
+      - services/buildr/test/integration/task-finish-run.test.mjs
+unresolvedItems: []
