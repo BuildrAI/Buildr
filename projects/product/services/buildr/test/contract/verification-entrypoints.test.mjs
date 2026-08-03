@@ -164,7 +164,11 @@ test('candidate verification retains necessary Candidate facts without Browser a
     assert.ok(workspaceSuites.some((step) => step.id === suite), `Workspace E2E registry must retain ${suite}`);
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
-  assert.equal(candidatePlan.steps.find((step) => step.id === 'system').executor.file, 'test/verification/system.mjs');
+  const system = candidatePlan.steps.find((step) => step.id === 'system');
+  assert.equal(system.executor.file, 'test/verification/system.mjs');
+  for (const helper of ['test/helpers/task-lifecycle-system-context.mjs', 'test/helpers/task-record-system-fixture.mjs']) {
+    assert.ok(system.inputs.includes(helper), `${helper} must map to the System owner`);
+  }
   assert.deepEqual(candidatePlan.steps.filter((step) => step.resources?.includes('workspace-saturating')).map((step) => step.id), [
     'system', 'integration-candidate-recovery', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
   ]);

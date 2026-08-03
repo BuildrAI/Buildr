@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import YAML from 'yaml';
+
+import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -13,13 +14,10 @@ function runBuildr(args) {
   return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
 }
 
+after(() => cleanupLocalTaskLifecycleSystemContext());
+
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-cli-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  assert.equal(runBuildr(['init', '--target', root, '--name', 'Verification', '--description', 'Verification fixture']).status, 0);
-  const created = runBuildr(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Demo verification']);
-  assert.equal(created.status, 0, created.stderr);
-  return root;
+  return copyTaskLifecycleWorkspace(t, 'verification-run-cli').root;
 }
 
 function declaredCapability(id, script, overrides = {}) {

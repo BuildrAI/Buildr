@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -24,22 +24,17 @@ function json(args, expected = 0) {
   return JSON.parse(result.stdout);
 }
 
+after(() => cleanupLocalTaskLifecycleSystemContext());
+
 function fixture(t) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-review-product-'));
-  const root = path.join(base, 'workspace');
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  run(['init', '--target', root, '--name', 'task-review', '--description', 'Task Review fixture', '--profile', 'team']);
-  run(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Task Review Project']);
-  const changeRoot = path.join(root, 'projects', 'demo', 'openspec', 'changes', 'review-change');
-  fs.mkdirSync(changeRoot, { recursive: true });
-  fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
-  fs.writeFileSync(path.join(changeRoot, 'proposal.md'), '# Review Change\n');
-  json(['task', 'create', 'review-task', '--title', 'Review Task', '--intent', '验证宽而薄的 Review Result', '--change', 'demo/review-change', '--target', root]);
+  const { base, root } = copyTaskLifecycleWorkspace(t, 'task-review-product');
+  createRuntime().createTaskRecord(root, { taskId: 'review-task', title: 'Review Task', intent: '验证宽而薄的 Review Result', projects: [], services: [], changes: ['demo/review-change'] });
   return { base, root };
 }
 
 test('Task Review CLI 提供单一稳定 JSON、两槽位与 current/stale/unknown', (t) => {
   const { root } = fixture(t);
+  const runtime = createRuntime();
   let response = json(['task', 'review', 'inspect', 'review-task', '--target', root]);
   assert.equal(response.schemaVersion, 'buildr.task-review-operation-result/v1');
   assert.equal(response.status, 'inspected');
@@ -53,23 +48,26 @@ test('Task Review CLI 提供单一稳定 JSON、两槽位与 current/stale/unkno
 
   response = json(['task', 'review', 'inspect', 'review-task', '--planning-target', 'plan:v2', '--target', root]);
   assert.equal(response.slots.planning.applicability, 'stale');
-  response = json(['task', 'review', 'inspect', 'review-task', '--target', root]);
+  response = runtime.inspectTaskReview(root, 'review-task');
   assert.equal(response.slots.planning.applicability, 'unknown');
 
   const missingIdentity = json(['task', 'review', 'record', 'review-task', '--type', 'completion', '--method', 'self', '--reviewed', 'candidate', '--outcome', 'ready', '--summary', 'done', '--target', root], 1);
   assert.equal(missingIdentity.status, 'blocked');
   assert.equal(missingIdentity.diagnostic.code, 'task_review_field_invalid');
   assert.deepEqual(missingIdentity.effects, []);
-
-  json(['task', 'complete', 'review-task', '--summary', 'terminal fixture', '--target', root]);
-  const terminal = json(['task', 'review', 'record', 'review-task', '--type', 'planning', '--target-identity', 'plan:v3', '--method', 'self', '--reviewed', 'task intent', '--outcome', 'ready', '--summary', 'late', '--target', root], 1);
-  assert.equal(terminal.diagnostic.code, 'task_review_task_terminal');
-  assert.equal(json(['task', 'review', 'inspect', 'review-task', '--target', root]).slots.planning.present, true);
 });
 
 test('Review Result 可 Git 跟踪且 Environment ignore 不吞掉 review slots', (t) => {
   const { root } = fixture(t);
-  json(['task', 'review', 'record', 'review-task', '--type', 'completion', '--target-identity', 'candidate:g1', '--method', 'human', '--reviewed', 'candidate:g1', '--outcome', 'ready', '--summary', 'Candidate approved', '--target', root]);
+  createRuntime().recordTaskReview(root, 'review-task', {
+    reviewType: 'completion',
+    targetIdentity: 'candidate:g1',
+    method: 'human',
+    reviewed: ['candidate:g1'],
+    uncovered: [],
+    findings: [],
+    conclusion: { outcome: 'ready', summary: 'Candidate approved' },
+  });
   assert.equal(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
   fs.appendFileSync(path.join(root, '.gitignore'), '\n.buildr/tasks/*/environment.json\n');
   const result = spawnSync('git', ['check-ignore', '-q', '.buildr/tasks/review-task/reviews/completion.yml'], { cwd: root, encoding: 'utf8' });

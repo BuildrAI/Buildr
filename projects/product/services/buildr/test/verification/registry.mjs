@@ -198,6 +198,8 @@ export const verificationSteps = Object.freeze([
   step({ id: 'system', name: 'public CLI and Workspace system tests', executor: { type: 'node', file: 'test/verification/system.mjs' }, profiles: ['candidate'], inputs: [
     'test/system/**',
     'test/helpers/clean-product-source.mjs',
+    'test/helpers/task-lifecycle-system-context.mjs',
+    'test/helpers/task-record-system-fixture.mjs',
     'test/verification/system.mjs',
     'bin/buildr.mjs', 'buildr',
     'src/application/cli-update.mjs',

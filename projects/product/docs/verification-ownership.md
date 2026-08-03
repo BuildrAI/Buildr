@@ -25,8 +25,8 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，�
 | Unit | `test:unit`；`test/unit` 19 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
 | Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，不穿过真实 filesystem 或进程边界 | `node:test`；外层 `cpu-heavy=2` |
 | Contract | `test:contract`；`test/contract` 20 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口一致性 | Product tree；部分 case 启动开发 CLI、Git 和临时目录，因此聚合边界记为低成本 Integration | `node:test` 文件并发；外层 `cpu-heavy=2` |
-| Integration | `test:integration`；`test/integration` 25 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；无浏览器 | `node:test` 文件并发；外层 `workspace-heavy=3` |
-| System | `test:system`；`test/system` 23 个文件 | 完整 CLI、Workspace、Local App runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
+| Integration | `test:integration`；`test/integration` 27 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；无浏览器 | `node:test` 文件并发；外层 `workspace-heavy=3` |
+| System | `test:system`；`test/system` 25 个文件 | 完整 CLI、Workspace、Local App runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
 | Recovery | `test:integration:candidate:recovery` 1 个文件；Release 专项 2 个文件 | builtin 迁移/恢复与 Git release convergence | 多轮临时 Workspace/Git | `workspace-saturating`；默认最多 2 路，受限 CI 1 路 |
 | Browser System | `test:browser:smoke` 1 个文件、6 个 selector | Local App shell、Task、Project、Service、Change 的真实浏览器 Journey | 本机 Chrome/Chromium、Playwright Core、loopback server、临时 Workspace | 不进入 Product Full；`verification.yml` 的 `browser` 协调资源容量为 1 |
 
@@ -63,6 +63,8 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 还要同时考虑内层并发：
 
 - `node:test` 会按文件启动 worker；`test:system` 经 4/默认/14/16/22 路对照后固定为 14 路；
+- `test:system` 为 Task Record/Review/Verification 与 Verification CLI 准备一次 `task-lifecycle/v1` 不可变基线，每个 case 复制独立 sandbox；初始化、Git/Task Environment、安装、迁移和 Finish 测试仍自行准备完整环境；
+- System runner 只粗粒度前置已知长 owner，其余保持字母序，并用 dot reporter 压缩成功日志；这不是动态调度器；
 - OpenSpec contract/recovery runner 在各自 suite 内按 case 并发，最多 12 路；
 - 多个 verifier 会再启动 Buildr CLI、Git、npm 或短生命周期 Node 子进程；
 - 双 Task acceptance 内部只在事实本身要求并发时启动两路 prepare、invocation、verification、Result record、preview stop 和 Task abandon；只有必须证明 peer preservation 的 Environment cleanup 保持顺序；
@@ -115,7 +117,7 @@ Development 稳定 Content Target 并固定 verification policy
 
 | 问题 | 事实 | 本轮处理与结论 |
 | --- | --- | --- |
-| System 名称和边界错误 | 22 个文件穿过完整 CLI/Git/Workspace；独立曾 65.5s、Candidate 95.5s | 唯一入口改为 `test:system`；14 路独立约 50.2s。窄 runner 明确报告 exit/signal，修复空日志失败；它仍是下一轮主目标 |
+| System 重复前置与队尾关键路径 | P0.5 合入前基线 22 个文件、56.64s、约 230.7 CPU 秒；Task lifecycle 文件反复冷启动相同 Workspace/Project | 同口径隔离树上，24 个 owner 文件、112 项测试共享一次只读基线并保留逐 case sandbox；fixture 用 4 次 Application 操作准备，长 owner 前置。结果为 55.38s、约 217.4 CPU 秒，墙钟约降 2.2%、CPU 约降 5.8%。rebase P0.5 后当前集合增至 25 个文件、115 项测试，单跑 67.50s、约 250.9 CPU 秒；新增 Task Development Journey 不复用该 context |
 | OpenSpec case 重复 | 两个 Candidate owner 都跑全部 15 case | 分为 contract 10 / recovery 5，交集为空；独立约 13.9s / 23.9s |
 | Package parity 重复生命周期 | 旧值 65.95s，重跑 Task/Review/Verification、双 Environment 和 release 行为 | 只保留代表输出、一次 init mutation 与 package assets；独立约 8.50s |
 | CLI help 冷启动过多 | 55 topic × 两种 form，约 109 次完整 CLI，Candidate 18.6s | 同一 owner 穷举 55 项同进程 contract，7 类代表入口保留真实进程；独立约 7.3s |
@@ -124,16 +126,14 @@ Development 稳定 Content Target 并固定 verification policy
 | 调度成本为 0 或过时 | 实际 9.5s 的 runtime reconciliation 被按 5s 留在尾部 | 按实测粗粒度前移；成本只用于启动顺序，不成为持久性能事实 |
 | Environment 启停 | 双 Task 要创建/删除 4 个 Git worktree，顺序 cleanup 是 peer-preservation 证据 | prepare 不是主瓶颈；cleanup 是 acceptance 最大单阶段但不能删除。下一轮应优化产品 cleanup 实现或局部 fixture，不能把必要证明改成假并发 |
 
-最终文档冻结前的干净候选上，Quick 为 6.4 秒，38-step Changed 为 148.543 秒，37-step Candidate 为 147.819 秒且全部通过；同一优化树另有 132.741 秒和 143.323 秒全绿结果。相对 193.161 秒基线，墙钟下降约 23%–31%，但 120 秒仍只是未达成的观察目标，不应通过调高预算或删必要风险证据宣告成功。
+P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，38-step Changed 为 148.543 秒，37-step Candidate 为 147.819 秒且全部通过；同一优化树另有 132.741 秒和 143.323 秒全绿结果。相对 193.161 秒基线，墙钟下降约 23%–31%。rebase P0.5 后先复测当前 System 为 115/115、67.50 秒；正式 delivery timing 以本次稳定 Content Target 的 transient summary 为准。120 秒仍只是未达成的观察目标，不应通过调高预算或删必要风险证据宣告成功。
 
 ## 8. 下一轮优化方案
 
-1. 先分析 System 内反复 CLI 冷启动。优先把 Task Record/Review/Verification 等“纯 parser、schema、Application 矩阵”下沉到 Unit/Component，只为每个公开命令保留代表性真实进程；CLI help 的 18.6s → 7.3s 已证明这种方法有效。
-2. 为高 fan-out owner 声明窄的 inner concurrency contract，并让 Candidate profile 显式传入；不要只看外层 `global=4`，也不要建设通用权重调度平台。
-3. 保持 System 文件 owner 清晰。一次把两个大文件机械拆成四个文件的实验使总 CPU 增加约 9%、完整 System 变慢，已回退；后续拆分必须先消除重复 baseline。
-4. 分析六个 package selector 重复做的 213-file static preparation。只在同一 verifier 内能保留独立 diagnostics 时共享；不引入跨 verifier daemon/cache。
-5. 保留 Acceptance 的顺序 Environment cleanup，继续从 Git worktree remove/prune、Task abandon 与 Doctor 调用次数定位产品实现成本。
-6. Browser fixture、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
+1. 下一主目标是 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程。先区分可复用前置与被测生命周期；只可共享不可变 Git/Workspace 基线，prepare/cleanup 事实仍必须真实执行。
+2. 为高 fan-out owner 声明窄的 inner concurrency contract，并让 Candidate profile 显式传入；不建设通用权重调度平台。
+3. 分析六个 package selector 重复做的 213-file static preparation；只在同一 verifier 内能保留独立 diagnostics 时共享，不引入跨 verifier daemon/cache。
+4. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
 
 ## 9. 迭代记录
 
@@ -146,3 +146,4 @@ Development 稳定 Content Target 并固定 verification policy
 | 5. 删除重复 | OpenSpec case 唯一 owner、package parity 缩窄、Acceptance 保留唯一组合事实 |
 | 6. 优化冷启动 | 55 项 help contract 保留全覆盖，真实 CLI 只跑代表边界；机械拆文件负优化被回退 |
 | 7. 冻结复测 | Quick 6.4s；Changed 148.543s；Candidate 147.819s 全绿，剩余关键路径确认是嵌套 fan-out 与重复 CLI/Workspace baseline |
+| 8. 复用上下文 | Task lifecycle 共享一次只读基线、逐 case 独立 sandbox；同口径 112/112 为 55.38s、CPU 约降 5.8%；rebase P0.5 后当前 115/115 为 67.50s，下一步分别分析新增 Task Development Journey 与真实 Task Environment/Git Journey |

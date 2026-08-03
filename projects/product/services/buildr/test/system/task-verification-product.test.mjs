@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -44,14 +44,12 @@ function declaration(proves = 'Demo behavior') {
   };
 }
 
+after(() => cleanupLocalTaskLifecycleSystemContext());
+
 function fixture(t) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-verification-product-'));
-  const root = path.join(base, 'workspace');
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  run(['init', '--target', root, '--name', 'task-verification', '--description', 'Task Verification fixture', '--profile', 'team']);
-  run(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Task Verification Project']);
+  const { base, root } = copyTaskLifecycleWorkspace(t, 'task-verification-product');
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(declaration()));
-  json(['task', 'create', 'verification-task', '--title', 'Verification Task', '--intent', '验证 current Result authority', '--project', 'demo', '--target', root]);
+  createRuntime().createTaskRecord(root, { taskId: 'verification-task', title: 'Verification Task', intent: '验证 current Result authority', projects: ['demo'], services: [], changes: [] });
   return { base, root };
 }
 
@@ -59,8 +57,20 @@ function recordArgs(root, target = 'delivery:v1') {
   return ['task', 'verification', 'record', 'verification-task', '--target-identity', target, '--target-summary', 'Demo delivery target', '--capability', 'demo/demo.unit::passed::Demo unit passed', '--outcome', 'passed', '--summary', 'Declared verification passed', '--declaration-root', root, '--target', root];
 }
 
+function recordInput(root, target = 'delivery:v1') {
+  return {
+    targetIdentity: target,
+    targetSummary: 'Demo delivery target',
+    capabilities: [{ project: 'demo', capability: 'demo.unit', outcome: 'passed', facts: ['Demo unit passed'] }],
+    coverageGaps: [],
+    conclusion: { outcome: 'passed', summary: 'Declared verification passed' },
+    declarationRoot: root,
+  };
+}
+
 test('Task Verification CLI 维护单一 current Result 并派生 target/declaration applicability', (t) => {
   const { root } = fixture(t);
+  const runtime = createRuntime();
   let response = json(['task', 'verification', 'inspect', 'verification-task', '--target', root]);
   assert.equal(response.schemaVersion, 'buildr.task-verification-operation-result/v1');
   assert.equal(response.slot.present, false);
@@ -74,11 +84,11 @@ test('Task Verification CLI 维护单一 current Result 并派生 target/declara
   response = json(['task', 'verification', 'inspect', 'verification-task', '--target-identity', 'delivery:v2', '--target', root]);
   assert.equal(response.slot.applicability.status, 'stale');
   assert.equal(response.slot.applicability.target.status, 'stale');
-  response = json(['task', 'verification', 'inspect', 'verification-task', '--target', root]);
+  response = runtime.inspectTaskVerification(root, 'verification-task');
   assert.equal(response.slot.applicability.status, 'unknown');
 
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(declaration('Changed policy fact')));
-  response = json(['task', 'verification', 'inspect', 'verification-task', '--target-identity', 'delivery:v1', '--target', root]);
+  response = runtime.inspectTaskVerification(root, 'verification-task', { targetIdentity: 'delivery:v1' });
   assert.equal(response.slot.applicability.declarations.status, 'stale');
   assert.ok(response.slot.applicability.reasons.some((reason) => reason.code === 'declaration-identity-changed'));
 
@@ -88,7 +98,7 @@ test('Task Verification CLI 维护单一 current Result 并派生 target/declara
 
 test('Local App 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {
   const { base, root } = fixture(t);
-  json(recordArgs(root));
+  createRuntime().recordTaskVerification(root, 'verification-task', recordInput(root));
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => {

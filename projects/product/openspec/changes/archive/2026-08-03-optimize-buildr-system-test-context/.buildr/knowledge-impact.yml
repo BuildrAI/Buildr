@@ -1,0 +1,30 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-buildr-system-test-context
+operation: reconcile
+treeIdentity: git:c271a0c9a8899415a37d8f1fe053fe3517b91224+dirty
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-buildr-system-test-context/brief.md
+    reason: 正式 Change 需要提供重复初始化根因、不可变基线和逐 case 隔离的人类入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-buildr-system-test-context/proposal.md
+      - openspec/changes/optimize-buildr-system-test-context/design.md
+      - openspec/changes/optimize-buildr-system-test-context/brief.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 System 测试环境、并发隔离和清理模型将增加 run-scoped 不可变基线
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-buildr-system-test-context/specs/product-verification-quality/spec.md
+      - services/buildr/test/verification/system.mjs
+      - services/buildr/test/helpers/task-lifecycle-system-context.mjs
+      - docs/verification-ownership.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 复用既有 Project Testing 与 System 术语；测试实现中的 context 不提升为 Buildr 产品 Context 术语
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+      - openspec/changes/optimize-buildr-system-test-context/design.md
+unresolvedItems: []

@@ -5,21 +5,60 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
+import {
+  prepareTaskLifecycleSystemContext,
+  TASK_LIFECYCLE_CONTEXT_ENV,
+} from '../helpers/task-lifecycle-system-context.mjs';
+
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const systemRoot = path.join(productRoot, 'test', 'system');
-const files = fs.readdirSync(systemRoot)
+const startFirst = [
+  'worktree-create.test.mjs',
+  'task-record-product.test.mjs',
+  'public-json-contracts.test.mjs',
+  'task-environment-migration.test.mjs',
+  'task-review-product.test.mjs',
+  'task-record-change-resolver.test.mjs',
+  'task-record-local-app.test.mjs',
+  'task-verification-product.test.mjs',
+  'workspace-product.test.mjs',
+];
+const startRank = new Map(startFirst.map((name, index) => [name, index]));
+const fileNames = fs.readdirSync(systemRoot)
   .filter((name) => name.endsWith('.test.mjs'))
-  .sort()
-  .map((name) => path.join(systemRoot, name));
+  .sort((left, right) => (startRank.get(left) ?? startFirst.length) - (startRank.get(right) ?? startFirst.length) || left.localeCompare(right));
+
+for (const name of startFirst) {
+  if (!fileNames.includes(name)) throw new Error(`Unknown start-first System owner: ${name}.`);
+}
+const files = fileNames.map((name) => path.join(systemRoot, name));
 
 if (files.length === 0) throw new Error(`No System tests found in ${systemRoot}.`);
 
-const result = spawnSync(process.execPath, ['--test', '--test-concurrency=14', ...files], {
-  cwd: productRoot,
-  stdio: 'inherit',
-});
+const context = prepareTaskLifecycleSystemContext();
+process.stderr.write(`[buildr-system-context] status=ready id=${context.marker.contextId} identity=${context.marker.identity} setupApplicationOperations=${context.marker.setup.applicationOperations} setupDurationMs=${context.marker.setup.durationMs}\n`);
 
+let result = null;
+let cleanupError = null;
+try {
+  result = spawnSync(process.execPath, ['--test', '--test-concurrency=14', '--test-reporter=dot', ...files], {
+    cwd: productRoot,
+    stdio: 'inherit',
+    env: { ...process.env, [TASK_LIFECYCLE_CONTEXT_ENV]: context.contextRoot },
+  });
+} finally {
+  try {
+    const cleanup = context.cleanup();
+    process.stderr.write(`[buildr-system-context] status=${cleanup.status} id=${context.marker.contextId} identity=${cleanup.identity}\n`);
+  } catch (error) {
+    cleanupError = error;
+    process.stderr.write(`[buildr-system-context] status=failed id=${context.marker.contextId} code=${error.code || 'cleanup_failed'} message=${error.message}\n`);
+  }
+}
+
+if (!result) throw cleanupError || new Error('System test runner did not return a process result.');
 if (result.error) throw result.error;
+if (cleanupError && result.status === 0) throw cleanupError;
 if (result.status !== 0) {
   process.stderr.write(`[buildr-system-tests] node:test failed: exitCode=${result.status ?? 'none'} signal=${result.signal ?? 'none'} files=${files.length}\n`);
   process.exitCode = result.status ?? 1;
