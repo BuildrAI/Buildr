@@ -1,0 +1,30 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: stabilize-openspec-delta-hash-portability
+operation: reconcile
+treeIdentity: working-tree@c271a0c9a8899415a37d8f1fe053fe3517b91224
+impacts:
+  - type: brief
+    target: openspec/changes/stabilize-openspec-delta-hash-portability/brief.md
+    reason: 正式 Change 需要说明 delta identity 的可移植边界、旧 receipt 的安全行为与明确非目标。
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/stabilize-openspec-delta-hash-portability/proposal.md
+      - openspec/changes/stabilize-openspec-delta-hash-portability/design.md
+      - openspec/changes/stabilize-openspec-delta-hash-portability/specs/openspec-contract-guard/spec.md
+      - services/buildr/src/application/domains/openspec.mjs
+      - services/buildr/test/unit/openspec-domain.test.mjs
+terminology:
+  status: aligned
+  termsConsulted:
+    - OpenSpec Change
+    - deltaHash
+    - convergence identity
+    - checkout
+  canonicalTerms: []
+  changedAssets: []
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/specs/openspec-contract-guard/spec.md
+    - openspec/knowledge/glossary.md
+    - openspec/changes/stabilize-openspec-delta-hash-portability/design.md
+unresolvedItems: []

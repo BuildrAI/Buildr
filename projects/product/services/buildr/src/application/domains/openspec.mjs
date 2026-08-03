@@ -180,7 +180,11 @@ export function registerDomainsOpenspec(runtime) {
       capabilities.set(entry.name, { file, content, operations: items });
       operations.push(...items);
     }
-    return { capabilities, operations, hash: openSpecContractHash([...capabilities.values()].map((item) => `${item.file}\n${item.content}`).join('\n')) };
+    const identityInputs = [...capabilities.entries()].map(([capability, item]) => ({
+      logicalPath: `specs/${capability}/spec.md`,
+      content: item.content,
+    }));
+    return { capabilities, operations, hash: openSpecContractHash(identityInputs) };
   }
 
   function readOpenSpecCanonicalRequirements(projectRoot, capability) {
