@@ -87,9 +87,9 @@ test('验证选择基础路径由同一 changed plan 扩展为完整回归', () 
 });
 
 test('candidate-aware preflight只选择登记的低成本直接契约', () => {
-  const skill = createVerificationPreflightPlan({ paths: ['package/targets/workspace/skills/buildr/task-finish/SKILL.md'] });
+  const skill = createVerificationPreflightPlan({ paths: ['package/targets/workspace/skills/buildr/task-development/SKILL.md'] });
   assert.deepEqual(ids(skill), ['preflight-contract']);
-  assert.equal(skill.steps[0].executor.file, 'test/contract/task-finish-sequencing.test.mjs');
+  assert.equal(skill.steps[0].executor.file, 'test/contract/task-development.test.mjs');
   assert.deepEqual(ids(createVerificationPreflightPlan({ paths: ['docs/buildr-product.md'] })), []);
 });
 

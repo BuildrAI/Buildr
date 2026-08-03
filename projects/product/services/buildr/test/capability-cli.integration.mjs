@@ -115,8 +115,10 @@ test('CLI 集成验证 optional provider 卸载后 consumer 降级', { concurren
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   await run(['init', '--target', root, '--name', 'capability-optional', '--profile', 'personal']);
   const uninstallReview = await run(['builtin', 'uninstall', 'task-asset-review', '--target', root, '--reason', 'optional fixture']);
-  assert.match(uninstallReview.stdout, /\[optional\].*task-finish.*buildr\.task-asset-review@3/);
-  assert.equal(consumer(await doctor(root), '.', 'task-finish').readiness, 'degraded');
+  assert.match(uninstallReview.stdout, /\[optional\].*task-development.*buildr\.task-asset-review@3/);
+  const report = await doctor(root);
+  assert.equal(consumer(report, '.', 'task-development').readiness, 'degraded');
+  assert.equal(consumer(report, '.', 'task-finish').readiness, 'ready');
 });
 
 test('CLI 集成验证未消费 binding、legacy Project 拒绝与 Project override', { concurrency: true }, async (t) => {

@@ -40,7 +40,7 @@ test('Git 任务集成实例区分 Agent capability 与产品 Task Finish execut
   assert.match(capabilityDocs, /Resolver 与 readiness/);
   assert.match(capabilityDocs, /Runtime evidence/);
   assert.match(capabilityDocs, /用户替换实现/);
-  assert.match(capabilityDocs, /独立 Git 任务仍由 `git-ops` provider/);
+  assert.match(capabilityDocs, /独立\s*Git\s*任务仍由`git-ops` provider/);
   assert.match(capabilityDocs, /它不决定 `task-finish\/v1` 产品执行器是否可运行/);
 });
 

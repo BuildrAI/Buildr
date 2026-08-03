@@ -81,9 +81,14 @@ capabilityContracts:
         integrity: sha256-030f4599e84bc24823fe95d93d3a8847335bcb6fa518fd229d8d15b364c9158e
         provider: task-verification
         description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
+  - id: buildr.task-development
+    version: 1
+    description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
+    path: package/targets/workspace/skills/contracts/buildr/task-development/v1.md
+    target: skills/contracts/buildr/task-development/v1.md
   - id: buildr.task-finish
     version: 1
-    description: 通过固定五阶段执行器完成已具备收尾资格候选的交付，不在收尾中修复产品缺陷。
+    description: 消费 current Development handoff，准备内容等价 carrier、推进目标并清理 Environment。
     path: package/targets/workspace/skills/contracts/buildr/task-finish/v1.md
     target: skills/contracts/buildr/task-finish/v1.md
   - id: buildr.task-asset-review
@@ -137,6 +142,9 @@ initialSkillBindings:
   - capability: buildr.task-verification
     version: 3
     provider: task-verification
+  - capability: buildr.task-development
+    version: 1
+    provider: task-development
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
@@ -231,7 +239,7 @@ builtins:
     - id: task-asset-review
       path: package/targets/workspace/skills/buildr/task-asset-review
       target: skills/buildr/task-asset-review
-      description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时持续收集轻量资产信号，用户要求复盘或沉淀，或 Task Finish 触发 finalize 时使用。
+      description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时持续收集轻量资产信号，用户要求复盘或沉淀，或 Task Development 在正式 handoff 前触发 finalize 时使用。
       required: false
       provides:
         - capability: buildr.task-asset-review
@@ -263,29 +271,57 @@ builtins:
     - id: task-verification
       path: package/targets/workspace/skills/buildr/task-verification
       target: skills/buildr/task-verification
-      description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者实现型任务到达正式验证节点、Task Finish 需要核对或补齐 Task Verification Result 时使用；不用于设计测试框架或开发测试，后者使用 project-testing。
+      description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish。
       required: false
       provides:
         - capability: buildr.task-verification
           version: 3
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: task-development
+      path: package/targets/workspace/skills/buildr/task-development
+      target: skills/buildr/task-development
+      description: 正式实现任务在 Planning Review 后推进开发、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、完成 Completion Review、记录风险决定或生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+      required: false
+      provides:
+        - capability: buildr.task-development
+          version: 1
+      requires:
+        - capability: buildr.task-record
+          version: 1
+          mode: required
+        - capability: buildr.task-environment
+          version: 1
+          mode: required
+        - capability: buildr.task-review
+          version: 1
+          mode: required
+        - capability: buildr.task-verification
+          version: 3
+          mode: required
+        - capability: buildr.current-knowledge-maintenance
+          version: 2
+          mode: required
+        - capability: buildr.task-asset-review
+          version: 3
+          mode: optional
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-finish
       path: package/targets/workspace/skills/buildr/task-finish
       target: skills/buildr/task-finish
-      description: 用户要求“收尾”或交付已验证的 Change/code-only 候选时使用；retained metadata-only 可安全交接 Git 单项操作，产品缺陷返回研发流程。
+      description: 用户要求“收尾”或交付已有 current formal Development handoff 时使用；只准备内容等价 carrier、推进 retained target 并清理 Environment，handoff/Candidate/Result 问题返回 Task Development。
       required: false
       provides:
         - capability: buildr.task-finish
           version: 1
       requires:
+        - capability: buildr.task-development
+          version: 1
+          mode: required
         - capability: buildr.task-environment
           version: 1
           mode: required
         - capability: buildr.git-single-operation
           version: 1
-          mode: optional
-        - capability: buildr.task-asset-review
-          version: 3
           mode: optional
       legacyIntegrities:
         - sha256-0607663344932ed85cdff84fe5c8dc817e4fc12a159a047eac054fa307fc1fd1
@@ -432,6 +468,7 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/task-record/v1.md => skills/contracts/buildr/task-record/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-review/v1.md => skills/contracts/buildr/task-review/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-verification/v3.md => skills/contracts/buildr/task-verification/v3.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-development/v1.md => skills/contracts/buildr/task-development/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v1.md => skills/contracts/buildr/task-asset-review/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v2.md => skills/contracts/buildr/task-asset-review/v2.md copy
@@ -463,6 +500,7 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md => skills/buildr/task-verification/references/project-verification-v2.md copy
   - package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
+  - package/targets/workspace/skills/buildr/task-development/SKILL.md => skills/buildr/task-development/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - package/targets/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - package/targets/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy

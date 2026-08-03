@@ -948,7 +948,7 @@ export function createPackageStaticValidator(deps) {
           '不启动重复 verifier',
           '不相加并行检查耗时',
           'buildr verification cleanup --summary <file>',
-          '不用于设计测试框架或开发测试，后者使用 project-testing',
+          '不用于设计测试框架、开发测试、生成 Candidate 或 Finish',
           '入口命名、成本或分层不合理时报告测试建设 gap',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-verification Skill must include ${JSON.stringify(requiredText)}.`);
@@ -1005,13 +1005,13 @@ export function createPackageStaticValidator(deps) {
       if (skill.id === 'task-finish') {
         for (const requiredText of [
           'buildr.task-finish/v1',
-          '“修复产品缺陷”不是收尾动作',
+          'current formal Development handoff',
           'preflight → prepare → verify → deliver → cleanup',
           'nextWorkflow: task-development',
-          '不得在当前 run 修改实现',
-          '不得手写或修改 token',
+          '不修复或恢复 run',
+          '不得手写 token',
           'agentProviderCompletions = 0',
-          'formalVerificationExecutions <= 1',
+          'formalVerificationExecutions = 0',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-finish Skill must include ${JSON.stringify(requiredText)}.`);
         }
@@ -1021,6 +1021,9 @@ export function createPackageStaticValidator(deps) {
         if (characterCount < 1500 || characterCount > 4000) problems.push(`task-finish Skill must remain thin: expected 1500-4000 Unicode characters, received ${characterCount}.`);
         for (const forbiddenPolicy of ['fast-forward-only', '默认 rebase 到最新目标分支', '不创建 merge commit']) {
           if (skillContent.includes(forbiddenPolicy)) problems.push(`task-finish must not copy Git provider policy: ${forbiddenPolicy}`);
+        }
+        for (const forbiddenAuthority of ['current Verification Result', 'requiredForDelivery', 'formalVerificationExecutions <= 1']) {
+          if (skillContent.includes(forbiddenAuthority)) problems.push(`task-finish must not retain Verification authority: ${forbiddenAuthority}`);
         }
         if (skillContent.includes('buildr openspec')) problems.push('task-finish source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
       }
@@ -1074,7 +1077,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
+        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v1` provider', '`buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');

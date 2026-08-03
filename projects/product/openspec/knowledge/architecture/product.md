@@ -31,6 +31,8 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Environment candidate 或 retained Project 解析限定 Change；全局 Change 索引保持 retained-only。
 - Task Review：一个 `buildr.task-review/v1` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。语义 Skill 执行审查，确定性 Application 是唯一 Result writer；目标适用性由读取时比较派生，Task Record、Environment、Verification、Finish 和 Task Asset Review 不复制或改写 Review 事实。
 - Task Verification：一个 `buildr.task-verification/v3` capability 读取 Project verification declarations，执行已有能力并维护一个 Task-scoped current Result。确定性 Application 独占 Result writer/reader，按 target/declaration identity 派生适用性；它不拥有测试开发、Task 推进、Candidate generation、Review、Environment 或业务验收。
+- Task Development：一个`buildr.task-development@1` capability和唯一Application维护Development Receipt、stable Content Target、verification policy、Task Candidate/generation、推进决定与不可变Finish handoff。它只通过Task Record、Environment、Review、Verification Applications/read models消费专业事实；OpenSpec、Git和具体测试框架都不是其通用schema前提。
+- Task Finish：P0.5保留固定五阶段窄adapter，只消费current Development handoff并证明Delivery Carrier内容等价；Change/current knowledge收敛、formal Verification、Completion Review、Candidate generation与风险决定均在进入Finish前完成。
 - Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish、Board 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联。
 
 ## 产品边界

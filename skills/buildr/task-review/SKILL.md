@@ -51,4 +51,4 @@ Agent、工具或人工流程在形成完整结论前中断时不要调用 recor
 
 报告 reviewType、target identity、method、实际 reviewed/uncovered、findings、结论，以及 operation status、resultDigest、applicability、effects/diagnostic。`changes-required` 只表达审查结论，不修改 Task 顶层状态。
 
-本 Skill 不创建 Task Environment、Task Development、Candidate generation、Verification evidence、Finish receipt、Git 提交或通用状态机，也不取代 `task-asset-review` 的长期资产 observation/人工沉淀流程。任何后续 gate 由未来 consumer 读取 Result 后自行判断；P0.3 不设置 gate。
+本 Skill 不创建 Task Environment、Task Development、Candidate generation、Verification evidence、Task Finish run、Git 提交或通用状态机，也不取代 `task-asset-review` 的长期资产 observation/人工沉淀流程。后续 gate 只由 Task Development 通过本 Application read model 判断；Task Review 本身不设置 gate。

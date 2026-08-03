@@ -1,0 +1,49 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+const root = path.resolve(import.meta.dirname, '../..');
+const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
+
+test('Task Development 是唯一 Receipt/Candidate/generation/handoff Application authority', () => {
+  const application = read('src/application/task-development/task-development-application.mjs');
+  const repository = read('src/infrastructure/filesystem/task-development-repository.mjs');
+  const composition = read('src/application/compose-runtime.mjs');
+  assert.match(application, /observeTaskDevelopment/);
+  assert.match(application, /freezeTaskDevelopmentCandidate/);
+  assert.match(application, /createTaskDevelopmentHandoff/);
+  assert.match(repository, /development\.yml/);
+  assert.match(composition, /registerTaskDevelopmentApplication/);
+  for (const forbidden of ['readTaskReviewResultPersistence', 'readTaskVerificationResultPersistence', 'writeTaskReviewResultPersistence', 'writeTaskVerificationResultPersistence']) assert.equal(application.includes(forbidden), false, forbidden);
+  const writers = fs.readFileSync(path.join(root, 'src/application/task-development/task-development-application.mjs'), 'utf8').includes('writeTaskDevelopmentPersistence');
+  assert.equal(writers, true);
+});
+
+test('Candidate identity 不包含 Result 或 Delivery Carrier，handoff 才绑定 gates', () => {
+  const domain = read('src/domain/task-development/task-development.mjs');
+  const candidateBody = domain.slice(domain.indexOf('export function createTaskCandidate'), domain.indexOf('export function normalizeTaskCandidate'));
+  for (const field of ['generation', 'contentTargetIdentity', 'taskContextIdentity', 'policyIdentity']) assert.ok(candidateBody.includes(field), field);
+  for (const forbidden of ['resultDigest', 'planning', 'verification', 'completion', 'commit', 'branch', 'worktree']) assert.equal(candidateBody.includes(forbidden), false, forbidden);
+  const handoffBody = domain.slice(domain.indexOf('export function createTaskFinishHandoff'), domain.indexOf('function normalizeHandoff'));
+  assert.match(handoffBody, /normalizedGates/);
+  assert.match(handoffBody, /normalizedDecision/);
+});
+
+test('第一版不暴露 public Development CLI 或 Local App route', () => {
+  const registry = read('src/interfaces/cli/registry.mjs');
+  const help = read('src/interfaces/cli/help.mjs');
+  const server = read('src/interfaces/local-app/http/server.mjs');
+  assert.doesNotMatch(registry, /task development/);
+  assert.doesNotMatch(help, /buildr task development/);
+  assert.doesNotMatch(server, /task-development|\/development/);
+  assert.equal(fs.existsSync(path.join(root, 'src/interfaces/internal/task-development-driver.mjs')), true);
+});
+
+test('Development Application 不硬编码自举 Project、Git/OpenSpec 或测试技术栈', () => {
+  const application = read('src/application/task-development/task-development-application.mjs');
+  for (const forbidden of ['project=product', "'product'", 'service=buildr', "'buildr'", 'origin/dev', "'dev'", 'node_modules', "'npm'", 'git worktree', 'OpenSpec', 'verification registry']) assert.equal(application.includes(forbidden), false, forbidden);
+  const observer = read('src/infrastructure/content/content-target-observer.mjs');
+  assert.match(observer, /FILESYSTEM_CONTENT_OBSERVER/);
+  assert.match(observer, /GIT_CONTENT_OBSERVER/);
+});

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 const reviewSkill = read('package/targets/workspace/skills/buildr/task-asset-review/SKILL.md');
+const developmentSkill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
 const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const packageManifest = read('package/manifest.yml');
@@ -74,9 +75,10 @@ test('provider 独占资格审查、分类和人工交接政策', () => {
   ]) assert.ok(reviewSkill.includes(required), `review Skill must include ${required}`);
 });
 
-test('Task Finish 只在产品 run 前触发 finalize 并等待 provider 结果', () => {
-  assert.match(finishSkill, /结果为 `awaiting-human` 时停止，不进入产品 Finish run/);
-  assert.match(finishSkill, /selected `buildr\.task-asset-review@3` provider finalize/);
+test('Task Development 在 handoff 前触发 finalize，Task Finish 不读取 observation', () => {
+  assert.match(developmentSkill, /selected `buildr\.task-asset-review@3` provider ready/);
+  assert.match(developmentSkill, /结果为 `awaiting-human` 时停止，不生成Finish handoff/);
   assert.doesNotMatch(finishSkill, /强信号|Rule\/Skill 候选|轻量资格判断/);
-  assert.match(workspaceSkills, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-asset-review[\s\S]*version: 3[\s\S]*mode: optional/);
+  assert.match(finishSkill, /Finish不读取或finalize asset observation/);
+  assert.match(workspaceSkills, /task-development[\s\S]*requires:[\s\S]*buildr\.task-asset-review[\s\S]*version: 3[\s\S]*mode: optional/);
 });

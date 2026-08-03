@@ -6,7 +6,9 @@ import { registerServiceManifestRepository } from '../infrastructure/filesystem/
 import { registerTaskRecordRepository } from '../infrastructure/filesystem/task-record-repository.mjs';
 import { registerTaskReviewRepository } from '../infrastructure/filesystem/task-review-repository.mjs';
 import { registerTaskVerificationRepository } from '../infrastructure/filesystem/task-verification-repository.mjs';
+import { registerTaskDevelopmentRepository } from '../infrastructure/filesystem/task-development-repository.mjs';
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
+import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerDomainsRuntime } from './domains/runtime.mjs';
 import { registerDomainsWorkspace } from './domains/workspace.mjs';
@@ -31,6 +33,7 @@ import { registerTaskFinishApplication } from './task-finish/task-finish-applica
 import { registerTaskRecordApplication } from './task-record/task-record-application.mjs';
 import { registerTaskReviewApplication } from './task-review/task-review-application.mjs';
 import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
+import { registerTaskDevelopmentApplication } from './task-development/task-development-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
 import { registerTaskEnvironmentLegacyMigration } from './task-environment/legacy-migration.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
@@ -47,7 +50,9 @@ const REGISTRATIONS = [
   registerTaskRecordRepository,
   registerTaskReviewRepository,
   registerTaskVerificationRepository,
+  registerTaskDevelopmentRepository,
   registerTaskEnvironmentRepository,
+  registerContentTargetObserver,
   registerProjectGitObserver,
   registerDomainsComponents,
   registerDomainsCommands,
@@ -71,6 +76,7 @@ const REGISTRATIONS = [
   registerTaskRecordApplication,
   registerTaskReviewApplication,
   registerTaskVerificationApplication,
+  registerTaskDevelopmentApplication,
   registerVerificationApplication,
   registerTaskFinishApplication,
 ];

@@ -48,7 +48,8 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化/更新验证能力声明，或实现任务到达正式验证节点 | `buildr.task-verification/v3` selected provider；不开发测试 |
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
-| 完成已验证任务、自动归档集成并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；产品缺陷退出收尾并返回研发流程 |
+| 在 Planning Review 后推进实现、稳定 Content Target、形成 verification policy、正式 Verification、Task Candidate、Completion Review、风险决定与 handoff | `buildr.task-development/v1` selected provider |
+| 消费 current Development handoff、准备内容等价 carrier、推进 retained target 并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；handoff 或等价性问题返回 Task Development |
 | 提交、拉取、合并、rebase、checkout/switch、reset、推送、发布或其他单项 Git 操作 | `buildr.git-single-operation/v1` selected provider |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
 | 沉淀每次会话必须遵守的约束 | 规则（Rules） |
@@ -122,7 +123,6 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 - root/Organization 规则删除：运行 `buildr rules remove <rule-id> --target <dir>`，同时删除 manifest entry 和规则文件；如只取消注册并保留文件，使用 `--keep-file`。
 - Project/Service 规则分别通过对应目录的 `AGENTS.md` 维护，不使用 Project 或 Service 级 `rules/manifest.yml`。
 - 需要渲染到 Agent runtime 时，运行 `buildr rules render <agent> --scope <workspace-relative-path> --target <dir>`；Codex 原生读取，Claude Code 使用逐 source bridge，Cursor/Qoder/TRAE 使用 scoped vendor rules，TRAE Work/WorkBuddy 使用 root reference bridge。具体路径、reload/UI 前置条件以及 `documented` / `verified` 证据等级见随包 `docs/agent-runtime-adapters.md`；GUI smoke 保持一次性人工 Prompt，不自动点击或抓取应用私有状态。
-
 ### Commands
 
 - Commands 分为三层：workspace `commands/manifest.yml` 与 `commands/**/manifest.yml` 是唯一 catalog definition source，Project `commands.yml` 只保存 requirement references，实际 binary/version/login 属于 user/machine environment。

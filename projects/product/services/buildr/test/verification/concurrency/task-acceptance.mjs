@@ -6,11 +6,12 @@ import process from 'node:process';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { parseSuccessfulJson, processesOverlap, spawnSupervised } from '../../helpers/child-process-supervisor.mjs';
+import { materializeCleanProductSource } from '../../helpers/clean-product-source.mjs';
 
-const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../../..');
-const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
+const SOURCE_PRODUCT_ROOT = path.resolve(import.meta.dirname, '../../..');
 const startedAt = Date.now();
 const fixtureRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-concurrent-task-acceptance-')));
+const { root: PRODUCT_ROOT, cli: BUILDR } = materializeCleanProductSource(SOURCE_PRODUCT_ROOT, path.join(fixtureRoot, 'product-manager'));
 const workspace = path.join(fixtureRoot, 'workspace');
 const appData = path.join(fixtureRoot, 'app-data');
 const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
@@ -282,7 +283,7 @@ try {
 
   summary.targetRace = {
     status: 'owned-by-task-finish-journey',
-    reason: 'Concurrent task acceptance no longer drives the removed caller-authored Finish protocol; v2 target-race recovery is covered by the product executor tests.',
+    reason: 'Concurrent task acceptance no longer drives the removed caller-authored Finish protocol; terminal v2 target-race handoff to Task Development is covered by product executor tests.',
   };
 
   summary.status = 'passed';

@@ -8,7 +8,7 @@
 
 ## 运行结构
 
-- CLI 解析 Workspace/Project/Service manifests、Task Record、Task Environment、Task Review 与 Task Verification 请求，执行确定性 source mutation、render、doctor、package 和 Local App lifecycle。`task environment prepare|inspect|cleanup`、`task review inspect|record` 与 `task verification inspect|record` 都只是各自 Application 的薄适配层；`verification run` 只产生 transient execution，`worktree create|inspect|cleanup` 只适配 Git provider。
+- CLI 解析 Workspace/Project/Service manifests、Task Record、Task Environment、Task Review、Task Verification 与 Task Finish 请求，执行确定性 source mutation、render、doctor、package 和 Local App lifecycle。`task environment prepare|inspect|cleanup`、`task review inspect|record` 与 `task verification inspect|record` 都只是各自 Application 的薄适配层；`verification run` 只产生 transient execution，`worktree create|inspect|cleanup` 只适配 Git provider。P0.5 Task Development 只通过 bundled Skill/internal driver 调用 Application，不公开 CLI；`task finish run|inspect` 只适配 current Development handoff 的固定五阶段交付。
 - Runtime adapter 将受管 Rules、Skills、contributions 和 capability binding evidence 投射到 Agent 原生入口；Project 普通知识和 Service repo 保持源资产，不复制进 runtime。
 - Local App 只监听 loopback，以 Workspace registry 为全局目录，通过 application/domain 层读取和受控管理 Project、Service 与 Task Record，并只读展示 Change。Task 详情的“环境”“审查”“验证”页签分别调用 Task Environment、Task Review 与 Task Verification Application `inspect`；Agent action 只生成受限 prompt，不提供专业 Result mutation API。Task-scoped Change route 复用共享 Resolver 并进入 Planning Review，全局 Change generic review 保持 retained-only；接口不接收任意 filesystem path。
 
@@ -18,8 +18,10 @@
 - Consumer 依赖 capability identity，不依赖 provider Skill id；required/optional 分别产生 blocked/degraded readiness。
 - `task-manager` 提供并默认绑定 `buildr.task-record/v1`；`task-triage` 只在正式持久交付分支 optional 消费，provider 不 ready 不影响讨论或只读分支。
 - `task-environment` 提供并默认绑定 `buildr.task-environment/v1`；正式 workflow 在持久写入前消费它。`task-worktree` 只提供 `buildr.git-worktree-provider/v1`，Environment 按实际 Git scope 组合该 provider。
-- `task-review` 提供并默认绑定唯一 `buildr.task-review/v1`；planning/completion 是动态参数，不注册类型专属 capability 或 provider。`task-asset-review` 的 capability、observation store 和 Task Finish optional dependency 保持独立。
-- `task-verification` 提供并默认绑定 `buildr.task-verification/v3`；Project `verification.yml` v2 是测试能力声明，不进入 capability binding manifest。Skill 负责 applicability 与语义提炼，Task Verification Application 独占 current Result writer/reader。
+- `task-review` 提供并默认绑定唯一 `buildr.task-review/v1`；planning/completion 是动态参数，不注册类型专属 capability 或 provider。`task-asset-review` 的 capability 与 observation store 保持独立，由 Task Development optional 消费并在 handoff 前 finalize，Task Finish 不读取。
+- `task-verification` 提供并默认绑定 `buildr.task-verification/v3`；Project `verification.yml` v2 是测试能力声明，不进入 capability binding manifest。Skill 负责执行与语义提炼，Task Verification Application 独占 current Result writer/reader。
+- `task-development` 提供并默认绑定 `buildr.task-development@1`，required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge，optional 消费 Task Asset Review。它是 Development Receipt、Content Target、verification policy、Task Candidate/generation、gates/decision 与 immutable handoff 的唯一 authority。
+- `task-finish` 继续提供 `buildr.task-finish/v1`，但 required 消费 Task Development 与 Task Environment，只把 current proceed handoff 交给内容等价 carrier adapter；Git 单项 provider 仅对 retained metadata-only handoff optional。
 - OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 contract guard、terminology 和 current knowledge 门禁，不修改上游 Skill source bytes。
 
 ## 数据与完整性
@@ -32,9 +34,11 @@ Environment Receipt 由 `domain/task-environment` closed schema、`application/t
 
 Task Review Result 由 `domain/task-review` closed schema、`application/task-review` 和 filesystem repository 共同维护。唯一 writer 精确拥有 `.buildr/tasks/<task-id>/reviews/planning.yml|completion.yml`，要求 active Task 和明确 target identity，并以同目录临时文件加原子替换保存完整 Result；失败保留旧 slot、另一 slot、Task Record、Environment 与未知 sibling。持久字段不含 revision、current、applicability 或 digest；Application 用调用方提供的当前目标派生 `current / stale / unknown`，并只在公共响应返回 canonical bytes `resultDigest`。Local App 与 CLI 都不直接解析或写 YAML。
 
-Task Verification Result 由 `domain/task-verification` closed schema、`application/task-verification` 和 filesystem repository 共同维护。唯一 writer 精确拥有 `.buildr/tasks/<task-id>/verification.yml`，要求 active Task、明确 target identity、当前 Task/Project/Service scope 和完整事实结果；Application 自行读取、校验并计算 declaration identities，caller 不能注入 digest。Repository 以临时文件、rename、写后回读和失败 rollback 执行整值替换；持久字段不含 stdout/stderr、Environment Receipt、revision/history、applicability、风险或推进决定。Application 在读取时按 target/declaration identity 派生 `current / stale / unknown`；CLI、Local App 和 Finish 都不直接解析或写 YAML。
+Task Verification Result 由 `domain/task-verification` closed schema、`application/task-verification` 和 filesystem repository 共同维护。唯一 writer 精确拥有 `.buildr/tasks/<task-id>/verification.yml`，要求 active Task、明确 Content Target identity、当前 Task/Project/Service scope 和完整事实结果；Application 自行读取、校验并计算 declaration identities，caller 不能注入 digest。Repository 以临时文件、rename、写后回读和失败 rollback 执行整值替换；持久字段不含 Candidate/generation、stdout/stderr、Environment Receipt、revision/history、applicability、风险或推进决定。Application 在读取时按 Content Target/declaration identity 派生 `current / stale / unknown`；CLI、Local App 和 Development 通过同一 reader 消费，Finish 不读取或写入。
 
-Workspace manifest 的 `runtime.node.version` 是实际采用的精确 Node toolchain 声明，属于 Workspace Domain；`package.json#engines.node` 只表达 Buildr 产品兼容范围。Buildr 在本机应用数据目录按 version/platform/arch 管理可恢复 runtime，`init` 首次确定并准备，`sync` 只按声明收敛，`doctor` 只读诊断。CLI、npm、验证、Candidate 和 Finish 均消费同一 Workspace Node identity，不允许 Agent runtime 或普通 `PATH` 重新选择版本。
+Development Receipt 由 `domain/task-development` closed schema、`application/task-development`、filesystem repository 与 Content Target observer port 共同维护。唯一 writer 精确拥有 `.buildr/tasks/<task-id>/development.yml`，只保存 Task ID、Environment 逻辑引用、Task context、Content Target、verification policy、generation/Candidate、gates/decision、append-only handoffs 与时间；不保存 Result 正文、执行日志、本机资源、revision/history/CAS/锁。Repository 使用同目录临时文件、atomic replace、写后回读和 rollback，保留 Task Record、Environment、Review、Verification 与未知 sibling。Git/filesystem observer 只返回逻辑 selector、相对 source path、observer capability 和内容 identity；`.buildr/**`、`.git/**`、worktree/branch/commit/runtime/session 与 Delivery Carrier 不进入 Content Target。
+
+Workspace manifest 的 `runtime.node.version` 是实际采用的精确 Node toolchain 声明，属于 Workspace Domain；`package.json#engines.node` 只表达 Buildr 产品兼容范围。Buildr 在本机应用数据目录按 version/platform/arch 管理可恢复 runtime，`init` 首次确定并准备，`sync` 只按声明收敛，`doctor` 只读诊断。CLI、npm、验证执行和 Finish adapter 消费同一 Workspace Node identity，不允许 Agent runtime 或普通 `PATH` 重新选择版本；Node/Environment identity 不进入通用 Content Target 或 Task Candidate。
 
 ## 验证
 
@@ -42,12 +46,14 @@ Project `verification.yml` 使用 closed `buildr.project-verification/v2`，只�
 
 Production `verification run` 接受显式 Project、capability 列表和 opaque target identity，只运行 command capabilities，并形成 provider-owned transient `buildr.verification-execution/v1`。完整输出、耗时、临时目录、精确授权、Workspace Node/Environment execution binding 与资源诊断只属于 execution evidence；不提供 caller-managed output writer。声明级通用 plan/DAG 已删除；Product selector/registry/DAG 留在 `test/verification`，production 只保留平坦 capability runner、process executor、真实 claim 使用的 coordinated/external resource coordinator 和 evidence cleanup。
 
-Task Verification Application 从 execution evidence 或有界 Agent 事实提炼完整 `buildr.task-verification-result/v1`，并整值写入 current slot。Result 只包含 Task/target/declaration identity、实际 capability 的 `passed / failed` 精炼事实、coverage gaps、`passed / not-passed` 结论与完成时间。中断、非终态 execution 或写入失败不覆盖 current；target 或当前 declaration identity 变化后 inspect 派生 stale。Result 不拥有推进决定、Task 状态、Candidate generation 或 Environment Receipt。
+Task Verification Application 从 execution evidence 或有界 Agent 事实提炼完整 `buildr.task-verification-result/v1`，并整值写入 current slot。Result 只包含 Task/Content Target/declaration identity、实际 capability 的 `passed / failed` 精炼事实、coverage gaps、`passed / not-passed` 结论与完成时间。中断、非终态 execution 或写入失败不覆盖 current；Content Target 或当前 declaration identity 变化后 inspect 派生 stale。Result 不拥有 verification policy、推进决定、Task 状态、Candidate generation、risk 或 handoff。
+
+Task Development 先固定 verification policy，再请求 Task Verification 对稳定 Content Target 执行 Formal Verification。Result facts 完整后才可 freeze Candidate；`not-passed`/coverage gap 不自动禁止 freeze，但没有绑定当前 Result digest 与 Task scope 的风险接受时阻止 `proceed`。Candidate 只绑定 generation、Content Target、Task context 与 policy identity；Completion Review 随后绑定 Candidate，三个 gate 只进入 Development decision/handoff，不进入 Candidate identity。
 
 transient cleanup 只删除系统临时根下、名称和 summary containment 均匹配的 provider-owned run directory。非 transient、symlink、越界或不可证明的 evidence 保留现场。资源协调只处理声明中真实 claim 的 `coordinated / external` 边界；explicit resource 必须精确授权。Buildr 不创建或调度 Agent/task。
 
 ## Task Finish
 
-Task Finish 是产品持有的固定五阶段执行器：`preflight → prepare → verify → deliver → cleanup`。CLI 只公开 `task finish run|inspect`；Application 持有 run store、candidate freeze、产品生成的 resume token 和结果投射，各领域的 OpenSpec convergence、verification、Git 与 runtime install 仍由确定性服务执行。Finish 完成交付后只向 Task Environment 提交各 scope 的 delivery identity/cleanup eligibility；可信 retained Environment Manager 按 Task-owned resource/provider facts 停止资源并调用 Git provider cleanup，不做 controller handoff，Finish 不再直接删除 worktree 或写第二份环境结论。
+Task Finish 是产品持有的固定五阶段窄 adapter：`preflight → prepare → verify → deliver → cleanup`。CLI 只公开 `task finish run|inspect`；Application 从 Task Development Application 读取 current proceed handoff，run/result v2 绑定 handoff、Candidate、Content Target、Environment、目标与 Delivery Carrier。它不建立 Finish Receipt、第二 Candidate/decision store 或旧 v1 reader。
 
-`preflight` 从 canonical Workspace 读取 Project 登记事实，并通过 Task Environment Application 读取 Change、knowledge、verification declaration、Git 交付内容与 execution binding；它一次聚合廉价只读问题。`prepare` 完成现有 Finish 的 mutation 并冻结 opaque target identity；`verify` 只通过 Task Verification Application 复用 current Result，或在单 Project command 能力的窄条件下执行一次、提炼并整值记录。产品缺陷、语义冲突和验证失败是终态；Finish 不创建 Candidate generation、不改 Task 状态，也不保存风险推进决定。客户端直接替换旧执行器，继续使用唯一 canonical run store，不创建第二 Verification store 或兼容 writer。
+`preflight` 只聚合 handoff、ready Environment、retained target 与 adapter readiness；`prepare` 只对相同 bytes 做精确 staging/commit 并确认 fast-forward ancestor；`verify` 只调用 Development 的 carrier-equivalence read model，`formalVerificationExecutions` 固定为 0。`deliver` 只做普通 fast-forward/push，以及 retained source 更新后的适用 sync/install/Doctor；`cleanup` 只把 delivery identity交给 Task Environment。Finish 不解析/收敛 Change/current knowledge、不生成 runtime内容、不 rebase、不运行 Formal Verification/Completion Review、不创建 Candidate/generation、不决定 proceed/blocked 或风险。carrier不等价、target race或 handoff漂移均 terminal 返回 Task Development；只有 carrier/expected target 未变的 lease、network、retained 或 cleanup 外部暂态问题可 resume。

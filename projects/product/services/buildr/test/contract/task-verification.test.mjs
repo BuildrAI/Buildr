@@ -19,6 +19,8 @@ const gitOpsSkill = read('package/targets/workspace/skills/buildr/git-ops/SKILL.
 const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
 const finishExecutor = read('src/application/task-finish/task-finish-product-executor.mjs');
+const developmentSkill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
+const developmentApplication = read('src/application/task-development/task-development-application.mjs');
 const openSpecApplySidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
@@ -64,7 +66,7 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
     '--declaration-root <task-environment-root>',
     '不自动创建测试、脚本、CI 或框架', '原子替换', '不得覆盖原 current',
     'portable current Result', 'buildr verification cleanup --summary <file>',
-    '不用于设计测试框架或开发测试，后者使用 project-testing',
+    '不用于设计测试框架、开发测试、生成 Candidate 或 Finish',
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);
@@ -93,8 +95,9 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.match(server, /runtime\.inspectTaskVerification/);
   assert.doesNotMatch(server, /recordTaskVerification/);
   assert.doesNotMatch(taskDetail, /node:fs|YAML|recordTaskVerification|writeFileSync/);
-  assert.match(finishExecutor, /runtime\.inspectTaskVerification/);
-  assert.match(finishExecutor, /runtime\.recordTaskVerification/);
+  assert.match(developmentApplication, /runtime\.inspectTaskVerification/);
+  assert.doesNotMatch(developmentApplication, /runtime\.recordTaskVerification/);
+  assert.doesNotMatch(finishExecutor, /inspectTaskVerification|recordTaskVerification/);
   assert.doesNotMatch(finishExecutor, /verificationSummary|requiredAssurance|candidate-fingerprint|--level/);
 });
 
@@ -133,7 +136,7 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   const packagedSkill = packageManifest.builtins.skills.find((item) => item.id === 'task-verification');
   assert.deepEqual(packagedSkill.provides, [{ capability: 'buildr.task-verification', version: 3 }]);
   assert.match(packagedSkill.description, /current 验证结果/);
-  assert.match(packagedSkill.description, /Task Verification Result/);
+  assert.match(packagedSkill.description, /稳定 Content Target/);
   assert.equal(packageManifest.workspaceFiles.some((entry) => String(entry).includes('task-verification/v2.md')), false);
   assert.equal(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-verification-v1.md')), false);
   assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('task-verification/v3.md')));
@@ -144,26 +147,28 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   assert.deepEqual(workspaceManifest.skills.find((item) => item.id === 'task-verification').provides, [{ capability: 'buildr.task-verification', version: 3 }]);
 });
 
-test('Task Finish 保持五阶段薄 consumer 并复用唯一 Result authority', () => {
+test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification authority', () => {
   assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 5000);
   assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 90);
   for (const required of [
     'buildr.task-finish/v1', 'preflight → prepare → verify → deliver → cleanup',
-    'current Verification Result digest/applicability', 'requiredForDelivery',
-    '多 Project、Agent capability', 'formalVerificationExecutions <= 1',
+    'current formal Development handoff', '内容等价 Delivery Carrier',
+    'formalVerificationExecutions` 必须为 `0`', '不发起 Task Verification',
   ]) assert.ok(finishSkill.includes(required), `Finish Skill must include ${required}`);
-  assert.match(finishContract, /buildr\.task-verification\/v3/);
-  assert.match(finishContract, /同一 Application inspect/);
-  assert.match(finishContract, /原子 record Result/);
+  assert.match(finishContract, /Development Application 的只读 carrier-equivalence check/);
+  assert.match(finishContract, /formal Verification executions 必须为 `0`/);
+  assert.match(finishContract, /不得选择 capability、运行测试或 record Verification Result/);
+  assert.doesNotMatch(finishContract, /task-verification\/v3|requiredForDelivery/);
   assert.doesNotMatch(finishSkill, /--required-assurance|--verification-summary/);
-  assert.doesNotMatch(finishContract, /affected.*candidate.*assurance/);
+  assert.doesNotMatch(finishSkill, /current Verification Result|requiredForDelivery|formalVerificationExecutions <= 1/);
 });
 
-test('OpenSpec apply 和 Task Finish 保持单一 convergence 事务边界', () => {
+test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调用', () => {
   for (const required of ['不把 delta 预写入 canonical specs', 'buildr openspec converge', '不得手工恢复 canonical', '选择内部 stage']) {
     assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve convergence boundary: ${required}`);
   }
-  assert.match(finishExecutor, /'openspec', 'converge'/);
+  assert.match(developmentSkill, /current knowledge 维护，以及每个关联 Change 的 sync\/archive/);
+  assert.doesNotMatch(finishExecutor, /openspec|converge|archive/);
   assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);
 });
 

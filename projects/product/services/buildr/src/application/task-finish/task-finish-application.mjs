@@ -10,7 +10,7 @@ function inputError(code, message, action) {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--change', '--project', '--agent', '--target-branch', '--remote', '--resume', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--resume', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -42,9 +42,13 @@ export function registerTaskFinishApplication(runtime) {
       if (!task) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --task <task-id>.', 'run');
       const context = runtime.resolveTaskEnvironmentExecution(root, task);
       if (!context?.ready) throw inputError(context?.blocked?.code || 'task_finish.not_task_environment', context?.blocked?.message || 'Task Finish requires a ready Task Environment.', 'run');
-      const change = optionValue(command.args, '--change', null);
-      const project = optionValue(command.args, '--project', null);
-      if (!project) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --project; --change is required only for Change candidates.', 'run');
+      const development = runtime.inspectTaskDevelopment(root, task);
+      const receipt = development.development?.receipt;
+      if (!receipt || development.development?.applicability?.handoff !== 'current') throw inputError('task_finish.development_handoff_not_current', 'Task Finish requires a current formal Development handoff.', 'run');
+      const handoff = [...receipt.handoffs].reverse().find((item) => item.candidate.identity === receipt.candidate?.identity
+        && JSON.stringify(item.gates) === JSON.stringify(receipt.gates)
+        && JSON.stringify(item.decision) === JSON.stringify(receipt.decision));
+      if (!handoff) throw inputError('task_finish.development_handoff_not_current', 'Task Finish could not resolve the current immutable Development handoff snapshot.', 'run');
       const repository = context.repositories?.find((entry) => entry.selector === 'workspace') || context.repositories?.[0] || {};
       const workspaceNodeIdentity = runtime.workspaceNodeExecution(context.validationRoot).identity?.digest;
       if (!workspaceNodeIdentity) throw inputError('task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.', 'run');
@@ -58,9 +62,9 @@ export function registerTaskFinishApplication(runtime) {
         resumeToken,
         identity: {
           task,
-          candidateKind: change ? 'change' : 'code-only',
-          change,
-          project,
+          handoffIdentity: handoff.identity,
+          candidateIdentity: handoff.candidate.identity,
+          contentTargetIdentity: handoff.candidate.contentTargetIdentity,
           agent: requestedAgent,
           targetBranch,
           remote: optionValue(command.args, '--remote', repository.remote || null),

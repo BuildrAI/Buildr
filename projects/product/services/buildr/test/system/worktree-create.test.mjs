@@ -7,8 +7,11 @@ import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const cli = path.join(productRoot, 'bin', 'buildr.mjs');
+import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
+
+const sourceProductRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const managerFixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-clean-environment-manager-'));
+const { root: productRoot, cli } = materializeCleanProductSource(sourceProductRoot, path.join(managerFixtureRoot, 'product'));
 
 function command(cwd, executable, args, expectedStatus = 0, env = process.env) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8', env });
@@ -42,6 +45,7 @@ function fixtureWorkspace(_t, { git = true } = {}) {
 
 after(() => {
   for (const root of fixtureWorkspaces.values()) fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(managerFixtureRoot, { recursive: true, force: true });
 });
 
 function createTask(root, taskId) {

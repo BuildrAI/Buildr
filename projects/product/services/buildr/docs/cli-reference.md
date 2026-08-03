@@ -40,7 +40,7 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 | `buildr verification run --project <code> --capability <id> ... --target-identity <identity>` | 使用 Workspace 受管 Node 执行 Project `verification.yml` v2 中显式选择的 command capabilities。需要绑定正式环境时同时传 `--environment <task-id> --workspace <canonical-workspace>`；返回 transient `buildr.verification-execution/v1`，不选择 applicability、不写 current Result。 |
 | `buildr task create\|inspect\|update\|complete\|abandon` | 在明确的 canonical Workspace 中维护 `.buildr/tasks/<task-id>/task.yml`。五个动作只管理 Task ID、标题、意图、Project/Service scope、0..N 个限定 Change、顶层状态和简短终态结果；不记录 Task Environment、研发、审查、验证、Git、Finish、Board 或复盘事实。`create` 要求显式 title/intent，`update` 只接受字段 setter 与引用 add/remove，`complete` 要求 summary 并以 `--no-change` 明确无变更完成，terminal Task 不可重开。全部动作支持 `--target` 和 `--json`。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值记录 `.buildr/tasks/<task-id>/verification.yml` 的 current Verification Result。Application 自行解析 Task scope 与 declaration identity；`inspect` 可带当前 `--target-identity` 派生 applicability，`record` 接收完整能力事实、coverage gaps 和结论，不执行测试。目标声明尚在 Task Environment 时可传 `--declaration-root <task-environment-root>`；Application 只接受该 Task 当前 ready Environment 的精确根，且不把路径写入 Result。 |
-| `buildr task finish run\|inspect` | 首次 `run` 明确接收 `--task <task-id> --project <code>`，并要求该 Task 的 Environment ready；`--change` 仅 Change 候选必需，省略时创建 code-only 候选。两类候选单次执行 `preflight → prepare → verify → deliver → cleanup`。Finish 读取 Environment execution result，交付完成后把 delivery identity 交给 Environment，并消费其 cleanup 结果；不直接清理 worktree 或动态资源。 |
+| `buildr task finish run\|inspect` | 首次`run`接收`--task <task-id>`并要求ready Environment与current Development handoff；可显式给出agent、target branch/remote，但不接受Project/Change、Candidate/generation或Verification authority输入。固定执行`preflight → prepare → verify → deliver → cleanup`：只准备内容等价carrier、fast-forward/普通push、retained sync/install/doctor并把cleanup交给Environment；formal Verification次数固定为0。P0.5不公开`task development`CLI，bundled`task-development`Skill通过内部driver调用唯一Application。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
@@ -100,7 +100,7 @@ Buildr 不 render 或安装 Commands，不保存 binary、token、cookie、登�
 
 没有声明或没有适用能力时，doctor 不产生 finding，Task Verification 在具体 Result 中报告 coverage gap，不自动开发测试。文件存在时 doctor 只做 closed schema、路径、scope 与资源引用校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”时，Agent 只从真实 build scripts、CI、文档和已有测试发现候选，并由用户确认 Project policy。
 
-current Task Result 使用 `buildr.task-verification-result/v1`，只保存 Task/target/declaration identity、实际能力的 `passed / failed` 精炼事实、coverage gaps、`passed / not-passed` 结论与完成时间。Task Verification Application 是唯一 writer/reader，record 做完整原子替换，inspect 按当前 target 和 declarations 派生 `current / stale / unknown`。Result 不保存 stdout/stderr、临时路径、Environment Receipt、风险接受、任务推进状态、history 或 Candidate generation。
+current Task Result使用`buildr.task-verification-result/v1`，只保存Task/stable Content Target/declaration identity、实际能力的`passed / failed`精炼事实、coverage gaps、`passed / not-passed`结论与完成时间。Task Verification Application是唯一writer/reader，record做完整原子替换，inspect按当前Content Target和declarations派生`current / stale / unknown`。Task Development只消费Application read model，Finish不直接消费Result。Result不保存stdout/stderr、临时路径、Environment Receipt、风险接受、任务推进状态、history或Candidate generation。
 
 ## Skill capability contracts
 
@@ -113,7 +113,7 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 - `buildr package check/build`：产品 package 维护和构建，不是普通 workspace 日常命令。
 - `buildr openspec converge <change> --project <project> --target <workspace> --json`：Buildr OpenSpec 单一收敛事务；内部完成规划、隔离 strict validation、条件式 canonical 应用、写后确认与 `archive --skip-specs`，结果为 `passed|blocked|recovery-unprovable`。
 - `buildr openspec audit <change> --project <project> --target <workspace> --json`：只读比较唯一回执中的 before/expected 与当前实际摘要；不写 canonical、回执或归档。
-- 历史 baseline、阶段 check、sync plan/apply 命令只在旧调用命中时执行并返回结构化弃用信息；新 Task Finish 和新 Change 不再消费或写入对应阶段 sidecar，达到零当前消费者与兼容窗口后删除。
+- 历史 baseline、阶段 check、sync plan/apply 命令只在旧调用命中时执行并返回结构化弃用信息；Task Development只使用当前OpenSpec converge/archive与current knowledge能力，Task Finish不消费任何Change命令或sidecar。达到零当前消费者与兼容窗口后删除旧入口。
 - `buildr bootstrap guide`：产品 Skill 不可用时的纯文本兜底说明。
 
 这些命令可执行，但不构成普通用户需要记忆的 public asset API。

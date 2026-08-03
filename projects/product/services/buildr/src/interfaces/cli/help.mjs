@@ -26,7 +26,7 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]');
     console.error('  buildr task review <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]');
     console.error('  buildr task verification <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]');
-    console.error('  buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--json]');
+    console.error('  buildr task finish run --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--json]');
     console.error('  buildr task finish inspect --run <id> [--target <canonical-workspace>] [--json]');
     console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
@@ -84,7 +84,7 @@ export function registerCommandHelp(runtime) {
       '  task create/inspect/update/complete/abandon  管理 canonical Workspace 的最小 Task Record。',
       '  task review          读取或记录完整 Task Review Result；不执行语义审查。',
       '  task verification    读取或记录一个 Task current Verification Result；不自动执行测试。',
-      '  task finish          产品执行 preflight → prepare → verify → deliver → cleanup 固定收尾。',
+      '  task finish          消费 current Development handoff，执行 carrier prepare → equivalence → deliver → cleanup。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
       '  runtime list         列出 Buildr 支持的 Agent runtime adapter。',
@@ -488,7 +488,7 @@ export function registerCommandHelp(runtime) {
 
   const finishHelp = {
     inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '--run。', exclusive: '无。', surface: 'canonical Workspace 中的 durable finish run，只读。', effects: '无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。' },
-    run: { usage: 'Usage: buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '首次运行需要 --task、--project 与 ready Task Environment；--change 只对 Change 候选必需，省略时创建 code-only 候选；target branch 默认来自 Git provider start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'Task Environment 执行根、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver；verify 只经 Task Verification Application 读取或补齐 current Result；完成交付后向 Environment 提交 cleanup eligibility。' },
+    run: { usage: 'Usage: buildr task finish run --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '首次运行需要 --task、current formal Development handoff 与 ready Task Environment；target branch 默认来自 Git carrier provider start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌；不接受 --project/--change 或调用方 Candidate/Result。', surface: 'Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 handoff preflight、内容等价 carrier prepare/equivalence、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。' },
   };
   for (const [action, help] of Object.entries(finishHelp)) HELP_TOPICS[`task finish ${action}`] = [
     help.usage,

@@ -1,6 +1,6 @@
 ---
 name: current-knowledge-maintenance
-description: OpenSpec Change 创建、修订、实现、同步或 Task Finish 前需要评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 概览、架构、流程、Service 说明和术语追上已确认当前事实时使用。
+description: OpenSpec Change 创建、修订、实现、同步或 Task Development 形成稳定 Content Target 前需要评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 概览、架构、流程、Service 说明和术语追上已确认当前事实时使用。
 ---
 
 # 当前认知维护
@@ -13,7 +13,7 @@ description: OpenSpec Change 创建、修订、实现、同步或 Task Finish �
 
 - `assess`：proposal/update 阶段评估影响；
 - `reconcile`：实现完成、最终验证前收敛内容；
-- `inspect`：Task Finish 验证前检查，不把检查冒充验证 execution；
+- `inspect`：Task Development 观察稳定 Content Target 前检查，不把检查冒充验证 execution；
 - `maintain`：没有 Change 时，让 current knowledge 追上已由权威来源确认的既有事实。
 
 事实顺序是 canonical specs → 当前实现与 registries → active Change artifacts → 已确认 evidence/用户决定 → archive provenance。冲突时先修正权威资产，再更新解释性 knowledge。
@@ -60,7 +60,7 @@ Brief 固定表达：一句话摘要、背景与问题、目标/非目标、受�
 
 ## 5. Inspect
 
-核对所有 impacts 已处理、Brief 与权威 artifacts 一致、current knowledge 对应当前 tree、terminology 无 unresolved，并返回 `aligned|not-applicable`；可以建议 fallback reconcile，但不得静默修改后继续沿用旧验证证据。任何 unresolved 必须阻塞 sync、verification、archive、Git integration、push 和 cleanup。
+核对所有 impacts 已处理、Brief 与权威 artifacts 一致、current knowledge 对应当前 tree、terminology 无 unresolved，并返回 `aligned|not-applicable`；可以建议 fallback reconcile，但不得静默修改后继续沿用旧验证证据。任何 unresolved 必须阻塞 stable Content Target、verification、archive、Git integration、push 和 cleanup。
 
 ## 6. Maintain
 

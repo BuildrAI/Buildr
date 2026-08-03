@@ -4,12 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
+import { pathToFileURL } from 'node:url';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 
-const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
-const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
+const SOURCE_PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
+const managerFixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-clean-migration-manager-'));
+const { root: PRODUCT_ROOT, cli: BUILDR } = materializeCleanProductSource(SOURCE_PRODUCT_ROOT, path.join(managerFixtureRoot, 'product'));
+const { createRuntime } = await import(pathToFileURL(path.join(PRODUCT_ROOT, 'src', 'application', 'compose-runtime.mjs')).href);
+
+after(() => fs.rmSync(managerFixtureRoot, { recursive: true, force: true }));
 
 function command(cwd, executable, args) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });

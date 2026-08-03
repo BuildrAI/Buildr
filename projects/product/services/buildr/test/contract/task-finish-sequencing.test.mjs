@@ -10,27 +10,34 @@ const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
+const development = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
+const developmentContract = read('package/targets/workspace/skills/contracts/buildr/task-development/v1.md');
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
 const packageManifest = read('package/manifest.yml');
 const workspaceSkills = read('package/targets/workspace/skills/manifest.yml');
 
-test('Task Finish 新协议只有五阶段且产品缺陷退出收尾', () => {
+test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 carrier equivalence', () => {
   assert.deepEqual(FINISH_PHASES, ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
-  assert.match(finish, /“修复产品缺陷”不是收尾动作/);
-  assert.match(finish, /不得在当前 run 修改实现.*重新验证/);
+  assert.match(finish, /current formal Development handoff/);
+  assert.match(finish, /formalVerificationExecutions.*0/);
   assert.match(finish, /nextWorkflow: task-development/);
+  const executor = read('src/application/task-finish/task-finish-product-executor.mjs');
+  for (const forbidden of ['recordTaskVerification', 'recordTaskReview', 'freezeTaskDevelopmentCandidate', 'openspec', 'runtime-resync', 'target-rebase']) assert.equal(executor.includes(forbidden), false, forbidden);
+  assert.doesNotMatch(executor, /runtime\.cleanupTaskEnvironment\(/);
+  assert.match(executor, /cleanupThroughRetainedController/);
 });
 
-test('Task Finish 产品 run 必须消费 Task Environment，metadata-only Git 交接仍保持窄边界', () => {
-  for (const phrase of ['code-only', 'metadata-only', 'buildr.git-single-operation@1', 'git add -A', 'git-single-operation-handoff']) assert.ok(finishContract.includes(phrase), phrase);
-  assert.match(finish, /--task <task-id> --project <project-code> \[--change <change-id>\]/);
-  assert.match(finish, /task environment inspect <task-id> --target <canonical-workspace>/);
-  assert.match(finishContract, /普通产品 run 必须消费 `buildr\.task-environment\/v1`/);
+test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {
+  for (const phrase of ['Content Target', 'verification policy', 'Candidate identity', 'append-only immutable', 'buildr.task-development-receipt/v1']) assert.ok(developmentContract.includes(phrase), phrase);
+  assert.match(development, /第一版没有公共 Development CLI/);
+  assert.match(finish, /buildr task finish run --task <task-id> --target/);
+  assert.doesNotMatch(finish, /--project|--change/);
   for (const manifest of [packageManifest, workspaceSkills]) {
+    assert.match(manifest, /task-development[\s\S]*provides:[\s\S]*buildr\.task-development[\s\S]*version: 1/);
+    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-development[\s\S]*version: 1[\s\S]*mode: required/);
     assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-environment[\s\S]*version: 1[\s\S]*mode: required/);
-    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.git-single-operation[\s\S]*version: 1[\s\S]*mode: optional/);
   }
 });
 

@@ -1,6 +1,6 @@
 ---
 name: task-asset-review
-description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时，持续收集可能影响长期 Rule、Skill、capability Contract 或产品能力的轻量信号；用户要求复盘或沉淀，或 Task Finish 触发 finalize 时也使用。负责 observation、资格审查、人工决定和新任务交接，不保存完整轨迹。
+description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时，持续收集可能影响长期 Rule、Skill、capability Contract 或产品能力的轻量信号；用户要求复盘或沉淀，或 Task Development 在正式 handoff 前触发 finalize 时也使用。负责 observation、资格审查、人工决定和新任务交接，不保存完整轨迹。
 ---
 
 # Task Asset Review Skill
@@ -10,7 +10,7 @@ description: 非简单 Workspace 任务开始探索、设计、诊断、实现�
 ## 职责边界
 
 - 本 Skill 拥有：是否创建 observation、信号筛选、持续更新、资格审查、候选分类、人工决定、去向交接和删除条件。
-- `task-finish` 只触发 selected provider 的 finalize 并等待结果；不得汇总信号、执行资格门禁或判断最终沉淀什么。
+- `task-development` 只触发 selected provider 的 finalize 并等待结果；不得汇总信号、执行资格门禁或判断最终沉淀什么。`task-finish` 不读取 observation，也不触发 finalize。
 - accept 只建立 identity 不同的新任务 handoff。后续必须重新进入 `task-triage`，原任务保持结束。
 - provider optional 不可用或本地状态不可写时，报告降级；不得用最终总结伪造持久化 observation。
 - 不为简单问答、翻译、单一稳定事实查询或没有 Workspace 资产含义的对话机械创建 observation。
@@ -79,7 +79,7 @@ node "<skill-root>/scripts/observation.mjs" observe \
 
 ## Finalize 与资格审查
 
-显式任务结束、Task Finish finalize 或用户要求复盘时：
+显式任务结束、Task Development 形成正式 handoff 前或用户要求复盘时：
 
 1. 读取当前 observation 和仍可访问的最终证据。
 2. 重建简短执行轮廓，选择高信息量转折点；不逐条复述。
@@ -195,11 +195,11 @@ product follow-up 重新使用 `task-triage` 和 OpenSpec。新 proposal 或 des
 4. observation identity 与共享 inbox 状态；
 5. 明确的 accept/reject 请求。
 
-Task Finish 调用时返回：
+Task Development 调用时返回：
 
 - `no-observation`：没有 observation，继续收尾；
 - `discarded`：provider 已证明没有合格且未解决候选并删除 observation，继续收尾；
-- `awaiting-human`：必须在 cleanup 前等待决定；
+- `awaiting-human`：必须在正式 handoff 前等待决定；
 - degradation：provider/helper 不可用，报告原因但不伪造结果。
 
 不要把“收尾”解释为长期资产写入授权，也不要在原任务自动实施接受的建议。当前任务已经完成同一项修改时应 discard observation，不得倒序 accept 并把原任务伪装成新 handoff。

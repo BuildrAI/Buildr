@@ -200,10 +200,59 @@
 
 ## 验证结果（Verification Result）
 
-- 定义：`.buildr/tasks/<task-id>/verification.yml` 中唯一 current、可移植、Git 跟踪的 closed `buildr.task-verification-result/v1`，绑定 Task、明确 target、实际 declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间。
-- 适用范围：CLI、Skill、Local App 与临时 Finish consumer 共用的 current verification authority；读取时按 target/declaration identity 派生 `current / stale / unknown`。
+- 定义：`.buildr/tasks/<task-id>/verification.yml` 中唯一 current、可移植、Git 跟踪的 closed `buildr.task-verification-result/v1`，绑定 Task、stable Content Target 与实际 declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间。
+- 适用范围：CLI、Skill、Local App 与 Task Development 共用的 current verification authority；读取时按 Content Target/declaration identity 派生 `current / stale / unknown`。Task Finish不直接消费该Result。
 - 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
+
+## 任务研发（Task Development）
+
+- 定义：正式Task在ready Environment中把已完成内容、Task Intent/scope/Change context、verification policy和专业Result收敛为Task Candidate、推进决定与Finish handoff的唯一生命周期authority。
+- 适用范围：Planning Review之后的实现收敛、stable Content Target、formal Verification编排、Candidate freeze、Completion Review消费、风险决定和handoff。
+- 避免混用：不是Task Core、通用planner/状态机、测试执行器、Git交付器或Task顶层状态writer；第一版没有公共CLI或Local App专业投影。
+- 来源：[Task Development specification](../specs/task-development/spec.md)
+
+## 研发回执（Development Receipt）
+
+- 定义：Task Development Application在`.buildr/tasks/<task-id>/development.yml`维护的唯一closed current记录，保存Environment逻辑引用、最小Task context、Content Target、verification policy、current Candidate/generation、最小gates、decision与不可变handoff snapshots。
+- 适用范围：Development inspect/observe/policy/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
+- 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接读写文件。
+- 来源：[Task Development capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-development/v1.md)
+
+## 内容目标（Content Target）
+
+- 定义：Development完成内容修改、测试开发、current knowledge和Change最终处置后，对ready Environment全部Task scopes的逻辑source path与current bytes形成的稳定聚合identity。
+- 适用范围：formal Task Verification的target，以及Task Candidate的内容输入和Delivery Carrier等价核验。
+- 避免混用：不等于Git HEAD、commit、branch、worktree、Environment、runtime projection、Agent session或Task lifecycle metadata；Git tracking/staging/commit载体变化不改变相同bytes的Content Target。
+- 来源：[Task Development specification](../specs/task-development/spec.md)
+
+## 任务候选（Task Candidate）
+
+- 定义：Task Development在formal Verification facts完整后冻结的Task级交付候选身份与正整数generation；identity只绑定完整Content Target、Task Intent/scope/Change context、verification policy decision和generation。
+- 适用范围：Completion Review target、Development decision/handoff和Finish carrier equivalence。
+- 避免混用：不等于Product Candidate verification、Git commit/branch/worktree、Task Environment、runtime projection、Agent session、tarball或其他Delivery Carrier；不包含Planning、Verification或Completion Result identity。
+- 来源：[Task Development specification](../specs/task-development/spec.md)
+
+## Product Candidate verification
+
+- 定义：Project Testing为完整产品候选组织的验证目标/编排；Buildr Product当前由`test:candidate`执行完整registry回归。
+- 适用范围：显式完整Project回归、Release前检查或用户要求的full validation。
+- 避免混用：不是Task Candidate，也不会自动创建Candidate/generation、Completion Review或Development handoff。
+- 来源：[Verification ownership](../../docs/verification-ownership.md)
+
+## Delivery Carrier
+
+- 定义：Task Finish为实际交付承载Task Candidate的commit、branch、tarball、安装包或其他载体。
+- 适用范围：Finish prepare/deliver与retained transition；当前Buildr自举adapter使用Git commit。
+- 避免混用：Carrier identity可以变化，但只有内容与Candidate绑定的Content Target可证明等价时才能继续；Finish不得借carrier准备修改交付内容。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## Development handoff
+
+- 定义：Development Receipt中append-only不可变快照，绑定Task Candidate、Change dispositions、Planning/Verification/Completion最小Result引用、`proceed`决定和精确用户风险接受。
+- 适用范围：Task Finish的唯一正式输入；上游事实漂移时旧snapshot保留但不再current。
+- 避免混用：不是Candidate identity、Finish execution plan或完整Result history；Finish不能自行从Task/Git/Change/Result拼装handoff。
+- 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 方案审查（Planning Review）
 
@@ -222,7 +271,7 @@
 ## 交付目标前进（Target Advancement）
 
 - 定义：Task Finish 交付 Candidate 期间，目标分支、远端 ref 或非 Git 目标位置出现了新的目标事实。
-- 适用范围：Finish 判断能否在 Candidate 内容/语义和 evidence 仍适用时自主完成机械交付变换，或必须停止并让用户决定是否返回 Development。
+- 适用范围：P0.5 Finish adapter发现目标与carrier preparation时观察的ref不一致后，终止当前run并返回Development重新建立stable target、Verification、Candidate与handoff。
 - 避免混用：不是 Task Environment 漂移或自动 source update 事件；retained target 前进本身不要求任务 checkout、Review 或 Verification 自动更新。
 - 来源：[Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
 
@@ -235,10 +284,10 @@
 
 ## 收尾就绪候选（Finish-ready Candidate）
 
-- 定义：研发实现、自审、必要审查、开发验证和 current knowledge 已完成，允许 Task Finish 只做确定性收敛、冻结、最终保证、交付与清理的候选。
-- 适用范围：Task Finish 的输入资格与研发/收尾责任边界。
-- 避免混用：不等于“代码大致完成”，也不表示 Task Finish 可以修复产品缺陷；收尾发现产品缺陷时必须退出并回到研发、审查和测试验证流程。
-- 来源：[Task Finish 执行规范](../specs/task-finish-execution/spec.md)
+- 定义：已有current正式Development handoff的Task Candidate；实现、current knowledge、Change处置、formal Verification、Completion Review、推进与风险决定均已在Development闭合。
+- 适用范围：Task Finish的输入资格与Development/Finish责任边界。
+- 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、运行formal Verification、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
+- 来源：[Task Finish执行规范](../specs/task-finish-execution/spec.md)
 
 ## Workspace Node Version
 

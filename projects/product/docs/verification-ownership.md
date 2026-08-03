@@ -18,15 +18,15 @@ Buildr 不把所有验证强行塞进 Unit、Component、Integration。每个 re
 
 ## 2. 直接测试层
 
-Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-03，稳定直接入口如下：
+Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，稳定直接入口如下：
 
 | 层次 | 入口与规模 | 主要内容 | 环境 | 并发 |
 | --- | --- | --- | --- | --- |
-| Unit | `test:unit`；`test/unit` 18 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
-| Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，少量临时目录 | `node:test`；外层 `cpu-heavy=2` |
-| Contract | `test:contract`；`test/contract` 19 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口一致性 | Product tree；部分 case 启动开发 CLI、Git 和临时目录，因此聚合边界记为低成本 Integration | `node:test` 文件并发；外层 `cpu-heavy=2` |
-| Integration | `test:integration`；`test/integration` 22 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；无浏览器 | `node:test` 文件并发；外层 `workspace-heavy=3` |
-| System | `test:system`；`test/system` 22 个文件 | 完整 CLI、Workspace、Local App runtime、Task/Environment/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
+| Unit | `test:unit`；`test/unit` 19 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，不穿过真实 filesystem 或进程边界 | `node:test`；外层 `cpu-heavy=2` |
+| Contract | `test:contract`；`test/contract` 20 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口一致性 | Product tree；部分 case 启动开发 CLI、Git 和临时目录，因此聚合边界记为低成本 Integration | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Integration | `test:integration`；`test/integration` 25 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；无浏览器 | `node:test` 文件并发；外层 `workspace-heavy=3` |
+| System | `test:system`；`test/system` 23 个文件 | 完整 CLI、Workspace、Local App runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
 | Recovery | `test:integration:candidate:recovery` 1 个文件；Release 专项 2 个文件 | builtin 迁移/恢复与 Git release convergence | 多轮临时 Workspace/Git | `workspace-saturating`；默认最多 2 路，受限 CI 1 路 |
 | Browser System | `test:browser:smoke` 1 个文件、6 个 selector | Local App shell、Task、Project、Service、Change 的真实浏览器 Journey | 本机 Chrome/Chromium、Playwright Core、loopback server、临时 Workspace | 不进入 Product Full；`verification.yml` 的 `browser` 协调资源容量为 1 |
 
@@ -93,7 +93,7 @@ Task Verification 不登记 39 个内部 step，也不为用户设计测试。`v
 | `product.delivery` | `test:changed -- --base origin/dev`；同一 plan 的 affected 或必要 full | 是 |
 | `product.full-regression` | `npm run test:candidate`；显式核心完整回归 | 否 |
 | `product.browser-smoke` | Local App paths 适用时运行真实浏览器 Journey | 适用时是 |
-| `product.archive-lifecycle` | Change active/archive 与 Task Finish 顺序 | 否 |
+| `product.archive-lifecycle` | Change active/archive 与 Task Development/Finish authority 顺序 | 否 |
 | `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |
 
 Agent 的正式验证流程是：
@@ -101,12 +101,13 @@ Agent 的正式验证流程是：
 ```text
 Task scope + changed paths + implementation risk
         ↓ 开发期 Quick / changed / focus
-冻结 target，读取 verification.yml 的 scope / applicability / authorization
+Development 稳定 Content Target 并固定 verification policy
         ↓ 执行适用 capability，保存 transient evidence
-记录一个绑定 target identity 与 declaration identities 的 current Result
+记录一个绑定 Content Target 与 declaration identities 的 current Result
+        ↓ Verification facts 完整后冻结 Task Candidate
 ```
 
-完整 stdout/stderr、临时路径、环境启动和 timing 属于 transient Execution Evidence；portable Result 只保留目标、声明、实际能力事实、coverage gap 和整体结论。target 或 declaration 变化后 Result 派生为 stale。Task Finish 与 Local App 复用同一个 Result reader。
+完整 stdout/stderr、临时路径、环境启动和 timing 属于 transient Execution Evidence；portable Result 只保留 Content Target、声明、实际能力事实、coverage gap 和整体结论。target 或 declaration 变化后 Result 派生为 stale。Task Development 与 Local App 复用同一个 Result reader；Task Finish 不读取或发起 Verification。
 
 ## 7. 当前性能根因与本轮结论
 

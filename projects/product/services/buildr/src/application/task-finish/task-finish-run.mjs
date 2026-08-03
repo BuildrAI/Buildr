@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v1';
-export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v1';
+export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v2';
+export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v2';
 export const FINISH_PHASES = Object.freeze(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
 export const FINISH_PHASE_STATUSES = Object.freeze(['pending', 'running', 'passed', 'blocked', 'failed', 'not-applicable']);
 
@@ -84,11 +84,16 @@ export function releaseFinishTargetLease(lease) {
   } catch { /* retain malformed or replaced lease */ }
 }
 
-export function writeFinishCompletion({ root, runId, completion }) {
+export function finishCompletionFile(root, runId) {
   if (!RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish completion run id is invalid.');
   const directory = path.join(canonicalFinishWorkspaceRoot(root), '.buildr', 'task-finish', 'completed');
   const file = path.resolve(directory, `${runId}.json`);
   if (path.dirname(file) !== directory) throw new Error('Task Finish completion path escapes the canonical completion root.');
+  return file;
+}
+
+export function writeFinishCompletion({ root, runId, completion }) {
+  const file = finishCompletionFile(root, runId);
   atomicWriteJson(file, completion);
   return file;
 }
@@ -112,19 +117,15 @@ function phase(id) {
 }
 
 function normalizeIdentity(input) {
-  const required = ['task', 'project', 'agent', 'targetBranch', 'environmentRoot', 'workspaceRoot'];
+  const required = ['task', 'handoffIdentity', 'candidateIdentity', 'contentTargetIdentity', 'agent', 'targetBranch', 'environmentRoot', 'workspaceRoot'];
   for (const field of required) {
     if (typeof input?.[field] !== 'string' || !input[field].trim()) throw new Error(`Task Finish requires ${field}.`);
   }
-  const candidateKind = input.candidateKind || (typeof input.change === 'string' && input.change.trim() ? 'change' : 'code-only');
-  if (!['change', 'code-only'].includes(candidateKind)) throw new Error(`Unsupported Task Finish candidate kind: ${candidateKind}`);
-  if (candidateKind === 'change' && (typeof input.change !== 'string' || !input.change.trim())) throw new Error('Task Finish change candidate requires change.');
-  if (candidateKind === 'code-only' && input.change != null && String(input.change).trim()) throw new Error('Task Finish code-only candidate cannot declare change.');
   return {
     task: input.task,
-    candidateKind,
-    change: candidateKind === 'change' ? input.change : null,
-    project: input.project,
+    handoffIdentity: input.handoffIdentity,
+    candidateIdentity: input.candidateIdentity,
+    contentTargetIdentity: input.contentTargetIdentity,
     agent: input.agent,
     targetBranch: input.targetBranch,
     remote: typeof input.remote === 'string' && input.remote.trim() ? input.remote : null,
@@ -155,8 +156,8 @@ export function createFinishRun({ root, identity, runId = null, clock = Date.now
     updatedAt: createdAt,
     completedAt: null,
     invocations: 0,
-    frozenCandidate: null,
-    verification: null,
+    deliveryCarrier: null,
+    equivalence: null,
     delivery: null,
     completion: null,
     resume: null,
@@ -175,11 +176,7 @@ export function readFinishRun({ root, runId }) {
   if (!Array.isArray(run.phases) || FINISH_PHASES.some((id) => !run.phases.some((item) => item.id === id))) {
     throw new Error(`Task Finish run has an invalid phase model: ${runId}`);
   }
-  if (!['change', 'code-only'].includes(run.identity?.candidateKind)
-    || (run.identity.candidateKind === 'change' && (typeof run.identity.change !== 'string' || !run.identity.change))
-    || (run.identity.candidateKind === 'code-only' && run.identity.change !== null)) {
-    throw new Error(`Task Finish run has an invalid candidate identity: ${runId}`);
-  }
+  for (const field of ['handoffIdentity', 'candidateIdentity', 'contentTargetIdentity']) if (typeof run.identity?.[field] !== 'string' || !run.identity[field]) throw new Error(`Task Finish run has an invalid Development handoff identity: ${runId}`);
   return run;
 }
 
@@ -254,47 +251,17 @@ function resumeTokenFor(run, phaseId, failure) {
     schemaVersion: FINISH_RUN_SCHEMA,
     runId: run.runId,
     identity: run.identityDigest,
-    candidate: run.frozenCandidate?.identity || null,
+    carrier: run.deliveryCarrier?.identity || null,
     phase: phaseId,
     failure: { code: failure.code, operation: failure.operation, diagnostic: failure.diagnostic?.digest || null },
   });
 }
 
 function applyPhaseOutput(run, phaseId, output) {
-  if (phaseId === 'prepare' && output?.frozenCandidate) run.frozenCandidate = clone(output.frozenCandidate);
-  if (phaseId === 'verify' && output?.verification) run.verification = clone(output.verification);
+  if (phaseId === 'prepare' && output?.deliveryCarrier) run.deliveryCarrier = clone(output.deliveryCarrier);
+  if (phaseId === 'verify' && output?.equivalence) run.equivalence = clone(output.equivalence);
   if (phaseId === 'deliver' && output?.delivery) run.delivery = clone(output.delivery);
   if (phaseId === 'cleanup' && output?.completion) run.completion = clone(output.completion);
-}
-
-function isTargetRaceRecovery(run) {
-  return run.status === 'blocked'
-    && run.resume?.phase === 'deliver'
-    && run.primaryFailure?.phase === 'deliver'
-    && run.primaryFailure?.code === 'task-finish.target-race';
-}
-
-function resetCandidateDependentPhase(item) {
-  item.status = 'pending';
-  item.startedAt = null;
-  item.completedAt = null;
-  item.inputIdentity = null;
-  item.outputIdentity = null;
-  item.checks = [];
-  item.operations = [];
-  item.observations = [];
-  item.output = null;
-  item.failure = null;
-}
-
-function resetTargetRaceCandidate(run) {
-  for (const phaseId of ['prepare', 'verify', 'deliver', 'cleanup']) {
-    resetCandidateDependentPhase(run.phases.find((item) => item.id === phaseId));
-  }
-  run.frozenCandidate = null;
-  run.verification = null;
-  run.delivery = null;
-  run.completion = null;
 }
 
 export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now }) {
@@ -303,7 +270,6 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
   if (run.status === 'blocked' && (!resumeToken || resumeToken !== run.resume?.token)) {
     throw new Error('Task Finish blocked run requires its current product-generated resume token.');
   }
-  if (isTargetRaceRecovery(run)) resetTargetRaceCandidate(run);
   run.invocations += 1;
   run.status = 'active';
   run.primaryFailure = null;
@@ -358,7 +324,7 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
         phase: phaseId,
         token: resumeTokenFor(run, phaseId, normalized.failure),
         generatedAt: now(clock),
-        candidateIdentity: run.frozenCandidate?.identity || null,
+        carrierIdentity: run.deliveryCarrier?.identity || null,
       };
       writeRun(root, run, clock);
       return finishResult(run, clock);
@@ -399,13 +365,15 @@ function publicPhase(item) {
 export function finishResult(run, clock = Date.now) {
   const phaseDurationMs = run.phases.reduce((total, item) => total + (item.durationMs || 0), 0);
   const commandObservations = run.phases.reduce((total, item) => total + (item.operations || []).filter((entry) => entry.kind === 'command').length, 0);
-  const formalVerificationExecutions = Number(run.verification?.executions || 0);
+  const formalVerificationExecutions = 0;
   const result = {
     schemaVersion: FINISH_RESULT_SCHEMA,
     runId: run.runId,
     status: run.status,
     identity: clone(run.identity),
-    candidate: clone(run.frozenCandidate),
+    handoff: { identity: run.identity.handoffIdentity },
+    candidate: { identity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity },
+    carrier: clone(run.deliveryCarrier),
     phases: run.phases.map(publicPhase),
     primaryFailure: clone(run.primaryFailure),
     resume: clone(run.resume),
@@ -413,7 +381,7 @@ export function finishResult(run, clock = Date.now) {
       ? (run.primaryFailure?.failureClass === 'upstream-candidate-defect' ? 'task-development' : 'task-finish-investigation')
       : null,
     nextAction: run.status === 'blocked' ? 'repeat-task-finish-run-with-resume-token' : null,
-    verification: clone(run.verification),
+    equivalence: clone(run.equivalence),
     delivery: clone(run.delivery),
     completion: clone(run.completion),
     metrics: {

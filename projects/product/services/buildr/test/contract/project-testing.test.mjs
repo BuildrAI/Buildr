@@ -65,7 +65,7 @@ test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(taskTriage, /selected `buildr\.task-verification\/v3` provider/);
   assert.match(buildrSkill, /开发测试 \| `project-testing` Skill；无 Result、Receipt 或 provider contract/);
   assert.match(buildrSkill, /运行已有测试.*`buildr\.task-verification\/v3` selected provider；不开发测试/);
-  assert.match(taskVerificationSkill, /不用于设计测试框架或开发测试，后者使用 project-testing/);
+  assert.match(taskVerificationSkill, /不用于设计测试框架[、或]开发测试[\s\S]*project-testing/);
   assert.match(taskVerificationSkill, /入口命名、成本或分层不合理时报告测试建设 gap/);
   assert.match(taskVerificationReference, /一个 Project 入口内部可以拥有多个 Project-specific step/);
 });

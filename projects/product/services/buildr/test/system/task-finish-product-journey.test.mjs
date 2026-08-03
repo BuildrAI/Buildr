@@ -75,7 +75,7 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
     executionRoots: [environmentRoot],
     allowedExecutionRoots: [environmentRoot],
     controller: { identity: 'fixture-controller', adapter: 'codex' },
-    controllerInvocation: { command: path.join(retained, 'projects', 'product', 'buildr'), argsPrefix: [], kind: 'stable-controller' },
+    controllerInvocation: { command: path.join(retained, 'projects', 'product', 'buildr'), argsPrefix: [], sourceRoot: path.join(retained, 'projects', 'product', 'services', 'buildr'), kind: 'stable-controller' },
     cliInvocation: {
       command: path.join(environmentRoot, 'projects', 'product', 'buildr'),
       argsPrefix: [],
@@ -96,10 +96,11 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
   return {
     resolveTaskEnvironmentExecution: execution,
     prepareTaskEnvironment: () => { throw new Error('Candidate runtime must not mutate Task Environment authority.'); },
-    cleanupTaskEnvironment: async (workspaceRoot, taskId, authorization) => {
+    cleanupTaskEnvironment: async () => { throw new Error('Candidate runtime must not clean its Task Environment.'); },
+    cleanupTaskEnvironmentThroughRetainedController: async (workspaceRoot, taskId, authorization) => {
       assert.equal(path.resolve(workspaceRoot), path.resolve(retained));
       assert.equal(taskId, task);
-      assert.equal(authorization?.type, 'finish');
+      assert.match(authorization?.runId || '', /^[a-z0-9._-]+$/);
       assert.match(authorization?.candidateRef || '', /^[0-9a-f]{40}$/);
       command(retained, 'git', ['worktree', 'remove', '--force', environmentRoot]);
       return { status: 'cleaned', effects: [{ type: 'git-worktree-removed', path: environmentRoot }], diagnostic: null };
@@ -107,30 +108,15 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
   };
 }
 
-function taskVerificationFixture(task) {
-  let current = null;
-  const capability = {
-    id: 'product.delivery',
-    scope: { project: 'product', services: [] },
-    invocation: { kind: 'command' },
-    applicability: { paths: ['**'], conditions: ['A delivery target exists'] },
-    requiredForDelivery: true,
-  };
+function taskDevelopmentFixture() {
+  const candidate = { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target', taskContextIdentity: 'sha256-task-context', policyIdentity: 'sha256-policy' };
+  const gates = { planning: { resultDigest: 'sha256-planning' }, verification: { resultDigest: 'sha256-verification' }, completion: { resultDigest: 'sha256-completion' } };
+  const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'ready', risks: [] };
+  const handoff = { identity: 'sha256-handoff', candidate, gates, decision };
+  const receipt = { candidate, gates, decision, handoffs: [handoff] };
   return {
-    readTaskRecordPersistence: () => ({ record: { taskId: task, status: 'active', scope: { projects: ['product'], services: [] } } }),
-    observeTaskVerificationDeclarations: () => [{ project: 'product', valid: true, declaration: { capabilities: [capability] } }],
-    inspectTaskVerification: (_workspaceRoot, _taskId, input = {}) => ({ slot: current ? {
-      present: true,
-      resultDigest: 'sha256-task-verification-result',
-      applicability: { status: current.target.identity === input.targetIdentity ? 'current' : 'stale' },
-      result: current,
-    } : { present: false, result: null, resultDigest: null, applicability: null } }),
-    recordTaskVerification: (_workspaceRoot, taskId, input) => {
-      assert.equal(taskId, task);
-      assert.equal(input.declarationRoot != null, true);
-      current = { target: { identity: input.targetIdentity }, capabilities: input.capabilities, coverageGaps: input.coverageGaps, conclusion: input.conclusion };
-      return { slot: { resultDigest: 'sha256-task-verification-result', applicability: { status: 'current' }, result: current } };
-    },
+    inspectTaskDevelopment: () => ({ development: { receipt, applicability: { handoff: 'current' } } }),
+    assertTaskDevelopmentCarrier: () => ({ status: 'equivalent', development: { receipt, applicability: { handoff: 'current' } }, effects: [] }),
   };
 }
 
@@ -145,6 +131,8 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  fs.mkdirSync(path.join(seed, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(seed, '.buildr', 'tracked-metadata.json'), 'baseline metadata\n');
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
   const changeRoot = path.join(seed, 'projects', 'product', 'openspec', 'changes', 'finish-journey');
   fs.mkdirSync(path.join(changeRoot, '.buildr'), { recursive: true });
@@ -154,6 +142,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# Task Finish journey\n');
   command(seed, 'git', ['add', '-A']);
+  command(seed, 'git', ['add', '-f', '.buildr/tracked-metadata.json']);
   command(seed, 'git', ['commit', '-m', 'baseline']);
   command(fixture, 'git', ['init', '--bare', remote]);
   command(seed, 'git', ['remote', 'add', 'origin', remote]);
@@ -166,8 +155,10 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   const environmentRoot = path.join(retained, '.worktrees', task);
   command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
   fs.writeFileSync(path.join(environmentRoot, 'feature.txt'), 'finished candidate\n');
+  fs.writeFileSync(path.join(environmentRoot, '.buildr', 'tracked-metadata.json'), 'task-local metadata\n');
   command(environmentRoot, 'git', ['add', 'feature.txt']);
   command(environmentRoot, 'git', ['commit', '-m', 'implement candidate']);
+  command(environmentRoot, 'git', ['add', '-f', '.buildr/tracked-metadata.json']);
 
   const openspec = path.join(fixture, 'bin', 'openspec');
   writeExecutable(openspec, fakeOpenSpec);
@@ -176,23 +167,9 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   const originalPath = process.env.PATH;
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
-  let planningAllowed = false;
   const runtime = {
     ...taskEnvironmentFixture({ task, environmentRoot, retained }),
-    ...taskVerificationFixture(task),
-    readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
-    parseOpenSpecChangeDelta: () => {
-      assert.equal(planningAllowed, true, 'archived preflight must rely on convergence audit instead of rebuilding a pure plan');
-      return { capabilities: new Map() };
-    },
-    parseOpenSpecProposalCapabilities: () => {
-      assert.equal(planningAllowed, true, 'archived preflight must not reinterpret New Capabilities against converged canonical specs');
-      return { modified: new Set(['task-finish-execution']), new: new Set() };
-    },
-    createOpenSpecContractResult: () => ({ findings: [], conflicts: [] }),
-    detectOpenSpecActiveConflicts: () => {},
-    validateOpenSpecProposalAlignment: () => {},
-    finishOpenSpecContractResult: (result) => ({ ...result, ok: true }),
+    ...taskDevelopmentFixture(),
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
   };
   const run = createFinishRun({
@@ -200,8 +177,9 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
     runId: 'product-journey',
     identity: {
       task,
-      change: 'finish-journey',
-      project: 'product',
+      handoffIdentity: 'sha256-handoff',
+      candidateIdentity: 'sha256-candidate',
+      contentTargetIdentity: 'sha256-content-target',
       agent: 'codex',
       targetBranch: 'dev',
       remote: 'origin',
@@ -210,16 +188,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
       workspaceNodeIdentity: 'sha256-workspace-node',
     },
   });
-  const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot, openspecCommand: openspec });
-  const activeChange = path.join(environmentRoot, 'projects', 'product', 'openspec', 'changes', 'finish-journey');
-  const archivedChange = path.join(environmentRoot, 'projects', 'product', 'openspec', 'changes', 'archive', '2026-07-28-finish-journey');
-  fs.mkdirSync(path.dirname(archivedChange), { recursive: true });
-  fs.renameSync(activeChange, archivedChange);
-  const archivedPreflight = await handlers.preflight({ run });
-  assert.equal(archivedPreflight.status, 'passed', JSON.stringify(archivedPreflight, null, 2));
-  assert.equal(archivedPreflight.checks.find((item) => item.check === 'openspec-plan')?.code, 'task-finish.openspec-plan-converged');
-  planningAllowed = true;
-  fs.renameSync(archivedChange, activeChange);
+  const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot });
   const result = await executeFinishRun({ root: environmentRoot, run, handlers });
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
@@ -229,12 +198,12 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   assert.equal(result.metrics.canonicalCliInvocations, 1);
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
-  assert.equal(result.metrics.formalVerificationExecutions, 1);
+  assert.equal(result.metrics.formalVerificationExecutions, 0);
   assert.equal(fs.existsSync(environmentRoot), false);
-  assert.equal(fs.existsSync(path.join(retained, 'projects', 'product', 'openspec', 'changes', 'finish-journey')), false);
-  assert.equal(fs.existsSync(path.join(retained, 'projects', 'product', 'openspec', 'changes', 'archive', 'finish-journey')), true);
-  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.candidate.head);
-  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.candidate.head);
+  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.carrier.head);
+  assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:.buildr/tracked-metadata.json`]), 'baseline metadata');
+  assert.equal(result.carrier.changedPaths.includes('.buildr/tracked-metadata.json'), false);
   assert.equal(fs.existsSync(result.completion.receipt), true);
 });
 
@@ -279,10 +248,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
     ...taskEnvironmentFixture({ task, environmentRoot, retained }),
-    ...taskVerificationFixture(task),
-    readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
-    parseOpenSpecChangeDelta: () => { throw new Error('OpenSpec delta parser must not run'); },
-    parseOpenSpecProposalCapabilities: () => { throw new Error('OpenSpec proposal parser must not run'); },
+    ...taskDevelopmentFixture(),
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
   };
   const run = createFinishRun({
@@ -290,9 +256,9 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
     runId: 'product-code-only-journey',
     identity: {
       task,
-      candidateKind: 'code-only',
-      change: null,
-      project: 'product',
+      handoffIdentity: 'sha256-handoff',
+      candidateIdentity: 'sha256-candidate',
+      contentTargetIdentity: 'sha256-content-target',
       agent: 'codex',
       targetBranch: 'dev',
       remote: 'origin',
@@ -301,27 +267,23 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
       workspaceNodeIdentity: 'sha256-workspace-node',
     },
   });
-  const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot, openspecCommand: path.join(fixture, 'must-not-run-openspec') });
+  const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot });
   const result = await executeFinishRun({ root: environmentRoot, run, handlers });
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
-  assert.equal(result.identity.candidateKind, 'code-only');
-  assert.equal(result.identity.change, null);
-  assert.equal(result.candidate.task, task);
-  assert.equal(result.candidate.candidateKind, 'code-only');
-  assert.equal(result.candidate.change, null);
+  assert.equal(result.handoff.identity, 'sha256-handoff');
+  assert.equal(result.candidate.identity, 'sha256-candidate');
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
   ]);
   const operations = result.phases.flatMap((phase) => phase.operations);
   assert.equal(operations.some((operation) => operation.id?.includes('openspec') || operation.args?.includes('openspec')), false);
-  assert.deepEqual(operations.filter((operation) => operation.id?.startsWith('deliver-local-app-')).map((operation) => operation.id), ['deliver-local-app-install', 'deliver-local-app-install-check']);
+  assert.deepEqual(operations.filter((operation) => operation.id?.startsWith('deliver-local-app-')).map((operation) => operation.id), ['deliver-local-app-install']);
   assert.equal(result.delivery.localAppDelivery.status, 'passed');
-  assert.equal(result.delivery.localAppDelivery.checkoutHead, result.candidate.head);
   assert.equal(fs.existsSync(environmentRoot), false);
-  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.candidate.head);
+  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
   const completion = JSON.parse(fs.readFileSync(result.completion.receipt, 'utf8'));
-  assert.equal(completion.candidateKind, 'code-only');
-  assert.equal(completion.change, null);
-  assert.equal(completion.workspaceNodeIdentity, 'sha256-workspace-node');
+  assert.equal(completion.handoffIdentity, 'sha256-handoff');
+  assert.equal(completion.candidateIdentity, 'sha256-candidate');
+  assert.equal(completion.contentTargetIdentity, 'sha256-content-target');
 });

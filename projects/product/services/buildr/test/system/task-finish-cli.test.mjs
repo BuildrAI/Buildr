@@ -20,7 +20,7 @@ function create(root, runId = 'current-inspect') {
     root,
     runId,
     identity: {
-      task: runId, change: 'finish-current', project: 'product', agent: 'codex', targetBranch: 'dev', remote: null,
+      task: runId, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: null,
       environmentRoot: root, workspaceRoot: root,
     },
   });
@@ -32,7 +32,7 @@ test('task finish inspect 只暴露当前固定五阶段', (t) => {
   const inspected = spawnSync(process.execPath, [cli, 'task', 'finish', 'inspect', '--run', 'current-inspect', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(inspected.status, 0, inspected.stderr);
   const result = JSON.parse(inspected.stdout);
-  assert.equal(result.schemaVersion, 'buildr.task-finish-result/v1');
+  assert.equal(result.schemaVersion, 'buildr.task-finish-result/v2');
   assert.deepEqual(result.phases.map((phase) => phase.id), ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
@@ -59,9 +59,10 @@ test('当前客户端拒绝旧 action 与 caller-authored 协议参数', (t) => 
   const root = fixture(t);
   for (const args of [
     ['advance', '--run', 'old'],
-    ['run', '--change', 'change', '--project', 'product', '--fingerprint', 'prepare=caller-proof'],
-    ['run', '--change', 'change', '--project', 'product', '--recovery', '{}'],
-    ['run', '--change', 'change', '--project', 'product', '--repair-authorization', '{}'],
+    ['run', '--task', 'task', '--project', 'product'],
+    ['run', '--task', 'task', '--change', 'change'],
+    ['run', '--task', 'task', '--recovery', '{}'],
+    ['run', '--task', 'task', '--repair-authorization', '{}'],
   ]) {
     const result = spawnSync(process.execPath, [cli, 'task', 'finish', ...args, '--target', root, '--json'], { encoding: 'utf8' });
     assert.equal(result.status, 2, result.stderr || result.stdout);
@@ -73,13 +74,13 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   const initialized = spawnSync(process.execPath, [cli, 'init', '--target', root, '--name', 'finish-cli', '--description', 'Task Finish CLI fixture', '--profile', 'team'], { encoding: 'utf8' });
   assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
 
-  const missingTask = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--change', 'finish-current', '--project', 'product', '--target', root, '--json'], { encoding: 'utf8' });
+  const missingTask = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(missingTask.status, 2, missingTask.stderr || missingTask.stdout);
   assert.equal(JSON.parse(missingTask.stdout).error.code, 'task_finish.missing_parameter');
 
   const created = spawnSync(process.execPath, [cli, 'task', 'create', 'finish-cli-task', '--title', 'Finish CLI Task', '--intent', '验证 Task Environment 门禁', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(created.status, 0, created.stderr || created.stdout);
-  const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--change', 'finish-current', '--project', 'product', '--target', root, '--json'], { encoding: 'utf8' });
+  const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(rejected.status, 2, rejected.stderr || rejected.stdout);
   assert.equal(JSON.parse(rejected.stdout).error.code, 'task_environment_no_receipt');
 
@@ -90,7 +91,8 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   const helpText = `${runHelp.stdout}\n${inspectHelp.stdout}`;
   assert.match(helpText, /task finish run/);
   assert.match(helpText, /task finish inspect/);
-  assert.match(helpText, /--task <task-id> --project <code> \[--change <id>\]/);
-  assert.match(helpText, /--change 只对 Change 候选必需/);
+  assert.match(helpText, /--task <task-id> \[--agent <agent>\]/);
+  assert.match(helpText, /current formal Development handoff/);
+  assert.doesNotMatch(helpText, /Usage:[^\n]*(?:--project|--change)/);
   assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);
 });

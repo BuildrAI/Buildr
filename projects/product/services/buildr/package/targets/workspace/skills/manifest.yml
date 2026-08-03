@@ -33,10 +33,14 @@ contracts:
     version: 3
     path: contracts/buildr/task-verification/v3.md
     description: 执行 Project 已声明的验证能力，并维护 Task-scoped portable current Verification Result。
+  - id: buildr.task-development
+    version: 1
+    path: contracts/buildr/task-development/v1.md
+    description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
-    description: 通过固定五阶段执行器完成已具备收尾资格候选的交付，不在收尾中修复产品缺陷。
+    description: 消费 current Development handoff，准备内容等价 carrier、推进目标并清理 Environment。
   - id: buildr.task-asset-review
     version: 3
     path: contracts/buildr/task-asset-review/v3.md
@@ -82,6 +86,9 @@ bindings:
   - capability: buildr.task-verification
     version: 3
     provider: task-verification
+  - capability: buildr.task-development
+    version: 1
+    provider: task-development
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
@@ -194,7 +201,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-asset-review
     source: buildr
     path: buildr/task-asset-review
-    description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时持续收集轻量资产信号，用户要求复盘或沉淀，或 Task Finish 触发 finalize 时使用。
+    description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时持续收集轻量资产信号，用户要求复盘或沉淀，或 Task Development 在正式 handoff 前触发 finalize 时使用。
     enabled: true
     required: false
     state: installed
@@ -236,7 +243,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-verification
     source: buildr
     path: buildr/task-verification
-    description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者实现型任务到达正式验证节点、Task Finish 需要核对或补齐 Task Verification Result 时使用；不用于设计测试框架或开发测试，后者使用 project-testing。
+    description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish。
     enabled: true
     required: false
     state: installed
@@ -245,12 +252,45 @@ skills:
     provides:
       - capability: buildr.task-verification
         version: 3
+  - id: task-development
+    assetIdentity: buildr:skill:task-development
+    sourceIdentity: package:workspace:buildr/task-development
+    source: buildr
+    path: buildr/task-development
+    description: 正式实现任务在 Planning Review 后推进开发、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、完成 Completion Review、记录风险决定或生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+    enabled: true
+    required: false
+    state: installed
+    runtimes: [claude-code, codex, cursor, qoder, trae, trae-work, workbuddy]
+    runtimePath: task-development
+    provides:
+      - capability: buildr.task-development
+        version: 1
+    requires:
+      - capability: buildr.task-record
+        version: 1
+        mode: required
+      - capability: buildr.task-environment
+        version: 1
+        mode: required
+      - capability: buildr.task-review
+        version: 1
+        mode: required
+      - capability: buildr.task-verification
+        version: 3
+        mode: required
+      - capability: buildr.current-knowledge-maintenance
+        version: 2
+        mode: required
+      - capability: buildr.task-asset-review
+        version: 3
+        mode: optional
   - id: task-finish
     assetIdentity: buildr:skill:task-finish
     sourceIdentity: package:workspace:buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求“收尾”或交付已验证的 Change/code-only 候选时使用；retained metadata-only 可安全交接 Git 单项操作，产品缺陷返回研发流程。
+    description: 用户要求“收尾”或交付已有 current formal Development handoff 时使用；只准备内容等价 carrier、推进 retained target 并清理 Environment，handoff/Candidate/Result 问题返回 Task Development。
     enabled: true
     required: false
     state: installed
@@ -260,14 +300,14 @@ skills:
       - capability: buildr.task-finish
         version: 1
     requires:
+      - capability: buildr.task-development
+        version: 1
+        mode: required
       - capability: buildr.task-environment
         version: 1
         mode: required
       - capability: buildr.git-single-operation
         version: 1
-        mode: optional
-      - capability: buildr.task-asset-review
-        version: 3
         mode: optional
   - id: terminology-governance
     assetIdentity: buildr:skill:terminology-governance

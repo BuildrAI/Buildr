@@ -1,6 +1,6 @@
 ---
 name: task-verification
-description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者实现型任务到达正式验证节点、Task Finish 需要核对或补齐 Task Verification Result 时使用；不用于设计测试框架或开发测试，后者使用 project-testing。
+description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish。
 ---
 
 # Task Verification Skill
@@ -91,9 +91,9 @@ Result 只回答 target、采用的 declarations、实际执行能力及事实�
 
 完整测试失败且 evidence 完整时可以形成 `not-passed` Result；execution 中断、输出不完整、结论未形成或 Application 写入失败时不得覆盖原 current。Repository 的整值原子替换和 rollback 由 Application 负责，Agent 不补写 sibling store。
 
-## 5. Finish consumer 与清理
+## 5. Development consumer 与清理
 
-Task Finish 先通过同一 Application inspect。只有 current、passed 且覆盖全部适用 `requiredForDelivery` 能力时才能复用；否则临时 adapter 最多执行一次可确定的 command capability 集合并 record。多 Project、Agent capability 或无法判定适用性时，先由本 Skill完成正式 Result，Finish 不创建新的 lifecycle authority。
+Task Development 通过同一 Application inspect Result 的 target/declaration applicability，并对照独立 verification policy 检查 required facts 或 coverage gaps。Result 可以是完整的 `not-passed`；是否继续由 Development 记录用户风险决定。Task Finish 不读取、解释、补跑或记录 Result，只消费 formal Development handoff。
 
 portable Result 形成且没有其他 consumer 后，使用 evidence 返回的精确 summary 清理 transient run：
 

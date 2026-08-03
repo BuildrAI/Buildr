@@ -44,15 +44,18 @@ test('task-review 动态审查范围、真实 method，并在中断时不写 Res
   assert.doesNotMatch(skill, /buildr verification run|buildr task finish run|git commit|git push|revision:/);
 });
 
-test('Task Review 与资产审查 authority 独立，Task Finish 依赖保持不变', () => {
+test('Task Review 与资产审查 authority 独立，专业依赖迁移到 Task Development', () => {
   const manifest = YAML.parse(read('package/manifest.yml'));
   const review = manifest.builtins.skills.find((item) => item.id === 'task-review');
   const assetReview = manifest.builtins.skills.find((item) => item.id === 'task-asset-review');
+  const development = manifest.builtins.skills.find((item) => item.id === 'task-development');
   const finish = manifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.deepEqual(review.provides, [{ capability: 'buildr.task-review', version: 1 }]);
   assert.deepEqual(assetReview.provides, [{ capability: 'buildr.task-asset-review', version: 3 }]);
+  assert.equal(development.requires.some((item) => item.capability === 'buildr.task-review' && item.version === 1 && item.mode === 'required'), true);
+  assert.equal(development.requires.some((item) => item.capability === 'buildr.task-asset-review' && item.version === 3 && item.mode === 'optional'), true);
   assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-review'), false);
-  assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-asset-review' && item.version === 3 && item.mode === 'optional'), true);
+  assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-asset-review'), false);
   assert.match(read('package/targets/workspace/skills/buildr/task-review/SKILL.md'), /不取代 `task-asset-review`/);
   assert.match(read('package/targets/workspace/skills/buildr/task-asset-review/SKILL.md'), /buildr\.task-asset-review\/v3/);
 });

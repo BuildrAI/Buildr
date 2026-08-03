@@ -35,25 +35,43 @@ test('terminology 与 current knowledge contracts 具有稳定 identity 和固�
   assert.match(read(knowledgeV2), /`maintain` 不得创建该 sidecar/);
 });
 
-test('默认 providers 与 bindings 可解析，Task Finish 直接依赖 Task Environment', () => {
+test('默认 providers 与 bindings 可解析，Development 承接专业依赖且 Finish 只消费 handoff', () => {
   const graph = resolveSkillCapabilityGraph(WORKSPACE_TARGET, null, { runtime: 'codex' });
   const knowledge = graph.consumers.find((item) => item.consumer === 'current-knowledge-maintenance');
+  const development = graph.consumers.find((item) => item.consumer === 'task-development');
   const finish = graph.consumers.find((item) => item.consumer === 'task-finish');
   assert.ok(knowledge);
   assert.equal(knowledge.readiness, 'ready');
   assert.equal(knowledge.dependencies[0].selectedProvider.id, 'terminology-governance');
+  assert.deepEqual(development.dependencies.map((item) => [item.capability, item.mode]), [
+    ['buildr.task-record', 'required'],
+    ['buildr.task-environment', 'required'],
+    ['buildr.task-review', 'required'],
+    ['buildr.task-verification', 'required'],
+    ['buildr.current-knowledge-maintenance', 'required'],
+    ['buildr.task-asset-review', 'optional'],
+  ]);
   assert.deepEqual(finish.dependencies.map((item) => [item.capability, item.mode]), [
+    ['buildr.task-development', 'required'],
     ['buildr.task-environment', 'required'],
     ['buildr.git-single-operation', 'optional'],
-    ['buildr.task-asset-review', 'optional'],
   ]);
   assert.equal(finish.readiness, 'ready');
   const packageManifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const packagedDevelopment = packageManifest.builtins.skills.find((item) => item.id === 'task-development');
   const packagedFinish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
+  assert.deepEqual(packagedDevelopment.requires, [
+    { capability: 'buildr.task-record', version: 1, mode: 'required' },
+    { capability: 'buildr.task-environment', version: 1, mode: 'required' },
+    { capability: 'buildr.task-review', version: 1, mode: 'required' },
+    { capability: 'buildr.task-verification', version: 3, mode: 'required' },
+    { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'required' },
+    { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
+  ]);
   assert.deepEqual(packagedFinish.requires, [
+    { capability: 'buildr.task-development', version: 1, mode: 'required' },
     { capability: 'buildr.task-environment', version: 1, mode: 'required' },
     { capability: 'buildr.git-single-operation', version: 1, mode: 'optional' },
-    { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
   ]);
   const triage = graph.consumers.find((item) => item.consumer === 'task-triage');
   assert.equal(triage.readiness, 'ready');
