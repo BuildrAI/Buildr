@@ -1,0 +1,63 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: introduce-project-testing-guidance
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/introduce-project-testing-guidance/brief.md
+    reason: 正式 Change 需要说明 Project Testing、Task Verification 和首版验收占位的边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-project-testing-guidance/proposal.md
+      - openspec/changes/introduce-project-testing-guidance/design.md
+      - openspec/changes/introduce-project-testing-guidance/specs/project-testing-guidance/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 需要定义 Project Testing 及其与 Task Verification、Acceptance 和 System 的边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-project-testing-guidance/design.md
+      - openspec/changes/introduce-project-testing-guidance/specs/project-testing-guidance/spec.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: 当前能力入口需要增加无状态 Project Testing 指导及其与正式 Task Verification 的交接
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-project-testing-guidance/specs/agent-task-workflows/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 将新增随包 project-testing Skill 并更新测试能力声明指导
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-project-testing-guidance/specs/project-testing-guidance/spec.md
+      - openspec/changes/introduce-project-testing-guidance/specs/project-test-capabilities/spec.md
+  - type: technical-architecture
+    target: docs/verification-ownership.md
+    reason: Buildr 自举实践文档需要从后续计划收敛为已实现的 Project Testing 与 Task Verification 分工
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-project-testing-guidance/design.md
+      - openspec/changes/introduce-project-testing-guidance/specs/project-testing-guidance/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Project Testing
+    - Task Verification
+    - Development Test
+    - Acceptance Test
+    - Static Conformance
+    - Unit
+    - Component
+    - Integration
+    - System
+  canonicalTerms: 项目测试（Project Testing）、任务验证（Task Verification）、研发测试（Development Test）、验收测试（Acceptance Test）、静态符合性（Static Conformance）、单元测试边界（Unit Test Boundary）、组件测试边界（Component Test Boundary）、集成测试边界（Integration Test Boundary）、系统测试边界（System Test Boundary）
+  changedAssets:
+    - openspec/knowledge/glossary.md
+    - openspec/knowledge/overview.md
+    - openspec/knowledge/services/buildr.md
+    - docs/verification-ownership.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/changes/introduce-project-testing-guidance/design.md
+    - openspec/changes/introduce-project-testing-guidance/specs/project-testing-guidance/spec.md
+unresolvedItems: []

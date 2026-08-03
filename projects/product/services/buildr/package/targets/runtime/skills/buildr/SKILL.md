@@ -13,7 +13,6 @@ Buildr 是为组织和 Agent 构建的工作资产治理系统。
 Buildr workspace 是组织（Organization/Root）资产根；Agent runtime 是面向当前 Agent 的可重建入口。Buildr 不成为另一个 Agent，也不接管 Agent 的理解、推理和任务执行。Buildr 组织并投射 Agent 可发现、可选择、可使用的工作资产，不替 Agent 构造 context window；Agent 根据当前任务发现并选择相关内容，形成任务上下文并推进工作。本机状态和临时提示不由 Buildr 维护。
 
 Agent 使用本 Skill 判断用户意图属于哪类 Buildr 资产，并通过 Buildr CLI 完成维护、诊断和按需渲染。事实状态以 `buildr runtime list --json`、`buildr doctor --agent <agent> --target <dir> --json`、manifest、CLI 帮助和 CLI 错误输出为准。
-
 组织资产先改变源资产（使用 Buildr CLI），再同步 Agent runtime（使用 render/sync）。
 Agent 是 Buildr 功能的默认操作入口。Agent 能在当前工具、权限和安全边界内完成的动作，应先说明必要影响并取得所需授权，再直接执行和验证；不得默认把命令交给用户代为执行。用户明确选择手动方式，或 Agent 因工具不可用、权限、登录态、外部环境等原因无法完成时，再提供准确的手动操作兜底。
 
@@ -45,7 +44,8 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 接入代码仓、服务仓或可执行资产 | 服务（Service） |
 | 复杂、长期、跨批次或有交叉依赖的任务看板、change 关联与持续进度入口 | `task-board` Skill |
 | 非简单 Workspace 任务开始后的轻量资产观察、任务复盘、人工决定和新任务交接 | `buildr.task-asset-review/v3` selected provider；optional 不可用时按 consumer 声明降级 |
-| 运行测试、验证改动、查看 current 验证结果、报告验证耗时、初始化/更新测试能力声明，或实现任务到达验证/完成节点 | `buildr.task-verification/v3` selected provider；用户无需主动点名该能力 |
+| 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
+| 运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化/更新验证能力声明，或实现任务到达正式验证节点 | `buildr.task-verification/v3` selected provider；不开发测试 |
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 完成已验证任务、自动归档集成并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；产品缺陷退出收尾并返回研发流程 |
@@ -72,7 +72,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 - 创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Project 表示业务、产品线、系统或长期工作单元；canonical entity 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`，`source.path` 定位文件系统位置。创建入口是 `buildr project create <code> --name <name> --description <description> --target <dir>`；独立 Git Project 再用 `--repo <url> --remote <name> --integration-branch <branch>` 声明来源，integration branch 是稳定集成目标而非当前 checkout。
 - `currentBranch`、HEAD、dirty、upstream、ahead/behind 和实际 remote URL 由 doctor/app 实时观察，不写入 Domain；分支偏移可能是合法任务状态，任何 checkout、stash、merge 或 remote 修改前都核对任务、clean 状态、ownership 和授权，不盲目纠正。
 - `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr app` 可查看 Project/Git 状态并受控修改 `name`、`description`；新增页面只生成 Agent prompt，不直接创建或 clone。
-- Project 可以按需维护可选 `verification.yml`，声明任意测试能力、成熟度、阶段、覆盖、环境、副作用和授权。缺失时保持 legacy policy discovery；该文件不进入 `capabilities.yml` 或 Service repo。
+- Project 可以按需维护可选 `verification.yml`，使用 closed `buildr.project-verification/v2` 声明已经存在且团队确认可调用的能力 identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求及必要环境/副作用边界。文件缺失或没有适用能力时只形成 coverage gap；不得在声明中加入测试层级、成熟度、阶段、通用 DAG 或借此开发测试。
 
 ### 遗留 Practices
 

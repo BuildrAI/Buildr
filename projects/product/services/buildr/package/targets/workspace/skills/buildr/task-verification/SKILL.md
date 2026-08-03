@@ -1,6 +1,6 @@
 ---
 name: task-verification
-description: 用户要求测试、验证、查看 current 验证结果、报告验证耗时、初始化或更新 Project 测试能力声明，或者实现型任务到达验证节点、Task Finish 需要核对或补齐正式 Task Verification Result 时使用；用户无需主动点名本 Skill。
+description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者实现型任务到达正式验证节点、Task Finish 需要核对或补齐 Task Verification Result 时使用；不用于设计测试框架或开发测试，后者使用 project-testing。
 ---
 
 # Task Verification Skill
@@ -42,6 +42,10 @@ current Result 只有在 target 与全部 declaration identities 都 `current` �
 - `coordinated`/`external` resource 只有被真实能力 claim 时才保留；本地临时文件不建设资源平台。
 
 用户明确要求初始化或更新声明时，读取真实 package/POM scripts、CI、AGENTS 和项目文档，只写已确认事实并保留已有稳定 capability id。测试不存在时保持空声明或 coverage gap，不借此任务开发测试。
+
+声明前还必须核对真实测试入口、内部 registry、环境、副作用和可用的近期耗时 evidence；必要且已授权时可以有界运行现有入口取得事实。不得根据 capability id、`fast`、`unit`、目录名或技术栈惯例推断成本与覆盖。
+
+只声明少量、稳定、可独立选择的 capability 接口，不复制每个测试文件或内部 registry step。测试意图、Static/Unit/Component/Integration/System 边界、Quick/Task-affected/Candidate/Release 编排和目标耗时属于 Project Testing 或项目 registry，不进入 `verification.yml` v2。入口命名、成本或分层不合理时报告测试建设 gap，并交给 `project-testing` 或后续实现任务；不要在声明更新中暗中重构测试。
 
 ## 3. 选择并执行已有能力
 

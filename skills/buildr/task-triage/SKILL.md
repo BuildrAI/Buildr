@@ -62,7 +62,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组：实现中选择直接相关的已有 capability 做反馈；全部内容和 review 修订完成后，由 selected `buildr.task-verification/v3` provider 针对明确 target 选择适用能力、执行 transient verification 并维护 current Task Result。triage 不声明该 dependency，也不预设 minimal/affected/candidate 层级；provider 暂时不可用不改变任务分流结论。
+实现型任务按共享实现区域、验证入口或失败影响面分组。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用 `project-testing`；它不维护 capability declaration 或 Result。实现中可以运行项目已有直接反馈入口；全部内容、测试和 review 修订完成后，由 selected `buildr.task-verification/v3` provider 针对明确 target 选择已声明适用能力、执行 transient verification 并维护 current Task Result。triage 不声明这两个入口的 dependency，也不预设 minimal/affected/candidate 层级；任一入口暂时不可用不改变任务分流结论。
 
 <!-- buildr:skill-contributions change-ready -->
 

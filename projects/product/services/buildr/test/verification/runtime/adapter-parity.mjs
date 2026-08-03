@@ -185,6 +185,8 @@ for (const agent of supportedAdapters) {
   assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'task-manager', 'SKILL.md')), `${agent} must render task-manager`);
   assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'task-manager', 'agents', 'openai.yaml')), `${agent} must preserve task-manager OpenAI vendor metadata`);
   assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'task-asset-review', 'SKILL.md')), `${agent} must render task-asset-review`);
+  assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'project-testing', 'SKILL.md')), `${agent} must render project-testing`);
+  assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'project-testing', 'references', 'testing-model-v1.md')), `${agent} must preserve project-testing reference`);
   assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'task-verification', 'SKILL.md')), `${agent} must render task-verification`);
   assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'capability-adaptation', 'SKILL.md')), `${agent} must render capability-adaptation`);
   assert.ok(fs.existsSync(path.join(workspace, root, 'skills', 'task-board', 'agents', 'openai.yaml')), `${agent} must preserve task-board OpenAI vendor metadata in the complete Skill inventory`);

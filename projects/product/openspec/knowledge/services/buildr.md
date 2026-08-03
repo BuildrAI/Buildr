@@ -2,7 +2,7 @@
 
 ## 职责
 
-Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment/Task Review/Task Verification domain、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证执行、package 和发布。
+Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment/Task Review/Task Verification domain、Project Testing 指导、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证执行、package 和发布。
 
 ## 接口与入口
 
@@ -26,11 +26,11 @@ Workspace Node identity 进入 Environment Receipt 的 Runtime probe 与 executi
 
 ## 运行与验证
 
-Task Record、Task Environment、Task Review 与 Task Verification 各自以 Domain/Application/filesystem repository 构成独立 writer，只共享 Task ID 和目录，不共享字段。独立 CLI interface 公开 `task environment prepare|inspect|cleanup`、`task review inspect|record` 与 `task verification inspect|record`；`verification run|cleanup` 只管理 transient execution。随包 `task-environment`、`task-review`、`task-verification` 与窄 `task-worktree` 分别提供 `buildr.task-environment/v1`、`buildr.task-review/v1`、`buildr.task-verification/v3` 和 `buildr.git-worktree-provider/v1`。Git-backed retained Environment Manager 在 mutation 前只检查受信产品输入并排除 `.buildr/`；候选 Product checkout 可只读 inspect、运行自身 CLI/runtime，但产品会阻止它管理自己的 Environment。
+Task Record、Task Environment、Task Review 与 Task Verification 各自以 Domain/Application/filesystem repository 构成独立 writer，只共享 Task ID 和目录，不共享字段。独立 CLI interface 公开 `task environment prepare|inspect|cleanup`、`task review inspect|record` 与 `task verification inspect|record`；`verification run|cleanup` 只管理 transient execution。随包无状态 `project-testing` 只指导测试设计、开发与编排，不提供 capability contract；`task-environment`、`task-review`、`task-verification` 与窄 `task-worktree` 分别提供 `buildr.task-environment/v1`、`buildr.task-review/v1`、`buildr.task-verification/v3` 和 `buildr.git-worktree-provider/v1`。Git-backed retained Environment Manager 在 mutation 前只检查受信产品输入并排除 `.buildr/`；候选 Product checkout 可只读 inspect、运行自身 CLI/runtime，但产品会阻止它管理自己的 Environment。
 
 Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。Workspace 在 `.buildr/workspace.yml` 维护精确 `runtime.node.version`；`init` 采用当前受支持 CLI Node 并准备本机受管 runtime，`sync` 按声明恢复且不改版本，`doctor` 只读核对声明、Node/npm/CLI/验证环境并建议 `sync`。开发与安装入口的普通命令固定使用该 runtime；仅 `init`、`doctor`、`sync` 可在 runtime 缺失时使用兼容 bootstrap Node。npm package 的 `engines.node` 继续只表达产品兼容范围。
 
-Project `verification.yml` 使用 closed v2 declaration，只描述已有 capability；Buildr Product 自身的 static/package、unit、fast integration、active/archive lifecycle、browser integration 与 `product.candidate` 是 Product-specific capability/runner 实现，不构成通用 assurance 层级。`buildr verification run --project <code> --capability <id> ... --target-identity <identity>` 随 npm `src/` runtime 发布，只执行显式 command capabilities，并输出 provider-owned transient `buildr.verification-execution/v1`，不提供 caller-managed output writer。`effects.authorization: explicit` 与 explicit resource 分别要求精确 capability/resource 授权；被真实 claim 的 `coordinated` 资源才通过 Git common-dir lease 协调。该机制不调度 Agent 或任务，也不写 current Result。
+Project `verification.yml` 使用 closed v2 declaration，只描述少量稳定、可独立选择的已有 capability；测试意图、执行边界、编排场景和目标耗时保留在 Project Testing 或项目 registry。Buildr Product 自身的 static/package、unit、fast integration、active/archive lifecycle、browser integration 与 `product.candidate` 是 Product-specific capability/runner 实现，不构成通用 assurance 层级。`buildr verification run --project <code> --capability <id> ... --target-identity <identity>` 随 npm `src/` runtime 发布，只执行显式 command capabilities，并输出 provider-owned transient `buildr.verification-execution/v1`，不提供 caller-managed output writer。`effects.authorization: explicit` 与 explicit resource 分别要求精确 capability/resource 授权；被真实 claim 的 `coordinated` 资源才通过 Git common-dir lease 协调。该机制不调度 Agent 或任务，也不写 current Result。
 
 Product `test:candidate` 额外执行 `concurrent-task-acceptance` 组合验收：在单一临时多仓 Workspace 创建两个正式 Task 与真实 Environment，从不同 cwd 按 Task ID 调用 receipt 返回的绝对 CLI invocation，并发执行显式 `verification run` 和随机端口 Preview。验收核对多仓 scope、allowed roots、共享容量等待与释放、非空 execution identity、错误 Task 无法停止对方 Preview、active Task cleanup authorization fail closed、异常子进程诊断、Environment 统一清理和 retained doctor。该步骤使用本地临时 Git 与进程，不访问外部系统。
 

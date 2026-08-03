@@ -55,6 +55,22 @@
     },
     {
       "type": "skill",
+      "id": "project-testing",
+      "target": "skills/buildr/project-testing",
+      "integrity": "sha256-440a16b261dccc5da373878bbee6f79bb434cb102b47becb4a1ed7ba049d3125",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-7c885b5a508aaf74842b51a32bd79356e4e03735a499f25f3520fc4df23afd98"
+        },
+        {
+          "path": "references/testing-model-v1.md",
+          "integrity": "sha256-dc12f99241cbb2f973b2499fce07f0c2884851b368eb6f428ea7cee4f025d84d"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "task-asset-review",
       "target": "skills/buildr/task-asset-review",
       "integrity": "sha256-f4677c5d717a0683f88dccdf3b37729f74d8ea8b75840a910e3cf83d7795ba83",
@@ -165,11 +181,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-3f4c795c9513ba30be0b24b628930cb3d6e45fdca4f0084b610e7d30f68f0a5e",
+      "integrity": "sha256-f58b2d61b385baec1ab7144596ab06384d17c7f9983c17cf9ae211f570a115f5",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-f39eab49b19edd7f404200b0c92b67a9c0a1b8bac416b34b818e010347df6737"
+          "integrity": "sha256-d47a73f3b9c496d6ad1e28ad0111b158ad4a0bccaaed8bfa62a55a3d015b253c"
         }
       ]
     },
@@ -177,15 +193,15 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-38a5690b393db96ec9d85b159efdac5721c680b0c6566b86ee1cdf509e376afe",
+      "integrity": "sha256-9040c8a541c9a720f21547830b1a4aa41f4e933d0062c7e945cce309951f928a",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-624054dbea718e6aaced2b93b3292cee1d0c40e4365002fe2c56ecab63cc2656"
+          "integrity": "sha256-961c504a25b7085e82b769b4c523ad900201d4ff11f11642df3fc0fb9b697c25"
         },
         {
           "path": "references/project-verification-v2.md",
-          "integrity": "sha256-34701c78dfad292455cc9167a56fb355e5673621fdf8bdacc611777dea42637f"
+          "integrity": "sha256-69e61d2e1e57d08a0b1bf90e5a625694f5ff4cbedeed18845473c0a47fba48e5"
         },
         {
           "path": "templates/project-verification.yml",

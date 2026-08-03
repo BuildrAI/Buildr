@@ -900,6 +900,29 @@ export function createPackageStaticValidator(deps) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-review Skill must not execute or persist ${JSON.stringify(forbiddenText)}.`);
         }
       }
+      if (skill.id === 'project-testing') {
+        for (const requiredText of [
+          'references/testing-model-v1.md',
+          '没有 Result、Receipt、Application、provider contract',
+          'Development、Acceptance、Static Conformance、Delivery / Release',
+          'Static、Unit、Component、Integration、System',
+          'Quick、Task-affected、Candidate、Release',
+          '`System` 不等于 Acceptance',
+          '`focus` 只用于失败诊断',
+          'primaryEvidenceOwner',
+          '最低充分边界',
+          '不写 `verification.yml`',
+          '交给 `task-verification`',
+        ]) {
+          if (!skillContent.includes(requiredText)) problems.push(`project-testing Skill must include ${JSON.stringify(requiredText)}.`);
+        }
+        if ((skill.provides || []).length > 0 || (skill.requires || []).length > 0) {
+          problems.push('project-testing must not provide or require a capability contract.');
+        }
+        for (const forbiddenText of ['buildr task verification record', 'buildr verification run --project', 'schemaVersion: buildr.task-verification']) {
+          if (skillContent.includes(forbiddenText)) problems.push(`project-testing Skill must not include ${JSON.stringify(forbiddenText)}.`);
+        }
+      }
       if (skill.id === 'task-verification') {
         for (const requiredText of [
           '本 Skill 是 `buildr.task-verification/v3` 的默认 provider',
@@ -925,7 +948,8 @@ export function createPackageStaticValidator(deps) {
           '不启动重复 verifier',
           '不相加并行检查耗时',
           'buildr verification cleanup --summary <file>',
-          '用户无需主动点名本 Skill',
+          '不用于设计测试框架或开发测试，后者使用 project-testing',
+          '入口命名、成本或分层不合理时报告测试建设 gap',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-verification Skill must include ${JSON.stringify(requiredText)}.`);
         }

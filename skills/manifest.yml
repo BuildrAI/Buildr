@@ -324,7 +324,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-verification
     source: buildr
     path: buildr/task-verification
-    description: 用户要求测试、验证、查看 current 验证结果、报告验证耗时、初始化或更新 Project 测试能力声明，或者实现型任务到达验证节点、Task Finish 需要核对或补齐正式 Task Verification Result 时使用；用户无需主动点名本 Skill。
+    description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者实现型任务到达正式验证节点、Task Finish 需要核对或补齐 Task Verification Result 时使用；不用于设计测试框架或开发测试，后者使用 project-testing。
     enabled: true
     required: false
     state: installed
@@ -451,6 +451,24 @@ skills:
     provides:
       - capability: buildr.task-review
         version: 1
+  - id: project-testing
+    assetIdentity: buildr:skill:project-testing
+    sourceIdentity: package:skills/buildr/project-testing
+    source: buildr
+    path: buildr/project-testing
+    description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，编排 Quick、Task-affected、Candidate、Release，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: project-testing
 contracts:
   - id: buildr.git-single-operation
     version: 1

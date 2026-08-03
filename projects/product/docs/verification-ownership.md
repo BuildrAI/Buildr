@@ -2,7 +2,7 @@
 
 本文记录 Buildr 项目当前有哪些测试能力、这些能力怎样声明给 Task Verification、Agent 在具体任务中怎样使用它们，以及测试体系仍需解决的问题和每轮优化结论。
 
-当前行为以 [verification.yml](../verification.yml)、[Task Verification spec](../openspec/specs/task-verification/spec.md) 和 [task-verification Skill](../services/buildr/package/targets/workspace/skills/buildr/task-verification/SKILL.md) 为准。本文是 Buildr 自举实践记录，不建立新的测试政策、Result 或生命周期权威，也不承担通用 Project Testing 指导。
+通用测试设计以 [project-testing Skill](../services/buildr/package/targets/workspace/skills/buildr/project-testing/SKILL.md) 及其 [testing model](../services/buildr/package/targets/workspace/skills/buildr/project-testing/references/testing-model-v1.md) 为准；能力声明和正式结果以 [verification.yml](../verification.yml)、[Task Verification spec](../openspec/specs/task-verification/spec.md) 和 [task-verification Skill](../services/buildr/package/targets/workspace/skills/buildr/task-verification/SKILL.md) 为准。本文只记录 Buildr 自举实践，不建立新的 Result 或生命周期权威。
 
 ## Buildr 当前有哪些测试
 
@@ -105,11 +105,11 @@ P0.4 实践基线中，`product.fast` 约 108 秒，`product.candidate` 约 282 
 
 本轮没有修改 `verification.yml`、Task Verification Result、交付门禁或业务验收边界，也没有为了提速删除真实生命周期覆盖。
 
-## 下一轮
+## 第二轮：建立 Project Testing 指导
 
-下一步分两条窄线推进：
+本轮 Change 收敛两条窄线：
 
-1. 用独立 Change 提供无状态的 `project-testing` 指导，说明测试意图、执行边界、Project / Service owner 和 Quick、Task-affected、Candidate、Release 编排；Acceptance 只保留设计占位，不创建 Result、Receipt 或 Application。
-2. 同时增强 `task-verification` 的声明指导：发现项目已有测试、检查真实成本、按稳定调用边界声明 capability，避免把重型端到端测试误放进高频能力。
+1. `project-testing` 指导 Agent 按测试意图、执行边界、Project / Service owner 和 Quick、Task-affected、Candidate、Release 设计与开发测试；它无 Result、Receipt、Application 或 provider contract，Acceptance 第一版只保留需求驱动的设计占位。
+2. `task-verification` 增强声明指导：发现项目已有测试、检查真实调用与成本，只按稳定调用边界声明 capability，不复制内部测试分类。
 
-随后用这套指导继续拆分 Buildr 自身测试。只有真实实践证明现有 `verification.yml` schema 或 Task Verification 控制层不足时，才提出对应产品变更。
+下一步使用最小审查卡逐项检查 Buildr registry，先补出 Component 层并继续缩短 Quick；只有真实实践证明现有 `verification.yml` schema 或 Task Verification 控制层不足时，才提出对应产品变更。

@@ -64,7 +64,7 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
     '--declaration-root <task-environment-root>',
     '不自动创建测试、脚本、CI 或框架', '原子替换', '不得覆盖原 current',
     'portable current Result', 'buildr verification cleanup --summary <file>',
-    '用户无需主动点名本 Skill',
+    '不用于设计测试框架或开发测试，后者使用 project-testing',
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);
@@ -133,7 +133,7 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   const packagedSkill = packageManifest.builtins.skills.find((item) => item.id === 'task-verification');
   assert.deepEqual(packagedSkill.provides, [{ capability: 'buildr.task-verification', version: 3 }]);
   assert.match(packagedSkill.description, /current 验证结果/);
-  assert.match(packagedSkill.description, /正式 Task Verification Result/);
+  assert.match(packagedSkill.description, /Task Verification Result/);
   assert.equal(packageManifest.workspaceFiles.some((entry) => String(entry).includes('task-verification/v2.md')), false);
   assert.equal(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-verification-v1.md')), false);
   assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('task-verification/v3.md')));
@@ -168,7 +168,7 @@ test('OpenSpec apply 和 Task Finish 保持单一 convergence 事务边界', () 
 });
 
 test('产品入口分别路由 Task Verification、Environment 与 Git provider 意图', () => {
-  assert.match(buildrSkill, /查看 current 验证结果.*`buildr\.task-verification\/v3` selected provider；用户无需主动点名该能力/);
+  assert.match(buildrSkill, /查看 current 验证结果.*`buildr\.task-verification\/v3` selected provider；不开发测试/);
   assert.match(buildrSkill, /正式 Task 准备、检查、恢复或清理实际执行环境 \| `buildr\.task-environment\/v1` selected provider/);
   assert.match(buildrSkill, /Git worktree\/provider evidence \| `buildr\.git-worktree-provider\/v1` selected provider/);
   assert.doesNotMatch(buildrSkill, /buildr\.task-worktree-lifecycle/);

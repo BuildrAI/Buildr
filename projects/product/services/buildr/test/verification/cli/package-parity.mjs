@@ -101,6 +101,9 @@ try {
     assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-manager', 'SKILL.md')), 'sync must project task-manager into Codex runtime');
     assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-review', 'SKILL.md')), 'sync must install task-review source');
     assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-review', 'SKILL.md')), 'sync must project task-review into Codex runtime');
+    assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'project-testing', 'SKILL.md')), 'sync must install project-testing source');
+    assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'project-testing', 'SKILL.md')), 'sync must project project-testing into Codex runtime');
+    assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'project-testing', 'references', 'testing-model-v1.md')), 'sync must preserve project-testing reference');
     assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-verification', 'SKILL.md')), 'sync must install task-verification source');
     assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-verification', 'SKILL.md')), 'sync must project task-verification into Codex runtime');
     const renderedTriage = fs.readFileSync(path.join(workspace, '.agents', 'skills', 'task-triage', 'SKILL.md'), 'utf8');

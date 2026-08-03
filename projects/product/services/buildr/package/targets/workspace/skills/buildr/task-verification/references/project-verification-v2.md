@@ -27,6 +27,12 @@ capabilities: []
 
 只有已经存在的命令、脚本、CI wrapper 或有界 Agent 操作可以进入声明。Buildr 不根据技术栈推断能力，也不在初始化声明时创建或执行新测试。
 
+## 能力发现与声明粒度
+
+初始化或更新前读取真实测试、package/POM scripts、CI、项目约定和内部 registry，并核对入口实际调用的环境、副作用与可用耗时 evidence。名称为 `fast` 或 `unit` 不构成低成本证明；没有当前事实时不要作出成本承诺。
+
+声明只暴露少量、稳定、可独立选择的 capability 接口。一个 Candidate 入口内部可以拥有多个 Project-specific step；不要把每个测试文件、step、测试意图、执行边界、编排场景或目标耗时复制进本 schema。测试框架设计和测试建设交给 `project-testing`；本声明只描述已经存在的能力。
+
 ## Environment、effects 与 resource
 
 `effects` 可声明 `writes`、`externalSystems` 和 `authorization: implicit|explicit`。存在 external system 时必须显式授权；command runner 只在调用方精确传入 `--authorize-capability <id>` 后执行 explicit effects。

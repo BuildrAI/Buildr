@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
+
+const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
+
+const projectTestingSkill = read('package/targets/workspace/skills/buildr/project-testing/SKILL.md');
+const testingModel = read('package/targets/workspace/skills/buildr/project-testing/references/testing-model-v1.md');
+const taskVerificationSkill = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
+const taskVerificationReference = read('package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
+const taskVerificationTemplate = YAML.parse(read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
+const taskTriage = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
+const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
+const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
+const packageManifest = YAML.parse(read('package/manifest.yml'));
+
+test('project-testing 是无状态且无 capability binding 的独立 Skill', () => {
+  for (const required of [
+    'references/testing-model-v1.md', '没有 Result、Receipt、Application、provider contract',
+    '不写 `verification.yml`', '交给 `task-verification`',
+  ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
+
+  const workspaceSkill = workspaceManifest.skills.find((item) => item.id === 'project-testing');
+  assert.ok(workspaceSkill);
+  assert.equal(workspaceSkill.required, false);
+  assert.equal(Object.hasOwn(workspaceSkill, 'provides'), false);
+  assert.equal(Object.hasOwn(workspaceSkill, 'requires'), false);
+  assert.equal(workspaceManifest.contracts.some((item) => item.id.includes('project-testing')), false);
+  assert.equal(workspaceManifest.bindings.some((item) => item.capability.includes('project-testing')), false);
+
+  const packagedSkill = packageManifest.builtins.skills.find((item) => item.id === 'project-testing');
+  assert.ok(packagedSkill);
+  assert.equal(packagedSkill.required, false);
+  assert.equal(Object.hasOwn(packagedSkill, 'provides'), false);
+  assert.equal(Object.hasOwn(packagedSkill, 'requires'), false);
+  assert.equal(packageManifest.capabilityContracts.some((item) => item.id.includes('project-testing')), false);
+  assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-testing/references/testing-model-v1.md')));
+});
+
+test('project-testing 使用三轴、事实 owner 与最低充分执行边界', () => {
+  for (const required of [
+    'Development、Acceptance、Static Conformance、Delivery / Release',
+    'Static、Unit、Component、Integration、System',
+    'Quick、Task-affected、Candidate、Release',
+    '`System` 不等于 Acceptance', '`focus` 只用于失败诊断',
+    'primaryEvidenceOwner', '最低充分边界',
+  ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
+
+  for (const required of [
+    'Node.js 示例', 'Java / Spring 示例', 'Spring context', 'Testcontainers',
+    'Browser / Playwright 只是执行手段', '`mixed` 只作为',
+    'ownerScope', 'targetDuration', 'applicability/proves',
+  ]) assert.ok(testingModel.includes(required), `testing model must include ${required}`);
+});
+
+test('测试建设与 Task Verification 路由保持分离', () => {
+  assert.match(taskTriage, /测试框架.*`project-testing`/s);
+  assert.match(taskTriage, /selected `buildr\.task-verification\/v3` provider/);
+  assert.match(buildrSkill, /开发测试 \| `project-testing` Skill；无 Result、Receipt 或 provider contract/);
+  assert.match(buildrSkill, /运行已有测试.*`buildr\.task-verification\/v3` selected provider；不开发测试/);
+  assert.match(taskVerificationSkill, /不用于设计测试框架或开发测试，后者使用 project-testing/);
+  assert.match(taskVerificationSkill, /入口命名、成本或分层不合理时报告测试建设 gap/);
+  assert.match(taskVerificationReference, /一个 Candidate 入口内部可以拥有多个 Project-specific step/);
+});
+
+test('声明指导不扩展 project verification v2 schema', () => {
+  assert.equal(taskVerificationTemplate.schemaVersion, 'buildr.project-verification/v2');
+  assert.deepEqual(Object.keys(taskVerificationTemplate).sort(), ['capabilities', 'schemaVersion']);
+  const capabilityKeys = Object.keys(taskVerificationTemplate.capabilities[0]).sort();
+  for (const forbidden of ['primaryIntent', 'executionBoundary', 'orchestrationScenarios', 'targetDuration', 'primaryEvidenceOwner']) {
+    assert.equal(capabilityKeys.includes(forbidden), false, `verification template must not add ${forbidden}`);
+  }
+  assert.match(taskVerificationReference, /不要把每个测试文件、step、测试意图、执行边界、编排场景或目标耗时复制进本 schema/);
+});

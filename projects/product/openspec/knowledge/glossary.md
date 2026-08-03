@@ -170,11 +170,18 @@
 - 避免混用：不是 Receipt、历史日志或状态机；不持久化 revision、current、applicability 或 digest，适用性由读取时目标比较派生。
 - 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
 
+## 项目测试（Project Testing）
+
+- 定义：面向 Project / Service 的无状态专业指导，帮助 Agent 根据真实技术栈设计测试框架、开发测试并编排反馈；分别判断测试主要意图、执行边界和编排场景。
+- 适用范围：Development、Acceptance、Static Conformance、Delivery / Release 意图；Static、Unit、Component、Integration、System 边界；Quick、Task-affected、Candidate、Release 场景。
+- 避免混用：不是 Task Verification 或测试平台，不创建 Result、Receipt、Application 或 provider contract；System 是执行边界，不自动等于 Acceptance，`focus` 只用于诊断选择；此处 Component 表示组件测试边界，不是 Buildr 受管资产 Component。
+- 来源：canonical `openspec/specs/project-testing-guidance/spec.md`（本 Change converge 时建立）
+
 ## 验证能力声明（Verification Capability Declaration）
 
 - 定义：Project 根 `verification.yml` 中由团队确认的现有验证能力目录，使用 closed `buildr.project-verification/v2`，声明 capability identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求和必要的环境/副作用边界。
 - 适用范围：Task Verification 选择已有 command、脚本、CI wrapper 或 bounded Agent 操作时的 Project policy 输入。
-- 避免混用：不是新测试框架、通用 DAG 或 Task lifecycle plan；能力缺失只形成 coverage gap，不能在 Verification 中自动开发测试。
+- 避免混用：不是 Project Testing、测试框架、通用 DAG 或 Task lifecycle plan；能力缺失只形成 coverage gap，不能在 Verification 中自动开发测试。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 验证执行证据（Verification Execution Evidence）
