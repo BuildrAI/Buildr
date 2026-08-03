@@ -73,9 +73,14 @@ function gitNulList(root, args) {
   return value.status === 0 ? value.stdout.split('\0').filter(Boolean) : null;
 }
 
+function controlMetadataPath(value) {
+  const normalized = normalizePortablePath(value);
+  return Boolean(normalized) && normalized.split('/').some((segment) => segment === '.buildr' || segment === '.git');
+}
+
 function deliverySourcePath(value) {
   const normalized = normalizePortablePath(value);
-  return normalized && !normalized.split('/').some((segment) => segment === '.buildr' || segment === '.git');
+  return normalized && !controlMetadataPath(normalized);
 }
 
 function changedDeliverySourcePaths(root) {
@@ -129,7 +134,7 @@ function retainedWorkspaceReadiness(identity) {
   for (const entry of identity.status.split('\0').filter(Boolean)) {
     const status = entry.slice(0, 2);
     const file = normalizePortablePath(entry.slice(3));
-    if (['??', ' M', ' D', ' T'].includes(status) && file.startsWith('.buildr/')) workspaceMetadata.push(file);
+    if (['??', ' M', ' D', ' T', 'M ', 'D ', 'T ', 'A ', 'AM'].includes(status) && controlMetadataPath(file)) workspaceMetadata.push(file);
     else unrelated.push(file || entry);
   }
   return { ready: unrelated.length === 0, workspaceMetadata: [...new Set(workspaceMetadata)].sort(), unrelated };
@@ -235,9 +240,14 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const context = taskEnvironment(run);
       if (!context?.ready) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task Environment is not ready.' } };
 
-      const unstageMetadata = git(environmentRoot, 'prepare-carrier-unstage-metadata', ['reset', '--quiet', 'HEAD', '--', '.buildr']);
-      operations.push(unstageMetadata.observation);
-      if (unstageMetadata.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-unstage-metadata-failed', exitCode: unstageMetadata.result.status, message: 'Unable to exclude Buildr control metadata from the delivery carrier.', diagnostic: unstageMetadata.observation.stderr } };
+      const stagedMetadata = gitNulList(environmentRoot, ['diff', '--cached', '--name-only', '--no-renames', '-z']);
+      if (stagedMetadata === null) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-metadata-inventory-failed', message: 'Unable to inventory staged Buildr control metadata.' } };
+      const metadataPaths = [...new Set(stagedMetadata.map(normalizePortablePath).filter(controlMetadataPath))].sort();
+      if (metadataPaths.length > 0) {
+        const unstageMetadata = git(environmentRoot, 'prepare-carrier-unstage-metadata', ['reset', '--quiet', 'HEAD', '--', ...metadataPaths.map((metadataPath) => `:(literal)${metadataPath}`)]);
+        operations.push(unstageMetadata.observation);
+        if (unstageMetadata.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-unstage-metadata-failed', exitCode: unstageMetadata.result.status, message: 'Unable to exclude Buildr control metadata from the delivery carrier.', diagnostic: unstageMetadata.observation.stderr } };
+      }
       const sourcePaths = changedDeliverySourcePaths(environmentRoot);
       if (sourcePaths === null) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-source-inventory-failed', message: 'Unable to inventory exact delivery source paths.' } };
       if (sourcePaths.length > 0) {

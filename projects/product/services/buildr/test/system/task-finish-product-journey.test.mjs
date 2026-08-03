@@ -156,9 +156,13 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
   fs.writeFileSync(path.join(environmentRoot, 'feature.txt'), 'finished candidate\n');
   fs.writeFileSync(path.join(environmentRoot, '.buildr', 'tracked-metadata.json'), 'task-local metadata\n');
+  const nestedMetadata = path.join(environmentRoot, 'projects', 'product', 'openspec', 'changes', 'archive', 'finish-journey', '.buildr', 'convergence-receipt.json');
+  fs.mkdirSync(path.dirname(nestedMetadata), { recursive: true });
+  fs.writeFileSync(nestedMetadata, '{"status":"control-only"}\n');
   command(environmentRoot, 'git', ['add', 'feature.txt']);
   command(environmentRoot, 'git', ['commit', '-m', 'implement candidate']);
   command(environmentRoot, 'git', ['add', '-f', '.buildr/tracked-metadata.json']);
+  command(environmentRoot, 'git', ['add', '-f', path.relative(environmentRoot, nestedMetadata)]);
 
   const openspec = path.join(fixture, 'bin', 'openspec');
   writeExecutable(openspec, fakeOpenSpec);
@@ -204,6 +208,8 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.carrier.head);
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:.buildr/tracked-metadata.json`]), 'baseline metadata');
   assert.equal(result.carrier.changedPaths.includes('.buildr/tracked-metadata.json'), false);
+  assert.equal(result.carrier.changedPaths.some((changedPath) => changedPath.split('/').includes('.buildr')), false);
+  assert.notEqual(spawnSync('git', ['cat-file', '-e', `${result.carrier.head}:projects/product/openspec/changes/archive/finish-journey/.buildr/convergence-receipt.json`], { cwd: retained }).status, 0);
   assert.equal(fs.existsSync(result.completion.receipt), true);
 });
 
