@@ -10,6 +10,7 @@ export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1
 export const GIT_WORKTREE_EVIDENCE_SCHEMA = 'buildr.git-worktree-evidence/v1';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
+const CONTROL_METADATA_SEGMENTS = new Set(['.buildr', '.git']);
 const EVIDENCE_REPOSITORY_FIELDS = new Set(['selector', 'entityType', 'sourcePath', 'sourceRepository', 'checkoutPath', 'branch', 'startPoint', 'head', 'clean', 'registered', 'remote', 'remoteUrl', 'state', 'diagnostic']);
 const EVIDENCE_REPOSITORY_STATES = new Set(['created', 'reused', 'ready', 'blocked']);
 const EVIDENCE_EFFECT_FIELDS = Object.freeze({
@@ -58,6 +59,25 @@ export function registerGitWorktreeProvider(runtime) {
   function gitText(cwd, args) {
     const result = git(cwd, args);
     return result.status === 0 ? result.stdout.trim() : null;
+  }
+
+  function controlMetadataPath(value) {
+    const normalized = path.posix.normalize(String(value || '').replaceAll('\\', '/')).replace(/^\.\//, '');
+    return Boolean(normalized) && normalized.split('/').some((segment) => CONTROL_METADATA_SEGMENTS.has(segment));
+  }
+
+  function changedWorktreePaths(targetRoot) {
+    const observations = [
+      git(targetRoot, ['diff', '--name-only', '--no-renames', '-z']),
+      git(targetRoot, ['diff', '--cached', '--name-only', '--no-renames', '-z']),
+      git(targetRoot, ['ls-files', '--others', '--exclude-standard', '-z']),
+    ];
+    if (observations.some((item) => item.status !== 0)) return null;
+    const paths = [...new Set(observations.flatMap((item) => item.stdout.split('\0').filter(Boolean)))].sort();
+    return {
+      controlMetadata: paths.filter(controlMetadataPath),
+      source: paths.filter((entry) => !controlMetadataPath(entry)),
+    };
   }
 
   function worktreeIdentity(targetRoot) {
@@ -338,6 +358,7 @@ export function registerGitWorktreeProvider(runtime) {
       const stored = readGitWorktreeEvidence(root, taskId, { optional: true });
       if (!stored) return result('cleanup', 'cleaned', taskId, gitWorktreeEvidencePath(root, taskId), [], [], null, []);
       const checks = [];
+      const controlMetadataOnly = new Set();
       for (const record of stored.evidence.repositories) {
         const checkoutExists = fs.existsSync(record.checkoutPath);
         const identity = checkoutExists ? worktreeIdentity(record.checkoutPath) : null;
@@ -349,7 +370,11 @@ export function registerGitWorktreeProvider(runtime) {
           const branchHead = gitText(record.sourceRepository, ['rev-parse', '--verify', `refs/heads/${record.branch}^{commit}`]);
           if (branchHead && branchHead !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_branch_drift', message: `Task checkout 已缺失，且本地任务分支已漂移：${record.selector}。` }, ['保留 evidence 并人工核对 branch ownership。']);
         }
-        if (!allowDirty && identity && !identity.clean) return result('cleanup', 'blocked', taskId, stored.file, [...checks, { ...record, ...identity, state: 'blocked' }], effects, { code: 'git_worktree_dirty', message: `Task checkout is dirty: ${record.selector}.` }, ['先完成交付或由明确 abandon authorization 处理 Task-owned 内容。']);
+        if (!allowDirty && identity && !identity.clean) {
+          const changed = changedWorktreePaths(record.checkoutPath);
+          if (!changed || changed.source.length > 0) return result('cleanup', 'blocked', taskId, stored.file, [...checks, { ...record, ...identity, state: 'blocked' }], effects, { code: 'git_worktree_dirty', message: `Task checkout is dirty: ${record.selector}.` }, ['先完成交付或由明确 abandon authorization 处理 Task-owned 内容。']);
+          controlMetadataOnly.add(path.resolve(record.checkoutPath));
+        }
         const integratedRef = integratedRefs[record.selector] || null;
         if (!allowDirty) {
           if (!integratedRef) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_integrated_ref_missing', message: `Missing integrated ref: ${record.selector}.` }, ['提供每个 repository 的 delivery identity。']);
@@ -362,7 +387,8 @@ export function registerGitWorktreeProvider(runtime) {
       const removed = [];
       for (const record of [...checks].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
         if (record.checkoutExists) {
-          const args = ['worktree', 'remove', ...(allowDirty ? ['--force'] : []), record.checkoutPath];
+          const discardControlMetadata = controlMetadataOnly.has(path.resolve(record.checkoutPath));
+          const args = ['worktree', 'remove', ...(allowDirty || discardControlMetadata ? ['--force'] : []), record.checkoutPath];
           const removal = git(record.sourceRepository, args);
           if (removal.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, [...removed, { ...record, state: 'remove-failed' }], effects, { code: 'git_worktree_remove_failed', message: (removal.stderr || removal.stdout).trim() }, ['保留剩余 evidence 并从当前步骤重试。']);
           effects.push({ type: 'worktree-removed', selector: record.selector, checkoutPath: record.checkoutPath });

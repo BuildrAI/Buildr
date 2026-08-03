@@ -122,6 +122,29 @@ test('Git provider cleanup 可从 worktree 已删除但本地分支尚未删除�
   assert.equal(fs.existsSync(created.evidencePath), false);
 });
 
+test('Git provider cleanup 只容忍任意层级 Buildr control metadata，source dirt 仍 fail closed', (t) => {
+  const root = fixtureWorkspace(t);
+  const controlTask = 'provider-control-metadata-cleanup';
+  const control = buildr(['worktree', 'create', controlTask, '--branch', `codex/${controlTask}`, '--start-point', 'main', '--target', root, '--json']);
+  const nestedMetadata = path.join(control.repositories[0].checkoutPath, 'docs', '.buildr', 'receipt.yml');
+  fs.mkdirSync(path.dirname(nestedMetadata), { recursive: true });
+  fs.writeFileSync(nestedMetadata, 'status: current\n');
+  const cleaned = buildr(['worktree', 'cleanup', controlTask, '--integrated-ref', 'workspace=main', '--target', root, '--json']);
+  assert.equal(cleaned.status, 'cleaned', JSON.stringify(cleaned, null, 2));
+  assert.equal(fs.existsSync(control.repositories[0].checkoutPath), false);
+
+  const sourceTask = 'provider-source-dirt-blocked';
+  const source = buildr(['worktree', 'create', sourceTask, '--branch', `codex/${sourceTask}`, '--start-point', 'main', '--target', root, '--json']);
+  const dirtySource = path.join(source.repositories[0].checkoutPath, 'source-dirty.txt');
+  fs.writeFileSync(dirtySource, 'uncommitted source\n');
+  const blocked = buildr(['worktree', 'cleanup', sourceTask, '--integrated-ref', 'workspace=main', '--target', root, '--json'], 1);
+  assert.equal(blocked.diagnostic.code, 'git_worktree_dirty');
+  assert.equal(fs.existsSync(source.repositories[0].checkoutPath), true);
+  fs.rmSync(dirtySource);
+  const sourceCleaned = buildr(['worktree', 'cleanup', sourceTask, '--integrated-ref', 'workspace=main', '--target', root, '--json']);
+  assert.equal(sourceCleaned.status, 'cleaned');
+});
+
 test('共享 Task Environment 以正式 Task 为门禁并独占 ready、恢复与 cleanup', (t) => {
   const root = fixtureWorkspace(t, { git: false });
   const taskId = 'shared-environment';
