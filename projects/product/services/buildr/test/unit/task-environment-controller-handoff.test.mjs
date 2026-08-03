@@ -58,7 +58,13 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
   writeController(controllerRoot);
   writeController(alternateControllerRoot, 'alternate');
   fs.mkdirSync(path.dirname(productCli), { recursive: true });
-  fs.writeFileSync(productCli, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ version: "fixture" }) + "\\n");\n');
+  fs.writeFileSync(productCli, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
+else if (args[0] === 'render') process.stdout.write('rendered\\n');
+else if (args[0] === 'runtime' && args[1] === 'check') process.stdout.write('Projection identity: candidate-projection\\n');
+else process.exitCode = 1;
+`);
   fs.chmodSync(productCli, 0o755);
   git(root, ['init', '-b', 'dev']);
   git(root, ['config', 'user.name', 'Buildr Test']);
@@ -83,6 +89,7 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
     receipt: receipt({ root, controllerRoot, executionRoot: isolated ? taskRoot : root, isolated, timestamp }),
   } : null;
   const calls = { writes: 0, providerPlans: 0, providerMutations: 0, providerCleanups: 0, projectionChecks: 0, resourceProbes: 0, resourceCleanups: 0 };
+  let retainedProjectionReady = true;
   const providerEvidence = {
     branch: `tasks/${TASK_ID}`,
     repositories: [{ selector: 'workspace', startPoint: m1, checkoutPath: taskRoot }],
@@ -111,7 +118,7 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
     workspaceNodeExecution: () => ({ ready: true, identity: { digest: 'workspace-node' }, executable: process.execPath, npmExecutable: process.execPath, environment: process.env }),
     checkRuntimeAdapter: () => {
       calls.projectionChecks += 1;
-      return { runtimeSourceEvidence: { projectionReady: true, projectionIdentity: 'projection-ready' } };
+      return { runtimeSourceEvidence: { projectionReady: retainedProjectionReady, projectionIdentity: 'retained-projection' } };
     },
     renderRuntime: () => { throw new Error('projection should already be ready'); },
     readGitWorktreeEvidence: () => isolated ? { evidence: providerEvidence } : null,
@@ -149,6 +156,7 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
     calls,
     receipt: () => persistence?.receipt || null,
     setProductRoot: (value) => { productRoot = value; },
+    setRetainedProjectionReady: (value) => { retainedProjectionReady = value; },
     advanceManager() {
       fs.appendFileSync(path.join(controllerRoot, 'src', 'controller.mjs'), "export const manager = 'm2';\n");
       git(root, ['add', 'projects/product/services/buildr/src/controller.mjs']);
@@ -157,6 +165,20 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
     },
   };
 }
+
+test('retained controller uses candidate CLI to verify a candidate-owned runtime projection', (t) => {
+  const current = fixture(t);
+  current.setRetainedProjectionReady(false);
+
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID);
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  assert.equal(prepared.environment.scopes[0].projection.identity, 'candidate-projection');
+  assert.equal(prepared.environment.controller.identity, 'sha256-created-at-m1');
+
+  const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
+  assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
+  assert.equal(inspected.environment.scopes[0].projection.identity, 'candidate-projection');
+});
 
 test('dirty Git-backed manager blocks first prepare before any persistent effect', async (t) => {
   const cases = {

@@ -263,15 +263,37 @@ export function registerTaskEnvironmentApplication(runtime) {
     return probe('ready', `${identity}:${payload.version}`);
   }
 
+  function probeCandidateProjection(adapter, validationRoot, cli, workspaceNode) {
+    const result = spawnSync(cli.command, [...cli.argsPrefix, 'runtime', 'check', adapter, '--target', validationRoot, '--scope', '.'], {
+      cwd: validationRoot,
+      encoding: 'utf8',
+      env: workspaceNode?.environment || process.env,
+      timeout: 180_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    const identity = /^Projection identity:\s*(\S+)\s*$/m.exec(result.stdout || '')?.[1] || null;
+    if (result.status !== 0 || !identity) {
+      return probe('blocked', identity, (result.stderr || result.stdout || 'Candidate runtime check failed.').trim().slice(0, 2000));
+    }
+    return probe('ready', identity);
+  }
+
   function prepareProjection(adapter, validationRoot, cli, workspaceNode, effects) {
     const check = runtime.checkRuntimeAdapter || checkRuntimeAdapter;
     let checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
-    if (cli.kind === 'task-environment-candidate' || !checked.runtimeSourceEvidence?.projectionReady) {
+    if (cli.kind === 'task-environment-candidate') {
       try {
-        if (cli.kind === 'task-environment-candidate') {
-          const rendered = spawnSync(cli.command, [...cli.argsPrefix, 'render', adapter, '--target', validationRoot], { cwd: validationRoot, encoding: 'utf8', env: workspaceNode?.environment || process.env, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
-          if (rendered.status !== 0) return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, (rendered.stderr || rendered.stdout || 'Candidate runtime projection failed.').trim().slice(0, 2000));
-        } else runtime.renderRuntime(adapter, ['--target', validationRoot], { productSkill: true });
+        const rendered = spawnSync(cli.command, [...cli.argsPrefix, 'render', adapter, '--target', validationRoot], { cwd: validationRoot, encoding: 'utf8', env: workspaceNode?.environment || process.env, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
+        if (rendered.status !== 0) return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, (rendered.stderr || rendered.stdout || 'Candidate runtime projection failed.').trim().slice(0, 2000));
+        effects.push({ type: 'runtime-projected', adapter, target: validationRoot, source: cli.kind });
+        return probeCandidateProjection(adapter, validationRoot, cli, workspaceNode);
+      } catch (error) {
+        return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, error.message);
+      }
+    }
+    if (!checked.runtimeSourceEvidence?.projectionReady) {
+      try {
+        runtime.renderRuntime(adapter, ['--target', validationRoot], { productSkill: true });
         effects.push({ type: 'runtime-projected', adapter, target: validationRoot, source: cli.kind });
         checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
       } catch (error) {
@@ -281,8 +303,9 @@ export function registerTaskEnvironmentApplication(runtime) {
     return checked.runtimeSourceEvidence?.projectionReady ? probe('ready', checked.runtimeSourceEvidence.projectionIdentity) : probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, 'Agent runtime projection 未就绪。');
   }
 
-  function observeProjection(adapter, validationRoot) {
+  function observeProjection(adapter, validationRoot, cli, workspaceNode) {
     try {
+      if (cli.kind === 'task-environment-candidate') return probeCandidateProjection(adapter, validationRoot, cli, workspaceNode);
       const check = runtime.checkRuntimeAdapter || checkRuntimeAdapter;
       const checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
       return checked.runtimeSourceEvidence?.projectionReady ? probe('ready', checked.runtimeSourceEvidence.projectionIdentity) : probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, 'Agent runtime projection 已漂移或不完整。');
@@ -307,7 +330,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       ? probe('blocked', null, '依赖未就绪，跳过 runtime projection。')
       : mutate
         ? prepareProjection(controller.adapter, validationRoot, cli, workspaceNode, effects)
-        : observeProjection(controller.adapter, validationRoot);
+        : observeProjection(controller.adapter, validationRoot, cli, workspaceNode);
     const scopes = receipt.scopes.map((scope) => ({ ...scope, runtime: runtimeProbe, cli: cliProbe, dependencies, projection }));
     const ready = scopes.every((scope) => [scope.runtime, scope.cli, scope.dependencies, scope.projection].every((item) => item.status !== 'blocked'));
     const diagnostic = ready ? null : scopes.flatMap((scope) => [scope.runtime, scope.cli, scope.dependencies, scope.projection].filter((item) => item.status === 'blocked').map((item) => `${scope.selector}: ${item.diagnostic}`))[0];
