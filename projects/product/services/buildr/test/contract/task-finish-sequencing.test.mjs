@@ -11,7 +11,7 @@ const productRoot = path.resolve(serviceRoot, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
-const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v2.md');
+const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
 const packageManifest = read('package/manifest.yml');
 const workspaceSkills = read('package/targets/workspace/skills/manifest.yml');
@@ -34,9 +34,10 @@ test('Task Finish 产品 run 必须消费 Task Environment，metadata-only Git �
   }
 });
 
-test('verification evidence 表达 archive-sensitive 与 supersession', () => {
+test('Task Verification 只表达 transient execution 与 current Result authority', () => {
   for (const source of [verification, verificationContract]) {
-    for (const phrase of ['archive-sensitive', 'implementation-changed', 'target-race', 'verification-failed', 'supersedesEvidence', 'invalidationReason', 'supersessionRelationship']) assert.ok(source.includes(phrase), phrase);
+    for (const phrase of ['buildr.project-verification/v2', 'transient', 'Task Verification Application', 'coverage gap']) assert.ok(source.includes(phrase), phrase);
+    for (const legacy of ['archive-sensitive', 'supersedesEvidence', 'supersessionRelationship', 'requiredAssurance', 'candidateCompleteness']) assert.equal(source.includes(legacy), false, legacy);
   }
 });
 

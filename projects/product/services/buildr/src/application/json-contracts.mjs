@@ -21,9 +21,10 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   gitWorktreeResult: 'buildr.git-worktree-result/v1',
   taskRecordResult: 'buildr.task-record-result/v1',
   taskReviewOperationResult: 'buildr.task-review-operation-result/v1',
+  taskVerificationOperationResult: 'buildr.task-verification-operation-result/v1',
   taskFinishRun: 'buildr.task-finish-run/v1',
   taskFinishResult: 'buildr.task-finish-result/v1',
-  verificationRun: 'buildr.verification-run/v1',
+  verificationExecution: 'buildr.verification-execution/v1',
   verificationEvidenceCleanup: 'buildr.verification-evidence-cleanup/v1',
 });
 

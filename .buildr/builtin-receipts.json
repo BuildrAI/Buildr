@@ -121,11 +121,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-8894a8c2ecc3d9f5c2105a5d9af019ae60f22add719229a4050f1c5de0641e69",
+      "integrity": "sha256-9c3406e5d2801c168c087343a66d308f6b851906e303e64b7ec0dcc3fe607c9d",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-01de231b8f0ec5cdb73e8038c8c8ab6ddea80a130de1c1ab24b0169b142763ef"
+          "integrity": "sha256-8f7ba9ac784dae99720b851ab10051d3248253ce78e4cc76940a30f022b20730"
         }
       ]
     },
@@ -165,11 +165,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-364797254753862455b9e34f683132d73244c87a299224b6cc7d30d39e33768c",
+      "integrity": "sha256-3f4c795c9513ba30be0b24b628930cb3d6e45fdca4f0084b610e7d30f68f0a5e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8aeb9513b8abc77335debcd0c694990b7929b18fd47292d66b08f2a00af747f0"
+          "integrity": "sha256-f39eab49b19edd7f404200b0c92b67a9c0a1b8bac416b34b818e010347df6737"
         }
       ]
     },
@@ -177,19 +177,19 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-2bf653948dcce501834c46a1cc725c5f119ff5cb47a52b4793cbdf60d1523dbf",
+      "integrity": "sha256-38a5690b393db96ec9d85b159efdac5721c680b0c6566b86ee1cdf509e376afe",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-528d617b112d415bbb696a3e3a231c5144f4980639b82edcbcaf467cc7c17ef3"
+          "integrity": "sha256-624054dbea718e6aaced2b93b3292cee1d0c40e4365002fe2c56ecab63cc2656"
         },
         {
-          "path": "references/project-verification-v1.md",
-          "integrity": "sha256-6368b6bafb6df54407b05d3838039d2161d8aea87a2c1bbe4de6f28a451aca8f"
+          "path": "references/project-verification-v2.md",
+          "integrity": "sha256-34701c78dfad292455cc9167a56fb355e5673621fdf8bdacc611777dea42637f"
         },
         {
           "path": "templates/project-verification.yml",
-          "integrity": "sha256-d083485b8ec1c61c6445ccb4d2ec768dad8b5bbda851c990e5d3ff674e0330f8"
+          "integrity": "sha256-f9269a1f1ea4b6985dd206c41d6d9df149c56ac8455cc30b3eb93d43e9aeb4bb"
         }
       ]
     },

@@ -40,17 +40,20 @@ test('product verification exposes three gates, direct layers, and one focus ent
   }
 });
 
-test('browser smoke 以 trial advisory 能力声明真实环境与范围', () => {
+test('browser smoke 以 v2 optional capability 声明真实环境、范围与资源', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
   const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
   assert.ok(browser);
-  assert.equal(browser.maturity, 'trial');
-  assert.deepEqual(browser.stages, ['affected']);
-  assert.deepEqual(browser.enforcement, { affected: 'advisory' });
-  assert.deepEqual(browser.command, { argv: ['npm', 'run', 'test:browser:smoke'], cwd: 'services/buildr' });
+  assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
+  assert.deepEqual(browser.scope, { project: 'product', services: ['buildr'] });
+  assert.deepEqual(browser.invocation, { kind: 'command', argv: ['npm', 'run', 'test:browser:smoke'], cwd: 'services/buildr' });
+  assert.equal(browser.requiredForDelivery, false);
+  assert.deepEqual(browser.applicability.paths, ['services/buildr/src/interfaces/local-app/**', 'services/buildr/test/browser-smoke/**']);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
-  assert.equal(browser.effects.level, 'local-temporary');
-  assert.equal(browser.effects.externalSystems, false);
+  assert.deepEqual(browser.effects.externalSystems, []);
+  assert.equal(browser.effects.authorization, 'implicit');
+  assert.deepEqual(browser.resourceClaims, ['browser']);
+  assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
 });
 
 test('focus verification de-duplicates groups without attaching fast', () => {

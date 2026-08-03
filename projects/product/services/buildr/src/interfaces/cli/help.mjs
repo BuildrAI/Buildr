@@ -22,10 +22,11 @@ export function registerCommandHelp(runtime) {
     console.error('  buildr worktree inspect <task-id> [--target <workspace>] [--json]');
     console.error(`  buildr task environment prepare <task-id> [--agent <${runtimeIds}>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]`);
     console.error('  buildr task environment inspect|cleanup <task-id> [--target <canonical-workspace>] [--json]');
-    console.error('  buildr verification run --project <code> --level <affected|candidate> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-resource <id> ...] [--output <file>] [--json]');
+    console.error('  buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--json]');
     console.error('  buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]');
     console.error('  buildr task review <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]');
-    console.error('  buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--json]');
+    console.error('  buildr task verification <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]');
+    console.error('  buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--json]');
     console.error('  buildr task finish inspect --run <id> [--target <canonical-workspace>] [--json]');
     console.error('  buildr openspec <converge|audit> <change> --project <project> [--target <workspace>] [--json]');
     console.error('  buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]');
@@ -79,9 +80,10 @@ export function registerCommandHelp(runtime) {
       '  service create       创建或登记 Service。',
       '  worktree create/inspect/cleanup  只管理 Git checkout、branch 和 provider evidence。',
       '  task environment     按正式 Task 准备、检查或清理唯一 Environment Receipt。',
-      '  verification run     按 Project verification.yml 执行受影响或完整候选验证。',
+      '  verification run     按 Project verification.yml v2 执行显式 command capabilities。',
       '  task create/inspect/update/complete/abandon  管理 canonical Workspace 的最小 Task Record。',
       '  task review          读取或记录完整 Task Review Result；不执行语义审查。',
+      '  task verification    读取或记录一个 Task current Verification Result；不自动执行测试。',
       '  task finish          产品执行 preflight → prepare → verify → deliver → cleanup 固定收尾。',
       '  doctor               诊断 workspace、源资产和 Agent runtime render 状态。',
       '  mutation recover      从保留 backup 恢复不完整 source mutation。',
@@ -207,6 +209,23 @@ export function registerCommandHelp(runtime) {
       '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
       '中断、缺少 target identity、覆盖或结论不完整时不写入；Completion identity 必须由真实 Candidate producer 提供。',
     ],
+    'task verification': [
+      'Usage: buildr task verification <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]',
+      '',
+      'Task Verification CLI 只管理一个已经完整形成的 current Result；它不自动选择或执行能力，也不拥有 Task 推进、Candidate 或风险接受。',
+      'Result 绑定明确 target identity 与 Task scope 内当前 Project declaration identities；中断、结论不完整或写入失败时不覆盖 current。',
+    ],
+    'task verification inspect': [
+      'Usage: buildr task verification inspect <task-id> [--target-identity <identity>] [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]',
+      '',
+      '只读返回单一 current slot、response-only resultDigest 与 target/declaration 派生 applicability；未提供 current target 时 target 轴为 unknown。',
+    ],
+    'task verification record': [
+      'Usage: buildr task verification record <task-id> --target-identity <identity> --target-summary <text> [--capability <project>/<capability>::<passed|failed>::<fact> ...] [--coverage-gap <scope>::<summary> ...] --outcome <passed|not-passed> --summary <text> [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]',
+      '',
+      '只接收完整 portable facts 并原子整值替换 current；declaration identities 由 Application 从 Task scope 与 Project registry 读取，调用方不能提交。',
+      '完整 stdout/stderr、耗时、临时路径、Environment Receipt、applicability、revision、proceed/blocked 或 Task status 不属于 Result。',
+    ],
     'task environment': [
       'Usage: buildr task environment <prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]',
       '',
@@ -277,17 +296,17 @@ export function registerCommandHelp(runtime) {
       '根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。',
     ],
     'verification run': [
-      'Usage: buildr verification run --project <code> --level <affected|candidate> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-resource <id> ...] [--concurrency <n>] [--include-advisory] [--output <file>] [--candidate-fingerprint <identity>] [--json]',
+      'Usage: buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--json]',
       '',
-      '读取已登记 Project 的 verification.yml，按依赖和显式 supersedes 构造 DAG，并发执行资源兼容的能力。',
+      '读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；applicability 选择与 bounded Agent operation 由 task-verification Skill 负责。',
       '采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。',
-      'coordinated 资源通过 Git common-dir lease 跨 task 排队；external 资源必须逐项 --authorize-resource。该命令执行验证，不创建任务或调度 Agent。',
-      '默认 evidence 为 transient；--output 指定 caller-managed summary。--json 返回 buildr.verification-run/v1。',
+      'effects.authorization: explicit 必须逐项 --authorize-capability；显式授权资源必须逐项 --authorize-resource。被实际 claim 的 coordinated 资源通过 Git common-dir lease 跨 Task 排队。该命令不创建任务、调度 Agent 或写 current Result。',
+      'execution evidence 始终写入 provider-owned 临时目录；全部 consumer 完成后通过 verification cleanup 精确清理。--json 返回 buildr.verification-execution/v1。',
     ],
     'verification cleanup': [
       'Usage: buildr verification cleanup --summary <file> [--json]',
       '',
-      '只清理 buildr.verification-run/v1 声明的 provider-owned transient run directory；caller-managed、identity 不匹配、越界或不可证明的 legacy evidence 一律保留。',
+      '只清理 buildr.verification-execution/v1 声明的 provider-owned transient run directory；非 transient、identity 不匹配、越界或不可证明的 evidence 一律保留。',
     ],
     doctor: [
       'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
@@ -469,7 +488,7 @@ export function registerCommandHelp(runtime) {
 
   const finishHelp = {
     inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '--run。', exclusive: '无。', surface: 'canonical Workspace 中的 durable finish run，只读。', effects: '无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。' },
-    run: { usage: 'Usage: buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--required-assurance <affected|candidate>] [--verification-summary <file>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '首次运行需要 --task、--project 与 ready Task Environment；--change 只对 Change 候选必需，省略时创建 code-only 候选；target branch 默认来自 Git provider start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'Task Environment 执行根、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver；完成交付后只向 Environment 提交 delivery identity/cleanup eligibility，并消费其 cleanup result。' },
+    run: { usage: 'Usage: buildr task finish run --task <task-id> --project <code> [--change <id>] [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '首次运行需要 --task、--project 与 ready Task Environment；--change 只对 Change 候选必需，省略时创建 code-only 候选；target branch 默认来自 Git provider start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌。', surface: 'Task Environment 执行根、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 preflight、prepare、verify、deliver；verify 只经 Task Verification Application 读取或补齐 current Result；完成交付后向 Environment 提交 cleanup eligibility。' },
   };
   for (const [action, help] of Object.entries(finishHelp)) HELP_TOPICS[`task finish ${action}`] = [
     help.usage,
@@ -491,6 +510,8 @@ export function registerCommandHelp(runtime) {
     if (domain === 'task' && ['create', 'inspect', 'update', 'complete', 'abandon'].includes(action)) return `task ${action}`;
     if (domain === 'task' && action === 'review' && !runtime) return 'task review';
     if (domain === 'task' && action === 'review' && ['inspect', 'record'].includes(runtime)) return `task review ${runtime}`;
+    if (domain === 'task' && action === 'verification' && !runtime) return 'task verification';
+    if (domain === 'task' && action === 'verification' && ['inspect', 'record'].includes(runtime)) return `task verification ${runtime}`;
     if (domain === 'task' && action === 'environment' && !runtime) return 'task environment';
     if (domain === 'task' && action === 'environment' && ['prepare', 'inspect', 'cleanup'].includes(runtime)) return `task environment ${runtime}`;
     if (domain === 'worktree' && action === 'create') return 'worktree create';

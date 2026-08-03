@@ -26,6 +26,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const option = (name) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : null; };
+const options = (name) => args.flatMap((value, index) => value === name ? [args[index + 1]] : []);
 const output = (value) => process.stdout.write(JSON.stringify(value) + '\\n');
 if (args[0] === 'version') output({ schemaVersion: 'buildr.version/v1', version: '2.0.0-test' });
 else if (args[0] === 'openspec' && args[1] === 'audit') output({ schemaVersion: 'buildr.openspec-audit/v1', status: 'passed' });
@@ -46,12 +47,12 @@ else if (args[0] === 'app' && args[1] === 'launcher' && ['install', 'status'].in
   });
 }
 else if (args[0] === 'verification' && args[1] === 'run') {
-  const fingerprint = option('--candidate-fingerprint');
+  const targetIdentity = option('--target-identity');
+  const checks = options('--capability').map((id) => ({ id, title: id, status: 'passed', exitCode: 0, durationMs: 7, stdout: '', stderr: '' }));
   output({
-    schemaVersion: 'buildr.verification-run/v1', status: 'passed', level: option('--level'),
-    requiredAssurance: option('--level'), source: { candidateFingerprint: fingerprint },
+    schemaVersion: 'buildr.verification-execution/v1', status: 'passed', target: { identity: targetIdentity, stable: true },
     workspaceNode: { identity: { digest: 'sha256-workspace-node', version: '22.4.1' } },
-    evidenceIdentity: 'evidence-' + fingerprint, evidenceReference: null, totalDurationMs: 7,
+    checks, executionIdentity: 'execution-' + targetIdentity, evidenceReference: null, durationMs: 7,
   });
 } else if (args[0] === 'doctor') output({ schemaVersion: 'buildr.doctor/v1', health: { ready: true }, findings: [] });
 else { process.stderr.write('unsupported fake Buildr invocation: ' + args.join(' ')); process.exit(2); }
@@ -103,6 +104,33 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
   };
 }
 
+function taskVerificationFixture(task) {
+  let current = null;
+  const capability = {
+    id: 'product.delivery',
+    scope: { project: 'product', services: [] },
+    invocation: { kind: 'command' },
+    applicability: { paths: ['**'], conditions: ['A delivery target exists'] },
+    requiredForDelivery: true,
+  };
+  return {
+    readTaskRecordPersistence: () => ({ record: { taskId: task, status: 'active', scope: { projects: ['product'], services: [] } } }),
+    observeTaskVerificationDeclarations: () => [{ project: 'product', valid: true, declaration: { capabilities: [capability] } }],
+    inspectTaskVerification: (_workspaceRoot, _taskId, input = {}) => ({ slot: current ? {
+      present: true,
+      resultDigest: 'sha256-task-verification-result',
+      applicability: { status: current.target.identity === input.targetIdentity ? 'current' : 'stale' },
+      result: current,
+    } : { present: false, result: null, resultDigest: null, applicability: null } }),
+    recordTaskVerification: (_workspaceRoot, taskId, input) => {
+      assert.equal(taskId, task);
+      assert.equal(input.declarationRoot != null, true);
+      current = { target: { identity: input.targetIdentity }, capabilities: input.capabilities, coverageGaps: input.coverageGaps, conclusion: input.conclusion };
+      return { slot: { resultDigest: 'sha256-task-verification-result', applicability: { status: 'current' }, result: current } };
+    },
+  };
+}
+
 test('真实产品执行器单次完成 commit、push、retained transition 与 task cleanup', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-journey-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
@@ -120,7 +148,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] implementation complete\n');
   fs.writeFileSync(path.join(changeRoot, '.buildr', 'knowledge-impact.yml'), 'schemaVersion: buildr.knowledge-impact/v1\nimpacts: []\nunresolvedItems: []\n');
-  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v1\ncapabilities:\n  - id: product.affected\n');
+  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# Task Finish journey\n');
   command(seed, 'git', ['add', '-A']);
   command(seed, 'git', ['commit', '-m', 'baseline']);
@@ -147,6 +175,7 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
     ...taskEnvironmentFixture({ task, environmentRoot, retained }),
+    ...taskVerificationFixture(task),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
     parseOpenSpecChangeDelta: () => ({ capabilities: new Map() }),
     parseOpenSpecProposalCapabilities: () => ({ modified: new Set(['task-finish-execution']), new: new Set() }),
@@ -168,7 +197,6 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
       remote: 'origin',
       environmentRoot,
       workspaceRoot: retained,
-      requiredAssurance: 'affected',
       workspaceNodeIdentity: 'sha256-workspace-node',
     },
   });
@@ -212,7 +240,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
   writeExecutable(path.join(seed, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs'), '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ schemaVersion: "buildr.version/v1", version: "2.0.0-test" }) + "\\n");\n');
   writeExecutable(path.join(seed, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli'), '#!/bin/sh\nexit 0\n');
-  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v1\ncapabilities:\n  - id: product.affected\n');
+  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# Code-only Task Finish journey\n');
   command(seed, 'git', ['add', '-A']);
   command(seed, 'git', ['commit', '-m', 'baseline']);
@@ -239,6 +267,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
     ...taskEnvironmentFixture({ task, environmentRoot, retained }),
+    ...taskVerificationFixture(task),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
     parseOpenSpecChangeDelta: () => { throw new Error('OpenSpec delta parser must not run'); },
     parseOpenSpecProposalCapabilities: () => { throw new Error('OpenSpec proposal parser must not run'); },
@@ -257,7 +286,6 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
       remote: 'origin',
       environmentRoot,
       workspaceRoot: retained,
-      requiredAssurance: 'affected',
       workspaceNodeIdentity: 'sha256-workspace-node',
     },
   });

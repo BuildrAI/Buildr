@@ -29,8 +29,10 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `openspec audit` | `buildr.openspec-convergence-audit/v1` |
 | `task environment prepare/inspect/cleanup` | `buildr.task-environment-result/v1` |
 | `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
-| `verification run` | `buildr.verification-run/v1` |
+| `verification run` | `buildr.verification-execution/v1` |
+| `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
 | `task create/inspect/update/complete/abandon` | `buildr.task-record-result/v1` |
+| `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
 | `task finish run/inspect` | `buildr.task-finish-result/v1` |
 | `app preview start/list/stop` | `buildr.local-app-preview/v1` |
 
@@ -38,7 +40,11 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
 
-`buildr.verification-run/v1` 返回 operation/status、required assurance、Project policy fingerprint、可选 task environment binding、repository candidate identity、计划选择与 supersedes、逐项命令终态、资源等待/lease/释放、真实整体 wall-clock、Candidate completeness、`evidenceIdentity`、reference 和 lifecycle。required check 或请求校验失败仍输出同一单一 JSON envelope 并非零退出；worker stdout/stderr 只作为有界字段进入 checks，不与顶层 JSON 混排。
+`buildr.verification-execution/v1` 返回显式 target identity、Project/declaration identity、实际选择的 command capabilities、逐项终态、可选 Task Environment execution binding、精确 capability/resource 授权、资源协调、真实 wall-clock、execution identity 与 transient evidence lifecycle。请求无效、能力失败或目标在执行中变化时仍输出同一单一 JSON envelope 并非零退出；worker stdout/stderr 只作为有界字段进入 checks，不与顶层 JSON 混排。它不是 portable Task Result，也不表达固定 assurance、推进决定或 Candidate generation。
+
+`buildr.verification-evidence-cleanup/v1` 只报告 transient execution evidence 的 cleanup 状态。非 transient、identity 不匹配、目录越界或无法证明 provider ownership 的文件不会被删除。
+
+`buildr.task-verification-operation-result/v1` 统一覆盖 current Result 的 `inspect|record`。成功时返回 `operation`、`status`、`taskId`、`slot`、`effects` 与 `nextActions`；`slot` 包含 path、present、完整 `buildr.task-verification-result/v1`、响应级 digest 和派生 applicability。没有 current Result 时 inspect 返回 `unknown`；target 或 declaration identity 变化时返回 `stale`。业务拒绝返回同一 envelope、`status: blocked`、稳定 diagnostic 和非零退出，且不得覆盖旧 slot。
 
 `buildr.task-record-result/v1` 统一覆盖五个 Task Record 动作。成功时返回 `operation`、`status`、`taskId`、canonical `path`、closed v1 `record`、响应级 `recordDigest`、`effects` 与 `nextActions`；`diagnostic` 为 `null`。业务拒绝仍返回同一 envelope、`status: blocked`、稳定 diagnostic 和非零退出，且不得产生 mutation effects。CLI 参数或路由语法错误继续使用 `buildr.cli-error/v1`。`recordDigest` 只描述本次读取的 canonical bytes，不进入 Task Record 持久 schema。
 

@@ -37,6 +37,10 @@ function probeStatusLabel(status) {
   return ({ ready: '就绪', blocked: '受阻', 'not-applicable': '不适用' })[status] || status || '未知';
 }
 
+function applicabilityLabel(status) {
+  return ({ current: '当前适用', stale: '已失效', unknown: '适用性未知' })[status] || status || '未知';
+}
+
 function provenanceLabel(resolution) {
   if (resolution.availability !== 'available') return '当前不可用';
   const provenance = resolution.workingCopy?.provenance;
@@ -63,7 +67,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   root.innerHTML = `
     <section class="detail-page-header"><a class="back-link" href="/tasks" data-route>← 返回任务列表</a><div class="detail-title-row"><div><p class="eyebrow">任务</p><h1 id="task-detail-title">正在读取…</h1><p id="task-detail-intent" class="page-copy"></p></div><span id="task-detail-status" class="lifecycle-badge">—</span></div></section>
     <div id="task-detail-alert" class="alert hidden" role="status"></div>
-    <nav class="detail-tabs" aria-label="任务详情"><button class="detail-tab active" type="button" data-task-tab="overview" aria-selected="true">概览</button><button class="detail-tab" type="button" data-task-tab="environment" aria-selected="false">环境</button><button class="detail-tab" type="button" data-task-tab="review" aria-selected="false">审查</button></nav>
+    <nav class="detail-tabs" aria-label="任务详情"><button class="detail-tab active" type="button" data-task-tab="overview" aria-selected="true">概览</button><button class="detail-tab" type="button" data-task-tab="environment" aria-selected="false">环境</button><button class="detail-tab" type="button" data-task-tab="review" aria-selected="false">审查</button><button class="detail-tab" type="button" data-task-tab="verification" aria-selected="false">验证</button></nav>
     <div id="task-overview-panel" data-task-panel="overview">
     <section class="detail-layout">
       <article class="panel"><div class="panel-heading"><div><h2>Task Record</h2><p class="section-copy">只展示顶层任务事实，不推断专业阶段状态。</p></div></div><dl class="read-facts detail-facts"><div><dt>Task ID</dt><dd id="task-detail-id">—</dd></div><div><dt>Project scope</dt><dd id="task-detail-projects">—</dd></div><div><dt>Service scope</dt><dd id="task-detail-services">—</dd></div><div><dt>OpenSpec Changes</dt><dd id="task-detail-changes">—</dd></div><div><dt>结果</dt><dd id="task-detail-result">进行中</dd></div><div><dt>创建时间</dt><dd id="task-detail-created">—</dd></div><div><dt>更新时间</dt><dd id="task-detail-updated">—</dd></div></dl></article>
@@ -84,6 +88,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
       <article class="panel review-summary"><div class="panel-heading"><div><p class="eyebrow">轻量语义 evidence</p><h2>Task Review Results</h2><p class="section-copy">Planning 与 Completion 是两个可选 current 槽位；这里只读展示，不在页面内编辑 Result。</p></div><button id="task-review-refresh" class="button secondary" type="button">刷新审查结果</button></div><div id="task-review-diagnostic" class="environment-diagnostic hidden"></div></article>
       <div id="task-review-loading" class="page-loading hidden"><span class="loader"></span><p>正在读取审查结果…</p></div>
       <div id="task-review-slots" class="review-slot-grid"></div>
+    </section>
+    <section id="task-verification-panel" class="hidden" data-task-panel="verification" aria-live="polite">
+      <article class="panel review-summary"><div class="panel-heading"><div><p class="eyebrow">可移植 current fact</p><h2>Task Verification Result</h2><p class="section-copy">这里只读展示一个 current Result；完整命令输出和临时 execution evidence 不进入本页。</p></div><button id="task-verification-refresh" class="button secondary" type="button">刷新验证结果</button></div><div id="task-verification-diagnostic" class="environment-diagnostic hidden"></div></article>
+      <div id="task-verification-loading" class="page-loading hidden"><span class="loader"></span><p>正在读取验证结果…</p></div>
+      <div id="task-verification-result" class="review-slot-grid"></div>
     </section>`;
 
   let current;
@@ -119,9 +128,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
 
   const environmentPanel = document.getElementById('task-environment-panel');
   const reviewPanel = document.getElementById('task-review-panel');
+  const verificationPanel = document.getElementById('task-verification-panel');
   let activeTab = 'overview';
   let environmentLoading = false;
   let reviewLoading = false;
+  let verificationLoading = false;
 
   function renderEnvironment(data) {
     if (!environmentPanel.isConnected) return;
@@ -294,6 +305,65 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     }
   }
 
+  function renderVerification(data) {
+    if (!verificationPanel.isConnected) return;
+    const diagnostic = document.getElementById('task-verification-diagnostic'); diagnostic.classList.add('hidden'); diagnostic.textContent = '';
+    const container = document.getElementById('task-verification-result'); container.replaceChildren();
+    const slot = data.slot;
+    const card = document.createElement('article'); card.className = `review-slot-card ${slot.present ? slot.applicability.status : 'missing'}`;
+    const heading = document.createElement('div'); heading.className = 'review-slot-heading';
+    const titleWrap = document.createElement('div');
+    const eyebrow = document.createElement('p'); eyebrow.className = 'eyebrow'; eyebrow.textContent = '单一 current slot';
+    const title = document.createElement('h3'); title.textContent = 'Verification Result'; titleWrap.append(eyebrow, title);
+    const state = document.createElement('span'); state.className = `state review-state ${slot.present ? slot.applicability.status : 'missing'}`;
+    state.textContent = slot.present ? applicabilityLabel(slot.applicability.status) : '未记录'; heading.append(titleWrap, state); card.append(heading);
+    if (!slot.present) {
+      const empty = document.createElement('div'); empty.className = 'review-slot-empty'; empty.textContent = '尚未形成完整 Result；不会创建空占位或从当前 HEAD 推断验证状态。'; card.append(empty);
+    } else {
+      const result = slot.result;
+      const facts = document.createElement('dl'); facts.className = 'read-facts review-facts';
+      facts.append(
+        fact('Target identity', result.target.identity),
+        fact('Target', result.target.summary),
+        fact('Target applicability', applicabilityLabel(slot.applicability.target.status)),
+        fact('Declaration applicability', applicabilityLabel(slot.applicability.declarations.status)),
+        fact('完成时间', new Date(result.completedAt).toLocaleString('zh-CN')),
+        fact('Result digest', slot.resultDigest),
+      );
+      const conclusion = document.createElement('div'); conclusion.className = `review-conclusion ${result.conclusion.outcome}`;
+      const outcome = document.createElement('strong'); outcome.textContent = result.conclusion.outcome === 'passed' ? 'Passed' : 'Not passed';
+      const summary = document.createElement('p'); summary.textContent = result.conclusion.summary; conclusion.append(outcome, summary);
+      const evidence = document.createElement('div'); evidence.className = 'review-evidence-grid';
+      evidence.append(
+        reviewList('能力声明', result.declarations, (item) => `${item.project} · ${item.identity} · ${item.path}`),
+        reviewList('实际能力事实', result.capabilities, (item) => `${item.project}/${item.capability} · ${item.outcome} · ${item.facts.join('；')}`),
+        reviewList('Coverage gaps', result.coverageGaps, (item) => `${item.scope}：${item.summary}`),
+        reviewList('失效原因', slot.applicability.reasons, (item) => `${item.code}：${item.message}`),
+      );
+      const technical = document.createElement('small'); technical.className = 'review-result-path'; technical.textContent = slot.path;
+      card.append(facts, conclusion, evidence, technical);
+    }
+    const actions = document.createElement('div'); actions.className = 'review-slot-actions';
+    const action = document.createElement('button'); action.type = 'button'; action.className = 'button secondary';
+    const active = current?.record.status === 'active'; action.disabled = !active; action.textContent = active ? '交给 Agent 验证' : '终态只读';
+    action.addEventListener('click', () => openAgentAction('task-verification', { taskId })); actions.append(action); card.append(actions); container.append(card);
+  }
+
+  async function refreshVerification() {
+    if (verificationLoading || !verificationPanel.isConnected) return;
+    verificationLoading = true;
+    document.getElementById('task-verification-loading').classList.remove('hidden');
+    const button = document.getElementById('task-verification-refresh'); button.disabled = true;
+    try {
+      renderVerification(await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/verification`));
+    } catch (error) {
+      const diagnostic = document.getElementById('task-verification-diagnostic'); diagnostic.classList.remove('hidden'); diagnostic.textContent = `${error.code || 'task_verification_read_failed'}：${error.message}`;
+    } finally {
+      verificationLoading = false;
+      if (verificationPanel.isConnected) { document.getElementById('task-verification-loading').classList.add('hidden'); button.disabled = false; }
+    }
+  }
+
   function selectTab(tab) {
     activeTab = tab;
     for (const button of document.querySelectorAll('[data-task-tab]')) {
@@ -302,6 +372,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     for (const panel of document.querySelectorAll('[data-task-panel]')) panel.classList.toggle('hidden', panel.dataset.taskPanel !== tab);
     if (tab === 'environment') refreshEnvironment();
     if (tab === 'review') refreshReview();
+    if (tab === 'verification') refreshVerification();
   }
 
   async function refresh() {
@@ -318,10 +389,12 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   for (const button of document.querySelectorAll('[data-task-tab]')) button.addEventListener('click', () => selectTab(button.dataset.taskTab));
   document.getElementById('task-environment-refresh').addEventListener('click', refreshEnvironment);
   document.getElementById('task-review-refresh').addEventListener('click', refreshReview);
+  document.getElementById('task-verification-refresh').addEventListener('click', refreshVerification);
   const refreshOnFocus = () => {
     if (!environmentPanel.isConnected) { window.removeEventListener('focus', refreshOnFocus); return; }
     if (activeTab === 'environment') refreshEnvironment();
     if (activeTab === 'review') refreshReview();
+    if (activeTab === 'verification') refreshVerification();
   };
   window.addEventListener('focus', refreshOnFocus);
 

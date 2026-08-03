@@ -324,7 +324,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-verification
     source: buildr
     path: buildr/task-verification
-    description: 用户要求测试、验证、耗时报告、初始化或更新测试声明、推进测试能力成熟度，或者实现型任务到达验证节点、Agent 准备判断或声称开发完成、Task Finish 需要核对或补齐正式验证 evidence 时使用；用户无需主动点名本 Skill。
+    description: 用户要求测试、验证、查看 current 验证结果、报告验证耗时、初始化或更新 Project 测试能力声明，或者实现型任务到达验证节点、Task Finish 需要核对或补齐正式 Task Verification Result 时使用；用户无需主动点名本 Skill。
     enabled: true
     required: false
     state: installed
@@ -339,7 +339,7 @@ skills:
     runtimePath: task-verification
     provides:
       - capability: buildr.task-verification
-        version: 2
+        version: 3
   - id: terminology-governance
     assetIdentity: buildr:skill:terminology-governance
     sourceIdentity: package:skills/buildr/terminology-governance
@@ -468,10 +468,6 @@ contracts:
     version: 1
     path: contracts/buildr/task-asset-review/v1.md
     description: 审查任务过程并提出可沉淀工作资产候选。
-  - id: buildr.task-verification
-    version: 2
-    path: contracts/buildr/task-verification/v2.md
-    description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
   - id: buildr.task-asset-review
     version: 2
     path: contracts/buildr/task-asset-review/v2.md
@@ -516,6 +512,10 @@ contracts:
     version: 1
     path: contracts/buildr/task-review/v1.md
     description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
+  - id: buildr.task-verification
+    version: 3
+    path: contracts/buildr/task-verification/v3.md
+    description: 执行 Project 已声明的验证能力，并维护 Task-scoped portable current Verification Result。
 bindings:
   - capability: buildr.git-single-operation
     version: 1
@@ -529,9 +529,6 @@ bindings:
   - capability: buildr.task-asset-review
     version: 1
     provider: task-asset-review
-  - capability: buildr.task-verification
-    version: 2
-    provider: task-verification
   - capability: buildr.task-asset-review
     version: 2
     provider: task-asset-review
@@ -565,4 +562,7 @@ bindings:
   - capability: buildr.task-review
     version: 1
     provider: task-review
+  - capability: buildr.task-verification
+    version: 3
+    provider: task-verification
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

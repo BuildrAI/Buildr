@@ -170,6 +170,34 @@
 - 避免混用：不是 Receipt、历史日志或状态机；不持久化 revision、current、applicability 或 digest，适用性由读取时目标比较派生。
 - 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
 
+## 验证能力声明（Verification Capability Declaration）
+
+- 定义：Project 根 `verification.yml` 中由团队确认的现有验证能力目录，使用 closed `buildr.project-verification/v2`，声明 capability identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求和必要的环境/副作用边界。
+- 适用范围：Task Verification 选择已有 command、脚本、CI wrapper 或 bounded Agent 操作时的 Project policy 输入。
+- 避免混用：不是新测试框架、通用 DAG 或 Task lifecycle plan；能力缺失只形成 coverage gap，不能在 Verification 中自动开发测试。
+- 来源：[Task Verification specification](../specs/task-verification/spec.md)
+
+## 验证执行证据（Verification Execution Evidence）
+
+- 定义：一次显式 capability invocation 产生的 transient `buildr.verification-execution/v1` 事实，包含完整命令终态、stdout/stderr、耗时、临时路径、资源协调和诊断。
+- 适用范围：Task Verification 提炼 portable Result 之前的本机 execution，以及消费后的有界 cleanup。
+- 避免混用：不是 current Verification Result，不进入 Git 跟踪的 portable slot，也不表达 Task 推进或风险接受。
+- 来源：[Task Verification specification](../specs/task-verification/spec.md)
+
+## 任务验证（Task Verification）
+
+- 定义：面向正式 Task 的专业验证能力，读取相关 Project declarations、选择并执行适用的已有 capability，再通过唯一 Task Verification Application 记录或读取 current Result。
+- 适用范围：明确 target identity 的测试执行、coverage gap 报告、Result 记录与 applicability 检查。
+- 避免混用：不替代 Task Review、Task Environment 或业务验收，不开发缺失测试，也不拥有 Task Development、Candidate generation、`proceed / blocked` 或 Task 顶层状态。
+- 来源：[Task Verification capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-verification/v3.md)
+
+## 验证结果（Verification Result）
+
+- 定义：`.buildr/tasks/<task-id>/verification.yml` 中唯一 current、可移植、Git 跟踪的 closed `buildr.task-verification-result/v1`，绑定 Task、明确 target、实际 declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间。
+- 适用范围：CLI、Skill、Local App 与临时 Finish consumer 共用的 current verification authority；读取时按 target/declaration identity 派生 `current / stale / unknown`。
+- 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
+- 来源：[Task Verification specification](../specs/task-verification/spec.md)
+
 ## 方案审查（Planning Review）
 
 - 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result 绑定调用方提供的 plan target identity。

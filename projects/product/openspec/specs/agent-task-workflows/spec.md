@@ -204,30 +204,6 @@ Buildr OpenSpec apply guidance MUST 要求 Agent 在 active change 的实现阶�
 - **THEN** Agent MUST 停止 canonical sync 后续动作或 archive
 - **AND** MUST NOT 通过 baseline adopt、重跑 pre-sync 或 `--skip-specs` 掩盖失败
 
-### Requirement: 实现任务采用分层验证门禁
-Buildr 任务流程 MUST 由 selected task-verification provider 将实现期间的验证分为单任务最小反馈、任务组受影响范围验证和最终候选完整验证，并 MUST 防止同一候选状态重复执行已被上层入口覆盖的检查。
-
-#### Scenario: 单任务只做最小反馈检查
-- **WHEN** Agent 完成任务组内的一个实现任务且没有跨越高风险边界
-- **THEN** selected provider MUST 只运行语法、类型或与该任务直接相关的小范围检查
-- **AND** provider MUST NOT 默认运行当前 workspace 或 Project 定义的完整验证入口
-
-#### Scenario: 任务组集中运行受影响验证
-- **WHEN** 共享实现区域、验证入口或失败影响面的任务组全部完成
-- **THEN** selected provider MUST 集中运行一次受影响范围验证
-- **AND** provider MUST NOT 为组内每项任务机械重复同一专项检查
-
-#### Scenario: Workspace 定义具体验证入口
-- **WHEN** Buildr 将任务流程 Skills 交付到用户 workspace
-- **THEN** task-verification Skill MUST 使用通用的最小反馈、受影响范围和完整验证语义
-- **AND** 具体检查命令 MUST 由当前 workspace 或 Project 的规则、OpenSpec 或开发文档定义
-- **AND** Skill MUST NOT 将 Buildr 产品仓的 package check、临时 workspace E2E 或产品总验证命令规定为所有项目的固定入口
-
-#### Scenario: 最终候选完成全部修订
-- **WHEN** 全部实现、自然语言资产、生成资产同步和 review 修订已经完成
-- **THEN** selected provider MUST 冻结候选并运行一次项目要求的完整验证
-- **AND** Agent MUST NOT 使用较早候选的验证结果声称当前实现完成
-
 ### Requirement: Git 工作区转换后诊断 Buildr Agent 环境
 Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buildr Agent 环境”的 workspace transition invariant；执行一般 Git 工作流的 Agent MUST 通过产品入口 Buildr Skill 完成具体诊断与修复边界，创建 canonical task worktree 时 MUST 使用 Buildr 的确定性 worktree bootstrap 入口，而不依赖某个 optional Git Skill 的身份。
 
@@ -458,38 +434,6 @@ Buildr 内置任务 Skills MUST 依赖 capability contracts 而不是硬编码 o
 - **WHEN** v2 provider 不可用
 - **THEN** Task Finish readiness MUST 保持 non-blocking degraded
 - **AND** 其他 required providers MUST 不受影响
-
-### Requirement: 最终 Candidate 任务勾选作为可审计验证结果元数据
-Buildr Product MUST 允许 Task Finish 将严格限定的最终 Candidate task checkbox transition 分类为 `closeout-metadata-only`，并 MUST 使用 `verification-result-metadata-only` subtype 组合原 Candidate evidence 与独立 transition evidence，而不得声称原 Candidate 直接验证了变化后的 delivery tree。
-
-#### Scenario: 同一会话勾选唯一最终 Candidate 任务
-- **WHEN** 当前会话的 Candidate 对 implementation identity 成功产生可复用 evidence，随后 active change 中唯一明确的最终 Candidate 任务仅由 `- [ ]` 变为 `- [x]`
-- **THEN** Task Finish MUST 保留原 implementation Candidate evidence，并记录 source/target identity、change/task identity、精确 old/new marker 和 `verification-result-metadata-only` subtype
-- **AND** Task Finish MUST NOT 调用 task-verification `execute` 或 Candidate executor
-- **AND** 最终报告 MUST 分别说明 Candidate 验证的树与 metadata transition 覆盖的 delivery tree
-
-#### Scenario: checkbox transition 伴随其他变化
-- **WHEN** 勾选 Candidate task 的同时存在任务文本、顺序、其他 task、文件或实现内容变化
-- **THEN** Task Finish MUST 将 transition 归类为 `implementation-changed`
-- **AND** Task Finish MUST 在交付前重新运行 Candidate
-
-#### Scenario: transition 来源或任务身份不可证明
-- **WHEN** 当前会话无法关联刚成功的 Candidate evidence、存在多个可能任务、source identity 不匹配或 transition evidence 已丢失
-- **THEN** Task Finish MUST NOT 仅凭 `tasks.md` 最终 diff 推断 `verification-result-metadata-only`
-- **AND** Task Finish MUST fail closed 并重新运行 Candidate
-
-### Requirement: OpenSpec apply 协调最终验证任务标记
-Buildr OpenSpec apply sidebar MUST 指导 Agent 在最终 Candidate 成功后捕获 Candidate evidence，再仅勾选对应验证任务并捕获精确 transition evidence；Buildr MUST NOT 通过修改外部 `openspec-*` Skill 源实现该协调。
-
-#### Scenario: Candidate 是 tasks 中最后一个验证任务
-- **WHEN** Agent 按 OpenSpec apply 执行 active change，且未完成任务是最终 Candidate 验证
-- **THEN** Agent MUST 先对未勾选状态运行 Candidate并捕获 identity/evidence，再将对应 checkbox 由 `- [ ]` 改为 `- [x]`
-- **AND** Agent MUST 立即确认该 checkbox 是唯一内容差异并记录 target identity
-
-#### Scenario: 最终标记不满足严格条件
-- **WHEN** OpenSpec apply 需要同时更新多个任务、修正文案或产生其他内容变化
-- **THEN** Agent MUST 按普通 implementation change 处理
-- **AND** Agent MUST NOT 创建可复用的 verification-result metadata transition
 
 ### Requirement: OpenSpec workflow 必须通过能力契约组合当前认知维护
 Buildr MUST 通过 capability dependencies 和 OpenSpec Component-owned Skill Contributions 将当前认知维护组合进外部 OpenSpec 1.6.0 workflow，并 MUST 保持 external `openspec-*` Skill 源可独立升级。Consumers MUST 依赖 capability identity 和 result evidence，不得依赖默认 provider Skill id 或声明静态方法调用。
@@ -905,3 +849,45 @@ Planning 与 Completion MUST 是两个可选 current Result 槽位。Task 创建
 - **WHEN** 同一正式 Task 在研发中完成 Planning/Completion Review，且另有长期资产 observation
 - **THEN** 两类记录 MUST 由各自 provider 独立维护
 - **AND** Task Finish 的 asset observation finalize MUST NOT 读取、替换或批准 Task Review Result
+
+### Requirement: task-verification Skill 必须作为语义验证入口
+Buildr MUST 交付一个名为 `task-verification` 的 Workspace Skill，并 MUST 通过 selected `buildr.task-verification/v3` provider 工作。Skill MUST 理解正式 Task Intent 与明确 target、读取 Task scope 内 Project v2 declarations、选择适用已有能力、调用 command runner 或执行 bounded Agent operation、提炼 portable facts，并只在完整结论形成后调用 Task Verification Application record。
+
+#### Scenario: 用户要求验证正式 Task
+- **WHEN** 用户、未来 Development 或临时 Finish consumer 提供正式 Task 与明确 target identity
+- **THEN** Agent MUST 先 inspect existing current Result 和 declarations
+- **AND** stale、missing 或目标要求额外能力时 MUST 执行适用能力并形成一份完整 replacement
+
+#### Scenario: 普通一次性测试
+- **WHEN** 用户只要求运行一条测试且没有正式 Task 或 target identity
+- **THEN** Skill MAY 执行并在会话中报告 transient facts
+- **AND** MUST NOT 创建空 Task、伪 target identity 或 Task Verification Result
+
+### Requirement: Skill 必须区分 Capability Declaration、Execution 与 Result
+Skill MUST 把 Project declaration 作为已有能力事实，把完整 stdout/stderr、耗时、资源等待和诊断作为 transient Execution Evidence，把 current Result 作为 portable Task fact。Skill MUST NOT 将三者合并成一个 schema，也 MUST NOT 把 execution summary path 写入 Result。
+
+#### Scenario: command execution 成功
+- **WHEN** Skill 通过 `buildr verification run` 执行显式 command capabilities
+- **THEN** Skill MUST 读取 transient summary 并提炼每项 capability 的 portable facts
+- **AND** 全部 consumer 完成后 MUST 请求 cleanup exact execution boundary
+
+#### Scenario: execution 中断
+- **WHEN** runner 或 Agent operation 中断且完整结论未形成
+- **THEN** Skill MUST 保留已有 current Result
+- **AND** MUST 如实报告本次 transient execution 未形成新 current
+
+### Requirement: P0.4 workflow 不得抢占 Development 或其他专业 authority
+`task-verification` MUST NOT 创建 Candidate generation、改变 Task Record status、决定 proceed/blocked、接受风险、实现缺失测试、替代 Task Review/Task Environment/业务验收或执行 Metadata Publication。Project policy 或 consumer MAY 决定需要哪些能力，但该决定不得被保存成 Verification lifecycle 状态。
+
+#### Scenario: 存在 coverage gap
+- **WHEN** 当前目标缺少能证明所需事实的 capability
+- **THEN** Skill MUST 将 gap 写入完整 Result 或会话报告
+- **AND** MUST 将“是否继续”留给用户或未来 Task Development
+
+### Requirement: Buildr 产品入口必须路由 v3 Verification authority
+Buildr product Skill、task-triage 和相关 builtin descriptions MUST 将测试、验证、能力声明和实现完成验证意图路由到 selected `buildr.task-verification/v3` provider，并 MUST 删除 v2、成熟度晋级、三层 assurance 与 Candidate reuse 的路由文本。
+
+#### Scenario: runtime 发现 Task Verification
+- **WHEN** supported Agent runtime 完成 Buildr sync/render
+- **THEN** runtime MUST 发现 v3 `task-verification` Skill、contract、Project v2 reference/template 与 binding
+- **AND** 不得同时投射 v2 contract 或 v1 reference

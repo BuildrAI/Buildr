@@ -21,7 +21,7 @@
 | 任务研发 / 研发回执 | Task Development / Development Receipt | 从环境就绪到形成交付候选之间的研发编排事实 |
 | 交付候选 / 候选代次 | Candidate / generation | 研发交给收尾的冻结交付身份，以及顺序递增的交接代次 |
 | 任务审查 / 审查结果 | Task Review / Review Result | 对方案和完成候选的专业审查及轻量证据 |
-| 任务验证 / 验证结果 | Task Verification / Verification Result | 可执行检查、政策上下文、结果和推进决定 |
+| 任务验证 / 验证结果 | Task Verification / Verification Result | 现有验证能力声明、transient execution、Task-scoped current 事实结果与派生适用性；不拥有推进决定 |
 | 任务收尾 / 收尾回执 | Task Finish / Finish Receipt | 交付、交付效果记录和环境清理交接，不拥有 Task 顶层终态 |
 | 结构化任务看板 | Structured Task Board | 跨 Task 的规划、依赖和协调事实 |
 | 任务复盘 | Task Retrospective | 任务终态后的非阻塞复盘和未来改进候选 |
@@ -73,7 +73,7 @@ flowchart TB
     B["Task Board<br/>可选的跨 Task 协调"] -. "只关联 Task ID" .-> M
 ```
 
-主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 只接收 Task Record 内容，Local App 则在同一 Task 详情中组合各模块的只读投影。P0.2 已增加独立“环境”页签，但 Environment、Development、Review、Verification、Finish、Board 或 Retrospective 内容都不写入 Task Record。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
+主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 只接收 Task Record 内容，Local App 则在同一 Task 详情中组合各模块的只读投影。P0.2/P0.3/P0.4 已分别增加“环境”“审查”“验证”专业页签，但 Environment、Development、Review、Verification、Finish、Board 或 Retrospective 内容都不写入 Task Record。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
 
 ## 系统基础
 
@@ -88,6 +88,7 @@ flowchart TB
 | Task Manager / Task Record / Local App | 通过共享 Application 创建、展示和维护正式 Task 的最小顶层记录 | P0.1 已交付并生效（2026-08-01） |
 | Task Triage | 判断任务应走什么路径 | 已确认；P0.1 接入 Task Manager |
 | Task Environment | 建立并维护可执行、可核验、可清理的任务环境 | P0.2 已交付并生效（2026-08-02） |
+| Task Verification | 声明现有验证能力、执行显式能力并维护 current Task Verification Result | P0.4 已交付并生效（2026-08-03） |
 | Task Development | 对形成交付变更的正式 Task，在 ready environment 中围绕已对齐 Task Intent 推进研发并形成 Candidate | 已确认 |
 | Task Finish | 对 Candidate 编排适用交付路径，维护 Finish Receipt，并请求 Task Environment 完成清理 | 已确认 |
 
@@ -96,11 +97,11 @@ flowchart TB
 | 能力 | 作用 |
 |---|---|
 | Task Review | 通过 Planning Review 与 Completion Review 分别审阅方案和完成候选 |
-| Task Verification | 在研发过程中按需执行可执行验证，并在 handoff 前核对 current Candidate evidence |
+| Task Verification | 对明确 target 执行适用的已声明能力，维护 current Result，并按 target/declaration identity 派生适用性 |
 | Git Operations | 定义单项 Git 行为、安全默认值、硬边界和最小 evidence；不负责流程编排 |
 | Task Board | 在 Workspace 范围组织多个 Task 的整体目标、规划、依赖和跨 Task 决策 |
 | Task Retrospective | 在任务中按高价值线索持续观察，并在任务终态后形成面向未来工作的复盘结论与改进候选 |
-| Local App | P0.1 提供 Task 最小列表、详情和受控管理；P0.2 增加当前机器的只读“环境”页签；P1 再增加 Structured Board 与其他专业结果投影 |
+| Local App | P0.1 提供 Task 最小列表、详情和受控管理；P0.2/P0.3/P0.4 增加只读“环境”“审查”“验证”页签；P1 再增加 Structured Board 与其他专业结果投影 |
 
 ## Workspace Foundation
 
@@ -511,7 +512,7 @@ Task Intent 是人与 Agent 当前已对齐的统一目标、范围和预期结�
 - Candidate 已 handoff 给 Finish 后，普通 Finish 授权不包含重新修改内容形成新 Candidate；只有用户再次明确授权，或当前 Task 已有 Goal 级持续授权时，Agent 才能返回 Development 继续修复。
 - 如果发现需要改变目标、需求、验收、范围或其他既有共识，Agent 必须停止相关实现、解释偏差并与用户重新对齐，不能让实现静默反向定义 Task Intent。
 - 使用 OpenSpec Change 时，重新对齐后必须先更新仍 active 的 Change；原 Change 已归档时，在同一 Task 中创建并关联新的 Change，表达新的共识。随后执行 Planning Review 并继续实现，完成实现后也由 Development 收敛全部关联 Change，再形成 Candidate。
-- Task Intent 改变后，原 Planning Review 不再有效；Verification、Completion Review 和 Candidate evidence 是否失效，按实际影响判断并如实记录。
+- Task Intent 改变后，原 Planning Review 不再有效；Verification Result 只有在新目标 identity 与 Project declarations 仍精确匹配时才可能 current，Completion Review 和未来 Candidate evidence 则由各自 authority 按实际影响判断并如实记录。
 - Intent 变化是否仍属于同一 Task，由 Agent 先分析并说明影响，用户最终判断。决定创建新 Task 时，重新判断 Triage 与 Environment，并使用新的 Task ID 和 Receipts。
 
 ### Development Receipt
@@ -550,7 +551,7 @@ Planning Review 主要审阅准备如何完成 Task。Task Intent 变化，或�
 
 Task Verification 与 Completion Review 不规定固定先后顺序。约束的是 handoff 时结果仍适用于 current Candidate，而不是执行次序；后续验证、Review 或实现产生新事实时，由 Agent 判断旧结果是否仍有效，不适用时重新执行。
 
-每个检查点都必须如实评估。失败、无法执行或未执行时，Agent 说明事实与风险并交给用户决定；用户可以明确接受具体缺口并继续，但原始 findings、失败和 evidence 缺口不能被抹除。Verification 的单项事实与 `proceed / blocked` 推进决定按 Task Verification 章节记录。用户决定只在明确的检查、Task、Candidate 或后续范围内生效，不自动扩展到其他检查、其他 Task 或后来新增的工作范围。
+每个检查点都必须如实评估。失败、无法执行或未执行时，Agent 说明事实与风险并交给用户决定；用户可以明确接受具体缺口并继续，但原始 findings、失败和 evidence 缺口不能被抹除。Task Verification 只记录能力事实、coverage gaps 和 `passed / not-passed`；未来 Task Development 才拥有 `proceed / blocked` 与用户风险决定。用户决定只在明确的检查、Task、Candidate 或后续范围内生效，不自动扩展到其他检查、其他 Task 或后来新增的工作范围。
 
 Task Retrospective 不属于 Development 检查点或 Finish handoff 条件。Development 只在出现具体高价值线索时按需调用它记录事实，不为每个 Task 预先加载完整复盘流程。
 
@@ -562,7 +563,7 @@ Candidate 使用两层 identity：每个工作范围的 **内容身份（content
 
 任务验证 Workspace、worktree、branch、其中投射的 task-scoped Agent runtime 及其 Agent session 都是执行与取证资源，不是 Candidate 本身。Candidate 可以引用它们产生的、已绑定内容与环境 identity 的有效证据，但不能用“某个 worktree/runtime 存在或测试过”代替可冻结的内容身份与交付候选身份；清理环境也不得改变已经冻结的 Candidate identity。
 
-候选代次（generation）只由 Task Development 创建和递增。第一次冻结 Candidate 时使用第一代；正式 handoff 前，如果内容与上下文未变，只是重新执行或替换 Review / Verification Result，则保持同一代。Review Result 不持久化 `revision`，同类型结果直接整体替换，Application 响应中的 `resultDigest` 标识本次读取的 canonical bytes；Verification Result 是否需要自己的 revision 由 P0.4 根据真实执行与复用需求决定。Candidate 已经 handoff 给 Finish 后被判定失效，或 content、Intent / Change context、verification policy context 发生变化时，Development 恢复同一份 Receipt，并在下一次冻结时递增 generation。Task Finish 只能引用或判定 generation 失效，不能创建、递增、回退或复用 generation。具体 identity 编码由 Task Development 模块 Change 确定。
+候选代次（generation）只由 Task Development 创建和递增。第一次冻结 Candidate 时使用第一代；正式 handoff 前，如果内容与上下文未变，只是重新执行或替换 Review / Verification Result，则保持同一代。Review 与 Verification Result 都不持久化 `revision`，完整 Result 直接整体替换，Application 响应中的 digest 只标识本次读取的 canonical bytes。Candidate 已经 handoff 给 Finish 后被判定失效，或 content、Intent / Change context、verification policy context 发生变化时，Development 恢复同一份 Receipt，并在下一次冻结时递增 generation。Task Finish 只能引用或判定 generation 失效，不能创建、递增、回退或复用 generation。具体 identity 编码由 Task Development 模块 Change 确定。
 
 Task、Board、Retrospective 或其他 Workspace lifecycle metadata 不属于 Candidate 内容。其共享方式由 P0.7 Task Metadata Publication 单独设计。Candidate 不强制等同于 Git commit；Git 仓库可能已经有匹配 commit，也可能由 Finish 按 Git Operations 约定创建交付 commit；非 Git 工作范围可以使用工具可核验的 snapshot / content identity。
 
@@ -817,122 +818,95 @@ Review Result 是 canonical Workspace 中可移植、Git 跟踪的轻量 evidenc
 
 ### 定位
 
-> Task Verification 是独立的可执行验证 Skill：根据 Project 声明与当前实际事实，在 Development 中执行适用检查，维护当前 Verification Result，并在 handoff 前核对 current Candidate 的验证情况。
+> Task Verification 读取 Project 已声明的现有验证能力，执行与明确交付目标相关的检查，并维护一份 Task-scoped current Verification Result。
 
-Task Verification 回答“实际执行了什么、结果如何、覆盖了什么”，不替代 Task Review、业务验收或用户风险决定。它不准备和清理长期运行环境，不提交、集成或推送 Candidate，也不在 Task Finish 中重新执行验证。
+它只回答“验证目标是什么、用了哪份声明、实际执行了什么、事实结果如何、整体结论是什么、对当前目标是否仍适用”。它不替代 Task Review、Task Environment 或业务验收，不决定风险是否可接受，也不写入 `proceed / blocked`、Task 顶层状态、Development Receipt 或 Candidate generation。
 
-Task-scoped Verification 全部发生在 Task Development 内。Agent 可以在实现过程中按实际需要多次调用；Task Finish 只读取 Development Receipt 与当前 Verification Result，核对 identity、适用性和缺口，不能改写验证事实。
+P0.4 交付 Result authority，但 P0.5 Task Development / Candidate 尚未实现。当前 Task Finish 只是临时 consumer：优先读取 current Result，并在窄条件下补齐一次验证；这不表示 Finish 已获得任务推进或 Candidate authority。
 
-用户单独要求运行测试时，Agent 可以读取同一 `verification.yml` 并执行适用的有界检查，但这只是 Task 外的临时验证：不创建 Task ID、Environment / Development Receipt 或持久化 Verification Result，也不进入 handoff 门禁。测试发现问题后，只有用户要求修改交付物时才创建正式 Task。
+### Verification Capability Declaration
 
-### Project 验证声明
+每个 Project 可以用根目录 `verification.yml` 声明自身及所属 Service 已经存在的测试验证能力，schema 为 `buildr.project-verification/v2`。Buildr 只引用已有命令、脚本、CI wrapper 或有界 Agent 操作，不根据技术栈发明测试，也不在 Verification 中开发缺失测试。
 
-第一版只在 Project 的 `verification.yml` 声明验证能力，不增加 Workspace 级声明，也不为每个 Service 建立独立文件。一个 Project 声明自身以及所属 Services 的验证能力；多 Project Task 分别读取相关 Project 声明并汇总。Workspace 只提供 Environment、身份和执行上下文。
+每项 capability 首版只保留：
 
-`verification.yml` 描述“有哪些验证能力、何时适用以及如何执行”，不规定 Task 的固定验证日程。每项能力只记录实际需要的最小信息：
-
-| 信息 | 最小内容 |
+| 信息 | 内容 |
 |---|---|
-| 身份与范围 | 能力标识，以及适用的 Project / Service |
-| 适用条件 | 什么变更或场景需要处理 |
-| 执行方式 | 可直接执行的 command 与 cwd，或有明确边界的 Agent 操作步骤 |
-| 判断依据 | 该能力证明什么，以及怎样算通过 |
-| 环境要求 | 仅在需要特定运行环境、服务或数据时声明 |
-| 交付要求 | 是否必须在 handoff 前处理 |
-| 副作用与授权 | 仅在会影响共享、外部或持久状态时声明 |
+| identity | Project 内稳定 capability id，可选 title |
+| scope | 明确的 Project 与 Service scope；空 Service 列表表示 Project-wide |
+| invocation | 有界 `command` 的 argv/cwd，或有界 `agent` instructions |
+| applicability | Project-relative path patterns，以及确有需要时的条件说明 |
+| proves | 该能力实际能够证明的事实 |
+| delivery policy | `requiredForDelivery: true / false` |
+| optional boundaries | 确有需要时的 environment、effects、authorization 与 resource claims |
 
-command 必须是会自行结束的有界执行。正式 Task 中的 Spring 服务、Local App Preview、dev server 等持续资源由 Task Environment 准备、登记和清理；Task Verification 只执行有界检查。Task 外临时启动服务或调用 API 由 Agent 直接处理，不因此创建 Task。
+声明是 closed schema。旧 `mode`、`maturity`、`stages`、`enforcement`、`coverage`、`sources`、`dependsOn` 和 `supersedes` 不再读取。声明缺失或没有适用能力时只形成 coverage gap；不得自动创建测试，也不得把 gap 改写成通过。声明存在但无效时 fail closed，不能执行其中能力。
 
-声明存在时，它就是 Project 当前确认的验证事实，不再区分 `augment`、`authoritative` 等 mode。所有适用于 current Candidate 且声明为“交付前必须处理”的能力都必须在 handoff 时有明确结果。Agent 仍可执行未声明检查作为补充 evidence 或新声明候选，但不能用它静默替代已声明要求。
+第一版不固化 `minimal / affected / candidate` 等通用验证层级，不建设通用 DAG、调度器或资源平台。现有 Product DAG 只保留在自身 test harness；production runner 按显式 capability 列表执行。资源协调只在真实 capability 声明 claim 时启用，是 execution 实现细节，不是 lifecycle authority。
 
-Agent 通过 Task Verification Skill 帮助用户初始化或更新声明：从 Project / Service 的 AGENTS、构建文件、package scripts、CI、文档和已有测试发现真实入口，提出能力、适用范围、通过标准和未知项；用户最终确认 Project 政策。未经授权不写入声明，也不凭技术栈发明测试能力。
+### Execution Evidence
 
-没有 `verification.yml` 时不阻塞普通 Development，也不强制现场初始化。Agent 根据当前 Project 事实和用户要求选择合理检查并标记为 `undeclared`；实际选择的检查全部通过且没有已知缺口时，可以形成 `passed + proceed`，但必须说明正式覆盖范围尚未声明，不能声称全部 Project 验证能力均已覆盖。Agent 可以建议补充声明。
+`verification run --project <project> --capability <id> --target-identity <identity>` 只执行显式选择的 command capability，并在 provider-owned 临时目录产生 transient `buildr.verification-execution/v1` evidence，不提供 caller-managed output writer。`effects.authorization: explicit` 与 explicit resource 分别要求精确 capability/resource 授权。完整 stdout/stderr、命令、耗时、临时路径、授权、资源获取和诊断都留在 execution evidence，不复制进 portable Result。
 
-`verification.yml` 已存在但无法解析、引用不存在或内部矛盾时，Development 仍可执行能够确认的检查；handoff 暂定为 `not-passed + blocked`，直到声明修复，或用户明确接受覆盖缺口并要求继续。具体无效声明分类留到实现时收敛。
+Execution 完成与 Result 发布分开：
 
-`verification.yml` 是 Project 的验证政策输入；只有当前 Task 修改它时，它才同时属于该 Task 的交付内容。每个相关 Project 的 verification policy context identity 由当前声明 identity / digest，或 `absent / undeclared` 标记，以及当前 Task 的适用性 / override 决定引用共同组成。current Candidate 形成后，只要这个 context identity 发生变化，无论来自当前 Task 修改、外部漂移、新增、加强、删除、降低要求还是用户排除当前 Task，本次 handoff 与绑定它的 policy evidence 都立即失效。Development 必须先完成适用的用户确认与 Intent 对齐，再形成新 Candidate。Agent 不能通过自行删除或降低声明为当前 Task 放行。
+- 所有选中能力得到终态事实后，caller 才能提炼完整 Result；
+- 中断、进程未形成终态或 Result 写入失败时，不覆盖 current Result；
+- execution evidence 在消费后按现有 cleanup 边界清理，不作为 Git 跟踪的 current authority；
+- Agent invocation 可以形成事实，但临时 Finish adapter 不代替正式 Agent 执行。
 
-### Development 中的执行
+### Current Task Verification Result
 
-Task Verification 不定义固定的 `minimal / affected / candidate` 级别，也不规定固定次数或与 Review 的先后顺序。Candidate 是被核验的 Task 级 handoff identity，其中 content identity 标识实际内容；它不是验证等级。
+每个 Task 只有一个 current slot：`.buildr/tasks/<task-id>/verification.yml`，schema 为 `buildr.task-verification-result/v1`。
 
-- Agent 根据当前工作和反馈成本安排验证，例如完成一组相干任务后执行相关单元测试；不同任务采用不同节奏。
-- Development 中间结果绑定当时的实现状态，可以继续作为反馈 evidence，但不自动证明最终 Candidate。
-- 准备 handoff 时，Agent 针对 current Candidate 核对所有适用的交付要求；已有结果仍有效时可以复用，不机械重跑。
-- Candidate 发生变化后逐项判断能力结果是否仍然覆盖当前内容；受影响的结果失效，不受影响且能够证明的可以复用，无法证明时按失效处理。
-- verification policy context identity 变化必然要求形成新 Candidate，但不要求机械重跑所有检查；只有能够证明仍覆盖新 Candidate 与新政策上下文的结果才可复用，其余结果失效。
-- Service 请求解析到所属 Project 的声明；多 Project Task 只组合实际相关的能力，不建立 Workspace 级统一测试计划。
-
-第一版不建设通用 DAG、资源调度器、固定测试层级、预算系统或复杂覆盖推导。能力之间未来确实出现稳定依赖或共享资源问题时，再基于真实需求演进。
-
-### 单项事实与推进决定
-
-每项已声明或已发现的能力只使用以下结果：
-
-| 结果 | 含义 | 算验证通过 |
-|---|---|---|
-| `passed` | 已执行且通过 | 是 |
-| `failed` | 已执行但失败 | 否 |
-| `blocked` | 应该执行，但环境、工具、授权等条件不满足 | 否 |
-| `skipped` | 应该执行，但用户明确决定不执行 | 否 |
-| `not-applicable` | 与当前 Candidate 无关 | 不参与判断 |
-
-`not-applicable` 由 Agent 根据声明的适用条件与 Candidate 事实判断并记录理由；事实含糊、影响范围不确定或排除后可能掩盖重要风险时必须询问用户。不能用 `not-applicable` 表达“适用但不想执行”。
-
-用户不需要使用这些内部状态词，只表达自然语言意愿。Agent 负责理解并规范化记录；如果用户指令的对象、动作或后果不明确，必须说明具体缺口及继续的后果并向用户确认，不能根据一句含糊的“继续”猜测用户是在要求修复、跳过验证还是接受风险。
-
-验证结论与任务推进决定分开：
-
-| 验证结论 | 推进决定 | 含义 |
-|---|---|---|
-| `passed` | `proceed` | 所有适用的交付必需能力均已通过，正常推进 |
-| `not-passed` | `blocked` | 存在失败、阻塞或未处理缺口，默认不能 handoff |
-| `not-passed` | `proceed` | 验证没有通过，但用户在了解具体事实和风险后明确允许继续 |
-
-用户接受风险只改变推进决定，不改变验证事实。例如测试失败后用户明确要求继续，单项结果仍是 `failed`，验证结论仍是 `not-passed`，只把推进决定记为 `proceed`。该决定只作用于用户明确理解并授权的检查、Candidate、Task 或后续范围，不自动扩展；范围不清时必须重新确认。
-
-### Verification Result
-
-Verification Result 是主 Workspace 中可移植、Git 跟踪的轻量 current evidence，不是 lifecycle Receipt，也没有独立状态机。每个 Task ID 维护一份按能力组织的当前结果集合；新的执行只更新相关能力的 current 结果，不保存完整运行历史。
-
-| 信息 | 最小内容 |
+| 字段 | 最小事实 |
 |---|---|
-| Task 绑定 | Task ID |
-| 声明来源 | 实际采用的 Project 声明及其 identity / digest，或 `absent / undeclared` 标记及发现依据 |
-| 目标状态 | 本次结果对应的实现状态或 current Candidate identity、适用的 verification policy context identity，以及实际执行所依赖的 Environment Receipt `revision` / 事实指纹；涉及 Agent runtime 时还包含 source/projection identity 与实际 Agent session 采用证据；包含 Task 级适用性 / override 决定引用 |
-| 能力结果 | capability、实际 command / Agent 步骤、`passed / failed / blocked / skipped / not-applicable` |
-| 验证结论 | 当前 `passed / not-passed` 及其能力结果依据 |
-| 最小 evidence | exit code、关键 assertion 或观察结论；完整日志只保存明确标记为本机或外部的引用，不嵌入 tracked Result |
-| 缺口与决定 | 失败、阻塞、跳过原因，以及用户明确风险决定和适用范围 |
-| 授权使用 | 涉及副作用时，本次使用的单次授权或既有预授权，以及匹配的目标和范围 |
-| 当前有效性 | 对当前实现或 Candidate 是否仍适用及判断依据；Candidate identity、verification policy context identity 或适用环境事实任一不再匹配时，不得继续显示为当前有效 |
+| Task | `taskId` |
+| target | 明确、opaque 的 target identity 与简短目标说明 |
+| declarations | 实际采用的 Project、声明路径与由 Application 观察得到的声明 identity |
+| capabilities | 实际执行的 Project/capability、`passed / failed` 与精炼事实 |
+| gaps | 没有能力或未覆盖 scope 的 coverage gap |
+| conclusion | `passed / not-passed` |
+| completion | `completedAt` |
 
-Task 级适用性 / override 决定由 Development 在 Candidate 冻结前维护为独立决定项；Task Verification 只在 Verification Result 中引用其 decision identity，并返回验证事实、缺口和建议。它不能把决定只保存在 Verification Result 中，也不能通过更新 Result 改写 Development 的政策决定。
+Result 不保存 stdout/stderr、临时路径、Environment Receipt、执行资源、用户风险决定、任务推进决定或 Candidate generation。它也不保存 history、持久 revision、局部 patch、merge/CAS 协议。
 
-Task Verification 独占写入 `.buildr/tasks/<task-id>/verification.*`。Development Receipt 只引用当前结果及适用性，并记录由它作出的 `proceed / blocked` handoff 决定；Task Finish 只读取。具体文件格式和 evidence 引用方式留到实现时确定。
+Task Verification Application 是该 slot 的唯一 writer/reader：
 
-对普通代码、CLI 或静态产物验证，Task Verification 可以直接在 ready 执行根运行适用能力。只有变更涉及 Agent runtime 的发现、加载、Skill/Rule source 或会话行为时，才需要在 receipt 绑定的任务验证 Workspace 中启动独立 Agent session，证明该 session 实际采用了预期 source/projection identity；不能把文件复制成功、当前开发会话看到源码或 worktree 内直接调用 CLI 冒充 Agent runtime 行为证据。
+- `record` 从当前 Task 与 Project registry 解析 scope，并自行读取、校验和计算 declaration identity；CLI、Skill 或 caller 不能注入 declaration digest；
+- 每次 record 都校验完整 closed Result，然后用临时文件、rename 和写后回读执行整值原子替换；
+- 序列化、写入、rename 或写后验证失败时回滚到原 current，不能留下半份或覆盖已确认结果；
+- `inspect` 同时返回 stored Result 与派生 applicability，不改写持久文件。
 
-已经用于正式 handoff 的 Verification Result，其 identity、当时 `revision`、最小结论、推进决定与适用的用户风险决定由 Development Receipt 的 generation 快照保留；更新 current 结果集合不改写旧快照。
+Applicability 只有 `current / stale / unknown`：
+
+- 没有 Result 时为 `unknown`；
+- caller 提供的当前 target identity 与 stored target 不一致时为 `stale`；
+- 当前 Project declaration identity 与 stored identity 不一致、声明缺失或无效时为 `stale`；
+- 两者都匹配时为 `current`。
+
+目标或声明变化不会静默刷新 Result。Service scope 与 capability identity 都按当前 Project declaration 校验；多 Project Task 分别绑定各自 declaration identity。
+
+### 共享 consumer
+
+CLI、`task-verification` Skill、Local App Task Verification 页签和 Task Finish 都调用同一个 Task Verification Application：
+
+- CLI 提供稳定的 `task verification inspect|record` JSON family；
+- Skill 负责选择已有能力、运行 transient execution、提炼完整 Result，并在不存在能力时报告 coverage gap；
+- Local App 只读投影 current Result 与 applicability，并提供受限 Agent prompt，不建立第二 writer；
+- 临时 Finish adapter 先复用 current、passed 且覆盖全部适用 delivery-required capability 的 Result；仅当单 Project 的 implicit command capability 可按 scope/path 确定性选择时，才保守执行一次并通过同一 Application 记录。自然语言 conditions 不用于跳过；多 Project、Agent、显式授权或需要语义排除时必须已有正式 Result。
+
+Finish adapter 不创建 Candidate、不递增 generation、不改 Task 状态，也不保存 `proceed / blocked`。P0.5/P0.8 实现后，Development handoff 与新 Finish 状态机再由各自窄 Change 接管；P0.4 不预建这些 authority。
+
+Application 在 canonical Workspace 写 current Result 后，retained source clean 继续按既定 Workspace Metadata Store 边界排除未 staged 的 `.buildr/**`；源码/文档 dirty 与 staged metadata 仍阻塞。Finish 不 stage、commit、发布、修改或丢弃 metadata，exact owned-path publication 仍由 P0.7 单独实现。
 
 ### 副作用与授权
 
-普通本地测试、构建产物和可自然退出的临时文件属于常规验证效果，不要求额外授权。会修改共享环境、外部系统、持久业务数据或其他难以恢复状态的能力，必须在声明中写清目标环境、操作、副作用和可行的业务数据清理步骤，并取得相应授权后才能执行。
-
-需要反复执行的能力可以在 `verification.yml` 中声明持久化预授权；预授权只覆盖精确声明的目标环境、步骤、副作用和清理范围，不保存凭证。实际执行偏离任一边界时必须重新询问。当前 Task 新增、扩大、缩小或移除预授权都必须由用户明确确认；确认后的声明默认也应用于当前 Task，除非用户明确排除。
-
-Task Verification 负责如实记录业务副作用和清理结果，但不把未知业务数据交给 Task Environment 猜测清理。正式 Task 验证所需的持久进程、端口、容器或临时数据库仍由 Task Environment 根据 Environment Receipt 清理。
-
-### Handoff 与 Finish 边界
-
-handoff 前，Task Development 要求 Task Verification 已针对 current Candidate 和它绑定的 verification policy context identity 核对全部适用的交付必需能力，并把每项归入明确结果；`not-applicable` 必须有理由，失败、阻塞、跳过和用户风险决定必须保留原始事实。
-
-Task Finish 只核对 Verification Result 是否属于当前 Task、Candidate 与 verification policy context，声明范围是否已处理、结果是否仍有效，以及 Development Receipt 的推进决定。推进决定缺失、过期、范围不匹配或出现新缺口时返回 `blocked`，不自行启动验证；policy context identity 已变化时必须返回 Development 形成新 Candidate。当前 Candidate 上已明确接受的同一风险不重复询问。普通授权下，是否返回 Development 补做验证或形成新 Candidate 由用户决定，Goal 级持续授权仍按原 Task Intent 自主循环。用户也可以在充分披露后明确接受缺口继续，但不能把结果改写为 `passed`。
+普通本地测试、自然退出的临时文件和隔离 fixture 属于 capability 声明的常规 effects。涉及外部系统、共享环境或持久业务数据时，声明必须显式写明边界并要求 explicit authorization；凭证不进入声明或 Result。Task Environment 继续拥有长期进程、端口和动态资源的准备与清理，Verification 只使用已经授权的有界能力。
 
 ### 建设形态
 
-第一版保持 **Skill + Project declaration + Verification Result**：`task-verification` Skill 负责发现声明、执行适用验证、判断结果有效性并维护 current evidence。现有 runner、DAG 和资源协调只作为可复用执行能力。P0.4 同一个 Change 中切换新 Result authority，迁移必要 consumer，并删除旧层级和旧生命周期 mutation/schema；不把物理清退延迟到后续批次。
+P0.4 保持 **Project declaration + transient execution + current Task Result + 一个 Application authority**。同一 Change 完成旧 v1 声明、固定 assurance、旧 run schema、旧 plan/DAG lifecycle、旧 Finish summary 输入与重复文档的迁移或删除，不留下双 writer、双 schema 或兼容 mutation path。
 
 ## Task Retrospective
 
@@ -1042,7 +1016,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | Environment Receipt 统一 ready、恢复、runtime projection、动态资源和 cleanup；旧 worktree-centric v1 receipt 一次性迁移退出，长期只保留新的窄 Git provider evidence | P0.2 Task Environment | Roadmap 记录；不加入 `task.yml`，同 Change 完成迁移和旧 writer/routing 清退 |
 | 保留工作区 Buildr 环境管理器是 Task Environment 的受信执行入口；其 fingerprint 不是 Task 来源基线或 target revision，轮换不得自动更新任务 checkout | P0.2 Task Environment | 固定术语和边界；具体 fingerprint 轮换协议由后续窄修正处理，不扩入 P0.3 |
 | worktree 只隔离工作树/index；Git refs、进程、端口、用户级 runtime、凭证等仍可能共享 | P0.2 Task Environment | Roadmap 记录；后续按真实资源协调 |
-| Agent runtime 行为必须由独立 session 证明，并绑定 source/projection/environment identity | P0.4 Task Verification | Roadmap 记录；不把 projection ready 冒充验证通过 |
+| Agent invocation 只能由有界 Agent 操作形成事实；文件投射或 Environment ready 本身不等于 capability 通过 | P0.4 Task Verification | v2 declaration 可声明 bounded Agent invocation；临时 Finish adapter 只执行 command capability |
 | worktree、任务验证 Workspace、task-scoped runtime 和 session 是执行资源，不是交付 Candidate | P0.5 Task Development / Candidate | Roadmap 记录；后续 Candidate contract 固化 |
 | 生命周期 metadata 只从 canonical exact owned paths 发布；不发布 `.worktrees`/本机 Environment/runtime；历史引用退役后的可读性另行设计 | P0.7 Task Metadata Publication | Roadmap 记录；P0.1 不增加 publication 状态或快照字段 |
 | `.buildr/` 是文件型 Workspace Metadata Store，整体排除在源码 global clean 判定之外；Git 跟踪与发布继续按 portable exact owned paths 独立处理 | P0.7 Task Metadata Publication / P0.8 Task Finish | 固定 clean 与 publication 分层；不等同于 `.gitignore` 或跳过 collision/ownership 检查 |
@@ -1060,7 +1034,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | 已交付并生效（2026-08-01，`dev@2448db0`） | 已交付稳定 Task ID、最小 `task.yml`、唯一 Task Record Application、`task-manager`、CLI 五个确定性动作和 Local App Task 列表/详情/受控管理；已投射 retained Codex runtime 并通过 Doctor | 无旧 Task Record store；已更新 task-triage 正式分支并复用现有 Local App shell/API 安全边界 |
 | P0.2 | Task Environment `introduce-task-environment` | 已交付并生效（2026-08-02，`dev@29f9c74`） | 已交付唯一 Task Environment Application、薄 CLI/Skill、Environment Receipt、真实 ready/恢复/runtime projection、动态资源与 cleanup、Local App 环境页签、Task-scoped Change Resolver 和窄 Git provider；retained runtime 已同步并通过 Doctor | 已按 A=1/B=1/C=31/D=0 完成一次性迁移；删除旧 environment writer、receipt authority、routing、JSON/help 与 consumer 残留，旧 worktree 能力仅保留为窄 Git provider evidence |
 | P0.3 | Task Review Result `introduce-task-review-results` | 已交付并生效（2026-08-02，`dev@7764a99`） | 已交付一个 Task Review Application、Planning/Completion 两个可选 current Result 槽位、最小 closed schema、明确 target identity、执行方式、覆盖、findings、结论与派生适用性；CLI、`task-review` Skill 和 Local App 任务 Review 管理复用同一 authority，retained runtime/CLI/Local App 已安装并通过 Candidate verification、Doctor 与真实 Result 写入回读 | Task-scoped Change 审查已切到 Planning Review；删除冲突旧 task-review route/store/schema/test，全局 retained-only generic Change review 与 Task Asset Review 保留各自 authority |
-| P0.4 | Task Verification Result `introduce-task-verification-results` | 未开始 | 无 | 同 Change 迁移当前 verification lifecycle，保留必要 runner/资源协调 |
+| P0.4 | Task Verification Result `introduce-task-verification-results` | 已交付并生效（2026-08-03，`introduce-task-verification-results`） | 已交付 Project declaration v2、显式 transient execution、唯一 Task Verification Application、原子 current Result、target/declaration staleness、CLI、Local App 与临时 Finish consumer | 删除旧声明 v1、固定 assurance/层级、旧 run schema、声明级 plan/DAG、Finish summary 输入和重复 writer；Product-only DAG 留在 test harness，真实资源协调按 claim 保留 |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | 未开始 | 无 | 同 Change 收敛重叠 Candidate/研发 handoff |
 | P0.6 | Git Operations `formalize-git-operations` | 未开始 | 无 | 同 Change 迁移并删除冲突旧 Git capabilities |
 | P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 未开始 | 无 | 新能力；只接入届时已存在的 Task-owned records |
@@ -1080,7 +1054,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 - 能稳定固化的 schema、校验、状态转换、路由和副作用进入产品/contract/fixtures，不让 Agent 反复推理；
 - 一个 Task 可以关联 `0..N` 个 `project/change`；P0.1 只做当前记录内限定与去重；
 - Candidate generation 只由 Task Development 创建和递增；
-- Review / Verification Result 按目标 identity、政策和适用环境失效；
+- Review Result 按目标 identity 失效；Verification Result 按 target 与 Project declaration identity 失效；
 - Task Finish 只消费 Development handoff，不创建或收敛 Change，不发起 Verification；
 - commit、push、PR、Board 状态和 metadata publication 都不单独等于 Task 完成；
 - 持久 revision、跨 Task Change ownership 与 publication 协议不作为所有记录的预设共同机制；P0.1 只为真实 Local App 陈旧页面提供非持久 `recordDigest`，其他 owner 模块按实际需要决定；
@@ -1093,7 +1067,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | Task ID、最小 `task.yml`、唯一 Task Record Application、`task-manager`、产品化 create/inspect/update/complete/abandon、Local App Task 列表/详情/创建/编辑/完成/放弃、三态/no-change、`0..N` 个 `project/change`；不含 Environment、专业 references、持久 revision、跨 Task Change ownership 或 publication 分类 | CLI 与 Local App 复用同一 writer；创建并跨 context 恢复；禁止字段与损坏记录 fail closed；陈旧页面冲突刷新；终态不可重开；Change 当前记录内无重复；task-triage 正式分支首次写入前建立 Task Record；集成并 retained render/App 验证后直接生效 |
 | P0.2 | Task Environment `introduce-task-environment` | Task 级 Environment Receipt、唯一 Application、薄公共 CLI/Skill、`.worktrees/<task-id>` 任务验证 Workspace、真实 ready 探测、task-scoped runtime projection identity、Task-scoped Change Resolver、Local App 只读环境页签、串行恢复、资源登记和 cleanup | 创建 Task → 保留工作区 Buildr 环境管理器准备环境 → 候选 Change 可被 Task 范围解析 → Local App 查看本机环境 → 候选投射自身 runtime → 跨 session 恢复 → Finish/放弃 cleanup；同 Change 将 task-worktree 收窄为 Git provider，按 A/B/C/D 一次性迁移旧 v1 receipt，并删除旧 environment mutation/routing/help/JSON/consumer；不把 worktree 称为主/retained/开发 Workspace 或 Agent runtime |
 | P0.3 | Task Review `introduce-task-review-results` | 一个 Result 模型、Planning/Completion 两个可选 current 槽位、目标 identity、执行方式、覆盖、findings、结论与派生适用性；无持久 revision/history，不编排 Development、Candidate 或门禁 | 两类 Result 可独立存在并绑定明确目标；同类型完整替换、跨类型隔离，中断不覆盖 current；Task-scoped Change 单次切到 Planning Review，全局 generic Change review 与 Task Asset Review 保留各自 authority；同 Change 删除或迁移冲突的旧 Review route/store/test |
-| P0.4 | Task Verification `introduce-task-verification-results` | Verification Result、政策上下文、事实结果与推进决定；Agent runtime 变更按需绑定独立 session 的 source/projection/environment identity；保留必要 runner/DAG/资源协调 | 真实 runner/Agent session 可形成新 Result，目标、runtime projection 或环境事实变化使旧结果失效；同 Change 切换现有 verification consumer/CLI/binding，删除旧 lifecycle mutation/schema，保留执行安全不变量 |
+| P0.4 | Task Verification `introduce-task-verification-results` | Project declaration v2、transient execution evidence、一个 current Verification Result、target/declaration identity 与派生 applicability；不包含推进决定、Candidate generation 或 Environment Receipt | 真实 command/Agent facts 可提炼完整 Result；中断或写入失败不覆盖 current；target/declaration 变化派生 stale；CLI、Skill、Local App、临时 Finish consumer 共用唯一 Application；删除旧 assurance、run/plan/DAG lifecycle、summary 输入与重复 schema |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | Development Receipt、`0..N` Change 处置、Candidate identity/generation、Result 编排与 handoff；明确 worktree/runtime/session 只是执行资源 | Environment ready → Planning Review → 实现 → Verification/Completion Review → generation 1 handoff；Candidate 以内容与上下文冻结，不以任务验证 Workspace 存在代替；同 Change 收敛任何重叠 Candidate/研发 handoff |
 | P0.6 | Git Operations `formalize-git-operations` | 单次 Git operation 授权、安全边界、前后 identity 与最小 Result | 精确暂存；commit/push 分离；不 force push；同 Change 迁移有效安全约束并删除冲突旧 capability/binding/router/schema |
 | P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 根据届时真实记录设计 canonical exact-owned-path publication；排除 `.worktrees`、本机 Environment/runtime 与 Candidate 内容；处理长期记录引用退役后的读取诊断；复用 Git Operations | Task records 可独立发布，失败不回退 Task 状态；无 Git 时留本地；revision、历史快照、重试和 commit range 规则在本 Change 依据实际需求确定，不由 P0.1 预设 |

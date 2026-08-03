@@ -78,7 +78,7 @@ try {
   const runPackaged = (args) => spawn(packagedCli, args);
   for (const args of [
     [], ['--version'], ['-V'], ['version'], ['version', '--json'],
-    ['help', 'doctor'], ['help', 'app'], ['help', 'init'], ['help', 'task'], ['help', 'task', 'review'], ['help', 'task', 'review', 'inspect'], ['help', 'task', 'review', 'record'], ['task', 'create', '--json'], ['task', 'review', 'inspect', '--json'], ['service', 'create'], ['doctr'], ['doctr', '--json'],
+    ['help', 'doctor'], ['help', 'app'], ['help', 'init'], ['help', 'task'], ['help', 'task', 'review'], ['help', 'task', 'review', 'inspect'], ['help', 'task', 'review', 'record'], ['help', 'task', 'verification'], ['help', 'task', 'verification', 'inspect'], ['help', 'task', 'verification', 'record'], ['task', 'create', '--json'], ['task', 'review', 'inspect', '--json'], ['task', 'verification', 'inspect', '--json'], ['service', 'create'], ['doctr'], ['doctr', '--json'],
     ['runtime', 'list', '--json'],
   ]) {
     const checkout = runCheckout(args);
@@ -101,6 +101,8 @@ try {
     assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-manager', 'SKILL.md')), 'sync must project task-manager into Codex runtime');
     assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-review', 'SKILL.md')), 'sync must install task-review source');
     assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-review', 'SKILL.md')), 'sync must project task-review into Codex runtime');
+    assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-verification', 'SKILL.md')), 'sync must install task-verification source');
+    assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'task-verification', 'SKILL.md')), 'sync must project task-verification into Codex runtime');
     const renderedTriage = fs.readFileSync(path.join(workspace, '.agents', 'skills', 'task-triage', 'SKILL.md'), 'utf8');
     assert.match(renderedTriage, /`buildr\.task-record@1`/);
     assert.match(renderedTriage, /selected provider: `task-manager`/);
@@ -108,25 +110,25 @@ try {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.equal(JSON.parse(result.stdout).health.ready, true);
     const capability = (id) => ({
-      id, title: id, command: { argv: [process.execPath, '-e', 'setTimeout(() => {}, 25)'], cwd: '.' },
-      maturity: 'stable', stages: ['candidate'], enforcement: { candidate: 'required' },
-      applicability: { paths: ['**'], risks: [] }, coverage: { kind: 'test', owns: [id] },
-      environment: { requires: ['node'], services: [] }, effects: { level: 'local-temporary', writes: [], externalSystems: false },
-      authorization: 'implicit', resourceClaims: ['task-temp'], dependsOn: [], supersedes: [], sources: ['package-parity'],
+      id, title: id,
+      scope: { project: 'demo', services: [] },
+      invocation: { kind: 'command', argv: [process.execPath, '-e', 'setTimeout(() => {}, 25)'], cwd: '.' },
+      applicability: { paths: ['**'], conditions: [] }, proves: [id], requiredForDelivery: true,
+      environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' },
+      resourceClaims: [],
     });
     fs.writeFileSync(path.join(workspace, 'projects', 'demo', 'verification.yml'), `${JSON.stringify({
-      schemaVersion: 'buildr.project-verification/v1', mode: 'authoritative',
+      schemaVersion: 'buildr.project-verification/v2',
       resources: [
-        { id: 'task-temp', title: 'Task temp', strategy: 'isolated', cleanup: 'provider-owned', authorization: 'implicit' },
-        { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' },
+        { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, authorization: 'implicit' },
       ],
-      capabilities: [capability('demo.one'), capability('demo.two'), { ...capability('demo.shared'), resourceClaims: ['shared-slot'], command: { argv: [process.execPath, '-e', 'setTimeout(() => {}, 80)'], cwd: '.' } }],
+      capabilities: [capability('demo.one'), capability('demo.two'), { ...capability('demo.shared'), resourceClaims: ['shared-slot'], invocation: { kind: 'command', argv: [process.execPath, '-e', 'setTimeout(() => {}, 80)'], cwd: '.' } }],
     }, null, 2)}\n`);
-    result = runner(['verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', workspace, '--json']);
+    result = runner(['verification', 'run', '--project', 'demo', '--capability', 'demo.one', '--capability', 'demo.two', '--capability', 'demo.shared', '--target-identity', 'target:package-parity', '--target', workspace, '--json']);
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const verification = JSON.parse(result.stdout);
-    assert.equal(verification.schemaVersion, 'buildr.verification-run/v1');
-    assert.equal(verification.candidateCompleteness, 'confirmed');
+    assert.equal(verification.schemaVersion, 'buildr.verification-execution/v1');
+    assert.match(verification.executionIdentity, /^sha256-/);
     assert.deepEqual(verification.checks.map((check) => check.id), ['demo.one', 'demo.two', 'demo.shared']);
     assert.ok(Date.parse(verification.checks[0].startedAt) < Date.parse(verification.checks[1].finishedAt));
   }
@@ -160,11 +162,29 @@ try {
       } }
       : payload.diagnostic,
   });
+  const normalizeVerificationPayload = (payload, workspace) => ({
+    ...payload,
+    slot: {
+      ...payload.slot,
+      path: path.isAbsolute(payload.slot?.path || '') ? path.relative(workspace, payload.slot.path).split(path.sep).join('/') : payload.slot?.path,
+      resultDigest: payload.slot?.resultDigest ? '<result-digest>' : null,
+      result: payload.slot?.result ? {
+        ...payload.slot.result,
+        declarations: payload.slot.result.declarations.map((item) => ({ ...item, identity: item.identity === 'absent' ? 'absent' : '<declaration-digest>' })),
+        completedAt: '<time>',
+      } : null,
+      applicability: payload.slot?.applicability ? {
+        ...payload.slot.applicability,
+        target: { ...payload.slot.applicability.target },
+        reasons: payload.slot.applicability.reasons.map((reason) => ({ ...reason, message: reason.code === 'target-identity-changed' ? '<target-changed>' : reason.message })),
+      } : null,
+    },
+  });
   const taskParity = [];
   for (const [runner, workspace] of [[runCheckout, checkoutWorkspace], [runPackaged, packagedWorkspace]]) {
     const results = [];
     for (const args of [
-      ['task', 'create', 'parity-task', '--title', 'Parity Task', '--intent', '验证 checkout/npm Task Record parity', '--target', workspace, '--json'],
+      ['task', 'create', 'parity-task', '--title', 'Parity Task', '--intent', '验证 checkout/npm Task Record parity', '--project', 'demo', '--target', workspace, '--json'],
       ['task', 'inspect', 'parity-task', '--target', workspace, '--json'],
       ['task', 'update', 'parity-task', '--intent', '已更新', '--target', workspace, '--json'],
     ]) {
@@ -176,6 +196,10 @@ try {
     assert.equal(review.status, 0, review.stderr || review.stdout); results.push(normalizeReviewPayload(JSON.parse(review.stdout), workspace));
     review = runner(['task', 'review', 'record', 'parity-task', '--type', 'completion', '--method', 'self', '--reviewed', 'candidate', '--outcome', 'ready', '--summary', 'Candidate ready', '--target', workspace, '--json']);
     assert.equal(review.status, 1, review.stderr || review.stdout); results.push(normalizeReviewPayload(JSON.parse(review.stdout), workspace));
+    let verificationResult = runner(['task', 'verification', 'record', 'parity-task', '--target-identity', 'delivery:parity-v1', '--target-summary', 'Parity delivery target', '--capability', 'demo/demo.one::passed::Demo one passed', '--outcome', 'passed', '--summary', 'Parity verification passed', '--target', workspace, '--json']);
+    assert.equal(verificationResult.status, 0, verificationResult.stderr || verificationResult.stdout); results.push(normalizeVerificationPayload(JSON.parse(verificationResult.stdout), workspace));
+    verificationResult = runner(['task', 'verification', 'inspect', 'parity-task', '--target-identity', 'delivery:parity-v2', '--target', workspace, '--json']);
+    assert.equal(verificationResult.status, 0, verificationResult.stderr || verificationResult.stdout); results.push(normalizeVerificationPayload(JSON.parse(verificationResult.stdout), workspace));
     let execution = runner(['task', 'complete', 'parity-task', '--summary', '无需交付变更', '--no-change', '--target', workspace, '--json']);
     assert.equal(execution.status, 0, execution.stderr || execution.stdout); results.push(normalizeTaskPayload(JSON.parse(execution.stdout), workspace));
     const blocked = runner(['task', 'update', 'parity-task', '--title', '不可重开', '--target', workspace, '--json']); assert.equal(blocked.status, 1, blocked.stderr || blocked.stdout); results.push(normalizeTaskPayload(JSON.parse(blocked.stdout), workspace));
@@ -212,16 +236,16 @@ try {
   });
   const concurrent = await Promise.all(tasks.map((task, index) => spawnAsync(task.execution.cliInvocation.command, [
     ...task.execution.cliInvocation.argsPrefix,
-    'verification', 'run', '--project', 'demo', '--level', 'candidate', '--target', task.execution.workdir,
+    'verification', 'run', '--project', 'demo', '--capability', 'demo.one', '--capability', 'demo.two', '--capability', 'demo.shared',
+    '--target-identity', `target:${taskIds[index]}`, '--target', task.execution.workdir,
     '--environment', taskIds[index], '--workspace', packagedWorkspace, '--json',
   ], { cwd: task.execution.workdir })));
   const summaries = concurrent.map((result, index) => {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const payload = JSON.parse(result.stdout);
-    assert.equal(payload.schemaVersion, 'buildr.verification-run/v1');
+    assert.equal(payload.schemaVersion, 'buildr.verification-execution/v1');
     assert.equal(payload.environment.taskId, taskIds[index]);
-    assert.equal(payload.candidateCompleteness, 'confirmed');
-    assert.match(payload.evidenceIdentity, /^sha256-/);
+    assert.match(payload.executionIdentity, /^sha256-/);
     return payload;
   });
   summaries.forEach((summary, index) => {

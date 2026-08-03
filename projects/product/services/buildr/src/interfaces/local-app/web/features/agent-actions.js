@@ -5,6 +5,7 @@ const ACTION_LABELS = {
   start: '任务',
   change: '变更',
   'task-review': '任务审查',
+  'task-verification': '任务验证',
 };
 
 export function setupAgentActions({ api }) {
@@ -175,6 +176,11 @@ export function setupAgentActions({ api }) {
     bindForm('task-review', () => api('/api/v1/prompts/task-review', { method: 'POST', body: JSON.stringify({ taskId: context.taskId, reviewType, ...(change ? { projectCode: context.projectCode, change: context.change } : {}) }) }), 'Review Result 尚未记录。');
   }
 
+  function renderTaskVerificationForm(context) {
+    content.innerHTML = `${formHeader('任务验证', '准备')}<form id="agent-action-form"><div class="context-help">为正式 Task <strong>${context.taskId}</strong> 准备 Task Verification。Buildr 只生成受约束指令，不在页面内执行测试、生成 target identity 或写入 Result。</div><div class="actions"><button class="button primary" type="submit">生成验证指令</button></div></form>`;
+    bindForm('task-verification', () => api('/api/v1/prompts/task-verification', { method: 'POST', body: JSON.stringify({ taskId: context.taskId, ...(context.targetIdentity ? { targetIdentity: context.targetIdentity } : {}) }) }), 'Task Verification Result 未被修改。');
+  }
+
   function open(action, context = {}) {
     if (action === 'workspace') renderWorkspaceForm();
     else if (action === 'workspace-recovery') renderProvidedPrompt(context.prompt);
@@ -183,6 +189,7 @@ export function setupAgentActions({ api }) {
     else if (action === 'start') void renderStartWorkForm(context);
     else if (action === 'change') void renderChangeForm(context);
     else if (action === 'task-review') renderTaskReviewForm(context);
+    else if (action === 'task-verification') renderTaskVerificationForm(context);
     else renderChooser(context);
     setOpen(true);
     content.querySelector('input, button')?.focus();

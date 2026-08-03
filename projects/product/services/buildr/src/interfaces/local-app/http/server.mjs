@@ -321,6 +321,10 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         if (request.method === 'GET' && taskReviewsMatch) {
           return jsonResponse(response, 200, runtime.inspectTaskReview(root, taskReviewsMatch[1]));
         }
+        const taskVerificationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/verification$`));
+        if (request.method === 'GET' && taskVerificationMatch) {
+          return jsonResponse(response, 200, runtime.inspectTaskVerification(root, taskVerificationMatch[1]));
+        }
         const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
         if (request.method === 'GET' && taskChangeMatch) {
           runtime.inspectTaskRecord(root, taskChangeMatch[1]);
@@ -383,6 +387,11 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           assertWriteRequest(request, origin, sessionToken);
           const input = await readAllowedJsonBody(request, new Set(['taskId', 'reviewType', 'projectCode', 'change']), 'Task Review prompt');
           return jsonResponse(response, 200, runtime.generateTaskReviewPrompt(root, input));
+        }
+        if (request.method === 'POST' && suffix === '/prompts/task-verification') {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['taskId', 'targetIdentity']), 'Task Verification prompt');
+          return jsonResponse(response, 200, runtime.generateTaskVerificationPrompt(root, input));
         }
       }
       jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr 本地应用资源不存在。' } });

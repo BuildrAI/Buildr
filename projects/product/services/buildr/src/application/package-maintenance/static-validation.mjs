@@ -902,42 +902,37 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-verification') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-verification/v2` 的默认 provider',
-          'Rules/AGENTS',
-          'minimal',
-          'affected',
-          'candidate',
-          'requiredAssurance',
-          'verifier-reported',
-          'wrapper-measured',
-          '单调时钟',
-          '不得把各检查 `durationMs` 相加推算 `totalDurationMs`',
-          'wait、poll 或 resume 同一进程',
-          'candidateIdentity',
-          'totalDurationMs',
-          'timingSource',
-          'slowestCheck',
-          'failedChecks',
-          'skippedChecks',
-          'evidenceReference',
-          'evidenceRetention',
-          'cleanupAfter',
-          'cleanupStatus',
-          'cleanupReference',
-          'operation: inspect | execute | cleanup',
-          'taskVerificationExecuteCalls',
-          'candidateExecutorCalls',
+          '本 Skill 是 `buildr.task-verification/v3` 的默认 provider',
+          'references/project-verification-v2.md',
+          'buildr.project-verification/v2',
+          'buildr task verification inspect <task-id>',
+          'buildr task verification record <task-id>',
+          'buildr verification run --project <code>',
+          'buildr.verification-execution/v1',
+          'coverage gap',
+          '不自动创建测试、脚本、CI 或框架',
+          'Task Verification Application',
+          '原子替换',
+          '中断',
+          '不得覆盖原 current',
+          'target identity',
+          'declaration identities',
+          '`current`',
+          '`stale`',
+          '`unknown`',
+          '不要复制 stdout/stderr、耗时、临时 evidence path、Environment Receipt',
+          '不要把测试通过等同于业务验收、风险接受、开发完成、Task 完成',
+          '不启动重复 verifier',
+          '不相加并行检查耗时',
+          'buildr verification cleanup --summary <file>',
           '用户无需主动点名本 Skill',
-          'Git/worktree provider 不负责这项清理',
-          '完整候选验证尚未执行',
-          '不依赖任何固定 Environment、Git 或 worktree provider id',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-verification Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        if (!skill.provides?.some((entry) => entry.capability === 'buildr.task-verification' && entry.version === 2)) {
-          problems.push('task-verification must provide buildr.task-verification/v2.');
+        if (!skill.provides?.some((entry) => entry.capability === 'buildr.task-verification' && entry.version === 3)) {
+          problems.push('task-verification must provide buildr.task-verification/v3.');
         }
-        for (const forbiddenText of ['npm run test:candidate` 作为所有项目', '必须使用 Git worktree', 'provider: task-worktree']) {
+        for (const forbiddenText of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative', 'provider: task-worktree']) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-verification Skill must not include ${JSON.stringify(forbiddenText)}.`);
         }
       }
@@ -1055,7 +1050,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-verification/v2` provider', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
+        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');
@@ -1145,15 +1140,16 @@ export function createPackageStaticValidator(deps) {
       files.push(productAgentsPath);
       for (const requiredText of [
         '合并前候选验证使用临时 workspace 或 task worktree 自身',
-        '最终候选 Git tree',
-        '不在主开发分支重复 E2E',
-        '候选 tree 改变时',
-        '单任务最小反馈、任务组受影响范围验证、最终候选完整验证',
+        '冻结明确 target identity',
+        '相同内容集成、push 和 worktree 清理不改变 target 时可以复用',
+        'tree 或 declaration bytes 发生任何变化后 Result 直接派生为 stale',
+        '按当前目标选择直接相关的已有 capability',
+        '`requiredForDelivery`',
         '不得在每个普通任务后运行产品总验证或临时 workspace E2E',
         '继续等待同一进程，不重复启动相同命令',
         '修复循环优先重跑失败项和受影响检查',
-        'selected `buildr.task-verification/v2` provider',
-        '测量验证自身 wall-clock 并向用户报告',
+        'selected `buildr.task-verification/v3` provider',
+        'Task-scoped current Result',
         '不作为相同 tree 后续 Git 动作的重复产品验证门禁',
         '使用 `task-finish` 编排',
         '不授权 force push、merge commit、远端任务分支删除',

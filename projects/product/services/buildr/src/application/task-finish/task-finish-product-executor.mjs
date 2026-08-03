@@ -19,6 +19,46 @@ function inside(parent, child) {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
+function normalizePortablePath(value) {
+  return path.posix.normalize(String(value || '').replaceAll('\\', '/')).replace(/^\.\//, '');
+}
+
+function globToRegExp(pattern) {
+  const normalized = normalizePortablePath(pattern);
+  let source = '^';
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index];
+    if (character === '*' && normalized[index + 1] === '*') {
+      index += 1;
+      if (normalized[index + 1] === '/') {
+        index += 1;
+        source += '(?:.*/)?';
+      } else source += '.*';
+    } else if (character === '*') source += '[^/]*';
+    else if (character === '?') source += '[^/]';
+    else source += character.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+  }
+  return new RegExp(`${source}$`);
+}
+
+function projectChangedPaths(run, project) {
+  const source = normalizePortablePath(project.source.path).replace(/\/$/, '');
+  return (run.frozenCandidate?.changedPaths || []).flatMap((changedPath) => {
+    const normalized = normalizePortablePath(changedPath);
+    if (source === '.') return [normalized];
+    if (normalized === source) return ['.'];
+    return normalized.startsWith(`${source}/`) ? [normalized.slice(source.length + 1)] : [];
+  });
+}
+
+function capabilityMatchesFinishScopeAndPaths(capability, task, projectCode, changedPaths) {
+  const serviceApplies = capability.scope.services.length === 0
+    || capability.scope.services.some((service) => task.scope.services.some((entry) => entry.project === projectCode && entry.service === service));
+  // Finish cannot interpret natural-language conditions. A deterministic scope/path match is
+  // conservative: it may run an extra required check, but it cannot incorrectly skip one.
+  return serviceApplies && changedPaths.some((changedPath) => capability.applicability.paths.some((pattern) => globToRegExp(pattern).test(changedPath)));
+}
+
 function boundedText(value, limit = 2000) {
   const text = String(value || '');
   return { preview: text.slice(0, limit), bytes: Buffer.byteLength(text), digest: digest(text), truncated: text.length > limit };
@@ -178,6 +218,19 @@ function currentGitIdentity(root) {
   };
 }
 
+function retainedWorkspaceReadiness(identity) {
+  if (identity.status === null) return { ready: false, workspaceMetadata: [], unrelated: ['git-status-unavailable'] };
+  const workspaceMetadata = [];
+  const unrelated = [];
+  for (const entry of identity.status.split('\0').filter(Boolean)) {
+    const status = entry.slice(0, 2);
+    const file = normalizePortablePath(entry.slice(3));
+    if (['??', ' M', ' D', ' T'].includes(status) && file.startsWith('.buildr/')) workspaceMetadata.push(file);
+    else unrelated.push(file || entry);
+  }
+  return { ready: unrelated.length === 0, workspaceMetadata: [...new Set(workspaceMetadata)].sort(), unrelated };
+}
+
 function observeFrozen(root, frozen) {
   const current = currentGitIdentity(root);
   return {
@@ -192,7 +245,7 @@ function targetLeasePath(root, targetBranch) {
   return path.join(path.resolve(root, common), 'buildr', 'task-finish', 'leases', `${targetBranch.replaceAll('/', '_')}.json`);
 }
 
-export function createTaskFinishProductHandlers({ runtime, root, existingVerificationSummary = null, openspecCommand = 'openspec' }) {
+export function createTaskFinishProductHandlers({ runtime, root, openspecCommand = 'openspec' }) {
   const environmentRoot = path.resolve(root);
 
   function taskEnvironment(run) {
@@ -268,15 +321,12 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
             ['openspec-plan', 'task-finish.openspec-plan-not-applicable', 'OpenSpec convergence planning is not applicable to a code-only candidate.'],
           ]) addFinding(findings, check, 'ok', code, message, { status: 'not-applicable' });
         }
-        const verificationFile = path.join(projectRoot, 'verification.yml');
-        if (!fs.existsSync(verificationFile)) addFinding(findings, 'verification-policy', 'error', 'task-finish.verification-policy-missing', 'Project verification policy is missing.');
-        else {
-          try {
-            const declaration = YAML.parse(fs.readFileSync(verificationFile, 'utf8'));
-            if (!declaration || !Array.isArray(declaration.capabilities) || declaration.capabilities.length === 0) throw new Error('verification.yml has no capabilities.');
-            addFinding(findings, 'verification-policy', 'ok', 'task-finish.verification-policy-ready', 'Project verification policy is parseable.');
-          } catch (error) { addFinding(findings, 'verification-policy', 'error', 'task-finish.verification-policy-invalid', error.message); }
-        }
+        const declaration = runtime.observeTaskVerificationDeclarations(run.identity.workspaceRoot, run.identity.task, environmentRoot)
+          .find((item) => item.project === run.identity.project);
+        if (declaration?.identity === 'absent') addFinding(findings, 'verification-policy', 'error', 'task-finish.verification-policy-missing', 'Project verification policy is missing.');
+        else if (!declaration?.valid) addFinding(findings, 'verification-policy', 'error', 'task-finish.verification-policy-invalid', declaration?.diagnostic || 'Project verification policy is unavailable.');
+        else if (!declaration.declaration?.capabilities.length) addFinding(findings, 'verification-policy', 'error', 'task-finish.verification-policy-empty', 'Project verification policy has no capabilities.');
+        else addFinding(findings, 'verification-policy', 'ok', 'task-finish.verification-policy-ready', 'Project verification policy is valid.');
       } catch (error) {
         addFinding(findings, 'project', 'error', 'task-finish.project-invalid', error.message);
       }
@@ -288,9 +338,10 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
 
       const retained = run.identity.workspaceRoot;
       const retainedIdentity = currentGitIdentity(retained);
+      const retainedReadiness = retainedWorkspaceReadiness(retainedIdentity);
       if (!retainedIdentity.head || retainedIdentity.branch !== run.identity.targetBranch) addFinding(findings, 'retained-workspace', 'error', 'task-finish.retained-target-mismatch', `Retained Workspace must be on target branch ${run.identity.targetBranch}.`, { failureClass: 'transient-external-condition' });
-      else if (!retainedIdentity.clean) addFinding(findings, 'retained-workspace', 'error', 'task-finish.retained-workspace-dirty', 'Retained Workspace has unrelated uncommitted changes.', { failureClass: 'transient-external-condition' });
-      else addFinding(findings, 'retained-workspace', 'ok', 'task-finish.retained-workspace-ready', 'Retained Workspace is clean and on the target branch.');
+      else if (!retainedReadiness.ready) addFinding(findings, 'retained-workspace', 'error', 'task-finish.retained-workspace-dirty', 'Retained Workspace has unrelated uncommitted changes.', { failureClass: 'transient-external-condition', unrelated: retainedReadiness.unrelated });
+      else addFinding(findings, 'retained-workspace', 'ok', 'task-finish.retained-workspace-ready', retainedReadiness.workspaceMetadata.length ? 'Retained Workspace source tree is clean; unstaged Workspace Metadata Store changes remain outside candidate delivery.' : 'Retained Workspace is clean and on the target branch.', { workspaceMetadata: retainedReadiness.workspaceMetadata });
 
       const errors = findings.filter((item) => item.severity === 'error');
       if (errors.length) {
@@ -404,48 +455,83 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
       const observed = observeFrozen(environmentRoot, run.frozenCandidate);
       if (!observed.matches) return { status: 'failed', failure: { operation: 'candidate-freeze', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-changed-after-freeze', message: 'Candidate identity changed after freeze.', findings: [observed.current] } };
 
-      if (existingVerificationSummary && fs.existsSync(existingVerificationSummary)) {
-        try {
-          const evidence = JSON.parse(fs.readFileSync(existingVerificationSummary, 'utf8'));
-          if (evidence.status === 'passed' && evidence.requiredAssurance === run.identity.requiredAssurance && evidence.source?.candidateFingerprint === run.frozenCandidate.identity && evidence.workspaceNode?.identity?.digest === run.identity.workspaceNodeIdentity) {
-            return { status: 'passed', inputIdentity: run.frozenCandidate.identity, outputIdentity: evidence.evidenceIdentity, output: { verification: { executions: 0, reused: true, status: 'passed', evidenceIdentity: evidence.evidenceIdentity, summaryPath: existingVerificationSummary, durationMs: evidence.durationMs ?? evidence.totalDurationMs ?? 0 } } };
-          }
-        } catch { /* execute fresh assurance */ }
-      }
-
       const context = taskEnvironment(run);
       if (!context?.ready) return { status: 'failed', failure: { operation: 'verification-context', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-context-invalid', message: context?.blocked?.message || 'Verification context is not executable.' } };
+      const task = runtime.readTaskRecordPersistence(run.identity.workspaceRoot, run.identity.task).record;
+      const declarations = runtime.observeTaskVerificationDeclarations(run.identity.workspaceRoot, run.identity.task, environmentRoot);
+      const declaration = declarations.find((item) => item.project === run.identity.project);
+      if (!declaration?.valid) return { status: 'failed', failure: { operation: 'verification-declaration', failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-declaration-invalid', message: declaration?.diagnostic || `Project verification declaration is unavailable: ${run.identity.project}` } };
+      const { project } = projectRecord(runtime, run.identity.workspaceRoot, environmentRoot, run.identity.project);
+      const changedPaths = projectChangedPaths(run, project);
+      const required = (declaration.declaration?.capabilities || []).filter((capability) => capability.requiredForDelivery && capabilityMatchesFinishScopeAndPaths(capability, task, run.identity.project, changedPaths));
+      const current = runtime.inspectTaskVerification(run.identity.workspaceRoot, run.identity.task, { targetIdentity: run.frozenCandidate.identity, declarationRoot: environmentRoot });
+      const covered = new Set((current.slot.result?.capabilities || []).filter((item) => item.outcome === 'passed').map((item) => `${item.project}/${item.capability}`));
+      if (current.slot.present && current.slot.applicability.status === 'current' && current.slot.result.conclusion.outcome === 'passed'
+        && required.every((capability) => covered.has(`${run.identity.project}/${capability.id}`))) {
+        return { status: 'passed', inputIdentity: run.frozenCandidate.identity, outputIdentity: current.slot.resultDigest, output: { verification: { executions: 0, reused: true, status: 'passed', resultDigest: current.slot.resultDigest, applicability: 'current', executionIdentity: null, summaryPath: null, durationMs: 0 } } };
+      }
+      if (declarations.length !== 1) return { status: 'failed', failure: { operation: 'verification-result', failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-multi-project-result-required', message: 'Automatic Finish verification cannot form a complete multi-Project Task Result; record it through Task Verification first.' } };
+      if (required.length === 0) return { status: 'failed', failure: { operation: 'verification-result', failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-capability-unavailable', message: 'No applicable required-for-delivery capability can form the current Task Verification Result.' } };
+      const agentCapability = required.find((capability) => capability.invocation.kind === 'agent');
+      if (agentCapability) return { status: 'failed', failure: { operation: 'verification-result', failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-agent-result-required', message: `Required Agent capability must be completed through Task Verification before Finish: ${agentCapability.id}` } };
+      const resources = new Map((declaration.declaration.resources || []).map((resource) => [resource.id, resource]));
+      const authorizationRequired = required.find((capability) => capability.effects?.authorization === 'explicit'
+        || (capability.resourceClaims || []).some((resource) => resources.get(resource)?.authorization === 'explicit'));
+      if (authorizationRequired) return { status: 'failed', failure: { operation: 'verification-result', failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-authorization-result-required', message: `Required capability needs explicit authorization and must be completed through Task Verification before Finish: ${authorizationRequired.id}` } };
       const invocation = context.cliInvocation;
-      const verified = runJsonCommand('verify-required-assurance', invocation.command, invocationArgs(invocation, [
-        'verification', 'run', '--project', run.identity.project, '--level', run.identity.requiredAssurance,
+      const capabilityArgs = required.flatMap((capability) => ['--capability', capability.id]);
+      const verified = runJsonCommand('verify-required-capabilities', invocation.command, invocationArgs(invocation, [
+        'verification', 'run', '--project', run.identity.project, ...capabilityArgs, '--target-identity', run.frozenCandidate.identity,
         '--target', environmentRoot, '--environment', run.identity.task, '--workspace', run.identity.workspaceRoot,
-        '--candidate-fingerprint', run.frozenCandidate.identity, '--json',
+        '--json',
       ]), environmentRoot);
       operations.push(verified.observation);
       const payload = verified.payload;
       const after = observeFrozen(environmentRoot, run.frozenCandidate);
       if (!after.matches) return { status: 'failed', operations, failure: { operation: 'verification', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-changed-after-freeze', message: 'Formal verification changed the frozen candidate.', findings: [after.current] } };
-      if (verified.result.status !== 0 || payload?.status !== 'passed') {
-        const primary = payload?.checks?.find((check) => check.status === 'failed') || null;
+      if (!payload?.executionIdentity || !Array.isArray(payload?.checks) || payload.checks.length !== required.length) {
         return {
           status: 'failed',
           operations,
           inputIdentity: run.frozenCandidate.identity,
-          output: { verification: { executions: 1, reused: false, status: 'failed', evidenceIdentity: payload?.evidenceIdentity || null, summaryPath: payload?.evidenceReference || null, durationMs: payload?.durationMs ?? payload?.totalDurationMs ?? verified.observation.durationMs } },
           failure: {
-            operation: 'verification', check: primary?.id || null, failureClass: 'upstream-candidate-defect',
-            code: primary ? 'task-finish.verification-check-failed' : payload?.error?.code || 'task-finish.verification-failed',
-            exitCode: primary?.exitCode ?? verified.result.status,
-            message: primary ? `Formal verification check failed: ${primary.id}` : payload?.error?.message || 'Formal verification failed.',
-            findings: primary ? [{ id: primary.id, status: primary.status, exitCode: primary.exitCode, stderr: boundedText(primary.stderr), stdout: boundedText(primary.stdout) }] : [],
-            diagnostic: { digest: digest(payload || verified.observation), preview: primary || payload?.error || verified.observation.stderr },
+            operation: 'verification', failureClass: 'product-execution-failure',
+            code: payload?.error?.code || 'task-finish.verification-execution-incomplete',
+            exitCode: verified.result.status,
+            message: payload?.error?.message || 'Formal verification did not produce complete execution evidence.',
+            diagnostic: { digest: digest(payload || verified.observation), preview: payload?.error || verified.observation.stderr },
           },
         };
       }
       if (payload?.workspaceNode?.identity?.digest !== run.identity.workspaceNodeIdentity) {
         return { status: 'failed', operations, failure: { operation: 'verification', failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-node-identity-mismatch', message: 'Formal verification evidence does not match the frozen Workspace Node identity.', diagnostic: { expected: run.identity.workspaceNodeIdentity, actual: payload?.workspaceNode?.identity?.digest || null } } };
       }
-      return { status: 'passed', operations, inputIdentity: run.frozenCandidate.identity, outputIdentity: payload.evidenceIdentity, output: { verification: { executions: 1, reused: false, status: 'passed', evidenceIdentity: payload.evidenceIdentity, summaryPath: payload.evidenceReference, durationMs: payload.durationMs ?? payload.totalDurationMs ?? verified.observation.durationMs } } };
+      const capabilityFacts = payload.checks.map((check) => ({
+        project: run.identity.project,
+        capability: check.id,
+        outcome: check.status === 'passed' ? 'passed' : 'failed',
+        facts: [check.status === 'passed' ? `${check.title || check.id} completed successfully.` : `${check.title || check.id} failed with exit code ${check.exitCode ?? 'unknown'}.`],
+      }));
+      const passed = payload.status === 'passed' && verified.result.status === 0 && capabilityFacts.every((item) => item.outcome === 'passed');
+      const recorded = runtime.recordTaskVerification(run.identity.workspaceRoot, run.identity.task, {
+        targetIdentity: run.frozenCandidate.identity,
+        targetSummary: `Frozen delivery tree for Task ${run.identity.task}`,
+        capabilities: capabilityFacts,
+        coverageGaps: [],
+        conclusion: { outcome: passed ? 'passed' : 'not-passed', summary: passed ? 'All applicable required delivery capabilities passed.' : 'One or more applicable required delivery capabilities failed.' },
+        declarationRoot: environmentRoot,
+      });
+      if (payload.evidenceReference) {
+        const cleaned = runJsonCommand('verify-evidence-cleanup', invocation.command, invocationArgs(invocation, ['verification', 'cleanup', '--summary', payload.evidenceReference, '--json']), environmentRoot);
+        operations.push(cleaned.observation);
+        if (cleaned.result.status !== 0 && cleaned.payload?.status !== 'already-absent') return { status: 'failed', operations, failure: { operation: 'verification-cleanup', failureClass: 'product-execution-failure', code: 'task-finish.verification-cleanup-failed', exitCode: cleaned.result.status, message: 'Transient verification evidence cleanup failed.', diagnostic: cleaned.payload || cleaned.observation.stderr } };
+      }
+      const verification = { executions: 1, reused: false, status: passed ? 'passed' : 'failed', resultDigest: recorded.slot.resultDigest, applicability: recorded.slot.applicability.status, executionIdentity: payload.executionIdentity, summaryPath: null, durationMs: payload.durationMs ?? verified.observation.durationMs };
+      if (!passed) {
+        const primary = payload.checks.find((check) => check.status === 'failed') || null;
+        return { status: 'failed', operations, inputIdentity: run.frozenCandidate.identity, outputIdentity: recorded.slot.resultDigest, output: { verification }, failure: { operation: 'verification', check: primary?.id || null, failureClass: 'upstream-candidate-defect', code: 'task-finish.verification-check-failed', exitCode: primary?.exitCode ?? verified.result.status, message: primary ? `Formal verification check failed: ${primary.id}` : 'Formal verification failed.', findings: primary ? [{ id: primary.id, status: primary.status, exitCode: primary.exitCode, stderr: boundedText(primary.stderr), stdout: boundedText(primary.stdout) }] : [], diagnostic: { digest: digest(payload), preview: primary || payload.failures } } };
+      }
+      return { status: 'passed', operations, inputIdentity: run.frozenCandidate.identity, outputIdentity: recorded.slot.resultDigest, output: { verification } };
     },
 
     async deliver({ run }) {
@@ -471,7 +557,8 @@ export function createTaskFinishProductHandlers({ runtime, root, existingVerific
         }
         if (!alreadyDelivered) {
           const retainedIdentity = currentGitIdentity(retainedRoot);
-          if (retainedIdentity.branch !== run.identity.targetBranch || !retainedIdentity.clean || retainedIdentity.head !== observedTargetRef) {
+          const retainedReadiness = retainedWorkspaceReadiness(retainedIdentity);
+          if (retainedIdentity.branch !== run.identity.targetBranch || !retainedReadiness.ready || retainedIdentity.head !== observedTargetRef) {
             return { status: 'blocked', operations, failure: { operation: 'retained-workspace', failureClass: 'transient-external-condition', code: 'task-finish.retained-workspace-not-ready', message: 'Retained Workspace is not clean at the observed target ref.', findings: [retainedIdentity] } };
           }
           const merged = git(retainedRoot, 'deliver-fast-forward', ['merge', '--ff-only', run.frozenCandidate.head]);

@@ -6,14 +6,13 @@ import { execFileSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { parseProjectVerification, validateProjectVerification } from '../doctor/project-verification-diagnostics.mjs';
-import { createProjectVerificationPlan } from './project-plan.mjs';
-import { runVerificationDag } from './dag-scheduler.mjs';
+import { runVerificationCapabilities } from './capability-runner.mjs';
 import { executeVerificationCommand } from './process-executor.mjs';
 import { createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.mjs';
 import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle } from './evidence-lifecycle.mjs';
 
 function digest(value) {
-  return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
+  return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')}`;
 }
 
 function inside(parent, child) {
@@ -25,7 +24,7 @@ function gitOutput(cwd, args) {
   try { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
 }
 
-function candidateIdentity(root) {
+function executionContentObservation(root) {
   const top = gitOutput(root, ['rev-parse', '--show-toplevel'])?.trim();
   if (!top) return { kind: 'filesystem', root, reusable: false, fingerprint: null };
   const status = gitOutput(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']) || '';
@@ -41,7 +40,7 @@ function candidateIdentity(root) {
     head: gitOutput(root, ['rev-parse', 'HEAD'])?.trim() || null,
     tree: gitOutput(root, ['rev-parse', 'HEAD^{tree}'])?.trim() || null,
     fingerprint: digest({ status, diff, untrackedContent }),
-    reusable: true,
+    reusable: false,
   };
 }
 
@@ -69,35 +68,27 @@ function sanitizeCheck(result) {
     startedAt: result.startedAt || null,
     finishedAt: result.finishedAt || null,
     queueDurationMs: result.queueDurationMs || 0,
-    blockedBy: result.blockedBy || null,
-    reason: result.reason || null,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     resourceCoordination: result.resourceCoordination || null,
   };
 }
 
-function bindWorkspaceNodeCommand(step, workspaceNode) {
-  const [command, ...args] = step.command.argv;
+function bindWorkspaceNodeCommand(capability, workspaceNode) {
+  const [command, ...args] = capability.command.argv;
   const executable = path.basename(command).toLowerCase();
-  if (['node', 'node.exe'].includes(executable)) {
-    return { ...step, command: { ...step.command, argv: [workspaceNode.executable, ...args] } };
-  }
-  if (['npm', 'npm.cmd'].includes(executable)) {
-    return { ...step, command: { ...step.command, argv: [workspaceNode.npmExecutable, ...args] } };
-  }
-  if (['npx', 'npx.cmd'].includes(executable)) {
-    return { ...step, command: { ...step.command, argv: [workspaceNode.paths.npx, ...args] } };
-  }
-  return step;
+  if (['node', 'node.exe'].includes(executable)) return { ...capability, command: { ...capability.command, argv: [workspaceNode.executable, ...args] } };
+  if (['npm', 'npm.cmd'].includes(executable)) return { ...capability, command: { ...capability.command, argv: [workspaceNode.npmExecutable, ...args] } };
+  if (['npx', 'npx.cmd'].includes(executable)) return { ...capability, command: { ...capability.command, argv: [workspaceNode.paths.npx, ...args] } };
+  return capability;
 }
 
-export function verificationEvidenceIdentityMaterial({ project, policy, level, context, workspaceNodeIdentity, candidates, checks }) {
+export function verificationExecutionIdentityMaterial({ project, declaration, target, context, workspaceNodeIdentity, observation, checks }) {
   return {
-    schemaVersion: PUBLIC_JSON_SCHEMAS.verificationRun,
+    schemaVersion: PUBLIC_JSON_SCHEMAS.verificationExecution,
     project,
-    policy,
-    level,
+    declaration,
+    target,
     environment: context ? {
       taskId: context.taskId,
       environmentRoot: context.environmentRoot,
@@ -112,7 +103,7 @@ export function verificationEvidenceIdentityMaterial({ project, policy, level, c
       })),
     } : null,
     workspaceNode: workspaceNodeIdentity,
-    candidates,
+    observation,
     checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })),
   };
 }
@@ -120,21 +111,22 @@ export function verificationEvidenceIdentityMaterial({ project, policy, level, c
 export function registerVerificationApplication(runtime) {
   async function verificationRun(args) {
     const json = args.includes('--json');
-    const level = runtime.optionValue(args, '--level', null);
     const projectCode = runtime.optionValue(args, '--project', null);
+    const targetIdentity = runtime.optionValue(args, '--target-identity', null);
     const targetRoot = fs.realpathSync(path.resolve(runtime.optionValue(args, '--target', process.cwd())));
+    const requestedCapabilities = [...new Set(optionValues(args, '--capability'))];
     const requestedEnvironment = runtime.optionValue(args, '--environment', null);
     const requestedWorkspace = runtime.optionValue(args, '--workspace', null);
-    const output = runtime.optionValue(args, '--output', null);
-    const taskFinishFingerprint = runtime.optionValue(args, '--candidate-fingerprint', null);
-    const includeAdvisory = args.includes('--include-advisory');
+    const authorizedCapabilities = [...new Set(optionValues(args, '--authorize-capability'))];
     const authorizedResources = optionValues(args, '--authorize-resource');
     const concurrency = Number(runtime.optionValue(args, '--concurrency', '4'));
-    runtime.assertNoUnknownOptions(args, new Set(['--project', '--level', '--target', '--environment', '--workspace', '--output', '--candidate-fingerprint', '--authorize-resource', '--concurrency', '--include-advisory', '--json']), new Set(['--include-advisory', '--json']));
+    runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--target-identity', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--json']), new Set(['--json']));
     if (runtime.positionalArgs(args).length) throw new Error('verification run does not accept positional arguments.');
     if (!projectCode) throw new Error('verification run requires --project <code>.');
-    if (!['affected', 'candidate'].includes(level)) throw new Error('verification run requires --level affected or candidate.');
+    if (requestedCapabilities.length === 0) throw new Error('verification run requires at least one --capability <id>.');
+    if (!targetIdentity) throw new Error('verification run requires --target-identity <identity>.');
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error('--concurrency must be an integer from 1 to 32.');
+    for (const id of authorizedCapabilities) if (!requestedCapabilities.includes(id)) throw new Error(`Authorized capability was not requested: ${id}`);
 
     const registry = runtime.readProjectRegistryPersistence(targetRoot).registry.projects;
     const project = registry[projectCode];
@@ -142,11 +134,12 @@ export function registerVerificationApplication(runtime) {
     const projectRoot = fs.realpathSync(path.resolve(targetRoot, project.source.path));
     if (!inside(targetRoot, projectRoot)) throw new Error(`Project source escapes the execution Workspace: ${project.source.path}`);
     const declarationPath = path.join(projectRoot, 'verification.yml');
-    if (!fs.existsSync(declarationPath)) throw new Error(`Project verification policy is missing: ${path.relative(targetRoot, declarationPath)}`);
-    const declarationContent = fs.readFileSync(declarationPath, 'utf8');
-    const declaration = parseProjectVerification(declarationContent, declarationPath);
-    const validationErrors = validateProjectVerification(declaration);
-    if (validationErrors.length) throw new Error(`Project verification policy is invalid:\n- ${validationErrors.join('\n- ')}`);
+    if (!fs.existsSync(declarationPath)) throw new Error(`Project verification declaration is missing: ${path.relative(targetRoot, declarationPath)}`);
+    const declarationContent = fs.readFileSync(declarationPath);
+    const declaration = parseProjectVerification(declarationContent.toString('utf8'), declarationPath);
+    const services = runtime.readServiceRegistryPersistence(targetRoot, project, project.workspaceId).registry.services;
+    const validationErrors = validateProjectVerification(declaration, { projectCode, services: Object.keys(services) });
+    if (validationErrors.length) throw new Error(`Project verification declaration is invalid:\n- ${validationErrors.join('\n- ')}`);
 
     if (Boolean(requestedEnvironment) !== Boolean(requestedWorkspace)) throw new Error('Task Environment verification requires --environment <task-id> and --workspace <canonical-workspace> together.');
     const context = requestedEnvironment ? runtime.resolveTaskEnvironmentExecution(path.resolve(requestedWorkspace), requestedEnvironment) : null;
@@ -155,17 +148,23 @@ export function registerVerificationApplication(runtime) {
     const workspaceNode = runtime.workspaceNodeExecution(targetRoot);
     if (!workspaceNode.ready) throw new Error(`Workspace Node runtime is not ready: ${workspaceNode.status}. Run buildr sync before verification.`);
 
-    const plan = createProjectVerificationPlan(declaration, { level, includeAdvisory });
-    if (plan.uncoveredRequired.length) throw new Error(`Required verification capabilities are not selected: ${plan.uncoveredRequired.join(', ')}`);
-    if (plan.steps.length === 0) throw new Error(`No executable ${level} capabilities are declared for Project ${projectCode}.`);
-    for (const step of plan.steps) {
-      const cwd = path.resolve(projectRoot, step.command.cwd);
-      if (!inside(projectRoot, cwd) || !fs.existsSync(cwd)) throw new Error(`Verification command cwd is unavailable or escapes Project: ${step.id}`);
-      step.executionCwd = cwd;
-    }
+    const byId = new Map(declaration.capabilities.map((capability) => [capability.id, capability]));
+    const selected = requestedCapabilities.map((id) => {
+      const capability = byId.get(id);
+      if (!capability) throw new Error(`Project verification capability is not declared: ${id}`);
+      if (capability.invocation.kind !== 'command') throw new Error(`Project verification capability requires bounded Agent execution and cannot be run by the command runner: ${id}`);
+      if (capability.effects?.authorization === 'explicit' && !authorizedCapabilities.includes(id)) throw new Error(`Explicit authorization is required for verification capability effects: ${id}`);
+      const executionCwd = path.resolve(projectRoot, capability.invocation.cwd || '.');
+      if (!inside(projectRoot, executionCwd) || !fs.existsSync(executionCwd)) throw new Error(`Verification command cwd is unavailable or escapes Project: ${id}`);
+      return {
+        ...capability,
+        command: { argv: capability.invocation.argv, cwd: capability.invocation.cwd || '.' },
+        executionCwd,
+      };
+    });
 
     const runId = `verification-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-    const before = context?.repositories?.map((repository) => ({ selector: repository.selector, ...candidateIdentity(repository.checkoutPath) })) || [{ selector: 'project', ...candidateIdentity(projectRoot) }];
+    const before = executionContentObservation(targetRoot);
     const startedAt = new Date().toISOString();
     const started = process.hrtime.bigint();
     const coordinator = createVerificationResourceCoordinator({
@@ -179,60 +178,55 @@ export function registerVerificationApplication(runtime) {
         runId,
       },
     });
-    const results = await runVerificationDag(plan, {
+    const results = await runVerificationCapabilities(selected, {
       concurrency,
       resourceCoordinator: coordinator,
       authorizedResources,
-      execute: (step, execution) => executeVerificationCommand(bindWorkspaceNodeCommand(step, workspaceNode), { cwd: step.executionCwd, env: { ...workspaceNode.environment, ...execution.resourceEnvironment } }),
+      execute: (capability, execution) => executeVerificationCommand(bindWorkspaceNodeCommand(capability, workspaceNode), { cwd: capability.executionCwd, env: { ...workspaceNode.environment, ...execution.resourceEnvironment } }),
     });
-    const after = context?.repositories?.map((repository) => ({ selector: repository.selector, ...candidateIdentity(repository.checkoutPath) })) || [{ selector: 'project', ...candidateIdentity(projectRoot) }];
+    const after = executionContentObservation(targetRoot);
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
     const checks = results.map(sanitizeCheck);
-    const candidateStable = digest(before) === digest(after);
-    const passed = candidateStable && checks.every((check) => check.status === 'passed');
-    const candidateCompleteness = level === 'candidate' && passed && plan.required.every((id) => checks.some((check) => check.id === id && check.status === 'passed') || plan.superseded.some((entry) => entry.capability === id)) ? 'confirmed' : level === 'candidate' ? 'incomplete' : 'not-requested';
-    const identityMaterial = verificationEvidenceIdentityMaterial({
+    const targetStable = digest(before) === digest(after);
+    const passed = targetStable && checks.every((check) => check.status === 'passed');
+    const declarationIdentity = digest(declarationContent);
+    const identityMaterial = verificationExecutionIdentityMaterial({
       project: projectCode,
-      policy: digest(declarationContent),
-      level,
+      declaration: declarationIdentity,
+      target: targetIdentity,
       context,
       workspaceNodeIdentity: workspaceNode.identity,
-      candidates: after,
+      observation: after,
       checks,
     });
-    const evidenceIdentity = digest(identityMaterial);
+    const executionIdentity = digest(identityMaterial);
     const base = {
       operation: 'execute',
       status: passed ? 'passed' : 'failed',
-      requiredAssurance: level,
+      target: { identity: targetIdentity, stable: targetStable, observation: after },
       project: { code: projectCode, root: projectRoot },
-      policy: { mode: declaration.mode, path: declarationPath, fingerprint: digest(declarationContent) },
+      declaration: { path: declarationPath, identity: declarationIdentity },
       environment: context ? { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot, scopes: context.scopes.map((scope) => ({ selector: scope.selector, executionRoot: scope.executionRoot, sourceIdentity: scope.cli.identity, projectionIdentity: scope.projection.identity })), allowedExecutionRoots: context.allowedExecutionRoots } : null,
       workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable, actualVersion: workspaceNode.actualVersion },
-      candidateIdentity: after,
-      plan: { selected: plan.steps.map((step) => ({ id: step.id, reasons: step.reasons, dependsOn: step.dependsOn || [], resourceClaims: step.resourceClaims || [] })), required: plan.required, superseded: plan.superseded },
+      selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, proves: capability.proves, requiredForDelivery: capability.requiredForDelivery, resourceClaims: capability.resourceClaims ?? [] })),
+      authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
       checks,
-      candidateCompleteness,
       durationMs,
       timingSource: 'wrapper-measured',
       startedAt,
       finishedAt: new Date().toISOString(),
       failures: checks.filter((check) => check.status === 'failed').map((check) => check.id),
-      skips: checks.filter((check) => check.status === 'blocked').map((check) => ({ id: check.id, reason: check.reason })),
-      evidenceIdentity,
-      candidateStable,
+      executionIdentity,
       runId,
-      source: taskFinishFingerprint ? { candidateFingerprint: taskFinishFingerprint } : null,
-      totalDurationMs: durationMs,
       run: { id: runId },
     };
-    const evidence = createVerificationEvidenceLifecycle(runId, output ? path.resolve(output) : null);
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationRun, { ...base, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle });
+    const evidence = createVerificationEvidenceLifecycle(runId);
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationExecution, { ...base, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle });
     runtime.atomicWriteFile(evidence.summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
     if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
-      console.log(`${level === 'candidate' ? '完整候选验证' : '受影响验证'}: ${payload.status}`);
-      console.log(`Project: ${projectCode}; checks: ${checks.length}; duration: ${durationMs} ms`);
+      console.log(`Verification execution: ${payload.status}`);
+      console.log(`Project: ${projectCode}; capabilities: ${checks.length}; duration: ${durationMs} ms`);
       console.log(`Evidence: ${evidence.summaryPath}`);
     }
     if (!passed) process.exitCode = 1;
@@ -244,15 +238,15 @@ export function registerVerificationApplication(runtime) {
       return await verificationRun(args);
     } catch (error) {
       if (!args.includes('--json')) throw error;
-      const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationRun, {
+      const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationExecution, {
         operation: 'execute',
         status: 'failed',
-        requiredAssurance: runtime.optionValue(args, '--level', null),
+        target: runtime.optionValue(args, '--target-identity', null),
         project: runtime.optionValue(args, '--project', null),
+        selectedCapabilities: optionValues(args, '--capability'),
         checks: [],
         failures: [],
-        skips: [],
-        evidenceIdentity: null,
+        executionIdentity: null,
         evidenceReference: null,
         evidenceLifecycle: null,
         error: { code: error.code || 'verification.invalid_request', message: error.message },

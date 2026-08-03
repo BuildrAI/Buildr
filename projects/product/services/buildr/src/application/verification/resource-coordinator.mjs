@@ -60,7 +60,6 @@ export function coordinatedResourcesFromLimits(limits = {}) {
     id,
     strategy: 'coordinated',
     capacity,
-    cleanup: 'provider-owned',
     authorization: 'implicit',
   }]));
 }
@@ -160,24 +159,15 @@ export function createVerificationResourceCoordinator(options) {
   async function acquire(resourceIds = [], acquireOptions = {}) {
     const startedAt = now();
     const claims = [];
-    const environment = {};
     try {
       for (const resource of [...new Set(resourceIds)].sort()) {
         const definition = definitions[resource];
         if (!definition) throw new Error(`Unknown verification resource: ${resource}`);
+        if (definition.authorization === 'explicit' && !(acquireOptions.authorizedResources || []).includes(resource)) {
+          throw new Error(`Explicit authorization is required for verification resource: ${resource}`);
+        }
         if (definition.strategy === 'external') {
-          if (!(acquireOptions.authorizedResources || []).includes(resource)) throw new Error(`Explicit authorization is required for external verification resource: ${resource}`);
-          claims.push({ resource, strategy: 'external', cleanup: 'external', status: 'authorized' });
-          continue;
-        }
-        if (definition.strategy === 'namespaced') {
-          const namespace = safeIdentity(`${owner.taskId}-${owner.environmentId}-${owner.runId}-${resource}`, 'verification-run');
-          environment[definition.namespaceEnv] = namespace;
-          claims.push({ resource, strategy: 'namespaced', namespace, cleanup: definition.cleanup, status: 'ready' });
-          continue;
-        }
-        if (definition.strategy === 'isolated') {
-          claims.push({ resource, strategy: 'isolated', cleanup: definition.cleanup, status: 'ready' });
+          claims.push({ resource, strategy: 'external', status: 'authorized' });
           continue;
         }
         if (definition.strategy !== 'coordinated' || !Number.isInteger(definition.capacity) || definition.capacity < 1) throw new Error(`Invalid coordinated verification resource: ${resource}`);
@@ -216,7 +206,7 @@ export function createVerificationResourceCoordinator(options) {
     }
     return {
       claims,
-      environment,
+      environment: {},
       waitDurationMs: now() - startedAt,
       acquiredAt: new Date(now()).toISOString(),
       release: () => releaseClaims(claims),

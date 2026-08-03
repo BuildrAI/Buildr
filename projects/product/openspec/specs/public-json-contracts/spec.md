@@ -73,17 +73,21 @@ Buildr CLI MUST 在无法匹配命令且输入请求 `--json` 时输出登记的
 - **AND** schema coverage registry MUST 在任一新 JSON family 未登记时失败
 
 ### Requirement: Verification run 必须提供稳定公开 JSON identity
-`buildr verification run --json` MUST 返回 `buildr.verification-run/v1` 顶层 identity，并至少包含 operation、status、requiredAssurance、project、policy sources、environment context、candidate identity、plan decisions、checks、resource events、candidate completeness、duration、timing source、failures、skips、evidence identity、reference 与 lifecycle；checkout 和 npm tarball MUST 保持 schema parity。
+`buildr verification run --json` MUST 输出 `buildr.verification-execution/v1`，并 MUST 在成功、capability failure 与调用前 invalid request 路径保持单一 stdout JSON object。Payload MUST 区分 transient execution status、Project/declaration identity、requested target identity、实际 checks、精确 capability/resource authorization、真实 timing、target stability、Workspace Node/Environment execution context 与 evidence lifecycle；MUST NOT 声称 current Result、Candidate completeness 或 required assurance。
 
 #### Scenario: 验证成功输出 JSON
-- **WHEN** verification run 完整通过并请求 JSON
-- **THEN** stdout MUST 是单一 `buildr.verification-run/v1` 对象
-- **AND** worker stdout/stderr MUST 作为有边界的字段或 evidence reference 返回，不得破坏 envelope
+- **WHEN** 所有显式 command capabilities 完成且 target observation 保持稳定
+- **THEN** JSON MUST 返回 `status: passed`、每项 check facts、declaration identity、duration 与 transient evidence reference
 
 #### Scenario: 验证业务失败输出 JSON
-- **WHEN** required check 失败、资源等待超时或 context binding 被拒绝
-- **THEN** stdout MUST 仍返回同一 schema family 的失败摘要并以非零状态退出
-- **AND** payload MUST 包含确定性 error code、已完成检查和 cleanup 状态
+- **WHEN** capability 执行失败、资源等待失败或 execution context 在启动后失稳
+- **THEN** stdout MUST 仍返回同一 `buildr.verification-execution/v1` family 的失败摘要并以非零状态退出
+- **AND** payload MUST 包含已完成 checks、具体 failures、cleanup 状态和可用的结构化诊断，且 MUST NOT 写 current Result
+
+#### Scenario: invalid request
+- **WHEN** 参数、v2 declaration、capability identity、invocation kind、执行根或授权不合法
+- **THEN** JSON MUST 返回 `status: failed`、空 checks 与结构化 error
+- **AND** MUST 不生成 current Result 或误报 completed execution
 
 ### Requirement: Task Record CLI 必须提供稳定公开 JSON identity
 `buildr task create|inspect|update|complete|abandon --json` MUST 返回 `buildr.task-record-result/v1` 顶层 identity，并 MUST 至少包含 operation、status、taskId、canonical path、record、`recordDigest: string|null`、diagnostic、effects 与 nextActions；checkout 和 npm tarball CLI MUST 保持 schema parity。非空 `recordDigest` 是当前有效 canonical bytes 的响应级 evidence，不属于持久 Task Record schema；记录不存在或无法形成有效 read model 时为 `null`。
@@ -182,3 +186,23 @@ Public JSON registry、CLI command registry、help、schema validation 与 check
 #### Scenario: registry 漂移
 - **WHEN** `task review inspect|record` 任一 command 已登记，但 public JSON family、关键字段 guard 或 parity fixture 缺失
 - **THEN** static/package verification MUST 失败并指出缺失 identity
+
+### Requirement: Task Verification CLI 必须提供稳定 operation JSON identity
+`task verification inspect|record --json` MUST 输出 `buildr.task-verification-operation-result/v1`，包含 operation、`inspected|recorded|blocked` status、Task ID、单一 result slot、diagnostic、effects 与 nextActions。Result digest 与 applicability MUST 位于 read model envelope，不得写入 persisted Result。
+
+#### Scenario: inspect 空 slot
+- **WHEN** Task 没有 current Verification Result
+- **THEN** payload MUST 返回 `present: false`、null Result/digest/applicability 与零 effects
+
+#### Scenario: record blocked
+- **WHEN** Application 拒绝 input、Task terminal、declaration invalid 或 persistence 失败
+- **THEN** payload MUST 返回 blocked、具体 diagnostic 与零 effects
+- **AND** stdout MUST 不混入普通日志
+
+### Requirement: Verification JSON registry 必须与 command registry 同步
+公开 schema registry、CLI registry、help/architecture verification 与 npm package parity MUST 同时登记 `verificationExecution`、`verificationEvidenceCleanup` 和 `taskVerificationOperationResult`，并 MUST 删除旧 `verificationRun` schema key 与 `buildr.verification-run/v1` identity。
+
+#### Scenario: 枚举公开 JSON families
+- **WHEN** product tests 枚举 `PUBLIC_JSON_SCHEMAS`
+- **THEN** registry MUST 精确包含三个当前 Verification families
+- **AND** checkout 与 installed CLI MUST 输出相同 schema identities

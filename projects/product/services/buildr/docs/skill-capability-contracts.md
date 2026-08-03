@@ -48,7 +48,7 @@ commit、目标 ref、输入/最终 content identity、tree 等价性信号、�
 - 结果必须包含 commit、目标 ref、远端状态、输入/最终 content identity、tree 等价性信号和 `treeChanged`；
 - merge、rebase、fast-forward、PR 和分支策略属于 `Allowed Variations`。
 
-Git provider 返回的 tree 等价性只是操作效果，不是最终验证结论。`task-worktree` 只提供窄 Git checkout/branch/HEAD/clean/registration evidence；Task Environment 独占实际执行根、Runtime/CLI/依赖、projection、动态资源、ready、恢复和总 cleanup；`task-verification` 才根据当前 Candidate identity 判断 evidence。三者通过最小 evidence 交接，不互相复制 policy。
+Git provider 返回的 tree 等价性只是操作效果，不是最终验证结论。`task-worktree` 只提供窄 Git checkout/branch/HEAD/clean/registration evidence；Task Environment 独占实际执行根、Runtime/CLI/依赖、projection、动态资源、ready、恢复和总 cleanup；`task-verification` 根据调用方提供的明确 target identity 与当前 declarations 判断 Result applicability。三者通过最小 evidence 交接，不互相复制 policy。
 
 ### 2. Manifest 注册、provider、consumer 与 binding
 
@@ -72,9 +72,9 @@ bindings:
 
 `task-finish/v1` 不消费完整 `git-task-integration`，其 task environment 路径通过产品 application service 执行固定 Git transition，并由自身 contract 约束 fast-forward、push、freeze 与结果证据。只有 retained metadata-only handoff 把 optional `git-single-operation` dependency 提升为 required；独立 Git 任务仍由 `git-ops` provider 和对应 contract 处理。
 
-任务验证单独建模，是因为它既可以在 Task Environment 中执行，也可以在当前分支、无 Git Project 或非代码候选中执行。`buildr.task-environment/v1` 保护 Task 的执行资格与环境处置；`buildr.git-worktree-provider/v1` 只保护 Git checkout evidence；`buildr.task-verification/v2` 保护测试选择、affected/candidate 保证、Candidate identity、耗时报告和 evidence 生命周期。Project `verification.yml` 是测试能力事实，不进入 `capabilities.yml`。
+任务验证单独建模，是因为它既可以在 Task Environment 中执行，也可以在当前分支、无 Git Project 或非代码交付目标中执行。`buildr.task-environment/v1` 保护 Task 的执行资格与环境处置；`buildr.git-worktree-provider/v1` 只保护 Git checkout evidence；`buildr.task-verification/v3` 保护 Project capability 选择、transient execution 与 current Task Verification Result 的边界。Project `verification.yml` 是测试能力事实，不进入 `capabilities.yml`。
 
-顶层验证 provider 不是只有用户主动说“验证”才加载。用户直接要求测试、耗时报告、初始化/更新测试声明或推进测试能力成熟度时由 description 发现；实现任务到达验证节点、Agent 准备声称完成时由适用 Rule 的完成边界触发。Task Finish 的最终 assurance 由产品 executor 调用 verification application service，不触发 Agent provider handoff。
+顶层验证 provider 不是只有用户主动说“验证”才加载。用户直接要求测试、耗时报告或初始化/更新测试声明时由 description 发现；实现任务到达验证节点、Agent 准备声称完成时由适用 Rule 的完成边界触发。Skill 读取 v2 declaration，选择已有能力并把 transient execution 提炼成完整 current Result；能力不存在时只报告 coverage gap，不创建测试。Task Finish 只调用同一个 Task Verification Application reader，并在窄单 Project command 条件下使用临时补齐 adapter。
 
 `buildr.task-record/v1` 是正式 Task 顶层记录的薄能力边界，默认由 `task-manager` 提供并绑定。它只保证通过产品 create/inspect/update/complete/abandon action 创建或恢复 Task ID、标题、意图、Project/Service scope、Change 引用与顶层终态；不得读取或复制 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 事实。`task-triage` 以 optional dependency 消费该能力：讨论、只读探索和非持久路径保持可用；只有已经对齐、即将首次写入的持久交付在 provider ready 时先创建或恢复 Task Record，provider not-ready 时明确 degraded/blocked，而不让 Agent 直接写 YAML。Local App 是同一 Application 的人类客户端，不是 capability provider 或第二份 authority。
 
@@ -92,7 +92,7 @@ render/sync 会在 `task-finish` 的 runtime 派生版本中注入受管 binding
 
 当用户说“收尾”时，Agent runtime 根据 description 命中并加载 `task-finish`。ready Environment 中的 Change/code-only 候选只调用一次 `buildr task finish run --task ...`；五阶段动作、证据投射和暂态恢复由产品执行器持有。没有 ready Environment 时，正式产品 run 直接阻塞；retained metadata-only 的独立安全交接不伪装成 Environment，也不得 stage 无关 dirty state。
 
-产品中的 verification 领域服务仍遵守 `buildr.task-verification/v2`：已有证据只有在 frozen identity 与 required assurance 完全匹配时复用，否则执行一次正式保证；失败终止 Finish，不在同一 run 修复或重验。transient evidence 在交付完成后由 cleanup 请求 provider 安全清理。
+产品中的 verification 领域服务遵守 `buildr.task-verification/v3`：已有 Result 只有在 target 与 declaration identity 都匹配、结论为 passed 且覆盖全部适用 delivery-required capability 时复用。单 Project command 能力可执行一次并由同一 Application 整值记录；多 Project、Agent capability、stale、not-passed 或 coverage gap 都不会被 Finish 改写为推进决定。transient execution evidence 在消费后由 cleanup 安全清理。
 
 对 optional `buildr.task-asset-review/v3`，provider 从非简单 Workspace 任务期间开始维护 canonical Workspace 的 `.buildr/asset-review/inbox/` observation，并独占信号筛选、资格审查、人工决定和新任务交接政策。该运行期目录必须由根 `.gitignore` 排除；长期维护历史仍只随真实资产修改提交到 `asset-maintenance/`。Task Finish consumer 只传递 Workspace/task identity 与最终证据引用并触发 finalize；它不复制 provider 的门禁。v3 允许写当前 owner 的本地 observation、迁移匹配的 v2 用户级草稿，并要求独立任务 handoff 与类型化完成证据，因此不能用 v1/v2 contract 替代。
 

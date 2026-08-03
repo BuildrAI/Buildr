@@ -10,7 +10,7 @@ function inputError(code, message, action) {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--change', '--project', '--agent', '--target-branch', '--remote', '--required-assurance', '--verification-summary', '--resume', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--change', '--project', '--agent', '--target-branch', '--remote', '--resume', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -66,13 +66,12 @@ export function registerTaskFinishApplication(runtime) {
           remote: optionValue(command.args, '--remote', repository.remote || null),
           environmentRoot: context.validationRoot,
           workspaceRoot: context.workspaceRoot,
-          requiredAssurance: optionValue(command.args, '--required-assurance', 'affected'),
           workspaceNodeIdentity,
         },
       });
     } else if (path.resolve(finishRun.identity.workspaceRoot) !== path.resolve(root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
     const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
-    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, existingVerificationSummary: optionValue(command.args, '--verification-summary', null) });
+    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot });
     return print(await executeFinishRun({ root, run: finishRun, handlers, resumeToken }), command.args);
   }
 

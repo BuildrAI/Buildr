@@ -112,19 +112,19 @@ try {
   git(nestedRoot, ['config', 'user.email', 'buildr-test@example.com']);
   git(nestedRoot, ['config', 'user.name', 'Buildr Test']);
   const verificationCapability = (id, delayMs, resourceClaims) => ({
-    id, title: id, command: { argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' },
-    maturity: 'stable', stages: ['candidate'], enforcement: { candidate: 'required' },
-    applicability: { paths: ['**'], risks: [] }, coverage: { kind: 'acceptance', owns: [id] },
-    environment: { requires: ['node'], services: [] }, effects: { level: 'local-temporary', writes: [], externalSystems: false },
-    authorization: 'implicit', resourceClaims, dependsOn: [], supersedes: [], sources: ['concurrent-task-acceptance'],
+    id, title: id,
+    scope: { project: 'nested', services: [] },
+    invocation: { kind: 'command', argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' },
+    applicability: { paths: ['**'], conditions: [] }, proves: [id], requiredForDelivery: true,
+    environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' },
+    resourceClaims,
   });
   fs.writeFileSync(path.join(nestedRoot, 'verification.yml'), `${JSON.stringify({
-    schemaVersion: 'buildr.project-verification/v1', mode: 'authoritative',
+    schemaVersion: 'buildr.project-verification/v2',
     resources: [
-      { id: 'task-temp', title: 'Task temp', strategy: 'isolated', cleanup: 'provider-owned', authorization: 'implicit' },
-      { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' },
+      { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, authorization: 'implicit' },
     ],
-    capabilities: [verificationCapability('nested.parallel-a', 80, ['task-temp']), verificationCapability('nested.parallel-b', 80, ['task-temp']), verificationCapability('nested.coordinated', 160, ['shared-slot'])],
+    capabilities: [verificationCapability('nested.parallel-a', 80, []), verificationCapability('nested.parallel-b', 80, []), verificationCapability('nested.coordinated', 160, ['shared-slot'])],
   }, null, 2)}\n`);
   assert.equal(runBuildr(['sync', 'codex', '--target', workspace]).status, 0);
   commitIfDirty(nestedRoot, 'nested runtime fixture');
@@ -154,16 +154,17 @@ try {
 
   const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
-    'verification', 'run', '--project', 'nested', '--level', 'candidate', '--target', task.environmentRoot,
+    'verification', 'run', '--project', 'nested', '--capability', 'nested.parallel-a', '--capability', 'nested.parallel-b', '--capability', 'nested.coordinated',
+    '--target-identity', `target:${task.taskId}`, '--target', task.environmentRoot,
     '--environment', task.taskId, '--workspace', workspace, '--json',
   ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: 15_000, outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);
   summary.verificationRuns = verificationResults.map((result, index) => {
     const payload = parseSuccessfulJson(result, `verification ${taskIds[index]}`);
-    assert.equal(payload.candidateCompleteness, 'confirmed');
-    assert.match(payload.evidenceIdentity, /^sha256-/);
-    return { taskId: taskIds[index], evidenceIdentity: payload.evidenceIdentity, environment: payload.environment, durationMs: payload.durationMs, checks: payload.checks };
+    assert.equal(payload.schemaVersion, 'buildr.verification-execution/v1');
+    assert.match(payload.executionIdentity, /^sha256-/);
+    return { taskId: taskIds[index], executionIdentity: payload.executionIdentity, environment: payload.environment, durationMs: payload.durationMs, checks: payload.checks };
   });
   assert.equal(summary.verificationRuns.every((run) => run.environment.taskId === run.taskId), true);
   assert.equal(summary.verificationRuns.some((run) => run.checks.find((check) => check.id === 'nested.coordinated').resourceCoordination.waitDurationMs > 50), true);

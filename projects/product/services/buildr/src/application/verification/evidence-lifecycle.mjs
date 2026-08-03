@@ -18,24 +18,8 @@ function transientSummaryBoundary(summaryPath, temporaryRoot = os.tmpdir()) {
   };
 }
 
-export function createVerificationEvidenceLifecycle(runId, output = null, options = {}) {
+export function createVerificationEvidenceLifecycle(runId, options = {}) {
   const temporaryRoot = path.resolve(options.temporaryRoot || os.tmpdir());
-  if (output) {
-    const summaryPath = path.resolve(output);
-    fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
-    return {
-      summaryPath,
-      lifecycle: {
-        schemaVersion: VERIFICATION_EVIDENCE_LIFECYCLE_SCHEMA,
-        runId,
-        evidenceRetention: 'caller-managed',
-        cleanupAfter: 'caller-policy',
-        cleanupStatus: 'not-applicable',
-        cleanupReference: null,
-        summaryPath,
-      },
-    };
-  }
   const directory = fs.mkdtempSync(path.join(temporaryRoot, 'buildr-verification-run-'));
   const summaryPath = path.join(directory, 'summary.json');
   return {
@@ -56,26 +40,6 @@ export function normalizeVerificationEvidenceLifecycle(summary) {
   if (summary?.evidenceLifecycle?.schemaVersion === VERIFICATION_EVIDENCE_LIFECYCLE_SCHEMA) {
     return { lifecycle: summary.evidenceLifecycle, compatibilitySource: null };
   }
-  if (summary && typeof summary.evidenceRetention === 'string') {
-    const summaryPath = summary.summaryPath || summary.evidenceReference || null;
-    const cleanupReference = summary.cleanupReference
-      && summaryPath
-      && path.resolve(summary.cleanupReference) === path.resolve(summaryPath)
-      ? path.dirname(path.resolve(summaryPath))
-      : summary.cleanupReference || null;
-    return {
-      compatibilitySource: 'legacy-flat-v1',
-      lifecycle: {
-        schemaVersion: VERIFICATION_EVIDENCE_LIFECYCLE_SCHEMA,
-        runId: summary.runId || summary.run?.id || null,
-        evidenceRetention: summary.evidenceRetention,
-        cleanupAfter: summary.cleanupAfter || null,
-        cleanupStatus: summary.cleanupStatus || null,
-        cleanupReference,
-        summaryPath,
-      },
-    };
-  }
   return { lifecycle: null, compatibilitySource: null };
 }
 
@@ -88,8 +52,8 @@ export function cleanupAbsentVerificationEvidence(summaryPath, options = {}) {
 }
 
 export function cleanupVerificationEvidence(summary, options = {}) {
-  if (summary?.schemaVersion !== 'buildr.verification-run/v1') {
-    return { ok: false, status: 'retained', code: 'cleanup.schema_invalid', message: 'Evidence is not a buildr.verification-run/v1 summary.' };
+  if (summary?.schemaVersion !== 'buildr.verification-execution/v1') {
+    return { ok: false, status: 'retained', code: 'cleanup.schema_invalid', message: 'Evidence is not a buildr.verification-execution/v1 summary.' };
   }
   const { lifecycle, compatibilitySource } = normalizeVerificationEvidenceLifecycle(summary);
   if (lifecycle?.evidenceRetention !== 'transient') {

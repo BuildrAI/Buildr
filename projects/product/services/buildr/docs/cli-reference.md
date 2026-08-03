@@ -37,8 +37,9 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
 | `buildr task environment prepare\|inspect\|cleanup <task-id>` | 在 canonical Workspace 上准备或恢复、只读复核、清理正式 Task 的执行环境。`prepare` 确定性准备实际执行根、Runtime、CLI、依赖和 runtime projection；结果返回 current-machine probes 与明确 execution binding。Environment Receipt 独占 ready、恢复、动态资源和总 cleanup。 |
 | `buildr worktree create\|inspect\|cleanup <task-id>` | 窄 Git worktree provider。`create` 接受 branch/start point 与显式 Project/Service selectors；`inspect` 复核 checkout/branch/HEAD/clean/registration；`cleanup` 要求每仓 integrated ref。它不判断 Environment ready，也不准备 Runtime、CLI、依赖、projection 或动态资源。 |
-| `buildr verification run --project <code> --level affected\|candidate` | 使用 Workspace 受管 Node 执行 Project `verification.yml`。需要绑定正式环境时同时传 `--environment <task-id> --workspace <canonical-workspace>`；执行根必须属于该 Environment。返回 Candidate、Task checkout/CLI/projection、Workspace Node 与 checks identity 绑定的验证 evidence，不证明 Agent session，也不把 retained Buildr hash 当作 applicability 条件。 |
+| `buildr verification run --project <code> --capability <id> ... --target-identity <identity>` | 使用 Workspace 受管 Node 执行 Project `verification.yml` v2 中显式选择的 command capabilities。需要绑定正式环境时同时传 `--environment <task-id> --workspace <canonical-workspace>`；返回 transient `buildr.verification-execution/v1`，不选择 applicability、不写 current Result。 |
 | `buildr task create\|inspect\|update\|complete\|abandon` | 在明确的 canonical Workspace 中维护 `.buildr/tasks/<task-id>/task.yml`。五个动作只管理 Task ID、标题、意图、Project/Service scope、0..N 个限定 Change、顶层状态和简短终态结果；不记录 Task Environment、研发、审查、验证、Git、Finish、Board 或复盘事实。`create` 要求显式 title/intent，`update` 只接受字段 setter 与引用 add/remove，`complete` 要求 summary 并以 `--no-change` 明确无变更完成，terminal Task 不可重开。全部动作支持 `--target` 和 `--json`。 |
+| `buildr task verification inspect\|record <task-id>` | 读取或整值记录 `.buildr/tasks/<task-id>/verification.yml` 的 current Verification Result。Application 自行解析 Task scope 与 declaration identity；`inspect` 可带当前 `--target-identity` 派生 applicability，`record` 接收完整能力事实、coverage gaps 和结论，不执行测试。目标声明尚在 Task Environment 时可传 `--declaration-root <task-environment-root>`；Application 只接受该 Task 当前 ready Environment 的精确根，且不把路径写入 Result。 |
 | `buildr task finish run\|inspect` | 首次 `run` 明确接收 `--task <task-id> --project <code>`，并要求该 Task 的 Environment ready；`--change` 仅 Change 候选必需，省略时创建 code-only 候选。两类候选单次执行 `preflight → prepare → verify → deliver → cleanup`。Finish 读取 Environment execution result，交付完成后把 delivery identity 交给 Environment，并消费其 cleanup 结果；不直接清理 worktree 或动态资源。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
@@ -55,7 +56,7 @@ buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --
 
 Task Record 使用 closed `buildr.task-record/v1` schema。Task ID、目录名和文件内 identity 必须一致；Project、Service 通过 Workspace registry 校验，新增 Change 引用通过 Task-scoped Change Reference Resolver 从 ready Task Environment Project root或 retained Project 解析。Change 不需要为适配校验而提前写入 retained Project。引用暂时不可用时 inspect/list 返回诊断，删除该引用或修改无关字段仍可继续。Task Record 不保存 Environment path、identity 或 provenance。Repository 只拥有并原子替换 `task.yml`；读取结果附带不持久化的 `recordDigest`，供 Local App 拒绝陈旧页面。
 
-默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task 详情保留概览，并提供独立只读“环境”页签：打开、窗口聚焦或手动刷新时执行一次 current-machine probe，显示 observedAt、scope/root、Runtime/CLI/依赖/projection、provider evidence、动态资源与 cleanup 摘要，不提供 Environment mutation。Task 关联 Change 的详情通过同一 Task-scoped Resolver 读取候选与 retained baseline；全局 Change 列表仍保持 retained-only。
+默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task 详情保留概览，并提供独立只读“环境”“审查”“验证”页签：打开、窗口聚焦或手动刷新时调用对应 Application reader；Verification 页签展示 current Result、target/declaration applicability、能力事实与 coverage gaps，只提供受限 Agent prompt，不提供第二个 Result writer。Task 关联 Change 的详情通过同一 Task-scoped Resolver 读取任务执行根与 retained baseline；全局 Change 列表仍保持 retained-only。
 
 Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。`source.path` 是文件系统物化位置；Git source 另外保存 URL、remote 和稳定的 `integrationBranch`。`currentBranch`、HEAD、dirty、upstream 与 ahead/behind 是实时观察状态，不写入 Domain。v1 registry 可只读查询，`buildr sync <agent>` 显式迁移；页面不会静默迁移、切分支、stash 或改写 remote。
 
@@ -93,11 +94,13 @@ Buildr 不 render 或安装 Commands，不保存 binary、token、cookie、登�
 
 ## Project 测试能力声明
 
-`projects/<project>/verification.yml` 使用 `buildr.project-verification/v1`，可选声明任意测试能力的 argv、cwd、成熟度、Minimal/Affected/Candidate 阶段、门禁强度、适用路径、覆盖、环境、副作用、授权和依赖关系。可选 `resources` 目录使用 `isolated`、`namespaced`、`coordinated`、`external` 表达 task-local、命名隔离、跨任务容量和外部授权边界，能力通过 `resourceClaims` 引用。它是 Project 测试事实，不是 `capabilities.yml` 中的 Skill binding，也不会被投射到 Service repo。
+`projects/<project>/verification.yml` 使用 closed `buildr.project-verification/v2`。每项 capability 声明稳定 id、明确 Project/Service scope、command 或 bounded Agent invocation、path/条件 applicability、能够证明的事实和 `requiredForDelivery`；只有确有需要时才增加 environment、effects、authorization、resources 与 `resourceClaims`。旧 mode、maturity、stages、enforcement、coverage、sources、dependsOn 和 supersedes 不再读取。它是 Project 测试能力事实，不是 `capabilities.yml` 中的 Skill binding，也不会被投射到 Service repo。
 
-有有效声明时，`buildr verification run` 是 checkout 与 npm 安装后共享的正式执行入口。`affected` 选择该阶段 stable required 能力；`candidate` 保留完整 required gate；依赖失败会阻塞下游，只有显式 `supersedes` 才去重。单次 run 内独立能力并发，`coordinated` 资源在同一 Git common-dir 的 task runs 之间排队，`external` 资源必须显式授权。命令不创建任务、不调度 Agent，也不把 Buildr Product registry 当作其他 Project 默认值。
+`buildr verification run` 不推导固定层级或声明级 DAG，只执行调用方显式选择的 command capabilities。`effects.authorization: explicit` 必须逐项传入 `--authorize-capability <id>`；声明为 explicit 的资源必须逐项传入 `--authorize-resource <id>`。实际 claim 的 `coordinated` 资源才通过有界 coordinator 排队。完整命令输出、耗时、授权与资源诊断属于 transient execution evidence。命令不创建任务、不调度 Agent，也不写 `.buildr/tasks/<task-id>/verification.yml`。
 
-没有该文件时，doctor 不产生 finding，`task-verification` 继续从 AGENTS、POM、项目文档和已有测试入口发现政策。文件存在时 doctor 只做结构、路径和能力图校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”即可生成/增量补充候选；新增能力默认 discovered 或 trial/advisory，不会自动成为 Candidate required gate。
+没有声明或没有适用能力时，doctor 不产生 finding，Task Verification 在具体 Result 中报告 coverage gap，不自动开发测试。文件存在时 doctor 只做 closed schema、路径、scope 与资源引用校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”时，Agent 只从真实 build scripts、CI、文档和已有测试发现候选，并由用户确认 Project policy。
+
+current Task Result 使用 `buildr.task-verification-result/v1`，只保存 Task/target/declaration identity、实际能力的 `passed / failed` 精炼事实、coverage gaps、`passed / not-passed` 结论与完成时间。Task Verification Application 是唯一 writer/reader，record 做完整原子替换，inspect 按当前 target 和 declarations 派生 `current / stale / unknown`。Result 不保存 stdout/stderr、临时路径、Environment Receipt、风险接受、任务推进状态、history 或 Candidate generation。
 
 ## Skill capability contracts
 

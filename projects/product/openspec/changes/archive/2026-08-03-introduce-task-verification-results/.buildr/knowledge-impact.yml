@@ -1,0 +1,97 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: introduce-task-verification-results
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/introduce-task-verification-results/brief.md
+    reason: P0.4 需要稳定的人类可读范围、流程与验收摘要
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/proposal.md
+      - openspec/changes/introduce-task-verification-results/design.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: Task workflow authority 增加 current Verification Result
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/specs/task-verification/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: declaration、execution、Result Application 和 store 边界发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr CLI、Local App、Finish 与 runtime package 消费同一 Result authority
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/specs/agent-task-workflows/spec.md
+      - openspec/changes/introduce-task-verification-results/specs/task-finish-execution/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: Change 实现后的验证不再使用固定三级 assurance 或 Candidate marker
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/specs/agent-task-workflows/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 需要收敛 Verification Capability Declaration、Execution Evidence、Task Verification Result 与 applicability 术语
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/design.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: Product authority map 需要增加独立 Task Verification capability 与 Result ownership
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/design.md
+      - openspec/changes/introduce-task-verification-results/specs/task-verification/spec.md
+  - type: product-architecture
+    target: docs/buildr-product.md
+    reason: 产品说明需要同步 declaration v2、transient execution、current Result、Local App 与临时 Finish consumer 边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/design.md
+      - openspec/changes/introduce-task-verification-results/specs/agent-task-workflows/spec.md
+  - type: product-architecture
+    target: docs/roadmap/task-lifecycle-architecture.md
+    reason: Roadmap 需要记录 P0.4 已交付内容并删除旧推进决定、固定层级和局部 Result authority
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-task-verification-results/design.md
+      - openspec/changes/introduce-task-verification-results/specs/task-verification/spec.md
+  - type: overview
+    target: docs/roadmap/README.md
+    reason: Roadmap 索引需要与生命周期讨论稿在同一 P0.4 Candidate 中同步目标事实和下一模块
+    status: updated
+    sourceIdentities:
+      - docs/roadmap/task-lifecycle-architecture.md
+      - openspec/changes/introduce-task-verification-results/design.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Verification Capability Declaration
+    - Verification Execution Evidence
+    - Task Verification
+    - Verification Result
+    - Result applicability
+    - coverage gap
+    - Candidate generation
+  canonicalTerms: 验证能力声明（Verification Capability Declaration）、验证执行证据（Verification Execution Evidence）、任务验证（Task Verification）、验证结果（Verification Result）、结果适用性（Result applicability）、覆盖缺口（coverage gap）、候选代次（Candidate generation）
+  changedAssets:
+    - openspec/knowledge/glossary.md
+    - openspec/knowledge/overview.md
+    - openspec/knowledge/architecture/product.md
+    - openspec/knowledge/architecture/technical.md
+    - openspec/knowledge/flows/openspec-change-lifecycle.md
+    - openspec/knowledge/services/buildr.md
+    - docs/buildr-product.md
+    - docs/roadmap/README.md
+    - docs/roadmap/task-lifecycle-architecture.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/changes/introduce-task-verification-results/design.md
+    - openspec/changes/introduce-task-verification-results/specs/task-verification/spec.md
+unresolvedItems: []

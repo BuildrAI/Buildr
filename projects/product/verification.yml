@@ -1,156 +1,123 @@
-schemaVersion: buildr.project-verification/v1
-mode: augment
+schemaVersion: buildr.project-verification/v2
 resources:
-  - id: task-temporary
-    title: Task-owned verification temporary state
-    strategy: isolated
-    cleanup: provider-owned
-    authorization: implicit
   - id: browser
     title: Local browser capacity
     strategy: coordinated
     capacity: 1
-    cleanup: provider-owned
-    authorization: implicit
-  - id: workspace-saturating
-    title: Workspace-saturating fixture capacity
-    strategy: coordinated
-    capacity: 1
-    cleanup: provider-owned
     authorization: implicit
 capabilities:
   - id: product.fast
     title: Buildr Product Fast 验证
-    command:
+    scope:
+      project: product
+      services: []
+    invocation:
+      kind: command
       argv: ["npm", "test"]
       cwd: services/buildr
-    maturity: stable
-    stages: [affected]
-    enforcement:
-      affected: required
     applicability:
       paths: ["**"]
-      risks: []
-    coverage:
-      kind: integration
-      owns: ["unit、静态契约、fast integration、CLI 架构、OpenSpec strict 与 runtime adapter contract"]
+      conditions:
+        - 需要快速确认 Product/Buildr 受影响实现与契约
+    proves:
+      - unit、静态契约、fast integration、CLI 架构、OpenSpec strict 与 runtime adapter contract 通过
+    requiredForDelivery: false
     environment:
       requires: [node, npm]
-      services: []
     effects:
-      level: local-temporary
       writes: ["系统临时目录中的验证 fixture 与 diagnostics"]
-      externalSystems: false
-    authorization: implicit
-    resourceClaims: [task-temporary]
-    dependsOn: []
-    supersedes: []
-    sources: ["AGENTS.md", "services/buildr/package.json", "services/buildr/test/verification/registry.mjs"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []
   - id: product.candidate
-    title: Buildr Product Candidate 验证
-    command:
+    title: Buildr Product 完整交付验证
+    scope:
+      project: product
+      services: []
+    invocation:
+      kind: command
       argv: ["npm", "run", "test:candidate"]
       cwd: services/buildr
-    maturity: stable
-    stages: [candidate]
-    enforcement:
-      candidate: required
     applicability:
       paths: ["**"]
-      risks: ["package、runtime、workspace lifecycle、发布与 OpenSpec 契约回归"]
-    coverage:
-      kind: end-to-end
-      owns: ["Product Project 与 Buildr Service 的完整候选门禁"]
+      conditions:
+        - Product 或 Buildr Service 形成待交付实现
+    proves:
+      - Product Project 与 Buildr Service 的完整产品测试、package、runtime、workspace lifecycle、发布与 OpenSpec 契约门禁通过
+    requiredForDelivery: true
     environment:
       requires: [node, npm]
-      services: []
     effects:
-      level: local-temporary
       writes: ["系统临时目录中的候选 workspace、tarball、timing evidence 与 diagnostics"]
-      externalSystems: false
-    authorization: implicit
-    resourceClaims: [task-temporary]
-    dependsOn: []
-    supersedes: []
-    sources: ["AGENTS.md", "services/buildr/docs/release-checklist.md", ".github/workflows/verify.yml"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []
   - id: product.browser-smoke
     title: Buildr 本机应用浏览器冒烟验证
-    command:
+    scope:
+      project: product
+      services: [buildr]
+    invocation:
+      kind: command
       argv: ["npm", "run", "test:browser:smoke"]
       cwd: services/buildr
-    maturity: trial
-    stages: [affected]
-    enforcement:
-      affected: advisory
     applicability:
       paths: ["services/buildr/src/interfaces/local-app/**", "services/buildr/test/browser-smoke/**"]
-      risks: ["项目、服务或变更管理的浏览器路由、DOM 交互与 Agent Action 回归"]
-    coverage:
-      kind: end-to-end
-      owns: ["项目目录与详情、服务过滤与详情、变更过滤与详情、Change Agent prompt 抽屉、浏览器运行错误"]
+      conditions:
+        - 本机应用路由、DOM 交互或 Agent Action 发生变化
+    proves:
+      - Project、Service、Change 与 Task 页面关键浏览器交互和错误反馈可用
+    requiredForDelivery: false
     environment:
       requires: [node, npm, chrome]
-      services: []
     effects:
-      level: local-temporary
       writes: ["系统临时目录中的隔离 Workspace、Service source 与浏览器 profile"]
-      externalSystems: false
-    authorization: implicit
+      externalSystems: []
+      authorization: implicit
     resourceClaims: [browser]
-    dependsOn: []
-    supersedes: []
-    sources: ["services/buildr/package.json", "services/buildr/test/browser-smoke/local-app-browser.test.mjs", "openspec/specs/local-app-browser-verification/spec.md"]
   - id: product.archive-lifecycle
     title: Buildr Change active/archive 生命周期契约
-    command:
+    scope:
+      project: product
+      services: []
+    invocation:
+      kind: command
       argv: ["node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
       cwd: services/buildr
-    maturity: stable
-    stages: [affected]
-    enforcement:
-      affected: required
     applicability:
       paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/package/targets/workspace/skills/buildr/task-finish/**", "services/buildr/test/contract/**"]
-      risks: ["Change lifecycle、Change path resolution、OpenSpec sync/archive workflow"]
-    coverage:
-      kind: contract
-      owns: ["active 或唯一 archived Change 定位、单一 OpenSpec convergence 事务与 Task Finish 生命周期顺序"]
+      conditions:
+        - Change lifecycle、Change path resolution 或 OpenSpec sync/archive workflow 发生变化
+    proves:
+      - active/archived Change 定位、OpenSpec convergence 与 Task Finish 生命周期顺序保持一致
+    requiredForDelivery: false
     environment:
       requires: [node]
-      services: []
     effects:
-      level: local-temporary
       writes: ["系统临时目录中的隔离 OpenSpec fixture"]
-      externalSystems: false
-    authorization: implicit
-    resourceClaims: [task-temporary]
-    dependsOn: []
-    supersedes: []
-    sources: ["services/buildr/test/contract/current-knowledge-governance.test.mjs", "services/buildr/test/contract/task-finish-sequencing.test.mjs"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []
   - id: product.openspec-convergence-journey
     title: Buildr OpenSpec 确定性收敛完整 Journey
-    command:
+    scope:
+      project: product
+      services: []
+    invocation:
+      kind: command
       argv: ["npm", "run", "test:openspec:convergence"]
       cwd: services/buildr
-    maturity: stable
-    stages: [affected]
-    enforcement:
-      affected: required
     applicability:
       paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/application/openspec/**", "services/buildr/src/application/domains/openspec.mjs", "services/buildr/src/interfaces/cli/**", "services/buildr/src/application/task-finish/**", "services/buildr/test/verification/openspec/**"]
-      risks: ["OpenSpec canonical 写入、断点恢复、并发 Change、archive --skip-specs 或 checkpoint bootstrap"]
-    coverage:
-      kind: end-to-end
-      owns: ["单一 receipt、隔离 strict validation、条件式应用、写后确认、文件事实恢复、归档重试、并发 Change 与损坏 domain checkpoint"]
+      conditions:
+        - OpenSpec canonical 写入、恢复、并发 Change、archive 或 checkpoint bootstrap 发生变化
+    proves:
+      - 单一 receipt、隔离 strict validation、条件应用、写后确认、文件事实恢复、归档重试与并发 Change Journey 通过
+    requiredForDelivery: false
     environment:
       requires: [node, npm]
-      services: []
     effects:
-      level: local-temporary
       writes: ["系统临时目录中的完整 OpenSpec Project、Change、finish run 与 receipts"]
-      externalSystems: false
-    authorization: implicit
-    resourceClaims: [task-temporary]
-    dependsOn: []
-    supersedes: []
-    sources: ["services/buildr/test/unit/openspec-convergence-transaction.test.mjs", "services/buildr/test/integration-fast/task-finish-cli.test.mjs", "services/buildr/test/verification/openspec/contract.mjs"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []

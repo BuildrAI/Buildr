@@ -21,7 +21,7 @@ function create(root, runId = 'current-inspect') {
     runId,
     identity: {
       task: runId, change: 'finish-current', project: 'product', agent: 'codex', targetBranch: 'dev', remote: null,
-      environmentRoot: root, workspaceRoot: root, requiredAssurance: 'affected',
+      environmentRoot: root, workspaceRoot: root,
     },
   });
 }

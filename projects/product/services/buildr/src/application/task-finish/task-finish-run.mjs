@@ -130,7 +130,6 @@ function normalizeIdentity(input) {
     remote: typeof input.remote === 'string' && input.remote.trim() ? input.remote : null,
     environmentRoot: path.resolve(input.environmentRoot),
     workspaceRoot: path.resolve(input.workspaceRoot),
-    requiredAssurance: input.requiredAssurance === 'candidate' ? 'candidate' : 'affected',
     workspaceNodeIdentity: typeof input.workspaceNodeIdentity === 'string' && input.workspaceNodeIdentity ? input.workspaceNodeIdentity : null,
   };
 }

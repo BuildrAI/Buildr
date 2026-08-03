@@ -12,7 +12,7 @@ function fixture(context) {
   return root;
 }
 
-const coordinated = { browser: { id: 'browser', strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' } };
+const coordinated = { browser: { id: 'browser', strategy: 'coordinated', capacity: 1, authorization: 'implicit' } };
 
 test('不同 verification runs 对容量一资源排队且精确释放', async (context) => {
   const root = fixture(context);
@@ -30,17 +30,12 @@ test('不同 verification runs 对容量一资源排队且精确释放', async (
   assert.deepEqual(await secondHandle.release(), [{ resource: 'browser', slot: 0, status: 'released' }]);
 });
 
-test('namespaced 资源按 task/run 隔离，external 资源要求显式授权', async (context) => {
+test('external 资源要求逐项显式授权', async (context) => {
   const root = fixture(context);
   const resources = {
-    data: { id: 'data', strategy: 'namespaced', namespaceEnv: 'TEST_NAMESPACE', cleanup: 'task-owned', authorization: 'implicit' },
-    staging: { id: 'staging', strategy: 'external', cleanup: 'external', authorization: 'explicit' },
+    staging: { id: 'staging', strategy: 'external', authorization: 'explicit' },
   };
   const first = createVerificationResourceCoordinator({ root, resources, owner: { taskId: 'task-a', runId: 'run-a' } });
-  const second = createVerificationResourceCoordinator({ root, resources, owner: { taskId: 'task-b', runId: 'run-b' } });
-  const firstNamespace = await first.acquire(['data']);
-  const secondNamespace = await second.acquire(['data']);
-  assert.notEqual(firstNamespace.environment.TEST_NAMESPACE, secondNamespace.environment.TEST_NAMESPACE);
   await assert.rejects(first.acquire(['staging']), /Explicit authorization is required/);
   const authorized = await first.acquire(['staging'], { authorizedResources: ['staging'] });
   assert.equal(authorized.claims[0].status, 'authorized');

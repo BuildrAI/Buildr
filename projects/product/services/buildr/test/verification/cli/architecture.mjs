@@ -55,6 +55,7 @@ if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)
 
 const requiredRuntime = [
   'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs', 'interfaces/cli/task-record.mjs',
+  'interfaces/cli/task-verification.mjs',
   'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
   'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web/app.js',
   'application/compose-runtime.mjs', 'application/doctor.mjs', 'application/package-maintenance.mjs',
@@ -64,6 +65,8 @@ const requiredRuntime = [
   'domain/task-environment/task-environment.mjs', 'infrastructure/filesystem/task-environment-repository.mjs',
   'application/task-finish/task-finish-application.mjs', 'application/task-finish/task-finish-run.mjs',
   'application/task-finish/task-finish-product-executor.mjs', 'application/task-finish/task-finish-impact.mjs',
+  'application/task-verification/task-verification-application.mjs', 'domain/task-verification/task-verification.mjs',
+  'infrastructure/filesystem/task-verification-repository.mjs',
   'application/domains/workspace.mjs', 'application/domains/rules.mjs', 'application/domains/skills.mjs',
   'application/domains/commands.mjs', 'application/domains/components.mjs', 'application/domains/openspec.mjs',
   'application/domains/runtime.mjs', 'application/json-contracts.mjs',
@@ -197,7 +200,7 @@ if (fs.existsSync(registry)) {
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicates.length) problems.push(`duplicate command registry keys: ${[...new Set(duplicates)].join(', ')}`);
   const expectedKeys = [
-    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree cleanup', 'worktree inspect', 'verification run', 'verification cleanup', 'task create', 'task inspect', 'task update', 'task complete', 'task abandon', 'task review inspect', 'task review record', 'task environment prepare', 'task environment inspect', 'task environment cleanup', 'task finish inspect', 'task finish run',
+    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree cleanup', 'worktree inspect', 'verification run', 'verification cleanup', 'task create', 'task inspect', 'task update', 'task complete', 'task abandon', 'task review inspect', 'task review record', 'task verification inspect', 'task verification record', 'task environment prepare', 'task environment inspect', 'task environment cleanup', 'task finish inspect', 'task finish run',
     'doctor', 'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove',
     'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'openspec converge', 'openspec audit', 'component list', 'component check', 'component install',
     'component uninstall', 'rules add', 'rules remove', 'builtin list', 'builtin uninstall', 'builtin restore',
@@ -246,6 +249,24 @@ if (fs.existsSync(taskReviewInterface)) {
   const source = fs.readFileSync(taskReviewInterface, 'utf8');
   if (!source.includes('export function taskReviewCommand') || !source.includes('runtime.inspectTaskReview') || !source.includes('runtime.recordTaskReview')) {
     problems.push('Task Review CLI interface must adapt both actions to the shared Application');
+  }
+}
+
+const taskVerificationApplication = path.join(sourceRoot, 'application', 'task-verification', 'task-verification-application.mjs');
+const taskVerificationInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-verification.mjs');
+if (fs.existsSync(taskVerificationApplication)) {
+  const source = fs.readFileSync(taskVerificationApplication, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|taskVerificationCommand|parseTaskVerificationCli/.test(source)) {
+    problems.push('Task Verification Application must not own CLI parsing, output, or process exit state');
+  }
+  if (!source.includes('runtime.readTaskVerificationResultPersistence') || !source.includes('runtime.writeTaskVerificationResultPersistence')) {
+    problems.push('Task Verification Application must remain the shared reader/writer over the narrow repository');
+  }
+}
+if (fs.existsSync(taskVerificationInterface)) {
+  const source = fs.readFileSync(taskVerificationInterface, 'utf8');
+  if (!source.includes('export function taskVerificationCommand') || !source.includes('runtime.inspectTaskVerification') || !source.includes('runtime.recordTaskVerification')) {
+    problems.push('Task Verification CLI interface must adapt both actions to the shared Application');
   }
 }
 if (fs.existsSync(taskEnvironmentInterface)) {

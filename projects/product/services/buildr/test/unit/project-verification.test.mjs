@@ -11,96 +11,89 @@ import {
   validateProjectVerification,
 } from '../../src/application/doctor/project-verification-diagnostics.mjs';
 
-function validDeclaration(overrides = {}) {
+function capability(overrides = {}) {
   return {
-    schemaVersion: 'buildr.project-verification/v1',
-    mode: 'augment',
-    resources: [
-      { id: 'temp', title: 'Task temp', strategy: 'isolated', cleanup: 'provider-owned', authorization: 'implicit' },
-      { id: 'data', title: 'Test data', strategy: 'namespaced', namespaceEnv: 'TEST_NAMESPACE', cleanup: 'task-owned', authorization: 'implicit' },
-      { id: 'browser', title: 'Browser', strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' },
-      { id: 'staging', title: 'Staging', strategy: 'external', cleanup: 'external', authorization: 'explicit' },
-    ],
-    capabilities: [{
-      id: 'demo.unit',
-      title: 'Demo unit tests',
-      command: { argv: ['npm', 'test'], cwd: '.' },
-      maturity: 'stable',
-      stages: ['minimal', 'affected', 'candidate'],
-      enforcement: { minimal: 'advisory', affected: 'required', candidate: 'required' },
-      applicability: { paths: ['services/demo/**'], risks: [] },
-      coverage: { kind: 'unit', owns: ['domain-logic'] },
-      environment: { requires: ['node'], services: [] },
-      effects: { level: 'local-temporary', writes: ['services/demo/coverage/**'], externalSystems: false },
-      authorization: 'implicit',
-      resourceClaims: ['temp', 'browser'],
-      dependsOn: [],
-      supersedes: [],
-      sources: ['services/demo/package.json'],
-    }],
+    id: 'demo.unit',
+    title: 'Demo unit tests',
+    scope: { project: 'demo', services: [] },
+    invocation: { kind: 'command', argv: ['npm', 'test'], cwd: '.' },
+    applicability: { paths: ['services/demo/**'], conditions: ['Demo implementation changed'] },
+    proves: ['Demo domain behavior'],
+    requiredForDelivery: true,
+    environment: { requires: ['node'] },
+    effects: { writes: ['coverage'], externalSystems: [], authorization: 'implicit' },
+    resourceClaims: [],
     ...overrides,
   };
 }
 
-test('Project verification v1 接受任意稳定能力集合', () => {
-  const declaration = validDeclaration();
-  assert.deepEqual(validateProjectVerification(declaration), []);
-  assert.deepEqual(parseProjectVerification(YAML.stringify(declaration)), declaration);
+function declaration(overrides = {}) {
+  return {
+    schemaVersion: 'buildr.project-verification/v2',
+    resources: [],
+    capabilities: [capability()],
+    ...overrides,
+  };
+}
 
-  const authoritative = validDeclaration({ mode: 'authoritative' });
-  assert.deepEqual(validateProjectVerification(authoritative), []);
+test('Project verification v2 接受最小 command 与 bounded Agent 能力', () => {
+  const value = declaration();
+  delete value.resources;
+  delete value.capabilities[0].title;
+  delete value.capabilities[0].applicability.conditions;
+  delete value.capabilities[0].environment;
+  delete value.capabilities[0].effects;
+  delete value.capabilities[0].resourceClaims;
+  value.capabilities.push(capability({
+    id: 'demo.acceptance',
+    invocation: { kind: 'agent', instructions: ['Inspect the existing bounded acceptance workflow', 'Return observed facts only'] },
+    requiredForDelivery: false,
+  }));
+  assert.deepEqual(validateProjectVerification(value, { projectCode: 'demo', services: [] }), []);
+  assert.deepEqual(parseProjectVerification(YAML.stringify(value)), value);
 });
 
-test('Project verification v1 拒绝未知字段、越界路径和未成熟门禁', () => {
-  const declaration = validDeclaration();
-  declaration.unknown = true;
-  declaration.capabilities[0].command.cwd = '../outside';
-  declaration.capabilities[0].maturity = 'trial';
-  const errors = validateProjectVerification(declaration);
-  assert.ok(errors.some((message) => message.includes('verification.unknown')));
-  assert.ok(errors.some((message) => message.includes('command.cwd')));
-  assert.ok(errors.some((message) => message.includes('cannot be required unless maturity is stable')));
+test('Project verification v2 拒绝 v1 lifecycle 字段、越界路径与错误 scope', () => {
+  const value = declaration({ mode: 'authoritative' });
+  value.capabilities[0].maturity = 'stable';
+  value.capabilities[0].invocation.cwd = '../outside';
+  value.capabilities[0].scope.services = ['unknown'];
+  const errors = validateProjectVerification(value, { projectCode: 'demo', services: ['known'] });
+  assert.ok(errors.some((message) => message.includes('verification.mode')));
+  assert.ok(errors.some((message) => message.includes('.maturity')));
+  assert.ok(errors.some((message) => message.includes('invocation.cwd')));
+  assert.ok(errors.some((message) => message.includes('unknown Service unknown')));
 });
 
-test('Project verification v1 拒绝未知引用、依赖环和高副作用 implicit 授权', () => {
-  const declaration = validDeclaration();
-  declaration.capabilities[0].dependsOn = ['demo.service'];
-  declaration.capabilities[0].effects = { level: 'shared', writes: [], externalSystems: true };
-  declaration.capabilities.push({
-    ...structuredClone(declaration.capabilities[0]),
-    id: 'demo.service',
-    title: 'Demo service tests',
-    dependsOn: ['demo.unit'],
-    supersedes: ['missing.capability'],
-    authorization: 'explicit',
+test('Project verification v2 只保留真实 claim 的 coordinated/external 资源', () => {
+  const value = declaration({
+    resources: [
+      { id: 'browser', strategy: 'coordinated', capacity: 1, authorization: 'implicit' },
+      { id: 'staging', strategy: 'external', authorization: 'explicit' },
+    ],
+    capabilities: [
+      capability({ resourceClaims: ['browser'] }),
+      capability({
+        id: 'demo.staging',
+        resourceClaims: ['staging'],
+        effects: { writes: [], externalSystems: ['staging'], authorization: 'explicit' },
+      }),
+    ],
   });
-  const errors = validateProjectVerification(declaration);
-  assert.ok(errors.some((message) => message.includes('contains a cycle')));
-  assert.ok(errors.some((message) => message.includes('references unknown capability missing.capability')));
-  assert.ok(errors.some((message) => message.includes('authorization cannot be implicit')));
-});
-
-test('Project verification v1 校验资源策略、引用与授权闭包', () => {
-  const declaration = validDeclaration();
-  declaration.resources[1].namespaceEnv = 'invalid-name';
-  declaration.resources[2].capacity = 0;
-  declaration.resources[3].authorization = 'implicit';
-  declaration.capabilities[0].resourceClaims.push('missing');
-  const errors = validateProjectVerification(declaration);
-  assert.ok(errors.some((message) => message.includes('namespaceEnv')));
+  assert.deepEqual(validateProjectVerification(value, { projectCode: 'demo', services: [] }), []);
+  value.resources[0].capacity = 0;
+  value.resources[1].authorization = 'implicit';
+  value.capabilities[0].resourceClaims.push('missing');
+  const errors = validateProjectVerification(value, { projectCode: 'demo', services: [] });
   assert.ok(errors.some((message) => message.includes('capacity must be a positive integer')));
   assert.ok(errors.some((message) => message.includes('authorization must be explicit')));
-  assert.ok(errors.some((message) => message.includes('references unknown resource missing')));
+  assert.ok(errors.some((message) => message.includes('unknown resource missing')));
+
+  const unused = declaration({ resources: [{ id: 'browser', strategy: 'coordinated', capacity: 1, authorization: 'implicit' }] });
+  assert.ok(validateProjectVerification(unused, { projectCode: 'demo', services: [] }).some((message) => message.includes('unclaimed resource browser')));
 });
 
-test('authoritative 模式要求稳定 Candidate required gate', () => {
-  const declaration = validDeclaration({ mode: 'authoritative' });
-  declaration.capabilities[0].stages = ['affected'];
-  declaration.capabilities[0].enforcement = { affected: 'required' };
-  assert.ok(validateProjectVerification(declaration).some((message) => message.includes('requires at least one stable required candidate capability')));
-});
-
-test('Project doctor 对声明缺失零 finding，对存在声明只读校验', (context) => {
+test('Project doctor 对声明缺失零 finding，对 v2 声明只读校验', (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-project-verification-'));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const projectRoot = path.join(root, 'projects', 'demo');
@@ -109,21 +102,21 @@ test('Project doctor 对声明缺失零 finding，对存在声明只读校验', 
   const diagnostics = createProjectVerificationDiagnostics({
     addDoctorFinding: (result, status, code, message, details) => result.findings.push({ status, code, message, ...details }),
   });
-  const registry = { projects: { demo: { path: 'projects/demo' } } };
+  const registry = { projects: { demo: { source: { path: 'projects/demo' } } } };
 
   const absent = { findings: [] };
   diagnostics.diagnoseProjectVerification(absent, root, registry);
   assert.deepEqual(absent.projectVerification, []);
   assert.deepEqual(absent.findings, []);
 
-  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify(validDeclaration()));
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify(declaration()));
   const valid = { findings: [] };
   diagnostics.diagnoseProjectVerification(valid, root, registry);
-  assert.deepEqual(valid.projectVerification, [{ project: 'demo', path: 'projects/demo/verification.yml', valid: true, mode: 'augment', capabilityCount: 1 }]);
+  assert.deepEqual(valid.projectVerification, [{ project: 'demo', path: 'projects/demo/verification.yml', valid: true, capabilityCount: 1 }]);
   assert.deepEqual(valid.findings, []);
 
-  const invalidDeclaration = validDeclaration();
-  invalidDeclaration.capabilities[0].command.argv = [];
+  const invalidDeclaration = declaration();
+  invalidDeclaration.capabilities[0].invocation.argv = [];
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify(invalidDeclaration));
   const invalid = { findings };
   diagnostics.diagnoseProjectVerification(invalid, root, registry);

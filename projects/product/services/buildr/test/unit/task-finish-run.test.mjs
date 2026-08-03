@@ -30,7 +30,6 @@ function identity(root, task = 'finish-v2') {
     remote: null,
     environmentRoot: root,
     workspaceRoot: root,
-    requiredAssurance: 'affected',
     workspaceNodeIdentity: 'sha256-workspace-node',
   };
 }
@@ -39,7 +38,7 @@ function passingHandlers(calls = []) {
   return Object.fromEntries(FINISH_PHASES.map((phase) => [phase, async () => {
     calls.push(phase);
     if (phase === 'prepare') return { status: 'passed', output: { frozenCandidate: { identity: 'candidate-v1', head: 'abc', tree: 'tree', branch: 'codex/finish-v2' } } };
-    if (phase === 'verify') return { status: 'passed', output: { verification: { status: 'passed', executions: 1, evidenceIdentity: 'evidence-v1' } } };
+    if (phase === 'verify') return { status: 'passed', output: { verification: { status: 'passed', executions: 1, resultDigest: 'sha256-result-v1', applicability: 'current' } } };
     if (phase === 'deliver') return { status: 'passed', output: { delivery: { status: 'delivered', candidateRef: 'abc' } } };
     if (phase === 'cleanup') return { status: 'passed', output: { completion: { status: 'complete', receipt: '/tmp/complete.json' } } };
     return { status: 'passed' };
@@ -89,12 +88,14 @@ test('code-only preflight 将 Change 与 OpenSpec 检查稳定标记为不适用
   assert.equal(git('config', 'user.name', 'Buildr Test').status, 0);
   assert.equal(git('config', 'user.email', 'buildr-test@example.com').status, 0);
   fs.mkdirSync(path.join(root, 'projects', 'product'), { recursive: true });
-  fs.writeFileSync(path.join(root, '.gitignore'), '.buildr/\n');
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v1\ncapabilities:\n  - id: product.affected\n');
+  fs.writeFileSync(path.join(root, '.gitignore'), '.buildr/task-finish/\n.buildr/tasks/*/environment.json\n');
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   const cli = path.join(root, 'fake-buildr.cjs');
   fs.writeFileSync(cli, 'process.stdout.write(JSON.stringify({ version: "2.0.0-test" }) + "\\n");\n');
   assert.equal(git('add', '-A').status, 0);
   assert.equal(git('commit', '-m', 'baseline').status, 0);
+  fs.mkdirSync(path.join(root, '.buildr', 'tasks', 'code-only-preflight'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.buildr', 'tasks', 'code-only-preflight', 'task.yml'), 'taskId: code-only-preflight\nstatus: active\n');
   const runtime = {
     resolveTaskEnvironmentExecution: () => ({
       ready: true,
@@ -105,12 +106,14 @@ test('code-only preflight 将 Change 与 OpenSpec 检查稳定标记为不适用
       cliInvocation: { command: process.execPath, argsPrefix: [cli] },
     }),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
+    observeTaskVerificationDeclarations: () => [{ project: 'product', identity: 'sha256-declaration', valid: true, declaration: { capabilities: [{ id: 'product.delivery' }] } }],
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' } }),
     parseOpenSpecChangeDelta: () => { throw new Error('OpenSpec parser must not run for code-only'); },
   };
   const run = createFinishRun({ root, runId: 'code-only-preflight', identity: { ...identity(root, 'code-only-preflight'), candidateKind: 'code-only', change: null } });
   const result = await createTaskFinishProductHandlers({ runtime, root, openspecCommand: '/must-not-run' }).preflight({ run });
   assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
+  assert.deepEqual(result.checks.find((check) => check.check === 'retained-workspace').workspaceMetadata, ['.buildr/tasks/code-only-preflight/task.yml']);
   const notApplicable = result.checks.filter((check) => check.status === 'not-applicable');
   assert.deepEqual(notApplicable.map((check) => check.check), ['change', 'change-tasks', 'current-knowledge', 'openspec-validation', 'openspec-plan']);
   assert.equal(result.operations.some((operation) => /openspec/.test(operation.id)), false);
@@ -144,7 +147,7 @@ test('最终验证发现产品缺陷会终止收尾并返回研发流程', async
   assert.equal(result.resume, null);
 });
 
-test('Finish 不复用缺少 Workspace Node identity 的旧验证证据', async (t) => {
+test('Finish 只通过 Application 复用 current、passed 且覆盖 required capability 的 Result', async (t) => {
   const root = fixture(t);
   const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
   assert.equal(git('init', '-b', 'codex/node-evidence').status, 0);
@@ -156,29 +159,38 @@ test('Finish 不复用缺少 Workspace Node identity 的旧验证证据', async 
   assert.equal(git('commit', '-m', 'candidate').status, 0);
   const head = git('rev-parse', 'HEAD').stdout.trim();
   const tree = git('rev-parse', 'HEAD^{tree}').stdout.trim();
-  const summary = path.join(fixture(t), 'verification.json');
-  fs.writeFileSync(summary, JSON.stringify({
-    status: 'passed', requiredAssurance: 'affected', source: { candidateFingerprint: 'frozen-node-candidate' }, evidenceIdentity: 'sha256-old-evidence',
-  }));
+  const required = {
+    id: 'product.delivery', scope: { project: 'product', services: [] }, invocation: { kind: 'command' },
+    applicability: { paths: ['**'], conditions: [] }, requiredForDelivery: true,
+  };
+  let currentSlot = {
+    present: true,
+    resultDigest: 'sha256-current-result',
+    applicability: { status: 'current' },
+    result: { conclusion: { outcome: 'passed' }, capabilities: [{ project: 'product', capability: 'product.delivery', outcome: 'passed' }] },
+  };
   const runtime = {
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' } }),
-    resolveTaskEnvironmentExecution: () => ({ ready: false, blocked: { code: 'task_environment_probe_blocked', message: 'verification should execute instead of reusing legacy evidence' } }),
+    resolveTaskEnvironmentExecution: () => ({ ready: true }),
+    readTaskRecordPersistence: () => ({ record: { scope: { projects: ['product'], services: [] } } }),
+    observeTaskVerificationDeclarations: () => [{ project: 'product', valid: true, declaration: { capabilities: [required] } }],
+    inspectTaskVerification: () => ({ slot: currentSlot }),
+    readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: '.' } } } } }),
   };
   const run = createFinishRun({ root, runId: 'node-evidence', identity: identity(root, 'node-evidence') });
-  run.frozenCandidate = { identity: 'frozen-node-candidate', head, tree, branch: 'codex/node-evidence', workspaceNodeIdentity: 'sha256-workspace-node' };
-  const handlers = createTaskFinishProductHandlers({ runtime, root, existingVerificationSummary: summary });
-  const legacy = await handlers.verify({ run });
-  assert.equal(legacy.status, 'failed');
-  assert.equal(legacy.failure.code, 'task-finish.candidate-context-invalid');
-
-  fs.writeFileSync(summary, JSON.stringify({
-    status: 'passed', requiredAssurance: 'affected', source: { candidateFingerprint: 'frozen-node-candidate' }, evidenceIdentity: 'sha256-current-evidence',
-    workspaceNode: { identity: { digest: 'sha256-workspace-node' } },
-  }));
+  run.frozenCandidate = { identity: 'frozen-node-candidate', head, tree, branch: 'codex/node-evidence', changedPaths: ['README.md'], workspaceNodeIdentity: 'sha256-workspace-node' };
+  const handlers = createTaskFinishProductHandlers({ runtime, root });
   const reusable = await handlers.verify({ run });
   assert.equal(reusable.status, 'passed');
   assert.equal(reusable.output.verification.reused, true);
   assert.equal(reusable.output.verification.executions, 0);
+  assert.equal(reusable.output.verification.resultDigest, 'sha256-current-result');
+
+  currentSlot = { present: false, resultDigest: null, applicability: null, result: null };
+  required.effects = { writes: ['shared-output'], externalSystems: [], authorization: 'explicit' };
+  const authorizationRequired = await handlers.verify({ run });
+  assert.equal(authorizationRequired.status, 'failed');
+  assert.equal(authorizationRequired.failure.code, 'task-finish.verification-authorization-result-required');
 });
 
 test('target race 由产品生成恢复令牌且不重跑已通过阶段', async (t) => {
@@ -248,6 +260,7 @@ test('preflight 一次聚合候选、环境、OpenSpec、知识、验证和 reta
   const runtime = {
     resolveTaskEnvironmentExecution: () => ({ ready: false, blocked: { code: 'task_environment_cli_unavailable', message: 'CLI dependency is missing.' }, repositories: [{ branch: 'dev' }] }),
     readProjectRegistryPersistence: () => ({ registry: { projects: { product: { source: { path: 'projects/product' } } } } }),
+    observeTaskVerificationDeclarations: () => [{ project: 'product', identity: 'absent', valid: true, declaration: null }],
     parseOpenSpecChangeDelta: () => { throw new Error('delta is invalid'); },
     workspaceNodeExecution: () => ({ ready: false, status: 'missing', identity: null }),
   };

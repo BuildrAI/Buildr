@@ -121,7 +121,7 @@ Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与
 
 调度性能回归可在同一冻结 tree 上交替运行默认 cost 模式与 `BUILDR_VERIFICATION_SCHEDULING=declaration npm run test:candidate`；timing summary 的 `environment.schedulingMode` 标识实际模式。只按多轮总墙钟和关键 step queue/duration 中位数调整 `schedulingCostMs`，不得用 `dependsOn` 固定建议顺序。
 
-验证层级、旧 MVP 覆盖迁移与必要交叉以 Product Project 的[验证覆盖职责矩阵](../../../docs/verification-ownership.md)为维护依据；发现重复时先确认主 owner，再迁移或删除断言。
+Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责矩阵](../../../docs/verification-ownership.md)为维护依据；发现重复时先确认主 owner，再迁移或删除断言。
 
 ## npm Release 流程
 
@@ -139,4 +139,4 @@ Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与
 
 实际自举 workspace 如需消费新版产品资产，可独立执行 sync，并在状态变更后运行当前 Agent doctor；CLI update 只更新当前 Product checkout 或 registry package。这不是第二轮产品 E2E。上述验证只证明当前本地产品包和 MVP 主路径成立；公开发布仍需要完成上面的发布材料和分发流程。
 
-使用 `task-finish` 自动收尾时，候选必须先达到 finish-ready：研发、自审、必要审查、开发验证与 current knowledge 已完成。产品在 `preflight` 一次聚合问题，在 `prepare` 内完成 OpenSpec convergence、runtime fixed point、提交/rebase 并冻结最终候选，然后对该 frozen identity 至多运行一次当前发布政策要求的 assurance。任何产品缺陷、语义冲突或验证失败都结束本次 Finish 并返回研发流程修正当前实现；不得在同一 run 修复或重新验证。只有 frozen tree 不变时，后续 fast-forward、push、retained install 与 cleanup 才能继续复用最终证据。
+使用 `task-finish` 自动收尾时，交付树必须先达到 finish-ready：研发、自审、必要审查、开发验证与 current knowledge 已完成。产品在 `preflight` 一次聚合问题，在 `prepare` 内完成 OpenSpec convergence、runtime fixed point、提交/rebase 并冻结最终交付目标；`verify` 只通过 Task Verification Application 复用 current、passed 且覆盖 delivery-required capabilities 的 Result，或对单 Project 目标执行一次可确定的 required command capability 集合并原子记录同一 Result。任何产品缺陷、语义冲突或验证失败都结束本次 Finish 并返回研发流程修正当前实现；不得在同一 run 修复或重新验证。只有 frozen tree 与 declaration identities 不变时，后续 fast-forward、push、retained install 与 cleanup 才能继续复用该 Result。

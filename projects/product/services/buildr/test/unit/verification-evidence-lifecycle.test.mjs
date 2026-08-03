@@ -7,7 +7,7 @@ import test from 'node:test';
 import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle, normalizeVerificationEvidenceLifecycle } from '../../src/application/verification/evidence-lifecycle.mjs';
 
 function summary(runId, evidence) {
-  return { schemaVersion: 'buildr.verification-run/v1', runId, run: { id: runId }, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle };
+  return { schemaVersion: 'buildr.verification-execution/v1', runId, run: { id: runId }, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle };
 }
 
 function cleanup(summaryPayload, options = {}) {
@@ -20,7 +20,7 @@ function cleanup(summaryPayload, options = {}) {
 test('production lifecycle cleans one exact transient run and is idempotent with captured summary', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-lifecycle-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const evidence = createVerificationEvidenceLifecycle('run-1', null, { temporaryRoot: root });
+  const evidence = createVerificationEvidenceLifecycle('run-1', { temporaryRoot: root });
   const payload = summary('run-1', evidence);
   fs.writeFileSync(evidence.summaryPath, `${JSON.stringify(payload)}\n`);
   const cleaned = cleanup(payload, { temporaryRoot: root });
@@ -29,30 +29,29 @@ test('production lifecycle cleans one exact transient run and is idempotent with
   assert.equal(cleanup(payload, { temporaryRoot: root }).code, 'cleanup.already_absent');
 });
 
-test('legacy flat production lifecycle is normalized only inside the owned boundary', (t) => {
+test('旧 verification-run summary 不再被 cleanup reader 接受', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-lifecycle-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const directory = fs.mkdtempSync(path.join(root, 'buildr-verification-run-'));
-  const summaryPath = path.join(directory, 'summary.json');
-  const payload = {
-    schemaVersion: 'buildr.verification-run/v1', runId: 'legacy-1', run: { id: 'legacy-1' },
-    evidenceRetention: 'transient', cleanupAfter: 'all-consumers-complete', cleanupStatus: 'retained',
-    cleanupReference: summaryPath, summaryPath, evidenceReference: summaryPath,
-  };
-  fs.writeFileSync(summaryPath, `${JSON.stringify(payload)}\n`);
+  const evidence = createVerificationEvidenceLifecycle('legacy-1', { temporaryRoot: root });
+  const payload = { ...summary('legacy-1', evidence), schemaVersion: 'buildr.verification-run/v1' };
+  fs.writeFileSync(evidence.summaryPath, `${JSON.stringify(payload)}\n`);
   const normalized = normalizeVerificationEvidenceLifecycle(payload);
-  assert.equal(normalized.compatibilitySource, 'legacy-flat-v1');
-  assert.equal(normalized.lifecycle.cleanupReference, directory);
-  assert.equal(cleanup(payload, { temporaryRoot: root }).code, 'cleanup.removed');
+  assert.equal(normalized.compatibilitySource, null);
+  assert.equal(normalized.lifecycle, evidence.lifecycle);
+  assert.equal(cleanup(payload, { temporaryRoot: root }).code, 'cleanup.schema_invalid');
+  assert.equal(fs.existsSync(evidence.summaryPath), true);
 });
 
 test('cleanup rejects run mismatch, caller-managed evidence and boundary escape', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-lifecycle-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const managed = createVerificationEvidenceLifecycle('managed-1', path.join(root, 'managed.json'), { temporaryRoot: root });
+  const managed = {
+    summaryPath: path.join(root, 'managed.json'),
+    lifecycle: { schemaVersion: 'buildr.verification-evidence-lifecycle/v1', runId: 'managed-1', evidenceRetention: 'caller-managed', cleanupAfter: 'caller-policy', cleanupStatus: 'not-applicable', cleanupReference: null, summaryPath: path.join(root, 'managed.json') },
+  };
   assert.equal(cleanup(summary('managed-1', managed), { temporaryRoot: root }).code, 'retention.not_transient');
 
-  const transient = createVerificationEvidenceLifecycle('run-2', null, { temporaryRoot: root });
+  const transient = createVerificationEvidenceLifecycle('run-2', { temporaryRoot: root });
   const mismatch = summary('run-2', transient);
   mismatch.evidenceLifecycle = { ...mismatch.evidenceLifecycle, runId: 'other' };
   assert.equal(cleanup(mismatch, { temporaryRoot: root }).code, 'cleanup.run_identity_mismatch');

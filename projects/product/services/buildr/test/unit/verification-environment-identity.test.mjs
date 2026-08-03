@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { verificationEvidenceIdentityMaterial } from '../../src/application/verification/verification-application.mjs';
+import { verificationExecutionIdentityMaterial } from '../../src/application/verification/verification-application.mjs';
 
 function context(controllerIdentity) {
   return {
@@ -21,18 +21,18 @@ function context(controllerIdentity) {
 }
 
 function material(environmentContext) {
-  return verificationEvidenceIdentityMaterial({
+  return verificationExecutionIdentityMaterial({
     project: 'product',
-    policy: 'sha256-policy',
-    level: 'candidate',
+    declaration: 'sha256-declaration',
+    target: 'target-one',
     context: environmentContext,
     workspaceNodeIdentity: { digest: 'sha256-node' },
-    candidates: [{ selector: 'workspace', fingerprint: 'sha256-candidate-m1' }],
+    observation: { fingerprint: 'sha256-content' },
     checks: [{ id: 'product.candidate', status: 'passed', exitCode: 0 }],
   });
 }
 
-test('retained controller hash is not part of Verification evidence applicability identity', () => {
+test('retained controller hash 不进入 transient Verification execution identity', () => {
   const m1 = material(context('sha256-controller-m1'));
   const m2 = material(context('sha256-controller-m2'));
   assert.deepEqual(m2, m1);

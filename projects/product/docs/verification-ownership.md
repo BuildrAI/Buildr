@@ -21,21 +21,19 @@
 | `test:changed` | 根据 Git diff 或显式 Product 路径生成最小可解释 DAG |
 | `test:candidate` | 无条件选择完整 candidate profile，不读取 diff |
 | `test:focus` | 按 step id 或 `group:<group>` 定位和重跑失败，不自动附加 Fast |
-| `buildr verification run` | 面向任意已登记 Project 执行 `verification.yml` 的 affected/Candidate DAG；随 npm runtime 发布，不依赖 Product checkout-only registry |
+| `buildr verification run` | 面向任意已登记 Project 执行 `verification.yml` v2 中调用方显式选择的 command capabilities；随 npm runtime 发布，不依赖 Product checkout-only registry |
 
-所有入口共享 `test/verification/registry.mjs` 中的 step identity、executor、inputs、真实依赖、profile/group、预算、并发类别和资源约束。`integration-candidate-recovery`、`integration-candidate-release` 与 `runtime-adapter-parity` 是 `workspace-saturating` owner；默认 local/CI execution profile 令其互斥，`ci-workspace-limited` 只用于同 tree 对照。未知 profile 或非法上限在启动 verifier 前 fail closed。`test:changed` 对未被任何 input 或显式 ignore 覆盖的 Product 路径 fail closed；Candidate 的完整性按 required gate identity 验证，不冻结 step 数量。
+前四个 npm 入口共享 `test/verification/registry.mjs` 中的 Product step identity、executor、inputs、真实依赖、profile/group、预算、并发类别和资源约束。`integration-candidate-recovery`、`integration-candidate-release` 与 `runtime-adapter-parity` 是 `workspace-saturating` owner；默认 local/CI execution profile 令其互斥，`ci-workspace-limited` 只用于同 tree 对照。未知 profile 或非法上限在启动 verifier 前 fail closed。`test:changed` 对未被任何 input 或显式 ignore 覆盖的 Product 路径 fail closed；`test:candidate` 的完整性按 Product required gate identity 验证，不冻结 step 数量。这些名称是 Buildr Product 的真实测试实现，不是 Task Verification 的通用 assurance 层级。
 
-Product 专用 selector/registry 仍留在 `test/verification`；通用 DAG scheduler、process executor、resource coordinator 与 evidence builder 位于 `src/application/verification`。Product verifier 通过薄 adapter 复用 scheduler/lease，普通 Workspace 通过 `buildr verification run` 消费 Project 声明。二者共享并发和 owner 语义，但 Product 私有 gate 不会成为其他 Project 的默认 policy。
+Product 专用 selector、registry 与 DAG scheduler 全部留在 `test/verification`。production `src/application/verification` 只保留显式 capability runner、process executor、真实 resource coordinator 与 transient evidence lifecycle；普通 Workspace 通过 `buildr verification run` 消费 Project 声明。Product 私有 DAG、profile 和 gate 不会成为其他 Project 的默认 policy。
 
 Runtime adapter contract 始终遍历全部 supported adapters，并生成 `native-recursive`、`per-source-reference`、`same-directory-vendor`、`central-vendor`、`root-index-bridge` 覆盖矩阵；昂贵 parity 生命周期只运行每个实现族的稳定代表。共享只读 Product source，但 mutation workspace、receipt 和 target namespace 保持隔离。
 
-Candidate 与 Changed 也共享 `test/verification/timing/evidence.mjs`：默认每次 run 使用唯一 transient evidence 目录，summary 记录 run/source identity、候选 fingerprint 和 `evidenceLifecycle`，并在终端直接输出 total、budget、slowest、failed、绝对路径、retention 与 cleanup 状态。显式输出路径标记为 caller-managed；默认 transient run 只保留到 consumer 使用完毕，并由 `cleanup-evidence.mjs` 在严格目录边界内删除。Changed 是开发反馈证据；只有最终 Candidate summary 可以作为 task-finish 的完整验证 timing evidence。
+Product Candidate 与 Changed 入口共享 `test/verification/timing/evidence.mjs`：默认每次 run 使用唯一 transient evidence 目录，summary 记录 run/source identity、Product target fingerprint 和 `evidenceLifecycle`，并在终端直接输出 total、budget、slowest、failed、绝对路径、retention 与 cleanup 状态。显式输出路径标记为 caller-managed；默认 transient run 只保留到 consumer 使用完毕，并由 `cleanup-evidence.mjs` 在严格目录边界内删除。它们都是 Product capability 的 execution evidence；portable Task Result 只提炼 capability outcome 与事实，不复制 timing 文件或完整日志。
 
-本机应用另提供 `npm run test:browser:smoke`，使用 `playwright-core` 驱动机器已有 Chrome，在随机 loopback 端口和临时 Workspace 中验证项目、服务、变更三条主流程。该入口不下载浏览器、不访问外部系统，当前在 Product `verification.yml` 中按 `trial`、`advisory` 声明，不属于 Fast 或 Candidate required gate；缺少 Chrome 时由验证编排报告环境阻塞。
+本机应用另提供 `npm run test:browser:smoke`，使用 `playwright-core` 驱动机器已有 Chrome，在随机 loopback 端口和临时 Workspace 中验证项目、服务、变更与任务主流程。该入口不下载浏览器、不访问外部系统，在 Product `verification.yml` v2 中声明为非 delivery-required capability，并真实 claim coordinated browser resource；缺少 Chrome 时 execution 如实失败，不改写为推进决定。
 
-Task Finish 消费 Candidate evidence 时，provider 的 `inspect`、`execute`、`cleanup` operation 与 verifier executor invocation 分开计数。已有 Candidate 对应 `same-content` 或可归因的 `closeout-metadata-only` transition 时，OpenSpec strict、contract guard、diff check 等 closeout checks 保持各自主 owner，不升级为新的 Candidate run；只有 `implementation-changed` 或无法证明仅为收尾元数据时才启动一次新的 Candidate executor。
-
-最终 Candidate task checkbox 是一个更窄的 closeout 分支：Candidate 先验证 source implementation identity A，随后同一会话只把 active change 中唯一对应任务由 `- [ ]` 改为 `- [x]`，形成 delivery identity B。consumer 将它记录为 `verification-result-metadata-only`，保留 A 的 Candidate evidence，并以 `session-only` transition evidence 单独记录 A/B identity、change/task identity 与精确 marker；不得说 Candidate 验证了 B。若还有其他 diff、候选任务不唯一、A 无法匹配或会话证据丢失，则不能仅凭 `tasks.md` 路径或 checkbox 状态放行，必须重跑 Candidate。
+Task Finish 通过 Task Verification Application inspect current Result。Result 只有在 target/declaration applicability 为 current、结论为 passed 且覆盖全部适用 delivery-required capability 时才复用；单 Project command capability 可由临时 adapter 执行一次并整值记录，多 Project 或 Agent capability 必须已有正式 Result。Finish 不读取旧 Candidate summary、不接收 verification summary 输入，也不创建 Result writer、Candidate generation 或任务推进状态。
 
 ## Unit coverage 与核心 owner
 
@@ -43,7 +41,7 @@ Task Finish 消费 Candidate evidence 时，provider 的 `inspect`、`execute`�
 
 | 核心区域 | 当前直接 unit owner | 其他必要 owner | 后续缺口 |
 | --- | --- | --- | --- |
-| verification planner / DAG / registry | `verification-planner`、`verification-dag-scheduler`、`unit-coverage` | entrypoint contract、Candidate timing | 已具备直接 owner，继续按新分支补测 |
+| Product selector / DAG / registry；production capability runner / Result | `verification-planner`、`verification-dag-scheduler`、`verification-runtime`、`task-verification-repository` | entrypoint contract、Product Candidate timing、Task Application/CLI/Finish integration | Product DAG 只在 test harness；production Result authority 由独立 domain/repository/Application 持有 |
 | runtime Skills / capability resolver | `runtime-skills`、`capability-contracts`、`capability-runtime` | runtime contract/parity、Workspace reconciliation | checker/projection 生命周期保留 focused integration |
 | package validation | package verifier selector unit | package static 与六个 package focused verifiers | `static-validation` 大模块后续按纯 validator 提取再补，不伪造 unit |
 | builtin replacement / recovery | `builtin-replacement` 状态分类、restore outcome 与 mutation callback matrix | Candidate recovery CLI、transaction、runtime、doctor 黄金路径 | 纯分类不重复创建 Workspace；真实零写入和 rollback 仍由 E2E 持有 |

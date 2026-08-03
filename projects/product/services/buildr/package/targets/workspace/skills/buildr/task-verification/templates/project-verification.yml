@@ -1,37 +1,16 @@
-schemaVersion: buildr.project-verification/v1
-mode: augment
-resources:
-  - id: example-temp
-    title: Example task-local temporary state
-    strategy: isolated
-    cleanup: provider-owned
-    authorization: implicit
+schemaVersion: buildr.project-verification/v2
 capabilities:
   - id: example.unit
-    title: Example unit tests
-    command:
-      argv: ["replace-with-test-command"]
+    title: Replace with an existing Project test capability
+    scope:
+      project: replace-with-project-code
+      services: []
+    invocation:
+      kind: command
+      argv: ["replace-with-existing-test-command"]
       cwd: .
-    maturity: discovered
-    stages: [minimal, affected]
-    enforcement:
-      minimal: advisory
-      affected: advisory
     applicability:
       paths: ["replace-with-applicable-path/**"]
-      risks: []
-    coverage:
-      kind: unit
-      owns: ["unconfirmed"]
-    environment:
-      requires: []
-      services: []
-    effects:
-      level: unknown
-      writes: []
-      externalSystems: false
-    authorization: explicit
-    resourceClaims: [example-temp]
-    dependsOn: []
-    supersedes: []
-    sources: ["replace-with-policy-source"]
+    proves:
+      - Replace with the fact this existing capability proves
+    requiredForDelivery: false

@@ -70,12 +70,30 @@ function createFixture(root) {
   fs.writeFileSync(path.join(source, 'README.md'), '# Demo API\n');
   runBuildr(['service', 'create', 'demo/api', source, '--target', root, '--name', '演示服务', '--description', '浏览器测试服务', '--type', 'backend']);
   const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), `schemaVersion: buildr.project-verification/v2
+capabilities:
+  - id: demo.browser
+    title: Browser smoke
+    scope:
+      project: demo
+      services: [api]
+    invocation:
+      kind: command
+      argv: [node, -e, "void 0"]
+      cwd: .
+    applicability:
+      paths: ["**"]
+    proves:
+      - Task Verification Result is visible in Local App
+    requiredForDelivery: true
+`);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   runBuildr(['task', 'environment', 'prepare', 'browser-task', '--shared', '--target', root]);
   runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'completion', '--target-identity', 'candidate:browser-g1', '--method', 'human', '--reviewed', 'candidate:browser-g1', '--uncovered', 'browser visual diff::smoke only', '--finding', '没有阻断问题', '--outcome', 'ready', '--summary', '候选可交付', '--target', root]);
+  runBuildr(['task', 'verification', 'record', 'browser-task', '--target-identity', 'delivery:browser-v1', '--target-summary', 'Browser delivery target', '--capability', 'demo/demo.browser::passed::Local App verification projection passed', '--outcome', 'passed', '--summary', 'Browser verification passed', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
 
@@ -324,6 +342,20 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 90_000 }, async (t)
     assert.match(await page.locator('#task-review-slots').innerText(), /candidate:browser-g1/);
     assert.match(await page.locator('#task-review-slots').innerText(), /计划可执行/);
     assert.match(await page.locator('#task-review-slots').innerText(), /没有阻断问题/);
+
+    await page.getByRole('button', { name: '验证', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
+    assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /delivery:browser-v1/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /Browser verification passed/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /demo\/demo.browser · passed · Local App verification projection passed/);
+    await page.getByRole('button', { name: '交给 Agent 验证', exact: true }).click();
+    await page.getByRole('button', { name: '生成验证指令', exact: true }).click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /browser-task/);
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /task-verification Skill/);
+    assert.equal(await page.locator('#action-copy-state').innerText(), 'Task Verification Result 未被修改。');
+    await page.locator('#close-agent-action').click();
 
     await page.getByRole('button', { name: '环境', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-environment-status')?.textContent === '可执行');

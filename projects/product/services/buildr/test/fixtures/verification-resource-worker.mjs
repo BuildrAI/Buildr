@@ -5,7 +5,7 @@ import { createVerificationResourceCoordinator } from '../../src/application/ver
 const [root, taskId, acquiredFile, releaseFile] = process.argv.slice(2);
 const coordinator = createVerificationResourceCoordinator({
   root,
-  resources: { browser: { strategy: 'coordinated', capacity: 1, cleanup: 'provider-owned', authorization: 'implicit' } },
+  resources: { browser: { strategy: 'coordinated', capacity: 1, authorization: 'implicit' } },
   owner: { taskId, runId: `run-${taskId}` },
   pollMs: 10,
   ttlMs: 2_000,

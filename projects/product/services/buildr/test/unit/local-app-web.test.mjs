@@ -102,6 +102,20 @@ test('Task 详情以只读审查页签展示两个 Result 槽位和三种 applic
   assert.match(styles, /\.review-slot-grid \{ grid-template-columns: 1fr; \}/);
 });
 
+test('Task 详情只读展示 current Verification Result，并通过 Agent Action 启动专业流程', () => {
+  const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
+  const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');
+  assert.match(source, /data-task-tab="verification"/);
+  assert.match(source, /Task Verification Result/);
+  assert.match(source, /Target applicability/);
+  assert.match(source, /Declaration applicability/);
+  assert.match(source, /\/verification`\)/);
+  assert.match(source, /openAgentAction\('task-verification', \{ taskId \}\)/);
+  assert.match(actions, /\/api\/v1\/prompts\/task-verification/);
+  assert.match(actions, /Task Verification Result 未被修改/);
+  assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskVerification/);
+});
+
 test('Task-scoped Change 使用 Planning Review，global Change 保留通用审查 route', () => {
   const change = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
   const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');

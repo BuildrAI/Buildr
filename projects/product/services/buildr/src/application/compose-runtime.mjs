@@ -5,6 +5,7 @@ import { registerProjectManifestRepository } from '../infrastructure/filesystem/
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
 import { registerTaskRecordRepository } from '../infrastructure/filesystem/task-record-repository.mjs';
 import { registerTaskReviewRepository } from '../infrastructure/filesystem/task-review-repository.mjs';
+import { registerTaskVerificationRepository } from '../infrastructure/filesystem/task-verification-repository.mjs';
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerDomainsRuntime } from './domains/runtime.mjs';
@@ -29,6 +30,7 @@ import { registerGitWorktreeProvider } from './worktree/git-worktree-provider.mj
 import { registerTaskFinishApplication } from './task-finish/task-finish-application.mjs';
 import { registerTaskRecordApplication } from './task-record/task-record-application.mjs';
 import { registerTaskReviewApplication } from './task-review/task-review-application.mjs';
+import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
 import { registerTaskEnvironmentLegacyMigration } from './task-environment/legacy-migration.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
@@ -44,6 +46,7 @@ const REGISTRATIONS = [
   registerServiceManifestRepository,
   registerTaskRecordRepository,
   registerTaskReviewRepository,
+  registerTaskVerificationRepository,
   registerTaskEnvironmentRepository,
   registerProjectGitObserver,
   registerDomainsComponents,
@@ -67,6 +70,7 @@ const REGISTRATIONS = [
   registerTaskEnvironmentLegacyMigration,
   registerTaskRecordApplication,
   registerTaskReviewApplication,
+  registerTaskVerificationApplication,
   registerVerificationApplication,
   registerTaskFinishApplication,
 ];

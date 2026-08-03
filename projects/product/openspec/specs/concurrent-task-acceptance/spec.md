@@ -51,12 +51,17 @@ Buildr MUST 提供可重复的双正式 Task 组合验收，在同一临时 cano
 - **AND** 清理 MUST 释放已取得的任务资源，且不得留下孤儿进程或租约
 
 ### Requirement: 双任务验收必须消费正式 Workspace 验证入口
-Candidate 双任务组合验收 MUST 在普通临时 Buildr Workspace 中使用 checkout 或已安装 CLI 的 `verification run`，以两个 canonical task environment 并发执行 Project 声明，而不得直接把 `test/verification` 内部模块作为通用能力的替代证据。
+Candidate 双任务组合验收 MUST 在普通临时 Buildr Workspace 中使用 checkout 或 installed CLI，以两个 canonical Task Environments 并发调用显式 capability 的 `verification run`，再分别通过 Task Verification Application record/inspect 各自 current Result；不得直接把 `test/verification` 内部 module 当作通用执行或 Result authority。
 
 #### Scenario: 两个 task 并发验证普通 Project
-- **WHEN** 验收在两个 task environment 中同时运行包含 isolated/namespaced 与 coordinated 资源的 Project 验证计划
-- **THEN** 可并行 worker MUST 有真实执行重叠，共享 coordinated resource MUST 排队
-- **AND** 两份摘要 MUST 分别绑定自己的 environment、candidate 与非空 `evidenceIdentity`
+- **WHEN** 验收在两个 Task Environments 中同时执行 claim 同一 coordinated resource 的 Project v2 command capability
+- **THEN** 共享 resource MUST 排队且两个 transient summaries MUST 分别绑定自己的 Environment、target identity 与 declaration identity
+- **AND** 两个 Task 的 portable Results MUST 位于各自 current slot、互不覆盖，并在匹配 target/declaration 时均为 current
+
+#### Scenario: 一个 execution 中断
+- **WHEN** 一个 worker 异常退出且未形成完整 Task 结论，另一个 worker 正常完成
+- **THEN** 中断 Task 的已有 current Result MUST 保持不变，正常 Task MUST 可 record/inspect 新 Result
+- **AND** transient cleanup 与 coordinated lease release MUST 精确按 run owner 完成
 
 ### Requirement: 双任务验收必须覆盖 runtime 所有权负向清理
 Candidate 双任务组合验收 MUST 证明错误 Task 无法停止另一 Task 的 Preview，且 active Task 未取得完成或明确放弃资格时无法执行 Environment cleanup；最终清理 MUST 由 Task Environment 通过已登记的资源与 provider evidence 完成。
