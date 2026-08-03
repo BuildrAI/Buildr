@@ -20,7 +20,7 @@ capabilities:
       conditions:
         - 需要快速确认 Product/Buildr 受影响实现与契约
     proves:
-      - unit、静态契约、fast integration、CLI 架构、OpenSpec strict 与 runtime adapter contract 通过
+      - 低成本 Unit、Component、Static Conformance 以及 contract/runtime Integration 通过
     requiredForDelivery: false
     environment:
       requires: [node, npm]

@@ -13,7 +13,7 @@ import {
   normalizeProductPath,
   validateVerificationRegistry,
 } from '../../test/verification/planner.mjs';
-import { verificationSteps } from '../../test/verification/registry.mjs';
+import { VERIFICATION_STEP_TESTING, verificationSteps } from '../../test/verification/registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ids = (plan) => plan.steps.map((step) => step.id);
@@ -22,11 +22,12 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   const validation = validateVerificationRegistry();
   assert.deepEqual(validation, { ok: true, findings: [] });
   assert.equal(new Set(verificationSteps.map((step) => step.id)).size, verificationSteps.length);
+  assert.deepEqual(Object.keys(VERIFICATION_STEP_TESTING).sort(), verificationSteps.map((step) => step.id).sort());
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['fast'] })), [
-    'unit', 'contract', 'integration-fast', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
+    'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
-    'unit', 'contract', 'integration-fast', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
+    'unit', 'component', 'integration', 'contract', 'integration-fast', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'integration-candidate-recovery', 'integration-candidate-release', 'concurrent-task-acceptance', 'candidate-tarball', 'open-source-candidate',
     'openspec-candidate-audit', 'managed-mutations', 'browser-shell', 'browser-project', 'browser-service', 'browser-task', 'browser-change', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'openspec-convergence-recovery', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
@@ -34,6 +35,29 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
     'repository-onboarding', 'init-onboarding', 'cli-compatibility', 'cli-package-parity', 'service-branch-contract',
     'remote-skill-timeout', 'release-tarball-smoke', 'managed-data-integrity', 'docs-quality',
   ]);
+});
+
+test('Project Testing 分类完整且 Quick 只包含低成本非 System step', () => {
+  for (const step of verificationSteps) {
+    assert.ok(step.testing.ownerScope);
+    assert.ok(step.testing.primaryIntent);
+    assert.ok(step.testing.executionBoundary);
+    assert.ok(step.testing.orchestrationScenarios.length > 0);
+    assert.ok(step.testing.targetDurationMs > 0);
+    assert.ok(step.testing.proves);
+    assert.ok(step.testing.primaryEvidenceOwner);
+  }
+  const quick = createVerificationPlan({ profiles: ['fast'] }).steps;
+  assert.ok(quick.some((step) => step.testing.executionBoundary === 'Component'));
+  assert.ok(quick.some((step) => step.testing.executionBoundary === 'Integration'));
+  assert.equal(quick.some((step) => step.testing.executionBoundary === 'System'), false);
+  assert.equal(quick.some((step) => step.testing.targetDurationMs > 15000), false);
+  assert.deepEqual(verificationSteps.find((step) => step.id === 'contract').testing, {
+    ownerScope: 'project:product', primaryIntent: 'Static Conformance', executionBoundary: 'Integration',
+    orchestrationScenarios: ['Quick', 'Task-affected', 'Candidate'], targetDurationMs: 15000,
+    proves: 'Product source, governance assets, and stable entrypoint contracts conform.', primaryEvidenceOwner: 'contract',
+  });
+  assert.deepEqual(verificationSteps.find((step) => step.id === 'integration-fast').testing.orchestrationScenarios, ['Task-affected', 'Candidate']);
 });
 
 test('Product path 和 glob matcher 在 Node 20 语义下稳定工作', () => {
@@ -99,15 +123,15 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
 });
 
 test('local app Changed 路由只选择对应 integration 边界', () => {
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/api-client.js'] })), ['unit', 'integration-fast']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/router.js'] })), ['unit', 'browser-shell']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/projects.js'] })), ['browser-project']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/services.js'] })), ['browser-service']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/tasks.js'] })), ['browser-task']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/changes.js'] })), ['browser-change']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/app.js'] })), ['browser-shell']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/workspaces.js'] })), ['browser-shell']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['integration-fast']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/api-client.js'] })), ['unit', 'integration', 'integration-fast']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/router.js'] })), ['unit', 'integration', 'browser-shell']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/projects.js'] })), ['unit', 'browser-project']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/services.js'] })), ['unit', 'browser-service']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/tasks.js'] })), ['unit', 'browser-task']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/changes.js'] })), ['unit', 'browser-change']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/app.js'] })), ['unit', 'browser-shell']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/workspaces.js'] })), ['unit', 'browser-shell']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['unit', 'integration', 'integration-fast']);
 });
 
 test('OpenSpec 路径只选择真实 owner', () => {
@@ -131,8 +155,12 @@ test('未映射 Product path fail closed', () => {
 });
 
 test('registry validation 在启动前拒绝重复、未知依赖、未知 executor 和 cycle', () => {
+  const testing = {
+    ownerScope: 'service:product/buildr', primaryIntent: 'Development', executionBoundary: 'Unit',
+    orchestrationScenarios: ['Task-affected'], targetDurationMs: 1000, proves: 'fixture', primaryEvidenceOwner: 'a',
+  };
   const base = {
-    name: 'step', executor: { type: 'node', file: 'x.mjs' }, profiles: [], groups: [], inputs: [], concurrencyClass: 'default', dependsOn: [],
+    name: 'step', executor: { type: 'node', file: 'x.mjs' }, profiles: [], groups: [], inputs: [], concurrencyClass: 'default', dependsOn: [], testing,
   };
   const invalid = [
     { ...base, id: 'a' },
@@ -145,6 +173,21 @@ test('registry validation 在启动前拒绝重复、未知依赖、未知 execu
   for (const code of ['duplicate_or_missing_id', 'missing_inputs', 'unknown_executor', 'invalid_scheduling_cost', 'dependency_cycle']) {
     assert.ok(result.findings.some((finding) => finding.code === code), `missing ${code}`);
   }
+});
+
+test('registry validation 对缺失或非法 Project Testing 分类 fail closed', () => {
+  const invalid = [{
+    id: 'invalid-testing', name: 'invalid testing', executor: { type: 'node', file: 'x.mjs' }, profiles: ['fast'], groups: [], inputs: ['x.mjs'],
+    concurrencyClass: 'default', dependsOn: [], testing: {
+      ownerScope: 'unknown', primaryIntent: 'Unknown', executionBoundary: 'System', orchestrationScenarios: ['Quick', 'Candidate'],
+      targetDurationMs: 20000, proves: '', primaryEvidenceOwner: 'missing',
+    },
+  }];
+  const result = validateVerificationRegistry(invalid);
+  for (const code of [
+    'invalid_testing_owner', 'invalid_testing_intent', 'quick_system_boundary', 'quick_target_too_slow',
+    'candidate_profile_mismatch', 'missing_testing_proves', 'unknown_primary_evidence_owner',
+  ]) assert.ok(result.findings.some((finding) => finding.code === code), `missing ${code}`);
 });
 
 test('registry validation拒绝有副作用或无预算的preflight', () => {

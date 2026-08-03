@@ -19,7 +19,9 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts.test, './scripts/verify-buildr-product-fast');
   assert.equal(scripts['test:fast'], './scripts/verify-buildr-product-fast');
   assert.equal(scripts['test:unit'], 'node --test test/unit/*.test.mjs');
+  assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs');
   assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs');
+  assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
   assert.equal(scripts['test:integration:fast'], 'node --test test/integration-fast/*.test.mjs');
   assert.equal(scripts['test:browser:smoke'], 'node --test test/browser-smoke/*.test.mjs');
   assert.equal(scripts['test:integration:candidate:recovery'], 'node --test test/integration-candidate-recovery/*.test.mjs');
@@ -34,7 +36,8 @@ test('product verification exposes three gates, direct layers, and one focus ent
   const fast = read('scripts/verify-buildr-product-fast');
   assert.match(fast, /verification\/profile\.mjs" fast/);
   const fastIds = createVerificationPlan({ profiles: ['fast'] }).steps.map((step) => step.id);
-  assert.deepEqual(fastIds, ['unit', 'contract', 'integration-fast', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract']);
+  assert.deepEqual(fastIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract']);
+  assert.equal(fastIds.includes('integration-fast'), false);
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.mjs', 'release-smoke.mjs']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);
   }
@@ -107,8 +110,10 @@ test('candidate verification retains every release gate and split package steps'
   const candidatePlan = createVerificationPlan({ profiles: ['candidate'] });
   for (const stage of [
     'fine-grained unit tests',
-    'static contract tests',
-    'fast integration tests',
+    'bounded component tests',
+    'technical boundary integration tests',
+    'repository contract tests',
+    'legacy full-system integration tests',
     'Candidate integration: builtin recovery and migration',
     'Candidate integration: release Git convergence',
     'Concurrent task workflow acceptance',

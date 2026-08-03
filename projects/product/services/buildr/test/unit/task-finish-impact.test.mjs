@@ -28,7 +28,7 @@ test('非 launcher 打包内容不会触发 development launcher 更新', () => 
   const result = classifyRetainedConvergencePaths([
     'projects/product/docs/buildr-product.md',
     'projects/product/openspec/specs/local-workspace-application/spec.md',
-    'projects/product/services/buildr/test/unit/local-app-runtime.test.mjs',
+    'projects/product/services/buildr/test/integration/local-app-runtime.test.mjs',
   ]);
 
   assert.equal(result.requiresLocalAppInstall, false);

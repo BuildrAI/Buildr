@@ -10,9 +10,11 @@ Buildr 使用 Node.js 内置 `node:test`，测试入口由 `services/buildr/pack
 
 | 入口 | 当前用途 |
 | --- | --- |
-| `test:unit` | 同进程验证纯逻辑和稳定模块边界 |
-| `test:contract` | 静态检查源码、manifest、文档、Skill、schema 与 entrypoint 契约 |
-| `test:integration:fast` | 验证 CLI、文件系统、Git、Task Environment、Local App 等技术边界 |
+| `test:unit` | 同进程验证纯逻辑；完整套件属于 Quick |
+| `test:component` | 用 fake 协作者验证单一有界 Application 组装；完整套件属于 Quick |
+| `test:contract` | 主要意图是 Static Conformance；因包含真实开发入口、Git 和临时目录检查，聚合执行边界按低成本 Integration 计 |
+| `test:integration` | 验证真实文件系统、Git 或子进程技术边界；按任务影响或 Candidate 运行 |
+| `test:integration:fast` | 历史名称；实际是完整 CLI、Workspace 与生命周期 System 集合，不属于 Quick |
 | `test:changed` / `test:focus` | 按变更 owner 选择开发期反馈，或定向重跑失败步骤 |
 | `test:candidate` | 运行完整 Product、package、runtime、Workspace、浏览器、发布和 OpenSpec 回归 |
 | 专项入口 | 定向验证 Browser、OpenSpec convergence、release 等高成本场景 |
@@ -33,11 +35,11 @@ Buildr 使用 Node.js 内置 `node:test`，测试入口由 `services/buildr/pack
 
 ## Task Verification 如何看到这些测试
 
-Task Verification 不登记每个测试文件，也不把 Product 内部的 42 个 Candidate step 暴露为 42 个能力。`verification.yml` 只声明 Agent 可稳定选择和调用的能力接口：
+Task Verification 不登记每个测试文件，也不把 Product 内部 Candidate steps 逐项暴露为能力。`verification.yml` 只声明 Agent 可稳定选择和调用的能力接口：
 
 | capability | 证明范围 | 交付必需 |
 | --- | --- | ---: |
-| `product.fast` | unit、静态契约、fast integration、CLI 架构、OpenSpec strict 与 runtime adapter contract | 否 |
+| `product.fast` | 低成本 Unit、Component、Static Conformance 与两项轻量 Integration | 否 |
 | `product.candidate` | Product 与 Buildr Service 的完整交付门禁 | 是 |
 | `product.browser-smoke` | Local App 关键浏览器交互 | 否 |
 | `product.archive-lifecycle` | Change active/archive 与 Task Finish 顺序 | 否 |
@@ -54,7 +56,7 @@ Agent 从任务变更和待证明事实出发，而不是根据 `fast`、`unit` 
 ```text
 Task scope + changed paths + implementation risk
                      ↓
-       开发期运行 unit、changed 或 focus 反馈
+       开发期运行 Quick、changed 或 focus 反馈
                      ↓
   冻结 target，匹配 verification.yml 的 scope 与 applicability
                      ↓
@@ -74,10 +76,10 @@ Task scope + changed paths + implementation risk
 
 ## 当前问题
 
-`product.fast` 目前是相对 Candidate 较快的混合回归，不是单元测试入口。它同时运行 unit、contract、integration-fast、架构、OpenSpec 和 runtime contract，因此任何小改动都可能等待一分钟以上。进一步审查发现：
+Quick 已恢复为约 6 秒的高频反馈，但测试体系仍有以下问题：
 
-- 目前缺少独立 Component 层，真实 CLI、Git 和 Environment 生命周期容易混入高频反馈；
-- `integration-fast` owner 过粗，同一组内的重型 fixture 会被整体选择；
+- Component 当前只有一个真实有界组装，覆盖仍薄，但不应为填数量伪造层级；
+- 新 `test:integration` 仍约 19 秒，`integration-fast` 仍是 60–96 秒的粗粒度 System 集合，部分 owner 和事实有重叠；
 - Candidate 包含多个 Workspace、Browser、package 和 release 重场景，资源互斥与依赖关系形成约 282 秒的关键路径；
 - `product.candidate` 对所有路径适用，Project policy 仍偏保守；
 - 能力名称不能证明成本，Agent 必须检查实际命令，声明指导也需要明确这一点。
@@ -112,4 +114,17 @@ P0.4 实践基线中，`product.fast` 约 108 秒，`product.candidate` 约 282 
 1. `project-testing` 指导 Agent 按测试意图、执行边界、Project / Service owner 和 Quick、Task-affected、Candidate、Release 设计与开发测试；它无 Result、Receipt、Application 或 provider contract，Acceptance 第一版只保留需求驱动的设计占位。
 2. `task-verification` 增强声明指导：发现项目已有测试、检查真实调用与成本，只按稳定调用边界声明 capability，不复制内部测试分类。
 
-下一步使用最小审查卡逐项检查 Buildr registry，先补出 Component 层并继续缩短 Quick；只有真实实践证明现有 `verification.yml` schema 或 Task Verification 控制层不足时，才提出对应产品变更。
+随后使用最小审查卡逐项检查 Buildr registry；只有真实实践证明现有 `verification.yml` schema 或 Task Verification 控制层不足时，才提出对应产品变更。
+
+## 第三轮：落实边界并收敛 Quick
+
+本轮为每个 registry step 增加 `ownerScope`、三轴分类、目标耗时、证明范围和唯一证据 owner，并由 registry validation fail closed。真实边界按行为迁移，没有删除测试：
+
+| 入口 | 本轮实测 | 结论 |
+| --- | ---: | --- |
+| `test:unit` | 20.02 秒 → 0.27 秒 | 22 个真实边界文件迁出后，只保留 76 个纯逻辑测试 |
+| `test:component` | 0.13 秒 | 先建立 2 个真实有界组装测试，不人为扩充 |
+| `test:integration` | 19.23 秒 | 承接 139 个真实 FS、Git、process 边界测试 |
+| `npm test` / `product.fast` | 6.31 秒 | 组合 Unit、Component、Static 及低成本 contract/runtime Integration |
+
+`integration-fast` 保留稳定 id、专项 selector、Task-affected owner 和 Candidate membership，但退出 Quick；`product.candidate` 的完整覆盖未缩小。下一轮优先拆解 Integration/System 的重复 owner 和 Candidate 关键路径，不扩展 Task Verification schema。

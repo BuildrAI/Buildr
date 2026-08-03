@@ -358,21 +358,21 @@ test('parallel verification preserves declaration order and failure identity', a
 });
 
 test('identified expensive candidate steps have non-blocking target budgets', () => {
-  for (const name of [
-    'fast integration tests',
-    'capability CLI integration',
-    'Candidate integration: builtin recovery and migration',
-    'Candidate integration: release Git convergence',
-    'runtime adapter implementation-family parity',
-    'package static validation',
-    'package workspace smoke',
-    'package Commands integration',
-    'package Rules integration',
-    'package Skills integration',
-    'package runtime integration',
-    'OpenSpec contract fixtures',
-    'CLI compatibility',
-  ]) assert.ok(candidateStepBudget(name) > 0, `${name} must have a target budget`);
+  for (const id of [
+    'integration-fast',
+    'capability-cli-integration',
+    'integration-candidate-recovery',
+    'integration-candidate-release',
+    'runtime-adapter-parity',
+    'package-static',
+    'package-workspace',
+    'package-commands',
+    'package-rules',
+    'package-skills',
+    'package-runtime',
+    'openspec-contract-fixtures',
+    'cli-compatibility',
+  ]) assert.ok(candidateStepBudget(id) > 0, `${id} must have a target budget`);
 });
 
 test('verification process cleanup 只终止 runner-owned process group', () => {

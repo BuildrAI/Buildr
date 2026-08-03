@@ -1,0 +1,29 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-buildr-quick-verification
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-buildr-quick-verification/brief.md
+    reason: 正式 Change 需要提供测试边界与编排变化的人类入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-buildr-quick-verification/proposal.md
+      - openspec/changes/optimize-buildr-quick-verification/design.md
+      - services/buildr/test/verification/registry.mjs
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 当前验证分层与 Fast 组成将发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/specs/project-testing-guidance/spec.md
+      - openspec/changes/optimize-buildr-quick-verification/specs/cli-modular-architecture/spec.md
+      - services/buildr/test/verification/registry.mjs
+      - services/buildr/package.json
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: Project Testing 已定义 Quick、Unit、Component 与 Integration
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

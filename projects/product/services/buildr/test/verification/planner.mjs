@@ -1,10 +1,13 @@
 import path from 'node:path';
 import {
   VERIFICATION_CONCURRENCY,
+  VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
   VERIFICATION_GROUPS,
   VERIFICATION_IGNORED_INPUTS,
+  VERIFICATION_ORCHESTRATION_SCENARIOS,
   VERIFICATION_PROFILES,
+  VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
 
@@ -45,6 +48,43 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     ids.add(item.id);
     if (!item.name) findings.push({ step: item.id, code: 'missing_name' });
     if (!Array.isArray(item.inputs) || item.inputs.length === 0) findings.push({ step: item.id, code: 'missing_inputs' });
+    const classification = item.testing;
+    if (!classification || typeof classification !== 'object') findings.push({ step: item.id, code: 'missing_testing_classification' });
+    else {
+      if (!/^(?:project:[a-z0-9-]+|service:[a-z0-9-]+\/[a-z0-9-]+)$/.test(classification.ownerScope ?? '')) {
+        findings.push({ step: item.id, code: 'invalid_testing_owner', value: classification.ownerScope });
+      }
+      if (!VERIFICATION_TEST_INTENTS.includes(classification.primaryIntent)) {
+        findings.push({ step: item.id, code: 'invalid_testing_intent', value: classification.primaryIntent });
+      }
+      if (!VERIFICATION_EXECUTION_BOUNDARIES.includes(classification.executionBoundary)) {
+        findings.push({ step: item.id, code: 'invalid_testing_boundary', value: classification.executionBoundary });
+      }
+      const scenarios = classification.orchestrationScenarios;
+      if (!Array.isArray(scenarios) || scenarios.length === 0) findings.push({ step: item.id, code: 'missing_testing_scenarios' });
+      else {
+        for (const scenario of scenarios) if (!VERIFICATION_ORCHESTRATION_SCENARIOS.includes(scenario)) {
+          findings.push({ step: item.id, code: 'invalid_testing_scenario', value: scenario });
+        }
+        const quick = scenarios.includes('Quick');
+        if (quick !== (item.profiles ?? []).includes('fast')) findings.push({ step: item.id, code: 'quick_profile_mismatch' });
+        if (quick && classification.executionBoundary === 'System') findings.push({ step: item.id, code: 'quick_system_boundary' });
+        if (quick && classification.targetDurationMs > 15000) findings.push({ step: item.id, code: 'quick_target_too_slow', value: classification.targetDurationMs });
+        if (scenarios.includes('Candidate') !== (item.profiles ?? []).includes('candidate')) findings.push({ step: item.id, code: 'candidate_profile_mismatch' });
+      }
+      if (!Number.isInteger(classification.targetDurationMs) || classification.targetDurationMs < 1) {
+        findings.push({ step: item.id, code: 'invalid_testing_target_duration', value: classification.targetDurationMs });
+      }
+      if (typeof classification.proves !== 'string' || classification.proves.trim().length === 0) {
+        findings.push({ step: item.id, code: 'missing_testing_proves' });
+      }
+      if (typeof classification.primaryEvidenceOwner !== 'string' || classification.primaryEvidenceOwner.length === 0) {
+        findings.push({ step: item.id, code: 'missing_primary_evidence_owner' });
+      }
+      if (item.budgetMs != null && item.budgetMs !== classification.targetDurationMs) {
+        findings.push({ step: item.id, code: 'testing_target_budget_mismatch', value: item.budgetMs });
+      }
+    }
     if (!VERIFICATION_EXECUTORS.includes(item.executor?.type)) findings.push({ step: item.id, code: 'unknown_executor', value: item.executor?.type });
     if (!VERIFICATION_CONCURRENCY.classes[item.concurrencyClass]) findings.push({ step: item.id, code: 'unknown_concurrency_class', value: item.concurrencyClass });
     for (const resource of item.resources ?? []) {
@@ -64,6 +104,10 @@ export function validateVerificationRegistry(steps = verificationSteps) {
   }
   for (const item of steps) for (const dependency of item.dependsOn ?? []) {
     if (!ids.has(dependency)) findings.push({ step: item.id, code: 'unknown_dependency', value: dependency });
+  }
+  for (const item of steps) {
+    const owner = item.testing?.primaryEvidenceOwner;
+    if (owner && !ids.has(owner)) findings.push({ step: item.id, code: 'unknown_primary_evidence_owner', value: owner });
   }
   const artifactProducers = steps.filter((item) => item.executor?.type === 'candidate-artifact');
   const artifactConsumers = steps.filter((item) => item.executor?.consumesArtifact === true);
