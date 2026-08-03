@@ -15,6 +15,19 @@ const waitFor = async (predicate, timeoutMs = 3_000) => {
   }
 };
 
+const waitForJson = async (file, timeoutMs = 3_000) => {
+  let value;
+  await waitFor(() => {
+    try {
+      value = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return true;
+    } catch {
+      return false;
+    }
+  }, timeoutMs);
+  return value;
+};
+
 function runWorker(root, taskId, acquiredFile, releaseFile) {
   return spawnSupervised(process.execPath, [worker, root, taskId, acquiredFile, releaseFile], { owner: { taskId, runId: `run-${taskId}` }, timeoutMs: 5_000 });
 }
@@ -39,8 +52,7 @@ test('独立进程共享 Workspace 容量槽并按 owner 释放', async (t) => {
 
   fs.writeFileSync(firstRelease, 'release\n');
   parseSuccessfulJson(await first.completed, 'first resource worker');
-  await waitFor(() => fs.existsSync(secondAcquired));
-  const secondClaim = JSON.parse(fs.readFileSync(secondAcquired, 'utf8'));
+  const secondClaim = await waitForJson(secondAcquired);
   assert.equal(secondClaim.owner.taskId, 'task-b');
   fs.writeFileSync(secondRelease, 'release\n');
   const released = parseSuccessfulJson(await second.completed, 'second resource worker');

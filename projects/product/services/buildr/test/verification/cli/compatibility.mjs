@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { registerCommandHelp } from '../../../src/interfaces/cli/help.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -36,9 +37,29 @@ const helpTopics = [
   ['skills', 'add'], ['skills', 'remove'], ['skills', 'bind'], ['skills', 'unbind'], ['skills', 'render'],
 ];
 
-for (const topic of helpTopics) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));
-  try {
+const helpRuntime = registerCommandHelp({ doctor: () => {} });
+const originalLog = console.log;
+let renderedHelp = '';
+console.log = (...parts) => { renderedHelp += `${parts.join(' ')}\n`; };
+try {
+  for (const topic of helpTopics) {
+    renderedHelp = '';
+    assert.equal(helpRuntime.isHelpRequest(topic.length === 0 ? [] : [...topic, '--help']), true);
+    assert.equal(helpRuntime.printHelp(topic), true, `help topic is not registered: ${topic.join(' ')}`);
+    assert.match(renderedHelp, /Usage:/, `help missing Usage: buildr ${topic.join(' ')}`);
+  }
+} finally {
+  console.log = originalLog;
+}
+
+const publicHelpTopics = [
+  [], ['init'], ['app', 'preview', 'start'], ['task', 'environment', 'prepare'],
+  ['task', 'verification', 'record'], ['task', 'finish', 'run'], ['rules', 'render'],
+];
+const helpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));
+try {
+  for (const topic of publicHelpTopics) {
+    const cwd = helpCwd;
     const result = run([...topic, '--help'], { cwd });
     assert.equal(result.status, 0, `help failed: buildr ${topic.join(' ')}`);
     assert.match(result.stdout, /Usage:/, `help missing Usage: buildr ${topic.join(' ')}`);
@@ -50,9 +71,9 @@ for (const topic of helpTopics) {
       assert.equal(commandHelp.stdout, result.stdout, `help forms differ: ${topic.join(' ')}`);
       assert.equal(commandHelp.stderr, '');
     }
-  } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
   }
+} finally {
+  fs.rmSync(helpCwd, { recursive: true, force: true });
 }
 
 for (const [args, expected] of [
@@ -132,4 +153,4 @@ try {
   fs.rmSync(workspace, { recursive: true, force: true });
 }
 
-console.log(`CLI compatibility verification passed: ${helpTopics.length} help topics, package identity, actionable failures, JSON discovery, and workspace mutation.`);
+console.log(`CLI compatibility verification passed: ${helpTopics.length} in-process help contracts, ${publicHelpTopics.length} public help entrypoints, package identity, actionable failures, JSON discovery, and workspace mutation.`);

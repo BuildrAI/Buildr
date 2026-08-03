@@ -359,7 +359,7 @@ test('parallel verification preserves declaration order and failure identity', a
 
 test('identified expensive candidate steps have non-blocking target budgets', () => {
   for (const id of [
-    'integration-fast',
+    'system',
     'capability-cli-integration',
     'integration-candidate-recovery',
     'runtime-adapter-parity',

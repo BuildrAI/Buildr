@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/application/package-maintenance/verification-registry.mjs';
 import { createVerificationPlan } from '../../test/verification/planner.mjs';
-import { VERIFICATION_DELEGATED_INPUTS, verificationSteps } from '../../test/verification/registry.mjs';
+import { VERIFICATION_DELEGATED_INPUTS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.mjs';
 import { workspaceSuites } from '../../test/verification/workspace/suites.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -22,7 +22,8 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs');
   assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs');
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
-  assert.equal(scripts['test:integration:fast'], 'node --test test/integration-fast/*.test.mjs');
+  assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
+  assert.equal(scripts['test:integration:fast'], undefined);
   assert.equal(scripts['test:browser:smoke'], 'node --test test/browser-smoke/*.test.mjs');
   assert.equal(scripts['test:integration:candidate:recovery'], 'node --test test/integration-candidate-recovery/*.test.mjs');
   assert.equal(scripts['test:integration:candidate:release'], 'node --test test/integration-candidate-release/*.test.mjs');
@@ -37,7 +38,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.match(fast, /verification\/profile\.mjs" fast/);
   const fastIds = createVerificationPlan({ profiles: ['fast'] }).steps.map((step) => step.id);
   assert.deepEqual(fastIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract']);
-  assert.equal(fastIds.includes('integration-fast'), false);
+  assert.equal(fastIds.includes('system'), false);
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.mjs', 'release-smoke.mjs']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);
   }
@@ -124,7 +125,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'bounded component tests',
     'technical boundary integration tests',
     'repository contract tests',
-    'legacy full-system integration tests',
+    'public CLI and Workspace system tests',
     'Candidate integration: builtin recovery and migration',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
@@ -163,23 +164,69 @@ test('candidate verification retains necessary Candidate facts without Browser a
     assert.ok(workspaceSuites.some((step) => step.id === suite), `Workspace E2E registry must retain ${suite}`);
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
+  assert.equal(candidatePlan.steps.find((step) => step.id === 'system').executor.file, 'test/verification/system.mjs');
   assert.deepEqual(candidatePlan.steps.filter((step) => step.resources?.includes('workspace-saturating')).map((step) => step.id), [
-    'integration-candidate-recovery', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
+    'system', 'integration-candidate-recovery', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
   ]);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.resources['workspace-saturating'], 2);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['workspace-saturating'], 2);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['workspace-saturating'], 1);
+  assert.ok(verificationSteps.find((step) => step.id === 'system').schedulingCostMs >= 60_000);
 });
 
 test('双任务并发验收输出完整的组合证据并执行归属清理', () => {
   const source = read('test/verification/concurrency/task-acceptance.mjs');
   for (const phrase of [
     'buildr.concurrent-task-acceptance/v1', 'cliInvocation', 'app', 'preview',
-    'taskChangeResolution', 'previewRegistrationFailure', 'resourceCoordination', 'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
+    'previewRegistrationFailure', 'resourceCoordination', 'environmentPreparation', 'portableResults', 'phases',
+    'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
   ]) assert.ok(source.includes(phrase), phrase);
+  assert.ok(source.includes('processesOverlap(prepareResults[0], prepareResults[1])'));
+  assert.ok(source.includes("'task', 'verification', 'record'"));
+  assert.equal(source.includes("'task', 'verification', 'inspect'"), false);
+  assert.equal(source.includes('taskChangeResolution'), false);
+  assert.equal(source.includes('candidate-only'), false);
+  assert.equal(source.includes('RESOURCE_WORKER'), false);
   assert.ok(source.includes("profiles: ['candidate']") === false);
   const entry = verificationSteps.find((step) => step.id === 'concurrent-task-acceptance');
   assert.equal(entry.executor.file, 'test/verification/concurrency/task-acceptance.mjs');
   assert.deepEqual(entry.profiles, ['candidate']);
   assert.ok(entry.resources.includes('workspace-saturating'));
   assert.ok(entry.budgetMs > 0);
+});
+
+test('OpenSpec fixture Candidate owners use disjoint complete suites', () => {
+  const runner = path.join(productRoot, 'test', 'verification', 'openspec', 'contract.mjs');
+  const listed = spawnSync(process.execPath, [runner, '--list-suites'], { cwd: productRoot, encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  const suites = JSON.parse(listed.stdout);
+  assert.equal(suites.contract.filter((name) => suites.recovery.includes(name)).length, 0);
+  assert.deepEqual([...new Set([...suites.contract, ...suites.recovery])].sort(), [...suites.all].sort());
+  const owners = Object.fromEntries(verificationSteps
+    .filter((step) => ['openspec-contract-fixtures', 'openspec-convergence-recovery'].includes(step.id))
+    .map((step) => [step.id, step.executor.args]));
+  assert.deepEqual(owners, {
+    'openspec-contract-fixtures': ['--suite', 'contract'],
+    'openspec-convergence-recovery': ['--suite', 'recovery'],
+  });
+  const unknown = spawnSync(process.execPath, [runner, '--suite', 'unknown'], { cwd: productRoot, encoding: 'utf8' });
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unknown OpenSpec fixture suite/);
+});
+
+test('CLI package parity owns representative equivalence without lifecycle duplication', () => {
+  const source = read('test/verification/cli/package-parity.mjs');
+  assert.match(source, /representative output and init mutation/);
+  for (const forbidden of [
+    'spawnAsync',
+    'verification.yml',
+    'taskParity',
+    'taskIds',
+    "'project', 'create'",
+    "'sync', 'codex'",
+    "'doctor', '--agent'",
+  ]) assert.equal(source.includes(forbidden), false, `package parity must not duplicate ${forbidden}`);
+  assert.equal(verificationSteps.find((step) => step.id === 'cli-package-parity').testing.executionBoundary, 'Integration');
 });
 
 test('package verifier selectors are stable, focused, and fail closed', () => {

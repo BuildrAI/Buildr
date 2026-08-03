@@ -7,6 +7,7 @@ import {
 
 const canonicalProjectEntries = [
   'AGENTS.md',
+  'CLAUDE.md',
   'README.md',
   'buildr',
   'capabilities.yml',
@@ -28,6 +29,15 @@ const canonicalServiceEntries = [
 const canonicalBridge = '#!/bin/sh\nset -eu\nproject_root=$(CDPATH= cd "${0%/*}" && pwd)\nexec "$project_root/services/buildr/scripts/run-development-cli" "$@"\n';
 
 test('Product 治理根与 Buildr Service 实现根满足最终结构契约', () => {
+  assert.deepEqual(validateProductSourceLayout({
+    projectEntries: canonicalProjectEntries,
+    serviceEntries: canonicalServiceEntries,
+    bridgeSource: canonicalBridge,
+  }), []);
+});
+
+test('Product 治理根接受与 AGENTS 同目录的受管 CLAUDE runtime bridge', () => {
+  assert.ok(productSourceLayoutContract.allowedProjectRootEntries.includes('CLAUDE.md'));
   assert.deepEqual(validateProductSourceLayout({
     projectEntries: canonicalProjectEntries,
     serviceEntries: canonicalServiceEntries,

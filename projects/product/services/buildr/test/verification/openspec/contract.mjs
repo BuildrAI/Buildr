@@ -13,7 +13,14 @@ const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
 const openspec = path.join(productRoot, 'node_modules', '.bin', 'openspec');
 const commandEnv = { ...process.env, PATH: `${path.dirname(openspec)}${path.delimiter}${process.env.PATH || ''}` };
 const project = 'demo';
-const selectedCase = process.argv[2] === '--case' ? process.argv[3] : null;
+const argv = process.argv.slice(2);
+const optionValue = (name) => {
+  const index = argv.indexOf(name);
+  return index === -1 ? null : argv[index + 1];
+};
+const selectedCase = optionValue('--case');
+const selectedSuite = optionValue('--suite') || 'all';
+const listSuites = argv.includes('--list-suites');
 const root = selectedCase ? process.env.BUILDR_OPENSPEC_FIXTURE_ROOT : null;
 const projectRoot = root ? path.join(root, 'projects', project) : null;
 const specsRoot = projectRoot ? path.join(projectRoot, 'openspec', 'specs') : null;
@@ -168,6 +175,37 @@ const cases = {
   },
 };
 
+const suites = Object.freeze({
+  contract: Object.freeze([
+    'unknown-project',
+    'safe-modified',
+    'safe-added',
+    'safe-removed',
+    'safe-renamed',
+    'proposal-and-baseline-errors',
+    'adopted-and-corrupt',
+    'conflict',
+    'stale-and-occupied',
+    'unsupported-upstream',
+  ]),
+  recovery: Object.freeze([
+    'post-sync-errors',
+    'upstream-archive-safety',
+    'convergence-transaction-safe',
+    'convergence-audit-unprovable',
+    'convergence-transaction-conflict-and-disjoint',
+  ]),
+});
+
+const allCases = Object.freeze([...suites.contract, ...suites.recovery]);
+
+function validateSuiteRegistry() {
+  const registered = Object.keys(cases).sort();
+  const selected = [...new Set(allCases)].sort();
+  if (selected.length !== allCases.length) fail('OpenSpec fixture suites overlap');
+  if (JSON.stringify(selected) !== JSON.stringify(registered)) fail('OpenSpec fixture suites do not cover every registered case');
+}
+
 async function prepareBase(baseRoot) {
   const startedAt = Date.now();
   if (runUpstream(['--version'], productRoot).stdout.trim() !== '1.6.0') fail('OpenSpec contract fixtures must execute bundled 1.6.0 CLI');
@@ -191,14 +229,20 @@ function runCase(name, caseRoot) {
 }
 
 async function main() {
+  validateSuiteRegistry();
+  if (listSuites) {
+    console.log(JSON.stringify({ contract: suites.contract, recovery: suites.recovery, all: allCases }));
+    return;
+  }
   if (selectedCase) { const execute = cases[selectedCase]; if (!execute) fail(`Unknown fixture case: ${selectedCase}`); execute(); return; }
+  const names = selectedSuite === 'all' ? allCases : suites[selectedSuite];
+  if (!names) fail(`Unknown OpenSpec fixture suite: ${selectedSuite}`);
   const runRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-contract-run-'));
   const baseRoot = path.join(runRoot, 'prepared');
   const startedAt = Date.now();
   let results = [];
   try {
     const preparationMs = await prepareBase(baseRoot);
-    const names = Object.keys(cases);
     const concurrency = Math.min(12, names.length);
     let cursor = 0;
     const workers = Array.from({ length: concurrency }, async () => {
@@ -216,6 +260,7 @@ async function main() {
     const evidence = {
       schemaVersion: 'buildr.openspec-contract-fixtures/v1',
       status: failed.length ? 'failed' : 'passed',
+      suite: selectedSuite,
       preparation: { status: 'passed', durationMs: preparationMs, identity: `sha256-${crypto.createHash('sha256').update([process.version, process.platform, '1.6.0', fs.readFileSync(fileURLToPath(import.meta.url))].join('\0')).digest('hex')}` },
       consumers: results.map(({ name, status, exitCode, durationMs }) => ({ name, status, exitCode, durationMs, reusedPreparation: true })),
       consumerCount: results.length,

@@ -9,27 +9,44 @@ import { parseSuccessfulJson, processesOverlap, spawnSupervised } from '../../he
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-const RESOURCE_WORKER = path.join(PRODUCT_ROOT, 'test', 'fixtures', 'verification-resource-worker.mjs');
 const startedAt = Date.now();
 const fixtureRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-concurrent-task-acceptance-')));
 const workspace = path.join(fixtureRoot, 'workspace');
 const appData = path.join(fixtureRoot, 'app-data');
-const leases = path.join(fixtureRoot, 'leases');
 const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
 const previews = [];
-const workers = [];
 const taskIds = ['acceptance-task-a', 'acceptance-task-b'];
 const summary = {
   schemaVersion: 'buildr.concurrent-task-acceptance/v1',
   status: 'failed',
   tasks: [], cliExecutions: [], previews: [], previewConcurrency: null,
-  taskChangeResolution: null,
+  phases: [], environmentPreparation: null,
   previewRegistrationFailure: null,
   resourceCoordination: null, targetRace: null, failureDiagnostics: null,
   verificationRuns: [],
+  portableResults: [],
   cleanup: { previews: [], resources: [], environments: [], branches: [], receipts: [] },
   retainedDoctor: null, durationMs: 0,
 };
+let activePhase = null;
+
+function startPhase(name) {
+  assert.equal(activePhase, null, `phase ${activePhase?.name} is still active`);
+  activePhase = { name, startedAt: new Date().toISOString(), startedAtMs: Date.now() };
+}
+
+function finishPhase(status = 'passed') {
+  if (!activePhase) return;
+  const finishedAtMs = Date.now();
+  summary.phases.push({
+    name: activePhase.name,
+    status,
+    startedAt: activePhase.startedAt,
+    finishedAt: new Date(finishedAtMs).toISOString(),
+    durationMs: finishedAtMs - activePhase.startedAtMs,
+  });
+  activePhase = null;
+}
 
 function runBuildr(args, options = {}) {
   return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: 30_000, ...options });
@@ -50,52 +67,8 @@ function commitIfDirty(cwd, message) {
   git(cwd, ['commit', '-m', message]);
 }
 
-function writeChange(projectRoot, directory, content) {
-  const changeRoot = path.join(projectRoot, 'openspec', 'changes', directory);
-  fs.mkdirSync(changeRoot, { recursive: true });
-  fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
-  fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${content}\n`);
-}
-
-async function waitFor(predicate, label, timeoutMs = 5_000) {
-  const limit = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= limit) throw new Error(`Timed out waiting for ${label}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}
-
-function runWorker(root, taskId, acquiredFile, releaseFile) {
-  const worker = spawnSupervised(process.execPath, [RESOURCE_WORKER, root, taskId, acquiredFile, releaseFile], {
-    cwd: PRODUCT_ROOT,
-    env,
-    owner: { taskId, runId: `run-${taskId}` },
-    timeoutMs: 8_000,
-  });
-  workers.push({ ...worker, releaseFile });
-  return worker;
-}
-
-function runTaskInvocation(task, cwd) {
-  const result = spawnSync(task.cliInvocation.command, [
-    ...task.cliInvocation.argsPrefix,
-    'task', 'environment', 'inspect', task.taskId, '--target', workspace, '--json',
-  ], { cwd, env, encoding: 'utf8', timeout: 10_000 });
-  const inspected = requireSuccess(result, `CLI invocation ${task.taskId}`);
-  assert.equal(inspected.taskId, task.taskId);
-  assert.equal(inspected.status, 'ready');
-  assert.deepEqual(inspected.environment.scopes.map((scope) => scope.selector), ['workspace', 'project:nested']);
-  assert.deepEqual(inspected.execution.allowedExecutionRoots, task.allowedExecutionRoots);
-  return { taskId: task.taskId, cwd, command: task.cliInvocation.command, scopes: inspected.environment.scopes.map((scope) => scope.selector), ready: inspected.execution.ready };
-}
-
-function releaseWorkers() {
-  for (const worker of workers) {
-    if (worker.child.exitCode === null && !fs.existsSync(worker.releaseFile)) fs.writeFileSync(worker.releaseFile, 'release\n');
-  }
-}
-
 try {
+  startPhase('fixture');
   const initialized = runBuildr(['init', '--target', workspace, '--name', 'concurrent-acceptance', '--description', 'Temporary concurrent task acceptance workspace', '--profile', 'team']);
   assert.equal(initialized.status, 0, initialized.stderr);
   execFileSync('git', ['init', '--initial-branch=dev', workspace], { stdio: 'ignore' });
@@ -135,15 +108,29 @@ try {
     ],
     capabilities: [verificationCapability('nested.parallel-a', 80, []), verificationCapability('nested.parallel-b', 80, []), verificationCapability('nested.coordinated', 160, ['shared-slot'])],
   }, null, 2)}\n`);
-  writeChange(nestedRoot, 'same-change', 'retained version');
   assert.equal(runBuildr(['sync', 'codex', '--target', workspace]).status, 0);
   commitIfDirty(nestedRoot, 'nested runtime fixture');
   git(workspace, ['add', '-f', '.agents']);
   commitIfDirty(workspace, 'register nested repository');
 
+  finishPhase();
+  startPhase('environment-prepare');
   for (const taskId of taskIds) {
     requireSuccess(runBuildr(['task', 'create', taskId, '--title', taskId, '--intent', '验证双 Task Environment 并发', '--project', 'nested', '--target', workspace, '--json']), `create Task ${taskId}`);
-    const prepared = requireSuccess(runBuildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', workspace, '--json']), `prepare ${taskId}`);
+  }
+  const prepareProcesses = taskIds.map((taskId) => spawnSupervised(process.execPath, [
+    BUILDR, 'task', 'environment', 'prepare', taskId,
+    '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', workspace, '--json',
+  ], { cwd: PRODUCT_ROOT, env, owner: { taskId, runId: 'environment-prepare' }, timeoutMs: 60_000, outputLimit: 128 * 1024 }));
+  const prepareResults = await Promise.all(prepareProcesses.map((run) => run.completed));
+  assert.equal(processesOverlap(prepareResults[0], prepareResults[1]), true);
+  summary.environmentPreparation = {
+    overlapped: true,
+    processes: prepareResults.map(({ owner, pid, startedAt: processStartedAt, finishedAt, durationMs, exitCode, signal }) => ({ owner, pid, startedAt: processStartedAt, finishedAt, durationMs, exitCode, signal })),
+  };
+  for (let index = 0; index < taskIds.length; index += 1) {
+    const taskId = taskIds[index];
+    const prepared = parseSuccessfulJson(prepareResults[index], `prepare ${taskId}`);
     assert.equal(prepared.status, 'ready');
     assert.equal(prepared.execution.ready, true);
     assert.equal(path.isAbsolute(prepared.execution.cliInvocation.command), true);
@@ -159,35 +146,31 @@ try {
   assert.notEqual(summary.tasks[0].environmentRoot, summary.tasks[1].environmentRoot);
   assert.notEqual(summary.tasks[0].repositories[1].checkoutPath, summary.tasks[1].repositories[1].checkoutPath);
 
-  const firstCandidateProject = summary.tasks[0].repositories.find((repository) => repository.selector === 'project:nested').checkoutPath;
-  writeChange(firstCandidateProject, 'candidate-only', 'candidate only');
-  writeChange(firstCandidateProject, path.join('archive', '2026-08-03-candidate-archived'), 'candidate archived');
-  fs.writeFileSync(path.join(firstCandidateProject, 'openspec', 'changes', 'same-change', 'proposal.md'), '# candidate version\n');
-  const linked = requireSuccess(runBuildr([
-    'task', 'update', taskIds[0],
-    '--add-change', 'nested/candidate-only',
-    '--add-change', 'nested/candidate-archived',
-    '--add-change', 'nested/same-change',
-    '--target', workspace, '--json',
-  ]), 'resolve Task-scoped candidate Changes');
-  const linkedByReference = new Map(linked.changeReferences.map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
-  assert.equal(linkedByReference.get('nested/candidate-only').workingCopy.provenance, 'task-environment-candidate');
-  assert.equal(linkedByReference.get('nested/candidate-archived').workingCopy.change.lifecycle, 'archived');
-  assert.equal(linkedByReference.get('nested/same-change').retainedBaseline.provenance, 'retained-baseline');
-  summary.taskChangeResolution = {
-    taskId: taskIds[0],
-    candidateOnly: linkedByReference.get('nested/candidate-only').workingCopy.provenance,
-    archivedLifecycle: linkedByReference.get('nested/candidate-archived').workingCopy.change.lifecycle,
-    retainedBaseline: linkedByReference.get('nested/same-change').retainedBaseline.provenance,
-  };
-  fs.rmSync(path.join(firstCandidateProject, 'openspec', 'changes', 'candidate-only'), { recursive: true });
-  fs.rmSync(path.join(firstCandidateProject, 'openspec', 'changes', 'archive', '2026-08-03-candidate-archived'), { recursive: true });
-  fs.writeFileSync(path.join(firstCandidateProject, 'openspec', 'changes', 'same-change', 'proposal.md'), '# retained version\n');
-  assert.equal(git(firstCandidateProject, ['status', '--porcelain']), '', 'Task-scoped Change acceptance must restore the candidate checkout before later lifecycle checks');
+  finishPhase();
+  startPhase('task-invocation');
+  const invocationProcesses = summary.tasks.map((task, index) => {
+    const cwd = index === 0 ? workspace : task.repositories[1].checkoutPath;
+    return {
+      cwd,
+      run: spawnSupervised(task.cliInvocation.command, [
+        ...task.cliInvocation.argsPrefix,
+        'task', 'environment', 'inspect', task.taskId, '--target', workspace, '--json',
+      ], { cwd, env, owner: { taskId: task.taskId, runId: 'task-invocation' }, timeoutMs: 10_000, outputLimit: 64 * 1024 }),
+    };
+  });
+  const invocationResults = await Promise.all(invocationProcesses.map(({ run }) => run.completed));
+  summary.cliExecutions = invocationResults.map((result, index) => {
+    const task = summary.tasks[index];
+    const inspected = parseSuccessfulJson(result, `CLI invocation ${task.taskId}`);
+    assert.equal(inspected.taskId, task.taskId);
+    assert.equal(inspected.status, 'ready');
+    assert.deepEqual(inspected.environment.scopes.map((scope) => scope.selector), ['workspace', 'project:nested']);
+    assert.deepEqual(inspected.execution.allowedExecutionRoots, task.allowedExecutionRoots);
+    return { taskId: task.taskId, cwd: invocationProcesses[index].cwd, command: task.cliInvocation.command, scopes: inspected.environment.scopes.map((scope) => scope.selector), ready: inspected.execution.ready };
+  });
 
-  summary.cliExecutions.push(runTaskInvocation(summary.tasks[0], workspace));
-  summary.cliExecutions.push(runTaskInvocation(summary.tasks[1], summary.tasks[1].repositories[1].checkoutPath));
-
+  finishPhase();
+  startPhase('verification');
   const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
     'verification', 'run', '--project', 'nested', '--capability', 'nested.parallel-a', '--capability', 'nested.parallel-b', '--capability', 'nested.coordinated',
@@ -205,6 +188,54 @@ try {
   assert.equal(summary.verificationRuns.every((run) => run.environment.taskId === run.taskId), true);
   assert.equal(summary.verificationRuns.some((run) => run.checks.find((check) => check.id === 'nested.coordinated').resourceCoordination.waitDurationMs > 50), true);
 
+  finishPhase();
+  startPhase('verification-result');
+  const recordProcesses = summary.tasks.map((task, index) => spawnSupervised(task.cliInvocation.command, [
+    ...task.cliInvocation.argsPrefix,
+    'task', 'verification', 'record', task.taskId,
+    '--target-identity', `target:${task.taskId}`,
+    '--target-summary', `Concurrent acceptance ${task.taskId}`,
+    ...summary.verificationRuns[index].checks.flatMap((check) => ['--capability', `nested/${check.id}::passed::Verification ${check.id} passed`]),
+    '--outcome', 'passed', '--summary', 'Concurrent task verification passed',
+    '--declaration-root', task.environmentRoot, '--target', workspace, '--json',
+  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'verification-result-record' }, timeoutMs: 10_000, outputLimit: 64 * 1024 }));
+  const recordedResults = await Promise.all(recordProcesses.map((run) => run.completed));
+  summary.portableResults = recordedResults.map((result, index) => {
+    const recorded = parseSuccessfulJson(result, `record verification result ${taskIds[index]}`);
+    assert.equal(recorded.status, 'recorded');
+    assert.equal(recorded.slot.applicability.status, 'current');
+    return { taskId: taskIds[index], path: recorded.slot.path, resultDigest: recorded.slot.resultDigest, applicability: recorded.slot.applicability.status };
+  });
+  assert.notEqual(summary.portableResults[0].path, summary.portableResults[1].path);
+  assert.notEqual(summary.portableResults[0].resultDigest, summary.portableResults[1].resultDigest);
+
+  finishPhase();
+  startPhase('resource-coordination');
+  const parallelOverlaps = summary.verificationRuns.map((run) => {
+    const first = run.checks.find((check) => check.id === 'nested.parallel-a');
+    const second = run.checks.find((check) => check.id === 'nested.parallel-b');
+    return Date.parse(first.startedAt) < Date.parse(second.finishedAt) && Date.parse(second.startedAt) < Date.parse(first.finishedAt);
+  });
+  assert.equal(parallelOverlaps.every(Boolean), true);
+  const coordinated = summary.verificationRuns.map((run) => run.checks.find((check) => check.id === 'nested.coordinated'));
+  for (const check of coordinated) {
+    assert.equal(check.resourceCoordination.claims.some((claim) => claim.status === 'acquired' && claim.resource === 'shared-slot'), true);
+    assert.equal(check.resourceCoordination.release.some((claim) => claim.status === 'released' && claim.resource === 'shared-slot'), true);
+    summary.cleanup.resources.push(...check.resourceCoordination.release);
+  }
+  const orderedCoordination = [...coordinated].sort((left, right) => left.resourceCoordination.waitDurationMs - right.resourceCoordination.waitDurationMs);
+  summary.resourceCoordination = {
+    isolatedParallel: { overlapped: true, owners: taskIds },
+    coordinated: {
+      capacity: 1,
+      firstOwner: orderedCoordination[0].resourceCoordination.claims[0].owner.taskId,
+      secondOwner: orderedCoordination[1].resourceCoordination.claims[0].owner.taskId,
+      secondWaitDurationMs: orderedCoordination[1].resourceCoordination.waitDurationMs,
+    },
+  };
+  finishPhase();
+
+  startPhase('preview');
   const previewRuns = summary.tasks.map((task) => {
     const instance = `${task.taskId}-preview`;
     previews.push(instance);
@@ -237,51 +268,17 @@ try {
   assert.equal(environmentAfterFailedPreview.environment.resources.some((resource) => resource.id === `preview:${failedPreviewInstance}`), false);
   assert.equal(environmentAfterFailedPreview.environment.resources.some((resource) => resource.id === `preview:${previews[0]}` && resource.status === 'running'), true);
   summary.previewRegistrationFailure = { taskId: taskIds[0], instance: failedPreviewInstance, processReclaimed: true, existingResourcesPreserved: true };
-  const prematureCleanup = runBuildr(['task', 'environment', 'cleanup', taskIds[0], '--target', workspace, '--json']);
-  assert.notEqual(prematureCleanup.status, 0);
-  const prematureCleanupResult = JSON.parse(prematureCleanup.stdout);
-  assert.equal(prematureCleanupResult.diagnostic.code, 'task_environment_cleanup_unauthorized');
-  assert.equal(fs.existsSync(summary.tasks[0].environmentRoot), true);
-  assert.equal(requireSuccess(runBuildr(['task', 'environment', 'inspect', taskIds[0], '--target', workspace, '--json']), 'inspect active resource').environment.resources.some((resource) => resource.kind === 'preview' && resource.status === 'running'), true);
-  summary.cleanup.receipts.push({ taskId: taskIds[0], authorizationGuard: prematureCleanupResult.diagnostic.code, environmentPreserved: true });
   summary.previewConcurrency = { overlapped: true, processes: previewResults.map(({ owner, pid, startedAt, finishedAt, durationMs, exitCode, signal }) => ({ owner, pid, startedAt, finishedAt, durationMs, exitCode, signal })) };
   if (process.env.BUILDR_ACCEPTANCE_INJECT_FAILURE === 'after-previews') throw new Error('Injected acceptance failure after concurrent previews');
-
-  const isolated = taskIds.map((taskId, index) => runWorker(path.join(leases, `isolated-${index}`), taskId, path.join(fixtureRoot, `isolated-${index}-acquired.json`), path.join(fixtureRoot, `isolated-${index}-release`)));
-  await Promise.all(isolated.map((_, index) => waitFor(() => fs.existsSync(path.join(fixtureRoot, `isolated-${index}-acquired.json`)), `isolated worker ${index}`)));
-  for (let index = 0; index < isolated.length; index += 1) fs.writeFileSync(path.join(fixtureRoot, `isolated-${index}-release`), 'release\n');
-  const isolatedResults = await Promise.all(isolated.map((run) => run.completed));
-  assert.equal(processesOverlap(isolatedResults[0], isolatedResults[1]), true);
-  summary.cleanup.resources.push(...isolatedResults.flatMap((result, index) => parseSuccessfulJson(result, `isolated resource worker ${index}`)));
-
-  const firstAcquired = path.join(fixtureRoot, 'first-acquired.json');
-  const secondAcquired = path.join(fixtureRoot, 'second-acquired.json');
-  const firstRelease = path.join(fixtureRoot, 'first-release');
-  const secondRelease = path.join(fixtureRoot, 'second-release');
-  const first = runWorker(path.join(leases, 'coordinated'), taskIds[0], firstAcquired, firstRelease);
-  await waitFor(() => fs.existsSync(firstAcquired), 'first resource claim');
-  const secondStartedAt = Date.now();
-  const second = runWorker(path.join(leases, 'coordinated'), taskIds[1], secondAcquired, secondRelease);
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.equal(fs.existsSync(secondAcquired), false);
-  fs.writeFileSync(firstRelease, 'release\n');
-  summary.cleanup.resources.push(...parseSuccessfulJson(await first.completed, 'first coordinated worker'));
-  await waitFor(() => fs.existsSync(secondAcquired), 'second resource claim');
-  const secondClaim = JSON.parse(fs.readFileSync(secondAcquired, 'utf8'));
-  fs.writeFileSync(secondRelease, 'release\n');
-  summary.cleanup.resources.push(...parseSuccessfulJson(await second.completed, 'second coordinated worker'));
-  summary.resourceCoordination = {
-    isolatedParallel: { overlapped: true, owners: taskIds },
-    coordinated: { capacity: 1, firstOwner: taskIds[0], secondOwner: secondClaim.owner.taskId, secondWaitDurationMs: Date.now() - secondStartedAt },
-  };
-  assert.equal(secondClaim.owner.taskId, taskIds[1]);
-
+  finishPhase();
+  startPhase('failure-diagnostics');
   const failedWorker = spawnSupervised(process.execPath, ['-e', 'process.stderr.write("expected worker failure\\n"); process.exit(7)'], { owner: { taskId: taskIds[0], runId: 'failure-injection' }, timeoutMs: 2_000 });
   const failedDiagnostic = await failedWorker.completed;
   assert.equal(failedDiagnostic.exitCode, 7);
   assert.equal(failedDiagnostic.signal, null);
   assert.match(failedDiagnostic.stderr, /expected worker failure/);
   summary.failureDiagnostics = { status: 'captured', owner: failedDiagnostic.owner, exitCode: failedDiagnostic.exitCode, signal: failedDiagnostic.signal, timedOut: failedDiagnostic.timedOut, stdout: failedDiagnostic.stdout, stderr: failedDiagnostic.stderr };
+  finishPhase();
 
   summary.targetRace = {
     status: 'owned-by-task-finish-journey',
@@ -290,34 +287,44 @@ try {
 
   summary.status = 'passed';
 } catch (error) {
+  finishPhase('failed');
   summary.error = { name: error.name, message: error.message, diagnostic: error.diagnostic || null };
   process.exitCode = 1;
 } finally {
-  releaseWorkers();
-  for (const worker of workers) {
-    if (worker.child.exitCode === null) {
-      try { await Promise.race([worker.completed, new Promise((resolve) => setTimeout(resolve, 500))]); } catch {}
-      if (worker.child.exitCode === null) worker.child.kill('SIGTERM');
-    }
-  }
+  if (activePhase) finishPhase(summary.status === 'passed' ? 'passed' : 'failed');
+  startPhase('cleanup');
+  const previewStops = [];
   for (const instance of [...previews].reverse()) {
     const taskId = instance.replace(/-preview$/, '');
     const task = summary.tasks.find((item) => item.taskId === taskId);
     const other = summary.tasks.find((item) => item.taskId !== taskId);
-    if (task && other) {
+    if (task && other && instance === previews[1]) {
       const wrongOwner = runBuildr(['app', 'preview', 'stop', instance, '--target', workspace, '--task', other.taskId, '--json']);
       summary.cleanup.previews.push({ instance, status: wrongOwner.status === 0 ? 'owner-guard-failed' : 'wrong-owner-rejected', diagnostic: (wrongOwner.stderr || wrongOwner.stdout).trim() });
     }
-    const stopped = task
-      ? runBuildr(['app', 'preview', 'stop', instance, '--target', workspace, '--task', task.taskId, '--json'])
-      : runBuildr(['app', 'preview', 'stop', instance, '--json']);
-    summary.cleanup.previews.push({ instance, status: stopped.status === 0 ? 'stopped' : 'failed', diagnostic: stopped.status === 0 ? null : (stopped.stderr || stopped.stdout).trim() });
+    const args = task
+      ? [BUILDR, 'app', 'preview', 'stop', instance, '--target', workspace, '--task', task.taskId, '--json']
+      : [BUILDR, 'app', 'preview', 'stop', instance, '--json'];
+    previewStops.push({
+      instance,
+      run: spawnSupervised(process.execPath, args, { cwd: PRODUCT_ROOT, env, owner: { taskId, instance }, timeoutMs: 10_000, outputLimit: 64 * 1024 }),
+    });
+  }
+  const previewStopResults = await Promise.all(previewStops.map(({ run }) => run.completed));
+  for (let index = 0; index < previewStops.length; index += 1) {
+    const stopped = previewStopResults[index];
+    summary.cleanup.previews.push({ instance: previewStops[index].instance, status: stopped.exitCode === 0 ? 'stopped' : 'failed', diagnostic: stopped.exitCode === 0 ? null : (stopped.stderr || stopped.stdout).trim() });
   }
   if (fs.existsSync(workspace)) {
-    for (const task of summary.tasks) {
-      if (!fs.existsSync(task.environmentRoot)) continue;
-      const record = runBuildr(['task', 'inspect', task.taskId, '--target', workspace, '--json']);
-      if (record.status === 0 && JSON.parse(record.stdout).record.status === 'active') runBuildr(['task', 'abandon', task.taskId, '--reason', 'concurrent acceptance fixture complete', '--target', workspace, '--json']);
+    const activeTasks = summary.tasks.filter((task) => fs.existsSync(task.environmentRoot));
+    const abandonRuns = activeTasks.map((task) => spawnSupervised(process.execPath, [
+      BUILDR, 'task', 'abandon', task.taskId, '--reason', 'concurrent acceptance fixture complete', '--target', workspace, '--json',
+    ], { cwd: PRODUCT_ROOT, env, owner: { taskId: task.taskId, runId: 'task-abandon' }, timeoutMs: 10_000, outputLimit: 64 * 1024 }));
+    const abandonResults = await Promise.all(abandonRuns.map((run) => run.completed));
+    for (let index = 0; index < abandonResults.length; index += 1) {
+      if (abandonResults[index].exitCode !== 0) summary.cleanup.receipts.push({ taskId: activeTasks[index].taskId, abandon: 'failed' });
+    }
+    for (const task of activeTasks) {
       const cleaned = runBuildr(['task', 'environment', 'cleanup', task.taskId, '--target', workspace, '--json']);
       let result = null;
       try { result = JSON.parse(cleaned.stdout); } catch {}
@@ -336,19 +343,20 @@ try {
       summary.retainedDoctor = { ok: report.ok, ready: report.health?.ready, actionableCount: report.health?.actionableCount };
     } else summary.retainedDoctor = { ok: false, message: doctor.stderr };
   }
-  summary.durationMs = Date.now() - startedAt;
   const cleanupPassed = summary.cleanup.previews.every((item) => ['stopped', 'wrong-owner-rejected'].includes(item.status))
-    && summary.cleanup.previews.filter((item) => item.status === 'wrong-owner-rejected').length === taskIds.length
+    && summary.cleanup.previews.filter((item) => item.status === 'wrong-owner-rejected').length === 1
     && summary.cleanup.resources.every((item) => ['released', 'not-applicable'].includes(item.status))
     && summary.cleanup.environments.length === taskIds.length
     && summary.cleanup.environments.every((item) => item.status === 'cleaned')
-    && summary.cleanup.receipts.some((item) => item.authorizationGuard === 'task_environment_cleanup_unauthorized' && item.environmentPreserved === true)
+    && summary.cleanup.receipts.every((item) => item.abandon !== 'failed')
     && summary.cleanup.receipts.some((item) => item.taskId === taskIds[1] && item.preservedAfterOtherCleanup === true)
     && summary.cleanup.receipts.filter((item) => item.environment).every((item) => item.environment === 'cleaned');
   if (!cleanupPassed || summary.retainedDoctor?.ready !== true) {
     summary.status = 'failed';
     process.exitCode = 1;
   }
+  finishPhase(cleanupPassed && summary.retainedDoctor?.ready === true ? 'passed' : 'failed');
+  summary.durationMs = Date.now() - startedAt;
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }

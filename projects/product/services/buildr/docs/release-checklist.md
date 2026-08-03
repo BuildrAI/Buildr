@@ -72,7 +72,7 @@ npm run test:unit
 npm run test:component
 npm run test:contract
 npm run test:integration
-npm run test:integration:fast
+npm run test:system
 npm run test:focus -- integration-candidate-recovery
 npm run test:focus -- integration-candidate-release
 npm run coverage:unit -- --summary /tmp/buildr-unit-coverage.json

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-buildr-test-performance",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-c11e0687f94166310b2ee8622175b64a04beff45e657cafea7d5fcc475cc223b",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "product-verification-quality",
+      "title": "OpenSpec fixture case 必须只有一个 Candidate owner",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "product-verification-quality",
+      "title": "Candidate 调度必须避免资源饱和型 verifier 互相放大",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Candidate 调度必须避免资源饱和型 verifier 互相放大\nBuildr verification registry 和 scheduler MUST 能表达子进程/文件系统饱和型 verifier 的资源约束，并 MUST 在当前执行策略下防止这些 steps 超过已验证的同时运行上限；调度策略 MUST 被 timing summary 记录，且 MUST NOT 改变 Candidate required step 集合。\n\n#### Scenario: 资源受限 CI 运行 Candidate\n- **WHEN** Candidate 在已声明资源受限的 CI execution profile 下运行\n- **THEN** scheduler MUST 使用该 profile 已验证的 global/class/饱和型并发上限\n- **AND** `integration-fast` 拆分后的重型 owner 与 `runtime-adapter-parity` MUST NOT 在超过该上限时同时扩张子进程\n- **AND** summary MUST 记录 execution profile、并发上限、step 调度时间线与 queue duration\n\n#### Scenario: 本地维护者运行 Candidate\n- **WHEN** Candidate 在本地默认 execution profile 下运行\n- **THEN** scheduler MUST 使用已登记且可观测的本地并发策略\n- **AND** 本地与 CI profile MUST 使用相同 registry、required steps、dependencies 和 executors\n\n#### Scenario: 未知调度 profile\n- **WHEN** 调用方请求未登记的 verification execution profile 或非法并发上限\n- **THEN** planner/scheduler MUST 在启动任何 verifier 前 fail closed\n- **AND** 诊断 MUST 标识未知 profile 或无效限制\n"
+    },
+    {
+      "capability": "product-verification-quality",
+      "title": "重复生命周期验证必须声明唯一主 owner",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 重复生命周期验证必须声明唯一主 owner\nBuildr Product MUST 为 development checkout onboarding、init 行为、checkout/package parity 和安装后 release lifecycle 声明不同的主 verifier；多个 verifier MAY 经过相同命令，但 MUST NOT 重复持有同一 happy-path 结果作为主要证据。\n\n#### Scenario: 验证 development checkout onboarding\n- **WHEN** repository onboarding verifier 运行\n- **THEN** verifier MUST 证明干净 Git checkout、本地开发 CLI 安装和 development update source 识别\n- **AND** verifier MUST NOT 重复持有完整 init/doctor 生命周期\n\n#### Scenario: 验证 init 行为\n- **WHEN** init onboarding verifier 运行\n- **THEN** verifier MUST 持有 unsupported adapter、source-only、完整 init、幂等、冲突和恢复提示契约\n- **AND** verifier MUST 使用 checkout CLI 而不承担 tarball 安装证明\n\n#### Scenario: 验证 checkout 与 package 一致性\n- **WHEN** CLI package parity verifier 运行\n- **THEN** verifier MUST 比较 checkout 与同一 candidate tarball 的代表输出和 mutation 结果\n- **AND** verifier MUST NOT 将单侧初始化成功作为独立发布证据\n\n#### Scenario: 验证安装后发布生命周期\n- **WHEN** release tarball smoke 运行\n- **THEN** verifier MUST 独占安装后 init、sync、doctor、optional uninstall 和最终 doctor 的发布生命周期证据\n"
+    },
+    {
+      "capability": "product-verification-quality",
+      "title": "产品验证必须提供分层入口",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 产品验证必须提供分层入口\nBuildr 产品验证 MUST 将测试证据层、主要门禁和故障定位入口明确分离：维护者主要工作流 MUST 收敛为 fast、changed 和 candidate 三种门禁，Unit、Contract 与 Fast Integration MUST 保留直接定位入口；Fast MUST 只包含可频繁执行的低成本证据，需要多轮真实 workspace/Git 演进、大量 CLI 子进程或失败恢复矩阵的 verifier MUST 使用独立 Candidate-only step identity，并 MUST 仍可由 changed/focus 定点选择。\n\n#### Scenario: 普通任务运行默认测试\n- **WHEN** 维护者或 Agent 在 Product checkout 运行 `npm test` 或 `npm run test:fast`\n- **THEN** verifier MUST 运行 Unit、Contract、低成本 Fast Integration、架构、canonical spec quality/strict 和全部 runtime adapter 低成本契约\n- **AND** verifier MUST NOT 执行 builtin replacement/migration/recovery 失败矩阵、多轮真实 workspace/Git 演进、npm pack/install、网络访问或 Workspace E2E\n\n#### Scenario: 根据改动运行验证\n- **WHEN** 维护者或 Agent 运行 `npm run test:changed`\n- **THEN** verifier MUST 根据 Git diff 或显式 Product 路径选择最小验证 DAG\n- **AND** 实现路径命中重型 recovery/migration 主 owner 时 MUST 选择对应 Candidate-only focused step，不得因其不属于 Fast 而跳过\n- **AND** 计划 MUST 解释每个 step 的选择原因并对未映射路径 fail closed\n\n#### Scenario: 定点重跑 step 或领域\n- **WHEN** 维护者运行 `npm run test:focus -- <step-id|group:<group>>...`\n- **THEN** verifier MUST 从统一 registry 选择并去重对应 step\n- **AND** verifier MUST 只展开真实执行依赖，不得无条件附加完整 Fast\n- **AND** 未知 selector MUST 在启动验证进程前 fail closed\n\n#### Scenario: 定位低成本测试层\n- **WHEN** 维护者直接运行 Unit、Contract 或 Fast Integration script\n- **THEN** 每个入口 MUST 只执行对应证据层\n- **AND** 这些入口 MUST NOT 被描述为独立发布门禁\n\n#### Scenario: 最终候选运行完整验证\n- **WHEN** 实现、自然语言资产、生成资产和 review 修订已经冻结\n- **THEN** 维护者或 CI MUST 运行 `npm run test:candidate`\n- **AND** candidate verifier MUST 直接编排全部 candidate profile steps，包括从 Fast 拆出的 recovery/migration 和真实 workspace/Git steps\n- **AND** candidate verifier MUST NOT 使用 diff、group 或 step selector 缩小覆盖范围\n- **AND** candidate verifier MUST 保留产品要求的文档、安全、onboarding、package、runtime adapter、release、managed data、Workspace E2E、OpenSpec 门禁及 timing summary\n"
+    },
+    {
+      "capability": "product-verification-quality",
+      "title": "低成本 Node 验证必须按测试语义分层",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 低成本 Node 验证必须按测试语义分层\nBuildr Product MUST 将低成本 Node tests 分为 unit、静态契约和快速集成三个稳定入口，并 MUST 由 fast 与 Candidate profile 聚合全部三层；测试迁移 MUST NOT 删除既有覆盖或把昂贵 Workspace、package、network、onboarding、release 生命周期引入 fast。\n\n#### Scenario: 运行纯单元测试\n- **WHEN** 维护者运行 `npm run test:unit`\n- **THEN** verifier MUST 只发现直接调用同进程产品模块的 unit tests\n- **AND** 这些测试 MUST NOT 启动真实 CLI、Git 或 npm 子进程\n\n#### Scenario: 运行静态契约测试\n- **WHEN** 维护者运行 `npm run test:contract`\n- **THEN** verifier MUST 检查源码结构、manifest、文档、Skills、schema 或 entrypoint declaration 的静态一致性\n- **AND** 这些测试 MUST 与 unit coverage 分开报告\n\n#### Scenario: 运行快速集成测试\n- **WHEN** 维护者运行 `npm run test:integration:fast`\n- **THEN** verifier MUST 运行需要真实 CLI、Git 子进程或多模块组合的低成本测试\n- **AND** verifier MUST NOT 执行完整用户 workspace、npm tarball 安装或发布生命周期\n\n#### Scenario: 聚合低成本验证\n- **WHEN** 维护者运行 `npm test`、`npm run test:fast` 或完整 Candidate\n- **THEN** unified registry MUST 选择 unit、contract 和 fast integration 三个独立 step\n- **AND** 每层 MUST 保留稳定 step identity、失败状态和 diagnostics\n"
+    },
+    {
+      "capability": "product-verification-quality",
+      "title": "Candidate 包含双任务并发整体验收",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Candidate 包含双任务并发整体验收\nBuildr Product Candidate MUST 将 `concurrent-task-acceptance` 登记为 required verification step，并 MUST 使用独立 executor 和预算执行，不得由其他单项测试的通过状态推断该组合验收通过。\n\n#### Scenario: 执行完整候选验证\n- **WHEN** 维护者执行 Product Candidate 验证\n- **THEN** verification registry MUST 选择 `concurrent-task-acceptance`\n- **AND** 该步骤失败或证据不完整时 Candidate MUST 失败\n"
+    }
+  ]
+}
