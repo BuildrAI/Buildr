@@ -38,6 +38,9 @@ else if (args[0] === 'openspec' && args[1] === 'converge') {
   fs.renameSync(active, archived);
   output({ schemaVersion: 'buildr.openspec-converge/v1', status: 'passed', receipt: path.join(archived, '.buildr-convergence.yml') });
 } else if (args[0] === 'sync') process.exit(0);
+else if (args[0] === 'task' && args[1] === 'environment' && args[2] === 'prepare') {
+  output({ schemaVersion: 'buildr.task-environment-operation-result/v1', operation: 'prepare', status: 'ready', taskId: args[3] });
+}
 else if (args[0] === 'app' && args[1] === 'launcher' && ['install', 'status'].includes(args[2])) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   output({
@@ -72,7 +75,7 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
     executionRoots: [environmentRoot],
     allowedExecutionRoots: [environmentRoot],
     controller: { identity: 'fixture-controller', adapter: 'codex' },
-    controllerInvocation: { command: process.execPath, argsPrefix: [], kind: 'stable-controller' },
+    controllerInvocation: { command: path.join(retained, 'projects', 'product', 'buildr'), argsPrefix: [], kind: 'stable-controller' },
     cliInvocation: {
       command: path.join(environmentRoot, 'projects', 'product', 'buildr'),
       argsPrefix: [],
@@ -92,7 +95,7 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
   });
   return {
     resolveTaskEnvironmentExecution: execution,
-    prepareTaskEnvironment: () => ({ status: 'ready', effects: [], diagnostic: null }),
+    prepareTaskEnvironment: () => { throw new Error('Candidate runtime must not mutate Task Environment authority.'); },
     cleanupTaskEnvironment: async (workspaceRoot, taskId, authorization) => {
       assert.equal(path.resolve(workspaceRoot), path.resolve(retained));
       assert.equal(taskId, task);

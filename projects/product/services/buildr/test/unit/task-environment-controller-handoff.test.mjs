@@ -61,7 +61,7 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
   fs.writeFileSync(productCli, `#!/usr/bin/env node
 const args = process.argv.slice(2);
 if (args[0] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
-else if (args[0] === 'render') process.stdout.write('rendered\\n');
+else if (args[0] === 'sync') process.stdout.write('synced\\n');
 else if (args[0] === 'runtime' && args[1] === 'check') process.stdout.write('Projection identity: candidate-projection\\n');
 else process.exitCode = 1;
 `);
@@ -166,7 +166,7 @@ else process.exitCode = 1;
   };
 }
 
-test('retained controller uses candidate CLI to verify a candidate-owned runtime projection', (t) => {
+test('retained controller uses candidate CLI to sync and verify a candidate-owned runtime projection', (t) => {
   const current = fixture(t);
   current.setRetainedProjectionReady(false);
 

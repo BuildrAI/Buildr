@@ -427,9 +427,20 @@ export function createTaskFinishProductHandlers({ runtime, root, openspecCommand
         if (verifyFixedPoint.result.status !== 0 || !currentGitIdentity(environmentRoot).clean) return { status: 'failed', operations, failure: { operation: 'runtime-fixed-point', failureClass: 'upstream-candidate-defect', code: 'task-finish.fixed-point-unstable', message: 'Runtime generation is not stable after the mechanical fixed-point commit.', diagnostic: verifyFixedPoint.observation.stderr } };
       }
 
-      const rebound = runtime.prepareTaskEnvironment(run.identity.workspaceRoot, run.identity.task, { adapter: run.identity.agent });
-      operations.push({ operation: 'prepare-environment-refresh', status: rebound.status, effects: rebound.effects, diagnostic: rebound.diagnostic });
-      if (rebound.status !== 'ready') return { status: 'failed', operations, failure: { operation: 'environment-refresh', failureClass: 'product-execution-failure', code: rebound.diagnostic?.code || 'task-finish.environment-refresh-failed', message: rebound.diagnostic?.message || 'Task Environment did not refresh the prepared candidate identity.', diagnostic: rebound.diagnostic } };
+      const controllerInvocation = context.controllerInvocation;
+      const rebound = controllerInvocation?.command
+        ? runJsonCommand('prepare-environment-refresh', controllerInvocation.command, invocationArgs(controllerInvocation, [
+          'task', 'environment', 'prepare', run.identity.task,
+          '--agent', run.identity.agent,
+          '--target', run.identity.workspaceRoot,
+          '--json',
+        ]), run.identity.workspaceRoot)
+        : null;
+      if (rebound) operations.push(rebound.observation);
+      if (!rebound || rebound.result.status !== 0 || rebound.payload?.status !== 'ready') {
+        const diagnostic = rebound?.payload?.diagnostic || rebound?.observation.stderr || null;
+        return { status: 'failed', operations, failure: { operation: 'environment-refresh', failureClass: 'product-execution-failure', code: rebound?.payload?.diagnostic?.code || 'task-finish.environment-refresh-failed', exitCode: rebound?.result.status ?? null, message: rebound?.payload?.diagnostic?.message || 'Retained controller did not refresh the prepared candidate identity.', diagnostic } };
+      }
 
       const identity = currentGitIdentity(environmentRoot);
       if (!identity.clean || !identity.head || !identity.tree) return { status: 'failed', operations, failure: { operation: 'candidate-freeze', failureClass: 'upstream-candidate-defect', code: 'task-finish.candidate-not-clean', message: 'Candidate must be clean before freeze.' } };
