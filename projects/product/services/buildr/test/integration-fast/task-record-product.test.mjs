@@ -196,6 +196,69 @@ test('Task-scoped Change Resolver 在 Application 与 Local App 复用候选、b
   assert.equal(runtime.abandonTaskRecord(root, 'resolver-task', { reason: 'resolver fixture complete' }).status, 'abandoned');
 });
 
+test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 candidate-only Change', async (t) => {
+  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-installed-task-change-reader-app-'));
+  process.env.BUILDR_APP_DATA_DIR = appData;
+  t.after(() => {
+    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  });
+
+  const { base, root } = fixture(t, 'installed-task-change-reader');
+  const workspaceRoot = fs.realpathSync(root);
+  const candidateProjectRoot = path.join(fs.realpathSync(base), 'candidate-demo');
+  fs.cpSync(path.join(workspaceRoot, 'projects', 'demo'), candidateProjectRoot, { recursive: true });
+  const candidateChangeRoot = path.join(candidateProjectRoot, 'openspec', 'changes', 'candidate-only');
+  fs.mkdirSync(candidateChangeRoot, { recursive: true });
+  fs.writeFileSync(path.join(candidateChangeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
+  fs.writeFileSync(path.join(candidateChangeRoot, 'proposal.md'), '# candidate only\n');
+
+  const runtime = createRuntime();
+  const taskId = 'installed-reader-task';
+  runtime.createTaskRecord(workspaceRoot, { taskId, title: 'Installed reader', intent: '读取候选 Change', projects: ['demo'], services: [], changes: [] });
+  const observedAt = new Date().toISOString();
+  runtime.writeTaskEnvironmentPersistence(root, {
+    schemaVersion: 'buildr.task-environment-receipt/v2',
+    taskId,
+    workspace: { id: runtime.readWorkspaceRecord(workspaceRoot).workspace.id, root: workspaceRoot },
+    controller: { sourceRoot: PRODUCT_ROOT, cliSource: BUILDR, identity: 'sha256-installed-reader-fixture', adapter: 'codex' },
+    status: 'ready',
+    scopes: [{
+      selector: 'project:demo', kind: 'project', project: 'demo', service: null, sourcePath: 'projects/demo', executionRoot: candidateProjectRoot, validationRoot: workspaceRoot, shared: true, provider: null,
+      runtime: { status: 'ready', identity: 'node', observedAt, diagnostic: null },
+      cli: { status: 'ready', identity: 'cli', observedAt, diagnostic: null },
+      dependencies: { status: 'not-applicable', identity: 'stable-controller', observedAt, diagnostic: null },
+      projection: { status: 'ready', identity: 'projection', observedAt, diagnostic: null },
+    }],
+    resources: [],
+    latest: { ready: { status: 'ready', observedAt, diagnostic: null }, cleanup: null },
+    createdAt: observedAt,
+    updatedAt: observedAt,
+  });
+  runtime.workspaceNodeExecution = () => ({ ready: true, identity: { digest: 'workspace-node' }, executable: process.execPath, npmExecutable: process.execPath, environment: process.env });
+  runtime.checkRuntimeAdapter = () => ({ runtimeSourceEvidence: { projectionReady: true, projectionIdentity: 'projection' } });
+  const bundleRoot = path.join(base, 'Buildr Dev.app', 'Contents', 'Resources', 'buildr');
+  fs.mkdirSync(bundleRoot, { recursive: true });
+  runtime.productRoot = () => bundleRoot;
+
+  const inspected = runtime.inspectTaskEnvironment(workspaceRoot, taskId);
+  assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
+  const linked = runtime.updateTaskRecord(workspaceRoot, taskId, { addChanges: ['demo/candidate-only'] });
+  assert.equal(linked.changeReferences[0].workingCopy.provenance, 'task-environment-candidate');
+  assert.equal(runtime.listProjectChanges(workspaceRoot, 'demo').changes.some((change) => change.code === 'candidate-only'), false, '全局 Change collection 保持 retained-only');
+
+  const instance = createLocalWorkspaceServer(runtime, { targetRoot: workspaceRoot });
+  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
+  const { url, initialWorkspaceId } = await instance.ready;
+  const response = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/${taskId}/changes/demo/candidate-only`);
+  assert.equal(response.status, 200);
+  const detail = await response.json();
+  assert.equal(detail.resolution.workingCopy.provenance, 'task-environment-candidate');
+  assert.equal(detail.resolution.workingCopy.change.artifacts.proposal.content, '# candidate only\n');
+});
+
 test('Task Record target 必须是 canonical Workspace，不能是 linked worktree checkout', (t) => {
   const { base, root } = fixture(t, 'task-canonical');
   run(['task', 'create', 'canonical-task', '--title', 'Canonical', '--intent', '写入 retained root', '--target', root]);

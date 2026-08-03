@@ -332,7 +332,7 @@ Task Environment MUST 以 Receipt scopes、实际 execution roots 与适用 prov
 - **AND** Review/Verification MUST 按新的 Candidate/target identity独立判断 evidence applicability
 
 ### Requirement: Retained Environment Manager 必须可信但不得成为源码版本 authority
-Task Environment mutation MUST 由 canonical retained Workspace 的可信 Environment Manager 执行。当前 manager 若来自 Git checkout，其实际实现输入 `bin/`、`src/`、`package/`、`package.json`、`package-lock.json` MUST 没有 staged、unstaged 或 untracked 变化；clean probe MUST 排除 `.buildr/`。Receipt `controller.identity` MAY 作为创建该 Receipt 的 Buildr 实现指纹或兼容诊断，但 MUST NOT 成为 ready、resource ownership、Verification applicability 或 Task checkout 等价性的匹配门槛，也 MUST NOT 在 retained manager 升级时自动改写为 lifecycle generation。
+Task Environment mutation MUST 由 canonical retained Workspace 的可信 Environment Manager 执行。当前 manager 若来自 Git checkout，其实际实现输入 `bin/`、`src/`、`package/`、`package.json`、`package-lock.json` MUST 没有 staged、unstaged 或 untracked 变化；clean probe MUST 排除 `.buildr/`。只读 `inspect` 在已从 canonical Task persistence 取得 matching Environment Receipt 后，MUST 使用 Receipt 登记的 controller 对当前机器执行既有 provider、foundation 与 resource probe，而 MUST NOT 要求只读调用方的 product sourceRoot/adapter 成为 Environment Manager。Receipt `controller.identity` MAY 作为创建该 Receipt 的 Buildr 实现指纹或兼容诊断，但 MUST NOT 成为 ready、resource ownership、Verification applicability 或 Task checkout 等价性的匹配门槛，也 MUST NOT 在 retained manager 升级时自动改写为 lifecycle generation。
 
 #### Scenario: 首次 prepare 遇到 dirty Git manager
 - **WHEN** Git-backed retained manager 的任一实现输入存在 staged、unstaged 或 untracked 变化，且 Task 尚无 Environment Receipt
@@ -348,6 +348,11 @@ Task Environment mutation MUST 由 canonical retained Workspace 的可信 Enviro
 - **WHEN** 当前 clean retained manager 的 sourceRoot/adapter 仍可信，但 content identity 与 Receipt 创建指纹不同
 - **THEN** `inspect`、`prepare`、resource mutation 与已授权 `cleanup` MUST NOT 因该差异阻断或自动更新 `controller.identity`
 - **AND** result MUST NOT 返回 controller handoff、rebind 或 generation-transition effect
+
+#### Scenario: 非 manager 的安装版读取 matching Environment
+- **WHEN** 安装版 Local App 或其他只读产品消费者以 canonical Workspace 与 matching Task ID 调用 `inspect`，且其 product sourceRoot/adapter 不同于 Receipt controller
+- **THEN** Application MUST 仅使用 Receipt controller 对已登记 Environment 执行当前机器的有界只读 probe，并按 probe 返回 ready 或 blocked read model
+- **AND** MUST NOT 因调用方不是 retained manager 而拒绝读取、写入/更新 Receipt，或授予任何 mutation authorization
 
 #### Scenario: candidate 只读检查自己的 Environment
 - **WHEN** task worktree 中的 candidate Buildr 使用匹配 Task ID 与 canonical Workspace 请求只读 `inspect`

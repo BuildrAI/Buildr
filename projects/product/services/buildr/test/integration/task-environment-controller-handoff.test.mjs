@@ -304,9 +304,13 @@ test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without
   await t.test('sourceRoot mismatch', (subtest) => {
     const current = fixture(subtest);
     current.setProductRoot(current.alternateControllerRoot);
+    const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
+    assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
     const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID);
     assert.equal(result.status, 'blocked');
     assert.equal(result.diagnostic.code, 'task_environment_manager_mismatch');
+    assert.throws(() => current.runtime.registerTaskEnvironmentResource(current.root, TASK_ID, {}), (error) => error.code === 'task_environment_manager_mismatch');
+    assert.throws(() => current.runtime.releaseTaskEnvironmentResource(current.root, TASK_ID, {}), (error) => error.code === 'task_environment_manager_mismatch');
     assert.equal(current.calls.writes, 0);
   });
 

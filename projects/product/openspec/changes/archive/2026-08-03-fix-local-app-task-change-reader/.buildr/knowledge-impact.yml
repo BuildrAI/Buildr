@@ -1,0 +1,54 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: fix-local-app-task-change-reader
+operation: reconcile
+treeIdentity: working-tree@6a2ef5d8b856d51f1a7c70b1d03dce3d77914090
+impacts:
+  - type: brief
+    target: openspec/changes/fix-local-app-task-change-reader/brief.md
+    reason: 正式 Change 需要说明安装版 Local App 的 Receipt-bound read 边界、mutation 非目标和验收链路。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-local-app-task-change-reader/proposal.md
+      - openspec/changes/fix-local-app-task-change-reader/design.md
+      - openspec/changes/fix-local-app-task-change-reader/specs/task-environments/spec.md
+      - openspec/changes/fix-local-app-task-change-reader/specs/change-asset-indexing/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: Retained Buildr Environment Manager 现有定义将 inspect 误列为 manager 专属职责，需对齐 Receipt-bound read 与 mutation manager 的边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-local-app-task-change-reader/specs/task-environments/spec.md
+      - openspec/knowledge/glossary.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Local App、Task-scoped resolver 与 Task Environment Application 的只读信任链需要说明 bundle 不必成为 manager。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-local-app-task-change-reader/design.md
+      - openspec/changes/fix-local-app-task-change-reader/specs/task-environments/spec.md
+      - openspec/changes/fix-local-app-task-change-reader/specs/change-asset-indexing/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的运行说明需要区分 Receipt-bound inspect 与 retained manager mutation。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-local-app-task-change-reader/specs/task-environments/spec.md
+terminology:
+  status: updated
+  termsConsulted:
+    - Task Environment
+    - Environment Receipt
+    - Retained Buildr Environment Manager
+    - Environment Manager
+    - Task-scoped Change Reference Resolver
+  canonicalTerms: Task Environment、Environment Receipt、Retained Buildr Environment Manager、Environment Manager、Task-scoped Change Reference Resolver
+  changedAssets:
+    - openspec/knowledge/glossary.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/specs/task-environments/spec.md
+    - openspec/specs/change-asset-indexing/spec.md
+    - openspec/knowledge/glossary.md
+    - openspec/changes/fix-local-app-task-change-reader/design.md
+    - openspec/changes/fix-local-app-task-change-reader/specs/task-environments/spec.md
+unresolvedItems: []

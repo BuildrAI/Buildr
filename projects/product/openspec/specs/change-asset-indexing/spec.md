@@ -90,6 +90,11 @@ Buildr MUST 提供任务范围 Change 引用解析器（Task-scoped Change Refer
 - **THEN** task-scoped resolution MUST 将任务环境副本作为当前 Task working copy，并把 retained 副本作为 `retained baseline` provenance 分开返回
 - **AND** MUST NOT 合并 artifacts、覆盖其中一份或把两份误报为两个 Task Record 引用
 
+#### Scenario: 安装版 Local App 读取 candidate-only Change
+- **WHEN** 安装版 Local App 的 product sourceRoot 不同于 matching Receipt controller，且该 Task Environment Project execution root 含有 retained Project 不存在的合法 Change
+- **THEN** Task-scoped detail route MUST 通过共享 Resolver 返回该 Change 与 `task-environment candidate` provenance
+- **AND** MUST NOT 仅因 Local App bundle root 与 controller sourceRoot 不同而回退到 retained Project
+
 #### Scenario: Task Environment 副本不可用
 - **WHEN** Task 没有 matching Environment Receipt、当前机器没有该执行根，或 Environment inspect 无法证明 Project scope
 - **THEN** Resolver MUST 只回退到 retained Project canonical root，并 MAY 返回 active 或 archived Change

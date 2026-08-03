@@ -124,12 +124,8 @@ export function registerTaskEnvironmentApplication(runtime) {
     return assertEnvironmentManagerSourceClean(current);
   }
 
-  function environmentInspector(workspaceRoot, receipt) {
-    const sourceRoot = path.resolve(runtime.productRoot());
-    const sourceCheckout = observeGitCheckoutIdentity(sourceRoot);
-    const workspaceCheckout = observeGitCheckoutIdentity(workspaceRoot);
-    if (candidateController(sourceCheckout, workspaceCheckout)) return receiptController(receipt);
-    return assertEnvironmentManager(workspaceRoot, receipt);
+  function environmentInspector(_workspaceRoot, receipt) {
+    return receiptController(receipt);
   }
 
   function candidateCli(controller, workspaceRoot, executionRoot) {
