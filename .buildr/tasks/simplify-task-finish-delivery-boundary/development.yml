@@ -1,0 +1,124 @@
+schemaVersion: buildr.task-development-receipt/v1
+taskId: simplify-task-finish-delivery-boundary
+environment:
+  taskId: simplify-task-finish-delivery-boundary
+  receiptSchema: buildr.task-environment-receipt/v2
+taskContext:
+  identity: sha256-d839a0503a94972504007bf837451b1179ae810a65562b466a587c51ab0fe7d4
+  taskId: simplify-task-finish-delivery-boundary
+  intent: 清除当前 Task Finish v2 已交付边界中的旧 canonical workflow、Roadmap 与 CLI routing 残留，保持 Development handoff、隔离 Delivery Carrier、Delivery Adaptation、target-race exact resume、远端回读、retained activation 与 Environment cleanup authority，不扩展新的交付 adapter。
+  scope:
+    projects:
+      - product
+    services:
+      - project: product
+        service: buildr
+  changes:
+    - project: product
+      change: simplify-task-finish-delivery-boundary
+      disposition: converged
+      summary: Canonical specs reconciled and Change archived as 2026-08-04-simplify-task-finish-delivery-boundary.
+contentTarget:
+  identity: sha256-0b906f9c2ba00df974d173370a0a0b116e6158815cf75ca30a86361284aa1191
+  components:
+    - selector: project:product
+      kind: project
+      sourcePath: projects/product
+      observer: buildr.git-content-observer/v1
+      identity: sha256-fa9e57f21abf70a8d14c7a98ad43af524053053bba8123a3be58979bc4be186b
+    - selector: service:product/buildr
+      kind: service
+      sourcePath: projects/product/services/buildr
+      observer: buildr.git-content-observer/v1
+      identity: sha256-6d7b2dd8f24377f91d51f05094cf4d5e7f892b2198cd589a0137d426d368fc50
+    - selector: workspace
+      kind: workspace
+      sourcePath: .
+      observer: buildr.git-content-observer/v1
+      identity: sha256-66ab7d65c1fe32e8cb5760bedf369ca8190558344bfbad5e1b51a83502b0fd82
+verificationPolicy:
+  identity: sha256-7b705511446755d67b6a5ad4a9ef7c8b289157ca8aa5bb7657cdad17efdc6c83
+  declarations:
+    - project: product
+      path: projects/product/verification.yml
+      identity: sha256-cc41d4e4786f39e46e793dc98fead1218104e3420b2acbc39fc5775b10086788
+  capabilities:
+    - project: product
+      capability: product.delivery
+      required: true
+    - project: product
+      capability: product.full-regression
+      required: true
+  coverageGaps: []
+  overrides:
+    - project: product
+      capability: product.full-regression
+      required: true
+      scope: project:product
+      basis: 用户明确要求完整 Product Candidate verification。
+      source: user-request:p0.8-first-stage
+generation: 1
+candidate:
+  identity: sha256-331702d9cf5e739bc275bccf851c3f677b85514b50d57ad382d1f9e342bc1e0f
+  generation: 1
+  contentTargetIdentity: sha256-0b906f9c2ba00df974d173370a0a0b116e6158815cf75ca30a86361284aa1191
+  taskContextIdentity: sha256-d839a0503a94972504007bf837451b1179ae810a65562b466a587c51ab0fe7d4
+  policyIdentity: sha256-7b705511446755d67b6a5ad4a9ef7c8b289157ca8aa5bb7657cdad17efdc6c83
+gates:
+  planning:
+    resultDigest: sha256-b58994a773d4784fb4b794e0e3c9adaa0ad968dd30f8c9948743d0c72188f224
+    targetIdentity: git-plan-cfe5be3a59cc757fd99b8a30725e31975a387065
+    outcome: ready
+    applicability: current
+  verification:
+    resultDigest: sha256-72c5ff4ac5f6bfec45d475b928b9955401f2b213ac9382c54f45bd95fa1e9a27
+    targetIdentity: sha256-0b906f9c2ba00df974d173370a0a0b116e6158815cf75ca30a86361284aa1191
+    outcome: passed
+    applicability: current
+  completion:
+    resultDigest: sha256-1b39d25caab142d663c463b1b8d9c47086ddad9483397faca01fb7a4b8e84005
+    targetIdentity: sha256-331702d9cf5e739bc275bccf851c3f677b85514b50d57ad382d1f9e342bc1e0f
+    outcome: ready
+    applicability: current
+decision:
+  outcome: proceed
+  candidateIdentity: sha256-331702d9cf5e739bc275bccf851c3f677b85514b50d57ad382d1f9e342bc1e0f
+  summary: Planning、Verification与Completion gates均current且正向；按用户授权进入Task Finish交付。
+  risks: []
+handoffs:
+  - identity: sha256-2a7c47de45e7cd10a24a4426f305324272cefcb4a942f10de8151f23e436c03a
+    candidate:
+      identity: sha256-331702d9cf5e739bc275bccf851c3f677b85514b50d57ad382d1f9e342bc1e0f
+      generation: 1
+      contentTargetIdentity: sha256-0b906f9c2ba00df974d173370a0a0b116e6158815cf75ca30a86361284aa1191
+      taskContextIdentity: sha256-d839a0503a94972504007bf837451b1179ae810a65562b466a587c51ab0fe7d4
+      policyIdentity: sha256-7b705511446755d67b6a5ad4a9ef7c8b289157ca8aa5bb7657cdad17efdc6c83
+    changes:
+      - project: product
+        change: simplify-task-finish-delivery-boundary
+        disposition: converged
+        summary: Canonical specs reconciled and Change archived as 2026-08-04-simplify-task-finish-delivery-boundary.
+    gates:
+      planning:
+        resultDigest: sha256-b58994a773d4784fb4b794e0e3c9adaa0ad968dd30f8c9948743d0c72188f224
+        targetIdentity: git-plan-cfe5be3a59cc757fd99b8a30725e31975a387065
+        outcome: ready
+        applicability: current
+      verification:
+        resultDigest: sha256-72c5ff4ac5f6bfec45d475b928b9955401f2b213ac9382c54f45bd95fa1e9a27
+        targetIdentity: sha256-0b906f9c2ba00df974d173370a0a0b116e6158815cf75ca30a86361284aa1191
+        outcome: passed
+        applicability: current
+      completion:
+        resultDigest: sha256-1b39d25caab142d663c463b1b8d9c47086ddad9483397faca01fb7a4b8e84005
+        targetIdentity: sha256-331702d9cf5e739bc275bccf851c3f677b85514b50d57ad382d1f9e342bc1e0f
+        outcome: ready
+        applicability: current
+    decision:
+      outcome: proceed
+      candidateIdentity: sha256-331702d9cf5e739bc275bccf851c3f677b85514b50d57ad382d1f9e342bc1e0f
+      summary: Planning、Verification与Completion gates均current且正向；按用户授权进入Task Finish交付。
+      risks: []
+    createdAt: 2026-08-04T09:43:43.346Z
+createdAt: 2026-08-04T09:34:52.134Z
+updatedAt: 2026-08-04T09:43:43.346Z

@@ -1,0 +1,17 @@
+schemaVersion: buildr.task-review-result/v1
+taskId: simplify-task-finish-delivery-boundary
+reviewType: planning
+targetIdentity: git-plan-cfe5be3a59cc757fd99b8a30725e31975a387065
+method: self
+reviewed:
+  - OpenSpec proposal/design/四份delta specs/tasks/Brief与审计证据
+uncovered:
+  - subject: 实现与验证
+    reason: Planning Review阶段尚未进入apply
+findings:
+  - 范围只清除current Task Finish旧authority残留，不新增未来交付adapter
+  - canonical delta完整替换冲突Requirement并增加package/runtime negative gate
+conclusion:
+  outcome: ready
+  summary: 计划边界窄且可验证：保留当前v2 executor与authority，只修正旧spec/help/routing残留并补回归门禁。
+completedAt: 2026-08-04T09:20:05.966Z
