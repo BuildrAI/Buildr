@@ -3,14 +3,23 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { describe, test } from 'node:test';
+import { after, before, describe, test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../src/application/json-contracts.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
+const fixtureRuntime = createRuntime();
+const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-json-contract-context-'));
+const fixtureEnv = { ...process.env, BUILDR_APP_DATA_DIR: path.join(fixtureRoot, 'local-app') };
+const fixtureContexts = {
+  plain: path.join(fixtureRoot, 'plain'),
+  codex: path.join(fixtureRoot, 'codex'),
+  managed: path.join(fixtureRoot, 'managed'),
+};
 
 function run(args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -33,6 +42,23 @@ function run(args, options = {}) {
   });
 }
 
+function fixtureWorkspace(t, context) {
+  const root = fs.mkdtempSync(path.join(fixtureRoot, `${context}-case-`));
+  fs.cpSync(fixtureContexts[context], root, { recursive: true });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+before(async () => {
+  await run(['init', '--target', fixtureContexts.plain, '--name', 'json-contracts', '--description', 'JSON contracts fixture', '--profile', 'team'], { json: false, env: fixtureEnv });
+  fs.cpSync(fixtureContexts.plain, fixtureContexts.codex, { recursive: true });
+  fixtureRuntime.renderRuntime('codex', ['--target', fixtureContexts.codex], { productSkill: true });
+  fs.cpSync(fixtureContexts.codex, fixtureContexts.managed, { recursive: true });
+  fixtureRuntime.renderRuntime('claude-code', ['--target', fixtureContexts.managed], { productSkill: true });
+});
+
+after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
+
 describe('public JSON contracts', { concurrency: 2 }, () => {
 
 test('JSON helper 只接受登记 schema 和对象 payload', () => {
@@ -45,10 +71,8 @@ test('JSON helper 只接受登记 schema 和对象 payload', () => {
 });
 
 test('全部 workspace JSON command family 输出登记的 schemaVersion', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-json-contracts-'));
+  const root = fixtureWorkspace(t, 'plain');
   const env = { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, 'local-app') };
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--target', root, '--name', 'json-contracts', '--description', 'JSON contracts fixture', '--profile', 'team'], { json: false, env });
 
   const cases = [
     [['version', '--json'], PUBLIC_JSON_SCHEMAS.version],
@@ -103,9 +127,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
 });
 
 test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-doctor-identity-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--target', root, '--name', 'doctor-identity', '--description', 'Doctor identity fixture', '--profile', 'team'], { json: false });
+  const root = fixtureWorkspace(t, 'plain');
 
   const initialized = await run(['doctor', '--target', root, '--json']);
   assert.equal(initialized.workspace.identity.state, 'valid');
@@ -139,9 +161,7 @@ test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => 
 });
 
 test('Codex partial inventory 作为 assurance metadata 保留且不产生 doctor warning', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-doctor-partial-inventory-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--agent', 'codex', '--target', root, '--name', 'doctor-partial-inventory', '--description', 'Doctor partial inventory fixture', '--profile', 'team'], { json: false });
+  const root = fixtureWorkspace(t, 'codex');
 
   const report = await run(['doctor', '--agent', 'codex', '--target', root, '--json']);
   assert.equal(report.findings.some((finding) => finding.code === 'runtime.codex_warning'), false);
@@ -163,10 +183,7 @@ test('Codex partial inventory 作为 assurance metadata 保留且不产生 docto
 });
 
 test('doctor 默认只盘点受管 runtime，显式 agent 才把对应 drift 变为可操作项', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-doctor-managed-runtimes-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--agent', 'codex', '--target', root, '--name', 'doctor-managed-runtimes', '--description', 'Doctor managed runtimes fixture', '--profile', 'team'], { json: false });
-  await run(['sync', 'claude-code', '--target', root], { json: false });
+  const root = fixtureWorkspace(t, 'managed');
 
   const healthy = await run(['doctor', '--target', root, '--json']);
   assert.deepEqual(healthy.agentRuntime.detectedAgents, ['claude-code', 'codex']);
@@ -201,9 +218,7 @@ test('doctor 默认只盘点受管 runtime，显式 agent 才把对应 drift 变
 });
 
 test('doctor 对未登记 Project 只报告登记根因并输出去重 repair plan', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-doctor-orphan-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--target', root, '--name', 'doctor-orphan', '--description', 'Doctor orphan fixture', '--profile', 'team'], { json: false });
+  const root = fixtureWorkspace(t, 'plain');
   fs.mkdirSync(path.join(root, 'projects', 'orphan'), { recursive: true });
 
   const report = await run(['doctor', '--target', root, '--json']);
