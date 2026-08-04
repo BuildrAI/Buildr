@@ -21,6 +21,8 @@ const finishContract = read('package/targets/workspace/skills/contracts/buildr/t
 const finishExecutor = read('src/application/task-finish/task-finish-product-executor.mjs');
 const developmentSkill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
 const developmentApplication = read('src/application/task-development/task-development-application.mjs');
+const openSpecProposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
+const openSpecUpdateSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
 const openSpecApplySidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
@@ -166,9 +168,17 @@ test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification 
 });
 
 test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调用', () => {
-  for (const required of ['不把 delta 预写入 canonical specs', 'buildr openspec converge', '不得手工恢复 canonical', '选择内部 stage']) {
+  for (const required of ['不把 delta 预写入 canonical specs', 'buildr openspec converge', '不得手工恢复canonical', '选择内部stage']) {
     assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve convergence boundary: ${required}`);
   }
+  for (const sidebar of [openSpecProposeSidebar, openSpecUpdateSidebar, openSpecApplySidebar]) {
+    for (const required of ['Change disposition', 'Formal Development', 'Task Finish', 'Metadata Publication', 'Environment cleanup', 'Task terminal state']) {
+      assert.ok(sidebar.includes(required), `OpenSpec sidebar must preserve checklist boundary: ${required}`);
+    }
+  }
+  assert.match(openSpecApplySidebar, /Convergence\/archive在Task Development观察stable Content Target/);
+  assert.match(openSpecApplySidebar, /change-checklist-incomplete/);
+  assert.doesNotMatch(openSpecApplySidebar, /Canonical sync\/archive 只由 Task Finish|完整 Candidate|current Task Verification Result/);
   assert.match(developmentSkill, /current knowledge 维护，以及每个关联 Change 的 sync\/archive/);
   assert.doesNotMatch(finishExecutor, /openspec|converge|archive/);
   assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);

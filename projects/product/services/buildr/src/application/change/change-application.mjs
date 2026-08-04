@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { inspectChangeChecklist } from '../openspec/change-checklist.mjs';
 
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
@@ -56,14 +57,6 @@ function readDirectories(root) {
     .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && SAFE_SEGMENT.test(entry.name))
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
-}
-
-function parseTasks(file) {
-  if (!isFile(file)) return { exists: false, completed: null, total: null, remaining: null };
-  const content = fs.readFileSync(file, 'utf8');
-  const matches = [...content.matchAll(/^\s*-\s*\[([ xX])\]\s+/gm)];
-  const completed = matches.filter((match) => match[1].toLowerCase() === 'x').length;
-  return { exists: true, completed, total: matches.length, remaining: matches.length - completed };
 }
 
 function artifact(file, root, includeContent) {
@@ -130,7 +123,7 @@ function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, l
     lifecycle,
     project: { id: project.id, code: project.code, name: project.name },
     updatedAt: updatedAt(changeRoot),
-    progress: parseTasks(path.join(changeRoot, 'tasks.md')),
+    progress: inspectChangeChecklist(changeRoot),
     brief,
     artifacts: {
       root: relativePath(targetRoot, changeRoot),

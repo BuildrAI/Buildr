@@ -5,6 +5,7 @@ import { createConvergencePlan } from './convergence-planner.mjs';
 import { observeConvergence } from './convergence-observer.mjs';
 import { CONVERGENCE_PLAN_SCHEMA, CONVERGENCE_RECEIPT_SCHEMA, createConvergenceReceipt, convergenceDigest, convergenceIdentity, convergencePlanIdentity, normalizeConvergenceText, validateConvergenceReceipt } from './convergence-model.mjs';
 import { deterministicSyncPlanIdentity } from './deterministic-sync.mjs';
+import { inspectChangeChecklist } from './change-checklist.mjs';
 
 export function convergenceReceiptPath(changeRoot) {
   return path.join(changeRoot, '.buildr', 'convergence-receipt.json');
@@ -156,6 +157,19 @@ export function runOpenSpecConvergence({
 }) {
   const startedAt = Date.now();
   const execution = [];
+  if (!context.archived) {
+    const checklist = inspectChangeChecklist(context.changeRoot, { io });
+    const incomplete = checklist.exists && checklist.remaining > 0;
+    execution.push({ id: 'checklist', status: incomplete ? 'blocked' : 'passed', durationMs: 0, commandCount: 0 });
+    if (incomplete) {
+      return result('blocked', context, startedAt, execution, {
+        code: 'change-checklist-incomplete',
+        checklist,
+        effects: [],
+        nextActions: ['完成或修订 Change checklist 中所有归档前任务后重新运行 converge。'],
+      });
+    }
+  }
   let receiptFile = convergenceReceiptPath(context.changeRoot);
   let receipt = null;
   if (io.existsSync(receiptFile)) {

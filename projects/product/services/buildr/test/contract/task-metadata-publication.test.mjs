@@ -45,7 +45,7 @@ test('真实writer contracts与helper精确声明五个portable paths', () => {
     assert.ok(writer.includes(owner), owner);
     assert.ok(writer.includes(recordPath), recordPath);
   }
-  for (const excluded of ['environment.json', '.buildr/task-finish/', '.buildr/asset-review/', '.buildr/mutations/', '.worktrees/']) {
+  for (const excluded of ['tasks.md', 'environment.json', '.buildr/task-finish/', '.buildr/asset-review/', '.buildr/mutations/', '.worktrees/']) {
     assert.equal(PORTABLE_TASK_RECORD_DECLARATIONS.some((entry) => entry.path.includes(excluded)), false, excluded);
   }
 });

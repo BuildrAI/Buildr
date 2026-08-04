@@ -8,6 +8,7 @@ import { createConvergencePlan } from '../../src/application/openspec/convergenc
 import { observeConvergence } from '../../src/application/openspec/convergence-observer.mjs';
 import { createConvergenceReceipt, portableExecutableIdentity } from '../../src/application/openspec/convergence-model.mjs';
 import { convergenceReceiptPath, runOpenSpecConvergence } from '../../src/application/openspec/openspec-converge.mjs';
+import { parseChangeChecklistText } from '../../src/application/openspec/change-checklist.mjs';
 import { createDeterministicSyncPlan } from '../../src/application/openspec/deterministic-sync.mjs';
 
 const requirement = (title, body = '系统 MUST 保持行为。', scenario = '正常') => `### Requirement: ${title}\n${body}\n\n#### Scenario: ${scenario}\n- **WHEN** 输入有效\n- **THEN** 系统 MUST 成功\n`;
@@ -110,6 +111,7 @@ function journey(options = {}) {
   const file = path.join(root, 'openspec', 'specs', 'demo', 'spec.md');
   fs.mkdirSync(changeRoot, { recursive: true });
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(path.join(changeRoot, 'tasks.md'), options.tasks || '- [x] Complete fixture implementation\n');
   fs.writeFileSync(file, canonical(requirement('Existing')));
   const operations = [{ type: 'ADDED', capability: 'demo', title: 'Added', requirement: requirement('Added') }];
   const context = { change: 'change-a', project: 'product', projectRoot: root, changeRoot, archived: false, delta: delta(operations, options.hash) };
@@ -139,6 +141,30 @@ function journey(options = {}) {
     setExecutableIdentity: (value) => { currentExecutableIdentity = value; },
   };
 }
+
+test('checklist parser只统计行首Markdown checkbox并保持progress形状', () => {
+  assert.deepEqual(parseChangeChecklistText('- [x] done\n  - [X] also done\n- [ ] pending\ntext [x] ignored\n'), {
+    completed: 2,
+    total: 3,
+    remaining: 1,
+  });
+});
+
+test('未完成checklist在receipt与canonical写入前fail closed', () => {
+  const fixture = journey({ tasks: '- [x] planned\n- [ ] post-archive work\n' });
+  try {
+    const before = fs.readFileSync(fixture.file, 'utf8');
+    const result = fixture.run();
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.code, 'change-checklist-incomplete');
+    assert.deepEqual(result.checklist, { exists: true, completed: 1, total: 2, remaining: 1 });
+    assert.deepEqual(result.effects, []);
+    assert.deepEqual(result.execution, [{ id: 'checklist', status: 'blocked', durationMs: 0, commandCount: 0 }]);
+    assert.equal(fs.readFileSync(fixture.file, 'utf8'), before);
+    assert.equal(fs.existsSync(convergenceReceiptPath(fixture.changeRoot)), false);
+    assert.equal(fixture.archiveCalls(), 0);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
 
 test('完整journey正常应用归档并重复执行幂等', () => {
   const fixture = journey();
