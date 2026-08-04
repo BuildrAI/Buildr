@@ -142,7 +142,7 @@ Development 稳定 Content Target 并固定 verification policy
 
 | 问题 | 事实 | 本轮处理与结论 |
 | --- | --- | --- |
-| System 重复前置与队尾关键路径 | P0.5 合入前基线 22 个文件、56.64s、约 230.7 CPU 秒；Task lifecycle 文件反复冷启动相同 Workspace/Project | 同口径隔离树上，24 个 owner 文件、112 项测试共享一次只读基线并保留逐 case sandbox；fixture 用 4 次 Application 操作准备，长 owner 前置。结果为 55.38s、约 217.4 CPU 秒，墙钟约降 2.2%、CPU 约降 5.8%。rebase P0.5 后当前集合增至 25 个文件、115 项测试，单跑 67.50s、约 250.9 CPU 秒；新增 Task Development Journey 不复用该 context |
+| System 重复前置与队尾关键路径 | P0.5 合入前基线 22 个文件、56.64s、约 230.7 CPU 秒；Task lifecycle 文件反复冷启动相同 Workspace/Project | 同口径隔离树上，24 个 owner 文件、112 项测试共享一次只读基线并保留逐 case sandbox；fixture 用 4 次 Application 操作准备，长 owner 前置。结果为 55.38s、约 217.4 CPU 秒，墙钟约降 2.2%、CPU 约降 5.8%。rebase P0.5 后集合增至 25 个文件、115 项测试，单跑 67.50s、约 250.9 CPU 秒；本轮合并重复 Worktree Journey 后为 25 个文件、114 项测试，Task Development Journey 仍不复用该 context |
 | OpenSpec case 重复 | 两个 Candidate owner 都跑全部 15 case | 分为 contract 10 / recovery 5，交集为空；独立约 13.9s / 23.9s |
 | Package parity 重复生命周期 | 旧值 65.95s，重跑 Task/Review/Verification、双 Environment 和 release 行为 | 只保留代表输出、一次 init mutation 与 package assets；独立约 8.50s |
 | CLI help 冷启动过多 | 55 topic × 两种 form，约 109 次完整 CLI，Candidate 18.6s | 同一 owner 穷举 55 项同进程 contract，7 类代表入口保留真实进程；独立约 7.3s |
@@ -157,7 +157,7 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 
 ## 8. 下一轮优化方案
 
-1. 单独分析 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程；prepare/cleanup 事实仍必须真实执行。
+1. 为 System 增加只进入 transient diagnostics 的紧凑文件级耗时摘要；保持 `dot reporter` 的正常输出，不把 timing 写入 portable Verification Result。
 2. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
 
 ## 9. 迭代记录
@@ -177,3 +177,5 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 11. 预算内层并发 | Task Development 从普通 Integration 聚合中拆出，保留 Integration 边界与全部 Candidate 证据；profile 对重型 runner 注入有限 worker budget。相同冻结树对照证明 System 与 Task Development 并行会相互放大，二者使用单一压力容量后 Full 从 174.508s 降至 149.979s；下一步只优化该专项的不可变 fixture 准备 |
 | 12. 验证 Task Development fixture 假设 | 两用例直接运行总计 98.95s；共享方案中的真实 `init + project create` 基线仅约 2.82s，而每例 Development 生命周期仍约 46–61s。约 3% 的潜在收益不足以承担新的共享 fixture 维护成本，因此不保留该 helper；下一步转查 package selector 的重复静态准备 |
 | 13. 收敛 package static owner | 五个 package Integration selector 各重复扫描 213 个静态文件；现在仅 `package-static` 执行该扫描，其他 selector 只运行各自 Journey 并明确静态事实由 `static` owner 持有。Candidate owner 与独立诊断不变，公共 `buildr package check` 仍先执行完整 static 再运行 aggregate。受机器负载波动影响，未把单次 package group 墙钟作为收益结论；确定性地消除了每个 Candidate 的五次重复扫描 |
+| 14. 审计测试残留进程 | 清理 3 个旧 Local App Preview 和 2 个 detached fixture 进程；其 worktree/临时目标均已不存在。当前双 Preview Journey 与 runner descendant cleanup 聚焦测试通过且未产生新残留，因此结论是历史环境污染，不追加当前产品修复或全局进程名清理机制 |
+| 15. 收敛 Worktree System Journey | 隔离基线 7 条串行 Journey 为 44.90s，其中三条 Task Environment Journey 占主要成本。共享占用/释放合并为一条公共 Journey，placement mismatch 下沉到 Application Integration，真实 Git create/cleanup 与公共 CLI 仍保留；公共 CLI 操作约从 39 次降到 30 次。背靠背候选为 6/6、30.41s，墙钟约降 32%，user+sys 从 43.15s 降到 30.28s；并发负载下的漂移结果未计入收益 |

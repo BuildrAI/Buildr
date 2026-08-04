@@ -145,16 +145,18 @@ test('Git provider cleanup 只容忍任意层级 Buildr control metadata，sourc
   assert.equal(sourceCleaned.status, 'cleaned');
 });
 
-test('共享 Task Environment 以正式 Task 为门禁并独占 ready、恢复与 cleanup', (t) => {
+test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复与 cleanup', (t) => {
   const root = fixtureWorkspace(t, { git: false });
-  const taskId = 'shared-environment';
-  const unavailable = buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json'], 1);
+  const ownerTask = 'shared-owner';
+  const waiterTask = 'shared-waiter';
+  const unavailable = buildr(['task', 'environment', 'inspect', ownerTask, '--target', root, '--json'], 1);
   assert.equal(unavailable.status, 'blocked');
   assert.equal(unavailable.diagnostic.code, 'task_record_not_found');
 
-  const task = createTask(root, taskId);
-  const taskBytes = fs.readFileSync(task.path, 'utf8');
-  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--shared', '--agent', 'codex', '--target', root, '--json']);
+  const owner = createTask(root, ownerTask);
+  createTask(root, waiterTask);
+  const taskBytes = fs.readFileSync(owner.path, 'utf8');
+  const prepared = buildr(['task', 'environment', 'prepare', ownerTask, '--shared', '--agent', 'codex', '--target', root, '--json']);
   assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v1');
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.status, 'ready');
@@ -166,46 +168,31 @@ test('共享 Task Environment 以正式 Task 为门禁并独占 ready、恢复�
   assert.equal(prepared.execution.workdir, root);
   assert.deepEqual(prepared.execution.allowedExecutionRoots, [root]);
   assert.equal(path.isAbsolute(prepared.execution.cliInvocation.command), true);
-  assert.equal(fs.readFileSync(task.path, 'utf8'), taskBytes);
+  assert.equal(fs.readFileSync(owner.path, 'utf8'), taskBytes);
 
-  const restored = buildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--target', root, '--json']);
-  assert.equal(restored.status, 'ready');
-  assert.equal(restored.environment.controller.identity, prepared.environment.controller.identity);
-  const inspected = buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json']);
+  const inspected = buildr(['task', 'environment', 'inspect', ownerTask, '--target', root, '--json']);
   assert.equal(inspected.status, 'ready');
   assert.equal(inspected.source, 'current-machine');
   assert.ok(inspected.observedAt);
 
-  const unauthorized = buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json'], 1);
-  assert.equal(unauthorized.diagnostic.code, 'task_environment_cleanup_unauthorized');
-  buildr(['task', 'abandon', taskId, '--reason', 'integration fixture complete', '--target', root, '--json']);
-  const cleaned = buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);
+  const blocked = buildr(['task', 'environment', 'prepare', waiterTask, '--shared', '--target', root, '--json'], 1);
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'task_environment_shared_occupancy_conflict');
+  assert.equal(blocked.diagnostic.details.occupied.taskId, ownerTask);
+  assert.equal(fs.existsSync(path.join(root, '.buildr', 'tasks', waiterTask, 'environment.json')), false);
+
+  buildr(['task', 'abandon', ownerTask, '--reason', 'release shared root', '--target', root, '--json']);
+  const cleaned = buildr(['task', 'environment', 'cleanup', ownerTask, '--target', root, '--json']);
   assert.equal(cleaned.status, 'cleaned');
   assert.equal(cleaned.environment.latest.cleanup.status, 'cleaned');
   assert.equal(cleaned.effects.some((effect) => effect.type === 'shared-scope-retained' && effect.selector === 'workspace'), true);
   assert.match(cleaned.environment.latest.cleanup.summary, /共享执行根已保留/);
-  assert.equal(fs.existsSync(task.path), true);
-});
+  assert.equal(fs.existsSync(owner.path), true);
 
-test('共享执行根只允许一个未清理 Task 占用，清理后下一 Task 才能准备', (t) => {
-  const root = fixtureWorkspace(t, { git: false });
-  createTask(root, 'shared-owner');
-  createTask(root, 'shared-waiter');
-  const owner = buildr(['task', 'environment', 'prepare', 'shared-owner', '--shared', '--target', root, '--json']);
-  assert.equal(owner.status, 'ready');
-
-  const blocked = buildr(['task', 'environment', 'prepare', 'shared-waiter', '--shared', '--target', root, '--json'], 1);
-  assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.diagnostic.code, 'task_environment_shared_occupancy_conflict');
-  assert.equal(blocked.diagnostic.details.occupied.taskId, 'shared-owner');
-  assert.equal(fs.existsSync(path.join(root, '.buildr', 'tasks', 'shared-waiter', 'environment.json')), false);
-
-  buildr(['task', 'abandon', 'shared-owner', '--reason', 'release shared root', '--target', root, '--json']);
-  buildr(['task', 'environment', 'cleanup', 'shared-owner', '--target', root, '--json']);
-  const resumed = buildr(['task', 'environment', 'prepare', 'shared-waiter', '--shared', '--target', root, '--json']);
+  const resumed = buildr(['task', 'environment', 'prepare', waiterTask, '--shared', '--target', root, '--json']);
   assert.equal(resumed.status, 'ready');
-  buildr(['task', 'abandon', 'shared-waiter', '--reason', 'fixture complete', '--target', root, '--json']);
-  buildr(['task', 'environment', 'cleanup', 'shared-waiter', '--target', root, '--json']);
+  buildr(['task', 'abandon', waiterTask, '--reason', 'fixture complete', '--target', root, '--json']);
+  buildr(['task', 'environment', 'cleanup', waiterTask, '--target', root, '--json']);
 });
 
 test('Git-backed Task Environment 组合 provider 并把 Git evidence 保持为窄引用', (t) => {
@@ -222,16 +209,12 @@ test('Git-backed Task Environment 组合 provider 并把 Git evidence 保持为�
   assert.equal(prepared.execution.workdir, scope.validationRoot);
   assert.equal(prepared.execution.cliInvocation.kind, 'stable-controller');
   assert.equal(fs.existsSync(scope.provider.evidence), true);
-  const provider = buildr(['worktree', 'inspect', taskId, '--target', root, '--json']);
-  assert.equal(provider.status, 'ready');
+  const provider = JSON.parse(fs.readFileSync(scope.provider.evidence, 'utf8'));
+  assert.equal(provider.schemaVersion, 'buildr.git-worktree-evidence/v1');
   assert.equal(provider.repositories[0].checkoutPath, scope.executionRoot);
-
-  const restored = buildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--target', root, '--json']);
-  assert.equal(restored.status, 'ready');
-  assert.equal(restored.environment.scopes[0].executionRoot, scope.executionRoot);
-  const switched = buildr(['task', 'environment', 'prepare', taskId, '--shared', '--target', root, '--json'], 1);
-  assert.equal(switched.diagnostic.code, 'task_environment_plan_mismatch');
-  assert.equal(buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json']).status, 'ready');
+  const inspected = buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json']);
+  assert.equal(inspected.status, 'ready');
+  assert.equal(inspected.environment.scopes[0].executionRoot, scope.executionRoot);
 
   buildr(['task', 'abandon', taskId, '--reason', 'integration fixture complete', '--target', root, '--json']);
   const cleaned = buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);

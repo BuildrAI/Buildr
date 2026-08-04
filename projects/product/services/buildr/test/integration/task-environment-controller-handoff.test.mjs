@@ -225,6 +225,30 @@ test('.buildr lifecycle changes do not affect manager clean or Receipt creation 
   assert.equal(restored.effects.some((effect) => effect.type === 'controller-handoff'), false);
 });
 
+test('existing Task Environment placement cannot switch between Git and shared roots', async (t) => {
+  await t.test('Git to shared', (subtest) => {
+    const current = fixture(subtest);
+    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic.code, 'task_environment_plan_mismatch');
+    assert.deepEqual(result.effects, []);
+    assert.equal(current.calls.writes, 0);
+    assert.equal(current.calls.providerPlans, 0);
+    assert.equal(current.calls.providerMutations, 0);
+  });
+
+  await t.test('shared to Git', (subtest) => {
+    const current = fixture(subtest, { isolated: false });
+    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: true });
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic.code, 'task_environment_plan_mismatch');
+    assert.deepEqual(result.effects, []);
+    assert.equal(current.calls.writes, 0);
+    assert.equal(current.calls.providerPlans, 0);
+    assert.equal(current.calls.providerMutations, 0);
+  });
+});
+
 test('clean retained M2 keeps probing the M1 task checkout without handoff or source update', (t) => {
   const current = fixture(t);
   const m2 = current.advanceManager();
