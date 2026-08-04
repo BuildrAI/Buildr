@@ -176,6 +176,7 @@ export function createPackageStaticValidator(deps) {
     const sqliteMigrations = [
       'src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
       'src/infrastructure/sqlite/migrations/0001_create_task_store.sql',
+      'src/infrastructure/sqlite/migrations/0002_create_parent_task_relations.sql',
     ];
     for (const relative of sqliteMigrations) {
       const file = path.join(root, relative);

@@ -33,6 +33,8 @@ function readRecord(database, taskId) {
   const projects = database.prepare('SELECT project FROM task_projects WHERE task_id = ? ORDER BY project').all(taskId).map((item) => item.project);
   const services = database.prepare('SELECT project, service FROM task_services WHERE task_id = ? ORDER BY project, service').all(taskId);
   const changes = database.prepare('SELECT project, change_name AS change FROM task_changes WHERE task_id = ? ORDER BY project, change_name').all(taskId);
+  const parentTaskId = database.prepare('SELECT parent_task_id FROM task_parent_relations WHERE child_task_id = ?').get(taskId)?.parent_task_id ?? null;
+  const childTaskIds = database.prepare('SELECT child_task_id FROM task_parent_relations WHERE parent_task_id = ? ORDER BY child_task_id').all(taskId).map((item) => item.child_task_id);
   return normalizeTaskRecord({
     schemaVersion: row.schema_version,
     taskId: row.task_id,
@@ -40,6 +42,8 @@ function readRecord(database, taskId) {
     intent: row.intent,
     scope: { projects, services },
     changes,
+    parentTaskId,
+    childTaskIds,
     status: row.status,
     result: resultValue(row),
     createdAt: row.created_at,
@@ -59,6 +63,28 @@ function insertRecord(database, record) {
     record.createdAt, record.updatedAt,
   );
   insertRelations(database, record);
+  writeParentRelation(database, record.taskId, record.parentTaskId);
+}
+
+function writeParentRelation(database, taskId, parentTaskId) {
+  database.prepare('DELETE FROM task_parent_relations WHERE child_task_id = ?').run(taskId);
+  if (parentTaskId) database.prepare('INSERT INTO task_parent_relations(child_task_id, parent_task_id) VALUES (?, ?)').run(taskId, parentTaskId);
+}
+
+function assertParentRelation(database, taskId, parentTaskId) {
+  if (parentTaskId === null) return;
+  if (parentTaskId === taskId) throw taskRecordError('task_record_parent_self_reference', 'Task 不能把自己设为 Parent Task。', 409, { taskId, parentTaskId });
+  const parent = database.prepare('SELECT task_id, status FROM tasks WHERE task_id = ?').get(parentTaskId);
+  if (!parent) throw taskRecordError('task_record_parent_not_found', `Parent Task 不存在：${parentTaskId}。`, 409, { taskId, parentTaskId }, '选择一个存在且 active 的 Parent Task。');
+  if (parent.status !== 'active') throw taskRecordError('task_record_parent_terminal', `Parent Task ${parentTaskId} 已是 ${parent.status}，不能接收新的 Child Task。`, 409, { taskId, parentTaskId, status: parent.status }, '选择一个 active Parent Task。');
+  const visited = new Set();
+  let cursor = parentTaskId;
+  while (cursor) {
+    if (cursor === taskId) throw taskRecordError('task_record_parent_cycle', 'Parent Task 关系会形成循环。', 409, { taskId, parentTaskId });
+    if (visited.has(cursor)) throw taskRecordError('task_record_parent_graph_invalid', '既有 Parent Task 关系包含循环，无法安全修改。', 409, { taskId, parentTaskId, cursor }, '保留数据库现场并运行 Buildr Doctor。');
+    visited.add(cursor);
+    cursor = database.prepare('SELECT parent_task_id FROM task_parent_relations WHERE child_task_id = ?').get(cursor)?.parent_task_id ?? null;
+  }
 }
 
 function insertRelations(database, record) {
@@ -77,6 +103,7 @@ function replaceRecord(database, record) {
   );
   for (const table of ['task_projects', 'task_services', 'task_changes']) database.prepare(`DELETE FROM ${table} WHERE task_id = ?`).run(record.taskId);
   insertRelations(database, record);
+  writeParentRelation(database, record.taskId, record.parentTaskId);
 }
 
 function withTransaction(database, callback) {
@@ -162,6 +189,7 @@ export function registerTaskRecordRepository(runtime) {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
       return withTransaction(opened.database, () => {
         if (readRecord(opened.database, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId }, `运行 buildr task inspect ${record.taskId} 查看现有记录。`);
+        assertParentRelation(opened.database, record.taskId, record.parentTaskId);
         insertRecord(opened.database, record);
         return persistence(root, readRecord(opened.database, record.taskId));
       });
@@ -184,6 +212,8 @@ export function registerTaskRecordRepository(runtime) {
         const nextValue = mutator(current);
         if (!nextValue) return current;
         const next = normalizeTaskRecord(nextValue, { expectedTaskId: taskId });
+        if (JSON.stringify(next.childTaskIds) !== JSON.stringify(currentRecord.childTaskIds)) throw taskRecordError('task_record_children_read_only', 'childTaskIds 是由 Child Task 关系派生的只读投影。', 409, { taskId });
+        if (next.parentTaskId !== currentRecord.parentTaskId) assertParentRelation(opened.database, taskId, next.parentTaskId);
         replaceRecord(opened.database, next);
         return persistence(root, readRecord(opened.database, taskId));
       });

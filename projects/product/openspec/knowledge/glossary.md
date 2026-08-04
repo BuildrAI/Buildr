@@ -103,8 +103,8 @@
 ## 任务记录（Task Record）
 
 - 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、Project/Service scope、0..N 个限定 Change、状态、终态摘要和系统时间。
-- 适用范围：Workspace Structured Store中的规范化Task数据，以及Task Record Application的create、inspect、update、complete、abandon动作。
-- 避免混用：不保存或索引 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 的专业事实；响应级 `recordDigest` 也不是持久字段。
+- 适用范围：Workspace Structured Store中的规范化Task数据、至多一个直接Parent与直接Children，以及Task Record Application的create、inspect、update、complete、abandon动作。
+- 避免混用：Parent/Child 只表达协调层级，不是依赖或通用关系图，不传播状态、Result或专业动作；Task Record不保存Task Environment、Development、Review、Verification、Git、Finish、独立Board或Retrospective的专业事实，响应级`recordDigest`也不是持久字段。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
 ## 任务管理器（Task Manager）
@@ -113,6 +113,20 @@
 - 适用范围：用户明确管理正式 Task Record，或 `task-triage` 判断正式持久交付即将首次写入的时点。
 - 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Local App 是同一 Application 的人类客户端，不通过 Task Manager 写入。
 - 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md)
+
+## 父任务 / 子任务（Parent Task / Child Task）
+
+- 定义：同一canonical Workspace内Task Record之间的直接协调层级；每个Child至多一个Parent，一个Parent可有多个直接Children。
+- 适用范围：协调Task拆分、Local App层级展示与导航，以及Task Manager显式设置、重挂或清除Parent。
+- 避免混用：不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
+- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md)
+
+## 协调任务（Coordinating Task）
+
+- 定义：通过Parent/Child关系管理一个或多个直接子Task的普通Task。
+- 适用范围：用Task本身承载整体意图，并通过直接Children拆分可独立交付的工作。
+- 避免混用：不是独立Board Domain、总调度器或状态聚合器；其终态仍由人或Agent明确决定。
+- 来源：[任务生命周期架构讨论稿](../../docs/roadmap/task-lifecycle-architecture.md)
 
 ## 任务环境（Task Environment）
 

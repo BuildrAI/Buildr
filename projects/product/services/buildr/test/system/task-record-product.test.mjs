@@ -17,7 +17,7 @@ test('CLI 和 Application 覆盖五个动作、0/1/N Change、跨 Project 同名
   const { root } = fixture(t, 'task-lifecycle');
   const runtime = createRuntime();
   const empty = runtime.createTaskRecord(root, { taskId: 'empty-task', title: '空引用', intent: '允许没有 Change', projects: [], services: [], changes: [] });
-  assert.equal(empty.schemaVersion, 'buildr.task-record-result/v2'); assert.deepEqual(empty.record.changes, []); assert.equal(empty.status, 'created'); assert.equal('path' in empty, false);
+  assert.equal(empty.schemaVersion, 'buildr.task-record-result/v3'); assert.deepEqual(empty.record.changes, []); assert.equal(empty.status, 'created'); assert.equal('path' in empty, false);
 
   const created = json(['task', 'create', 'multi-task', '--title', '多范围任务', '--intent', '验证限定引用', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/same-change', '--change', 'demo/second-change', '--change', 'other/same-change', '--target', root]);
   assert.equal(created.record.changes.length, 3); assert.match(created.recordDigest, /^sha256-/); assert.deepEqual(created.effects, [{ type: 'created', taskId: 'multi-task' }]); assert.equal('path' in created, false);
@@ -35,6 +35,47 @@ test('CLI 和 Application 覆盖五个动作、0/1/N Change、跨 Project 同名
   const terminal = json(['task', 'update', 'abandoned-task', '--title', '不可重开', '--target', root], 1); assert.equal(terminal.status, 'blocked'); assert.equal(terminal.diagnostic.code, 'task_record_terminal'); assert.deepEqual(terminal.effects, []);
   assert.throws(() => runtime.createTaskRecord(root, { taskId: 'multi-task', title: '重复', intent: '不得覆盖', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_already_exists');
   const syntax = json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
+});
+
+test('Parent Task 支持直接层级、重挂与清除，并拒绝自引用、循环和 terminal 新关系', (t) => {
+  const { root } = fixture(t, 'task-parent');
+  const runtime = createRuntime();
+  const parent = json(['task', 'create', 'parent-task', '--title', '协调任务', '--intent', '管理直接子任务', '--target', root]);
+  const child = json(['task', 'create', 'child-task', '--title', '子任务', '--intent', '被协调', '--parent', 'parent-task', '--target', root]);
+  assert.equal(child.record.parentTaskId, 'parent-task');
+  assert.deepEqual(child.taskRelations.parent, { taskId: 'parent-task', title: '协调任务', status: 'active' });
+  assert.deepEqual(runtime.inspectTaskRecord(root, 'parent-task').record.childTaskIds, ['child-task']);
+  assert.notEqual(runtime.inspectTaskRecord(root, 'parent-task').recordDigest, parent.recordDigest, '反向 Children 变化必须改变 Parent read model digest');
+  assert.deepEqual(runtime.inspectTaskRecord(root, 'parent-task').taskRelations.children, [{ taskId: 'child-task', title: '子任务', status: 'active' }]);
+
+  runtime.createTaskRecord(root, { taskId: 'grandchild-task', title: '孙任务', intent: '验证多层', parentTaskId: 'child-task', projects: [], services: [], changes: [] });
+  assert.throws(() => runtime.updateTaskRecord(root, 'parent-task', { parentTaskId: 'grandchild-task' }), (error) => error.code === 'task_record_parent_cycle');
+  assert.throws(() => runtime.updateTaskRecord(root, 'parent-task', { parentTaskId: 'parent-task' }), (error) => error.code === 'task_record_parent_self_reference');
+  assert.throws(() => runtime.createTaskRecord(root, { taskId: 'missing-parent-child', title: '非法子任务', intent: 'Parent 不存在', parentTaskId: 'missing-parent', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_parent_not_found');
+
+  const replacement = runtime.createTaskRecord(root, { taskId: 'replacement-parent', title: '替代协调任务', intent: '验证重挂', projects: [], services: [], changes: [] });
+  const reparented = json(['task', 'update', 'child-task', '--parent', 'replacement-parent', '--target', root]);
+  assert.equal(reparented.record.parentTaskId, 'replacement-parent');
+  assert.deepEqual(runtime.inspectTaskRecord(root, 'parent-task').record.childTaskIds, []);
+  assert.deepEqual(runtime.inspectTaskRecord(root, 'replacement-parent').record.childTaskIds, ['child-task']);
+  const cleared = json(['task', 'update', 'child-task', '--clear-parent', '--target', root]);
+  assert.equal(cleared.record.parentTaskId, null);
+  const mutuallyExclusive = json(['task', 'update', 'child-task', '--parent', 'parent-task', '--clear-parent', '--target', root], 2);
+  assert.equal(mutuallyExclusive.error.code, 'task_record_cli.syntax');
+
+  const terminalParent = runtime.completeTaskRecord(root, 'replacement-parent', { summary: '协调结束', noChange: false });
+  assert.equal(terminalParent.record.status, 'completed');
+  assert.throws(() => runtime.updateTaskRecord(root, 'child-task', { parentTaskId: 'replacement-parent' }), (error) => error.code === 'task_record_parent_terminal');
+  runtime.updateTaskRecord(root, 'child-task', { parentTaskId: 'parent-task' });
+  runtime.completeTaskRecord(root, 'parent-task', { summary: 'Parent 独立完成', noChange: false });
+  const stillRelated = runtime.inspectTaskRecord(root, 'child-task');
+  assert.equal(stillRelated.record.parentTaskId, 'parent-task');
+  assert.equal(stillRelated.taskRelations.parent.status, 'completed');
+  runtime.updateTaskRecord(root, 'child-task', { title: '既有关系不阻塞普通更新' });
+  runtime.completeTaskRecord(root, 'child-task', { summary: 'Child 独立完成', noChange: false });
+  assert.throws(() => runtime.updateTaskRecord(root, 'child-task', { parentTaskId: null }), (error) => error.code === 'task_record_terminal');
+  assert.match(replacement.recordDigest, /^sha256-/);
+  assert.match(parent.recordDigest, /^sha256-/);
 });
 
 test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均保留最后有效记录', (t) => {

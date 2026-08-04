@@ -11,6 +11,8 @@ function active(overrides = {}) {
     intent: '验证最小 Task Record',
     scope: { projects: ['demo'], services: [{ project: 'demo', service: 'api' }] },
     changes: [{ project: 'demo', change: 'change-one' }],
+    parentTaskId: null,
+    childTaskIds: [],
     status: 'active',
     result: null,
     createdAt: '2026-08-01T00:00:00.000Z',
@@ -43,6 +45,9 @@ test('Task identity、当前记录引用去重与时间关系 fail closed', () =
   assert.throws(() => normalizeTaskRecord(active({ taskId: '../escape' })), (error) => error.code === 'task_record_identity_invalid');
   assert.throws(() => normalizeTaskRecord(active(), { expectedTaskId: 'other-task' }), (error) => error.code === 'task_record_identity_mismatch');
   assert.throws(() => normalizeTaskRecord(active({ changes: [{ project: 'demo', change: 'same' }, { project: 'demo', change: 'same' }] })), (error) => error.code === 'task_record_reference_duplicate');
+  assert.throws(() => normalizeTaskRecord(active({ parentTaskId: '../parent' })), (error) => error.code === 'task_record_identity_invalid');
+  assert.throws(() => normalizeTaskRecord(active({ childTaskIds: ['child-b', 'child-b'] })), (error) => error.code === 'task_record_reference_duplicate');
+  assert.deepEqual(normalizeTaskRecord(active({ parentTaskId: 'parent-task', childTaskIds: ['child-b', 'child-a'] })).childTaskIds, ['child-a', 'child-b']);
   assert.doesNotThrow(() => normalizeTaskRecord(active({ changes: [{ project: 'demo', change: 'same' }, { project: 'other', change: 'same' }] })));
   assert.throws(() => normalizeTaskRecord(active({ updatedAt: '2026-07-31T23:59:59.000Z' })), (error) => error.code === 'task_record_timestamp_invalid');
 });

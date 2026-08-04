@@ -188,7 +188,7 @@ export function registerCommandHelp(runtime) {
     task: [
       'Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]',
       '',
-      'Task Manager 只管理 canonical Workspace 中的顶层 Task Record：创建、查看、明确更新、完成或放弃。',
+      'Task Manager 只管理 canonical Workspace 中的 Task Record：创建、查看、明确更新、设置或清除 Parent Task、完成或放弃。',
       '它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。',
       'Agent 和 Local App 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。',
     ],
@@ -250,20 +250,22 @@ export function registerCommandHelp(runtime) {
       '公共 CLI 只允许已持久化的 abandoned Task；正常完成由 Task Finish 内部提交交付 identity。',
     ],
     'task create': [
-      'Usage: buildr task create <task-id> --title <text> --intent <text> [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
+      'Usage: buildr task create <task-id> --title <text> --intent <text> [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
       '',
       '必需参数：唯一 task-id、--title、--intent。--project、--service、--change 可重复；引用必须已登记或真实存在。',
-      '副作用：在 Workspace 本地 structured store 中原子创建 Task 及其关系；不创建 Environment、Change、branch、commit 或专业记录。',
+      '--parent 只接受当前 Workspace 中已存在且 active 的 Task；副作用是在本地 structured store 中原子创建 Task 及其直接 Parent 关系。',
+      '不创建 Environment、Change、branch、commit 或专业记录，也不自动改变 Parent/Child 的状态。',
     ],
     'task inspect': [
       'Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]',
       '',
-      '只读返回 Task Record 和响应级 recordDigest，不暴露数据库路径；数据库尚未初始化时保持零写入。',
+      '只读返回 Task Record、直接 Parent/Children 摘要和响应级 recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。',
     ],
     'task update': [
-      'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
+      'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--parent <task-id> | --clear-parent] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
       '',
       '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。只允许修改 active Task。',
+      '--parent 与 --clear-parent 互斥；拒绝不存在或 terminal Parent、自引用和任何祖先循环。Child 列表是只读派生结果。',
       '不接受 --input、patch、完整 next-state、expected revision 或专业模块字段。',
     ],
     'task complete': [

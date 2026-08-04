@@ -27,7 +27,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Service：职责与代码/资产边界。
 - Work Assets：工作事实与工作方法；Rules、Skills、Commands、Specs 等只是当前示例。
 - Change：规范驱动的变更管理；Brief 提供人类入口，标准 artifacts 保持规范 authority。
-- Task Record：正式 Task 的最小顶层事实；Task Manager 与 Local App 通过同一产品 Application 管理，closed v1 不保存任何专业阶段内容。Task是Workspace Structured Store的首个consumer。
+- Task Record：正式 Task 的最小顶层事实；Task Manager 与 Local App 通过同一产品 Application 管理，closed v1 可表达至多一个直接 Parent 与直接 Children，只用于协调层级，不保存任何专业阶段内容。Task是Workspace Structured Store的首个consumer。
 - Task Environment：正式 Task 的本机执行基础与环境 authority；唯一 Environment Receipt 保存实际执行根、ready/blocked probes、动态资源和 cleanup。它可以组合共享根或 Git worktree provider，但不是 Workspace、Agent runtime 或 Task Record。
 - Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Environment candidate 或 retained Project 解析限定 Change；全局 Change 索引保持 retained-only。
 - Task Review：一个 `buildr.task-review/v1` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。语义 Skill 执行审查，确定性 Application 是唯一 Result writer；目标适用性由读取时比较派生，Task Record、Environment、Verification、Finish 和 Task Asset Review 不复制或改写 Review 事实。
@@ -35,7 +35,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task Development：一个`buildr.task-development@2`capability和唯一Application从首个正式研发动作到Finish handoff维护Development Receipt、planning snapshot、stable Content Target、verification policy、Task Candidate/generation、gate dispositions、推进决定与不可变研发交接。它只通过Task Record、Environment、Review、Verification Applications/read models消费专业事实；Local App仅调用同一Application的只读`inspect`投影。
 - Task Finish：P0.5保留固定五阶段窄adapter，只消费当前研发交接（Development Handoff）；Git adapter区分任务贡献（Task Contribution）与交付基线（Delivery Baseline），只在隔离交付载体（Delivery Carrier）上机械应用并证明delta identity等价。目标基线前进不自动使Candidate失效；Change/current knowledge收敛、formal Verification、Completion Review、Candidate generation与风险决定均在进入Finish前完成。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
-- Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish、Board 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联。
+- Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联；Parent/Child 只表达 Task 间协调层级，不传播这些专业事实。
 
 ## 产品边界
 

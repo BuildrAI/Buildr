@@ -88,6 +88,22 @@ function timestamp(value, field) {
   return value;
 }
 
+function optionalTaskId(value, field) {
+  if (value === null || value === undefined) return null;
+  const normalized = nonEmptyText(value, field);
+  if (!isTaskRecordId(normalized)) {
+    throw taskRecordError('task_record_identity_invalid', `${field} 必须是合法 Task ID。`, 400, { field, value });
+  }
+  return normalized;
+}
+
+function taskIds(value, field) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw taskRecordError('task_record_field_invalid', `${field} 必须是数组。`, 400, { field });
+  return unique(value.map((item, index) => optionalTaskId(item, `${field}[${index}]`)), (item) => item, field)
+    .sort((a, b) => a.localeCompare(b));
+}
+
 function normalizeResult(status, value) {
   if (status === 'active') {
     if (value !== null) throw taskRecordError('task_record_result_invalid', 'active Task 的 result 必须为 null。', 400, { field: 'result' });
@@ -105,7 +121,7 @@ function normalizeResult(status, value) {
 
 export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
   const record = object(value, 'Task Record');
-  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'status', 'result', 'createdAt', 'updatedAt']), '');
+  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'status', 'result', 'createdAt', 'updatedAt']), '');
   if (record.schemaVersion !== TASK_RECORD_SCHEMA) {
     throw taskRecordError('task_record_schema_unsupported', `Task Record schemaVersion 必须是 ${TASK_RECORD_SCHEMA}。`, 409, { field: 'schemaVersion', actual: record.schemaVersion });
   }
@@ -136,6 +152,8 @@ export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
       services: qualifiedIdentities(scope.services, 'scope.services', 'service'),
     },
     changes: qualifiedIdentities(record.changes, 'changes', 'change'),
+    parentTaskId: optionalTaskId(record.parentTaskId, 'parentTaskId'),
+    childTaskIds: taskIds(record.childTaskIds, 'childTaskIds'),
     status: record.status,
     result: normalizeResult(record.status, record.result),
     createdAt,

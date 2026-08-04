@@ -19,6 +19,12 @@ function text(value, field) {
   return value.trim();
 }
 
+function taskId(value, field) {
+  const normalized = text(value, field);
+  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(normalized)) throw taskRecordError('task_record_identity_invalid', `${field} 必须是合法 Task ID。`, 400, { field, value });
+  return normalized;
+}
+
 function array(value, field) {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw taskRecordError('task_record_field_invalid', `${field} 必须是数组。`, 400, { field });
@@ -53,8 +59,12 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function readModel(persistence, changeReferences = []) {
-  return { record: persistence.record, recordDigest: persistence.recordDigest, changeReferences };
+function taskSummary(record) {
+  return { taskId: record.taskId, title: record.title, status: record.status };
+}
+
+function readModel(persistence, changeReferences = [], taskRelations = { parent: null, children: [] }) {
+  return { record: persistence.record, recordDigest: persistence.recordDigest, changeReferences, taskRelations };
 }
 
 function effect(type, taskId) {
@@ -110,6 +120,8 @@ export function registerTaskRecordApplication(runtime) {
   }
 
   function result(operation, status, persistence, effects = []) {
+    const parent = persistence.record.parentTaskId ? taskSummary(runtime.readTaskRecordPersistence(persistence.root, persistence.record.parentTaskId).record) : null;
+    const children = persistence.record.childTaskIds.map((childTaskId) => taskSummary(runtime.readTaskRecordPersistence(persistence.root, childTaskId).record));
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordResult, {
       operation,
       status,
@@ -117,6 +129,7 @@ export function registerTaskRecordApplication(runtime) {
       record: persistence.record,
       recordDigest: persistence.recordDigest,
       changeReferences: resolveChangeReferences(persistence.root, persistence.record.taskId, persistence.record.changes),
+      taskRelations: { parent, children },
       diagnostic: null,
       effects,
       nextActions: [],
@@ -135,16 +148,19 @@ export function registerTaskRecordApplication(runtime) {
     const persistence = runtime.listTaskRecordPersistence(targetRoot);
     const tasks = [];
     const diagnostics = [...persistence.diagnostics];
+    const recordsById = new Map(persistence.records.map((item) => [item.record.taskId, item.record]));
     for (const record of persistence.records) {
       try {
         validateScopeReferences(persistence.root, record.record);
-        tasks.push(readModel(record, resolveChangeReferences(persistence.root, record.record.taskId, record.record.changes)));
+        const parent = record.record.parentTaskId ? taskSummary(recordsById.get(record.record.parentTaskId)) : null;
+        const children = record.record.childTaskIds.map((childTaskId) => taskSummary(recordsById.get(childTaskId)));
+        tasks.push(readModel(record, resolveChangeReferences(persistence.root, record.record.taskId, record.record.changes), { parent, children }));
       } catch (error) {
         diagnostics.push({ taskId: record.record.taskId, code: error.code || 'task_record_invalid', message: error.message, details: error.details });
       }
     }
     tasks.sort((a, b) => b.record.updatedAt.localeCompare(a.record.updatedAt) || a.record.taskId.localeCompare(b.record.taskId));
-    return { schemaVersion: 'buildr.task-record-list/v1', tasks, diagnostics };
+    return { schemaVersion: 'buildr.task-record-list/v2', tasks, diagnostics };
   }
 
   function inspectTaskRecord(targetRoot, taskId) {
@@ -152,12 +168,12 @@ export function registerTaskRecordApplication(runtime) {
   }
 
   function createTaskRecord(targetRoot, input) {
-    assertFields(input, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes']), 'Task create');
-    const taskId = text(input.taskId, 'taskId');
+    assertFields(input, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes', 'parentTaskId']), 'Task create');
+    const taskIdValue = taskId(input.taskId, 'taskId');
     const timestamp = nowIso();
     const record = normalizeTaskRecord({
       schemaVersion: 'buildr.task-record/v1',
-      taskId,
+      taskId: taskIdValue,
       title: text(input.title, 'title'),
       intent: text(input.intent, 'intent'),
       scope: {
@@ -165,25 +181,28 @@ export function registerTaskRecordApplication(runtime) {
         services: array(input.services, 'services').map((item, index) => qualified(item, `services[${index}]`, 'service')),
       },
       changes: array(input.changes, 'changes').map((item, index) => qualified(item, `changes[${index}]`, 'change')),
+      parentTaskId: input.parentTaskId === undefined || input.parentTaskId === null ? null : taskId(input.parentTaskId, 'parentTaskId'),
+      childTaskIds: [],
       status: 'active', result: null, createdAt: timestamp, updatedAt: timestamp,
-    }, { expectedTaskId: taskId });
+    }, { expectedTaskId: taskIdValue });
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     validateScopeReferences(root, record);
-    assertChangeReferencesAvailable(root, taskId, record.changes, { allowMissingTask: true });
+    assertChangeReferencesAvailable(root, taskIdValue, record.changes, { allowMissingTask: true });
     try {
       const written = runtime.createTaskRecordPersistence(root, record);
       return result('create', 'created', written, [effect('created', written.record.taskId)]);
     } catch (error) {
       if (error.taskRecordBusiness) throw error;
-      throw taskRecordError('task_record_write_failed', `Task Record 创建失败：${error.message}`, 500, { taskId }, '保留数据库现场并运行 Buildr Doctor 后重试。');
+      throw taskRecordError('task_record_write_failed', `Task Record 创建失败：${error.message}`, 500, { taskId: taskIdValue }, '保留数据库现场并运行 Buildr Doctor 后重试。');
     }
   }
 
   function normalizedUpdate(input) {
-    assertFields(input, new Set(['expectedRecordDigest', 'title', 'intent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');
+    assertFields(input, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');
     const operations = {
       ...(input.title === undefined ? {} : { title: text(input.title, 'title') }),
       ...(input.intent === undefined ? {} : { intent: text(input.intent, 'intent') }),
+      ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId === null ? null : taskId(input.parentTaskId, 'parentTaskId') }),
       addProjects: uniqueInput(array(input.addProjects, 'addProjects').map((item) => text(item, 'addProjects')), (item) => item, 'addProjects'),
       removeProjects: uniqueInput(array(input.removeProjects, 'removeProjects').map((item) => text(item, 'removeProjects')), (item) => item, 'removeProjects'),
       addServices: uniqueInput(array(input.addServices, 'addServices').map((item, index) => qualified(item, `addServices[${index}]`, 'service')), (item) => referenceKey(item, 'service'), 'addServices'),
@@ -191,7 +210,7 @@ export function registerTaskRecordApplication(runtime) {
       addChanges: uniqueInput(array(input.addChanges, 'addChanges').map((item, index) => qualified(item, `addChanges[${index}]`, 'change')), (item) => referenceKey(item, 'change'), 'addChanges'),
       removeChanges: uniqueInput(array(input.removeChanges, 'removeChanges').map((item, index) => qualified(item, `removeChanges[${index}]`, 'change')), (item) => referenceKey(item, 'change'), 'removeChanges'),
     };
-    const hasMutation = operations.title !== undefined || operations.intent !== undefined
+    const hasMutation = operations.title !== undefined || operations.intent !== undefined || operations.parentTaskId !== undefined
       || ['addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges'].some((field) => operations[field].length);
     if (!hasMutation) throw taskRecordError('task_record_update_empty', 'Task update 至少需要一个明确 mutation。', 400, undefined, '提供 title/intent setter 或 scope/change add/remove 操作。');
     for (const [addField, removeField, key] of [['addProjects', 'removeProjects', (item) => item], ['addServices', 'removeServices', (item) => referenceKey(item, 'service')], ['addChanges', 'removeChanges', (item) => referenceKey(item, 'change')]]) {
@@ -249,6 +268,7 @@ export function registerTaskRecordApplication(runtime) {
       ...current,
       ...(operations.title === undefined ? {} : { title: operations.title }),
       ...(operations.intent === undefined ? {} : { intent: operations.intent }),
+      ...(operations.parentTaskId === undefined ? {} : { parentTaskId: operations.parentTaskId }),
       scope: {
         projects: applyCollection(current.scope.projects, operations.addProjects, operations.removeProjects, (item) => item, 'Project scope'),
         services: applyCollection(current.scope.services, operations.addServices, operations.removeServices, (item) => referenceKey(item, 'service'), 'Service scope'),

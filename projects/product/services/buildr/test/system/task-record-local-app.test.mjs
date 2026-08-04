@@ -46,9 +46,13 @@ test('Local App Task API 保持 workspaceId、Origin/session/JSON/body/字段边
     const response = await fetch(resource, options); return { status: response.status, headers: response.headers, body: await response.json() };
   };
 
-  let response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-task', title: '页面任务', intent: '通过共享 Application 创建', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] }) });
+  let response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-parent', title: '页面协调任务', intent: '作为 Parent' }) });
+  assert.equal(response.status, 201);
+  response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-task', title: '页面任务', intent: '通过共享 Application 创建', parentTaskId: 'app-parent', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] }) });
   assert.equal(response.status, 201); assert.equal(response.body.status, 'created'); const staleDigest = response.body.recordDigest;
-  response = await request(endpoint); assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-task']);
+  assert.equal(response.body.record.parentTaskId, 'app-parent'); assert.equal(response.body.taskRelations.parent.title, '页面协调任务');
+  response = await request(endpoint); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task']));
+  const parentReadModel = response.body.tasks.find((item) => item.record.taskId === 'app-parent'); assert.deepEqual(parentReadModel.record.childTaskIds, ['app-task']); assert.equal(parentReadModel.taskRelations.children[0].status, 'active');
   const taskEndpoint = `${endpoint}/app-task`;
   response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.schemaVersion, 'buildr.task-development-operation-result/v1'); assert.equal(response.body.status, 'missing'); assert.equal(response.headers.get('cache-control'), 'no-store');
   const inspectDevelopment = runtime.inspectTaskDevelopment.bind(runtime);

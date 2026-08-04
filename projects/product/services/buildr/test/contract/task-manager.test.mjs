@@ -24,7 +24,7 @@ test('task-manager contract/provider/binding 与 task-triage optional consumer �
 test('task-manager routing 正向命中正式记录，负向排除普通任务和专业阶段', () => {
   const manager = fs.readFileSync(path.join(target, 'skills', 'buildr', 'task-manager', 'SKILL.md'), 'utf8');
   const triage = fs.readFileSync(path.join(target, 'skills', 'buildr', 'task-triage', 'SKILL.md'), 'utf8');
-  for (const positive of ['创建、查看、更新、完成或放弃正式 Task Record', '按 Task ID 恢复', '首次持久交付写入前']) assert.ok(`${manager}\n${triage}`.includes(positive), positive);
+  for (const positive of ['创建、查看、更新、设置 Parent、完成或放弃正式 Task Record', '按 Task ID 恢复', '首次持久交付写入前']) assert.ok(`${manager}\n${triage}`.includes(positive), positive);
   for (const negative of ['普通任务分流', '只读探索', 'Task Environment', 'Verification', 'Git', 'Finish']) assert.ok(manager.includes(negative), negative);
   assert.match(manager, /不要仅因用户说“任务”就触发/); assert.doesNotMatch(manager, /buildr worktree create|buildr verification run|buildr task finish run|git commit|git push/);
   assert.match(triage, /Local App 已创建时先 inspect/); assert.match(triage, /本次动作仅维护已有生命周期 metadata 时不递归创建新 Task/);

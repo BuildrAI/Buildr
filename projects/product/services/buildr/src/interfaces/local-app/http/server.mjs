@@ -299,14 +299,14 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         if (request.method === 'GET' && suffix === '/tasks') return jsonResponse(response, 200, runtime.listTaskRecords(root));
         if (request.method === 'POST' && suffix === '/tasks') {
           assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes']), 'Task create');
+          const input = await readAllowedJsonBody(request, new Set(['taskId', 'title', 'intent', 'parentTaskId', 'projects', 'services', 'changes']), 'Task create');
           return jsonResponse(response, 201, runtime.createTaskRecord(root, input));
         }
         const taskMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})$`));
         if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecord(root, taskMatch[1]));
         if (request.method === 'PATCH' && taskMatch) {
           assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');
           if (!Object.hasOwn(input, 'expectedRecordDigest')) {
             const error = new Error('Task update 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error;
           }

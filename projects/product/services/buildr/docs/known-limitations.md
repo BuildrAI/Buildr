@@ -8,7 +8,7 @@
 - App 不扫描磁盘或跨 Workspace 聚合资源；用户显式登记 root，关闭浏览器不等于退出，必须使用页面“退出 Buildr”或终止进程。
 - Component 只支持 workspace scope；没有 Project/Service Component、远程 registry、依赖求解或可执行 Hook。
 - Buildr Local 使用文件系统/Git保存portable工作资产，并在每个Workspace的本地SQLite中保存适合索引、关系、聚合和事务的structured data。SQLite文件不提交、不同步，也不提供多人并发协作；未来组织协作需要独立的Buildr Server/Cloud authority。
-- Task Record 是首个SQLite consumer。旧 `.buildr/tasks/<task-id>/task.yml` 不迁移、不读取、不双写；升级后需要的Task应通过产品动作重新创建。Parent Task、其他lifecycle records迁移和数据库备份/恢复UI不在当前版本范围内。
+- Task Record 是首个SQLite consumer。旧 `.buildr/tasks/<task-id>/task.yml` 不迁移、不读取、不双写；升级后需要的Task应通过产品动作重新创建。Parent Task 只支持同一 Workspace 内的单 Parent/多直接 Child 层级；不支持多 Parent、通用依赖图、自动状态传播、递归整树响应或跨 Workspace 关系。其他 lifecycle records迁移和数据库备份/恢复UI不在当前版本范围内。
 - Commands 只声明和诊断外部 CLI，不执行本机安装、升级或登录。
 - 远端 Skill 当前只支持 raw `SKILL.md` 的 `resolved.kind: skill-url`；未声明 integrity 时允许 render，但 doctor 会警告。
 - Agent 没有统一 API 枚举已加载的 admin/system/plugin Skills。adapter 会在 runtime scope 保留 `partial` inventory evidence，但不把不可观测性本身报告为健康 warning；Buildr 只检查自身管理候选的可观测同名项并阻止真实冲突，不盘点无关 runtime Skills，也不宣称已证明 Agent 全局唯一。首版不提供自动 adopt/transfer，外部资产必须重命名、显式移除/禁用或保持现场。
