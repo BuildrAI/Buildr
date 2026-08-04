@@ -486,8 +486,21 @@ Buildr 本机应用 MUST 在资源导航中提供独立的变更（Change）管�
 
 #### Scenario: 创建 Change
 - **WHEN** 用户点击“创建变更”
-- **THEN** 页面 MUST 使用抽屉或弹窗收集所属项目与目标说明
+- **THEN** 页面 MUST 使用抽屉或弹窗，从当前 Workspace 已登记 Project 中选择所属项目，并收集目标说明
+- **AND** MUST NOT 允许自由输入未登记的项目代码
+- **AND** 当上下文提供的 Project code 属于已登记 Project 时，所属项目 MUST 默认选中该 Project
 - **AND** MUST 展示可复制的 Agent prompt，不得直接写入 OpenSpec
+
+#### Scenario: 无已登记 Project 时创建 Change
+- **WHEN** 用户打开“创建变更”且当前 Workspace 没有已登记 Project
+- **THEN** 页面 MUST 展示明确空态（例如“请先创建项目”）
+- **AND** MUST NOT 生成创建变更 prompt
+
+#### Scenario: 异步加载期间切换抽屉
+- **WHEN** 用户打开“创建变更”后，在项目列表请求完成前关闭抽屉或切换到其他 Agent Action 表单
+- **THEN** 过期的项目列表响应 MUST NOT 修改当前可见表单中的同名控件
+- **AND** MUST NOT 向当前表单额外绑定“创建变更”提交处理器
+- **AND** MUST NOT 把错误展示到当前其他表单
 
 ### Requirement: 本机应用必须提供可链接的 Change 详情页
 Buildr 本机应用 MUST 使用稳定独立路由展示 Change 详情，并 MUST 将生命周期摘要、人类可读 Brief、技术 artifacts 与短 prompt 交互分离。页面 MUST 优先帮助普通用户理解 Change，再提供 proposal、design、specs 和 tasks 的可深入入口。
