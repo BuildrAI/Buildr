@@ -505,6 +505,31 @@ skills:
       - capability: buildr.task-asset-review
         version: 3
         mode: optional
+  - id: task-metadata-publication
+    assetIdentity: buildr:skill:task-metadata-publication
+    sourceIdentity: package:skills/buildr/task-metadata-publication
+    source: buildr
+    path: buildr/task-metadata-publication
+    description: 用户或lifecycle consumer要求把canonical Workspace中一个明确Task的portable exact owned records独立commit或push到Git时使用；不用于发布Candidate/源码、Task Finish、批量metadata或选择通用Git策略。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: task-metadata-publication
+    provides:
+      - capability: buildr.task-metadata-publication
+        version: 1
+    requires:
+      - capability: buildr.git-operations
+        version: 1
+        mode: required
 contracts:
   - id: buildr.task-asset-review
     version: 1
@@ -566,6 +591,10 @@ contracts:
     version: 1
     path: contracts/buildr/git-operations/v1.md
     description: 为已选定的单次 Git Operation 提供授权、安全边界、前后 identity 与最小结果。
+  - id: buildr.task-metadata-publication
+    version: 1
+    path: contracts/buildr/task-metadata-publication/v1.md
+    description: 发布一个明确 Task 的 portable exact owned metadata，并保持 record、lifecycle 与 Git authority 分离。
 bindings:
   - capability: buildr.task-asset-review
     version: 1
@@ -612,4 +641,7 @@ bindings:
   - capability: buildr.git-operations
     version: 1
     provider: git-operations
+  - capability: buildr.task-metadata-publication
+    version: 1
+    provider: task-metadata-publication
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
