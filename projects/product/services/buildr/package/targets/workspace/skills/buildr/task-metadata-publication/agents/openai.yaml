@@ -1,0 +1,4 @@
+interface:
+  display_name: Task Metadata Publication
+  short_description: 精确发布一个Task的portable records
+  default_prompt: 使用 $task-metadata-publication 发布一个明确Task的portable exact owned metadata。

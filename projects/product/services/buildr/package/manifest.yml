@@ -45,6 +45,11 @@ capabilityContracts:
         integrity: sha256-026125f83f82e2a0a650b38b2e2ae0291c3f1ef5fd37565066d2fc36b7f0a981
         provider: git-ops
         description: 在 workspace sync 前安全更新 Git checkout。
+  - id: buildr.task-metadata-publication
+    version: 1
+    description: 发布一个明确 Task 的 portable exact owned metadata，并保持 record、lifecycle 与 Git authority 分离。
+    path: package/targets/workspace/skills/contracts/buildr/task-metadata-publication/v1.md
+    target: skills/contracts/buildr/task-metadata-publication/v1.md
   - id: buildr.task-environment
     version: 1
     description: 管理正式 Task 的实际执行环境和唯一 Environment Receipt。
@@ -130,6 +135,9 @@ initialSkillBindings:
   - capability: buildr.git-operations
     version: 1
     provider: git-operations
+  - capability: buildr.task-metadata-publication
+    version: 1
+    provider: task-metadata-publication
   - capability: buildr.task-environment
     version: 1
     provider: task-environment
@@ -370,6 +378,19 @@ builtins:
         - sha256-50b5fb04eb75acb1218fc5c34caf4e0e7b66500f0df28e6f296f8b9f89e559b8
         - sha256-badf69cfc2f7983fdbd2c681f7418a542d5538bfab283dfe8da927bfdfdd96c8
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: task-metadata-publication
+      path: package/targets/workspace/skills/buildr/task-metadata-publication
+      target: skills/buildr/task-metadata-publication
+      description: 用户或lifecycle consumer要求把canonical Workspace中一个明确Task的portable exact owned records独立commit或push到Git时使用；不用于发布Candidate/源码、Task Finish、批量metadata或选择通用Git策略。
+      required: false
+      provides:
+        - capability: buildr.task-metadata-publication
+          version: 1
+      requires:
+        - capability: buildr.git-operations
+          version: 1
+          mode: required
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-explore
       path: package/targets/workspace/skills/openspec/openspec-explore
       target: skills/openspec/openspec-explore
@@ -465,6 +486,7 @@ workspaceFiles:
   - package/targets/workspace/components/manifest.yml => components/manifest.yml copy
   - package/targets/workspace/skills/manifest.yml => skills/manifest.yml copy
   - package/targets/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-metadata-publication/v1.md => skills/contracts/buildr/task-metadata-publication/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-record/v1.md => skills/contracts/buildr/task-record/v1.md copy
@@ -507,6 +529,9 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - package/targets/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
   - package/targets/workspace/skills/buildr/git-operations/SKILL.md => skills/buildr/git-operations/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-metadata-publication/SKILL.md => skills/buildr/task-metadata-publication/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-metadata-publication/agents/openai.yaml => skills/buildr/task-metadata-publication/agents/openai.yaml copy
+  - package/targets/workspace/skills/buildr/task-metadata-publication/scripts/publication.mjs => skills/buildr/task-metadata-publication/scripts/publication.mjs copy
 
 projectDirectories:
   - openspec/specs

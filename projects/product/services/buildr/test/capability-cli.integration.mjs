@@ -117,7 +117,7 @@ test('CLI 集成验证 optional provider 卸载后 consumer 降级', { concurren
   assert.equal(consumer(report, '.', 'task-finish').readiness, 'ready');
 });
 
-test('CLI 集成验证 Git Operations optional consumer、legacy Project 拒绝与 Project override', { concurrency: true }, async (t) => {
+test('CLI 集成验证 Git Operations required/optional consumers、legacy Project 拒绝与 Project override', { concurrency: true }, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-project-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   await run(['init', '--target', root, '--name', 'capability-project', '--profile', 'personal']);
@@ -125,9 +125,12 @@ test('CLI 集成验证 Git Operations optional consumer、legacy Project 拒绝�
   await run(['skills', 'add', '--source', internalSource, '--target', root, '--provides', 'buildr.git-operations@1']);
   const unbind = await run(['skills', 'unbind', 'buildr.git-operations@1', '--scope', '.', '--target', root]);
   assert.match(unbind.stdout, /\[optional\].*task-finish.*buildr\.git-operations@1/);
-  const workspaceFinish = consumer(await doctor(root), '.', 'task-finish');
+  assert.match(unbind.stdout, /\[required\].*task-metadata-publication.*buildr\.git-operations@1/);
+  const unboundReport = await doctor(root, '.', 1);
+  const workspaceFinish = consumer(unboundReport, '.', 'task-finish');
   assert.equal(workspaceFinish.readiness, 'degraded');
   assert.equal(workspaceFinish.dependencies.some((item) => item.capability === 'buildr.git-operations'), true);
+  assert.equal(consumer(unboundReport, '.', 'task-metadata-publication').readiness, 'blocked');
   await run(['skills', 'bind', 'buildr.git-operations@1', '--provider', 'git-operations', '--scope', '.', '--target', root]);
 
   await run(['project', 'create', 'demo', '--target', root]);

@@ -1005,6 +1005,56 @@ export function createPackageStaticValidator(deps) {
           // Frontmatter errors are already reported above.
         }
       }
+      if (skill.id === 'task-metadata-publication') {
+        for (const requiredText of [
+          '`buildr.task-metadata-publication/v1`',
+          'required消费selected `buildr.git-operations/v1`',
+          '.buildr/tasks/<task-id>/task.yml',
+          '.buildr/tasks/<task-id>/development.yml',
+          '.buildr/tasks/<task-id>/verification.yml',
+          '.buildr/tasks/<task-id>/reviews/planning.yml',
+          '.buildr/tasks/<task-id>/reviews/completion.yml',
+          '不得扫描Task目录',
+          '不写Receipt/history',
+          '只有`verified`才可push',
+          '完整range',
+          'local history已改变、remote未改变',
+          '不新增公共CLI/Application',
+          '不恢复`git-workspace-update`、`git-task-integration`、`git-single-operation`',
+        ]) {
+          if (!skillContent.includes(requiredText)) problems.push(`task-metadata-publication Skill must include ${JSON.stringify(requiredText)}.`);
+        }
+        if (skill.provides?.length !== 1 || !skill.provides.some((entry) => entry.capability === 'buildr.task-metadata-publication' && entry.version === 1)) {
+          problems.push('task-metadata-publication must provide only buildr.task-metadata-publication/v1.');
+        }
+        if (skill.requires?.length !== 1 || !skill.requires.some((entry) => entry.capability === 'buildr.git-operations' && entry.version === 1 && entry.mode === 'required')) {
+          problems.push('task-metadata-publication must require only buildr.git-operations/v1 in required mode.');
+        }
+        const helper = path.join(skillDir, 'scripts', 'publication.mjs');
+        if (!existsFile(helper)) {
+          problems.push('task-metadata-publication must include scripts/publication.mjs.');
+        } else {
+          const helperContent = fs.readFileSync(helper, 'utf8');
+          for (const declaration of [
+            ['buildr.task-record/v1', '.buildr/tasks/<task-id>/task.yml'],
+            ['buildr.task-development/v1', '.buildr/tasks/<task-id>/development.yml'],
+            ['buildr.task-verification/v3', '.buildr/tasks/<task-id>/verification.yml'],
+            ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/planning.yml'],
+            ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/completion.yml'],
+          ]) {
+            if (!declaration.every((text) => helperContent.includes(text))) problems.push(`task-metadata-publication helper must declare ${declaration.join(' -> ')}.`);
+          }
+          for (const forbiddenMutation of ["['add'", "['commit'", "['push'", "['reset'", "['rebase'", "['merge'"]) {
+            if (helperContent.includes(forbiddenMutation)) problems.push(`task-metadata-publication helper must remain Git read-only: ${forbiddenMutation}`);
+          }
+        }
+        try {
+          const metadata = parseSkillFrontmatter(skillFile);
+          if (String(metadata.description || '') !== skill.description) problems.push('task-metadata-publication Skill frontmatter description must exactly match package manifest.');
+        } catch {
+          // Frontmatter errors are already reported above.
+        }
+      }
       if (skill.id === 'task-finish') {
         for (const requiredText of [
           'buildr.task-finish/v1',
@@ -1153,6 +1203,9 @@ export function createPackageStaticValidator(deps) {
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-review' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-review.');
     }
+    if (!manifest.builtins.skills.some((skill) => skill.id === 'task-metadata-publication' && skill.required === false)) {
+      problems.push('builtins.skills must declare optional task-metadata-publication.');
+    }
 
     for (const command of manifest.builtins.commands) {
       validateLegacyIntegrities(command, `builtins.commands.${command.id || '<missing>'}`);
@@ -1199,7 +1252,7 @@ export function createPackageStaticValidator(deps) {
       try {
         const baselineSkills = readSkillManifest(baselineSkillsManifest);
         validateSkillManifestEntries(baselineSkills, baselineSkillsManifest);
-        for (const id of ['task-triage', 'task-manager', 'task-worktree', 'task-board', 'task-finish', 'git-operations']) {
+        for (const id of ['task-triage', 'task-manager', 'task-worktree', 'task-board', 'task-finish', 'git-operations', 'task-metadata-publication']) {
           const packaged = manifest.builtins.skills.find((entry) => entry.id === id);
           const baseline = baselineSkills.find((entry) => entry.id === id);
           if (packaged && baseline?.description !== packaged.description) {
@@ -1233,6 +1286,10 @@ export function createPackageStaticValidator(deps) {
         const gitOperations = baselineSkills.find((entry) => entry.id === 'git-operations');
         if (!gitOperations || gitOperations.source !== 'buildr' || gitOperations.state !== 'installed' || gitOperations.enabled !== true || !(gitOperations.provides || []).some((item) => item.capability === 'buildr.git-operations' && item.version === 1)) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr git-operations providing buildr.git-operations@1.');
+        }
+        const taskMetadataPublication = baselineSkills.find((entry) => entry.id === 'task-metadata-publication');
+        if (!taskMetadataPublication || taskMetadataPublication.source !== 'buildr' || taskMetadataPublication.state !== 'installed' || taskMetadataPublication.enabled !== true || !(taskMetadataPublication.provides || []).some((item) => item.capability === 'buildr.task-metadata-publication' && item.version === 1) || !(taskMetadataPublication.requires || []).some((item) => item.capability === 'buildr.git-operations' && item.version === 1 && item.mode === 'required')) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-metadata-publication providing buildr.task-metadata-publication@1 and requiring buildr.git-operations@1.');
         }
         if (baselineSkills.some((entry) => entry.id === 'git-ops')) {
           problems.push('Workspace skills baseline must not retain legacy git-ops entry.');

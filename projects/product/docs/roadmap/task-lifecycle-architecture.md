@@ -28,7 +28,7 @@
 | 任务收尾 | Task Finish | 消费当前研发交接，完成内容等价载体交付、retained 激活与环境清理；不拥有研发事实 |
 | 结构化任务看板 | Structured Task Board | 跨 Task 的规划、依赖和协调事实 |
 | 任务复盘 | Task Retrospective | 任务终态后的非阻塞复盘和未来改进候选 |
-| 任务元数据发布 | Task Metadata Publication | 后续将 Task-owned 记录精确纳入 Git 共享的独立边界 |
+| 任务元数据发布 | Task Metadata Publication | 将一个明确 Task 的 writer-declared portable exact owned paths 精确纳入 Git 共享的独立边界 |
 | 工作区元数据存储 | Workspace Metadata Store / `.buildr/` | Buildr 以文件承载的工作区数据库边界；源码 clean 判定与精确 Git 发布分别处理 |
 | 交付目标前进 | Target Advancement | Candidate 交付期间目标分支或目标位置出现了更新；不是 Task Environment 自动更新事件 |
 | 生命周期权威 | lifecycle authority | 对某类生命周期事实拥有唯一写入和最终解释责任的模块 |
@@ -93,6 +93,7 @@ flowchart TB
 | Task Environment | 建立并维护可执行、可核验、可清理的任务环境 | P0.2 已交付并生效（2026-08-02） |
 | Task Verification | 声明现有验证能力、执行显式能力并维护 current Task Verification Result | P0.4 已交付并生效（2026-08-03） |
 | Task Development | 对形成交付变更的正式 Task，在 ready environment 中形成 Content Target、正式 Verification、Task Candidate、推进决定与不可变研发交接 | P0.5 已交付并生效（2026-08-04）；Local App 只读投影已补齐 |
+| Task Metadata Publication | 把一个明确 Task 的 portable exact owned records 作为独立 metadata-only commit/push 发布 | P0.7 已交付并生效（2026-08-04） |
 | Task Finish | 消费研发交接，为当前 Product 执行内容等价载体交付、retained 激活与 Task Environment 清理 | P0.5 已收窄为 handoff adapter；P0.8 扩展交付路径 |
 
 ## 辅助与横切能力
@@ -102,6 +103,7 @@ flowchart TB
 | Task Review | 通过 Planning Review 与 Completion Review 分别审阅方案和完成候选 |
 | Task Verification | 对明确 target 执行适用的已声明能力，维护 current Result，并按 target/declaration identity 派生适用性 |
 | Git Operations | 定义单项 Git 行为、安全默认值、硬边界和最小 evidence；不负责流程编排 |
+| Task Metadata Publication | 组合真实 writer 声明的五个 exact paths，验证同一 bytes snapshot，并分别调用 Git Operations commit/push |
 | Task Board | 在 Workspace 范围组织多个 Task 的整体目标、规划、依赖和跨 Task 决策 |
 | Task Retrospective | 在任务中按高价值线索持续观察，并在任务终态后形成面向未来工作的复盘结论与改进候选 |
 | Local App | P0.1 提供 Task 最小列表、详情和受控管理；P0.2/P0.3/P0.4 交付环境、审查与验证 reader；P0.5a 将一级视图收敛为“概览、研发、证据、环境”并增加 Development 只读投影；P1 再增加 Structured Board 与其余专业结果投影 |
@@ -428,7 +430,9 @@ Task Record Application 只维护 `task.yml`；Task Manager/CLI 与 Local App �
 
 P0.1 只定义 Task Record 的内容禁区和 canonical path，不建立“portable / unpublished / local-only”状态模型，也不执行 Git add、commit 或 push。Task 是否已经共享不写入 Task Record。
 
-P0.7 再根据届时真实记录类型设计 Task Metadata Publication，至少保持：只处理 canonical Workspace 中各 writer 声明的精确 owned paths，不读取或发布 `.worktrees`、Environment 本机状态或 task-scoped runtime；生命周期 metadata 不混入 Development Candidate；commit 与 push 分开；无明确授权不改写历史；主 Workspace 没有 Git 时记录继续留在本地。长期记录引用的 Project/Service/Change 后来被删除或归档时，是保留历史可读快照、提供 reference diagnostic，还是允许部分读取，也由 P0.7/对应历史 owner 基于真实需求决定，不扩张 P0.1 v1。revision、重试协议和具体 Git 实现是否必要，由 P0.7 Change 基于实际并发与发布需求决定。
+P0.7 通过唯一 `task-metadata-publication` / `buildr.task-metadata-publication/v1` 组合真实 writer 声明的五个 portable exact paths：`task.yml`、`development.yml`、`verification.yml`、`reviews/planning.yml` 与 `reviews/completion.yml`。缺失 optional record 保持缺失；已跟踪但当前缺失的 exact path可以作为精确删除。`environment.json`、`.buildr/task-finish/**`、asset-review、mutations、`.worktrees/**`、Agent/task runtime、Candidate、delivery source、其他 Task 与其他 owner metadata均不具备 publication eligibility。
+
+Skill随附无状态helper，只执行preflight、presence/bytes snapshot、post-commit tree验证、等价commit与完整range观察，不执行Git mutation或保存history。commit与push分别调用required `buildr.git-operations/v1` provider并保留两个Result；snapshot漂移或scope外unpublished commit阻止push，commit成功/push失败保留local metadata commit。内容等价且未共享的metadata commit可安全复用，已共享Candidate/delivery commit不可amend。无Git Workspace返回`local-only / not-applicable`并保留records。历史Project/Service/Change已归档、退役或当前unavailable但writer仍能安全读取时，只返回non-blocking diagnostic且不改写record；writer identity/schema/path损坏仍fail closed。Task Record与其他专业schema不增加publication字段。
 
 ## Task Board
 
@@ -967,7 +971,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | 已交付并生效（2026-08-04） | 已交付唯一 Task Development Application/Receipt、通用 Content Target observer、verification policy、Task Candidate/generation、gates/decision、append-only immutable handoff、internal driver 与非 Git/no Change System fixture；Formal Verification 先于 Candidate freeze，Completion Review 绑定 Candidate | Development 成为唯一 Candidate/decision/handoff authority；Verification/Review 保留 Result authority；Finish 收窄为 v2 handoff adapter，删除旧 Verification、Change convergence、Candidate/risk mutation path |
 | P0.5a | Task Development Local App 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情收敛为“概览、研发、证据、环境”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
 | P0.6 | Git Operations `formalize-git-operations` | 已交付并生效（2026-08-04） | 已交付唯一 Skill-only `git-operations` / `buildr.git-operations/v1`、consumer-selected operation 边界、精确暂存、commit/push 分离、完整 push range、共享冻结、最小 Result 与部分失败 evidence；retained runtime 已同步并通过 Doctor | Task Finish optional dependency 与 Buildr 产品入口已迁移；删除 `git-ops` 和三项旧 contracts/bindings/router/schema，`git-worktree-provider/v1` 保持独立 |
-| P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 未开始 | 无 | 新能力；只接入届时已存在的 Task-owned records |
+| P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 已交付并生效（2026-08-04） | 已交付唯一 `task-metadata-publication` / `buildr.task-metadata-publication/v1`、五个 writer-declared exact paths、无状态 snapshot/helper、独立 commit/push、完整 range、部分失败、安全重试、reference diagnostic 与无 Git local-only；retained runtime 已同步并通过 Doctor | 新能力；required 复用 `git-operations`，未新增公共 Application/CLI，未恢复三条旧 Git routes，Environment/Finish/Candidate 与其他 owner保持排除 |
 | P0.8 | Task Finish `replace-task-finish` | 未开始 | 无 | 基于 P0.5 handoff adapter 扩展经证明需要的交付路径/effects；同 Change 迁移并删除被替代 mutation path，不取得研发 authority |
 | P1.1 | Structured Task Board `introduce-structured-task-board` | 未开始 | 无 | 同 Change 停止静态 HTML 新写入并清退旧生成链 |
 | P1.2 | Local App Board / 其余专业投影 `project-task-lifecycle-in-local-app` | 未开始 | 无 | 基于既有四视图扩展 Board 与届时仍缺失的专业投影，迁移/删除冲突入口，不重建 Development/Review/Verification/Environment authority |
@@ -1000,7 +1004,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.4 | Task Verification `introduce-task-verification-results` | Project declaration v2、transient execution evidence、一个 current Verification Result、Content Target/declaration identity 与派生 applicability；不包含推进决定、Candidate generation 或 Environment Receipt | 真实 command/Agent facts 可提炼完整 Result；中断或写入失败不覆盖 current；target/declaration 变化派生 stale；CLI、Skill、Local App、Development consumer 共用唯一 Application；删除旧 assurance、run/plan/DAG lifecycle、summary 输入与重复 schema |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | Development Receipt、`0..N` Change 处置、Content Target/policy、Candidate identity/generation、三个 gates、decision 与 immutable handoff；明确 control metadata/carrier/runtime/session 不是 Candidate | Environment ready → Planning Review → stable Content Target/policy → Formal Verification → generation 1 Candidate → Completion Review → proceed handoff；非 Git/no Change fixture 证明通用边界；Finish v2 adapter 只消费 handoff且 formal execution count 为 0 |
 | P0.6 | Git Operations `formalize-git-operations` | 单次 Git operation 授权、安全边界、前后 identity 与最小 Result | 精确暂存；commit/push 分离；不 force push；同 Change 迁移有效安全约束并删除冲突旧 capability/binding/router/schema |
-| P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 根据届时真实记录设计 canonical exact-owned-path publication；排除 `.worktrees`、本机 Environment/runtime 与 Candidate 内容；处理长期记录引用退役后的读取诊断；复用 Git Operations | Task records 可独立发布，失败不回退 Task 状态；无 Git 时留本地；revision、历史快照、重试和 commit range 规则在本 Change 依据实际需求确定，不由 P0.1 预设 |
+| P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 已实现 canonical writer-declared exact-owned-path publication；排除 `.worktrees`、本机 Environment/runtime、Finish 与 Candidate 内容；历史引用由writer提供diagnostic；required复用Git Operations | 五个portable paths可独立发布；无状态snapshot阻止混合revision；commit/push分离并检查完整range；push失败安全复用等价local commit；失败不回退Task状态；无Git时留本地 |
 | P0.8 | Task Finish `replace-task-finish` | 只消费研发交接；按真实需求扩展 Git/非 Git 交付与 generation effects，继续禁止 Change/Verification/Review/Candidate/decision authority | 覆盖被批准的新交付路径与部分 effects；同 Change 审计 active run、切换 application/runtime/binding，并删除被替代 mutation path；只按必要保留历史只读 inspect |
 
 P0.1 到 P0.8 分别在各自交付时切换自己拥有的 authority。过渡期允许“新 Task Record + 尚未替换的专业模块”组合，但同一类事实不能有两个 writer；P0.8 不再承担统一默认 authority 切换。
