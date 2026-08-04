@@ -1,0 +1,19 @@
+schemaVersion: buildr.task-record/v1
+taskId: introduce-task-metadata-publication
+title: 交付 Task Metadata Publication P0.7
+intent: 交付第一版克制的 Task Metadata Publication：从 canonical Workspace 发布明确 Task 的 portable exact owned paths，并保持与 Git Operations 及其他生命周期 authority 的窄边界。
+scope:
+  projects:
+    - product
+  services:
+    - project: product
+      service: buildr
+changes:
+  - project: product
+    change: introduce-task-metadata-publication
+status: completed
+result:
+  summary: P0.7 Task Metadata Publication 已完成实现、正式验证、交付、runtime 生效与环境清理；随后发布 portable Task metadata。
+  noChange: false
+createdAt: 2026-08-04T07:37:16.347Z
+updatedAt: 2026-08-04T08:27:23.261Z
