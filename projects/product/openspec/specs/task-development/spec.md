@@ -169,10 +169,30 @@ Task Finish MAY 请求Development Application针对一个允许的carrier root�
 - **THEN** equivalence MUST失败并判定current handoff失效
 - **AND** Finish MUST退出到Development重新验证和生成Candidate
 
-### Requirement: 首版Development不得增加公共产品界面
-P0.5 MUST 交付`task-development` bundled Skill与`buildr.task-development@1` capability contract，但MUST NOT注册公共`buildr task development` CLI、Local App route/tab/action或新的Task Core。Skill/internal driver MUST复用同一Application methods，MUST NOT复制业务校验。
+### Requirement: Local App 必须只读投影任务研发 read model
+Buildr Local App MUST 为正式 Task 提供只读“研发”视图，并 MUST 通过 Task Development Application `inspect` 展示 Development presence、当前适用性、Task context、Content Target、verification policy、Candidate/generation、Planning/Verification/Completion gates、decision、明确风险与最近一次 Development handoff。HTTP 与 Web 层 MUST NOT 直接读取或解析 `development.yml`、重新计算 identity/currentness、复制专业 Result body、提供 Receipt mutation 或注册公共 `buildr task development` CLI。
 
-#### Scenario: Agent执行Development flow
-- **WHEN** routed `task-development` Skill需要observe、policy、freeze、decision或handoff action
-- **THEN** Skill MUST 通过随产品交付的内部driver调用同一Application
-- **AND** `buildr help`与Local App API inventory MUST不出现Development公共surface
+#### Scenario: 查看 current Development
+- **WHEN** Task Development Application 返回 `developing`、`candidate-current` 或 `handoff-current`
+- **THEN** 页面 MUST 用中文分别显示“研发中”“候选已就绪”或“研发交接已就绪”
+- **AND** MUST 将 Task context、Content Target、policy、Candidate 与 handoff 的 current/stale/missing 作为独立事实展示，不得改写 Task Record status
+
+#### Scenario: Development 尚未形成
+- **WHEN** Application `inspect` 返回 `status: missing` 且没有 Development Receipt
+- **THEN** 页面 MUST 显示“尚未形成研发回执”的空状态
+- **AND** 概览、证据和环境视图 MUST 继续正常工作，不得创建空 Receipt 或提供浏览器写操作
+
+#### Scenario: 当前环境不可观察但历史交接存在
+- **WHEN** Application 返回已有 Receipt 且 `applicability.status` 为 `unknown`
+- **THEN** 页面 MUST 保留展示已保存的候选、决定和最近一次研发交接摘要，并明确显示“历史研发交接仍被保留，但当前无法实时复核”
+- **AND** 页面 MUST NOT 将历史交接标记为 current、stale 或 failed，也不得从 Environment cleanup 推断 Task 顶层状态
+
+#### Scenario: 安全读取 Development
+- **WHEN** 客户端对已登记 Workspace 和真实 Task 发起 `GET /api/v1/workspaces/:workspaceId/tasks/:taskId/development`
+- **THEN** API MUST 返回 Task Development Application operation read model 并使用 no-store 语义
+- **AND** query 参数、未知 Task、POST、PUT、PATCH 与 DELETE MUST fail closed，且 Task、Receipt、Review、Verification 与 Environment bytes MUST 保持不变
+
+#### Scenario: 展示最小研发信息
+- **WHEN** Development Receipt 包含长 identity、多个 handoff 或专业 Result reference
+- **THEN** 页面 MUST 默认只展示完整但次级排版的当前 identity、候选代次、三个 gate 摘要、决定、风险数量和最近一次 handoff
+- **AND** MUST NOT展示开发日志、source diff、完整命令输出、隐藏推理、完整 Result body或全部历史 handoff 列表

@@ -30,13 +30,18 @@ test('Candidate identity 不包含 Result 或 Delivery Carrier，handoff 才绑�
   assert.match(handoffBody, /normalizedDecision/);
 });
 
-test('第一版不暴露 public Development CLI 或 Local App route', () => {
+test('第一版不暴露 public Development CLI，Local App 只读投影复用 Application inspect authority', () => {
   const registry = read('src/interfaces/cli/registry.mjs');
   const help = read('src/interfaces/cli/help.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
+  const skill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
   assert.doesNotMatch(registry, /task development/);
   assert.doesNotMatch(help, /buildr task development/);
-  assert.doesNotMatch(server, /task-development|\/development/);
+  assert.match(server, /\/tasks\/\(\$\{TASK_ID\}\)\/development/);
+  assert.match(server, /request\.method === 'GET'[\s\S]*runtime\.inspectTaskDevelopment/);
+  assert.doesNotMatch(server, /runtime\.(?:observe|record|freeze|decide|create)TaskDevelopment/);
+  assert.match(skill, /Local App 只消费 Application `inspect` 的只读投影/);
+  assert.doesNotMatch(skill, /没有 Local App 专业投影/);
   assert.equal(fs.existsSync(path.join(root, 'src/interfaces/internal/task-development-driver.mjs')), true);
 });
 

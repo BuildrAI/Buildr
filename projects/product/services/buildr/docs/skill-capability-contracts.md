@@ -78,7 +78,7 @@ bindings:
 
 `buildr.task-record/v1` 是正式 Task 顶层记录的薄能力边界，默认由 `task-manager` 提供并绑定。它只保证通过产品 create/inspect/update/complete/abandon action 创建或恢复 Task ID、标题、意图、Project/Service scope、Change 引用与顶层终态；不得读取或复制 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 事实。`task-triage` 以 optional dependency 消费该能力：讨论、只读探索和非持久路径保持可用；只有已经对齐、即将首次写入的持久交付在 provider ready 时先创建或恢复 Task Record，provider not-ready 时明确 degraded/blocked，而不让 Agent 直接写 YAML。Local App 是同一 Application 的人类客户端，不是 capability provider 或第二份 authority。
 
-`buildr.task-development@1`默认由`task-development`提供，并required消费Task Record、Task Environment、Task Review、Task Verification与current knowledge v2，optional消费task-asset-review v3。provider通过随包内部driver调用唯一Task Development Application，独占Development Receipt、Content Target、verification policy、Task Candidate/generation、decision与immutable handoff；第一版不注册公共Development CLI或Local App surface。OpenSpec是`0..N`可选关联，Git、Node/npm、Product registry和具体测试框架都不进入通用contract。
+`buildr.task-development@1` 默认由 `task-development` 提供，并 required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge v2，optional 消费 task-asset-review v3。provider 通过随包内部 driver 调用唯一 Task Development Application，独占 Development Receipt、Content Target、verification policy、Task Candidate/generation、decision 与不可变研发交接（Development Handoff）；第一版不注册公共 Development CLI 或写 surface，Local App 只消费 Application `inspect` read model。OpenSpec 是 `0..N` 可选关联，Git、Node/npm、Product registry 和具体测试框架都不进入通用 contract。
 
 `buildr.task-environment/v1`默认由`task-environment`提供。它要求正式Task，调用Task Environment Application的公共`prepare/inspect/cleanup`CLI，并消费`buildr.task-environment-result/v1`。Git隔离是可选实现细节：需要时Application调用`buildr.git-worktree-provider/v1`；共享根和非Git环境不依赖该provider。Local App、Preview、Development、Verification与Finish复用同一Application/read model，不直接解析Receipt或写第二份环境状态。
 
@@ -102,7 +102,7 @@ render/sync会在`task-development`和`task-finish`的runtime派生版本中注�
 
 若组织创建 `internal-git` 并声明提供同一 contract，安装它不会改变用户的“收尾”入口。产品执行器只能使用已具备稳定确定性 application service 的实现；需要 Agent completion 或改变 fast-forward/push 授权语义的 provider 不能被直接接入固定正常路径。
 
-Task Finish随Buildr Client整体直接替换，沿用`buildr.task-finish/v1` capability identity并把单命令五阶段语义收窄为Development handoff consumer；runtime description必须继续覆盖“收尾”意图。breaking run/result schema使用v2并拒绝旧v1 run，客户端不保留旧reader/executor，也不建立并行capability、Finish Receipt或状态迁移模块。需要回滚时安装上一个客户端版本。
+Task Finish 随 Buildr Client 整体直接替换，沿用 `buildr.task-finish/v1` capability identity，并把单命令五阶段语义收窄为研发交接（Development Handoff）consumer；runtime description 必须继续覆盖“收尾”意图。breaking run/result schema 使用 v2 并拒绝旧 v1 run，客户端不保留旧 reader/executor，也不建立并行 capability、Finish Receipt 或状态迁移模块。需要回滚时安装上一个客户端版本。
 
 这里有两个不同的版本概念：
 

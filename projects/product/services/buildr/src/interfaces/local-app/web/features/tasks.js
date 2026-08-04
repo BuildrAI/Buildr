@@ -12,7 +12,7 @@ function statusLabel(status) {
 }
 
 function scopeText(record) {
-  const projects = record.scope.projects.join('、') || '无 Project';
+  const projects = record.scope.projects.join('、') || '无项目';
   const services = record.scope.services.map((item) => `${item.project}/${item.service}`).join('、');
   return services ? `${projects}；${services}` : projects;
 }
@@ -29,26 +29,26 @@ function detailLink(taskId) {
 export async function renderTasks({ root, api, onWorkspace, navigate }) {
   root.innerHTML = `
     <section class="resource-toolbar">
-      <div><p class="eyebrow">任务</p><h1>任务记录</h1><p class="page-copy">查看并管理正式 Task 的顶层事实。这里不展示或修改 Task Environment、研发、审查、验证、Git、Finish 或看板状态。</p></div>
+      <div><p class="eyebrow">任务</p><h1>任务记录</h1><p class="page-copy">查看并管理正式任务的顶层事实。这里不展示或修改任务环境、研发、审查、验证、Git、任务收尾（Task Finish）或看板状态。</p></div>
       <span id="tasks-state" class="count-label">正在读取</span>
     </section>
     <section class="panel task-create-panel">
-      <div class="panel-heading"><div><p class="eyebrow">创建</p><h2>新建正式 Task</h2></div><span id="task-create-state" class="state">等待输入</span></div>
+      <div class="panel-heading"><div><p class="eyebrow">创建</p><h2>新建正式任务</h2></div><span id="task-create-state" class="state">等待输入</span></div>
       <form id="task-create-form" class="prompt-grid">
-        <label>Task ID<input id="task-create-id" autocomplete="off" placeholder="例如 improve-login-flow" pattern="[a-z0-9](?:[a-z0-9._\\-]*[a-z0-9])?" required></label>
+        <label>任务 ID<input id="task-create-id" autocomplete="off" placeholder="例如 improve-login-flow" pattern="[a-z0-9](?:[a-z0-9._\\-]*[a-z0-9])?" required></label>
         <label>标题<input id="task-create-title" autocomplete="off" required></label>
         <label class="full">意图<textarea id="task-create-intent" rows="3" required></textarea></label>
-        <label>Project scope（逗号或换行）<textarea id="task-create-projects" rows="3" placeholder="product"></textarea></label>
-        <label>Service scope（project/service）<textarea id="task-create-services" rows="3" placeholder="product/buildr"></textarea></label>
-        <label class="full">OpenSpec Changes（project/change，0..N）<textarea id="task-create-changes" rows="3" placeholder="product/introduce-task-record"></textarea></label>
-        <div class="actions full"><button id="task-create-button" class="button primary" type="submit">创建 Task Record</button></div>
+        <label>项目范围（逗号或换行）<textarea id="task-create-projects" rows="3" placeholder="product"></textarea></label>
+        <label>服务范围（project/service）<textarea id="task-create-services" rows="3" placeholder="product/buildr"></textarea></label>
+        <label class="full">OpenSpec 变更（project/change，0..N）<textarea id="task-create-changes" rows="3" placeholder="product/introduce-task-record"></textarea></label>
+        <div class="actions full"><button id="task-create-button" class="button primary" type="submit">创建任务记录</button></div>
       </form>
     </section>
     <section class="resource-list-section">
       <div class="section-heading"><div><h2>全部任务</h2><p class="section-copy">按最近更新时间排列；终态记录保持只读。</p></div></div>
       <div id="task-diagnostics" class="alert error hidden" role="status"></div>
       <div id="task-table-wrap" class="management-table-wrap hidden"><table class="management-table"><thead><tr><th>任务</th><th>意图</th><th>范围</th><th>状态</th><th>更新时间</th><th class="operation-column">操作</th></tr></thead><tbody id="task-table-body"></tbody></table></div>
-      <div id="task-empty" class="empty-state hidden">当前工作空间还没有正式 Task Record。只有已经对齐并准备产生持久交付的工作才需要创建。</div>
+      <div id="task-empty" class="empty-state hidden">当前工作空间还没有正式任务记录。只有已经对齐并准备产生持久交付的工作才需要创建。</div>
     </section>`;
 
   async function load() {

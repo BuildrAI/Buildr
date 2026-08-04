@@ -170,15 +170,15 @@ export function setupAgentActions({ api }) {
 
   function renderTaskReviewForm(context) {
     const reviewType = context.reviewType === 'completion' ? 'completion' : 'planning';
-    const typeLabel = reviewType === 'planning' ? 'Planning Review' : 'Completion Review';
+    const typeLabel = reviewType === 'planning' ? '方案审查（Planning Review）' : '完成审查（Completion Review）';
     const change = context.projectCode && context.change ? `${context.projectCode}/${context.change}` : '';
-    content.innerHTML = `${formHeader('任务审查', '准备')}<form id="agent-action-form"><div class="context-help">为正式 Task <strong>${context.taskId}</strong> 准备 ${typeLabel}${change ? `，限定 Task-scoped Change <strong>${change}</strong>` : ''}。Buildr 只生成受约束指令，不在页面内执行审查或写入 Result。</div><div class="actions"><button class="button primary" type="submit">生成审查指令</button></div></form>`;
-    bindForm('task-review', () => api('/api/v1/prompts/task-review', { method: 'POST', body: JSON.stringify({ taskId: context.taskId, reviewType, ...(change ? { projectCode: context.projectCode, change: context.change } : {}) }) }), 'Review Result 尚未记录。');
+    content.innerHTML = `${formHeader('任务审查', '准备')}<form id="agent-action-form"><div class="context-help">为正式任务 <strong>${context.taskId}</strong> 准备 ${typeLabel}${change ? `，限定任务范围内的变更 <strong>${change}</strong>` : ''}。Buildr 只生成受约束指令，不在页面内执行审查或写入结果。</div><div class="actions"><button class="button primary" type="submit">生成审查指令</button></div></form>`;
+    bindForm('task-review', () => api('/api/v1/prompts/task-review', { method: 'POST', body: JSON.stringify({ taskId: context.taskId, reviewType, ...(change ? { projectCode: context.projectCode, change: context.change } : {}) }) }), '审查结果尚未记录。');
   }
 
   function renderTaskVerificationForm(context) {
-    content.innerHTML = `${formHeader('任务验证', '准备')}<form id="agent-action-form"><div class="context-help">为正式 Task <strong>${context.taskId}</strong> 准备 Task Verification。Buildr 只生成受约束指令，不在页面内执行测试、生成 target identity 或写入 Result。</div><div class="actions"><button class="button primary" type="submit">生成验证指令</button></div></form>`;
-    bindForm('task-verification', () => api('/api/v1/prompts/task-verification', { method: 'POST', body: JSON.stringify({ taskId: context.taskId, ...(context.targetIdentity ? { targetIdentity: context.targetIdentity } : {}) }) }), 'Task Verification Result 未被修改。');
+    content.innerHTML = `${formHeader('任务验证', '准备')}<form id="agent-action-form"><div class="context-help">为正式任务 <strong>${context.taskId}</strong> 准备任务验证（Task Verification）。Buildr 只生成受约束指令，不在页面内执行测试、生成目标身份或写入结果。</div><div class="actions"><button class="button primary" type="submit">生成验证指令</button></div></form>`;
+    bindForm('task-verification', () => api('/api/v1/prompts/task-verification', { method: 'POST', body: JSON.stringify({ taskId: context.taskId, ...(context.targetIdentity ? { targetIdentity: context.targetIdentity } : {}) }) }), '验证结果未被修改。');
   }
 
   function open(action, context = {}) {

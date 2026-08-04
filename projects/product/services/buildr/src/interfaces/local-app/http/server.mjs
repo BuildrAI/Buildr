@@ -317,6 +317,10 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           runtime.inspectTaskRecord(root, taskEnvironmentMatch[1]);
           return jsonResponse(response, 200, runtime.inspectTaskEnvironment(root, taskEnvironmentMatch[1]));
         }
+        const taskDevelopmentMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/development$`));
+        if (request.method === 'GET' && taskDevelopmentMatch) {
+          return jsonResponse(response, 200, runtime.inspectTaskDevelopment(root, taskDevelopmentMatch[1]));
+        }
         const taskReviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/reviews$`));
         if (request.method === 'GET' && taskReviewsMatch) {
           return jsonResponse(response, 200, runtime.inspectTaskReview(root, taskReviewsMatch[1]));

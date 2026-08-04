@@ -18,7 +18,7 @@
 
 Agent 会负责 runtime discovery、初始化、doctor 和必要的确定性操作。你的第一次成功不是“已经输入过 init 命令”，而是：你已确认 Workspace、Project、可选 Service，并能直接向 Agent 描述要推进的目标。
 
-也可以打开本机 Buildr App：添加已有 Workspace，查看当前 Project 与 Service 范围，然后点击“用 Agent 开始”。App 只帮助理解范围、维护低风险 metadata 和生成交接指令；它不创建 repo、不迁移资产，也不在页面内执行任务。
+也可以打开 Buildr 本机应用（Local App）：添加已有工作空间（Workspace），查看当前项目（Project）与服务（Service）范围，然后点击“用 Agent 开始”。应用只帮助理解范围、维护低风险 metadata、只读查看任务专业事实和生成交接指令；它不创建 repo、不迁移资产，也不在页面内执行专业任务。
 
 ### 只需理解三个对象
 
@@ -30,9 +30,9 @@ Workspace → Project → Service（可选）
 - **Project**：一个业务、产品、系统或长期工作单元。
 - **Service**：该 Project 按需管理的代码仓、应用、模块或可执行资产；没有 Service 也可以开始 Project 范围工作。
 
-## Agent 与 local app 各做什么
+## 智能体（Agent）与本机应用（Local App）各做什么
 
-Agent 负责理解目标、读取相关资产、规划、执行和验证。local app 负责让人看懂真实的 Workspace / Project / Service 范围，受控维护名称与说明，并把 canonical 范围和目标交给 Agent。两条入口读取同一份 Workspace 源资产，不维护第二套 onboarding 状态。
+智能体负责理解目标、读取相关资产、规划、执行和验证。本机应用负责让人看懂真实的工作空间 / 项目 / 服务范围，受控维护名称与说明，并把规范范围和目标交给智能体。任务详情以“概览、研发、证据、环境”四个一级视图组合任务记录、任务研发、审查、验证与当前机器环境的 Application read model；除任务记录的受控管理外，专业事实保持只读。两条入口读取同一份工作空间源资产，不维护第二套 onboarding 或生命周期状态。
 
 ## 手动或技术兜底
 

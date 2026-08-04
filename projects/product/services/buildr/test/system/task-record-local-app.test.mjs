@@ -50,6 +50,22 @@ test('Local App Task API 保持 workspaceId、Origin/session/JSON/body/字段边
   assert.equal(response.status, 201); assert.equal(response.body.status, 'created'); const staleDigest = response.body.recordDigest;
   response = await request(endpoint); assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-task']);
   const taskEndpoint = `${endpoint}/app-task`;
+  response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-development-operation-result/v1'); assert.equal(response.body.status, 'missing'); assert.equal(response.headers.get('cache-control'), 'no-store');
+  const inspectDevelopment = runtime.inspectTaskDevelopment.bind(runtime);
+  const developmentReadModel = { schemaVersion: 'buildr.task-development-operation-result/v1', operation: 'inspect', status: 'inspected', taskId: 'app-task', development: { path: '.buildr/tasks/app-task/development.yml', receiptDigest: 'sha256-development', receipt: { generation: 2 }, applicability: { status: 'candidate-current' } }, diagnostic: null, effects: [], nextActions: [] };
+  let developmentReads = 0;
+  runtime.inspectTaskDevelopment = (target, taskId) => {
+    if (taskId !== 'app-task') return inspectDevelopment(target, taskId);
+    developmentReads += 1;
+    assert.equal(target, root);
+    return developmentReadModel;
+  };
+  response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200); assert.deepEqual(response.body, developmentReadModel); assert.equal(developmentReads, 1);
+  response = await request(`${taskEndpoint}/development?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
+  response = await request(`${endpoint}/missing-task/development`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');
+  const taskBytesBeforeRejectedDevelopmentWrite = fs.readFileSync(path.join(root, '.buildr', 'tasks', 'app-task', 'task.yml'), 'utf8');
+  response = await request(`${taskEndpoint}/development`, { method: 'POST', headers: writeHeaders, body: '{}' }); assert.equal(response.status, 404);
+  assert.equal(fs.readFileSync(path.join(root, '.buildr', 'tasks', 'app-task', 'task.yml'), 'utf8'), taskBytesBeforeRejectedDevelopmentWrite);
   response = await request(`${taskEndpoint}/environment`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-environment-result/v1'); assert.equal(response.body.status, 'unavailable'); assert.equal(response.body.source, 'current-machine'); assert.equal(response.headers.get('cache-control'), 'no-store');
   response = await request(`${taskEndpoint}/environment?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(`${endpoint}/missing-task/environment`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');

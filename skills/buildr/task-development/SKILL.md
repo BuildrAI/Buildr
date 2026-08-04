@@ -5,7 +5,7 @@ description: 正式实现任务在 Planning Review 后推进开发、稳定 Cont
 
 # Task Development
 
-本 Skill 编排 `buildr.task-development/v1`。它通过 Buildr 内部 Task Development Application 工作；第一版没有公共 Development CLI，也没有 Local App 专业投影。不得手写 Development Receipt。
+本 Skill 编排 `buildr.task-development/v1`。它通过 Buildr 内部 Task Development Application 工作；第一版没有公共 Development CLI，Local App 只消费 Application `inspect` 的只读投影，不提供 Development 写操作。不得手写 Development Receipt。
 
 ## 恢复事实
 

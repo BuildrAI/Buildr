@@ -88,10 +88,17 @@ test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () 
   assert.match(styles, /\.content-view-toggle/);
 });
 
-test('Task 详情以只读审查页签展示两个 Result 槽位和三种 applicability', () => {
+test('任务详情使用概览、研发、证据、环境四个一级视图', () => {
   const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
   const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
-  assert.match(source, /data-task-tab="review"/);
+  assert.equal(source.match(/data-task-tab=/g)?.length, 4);
+  assert.match(source, /data-task-tab="overview"[^>]*>概览/);
+  assert.match(source, /data-task-tab="development"[^>]*>研发/);
+  assert.match(source, /data-task-tab="evidence"[^>]*>证据/);
+  assert.match(source, /data-task-tab="environment"[^>]*>环境/);
+  assert.doesNotMatch(source, /data-task-tab="(?:review|verification)"/);
+  assert.match(source, /data-task-panel="evidence"/);
+  assert.match(source, /if \(tab === 'evidence'\) \{ refreshReview\(\); refreshVerification\(\); \}/);
   assert.match(source, /renderReviewSlot\('planning'/);
   assert.match(source, /renderReviewSlot\('completion'/);
   assert.match(source, /current: '当前适用', stale: '目标已变化', unknown: '适用性未知'/);
@@ -102,26 +109,82 @@ test('Task 详情以只读审查页签展示两个 Result 槽位和三种 applic
   assert.match(styles, /\.review-slot-grid \{ grid-template-columns: 1fr; \}/);
 });
 
-test('Task 详情只读展示 current Verification Result，并通过 Agent Action 启动专业流程', () => {
+test('任务研发视图只读投影 current Development Receipt、候选、门禁、决策与最近交接', () => {
+  const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
+  const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
+  assert.match(source, /任务研发（Task Development）/);
+  assert.match(source, /\/development`\)/);
+  assert.match(source, /handoff-current': '研发交接已就绪'/);
+  assert.match(source, /candidate-current': '候选已就绪'/);
+  assert.match(source, /developmentGateCard\('方案审查'/);
+  assert.match(source, /developmentGateCard\('任务验证'/);
+  assert.match(source, /developmentGateCard\('完成审查'/);
+  assert.match(source, /任务上下文身份/);
+  assert.match(source, /已接受风险数/);
+  assert.match(source, /const latest = handoffs\.at\(-1\)/);
+  assert.match(source, /历史研发交接仍被保留，但当前无法实时复核/);
+  assert.doesNotMatch(source, /recordTaskDevelopment|freezeTaskDevelopment|decideTaskDevelopment|createTaskDevelopmentHandoff/);
+  assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync/);
+  assert.match(styles, /\.development-axis-grid/);
+  assert.match(styles, /\.development-gate-grid/);
+  assert.match(styles, /\.development-axis-grid, \.development-gate-grid/);
+});
+
+test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {
   const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
   const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');
-  assert.match(source, /data-task-tab="verification"/);
-  assert.match(source, /Task Verification Result/);
-  assert.match(source, /Target applicability/);
-  assert.match(source, /Declaration applicability/);
+  assert.match(source, /验证结果（Verification Result）/);
+  assert.match(source, /目标适用性/);
+  assert.match(source, /声明适用性/);
   assert.match(source, /\/verification`\)/);
   assert.match(source, /openAgentAction\('task-verification', \{ taskId \}\)/);
   assert.match(actions, /\/api\/v1\/prompts\/task-verification/);
-  assert.match(actions, /Task Verification Result 未被修改/);
+  assert.match(actions, /验证结果未被修改/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskVerification/);
+});
+
+test('任务详情面向用户的核心术语使用中文或中英文并列', () => {
+  const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
+  const tasks = fs.readFileSync('src/interfaces/local-app/web/features/tasks.js', 'utf8');
+  const change = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
+  assert.match(source, /任务记录（Task Record）/);
+  assert.match(source, /任务环境（Task Environment）/);
+  assert.match(source, /方案审查（Planning Review）/);
+  assert.match(source, /完成审查（Completion Review）/);
+  assert.doesNotMatch(source, />Task Record</);
+  assert.doesNotMatch(source, />Task Environment</);
+  assert.doesNotMatch(source, />Planning Review</);
+  assert.doesNotMatch(source, />Completion Review</);
+  assert.doesNotMatch(source, />Verification Result</);
+  assert.match(tasks, /新建正式任务/);
+  assert.match(tasks, /任务 ID/);
+  assert.match(tasks, /项目范围（逗号或换行）/);
+  assert.match(tasks, /服务范围（project\/service）/);
+  assert.match(tasks, /OpenSpec 变更（project\/change/);
+  assert.doesNotMatch(tasks, />新建正式 Task</);
+  assert.doesNotMatch(tasks, />Task ID</);
+  assert.doesNotMatch(tasks, />Project scope/);
+  assert.doesNotMatch(tasks, />Service scope/);
+  assert.doesNotMatch(tasks, />OpenSpec Changes/);
+  assert.match(change, /任务范围解析器（Task-scoped Resolver）/);
+  assert.match(change, /按任务 \$\{taskId\}/);
+  assert.match(change, /文件系统路径（filesystem path）/);
+  assert.match(change, /保留工作区（Retained）/);
+  assert.match(change, /工作副本（Working copy）/);
+  assert.match(change, /保留基线（Retained baseline）/);
+  assert.doesNotMatch(change, /row\('Working copy'/);
+  assert.doesNotMatch(change, /row\('Retained baseline'/);
 });
 
 test('Task-scoped Change 使用 Planning Review，global Change 保留通用审查 route', () => {
   const change = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
+  const tasks = fs.readFileSync('src/interfaces/local-app/web/features/tasks.js', 'utf8');
   const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');
   assert.match(change, /openAgentAction\('task-review', \{ taskId, reviewType: 'planning', projectCode, change: change\.code \}\)/);
   assert.match(change, /openAgentAction\('change', \{ projectCode, ref: changeRef, action: 'review' \}\)/);
   assert.doesNotMatch(change, /querySelector\('\.panel-actions'\)\.classList\.add\('hidden'\)/);
   assert.match(actions, /\/api\/v1\/prompts\/task-review/);
-  assert.match(actions, /Review Result 尚未记录/);
+  assert.match(actions, /审查结果尚未记录/);
+  assert.match(tasks, /创建任务记录/);
+  assert.match(change, /方案审查（Planning Review）/);
 });
