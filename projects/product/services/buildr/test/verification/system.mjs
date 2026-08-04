@@ -13,6 +13,7 @@ import { resolveVerificationWorkerBudget } from './worker-budget.mjs';
 
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const systemRoot = path.join(productRoot, 'test', 'system');
+const fileTimingReporter = path.join(import.meta.dirname, 'system-file-timing-reporter.mjs');
 const startFirst = [
   'worktree-create.test.mjs',
   'task-record-product.test.mjs',
@@ -43,7 +44,15 @@ process.stderr.write(`[buildr-system-context] status=ready id=${context.marker.c
 let result = null;
 let cleanupError = null;
 try {
-  result = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, '--test-reporter=dot', ...files], {
+  result = spawnSync(process.execPath, [
+    '--test',
+    `--test-concurrency=${workerBudget}`,
+    '--test-reporter=dot',
+    '--test-reporter-destination=stdout',
+    `--test-reporter=${fileTimingReporter}`,
+    '--test-reporter-destination=stderr',
+    ...files,
+  ], {
     cwd: productRoot,
     stdio: 'inherit',
     env: { ...process.env, [TASK_LIFECYCLE_CONTEXT_ENV]: context.contextRoot },

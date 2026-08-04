@@ -2,22 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
-
-const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
-const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-
-function run(args, expected = 0) {
-  const result = spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
-  assert.equal(result.status, expected, `buildr ${args.join(' ')}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
-  return result;
-}
 
 function declaration() {
   return {
@@ -46,14 +36,31 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   fs.mkdirSync(source);
   fs.writeFileSync(path.join(source, 'README.md'), '# Portable guide\n');
 
-  run(['init', '--target', root, '--name', 'portable-docs', '--description', 'Generic Task Development fixture', '--profile', 'team']);
-  run(['project', 'create', 'docs', '--target', root, '--name', 'Docs', '--description', 'Documentation project']);
-  run(['service', 'create', 'docs/guide', source, '--target', root, '--name', 'Guide', '--description', 'Documentation service', '--type', 'documentation']);
+  const runtime = createRuntime();
+  runtime.initBuildr(['--target', root, '--name', 'portable-docs', '--description', 'Generic Task Development fixture', '--profile', 'team']);
+  runtime.createProject(['docs', '--target', root, '--name', 'Docs', '--description', 'Documentation project']);
+  runtime.createService(['docs/guide', source, '--target', root, '--name', 'Guide', '--description', 'Documentation service', '--type', 'documentation']);
   fs.writeFileSync(path.join(root, 'projects', 'docs', 'verification.yml'), YAML.stringify(declaration()));
-  run(['task', 'create', 'publish-guide', '--title', 'Publish guide', '--intent', 'Deliver the current portable guide.', '--project', 'docs', '--service', 'docs/guide', '--target', root]);
+  runtime.createTaskRecord(root, {
+    taskId: 'publish-guide',
+    title: 'Publish guide',
+    intent: 'Deliver the current portable guide.',
+    projects: ['docs'],
+    services: ['docs/guide'],
+    changes: [],
+  });
 
   assert.equal(fs.existsSync(path.join(root, '.git')), false);
-  const runtime = createRuntime();
+  const taskContext = runtime.readTaskRecordPersistence(root, 'publish-guide');
+  const declarationContext = runtime.observeTaskVerificationDeclarations(root, 'publish-guide', root);
+  runtime.readTaskRecordPersistence = (_targetRoot, taskId) => {
+    assert.equal(taskId, 'publish-guide');
+    return taskContext;
+  };
+  runtime.observeTaskVerificationDeclarations = (_targetRoot, taskId) => {
+    assert.equal(taskId, 'publish-guide');
+    return declarationContext;
+  };
   runtime.resolveTaskEnvironmentExecution = (_workspace, taskId) => ({
     ready: true,
     taskId,
@@ -67,6 +74,13 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
       { selector: 'service:docs/guide', kind: 'service', sourcePath: 'projects/docs/services/guide', executionRoot: path.join(root, 'projects', 'docs', 'services', 'guide') },
     ],
   });
+  runtime.observeTaskContentComponents = (scopes) => scopes.map((scope) => ({
+    selector: scope.selector,
+    kind: scope.kind,
+    sourcePath: scope.sourcePath,
+    observer: 'buildr.filesystem-content-observer/v1',
+    identity: taskDevelopmentDigest(`generic-journey:${scope.selector}`),
+  })).sort((left, right) => left.selector.localeCompare(right.selector));
   const planningTargetIdentity = taskDevelopmentDigest('publish-guide-plan-v1');
   runtime.recordTaskReview(root, 'publish-guide', {
     reviewType: 'planning',

@@ -92,6 +92,10 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   assert.match(runner, /\[TASK_LIFECYCLE_CONTEXT_ENV\]: context\.contextRoot/);
   assert.match(runner, /finally \{[\s\S]*context\.cleanup\(\)/);
   assert.match(runner, /--test-reporter=dot/, 'successful System output must stay compact while dot reporter retains failure details');
+  assert.match(runner, /--test-reporter-destination=stdout/);
+  assert.match(runner, /system-file-timing-reporter\.mjs/);
+  assert.match(runner, /--test-reporter-destination=stderr/,
+    'file timing must remain transient process diagnostics instead of portable Verification Result data');
   assert.match(runner, /const startFirst = \[[\s\S]*worktree-create\.test\.mjs[\s\S]*task-record-product\.test\.mjs/,
     'the bounded System runner must start known long owners before alphabetic tail scheduling');
   assert.match(runner, /startRank\.get\(left\)[\s\S]*left\.localeCompare\(right\)/,

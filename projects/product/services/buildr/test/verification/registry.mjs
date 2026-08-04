@@ -255,6 +255,7 @@ export const verificationSteps = Object.freeze([
     'test/helpers/clean-product-source.mjs',
     'test/helpers/task-lifecycle-system-context.mjs',
     'test/helpers/task-record-system-fixture.mjs',
+    'test/verification/system-file-timing-reporter.mjs',
     'test/verification/system.mjs',
     'bin/buildr.mjs', 'buildr',
     'src/application/cli-update.mjs',

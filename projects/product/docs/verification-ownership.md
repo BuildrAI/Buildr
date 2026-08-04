@@ -152,13 +152,15 @@ Development 稳定 Content Target 并固定 verification policy
 | Environment 启停 | 双 Task 要创建/删除 4 个 Git worktree，顺序 cleanup 是 peer-preservation 证据 | prepare 不是主瓶颈；cleanup 是 acceptance 最大单阶段但不能删除。下一轮应优化产品 cleanup 实现或局部 fixture，不能把必要证明改成假并发 |
 | affected owner 过度扩散 | Task Finish 交付的 25 条 Product path 曾命中 20 个 step：任意 Skill 命中 9 个 owner、任意 OpenSpec 内容命中两个重型 fixture、Task Finish 源码命中完整 Integration/System/并发验收 | 删除非直接 owner，并让 Task Finish 使用 3-file Integration 与 2-file System slice；同一历史路径回放降为 15 个 step。安全内容扫描及其 tarball dependency 保留；两个 slice 实跑 16/16、总墙钟 5.17 秒，完整 affected 回放 37.110 秒，相比原正式运行 135.035 秒；Candidate 的 37 个主步骤不变 |
 | Runtime parity 重复环境与覆盖错位 | 同一 `dev` 三轮为 34.44–35.61s，中位 35.34s；6 次 `init`、重复 install/render、串行 Doctor；且代码把 5 个实现族代表误当成全部 supported adapter，遗漏 Trae/Trae Work inventory/Doctor | 一次 seed init、隔离 clone、3 路有界并行；7 个 adapter 全量 inventory/Doctor，5 个实现族保留 install/render/check/idempotency/orphan/uninstall/restore/cleanup。最终内容树两轮 20.59–23.11s，中位 21.85s，下降约 38%；普通 Task Finish Skill 改走 `runtime-skill-projection`，完整 6-step affected 为 13.479s |
+| System 缺少文件级诊断、generic journey 重复稳定上下文 | `dot reporter` 只能看到总时长；首次 25 文件诊断中 `task-development-generic-journey` 并发耗时 39.69s，隔离耗时 24.08s。逐阶段确认主要成本是不变 Task Record、declaration、Environment 与 Content Target 被各 lifecycle action 重复准备和 canonical 校验 | System 保留 `dot` 输出，并通过第二 reporter 将 25 个 file completion 按 worker duration 排序写入 stderr transient diagnostics，不进入 portable Result。generic journey 复用不可变任务上下文，Review/Verification/Development 持久化仍真实执行；隔离耗时降至 7.87s，完整 System 中该文件降至 17.04s，System 114/114 墙钟约从 51.3s 降至 43.8s |
 
 P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，38-step Changed 为 148.543 秒，37-step Candidate 为 147.819 秒且全部通过；同一优化树另有 132.741 秒和 143.323 秒全绿结果。相对 193.161 秒基线，墙钟下降约 23%–31%。rebase P0.5 后先复测当前 System 为 115/115、67.50 秒；正式 delivery timing 以本次稳定 Content Target 的 transient summary 为准。120 秒仍只是未达成的观察目标，不应通过调高预算或删必要风险证据宣告成功。
 
 ## 8. 下一轮优化方案
 
-1. 为 System 增加只进入 transient diagnostics 的紧凑文件级耗时摘要；保持 `dot reporter` 的正常输出，不把 timing 写入 portable Verification Result。
-2. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
+1. 用文件级 diagnostics 继续区分 `worktree-create` 的隔离固有成本与 Candidate 并发争用；只有确认重复 owner 或 fixture 成本后才改测试，必要 Git/Task Environment Journey 不因慢而删除。
+2. 再审查 `workspace-product` 是否重复准备相同 Workspace/CLI 上下文；不把 System runner 扩成动态调度器或持久性能平台。
+3. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
 
 ## 9. 迭代记录
 
@@ -179,3 +181,4 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 13. 收敛 package static owner | 五个 package Integration selector 各重复扫描 213 个静态文件；现在仅 `package-static` 执行该扫描，其他 selector 只运行各自 Journey 并明确静态事实由 `static` owner 持有。Candidate owner 与独立诊断不变，公共 `buildr package check` 仍先执行完整 static 再运行 aggregate。受机器负载波动影响，未把单次 package group 墙钟作为收益结论；确定性地消除了每个 Candidate 的五次重复扫描 |
 | 14. 审计测试残留进程 | 清理 3 个旧 Local App Preview 和 2 个 detached fixture 进程；其 worktree/临时目标均已不存在。当前双 Preview Journey 与 runner descendant cleanup 聚焦测试通过且未产生新残留，因此结论是历史环境污染，不追加当前产品修复或全局进程名清理机制 |
 | 15. 收敛 Worktree System Journey | 隔离基线 7 条串行 Journey 为 44.90s，其中三条 Task Environment Journey 占主要成本。共享占用/释放合并为一条公共 Journey，placement mismatch 下沉到 Application Integration，真实 Git create/cleanup 与公共 CLI 仍保留；公共 CLI 操作约从 39 次降到 30 次。背靠背候选为 6/6、30.41s，墙钟约降 32%，user+sys 从 43.15s 降到 30.28s；并发负载下的漂移结果未计入收益 |
+| 16. 增加 System 文件诊断并复用稳定任务上下文 | 双 reporter 从 Node file completion 提取 25 个真实 worker duration，摘要只进入 stderr transient diagnostics。首轮数据定位到 generic Task Development Journey；复用不变 Task Record、declaration、Environment 与 Content Target，保留可变 Result/Receipt 的真实持久化。该文件隔离 24.08s→7.87s，完整 System 中 39.69s→17.04s；System 114/114 墙钟约 51.3s→43.8s |
