@@ -177,6 +177,7 @@ export function createPackageStaticValidator(deps) {
       'src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
       'src/infrastructure/sqlite/migrations/0001_create_task_store.sql',
       'src/infrastructure/sqlite/migrations/0002_create_parent_task_relations.sql',
+      'src/infrastructure/sqlite/migrations/0003_inline_parent_task_column.sql',
     ];
     for (const relative of sqliteMigrations) {
       const file = path.join(root, relative);
@@ -188,6 +189,13 @@ export function createPackageStaticValidator(deps) {
       const names = fs.readdirSync(migrationDirectory).sort();
       if (JSON.stringify(names) !== JSON.stringify(sqliteMigrations.map((relative) => path.basename(relative)))) {
         problems.push(`Workspace SQLite migrations must be the contiguous reviewed set: ${names.join(', ') || '<none>'}.`);
+      }
+    }
+    const parentColumnMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0003_inline_parent_task_column.sql');
+    if (existsFile(parentColumnMigration)) {
+      const sql = fs.readFileSync(parentColumnMigration, 'utf8');
+      for (const required of ['ADD COLUMN parent_task_id', 'DROP TABLE task_parent_relations', 'CREATE INDEX tasks_parent_task_idx ON tasks(parent_task_id, task_id)']) {
+        if (!sql.includes(required)) problems.push(`Workspace SQLite parent column migration must include: ${required}`);
       }
     }
     if (existsFile(path.join(root, 'scripts', 'install-buildr-cli'))) {

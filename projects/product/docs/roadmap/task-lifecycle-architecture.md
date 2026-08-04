@@ -450,7 +450,7 @@ Skill随附无状态helper，只执行preflight、presence/bytes snapshot、post
 
 协调 Task 仍是普通 Task Record，使用同一 Task ID、状态和生命周期。它可以有多个直接 Children，也可以自身作为另一个 Task 的 Child，从而形成多层树。每个 Child 至多一个直接 Parent；关系只存在于同一 canonical Workspace。
 
-Task Record Application 是关系的唯一 writer。SQLite 使用窄 `task_parent_relations(child_task_id, parent_task_id)` 表达层级，不把 `tasks` 主表重建成自引用 schema，也不建设通用 relation/edge 图。写入必须拒绝不存在或 terminal Parent、自引用和任何祖先循环；读取只返回直接 Parent 和直接 Children，调用方按需逐层导航。
+Task Record Application 是关系的唯一 writer。SQLite 直接使用 nullable `tasks.parent_task_id` self-reference foreign key 表达标准一对多层级，并通过 `tasks(parent_task_id, task_id)` 索引查询直接 Children；不增加独立关系表，也不建设通用 relation/edge 图。写入必须拒绝不存在或 terminal Parent、自引用和任何祖先循环；读取只返回直接 Parent 和直接 Children，调用方按需逐层导航。
 
 ### 生命周期独立性
 

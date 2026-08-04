@@ -32,23 +32,27 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(fs.existsSync(file), false);
 
   const writable = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  assert.equal(writable.version, 2);
+  assert.equal(writable.version, 3);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), [
     { version: 0, name: '0000_create_migration_ledger.sql' },
     { version: 1, name: '0001_create_task_store.sql' },
     { version: 2, name: '0002_create_parent_task_relations.sql' },
+    { version: 3, name: '0003_inline_parent_task_column.sql' },
   ]);
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_parent_relations', 'task_projects', 'task_services', 'tasks',
+    'schema_migrations', 'task_changes', 'task_projects', 'task_services', 'tasks',
   ]);
+  assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
+  assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
+  assert.ok(writable.database.prepare("PRAGMA index_list(tasks)").all().some((row) => row.name === 'tasks_parent_task_idx'));
   writable.database.close();
 
   const before = fs.statSync(file).mtimeMs;
   const readOnly = runtime.openWorkspaceStructuredStore(root, { writable: false });
-  assert.equal(readOnly.version, 2);
+  assert.equal(readOnly.version, 3);
   readOnly.database.close();
   assert.equal(fs.statSync(file).mtimeMs, before);
-  assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'healthy', version: 2, integrity: 'ok' });
+  assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'healthy', version: 3, integrity: 'ok' });
 });
 
 test('只读打开未初始化 Workspace 不创建目录或数据库', (t) => {
@@ -66,7 +70,7 @@ test('只读打开未初始化 Workspace 不创建目录或数据库', (t) => {
   assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'uninitialized', version: null, integrity: null });
 });
 
-test('version 1 Task Store 原位升级到 version 2 且保留既有 Task', (t) => {
+test('version 1 Task Store 原位升级到 latest 且保留既有 Task', (t) => {
   const root = workspace(t);
   const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -80,13 +84,38 @@ test('version 1 Task Store 原位升级到 version 2 且保留既有 Task', (t) 
 
   const runtime = createRuntime();
   const upgraded = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  assert.equal(upgraded.version, 2);
+  assert.equal(upgraded.version, 3);
   assert.equal(upgraded.database.prepare("SELECT title FROM tasks WHERE task_id = 'existing-task'").get().title, '既有任务');
-  assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 1);
+  assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 0);
+  assert.equal(upgraded.database.prepare("SELECT parent_task_id FROM tasks WHERE task_id = 'existing-task'").get().parent_task_id, null);
   upgraded.database.close();
   const record = runtime.readTaskRecordPersistence(root, 'existing-task').record;
   assert.equal(record.parentTaskId, null);
   assert.deepEqual(record.childTaskIds, []);
+});
+
+test('version 2 Parent 关系原位迁入 tasks.parent_task_id 并删除关系表', (t) => {
+  const root = workspace(t);
+  const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const database = new DatabaseSync(file);
+  const migrations = loadWorkspaceSqliteMigrations();
+  for (const migration of migrations.slice(0, 3)) applyWorkspaceSqliteMigration(database, migration);
+  const insert = database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at)
+    VALUES (?, 'buildr.task-record/v1', ?, ?, 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z')`);
+  insert.run('parent-task', 'Parent', 'Coordinate');
+  insert.run('child-task', 'Child', 'Execute');
+  database.prepare("INSERT INTO task_parent_relations(child_task_id, parent_task_id) VALUES ('child-task', 'parent-task')").run();
+  database.close();
+
+  const runtime = createRuntime();
+  const upgraded = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  assert.equal(upgraded.version, 3);
+  assert.equal(upgraded.database.prepare("SELECT parent_task_id FROM tasks WHERE task_id = 'child-task'").get().parent_task_id, 'parent-task');
+  assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 0);
+  upgraded.database.close();
+  assert.equal(runtime.readTaskRecordPersistence(root, 'child-task').record.parentTaskId, 'parent-task');
+  assert.deepEqual(runtime.readTaskRecordPersistence(root, 'parent-task').record.childTaskIds, ['child-task']);
 });
 
 test('migration loader 拒绝缺口并以原始 package bytes 计算稳定 checksum', (t) => {
@@ -125,7 +154,7 @@ test('checksum 漂移、版本超前和损坏数据库均 fail closed', (t) => {
 
   const newerRoot = workspace(t);
   opened = runtime.openWorkspaceStructuredStore(newerRoot, { writable: true });
-  opened.database.prepare(`INSERT INTO schema_migrations(version, name, checksum, applied_at) VALUES (3, '0003_future.sql', 'sha256-${'f'.repeat(64)}', ?)`).run(new Date().toISOString());
+  opened.database.prepare(`INSERT INTO schema_migrations(version, name, checksum, applied_at) VALUES (4, '0004_future.sql', 'sha256-${'f'.repeat(64)}', ?)`).run(new Date().toISOString());
   opened.database.close();
   assert.throws(() => runtime.openWorkspaceStructuredStore(newerRoot, { writable: false }), (error) => error.code === 'workspace_store_database_newer_than_runtime');
 
@@ -147,7 +176,7 @@ test('Doctor 区分未初始化、healthy 与 unavailable 且不暴露数据库 
   runtime.openWorkspaceStructuredStore(root, { writable: true }).database.close();
   result = { findings: [], structuredStore: null };
   runtime.diagnoseWorkspaceStructuredStore(result, root);
-  assert.deepEqual(result.structuredStore, { status: 'healthy', version: 2, integrity: 'ok' });
+  assert.deepEqual(result.structuredStore, { status: 'healthy', version: 3, integrity: 'ok' });
   assert.deepEqual(result.findings, []);
 
   const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');

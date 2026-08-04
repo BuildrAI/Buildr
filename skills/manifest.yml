@@ -392,7 +392,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 用户明确要求创建、查看、更新、完成或放弃正式 Task Record，或按 Task ID 恢复正式任务顶层事实时使用；不用于普通任务分流、只读探索、Task Environment 或任何专业阶段动作。
+    description: 用户明确要求创建、查看、更新、设置 Parent、完成或放弃正式 Task Record，或按 Task ID 恢复正式任务顶层事实时使用；不用于普通任务分流、只读探索、Task Environment 或任何专业阶段动作。
     enabled: true
     required: false
     state: installed
