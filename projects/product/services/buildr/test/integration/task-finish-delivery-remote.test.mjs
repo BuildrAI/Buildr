@@ -8,6 +8,7 @@ import test from 'node:test';
 import { resolveTaskFinishDeliveryRemote } from '../../src/application/task-finish/task-finish-delivery-remote.mjs';
 import { resolveTaskFinishTargetBranch } from '../../src/application/task-finish/task-finish-delivery-target.mjs';
 import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
+import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
 
 function command(cwd, executable, args) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -31,7 +32,7 @@ function repositoryFixture(t) {
   command(seed, 'git', ['init', '-b', 'dev']);
   command(seed, 'git', ['config', 'user.name', 'Buildr Remote Test']);
   command(seed, 'git', ['config', 'user.email', 'remote@example.com']);
-  fs.writeFileSync(path.join(seed, '.gitignore'), '/.worktrees/\n');
+  fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# baseline\n');
   command(seed, 'git', ['add', '.gitignore', 'README.md']);
   command(seed, 'git', ['commit', '-m', 'baseline']);
@@ -52,7 +53,9 @@ function deliveryFixture(t, hook) {
   command(environmentRoot, 'git', ['add', 'feature.txt']);
   command(environmentRoot, 'git', ['commit', '-m', 'candidate']);
   const expectedTargetRef = command(data.retained, 'git', ['rev-parse', 'dev']);
-  const carrierRef = command(environmentRoot, 'git', ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: environmentRoot, deliveryBaselineHead: expectedTargetRef });
+  const isolated = createIsolatedGitCarrier({ repositoryRoot: environmentRoot, workspaceRoot: data.retained, runId: 'delivery-remote-evidence', deliveryBaselineHead: expectedTargetRef, taskContribution: contribution, message: 'delivery carrier' });
+  const carrierRef = isolated.head;
   if (hook) writeExecutable(path.join(data.remote, 'hooks', 'post-receive'), hook({ ...data, expectedTargetRef, carrierRef }));
   const run = {
     runId: 'delivery-remote-evidence',
@@ -60,6 +63,7 @@ function deliveryFixture(t, hook) {
       task: 'delivery-remote-evidence',
       handoffIdentity: 'sha256-handoff',
       candidateIdentity: 'sha256-candidate',
+      candidateGeneration: 1,
       contentTargetIdentity: 'sha256-content-target',
       agent: 'codex',
       targetBranch: 'dev',
@@ -70,9 +74,10 @@ function deliveryFixture(t, hook) {
     },
     deliveryCarrier: {
       identity: 'sha256-carrier',
+      ...isolated,
+      kind: 'git-isolated-commit',
       head: carrierRef,
-      tree: command(environmentRoot, 'git', ['rev-parse', 'HEAD^{tree}']),
-      branch: 'codex/delivery',
+      branch: null,
       expectedTargetRef,
       targetRef: 'origin/dev',
       changedPaths: ['feature.txt'],

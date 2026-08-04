@@ -283,7 +283,7 @@ try {
 
   summary.targetRace = {
     status: 'owned-by-task-finish-journey',
-    reason: 'Concurrent task acceptance no longer drives the removed caller-authored Finish protocol; terminal v2 target-race handoff to Task Development is covered by product executor tests.',
+    reason: 'Concurrent task acceptance no longer drives the removed caller-authored Finish protocol; isolated-carrier target-race recovery and fail-closed contribution checks are covered by product executor tests.',
   };
 
   summary.status = 'passed';

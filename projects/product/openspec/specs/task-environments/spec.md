@@ -102,38 +102,48 @@ Task Environment MUST 记录每个工作范围的实际执行根、任务验证�
 - **AND** MUST NOT 接管、暂存、覆盖、回滚或扩大清理范围
 
 ### Requirement: Git worktree provider 必须只返回窄 Git evidence
-Buildr MUST 以 `buildr.git-worktree-provider/v1` 表达 Git worktree provider，并 MUST 让默认 `task-worktree` provider 只拥有 repository plan、checkout、branch、HEAD、remote、clean、worktree registration 和 Git cleanup effects。provider evidence MUST 使用 `buildr.git-worktree-evidence/v1`；它 MUST NOT 判断或保存 Task Environment 的 runtime/CLI/依赖、总 `ready`、恢复、动态资源、Agent session 或总 cleanup 结论。
+Buildr MUST以`buildr.git-worktree-provider/v1`表达Git worktree provider，并 MUST让默认`task-worktree` provider只拥有repository plan、checkout、branch、HEAD、remote、clean、worktree registration、由Task Environment提交的确定性integrated evidence与Git cleanup effects。provider evidence MUST使用`buildr.git-worktree-evidence/v1`；它 MUST NOT判断或保存Task Environment的runtime/CLI/依赖、总`ready`、恢复、动态资源、Agent session或总cleanup结论。正常交付的integrated evidence MAY是Task branch对delivery ref的ancestor，也 MAY是Finish提供且provider能独立复算的Task Contribution equivalence；两者都 MUST绑定精确Task checkout/source snapshot、baseline、carrier与target ref，不能由调用方claimed outcome替代。
 
 #### Scenario: 创建默认单仓 worktree
-- **WHEN** Task Environment 为 Workspace root 选择 Git worktree provider
-- **THEN** provider MUST 在 `.worktrees/<task-id>` 创建或复用 root repository worktree
-- **AND** MUST 返回可复核的 repository、checkout、branch、HEAD、clean 与 registration evidence
+- **WHEN** Task Environment为Workspace root选择Git worktree provider
+- **THEN** provider MUST在`.worktrees/<task-id>`创建或复用root repository worktree
+- **AND** MUST返回可复核的repository、checkout、branch、HEAD、clean与registration evidence
 
 #### Scenario: 创建显式多 repo worktrees
-- **WHEN** Task Environment 提供一个或多个显式 Project/Service selectors
-- **THEN** provider MUST 从 canonical registries 与实际 Git boundaries 解析 source path、remote 和 integration branch
-- **AND** MUST 将每个 nested worktree 放在环境 checkout 内对应的 canonical `source.path`
-- **AND** MUST NOT 自动包含全部 repositories、按 remote URL 猜范围或把独立 repository 合并成共享 index
+- **WHEN** Task Environment提供一个或多个显式Project/Service selectors
+- **THEN** provider MUST从canonical registries与实际Git boundaries解析source path、remote和integration branch
+- **AND** MUST将每个nested worktree放在环境checkout内对应的canonical `source.path`
+- **AND** MUST NOT自动包含全部repositories、按remote URL猜范围或把独立repository合并成共享index
 
 #### Scenario: repository plan 存在冲突
-- **WHEN** selector 无效、remote/branch identity 冲突、目标被父 repository 跟踪、路径越界、已有未知文件或被其他 worktree 占用
-- **THEN** provider MUST 在任何 `git worktree add` 前 fail closed
-- **AND** MUST 返回失败 selector、声明/实际 identity 与未执行 effects
+- **WHEN** selector无效、remote/branch identity冲突、目标被父repository跟踪、路径越界、已有未知文件或被其他worktree占用
+- **THEN** provider MUST在任何`git worktree add`前fail closed
+- **AND** MUST返回失败selector、声明/实际identity与未执行effects
 
 #### Scenario: 多 repo 创建中途失败
-- **WHEN** 完整预检通过后一个 nested worktree 创建失败
-- **THEN** provider MUST 保留已成功创建的 checkouts 和分支并返回逐 repository evidence
-- **AND** Task Environment MUST 在同一 Environment Receipt 中记录 `blocked`，相同 plan 重试 MUST 幂等复用匹配 checkouts
+- **WHEN** 完整预检通过后一个nested worktree创建失败
+- **THEN** provider MUST保留已成功创建的checkouts和分支并返回逐repository evidence
+- **AND** Task Environment MUST在同一Environment Receipt中记录`blocked`，相同plan重试 MUST幂等复用匹配checkouts
 
 #### Scenario: provider 被直接检查
-- **WHEN** 调用方执行 provider-level worktree inspect
-- **THEN** 结果 MUST 只报告当前 Git evidence 和本次 effects
-- **AND** MUST NOT 返回或暗示 Environment `ready`、execution binding、runtime projection、依赖或 session adoption
+- **WHEN** 调用方执行provider-level worktree inspect
+- **THEN** 结果 MUST只报告当前Git evidence和本次effects
+- **AND** MUST NOT返回或暗示Environment `ready`、execution binding、runtime projection、依赖或session adoption
+
+#### Scenario: ancestor关系证明正常集成
+- **WHEN** Task Environment提供matching evidence、delivery ref包含Task branch HEAD且worktree没有source drift
+- **THEN** provider MUST按现有ancestor integrated evidence执行精确cleanup
+- **AND** MUST保留其他任务与远端refs
+
+#### Scenario: 等价任务贡献证明正常集成
+- **WHEN** Task branch因隔离carrier re-application不是delivery ref祖先，但Task Environment提供source snapshot、原任务基线、Delivery Baseline、carrier/target ref与Task Contribution identity
+- **THEN** provider MUST从当前Task worktree与Git objects独立复算原/应用后delta identities，并只在完全相等且target等于carrier时视为integrated
+- **AND** MUST NOT修改Task worktree/branch、使用路径无重叠推断语义安全或信任caller claimed equivalence
 
 #### Scenario: provider 执行清理
-- **WHEN** Task Environment 提供匹配 evidence 的正常交付或明确放弃清理授权
-- **THEN** provider MUST 只删除精确 Task-owned worktrees/本地分支/evidence，并保留其他任务和远端 refs
-- **AND** identity、ownership 或授权不匹配时 MUST 零删除失败
+- **WHEN** Task Environment提供匹配evidence的正常交付或明确放弃清理授权
+- **THEN** provider MUST只删除精确Task-owned worktrees/本地分支/evidence，并保留其他任务和远端refs
+- **AND** identity、ownership、贡献等价或授权不匹配时 MUST零删除失败
 
 ### Requirement: Environment prepare 必须确定性准备并真实探测执行基础
 Task Environment MUST 从 canonical Workspace、Project、Service 与现有 runtime/command authority 解析准备计划，并 MUST 依次准备执行位置、适用 Runtime、Workspace CLI、依赖和 workspace-scoped runtime projection。`ready` MUST 来自实际执行根的最小真实 probe；事实缺失、冲突或任一 required scope 未通过时 MUST 返回 `blocked`，不得让 Agent 按惯例猜测安装或修复动作。
@@ -243,37 +253,42 @@ Task Environment MUST 通过 canonical Task ID 恢复同一份 Environment Recei
 - **AND** MUST NOT 自动 merge、覆盖或宣称锁/CAS/租约保证
 
 ### Requirement: Task Environment 必须统一编排安全 cleanup
-Task Environment MUST 独占 Task 级环境 cleanup 编排和结果。正常完成时，它 MUST 只在 Task Finish 提供每个工作范围的已交付 identity 与清理资格后停止资源、调用 provider cleanup 并解除占用；明确放弃时，它 MAY 在上层已经处置关联 Change/保留事实且 ownership 可证明后清理 Task-owned dirty 资源。Task Environment MUST NOT 执行 commit、merge、push、远端删除、交付判断或 Retrospective。
+Task Environment MUST独占Task级环境cleanup编排和结果。正常完成时，它 MUST只在Task Finish提供每个工作范围的已交付identity与清理资格后停止资源、调用provider cleanup并解除占用；对于隔离Delivery Carrier，Environment MUST把bounded Task Contribution proof交给Git provider复核，而不是要求Finish改写原Task branch以制造ancestor关系。明确放弃时，它 MAY在上层已经处置关联Change/保留事实且ownership可证明后清理Task-owned dirty资源。Task Environment MUST NOT执行commit、merge、push、远端删除、语义交付判断或Retrospective。
 
 #### Scenario: 正常完成后清理
-- **WHEN** Finish handoff 证明全部工作范围已交付且可清理，资源与 provider evidence 均匹配
-- **THEN** Task Environment MUST 按资源依赖顺序停止动态资源，再调用各 scope provider cleanup 并解除共享根占用
-- **AND** Environment Receipt MUST 保留 removed/retained resources、provider results 与最终 cleanup status
+- **WHEN** Finish handoff证明全部工作范围已交付且可清理，资源与provider evidence均匹配
+- **THEN** Task Environment MUST按资源依赖顺序停止动态资源，再调用各scope provider cleanup并解除共享根占用
+- **AND** Environment Receipt MUST保留removed/retained resources、provider results与最终cleanup status
+
+#### Scenario: 隔离carrier交付后清理原Task worktree
+- **WHEN** Finish提供可独立复算的Task Contribution proof，target ref等于carrier，且当前Task source snapshot未漂移
+- **THEN** Environment MUST允许Git provider以该等价proof确认integrated并清理原Task worktree/branch
+- **AND** MUST不要求原Task branch成为target祖先或修改Candidate generation
 
 #### Scenario: Finish 请求清理但资源仍阻塞
-- **WHEN** 任一 Preview/process/container 仍运行、provider identity 不匹配、worktree dirty/未集成或其他 Task 仍占用资源
-- **THEN** cleanup MUST 返回 `blocked` 并保留所有仍用于恢复的环境内容
-- **AND** Finish MUST 只恢复 cleanup，不得重跑 prepare、verify 或 deliver
+- **WHEN** 任一Preview/process/container仍运行、provider identity不匹配、worktree source drift、integrated/contribution proof不成立或其他Task仍占用资源
+- **THEN** cleanup MUST返回`blocked`并保留所有仍用于恢复的环境与carrier内容
+- **AND** Finish MUST只恢复cleanup，不得重跑prepare、verify或deliver
 
 #### Scenario: 用户明确放弃独占 dirty worktree
-- **WHEN** 上层提供明确 abandon authorization，关联 Change/保留事实已处置，且 provider evidence 证明 dirty worktree 全部属于该 Task
-- **THEN** Task Environment MAY 请求 provider 删除该 Task-owned checkout、未共享本地分支与资源
-- **AND** MUST 记录放弃授权和实际 removed evidence，不要求第二次普通 cleanup 确认
+- **WHEN** 上层提供明确abandon authorization，关联Change/保留事实已处置，且provider evidence证明dirty worktree全部属于该Task
+- **THEN** Task Environment MAY请求provider删除该Task-owned checkout、未共享本地分支与资源
+- **AND** MUST记录放弃授权和实际removed evidence，不要求第二次普通cleanup确认
 
 #### Scenario: 放弃共享根但 ownership 不清
-- **WHEN** 非 Git/shared execution root 混有来源不明或其他 Task 改动
-- **THEN** Task Environment MUST 保留该内容并返回 `blocked` 或明确 retained result
-- **AND** MUST NOT 因 Task 已放弃而清空、回滚或删除整个共享根
+- **WHEN** 非Git/shared execution root混有来源不明或其他Task改动
+- **THEN** Task Environment MUST保留该内容并返回`blocked`或明确retained result
+- **AND** MUST NOT因Task已放弃而清空、回滚或删除整个共享根
 
 #### Scenario: 清理其他并行任务
-- **WHEN** 同一 Workspace/Git common-dir 还存在其他 Task receipts、worktrees、previews、ports 或 branches
-- **THEN** cleanup MUST 只操作当前 Environment Receipt 精确登记且 provider 已证明 ownership 的资源
-- **AND** 其他任务的文件、进程、refs、evidence 与 receipts MUST 保持不变
+- **WHEN** 同一Workspace/Git common-dir还存在其他Task receipts、worktrees、previews、ports或branches
+- **THEN** cleanup MUST只操作当前Environment Receipt精确登记且provider已证明ownership的资源
+- **AND** 其他任务的文件、进程、refs、evidence与receipts MUST保持不变
 
 #### Scenario: 清理成功后的最小留痕
 - **WHEN** 全部适用资源已删除或按明确决定安全保留
-- **THEN** Buildr MUST 在原 `environment.json` 保留 Task/Workspace identity、完成时间、最终 status 与最小处置摘要
-- **AND** MUST NOT 删除 Task Record、Development/Review/Verification/Finish Result 或 Retrospective
+- **THEN** Buildr MUST在原`environment.json`保留Task/Workspace identity、完成时间、最终status与最小处置摘要
+- **AND** MUST NOT删除Task Record、Development/Review/Verification/Finish Result或Retrospective
 
 ### Requirement: P0.2 必须原子切换旧 environment authority
 P0.2 MUST 在同一 Change 中交付新的 Task Environment authority、窄 Git provider、一次性旧数据迁移和全部 consumer/routing 切换，并 MUST 删除 `buildr.task-worktree-lifecycle@1/@2`、旧 worktree environment writer、session adoption 与其他竞争 `ready / restore / cleanup` 的 mutation path。旧 v1 读取 MUST 与正常 routing 隔离、只服务于一次性迁移，MUST NOT 写回 v1、形成双写/双路由或保留 permanent legacy inspect/cleanup adapter。

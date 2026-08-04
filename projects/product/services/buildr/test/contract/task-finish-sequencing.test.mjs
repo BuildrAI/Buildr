@@ -23,10 +23,13 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(finish, /current formal Development handoff/);
   assert.match(finish, /formalVerificationExecutions.*0/);
   assert.match(finish, /nextWorkflow: task-development/);
+  for (const phrase of ['任务贡献（Task Contribution）', '交付基线（Delivery Baseline）', '不增加 Candidate generation', '路径不重叠都不等于语义安全']) assert.ok(finish.includes(phrase), phrase);
   const executor = read('src/application/task-finish/task-finish-product-executor.mjs');
   for (const forbidden of ['recordTaskVerification', 'recordTaskReview', 'freezeTaskDevelopmentCandidate', 'openspec', 'runtime-resync', 'target-rebase']) assert.equal(executor.includes(forbidden), false, forbidden);
   assert.doesNotMatch(executor, /runtime\.cleanupTaskEnvironment\(/);
   assert.match(executor, /cleanupThroughRetainedController/);
+  assert.match(executor, /createIsolatedGitCarrier/);
+  assert.doesNotMatch(executor, /gitNulList|changedDeliverySourcePaths/);
 });
 
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {

@@ -75,6 +75,7 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
     type: 'finish',
     deliveries,
     candidateRef: run.delivery.carrierRef,
+    integratedContributions: { workspace: run.deliveryCarrier },
   });
 }
 

@@ -24,6 +24,7 @@ function identity(root, task = 'finish-handoff') {
     task,
     handoffIdentity: 'sha256-handoff',
     candidateIdentity: 'sha256-candidate',
+    candidateGeneration: 1,
     contentTargetIdentity: 'sha256-content-target',
     agent: 'codex',
     targetBranch: 'dev',
@@ -54,7 +55,7 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   assert.deepEqual(calls, FINISH_PHASES);
   assert.deepEqual(result.phases.map((phase) => phase.id), FINISH_PHASES);
   assert.equal(result.handoff.identity, 'sha256-handoff');
-  assert.deepEqual(result.candidate, { identity: 'sha256-candidate', contentTargetIdentity: 'sha256-content-target' });
+  assert.deepEqual(result.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
   assert.equal(result.carrier.identity, 'carrier-abc');
   assert.equal(result.equivalence.status, 'equivalent');
   assert.equal(result.metrics.formalVerificationExecutions, 0);
@@ -66,7 +67,7 @@ test('run identity 强制绑定 Development handoff/Candidate/Content Target，�
   const root = fixture(t);
   const run = createFinishRun({ root, runId: 'current', identity: identity(root) });
   assert.equal(run.schemaVersion, 'buildr.task-finish-run/v2');
-  for (const field of ['handoffIdentity', 'candidateIdentity', 'contentTargetIdentity']) {
+  for (const field of ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']) {
     const invalid = identity(root);
     delete invalid[field];
     assert.throws(() => createFinishRun({ root, runId: `missing-${field.toLowerCase()}`, identity: invalid }), new RegExp(field));
@@ -94,22 +95,31 @@ test('carrier equivalence 缺陷终止 run 并返回 Task Development', async (t
   assert.equal(result.metrics.formalVerificationExecutions, 0);
 });
 
-test('target race 终止 run 并返回 Task Development，不创建新 Candidate 或执行 Verification', async (t) => {
+test('target race 使用精确 token 重建 carrier，复用 Candidate 且不执行 formal Verification', async (t) => {
   const root = fixture(t);
   const firstCalls = [];
   const handlers = passingHandlers(firstCalls);
   handlers.deliver = async () => {
     firstCalls.push('deliver');
-    return { status: 'failed', failure: { operation: 'target-transition', failureClass: 'upstream-candidate-defect', code: 'task-finish.target-race', message: 'Target changed.' } };
+    return { status: 'blocked', failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Target changed.' } };
   };
-  const result = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'target-race', identity: identity(root, 'target-race') }), handlers });
-  assert.equal(result.status, 'failed');
-  assert.equal(result.nextWorkflow, 'task-development');
-  assert.equal(result.resume, null);
+  const first = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'target-race', identity: identity(root, 'target-race') }), handlers });
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.nextWorkflow, null);
+  assert.match(first.resume.token, /^sha256-/);
   assert.deepEqual(firstCalls, ['preflight', 'prepare', 'verify', 'deliver']);
-  assert.equal(result.candidate.identity, 'sha256-candidate');
-  assert.equal(result.metrics.formalVerificationExecutions, 0);
-  assert.equal(inspectFinishRun({ root, runId: 'target-race' }).status, 'failed');
+  const secondCalls = [];
+  const second = await executeFinishRun({ root, run: readFinishRun({ root, runId: 'target-race' }), handlers: passingHandlers(secondCalls, 'def'), resumeToken: first.resume.token });
+  assert.equal(second.status, 'complete');
+  assert.deepEqual(secondCalls, ['prepare', 'verify', 'deliver', 'cleanup']);
+  assert.equal(second.candidate.identity, 'sha256-candidate');
+  assert.equal(second.candidate.generation, 1);
+  assert.equal(second.carrier.head, 'def');
+  assert.equal(second.phases.find((phase) => phase.id === 'preflight').attempts, 1);
+  assert.equal(second.phases.find((phase) => phase.id === 'prepare').attempts, 2);
+  assert.equal(second.phases.find((phase) => phase.id === 'verify').attempts, 2);
+  assert.equal(second.metrics.formalVerificationExecutions, 0);
+  assert.equal(inspectFinishRun({ root, runId: 'target-race' }).status, 'complete');
 });
 
 test('cleanup 暂态阻塞恢复只重试 cleanup', async (t) => {

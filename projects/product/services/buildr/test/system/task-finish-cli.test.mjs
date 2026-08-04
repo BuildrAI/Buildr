@@ -20,7 +20,7 @@ function create(root, runId = 'current-inspect') {
     root,
     runId,
     identity: {
-      task: runId, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: null,
+      task: runId, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: null,
       environmentRoot: root, workspaceRoot: root,
     },
   });

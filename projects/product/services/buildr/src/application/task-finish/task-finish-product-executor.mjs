@@ -7,6 +7,12 @@ import { spawnSync } from 'node:child_process';
 import { classifyRetainedConvergencePaths } from './task-finish-impact.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { acquireFinishTargetLease, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
+import {
+  createIsolatedGitCarrier,
+  observeGitTaskContribution,
+  removeIsolatedGitCarrier,
+  verifyGitTaskContributionCarrier,
+} from './git-task-contribution.mjs';
 
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
@@ -69,42 +75,19 @@ function gitText(root, args) {
   return value.status === 0 ? value.stdout.trim() : null;
 }
 
-function gitNulList(root, args) {
-  const value = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: MAX_OUTPUT_BYTES });
-  return value.status === 0 ? value.stdout.split('\0').filter(Boolean) : null;
-}
-
 function controlMetadataPath(value) {
   const normalized = normalizePortablePath(value);
   return Boolean(normalized) && normalized.split('/').some((segment) => segment === '.buildr' || segment === '.git');
 }
 
-function deliverySourcePath(value) {
-  const normalized = normalizePortablePath(value);
-  return normalized && !controlMetadataPath(normalized);
-}
-
-function changedDeliverySourcePaths(root) {
-  const observations = [
-    gitNulList(root, ['diff', '--name-only', '--no-renames', '-z']),
-    gitNulList(root, ['diff', '--cached', '--name-only', '--no-renames', '-z']),
-    gitNulList(root, ['ls-files', '--others', '--exclude-standard', '-z']),
-  ];
-  if (observations.some((paths) => paths === null)) return null;
-  return [...new Set(observations.flat().map(normalizePortablePath).filter(deliverySourcePath))].sort();
-}
-
-function invocationArgs(invocation, args) {
-  return [...(invocation.argsPrefix || []), ...args];
-}
-
-async function cleanupThroughRetainedController(runtime, context, run, deliveries) {
+async function cleanupThroughRetainedController(runtime, context, run, deliveries, integratedContributions) {
   if (typeof runtime.cleanupTaskEnvironmentThroughRetainedController === 'function') {
     return {
       payload: await runtime.cleanupTaskEnvironmentThroughRetainedController(run.identity.workspaceRoot, run.identity.task, {
         runId: run.runId,
         deliveries,
         candidateRef: run.delivery.carrierRef,
+        integratedContributions,
       }),
       observation: null,
     };
@@ -139,16 +122,6 @@ function retainedWorkspaceReadiness(identity) {
     else unrelated.push(file || entry);
   }
   return { ready: unrelated.length === 0, workspaceMetadata: [...new Set(workspaceMetadata)].sort(), unrelated };
-}
-
-function carrierMatches(root, carrier) {
-  const current = currentGitIdentity(root);
-  const readiness = retainedWorkspaceReadiness(current);
-  return {
-    matches: Boolean(carrier && readiness.ready && current.head === carrier.head && current.tree === carrier.tree && current.branch === carrier.branch),
-    current,
-    readiness,
-  };
 }
 
 function targetLeasePath(root, targetBranch) {
@@ -252,58 +225,45 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       if (!context?.ready) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task Environment is not ready.' } };
       if (!run.identity.remote) return { status: 'failed', failure: { operation: 'delivery-remote', failureClass: 'product-execution-failure', code: 'task-finish.delivery-remote-missing', message: 'Task Finish cannot prepare a delivery carrier without a frozen delivery remote.' } };
 
-      const stagedMetadata = gitNulList(environmentRoot, ['diff', '--cached', '--name-only', '--no-renames', '-z']);
-      if (stagedMetadata === null) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-metadata-inventory-failed', message: 'Unable to inventory staged Buildr control metadata.' } };
-      const metadataPaths = [...new Set(stagedMetadata.map(normalizePortablePath).filter(controlMetadataPath))].sort();
-      if (metadataPaths.length > 0) {
-        const unstageMetadata = git(environmentRoot, 'prepare-carrier-unstage-metadata', ['reset', '--quiet', 'HEAD', '--', ...metadataPaths.map((metadataPath) => `:(literal)${metadataPath}`)]);
-        operations.push(unstageMetadata.observation);
-        if (unstageMetadata.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-unstage-metadata-failed', exitCode: unstageMetadata.result.status, message: 'Unable to exclude Buildr control metadata from the delivery carrier.', diagnostic: unstageMetadata.observation.stderr } };
-      }
-      const sourcePaths = changedDeliverySourcePaths(environmentRoot);
-      if (sourcePaths === null) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-source-inventory-failed', message: 'Unable to inventory exact delivery source paths.' } };
-      if (sourcePaths.length > 0) {
-        const add = git(environmentRoot, 'prepare-carrier-add', ['add', '-A', '--', ...sourcePaths.map((sourcePath) => `:(literal)${sourcePath}`)]);
-        operations.push(add.observation);
-        if (add.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-add-failed', exitCode: add.result.status, message: 'Unable to stage the content-equivalent carrier.', diagnostic: add.observation.stderr } };
-      }
-      const staged = gitText(environmentRoot, ['diff', '--cached', '--name-only']);
-      if (staged) {
-        const commit = git(environmentRoot, 'prepare-carrier-commit', ['commit', '-m', `交付 ${run.identity.task}`]);
-        operations.push(commit.observation);
-        if (commit.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.commit-failed', exitCode: commit.result.status, message: 'Unable to create the delivery carrier commit.', diagnostic: commit.observation.stderr } };
-      }
-
-      const invocation = context.controllerInvocation;
-      const refreshed = invocation?.command ? runJsonCommand('prepare-environment-refresh', invocation.command, invocationArgs(invocation, ['task', 'environment', 'prepare', run.identity.task, '--agent', run.identity.agent, '--target', run.identity.workspaceRoot, '--json']), run.identity.workspaceRoot) : null;
-      if (refreshed) operations.push(refreshed.observation);
-      if (!refreshed || refreshed.result.status !== 0 || refreshed.payload?.status !== 'ready') return { status: 'failed', operations, failure: { operation: 'environment-refresh', failureClass: 'product-execution-failure', code: refreshed?.payload?.diagnostic?.code || 'task-finish.environment-refresh-failed', exitCode: refreshed?.result.status ?? null, message: refreshed?.payload?.diagnostic?.message || 'Environment Receipt did not accept the carrier identity.', diagnostic: refreshed?.payload?.diagnostic || refreshed?.observation.stderr || null } };
-
       const fetched = git(environmentRoot, 'prepare-target-fetch', ['fetch', run.identity.remote, run.identity.targetBranch]);
       operations.push(fetched.observation);
       if (fetched.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-fetch', failureClass: 'transient-external-condition', code: 'task-finish.target-fetch-failed', exitCode: fetched.result.status, message: 'Unable to observe the target branch.', diagnostic: fetched.observation.stderr } };
       const targetRef = `${run.identity.remote}/${run.identity.targetBranch}`;
       const expectedTargetRef = gitText(environmentRoot, ['rev-parse', `${targetRef}^{commit}`]);
       if (!expectedTargetRef) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-ref-missing', message: `Target ref is unavailable: ${targetRef}` } };
-      const ancestry = git(environmentRoot, 'prepare-fast-forward-check', ['merge-base', '--is-ancestor', expectedTargetRef, 'HEAD']);
-      operations.push(ancestry.observation);
-      if (ancestry.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'carrier-ancestry', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-fast-forward', message: 'Current carrier is not a fast-forward of the target; return to Task Development.', diagnostic: ancestry.observation.stderr } };
-
-      const identity = currentGitIdentity(environmentRoot);
-      const readiness = retainedWorkspaceReadiness(identity);
-      if (!readiness.ready || !identity.head || !identity.tree) return { status: 'failed', operations, failure: { operation: 'carrier-freeze', failureClass: 'product-execution-failure', code: 'task-finish.carrier-not-clean', message: 'Delivery carrier has uncommitted source content after preparation.', diagnostic: readiness } };
-      const changedPaths = (gitText(environmentRoot, ['diff', '--name-only', `${targetRef}...HEAD`]) || '').split('\n').filter(Boolean).sort();
+      let isolated;
+      try {
+        const taskContribution = observeGitTaskContribution({ root: environmentRoot, deliveryBaselineHead: expectedTargetRef });
+        isolated = createIsolatedGitCarrier({
+          repositoryRoot: environmentRoot,
+          workspaceRoot: run.identity.workspaceRoot,
+          runId: run.runId,
+          deliveryBaselineHead: expectedTargetRef,
+          taskContribution,
+          message: `交付 ${run.identity.task}`,
+        });
+      } catch (error) {
+        operations.push({ kind: 'product', id: 'prepare-isolated-carrier', status: 'failed', code: error.code || 'task-finish.carrier-prepare-failed' });
+        return { status: 'failed', operations, failure: { operation: 'task-contribution', failureClass: 'upstream-candidate-defect', code: error.code || 'task-finish.carrier-prepare-failed', message: error.message, diagnostic: error.details || error.cleanup || null } };
+      }
+      operations.push({ kind: 'product', id: 'prepare-isolated-carrier', status: 'passed', carrierRoot: isolated.root });
       const equivalent = runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task);
-      if (equivalent.status !== 'equivalent') return { status: 'failed', operations, failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Carrier preparation changed Candidate content or invalidated the Development handoff.', diagnostic: equivalent.diagnostic } };
+      if (equivalent.status !== 'equivalent') {
+        const cleanup = removeIsolatedGitCarrier({ repositoryRoot: environmentRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, expectedRoot: isolated.root });
+        return { status: 'failed', operations, failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Task Content Target or Development handoff changed during isolated carrier preparation.', diagnostic: { development: equivalent.diagnostic, carrierCleanup: cleanup } } };
+      }
       const deliveryCarrier = {
-        identity: digest({ head: identity.head, tree: identity.tree, branch: identity.branch, expectedTargetRef, changedPaths, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity }),
-        kind: 'git-commit',
-        head: identity.head,
-        tree: identity.tree,
-        branch: identity.branch,
+        identity: digest({ head: isolated.head, tree: isolated.tree, expectedTargetRef, taskContributionIdentity: isolated.taskContribution.identity, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity }),
+        kind: 'git-isolated-commit',
+        root: isolated.root,
+        head: isolated.head,
+        tree: isolated.tree,
+        branch: null,
         expectedTargetRef,
         targetRef,
-        changedPaths,
+        changedPaths: isolated.changedPaths,
+        deliveryBaseline: isolated.deliveryBaseline,
+        taskContribution: isolated.taskContribution,
         handoffIdentity: run.identity.handoffIdentity,
         candidateIdentity: run.identity.candidateIdentity,
         contentTargetIdentity: run.identity.contentTargetIdentity,
@@ -313,17 +273,18 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
     },
 
     async verify({ run }) {
-      const observed = carrierMatches(environmentRoot, run.deliveryCarrier);
-      if (!observed.matches) return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-changed', message: 'Delivery carrier changed after preparation.', findings: [observed.current] } };
+      const observed = verifyGitTaskContributionCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier });
+      if (observed.status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: observed.code || 'task-finish.carrier-changed', message: 'Delivery Carrier or Task Contribution changed after preparation.', findings: [observed] } };
       const equivalent = runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task);
       if (equivalent.status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Delivery carrier is no longer content-equivalent to the Development handoff.', diagnostic: equivalent.diagnostic } };
-      const equivalence = { status: 'equivalent', handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity, carrierIdentity: run.deliveryCarrier.identity, formalVerificationExecutions: 0 };
+      const equivalence = { status: 'equivalent', handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, candidateGeneration: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity, taskContributionIdentity: run.deliveryCarrier.taskContribution.identity, deliveryBaselineIdentity: digest(run.deliveryCarrier.deliveryBaseline), carrierIdentity: run.deliveryCarrier.identity, formalVerificationExecutions: 0 };
       return { status: 'passed', inputIdentity: run.deliveryCarrier.identity, outputIdentity: digest(equivalence), output: { equivalence } };
     },
 
     async deliver({ run }) {
       const operations = [];
-      if (!carrierMatches(environmentRoot, run.deliveryCarrier).matches) return { status: 'failed', failure: { operation: 'carrier', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-changed', message: 'Delivery carrier changed before delivery.' } };
+      const carrier = verifyGitTaskContributionCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier });
+      if (carrier.status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier', failureClass: 'upstream-candidate-defect', code: carrier.code || 'task-finish.carrier-changed', message: 'Delivery Carrier or Task Contribution changed before delivery.' } };
       if (runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task).status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Development handoff is no longer current before delivery.' } };
       const retainedRoot = run.identity.workspaceRoot;
       const lease = acquireFinishTargetLease({ file: targetLeasePath(retainedRoot, run.identity.targetBranch), run });
@@ -335,7 +296,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         if (remote.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-observation-failed', exitCode: remote.result.status, message: 'Unable to observe remote target ref.', diagnostic: remote.observation.stderr } };
         const observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
         const alreadyDelivered = observedTargetRef === run.deliveryCarrier.head;
-        if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) return { status: 'failed', operations, failure: { operation: 'target-transition', failureClass: 'upstream-candidate-defect', code: 'task-finish.target-race', message: 'Target ref changed after carrier preparation; return to Task Development.', findings: [{ expected: run.deliveryCarrier.expectedTargetRef, observed: observedTargetRef }] }, output: { delivery: { status: 'failed', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
+        if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Target ref changed after carrier preparation; rebuild the isolated carrier on the latest Delivery Baseline.', findings: [{ expected: run.deliveryCarrier.expectedTargetRef, observed: observedTargetRef }] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
         if (!alreadyDelivered) {
           const retainedIdentity = currentGitIdentity(retainedRoot);
           const readiness = retainedWorkspaceReadiness(retainedIdentity);
@@ -392,9 +353,12 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         task: run.identity.task,
         handoffIdentity: run.identity.handoffIdentity,
         candidateIdentity: run.identity.candidateIdentity,
+        candidateGeneration: run.identity.candidateGeneration,
         contentTargetIdentity: run.identity.contentTargetIdentity,
         carrierIdentity: run.deliveryCarrier.identity,
         carrierRef: run.deliveryCarrier.head,
+        taskContributionIdentity: run.deliveryCarrier.taskContribution.identity,
+        deliveryBaseline: run.deliveryCarrier.deliveryBaseline,
         targetBranch: run.identity.targetBranch,
         status: 'prepared',
         preparedAt: new Date().toISOString(),
@@ -402,7 +366,8 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const completionFile = writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: prepared });
       const context = taskEnvironment(run);
       const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
-      const delegated = await cleanupThroughRetainedController(runtime, context, run, deliveries);
+      const integratedContributions = { workspace: run.deliveryCarrier };
+      const delegated = await cleanupThroughRetainedController(runtime, context, run, deliveries, integratedContributions);
       if (delegated.observation) operations.push(delegated.observation);
       const cleanedEnvironment = delegated.payload || {
         status: 'blocked', effects: [], diagnostic: {
@@ -412,6 +377,9 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       };
       operations.push({ operation: 'cleanup-task-environment', status: cleanedEnvironment.status, effects: cleanedEnvironment.effects, diagnostic: cleanedEnvironment.diagnostic });
       if (cleanedEnvironment.status !== 'cleaned') return { status: 'blocked', operations, failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: cleanedEnvironment.diagnostic?.code || 'task-finish.environment-cleanup-failed', message: cleanedEnvironment.diagnostic?.message || 'Task Environment cleanup failed.', diagnostic: cleanedEnvironment } };
+      const carrierCleanup = removeIsolatedGitCarrier({ repositoryRoot: run.identity.workspaceRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, expectedRoot: run.deliveryCarrier.root });
+      operations.push({ kind: 'product', id: 'cleanup-isolated-carrier', status: carrierCleanup.status, details: carrierCleanup });
+      if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-cleanup', failureClass: 'transient-external-condition', code: carrierCleanup.code || 'task-finish.carrier-cleanup-failed', message: 'Unable to clean the run-owned isolated Delivery Carrier.', diagnostic: carrierCleanup } };
       const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete });
       return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { status: 'complete', receipt: completionFile, cleanup: cleanedEnvironment } } };

@@ -192,6 +192,7 @@ export const verificationSteps = Object.freeze([
     'test/integration/task-finish-delivery-remote.test.mjs',
     'test/integration/task-finish-retained-cleanup.test.mjs',
     'test/integration/task-finish-run.test.mjs',
+    'test/integration/task-finish-task-contribution.test.mjs',
   ] }, inputs: [
     'test/integration/task-finish-*.test.mjs',
     'src/application/task-finish/**',

@@ -152,12 +152,13 @@ test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification 
   assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 90);
   for (const required of [
     'buildr.task-finish/v1', 'preflight → prepare → verify → deliver → cleanup',
-    'current formal Development handoff', '内容等价 Delivery Carrier',
+    'current formal Development handoff', '隔离交付载体（Delivery Carrier）',
+    '任务贡献（Task Contribution）', '交付基线（Delivery Baseline）',
     'formalVerificationExecutions` 必须为 `0`', '不发起 Task Verification',
   ]) assert.ok(finishSkill.includes(required), `Finish Skill must include ${required}`);
-  assert.match(finishContract, /Development Application 的只读 carrier-equivalence check/);
-  assert.match(finishContract, /formal Verification executions 必须为 `0`/);
-  assert.match(finishContract, /不得选择 capability、运行测试或 record Verification Result/);
+  assert.match(finishContract, /Development Application的只读carrier-equivalence check/);
+  assert.match(finishContract, /formal Verification executions必须为`0`/);
+  assert.match(finishContract, /不得选择capability、运行测试或record Verification Result/);
   assert.doesNotMatch(finishContract, /task-verification\/v3|requiredForDelivery/);
   assert.doesNotMatch(finishSkill, /--required-assurance|--verification-summary/);
   assert.doesNotMatch(finishSkill, /current Verification Result|requiredForDelivery|formalVerificationExecutions <= 1/);

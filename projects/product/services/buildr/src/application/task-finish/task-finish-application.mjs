@@ -86,6 +86,7 @@ export function registerTaskFinishApplication(runtime) {
           task,
           handoffIdentity: handoff.identity,
           candidateIdentity: handoff.candidate.identity,
+          candidateGeneration: handoff.candidate.generation,
           contentTargetIdentity: handoff.candidate.contentTargetIdentity,
           agent: requestedAgent,
           targetBranch,

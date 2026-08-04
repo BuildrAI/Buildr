@@ -121,10 +121,12 @@ function normalizeIdentity(input) {
   for (const field of required) {
     if (typeof input?.[field] !== 'string' || !input[field].trim()) throw new Error(`Task Finish requires ${field}.`);
   }
+  if (!Number.isInteger(input.candidateGeneration) || input.candidateGeneration < 1) throw new Error('Task Finish requires candidateGeneration.');
   return {
     task: input.task,
     handoffIdentity: input.handoffIdentity,
     candidateIdentity: input.candidateIdentity,
+    candidateGeneration: input.candidateGeneration,
     contentTargetIdentity: input.contentTargetIdentity,
     agent: input.agent,
     targetBranch: input.targetBranch,
@@ -177,6 +179,7 @@ export function readFinishRun({ root, runId }) {
     throw new Error(`Task Finish run has an invalid phase model: ${runId}`);
   }
   for (const field of ['handoffIdentity', 'candidateIdentity', 'contentTargetIdentity']) if (typeof run.identity?.[field] !== 'string' || !run.identity[field]) throw new Error(`Task Finish run has an invalid Development handoff identity: ${runId}`);
+  if (!Number.isInteger(run.identity?.candidateGeneration) || run.identity.candidateGeneration < 1) throw new Error(`Task Finish run has an invalid Candidate generation: ${runId}`);
   return run;
 }
 
@@ -264,12 +267,39 @@ function applyPhaseOutput(run, phaseId, output) {
   if (phaseId === 'cleanup' && output?.completion) run.completion = clone(output.completion);
 }
 
+function resetTargetRaceCarrierPhases(run) {
+  const targetRace = run.status === 'blocked'
+    && run.resume?.phase === 'deliver'
+    && run.primaryFailure?.code === 'task-finish.target-race';
+  if (!targetRace) return false;
+  const reset = new Set(['prepare', 'verify', 'deliver', 'cleanup']);
+  for (const item of run.phases) {
+    if (!reset.has(item.id)) continue;
+    item.status = 'pending';
+    item.startedAt = null;
+    item.completedAt = null;
+    item.inputIdentity = null;
+    item.outputIdentity = null;
+    item.checks = [];
+    item.operations = [];
+    item.observations = [];
+    item.output = null;
+    item.failure = null;
+  }
+  run.deliveryCarrier = null;
+  run.equivalence = null;
+  run.delivery = null;
+  run.completion = null;
+  return true;
+}
+
 export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now }) {
   if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error('Task Finish executor requires a current run.');
   if (['failed', 'complete'].includes(run.status)) return finishResult(run, clock);
   if (run.status === 'blocked' && (!resumeToken || resumeToken !== run.resume?.token)) {
     throw new Error('Task Finish blocked run requires its current product-generated resume token.');
   }
+  resetTargetRaceCarrierPhases(run);
   run.invocations += 1;
   run.status = 'active';
   run.primaryFailure = null;
@@ -372,7 +402,7 @@ export function finishResult(run, clock = Date.now) {
     status: run.status,
     identity: clone(run.identity),
     handoff: { identity: run.identity.handoffIdentity },
-    candidate: { identity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity },
+    candidate: { identity: run.identity.candidateIdentity, generation: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity },
     carrier: clone(run.deliveryCarrier),
     phases: run.phases.map(publicPhase),
     primaryFailure: clone(run.primaryFailure),

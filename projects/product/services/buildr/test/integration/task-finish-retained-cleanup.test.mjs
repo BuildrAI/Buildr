@@ -21,6 +21,7 @@ function readyRun(t) {
       task: 'finish-task',
       handoffIdentity: 'sha256-handoff',
       candidateIdentity: 'sha256-candidate',
+      candidateGeneration: 1,
       contentTargetIdentity: 'sha256-content-target',
       agent: 'codex',
       targetBranch: 'dev',
@@ -44,6 +45,7 @@ function readyRun(t) {
       task: run.identity.task,
       handoffIdentity: run.identity.handoffIdentity,
       candidateIdentity: run.identity.candidateIdentity,
+      candidateGeneration: run.identity.candidateGeneration,
       contentTargetIdentity: run.identity.contentTargetIdentity,
       carrierIdentity: run.deliveryCarrier.identity,
       carrierRef: run.deliveryCarrier.head,
@@ -78,6 +80,7 @@ test('retained cleanup bootstrap derives Environment authorization from durable 
     type: 'finish',
     deliveries: { workspace: 'dev', 'product/buildr': 'dev' },
     candidateRef: 'carrier-ref',
+    integratedContributions: { workspace: run.deliveryCarrier },
   });
 });
 

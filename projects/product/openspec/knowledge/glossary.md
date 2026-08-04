@@ -247,11 +247,25 @@
 - 避免混用：不是Task Candidate，也不会自动创建Candidate/generation、Completion Review或Development handoff。
 - 来源：[Verification ownership](../../docs/verification-ownership.md)
 
-## Delivery Carrier
+## 交付载体（Delivery Carrier）
 
-- 定义：Task Finish为实际交付承载Task Candidate的commit、branch、tarball、安装包或其他载体。
-- 适用范围：Finish prepare/deliver与retained transition；当前Buildr自举adapter使用Git commit。
-- 避免混用：Carrier identity可以变化，但只有内容与Candidate绑定的Content Target可证明等价时才能继续；Finish不得借carrier准备修改交付内容。
+- 定义：交付载体（Delivery Carrier）是Task Finish为实际交付承载Task Contribution的commit、branch、tarball、安装包或其他隔离载体。
+- 适用范围：Finish prepare/deliver与retained transition；当前Buildr自举adapter在run-owned detached Git worktree中形成commit。
+- 避免混用：Carrier identity可以随Delivery Baseline变化，但只有Task Contribution与Candidate绑定内容可证明等价时才能继续；Finish不得改写原Task worktree或借carrier准备修改贡献。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## 任务贡献（Task Contribution）
+
+- 定义：Git-backed Finish从原任务基线tree到current Task source snapshot tree观察到的canonical raw Git delta identity，绑定path、mode与before/after blob identities。
+- 适用范围：在最新Delivery Baseline创建隔离Delivery Carrier、verify等价与Environment cleanup独立复算。
+- 避免混用：不是Content Target、Candidate、changed-path列表或语义安全结论；Git clean apply和路径不重叠都不能替代identity证明或既有verification policy。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## 交付基线（Delivery Baseline）
+
+- 定义：Task Finish prepare时实际读取的最新远端target commit/tree，是隔离Delivery Carrier应用Task Contribution的Git基础。
+- 适用范围：目标分支前进、target-race recovery、carrier/delivery/cleanup evidence。
+- 避免混用：不是原任务基线、Content Target或Task Candidate；它前进不自动表示任务贡献变化，也不自动递增Candidate generation或重跑Verification/Completion Review。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## Development handoff

@@ -121,7 +121,7 @@ function taskDevelopmentFixture() {
   };
 }
 
-test('真实产品执行器单次完成 commit、push、retained transition 与 task cleanup', async (t) => {
+test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-journey-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -162,8 +162,14 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   fs.writeFileSync(nestedMetadata, '{"status":"control-only"}\n');
   command(environmentRoot, 'git', ['add', 'feature.txt']);
   command(environmentRoot, 'git', ['commit', '-m', 'implement candidate']);
+  const candidateHead = command(environmentRoot, 'git', ['rev-parse', 'HEAD']);
   command(environmentRoot, 'git', ['add', '-f', '.buildr/tracked-metadata.json']);
   command(environmentRoot, 'git', ['add', '-f', path.relative(environmentRoot, nestedMetadata)]);
+  fs.writeFileSync(path.join(retained, 'baseline-advance.txt'), 'new delivery baseline\n');
+  command(retained, 'git', ['add', 'baseline-advance.txt']);
+  command(retained, 'git', ['commit', '-m', 'advance delivery baseline']);
+  const advancedBaselineHead = command(retained, 'git', ['rev-parse', 'HEAD']);
+  command(retained, 'git', ['push', 'origin', 'dev']);
 
   const openspec = path.join(fixture, 'bin', 'openspec');
   writeExecutable(openspec, fakeOpenSpec);
@@ -201,18 +207,23 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
+  assert.deepEqual(result.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
   assert.equal(result.identity.remote, 'origin');
   assert.equal(result.identity.targetBranch, 'dev');
   assert.equal(result.delivery.remoteAfterRef, result.carrier.head);
+  assert.equal(result.carrier.deliveryBaseline.head, advancedBaselineHead);
+  assert.notEqual(result.carrier.head, candidateHead);
   assert.deepEqual(result.phases.find((phase) => phase.id === 'deliver').operations.filter((operation) => operation.id === 'deliver-push' || operation.id === 'deliver-target-readback').map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.carrier.head);
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:.buildr/tracked-metadata.json`]), 'baseline metadata');
+  assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:baseline-advance.txt`]), 'new delivery baseline');
   assert.equal(result.carrier.changedPaths.includes('.buildr/tracked-metadata.json'), false);
   assert.equal(result.carrier.changedPaths.some((changedPath) => changedPath.split('/').includes('.buildr')), false);
   assert.notEqual(spawnSync('git', ['cat-file', '-e', `${result.carrier.head}:projects/product/openspec/changes/archive/finish-journey/.buildr/convergence-receipt.json`], { cwd: retained }).status, 0);
   assert.equal(fs.existsSync(result.completion.receipt), true);
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', result.runId)), false);
 });
 
 test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
@@ -266,6 +277,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
       task,
       handoffIdentity: 'sha256-handoff',
       candidateIdentity: 'sha256-candidate',
+      candidateGeneration: 1,
       contentTargetIdentity: 'sha256-content-target',
       agent: 'codex',
       targetBranch: 'dev',
@@ -281,6 +293,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
   assert.equal(result.handoff.identity, 'sha256-handoff');
   assert.equal(result.candidate.identity, 'sha256-candidate');
+  assert.equal(result.candidate.generation, 1);
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
   ]);
@@ -293,5 +306,6 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const completion = JSON.parse(fs.readFileSync(result.completion.receipt, 'utf8'));
   assert.equal(completion.handoffIdentity, 'sha256-handoff');
   assert.equal(completion.candidateIdentity, 'sha256-candidate');
+  assert.equal(completion.candidateGeneration, 1);
   assert.equal(completion.contentTargetIdentity, 'sha256-content-target');
 });
