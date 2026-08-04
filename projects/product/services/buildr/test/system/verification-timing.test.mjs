@@ -25,6 +25,20 @@ const reporter = path.join(productRoot, 'test', 'verification', 'timing', 'repor
 const summaryVerifier = path.join(productRoot, 'test', 'verification', 'timing', 'verify-summary.mjs');
 const evidenceCleaner = path.join(productRoot, 'test', 'verification', 'timing', 'cleanup-evidence.mjs');
 
+async function assertProcessExited(pid, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error.code === 'ESRCH') return;
+      throw error;
+    }
+    if (Date.now() >= deadline) assert.fail(`Process ${pid} remained alive after ${timeoutMs} ms.`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 test('timing summary 保留向后兼容的 step 调度时间轴', () => {
   const summary = createVerificationTimingSummary({
     status: 'passed',
@@ -471,8 +485,7 @@ test('verification runner 回收真实 detached descendant', async (t) => {
   assert.ok(Number.isInteger(detachedPid));
   assert.ok(result.processCleanup.descendants.observed.includes(detachedPid));
   assert.ok(result.processCleanup.descendants.terminated.includes(detachedPid));
-  await new Promise((resolve) => setTimeout(resolve, 25));
-  assert.throws(() => process.kill(detachedPid, 0), (error) => error.code === 'ESRCH');
+  await assertProcessExited(detachedPid);
 });
 
 test('verification runner 在direct child退出后回收仍持有stdio的detached descendant', async (t) => {

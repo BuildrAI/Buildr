@@ -41,6 +41,13 @@ export function matchesInput(productPath, pattern) {
   return globToRegExp(pattern).test(normalizeProductPath(productPath));
 }
 
+function matchedStepInput(step, productPath) {
+  const matched = step.inputs.find((pattern) => matchesInput(productPath, pattern));
+  if (!matched) return null;
+  if ((step.inputExclusions ?? []).some((pattern) => matchesInput(productPath, pattern))) return null;
+  return matched;
+}
+
 export function validateVerificationRegistry(steps = verificationSteps) {
   const findings = [];
   const ids = new Set();
@@ -49,6 +56,10 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     ids.add(item.id);
     if (!item.name) findings.push({ step: item.id, code: 'missing_name' });
     if (!Array.isArray(item.inputs) || item.inputs.length === 0) findings.push({ step: item.id, code: 'missing_inputs' });
+    if (item.inputExclusions != null && !Array.isArray(item.inputExclusions)) findings.push({ step: item.id, code: 'invalid_input_exclusions' });
+    else for (const pattern of item.inputExclusions ?? []) {
+      try { normalizeProductPath(pattern); } catch { findings.push({ step: item.id, code: 'invalid_input_exclusion', value: pattern }); }
+    }
     const classification = item.testing;
     if (!classification || typeof classification !== 'object') findings.push({ step: item.id, code: 'missing_testing_classification' });
     else {
@@ -78,6 +89,13 @@ export function validateVerificationRegistry(steps = verificationSteps) {
       }
     }
     if (!VERIFICATION_EXECUTORS.includes(item.executor?.type)) findings.push({ step: item.id, code: 'unknown_executor', value: item.executor?.type });
+    if (item.executor?.type === 'node-test' && (!Array.isArray(item.executor.files) || item.executor.files.length === 0)) {
+      findings.push({ step: item.id, code: 'node_test_files_missing' });
+    } else if (item.executor?.type === 'node-test') {
+      for (const file of item.executor.files) {
+        try { normalizeProductPath(file); } catch { findings.push({ step: item.id, code: 'node_test_file_invalid', value: file }); }
+      }
+    }
     if (!VERIFICATION_CONCURRENCY.classes[item.concurrencyClass]) findings.push({ step: item.id, code: 'unknown_concurrency_class', value: item.concurrencyClass });
     for (const resource of item.resources ?? []) {
       if (!VERIFICATION_CONCURRENCY.resources?.[resource]) findings.push({ step: item.id, code: 'unknown_concurrency_resource', value: resource });
@@ -154,7 +172,7 @@ export function auditVerificationInputCoverage(paths, steps = verificationSteps)
   const unmapped = [];
   for (const rawPath of paths) {
     const productPath = normalizeProductPath(rawPath);
-    const owners = steps.filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern))).map((item) => item.id);
+    const owners = steps.filter((item) => matchedStepInput(item, productPath)).map((item) => item.id);
     const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
       .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
       .map((item) => item.owner);
@@ -237,7 +255,7 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const unmatchedPaths = [];
   const delegatedPaths = [];
   for (const productPath of paths) {
-    const matched = steps.filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)));
+    const matched = steps.filter((item) => matchedStepInput(item, productPath));
     const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
       .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
       .map((item) => item.owner);
@@ -245,7 +263,7 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     else if (matched.length === 0 && !VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) unmatchedPaths.push(productPath);
     for (const item of matched) {
       selected.add(item.id);
-      reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${item.inputs.find((pattern) => matchesInput(productPath, pattern))}`]);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${matchedStepInput(item, productPath)}`]);
     }
   }
   if (unmatchedPaths.length > 0) throw new Error(`Unmapped Product paths:\n${unmatchedPaths.map((item) => `- ${item}`).join('\n')}`);

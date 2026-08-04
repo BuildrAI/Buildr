@@ -59,6 +59,8 @@ test('Project Testing 分类完整且 Quick 只包含低成本非 System step', 
   });
   assert.deepEqual(verificationSteps.find((step) => step.id === 'integration-candidate-release').profiles, []);
   assert.deepEqual(verificationSteps.find((step) => step.id === 'repository-onboarding').profiles, []);
+  assert.equal(verificationSteps.find((step) => step.id === 'integration-task-finish').testing.primaryEvidenceOwner, 'integration');
+  assert.equal(verificationSteps.find((step) => step.id === 'system-task-finish').testing.primaryEvidenceOwner, 'system');
   assert.equal(verificationSteps.some((step) => step.id.startsWith('browser-')), false);
 });
 
@@ -150,9 +152,57 @@ test('local app Changed 路由只选择内部 owner，Browser 由独立 capabili
 
 test('OpenSpec 路径只选择真实 owner', () => {
   const openspec = ids(createVerificationPlan({ paths: ['openspec/specs/product-verification-quality/spec.md'] }));
-  for (const required of ['openspec-spec-quality', 'openspec-strict', 'openspec-candidate-audit', 'openspec-contract-fixtures', 'docs-quality']) {
+  for (const required of ['openspec-spec-quality', 'openspec-strict', 'openspec-candidate-audit', 'docs-quality']) {
     assert.ok(openspec.includes(required), `OpenSpec plan must include ${required}`);
   }
+  for (const excluded of ['openspec-contract-fixtures', 'openspec-convergence-recovery']) {
+    assert.equal(openspec.includes(excluded), false, `canonical OpenSpec content must not select ${excluded}`);
+  }
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/verification/openspec/spec-quality.mjs'] })), ['openspec-spec-quality']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/verification/openspec/contract-audit.mjs'] })), ['openspec-candidate-audit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/verification/openspec/contract.mjs'] })), [
+    'openspec-contract-fixtures', 'openspec-convergence-recovery',
+  ]);
+});
+
+test('Task Finish affected 路径使用有界 Integration/System slice', () => {
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/application/task-finish/task-finish-application.mjs'] })), [
+    'unit', 'integration-task-finish', 'system-task-finish',
+  ]);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-finish-run.test.mjs'] })), [
+    'integration-task-finish',
+  ]);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/system/task-finish-cli.test.mjs'] })), [
+    'system-task-finish',
+  ]);
+  const skillPlan = ids(createVerificationPlan({ paths: ['package/targets/workspace/skills/buildr/task-finish/SKILL.md'] }));
+  assert.deepEqual(skillPlan, [
+    'contract', 'capability-cli-integration', 'package-static', 'package-skills', 'runtime-adapter-parity', 'docs-quality',
+  ]);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['docs/cli-reference.md'] })), [
+    'candidate-tarball', 'open-source-candidate', 'cli-compatibility', 'docs-quality',
+  ]);
+});
+
+test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {
+  const plan = createVerificationPlan({ paths: [
+    'openspec/changes/archive/example/proposal.md',
+    'openspec/specs/task-finish-execution/spec.md',
+    'docs/cli-architecture.md',
+    'docs/cli-reference.md',
+    'docs/skill-capability-contracts.md',
+    'package/targets/workspace/skills/buildr/task-finish/SKILL.md',
+    'package/targets/workspace/skills/contracts/buildr/task-finish/v1.md',
+    'src/application/task-finish/task-finish-application.mjs',
+    'test/integration/task-finish-delivery-remote.test.mjs',
+    'test/system/task-finish-product-journey.test.mjs',
+  ] });
+  assert.deepEqual(ids(plan), [
+    'unit', 'integration-task-finish', 'contract', 'system-task-finish',
+    'openspec-spec-quality', 'openspec-strict', 'candidate-tarball', 'open-source-candidate', 'openspec-candidate-audit',
+    'capability-cli-integration', 'package-static', 'package-skills',
+    'runtime-adapter-parity', 'cli-compatibility', 'docs-quality',
+  ]);
 });
 
 test('focus step 与 group 去重且只展开真实 artifact 依赖', () => {
@@ -212,6 +262,26 @@ test('registry validation拒绝有副作用或无预算的preflight', () => {
   const result = validateVerificationRegistry(invalid);
   assert.ok(result.findings.some((finding) => finding.code === 'preflight_side_effects_unsafe'));
   assert.ok(result.findings.some((finding) => finding.code === 'preflight_budget_invalid'));
+});
+
+test('registry validation 拒绝非法 input exclusion 与 node-test files', () => {
+  const testing = {
+    ownerScope: 'service:product/buildr', primaryIntent: 'Development', executionBoundary: 'Integration',
+    targetDurationMs: 1000, proves: 'fixture', primaryEvidenceOwner: 'invalid-slice',
+  };
+  const result = validateVerificationRegistry([
+    {
+      id: 'invalid-slice', name: 'invalid slice', executor: { type: 'node-test', files: [] }, profiles: [], groups: [], inputs: ['src/**'],
+      inputExclusions: '../outside', concurrencyClass: 'default', dependsOn: [], testing,
+    },
+    {
+      id: 'invalid-file', name: 'invalid file', executor: { type: 'node-test', files: ['../outside.test.mjs'] }, profiles: [], groups: [], inputs: ['test/**'],
+      inputExclusions: [], concurrencyClass: 'default', dependsOn: [], testing: { ...testing, primaryEvidenceOwner: 'invalid-file' },
+    },
+  ]);
+  assert.ok(result.findings.some((finding) => finding.code === 'invalid_input_exclusions'));
+  assert.ok(result.findings.some((finding) => finding.code === 'node_test_files_missing'));
+  assert.ok(result.findings.some((finding) => finding.code === 'node_test_file_invalid'));
 });
 
 test('registry validation 拒绝缺少 producer 依赖的 artifact consumer', () => {

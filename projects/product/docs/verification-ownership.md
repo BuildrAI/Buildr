@@ -25,7 +25,7 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，�
 | Unit | `test:unit`；`test/unit` 19 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
 | Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，不穿过真实 filesystem 或进程边界 | `node:test`；外层 `cpu-heavy=2` |
 | Contract | `test:contract`；`test/contract` 20 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口一致性 | Product tree；部分 case 启动开发 CLI、Git 和临时目录，因此聚合边界记为低成本 Integration | `node:test` 文件并发；外层 `cpu-heavy=2` |
-| Integration | `test:integration`；`test/integration` 27 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；无浏览器 | `node:test` 文件并发；外层 `workspace-heavy=3` |
+| Integration | `test:integration`；`test/integration` 28 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；无浏览器 | `node:test` 文件并发；外层 `workspace-heavy=3` |
 | System | `test:system`；`test/system` 25 个文件 | 完整 CLI、Workspace、Local App runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
 | Recovery | `test:integration:candidate:recovery` 1 个文件；Release 专项 2 个文件 | builtin 迁移/恢复与 Git release convergence | 多轮临时 Workspace/Git | `workspace-saturating`；默认最多 2 路，受限 CI 1 路 |
 | Browser System | `test:browser:smoke` 1 个文件、6 个 selector | Local App shell、Task、Project、Service、Change 的真实浏览器 Journey | 本机 Chrome/Chromium、Playwright Core、loopback server、临时 Workspace | 不进入 Product Full；`verification.yml` 的 `browser` 协调资源容量为 1 |
@@ -34,11 +34,12 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，�
 
 ## 3. 完整 registry inventory
 
-Product registry 当前有 39 个 primary owners；`test:candidate` 选择其中 37 个，Release Git convergence 与 clean-checkout onboarding 保留为 focus/Release 专项。以下分组覆盖全部 step：
+Product registry 当前有 41 个 executable steps、39 个 primary owners；两个 Task Finish affected slice 分别复用 `integration` 与 `system` owner，不增加 Candidate 证据。`test:candidate` 仍选择 37 个主步骤，Release Git convergence 与 clean-checkout onboarding 保留为 focus/Release 专项。
 
 | 分组 | step IDs | 主要事实 | 主要环境与并发 |
 | --- | --- | --- | --- |
 | 直接层 | `unit`、`component`、`contract`、`integration`、`system` | 纯逻辑、有界组装、仓库契约、技术边界、完整公共 Journey | 见上一节；System 会产生较多 CLI/Git 子进程 |
+| affected slice | `integration-task-finish`、`system-task-finish` | Task Finish 直接影响的 3 个 Integration 文件和 2 个 System 文件 | 只在 changed plan 命中 Task Finish 时替代两个完整聚合层；Candidate 仍运行聚合层 |
 | Quick 静态门禁 | `cli-architecture`、`openspec-spec-quality`、`openspec-strict`、`runtime-adapter-contract` | CLI 模块结构、canonical spec 质量、OpenSpec strict、runtime adapter 轻量契约 | Product tree、bundled OpenSpec；无外部系统，可与其他低成本 step 并行 |
 | 恢复与验收 | `integration-candidate-recovery`、`concurrent-task-acceptance`、`openspec-contract-fixtures`、`openspec-convergence-recovery` | builtin 恢复、双 Task 组合验收、OpenSpec contract、convergence/recovery | 临时 Git/Workspace；OpenSpec contract 10 case、recovery 5 case，集合互斥；重型步骤受 `workspace-saturating` 限制 |
 | Candidate 静态事实 | `open-source-candidate`、`openspec-candidate-audit`、`managed-mutations`、`package-static`、`docs-quality` | 公共发布材料、Change contract、mutation owner、package inventory、文档质量 | Product tree 或已生成 tarball；无浏览器 |
@@ -77,7 +78,7 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 | 入口 | 定位 | 选择规则 |
 | --- | --- | --- |
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、Contract 和四项低成本静态/adapter 门禁；不含 System、npm pack、浏览器、恢复矩阵 |
-| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配 registry inputs；未映射 fail closed；命中 registry/planner/runner/声明/timing 等全局 owner 时确定性扩展 full |
+| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；聚合层可排除已有专属 slice 的路径；未映射 fail closed；命中 registry/planner/runner/声明/timing 等全局 owner 时确定性扩展 full |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
 | `test:candidate` | 显式 Product Full | 固定选择 37 个 Candidate owners，不按 diff 缩小；输出 transient timing/diagnostics |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
@@ -87,7 +88,7 @@ Quick 是成本约束，affected/full 是选择范围，Candidate/Release 是验
 
 ## 6. Task Verification 如何使用项目测试
 
-Task Verification 不登记 39 个内部 step，也不为用户设计测试。`verification.yml` 只暴露 6 个稳定能力接口：
+Task Verification 不登记 41 个内部 executable step，也不为用户设计测试。`verification.yml` 只暴露 6 个稳定能力接口：
 
 | capability | 调用与证明范围 | 交付要求 |
 | --- | --- | ---: |
@@ -125,13 +126,14 @@ Development 稳定 Content Target 并固定 verification policy
 | 外层并发没有约束内层 fan-out | `global=4` 时 System 还开 14 file workers，OpenSpec 和其他 owner 再开子进程 | local/CI 的隔离重型上限为 2、受限 CI 为 1；但 Full 中 System 仍会膨胀到 71.5–93.8s、OpenSpec recovery 到 35.6–44.1s，说明 120s 预算目前不能稳定满足 |
 | 调度成本为 0 或过时 | 实际 9.5s 的 runtime reconciliation 被按 5s 留在尾部 | 按实测粗粒度前移；成本只用于启动顺序，不成为持久性能事实 |
 | Environment 启停 | 双 Task 要创建/删除 4 个 Git worktree，顺序 cleanup 是 peer-preservation 证据 | prepare 不是主瓶颈；cleanup 是 acceptance 最大单阶段但不能删除。下一轮应优化产品 cleanup 实现或局部 fixture，不能把必要证明改成假并发 |
+| affected owner 过度扩散 | Task Finish 交付的 25 条 Product path 曾命中 20 个 step：任意 Skill 命中 9 个 owner、任意 OpenSpec 内容命中两个重型 fixture、Task Finish 源码命中完整 Integration/System/并发验收 | 删除非直接 owner，并让 Task Finish 使用 3-file Integration 与 2-file System slice；同一历史路径回放降为 15 个 step。安全内容扫描及其 tarball dependency 保留；两个 slice 实跑 16/16、总墙钟 5.17 秒，完整 affected 回放 37.110 秒，相比原正式运行 135.035 秒；Candidate 的 37 个主步骤不变 |
 
 P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，38-step Changed 为 148.543 秒，37-step Candidate 为 147.819 秒且全部通过；同一优化树另有 132.741 秒和 143.323 秒全绿结果。相对 193.161 秒基线，墙钟下降约 23%–31%。rebase P0.5 后先复测当前 System 为 115/115、67.50 秒；正式 delivery timing 以本次稳定 Content Target 的 transient summary 为准。120 秒仍只是未达成的观察目标，不应通过调高预算或删必要风险证据宣告成功。
 
 ## 8. 下一轮优化方案
 
-1. 下一主目标是 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程。先区分可复用前置与被测生命周期；只可共享不可变 Git/Workspace 基线，prepare/cleanup 事实仍必须真实执行。
-2. 为高 fan-out owner 声明窄的 inner concurrency contract，并让 Candidate profile 显式传入；不建设通用权重调度平台。
+1. 根据后续 changed timing 选择下一个真实高成本领域，再增加一个有证据的 affected slice；不为目录完整性一次拆完 Integration/System。
+2. 单独分析 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程；prepare/cleanup 事实仍必须真实执行。
 3. 分析六个 package selector 重复做的 213-file static preparation；只在同一 verifier 内能保留独立 diagnostics 时共享，不引入跨 verifier daemon/cache。
 4. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
 
@@ -147,3 +149,4 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 6. 优化冷启动 | 55 项 help contract 保留全覆盖，真实 CLI 只跑代表边界；机械拆文件负优化被回退 |
 | 7. 冻结复测 | Quick 6.4s；Changed 148.543s；Candidate 147.819s 全绿，剩余关键路径确认是嵌套 fan-out 与重复 CLI/Workspace baseline |
 | 8. 复用上下文 | Task lifecycle 共享一次只读基线、逐 case 独立 sandbox；同口径 112/112 为 55.38s、CPU 约降 5.8%；rebase P0.5 后当前 115/115 为 67.50s，下一步分别分析新增 Task Development Journey 与真实 Task Environment/Git Journey |
+| 9. 收窄 affected | 用直接 owner 替代“最终可到达”关系；历史 Task Finish 计划从 20 降至 15 step，完整 Integration/System 替换为 3+2 文件 slice，安全内容扫描保留，Full membership 不变；14 路 System 暴露的固定 25ms 进程退出断言改为 1s 有界最终退出，不放宽清理要求 |

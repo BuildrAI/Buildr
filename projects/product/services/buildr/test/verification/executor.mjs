@@ -22,6 +22,10 @@ export function createVerificationExecutor(options) {
   const commandFor = (step) => {
     const executor = step.executor;
     if (executor.type === 'node') return { command: process.execPath, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
+    if (executor.type === 'node-test') return {
+      command: process.execPath,
+      args: ['--test', ...(executor.args ?? []), ...executor.files.map((file) => path.join(productRoot, file))],
+    };
     if (executor.type === 'npm') return { command: npmExecutable, args: executor.args ?? [] };
     if (executor.type === 'openspec') return { command: openspecExecutable, args: executor.args ?? [], cwd: projectRoot };
     if (executor.type === 'package-selector') return { command: process.execPath, args: [path.join(productRoot, 'test/verification/package/run.mjs'), executor.selector] };
