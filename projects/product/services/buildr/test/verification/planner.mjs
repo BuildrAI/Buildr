@@ -2,12 +2,15 @@ import path from 'node:path';
 import {
   VERIFICATION_CONCURRENCY,
   VERIFICATION_DELEGATED_INPUTS,
+  VERIFICATION_ENVIRONMENT_FOOTPRINTS,
+  VERIFICATION_ENVIRONMENT_ISOLATIONS,
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
   VERIFICATION_FULL_SCOPE_INPUTS,
   VERIFICATION_GROUPS,
   VERIFICATION_IGNORED_INPUTS,
   VERIFICATION_PROFILES,
+  VERIFICATION_RESET_BURDENS,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
@@ -83,6 +86,41 @@ export function validateVerificationRegistry(steps = verificationSteps) {
       }
       if (typeof classification.primaryEvidenceOwner !== 'string' || classification.primaryEvidenceOwner.length === 0) {
         findings.push({ step: item.id, code: 'missing_primary_evidence_owner' });
+      }
+      const executionEnvironment = classification.environment;
+      if (!executionEnvironment || typeof executionEnvironment !== 'object') findings.push({ step: item.id, code: 'missing_testing_environment' });
+      else {
+        if (!Array.isArray(executionEnvironment.footprints)) findings.push({ step: item.id, code: 'invalid_environment_footprints' });
+        else {
+          const uniqueFootprints = new Set(executionEnvironment.footprints);
+          if (uniqueFootprints.size !== executionEnvironment.footprints.length) findings.push({ step: item.id, code: 'duplicate_environment_footprint' });
+          for (const footprint of uniqueFootprints) if (!VERIFICATION_ENVIRONMENT_FOOTPRINTS.includes(footprint)) {
+            findings.push({ step: item.id, code: 'unknown_environment_footprint', value: footprint });
+          }
+        }
+        if (!VERIFICATION_ENVIRONMENT_ISOLATIONS.includes(executionEnvironment.isolation)) {
+          findings.push({ step: item.id, code: 'invalid_environment_isolation', value: executionEnvironment.isolation });
+        }
+      }
+      if (!VERIFICATION_RESET_BURDENS.includes(classification.resetBurden)) {
+        findings.push({ step: item.id, code: 'invalid_reset_burden', value: classification.resetBurden });
+      }
+      if (classification.executionBoundary === 'Component' && (
+        (executionEnvironment?.footprints?.length ?? 0) > 0
+        || executionEnvironment?.isolation !== 'none'
+        || classification.resetBurden !== 'none'
+      )) findings.push({ step: item.id, code: 'component_environment_boundary' });
+      if (quick && ['repeated-cleanup', 'lifecycle'].includes(classification.resetBurden)) {
+        findings.push({ step: item.id, code: 'quick_reset_burden', value: classification.resetBurden });
+      }
+      if (quick && executionEnvironment?.isolation === 'shared') findings.push({ step: item.id, code: 'quick_shared_environment' });
+      if (quick && classification.executionBoundary === 'Integration') {
+        const forbidden = executionEnvironment?.footprints?.filter((footprint) => ['git', 'network', 'workspace-lifecycle'].includes(footprint)) ?? [];
+        if (!['read-only', 'unique-temporary-root'].includes(executionEnvironment?.isolation)
+          || classification.resetBurden !== 'none'
+          || forbidden.length > 0) {
+          findings.push({ step: item.id, code: 'quick_integration_not_isolated', value: forbidden.join(',') || executionEnvironment?.isolation });
+        }
       }
       if (item.budgetMs != null && item.budgetMs !== classification.targetDurationMs) {
         findings.push({ step: item.id, code: 'testing_target_budget_mismatch', value: item.budgetMs });

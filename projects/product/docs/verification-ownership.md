@@ -22,16 +22,18 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，�
 
 | 层次 | 入口与规模 | 主要内容 | 环境 | 并发 |
 | --- | --- | --- | --- | --- |
-| Unit | `test:unit`；`test/unit` 19 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Unit | `test:unit`；`test/unit` 21 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
 | Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，不穿过真实 filesystem 或进程边界 | `node:test`；外层 `cpu-heavy=2` |
-| Contract | `test:contract`；`test/contract` 20 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口一致性 | Product tree；部分 case 启动开发 CLI、Git 和临时目录，因此聚合边界记为低成本 Integration | `node:test` 文件并发；外层 `cpu-heavy=2` |
-| Integration | `test:integration`；`test/integration` 28 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；无浏览器 | 直接入口保留全部文件以便定位；Candidate 中普通聚合排除专属 lifecycle slice，并以 6 worker 运行 |
+| Contract | `test:contract`；`test/contract` 19 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口 declaration 一致性 | 只读 Product tree；不创建可变 fixture，不启动真实 CLI/Git/网络 | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Integration | `test:integration`；`test/integration` 34 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；包含从 Contract 迁出的环境测试；无浏览器 | 直接入口保留全部文件以便定位；Candidate 中普通聚合排除专属 lifecycle slice，并以 6 worker 运行 |
 | Task Development Integration | `integration-task-development`；`task-development-application.test.mjs` 1 个文件、2 个用例 | Task Development 贯穿真实 CLI、filesystem 和 Application 的生命周期事实 | 独立临时 Workspace、CLI、Git；无浏览器 | `workspace-heavy` + `workspace-saturating`；文件内顺序执行，避免与普通 Integration 混在一起 |
 | System | `test:system`；`test/system` 25 个文件 | 完整 CLI、Workspace、Local App runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
 | Recovery | `test:integration:candidate:recovery` 1 个文件；Release 专项 2 个文件 | builtin 迁移/恢复与 Git release convergence | 多轮临时 Workspace/Git | `workspace-saturating`；默认最多 2 路，受限 CI 1 路 |
 | Browser System | `test:browser:smoke` 1 个文件、6 个 selector | Local App shell、Task、Project、Service、Change 的真实浏览器 Journey | 本机 Chrome/Chromium、Playwright Core、loopback server、临时 Workspace | 不进入 Product Full；`verification.yml` 的 `browser` 协调资源容量为 1 |
 
 历史 `test:integration:fast` 已退休。它实际需要 60 秒以上并穿过完整 CLI/Git/Workspace，不是 fast，也不是普通技术 Integration；同一集合现在只有 `test:system` 一个入口。
+
+每个 registry step 另外声明 `environment.footprints`、`environment.isolation` 与 `resetBurden`。Component 必须是空足迹、无隔离环境、无重置；Quick 拒绝重复 cleanup、完整 lifecycle 和共享可变环境。Integration 只有在目标耗时有界、环境可测且独立、无 reset burden，并且不穿过 Git、网络或 Workspace lifecycle 时才允许作为例外进入 Quick。Planner 与 `testing-boundaries` contract 在启动 verifier 前共同 fail closed，不按名称或一次 timing 推断资格。
 
 ## 3. 完整 registry inventory
 
@@ -41,13 +43,13 @@ Product registry 当前有 43 个 executable steps、40 个 primary owners；Tas
 | --- | --- | --- | --- |
 | 直接层 | `unit`、`component`、`contract`、`integration`、`integration-task-development`、`system` | 纯逻辑、有界组装、仓库契约、普通技术边界、Task Development 生命周期、完整公共 Journey | 见上一节；重型 owner 会产生较多 CLI/Git 子进程 |
 | affected slice | `integration-task-finish`、`system-task-finish`、`runtime-skill-projection` | Task Finish 直接影响的 3 个 Integration 文件和 2 个 System 文件；变更 Skill 在 7 个 supported adapter 的 source digest、完整投射 inventory 与 receipt | changed plan 使用有界 owner；Candidate 仍运行完整聚合层与 `runtime-adapter-parity` |
-| Quick 静态门禁 | `cli-architecture`、`openspec-spec-quality`、`openspec-strict`、`runtime-adapter-contract` | CLI 模块结构、canonical spec 质量、OpenSpec strict、runtime adapter 轻量契约 | Product tree、bundled OpenSpec；无外部系统，可与其他低成本 step 并行 |
+| Quick 静态门禁 | `cli-architecture`、`openspec-spec-quality`、`openspec-strict` | CLI 模块结构、canonical spec 质量、OpenSpec strict | Product tree、bundled OpenSpec；只读运行，可与其他低成本 step 并行 |
 | 恢复与验收 | `integration-candidate-recovery`、`concurrent-task-acceptance`、`openspec-contract-fixtures`、`openspec-convergence-recovery` | builtin 恢复、双 Task 组合验收、OpenSpec contract、convergence/recovery | 临时 Git/Workspace；OpenSpec contract 10 case、recovery 5 case，集合互斥；重型步骤受 `workspace-saturating` 限制 |
 | Candidate 静态事实 | `open-source-candidate`、`openspec-candidate-audit`、`managed-mutations`、`package-static`、`docs-quality` | 公共发布材料、Change contract、mutation owner、package inventory、文档质量 | Product tree 或已生成 tarball；无浏览器 |
 | Package 组装与集成 | `candidate-tarball`、`package-workspace`、`package-commands`、`package-rules`、`package-skills`、`package-runtime` | tarball 可组装，六类受管资产结构与安装行为正确 | 本地 `npm pack`、临时目录、开发 CLI；不访问 npm registry |
 | Package/Release Journey | `cli-package-parity`、`release-tarball-smoke` | checkout 与同一 tarball 的代表输出/一次 init mutation 一致；安装版 init/sync/doctor/uninstall 可用 | 共享 Candidate tarball、临时 npm prefix/Workspace；三个 consumer 依赖 `candidate-tarball`，可在产物生成后并行 |
 | CLI 与 capability | `capability-cli-integration`、`commands-cli-integration`、`cli-compatibility`、`service-branch-contract`、`remote-skill-timeout` | capability/Commands 资产、公开 CLI 兼容、Service branch、远程读取超时 | 临时 Workspace/Git/CLI；55 项 help 同进程穷举、7 项代表 help 走真实 CLI；timeout 只使用 loopback HTTP |
-| Runtime 与 Workspace E2E | `runtime-adapter-parity`、`workspace-lifecycle`、`ownership-recovery`、`runtime-reconciliation`、`init-onboarding`、`managed-data-integrity` | 7 个 adapter inventory/Doctor、5 个实现族生命周期、Workspace 生命周期/恢复/投射、init、原子 mutation 与 nested repo 保留 | 多轮临时 Workspace、CLI、Git；runtime parity 是 `workspace-saturating` |
+| Runtime 与 Workspace E2E | `runtime-adapter-contract`、`runtime-adapter-parity`、`workspace-lifecycle`、`ownership-recovery`、`runtime-reconciliation`、`init-onboarding`、`managed-data-integrity` | adapter descriptor 与多轮临时投射、7 个 adapter inventory/Doctor、5 个实现族生命周期、Workspace 生命周期/恢复/投射、init、原子 mutation 与 nested repo 保留 | `runtime-adapter-contract` 需要重复临时 filesystem cleanup；其余为多轮临时 Workspace、CLI、Git，runtime parity 是 `workspace-saturating` |
 | 独立专项 | `integration-candidate-release`、`repository-onboarding` | dev/main release convergence；干净 checkout 安装开发 CLI | 本地临时 Git；不属于核心 Full，按 Release 或 affected/focus 选择 |
 
 `concurrent-task-acceptance` 是唯一组合 Acceptance owner：它创建本地多仓 Workspace 和两个正式 Task，并发 prepare 两个 Environment，并发运行 Project verification、记录两份独立 current Result，并启动两个 Preview；它验证共享资源容量、owner guard、异常诊断，再顺序 cleanup Environment 以证明清理一个 Task 不影响另一个。完整浏览器业务验收由独立 Browser capability 持有，不混入这个步骤。
@@ -82,12 +84,29 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 
 | 入口 | 定位 | 选择规则 |
 | --- | --- | --- |
-| `npm test` / `test:fast` | Quick | 完整 Unit、Component、Contract 和四项低成本静态/adapter 门禁；不含 System、npm pack、浏览器、恢复矩阵 |
+| `npm test` / `test:fast` | Quick | 完整 Unit、Component、静态 Contract、CLI architecture、OpenSpec spec quality/strict；不含真实投射、重复 cleanup、System、npm pack、浏览器或恢复矩阵 |
 | `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；聚合层可排除已有专属 slice 的路径；未映射 fail closed；命中 registry/planner/runner/声明/timing 等全局 owner 时确定性扩展 full |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
 | `test:candidate` | 显式 Product Full | 固定选择 38 个 Candidate owners，不按 diff 缩小；输出 transient timing/diagnostics |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Local App 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
+
+### Quick 准入快照（2026-08-04）
+
+同一 Task worktree 连续三轮 `npm run test:fast` 墙钟为 2.22s、1.84s、1.91s。每轮 runner 只创建并最终删除一个共享 diagnostics 临时根；以下 step 自身的环境初始化与 cleanup 次数均为 0，且都不声明协调资源：
+
+| step | 边界与环境 | reset burden | 三轮耗时 | 隔离与并发 | 保留理由 |
+| --- | --- | --- | --- | --- | --- |
+| `unit` | Unit；同进程纯逻辑，无真实环境足迹 | `none` | 491 / 450 / 421ms | `cpu-heavy`，最多 2；无共享可变状态 | 完整低成本纯逻辑反馈 |
+| `component` | Component；内存 fake，无 filesystem/CLI/Git/网络/Workspace | `none` | 372 / 350 / 317ms | `cpu-heavy`，最多 2；无共享可变状态 | 有界组装且满足 Component 硬边界 |
+| `contract` | Static；只读 Product tree | `none` | 539 / 512 / 571ms | `cpu-heavy`，最多 2；文件级并发只读 | 只保留静态 declaration/manifest/Skill/schema 契约 |
+| `cli-architecture` | Static；只读源码与入口结构 | `none` | 319 / 296 / 265ms | `default`，全局最多 4；只读 | 低成本架构一致性 |
+| `openspec-spec-quality` | Static；只读 canonical OpenSpec | `none` | 204 / 173 / 137ms | `default`，全局最多 4；只读 | canonical spec 质量静态检查 |
+| `openspec-strict` | Static Conformance；一次 bundled OpenSpec CLI，只读 Project tree | `none` | 1353 / 1399 / 1512ms | `default`，全局最多 4；无网络或可变 fixture | 单次、可测、只读严格校验，不承担环境重置 |
+
+Quick runner 全局最多并发 4 个 step；`unit`、`component`、`contract` 共用 `cpu-heavy=2` 上限，其他三个 step 使用 `default=4`，但仍受全局上限约束。没有 Quick step 使用 `workspace-heavy`、`workspace-saturating`、network 或 exclusive 资源。
+
+迁出的 `development-entry`、`task-asset-observation`、候选文件系统、Task Manager 临时 capability graph 与 verification CLI process cases 现在由 `integration` 选择；它们包含真实 CLI/Git/filesystem 或 cleanup。`runtime-adapter-contract` 虽单次耗时较低，但会重复创建和清理临时投射目录，因此保留 changed/focus/Candidate identity 并退出 Quick。
 
 Quick 是成本约束，affected/full 是选择范围，Candidate/Release 是验证目标或节点。三者不再作为一条混合层级，也不进入 Task Verification Result schema。
 

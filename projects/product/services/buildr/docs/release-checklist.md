@@ -58,7 +58,7 @@
 
 开发期间只在单任务后做最小反馈检查，在相关任务组完成后做一次受影响范围验证；不要逐任务运行本节的完整验证。验证命令仍在运行或暂时无输出时继续等待同一进程，不重复启动。
 
-普通任务默认运行兼容名称下的 Quick gate；该入口并行聚合完整低成本 Unit、Component、Static，以及 contract/runtime Integration，不创建完整临时用户 Workspace，也不执行完整 CLI/Git 生命周期、npm pack/install 或 System E2E：
+普通任务默认运行兼容名称下的 Quick gate；该入口并行聚合完整低成本 Unit、Component、静态 Contract 和必要静态检查。Registry 同时记录环境足迹、隔离方式与重置负担，并在启动 verifier 前拒绝真实 filesystem 投射、Git、网络、Workspace 生命周期、重复 cleanup 或不满足隔离例外的 Integration：
 
 ```bash
 npm test

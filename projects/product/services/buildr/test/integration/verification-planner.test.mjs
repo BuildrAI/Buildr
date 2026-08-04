@@ -24,7 +24,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   assert.equal(new Set(verificationSteps.map((step) => step.id)).size, verificationSteps.length);
   assert.deepEqual(Object.keys(VERIFICATION_STEP_TESTING).sort(), verificationSteps.map((step) => step.id).sort());
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['fast'] })), [
-    'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
+    'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
     'unit', 'component', 'integration', 'integration-task-development', 'contract', 'system', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
@@ -46,16 +46,21 @@ test('Project Testing 分类完整且 Quick 只包含低成本非 System step', 
     assert.ok(step.testing.targetDurationMs > 0);
     assert.ok(step.testing.proves);
     assert.ok(step.testing.primaryEvidenceOwner);
+    assert.ok(step.testing.environment);
+    assert.ok(Array.isArray(step.testing.environment.footprints));
+    assert.ok(step.testing.environment.isolation);
+    assert.ok(step.testing.resetBurden);
   }
   const quick = createVerificationPlan({ profiles: ['fast'] }).steps;
   assert.ok(quick.some((step) => step.testing.executionBoundary === 'Component'));
-  assert.ok(quick.some((step) => step.testing.executionBoundary === 'Integration'));
   assert.equal(quick.some((step) => step.testing.executionBoundary === 'System'), false);
+  assert.equal(quick.some((step) => ['repeated-cleanup', 'lifecycle'].includes(step.testing.resetBurden)), false);
   assert.equal(quick.some((step) => step.testing.targetDurationMs > 15000), false);
   assert.deepEqual(verificationSteps.find((step) => step.id === 'contract').testing, {
-    ownerScope: 'project:product', primaryIntent: 'Static Conformance', executionBoundary: 'Integration',
-    targetDurationMs: 15000,
-    proves: 'Product source, governance assets, and stable entrypoint contracts conform.', primaryEvidenceOwner: 'contract',
+    ownerScope: 'project:product', primaryIntent: 'Static Conformance', executionBoundary: 'Static',
+    targetDurationMs: 5000,
+    proves: 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.',
+    environment: { footprints: ['filesystem'], isolation: 'read-only' }, resetBurden: 'none', primaryEvidenceOwner: 'contract',
   });
   assert.deepEqual(verificationSteps.find((step) => step.id === 'integration-candidate-release').profiles, []);
   assert.deepEqual(verificationSteps.find((step) => step.id === 'repository-onboarding').profiles, []);

@@ -62,7 +62,7 @@ Project 服务通过 `services/manifest.yml` 维护 Service registry，默认 re
 
 修改 package baseline、manifest、CLI、bootstrap、Buildr Skill 或 runtime adapter 后，按 `services/buildr/docs/release-checklist.md` 验证。
 
-- 普通任务从 `services/buildr/` 运行 `npm test` 或 `npm run test:fast`，只承担完整低成本 Unit、Component、Static 及 contract/runtime Integration 的 Quick 反馈；完整 CLI、Git、Workspace 与生命周期 System 测试不得因历史 `fast` 名称进入该入口。
+- 普通任务从 `services/buildr/` 运行 `npm test` 或 `npm run test:fast`，只承担完整低成本 Unit、Component、静态 Contract 及必要静态检查的 Quick 反馈；需要真实 filesystem 投射、CLI、Git、Workspace、重复 cleanup 或完整生命周期的测试不得因历史名称或暂时较快进入该入口。
 - 日常改动优先运行 `npm run test:changed`；失败定位使用 `npm run test:focus -- <step-id|group:<group>>`，只展开真实依赖并按 identity 去重。
 - 最终候选冻结后通过 Task Verification 执行 delivery-required `product.delivery`；其 changed plan 根据 owner 选择 affected 或 full。用户明确要求完整 Product 回归、发布准备或验证兼容入口时运行 `npm run test:candidate`；`scripts/verify-buildr-product` 是其等价兼容入口。
 

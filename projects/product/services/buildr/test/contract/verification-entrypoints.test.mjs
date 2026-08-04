@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import process from 'node:process';
 import test from 'node:test';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/application/package-maintenance/verification-registry.mjs';
@@ -37,7 +35,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   const fast = read('scripts/verify-buildr-product-fast');
   assert.match(fast, /verification\/profile\.mjs" fast/);
   const fastIds = createVerificationPlan({ profiles: ['fast'] }).steps.map((step) => step.id);
-  assert.deepEqual(fastIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract']);
+  assert.deepEqual(fastIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.equal(fastIds.includes('system'), false);
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.mjs', 'release-smoke.mjs']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);
@@ -78,23 +76,6 @@ test('focus verification de-duplicates groups without attaching fast', () => {
   assert.equal(plan.steps.filter((step) => step.id === 'candidate-tarball').length, 1);
 });
 
-test('focus verification lists selectors and rejects unknown values before execution', () => {
-  const runner = path.join(productRoot, 'test', 'verification', 'focus.mjs');
-  const help = spawnSync(process.execPath, [runner, '--help'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(help.status, 0, help.stderr);
-  assert.match(help.stdout, /step-id\|group/);
-
-  const listed = spawnSync(process.execPath, [runner, '--list'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(listed.status, 0, listed.stderr);
-  assert.match(listed.stdout, /group:package/);
-  assert.match(listed.stdout, /workspace-lifecycle/);
-
-  const unknown = spawnSync(process.execPath, [runner, 'unknown'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /Unknown verification step/);
-  assert.doesNotMatch(`${unknown.stdout}${unknown.stderr}`, /\[focus\]/);
-});
-
 test('candidate verification retains necessary Candidate facts without Browser and Release-only owners', () => {
   const wrapper = read('scripts/verify-buildr-product');
   const candidate = read('test/verification/candidate.mjs');
@@ -102,22 +83,6 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.ok(candidate.includes("profiles: ['candidate']"));
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
-  const invalidScheduling = spawnSync(process.execPath, [path.join(productRoot, 'test', 'verification', 'candidate.mjs')], {
-    cwd: productRoot,
-    encoding: 'utf8',
-    env: { ...process.env, BUILDR_VERIFICATION_SCHEDULING: 'unknown' },
-  });
-  assert.equal(invalidScheduling.status, 1);
-  assert.match(invalidScheduling.stderr, /Invalid verification scheduling mode/);
-  assert.doesNotMatch(`${invalidScheduling.stdout}${invalidScheduling.stderr}`, /\[verify-product\]/);
-  const invalidProfile = spawnSync(process.execPath, [path.join(productRoot, 'test', 'verification', 'candidate.mjs')], {
-    cwd: productRoot,
-    encoding: 'utf8',
-    env: { ...process.env, BUILDR_VERIFICATION_PROFILE: 'unknown' },
-  });
-  assert.equal(invalidProfile.status, 1);
-  assert.match(invalidProfile.stderr, /Unknown verification execution profile/);
-  assert.doesNotMatch(`${invalidProfile.stdout}${invalidProfile.stderr}`, /\[verify-product\]/);
   assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan = createVerificationPlan({ profiles: ['candidate'] });
   for (const stage of [
@@ -210,12 +175,6 @@ test('双任务并发验收输出完整的组合证据并执行归属清理', ()
 });
 
 test('OpenSpec fixture Candidate owners use disjoint complete suites', () => {
-  const runner = path.join(productRoot, 'test', 'verification', 'openspec', 'contract.mjs');
-  const listed = spawnSync(process.execPath, [runner, '--list-suites'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(listed.status, 0, listed.stderr);
-  const suites = JSON.parse(listed.stdout);
-  assert.equal(suites.contract.filter((name) => suites.recovery.includes(name)).length, 0);
-  assert.deepEqual([...new Set([...suites.contract, ...suites.recovery])].sort(), [...suites.all].sort());
   const owners = Object.fromEntries(verificationSteps
     .filter((step) => ['openspec-contract-fixtures', 'openspec-convergence-recovery'].includes(step.id))
     .map((step) => [step.id, step.executor.args]));
@@ -223,9 +182,6 @@ test('OpenSpec fixture Candidate owners use disjoint complete suites', () => {
     'openspec-contract-fixtures': ['--suite', 'contract'],
     'openspec-convergence-recovery': ['--suite', 'recovery'],
   });
-  const unknown = spawnSync(process.execPath, [runner, '--suite', 'unknown'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(unknown.status, 1);
-  assert.match(unknown.stderr, /Unknown OpenSpec fixture suite/);
 });
 
 test('CLI package parity owns representative equivalence without lifecycle duplication', () => {
@@ -247,27 +203,4 @@ test('package verifier selectors are stable, focused, and fail closed', () => {
   assert.deepEqual(selectPackageVerifiers('static,runtime').map((step) => step.id), ['static', 'runtime']);
   assert.throws(() => selectPackageVerifiers('unknown'), /Unknown package verifier/);
 
-  const runner = path.join(productRoot, 'test', 'verification', 'package', 'run.mjs');
-  const help = spawnSync(process.execPath, [runner, '--help'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(help.status, 0, help.stderr);
-  for (const step of PACKAGE_VERIFIERS) assert.match(help.stdout, new RegExp(`\\b${step.id}\\b`));
-
-  const unknown = spawnSync(process.execPath, [runner, 'unknown'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /Unknown package verifier/);
-});
-
-test('changed verification exposes plan/json and rejects unknown options before execution', () => {
-  const runner = path.join(productRoot, 'test', 'verification', 'changed.mjs');
-  const json = spawnSync(process.execPath, [runner, '--json', 'docs/buildr-product.md'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(json.status, 0, json.stderr);
-  const payload = JSON.parse(json.stdout);
-  assert.equal(payload.schemaVersion, 'buildr.verification-plan/v1');
-  assert.deepEqual(payload.paths, ['docs/buildr-product.md']);
-  assert.deepEqual(payload.steps.map((step) => step.id), ['docs-quality']);
-
-  const unknown = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8' });
-  assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /Unknown test:changed option/);
-  assert.doesNotMatch(unknown.stderr, /\[verify\]/);
 });

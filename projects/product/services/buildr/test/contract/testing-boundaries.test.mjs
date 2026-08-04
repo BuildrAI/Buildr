@@ -5,8 +5,10 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { inspectTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
+import { verificationSteps } from '../verification/registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const contractRoot = path.join(productRoot, 'test', 'contract');
 const forbiddenNodeBoundaries = new Set([
   'child_process', 'cluster', 'dgram', 'fs', 'http', 'http2', 'https', 'net', 'tls', 'worker_threads',
 ]);
@@ -46,6 +48,33 @@ function directBoundaryImports(layer) {
 test('Unit 与 Component 不直接穿过真实进程、网络或文件系统边界', () => {
   assert.deepEqual(directBoundaryImports('unit'), []);
   assert.deepEqual(directBoundaryImports('component'), []);
+});
+
+test('Quick Contract 只保留只读静态契约并拒绝可变环境测试', () => {
+  const forbiddenImports = /from\s+['"]node:(?:child_process|cluster|dgram|http|http2|https|net|tls|worker_threads)['"]/u;
+  const mutatingFilesystem = /\bfs\.(?:appendFileSync|cpSync|mkdirSync|mkdtempSync|renameSync|rmSync|unlinkSync|writeFileSync)\s*\(/u;
+  for (const file of fs.readdirSync(contractRoot).filter((name) => name.endsWith('.test.mjs') && name !== 'testing-boundaries.test.mjs')) {
+    const source = fs.readFileSync(path.join(contractRoot, file), 'utf8');
+    assert.doesNotMatch(source, forbiddenImports, `${file} must move real process/network boundaries to Integration`);
+    assert.doesNotMatch(source, mutatingFilesystem, `${file} must move mutable filesystem fixtures to Integration`);
+  }
+
+  const contract = verificationSteps.find((step) => step.id === 'contract');
+  assert.equal(contract.testing.executionBoundary, 'Static');
+  assert.deepEqual(contract.testing.environment, { footprints: ['filesystem'], isolation: 'read-only' });
+  assert.equal(contract.testing.resetBurden, 'none');
+});
+
+test('Quick registry membership 由环境足迹与重置负担约束', () => {
+  const quick = verificationSteps.filter((step) => step.profiles.includes('fast'));
+  for (const step of quick) {
+    assert.notEqual(step.testing.environment.isolation, 'shared', step.id);
+    assert.equal(['repeated-cleanup', 'lifecycle'].includes(step.testing.resetBurden), false, step.id);
+  }
+  const runtimeAdapter = verificationSteps.find((step) => step.id === 'runtime-adapter-contract');
+  assert.equal(runtimeAdapter.profiles.includes('fast'), false);
+  assert.deepEqual(runtimeAdapter.testing.environment.footprints, ['filesystem']);
+  assert.equal(runtimeAdapter.testing.resetBurden, 'repeated-cleanup');
 });
 
 test('Task lifecycle System context 只共享不可变基线并保留全生命周期测试的独立 owner', () => {

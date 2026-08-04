@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
 
+// Integration: every case crosses a real launcher process and temporary filesystem boundary.
+
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const runner = path.join(serviceRoot, 'scripts/run-development-cli');
 const projectBridge = path.resolve(serviceRoot, '../../buildr');

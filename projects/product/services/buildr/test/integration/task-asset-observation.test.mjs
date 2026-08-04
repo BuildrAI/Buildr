@@ -7,6 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// Integration: this suite exercises real filesystem, helper subprocess, Git and worktree boundaries.
 const helper = path.join(productRoot, 'package/targets/workspace/skills/buildr/task-asset-review/scripts/observation.mjs');
 const ID_A = '11111111-1111-4111-8111-111111111111';
 const ID_B = '22222222-2222-4222-8222-222222222222';
