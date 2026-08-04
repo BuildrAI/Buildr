@@ -57,13 +57,10 @@ function parseTaskRecordCli(action, args) {
 function blockedResult(runtime, operation, taskId, targetRoot, error) {
   let current = null;
   try { current = runtime.readTaskRecordPersistence(targetRoot, taskId); } catch {}
-  let file = null;
-  try { file = runtime.taskRecordPath(targetRoot, taskId); } catch {}
   return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordResult, {
     operation,
     status: 'blocked',
     taskId: taskId || null,
-    path: current?.file || file,
     record: current?.record || null,
     recordDigest: current?.recordDigest || error.details?.currentRecordDigest || null,
     diagnostic: { code: error.code || 'task_record_failed', message: error.message, ...(error.details === undefined ? {} : { details: error.details }) },
@@ -75,7 +72,7 @@ function blockedResult(runtime, operation, taskId, targetRoot, error) {
 function printTaskRecordResult(payload, json) {
   if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else if (payload.status === 'blocked') console.error(`[${payload.diagnostic.code}] ${payload.diagnostic.message}\nNext: ${payload.nextActions[0]}`);
-  else console.log(`Task ${payload.taskId} ${payload.status}: ${payload.path}`);
+  else console.log(`Task ${payload.taskId} ${payload.status}`);
   return payload;
 }
 

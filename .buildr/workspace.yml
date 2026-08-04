@@ -4,6 +4,6 @@ name: Buildr
 description: Buildr 产品的自举 Workspace，用 Buildr 开发 Buildr。
 runtime:
   node:
-    version: 23.10.0
+    version: 24.18.0
 kind: organization
 profile: team

@@ -146,10 +146,10 @@ function readLegacyInventory(runtime, workspaceRoot) {
       const repositories = receipt.repositories.map(currentRepository);
       const liveCount = repositories.filter(Boolean).length;
       const blockers = legacyResourceBlockers(root, receipt, common);
-      const taskFile = path.join(root, '.buildr', 'tasks', taskId, 'task.yml');
       let formalTask = false;
-      if (fs.existsSync(taskFile)) {
-        try { runtime.readTaskRecordPersistence(root, taskId); formalTask = true; } catch (error) { return { ...base, repositories: repositories.filter(Boolean), blockers, reason: `正式 Task 无法验证：${error.message}` }; }
+      try { runtime.readTaskRecordPersistence(root, taskId); formalTask = true; }
+      catch (error) {
+        if (error.code !== 'task_record_not_found') return { ...base, repositories: repositories.filter(Boolean), blockers, reason: `正式 Task 无法验证：${error.message}` };
       }
       const newReceipt = path.join(root, '.buildr', 'tasks', taskId, 'environment.json');
       const newEvidence = path.join(common, 'buildr', 'task-worktrees', `${taskId}.json`);

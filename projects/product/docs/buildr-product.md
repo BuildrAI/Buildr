@@ -153,7 +153,7 @@ Buildr 资产是源头；Agent runtime 是面向当前 Agent 的可重建入口�
 
 macOS `Buildr.app` 和 Windows launcher bundle 携带运行所需的 Node runtime 与相同 Web 资源，只负责启动或复用本机服务并打开默认浏览器，不引入 Desktop WebView。关闭浏览器不等于退出服务；页面提供受 session 保护的显式退出操作。当前不提供菜单栏、登录启动、磁盘自动扫描或跨 Workspace 资源聚合，也不由 App 启动或管理 Agent。
 
-新建 Workspace、Project、Service 或 Change，以及继续 Change、Task Review，均只生成交给 Agent 的完整 prompt，不绕过 Agent 对范围、目录、Git、授权、OpenSpec 契约和 runtime 的判断。Task-scoped Change 使用 Task Review Planning route；全局 Change 的通用审查 prompt 保持原边界。已归档 Change 默认只读，页面不会直接创建、编辑、apply、sync 或 archive Change。文件系统仍是本地 Workspace 的事实载体。
+新建 Workspace、Project、Service 或 Change，以及继续 Change、Task Review，均只生成交给 Agent 的完整 prompt，不绕过 Agent 对范围、目录、Git、授权、OpenSpec 契约和 runtime 的判断。Task-scoped Change 使用 Task Review Planning route；全局 Change 的通用审查 prompt 保持原边界。已归档 Change 默认只读，页面不会直接创建、编辑、apply、sync 或 archive Change。portable工作资产继续由文件系统/Git承载；适合索引、关系、聚合和事务的本地structured data由每个Workspace独立SQLite承载。
 
 Project Domain 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。文件系统场景必须保留 `source.path` 以定位真实 Project；独立 Git source 另外声明 URL、remote 和稳定的 `integrationBranch`。当前分支、HEAD、dirty、upstream 与 ahead/behind 会随任务变化，只由 Git adapter 实时观察，不持久化到 Domain，也不会触发 Buildr 自动 checkout、stash 或 merge。
 
@@ -171,6 +171,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 - Cursor、Qoder 与 TRAE 将 `AGENTS.md` 投射为各自可检查的 scoped vendor rule files；TRAE Work 与 WorkBuddy 使用受管 root reference bridge。完整路径、activation、限制和证据状态见 Buildr Service 的 [Agent Runtime Adapters](../services/buildr/docs/agent-runtime-adapters.md)。
 - 默认 `sync` 从 root `.` 递归 reconcile 整个受管理 workspace；扫描跳过符号链接、依赖/build/runtime 目录和未登记的嵌套 Git repo。
 - 正式持久交付在首次写入前创建或恢复最小 Task Record，再按 Task ID 运行 `buildr task environment prepare`。Environment Receipt 独占实际执行根、Runtime/CLI/依赖、runtime projection、动态资源、ready/恢复与 cleanup；Task Record 不保存环境字段。`prepare` 可以选择共享根，也可以把 `.worktrees/<task-id>` 作为 checkout、执行根和 Task Validation Workspace 根。
+- Buildr Local 在 `.buildr/local/workspace.sqlite` 保存单机local-only structured data，Task Record是首个consumer。数据库不进入Git、runtime投射或跨机器同步；旧Task YAML不迁移。未来组织多人协作由独立Buildr Server/Cloud authority承担，不同步本地SQLite文件。
 - `.worktrees/` 是多个 Task Environment checkout 的容器，不是主 Workspace、保留工作区或 Agent runtime。`task-worktree` 只提供 `buildr.git-worktree-provider/v1` 的 checkout/branch/HEAD/clean/registration evidence；`buildr worktree create|inspect|cleanup` 不代表 Environment ready，也不拥有恢复和总 cleanup。
 - 复杂、长期、跨批次或存在交叉依赖的任务可以由 `task-board` Skill 在 retained Workspace checkout 的 Project `openspec/knowledge/task-boards/yyyy-MM-dd-<task-id>.html` 维护稳定的只读 HTML 任务看板。看板以 Task ID 为主，关联零个或多个真实 OpenSpec changes；Environment 只提供只读事实来源。Agent 从 `task environment inspect` 的 read model 确定 canonical Workspace 与执行根，不直接解析 Receipt。旧称“任务驾驶舱”继续路由到该 Skill，但既有 `task-cockpits/` HTML 保持原路径和原内容。
 - 实现型 OpenSpec Change 在 propose 前取得 matching ready Task Environment；artifacts、实现、开发期测试和 Formal Verification 只写 Environment 允许的根，不与 retained source 双写。候选 Skill、CLI、功能和 runtime 可以在自身 Task Validation Workspace 测试，只有集成到 retained source 后正式 runtime 才同步生效。

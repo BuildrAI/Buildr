@@ -161,7 +161,8 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
 
   const owner = createTask(root, ownerTask);
   createTask(root, waiterTask);
-  const taskBytes = fs.readFileSync(owner.path, 'utf8');
+  const taskRecordBefore = owner.record;
+  const taskDigestBefore = owner.recordDigest;
   const prepared = buildr(['task', 'environment', 'prepare', ownerTask, '--shared', '--agent', 'codex', '--target', root, '--json']);
   assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v1');
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
@@ -174,7 +175,9 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   assert.equal(prepared.execution.workdir, root);
   assert.deepEqual(prepared.execution.allowedExecutionRoots, [root]);
   assert.equal(path.isAbsolute(prepared.execution.cliInvocation.command), true);
-  assert.equal(fs.readFileSync(owner.path, 'utf8'), taskBytes);
+  const taskAfterPrepare = buildr(['task', 'inspect', ownerTask, '--target', root, '--json']);
+  assert.deepEqual(taskAfterPrepare.record, taskRecordBefore);
+  assert.equal(taskAfterPrepare.recordDigest, taskDigestBefore);
 
   const inspected = buildr(['task', 'environment', 'inspect', ownerTask, '--target', root, '--json']);
   assert.equal(inspected.status, 'ready');
@@ -193,7 +196,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   assert.equal(cleaned.environment.latest.cleanup.status, 'cleaned');
   assert.equal(cleaned.effects.some((effect) => effect.type === 'shared-scope-retained' && effect.selector === 'workspace'), true);
   assert.match(cleaned.environment.latest.cleanup.summary, /共享执行根已保留/);
-  assert.equal(fs.existsSync(owner.path), true);
+  assert.equal(buildr(['task', 'inspect', ownerTask, '--target', root, '--json']).record.status, 'abandoned');
 
   const resumed = buildr(['task', 'environment', 'prepare', waiterTask, '--shared', '--target', root, '--json']);
   assert.equal(resumed.status, 'ready');

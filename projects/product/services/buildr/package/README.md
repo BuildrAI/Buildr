@@ -26,7 +26,7 @@ Workspace → Project → Service (optional)
 
 ## Manual fallback
 
-When an Agent cannot perform setup, Buildr requires Node.js 20+:
+When an Agent cannot perform setup, Buildr requires Node.js 24.15+:
 
 ```bash
 npm install --global @buildr-ai/buildr@next

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-minimum_node_major=20
+minimum_node_version=24.15.0
 self=$0
 while [ -L "$self" ]; do
   link=$(readlink "$self")
@@ -20,11 +20,17 @@ node_version() {
 is_compatible_node() {
   [ -x "$1" ] || return 1
   candidate_version=$(node_version "$1") || return 1
-  candidate_major=${candidate_version%%.*}
-  case "$candidate_major" in
-    ''|*[!0-9]*) return 1 ;;
+  old_ifs=$IFS
+  IFS=.
+  set -- $candidate_version
+  IFS=$old_ifs
+  candidate_major=${1:-}
+  candidate_minor=${2:-}
+  candidate_patch=${3:-}
+  case "$candidate_major.$candidate_minor.$candidate_patch" in
+    *[!0-9.]*) return 1 ;;
   esac
-  [ "$candidate_major" -ge "$minimum_node_major" ]
+  [ "$candidate_major" -gt 24 ] || { [ "$candidate_major" -eq 24 ] && [ "$candidate_minor" -ge 15 ]; }
 }
 
 run_with_node() {
@@ -106,7 +112,7 @@ if [ "${BUILDR_NODE+x}" = x ]; then
     *) explicit_node=$(command -v "$explicit_node" 2>/dev/null || true) ;;
   esac
   if ! is_compatible_node "$explicit_node"; then
-    echo "Buildr bootstrap requires Node.js >=${minimum_node_major}; BUILDR_NODE must name a compatible executable." >&2
+    echo "Buildr bootstrap requires Node.js >=${minimum_node_version}; BUILDR_NODE must name a compatible executable." >&2
     exit 1
   fi
   run_with_node "$explicit_node" "$@"
@@ -133,8 +139,8 @@ done
 IFS=$old_ifs
 
 if [ -n "$declared_version" ]; then
-  echo "Workspace Node runtime $declared_version is unavailable and no compatible bootstrap Node can run $command_name. Restore a Node >=${minimum_node_major}, then run buildr sync." >&2
+  echo "Workspace Node runtime $declared_version is unavailable and no compatible bootstrap Node can run $command_name. Restore a Node >=${minimum_node_version}, then run buildr sync." >&2
 else
-  echo "Buildr bootstrap requires Node.js >=${minimum_node_major}. Set BUILDR_NODE to a compatible executable or add one to PATH." >&2
+  echo "Buildr bootstrap requires Node.js >=${minimum_node_version}. Set BUILDR_NODE to a compatible executable or add one to PATH." >&2
 fi
 exit 1

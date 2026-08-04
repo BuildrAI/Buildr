@@ -54,6 +54,10 @@ export function registerTaskDevelopmentRepository(runtime) {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     const directory = runtime.taskRecordDirectory(root, taskId);
     const file = taskDevelopmentReceiptPath(root, taskId);
+    if (!io.existsSync(directory)) {
+      if (optional) return null;
+      throw taskDevelopmentError('task_development_receipt_not_found', `Development Receipt 不存在：${taskId}。`, 404, { taskId, path: file });
+    }
     if (!regularDirectory(io, directory)) throw taskDevelopmentError('task_development_directory_invalid', 'Development Receipt 必须位于普通 Task 目录。', 409, { taskId, path: directory });
     if (!io.existsSync(file)) {
       if (optional) return null;
@@ -80,7 +84,7 @@ export function registerTaskDevelopmentRepository(runtime) {
     } catch (error) {
       throw taskDevelopmentError('task_development_write_failed', `Development Receipt 写入失败（serialization）：${error.message}`, 500, { taskId: normalized.taskId, stage: 'serialization', path: file, rollback: { status: 'not-required' } });
     }
-    if (!regularDirectory(io, directory)) throw taskDevelopmentError('task_development_directory_invalid', 'Development Receipt 必须位于普通 Task 目录。', 409, { taskId: normalized.taskId, path: directory });
+    runtime.ensureTaskRecordDirectory(root, normalized.taskId, io);
     if (io.existsSync(file) && !regularFile(io, file)) throw taskDevelopmentError('task_development_path_occupied', `Development Receipt 路径已被占用：${normalized.taskId}。`, 409, { taskId: normalized.taskId, path: file });
 
     const existed = io.existsSync(file);

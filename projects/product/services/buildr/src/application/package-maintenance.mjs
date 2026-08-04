@@ -149,11 +149,11 @@ export function registerApplicationPackageMaintenance(runtime) {
         '.qoder/',
         '# Buildr transaction state',
         '/.buildr/mutations/',
+        '# Workspace local structured data', '/.buildr/local/',
         '# Task asset review runtime state',
         '/.buildr/asset-review/',
         '/.buildr/task-finish/',
-        '# Task worktrees',
-        '/.worktrees/',
+        '# Task worktrees', '/.worktrees/',
       ])) {
         changed.push('.gitignore');
       }

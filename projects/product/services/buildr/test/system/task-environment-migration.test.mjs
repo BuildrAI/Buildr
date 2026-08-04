@@ -87,8 +87,6 @@ test('一次性迁移完整覆盖 A/B/C/D，D 类全局零迁移后 A/B/C 原子
   const root = fs.realpathSync(rootInput);
 
   buildr(['task', 'create', 'legacy-a', '--title', 'Legacy A', '--intent', 'migrate formal environment', '--target', root]);
-  command(root, 'git', ['add', '.buildr/tasks/legacy-a/task.yml']);
-  command(root, 'git', ['commit', '-m', 'create formal legacy task']);
 
   const common = path.resolve(root, command(root, 'git', ['rev-parse', '--git-common-dir']));
   const legacyRoot = path.join(common, 'buildr', 'task-environments');

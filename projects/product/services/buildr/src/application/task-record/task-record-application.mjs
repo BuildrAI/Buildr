@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 import { normalizeTaskRecord, taskRecordError } from '../../domain/task-record/task-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
@@ -55,16 +53,12 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function relative(root, file) {
-  return path.relative(root, file).split(path.sep).join('/');
-}
-
 function readModel(persistence, changeReferences = []) {
-  return { path: persistence.file, record: persistence.record, recordDigest: persistence.recordDigest, changeReferences };
+  return { record: persistence.record, recordDigest: persistence.recordDigest, changeReferences };
 }
 
-function effect(type, root, file) {
-  return { type, path: relative(root, file) };
+function effect(type, taskId) {
+  return { type, taskId };
 }
 
 export function registerTaskRecordApplication(runtime) {
@@ -120,7 +114,6 @@ export function registerTaskRecordApplication(runtime) {
       operation,
       status,
       taskId: persistence.record.taskId,
-      path: persistence.file,
       record: persistence.record,
       recordDigest: persistence.recordDigest,
       changeReferences: resolveChangeReferences(persistence.root, persistence.record.taskId, persistence.record.changes),
@@ -179,10 +172,10 @@ export function registerTaskRecordApplication(runtime) {
     assertChangeReferencesAvailable(root, taskId, record.changes, { allowMissingTask: true });
     try {
       const written = runtime.createTaskRecordPersistence(root, record);
-      return result('create', 'created', written, [effect('created', root, written.file)]);
+      return result('create', 'created', written, [effect('created', written.record.taskId)]);
     } catch (error) {
       if (error.taskRecordBusiness) throw error;
-      throw taskRecordError('task_record_write_failed', `Task Record 创建失败：${error.message}`, 500, { taskId }, '保留现场并检查 filesystem/doctor 诊断后重试。');
+      throw taskRecordError('task_record_write_failed', `Task Record 创建失败：${error.message}`, 500, { taskId }, '保留数据库现场并运行 Buildr Doctor 后重试。');
     }
   }
 
@@ -230,19 +223,23 @@ export function registerTaskRecordApplication(runtime) {
   function mutate(targetRoot, taskId, operation, input, build, addedChanges = []) {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     try {
-      const current = readCurrent(root, taskId);
-      assertExpectedDigest(current, input.expectedRecordDigest);
-      if (current.record.status !== 'active') throw taskRecordError('task_record_terminal', `Task ${taskId} 已是 ${current.record.status}，不能再次修改或结束。`, 409, { status: current.record.status }, `运行 buildr task inspect ${taskId} 查看终态结果。`);
-      const candidate = normalizeTaskRecord(build(current.record), { expectedTaskId: taskId });
-      validateScopeReferences(root, candidate);
-      assertChangeReferencesAvailable(root, taskId, addedChanges);
-      const same = JSON.stringify({ ...candidate, updatedAt: current.record.updatedAt }) === JSON.stringify(current.record);
-      if (same) return result(operation, operation === 'update' ? 'updated' : operation === 'complete' ? 'completed' : 'abandoned', current, []);
-      const written = runtime.writeTaskRecordPersistence(root, { ...candidate, updatedAt: nowIso() });
-      return result(operation, operation === 'update' ? 'updated' : operation === 'complete' ? 'completed' : 'abandoned', written, [effect('updated', root, written.file)]);
+      let changed = false;
+      const written = runtime.mutateTaskRecordPersistence(root, taskId, (current) => {
+        validateScopeReferences(root, current.record);
+        assertExpectedDigest(current, input.expectedRecordDigest);
+        if (current.record.status !== 'active') throw taskRecordError('task_record_terminal', `Task ${taskId} 已是 ${current.record.status}，不能再次修改或结束。`, 409, { status: current.record.status }, `运行 buildr task inspect ${taskId} 查看终态结果。`);
+        const candidate = normalizeTaskRecord(build(current.record), { expectedTaskId: taskId });
+        validateScopeReferences(root, candidate);
+        assertChangeReferencesAvailable(root, taskId, addedChanges);
+        const same = JSON.stringify({ ...candidate, updatedAt: current.record.updatedAt }) === JSON.stringify(current.record);
+        if (same) return null;
+        changed = true;
+        return { ...candidate, updatedAt: nowIso() };
+      });
+      return result(operation, operation === 'update' ? 'updated' : operation === 'complete' ? 'completed' : 'abandoned', written, changed ? [effect('updated', taskId)] : []);
     } catch (error) {
       if (error.taskRecordBusiness) throw error;
-      throw taskRecordError('task_record_write_failed', `Task Record ${operation} 失败：${error.message}`, 500, { taskId }, '保留现场并检查 filesystem/doctor 诊断后重试。');
+      throw taskRecordError('task_record_write_failed', `Task Record ${operation} 失败：${error.message}`, 500, { taskId }, '保留数据库现场并运行 Buildr Doctor 后重试。');
     }
   }
 

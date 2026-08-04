@@ -11,14 +11,13 @@ description: 用户或lifecycle consumer要求把canonical Workspace中一个明
 
 开始前确认canonical Workspace、Task ID、真实repository、source/local ref、push适用时的remote/destination ref，以及分别允许的local commit/history与remote push effects。调用各writer read model取得record validity与Project/Service/Change reference diagnostics；writer blocked时停止，不自行解析或修复schema。
 
-只组合contract声明的五个exact paths：
+只组合contract声明的四个portable exact paths：
 
-- `buildr.task-record/v1`：`.buildr/tasks/<task-id>/task.yml`；
 - `buildr.task-development/v2`：`.buildr/tasks/<task-id>/development.yml`；
 - `buildr.task-verification/v3`：`.buildr/tasks/<task-id>/verification.yml`；
 - `buildr.task-review/v1`：`.buildr/tasks/<task-id>/reviews/planning.yml`、`.buildr/tasks/<task-id>/reviews/completion.yml`。
 
-不得扫描Task目录、使用glob/exclusion list或把`git add -A`当ownership。缺失optional records保持缺失；`environment.json`、Finish、asset-review、mutations、worktree/runtime、Candidate、delivery source、其他Task与其他owner内容不进入scope。
+不得扫描Task目录、使用glob/exclusion list或把`git add -A`当ownership。缺失optional records保持缺失；Task Record的SQLite数据、`environment.json`、Finish、asset-review、mutations、worktree/runtime、Candidate、delivery source、其他Task与其他owner内容不进入scope。
 
 ## 2. 建立并保留无状态snapshot
 

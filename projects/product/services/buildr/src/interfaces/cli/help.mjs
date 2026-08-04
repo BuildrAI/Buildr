@@ -190,7 +190,7 @@ export function registerCommandHelp(runtime) {
       '',
       'Task Manager 只管理 canonical Workspace 中的顶层 Task Record：创建、查看、明确更新、完成或放弃。',
       '它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。',
-      'Agent 和 Local App 都调用同一个 Task Record Application；不要直接编辑 .buildr/tasks/<task-id>/task.yml。',
+      'Agent 和 Local App 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。',
     ],
     'task review': [
       'Usage: buildr task review <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]',
@@ -253,12 +253,12 @@ export function registerCommandHelp(runtime) {
       'Usage: buildr task create <task-id> --title <text> --intent <text> [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
       '',
       '必需参数：唯一 task-id、--title、--intent。--project、--service、--change 可重复；引用必须已登记或真实存在。',
-      '副作用：仅创建 .buildr/tasks/<task-id>/task.yml；不创建 Environment、Change、branch、commit 或专业记录。',
+      '副作用：在 Workspace 本地 structured store 中原子创建 Task 及其关系；不创建 Environment、Change、branch、commit 或专业记录。',
     ],
     'task inspect': [
       'Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]',
       '',
-      '只读返回 Task Record、canonical path 和响应级 recordDigest；不更新时间或任何字段。',
+      '只读返回 Task Record 和响应级 recordDigest，不暴露数据库路径；数据库尚未初始化时保持零写入。',
     ],
     'task update': [
       'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',

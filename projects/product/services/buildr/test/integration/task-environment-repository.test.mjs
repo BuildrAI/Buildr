@@ -25,21 +25,11 @@ function fixture(t) {
     'profile: team',
     '',
   ].join('\n'));
-  fs.writeFileSync(path.join(root, '.buildr', 'tasks', 'demo-task', 'task.yml'), [
-    'schemaVersion: buildr.task-record/v1',
-    'taskId: demo-task',
-    'title: Demo',
-    'intent: Verify Environment repository',
-    'scope:',
-    '  projects: []',
-    '  services: []',
-    'changes: []',
-    'status: active',
-    'result: null',
-    'createdAt: 2026-08-02T00:00:00.000Z',
-    'updatedAt: 2026-08-02T00:00:00.000Z',
-    '',
-  ].join('\n'));
+  createRuntime().createTaskRecordPersistence(root, {
+    schemaVersion: 'buildr.task-record/v1', taskId: 'demo-task', title: 'Demo', intent: 'Verify Environment repository',
+    scope: { projects: [], services: [] }, changes: [], status: 'active', result: null,
+    createdAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
+  });
   return fs.realpathSync(root);
 }
 

@@ -35,10 +35,10 @@ buildr task complete <task-id> --summary <text> [--no-change] --target <canonica
 buildr task abandon <task-id> --reason <text> --target <canonical-workspace> --json
 ```
 
-只提交动作参数，不直接编辑 `.buildr/tasks/<task-id>/task.yml`，不传完整 YAML/JSON next state，不自行生成 `status`、`result`、时间或 `recordDigest`。引用、默认值、状态转换、去重、系统字段和写入安全全部由 Task Record Application 决定。
+只提交动作参数，不直接读写Workspace SQLite或旧 `.buildr/tasks/<task-id>/task.yml`，不传完整 YAML/JSON next state，不自行生成 `status`、`result`、时间或 `recordDigest`。引用、默认值、状态转换、去重、系统字段和事务安全全部由 Task Record Application 决定。
 
 ## 4. 停止与交接
 
-canonical target、identity、引用或授权不明，provider 不 ready，记录损坏、已终态、动作冲突或 result 为 blocked 时停止对应 Task Record 动作，保留原文件并报告唯一 next action。不得回退为 Agent 手写 YAML，也不得把专业记录复制进 Task Record。
+canonical target、identity、引用或授权不明，provider 不 ready，数据库或记录损坏、已终态、动作冲突或 result 为 blocked 时停止对应 Task Record 动作，保留原状态并报告唯一 next action。不得回退为 Agent 手写 YAML，也不得把专业记录复制进 Task Record。
 
-成功后报告 operation、Task ID、status、canonical path、effects 和必要的 nextActions。随后仅按用户意图把工作交给 Triage、Environment 或其他专业 Skill；Task Manager 本身不执行这些阶段，也不自动 commit、push、publication、Finish 或 cleanup。
+成功后报告 operation、Task ID、status、effects 和必要的 nextActions；不得返回本地数据库路径。随后仅按用户意图把工作交给 Triage、Environment 或其他专业 Skill；Task Manager 本身不执行这些阶段，也不自动 commit、push、publication、Finish 或 cleanup。

@@ -41,7 +41,6 @@ function fixture(t, { gitBacked = true } = {}) {
 }
 
 const taskPaths = (task = 'demo-task') => [
-  `.buildr/tasks/${task}/task.yml`,
   `.buildr/tasks/${task}/development.yml`,
   `.buildr/tasks/${task}/verification.yml`,
   `.buildr/tasks/${task}/reviews/planning.yml`,
@@ -52,11 +51,12 @@ test('snapshot覆盖全部/部分/全部缺失并排除Environment、Finish、ru
   const root = fixture(t);
   const empty = createPublicationSnapshot({ workspaceRoot: root, taskId: 'demo-task', repositoryRoot: root });
   assert.equal(empty.status, 'not-applicable');
-  assert.equal(empty.snapshot.absentPaths.length, 5);
+  assert.equal(empty.snapshot.absentPaths.length, 4);
   assert.deepEqual(empty.snapshot.operationPaths, []);
 
-  write(root, taskPaths()[0], 'task: demo\n');
-  write(root, taskPaths()[2], 'verification: passed\n');
+  write(root, taskPaths()[0], 'development: demo\n');
+  write(root, taskPaths()[1], 'verification: passed\n');
+  write(root, '.buildr/tasks/demo-task/task.yml', 'legacy task: excluded\n');
   write(root, '.buildr/tasks/demo-task/environment.json', '{"machine":true}\n');
   write(root, '.buildr/task-finish/run.json', '{}\n');
   write(root, '.buildr/asset-review/inbox/demo.md', '# local\n');
@@ -64,18 +64,18 @@ test('snapshot覆盖全部/部分/全部缺失并排除Environment、Finish、ru
   write(root, '.buildr/tasks/other-task/task.yml', 'task: other\n');
   const partial = createPublicationSnapshot({ workspaceRoot: root, taskId: 'demo-task', repositoryRoot: root });
   assert.equal(partial.status, 'ready');
-  assert.deepEqual(partial.snapshot.presentPaths, [taskPaths()[0], taskPaths()[2]]);
-  assert.deepEqual(partial.snapshot.operationPaths, [taskPaths()[0], taskPaths()[2]]);
+  assert.deepEqual(partial.snapshot.presentPaths, [taskPaths()[0], taskPaths()[1]]);
+  assert.deepEqual(partial.snapshot.operationPaths, [taskPaths()[0], taskPaths()[1]]);
 
   for (const [index, recordPath] of taskPaths().entries()) write(root, recordPath, `record: ${index}\n`);
   const all = createPublicationSnapshot({ workspaceRoot: root, taskId: 'demo-task', repositoryRoot: root });
-  assert.equal(all.snapshot.presentPaths.length, 5);
+  assert.equal(all.snapshot.presentPaths.length, 4);
   assert.equal(all.snapshot.declaredPaths.some((entry) => entry.includes('environment.json') || entry.includes('other-task')), false);
 });
 
 test('snapshot只读保留unrelated dirty/staged/untracked并对occupied、symlink与ownership冲突fail closed', (t) => {
   const root = fixture(t);
-  write(root, taskPaths()[0], 'task: demo\n');
+  write(root, taskPaths()[0], 'development: demo\n');
   write(root, 'staged.txt', 'staged\n');
   git(root, ['add', 'staged.txt']);
   write(root, 'dirty.txt', 'dirty\n');
@@ -114,17 +114,17 @@ test('post-commit验证exact diff/bytes并阻止snapshot后drift', (t) => {
   assert.equal(verified.status, 'verified');
   assert.deepEqual(verified.paths, [...snapshot.snapshot.operationPaths].sort());
 
-  write(root, taskPaths()[2], 'verification: changed after snapshot\n');
+  write(root, taskPaths()[1], 'verification: changed after snapshot\n');
   const drift = verifyPublicationSnapshot({ token: snapshot.snapshot.token, commit });
   assert.equal(drift.status, 'blocked');
   assert.equal(drift.diagnostic.code, 'task_metadata_publication_snapshot_drift');
-  assert.deepEqual(drift.diagnostic.details.liveMismatches, [taskPaths()[2]]);
+  assert.deepEqual(drift.diagnostic.details.liveMismatches, [taskPaths()[1]]);
 });
 
 test('equivalent commit可安全复用且完整range阻止scope外commit', (t) => {
   const root = fixture(t);
   const target = git(root, ['rev-parse', 'HEAD']).stdout.trim();
-  write(root, taskPaths()[0], 'task: demo\n');
+  write(root, taskPaths()[0], 'development: demo\n');
   const snapshot = createPublicationSnapshot({ workspaceRoot: root, taskId: 'demo-task', repositoryRoot: root });
   git(root, ['add', '--', ...snapshot.snapshot.operationPaths]);
   git(root, ['commit', '-m', 'chore(task): publish metadata']);

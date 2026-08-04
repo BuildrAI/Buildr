@@ -19,3 +19,5 @@ CLAUDE.local.md
 /.buildr/task-finish/
 # Task Environment machine-local receipts
 /.buildr/tasks/*/environment.json
+# Workspace local structured data
+/.buildr/local/

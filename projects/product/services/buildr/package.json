@@ -68,7 +68,7 @@
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24.15.0"
   },
   "dependencies": {
     "yaml": "^2.9.0"

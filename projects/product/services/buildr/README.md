@@ -36,7 +36,7 @@ Workspace → Project → Service（可选）
 
 ## 手动或技术兜底
 
-当 Agent 无法执行时，再使用下面的确定性入口。Buildr 需要 Node.js 20+：
+当 Agent 无法执行时，再使用下面的确定性入口。Buildr 需要 Node.js 24.15+：
 
 ```bash
 npm install --global @buildr-ai/buildr@next

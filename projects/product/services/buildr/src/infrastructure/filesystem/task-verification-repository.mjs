@@ -58,6 +58,10 @@ export function registerTaskVerificationRepository(runtime) {
     const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
     const directory = runtime.taskRecordDirectory(task.root, taskId);
     const file = taskVerificationResultPath(task.root, taskId);
+    if (!io.existsSync(directory)) {
+      if (optional) return null;
+      throw taskVerificationError('task_verification_result_not_found', `Task Verification Result 不存在：${taskId}。`, 404, { taskId, path: file });
+    }
     if (!regularDirectory(io, directory)) {
       throw taskVerificationError('task_verification_directory_invalid', 'Task Verification 路径必须位于普通 Task 目录。', 409, { taskId, path: directory });
     }
@@ -91,6 +95,7 @@ export function registerTaskVerificationRepository(runtime) {
     const io = runtime.taskVerificationIo || fs;
     const task = runtime.readTaskRecordPersistence(targetRoot, result?.taskId);
     const normalized = normalizeTaskVerificationResult(result, { expectedTaskId: task.record.taskId });
+    runtime.ensureTaskRecordDirectory(task.root, normalized.taskId, io);
     const directory = runtime.taskRecordDirectory(task.root, normalized.taskId);
     const file = taskVerificationResultPath(task.root, normalized.taskId);
     let content;

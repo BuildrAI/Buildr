@@ -3,7 +3,8 @@ import { registerWorkspaceManifestRepository } from '../infrastructure/filesyste
 import { registerWorkspaceRegistryRepository } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
 import { registerProjectManifestRepository } from '../infrastructure/filesystem/project-manifest-repository.mjs';
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
-import { registerTaskRecordRepository } from '../infrastructure/filesystem/task-record-repository.mjs';
+import { registerWorkspaceSqlite } from '../infrastructure/sqlite/workspace-sqlite.mjs';
+import { registerTaskRecordRepository } from '../infrastructure/sqlite/task-record-repository.mjs';
 import { registerTaskReviewRepository } from '../infrastructure/filesystem/task-review-repository.mjs';
 import { registerTaskVerificationRepository } from '../infrastructure/filesystem/task-verification-repository.mjs';
 import { registerTaskDevelopmentRepository } from '../infrastructure/filesystem/task-development-repository.mjs';
@@ -47,6 +48,7 @@ const REGISTRATIONS = [
   registerDomainsWorkspace,
   registerProjectManifestRepository,
   registerServiceManifestRepository,
+  registerWorkspaceSqlite,
   registerTaskRecordRepository,
   registerTaskReviewRepository,
   registerTaskVerificationRepository,

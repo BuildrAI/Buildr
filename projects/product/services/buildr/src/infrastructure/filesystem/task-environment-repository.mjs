@@ -44,6 +44,7 @@ export function registerTaskEnvironmentRepository(runtime) {
     const root = canonicalRoot(targetRoot);
     const task = runtime.readTaskRecordPersistence(root, receipt?.taskId);
     const normalized = normalizeTaskEnvironmentReceipt(receipt, { expectedTaskId: task.record.taskId, expectedWorkspaceRoot: root });
+    runtime.ensureTaskRecordDirectory(root, normalized.taskId);
     const file = taskEnvironmentPath(root, normalized.taskId);
     runtime.atomicWriteJson(file, normalized);
     return readTaskEnvironmentPersistence(root, normalized.taskId);

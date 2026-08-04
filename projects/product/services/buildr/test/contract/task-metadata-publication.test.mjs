@@ -31,9 +31,8 @@ test('Task Metadata Publication 保持唯一Skill/capability与required Git Oper
   assert.equal(workspaceManifest.skills.some((item) => item.id === 'metadata-publication'), false);
 });
 
-test('真实writer contracts与helper精确声明五个portable paths', () => {
+test('真实writer contracts与helper精确声明四个portable paths，Task Record保持local-only', () => {
   const expected = [
-    ['buildr.task-record/v1', '.buildr/tasks/<task-id>/task.yml', 'task-record/v1.md'],
     ['buildr.task-development/v2', '.buildr/tasks/<task-id>/development.yml', 'task-development/v2.md'],
     ['buildr.task-verification/v3', '.buildr/tasks/<task-id>/verification.yml', 'task-verification/v3.md'],
     ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/planning.yml', 'task-review/v1.md'],
@@ -45,6 +44,9 @@ test('真实writer contracts与helper精确声明五个portable paths', () => {
     assert.ok(writer.includes(owner), owner);
     assert.ok(writer.includes(recordPath), recordPath);
   }
+  const taskRecordContract = read('package/targets/workspace/skills/contracts/buildr/task-record/v1.md');
+  assert.ok(taskRecordContract.includes('Task Record是local-only数据'));
+  assert.equal(PORTABLE_TASK_RECORD_DECLARATIONS.some((entry) => entry.owner === 'buildr.task-record/v1'), false);
   for (const excluded of ['tasks.md', 'environment.json', '.buildr/task-finish/', '.buildr/asset-review/', '.buildr/mutations/', '.worktrees/']) {
     assert.equal(PORTABLE_TASK_RECORD_DECLARATIONS.some((entry) => entry.path.includes(excluded)), false, excluded);
   }

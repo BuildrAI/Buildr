@@ -109,10 +109,10 @@ test('Local App 只读查看双槽位，并只生成 Task Review Agent prompt', 
   response = await request(`${endpoint}/tasks/review-task/reviews`, { method: 'POST', headers: writeHeaders, body: '{}' });
   assert.equal(response.status, 404, 'Local App must not expose direct Review Result writer');
 
-  const taskFile = path.join(root, '.buildr', 'tasks', 'review-task', 'task.yml');
+  runtime.ensureTaskRecordDirectory(root, 'review-task');
   const environmentFile = path.join(root, '.buildr', 'tasks', 'review-task', 'environment.json');
   fs.writeFileSync(environmentFile, '{"owner":"environment-fixture"}\n');
-  const taskBytes = fs.readFileSync(taskFile);
+  const taskBefore = runtime.inspectTaskRecord(root, 'review-task');
   const environmentBytes = fs.readFileSync(environmentFile);
   runtime.recordTaskReview(root, 'review-task', {
     reviewType: 'planning', targetIdentity: 'plan:local-app', method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Plan ready' },
@@ -121,7 +121,9 @@ test('Local App 只读查看双槽位，并只生成 Task Review Agent prompt', 
   assert.equal(response.body.slots.planning.present, true);
   assert.equal(response.body.slots.planning.applicability, 'unknown');
   assert.equal(response.body.slots.completion.present, false);
-  assert.deepEqual(fs.readFileSync(taskFile), taskBytes);
+  const taskAfter = runtime.inspectTaskRecord(root, 'review-task');
+  assert.equal(taskAfter.recordDigest, taskBefore.recordDigest);
+  assert.deepEqual(taskAfter.record, taskBefore.record);
   assert.deepEqual(fs.readFileSync(environmentFile), environmentBytes);
 
   response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning' }) });
@@ -137,6 +139,8 @@ test('Local App 只读查看双槽位，并只生成 Task Review Agent prompt', 
   response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning', path: root }) });
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, 'target_forbidden');
-  assert.deepEqual(fs.readFileSync(taskFile), taskBytes);
+  const taskAtEnd = runtime.inspectTaskRecord(root, 'review-task');
+  assert.equal(taskAtEnd.recordDigest, taskBefore.recordDigest);
+  assert.deepEqual(taskAtEnd.record, taskBefore.record);
   assert.deepEqual(fs.readFileSync(environmentFile), environmentBytes);
 });

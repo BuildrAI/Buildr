@@ -173,6 +173,22 @@ export function createPackageStaticValidator(deps) {
     for (const required of ['LICENSE', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md']) {
       if (!fs.existsSync(path.join(root, required))) problems.push(`Open-source product baseline is missing: ${required}`);
     }
+    const sqliteMigrations = [
+      'src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
+      'src/infrastructure/sqlite/migrations/0001_create_task_store.sql',
+    ];
+    for (const relative of sqliteMigrations) {
+      const file = path.join(root, relative);
+      if (!existsFile(file)) problems.push(`Workspace SQLite migration asset is missing: ${relative}`);
+      else if (!fs.readFileSync(file, 'utf8').trim()) problems.push(`Workspace SQLite migration asset is empty: ${relative}`);
+    }
+    const migrationDirectory = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations');
+    if (existsDirectory(migrationDirectory)) {
+      const names = fs.readdirSync(migrationDirectory).sort();
+      if (JSON.stringify(names) !== JSON.stringify(sqliteMigrations.map((relative) => path.basename(relative)))) {
+        problems.push(`Workspace SQLite migrations must be the contiguous reviewed set: ${names.join(', ') || '<none>'}.`);
+      }
+    }
     if (existsFile(path.join(root, 'scripts', 'install-buildr-cli'))) {
       for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'scripts/release/release-contract.mjs']) {
         if (!existsFile(path.join(root, required))) problems.push(`Development checkout verification is missing: ${required}`);
@@ -257,7 +273,7 @@ export function createPackageStaticValidator(deps) {
     for (const relative of [
       'src/domain/task-record/task-record.mjs',
       'src/application/task-record/task-record-application.mjs',
-      'src/infrastructure/filesystem/task-record-repository.mjs',
+      'src/infrastructure/sqlite/task-record-repository.mjs',
       'src/domain/task-environment/task-environment.mjs',
       'src/application/task-environment/task-environment-application.mjs',
       'src/infrastructure/filesystem/task-environment-repository.mjs',
@@ -848,7 +864,7 @@ export function createPackageStaticValidator(deps) {
           '不读取 environment receipt',
           '不从 worktree 推断 retained root',
           'Local App 是调用同一 Task Record Application 的独立人类客户端',
-          '不直接编辑 `.buildr/tasks/<task-id>/task.yml`',
+          '不直接读写Workspace SQLite或旧 `.buildr/tasks/<task-id>/task.yml`',
           '不自动 commit、push、publication、Finish 或 cleanup',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-manager Skill must include ${JSON.stringify(requiredText)}.`);
@@ -1009,7 +1025,7 @@ export function createPackageStaticValidator(deps) {
         for (const requiredText of [
           '`buildr.task-metadata-publication/v1`',
           'required消费selected `buildr.git-operations/v1`',
-          '.buildr/tasks/<task-id>/task.yml',
+          'Task Record的SQLite数据',
           '.buildr/tasks/<task-id>/development.yml',
           '.buildr/tasks/<task-id>/verification.yml',
           '.buildr/tasks/<task-id>/reviews/planning.yml',
@@ -1036,7 +1052,6 @@ export function createPackageStaticValidator(deps) {
         } else {
           const helperContent = fs.readFileSync(helper, 'utf8');
           for (const declaration of [
-            ['buildr.task-record/v1', '.buildr/tasks/<task-id>/task.yml'],
             ['buildr.task-development/v2', '.buildr/tasks/<task-id>/development.yml'],
             ['buildr.task-verification/v3', '.buildr/tasks/<task-id>/verification.yml'],
             ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/planning.yml'],

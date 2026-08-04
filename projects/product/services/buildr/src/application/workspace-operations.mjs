@@ -7,6 +7,7 @@ import {
   UNSUPPORTED_AGENT_GUIDANCE,
   isSupportedAgent,
 } from '../infrastructure/runtime/adapter-contract.mjs';
+import { observeGitCheckoutIdentity } from '../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './doctor/result-model.mjs';
 
@@ -86,6 +87,27 @@ export function registerApplicationWorkspaceOperations(runtime) {
       addDoctorFinding(result, 'warning', 'workspace.node_cli_drift', `当前 CLI Node ${actualCliVersion} 与 Workspace Node ${workspace.runtime.node.version} 不一致。`, {
         path: process.execPath, expected: probe.identity, actual: { executable: process.execPath, version: actualCliVersion },
         suggestion: '使用 Workspace Node-aware Buildr launcher 重新执行；runtime 缺失时先运行 sync。', command, userActionRequired: true,
+      });
+    }
+  }
+
+  function diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo = false) {
+    if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
+      result.structuredStore = { status: 'not-applicable', version: null, integrity: null };
+      if (includeInfo) addDoctorFinding(result, 'info', 'workspace.structured_store_not_applicable', 'Linked task worktree 不持有 Workspace structured store；数据库只属于 canonical Workspace。');
+      return;
+    }
+    try {
+      const observation = runtime.inspectWorkspaceStructuredStore(targetRoot);
+      result.structuredStore = observation;
+      if (observation.status === 'uninitialized' && includeInfo) {
+        addDoctorFinding(result, 'info', 'workspace.structured_store_uninitialized', 'Workspace structured store 尚未初始化；首次合法结构化写入会创建数据库。');
+      }
+    } catch (error) {
+      result.structuredStore = { status: 'unavailable', version: null, integrity: null };
+      addDoctorFinding(result, 'error', error.code || 'workspace.structured_store_failed', error.message, {
+        suggestion: error.nextAction || '保留数据库现场并检查 migration 与 integrity 诊断；不要自动删除或从旧 Task 文件恢复。',
+        userActionRequired: true,
       });
     }
   }
@@ -220,6 +242,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
       ok: true,
       summary: { ok: 0, info: 0, warning: 0, error: 0 },
       workspace: null,
+      structuredStore: null,
       projectRegistry: null,
       projectVerification: [],
       organizations: [],
@@ -240,6 +263,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
 
     diagnoseWorkspace(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceMetadata(result, targetRoot);
+    if (result.workspace?.initialized) diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo);
     if (result.workspace?.initialized) diagnoseWorkspaceNode(result, targetRoot, requestedAgent);
     diagnoseMutations(result, targetRoot);
     if (result.workspace?.initialized) diagnoseRules(result, targetRoot);
@@ -361,6 +385,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '.qoder/',
       '# Buildr transaction state',
       '/.buildr/mutations/',
+      '# Workspace local structured data',
+      '/.buildr/local/',
       '# Task asset review runtime state',
       '/.buildr/asset-review/',
       '/.buildr/task-finish/',
@@ -403,6 +429,6 @@ export function registerApplicationWorkspaceOperations(runtime) {
     console.log('  完整 Agent onboarding guidance：buildr bootstrap guide');
   }
 
-  Object.assign(runtime, { bootstrapGuide, mutationTransactions, diagnoseMutations, diagnoseWorkspaceNode, mutationRecover, doctor, initBuildr });
+  Object.assign(runtime, { bootstrapGuide, mutationTransactions, diagnoseMutations, diagnoseWorkspaceNode, diagnoseWorkspaceStructuredStore, mutationRecover, doctor, initBuildr });
   return runtime;
 }

@@ -100,6 +100,7 @@ export function registerTaskReviewRepository(runtime) {
     const io = runtime.taskReviewIo || fs;
     const task = runtime.readTaskRecordPersistence(targetRoot, result?.taskId);
     const normalized = normalizeTaskReviewResult(result, { expectedTaskId: task.record.taskId, expectedReviewType: result?.reviewType });
+    runtime.ensureTaskRecordDirectory(task.root, normalized.taskId, io);
     const directory = taskReviewDirectory(task.root, normalized.taskId);
     const file = taskReviewResultPath(task.root, normalized.taskId, normalized.reviewType);
     let content;

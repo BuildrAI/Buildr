@@ -16,6 +16,7 @@ function fixture(t) {
   const runtime = {
     assertCanonicalTaskWorkspace: () => root,
     taskRecordDirectory: (_target, taskId) => path.join(root, '.buildr', 'tasks', taskId),
+    ensureTaskRecordDirectory: (_target, taskId) => path.join(root, '.buildr', 'tasks', taskId),
   };
   registerTaskDevelopmentRepository(runtime);
   return { root, directory, runtime };

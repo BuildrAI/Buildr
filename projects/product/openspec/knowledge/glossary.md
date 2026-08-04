@@ -16,6 +16,27 @@
 - 避免混用：内容位于 Workspace 不表示它已经被 Buildr 治理。
 - 来源：[Workspace current facts](overview.md)
 
+## Workspace Local Data Store
+
+- 定义：Buildr Local在一个canonical Workspace中维护的全部单机local-only数据范围；当前包含Workspace Structured Store，也可包含明确声明为本机事实的其他存储。
+- 适用范围：不应进入Git、runtime投射或跨机器同步的Workspace本地数据。
+- 避免混用：不是单个数据库文件，不等于portable工作资产；未来Buildr Server/Cloud的共享authority不属于本地数据存储。
+- 来源：[技术架构](architecture/technical.md)
+
+## Workspace File Store
+
+- 定义：Workspace中以文件和目录承载的portable或writer-owned事实，包括manifests、Rules、Skills、Specs及专业Task records。
+- 适用范围：需要文件发现、审阅、Git版本化或独立writer ownership的工作资产与记录。
+- 避免混用：不是Workspace内所有文件的统称，也不包含local-only SQLite structured data。
+- 来源：[技术架构](architecture/technical.md)
+
+## Workspace Structured Store
+
+- 定义：Buildr Local为每个canonical Workspace维护的独立SQLite，用于索引、关系、聚合和事务特征明显的结构化数据。
+- 适用范围：`.buildr/local/workspace.sqlite`及其版本化SQL migration lifecycle；Task Record是首个consumer。
+- 避免混用：不是同步数据库、portable asset或组织协作authority；不得把SQLite文件上传或复制为Buildr Server/Cloud协议。
+- 来源：[技术架构](architecture/technical.md)
+
 ## 工作资产（Work Asset）
 
 - 定义：被明确组织、登记或纳入治理、可长期维护和复用的工作事实或工作方法来源。
@@ -82,7 +103,7 @@
 ## 任务记录（Task Record）
 
 - 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、Project/Service scope、0..N 个限定 Change、状态、终态摘要和系统时间。
-- 适用范围：`.buildr/tasks/<task-id>/task.yml` 及 Task Record Application 的 create、inspect、update、complete、abandon 动作。
+- 适用范围：Workspace Structured Store中的规范化Task数据，以及Task Record Application的create、inspect、update、complete、abandon动作。
 - 避免混用：不保存或索引 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 的专业事实；响应级 `recordDigest` 也不是持久字段。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
@@ -315,13 +336,6 @@
 - 定义：Task Finish 交付 Candidate 期间，目标分支、远端 ref 或非 Git 目标位置出现了新的目标事实。
 - 适用范围：P0.5 Finish adapter发现目标与carrier preparation时观察的ref不一致后，终止当前run并返回Development重新建立stable target、Verification、Candidate与handoff。
 - 避免混用：不是 Task Environment 漂移或自动 source update 事件；retained target 前进本身不要求任务 checkout、Review 或 Verification 自动更新。
-- 来源：[Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
-
-## 工作区元数据存储（Workspace Metadata Store）
-
-- 定义：canonical Workspace 中由 `.buildr/` 承载的文件型 Buildr 数据边界，包含可移植生命周期 metadata 与本机管理事实。
-- 适用范围：源码 clean/readiness 分类与 Task Metadata Publication 的分层处理；前者整体排除 `.buildr/`，后者只按各 writer 的 portable exact owned paths 发布。
-- 避免混用：不等于把 `.buildr/` 全部加入 `.gitignore`、全部纳入 Git、跳过 collision/ownership 检查，或赋予目录级 transaction authority。
 - 来源：[Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
 
 ## 收尾就绪候选（Finish-ready Candidate）
