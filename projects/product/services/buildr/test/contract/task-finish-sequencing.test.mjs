@@ -95,6 +95,20 @@ test('Task Finish inspect 使用轻量 bootstrap，执行 domain 只在 run 延�
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-action-registry.mjs')), false);
 });
 
+test('current Product/Git adapter 直接接线且没有未来 adapter registry', () => {
+  const application = read('src/application/task-finish/task-finish-application.mjs');
+  const bootstrap = read('src/interfaces/cli/task-finish-bootstrap.mjs');
+  assert.match(bootstrap, /registerTaskFinishApplication\(runtime\)/);
+  assert.match(application, /createTaskFinishProductHandlers/);
+  assert.match(finishContract, /current Product 只提供一个直接接线的 Git carrier adapter/);
+  for (const legacy of ['worktree-lifecycle', 'git-task-integration', 'OpenSpec 归档', 'EOF 空白行处理']) {
+    assert.equal(finish.includes(legacy), false, legacy);
+    assert.equal(finishContract.includes(legacy), false, legacy);
+  }
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-adapter-registry.mjs')), false);
+  assert.doesNotMatch(application, /adapterRegistry|selectAdapter|resolveAdapter/);
+});
+
 test('旧 OpenSpec 阶段接口受显式消费者和兼容窗口门禁约束', () => {
   assert.deepEqual(Object.keys(LEGACY_CONVERGENCE_REGISTRY), ['baseline', 'check', 'sync-plan', 'sync-apply']);
   const roots = [

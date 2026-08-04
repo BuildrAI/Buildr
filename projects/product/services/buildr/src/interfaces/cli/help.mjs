@@ -395,12 +395,12 @@ export function registerCommandHelp(runtime) {
     'openspec baseline create': [
       'Usage: buildr openspec baseline create <change> --project <project> [--target <dir>] [--adopt-current] [--update] [--json]',
       '',
-      '弃用兼容入口：为旧 workflow 创建 Requirement 契约基线；新 Task Finish 使用 openspec converge。',
+      '弃用兼容入口：为旧 OpenSpec workflow 创建 Requirement 契约基线；current Change lifecycle 在稳定 Content Target 前使用所选 OpenSpec workflow，Task Finish 不收敛 Change。',
     ],
     'openspec check': [
       'Usage: buildr openspec check <change> --stage <proposal|pre-sync|post-sync> --project <project> [--target <dir>] [--json]',
       '',
-      '弃用兼容入口：检查旧 proposal、基线和阶段结果；新 Task Finish 使用 openspec converge。',
+      '弃用兼容入口：检查旧 OpenSpec proposal、基线和阶段结果；current Change lifecycle 在稳定 Content Target 前使用所选 OpenSpec workflow，Task Finish 不收敛 Change。',
     ],
     'openspec converge': [
       'Usage: buildr openspec converge <change> --project <project> [--target <dir>] [--json]',
@@ -488,7 +488,7 @@ export function registerCommandHelp(runtime) {
 
   const finishHelp = {
     inspect: { usage: 'Usage: buildr task finish inspect --run <id> [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '--run。', exclusive: '无。', surface: 'canonical Workspace 中的 durable finish run，只读。', effects: '无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。' },
-    run: { usage: 'Usage: buildr task finish run --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '首次运行需要 --task、current formal Development handoff 与 ready Task Environment；target branch 默认来自 Git carrier provider start point。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌；不接受 --project/--change 或调用方 Candidate/Result。', surface: 'Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与声明的 remote。', effects: '产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。' },
+    run: { usage: 'Usage: buildr task finish run --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--run <id> --resume <token>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', required: '首次运行需要 --task、current formal Development handoff 与 ready Task Environment；target branch 默认使用 retained canonical Workspace 的当前符号分支，Environment startPoint 不提供交付分支 authority。', exclusive: '--resume 只接受产品为当前 blocked run 生成的令牌；不接受 --project/--change 或调用方 Candidate/Result。', surface: 'Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。', effects: '产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。' },
   };
   for (const [action, help] of Object.entries(finishHelp)) HELP_TOPICS[`task finish ${action}`] = [
     help.usage,

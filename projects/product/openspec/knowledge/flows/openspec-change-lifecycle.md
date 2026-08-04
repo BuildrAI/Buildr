@@ -26,7 +26,7 @@ P0.4继续提供一个current Task Verification Result、Project declaration v2�
 - Environment Receipt、实际 scope/root、controller、Runtime/CLI/依赖、runtime projection、provider evidence 或动态资源 probe 不匹配时停止 proposal/apply/verification；`prepare` 只恢复可确定修复，不静默改 plan。
 - Reconcile 或其他 mutation 改变 target identity 后，current Verification Result 派生 stale；Project declaration identity 变化同样 stale。
 - Projected validation 在 task-owned 临时 Project 中投射完整 expected canonical tree，并使用 receipt 绑定的 OpenSpec executable 运行 strict validation；失败时正式文件零写入。写入前任一 delta、canonical before 或 executable identity 漂移都会重新规划，混合或未知文件状态关闭式失败。
-- Task Finish只接收当前研发交接。产品报告五阶段、Candidate/Content Target/交付载体等价、交付/清理证据、具体primary failure与执行次数；不得把Change收敛、研发修复、审查返工或formal Verification计入收尾。发现上游缺陷时本次Finish终止并返回Development。
+- Task Finish只接收当前研发交接。产品报告五阶段、Candidate/Content Target/交付载体等价、交付/清理证据、具体primary failure与执行次数；不得把Change收敛、研发修复、审查返工或formal Verification计入收尾。只有Development Application报告原Task source/context/policy/gates/handoff真实stale时返回Development；Delivery Adaptation、target-race、retained或cleanup阻塞保留同一Candidate/handoff并只返回一个产品生成的exact next action。
 - Task Finish preflight一次聚合低成本、无共享副作用检查；preflight和verify都不启动verification execution，也不读取Verification Result store。
 - retained metadata-only handoff 的任务 path、验证 identity、目标 ref 或 Git provider readiness 任一不可证明时停止，不能把 dirty retained tree 伪装为 task environment。
 - Archive 只移动已对齐 Change、Brief 和 sidecar；归档后不补写 glossary 或 current knowledge。

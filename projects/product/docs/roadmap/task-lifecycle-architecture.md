@@ -94,7 +94,7 @@ flowchart TB
 | Task Verification | 声明现有验证能力、执行显式能力并维护 current Task Verification Result | P0.4 已交付并生效（2026-08-03） |
 | Task Development | 对形成交付变更的正式 Task，在 ready environment 中形成 Content Target、正式 Verification、Task Candidate、推进决定与不可变研发交接 | P0.5 已交付并生效（2026-08-04）；Local App 只读投影已补齐 |
 | Task Metadata Publication | 把一个明确 Task 的 portable exact owned records 作为独立 metadata-only commit/push 发布 | P0.7 已交付并生效（2026-08-04） |
-| Task Finish | 消费研发交接，为当前 Product 执行内容等价载体交付、retained 激活与 Task Environment 清理 | P0.5 已收窄为 handoff adapter；P0.8 扩展交付路径 |
+| Task Finish | 消费研发交接，为当前 Product 执行内容等价载体交付、retained 激活与 Task Environment 清理 | P0.5 已收窄为 handoff adapter；P0.8 第一阶段收敛现有交付边界，后续只按真实需求扩展路径 |
 
 ## 辅助与横切能力
 
@@ -515,7 +515,7 @@ Task Development 不规定统一的分析、计划、编码或测试步骤。Age
 | Formal Verification | 固定 verification policy，对稳定 Content Target 执行正式验证并发布完整 current Verification Result；`not-passed` 或 gap 保持事实 |
 | Candidate 与 Completion | Verification 事实完整后冻结 Task Candidate，再对 Candidate 执行 Completion Review |
 | 准备研发交接 | 根据三个 gates 和精确 scoped 风险接受形成 `proceed / blocked`；只有 `proceed` 才追加不可变研发交接 |
-| Finish 返回 Development | carrier 不等价、目标前进或研发交接前提变化时，Finish 终止当前 run 并把下一 workflow 指回 Development；只有 Development 能修复、重验、形成新 generation 和新研发交接 |
+| Finish 返回 Development | 只有 Development Application 报告原 Task source/context/policy/gates/handoff 真实 stale 时，Finish 终止当前 run 并把下一 workflow 指回 Development；Delivery Adaptation 与 target race 保留同一 Candidate/handoff 并按产品 exact token 恢复 |
 | 用户明确放弃 | 记录放弃决定，不再要求 Candidate 或补做检查点；存在关联 OpenSpec Change 时，先按实际能力完成并记录每个 Change 的最终处置，再请求 Task Environment 清理 Task-owned 环境与改动；环境完成处置或被明确保留后，才形成 `abandoned` 终态并请求最终复盘 |
 
 ### Task Intent 与 Agent 自主权
@@ -618,19 +618,19 @@ P0.5 已实现 **Skill + capability contract + 唯一 Application + internal dri
 4. `deliver`：普通 fast-forward、普通 push，并在 retained source 更新后执行适用的 sync、Doctor 与 CLI install。
 5. `cleanup`：请求 Task Environment Application 清理 Task-owned Environment。
 
-Finish 不执行实现修复、Change convergence/archive、current knowledge mutation、Formal Verification、Completion Review、Candidate 生成、generation 变更、`proceed / blocked` 或风险接受。它也不能以 rebase/merge 修改冻结内容。目标分支前进、carrier 不等价或任何 handoff 前提变化都属于 upstream Candidate defect：当前 run 终止并把下一 workflow 指回 Task Development，不能在 Finish 内恢复为新 Candidate。
+Finish 不执行实现修复、Change convergence/archive、current knowledge mutation、Formal Verification、Completion Review、Candidate 生成、generation 变更、`proceed / blocked` 或风险接受。它也不能以 rebase/merge 修改冻结内容。Delivery Baseline 前进时，产品在 run-owned carrier 机械复用 Task Contribution；Git conflict进入 Delivery Adaptation，deliver target race 使用产品 exact token 从 `prepare` 重做 carrier phases。只有 Development Application 报告原 Task source/context/policy/gates/handoff 真实 stale 时，当前 run 才终止并指回 Task Development。
 
 P0.5 自举适配器服务当前 Product 的单一 Git direct-to-target 路径；通用 Development contract 不因此依赖 Git 或 Product 常量。Finish 成功后由主 Agent 调用 Task Manager `complete`；Task Retrospective、PR 与 P0.7 metadata publication 不是顶层完成门槛。
 
-### P0.8 后续范围
+### P0.8 第一阶段与后续范围
 
-非 Git、多个交付单元、task-branch、PR/release/deploy 或跨 generation delivery effects 尚未进入当前 adapter。P0.8 `replace-task-finish` 只能扩展这些真实交付需求，仍必须消费研发交接，并继续禁止 Finish 获得 Change、Verification、Review、Candidate 或推进决定 authority。目标分支/位置不能由 Finish 的通用契约硬编码；涉及语义变化或新授权时返回 Development 或用户。
+P0.8 第一阶段 `simplify-task-finish-delivery-boundary` 只收敛现有 v2 边界：保留单一直接接线的 Product/Git adapter，不建立 adapter registry，并清除旧 Change/Candidate/Verification/worktree target 路由。非 Git、多个交付单元、task-branch、PR/release/deploy 或跨 generation delivery effects 尚未进入当前 adapter；后续只有真实交付需求及第二个可验证 adapter 已存在时，才以窄 Change 扩展，且继续禁止 Finish 获得 Change、Verification、Review、Candidate 或推进决定 authority。
 
 ### Candidate、carrier 与 Target Advancement
 
 Candidate 由 Development 冻结，不强制等于 Git commit。Finish 可以创建内容等价的交付载体，但不能用 amend/rebase/merge 改变 Candidate bytes，也不能把 commit/tree identity 写回 Candidate。Git tracking、staging 或 commit 同一 bytes 不改变 Content Target/Candidate。
 
-交付目标前进不是 Environment 漂移。当前 P0.5 adapter 把它作为 terminal upstream Candidate defect：停止当前 run，保留诊断并返回 Task Development；Development 才能吸收新目标、重验并形成新 generation。未来 P0.8 只有在能够确定性证明 frozen bytes 等价时，才可增加更丰富的 carrier 策略。
+交付目标前进不是 Environment 漂移，也不自动使 Candidate stale。当前 adapter 从最新 Delivery Baseline 重新准备隔离 carrier：clean apply 记录 deterministic reuse，Git conflict进入 Delivery Adaptation，push 前 target race 用 exact token 重做 `prepare → verify → deliver → cleanup`；三者都复用原 Candidate/generation，且不重跑 Formal Verification。只有原 Task source 或其他 Development applicability input 真实变化时返回 Development。
 
 ### Run、Result 与完成
 
@@ -953,7 +953,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | 生命周期 metadata 只从 canonical exact owned paths 发布；不发布 `.worktrees`/本机 Environment/runtime；历史引用退役后的可读性另行设计 | P0.7 Task Metadata Publication | Roadmap 记录；P0.1 不增加 publication 状态或快照字段 |
 | `.buildr/` 是文件型 Workspace Metadata Store，整体排除在源码 global clean 判定之外；Git 跟踪与发布继续按 portable exact owned paths 独立处理 | P0.7 Task Metadata Publication / P0.8 Task Finish | 固定 clean 与 publication 分层；不等同于 `.gitignore` 或跳过 collision/ownership 检查 |
 | 自举主 Workspace 的正式 runtime 激活只能发生在内容进入 retained source 之后 | P0.8 Task Finish / Workspace Foundation | P0.1 只阻止候选越权投射；最终交付与 retained sync/doctor 仍由交付边界完成 |
-| target advancement 不自动更新 Environment；P0.5 Finish adapter 终止当前 run 并返回 Development，不在 Finish 内 rebase、重验或生成 Candidate | P0.5 Task Development / Candidate | 已固定 upstream Candidate defect 与返回路径；P0.8 如扩展 carrier 策略仍不得取得研发 authority |
+| target advancement 不自动更新 Environment，也不自动使 Candidate stale；Finish 在隔离 carrier deterministic reuse、Delivery Adaptation 或 exact-token target-race resume，不在原 Task worktree rebase、重验或生成 Candidate | P0.5 Task Development / Candidate、P0.8 Task Finish | 已固定 applicability 与交付基线分层；只有 Development Application 报告真实 stale 才返回 Development |
 | Local App 在 Task 详情展示当前机器 Environment 时调用 Environment Application，不复制进 Task Record | P0.2 Task Environment | 已交付只读“环境”视图、Workspace-scoped API 与本机不可用状态 |
 | Local App 通过各模块 reader 组合 Development、Review 与 Verification，不复制进 Task Record | P0.5a Local App 专业投影 | 固定“概览、研发、证据、环境”四个一级视图；Development 保持只读，Review/Verification 在证据视图独立加载 |
 | Local App 后续展示 Board 与其余专业结果时调用各模块 reader，不复制进 Task Record | P1.2 Local App 专业投影 | 延续既有四视图边界；不重建 P0.2 Environment 或 P0.5a Development/Review/Verification reader/API |
@@ -972,7 +972,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.5a | Task Development Local App 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情收敛为“概览、研发、证据、环境”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
 | P0.6 | Git Operations `formalize-git-operations` | 已交付并生效（2026-08-04） | 已交付唯一 Skill-only `git-operations` / `buildr.git-operations/v1`、consumer-selected operation 边界、精确暂存、commit/push 分离、完整 push range、共享冻结、最小 Result 与部分失败 evidence；retained runtime 已同步并通过 Doctor | Task Finish optional dependency 与 Buildr 产品入口已迁移；删除 `git-ops` 和三项旧 contracts/bindings/router/schema，`git-worktree-provider/v1` 保持独立 |
 | P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 已交付并生效（2026-08-04） | 已交付唯一 `task-metadata-publication` / `buildr.task-metadata-publication/v1`、五个 writer-declared exact paths、无状态 snapshot/helper、独立 commit/push、完整 range、部分失败、安全重试、reference diagnostic 与无 Git local-only；retained runtime 已同步并通过 Doctor | 新能力；required 复用 `git-operations`，未新增公共 Application/CLI，未恢复三条旧 Git routes，Environment/Finish/Candidate 与其他 owner保持排除 |
-| P0.8 | Task Finish `replace-task-finish` | 未开始 | 无 | 基于 P0.5 handoff adapter 扩展经证明需要的交付路径/effects；同 Change 迁移并删除被替代 mutation path，不取得研发 authority |
+| P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 已收敛（2026-08-04） | current specs、Roadmap、CLI help、package/runtime 与 residual verification 统一为现有 v2 delivery boundary；保留单一直接接线 Product/Git adapter、Delivery Adaptation、exact-token target-race resume、remote readback、retained activation 与 Environment cleanup | 审计 active run/Application/CLI/registry/compose/schema/managed mutations/capability graph；没有真实可达旧 writer/router/binding，故以 zero-delete evidence 关闭，不制造 framework 或迁移 |
 | P1.1 | Structured Task Board `introduce-structured-task-board` | 未开始 | 无 | 同 Change 停止静态 HTML 新写入并清退旧生成链 |
 | P1.2 | Local App Board / 其余专业投影 `project-task-lifecycle-in-local-app` | 未开始 | 无 | 基于既有四视图扩展 Board 与届时仍缺失的专业投影，迁移/删除冲突入口，不重建 Development/Review/Verification/Environment authority |
 | P2.1 | Task Retrospective `introduce-task-retrospective` | 未开始 | 无 | 同 Change 替换并清退 Task Asset Review |
@@ -1005,7 +1005,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | Development Receipt、`0..N` Change 处置、Content Target/policy、Candidate identity/generation、三个 gates、decision 与 immutable handoff；明确 control metadata/carrier/runtime/session 不是 Candidate | Environment ready → Planning Review → stable Content Target/policy → Formal Verification → generation 1 Candidate → Completion Review → proceed handoff；非 Git/no Change fixture 证明通用边界；Finish v2 adapter 只消费 handoff且 formal execution count 为 0 |
 | P0.6 | Git Operations `formalize-git-operations` | 单次 Git operation 授权、安全边界、前后 identity 与最小 Result | 精确暂存；commit/push 分离；不 force push；同 Change 迁移有效安全约束并删除冲突旧 capability/binding/router/schema |
 | P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 已实现 canonical writer-declared exact-owned-path publication；排除 `.worktrees`、本机 Environment/runtime、Finish 与 Candidate 内容；历史引用由writer提供diagnostic；required复用Git Operations | 五个portable paths可独立发布；无状态snapshot阻止混合revision；commit/push分离并检查完整range；push失败安全复用等价local commit；失败不回退Task状态；无Git时留本地 |
-| P0.8 | Task Finish `replace-task-finish` | 只消费研发交接；按真实需求扩展 Git/非 Git 交付与 generation effects，继续禁止 Change/Verification/Review/Candidate/decision authority | 覆盖被批准的新交付路径与部分 effects；同 Change 审计 active run、切换 application/runtime/binding，并删除被替代 mutation path；只按必要保留历史只读 inspect |
+| P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 收敛现有 v2 delivery boundary；保留直接 Product/Git adapter，不新增非 Git、多交付单元、PR/release/deploy、adapter registry 或 Finish Receipt | canonical/current/package/help 一致；正常路径单次 CLI，Delivery Adaptation 与连续 target race 复用同一 Candidate/handoff，formal Verification 为 0；审计真实旧 writer/router/binding 并仅在存在时删除 |
 
 P0.1 到 P0.8 分别在各自交付时切换自己拥有的 authority。过渡期允许“新 Task Record + 尚未替换的专业模块”组合，但同一类事实不能有两个 writer；P0.8 不再承担统一默认 authority 切换。
 

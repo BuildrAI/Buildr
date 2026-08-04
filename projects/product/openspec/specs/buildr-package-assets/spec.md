@@ -427,32 +427,32 @@ Buildr package verification MUST 防止正式 workflow 绕过 Task Environment �
 - **AND** MUST 区分 Candidate E2E 与集成后 retained sync/render/doctor 的正式激活检查
 
 ### Requirement: 产品验证覆盖 Task Finish 收尾契约
-Buildr package verification MUST 确保 `task-finish` 作为 `buildr.task-finish/v1` 默认 provider 发布、按 capability 路由，并通过绑定的 worktree-lifecycle 与 Git task-integration providers 保留安全收尾契约。
+Buildr package verification MUST确保`task-finish`作为`buildr.task-finish/v1`唯一默认provider发布，required消费`buildr.task-development@1`与`buildr.task-environment/v1`，只在retained metadata-only handoff optional消费`buildr.git-operations/v1`，并通过source/package/runtime parity保护current五阶段adapter。验证 MUST覆盖current Development Handoff、Task Contribution/Delivery Baseline、run-owned Delivery Carrier、deterministic reuse、Agent-reviewed Delivery Adaptation、target-race exact resume、真实remote readback、适用retained activation、Environment cleanup handoff与`formalVerificationExecutions: 0`。验证 MUST拒绝旧Task Finish writer、旧Verification/Change/Candidate authority输入、旧action/executor/router/schema/binding和与current v2重复的recovery path。
 
 #### Scenario: 校验 Task Finish 随包发布
-- **WHEN** Buildr 执行 package check
-- **THEN** workspace Skill manifests MUST 声明 enabled、installed 的 `task-finish` 及其 provides/requires
-- **AND** 产品入口 Buildr Skill MUST 将完整任务收尾意图路由到 `buildr.task-finish/v1` selected provider
-- **AND** Git Ops Skill description MUST NOT 继续声明完整“收尾”意图
+- **WHEN** Buildr执行package check或runtime parity verification
+- **THEN** workspace/package manifests MUST声明enabled、installed的`task-finish`及其current provides/requires，所有runtime MUST投射相同Skill/contract identity
+- **AND** 产品入口Buildr Skill MUST将完整任务收尾意图路由到`buildr.task-finish/v1`selected provider，Git Operations description MUST NOT声明完整“收尾”意图
 
 #### Scenario: 校验收尾状态机
-- **WHEN** Buildr 验证随包 `task-finish` Skill
-- **THEN** 验证 MUST 覆盖前置检查、两个 required provider resolutions 与披露、OpenSpec 归档、EOF 空白行处理、验证证据复用、提交、provider integration、push、入口迁移和本地清理
-- **AND** 验证 MUST 确认 tree 改变后重验、tree 相同时不重复 E2E
-- **AND** verification MUST NOT require `task-finish` to duplicate the selected provider's rebase、fast-forward or merge policy
-- **AND** verification MUST NOT require `task-finish` to duplicate worktree placement、retention or cleanup policy
+- **WHEN** verifier使用真实Task Environment、current Development Handoff与Git remote执行无冲突direct-to-target收尾
+- **THEN** 一次canonical CLI invocation MUST连续完成`preflight → prepare → verify → deliver → cleanup`、普通push、远端ref回读与适用retained activation
+- **AND** MUST断言`agentProviderCompletions: 0`、`manualRecoveryManifests: 0`、`formalVerificationExecutions: 0`且Candidate/generation/Review/Verification/decision未被Finish修改
 
 #### Scenario: 校验收尾授权边界
-- **WHEN** Buildr 验证随包 `task-finish` Skill
-- **THEN** 验证 MUST 确认“收尾”不授权 force push、远端任务分支删除、丢弃改动、共享分支历史改写或语义冲突决策
-- **AND** merge commit MUST follow the selected provider contract and execution disclosure rather than a global Task Finish prohibition
-- **AND** 验证 MUST 确认任何失败会停止尚未执行的 integrate、push 或 cleanup
+- **WHEN** fixtures分别让Delivery Baseline无冲突前进、deliver发生target-race和同路径变化产生Git conflict
+- **THEN** verifier MUST证明deterministic reuse、exact-token carrier rebuild与Agent-reviewed Delivery Adaptation都复用current Candidate/handoff且只在run-owned carrier发生
+- **AND** MUST NOT把这些路径路由为Development rebuild、自动冲突解决或Formal Verification
+
+#### Scenario: 校验旧authority残留
+- **WHEN** package/static/runtime verification扫描current manifests、Skill/contract、CLI help/registry、Application registration、JSON schemas、managed mutations与executable tests
+- **THEN** 旧Finish action/writer、`--project|--change`/Verification summary/caller Candidate输入、旧Git capability ids、旧Change convergence routing和并行run/receipt schema residual MUST为零
+- **AND** archived Change与明确历史fixture MAY保留旧事实，但 MUST NOT被current runtime、help或默认tests解析为可用入口
 
 #### Scenario: Core 不复制收尾流程
-- **WHEN** Buildr 验证 required Core、capability contracts 和 Task Finish provider
-- **THEN** 完整 task closeout 操作手册 MUST 只存在于 Skills
-- **AND** required Core MUST NOT 包含 OpenSpec archive EOF 修复或 Git 收尾步骤
-- **AND** Core MAY contain only the provider-binding and workspace-transition invariants required regardless of optional Skill lifecycle
+- **WHEN** verifier检查required Core、Task Development、Task Environment、Git Operations、Metadata Publication与Task Finish
+- **THEN** Candidate/generation/decision MUST只由Development写入，资源/provider cleanup MUST只由Environment写入，单次Git Operation MUST不选择Finish流程，metadata publication MUST保持独立
+- **AND** Task Finish MUST只持有carrier/equivalence/delivery/retained activation/cleanup handoff/run恢复事实，不得创建第二份专业Result或顶层Task终态
 
 ### Requirement: Package manifest 声明 workspace Components
 Buildr package manifest MUST 显式声明随包 workspace Components，并将 Component 定义、外部 Skill resolved sources 和 Buildr-owned member sources 限制在可验证的发布边界内。
@@ -1093,3 +1093,11 @@ Buildr package MUST交付 `task-metadata-publication` Skill、`buildr.task-metad
 - **WHEN**新Workspace通过bootstrap/guide发现Task lifecycle能力
 - **THEN**文档 MUST说明唯一入口、五个exact paths、明确排除项、Git Operations调用与local-only结果
 - **AND** MUST NOT宣传公共CLI、publication history、批量发布或Task Finish authority
+
+### Requirement: 当前 package 不得为未来 Task Finish adapter 预建选择框架
+Buildr package、capability graph、runtime source与verification registry MUST在只有当前Product/Git adapter时保持单一`buildr.task-finish/v1`provider与直接Application registration。没有第二种满足真实consumer、delivery target、equivalence、authorization、cleanup eligibility和独立E2E的adapter时，package MUST NOT新增adapter registry、adapter capability family、plugin selection metadata、Finish Receipt或平行run store。
+
+#### Scenario: 当前 package 解析 capability graph
+- **WHEN** doctor或package check解析Task Finish provider与consumer topology
+- **THEN** graph MUST只显示current`task-finish`provider及其Development/Environment/optional Git Operations dependencies
+- **AND** MUST NOT出现未被真实delivery path消费的adapter selector、provider family或第二Finish authority

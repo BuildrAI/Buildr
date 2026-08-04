@@ -95,7 +95,7 @@ test('carrier equivalence 缺陷终止 run 并返回 Task Development', async (t
   assert.equal(result.metrics.formalVerificationExecutions, 0);
 });
 
-test('target race 使用精确 token 重建 carrier，复用 Candidate 且不执行 formal Verification', async (t) => {
+test('连续 target race 每次使用新精确 token 重建 carrier，复用 Candidate 且不执行 formal Verification', async (t) => {
   const root = fixture(t);
   const firstCalls = [];
   const handlers = passingHandlers(firstCalls);
@@ -109,16 +109,28 @@ test('target race 使用精确 token 重建 carrier，复用 Candidate 且不执
   assert.match(first.resume.token, /^sha256-/);
   assert.deepEqual(firstCalls, ['preflight', 'prepare', 'verify', 'deliver']);
   const secondCalls = [];
-  const second = await executeFinishRun({ root, run: readFinishRun({ root, runId: 'target-race' }), handlers: passingHandlers(secondCalls, 'def'), resumeToken: first.resume.token });
-  assert.equal(second.status, 'complete');
-  assert.deepEqual(secondCalls, ['prepare', 'verify', 'deliver', 'cleanup']);
-  assert.equal(second.candidate.identity, 'sha256-candidate');
-  assert.equal(second.candidate.generation, 1);
-  assert.equal(second.carrier.head, 'def');
-  assert.equal(second.phases.find((phase) => phase.id === 'preflight').attempts, 1);
-  assert.equal(second.phases.find((phase) => phase.id === 'prepare').attempts, 2);
-  assert.equal(second.phases.find((phase) => phase.id === 'verify').attempts, 2);
-  assert.equal(second.metrics.formalVerificationExecutions, 0);
+  const secondHandlers = passingHandlers(secondCalls, 'def');
+  secondHandlers.deliver = async () => {
+    secondCalls.push('deliver');
+    return { status: 'blocked', failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Target changed again.' } };
+  };
+  const second = await executeFinishRun({ root, run: readFinishRun({ root, runId: 'target-race' }), handlers: secondHandlers, resumeToken: first.resume.token });
+  assert.equal(second.status, 'blocked');
+  assert.deepEqual(secondCalls, ['prepare', 'verify', 'deliver']);
+  assert.match(second.resume.token, /^sha256-/);
+  assert.notEqual(second.resume.token, first.resume.token);
+  const thirdCalls = [];
+  const third = await executeFinishRun({ root, run: readFinishRun({ root, runId: 'target-race' }), handlers: passingHandlers(thirdCalls, 'ghi'), resumeToken: second.resume.token });
+  assert.equal(third.status, 'complete');
+  assert.deepEqual(thirdCalls, ['prepare', 'verify', 'deliver', 'cleanup']);
+  assert.equal(third.candidate.identity, 'sha256-candidate');
+  assert.equal(third.candidate.generation, 1);
+  assert.equal(third.carrier.head, 'ghi');
+  assert.equal(third.phases.find((phase) => phase.id === 'preflight').attempts, 1);
+  assert.equal(third.phases.find((phase) => phase.id === 'prepare').attempts, 3);
+  assert.equal(third.phases.find((phase) => phase.id === 'verify').attempts, 3);
+  assert.equal(third.phases.find((phase) => phase.id === 'deliver').attempts, 3);
+  assert.equal(third.metrics.formalVerificationExecutions, 0);
   assert.equal(inspectFinishRun({ root, runId: 'target-race' }).status, 'complete');
 });
 

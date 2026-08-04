@@ -270,27 +270,27 @@ Buildr MUST 将 `buildr verification run` 登记为 public transient execution C
 - **AND** MUST NOT 启动 capability 或写 evidence
 
 ### Requirement: Task Finish canonical CLI 必须只有 run 与 inspect
-Buildr CLI MUST 只提供 `task finish run` 和 `task finish inspect`：`run` 从 receipt-bound task environment、Project 与可选 Change context 解析执行所需 identity 并连续执行五阶段，`inspect` 只读返回当前 run 状态。首次 run MUST 要求 `--project`，MUST 在提供 `--change` 时创建 Change 候选，并 MUST 在省略 `--change` 时创建 code-only 候选。当前客户端 MUST NOT 注册、加载或执行 `actions|advance|resume|renew|recover|cleanup-prepare|cleanup-finalize`，也 MUST NOT 接受调用方提供的 evidence/fingerprint/execution-plan/recovery 参数。
+Buildr CLI MUST只提供`task finish run`和`task finish inspect`：首次`run` MUST只要求`--task <task-id>`，并从matching ready Task Environment与Task Development Application解析current Development Handoff、Candidate/generation和Content Target；`inspect` MUST只读返回canonical run状态。默认target branch MUST来自retained Workspace当前符号分支，显式`--target-branch` MUST与该分支一致；delivery remote MUST来自显式参数、Environment evidence、target branch upstream或唯一configured remote。当前客户端 MUST NOT注册、加载或执行`actions|advance|resume|renew|recover|cleanup-prepare|cleanup-finalize`，也 MUST NOT接受`--project`、`--change`、assurance/Result bytes、caller-authoredCandidate/evidence/fingerprint/execution-plan/recovery参数。
 
 #### Scenario: 查询 canonical Task Finish 帮助
-- **WHEN** 用户运行 `buildr help task finish`、`buildr task finish run --help` 或 `buildr task finish inspect --help`
-- **THEN** 输出 MUST 只把 run/inspect 表述为 canonical actions，并说明 task identity 来自 environment receipt、`--project` 必需、`--change` 只对 Change 候选必需，以及可选 agent/target/resume token
-- **AND** MUST NOT 要求调用方理解 step、attempt、lease、action registry 或 recovery manifest
+- **WHEN** 用户运行`buildr help task finish`、`buildr help task finish run`或`buildr help task finish inspect`
+- **THEN** 输出 MUST只把run/inspect表述为canonical actions，并说明首次run需要Task ID、current Development Handoff、ready Environment、retained target与可确定remote
+- **AND** MUST NOT声称target branch来自worktree start point，或要求调用方理解Project/Change、Candidate kind、step、attempt、action registry或recovery manifest
 
 #### Scenario: 省略 Change 创建 code-only run
-- **WHEN** 调用方从 receipt-bound task environment 使用 `task finish run --project <code>`
-- **THEN** CLI MUST 接受输入并把 candidate kind 解析为 code-only
-- **AND** MUST NOT 返回 `missing_parameter` 或推断任意 active Change
+- **WHEN** Task Development已经为Change引用为`0..N`的Task形成current handoff
+- **THEN** 调用方 MUST只用`task finish run --task <task-id>`进入同一产品执行器
+- **AND** CLI MUST把Change context保持为opaque handoff fact，不推断candidate kind或任意active Change
 
 #### Scenario: 调用旧 action
-- **WHEN** 调用方使用旧 maintenance action
-- **THEN** CLI MUST 作为不存在或不支持的 action 拒绝
-- **AND** MUST NOT 加载旧 reader/executor 或创建旧 run
+- **WHEN** 调用方使用旧maintenance action、`--project`、`--change`、Verification summary或caller Candidate参数
+- **THEN** CLI MUST作为不存在、不支持或unknown argument拒绝
+- **AND** MUST NOT加载旧reader/executor、创建run、写Development Receipt或启动Verification
 
 #### Scenario: Canonical store 中存在旧 run shape
-- **WHEN** 当前客户端运行或检查 Task Finish 且 canonical store 中仍有旧 checkpoint、lease 或 completion shape
-- **THEN** 自动选择 MUST 跳过旧 shape，显式 inspect MUST fail closed
-- **AND** MUST NOT 加载旧 reader、生成迁移 receipt 或把旧 passed evidence 映射为新 phase
+- **WHEN** 当前客户端运行或检查Task Finish且canonical store中仍有非v2 run shape
+- **THEN** 自动选择 MUST跳过旧shape，显式inspect MUST fail closed
+- **AND** MUST NOT加载旧reader、生成迁移receipt或把旧passed evidence映射为新phase
 
 ### Requirement: Task Finish CLI 失败必须直接定位并给出唯一 workflow
 
@@ -438,3 +438,16 @@ Buildr CLI MUST 只通过 `task verification inspect|record` 管理一个 Task c
 - **WHEN** target、capability fact、coverage gap 或 conclusion 不能构成完整 closed-schema Result
 - **THEN** CLI MUST 返回 blocked operation result 与具体 field diagnostic
 - **AND** 原 current MUST 保持不变
+
+### Requirement: OpenSpec CLI help 不得恢复 Task Finish 的旧 Change authority
+Buildr CLI MUST把`openspec baseline create`、`openspec check`、`openspec converge`与`openspec audit`描述为各自的OpenSpec contract/maintenance入口，并 MUST NOT把任一命令表述为current Task Finish stage、required action或恢复路径。Task Finish current help MUST明确Change convergence、sync与archive在Development stable Content Target之前完成。
+
+#### Scenario: 查询 OpenSpec 兼容入口帮助
+- **WHEN** 用户查询`buildr help openspec baseline create`或`buildr help openspec check`
+- **THEN** help MAY说明其兼容诊断用途
+- **AND** MUST NOT声称“新 Task Finish 使用 openspec converge”或引导Finish读取/修改Change
+
+#### Scenario: 查询 Task Finish 帮助
+- **WHEN** 用户查询canonical Task Finish help
+- **THEN** help MUST说明Finish只消费current Development Handoff并执行carrier/delivery/cleanup
+- **AND** MUST NOT列出OpenSpec command、Change convergence、sync或archive为Finish operation

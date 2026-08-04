@@ -22,7 +22,7 @@
 - `task-verification` 提供并默认绑定 `buildr.task-verification/v3`；Project `verification.yml` v2 是测试能力声明，不进入 capability binding manifest。Skill 负责执行与语义提炼，Task Verification Application 独占 current Result writer/reader。
 - `task-development` 提供并默认绑定 `buildr.task-development@1`，required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge，optional 消费 Task Asset Review。它是 Development Receipt、Content Target、verification policy、Task Candidate/generation、gates/decision 与不可变研发交接（Development Handoff）的唯一 authority；Local App 只是该 authority 的只读客户端。
 - `git-operations` 只提供并默认绑定 `buildr.git-operations@1`，没有 Application、CLI、Receipt 或持久状态；直接用户或上游 consumer 选择 repository/operation/ref/scope/order，provider 只保护精确 staging、commit/push 分离、完整 push range、共享历史冻结与最小 Result。`git-worktree-provider/v1` 继续独立。
-- `task-finish` 继续提供 `buildr.task-finish/v1`，但 required 消费 Task Development 与 Task Environment，只把当前允许推进的研发交接交给内容等价交付载体适配器；Git Operations 仅对 retained metadata-only handoff optional，commit/push 顺序仍由 Task Finish 决定。
+- `task-finish` 继续提供 `buildr.task-finish/v1`，但 required 消费 Task Development 与 Task Environment，只把当前允许推进的研发交接交给内容等价交付载体适配器；current Product 只有一个直接接线的 Git carrier adapter，不建立 adapter registry 或未来路径占位。Git Operations 仅对 retained metadata-only handoff optional，commit/push 顺序仍由 Task Finish 决定。
 - OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 contract guard、terminology 和 current knowledge 门禁，不修改上游 Skill source bytes。
 
 ## 数据与完整性
@@ -55,6 +55,6 @@ transient cleanup 只删除系统临时根下、名称和 summary containment �
 
 ## Task Finish
 
-Task Finish 是产品持有的固定五阶段窄 adapter：`preflight → prepare → verify → deliver → cleanup`。CLI 只公开 `task finish run|inspect`；Application 从 Task Development Application 读取当前允许推进的研发交接（Development Handoff），run/result v2 绑定研发交接、Candidate identity/generation、Content Target、Environment、任务贡献（Task Contribution）、交付基线（Delivery Baseline）、目标与交付载体（Delivery Carrier）。它不建立 Finish Receipt、第二 Candidate/decision store 或旧 v1 reader。
+Task Finish 是产品持有的固定五阶段窄 adapter：`preflight → prepare → verify → deliver → cleanup`。CLI 只公开 `task finish run|inspect`；Application 从 Task Development Application 读取当前允许推进的研发交接（Development Handoff），run/result v2 绑定研发交接、Candidate identity/generation、Content Target、Environment、任务贡献（Task Contribution）、交付基线（Delivery Baseline）、目标与交付载体（Delivery Carrier）。current Product/Git adapter 直接注册到 Application；没有第二个真实 adapter，因此不建立 adapter registry。它不建立 Finish Receipt、第二 Candidate/decision store 或旧 v1 reader。
 
 `preflight`只聚合handoff、ready Environment、retained target与adapter readiness；`prepare`用临时index观察原任务基线到冻结source snapshot的Task Contribution，在run-owned detached worktree的最新Delivery Baseline上机械应用。clean apply形成commit并记录`deterministic-reuse`；Git conflict保留baseline carrier并blocked返回交付适配（Delivery Adaptation）。Agent只在该carrier中处理语义兼容；resume核验ownership、baseline ancestry、source/handoff current、cleanliness及Project policy要求的bounded compatibility checks。`verify`对适配记录`agent-reviewed-delivery-adaptation`和path/mode/blob/tree/head/check facts，不声称Buildr证明语义等价，不写Task Verification Result，`formalVerificationExecutions`固定为0。`deliver`只做普通fast-forward/push及retained sync/install/Doctor；`cleanup`在远端ref回读成功后清理原Task Environment与carrier。只有Development Application报告applicability stale才返回Development rebuild；其他无法证明facts保持blocked。

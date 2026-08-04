@@ -93,6 +93,18 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.match(helpText, /task finish inspect/);
   assert.match(helpText, /--task <task-id> \[--agent <agent>\]/);
   assert.match(helpText, /current formal Development handoff/);
+  assert.match(helpText, /retained canonical Workspace 的当前符号分支/);
+  assert.match(helpText, /Environment startPoint 不提供交付分支 authority/);
   assert.doesNotMatch(helpText, /Usage:[^\n]*(?:--project|--change)/);
+  assert.doesNotMatch(helpText, /target branch 默认来自 Git carrier provider start point/);
   assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);
+});
+
+test('OpenSpec 兼容帮助不再把 convergence 路由给 Task Finish', () => {
+  for (const topic of [['baseline', 'create'], ['check']]) {
+    const result = spawnSync(process.execPath, [cli, 'help', 'openspec', ...topic], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Task Finish 不收敛 Change/);
+    assert.doesNotMatch(result.stdout, /新 Task Finish 使用 openspec converge/);
+  }
 });
