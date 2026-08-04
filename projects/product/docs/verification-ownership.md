@@ -138,9 +138,8 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 
 ## 8. 下一轮优化方案
 
-1. 分析六个 package selector 重复做的 213-file static preparation；只在同一 verifier 内能保留独立 diagnostics 时共享，不引入跨 verifier daemon/cache。
-2. 单独分析 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程；prepare/cleanup 事实仍必须真实执行。
-3. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
+1. 单独分析 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程；prepare/cleanup 事实仍必须真实执行。
+2. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
 
 ## 9. 迭代记录
 
@@ -158,3 +157,4 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 10. 优化 runtime parity | packaged Skill 内容改走约 2s 的 7-adapter 投射 slice；完整 parity 复用一次 seed 并隔离 clone，补齐 7-adapter inventory/Doctor 与 5-family lifecycle，最终内容树两轮中位数为 21.85s，较 35.34s 基线下降约 38%，Candidate gate 数不变 |
 | 11. 预算内层并发 | Task Development 从普通 Integration 聚合中拆出，保留 Integration 边界与全部 Candidate 证据；profile 对重型 runner 注入有限 worker budget。相同冻结树对照证明 System 与 Task Development 并行会相互放大，二者使用单一压力容量后 Full 从 174.508s 降至 149.979s；下一步只优化该专项的不可变 fixture 准备 |
 | 12. 验证 Task Development fixture 假设 | 两用例直接运行总计 98.95s；共享方案中的真实 `init + project create` 基线仅约 2.82s，而每例 Development 生命周期仍约 46–61s。约 3% 的潜在收益不足以承担新的共享 fixture 维护成本，因此不保留该 helper；下一步转查 package selector 的重复静态准备 |
+| 13. 收敛 package static owner | 五个 package Integration selector 各重复扫描 213 个静态文件；现在仅 `package-static` 执行该扫描，其他 selector 只运行各自 Journey 并明确静态事实由 `static` owner 持有。Candidate owner 与独立诊断不变，公共 `buildr package check` 仍先执行完整 static 再运行 aggregate。受机器负载波动影响，未把单次 package group 墙钟作为收益结论；确定性地消除了每个 Candidate 的五次重复扫描 |

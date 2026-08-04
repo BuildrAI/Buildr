@@ -1312,5 +1312,6 @@ export function createPackageStaticValidator(deps) {
     validateWorkspaceSkillsBaseline,
     validateWorkspaceRulesBaseline,
     validatePackageStatic,
+    parseJsonOutput,
   };
 }

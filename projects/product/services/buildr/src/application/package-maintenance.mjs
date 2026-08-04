@@ -382,6 +382,7 @@ export function registerApplicationPackageMaintenance(runtime) {
     validateWorkspaceSkillsBaseline,
     validateWorkspaceRulesBaseline,
     validatePackageStatic,
+    parseJsonOutput,
   } = createPackageStaticValidator({
     LEGACY_PACKAGE_PATHS,
     PACKAGE_RUNTIME_TARGET,
@@ -464,27 +465,21 @@ export function registerApplicationPackageMaintenance(runtime) {
     const context = { root, workspaceRoot, manifestPath, manifest, allowedVariables, files, problems, mappedEntries };
     const selector = process.env[PACKAGE_VERIFIER_ENV] || '';
     const selected = selectPackageVerifiers(selector);
-    let smokeContext = null;
-    const prepareSmokeContext = () => {
-      if (smokeContext) return smokeContext;
-      const prepared = validatePackageStatic(context);
-      smokeContext = { ...context, ...prepared };
-      return smokeContext;
-    };
+    const smokeContext = { ...context, parseJsonOutput };
     const runners = {
       static: () => {
-        const prepared = prepareSmokeContext();
-        validatePackageSupportTools(prepared);
+        validatePackageStatic(context);
+        validatePackageSupportTools(smokeContext);
       },
-      workspace: () => runPackageWorkspaceSmoke(prepareSmokeContext()),
-      commands: () => runPackageDomainIntegration(prepareSmokeContext(), 'commands'),
-      rules: () => runPackageDomainIntegration(prepareSmokeContext(), 'rules'),
-      skills: () => runPackageDomainIntegration(prepareSmokeContext(), 'skills'),
-      runtime: () => runPackageRuntimeIntegration(prepareSmokeContext()),
+      workspace: () => runPackageWorkspaceSmoke(smokeContext),
+      commands: () => runPackageDomainIntegration(smokeContext, 'commands'),
+      rules: () => runPackageDomainIntegration(smokeContext, 'rules'),
+      skills: () => runPackageDomainIntegration(smokeContext, 'skills'),
+      runtime: () => runPackageRuntimeIntegration(smokeContext),
     };
     if (!selector) {
       runners.static();
-      runPackageAggregateSmoke(prepareSmokeContext());
+      runPackageAggregateSmoke(smokeContext);
     } else {
       for (const step of selected) runners[step.runner]();
     }
@@ -495,7 +490,12 @@ export function registerApplicationPackageMaintenance(runtime) {
       process.exit(1);
     }
 
-    console.log(`Buildr package check passed. Checked ${manifest.include.length} include entries and ${files.length} files across ${selected.map((step) => step.id).join(', ')}.`);
+    const selectorSummary = selected.map((step) => step.id).join(', ');
+    if (selected.some((step) => step.id === 'static')) {
+      console.log(`Buildr package check passed. Static validation checked ${manifest.include.length} include entries and ${files.length} files; ran ${selectorSummary}.`);
+    } else {
+      console.log(`Buildr package integration check passed. Ran ${selectorSummary}; static package validation is owned by selector static.`);
+    }
   }
 
   const {

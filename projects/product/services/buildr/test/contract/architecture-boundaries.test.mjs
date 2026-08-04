@@ -21,6 +21,11 @@ test('package verification 使用稳定 registry 且不恢复共享 smoke runner
   const smoke = fs.readFileSync(path.join(productRoot, 'src/application/package-maintenance/smoke-checks.mjs'), 'utf8');
   const registry = fs.readFileSync(path.join(productRoot, 'src/application/package-maintenance/verification-registry.mjs'), 'utf8');
   assert.match(application, /selectPackageVerifiers/);
+  assert.equal(application.match(/validatePackageStatic\(context\)/g)?.length, 1);
+  for (const runner of ['runPackageWorkspaceSmoke', 'runPackageDomainIntegration', 'runPackageRuntimeIntegration']) {
+    assert.match(application, new RegExp(`${runner}\\(smokeContext`));
+  }
+  assert.match(application, /static package validation is owned by selector static/);
   assert.doesNotMatch(smoke, /runPackageSmokeChecks/);
   for (const selector of ['static', 'workspace', 'commands', 'rules', 'skills', 'runtime']) {
     assert.match(registry, new RegExp(`id: '${selector}'`));
