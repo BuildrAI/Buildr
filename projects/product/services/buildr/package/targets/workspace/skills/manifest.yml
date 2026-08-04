@@ -32,7 +32,7 @@ contracts:
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
-    description: 消费 current Development handoff，准备内容等价 carrier、推进目标并清理 Environment。
+    description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
   - id: buildr.task-asset-review
     version: 3
     path: contracts/buildr/task-asset-review/v3.md
@@ -276,7 +276,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求“收尾”或交付已有 current formal Development handoff 时使用；只准备内容等价 carrier、推进 retained target 并清理 Environment，handoff/Candidate/Result 问题返回 Task Development。
+    description: 用户要求“收尾”或交付已有 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
     enabled: true
     required: false
     state: installed

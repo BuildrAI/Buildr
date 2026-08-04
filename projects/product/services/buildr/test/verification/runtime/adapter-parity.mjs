@@ -158,7 +158,8 @@ async function verifyLifecycle(context) {
     assert.ok(renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
     assert.ok(renderedFinish.includes('不由 Agent 编排阶段、补 evidence 或设计 recovery'));
     assert.ok(renderedFinish.includes('asset observation'));
-    assert.ok(renderedFinish.includes('不得手写 token或重做已通过阶段'));
+    assert.ok(renderedFinish.includes('不得手写token、recovery manifest或claimed semantic equivalence'));
+    assert.ok(renderedFinish.includes('原Task source/handoff真实stale时才返回'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));
   }
 

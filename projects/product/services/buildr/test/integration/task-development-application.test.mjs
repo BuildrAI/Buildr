@@ -28,6 +28,12 @@ function pinImmutableTaskRecord(runtime, root, taskId) {
   };
 }
 
+function git(root, args) {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, `git ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+  return result.stdout.trim();
+}
+
 function fixture(t, taskId) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-application-'));
   const root = path.join(base, 'workspace');
@@ -77,6 +83,73 @@ function recordVerification(current, outcome = 'passed') {
 
 function completion(current, candidate, outcome = 'ready') {
   return current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Task Candidate'], uncovered: [], findings: outcome === 'ready' ? [] : ['Known acceptance concern.'], conclusion: { outcome, summary: outcome === 'ready' ? 'Ready.' : 'Requires explicit risk acceptance.' } });
+}
+
+function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-git-'));
+  const root = path.join(base, 'workspace');
+  const taskRoot = path.join(root, '.worktrees', taskId);
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  run(['init', '--target', root, '--name', 'development-git-fixture', '--description', 'Git-backed Development applicability fixture']);
+  run(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Demo project']);
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'README.md'), '# Demo\n');
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [{
+      id: 'demo.check', title: 'Demo check', scope: { project: 'demo', services: [] },
+      invocation: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' },
+      applicability: { paths: ['**'], conditions: [] }, proves: ['Demo content is readable.'], requiredForDelivery: true,
+      environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
+    }],
+  }));
+  if (sharedPath) fs.writeFileSync(path.join(root, 'shared.txt'), `${Array.from({ length: 40 }, (_, index) => `line-${index + 1}`).join('\n')}\n`);
+  git(root, ['init', '-b', 'dev']);
+  git(root, ['config', 'user.name', 'Buildr Development']);
+  git(root, ['config', 'user.email', 'development@example.com']);
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-m', 'baseline']);
+  run(['task', 'create', taskId, '--title', 'Develop Git demo', '--intent', 'Preserve contribution applicability across baseline advance.', '--project', 'demo', '--target', root]);
+  fs.mkdirSync(path.dirname(taskRoot), { recursive: true });
+  git(root, ['worktree', 'add', '-b', `codex/${taskId}`, taskRoot, 'dev']);
+  git(taskRoot, ['config', 'user.name', 'Buildr Development']);
+  git(taskRoot, ['config', 'user.email', 'development@example.com']);
+  if (sharedPath) {
+    const lines = fs.readFileSync(path.join(taskRoot, 'shared.txt'), 'utf8').trimEnd().split('\n');
+    lines[39] = 'task-line-40';
+    fs.writeFileSync(path.join(taskRoot, 'shared.txt'), `${lines.join('\n')}\n`);
+  } else {
+    fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'task contribution\n');
+  }
+  git(taskRoot, ['add', '-A']);
+  git(taskRoot, ['commit', '-m', 'task contribution']);
+  const runtime = createRuntime();
+  runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true,
+    taskId,
+    receiptSchema: 'buildr.task-environment-receipt/v2',
+    workspaceRoot: root,
+    environmentRoot: taskRoot,
+    validationRoot: taskRoot,
+    repositories: [{ selector: 'workspace', sourceRepository: root, checkoutPath: taskRoot }],
+    scopes: [
+      { selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: taskRoot },
+      { selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(taskRoot, 'projects', 'demo') },
+    ],
+  });
+  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Git-backed plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  let result = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
+  runtime.recordTaskDevelopmentPolicy(root, taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
+  const targetIdentity = result.development.receipt.contentTarget.identity;
+  runtime.recordTaskVerification(root, taskId, {
+    targetIdentity, targetSummary: 'Git Task Contribution target', capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Demo check passed.'] }],
+    coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Verified.' }, declarationRoot: taskRoot,
+  });
+  result = runtime.freezeTaskDevelopmentCandidate(root, taskId);
+  const candidate = result.development.receipt.candidate;
+  runtime.recordTaskReview(root, taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Git Task Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
+  result = runtime.createTaskDevelopmentHandoff(root, taskId);
+  return { root, taskRoot, runtime, taskId, planningTargetIdentity, candidate, handoff: result.development.receipt.handoffs.at(-1), targetIdentity };
 }
 
 test('同一输入刷新 Result 不递增 generation；Content 变化递增且保留旧 handoff snapshot', (t) => {
@@ -153,4 +226,69 @@ test('Verification not-passed 与 Completion changes-required 可经精确用户
   result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
   assert.equal(result.development.receipt.handoffs[0].candidate.identity, candidate.identity);
   assert.equal(result.development.receipt.handoffs[0].decision.risks.length, 2);
+});
+
+test('Delivery Baseline 前进但原 Task source 未修改时 Development gates 与 handoff 保持 current', (t) => {
+  const current = gitDevelopmentFixture(t, 'baseline-applicability-current');
+  fs.writeFileSync(path.join(current.root, 'baseline-advance.txt'), 'independent baseline advance\n');
+  git(current.root, ['add', 'baseline-advance.txt']);
+  git(current.root, ['commit', '-m', 'advance delivery baseline']);
+
+  let result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.equal(result.development.applicability.contentTarget, 'current');
+  assert.equal(result.development.applicability.candidate, 'current');
+  assert.equal(result.development.applicability.handoff, 'current');
+  assert.deepEqual(result.development.applicability.gates, {
+    planning: { ...result.development.receipt.gates.planning, applicability: 'current' },
+    verification: { ...result.development.receipt.gates.verification, applicability: 'current' },
+    completion: { ...result.development.receipt.gates.completion, applicability: 'current' },
+  });
+
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  assert.equal(result.status, 'unchanged');
+  assert.equal(result.development.receipt.candidate.generation, 1);
+});
+
+test('只有原 Task source 变化使 Development stale；同路径 baseline 与 repository evidence 不取得 applicability authority', (t) => {
+  const changed = gitDevelopmentFixture(t, 'baseline-applicability-drift');
+  fs.appendFileSync(path.join(changed.taskRoot, 'feature.txt'), 'changed contribution\n');
+  let result = changed.runtime.inspectTaskDevelopment(changed.root, changed.taskId);
+  assert.equal(result.development.applicability.contentTarget, 'stale');
+  assert.equal(result.development.applicability.candidate, 'stale');
+  assert.equal(result.development.applicability.handoff, 'stale');
+
+  const shared = gitDevelopmentFixture(t, 'baseline-applicability-shared', { sharedPath: true });
+  const baselineLines = fs.readFileSync(path.join(shared.root, 'shared.txt'), 'utf8').trimEnd().split('\n');
+  baselineLines[0] = 'baseline-line-1';
+  fs.writeFileSync(path.join(shared.root, 'shared.txt'), `${baselineLines.join('\n')}\n`);
+  git(shared.root, ['add', 'shared.txt']);
+  git(shared.root, ['commit', '-m', 'advance shared baseline']);
+  result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);
+  assert.equal(result.development.applicability.contentTarget, 'current');
+  assert.equal(result.development.applicability.handoff, 'current');
+
+  shared.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true, taskId: shared.taskId, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: shared.root,
+    environmentRoot: shared.taskRoot, validationRoot: shared.taskRoot, repositories: [],
+    scopes: [
+      { selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: shared.taskRoot },
+      { selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(shared.taskRoot, 'projects', 'demo') },
+    ],
+  });
+  result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);
+  assert.equal(result.development.applicability.contentTarget, 'current');
+  assert.equal(result.development.applicability.handoff, 'current');
+
+  shared.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true, taskId: shared.taskId, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: shared.root,
+    environmentRoot: shared.taskRoot, validationRoot: shared.taskRoot,
+    repositories: [{ selector: 'workspace', sourceRepository: path.join(shared.root, 'missing-retained-repository'), checkoutPath: shared.taskRoot }],
+    scopes: [
+      { selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: shared.taskRoot },
+      { selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(shared.taskRoot, 'projects', 'demo') },
+    ],
+  });
+  result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);
+  assert.equal(result.development.applicability.contentTarget, 'current');
+  assert.equal(result.development.applicability.handoff, 'current');
 });

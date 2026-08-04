@@ -43,7 +43,7 @@ const allowed = new Map([
   ['src/application/task-finish/task-finish-run.mjs', new Set([
     'atomicWriteJson', 'acquireFinishTargetLease', 'releaseFinishTargetLease',
   ])],
-  ['src/application/task-finish/git-task-contribution.mjs', new Set(['withTemporaryIndex'])],
+  ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
   ['src/application/verification/resource-coordinator.mjs', new Set([
     'atomicWriteJson', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],

@@ -293,17 +293,26 @@ Buildr CLI MUST 只提供 `task finish run` 和 `task finish inspect`：`run` �
 - **AND** MUST NOT 加载旧 reader、生成迁移 receipt 或把旧 passed evidence 映射为新 phase
 
 ### Requirement: Task Finish CLI 失败必须直接定位并给出唯一 workflow
-Task Finish JSON error/result MUST 优先返回真实 `phase`、`operation|check`、`failureClass`、`code|status|exit`、bounded diagnostic identity 和唯一 `nextWorkflow|nextAction`。产品缺陷 MUST 指向 `task-development`，同一 frozen candidate 可恢复的暂态阻塞 MUST 返回产品生成的 resume token；未知参数与缺失 context MUST 返回 canonical run/inspect help topic。
+
+Task Finish JSON error/result MUST优先返回真实`phase`、`operation|check`、`failureClass`、`code|status|exit`、bounded diagnostic identity与唯一`nextWorkflow|nextAction`。只有Task Development Application报告Candidate applicability stale时，Finish才 MUST指向`task-development`；同一frozen Candidate可恢复的target race、Delivery Adaptation、retained或cleanup阻塞 MUST返回产品生成的exact resume token。未知参数与缺失context MUST返回canonical run/inspect help topic。
 
 #### Scenario: Verification 子检查失败
-- **WHEN** 正式 verification executor 的具体 check 非零退出
-- **THEN** Task Finish compact JSON MUST 直接投射该 check/stage 和 diagnostic
-- **AND** MUST NOT 只返回顶层 `verifier.nonzero-exit`、`primaryFailure: null` 或让 Agent搜索日志猜测原因
+
+- **WHEN** Task Development Application报告Content Target、Candidate、gate或handoff stale
+- **THEN** CLI MUST返回具体Development finding与`nextWorkflow: task-development`
+- **AND** MUST NOT把Finish自己的Git判断伪装成Development applicability evidence
+
+#### Scenario: Delivery Adaptation required
+
+- **WHEN** prepare在最新Delivery Baseline机械应用Task Contribution失败但Development handoff仍current
+- **THEN** CLI MUST返回`delivery-adaptation-required`或`semantic-review-required`、carrier facts与exact resume token
+- **AND** `nextAction` MUST指向在run-owned carrier完成Agent review后重复canonical run，不得输出`nextWorkflow: task-development`
 
 #### Scenario: Target race 可恢复
-- **WHEN** frozen candidate 未变但目标 ref 在 push 前漂移
-- **THEN** CLI MUST 返回 `phase: deliver`、`code: target-race` 和产品生成的 resume token
-- **AND** nextAction MUST 是重复 canonical run/resume，而不是手写 recovery JSON
+
+- **WHEN** frozen Candidate未变但目标ref在push前漂移
+- **THEN** CLI MUST返回`phase: deliver`、`code: task-finish.target-race`和产品生成的resume token
+- **AND** nextAction MUST是重复canonical run/resume，而不是手写recovery JSON
 
 ### Requirement: Task Record 必须提供五个明确 CLI action
 Buildr CLI MUST 公开 `buildr task create <task-id>`、`inspect`、`update`、`complete` 和 `abandon`，并 MUST 在帮助中将它们描述为 Task Manager 的确定性记录动作。CLI interface MUST 只拥有参数解析、Application 调用、输出和退出码；Task Record Application MUST NOT 解析 argv、打印 stdout/stderr 或修改 process exit state。现有 `buildr task finish run|inspect` MUST 保持当前专业语义，直到 Task Finish 模块被替换。

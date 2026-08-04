@@ -156,9 +156,10 @@ test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification 
     '任务贡献（Task Contribution）', '交付基线（Delivery Baseline）',
     'formalVerificationExecutions` 必须为 `0`', '不发起 Task Verification',
   ]) assert.ok(finishSkill.includes(required), `Finish Skill must include ${required}`);
-  assert.match(finishContract, /Development Application的只读carrier-equivalence check/);
+  assert.match(finishContract, /Development Application只读确认applicability/);
   assert.match(finishContract, /formal Verification executions必须为`0`/);
-  assert.match(finishContract, /不得选择capability、运行测试或record Verification Result/);
+  assert.match(finishContract, /bounded compatibility checks/);
+  assert.match(finishContract, /不得record Verification Result/);
   assert.doesNotMatch(finishContract, /task-verification\/v3|requiredForDelivery/);
   assert.doesNotMatch(finishSkill, /--required-assurance|--verification-summary/);
   assert.doesNotMatch(finishSkill, /current Verification Result|requiredForDelivery|formalVerificationExecutions <= 1/);

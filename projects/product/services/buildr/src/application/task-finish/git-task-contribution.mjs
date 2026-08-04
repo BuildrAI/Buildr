@@ -1,92 +1,16 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import {
+  gitContributionCommand as git,
+  gitContributionText as gitText,
+  gitTaskContributionIdentity as deltaIdentity,
+  gitTaskContributionPatch as contributionPatch,
+  observeGitTaskContribution,
+  requireGitContributionText as requireGitText,
+  withGitTaskContributionSnapshot as withTemporaryIndex,
+} from '../../infrastructure/git/git-task-contribution.mjs';
 
-const MAX_BUFFER = 64 * 1024 * 1024;
-const CONTROL_SEGMENTS = new Set(['.buildr', '.git']);
-
-function digest(value) {
-  return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
-}
-
-function normalizePath(value) {
-  return path.posix.normalize(String(value || '').replaceAll('\\', '/')).replace(/^\.\//, '');
-}
-
-function deliverablePath(value) {
-  const normalized = normalizePath(value);
-  return Boolean(normalized) && !normalized.split('/').some((segment) => CONTROL_SEGMENTS.has(segment));
-}
-
-function git(root, args, options = {}) {
-  return spawnSync('git', args, {
-    cwd: root,
-    encoding: options.encoding ?? 'utf8',
-    maxBuffer: MAX_BUFFER,
-    env: options.env || process.env,
-    input: options.input,
-  });
-}
-
-function gitText(root, args, options = {}) {
-  const result = git(root, args, options);
-  return result.status === 0 ? String(result.stdout).trim() : null;
-}
-
-function requireGitText(root, args, message, options = {}) {
-  const value = gitText(root, args, options);
-  if (!value) throw new Error(message);
-  return value;
-}
-
-function nulPaths(result) {
-  if (result.status !== 0) return null;
-  return String(result.stdout).split('\0').filter(Boolean).map(normalizePath);
-}
-
-function taskSourcePaths(root, baselineHead) {
-  const baseline = nulPaths(git(root, ['ls-tree', '-r', '-z', '--name-only', baselineHead]));
-  const current = nulPaths(git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']));
-  if (!baseline || !current) throw new Error('Unable to inventory Task source paths.');
-  return [...new Set([...baseline, ...current].filter(deliverablePath))].sort();
-}
-
-function withTemporaryIndex(root, baselineHead, operation) {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-contribution-'));
-  try {
-    const indexFile = path.join(temporary, 'index');
-    const environment = { ...process.env, GIT_INDEX_FILE: indexFile };
-    const read = git(root, ['read-tree', baselineHead], { env: environment });
-    if (read.status !== 0) throw new Error(`Unable to seed Task source snapshot: ${read.stderr || read.stdout}`);
-    const sourcePaths = taskSourcePaths(root, baselineHead);
-    if (sourcePaths.length > 0) {
-      const added = git(root, ['add', '-A', '-f', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: environment, encoding: 'buffer', input: Buffer.from(`${sourcePaths.join('\0')}\0`) });
-      if (added.status !== 0) throw new Error(`Unable to snapshot exact Task source: ${added.stderr || added.stdout}`);
-    }
-    const tree = requireGitText(root, ['write-tree'], 'Unable to write Task source snapshot tree.', { env: environment });
-    return operation({ tree, environment, temporary });
-  } finally {
-    fs.rmSync(temporary, { recursive: true, force: true });
-  }
-}
-
-function rawDelta(root, beforeTree, afterTree) {
-  const result = git(root, ['diff-tree', '--no-commit-id', '-r', '--raw', '-z', '--no-renames', beforeTree, afterTree], { encoding: 'buffer' });
-  if (result.status !== 0) throw new Error(`Unable to observe Task Contribution delta: ${String(result.stderr || result.stdout)}`);
-  return Buffer.from(result.stdout);
-}
-
-function deltaIdentity(root, beforeTree, afterTree) {
-  return digest(Buffer.concat([Buffer.from('buildr.git-task-contribution/v1\0'), rawDelta(root, beforeTree, afterTree)]));
-}
-
-function contributionPatch(root, beforeTree, afterTree) {
-  const result = git(root, ['diff', '--binary', '--full-index', '--no-renames', beforeTree, afterTree, '--'], { encoding: 'buffer' });
-  if (result.status !== 0) throw new Error(`Unable to materialize Task Contribution patch: ${String(result.stderr || result.stdout)}`);
-  return Buffer.from(result.stdout);
-}
+export { observeGitTaskContribution } from '../../infrastructure/git/git-task-contribution.mjs';
 
 function carrierRoot(workspaceRoot, runId) {
   const base = path.resolve(workspaceRoot, '.buildr', 'task-finish', 'carriers');
@@ -105,16 +29,19 @@ function carrierRegistration(root, target) {
   return String(result.stdout).split(/\n\n+/).map((entry) => entry.split('\n').find((line) => line.startsWith('worktree '))?.slice(9)).find((entry) => entry && physical(entry) === expected) || null;
 }
 
-export function observeGitTaskContribution({ root, deliveryBaselineHead }) {
-  const sourceHead = requireGitText(root, ['rev-parse', 'HEAD^{commit}'], 'Task source HEAD is unavailable.');
-  const originalBaselineHead = requireGitText(root, ['merge-base', sourceHead, deliveryBaselineHead], 'Task source and Delivery Baseline have no provable Git baseline.');
-  const originalBaselineTree = requireGitText(root, ['rev-parse', `${originalBaselineHead}^{tree}`], 'Original Task baseline tree is unavailable.');
-  return withTemporaryIndex(root, originalBaselineHead, ({ tree: sourceTree }) => ({
-    schemaVersion: 'buildr.git-task-contribution/v1',
-    identity: deltaIdentity(root, originalBaselineTree, sourceTree),
-    originalBaseline: { head: originalBaselineHead, tree: originalBaselineTree },
-    source: { head: sourceHead, tree: sourceTree },
-  }));
+function rawChanges(root, before, after) {
+  const result = git(root, ['diff', '--raw', '--full-index', '--abbrev=40', '--no-renames', '-z', `${before}..${after}`]);
+  if (result.status !== 0) return [];
+  const tokens = String(result.stdout).split('\0').filter(Boolean);
+  const changes = [];
+  for (let index = 0; index < tokens.length; index += 2) {
+    const header = tokens[index];
+    const file = tokens[index + 1];
+    const matched = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/.exec(header);
+    if (!matched || !file) continue;
+    changes.push({ path: file.replaceAll('\\', '/'), beforeMode: matched[1], afterMode: matched[2], beforeBlob: matched[3], afterBlob: matched[4], status: matched[5] });
+  }
+  return changes.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, expectedRoot = null }) {
@@ -141,14 +68,35 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
     const patch = contributionPatch(repositoryRoot, taskContribution.originalBaseline.tree, taskContribution.source.tree);
     if (patch.length > 0) {
       const applied = git(target, ['apply', '--index', '--binary', '-'], { encoding: 'buffer', input: patch });
-      if (applied.status !== 0) throw Object.assign(new Error('Task Contribution does not apply cleanly to the latest Delivery Baseline.'), { code: 'task-finish.contribution-apply-conflict', details: String(applied.stderr || applied.stdout).trim() });
+      if (applied.status !== 0) {
+        git(target, ['reset', '--hard', deliveryBaselineHead]);
+        return {
+          status: 'adaptation-required',
+          root: target,
+          head: deliveryBaselineHead,
+          tree: deliveryBaselineTree,
+          changedPaths: [],
+          deliveryBaseline: { head: deliveryBaselineHead, tree: deliveryBaselineTree },
+          taskContribution,
+          conflict: { code: 'task-finish.contribution-apply-conflict', diagnostic: String(applied.stderr || applied.stdout).trim() },
+        };
+      }
     }
     const appliedTree = requireGitText(target, ['write-tree'], 'Unable to write Delivery Carrier tree.');
     const appliedIdentity = deltaIdentity(target, deliveryBaselineTree, appliedTree);
-    if (appliedIdentity !== taskContribution.identity) throw Object.assign(new Error('Applied Task Contribution is not identity-equivalent on the latest Delivery Baseline.'), {
-      code: 'task-finish.contribution-not-equivalent',
-      details: { expected: taskContribution.identity, observed: appliedIdentity },
-    });
+    if (appliedIdentity !== taskContribution.identity) {
+      git(target, ['reset', '--hard', deliveryBaselineHead]);
+      return {
+        status: 'adaptation-required',
+        root: target,
+        head: deliveryBaselineHead,
+        tree: deliveryBaselineTree,
+        changedPaths: [],
+        deliveryBaseline: { head: deliveryBaselineHead, tree: deliveryBaselineTree },
+        taskContribution,
+        conflict: { code: 'task-finish.contribution-not-equivalent', diagnostic: { expected: taskContribution.identity, observed: appliedIdentity } },
+      };
+    }
     if (appliedTree !== deliveryBaselineTree) {
       const committed = git(target, ['commit', '-m', message]);
       if (committed.status !== 0) throw Object.assign(new Error(`Unable to commit isolated Delivery Carrier: ${committed.stderr || committed.stdout}`), { code: 'task-finish.commit-failed' });
@@ -157,10 +105,12 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
     const tree = requireGitText(target, ['rev-parse', 'HEAD^{tree}'], 'Delivery Carrier tree is unavailable.');
     const changedPaths = String(gitText(target, ['diff', '--name-only', `${deliveryBaselineHead}..${head}`]) || '').split('\n').filter(Boolean).sort();
     return {
+      status: 'prepared',
       root: target,
       head,
       tree,
       changedPaths,
+      changes: rawChanges(target, deliveryBaselineHead, head),
       deliveryBaseline: { head: deliveryBaselineHead, tree: deliveryBaselineTree },
       taskContribution: { ...taskContribution, appliedIdentity },
     };
@@ -171,6 +121,33 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
   }
 }
 
+export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier }) {
+  if (!carrier?.root || !carrierRegistration(repositoryRoot, carrier.root)) return { status: 'blocked', code: 'task-finish.carrier-ownership-unprovable' };
+  const baselineHead = carrier.deliveryBaseline?.head;
+  const baselineTree = carrier.deliveryBaseline?.tree;
+  if (!baselineHead || !baselineTree) return { status: 'blocked', code: 'task-finish.delivery-baseline-unprovable' };
+  const head = gitText(carrier.root, ['rev-parse', 'HEAD^{commit}']);
+  const tree = gitText(carrier.root, ['rev-parse', 'HEAD^{tree}']);
+  const status = git(carrier.root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+  if (!head || !tree || status.status !== 0 || status.stdout.length !== 0) return { status: 'blocked', code: 'task-finish.delivery-adaptation-dirty', observed: { head, tree, clean: false } };
+  if (head === baselineHead || tree === baselineTree) return { status: 'blocked', code: 'task-finish.delivery-adaptation-missing', observed: { head, tree } };
+  const ancestor = git(carrier.root, ['merge-base', '--is-ancestor', baselineHead, head]);
+  if (ancestor.status !== 0) return { status: 'blocked', code: 'task-finish.delivery-baseline-drift', observed: { baselineHead, head } };
+  const merges = gitText(carrier.root, ['rev-list', '--merges', `${baselineHead}..${head}`]);
+  if (merges) return { status: 'blocked', code: 'task-finish.delivery-adaptation-merge-commit', observed: { merges: merges.split('\n') } };
+  const changedPaths = String(gitText(carrier.root, ['diff', '--name-only', `${baselineHead}..${head}`]) || '').split('\n').filter(Boolean).sort();
+  const carrierDeltaIdentity = deltaIdentity(carrier.root, baselineTree, tree);
+  return {
+    status: 'adopted',
+    head,
+    tree,
+    changedPaths,
+    changes: rawChanges(carrier.root, baselineHead, head),
+    carrierDeltaIdentity,
+    cleanliness: { clean: true },
+  };
+}
+
 export function verifyGitTaskContributionCarrier({ repositoryRoot, carrier }) {
   if (!carrier?.root || !carrierRegistration(repositoryRoot, carrier.root)) return { status: 'stale', code: 'task-finish.carrier-ownership-unprovable' };
   const head = gitText(carrier.root, ['rev-parse', 'HEAD^{commit}']);
@@ -178,8 +155,12 @@ export function verifyGitTaskContributionCarrier({ repositoryRoot, carrier }) {
   const status = git(carrier.root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
   if (head !== carrier.head || tree !== carrier.tree || status.status !== 0 || status.stdout.length !== 0) return { status: 'stale', code: 'task-finish.carrier-changed', observed: { head, tree, clean: status.status === 0 && status.stdout.length === 0 } };
   const appliedIdentity = deltaIdentity(carrier.root, carrier.deliveryBaseline.tree, tree);
+  if (carrier.reuseMode === 'agent-reviewed-delivery-adaptation') {
+    if (appliedIdentity !== carrier.carrierDeltaIdentity) return { status: 'stale', code: 'task-finish.delivery-adaptation-drift', observed: { appliedIdentity } };
+    return { status: 'equivalent', appliedIdentity, reuseMode: carrier.reuseMode };
+  }
   if (appliedIdentity !== carrier.taskContribution.identity || appliedIdentity !== carrier.taskContribution.appliedIdentity) return { status: 'stale', code: 'task-finish.contribution-not-equivalent', observed: { appliedIdentity } };
-  return { status: 'equivalent', appliedIdentity };
+  return { status: 'equivalent', appliedIdentity, reuseMode: 'deterministic-reuse' };
 }
 
 export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof }) {
@@ -194,8 +175,13 @@ export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof 
     if (current.tree !== proof.taskContribution.source.tree) return { status: 'stale', code: 'git_worktree_contribution_source_drift' };
     const sourceIdentity = deltaIdentity(taskRoot, proof.taskContribution.originalBaseline.tree, current.tree);
     const deliveredIdentity = deltaIdentity(taskRoot, proof.deliveryBaseline.tree, proof.tree);
-    if (sourceIdentity !== proof.taskContribution.identity || deliveredIdentity !== proof.taskContribution.identity) return { status: 'stale', code: 'git_worktree_contribution_not_equivalent' };
-    return { status: 'equivalent', identity: sourceIdentity };
+    if (sourceIdentity !== proof.taskContribution.identity) return { status: 'stale', code: 'git_worktree_contribution_source_not_equivalent' };
+    if (proof.reuseMode === 'agent-reviewed-delivery-adaptation') {
+      if (!proof.carrierDeltaIdentity || deliveredIdentity !== proof.carrierDeltaIdentity) return { status: 'stale', code: 'git_worktree_delivery_adaptation_not_equivalent' };
+      return { status: 'equivalent', identity: sourceIdentity, carrierIdentity: deliveredIdentity, reuseMode: proof.reuseMode };
+    }
+    if (deliveredIdentity !== proof.taskContribution.identity) return { status: 'stale', code: 'git_worktree_contribution_not_equivalent' };
+    return { status: 'equivalent', identity: sourceIdentity, reuseMode: 'deterministic-reuse' };
   } catch (error) {
     return { status: 'stale', code: 'git_worktree_contribution_proof_failed', diagnostic: error.message };
   }

@@ -228,9 +228,9 @@
 
 ## 内容目标（Content Target）
 
-- 定义：Development完成内容修改、测试开发、current knowledge和Change最终处置后，对ready Environment全部Task scopes的逻辑source path与current bytes形成的稳定聚合identity。
-- 适用范围：formal Task Verification 的 target，以及 Task Candidate 的内容输入和交付载体等价核验。
-- 避免混用：不等于Git HEAD、commit、branch、worktree、Environment、runtime projection、Agent session或Task lifecycle metadata；Git tracking/staging/commit载体变化不改变相同bytes的Content Target。
+- 定义：Development完成内容修改、测试开发、current knowledge和Change最终处置后，对ready Environment全部Task scopes的原Task source snapshot形成的稳定deliverable内容聚合identity；不读取retained最新Delivery Baseline。
+- 适用范围：formal Task Verification 的 target，以及 Task Candidate 的内容输入和交付载体（Delivery Carrier）等价核验。
+- 避免混用：不等于Git HEAD、commit、branch、worktree、Delivery Baseline、Environment、runtime projection、Agent session或Task lifecycle metadata；Git tracking/staging/commit载体和纯基线前进不改变相同任务贡献的Content Target。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 任务候选（Task Candidate）
@@ -249,23 +249,30 @@
 
 ## 交付载体（Delivery Carrier）
 
-- 定义：交付载体（Delivery Carrier）是Task Finish为实际交付承载Task Contribution的commit、branch、tarball、安装包或其他隔离载体。
+- 定义：交付载体（Delivery Carrier）是Task Finish为实际交付承载Task Contribution的commit、branch、tarball、安装包或其他run-owned隔离载体；Git conflict时可先保留最新Delivery Baseline供Agent完成Delivery Adaptation。
 - 适用范围：Finish prepare/deliver与retained transition；当前Buildr自举adapter在run-owned detached Git worktree中形成commit。
-- 避免混用：Carrier identity可以随Delivery Baseline变化，但只有Task Contribution与Candidate绑定内容可证明等价时才能继续；Finish不得改写原Task worktree或借carrier准备修改贡献。
+- 避免混用：不是Task Candidate或Development Content Target；Finish不得改写原Task worktree。`agent-reviewed-delivery-adaptation`只表示Agent在carrier完成语义处理并通过适用checks，不表示Buildr确定性证明语义等价。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## 任务贡献（Task Contribution）
 
-- 定义：Git-backed Finish从原任务基线tree到current Task source snapshot tree观察到的canonical raw Git delta identity，绑定path、mode与before/after blob identities。
-- 适用范围：在最新Delivery Baseline创建隔离Delivery Carrier、verify等价与Environment cleanup独立复算。
-- 避免混用：不是Content Target、Candidate、changed-path列表或语义安全结论；Git clean apply和路径不重叠都不能替代identity证明或既有verification policy。
+- 定义：Git-backed Finish从原任务基线tree到冻结Task source snapshot tree观察到的canonical Git delta，绑定path、mode与before/after blob identities。
+- 适用范围：在最新Delivery Baseline机械创建隔离Delivery Carrier、记录适配来源facts与Environment cleanup独立复算；Development通过原Task source Content Target判断applicability，不消费最新baseline重算该identity。
+- 避免混用：不是Candidate、changed-path列表或语义安全结论；Git clean apply、clean rebase和路径不重叠都不能替代Agent语义核对、identity证明或既有verification policy。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## 交付基线（Delivery Baseline）
 
-- 定义：Task Finish prepare时实际读取的最新远端target commit/tree，是隔离Delivery Carrier应用Task Contribution的Git基础。
-- 适用范围：目标分支前进、target-race recovery、carrier/delivery/cleanup evidence。
+- 定义：Task Finish prepare读取的最新目标commit/tree，是机械应用Task Contribution、Delivery Adaptation和交付的Git基础。
+- 适用范围：目标分支前进、target-race recovery与carrier/delivery/cleanup evidence；不参与Development Content Target identity。
 - 避免混用：不是原任务基线、Content Target或Task Candidate；它前进不自动表示任务贡献变化，也不自动递增Candidate generation或重跑Verification/Completion Review。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## 交付适配（Delivery Adaptation）
+
+- 定义：Task Contribution无法机械应用到最新Delivery Baseline时，Agent只在run-owned隔离Delivery Carrier中完成的语义兼容处理；Buildr随后核验确定性Git、identity、cleanliness与Project policy要求的compatibility check facts。
+- 适用范围：Task Finish同一blocked run的`prepare → verify → deliver → cleanup`恢复；成功结果标记`agent-reviewed-delivery-adaptation`。
+- 避免混用：不是原Task worktree rebase、Candidate修改、formal Verification、Completion Review或Buildr语义等价证明；无法判断时必须保持blocked。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## 研发交接（Development Handoff）

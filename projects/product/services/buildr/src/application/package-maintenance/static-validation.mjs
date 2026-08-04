@@ -1011,8 +1011,10 @@ export function createPackageStaticValidator(deps) {
           'current formal Development handoff',
           'preflight → prepare → verify → deliver → cleanup',
           'nextWorkflow: task-development',
-          '不修复或恢复 run',
-          '不得手写 token',
+          '交付适配（Delivery Adaptation）',
+          'deterministic-reuse',
+          'agent-reviewed-delivery-adaptation',
+          '不得手写token',
           'agentProviderCompletions = 0',
           'formalVerificationExecutions = 0',
         ]) {

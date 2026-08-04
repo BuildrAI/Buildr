@@ -20,6 +20,10 @@ description: 正式实现任务在 Planning Review 后推进开发、稳定 Cont
 
 内容固定后，向 Development Application 提交完整 Change dispositions 并观察 Content Target。code-only Task 提交空数组。观察结果必须只含逻辑 selector、相对 source path、observer capability 与内容 identity，不得保存本机路径。
 
+Candidate freeze后交付基线（Delivery Baseline）前进时，不要rebase或修改原Task worktree。先只读inspect原Task source snapshot、Task Context、policy与gates；Task Development是Content Target、Candidate、Verification、Completion Review、decision与handoff是否current/stale的唯一authority。原Task source与这些输入未变时，全部facts保持current，直接让Finish在run-owned隔离交付载体（Delivery Carrier）处理交付适配（Delivery Adaptation）；不得调用observe覆盖Content Target、重跑正式Verification或递增generation。
+
+Finish的Git conflict只证明机械应用失败或需要语义判断，不证明任务贡献（Task Contribution）已改变。只有Agent确认任务行为、验收目标或原Task source/Task Contribution真实变化时，才调用observe并按本Skill重新Verification、Completion Review、handoff与freeze。无法判断时保持blocked，不交付或伪造复用evidence。
+
 ## Verification policy 与正式 Verification
 
 根据 Task scope 和 Task Verification Application 返回的 current declarations，形成一份完整 policy：
@@ -46,8 +50,8 @@ selected `buildr.task-asset-review@3` provider ready且存在当前Task observat
 
 ## 交给 Finish
 
-handoff 完成后调用 `task-finish`。Finish 只能读取该 snapshot、准备内容等价 Delivery Carrier、交付并清理；它不得收敛 Change、同步候选内容、生成 Candidate、发起 Verification/Completion Review、接受风险或修改 Development Receipt。等价检查失败时回到本 Skill。
+handoff 完成后调用 `task-finish`。Finish 只能读取该 snapshot、准备或保留隔离Delivery Carrier、交付并清理；它不得收敛Change、同步Candidate内容、生成Candidate、发起正式Verification/Completion Review、接受风险或修改Development Receipt。只有Development Application报告applicability stale时才回到本Skill；Finish机械冲突留在carrier适配路径。
 
 ## 完成证据
 
-报告 Content Target identity、policy identity、Verification Result digest/applicability、Candidate identity/generation、Completion Result digest/applicability、decision、handoff identity，以及 Finish carrier equivalence。不得把 Product Candidate verification 误报成 Task Candidate，也不得把 commit/branch/worktree 当 Candidate。
+报告 Content Target identity、policy identity、Verification Result digest/applicability、Candidate identity/generation、Completion Result digest/applicability、decision、handoff identity，以及适用的Task Contribution/Delivery Baseline观察与Finish carrier equivalence。不得把 Product Candidate verification 误报成 Task Candidate，也不得把 commit/branch/worktree 当 Candidate。

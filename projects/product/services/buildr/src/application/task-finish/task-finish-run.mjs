@@ -269,7 +269,6 @@ function applyPhaseOutput(run, phaseId, output) {
 
 function resetTargetRaceCarrierPhases(run) {
   const targetRace = run.status === 'blocked'
-    && run.resume?.phase === 'deliver'
     && run.primaryFailure?.code === 'task-finish.target-race';
   if (!targetRace) return false;
   const reset = new Set(['prepare', 'verify', 'deliver', 'cleanup']);
@@ -410,7 +409,12 @@ export function finishResult(run, clock = Date.now) {
     nextWorkflow: run.status === 'failed'
       ? (run.primaryFailure?.failureClass === 'upstream-candidate-defect' ? 'task-development' : 'task-finish-investigation')
       : null,
-    nextAction: run.status === 'blocked' ? 'repeat-task-finish-run-with-resume-token' : null,
+    nextAction: run.status === 'blocked'
+      ? (run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
+        ? 'adapt-run-owned-delivery-carrier-and-repeat-task-finish-run-with-resume-token'
+        : 'repeat-task-finish-run-with-resume-token')
+      : null,
+    reuseMode: run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
     equivalence: clone(run.equivalence),
     delivery: clone(run.delivery),
     completion: clone(run.completion),

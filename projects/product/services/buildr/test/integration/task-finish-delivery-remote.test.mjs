@@ -130,9 +130,9 @@ test('workspace source 缺少 Environment remote 时解析 retained branch upstr
 test('push 后远端回读不一致时返回 target race 且不形成 remoteAfterRef', async (t) => {
   const data = deliveryFixture(t, ({ expectedTargetRef }) => `#!/bin/sh\nread old new ref\ngit update-ref "$ref" "${expectedTargetRef}" "$new"\n`);
   const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'failed', JSON.stringify(result, null, 2));
+  assert.equal(result.status, 'blocked', JSON.stringify(result, null, 2));
   assert.equal(result.failure.code, 'task-finish.target-race');
-  assert.equal(result.output.delivery.status, 'failed');
+  assert.equal(result.output.delivery.status, 'blocked');
   assert.equal(Object.hasOwn(result.output.delivery, 'remoteAfterRef'), false);
   assert.deepEqual(result.operations.slice(-2).map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
   assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], data.expectedTargetRef);

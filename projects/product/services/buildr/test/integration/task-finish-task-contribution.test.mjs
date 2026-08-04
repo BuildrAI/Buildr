@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import {
+  adoptAgentReviewedGitCarrier,
   createIsolatedGitCarrier,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
@@ -51,13 +52,14 @@ test('最新 Delivery Baseline 上干净应用时 Task Contribution identity 保
   const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'clean-reuse', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
 
   assert.equal(carrier.taskContribution.appliedIdentity, contribution.identity);
+  assert.equal(carrier.changes.find((change) => change.path === 'feature.txt').afterBlob.length, 40);
   assert.equal(verifyGitTaskContributionCarrier({ repositoryRoot: taskRoot, carrier }).status, 'equivalent');
   assert.equal(git(carrier.root, ['show', 'HEAD:baseline-advance.txt']), 'advanced independently');
   assert.equal(git(carrier.root, ['show', 'HEAD:feature.txt']), 'candidate contribution');
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'clean-reuse', expectedRoot: carrier.root }).status, 'removed');
 });
 
-test('Delivery Baseline 与 Task Contribution 冲突时 fail closed', (t) => {
+test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 Agent-reviewed adaptation', (t) => {
   const { root, taskRoot } = repository(t);
   fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
   git(taskRoot, ['add', 'shared.txt']);
@@ -68,11 +70,27 @@ test('Delivery Baseline 与 Task Contribution 冲突时 fail closed', (t) => {
   const baselineHead = git(root, ['rev-parse', 'HEAD']);
   const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
 
-  assert.throws(
-    () => createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'conflict', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' }),
-    (error) => error.code === 'task-finish.contribution-apply-conflict',
-  );
-  assert.equal(fs.existsSync(path.join(root, '.buildr', 'task-finish', 'carriers', 'conflict')), false);
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'conflict', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
+  assert.equal(carrier.status, 'adaptation-required');
+  assert.equal(carrier.conflict.code, 'task-finish.contribution-apply-conflict');
+  assert.equal(git(carrier.root, ['status', '--porcelain']), '');
+  assert.equal(git(carrier.root, ['show', 'HEAD:shared.txt']), 'baseline meaning');
+
+  fs.writeFileSync(path.join(carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
+  git(carrier.root, ['add', 'shared.txt']);
+  git(carrier.root, ['commit', '-m', 'adapt delivery carrier']);
+  const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
+  assert.equal(adopted.status, 'adopted');
+  assert.equal(adopted.changes[0].beforeMode, '100644');
+  assert.equal(adopted.changes[0].afterBlob.length, 40);
+  const adaptedCarrier = { ...carrier, ...adopted, reuseMode: 'agent-reviewed-delivery-adaptation' };
+  const verified = verifyGitTaskContributionCarrier({ repositoryRoot: taskRoot, carrier: adaptedCarrier });
+  assert.equal(verified.status, 'equivalent');
+  assert.equal(verified.reuseMode, 'agent-reviewed-delivery-adaptation');
+  const cleanupProof = verifyDeliveredGitTaskContribution({ taskRoot, targetRef: adaptedCarrier.head, proof: adaptedCarrier });
+  assert.equal(cleanupProof.status, 'equivalent');
+  assert.equal(cleanupProof.reuseMode, 'agent-reviewed-delivery-adaptation');
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'conflict', expectedRoot: carrier.root }).status, 'removed');
 });
 
 test('Task source 在 proof 后漂移时 cleanup 拒绝贡献复用', (t) => {

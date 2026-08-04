@@ -87,7 +87,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function contentTarget(context) {
-    const components = runtime.observeTaskContentComponents(context.scopes);
+    const components = runtime.observeTaskContentComponents(context.scopes, { repositories: context.repositories || [] });
     return normalizeTaskContentTarget({ identity: taskDevelopmentDigest({ components }), components });
   }
 

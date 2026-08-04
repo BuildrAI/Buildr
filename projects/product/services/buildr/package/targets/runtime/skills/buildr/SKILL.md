@@ -49,7 +49,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 在 Planning Review 后推进实现、稳定 Content Target、形成 verification policy、正式 Verification、Task Candidate、Completion Review、风险决定与 handoff | `buildr.task-development/v1` selected provider |
-| 消费 current Development handoff、准备内容等价 carrier、推进 retained target 并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；handoff 或等价性问题返回 Task Development |
+| 消费 current Development handoff、在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进 retained target 并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；只有 Development applicability stale 才返回 Task Development |
 | 已明确 repository/ref 的 commit、push、commit+push 或其他已选 Git Operation | `buildr.git-operations/v1` selected provider；本 Skill 或直接用户继续决定 operation、目标与顺序 |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
 | 沉淀每次会话必须遵守的约束 | 规则（Rules） |

@@ -5,9 +5,12 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { registerTaskDevelopmentApplication } from '../../src/application/task-development/task-development-application.mjs';
 import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
 import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
 import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
+import { registerContentTargetObserver } from '../../src/infrastructure/content/content-target-observer.mjs';
 
 function command(cwd, executable, args) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -70,6 +73,7 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRem
   const execution = () => ({
     ready: true,
     taskId: task,
+    receiptSchema: 'buildr.task-environment-receipt/v2',
     workspaceRoot: retained,
     environmentRoot,
     validationRoot: environmentRoot,
@@ -85,13 +89,14 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRem
     },
     repositories: [{
       selector: 'workspace',
+      sourceRepository: retained,
       checkoutPath: environmentRoot,
       branch: `codex/${task}`,
       remote: repositoryRemote,
       startPoint: repositoryStartPoint,
       state: 'ready',
     }],
-    scopes: [{ selector: 'workspace', executionRoot: environmentRoot, validationRoot: environmentRoot, shared: false }],
+    scopes: [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: environmentRoot, validationRoot: environmentRoot, shared: false }],
     resources: [],
   });
   return {
@@ -119,6 +124,59 @@ function taskDevelopmentFixture() {
     inspectTaskDevelopment: () => ({ development: { receipt, applicability: { handoff: 'current' } } }),
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent', development: { receipt, applicability: { handoff: 'current' } }, effects: [] }),
   };
+}
+
+function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment }) {
+  let receipt = null;
+  const planningTargetIdentity = taskDevelopmentDigest(`${task}:planning`);
+  const declarationIdentity = taskDevelopmentDigest(`${task}:declaration`);
+  const runtime = {
+    ...environment,
+    inspectTaskRecord: () => ({ record: { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active' } }),
+    observeTaskVerificationDeclarations: () => [{
+      project: 'product', path: 'projects/product/verification.yml', identity: declarationIdentity, valid: true,
+      declaration: { capabilities: [{ id: 'product.delivery', requiredForDelivery: true }] },
+    }],
+    inspectTaskReview: (_root, _task, options = {}) => ({ slots: {
+      planning: {
+        present: true, applicability: options.planningTargetIdentity && options.planningTargetIdentity !== planningTargetIdentity ? 'stale' : 'current',
+        resultDigest: taskDevelopmentDigest(`${task}:planning-result`), result: { targetIdentity: planningTargetIdentity, conclusion: { outcome: 'ready' } },
+      },
+      completion: options.completionTargetIdentity ? {
+        present: true, applicability: 'current', resultDigest: taskDevelopmentDigest(`${task}:completion-result`),
+        result: { targetIdentity: options.completionTargetIdentity, conclusion: { outcome: 'ready' } },
+      } : { present: false, applicability: 'unknown' },
+    } }),
+    inspectTaskVerification: (_root, _task, options = {}) => ({ slot: {
+      present: true,
+      applicability: { status: 'current' },
+      resultDigest: taskDevelopmentDigest(`${task}:verification-result`),
+      result: {
+        target: { identity: options.targetIdentity },
+        capabilities: [{ project: 'product', capability: 'product.delivery', outcome: 'passed', facts: ['Passed.'] }],
+        coverageGaps: [], conclusion: { outcome: 'passed' },
+      },
+    } }),
+    readTaskDevelopmentPersistence: (_root, _task, options = {}) => {
+      if (!receipt && options.optional) return null;
+      assert.ok(receipt, 'Development Receipt must exist.');
+      return { root: retained, file: path.join(retained, '.buildr', 'tasks', task, 'development.yml'), receipt, receiptDigest: taskDevelopmentDigest(receipt) };
+    },
+    writeTaskDevelopmentPersistence: (_root, next) => {
+      receipt = next;
+      return { root: retained, file: path.join(retained, '.buildr', 'tasks', task, 'development.yml'), receipt, receiptDigest: taskDevelopmentDigest(receipt) };
+    },
+  };
+  registerContentTargetObserver(runtime);
+  registerTaskDevelopmentApplication(runtime);
+  runtime.observeTaskDevelopment(retained, task, { changeDispositions: [], planningTargetIdentity });
+  runtime.recordTaskDevelopmentPolicy(retained, task, { capabilities: [{ project: 'product', capability: 'product.delivery', required: true }], coverageGaps: [], overrides: [] });
+  runtime.freezeTaskDevelopmentCandidate(retained, task, { planningTargetIdentity });
+  runtime.decideTaskDevelopment(retained, task, { outcome: 'proceed', summary: 'Current gates.', risks: [] });
+  runtime.createTaskDevelopmentHandoff(retained, task);
+  const before = runtime.inspectTaskDevelopment(retained, task);
+  assert.equal(before.development.applicability.handoff, 'current');
+  return runtime;
 }
 
 test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup', async (t) => {
@@ -165,6 +223,9 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   const candidateHead = command(environmentRoot, 'git', ['rev-parse', 'HEAD']);
   command(environmentRoot, 'git', ['add', '-f', '.buildr/tracked-metadata.json']);
   command(environmentRoot, 'git', ['add', '-f', path.relative(environmentRoot, nestedMetadata)]);
+  const environment = taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRemote: null, repositoryStartPoint: 'HEAD' });
+  const runtime = realTaskDevelopmentFixture({ task, environmentRoot, retained, environment });
+  const frozen = runtime.inspectTaskDevelopment(retained, task).development.receipt.candidate;
   fs.writeFileSync(path.join(retained, 'baseline-advance.txt'), 'new delivery baseline\n');
   command(retained, 'git', ['add', 'baseline-advance.txt']);
   command(retained, 'git', ['commit', '-m', 'advance delivery baseline']);
@@ -178,9 +239,7 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   const originalPath = process.env.PATH;
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
-  const runtime = {
-    ...taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRemote: null, repositoryStartPoint: 'HEAD' }),
-    ...taskDevelopmentFixture(),
+  Object.assign(runtime, {
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
     optionValue: (args, name, fallback) => {
       const index = args.indexOf(name);
@@ -190,8 +249,12 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
       const index = args.indexOf('--target');
       return { args, targetRoot: path.resolve(index === -1 ? retained : args[index + 1]) };
     },
-  };
+  });
   registerTaskFinishApplication(runtime);
+  const gateObservation = runtime.inspectTaskDevelopment(retained, task);
+  assert.equal(gateObservation.development.applicability.contentTarget, 'current');
+  assert.equal(gateObservation.development.applicability.candidate, 'current');
+  assert.equal(gateObservation.development.applicability.handoff, 'current');
   await assert.rejects(
     runtime.taskFinish('run', ['--task', task, '--target-branch', 'main', '--target', retained]),
     (error) => error.code === 'task_finish.target_branch_mismatch' && error.details.retainedBranch === 'dev',
@@ -207,7 +270,7 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
-  assert.deepEqual(result.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
+  assert.deepEqual(result.candidate, { identity: frozen.identity, generation: 1, contentTargetIdentity: frozen.contentTargetIdentity });
   assert.equal(result.identity.remote, 'origin');
   assert.equal(result.identity.targetBranch, 'dev');
   assert.equal(result.delivery.remoteAfterRef, result.carrier.head);
@@ -224,6 +287,105 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   assert.notEqual(spawnSync('git', ['cat-file', '-e', `${result.carrier.head}:projects/product/openspec/changes/archive/finish-journey/.buildr/convergence-receipt.json`], { cwd: retained }).status, 0);
   assert.equal(fs.existsSync(result.completion.receipt), true);
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', result.runId)), false);
+});
+
+test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery Adaptation恢复交付', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-adaptation-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const seed = path.join(fixture, 'seed');
+  const remote = path.join(fixture, 'remote.git');
+  const retained = path.join(fixture, 'workspace');
+  fs.mkdirSync(seed);
+  command(seed, 'git', ['init', '-b', 'dev']);
+  command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
+  fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
+  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
+  fs.writeFileSync(path.join(seed, 'shared.txt'), 'baseline meaning\n');
+  command(seed, 'git', ['add', '-A']);
+  command(seed, 'git', ['commit', '-m', 'baseline']);
+  command(fixture, 'git', ['init', '--bare', remote]);
+  command(seed, 'git', ['remote', 'add', 'origin', remote]);
+  command(seed, 'git', ['push', '-u', 'origin', 'dev']);
+  command(fixture, 'git', ['clone', '--branch', 'dev', remote, retained]);
+  command(retained, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(retained, 'git', ['config', 'user.email', 'journey@example.com']);
+
+  const task = 'finish-adaptation-task';
+  const environmentRoot = path.join(retained, '.worktrees', task);
+  command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
+  fs.writeFileSync(path.join(environmentRoot, 'shared.txt'), 'task meaning\n');
+  command(environmentRoot, 'git', ['add', 'shared.txt']);
+  command(environmentRoot, 'git', ['commit', '-m', 'implement candidate']);
+  const taskHeadBeforeFinish = command(environmentRoot, 'git', ['rev-parse', 'HEAD']);
+  const environment = taskEnvironmentFixture({ task, environmentRoot, retained });
+  const runtime = realTaskDevelopmentFixture({ task, environmentRoot, retained, environment });
+  const frozen = runtime.inspectTaskDevelopment(retained, task).development.receipt.candidate;
+
+  fs.writeFileSync(path.join(environmentRoot, 'shared.txt'), 'drifted task meaning\n');
+  assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'stale');
+  fs.writeFileSync(path.join(environmentRoot, 'shared.txt'), 'task meaning\n');
+  assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current');
+
+  fs.writeFileSync(path.join(retained, 'shared.txt'), 'new baseline meaning\n');
+  command(retained, 'git', ['add', 'shared.txt']);
+  command(retained, 'git', ['commit', '-m', 'advance conflicting baseline']);
+  const advancedBaselineHead = command(retained, 'git', ['rev-parse', 'HEAD']);
+  command(retained, 'git', ['push', 'origin', 'dev']);
+
+  let compatibilityStatus = 'failed';
+  Object.assign(runtime, {
+    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
+    runTaskFinishCarrierCompatibility: ({ carrier }) => ({ status: compatibilityStatus, checks: [{ id: 'product.delivery-carrier-compatibility', status: compatibilityStatus, carrierTree: carrier.tree }], evidenceIdentity: `compatibility-${carrier.tree}-${compatibilityStatus}` }),
+    optionValue: (args, name, fallback) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget: (args) => {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? retained : args[index + 1]) };
+    },
+  });
+  registerTaskFinishApplication(runtime);
+  const first = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
+
+  assert.equal(first.status, 'blocked', JSON.stringify(first, null, 2));
+  assert.equal(first.primaryFailure.code, 'task-finish.delivery-adaptation-required');
+  assert.equal(first.primaryFailure.failureClass, 'semantic-review-required');
+  assert.equal(first.nextWorkflow, null);
+  assert.equal(first.reuseMode, 'adaptation-required');
+  assert.equal(first.candidate.generation, 1);
+  assert.equal(first.metrics.formalVerificationExecutions, 0);
+  assert.equal(fs.existsSync(environmentRoot), true);
+  assert.equal(command(environmentRoot, 'git', ['rev-parse', 'HEAD']), taskHeadBeforeFinish);
+  assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current');
+
+  fs.writeFileSync(path.join(first.carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
+  command(first.carrier.root, 'git', ['add', 'shared.txt']);
+  command(first.carrier.root, 'git', ['commit', '-m', 'adapt delivery carrier']);
+  const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
+  assert.equal(compatibilityFailure.status, 'blocked');
+  assert.equal(compatibilityFailure.primaryFailure.code, 'task-finish.compatibility-checks-failed');
+  assert.equal(compatibilityFailure.delivery, null);
+  assert.equal(fs.existsSync(environmentRoot), true);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], advancedBaselineHead);
+
+  compatibilityStatus = 'passed';
+  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', compatibilityFailure.resume.token, '--target', retained]);
+
+  assert.equal(second.status, 'complete', JSON.stringify(second, null, 2));
+  assert.equal(second.reuseMode, 'agent-reviewed-delivery-adaptation');
+  assert.equal(second.equivalence.semanticEquivalence, 'agent-reviewed-not-proven-by-buildr');
+  assert.equal(second.carrier.adaptation.compatibilityChecks.status, 'passed');
+  assert.equal(second.candidate.identity, frozen.identity);
+  assert.equal(second.candidate.generation, 1);
+  assert.equal(second.metrics.formalVerificationExecutions, 0);
+  assert.equal(second.carrier.deliveryBaseline.head, advancedBaselineHead);
+  assert.equal(second.delivery.remoteAfterRef, second.carrier.head);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], second.carrier.head);
+  assert.equal(fs.existsSync(environmentRoot), false);
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', second.runId)), false);
 });
 
 test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
