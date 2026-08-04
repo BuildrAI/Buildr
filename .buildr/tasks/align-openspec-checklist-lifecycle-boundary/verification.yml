@@ -1,0 +1,25 @@
+schemaVersion: buildr.task-verification-result/v1
+taskId: align-openspec-checklist-lifecycle-boundary
+target:
+  identity: sha256-03477df3ff2d7bceb7a4bb7236666a3d0e50ab3d4a8bb96ab50ab5d325e7b8a5
+  summary: Archived OpenSpec checklist lifecycle boundary implementation and synced workspace projection
+declarations:
+  - project: product
+    path: projects/product/verification.yml
+    identity: sha256-cc41d4e4786f39e46e793dc98fead1218104e3420b2acbc39fc5775b10086788
+capabilities:
+  - project: product
+    capability: product.delivery
+    outcome: passed
+    facts:
+      - Affected delivery plan passed for the frozen Product target.
+  - project: product
+    capability: product.openspec-convergence-journey
+    outcome: passed
+    facts:
+      - Deterministic convergence journey passed, including checklist fail-closed behavior before writes.
+coverageGaps: []
+conclusion:
+  outcome: passed
+  summary: Formal Product delivery and OpenSpec convergence capabilities passed for the stable Content Target.
+completedAt: 2026-08-04T10:23:25.559Z
