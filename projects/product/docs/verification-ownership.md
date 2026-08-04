@@ -85,7 +85,7 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、Contract 和四项低成本静态/adapter 门禁；不含 System、npm pack、浏览器、恢复矩阵 |
 | `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；聚合层可排除已有专属 slice 的路径；未映射 fail closed；命中 registry/planner/runner/声明/timing 等全局 owner 时确定性扩展 full |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
-| `test:candidate` | 显式 Product Full | 固定选择 37 个 Candidate owners，不按 diff 缩小；输出 transient timing/diagnostics |
+| `test:candidate` | 显式 Product Full | 固定选择 38 个 Candidate owners，不按 diff 缩小；输出 transient timing/diagnostics |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Local App 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
 
@@ -138,10 +138,9 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 
 ## 8. 下一轮优化方案
 
-1. 单独优化 Task Development Integration 的 2 个用例初始化：只复用不可变基础并为每个 mutation 保留独立 clone；不把它降级为 Unit 或跳过生命周期事实。
-2. 分析六个 package selector 重复做的 213-file static preparation；只在同一 verifier 内能保留独立 diagnostics 时共享，不引入跨 verifier daemon/cache。
-3. 单独分析 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程；prepare/cleanup 事实仍必须真实执行。
-4. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
+1. 分析六个 package selector 重复做的 213-file static preparation；只在同一 verifier 内能保留独立 diagnostics 时共享，不引入跨 verifier daemon/cache。
+2. 单独分析 `worktree-create` 的 6 个串行 Journey，尤其三项真实 Task Environment/Git 流程；prepare/cleanup 事实仍必须真实执行。
+3. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
 
 ## 9. 迭代记录
 
@@ -158,3 +157,4 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 9. 收窄 affected | 用直接 owner 替代“最终可到达”关系；历史 Task Finish 计划从 20 降至 15 step，完整 Integration/System 替换为 3+2 文件 slice，安全内容扫描保留，Full membership 不变；14 路 System 暴露的固定 25ms 进程退出断言改为 1s 有界最终退出，不放宽清理要求 |
 | 10. 优化 runtime parity | packaged Skill 内容改走约 2s 的 7-adapter 投射 slice；完整 parity 复用一次 seed 并隔离 clone，补齐 7-adapter inventory/Doctor 与 5-family lifecycle，最终内容树两轮中位数为 21.85s，较 35.34s 基线下降约 38%，Candidate gate 数不变 |
 | 11. 预算内层并发 | Task Development 从普通 Integration 聚合中拆出，保留 Integration 边界与全部 Candidate 证据；profile 对重型 runner 注入有限 worker budget。相同冻结树对照证明 System 与 Task Development 并行会相互放大，二者使用单一压力容量后 Full 从 174.508s 降至 149.979s；下一步只优化该专项的不可变 fixture 准备 |
+| 12. 验证 Task Development fixture 假设 | 两用例直接运行总计 98.95s；共享方案中的真实 `init + project create` 基线仅约 2.82s，而每例 Development 生命周期仍约 46–61s。约 3% 的潜在收益不足以承担新的共享 fixture 维护成本，因此不保留该 helper；下一步转查 package selector 的重复静态准备 |
