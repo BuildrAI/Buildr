@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
 import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
 import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 
@@ -65,7 +66,7 @@ const fakeOpenSpec = `#!/usr/bin/env node
 process.stdout.write(JSON.stringify({ summary: { passed: 1, failed: 0 } }) + '\\n');
 `;
 
-function taskEnvironmentFixture({ task, environmentRoot, retained }) {
+function taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRemote = 'origin', repositoryStartPoint = 'dev' }) {
   const execution = () => ({
     ready: true,
     taskId: task,
@@ -86,8 +87,8 @@ function taskEnvironmentFixture({ task, environmentRoot, retained }) {
       selector: 'workspace',
       checkoutPath: environmentRoot,
       branch: `codex/${task}`,
-      remote: 'origin',
-      startPoint: 'dev',
+      remote: repositoryRemote,
+      startPoint: repositoryStartPoint,
       state: 'ready',
     }],
     scopes: [{ selector: 'workspace', executionRoot: environmentRoot, validationRoot: environmentRoot, shared: false }],
@@ -172,28 +173,25 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
-    ...taskEnvironmentFixture({ task, environmentRoot, retained }),
+    ...taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRemote: null, repositoryStartPoint: 'HEAD' }),
     ...taskDevelopmentFixture(),
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
-  };
-  const run = createFinishRun({
-    root: environmentRoot,
-    runId: 'product-journey',
-    identity: {
-      task,
-      handoffIdentity: 'sha256-handoff',
-      candidateIdentity: 'sha256-candidate',
-      contentTargetIdentity: 'sha256-content-target',
-      agent: 'codex',
-      targetBranch: 'dev',
-      remote: 'origin',
-      environmentRoot,
-      workspaceRoot: retained,
-      workspaceNodeIdentity: 'sha256-workspace-node',
+    optionValue: (args, name, fallback) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
     },
-  });
-  const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot });
-  const result = await executeFinishRun({ root: environmentRoot, run, handlers });
+    withResolvedTarget: (args) => {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? retained : args[index + 1]) };
+    },
+  };
+  registerTaskFinishApplication(runtime);
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--target-branch', 'main', '--target', retained]),
+    (error) => error.code === 'task_finish.target_branch_mismatch' && error.details.retainedBranch === 'dev',
+  );
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'runs')), false);
+  const result = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
@@ -203,6 +201,10 @@ test('真实产品执行器单次完成 commit、push、retained transition 与 
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
+  assert.equal(result.identity.remote, 'origin');
+  assert.equal(result.identity.targetBranch, 'dev');
+  assert.equal(result.delivery.remoteAfterRef, result.carrier.head);
+  assert.deepEqual(result.phases.find((phase) => phase.id === 'deliver').operations.filter((operation) => operation.id === 'deliver-push' || operation.id === 'deliver-target-readback').map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.carrier.head);

@@ -1,10 +1,13 @@
 import path from 'node:path';
 
+import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
+import { resolveTaskFinishTargetBranch } from './task-finish-delivery-target.mjs';
 import { executeFinishRun, inspectFinishRun, readFinishRun, resolveFinishRun } from './task-finish-run.mjs';
 
-function inputError(code, message, action) {
+function inputError(code, message, action, details = null) {
   const error = new Error(message);
   Object.assign(error, { code, usage: `buildr help task finish ${action}`, nextAction: `buildr help task finish ${action}` });
+  if (details) error.details = details;
   return error;
 }
 
@@ -52,10 +55,29 @@ export function registerTaskFinishApplication(runtime) {
       const repository = context.repositories?.find((entry) => entry.selector === 'workspace') || context.repositories?.[0] || {};
       const workspaceNodeIdentity = runtime.workspaceNodeExecution(context.validationRoot).identity?.digest;
       if (!workspaceNodeIdentity) throw inputError('task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.', 'run');
-      const targetBranch = optionValue(command.args, '--target-branch', repository.startPoint || null);
-      if (!targetBranch) throw inputError('task_finish.target_branch_unavailable', 'Task Finish could not derive the target branch; pass --target-branch.', 'run');
+      let deliveryTarget;
+      try {
+        deliveryTarget = resolveTaskFinishTargetBranch({
+          root: context.workspaceRoot,
+          requestedTargetBranch: optionValue(command.args, '--target-branch', null),
+        });
+      } catch (error) {
+        throw inputError(error.code || 'task_finish.target_branch_unavailable', error.message, 'run', error.details);
+      }
+      const targetBranch = deliveryTarget.targetBranch;
       const requestedAgent = optionValue(command.args, '--agent', context.controller.adapter);
       if (requestedAgent !== context.controller.adapter) throw inputError('task_finish.environment_mismatch', 'Task Finish agent must match the Task Environment adapter.', 'run');
+      let deliveryRemote;
+      try {
+        deliveryRemote = resolveTaskFinishDeliveryRemote({
+          root: context.workspaceRoot,
+          targetBranch,
+          requestedRemote: optionValue(command.args, '--remote', null),
+          environmentRemote: repository.remote || null,
+        });
+      } catch (error) {
+        throw inputError(error.code || 'task_finish.remote_unavailable', error.message, 'run', error.details);
+      }
       finishRun = resolveFinishRun({
         root,
         runId,
@@ -67,7 +89,7 @@ export function registerTaskFinishApplication(runtime) {
           contentTargetIdentity: handoff.candidate.contentTargetIdentity,
           agent: requestedAgent,
           targetBranch,
-          remote: optionValue(command.args, '--remote', repository.remote || null),
+          remote: deliveryRemote.remote,
           environmentRoot: context.validationRoot,
           workspaceRoot: context.workspaceRoot,
           workspaceNodeIdentity,

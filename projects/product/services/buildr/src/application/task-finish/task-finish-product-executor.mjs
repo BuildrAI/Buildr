@@ -5,6 +5,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
 import { classifyRetainedConvergencePaths } from './task-finish-impact.mjs';
+import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { acquireFinishTargetLease, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
 
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -225,6 +226,16 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       else if (!retainedReadiness.ready) checks.push(finding('retained-workspace', 'error', 'task-finish.retained-workspace-dirty', 'Retained Workspace has unrelated uncommitted changes.', { failureClass: 'transient-external-condition', unrelated: retainedReadiness.unrelated }));
       else checks.push(finding('retained-workspace', 'ok', 'task-finish.retained-workspace-ready', 'Retained Workspace is ready for target transition.', { workspaceMetadata: retainedReadiness.workspaceMetadata }));
 
+      if (!run.identity.remote) checks.push(finding('delivery-remote', 'error', 'task-finish.delivery-remote-missing', 'Task Finish run is not bound to a retained Workspace delivery remote.'));
+      else {
+        try {
+          const resolved = resolveTaskFinishDeliveryRemote({ root: run.identity.workspaceRoot, targetBranch: run.identity.targetBranch, requestedRemote: run.identity.remote });
+          checks.push(finding('delivery-remote', 'ok', 'task-finish.delivery-remote-ready', `Delivery remote ${resolved.remote} is configured in the retained Workspace.`));
+        } catch (error) {
+          checks.push(finding('delivery-remote', 'error', 'task-finish.delivery-remote-unavailable', error.message, { failureClass: 'transient-external-condition', details: error.details }));
+        }
+      }
+
       const errors = checks.filter((item) => item.severity === 'error');
       if (errors.length) {
         const transientOnly = errors.every((item) => item.failureClass === 'transient-external-condition');
@@ -239,6 +250,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       if (!currentWorkspaceNode(run).matches) return { status: 'failed', failure: { operation: 'workspace-node', failureClass: 'upstream-candidate-defect', code: 'task-finish.workspace-node-drift', message: 'Workspace Node identity changed before carrier preparation.' } };
       const context = taskEnvironment(run);
       if (!context?.ready) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task Environment is not ready.' } };
+      if (!run.identity.remote) return { status: 'failed', failure: { operation: 'delivery-remote', failureClass: 'product-execution-failure', code: 'task-finish.delivery-remote-missing', message: 'Task Finish cannot prepare a delivery carrier without a frozen delivery remote.' } };
 
       const stagedMetadata = gitNulList(environmentRoot, ['diff', '--cached', '--name-only', '--no-renames', '-z']);
       if (stagedMetadata === null) return { status: 'failed', operations, failure: { operation: 'carrier-commit', failureClass: 'product-execution-failure', code: 'task-finish.git-metadata-inventory-failed', message: 'Unable to inventory staged Buildr control metadata.' } };
@@ -267,13 +279,10 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       if (refreshed) operations.push(refreshed.observation);
       if (!refreshed || refreshed.result.status !== 0 || refreshed.payload?.status !== 'ready') return { status: 'failed', operations, failure: { operation: 'environment-refresh', failureClass: 'product-execution-failure', code: refreshed?.payload?.diagnostic?.code || 'task-finish.environment-refresh-failed', exitCode: refreshed?.result.status ?? null, message: refreshed?.payload?.diagnostic?.message || 'Environment Receipt did not accept the carrier identity.', diagnostic: refreshed?.payload?.diagnostic || refreshed?.observation.stderr || null } };
 
-      let targetRef = run.identity.targetBranch;
-      if (run.identity.remote) {
-        const fetched = git(environmentRoot, 'prepare-target-fetch', ['fetch', run.identity.remote, run.identity.targetBranch]);
-        operations.push(fetched.observation);
-        if (fetched.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-fetch', failureClass: 'transient-external-condition', code: 'task-finish.target-fetch-failed', exitCode: fetched.result.status, message: 'Unable to observe the target branch.', diagnostic: fetched.observation.stderr } };
-        targetRef = `${run.identity.remote}/${run.identity.targetBranch}`;
-      }
+      const fetched = git(environmentRoot, 'prepare-target-fetch', ['fetch', run.identity.remote, run.identity.targetBranch]);
+      operations.push(fetched.observation);
+      if (fetched.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-fetch', failureClass: 'transient-external-condition', code: 'task-finish.target-fetch-failed', exitCode: fetched.result.status, message: 'Unable to observe the target branch.', diagnostic: fetched.observation.stderr } };
+      const targetRef = `${run.identity.remote}/${run.identity.targetBranch}`;
       const expectedTargetRef = gitText(environmentRoot, ['rev-parse', `${targetRef}^{commit}`]);
       if (!expectedTargetRef) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-ref-missing', message: `Target ref is unavailable: ${targetRef}` } };
       const ancestry = git(environmentRoot, 'prepare-fast-forward-check', ['merge-base', '--is-ancestor', expectedTargetRef, 'HEAD']);
@@ -320,13 +329,11 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const lease = acquireFinishTargetLease({ file: targetLeasePath(retainedRoot, run.identity.targetBranch), run });
       if (lease.blocked) return { status: 'blocked', failure: { operation: 'target-lease', failureClass: 'transient-external-condition', code: 'task-finish.target-lease-held', message: 'Target branch lease is held by another Finish run.', findings: [lease.existing] } };
       try {
-        let observedTargetRef = null;
-        if (run.identity.remote) {
-          const remote = git(retainedRoot, 'deliver-target-observe', ['ls-remote', '--heads', run.identity.remote, run.identity.targetBranch]);
-          operations.push(remote.observation);
-          if (remote.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-observation-failed', exitCode: remote.result.status, message: 'Unable to observe remote target ref.', diagnostic: remote.observation.stderr } };
-          observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
-        } else observedTargetRef = gitText(retainedRoot, ['rev-parse', `${run.identity.targetBranch}^{commit}`]);
+        if (!run.identity.remote) return { status: 'failed', operations, failure: { operation: 'delivery-remote', failureClass: 'product-execution-failure', code: 'task-finish.delivery-remote-missing', message: 'Task Finish cannot deliver without a frozen delivery remote.' } };
+        const remote = git(retainedRoot, 'deliver-target-observe', ['ls-remote', '--heads', run.identity.remote, run.identity.targetBranch]);
+        operations.push(remote.observation);
+        if (remote.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-observation-failed', exitCode: remote.result.status, message: 'Unable to observe remote target ref.', diagnostic: remote.observation.stderr } };
+        const observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
         const alreadyDelivered = observedTargetRef === run.deliveryCarrier.head;
         if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) return { status: 'failed', operations, failure: { operation: 'target-transition', failureClass: 'upstream-candidate-defect', code: 'task-finish.target-race', message: 'Target ref changed after carrier preparation; return to Task Development.', findings: [{ expected: run.deliveryCarrier.expectedTargetRef, observed: observedTargetRef }] }, output: { delivery: { status: 'failed', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
         if (!alreadyDelivered) {
@@ -336,12 +343,16 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           const merged = git(retainedRoot, 'deliver-fast-forward', ['merge', '--ff-only', run.deliveryCarrier.head]);
           operations.push(merged.observation);
           if (merged.result.status !== 0) return { status: 'failed', operations, failure: { operation: 'target-transition', failureClass: 'upstream-candidate-defect', code: 'task-finish.fast-forward-failed', exitCode: merged.result.status, message: 'Delivery carrier is not a fast-forward transition.', diagnostic: merged.observation.stderr } };
-          if (run.identity.remote) {
-            const pushed = git(retainedRoot, 'deliver-push', ['push', run.identity.remote, `${run.identity.targetBranch}:${run.identity.targetBranch}`]);
-            operations.push(pushed.observation);
-            if (pushed.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-push', failureClass: 'transient-external-condition', code: 'task-finish.push-failed', exitCode: pushed.result.status, message: 'Target push failed.', diagnostic: pushed.observation.stderr } };
-          }
+          const pushed = git(retainedRoot, 'deliver-push', ['push', run.identity.remote, `${run.identity.targetBranch}:${run.identity.targetBranch}`]);
+          operations.push(pushed.observation);
+          if (pushed.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-push', failureClass: 'transient-external-condition', code: 'task-finish.push-failed', exitCode: pushed.result.status, message: 'Target push failed.', diagnostic: pushed.observation.stderr } };
         }
+
+        const readback = git(retainedRoot, 'deliver-target-readback', ['ls-remote', '--heads', run.identity.remote, run.identity.targetBranch]);
+        operations.push(readback.observation);
+        if (readback.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-readback', failureClass: 'transient-external-condition', code: 'task-finish.remote-readback-failed', exitCode: readback.result.status, message: 'Unable to read back the remote target ref after delivery.', diagnostic: readback.observation.stderr } };
+        const remoteAfterRef = readback.result.stdout.trim().split(/\s+/)[0] || null;
+        if (remoteAfterRef !== run.deliveryCarrier.head) return { status: 'failed', operations, failure: { operation: 'target-transition', failureClass: 'upstream-candidate-defect', code: 'task-finish.target-race', message: 'Remote target ref does not match the carrier after push; return to Task Development.', findings: [{ expected: run.deliveryCarrier.head, observed: remoteAfterRef }] }, output: { delivery: { status: 'failed', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
 
         const retainedCli = path.join(retainedRoot, 'projects', 'product', 'buildr');
         const impact = classifyRetainedConvergencePaths(run.deliveryCarrier.changedPaths || []);
@@ -366,7 +377,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           if (installed.result.status !== 0 || installed.payload?.installed !== true) return { status: 'blocked', operations, failure: { operation: 'local-app-install', failureClass: 'transient-external-condition', code: 'task-finish.local-app-install-failed', exitCode: installed.result.status, message: 'Buildr development launcher installation failed.', diagnostic: installed.payload || installed.observation.stderr } };
           localAppDelivery = { status: 'passed', channel: 'development' };
         }
-        return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: run.deliveryCarrier.head, output: { delivery: { status: 'delivered', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef: run.deliveryCarrier.head, impact, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery } } };
+        return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery: { status: 'delivered', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, impact, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery } } };
       } finally {
         releaseFinishTargetLease(lease);
       }
