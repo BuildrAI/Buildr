@@ -80,7 +80,7 @@ Buildr MUST 仅在上游 workflow 未覆盖且 Buildr consumer 需要该约束�
 - **WHEN** sidebar 只作为 OpenSpec Component 固定组合中的自然语言增量且没有可替换 provider
 - **THEN** Buildr MUST 使用 Component member integrity 和 composition tests 保护它
 - **AND** Buildr MUST NOT 为每个 sidebar 创建 `provides`、`requires` 或 binding
-- **AND** 现有 task-worktree、task-verification、git-task-integration、task-asset-review 和 task-finish capability contracts MUST 保持有效
+- **AND** 现有 task-worktree、task-verification、git-operations、task-asset-review 和 task-finish capability contracts MUST 保持有效
 
 ### Requirement: Buildr 不将 OpenSpec Stores 作为默认受支持工作流
 Buildr MUST 不因 OpenSpec 1.6.0 包含 Stores beta 而在默认 OpenSpec Component、Buildr Skills 或 Project 资产中声明、创建、迁移或操作 Store。

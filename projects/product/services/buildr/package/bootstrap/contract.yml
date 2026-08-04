@@ -99,8 +99,7 @@ buildrSkillRequiredText:
   - task-board
   - task-asset-review
   - capability-adaptation
-  - buildr.git-single-operation/v1
-  - buildr.git-workspace-update/v1
+  - buildr.git-operations/v1
   - buildr.task-environment/v1
   - buildr.git-worktree-provider/v1
   - buildr.task-verification/v3

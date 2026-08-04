@@ -21,7 +21,7 @@ root 固定为 `<workspace-root>/.worktrees/<task-id>`；独立 Project/Service 
 
 结果只包含 repository selector、source/checkout path、branch、start point、HEAD、clean/registered/remote、精确 Git effects 与 diagnostic。`.buildr/worktrees/<task-id>.json` 只保留 Git provider evidence，不是 Environment Receipt。
 
-本 Skill 不判断 Task 是否 ready，不准备 Runtime、CLI、依赖或 projection，不登记动态资源，不记录 Agent session，也不承担恢复或环境总 cleanup。验证交给 `task-verification`，Git integration 交给 `git-ops`，正式任务环境交给 `task-environment`。
+本 Skill 不判断 Task 是否 ready，不准备 Runtime、CLI、依赖或 projection，不登记动态资源，不记录 Agent session，也不承担恢复或环境总 cleanup。验证交给 `task-verification`，已选定 Git Operation 的安全边界交给 `git-operations`，正式任务环境交给 `task-environment`。
 
 ## 停止条件
 

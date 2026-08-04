@@ -24,7 +24,7 @@ buildr update
 command -v buildr
 buildr skill install <agent> --target <workspace-root>
 ```
-用户要求“更新 workspace”或“同步 workspace”时，先确认 workspace root 是否由 Git 管理。Git 管理的 workspace 解析 `buildr.git-workspace-update/v1` binding，读取 selected provider 后检查当前分支、upstream 和工作区状态并安全更新本地 checkout；required provider blocked 或遇到本地改动、分叉、冲突、缺少 upstream 等决策点时停止说明，不自动 stash、rebase、覆盖，也不继续 sync。Git 更新成功后不重复询问 sync；非 Git workspace 跳过 Git provider。然后使用当前 CLI 执行 sync，不先更新 CLI；这不是 `buildr sync` 的隐式 Git 行为：
+用户要求“更新 workspace”或“同步 workspace”时，先确认 workspace root 是否由 Git 管理。Git 管理的 workspace 解析 `buildr.git-operations/v1` binding，读取 selected provider，并由 Buildr Skill 提供明确 workspace、upstream 和 update operation；required provider blocked 或遇到本地改动、分叉、冲突、缺少 upstream 等决策点时停止说明，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。Git 更新成功后不重复询问 sync；非 Git workspace 跳过 Git provider。然后使用当前 CLI 执行 sync，不先更新 CLI；这不是 `buildr sync` 的隐式 Git 行为：
 
 ```bash
 buildr sync <agent> --target <dir>

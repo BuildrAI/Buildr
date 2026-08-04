@@ -33,6 +33,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task Verification：一个 `buildr.task-verification/v3` capability 读取 Project verification declarations，执行已有能力并维护一个 Task-scoped current Result。确定性 Application 独占 Result writer/reader，按 target/declaration identity 派生适用性；它不拥有测试开发、Task 推进、Candidate generation、Review、Environment 或业务验收。
 - Task Development：一个`buildr.task-development@1` capability和唯一Application维护Development Receipt、stable Content Target、verification policy、Task Candidate/generation、推进决定与不可变Finish handoff。它只通过Task Record、Environment、Review、Verification Applications/read models消费专业事实；OpenSpec、Git和具体测试框架都不是其通用schema前提。
 - Task Finish：P0.5保留固定五阶段窄adapter，只消费current Development handoff并证明Delivery Carrier内容等价；Change/current knowledge收敛、formal Verification、Completion Review、Candidate generation与风险决定均在进入Finish前完成。
+- Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
 - Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish、Board 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联。
 
 ## 产品边界

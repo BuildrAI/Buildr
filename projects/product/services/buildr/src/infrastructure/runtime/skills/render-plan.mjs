@@ -153,8 +153,8 @@ function buildAdapterRuntimeContext(skill) {
     '```',
     '',
     adapter.renderCapabilities['rules-entry'].writesFiles
-      ? '用户要求更新或同步 Buildr 时依次运行 update 与 Skill install；更新或同步 workspace 时，Git 管理的 workspace 先解析 `buildr.git-workspace-update/v1` selected provider 安全更新本地 checkout，再运行 sync，非 Git workspace 直接运行 sync。doctor 指向具体 runtime 问题后，再使用其余专项维护命令：'
-      : '用户要求更新或同步 Buildr 时依次运行 update 与 Skill install；更新或同步 workspace 时，Git 管理的 workspace 先解析 `buildr.git-workspace-update/v1` selected provider 安全更新本地 checkout，再运行 sync，非 Git workspace 直接运行 sync：',
+      ? '用户要求更新或同步 Buildr 时依次运行 update 与 Skill install；更新或同步 workspace 时，Git 管理的 workspace 先解析 `buildr.git-operations/v1` selected provider，并由 Buildr Skill 提供明确 workspace、upstream 和 update operation，安全更新本地 checkout 后运行 sync，非 Git workspace 直接运行 sync。doctor 指向具体 runtime 问题后，再使用其余专项维护命令：'
+      : '用户要求更新或同步 Buildr 时依次运行 update 与 Skill install；更新或同步 workspace 时，Git 管理的 workspace 先解析 `buildr.git-operations/v1` selected provider，并由 Buildr Skill 提供明确 workspace、upstream 和 update operation，安全更新本地 checkout 后运行 sync，非 Git workspace 直接运行 sync：',
     '',
     '```bash',
     ...maintenanceCommands,

@@ -506,8 +506,7 @@ export function createPackageStaticValidator(deps) {
       const skillContent = fs.readFileSync(skillFile, 'utf8');
       if (skill.id === 'buildr') {
         for (const requiredText of [
-          'buildr.git-single-operation/v1',
-          'buildr.git-workspace-update/v1',
+          'buildr.git-operations/v1',
           'Buildr Capability Bindings',
           'capabilities` graph',
           'Agent 是 Buildr 功能的默认操作入口',
@@ -518,8 +517,8 @@ export function createPackageStaticValidator(deps) {
           'buildr skill install <agent> --target <dir>',
           '用户要求“更新 workspace”或“同步 workspace”时',
           '用户明确要求“只更新 CLI”时',
-          '解析 `buildr.git-workspace-update/v1`',
-          '不自动 stash、rebase、覆盖，也不继续 sync',
+          '解析 `buildr.git-operations/v1`',
+          '不自动 stash、reset、rebase、merge、覆盖，也不继续 sync',
           '不重复询问 sync',
           '不是 Git workspace，直接运行 sync',
           '先加载 `capability-adaptation` 判断是否触达或产生跨 Skill 稳定依赖边界',
@@ -530,9 +529,9 @@ export function createPackageStaticValidator(deps) {
           if (!skillContent.includes(requiredText)) problems.push(`Buildr Agent Skill must include ${JSON.stringify(requiredText)}.`);
         }
         for (const [relativePath, requiredTexts] of [
-          ['package/bootstrap/guide.md', ['解析 `buildr.git-workspace-update/v1` binding', '不自动 stash、rebase、覆盖，也不继续 sync', '不重复询问 sync', '非 Git workspace 跳过 Git provider', '不是 `buildr sync` 的隐式 Git 行为']],
-          ['docs/cli-reference.md', ['解析 `buildr.git-workspace-update/v1` binding', 'Agent 不自动 stash、rebase 或覆盖', '不重复询问 sync', '非 Git workspace 直接 sync', '不隐式执行 Git 更新']],
-          ['src/infrastructure/runtime/skills/render-plan.mjs', ['解析 `buildr.git-workspace-update/v1` selected provider', '非 Git workspace 直接运行 sync']],
+          ['package/bootstrap/guide.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', '不自动 stash、reset、rebase、merge、覆盖，也不继续 sync', '不重复询问 sync', '非 Git workspace 跳过 Git provider', '不是 `buildr sync` 的隐式 Git 行为']],
+          ['docs/cli-reference.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', 'Agent 不自动 stash、reset、rebase、merge 或覆盖', '不重复询问 sync', '非 Git workspace 直接 sync', '不隐式执行 Git 更新']],
+          ['src/infrastructure/runtime/skills/render-plan.mjs', ['解析 `buildr.git-operations/v1` selected provider', '提供明确 workspace、upstream 和 update operation', '非 Git workspace 直接运行 sync']],
         ]) {
           const contractPath = path.join(root, relativePath);
           if (!existsFile(contractPath)) {
@@ -960,43 +959,47 @@ export function createPackageStaticValidator(deps) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-verification Skill must not include ${JSON.stringify(forbiddenText)}.`);
         }
       }
-      if (skill.id === 'git-ops') {
+      if (skill.id === 'git-operations') {
         for (const requiredText of [
-          '不执行项目 Candidate 验证',
-          '输入与最终 candidate content identity',
-          'tree 等价性信号',
-          '由 selected task-verification provider 或其 consumer',
-          'Workspace tree transition result',
-          '`treeChanged` 结果证据',
-          '`fetch`、`push` 和普通 `commit`',
+          '`commit`：只创建或安全 amend local commit，不 push',
+          '`push`：只发布已有 commit，不把 dirty 自动 commit',
+          '`commit+push`：caller 依次执行一次 commit 和一次 push',
+          '禁止使用 `git add -A`',
+          '保留全部无关 dirty',
+          '完整 commit range',
+          'scope 外 unpublished commit',
+          '普通 push 被拒绝时停止',
+          'push 或其他共享会冻结 commit',
+          'local history 已改变、remote 未改变',
+          '不创建 Git Operations Receipt',
+          '不自动 stash、reset、rebase、merge、force push',
           'required Core workspace-transition invariant',
-          '本 provider 不拥有或复制该 Buildr 操作手册',
-          '默认 push 只面向已集成的目标分支',
-          '才可推送任务分支',
+          '不判断 Review 或 Verification 是否仍有效',
         ]) {
-          if (!skillContent.includes(requiredText)) problems.push(`git-ops Skill must include ${JSON.stringify(requiredText)}.`);
+          if (!skillContent.includes(requiredText)) problems.push(`git-operations Skill must include ${JSON.stringify(requiredText)}.`);
         }
         for (const forbiddenText of [
           '改变已验证 tree 时，原验证结果失效',
           '集成前重新运行受影响的验证',
           '复用已有验证结果',
           '不因 checkout、commit hash 或分支名称改变而重复运行相同验证',
+          '默认 rebase 到最新目标分支',
         ]) {
-          if (skillContent.includes(forbiddenText)) problems.push(`git-ops Skill must not own Candidate verification decision ${JSON.stringify(forbiddenText)}.`);
+          if (skillContent.includes(forbiddenText)) problems.push(`git-operations Skill must not own workflow or Candidate decision ${JSON.stringify(forbiddenText)}.`);
         }
-        for (const routedIntent of ['pull', 'checkout', 'switch', 'reset', 'cherry-pick', 'revert', 'stash']) {
-          if (!skill.description.includes(routedIntent)) problems.push(`git-ops builtin description must route ${routedIntent}.`);
+        if (!skill.provides?.some((entry) => entry.capability === 'buildr.git-operations' && entry.version === 1) || skill.provides.length !== 1) {
+          problems.push('git-operations must provide only buildr.git-operations/v1.');
         }
-        if (skill.description.includes('收尾')) {
-          problems.push('git-ops builtin description must not claim the complete task closeout intent.');
+        for (const broadIntent of ['pull', 'checkout', 'switch', 'reset', 'cherry-pick', 'revert', 'stash', '删除分支']) {
+          if (skill.description.includes(broadIntent)) problems.push(`git-operations builtin description must not pre-expand ${broadIntent}.`);
         }
         try {
           const metadata = parseSkillFrontmatter(skillFile);
-          if (String(metadata.description || '').includes('收尾')) {
-            problems.push('git-ops Skill description must not claim the complete task closeout intent.');
+          if (String(metadata.description || '') !== skill.description) {
+            problems.push('git-operations Skill frontmatter description must exactly match package manifest.');
           }
-          for (const routedIntent of ['pull', 'checkout', 'switch', 'reset', 'cherry-pick', 'revert', 'stash']) {
-            if (!String(metadata.description || '').includes(routedIntent)) problems.push(`git-ops Skill description must route ${routedIntent}.`);
+          for (const broadIntent of ['pull', 'checkout', 'switch', 'reset', 'cherry-pick', 'revert', 'stash', '删除分支']) {
+            if (String(metadata.description || '').includes(broadIntent)) problems.push(`git-operations Skill description must not pre-expand ${broadIntent}.`);
           }
         } catch {
           // Frontmatter errors are already reported above.
@@ -1194,7 +1197,7 @@ export function createPackageStaticValidator(deps) {
       try {
         const baselineSkills = readSkillManifest(baselineSkillsManifest);
         validateSkillManifestEntries(baselineSkills, baselineSkillsManifest);
-        for (const id of ['task-triage', 'task-manager', 'task-worktree', 'task-board', 'task-finish']) {
+        for (const id of ['task-triage', 'task-manager', 'task-worktree', 'task-board', 'task-finish', 'git-operations']) {
           const packaged = manifest.builtins.skills.find((entry) => entry.id === id);
           const baseline = baselineSkills.find((entry) => entry.id === id);
           if (packaged && baseline?.description !== packaged.description) {
@@ -1225,9 +1228,12 @@ export function createPackageStaticValidator(deps) {
         if (!taskAssetReview || taskAssetReview.source !== 'buildr' || taskAssetReview.state !== 'installed' || taskAssetReview.enabled !== true) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-asset-review.');
         }
-        const gitOps = baselineSkills.find((entry) => entry.id === 'git-ops');
-        for (const routedIntent of ['pull', 'checkout', 'switch', 'reset', 'cherry-pick', 'revert', 'stash']) {
-          if (!gitOps?.description?.includes(routedIntent)) problems.push(`Workspace git-ops description must route ${routedIntent}.`);
+        const gitOperations = baselineSkills.find((entry) => entry.id === 'git-operations');
+        if (!gitOperations || gitOperations.source !== 'buildr' || gitOperations.state !== 'installed' || gitOperations.enabled !== true || !(gitOperations.provides || []).some((item) => item.capability === 'buildr.git-operations' && item.version === 1)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr git-operations providing buildr.git-operations@1.');
+        }
+        if (baselineSkills.some((entry) => entry.id === 'git-ops')) {
+          problems.push('Workspace skills baseline must not retain legacy git-ops entry.');
         }
         for (const skill of baselineSkills.filter((entry) => entry.source !== undefined)) {
           if (typeof skill.source === 'string' && !isManifestSourceLabel(skill.source)) {

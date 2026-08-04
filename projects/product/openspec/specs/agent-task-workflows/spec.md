@@ -24,9 +24,9 @@ Buildr MUST为依赖用户任务意图或工作流阶段的Buildr维护流程提
 - **AND** 内容稳定后 MUST路由`task-development`完成Verification、Candidate、Completion Review与handoff
 
 #### Scenario: Agent 需要 Git 操作指引
-- **WHEN** 用户表达独立commit、push、merge、rebase、release或branch操作意图
-- **THEN** Buildr MUST通过Git Ops Skill提供协作策略
-- **AND** Git Ops MUST NOT接管Development Candidate或完整Task Finish
+- **WHEN** 用户已经选择独立 commit、push、commit+push 或其他明确 Git Operation，或上游 consumer 已提供该动作
+- **THEN** Buildr MUST通过唯一 `git-operations` Skill消费 `buildr.git-operations/v1`
+- **AND** Git Operations MUST NOT自行扩展动作目录、选择交付顺序、接管Development Candidate或完整Task Finish
 
 #### Scenario: Agent 需要完整任务收尾
 - **WHEN** 用户对已有current Development handoff表达“收尾”或交付意图
@@ -155,36 +155,6 @@ Buildr 的 task-triage Skill MUST 在选择或继续 OpenSpec 工作流时，要
 - **THEN** 其面向用户的 guidance MUST 要求 Buildr 自有文档正文使用中文
 - **AND** 它 MUST 允许 English commands、paths、code identifiers、protocol fields、YAML/frontmatter 和 OpenSpec format keywords
 
-### Requirement: Git Ops 默认保持线性任务历史
-Buildr Git Ops Skill MUST 对任务分支采用 rebase-first、fast-forward-only 的默认集成策略，并保留 Git 写操作授权边界。
-
-#### Scenario: 本地未推送任务分支发生分叉
-- **WHEN** 任务分支包含本地未推送提交且目标分支出现新提交
-- **THEN** Agent MUST 先 fetch 最新目标分支
-- **AND** Agent MUST 默认将任务分支 rebase 到最新目标分支
-- **AND** Agent MUST 比较 rebase 前后的 Git tree
-- **AND** 仅当 tree 改变时，Agent MUST 在集成前重新运行受影响的验证
-
-#### Scenario: 集成任务分支到目标分支
-- **WHEN** Agent 已获当前轮次的合并授权并准备把任务分支集成到目标分支
-- **THEN** Agent MUST 默认使用 fast-forward-only 集成
-- **AND** Agent MUST NOT 自动创建 merge commit
-
-#### Scenario: 用户明确要求 merge commit
-- **WHEN** 用户当前轮次明确要求 merge commit，或项目规则明确要求 non-fast-forward merge
-- **THEN** Agent MAY 使用 merge commit
-- **AND** Agent MUST 在执行前报告目标分支和集成方式
-
-#### Scenario: 已推送或共享任务分支
-- **WHEN** 任务分支提交已经推送或被多人共享
-- **THEN** Agent MUST NOT 自动 rebase 或 force push
-- **AND** Agent MUST 等待用户明确授权历史改写或选择其他集成方式
-
-#### Scenario: Rebase 冲突需要语义决策
-- **WHEN** rebase 冲突无法通过保持双方既有语义机械解决
-- **THEN** Agent MUST 停止并报告冲突
-- **AND** Agent MUST 等待用户确认后继续
-
 ### Requirement: OpenSpec apply 保持 canonical specs 直到受控同步阶段
 Buildr OpenSpec apply guidance MUST 要求 Agent 在 active change 的实现阶段只修改 change artifacts 与实现内容，MUST NOT 在当前会话的 `pre-sync` contract guard 成功前写入该 change 的 canonical specs。Agent MUST 在 pre-sync 成功后执行 agent-driven canonical sync，并在 `post-sync` guard 返回 `ok: true` 后才使用 `openspec archive <change> --skip-specs --yes`。
 
@@ -229,7 +199,7 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 #### Scenario: 当前 provider 已报告 treeChanged
 - **WHEN** 已绑定 Git provider 的结果证据包含 `treeChanged: true`
 - **THEN** consumer 或 orchestrator MUST 触发 required workspace transition invariant
-- **AND** Agent MUST NOT 因 provider id 不等于 `git-ops` 而跳过检查
+- **AND** Agent MUST NOT 因 selected provider 的具体 Skill id 不同而跳过检查
 
 #### Scenario: 一般环境漂移可由 workspace sync 修复
 - **WHEN** 非 worktree-create 工作区转换后的 doctor 指出当前 Agent 的 workspace sync 是合适修复动作
@@ -632,7 +602,7 @@ Buildr MUST提供实现`buildr.task-finish/v1`的Task Finish Skill。Skill MUST�
 #### Scenario: Retained metadata-only 候选正式 handoff
 - **WHEN** 用户在retained canonical Workspace对已完成且已验证的metadata-only任务要求收尾，且任务文件、目标分支和无关改动可精确区分
 - **THEN** Task Finish Skill MAY将产品执行器标记不适用并披露精确任务文件/排除项/commit/push影响
-- **AND** MUST只把明确Git单项动作交给selected `buildr.git-single-operation/v1` provider
+- **AND** MUST只把明确 Git Operation 交给selected `buildr.git-operations/v1` provider
 
 #### Scenario: Retained handoff 无法证明文件隔离
 - **WHEN** metadata-only候选的任务文件范围、验证identity、目标ref或Git provider readiness无法证明
@@ -671,16 +641,16 @@ Task asset review MUST保持独立Skill lifecycle。存在observation且finalize
 - **AND** 决定完成后才 MAY形成current handoff
 
 ### Requirement: Task Finish handoff 必须保持 Git 单项能力边界
-Task Finish 的 retained metadata-only handoff MUST 只在该分支把 optional `buildr.git-single-operation/v1` dependency 提升为 required，并 MUST 让 selected provider 保持精确仓库、path/ref、授权与 `treeChanged` 结果契约。完整“收尾”意图仍由 Task Finish 解释；Git provider MUST NOT 接管 OpenSpec、验证政策、retained sync 或 task cleanup。
+Task Finish 的 retained metadata-only handoff MUST 只在该分支把 optional `buildr.git-operations/v1` dependency 提升为 required，并 MUST 让 selected provider 保持精确 repository、operation、path/ref、授权、完整 push range 与最小 Result。完整“收尾”意图和 commit/push 顺序仍由 Task Finish 解释；Git Operations MUST NOT 接管 OpenSpec、验证政策、retained sync 或 task cleanup。
 
 #### Scenario: Git provider 对 handoff 可用
-- **WHEN** retained metadata-only handoff 命中且 selected Git provider ready
-- **THEN** Task Finish MUST 为 commit 与 push 分别提供仓库、任务 paths、目标 ref 和当前授权
-- **AND** provider MUST 保留所有无关 dirty changes 并返回 commit/ref/remote 与 `treeChanged` evidence
+- **WHEN** retained metadata-only handoff 命中且 selected Git Operations provider ready
+- **THEN** Task Finish MUST 为 commit 与 push 分别提供 repository、任务 paths、source/destination ref 和当前授权
+- **AND** provider MUST 保留所有无关 dirty changes并分别返回适用的 identity、range、effects 与变化维度
 
 #### Scenario: 普通产品 run 不依赖 Git handoff provider
 - **WHEN** Task Finish 在 receipt-bound task environment 中启动 canonical product run
-- **THEN** optional Git handoff provider 不 ready MUST NOT 阻塞产品 run
+- **THEN** optional Git Operations provider 不 ready MUST NOT 阻塞产品 run
 - **AND** 产品执行器 MUST 继续自行持有固定五阶段内的 Git effects
 
 ### Requirement: task-manager Skill 必须作为 Task Record 的薄管理入口
@@ -975,3 +945,61 @@ Buildr MUST交付`task-development` Workspace Skill并提供`buildr.task-develop
 - **WHEN** supported Agent runtime完成Buildr sync/render
 - **THEN** runtime MUST发现`task-development` Skill、`buildr.task-development@1` contract与binding
 - **AND** MUST不同时投射旧Finish-owned Candidate/Verification路由
+
+### Requirement: Git Operations 只执行 consumer 已选定的 Git Operation
+Buildr MUST 交付唯一 Skill-only `git-operations`，并 MUST 通过 selected `buildr.git-operations/v1` provider 为一次已选定 Git Operation 提供授权边界、安全默认值、操作前后 identity 与最小 Result。直接用户或上游 consumer MUST 决定 repository、operation、相关 ref、scope、目标和顺序；provider MUST NOT 接管 Task Development、Task Finish、验证、交付编排或语义决策。
+
+#### Scenario: 输入不足时零写入
+- **WHEN** repository、operation、相关 local/remote ref、精确 scope 或当前授权不能唯一确定
+- **THEN** provider MUST 在任何 Git 写入前返回 `blocked` 与缺失事实
+- **AND** MUST NOT 自行选择 repository、ref、remote、operation 或策略
+
+#### Scenario: 独立 commit
+- **WHEN** consumer 只授权 `commit` 并提供精确 owned paths 或可可靠分离的 hunks
+- **THEN** provider MUST 只 stage 授权内容并创建或安全 amend 尚未共享的当前 scope commit
+- **AND** MUST NOT push、使用 `git add -A`、stage 无关 dirty 或覆盖其他改动
+
+#### Scenario: 独立 push
+- **WHEN** consumer 只授权 `push` 并提供 source ref、destination remote/ref 与 commit scope
+- **THEN** provider MUST 只推送已有 commit，并在写远端前核验实际 remote/ref 和完整 unpublished commit range
+- **AND** MUST NOT 把 dirty 内容自动 commit 或只检查 range 的 tip commit
+
+#### Scenario: commit 后 push
+- **WHEN** consumer 明确选择 `commit+push`
+- **THEN** caller MUST 依次请求独立 commit 与 push operation，并分别消费两个 Result
+- **AND** Git Operations MUST NOT 把两步伪装成原子 transaction
+
+#### Scenario: 工作区存在无关 dirty
+- **WHEN** operation scope 外存在 modified、staged 或 untracked 内容
+- **THEN** provider MUST 保留这些内容的 index 与 working tree 状态
+- **AND** 只有授权内容可精确隔离时 operation MAY 继续，否则 MUST 返回 `blocked`
+
+#### Scenario: Push range 包含 scope 外提交
+- **WHEN** destination remote/ref 与 source ref 之间将被发布的完整 commit range 含有 consumer scope 外的 unpublished commit
+- **THEN** provider MUST 在 push 前返回 `blocked` 并列出不匹配的 range facts
+- **AND** MUST NOT 自动扩大授权、改推其他 ref、rebase、merge 或 force push
+
+#### Scenario: Push 被拒绝
+- **WHEN** remote 拒绝普通 push 或 destination identity 已漂移
+- **THEN** provider MUST 停止并返回当前 local/remote facts 与已发生 effects
+- **AND** MUST NOT 自动 force push、改写历史、切换 destination 或改变集成策略
+
+#### Scenario: 共享 commit 冻结
+- **WHEN** 当前 scope commit 已 push 或以其他方式共享
+- **THEN** provider MUST NOT amend、rebase 或改写该 commit
+- **AND** 后续变更 MUST 创建新 commit；撤销共享内容默认由 caller 明确选择新 revert operation
+
+#### Scenario: 操作部分失败
+- **WHEN** 一个 operation 失败前已经产生 local history、working tree 或 remote effect，或 commit+push 的 commit 已成功而 push blocked
+- **THEN** Result MUST 如实报告已发生 effects、当前 repository identity 和未发生的 effect
+- **AND** provider MUST NOT 静默回滚、stash、reset、换策略或把部分成功报告为零 effect
+
+#### Scenario: 最小 Result
+- **WHEN** provider 完成或阻止一个 Git Operation
+- **THEN** Result MUST 包含 repository、实际 operation、`succeeded | blocked`、reason、适用的 before/after branch 与 commit identity、remote/ref、变化维度和已发生 effects
+- **AND** Result MUST 只在 push 适用时包含完整 commit range，且 MUST NOT 要求所有 operation 填充统一的大 schema 或创建 Receipt
+
+#### Scenario: 默认不自动执行高风险策略
+- **WHEN** operation 遇到 dirty、divergence、冲突、目标竞争或共享历史
+- **THEN** provider MUST NOT 自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略
+- **AND** 语义或重大风险决定 MUST 由 Agent 交还用户，恢复或重试 MUST 先重新核验事实

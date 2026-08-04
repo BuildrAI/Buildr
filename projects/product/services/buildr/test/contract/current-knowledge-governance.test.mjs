@@ -54,7 +54,7 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
   assert.deepEqual(finish.dependencies.map((item) => [item.capability, item.mode]), [
     ['buildr.task-development', 'required'],
     ['buildr.task-environment', 'required'],
-    ['buildr.git-single-operation', 'optional'],
+    ['buildr.git-operations', 'optional'],
   ]);
   assert.equal(finish.readiness, 'ready');
   const packageManifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
@@ -71,7 +71,7 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
   assert.deepEqual(packagedFinish.requires, [
     { capability: 'buildr.task-development', version: 1, mode: 'required' },
     { capability: 'buildr.task-environment', version: 1, mode: 'required' },
-    { capability: 'buildr.git-single-operation', version: 1, mode: 'optional' },
+    { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
   ]);
   const triage = graph.consumers.find((item) => item.consumer === 'task-triage');
   assert.equal(triage.readiness, 'ready');

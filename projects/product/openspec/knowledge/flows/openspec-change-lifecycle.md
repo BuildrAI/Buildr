@@ -18,7 +18,7 @@ P0.4继续提供一个current Task Verification Result、Project declaration v2�
 
 没有 Change 的独立当前事实收敛不进入上述 Change planning lifecycle：`task-triage` 选择 `spec-maintenance + metadata-only`，由 selected `buildr.current-knowledge-maintenance/v2` provider 执行 `maintain`。它只让 current knowledge 追上已由 canonical specs、实现、registries 或已确认决定证明的既有事实；authority 冲突返回 `unresolved`，发现新业务语义返回 `change-required` 并重新进入 Change lifecycle。
 
-如果metadata-only候选保留在retained canonical Workspace，`worktree.not_task_environment`使产品Task Finish run正式不适用。Task Finish Skill只有在任务paths、current Development handoff、目标branch/remote与无关dirty paths可精确证明时，才把commit和push分别交给selected`buildr.git-single-operation/v1` provider；否则blocked。该handoff不使用`git add -A`、stash、回滚或虚假Change，也不生成五阶段completion receipt。
+如果metadata-only候选保留在retained canonical Workspace，`worktree.not_task_environment`使产品Task Finish run正式不适用。Task Finish Skill只有在任务paths、current Development handoff、目标branch/remote与无关dirty paths可精确证明时，才把commit和push作为两个已选 operation 分别交给selected`buildr.git-operations/v1` provider；provider精确stage并在push前检查完整publication range，否则blocked。该handoff不使用`git add -A`、stash、reset、rebase、merge、force push、回滚或虚假Change，也不生成五阶段completion receipt。
 
 ## 失败与停止
 

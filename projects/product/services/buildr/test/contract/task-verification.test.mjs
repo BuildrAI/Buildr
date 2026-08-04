@@ -14,8 +14,8 @@ const verificationReference = read('package/targets/workspace/skills/buildr/task
 const verificationTemplate = read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml');
 const worktreeSkill = read('package/targets/workspace/skills/buildr/task-worktree/SKILL.md');
 const environmentSkill = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
-const gitIntegrationContract = read('package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md');
-const gitOpsSkill = read('package/targets/workspace/skills/buildr/git-ops/SKILL.md');
+const gitOperationsContract = read('package/targets/workspace/skills/contracts/buildr/git-operations/v1.md');
+const gitOperationsSkill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
 const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
 const finishExecutor = read('src/application/task-finish/task-finish-product-executor.mjs');
@@ -111,13 +111,13 @@ test('Task Environment、Git provider 与 Task Verification 权限保持解耦',
   assert.match(verificationSkill, /不要复制 stdout\/stderr、耗时、临时 evidence path、Environment Receipt/);
 });
 
-test('Git integration 只返回内容转换证据，不拥有 Verification Result 决策', () => {
-  assert.match(gitIntegrationContract, /输入与最终 candidate content identity/);
-  assert.match(gitIntegrationContract, /tree 等价性信号只描述 Git 操作效果/);
-  assert.match(gitIntegrationContract, /验证 evidence 的有效性、复用或重跑由 task-verification provider 或其 consumer 决定/);
-  assert.match(gitOpsSkill, /不执行项目 Candidate 验证/);
-  assert.doesNotMatch(gitOpsSkill, /改变已验证 tree 时，原验证结果失效/);
-  assert.doesNotMatch(gitOpsSkill, /集成前重新运行受影响的验证/);
+test('Git Operations 只返回操作 facts，不拥有 Verification Result 决策', () => {
+  assert.match(gitOperationsContract, /操作前后 identity 与最小结果/);
+  assert.match(gitOperationsContract, /不选择动作、目标或顺序/);
+  assert.match(gitOperationsContract, /完整 commit range/);
+  assert.match(gitOperationsSkill, /不判断 Review 或 Verification 是否仍有效/);
+  assert.doesNotMatch(gitOperationsSkill, /改变已验证 tree 时，原验证结果失效/);
+  assert.doesNotMatch(gitOperationsSkill, /集成前重新运行受影响的验证/);
 });
 
 test('随包 manifest 原子切换 v3 contract、provider、binding 与 reference', () => {
@@ -176,5 +176,6 @@ test('产品入口分别路由 Task Verification、Environment 与 Git provider 
   assert.match(buildrSkill, /查看 current 验证结果.*`buildr\.task-verification\/v3` selected provider；不开发测试/);
   assert.match(buildrSkill, /正式 Task 准备、检查、恢复或清理实际执行环境 \| `buildr\.task-environment\/v1` selected provider/);
   assert.match(buildrSkill, /Git worktree\/provider evidence \| `buildr\.git-worktree-provider\/v1` selected provider/);
+  assert.match(buildrSkill, /commit、push、commit\+push 或其他已选 Git Operation \| `buildr\.git-operations\/v1` selected provider/);
   assert.doesNotMatch(buildrSkill, /buildr\.task-worktree-lifecycle/);
 });

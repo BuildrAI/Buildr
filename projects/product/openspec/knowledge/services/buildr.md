@@ -2,7 +2,7 @@
 
 ## 职责
 
-Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment/Task Review/Task Verification/Task Development/Task Finish domain、Project Testing 指导、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证执行、package 和发布。
+Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment/Task Review/Task Verification/Task Development/Task Finish domain、Skill-only Git Operations、Project Testing 指导、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证执行、package 和发布。
 
 ## 接口与入口
 
@@ -21,13 +21,14 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 - Local App Task API 先把已登记 `workspaceId` 解析为 canonical root，再调用 Task Record Application；mutation 复用 same-origin、session、JSON、body limit、字段白名单和路径拒绝边界，并用响应级 `recordDigest` 拒绝陈旧页面。Environment、Review 与 Verification API 只调用各自 Application `inspect` 并使用 `no-store`；专业 endpoint 不接受任意 root/path，也没有直接 writer endpoint。Change 全局 collection 保持 retained-only，Task 关联详情通过共享 Resolver 从 matching Environment execution root 或 retained Project 读取。
 - Environment Receipt 使用 closed `buildr.task-environment-receipt/v2`，只由 Task Environment Application 写入。它按 Task ID 保存 canonical Workspace、Task checkout/provider evidence、scope/execution/validation roots、Receipt 创建时的 controller 指纹、Runtime/CLI/依赖/projection probes、已登记动态资源和 cleanup summary。公开 read model 去除资源 handle、secret 与 controller CLI path；创建指纹不参与 ready、资源 ownership 或 Verification applicability。
 - Git worktree provider 只在 Git common-dir 保存 `buildr.git-worktree-evidence/v1`，包含 repository plan、checkout/branch/HEAD/clean/registration 和 Git effects。`worktree create|inspect|cleanup` 不返回 Environment ready、Runtime/CLI/依赖、资源、恢复或总 cleanup 结论。
+- Git Operations 只由 `git-operations` Skill 和 `buildr.git-operations/v1` contract 表达调用期行为，不新增 Application、CLI、Receipt 或 store。consumer 提供 repository/operation/ref/scope/授权；Result 只返回适用的前后 identity、完整 push range、变化维度和实际 effects。
 - 普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence。候选 CLI/runtime 可以在自身 Task Validation Workspace 验证；只有集成到 retained source 后正式 runtime 才同步生效。bounded Agent capability 必须由 Agent 形成事实，文件投射或 Environment ready 本身不等于验证通过；Result 不复制 Environment Receipt。
 
 Workspace Node identity 进入 Environment Receipt 的 Runtime probe 与 execution binding，并绑定 transient verification execution及Finish本机run/resume判断，但不进入Content Target或Task Candidate identity。Agent runtime 只能消费该 identity，不能选择或保存 Node version；验证 executor 为 node、npm、测试和子进程统一注入受管环境。portable Task Verification Result 只绑定调用方Content Target和Project declarations，不复制Node/Environment事实。
 
 ## 运行与验证
 
-Task Record、Task Environment、Task Review、Task Verification与Task Development各自以Domain/Application/filesystem repository构成独立writer，只共享Task ID和目录，不共享字段。独立CLI interface公开`task environment prepare|inspect|cleanup`、`task review inspect|record`与`task verification inspect|record`；`verification run|cleanup`只管理transient execution。Task Development首版只通过bundled Skill和内部driver调用同一Application，不注册公共CLI或Local App route。随包无状态`project-testing`只指导测试设计、开发与编排；`task-environment`、`task-review`、`task-verification`、`task-development`与窄`task-worktree`分别提供`buildr.task-environment/v1`、`buildr.task-review/v1`、`buildr.task-verification/v3`、`buildr.task-development@1`和`buildr.git-worktree-provider/v1`。matching Receipt的`inspect`使用Receipt controller做当前机器probe，安装版Local App的bundle source因此不必成为Environment Manager；Git-backed retained Environment Manager只在mutation前检查受信产品输入并排除`.buildr/`。候选Product checkout可只读inspect、运行自身CLI/runtime，但产品会阻止它管理自己的Environment。
+Task Record、Task Environment、Task Review、Task Verification与Task Development各自以Domain/Application/filesystem repository构成独立writer，只共享Task ID和目录，不共享字段。独立CLI interface公开`task environment prepare|inspect|cleanup`、`task review inspect|record`与`task verification inspect|record`；`verification run|cleanup`只管理transient execution。Task Development首版只通过bundled Skill和内部driver调用同一Application，不注册公共CLI或Local App route。随包无状态`project-testing`只指导测试设计、开发与编排；`git-operations`、`task-environment`、`task-review`、`task-verification`、`task-development`与窄`task-worktree`分别提供`buildr.git-operations/v1`、`buildr.task-environment/v1`、`buildr.task-review/v1`、`buildr.task-verification/v3`、`buildr.task-development@1`和`buildr.git-worktree-provider/v1`。matching Receipt的`inspect`使用Receipt controller做当前机器probe，安装版Local App的bundle source因此不必成为Environment Manager；Git-backed retained Environment Manager只在mutation前检查受信产品输入并排除`.buildr/`。候选Product checkout可只读inspect、运行自身CLI/runtime，但产品会阻止它管理自己的Environment。
 
 Service 使用 Node.js ESM，开发依赖通过 lockfile 与 `npm ci` 收敛。Workspace 在 `.buildr/workspace.yml` 维护精确 `runtime.node.version`；`init` 采用当前受支持 CLI Node 并准备本机受管 runtime，`sync` 按声明恢复且不改版本，`doctor` 只读核对声明、Node/npm/CLI/验证环境并建议 `sync`。开发与安装入口的普通命令固定使用该 runtime；仅 `init`、`doctor`、`sync` 可在 runtime 缺失时使用兼容 bootstrap Node。npm package 的 `engines.node` 继续只表达产品兼容范围。
 
@@ -41,7 +42,7 @@ Finish不解析或收敛Change/current knowledge，不执行runtime内容生成�
 
 当前run/result一次性迁移为`buildr.task-finish-run/v2`与`buildr.task-finish-result/v2`，绑定Task、handoff、Candidate、Content Target、carrier、target、Workspace Node、五阶段facts、primary failure、bounded command observations、delivery/completion和固定执行计数；拒绝旧v1 run，不建立第二Finish Receipt、Verification store、candidate kind或Change context authority。durable completion仍保存在既有`runs`、`completed`与lease namespace。
 
-retained canonical Workspace 中明确的 metadata-only候选不进入产品执行器，因为无关dirty state无法形成隔离carrier。Task Finish Skill只有在任务paths、current Development handoff、目标branch/remote与retained context都可证明时，才把精确commit与push分别交接给optional selected`buildr.git-single-operation/v1` provider；provider只能stage任务paths并保留无关改动，返回逐项Git evidence与`completionMode: git-single-operation-handoff`。任一事实或provider readiness不可证明时正式blocked，不使用`git add -A`、stash、回滚、虚假Change或手写Git回退。
+retained canonical Workspace 中明确的 metadata-only候选不进入产品执行器，因为无关dirty state无法形成隔离carrier。Task Finish Skill只有在任务paths、current Development handoff、目标branch/remote与retained context都可证明时，才选择精确commit与push的目标和顺序，并分别交接给optional selected`buildr.git-operations/v1` provider；provider只能stage任务paths、检查完整push range并保留无关改动，返回两项各自适用的最小Result。任一事实或provider readiness不可证明时正式blocked，不使用`git add -A`、stash、reset、rebase、merge、force push、虚假Change或手写Git回退。
 
 Task Environment 候选集成后，主 Workspace runtime 仍从 retained checkout sync/doctor；未合并 task checkout 不更新主 runtime。一次性迁移只把 identity 匹配的活跃旧 receipt 转为 v2 Environment + 窄 Git evidence，清退陈旧 receipt；冲突现场原样保留并阻止 authority 切换，不保留永久旧 reader/writer 路由。
 

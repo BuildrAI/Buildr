@@ -389,28 +389,14 @@ Buildr package MUST 通过 required Core 提供独立于 Git Ops Skill 生命周
 Buildr product verification MUST 防止提交格式与默认语言重新耦合到同一 Skill 生命周期。
 
 #### Scenario: 校验 Git Ops 提交格式
-- **WHEN** Buildr validates the packaged Git Ops Skill
+- **WHEN** Buildr validates the packaged Git Operations Skill
 - **THEN** verification MUST confirm the concise Conventional Commits format、supported types、optional scope and breaking-change guidance
-- **AND** verification MUST confirm Git Ops follows Core and more specific conventions without copying the Chinese constraint
+- **AND** verification MUST confirm Git Operations follows Core and more specific conventions without copying the Chinese constraint
 
 #### Scenario: 校验 Core 默认提交语言
 - **WHEN** Buildr validates the default package and a temporary initialized workspace
 - **THEN** verification MUST confirm required Core contains the concise Chinese default and allowed original-form exceptions
-- **AND** verification MUST confirm the Core default remains present when Git Ops is absent
-
-### Requirement: 产品验证覆盖 Git Ops 集成契约
-Buildr product verification MUST 防止随包 Git Ops Skill 回退到未定义或默认 merge 的任务集成策略。
-
-#### Scenario: 校验线性集成语义
-- **WHEN** Buildr 验证随包 Git Ops Skill
-- **THEN** 验证 MUST 确认 Skill 声明本地未推送任务分支默认 rebase
-- **AND** 验证 MUST 确认目标分支默认 fast-forward-only 集成
-- **AND** 验证 MUST 确认没有用户明确要求时不得创建 merge commit
-
-#### Scenario: 校验共享分支保护
-- **WHEN** Buildr 验证随包 Git Ops Skill
-- **THEN** 验证 MUST 确认已推送或共享任务分支不得自动 rebase 或 force push
-- **AND** 验证 MUST 确认需要语义决策的 rebase 冲突必须停止并等待用户确认
+- **AND** verification MUST confirm the Core default remains present when Git Operations is absent
 
 ### Requirement: 产品验证覆盖 task worktree 隔离与证据复用
 Buildr package verification MUST 防止正式 workflow 绕过 Task Environment 直接把 task-worktree 当作环境 authority，也 MUST 防止 change artifacts 双写、合并前污染 retained self-bootstrap Workspace，或让 Git/worktree providers重新拥有 Runtime/依赖、Candidate verification 或 evidence 复用决策。
@@ -421,14 +407,14 @@ Buildr package verification MUST 防止正式 workflow 绕过 Task Environment �
 - **AND** 采用 Environment 后 artifacts、实现和候选验证 MUST 只有 receipt 允许的写入位置
 
 #### Scenario: 校验 Git provider 只交接 Git 事实
-- **WHEN** Buildr 验证 Product Project 开发规则、task-environment、task-worktree 和 git-ops
+- **WHEN** Buildr 验证 Product Project 开发规则、task-environment、task-worktree 和 git-operations
 - **THEN** 验证 MUST 确认 task-worktree 只提供 repository/checkout/branch/HEAD/clean 与 Git transition evidence
 - **AND** task-environment MUST 独占 Runtime/CLI/依赖、projection、资源、restore 与总 cleanup，Task Verification MUST 独占 Candidate/evidence
 
 #### Scenario: 校验 Skill 文本没有重复职责
 - **WHEN** Buildr 执行 package 静态验证和任务能力专项测试
 - **THEN** verifier MUST 拒绝 task-worktree 中的 Environment ready、runtime preparation、session adoption 或总 cleanup 说明
-- **AND** verifier MUST 拒绝 git-ops/task-worktree 重新声明 Candidate 验证命令、保证级别或 evidence 复用决策
+- **AND** verifier MUST 拒绝 git-operations/task-worktree 重新声明 Candidate 验证命令、保证级别或 evidence 复用决策
 
 #### Scenario: 候选验证保持 retained Workspace 干净
 - **WHEN** 产品 E2E 从 Task Validation Workspace 验证未合并候选版本
@@ -590,13 +576,13 @@ Buildr MUST 将 package build 输出视为带版本化 receipt 和 integrity 的
 - **THEN** Buildr MUST 拒绝构建且保持目标不变
 
 ### Requirement: 产品验证覆盖 Git 工作区转换后的环境检查契约
-Buildr package verification MUST 防止随包 Git 和任务 Skills 丢失一般工作区转换后的 Buildr 环境诊断边界，并 MUST 通过可执行产品验证证明 canonical task worktree 创建后的 doctor 与安全自动 sync 确定性发生。
+Buildr package verification MUST 防止 selected Git Operation 或任务 Skill 丢失一般工作区转换后的 Buildr 环境诊断边界，并 MUST 通过可执行产品验证证明 canonical task worktree 创建后的 doctor 与安全自动 sync 确定性发生；该验证 MUST NOT 把 `git-operations` 扩展成完整命令 router。
 
 #### Scenario: 校验 Git Ops 触发与排除范围
-- **WHEN** Buildr 验证随包 Git Ops Skill 和 manifest description
-- **THEN** 验证 MUST 确认 Skill 能路由 `pull`、`checkout`、`switch`、`reset`、`cherry-pick`、`revert` 和 `stash` 等工作区转换意图
-- **AND** 验证 MUST 确认成功的一般工作区转换会在已初始化 Buildr workspace 中运行当前 Agent doctor
-- **AND** 验证 MUST 确认 `fetch`、`push`、普通 `commit` 和失败或冲突中的工作区转换不会触发该检查
+- **WHEN** Buildr 验证随包 Git Operations Skill 和 manifest description
+- **THEN** 验证 MUST 确认入口只在直接用户或 consumer 已选定 Git Operation 时加载，并覆盖明确的 commit、push 与组合语义
+- **AND** 验证 MUST 确认 description 不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令集
+- **AND** provider 对实际改变 checkout 的已选 operation MUST 返回 `treeChanged: true`，普通 commit/push MUST 返回 `false`
 
 #### Scenario: 校验一般 Agent-first 同步交互
 - **WHEN** Buildr 验证 worktree create 之外的 Git 工作区转换处理文本
@@ -635,36 +621,36 @@ Buildr package verification MUST 防止随包 Git 和任务 Skills 丢失一般�
 - **AND** 验证 MUST 保留绕过 Buildr worktree create 的外部 Git 操作只能由后续 Buildr 基线 doctor 兜底的边界
 
 ### Requirement: 产品验证覆盖 Git-first workspace 更新编排
-Buildr product verification MUST 防止产品入口 Buildr Skill 和随包引导退回到只执行本地 `buildr sync` 的 workspace 更新语义。
+Buildr product verification MUST 防止产品入口 Buildr Skill 和随包引导退回到只执行本地 `buildr sync` 的 workspace 更新语义，同时 MUST 保证更新 operation 由产品入口选择而不是 Git Operations 自行推断。
 
 #### Scenario: 校验 Git 管理 workspace 的更新顺序
 - **WHEN** Buildr 验证产品入口 Buildr Skill、bootstrap guide、CLI reference 和 runtime 提示
-- **THEN** 验证 MUST 确认“更新 workspace”与“同步 workspace”会先复用 Git Ops 安全更新 Git 管理的 workspace checkout，再执行 `buildr sync <agent> --target <workspace-root>`
+- **THEN** 验证 MUST 确认“更新 workspace”与“同步 workspace”由 Buildr Skill 先向 selected `buildr.git-operations/v1` provider 提供 workspace、upstream 和明确 update operation，再执行 `buildr sync <agent> --target <workspace-root>`
 - **AND** 验证 MUST 确认该意图不会先运行 `buildr update`
 - **AND** 验证 MUST 确认 Git 更新成功后无需再次询问 sync 授权
 
 #### Scenario: 校验 Git 更新失败边界
 - **WHEN** Buildr 验证 Git 管理 workspace 的更新决策点
 - **THEN** 验证 MUST 确认本地改动、分叉、冲突、缺少 upstream 或其他 Git 决策点会阻止后续 sync
-- **AND** 验证 MUST 确认 Agent 不会自动 stash、rebase 或覆盖用户内容
+- **AND** 验证 MUST 确认 Agent 不会自动 stash、reset、rebase、merge 或覆盖用户内容
 
 #### Scenario: 校验非 Git workspace 和 CLI 职责边界
 - **WHEN** Buildr 验证非 Git workspace 或 `buildr sync` 命令说明
 - **THEN** 验证 MUST 确认非 Git workspace 直接执行 sync
-- **AND** 验证 MUST 确认 Git 更新属于 Agent 意图编排，而不是 `buildr sync` CLI 的隐式行为
+- **AND** 验证 MUST 确认 Git 更新属于 Buildr Skill 的 consumer 编排，而不是 `buildr sync` CLI 或 Git Operations provider 的隐式行为
 
 ### Requirement: 产品验证覆盖 capability provider replacement
 Buildr product verification MUST 覆盖默认 provider、内部 provider 替换、provider 卸载、歧义、版本冲突和 optional degradation，并 MUST 验证所有 supported runtime adapters 获得一致 binding 语义。
 
 #### Scenario: 默认 providers 完成现有工作流
 - **WHEN** a temporary workspace uses package defaults
-- **THEN** Git/task consumers MUST resolve to the declared builtin providers
-- **AND** existing workspace update、worktree and finish behavior MUST remain available
+- **THEN** Git Operations、worktree and task consumers MUST resolve to the declared builtin providers
+- **AND** existing workspace update、worktree and retained metadata-only finish behavior MUST remain available
 
 #### Scenario: 内部 provider 替换 Git Ops
-- **WHEN** a temporary workspace installs compatible internal Git providers、binds all required Git capabilities and uninstalls `git-ops`
-- **THEN** product entry、`task-worktree` and `task-finish` MUST remain capability-ready
-- **AND** render and doctor MUST identify the internal providers without restoring `git-ops`
+- **WHEN** a temporary workspace installs one compatible internal `buildr.git-operations@1` provider、binds it and uninstalls `git-operations`
+- **THEN** product entry and `task-finish` MUST resolve the internal provider，且 `task-worktree` MUST 继续解析自己的独立 provider
+- **AND** render and doctor MUST identify the internal provider without restoring `git-operations` or any removed legacy capability
 
 #### Scenario: Required provider 缺失或有歧义
 - **WHEN** a test removes the only compatible required provider or leaves multiple unbound providers in the nearest scope
@@ -889,7 +875,7 @@ Buildr package MUST 为 `task-triage` 增加 optional `buildr.task-record@1` con
 #### Scenario: 检查 capability graph
 - **WHEN** package verification 比较变更前后 capability graph
 - **THEN** graph MUST 新增 `buildr.task-record@1`、default `task-manager` provider/binding 和 `task-triage` optional consumer edge
-- **AND** MUST NOT 给 task-worktree、task-verification、task-finish、task-board、task-asset-review 或 git-ops 增加 Task Record consumer edge
+- **AND** MUST NOT 给 task-worktree、task-verification、task-finish、task-board、task-asset-review 或 git-operations 增加 Task Record consumer edge
 
 #### Scenario: 正式分支 provider 不 ready
 - **WHEN** task-triage 已确认即将进入正式持久交付但 Task Record provider 不 ready
@@ -1066,3 +1052,26 @@ Buildr package verification MUST 静态证明 Result persistence writer 只有 T
 - **WHEN** package verifier 扫描受管 runtime assets、canonical docs 与公开 CLI
 - **THEN** 不得存在 `buildr.task-verification/v2`、`project-verification/v1`、requiredAssurance、minimal/affected/candidate Result 层级或 direct verification summary consumer
 - **AND** Product 内部测试 profile 中的 `candidate` 名称 MAY 保留，但 MUST 与 Task Verification declaration/Result authority 明确隔离
+
+### Requirement: Package 必须原子交付唯一 Git Operations 能力
+Buildr package MUST 原子交付一个 `git-operations` workspace Skill、一个 `buildr.git-operations@1` contract 和一个默认 binding，并 MUST 在同一 cutover 删除旧 Git capability graph。`buildr.git-worktree-provider@1` MUST 保持独立。
+
+#### Scenario: 默认 graph 只有一个 Git Operations 入口
+- **WHEN** package check、doctor 或 runtime render 解析默认 capability graph
+- **THEN** graph MUST 只让 `git-operations` provide `buildr.git-operations@1` 并成为其默认 binding
+- **AND** `task-finish` MUST 只以 optional mode require 该 capability，产品入口 MAY 按命中意图动态消费它
+
+#### Scenario: 旧 graph residual gate
+- **WHEN** package static verification 扫描 current manifests、Skill sources、contracts、bootstrap/docs 和 executable tests
+- **THEN** `git-ops`、`buildr.git-single-operation`、`buildr.git-task-integration` 与 `buildr.git-workspace-update` 的 active provider、consumer、binding、router 和 schema residual MUST 为零
+- **AND** archive 历史 MAY 保留旧事实但 MUST NOT 被 runtime 或 current docs 解析为可用入口
+
+#### Scenario: Worktree provider 保持独立
+- **WHEN** Task Environment 准备 Git checkout
+- **THEN** `task-worktree` MUST 继续独立 provide `buildr.git-worktree-provider@1`
+- **AND** `git-operations` MUST NOT 接管 worktree create、registration、Environment ready 或 cleanup authority
+
+#### Scenario: Git Operations 安全语义被打包验证
+- **WHEN** Buildr 验证随包 `git-operations` Skill 与 contract
+- **THEN** verification MUST 覆盖独立 commit、独立 push、commit+push、无关 dirty、scope 外 unpublished commits、push rejection、共享 commit 冻结和部分失败 evidence
+- **AND** verification MUST 确认该能力没有 Application、CLI、Receipt、持久状态或通用 Git transaction

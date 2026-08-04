@@ -21,7 +21,8 @@
 - `task-review` 提供并默认绑定唯一 `buildr.task-review/v1`；planning/completion 是动态参数，不注册类型专属 capability 或 provider。`task-asset-review` 的 capability 与 observation store 保持独立，由 Task Development optional 消费并在 handoff 前 finalize，Task Finish 不读取。
 - `task-verification` 提供并默认绑定 `buildr.task-verification/v3`；Project `verification.yml` v2 是测试能力声明，不进入 capability binding manifest。Skill 负责执行与语义提炼，Task Verification Application 独占 current Result writer/reader。
 - `task-development` 提供并默认绑定 `buildr.task-development@1`，required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge，optional 消费 Task Asset Review。它是 Development Receipt、Content Target、verification policy、Task Candidate/generation、gates/decision 与 immutable handoff 的唯一 authority。
-- `task-finish` 继续提供 `buildr.task-finish/v1`，但 required 消费 Task Development 与 Task Environment，只把 current proceed handoff 交给内容等价 carrier adapter；Git 单项 provider 仅对 retained metadata-only handoff optional。
+- `git-operations` 只提供并默认绑定 `buildr.git-operations@1`，没有 Application、CLI、Receipt 或持久状态；直接用户或上游 consumer 选择 repository/operation/ref/scope/order，provider 只保护精确 staging、commit/push 分离、完整 push range、共享历史冻结与最小 Result。`git-worktree-provider/v1` 继续独立。
+- `task-finish` 继续提供 `buildr.task-finish/v1`，但 required 消费 Task Development 与 Task Environment，只把 current proceed handoff 交给内容等价 carrier adapter；Git Operations 仅对 retained metadata-only handoff optional，commit/push 顺序仍由 Task Finish 决定。
 - OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 contract guard、terminology 和 current knowledge 门禁，不修改上游 Skill source bytes。
 
 ## 数据与完整性

@@ -22,10 +22,10 @@ try {
   assert.match(requiredRemoval.combined, /Required Buildr builtin cannot be uninstalled/);
   assert.equal(fs.existsSync(path.join(fixture.workspace, 'rules', 'buildr', 'core.md')), true);
 
-  runBuildr(['builtin', 'uninstall', 'git-ops', '--target', fixture.workspace, '--reason', 'Workspace E2E recovery']);
-  assert.equal(fs.existsSync(path.join(fixture.workspace, 'skills', 'buildr', 'git-ops')), false);
-  runBuildr(['builtin', 'restore', 'git-ops', '--target', fixture.workspace]);
-  assert.equal(fs.existsSync(path.join(fixture.workspace, 'skills', 'buildr', 'git-ops', 'SKILL.md')), true);
+  runBuildr(['builtin', 'uninstall', 'git-operations', '--target', fixture.workspace, '--reason', 'Workspace E2E recovery']);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'skills', 'buildr', 'git-operations')), false);
+  runBuildr(['builtin', 'restore', 'git-operations', '--target', fixture.workspace]);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'skills', 'buildr', 'git-operations', 'SKILL.md')), true);
   runBuildr(['sync', 'codex', '--scope', '.', '--target', fixture.workspace]);
 
   const doctor = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json']), 'ownership recovery doctor');

@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-08-04
+goal: Provide safe defaults, hard boundaries, before/after identity, complete
+  push-range validation, and minimal fail-closed Result for an already selected
+  Git Operation.

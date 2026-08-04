@@ -52,12 +52,12 @@ skills:
     provides:
       - capability: buildr.git-worktree-provider
         version: 1
-  - id: git-ops
-    assetIdentity: buildr:skill:git-ops
-    sourceIdentity: package:skills/buildr/git-ops
+  - id: git-operations
+    assetIdentity: buildr:skill:git-operations
+    sourceIdentity: package:skills/buildr/git-operations
     source: buildr
-    path: buildr/git-ops
-    description: 用户表达提交、推送、拉取、pull、合并、merge、rebase、checkout、switch、reset、cherry-pick、revert、stash、发布、删除分支等单项 Git 意图，或 Git 操作存在授权、范围、amend、远端改写、工作区转换、分支删除等歧义时使用。
+    path: buildr/git-operations
+    description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，需要执行 commit、push、commit+push 或检查该动作的授权、安全边界和结果 evidence 时使用；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
     enabled: true
     required: false
     state: installed
@@ -69,13 +69,9 @@ skills:
       - trae
       - trae-work
       - workbuddy
-    runtimePath: git-ops
+    runtimePath: git-operations
     provides:
-      - capability: buildr.git-single-operation
-        version: 1
-      - capability: buildr.git-task-integration
-        version: 1
-      - capability: buildr.git-workspace-update
+      - capability: buildr.git-operations
         version: 1
   - id: task-finish
     assetIdentity: buildr:skill:task-finish
@@ -105,7 +101,7 @@ skills:
       - capability: buildr.task-environment
         version: 1
         mode: required
-      - capability: buildr.git-single-operation
+      - capability: buildr.git-operations
         version: 1
         mode: optional
   - id: openspec-contract-guard
@@ -510,18 +506,6 @@ skills:
         version: 3
         mode: optional
 contracts:
-  - id: buildr.git-single-operation
-    version: 1
-    path: contracts/buildr/git-single-operation/v1.md
-    description: 安全执行一个明确的 Git 操作并返回可审计结果。
-  - id: buildr.git-task-integration
-    version: 1
-    path: contracts/buildr/git-task-integration/v1.md
-    description: 提交并把已验证任务安全集成到目标分支。
-  - id: buildr.git-workspace-update
-    version: 1
-    path: contracts/buildr/git-workspace-update/v1.md
-    description: 在 workspace sync 前安全更新 Git checkout。
   - id: buildr.task-asset-review
     version: 1
     path: contracts/buildr/task-asset-review/v1.md
@@ -578,16 +562,11 @@ contracts:
     version: 1
     path: contracts/buildr/task-development/v1.md
     description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
+  - id: buildr.git-operations
+    version: 1
+    path: contracts/buildr/git-operations/v1.md
+    description: 为已选定的单次 Git Operation 提供授权、安全边界、前后 identity 与最小结果。
 bindings:
-  - capability: buildr.git-single-operation
-    version: 1
-    provider: git-ops
-  - capability: buildr.git-task-integration
-    version: 1
-    provider: git-ops
-  - capability: buildr.git-workspace-update
-    version: 1
-    provider: git-ops
   - capability: buildr.task-asset-review
     version: 1
     provider: task-asset-review
@@ -630,4 +609,7 @@ bindings:
   - capability: buildr.task-development
     version: 1
     provider: task-development
+  - capability: buildr.git-operations
+    version: 1
+    provider: git-operations
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

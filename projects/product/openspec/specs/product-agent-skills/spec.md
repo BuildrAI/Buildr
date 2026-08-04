@@ -3,6 +3,7 @@
 ## Purpose
 定义 Buildr 产品入口 Agent Skill、workspace Skill 源资产、Project capability/applicability context、runtime 投射和场景化工作流引导契约。
 ## Requirements
+
 ### Requirement: 产品内置 Agent Skills
 Buildr MUST 支持面向支持 runtime 的产品内置 Agent Skills，将其作为 workspace sync 的一部分进行同步，并 MUST 通过 capability contracts 路由可替换的 workspace 专业动作。
 
@@ -26,21 +27,21 @@ Buildr MUST 支持面向支持 runtime 的产品内置 Agent Skills，将其作�
 
 #### Scenario: Buildr Skill 感知 Git 管理的 workspace 同步意图
 - **WHEN** 用户要求 Agent“更新 workspace”“同步 workspace”或表达明确等价意图，且 workspace root 由 Git 管理
-- **THEN** Buildr Skill MUST resolve `buildr.git-workspace-update/v1` and use the selected provider to inspect branch、upstream 和 working tree state and safely update the local checkout
+- **THEN** Buildr Skill MUST resolve `buildr.git-operations/v1`，并把明确 workspace、upstream、update operation 与授权交给 selected provider
 - **AND** Git 更新成功后 Agent MUST 直接运行 `buildr sync <agent> --target <dir>`，不得因 sync 再次询问授权
 - **AND** Agent MUST NOT 先运行 `buildr update`
 - **AND** Agent MUST 使用 sync 的最终 doctor 结果判断 workspace 同步是否完成
 
 #### Scenario: Git workspace update provider 不可用
-- **WHEN** `buildr.git-workspace-update/v1` consumer readiness is `blocked`
+- **WHEN** `buildr.git-operations/v1` consumer readiness is `blocked`
 - **THEN** Buildr Skill MUST stop before changing the checkout
 - **AND** Agent MUST report the readiness reason and executable provider or binding nextActions
-- **AND** Agent MUST NOT silently fall back to the uninstalled builtin `git-ops`
+- **AND** Agent MUST NOT silently fall back to a removed builtin or hand-written Git route
 
 #### Scenario: Git workspace 无法安全更新
 - **WHEN** workspace Git 更新遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态
 - **THEN** Agent MUST 停止并说明实际状态和可执行选项
-- **AND** Agent MUST NOT 自动 stash、rebase、覆盖或继续执行 `buildr sync`
+- **AND** Agent MUST NOT 自动 stash、rebase、merge、覆盖或继续执行 `buildr sync`
 
 #### Scenario: Buildr Skill 感知非 Git workspace 同步意图
 - **WHEN** 用户要求 Agent“更新 workspace”“同步 workspace”或表达明确等价意图，且 workspace root 不由 Git 管理
@@ -96,30 +97,6 @@ Buildr Skill MUST 按 asset semantics 定义 Rules 与 Skills，而不是按它�
 - **THEN** reusable Conventional Commits format、type selection and message generation procedure MUST belong to the Git operations Skill
 - **AND** Buildr default commit language MUST belong to required Core so it remains independent of the Git operations Skill lifecycle
 - **AND** more specific Project、Service or repository rules MUST be allowed to override the Core language default
-
-### Requirement: Git Ops 生成精简提交信息
-Buildr Git Ops Skill MUST 提供精简的 Conventional Commits 提交信息生成规则，并遵循 Core 和更具体的提交语言约定。
-
-#### Scenario: 生成提交主题
-- **WHEN** Agent 为已确认提交范围生成 commit message
-- **THEN** subject MUST 使用 `<type>(<scope>): <subject>` 格式，其中 scope 可选
-- **AND** type MUST 从 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 中选择
-- **AND** Agent MUST 基于实际提交内容选择 type 和 scope，不得猜测不明确的 scope
-
-#### Scenario: 补充正文或破坏性变更
-- **WHEN** 变更动机、行为差异或破坏性影响需要补充说明
-- **THEN** Agent MUST 使用可选正文说明动机和行为差异
-- **AND** 破坏性变更 MUST 使用 `BREAKING CHANGE:` 说明
-- **AND** 不需要补充信息时 MUST 保持仅一行 subject
-
-#### Scenario: 应用提交语言约定
-- **WHEN** Agent 使用 Git Ops 生成 commit message
-- **THEN** Git Ops MUST 遵循 Core 的默认提交语言和当前 scope 的更具体约定
-- **AND** Git Ops MUST NOT 在 Skill 正文中复制 Core 的语言约束
-
-#### Scenario: 仓库已有明确格式
-- **WHEN** 项目或仓库规则定义了比 Git Ops 默认格式更具体的提交约定
-- **THEN** Agent MUST 遵循更具体的项目或仓库约定
 
 ### Requirement: Buildr 技能引导工具型资产维护
 Buildr 内置技能 MUST 引导 Agent 使用 Buildr 源资产维护规则、技能和命令行工具清单，并区分源资产维护与运行环境投射。
@@ -377,3 +354,27 @@ Buildr Product Skill MUST explain the canonical Project fields, source boundary,
 #### Scenario: Agent 看到 branch drift
 - **WHEN** doctor 或 UI 报告 current branch 偏离 integration branch
 - **THEN** Skill MUST 引导 Agent 结合当前任务判断，而不是让 Buildr 自动切换分支
+
+### Requirement: Git Operations 生成精简提交信息
+Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的 Conventional Commits 提交信息规则，并 MUST 遵循 Core 和更具体的提交语言约定。
+
+#### Scenario: 生成提交主题
+- **WHEN** Agent 为已确认提交范围生成 commit message
+- **THEN** subject MUST 使用 `<type>(<scope>): <subject>` 格式，其中 scope 可选
+- **AND** type MUST 从 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 中选择
+- **AND** Agent MUST 基于实际提交内容选择 type 和 scope，不得猜测不明确的 scope
+
+#### Scenario: 补充正文或破坏性变更
+- **WHEN** 变更动机、行为差异或破坏性影响需要补充说明
+- **THEN** Agent MUST 使用可选正文说明动机和行为差异
+- **AND** 破坏性变更 MUST 使用 `BREAKING CHANGE:` 说明
+- **AND** 不需要补充信息时 MUST 保持仅一行 subject
+
+#### Scenario: 应用提交语言约定
+- **WHEN** Agent 使用 Git Operations 生成 commit message
+- **THEN** Git Operations MUST 遵循 Core 的默认提交语言和当前 scope 的更具体约定
+- **AND** Git Operations MUST NOT 在 Skill 正文中复制 Core 的语言约束
+
+#### Scenario: 仓库已有明确格式
+- **WHEN** 项目或仓库规则定义了比 Git Operations 默认格式更具体的提交约定
+- **THEN** Agent MUST 遵循更具体的项目或仓库约定

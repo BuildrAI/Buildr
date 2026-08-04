@@ -21,21 +21,30 @@ agentSkills:
       - workbuddy
 
 capabilityContracts:
-  - id: buildr.git-single-operation
+  - id: buildr.git-operations
     version: 1
-    description: 安全执行一个明确的 Git 操作并返回可审计结果。
-    path: package/targets/workspace/skills/contracts/buildr/git-single-operation/v1.md
-    target: skills/contracts/buildr/git-single-operation/v1.md
-  - id: buildr.git-task-integration
-    version: 1
-    description: 提交并把已验证任务安全集成到目标分支。
-    path: package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md
-    target: skills/contracts/buildr/git-task-integration/v1.md
-  - id: buildr.git-workspace-update
-    version: 1
-    description: 在 workspace sync 前安全更新 Git checkout。
-    path: package/targets/workspace/skills/contracts/buildr/git-workspace-update/v1.md
-    target: skills/contracts/buildr/git-workspace-update/v1.md
+    description: 为已选定的单次 Git Operation 提供授权、安全边界、前后 identity 与最小结果。
+    path: package/targets/workspace/skills/contracts/buildr/git-operations/v1.md
+    target: skills/contracts/buildr/git-operations/v1.md
+    replaces:
+      - id: buildr.git-single-operation
+        version: 1
+        target: skills/contracts/buildr/git-single-operation/v1.md
+        integrity: sha256-7a3c956590b7cbb74c0676c6c3999dd078fc298da6c8f83c8c8be7963ad58379
+        provider: git-ops
+        description: 安全执行一个明确的 Git 操作并返回可审计结果。
+      - id: buildr.git-task-integration
+        version: 1
+        target: skills/contracts/buildr/git-task-integration/v1.md
+        integrity: sha256-e751f55c1adab0a5ca30300fec116770232796158681f7b4337ea0cac7aff88d
+        provider: git-ops
+        description: 提交并把已验证任务安全集成到目标分支。
+      - id: buildr.git-workspace-update
+        version: 1
+        target: skills/contracts/buildr/git-workspace-update/v1.md
+        integrity: sha256-026125f83f82e2a0a650b38b2e2ae0291c3f1ef5fd37565066d2fc36b7f0a981
+        provider: git-ops
+        description: 在 workspace sync 前安全更新 Git checkout。
   - id: buildr.task-environment
     version: 1
     description: 管理正式 Task 的实际执行环境和唯一 Environment Receipt。
@@ -118,15 +127,9 @@ capabilityContracts:
     target: skills/contracts/buildr/task-board-maintenance/v1.md
 
 initialSkillBindings:
-  - capability: buildr.git-single-operation
+  - capability: buildr.git-operations
     version: 1
-    provider: git-ops
-  - capability: buildr.git-task-integration
-    version: 1
-    provider: git-ops
-  - capability: buildr.git-workspace-update
-    version: 1
-    provider: git-ops
+    provider: git-operations
   - capability: buildr.task-environment
     version: 1
     provider: task-environment
@@ -320,7 +323,7 @@ builtins:
         - capability: buildr.task-environment
           version: 1
           mode: required
-        - capability: buildr.git-single-operation
+        - capability: buildr.git-operations
           version: 1
           mode: optional
       legacyIntegrities:
@@ -351,19 +354,20 @@ builtins:
           version: 1
           mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: git-ops
-      path: package/targets/workspace/skills/buildr/git-ops
-      target: skills/buildr/git-ops
-      description: 用户表达提交、推送、拉取、pull、合并、merge、rebase、checkout、switch、reset、cherry-pick、revert、stash、发布、删除分支等单项 Git 意图，或 Git 操作存在授权、范围、amend、远端改写、工作区转换、分支删除等歧义时使用。
+    - id: git-operations
+      path: package/targets/workspace/skills/buildr/git-operations
+      target: skills/buildr/git-operations
+      description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，需要执行 commit、push、commit+push 或检查该动作的授权、安全边界和结果 evidence 时使用；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
       required: false
       provides:
-        - capability: buildr.git-single-operation
+        - capability: buildr.git-operations
           version: 1
-        - capability: buildr.git-task-integration
-          version: 1
-        - capability: buildr.git-workspace-update
-          version: 1
+      replaces:
+        id: git-ops
+        target: skills/buildr/git-ops
+        runtimePath: git-ops
       legacyIntegrities:
+        - sha256-50b5fb04eb75acb1218fc5c34caf4e0e7b66500f0df28e6f296f8b9f89e559b8
         - sha256-badf69cfc2f7983fdbd2c681f7418a542d5538bfab283dfe8da927bfdfdd96c8
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-explore
@@ -460,9 +464,7 @@ workspaceFiles:
   - package/targets/workspace/commands/manifest.yml => commands/manifest.yml copy
   - package/targets/workspace/components/manifest.yml => components/manifest.yml copy
   - package/targets/workspace/skills/manifest.yml => skills/manifest.yml copy
-  - package/targets/workspace/skills/contracts/buildr/git-single-operation/v1.md => skills/contracts/buildr/git-single-operation/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md => skills/contracts/buildr/git-task-integration/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/git-workspace-update/v1.md => skills/contracts/buildr/git-workspace-update/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-record/v1.md => skills/contracts/buildr/task-record/v1.md copy
@@ -504,7 +506,7 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - package/targets/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - package/targets/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
-  - package/targets/workspace/skills/buildr/git-ops/SKILL.md => skills/buildr/git-ops/SKILL.md copy
+  - package/targets/workspace/skills/buildr/git-operations/SKILL.md => skills/buildr/git-operations/SKILL.md copy
 
 projectDirectories:
   - openspec/specs
