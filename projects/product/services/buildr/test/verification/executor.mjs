@@ -4,6 +4,13 @@ import process from 'node:process';
 import { createCandidatePackage, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_TARBALL_ENV } from './release/candidate-package.mjs';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
 
+export function workerBudgetEnvironment(step, executionProfile) {
+  const budget = executionProfile?.limits?.innerConcurrency?.[step.id];
+  if (budget == null) return {};
+  if (!Number.isInteger(budget) || budget < 1) throw new Error(`Invalid inner concurrency budget for ${step.id}`);
+  return { BUILDR_VERIFICATION_WORKER_BUDGET: String(budget) };
+}
+
 export function createVerificationExecutor(options) {
   const productRoot = path.resolve(options.productRoot);
   const projectRoot = path.resolve(options.projectRoot ?? productRoot);
@@ -66,7 +73,7 @@ export function createVerificationExecutor(options) {
       ...step,
       ...resolved,
       cwd: resolved.cwd ?? productRoot,
-      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv },
+      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext.executionProfile) },
       diagnosticsDirectory: options.diagnosticsDirectory,
     });
   };

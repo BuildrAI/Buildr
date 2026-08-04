@@ -7,6 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
+import { resolveVerificationWorkerBudget } from '../worker-budget.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -243,7 +244,7 @@ async function main() {
   let results = [];
   try {
     const preparationMs = await prepareBase(baseRoot);
-    const concurrency = Math.min(12, names.length);
+    const concurrency = resolveVerificationWorkerBudget({ env: process.env, fallback: 12, maximum: names.length, label: `OpenSpec ${selectedSuite} fixture suite` });
     let cursor = 0;
     const workers = Array.from({ length: concurrency }, async () => {
       const owned = [];

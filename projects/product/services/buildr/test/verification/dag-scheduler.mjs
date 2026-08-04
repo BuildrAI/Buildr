@@ -73,7 +73,7 @@ export async function runVerificationDag(plan, options = {}) {
         : null;
       startedAtMs = now();
       options.onStart?.(step);
-      return execute(step, { resourceEnvironment: resourceHandle?.environment || {} });
+      return execute(step, { resourceEnvironment: resourceHandle?.environment || {}, executionProfile: options.executionProfile });
     }).then((result) => ({ id: step.id, title: step.title, name: step.name, ...result }), (error) => ({
       id: step.id, title: step.title, name: step.name, status: 'failed', exitCode: 1, signal: null, durationMs: 0, stdout: '', stderr: `${error.stack || error.message}\n`,
     })).then(async (result) => {

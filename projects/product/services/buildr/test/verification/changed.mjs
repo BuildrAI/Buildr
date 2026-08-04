@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { collectChangedProductPaths } from './changed-paths.mjs';
 import { createVerificationPlan, createVerificationPreflightPlan } from './planner.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
+import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -46,6 +47,7 @@ try {
     usage();
   } else {
     const changed = collectChangedProductPaths({ productRoot, projectRoot, base: args.base, explicitPaths: args.paths });
+    const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
     const preflightPlan = createVerificationPreflightPlan({ paths: changed.paths });
     const plan = createVerificationPlan({ paths: changed.paths });
     const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, delegated: plan.delegated, preflightSteps: preflightPlan.steps, steps: plan.steps };
@@ -73,6 +75,8 @@ try {
         },
         runId: evidence.runId,
         taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'changed',
+        concurrency: executionProfile.limits,
+        executionProfile,
         stream: process.stdout,
         errorStream: process.stderr,
       };
@@ -95,6 +99,7 @@ try {
         prefix: 'verify-changed',
         stream: process.stdout,
         errorStream: process.stderr,
+        executionProfile,
       });
       if (!execution.passed) process.exitCode = 1;
       else process.stdout.write('Buildr changed verification passed.\n');
@@ -116,6 +121,7 @@ try {
         prefix: 'verify-changed',
         stream: process.stdout,
         errorStream: process.stderr,
+        executionProfile: resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE),
       });
     } catch {}
   }

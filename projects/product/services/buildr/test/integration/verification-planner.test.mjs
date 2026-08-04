@@ -27,7 +27,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
     'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
-    'unit', 'component', 'integration', 'contract', 'system', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
+    'unit', 'component', 'integration', 'integration-task-development', 'contract', 'system', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'integration-candidate-recovery', 'concurrent-task-acceptance', 'candidate-tarball', 'open-source-candidate',
     'openspec-candidate-audit', 'managed-mutations', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'openspec-convergence-recovery', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
@@ -60,6 +60,7 @@ test('Project Testing 分类完整且 Quick 只包含低成本非 System step', 
   assert.deepEqual(verificationSteps.find((step) => step.id === 'integration-candidate-release').profiles, []);
   assert.deepEqual(verificationSteps.find((step) => step.id === 'repository-onboarding').profiles, []);
   assert.equal(verificationSteps.find((step) => step.id === 'integration-task-finish').testing.primaryEvidenceOwner, 'integration');
+  assert.equal(verificationSteps.find((step) => step.id === 'integration-task-development').testing.primaryEvidenceOwner, 'integration');
   assert.equal(verificationSteps.find((step) => step.id === 'system-task-finish').testing.primaryEvidenceOwner, 'system');
   assert.equal(verificationSteps.some((step) => step.id.startsWith('browser-')), false);
 });
@@ -186,6 +187,18 @@ test('Task Finish affected 路径使用有界 Integration/System slice', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['docs/cli-reference.md'] })), [
     'candidate-tarball', 'open-source-candidate', 'cli-compatibility', 'docs-quality',
   ]);
+});
+
+test('Task Development lifecycle 路径使用独立重型 Integration owner', () => {
+  const sourcePlan = ids(createVerificationPlan({ paths: ['src/application/task-development/task-development-application.mjs'] }));
+  assert.deepEqual(sourcePlan, ['unit', 'integration-task-development', 'system']);
+  assert.equal(sourcePlan.includes('integration'), false);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-development-application.test.mjs'] })), [
+    'integration-task-development',
+  ]);
+  const owner = verificationSteps.find((step) => step.id === 'integration-task-development');
+  assert.deepEqual(owner.resources, ['workspace-saturating', 'task-lifecycle-heavy']);
+  assert.equal(owner.testing.executionBoundary, 'Integration');
 });
 
 test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {

@@ -16,6 +16,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.'),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.'),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 30000, 'Buildr modules behave correctly across real filesystem, Git, or process boundaries.'),
+  'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Task Development lifecycle behavior remains correct across real CLI, filesystem, and Application boundaries.', 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish behaves correctly across its real filesystem, Git, and process boundaries.', 'integration'),
   system: testing(PROJECT_OWNER, 'Development', 'System', 70000, 'Buildr public CLI and Workspace lifecycle journeys behave correctly.'),
   'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Task Finish public CLI and delivery journeys behave correctly.', 'system'),
@@ -80,16 +81,17 @@ const packageVerifier = (selector) => {
   return { name: verifier.name, executor: { type: 'package-selector', selector } };
 };
 
-const concurrency = (global, workspaceHeavy, workspaceSaturating) => Object.freeze({
+const concurrency = (global, workspaceHeavy, workspaceSaturating, innerConcurrency) => Object.freeze({
   global,
   classes: Object.freeze({ default: global, 'cpu-heavy': 2, 'workspace-heavy': workspaceHeavy, network: 2, exclusive: 1 }),
-  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating }),
+  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating, 'task-lifecycle-heavy': 1 }),
+  innerConcurrency: Object.freeze(innerConcurrency),
 });
 
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
-  local: concurrency(4, 3, 2),
-  ci: concurrency(4, 3, 2),
-  'ci-workspace-limited': concurrency(4, 2, 1),
+  local: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 4, 'openspec-convergence-recovery': 3 }),
+  ci: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 4, 'openspec-convergence-recovery': 3 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, system: 6, 'openspec-contract-fixtures': 3, 'openspec-convergence-recovery': 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY = VERIFICATION_EXECUTION_PROFILES.local;
@@ -144,23 +146,22 @@ export const verificationSteps = Object.freeze([
     'test/component/**',
     'src/application/service/**',
   ], concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'technical boundary integration tests', executor: { type: 'npm', args: ['run', 'test:integration'] }, profiles: ['candidate'], inputs: [
+  step({ id: 'integration', name: 'technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.mjs', args: ['--suite', 'general'] }, profiles: ['candidate'], inputs: [
     'test/integration/**',
+    'test/verification/integration.mjs',
+    'test/verification/worker-budget.mjs',
     'src/application/change/**',
     'src/application/compose-runtime.mjs',
     'src/application/doctor/**',
     'src/application/openspec/**',
     'src/application/package-maintenance/**',
-    'src/application/task-development/**',
     'src/application/task-environment/**',
     'src/application/task-finish/**',
     'src/application/task-review/**',
     'src/application/task-verification/**',
     'src/application/verification/**',
     'src/domain/task-environment/**',
-    'src/domain/task-development/**',
     'src/infrastructure/content/**',
-    'src/infrastructure/filesystem/task-development-repository.mjs',
     'src/interfaces/internal/**',
     'src/infrastructure/filesystem/workspace-node-runtime.mjs',
     'src/infrastructure/runtime/**',
@@ -168,9 +169,25 @@ export const verificationSteps = Object.freeze([
     'src/interfaces/local-app/web/api-client.js',
     'src/interfaces/local-app/web/router.js',
   ], inputExclusions: [
+    'test/integration/task-development-application.test.mjs',
     'test/integration/task-finish-*.test.mjs',
+    'src/application/task-development/**',
+    'src/domain/task-development/**',
+    'src/infrastructure/filesystem/task-development-repository.mjs',
     'src/application/task-finish/**',
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-task-development', name: 'Task Development lifecycle integration', executor: { type: 'node-test', files: [
+    'test/integration/task-development-application.test.mjs',
+  ], args: ['--test-concurrency=1'] }, profiles: ['candidate'], inputs: [
+    'test/integration/task-development-application.test.mjs',
+    'src/application/task-development/**',
+    'src/domain/task-development/**',
+    'src/infrastructure/filesystem/task-development-repository.mjs',
+    'src/application/task-review/**',
+    'src/application/task-verification/**',
+    'src/application/verification/**',
+    'src/application/task-environment/**',
+  ], schedulingCostMs: 90000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
   step({ id: 'integration-task-finish', name: 'Task Finish integration slice', executor: { type: 'node-test', files: [
     'test/integration/task-finish-delivery-remote.test.mjs',
     'test/integration/task-finish-retained-cleanup.test.mjs',
@@ -248,7 +265,7 @@ export const verificationSteps = Object.freeze([
   ], inputExclusions: [
     'test/system/task-finish-*.test.mjs',
     'src/application/task-finish/**',
-  ], schedulingCostMs: 65000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  ], schedulingCostMs: 65000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
   step({ id: 'system-task-finish', name: 'Task Finish public journey slice', executor: { type: 'node-test', files: [
     'test/system/task-finish-cli.test.mjs',
     'test/system/task-finish-product-journey.test.mjs',

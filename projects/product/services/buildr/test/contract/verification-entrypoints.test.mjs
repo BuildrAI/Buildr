@@ -124,6 +124,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'fine-grained unit tests',
     'bounded component tests',
     'technical boundary integration tests',
+    'Task Development lifecycle integration',
     'repository contract tests',
     'public CLI and Workspace system tests',
     'Candidate integration: builtin recovery and migration',
@@ -170,11 +171,20 @@ test('candidate verification retains necessary Candidate facts without Browser a
     assert.ok(system.inputs.includes(helper), `${helper} must map to the System owner`);
   }
   assert.deepEqual(candidatePlan.steps.filter((step) => step.resources?.includes('workspace-saturating')).map((step) => step.id), [
-    'system', 'integration-candidate-recovery', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
+    'integration-task-development', 'system', 'integration-candidate-recovery', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
   ]);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.resources['workspace-saturating'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['workspace-saturating'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['workspace-saturating'], 1);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.resources['task-lifecycle-heavy'], 1);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['task-lifecycle-heavy'], 1);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
+  assert.deepEqual(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency, {
+    integration: 6, system: 8, 'openspec-contract-fixtures': 4, 'openspec-convergence-recovery': 3,
+  });
+  assert.deepEqual(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency, {
+    integration: 3, system: 6, 'openspec-contract-fixtures': 3, 'openspec-convergence-recovery': 2,
+  });
   assert.ok(verificationSteps.find((step) => step.id === 'system').schedulingCostMs >= 60_000);
 });
 

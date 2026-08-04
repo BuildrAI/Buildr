@@ -9,6 +9,7 @@ import {
   prepareTaskLifecycleSystemContext,
   TASK_LIFECYCLE_CONTEXT_ENV,
 } from '../helpers/task-lifecycle-system-context.mjs';
+import { resolveVerificationWorkerBudget } from './worker-budget.mjs';
 
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const systemRoot = path.join(productRoot, 'test', 'system');
@@ -34,14 +35,15 @@ for (const name of startFirst) {
 const files = fileNames.map((name) => path.join(systemRoot, name));
 
 if (files.length === 0) throw new Error(`No System tests found in ${systemRoot}.`);
+const workerBudget = resolveVerificationWorkerBudget({ env: process.env, fallback: 14, maximum: files.length, label: 'System suite' });
 
 const context = prepareTaskLifecycleSystemContext();
-process.stderr.write(`[buildr-system-context] status=ready id=${context.marker.contextId} identity=${context.marker.identity} setupApplicationOperations=${context.marker.setup.applicationOperations} setupDurationMs=${context.marker.setup.durationMs}\n`);
+process.stderr.write(`[buildr-system-context] status=ready id=${context.marker.contextId} identity=${context.marker.identity} setupApplicationOperations=${context.marker.setup.applicationOperations} setupDurationMs=${context.marker.setup.durationMs} workerBudget=${workerBudget}\n`);
 
 let result = null;
 let cleanupError = null;
 try {
-  result = spawnSync(process.execPath, ['--test', '--test-concurrency=14', '--test-reporter=dot', ...files], {
+  result = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, '--test-reporter=dot', ...files], {
     cwd: productRoot,
     stdio: 'inherit',
     env: { ...process.env, [TASK_LIFECYCLE_CONTEXT_ENV]: context.contextRoot },

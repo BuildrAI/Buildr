@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { createVerificationPlan } from './planner.mjs';
-import { VERIFICATION_GROUPS, verificationSteps } from './registry.mjs';
+import { resolveVerificationExecutionProfile, VERIFICATION_GROUPS, verificationSteps } from './registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -68,6 +68,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       else if (parsed.planOnly) printPlan(plan);
       else {
         temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-focus-verification-'));
+        const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
         const execution = await executePlan(plan, {
           productRoot,
           diagnosticsDirectory: path.join(temporaryRoot, 'diagnostics'),
@@ -75,6 +76,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
           stream: process.stdout,
           errorStream: process.stderr,
           prefix: 'focus',
+          concurrency: executionProfile.limits,
+          executionProfile,
         });
         if (!execution.passed) process.exitCode = 1;
         else process.stdout.write(`Buildr focus verification passed: ${[...plan.stepIds, ...plan.groups.map((group) => `group:${group}`)].join(' ')}\n`);
