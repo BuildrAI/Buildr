@@ -18,6 +18,16 @@ function run(args) {
   assert.equal(result.status, 0, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
 }
 
+function pinImmutableTaskRecord(runtime, root, taskId) {
+  const readTaskRecordPersistence = runtime.readTaskRecordPersistence;
+  let taskRecord;
+  runtime.readTaskRecordPersistence = (targetRoot, currentTaskId, ...args) => {
+    if (targetRoot !== root || currentTaskId !== taskId) return readTaskRecordPersistence(targetRoot, currentTaskId, ...args);
+    taskRecord ||= readTaskRecordPersistence(targetRoot, currentTaskId, ...args);
+    return taskRecord;
+  };
+}
+
 function fixture(t, taskId) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-application-'));
   const root = path.join(base, 'workspace');
@@ -46,6 +56,7 @@ function fixture(t, taskId) {
     validationRoot: root,
     scopes: [{ selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(root, 'projects', 'demo') }],
   });
+  pinImmutableTaskRecord(runtime, root, taskId);
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
   runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Task plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
   runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
