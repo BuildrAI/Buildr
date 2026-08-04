@@ -15,6 +15,7 @@ import { stopPreview } from '../../src/interfaces/local-app/runtime/preview-mana
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const TEST_APP_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-app-data-'));
+const setupRuntime = createRuntime();
 process.once('exit', () => fs.rmSync(TEST_APP_DATA, { recursive: true, force: true }));
 
 function temporaryRoot(t) {
@@ -28,10 +29,23 @@ function runBuildr(args, options = {}) {
   return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
 }
 
-function initWorkspace(t, options = {}) {
+function initWorkspaceViaCli(t, options = {}) {
   const root = path.join(temporaryRoot(t), 'workspace');
   const result = runBuildr(['init', '--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team'], options.env ? { env: options.env } : {});
   assert.equal(result.status, 0, result.stderr);
+  return root;
+}
+
+function initWorkspace(t, options = {}) {
+  if (options.env) return initWorkspaceViaCli(t, options);
+  const root = path.join(temporaryRoot(t), 'workspace');
+  const previousLog = console.log;
+  console.log = () => {};
+  try {
+    setupRuntime.initBuildr(['--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team']);
+  } finally {
+    console.log = previousLog;
+  }
   return root;
 }
 
@@ -59,7 +73,7 @@ function writeLegacyWorkspace(root, workspaceId) {
 }
 
 test('init 生成 canonical Workspace，并让两个 Manifest 复用同一 UUID', (t) => {
-  const root = initWorkspace(t);
+  const root = initWorkspaceViaCli(t);
   const workspace = YAML.parse(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'));
   const skills = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
   assert.equal(workspace.schemaVersion, 'buildr.workspace/v1');

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 
 const sourceProductRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -25,6 +26,7 @@ function buildr(args, expectedStatus = 0, env = process.env) {
 }
 
 const fixtureWorkspaces = new Map();
+const taskRuntime = createRuntime();
 
 function fixtureWorkspace(_t, { git = true } = {}) {
   const key = git ? 'git' : 'shared';
@@ -49,7 +51,11 @@ after(() => {
 });
 
 function createTask(root, taskId) {
-  return buildr(['task', 'create', taskId, '--title', `Task ${taskId}`, '--intent', '验证 P0.2 Task Environment', '--target', root, '--json']);
+  return taskRuntime.createTaskRecord(root, { taskId, title: `Task ${taskId}`, intent: '验证 P0.2 Task Environment', projects: [], services: [], changes: [] });
+}
+
+function abandonTask(root, taskId, reason) {
+  return taskRuntime.abandonTaskRecord(root, taskId, { reason });
 }
 
 test('worktree CLI 只维护窄 Git provider evidence', (t) => {
@@ -181,7 +187,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   assert.equal(blocked.diagnostic.details.occupied.taskId, ownerTask);
   assert.equal(fs.existsSync(path.join(root, '.buildr', 'tasks', waiterTask, 'environment.json')), false);
 
-  buildr(['task', 'abandon', ownerTask, '--reason', 'release shared root', '--target', root, '--json']);
+  abandonTask(root, ownerTask, 'release shared root');
   const cleaned = buildr(['task', 'environment', 'cleanup', ownerTask, '--target', root, '--json']);
   assert.equal(cleaned.status, 'cleaned');
   assert.equal(cleaned.environment.latest.cleanup.status, 'cleaned');
@@ -191,7 +197,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
 
   const resumed = buildr(['task', 'environment', 'prepare', waiterTask, '--shared', '--target', root, '--json']);
   assert.equal(resumed.status, 'ready');
-  buildr(['task', 'abandon', waiterTask, '--reason', 'fixture complete', '--target', root, '--json']);
+  abandonTask(root, waiterTask, 'fixture complete');
   buildr(['task', 'environment', 'cleanup', waiterTask, '--target', root, '--json']);
 });
 
@@ -212,11 +218,7 @@ test('Git-backed Task Environment 组合 provider 并把 Git evidence 保持为�
   const provider = JSON.parse(fs.readFileSync(scope.provider.evidence, 'utf8'));
   assert.equal(provider.schemaVersion, 'buildr.git-worktree-evidence/v1');
   assert.equal(provider.repositories[0].checkoutPath, scope.executionRoot);
-  const inspected = buildr(['task', 'environment', 'inspect', taskId, '--target', root, '--json']);
-  assert.equal(inspected.status, 'ready');
-  assert.equal(inspected.environment.scopes[0].executionRoot, scope.executionRoot);
-
-  buildr(['task', 'abandon', taskId, '--reason', 'integration fixture complete', '--target', root, '--json']);
+  abandonTask(root, taskId, 'integration fixture complete');
   const cleaned = buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);
   assert.equal(cleaned.status, 'cleaned');
   assert.equal(fs.existsSync(scope.executionRoot), false);

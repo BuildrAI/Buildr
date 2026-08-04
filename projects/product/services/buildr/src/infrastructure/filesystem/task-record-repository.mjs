@@ -63,25 +63,32 @@ export function registerTaskRecordRepository(runtime) {
     return root;
   }
 
-  function taskRecordsRoot(targetRoot) {
-    return path.join(assertCanonicalTaskWorkspace(targetRoot), '.buildr', 'tasks');
+  function taskRecordsRootAtRoot(root) {
+    return path.join(root, '.buildr', 'tasks');
   }
 
-  function taskRecordDirectory(targetRoot, taskId) {
+  function taskRecordsRoot(targetRoot) {
+    return taskRecordsRootAtRoot(assertCanonicalTaskWorkspace(targetRoot));
+  }
+
+  function taskRecordDirectoryAtRoot(root, taskId) {
     if (!isTaskRecordId(taskId)) throw taskRecordError('task_record_identity_invalid', `Task ID 不合法：${taskId || '<missing>'}。`, 400, { taskId });
-    const root = taskRecordsRoot(targetRoot);
-    const directory = path.resolve(root, taskId);
-    if (path.dirname(directory) !== root) throw taskRecordError('task_record_path_escape', 'Task Record path 逃逸。', 400, { taskId });
+    const recordsRoot = taskRecordsRootAtRoot(root);
+    const directory = path.resolve(recordsRoot, taskId);
+    if (path.dirname(directory) !== recordsRoot) throw taskRecordError('task_record_path_escape', 'Task Record path 逃逸。', 400, { taskId });
     return directory;
   }
 
-  function taskRecordPath(targetRoot, taskId) {
-    return path.join(taskRecordDirectory(targetRoot, taskId), 'task.yml');
+  function taskRecordDirectory(targetRoot, taskId) {
+    return taskRecordDirectoryAtRoot(assertCanonicalTaskWorkspace(targetRoot), taskId);
   }
 
-  function taskRecordPresence(targetRoot, taskId) {
-    const root = assertCanonicalTaskWorkspace(targetRoot);
-    const directory = taskRecordDirectory(root, taskId);
+  function taskRecordPath(targetRoot, taskId) {
+    return path.join(taskRecordDirectoryAtRoot(assertCanonicalTaskWorkspace(targetRoot), taskId), 'task.yml');
+  }
+
+  function taskRecordPresenceAtRoot(root, taskId) {
+    const directory = taskRecordDirectoryAtRoot(root, taskId);
     const file = path.join(directory, 'task.yml');
     if (!fs.existsSync(directory)) return { status: 'absent', directory, file };
     if (regularDirectory(directory) && regularFile(file)) {
@@ -96,6 +103,10 @@ export function registerTaskRecordRepository(runtime) {
     return { status: 'occupied', directory, file };
   }
 
+  function taskRecordPresence(targetRoot, taskId) {
+    return taskRecordPresenceAtRoot(assertCanonicalTaskWorkspace(targetRoot), taskId);
+  }
+
   function occupiedTaskRecordError(taskId, presence) {
     return taskRecordError('task_record_path_occupied', `Task Record 路径已被占用但不是有效记录：${taskId}。`, 409, {
       taskId,
@@ -103,11 +114,10 @@ export function registerTaskRecordRepository(runtime) {
     }, '检查并恢复该 Task 目录中的 task.yml 后重试；Buildr 不会覆盖或清理其他模块文件。');
   }
 
-  function readTaskRecordPersistence(targetRoot, taskId) {
-    const root = assertCanonicalTaskWorkspace(targetRoot);
-    const directory = taskRecordDirectory(root, taskId);
+  function readTaskRecordPersistenceAtRoot(root, taskId) {
+    const directory = taskRecordDirectoryAtRoot(root, taskId);
     const file = path.join(directory, 'task.yml');
-    const presence = taskRecordPresence(root, taskId);
+    const presence = taskRecordPresenceAtRoot(root, taskId);
     if (presence.status === 'absent') {
       throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId, path: file }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
     }
@@ -117,9 +127,13 @@ export function registerTaskRecordRepository(runtime) {
     return { root, directory, file, content, recordDigest: digest(content), record: parse(content, path.relative(root, file).split(path.sep).join('/'), taskId) };
   }
 
+  function readTaskRecordPersistence(targetRoot, taskId) {
+    return readTaskRecordPersistenceAtRoot(assertCanonicalTaskWorkspace(targetRoot), taskId);
+  }
+
   function listTaskRecordPersistence(targetRoot) {
     const root = assertCanonicalTaskWorkspace(targetRoot);
-    const tasksRoot = path.join(root, '.buildr', 'tasks');
+    const tasksRoot = taskRecordsRootAtRoot(root);
     if (!fs.existsSync(tasksRoot)) return { root, tasksRoot, records: [], diagnostics: [] };
     if (!regularDirectory(tasksRoot)) {
       throw taskRecordError('task_record_root_invalid', '.buildr/tasks 必须是普通目录。', 409, { path: '.buildr/tasks' }, '恢复 .buildr/tasks 目录后刷新。');
@@ -132,7 +146,7 @@ export function registerTaskRecordRepository(runtime) {
         continue;
       }
       try {
-        records.push(readTaskRecordPersistence(root, entry.name));
+        records.push(readTaskRecordPersistenceAtRoot(root, entry.name));
       } catch (error) {
         diagnostics.push({ taskId: entry.name, code: error.code || 'task_record_invalid', message: error.message, details: error.details });
       }
@@ -144,22 +158,22 @@ export function registerTaskRecordRepository(runtime) {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     const normalized = normalizeTaskRecord(record, { expectedTaskId: record?.taskId });
     const content = renderTaskRecord(normalized);
-    parse(content, path.relative(root, taskRecordPath(root, normalized.taskId)).split(path.sep).join('/'), normalized.taskId);
-    const file = taskRecordPath(root, normalized.taskId);
-    const presence = taskRecordPresence(root, normalized.taskId);
+    const file = path.join(taskRecordDirectoryAtRoot(root, normalized.taskId), 'task.yml');
+    parse(content, path.relative(root, file).split(path.sep).join('/'), normalized.taskId);
+    const presence = taskRecordPresenceAtRoot(root, normalized.taskId);
     if (presence.status === 'absent') throw taskRecordError('task_record_not_found', `Task Record 不存在：${normalized.taskId}。`, 404, { taskId: normalized.taskId, path: file }, `运行 buildr task create ${normalized.taskId} 创建正式 Task Record。`);
     if (presence.status === 'invalid') throw presence.error;
     if (presence.status === 'occupied') throw occupiedTaskRecordError(normalized.taskId, presence);
     runtime.atomicWriteFile(file, content);
-    return readTaskRecordPersistence(root, normalized.taskId);
+    return readTaskRecordPersistenceAtRoot(root, normalized.taskId);
   }
 
   function createTaskRecordPersistence(targetRoot, record) {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     const normalized = normalizeTaskRecord(record, { expectedTaskId: record?.taskId });
     const content = renderTaskRecord(normalized);
-    const tasksRoot = path.join(root, '.buildr', 'tasks');
-    const directory = taskRecordDirectory(root, normalized.taskId);
+    const tasksRoot = taskRecordsRootAtRoot(root);
+    const directory = taskRecordDirectoryAtRoot(root, normalized.taskId);
     const file = path.join(directory, 'task.yml');
     parse(content, path.relative(root, file).split(path.sep).join('/'), normalized.taskId);
 
@@ -167,7 +181,7 @@ export function registerTaskRecordRepository(runtime) {
     if (!regularDirectory(tasksRoot)) {
       throw taskRecordError('task_record_root_invalid', '.buildr/tasks 必须是普通目录。', 409, { path: '.buildr/tasks' }, '恢复 .buildr/tasks 目录后重试。');
     }
-    const before = taskRecordPresence(root, normalized.taskId);
+    const before = taskRecordPresenceAtRoot(root, normalized.taskId);
     if (before.status === 'record') throw taskRecordError('task_record_already_exists', `Task Record 已存在：${normalized.taskId}。`, 409, { taskId: normalized.taskId }, `运行 buildr task inspect ${normalized.taskId} 查看现有记录。`);
     if (before.status === 'invalid') throw before.error;
     if (before.status === 'occupied') throw occupiedTaskRecordError(normalized.taskId, before);
@@ -176,7 +190,7 @@ export function registerTaskRecordRepository(runtime) {
       fs.mkdirSync(directory);
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      const current = taskRecordPresence(root, normalized.taskId);
+      const current = taskRecordPresenceAtRoot(root, normalized.taskId);
       if (current.status === 'record') throw taskRecordError('task_record_already_exists', `Task Record 已存在：${normalized.taskId}。`, 409, { taskId: normalized.taskId }, `运行 buildr task inspect ${normalized.taskId} 查看现有记录。`);
       if (current.status === 'invalid') throw current.error;
       throw occupiedTaskRecordError(normalized.taskId, current);
@@ -188,7 +202,7 @@ export function registerTaskRecordRepository(runtime) {
       if (!fs.existsSync(file) && regularDirectory(directory) && fs.readdirSync(directory).length === 0) fs.rmdirSync(directory);
       throw error;
     }
-    return readTaskRecordPersistence(root, normalized.taskId);
+    return readTaskRecordPersistenceAtRoot(root, normalized.taskId);
   }
 
   Object.assign(runtime, {
