@@ -177,7 +177,11 @@ test('Task Finish affected 路径使用有界 Integration/System slice', () => {
   ]);
   const skillPlan = ids(createVerificationPlan({ paths: ['package/targets/workspace/skills/buildr/task-finish/SKILL.md'] }));
   assert.deepEqual(skillPlan, [
-    'contract', 'capability-cli-integration', 'package-static', 'package-skills', 'runtime-adapter-parity', 'docs-quality',
+    'contract', 'capability-cli-integration', 'package-static', 'package-skills', 'runtime-skill-projection', 'docs-quality',
+  ]);
+  assert.equal(skillPlan.includes('runtime-adapter-parity'), false);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['package/targets/workspace/skills/contracts/buildr/task-finish/v1.md'] })), [
+    'contract', 'capability-cli-integration', 'package-static', 'package-skills', 'docs-quality',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['docs/cli-reference.md'] })), [
     'candidate-tarball', 'open-source-candidate', 'cli-compatibility', 'docs-quality',
@@ -201,7 +205,7 @@ test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {
     'unit', 'integration-task-finish', 'contract', 'system-task-finish',
     'openspec-spec-quality', 'openspec-strict', 'candidate-tarball', 'open-source-candidate', 'openspec-candidate-audit',
     'capability-cli-integration', 'package-static', 'package-skills',
-    'runtime-adapter-parity', 'cli-compatibility', 'docs-quality',
+    'runtime-skill-projection', 'cli-compatibility', 'docs-quality',
   ]);
 });
 
