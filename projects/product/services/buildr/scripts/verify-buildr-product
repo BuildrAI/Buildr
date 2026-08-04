@@ -2,4 +2,4 @@
 set -euo pipefail
 
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec node "$product_root/test/verification/candidate.mjs"
+exec node "$product_root/test/verification/candidate.mjs" "$@"

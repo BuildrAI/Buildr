@@ -40,6 +40,20 @@ test('candidate rejects invalid scheduling and execution profiles before verific
   assert.doesNotMatch(`${invalidProfile.stdout}${invalidProfile.stderr}`, /\[verify-product\]/);
 });
 
+test('candidate full plan unions changed owners once and rejects unknown options before execution', () => {
+  const runner = path.join(productRoot, 'test', 'verification', 'candidate.mjs');
+  const planned = spawnSync(process.execPath, [runner, '--base', 'HEAD^', '--json'], { cwd: productRoot, encoding: 'utf8' });
+  assert.equal(planned.status, 0, planned.stderr);
+  const payload = JSON.parse(planned.stdout);
+  assert.equal(payload.schemaVersion, 'buildr.verification-full-plan/v1');
+  assert.equal(new Set(payload.steps.map((step) => step.id)).size, payload.steps.length);
+  for (const id of ['system', 'docs-quality']) assert.equal(payload.steps.filter((step) => step.id === id).length, 1);
+  const unknown = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8' });
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unknown test:candidate option/);
+  assert.doesNotMatch(`${unknown.stdout}${unknown.stderr}`, /\[verify-product\]/);
+});
+
 test('OpenSpec fixture runner lists disjoint suites and rejects unknown suites', () => {
   const runner = path.join(productRoot, 'test', 'verification', 'openspec', 'contract.mjs');
   const listed = spawnSync(process.execPath, [runner, '--list-suites'], { cwd: productRoot, encoding: 'utf8' });

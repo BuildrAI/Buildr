@@ -52,9 +52,10 @@ test('macOS launcher 不等待本地服务进程，避免 Finder 将图标判为
   const app = path.join(output, 'Buildr.app', 'Contents');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-launcher-home-'));
   const pidFile = path.join(home, 'launcher-child.pid');
+  const completedFile = path.join(home, 'launcher-child.completed');
   const runtime = path.join(app, 'MacOS', 'node');
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  fs.writeFileSync(runtime, `#!/bin/sh\nprintf '%s\\n' "$$" > "$HOME/launcher-child.pid"\nexec sleep 1\n`, { mode: 0o755 });
+  fs.writeFileSync(runtime, `#!/bin/sh\nprintf '%s\\n' "$$" > "$HOME/launcher-child.pid"\nsleep 1\nprintf 'completed\\n' > "$HOME/launcher-child.completed"\n`, { mode: 0o755 });
 
   const result = spawnSync(path.join(app, 'MacOS', 'Buildr'), [], { encoding: 'utf8', env: { ...process.env, HOME: home } });
   assert.equal(result.status, 0, result.stderr);
@@ -62,16 +63,8 @@ test('macOS launcher 不等待本地服务进程，避免 Finder 将图标判为
   assert.ok(fs.existsSync(pidFile), 'launcher should start the local app after the shell returns');
   const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
   assert.doesNotThrow(() => process.kill(pid, 0));
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    try {
-      process.kill(pid, 0);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
-    } catch (error) {
-      if (error.code === 'ESRCH') return;
-      throw error;
-    }
-  }
-  assert.fail('launcher fixture process should exit within its bounded lifetime');
+  for (let attempt = 0; attempt < 300 && !fs.existsSync(completedFile); attempt += 1) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  assert.ok(fs.existsSync(completedFile), 'launcher fixture process should complete within its bounded lifetime');
 });
 
 test('Windows launcher bundle 携带 runtime、Web 资源与桌面/开始菜单快捷方式安装入口', (t) => {

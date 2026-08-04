@@ -51,7 +51,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
   assert.equal(delivery.requiredForDelivery, true);
   assert.deepEqual(delivery.applicability.paths, ['**']);
-  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
+  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['npm', 'run', 'test:candidate', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
   assert.equal(fullRegression.requiredForDelivery, false);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
   assert.equal(declaration.capabilities.some((capability) => ['product.task-affected', 'product.candidate'].includes(capability.id)), false);
@@ -80,7 +80,9 @@ test('candidate verification retains necessary Candidate facts without Browser a
   const wrapper = read('scripts/verify-buildr-product');
   const candidate = read('test/verification/candidate.mjs');
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
+  assert.ok(wrapper.includes('"$@"'));
   assert.ok(candidate.includes("profiles: ['candidate']"));
+  assert.ok(candidate.includes('createVerificationPreflightPlan'));
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
   assert.ok(candidate.split(/\r?\n/).length < 100);

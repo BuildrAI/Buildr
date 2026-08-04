@@ -37,6 +37,14 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   ]);
 });
 
+test('Full plan 联合 Candidate 与 changed owner 并按 step identity 去重', () => {
+  const plan = createVerificationPlan({ profiles: ['candidate'], paths: ['test/integration-candidate-release/release.test.mjs', 'test/system/public-json-contracts.test.mjs'] });
+  const selected = ids(plan);
+  assert.equal(new Set(selected).size, selected.length);
+  assert.equal(selected.filter((id) => id === 'system').length, 1);
+  assert.equal(selected.filter((id) => id === 'integration-candidate-release').length, 1);
+});
+
 test('Project Testing 分类完整且 Quick 只包含低成本非 System step', () => {
   for (const step of verificationSteps) {
     assert.ok(step.testing.ownerScope);

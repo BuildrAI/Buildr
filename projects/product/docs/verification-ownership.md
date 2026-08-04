@@ -87,7 +87,7 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、静态 Contract、CLI architecture、OpenSpec spec quality/strict；不含真实投射、重复 cleanup、System、npm pack、浏览器或恢复矩阵 |
 | `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；聚合层可排除已有专属 slice 的路径；未映射 fail closed；命中 registry/planner/runner/声明/timing 等全局 owner 时确定性扩展 full |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
-| `test:candidate` | 显式 Product Full | 固定选择 38 个 Candidate owners，不按 diff 缩小；输出 transient timing/diagnostics |
+| `test:candidate` | 显式 Product Full | 默认选择 38 个 Candidate owners；带 `--base` 时联合 changed owners，按 step identity 去重后只执行一个 DAG；输出 transient timing/diagnostics |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Local App 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
 
@@ -118,7 +118,7 @@ Task Verification 不登记 41 个内部 executable step，也不为用户设计
 | --- | --- | ---: |
 | `product.fast` | `npm run test:fast`；低成本开发反馈 | 否 |
 | `product.delivery` | `test:changed -- --base origin/dev`；同一 plan 的 affected 或必要 full | 是 |
-| `product.full-regression` | `npm run test:candidate`；显式核心完整回归 | 否 |
+| `product.full-regression` | `npm run test:candidate -- --base origin/dev`；changed owner 与 Candidate profile 合并为一个去重 Full plan | 否 |
 | `product.browser-smoke` | Local App paths 适用时运行真实浏览器 Journey | 适用时是 |
 | `product.archive-lifecycle` | Change active/archive 与 Task Development/Finish authority 顺序 | 否 |
 | `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |
@@ -156,6 +156,7 @@ Development 稳定 Content Target 并固定 verification policy
 | Task Development 专项重复读取不变 Task Record | Full 中该 owner 为 85.89s；共享 `init + project create` 只值约 2.82s。单变量对照中只缓存 declaration 仍为 61.78s，只固定 Task Record persistence 为 23.68s | 每个 case 仍独立创建 Workspace/Task，只在 Task 不发生修改的 fixture 生命周期内复用一次真实 Task Record persistence；Content Target、declaration、Review、Verification、Development receipt 继续逐次真实读取。两项隔离 Journey 为 23.68s，最终 Full 中为 35.30s，下降约 59%；Candidate 为 151.31s，关键路径转移到 79.17s 的 System 与后续饱和队列 |
 | System 重复 canonical 校验、跨模块 fixture 冷启动与裸 PID cleanup | 最新两轮 Candidate 的 System 为 79.17s / 96.67s；前三热点稳定包含 `worktree-create`、Task Record/Change Resolver 与 `workspace-product`。命令级诊断确认 `git worktree` 本身通常只需 0.2–0.7s，主要成本是 Environment lifecycle、Task repository 嵌套重复 Workspace/Git 身份校验，以及 Application-only case 反复冷启动 `init` CLI。优化树的前两次 Full 又稳定复现 System 启动约 6 秒后收到外部 `SIGTERM`，而同一五 owner focus 全绿，最终定位到 launcher fixture 对无 owner identity 的裸 PID 发信号 | Task Record repository 改为每个公共操作只校验一次 canonical 边界，内部 helper 复用已解析 root；Worktree System 只用 Task Application 准备/结束记录，并删除第二份 Environment inspect，真实 Worktree/Environment CLI 与共享占用恢复仍保留；Workspace System 仅在 `init` CLI owner 使用真实冷启动，其余 case 用 Application 准备隔离 fixture；launcher fixture 改为 1 秒有界自然退出，不再向可能复用的 PID 发送 `SIGTERM`。隔离结果分别为 `worktree-create` 33.85s→23.92s、`task-record-product` 17.31s→7.67s、Change Resolver 14.13s→6.26s、`workspace-product` 30.17s→20.63s。registry 缓存和 Public JSON Application init 实验无稳定收益，均已回退 |
 | Public JSON 重复准备完整 Workspace/runtime | 隔离 10.86s；5 个场景分别重复 `init`，Codex/managed runtime 又重复 `sync + Doctor`。把 Doctor 改成同步 Application 调用会破坏现有异步并行，11.76s，无收益 | suite 只准备一次 `plain → codex → codex+claude` 不可变基线；runtime 用与 sync 相同的 Product Skill 投射，但不在 fixture setup 重跑 sync 的最终 Doctor。每个 case 复制独立目录，全部 JSON/Doctor 仍走真实 CLI。隔离 7/7、6.75s，下降约 38%；普通 `render` 缺少 Product Skill 会产生真实 warning，已否定 |
+| Full 与 affected 重复启动 registry runner | 同一目标中 affected 仅选 `system/docs-quality`，两者已全部包含于 38-step Full；Task Verification 默认并发执行两个无资源 claim 的 capability。Full 单独为 148.208s，与 affected 并发时为 193.622s，放大 45.414s（约 31%） | Candidate 支持 `--base`，用现有 planner 联合 `candidate profile + changed paths`，preflight 后只执行一个按 step identity 去重的 DAG。显式 Full 交付只选择 `product.full-regression`，并用 policy override 将该能力从声明的可选项设为本任务必需；不同时选择 `product.delivery`，不扩展 Verification schema 或建设跨 capability cache |
 
 P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，38-step Changed 为 148.543 秒，37-step Candidate 为 147.819 秒且全部通过；同一优化树另有 132.741 秒和 143.323 秒全绿结果。相对 193.161 秒基线，墙钟下降约 23%–31%。rebase P0.5 后先复测当前 System 为 115/115、67.50 秒；正式 delivery timing 以本次稳定 Content Target 的 transient summary 为准。120 秒仍只是未达成的观察目标，不应通过调高预算或删必要风险证据宣告成功。
 
@@ -187,3 +188,4 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 17. 优化 Task Development 生命周期集成 | 放弃收益约 3% 的跨 case 共享初始化，改为 case 内复用一次真实且不变的 Task Record persistence。单变量对照：只缓存 declaration 为 61.78s，只固定 Task Record 为 23.68s；因此不缓存 declaration，保留其真实适用性读取。隔离为 23.68s；Full 中从 85.89s 降至 35.30s，37/37 全绿，Candidate 151.31s。总墙钟只下降约 8.2s 是因为关键路径已转移，不代表该 owner 的约 50.6s 降幅失效 |
 | 18. 优化 System 热点 | 命令级诊断否定“`git worktree add` 是主因”，并证明 Task repository 嵌套 canonical 校验才是 Task Record/Resolver 的共同放大器。实现改为一次边界校验；Worktree/Workspace fixture 只保留各自公共 owner。四个隔离热点约下降 29%–56%。14 路直接 System 总墙钟比 8 路快约 4 秒，8 路仍用于 Candidate 外层资源共享，因此并发预算不变；无收益的 registry cache 与 Public JSON setup 实验均回退。两次 Full 中 System 均在约 6 秒收到 `SIGTERM`，最小五 owner focus 全绿后确认是 launcher test 的裸 PID cleanup；改为有界自然退出，消除跨 step 误杀而不削弱非等待事实 |
 | 19. 复用 Public JSON 分层上下文 | 单次 Doctor 约 0.69s，主要成本并非异常扫描，而是 5 次 Workspace 初始化和重复 runtime sync/Doctor。同步 Application 实验破坏异步并行并回退；最终只共享 `plain/codex/managed` 不可变基线，case 仍独立复制且全部公共命令保持真实 CLI。隔离 10.86s→6.75s，下降约 38% |
+| 20. 合并 Full 与 affected 执行计划 | 代码、plan 与实测共同确认两个 capability 会并发启动重叠 runner：独立 Full 148.208s，并发 Full 193.622s。复用既有 planner 的 profile/path union，Candidate `--base` 输出 38 个唯一 owner，`system` 与 `docs-quality` 各一次；最终联合 Full 154.633s、全部通过。显式 Full 通过单一 capability 同时证明 changed owner coverage 与完整回归 |
