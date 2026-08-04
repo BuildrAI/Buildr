@@ -44,6 +44,7 @@ function applicabilityLabel(status) {
 function developmentStatusLabel(status) {
   return ({
     missing: '尚未形成研发回执',
+    planning: '规划中',
     developing: '研发中',
     'candidate-current': '候选已就绪',
     'handoff-current': '研发交接已就绪',
@@ -57,6 +58,10 @@ function developmentAxisLabel(status) {
 
 function gateOutcomeLabel(outcome) {
   return ({ ready: '已就绪', 'changes-required': '需要修改', passed: '已通过', 'not-passed': '未通过' })[outcome] || '尚未形成';
+}
+
+function developmentDispositionLabel(disposition) {
+  return ({ pending: '待形成', current: '当前事实', stale: '已失效', 'not-applicable': '不适用', waived: '已明确豁免' })[disposition] || disposition || '未知';
 }
 
 function decisionOutcomeLabel(outcome) {
@@ -124,11 +129,12 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     <section id="task-terminal-note" class="empty-state hidden"><h2>这是终态任务记录</h2><p>顶层事实保持只读，不提供重开或继续修改入口。专业模块仍由各自权威来源管理。</p></section>
     </div>
     <section id="task-development-panel" class="hidden" data-task-panel="development" aria-live="polite">
-      <article class="panel development-summary"><div class="panel-heading"><div><p class="eyebrow">交付准备</p><h2>任务研发（Task Development）</h2><p class="section-copy">只读展示当前研发结论、候选、门禁与最近一次交接，不展开日志、差异或完整历史。</p></div><button id="task-development-refresh" class="button secondary" type="button">刷新研发状态</button></div><dl class="read-facts"><div><dt>当前结论</dt><dd id="task-development-status">尚未读取</dd></div><div><dt>更新时间</dt><dd id="task-development-updated">—</dd></div><div><dt>研发回执</dt><dd id="task-development-receipt">—</dd></div></dl><div id="task-development-diagnostic" class="environment-diagnostic hidden"></div></article>
+      <article class="panel development-summary"><div class="panel-heading"><div><p class="eyebrow">研发事实</p><h2>任务研发（Task Development）</h2><p class="section-copy">从首个正式研发动作开始，只读聚合规划节点、当前目标、候选、门禁与最近一次交接；各专业内容仍由原 authority 管理。</p></div><button id="task-development-refresh" class="button secondary" type="button">刷新研发状态</button></div><dl class="read-facts"><div><dt>当前结论</dt><dd id="task-development-status">尚未读取</dd></div><div><dt>更新时间</dt><dd id="task-development-updated">—</dd></div><div><dt>研发回执</dt><dd id="task-development-receipt">—</dd></div></dl><div id="task-development-diagnostic" class="environment-diagnostic hidden"></div></article>
       <div id="task-development-loading" class="page-loading hidden"><span class="loader"></span><p>正在读取研发状态…</p></div>
-      <section id="task-development-empty" class="empty-state hidden"><h2 id="task-development-empty-title">尚未形成研发回执</h2><p id="task-development-empty-copy">任务仍可继续推进；当正式研发开始观察当前目标后，这里会出现候选与门禁状态。</p></section>
+      <section id="task-development-empty" class="empty-state hidden"><h2 id="task-development-empty-title">尚未形成研发回执</h2><p id="task-development-empty-copy">任务仍可继续推进；从写提案、写方案或直接实现等首个正式研发动作开始，这里会记录研发事实。</p></section>
       <div id="task-development-detail" class="development-detail hidden">
         <section class="panel"><div class="panel-heading"><div><h2>当前有效性</h2><p class="section-copy">分别判断任务上下文、内容目标、验证策略、候选与研发交接是否仍然有效。</p></div></div><div id="task-development-axes" class="development-axis-grid"></div></section>
+        <section class="panel"><div class="panel-heading"><div><h2>研发规划事实</h2><p class="section-copy">节点不构成必经工作流；存在时仅记录其 authority、引用、身份与当前处置。</p></div></div><div id="task-development-planning" class="development-planning-list"></div></section>
         <section class="detail-layout"><article class="panel"><div class="panel-heading"><div><h2>当前候选</h2><p class="section-copy">候选由研发模块冻结；页面不重新计算身份。</p></div></div><dl id="task-development-candidate" class="read-facts"></dl></article><aside class="panel facts-panel"><p class="eyebrow">研发决策</p><h2>保存的推进结论</h2><dl id="task-development-decision" class="fact-list"></dl><div id="task-development-risks" class="development-risk-list"></div></aside></section>
         <section class="panel"><div class="panel-heading"><div><h2>交付门禁</h2><p class="section-copy">方案审查、任务验证和完成审查的当前结果；详情统一进入“证据”。</p></div></div><div id="task-development-gates" class="development-gate-grid"></div></section>
         <section class="panel"><div class="panel-heading"><div><h2>最近保存的研发交接</h2><p class="section-copy">仅展示最近一次不可变快照；当前有效性以实时适用性判断为准。</p></div></div><dl id="task-development-handoff" class="read-facts"></dl><p id="task-development-history-note" class="development-status-note hidden"></p></section>
@@ -205,10 +211,22 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     const card = document.createElement('article'); card.className = `development-gate-card ${status}`;
     const heading = document.createElement('div'); heading.className = 'development-gate-heading';
     const name = document.createElement('strong'); name.textContent = label;
-    const value = document.createElement('span'); value.className = `state review-state ${status}`; value.textContent = unknown ? '当前无法判断' : gateOutcomeLabel(gate?.outcome);
+    const value = document.createElement('span'); value.className = `state review-state ${status}`; value.textContent = unknown ? '当前无法判断' : gate?.disposition ? developmentDispositionLabel(gate.disposition) : gateOutcomeLabel(gate?.outcome);
     heading.append(name, value); card.append(heading);
-    const identity = document.createElement('small'); identity.className = 'development-identity'; identity.textContent = gate ? `${gate.targetIdentity} · ${gate.resultDigest}` : (unknown ? '当前无法实时复核目标。' : '尚未形成当前门禁结果。'); card.append(identity);
-    const action = document.createElement('button'); action.type = 'button'; action.className = 'text-button'; action.textContent = '查看证据'; action.addEventListener('click', () => selectTab('evidence')); card.append(action);
+    const identity = document.createElement('small'); identity.className = 'development-identity'; identity.textContent = gate ? (gate.resultDigest ? `${gate.targetIdentity} · ${gate.resultDigest}` : `${gate.summary} · ${gate.source}`) : (unknown ? '当前无法实时复核目标。' : '尚未形成当前门禁结果。'); card.append(identity);
+    if (gate?.resultDigest) { const action = document.createElement('button'); action.type = 'button'; action.className = 'text-button'; action.textContent = '查看证据'; action.addEventListener('click', () => selectTab('evidence')); card.append(action); }
+    return card;
+  }
+
+  function developmentPlanningCard(node) {
+    const card = document.createElement('article'); card.className = `development-planning-card ${node.disposition}`;
+    const heading = document.createElement('div'); heading.className = 'development-gate-heading';
+    const name = document.createElement('strong'); name.textContent = `${node.kind} · ${node.id}`;
+    const disposition = document.createElement('span'); disposition.className = 'state'; disposition.textContent = developmentDispositionLabel(node.disposition);
+    heading.append(name, disposition); card.append(heading);
+    const reference = document.createElement('p'); reference.textContent = `${node.authority} · ${node.reference}`; card.append(reference);
+    const summary = document.createElement('p'); summary.textContent = node.summary || '未提供摘要'; card.append(summary);
+    const identity = document.createElement('small'); identity.className = 'development-identity'; identity.textContent = node.source ? `${node.identity} · ${node.source}` : node.identity; card.append(identity);
     return card;
   }
 
@@ -240,21 +258,25 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     empty.classList.toggle('hidden', Boolean(development));
     detail.classList.toggle('hidden', !development);
     text('task-development-empty-title', data.status === 'missing' ? '尚未形成研发回执' : '当前无法读取研发状态');
-    text('task-development-empty-copy', data.status === 'missing' ? '任务仍可继续推进；当正式研发开始观察当前目标后，这里会出现候选与门禁状态。' : '当前读取失败，没有足够事实判断候选或交接状态。请根据诊断处理后重试。');
+    text('task-development-empty-copy', data.status === 'missing' ? '任务仍可继续推进；从写提案、写方案或直接实现等首个正式研发动作开始，这里会记录研发事实。' : '当前读取失败，没有足够事实判断候选或交接状态。请根据诊断处理后重试。');
     if (!development) return;
 
     const unknown = status === 'unknown';
     const axes = document.getElementById('task-development-axes'); axes.replaceChildren();
-    for (const [label, key] of [['任务上下文', 'taskContext'], ['内容目标', 'contentTarget'], ['验证策略', 'policy'], ['当前候选', 'candidate'], ['研发交接', 'handoff']]) {
+    for (const [label, key] of [['任务上下文', 'taskContext'], ['研发规划', 'planning'], ['内容目标', 'contentTarget'], ['验证策略', 'policy'], ['当前候选', 'candidate'], ['研发交接', 'handoff']]) {
       axes.append(developmentAxisCard(label, unknown ? 'unknown' : applicability?.[key] || 'unknown'));
     }
+
+    const planning = document.getElementById('task-development-planning'); planning.replaceChildren();
+    if (receipt.planning.nodes.length) for (const node of receipt.planning.nodes) planning.append(developmentPlanningCard(node));
+    else { const note = document.createElement('p'); note.className = 'development-status-note'; note.textContent = '当前没有需要记录的规划节点；这不阻止研发继续。'; planning.append(note); }
 
     const candidate = document.getElementById('task-development-candidate'); candidate.replaceChildren();
     candidate.append(
       fact('候选代次', receipt.candidate ? String(receipt.candidate.generation) : receipt.generation ? `第 ${receipt.generation} 代已失效` : '尚未形成'),
       fact('候选身份', receipt.candidate?.identity || '尚未形成'),
       fact('任务上下文身份', receipt.taskContext.identity),
-      fact('内容目标身份', receipt.contentTarget.identity),
+      fact('内容目标身份', receipt.contentTarget?.identity || '尚未稳定'),
       fact('验证策略身份', receipt.verificationPolicy?.identity || '尚未形成'),
     );
 

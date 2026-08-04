@@ -69,7 +69,7 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
     { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
   ]);
   assert.deepEqual(packagedFinish.requires, [
-    { capability: 'buildr.task-development', version: 1, mode: 'required' },
+    { capability: 'buildr.task-development', version: 2, mode: 'required' },
     { capability: 'buildr.task-environment', version: 1, mode: 'required' },
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
   ]);

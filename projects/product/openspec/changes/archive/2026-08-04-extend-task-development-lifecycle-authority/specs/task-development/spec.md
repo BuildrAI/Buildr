@@ -1,10 +1,37 @@
-# task-development Specification
+## ADDED Requirements
 
-## Purpose
+### Requirement: Task Development 必须覆盖完整正式研发区间
+Task Development MUST 从 active Task 的首个正式研发动作开始维护研发聚合事实，直到形成 current Finish handoff。Proposal、design、Planning Review、实现收敛、formal Verification 与 Completion Review 等节点 MUST 可按 Task 事实不存在、`not-applicable` 或由明确授权 `waived`；节点存在时 Development MUST 保存其专业 authority、portable reference、identity 与 disposition，不得复制专业内容或 Result 正文。
 
-定义 Development Application、Receipt、Content Target、Candidate/generation、决策、失效、Completion Review 与 Finish handoff 的唯一 authority。
+#### Scenario: 从 proposal 开始正式研发
+- **WHEN** active Task 在 ready Environment 中开始创建 proposal，且尚未形成 Content Target
+- **THEN** Development Application MUST 原子建立 Receipt 与 current planning snapshot
+- **AND** Receipt MUST 不创建 Content Target、verification policy、Candidate、Result gate、decision 或 handoff 占位事实
 
-## Requirements
+#### Scenario: code-only Task 直接实现
+- **WHEN** Task 没有 proposal、design 或 Change，且首个正式研发动作为代码实现
+- **THEN** Development MUST 接受空 planning nodes 与空 Change references并开始维护研发事实
+- **AND** MUST NOT为了流程完整虚构 OpenSpec、Planning Review 或其他节点
+
+#### Scenario: 用户主动跳过节点
+- **WHEN** 用户或具备业务授权的来源明确跳过一个适用研发节点
+- **THEN** Development MUST 记录 `waived`、精确目标、summary 与 authorization source
+- **AND** MUST NOT把 waiver 写成专业 Result 的 `ready`、`passed` 或 `current`
+
+### Requirement: Planning snapshot 必须最小、可移植且不是事件历史
+Development Receipt MUST 保存一个 closed current `planning` snapshot，包含确定性 identity 与按稳定 id 排序的 nodes。Node MUST 只包含 `id`、`kind`、`authority`、portable `reference`、内容 `identity`、`pending|current|stale|not-applicable|waived` disposition、最小 `summary` 与按需 `source`；MUST NOT保存正文、diff、命令、attempt、progress、transition event或完整历史。
+
+#### Scenario: 专业 artifact 已形成
+- **WHEN** proposal、design 或 Project 自定义规划 artifact 已由其专业 authority 保存
+- **THEN** Development planning node MUST 只引用该 authority 的portable reference与content identity
+- **AND** artifact内容变化后旧node MUST 不得继续解释为current
+
+#### Scenario: 节点不适用
+- **WHEN** Task性质决定某节点不适用
+- **THEN** Development MAY 保存`not-applicable`与最小依据，或在没有治理价值时不创建该node
+- **AND** MUST NOT创建空artifact、空Result或虚假identity
+
+## MODIFIED Requirements
 
 ### Requirement: Task Development 必须维护唯一 current Receipt
 Buildr MUST 为每个正式 Task 提供至多一份 `.buildr/tasks/<task-id>/development.yml`，新写入schema MUST 为 `buildr.task-development-receipt/v2`。Task Development Application MUST 是 Receipt normalization、identity、persistence、失效、planning snapshot、Candidate generation、decision 与 handoff 的唯一 writer 和 reader；Skill、Finish、Task Record、Environment、Review 与 Verification MUST NOT 直接读写该 store。
@@ -42,68 +69,6 @@ Receipt MUST 只包含 `schemaVersion`、`taskId`、Environment Receipt逻辑引
 - **THEN** Repository MUST 保留或恢复原 current Receipt与所有 sibling records
 - **AND** MUST 只清理本次写入可证明拥有的临时文件
 
-### Requirement: Task context identity 必须绑定完整 Intent、scope 与 Change context
-Application MUST 从 Task Record Application/persistence authority 取得 Task ID、intent、完整 Project/Service scope与0..N Change references，并结合 Development记录的每个 Change disposition派生可移植 `taskContext.identity`。Identity MUST NOT 绑定Task Record时间戳、本机路径或默认 Product/Service名称。
-
-#### Scenario: 多 Change Task context
-- **WHEN** Task Record包含多个不同Project/Change references
-- **THEN** context identity输入 MUST 对全部reference和disposition确定性排序并完整绑定
-- **AND** 任一 reference新增、删除或disposition变化 MUST 使旧 Candidate/handoff失效
-
-#### Scenario: 无 OpenSpec 的 code-only Task
-- **WHEN** Task Record的Change references为空
-- **THEN** Application MUST 接受明确的code-only context并派生稳定identity
-- **AND** MUST NOT 创建、推断、选择或调用虚假Change/OpenSpec能力
-
-### Requirement: Content Target 必须完整且不预设源码工具
-Application MUST 从matching ready Task Environment read model取得全部Task scopes，并通过selected Content Target observer port观察每个scope的当前内容。Target MUST 包含按selector排序的component identities与aggregate identity；identity MUST 绑定逻辑source path与current bytes语义，MUST NOT绑定branch、commit、worktree、绝对路径、时间、Project code常量、Git、Node/npm或OpenSpec假设。
-
-#### Scenario: Git-backed Buildr自举scope
-- **WHEN** registered source provider能提供可移植content inventory
-- **THEN** infrastructure observer MAY消费该provider evidence
-- **AND** Development Application MUST 只处理统一component read model，不得分支解释Git ref或Buildr固定目录
-
-#### Scenario: 非Git普通Workspace
-- **WHEN** ready Environment scopes位于没有Git和OpenSpec的普通filesystem Workspace
-- **THEN** fallback observer MUST 对允许scope建立确定性的portable content identity
-- **AND** 相同bytes位于不同绝对根 MUST 得到相同identity
-
-#### Scenario: scope内容在Verification后变化
-- **WHEN** 任一受管source file新增、删除、内容或可执行语义变化
-- **THEN** 重新观察的Content Target MUST 与旧target不同
-- **AND** Application MUST 清除current Candidate、Completion gate与decision，并使既有handoff snapshot不再current但不得改写或删除
-
-### Requirement: Verification policy decision 必须由 Development 独占
-Task Development MUST 记录一个closed verification policy decision，绑定Task scope内当前declaration observations、明确选择的capability identities、是否required及coverage gaps，并派生`verificationPolicy.identity`。Application MUST 通过Task Verification Application取得declaration read model，MUST NOT直接读取verification.yml或Verification Result store，也不得硬编码Product capability。
-
-#### Scenario: Project声明required capability
-- **WHEN** Development选择当前declaration中一个适用capability作为required
-- **THEN** Application MUST 校验Project/Service scope与declaration identity并纳入policy identity
-- **AND** declaration或选择变化 MUST 使旧Verification gate、Candidate与handoff失效
-
-#### Scenario: 没有可用能力
-- **WHEN** 某个scope没有declaration或适用capability
-- **THEN** policy decision MUST 显式记录portable coverage gap
-- **AND** Development MUST NOT创建测试、脚本、declaration或第二verification registry
-
-### Requirement: Formal Verification 必须在 Candidate freeze 之前绑定 Content Target
-Development MUST 先建立stable Content Target与verification policy，再由现有Task Verification workflow针对该Content Target形成current Result。冻结Candidate前，Application MUST 通过Task Verification Application inspect证明target/declarations current且policy要求的capability fact或coverage gap完整；Application本身MUST NOT执行formal Verification或写Verification Result，也MUST NOT把`not-passed`改写为`passed`。
-
-#### Scenario: current Result满足policy事实完整性
-- **WHEN** Verification Application返回Result target等于current Content Target、declarations current，且required capability facts或明确coverage gap完整
-- **THEN** Development MAY 将Verification gate记为current并继续Candidate freeze
-- **AND** Candidate value MUST NOT包含Result identity或digest
-
-#### Scenario: Verification仍绑定旧Content Target
-- **WHEN** Result target与current Content Target不同或declaration applicability为stale/unknown
-- **THEN** Candidate freeze MUST blocked并返回Task Verification next action
-- **AND** Development MUST NOT改写Result、applicability或伪造passed evidence
-
-#### Scenario: Verification结论not-passed
-- **WHEN** current Result完整但结论为`not-passed`
-- **THEN** Development MAY冻结Candidate，但在没有绑定精确Verification Result digest、范围和授权来源的风险接受时 MUST记录blocked且不得形成handoff
-- **AND** scoped risk MUST NOT把Verification事实改写为passed或使stale/incomplete Result适用
-
 ### Requirement: Planning Review 必须在Candidate前保持current
 Development MUST 只通过Task Review Application inspect消费Planning Result；若当前policy要求Planning Review，则target为current planning identity且outcome为`ready`的Result MUST在Candidate前成立。Policy判定Planning Review不适用时MUST记录`not-applicable`；用户明确跳过时MUST记录`waived`与授权来源。Development MUST NOT读取Review store、复制findings、替代语义Review或把waiver伪造成Result。
 
@@ -140,19 +105,6 @@ Application MUST 只在Task context、stable Content Target、verification polic
 - **THEN** Application MUST生成严格大于旧generation的新Candidate
 - **AND** Receipt MUST只保留新current Candidate，不创建完整generation history；既有正式handoff snapshots保持不可变
 
-### Requirement: Completion Review 必须绑定Candidate且由Development消费
-Candidate冻结后，Completion Review MUST 由Task Review Application以`reviewType: completion`记录并绑定current Candidate identity。Development MUST 通过Application read model证明target current且outcome ready；Candidate变化时旧Completion Result MUST stale。
-
-#### Scenario: Completion Review通过
-- **WHEN** Completion Result target等于current Candidate且conclusion ready
-- **THEN** Development MUST 保存最小Completion gate reference
-- **AND** MUST NOT把review findings、method细节或Result body复制进Candidate
-
-#### Scenario: Candidate变化
-- **WHEN** 新generation替换旧Candidate
-- **THEN** 旧Completion Result MUST 由Task Review Application派生为stale
-- **AND** Development MUST 清除旧Completion gate与decision，并使旧handoff snapshot不再current但不得改写或删除
-
 ### Requirement: Development 必须独占proceed/blocked、scoped risk与Finish handoff
 只有Task Development MAY 根据current Candidate、专业Result gates与明确`not-applicable|waived` dispositions形成`proceed|blocked` decision，并记录与Task Intent或明确用户授权相关的最小portable scoped risk。只有current Candidate、全部适用gate与disposition、`proceed` decision同时成立时，Application MAY形成immutable handoff snapshot与identity；Verification与Review Result MUST保持原专业事实。
 
@@ -170,19 +122,6 @@ Candidate冻结后，Completion Review MUST 由Task Review Application以`review
 - **WHEN** planning snapshot、Content Target、Task context、policy、Candidate或任一gate applicability/disposition变化
 - **THEN** Application MUST清除current decision、判定旧snapshot不再current并返回`task-development`
 - **AND** Finish MUST不得继续消费旧snapshot，Application MUST NOT改写或删除它
-
-### Requirement: Finish carrier 必须由Development证明内容等价
-Task Finish MAY 请求Development Application针对一个允许的carrier root重观测complete Content Target，但MUST NOT创建Candidate。只有carrier Content Target与handoff Candidate绑定的target逐component相等且Task context/policy仍current时，Application MUST 返回equivalent；否则MUST返回Development handoff失效。
-
-#### Scenario: 只增加delivery commit
-- **WHEN** Finish机械提交当前内容但所有scope bytes与逻辑语义未变化
-- **THEN** carrier equivalence MUST通过且Candidate identity保持不变
-- **AND** commit、branch与ref MUST不进入Content Target或Candidate identity
-
-#### Scenario: carrier prepare改变内容
-- **WHEN** rebase、sync、archive、生成或冲突处理改变任一component identity
-- **THEN** equivalence MUST失败并判定current handoff失效
-- **AND** Finish MUST退出到Development重新验证和生成Candidate
 
 ### Requirement: Local App 必须只读投影任务研发 read model
 Buildr Local App MUST 为正式 Task 提供只读“研发”视图，并 MUST 通过 Task Development Application `inspect` 展示 Development presence、当前适用性、planning nodes/dispositions、Task context、Content Target、verification policy、Candidate/generation、Planning/Verification/Completion gates、decision、明确风险与最近一次 Development handoff。HTTP 与 Web 层 MUST NOT 直接读取或解析 `development.yml`、重新计算 identity/currentness、复制专业 artifact/Result body、提供 Receipt mutation 或注册公共`buildr task development` CLI。
@@ -228,34 +167,3 @@ Task Development writer MUST声明`buildr.task-development/v2`唯一拥有`.buil
 #### Scenario: publication失败
 - **WHEN** snapshot、commit或push失败
 - **THEN** Development writer MUST保持generation、Candidate、gates、decision与handoffs不变
-
-### Requirement: Task Development 必须覆盖完整正式研发区间
-Task Development MUST 从 active Task 的首个正式研发动作开始维护研发聚合事实，直到形成 current Finish handoff。Proposal、design、Planning Review、实现收敛、formal Verification 与 Completion Review 等节点 MUST 可按 Task 事实不存在、`not-applicable` 或由明确授权 `waived`；节点存在时 Development MUST 保存其专业 authority、portable reference、identity 与 disposition，不得复制专业内容或 Result 正文。
-
-#### Scenario: 从 proposal 开始正式研发
-- **WHEN** active Task 在 ready Environment 中开始创建 proposal，且尚未形成 Content Target
-- **THEN** Development Application MUST 原子建立 Receipt 与 current planning snapshot
-- **AND** Receipt MUST 不创建 Content Target、verification policy、Candidate、Result gate、decision 或 handoff 占位事实
-
-#### Scenario: code-only Task 直接实现
-- **WHEN** Task 没有 proposal、design 或 Change，且首个正式研发动作为代码实现
-- **THEN** Development MUST 接受空 planning nodes 与空 Change references并开始维护研发事实
-- **AND** MUST NOT为了流程完整虚构 OpenSpec、Planning Review 或其他节点
-
-#### Scenario: 用户主动跳过节点
-- **WHEN** 用户或具备业务授权的来源明确跳过一个适用研发节点
-- **THEN** Development MUST 记录 `waived`、精确目标、summary 与 authorization source
-- **AND** MUST NOT把 waiver 写成专业 Result 的 `ready`、`passed` 或 `current`
-
-### Requirement: Planning snapshot 必须最小、可移植且不是事件历史
-Development Receipt MUST 保存一个 closed current `planning` snapshot，包含确定性 identity 与按稳定 id 排序的 nodes。Node MUST 只包含 `id`、`kind`、`authority`、portable `reference`、内容 `identity`、`pending|current|stale|not-applicable|waived` disposition、最小 `summary` 与按需 `source`；MUST NOT保存正文、diff、命令、attempt、progress、transition event或完整历史。
-
-#### Scenario: 专业 artifact 已形成
-- **WHEN** proposal、design 或 Project 自定义规划 artifact 已由其专业 authority 保存
-- **THEN** Development planning node MUST 只引用该 authority 的portable reference与content identity
-- **AND** artifact内容变化后旧node MUST 不得继续解释为current
-
-#### Scenario: 节点不适用
-- **WHEN** Task性质决定某节点不适用
-- **THEN** Development MAY 保存`not-applicable`与最小依据，或在没有治理价值时不创建该node
-- **AND** MUST NOT创建空artifact、空Result或虚假identity

@@ -392,12 +392,17 @@ Buildr task workflow guidance MUST 要求 Agent 在任务看板首次创建、�
 - **AND** 任务看板 MUST 在下一次实质状态回复中继续可发现
 
 ### Requirement: 内置任务 Skills 按 capability contract 协作
-Buildr内置任务Skills MUST依赖capability contracts而不是硬编码optional Skill identity。`task-development` MUST required消费Task Record、Task Environment、Task Review、Task Verification与current knowledge capabilities，并 MAY optional消费`buildr.task-asset-review/v3`；`task-finish` MUST required消费`buildr.task-development@1`与Task Environment，MUST不再消费Task Review、Task Verification、current knowledge或task-asset-review authority。
+Buildr内置任务Skills MUST依赖capability contracts而不是硬编码optional Skill identity。`task-development` MUST required消费Task Record、Task Environment、Task Review、Task Verification与current knowledge capabilities，并 MAY optional消费`buildr.task-asset-review/v3`；`task-triage` MAY optional消费`buildr.task-development/v2`以在首个正式研发动作建立聚合事实；`task-finish` MUST required消费`buildr.task-development@2`与Task Environment，MUST不再消费Task Review、Task Verification、current knowledge或task-asset-review authority。
 
 #### Scenario: Task Development使用required providers
 - **WHEN** Buildr声明`task-development` builtin
 - **THEN** manifest MUST声明`buildr.task-record/v1`、`buildr.task-environment/v1`、`buildr.task-review/v1`、`buildr.task-verification/v3`与`buildr.current-knowledge-maintenance/v2` required dependencies
 - **AND** 任一required provider missing/ambiguous/blocked MUST使Development readiness fail closed
+
+#### Scenario: 首个正式研发动作建立聚合事实
+- **WHEN** task-triage已经建立active Task与matching ready Environment，并即将进入proposal、design或直接实现
+- **THEN** routing MUST调用selected `buildr.task-development/v2` provider的begin action
+- **AND** provider缺失或blocked MUST在内容写入前fail closed，不得形成第二个Development writer
 
 #### Scenario: Task Development使用optional asset review
 - **WHEN** selected `buildr.task-asset-review/v3` provider ready且Task存在observation
@@ -406,7 +411,7 @@ Buildr内置任务Skills MUST依赖capability contracts而不是硬编码optiona
 
 #### Scenario: Task Finish消费Development
 - **WHEN** Buildr声明`task-finish` builtin
-- **THEN** manifest MUST required依赖`buildr.task-development@1`与`buildr.task-environment/v1`
+- **THEN** manifest MUST required依赖`buildr.task-development@2`与`buildr.task-environment/v1`
 - **AND** MUST删除旧Task Review、Task Verification、current knowledge与task-asset-review dependencies
 
 #### Scenario: provider替换
@@ -949,22 +954,27 @@ Buildr product Skill、task-triage 和 builtin descriptions MUST 将测试框架
 - **AND** `project-testing` MUST 不提供 Task Verification capability binding 或 Result authority
 
 ### Requirement: task-development Skill 必须编排P0.5 authority顺序
-Buildr MUST交付`task-development` Workspace Skill并提供`buildr.task-development@1`。Skill MUST依次收敛Change/current knowledge/生成资产、建立Planning gate、观察Content Target与policy、调用formal Verification、冻结Candidate、调用Completion Review、形成decision/handoff；它 MUST通过内部Application driver工作且 MUST NOT新增公共CLI或Local App projection。
+Buildr MUST交付`task-development` Workspace Skill并提供`buildr.task-development@2`。Skill MUST从proposal、design或直接实现等首个正式研发动作开始维护planning current snapshot，在内容稳定后建立Content Target与policy、调用formal Verification、冻结Candidate、按适用性调用或明确处置Completion Review，并形成decision/handoff；它 MUST通过内部Application driver工作且 MUST NOT新增公共CLI或Local App writer。
+
+#### Scenario: OpenSpec planning入口登记事实
+- **WHEN** active Task在ready Environment中创建或更新proposal/design
+- **THEN** OpenSpec sidebar MUST先调用Development begin或planning action，并在artifact形成后登记其专业authority、portable reference与identity
+- **AND** MUST NOT把artifact正文复制到Development Receipt
 
 #### Scenario: Change任务进入Candidate准备
 - **WHEN** active Task包含0..N Change且实现已完成
-- **THEN** Skill MUST在Content Target观察前完成适用Change sync/archive/current knowledge/runtime fixed point
+- **THEN** Skill MUST在Content Target观察前完成适用Change sync/archive/current knowledge/runtime fixed point，并把已有proposal/design/Review等专业facts登记到current planning snapshot
 - **AND** 任一内容mutation发生后 MUST重新观察target，不能复用先前Verification
 
 #### Scenario: 无Change普通Workspace进入Candidate准备
-- **WHEN** active Task没有OpenSpec且使用非Git普通Workspace
-- **THEN** Skill MUST用同一Development Application完成Content Target、Verification、Candidate、Completion Review与handoff
-- **AND** MUST NOT要求Product code、Service code、Git ref、Node/npm或OpenSpec executable
+- **WHEN** active Task没有OpenSpec且首个正式研发动作为代码实现
+- **THEN** Skill MUST以空planning nodes建立Development Receipt并允许实现继续
+- **AND** MUST NOT要求proposal、Planning Review、Product code、Service code、Git ref、Node/npm或OpenSpec executable
 
 #### Scenario: runtime发现Development
 - **WHEN** supported Agent runtime完成Buildr sync/render
-- **THEN** runtime MUST发现`task-development` Skill、`buildr.task-development@1` contract与binding
-- **AND** MUST不同时投射旧Finish-owned Candidate/Verification路由
+- **THEN** runtime MUST发现`task-development` Skill、`buildr.task-development@2` contract与binding
+- **AND** MUST不同时投射v1 provider或旧Finish-owned Candidate/Verification路由
 
 ### Requirement: Git Operations 只执行 consumer 已选定的 Git Operation
 Buildr MUST 交付唯一 Skill-only `git-operations`，并 MUST 通过 selected `buildr.git-operations/v1` provider 为一次已选定 Git Operation 提供授权边界、安全默认值、操作前后 identity 与最小 Result。直接用户或上游 consumer MUST 决定 repository、operation、相关 ref、scope、目标和顺序；provider MUST NOT 接管 Task Development、Task Finish、验证、交付编排或语义决策。

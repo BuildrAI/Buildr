@@ -116,6 +116,11 @@ test('任务研发视图只读投影 current Development Receipt、候选、门�
   assert.match(source, /\/development`\)/);
   assert.match(source, /handoff-current': '研发交接已就绪'/);
   assert.match(source, /candidate-current': '候选已就绪'/);
+  assert.match(source, /planning: '规划中'/);
+  assert.match(source, /研发规划事实/);
+  assert.match(source, /developmentPlanningCard/);
+  assert.match(source, /已明确豁免/);
+  assert.match(source, /节点不构成必经工作流/);
   assert.match(source, /developmentGateCard\('方案审查'/);
   assert.match(source, /developmentGateCard\('任务验证'/);
   assert.match(source, /developmentGateCard\('完成审查'/);
@@ -127,6 +132,7 @@ test('任务研发视图只读投影 current Development Receipt、候选、门�
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync/);
   assert.match(styles, /\.development-axis-grid/);
   assert.match(styles, /\.development-gate-grid/);
+  assert.match(styles, /\.development-planning-list/);
   assert.match(styles, /\.development-axis-grid, \.development-gate-grid/);
 });
 

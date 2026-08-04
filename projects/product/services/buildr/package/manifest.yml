@@ -96,10 +96,17 @@ capabilityContracts:
         provider: task-verification
         description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
   - id: buildr.task-development
-    version: 1
-    description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
-    path: package/targets/workspace/skills/contracts/buildr/task-development/v1.md
-    target: skills/contracts/buildr/task-development/v1.md
+    version: 2
+    description: 从首个正式研发动作到 immutable Finish handoff，维护planning聚合事实、稳定 Content Target、verification policy、Task Candidate generation与推进决定。
+    path: package/targets/workspace/skills/contracts/buildr/task-development/v2.md
+    target: skills/contracts/buildr/task-development/v2.md
+    replaces:
+      - id: buildr.task-development
+        version: 1
+        target: skills/contracts/buildr/task-development/v1.md
+        integrity: sha256-c903f0b6b81b1bd28615528c1f80e2b6aa7be27da5f8071c7ec65cd4f8b334db
+        provider: task-development
+        description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
   - id: buildr.task-finish
     version: 1
     description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
@@ -154,7 +161,7 @@ initialSkillBindings:
     version: 3
     provider: task-verification
   - capability: buildr.task-development
-    version: 1
+    version: 2
     provider: task-development
   - capability: buildr.task-finish
     version: 1
@@ -200,6 +207,9 @@ builtins:
           mode: optional
         - capability: buildr.task-board-maintenance
           version: 1
+          mode: optional
+        - capability: buildr.task-development
+          version: 2
           mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-testing
@@ -291,11 +301,11 @@ builtins:
     - id: task-development
       path: package/targets/workspace/skills/buildr/task-development
       target: skills/buildr/task-development
-      description: 正式实现任务在 Planning Review 后推进开发、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、完成 Completion Review、记录风险决定或生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+      description: 正式实现任务从 proposal、design 或直接实现等首个正式研发动作开始，持续维护研发聚合事实、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、记录适用门禁与风险决定并生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
       required: false
       provides:
         - capability: buildr.task-development
-          version: 1
+          version: 2
       requires:
         - capability: buildr.task-record
           version: 1
@@ -326,7 +336,7 @@ builtins:
           version: 1
       requires:
         - capability: buildr.task-development
-          version: 1
+          version: 2
           mode: required
         - capability: buildr.task-environment
           version: 1
@@ -492,7 +502,7 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/task-record/v1.md => skills/contracts/buildr/task-record/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-review/v1.md => skills/contracts/buildr/task-review/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-verification/v3.md => skills/contracts/buildr/task-verification/v3.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-development/v1.md => skills/contracts/buildr/task-development/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-development/v2.md => skills/contracts/buildr/task-development/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v1.md => skills/contracts/buildr/task-asset-review/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-asset-review/v2.md => skills/contracts/buildr/task-asset-review/v2.md copy

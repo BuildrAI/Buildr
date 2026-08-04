@@ -152,6 +152,53 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
   return { root, taskRoot, runtime, taskId, planningTargetIdentity, candidate, handoff: result.development.receipt.handoffs.at(-1), targetIdentity };
 }
 
+test('从proposal建立planning Receipt，并以明确waiver完成可选Verification与Completion gate', (t) => {
+  const current = fixture(t, 'planning-first');
+  fs.unlinkSync(path.join(current.root, '.buildr', 'tasks', current.taskId, 'development.yml'));
+  let result = current.runtime.beginTaskDevelopment(current.root, current.taskId, {
+    changeDispositions: [],
+    planning: { targetIdentity: current.planningTargetIdentity, nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/change/proposal', identity: taskDevelopmentDigest('proposal-v1'), disposition: 'current', summary: 'Proposal current.' }] },
+  });
+  assert.equal(result.status, 'created');
+  assert.equal(result.development.applicability.status, 'planning');
+  assert.equal(result.development.applicability.contentTarget, 'missing');
+  assert.equal(result.development.receipt.contentTarget, null);
+  assert.equal(result.development.receipt.gates.planning.outcome, 'ready');
+
+  result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: current.planningTargetIdentity });
+  assert.ok(result.development.receipt.contentTarget);
+  result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
+  const targetIdentity = result.development.receipt.contentTarget.identity;
+  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity, summary: 'User explicitly waived formal execution for this fixture.', source: 'user:integration-fixture' });
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  assert.equal(result.status, 'frozen');
+  const candidate = result.development.receipt.candidate;
+  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'completion', disposition: 'waived', targetIdentity: candidate.identity, summary: 'User explicitly waived Completion Review for this fixture.', source: 'user:integration-fixture' });
+  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Explicit optional-node waivers are current.', risks: [] });
+  assert.equal(result.development.receipt.decision.outcome, 'proceed');
+  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.development.receipt.handoffs[0].gates.verification.disposition, 'waived');
+
+  const firstCandidate = result.development.receipt.candidate;
+  const firstHandoff = result.development.receipt.handoffs[0];
+  const nextPlanningTarget = taskDevelopmentDigest('planning-first:plan-v2');
+  result = current.runtime.recordTaskDevelopmentPlanning(current.root, current.taskId, {
+    changeDispositions: [],
+    planning: { targetIdentity: nextPlanningTarget, nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/change/proposal', identity: taskDevelopmentDigest('proposal-v2'), disposition: 'current', summary: 'Proposal updated.' }] },
+    planningGate: { disposition: 'waived', targetIdentity: nextPlanningTarget, summary: 'The user explicitly accepted the updated plan without another review.', source: 'user:integration-fixture' },
+  });
+  assert.equal(result.development.receipt.candidate, null);
+  assert.deepEqual(result.development.receipt.handoffs, [firstHandoff]);
+  result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: nextPlanningTarget });
+  result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
+  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity: result.development.receipt.contentTarget.identity, summary: 'User explicitly waived repeated formal execution for this fixture.', source: 'user:integration-fixture' });
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  assert.equal(result.development.receipt.candidate.generation, firstCandidate.generation + 1);
+  assert.notEqual(result.development.receipt.candidate.identity, firstCandidate.identity);
+  assert.deepEqual(result.development.receipt.handoffs, [firstHandoff]);
+});
+
 test('同一输入刷新 Result 不递增 generation；Content 变化递增且保留旧 handoff snapshot', (t) => {
   const current = fixture(t, 'generation-refresh');
   assert.throws(() => current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, {

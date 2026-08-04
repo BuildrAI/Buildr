@@ -26,10 +26,11 @@ function receipt() {
   const taskContext = { identity: taskDevelopmentDigest(taskContextPayload), ...taskContextPayload };
   const components = [{ selector: 'project:docs', kind: 'project', sourcePath: 'projects/docs', observer: 'fixture.filesystem/v1', identity: taskDevelopmentDigest('content') }];
   return {
-    schemaVersion: 'buildr.task-development-receipt/v1',
+    schemaVersion: 'buildr.task-development-receipt/v2',
     taskId: 'demo-task',
     environment: { taskId: 'demo-task', receiptSchema: 'buildr.task-environment-receipt/v2' },
     taskContext,
+    planning: { identity: taskDevelopmentDigest({ targetIdentity: null, nodes: [] }), targetIdentity: null, nodes: [] },
     contentTarget: { identity: taskDevelopmentDigest({ components }), components },
     verificationPolicy: null,
     generation: 0,
@@ -41,6 +42,20 @@ function receipt() {
     updatedAt: '2026-08-04T00:00:00.000Z',
   };
 }
+
+test('repository只读迁移v1 Receipt并在下一次写入保存v2', (t) => {
+  const { root, directory, runtime } = fixture(t);
+  const legacy = receipt();
+  delete legacy.planning;
+  legacy.schemaVersion = 'buildr.task-development-receipt/v1';
+  fs.writeFileSync(path.join(directory, 'development.yml'), runtime.renderTaskDevelopmentReceipt({ ...receipt() }).replace('buildr.task-development-receipt/v2', 'buildr.task-development-receipt/v1').replace(/planning:\n(?:  .*\n)+?contentTarget:/, 'contentTarget:'));
+  const before = fs.readFileSync(path.join(directory, 'development.yml'), 'utf8');
+  const migrated = runtime.readTaskDevelopmentPersistence(root, 'demo-task', { optional: false });
+  assert.equal(migrated.receipt.schemaVersion, 'buildr.task-development-receipt/v2');
+  assert.equal(fs.readFileSync(path.join(directory, 'development.yml'), 'utf8'), before);
+  runtime.writeTaskDevelopmentPersistence(root, migrated.receipt);
+  assert.match(fs.readFileSync(path.join(directory, 'development.yml'), 'utf8'), /buildr\.task-development-receipt\/v2/);
+});
 
 function io(overrides = {}) {
   return {

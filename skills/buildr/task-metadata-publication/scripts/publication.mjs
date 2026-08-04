@@ -11,7 +11,7 @@ const TOKEN_SCHEMA = 'buildr.task-metadata-publication-snapshot/v1';
 
 export const PORTABLE_TASK_RECORD_DECLARATIONS = Object.freeze([
   Object.freeze({ owner: 'buildr.task-record/v1', path: '.buildr/tasks/<task-id>/task.yml' }),
-  Object.freeze({ owner: 'buildr.task-development/v1', path: '.buildr/tasks/<task-id>/development.yml' }),
+  Object.freeze({ owner: 'buildr.task-development/v2', path: '.buildr/tasks/<task-id>/development.yml' }),
   Object.freeze({ owner: 'buildr.task-verification/v3', path: '.buildr/tasks/<task-id>/verification.yml' }),
   Object.freeze({ owner: 'buildr.task-review/v1', path: '.buildr/tasks/<task-id>/reviews/planning.yml' }),
   Object.freeze({ owner: 'buildr.task-review/v1', path: '.buildr/tasks/<task-id>/reviews/completion.yml' }),

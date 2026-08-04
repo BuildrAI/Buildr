@@ -31,6 +31,9 @@ skills:
       - capability: buildr.task-board-maintenance
         version: 1
         mode: optional
+      - capability: buildr.task-development
+        version: 2
+        mode: optional
   - id: task-worktree
     assetIdentity: buildr:skill:task-worktree
     sourceIdentity: package:skills/buildr/task-worktree
@@ -96,7 +99,7 @@ skills:
         version: 1
     requires:
       - capability: buildr.task-development
-        version: 1
+        version: 2
         mode: required
       - capability: buildr.task-environment
         version: 1
@@ -470,7 +473,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-development
     source: buildr
     path: buildr/task-development
-    description: 正式实现任务在 Planning Review 后推进开发、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、完成 Completion Review、记录风险决定或生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+    description: 正式实现任务从 proposal、design 或直接实现等首个正式研发动作开始，持续维护研发聚合事实、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、记录适用门禁与风险决定并生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
     enabled: true
     required: false
     state: installed
@@ -485,7 +488,7 @@ skills:
     runtimePath: task-development
     provides:
       - capability: buildr.task-development
-        version: 1
+        version: 2
     requires:
       - capability: buildr.task-record
         version: 1
@@ -583,10 +586,6 @@ contracts:
     version: 3
     path: contracts/buildr/task-verification/v3.md
     description: 执行 Project 已声明的验证能力，并维护 Task-scoped portable current Verification Result。
-  - id: buildr.task-development
-    version: 1
-    path: contracts/buildr/task-development/v1.md
-    description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
   - id: buildr.git-operations
     version: 1
     path: contracts/buildr/git-operations/v1.md
@@ -595,6 +594,10 @@ contracts:
     version: 1
     path: contracts/buildr/task-metadata-publication/v1.md
     description: 发布一个明确 Task 的 portable exact owned metadata，并保持 record、lifecycle 与 Git authority 分离。
+  - id: buildr.task-development
+    version: 2
+    path: contracts/buildr/task-development/v2.md
+    description: 从首个正式研发动作到 immutable Finish handoff，维护planning聚合事实、稳定 Content Target、verification policy、Task Candidate generation与推进决定。
 bindings:
   - capability: buildr.task-asset-review
     version: 1
@@ -635,13 +638,13 @@ bindings:
   - capability: buildr.task-verification
     version: 3
     provider: task-verification
-  - capability: buildr.task-development
-    version: 1
-    provider: task-development
   - capability: buildr.git-operations
     version: 1
     provider: git-operations
   - capability: buildr.task-metadata-publication
     version: 1
     provider: task-metadata-publication
+  - capability: buildr.task-development
+    version: 2
+    provider: task-development
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

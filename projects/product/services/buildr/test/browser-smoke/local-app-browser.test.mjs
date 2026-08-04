@@ -9,6 +9,7 @@ import test from 'node:test';
 import { chromium } from 'playwright-core';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 
@@ -97,6 +98,10 @@ capabilities:
 }
 
 function prepareDevelopmentFixture(runtime, root) {
+  runtime.beginTaskDevelopment(root, 'browser-task', {
+    changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'converged', summary: '浏览器夹具变更已收敛。' }],
+    planning: { targetIdentity: 'plan:browser-v1', nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/browser-flow/proposal', identity: taskDevelopmentDigest('browser-flow-proposal'), disposition: 'current', summary: '浏览器夹具提案已形成。' }] },
+  });
   let development = runtime.observeTaskDevelopment(root, 'browser-task', {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'converged', summary: '浏览器夹具变更已收敛。' }],
     planningTargetIdentity: 'plan:browser-v1',
@@ -368,6 +373,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.match(await taskChange.innerText(), /任务环境候选 · 进行中/);
     await taskChange.click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
+    await page.waitForFunction(() => document.getElementById('change-detail-code')?.textContent === 'browser-flow');
     assert.equal(await page.locator('#change-detail-code').innerText(), 'browser-flow');
     assert.equal(await page.locator('#change-detail-provenance').innerText(), '任务环境候选');
     await page.locator('#task-change-provenance').waitFor({ state: 'visible' });
@@ -386,8 +392,9 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
 
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '研发交接已就绪');
-    assert.equal(await page.locator('#task-development-axes .development-axis-card').count(), 5);
-    assert.equal(await page.locator('#task-development-axes').getByText('当前有效', { exact: true }).count(), 5);
+    assert.equal(await page.locator('#task-development-axes .development-axis-card').count(), 6);
+    assert.equal(await page.locator('#task-development-axes').getByText('当前有效', { exact: true }).count(), 6);
+    assert.match(await page.locator('#task-development-planning').innerText(), /proposal · proposal[\s\S]*当前事实[\s\S]*openspec\/v1[\s\S]*浏览器夹具提案已形成/);
     assert.equal(await page.locator('#task-development-gates .development-gate-card').count(), 3);
     assert.match(await page.locator('#task-development-gates').innerText(), /方案审查[\s\S]*已就绪/);
     assert.match(await page.locator('#task-development-gates').innerText(), /任务验证[\s\S]*已通过/);

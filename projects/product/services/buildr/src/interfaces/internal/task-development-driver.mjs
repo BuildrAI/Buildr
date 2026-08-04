@@ -25,8 +25,8 @@ const action = args[0];
 const taskId = option(args, '--task');
 const targetRoot = option(args, '--target');
 
-if (!['inspect', 'observe', 'policy', 'freeze', 'decide', 'handoff', 'carrier'].includes(action) || !taskId || !targetRoot) {
-  console.error('Internal usage: node task-development-driver.mjs <inspect|observe|policy|freeze|decide|handoff|carrier> --task <task-id> --target <canonical-workspace> [--input-json <json>]');
+if (!['inspect', 'begin', 'planning', 'observe', 'policy', 'gate', 'freeze', 'decide', 'handoff', 'carrier'].includes(action) || !taskId || !targetRoot) {
+  console.error('Internal usage: node task-development-driver.mjs <inspect|begin|planning|observe|policy|gate|freeze|decide|handoff|carrier> --task <task-id> --target <canonical-workspace> [--input-json <json>]');
   process.exit(2);
 }
 
@@ -35,8 +35,11 @@ try {
   const payload = input(args);
   const operations = {
     inspect: () => runtime.inspectTaskDevelopment(targetRoot, taskId),
+    begin: () => runtime.beginTaskDevelopment(targetRoot, taskId, payload),
+    planning: () => runtime.recordTaskDevelopmentPlanning(targetRoot, taskId, payload),
     observe: () => runtime.observeTaskDevelopment(targetRoot, taskId, payload),
     policy: () => runtime.recordTaskDevelopmentPolicy(targetRoot, taskId, payload),
+    gate: () => runtime.recordTaskDevelopmentGate(targetRoot, taskId, payload),
     freeze: () => runtime.freezeTaskDevelopmentCandidate(targetRoot, taskId, payload),
     decide: () => runtime.decideTaskDevelopment(targetRoot, taskId, payload),
     handoff: () => runtime.createTaskDevelopmentHandoff(targetRoot, taskId, payload),

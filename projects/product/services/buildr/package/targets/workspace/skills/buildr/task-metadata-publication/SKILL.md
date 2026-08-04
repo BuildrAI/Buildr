@@ -14,7 +14,7 @@ description: 用户或lifecycle consumer要求把canonical Workspace中一个明
 只组合contract声明的五个exact paths：
 
 - `buildr.task-record/v1`：`.buildr/tasks/<task-id>/task.yml`；
-- `buildr.task-development/v1`：`.buildr/tasks/<task-id>/development.yml`；
+- `buildr.task-development/v2`：`.buildr/tasks/<task-id>/development.yml`；
 - `buildr.task-verification/v3`：`.buildr/tasks/<task-id>/verification.yml`；
 - `buildr.task-review/v1`：`.buildr/tasks/<task-id>/reviews/planning.yml`、`.buildr/tasks/<task-id>/reviews/completion.yml`。
 

@@ -1,24 +1,27 @@
 ---
 name: task-development
-description: 正式实现任务在 Planning Review 后推进开发、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、完成 Completion Review、记录风险决定或生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；不用于Task Record、专业内容写入、测试开发或交付执行。
 ---
 
 # Task Development
 
-本 Skill 编排 `buildr.task-development/v1`。它通过 Buildr 内部 Task Development Application 工作；第一版没有公共 Development CLI，Local App 只消费 Application `inspect` 的只读投影，不提供 Development 写操作。不得手写 Development Receipt。
+本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；没有公共Development CLI，Local App只消费Application `inspect`的只读投影，不提供Development写操作。不得手写Development Receipt。
 
-## 恢复事实
+## 从首个研发动作接入
 
-1. 读取 Task Record，确认 Task active、Intent、Project/Service scope 和 `0..N` Change 引用。
-2. 通过 `task-environment` 恢复 matching ready Environment，只使用 Receipt 返回的 execution/validation roots。
-3. 通过 `task-review` inspect Planning Result；没有 current ready Planning Review 时先完成 Planning Review。
-4. 通过 Development Application inspect 已有 Receipt/current Candidate/handoffs。旧 snapshot 即使 stale 也不删除或改写。
+1. 读取Task Record，确认Task active、Intent、Project/Service scope和`0..N` Change引用。
+2. 通过`task-environment`恢复matching ready Environment，只使用Receipt返回的execution/validation roots。
+3. 通过Development Application inspect已有Receipt；若缺失，在首个proposal、design、直接实现或其他正式研发动作前调用`begin`，记录完整Change dispositions与current planning snapshot。
+4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。
+5. 通过`task-review`inspect Planning Result。Review可按当前policy不存在、not-applicable或明确waived；存在时必须绑定current planning target。旧Result和handoff snapshot即使stale也不删除或改写。
+
+Development只拥有这些专业事实如何构成当前Task研发过程，不生成或复制proposal、design、Review/Verification Result正文。
 
 ## 开发到稳定目标
 
-在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 sync/archive 或明确 `not-applicable`。这些动作属于相应 Project/Skill，不由 Development Application执行。
+在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 sync/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。
 
-内容固定后，向 Development Application 提交完整 Change dispositions 并观察 Content Target。code-only Task 提交空数组。观察结果必须只含逻辑 selector、相对 source path、observer capability 与内容 identity，不得保存本机路径。
+内容固定后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。code-only Task提交空数组。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 
 Candidate freeze后交付基线（Delivery Baseline）前进时，不要rebase或修改原Task worktree。先只读inspect原Task source snapshot、Task Context、policy与gates；Task Development是Content Target、Candidate、Verification、Completion Review、decision与handoff是否current/stale的唯一authority。原Task source与这些输入未变时，全部facts保持current，直接让Finish在run-owned隔离交付载体（Delivery Carrier）处理交付适配（Delivery Adaptation）；不得调用observe覆盖Content Target、重跑正式Verification或递增generation。
 
@@ -37,12 +40,12 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 ## Candidate、Completion 与决定
 
-所有 Change disposition 非 pending、Planning ready、policy current 且 Verification facts 完整后，调用 Development Application freeze。freeze 不修改内容、不运行命令，只创建或复用 current Candidate；新的 Content/Task context/policy 输入才递增 generation。
+所有Change disposition非pending、planning nodes与适用gates已得到current专业Result、`not-applicable`或明确`waived`处置，policy current且Verification facts满足policy后，调用Development Application freeze。freeze不修改内容、不运行命令，只创建或复用current Candidate；planning、Content、Task context、policy或gate disposition变化会使旧Candidate失效并在下一次freeze递增generation。
 
 随后用 `task-review` 对 Candidate identity 执行 Completion Review。根据 current gates 记录：
 
-- `blocked`：说明未获接受的风险或仍需处理的问题，不修改 Task 顶层 status；
-- `proceed`：必须绑定 current Candidate。Verification not-passed、coverage gap 或 Completion changes-required 时，每项风险都要绑定 `verification|completion`、精确 Result digest、scope、summary 和用户授权 source。
+- `blocked`：说明未获接受的风险或仍需处理的问题，不修改Task顶层status；
+- `proceed`：必须绑定current Candidate。Verification not-passed、coverage gap或Completion changes-required时，每项风险都要绑定`verification|completion`、精确Result digest、scope、summary和用户授权source；跳过整个适用gate使用`gate`记录waiver，不伪造Result或混入风险列表。
 
 selected `buildr.task-asset-review@3` provider ready且存在当前Task observation时，在handoff前调用`finalize`；结果为 `awaiting-human` 时停止，不生成Finish handoff，待人工accept/reject。provider缺失或没有observation时保持non-blocking degraded，不创建空observation或让Finish补做判断。
 
@@ -54,4 +57,4 @@ handoff 完成后调用 `task-finish`。Finish 只能读取该 snapshot、准备
 
 ## 完成证据
 
-报告 Content Target identity、policy identity、Verification Result digest/applicability、Candidate identity/generation、Completion Result digest/applicability、decision、handoff identity，以及适用的Task Contribution/Delivery Baseline观察与Finish carrier equivalence。不得把 Product Candidate verification 误报成 Task Candidate，也不得把 commit/branch/worktree 当 Candidate。
+报告planning snapshot identity与nodes/dispositions、Content Target identity、policy identity、Verification Result或waiver applicability、Candidate identity/generation、Completion Result或waiver applicability、decision、handoff identity，以及适用的Task Contribution/Delivery Baseline观察与Finish carrier equivalence。不得把Product Candidate verification误报成Task Candidate，也不得把commit/branch/worktree当Candidate。

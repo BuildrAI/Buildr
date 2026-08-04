@@ -1037,7 +1037,7 @@ export function createPackageStaticValidator(deps) {
           const helperContent = fs.readFileSync(helper, 'utf8');
           for (const declaration of [
             ['buildr.task-record/v1', '.buildr/tasks/<task-id>/task.yml'],
-            ['buildr.task-development/v1', '.buildr/tasks/<task-id>/development.yml'],
+            ['buildr.task-development/v2', '.buildr/tasks/<task-id>/development.yml'],
             ['buildr.task-verification/v3', '.buildr/tasks/<task-id>/verification.yml'],
             ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/planning.yml'],
             ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/completion.yml'],
@@ -1132,7 +1132,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v1` provider', '`buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
+        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');

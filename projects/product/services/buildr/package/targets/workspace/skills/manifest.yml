@@ -30,9 +30,9 @@ contracts:
     path: contracts/buildr/task-verification/v3.md
     description: 执行 Project 已声明的验证能力，并维护 Task-scoped portable current Verification Result。
   - id: buildr.task-development
-    version: 1
-    path: contracts/buildr/task-development/v1.md
-    description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
+    version: 2
+    path: contracts/buildr/task-development/v2.md
+    description: 从首个正式研发动作到 immutable Finish handoff维护planning、Content Target、Candidate与推进事实。
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
@@ -80,7 +80,7 @@ bindings:
     version: 3
     provider: task-verification
   - capability: buildr.task-development
-    version: 1
+    version: 2
     provider: task-development
   - capability: buildr.task-finish
     version: 1
@@ -124,6 +124,9 @@ skills:
         mode: optional
       - capability: buildr.task-board-maintenance
         version: 1
+        mode: optional
+      - capability: buildr.task-development
+        version: 2
         mode: optional
   - id: project-testing
     assetIdentity: buildr:skill:project-testing
@@ -250,7 +253,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-development
     source: buildr
     path: buildr/task-development
-    description: 正式实现任务在 Planning Review 后推进开发、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、完成 Completion Review、记录风险决定或生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+    description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；不用于Task Record、专业内容写入、测试开发或交付执行。
     enabled: true
     required: false
     state: installed
@@ -258,7 +261,7 @@ skills:
     runtimePath: task-development
     provides:
       - capability: buildr.task-development
-        version: 1
+        version: 2
     requires:
       - capability: buildr.task-record
         version: 1
@@ -294,7 +297,7 @@ skills:
         version: 1
     requires:
       - capability: buildr.task-development
-        version: 1
+        version: 2
         mode: required
       - capability: buildr.task-environment
         version: 1

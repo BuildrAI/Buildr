@@ -34,7 +34,7 @@ test('Task Metadata Publication 保持唯一Skill/capability与required Git Oper
 test('真实writer contracts与helper精确声明五个portable paths', () => {
   const expected = [
     ['buildr.task-record/v1', '.buildr/tasks/<task-id>/task.yml', 'task-record/v1.md'],
-    ['buildr.task-development/v1', '.buildr/tasks/<task-id>/development.yml', 'task-development/v1.md'],
+    ['buildr.task-development/v2', '.buildr/tasks/<task-id>/development.yml', 'task-development/v2.md'],
     ['buildr.task-verification/v3', '.buildr/tasks/<task-id>/verification.yml', 'task-verification/v3.md'],
     ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/planning.yml', 'task-review/v1.md'],
     ['buildr.task-review/v1', '.buildr/tasks/<task-id>/reviews/completion.yml', 'task-review/v1.md'],

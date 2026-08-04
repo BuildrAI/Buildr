@@ -52,7 +52,7 @@ flowchart TB
     S --> M
     L --> M
     M -->|"稳定 Task ID"| E
-    E -->|"ready"| D
+    E -->|"ready；首个正式研发动作"| D
     D -. "扩展环境" .-> E
     D -->|"不可变研发交接"| F
     F -. "upstream Candidate defect" .-> D
@@ -92,7 +92,7 @@ flowchart TB
 | Task Triage | 判断任务应走什么路径 | 已确认；P0.1 接入 Task Manager |
 | Task Environment | 建立并维护可执行、可核验、可清理的任务环境 | P0.2 已交付并生效（2026-08-02） |
 | Task Verification | 声明现有验证能力、执行显式能力并维护 current Task Verification Result | P0.4 已交付并生效（2026-08-03） |
-| Task Development | 对形成交付变更的正式 Task，在 ready environment 中形成 Content Target、正式 Verification、Task Candidate、推进决定与不可变研发交接 | P0.5 已交付并生效（2026-08-04）；Local App 只读投影已补齐 |
+| Task Development | 从首个正式研发动作到Finish handoff维护可选planning nodes、Content Target、正式Verification、Task Candidate、推进决定与不可变研发交接 | P0.5 已交付并生效（2026-08-04）；v2全研发周期authority与Local App只读投影已补齐 |
 | Task Metadata Publication | 把一个明确 Task 的 portable exact owned records 作为独立 metadata-only commit/push 发布 | P0.7 已交付并生效（2026-08-04） |
 | Task Finish | 消费研发交接，为当前 Product 执行内容等价载体交付、retained 激活与 Task Environment 清理 | P0.5 已收窄为 handoff adapter；P0.8 第一阶段收敛现有交付边界，后续只按真实需求扩展路径 |
 

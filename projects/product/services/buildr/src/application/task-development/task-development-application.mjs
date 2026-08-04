@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import {
+  createTaskDevelopmentPlanning,
   createTaskCandidate,
   createTaskFinishHandoff,
   normalizeTaskContentTarget,
@@ -84,6 +85,25 @@ export function registerTaskDevelopmentApplication(runtime) {
       },
       changes: [...payload.changes].sort((left, right) => `${left.project}/${left.change}`.localeCompare(`${right.project}/${right.change}`)),
     }), ...payload });
+  }
+
+  function planningSnapshot(input = {}) {
+    assertFields(input, new Set(['targetIdentity', 'nodes']), 'Task Development planning');
+    if (!Array.isArray(input.nodes || [])) throw taskDevelopmentError('task_development_planning_nodes_invalid', 'planning.nodes 必须是数组。', 400, { field: 'planning.nodes' });
+    const nodes = (input.nodes || []).map((node, index) => {
+      assertFields(node, new Set(['id', 'kind', 'authority', 'reference', 'identity', 'disposition', 'summary', 'source']), `planning.nodes[${index}]`);
+      return {
+        id: node.id,
+        kind: node.kind,
+        authority: node.authority,
+        reference: node.reference ?? null,
+        identity: node.identity ?? null,
+        disposition: node.disposition,
+        summary: node.summary,
+        source: node.source ?? null,
+      };
+    }).sort((left, right) => String(left.id).localeCompare(String(right.id)));
+    return createTaskDevelopmentPlanning({ targetIdentity: input.targetIdentity ?? null, nodes });
   }
 
   function contentTarget(context) {
@@ -185,6 +205,24 @@ export function registerTaskDevelopmentApplication(runtime) {
     return { resultDigest: slot.resultDigest, targetIdentity: slot.result.target.identity, outcome: slot.result.conclusion.outcome, applicability: 'current' };
   }
 
+  function gateDisposition(gate) {
+    return gate?.disposition || (gate ? 'current' : null);
+  }
+
+  function gateResolved(gate, positiveOutcomes) {
+    const disposition = gateDisposition(gate);
+    return disposition === 'waived' || disposition === 'not-applicable' || (disposition === 'current' && positiveOutcomes.includes(gate.outcome));
+  }
+
+  function planningGate(planning, saved, review) {
+    const current = reviewGate(review.slots.planning);
+    if (current) return current;
+    const disposition = gateDisposition(saved);
+    if (!['waived', 'not-applicable'].includes(disposition)) return null;
+    if (saved.targetIdentity && saved.targetIdentity !== planning.targetIdentity) return null;
+    return saved;
+  }
+
   function policyCoverage(policy, slot) {
     if (!policy || !slot?.present || slot.applicability?.status !== 'current') return { complete: false, missing: [], gaps: [] };
     const facts = new Map(slot.result.capabilities.map((item) => [`${item.project}/${item.capability}`, item]));
@@ -199,50 +237,57 @@ export function registerTaskDevelopmentApplication(runtime) {
     const inspected = task(targetRoot, taskId);
     const execution = environment(targetRoot, taskId);
     const context = taskContext(inspected, options.changeDispositions || receipt.taskContext.changes);
-    const target = contentTarget(execution);
-    const observedDeclarations = declarations(targetRoot, taskId, execution.environmentRoot);
-    const policyIsCurrent = currentPolicy(receipt.verificationPolicy, observedDeclarations);
-    const planningTargetIdentity = options.planningTargetIdentity || receipt.gates.planning?.targetIdentity;
+    const planning = options.planning ? planningSnapshot(options.planning) : receipt.planning;
+    const target = receipt.contentTarget ? contentTarget(execution) : null;
+    const observedDeclarations = target ? declarations(targetRoot, taskId, execution.environmentRoot) : [];
+    const policyIsCurrent = Boolean(target) && currentPolicy(receipt.verificationPolicy, observedDeclarations);
+    const planningTargetIdentity = planning.targetIdentity;
     const review = runtime.inspectTaskReview(targetRoot, taskId, {
       ...(planningTargetIdentity ? { planningTargetIdentity } : {}),
       ...(receipt.candidate ? { completionTargetIdentity: receipt.candidate.identity } : {}),
     });
-    const verification = runtime.inspectTaskVerification(targetRoot, taskId, { targetIdentity: target.identity, declarationRoot: execution.environmentRoot });
-    const planning = reviewGate(review.slots.planning);
-    const verificationCurrent = policyIsCurrent ? verificationGate(verification.slot) : null;
-    const coverage = policyCoverage(policyIsCurrent ? receipt.verificationPolicy : null, verification.slot);
-    const completion = receipt.candidate ? reviewGate(review.slots.completion) : null;
-    const inputsCurrent = context.identity === receipt.taskContext.identity && target.identity === receipt.contentTarget.identity && policyIsCurrent;
+    const verification = target ? runtime.inspectTaskVerification(targetRoot, taskId, { targetIdentity: target.identity, declarationRoot: execution.environmentRoot }) : { slot: null };
+    const planningCurrent = planningGate(planning, receipt.gates.planning, review);
+    const savedVerificationDisposition = gateDisposition(receipt.gates.verification);
+    const verificationCurrent = policyIsCurrent
+      ? verificationGate(verification.slot) || (['waived', 'not-applicable'].includes(savedVerificationDisposition) && (!receipt.gates.verification.targetIdentity || receipt.gates.verification.targetIdentity === target.identity) ? receipt.gates.verification : null)
+      : null;
+    const coverage = gateDisposition(verificationCurrent) === 'current' ? policyCoverage(receipt.verificationPolicy, verification.slot) : { complete: Boolean(verificationCurrent), missing: [], gaps: [] };
+    const reviewedCompletion = receipt.candidate ? reviewGate(review.slots.completion) : null;
+    const savedCompletionDisposition = gateDisposition(receipt.gates.completion);
+    const completion = reviewedCompletion || (receipt.candidate && ['waived', 'not-applicable'].includes(savedCompletionDisposition) && (!receipt.gates.completion.targetIdentity || receipt.gates.completion.targetIdentity === receipt.candidate.identity) ? receipt.gates.completion : null);
+    const inputsCurrent = context.identity === receipt.taskContext.identity && Boolean(target) && target.identity === receipt.contentTarget?.identity && policyIsCurrent;
     const candidateCurrent = Boolean(receipt.candidate)
       && inputsCurrent
       && receipt.candidate.contentTargetIdentity === target.identity
       && receipt.candidate.taskContextIdentity === context.identity
       && receipt.candidate.policyIdentity === receipt.verificationPolicy?.identity
-      && planning?.outcome === 'ready'
-      && Boolean(verificationCurrent)
+      && gateResolved(planningCurrent, ['ready'])
+      && gateResolved(verificationCurrent, ['passed', 'not-passed'])
       && coverage.complete;
-    const completionCurrent = candidateCurrent && Boolean(completion);
+    const completionCurrent = candidateCurrent && gateResolved(completion, ['ready', 'changes-required']);
     const proceedCurrent = completionCurrent && receipt.decision?.outcome === 'proceed' && receipt.decision.candidateIdentity === receipt.candidate.identity;
-    const currentGates = { planning, verification: verificationCurrent, completion: candidateCurrent ? completion : null };
+    const currentGates = { planning: planningCurrent, verification: verificationCurrent, completion: candidateCurrent ? completion : null };
     const currentHandoff = proceedCurrent ? [...receipt.handoffs].reverse().find((item) => item.candidate.identity === receipt.candidate.identity && same(item.gates, currentGates) && same(item.decision, receipt.decision)) || null : null;
     const handoffCurrent = Boolean(currentHandoff);
     const reasons = [];
     if (context.identity !== receipt.taskContext.identity) reasons.push({ axis: 'task-context', code: 'task-context-changed' });
-    if (target.identity !== receipt.contentTarget.identity) reasons.push({ axis: 'content-target', code: 'content-target-changed' });
-    if (!policyIsCurrent) reasons.push({ axis: 'policy', code: receipt.verificationPolicy ? 'declarations-changed' : 'policy-missing' });
-    if (!planning || planning.outcome !== 'ready') reasons.push({ axis: 'planning', code: planning ? 'planning-changes-required' : 'planning-missing-or-stale' });
-    if (!verificationCurrent) reasons.push({ axis: 'verification', code: 'verification-missing-or-stale' });
-    else if (verificationCurrent.outcome !== 'passed') reasons.push({ axis: 'verification', code: 'verification-not-passed', riskAcceptable: true });
-    if (!coverage.complete) reasons.push({ axis: 'verification-policy', code: 'required-facts-incomplete', missing: coverage.missing, gaps: coverage.gaps });
+    if (!receipt.contentTarget) reasons.push({ axis: 'content-target', code: 'content-target-missing' });
+    else if (!target || target.identity !== receipt.contentTarget.identity) reasons.push({ axis: 'content-target', code: 'content-target-changed' });
+    if (receipt.contentTarget && !policyIsCurrent) reasons.push({ axis: 'policy', code: receipt.verificationPolicy ? 'declarations-changed' : 'policy-missing' });
+    if (!gateResolved(planningCurrent, ['ready'])) reasons.push({ axis: 'planning', code: planningCurrent ? 'planning-changes-required' : 'planning-missing-or-stale' });
+    if (receipt.contentTarget && !verificationCurrent) reasons.push({ axis: 'verification', code: 'verification-missing-or-stale' });
+    else if (gateDisposition(verificationCurrent) === 'current' && verificationCurrent.outcome !== 'passed') reasons.push({ axis: 'verification', code: 'verification-not-passed', riskAcceptable: true });
+    if (receipt.contentTarget && !coverage.complete) reasons.push({ axis: 'verification-policy', code: 'required-facts-incomplete', missing: coverage.missing, gaps: coverage.gaps });
     if (receipt.candidate && !candidateCurrent) reasons.push({ axis: 'candidate', code: 'candidate-stale' });
     if (receipt.candidate && !completionCurrent) reasons.push({ axis: 'completion', code: 'completion-missing-or-stale' });
-    else if (completion?.outcome === 'changes-required') reasons.push({ axis: 'completion', code: 'completion-changes-required', riskAcceptable: true });
-    return { inspected, execution, context, target, observedDeclarations, policyIsCurrent, review, verification, gates: currentGates, coverage, candidateCurrent, completionCurrent, proceedCurrent, handoffCurrent, currentHandoff, reasons };
+    else if (gateDisposition(completion) === 'current' && completion?.outcome === 'changes-required') reasons.push({ axis: 'completion', code: 'completion-changes-required', riskAcceptable: true });
+    return { inspected, execution, context, planning, target, observedDeclarations, policyIsCurrent, review, verification, gates: currentGates, coverage, candidateCurrent, completionCurrent, proceedCurrent, handoffCurrent, currentHandoff, reasons };
   }
 
-  function initialReceipt(taskId, execution, context, target, planning) {
+  function initialReceipt(taskId, execution, context, planning, content = null, planningGateValue = null) {
     const timestamp = now();
-    return normalizeTaskDevelopmentReceipt({ schemaVersion: 'buildr.task-development-receipt/v1', taskId, environment: { taskId, receiptSchema: execution.receiptSchema }, taskContext: context, contentTarget: target, verificationPolicy: null, generation: 0, candidate: null, gates: { planning, verification: null, completion: null }, decision: null, handoffs: [], createdAt: timestamp, updatedAt: timestamp }, { expectedTaskId: taskId });
+    return normalizeTaskDevelopmentReceipt({ schemaVersion: 'buildr.task-development-receipt/v2', taskId, environment: { taskId, receiptSchema: execution.receiptSchema }, taskContext: context, planning, contentTarget: content, verificationPolicy: null, generation: 0, candidate: null, gates: { planning: planningGateValue, verification: null, completion: null }, decision: null, handoffs: [], createdAt: timestamp, updatedAt: timestamp }, { expectedTaskId: taskId });
   }
 
   function writeDevelopment(targetRoot, previous, receipt) {
@@ -267,10 +312,11 @@ export function registerTaskDevelopmentApplication(runtime) {
 
   function applicabilityFromObserved(receipt, observed) {
     return {
-      status: observed.handoffCurrent ? 'handoff-current' : observed.candidateCurrent ? 'candidate-current' : 'developing',
+      status: observed.handoffCurrent ? 'handoff-current' : observed.candidateCurrent ? 'candidate-current' : receipt.contentTarget ? 'developing' : 'planning',
       taskContext: observed.context.identity === receipt.taskContext.identity ? 'current' : 'stale',
-      contentTarget: observed.target.identity === receipt.contentTarget.identity ? 'current' : 'stale',
-      policy: observed.policyIsCurrent ? 'current' : receipt.verificationPolicy ? 'stale' : 'missing',
+      planning: observed.planning.identity === receipt.planning.identity ? 'current' : 'stale',
+      contentTarget: !receipt.contentTarget ? 'missing' : observed.target?.identity === receipt.contentTarget.identity ? 'current' : 'stale',
+      policy: !receipt.contentTarget ? 'missing' : observed.policyIsCurrent ? 'current' : receipt.verificationPolicy ? 'stale' : 'missing',
       candidate: receipt.candidate ? observed.candidateCurrent ? 'current' : 'stale' : 'missing',
       handoff: receipt.handoffs.length ? observed.handoffCurrent ? 'current' : 'stale' : 'missing',
       gates: observed.gates,
@@ -281,7 +327,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   function inspectTaskDevelopment(targetRoot, taskId) {
     const inspectedTask = task(targetRoot, taskId);
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
-    if (!persistence) return result('inspect', 'missing', inspectedTask.taskId, null, null, [], null, ['使用task-development在ready Environment中observe current context。']);
+    if (!persistence) return result('inspect', 'missing', inspectedTask.taskId, null, null, [], null, ['在首个正式研发动作时使用task-development begin建立current planning facts。']);
     try {
       const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
       return result('inspect', 'inspected', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
@@ -290,33 +336,76 @@ export function registerTaskDevelopmentApplication(runtime) {
     }
   }
 
+  function planningMutation(operation, targetRoot, taskId, input) {
+    assertFields(input, new Set(['changeDispositions', 'planning', 'planningGate']), `Task Development ${operation}`);
+    const inspected = task(targetRoot, taskId, { active: true });
+    const execution = environment(targetRoot, taskId);
+    const context = taskContext(inspected, input.changeDispositions);
+    const planning = planningSnapshot(input.planning || {});
+    const requestedGate = input.planningGate ?? null;
+    if (requestedGate) {
+      assertFields(requestedGate, new Set(['disposition', 'targetIdentity', 'summary', 'source']), 'planningGate');
+      if (!['waived', 'not-applicable'].includes(requestedGate.disposition)) throw taskDevelopmentError('task_development_gate_disposition_invalid', 'begin/planning只接受waived或not-applicable planningGate。', 400, { field: 'planningGate.disposition' });
+    }
+    const review = runtime.inspectTaskReview(targetRoot, taskId, planning.targetIdentity ? { planningTargetIdentity: planning.targetIdentity } : {});
+    const resolvedPlanningGate = reviewGate(review.slots.planning) || requestedGate;
+    const current = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
+    let receipt;
+    if (!current) receipt = initialReceipt(taskId, execution, context, planning, null, resolvedPlanningGate);
+    else {
+      const changed = context.identity !== current.receipt.taskContext.identity || planning.identity !== current.receipt.planning.identity || !same(resolvedPlanningGate, current.receipt.gates.planning);
+      receipt = normalizeTaskDevelopmentReceipt({
+        ...current.receipt,
+        taskContext: context,
+        planning,
+        candidate: changed ? null : current.receipt.candidate,
+        gates: { planning: resolvedPlanningGate, verification: changed ? null : current.receipt.gates.verification, completion: changed ? null : current.receipt.gates.completion },
+        decision: changed ? null : current.receipt.decision,
+        updatedAt: now(),
+      }, { expectedTaskId: taskId });
+    }
+    const written = writeDevelopment(targetRoot, current?.receipt || null, receipt);
+    const observed = observeCurrent(targetRoot, taskId, written.receipt);
+    return result(operation, current ? 'updated' : 'created', taskId, written, applicabilityFromObserved(written.receipt, observed), [effect(written.root, written)]);
+  }
+
+  function beginTaskDevelopment(targetRoot, taskId, input) {
+    return planningMutation('begin', targetRoot, taskId, input);
+  }
+
+  function recordTaskDevelopmentPlanning(targetRoot, taskId, input) {
+    return planningMutation('planning', targetRoot, taskId, input);
+  }
+
   function observeTaskDevelopment(targetRoot, taskId, input) {
     assertFields(input, new Set(['changeDispositions', 'planningTargetIdentity']), 'Task Development observe');
     const inspected = task(targetRoot, taskId, { active: true });
     const execution = environment(targetRoot, taskId);
     const context = taskContext(inspected, input.changeDispositions);
     const target = contentTarget(execution);
-    const review = runtime.inspectTaskReview(targetRoot, taskId, input.planningTargetIdentity ? { planningTargetIdentity: input.planningTargetIdentity } : {});
-    const planning = reviewGate(review.slots.planning);
     const current = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
-    let receipt = current?.receipt || initialReceipt(taskId, execution, context, target, planning);
+    const planning = current?.receipt.planning || createTaskDevelopmentPlanning({ targetIdentity: input.planningTargetIdentity || null, nodes: [] });
+    if (input.planningTargetIdentity && planning.targetIdentity !== input.planningTargetIdentity) throw taskDevelopmentError('task_development_planning_target_mismatch', 'observe的planningTargetIdentity与current planning snapshot不一致；先更新planning facts。', 409, { expected: planning.targetIdentity, actual: input.planningTargetIdentity });
+    const review = runtime.inspectTaskReview(targetRoot, taskId, planning.targetIdentity ? { planningTargetIdentity: planning.targetIdentity } : {});
+    const currentPlanningGate = planningGate(planning, current?.receipt.gates.planning || null, review);
+    let receipt = current?.receipt || initialReceipt(taskId, execution, context, planning, target, currentPlanningGate);
     if (current) {
       const observedDeclarations = declarations(targetRoot, taskId, execution.environmentRoot);
       const policy = currentPolicy(receipt.verificationPolicy, observedDeclarations) ? receipt.verificationPolicy : null;
-      const upstreamChanged = context.identity !== receipt.taskContext.identity || target.identity !== receipt.contentTarget.identity || policy?.identity !== receipt.verificationPolicy?.identity || !same(planning, receipt.gates.planning);
+      const upstreamChanged = context.identity !== receipt.taskContext.identity || target.identity !== receipt.contentTarget?.identity || policy?.identity !== receipt.verificationPolicy?.identity || !same(currentPlanningGate, receipt.gates.planning);
       receipt = normalizeTaskDevelopmentReceipt({
         ...receipt,
         taskContext: context,
         contentTarget: target,
         verificationPolicy: policy,
         candidate: upstreamChanged ? null : receipt.candidate,
-        gates: { planning, verification: upstreamChanged ? null : receipt.gates.verification, completion: upstreamChanged ? null : receipt.gates.completion },
+        gates: { planning: currentPlanningGate, verification: upstreamChanged ? null : receipt.gates.verification, completion: upstreamChanged ? null : receipt.gates.completion },
         decision: upstreamChanged ? null : receipt.decision,
         updatedAt: now(),
       }, { expectedTaskId: taskId });
     }
     const written = writeDevelopment(targetRoot, current?.receipt || null, receipt);
-    const observed = observeCurrent(targetRoot, taskId, written.receipt, { planningTargetIdentity: input.planningTargetIdentity });
+    const observed = observeCurrent(targetRoot, taskId, written.receipt);
     return result('observe', current ? 'updated' : 'created', taskId, written, applicabilityFromObserved(written.receipt, observed), [effect(written.root, written)]);
   }
 
@@ -328,10 +417,10 @@ export function registerTaskDevelopmentApplication(runtime) {
     const target = contentTarget(execution);
     const observedDeclarations = declarations(targetRoot, taskId, execution.environmentRoot);
     const policy = buildPolicy(inspected, observedDeclarations, input);
-    const planningTarget = persistence.receipt.gates.planning?.targetIdentity;
+    const planningTarget = persistence.receipt.planning.targetIdentity;
     const review = runtime.inspectTaskReview(targetRoot, taskId, planningTarget ? { planningTargetIdentity: planningTarget } : {});
-    const planning = reviewGate(review.slots.planning);
-    const inputsChanged = context.identity !== persistence.receipt.taskContext.identity || target.identity !== persistence.receipt.contentTarget.identity || policy.identity !== persistence.receipt.verificationPolicy?.identity || !same(planning, persistence.receipt.gates.planning);
+    const planning = planningGate(persistence.receipt.planning, persistence.receipt.gates.planning, review);
+    const inputsChanged = context.identity !== persistence.receipt.taskContext.identity || target.identity !== persistence.receipt.contentTarget?.identity || policy.identity !== persistence.receipt.verificationPolicy?.identity || !same(planning, persistence.receipt.gates.planning);
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, taskContext: context, contentTarget: target, verificationPolicy: policy, candidate: inputsChanged ? null : persistence.receipt.candidate, gates: { planning, verification: inputsChanged ? null : persistence.receipt.gates.verification, completion: inputsChanged ? null : persistence.receipt.gates.completion }, decision: inputsChanged ? null : persistence.receipt.decision, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, persistence.receipt, receipt);
     const observed = observeCurrent(targetRoot, taskId, written.receipt);
@@ -340,7 +429,24 @@ export function registerTaskDevelopmentApplication(runtime) {
 
   function invalidateForObserved(receipt, observed) {
     const policy = observed.policyIsCurrent ? receipt.verificationPolicy : null;
-    return normalizeTaskDevelopmentReceipt({ ...receipt, taskContext: observed.context, contentTarget: observed.target, verificationPolicy: policy, candidate: null, gates: { planning: observed.gates.planning, verification: policy && observed.coverage.complete ? observed.gates.verification : null, completion: null }, decision: null, updatedAt: now() }, { expectedTaskId: receipt.taskId });
+    return normalizeTaskDevelopmentReceipt({ ...receipt, taskContext: observed.context, planning: observed.planning, contentTarget: observed.target || receipt.contentTarget, verificationPolicy: policy, candidate: null, gates: { planning: observed.gates.planning, verification: policy && observed.coverage.complete ? observed.gates.verification : null, completion: null }, decision: null, updatedAt: now() }, { expectedTaskId: receipt.taskId });
+  }
+
+  function recordTaskDevelopmentGate(targetRoot, taskId, input) {
+    assertFields(input, new Set(['gate', 'disposition', 'targetIdentity', 'summary', 'source']), 'Task Development gate');
+    if (!['planning', 'verification', 'completion'].includes(input.gate)) throw taskDevelopmentError('task_development_gate_invalid', 'gate必须是planning、verification或completion。', 400, { field: 'gate' });
+    if (!['waived', 'not-applicable'].includes(input.disposition)) throw taskDevelopmentError('task_development_gate_disposition_invalid', 'gate disposition必须是waived或not-applicable。', 400, { field: 'disposition' });
+    task(targetRoot, taskId, { active: true });
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
+    if (input.gate !== 'planning' && !persistence.receipt.contentTarget) throw taskDevelopmentError('task_development_content_target_required', `${input.gate} disposition需要stable Content Target。`, 409);
+    if (input.gate === 'completion' && !persistence.receipt.candidate) throw taskDevelopmentError('task_development_candidate_required', 'completion disposition需要current Candidate。', 409);
+    const gate = { disposition: input.disposition, targetIdentity: input.targetIdentity ?? null, summary: input.summary, source: input.source ?? null };
+    const gates = { ...persistence.receipt.gates, [input.gate]: gate };
+    const invalidatesCandidate = input.gate !== 'completion';
+    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, candidate: invalidatesCandidate ? null : persistence.receipt.candidate, gates: { ...gates, completion: invalidatesCandidate ? null : gates.completion }, decision: null, updatedAt: now() }, { expectedTaskId: taskId });
+    const written = writeDevelopment(targetRoot, persistence.receipt, receipt);
+    const observed = observeCurrent(targetRoot, taskId, written.receipt);
+    return result('gate', 'recorded', taskId, written, applicabilityFromObserved(written.receipt, observed), [effect(written.root, written)]);
   }
 
   function freezeTaskDevelopmentCandidate(targetRoot, taskId, input = {}) {
@@ -349,7 +455,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt, input);
     const pendingChanges = observed.context.changes.filter((item) => item.disposition === 'pending');
-    const ready = observed.policyIsCurrent && observed.gates.planning?.outcome === 'ready' && Boolean(observed.gates.verification) && observed.coverage.complete && pendingChanges.length === 0;
+    const ready = observed.policyIsCurrent && gateResolved(observed.gates.planning, ['ready']) && gateResolved(observed.gates.verification, ['passed', 'not-passed']) && observed.coverage.complete && pendingChanges.length === 0;
     if (!ready) {
       const invalidated = writeDevelopment(targetRoot, persistence.receipt, invalidateForObserved(persistence.receipt, observed));
       throw taskDevelopmentError('task_development_candidate_not_ready', 'Candidate freeze前置gate未满足。', 409, { reasons: observed.reasons, pendingChanges: pendingChanges.map((item) => `${item.project}/${item.change}`), receiptDigest: invalidated.receiptDigest }, '完成Change convergence、Planning Review与stable Content Target formal Verification后重试。');
@@ -401,6 +507,6 @@ export function registerTaskDevelopmentApplication(runtime) {
     return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], { code: 'task_development_carrier_not_equivalent', message: 'Delivery carrier与current handoff Candidate不等价。', details: observed.reasons }, ['返回task-development重新建立stable target、Verification、Candidate、Completion Review与handoff。']);
   }
 
-  Object.assign(runtime, { inspectTaskDevelopment, observeTaskDevelopment, recordTaskDevelopmentPolicy, freezeTaskDevelopmentCandidate, decideTaskDevelopment, createTaskDevelopmentHandoff, assertTaskDevelopmentCarrier });
+  Object.assign(runtime, { inspectTaskDevelopment, beginTaskDevelopment, recordTaskDevelopmentPlanning, observeTaskDevelopment, recordTaskDevelopmentPolicy, recordTaskDevelopmentGate, freezeTaskDevelopmentCandidate, decideTaskDevelopment, createTaskDevelopmentHandoff, assertTaskDevelopmentCarrier });
   return runtime;
 }

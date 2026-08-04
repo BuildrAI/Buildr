@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
 
-export const TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v1';
+export const TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v2';
+export const LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v1';
 export const TASK_DEVELOPMENT_DECISIONS = Object.freeze(['proceed', 'blocked']);
 export const TASK_DEVELOPMENT_CHANGE_DISPOSITIONS = Object.freeze(['pending', 'converged', 'not-applicable']);
+export const TASK_DEVELOPMENT_PLANNING_DISPOSITIONS = Object.freeze(['pending', 'current', 'stale', 'not-applicable', 'waived']);
 
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|file:\/\/)/;
 const DIGEST = /^sha256-[a-f0-9]{64}$/;
@@ -114,6 +116,49 @@ function normalizeEnvironmentReference(value) {
   };
 }
 
+function optionalPortableText(value, field) {
+  return value === null || value === undefined ? null : portableText(value, field);
+}
+
+function optionalDigestIdentity(value, field) {
+  return value === null || value === undefined ? null : digestIdentity(value, field);
+}
+
+export function normalizeTaskDevelopmentPlanning(value) {
+  const planning = object(value, 'planning');
+  closed(planning, new Set(['identity', 'targetIdentity', 'nodes']), 'planning');
+  if (!Array.isArray(planning.nodes)) throw taskDevelopmentError('task_development_field_invalid', 'planning.nodes 必须是数组。', 400, { field: 'planning.nodes' });
+  const nodes = planning.nodes.map((item, index) => {
+    const field = `planning.nodes[${index}]`;
+    const node = object(item, field);
+    closed(node, new Set(['id', 'kind', 'authority', 'reference', 'identity', 'disposition', 'summary', 'source']), field);
+    if (!TASK_DEVELOPMENT_PLANNING_DISPOSITIONS.includes(node.disposition)) throw taskDevelopmentError('task_development_planning_disposition_invalid', `${field}.disposition 不受支持。`, 400, { field: `${field}.disposition`, value: node.disposition });
+    const normalized = {
+      id: portableText(node.id, `${field}.id`),
+      kind: portableText(node.kind, `${field}.kind`),
+      authority: portableText(node.authority, `${field}.authority`),
+      reference: optionalPortableText(node.reference, `${field}.reference`),
+      identity: optionalDigestIdentity(node.identity, `${field}.identity`),
+      disposition: node.disposition,
+      summary: portableText(node.summary, `${field}.summary`),
+      source: optionalPortableText(node.source, `${field}.source`),
+    };
+    if (['current', 'stale'].includes(normalized.disposition) && (!normalized.reference || !normalized.identity)) throw taskDevelopmentError('task_development_planning_evidence_required', `${field} 的 current/stale disposition 必须包含 reference 与 identity。`, 409, { field });
+    if (normalized.disposition === 'waived' && !normalized.source) throw taskDevelopmentError('task_development_planning_waiver_source_required', `${field} 的 waived disposition 必须包含明确授权 source。`, 409, { field });
+    return normalized;
+  }).sort((left, right) => left.id.localeCompare(right.id));
+  if (new Set(nodes.map((item) => item.id)).size !== nodes.length) throw taskDevelopmentError('task_development_value_duplicate', 'planning.nodes id 不能重复。', 400, { field: 'planning.nodes' });
+  const targetIdentity = optionalPortableText(planning.targetIdentity, 'planning.targetIdentity');
+  const identity = taskDevelopmentDigest({ targetIdentity, nodes });
+  assertDerivedIdentity(planning.identity, identity, 'planning.identity');
+  return { identity, targetIdentity, nodes };
+}
+
+export function createTaskDevelopmentPlanning({ targetIdentity = null, nodes = [] } = {}) {
+  const payload = { targetIdentity, nodes };
+  return normalizeTaskDevelopmentPlanning({ identity: taskDevelopmentDigest({ targetIdentity, nodes: [...nodes].sort((left, right) => left.id.localeCompare(right.id)) }), ...payload });
+}
+
 export function normalizeTaskDevelopmentContext(value) {
   const context = object(value, 'taskContext');
   closed(context, new Set(['identity', 'taskId', 'intent', 'scope', 'changes']), 'taskContext');
@@ -221,7 +266,17 @@ export function normalizeTaskVerificationPolicy(value) {
 function normalizeGate(value, field, outcomes) {
   if (value === null) return null;
   const gate = object(value, field);
-  closed(gate, new Set(['resultDigest', 'targetIdentity', 'outcome', 'applicability']), field);
+  const disposition = gate.disposition || 'current';
+  if (!['current', 'not-applicable', 'waived'].includes(disposition)) throw taskDevelopmentError('task_development_gate_disposition_invalid', `${field}.disposition 不受支持。`, 400, { field: `${field}.disposition`, value: disposition });
+  if (disposition !== 'current') {
+    closed(gate, new Set(['disposition', 'targetIdentity', 'summary', 'source']), field);
+    const targetIdentity = optionalPortableText(gate.targetIdentity, `${field}.targetIdentity`);
+    const summary = portableText(gate.summary, `${field}.summary`);
+    const source = optionalPortableText(gate.source, `${field}.source`);
+    if (disposition === 'waived' && (!targetIdentity || !source)) throw taskDevelopmentError('task_development_gate_waiver_source_required', `${field} waived 必须绑定target identity与明确授权source。`, 409, { field });
+    return { disposition, targetIdentity, summary, source };
+  }
+  closed(gate, new Set(['disposition', 'resultDigest', 'targetIdentity', 'outcome', 'applicability']), field);
   if (!outcomes.includes(gate.outcome)) throw taskDevelopmentError('task_development_gate_outcome_invalid', `${field}.outcome 不受支持。`, 400, { field: `${field}.outcome`, value: gate.outcome });
   if (gate.applicability !== 'current') throw taskDevelopmentError('task_development_gate_applicability_invalid', `${field}.applicability 只能保存 current snapshot。`, 400, { field: `${field}.applicability`, value: gate.applicability });
   return { resultDigest: digestIdentity(gate.resultDigest, `${field}.resultDigest`), targetIdentity: portableText(gate.targetIdentity, `${field}.targetIdentity`), outcome: gate.outcome, applicability: 'current' };
@@ -302,17 +357,18 @@ export function createTaskFinishHandoff({ candidate, changes, gates, decision, c
   }).changes;
   const normalizedGates = normalizeGates(gates);
   const normalizedDecision = normalizeDecision(decision);
-  if (!normalizedGates.planning || normalizedGates.planning.outcome !== 'ready' || !normalizedGates.verification || !normalizedGates.completion) {
-    throw taskDevelopmentError('task_development_handoff_gates_incomplete', 'Finish handoff 需要 current Planning、Verification 与 Completion gates。', 409);
+  const resolved = (gate, positive) => Boolean(gate) && (gate.disposition === 'waived' || gate.disposition === 'not-applicable' || positive.includes(gate.outcome));
+  if (!resolved(normalizedGates.planning, ['ready']) || !resolved(normalizedGates.verification, ['passed', 'not-passed']) || !resolved(normalizedGates.completion, ['ready', 'changes-required'])) {
+    throw taskDevelopmentError('task_development_handoff_gates_incomplete', 'Finish handoff 需要 current专业Result或合法not-applicable/waived gate。', 409);
   }
   if (normalizedDecision?.outcome !== 'proceed' || normalizedDecision.candidateIdentity !== normalizedCandidate.identity) throw taskDevelopmentError('task_development_handoff_decision_blocked', 'Finish handoff 需要绑定 current Candidate 的 proceed decision。', 409);
   for (const risk of normalizedDecision.risks) {
     const gate = normalizedGates[risk.gate];
-    if (!gate || risk.resultDigest !== gate.resultDigest) throw taskDevelopmentError('task_development_risk_result_mismatch', `风险接受必须绑定current ${risk.gate} Result digest。`, 409, { gate: risk.gate, expected: gate?.resultDigest || null, actual: risk.resultDigest });
+    if (!gate || gate.disposition || risk.resultDigest !== gate.resultDigest) throw taskDevelopmentError('task_development_risk_result_mismatch', `风险接受必须绑定current ${risk.gate} Result digest。`, 409, { gate: risk.gate, expected: gate?.resultDigest || null, actual: risk.resultDigest });
   }
   const adverse = [
-    ...(normalizedGates.verification.outcome === 'passed' ? [] : [{ gate: 'verification', digest: normalizedGates.verification.resultDigest }]),
-    ...(normalizedGates.completion.outcome === 'ready' ? [] : [{ gate: 'completion', digest: normalizedGates.completion.resultDigest }]),
+    ...(normalizedGates.verification.disposition || normalizedGates.verification.outcome === 'passed' ? [] : [{ gate: 'verification', digest: normalizedGates.verification.resultDigest }]),
+    ...(normalizedGates.completion.disposition || normalizedGates.completion.outcome === 'ready' ? [] : [{ gate: 'completion', digest: normalizedGates.completion.resultDigest }]),
   ];
   for (const item of adverse) {
     if (!normalizedDecision.risks.some((risk) => risk.gate === item.gate && risk.resultDigest === item.digest)) throw taskDevelopmentError('task_development_risk_acceptance_required', `proceed 必须显式接受 ${item.gate} gate 风险。`, 409, item);
@@ -331,9 +387,14 @@ function normalizeHandoff(value, index) {
 }
 
 export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null } = {}) {
-  const receipt = object(value, 'Development Receipt');
-  closed(receipt, new Set(['schemaVersion', 'taskId', 'environment', 'taskContext', 'contentTarget', 'verificationPolicy', 'generation', 'candidate', 'gates', 'decision', 'handoffs', 'createdAt', 'updatedAt']), '');
-  if (receipt.schemaVersion !== TASK_DEVELOPMENT_RECEIPT_SCHEMA) throw taskDevelopmentError('task_development_schema_unsupported', `Development Receipt schemaVersion 必须是 ${TASK_DEVELOPMENT_RECEIPT_SCHEMA}。`, 409, { actual: receipt.schemaVersion });
+  let receipt = object(value, 'Development Receipt');
+  const legacy = receipt.schemaVersion === LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMA;
+  closed(receipt, new Set(['schemaVersion', 'taskId', 'environment', 'taskContext', 'planning', 'contentTarget', 'verificationPolicy', 'generation', 'candidate', 'gates', 'decision', 'handoffs', 'createdAt', 'updatedAt']), '');
+  if (!legacy && receipt.schemaVersion !== TASK_DEVELOPMENT_RECEIPT_SCHEMA) throw taskDevelopmentError('task_development_schema_unsupported', `Development Receipt schemaVersion 必须是 ${TASK_DEVELOPMENT_RECEIPT_SCHEMA}。`, 409, { actual: receipt.schemaVersion });
+  if (legacy) {
+    const targetIdentity = receipt.gates?.planning?.targetIdentity || null;
+    receipt = { ...receipt, schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, planning: createTaskDevelopmentPlanning({ targetIdentity, nodes: [] }) };
+  }
   const taskId = portableText(receipt.taskId, 'taskId');
   if (expectedTaskId && taskId !== expectedTaskId) throw taskDevelopmentError('task_development_task_identity_mismatch', `Development Receipt taskId 与目录不一致：${expectedTaskId} != ${taskId}。`, 409, { expectedTaskId, taskId });
   const environment = normalizeEnvironmentReference(receipt.environment);
@@ -341,7 +402,8 @@ export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null }
   if (!Number.isInteger(receipt.generation) || receipt.generation < 0) throw taskDevelopmentError('task_development_generation_invalid', 'generation 必须是非负整数。', 400, { field: 'generation' });
   const taskContext = normalizeTaskDevelopmentContext(receipt.taskContext);
   if (taskContext.taskId !== taskId) throw taskDevelopmentError('task_development_task_identity_mismatch', 'taskContext.taskId 与 Receipt taskId 不一致。', 409, { taskId, contextTaskId: taskContext.taskId });
-  const contentTarget = normalizeTaskContentTarget(receipt.contentTarget);
+  const planning = normalizeTaskDevelopmentPlanning(receipt.planning);
+  const contentTarget = receipt.contentTarget === null ? null : normalizeTaskContentTarget(receipt.contentTarget);
   const verificationPolicy = receipt.verificationPolicy === null ? null : normalizeTaskVerificationPolicy(receipt.verificationPolicy);
   const candidate = receipt.candidate === null ? null : normalizeTaskCandidate(receipt.candidate);
   const gates = normalizeGates(receipt.gates);
@@ -350,11 +412,12 @@ export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null }
   const handoffs = receipt.handoffs.map(normalizeHandoff);
   if (new Set(handoffs.map((item) => item.identity)).size !== handoffs.length) throw taskDevelopmentError('task_development_value_duplicate', 'handoffs identity 不能重复。', 400, { field: 'handoffs' });
   if (candidate && candidate.generation !== receipt.generation) throw taskDevelopmentError('task_development_generation_mismatch', 'current Candidate generation 必须等于 Receipt generation。', 409);
-  if (candidate && (candidate.contentTargetIdentity !== contentTarget.identity || candidate.taskContextIdentity !== taskContext.identity || candidate.policyIdentity !== verificationPolicy?.identity)) throw taskDevelopmentError('task_development_candidate_inputs_mismatch', 'current Candidate 与 Receipt current inputs 不一致。', 409);
+  if (candidate && (!contentTarget || candidate.contentTargetIdentity !== contentTarget.identity || candidate.taskContextIdentity !== taskContext.identity || candidate.policyIdentity !== verificationPolicy?.identity)) throw taskDevelopmentError('task_development_candidate_inputs_mismatch', 'current Candidate 与 Receipt current inputs 不一致。', 409);
+  if (!contentTarget && (verificationPolicy || candidate || gates.verification || gates.completion || decision || handoffs.length)) throw taskDevelopmentError('task_development_content_target_required', 'Content Target形成前不能保存policy、Candidate、Verification/Completion gate、decision或handoff。', 409);
   if (!candidate && gates.completion) throw taskDevelopmentError('task_development_completion_without_candidate', '没有 current Candidate 时不能保存 Completion gate。', 409);
   if (decision?.candidateIdentity && decision.candidateIdentity !== candidate?.identity) throw taskDevelopmentError('task_development_decision_candidate_mismatch', 'decision 与 current Candidate 不一致。', 409);
   const createdAt = timestamp(receipt.createdAt, 'createdAt');
   const updatedAt = timestamp(receipt.updatedAt, 'updatedAt');
   if (Date.parse(updatedAt) < Date.parse(createdAt)) throw taskDevelopmentError('task_development_timestamp_invalid', 'updatedAt 不能早于 createdAt。', 400, { field: 'updatedAt' });
-  return { schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, taskId, environment, taskContext, contentTarget, verificationPolicy, generation: receipt.generation, candidate, gates, decision, handoffs, createdAt, updatedAt };
+  return { schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, taskId, environment, taskContext, planning, contentTarget, verificationPolicy, generation: receipt.generation, candidate, gates, decision, handoffs, createdAt, updatedAt };
 }

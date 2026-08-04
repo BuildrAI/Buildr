@@ -11,7 +11,7 @@ const productRoot = path.resolve(serviceRoot, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const development = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
-const developmentContract = read('package/targets/workspace/skills/contracts/buildr/task-development/v1.md');
+const developmentContract = read('package/targets/workspace/skills/contracts/buildr/task-development/v2.md');
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
@@ -33,13 +33,13 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
 });
 
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {
-  for (const phrase of ['Content Target', 'verification policy', 'Candidate identity', 'append-only immutable', 'buildr.task-development-receipt/v1']) assert.ok(developmentContract.includes(phrase), phrase);
-  assert.match(development, /第一版没有公共 Development CLI/);
+  for (const phrase of ['Content Target', 'verification policy', 'Candidate', 'append-only', 'buildr.task-development-receipt/v2', 'planning', 'waived']) assert.ok(developmentContract.includes(phrase), phrase);
+  assert.match(development, /没有公共Development CLI/);
   assert.match(finish, /buildr task finish run --task <task-id> --target/);
   assert.doesNotMatch(finish, /--project|--change/);
   for (const manifest of [packageManifest, workspaceSkills]) {
-    assert.match(manifest, /task-development[\s\S]*provides:[\s\S]*buildr\.task-development[\s\S]*version: 1/);
-    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-development[\s\S]*version: 1[\s\S]*mode: required/);
+    assert.match(manifest, /task-development[\s\S]*provides:[\s\S]*buildr\.task-development[\s\S]*version: 2/);
+    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-development[\s\S]*version: 2[\s\S]*mode: required/);
     assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-environment[\s\S]*version: 1[\s\S]*mode: required/);
   }
 });

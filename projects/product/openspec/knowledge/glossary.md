@@ -214,17 +214,31 @@
 
 ## 任务研发（Task Development）
 
-- 定义：正式 Task 在 ready Environment 中把已完成内容、Task Intent/scope/Change context、verification policy 和专业 Result 收敛为 Task Candidate、推进决定与研发交接的唯一生命周期 authority。
-- 适用范围：Planning Review 之后的实现收敛、stable Content Target、formal Verification 编排、Candidate freeze、Completion Review 消费、风险决定和研发交接；Local App 可通过 Application `inspect` 只读展示这些事实。
+- 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority。
+- 适用范围：全研发区间的可选节点引用/currentness、实现收敛、formal Verification编排、Candidate freeze、Completion Review消费、风险/豁免决定和研发交接；Local App可通过Application`inspect`只读展示这些事实。
 - 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；没有公共 Development CLI、写 API 或 Local App mutation。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 研发回执（Development Receipt）
 
-- 定义：Task Development Application 在 `.buildr/tasks/<task-id>/development.yml` 维护的唯一 closed current 记录，保存 Environment 逻辑引用、最小 Task context、Content Target、verification policy、current Candidate/generation、最小 gates、decision 与不可变研发交接 snapshots。
-- 适用范围：Development inspect/observe/policy/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
+- 定义：Task Development Application在`.buildr/tasks/<task-id>/development.yml`维护的唯一closed current记录；v2保存Environment逻辑引用、最小Task context、planning snapshot、可空Content Target、verification policy、current Candidate/generation、最小gates/dispositions、decision与不可变研发交接snapshots，并兼容只读迁移v1。
+- 适用范围：Development inspect/begin/planning/observe/policy/gate/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
 - 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接读写文件。
-- 来源：[Task Development capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-development/v1.md)
+- 来源：[Task Development capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-development/v2.md)
+
+## 研发节点（Development Node）
+
+- 定义：Development planning snapshot中对proposal、design、Project自定义规划artifact或其他正式研发节点的最小current引用，包含专业authority、portable reference、content identity、disposition与摘要。
+- 适用范围：节点可以不存在、pending、current、stale、not-applicable或明确waived；存在时由Development聚合currentness，内容仍由对应专业authority拥有。
+- 避免混用：不是通用任务step、progress、attempt、事件历史或artifact副本；`waived`不等于专业Result的ready/passed。
+- 来源：[Task Development specification](../specs/task-development/spec.md)
+
+## 明确豁免（waived）
+
+- 定义：用户或具备业务授权的来源针对精确planning node或gate target明确允许不执行该节点的研发事实，必须保存summary与authorization source。
+- 适用范围：Task Development planning与Planning/Verification/Completion gate disposition；用于解释为何允许继续Candidate或handoff。
+- 避免混用：不等于not-applicable，不改写Review/Verification Result，不使stale/incomplete evidence变为current，也不自动接受负向Result风险。
+- 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 内容目标（Content Target）
 

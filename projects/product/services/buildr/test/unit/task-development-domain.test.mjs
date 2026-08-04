@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createTaskDevelopmentPlanning,
   createTaskCandidate,
   createTaskFinishHandoff,
   normalizeTaskDevelopmentReceipt,
@@ -63,10 +64,11 @@ function receipt(overrides = {}) {
   const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'All declared gates are current.', risks: [] };
   const handoff = createTaskFinishHandoff({ candidate, changes: taskContext.changes, gates, decision, createdAt: '2026-08-04T00:00:00.000Z' });
   return {
-    schemaVersion: 'buildr.task-development-receipt/v1',
+    schemaVersion: 'buildr.task-development-receipt/v2',
     taskId: 'demo-task',
     environment: { taskId: 'demo-task', receiptSchema: 'buildr.task-environment-receipt/v2' },
     taskContext,
+    planning: createTaskDevelopmentPlanning({ targetIdentity: gates.planning.targetIdentity, nodes: [] }),
     contentTarget,
     verificationPolicy,
     generation: 1,
@@ -79,6 +81,29 @@ function receipt(overrides = {}) {
     ...overrides,
   };
 }
+
+test('planning snapshot支持current、not-applicable与明确waived，但拒绝无授权waiver', () => {
+  const current = createTaskDevelopmentPlanning({ targetIdentity: sha('plan'), nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'product/change/proposal', identity: sha('proposal'), disposition: 'current', summary: 'Proposal current.', source: null }] });
+  assert.equal(current.nodes[0].disposition, 'current');
+  assert.throws(() => createTaskDevelopmentPlanning({ nodes: [{ id: 'review', kind: 'planning-review', authority: 'buildr.task-review/v1', reference: null, identity: null, disposition: 'waived', summary: 'Skipped.', source: null }] }), (error) => error.code === 'task_development_planning_waiver_source_required');
+});
+
+test('Receipt允许只有planning facts且Content Target为null', () => {
+  const early = receipt({ contentTarget: null, verificationPolicy: null, generation: 0, candidate: null, gates: { planning: null, verification: null, completion: null }, decision: null, handoffs: [] });
+  assert.equal(normalizeTaskDevelopmentReceipt(early).contentTarget, null);
+});
+
+test('v1 Receipt只读迁移保持Candidate、decision与handoff identity', () => {
+  const legacy = receipt();
+  legacy.schemaVersion = 'buildr.task-development-receipt/v1';
+  delete legacy.planning;
+  const migrated = normalizeTaskDevelopmentReceipt(legacy);
+  assert.equal(migrated.schemaVersion, 'buildr.task-development-receipt/v2');
+  assert.equal(migrated.candidate.identity, legacy.candidate.identity);
+  assert.deepEqual(migrated.decision, legacy.decision);
+  assert.equal(migrated.handoffs[0].identity, legacy.handoffs[0].identity);
+  assert.equal(migrated.planning.targetIdentity, legacy.gates.planning.targetIdentity);
+});
 
 test('Candidate identity 只绑定 generation、Content Target、Task Context 与 policy', () => {
   const current = receipt();
