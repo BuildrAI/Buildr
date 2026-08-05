@@ -67,11 +67,38 @@ function readModel(persistence, changeReferences = [], taskRelations = { parent:
   return { record: persistence.record, recordDigest: persistence.recordDigest, changeReferences, taskRelations };
 }
 
+function storedView(view) {
+  return {
+    record: view.record,
+    recordDigest: view.recordDigest,
+    storedChangeReferences: view.record.changes,
+    taskRelations: view.taskRelations,
+    childTaskCount: view.childTaskCount,
+  };
+}
+
 function effect(type, taskId) {
   return { type, taskId };
 }
 
 export function registerTaskRecordApplication(runtime) {
+  function normalizedQueryFilters(input = {}) {
+    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren']), 'Task query');
+    const filters = {};
+    if (input.q !== undefined && String(input.q).trim()) filters.q = String(input.q).trim();
+    if (input.project !== undefined && String(input.project).trim()) filters.project = text(input.project, 'project');
+    if (input.service !== undefined && String(input.service).trim()) filters.service = qualified(input.service, 'service', 'service');
+    if (input.status !== undefined) {
+      if (!['active', 'completed', 'abandoned', 'all'].includes(input.status)) throw taskRecordError('task_record_filter_invalid', 'status 只支持 active、completed、abandoned 或 all。', 400, { field: 'status', value: input.status });
+      filters.status = input.status;
+    }
+    if (input.hasChildren !== undefined) {
+      if (!['yes', 'no', 'all'].includes(input.hasChildren)) throw taskRecordError('task_record_filter_invalid', 'hasChildren 只支持 yes、no 或 all。', 400, { field: 'hasChildren', value: input.hasChildren });
+      filters.hasChildren = input.hasChildren;
+    }
+    return filters;
+  }
+
   function validateScopeReferences(targetRoot, record) {
     const projects = runtime.readProjectRegistryRecord(targetRoot);
     if (projects.registry.migrationRequired) throw taskRecordError('task_record_project_registry_migration_required', 'Project registry 需要先完成 canonical 迁移。', 409, undefined, '先运行 canonical buildr sync <agent>。');
@@ -161,6 +188,30 @@ export function registerTaskRecordApplication(runtime) {
     }
     tasks.sort((a, b) => b.record.updatedAt.localeCompare(a.record.updatedAt) || a.record.taskId.localeCompare(b.record.taskId));
     return { schemaVersion: 'buildr.task-record-list/v2', tasks, diagnostics };
+  }
+
+  function queryTaskRecordViews(targetRoot, input = {}) {
+    const filters = normalizedQueryFilters(input);
+    const persistence = runtime.queryTaskRecordViewPersistence(targetRoot, filters);
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordList, {
+      filters: {
+        q: filters.q ?? '', project: filters.project ?? null,
+        service: filters.service ? referenceKey(filters.service, 'service') : null,
+        status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all',
+      },
+      filterOptions: {
+        projects: persistence.filterOptions.projects,
+        services: persistence.filterOptions.services.map((service) => referenceKey(service, 'service')),
+      },
+      totalTaskCount: persistence.totalTaskCount,
+      tasks: persistence.views.map(storedView),
+      diagnostics: [],
+    });
+  }
+
+  function inspectTaskRecordView(targetRoot, taskIdValue) {
+    const view = runtime.readTaskRecordViewPersistence(targetRoot, taskId(taskIdValue, 'taskId'));
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordView, { taskId: view.record.taskId, ...storedView(view) });
   }
 
   function inspectTaskRecord(targetRoot, taskId) {
@@ -290,6 +341,6 @@ export function registerTaskRecordApplication(runtime) {
     return mutate(targetRoot, taskId, 'abandon', input, (current) => ({ ...current, status: 'abandoned', result: { summary } }));
   }
 
-  Object.assign(runtime, { listTaskRecords, inspectTaskRecord, createTaskRecord, updateTaskRecord, completeTaskRecord, abandonTaskRecord });
+  Object.assign(runtime, { listTaskRecords, queryTaskRecordViews, inspectTaskRecord, inspectTaskRecordView, createTaskRecord, updateTaskRecord, completeTaskRecord, abandonTaskRecord });
   return runtime;
 }

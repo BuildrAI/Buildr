@@ -29,6 +29,7 @@ const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
+const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren']);
 const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
 const STATIC_ASSETS = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
@@ -162,6 +163,25 @@ async function readAllowedJsonBody(request, allowed, label) {
   return input;
 }
 
+function taskQueryInput(searchParams) {
+  const input = {};
+  for (const field of new Set(searchParams.keys())) {
+    if (!TASK_QUERY_FIELDS.has(field)) {
+      const error = new Error(`Task list 不支持 query 参数：${field}。`);
+      error.code = 'task_api_query_forbidden'; error.status = 400; error.details = { field };
+      throw error;
+    }
+    const values = searchParams.getAll(field);
+    if (values.length !== 1) {
+      const error = new Error(`Task list query 参数不能重复：${field}。`);
+      error.code = 'task_api_query_invalid'; error.status = 400; error.details = { field };
+      throw error;
+    }
+    input[field] = values[0];
+  }
+  return input;
+}
+
 function staticFile(name) {
   return fs.readFileSync(path.join(STATIC_ROOT, name), 'utf8');
 }
@@ -290,20 +310,15 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         }
         if (request.method === 'GET' && suffix === '/projects') return jsonResponse(response, 200, runtime.listProjects(root));
         const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
-        if (taskApi && requestUrl.searchParams.size > 0) {
+        if (taskApi && requestUrl.searchParams.size > 0 && !(request.method === 'GET' && suffix === '/tasks')) {
           const error = new Error('Task API 不接受 query 参数。');
           error.code = 'task_api_query_forbidden';
           error.status = 400;
           throw error;
         }
-        if (request.method === 'GET' && suffix === '/tasks') return jsonResponse(response, 200, runtime.listTaskRecords(root));
-        if (request.method === 'POST' && suffix === '/tasks') {
-          assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['taskId', 'title', 'intent', 'parentTaskId', 'projects', 'services', 'changes']), 'Task create');
-          return jsonResponse(response, 201, runtime.createTaskRecord(root, input));
-        }
+        if (request.method === 'GET' && suffix === '/tasks') return jsonResponse(response, 200, runtime.queryTaskRecordViews(root, taskQueryInput(requestUrl.searchParams)));
         const taskMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})$`));
-        if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecord(root, taskMatch[1]));
+        if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecordView(root, taskMatch[1]));
         if (request.method === 'PATCH' && taskMatch) {
           assertWriteRequest(request, origin, sessionToken);
           const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');

@@ -20,6 +20,8 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskEnvironmentResult: 'buildr.task-environment-result/v1',
   gitWorktreeResult: 'buildr.git-worktree-result/v1',
   taskRecordResult: 'buildr.task-record-result/v3',
+  taskRecordView: 'buildr.task-record-view/v1',
+  taskRecordList: 'buildr.task-record-list/v3',
   taskReviewOperationResult: 'buildr.task-review-operation-result/v1',
   taskVerificationOperationResult: 'buildr.task-verification-operation-result/v1',
   taskFinishRun: 'buildr.task-finish-run/v2',

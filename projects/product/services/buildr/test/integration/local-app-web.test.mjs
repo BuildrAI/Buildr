@@ -162,11 +162,10 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
   assert.doesNotMatch(source, />Planning Review</);
   assert.doesNotMatch(source, />Completion Review</);
   assert.doesNotMatch(source, />Verification Result</);
-  assert.match(tasks, /新建正式任务/);
-  assert.match(tasks, /任务 ID/);
-  assert.match(tasks, /项目范围（逗号或换行）/);
-  assert.match(tasks, /服务范围（project\/service）/);
-  assert.match(tasks, /OpenSpec 变更（project\/change/);
+  assert.match(tasks, /正式任务由 Agent 创建/);
+  assert.match(tasks, /标题或意图/);
+  assert.match(tasks, /全部项目/);
+  assert.match(tasks, /全部服务/);
   assert.doesNotMatch(tasks, />新建正式 Task</);
   assert.doesNotMatch(tasks, />Task ID</);
   assert.doesNotMatch(tasks, />Project scope/);
@@ -191,6 +190,23 @@ test('Task-scoped Change 使用 Planning Review，global Change 保留通用审�
   assert.doesNotMatch(change, /querySelector\('\.panel-actions'\)\.classList\.add\('hidden'\)/);
   assert.match(actions, /\/api\/v1\/prompts\/task-review/);
   assert.match(actions, /审查结果尚未记录/);
-  assert.match(tasks, /创建任务记录/);
+  assert.doesNotMatch(tasks, /创建任务记录|task-create-form/);
   assert.match(change, /方案审查（Planning Review）/);
+});
+
+test('任务列表使用可取消的服务端筛选，详情首屏只读轻量视图并延迟读取 Parent 候选', () => {
+  const detail = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
+  const tasks = fs.readFileSync('src/interfaces/local-app/web/features/tasks.js', 'utf8');
+  const server = fs.readFileSync('src/interfaces/local-app/http/server.mjs', 'utf8');
+  assert.match(tasks, /new AbortController\(\)/);
+  assert.match(tasks, /setTimeout\(load, 200\)/);
+  assert.match(tasks, /hasChildren/);
+  assert.match(tasks, /childTaskCount/);
+  assert.match(tasks, /data\.totalTaskCount === 0/);
+  assert.doesNotMatch(tasks, /method: 'POST'/);
+  assert.match(detail, /api\('\/api\/v1\/tasks\?status=active'\)/);
+  assert.match(detail, /addEventListener\('focus', loadParentOptions\)/);
+  assert.match(detail, /打开时检查当前状态/);
+  assert.doesNotMatch(detail, /Promise\.all\(\[api\('\/api\/v1\/workspace'\), api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}`\), api\('\/api\/v1\/tasks'\)\]\)/);
+  assert.doesNotMatch(server, /request\.method === 'POST' && suffix === '\/tasks'/);
 });

@@ -90,14 +90,6 @@ function developmentReasonLabel(reason) {
   return reason.message || labels[reason.code] || `当前状态原因：${reason.code || '未知'}。`;
 }
 
-function provenanceLabel(resolution) {
-  if (resolution.availability !== 'available') return '当前不可用';
-  const provenance = resolution.workingCopy?.provenance;
-  if (provenance === 'task-environment-candidate') return `任务环境候选 · ${resolution.workingCopy.change.lifecycle === 'archived' ? '已归档' : '进行中'}`;
-  if (provenance === 'retained-archive') return '保留工作区 · 已归档';
-  return '保留工作区 · 进行中';
-}
-
 function fact(label, value) {
   const row = document.createElement('div');
   const term = document.createElement('dt'); term.textContent = label;
@@ -159,7 +151,8 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     </section>`;
 
   let current;
-  let taskList = [];
+  let parentOptionsLoaded = false;
+  let parentOptionsLoading = false;
 
   function relationLink(summary) {
     const link = document.createElement('a'); link.href = `/tasks/${encodeURIComponent(summary.taskId)}`; link.dataset.route = '';
@@ -181,10 +174,33 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
 
   function renderParentOptions(record) {
     const select = document.getElementById('task-edit-parent'); select.replaceChildren(new Option('无 Parent（独立 Task）', ''));
-    for (const item of taskList.filter((item) => item.record.taskId !== record.taskId && (item.record.status === 'active' || item.record.taskId === record.parentTaskId))) {
-      select.append(new Option(`${item.record.title} · ${item.record.taskId} · ${statusLabel(item.record.status)}`, item.record.taskId));
+    if (record.parentTaskId && current.taskRelations.parent) {
+      const parent = current.taskRelations.parent;
+      select.append(new Option(`${parent.title} · ${parent.taskId} · ${statusLabel(parent.status)}`, parent.taskId));
     }
     select.value = record.parentTaskId || '';
+  }
+
+  async function loadParentOptions() {
+    if (parentOptionsLoaded || parentOptionsLoading || current.record.status !== 'active') return;
+    parentOptionsLoading = true;
+    const select = document.getElementById('task-edit-parent');
+    select.disabled = true;
+    try {
+      const data = await api('/api/v1/tasks?status=active');
+      const record = current.record;
+      renderParentOptions(record);
+      for (const item of data.tasks.filter((item) => item.record.taskId !== record.taskId && item.record.taskId !== record.parentTaskId)) {
+        select.append(new Option(`${item.record.title} · ${item.record.taskId} · ${statusLabel(item.record.status)}`, item.record.taskId));
+      }
+      select.value = record.parentTaskId || '';
+      parentOptionsLoaded = true;
+    } catch (error) {
+      showError(error);
+    } finally {
+      parentOptionsLoading = false;
+      select.disabled = false;
+    }
   }
   function render(data) {
     current = data;
@@ -197,17 +213,16 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     const changeContainer = document.getElementById('task-detail-changes'); changeContainer.replaceChildren();
     if (!record.changes.length) changeContainer.textContent = '无';
     else {
-      const resolutions = new Map((data.changeReferences || []).map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
       const list = document.createElement('span'); list.className = 'task-change-links';
       for (const reference of record.changes) {
         const key = `${reference.project}/${reference.change}`;
-        const resolution = resolutions.get(key) || { availability: 'unavailable' };
-        const item = document.createElement(resolution.availability === 'available' ? 'a' : 'span');
-        item.className = `task-change-link ${resolution.availability}`;
-        if (item.tagName === 'A') { item.href = `/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`; item.dataset.route = ''; }
+        const item = document.createElement('a');
+        item.className = 'task-change-link available';
+        item.href = `/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`;
+        item.dataset.route = '';
         const label = document.createElement('strong'); label.textContent = key;
-        const provenance = document.createElement('small'); provenance.textContent = provenanceLabel(resolution);
-        item.append(label, provenance); list.append(item);
+        const note = document.createElement('small'); note.textContent = '打开时检查当前状态';
+        item.append(label, note); list.append(item);
       }
       changeContainer.append(list);
     }
@@ -602,7 +617,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   }
 
   async function refresh() {
-    const [workspace, data, tasks] = await Promise.all([api('/api/v1/workspace'), api(`/api/v1/tasks/${encodeURIComponent(taskId)}`), api('/api/v1/tasks')]); taskList = tasks.tasks; onWorkspace(workspace); render(data);
+    const [workspace, data] = await Promise.all([api('/api/v1/workspace'), api(`/api/v1/tasks/${encodeURIComponent(taskId)}`)]); onWorkspace(workspace); render(data);
   }
 
   function showError(error) {
@@ -617,6 +632,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   document.getElementById('task-environment-refresh').addEventListener('click', refreshEnvironment);
   document.getElementById('task-review-refresh').addEventListener('click', refreshReview);
   document.getElementById('task-verification-refresh').addEventListener('click', refreshVerification);
+  document.getElementById('task-edit-parent').addEventListener('focus', loadParentOptions);
   const refreshOnFocus = () => {
     if (!developmentPanel.isConnected) { window.removeEventListener('focus', refreshOnFocus); return; }
     if (activeTab === 'development') refreshDevelopment();
@@ -637,7 +653,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     const nextParentTaskId = document.getElementById('task-edit-parent').value || null;
     try {
       const updated = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: JSON.stringify({ expectedRecordDigest: current.recordDigest, title: document.getElementById('task-edit-title').value, intent: document.getElementById('task-edit-intent').value, ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }), addProjects: projects.add, removeProjects: projects.remove, addServices: services.add, removeServices: services.remove, addChanges: changes.add, removeChanges: changes.remove }) });
-      render(updated); text('task-edit-state', updated.effects.length ? '保存成功' : '内容一致'); button.disabled = false; document.getElementById('task-detail-alert').classList.add('hidden');
+      parentOptionsLoaded = false; render(updated); text('task-edit-state', updated.effects.length ? '保存成功' : '内容一致'); button.disabled = false; document.getElementById('task-detail-alert').classList.add('hidden');
     } catch (error) { showError(error); button.disabled = false; }
   });
 

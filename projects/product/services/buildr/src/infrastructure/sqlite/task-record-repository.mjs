@@ -27,14 +27,7 @@ function resultValue(row) {
   return { summary: row.result_summary };
 }
 
-function readRecord(database, taskId) {
-  const row = database.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId);
-  if (!row) return null;
-  const projects = database.prepare('SELECT project FROM task_projects WHERE task_id = ? ORDER BY project').all(taskId).map((item) => item.project);
-  const services = database.prepare('SELECT project, service FROM task_services WHERE task_id = ? ORDER BY project, service').all(taskId);
-  const changes = database.prepare('SELECT project, change_name AS change FROM task_changes WHERE task_id = ? ORDER BY project, change_name').all(taskId);
-  const parentTaskId = row.parent_task_id ?? null;
-  const childTaskIds = database.prepare('SELECT task_id FROM tasks WHERE parent_task_id = ? ORDER BY task_id').all(taskId).map((item) => item.task_id);
+function recordValue(row, { projects = [], services = [], changes = [], childTaskIds = [] } = {}) {
   return normalizeTaskRecord({
     schemaVersion: row.schema_version,
     taskId: row.task_id,
@@ -42,17 +35,93 @@ function readRecord(database, taskId) {
     intent: row.intent,
     scope: { projects, services },
     changes,
-    parentTaskId,
+    parentTaskId: row.parent_task_id ?? null,
     childTaskIds,
     status: row.status,
     result: resultValue(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  }, { expectedTaskId: taskId });
+  }, { expectedTaskId: row.task_id });
+}
+
+function readRecord(database, taskId) {
+  const row = database.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId);
+  if (!row) return null;
+  const projects = database.prepare('SELECT project FROM task_projects WHERE task_id = ? ORDER BY project').all(taskId).map((item) => item.project);
+  const services = database.prepare('SELECT project, service FROM task_services WHERE task_id = ? ORDER BY project, service').all(taskId);
+  const changes = database.prepare('SELECT project, change_name AS change FROM task_changes WHERE task_id = ? ORDER BY project, change_name').all(taskId);
+  const childTaskIds = database.prepare('SELECT task_id FROM tasks WHERE parent_task_id = ? ORDER BY task_id').all(taskId).map((item) => item.task_id);
+  return recordValue(row, { projects, services, changes, childTaskIds });
 }
 
 function persistence(root, record) {
   return { root, record, recordDigest: digestRecord(record) };
+}
+
+function group(rows, key, value = (item) => item) {
+  const values = new Map();
+  for (const row of rows) {
+    const identity = key(row);
+    if (!values.has(identity)) values.set(identity, []);
+    values.get(identity).push(value(row));
+  }
+  return values;
+}
+
+function taskViewQuery(filters = {}, taskId = null) {
+  const conditions = [];
+  const parameters = [];
+  if (taskId) { conditions.push('t.task_id = ?'); parameters.push(taskId); }
+  if (filters.q) {
+    conditions.push('(instr(lower(t.title), lower(?)) > 0 OR instr(lower(t.intent), lower(?)) > 0)');
+    parameters.push(filters.q, filters.q);
+  }
+  if (filters.project) {
+    conditions.push('EXISTS (SELECT 1 FROM task_projects project_filter WHERE project_filter.task_id = t.task_id AND project_filter.project = ?)');
+    parameters.push(filters.project);
+  }
+  if (filters.service) {
+    conditions.push('EXISTS (SELECT 1 FROM task_services service_filter WHERE service_filter.task_id = t.task_id AND service_filter.project = ? AND service_filter.service = ?)');
+    parameters.push(filters.service.project, filters.service.service);
+  }
+  if (filters.status && filters.status !== 'all') { conditions.push('t.status = ?'); parameters.push(filters.status); }
+  if (filters.hasChildren === 'yes') conditions.push('EXISTS (SELECT 1 FROM tasks child_filter WHERE child_filter.parent_task_id = t.task_id)');
+  if (filters.hasChildren === 'no') conditions.push('NOT EXISTS (SELECT 1 FROM tasks child_filter WHERE child_filter.parent_task_id = t.task_id)');
+  return {
+    sql: `SELECT t.*, parent.title AS parent_title, parent.status AS parent_status,
+      (SELECT COUNT(*) FROM tasks child_count WHERE child_count.parent_task_id = t.task_id) AS child_task_count
+      FROM tasks t LEFT JOIN tasks parent ON parent.task_id = t.parent_task_id
+      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+      ORDER BY t.updated_at DESC, t.task_id`,
+    parameters,
+  };
+}
+
+function taskViews(database, rows, root) {
+  if (!rows.length) return [];
+  const taskIds = rows.map((row) => row.task_id);
+  const slots = taskIds.map(() => '?').join(', ');
+  const projects = group(database.prepare(`SELECT task_id, project FROM task_projects WHERE task_id IN (${slots}) ORDER BY task_id, project`).all(...taskIds), (row) => row.task_id, (row) => row.project);
+  const services = group(database.prepare(`SELECT task_id, project, service FROM task_services WHERE task_id IN (${slots}) ORDER BY task_id, project, service`).all(...taskIds), (row) => row.task_id, ({ project, service }) => ({ project, service }));
+  const changes = group(database.prepare(`SELECT task_id, project, change_name AS change FROM task_changes WHERE task_id IN (${slots}) ORDER BY task_id, project, change_name`).all(...taskIds), (row) => row.task_id, ({ project, change }) => ({ project, change }));
+  const children = group(database.prepare(`SELECT task_id, parent_task_id, title, status FROM tasks WHERE parent_task_id IN (${slots}) ORDER BY parent_task_id, task_id`).all(...taskIds), (row) => row.parent_task_id);
+  return rows.map((row) => {
+    const childRows = children.get(row.task_id) || [];
+    const record = recordValue(row, {
+      projects: projects.get(row.task_id) || [],
+      services: services.get(row.task_id) || [],
+      changes: changes.get(row.task_id) || [],
+      childTaskIds: childRows.map((child) => child.task_id),
+    });
+    return {
+      ...persistence(root, record),
+      childTaskCount: Number(row.child_task_count),
+      taskRelations: {
+        parent: row.parent_task_id ? { taskId: row.parent_task_id, title: row.parent_title, status: row.parent_status } : null,
+        children: childRows.map((child) => ({ taskId: child.task_id, title: child.title, status: child.status })),
+      },
+    };
+  });
 }
 
 function insertRecord(database, record) {
@@ -168,15 +237,42 @@ export function registerTaskRecordRepository(runtime) {
   }
 
   function listTaskRecordPersistence(targetRoot) {
+    const query = queryTaskRecordViewPersistence(targetRoot);
+    return { root: query.root, records: query.views.map(({ childTaskCount, taskRelations, ...record }) => record), diagnostics: [] };
+  }
+
+  function queryTaskRecordViewPersistence(targetRoot, filters = {}) {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     let opened;
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
-      if (!opened.present) return { root, records: [], diagnostics: [] };
-      const taskIds = opened.database.prepare('SELECT task_id FROM tasks ORDER BY updated_at DESC, task_id').all().map((row) => row.task_id);
-      return { root, records: taskIds.map((taskId) => persistence(root, readRecord(opened.database, taskId))), diagnostics: [] };
+      if (!opened.present) return { root, views: [], totalTaskCount: 0, filterOptions: { projects: [], services: [] } };
+      const query = taskViewQuery(filters);
+      const rows = opened.database.prepare(query.sql).all(...query.parameters);
+      const totalTaskCount = Number(opened.database.prepare('SELECT COUNT(*) AS count FROM tasks').get().count);
+      const projectOptions = opened.database.prepare('SELECT DISTINCT project FROM task_projects ORDER BY project').all().map((row) => row.project);
+      const serviceOptions = opened.database.prepare('SELECT DISTINCT project, service FROM task_services ORDER BY project, service').all();
+      return { root, views: taskViews(opened.database, rows, root), totalTaskCount, filterOptions: { projects: projectOptions, services: serviceOptions } };
     } catch (error) {
-      throw asTaskRecordError(error, '列表读取');
+      throw asTaskRecordError(error, '查询视图读取');
+    } finally {
+      try { opened?.database?.close(); } catch {}
+    }
+  }
+
+  function readTaskRecordViewPersistence(targetRoot, taskId) {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    if (!isTaskRecordId(taskId)) throw taskRecordError('task_record_identity_invalid', `Task ID 不合法：${taskId || '<missing>'}。`, 400, { taskId });
+    let opened;
+    try {
+      opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+      if (!opened.present) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId });
+      const query = taskViewQuery({}, taskId);
+      const rows = opened.database.prepare(query.sql).all(...query.parameters);
+      if (!rows.length) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId });
+      return taskViews(opened.database, rows, root)[0];
+    } catch (error) {
+      throw asTaskRecordError(error, '详情视图读取');
     } finally {
       try { opened?.database?.close(); } catch {}
     }
@@ -236,6 +332,8 @@ export function registerTaskRecordRepository(runtime) {
     readTaskRecordPersistence,
     prepareTaskRecordPersistence,
     listTaskRecordPersistence,
+    queryTaskRecordViewPersistence,
+    readTaskRecordViewPersistence,
     createTaskRecordPersistence,
     mutateTaskRecordPersistence,
     writeTaskRecordPersistence,

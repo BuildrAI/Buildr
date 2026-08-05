@@ -236,7 +236,9 @@ input:disabled, textarea:disabled, select:disabled { color: #7c8881; background:
 .finding { padding: 8px 10px; border-radius: 6px; color: var(--amber); background: var(--amber-soft); font-size: 11px; line-height: 1.45; }
 .finding.error { color: var(--red); background: #fdeaea; }
 .context-help { margin: 12px 0 0; padding: 10px; border-radius: 6px; color: var(--muted); background: #f4f7f5; font-size: 11px; line-height: 1.5; }
-.task-create-panel { margin-bottom: 24px; }
+.task-filter-panel { margin-bottom: 24px; }
+.task-filter-grid { grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(130px, 1fr)); align-items: end; }
+.task-filter-grid.is-loading { opacity: .62; }
 .detail-tabs { display: flex; gap: 4px; margin: 18px 0 20px; overflow-x: auto; border-bottom: 1px solid var(--line); }
 .detail-tab { margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; padding: 10px 16px; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 800; }
 .detail-tab:hover { color: var(--ink); }
@@ -381,7 +383,7 @@ details summary { cursor: pointer; color: var(--ink); font-size: 12px; font-weig
   h1 { font-size: 30px; }
   .resource-toolbar, .detail-title-row, .page-header-row { display: grid; align-items: start; gap: 16px; }
   .toolbar-actions { justify-content: space-between; }
-  .workspace-grid, .metric-grid, .content-grid, .detail-layout, .edit-layout, .overview-strip, .project-service-list, .asset-preview-grid, .change-filters, .change-metrics, .prompt-grid, .related-resource-links, .terminal-action-grid, .development-axis-grid, .development-gate-grid, .development-planning-list, .environment-probe-grid, .review-slot-grid { grid-template-columns: 1fr; }
+  .workspace-grid, .metric-grid, .content-grid, .detail-layout, .edit-layout, .overview-strip, .project-service-list, .asset-preview-grid, .change-filters, .change-metrics, .prompt-grid, .task-filter-grid, .related-resource-links, .terminal-action-grid, .development-axis-grid, .development-gate-grid, .development-planning-list, .environment-probe-grid, .review-slot-grid { grid-template-columns: 1fr; }
   .overview-strip div { border-top: 1px solid var(--line); border-left: 0; }
   .overview-strip div:first-child { border-top: 0; }
   .related-resource-link { border-top: 1px solid var(--line); border-left: 0; }

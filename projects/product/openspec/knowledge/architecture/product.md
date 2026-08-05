@@ -27,7 +27,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Service：职责与代码/资产边界。
 - Work Assets：工作事实与工作方法；Rules、Skills、Commands、Specs 等只是当前示例。
 - Change：规范驱动的变更管理；Brief 提供人类入口，标准 artifacts 保持规范 authority。
-- Task Record：正式 Task 的最小顶层事实；Task Manager 与 Local App 通过同一产品 Application 管理，closed v1 可表达至多一个直接 Parent 与直接 Children，只用于协调层级，不保存任何专业阶段内容。Task专业模块与Task Record进入同一个SQLite但仍保持独立Domain、Application和writer，不共享状态机。
+- Task Record：正式 Task 的最小顶层事实；Task Manager 通过同一产品 Application 创建/恢复并维护，Local App 只观察和有限维护已有记录。closed v1 可表达至多一个直接 Parent 与直接 Children，只用于协调层级，不保存任何专业阶段内容。Local App 普通列表/详情使用同一 SQLite authority 的 stored-state query projection，专业 currentness 在具体交互中按需读取。Task专业模块与Task Record进入同一个SQLite但仍保持独立Domain、Application和writer，不共享状态机。
 - Task Environment：正式 Task 的本机执行基础与环境 authority；唯一 Environment Receipt 保存实际执行根、ready/blocked probes、动态资源和 cleanup。它可以组合共享根或 Git worktree provider，但不是 Workspace、Agent runtime 或 Task Record。
 - Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Environment candidate 或 retained Project 解析限定 Change；全局 Change 索引保持 retained-only。
 - Task Review：一个 `buildr.task-review/v1` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。语义 Skill 执行审查，确定性 Application 是唯一 Result writer；目标适用性由读取时比较派生，Task Record、Environment、Verification、Finish 和 Task Asset Review 不复制或改写 Review 事实。

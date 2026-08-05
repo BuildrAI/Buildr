@@ -361,10 +361,10 @@ Agent 不直接编辑 YAML，不提交完整 next-state document，也不推理�
 
 P0.1 把“任务”加入 Workspace 核心导航，提供：
 
-- `/workspaces/:workspaceId/tasks`：Task 列表，展示 Task ID、标题、Intent、Project/Service scope、状态和更新时间；
-- `/workspaces/:workspaceId/tasks/:taskId`：最小 Task Record 详情；
-- 创建 Task、编辑 active Task 的 title/intent/scope/Change references；
-- 创建或编辑 active Task 时选择、重挂或清除 Parent；列表显示层级摘要，详情可在 Parent 与直接 Children 间导航；
+- `/workspaces/:workspaceId/tasks`：SQLite 轻量 Task 列表，默认 active，支持关键词、Project、Service、status 与直接 Child 筛选；
+- `/workspaces/:workspaceId/tasks/:taskId`：单 Task stored-state 详情，不在首屏解析专业 currentness；
+- 编辑 active Task 的 title/intent/scope/Change references；正式 Task 只由 Agent/Task Manager 创建，Local App 不提供 create route；
+- 编辑 active Task 时可选择、重挂或清除 Parent；候选在操作字段时按需读取，列表显示层级摘要，详情可在 Parent 与直接 Children 间导航；
 - 明确确认后 complete 或 abandon，完成时明确选择是否 no-change；terminal Task 只读。
 
 Local App 通过 Workspace-scoped API 调用 Task Record Application，继续只接受已登记 `workspaceId`，拒绝 `target/root/path`、未知字段和不可信写请求。完成/放弃确认必须说明“只更新顶层 Task 状态，不执行 Finish、Git、Verification 或 Environment cleanup”。P0.1 不显示专业阶段卡片、不建设 Board、不做批量操作或语义比较。
@@ -455,7 +455,7 @@ Task Record Application 是关系的唯一 writer。SQLite 直接使用 nullable
 
 ### Local App
 
-Local App 创建和编辑 active Task 时可选择、重挂或清除 Parent；候选列表只提供当前 Workspace 的 active Task并排除自身。任务列表显示 Parent 和直接 Child 数量，详情显示 Parent 与直接 Children 的真实标题和状态，并支持双向导航。页面不递归加载整棵树，不把 Child 状态合成为 Parent 健康度，也不新增 Board writer。
+Local App 编辑 active Task 时可选择、重挂或清除 Parent；候选只在操作 Parent 字段时通过 SQLite query projection 延迟读取当前 Workspace 的 active Task 并排除自身。任务列表显示 Parent 和查询派生的直接 Child 数量，详情显示 Parent 与直接 Children 的真实标题和状态，并支持双向导航。页面不创建 Task、不递归加载整棵树、不把 Child 状态合成为 Parent 健康度，也不新增 Board writer。
 
 Task 外的临时测试、服务和 API 操作没有 Task ID，因此不进入层级投影。需要纳入持续协调时，先创建正式 Task，再建立 Parent 关系。
 
@@ -945,6 +945,7 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 |---|---|---|---|---|
 | P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | 已交付并生效（2026-08-01，`dev@2448db0`） | 已交付稳定 Task ID、最小 Task Record 逻辑模型、唯一 Task Record Application、`task-manager`、CLI 五个确定性动作和 Local App Task 列表/详情/受控管理；后续 SQLite Task Store Change 将持久化切换到 Workspace Structured Store | 旧 `task.yml` 在 SQLite 切换后保持 inert，不迁移、不读取、不双写、不删除 |
 | P0.1a | Parent Task `introduce-parent-task` | 实现中（2026-08-04） | 在 SQLite Task Store 上增加单 Parent/多直接 Child、循环保护、Task Manager/CLI/Local App 双向查看与维护；讨论稿当前方向改为协调 Task + dynamic projection | 不创建独立 Board Domain，不迁移旧数据，不传播 Parent/Child 生命周期 |
+| P0.1b | Local App Task 轻量查询 `simplify-and-optimize-local-app-task-list` | 已收敛（2026-08-05） | Local App 列表/详情首屏改为固定批量 SQLite stored-state projection，加入封闭过滤、派生直接 Child 数量、竞态防护和 Parent 候选延迟读取 | 删除 Local App Task create UI/route；CLI、Task Manager 五个 action、完整 inspect 与专业 currentness authority 保持不变；不增加 migration、物化计数或缓存 |
 | P0.2 | Task Environment `introduce-task-environment` | 已交付并生效（2026-08-02，`dev@29f9c74`） | 已交付唯一 Task Environment Application、薄 CLI/Skill、Environment Receipt、真实 ready/恢复/runtime projection、动态资源与 cleanup、Local App 环境页签、Task-scoped Change Resolver 和窄 Git provider；retained runtime 已同步并通过 Doctor | 已按 A=1/B=1/C=31/D=0 完成一次性迁移；删除旧 environment writer、receipt authority、routing、JSON/help 与 consumer 残留，旧 worktree 能力仅保留为窄 Git provider evidence |
 | P0.3 | Task Review Result `introduce-task-review-results` | 已交付并生效（2026-08-02，`dev@7764a99`） | 已交付一个 Task Review Application、Planning/Completion 两个可选 current Result 槽位、最小 closed schema、明确 target identity、执行方式、覆盖、findings、结论与派生适用性；CLI、`task-review` Skill 和 Local App 任务 Review 管理复用同一 authority，retained runtime/CLI/Local App 已安装并通过 Candidate verification、Doctor 与真实 Result 写入回读 | Task-scoped Change 审查已切到 Planning Review；删除冲突旧 task-review route/store/schema/test，全局 retained-only generic Change review 与 Task Asset Review 保留各自 authority |
 | P0.4 | Task Verification Result `introduce-task-verification-results` | 已交付并生效（2026-08-03，`introduce-task-verification-results`） | 已交付 Project declaration v2、显式 transient execution、唯一 Task Verification Application、原子 current Result、target/declaration staleness、CLI 与 Local App；P0.5 已把正式 lifecycle consumer 切换为 Development | 删除旧声明 v1、固定 assurance/层级、旧 run schema、声明级 plan/DAG、Finish summary 输入和重复 writer；Product-only DAG 留在 test harness，真实资源协调按 claim 保留 |
@@ -978,7 +979,7 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 
 | 顺序 | 单一模块与建议 Change | 本次只完成 | 最小模块验收与旧能力处置 |
 |---|---|---|---|
-| P0.1 | Task Manager / Task Record / Local App `introduce-task-record` + `introduce-parent-task` | Task ID、最小 Task Record、唯一 Task Record Application、`task-manager`、产品化 create/inspect/update/complete/abandon、Local App Task 列表/详情/创建/编辑/完成/放弃、三态/no-change、`0..N` 个 `project/change`，以及单 Parent/多直接 Child；当前以本机 SQLite 规范化持久化，不含通用依赖图、Environment、专业 references、持久 revision、跨 Task Change ownership或同步 | CLI 与 Local App 复用同一 writer；SQL schema、foreign keys、迁移 ledger 和完整性 fail closed；陈旧页面冲突刷新；关系拒绝自引用/循环/terminal 新 Parent；Parent/Child 生命周期独立；linked worktree 不得成为 authority |
+| P0.1 | Task Manager / Task Record / Local App `introduce-task-record` + `introduce-parent-task` + `simplify-and-optimize-local-app-task-list` | Task ID、最小 Task Record、唯一 Task Record Application、`task-manager`、产品化 create/inspect/update/complete/abandon、Local App Task 轻量列表/详情与已有记录编辑/完成/放弃、三态/no-change、`0..N` 个 `project/change`，以及单 Parent/多直接 Child；正式 Task 只由 Agent/Task Manager 创建，当前以本机 SQLite 规范化持久化，不含通用依赖图、Environment、专业 references、持久 revision、跨 Task Change ownership或同步 | CLI/Task Manager 保留五个 action 与完整 inspect；Local App 复用同一 Application 的 stored-state query projection 和有限 writer，不提供 create；SQL schema、foreign keys、迁移 ledger 和完整性 fail closed；陈旧页面冲突刷新；关系拒绝自引用/循环/terminal 新 Parent；Parent/Child 生命周期独立；linked worktree 不得成为 authority |
 | P0.2 | Task Environment `introduce-task-environment` | Task 级 Environment Receipt、唯一 Application、薄公共 CLI/Skill、`.worktrees/<task-id>` 任务验证 Workspace、真实 ready 探测、task-scoped runtime projection identity、Task-scoped Change Resolver、Local App 只读环境页签、串行恢复、资源登记和 cleanup | 创建 Task → 保留工作区 Buildr 环境管理器准备环境 → 候选 Change 可被 Task 范围解析 → Local App 查看本机环境 → 候选投射自身 runtime → 跨 session 恢复 → Finish/放弃 cleanup；同 Change 将 task-worktree 收窄为 Git provider，按 A/B/C/D 一次性迁移旧 v1 receipt，并删除旧 environment mutation/routing/help/JSON/consumer；不把 worktree 称为主/retained/开发 Workspace 或 Agent runtime |
 | P0.3 | Task Review `introduce-task-review-results` | 一个 Result 模型、Planning/Completion 两个可选 current 槽位、目标 identity、执行方式、覆盖、findings、结论与派生适用性；无持久 revision/history，不编排 Development、Candidate 或门禁 | 两类 Result 可独立存在并绑定明确目标；同类型完整替换、跨类型隔离，中断不覆盖 current；Task-scoped Change 单次切到 Planning Review，全局 generic Change review 与 Task Asset Review 保留各自 authority；同 Change 删除或迁移冲突的旧 Review route/store/test |
 | P0.4 | Task Verification `introduce-task-verification-results` | Project declaration v2、transient execution evidence、一个 current Verification Result、Content Target/declaration identity 与派生 applicability；不包含推进决定、Candidate generation 或 Environment Receipt | 真实 command/Agent facts 可提炼完整 Result；中断或写入失败不覆盖 current；target/declaration 变化派生 stale；CLI、Skill、Local App、Development consumer 共用唯一 Application；删除旧 assurance、run/plan/DAG lifecycle、summary 输入与重复 schema |

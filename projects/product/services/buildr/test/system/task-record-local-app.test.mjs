@@ -33,10 +33,34 @@ test('Task Record target 必须是 canonical Workspace，不能是 linked worktr
   assert.equal(uninitialized.diagnostic.code, 'task_record_workspace_invalid');
 });
 
-test('Local App Task API 保持 workspaceId、Origin/session/JSON/body/字段边界和 digest 冲突', async (t) => {
+test('Local App Task API 提供轻量查询与既有任务维护，不暴露创建入口', async (t) => {
   const { base, root } = fixture(t, 'task-local-app');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'app-parent', title: '页面协调任务', intent: '作为 Parent', projects: [], services: [], changes: [] });
+  const created = runtime.createTaskRecord(root, { taskId: 'app-task', title: '页面任务', intent: '验证轻量读取 %_ literal', parentTaskId: 'app-parent', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] });
+  const staleDigest = created.recordDigest;
+  let bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  const insertBulk = bulkStore.database.prepare('INSERT INTO tasks(task_id, schema_version, title, intent, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  bulkStore.database.exec('BEGIN');
+  for (let index = 0; index < 200; index += 1) insertBulk.run(`bulk-${String(index).padStart(3, '0')}`, 'buildr.task-record/v1', `批量任务 ${index}`, '固定查询次数夹具', 'active', '2026-08-05T00:00:00.000Z', '2026-08-05T00:00:00.000Z');
+  bulkStore.database.exec('COMMIT'); bulkStore.database.close();
+  const openStore = runtime.openWorkspaceStructuredStore.bind(runtime);
+  let preparedStatements = 0;
+  runtime.openWorkspaceStructuredStore = (...args) => {
+    const opened = openStore(...args);
+    if (!opened.database) return opened;
+    return { ...opened, database: new Proxy(opened.database, { get(database, field) {
+      if (field === 'prepare') return (...input) => { preparedStatements += 1; return database.prepare(...input); };
+      const value = Reflect.get(database, field); return typeof value === 'function' ? value.bind(database) : value;
+    } }) };
+  };
+  const bulkView = runtime.queryTaskRecordViews(root); assert.equal(bulkView.tasks.length, 202); assert.equal(bulkView.totalTaskCount, 202); assert.equal(preparedStatements, 8, '列表 SQL 次数必须与 Task 数量无关');
+  preparedStatements = 0; runtime.inspectTaskRecordView(root, 'app-task'); assert.equal(preparedStatements, 5, '详情轻量视图不得扫描或解析其他 Task');
+  runtime.openWorkspaceStructuredStore = openStore;
+  assert.deepEqual(runtime.queryTaskRecordViews(root, { q: '%_' }).tasks.map((item) => item.record.taskId), ['app-task'], 'SQL wildcard 必须按普通文本匹配');
+  assert.deepEqual(runtime.queryTaskRecordViews(root, { q: "%' OR 1=1 --" }).tasks, [], 'query input 必须保持参数绑定');
+  bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true }); bulkStore.database.prepare("DELETE FROM tasks WHERE task_id LIKE 'bulk-%'").run(); bulkStore.database.close();
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId, sessionToken } = await instance.ready;
@@ -46,14 +70,18 @@ test('Local App Task API 保持 workspaceId、Origin/session/JSON/body/字段边
     const response = await fetch(resource, options); return { status: response.status, headers: response.headers, body: await response.json() };
   };
 
-  let response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-parent', title: '页面协调任务', intent: '作为 Parent' }) });
-  assert.equal(response.status, 201);
-  response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-task', title: '页面任务', intent: '通过共享 Application 创建', parentTaskId: 'app-parent', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] }) });
-  assert.equal(response.status, 201); assert.equal(response.body.status, 'created'); const staleDigest = response.body.recordDigest;
-  assert.equal(response.body.record.parentTaskId, 'app-parent'); assert.equal(response.body.taskRelations.parent.title, '页面协调任务');
-  response = await request(endpoint); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task']));
+  let response = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v3'); assert.equal(response.body.totalTaskCount, 2); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task']));
   const parentReadModel = response.body.tasks.find((item) => item.record.taskId === 'app-parent'); assert.deepEqual(parentReadModel.record.childTaskIds, ['app-task']); assert.equal(parentReadModel.taskRelations.children[0].status, 'active');
+  assert.equal(parentReadModel.childTaskCount, 1);
+  response = await request(`${endpoint}?q=%E8%BD%BB%E9%87%8F&project=demo&service=demo%2Fapi&status=active&hasChildren=no`);
+  assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-task']);
+  assert.deepEqual(response.body.filters, { q: '轻量', project: 'demo', service: 'demo/api', status: 'active', hasChildren: 'no' });
+  assert.deepEqual(response.body.filterOptions, { projects: ['demo'], services: ['demo/api'] });
+  response = await request(`${endpoint}?hasChildren=yes`); assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-parent']);
+  response = await request(`${endpoint}?status=invalid`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
+  response = await request(`${endpoint}?q=a&q=b`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_invalid');
   const taskEndpoint = `${endpoint}/app-task`;
+  response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v1'); assert.deepEqual(response.body.storedChangeReferences, [{ project: 'demo', change: 'same-change' }]); assert.equal('changeReferences' in response.body, false);
   response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.schemaVersion, 'buildr.task-development-operation-result/v1'); assert.equal(response.body.status, 'missing'); assert.equal(response.headers.get('cache-control'), 'no-store');
   const inspectDevelopment = runtime.inspectTaskDevelopment.bind(runtime);
   const developmentReadModel = { schemaVersion: 'buildr.task-development-operation-result/v1', operation: 'inspect', status: 'inspected', taskId: 'app-task', development: { path: 'workspace-sqlite:task-development/app-task', receiptDigest: 'sha256-development', receipt: { generation: 2 }, applicability: { status: 'candidate-current' } }, diagnostic: null, effects: [], nextActions: [] };
@@ -81,14 +109,9 @@ test('Local App Task API 保持 workspaceId、Origin/session/JSON/body/字段边
   response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: staleDigest, title: '陈旧覆盖' }) });
   assert.equal(response.status, 409); assert.equal(response.body.error.code, 'task_record_conflict');
 
-  for (const [body, code] of [[{ taskId: 'path-task', title: 'x', intent: 'x', path: root }, 'target_forbidden'], [{ taskId: 'unknown-task', title: 'x', intent: 'x', revision: 1 }, 'task_api_field_forbidden']]) {
-    response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify(body) }); assert.equal(response.status, 400); assert.equal(response.body.error.code, code);
-  }
-  response = await request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', 'x-buildr-session': sessionToken }, body: JSON.stringify({ taskId: 'origin-task', title: 'x', intent: 'x' }) }); assert.equal(response.status, 403); assert.equal(response.body.error.code, 'origin_forbidden');
-  response = await request(endpoint, { method: 'POST', headers: { origin: url, 'x-buildr-session': 'wrong', 'content-type': 'application/json' }, body: '{}' }); assert.equal(response.status, 403); assert.equal(response.body.error.code, 'session_forbidden');
-  response = await request(endpoint, { method: 'POST', headers: { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'text/plain' }, body: '{}' }); assert.equal(response.status, 415); assert.equal(response.body.error.code, 'content_type_unsupported');
+  response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'not-created', title: 'x', intent: 'x' }) }); assert.equal(response.status, 404);
+  assert.throws(() => runtime.inspectTaskRecord(root, 'not-created'), (error) => error.code === 'task_record_not_found');
   response = await request(`${endpoint}?filter=active`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_forbidden');
-  response = await request(endpoint, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'large-task', title: 'x', intent: 'x'.repeat(40 * 1024) }) }); assert.equal(response.status, 413); assert.equal(response.body.error.code, 'request_body_too_large');
 
   const latest = (await request(taskEndpoint)).body;
   response = await request(`${taskEndpoint}/complete`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: latest.recordDigest, summary: '页面确认完成', noChange: false }) });

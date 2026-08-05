@@ -93,6 +93,7 @@ capabilities:
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--target', root]);
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Local App 轻量查询客户端', '--parent', 'browser-task', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   runBuildr(['task', 'environment', 'prepare', 'browser-task', '--shared', '--target', root], controllerCli);
   runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
@@ -315,34 +316,33 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  if (selected('task')) await t.test('任务列表、创建、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
+  if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
     prepareDevelopmentFixture(runtime, workspaceRoot);
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-table-body tr').count(), 3);
+    assert.equal(await page.locator('#task-table-body tr').count(), 4);
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item) => item.classList.contains('active')), true);
-    assert.match(await page.locator('.page-copy').first().innerText(), /不展示或修改任务环境/);
-
-    await page.locator('#task-create-id').fill('created-in-app');
-    await page.locator('#task-create-title').fill('页面创建任务');
-    await page.locator('#task-create-intent').fill('验证 Local App 是共享 Application 客户端');
-    await page.locator('#task-create-parent').selectOption('browser-task');
-    await page.locator('#task-create-projects').fill('demo');
-    await page.locator('#task-create-services').fill('demo/api');
-    await page.locator('#task-create-changes').fill('demo/browser-flow');
-    await page.getByRole('button', { name: '创建任务记录', exact: true }).click();
+    assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
+    assert.equal(await page.locator('#task-create-form').count(), 0);
+    await page.locator('#task-filter-project').selectOption('demo');
+    assert.deepEqual(await page.locator('#task-filter-service option').allTextContents(), ['全部服务', 'demo/api']);
+    await page.locator('#task-filter-service').selectOption('demo/api');
+    await page.locator('#task-filter-q').fill('轻量查询');
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr').length === 1);
+    assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
+    await page.getByRole('link', { name: '详情', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
     assert.equal(await page.locator('#task-detail-status').innerText(), '进行中');
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器任务[\s\S]*进行中/);
     await page.locator('#task-detail-parent a').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器协调任务[\s\S]*进行中/);
-    assert.match(await page.locator('#task-detail-children').innerText(), /页面创建任务[\s\S]*进行中/);
-    await page.locator('#task-detail-children a').filter({ hasText: '页面创建任务' }).click();
+    assert.match(await page.locator('#task-detail-children').innerText(), /页面查看任务[\s\S]*进行中/);
+    await page.locator('#task-detail-children a').filter({ hasText: '页面查看任务' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
-    assert.match(await page.locator('#task-detail-changes').innerText(), /保留工作区 · 进行中/);
+    assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
     assert.equal(await page.locator('[data-task-tab]').count(), 4);
     await unique(page.getByRole('button', { name: '研发', exact: true }), '任务研发页签');
     await unique(page.getByRole('button', { name: '证据', exact: true }), '任务证据页签');
@@ -384,7 +384,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.equal(await page.locator('#task-detail-parent').innerText(), '无（独立 Task）');
     const taskChange = page.locator('#task-detail-changes a').filter({ hasText: 'demo/browser-flow' });
     await unique(taskChange, '任务关联 Change');
-    assert.match(await taskChange.innerText(), /任务环境候选 · 进行中/);
+    assert.match(await taskChange.innerText(), /打开时检查当前状态/);
     await taskChange.click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
     await page.waitForFunction(() => document.getElementById('change-detail-code')?.textContent === 'browser-flow');

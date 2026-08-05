@@ -32,6 +32,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `verification run` | `buildr.verification-execution/v1` |
 | `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
 | `task create/inspect/update/complete/abandon` | `buildr.task-record-result/v3` |
+| Local App Task stored detail/list query | `buildr.task-record-view/v1` / `buildr.task-record-list/v3` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
 | `task finish run/inspect` | `buildr.task-finish-result/v2` |
 | `app preview start/list/stop` | `buildr.local-app-preview/v1` |
@@ -46,7 +47,9 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 
 `buildr.task-verification-operation-result/v1` 统一覆盖 current Result 的 `inspect|record`。成功时返回 `operation`、`status`、`taskId`、`slot`、`effects` 与 `nextActions`；`slot` 包含 path、present、完整 `buildr.task-verification-result/v1`、响应级 digest 和派生 applicability。没有 current Result 时 inspect 返回 `unknown`；target 或 declaration identity 变化时返回 `stale`。业务拒绝返回同一 envelope、`status: blocked`、稳定 diagnostic 和非零退出，且不得覆盖旧 slot。
 
-`buildr.task-record-result/v3` 统一覆盖五个 Task Record 动作。成功时返回 `operation`、`status`、`taskId`、closed v1 `record`、响应级 `recordDigest`、直接关系摘要 `taskRelations`、`effects` 与 `nextActions`，不返回本地数据库路径；`diagnostic` 为 `null`。`record.parentTaskId` 是直接 Parent，`record.childTaskIds` 是按 ID 排序的直接 Children；`taskRelations.parent/children` 补充真实标题与状态，不递归展开。列表使用 `buildr.task-record-list/v2` 并为每项返回同样的直接关系摘要。业务拒绝仍返回同一 envelope、`status: blocked`、稳定 diagnostic 和非零退出，且不得产生 mutation effects。CLI 参数或路由语法错误继续使用 `buildr.cli-error/v1`。`recordDigest` 只描述逻辑 read model，不进入 Task Record 持久 schema。
+`buildr.task-record-result/v3` 统一覆盖五个 Task Record 动作。成功时返回 `operation`、`status`、`taskId`、closed v1 `record`、响应级 `recordDigest`、直接关系摘要 `taskRelations`、`effects` 与 `nextActions`，不返回本地数据库路径；`diagnostic` 为 `null`。`record.parentTaskId` 是直接 Parent，`record.childTaskIds` 是按 ID 排序的直接 Children；`taskRelations.parent/children` 补充真实标题与状态，不递归展开。完整 Application 列表继续使用 `buildr.task-record-list/v2`。
+
+Local App 普通观察路径使用独立 stored-state projection：详情 `buildr.task-record-view/v1` 与列表 `buildr.task-record-list/v3` 都来自同一 SQLite authority，返回 response-level `recordDigest`、stored Change references、直接关系与非持久化 `childTaskCount`，但不解析 Change availability、Environment、Development、Review、Verification 或 Finish currentness。列表 v3 另返回规范化 `filters`、从 Task scope rows 派生的 `filterOptions` 与用于区分“Workspace 无 Task/筛选无结果”的 `totalTaskCount`。业务拒绝仍返回现有 error envelope 或 action envelope，且不得产生 mutation effects。CLI 参数或路由语法错误继续使用 `buildr.cli-error/v1`。`recordDigest` 和 `childTaskCount` 都不进入 Task Record 持久 schema。
 
 ## Doctor v1 结果语义
 

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "simplify-and-optimize-local-app-task-list",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-121b4950ffd2a3f353d690cf92087ec796740688a4628ef95c015a14f46871d0",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-record",
+      "title": "Local App Task query projection 必须保持轻量且来自唯一 authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App Task 列表必须支持封闭 SQLite 过滤",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "直接 Child 数量必须是非持久化查询派生事实",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Parent 候选必须按需读取",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App 必须展示并适当管理 Task Record",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Local App 必须展示并适当管理 Task Record\nBuildr Local App MUST 在已登记 Workspace 下提供 Task 核心导航、列表和详情，并 MUST 允许人通过 Task Record Application 创建 Task、编辑 active Task 以及明确完成或放弃 Task。P0.1 Task 概览 MUST NOT 从尚未交付的专业记录推断 lifecycle；P0.2 MUST 在同一 Task 详情中以独立只读“环境”页签组合 Task Environment read model，而不得把环境字段或专业状态写入 Task Record。\n\n#### Scenario: 浏览 Workspace Task 列表\n- **WHEN** 用户进入 `/workspaces/:workspaceId/tasks`\n- **THEN** 页面 MUST 从当前已登记 Workspace 列出真实 Task ID、title、intent、Project/Service scope、status 和 `updatedAt`\n- **AND** 空集合、损坏记录和不可用 Workspace MUST 分别显示可解释状态，不得虚构或静默跳过损坏 Task\n\n#### Scenario: 查看 Task 详情\n- **WHEN** 用户进入 `/workspaces/:workspaceId/tasks/:taskId`\n- **THEN** Task 概览 MUST 展示该 Task 的完整最小 Task Record 与 terminal result（如有）\n- **AND** MUST NOT 从 Environment、worktree、branch、Review、Verification、Finish、Board 或 Retrospective 推断或改写 Task 顶层状态\n\n#### Scenario: 查看 Task Environment\n- **WHEN** 用户选择 Task 详情的“环境”页签\n- **THEN** 页面 MUST 只读展示 Task Environment Application 返回的当前机器 read model，并与 Task Record 概览分开\n- **AND** MUST NOT 提供 prepare/cleanup/resource mutation、直接 receipt 编辑或把 Environment 状态复制到 Task Record\n\n#### Scenario: 从 Local App 创建或编辑 Task\n- **WHEN** 用户提交合法 Task ID、title、intent、scope 与 Change references，或编辑 active Task 的这些字段\n- **THEN** HTTP interface MUST 调用对应 create/update Application action 并返回最新 record\n- **AND** 页面 MUST 使用与 CLI 相同的 identity、reference、closed schema 与 state validation\n\n#### Scenario: 从 Local App 完成或放弃 Task\n- **WHEN** 用户对 active Task 选择完成或放弃\n- **THEN** 页面 MUST 要求明确确认并提交非空 summary/reason；完成时 MUST 让用户明确选择是否为 no-change\n- **AND** 确认文案 MUST 说明该动作只更新 Task 顶层状态，不执行 Finish、Git、Verification、Environment cleanup 或其他专业动作\n\n#### Scenario: Local App 打开 terminal Task\n- **WHEN** Task status 已是 completed 或 abandoned\n- **THEN** 页面 MUST 将顶层业务字段和终态动作显示为只读/不可用\n- **AND** Environment 页签 MAY 继续只读展示最终 cleanup 或 unavailable 事实，但 MUST NOT 提供重开、修改或绕过 Application validator 的入口\n"
+    },
+    {
+      "capability": "task-record",
+      "title": "Local App Task API 必须保持 Workspace 写安全边界",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Local App Task API 必须保持 Workspace 写安全边界\nBuildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路径提供 Workspace-scoped read/write API，并 MUST 在调用 Task Record Application 前解析已登记 Workspace 的真实 canonical root。所有 mutation MUST 复用现有同源、session、JSON、body size、字段白名单和未知字段拒绝边界。\n\n#### Scenario: Task API 使用已登记 Workspace\n- **WHEN** 请求中的 `workspaceId` 已登记、可用且与 canonical Workspace identity 一致\n- **THEN** HTTP interface MUST 只把该 Workspace 的真实 root 与明确 action input 交给 Application\n- **AND** 结果 MUST NOT 混入其他 Workspace 的 Task 或路径\n\n#### Scenario: Task API 提交路径或越界字段\n- **WHEN** Task query/body 包含 `target`、`root`、`path`、完整 next-state document、专业记录字段或其他未知字段\n- **THEN** HTTP interface MUST 在读取或修改 Task Record 前拒绝请求\n- **AND** MUST NOT 回退到 server cwd、调用方路径或任意其他 Workspace\n\n#### Scenario: Task API 写请求不可信\n- **WHEN** mutation 缺少合法 Origin/session、不是允许的 JSON content type、超过 body limit 或 action fields 不完整\n- **THEN** HTTP interface MUST 拒绝请求并保持 Task Record bytes 不变\n- **AND** MUST 返回现有 Local App error envelope 可表达的稳定诊断\n"
+    }
+  ]
+}
