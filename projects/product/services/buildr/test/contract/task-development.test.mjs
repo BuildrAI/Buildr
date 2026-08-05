@@ -8,12 +8,13 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('Task Development 是唯一 Receipt/Candidate/generation/handoff Application authority', () => {
   const application = read('src/application/task-development/task-development-application.mjs');
-  const repository = read('src/infrastructure/filesystem/task-development-repository.mjs');
+  const repository = read('src/infrastructure/sqlite/task-development-repository.mjs');
   const composition = read('src/application/compose-runtime.mjs');
   assert.match(application, /observeTaskDevelopment/);
   assert.match(application, /freezeTaskDevelopmentCandidate/);
   assert.match(application, /createTaskDevelopmentHandoff/);
-  assert.match(repository, /development\.yml/);
+  assert.match(repository, /task_development_current/);
+  assert.doesNotMatch(repository, /development\.yml|from ['"]yaml['"]|YAML\.(?:parse|stringify)/);
   assert.match(composition, /registerTaskDevelopmentApplication/);
   for (const forbidden of ['readTaskReviewResultPersistence', 'readTaskVerificationResultPersistence', 'writeTaskReviewResultPersistence', 'writeTaskVerificationResultPersistence']) assert.equal(application.includes(forbidden), false, forbidden);
   const writers = fs.readFileSync(path.join(root, 'src/application/task-development/task-development-application.mjs'), 'utf8').includes('writeTaskDevelopmentPersistence');

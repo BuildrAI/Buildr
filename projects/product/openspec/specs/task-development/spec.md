@@ -7,12 +7,12 @@
 ## Requirements
 
 ### Requirement: Task Development 必须维护唯一 current Receipt
-Buildr MUST 为每个正式 Task 提供至多一份 `.buildr/tasks/<task-id>/development.yml`，新写入schema MUST 为 `buildr.task-development-receipt/v2`。Task Development Application MUST 是 Receipt normalization、identity、persistence、失效、planning snapshot、Candidate generation、decision 与 handoff 的唯一 writer 和 reader；Skill、Finish、Task Record、Environment、Review 与 Verification MUST NOT 直接读写该 store。
+Buildr MUST 为每个正式 Task 在 Workspace SQLite 中提供至多一份 `buildr.task-development-receipt/v2` current Receipt。Task Development Application MUST 是 Receipt normalization、identity、persistence、失效、planning snapshot、Candidate generation、decision 与 handoff 的唯一 writer 和 reader；Skill、Finish、Task Record、Environment、Review 与 Verification MUST NOT 直接读写 repository 或 SQLite。
 
 #### Scenario: 首次观察 Development context
 - **WHEN** active Task 具有 matching ready Task Environment，且调用方请求建立 Development current facts
-- **THEN** Application MUST 原子创建唯一 Development Receipt并返回 read model，不要求 Planning Review ready或Content Target已经形成
-- **AND** filesystem MUST NOT 创建 Candidate、decision、handoff或历史占位文件
+- **THEN** Application MUST 在 transaction 中创建唯一 Development current Receipt并返回 read model，不要求 Planning Review ready或Content Target已经形成
+- **AND** store MUST NOT 创建 Candidate、decision、handoff或历史占位记录
 
 #### Scenario: 其他模块需要 Development facts
 - **WHEN** Finish、Local App 或 Skill 需要当前研发事实、Candidate或handoff
@@ -20,16 +20,21 @@ Buildr MUST 为每个正式 Task 提供至多一份 `.buildr/tasks/<task-id>/dev
 - **AND** persistence reader 的静态调用方 MUST 只有 Task Development Application
 
 #### Scenario: 读取既有v1 Receipt
-- **WHEN** repository读取合法`buildr.task-development-receipt/v1`
-- **THEN** Application MUST确定性投射为v2 read model并保留Candidate、generation、decision与handoff语义
-- **AND** inspect MUST零写入，下一次合法Development mutation才可原子保存v2
+- **WHEN**旧File Store中存在合法`buildr.task-development-receipt/v1`
+- **THEN** Application MUST将该文件保持inert且返回SQLite current Receipt或missing
+- **AND** inspect与下一次合法Development mutation MUST NOT读取、投射或迁移v1文件
+
+#### Scenario: 旧 Development YAML 存在
+- **WHEN** `.buildr/tasks/<task-id>/development.yml` 仍存在或使用旧 schema
+- **THEN** Application MUST 将其保持 inert且只读取 SQLite current Receipt
+- **AND** MUST NOT 导入、升级、删除或生成兼容 YAML
 
 ### Requirement: Development Receipt 必须使用关闭且最小的数据模型
 Receipt MUST 只包含 `schemaVersion`、`taskId`、Environment Receipt逻辑引用`environment`、`taskContext`、`planning`、可为空的`contentTarget`、`verificationPolicy`、`generation`、`candidate`、`gates`、`decision`、不可变快照数组`handoffs`、`createdAt` 与 `updatedAt`。Receipt MUST NOT 保存 source diff、文件 inventory、命令输出、时长、绝对 execution path、Environment资源/handle、完整 Review/Verification Result、聊天、隐藏推理、完整Candidate history、revision、CAS、锁或租约。
 
 #### Scenario: 调用方提交未知 authority 字段
 - **WHEN** action input 或持久 Receipt 包含 progress、step、attempt、raw evidence、Result body、Git branch/commit、OpenSpec plan、history或其他未知字段
-- **THEN** Application MUST 拒绝整个值并保留原 current bytes
+- **THEN** Application MUST 拒绝整个值并保留原 current value
 - **AND** MUST 返回精确 forbidden field diagnostic
 
 #### Scenario: Content Target尚未形成
@@ -38,9 +43,9 @@ Receipt MUST 只包含 `schemaVersion`、`taskId`、Environment Receipt逻辑引
 - **AND** Candidate、verification policy、Verification/Completion gate、decision与handoff MUST保持null或空数组
 
 #### Scenario: 原子替换中断
-- **WHEN** serialization、临时写入、rename或post-read任一阶段失败
-- **THEN** Repository MUST 保留或恢复原 current Receipt与所有 sibling records
-- **AND** MUST 只清理本次写入可证明拥有的临时文件
+- **WHEN** serialization、SQLite mutation或post-read任一阶段失败
+- **THEN** Repository MUST rollback并保留原 current Receipt与所有 sibling records
+- **AND** MUST NOT 产生部分 row、backup file或兼容 YAML
 
 ### Requirement: Task context identity 必须绑定完整 Intent、scope 与 Change context
 Application MUST 从 Task Record Application/persistence authority 取得 Task ID、intent、完整 Project/Service scope与0..N Change references，并结合 Development记录的每个 Change disposition派生可移植 `taskContext.identity`。Identity MUST NOT 绑定Task Record时间戳、本机路径或默认 Product/Service名称。
@@ -216,18 +221,6 @@ Buildr Local App MUST 为正式 Task 提供只读“研发”视图，并 MUST �
 - **WHEN** Development Receipt包含长identity、多个planning nodes/handoff或专业Result reference
 - **THEN** 页面 MUST默认只展示完整但次级排版的当前identity、节点disposition、候选代次、三个gate摘要、决定、风险数量和最近一次handoff
 - **AND** MUST NOT展示开发日志、source diff、完整命令输出、隐藏推理、专业artifact/Result body或全部历史handoff列表
-
-### Requirement: Task Development writer 必须声明portable Receipt path并保持Candidate分离
-Task Development writer MUST声明`buildr.task-development/v2`唯一拥有`.buildr/tasks/<task-id>/development.yml`，该current Receipt为可选、portable publication eligible；Task Candidate、delivery source、task worktree、runtime与session MUST NOT因该声明成为publication内容。
-
-#### Scenario: Development Receipt存在
-- **WHEN** writer可安全读取当前`development.yml`
-- **THEN** publication scope MUST只纳入该exact path
-- **AND** metadata commit MUST与Candidate/delivery commit分离
-
-#### Scenario: publication失败
-- **WHEN** snapshot、commit或push失败
-- **THEN** Development writer MUST保持generation、Candidate、gates、decision与handoffs不变
 
 ### Requirement: Task Development 必须覆盖完整正式研发区间
 Task Development MUST 从 active Task 的首个正式研发动作开始维护研发聚合事实，直到形成 current Finish handoff。Proposal、design、Planning Review、实现收敛、formal Verification 与 Completion Review 等节点 MUST 可按 Task 事实不存在、`not-applicable` 或由明确授权 `waived`；节点存在时 Development MUST 保存其专业 authority、portable reference、identity 与 disposition，不得复制专业内容或 Result 正文。

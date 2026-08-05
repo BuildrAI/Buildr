@@ -56,7 +56,7 @@ test('Local App Task API 保持 workspaceId、Origin/session/JSON/body/字段边
   const taskEndpoint = `${endpoint}/app-task`;
   response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.schemaVersion, 'buildr.task-development-operation-result/v1'); assert.equal(response.body.status, 'missing'); assert.equal(response.headers.get('cache-control'), 'no-store');
   const inspectDevelopment = runtime.inspectTaskDevelopment.bind(runtime);
-  const developmentReadModel = { schemaVersion: 'buildr.task-development-operation-result/v1', operation: 'inspect', status: 'inspected', taskId: 'app-task', development: { path: '.buildr/tasks/app-task/development.yml', receiptDigest: 'sha256-development', receipt: { generation: 2 }, applicability: { status: 'candidate-current' } }, diagnostic: null, effects: [], nextActions: [] };
+  const developmentReadModel = { schemaVersion: 'buildr.task-development-operation-result/v1', operation: 'inspect', status: 'inspected', taskId: 'app-task', development: { path: 'workspace-sqlite:task-development/app-task', receiptDigest: 'sha256-development', receipt: { generation: 2 }, applicability: { status: 'candidate-current' } }, diagnostic: null, effects: [], nextActions: [] };
   let developmentReads = 0;
   runtime.inspectTaskDevelopment = (target, taskId) => {
     if (taskId !== 'app-task') return inspectDevelopment(target, taskId);

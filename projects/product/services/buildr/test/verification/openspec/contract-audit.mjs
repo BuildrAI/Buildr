@@ -40,7 +40,9 @@ function isPurposeOnlyMaintenance(file) {
   } catch {
     return false;
   }
-  const current = fs.readFileSync(path.join(productRoot, file), 'utf8');
+  const currentPath = path.join(productRoot, file);
+  if (!fs.existsSync(currentPath)) return false;
+  const current = fs.readFileSync(currentPath, 'utf8');
   return withoutPurposeBody(previous) === withoutPurposeBody(current);
 }
 
@@ -107,10 +109,15 @@ for (const root of [path.join(productRoot, 'openspec', 'changes'), path.join(pro
         const capabilities = [];
         for (const file of value.files) {
           const match = typeof file?.path === 'string' ? file.path.match(/^openspec\/specs\/([^/]+)\/spec\.md$/) : null;
-          if (!match || typeof file.expectedDigest !== 'string') continue;
+          if (!match) continue;
           const deltaFile = path.join(root, entry.name, 'specs', match[1], 'spec.md');
           const canonicalFile = path.join(productRoot, file.path);
-          if (!fs.existsSync(deltaFile) || !fs.existsSync(canonicalFile)) continue;
+          if (!fs.existsSync(deltaFile)) continue;
+          if (file.expectedExists === false && file.expectedDigest === null && !fs.existsSync(canonicalFile)) {
+            capabilities.push(match[1]);
+            continue;
+          }
+          if (file.expectedExists === false || typeof file.expectedDigest !== 'string' || !fs.existsSync(canonicalFile)) continue;
           if (normalizedIntegrity(fs.readFileSync(canonicalFile, 'utf8')) === file.expectedDigest) capabilities.push(match[1]);
         }
         receipts.push({ change: value.change, capabilities });

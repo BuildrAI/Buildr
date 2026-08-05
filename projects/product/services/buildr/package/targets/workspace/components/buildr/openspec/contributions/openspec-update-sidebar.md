@@ -8,4 +8,4 @@
 
 正式Task中的planning artifact一旦改变，必须调用selected`buildr.task-development/v2`provider的`planning`更新portable references、content identities与dispositions；该动作使旧Planning Review/Candidate/handoff按Application事实失效，但不复制artifact正文或改写Review Result。
 
-修订`tasks.md`时保持Change disposition前边界：每个checkbox都必须能在convergence/archive前完成。Formal Development、Task Verification/Candidate、Completion Review、Task Finish、Metadata Publication、Environment cleanup与Task terminal state属于archive后的Task lifecycle authority，不得作为Change task加入或保留。
+修订`tasks.md`时保持Change disposition前边界：每个checkbox都必须能在convergence/archive前完成。Formal Development、Task Verification/Candidate、Completion Review、Task Finish、Environment cleanup与Task terminal state属于archive后的Task lifecycle authority，不得作为Change task加入或保留。

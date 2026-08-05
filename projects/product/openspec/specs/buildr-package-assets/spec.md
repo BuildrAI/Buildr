@@ -450,8 +450,8 @@ Buildr package verification MUST确保`task-finish`作为`buildr.task-finish/v1`
 - **AND** archived Change与明确历史fixture MAY保留旧事实，但 MUST NOT被current runtime、help或默认tests解析为可用入口
 
 #### Scenario: Core 不复制收尾流程
-- **WHEN** verifier检查required Core、Task Development、Task Environment、Git Operations、Metadata Publication与Task Finish
-- **THEN** Candidate/generation/decision MUST只由Development写入，资源/provider cleanup MUST只由Environment写入，单次Git Operation MUST不选择Finish流程，metadata publication MUST保持独立
+- **WHEN** verifier检查required Core、Task Development、Task Environment、Git Operations与Task Finish
+- **THEN** Candidate/generation/decision MUST只由Development写入，资源/provider cleanup MUST只由Environment写入，单次Git Operation MUST不选择Finish流程，Task current records MUST只由各自Application写入Workspace SQLite
 - **AND** Task Finish MUST只持有carrier/equivalence/delivery/retained activation/cleanup handoff/run恢复事实，不得创建第二份专业Result或顶层Task终态
 
 ### Requirement: Package manifest 声明 workspace Components
@@ -1076,24 +1076,6 @@ Buildr package MUST 原子交付一个 `git-operations` workspace Skill、一个
 - **THEN** verification MUST 覆盖独立 commit、独立 push、commit+push、无关 dirty、scope 外 unpublished commits、push rejection、共享 commit 冻结和部分失败 evidence
 - **AND** verification MUST 确认该能力没有 Application、CLI、Receipt、持久状态或通用 Git transaction
 
-### Requirement: Buildr package 必须交付Task Metadata Publication资产
-Buildr package MUST交付 `task-metadata-publication` Skill、`buildr.task-metadata-publication/v1` contract、最小无状态helper、provider/binding与完整随附文件，并 MUST在workspace baseline、runtime projection、bootstrap与静态校验中保持相同identity。
-
-#### Scenario: package安装或sync
-- **WHEN** Workspace安装或同步当前Buildr package
-- **THEN** source Skill、contract与helper MUST按完整目录bytes和owner executable mode投射
-- **AND** workspace manifest MUST声明provider、required Git Operations dependency与selected binding
-
-#### Scenario: package静态验证
-- **WHEN** package verifier检查Metadata Publication
-- **THEN** verifier MUST证明Skill/contract/helper存在、writer declaration table与四个writer contracts一致、没有同义入口
-- **AND** MUST拒绝缺失required dependency、额外eligible path、恢复旧Git capability或runtime projection不完整
-
-#### Scenario: bootstrap与current docs
-- **WHEN**新Workspace通过bootstrap/guide发现Task lifecycle能力
-- **THEN**文档 MUST说明唯一入口、五个exact paths、明确排除项、Git Operations调用与local-only结果
-- **AND** MUST NOT宣传公共CLI、publication history、批量发布或Task Finish authority
-
 ### Requirement: 当前 package 不得为未来 Task Finish adapter 预建选择框架
 Buildr package、capability graph、runtime source与verification registry MUST在只有当前Product/Git adapter时保持单一`buildr.task-finish/v1`provider与直接Application registration。没有第二种满足真实consumer、delivery target、equivalence、authorization、cleanup eligibility和独立E2E的adapter时，package MUST NOT新增adapter registry、adapter capability family、plugin selection metadata、Finish Receipt或平行run store。
 
@@ -1103,14 +1085,14 @@ Buildr package、capability graph、runtime source与verification registry MUST�
 - **AND** MUST NOT出现未被真实delivery path消费的adapter selector、provider family或第二Finish authority
 
 ### Requirement: Package verification 必须保护 OpenSpec checklist 与 lifecycle authority parity
-Buildr package、workspace source与rendered runtime MUST投射一致的OpenSpec propose/update/apply contributions，并通过static/contract verification拒绝Task Finish convergence/archive旧authority和post-archive lifecycle checkbox引导。Package verification MUST证明convergence的未完成checklist门禁存在，且Metadata Publication保持只发布writer-owned portable Task records。
+Buildr package、workspace source与rendered runtime MUST投射一致的OpenSpec propose/update/apply contributions，并通过static/contract verification拒绝Task Finish convergence/archive旧authority和post-archive lifecycle checkbox引导。Package verification MUST证明convergence的未完成checklist门禁存在，并 MUST证明current runtime、capability graph和帮助文本不再包含Task Metadata Publication provider、binding或consumer route。
 
 #### Scenario: 校验OpenSpec Component contributions
 - **WHEN** verifier检查package source、workspace Component source与rendered OpenSpec Skills
 - **THEN** 三者 MUST一致声明Change checklist的pre-disposition边界和未完成项fail-closed要求
 - **AND** current assets MUST不包含“Task Finish执行或拥有OpenSpec convergence/archive”的可用路由
 
-#### Scenario: 校验Metadata Publication边界
-- **WHEN** verifier扫描checklist修复相关的Skill、contract与测试
-- **THEN** Metadata Publication MUST仍排除`tasks.md`、Environment与Finish evidence
-- **AND** MUST不新增archive reconciliation、checklist writer或第二份lifecycle状态
+#### Scenario: 校验Metadata Publication清退
+- **WHEN** verifier扫描package source、workspace/runtime manifests、capability graph、help与executable tests
+- **THEN** Task Metadata Publication provider、contract、binding、helper与consumer route MUST全部不存在
+- **AND** Task current records MUST不进入Git，且 MUST不新增archive reconciliation、checklist writer或第二份lifecycle状态

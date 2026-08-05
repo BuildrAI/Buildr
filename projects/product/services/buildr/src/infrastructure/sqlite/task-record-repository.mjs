@@ -142,12 +142,12 @@ export function registerTaskRecordRepository(runtime) {
     return directory;
   }
 
-  function readTaskRecordPersistence(targetRoot, taskId) {
+  function readTaskRecordFromStore(targetRoot, taskId, { writable = false } = {}) {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     if (!isTaskRecordId(taskId)) throw taskRecordError('task_record_identity_invalid', `Task ID 不合法：${taskId || '<missing>'}。`, 400, { taskId });
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+      opened = runtime.openWorkspaceStructuredStore(root, { writable });
       if (!opened.present) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
       const record = readRecord(opened.database, taskId);
       if (!record) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
@@ -157,6 +157,14 @@ export function registerTaskRecordRepository(runtime) {
     } finally {
       try { opened?.database?.close(); } catch {}
     }
+  }
+
+  function readTaskRecordPersistence(targetRoot, taskId) {
+    return readTaskRecordFromStore(targetRoot, taskId);
+  }
+
+  function prepareTaskRecordPersistence(targetRoot, taskId) {
+    return readTaskRecordFromStore(targetRoot, taskId, { writable: true });
   }
 
   function listTaskRecordPersistence(targetRoot) {
@@ -226,6 +234,7 @@ export function registerTaskRecordRepository(runtime) {
     taskRecordDirectory,
     ensureTaskRecordDirectory,
     readTaskRecordPersistence,
+    prepareTaskRecordPersistence,
     listTaskRecordPersistence,
     createTaskRecordPersistence,
     mutateTaskRecordPersistence,

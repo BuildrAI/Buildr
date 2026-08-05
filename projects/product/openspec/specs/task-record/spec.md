@@ -332,17 +332,22 @@ Buildr Local App MUST 在 Task 详情“证据”视图中提供“审查结果�
 - **THEN** Task Record Application MUST 不读取、复制、删除或改写 `reviews/` 下任一文件
 
 ### Requirement: Task Record writer 必须声明 local-only structured persistence
-Task Record writer MUST声明 `buildr.task-record/v1` 的 persistence classification 为 Workspace-local structured data，并 MUST返回空 portable publication path 集合。声明 MUST NOT暴露数据库 path、table、row id、SQL、`recordDigest` 或扩大到其他 lifecycle owner。
+Task Record writer MUST声明 `buildr.task-record/v1` 的 persistence classification 为 Workspace-local structured data。声明 MUST NOT暴露数据库 path、table、row id、SQL、`recordDigest` 或扩大到其他 lifecycle owner；Development、Verification与Review虽进入同一SQLite，仍 MUST保持各自Application authority。
+
+#### Scenario: consumer读取Task Record ownership
+- **WHEN**合法consumer检查一个Task的持久化classification
+- **THEN** Task Record writer MUST标记Workspace-local且不提供Git path
+- **AND** MUST NOT包含旧`task.yml`、Environment、Development、Review、Verification或Finish路径
 
 #### Scenario: Metadata Publication 请求 local-only Task Record ownership
-- **WHEN** `task-metadata-publication` 为一个合法 Task ID 组合 writer declarations
-- **THEN** Task Record writer declaration MUST返回空 portable path 集合并标记 local-only
-- **AND** MUST NOT包含 `.buildr/local/workspace.sqlite*`、旧 `task.yml`、Environment、Development、Review、Verification 或 Finish 路径
+- **WHEN**遗留caller尝试通过已清退的Metadata Publication取得Task Record ownership
+- **THEN** capability graph MUST不存在可路由provider或binding，Task Record writer MUST不返回任何Git path
+- **AND** MUST NOT导出数据库、旧`task.yml`或其他lifecycle owner的数据
 
 #### Scenario: 历史引用当前不可用
-- **WHEN** 有效 Task Record 包含 archived、retired 或当前 unavailable 的 Project/Service/Change 引用
-- **THEN** Task Record read model MUST保留逻辑 record 并返回 availability diagnostic
-- **AND** publication MUST NOT要求 writer 导出或改写 Task Record 才能处理其他 portable records
+- **WHEN**有效Task Record包含archived、retired或当前unavailable的Project/Service/Change引用
+- **THEN** Task Record read model MUST保留逻辑record并返回availability diagnostic
+- **AND** MUST NOT要求writer导出或改写Task Record才能继续读取其他专业current records
 
 ### Requirement: Task Record 必须支持最小 Parent Task 层级
 Buildr MUST 允许 active Task 保存至多一个 canonical Workspace 内的直接 `parentTaskId`，并 MUST 从同一 Task authority 动态投影按 Task ID 排序的直接 `childTaskIds`。Parent/Child 关系 MUST NOT 复制 Task 正文、专业 Result 或整棵递归树。

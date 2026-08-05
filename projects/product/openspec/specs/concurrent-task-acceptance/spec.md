@@ -56,7 +56,7 @@ Candidate 双任务组合验收 MUST 在普通临时 Buildr Workspace 中使用 
 #### Scenario: 两个 task 并发验证普通 Project
 - **WHEN** 验收在两个 Task Environments 中同时执行 claim 同一 coordinated resource 的 Project v2 command capability
 - **THEN** 共享 resource MUST 排队且两个 transient summaries MUST 分别绑定自己的 Environment、target identity 与 declaration identity
-- **AND** 两个 Task 的 portable Results MUST 位于各自 current slot、互不覆盖，并在匹配 target/declaration 时均为 current
+- **AND** 两个Task的current Results MUST位于各自SQLite current slot、互不覆盖，并在匹配target/declaration时均为current
 
 #### Scenario: 一个 execution 中断
 - **WHEN** 一个 worker 异常退出且未形成完整 Task 结论，另一个 worker 正常完成

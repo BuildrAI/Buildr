@@ -43,7 +43,7 @@ test('Task Review CLI 提供单一稳定 JSON、两槽位与 current/stale/unkno
   response = json(['task', 'review', 'record', 'review-task', '--type', 'planning', '--target-identity', 'plan:v1', '--method', 'self', '--reviewed', 'task intent', '--uncovered', 'browser::not relevant', '--finding', 'No blocking finding', '--outcome', 'ready', '--summary', 'Plan is ready', '--target', root]);
   assert.equal(response.status, 'recorded');
   assert.equal(response.slots.planning.applicability, 'current');
-  assert.deepEqual(response.effects, [{ type: 'created', path: '.buildr/tasks/review-task/reviews/planning.yml' }]);
+  assert.deepEqual(response.effects, [{ type: 'created', path: 'workspace-sqlite:task-review/review-task/planning' }]);
   assert.equal('resultDigest' in response.slots.planning.result, false);
 
   response = json(['task', 'review', 'inspect', 'review-task', '--planning-target', 'plan:v2', '--target', root]);
@@ -57,7 +57,7 @@ test('Task Review CLI 提供单一稳定 JSON、两槽位与 current/stale/unkno
   assert.deepEqual(missingIdentity.effects, []);
 });
 
-test('Review Result 可 Git 跟踪且 Environment ignore 不吞掉 review slots', (t) => {
+test('Review Result只在SQLite持久化且数据库保持Git ignore', (t) => {
   const { root } = fixture(t);
   createRuntime().recordTaskReview(root, 'review-task', {
     reviewType: 'completion',
@@ -69,11 +69,13 @@ test('Review Result 可 Git 跟踪且 Environment ignore 不吞掉 review slots'
     conclusion: { outcome: 'ready', summary: 'Candidate approved' },
   });
   assert.equal(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
-  fs.appendFileSync(path.join(root, '.gitignore'), '\n.buildr/tasks/*/environment.json\n');
-  const result = spawnSync('git', ['check-ignore', '-q', '.buildr/tasks/review-task/reviews/completion.yml'], { cwd: root, encoding: 'utf8' });
-  assert.equal(result.status, 1, result.stderr || result.stdout);
-  const yaml = fs.readFileSync(path.join(root, '.buildr', 'tasks', 'review-task', 'reviews', 'completion.yml'), 'utf8');
-  assert.doesNotMatch(yaml, /revision|resultDigest|applicability/);
+  const result = spawnSync('git', ['check-ignore', '-q', '.buildr/local/workspace.sqlite'], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const runtime = createRuntime();
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  const payload = opened.database.prepare("SELECT result_json FROM task_review_current WHERE task_id = 'review-task' AND review_type = 'completion'").get().result_json;
+  opened.database.close();
+  assert.doesNotMatch(payload, /revision|resultDigest|applicability/);
 });
 
 test('Local App 只读查看双槽位，并只生成 Task Review Agent prompt', async (t) => {

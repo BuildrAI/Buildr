@@ -207,8 +207,8 @@
 
 ## 审查结果（Review Result）
 
-- 定义：绑定明确目标 identity 的可移植、Git 跟踪轻量 evidence，记录审查类型、执行方式、reviewed/uncovered、findings、结论和系统完成时间。
-- 适用范围：`.buildr/tasks/<task-id>/reviews/planning.yml|completion.yml` 两个可选 current 槽位；同类型完整替换，不同类型互不覆盖。
+- 定义：绑定明确目标 identity 的轻量Workspace-local evidence，记录审查类型、执行方式、reviewed/uncovered、findings、结论和系统完成时间。
+- 适用范围：Workspace SQLite中`planning|completion`两个可选current slots；同类型事务完整替换，不同类型互不覆盖。
 - 避免混用：不是 Receipt、历史日志或状态机；不持久化 revision、current、applicability 或 digest，适用性由读取时目标比较派生。
 - 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
 
@@ -229,8 +229,8 @@
 ## 验证执行证据（Verification Execution Evidence）
 
 - 定义：一次显式 capability invocation 产生的 transient `buildr.verification-execution/v1` 事实，包含完整命令终态、stdout/stderr、耗时、临时路径、资源协调和诊断。
-- 适用范围：Task Verification 提炼 portable Result 之前的本机 execution，以及消费后的有界 cleanup。
-- 避免混用：不是 current Verification Result，不进入 Git 跟踪的 portable slot，也不表达 Task 推进或风险接受。
+- 适用范围：Task Verification提炼current Result之前的本机execution，以及消费后的有界cleanup。
+- 避免混用：不是current Verification Result，不进入Workspace SQLite current slot，也不表达Task推进或风险接受。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 任务验证（Task Verification）
@@ -242,7 +242,7 @@
 
 ## 验证结果（Verification Result）
 
-- 定义：`.buildr/tasks/<task-id>/verification.yml` 中唯一 current、可移植、Git 跟踪的 closed `buildr.task-verification-result/v1`，绑定 Task、stable Content Target 与实际 declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间。
+- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v1` current row，绑定Task、stable Content Target与实际declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间。
 - 适用范围：CLI、Skill、Local App 与 Task Development 共用的 current verification authority；读取时按 Content Target/declaration identity 派生 `current / stale / unknown`。Task Finish不直接消费该Result。
 - 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
@@ -256,9 +256,9 @@
 
 ## 研发回执（Development Receipt）
 
-- 定义：Task Development Application在`.buildr/tasks/<task-id>/development.yml`维护的唯一closed current记录；v2保存Environment逻辑引用、最小Task context、planning snapshot、可空Content Target、verification policy、current Candidate/generation、最小gates/dispositions、decision与不可变研发交接snapshots，并兼容只读迁移v1。
+- 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；v2保存Environment逻辑引用、最小Task context、planning snapshot、可空Content Target、verification policy、current Candidate/generation、最小gates/dispositions、decision与不可变研发交接snapshots，不读取或迁移旧YAML/v1。
 - 适用范围：Development inspect/begin/planning/observe/policy/gate/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
-- 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接读写文件。
+- 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接打开SQLite，只消费Application handoff port。
 - 来源：[Task Development capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-development/v2.md)
 
 ## 研发节点（Development Node）

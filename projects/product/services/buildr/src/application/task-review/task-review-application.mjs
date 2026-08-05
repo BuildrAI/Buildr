@@ -21,6 +21,7 @@ function currentTarget(value, field) {
 }
 
 function relative(root, file) {
+  if (file.startsWith('workspace-sqlite:')) return file;
   return path.relative(root, file).split(path.sep).join('/');
 }
 
@@ -63,7 +64,7 @@ export function registerTaskReviewApplication(runtime) {
 
   function recordTaskReview(targetRoot, taskId, input) {
     assertFields(input, new Set(['reviewType', 'targetIdentity', 'method', 'reviewed', 'uncovered', 'findings', 'conclusion']), 'Task Review record');
-    const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+    const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
     if (task.record.status !== 'active') {
       throw taskReviewError('task_review_task_terminal', `Task ${taskId} 已是 ${task.record.status}，不能记录新的 Review Result。`, 409, { status: task.record.status }, `运行 buildr task review inspect ${taskId} 查看已有结果。`);
     }

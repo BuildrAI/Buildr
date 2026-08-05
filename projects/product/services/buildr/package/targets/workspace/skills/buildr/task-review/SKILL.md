@@ -43,7 +43,7 @@ method 必须真实：同一 Agent 自审使用 `self`；只有实际独立 Agen
 buildr task review record <task-id> --type <planning|completion> --target-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <ready|changes-required> --summary <text> --target <canonical-workspace> --json
 ```
 
-只传语义字段；不直接编辑 YAML，不传 schemaVersion、taskId、completedAt、revision、current、applicability、path 或完整 next state。Application 只替换精确类型的 current slot；Planning 和 Completion 同时存在时不生成总 receipt，也不让一种覆盖另一种。
+只传语义字段；不直接编辑旧YAML或打开SQLite，不传 schemaVersion、taskId、completedAt、revision、current、applicability、path 或完整 next state。Application 只事务替换精确类型的 current slot；Planning 和 Completion 同时存在时不生成总 receipt，也不让一种覆盖另一种。
 
 Agent、工具或人工流程在形成完整结论前中断时不要调用 record。已有 Result 即使 stale 也保留；不得写 draft/blocked 占位结果。
 

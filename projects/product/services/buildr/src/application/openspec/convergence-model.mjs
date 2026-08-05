@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export const CONVERGENCE_ALGORITHM_VERSION = 2;
+export const CONVERGENCE_ALGORITHM_VERSION = 4;
 export const CONVERGENCE_PLAN_SCHEMA = 'buildr.openspec-convergence-plan/v1';
 export const CONVERGENCE_RECEIPT_SCHEMA = 'buildr.openspec-convergence-receipt/v3';
 export const CONVERGENCE_RESULT_SCHEMA = 'buildr.openspec-convergence-result/v1';
@@ -39,7 +39,7 @@ export function convergenceIdentity({ change, project, deltaDigest, files, execu
     project,
     deltaDigest,
     executableIdentity,
-    files: [...files].map(({ path, beforeDigest }) => ({ path, beforeDigest })).sort((a, b) => a.path.localeCompare(b.path)),
+    files: [...files].map(({ path, beforeDigest, beforeExists = true }) => ({ path, beforeDigest, beforeExists })).sort((a, b) => a.path.localeCompare(b.path)),
   });
 }
 
@@ -99,8 +99,12 @@ export function validateConvergenceReceipt(receipt) {
   };
   if (!Array.isArray(receipt.files) || receipt.files.length === 0 || convergencePlanIdentity(plan) !== receipt.planIdentity) throw new Error('OpenSpec convergence receipt plan identity is invalid.');
   for (const file of receipt.files) {
-    if (convergenceDigest(normalizeConvergenceText(file.beforeContent)) !== file.beforeDigest
-      || convergenceDigest(normalizeConvergenceText(file.expectedContent)) !== file.expectedDigest) {
+    const beforeExists = file.beforeExists !== false;
+    const expectedExists = file.expectedExists !== false;
+    if ((beforeExists && convergenceDigest(normalizeConvergenceText(file.beforeContent)) !== file.beforeDigest)
+      || (!beforeExists && file.beforeDigest !== null)
+      || (expectedExists && convergenceDigest(normalizeConvergenceText(file.expectedContent)) !== file.expectedDigest)
+      || (!expectedExists && file.expectedDigest !== null)) {
       throw new Error(`OpenSpec convergence receipt content digest mismatch: ${file.path}`);
     }
   }

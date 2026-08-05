@@ -79,7 +79,7 @@ test('Task Verification CLI 维护单一 current Result 并派生 target/declara
   assert.equal(response.status, 'recorded');
   assert.equal(response.slot.applicability.status, 'current');
   assert.match(response.slot.resultDigest, /^sha256-/);
-  assert.deepEqual(response.effects, [{ type: 'created', path: '.buildr/tasks/verification-task/verification.yml' }]);
+  assert.deepEqual(response.effects, [{ type: 'created', path: 'workspace-sqlite:task-verification/verification-task' }]);
 
   response = json(['task', 'verification', 'inspect', 'verification-task', '--target-identity', 'delivery:v2', '--target', root]);
   assert.equal(response.slot.applicability.status, 'stale');
@@ -92,8 +92,10 @@ test('Task Verification CLI 维护单一 current Result 并派生 target/declara
   assert.equal(response.slot.applicability.declarations.status, 'stale');
   assert.ok(response.slot.applicability.reasons.some((reason) => reason.code === 'declaration-identity-changed'));
 
-  const yaml = fs.readFileSync(path.join(root, '.buildr', 'tasks', 'verification-task', 'verification.yml'), 'utf8');
-  assert.doesNotMatch(yaml, /stdout|stderr|duration|applicability|resultDigest|revision|Environment Receipt/);
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  const payload = opened.database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'verification-task'").get().result_json;
+  opened.database.close();
+  assert.doesNotMatch(payload, /stdout|stderr|duration|applicability|resultDigest|revision|Environment Receipt/);
 });
 
 test('Local App 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {

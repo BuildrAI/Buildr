@@ -432,7 +432,7 @@ Buildr CLI MUST 只通过 `task verification inspect|record` 管理一个 Task c
 #### Scenario: record 完整 Result
 - **WHEN** Agent 为 active Task 提供完整合法 facts 与 conclusion
 - **THEN** CLI MUST 调用 Application 原子整值替换 current
-- **AND** 返回 effects MUST 只披露 created/updated 的 portable Result path
+- **AND** 返回effects MUST只披露created/updated的Workspace SQLite logical locator
 
 #### Scenario: record 不完整
 - **WHEN** target、capability fact、coverage gap 或 conclusion 不能构成完整 closed-schema Result

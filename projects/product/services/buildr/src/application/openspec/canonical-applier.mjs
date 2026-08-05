@@ -9,27 +9,43 @@ export function applyCanonicalPlan({ projectRoot, plan, currentDeltaDigest, curr
   for (const item of plan.files) {
     const file = path.resolve(projectRoot, item.path);
     if (!file.startsWith(`${path.resolve(projectRoot)}${path.sep}`)) throw new Error('OpenSpec convergence target escapes Project root.');
-    const actual = io.existsSync(file) ? convergenceDigest(normalizeConvergenceText(io.readFileSync(file, 'utf8'))) : convergenceDigest(normalizeConvergenceText(item.beforeContent));
-    if (actual !== item.beforeDigest) return { status: 'input-changed', effects: [] };
-    if (convergenceDigest(normalizeConvergenceText(item.expectedContent)) !== item.expectedDigest) throw new Error('OpenSpec convergence expected content digest mismatch.');
-    prepared.push({ ...item, file, changed: item.beforeDigest !== item.expectedDigest });
+    const exists = io.existsSync(file);
+    const beforeExists = item.beforeExists !== false;
+    const expectedExists = item.expectedExists !== false;
+    const actual = exists ? convergenceDigest(normalizeConvergenceText(io.readFileSync(file, 'utf8'))) : null;
+    if (exists !== beforeExists || actual !== item.beforeDigest) return { status: 'input-changed', effects: [] };
+    if ((expectedExists && convergenceDigest(normalizeConvergenceText(item.expectedContent)) !== item.expectedDigest)
+      || (!expectedExists && item.expectedDigest !== null)) throw new Error('OpenSpec convergence expected content digest mismatch.');
+    prepared.push({ ...item, beforeExists, expectedExists, file, changed: beforeExists !== expectedExists || item.beforeDigest !== item.expectedDigest });
   }
   const temporaries = [];
+  const committed = [];
   try {
-    for (const item of prepared.filter((entry) => entry.changed)) {
+    for (const item of prepared.filter((entry) => entry.changed && entry.expectedExists)) {
       io.mkdirSync(path.dirname(item.file), { recursive: true });
       const temporary = `${item.file}.buildr-converge-${process.pid}-${temporaries.length}`;
       io.writeFileSync(temporary, item.expectedContent);
       if (convergenceDigest(normalizeConvergenceText(io.readFileSync(temporary, 'utf8'))) !== item.expectedDigest) throw new Error('OpenSpec convergence temporary verification failed.');
       temporaries.push({ ...item, temporary });
     }
-    for (const item of temporaries) io.renameSync(item.temporary, item.file);
+    for (const item of prepared.filter((entry) => entry.changed && !entry.expectedExists)) {
+      io.rmSync(item.file, { force: true });
+      committed.push(item);
+    }
+    for (const item of temporaries) {
+      io.renameSync(item.temporary, item.file);
+      committed.push(item);
+    }
   } catch (error) {
     for (const item of temporaries) if (io.existsSync(item.temporary)) io.rmSync(item.temporary, { force: true });
+    for (const item of committed.reverse()) {
+      if (item.beforeExists) io.writeFileSync(item.file, item.beforeContent);
+      else io.rmSync(item.file, { force: true });
+    }
     throw error;
   }
   return {
     status: 'passed',
-    effects: prepared.filter((item) => item.changed).map((item) => ({ path: item.path, digest: item.expectedDigest })),
+    effects: prepared.filter((item) => item.changed).map((item) => ({ path: item.path, digest: item.expectedDigest, type: item.expectedExists ? 'updated' : 'deleted' })),
   };
 }

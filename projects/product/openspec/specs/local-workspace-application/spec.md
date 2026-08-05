@@ -876,7 +876,7 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 
 #### Scenario: 用户请求开始验证
 - **WHEN** 用户从 Task“证据”视图的验证结果区块触发 Agent Action
-- **THEN** prompt MUST 明确 execution evidence 与 portable Result 分离、中断不覆盖和 coverage gap 边界
+- **THEN** prompt MUST明确execution evidence与Workspace-local current Result分离、中断不覆盖和coverage gap边界
 - **AND** Local App MUST 不执行测试、不生成 target identity、不写 Result
 
 #### Scenario: terminal Task 请求新验证

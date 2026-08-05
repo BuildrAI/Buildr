@@ -125,12 +125,12 @@ test('CLI 集成验证 Git Operations required/optional consumers、legacy Proje
   await run(['skills', 'add', '--source', internalSource, '--target', root, '--provides', 'buildr.git-operations@1']);
   const unbind = await run(['skills', 'unbind', 'buildr.git-operations@1', '--scope', '.', '--target', root]);
   assert.match(unbind.stdout, /\[optional\].*task-finish.*buildr\.git-operations@1/);
-  assert.match(unbind.stdout, /\[required\].*task-metadata-publication.*buildr\.git-operations@1/);
-  const unboundReport = await doctor(root, '.', 1);
+  assert.doesNotMatch(unbind.stdout, /task-metadata-publication|buildr\.task-metadata-publication/);
+  const unboundReport = await doctor(root);
   const workspaceFinish = consumer(unboundReport, '.', 'task-finish');
   assert.equal(workspaceFinish.readiness, 'degraded');
   assert.equal(workspaceFinish.dependencies.some((item) => item.capability === 'buildr.git-operations'), true);
-  assert.equal(consumer(unboundReport, '.', 'task-metadata-publication').readiness, 'blocked');
+  assert.equal(unboundReport.capabilities.graphs.some((graph) => graph.providers?.some((item) => item.provider === 'task-metadata-publication')), false);
   await run(['skills', 'bind', 'buildr.git-operations@1', '--provider', 'git-operations', '--scope', '.', '--target', root]);
 
   await run(['project', 'create', 'demo', '--target', root]);

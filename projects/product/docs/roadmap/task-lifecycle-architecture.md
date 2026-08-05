@@ -30,7 +30,6 @@
 | 协调任务 | Coordinating Task | 通过 Parent/Child 组织直接子 Task 的普通 Task；没有独立状态机或自动传播 |
 | 结构化任务看板 | Structured Task Board | 仅作为后续评估方向；只有 Parent/Child 无法覆盖真实协调需求时才考虑独立 Domain |
 | 任务复盘 | Task Retrospective | 任务终态后的非阻塞复盘和未来改进候选 |
-| 任务元数据发布 | Task Metadata Publication | 将一个明确 Task 的 writer-declared portable exact owned paths 精确纳入 Git 共享的独立边界 |
 | 工作区本地数据存储 | Workspace Local Data Store / `.buildr/` | Workspace File Store 与本机 SQLite Workspace Structured Store 的总边界；源码 clean、发布和本地数据分别处理 |
 | 交付目标前进 | Target Advancement | Candidate 交付期间目标分支或目标位置出现了更新；不是 Task Environment 自动更新事件 |
 | 生命周期权威 | lifecycle authority | 对某类生命周期事实拥有唯一写入和最终解释责任的模块 |
@@ -95,7 +94,6 @@ flowchart TB
 | Task Environment | 建立并维护可执行、可核验、可清理的任务环境 | P0.2 已交付并生效（2026-08-02） |
 | Task Verification | 声明现有验证能力、执行显式能力并维护 current Task Verification Result | P0.4 已交付并生效（2026-08-03） |
 | Task Development | 从首个正式研发动作到Finish handoff维护可选planning nodes、Content Target、正式Verification、Task Candidate、推进决定与不可变研发交接 | P0.5 已交付并生效（2026-08-04）；v2全研发周期authority与Local App只读投影已补齐 |
-| Task Metadata Publication | 把一个明确 Task 的 portable exact owned records 作为独立 metadata-only commit/push 发布 | P0.7 已交付并生效（2026-08-04） |
 | Task Finish | 消费研发交接，为当前 Product 执行内容等价载体交付、retained 激活与 Task Environment 清理 | P0.5 已收窄为 handoff adapter；P0.8 第一阶段收敛现有交付边界，后续只按真实需求扩展路径 |
 
 ## 辅助与横切能力
@@ -105,7 +103,6 @@ flowchart TB
 | Task Review | 通过 Planning Review 与 Completion Review 分别审阅方案和完成候选 |
 | Task Verification | 对明确 target 执行适用的已声明能力，维护 current Result，并按 target/declaration identity 派生适用性 |
 | Git Operations | 定义单项 Git 行为、安全默认值、硬边界和最小 evidence；不负责流程编排 |
-| Task Metadata Publication | 组合真实 writer 声明的五个 exact paths，验证同一 bytes snapshot，并分别调用 Git Operations commit/push |
 | Parent Task | 让一个普通 Task 管理直接子 Task；只表达协调层级，不传播状态、结果或专业动作 |
 | Structured Task Board 评估 | Parent/Child 无法覆盖非 Task 规划项、多协调者成员关系、显式依赖、稳定排序/分组或跨 Task 决策记录时，再评估独立 Domain |
 | Task Retrospective | 在任务中按高价值线索持续观察，并在任务终态后形成面向未来工作的复盘结论与改进候选 |
@@ -382,7 +379,7 @@ HTTP/Web 层只接收已登记的 `workspaceId` 与真实 Task ID，拒绝 `targ
 
 ### P0.5a Local App 研发与证据视图
 
-P0.5a 不增加第五个模块页签，而把任务详情一级信息架构固定为“概览、研发、证据、环境”。“研发”通过 Workspace-scoped、no-store 的只读 API 调用 Task Development Application `inspect`，展示 `missing / developing / candidate-current / handoff-current / unknown` 的中文结论、最小输入适用性、候选代次、三个门禁、保存的推进决定、风险和最近一次研发交接；页面不读取 `development.yml`，不重新推导 currentness，也不提供 Development writer。
+P0.5a 不增加第五个模块页签，而把任务详情一级信息架构固定为“概览、研发、证据、环境”。“研发”通过 Workspace-scoped、no-store 的只读 API 调用 Task Development Application `inspect`，展示 `missing / developing / candidate-current / handoff-current / unknown` 的中文结论、最小输入适用性、候选代次、三个门禁、保存的推进决定、风险和最近一次研发交接；页面不打开SQLite或读取旧YAML，不重新推导 currentness，也不提供 Development writer。
 
 “证据”不增加二级导航，连续放置审查结果与验证结果两个独立区块；打开视图时分别调用 Task Review 与 Task Verification reader，任一 loading/diagnostic 不隐藏另一方。Environment 已清理或当前观察失败时，Development reader 返回 `unknown`；页面保留已保存候选、决定与最近交接，并明确说明历史事实当前无法实时复核，不把它显示为 current、stale 或 failed。首版不展示日志、diff、完整 Result、全部交接历史、后台轮询或写操作。
 
@@ -407,20 +404,20 @@ Task Record 与后续专业记录都属于 canonical Workspace，但每类记录
     └── <task-id>.*
 ```
 
-Task Record Application 只维护 SQLite 中的 Task 表及规范化关系表；Task Manager/CLI 与 Local App 只调用 Application。Task Environment、Development、Verification、Review、Finish、Board 与 Retrospective 分别独占自己的专业记录。linked task worktree 不是 Structured Store authority，不能创建或修改 canonical Workspace 数据库。
+Task Record Application只维护SQLite中的Task表及规范化关系表；Task Manager/CLI与Local App只调用Application。Task Development、Verification与Review分别通过自己的Application和SQLite repository独占专业current records；进入同一个数据库不等于合并Domain、writer或状态机。Task Environment、Finish、Board与Retrospective继续独占自己的专业记录。linked task worktree不是Structured Store authority，不能创建或修改canonical Workspace数据库。
 
-`.buildr/` 作为 **Workspace Local Data Store** 处理：File Store 承载可移植的专业 records 与本机管理事实，Structured Store 承载适合索引、查询、聚合和事务的数据。`.buildr/local/` 整体忽略且不发布、不同步；可移植文件仍由各 writer 维护，并由 Task Metadata Publication 按 exact owned paths 检查冲突、commit 和 push。本地 SQLite 不承担 Buildr Server/Cloud 的团队协作职责。
+`.buildr/`作为**Workspace Local Data Store**处理：Structured Store承载Task Record及Development、Verification、Planning/Completion Review全部current records；File Store只继续承载Environment、Finish、日志等各owner明确保留的本机运行/交付事实。`.buildr/local/`整体忽略且不发布、不同步；Task current records不进入Git。未来组织协作由Buildr Server/Cloud承担，本任务不设计其schema、API或同步协议。
 
 ### 首版 SQLite 写入纪律
 
 第一版只保留低成本、确定性的文件安全：
 
 - closed schema 和字段级校验由产品实现；
-- Task Record repository 只拥有 `tasks` 及其 Project、Service、Change 关系表，不接管 `.buildr/tasks/<task-id>/` 中的专业文件；
+- Task Record repository只拥有`tasks`及其Project、Service、Change关系表；三个专业repositories只拥有各自current tables，业务判断不下沉到SQL；
 - schema 由有序、带 checksum 的 SQL migration assets 建立；版本缺口、漂移、未知更新版本或完整性失败均 fail closed；
 - 每个 create/update/terminal mutation 在单个 SQLite transaction 中完成，foreign keys 和 closed domain constraints 同时生效；
 - Local App mutation 以不持久化的 `recordDigest` 拒绝已经陈旧的页面；
-- mutation 失败必须 rollback，保留最后一份有效逻辑记录和所有专业 sibling files；
+- mutation失败必须rollback，保留最后一份有效逻辑记录和所有其他current slots；
 - `completed / abandoned` 不得回到 `active`。
 
 SQLite transaction 防止半写关系记录；`recordDigest` 只拒绝可证明陈旧的页面。Task Record 不把 revision 写入 schema，不加入租约、自动合并或多人协同编辑。
@@ -434,13 +431,9 @@ SQLite transaction 防止半写关系记录；`recordDigest` 只拒绝可证明�
 - 不创建 Development、Candidate、Review、Verification 或 Finish 占位记录；
 - 如果已经创建或修改交付物，就不再使用 no-change，继续正常交付或明确 abandon。
 
-### Git 与元数据发布边界
+### Git 与Task本地数据边界
 
-Task Record 明确属于 local-only Structured Store，不执行 Git add、commit、push 或同步。Task 是否已经共享不写入 Task Record。
-
-P0.7 通过唯一 `task-metadata-publication` / `buildr.task-metadata-publication/v1` 组合真实 writer 声明的四个 portable exact paths：`development.yml`、`verification.yml`、`reviews/planning.yml` 与 `reviews/completion.yml`。缺失 optional record 保持缺失；已跟踪但当前缺失的 exact path可以作为精确删除。Task Record、`.buildr/local/**`、`environment.json`、`.buildr/task-finish/**`、asset-review、mutations、`.worktrees/**`、Agent/task runtime、Candidate、delivery source、其他 Task 与其他 owner metadata均不具备 publication eligibility。
-
-Skill随附无状态helper，只执行preflight、presence/bytes snapshot、post-commit tree验证、等价commit与完整range观察，不执行Git mutation或保存history。commit与push分别调用required `buildr.git-operations/v1` provider并保留两个Result；snapshot漂移或scope外unpublished commit阻止push，commit成功/push失败保留local metadata commit。内容等价且未共享的metadata commit可安全复用，已共享Candidate/delivery commit不可amend。无Git Workspace返回`local-only / not-applicable`并保留records。历史Project/Service/Change已归档、退役或当前unavailable但writer仍能安全读取时，只返回non-blocking diagnostic且不改写record；writer identity/schema/path损坏仍fail closed。Task Record与其他专业schema不增加publication字段。
+Task Record及全部专业current records明确属于local-only Structured Store，不执行Git add、commit、push或同步。Git只负责产品源码和用户或其他consumer明确选择的普通Git内容；Task是否已经共享不写入任何Task current record。旧YAML存在时保持inert，不读取、不迁移、不双写，也不作为Git metadata继续维护。
 
 ## Parent Task 与协调投影
 
@@ -517,7 +510,7 @@ Task Intent 是人与 Agent 当前已对齐的统一目标、范围和预期结�
 
 ### Development Receipt
 
-每个 Task ID 只有一份 current Development Receipt，由 Task Development Application 唯一读写，保存在 canonical Workspace 的 `.buildr/tasks/<task-id>/development.yml`。它是可移植的 Workspace metadata；是否进入 Git 由 P0.7 决定，不因创建 Receipt 自动进入 Candidate 或源码 commit。跨 Agent session 通过 Task ID 恢复；Task Finish 只读取 current handoff，不回写或改写研发事实。
+每个Task ID只有一份current Development Receipt，由Task Development Application唯一读写并事务保存到canonical Workspace SQLite。它是Workspace本地事实，不进入Git，也不因创建Receipt自动进入Candidate或源码commit。跨Agent session通过Task ID恢复；Task Finish只通过Application读取current handoff，不回写或改写研发事实。
 
 | 信息 | 最小内容 |
 |---|---|
@@ -530,9 +523,9 @@ Task Intent 是人与 Agent 当前已对齐的统一目标、范围和预期结�
 | handoffs | 每个正式 handoff generation 的最小不可变快照；旧快照保留但不再 current |
 | 时间 | `createdAt` 与 `updatedAt` |
 
-Receipt 只在这些交接事实变化时更新，不保存研发流水、普通进度、思考过程、聊天摘要、完整方案正文、代码 diff、测试输出或 Review 明细。Candidate 变化时更新 current identity，并引用对应专业能力对 current evidence 适用性的最新判断；失效结果不得继续显示为当前 Candidate 已通过。current Result 文件仍可按各自规则覆盖，但一旦某 generation 已经正式 handoff，它的最小交接快照只能保留、不能改写或删除；后续 generation 追加自己的快照，不建设完整 Result 历史库。
+Receipt只在这些交接事实变化时更新，不保存研发流水、普通进度、思考过程、聊天摘要、完整方案正文、代码diff、测试输出或Review明细。Candidate变化时更新current identity，并引用对应专业能力对current evidence适用性的最新判断；失效结果不得继续显示为当前Candidate已通过。current Result仍可按各自规则事务覆盖，但一旦某generation已经正式handoff，它的最小交接快照只能保留、不能改写或删除；后续generation追加自己的快照，不建设完整Result历史库。
 
-完成或放弃后只保留最小最终记录和已经正式 handoff 的不可变快照，当前不设计 TTL、归档或自动回收策略。主 Workspace Git 提供基于 commit / push 的共享与审计；需要不依赖 Git 的跨机器实时协作时，再评估 Buildr Cloud / Server。具体业务字段和文件扩展名由 Task Development 模块 Change 确定，写入遵守统一的“最低文件写入纪律”。
+完成或放弃后只保留最小最终记录和已经正式handoff的不可变快照，当前不设计TTL、归档或自动回收策略。Task current records不通过主Workspace Git共享；需要团队协作时再由独立Buildr Cloud/Server authority设计。具体业务字段由Task Development Domain确定，repository遵守最小transaction纪律。
 
 ### 检查点
 
@@ -564,7 +557,7 @@ Task Candidate 只绑定 generation、Content Target identity、Task Intent/scop
 
 候选代次（generation）只由 Task Development 创建和递增。第一次冻结 Candidate 时使用第一代；正式 handoff 前，如果内容与上下文未变，只是重新执行或替换 Review / Verification Result，则保持同一代。Review 与 Verification Result 都不持久化 `revision`，完整 Result 直接整体替换，Application 响应中的 digest 只标识本次读取的 canonical bytes。Candidate 已经 handoff 给 Finish 后被判定失效，或 content、Intent / Change context、verification policy context 发生变化时，Development 恢复同一份 Receipt，并在下一次冻结时递增 generation。Task Finish 只能引用或判定 generation 失效，不能创建、递增、回退或复用 generation。具体 identity 编码由 Task Development 模块 Change 确定。
 
-Task、Board、Retrospective 或其他 Workspace lifecycle metadata 不属于 Candidate 内容。其共享方式由 P0.7 Task Metadata Publication 单独设计。Candidate 不强制等同于 Git commit；Git 仓库可能已经有匹配 commit，也可能由 Finish 按 Git Operations 约定创建交付 commit；非 Git 工作范围可以使用工具可核验的 snapshot / content identity。
+Task、Board、Retrospective或其他Workspace lifecycle metadata不属于Candidate内容，也不通过Git共享。Candidate不强制等同于Git commit；Git仓库可能已经有匹配commit，也可能由Finish按Git Operations约定创建交付commit；非Git工作范围可以使用工具可核验的snapshot/content identity。
 
 同一 Task 可以顺序形成多个 Candidate，但同一时刻只有一个 current Candidate。正式 handoff 后 Content Target、Task context、policy 或 current gate 发生变化时，本次 handoff 不再 current；Development 恢复同一 Receipt 并形成下一代 Candidate。旧 handoff snapshot append-only，仍保留历史事实但不能被 Finish 当作 current。Candidate 失效不创建新 Task，也不创建第二份 Development Receipt。
 
@@ -606,7 +599,7 @@ P0.5 已实现 **Skill + capability contract + 唯一 Application + internal dri
 
 Finish 不执行实现修复、Change convergence/archive、current knowledge mutation、Formal Verification、Completion Review、Candidate 生成、generation 变更、`proceed / blocked` 或风险接受。它也不能以 rebase/merge 修改冻结内容。Delivery Baseline 前进时，产品在 run-owned carrier 机械复用 Task Contribution；Git conflict进入 Delivery Adaptation，deliver target race 使用产品 exact token 从 `prepare` 重做 carrier phases。只有 Development Application 报告原 Task source/context/policy/gates/handoff 真实 stale 时，当前 run 才终止并指回 Task Development。
 
-P0.5 自举适配器服务当前 Product 的单一 Git direct-to-target 路径；通用 Development contract 不因此依赖 Git 或 Product 常量。Finish 成功后由主 Agent 调用 Task Manager `complete`；Task Retrospective、PR 与 P0.7 metadata publication 不是顶层完成门槛。
+P0.5 自举适配器服务当前 Product 的单一 Git direct-to-target 路径；通用 Development contract 不因此依赖 Git 或 Product 常量。Finish 成功后由主 Agent调用Task Manager `complete`；Task Retrospective与PR不是顶层完成门槛。Task current records由Workspace SQLite持久化，不存在metadata publication阶段。
 
 ### P0.8 第一阶段与后续范围
 
@@ -634,7 +627,7 @@ Finish 成功只证明 current handoff 已由内容等价 carrier 交付、目�
 
 它不是 Git 教程或完整操作手册，也不负责交付编排。Task Finish 决定正常收尾需要哪些 Git Operation 及其顺序；超出默认编排的场景由 Agent 根据实际事实推理。涉及语义、授权、重大风险或无法安全恢复的决定时，Agent 把决策权交给用户。
 
-Git Operations 只在本次动作所针对的 repository 使用 Git，且 consumer 已选定 Git 动作时介入；没有 Git 的 repository 不加载、不执行它。一个 Candidate 完全采用非 Git 交付的 Task，如果主 Workspace 根使用 Git，结束 Agent 仍可以为 Workspace metadata publication 调用 Git Operations。它自身无状态，不创建 Git Operations Receipt；Task Finish、metadata publication 等 consumer 维护自己的流程状态，Git Operations 只返回本次操作结果。
+Git Operations 只在本次动作所针对的 repository 使用 Git，且 consumer 已选定 Git 动作时介入；没有 Git 的 repository 不加载、不执行它。它自身无状态，不创建 Git Operations Receipt；Task Finish等真实consumer维护自己的流程状态，Git Operations只返回本次操作结果。Task current records不是Git内容，也没有metadata publication consumer。
 
 ### 意图边界
 
@@ -644,13 +637,13 @@ Git Operations 只在本次动作所针对的 repository 使用 Git，且 consum
 | push / 推送 | 只推送已有 commit，不把 dirty 改动自动 commit |
 | 提交并推送 | 依次完成适用的 commit / amend 与 push |
 | Task Finish / 收尾 | 由 Task Finish 提供组合授权和默认编排，不对每个内部 Git Operation 重复询问 |
-| Workspace metadata publication | 精确路径创建新的 metadata-only commit 并 push，不改写 Candidate commit |
+| 用户明确选择的普通 Git 内容 | 按consumer声明的精确scope commit或push，不扩大到Task current records |
 
 目标 remote、source ref、target ref 和所需动作由直接用户指令或 Task Finish 等 consumer 决定；Git Operations 不自行选择交付目标。更具体的用户指令、Project / repository 规则高于这里的默认约定。
 
 ### Commit 与共享历史
 
-- Commit 只包含当前 consumer 已确认归属且明确授权的改动：Task Finish 时必须属于当前 Task，Workspace metadata publication 时必须属于本次 publication scope。不得暂存、stash、reset 或覆盖用户及其他 Task 的无关改动，也不能用 `git add -A` 代替范围判断。
+- Commit 只包含当前 consumer 已确认归属且明确授权的改动：Task Finish时必须属于当前Task，其他普通Git consumer也必须提供精确scope。不得暂存、stash、reset或覆盖用户及其他Task的无关改动，也不能用`git add -A`代替范围判断。
 - 同一文件混有不同归属的修改时，只有边界清晰才按 hunk 暂存；无法可靠分离时返回 `blocked`。
 - 默认 commit message 使用简洁的 Conventional Commits：`<type>(<scope>): <subject>`，`scope` 和正文按需使用。message 描述最终内容而不是操作过程；amend 后语义变化时同步修正。Project、repository 或用户的更具体约定优先，语言选择继续由 Workspace 或用户规则决定。
 - 同一 Task 在两次 push 之间默认只维护一个尚未共享的可变 commit，后续直接相关修改优先 amend，而不是新增 commit。
@@ -717,7 +710,7 @@ Task Review 默认可以由当前 Agent 自审；用户、Project 规则或任�
 
 ### Review Result
 
-Review Result 是 canonical Workspace 中可移植、Git 跟踪的轻量 evidence，不是新的 lifecycle receipt，也没有独立状态机。一个 `task-review` 能力使用同一 closed Result 模型，按 Task ID 定义两个可选 current 结果槽位：`.buildr/tasks/<task-id>/reviews/planning.yml` 与 `completion.yml`。没有执行某类 Review 时对应文件不存在，不创建占位结果，也不要求两种结果同时存在。
+Review Result是canonical Workspace中的本地轻量evidence，不是新的lifecycle receipt，也没有独立状态机。一个`task-review`能力使用同一closed Result模型，在Workspace SQLite中按Task ID和`planning|completion`定义两个可选current slots。没有执行某类Review时对应row不存在，不创建占位结果，也不要求两种结果同时存在。
 
 - 同类型 Review 正常完成后，新结果直接覆盖旧结果，不保留历史版本；两种 Review 互不覆盖。
 - Review 中断、执行失败或没有形成完整结论时不覆盖旧结果；旧结果若已不适用，也不能继续作为当前有效 evidence。
@@ -764,18 +757,18 @@ P0.4 交付 Result authority；P0.5 已把正式 consumer 切换为 Task Develop
 
 ### Execution Evidence
 
-`verification run --project <project> --capability <id> --target-identity <identity>` 只执行显式选择的 command capability，并在 provider-owned 临时目录产生 transient `buildr.verification-execution/v1` evidence，不提供 caller-managed output writer。`effects.authorization: explicit` 与 explicit resource 分别要求精确 capability/resource 授权。完整 stdout/stderr、命令、耗时、临时路径、授权、资源获取和诊断都留在 execution evidence，不复制进 portable Result。
+`verification run --project <project> --capability <id> --target-identity <identity>` 只执行显式选择的 command capability，并在 provider-owned 临时目录产生 transient `buildr.verification-execution/v1` evidence，不提供 caller-managed output writer。`effects.authorization: explicit` 与 explicit resource 分别要求精确 capability/resource 授权。完整 stdout/stderr、命令、耗时、临时路径、授权、资源获取和诊断都留在 execution evidence，不复制进current Result。
 
 Execution 完成与 Result 发布分开：
 
 - 所有选中能力得到终态事实后，caller 才能提炼完整 Result；
 - 中断、进程未形成终态或 Result 写入失败时，不覆盖 current Result；
-- execution evidence 在消费后按现有 cleanup 边界清理，不作为 Git 跟踪的 current authority；
+- execution evidence在消费后按现有cleanup边界清理，不作为current authority；
 - Agent invocation 可以形成事实，但 Development/Finish 都不能伪造或代替该专业执行。
 
 ### Current Task Verification Result
 
-每个 Task 只有一个 current slot：`.buildr/tasks/<task-id>/verification.yml`，schema 为 `buildr.task-verification-result/v1`。
+每个Task在Workspace SQLite中只有一个current Verification row，schema为`buildr.task-verification-result/v1`。
 
 | 字段 | 最小事实 |
 |---|---|
@@ -904,7 +897,7 @@ Task Retrospective Skill 是唯一 writer；其他模块只提供事实或读取
 
 P2.1 建设 `task-retrospective` Skill 与最小 Workspace 记录，并在同一个 Change 中接管观察 authority、处置仍需保留的旧 observation、移除 Asset Review 对 Finish/cleanup 的门禁及旧 mutation/routing/binding。不是先并行保留两套 writer，再到后续批量清退。
 
-Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则在 P2.1 扩展；具体文件 schema、是否需要 revision 和发布重试不在 P0.1 预设。
+Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不恢复Git metadata publication或本机SQLite同步。
 
 ## 实施与验证顺序
 
@@ -926,7 +919,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 
 | 结论 | 归属模块 | 当前处理 |
 |---|---|---|
-| Task Record 只拥有 SQLite `tasks` 与规范化关系表；不得接管专业 sibling files；区分数据库未初始化、记录不存在、有效记录和 schema/integrity failure | Task Record / Workspace Structured Store | SQLite Task Store Change 修正实现、契约与失败测试 |
+| Task Record只拥有SQLite `tasks`与规范化关系表；专业current records进入同库但由各自Application/repository独占；区分数据库未初始化、记录不存在、有效记录和schema/integrity failure | Task Record / Workspace Structured Store | 已按连续migration与独立writer边界收敛 |
 | canonical Workspace 不能靠 `.worktrees` 字符串猜测；Git target 使用 `git-dir/common-dir` 拓扑 | P0.1 Task Record | 当前 Change 修正 repository 与测试；非 Git Workspace 继续支持 |
 | Task CLI 只做参数/输出适配，Application 保持共享 use case | P0.1 Task Record | 当前 Change 拆分 CLI interface |
 | 候选 source 可投射自身任务验证 Workspace，并可在其内部测试隔离的模拟用户 runtime；不得写 retained、peer checkout 或外部共享用户 runtime | P0.1 自举安全边界 | 当前 Change 以 checkout 拓扑与 runtime target 路径关系增加确定性写前保护；不写入 Task Record |
@@ -936,8 +929,8 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | worktree 只隔离工作树/index；Git refs、进程、端口、用户级 runtime、凭证等仍可能共享 | P0.2 Task Environment | Roadmap 记录；后续按真实资源协调 |
 | Agent invocation 只能由有界 Agent 操作形成事实；文件投射或 Environment ready 本身不等于 capability 通过 | P0.4 Task Verification | v2 declaration 可声明 bounded Agent invocation；P0.5 由 Development 请求正式执行，Finish execution count 固定为 0 |
 | worktree、任务验证 Workspace、task-scoped runtime 和 session 是执行资源，不是 Content Target 或 Task Candidate | P0.5 Task Development / Candidate | 已由 Candidate contract、observer 与非 Git fixture 固化 |
-| 生命周期 metadata 只从 canonical exact owned paths 发布；不发布 `.worktrees`/本机 Environment/runtime；历史引用退役后的可读性另行设计 | P0.7 Task Metadata Publication | Roadmap 记录；P0.1 不增加 publication 状态或快照字段 |
-| `.buildr/` 是 Workspace Local Data Store；File Store 与 Structured Store 分层，`.buildr/local/` 必须忽略且不发布，portable 文件继续按 exact owned paths 独立处理 | Task Store / P0.7 Task Metadata Publication / P0.8 Task Finish | 固定 clean、local-only 与 publication 分层；不跳过文件 ownership 检查 |
+| Task current records只在canonical Workspace SQLite持久化，不发布、不进入Git、不进行本地多机同步 | Workspace Structured Store | 已清退Metadata Publication provider、binding、helper、tests与runtime投射 |
+| `.buildr/`是Workspace Local Data Store；Structured Store承载Task current state，File Store继续承载Environment/Finish等明确本机事实 | Task Store / Task Environment / Task Finish | 保持owner分层，不建立双authority或通用数据库框架 |
 | 自举主 Workspace 的正式 runtime 激活只能发生在内容进入 retained source 之后 | P0.8 Task Finish / Workspace Foundation | P0.1 只阻止候选越权投射；最终交付与 retained sync/doctor 仍由交付边界完成 |
 | target advancement 不自动更新 Environment，也不自动使 Candidate stale；Finish 在隔离 carrier deterministic reuse、Delivery Adaptation 或 exact-token target-race resume，不在原 Task worktree rebase、重验或生成 Candidate | P0.5 Task Development / Candidate、P0.8 Task Finish | 已固定 applicability 与交付基线分层；只有 Development Application 报告真实 stale 才返回 Development |
 | Local App 在 Task 详情展示当前机器 Environment 时调用 Environment Application，不复制进 Task Record | P0.2 Task Environment | 已交付只读“环境”视图、Workspace-scoped API 与本机不可用状态 |
@@ -958,7 +951,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | 已交付并生效（2026-08-04） | 已交付唯一 Task Development Application/Receipt、通用 Content Target observer、verification policy、Task Candidate/generation、gates/decision、append-only immutable handoff、internal driver 与非 Git/no Change System fixture；Formal Verification 先于 Candidate freeze，Completion Review 绑定 Candidate | Development 成为唯一 Candidate/decision/handoff authority；Verification/Review 保留 Result authority；Finish 收窄为 v2 handoff adapter，删除旧 Verification、Change convergence、Candidate/risk mutation path |
 | P0.5a | Task Development Local App 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情收敛为“概览、研发、证据、环境”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
 | P0.6 | Git Operations `formalize-git-operations` | 已交付并生效（2026-08-04） | 已交付唯一 Skill-only `git-operations` / `buildr.git-operations/v1`、consumer-selected operation 边界、精确暂存、commit/push 分离、完整 push range、共享冻结、最小 Result 与部分失败 evidence；retained runtime 已同步并通过 Doctor | Task Finish optional dependency 与 Buildr 产品入口已迁移；删除 `git-ops` 和三项旧 contracts/bindings/router/schema，`git-worktree-provider/v1` 保持独立 |
-| P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 已交付并生效（2026-08-04） | 已交付唯一 `task-metadata-publication` / `buildr.task-metadata-publication/v1`；SQLite Task Store Change 后组合四个 writer-declared portable exact paths，Task Record 明确 local-only；保留无状态 snapshot/helper、独立 commit/push、完整 range、部分失败、安全重试、reference diagnostic 与无 Git local-only | required 复用 `git-operations`；Environment/Finish/Candidate、Task Record 与其他 owner 保持排除 |
+| P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 已收敛（2026-08-05） | Development、Verification与Planning/Completion Review current records通过连续migration进入Workspace SQLite；各专业Application与Local App reader边界不变 | 旧YAML保持inert；Task Metadata Publication source、contract、binding、helper、tests、spec与runtime整体清退 |
 | P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 已收敛（2026-08-04） | current specs、Roadmap、CLI help、package/runtime 与 residual verification 统一为现有 v2 delivery boundary；保留单一直接接线 Product/Git adapter、Delivery Adaptation、exact-token target-race resume、remote readback、retained activation 与 Environment cleanup | 审计 active run/Application/CLI/registry/compose/schema/managed mutations/capability graph；没有真实可达旧 writer/router/binding，故以 zero-delete evidence 关闭，不制造 framework 或迁移 |
 | P1.1 | Structured Task Board 有限探索 | 延后，等待真实缺口 | 无 | 仅在非 Task 规划项、多协调者成员、显式依赖、稳定排序/分组或跨 Task 决策记录无法由 Parent/Child 覆盖时再提案 |
 | P1.2 | 其余专业投影 | 未开始 | 无 | 基于既有四视图按真实缺口扩展，不预设 Board 页面，不重建 Development/Review/Verification/Environment authority |
@@ -977,7 +970,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 - Candidate generation 只由 Task Development 创建和递增；
 - Review Result 按目标 identity 失效；Verification Result 按 target 与 Project declaration identity 失效；
 - Task Finish 只消费研发交接，不创建或收敛 Change，不发起 Verification；
-- commit、push、PR、Board 状态和 metadata publication 都不单独等于 Task 完成；
+- commit、push、PR和Board状态都不单独等于Task完成；
 - 持久 revision、跨 Task Change ownership 与 publication 协议不作为所有记录的预设共同机制；P0.1 只为真实 Local App 陈旧页面提供非持久 `recordDigest`，其他 owner 模块按实际需要决定；
 - 每个模块在自己的 Change 中完成 authority 切换和重叠旧能力清退。
 
@@ -991,7 +984,7 @@ Task Metadata Publication 如需支持 Retrospective，由 P0.7 的 owner 规则
 | P0.4 | Task Verification `introduce-task-verification-results` | Project declaration v2、transient execution evidence、一个 current Verification Result、Content Target/declaration identity 与派生 applicability；不包含推进决定、Candidate generation 或 Environment Receipt | 真实 command/Agent facts 可提炼完整 Result；中断或写入失败不覆盖 current；target/declaration 变化派生 stale；CLI、Skill、Local App、Development consumer 共用唯一 Application；删除旧 assurance、run/plan/DAG lifecycle、summary 输入与重复 schema |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | Development Receipt、`0..N` Change 处置、Content Target/policy、Candidate identity/generation、三个 gates、decision 与 immutable handoff；明确 control metadata/carrier/runtime/session 不是 Candidate | Environment ready → Planning Review → stable Content Target/policy → Formal Verification → generation 1 Candidate → Completion Review → proceed handoff；非 Git/no Change fixture 证明通用边界；Finish v2 adapter 只消费 handoff且 formal execution count 为 0 |
 | P0.6 | Git Operations `formalize-git-operations` | 单次 Git operation 授权、安全边界、前后 identity 与最小 Result | 精确暂存；commit/push 分离；不 force push；同 Change 迁移有效安全约束并删除冲突旧 capability/binding/router/schema |
-| P0.7 | Task Metadata Publication `introduce-task-metadata-publication` | 已实现 canonical writer-declared exact-owned-path publication；排除 `.worktrees`、本机 Environment/runtime、Finish 与 Candidate 内容；历史引用由writer提供diagnostic；required复用Git Operations | 五个portable paths可独立发布；无状态snapshot阻止混合revision；commit/push分离并检查完整range；push失败安全复用等价local commit；失败不回退Task状态；无Git时留本地 |
+| P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 四类专业current records进入SQLite，保持独立Domain/Application/writer；不建设history、同步或通用框架 | fresh/continuous schema、foreign key、slot isolation、rollback、旧YAML inert、Local App/lifecycle consumer与publication residual验证 |
 | P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 收敛现有 v2 delivery boundary；保留直接 Product/Git adapter，不新增非 Git、多交付单元、PR/release/deploy、adapter registry 或 Finish Receipt | canonical/current/package/help 一致；正常路径单次 CLI，Delivery Adaptation 与连续 target race 复用同一 Candidate/handoff，formal Verification 为 0；审计真实旧 writer/router/binding 并仅在存在时删除 |
 
 P0.1 到 P0.8 分别在各自交付时切换自己拥有的 authority。过渡期允许“新 Task Record + 尚未替换的专业模块”组合，但同一类事实不能有两个 writer；P0.8 不再承担统一默认 authority 切换。

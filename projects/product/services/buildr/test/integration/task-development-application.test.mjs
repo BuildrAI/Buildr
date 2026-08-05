@@ -154,7 +154,9 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
 
 test('从proposal建立planning Receipt，并以明确waiver完成可选Verification与Completion gate', (t) => {
   const current = fixture(t, 'planning-first');
-  fs.unlinkSync(path.join(current.root, '.buildr', 'tasks', current.taskId, 'development.yml'));
+  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
+  opened.database.prepare('DELETE FROM task_development_current WHERE task_id = ?').run(current.taskId);
+  opened.database.close();
   let result = current.runtime.beginTaskDevelopment(current.root, current.taskId, {
     changeDispositions: [],
     planning: { targetIdentity: current.planningTargetIdentity, nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/change/proposal', identity: taskDevelopmentDigest('proposal-v1'), disposition: 'current', summary: 'Proposal current.' }] },

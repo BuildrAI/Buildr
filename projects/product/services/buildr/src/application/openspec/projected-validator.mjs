@@ -49,7 +49,11 @@ export function validateProjectedOpenSpec({ projectRoot, files = [], executable,
     const temporaryProject = path.join(temporaryRoot, 'project');
     fs.mkdirSync(temporaryProject, { recursive: true });
     copyDirectory(path.join(projectRoot, 'openspec'), path.join(temporaryProject, 'openspec'));
-    for (const item of files) atomicWriteFile(path.join(temporaryProject, item.path), item.content);
+    for (const item of files) {
+      const target = path.join(temporaryProject, item.path);
+      if (item.exists === false) removePath(target);
+      else atomicWriteFile(target, item.content);
+    }
     if (!path.isAbsolute(executable) || !fs.existsSync(executable)) return { status: 'blocked', code: 'openspec-executable-unavailable', durationMs: Date.now() - startedAt, commandCount: 0 };
     const validation = spawn(executable, ['validate', '--all', '--strict', '--no-interactive'], { cwd: temporaryProject, encoding: 'utf8' });
     const output = `${validation.stdout || ''}${validation.stderr || ''}`;

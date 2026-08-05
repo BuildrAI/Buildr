@@ -5,9 +5,9 @@ import { registerProjectManifestRepository } from '../infrastructure/filesystem/
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
 import { registerWorkspaceSqlite } from '../infrastructure/sqlite/workspace-sqlite.mjs';
 import { registerTaskRecordRepository } from '../infrastructure/sqlite/task-record-repository.mjs';
-import { registerTaskReviewRepository } from '../infrastructure/filesystem/task-review-repository.mjs';
-import { registerTaskVerificationRepository } from '../infrastructure/filesystem/task-verification-repository.mjs';
-import { registerTaskDevelopmentRepository } from '../infrastructure/filesystem/task-development-repository.mjs';
+import { registerTaskReviewRepository } from '../infrastructure/sqlite/task-review-repository.mjs';
+import { registerTaskVerificationRepository } from '../infrastructure/sqlite/task-verification-repository.mjs';
+import { registerTaskDevelopmentRepository } from '../infrastructure/sqlite/task-development-repository.mjs';
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';

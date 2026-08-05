@@ -5,7 +5,7 @@
 ## Requirements
 
 ### Requirement: Task Verification 必须维护一个 Task-scoped current Result
-Buildr MUST 为每个正式Task提供至多一份`.buildr/tasks/<task-id>/verification.yml`，其schema MUST为`buildr.task-verification-result/v1`。Result MUST只包含Task/stable Content Target、Project declaration identities、实际执行capability facts、coverage gaps、整体结论与完成时间，并MUST可移植、可Git跟踪。Verification Result MUST NOT绑定或生成Task Candidate。
+Buildr MUST 为每个正式Task在Workspace SQLite中提供至多一份`buildr.task-verification-result/v1` current Result。Result MUST只包含Task/stable Content Target、Project declaration identities、实际执行capability facts、coverage gaps、整体结论与完成时间，并MUST保持可移植值语义但不进入Git。Verification Result MUST NOT绑定或生成Task Candidate。
 
 #### Scenario: 完整验证形成 current Result
 - **WHEN** Agent已针对Development观察到的明确stable Content Target完成全部选择、执行和事实提炼
@@ -16,6 +16,11 @@ Buildr MUST 为每个正式Task提供至多一份`.buildr/tasks/<task-id>/verifi
 - **WHEN** Task scope内某个目标没有可用声明或适用能力
 - **THEN** Result MUST通过`coverageGaps`如实记录缺口
 - **AND** Verification MUST NOT自动创建测试、脚本或capability declaration
+
+#### Scenario: 旧 Verification YAML 存在
+- **WHEN** `.buildr/tasks/<task-id>/verification.yml` 存在、损坏或与SQLite不同
+- **THEN** Application MUST只读取SQLite current Result
+- **AND** MUST NOT迁移、双写、删除或生成兼容YAML
 
 ### Requirement: Result 必须使用关闭且最小的数据模型
 Result MUST绑定非空Content Target `target.identity`和可移植`target.summary`；每个declaration MUST绑定Project、相对path与当前content identity或`absent`；每个实际capability MUST绑定Project、capability identity、`passed|failed` outcome与至少一个portable fact；结论MUST只使用`passed|not-passed`。
@@ -54,17 +59,22 @@ Task Verification Application MUST独占Result normalization、Task/Project reso
 - **AND** 页面/API MUST NOT暴露direct Result writer
 
 ### Requirement: Result 必须原子整值替换且失败时保留 current
-Repository MUST 在写入前完成 closed-schema normalization 与 serialization round-trip，再以同目录独占临时文件、重读验证和 atomic rename 整值替换 current。任何写入阶段失败 MUST 返回精确 stage/rollback 诊断，并 MUST 保留或恢复原 current bytes。
+Repository MUST 在写入前完成 closed-schema normalization 与 serialization round-trip，再以单一 SQLite transaction 精确替换 current row并在提交前重读验证。任何写入阶段失败 MUST rollback并返回精确 stage diagnostic，且 MUST 保留原 current value。
 
 #### Scenario: 执行中断或完整结论尚未形成
 - **WHEN** execution 被中断、超时、只完成部分能力或 Agent 尚未形成完整 Task 结论
 - **THEN** caller MUST NOT 调用 record
 - **AND** 已有 current MUST 保持不变
 
+#### Scenario: mutation 后 post-read 失败
+- **WHEN** 新值已写入 transaction 但 Repository 无法重读确认
+- **THEN** Repository MUST rollback整个transaction
+- **AND** 原 current Result及其他Task current records MUST保持不变
+
 #### Scenario: rename 后 post-read 失败
-- **WHEN** 新值已 rename 但 Repository 无法重读确认
-- **THEN** Repository MUST 尝试恢复旧 bytes 或删除首次创建的新文件
-- **AND** rollback 失败时 MUST 停止并报告精确文件与人工恢复要求
+- **WHEN**遗留filesystem rename/post-read fault path被调用或注入
+- **THEN** SQLite repository MUST不执行该已清退stage且MUST不读取或写回旧YAML
+- **AND** 原current Result与其他Task current records MUST保持不变
 
 ### Requirement: Applicability 必须由 target 与 declaration identities 派生
 Application inspect MUST对Content Target与Task scope内全部Project declaration分别派生applicability，不得把applicability持久化。任一declaration出现、消失、内容、registry/path或validity变化 MUST使current Result stale；Content Target identity不同时 MUST stale；未提供当前target时target轴 MUST为unknown。
@@ -121,14 +131,3 @@ Task Verification MUST NOT创建Candidate/generation、更新Task顶层状态、
 - **WHEN** 旧Finish consumer尝试读取或解释`not-passed` Verification Result
 - **THEN** P0.5 runtime MUST拒绝该authority路径并返回Task Development
 - **AND** Finish MUST只消费current Development handoff，不得运行Verification或决定风险
-
-### Requirement: Task Verification writer 必须声明 portable publication path
-Task Verification writer MUST声明 `buildr.task-verification/v3`唯一拥有 `.buildr/tasks/<task-id>/verification.yml`，该current Result为可选、portable publication eligible；transient execution evidence、log、resource、Environment与runtime状态 MUST NOT进入该声明。
-
-#### Scenario: Verification Result存在
-- **WHEN** writer可安全读取当前 `verification.yml`
-- **THEN** publication scope MUST只纳入该exact path及其当前bytes
-
-#### Scenario: Verification Result缺失
-- **WHEN** current Result不存在
-- **THEN** publication MUST保持路径缺失且不得从transient evidence重建Result

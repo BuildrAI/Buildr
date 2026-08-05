@@ -133,6 +133,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   const runtime = {
     ...environment,
     inspectTaskRecord: () => ({ record: { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active' } }),
+    prepareTaskRecordPersistence: () => ({ record: { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active' } }),
     observeTaskVerificationDeclarations: () => [{
       project: 'product', path: 'projects/product/verification.yml', identity: declarationIdentity, valid: true,
       declaration: { capabilities: [{ id: 'product.delivery', requiredForDelivery: true }] },
@@ -160,11 +161,11 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
     readTaskDevelopmentPersistence: (_root, _task, options = {}) => {
       if (!receipt && options.optional) return null;
       assert.ok(receipt, 'Development Receipt must exist.');
-      return { root: retained, file: path.join(retained, '.buildr', 'tasks', task, 'development.yml'), receipt, receiptDigest: taskDevelopmentDigest(receipt) };
+      return { root: retained, file: `workspace-sqlite:task-development/${task}`, receipt, receiptDigest: taskDevelopmentDigest(receipt) };
     },
     writeTaskDevelopmentPersistence: (_root, next) => {
       receipt = next;
-      return { root: retained, file: path.join(retained, '.buildr', 'tasks', task, 'development.yml'), receipt, receiptDigest: taskDevelopmentDigest(receipt) };
+      return { root: retained, file: `workspace-sqlite:task-development/${task}`, receipt, receiptDigest: taskDevelopmentDigest(receipt) };
     },
   };
   registerContentTargetObserver(runtime);

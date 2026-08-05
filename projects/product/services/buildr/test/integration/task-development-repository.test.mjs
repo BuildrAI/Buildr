@@ -4,118 +4,85 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { registerTaskDevelopmentRepository } from '../../src/infrastructure/filesystem/task-development-repository.mjs';
+import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-repository-'));
-  const directory = path.join(root, '.buildr', 'tasks', 'demo-task');
-  fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'task.yml'), 'sibling: preserved\n');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-sqlite-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const runtime = {
-    assertCanonicalTaskWorkspace: () => root,
-    taskRecordDirectory: (_target, taskId) => path.join(root, '.buildr', 'tasks', taskId),
-    ensureTaskRecordDirectory: (_target, taskId) => path.join(root, '.buildr', 'tasks', taskId),
-  };
-  registerTaskDevelopmentRepository(runtime);
-  return { root, directory, runtime };
+  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'projects'));
+  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
+  fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
+  const runtime = createRuntime();
+  runtime.createTaskRecordPersistence(root, {
+    schemaVersion: 'buildr.task-record/v1', taskId: 'demo-task', title: 'Demo', intent: 'Verify Development SQLite authority',
+    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], status: 'active', result: null,
+    createdAt: '2026-08-04T00:00:00.000Z', updatedAt: '2026-08-04T00:00:00.000Z',
+  });
+  return { root: fs.realpathSync(root), runtime };
 }
 
-function receipt() {
+function receipt(updatedAt = '2026-08-04T00:00:00.000Z') {
   const taskContextPayload = { taskId: 'demo-task', intent: 'Portable docs', scope: { projects: ['docs'], services: [] }, changes: [] };
   const taskContext = { identity: taskDevelopmentDigest(taskContextPayload), ...taskContextPayload };
-  const components = [{ selector: 'project:docs', kind: 'project', sourcePath: 'projects/docs', observer: 'fixture.filesystem/v1', identity: taskDevelopmentDigest('content') }];
   return {
-    schemaVersion: 'buildr.task-development-receipt/v2',
-    taskId: 'demo-task',
-    environment: { taskId: 'demo-task', receiptSchema: 'buildr.task-environment-receipt/v2' },
-    taskContext,
+    schemaVersion: 'buildr.task-development-receipt/v2', taskId: 'demo-task',
+    environment: { taskId: 'demo-task', receiptSchema: 'buildr.task-environment-receipt/v2' }, taskContext,
     planning: { identity: taskDevelopmentDigest({ targetIdentity: null, nodes: [] }), targetIdentity: null, nodes: [] },
-    contentTarget: { identity: taskDevelopmentDigest({ components }), components },
-    verificationPolicy: null,
-    generation: 0,
-    candidate: null,
-    gates: { planning: null, verification: null, completion: null },
-    decision: null,
-    handoffs: [],
-    createdAt: '2026-08-04T00:00:00.000Z',
-    updatedAt: '2026-08-04T00:00:00.000Z',
+    contentTarget: null, verificationPolicy: null, generation: 0, candidate: null,
+    gates: { planning: null, verification: null, completion: null }, decision: null, handoffs: [],
+    createdAt: '2026-08-04T00:00:00.000Z', updatedAt,
   };
 }
 
-test('repository只读迁移v1 Receipt并在下一次写入保存v2', (t) => {
-  const { root, directory, runtime } = fixture(t);
-  const legacy = receipt();
-  delete legacy.planning;
-  legacy.schemaVersion = 'buildr.task-development-receipt/v1';
-  fs.writeFileSync(path.join(directory, 'development.yml'), runtime.renderTaskDevelopmentReceipt({ ...receipt() }).replace('buildr.task-development-receipt/v2', 'buildr.task-development-receipt/v1').replace(/planning:\n(?:  .*\n)+?contentTarget:/, 'contentTarget:'));
-  const before = fs.readFileSync(path.join(directory, 'development.yml'), 'utf8');
-  const migrated = runtime.readTaskDevelopmentPersistence(root, 'demo-task', { optional: false });
-  assert.equal(migrated.receipt.schemaVersion, 'buildr.task-development-receipt/v2');
-  assert.equal(fs.readFileSync(path.join(directory, 'development.yml'), 'utf8'), before);
-  runtime.writeTaskDevelopmentPersistence(root, migrated.receipt);
-  assert.match(fs.readFileSync(path.join(directory, 'development.yml'), 'utf8'), /buildr\.task-development-receipt\/v2/);
-});
-
-function io(overrides = {}) {
-  return {
-    existsSync: fs.existsSync,
-    lstatSync: fs.lstatSync,
-    readFileSync: fs.readFileSync,
-    writeFileSync: fs.writeFileSync,
-    renameSync: fs.renameSync,
-    unlinkSync: fs.unlinkSync,
-    ...overrides,
-  };
+function stored(runtime, root) {
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  try { return opened.database.prepare("SELECT record_json FROM task_development_current WHERE task_id = 'demo-task'").get()?.record_json ?? null; }
+  finally { opened.database.close(); }
 }
 
-test('repository 以 atomic replace 写入 closed Receipt，且不触碰 sibling records', (t) => {
-  const { root, directory, runtime } = fixture(t);
-  const written = runtime.writeTaskDevelopmentPersistence(root, receipt());
-  assert.equal(written.created, true);
-  assert.match(written.receiptDigest, /^sha256-/);
-  assert.equal(runtime.readTaskDevelopmentPersistence(root, 'demo-task', { optional: false }).receipt.taskId, 'demo-task');
-  assert.equal(fs.readFileSync(path.join(directory, 'task.yml'), 'utf8'), 'sibling: preserved\n');
-  assert.equal(fs.readdirSync(directory).some((name) => name.includes('.buildr-tmp-')), false);
+test('Development current Receipt 只在SQLite写入、替换和读取，旧YAML保持inert', (t) => {
+  const { root, runtime } = fixture(t);
+  const legacy = path.join(root, '.buildr', 'tasks', 'demo-task', 'development.yml');
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(legacy, 'legacy: inert\n');
+
+  assert.equal(runtime.readTaskDevelopmentPersistence(root, 'demo-task', { optional: true }), null);
+  const first = runtime.writeTaskDevelopmentPersistence(root, receipt());
+  assert.equal(first.created, true);
+  assert.equal(first.file, 'workspace-sqlite:task-development/demo-task');
+  assert.match(first.receiptDigest, /^sha256-/);
+  assert.equal(JSON.parse(stored(runtime, root)).schemaVersion, 'buildr.task-development-receipt/v2');
+
+  const second = runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:01:00.000Z'));
+  assert.equal(second.created, false);
+  assert.notEqual(second.receiptDigest, first.receiptDigest);
+  assert.equal(runtime.readTaskDevelopmentPersistence(root, 'demo-task', { optional: false }).receipt.updatedAt, '2026-08-04T00:01:00.000Z');
+  assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy: inert\n');
 });
 
-test('serialization、temporary write 与 post-read failure 均保留原 current', (t) => {
-  const { root, directory, runtime } = fixture(t);
+test('Development serialization或SQLite mutation失败时保留最后有效current', (t) => {
+  const { root, runtime } = fixture(t);
   runtime.writeTaskDevelopmentPersistence(root, receipt());
-  const file = path.join(directory, 'development.yml');
-  const original = fs.readFileSync(file);
+  const original = stored(runtime, root);
 
   runtime.taskDevelopmentSerialize = () => { throw new Error('serialization failed'); };
-  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, { ...receipt(), updatedAt: '2026-08-04T00:01:00.000Z' }), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'serialization');
+  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:01:00.000Z')), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'serialization');
   runtime.taskDevelopmentSerialize = null;
+  assert.equal(stored(runtime, root), original);
 
-  runtime.taskDevelopmentIo = io({
-    writeFileSync(target, ...args) {
-      if (String(target).includes('.development.yml.buildr-tmp-')) throw new Error('temporary write failed');
-      return fs.writeFileSync(target, ...args);
-    },
-  });
-  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, { ...receipt(), updatedAt: '2026-08-04T00:02:00.000Z' }), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'temporary-write');
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  opened.database.exec("CREATE TRIGGER reject_development_update BEFORE UPDATE ON task_development_current BEGIN SELECT RAISE(ABORT, 'injected mutation failure'); END;");
+  opened.database.close();
+  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:02:00.000Z')), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'mutation' && error.details.rollback.status === 'restored');
+  assert.equal(stored(runtime, root), original);
+});
 
-  let replaced = false;
-  let postReadFailed = false;
-  runtime.taskDevelopmentIo = io({
-    renameSync(source, destination) {
-      const result = fs.renameSync(source, destination);
-      if (destination === file && String(source).includes('.development.yml.buildr-tmp-')) replaced = true;
-      return result;
-    },
-    readFileSync(target, ...args) {
-      if (replaced && !postReadFailed && target === file && args[0] === 'utf8') {
-        postReadFailed = true;
-        throw new Error('post-read failed');
-      }
-      return fs.readFileSync(target, ...args);
-    },
-  });
-  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, { ...receipt(), updatedAt: '2026-08-04T00:03:00.000Z' }), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'post-read' && error.details.rollback.status === 'restored');
-  runtime.taskDevelopmentIo = null;
-  assert.deepEqual(fs.readFileSync(file), original);
-  assert.equal(fs.readFileSync(path.join(directory, 'task.yml'), 'utf8'), 'sibling: preserved\n');
+test('Development repository拒绝不存在Task且不产生orphan row', (t) => {
+  const { root, runtime } = fixture(t);
+  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, { ...receipt(), taskId: 'missing-task' }), (error) => error.code === 'task_record_not_found');
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  assert.equal(opened.database.prepare('SELECT count(*) AS count FROM task_development_current').get().count, 0);
+  opened.database.close();
 });

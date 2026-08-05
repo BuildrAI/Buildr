@@ -894,7 +894,7 @@ Planning与Completion MUST继续是两个可选current Result槽位；Task Recor
 - **AND** Task Finish 的 asset observation finalize MUST NOT 读取、替换或批准 Task Review Result
 
 ### Requirement: task-verification Skill 必须作为语义验证入口
-Buildr MUST交付`task-verification` Workspace Skill并通过selected `buildr.task-verification/v3` provider工作。Skill MUST理解Task Intent与Development提供的stable Content Target，读取Task scope内Project v2 declarations、选择适用已有能力、取得transient execution evidence、提炼portable facts，并只在完整结论形成后调用Task Verification Application record。
+Buildr MUST交付`task-verification` Workspace Skill并通过selected `buildr.task-verification/v3` provider工作。Skill MUST理解Task Intent与Development提供的stable Content Target，读取Task scope内Project v2 declarations、选择适用已有能力、取得transient execution evidence、提炼current facts，并只在完整结论形成后调用Task Verification Application record。
 
 #### Scenario: 用户要求验证正式 Task
 - **WHEN** 用户或Task Development提供正式Task、明确stable Content Target identity与policy decision
@@ -917,11 +917,11 @@ Buildr MUST交付`task-verification` Workspace Skill并通过selected `buildr.ta
 - **AND** MUST NOT创建空Task、伪Content Target或Task Verification Result
 
 ### Requirement: Skill 必须区分 Capability Declaration、Execution 与 Result
-Skill MUST 把 Project declaration 作为已有能力事实，把完整 stdout/stderr、耗时、资源等待和诊断作为 transient Execution Evidence，把 current Result 作为 portable Task fact。Skill MUST NOT 将三者合并成一个 schema，也 MUST NOT 把 execution summary path 写入 Result。
+Skill MUST 把 Project declaration 作为已有能力事实，把完整 stdout/stderr、耗时、资源等待和诊断作为 transient Execution Evidence，把current Result作为Workspace-local Task fact。Skill MUST NOT将三者合并成一个schema，也 MUST NOT把execution summary path写入Result。
 
 #### Scenario: command execution 成功
 - **WHEN** Skill 通过 `buildr verification run` 执行显式 command capabilities
-- **THEN** Skill MUST 读取 transient summary 并提炼每项 capability 的 portable facts
+- **THEN** Skill MUST读取transient summary并提炼每项capability的current facts
 - **AND** 全部 consumer 完成后 MUST 请求 cleanup exact execution boundary
 
 #### Scenario: execution 中断
@@ -930,7 +930,7 @@ Skill MUST 把 Project declaration 作为已有能力事实，把完整 stdout/s
 - **AND** MUST 如实报告本次 transient execution 未形成新 current
 
 ### Requirement: P0.4 workflow 不得抢占 Development 或其他专业 authority
-`task-verification` MUST NOT创建Candidate/generation、改变Task Record status、决定verification policy或proceed/blocked、接受风险、实现缺失测试、替代Task Review/Environment/业务验收或执行Metadata Publication。P0.5 Task Development MUST独占这些consumer decisions并只通过Verification Application read model消费Result。
+`task-verification` MUST NOT创建Candidate/generation、改变Task Record status、决定verification policy或proceed/blocked、接受风险、实现缺失测试或替代Task Review/Environment/业务验收。P0.5 Task Development MUST独占这些consumer decisions并只通过Verification Application read model消费Result。
 
 #### Scenario: 存在 coverage gap
 - **WHEN** 当前Content Target缺少能证明所需事实的capability
@@ -1074,36 +1074,23 @@ Task Development MUST是 Content Target、Candidate、Verification Result、Comp
 - **THEN** 测试 MUST使用真实Task Development Application形成并只读检查current gates与handoff
 - **AND** MUST覆盖clean reuse、same-path conflict adaptation、真实source drift rebuild、generation与formal Verification执行次数
 
-### Requirement: Agent 必须通过唯一Metadata Publication Skill组合writers与Git Operations
-Buildr workspace MUST安装唯一 `task-metadata-publication` Skill作为用户/consumer发布Task portable metadata的入口；该Skill MUST提供 `buildr.task-metadata-publication/v1`并required消费selected `buildr.git-operations/v1` provider。
-
-#### Scenario: capability graph ready
-- **WHEN** package与workspace runtime已同步
-- **THEN** capability graph MUST把 `buildr.task-metadata-publication/v1`绑定到 `task-metadata-publication`
-- **AND** consumer dependency MUST把 `buildr.git-operations/v1`解析到唯一selected provider
-
-#### Scenario: Git Operations blocked
-- **WHEN** required Git Operations binding invalid、unresolved或provider blocked
-- **THEN** Metadata Publication MUST停止Git effects并报告next action
-- **AND** MUST NOT回退到旧Git route或手写第二条executor
-
-#### Scenario: description routing
-- **WHEN**用户要求发布一个Task的portable metadata
-- **THEN** `task-metadata-publication` description MUST覆盖该意图
-- **AND** `task-finish`、`git-operations`与Buildr产品入口 MUST继续保持各自边界而不竞争同一顶层意图
-
 ### Requirement: OpenSpec Change checklist 必须止于 Change disposition 边界
-Buildr-owned OpenSpec propose、update与apply contributions MUST引导Agent只把Change disposition前可完成的实现、知识收敛、验证反馈和archive readiness动作写入`tasks.md`。Contributions MUST NOT把Formal Development、Task Finish、Metadata Publication、Environment cleanup、Task terminal state或其他只能在archive后发生的Task lifecycle动作写为Change checkbox；convergence/archive MUST在Task Development观察stable Content Target之前完成，Task Finish MUST不拥有或解释Change checklist。
+Buildr-owned OpenSpec propose、update与apply contributions MUST引导Agent只把Change disposition前可完成的实现、知识收敛、验证反馈和archive readiness动作写入`tasks.md`。Contributions MUST NOT把Formal Development、Task Finish、Environment cleanup、Task terminal state或其他只能在archive后发生的Task lifecycle动作写为Change checkbox；convergence/archive MUST在Task Development观察stable Content Target之前完成，Task Finish MUST不拥有或解释Change checklist。
 
 #### Scenario: Agent创建或修订Change计划
 - **WHEN** `openspec-propose`或`openspec-update-change`生成或修改`tasks.md`
 - **THEN** Buildr contribution MUST要求每个checkbox都能在Change disposition前完成
-- **AND** MUST排除Formal Development、Finish、publication、cleanup与terminal动作
+- **AND** MUST把Formal Verification、Task Candidate、Completion Review、Task Finish、Environment cleanup与Task terminal state留给Change外的Task Development lifecycle
 
 #### Scenario: Agent准备收敛Change
 - **WHEN** `openspec-apply-change`完成实现并准备调用`buildr openspec converge`
 - **THEN** contribution MUST要求先完成全部Change-owned checkbox并说明convergence/archive属于Development stable Content Target之前的Change处置
 - **AND** MUST NOT声称Task Finish调用或拥有convergence/archive
+
+#### Scenario: checklist含有archive后动作
+- **WHEN** Agent发现现有checkbox只能在Change converge/archive后完成
+- **THEN** Agent MUST在implementation前修订该checkbox而不是让convergence自动勾选或绕过
+- **AND** Change仍必须在全部真实Change-owned checkbox完成后才能进入convergence
 
 ### Requirement: task-manager 必须作为 Parent Task 的薄管理入口
 `task-manager` MUST 只通过 Task Record Application 创建、检查和明确修改 Parent Task 关系，并 MUST 使用 canonical Workspace Task identity。Skill MUST NOT 直接操作 SQLite、构建通用关系图、自动修改 Child lifecycle 或冒充 Task Board writer。

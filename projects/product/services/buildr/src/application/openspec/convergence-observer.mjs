@@ -8,7 +8,11 @@ export function observeConvergence({ projectRoot, receipt, archived = false, io 
     if (!file.startsWith(`${path.resolve(projectRoot)}${path.sep}`)) throw new Error('OpenSpec convergence target escapes Project root.');
     const exists = io.existsSync(file);
     const actualDigest = exists ? convergenceDigest(normalizeConvergenceText(io.readFileSync(file, 'utf8'))) : null;
-    const state = actualDigest === item.expectedDigest ? 'expected' : actualDigest === item.beforeDigest ? 'before' : 'unknown';
+    const beforeExists = item.beforeExists !== false;
+    const expectedExists = item.expectedExists !== false;
+    const state = exists === expectedExists && actualDigest === item.expectedDigest ? 'expected'
+      : exists === beforeExists && actualDigest === item.beforeDigest ? 'before'
+        : 'unknown';
     return { path: item.path, beforeDigest: item.beforeDigest, expectedDigest: item.expectedDigest, actualDigest, state };
   });
   const states = new Set(files.map((item) => item.state));

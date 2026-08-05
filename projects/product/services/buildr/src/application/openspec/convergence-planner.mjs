@@ -36,13 +36,14 @@ export function createConvergencePlan({ change, project, delta, canonicalFiles, 
   for (const [capability, capabilityOperations] of [...grouped].sort(([a], [b]) => a.localeCompare(b))) {
     const snapshot = canonicalFiles.get(capability);
     const exists = snapshot?.exists === true;
+    const removesWholeAbsentCapability = !exists && capabilityOperations.length > 0 && capabilityOperations.every((operation) => operation.type === 'REMOVED');
     const purpose = capabilityPurposes.get(capability)?.trim();
     const beforeContent = exists ? normalizeConvergenceText(snapshot.content) : normalizeConvergenceText(`# ${capability} Specification\n\n## Purpose\n\n${purpose || ''}\n\n## Requirements\n`);
     const document = parseCanonical(beforeContent);
     const replacements = new Map();
     const removals = new Set();
     const additions = [];
-    if (!exists && (!purpose || purpose.length < 50)) blocked.push({ capability, requirement: null, operation: 'CREATE_CAPABILITY', code: 'semantic-resolution-required' });
+    if (!exists && !removesWholeAbsentCapability && (!purpose || purpose.length < 50)) blocked.push({ capability, requirement: null, operation: 'CREATE_CAPABILITY', code: 'semantic-resolution-required' });
 
     for (const operation of capabilityOperations) {
       const title = operation.title || operation.from;
@@ -76,11 +77,14 @@ export function createConvergencePlan({ change, project, delta, canonicalFiles, 
       } else fail('unsupported-operation');
       operations.push({ capability, type: operation.type, requirement: title, status, reason });
     }
-    const expectedContent = renderCanonical(document, replacements, removals, additions);
+    const expectedExists = !removesWholeAbsentCapability && !(exists && document.blocks.length > 0 && document.blocks.every((item) => removals.has(item.title)) && additions.length === 0);
+    const expectedContent = expectedExists ? renderCanonical(document, replacements, removals, additions) : '';
     files.push({
       path: snapshot.path,
-      beforeDigest: convergenceDigest(beforeContent),
-      expectedDigest: convergenceDigest(expectedContent),
+      beforeExists: exists,
+      expectedExists,
+      beforeDigest: exists ? convergenceDigest(beforeContent) : null,
+      expectedDigest: expectedExists ? convergenceDigest(expectedContent) : null,
       beforeContent,
       expectedContent,
     });

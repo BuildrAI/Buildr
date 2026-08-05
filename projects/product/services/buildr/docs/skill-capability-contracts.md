@@ -50,9 +50,7 @@ operation、前后 branch/commit、适用 remote/ref/range、变化维度、部�
 
 Git Operations 的结果只是本次操作事实，不是 Candidate、Review 或 Verification 结论。`task-worktree` 只提供窄 Git checkout/branch/HEAD/clean/registration evidence；Task Environment 独占实际执行根、Runtime/CLI/依赖、projection、动态资源、ready、恢复和总 cleanup；Task Development/Verification 继续判断 Content Target 与 evidence applicability。各模块只通过最小 evidence 交接。
 
-`buildr.task-metadata-publication/v1`默认由唯一`task-metadata-publication`提供，并required消费`buildr.git-operations/v1`。它只组合Development、Verification与Review writer声明的四个portable exact paths；Task Record SQLite数据保持local-only。它不扫描Task目录，也不发布`environment.json`、Finish、asset-review、mutations、worktree/runtime、Candidate、delivery source或其他Task。随Skill发布的无状态helper只观察presence/bytes、commit tree、等价commit与完整range，不执行Git mutation或保存Receipt/history。
-
-Metadata Publication由consumer明确canonical Workspace、Task、repository/ref与commit/push授权。commit与push分别调用Git Operations并保留两个Result；post-commit snapshot不一致或完整range含scope外commit时阻止push。commit成功/push失败保留local metadata commit，重试先复用可证明未共享且内容等价的commit。无Git Workspace返回`local-only / not-applicable`。reference archived/retired/unavailable由writer read model返回non-blocking diagnostic；publisher不解析或改写record schema。
+Task Record、Development、Verification与Review current records都由各自Application维护在Workspace SQLite中，不再提供metadata publication capability。Git Operations仍是普通Git内容与其他已选consumer的独立能力，但没有Task metadata provider、binding或consumer route。
 
 ### 2. Manifest 注册、provider、consumer 与 binding
 
@@ -72,9 +70,6 @@ bindings:
   - capability: buildr.git-operations
     version: 1
     provider: git-operations
-  - capability: buildr.task-metadata-publication
-    version: 1
-    provider: task-metadata-publication
 ```
 
 `task-finish/v1`的Task Environment路径通过产品application service执行固定Git carrier transition，并由自身contract约束内容等价、真实delivery remote、fast-forward、普通push、push后远端ref回读与结果证据；只有回读值等于carrier才能报告`remoteAfterRef`。它不拥有Candidate freeze。只有retained metadata-only handoff把optional`buildr.git-operations@1` dependency提升为required，并由Task Finish分别选择commit与push；独立已选Git Operation由同一个`git-operations` provider处理。

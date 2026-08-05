@@ -49,7 +49,7 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
   for (const required of [
     'buildr.project-verification/v2', 'buildr.task-verification-result/v1',
     'buildr.task-verification-operation-result/v1', 'transient Execution Evidence',
-    '`current`', '`stale`', '`unknown`', 'atomic rename', 'coverage gap',
+    '`current`', '`stale`', '`unknown`', '单一SQLite transaction', 'coverage gap',
     'requiredForDelivery', 'Task Verification Application', '完整替换 current',
     '不得提交 declaration identity', '不得保存 stdout/stderr',
     'Task progression', '测试命令完整失败可以形成 `not-passed` Result',
@@ -67,7 +67,7 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
     'buildr task verification record <task-id>', 'buildr.verification-execution/v1',
     '--declaration-root <task-environment-root>',
     '不自动创建测试、脚本、CI 或框架', '原子替换', '不得覆盖原 current',
-    'portable current Result', 'buildr verification cleanup --summary <file>',
+    'Workspace本地current Result', 'buildr verification cleanup --summary <file>',
     '不用于设计测试框架、开发测试、生成 Candidate 或 Finish',
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
@@ -172,9 +172,10 @@ test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调�
     assert.ok(openSpecApplySidebar.includes(required), `OpenSpec apply sidebar must preserve convergence boundary: ${required}`);
   }
   for (const sidebar of [openSpecProposeSidebar, openSpecUpdateSidebar, openSpecApplySidebar]) {
-    for (const required of ['Change disposition', 'Formal Development', 'Task Finish', 'Metadata Publication', 'Environment cleanup', 'Task terminal state']) {
+    for (const required of ['Change disposition', 'Formal Development', 'Task Finish', 'Environment cleanup', 'Task terminal state']) {
       assert.ok(sidebar.includes(required), `OpenSpec sidebar must preserve checklist boundary: ${required}`);
     }
+    assert.equal(sidebar.includes('Metadata Publication'), false, 'retired Metadata Publication must not remain in current OpenSpec sidebars');
   }
   assert.match(openSpecApplySidebar, /Convergence\/archive在Task Development观察stable Content Target/);
   assert.match(openSpecApplySidebar, /change-checklist-incomplete/);

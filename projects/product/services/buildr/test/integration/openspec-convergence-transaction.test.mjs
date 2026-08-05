@@ -105,6 +105,43 @@ test('canonical applier在before漂移时整批零写入', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('删除capability全部Requirements时投影并原子删除canonical spec', () => {
+  const before = canonical(requirement('Only'));
+  const plan = planFor(before, [{ type: 'REMOVED', capability: 'demo', title: 'Only' }]);
+  assert.equal(plan.status, 'safe');
+  assert.equal(plan.files[0].beforeExists, true);
+  assert.equal(plan.files[0].expectedExists, false);
+  assert.equal(plan.files[0].expectedDigest, null);
+  const receipt = createConvergenceReceipt({ plan, executableIdentity });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-applier-delete-'));
+  try {
+    const file = path.join(root, plan.files[0].path);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, before);
+    assert.equal(observeConvergence({ projectRoot: root, receipt, io: fs }).disposition, 'planned-not-applied');
+    const applied = applyCanonicalPlan({ projectRoot: root, plan, currentDeltaDigest: plan.deltaDigest, currentExecutableIdentity: executableIdentity, io: fs });
+    assert.equal(applied.status, 'passed');
+    assert.deepEqual(applied.effects, [{ path: plan.files[0].path, digest: null, type: 'deleted' }]);
+    assert.equal(fs.existsSync(file), false);
+    assert.equal(observeConvergence({ projectRoot: root, receipt, io: fs }).disposition, 'applied-and-matched');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('完整REMOVED delta重放时保持已经不存在的capability为expected absent', () => {
+  const operations = [{ type: 'REMOVED', capability: 'demo', title: 'Only' }];
+  const plan = createConvergencePlan({
+    change: 'change-a', project: 'product', delta: delta(operations), executableIdentity,
+    canonicalFiles: new Map([['demo', { path: 'openspec/specs/demo/spec.md', exists: false, content: null }]]),
+    capabilityPurposes: new Map(), activeConflicts: [],
+  });
+  assert.equal(plan.status, 'already-applied');
+  assert.deepEqual(plan.blocked, []);
+  assert.equal(plan.operations[0].reason, 'requirement-absent');
+  assert.equal(plan.files[0].beforeExists, false);
+  assert.equal(plan.files[0].expectedExists, false);
+  assert.equal(plan.files[0].expectedDigest, null);
+});
+
 function journey(options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-converge-journey-'));
   const changeRoot = path.join(root, 'openspec', 'changes', 'change-a');

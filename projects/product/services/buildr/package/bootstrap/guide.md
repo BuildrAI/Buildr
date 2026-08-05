@@ -37,7 +37,7 @@ buildr sync <agent> --target <dir>
 buildr skill install <agent> --target <dir>
 ```
 
-如果安装后 Buildr Skill 可用，后续按 Buildr Skill 工作。本指南只保留 Skill 不可用时的最小兜底流程。用户要求共享一个明确Task的portable lifecycle metadata时，只使用`task-metadata-publication`：它精确处理`development.yml`、`verification.yml`、`reviews/planning.yml`与`reviews/completion.yml`，缺失optional record保持缺失；Task Record SQLite数据保持local-only，并排除Environment、Finish、asset-review、mutations、worktree/runtime、Candidate、delivery source、其他Task与其他owner内容。Skill required解析`buildr.git-operations/v1`，用无状态bytes snapshot分别约束commit/push；scope外range或drift时停止，push失败保留并复用等价未共享commit，无Git返回`local-only / not-applicable`。首版没有公共CLI、批量发布或history store。
+如果安装后Buildr Skill可用，后续按Buildr Skill工作。本指南只保留Skill不可用时的最小兜底流程。Task Record、Development、Verification与Review current records都由对应Application保存到Workspace SQLite，不进入Git或跨机器同步；不要读取、迁移或生成旧Task YAML。Git Operations只处理用户或上游consumer明确选择的普通Git内容。Environment、Finish、asset-review、mutations、worktree/runtime、Candidate与delivery source继续遵守各自owner边界。
 ## 最小兜底
 
 优先使用 Buildr CLI 完成用户指令。workspace 必须完成初始化；未初始化时使用上面的 `buildr init --agent <agent>`，其成功输出已包含最终 doctor，不再重复执行。已有 workspace 中，`buildr doctor --agent <agent> --json` 是最小兜底流程的默认事实入口。不要省略 `--agent`；未指定 Agent 时 doctor 会检查所有支持的 runtime。
