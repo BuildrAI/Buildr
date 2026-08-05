@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
 
 import { registerTaskTerminalDeliveryApplication } from '../../src/application/task-terminal-delivery/task-terminal-delivery-application.mjs';
-import { FINISH_PHASES, FINISH_RUN_SCHEMA, readTaskFinishResults } from '../../src/application/task-finish/task-finish-run.mjs';
 
 const TASK = 'terminal-task';
 const ids = {
@@ -113,29 +109,4 @@ test('terminal composer covers active, no-change, abandoned, unproven and identi
   const unavailable = runtimeFor('completed', null);
   unavailable.readTaskFinishResults = () => ({ results: [], diagnostics: [{ code: 'task_finish_completion_invalid' }] });
   assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'unavailable');
-});
-
-test('Finish query reads current JSON authority, prefers valid completion and reports matching corruption', (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-terminal-finish-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const runs = path.join(root, '.buildr', 'task-finish', 'runs');
-  const completed = path.join(root, '.buildr', 'task-finish', 'completed');
-  fs.mkdirSync(runs, { recursive: true }); fs.mkdirSync(completed, { recursive: true });
-  const runId = `${TASK}-run`;
-  const entry = finishEntry();
-  const run = {
-    schemaVersion: FINISH_RUN_SCHEMA, runId, status: 'complete',
-    identity: { task: TASK, handoffIdentity: ids.handoff, candidateIdentity: ids.candidate, candidateGeneration: 1, contentTargetIdentity: ids.target, agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: root, workspaceRoot: root, workspaceNodeIdentity: 'sha256-node' },
-    identityDigest: 'sha256-identity', createdAt: '2026-08-05T00:00:00.000Z', updatedAt: '2026-08-05T00:00:06.000Z', completedAt: '2026-08-05T00:00:06.000Z', invocations: 1,
-    deliveryCarrier: entry.result.carrier, equivalence: entry.result.equivalence, delivery: entry.result.delivery, completion: entry.result.completion, resume: null, primaryFailure: null,
-    phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: null, completedAt: null, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
-  };
-  fs.writeFileSync(path.join(runs, `${runId}.json`), `${JSON.stringify(run)}\n`);
-  fs.writeFileSync(path.join(completed, `${runId}.json`), `${JSON.stringify({ schemaVersion: 'buildr.task-finish-completion/v1', runId, task: TASK, handoffIdentity: ids.handoff, candidateIdentity: ids.candidate, candidateGeneration: 1, contentTargetIdentity: ids.target, carrierIdentity: ids.carrier, carrierRef: 'abc123', status: 'complete', completedAt: run.completedAt })}\n`);
-  fs.writeFileSync(path.join(runs, `${TASK}-old-failed.json`), `${JSON.stringify({ schemaVersion: FINISH_RUN_SCHEMA, runId: `${TASK}-old-failed`, status: 'blocked', identity: { task: TASK } })}\n`);
-  fs.writeFileSync(path.join(completed, `${TASK}-broken.json`), '{broken');
-  const query = readTaskFinishResults({ root, taskId: TASK, clock: () => Date.parse(run.completedAt) });
-  assert.equal(query.results.length, 1);
-  assert.equal(query.results[0].result.runId, runId);
-  assert.equal(query.diagnostics[0].code, 'task_finish_completion_invalid');
 });

@@ -100,7 +100,7 @@ capabilities:
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runGit(root, ['init', '-q']);
   runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
-  runGit(root, ['config', 'user.email', 'fixture@buildr.local']);
+  runGit(root, ['config', 'user.email', 'fixture@example.com']);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-qm', 'browser fixture baseline']);
   runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--target', root]);

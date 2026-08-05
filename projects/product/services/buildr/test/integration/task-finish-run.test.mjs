@@ -8,10 +8,49 @@ import {
   createFinishRun,
   executeFinishRun,
   FINISH_PHASES,
+  FINISH_RUN_SCHEMA,
   finishRunFile,
   inspectFinishRun,
+  readTaskFinishResults,
   readFinishRun,
 } from '../../src/application/task-finish/task-finish-run.mjs';
+
+test('Finish query reads current JSON authority, prefers valid completion and reports matching corruption', (t) => {
+  const root = fixture(t);
+  const task = 'terminal-task';
+  const runId = `${task}-run`;
+  const completedAt = '2026-08-05T00:00:06.000Z';
+  const runs = path.join(root, '.buildr', 'task-finish', 'runs');
+  const completed = path.join(root, '.buildr', 'task-finish', 'completed');
+  fs.mkdirSync(runs, { recursive: true });
+  fs.mkdirSync(completed, { recursive: true });
+  const run = {
+    schemaVersion: FINISH_RUN_SCHEMA,
+    runId,
+    status: 'complete',
+    identity: { task, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: root, workspaceRoot: root, workspaceNodeIdentity: 'sha256-node' },
+    identityDigest: 'sha256-identity',
+    createdAt: '2026-08-05T00:00:00.000Z',
+    updatedAt: completedAt,
+    completedAt,
+    invocations: 1,
+    deliveryCarrier: { identity: 'sha256-carrier' },
+    equivalence: { status: 'equivalent', reuseMode: 'deterministic-reuse', semanticEquivalence: 'deterministic-git-identity', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', carrierIdentity: 'sha256-carrier' },
+    delivery: { status: 'delivered', carrierRef: 'abc123', remoteAfterRef: 'abc123', finalRemoteRef: 'abc123', activation: { status: 'passed' }, retainedDoctor: 'passed', runtimeInstall: 'passed', localAppDelivery: { status: 'passed', channel: 'development' } },
+    completion: { status: 'complete', cleanup: { status: 'cleaned' } },
+    resume: null,
+    primaryFailure: null,
+    phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: null, completedAt: null, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
+  };
+  fs.writeFileSync(path.join(runs, `${runId}.json`), `${JSON.stringify(run)}\n`);
+  fs.writeFileSync(path.join(completed, `${runId}.json`), `${JSON.stringify({ schemaVersion: 'buildr.task-finish-completion/v1', runId, task, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', carrierIdentity: 'sha256-carrier', carrierRef: 'abc123', status: 'complete', completedAt })}\n`);
+  fs.writeFileSync(path.join(runs, `${task}-old-failed.json`), `${JSON.stringify({ schemaVersion: FINISH_RUN_SCHEMA, runId: `${task}-old-failed`, status: 'blocked', identity: { task } })}\n`);
+  fs.writeFileSync(path.join(completed, `${task}-broken.json`), '{broken');
+  const query = readTaskFinishResults({ root, taskId: task, clock: () => Date.parse(completedAt) });
+  assert.equal(query.results.length, 1);
+  assert.equal(query.results[0].result.runId, runId);
+  assert.equal(query.diagnostics[0].code, 'task_finish_completion_invalid');
+});
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-'));
