@@ -90,6 +90,13 @@ test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 
   const cleanupProof = verifyDeliveredGitTaskContribution({ taskRoot, targetRef: adaptedCarrier.head, proof: adaptedCarrier });
   assert.equal(cleanupProof.status, 'equivalent');
   assert.equal(cleanupProof.reuseMode, 'agent-reviewed-delivery-adaptation');
+  fs.writeFileSync(path.join(carrier.root, 'managed-runtime.txt'), 'post-carrier convergence\n');
+  git(carrier.root, ['add', 'managed-runtime.txt']);
+  git(carrier.root, ['commit', '-m', 'workspace convergence']);
+  const convergenceHead = git(carrier.root, ['rev-parse', 'HEAD']);
+  const convergedProof = verifyDeliveredGitTaskContribution({ taskRoot, targetRef: convergenceHead, proof: adaptedCarrier });
+  assert.equal(convergedProof.status, 'equivalent');
+  assert.equal(convergedProof.reuseMode, 'agent-reviewed-delivery-adaptation');
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'conflict', expectedRoot: carrier.root }).status, 'removed');
 });
 

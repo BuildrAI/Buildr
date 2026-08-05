@@ -167,8 +167,10 @@ export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof 
   try {
     if (!proof?.taskContribution || !proof?.deliveryBaseline || !proof?.head || !proof?.tree) return { status: 'stale', code: 'git_worktree_contribution_proof_invalid' };
     const targetHead = requireGitText(taskRoot, ['rev-parse', `${targetRef}^{commit}`], 'Delivered target ref is unavailable.');
-    const targetTree = requireGitText(taskRoot, ['rev-parse', `${targetRef}^{tree}`], 'Delivered target tree is unavailable.');
-    if (targetHead !== proof.head || targetTree !== proof.tree) return { status: 'stale', code: 'git_worktree_contribution_target_mismatch' };
+    const proofHead = requireGitText(taskRoot, ['rev-parse', `${proof.head}^{commit}`], 'Delivered carrier ref is unavailable.');
+    const proofTree = requireGitText(taskRoot, ['rev-parse', `${proof.head}^{tree}`], 'Delivered carrier tree is unavailable.');
+    const delivered = git(taskRoot, ['merge-base', '--is-ancestor', proof.head, targetHead]);
+    if (proofHead !== proof.head || proofTree !== proof.tree || delivered.status !== 0) return { status: 'stale', code: 'git_worktree_contribution_target_mismatch' };
     const sourceHead = requireGitText(taskRoot, ['rev-parse', 'HEAD^{commit}'], 'Task source HEAD is unavailable.');
     if (sourceHead !== proof.taskContribution.source.head) return { status: 'stale', code: 'git_worktree_contribution_source_head_drift' };
     const current = withTemporaryIndex(taskRoot, proof.taskContribution.originalBaseline.head, ({ tree }) => ({ tree }));
