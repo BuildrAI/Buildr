@@ -28,10 +28,13 @@ function finishMatchesHandoff(entry, handoff) {
     && delivery.finalRemoteRef === delivery.remoteAfterRef
     && delivery.finalRemoteRef === delivery.carrierRef
     && delivery.finalRemoteRef === completion.carrierRef;
+  const localAppDeliveryStatus = typeof delivery?.localAppDelivery === 'string'
+    ? delivery.localAppDelivery
+    : delivery?.localAppDelivery?.status;
   const activated = delivery?.activation?.status === 'passed'
     && delivery.retainedDoctor === 'passed'
     && ['passed', 'not-applicable'].includes(delivery.runtimeInstall)
-    && ['passed', 'not-applicable'].includes(delivery.localAppDelivery);
+    && ['passed', 'not-applicable'].includes(localAppDeliveryStatus);
   const cleaned = cleanup?.operation === 'cleanup' && cleanup.status === 'cleaned' && cleanup.environment?.status === 'cleaned'
     && cleanup.environment?.latest?.cleanup?.status === 'cleaned';
   return identitiesMatch && carrierEquivalent && remoteReadback && activated && cleaned;
