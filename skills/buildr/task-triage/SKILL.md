@@ -54,8 +54,6 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 实现型任务按共享实现区域、验证入口或失败影响面分组。正式 Task 取得 ready Environment 后，在写入首个 proposal、方案或实现内容前调用 selected `buildr.task-development/v2` provider 的 `begin` 建立研发聚合事实；后续专业 planning artifact 变化时更新 planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用 `project-testing`；它不维护 capability declaration 或 Result。内容、测试和 review 修订完成后仍由 Development 收敛 current knowledge/Change、观察 stable Content Target、形成 policy，并调用 selected `buildr.task-verification/v3` provider 维护 current Task Result，再继续 Candidate、Completion Review、decision 与 handoff。triage 不接管这些 provider，也不预设 minimal/affected/candidate 层级；Development provider 在该正式分支不 ready 时停止首次研发写入，不能回退为无 Receipt 流程。
 
-<!-- buildr:skill-contributions change-ready -->
-
 ## 4. 输出契约
 
 ```text

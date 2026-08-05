@@ -185,11 +185,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-e153175c4eeeb6f83386f1189aaa5ef1d2e272ae51d3ec7d8b1bff0d9d7409b9",
+      "integrity": "sha256-001b213bb6727da49ea82c5551875bb1d857d801ed9ea157ef73330fc43e1d44",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-33ea9ba6cbea679306642d4be2bea55cb79327a9cfe856db92df72dbf263aae0"
+          "integrity": "sha256-bfc12bc15faee663ee8caaf710645896c0761b86d1f10717513048eef9b2d8ce"
         }
       ]
     },

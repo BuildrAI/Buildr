@@ -140,10 +140,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-explore
-    requires:
-      - capability: buildr.terminology-governance
-        version: 1
-        mode: optional
   - id: openspec-propose
     assetIdentity: buildr:skill:openspec-propose
     sourceIdentity: package:skills/openspec/openspec-propose
@@ -162,10 +158,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-propose
-    requires:
-      - capability: buildr.current-knowledge-maintenance
-        version: 1
-        mode: required
   - id: openspec-update-change
     assetIdentity: buildr:skill:openspec-update-change
     sourceIdentity: package:skills/openspec/openspec-update-change
@@ -184,10 +176,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-update-change
-    requires:
-      - capability: buildr.current-knowledge-maintenance
-        version: 1
-        mode: required
   - id: openspec-apply-change
     assetIdentity: buildr:skill:openspec-apply-change
     sourceIdentity: package:skills/openspec/openspec-apply-change
@@ -206,10 +194,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-apply-change
-    requires:
-      - capability: buildr.current-knowledge-maintenance
-        version: 1
-        mode: required
   - id: openspec-sync-specs
     assetIdentity: buildr:skill:openspec-sync-specs
     sourceIdentity: package:skills/openspec/openspec-sync-specs
@@ -228,10 +212,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-sync-specs
-    requires:
-      - capability: buildr.current-knowledge-maintenance
-        version: 1
-        mode: required
   - id: openspec-archive-change
     assetIdentity: buildr:skill:openspec-archive-change
     sourceIdentity: package:skills/openspec/openspec-archive-change
