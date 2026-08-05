@@ -153,6 +153,7 @@ export function registerApplicationPackageMaintenance(runtime) {
         '# Task asset review runtime state',
         '/.buildr/asset-review/',
         '/.buildr/task-finish/',
+        '# Task machine-local state', '/.buildr/tasks/',
         '# Task worktrees', '/.worktrees/',
       ])) {
         changed.push('.gitignore');

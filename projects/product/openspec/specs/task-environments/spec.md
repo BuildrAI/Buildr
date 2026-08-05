@@ -64,9 +64,9 @@ Buildr MUST 在 `<canonical-workspace>/.buildr/tasks/<task-id>/environment.json`
 - **AND** MUST NOT 读取后回填、删除、移动或回滚 sibling 文件
 
 #### Scenario: Receipt 进入 Git 候选
-- **WHEN** Git status 或 package verification 检查 Workspace 本机环境记录
-- **THEN** `/.buildr/tasks/*/environment.json` MUST 被精确忽略
-- **AND** Task Record 与其他可移植专业记录 MUST NOT 因该规则被整体忽略
+- **WHEN** Git status、初始化或 package verification 检查 Workspace 的 `.buildr/tasks/` 目录
+- **THEN** 根 `.gitignore` MUST 包含 `/.buildr/tasks/` 并整体排除该目录
+- **AND** Buildr MUST NOT stage、commit、push或声明其中任一 Environment Receipt 或 inert legacy record 为 portable owner
 
 #### Scenario: Receipt 内容边界
 - **WHEN** Environment writer 形成或更新 receipt

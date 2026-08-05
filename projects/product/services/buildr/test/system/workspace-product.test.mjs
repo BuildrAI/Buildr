@@ -83,6 +83,33 @@ test('init 生成 canonical Workspace，并让两个 Manifest 复用同一 UUID'
   assert.equal(workspace.runtime.node.version, process.versions.node);
 });
 
+test('Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
+  const broadEntry = '/.buildr/tasks/';
+  const preciseEntry = '/.buildr/tasks/*/environment.json';
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  assert.equal(packageGitignore.filter((line) => line === broadEntry).length, 1);
+  assert.equal(packageGitignore.includes(preciseEntry), false);
+
+  const root = initWorkspaceViaCli(t);
+  const gitignore = path.join(root, '.gitignore');
+  let lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
+  assert.equal(lines.filter((line) => line === broadEntry).length, 1);
+  assert.equal(lines.includes(preciseEntry), false);
+
+  fs.writeFileSync(gitignore, `${lines.filter((line) => line !== broadEntry).join('\n').replace(/\n*$/u, '')}\n${preciseEntry}\ncustom-user-entry\n`);
+  let result = runBuildr(['sync', 'codex', '--target', root]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
+  assert.equal(lines.filter((line) => line === broadEntry).length, 1);
+  assert.equal(lines.filter((line) => line === preciseEntry).length, 1);
+  assert.equal(lines.filter((line) => line === 'custom-user-entry').length, 1);
+
+  const afterFirstSync = fs.readFileSync(gitignore, 'utf8');
+  result = runBuildr(['sync', 'codex', '--target', root]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.readFileSync(gitignore, 'utf8'), afterFirstSync);
+});
+
 test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复且不改版本', (t) => {
   const appData = path.join(temporaryRoot(t), 'node-app-data');
   const root = path.join(temporaryRoot(t), 'workspace');

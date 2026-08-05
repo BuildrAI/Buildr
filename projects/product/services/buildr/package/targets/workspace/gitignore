@@ -21,8 +21,8 @@ CODEBUDDY.md
 # Task Finish checkpoint runtime state
 /.buildr/task-finish/
 
-# Task Environment machine-local receipts
-/.buildr/tasks/*/environment.json
+# Task machine-local state
+/.buildr/tasks/
 
 # Task worktrees
 /.worktrees/
