@@ -459,6 +459,11 @@ export function createPackageStaticValidator(deps) {
           }
           const members = new Set(componentMemberPaths(record.definition));
           if (!members.has('skills/openspec/openspec-update-change')) problems.push('OpenSpec Component must include the upstream update workflow Skill.');
+          const fragments = record.definition.contributions?.skillFragments || [];
+          if (fragments.some((item) => item.startsWith('task-triage#change-ready='))) problems.push('OpenSpec Component must attach apply-ready gates to openspec-apply-change, not task-triage.');
+          for (const target of ['openspec-apply-change@prepend=', 'openspec-sync-specs@prepend=', 'openspec-archive-change@prepend=']) {
+            if (!fragments.some((item) => item.startsWith(target))) problems.push(`OpenSpec Component must declare ${target} contribution.`);
+          }
           for (const legacySidebar of ['openspec-explore-sidebar.md', 'openspec-sync-sidebar.md', 'openspec-archive-sidebar.md']) {
             if ([...(record.definition.members.skillContributions || [])].some((member) => member.endsWith(legacySidebar))) {
               problems.push(`OpenSpec Component must not retain the duplicated ${legacySidebar} sidebar.`);
@@ -1121,7 +1126,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');

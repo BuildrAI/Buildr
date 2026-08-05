@@ -155,7 +155,7 @@ test('retained OpenSpec legacy CLI 受显式消费者和兼容窗口门禁约束
   };
   roots.forEach(walk);
   assert.deepEqual(consumers.sort(), [
-    'services/buildr/package/targets/workspace/components/buildr/openspec/contributions/task-triage-change-ready.md',
+    'services/buildr/package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
     'services/buildr/package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
   ]);
   assert.equal(legacyConvergenceRetirementStatus({ consumers, compatibilityWindowComplete: false }).removalEligible, false);

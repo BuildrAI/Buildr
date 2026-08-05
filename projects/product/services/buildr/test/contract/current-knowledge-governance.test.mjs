@@ -103,16 +103,19 @@ test('current knowledge provider 同时提供 v1/v2 且 maintain 不伪造 Chang
   assert.match(skill, /change: <id \| none>/);
 });
 
-test('OpenSpec consumers 只声明 capability dependencies，archive 保持无知识写入依赖', () => {
+test('OpenSpec capability dependencies 由 Component 与 fragments 原子维护', () => {
   const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
   const skills = new Map(manifest.builtins.skills.map((skill) => [skill.id, skill]));
-  const dependency = (id, capability, mode) => skills.get(id).requires?.some((item) => item.capability === capability && item.mode === mode);
-  assert.equal(dependency('openspec-explore', 'buildr.terminology-governance', 'optional'), true);
-  for (const id of ['openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs']) {
-    assert.equal(dependency(id, 'buildr.current-knowledge-maintenance', 'required'), true, id);
-  }
-  assert.equal(dependency('task-finish', 'buildr.current-knowledge-maintenance', 'required'), false);
-  assert.equal(skills.get('openspec-archive-change').requires, undefined);
+  for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) assert.equal(skills.get(id).requires, undefined, id);
+  const component = YAML.parse(read(path.join(WORKSPACE_TARGET, 'components/buildr/openspec/component.yml')));
+  const dependencies = component.contributions.skillDependencies;
+  const has = (skill, capability, mode) => dependencies.some((item) => item.skill === skill && item.capability === capability && item.mode === mode);
+  assert.equal(has('openspec-explore', 'buildr.terminology-governance', 'optional'), true);
+  for (const id of ['openspec-propose', 'openspec-apply-change']) for (const capability of ['buildr.task-record', 'buildr.task-environment', 'buildr.task-development', 'buildr.current-knowledge-maintenance']) assert.equal(has(id, capability, 'required'), true, `${id}:${capability}`);
+  assert.equal(has('openspec-update-change', 'buildr.current-knowledge-maintenance', 'required'), true);
+  for (const capability of ['buildr.task-environment', 'buildr.task-development']) assert.equal(has('openspec-update-change', capability, 'optional'), true, capability);
+  assert.equal(dependencies.some((item) => ['openspec-sync-specs', 'openspec-archive-change'].includes(item.skill)), false);
+  assert.equal(skills.get('task-finish').requires?.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.mode === 'required') || false, false);
 });
 
 test('OpenSpec Component 通过 contributions 组合且不改写 external Skill source', () => {
@@ -120,6 +123,8 @@ test('OpenSpec Component 通过 contributions 组合且不改写 external Skill 
   const fragments = component.contributions.skillFragments;
   assert.ok(fragments.some((item) => item.startsWith('openspec-explore@prepend=')));
   assert.ok(fragments.some((item) => item.startsWith('openspec-sync-specs@prepend=')));
+  assert.ok(fragments.some((item) => item.startsWith('openspec-archive-change@prepend=')));
+  assert.equal(fragments.some((item) => item.startsWith('task-triage#change-ready=')), false);
   assert.equal(fragments.some((item) => item.startsWith('task-finish#')), false);
   for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) {
     const source = read(path.join(WORKSPACE_TARGET, `skills/openspec/${id}/SKILL.md`));

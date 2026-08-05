@@ -49,7 +49,6 @@ export function resolveSkillCapabilityGraph(organizationRoot, projectRoot = null
     runtime,
     projectScope: scope,
     resolveRemote: false,
-    includeContributions: false,
   });
   const skillsById = new Map(skills.map((skill) => [skill.id, skill]));
   const allEntries = visibleLayers.flatMap((layer) => (layer.document.skills || []).map((skill) => ({ ...skill, declaredScope: layer.scope })));

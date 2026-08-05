@@ -111,42 +111,6 @@ Buildr Skill MUST 通过统一执行循环表达 Buildr 状态变更后的 docto
 - **WHEN** Buildr Skill 不可用且 Agent 使用 bootstrap guide
 - **THEN** bootstrap MUST 保留状态变更后运行当前 Agent doctor 的最小兜底流程
 
-### Requirement: Buildr 通过声明式 Skill Contribution 编排 OpenSpec 契约门禁
-Buildr MUST 由 OpenSpec Component 向通用 workspace Skills 的稳定 slot 贡献门禁说明，在 change 建立、同步和归档边界调用契约门禁，并保持通用 Skills 与外部 OpenSpec Skills 可独立更新。
-
-#### Scenario: Change artifacts 达到 apply-ready
-- **WHEN** task triage 选择 change-flow 且 proposal、design、specs 和 tasks 已达到 apply-ready
-- **THEN** installed OpenSpec Component MUST 在 `task-triage` runtime Skill 的 change-ready slot 贡献建立基线和 proposal stage check 的说明
-- **AND** Agent MUST 使用 `openspec-contract-guard` 建立契约基线并运行 proposal stage check
-- **AND** 门禁未通过时 Agent MUST 将 change 报告为 blocked 而不是开始实现
-
-#### Scenario: Delta 实现期间改变触达范围
-- **WHEN** Agent 修改 delta 使其新增或改变 Requirement identity
-- **THEN** Agent MUST 再次运行 proposal stage check
-- **AND** Agent MUST 显式更新不完整基线而不是由普通 check 自动采用当前事实
-
-#### Scenario: Task Finish 同步前后执行门禁
-- **WHEN** `task-finish` 准备同步并归档带 delta specs 的 change
-- **THEN** installed OpenSpec Component MUST 分别向 `task-finish` runtime Skill 的 pre-sync 和 post-sync slot 贡献对应门禁说明
-- **AND** Task Finish MUST 在 canonical spec sync 前运行 pre-sync check
-- **AND** Task Finish MUST 在 sync 后、archive 前运行 post-sync check
-- **AND** 任一检查失败时 MUST 停止尚未执行的 archive、commit、push 和 cleanup
-
-#### Scenario: OpenSpec Component 已卸载
-- **WHEN** OpenSpec Component 为 disabled 或 uninstalled 且 Agent runtime 被重新渲染
-- **THEN** `task-triage`、`task-finish` 和产品入口 Buildr Skill MUST NOT 包含 OpenSpec contract guard 的专用命令或路由
-- **AND** 通用 Skills MUST 继续支持其不依赖 OpenSpec Component 的既有职责
-
-#### Scenario: 外部 OpenSpec workflow 保持原样
-- **WHEN** Buildr 发布或升级契约门禁
-- **THEN** Buildr MUST 通过 Component-owned contribution、自有 Skill 和 CLI 编排门禁
-- **AND** Buildr MUST NOT 要求修改外部 `openspec-*` Skills 来承载 Buildr 检查逻辑
-
-#### Scenario: 门禁诊断对用户可见
-- **WHEN** 契约检查阻塞 change-flow 或 task finish
-- **THEN** Agent MUST 报告 change、stage、冲突或陈旧 Requirement、当前状态和可执行下一步
-- **AND** Agent MUST NOT 把 warning 或未验证状态描述为门禁通过
-
 ### Requirement: task-triage 明确 OpenSpec 中文文档约束
 Buildr 的 task-triage Skill MUST 在选择或继续 OpenSpec 工作流时，要求 Agent 使用中文编写 Buildr 自有 OpenSpec 文档和用户可见说明，并说明允许保留英文的格式与技术内容。
 
@@ -154,24 +118,6 @@ Buildr 的 task-triage Skill MUST 在选择或继续 OpenSpec 工作流时，要
 - **WHEN** task triage 选择或继续 OpenSpec change-flow
 - **THEN** 其面向用户的 guidance MUST 要求 Buildr 自有文档正文使用中文
 - **AND** 它 MUST 允许 English commands、paths、code identifiers、protocol fields、YAML/frontmatter 和 OpenSpec format keywords
-
-### Requirement: OpenSpec apply 保持 canonical specs 直到受控同步阶段
-Buildr OpenSpec apply guidance MUST 要求 Agent 在 active change 的实现阶段只修改 change artifacts 与实现内容，MUST NOT 在当前会话的 `pre-sync` contract guard 成功前写入该 change 的 canonical specs。Agent MUST 在 pre-sync 成功后执行 agent-driven canonical sync，并在 `post-sync` guard 返回 `ok: true` 后才使用 `openspec archive <change> --skip-specs --yes`。
-
-#### Scenario: apply 阶段尚未进入受控同步
-- **WHEN** Agent 正在实现 active OpenSpec change，且当前会话尚未取得该 change 的成功 pre-sync receipt
-- **THEN** Agent MUST NOT 将该 change 的 delta 预写入 canonical specs
-- **AND** MUST 保持 canonical Requirement 与 baseline 可比较，直到 Task Finish 进入受控同步阶段
-
-#### Scenario: 受控同步与归档
-- **WHEN** pre-sync guard 返回 `ok: true`，Agent 已按该 change 的 delta 完成 canonical sync，且 post-sync guard 返回 `ok: true`
-- **THEN** Agent MUST 记录同步证据并使用 `openspec archive <change> --skip-specs --yes`
-- **AND** archive 后 MUST 继续执行 strict validation、status 与现有 closeout workflow checks
-
-#### Scenario: pre-sync 或 post-sync 未通过
-- **WHEN** pre-sync 或 post-sync guard 未返回 `ok: true`
-- **THEN** Agent MUST 停止 canonical sync 后续动作或 archive
-- **AND** MUST NOT 通过 baseline adopt、重跑 pre-sync 或 `--skip-specs` 掩盖失败
 
 ### Requirement: Git 工作区转换后诊断 Buildr Agent 环境
 Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buildr Agent 环境”的 workspace transition invariant；执行一般 Git 工作流的 Agent MUST 通过产品入口 Buildr Skill 完成具体诊断与修复边界，创建 canonical task worktree 时 MUST 使用 Buildr 的确定性 worktree bootstrap 入口，而不依赖某个 optional Git Skill 的身份。
@@ -1104,3 +1050,44 @@ Workspace Component MAY通过`task-finish@append`追加Workspace专属维护。C
 - **WHEN** Formal Task Finish成功但Workspace专属自举收敛失败
 - **THEN** Agent MUST报告主任务已交付且Workspace收敛未完成，并保留精确恢复现场
 - **AND** MUST NOT改写或撤销Formal Task Finish Result与上游研发事实
+
+### Requirement: OpenSpec 直接 consumers 必须表达真实 capability 停止条件
+Buildr OpenSpec Component MUST通过结构化 dependency contributions 与对应 fragments 统一声明直接和条件依赖，使直接命中外部 OpenSpec Skill 的正式持久交付仍满足 Task、Environment、Development 与 current knowledge 边界。
+
+#### Scenario: 直接调用 propose
+- **WHEN**用户意图直接命中 `openspec-propose` 并准备创建 Change artifacts
+- **THEN** consumer MUST required依赖 `buildr.task-record/v1`、`buildr.task-environment/v1`、`buildr.task-development@2` 与 `buildr.current-knowledge-maintenance/v1`
+- **AND** Environment MAY选择共享执行根但 MUST返回 matching ready evidence
+
+#### Scenario: 直接调用 apply
+- **WHEN**用户意图直接命中 `openspec-apply-change` 并准备修改实现或 Change tasks
+- **THEN** consumer MUST required依赖 Task Record、Task Environment、Task Development 与 current knowledge capabilities
+- **AND**任一 provider 未 ready 或 Task/Environment/Development context 不匹配时 MUST在实现编辑前停止
+
+#### Scenario: 纯 planning update
+- **WHEN** `openspec-update-change` 只修订既有 planning artifacts且不产生新的执行效果
+- **THEN** current knowledge dependency MUST为 required，Task Environment与Task Development dependencies MUST为 optional
+- **AND**若修订发生在正式 Task 中，Development provider ready时 MUST更新planning snapshot
+
+#### Scenario: Update 产生执行效果
+- **WHEN** update 需要新的实现、构建、测试、资源或执行位置变化
+- **THEN** fragment MUST要求 Environment和Development provider ready并转入`openspec-apply-change`
+- **AND**不得在 update consumer 中继续实现或把 optional dependency 当作绕过理由
+
+### Requirement: OpenSpec apply、sync 和 archive 必须使用单一 convergence authority
+Buildr MUST在 apply 入口执行 apply-ready 和 proposal/delta 门禁，并 MUST让独立 sync/archive consumers 拒绝 canonical 写入或归档旁路，统一转交 `buildr openspec converge`。
+
+#### Scenario: Apply 开始实现
+- **WHEN** `openspec-apply-change` 准备进行首个实现编辑
+- **THEN** prepend MUST验证 apply-required artifacts complete、上游 strict validation 与 proposal/delta classification check
+- **AND**门禁未通过时 MUST blocked，delta Requirement identity改变后 MUST重新检查
+
+#### Scenario: 用户直接调用 sync
+- **WHEN**用户要求 `openspec-sync-specs` 在 Buildr Workspace 写入 canonical specs
+- **THEN** prepend MUST拒绝上游 agent-driven sync并转用 `buildr openspec converge`
+- **AND** sync consumer MUST NOT机械声明完整Task lifecycle dependencies或运行旧pre-sync/post-sync序列
+
+#### Scenario: 用户直接调用 archive
+- **WHEN**用户要求 `openspec-archive-change` 跳过未完成tasks、spec sync或convergence直接归档
+- **THEN** prepend MUST拒绝确认绕过并转用 `buildr openspec converge`
+- **AND**只有converge返回passed或幂等archived结果时才 MUST报告canonical sync/archive完成

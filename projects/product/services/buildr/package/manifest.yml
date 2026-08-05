@@ -358,10 +358,6 @@ builtins:
       description: 探索想法、调查问题或澄清需求时使用；只思考和梳理，不实现代码。
       required: false
       component: openspec
-      requires:
-        - capability: buildr.terminology-governance
-          version: 1
-          mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-propose
       path: package/targets/workspace/skills/openspec/openspec-propose
@@ -369,10 +365,6 @@ builtins:
       description: 用户要快速创建完整 OpenSpec change 提案、设计、规格和任务时使用。
       required: false
       component: openspec
-      requires:
-        - capability: buildr.current-knowledge-maintenance
-          version: 1
-          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-update-change
       path: package/targets/workspace/skills/openspec/openspec-update-change
@@ -380,10 +372,6 @@ builtins:
       description: 用户要修订既有 OpenSpec change 的 proposal、design、specs 或 tasks，且不进入代码实现时使用。
       required: false
       component: openspec
-      requires:
-        - capability: buildr.current-knowledge-maintenance
-          version: 1
-          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-apply-change
       path: package/targets/workspace/skills/openspec/openspec-apply-change
@@ -391,10 +379,6 @@ builtins:
       description: 用户要开始或继续实现某个 OpenSpec change 的任务时使用。
       required: false
       component: openspec
-      requires:
-        - capability: buildr.current-knowledge-maintenance
-          version: 1
-          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-sync-specs
       path: package/targets/workspace/skills/openspec/openspec-sync-specs
@@ -402,10 +386,6 @@ builtins:
       description: 用户要把 change 中的 delta specs 同步到主 specs，但不归档 change 时使用。
       required: false
       component: openspec
-      requires:
-        - capability: buildr.current-knowledge-maintenance
-          version: 1
-          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-archive-change
       path: package/targets/workspace/skills/openspec/openspec-archive-change

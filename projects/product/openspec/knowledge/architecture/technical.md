@@ -16,6 +16,7 @@
 
 - `skills/manifest.yml` 注册 capability contracts、providers、consumers 和 workspace default bindings。
 - Consumer 依赖 capability identity，不依赖 provider Skill id；required/optional 分别产生 blocked/degraded readiness。
+- Component definition 可在 `contributions.skillDependencies` 中为同一 Component fragment 的目标 Skill 声明结构化 capability、major version 与 required/optional mode。runtime 将 enabled/installed Component dependency 与 base `requires` 按 `capability@version` 合并，required 优先并保留来源；install/update/uninstall 与 fragment 原子生效。Doctor 只读取该结构化结果，不从 Markdown 推断依赖，也不以 capability graph 代替直接 CLI 的 Application 检查。
 - `task-manager` 提供并默认绑定 `buildr.task-record/v1`；`task-triage` 只在正式持久交付分支 optional 消费，provider 不 ready 不影响讨论或只读分支。
 - `task-environment` 提供并默认绑定 `buildr.task-environment/v1`；正式 workflow 在持久写入前消费它。`task-worktree` 只提供 `buildr.git-worktree-provider/v1`，Environment 按实际 Git scope 组合该 provider。
 - `task-review` 提供并默认绑定唯一 `buildr.task-review/v1`；planning/completion 是动态参数，不注册类型专属 capability 或 provider。`task-asset-review` 的 capability 与 observation store 保持独立，由 Task Development optional 消费并在 handoff 前 finalize，Task Finish 不读取。
@@ -23,7 +24,7 @@
 - `task-development`提供并默认绑定`buildr.task-development@2`，required消费Task Record、Task Environment、Task Review、Task Verification与current knowledge，optional消费Task Asset Review。它是Development Receipt v2及v1 read migration、planning snapshot、Content Target、verification policy、Task Candidate/generation、gates/dispositions/decision与不可变研发交接的唯一authority；Local App只是该authority的只读客户端。
 - `git-operations` 只提供并默认绑定 `buildr.git-operations@1`，没有 Application、CLI、Receipt 或持久状态；直接用户或上游 consumer 选择 repository/operation/ref/scope/order，provider 只保护精确 staging、commit/push 分离、完整 push range、共享历史冻结与最小 Result。`git-worktree-provider/v1` 继续独立。
 - `task-finish` 继续提供 `buildr.task-finish/v1`，但 required 消费 Task Development 与 Task Environment，只把当前允许推进的研发交接交给内容等价交付载体适配器；current Product 只有一个直接接线的 Git carrier adapter，不建立 adapter registry 或未来路径占位。Git Operations 仅对 retained metadata-only handoff optional，commit/push 顺序仍由 Task Finish 决定。
-- OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 contract guard、terminology 和 current knowledge 门禁，不修改上游 Skill source bytes。
+- OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 apply-ready、Task/Environment/Development/current knowledge、terminology 与 convergence 边界，不修改上游 Skill source bytes；这些 Component-owned dependencies 不在 package builtin descriptor 双写。
 
 ## 数据与完整性
 

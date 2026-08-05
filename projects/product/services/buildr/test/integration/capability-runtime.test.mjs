@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
+import crypto from 'node:crypto';
 
 import { getRuntimeAdapter, SUPPORTED_AGENT_IDS } from '../../src/infrastructure/runtime/adapter-contract.mjs';
 import { buildSkillContent, hasManagedSkillMarker, resolveRenderSkills } from '../../src/infrastructure/runtime/skills/render-plan.mjs';
@@ -53,6 +54,33 @@ function writeManifest(root, overrides = {}) {
   return document;
 }
 
+function writeDependencyComponent(root, { mode = 'required', state = 'installed', dependencySkill = 'required-consumer' } = {}) {
+  const componentRoot = path.join(root, 'components', 'workspace', 'dependency-fixture');
+  const fragmentRelative = 'components/workspace/dependency-fixture/contributions/consumer.md';
+  const fragmentFile = path.join(root, fragmentRelative);
+  fs.mkdirSync(path.dirname(fragmentFile), { recursive: true });
+  fs.writeFileSync(fragmentFile, '## Component dependency boundary\n');
+  const integrity = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(fragmentFile)).digest('hex')}`;
+  fs.writeFileSync(path.join(componentRoot, 'component.yml'), YAML.stringify({
+    schemaVersion: 'buildr.component/v1',
+    id: 'dependency-fixture',
+    kind: 'addon',
+    version: '1.0.0',
+    source: 'workspace',
+    members: { rules: [], skills: [], commandCollections: [], skillContributions: [fragmentRelative] },
+    contributions: {
+      skillFragments: [`required-consumer@prepend=${fragmentRelative}`],
+      skillDependencies: [{ skill: dependencySkill, capability: 'example.required', version: 1, mode }],
+    },
+    integrity: [`${fragmentRelative}=${integrity}`],
+  }, { lineWidth: 0 }));
+  fs.mkdirSync(path.join(root, 'components'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'components', 'manifest.yml'), YAML.stringify({
+    schemaVersion: 'buildr.components/v1',
+    components: [{ id: 'dependency-fixture', source: 'workspace', path: 'components/workspace/dependency-fixture', enabled: true, required: false, state }],
+  }, { lineWidth: 0 }));
+}
+
 test('全部 supported adapters 投射一致的 ready/degraded binding，且不修改 Skill source', (t) => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -78,6 +106,14 @@ test('全部 supported adapters 投射一致的 ready/degraded binding，且不�
   }
 
   assert.equal(fs.readFileSync(sourceFile, 'utf8'), sourceBefore);
+});
+
+test('Component dependency contribution 拒绝未接收 fragment 的 target', (t) => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeManifest(root);
+  writeDependencyComponent(root, { dependencySkill: 'optional-consumer' });
+  assert.throws(() => resolveRenderSkills(root, '.', 'codex'), /dependency target must also receive a Skill fragment: optional-consumer/);
 });
 
 test('required provider 缺失时保留 blocked consumer，binding 或 contract 变化会改变 managed hash', (t) => {
@@ -108,4 +144,28 @@ test('required provider 缺失时保留 blocked consumer，binding 或 contract 
   consumer = resolveRenderSkills(root, '.', 'codex').find((skill) => skill.id === 'required-consumer');
   const contractChanged = buildSkillContent(root, { ...consumer, runtime: 'codex' });
   assert.notEqual(contractChanged.match(/Hash: ([a-f0-9]+)/)?.[1], ready.match(/Hash: ([a-f0-9]+)/)?.[1]);
+});
+
+test('Component dependency contribution 与 fragment 同生命周期合并且 required 覆盖 optional', (t) => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeManifest(root, {
+    bindings: [],
+    skills: [{ id: 'required-consumer', path: 'required-consumer', requires: [{ capability: 'example.required', version: 1, mode: 'optional' }] }],
+  });
+  writeDependencyComponent(root);
+
+  let consumer = resolveRenderSkills(root, '.', 'codex').find((skill) => skill.id === 'required-consumer');
+  assert.deepEqual(consumer.requires, [{ capability: 'example.required', version: 1, mode: 'required' }]);
+  assert.equal(consumer.skillDependencyContributions.length, 1);
+  assert.equal(consumer.skillDependencyContributions[0].componentId, 'dependency-fixture');
+  assert.equal(consumer.skillContributions.length, 1);
+  assert.equal(consumer.capabilityBindings.readiness, 'blocked');
+
+  writeDependencyComponent(root, { state: 'uninstalled' });
+  consumer = resolveRenderSkills(root, '.', 'codex').find((skill) => skill.id === 'required-consumer');
+  assert.deepEqual(consumer.requires, [{ capability: 'example.required', version: 1, mode: 'optional' }]);
+  assert.equal(consumer.skillDependencyContributions, undefined);
+  assert.equal(consumer.skillContributions, undefined);
+  assert.equal(consumer.capabilityBindings.readiness, 'degraded');
 });
