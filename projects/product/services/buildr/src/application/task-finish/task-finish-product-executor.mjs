@@ -423,7 +423,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           const tracked = (renderDelta || []).filter((entry) => entry.status !== '??');
           if (tracked.length) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'product-execution-failure', code: 'task-finish.render-produced-tracked-delta', message: 'Runtime render produced tracked Git changes.', findings: tracked } };
         }
-        const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--agent', run.identity.agent, '--target', retainedRoot, '--json'], retainedRoot, { json: true });
+        const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--target', retainedRoot, '--json'], retainedRoot, { json: true });
         if (!doctor) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' } };
         operations.push(doctor.observation);
         if (doctor.result.status !== 0 || doctor.payload?.health?.ready !== true) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-doctor-failed', exitCode: doctor.result.status, message: 'Retained Workspace doctor is not ready.', diagnostic: doctor.payload?.findings || doctor.observation.stderr } };

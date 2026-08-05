@@ -151,7 +151,7 @@ flowchart TB
 - Foundation 组织长期共享的事实、方法和发现入口，不接管所有代码、数据库、网页或用户输入。
 - 人和 Agent 共用同一 Source Authority；Agent Runtime 是实际运行面，但不是第二份事实源。
 - Task Environment 由保留工作区 Buildr 环境管理器执行准备、恢复、资源登记和清理。task worktree/branch 中的 Rule、Skill、contract、功能模块和 package 都是候选变更，可以在隔离目标测试；只有实现完成并集成到 retained checkout 后，才从 retained Product source sync/render 对应 Agent runtime 并确认生效。
-- 当前 P0.5 Task Finish adapter 只消费研发交接；交付进入retained source后只按Workspace根Task Contribution选择`none | render-runtime`，完成普通push/readback、retained Doctor与Environment cleanup，不安装Buildr development CLI或Local App。Formal Finish成功后，Buildr自举Workspace安装的`buildr-self-bootstrap` Component才按冻结Task Contribution去重执行package sync、development CLI/Local App activation与最终Doctor；普通用户Workspace不包含该能力。通用Development contract不因此依赖Product、Git或runtime常量。
+- 当前 P0.5 Task Finish adapter 只消费研发交接；交付进入retained source后只按Workspace根Task Contribution选择`none | render-runtime`，完成普通push/readback、通用Workspace inventory Doctor与Environment cleanup，不安装Buildr development CLI或Local App。Formal Finish成功后，Buildr自举Workspace安装的`buildr-self-bootstrap` Component才按冻结Task Contribution去重执行package sync、development CLI/Local App activation与selected-Agent最终Doctor；普通用户Workspace不包含该能力。通用Development contract不因此依赖Product、Git或runtime常量。
 - Foundation 可以提供跨 Task、跨 Change 的功能模块；具体状态由对应模块管理。
 - Buildr 保证身份、结构、边界和投射，不裁决业务事实，也不替 Agent 构造完整 Task Context。
 
@@ -594,7 +594,7 @@ P0.5 已实现 **Skill + capability contract + 唯一 Application + internal dri
 1. `preflight`：读取当前研发交接、ready Environment、retained target 与授权目标。
 2. `prepare`：为当前 Candidate 创建精确、内容等价的 Git carrier，并刷新 Environment 事实。
 3. `verify`：只证明 carrier 与 Content Target 等价；Formal Verification 已在 Development 中完成，这里执行次数必须为 0。
-4. `deliver`：普通 fast-forward、普通 push，并在 retained source 更新后执行适用的 sync、Doctor 与 CLI install。
+4. `deliver`：普通 fast-forward、普通 push，并在 retained source 更新后执行适用的runtime render与通用Workspace inventory Doctor；不执行sync或产品安装。
 5. `cleanup`：请求 Task Environment Application 清理 Task-owned Environment。
 
 Finish 不执行实现修复、Change convergence/archive、current knowledge mutation、Formal Verification、Completion Review、Candidate 生成、generation 变更、`proceed / blocked` 或风险接受。它也不能以 rebase/merge 修改冻结内容。Delivery Baseline 前进时，产品在 run-owned carrier 机械复用 Task Contribution；Git conflict进入 Delivery Adaptation，deliver target race 使用产品 exact token 从 `prepare` 重做 carrier phases。只有 Development Application 报告原 Task source/context/policy/gates/handoff 真实 stale 时，当前 run 才终止并指回 Task Development。
@@ -931,7 +931,7 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 | worktree、任务验证 Workspace、task-scoped runtime 和 session 是执行资源，不是 Content Target 或 Task Candidate | P0.5 Task Development / Candidate | 已由 Candidate contract、observer 与非 Git fixture 固化 |
 | Task current records只在canonical Workspace SQLite持久化，不发布、不进入Git、不进行本地多机同步 | Workspace Structured Store | 已清退Metadata Publication provider、binding、helper、tests与runtime投射 |
 | `.buildr/`是Workspace Local Data Store；Structured Store承载Task current state，File Store继续承载Environment/Finish等明确本机事实 | Task Store / Task Environment / Task Finish | 保持owner分层，不建立双authority或通用数据库框架 |
-| 自举主 Workspace 的正式 runtime 激活只能发生在内容进入 retained source 之后 | P0.8 Task Finish / Workspace Foundation | P0.1 只阻止候选越权投射；最终交付与 retained sync/doctor 仍由交付边界完成 |
+| 自举主 Workspace 的正式 runtime 激活只能发生在Formal Finish成功且内容进入retained source之后 | P0.8 Task Finish / Workspace Foundation | Common Finish只执行通用render与inventory Doctor；self-bootstrap Component随后执行sync、产品安装与selected-Agent最终Doctor |
 | target advancement 不自动更新 Environment，也不自动使 Candidate stale；Finish 在隔离 carrier deterministic reuse、Delivery Adaptation 或 exact-token target-race resume，不在原 Task worktree rebase、重验或生成 Candidate | P0.5 Task Development / Candidate、P0.8 Task Finish | 已固定 applicability 与交付基线分层；只有 Development Application 报告真实 stale 才返回 Development |
 | Local App 在 Task 详情展示当前机器 Environment 时调用 Environment Application，不复制进 Task Record | P0.2 Task Environment | 已交付只读“环境”视图、Workspace-scoped API 与本机不可用状态 |
 | Local App 通过各模块 reader 组合 Development、Review 与 Verification，不复制进 Task Record | P0.5a Local App 专业投影 | 固定“概览、研发、证据、环境”四个一级视图；Development 保持只读，Review/Verification 在证据视图独立加载 |

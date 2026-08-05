@@ -28,7 +28,7 @@ const args = process.argv.slice(2);
 const target = args[args.indexOf('--target') + 1];
 if (args[0] === 'doctor') {
   const skill = fs.readFileSync(path.join(target, 'skills', 'example', 'SKILL.md'), 'utf8');
-  const ready = !skill.includes('doctor-failure');
+  const ready = !skill.includes('doctor-failure') && !args.includes('--agent');
   process.stdout.write(JSON.stringify({ health: { ready }, findings: ready ? [] : [{ code: 'fixture.not-ready' }] }) + '\\n');
   if (!ready) process.exitCode = 1;
 }
@@ -97,6 +97,7 @@ test('Workspace Skill contribution renders and never syncs', async (t) => {
   assert.equal(result.output.delivery.activation.plan.mode, 'render-runtime');
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-render'), true);
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
+  assert.equal(result.operations.find((item) => item.id === 'deliver-retained-doctor').args.includes('--agent'), false);
   assert.equal(result.output.delivery.finalRemoteRef, data.run.deliveryCarrier.head);
 });
 
