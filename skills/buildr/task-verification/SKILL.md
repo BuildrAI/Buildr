@@ -5,9 +5,9 @@ description: 用户要求运行已有测试、验证改动、查看 current 验�
 
 # Task Verification Skill
 
-本 Skill 是 `buildr.task-verification/v3` 的默认 provider。它只负责两部分：Project 的 Verification Capability Declaration，以及针对正式 Task 目标的 transient Execution + portable current Result。它不开发测试，不拥有 Task Environment、Task Review、Task Development、Candidate generation、Task progression、风险接受、部署或业务验收。
+本 Skill 是 `buildr.task-verification/v3` 的默认 provider。它只负责两部分：Project 的 Verification Capability Declaration，以及针对正式 Task 目标的 transient Execution + Workspace本地current Result。它不开发测试，不拥有 Task Environment、Task Review、Task Development、Candidate generation、Task progression、风险接受、部署或业务验收。
 
-开始行动时必须读取 `references/project-verification-v2.md`；初始化或更新声明时再使用 `templates/project-verification.yml`。正式 Result 必须通过 Task Verification Application 维护，不能直接读写 `.buildr/tasks/<task-id>/verification.yml`。
+开始行动时必须读取 `references/project-verification-v2.md`；初始化或更新声明时再使用 `templates/project-verification.yml`。正式 Result 必须通过 Task Verification Application 维护，不能直接读写Workspace SQLite或旧`.buildr/tasks/<task-id>/verification.yml`。
 
 ## 1. 建立验证边界
 
@@ -29,7 +29,7 @@ buildr task verification inspect <task-id> --target-identity <identity> --target
 
 current Result 只有在 target 与全部 declaration identities 都 `current` 时才适用于当前目标。target 未提供为 `unknown`；任一声明缺失/出现、内容、path、Project scope 或有效性变化为 `stale`。不要写回 applicability 标记。
 
-当前目标来自 ready Task Environment 且其中的 declaration bytes 尚未进入 canonical Workspace 时，inspect/record 都追加 `--declaration-root <task-environment-root>`。Application 只接受该 Task 当前 ready Environment 的精确根目录；本机路径只用于读取，不进入 portable Result。
+当前目标来自 ready Task Environment 且其中的 declaration bytes 尚未进入 canonical Workspace 时，inspect/record 都追加 `--declaration-root <task-environment-root>`。Application 只接受该 Task 当前 ready Environment 的精确根目录；本机路径只用于读取，不进入 current Result。
 
 ## 2. 读取和维护 Project declaration
 
@@ -95,7 +95,7 @@ Result 只回答 target、采用的 declarations、实际执行能力及事实�
 
 Task Development 通过同一 Application inspect Result 的 target/declaration applicability，并对照独立 verification policy 检查 required facts 或 coverage gaps。Result 可以是完整的 `not-passed`；是否继续由 Development 记录用户风险决定。Task Finish 不读取、解释、补跑或记录 Result，只消费 formal Development handoff。
 
-portable Result 形成且没有其他 consumer 后，使用 evidence 返回的精确 summary 清理 transient run：
+current Result 形成且没有其他 consumer 后，使用 evidence 返回的精确 summary 清理 transient run：
 
 ```bash
 buildr verification cleanup --summary <file> --json
