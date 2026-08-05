@@ -31,15 +31,15 @@ preflight → prepare → verify → deliver → cleanup
 
 五阶段由产品连续执行，不由 Agent 编排阶段、补 evidence 或设计 recovery。
 
-- `preflight` 只核对 current handoff、Environment、carrier adapter 与 retained target；retained Project 的 `task-finish.yml` 是 `sync-workspace` 资格唯一声明源，候选中的声明不能授权当前 run。
+- `preflight` 只核对 current handoff、Environment、carrier adapter 与 retained target；activation不读取Project或Service声明。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
 - Agent只在carrier完成交付适配（Delivery Adaptation）；resume核验ownership、baseline、source/handoff、cleanliness与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
-- `deliver`只做fast-forward、普通push/回读、类型化activation、适用install与Doctor。Task Contribution命中retained Project/Service `sync-workspace` binding才sync；Workspace根Rule/Skill只render；其他为none。不接受任意命令字符串。
-- render不得产生tracked/staged delta。sync只接纳plan证明的受管delta；有变化时精确暂存为独立convergence commit并普通push/回读。`remoteAfterRef`等于carrier，`finalRemoteRef`等于carrier或convergence commit。
+- `deliver`只做fast-forward、普通push/回读、类型化activation、适用install与Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；不读取Project/Service配置，不执行sync，也不接受任意命令字符串。
+- render不得产生tracked/staged delta。`remoteAfterRef`与`finalRemoteRef`都等于carrier远端回读。
 - `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 
-target前进时返回`task-finish.target-race`与精确token，恢复carrier phases，不增加 Candidate generation、不重跑formal Verification或Completion Review。convergence push失败时token绑定run、carrier、plan与ref，只重试push/readback。Git conflict返回Delivery Adaptation facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
+target前进时返回`task-finish.target-race`与精确token，恢复carrier phases，不增加 Candidate generation、不重跑formal Verification或Completion Review。Git conflict返回Delivery Adaptation facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
 
 恢复命令：
 
@@ -63,5 +63,5 @@ Finish不创建或改变Candidate/generation，不修改Development Receipt，�
 - Result引用Development handoff、Candidate/generation、Content Target、Task Contribution、Delivery Baseline和Delivery Carrier；
 - Result标记`deterministic-reuse`或`agent-reviewed-delivery-adaptation`，后者不声称Buildr证明语义等价；
 - carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
-- Git-backed delivery 的 configured remote、普通 push 和 after ref 回读均已证明，且 `remoteAfterRef` 等于 carrier ref，`finalRemoteRef` 等于 carrier 或可证明以 carrier 为祖先的 convergence ref；
+- Git-backed delivery 的 configured remote、普通 push 和 after ref 回读均已证明，且 `remoteAfterRef` 与 `finalRemoteRef` 都等于 carrier ref；
 - `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。

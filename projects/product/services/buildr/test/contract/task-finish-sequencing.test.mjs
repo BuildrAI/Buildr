@@ -8,6 +8,7 @@ import { LEGACY_CONVERGENCE_REGISTRY, legacyConvergenceRetirementStatus } from '
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
+const workspaceRoot = path.resolve(productRoot, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const development = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
@@ -30,21 +31,32 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(executor, /cleanupThroughRetainedController/);
   assert.match(executor, /createIsolatedGitCarrier/);
   assert.match(executor, /render-runtime/);
-  assert.match(executor, /sync-workspace/);
+  assert.doesNotMatch(executor, /sync-workspace/);
   assert.match(executor, /finalRemoteRef/);
-  assert.match(executor, /!run\.deliveryCarrier\?\.activationPlan/);
+  assert.match(executor, /finalRemoteRef: remoteAfterRef/);
   assert.doesNotMatch(executor, /git', \['add', '-A'/);
   assert.doesNotMatch(executor, /gitNulList|changedDeliverySourcePaths/);
 });
 
-test('Task Finish activation is a closed retained declaration, not a process framework', () => {
+test('Task Finish activation is a closed render decision, not a Project process framework', () => {
   const activation = read('src/application/task-finish/task-finish-activation.mjs');
-  const declaration = fs.readFileSync(path.join(productRoot, 'task-finish.yml'), 'utf8');
-  for (const phrase of ['buildr.task-finish-activation/v1', 'buildr-self-bootstrap', 'sync-workspace', 'services/buildr/package/targets/workspace/**']) assert.match(declaration, new RegExp(phrase.replaceAll('*', '\\*')));
-  for (const forbidden of ['executable', 'command:', 'args:', 'env:', 'shell:']) assert.equal(declaration.includes(forbidden), false, forbidden);
-  assert.match(activation, /TASK_FINISH_ACTIVATION_MODES/);
+  assert.equal(fs.existsSync(path.join(productRoot, 'task-finish.yml')), false);
   assert.match(activation, /render-runtime/);
-  assert.match(activation, /activation-binding-ambiguous/);
+  assert.match(activation, /ROOT_RUNTIME_SOURCE/);
+  for (const forbidden of ['sync-workspace', 'task-finish.yml', 'bindings', 'executable', 'command:', 'args:', 'env:', 'shell:']) assert.equal(activation.includes(forbidden), false, forbidden);
+});
+
+test('Buildr self-bootstrap is a Workspace Component contribution, not a package capability', () => {
+  const component = fs.readFileSync(path.join(workspaceRoot, 'components/workspace/buildr-self-bootstrap/component.yml'), 'utf8');
+  const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
+  const runtimeFinish = fs.readFileSync(path.join(workspaceRoot, '.agents/skills/task-finish/SKILL.md'), 'utf8');
+  const packageFinish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
+  for (const phrase of ['task-finish@append', 'skills/buildr-self-bootstrap-sync', 'source: workspace']) assert.ok(component.includes(phrase), phrase);
+  for (const input of ['projects/product/services/buildr/package/manifest.yml', 'projects/product/services/buildr/package/targets/workspace/**']) assert.ok(skill.includes(input), input);
+  assert.match(runtimeFinish, /Buildr 自举 Workspace 收敛/);
+  assert.ok(runtimeFinish.indexOf('Buildr 自举 Workspace 收敛') > runtimeFinish.indexOf('## 完成标准'));
+  assert.doesNotMatch(packageFinish, /post-finish|Workspace 交付后维护|Buildr 自举 Workspace 收敛/);
+  assert.equal(packageManifest.includes('buildr-self-bootstrap-sync'), false);
 });
 
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {

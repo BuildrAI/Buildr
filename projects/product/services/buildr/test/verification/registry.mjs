@@ -221,12 +221,11 @@ export const verificationSteps = Object.freeze([
     'test/integration/task-finish-run.test.mjs',
     'test/integration/task-finish-task-contribution.test.mjs',
   ] }, inputs: [
-    'task-finish.yml',
     'test/integration/task-finish-*.test.mjs',
     'src/application/task-finish/**',
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
-    'test/contract/**', 'test/fixtures/**', 'verification.yml',
+    'test/contract/**', 'test/fixtures/**', 'verification.yml', 'task-finish.yml',
     'src/infrastructure/runtime/render-claude-code.mjs',
     'test/verification/candidate.mjs',
     'test/verification/changed.mjs',

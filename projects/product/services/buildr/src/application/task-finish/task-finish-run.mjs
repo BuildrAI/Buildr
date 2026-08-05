@@ -256,7 +256,6 @@ function resumeTokenFor(run, phaseId, failure) {
     identity: run.identityDigest,
     carrier: run.deliveryCarrier?.identity || null,
     activationPlan: run.deliveryCarrier?.activationPlan?.identity || run.delivery?.activation?.plan?.identity || null,
-    convergenceRef: run.delivery?.convergenceRef || null,
     phase: phaseId,
     failure: { code: failure.code, operation: failure.operation, diagnostic: failure.diagnostic?.digest || null },
   });

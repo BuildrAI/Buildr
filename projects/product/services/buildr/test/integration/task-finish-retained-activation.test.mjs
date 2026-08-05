@@ -26,20 +26,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
 const target = args[args.indexOf('--target') + 1];
-if (args[0] === 'doctor') process.stdout.write(JSON.stringify({ health: { ready: true }, findings: [] }) + '\\n');
+if (args[0] === 'doctor') {
+  const skill = fs.readFileSync(path.join(target, 'skills', 'example', 'SKILL.md'), 'utf8');
+  const ready = !skill.includes('doctor-failure');
+  process.stdout.write(JSON.stringify({ health: { ready }, findings: ready ? [] : [{ code: 'fixture.not-ready' }] }) + '\\n');
+  if (!ready) process.exitCode = 1;
+}
 else if (args[0] === 'app' && args[1] === 'launcher') process.stdout.write(JSON.stringify({ installed: true }) + '\\n');
 else if (args[0] === 'render') {
   const skill = fs.readFileSync(path.join(target, 'skills', 'example', 'SKILL.md'), 'utf8');
   if (skill.includes('tracked-delta')) fs.writeFileSync(path.join(target, 'README.md'), 'render changed tracked source\\n');
-} else if (args[0] === 'sync') {
-  const source = fs.readFileSync(path.join(target, 'projects', 'product', 'services', 'buildr', 'package', 'targets', 'workspace', 'rules', 'buildr', 'core.md'), 'utf8');
-  fs.mkdirSync(path.join(target, 'rules', 'buildr'), { recursive: true });
-  fs.writeFileSync(path.join(target, 'rules', 'buildr', 'core.md'), source);
-  if (source.includes('unknown-delta')) fs.writeFileSync(path.join(target, 'README.md'), 'sync changed unknown source\\n');
 } else process.exit(2);
 `;
 
-function fixture(t, { contributionPath, contributionContent, scope, rejectConvergenceOnce = false }) {
+function fixture(t, { contributionPath, contributionContent }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-activation-delivery-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const seed = path.join(root, 'seed');
@@ -57,8 +57,6 @@ function fixture(t, { contributionPath, contributionContent, scope, rejectConver
   fs.writeFileSync(path.join(seed, 'rules', 'buildr', 'core.md'), 'old managed rule\n');
   fs.mkdirSync(path.join(seed, 'skills', 'example'), { recursive: true });
   fs.writeFileSync(path.join(seed, 'skills', 'example', 'SKILL.md'), 'old skill\n');
-  fs.mkdirSync(path.join(seed, 'projects', 'product'), { recursive: true });
-  fs.writeFileSync(path.join(seed, 'projects', 'product', 'task-finish.yml'), `schemaVersion: buildr.task-finish-activation/v1\nbindings:\n  - id: buildr-self-bootstrap\n    service: buildr\n    mode: sync-workspace\n    inputs:\n      - services/buildr/package/targets/workspace/**\n`);
   const packageRule = path.join(seed, 'projects', 'product', 'services', 'buildr', 'package', 'targets', 'workspace', 'rules', 'buildr', 'core.md');
   fs.mkdirSync(path.dirname(packageRule), { recursive: true });
   fs.writeFileSync(packageRule, 'old managed rule\n');
@@ -80,24 +78,17 @@ function fixture(t, { contributionPath, contributionContent, scope, rejectConver
   const expectedTargetRef = command(retained, 'git', ['rev-parse', 'HEAD']);
   const taskContribution = observeGitTaskContribution({ root: environmentRoot, deliveryBaselineHead: expectedTargetRef });
   const isolated = createIsolatedGitCarrier({ repositoryRoot: environmentRoot, workspaceRoot: retained, runId: 'activation-delivery', deliveryBaselineHead: expectedTargetRef, taskContribution, message: 'carrier' });
-  const task = { scope };
-  const activationPlan = planRetainedTaskFinishActivation({ workspaceRoot: retained, agent: 'codex', task, changedPaths: isolated.changedPaths });
+  const activationPlan = planRetainedTaskFinishActivation({ agent: 'codex', changedPaths: isolated.changedPaths });
   const carrier = { identity: 'sha256-carrier', ...isolated, kind: 'git-isolated-commit', branch: null, expectedTargetRef, targetRef: 'origin/dev', activationPlan };
   const run = { runId: 'activation-delivery', identity: { task: 'activation', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot, workspaceRoot: retained, workspaceNodeIdentity: 'sha256-node' }, deliveryCarrier: carrier, delivery: null };
   const runtime = {
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }),
-    inspectTaskRecord: () => ({ record: task }),
-    buildSyncSourcePlan: () => ({ affectedPaths: [path.join(retained, 'rules', 'buildr', 'core.md')] }),
   };
-  if (rejectConvergenceOnce) {
-    fs.writeFileSync(path.join(remote, 'hooks', 'reject-convergence-once'), '1');
-    writeExecutable(path.join(remote, 'hooks', 'pre-receive'), `#!/bin/sh\nread old new ref\nsubject=$(git log -1 --format=%s "$new")\nif echo "$subject" | grep -q 'Workspace activation' && [ -f "${path.join(remote, 'hooks', 'reject-convergence-once')}" ]; then rm "${path.join(remote, 'hooks', 'reject-convergence-once')}"; exit 1; fi\n`);
-  }
   return { retained, remote, run, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
 
 test('Workspace Skill contribution renders and never syncs', async (t) => {
-  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'updated skill\n', scope: { projects: [], services: [] } });
+  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'updated skill\n' });
   const result = await data.handlers.deliver({ run: data.run });
   assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
   assert.equal(result.output.delivery.activation.plan.mode, 'render-runtime');
@@ -107,7 +98,7 @@ test('Workspace Skill contribution renders and never syncs', async (t) => {
 });
 
 test('render tracked delta fails closed without staging or convergence commit', async (t) => {
-  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'tracked-delta\n', scope: { projects: [], services: [] } });
+  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'tracked-delta\n' });
   const result = await data.handlers.deliver({ run: data.run });
   assert.equal(result.status, 'blocked');
   assert.equal(result.failure.code, 'task-finish.render-produced-tracked-delta');
@@ -115,64 +106,22 @@ test('render tracked delta fails closed without staging or convergence commit', 
   assert.equal(command(data.retained, 'git', ['diff', '--cached', '--name-only']), '');
 });
 
-test('self-bootstrap sync creates and pushes a separate managed convergence commit', async (t) => {
+test('Doctor failure blocks cleanup without generic sync', async (t) => {
+  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'doctor-failure\n' });
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.retained-doctor-failed');
+  assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
+});
+
+test('Buildr package contribution is delivered without generic sync', async (t) => {
   const contributionPath = 'projects/product/services/buildr/package/targets/workspace/rules/buildr/core.md';
-  const data = fixture(t, { contributionPath, contributionContent: 'new managed rule\n', scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] } });
+  const data = fixture(t, { contributionPath, contributionContent: 'new managed rule\n' });
   const result = await data.handlers.deliver({ run: data.run });
   assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
   const delivery = result.output.delivery;
-  assert.equal(delivery.activation.plan.mode, 'sync-workspace');
-  assert.deepEqual(delivery.activation.ownedPaths, ['rules/buildr/core.md']);
-  assert.notEqual(delivery.convergenceRef, delivery.carrierRef);
-  assert.equal(delivery.finalRemoteRef, delivery.convergenceRef);
-  assert.equal(command(data.retained, 'git', ['merge-base', '--is-ancestor', delivery.carrierRef, delivery.finalRemoteRef]), '');
+  assert.equal(delivery.activation.plan.mode, 'none');
+  assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
+  assert.equal(delivery.finalRemoteRef, delivery.carrierRef);
   assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], delivery.finalRemoteRef);
-});
-
-test('sync unknown delta is rejected before staging', async (t) => {
-  const contributionPath = 'projects/product/services/buildr/package/targets/workspace/rules/buildr/core.md';
-  const data = fixture(t, { contributionPath, contributionContent: 'unknown-delta\n', scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] } });
-  const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.failure.code, 'task-finish.sync-produced-unknown-delta');
-  assert.deepEqual(result.failure.findings.map((item) => item.path), ['README.md']);
-  assert.equal(command(data.retained, 'git', ['diff', '--cached', '--name-only']), '');
-});
-
-test('blocked convergence push resumes the same commit without rerunning sync', async (t) => {
-  const contributionPath = 'projects/product/services/buildr/package/targets/workspace/rules/buildr/core.md';
-  const data = fixture(t, { contributionPath, contributionContent: 'resume managed rule\n', scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] }, rejectConvergenceOnce: true });
-  const first = await data.handlers.deliver({ run: data.run });
-  assert.equal(first.status, 'blocked', JSON.stringify(first, null, 2));
-  assert.equal(first.failure.code, 'task-finish.convergence-push-failed');
-  const resumedRun = { ...data.run, delivery: first.output.delivery };
-  const second = await data.handlers.deliver({ run: resumedRun });
-  assert.equal(second.status, 'passed', JSON.stringify(second, null, 2));
-  assert.equal(second.operations.some((item) => item.id === 'deliver-retained-sync'), false);
-  assert.equal(second.output.delivery.finalRemoteRef, first.output.delivery.convergenceRef);
-});
-
-test('planner uses retained declaration only and requires exact Service scope', (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-plan-authority-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const candidate = path.join(root, '.worktrees', 'candidate', 'projects', 'product', 'task-finish.yml');
-  fs.mkdirSync(path.dirname(candidate), { recursive: true });
-  fs.writeFileSync(candidate, `schemaVersion: buildr.task-finish-activation/v1\nbindings:\n  - id: self\n    service: buildr\n    mode: sync-workspace\n    inputs:\n      - services/buildr/package/**\n`);
-  const changedPaths = ['projects/product/task-finish.yml', 'projects/product/services/buildr/package/manifest.yml'];
-  const serviceTask = { scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] } };
-  assert.equal(planRetainedTaskFinishActivation({ workspaceRoot: root, agent: 'codex', task: serviceTask, changedPaths }).mode, 'none');
-  fs.mkdirSync(path.join(root, 'projects', 'product'), { recursive: true });
-  fs.copyFileSync(candidate, path.join(root, 'projects', 'product', 'task-finish.yml'));
-  assert.equal(planRetainedTaskFinishActivation({ workspaceRoot: root, agent: 'codex', task: { scope: { projects: ['product'], services: [] } }, changedPaths }).mode, 'none');
-  assert.equal(planRetainedTaskFinishActivation({ workspaceRoot: root, agent: 'codex', task: serviceTask, changedPaths }).mode, 'sync-workspace');
-});
-
-test('planner fails closed when multiple retained bindings match', (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-plan-ambiguous-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const file = path.join(root, 'projects', 'product', 'task-finish.yml');
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `schemaVersion: buildr.task-finish-activation/v1\nbindings:\n  - id: first\n    service: buildr\n    mode: sync-workspace\n    inputs: [services/buildr/package/**]\n  - id: second\n    service: buildr\n    mode: sync-workspace\n    inputs: [services/buildr/package/manifest.yml]\n`);
-  const task = { scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] } };
-  assert.throws(() => planRetainedTaskFinishActivation({ workspaceRoot: root, agent: 'codex', task, changedPaths: ['projects/product/services/buildr/package/manifest.yml'] }), (error) => error.code === 'task-finish.activation-binding-ambiguous');
 });

@@ -84,24 +84,14 @@ test('retained cleanup bootstrap derives Environment authorization from durable 
   });
 });
 
-test('retained cleanup accepts a delivered pre-activation run whose remoteAfterRef is the carrier', async (t) => {
+test('retained cleanup rejects legacy delivery without finalRemoteRef', async (t) => {
   const { root, run } = readyRun(t);
   delete run.delivery.finalRemoteRef;
   fs.writeFileSync(finishRunFile(root, run.runId), `${JSON.stringify(run, null, 2)}\n`);
-  const result = await executeRetainedTaskFinishCleanup({
-    targetRoot: root,
-    runId: run.runId,
-    runtime: {
-      resolveTaskEnvironmentExecution: () => ({
-        ready: true,
-        workspaceRoot: root,
-        environmentRoot: run.identity.environmentRoot,
-        repositories: [{ selector: 'workspace', startPoint: 'dev' }],
-      }),
-      cleanupTaskEnvironment: async () => ({ status: 'cleaned', effects: [], diagnostic: null }),
-    },
-  });
-  assert.equal(result.status, 'cleaned');
+  await assert.rejects(
+    executeRetainedTaskFinishCleanup({ targetRoot: root, runId: run.runId, runtime: {} }),
+    (error) => error.code === 'task-finish.retained-cleanup-run-not-ready',
+  );
 });
 
 test('retained cleanup still requires finalRemoteRef for an activation-aware run', async (t) => {

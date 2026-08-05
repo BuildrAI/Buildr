@@ -59,9 +59,7 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
   const cleanup = run.phases.find((phase) => phase.id === 'cleanup');
   const finalRemoteRef = typeof run.delivery?.finalRemoteRef === 'string' && run.delivery.finalRemoteRef
     ? run.delivery.finalRemoteRef
-    : (!run.deliveryCarrier?.activationPlan && run.delivery?.remoteAfterRef === run.deliveryCarrier?.head
-      ? run.delivery.remoteAfterRef
-      : null);
+    : null;
   if (run.status !== 'active' || deliver?.status !== 'passed' || cleanup?.status !== 'running'
     || run.delivery?.status !== 'delivered' || run.delivery?.carrierRef !== run.deliveryCarrier?.head
     || run.delivery?.remoteAfterRef !== run.deliveryCarrier?.head

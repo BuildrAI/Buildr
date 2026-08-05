@@ -162,16 +162,6 @@ function activationGitDelta(root) {
   return entries.filter((entry) => !controlMetadataPath(entry.path));
 }
 
-function managedActivationPaths(runtime, retainedRoot, agent) {
-  if (typeof runtime.buildSyncSourcePlan !== 'function') return [];
-  const plan = runtime.buildSyncSourcePlan(retainedRoot, agent);
-  return [...new Set((plan.affectedPaths || []).map((item) => normalizePortablePath(path.relative(retainedRoot, item))))].filter(Boolean).sort();
-}
-
-function isManagedPath(candidate, managedPaths) {
-  return managedPaths.some((managed) => candidate === managed || candidate.startsWith(`${managed.replace(/\/$/, '')}/`));
-}
-
 function retainedWorkspaceReadiness(identity) {
   if (identity.status === null) return { ready: false, workspaceMetadata: [], unrelated: ['git-status-unavailable'] };
   const workspaceMetadata = [];
@@ -218,13 +208,8 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
     return runtime.resolveTaskEnvironmentExecution(run.identity.workspaceRoot, run.identity.task);
   }
 
-  function taskRecord(run) {
-    if (typeof runtime.inspectTaskRecord !== 'function') return { taskId: run.identity.task, scope: { projects: [], services: [] } };
-    return runtime.inspectTaskRecord(run.identity.workspaceRoot, run.identity.task)?.record || { taskId: run.identity.task, scope: { projects: [], services: [] } };
-  }
-
   function activationPlan(run, changedPaths) {
-    return planRetainedTaskFinishActivation({ workspaceRoot: run.identity.workspaceRoot, agent: run.identity.agent, task: taskRecord(run), changedPaths });
+    return planRetainedTaskFinishActivation({ agent: run.identity.agent, changedPaths });
   }
 
   function developmentCarrier(run) {
@@ -279,12 +264,8 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         }
       }
 
-      try {
-        const retainedActivation = activationPlan(run, []);
-        checks.push(finding('retained-activation', 'ok', 'task-finish.activation-authority-ready', 'Retained Task Finish activation declarations are valid for the Task scope.', { planIdentity: retainedActivation.identity }));
-      } catch (error) {
-        checks.push(finding('retained-activation', 'error', error.code || 'task-finish.activation-declaration-invalid', error.message, { details: error.details }));
-      }
+      const retainedActivation = activationPlan(run, []);
+      checks.push(finding('retained-activation', 'ok', 'task-finish.activation-plan-ready', 'Task Finish activation is limited to Workspace root runtime rendering.', { planIdentity: retainedActivation.identity }));
 
       const errors = checks.filter((item) => item.severity === 'error');
       if (errors.length) {
@@ -386,27 +367,6 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         operations.push(remote.observation);
         if (remote.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-observation-failed', exitCode: remote.result.status, message: 'Unable to observe remote target ref.', diagnostic: remote.observation.stderr } };
         const observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
-        const pendingConvergence = run.delivery?.convergenceRef ? run.delivery : null;
-        if (pendingConvergence) {
-          const convergenceRef = pendingConvergence.convergenceRef;
-          if (pendingConvergence.activation?.plan?.identity !== run.deliveryCarrier.activationPlan?.identity) return { status: 'failed', operations, failure: { operation: 'activation-resume', failureClass: 'product-execution-failure', code: 'task-finish.activation-plan-drift', message: 'The blocked delivery activation plan no longer matches its Delivery Carrier.' } };
-          const retainedIdentity = currentGitIdentity(retainedRoot);
-          const carrierAncestor = gitText(retainedRoot, ['merge-base', '--is-ancestor', run.deliveryCarrier.head, convergenceRef]) === '';
-          const retainedDelta = activationGitDelta(retainedRoot);
-          if (retainedIdentity.head !== convergenceRef || retainedDelta === null || retainedDelta.length > 0 || !carrierAncestor) return { status: 'blocked', operations, failure: { operation: 'convergence-resume', failureClass: 'transient-external-condition', code: 'task-finish.convergence-resume-drift', message: 'Retained convergence HEAD, tree, or carrier ancestry changed before resume.', findings: [{ expected: convergenceRef, observed: retainedIdentity.head, delta: retainedDelta, carrierAncestor }] } };
-          if (![run.deliveryCarrier.head, convergenceRef].includes(observedTargetRef)) return { status: 'blocked', operations, failure: { operation: 'convergence-resume', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Remote target changed while convergence delivery was blocked.', findings: [{ expected: [run.deliveryCarrier.head, convergenceRef], observed: observedTargetRef }] } };
-          if (observedTargetRef === run.deliveryCarrier.head) {
-            const pushed = git(retainedRoot, 'deliver-convergence-push', ['push', run.identity.remote, `${run.identity.targetBranch}:${run.identity.targetBranch}`]);
-            operations.push(pushed.observation);
-            if (pushed.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'convergence-push', failureClass: 'transient-external-condition', code: 'task-finish.convergence-push-failed', exitCode: pushed.result.status, message: 'Retained activation convergence push failed.', diagnostic: pushed.observation.stderr }, output: { delivery: pendingConvergence } };
-          }
-          const finalReadback = git(retainedRoot, 'deliver-convergence-readback', ['ls-remote', '--heads', run.identity.remote, run.identity.targetBranch]);
-          operations.push(finalReadback.observation);
-          const finalRemoteRef = finalReadback.result.status === 0 ? finalReadback.result.stdout.trim().split(/\s+/)[0] || null : null;
-          if (finalRemoteRef !== convergenceRef) return { status: 'blocked', operations, failure: { operation: 'convergence-readback', failureClass: 'transient-external-condition', code: 'task-finish.convergence-readback-failed', message: 'Unable to prove the final retained activation remote ref.', findings: [{ expected: convergenceRef, observed: finalRemoteRef }] }, output: { delivery: pendingConvergence } };
-          const delivery = { ...pendingConvergence, status: 'delivered', finalRemoteRef };
-          return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: finalRemoteRef, output: { delivery } };
-        }
         const alreadyDelivered = observedTargetRef === run.deliveryCarrier.head;
         if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Target ref changed after carrier preparation; rebuild the isolated carrier on the latest Delivery Baseline.', findings: [{ expected: run.deliveryCarrier.expectedTargetRef, observed: observedTargetRef }] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
         if (!alreadyDelivered) {
@@ -433,7 +393,6 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         const beforeActivation = activationGitDelta(retainedRoot);
         if (beforeActivation === null) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-status-unavailable', message: 'Unable to observe retained Git status before activation.' } };
         if (beforeActivation.length) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-workspace-dirty', message: 'Retained Workspace has non-metadata changes before activation.', findings: beforeActivation } };
-        let managedPaths = [];
         if (plan.mode === 'render-runtime') {
           const rendered = runCommand('deliver-retained-render', retainedCli, ['render', run.identity.agent, '--target', retainedRoot], retainedRoot);
           operations.push(rendered.observation);
@@ -441,11 +400,6 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           const renderDelta = activationGitDelta(retainedRoot);
           const tracked = (renderDelta || []).filter((entry) => entry.status !== '??');
           if (tracked.length) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'product-execution-failure', code: 'task-finish.render-produced-tracked-delta', message: 'Runtime render produced tracked Git changes.', findings: tracked } };
-        } else if (plan.mode === 'sync-workspace') {
-          managedPaths = managedActivationPaths(runtime, retainedRoot, run.identity.agent);
-          const synced = runCommand('deliver-retained-sync', retainedCli, ['sync', run.identity.agent, '--target', retainedRoot], retainedRoot);
-          operations.push(synced.observation);
-          if (synced.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'retained-sync', failureClass: 'transient-external-condition', code: 'task-finish.retained-sync-failed', exitCode: synced.result.status, message: 'Retained Workspace sync failed.', diagnostic: synced.observation.stderr } };
         }
         const doctor = runJsonCommand('deliver-retained-doctor', retainedCli, ['doctor', '--agent', run.identity.agent, '--target', retainedRoot, '--json'], retainedRoot);
         operations.push(doctor.observation);
@@ -463,39 +417,9 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           if (installed.result.status !== 0 || installed.payload?.installed !== true) return { status: 'blocked', operations, failure: { operation: 'local-app-install', failureClass: 'transient-external-condition', code: 'task-finish.local-app-install-failed', exitCode: installed.result.status, message: 'Buildr development launcher installation failed.', diagnostic: installed.payload || installed.observation.stderr } };
           localAppDelivery = { status: 'passed', channel: 'development' };
         }
-        const activation = { status: 'passed', plan, managedPaths, ownedPaths: [], convergenceRef: null };
-        let finalRemoteRef = remoteAfterRef;
-        let convergenceRef = null;
-        if (plan.mode === 'sync-workspace') {
-          const delta = activationGitDelta(retainedRoot);
-          if (delta === null) return { status: 'blocked', operations, failure: { operation: 'retained-sync', failureClass: 'transient-external-condition', code: 'task-finish.activation-status-unavailable', message: 'Unable to observe retained Git status after sync.' } };
-          const unknown = delta.filter((entry) => !isManagedPath(entry.path, managedPaths));
-          if (unknown.length) return { status: 'blocked', operations, failure: { operation: 'retained-sync', failureClass: 'product-execution-failure', code: 'task-finish.sync-produced-unknown-delta', message: 'Retained sync produced Git changes outside its managed mutation plan.', findings: unknown } };
-          const ownedPaths = [...new Set(delta.map((entry) => entry.path))].sort();
-          activation.ownedPaths = ownedPaths;
-          if (ownedPaths.length) {
-            const staged = git(retainedRoot, 'deliver-convergence-stage', ['add', '--', ...ownedPaths]);
-            operations.push(staged.observation);
-            if (staged.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'convergence-stage', failureClass: 'product-execution-failure', code: 'task-finish.convergence-stage-failed', message: 'Unable to stage the exact retained activation paths.', diagnostic: staged.observation.stderr } };
-            const cached = (gitText(retainedRoot, ['diff', '--cached', '--name-only', '-z']) || '').split('\0').filter(Boolean).sort();
-            if (JSON.stringify(cached) !== JSON.stringify(ownedPaths)) return { status: 'blocked', operations, failure: { operation: 'convergence-stage', failureClass: 'product-execution-failure', code: 'task-finish.convergence-stage-scope-mismatch', message: 'Staged convergence paths do not exactly match the activation-owned paths.', findings: [{ expected: ownedPaths, observed: cached }] } };
-            const committed = git(retainedRoot, 'deliver-convergence-commit', ['commit', '-m', `收敛 ${run.identity.task} Workspace activation`]);
-            operations.push(committed.observation);
-            if (committed.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'convergence-commit', failureClass: 'product-execution-failure', code: 'task-finish.convergence-commit-failed', message: 'Unable to commit retained activation convergence.', diagnostic: committed.observation.stderr } };
-            convergenceRef = gitText(retainedRoot, ['rev-parse', 'HEAD']);
-            activation.convergenceRef = convergenceRef;
-            const delivery = { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, convergenceRef, impact, activation, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery };
-            const pushed = git(retainedRoot, 'deliver-convergence-push', ['push', run.identity.remote, `${run.identity.targetBranch}:${run.identity.targetBranch}`]);
-            operations.push(pushed.observation);
-            if (pushed.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'convergence-push', failureClass: 'transient-external-condition', code: 'task-finish.convergence-push-failed', exitCode: pushed.result.status, message: 'Retained activation convergence push failed.', diagnostic: pushed.observation.stderr }, output: { delivery } };
-            const finalReadback = git(retainedRoot, 'deliver-convergence-readback', ['ls-remote', '--heads', run.identity.remote, run.identity.targetBranch]);
-            operations.push(finalReadback.observation);
-            finalRemoteRef = finalReadback.result.status === 0 ? finalReadback.result.stdout.trim().split(/\s+/)[0] || null : null;
-            if (finalRemoteRef !== convergenceRef) return { status: 'blocked', operations, failure: { operation: 'convergence-readback', failureClass: 'transient-external-condition', code: 'task-finish.convergence-readback-failed', message: 'Unable to prove the final retained activation remote ref.', findings: [{ expected: convergenceRef, observed: finalRemoteRef }] }, output: { delivery } };
-          }
-        }
-        const delivery = { status: 'delivered', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef, ...(convergenceRef ? { convergenceRef } : {}), impact, activation, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery };
-        return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: finalRemoteRef, output: { delivery } };
+        const activation = { status: 'passed', plan };
+        const delivery = { status: 'delivered', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, impact, activation, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery };
+        return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery } };
       } finally {
         releaseFinishTargetLease(lease);
       }
@@ -503,10 +427,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
 
     async cleanup({ run }) {
       const operations = [];
-      const finalRemoteRef = run.delivery?.finalRemoteRef
-        || (!run.deliveryCarrier?.activationPlan && run.delivery?.remoteAfterRef === run.deliveryCarrier?.head
-          ? run.delivery.remoteAfterRef
-          : null);
+      const finalRemoteRef = run.delivery?.finalRemoteRef;
       if (run.delivery?.carrierRef !== run.deliveryCarrier?.head || !finalRemoteRef) return { status: 'blocked', failure: { operation: 'cleanup-readiness', failureClass: 'transient-external-condition', code: 'task-finish.delivery-not-complete', message: 'Cleanup requires completed carrier and final remote delivery evidence.' } };
       const prepared = {
         schemaVersion: 'buildr.task-finish-completion/v1',
