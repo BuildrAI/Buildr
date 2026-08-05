@@ -57,11 +57,15 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
   if (resolvedPath(run.identity.workspaceRoot) !== root) throw cleanupError('task-finish.retained-cleanup-workspace-mismatch', 'Task Finish run is bound to another retained Workspace.');
   const deliver = run.phases.find((phase) => phase.id === 'deliver');
   const cleanup = run.phases.find((phase) => phase.id === 'cleanup');
+  const finalRemoteRef = typeof run.delivery?.finalRemoteRef === 'string' && run.delivery.finalRemoteRef
+    ? run.delivery.finalRemoteRef
+    : (!run.deliveryCarrier?.activationPlan && run.delivery?.remoteAfterRef === run.deliveryCarrier?.head
+      ? run.delivery.remoteAfterRef
+      : null);
   if (run.status !== 'active' || deliver?.status !== 'passed' || cleanup?.status !== 'running'
     || run.delivery?.status !== 'delivered' || run.delivery?.carrierRef !== run.deliveryCarrier?.head
     || run.delivery?.remoteAfterRef !== run.deliveryCarrier?.head
-    || typeof run.delivery?.finalRemoteRef !== 'string'
-    || !run.delivery.finalRemoteRef) {
+    || !finalRemoteRef) {
     throw cleanupError('task-finish.retained-cleanup-run-not-ready', 'Task Finish run does not contain a completed delivery and active cleanup boundary.');
   }
   assertPreparedCompletion(root, run);
