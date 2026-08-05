@@ -88,6 +88,22 @@ test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () 
   assert.match(styles, /\.content-view-toggle/);
 });
 
+test('全局 Change 详情按需关联已有 Task，不增加首屏 Task 读取', () => {
+  const change = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
+  const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');
+  assert.match(change, /id="associate-change"/);
+  assert.match(change, /id="change-task-association"/);
+  assert.match(change, /api\('\/api\/v1\/tasks\?status=active'\)/);
+  assert.match(change, /expectedRecordDigest: selected\.recordDigest/);
+  assert.match(change, /addChanges: \[`\$\{change\.project\.code\}\/\$\{change\.code\}`\]/);
+  assert.match(change, /navigate\(`\/tasks\/\$\{encodeURIComponent\(selected\.record\.taskId\)\}`\)/);
+  assert.match(change, /task_record_conflict/);
+  assert.match(change, /openAgentAction\('start', \{ projectCode: change\.project\.code/);
+  assert.match(actions, /if \(context\.goal\) document\.getElementById\('action-goal'\)\.value = context\.goal/);
+  const initialRead = change.slice(change.indexOf('const \[workspace, data\]'), change.indexOf('const associateButton'));
+  assert.doesNotMatch(initialRead, /\/api\/v1\/tasks/);
+});
+
 test('Local App 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
   const app = fs.readFileSync('src/interfaces/local-app/web/app.js', 'utf8');
   const index = fs.readFileSync('src/interfaces/local-app/web/index.html', 'utf8');

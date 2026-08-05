@@ -195,6 +195,8 @@ dd { margin: 0; overflow-wrap: anywhere; font: 10px/1.45 ui-monospace, SFMono-Re
 .asset-preview-grid small { color: var(--muted); font-size: 10px; }
 .change-filters { display: grid; grid-template-columns: repeat(2, minmax(180px, 280px)); }
 .change-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.change-task-association { margin: 16px 0; border-color: #b8d7c4; background: linear-gradient(135deg, #f6fbf8, #fff); }
+.association-controls { display: grid; gap: 14px; }
 .task-change-provenance { margin-bottom: 16px; }
 .change-brief-panel { margin-bottom: 16px; border-color: #b8d7c4; background: linear-gradient(135deg, #f6fbf8, #fff); }
 .brief-content { display: grid; gap: 10px; max-width: 900px; padding: 4px 20px 20px; }

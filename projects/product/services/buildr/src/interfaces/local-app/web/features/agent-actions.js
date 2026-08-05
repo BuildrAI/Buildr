@@ -124,6 +124,7 @@ export function setupAgentActions({ api }) {
       if (context.projectCode && projects.projects.some((project) => project.code === context.projectCode)) projectSelect.value = context.projectCode;
       await loadServices(projectSelect.value);
       projectSelect.addEventListener('change', () => loadServices(projectSelect.value));
+      if (context.goal) document.getElementById('action-goal').value = context.goal;
     } catch (error) {
       document.getElementById('agent-action-error').textContent = error.message;
       document.getElementById('agent-action-error').classList.remove('hidden');
