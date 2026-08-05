@@ -6,6 +6,7 @@ import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 
 export const VERIFICATION_RESOURCE_LEASE_SCHEMA = 'buildr.verification-resource-lease/v1';
+export const VERIFICATION_RESOURCE_TICKET_SCHEMA = 'buildr.verification-resource-ticket/v1';
 
 function safeIdentity(value, fallback) {
   const normalized = String(value || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -27,6 +28,17 @@ function atomicWriteJson(file, value) {
   fs.renameSync(temporary, file);
 }
 
+function registerTicketDirectory(temporary, directory, ticket) {
+  fs.mkdirSync(temporary, { mode: 0o700 });
+  try {
+    atomicWriteJson(path.join(temporary, 'ticket.json'), ticket);
+    fs.renameSync(temporary, directory);
+  } catch (error) {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 function replaceExpiredLeaseDirectory(directory, stale) {
   fs.renameSync(directory, stale);
   fs.rmSync(stale, { recursive: true, force: true });
@@ -35,6 +47,12 @@ function replaceExpiredLeaseDirectory(directory, stale) {
 function releaseLeaseDirectory(directory, released) {
   fs.renameSync(directory, released);
   fs.rmSync(released, { recursive: true, force: true });
+}
+
+function ownerMatches(value, owner) {
+  return value?.taskId === owner.taskId
+    && value?.environmentId === owner.environmentId
+    && value?.runId === owner.runId;
 }
 
 function readJson(file) {
@@ -82,6 +100,7 @@ export function createVerificationResourceCoordinator(options) {
   const pollMs = options.pollMs ?? 50;
   const waitTimeoutMs = options.waitTimeoutMs ?? 600_000;
   const now = options.now ?? Date.now;
+  const ticketOrder = options.ticketOrder ?? (() => process.hrtime.bigint().toString().padStart(24, '0'));
   const delay = options.delay ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   const timers = options.timers ?? { setInterval, clearInterval };
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -101,11 +120,119 @@ export function createVerificationResourceCoordinator(options) {
     };
   }
 
-  function tryClaim(resource, definition) {
-    const resourceRoot = path.join(root, digest(`${owner.workspaceId}:${owner.projectId}:${resource}`));
-    fs.mkdirSync(resourceRoot, { recursive: true, mode: 0o700 });
+  function resourceRoot(resource) {
+    const directory = path.join(root, digest(`${owner.workspaceId}:${owner.projectId}:${resource}`));
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    return directory;
+  }
+
+  function ticketValue(resource, token) {
+    const timestamp = now();
+    return {
+      schemaVersion: VERIFICATION_RESOURCE_TICKET_SCHEMA,
+      resource,
+      token,
+      order: String(ticketOrder()),
+      ...owner,
+      enqueuedAt: new Date(timestamp).toISOString(),
+      heartbeatAt: new Date(timestamp).toISOString(),
+      expiresAt: new Date(timestamp + ttlMs).toISOString(),
+    };
+  }
+
+  function createTicket(resource) {
+    const waitersRoot = path.join(resourceRoot(resource), 'waiters');
+    fs.mkdirSync(waitersRoot, { recursive: true, mode: 0o700 });
+    const token = crypto.randomUUID();
+    const directory = path.join(waitersRoot, token);
+    const temporary = path.join(waitersRoot, `.${token}.creating-${process.pid}`);
+    const ticket = ticketValue(resource, token);
+    registerTicketDirectory(temporary, directory, ticket);
+    const heartbeat = timers.setInterval(() => {
+      try {
+        const file = path.join(directory, 'ticket.json');
+        const current = readJson(file);
+        if (!current || current.token !== token || !ownerMatches(current, owner)) return;
+        const timestamp = now();
+        atomicWriteJson(file, { ...current, heartbeatAt: new Date(timestamp).toISOString(), expiresAt: new Date(timestamp + ttlMs).toISOString() });
+      } catch { /* ticket ownership remains authoritative */ }
+    }, Math.max(10, Math.floor(ttlMs / 3)));
+    heartbeat.unref?.();
+    return { directory, ticket, heartbeat };
+  }
+
+  function removeTicket(ticket, suffix) {
+    const file = path.join(ticket.directory, 'ticket.json');
+    const current = readJson(file);
+    if (!current || current.token !== ticket.ticket.token || !ownerMatches(current, owner)) return false;
+    const removed = `${ticket.directory}.${suffix}-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
+    try {
+      releaseLeaseDirectory(ticket.directory, removed);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    }
+  }
+
+  function expireTicket(directory, ticket) {
+    const file = path.join(directory, 'ticket.json');
+    const current = readJson(file);
+    if (!current || current.token !== ticket.token || Date.parse(current.expiresAt) > now()) return false;
+    const expired = `${directory}.expired-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
+    try {
+      releaseLeaseDirectory(directory, expired);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    }
+  }
+
+  function validTickets(resource) {
+    const waitersRoot = path.join(resourceRoot(resource), 'waiters');
+    fs.mkdirSync(waitersRoot, { recursive: true, mode: 0o700 });
+    const tickets = [];
+    for (const entry of fs.readdirSync(waitersRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const directory = path.join(waitersRoot, entry.name);
+      const ticket = readJson(path.join(directory, 'ticket.json'));
+      if (!ticket || ticket.schemaVersion !== VERIFICATION_RESOURCE_TICKET_SCHEMA || ticket.resource !== resource || ticket.token !== entry.name) continue;
+      if (Date.parse(ticket.expiresAt) <= now()) {
+        expireTicket(directory, ticket);
+        continue;
+      }
+      tickets.push({ directory, ticket });
+    }
+    return tickets.sort((left, right) => left.ticket.order.localeCompare(right.ticket.order) || left.ticket.token.localeCompare(right.ticket.token));
+  }
+
+  function availableSlots(resource, definition) {
+    const directory = resourceRoot(resource);
+    let available = 0;
     for (let slot = 0; slot < definition.capacity; slot += 1) {
-      const directory = path.join(resourceRoot, `slot-${slot}`);
+      const leaseDirectory = path.join(directory, `slot-${slot}`);
+      if (!fs.existsSync(leaseDirectory)) {
+        available += 1;
+        continue;
+      }
+      const lease = readJson(path.join(leaseDirectory, 'lease.json'));
+      if (lease && Date.parse(lease.expiresAt) <= now()) available += 1;
+    }
+    return available;
+  }
+
+  function ticketEligible(resource, definition, ticket) {
+    const current = readJson(path.join(ticket.directory, 'ticket.json'));
+    if (!current || current.token !== ticket.ticket.token || !ownerMatches(current, owner)) throw new Error(`Verification resource wait ownership lost: ${resource}`);
+    const index = validTickets(resource).findIndex((item) => item.ticket.token === ticket.ticket.token);
+    return index >= 0 && index < availableSlots(resource, definition);
+  }
+
+  function tryClaim(resource, definition) {
+    const currentResourceRoot = resourceRoot(resource);
+    for (let slot = 0; slot < definition.capacity; slot += 1) {
+      const directory = path.join(currentResourceRoot, `slot-${slot}`);
       const token = crypto.randomUUID();
       try {
         fs.mkdirSync(directory, { mode: 0o700 });
@@ -171,12 +298,18 @@ export function createVerificationResourceCoordinator(options) {
           continue;
         }
         if (definition.strategy !== 'coordinated' || !Number.isInteger(definition.capacity) || definition.capacity < 1) throw new Error(`Invalid coordinated verification resource: ${resource}`);
+        const ticket = createTicket(resource);
         let claimed = null;
-        while (!claimed) {
-          if (acquireOptions.signal?.aborted) throw new Error(`Verification resource wait cancelled: ${resource}`);
-          if (now() - startedAt >= (acquireOptions.waitTimeoutMs ?? waitTimeoutMs)) throw new Error(`Verification resource wait timed out: ${resource}`);
-          claimed = tryClaim(resource, definition);
-          if (!claimed) await delay(pollMs);
+        try {
+          while (!claimed) {
+            if (acquireOptions.signal?.aborted) throw new Error(`Verification resource wait cancelled: ${resource}`);
+            if (now() - startedAt >= (acquireOptions.waitTimeoutMs ?? waitTimeoutMs)) throw new Error(`Verification resource wait timed out: ${resource}`);
+            if (ticketEligible(resource, definition, ticket)) claimed = tryClaim(resource, definition);
+            if (!claimed) await delay(pollMs);
+          }
+        } finally {
+          timers.clearInterval(ticket.heartbeat);
+          removeTicket(ticket, claimed ? 'acquired' : 'cancelled');
         }
         const heartbeat = timers.setInterval(() => {
           try {

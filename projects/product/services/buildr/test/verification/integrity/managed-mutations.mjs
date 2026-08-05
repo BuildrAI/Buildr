@@ -45,7 +45,7 @@ const allowed = new Map([
   ])],
   ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
   ['src/application/verification/resource-coordinator.mjs', new Set([
-    'atomicWriteJson', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
+    'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],
   ['src/interfaces/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/application/domains/workspace.mjs', new Set(['createProject', 'createService'])],

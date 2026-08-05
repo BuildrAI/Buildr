@@ -67,8 +67,9 @@ buildr verification run --project <code> \
 - Agent capability 按声明 instructions 做有界操作，保留实际事实；不要硬塞进 command runner。
 - external resource 或持久副作用必须取得对应授权；无授权时不执行，并在完整 Result 中形成 gap 或 failed fact。
 - Product 内部测试可以使用其专用 registry/DAG；不要把它提升为通用 Project declaration policy。
+- coordinated resource 由 runner 通过 owner-bound waiting ticket 公平排队；最早的有效 waiter 优先取得可用容量。取消、timeout、崩溃或过期 ticket 由 coordinator 按 owner/token 与 expiry 精确恢复；Agent 不清空共享队列、不删除其他 waiter/lease，也不通过重复启动 verification 抢占容量。
 
-完整 stdout/stderr、命令、耗时、排队、资源 lease、临时路径和 Environment 诊断属于 `buildr.verification-execution/v1` transient evidence。运行中或暂时无输出时继续等待同一 execution，不启动重复 verifier。整体耗时只从 execution wall-clock 读取，不相加并行检查耗时。
+完整 stdout/stderr、命令、耗时、排队、waiting ticket、资源 lease、临时路径和 Environment 诊断属于 `buildr.verification-execution/v1` transient evidence。运行中或暂时无输出时继续等待同一 execution，不启动重复 verifier。整体耗时只从 execution wall-clock 读取，不相加并行检查耗时。
 
 ## 4. 提炼并原子记录 current Result
 

@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import process from 'node:process';
 import { createVerificationResourceCoordinator } from '../../src/application/verification/resource-coordinator.mjs';
 
-const [root, taskId, acquiredFile, releaseFile] = process.argv.slice(2);
+const [root, taskId, acquiredFile, releaseFile, ttlArg] = process.argv.slice(2);
 const coordinator = createVerificationResourceCoordinator({
   root,
   resources: { browser: { strategy: 'coordinated', capacity: 1, authorization: 'implicit' } },
   owner: { taskId, runId: `run-${taskId}` },
   pollMs: 10,
-  ttlMs: 2_000,
+  ttlMs: Number(ttlArg) || 2_000,
   waitTimeoutMs: 5_000,
 });
 const handle = await coordinator.acquire(['browser']);

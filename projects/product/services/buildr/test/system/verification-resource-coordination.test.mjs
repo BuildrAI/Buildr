@@ -28,8 +28,22 @@ const waitForJson = async (file, timeoutMs = 3_000) => {
   return value;
 };
 
-function runWorker(root, taskId, acquiredFile, releaseFile) {
-  return spawnSupervised(process.execPath, [worker, root, taskId, acquiredFile, releaseFile], { owner: { taskId, runId: `run-${taskId}` }, timeoutMs: 5_000 });
+function runWorker(root, taskId, acquiredFile, releaseFile, ttlMs = 2_000) {
+  return spawnSupervised(process.execPath, [worker, root, taskId, acquiredFile, releaseFile, String(ttlMs)], { owner: { taskId, runId: `run-${taskId}` }, timeoutMs: 5_000 });
+}
+
+function ticketCount(root) {
+  let count = 0;
+  const visit = (directory) => {
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const current = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(current);
+      else if (entry.name === 'ticket.json') count += 1;
+    }
+  };
+  visit(root);
+  return count;
 }
 
 test('独立进程共享 Workspace 容量槽并按 owner 释放', async (t) => {
@@ -57,4 +71,54 @@ test('独立进程共享 Workspace 容量槽并按 owner 释放', async (t) => {
   fs.writeFileSync(secondRelease, 'release\n');
   const released = parseSuccessfulJson(await second.completed, 'second resource worker');
   assert.equal(released[0].status, 'released');
+});
+
+test('独立进程按已登记 ticket 顺序取得容量', async (t) => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-resource-fifo-'));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const root = path.join(temporary, 'leases');
+  const state = (name) => path.join(temporary, name);
+  const first = runWorker(root, 'task-a', state('first-acquired'), state('first-release'));
+  t.after(() => first.child.kill());
+  await waitFor(() => fs.existsSync(state('first-acquired')));
+  const second = runWorker(root, 'task-b', state('second-acquired'), state('second-release'));
+  t.after(() => second.child.kill());
+  await waitFor(() => ticketCount(root) === 1);
+  const third = runWorker(root, 'task-c', state('third-acquired'), state('third-release'));
+  t.after(() => third.child.kill());
+  await waitFor(() => ticketCount(root) === 2);
+
+  fs.writeFileSync(state('first-release'), 'release\n');
+  parseSuccessfulJson(await first.completed, 'first FIFO worker');
+  await waitFor(() => fs.existsSync(state('second-acquired')));
+  assert.equal(fs.existsSync(state('third-acquired')), false);
+  fs.writeFileSync(state('second-release'), 'release\n');
+  parseSuccessfulJson(await second.completed, 'second FIFO worker');
+  await waitFor(() => fs.existsSync(state('third-acquired')));
+  fs.writeFileSync(state('third-release'), 'release\n');
+  parseSuccessfulJson(await third.completed, 'third FIFO worker');
+});
+
+test('崩溃进程的过期 ticket 不永久阻塞队列', async (t) => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-resource-stale-ticket-'));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const root = path.join(temporary, 'leases');
+  const state = (name) => path.join(temporary, name);
+  const first = runWorker(root, 'task-a', state('first-acquired'), state('first-release'), 100);
+  t.after(() => first.child.kill());
+  await waitFor(() => fs.existsSync(state('first-acquired')));
+  const crashed = runWorker(root, 'task-b', state('crashed-acquired'), state('crashed-release'), 100);
+  t.after(() => crashed.child.kill());
+  await waitFor(() => ticketCount(root) === 1);
+  const crashedCompletion = crashed.completed.catch((error) => error);
+  crashed.child.kill();
+  await crashedCompletion;
+  const later = runWorker(root, 'task-c', state('later-acquired'), state('later-release'), 100);
+  t.after(() => later.child.kill());
+  await waitFor(() => ticketCount(root) >= 1);
+  fs.writeFileSync(state('first-release'), 'release\n');
+  parseSuccessfulJson(await first.completed, 'first stale-ticket worker');
+  await waitFor(() => fs.existsSync(state('later-acquired')));
+  fs.writeFileSync(state('later-release'), 'release\n');
+  parseSuccessfulJson(await later.completed, 'later stale-ticket worker');
 });
