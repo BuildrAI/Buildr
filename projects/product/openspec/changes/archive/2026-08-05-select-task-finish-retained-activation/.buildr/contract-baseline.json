@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "select-task-finish-retained-activation",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-d4e7a78056a20b3c2725a833ab3377399a7b21e90780fcb55a057758dbdc2bfa",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须按 retained activation binding 选择生效动作",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须收敛 activation 的 Git effect 与最终远端证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "产品验证必须覆盖 retained activation 选择与收敛",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

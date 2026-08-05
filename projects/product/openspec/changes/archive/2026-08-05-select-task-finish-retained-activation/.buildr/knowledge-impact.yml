@@ -1,0 +1,64 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: select-task-finish-retained-activation
+operation: reconcile
+treeIdentity: implementation-current
+impacts:
+  - type: brief
+    target: openspec/changes/select-task-finish-retained-activation/brief.md
+    reason: 记录普通Workspace render与Buildr自举sync的范围、流程和验收边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/select-task-finish-retained-activation/proposal.md
+      - openspec/changes/select-task-finish-retained-activation/design.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: Task Finish retained activation从固定Product sync改为类型化选择
+    status: updated
+    sourceIdentities:
+      - openspec/changes/select-task-finish-retained-activation/specs/agent-task-workflows/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: activation binding、plan、Git effect与恢复证据改变Task Finish技术边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/select-task-finish-retained-activation/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service的Task Finish deliver与retained runtime行为发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/select-task-finish-retained-activation/specs/agent-task-workflows/spec.md
+      - openspec/changes/select-task-finish-retained-activation/specs/buildr-package-assets/spec.md
+  - type: product-architecture
+    target: docs/roadmap/task-lifecycle-architecture.md
+    reason: 生命周期Roadmap需要区分普通Workspace render与Product自举sync
+    status: updated
+    sourceIdentities:
+      - openspec/changes/select-task-finish-retained-activation/design.md
+  - type: service
+    target: services/buildr/docs/cli-reference.md
+    reason: Task Finish CLI说明需要表达activation选择与最终远端证据
+    status: updated
+    sourceIdentities:
+      - openspec/changes/select-task-finish-retained-activation/specs/agent-task-workflows/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 复用retained Workspace、Agent runtime、sync、render与Task Finish既有术语，不新增领域概念
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - retained Workspace
+    - Agent runtime
+    - sync
+    - render
+    - Task Finish
+  canonicalTerms: retained Workspace、Agent runtime、sync、render、Task Finish
+  changedAssets: []
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/knowledge/glossary.md
+    - openspec/changes/select-task-finish-retained-activation/design.md
+unresolvedItems: []

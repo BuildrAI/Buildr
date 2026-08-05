@@ -1,0 +1,8 @@
+schemaVersion: buildr.task-finish-activation/v1
+bindings:
+  - id: buildr-self-bootstrap
+    service: buildr
+    mode: sync-workspace
+    inputs:
+      - services/buildr/package/manifest.yml
+      - services/buildr/package/targets/workspace/**

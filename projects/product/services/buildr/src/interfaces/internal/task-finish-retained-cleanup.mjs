@@ -59,7 +59,9 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
   const cleanup = run.phases.find((phase) => phase.id === 'cleanup');
   if (run.status !== 'active' || deliver?.status !== 'passed' || cleanup?.status !== 'running'
     || run.delivery?.status !== 'delivered' || run.delivery?.carrierRef !== run.deliveryCarrier?.head
-    || run.delivery?.remoteAfterRef !== run.deliveryCarrier?.head) {
+    || run.delivery?.remoteAfterRef !== run.deliveryCarrier?.head
+    || typeof run.delivery?.finalRemoteRef !== 'string'
+    || !run.delivery.finalRemoteRef) {
     throw cleanupError('task-finish.retained-cleanup-run-not-ready', 'Task Finish run does not contain a completed delivery and active cleanup boundary.');
   }
   assertPreparedCompletion(root, run);

@@ -151,7 +151,7 @@ flowchart TB
 - Foundation 组织长期共享的事实、方法和发现入口，不接管所有代码、数据库、网页或用户输入。
 - 人和 Agent 共用同一 Source Authority；Agent Runtime 是实际运行面，但不是第二份事实源。
 - Task Environment 由保留工作区 Buildr 环境管理器执行准备、恢复、资源登记和清理。task worktree/branch 中的 Rule、Skill、contract、功能模块和 package 都是候选变更，可以在隔离目标测试；只有实现完成并集成到 retained checkout 后，才从 retained Product source sync/render 对应 Agent runtime 并确认生效。
-- 当前 P0.5 Task Finish adapter 只消费研发交接；自举 Product 交付进入 retained source 后执行适用的 sync、Doctor 与 CLI install，再请求 Environment cleanup。通用 Development contract 不因此依赖 Product、Git 或 runtime 常量。
+- 当前 P0.5 Task Finish adapter 只消费研发交接；交付进入retained source后按retained Project声明与Task Contribution选择`none | render-runtime | sync-workspace`。普通Workspace Rule/Skill开发只render Agent runtime；Buildr自举package输入命中显式binding才sync，并把受管投射delta作为独立convergence commit普通push。Doctor与适用install通过、`finalRemoteRef`回读成立后才请求Environment cleanup。通用Development contract不因此依赖Product、Git或runtime常量。
 - Foundation 可以提供跨 Task、跨 Change 的功能模块；具体状态由对应模块管理。
 - Buildr 保证身份、结构、边界和投射，不裁决业务事实，也不替 Agent 构造完整 Task Context。
 
@@ -585,7 +585,7 @@ P0.5 已实现 **Skill + capability contract + 唯一 Application + internal dri
 
 ### P0.5 当前适配器
 
-> 当前 Task Finish 是研发交接（Development Handoff）的窄交付适配器：它只把已经冻结并允许推进的 Candidate 放到内容等价的交付载体（Delivery Carrier）上，完成交付、retained runtime 激活与 Environment cleanup。
+> 当前 Task Finish 是研发交接（Development Handoff）的窄交付适配器：它只把已经冻结并允许推进的 Candidate 放到内容等价的交付载体（Delivery Carrier）上，完成交付、按retained声明选择的`none | render-runtime | sync-workspace`激活与Environment cleanup。
 
 用户说“收尾”时，公共入口仍是单个 `buildr task finish run --task ...`。Run/Result 使用 breaking v2 schema，绑定 Task、研发交接、Candidate、Content Target、Environment、目标和实际 carrier；这不是新的 Finish Receipt，也不建立第二份 Candidate/decision authority。`completed + no-change` 路径不进入 Finish。
 

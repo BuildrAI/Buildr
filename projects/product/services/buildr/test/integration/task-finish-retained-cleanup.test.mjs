@@ -32,7 +32,7 @@ function readyRun(t) {
     },
   });
   run.deliveryCarrier = { identity: 'sha256-carrier', head: 'carrier-ref' };
-  run.delivery = { status: 'delivered', carrierRef: 'carrier-ref', remoteAfterRef: 'carrier-ref' };
+  run.delivery = { status: 'delivered', carrierRef: 'carrier-ref', remoteAfterRef: 'carrier-ref', finalRemoteRef: 'carrier-ref' };
   run.phases.find((phase) => phase.id === 'deliver').status = 'passed';
   run.phases.find((phase) => phase.id === 'cleanup').status = 'running';
   fs.writeFileSync(finishRunFile(root, run.runId), `${JSON.stringify(run, null, 2)}\n`);

@@ -29,7 +29,21 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.doesNotMatch(executor, /runtime\.cleanupTaskEnvironment\(/);
   assert.match(executor, /cleanupThroughRetainedController/);
   assert.match(executor, /createIsolatedGitCarrier/);
+  assert.match(executor, /render-runtime/);
+  assert.match(executor, /sync-workspace/);
+  assert.match(executor, /finalRemoteRef/);
+  assert.doesNotMatch(executor, /git', \['add', '-A'/);
   assert.doesNotMatch(executor, /gitNulList|changedDeliverySourcePaths/);
+});
+
+test('Task Finish activation is a closed retained declaration, not a process framework', () => {
+  const activation = read('src/application/task-finish/task-finish-activation.mjs');
+  const declaration = fs.readFileSync(path.join(productRoot, 'task-finish.yml'), 'utf8');
+  for (const phrase of ['buildr.task-finish-activation/v1', 'buildr-self-bootstrap', 'sync-workspace', 'services/buildr/package/targets/workspace/**']) assert.match(declaration, new RegExp(phrase.replaceAll('*', '\\*')));
+  for (const forbidden of ['executable', 'command:', 'args:', 'env:', 'shell:']) assert.equal(declaration.includes(forbidden), false, forbidden);
+  assert.match(activation, /TASK_FINISH_ACTIVATION_MODES/);
+  assert.match(activation, /render-runtime/);
+  assert.match(activation, /activation-binding-ambiguous/);
 });
 
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {

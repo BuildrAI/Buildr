@@ -216,10 +216,12 @@ export const verificationSteps = Object.freeze([
   ], schedulingCostMs: 90000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
   step({ id: 'integration-task-finish', name: 'Task Finish integration slice', executor: { type: 'node-test', files: [
     'test/integration/task-finish-delivery-remote.test.mjs',
+    'test/integration/task-finish-retained-activation.test.mjs',
     'test/integration/task-finish-retained-cleanup.test.mjs',
     'test/integration/task-finish-run.test.mjs',
     'test/integration/task-finish-task-contribution.test.mjs',
   ] }, inputs: [
+    'task-finish.yml',
     'test/integration/task-finish-*.test.mjs',
     'src/application/task-finish/**',
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),

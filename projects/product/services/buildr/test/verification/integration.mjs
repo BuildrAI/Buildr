@@ -12,6 +12,7 @@ const integrationRoot = path.join(productRoot, 'test', 'integration');
 const excludedFromGeneral = new Set([
   'task-development-application.test.mjs',
   'task-finish-delivery-remote.test.mjs',
+  'task-finish-retained-activation.test.mjs',
   'task-finish-retained-cleanup.test.mjs',
   'task-finish-run.test.mjs',
 ]);

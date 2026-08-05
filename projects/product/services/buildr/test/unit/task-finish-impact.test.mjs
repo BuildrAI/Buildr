@@ -20,7 +20,6 @@ test('Local App 影响范围与 launcher 的完整产品打包清单一致', () 
   ]);
   assert.equal(result.requiresLocalAppInstall, true);
   assert.equal(result.requiresCliInstall, true);
-  assert.equal(result.requiresRuntimeSync, true);
   assert.deepEqual(result.unknown, ['docs/roadmap/README.md']);
 });
 

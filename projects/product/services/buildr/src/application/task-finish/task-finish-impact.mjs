@@ -13,5 +13,5 @@ export function classifyRetainedConvergencePaths(paths = []) {
     if (localAppPattern.test(candidate)) { result.localApp.push(candidate); matched = true; }
     if (!matched) result.unknown.push(candidate);
   }
-  return { ...result, requiresRuntimeSync: result.runtime.length > 0, requiresCliInstall: result.cli.length > 0, requiresLocalAppInstall: result.localApp.length > 0 };
+  return { ...result, requiresCliInstall: result.cli.length > 0, requiresLocalAppInstall: result.localApp.length > 0 };
 }
