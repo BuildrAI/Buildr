@@ -494,7 +494,7 @@ export function registerDomainsComponents(runtime) {
           return '';
         }
       }).join('\n');
-      for (const requiredText of ['--stage proposal']) {
+      for (const requiredText of ['openspec validate <change> --strict', 'Planning Review']) {
         if (!contributionContent.includes(requiredText)) errors.push(`OpenSpec Component Skill contributions must include ${JSON.stringify(requiredText)}.`);
       }
     }

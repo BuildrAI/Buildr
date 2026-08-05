@@ -15,16 +15,15 @@ OpenSpec 1.6 负责 delta 格式与 Requirement 结构、单个 change 的规范
 
 本 Skill 不修改外部 `openspec-*` Skills、外部 OpenSpec CLI 或本机 CLI 安装。
 
-## 1. Proposal 检查
+## 1. Apply 前门禁
 
 change artifacts complete 且上游严格验证通过后运行：
 
 ```bash
 openspec validate <change> --strict
-buildr openspec check <change> --stage proposal --project <project> --target <workspace> --json
 ```
 
-历史 change 的 baseline/create 和阶段型 check 只保留兼容诊断；新收敛事务不创建、刷新或依赖这些 sidecar。
+正式 Task 同时要求 current Planning Review。Buildr 不提供 baseline/create 或阶段型 check，也不创建、刷新、读取或依赖这些 sidecar。
 
 ## 2. 单一收敛事务
 

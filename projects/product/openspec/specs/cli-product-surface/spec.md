@@ -6,13 +6,13 @@
 ## Requirements
 
 ### Requirement: CLI 产品表面必须显式分层
-Buildr MUST 将当前可执行命令、兼容输入和内部数据标识区分为 `primary`、`agent-machine`、`maintenance` 与 `legacy` 产品表面，并在 command metadata、help、产品文档、current-state knowledge 和验证中保持同一分类。该分类只控制可发现性与兼容承诺，不改变命令自身的授权、安全契约或可执行 effects。
+Buildr MUST 将当前可执行命令区分为 `primary`、`agent-machine` 与 `maintenance` 三类产品表面，并在 command metadata、help、产品文档、current-state knowledge 和验证中保持同一分类。该分类只控制可发现性与支持承诺，不改变命令自身的授权、安全契约或可执行 effects。Buildr MUST NOT 注册 `legacy` command surface。
 
 #### Scenario: Public workspace surface
 - **WHEN** 用户或 Agent 查看 Buildr 根帮助与主产品文档
 - **THEN** Buildr MUST 在 primary 区展示普通工作路径需要的 workspace 初始化、核心范围维护、诊断、恢复、同步和本地应用入口
 - **AND** `buildr app --target <workspace>` MUST 继续作为人查看 Workspace 并执行受控 metadata 修改的主产品入口
-- **AND** primary 区 MUST NOT 混入产品构建、开发预览、OpenSpec workflow internals 或 legacy migration actions
+- **AND** primary 区 MUST NOT 混入产品构建、开发预览或 OpenSpec workflow internals
 
 #### Scenario: Agent machine surface
 - **WHEN** Agent、Skill、doctor repair 或 bootstrap 需要低频但正式支持的确定性命令
@@ -25,9 +25,9 @@ Buildr MUST 将当前可执行命令、兼容输入和内部数据标识区分�
 - **AND** `buildr app preview start|list|stop` MUST 作为 Agent 并行验收 task worktree 的 maintenance 开发入口继续可用
 
 #### Scenario: Legacy surface
-- **WHEN** 兼容窗口内的旧调用命中 retained legacy command
-- **THEN** Buildr MUST 保持已声明的兼容行为并在 topic/structured result 中给出 replacement 或迁移说明
-- **AND** canonical 根帮助与新使用说明 MUST NOT 把 legacy command 推荐为当前工作路径
+- **WHEN** 调用方使用已退役 command
+- **THEN** Buildr MUST 返回标准 unknown-command，而不是注册 legacy surface、alias 或隐藏入口
+- **AND** canonical 根帮助与新使用说明 MUST NOT 展示 Legacy compatibility commands 分组
 
 #### Scenario: Local application help
 - **WHEN** 用户运行 `buildr app --help`、`buildr help app` 或 preview 子命令帮助
@@ -41,13 +41,18 @@ Buildr MUST 将当前可执行命令、兼容输入和内部数据标识区分�
 - **AND** help MUST 说明未提供说明时会产生待补全提示，而不是静默编造 Workspace 说明
 
 ### Requirement: Canonical 输出不得推荐 legacy 形式
-Buildr MUST 只在兼容解析、迁移诊断或历史事实中接受和描述 legacy surface；主帮助、主题帮助、bootstrap canonical 示例、doctor repair command 和当前使用说明 MUST NOT 生成或推荐 legacy 参数、scope、Project Skill source 或数据布局。
+Buildr MUST NOT 在主帮助、主题帮助、bootstrap canonical 示例、doctor repair command 或当前使用说明中生成或推荐已删除的 Legacy CLI、Project Skill source 或旧 OpenSpec sidecar workflow。仍被其他 canonical specs 明确保留的 deprecated 参数兼容输入 MUST 与 executable command surface 分开描述，不得恢复 `legacy` command 分类。
 
 #### Scenario: Legacy 输入仍被兼容
-- **WHEN** 旧 workspace 或旧调用使用仍受支持的 legacy 参数、scope 或 Project Skill manifest
-- **THEN** Buildr MUST 按对应 canonical spec 保留、迁移或兼容解析
-- **AND** Buildr MUST 使用 `legacy Project Skill source` 等明确限定术语输出可操作的 warning、info 或迁移提示
-- **AND** Buildr MUST NOT 静默把 legacy 形式重新定义为 canonical
+- **WHEN** 旧 workspace 使用仍由其他 canonical spec 明确保留的 deprecated 参数或数据输入
+- **THEN** Buildr MUST 按对应 canonical spec 兼容解析或拒绝，并明确其非 canonical 状态
+- **AND** Buildr MUST NOT 因输入兼容而恢复已删除 command、自动 Project Skill 迁移或 `legacy` command surface
+
+#### Scenario: Legacy Project Skill source 不再自动迁移
+- **WHEN** 旧 workspace 包含 Project Skill manifest 或用户请求 Project Skill source scope
+- **THEN** Buildr MUST fail closed 并说明 workspace 是唯一 Skill source authority
+- **AND** 当前 CLI MUST NOT 提供自动复制、合并、删除或迁移 Project Skill source 的 next action
+- **AND** diagnostic MAY 要求用户在升级前使用旧版本完成迁移或人工审阅整理
 
 #### Scenario: Unsupported layout is not compatibility surface
 - **WHEN** 输入使用 canonical specs 已明确拒绝的 `organizations/<org>/` layout 或新的 Project Skill source scope
@@ -100,7 +105,7 @@ Buildr MUST 将 `package:<source-id>` 保留为 package manifest `skillSources` 
 - **AND** 说明 MUST NOT 引导用户手工构造 `package:<source-id>` 引用
 
 ### Requirement: 产品表面分类必须由验证保护
-Buildr 产品验证 MUST 从同一 command metadata authority 验证 executable route、canonical leaf/aggregate help、surface 分类、legacy replacement 和 unknown-command candidates 的一致性，防止 help、docs、spec 和实现再次漂移；验证 MUST NOT 仅以固定 command 数量或重复硬编码完整 key 清单保护存量表面。
+Buildr 产品验证 MUST 从同一 command metadata authority 验证 executable route、canonical leaf/aggregate help、三类 surface 和 unknown-command candidates 的一致性，防止 help、docs、spec 和实现再次漂移；验证 MUST NOT 仅以固定 command 数量或重复硬编码完整 key 清单保护存量表面。
 
 #### Scenario: Verify retained route discoverability
 - **WHEN** 产品验证遍历 command metadata 中的 executable routes
@@ -109,13 +114,14 @@ Buildr 产品验证 MUST 从同一 command metadata authority 验证 executable 
 
 #### Scenario: Verify help and compatibility boundaries
 - **WHEN** 产品验证渲染根帮助和当前 CLI Reference
-- **THEN** primary、agent-machine、maintenance 与 legacy MUST 按 metadata 分区
-- **AND** maintenance/legacy entries MUST NOT 被硬编码进 primary 区
+- **THEN** primary、agent-machine 与 maintenance MUST 按 metadata 分区
+- **AND** maintenance entries MUST NOT 被硬编码进 primary 区
+- **AND** 根帮助 MUST NOT 渲染 Legacy compatibility commands 分组
 
 #### Scenario: Verify compatibility boundaries
-- **WHEN** 产品验证检查 retained legacy Service/Skill/OpenSpec 输入
-- **THEN** 验证 MUST 确认兼容行为、canonical replacement 与输出收敛
-- **AND** 已明确删除的 route MUST 不存在于 executable catalog、help topics、unknown-command candidates 或 public JSON schema registry
+- **WHEN** 产品验证调用已删除的 OpenSpec baseline/check 或 Project Skill migration route
+- **THEN** 验证 MUST 确认 route 不存在于 executable catalog、help topics、unknown-command candidates 或 public JSON schema registry
+- **AND** 每次调用 MUST 返回标准 unknown-command 且保持目标 workspace 零写入
 
 #### Scenario: Verify internal source identity boundary
 - **WHEN** package check 或产品测试检查随包 Skill source reference
@@ -177,7 +183,7 @@ Buildr CLI MUST 对无法匹配的命令返回稳定非零退出码、未知输�
 - **AND** Buildr MUST 以未知 option 诊断失败，为未来 verbose 语义保留该短参数
 
 ### Requirement: Skills CLI 明确区分 workspace source 与 render destination
-Skills CLI MUST 将 workspace 作为唯一 source authority，并 MUST 使用 `--destination user|workspace` 表达 runtime 投射位置。
+Skills CLI MUST 将 workspace 作为唯一 source authority，并 MUST 使用 `--destination user|workspace` 表达 runtime 投射位置。Project Skill source scope MUST 被拒绝，且当前 CLI MUST NOT 提供自动迁移入口。
 
 #### Scenario: skills add/remove canonical help
 - **WHEN** 用户查看 `skills add` 或 `skills remove` 帮助
@@ -193,7 +199,7 @@ Skills CLI MUST 将 workspace 作为唯一 source authority，并 MUST 使用 `-
 #### Scenario: legacy Project scope
 - **WHEN** 用户执行带 `--scope projects/<project>` 的 Skills 命令
 - **THEN** CLI MUST 返回结构化 breaking diagnostic
-- **AND** diagnostic MUST 包含 Project Skill migration nextAction
+- **AND** diagnostic MUST NOT 包含当前版本可执行的 Project Skill migration command
 
 ### Requirement: Skill 冲突输出使用稳定机器契约
 Skills render、sync、runtime check 和 doctor MUST 使用稳定 diagnostics 表达 Buildr 管理 Skill 的 identity、ownership、内容和已观察冲突，并 MUST 使用独立 assurance metadata 表达 runtime inventory 的可见性上限。
@@ -469,17 +475,17 @@ Buildr CLI MUST 只通过 `task verification inspect|record` 管理一个 Task c
 - **AND** 原 current MUST 保持不变
 
 ### Requirement: OpenSpec CLI help 不得恢复 Task Finish 的旧 Change authority
-Buildr CLI MUST把`openspec baseline create`、`openspec check`、`openspec converge`与`openspec audit`描述为各自的OpenSpec contract/maintenance入口，并 MUST NOT把任一命令表述为current Task Finish stage、required action或恢复路径。Task Finish current help MUST明确Change convergence、sync与archive在Development stable Content Target之前完成。
+Buildr CLI MUST 只把 `openspec converge` 与 `openspec audit`描述为当前 OpenSpec maintenance 入口，并 MUST NOT 注册或帮助展示 `openspec baseline create`、`openspec check`。Task Finish current help MUST 明确 Change convergence、sync 与 archive 在 Development stable Content Target 之前完成。
 
 #### Scenario: 查询 OpenSpec 兼容入口帮助
-- **WHEN** 用户查询`buildr help openspec baseline create`或`buildr help openspec check`
-- **THEN** help MAY说明其兼容诊断用途
-- **AND** MUST NOT声称“新 Task Finish 使用 openspec converge”或引导Finish读取/修改Change
+- **WHEN** 用户查询 `buildr help openspec baseline create`、`buildr help openspec check` 或直接调用这些命令
+- **THEN** CLI MUST 返回标准 unknown-command 诊断
+- **AND** MUST NOT 读取或写入旧 baseline、pre-sync receipt、canonical spec 或 archive 状态
 
 #### Scenario: 查询 Task Finish 帮助
-- **WHEN** 用户查询canonical Task Finish help
-- **THEN** help MUST说明Finish只消费current Development Handoff并执行carrier/delivery/cleanup
-- **AND** MUST NOT列出OpenSpec command、Change convergence、sync或archive为Finish operation
+- **WHEN** 用户查询 canonical Task Finish help
+- **THEN** help MUST 说明 Finish 只消费 current Development Handoff 并执行 carrier/delivery/cleanup
+- **AND** MUST NOT 列出 OpenSpec command、Change convergence、sync 或 archive 为 Finish operation
 
 ### Requirement: Task CLI 必须在既有 action 中管理 Parent Task
 `buildr task create` MUST 接受可选 Parent Task ID，`buildr task update` MUST 提供互斥的 set-parent 与 clear-parent 参数；inspect/list MUST 返回 Parent/Child read model。CLI MUST NOT 新增独立 graph、board 或 relation 顶层 action。
@@ -517,24 +523,42 @@ Buildr MUST 通过一个封闭、可验证的 command metadata catalog 同时声
 - **THEN** 产品验证 MUST fail closed 并给出具体 command identity 与字段诊断
 
 ### Requirement: 零消费者的 OpenSpec 分阶段 CLI 必须退役
-Buildr MUST 不再注册、执行或发布 `buildr openspec sync-plan` 与 `buildr openspec sync-apply`；确定性 expected tree 规划、隔离验证和条件式 canonical 应用 MUST 只作为 `buildr openspec converge` 单一事务的内部步骤保留。
+Buildr MUST 不再注册、执行或发布 `buildr openspec baseline create`、`buildr openspec check`、`buildr openspec sync-plan` 与 `buildr openspec sync-apply`；旧 baseline、pre-sync/post-sync stage 与 sidecar workflow MUST 不再拥有 current writer 或 reader。确定性 expected tree、冲突检查、隔离验证、条件式 canonical 应用与写后确认 MUST 只由 `buildr openspec converge` 单一事务持有。
 
 #### Scenario: 调用已删除的 sync-plan
 - **WHEN** 调用方运行 `buildr openspec sync-plan <change> ...`
 - **THEN** CLI MUST 返回标准 unknown-command 诊断并以非零状态退出
-- **AND** MUST NOT 写 plan sidecar、canonical spec、receipt 或 archive 状态
+- **AND** MUST NOT 写 plan、baseline、pre-sync receipt、canonical spec、convergence receipt 或 archive 状态
 
 #### Scenario: 调用已删除的 sync-apply
 - **WHEN** 调用方运行 `buildr openspec sync-apply <change> ...`
 - **THEN** CLI MUST 返回标准 unknown-command 诊断并以非零状态退出
-- **AND** MUST NOT读取旧 plan 作为授权、修改 canonical spec 或创建 convergence receipt
+- **AND** MUST NOT 读取旧 plan 作为授权、修改 canonical spec 或创建 convergence receipt
 
 #### Scenario: 使用当前收敛事务
 - **WHEN** OpenSpec Contract Guard 需要确定性收敛 active Change
-- **THEN** 它 MUST 继续只调用 `buildr openspec converge`
-- **AND** converge MUST 在单一 operation 中完成规划、projected strict validation、条件式应用、写后确认和 archive
+- **THEN** 它 MUST 只调用 `buildr openspec converge`
+- **AND** converge MUST 在单一 operation 中完成冲突检查、规划、projected strict validation、条件式应用、写后确认和 archive
+
+#### Scenario: Fresh Change 进入 apply
+- **WHEN** 一个没有旧 baseline sidecar 的新 Change 完成 apply-required artifacts
+- **THEN** OpenSpec consumer MUST 使用 upstream strict validation 与 Planning Review 进入实现
+- **AND** MUST NOT 创建、刷新、读取或要求旧 contract baseline
 
 #### Scenario: 保留仍有消费者的兼容入口
-- **WHEN** 当前 Skill/Component 仍调用 `openspec baseline create`、proposal `openspec check` 或 `skills migrate-project-assets`
-- **THEN** 本 Change MUST 将其标记为 legacy 并保留既有兼容行为
-- **AND** 不得以删除 `sync-plan`/`sync-apply` 为由提前删除这些独立入口
+- **WHEN** 当前或旧 consumer 调用 `openspec baseline create`、proposal `openspec check` 或 `skills migrate-project-assets`
+- **THEN** Buildr MUST 返回标准 unknown-command，不保留兼容行为或 replacement route
+- **AND** MUST NOT 读取或写入旧 sidecar、Project Skill source 或 capability context
+
+### Requirement: Legacy Project Skill 自动迁移必须退役
+Buildr MUST 不再注册、执行或发布 `buildr skills migrate-project-assets`，并 MUST 删除扫描、复制、合并或删除 Project Skill source 的自动迁移能力。workspace Skill registry MUST 继续作为唯一 source authority，Project MUST 只表达 capability context。
+
+#### Scenario: 调用已删除迁移命令
+- **WHEN** 调用方运行 `buildr skills migrate-project-assets --check` 或 `--apply`
+- **THEN** CLI MUST 返回标准 unknown-command 诊断并以非零状态退出
+- **AND** MUST NOT 读取、复制、写入或删除 workspace/Project Skill source、manifest、contract 或 capability context
+
+#### Scenario: Doctor 遇到旧 Project Skill source
+- **WHEN** Doctor 观察到 Project 下仍存在旧 Skill manifest 或 source
+- **THEN** Doctor MUST 报告 unsupported/fail-closed diagnostic
+- **AND** MUST NOT 推荐当前版本不存在的 migration command 或执行自动修复

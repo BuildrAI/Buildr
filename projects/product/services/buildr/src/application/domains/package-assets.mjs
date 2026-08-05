@@ -544,9 +544,8 @@ export function registerDomainsPackageAssets(runtime) {
       writeMappedFileIfMissing(targetRoot, projectRoot, entry, variables, changed);
       if (changed.length > before) changed[changed.length - 1] = `projects/${projectName}/${entry.target}`;
     }
-    // Legacy projects/<project>/skills is preserved verbatim until the explicit
-    // migrate-project-assets transaction is run. Ordinary repair/sync never
-    // creates, rewrites, merges, or deletes it.
+    // Unsupported projects/<project>/skills is preserved verbatim. Current
+    // repair/sync never creates, rewrites, merges, migrates, or deletes it.
     const servicesFile = servicesManifestPath(projectRoot);
     if (!existsFile(servicesFile) && !existsFile(path.join(projectRoot, 'services.yml'))) {
       runtime.writeServiceRegistry(servicesFile, projectEntity.id, {});

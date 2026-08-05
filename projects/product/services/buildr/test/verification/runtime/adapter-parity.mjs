@@ -254,8 +254,9 @@ async function verifyLegacySkillScope(seed) {
   const plan = path.join(workspace, '.agents', 'buildr', 'skill-install-plans', 'beta-remote.md');
   assert.ok(fs.existsSync(plan));
   const result = await harness.runAsync(['skills', 'render', 'codex', '--scope', 'projects/scope-alpha', '--target', workspace], { allowFailure: true });
-  assert.notEqual(result.status, 0, 'Project-scoped Skill render must fail with migration guidance');
+  assert.notEqual(result.status, 0, 'Project-scoped Skill render must fail without automatic migration');
   assert.match(result.stderr, /Legacy Project Skill render scope is no longer supported/);
+  assert.doesNotMatch(result.stderr, /migrate-project-assets/);
   assert.ok(fs.existsSync(plan), 'rejected Project-scoped render must not remove workspace install plans');
 }
 

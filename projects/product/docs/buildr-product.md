@@ -127,18 +127,17 @@ local app 不是第二个 Agent，也不是聊天客户端或任务执行器。�
 
 ## CLI 产品表面
 
-Buildr 按用途和承诺区分四层 CLI 产品表面：
+Buildr 按用途和承诺区分三层 CLI 产品表面：
 
 | 分类 | 含义 | 可见性 |
 |---|---|---|
 | primary | 普通用户或 Agent 的 workspace onboarding、资产 lifecycle、诊断、修复和 runtime 主路径 | 根帮助主区、主题帮助、主产品文档和 bootstrap canonical 示例 |
 | agent-machine | Agent、Skill 和产品 Application 依赖的低频确定性接口，例如 Review/Verification Result、Task Environment 与 Finish | 根帮助独立分区、完整主题帮助和稳定命令契约 |
 | maintenance | 产品构建、开发预览和 OpenSpec workflow 编排 | 根帮助维护分区、维护文档、workflow Skills 和产品验证 |
-| legacy | 兼容窗口内仍有消费者的旧入口 | 根帮助 legacy 分区、主题帮助显示 replacement；新说明不推荐使用 |
 
 该分类只控制可发现性与兼容承诺，不是权限或安全边界。`agent-machine` 与 `maintenance` 命令仍然可执行并具有 canonical help；具体授权、安全和 effects 继续由对应 Application/Skill contract 决定。
 
-当前 `package check/build`、`app preview *`、`openspec converge/audit` 属于 maintenance。`openspec sync-plan` 与 `sync-apply` 已在零消费者后删除，确定性 planning/apply 仅由 `converge` 事务内部持有；仍有消费者的 `openspec baseline create`、阶段型 `openspec check` 和 `skills migrate-project-assets` 暂列 legacy。`package:<source-id>` 是 package manifest 与随包 Skill resolver 的内部 source identity，不是用户资产 id 或公开 source scheme。`service create --rules` 仅保留 deprecated warning compatibility no-op；canonical Service 规则入口是 Service 目录中的 `AGENTS.md`。
+当前 `package check/build`、`app preview *`、`openspec converge/audit` 属于 maintenance。`openspec baseline create`、阶段型 `openspec check`、`openspec sync-plan`、`openspec sync-apply` 与 `skills migrate-project-assets` 已删除；旧调用返回标准 unknown-command，确定性 planning/apply 仅由 `converge` 事务内部持有。legacy Project Skill source 不受支持且当前 Buildr 不执行自动迁移。`package:<source-id>` 是 package manifest 与随包 Skill resolver 的内部 source identity，不是用户资产 id 或公开 source scheme。`service create --rules` 仅保留 deprecated warning compatibility no-op；canonical Service 规则入口是 Service 目录中的 `AGENTS.md`。
 
 ## Runtime 投射
 

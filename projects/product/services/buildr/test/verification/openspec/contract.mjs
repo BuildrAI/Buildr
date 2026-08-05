@@ -33,9 +33,8 @@ function run(args, expected = 0, fixtureRoot = root) {
   if (result.status !== expected) fail(`buildr ${args.join(' ')} exited ${result.status}, expected ${expected}: ${(result.stderr || result.stdout).trim()}`);
   const payload = args.includes('--json') && result.stdout.trim() ? JSON.parse(result.stdout) : null;
   if (payload && args[0] === 'openspec') {
-    const expectedSchema = args[1] === 'baseline' ? 'buildr.openspec-baseline/v1'
-      : args[1] === 'converge' ? 'buildr.openspec-convergence/v1'
-        : args[1] === 'audit' ? 'buildr.openspec-convergence-audit/v1' : 'buildr.openspec-check/v1';
+    const expectedSchema = args[1] === 'converge' ? 'buildr.openspec-convergence/v1'
+      : 'buildr.openspec-convergence-audit/v1';
     if (payload.schemaVersion !== expectedSchema) fail(`Expected ${expectedSchema}, got ${payload.schemaVersion}`);
   }
   return payload;
@@ -59,11 +58,8 @@ function change(id, capability, kind, delta) {
   write(path.join(changesRoot, id, 'specs', capability, 'spec.md'), delta);
 }
 function removeChange(id) { fs.rmSync(path.join(changesRoot, id), { recursive: true, force: true }); }
-function baseline(id, options = []) { return run(['openspec', 'baseline', 'create', id, '--project', project, '--target', root, '--json', ...options]); }
-function check(id, stage, expected = 0) { return run(['openspec', 'check', id, '--stage', stage, '--project', project, '--target', root, '--json'], expected); }
 function converge(id, expected = 0) { return run(['openspec', 'converge', id, '--project', project, '--target', root, '--json'], expected); }
 function audit(id, expected = 0) { return run(['openspec', 'audit', id, '--project', project, '--target', root, '--json'], expected); }
-function assertError(result, code) { if (!result.findings.some((finding) => finding.code === code)) fail(`Expected finding ${code}: ${JSON.stringify(result.findings)}`); }
 
 const existing = requirement('Existing', '保留既有行为');
 const untouched = requirement('Untouched', '保持不变');
@@ -72,57 +68,12 @@ const added = requirement('Added', '提供新增能力');
 
 const cases = {
   'unknown-project'() {
-    const result = spawnSync(process.execPath, [buildr, 'openspec', 'check', 'missing', '--stage', 'proposal', '--project', 'missing', '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
+    const result = spawnSync(process.execPath, [buildr, 'openspec', 'converge', 'missing', '--project', 'missing', '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
     if (result.status === 0 || !result.stderr.includes('Project is not registered')) fail('unknown Project must be rejected before sidecar access');
-  },
-  'safe-modified'() {
-    change('safe-modified', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); const baselineResult = baseline('safe-modified');
-    const proposalResult = check('safe-modified', 'proposal');
-    if (baselineResult.deprecation?.status !== 'deprecated-compatible' || proposalResult.deprecation?.replacement !== 'openspec converge' || !check('safe-modified', 'pre-sync').ok) fail('legacy guards must pass with structured deprecation');
-    canonical('demo', [modified, untouched]); if (!check('safe-modified', 'post-sync').ok) fail('safe modified post-sync must pass');
-    const receipt = JSON.parse(fs.readFileSync(path.join(changesRoot, 'safe-modified', '.buildr', 'contract-pre-sync-receipt.json'), 'utf8'));
-    if (!receipt.postSyncSpecIntegrities?.demo?.startsWith('sha256-')) fail('post-sync receipt must bind canonical integrity');
-  },
-  'safe-added'() {
-    change('safe-added', 'demo', 'modified', `## ADDED Requirements\n\n${added}`); baseline('safe-added'); check('safe-added', 'pre-sync');
-    canonical('demo', [existing, untouched, added]); if (!check('safe-added', 'post-sync').ok) fail('safe added post-sync must pass');
-  },
-  'safe-removed'() {
-    canonical('demo', [existing, untouched, added]); change('safe-removed', 'demo', 'modified', `## REMOVED Requirements\n\n${added}`); baseline('safe-removed'); check('safe-removed', 'pre-sync');
-    canonical('demo', [existing, untouched]); if (!check('safe-removed', 'post-sync').ok) fail('safe removed post-sync must pass');
-  },
-  'safe-renamed'() {
-    const legacy = requirement('Legacy', '保留名称前的内容'); canonical('demo', [legacy, untouched]);
-    change('safe-renamed', 'demo', 'modified', '## RENAMED Requirements\n\n- FROM: `### Requirement: Legacy`\n- TO: `### Requirement: Modern`\n'); baseline('safe-renamed'); check('safe-renamed', 'pre-sync');
-    canonical('demo', [legacy.replace('### Requirement: Legacy', '### Requirement: Modern'), untouched]); if (!check('safe-renamed', 'post-sync').ok) fail('safe renamed post-sync must pass');
-  },
-  'proposal-and-baseline-errors'() {
-    change('proposal-mismatch', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('proposal-mismatch');
-    write(path.join(changesRoot, 'proposal-mismatch', 'proposal.md'), '## Capabilities\n\n### New Capabilities\n\n### Modified Capabilities\n'); assertError(check('proposal-mismatch', 'proposal', 1), 'openspec_contract.proposal_delta_missing'); removeChange('proposal-mismatch');
-    change('incomplete-baseline', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('incomplete-baseline'); fs.appendFileSync(path.join(changesRoot, 'incomplete-baseline', 'specs', 'demo', 'spec.md'), `\n## ADDED Requirements\n\n${requirement('Later', '在基线后新增')}`); assertError(check('incomplete-baseline', 'proposal', 1), 'openspec_contract.baseline_incomplete'); removeChange('incomplete-baseline');
-    change('missing-baseline', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); assertError(check('missing-baseline', 'proposal', 1), 'openspec_contract.baseline_missing');
-  },
-  'adopted-and-corrupt'() {
-    change('adopted', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); if (baseline('adopted', ['--adopt-current']).adopted !== true) fail('adopted baseline must be marked'); removeChange('adopted');
-    change('corrupt-baseline', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('corrupt-baseline'); fs.writeFileSync(path.join(changesRoot, 'corrupt-baseline', '.buildr', 'contract-baseline.json'), '{ invalid json\n'); assertError(check('corrupt-baseline', 'proposal', 1), 'openspec_contract.baseline_invalid');
-  },
-  'conflict'() {
-    change('conflict-a', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); change('conflict-b', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('conflict-a'); baseline('conflict-b'); assertError(check('conflict-a', 'pre-sync', 1), 'openspec_contract.active_conflict');
-  },
-  'stale-and-occupied'() {
-    change('stale', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('stale'); canonical('demo', [requirement('Existing', '已被前序 change 改变'), untouched]); assertError(check('stale', 'pre-sync', 1), 'openspec_contract.baseline_stale'); removeChange('stale');
-    canonical('demo', [existing, untouched]); change('occupied-added', 'demo', 'modified', `## ADDED Requirements\n\n${added}`); baseline('occupied-added'); canonical('demo', [existing, untouched, added]); assertError(check('occupied-added', 'pre-sync', 1), 'openspec_contract.baseline_stale');
-  },
-  'post-sync-errors'() {
-    change('partial', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('partial'); check('partial', 'pre-sync');
-    const mismatch = check('partial', 'post-sync', 1); const finding = mismatch.findings.find((item) => item.code === 'openspec_contract.post_sync_result_mismatch');
-    if (!finding || finding.operation !== 'MODIFIED' || !finding.expectedSummary?.startsWith('sha256-') || !finding.actualSummary?.startsWith('sha256-') || !finding.nextAction?.includes('完整文本')) fail('post-sync mismatch diagnostic incomplete');
-    canonical('demo', [modified, requirement('Untouched', '被错误改写')]); assertError(check('partial', 'post-sync', 1), 'openspec_contract.post_sync_untouched_changed'); removeChange('partial');
-    canonical('demo', [existing, untouched]); change('receipt-changed', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); baseline('receipt-changed'); check('receipt-changed', 'pre-sync'); fs.appendFileSync(path.join(changesRoot, 'receipt-changed', 'specs', 'demo', 'spec.md'), '\n<!-- fixture mutation -->\n'); assertError(check('receipt-changed', 'post-sync', 1), 'openspec_contract.receipt_delta_changed');
   },
   'unsupported-upstream'() {
     const definition = path.join(root, 'components', 'buildr', 'openspec', 'component.yml'); const original = fs.readFileSync(definition, 'utf8'); fs.writeFileSync(definition, original.replace('version: "1.6.0"', 'version: "9.9.9"'));
-    change('unsupported-upstream', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); const result = spawnSync(process.execPath, [buildr, 'openspec', 'baseline', 'create', 'unsupported-upstream', '--project', project, '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
+    change('unsupported-upstream', 'demo', 'modified', `## MODIFIED Requirements\n\n${modified}`); const result = spawnSync(process.execPath, [buildr, 'openspec', 'converge', 'unsupported-upstream', '--project', project, '--target', root, '--json'], { cwd: productRoot, encoding: 'utf8', env: commandEnv });
     if (result.status === 0 || !result.stderr.includes('does not support upstream version')) fail('unsupported upstream must fail closed');
   },
   'upstream-archive-safety'() {
@@ -179,18 +130,9 @@ const cases = {
 const suites = Object.freeze({
   contract: Object.freeze([
     'unknown-project',
-    'safe-modified',
-    'safe-added',
-    'safe-removed',
-    'safe-renamed',
-    'proposal-and-baseline-errors',
-    'adopted-and-corrupt',
-    'conflict',
-    'stale-and-occupied',
     'unsupported-upstream',
   ]),
   recovery: Object.freeze([
-    'post-sync-errors',
     'upstream-archive-safety',
     'convergence-transaction-safe',
     'convergence-audit-unprovable',

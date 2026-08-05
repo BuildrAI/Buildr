@@ -66,7 +66,7 @@ infrastructure/runtime/render-claude-code.mjs
   -> infrastructure/runtime/skills/{arguments,manifests,contributions,sources,render-plan}.mjs
 ```
 
-CLI command 只在 `src/interfaces/cli/registry.mjs` 的 command catalog 登记一次。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance | legacy` surface、summary、canonical help、match 与 run adapter；legacy descriptor 另外声明 replacement。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费该 catalog，架构验证检查 descriptor 关系而不复制完整 supported-key 清单。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+CLI command 只在 `src/interfaces/cli/registry.mjs` 的 command catalog 登记一次。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费该 catalog，架构验证检查 descriptor 关系而不复制完整 supported-key 清单。已退役命令不保留 legacy descriptor、alias 或隐藏 route。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
 
 Surface 只控制发现层级与兼容承诺，不提供权限。`agent-machine` 保留 Task Environment、Review/Verification Result、Finish 等正式机器接口；`maintenance` 隔离 package、preview 与 OpenSpec workflow；`legacy` 只保留仍有消费者的兼容入口。`openspec sync-plan`/`sync-apply` 的公开 route、handler 和 JSON schema 已删除，但 deterministic planner/apply primitive 继续由单一 `openspec converge` transaction 内部组合。
 

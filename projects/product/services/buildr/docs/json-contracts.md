@@ -23,8 +23,6 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `component check` | `buildr.component-check/v1` |
 | `builtin list` | `buildr.builtin-list/v1` |
 | `update check` | `buildr.update-check/v1` |
-| `openspec baseline create` | `buildr.openspec-baseline/v1` |
-| `openspec check` | `buildr.openspec-check/v1` |
 | `openspec converge` | `buildr.openspec-convergence/v1` |
 | `openspec audit` | `buildr.openspec-convergence-audit/v1` |
 | `task environment prepare/inspect/cleanup` | `buildr.task-environment-result/v1` |

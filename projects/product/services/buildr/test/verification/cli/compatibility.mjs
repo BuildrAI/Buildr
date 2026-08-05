@@ -66,7 +66,6 @@ const surfaceHeadings = {
   primary: 'Primary workspace commands:',
   'agent-machine': 'Agent machine commands:',
   maintenance: 'Product maintenance commands:',
-  legacy: 'Legacy compatibility commands:',
 };
 for (const [surface, heading] of Object.entries(surfaceHeadings)) {
   const start = rootHelp.stdout.indexOf(heading);
@@ -82,12 +81,19 @@ for (const [surface, heading] of Object.entries(surfaceHeadings)) {
 
 const removedHelpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-removed-help-'));
 try {
-  for (const action of ['sync-plan', 'sync-apply']) {
-    const result = run(['openspec', action, 'demo', '--target', removedHelpCwd, '--json'], { cwd: removedHelpCwd });
+  const removedCommands = [
+    { key: 'openspec baseline create', args: ['openspec', 'baseline', 'create', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec check', args: ['openspec', 'check', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec sync-plan', args: ['openspec', 'sync-plan', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec sync-apply', args: ['openspec', 'sync-apply', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'skills migrate-project-assets', args: ['skills', 'migrate-project-assets', '--target', removedHelpCwd, '--check', '--json'] },
+  ];
+  for (const command of removedCommands) {
+    const result = run(command.args, { cwd: removedHelpCwd });
     assert.equal(result.status, 2);
     assert.equal(JSON.parse(result.stdout).error.code, 'cli.unknown_command');
-    assert.deepEqual(fs.readdirSync(removedHelpCwd), [], `removed command wrote files: ${action}`);
-    assert.equal(COMMAND_REGISTRY.some((item) => item.key === `openspec ${action}`), false);
+    assert.deepEqual(fs.readdirSync(removedHelpCwd), [], `removed command wrote files: ${command.key}`);
+    assert.equal(COMMAND_REGISTRY.some((item) => item.key === command.key), false);
   }
 } finally {
   fs.rmSync(removedHelpCwd, { recursive: true, force: true });

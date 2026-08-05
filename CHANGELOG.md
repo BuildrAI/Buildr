@@ -4,7 +4,8 @@
 
 ## Unreleased
 
-- 收敛 Buildr CLI 产品表面：以单一 command catalog 统一 dispatch、canonical help、未知命令建议和 `primary`、`agent-machine`、`maintenance`、`legacy` 四层分类；补齐 `task finish` 聚合帮助，并移除零消费者的 `openspec sync-plan`、`openspec sync-apply` 公开 route 与 JSON schema，统一改用 `openspec converge`。
+- Breaking：清退 CLI Legacy 产品表面，删除 `openspec baseline create`、阶段型 `openspec check` 与 `skills migrate-project-assets` 的 route、实现和 JSON schema；连同已删除的 `sync-plan`/`sync-apply`，旧调用统一返回零写入 unknown-command。OpenSpec apply 改用 strict validation、current Planning Review 与单一 `converge`，legacy Project Skill source 只 fail closed，不再自动迁移。
+- 收敛 Buildr CLI 产品表面：以单一 command catalog 统一 dispatch、canonical help、未知命令建议和 `primary`、`agent-machine`、`maintenance` 三层分类；补齐 `task finish` 聚合帮助。
 
 ## 0.1.0-rc.7 - 2026-07-24
 

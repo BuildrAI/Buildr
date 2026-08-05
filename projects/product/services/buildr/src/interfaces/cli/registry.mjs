@@ -513,32 +513,6 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.commandsRemove(c.argv.slice(4)),
   },
   {
-    key: "openspec baseline create",
-    surface: "legacy",
-    summary: "弃用兼容入口：为旧 OpenSpec workflow 创建 Requirement 契约基线；current Change lifecycle 在稳定 Content Target 前使用所选 OpenSpec workflow，Task Finish 不收敛 Change。",
-    help: [
-      "Usage: buildr openspec baseline create <change> --project <project> [--target <dir>] [--adopt-current] [--update] [--json]",
-      "",
-      "弃用兼容入口：为旧 OpenSpec workflow 创建 Requirement 契约基线；current Change lifecycle 在稳定 Content Target 前使用所选 OpenSpec workflow，Task Finish 不收敛 Change。"
-    ],
-    replacement: "buildr openspec converge",
-    match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'baseline' && runtimeId === 'create',
-    run: (r, c) => r.openspecBaselineCreate(c.argv.slice(5)),
-  },
-  {
-    key: "openspec check",
-    surface: "legacy",
-    summary: "弃用兼容入口：检查旧 OpenSpec proposal、基线和阶段结果；current Change lifecycle 在稳定 Content Target 前使用所选 OpenSpec workflow，Task Finish 不收敛 Change。",
-    help: [
-      "Usage: buildr openspec check <change> --stage <proposal|pre-sync|post-sync> --project <project> [--target <dir>] [--json]",
-      "",
-      "弃用兼容入口：检查旧 OpenSpec proposal、基线和阶段结果；current Change lifecycle 在稳定 Content Target 前使用所选 OpenSpec workflow，Task Finish 不收敛 Change。"
-    ],
-    replacement: "buildr openspec converge",
-    match: ({ domain, action }) => domain === 'openspec' && action === 'check',
-    run: (r, c) => r.openspecCheck(c.argv.slice(4)),
-  },
-  {
     key: "openspec converge",
     surface: "maintenance",
     summary: "产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。",
@@ -775,19 +749,6 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'skills' && action === 'unbind',
     run: (r, c) => r.skillsUnbind(c.argv.slice(4)),
-  },
-  {
-    key: "skills migrate-project-assets",
-    surface: "legacy",
-    summary: "显式检查或事务迁移 legacy Project Skill 源到 workspace，并生成 Project capability/applicability context。",
-    help: [
-      "Usage: buildr skills migrate-project-assets --target <workspace> <--check|--apply> [--json]",
-      "",
-      "显式检查或事务迁移 legacy Project Skill 源到 workspace，并生成 Project capability/applicability context。"
-    ],
-    replacement: "buildr skills add/bind with Project capabilities.yml",
-    match: ({ domain, action }) => domain === 'skills' && action === 'migrate-project-assets',
-    run: (r, c) => r.skillsMigrateProjectAssets(c.argv.slice(4)),
   },
   {
     key: "skill install",

@@ -8,7 +8,7 @@ const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const projectRoot = path.resolve(productRoot, '../..');
 const scanRoots = ['README.md', 'docs', 'package', 'bin', 'src', 'scripts', 'test', 'openspec/specs'];
 const textExtensions = new Set(['.md', '.mjs', '.yml', '.yaml']);
-const allowedProjectSkillContext = /legacy|migration|migrate-project-assets|no longer supported|must be rejected|must not|旧文档|询问 Project Skill|未公开|迁移|拒绝|而不是|不再|不得|不支持|不折叠|不创建|不解释/i;
+const allowedProjectSkillContext = /legacy|unsupported|no longer supported|must be rejected|must not|旧文档|询问 Project Skill|未公开|人工审阅|迁移|拒绝|而不是|不再|不得|不支持|不折叠|不创建|不解释/i;
 const obsoleteCurrentState = [
   /workspace\s*[/、]\s*project skills?/i,
   /workspace or project skills?/i,

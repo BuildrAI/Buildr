@@ -100,11 +100,10 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);
 });
 
-test('OpenSpec 兼容帮助不再把 convergence 路由给 Task Finish', () => {
+test('已清退的 OpenSpec Legacy 帮助入口不再存在', () => {
   for (const topic of [['baseline', 'create'], ['check']]) {
     const result = spawnSync(process.execPath, [cli, 'help', 'openspec', ...topic], { encoding: 'utf8' });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Task Finish 不收敛 Change/);
-    assert.doesNotMatch(result.stdout, /新 Task Finish 使用 openspec converge/);
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.match(result.stderr, /Unknown help topic/);
   }
 });

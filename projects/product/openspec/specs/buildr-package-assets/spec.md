@@ -709,7 +709,7 @@ Buildr package MUST 只向 workspace baseline 交付受管 Skill manifest、cont
 - **AND** MUST NOT 复制 Skill source 到 Project template
 
 ### Requirement: Package verification 覆盖 destination 与冲突迁移
-产品验证 MUST 覆盖 workspace-only source、user/workspace render destination、effective inventory conflict 和 legacy Project Skill migration。
+产品验证 MUST 覆盖 workspace-only source、user/workspace render destination、effective inventory conflict，以及 legacy Project Skill source 被拒绝且不存在自动迁移路径。
 
 #### Scenario: 临时 workspace Skill 生命周期
 - **WHEN** package verification 创建临时 workspace 并维护 Skill
@@ -717,9 +717,9 @@ Buildr package MUST 只向 workspace baseline 交付受管 Skill manifest、cont
 - **AND** MUST 证明 init/sync 不写用户层
 
 #### Scenario: Project Skill migration fixtures
-- **WHEN** verification 检查 legacy workspace
-- **THEN** MUST 覆盖 Project 独有 Skill、等价重复、同名不同内容、Project binding 和 migration rollback
-- **AND** blocking conflict MUST 保持整次零写入
+- **WHEN** verification 检查包含 legacy Project Skill manifest 或 source 的 workspace
+- **THEN** MUST 验证 Doctor 与 Skills CLI fail closed 且不返回可执行 migration command
+- **AND** MUST 证明当前产品不会复制、合并、删除或改写 legacy Project Skill bytes
 
 ### Requirement: Package baseline 交付 Project Command requirements context
 Buildr package MUST 为新 Project 交付空的 Command requirements baseline，并 MUST 保持 workspace catalog 与 Project references 分离。

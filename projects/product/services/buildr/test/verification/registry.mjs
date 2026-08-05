@@ -109,9 +109,9 @@ const concurrency = (global, workspaceHeavy, workspaceSaturating, innerConcurren
 });
 
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
-  local: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 4, 'openspec-convergence-recovery': 3 }),
-  ci: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 4, 'openspec-convergence-recovery': 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, system: 6, 'openspec-contract-fixtures': 3, 'openspec-convergence-recovery': 2 }),
+  local: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
+  ci: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, system: 6, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY = VERIFICATION_EXECUTION_PROFILES.local;

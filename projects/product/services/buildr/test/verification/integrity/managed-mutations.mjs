@@ -50,7 +50,7 @@ const allowed = new Map([
   ['src/interfaces/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/application/domains/workspace.mjs', new Set(['createProject', 'createService'])],
   ['src/application/domains/rules.mjs', new Set(['rulesRemoveUnsafe'])],
-  ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe', 'applyProjectSkillMigration'])],
+  ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
   ['src/application/domains/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
   ['src/application/domains/package-assets.mjs', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
   ['src/application/package-maintenance.mjs', new Set(['syncPackageBuiltins'])],

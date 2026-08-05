@@ -108,7 +108,7 @@ Task Finish 随 Buildr Client 整体直接替换，沿用 `buildr.task-finish/v1
 
 这里有两个不同的版本概念：
 
-- Workspace manifest 会从 v1/v2 兼容读取并在受管 mutation 中升级为 `buildr.skills/v3`，保存 workspace/asset/source identity。legacy Project manifest 必须通过 `skills migrate-project-assets --check/--apply` 显式事务迁移；失败时保留原目录与完整 recovery evidence。
+- Workspace manifest 会从 v1/v2 兼容读取并在受管 mutation 中升级为 `buildr.skills/v3`，保存 workspace/asset/source identity。legacy Project manifest 已不受支持，当前 Buildr 不提供自动迁移；升级前需使用旧版本完成迁移，或人工审阅后整理到 workspace `skills/`。当前命令保持原目录 bytes 不变并 fail closed。
 - contract 路径中的 `v1.md` 和 frontmatter 中的 `version: 1` 表示 capability contract 的第 1 个主版本，不随 manifest schema 升级；只有 contract 出现不兼容语义变化时才提升主版本。
 
 ## Contract 文档

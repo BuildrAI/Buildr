@@ -3,7 +3,6 @@ function rootHelp(catalog) {
     primary: 'Primary workspace commands:',
     'agent-machine': 'Agent machine commands:',
     maintenance: 'Product maintenance commands:',
-    legacy: 'Legacy compatibility commands:',
   };
   const lines = ['Usage: buildr <command> [options]'];
   for (const surface of Object.keys(headings)) {

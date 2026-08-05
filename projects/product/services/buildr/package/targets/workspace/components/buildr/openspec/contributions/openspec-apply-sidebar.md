@@ -2,7 +2,7 @@
 
 应用 change 前先向用户说明正在使用 OpenSpec、`apply` action、change id 及其选择或推断来源。OpenSpec status 解析上下文后，在编辑前报告实际 `changeRoot`；正式实现任务同时报告 Task ID 与 Task Environment 的实际工作根。
 
-任何实现编辑前，确认 apply-required artifacts 已完成，运行上游 `openspec validate <change> --strict`，并运行 `buildr openspec check <change> --stage proposal --project <project> --target <workspace> --json`。任一门禁未通过时停止并报告 `nextActions`；delta Requirement identity 后续改变时必须重新检查。不得把该门禁放回早于 Change 创建的 task triage，也不得创建、刷新或采用旧 baseline 来替代 current proposal/delta classification。
+任何实现编辑前，确认 apply-required artifacts 已完成并运行上游 `openspec validate <change> --strict`；正式 Task 还必须持有 current Planning Review。任一门禁未通过时停止并报告诊断；delta Requirement identity 后续改变时必须重新执行 strict validation，并使 Planning Review 重新判断 current。不得把该门禁放回早于 Change 创建的 task triage，也不得创建、刷新、读取或采用旧 baseline/阶段 sidecar。
 
 采用 Task Environment 时，编辑前运行 `buildr task environment inspect <task-id> --target <canonical-workspace> --json`，只消费成功结果中的 `execution.workdir`、`allowedExecutionRoots`、controller 与 `cliInvocation`；不得从 cwd、branch、同一 HEAD 或 Git evidence 猜 ownership。普通 Rule/Skill 内容修改不要求 session activation；只有本任务修改 runtime 的发现、加载或激活机制，且专项验收明确要求真实 Agent host activation proof 时才交给 Task Verification。
 

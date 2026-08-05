@@ -79,8 +79,9 @@ export function registerApplicationRuntime(runtime) {
     if (!runtimeTargetRoot) throw new Error(`Cannot determine user home for Skill destination ${destination}.`);
     assertRuntimeProjectionTarget(renderCommand.targetRoot, { destination, runtimeTargetRoot });
     if (skillScope !== '.') {
-      const error = new Error(`Legacy Project Skill render scope is no longer supported: ${skillScope}. Run buildr skills migrate-project-assets --target ${renderCommand.targetRoot} --check, then use --destination ${destination}.`);
+      const error = new Error(`Legacy Project Skill render scope is no longer supported: ${skillScope}. This Buildr version does not migrate Project Skill sources; review and move the source to workspace skills/ before using --destination ${destination}.`);
       error.code = 'skills.project_scope_unsupported';
+      error.nextActions = ['Review the legacy Project Skill source without modifying it.', `buildr skills render ${agent} --destination ${destination} --target ${renderCommand.targetRoot}`];
       throw error;
     }
     if (args.includes('--scope')) console.error('Warning: --scope . is deprecated for skills render; use --destination workspace or --destination user.');

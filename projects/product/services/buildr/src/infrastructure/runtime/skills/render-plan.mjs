@@ -245,7 +245,7 @@ export function resolveRenderSkills(repoRoot, scope, runtime) {
     const error = new Error(`Legacy Project Skill render scope is no longer supported: ${scope}. Use --destination workspace or --destination user from the workspace source authority.`);
     error.code = 'skills.project_scope_unsupported';
     error.reason = 'project_scope_removed';
-    error.nextActions = [`buildr skills migrate-project-assets --target ${organizationRoot} --check`, `buildr skills render ${runtime} --destination workspace --target ${organizationRoot}`];
+    error.nextActions = ['Review the legacy Project Skill source without modifying it; this Buildr version does not migrate it.', `buildr skills render ${runtime} --destination workspace --target ${organizationRoot}`];
     throw error;
   }
   const workspaceGraph = resolveSkillCapabilityGraph(organizationRoot, null, { runtime });

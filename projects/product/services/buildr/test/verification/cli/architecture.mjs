@@ -201,17 +201,16 @@ if (fs.existsSync(registry)) {
   const keys = COMMAND_CATALOG.map((item) => item.key);
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicates.length) problems.push(`duplicate command registry keys: ${[...new Set(duplicates)].join(', ')}`);
-  const surfaces = new Set(['primary', 'agent-machine', 'maintenance', 'legacy']);
+  const surfaces = new Set(['primary', 'agent-machine', 'maintenance']);
   for (const descriptor of COMMAND_CATALOG) {
     if (!surfaces.has(descriptor.surface)) problems.push(`command has invalid surface: ${descriptor.key}`);
     if (!descriptor.summary?.trim()) problems.push(`command is missing summary: ${descriptor.key}`);
     if (!Array.isArray(descriptor.help) || !descriptor.help.some((line) => line.startsWith('Usage:'))) problems.push(`command is missing canonical help: ${descriptor.key}`);
     if (descriptor.executable && (typeof descriptor.match !== 'function' || typeof descriptor.run !== 'function')) problems.push(`executable command is missing match/run: ${descriptor.key}`);
     if (!descriptor.executable && (descriptor.match || descriptor.run)) problems.push(`aggregate command must not execute: ${descriptor.key}`);
-    if (descriptor.surface === 'legacy' && !descriptor.replacement) problems.push(`legacy command is missing replacement: ${descriptor.key}`);
   }
   if (COMMAND_REGISTRY.some((item) => !item.executable)) problems.push('COMMAND_REGISTRY must contain executable descriptors only');
-  for (const retired of ['openspec sync-plan', 'openspec sync-apply']) {
+  for (const retired of ['openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'skills migrate-project-assets']) {
     if (keys.includes(retired)) problems.push(`retired command remains in catalog: ${retired}`);
   }
   if (!source.includes('registerCommandHelp(runtime, COMMAND_CATALOG)')) problems.push('dispatch and help must consume the same command catalog');

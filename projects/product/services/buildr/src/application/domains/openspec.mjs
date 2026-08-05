@@ -8,11 +8,8 @@ import { portableExecutableIdentity } from '../openspec/convergence-model.mjs';
 import { CONVERGENCE_RECEIPT_SCHEMA } from '../openspec/convergence-model.mjs';
 import { convergenceReceiptPath, runOpenSpecConvergence } from '../openspec/openspec-converge.mjs';
 import { observeConvergence } from '../openspec/convergence-observer.mjs';
-import { legacyConvergenceDeprecation, legacyConvergenceWarning } from '../openspec/legacy-convergence.mjs';
 import { validateActualOpenSpec, validateProjectedOpenSpec } from '../openspec/projected-validator.mjs';
 
-const OPENSPEC_CONTRACT_BASELINE_SCHEMA = 'buildr.openspec-contract-baseline/v1';
-const OPENSPEC_CONTRACT_RECEIPT_SCHEMA = 'buildr.openspec-contract-receipt/v1';
 const OPENSPEC_CONTRACT_SUPPORTED_UPSTREAM_VERSIONS = new Set(['1.6.0']);
 
 export function registerDomainsOpenspec(runtime) {
@@ -213,14 +210,6 @@ export function registerDomainsOpenspec(runtime) {
     return result;
   }
 
-  function openSpecBaselinePath(changeRoot) {
-    return path.join(changeRoot, '.buildr', 'contract-baseline.json');
-  }
-
-  function openSpecReceiptPath(changeRoot) {
-    return path.join(changeRoot, '.buildr', 'contract-pre-sync-receipt.json');
-  }
-
   function readOpenSpecContractJson(file, schema) {
     if (!existsFile(file)) return null;
     let value;
@@ -235,57 +224,6 @@ export function registerDomainsOpenspec(runtime) {
 
   function writeOpenSpecContractJson(file, value) {
     atomicWriteJson(file, value);
-  }
-
-  function baselineTargetsForDelta(projectRoot, delta) {
-    const targets = [];
-    for (const operation of delta.operations) {
-      const canonical = readOpenSpecCanonicalRequirements(projectRoot, operation.capability).requirements;
-      if (operation.type === 'RENAMED') {
-        for (const [title, expectedState] of [[operation.from, 'present'], [operation.to, 'absent']]) {
-          targets.push({ capability: operation.capability, title, operation: operation.type, state: expectedState, content: canonical.get(title) || null });
-        }
-      } else {
-        const expectedState = operation.type === 'ADDED' ? 'absent' : 'present';
-        targets.push({ capability: operation.capability, title: operation.title, operation: operation.type, state: expectedState, content: canonical.get(operation.title) || null });
-      }
-    }
-    for (const target of targets) {
-      if ((target.state === 'present') !== Boolean(target.content)) {
-        throw new Error(`Canonical Requirement state does not match delta operation: ${target.capability} / ${target.title}`);
-      }
-    }
-    return targets;
-  }
-
-  function expectedOpenSpecBaselineTargets(delta) {
-    const targets = [];
-    for (const operation of delta.operations) {
-      if (operation.type === 'RENAMED') {
-        targets.push({ capability: operation.capability, title: operation.from, operation: operation.type, state: 'present' });
-        targets.push({ capability: operation.capability, title: operation.to, operation: operation.type, state: 'absent' });
-      } else {
-        targets.push({ capability: operation.capability, title: operation.title, operation: operation.type, state: operation.type === 'ADDED' ? 'absent' : 'present' });
-      }
-    }
-    return targets;
-  }
-
-  function baselineTargetMap(baseline) {
-    const targets = Array.isArray(baseline?.targets) ? baseline.targets : [];
-    const result = new Map();
-    for (const target of targets) {
-      if (!isPlainObject(target) || typeof target.capability !== 'string' || typeof target.title !== 'string'
-        || !['present', 'absent'].includes(target.state) || typeof target.operation !== 'string') {
-        throw new Error('OpenSpec contract baseline contains an invalid target.');
-      }
-      const key = `${target.capability}\u0000${target.title}`;
-      if (result.has(key)) throw new Error(`OpenSpec contract baseline contains duplicate target: ${target.capability} / ${target.title}`);
-      if (target.state === 'present' && typeof target.content !== 'string') throw new Error(`OpenSpec contract baseline is missing content: ${target.capability} / ${target.title}`);
-      if (target.state === 'absent' && target.content !== null) throw new Error(`OpenSpec contract baseline must record null content for absent Requirement: ${target.capability} / ${target.title}`);
-      result.set(key, target);
-    }
-    return result;
   }
 
   function createOpenSpecContractResult(stage, change, project, upstreamVersion) {
@@ -304,84 +242,6 @@ export function registerDomainsOpenspec(runtime) {
 
   function addOpenSpecContractFinding(result, severity, code, message, extra = {}) {
     result.findings.push({ severity, code, message, ...extra });
-  }
-
-  function finishOpenSpecContractResult(result) {
-    result.ok = !result.findings.some((finding) => finding.severity === 'error');
-    result.nextActions = [...new Map(result.findings
-      .filter((finding) => finding.nextAction)
-      .map((finding) => [finding.nextAction, finding.nextAction])).values()];
-    return result;
-  }
-
-  function printOpenSpecContractResult(result) {
-    console.log(`Buildr OpenSpec contract ${result.stage}: ${result.project}/${result.change}`);
-    console.log(`Status: ${result.ok ? 'passed' : 'blocked'}; baseline=${result.baselineState}; conflicts=${result.conflicts.length}`);
-    for (const finding of result.findings) {
-      console.log(`[${finding.severity}] ${finding.code} - ${finding.message}`);
-      if (finding.nextAction) console.log(`  下一步：${finding.nextAction}`);
-      if (finding.expectedSummary || finding.actualSummary) console.log(`  预期/实际：${finding.expectedSummary ?? '<none>'} / ${finding.actualSummary ?? '<none>'}`);
-    }
-  }
-
-  function validateOpenSpecProposalAlignment(projectRoot, changeRoot, delta, baseline, result) {
-    let proposal;
-    try {
-      proposal = parseOpenSpecProposalCapabilities(changeRoot);
-    } catch (error) {
-      addOpenSpecContractFinding(result, 'error', 'openspec_contract.proposal_invalid', error.message, {
-        nextAction: '修复 proposal.md 的 Capabilities 列表后重新运行 proposal check。',
-      });
-      return;
-    }
-    const deltaCapabilities = new Set(delta.capabilities.keys());
-    for (const capability of deltaCapabilities) {
-      if (!proposal.new.has(capability) && !proposal.modified.has(capability)) {
-        addOpenSpecContractFinding(result, 'error', 'openspec_contract.proposal_delta_missing', `proposal 未声明 delta capability：${capability}`, {
-          capability,
-          nextAction: '在 proposal.md 的 Capabilities 中声明该 capability，或移除无关 delta spec。',
-        });
-      }
-      const exists = existsFile(path.join(projectRoot, 'openspec', 'specs', capability, 'spec.md'));
-      if (proposal.new.has(capability) && exists) addOpenSpecContractFinding(result, 'error', 'openspec_contract.proposal_kind_mismatch', `proposal 将已有 canonical capability 标为 new：${capability}`, { capability });
-      if (proposal.modified.has(capability) && !exists) addOpenSpecContractFinding(result, 'error', 'openspec_contract.proposal_kind_mismatch', `proposal 将不存在的 canonical capability 标为 modified：${capability}`, { capability });
-    }
-    for (const capability of [...proposal.new, ...proposal.modified]) {
-      if (!deltaCapabilities.has(capability)) addOpenSpecContractFinding(result, 'error', 'openspec_contract.proposal_delta_absent', `proposal capability 缺少 delta spec：${capability}`, {
-        capability,
-        nextAction: '创建对应 specs/<capability>/spec.md，或移除 proposal 中的 capability。',
-      });
-    }
-    if (!baseline) return;
-    let baselineTargets;
-    try {
-      baselineTargets = baselineTargetMap(baseline);
-    } catch (error) {
-      addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_invalid', error.message, { nextAction: '使用 baseline create --update 显式重建基线。' });
-      return;
-    }
-    const expected = expectedOpenSpecBaselineTargets(delta);
-    const expectedMap = new Map(expected.map((target) => [`${target.capability}\u0000${target.title}`, target]));
-    for (const [key, target] of expectedMap) {
-      const actual = baselineTargets.get(key);
-      if (!actual || actual.operation !== target.operation || actual.state !== target.state) {
-        addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_incomplete', `基线未覆盖当前 delta target：${target.capability} / ${target.title}`, {
-          capability: target.capability,
-          requirement: target.title,
-          nextAction: '审阅当前 canonical facts 后运行 baseline create --update。',
-        });
-      }
-    }
-    for (const [key, target] of baselineTargets) {
-      if (!expectedMap.has(key)) addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_extra', `基线包含当前 delta 未触达的 target：${target.capability} / ${target.title}`, {
-        capability: target.capability,
-        requirement: target.title,
-        nextAction: '审阅 delta 后运行 baseline create --update。',
-      });
-    }
-    if (baseline.deltaHash !== delta.hash) addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_delta_changed', 'delta 在创建基线后已变化。', {
-      nextAction: '审阅变更范围后运行 baseline create --update。',
-    });
   }
 
   function listActiveOpenSpecChangeRoots(projectRoot) {
@@ -423,101 +283,16 @@ export function registerDomainsOpenspec(runtime) {
         result.conflicts.push(conflict);
         addOpenSpecContractFinding(result, 'error', 'openspec_contract.active_conflict', `active changes 同时触达 Requirement：${identity.capability} / ${identity.requirement} (${candidate.id})`, {
           ...conflict,
-          nextAction: '合并语义相同的 change，或先完成并重新建立后续 change 的基线。',
+          nextAction: '合并语义相同的 change，或先完成前序 change 后重新建立后续 Change 的 Content Target。',
         });
-      }
-    }
-  }
-
-  function validateOpenSpecBaselineCurrent(projectRoot, baseline, result) {
-    let targets;
-    try {
-      targets = baselineTargetMap(baseline);
-    } catch (error) {
-      addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_invalid', error.message, { nextAction: '使用 baseline create --update 显式重建基线。' });
-      return;
-    }
-    for (const target of targets.values()) {
-      const actual = readOpenSpecCanonicalRequirements(projectRoot, target.capability).requirements.get(target.title) || null;
-      const expected = target.content;
-      if (actual !== expected) {
-        result.baselineState = 'stale';
-        addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_stale', `canonical Requirement 已偏离基线：${target.capability} / ${target.title}`, {
-          capability: target.capability,
-          requirement: target.title,
-          expectedState: target.state,
-          expectedSummary: openSpecContractHash(expected || ''),
-          actualSummary: openSpecContractHash(actual || ''),
-          nextAction: '先恢复或审阅 canonical Requirement，再显式更新或重建该 change 的基线；不得将当前 canonical 自动采纳为同步结果。',
-        });
-      }
-    }
-  }
-
-  function snapshotOpenSpecCapabilities(projectRoot, delta) {
-    const capabilities = {};
-    for (const capability of delta.capabilities.keys()) {
-      const requirements = readOpenSpecCanonicalRequirements(projectRoot, capability).requirements;
-      capabilities[capability] = Object.fromEntries([...requirements.entries()].sort(([left], [right]) => left.localeCompare(right)));
-    }
-    return capabilities;
-  }
-
-  function snapshotOpenSpecSpecIntegrities(projectRoot, delta) {
-    const integrities = {};
-    for (const capability of delta.capabilities.keys()) {
-      const file = path.join(projectRoot, 'openspec', 'specs', capability, 'spec.md');
-      const content = existsFile(file) ? normalizeOpenSpecContractText(fs.readFileSync(file, 'utf8')) : '';
-      integrities[capability] = openSpecContractHash(content);
-    }
-    return integrities;
-  }
-
-  function renameRequirementBlock(content, from, to) {
-    return normalizeOpenSpecContractText(content.replace(`### Requirement: ${from}`, `### Requirement: ${to}`));
-  }
-
-  function validateOpenSpecPostSync(projectRoot, delta, receipt, result) {
-    if (receipt.deltaHash !== delta.hash) {
-      addOpenSpecContractFinding(result, 'error', 'openspec_contract.receipt_delta_changed', 'delta 在 pre-sync 后发生变化。', {
-        nextAction: '重新运行 pre-sync check 后再验证同步结果。',
-      });
-      return;
-    }
-    const touched = new Map();
-    for (const operation of delta.operations) {
-      const names = operation.type === 'RENAMED' ? [operation.from, operation.to] : [operation.title];
-      for (const name of names) touched.set(`${operation.capability}\u0000${name}`, operation);
-      const requirements = readOpenSpecCanonicalRequirements(projectRoot, operation.capability).requirements;
-      if (operation.type === 'ADDED' || operation.type === 'MODIFIED') {
-        const actual = requirements.get(operation.title) || null;
-        if (actual !== operation.requirement) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_result_mismatch', `同步结果不匹配 ${operation.type} Requirement：${operation.capability} / ${operation.title}`, {
-          capability: operation.capability, requirement: operation.title, operation: operation.type,
-          expectedSummary: openSpecContractHash(operation.requirement), actualSummary: openSpecContractHash(actual || ''),
-          nextAction: '从 delta 中该 Requirement 的完整文本重建 canonical 后重跑 post-sync；不得重跑 pre-sync 掩盖 mismatch。',
-        });
-      } else if (operation.type === 'REMOVED') {
-        if (requirements.has(operation.title)) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_result_mismatch', `同步结果仍保留 REMOVED Requirement：${operation.capability} / ${operation.title}`, { capability: operation.capability, requirement: operation.title, operation: operation.type, expectedSummary: '<absent>', actualSummary: openSpecContractHash(requirements.get(operation.title)), nextAction: '移除 delta 声明的 Requirement 后重跑 post-sync。' });
-      } else if (operation.type === 'RENAMED') {
-        const before = receipt.capabilities?.[operation.capability]?.[operation.from];
-        const expected = before ? renameRequirementBlock(before, operation.from, operation.to) : null;
-        if (requirements.has(operation.from) || !expected || requirements.get(operation.to) !== expected) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_rename_mismatch', `同步结果不匹配 RENAMED Requirement：${operation.capability} / ${operation.from} -> ${operation.to}`, { capability: operation.capability, requirement: operation.from });
-      }
-    }
-    for (const [capability, snapshot] of Object.entries(receipt.capabilities || {})) {
-      const current = readOpenSpecCanonicalRequirements(projectRoot, capability).requirements;
-      const names = new Set([...Object.keys(snapshot), ...current.keys()]);
-      for (const name of names) {
-        if (touched.has(`${capability}\u0000${name}`)) continue;
-        if ((snapshot[name] || null) !== (current.get(name) || null)) addOpenSpecContractFinding(result, 'error', 'openspec_contract.post_sync_untouched_changed', `同步修改了未触达 Requirement：${capability} / ${name}`, { capability, requirement: name });
       }
     }
   }
 
   function openSpecContractContext(args, options = {}) {
-    const allowed = new Set(['--target', '--project', '--json', '--adopt-current', '--update', '--stage']);
+    const allowed = new Set(['--target', '--project', '--json']);
     for (const option of options.allowedOptions || []) allowed.add(option);
-    assertNoUnknownOptions(args, allowed, new Set(['--json', '--adopt-current', '--update']));
+    assertNoUnknownOptions(args, allowed, new Set(['--json']));
     const positionals = positionalArgs(args);
     const change = positionals[0];
     if (!change || positionals.length !== 1) throw new Error(`Usage: ${options.usage}`);
@@ -531,116 +306,6 @@ export function registerDomainsOpenspec(runtime) {
     const delta = parseOpenSpecChangeDelta(changeRoot);
     if (delta.operations.length === 0) throw new Error(`OpenSpec change has no delta Requirements: ${change}`);
     return { targetRoot, project, projectRoot, component, change, changeRoot, delta, archived };
-  }
-
-  function openspecBaselineCreate(args) {
-    const context = openSpecContractContext(args, {
-      usage: 'buildr openspec baseline create <change> --project <project> [--target <dir>] [--adopt-current] [--update] [--json]',
-    });
-    const json = hasFlag(args, '--json');
-    const baselineFile = openSpecBaselinePath(context.changeRoot);
-    if (existsFile(baselineFile) && !hasFlag(args, '--update')) {
-      throw new Error(`OpenSpec contract baseline already exists: ${toPosixRelative(context.projectRoot, baselineFile)}. Use --update only after reviewing the canonical facts.`);
-    }
-    const targets = baselineTargetsForDelta(context.projectRoot, context.delta);
-    const baseline = {
-      schemaVersion: OPENSPEC_CONTRACT_BASELINE_SCHEMA,
-      change: context.change,
-      project: context.project,
-      upstreamVersion: context.component.upstreamVersion,
-      deltaHash: context.delta.hash,
-      adopted: hasFlag(args, '--adopt-current'),
-      targets,
-    };
-    writeOpenSpecContractJson(baselineFile, baseline);
-    const payload = {
-      ok: true,
-      change: context.change,
-      project: context.project,
-      upstreamVersion: context.component.upstreamVersion,
-      baselinePath: toPosixRelative(context.projectRoot, baselineFile),
-      adopted: baseline.adopted,
-      targetCount: targets.length,
-      nextActions: [`buildr openspec converge ${context.change} --project ${context.project} --target ${context.targetRoot} --json`],
-      deprecation: legacyConvergenceDeprecation('baseline'),
-    };
-    if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecBaseline, payload), null, 2)}\n`);
-    else { console.warn(legacyConvergenceWarning('baseline')); console.log(`Created OpenSpec contract baseline: ${payload.baselinePath} (${targets.length} targets)`); }
-  }
-
-  function openspecCheck(args) {
-    const context = openSpecContractContext(args, {
-      usage: 'buildr openspec check <change> --stage <proposal|pre-sync|post-sync> --project <project> [--target <dir>] [--json]',
-    });
-    const stage = optionValue(args, '--stage');
-    if (!['proposal', 'pre-sync', 'post-sync'].includes(stage)) throw new Error(`Unsupported OpenSpec contract stage: ${stage || '<missing>'}`);
-    const json = hasFlag(args, '--json');
-    const result = createOpenSpecContractResult(stage, context.change, context.project, context.component.upstreamVersion);
-    const baselineFile = openSpecBaselinePath(context.changeRoot);
-    let baseline;
-    try {
-      baseline = readOpenSpecContractJson(baselineFile, OPENSPEC_CONTRACT_BASELINE_SCHEMA);
-    } catch (error) {
-      addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_invalid', error.message, { nextAction: `buildr openspec baseline create ${context.change} --project ${context.project} --target ${context.targetRoot}` });
-    }
-    if (!baseline) {
-      addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_missing', 'OpenSpec change 缺少契约基线。', { nextAction: `buildr openspec baseline create ${context.change} --project ${context.project} --target ${context.targetRoot}` });
-    } else if (baseline.change !== context.change || baseline.project !== context.project || baseline.upstreamVersion !== context.component.upstreamVersion) {
-      result.baselineState = 'stale';
-      addOpenSpecContractFinding(result, 'error', 'openspec_contract.baseline_metadata_mismatch', '契约基线的 change、Project 或 upstream version 与当前事实不一致。', { nextAction: `审阅后运行 buildr openspec baseline create ${context.change} --project ${context.project} --target ${context.targetRoot} --update` });
-    } else {
-      result.baselineState = 'recorded';
-    }
-
-    if (stage === 'proposal') {
-      validateOpenSpecProposalAlignment(context.projectRoot, context.changeRoot, context.delta, baseline, result);
-      if (!result.findings.some((finding) => finding.severity === 'error') && baseline) result.baselineState = 'current';
-    }
-
-    if (stage === 'pre-sync') {
-      validateOpenSpecProposalAlignment(context.projectRoot, context.changeRoot, context.delta, baseline, result);
-      detectOpenSpecActiveConflicts(context.projectRoot, context.change, context.delta, result);
-      if (baseline) validateOpenSpecBaselineCurrent(context.projectRoot, baseline, result);
-      if (!result.findings.some((finding) => finding.severity === 'error')) {
-        const receipt = {
-          schemaVersion: OPENSPEC_CONTRACT_RECEIPT_SCHEMA,
-          change: context.change,
-          project: context.project,
-          upstreamVersion: context.component.upstreamVersion,
-          deltaHash: context.delta.hash,
-          baselineHash: openSpecContractHash(baseline),
-          capabilities: snapshotOpenSpecCapabilities(context.projectRoot, context.delta),
-        };
-        writeOpenSpecContractJson(openSpecReceiptPath(context.changeRoot), receipt);
-        result.baselineState = 'current';
-      }
-    }
-
-    if (stage === 'post-sync') {
-      const receiptFile = openSpecReceiptPath(context.changeRoot);
-      let receipt;
-      try {
-        receipt = readOpenSpecContractJson(receiptFile, OPENSPEC_CONTRACT_RECEIPT_SCHEMA);
-      } catch (error) {
-        addOpenSpecContractFinding(result, 'error', 'openspec_contract.receipt_invalid', error.message, { nextAction: '重新运行 pre-sync check 后再验证同步结果。' });
-      }
-      if (!receipt) addOpenSpecContractFinding(result, 'error', 'openspec_contract.receipt_missing', '缺少成功 pre-sync 的 contract receipt。', { nextAction: '重新运行 pre-sync check 后再执行或验证同步。' });
-      else if (receipt.change !== context.change || receipt.project !== context.project || receipt.upstreamVersion !== context.component.upstreamVersion) addOpenSpecContractFinding(result, 'error', 'openspec_contract.receipt_metadata_mismatch', 'pre-sync receipt 与当前 change、Project 或 upstream version 不一致。', { nextAction: '重新运行 pre-sync check。' });
-      else validateOpenSpecPostSync(context.projectRoot, context.delta, receipt, result);
-      if (!result.findings.some((finding) => finding.severity === 'error')) {
-        result.baselineState = 'contract-applied';
-        receipt.postSyncVerified = true;
-        receipt.postSyncDeltaHash = context.delta.hash;
-        receipt.postSyncSpecIntegrities = snapshotOpenSpecSpecIntegrities(context.projectRoot, context.delta);
-        writeOpenSpecContractJson(receiptFile, receipt);
-      }
-    }
-
-    finishOpenSpecContractResult(result);
-    result.deprecation = legacyConvergenceDeprecation('check');
-    if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecCheck, result), null, 2)}\n`);
-    else { console.warn(legacyConvergenceWarning('check')); printOpenSpecContractResult(result); }
-    process.exitCode = result.ok ? 0 : 1;
   }
 
   function openspecConverge(args) {
@@ -727,6 +392,6 @@ export function registerDomainsOpenspec(runtime) {
     process.exitCode = payload.status === 'passed' ? 0 : 2;
   }
 
-  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, openSpecBaselinePath, openSpecReceiptPath, readOpenSpecContractJson, writeOpenSpecContractJson, baselineTargetsForDelta, expectedOpenSpecBaselineTargets, baselineTargetMap, createOpenSpecContractResult, addOpenSpecContractFinding, finishOpenSpecContractResult, printOpenSpecContractResult, validateOpenSpecProposalAlignment, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, validateOpenSpecBaselineCurrent, snapshotOpenSpecCapabilities, snapshotOpenSpecSpecIntegrities, renameRequirementBlock, validateOpenSpecPostSync, openSpecContractContext, openspecBaselineCreate, openspecCheck, openspecConverge, openspecAudit });
+  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, readOpenSpecContractJson, writeOpenSpecContractJson, createOpenSpecContractResult, addOpenSpecContractFinding, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, openSpecContractContext, openspecConverge, openspecAudit });
   return runtime;
 }
