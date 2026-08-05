@@ -252,3 +252,15 @@ test('renderMarkdown 在启用相对链接时安全渲染 Change 内路径', asy
   assert.match(textOf(root), /\[绝对\]\(\/etc\/passwd\)/);
   assert.match(textOf(root), /\[脚本\]\(javascript:alert\(1\)\)/);
 });
+
+test('renderMarkdown 只通过显式 resolver 渲染本地图片', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('![封面](assets/cover.png) ![危险](/tmp/secret.png)', {
+    imageResolver(href) { return href === 'assets/cover.png' ? { href: '/api/v1/publications/demo/assets/assets/cover.png' } : null; },
+  });
+  const image = root.querySelector('img');
+  assert.equal(root.querySelectorAll('img').length, 1);
+  assert.equal(image?.getAttribute('alt'), '封面');
+  assert.equal(image?.getAttribute('src'), '/api/v1/publications/demo/assets/assets/cover.png');
+  assert.match(root.textContent, /危险/);
+});

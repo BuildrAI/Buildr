@@ -19,7 +19,7 @@ const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const SELECTOR = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR = process.env.BUILDR_SCREENSHOT_DIR;
-const KNOWN_SELECTORS = new Set(['all', 'shell', 'task', 'project', 'service', 'change']);
+const KNOWN_SELECTORS = new Set(['all', 'shell', 'task', 'project', 'service', 'change', 'articles']);
 
 if (!KNOWN_SELECTORS.has(SELECTOR)) throw new Error(`Unknown browser integration selector: ${SELECTOR}`);
 const selected = (name) => SELECTOR === 'all' || SELECTOR === name;
@@ -70,10 +70,17 @@ function writeChange(projectRoot, relative, title) {
   fs.writeFileSync(path.join(changeRoot, 'specs', 'demo-capability', 'spec.md'), '# Demo Capability Specification\n\n## Purpose\n\nFixture.\n\n## Requirements\n');
 }
 
-function createFixture(root, controllerCli) {
+function createFixture(root, controllerCli, options = {}) {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke', '--description', '隔离的浏览器 E2E fixture']);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   runBuildr(['project', 'create', 'other', '--target', root, '--name', '另一项目', '--description', '用于验证 Workspace 摘要不锁定项目']);
+  if (options.articles) {
+    runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '对外文章测试项目']);
+    const publicationRoot = path.join(root, 'projects', 'product', 'docs', 'publications');
+    fs.mkdirSync(path.join(publicationRoot, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(publicationRoot, 'article.md'), '---\nid: browser-article\ntitle: 浏览器测试文章\nkind: product-article\nstatus: published\npublished_at: 2026-08-05\ntargets:\n  - platform: local-app\n    status: published\n---\n\n# 浏览器测试文章\n\n![测试配图](assets/cover.png)\n');
+    fs.writeFileSync(path.join(publicationRoot, 'assets', 'cover.png'), Buffer.from('not-a-real-image'));
+  }
   const source = path.join(path.dirname(root), 'service-source');
   fs.mkdirSync(source);
   fs.writeFileSync(path.join(source, 'README.md'), '# Demo API\n');
@@ -194,7 +201,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
 
   const controller = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
   const controllerRuntime = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'application', 'compose-runtime.mjs')).href}?browser=${Date.now()}`)).createRuntime();
-  createFixture(workspaceRoot, controller.cli);
+  createFixture(workspaceRoot, controller.cli, { articles: SELECTOR === 'articles' });
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const otherRoot = path.join(base, 'other-workspace');
@@ -228,8 +235,9 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
   browser = await chromium.launch({ executablePath: resolveBrowserExecutable(), headless: true });
   const page = await browser.newPage({ locale: 'zh-CN' });
   const browserErrors = [];
+  const expectedBrowserErrors = new Set();
   page.on('pageerror', (error) => browserErrors.push(`pageerror ${page.url()}: ${error.message}`));
-  page.on('console', (message) => { if (message.type() === 'error') browserErrors.push(`console.error ${page.url()}: ${message.text()}`); });
+  page.on('console', (message) => { if (message.type() === 'error') browserErrors.push(`console.error ${page.url()} [${message.location().url}]: ${message.text()}`); });
 
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
     await page.goto(url);
@@ -277,6 +285,30 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.equal(await page.getByRole('button', { name: '稍后处理' }).count(), 1);
     current = runtime.registerLocalWorkspace({ rootPath: workspaceRoot, revision: current.revision });
     runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: current.revision });
+  });
+
+  if (SELECTOR === 'articles') await t.test('文章入口展示列表、详情和项目内配图', async () => {
+    await page.goto(`${workspaceUrl}/articles`);
+    await page.locator('.publication-card').first().waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.publication-card').count(), 1);
+    assert.equal(await page.locator('[data-nav="articles"]').evaluate((item) => item.classList.contains('active')), true);
+    await page.locator('.publication-card a').click();
+    await page.waitForURL(`${workspaceUrl}/articles/browser-article`);
+    await page.locator('#publication-title').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#publication-title').innerText(), '浏览器测试文章');
+    assert.match(await page.locator('#publication-targets').innerText(), /Local App/);
+    assert.equal(await page.locator('.publication-content img').count(), 1);
+    assert.match(await page.locator('.publication-content img').getAttribute('src'), /\/api\/v1\/workspaces\/[^/]+\/publications\/browser-article\/assets\/assets\/cover\.png$/);
+    await page.getByRole('button', { name: '原文', exact: true }).click();
+    assert.equal(await page.locator('.content-view-source').isVisible(), true);
+    expectedBrowserErrors.add(`${url}/api/v1/workspaces/${initialWorkspaceId}/publications/missing`);
+    await page.goto(`${workspaceUrl}/articles/missing`);
+    await page.locator('h1').filter({ hasText: '文章不可用' }).waitFor({ state: 'visible' });
+    assert.match(await page.locator('.page-copy').innerText(), /文章不存在/);
+    fs.rmSync(path.join(workspaceRoot, 'projects', 'product', 'docs', 'publications', 'article.md'));
+    await page.goto(`${workspaceUrl}/articles`);
+    await page.locator('#publications-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#publications-empty').innerText(), /暂无文章/);
   });
 
   if (selected('project')) await t.test('项目目录在操作栏提供关联跳转，详情只展示统一事实', async () => {
@@ -540,7 +572,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await page.waitForFunction(() => document.getElementById('task-edit-state')?.textContent === '记录已变化');
     assert.match(await page.locator('#task-detail-alert').innerText(), /请刷新本页/);
     for (let index = browserErrors.length - 1; index >= 0; index -= 1) {
-      if (/\/tasks\/browser-task: Failed to load resource: the server responded with a status of 409 \(Conflict\)$/.test(browserErrors[index])) browserErrors.splice(index, 1);
+      if (/\/tasks\/browser-task \[[^\]]*\]: Failed to load resource: the server responded with a status of 409 \(Conflict\)$/.test(browserErrors[index])) browserErrors.splice(index, 1);
     }
     await page.reload();
     assert.equal(await page.locator('#task-edit-intent').inputValue(), '另一客户端已经更新');
@@ -689,5 +721,6 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await page.getByRole('button', { name: '关闭', exact: true }).click();
   });
 
-  assert.deepEqual(browserErrors, [], browserErrors.join('\n'));
+  const unexpectedBrowserErrors = browserErrors.filter((error) => ![...expectedBrowserErrors].some((expected) => error.includes(expected)));
+  assert.deepEqual(unexpectedBrowserErrors, [], unexpectedBrowserErrors.join('\n'));
 });

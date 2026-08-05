@@ -38,7 +38,8 @@ for (const file of [...new Set(files)].sort()) {
     if (/[ \t]+$/.test(line)) problems.push(`${relative}:${index + 1}: trailing whitespace`);
   });
   if (file.endsWith('.md')) {
-    for (const match of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+    const linkContent = content.replace(/`+[^`\n]*`+/g, '');
+    for (const match of linkContent.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
       let target = match[1].trim().replace(/^<|>$/g, '');
       if (!target || /^(?:https?:|mailto:|#)/.test(target)) continue;
       target = target.split('#')[0].split('?')[0];

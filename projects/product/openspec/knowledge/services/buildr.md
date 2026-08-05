@@ -7,7 +7,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 ## 接口与入口
 
 - CLI：`projects/product/buildr`（开发 checkout）及 npm `buildr` 命令。
-- Local App：loopback HTTP 与浏览器界面；Workspace 是全局目录，Project、Service、Task Record、Change 使用稳定详情路由。Task 列表/详情首屏使用 SQLite stored-state query projection，列表默认 active 并支持封闭过滤，详情按需读取 Parent 候选；正式 Task 只由 Agent/Task Manager 创建，Local App 只编辑或结束已有 active Task。Task 详情固定为“概览、研发、证据、环境”四个一级视图及 Task-scoped Change route；研发只读投影 Task Development `inspect`，证据独立读取 Review/Verification。Development/Environment mutation 和 Review/Verification Result CRUD 都不进入 UI，专业动作只生成受限 Agent action。
+- Local App：loopback HTTP 与浏览器界面；Workspace 是全局目录，Project、Service、Task Record、Change 使用稳定详情路由。Task 列表/详情首屏使用 SQLite stored-state query projection，列表默认 active 并支持封闭过滤，详情按需读取 Parent 候选；正式 Task 只由 Agent/Task Manager 创建，Local App 只编辑或结束已有 active Task。Task 详情固定为“概览、研发、证据、环境”四个一级视图及 Task-scoped Change route；研发只读投影 Task Development `inspect`，证据独立读取 Review/Verification。Development/Environment mutation 和 Review/Verification Result CRUD 都不进入 UI，专业动作只生成受限 Agent action。Local App 另提供独立的“文章”入口，通过 Publication Application 只读投影已登记 Workspace 中 Product Project 的 `docs/publications/` Markdown、发布目标元数据和固定目录内的本地图片；不提供文章 writer、平台发布 adapter、数据库副本或任意文件路径读取。
 - Package：`services/buildr/package/manifest.yml` 定义发布边界、workspace/project baseline、builtins、contracts、bindings 和 Components；Component definition 同时拥有 Skill fragments 与其引入的结构化 capability dependencies，package builtin descriptor 不重复维护 Component-owned `requires`。
 
 ## 数据与依赖

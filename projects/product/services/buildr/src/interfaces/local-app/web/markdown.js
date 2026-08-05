@@ -44,26 +44,37 @@ function isTableSeparator(line) {
 }
 
 function appendInline(parent, text, doc, linkOptions) {
-  const pattern = /(`+)([^`]+?)\1|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
   let lastIndex = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) parent.append(doc.createTextNode(text.slice(lastIndex, match.index)));
     if (match[1] !== undefined) {
-      const code = doc.createElement('code');
-      code.textContent = match[2];
-      parent.append(code);
+      const resolved = linkOptions.imageResolver?.(match[2]);
+      if (resolved?.href) {
+        const image = doc.createElement('img');
+        image.setAttribute('src', resolved.href);
+        image.setAttribute('alt', match[1]);
+        image.setAttribute('loading', 'lazy');
+        parent.append(image);
+      } else {
+        parent.append(doc.createTextNode(`![${match[1]}](${match[2]})`));
+      }
     } else if (match[3] !== undefined) {
+      const code = doc.createElement('code');
+      code.textContent = match[4];
+      parent.append(code);
+    } else if (match[5] !== undefined) {
       const strong = doc.createElement('strong');
-      strong.textContent = match[3];
+      strong.textContent = match[5];
       parent.append(strong);
-    } else if (match[4] !== undefined) {
+    } else if (match[6] !== undefined) {
       const em = doc.createElement('em');
-      em.textContent = match[4];
+      em.textContent = match[6];
       parent.append(em);
     } else {
-      const label = match[5];
-      const resolved = resolveSafeHref(match[6], linkOptions);
+      const label = match[7];
+      const resolved = resolveSafeHref(match[8], linkOptions);
       if (resolved) {
         const link = doc.createElement('a');
         link.setAttribute('href', resolved.href);
@@ -77,7 +88,7 @@ function appendInline(parent, text, doc, linkOptions) {
         link.textContent = label;
         parent.append(link);
       } else {
-        parent.append(doc.createTextNode(`[${label}](${match[6]})`));
+        parent.append(doc.createTextNode(`[${label}](${match[8]})`));
       }
     }
     lastIndex = match.index + match[0].length;
@@ -182,7 +193,7 @@ function normalizeRenderArgs(docOrOptions, maybeOptions) {
 export function renderMarkdown(markdown, docOrOptions = globalThis.document, maybeOptions = {}) {
   const { doc, options } = normalizeRenderArgs(docOrOptions, maybeOptions);
   const headingOffset = Math.max(0, Number.isFinite(options.headingOffset) ? options.headingOffset : 0);
-  const linkOptions = { allowRelativeLinks: Boolean(options.allowRelativeLinks) };
+  const linkOptions = { allowRelativeLinks: Boolean(options.allowRelativeLinks), imageResolver: options.imageResolver };
   const root = doc.createElement('div');
   root.className = 'markdown-body';
   const lines = String(markdown ?? '').replace(/\r\n/g, '\n').split('\n');

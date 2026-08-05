@@ -434,6 +434,38 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
+test('本地应用文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
+  const root = initWorkspace(t);
+  const created = runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '文章测试项目']);
+  assert.equal(created.status, 0, created.stderr);
+  const publicationRoot = path.join(root, 'projects', 'product', 'docs', 'publications');
+  fs.mkdirSync(path.join(publicationRoot, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(publicationRoot, 'README.md'), '# index\n');
+  fs.writeFileSync(path.join(publicationRoot, 'article.md'), '---\nid: article\ntitle: 测试文章\nstatus: published\ntargets:\n  - platform: local-app\n    status: published\n---\n\n# 测试文章\n\n![封面](assets/cover.png)\n');
+  fs.writeFileSync(path.join(publicationRoot, 'assets', 'cover.png'), 'png');
+  const instance = createLocalWorkspaceServer(createRuntime(), { targetRoot: root });
+  t.after(() => instance.server.close());
+  const { url, initialWorkspaceId } = await instance.ready;
+  const apiBase = `${url}/api/v1/workspaces/${initialWorkspaceId}`;
+  let response = await fetch(`${url}/workspaces/${initialWorkspaceId}/articles`);
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Buildr 工作空间/);
+  const list = await fetch(`${apiBase}/publications`).then((item) => item.json());
+  assert.equal(list.publications[0].id, 'article');
+  const detail = await fetch(`${apiBase}/publications/article`).then((item) => item.json());
+  assert.match(detail.content, /assets\/cover\.png/);
+  response = await fetch(`${apiBase}/publications/article/assets/assets/cover.png`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.equal(await response.text(), 'png');
+  response = await fetch(`${apiBase}/publications/article/assets/../../.buildr/workspace.yml`);
+  assert.notEqual(response.status, 200);
+  response = await fetch(`${apiBase}/publications/missing`);
+  assert.equal(response.status, 404);
+  response = await fetch(`${apiBase}/publications?path=/tmp/other`);
+  assert.equal(response.status, 400);
+});
+
 test('全局本机应用隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
   const base = temporaryRoot(t);
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'global-app-data');

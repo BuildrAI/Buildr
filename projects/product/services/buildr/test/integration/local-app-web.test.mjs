@@ -88,6 +88,28 @@ test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () 
   assert.match(styles, /\.content-view-toggle/);
 });
 
+test('Local App 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
+  const app = fs.readFileSync('src/interfaces/local-app/web/app.js', 'utf8');
+  const index = fs.readFileSync('src/interfaces/local-app/web/index.html', 'utf8');
+  const server = fs.readFileSync('src/interfaces/local-app/http/server.mjs', 'utf8');
+  const detail = fs.readFileSync('src/interfaces/local-app/web/features/publication-detail.js', 'utf8');
+  const publications = fs.readFileSync('src/interfaces/local-app/web/features/publications.js', 'utf8');
+  assert.match(index, /data-nav="articles"[^>]*>.*文章/);
+  assert.match(app, /'\/articles': \{ id: 'articles'/);
+  assert.match(app, /'\/articles\/:publicationId'/);
+  assert.match(app, /renderPublicationDetail/);
+  assert.match(server, /\/features\/publications\.js/);
+  assert.match(server, /suffix === '\/publications'/);
+  assert.match(server, /readPublicationAsset/);
+  assert.match(publications, /只读展示/);
+  assert.match(detail, /imageResolver/);
+  assert.match(detail, /assets\\\//);
+  assert.match(detail, /返回文章目录/);
+  assert.match(detail, /渲染/);
+  assert.match(detail, /原文/);
+  assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content/);
+});
+
 test('任务详情使用概览、研发、证据、环境四个一级视图', () => {
   const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
   const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');

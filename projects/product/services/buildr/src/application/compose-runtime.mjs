@@ -27,6 +27,7 @@ import { registerApplicationCliUpdate } from './cli-update.mjs';
 import { registerWorkspaceApplication } from './workspace/workspace-application.mjs';
 import { registerWorkspaceNodeRuntime } from '../infrastructure/filesystem/workspace-node-runtime.mjs';
 import { registerProjectApplication } from './project/project-application.mjs';
+import { registerPublicationApplication } from './publication/publication-application.mjs';
 import { registerServiceApplication } from './service/service-application.mjs';
 import { registerChangeApplication } from './change/change-application.mjs';
 import { registerGitWorktreeProvider } from './worktree/git-worktree-provider.mjs';
@@ -67,6 +68,7 @@ const REGISTRATIONS = [
   registerWorkspaceApplication,
   registerWorkspaceNodeRuntime,
   registerProjectApplication,
+  registerPublicationApplication,
   registerServiceApplication,
   registerChangeApplication,
   registerApplicationPackageMaintenance,

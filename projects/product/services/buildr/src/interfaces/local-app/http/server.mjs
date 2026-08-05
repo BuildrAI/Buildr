@@ -30,7 +30,7 @@ const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren']);
-const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
+const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
 const STATIC_ASSETS = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/api-client.js', ['api-client.js', 'text/javascript; charset=utf-8']],
@@ -49,6 +49,8 @@ const STATIC_ASSETS = new Map([
   ['/features/service-edit.js', ['features/service-edit.js', 'text/javascript; charset=utf-8']],
   ['/features/changes.js', ['features/changes.js', 'text/javascript; charset=utf-8']],
   ['/features/change-detail.js', ['features/change-detail.js', 'text/javascript; charset=utf-8']],
+  ['/features/publications.js', ['features/publications.js', 'text/javascript; charset=utf-8']],
+  ['/features/publication-detail.js', ['features/publication-detail.js', 'text/javascript; charset=utf-8']],
   ['/features/agent-actions.js', ['features/agent-actions.js', 'text/javascript; charset=utf-8']],
 ]);
 
@@ -69,6 +71,15 @@ function textResponse(response, status, content, contentType) {
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
+  });
+  response.end(content);
+}
+
+function binaryResponse(response, status, content, contentType) {
+  response.writeHead(status, {
+    'content-type': contentType,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
   });
   response.end(content);
 }
@@ -309,6 +320,14 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           return jsonResponse(response, 200, runtime.updateWorkspaceMetadata(root, await readJsonBody(request)));
         }
         if (request.method === 'GET' && suffix === '/projects') return jsonResponse(response, 200, runtime.listProjects(root));
+        if (request.method === 'GET' && suffix === '/publications') return jsonResponse(response, 200, runtime.listPublications(root));
+        const publicationMatch = suffix.match(new RegExp(`^/publications/(${TASK_ID})$`));
+        if (request.method === 'GET' && publicationMatch) return jsonResponse(response, 200, runtime.publicationDetail(root, publicationMatch[1]));
+        const publicationAssetMatch = suffix.match(new RegExp(`^/publications/(${TASK_ID})/assets/(.+)$`));
+        if (request.method === 'GET' && publicationAssetMatch) {
+          const asset = runtime.readPublicationAsset(root, publicationAssetMatch[1], decodeURIComponent(publicationAssetMatch[2]));
+          return binaryResponse(response, 200, fs.readFileSync(asset.file), asset.contentType);
+        }
         const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
         if (taskApi && requestUrl.searchParams.size > 0 && !(request.method === 'GET' && suffix === '/tasks')) {
           const error = new Error('Task API 不接受 query 参数。');

@@ -12,6 +12,8 @@ import { renderWorkspaceOverview, renderWorkspaceSettings } from '/features/work
 import { renderWorkspaces } from '/features/workspaces.js';
 import { renderTasks } from '/features/tasks.js';
 import { renderTaskDetail } from '/features/task-detail.js';
+import { renderPublications } from '/features/publications.js';
+import { renderPublicationDetail } from '/features/publication-detail.js';
 import { createRouter } from '/router.js';
 
 const view = document.getElementById('app-view');
@@ -37,6 +39,15 @@ const routeDefinitions = {
   '/': { id: 'workspaces', label: '工作空间', render: renderWorkspaces, global: true },
   '/overview': { id: 'overview', label: '开始', render: renderWorkspaceOverview },
   '/settings': { id: 'settings', label: '工作空间设置', render: renderWorkspaceSettings },
+  '/articles': { id: 'articles', label: '文章', render: renderPublications },
+  '/articles/:publicationId': {
+    id: 'articles', label: '文章详情',
+    match(pathname) {
+      const match = pathname.match(/^\/articles\/([a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)$/);
+      return match ? { publicationId: decodeURIComponent(match[1]) } : null;
+    },
+    render: renderPublicationDetail,
+  },
   '/tasks': { id: 'tasks', label: '任务', render: renderTasks },
   '/tasks/:taskId': {
     id: 'tasks', label: '任务详情',
@@ -135,7 +146,7 @@ function updateRouteState(route, global) {
     else item.removeAttribute('aria-current');
   }
   const resourceGroup = document.querySelector('[data-nav-group="resources"]');
-  resourceGroup.classList.toggle('active', ['tasks', 'projects', 'services'].includes(route.id));
+  resourceGroup.classList.toggle('active', ['tasks', 'projects', 'services', 'articles'].includes(route.id));
   const moreGroup = document.querySelector('[data-nav-group="more"]');
   moreGroup.classList.toggle('active', route.id === 'changes');
 }
@@ -160,7 +171,7 @@ function setResourceNavigation(expanded) {
 
 function workspaceDestination(destination) {
   if (!currentWorkspaceId || destination === '/' || destination.startsWith('/workspaces/')) return destination;
-  const internal = ['/overview', '/settings', '/tasks', '/projects', '/services', '/changes'];
+  const internal = ['/overview', '/settings', '/articles', '/tasks', '/projects', '/services', '/changes'];
   return internal.some((prefix) => destination === prefix || destination.startsWith(`${prefix}/`) || destination.startsWith(`${prefix}?`))
     ? `/workspaces/${currentWorkspaceId}${destination}`
     : destination;

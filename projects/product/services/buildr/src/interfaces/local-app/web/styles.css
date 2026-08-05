@@ -108,6 +108,19 @@ h3 { margin-bottom: 0; font-size: 16px; }
 .list-controls { display: flex; gap: 16px; margin: 0 0 16px; padding: 12px 0; border-block: 1px solid var(--line); }
 .list-controls label { max-width: 320px; min-width: 200px; }
 .resource-list-section { margin-top: 16px; }
+.publication-list { display: grid; gap: 10px; }
+.publication-card { padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 2px 8px rgba(20, 40, 30, .04); }
+.publication-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.publication-card h3 { margin: 0; font-size: 16px; }
+.publication-card h3 a { color: var(--ink); text-decoration: none; }
+.publication-card h3 a:hover { color: var(--green); }
+.publication-meta { margin: 8px 0; color: var(--muted); font-size: 12px; }
+.publication-targets { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--muted); font-size: 11px; }
+.publication-targets a { color: var(--green); }
+.publication-detail-header { margin-bottom: 16px; }
+.publication-content-panel { padding: 0; overflow: hidden; }
+.publication-content { padding: 20px; }
+.publication-content-panel .content-view-toggle { margin-top: 12px; }
 .section-heading, .panel-heading, .detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .management-table-wrap { width: 100%; overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .management-table { width: 100%; min-width: 640px; border-collapse: collapse; background: var(--surface); font-size: 12px; }
@@ -224,6 +237,7 @@ dd { margin: 0; overflow-wrap: anywhere; font: 10px/1.45 ui-monospace, SFMono-Re
 .markdown-body th, .markdown-body td { padding: 6px 8px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .markdown-body th { background: #f5f7f5; color: var(--ink); font-weight: 700; }
 .markdown-body strong { color: var(--ink); }
+.markdown-body img { display: block; width: min(100%, 840px); height: auto; margin: 4px auto; border: 1px solid var(--line); border-radius: 8px; }
 
 form { display: grid; gap: 16px; }
 label { display: grid; gap: 6px; color: #2c3932; font-size: 12px; font-weight: 700; }
