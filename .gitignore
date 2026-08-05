@@ -21,3 +21,5 @@ CLAUDE.local.md
 /.buildr/tasks/*/environment.json
 # Workspace local structured data
 /.buildr/local/
+# Task machine-local state
+/.buildr/tasks/
