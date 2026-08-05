@@ -44,15 +44,21 @@ test('product verification exposes three gates, direct layers, and one focus ent
 
 test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付能力', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
+  const fast = declaration.capabilities.find((capability) => capability.id === 'product.fast');
   const delivery = declaration.capabilities.find((capability) => capability.id === 'product.delivery');
   const fullRegression = declaration.capabilities.find((capability) => capability.id === 'product.full-regression');
   const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
   assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
+  const fastPlan = createVerificationPlan({ profiles: ['fast'] });
+  assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
+  assert.deepEqual(fast.proves, ['低成本 Unit、Component 与 Static Conformance 通过']);
   assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
   assert.equal(delivery.requiredForDelivery, true);
+  assert.deepEqual(delivery.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(delivery.applicability.paths, ['**']);
   assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['npm', 'run', 'test:candidate', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
   assert.equal(fullRegression.requiredForDelivery, false);
+  assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
   assert.equal(declaration.capabilities.some((capability) => ['product.task-affected', 'product.candidate'].includes(capability.id)), false);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr'] });
