@@ -108,8 +108,11 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, controllerCom
       assert.equal(taskId, task);
       assert.match(authorization?.runId || '', /^[a-z0-9._-]+$/);
       assert.match(authorization?.candidateRef || '', /^[0-9a-f]{40}$/);
-      command(retained, 'git', ['worktree', 'remove', '--force', environmentRoot]);
-      return { status: 'cleaned', effects: [{ type: 'git-worktree-removed', path: environmentRoot }], diagnostic: null };
+      if (fs.existsSync(environmentRoot)) {
+        command(retained, 'git', ['worktree', 'remove', '--force', environmentRoot]);
+        return { status: 'cleaned', effects: [{ type: 'git-worktree-removed', path: environmentRoot }], diagnostic: null };
+      }
+      return { status: 'cleaned', effects: [], diagnostic: null };
     },
   };
 }
@@ -120,7 +123,14 @@ function taskDevelopmentFixture() {
   const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'ready', risks: [] };
   const handoff = { identity: 'sha256-handoff', candidate, gates, decision };
   const receipt = { candidate, gates, decision, handoffs: [handoff] };
+  let taskRecord = null;
   return {
+    inspectTaskRecord: (_root, task) => ({ record: taskRecord || { taskId: task, status: 'active', result: null } }),
+    completeTaskRecordFromFinish: (_root, task) => {
+      if (!taskRecord) taskRecord = { taskId: task, status: 'active', result: null };
+      if (taskRecord.status === 'active') taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
+      return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: [{ type: 'updated', taskId: task }] };
+    },
     inspectTaskDevelopment: () => ({ development: { receipt, applicability: { handoff: 'current' } } }),
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent', development: { receipt, applicability: { handoff: 'current' } }, effects: [] }),
   };
@@ -128,12 +138,18 @@ function taskDevelopmentFixture() {
 
 function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment }) {
   let receipt = null;
+  let taskRecord = { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active', result: null };
   const planningTargetIdentity = taskDevelopmentDigest(`${task}:planning`);
   const declarationIdentity = taskDevelopmentDigest(`${task}:declaration`);
   const runtime = {
     ...environment,
-    inspectTaskRecord: () => ({ record: { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active' } }),
-    prepareTaskRecordPersistence: () => ({ record: { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active' } }),
+    inspectTaskRecord: () => ({ record: taskRecord }),
+    prepareTaskRecordPersistence: () => ({ record: taskRecord }),
+    completeTaskRecordFromFinish: () => {
+      const changed = taskRecord.status === 'active';
+      if (changed) taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
+      return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: changed ? [{ type: 'updated', taskId: task }] : [] };
+    },
     observeTaskVerificationDeclarations: () => [{
       project: 'product', path: 'projects/product/verification.yml', identity: declarationIdentity, valid: true,
       declaration: { capabilities: [{ id: 'product.delivery', requiredForDelivery: true }] },
@@ -261,13 +277,24 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
     (error) => error.code === 'task_finish.target_branch_mismatch' && error.details.retainedBranch === 'dev',
   );
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'runs')), false);
-  const result = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
+  const completeTaskRecordFromFinish = runtime.completeTaskRecordFromFinish;
+  let completionAttempts = 0;
+  runtime.completeTaskRecordFromFinish = (...args) => {
+    completionAttempts += 1;
+    if (completionAttempts === 1) throw Object.assign(new Error('Injected transient Task Record failure.'), { code: 'task_record_write_failed' });
+    return completeTaskRecordFromFinish(...args);
+  };
+  const blocked = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.primaryFailure.code, 'task_record_write_failed');
+  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
+  const result = await runtime.taskFinish('run', ['--task', task, '--run', blocked.runId, '--resume', blocked.resume.token, '--target', retained]);
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
   ]);
-  assert.equal(result.metrics.canonicalCliInvocations, 1);
+  assert.equal(result.metrics.canonicalCliInvocations, 2);
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
@@ -288,6 +315,10 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   assert.notEqual(spawnSync('git', ['cat-file', '-e', `${result.carrier.head}:projects/product/openspec/changes/archive/finish-journey/.buildr/convergence-receipt.json`], { cwd: retained }).status, 0);
   assert.equal(fs.existsSync(result.completion.receipt), true);
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', result.runId)), false);
+  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'completed');
+  assert.deepEqual(runtime.inspectTaskRecord(retained, task).record.result, { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false });
+  const taskCompletion = result.phases.find((phase) => phase.id === 'cleanup').operations.find((operation) => operation.operation === 'complete-task-record');
+  assert.equal(taskCompletion.status, 'completed');
 });
 
 test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery Adaptation恢复交付', async (t) => {
@@ -386,6 +417,7 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   assert.equal(second.delivery.remoteAfterRef, second.carrier.head);
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], second.carrier.head);
   assert.equal(fs.existsSync(environmentRoot), false);
+  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'completed');
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', second.runId)), false);
 });
 

@@ -476,6 +476,19 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const carrierCleanup = removeIsolatedGitCarrier({ repositoryRoot: run.identity.workspaceRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, expectedRoot: run.deliveryCarrier.root });
       operations.push({ kind: 'product', id: 'cleanup-isolated-carrier', status: carrierCleanup.status, details: carrierCleanup });
       if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-cleanup', failureClass: 'transient-external-condition', code: carrierCleanup.code || 'task-finish.carrier-cleanup-failed', message: 'Unable to clean the run-owned isolated Delivery Carrier.', diagnostic: carrierCleanup } };
+      let taskCompletion;
+      try {
+        if (typeof runtime.completeTaskRecordFromFinish !== 'function') throw Object.assign(new Error('Task Record Application Finish completion entry is unavailable.'), { code: 'task-finish.task-record-completion-unavailable' });
+        taskCompletion = runtime.completeTaskRecordFromFinish(run.identity.workspaceRoot, run.identity.task);
+      } catch (error) {
+        const diagnostic = { code: error.code || 'task-finish.task-record-completion-failed', message: error.message, details: error.details || null };
+        operations.push({ operation: 'complete-task-record', status: 'blocked', taskId: run.identity.task, effects: [], diagnostic });
+        return { status: 'blocked', operations, failure: { operation: 'task-record-completion', failureClass: error.code === 'task_record_finish_terminal_conflict' ? 'semantic-review-required' : 'transient-external-condition', code: diagnostic.code, message: diagnostic.message, diagnostic } };
+      }
+      operations.push({ operation: 'complete-task-record', status: taskCompletion.status, taskId: taskCompletion.taskId, recordDigest: taskCompletion.recordDigest, effects: taskCompletion.effects });
+      if (taskCompletion.status !== 'completed' || taskCompletion.record?.status !== 'completed' || taskCompletion.record?.result?.noChange !== false) {
+        return { status: 'blocked', operations, failure: { operation: 'task-record-completion', failureClass: 'product-execution-failure', code: 'task-finish.task-record-completion-invalid', message: 'Task Record Application did not confirm a delivered completed Task.', diagnostic: taskCompletion } };
+      }
       const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete });
       return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { status: 'complete', receipt: completionFile, cleanup: cleanedEnvironment } } };

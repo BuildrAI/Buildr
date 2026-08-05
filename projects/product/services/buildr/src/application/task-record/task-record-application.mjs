@@ -2,6 +2,7 @@ import { normalizeTaskRecord, taskRecordError } from '../../domain/task-record/t
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
 const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
+const TASK_FINISH_COMPLETION_SUMMARY = 'Formal Task Finish 已完成交付与环境清理。';
 
 function assertObject(input, label = 'Task Record action input') {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskRecordError('task_record_input_invalid', `${label} 必须是对象。`);
@@ -337,12 +338,43 @@ export function registerTaskRecordApplication(runtime) {
     return mutate(targetRoot, taskId, 'complete', input, (current) => ({ ...current, status: 'completed', result: { summary, noChange: input.noChange } }));
   }
 
+  function completeTaskRecordFromFinish(targetRoot, taskId) {
+    const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
+    try {
+      let changed = false;
+      const written = runtime.mutateTaskRecordPersistence(root, taskId, (current) => {
+        validateScopeReferences(root, current.record);
+        if (current.record.status === 'completed' && current.record.result?.noChange === false) return null;
+        if (current.record.status !== 'active') {
+          throw taskRecordError(
+            'task_record_finish_terminal_conflict',
+            `Task ${taskId} 已是与正常 Finish 不兼容的 ${current.record.status} 终态。`,
+            409,
+            { status: current.record.status, result: current.record.result },
+            `运行 buildr task inspect ${taskId} 核对终态与 Finish 交付事实。`,
+          );
+        }
+        changed = true;
+        return normalizeTaskRecord({
+          ...current.record,
+          status: 'completed',
+          result: { summary: TASK_FINISH_COMPLETION_SUMMARY, noChange: false },
+          updatedAt: nowIso(),
+        }, { expectedTaskId: taskId });
+      });
+      return result('complete', 'completed', written, changed ? [effect('updated', taskId)] : []);
+    } catch (error) {
+      if (error.taskRecordBusiness) throw error;
+      throw taskRecordError('task_record_write_failed', `Task Record Finish completion 失败：${error.message}`, 500, { taskId }, '保留数据库现场并基于同一 Finish run 重试。');
+    }
+  }
+
   function abandonTaskRecord(targetRoot, taskId, input) {
     assertFields(input, new Set(['expectedRecordDigest', 'reason']), 'Task abandon');
     const summary = text(input.reason, 'reason');
     return mutate(targetRoot, taskId, 'abandon', input, (current) => ({ ...current, status: 'abandoned', result: { summary } }));
   }
 
-  Object.assign(runtime, { listTaskRecords, queryTaskRecordViews, inspectTaskRecord, inspectTaskRecordView, createTaskRecord, updateTaskRecord, completeTaskRecord, abandonTaskRecord });
+  Object.assign(runtime, { listTaskRecords, queryTaskRecordViews, inspectTaskRecord, inspectTaskRecordView, createTaskRecord, updateTaskRecord, completeTaskRecord, completeTaskRecordFromFinish, abandonTaskRecord });
   return runtime;
 }
