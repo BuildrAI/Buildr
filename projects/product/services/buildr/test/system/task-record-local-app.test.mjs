@@ -92,7 +92,14 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
     assert.equal(target, root);
     return developmentReadModel;
   };
-  response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200); assert.deepEqual(response.body, developmentReadModel); assert.equal(developmentReads, 1);
+  response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200);
+  const { terminal, ...developmentBody } = response.body;
+  assert.deepEqual(developmentBody, developmentReadModel, '既有 Development read model 字段保持兼容');
+  assert.equal(terminal.schemaVersion, 'buildr.task-terminal-delivery/v1');
+  assert.equal(terminal.status, 'active');
+  assert.equal(terminal.delivered, false);
+  assert.equal(terminal.snapshot.generation, 2);
+  assert.equal(developmentReads, 1);
   response = await request(`${taskEndpoint}/development?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(`${endpoint}/missing-task/development`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');
   const taskBeforeRejectedDevelopmentWrite = runtime.inspectTaskRecord(root, 'app-task');

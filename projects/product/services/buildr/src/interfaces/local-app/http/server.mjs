@@ -334,15 +334,15 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         }
         const taskDevelopmentMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/development$`));
         if (request.method === 'GET' && taskDevelopmentMatch) {
-          return jsonResponse(response, 200, runtime.inspectTaskDevelopment(root, taskDevelopmentMatch[1]));
+          return jsonResponse(response, 200, runtime.inspectTaskDevelopmentView(root, taskDevelopmentMatch[1]));
         }
         const taskReviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/reviews$`));
         if (request.method === 'GET' && taskReviewsMatch) {
-          return jsonResponse(response, 200, runtime.inspectTaskReview(root, taskReviewsMatch[1]));
+          return jsonResponse(response, 200, runtime.inspectTaskReviewView(root, taskReviewsMatch[1]));
         }
         const taskVerificationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/verification$`));
         if (request.method === 'GET' && taskVerificationMatch) {
-          return jsonResponse(response, 200, runtime.inspectTaskVerification(root, taskVerificationMatch[1]));
+          return jsonResponse(response, 200, runtime.inspectTaskVerificationView(root, taskVerificationMatch[1]));
         }
         const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
         if (request.method === 'GET' && taskChangeMatch) {

@@ -43,6 +43,11 @@ function applicabilityLabel(status) {
 
 function developmentStatusLabel(status) {
   return ({
+    delivered: '已交付',
+    'completed-no-change': '已完成，无需交付变更',
+    'completed-unproven': '已完成，但交付未经证明',
+    abandoned: '已放弃',
+    unavailable: '交付事实不可安全核验',
     missing: '尚未形成研发回执',
     planning: '规划中',
     developing: '研发中',
@@ -53,7 +58,7 @@ function developmentStatusLabel(status) {
 }
 
 function developmentAxisLabel(status) {
-  return ({ current: '当前有效', stale: '已失效', missing: '尚未形成', unknown: '当前无法判断' })[status] || '当前无法判断';
+  return ({ current: '当前有效', stale: '已失效', missing: '尚未形成', unknown: '当前无法判断', snapshot: '交付时快照', historical: '历史快照' })[status] || '当前无法判断';
 }
 
 function gateOutcomeLabel(outcome) {
@@ -98,6 +103,13 @@ function fact(label, value) {
   return row;
 }
 
+function technicalDetails(value) {
+  const details = document.createElement('details'); details.className = 'technical-details compact';
+  const summary = document.createElement('summary'); summary.textContent = '技术信息';
+  const content = document.createElement('small'); content.className = 'review-result-path'; content.textContent = value;
+  details.append(summary, content); return details;
+}
+
 function errorPage(root, message) {
   root.innerHTML = '<section class="page-header"><p class="eyebrow">任务</p><h1>任务不可用</h1><p class="page-copy"></p></section><a class="button secondary" href="/tasks" data-route>返回任务列表</a>';
   root.querySelector('.page-copy').textContent = message;
@@ -121,11 +133,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     <section id="task-terminal-note" class="empty-state hidden"><h2>这是终态任务记录</h2><p>顶层事实与 Parent/Child 关系保持只读，不提供重开、重新挂接或自动处置关联 Task 的入口。专业模块仍由各自权威来源管理。</p></section>
     </div>
     <section id="task-development-panel" class="hidden" data-task-panel="development" aria-live="polite">
-      <article class="panel development-summary"><div class="panel-heading"><div><p class="eyebrow">研发事实</p><h2>任务研发（Task Development）</h2><p class="section-copy">从首个正式研发动作开始，只读聚合规划节点、当前目标、候选、门禁与最近一次交接；各专业内容仍由原 authority 管理。</p></div><button id="task-development-refresh" class="button secondary" type="button">刷新研发状态</button></div><dl class="read-facts"><div><dt>当前结论</dt><dd id="task-development-status">尚未读取</dd></div><div><dt>更新时间</dt><dd id="task-development-updated">—</dd></div><div><dt>研发回执</dt><dd id="task-development-receipt">—</dd></div></dl><div id="task-development-diagnostic" class="environment-diagnostic hidden"></div></article>
+      <article class="panel development-summary"><div class="panel-heading"><div><p class="eyebrow">研发事实</p><h2>任务研发（Task Development）</h2><p class="section-copy">从首个正式研发动作开始，只读聚合规划节点、当前目标、候选、门禁与最近一次交接；terminal Task 另行展示交付时事实，不伪装实时 currentness。</p></div><button id="task-development-refresh" class="button secondary" type="button">刷新研发状态</button></div><dl class="read-facts"><div><dt>主结论</dt><dd id="task-development-status">尚未读取</dd></div><div><dt>更新时间</dt><dd id="task-development-updated">—</dd></div></dl><div id="task-development-terminal" class="delivery-summary hidden"></div><details class="technical-details compact"><summary>技术信息</summary><dl class="read-facts"><div><dt>研发回执</dt><dd id="task-development-receipt">—</dd></div></dl></details><div id="task-development-diagnostic" class="environment-diagnostic hidden"></div></article>
       <div id="task-development-loading" class="page-loading hidden"><span class="loader"></span><p>正在读取研发状态…</p></div>
       <section id="task-development-empty" class="empty-state hidden"><h2 id="task-development-empty-title">尚未形成研发回执</h2><p id="task-development-empty-copy">任务仍可继续推进；从写提案、写方案或直接实现等首个正式研发动作开始，这里会记录研发事实。</p></section>
       <div id="task-development-detail" class="development-detail hidden">
-        <section class="panel"><div class="panel-heading"><div><h2>当前有效性</h2><p class="section-copy">分别判断任务上下文、内容目标、验证策略、候选与研发交接是否仍然有效。</p></div></div><div id="task-development-axes" class="development-axis-grid"></div></section>
+        <section class="panel"><div class="panel-heading"><div><h2 id="task-development-axes-title">当前有效性</h2><p id="task-development-axes-copy" class="section-copy">分别判断任务上下文、内容目标、验证策略、候选与研发交接是否仍然有效。</p></div></div><div id="task-development-axes" class="development-axis-grid"></div></section>
         <section class="panel"><div class="panel-heading"><div><h2>研发规划事实</h2><p class="section-copy">节点不构成必经工作流；存在时仅记录其 authority、引用、身份与当前处置。</p></div></div><div id="task-development-planning" class="development-planning-list"></div></section>
         <section class="detail-layout"><article class="panel"><div class="panel-heading"><div><h2>当前候选</h2><p class="section-copy">候选由研发模块冻结；页面不重新计算身份。</p></div></div><dl id="task-development-candidate" class="read-facts"></dl></article><aside class="panel facts-panel"><p class="eyebrow">研发决策</p><h2>保存的推进结论</h2><dl id="task-development-decision" class="fact-list"></dl><div id="task-development-risks" class="development-risk-list"></div></aside></section>
         <section class="panel"><div class="panel-heading"><div><h2>交付门禁</h2><p class="section-copy">方案审查、任务验证和完成审查的当前结果；详情统一进入“证据”。</p></div></div><div id="task-development-gates" class="development-gate-grid"></div></section>
@@ -277,12 +289,33 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   function renderDevelopment(data) {
     if (!developmentPanel.isConnected) return;
     const development = data.development;
+    const terminal = data.terminal;
     const applicability = development?.applicability;
-    const status = data.status === 'missing' ? 'missing' : applicability?.status || 'unknown';
+    const terminalStatus = terminal && terminal.status !== 'active' ? terminal.status : null;
+    const status = terminalStatus || (data.status === 'missing' ? 'missing' : applicability?.status || 'unknown');
     const receipt = development?.receipt;
     text('task-development-status', developmentStatusLabel(status));
     text('task-development-updated', receipt?.updatedAt ? new Date(receipt.updatedAt).toLocaleString('zh-CN') : '—');
     text('task-development-receipt', development ? `${development.receiptDigest} · ${development.path}` : '尚未形成');
+
+    const terminalSummary = document.getElementById('task-development-terminal'); terminalSummary.replaceChildren();
+    terminalSummary.classList.toggle('hidden', !terminalStatus);
+    if (terminalStatus) {
+      const copy = document.createElement('p'); copy.className = 'delivery-conclusion'; copy.textContent = developmentStatusLabel(terminalStatus); terminalSummary.append(copy);
+      if (terminal.delivery) {
+        const facts = document.createElement('dl'); facts.className = 'read-facts delivery-facts'; facts.append(
+          fact('交付目标', `${terminal.delivery.remote}/${terminal.delivery.targetBranch}`),
+          fact('完成时间', new Date(terminal.delivery.completedAt).toLocaleString('zh-CN')),
+          fact('环境清理', `${terminal.delivery.cleanup.status === 'cleaned' ? '已按正常流程清理' : terminal.delivery.cleanup.status} · ${terminal.delivery.cleanup.summary}`),
+        ); terminalSummary.append(facts, technicalDetails(`final ref ${terminal.delivery.finalRemoteRef} · run ${terminal.delivery.runId} · ${terminal.delivery.reuseMode} · ${terminal.delivery.semanticEquivalence}`));
+      } else if (terminalStatus === 'completed-no-change') {
+        const note = document.createElement('p'); note.textContent = 'Task 明确以 noChange 完成，不要求 Formal Finish Result。'; terminalSummary.append(note);
+      } else if (terminalStatus === 'completed-unproven') {
+        const note = document.createElement('p'); note.textContent = '没有找到与 immutable handoff/Candidate 完整匹配的成功 Finish Result。'; terminalSummary.append(note);
+      } else if (terminalStatus === 'abandoned') {
+        const note = document.createElement('p'); note.textContent = '这里只读展示已保存的历史快照，不会恢复 Environment 或 Candidate。'; terminalSummary.append(note);
+      }
+    }
 
     const diagnostic = document.getElementById('task-development-diagnostic'); diagnostic.replaceChildren();
     const reasons = applicability?.reasons || [];
@@ -305,10 +338,14 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     text('task-development-empty-copy', data.status === 'missing' ? '任务仍可继续推进；从写提案、写方案或直接实现等首个正式研发动作开始，这里会记录研发事实。' : '当前读取失败，没有足够事实判断候选或交接状态。请根据诊断处理后重试。');
     if (!development) return;
 
-    const unknown = status === 'unknown';
+    const delivered = terminalStatus === 'delivered';
+    const historical = terminalStatus === 'abandoned';
+    const unknown = !terminalStatus && status === 'unknown';
+    text('task-development-axes-title', delivered ? '交付时快照' : historical ? '历史快照' : '当前有效性');
+    text('task-development-axes-copy', delivered ? '这些事实随 immutable handoff 被交付采用；它们不是对已清理 Environment 的实时 currentness 判断。' : historical ? '只展示放弃前已保存的研发事实，不重新判断或恢复 Candidate。' : '分别判断任务上下文、内容目标、验证策略、候选与研发交接是否仍然有效。');
     const axes = document.getElementById('task-development-axes'); axes.replaceChildren();
     for (const [label, key] of [['任务上下文', 'taskContext'], ['研发规划', 'planning'], ['内容目标', 'contentTarget'], ['验证策略', 'policy'], ['当前候选', 'candidate'], ['研发交接', 'handoff']]) {
-      axes.append(developmentAxisCard(label, unknown ? 'unknown' : applicability?.[key] || 'unknown'));
+      axes.append(developmentAxisCard(label, delivered ? 'snapshot' : historical ? 'historical' : unknown ? 'unknown' : applicability?.[key] || 'unknown'));
     }
 
     const planning = document.getElementById('task-development-planning'); planning.replaceChildren();
@@ -338,9 +375,9 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     }
 
     const gates = document.getElementById('task-development-gates'); gates.replaceChildren(
-      developmentGateCard('方案审查', applicability?.gates?.planning, unknown),
-      developmentGateCard('任务验证', applicability?.gates?.verification, unknown),
-      developmentGateCard('完成审查', applicability?.gates?.completion, unknown),
+      developmentGateCard('方案审查', delivered ? terminal.snapshot?.handoff?.gates?.planning : applicability?.gates?.planning, unknown),
+      developmentGateCard('任务验证', delivered ? terminal.snapshot?.handoff?.gates?.verification : applicability?.gates?.verification, unknown),
+      developmentGateCard('完成审查', delivered ? terminal.snapshot?.handoff?.gates?.completion : applicability?.gates?.completion, unknown),
     );
 
     const handoffs = receipt.handoffs || [];
@@ -348,7 +385,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     const handoff = document.getElementById('task-development-handoff'); handoff.replaceChildren();
     if (latest) {
       handoff.append(
-        fact('当前有效性', developmentAxisLabel(unknown ? 'unknown' : applicability?.handoff || 'unknown')),
+        fact(delivered ? '交付关联' : '当前有效性', developmentAxisLabel(delivered ? 'snapshot' : historical ? 'historical' : unknown ? 'unknown' : applicability?.handoff || 'unknown')),
         fact('交接身份', latest.identity),
         fact('候选代次', String(latest.candidate.generation)),
         fact('形成时间', new Date(latest.createdAt).toLocaleString('zh-CN')),
@@ -356,8 +393,8 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
       );
     } else handoff.append(fact('状态', '尚未形成'), fact('已保存交接数', '0'));
     const historyNote = document.getElementById('task-development-history-note');
-    historyNote.classList.toggle('hidden', !latest || (!unknown && applicability?.handoff === 'current'));
-    historyNote.textContent = unknown ? '历史研发交接仍被保留，但当前无法实时复核。' : '最近保存的研发交接仍被保留，但已不再代表当前交付状态。';
+    historyNote.classList.toggle('hidden', delivered ? false : !latest || (!unknown && applicability?.handoff === 'current'));
+    historyNote.textContent = delivered ? 'Environment 已按正常流程清理；刷新只会重读交付事实，不会重新创建 Environment。' : unknown ? '历史研发交接仍被保留，但当前无法实时复核。' : '最近保存的研发交接仍被保留，但已不再代表当前交付状态。';
   }
 
   async function refreshDevelopment() {
@@ -477,19 +514,20 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     section.append(list); return section;
   }
 
-  function renderReviewSlot(reviewType, slot) {
-    const card = document.createElement('article'); card.className = `review-slot-card ${slot.present ? slot.applicability : 'missing'}`;
+  function renderReviewSlot(reviewType, slot, association = null) {
+    const card = document.createElement('article'); card.className = `review-slot-card ${association?.status === 'adopted-at-delivery' ? 'delivered' : slot.present ? slot.applicability : 'missing'}`;
     const heading = document.createElement('div'); heading.className = 'review-slot-heading';
     const titleWrap = document.createElement('div');
     const eyebrow = document.createElement('p'); eyebrow.className = 'eyebrow'; eyebrow.textContent = reviewType === 'planning' ? '计划目标' : '完成候选';
     const title = document.createElement('h3'); title.textContent = reviewType === 'planning' ? '方案审查（Planning Review）' : '完成审查（Completion Review）';
     titleWrap.append(eyebrow, title);
     const state = document.createElement('span'); state.className = `state review-state ${slot.present ? slot.applicability : 'missing'}`;
-    state.textContent = !slot.present ? '未记录' : ({ current: '当前适用', stale: '目标已变化', unknown: '适用性未知' })[slot.applicability] || '未知';
+    state.textContent = association?.status === 'adopted-at-delivery' ? '已随交付候选采用' : !slot.present ? '未记录' : ({ current: '当前适用', stale: '目标已变化', unknown: '适用性未知' })[slot.applicability] || '未知';
     heading.append(titleWrap, state); card.append(heading);
 
     if (!slot.present) {
       const empty = document.createElement('div'); empty.className = 'review-slot-empty'; empty.textContent = '尚未形成完整结果；不会创建空占位记录。'; card.append(empty);
+      if (association?.status === 'gate-disposition') { const gate = document.createElement('p'); gate.className = 'delivery-gate-note'; gate.textContent = `Development gate：${developmentDispositionLabel(association.disposition)} · ${association.summary} · ${association.source}`; card.append(gate); }
     } else {
       const result = slot.result;
       const facts = document.createElement('dl'); facts.className = 'read-facts review-facts';
@@ -509,8 +547,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
         reviewList('未覆盖', result.uncovered, (item) => `${item.subject}：${item.reason}`),
         reviewList('发现', result.findings),
       );
-      const technical = document.createElement('small'); technical.className = 'review-result-path'; technical.textContent = slot.path;
-      card.append(facts, conclusion, evidence, technical);
+      card.append(facts, conclusion, evidence, technicalDetails(`${slot.resultDigest} · ${slot.path}`));
     }
 
     const actions = document.createElement('div'); actions.className = 'review-slot-actions';
@@ -526,8 +563,8 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     if (!reviewPanel.isConnected) return;
     const diagnostic = document.getElementById('task-review-diagnostic'); diagnostic.classList.add('hidden'); diagnostic.textContent = '';
     const slots = document.getElementById('task-review-slots'); slots.replaceChildren(
-      renderReviewSlot('planning', data.slots.planning),
-      renderReviewSlot('completion', data.slots.completion),
+      renderReviewSlot('planning', data.slots.planning, data.terminal?.associations?.planning),
+      renderReviewSlot('completion', data.slots.completion, data.terminal?.associations?.completion),
     );
   }
 
@@ -551,13 +588,14 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     const diagnostic = document.getElementById('task-verification-diagnostic'); diagnostic.classList.add('hidden'); diagnostic.textContent = '';
     const container = document.getElementById('task-verification-result'); container.replaceChildren();
     const slot = data.slot;
-    const card = document.createElement('article'); card.className = `review-slot-card ${slot.present ? slot.applicability.status : 'missing'}`;
+    const association = data.terminal?.associations?.verification;
+    const card = document.createElement('article'); card.className = `review-slot-card ${association?.status === 'verified-at-delivery' ? 'delivered' : slot.present ? slot.applicability.status : 'missing'}`;
     const heading = document.createElement('div'); heading.className = 'review-slot-heading';
     const titleWrap = document.createElement('div');
     const eyebrow = document.createElement('p'); eyebrow.className = 'eyebrow'; eyebrow.textContent = '单一当前槽位';
     const title = document.createElement('h3'); title.textContent = '验证结果（Verification Result）'; titleWrap.append(eyebrow, title);
     const state = document.createElement('span'); state.className = `state review-state ${slot.present ? slot.applicability.status : 'missing'}`;
-    state.textContent = slot.present ? applicabilityLabel(slot.applicability.status) : '未记录'; heading.append(titleWrap, state); card.append(heading);
+    state.textContent = association?.status === 'verified-at-delivery' ? `已随交付目标验证${association.outcome === 'passed' ? '通过' : '未通过'}` : slot.present ? applicabilityLabel(slot.applicability.status) : '未记录'; heading.append(titleWrap, state); card.append(heading);
     if (!slot.present) {
       const empty = document.createElement('div'); empty.className = 'review-slot-empty'; empty.textContent = '尚未形成完整结果；不会创建空占位或从当前代码版本（HEAD）推断验证状态。'; card.append(empty);
     } else {
@@ -581,8 +619,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
         reviewList('覆盖缺口', result.coverageGaps, (item) => `${item.scope}：${item.summary}`),
         reviewList('失效原因', slot.applicability.reasons, (item) => `${item.code}：${item.message}`),
       );
-      const technical = document.createElement('small'); technical.className = 'review-result-path'; technical.textContent = slot.path;
-      card.append(facts, conclusion, evidence, technical);
+      card.append(facts, conclusion, evidence, technicalDetails(`${slot.resultDigest} · ${slot.path}`));
     }
     const actions = document.createElement('div'); actions.className = 'review-slot-actions';
     const action = document.createElement('button'); action.type = 'button'; action.className = 'button secondary';

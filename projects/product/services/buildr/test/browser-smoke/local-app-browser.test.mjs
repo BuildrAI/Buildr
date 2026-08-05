@@ -5,10 +5,12 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright-core';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { FINISH_PHASES, FINISH_RUN_SCHEMA, finishRunFile, writeFinishCompletion } from '../../src/application/task-finish/task-finish-run.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
@@ -24,6 +26,11 @@ const selected = (name) => SELECTOR === 'all' || SELECTOR === name;
 
 function runBuildr(args, buildr = BUILDR) {
   const result = spawnSync(process.execPath, [buildr, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
+  assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+}
+
+function runGit(root, args) {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
 }
 
@@ -91,28 +98,38 @@ capabilities:
 `);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
+  runGit(root, ['init', '-q']);
+  runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
+  runGit(root, ['config', 'user.email', 'fixture@buildr.local']);
+  runGit(root, ['add', '.']);
+  runGit(root, ['commit', '-qm', 'browser fixture baseline']);
   runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--target', root]);
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Local App 轻量查询客户端', '--parent', 'browser-task', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
-  runBuildr(['task', 'environment', 'prepare', 'browser-task', '--shared', '--target', root], controllerCli);
+  for (const [taskId, title] of [['browser-delivered', '已交付浏览器任务'], ['browser-stale', '目标已变化浏览器任务']]) {
+    runBuildr(['task', 'create', taskId, '--title', title, '--intent', '验证 terminal delivery 与 live applicability 分离', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+    runBuildr(['task', 'environment', 'prepare', taskId, ...(taskId === 'browser-delivered' ? ['--shared'] : []), '--target', root], controllerCli);
+    runBuildr(['task', 'review', 'record', taskId, '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
+  }
+  runBuildr(['task', 'create', 'browser-unproven', '--title', '交付未经证明任务', '--intent', '验证 completed 但缺少 matching Finish', '--target', root]);
   runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
 
-function prepareDevelopmentFixture(runtime, root) {
-  runtime.beginTaskDevelopment(root, 'browser-task', {
+function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
+  runtime.beginTaskDevelopment(root, taskId, {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'converged', summary: '浏览器夹具变更已收敛。' }],
     planning: { targetIdentity: 'plan:browser-v1', nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/browser-flow/proposal', identity: taskDevelopmentDigest('browser-flow-proposal'), disposition: 'current', summary: '浏览器夹具提案已形成。' }] },
   });
-  let development = runtime.observeTaskDevelopment(root, 'browser-task', {
+  let development = runtime.observeTaskDevelopment(root, taskId, {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'converged', summary: '浏览器夹具变更已收敛。' }],
     planningTargetIdentity: 'plan:browser-v1',
   });
-  development = runtime.recordTaskDevelopmentPolicy(root, 'browser-task', {
+  development = runtime.recordTaskDevelopmentPolicy(root, taskId, {
     capabilities: [{ project: 'demo', capability: 'demo.browser', required: true }], coverageGaps: [], overrides: [],
   });
   const targetIdentity = development.development.receipt.contentTarget.identity;
-  runtime.recordTaskVerification(root, 'browser-task', {
+  runtime.recordTaskVerification(root, taskId, {
     targetIdentity,
     targetSummary: '浏览器交付目标',
     capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['Local App 验证投影已通过。'] }],
@@ -120,15 +137,34 @@ function prepareDevelopmentFixture(runtime, root) {
     conclusion: { outcome: 'passed', summary: '浏览器验证已通过。' },
     declarationRoot: root,
   });
-  development = runtime.freezeTaskDevelopmentCandidate(root, 'browser-task');
+  development = runtime.freezeTaskDevelopmentCandidate(root, taskId);
   const candidate = development.development.receipt.candidate;
-  runtime.recordTaskReview(root, 'browser-task', {
+  runtime.recordTaskReview(root, taskId, {
     reviewType: 'completion', targetIdentity: candidate.identity, method: 'human', reviewed: ['当前任务候选'],
     uncovered: [{ subject: '浏览器视觉差异', reason: '本轮只执行烟雾测试。' }], findings: ['没有阻断问题'],
     conclusion: { outcome: 'ready', summary: '候选可交付' },
   });
-  runtime.decideTaskDevelopment(root, 'browser-task', { outcome: 'proceed', summary: '当前门禁均允许推进。', risks: [] });
-  return runtime.createTaskDevelopmentHandoff(root, 'browser-task').development.receipt;
+  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: '当前门禁均允许推进。', risks: [] });
+  return runtime.createTaskDevelopmentHandoff(root, taskId).development.receipt;
+}
+
+function writeDeliveredFinishFixture(root, taskId, receipt, cleanupResult) {
+  const handoff = receipt.handoffs.at(-1);
+  const runId = `${taskId}-browser-run`;
+  const completedAt = cleanupResult.environment.latest.cleanup.completedAt;
+  const carrier = { identity: 'sha256-browser-carrier', reuseMode: 'deterministic-reuse' };
+  const equivalence = { status: 'equivalent', reuseMode: 'deterministic-reuse', semanticEquivalence: 'deterministic-git-identity', handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity };
+  const delivery = { status: 'delivered', carrierRef: 'browser-final-ref', remoteAfterRef: 'browser-final-ref', finalRemoteRef: 'browser-final-ref', activation: { status: 'passed' }, retainedDoctor: 'passed', runtimeInstall: 'not-applicable', localAppDelivery: 'not-applicable' };
+  const completion = { status: 'complete', cleanup: cleanupResult };
+  const run = {
+    schemaVersion: FINISH_RUN_SCHEMA, runId, status: 'complete',
+    identity: { task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: root, workspaceRoot: root, workspaceNodeIdentity: 'sha256-browser-node' },
+    identityDigest: 'sha256-browser-run', createdAt: completedAt, updatedAt: completedAt, completedAt, invocations: 1,
+    deliveryCarrier: carrier, equivalence, delivery, completion, resume: null, primaryFailure: null,
+    phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: completedAt, completedAt, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
+  };
+  const runFile = finishRunFile(root, runId); fs.mkdirSync(path.dirname(runFile), { recursive: true }); fs.writeFileSync(runFile, `${JSON.stringify(run, null, 2)}\n`);
+  writeFinishCompletion({ root, runId, completion: { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult } });
 }
 
 async function unique(locator, description) {
@@ -157,6 +193,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
   });
 
   const controller = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
+  const controllerRuntime = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'application', 'compose-runtime.mjs')).href}?browser=${Date.now()}`)).createRuntime();
   createFixture(workspaceRoot, controller.cli);
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
@@ -317,10 +354,20 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
   });
 
   if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
+    const deliveredReceipt = prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-delivered');
+    prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-stale');
+    runtime.recordTaskVerification(workspaceRoot, 'browser-stale', { targetIdentity: 'sha256-browser-stale-target', targetSummary: '已变化目标', capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['旧目标验证事实。'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: '旧目标曾通过。' }, declarationRoot: workspaceRoot });
+    runtime.completeTaskRecord(workspaceRoot, 'browser-delivered', { summary: '浏览器交付完成', noChange: false });
+    const deliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
+    assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
+    writeDeliveredFinishFixture(workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
+    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { useGit: false });
+    assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
     prepareDevelopmentFixture(runtime, workspaceRoot);
+    runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成', noChange: false });
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-table-body tr').count(), 4);
+    assert.equal(await page.locator('#task-table-body tr').count(), 5, '默认目录只显示 active Task；terminal fixtures 通过深链接验证');
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item) => item.classList.contains('active')), true);
     assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
     assert.equal(await page.locator('#task-create-form').count(), 0);
@@ -432,12 +479,12 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
-    assert.equal(await page.locator('#task-review-slots').getByText('适用性未知', { exact: true }).count(), 2);
+    assert.equal(await page.locator('#task-review-slots').getByText('当前适用', { exact: true }).count(), 2);
     assert.match(await page.locator('#task-review-slots').innerText(), /plan:browser-v1/);
     assert.match(await page.locator('#task-review-slots').innerText(), /sha256-/);
     assert.match(await page.locator('#task-review-slots').innerText(), /计划可执行/);
     assert.match(await page.locator('#task-review-slots').innerText(), /没有阻断问题/);
-    assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /当前适用/);
     assert.match(await page.locator('#task-verification-result').innerText(), /sha256-/);
     assert.match(await page.locator('#task-verification-result').innerText(), /浏览器验证已通过/);
     assert.match(await page.locator('#task-verification-result').innerText(), /demo\/demo.browser · 已通过 · Local App 验证投影已通过/);
@@ -449,6 +496,31 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.equal(await page.locator('#action-copy-state').innerText(), '验证结果未被修改。');
     await page.locator('#close-agent-action').click();
 
+    await page.goto(`${workspaceUrl}/tasks/browser-stale`);
+    await page.getByRole('button', { name: '证据', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
+    assert.match(await page.locator('#task-verification-result').innerText(), /已失效/);
+    assert.doesNotMatch(await page.locator('#task-verification-result').innerText(), /已随交付目标/);
+
+    await page.goto(`${workspaceUrl}/tasks/browser-delivered`);
+    await page.getByRole('button', { name: '研发', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已交付');
+    assert.equal(await page.locator('#task-development-axes').getByText('交付时快照', { exact: true }).count(), 6);
+    assert.match(await page.locator('#task-development-terminal').innerText(), /origin\/dev[\s\S]*已按正常流程清理/);
+    assert.equal(await page.locator('#task-development-history-note').innerText(), 'Environment 已按正常流程清理；刷新只会重读交付事实，不会重新创建 Environment。');
+    await page.getByRole('button', { name: '证据', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
+    assert.match(await page.locator('#task-review-slots').innerText(), /已随交付候选采用/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /已随交付目标验证通过/);
+    assert.equal(await page.locator('#task-verification-result .review-slot-card').evaluate((item) => item.getBoundingClientRect().width <= 800), true);
+
+    await page.goto(`${workspaceUrl}/tasks/browser-unproven`);
+    await page.getByRole('button', { name: '研发', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已完成，但交付未经证明');
+    assert.match(await page.locator('#task-development-terminal').innerText(), /没有找到与 immutable handoff\/Candidate 完整匹配的成功 Finish Result/);
+    assert.equal(await page.locator('#task-development-terminal').evaluate((item) => item.classList.contains('delivered')), false);
+
+    await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.getByRole('button', { name: '环境', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-environment-status')?.textContent === '可执行');
     assert.equal(await page.locator('#task-environment-source').innerText(), '当前机器（current-machine）');

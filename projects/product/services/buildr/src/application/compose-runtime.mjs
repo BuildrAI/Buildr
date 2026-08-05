@@ -31,6 +31,7 @@ import { registerServiceApplication } from './service/service-application.mjs';
 import { registerChangeApplication } from './change/change-application.mjs';
 import { registerGitWorktreeProvider } from './worktree/git-worktree-provider.mjs';
 import { registerTaskFinishApplication } from './task-finish/task-finish-application.mjs';
+import { registerTaskTerminalDeliveryApplication } from './task-terminal-delivery/task-terminal-delivery-application.mjs';
 import { registerTaskRecordApplication } from './task-record/task-record-application.mjs';
 import { registerTaskReviewApplication } from './task-review/task-review-application.mjs';
 import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
@@ -81,6 +82,7 @@ const REGISTRATIONS = [
   registerTaskDevelopmentApplication,
   registerVerificationApplication,
   registerTaskFinishApplication,
+  registerTaskTerminalDeliveryApplication,
 ];
 
 export function createRuntime() {

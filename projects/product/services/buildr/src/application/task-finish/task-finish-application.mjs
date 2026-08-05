@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { resolveTaskFinishTargetBranch } from './task-finish-delivery-target.mjs';
-import { executeFinishRun, inspectFinishRun, readFinishRun, resolveFinishRun } from './task-finish-run.mjs';
+import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolveFinishRun } from './task-finish-run.mjs';
 
 function inputError(code, message, action, details = null) {
   const error = new Error(message);
@@ -126,5 +126,5 @@ export function registerTaskFinishApplication(runtime) {
     return action === 'run' ? run(command) : inspect(command);
   }
 
-  Object.assign(runtime, { taskFinish });
+  Object.assign(runtime, { taskFinish, readTaskFinishResults });
 }

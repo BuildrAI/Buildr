@@ -439,3 +439,65 @@ export function finishResult(run, clock = Date.now) {
 export function inspectFinishRun({ root, runId, clock = Date.now }) {
   return finishResult(readFinishRun({ root, runId }), clock);
 }
+
+function regularJsonFiles(directory) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && entry.name.endsWith('.json'))
+    .map((entry) => path.join(directory, entry.name));
+}
+
+function completionDiagnostic(file, code, message) {
+  return { code, message, file: path.basename(file) };
+}
+
+function validateCompletion(value, taskId, file) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('completion 必须是对象。');
+  if (value.schemaVersion !== 'buildr.task-finish-completion/v1') throw new Error(`completion schemaVersion 不受支持：${value.schemaVersion || 'missing'}。`);
+  if (value.task !== taskId) throw new Error(`completion Task identity 不匹配：${value.task || 'missing'}。`);
+  if (value.status !== 'complete') throw new Error(`completion status 不是 complete：${value.status || 'missing'}。`);
+  for (const field of ['runId', 'handoffIdentity', 'candidateIdentity', 'contentTargetIdentity', 'carrierIdentity', 'carrierRef', 'completedAt']) {
+    if (typeof value[field] !== 'string' || !value[field]) throw new Error(`completion 缺少 ${field}。`);
+  }
+  if (!Number.isInteger(value.candidateGeneration) || value.candidateGeneration < 1) throw new Error('completion candidateGeneration 无效。');
+  if (Number.isNaN(Date.parse(value.completedAt))) throw new Error('completion completedAt 无效。');
+  if (path.basename(file) !== `${value.runId}.json`) throw new Error('completion 文件名与 runId 不匹配。');
+  return value;
+}
+
+export function readTaskFinishResults({ root, taskId, clock = Date.now }) {
+  if (!RUN_ID_PATTERN.test(String(taskId || ''))) throw new Error('Task Finish query requires a valid Task ID.');
+  const completionRoot = path.join(canonicalFinishWorkspaceRoot(root), '.buildr', 'task-finish', 'completed');
+  const results = [];
+  const diagnostics = [];
+  for (const file of regularJsonFiles(completionRoot)) {
+    const name = path.basename(file, '.json');
+    let value;
+    try { value = JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch (error) {
+      if (name.startsWith(`${taskId}-`)) diagnostics.push(completionDiagnostic(file, 'task_finish_completion_invalid', `Finish completion 无法解析：${error.message}`));
+      continue;
+    }
+    if (value?.task !== taskId) continue;
+    try {
+      const completion = validateCompletion(value, taskId, file);
+      const run = readFinishRun({ root, runId: completion.runId });
+      if (run.status !== 'complete' || run.completion?.status !== 'complete') throw new Error('matching Finish run 未完整完成 cleanup。');
+      const result = finishResult(run, clock);
+      for (const [left, right, label] of [
+        [result.identity.task, completion.task, 'task'],
+        [result.handoff.identity, completion.handoffIdentity, 'handoff'],
+        [result.candidate.identity, completion.candidateIdentity, 'candidate'],
+        [result.candidate.generation, completion.candidateGeneration, 'candidate generation'],
+        [result.candidate.contentTargetIdentity, completion.contentTargetIdentity, 'content target'],
+        [result.carrier?.identity, completion.carrierIdentity, 'carrier'],
+        [result.delivery?.finalRemoteRef, completion.carrierRef, 'final remote ref'],
+      ]) if (left !== right) throw new Error(`Finish run 与 completion 的 ${label} identity 不匹配。`);
+      results.push({ result, completion });
+    } catch (error) {
+      diagnostics.push(completionDiagnostic(file, 'task_finish_completion_invalid', error.message));
+    }
+  }
+  results.sort((left, right) => Date.parse(right.result.completedAt) - Date.parse(left.result.completedAt));
+  return { taskId, results, diagnostics };
+}
