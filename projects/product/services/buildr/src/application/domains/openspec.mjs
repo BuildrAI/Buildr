@@ -3,9 +3,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
-import os from 'node:os';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
-import { applyDeterministicSyncPlan, createDeterministicSyncPlan, DETERMINISTIC_SYNC_PLAN_SCHEMA } from '../openspec/deterministic-sync.mjs';
 import { portableExecutableIdentity } from '../openspec/convergence-model.mjs';
 import { CONVERGENCE_RECEIPT_SCHEMA } from '../openspec/convergence-model.mjs';
 import { convergenceReceiptPath, runOpenSpecConvergence } from '../openspec/openspec-converge.mjs';
@@ -221,10 +219,6 @@ export function registerDomainsOpenspec(runtime) {
 
   function openSpecReceiptPath(changeRoot) {
     return path.join(changeRoot, '.buildr', 'contract-pre-sync-receipt.json');
-  }
-
-  function openSpecSyncPlanPath(changeRoot) {
-    return path.join(changeRoot, '.buildr', 'deterministic-sync-plan.json');
   }
 
   function readOpenSpecContractJson(file, schema) {
@@ -649,71 +643,6 @@ export function registerDomainsOpenspec(runtime) {
     process.exitCode = result.ok ? 0 : 1;
   }
 
-  function openspecSyncPlan(args) {
-    const context = openSpecContractContext(args, {
-      usage: 'buildr openspec sync-plan <change> --project <project> [--target <dir>] [--json]',
-    });
-    const baseline = readOpenSpecContractJson(openSpecBaselinePath(context.changeRoot), OPENSPEC_CONTRACT_BASELINE_SCHEMA);
-    if (!baseline) throw new Error('OpenSpec contract baseline is required before deterministic sync planning.');
-    const proposal = parseOpenSpecProposalCapabilities(context.changeRoot);
-    const plan = createDeterministicSyncPlan({ ...context, baseline, capabilityPurposes: proposal.descriptions });
-    writeOpenSpecContractJson(openSpecSyncPlanPath(context.changeRoot), plan);
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecSyncPlan, {
-      change: plan.change, project: plan.project, deltaHash: plan.deltaHash, status: plan.status,
-      identity: plan.identity, operations: plan.operations, blocked: plan.blocked,
-      files: plan.files.map((item) => ({ path: item.path, beforeDigest: item.beforeDigest, expectedDigest: item.expectedDigest })),
-      planPath: toPosixRelative(context.projectRoot, openSpecSyncPlanPath(context.changeRoot)),
-      fallback: plan.status === 'blocked' ? { action: 'agent-driven-sync', reason: 'semantic-resolution-required' } : null,
-      deprecation: legacyConvergenceDeprecation('sync-plan'),
-    });
-    if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    else { console.warn(legacyConvergenceWarning('sync-plan')); console.log(`OpenSpec deterministic sync plan: ${plan.status} (${plan.operations.length} operations)`); }
-    process.exitCode = plan.status === 'blocked' ? 2 : 0;
-  }
-
-  function openspecSyncApply(args) {
-    const context = openSpecContractContext(args, {
-      usage: 'buildr openspec sync-apply <change> --project <project> [--target <dir>] [--json]',
-      allowedOptions: ['--openspec-executable'],
-    });
-    const plan = readOpenSpecContractJson(openSpecSyncPlanPath(context.changeRoot), DETERMINISTIC_SYNC_PLAN_SCHEMA);
-    if (!plan) throw new Error('OpenSpec deterministic sync plan receipt is missing. Run openspec sync-plan first.');
-    if (plan.change !== context.change || plan.project !== context.project || plan.deltaHash !== context.delta.hash) throw new Error('OpenSpec deterministic sync plan receipt no longer matches the change.');
-    const result = applyDeterministicSyncPlan({ projectRoot: context.projectRoot, plan, validateExpected: ({ files }) => {
-      const startedAt = Date.now();
-      const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-expected-'));
-      try {
-        const temporaryProject = path.join(temporaryRoot, 'project');
-        ensureDirectory(temporaryProject);
-        copyDirectory(path.join(context.projectRoot, 'openspec'), path.join(temporaryProject, 'openspec'));
-        for (const item of files) {
-          const target = path.join(temporaryProject, item.path);
-          atomicWriteFile(target, item.content);
-        }
-        const declaredExecutable = optionValue(args, '--openspec-executable');
-        const executableLookup = declaredExecutable ? null : spawnSync('which', ['openspec'], { encoding: 'utf8' });
-        const executable = declaredExecutable || (executableLookup.status === 0 ? executableLookup.stdout.trim() : '');
-        if (!path.isAbsolute(executable) || !existsFile(executable)) return { status: 'blocked', code: 'openspec-executable-unavailable', durationMs: Date.now() - startedAt };
-        const version = spawnSync(executable, ['--version'], { cwd: temporaryProject, encoding: 'utf8' });
-        const validation = spawnSync(executable, ['validate', '--all', '--strict', '--no-interactive'], { cwd: temporaryProject, encoding: 'utf8' });
-        const output = `${validation.stdout || ''}${validation.stderr || ''}`;
-        return {
-          status: validation.status === 0 ? 'passed' : 'blocked',
-          code: validation.status === 0 ? null : 'expected-tree-strict-validation-failed',
-          executable,
-          version: version.status === 0 ? version.stdout.trim() : null,
-          durationMs: Date.now() - startedAt,
-          expectedDigests: Object.fromEntries(files.map((item) => [item.path, item.digest])),
-          diagnostic: { bytes: Buffer.byteLength(output), sha256: openSpecContractHash(output), preview: output.slice(0, 2000), truncated: output.length > 2000 },
-        };
-      } finally { removePath(temporaryRoot); }
-    } });
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecSyncApply, { change: context.change, project: context.project, ...result, deprecation: legacyConvergenceDeprecation('sync-apply') });
-    if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    else { console.warn(legacyConvergenceWarning('sync-apply')); console.log(`OpenSpec deterministic sync apply: ${result.status} (${result.effects.length} effects)`); }
-    process.exitCode = result.status === 'passed' ? 0 : 2;
-  }
-
   function openspecConverge(args) {
     const context = openSpecContractContext(args, {
       usage: 'buildr openspec converge <change> --project <project> [--target <dir>] [--json]',
@@ -798,6 +727,6 @@ export function registerDomainsOpenspec(runtime) {
     process.exitCode = payload.status === 'passed' ? 0 : 2;
   }
 
-  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, openSpecBaselinePath, openSpecReceiptPath, openSpecSyncPlanPath, readOpenSpecContractJson, writeOpenSpecContractJson, baselineTargetsForDelta, expectedOpenSpecBaselineTargets, baselineTargetMap, createOpenSpecContractResult, addOpenSpecContractFinding, finishOpenSpecContractResult, printOpenSpecContractResult, validateOpenSpecProposalAlignment, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, validateOpenSpecBaselineCurrent, snapshotOpenSpecCapabilities, snapshotOpenSpecSpecIntegrities, renameRequirementBlock, validateOpenSpecPostSync, openSpecContractContext, openspecBaselineCreate, openspecCheck, openspecSyncPlan, openspecSyncApply, openspecConverge, openspecAudit });
+  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, openSpecBaselinePath, openSpecReceiptPath, readOpenSpecContractJson, writeOpenSpecContractJson, baselineTargetsForDelta, expectedOpenSpecBaselineTargets, baselineTargetMap, createOpenSpecContractResult, addOpenSpecContractFinding, finishOpenSpecContractResult, printOpenSpecContractResult, validateOpenSpecProposalAlignment, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, validateOpenSpecBaselineCurrent, snapshotOpenSpecCapabilities, snapshotOpenSpecSpecIntegrities, renameRequirementBlock, validateOpenSpecPostSync, openSpecContractContext, openspecBaselineCreate, openspecCheck, openspecConverge, openspecAudit });
   return runtime;
 }

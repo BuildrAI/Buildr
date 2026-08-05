@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- 收敛 Buildr CLI 产品表面：以单一 command catalog 统一 dispatch、canonical help、未知命令建议和 `primary`、`agent-machine`、`maintenance`、`legacy` 四层分类；补齐 `task finish` 聚合帮助，并移除零消费者的 `openspec sync-plan`、`openspec sync-apply` 公开 route 与 JSON schema，统一改用 `openspec converge`。
 
 ## 0.1.0-rc.7 - 2026-07-24
 

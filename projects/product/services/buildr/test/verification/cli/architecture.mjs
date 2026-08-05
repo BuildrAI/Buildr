@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { validateVerificationRegistry } from '../planner.mjs';
 import { verificationSteps } from '../registry.mjs';
 import { validateProductSourceLayout } from './product-source-layout.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/interfaces/cli/registry.mjs';
 
 const reportOnly = process.argv.includes('--report');
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -197,18 +198,23 @@ const registry = path.join(sourceRoot, 'interfaces', 'cli', 'registry.mjs');
 if (fs.existsSync(registry)) {
   const source = fs.readFileSync(registry, 'utf8');
   if (!source.includes('COMMAND_REGISTRY')) problems.push('command registry must expose one explicit COMMAND_REGISTRY');
-  const keys = [...source.matchAll(/key:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
+  const keys = COMMAND_CATALOG.map((item) => item.key);
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicates.length) problems.push(`duplicate command registry keys: ${[...new Set(duplicates)].join(', ')}`);
-  const expectedKeys = [
-    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree cleanup', 'worktree inspect', 'verification run', 'verification cleanup', 'task create', 'task inspect', 'task update', 'task complete', 'task abandon', 'task review inspect', 'task review record', 'task verification inspect', 'task verification record', 'task environment prepare', 'task environment inspect', 'task environment cleanup', 'task finish inspect', 'task finish run',
-    'doctor', 'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove',
-    'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'openspec converge', 'openspec audit', 'component list', 'component check', 'component install',
-    'component uninstall', 'rules add', 'rules remove', 'builtin list', 'builtin uninstall', 'builtin restore',
-    'update check', 'update', 'render', 'sync', 'skills add', 'skills remove', 'skills bind', 'skills unbind',
-    'skills migrate-project-assets', 'skill install', 'runtime check', 'skills render', 'rules render',
-  ];
-  if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) problems.push('command registry keys differ from the supported CLI surface');
+  const surfaces = new Set(['primary', 'agent-machine', 'maintenance', 'legacy']);
+  for (const descriptor of COMMAND_CATALOG) {
+    if (!surfaces.has(descriptor.surface)) problems.push(`command has invalid surface: ${descriptor.key}`);
+    if (!descriptor.summary?.trim()) problems.push(`command is missing summary: ${descriptor.key}`);
+    if (!Array.isArray(descriptor.help) || !descriptor.help.some((line) => line.startsWith('Usage:'))) problems.push(`command is missing canonical help: ${descriptor.key}`);
+    if (descriptor.executable && (typeof descriptor.match !== 'function' || typeof descriptor.run !== 'function')) problems.push(`executable command is missing match/run: ${descriptor.key}`);
+    if (!descriptor.executable && (descriptor.match || descriptor.run)) problems.push(`aggregate command must not execute: ${descriptor.key}`);
+    if (descriptor.surface === 'legacy' && !descriptor.replacement) problems.push(`legacy command is missing replacement: ${descriptor.key}`);
+  }
+  if (COMMAND_REGISTRY.some((item) => !item.executable)) problems.push('COMMAND_REGISTRY must contain executable descriptors only');
+  for (const retired of ['openspec sync-plan', 'openspec sync-apply']) {
+    if (keys.includes(retired)) problems.push(`retired command remains in catalog: ${retired}`);
+  }
+  if (!source.includes('registerCommandHelp(runtime, COMMAND_CATALOG)')) problems.push('dispatch and help must consume the same command catalog');
 }
 
 const taskRecordApplication = path.join(sourceRoot, 'application', 'task-record', 'task-record-application.mjs');

@@ -1,8 +1,6 @@
 export const LEGACY_CONVERGENCE_REGISTRY = Object.freeze({
   baseline: entry('openspec baseline create', 'openspec converge', ['contract-baseline.json']),
   check: entry('openspec check', 'openspec converge', ['contract-pre-sync-receipt.json']),
-  'sync-plan': entry('openspec sync-plan', 'openspec converge', ['deterministic-sync-plan.json']),
-  'sync-apply': entry('openspec sync-apply', 'openspec converge', ['deterministic-convergence.json', 'convergence-recovery.json']),
 });
 
 function entry(command, replacement, sidecars) {

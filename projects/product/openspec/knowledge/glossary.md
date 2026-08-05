@@ -2,6 +2,13 @@
 
 本表维护 Buildr Product 的 canonical terminology。规范行为仍以 OpenSpec specs 为准。
 
+## CLI 产品表面（CLI Product Surface）
+
+- 定义：Buildr 对每个 CLI command 的可发现性与兼容承诺分类，封闭取值为 `primary`、`agent-machine`、`maintenance`、`legacy`。
+- 适用范围：command metadata、根/主题帮助、CLI Reference 和产品验证；`primary` 表示普通工作主路径，`agent-machine` 表示 Agent/Skill 的稳定机器接口，`maintenance` 表示产品维护或 workflow，`legacy` 表示兼容窗口内保留且声明 replacement 的入口。
+- 避免混用：不是权限、安全或 effects 分级；低频机器接口不等于 unsupported/internal，领域授权仍由具体 Application/Skill contract 决定。
+- 来源：canonical `openspec/specs/cli-product-surface/spec.md`（本 Change convergence 时更新）。
+
 ## 工作信息空间（Work Information Space）
 
 - 定义：所有潜在可用于工作的来源，包括 Workspace 文件、数据库、API、网页、聊天、机器状态、用户输入和工具结果。

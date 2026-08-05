@@ -4,6 +4,8 @@
 
 支持 `--json` 的命令在顶层输出 `schemaVersion`。该字段及兼容规则见 [公开 JSON 契约](json-contracts.md)；消费者应按 schema identity 判断格式，而不是依赖未声明的内部实现。
 
+根帮助从同一 command catalog 按四层显示：`primary` 是普通工作主路径，`agent-machine` 是 Agent/Skill 依赖的稳定机器接口，`maintenance` 是产品构建、开发预览和 workflow，`legacy` 是兼容窗口内仍保留且带 replacement 的入口。Surface 不是授权边界；每个 retained executable route 都可通过 canonical topic 查询帮助。
+
 ## CLI identity、帮助与错误
 
 - `buildr --version`、`buildr -V` 和 `buildr version` 输出当前实际执行 package 的版本；`buildr version --json` 输出 `buildr.version/v1`。
@@ -115,7 +117,8 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 - `buildr package check/build`：产品 package 维护和构建，不是普通 workspace 日常命令。
 - `buildr openspec converge <change> --project <project> --target <workspace> --json`：Buildr OpenSpec 单一收敛事务；内部完成规划、隔离 strict validation、条件式 canonical 应用、写后确认与 `archive --skip-specs`，结果为 `passed|blocked|recovery-unprovable`。
 - `buildr openspec audit <change> --project <project> --target <workspace> --json`：只读比较唯一回执中的 before/expected 与当前实际摘要；不写 canonical、回执或归档。
-- 历史 baseline、阶段 check、sync plan/apply 命令只在旧调用命中时执行并返回结构化弃用信息；Task Development只使用当前OpenSpec converge/archive与current knowledge能力，Task Finish不消费任何Change命令或sidecar。达到零当前消费者与兼容窗口后删除旧入口。
+- `openspec sync-plan` 与 `openspec sync-apply` 已删除；旧调用返回标准 unknown-command 且不会读取或写入阶段 sidecar。确定性 planning/apply 只保留为 `converge` 单一事务的内部步骤。
+- `openspec baseline create` 与阶段型 `openspec check` 仍因现有 consumer 保留为 legacy，并在主题/结构化输出中指向 `openspec converge`。Task Development只使用当前OpenSpec converge/archive与current knowledge能力，Task Finish不消费任何Change命令或sidecar。
 - `buildr bootstrap guide`：产品 Skill 不可用时的纯文本兜底说明。
 
 这些命令可执行，但不构成普通用户需要记忆的 public asset API。

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { registerCommandHelp } from '../../../src/interfaces/cli/help.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/interfaces/cli/registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -19,25 +20,8 @@ function run(args, options = {}) {
   });
 }
 
-const helpTopics = [
-  [], ['version'], ['init'], ['project', 'create'], ['service', 'create'], ['doctor'],
-  ['worktree', 'create'], ['worktree', 'cleanup'], ['worktree', 'inspect'],
-  ['verification', 'run'], ['verification', 'cleanup'],
-  ['task'], ...['create', 'inspect', 'update', 'complete', 'abandon'].map((action) => ['task', action]),
-  ['task', 'review'], ...['inspect', 'record'].map((action) => ['task', 'review', action]),
-  ...['inspect', 'run'].map((action) => ['task', 'finish', action]),
-  ['mutation', 'recover'], ['runtime', 'list'], ['runtime', 'check'],
-  ['commands', 'add'], ['commands', 'remove'], ['commands', 'check'],
-  ['openspec', 'baseline', 'create'], ['openspec', 'check'], ['openspec', 'converge'], ['openspec', 'audit'],
-  ['component', 'list'], ['component', 'check'], ['component', 'install'], ['component', 'uninstall'],
-  ['rules', 'add'], ['rules', 'remove'], ['rules', 'render'],
-  ['builtin', 'list'], ['builtin', 'uninstall'], ['builtin', 'restore'],
-  ['update'], ['update', 'check'], ['package', 'check'], ['package', 'build'],
-  ['bootstrap', 'guide'], ['render'], ['sync'], ['skill', 'install'],
-  ['skills', 'add'], ['skills', 'remove'], ['skills', 'bind'], ['skills', 'unbind'], ['skills', 'render'],
-];
-
-const helpRuntime = registerCommandHelp({ doctor: () => {} });
+const helpTopics = [[], ...COMMAND_CATALOG.map((item) => item.key.split(' '))];
+const helpRuntime = registerCommandHelp({}, COMMAND_CATALOG);
 const originalLog = console.log;
 let renderedHelp = '';
 console.log = (...parts) => { renderedHelp += `${parts.join(' ')}\n`; };
@@ -54,7 +38,7 @@ try {
 
 const publicHelpTopics = [
   [], ['init'], ['app', 'preview', 'start'], ['task', 'environment', 'prepare'],
-  ['task', 'verification', 'record'], ['task', 'finish', 'run'], ['rules', 'render'],
+  ['task', 'verification', 'record'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
 ];
 const helpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));
 try {
@@ -74,6 +58,39 @@ try {
   }
 } finally {
   fs.rmSync(helpCwd, { recursive: true, force: true });
+}
+
+const rootHelp = run([]);
+assert.equal(rootHelp.status, 0);
+const surfaceHeadings = {
+  primary: 'Primary workspace commands:',
+  'agent-machine': 'Agent machine commands:',
+  maintenance: 'Product maintenance commands:',
+  legacy: 'Legacy compatibility commands:',
+};
+for (const [surface, heading] of Object.entries(surfaceHeadings)) {
+  const start = rootHelp.stdout.indexOf(heading);
+  assert.notEqual(start, -1, `root help is missing ${surface} section`);
+  const later = Object.values(surfaceHeadings)
+    .map((candidate) => rootHelp.stdout.indexOf(candidate, start + heading.length))
+    .filter((index) => index !== -1);
+  const section = rootHelp.stdout.slice(start, later.length ? Math.min(...later) : undefined);
+  for (const descriptor of COMMAND_REGISTRY.filter((item) => item.surface === surface)) {
+    assert.match(section, new RegExp(`^  ${descriptor.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s`, 'm'), `${descriptor.key} is not rendered in ${surface}`);
+  }
+}
+
+const removedHelpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-removed-help-'));
+try {
+  for (const action of ['sync-plan', 'sync-apply']) {
+    const result = run(['openspec', action, 'demo', '--target', removedHelpCwd, '--json'], { cwd: removedHelpCwd });
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).error.code, 'cli.unknown_command');
+    assert.deepEqual(fs.readdirSync(removedHelpCwd), [], `removed command wrote files: ${action}`);
+    assert.equal(COMMAND_REGISTRY.some((item) => item.key === `openspec ${action}`), false);
+  }
+} finally {
+  fs.rmSync(removedHelpCwd, { recursive: true, force: true });
 }
 
 for (const [args, expected] of [

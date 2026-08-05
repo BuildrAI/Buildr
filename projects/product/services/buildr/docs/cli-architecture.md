@@ -66,7 +66,9 @@ infrastructure/runtime/render-claude-code.mjs
   -> infrastructure/runtime/skills/{arguments,manifests,contributions,sources,render-plan}.mjs
 ```
 
-CLI command 只在 `src/interfaces/cli/registry.mjs` 登记一次。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+CLI command 只在 `src/interfaces/cli/registry.mjs` 的 command catalog 登记一次。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance | legacy` surface、summary、canonical help、match 与 run adapter；legacy descriptor 另外声明 replacement。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费该 catalog，架构验证检查 descriptor 关系而不复制完整 supported-key 清单。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+
+Surface 只控制发现层级与兼容承诺，不提供权限。`agent-machine` 保留 Task Environment、Review/Verification Result、Finish 等正式机器接口；`maintenance` 隔离 package、preview 与 OpenSpec workflow；`legacy` 只保留仍有消费者的兼容入口。`openspec sync-plan`/`sync-apply` 的公开 route、handler 和 JSON schema 已删除，但 deterministic planner/apply primitive 继续由单一 `openspec converge` transaction 内部组合。
 
 Task Record 是当前完成垂直切片的领域：`domain/task-record` 只验证 closed v1 record 与状态，`application/task-record` 拥有 create/inspect/update/complete/abandon、Parent setter、registry/Change 引用解析、直接关系 read model 和响应级 digest 前置条件，`interfaces/cli/task-record.mjs` 只拥有 argv/输出/退出码适配，`infrastructure/sqlite/task-record-repository.mjs` 只拥有规范化 Task tables、内联 `tasks.parent_task_id` self-reference foreign key 与 transaction。通用 `infrastructure/sqlite/workspace-sqlite.mjs` 负责 canonical Workspace 边界、connection、migration ledger、checksum 和健康检查。Repository 通过 Git topology 拒绝 linked worktree，不读取或双写旧 Task YAML。CLI 与 Task Manager 使用带 registry/Change currentness 的完整 Application action；Local App 普通列表和详情使用同一 Application 暴露的 SQLite stored-state query projection，只在具体专业交互中调用对应 currentness reader。两类客户端都不接受 caller 提供的 filesystem 或数据库 path。Parent/Child 不传播状态、Result 或专业动作，也不扩展为独立关系实体或通用关系图。Task Environment、Development、Review、Verification、Git、Finish、独立 Board 与 Retrospective 仍由各自模块拥有，不能进入 Task Record repository。
 
@@ -107,4 +109,4 @@ node test/verification/cli/package-parity.mjs
 node test/verification/integrity/managed-mutations.mjs
 ```
 
-架构 verifier 检查生命周期目录、薄入口、`src` import 方向、无 owner 的 shared、关键 facade、完整 runtime inventory、command 唯一登记、verification registry、Candidate required gates 和 npm 边界。mutation verifier 递归扫描全部发布 runtime module 的直接写入白名单；package parity 从 tarball 安装并比较 checkout/npm 行为。
+架构 verifier 检查生命周期目录、薄入口、`src` import 方向、无 owner 的 shared、关键 facade、完整 runtime inventory、command descriptor schema/唯一 key/surface/help/replacement、verification registry、Candidate required gates 和 npm 边界。CLI compatibility 直接遍历 catalog 验证 retained leaf/aggregate help，并验证已删除 route 返回标准 unknown-command 且零写入。mutation verifier 递归扫描全部发布 runtime module 的直接写入白名单；package parity 从 tarball 安装并比较 checkout/npm 行为。

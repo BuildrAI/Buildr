@@ -136,8 +136,8 @@ test('current Product/Git adapter 直接接线且没有未来 adapter registry',
   assert.doesNotMatch(application, /adapterRegistry|selectAdapter|resolveAdapter/);
 });
 
-test('旧 OpenSpec 阶段接口受显式消费者和兼容窗口门禁约束', () => {
-  assert.deepEqual(Object.keys(LEGACY_CONVERGENCE_REGISTRY), ['baseline', 'check', 'sync-plan', 'sync-apply']);
+test('retained OpenSpec legacy CLI 受显式消费者和兼容窗口门禁约束', () => {
+  assert.deepEqual(Object.keys(LEGACY_CONVERGENCE_REGISTRY), ['baseline', 'check']);
   const roots = [
     path.join(serviceRoot, 'package/targets/workspace'),
     path.join(productRoot, 'openspec/knowledge'),
@@ -150,7 +150,7 @@ test('旧 OpenSpec 阶段接口受显式消费者和兼容窗口门禁约束', (
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const target = path.join(directory, entry.name);
       if (entry.isDirectory()) walk(target);
-      else if (/\.(?:md|ya?ml)$/.test(entry.name) && /buildr openspec (?:baseline|check|sync-plan|sync-apply)\b/.test(fs.readFileSync(target, 'utf8'))) consumers.push(path.relative(productRoot, target).split(path.sep).join('/'));
+      else if (/\.(?:md|ya?ml)$/.test(entry.name) && /buildr openspec (?:baseline|check)\b/.test(fs.readFileSync(target, 'utf8'))) consumers.push(path.relative(productRoot, target).split(path.sep).join('/'));
     }
   };
   roots.forEach(walk);

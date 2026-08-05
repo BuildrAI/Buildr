@@ -109,8 +109,6 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'openspecBaseline',
     'openspecCheck',
     'openspecConverge',
-    'openspecSyncApply',
-    'openspecSyncPlan',
     'runtimeList',
     'taskEnvironmentResult',
     'taskFinishResult',
