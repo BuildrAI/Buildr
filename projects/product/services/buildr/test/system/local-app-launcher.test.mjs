@@ -10,13 +10,27 @@ import { installLauncher, launcherStatus, uninstallLauncher } from '../../packag
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDER = path.join(PRODUCT_ROOT, 'package', 'launchers', 'build.mjs');
 
-function build(t, platform) {
+function build(t, platform, channel = 'release') {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${platform}-launcher-`));
   t.after(() => fs.rmSync(output, { recursive: true, force: true }));
-  const result = spawnSync(process.execPath, [BUILDER, '--platform', platform, '--runtime', process.execPath, '--output', output], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [BUILDER, '--platform', platform, '--channel', channel, '--runtime', process.execPath, '--output', output], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   return output;
 }
+
+test('development launcher 固定 4317 端口，release launcher 保持动态端口', (t) => {
+  const developmentMac = build(t, 'darwin', 'development');
+  const releaseMac = build(t, 'darwin', 'release');
+  const developmentWindows = build(t, 'win32', 'development');
+  const releaseWindows = build(t, 'win32', 'release');
+  const macCommand = (root, name) => fs.readFileSync(path.join(root, `${name}.app`, 'Contents', 'MacOS', 'Buildr'), 'utf8');
+  const windowsCommand = (root, name) => fs.readFileSync(path.join(root, name, 'Launch-Buildr.cmd'), 'utf8');
+
+  assert.match(macCommand(developmentMac, 'Buildr Dev'), /app --port 4317/);
+  assert.doesNotMatch(macCommand(releaseMac, 'Buildr'), /app --port 4317/);
+  assert.match(windowsCommand(developmentWindows, 'Buildr Dev'), /app --port 4317/);
+  assert.doesNotMatch(windowsCommand(releaseWindows, 'Buildr'), /app --port 4317/);
+});
 
 test('macOS launcher bundle 携带 Node runtime、Buildr Web 资源和可双击 App 入口', (t) => {
   const output = build(t, 'darwin');
