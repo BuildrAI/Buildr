@@ -32,6 +32,7 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(executor, /render-runtime/);
   assert.match(executor, /sync-workspace/);
   assert.match(executor, /finalRemoteRef/);
+  assert.match(executor, /!run\.deliveryCarrier\?\.activationPlan/);
   assert.doesNotMatch(executor, /git', \['add', '-A'/);
   assert.doesNotMatch(executor, /gitNulList|changedDeliverySourcePaths/);
 });

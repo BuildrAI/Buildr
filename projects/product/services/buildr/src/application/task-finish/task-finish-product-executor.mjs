@@ -503,7 +503,11 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
 
     async cleanup({ run }) {
       const operations = [];
-      if (run.delivery?.carrierRef !== run.deliveryCarrier?.head || !run.delivery?.finalRemoteRef) return { status: 'blocked', failure: { operation: 'cleanup-readiness', failureClass: 'transient-external-condition', code: 'task-finish.delivery-not-complete', message: 'Cleanup requires completed carrier and final remote delivery evidence.' } };
+      const finalRemoteRef = run.delivery?.finalRemoteRef
+        || (!run.deliveryCarrier?.activationPlan && run.delivery?.remoteAfterRef === run.deliveryCarrier?.head
+          ? run.delivery.remoteAfterRef
+          : null);
+      if (run.delivery?.carrierRef !== run.deliveryCarrier?.head || !finalRemoteRef) return { status: 'blocked', failure: { operation: 'cleanup-readiness', failureClass: 'transient-external-condition', code: 'task-finish.delivery-not-complete', message: 'Cleanup requires completed carrier and final remote delivery evidence.' } };
       const prepared = {
         schemaVersion: 'buildr.task-finish-completion/v1',
         runId: run.runId,
