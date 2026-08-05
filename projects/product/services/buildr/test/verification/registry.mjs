@@ -36,7 +36,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 30000, 'Buildr modules behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 90000, 'Task Development lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
+  'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Task Development lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish behaves correctly across its real filesystem, Git, and process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
   system: testing(PROJECT_OWNER, 'Development', 'System', 70000, 'Buildr public CLI and Workspace lifecycle journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Task Finish public CLI and delivery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle, 'system'),
@@ -213,7 +213,7 @@ export const verificationSteps = Object.freeze([
     'src/application/task-verification/**',
     'src/application/verification/**',
     'src/application/task-environment/**',
-  ], schedulingCostMs: 90000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
+  ], schedulingCostMs: 50000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
   step({ id: 'integration-task-finish', name: 'Task Finish integration slice', executor: { type: 'node-test', files: [
     'test/integration/task-finish-delivery-remote.test.mjs',
     'test/integration/task-finish-retained-activation.test.mjs',

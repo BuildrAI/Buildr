@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after, before } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
@@ -12,10 +12,46 @@ import { taskDevelopmentDigest } from '../../src/domain/task-development/task-de
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
+let fixtureTemplateBase;
+let fixtureTemplateRoot;
 
 function run(args) {
   const result = spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
   assert.equal(result.status, 0, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+}
+
+function writeVerificationDeclaration(root) {
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2',
+    resources: [],
+    capabilities: [{
+      id: 'demo.check', title: 'Demo check', scope: { project: 'demo', services: [] },
+      invocation: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' },
+      applicability: { paths: ['**'], conditions: [] }, proves: ['Demo content is readable.'], requiredForDelivery: true,
+      environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
+    }],
+  }));
+}
+
+before(() => {
+  fixtureTemplateBase = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-template-'));
+  fixtureTemplateRoot = path.join(fixtureTemplateBase, 'workspace');
+  run(['init', '--target', fixtureTemplateRoot, '--name', 'development-fixture', '--description', 'Task Development integration fixture']);
+  run(['project', 'create', 'demo', '--target', fixtureTemplateRoot, '--name', 'Demo', '--description', 'Demo project']);
+  fs.writeFileSync(path.join(fixtureTemplateRoot, 'projects', 'demo', 'README.md'), '# Demo\n');
+  writeVerificationDeclaration(fixtureTemplateRoot);
+});
+
+after(() => {
+  if (fixtureTemplateBase) fs.rmSync(fixtureTemplateBase, { recursive: true, force: true });
+});
+
+function copyFixtureWorkspace(t, name) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-task-development-${name}-`));
+  const root = path.join(base, 'workspace');
+  fs.cpSync(fixtureTemplateRoot, root, { recursive: true });
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  return { base, root };
 }
 
 function pinImmutableTaskRecord(runtime, root, taskId) {
@@ -35,24 +71,9 @@ function git(root, args) {
 }
 
 function fixture(t, taskId) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-application-'));
-  const root = path.join(base, 'workspace');
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  run(['init', '--target', root, '--name', 'development-fixture', '--description', 'Task Development integration fixture']);
-  run(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Demo project']);
-  fs.writeFileSync(path.join(root, 'projects', 'demo', 'README.md'), '# Demo\n');
-  fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2',
-    resources: [],
-    capabilities: [{
-      id: 'demo.check', title: 'Demo check', scope: { project: 'demo', services: [] },
-      invocation: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' },
-      applicability: { paths: ['**'], conditions: [] }, proves: ['Demo content is readable.'], requiredForDelivery: true,
-      environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
-    }],
-  }));
-  run(['task', 'create', taskId, '--title', 'Develop demo', '--intent', 'Deliver current demo content.', '--project', 'demo', '--target', root]);
+  const { root } = copyFixtureWorkspace(t, 'application');
   const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId, title: 'Develop demo', intent: 'Deliver current demo content.', projects: ['demo'], services: [], changes: [] });
   runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
     ready: true,
     taskId: currentTask,
@@ -86,28 +107,16 @@ function completion(current, candidate, outcome = 'ready') {
 }
 
 function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-git-'));
-  const root = path.join(base, 'workspace');
+  const { root } = copyFixtureWorkspace(t, 'git');
   const taskRoot = path.join(root, '.worktrees', taskId);
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  run(['init', '--target', root, '--name', 'development-git-fixture', '--description', 'Git-backed Development applicability fixture']);
-  run(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Demo project']);
-  fs.writeFileSync(path.join(root, 'projects', 'demo', 'README.md'), '# Demo\n');
-  fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [{
-      id: 'demo.check', title: 'Demo check', scope: { project: 'demo', services: [] },
-      invocation: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' },
-      applicability: { paths: ['**'], conditions: [] }, proves: ['Demo content is readable.'], requiredForDelivery: true,
-      environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
-    }],
-  }));
   if (sharedPath) fs.writeFileSync(path.join(root, 'shared.txt'), `${Array.from({ length: 40 }, (_, index) => `line-${index + 1}`).join('\n')}\n`);
   git(root, ['init', '-b', 'dev']);
   git(root, ['config', 'user.name', 'Buildr Development']);
   git(root, ['config', 'user.email', 'development@example.com']);
   git(root, ['add', '-A']);
   git(root, ['commit', '-m', 'baseline']);
-  run(['task', 'create', taskId, '--title', 'Develop Git demo', '--intent', 'Preserve contribution applicability across baseline advance.', '--project', 'demo', '--target', root]);
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId, title: 'Develop Git demo', intent: 'Preserve contribution applicability across baseline advance.', projects: ['demo'], services: [], changes: [] });
   fs.mkdirSync(path.dirname(taskRoot), { recursive: true });
   git(root, ['worktree', 'add', '-b', `codex/${taskId}`, taskRoot, 'dev']);
   git(taskRoot, ['config', 'user.name', 'Buildr Development']);
@@ -121,7 +130,6 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
   }
   git(taskRoot, ['add', '-A']);
   git(taskRoot, ['commit', '-m', 'task contribution']);
-  const runtime = createRuntime();
   runtime.resolveTaskEnvironmentExecution = () => ({
     ready: true,
     taskId,
@@ -277,13 +285,13 @@ test('Verification not-passed 与 Completion changes-required 可经精确用户
   assert.equal(result.development.receipt.handoffs[0].decision.risks.length, 2);
 });
 
-test('Delivery Baseline 前进但原 Task source 未修改时 Development gates 与 handoff 保持 current', (t) => {
-  const current = gitDevelopmentFixture(t, 'baseline-applicability-current');
-  fs.writeFileSync(path.join(current.root, 'baseline-advance.txt'), 'independent baseline advance\n');
-  git(current.root, ['add', 'baseline-advance.txt']);
-  git(current.root, ['commit', '-m', 'advance delivery baseline']);
+test('Delivery Baseline 前进保持 current；只有原 Task source 变化使 Development stale', (t) => {
+  const shared = gitDevelopmentFixture(t, 'baseline-applicability-shared', { sharedPath: true });
+  fs.writeFileSync(path.join(shared.root, 'baseline-advance.txt'), 'independent baseline advance\n');
+  git(shared.root, ['add', 'baseline-advance.txt']);
+  git(shared.root, ['commit', '-m', 'advance delivery baseline']);
 
-  let result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  let result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);
   assert.equal(result.development.applicability.contentTarget, 'current');
   assert.equal(result.development.applicability.candidate, 'current');
   assert.equal(result.development.applicability.handoff, 'current');
@@ -292,21 +300,22 @@ test('Delivery Baseline 前进但原 Task source 未修改时 Development gates 
     verification: { ...result.development.receipt.gates.verification, applicability: 'current' },
     completion: { ...result.development.receipt.gates.completion, applicability: 'current' },
   });
-
-  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  result = shared.runtime.freezeTaskDevelopmentCandidate(shared.root, shared.taskId);
   assert.equal(result.status, 'unchanged');
   assert.equal(result.development.receipt.candidate.generation, 1);
-});
 
-test('只有原 Task source 变化使 Development stale；同路径 baseline 与 repository evidence 不取得 applicability authority', (t) => {
-  const changed = gitDevelopmentFixture(t, 'baseline-applicability-drift');
-  fs.appendFileSync(path.join(changed.taskRoot, 'feature.txt'), 'changed contribution\n');
-  let result = changed.runtime.inspectTaskDevelopment(changed.root, changed.taskId);
+  const taskSource = fs.readFileSync(path.join(shared.taskRoot, 'shared.txt'));
+  fs.appendFileSync(path.join(shared.taskRoot, 'shared.txt'), 'changed contribution\n');
+  result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);
   assert.equal(result.development.applicability.contentTarget, 'stale');
   assert.equal(result.development.applicability.candidate, 'stale');
   assert.equal(result.development.applicability.handoff, 'stale');
 
-  const shared = gitDevelopmentFixture(t, 'baseline-applicability-shared', { sharedPath: true });
+  fs.writeFileSync(path.join(shared.taskRoot, 'shared.txt'), taskSource);
+  result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);
+  assert.equal(result.development.applicability.contentTarget, 'current');
+  assert.equal(result.development.applicability.handoff, 'current');
+
   const baselineLines = fs.readFileSync(path.join(shared.root, 'shared.txt'), 'utf8').trimEnd().split('\n');
   baselineLines[0] = 'baseline-line-1';
   fs.writeFileSync(path.join(shared.root, 'shared.txt'), `${baselineLines.join('\n')}\n`);
