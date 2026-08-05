@@ -69,15 +69,15 @@
       "type": "skill",
       "id": "project-testing",
       "target": "skills/buildr/project-testing",
-      "integrity": "sha256-b22a66d97b3826256b9a7db3debb3d0a17a113693b5b30b4a1c94cac438acd5f",
+      "integrity": "sha256-1326f57003cdf9e6028e204a8fd27d773542dffc522ff675288365c3914e939e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-53e3671b6f0f62a3aaefd7b585682718704613b9ebe82c3a4dcc7678fadc2fc0"
+          "integrity": "sha256-0af66f51c7d37b6a04fa6ff04bf0ec4565a7952f8cc4da7a627237541fd7d8cd"
         },
         {
           "path": "references/testing-model-v1.md",
-          "integrity": "sha256-39940a0f8e4abd7cdc116a4d889fa011d3fe2f679d3bdd9b827715448b2d4939"
+          "integrity": "sha256-50c17762af6b33e7936e8a07a5e58f7f3e0eb2cc2ce00d75336fbcc9ccb0d5ab"
         }
       ]
     },
