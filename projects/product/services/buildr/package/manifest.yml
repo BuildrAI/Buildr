@@ -127,12 +127,6 @@ capabilityContracts:
     description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
     path: package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md
     target: skills/contracts/buildr/current-knowledge-maintenance/v2.md
-  - id: buildr.task-board-maintenance
-    version: 1
-    description: 创建或更新以稳定 Project task identity 为主的只读任务看板。
-    path: package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md
-    target: skills/contracts/buildr/task-board-maintenance/v1.md
-
 initialSkillBindings:
   - capability: buildr.git-operations
     version: 1
@@ -170,10 +164,6 @@ initialSkillBindings:
   - capability: buildr.current-knowledge-maintenance
     version: 2
     provider: current-knowledge-maintenance
-  - capability: buildr.task-board-maintenance
-    version: 1
-    provider: task-board
-
 builtins:
   rules:
     - id: buildr-core
@@ -195,9 +185,6 @@ builtins:
           version: 2
           mode: optional
         - capability: buildr.task-environment
-          version: 1
-          mode: optional
-        - capability: buildr.task-board-maintenance
           version: 1
           mode: optional
         - capability: buildr.task-development
@@ -228,21 +215,6 @@ builtins:
         - capability: buildr.task-review
           version: 1
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: task-board
-      path: package/targets/workspace/skills/buildr/task-board
-      target: skills/buildr/task-board
-      description: 为跨批次、跨 change、跨团队或跨会话的复杂任务创建或更新只读任务看板；用户明确要求任务看板、整体进度、长期跟踪或使用旧称“任务驾驶舱”时也使用。简单任务不使用。
-      required: false
-      provides:
-        - capability: buildr.task-board-maintenance
-          version: 1
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-      replaces:
-        id: task-cockpit
-        target: skills/buildr/task-cockpit
-        runtimePath: task-cockpit
-      legacyIntegrities:
-        - sha256-0ac07cea3870e19c75e097a6f1df556242c8e11488419bd5f9a3bfa52f36c061
     - id: capability-adaptation
       path: package/targets/workspace/skills/buildr/capability-adaptation
       target: skills/buildr/capability-adaptation
@@ -488,7 +460,6 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-board-maintenance/v1.md => skills/contracts/buildr/task-board-maintenance/v1.md copy
   - package/targets/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - package/targets/workspace/skills/buildr/project-testing/SKILL.md => skills/buildr/project-testing/SKILL.md copy
   - package/targets/workspace/skills/buildr/project-testing/references/testing-model-v1.md => skills/buildr/project-testing/references/testing-model-v1.md copy
@@ -496,9 +467,6 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-manager/agents/openai.yaml => skills/buildr/task-manager/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-review/SKILL.md => skills/buildr/task-review/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-review/agents/openai.yaml => skills/buildr/task-review/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/task-board/SKILL.md => skills/buildr/task-board/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-board/agents/openai.yaml => skills/buildr/task-board/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/task-board/assets/task-board-template.html => skills/buildr/task-board/assets/task-board-template.html copy
   - package/targets/workspace/skills/buildr/capability-adaptation/SKILL.md => skills/buildr/capability-adaptation/SKILL.md copy
   - package/targets/workspace/skills/buildr/capability-adaptation/agents/openai.yaml => skills/buildr/capability-adaptation/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-asset-review/SKILL.md => skills/buildr/task-asset-review/SKILL.md copy

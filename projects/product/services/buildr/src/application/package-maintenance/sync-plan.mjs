@@ -8,12 +8,13 @@ export function createPackageSyncPlan({
   targetPathFromBuiltin,
   toPosixRelative,
 }) {
-  function packageBuiltinMutationPaths(targetRoot, manifest = readPackageManifest()) {
+  function packageBuiltinMutationPaths(targetRoot, manifest = readPackageManifest(), receipts = { builtins: [] }) {
     const affected = new Set([
       path.join(targetRoot, 'AGENTS.md'),
       path.join(targetRoot, '.gitignore'),
       path.join(targetRoot, 'rules', 'manifest.yml'),
       path.join(targetRoot, 'skills', 'manifest.yml'),
+      path.join(targetRoot, 'skills', 'contracts', 'buildr'),
       path.join(targetRoot, 'commands', 'manifest.yml'),
       path.join(targetRoot, '.buildr', 'builtin-receipts.json'),
       ...packageRegistryMutationPaths(targetRoot),
@@ -30,6 +31,18 @@ export function createPackageSyncPlan({
         const predecessorMissingParent = missingAncestorForMutation(targetRoot, path.dirname(predecessorTarget));
         if (predecessorMissingParent) affected.add(predecessorMissingParent);
       }
+    }
+    const currentBuiltinKeys = new Set([
+      ...manifest.builtins.rules.map((item) => `rule:${item.id}`),
+      ...manifest.builtins.skills.map((item) => `skill:${item.id}`),
+      ...manifest.builtins.commands.map((item) => `command:${item.id}`),
+    ]);
+    for (const receipt of receipts.builtins || []) {
+      if (receipt.type !== 'skill' || currentBuiltinKeys.has(`${receipt.type}:${receipt.id}`)) continue;
+      const target = path.join(targetRoot, receipt.target);
+      affected.add(target);
+      const missingParent = missingAncestorForMutation(targetRoot, path.dirname(target));
+      if (missingParent) affected.add(missingParent);
     }
     for (const retirement of (manifest.capabilityContracts || []).flatMap((contract) => contract.replaces || [])) {
       const target = path.join(targetRoot, retirement.target);

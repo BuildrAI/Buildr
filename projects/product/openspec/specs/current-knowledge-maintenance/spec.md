@@ -3,6 +3,7 @@
 ## Purpose
 定义 Buildr Project 当前认知的文档职责、事实来源边界、按真实影响维护机制，以及 current-knowledge capability 的行为契约。
 ## Requirements
+
 ### Requirement: Project 当前认知必须按信息职责组织
 Buildr Project MUST 允许在 `openspec/knowledge/` 按 `overview.md`、`glossary.md`、`architecture/index.md`、`architecture/product.md`、`architecture/technical.md`、`flows/<flow-id>.md` 和 `services/<service-code>.md` 组织当前认知；文件 MUST 只在存在已确认真实内容或当前 Change 真实影响时创建或更新，MUST NOT 机械生成空文档。
 
@@ -22,7 +23,7 @@ Buildr Project MUST 允许在 `openspec/knowledge/` 按 `overview.md`、`glossar
 - **AND** MUST NOT 在产品架构和技术架构中复制两份完整流程作为并列事实源
 
 ### Requirement: 当前认知必须保持事实来源边界
-Current knowledge MUST 解释 Project 当前事实但 MUST NOT 替代 canonical specs；发生冲突时 MUST 依次核对 canonical specs、当前实现与 registries、active Change artifacts、已确认 evidence，并只能将 archived Changes 作为历史来源线索。
+Current knowledge MUST 解释 Project 当前事实但 MUST NOT 替代 canonical specs；发生冲突时 MUST 依次核对 canonical specs、当前实现与 registries、active Change artifacts、已确认 evidence，并只能将 archived Changes 与既有历史任务页面作为历史来源线索。
 
 #### Scenario: knowledge 与 canonical spec 冲突
 - **WHEN** 当前认知陈述与 canonical Requirement 不一致
@@ -35,9 +36,9 @@ Current knowledge MUST 解释 Project 当前事实但 MUST NOT 替代 canonical 
 - **AND** MUST NOT 因历史 Change 存在而继续把旧行为当作当前事实
 
 #### Scenario: task board 表达任务认知
-- **WHEN** `task-boards/` 或既有 `task-cockpits/` 与当前认知同时存在
-- **THEN** 任务级页面 MUST 保持工作状态与导航职责
-- **AND** overview、architecture、flows、services 和 glossary MUST 保持 Project 当前事实职责
+- **WHEN** `task-boards/` 或 `task-cockpits/` 历史页面与当前认知同时存在
+- **THEN** current knowledge maintenance MUST 将这些页面仅作为历史旁证，不得继续维护其工作状态
+- **AND** overview、architecture、flows、services、glossary、canonical specs 与各专业 read model MUST 保持各自当前事实职责
 
 ### Requirement: 当前认知必须支持独立事实收敛
 Buildr MUST 允许 Agent 在没有 OpenSpec Change 时，对已由 canonical specs、当前实现、registries 或已确认决定证明的 Project 当前事实执行 `maintain`；该 operation MUST 只更新真实受影响的 current knowledge，MUST NOT 引入新业务语义、创建 Brief 或 Change sidecar。

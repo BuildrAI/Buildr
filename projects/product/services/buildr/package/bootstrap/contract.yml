@@ -96,7 +96,6 @@ buildrSkillRequiredText:
   - task-environment
   - task-verification
   - task-finish
-  - task-board
   - task-asset-review
   - capability-adaptation
   - buildr.git-operations/v1

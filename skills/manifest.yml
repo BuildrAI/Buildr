@@ -28,9 +28,6 @@ skills:
       - capability: buildr.task-environment
         version: 1
         mode: optional
-      - capability: buildr.task-board-maintenance
-        version: 1
-        mode: optional
       - capability: buildr.task-development
         version: 2
         mode: optional
@@ -253,27 +250,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: openspec-archive-change
-  - id: task-board
-    assetIdentity: buildr:skill:task-board
-    sourceIdentity: package:skills/buildr/task-board
-    source: buildr
-    path: buildr/task-board
-    description: 为跨批次、跨 change、跨团队或跨会话的复杂任务创建或更新只读任务看板；用户明确要求任务看板、整体进度、长期跟踪或使用旧称“任务驾驶舱”时也使用。简单任务不使用。
-    enabled: true
-    required: false
-    state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
-    runtimePath: task-board
-    provides:
-      - capability: buildr.task-board-maintenance
-        version: 1
   - id: task-asset-review
     assetIdentity: buildr:skill:task-asset-review
     sourceIdentity: package:skills/buildr/task-asset-review
@@ -533,10 +509,6 @@ contracts:
     version: 2
     path: contracts/buildr/current-knowledge-maintenance/v2.md
     description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
-  - id: buildr.task-board-maintenance
-    version: 1
-    path: contracts/buildr/task-board-maintenance/v1.md
-    description: 创建或更新以稳定 Project task identity 为主的只读任务看板。
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
@@ -588,9 +560,6 @@ bindings:
   - capability: buildr.current-knowledge-maintenance
     version: 2
     provider: current-knowledge-maintenance
-  - capability: buildr.task-board-maintenance
-    version: 1
-    provider: task-board
   - capability: buildr.task-finish
     version: 1
     provider: task-finish

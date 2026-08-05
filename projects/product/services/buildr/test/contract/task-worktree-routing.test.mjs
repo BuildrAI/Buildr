@@ -19,17 +19,18 @@ const openSpecComponent = YAML.parse(read('package/targets/workspace/components/
 const packageManifest = YAML.parse(read('package/manifest.yml'));
 const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 
-test('task triage 输出三轴决策、repository set 与 Task Environment 动作', () => {
+test('task triage 输出两轴决策、repository set 与 Task Environment 动作', () => {
   for (const required of [
-    '## 2. 三轴决策',
+    '## 2. 两轴决策',
     '### 语义治理',
     '### 执行形态',
-    '### 任务跟踪',
     'Repository set',
     '`implementation`',
     '`metadata-only`',
     '`buildr.task-environment/v1`',
   ]) assert.ok(triageSkill.includes(required), `task-triage must include ${required}`);
+
+  assert.doesNotMatch(triageSkill, /create-board|continue-board|buildr\.task-board-maintenance/);
 
   assert.match(triageSkill, /首次持久交付写入前取得 `ready`、实际 execution roots、validation root 和执行 CLI/);
   assert.match(triageSkill, /`metadata-only` 可以使用共享执行根，不必创建 Git worktree/);
@@ -84,7 +85,6 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
     { capability: 'buildr.task-record', version: 1, mode: 'optional' },
     { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'optional' },
     { capability: 'buildr.task-environment', version: 1, mode: 'optional' },
-    { capability: 'buildr.task-board-maintenance', version: 1, mode: 'optional' },
     { capability: 'buildr.task-development', version: 2, mode: 'optional' },
   ];
   assert.deepEqual(packagedTriage.requires, expected);
@@ -107,7 +107,7 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
   assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-worktree-lifecycle'), false);
   assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-worktree-lifecycle'), false);
 
-  for (const id of ['task-triage', 'task-environment', 'task-worktree', 'task-board', 'task-finish']) {
+  for (const id of ['task-triage', 'task-environment', 'task-worktree', 'task-finish']) {
     const packaged = packageManifest.builtins.skills.find((item) => item.id === id);
     const workspace = workspaceManifest.skills.find((item) => item.id === id);
     const source = read(packaged.path.replace(/^package\//, 'package/') + '/SKILL.md');

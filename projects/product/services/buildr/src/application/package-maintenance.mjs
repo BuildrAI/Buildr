@@ -20,6 +20,7 @@ import { createPackageSmokeChecks } from './package-maintenance/smoke-checks.mjs
 import { createPackageStaticValidator } from './package-maintenance/static-validation.mjs';
 import { createBuiltinReceipts } from './package-maintenance/builtin-receipts.mjs';
 import { createBuiltinReplacement } from './package-maintenance/builtin-replacement.mjs';
+import { retireOrphanedBuiltinSkills } from './package-maintenance/builtin-retirement.mjs';
 import { createPackageSyncPlan } from './package-maintenance/sync-plan.mjs';
 import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.mjs';
 import { createCapabilityRetirement } from './package-maintenance/capability-retirement.mjs';
@@ -115,7 +116,6 @@ export function registerApplicationPackageMaintenance(runtime) {
     const receipts = readBuiltinReceipts(targetRoot);
     const receiptByKey = new Map(receipts.builtins.map((item) => [builtinReceiptKey(item.type, item.id), item]));
     let receiptsChanged = false;
-
     const updateReceipt = (type, builtin, snapshot) => {
       const key = builtinReceiptKey(type, builtin.id);
       const next = receiptFromSnapshot(type, builtin, snapshot);
@@ -212,9 +212,9 @@ export function registerApplicationPackageMaintenance(runtime) {
       const rulesPath = writeRulesManifest(targetRoot, rulesManifest);
       changed.push(toPosixRelative(targetRoot, rulesPath));
     }
-
     const skillsManifest = readSkillsManifestForWrite(targetRoot);
     const skillsDocument = manifestDocumentFor(skillsManifest);
+    retireOrphanedBuiltinSkills({ manifest, receipts, receiptByKey, skillsManifest, targetRoot, builtinReceiptKey, builtinSnapshot, existsDirectory, path, removeDirectory: removePath, removeReceipt, changed, findings, checkOnly });
     const skillsById = new Map(skillsManifest.map((skill, index) => [skill.id, { skill, index }]));
     const contracts = [...(skillsDocument.contracts || [])];
     const bindings = [...(skillsDocument.bindings || [])];
@@ -331,7 +331,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       if (receiptsChanged) changed.push(writeBuiltinReceipts(targetRoot, receipts));
     }
 
-    const affectedPaths = checkOnly ? packageBuiltinMutationPaths(targetRoot, manifest) : [];
+    const affectedPaths = checkOnly ? packageBuiltinMutationPaths(targetRoot, manifest, receipts) : [];
     return { targetRoot, changed: [...new Set(changed)], findings, ...(restoreId ? { restoreOutcomes } : {}), affectedPaths, signature: checkOnly ? builtinSyncPlanSignature(targetRoot, findings, affectedPaths) : null };
   }
 

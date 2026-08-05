@@ -315,10 +315,8 @@ export const verificationSteps = Object.freeze([
     'src/application/package-maintenance/sync-plan.mjs',
     'src/application/workspace-operations.mjs',
     'src/infrastructure/filesystem/**',
-    'skills/task-board/**',
     'package/manifest.yml',
     'package/targets/workspace/manifest.yml',
-    'package/targets/workspace/skills/buildr/task-board/**',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
     'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-convergence.mjs',

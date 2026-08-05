@@ -4,6 +4,7 @@
 
 定义 Buildr 自身开发如何使用 OpenSpec 管理计划型产品工作、长期文档和可实施变更的分工，以及 OpenSpec 自举对现有 runtime 行为的边界。
 ## Requirements
+
 ### Requirement: Buildr 计划型产品工作使用 OpenSpec
 Buildr MUST 使用 OpenSpec change 来规划产品能力、跨领域规则、CLI 行为变更和影响架构的工作，然后再进入实现。
 
@@ -195,27 +196,27 @@ Buildr MUST 为根 README 提供中文主文档和英文翻译，但 MUST NOT �
 - **AND** 其他文档 MUST 按当前 Project 管理语言维护
 
 ### Requirement: Project knowledge 区分当前事实与任务看板
-Buildr Project `openspec/knowledge/` MUST 允许在明确的 `task-boards/` 子目录保存新创建的 Agent-maintained task-scoped working knowledge，同时 MUST 保持 current-state knowledge、canonical specs、active changes 和历史 archive 的既有职责边界；既有 `task-cockpits/` 页面 MUST 原地保留且不得因产品升级被改写。
+Buildr Project `openspec/knowledge/` MUST 保持 current-state knowledge、canonical specs、active changes 和历史 archive 的职责边界；既有 `task-boards/*.html` 与 `task-cockpits/*.html` MUST 仅作为历史任务页面原地保留，不得被解释为当前 Task、进度、证据或协调 authority，也不得因产品升级被迁移、重写、删除或重新接管。
 
 #### Scenario: 记录任务看板
-- **WHEN** Agent 为复杂 Project 任务维护跨批次目标、计划、依赖、进度、风险和证据索引
-- **THEN** 该 HTML MUST 保存在 `openspec/knowledge/task-boards/`
-- **AND** 它 MUST 被标识为任务认知入口，而不是当前业务事实全集或规范性契约
+- **WHEN** 维护者查看 `openspec/knowledge/task-boards/*.html` 或 `task-cockpits/*.html`
+- **THEN** 页面 MAY 作为历史过程与来源线索读取
+- **AND** 当前状态 MUST 由 Task Record、Parent/Child、各专业 read model、canonical specs、当前实现与有效 evidence 核实
 
 #### Scenario: 任务看板包含未来批次
-- **WHEN** 任务看板展示已经确认但尚未开始的后续批次或外部等待事项
-- **THEN** 这些内容 MUST 被表达为当前任务计划或依赖状态
-- **AND** knowledge 文档规则 MUST NOT 将它们误读为 Buildr 已实现能力或无条件产品承诺
+- **WHEN** Agent 推进普通或 Parent-managed 正式 Task
+- **THEN** Agent MUST 使用 Task Record、Parent/Child、各专业 Application/read model、Local App 与对话汇报
+- **AND** MUST NOT 创建新的 `task-boards/*.html` 或 `task-cockpits/*.html`
 
 #### Scenario: 读取权威事实
-- **WHEN** 任务看板摘要与 canonical specs、active change、代码或验证证据存在冲突
-- **THEN** Agent MUST 以对应权威来源核实并修正任务看板
-- **AND** Agent MUST NOT 使用任务看板覆盖或回写权威事实
+- **WHEN** 历史任务页面与 canonical specs、active change、代码或验证证据存在冲突
+- **THEN** Agent MUST 以对应当前 authority 核实任务事实
+- **AND** Agent MUST NOT 使用历史页面覆盖或回写权威事实
 
 #### Scenario: 旧路径保留历史页面
-- **WHEN** Project 在升级前已经包含 `task-cockpits/*.html`
-- **THEN** Buildr update、sync 和 Agent MUST 保留这些文件的路径与内容
-- **AND** 这些历史页面 MUST NOT 被批量转换为 `task-boards/` 页面或兼容跳转文件
+- **WHEN** Buildr update、sync、Doctor 或 Task Finish 处理包含历史任务页面的 Project
+- **THEN** 这些文件的路径与内容 MUST 保持不变
+- **AND** 产品 MUST NOT 将它们转换为 runtime、compatibility redirect 或新的 current authority
 
 ### Requirement: Product planning root 与 Service verification root 必须协同但保持所有权分离
 Buildr 产品开发 MUST 以 Product Project root 维护 OpenSpec、任务与项目级验证政策，并 MUST 以 Buildr Service root 执行源码、npm package、测试和发布验证；验证编排必须显式识别两个根的所有权。

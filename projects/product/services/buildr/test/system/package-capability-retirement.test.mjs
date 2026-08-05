@@ -69,3 +69,58 @@ test('旧 contract 文件漂移时 sync 在任何退休 mutation 前阻断', (t)
   assert.deepEqual(fs.readFileSync(v1), v1Before);
   assert.deepEqual(fs.readFileSync(v2), v2Before);
 });
+
+test('sync 清退 package 已不再声明的 Buildr-owned contract 与 binding', (t) => {
+  const root = fixtureRoot(t);
+  const manifestFile = path.join(root, 'skills', 'manifest.yml');
+  const manifest = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const relative = 'contracts/buildr/retired-example/v1.md';
+  manifest.contracts.push({ id: 'buildr.retired-example', version: 1, path: relative, description: 'Retired Buildr capability.' });
+  manifest.bindings.push({ capability: 'buildr.retired-example', version: 1, provider: 'retired-provider' });
+  fs.writeFileSync(manifestFile, YAML.stringify(manifest));
+  const target = path.join(root, 'skills', relative);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, `---
+schemaVersion: buildr.capability-contract/v1
+id: buildr.retired-example
+version: 1
+---
+
+# Retired Buildr capability
+
+## Purpose
+
+Fixture.
+
+## Consumer Obligations
+
+Fixture.
+
+## Minimum Guarantees
+
+Fixture.
+
+## Effects and Authorization
+
+Fixture.
+
+## Result Evidence
+
+Fixture.
+
+## Decision Points
+
+Fixture.
+
+## Allowed Variations
+
+Fixture.
+`);
+
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  const updated = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  assert.equal(updated.contracts.some((item) => item.id === 'buildr.retired-example'), false);
+  assert.equal(updated.bindings.some((item) => item.capability === 'buildr.retired-example'), false);
+  assert.equal(fs.existsSync(target), false);
+});

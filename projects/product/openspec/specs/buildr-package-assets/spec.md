@@ -870,12 +870,12 @@ Buildr package MUST 让 `task-manager` frontmatter、package manifest 与 worksp
 - **AND** Web feature MUST 只调用登记的 Workspace Task API 并展示 Application result
 
 ### Requirement: task-triage 必须条件消费 Task Record capability
-Buildr package MUST 为 `task-triage` 增加 optional `buildr.task-record@1` consumer edge，并 MUST 更新 Skill source，使 formal execution 分支在首次持久写入前调用 selected provider；该依赖 MUST NOT 阻塞纯讨论、只读或 Task 外操作。
+Buildr package MUST 为 `task-triage` 提供 optional `buildr.task-record@1` consumer edge，并 MUST 让 Skill source 在 formal execution 分支首次持久写入前调用 selected provider；该依赖 MUST NOT 阻塞纯讨论、只读或 Task 外操作。
 
 #### Scenario: 检查 capability graph
-- **WHEN** package verification 比较变更前后 capability graph
-- **THEN** graph MUST 新增 `buildr.task-record@1`、default `task-manager` provider/binding 和 `task-triage` optional consumer edge
-- **AND** MUST NOT 给 task-worktree、task-verification、task-finish、task-board、task-asset-review 或 git-operations 增加 Task Record consumer edge
+- **WHEN** package verification 检查当前 capability graph
+- **THEN** graph MUST 包含 `buildr.task-record@1`、default `task-manager` provider/binding 和 `task-triage` optional consumer edge
+- **AND** MUST NOT 给 task-worktree、task-verification、task-finish、task-asset-review 或 git-operations 增加 Task Record consumer edge
 
 #### Scenario: 正式分支 provider 不 ready
 - **WHEN** task-triage 已确认即将进入正式持久交付但 Task Record provider 不 ready
@@ -883,9 +883,9 @@ Buildr package MUST 为 `task-triage` 增加 optional `buildr.task-record@1` con
 - **AND** semantic triage result MUST 保持可见
 
 #### Scenario: 旧专业模块继续运行
-- **WHEN** P0.1 后正式 Task 调用当前 worktree、Verification、Task Finish、Board、Asset Review 或 Git 路径
+- **WHEN** 正式 Task 调用当前 worktree、Verification、Task Finish、Asset Review 或 Git 路径
 - **THEN** 它们 MUST 继续只维护自己的专业 receipt/result/store
-- **AND** MUST NOT 自动回填专业字段到 `task.yml`
+- **AND** MUST NOT 自动回填专业字段到 Task Record
 
 ### Requirement: 候选 package 变更不得提前激活 retained runtime
 task worktree/branch 内的 Task Manager、task-triage、contract、manifest 和 generated package 变更 MUST 视为候选 self-bootstrap 内容；候选 source MAY 更新同一 task worktree 所承载的任务验证 Workspace runtime，也 MAY 在任务验证 Workspace 或无关临时 Workspace 内向隔离的模拟用户目录投射以验证 user destination，但 MUST NOT 更新共享同一 Git common-dir 的 retained checkout、另一个 task worktree 或验证 Workspace 之外的用户级共享 runtime。隔离模拟投射 MUST NOT 被报告为 retained runtime 或真实用户 runtime 已生效。只有实现完成并集成到 retained checkout 后，从 retained product source 执行的 sync/render 才能更新 retained Agent runtime。
@@ -1096,3 +1096,16 @@ Buildr package、workspace source与rendered runtime MUST投射一致的OpenSpec
 - **WHEN** verifier扫描package source、workspace/runtime manifests、capability graph、help与executable tests
 - **THEN** Task Metadata Publication provider、contract、binding、helper与consumer route MUST全部不存在
 - **AND** Task current records MUST不进入Git，且 MUST不新增archive reconciliation、checklist writer或第二份lifecycle状态
+
+### Requirement: Package 不得继续发布退役的静态 Task Board
+Buildr package、workspace baseline、bootstrap contract、runtime navigation 与 static validation MUST NOT 声明或要求 `task-board` Skill、`buildr.task-board-maintenance/v1` contract、provider、binding 或 HTML template；package check MUST 继续保证其他已声明能力的 manifest-first 完整性。
+
+#### Scenario: 校验当前 package
+- **WHEN** Agent 运行 `buildr package check`
+- **THEN** Task Board Skill、contract、binding、template 与专属 validation MUST 不在当前 package graph 中
+- **AND** 其他 builtin replacement、capability contract 与 provider validation MUST 继续生效
+
+#### Scenario: 构建 runtime 投射
+- **WHEN** Buildr 从当前 package 渲染或同步 Agent runtime
+- **THEN** runtime MUST NOT 发现 `task-board` 入口或 Task Board capability metadata
+- **AND** Task、Parent/Child 与专业 read model 的当前能力 MUST 不受影响

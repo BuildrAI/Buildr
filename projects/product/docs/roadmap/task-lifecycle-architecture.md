@@ -469,7 +469,7 @@ Task 外的临时测试、服务和 API 操作没有 Task ID，因此不进入�
 - 需要稳定排序、泳道、分组或跨 Task 决策记录；
 - 需要 Server/Cloud 下的组织级多人协作 authority。
 
-在这些信号出现前，不创建 Board ID、Board 状态机、`.buildr/boards/**`、Board writer、Board Skill 或独立数据库表。旧静态任务看板能力不作为新 authority；后续若清退其生成链，应以单独窄 Change 处理，不与 Parent Task 混合。
+在这些信号出现前，不创建 Board ID、Board 状态机、`.buildr/boards/**`、Board writer、Board Skill 或独立数据库表。旧静态任务看板生成链已由独立窄 Change `simplify-task-board-after-sqlite-consolidation` 清退；既有历史 HTML 保持原路径和原内容，不作为新 authority。
 
 ## Task Development
 
@@ -944,7 +944,7 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 | 顺序 | 模块 / Change | 当前状态 | 已交付并生效内容 | 对应旧能力处置 |
 |---|---|---|---|---|
 | P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | 已交付并生效（2026-08-01，`dev@2448db0`） | 已交付稳定 Task ID、最小 Task Record 逻辑模型、唯一 Task Record Application、`task-manager`、CLI 五个确定性动作和 Local App Task 列表/详情/受控管理；后续 SQLite Task Store Change 将持久化切换到 Workspace Structured Store | 旧 `task.yml` 在 SQLite 切换后保持 inert，不迁移、不读取、不双写、不删除 |
-| P0.1a | Parent Task `introduce-parent-task` | 实现中（2026-08-04） | 在 SQLite Task Store 上增加单 Parent/多直接 Child、循环保护、Task Manager/CLI/Local App 双向查看与维护；讨论稿当前方向改为协调 Task + dynamic projection | 不创建独立 Board Domain，不迁移旧数据，不传播 Parent/Child 生命周期 |
+| P0.1a | Parent Task `introduce-parent-task` | 已交付并生效（2026-08-05） | SQLite Task Store 已提供单 Parent/多直接 Child、循环保护、Task Manager/CLI/Local App 双向查看与维护；协调模型已切换为普通 Task + Parent/Child + dynamic projection | 未创建独立 Board Domain，未迁移旧 Board 数据，不传播 Parent/Child 生命周期 |
 | P0.1b | Local App Task 轻量查询 `simplify-and-optimize-local-app-task-list` | 已收敛（2026-08-05） | Local App 列表/详情首屏改为固定批量 SQLite stored-state projection，加入封闭过滤、派生直接 Child 数量、竞态防护和 Parent 候选延迟读取 | 删除 Local App Task create UI/route；CLI、Task Manager 五个 action、完整 inspect 与专业 currentness authority 保持不变；不增加 migration、物化计数或缓存 |
 | P0.2 | Task Environment `introduce-task-environment` | 已交付并生效（2026-08-02，`dev@29f9c74`） | 已交付唯一 Task Environment Application、薄 CLI/Skill、Environment Receipt、真实 ready/恢复/runtime projection、动态资源与 cleanup、Local App 环境页签、Task-scoped Change Resolver 和窄 Git provider；retained runtime 已同步并通过 Doctor | 已按 A=1/B=1/C=31/D=0 完成一次性迁移；删除旧 environment writer、receipt authority、routing、JSON/help 与 consumer 残留，旧 worktree 能力仅保留为窄 Git provider evidence |
 | P0.3 | Task Review Result `introduce-task-review-results` | 已交付并生效（2026-08-02，`dev@7764a99`） | 已交付一个 Task Review Application、Planning/Completion 两个可选 current Result 槽位、最小 closed schema、明确 target identity、执行方式、覆盖、findings、结论与派生适用性；CLI、`task-review` Skill 和 Local App 任务 Review 管理复用同一 authority，retained runtime/CLI/Local App 已安装并通过 Candidate verification、Doctor 与真实 Result 写入回读 | Task-scoped Change 审查已切到 Planning Review；删除冲突旧 task-review route/store/schema/test，全局 retained-only generic Change review 与 Task Asset Review 保留各自 authority |
@@ -953,6 +953,7 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 | P0.5a | Task Development Local App 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情收敛为“概览、研发、证据、环境”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
 | P0.6 | Git Operations `formalize-git-operations` | 已交付并生效（2026-08-04） | 已交付唯一 Skill-only `git-operations` / `buildr.git-operations/v1`、consumer-selected operation 边界、精确暂存、commit/push 分离、完整 push range、共享冻结、最小 Result 与部分失败 evidence；retained runtime 已同步并通过 Doctor | Task Finish optional dependency 与 Buildr 产品入口已迁移；删除 `git-ops` 和三项旧 contracts/bindings/router/schema，`git-worktree-provider/v1` 保持独立 |
 | P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 已收敛（2026-08-05） | Development、Verification与Planning/Completion Review current records通过连续migration进入Workspace SQLite；各专业Application与Local App reader边界不变 | 旧YAML保持inert；Task Metadata Publication source、contract、binding、helper、tests、spec与runtime整体清退 |
+| P0.7a | 静态 Task Board 清退 `simplify-task-board-after-sqlite-consolidation` | 已收敛（2026-08-05） | `task-board` Skill、maintenance contract、binding、Triage分支、template、package/runtime与专属tests退出；协调只组合Task/Parent与专业read models | 两类历史HTML原路径原内容保留；SQLite schema与Task Record shape零变更；通用builtin replacement继续服务真实consumer |
 | P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 已收敛（2026-08-04） | current specs、Roadmap、CLI help、package/runtime 与 residual verification 统一为现有 v2 delivery boundary；保留单一直接接线 Product/Git adapter、Delivery Adaptation、exact-token target-race resume、remote readback、retained activation 与 Environment cleanup | 审计 active run/Application/CLI/registry/compose/schema/managed mutations/capability graph；没有真实可达旧 writer/router/binding，故以 zero-delete evidence 关闭，不制造 framework 或迁移 |
 | P1.1 | Structured Task Board 有限探索 | 延后，等待真实缺口 | 无 | 仅在非 Task 规划项、多协调者成员、显式依赖、稳定排序/分组或跨 Task 决策记录无法由 Parent/Child 覆盖时再提案 |
 | P1.2 | 其余专业投影 | 未开始 | 无 | 基于既有四视图按真实缺口扩展，不预设 Board 页面，不重建 Development/Review/Verification/Environment authority |

@@ -34,7 +34,7 @@ const preflightPlan = createVerificationPreflightPlan({ paths: changed.paths });
 const plan = createVerificationPlan({ profiles: ['candidate'], paths: changed.paths });
 if (request.json) {
   const project = (step) => ({ id: step.id, name: step.name, reasons: step.reasons });
-  process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, delegated: plan.delegated, preflightSteps: preflightPlan.steps.map(project), steps: plan.steps.map(project) }, null, 2)}\n`);
+  await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, delegated: plan.delegated, preflightSteps: preflightPlan.steps.map(project), steps: plan.steps.map(project) }, null, 2)}\n`, (error) => error ? reject(error) : resolve()));
   process.exit(0);
 }
 const executionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-verification-'));

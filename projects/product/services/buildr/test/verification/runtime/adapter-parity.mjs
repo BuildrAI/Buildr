@@ -58,9 +58,6 @@ function assertCompleteSkillInventory(workspace, adapterId) {
 
   assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-manager', 'agents', 'openai.yaml')), `${adapterId} must preserve task-manager OpenAI vendor metadata`);
   assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'project-testing', 'references', 'testing-model-v1.md')), `${adapterId} must preserve project-testing reference`);
-  assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-board', 'agents', 'openai.yaml')), `${adapterId} must preserve task-board OpenAI vendor metadata`);
-  assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-board', 'assets', 'task-board-template.html')), `${adapterId} must render task-board template asset`);
-
   const completeRuntime = path.join(runtimeRoot, 'skills', 'complete-runtime-skill');
   for (const relative of ['SKILL.md', 'agents/openai.yaml', 'examples/sample.md', 'references/guide.md', 'scripts/run.sh', 'templates/template.txt']) {
     assert.ok(fs.existsSync(path.join(completeRuntime, ...relative.split('/'))), `${adapterId} must render ${relative}`);

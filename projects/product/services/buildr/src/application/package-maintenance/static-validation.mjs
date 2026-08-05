@@ -805,7 +805,7 @@ export function createPackageStaticValidator(deps) {
       try {
         const metadata = parseSkillFrontmatter(skillFile);
         if (metadata.name !== skill.id) problems.push(`${label}.id must match SKILL.md frontmatter name: ${skill.id} != ${metadata.name}`);
-        if (['task-triage', 'task-manager', 'task-review', 'task-environment', 'task-worktree', 'task-board', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
+        if (['task-triage', 'task-manager', 'task-review', 'task-environment', 'task-worktree', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
           problems.push(`${label}.description must exactly match SKILL.md frontmatter description.`);
         }
       } catch (error) {
@@ -1121,44 +1121,14 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 三轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`buildr.task-board-maintenance/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约', '<!-- buildr:skill-contributions change-ready -->']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');
+        for (const retiredText of ['`create-board`', '`continue-board`', '`buildr.task-board-maintenance/v1`']) {
+          if (skillContent.includes(retiredText)) problems.push(`task-triage Skill must not route retired Task Board behavior: ${JSON.stringify(retiredText)}.`);
+        }
         if (skillContent.includes('buildr openspec')) problems.push('task-triage source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
-      }
-      if (skill.id === 'task-board') {
-        for (const requiredText of [
-          'openspec/knowledge/task-boards/yyyy-MM-dd-<task-id>.html',
-          'Agent 单向维护',
-          '不是 OpenSpec change 的翻译',
-          '任务看板',
-          '既有 `task-cockpits/` 页面保持原路径和原内容',
-          '`buildr.task-board-maintenance/v1`',
-          '`changes` 可以为空',
-          'OpenSpec changes 是 `0..N`',
-          'status: created | updated | aligned | blocked',
-          '`dependencyPool`',
-          '首页',
-          '推进',
-          '方案',
-          '技术细节',
-          '不猜测百分比',
-          '可点击入口',
-          'assets/task-board-template.html',
-        ]) {
-          if (!skillContent.includes(requiredText)) problems.push(`task-board Skill must include ${JSON.stringify(requiredText)}.`);
-        }
-        const templatePath = path.join(skillDir, 'assets', 'task-board-template.html');
-        if (!existsFile(templatePath)) {
-          problems.push('task-board Skill must include assets/task-board-template.html.');
-        } else {
-          const templateContent = fs.readFileSync(templatePath, 'utf8');
-          for (const requiredText of ['id="board-data"', 'data-tab="overview"', 'data-tab="progress"', 'data-tab="solution"', 'data-tab="technical"', '由 Agent 单向维护 · 页面只读', '"changes"', '"batches"', '"dependencyPool"', '"businessPlan"', '"technicalPlan"', '"details"']) {
-            if (!templateContent.includes(requiredText)) problems.push(`task-board template must include ${JSON.stringify(requiredText)}.`);
-          }
-          if (/https?:\/\//.test(templateContent)) problems.push('task-board template must not depend on external HTTP resources.');
-        }
       }
       if (skill.id === 'openspec-contract-guard') {
         for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec converge', 'passed|blocked|recovery-unprovable', 'archive --skip-specs', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
@@ -1180,9 +1150,6 @@ export function createPackageStaticValidator(deps) {
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-environment' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-environment.');
     }
-    if (!manifest.builtins.skills.some((skill) => skill.id === 'task-board' && skill.required === false)) {
-      problems.push('builtins.skills must declare optional task-board.');
-    }
     if (manifest.builtins.skills.some((skill) => skill.id.includes('openspec-store'))) {
       problems.push('OpenSpec Stores are beta and must not be registered as a Buildr builtin Skill.');
     }
@@ -1196,6 +1163,12 @@ export function createPackageStaticValidator(deps) {
       || (manifest.capabilityContracts || []).some((contract) => contract.id === 'buildr.task-metadata-publication')
       || (manifest.initialSkillBindings || []).some((binding) => binding.capability === 'buildr.task-metadata-publication')) {
       problems.push('Task Metadata Publication must not remain in package skills, contracts, or initial bindings.');
+    }
+    if (manifest.builtins.skills.some((skill) => skill.id === 'task-board')
+      || (manifest.capabilityContracts || []).some((contract) => contract.id === 'buildr.task-board-maintenance')
+      || (manifest.initialSkillBindings || []).some((binding) => binding.capability === 'buildr.task-board-maintenance')
+      || manifest.builtins.skills.some((skill) => (skill.requires || []).some((dependency) => dependency.capability === 'buildr.task-board-maintenance'))) {
+      problems.push('Retired Task Board must not remain in package skills, contracts, bindings, or consumer edges.');
     }
 
     for (const command of manifest.builtins.commands) {
@@ -1243,7 +1216,7 @@ export function createPackageStaticValidator(deps) {
       try {
         const baselineSkills = readSkillManifest(baselineSkillsManifest);
         validateSkillManifestEntries(baselineSkills, baselineSkillsManifest);
-        for (const id of ['task-triage', 'task-manager', 'task-worktree', 'task-board', 'task-finish', 'git-operations']) {
+        for (const id of ['task-triage', 'task-manager', 'task-worktree', 'task-finish', 'git-operations']) {
           const packaged = manifest.builtins.skills.find((entry) => entry.id === id);
           const baseline = baselineSkills.find((entry) => entry.id === id);
           if (packaged && baseline?.description !== packaged.description) {
@@ -1257,10 +1230,6 @@ export function createPackageStaticValidator(deps) {
         const taskVerification = baselineSkills.find((entry) => entry.id === 'task-verification');
         if (!taskVerification || taskVerification.source !== 'buildr' || taskVerification.state !== 'installed' || taskVerification.enabled !== true) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-verification.');
-        }
-        const taskBoard = baselineSkills.find((entry) => entry.id === 'task-board');
-        if (!taskBoard || taskBoard.source !== 'buildr' || taskBoard.state !== 'installed' || taskBoard.enabled !== true) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-board.');
         }
         const taskManager = baselineSkills.find((entry) => entry.id === 'task-manager');
         if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1)) {

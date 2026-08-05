@@ -76,8 +76,18 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
   const triage = graph.consumers.find((item) => item.consumer === 'task-triage');
   assert.equal(triage.readiness, 'ready');
   assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 2 && item.mode === 'optional'));
-  assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.task-board-maintenance' && item.mode === 'optional'));
+  assert.equal(triage.dependencies.some((item) => item.capability === 'buildr.task-board-maintenance'), false);
   assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.task-environment' && item.version === 1 && item.mode === 'optional'));
+  assert.equal(packageManifest.builtins.skills.some((item) => item.id === 'task-board'), false);
+  assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-board-maintenance'), false);
+  assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-board-maintenance'), false);
+  assert.equal(packageManifest.builtins.skills.some((item) => item.id === 'task-metadata-publication'), false);
+  assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-metadata-publication'), false);
+  assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-metadata-publication'), false);
+  assert.equal(fs.existsSync(path.join(WORKSPACE_TARGET, 'skills/buildr/task-board/SKILL.md')), false);
+  assert.equal(fs.existsSync(path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/task-board-maintenance/v1.md')), false);
+  assert.equal(fs.existsSync(path.join(WORKSPACE_TARGET, 'skills/buildr/task-metadata-publication/SKILL.md')), false);
+  assert.equal(fs.existsSync(path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/task-metadata-publication/v1.md')), false);
 });
 
 test('current knowledge provider 同时提供 v1/v2 且 maintain 不伪造 Change', () => {

@@ -111,26 +111,6 @@
     },
     {
       "type": "skill",
-      "id": "task-board",
-      "target": "skills/buildr/task-board",
-      "integrity": "sha256-a5f57f9a611f63f99edb9aa0b37b9cf7aae11469c13ec4f8c41b8d606c0c7bd4",
-      "files": [
-        {
-          "path": "SKILL.md",
-          "integrity": "sha256-a18654132d4f0a4329c58d4f1d4ce5d7333803b82fc9beddf62bf6d493486f78"
-        },
-        {
-          "path": "agents/openai.yaml",
-          "integrity": "sha256-96eb04fa5393aeb30f0fa9f6f86f76883e289d4c2286c6e559d8662f103493e4"
-        },
-        {
-          "path": "assets/task-board-template.html",
-          "integrity": "sha256-ddab7d75df54b0fb42ac862e0e158212e7a6843ce99f7e3edfccdd3b5585fd3f"
-        }
-      ]
-    },
-    {
-      "type": "skill",
       "id": "task-development",
       "target": "skills/buildr/task-development",
       "integrity": "sha256-588faf51289f7ca4278fe4374882a4967173bddf54656c273800b89be5795dac",
@@ -173,11 +153,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-8ddf4e3c69172d202e0cc87fa50032b52c2ac964d33663f6d62204480e891265",
+      "integrity": "sha256-186a43aaf655947a34081cd9aeabb2426edd681565ff71517b242e4a05c1693c",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-101833d2156e3738078818a41db3f5c68ed51cd332b213ca111c1d0f70b45fd5"
+          "integrity": "sha256-2b3b5f0d43f1950116b50ab7151d83c8cd60b2fec1c255c0763bb7f2c19a5253"
         },
         {
           "path": "agents/openai.yaml",
@@ -187,33 +167,13 @@
     },
     {
       "type": "skill",
-      "id": "task-metadata-publication",
-      "target": "skills/buildr/task-metadata-publication",
-      "integrity": "sha256-476ae5a5a0848eec2aa3b817fde0e7077d1f351a87550d8275ce892022314506",
-      "files": [
-        {
-          "path": "SKILL.md",
-          "integrity": "sha256-f91ee2e80ecca01d184b858cbb76ee955c58f5776741253b3f0e72f9d1b113ab"
-        },
-        {
-          "path": "agents/openai.yaml",
-          "integrity": "sha256-3efa98af41b7b50f9c47f4bb9f3315dab026024608acaf3e95ee9b1b4fec70d2"
-        },
-        {
-          "path": "scripts/publication.mjs",
-          "integrity": "sha256-cc7706e29658924fc82e5bc44a600e45bf035490ff22a770fb7f35848841c3a6"
-        }
-      ]
-    },
-    {
-      "type": "skill",
       "id": "task-review",
       "target": "skills/buildr/task-review",
-      "integrity": "sha256-8b80447fb779b858bcda67c3d3929a2b2fcd46bf8eb7b3cf94bb437a8285c67e",
+      "integrity": "sha256-9e43b22a0b3bd2d24633d430b54cc887ef02f750b24e7259b83fe8880ff351ef",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-50e83789d3ee02de1573bc2220344f86f5ea91b92f609169d83b0823e9f38f43"
+          "integrity": "sha256-c9798e8aa3a45de84900fc9d1bdc80f14bcab50d58aea16acdb83373a27b0597"
         },
         {
           "path": "agents/openai.yaml",
@@ -225,11 +185,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-2c544a2be3db884e4592760510ac9c91842fd29cb2746553ff7116ad8bc37cde",
+      "integrity": "sha256-e153175c4eeeb6f83386f1189aaa5ef1d2e272ae51d3ec7d8b1bff0d9d7409b9",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-03593e24cd74bd7bdcd5be6caa8f601e1cc81908e2d2a6c26219f0cca618f13e"
+          "integrity": "sha256-33ea9ba6cbea679306642d4be2bea55cb79327a9cfe856db92df72dbf263aae0"
         }
       ]
     },
@@ -237,11 +197,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-c02361e08585cc30e0fd5fdeaaf22ff4749f2220dd9ff97f740d123197728112",
+      "integrity": "sha256-5aaa6c9b21088874d739ac5aa0041f67cbde6d834b8e5e0b584c94ada9a3a2f1",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-863e93449ee0984925e3b10c39e258c4e44629fab84bc40eae2663f7a5bd8510"
+          "integrity": "sha256-f5e75b7d2395a2cfeaee9e233bcb086ad6552759bd51ea4b6a6e4ff11db6653c"
         },
         {
           "path": "references/project-verification-v2.md",

@@ -27,7 +27,7 @@
 | 产品入口、最小心智模型、快速开始 | `README.md` |
 | 产品定位、为什么、核心概念、协作模型 | `docs/buildr-product.md` |
 | 已经实现的当前事实 | `openspec/knowledge/overview.md` 及其导航的结构化 knowledge |
-| 复杂任务跨 change 的交付批次、依赖池、方案、进度和证据看板 | `openspec/knowledge/task-boards/yyyy-MM-dd-<task-id>.html` |
+| 历史任务页面（只作历史旁证，不再创建或维护） | `openspec/knowledge/task-boards/*.html`、`openspec/knowledge/task-cockpits/*.html` |
 | MUST / SHOULD 级产品行为 | `openspec/specs/` |
 | 计划型产品变更 | `openspec/changes/` |
 | 尚未进入实现的长期产品方向 | `docs/roadmap/` |
@@ -46,12 +46,12 @@
 
 `knowledge` 不写产品价值主张、愿景、历史原因、采用场景或路线图。
 
-`openspec/knowledge/task-boards/` 是明确隔离的 task-scoped working knowledge 子层：
+`openspec/knowledge/task-boards/` 与 `openspec/knowledge/task-cockpits/` 是原地保留的历史任务页面：
 
-- 由 Agent 单向维护整个任务的目标、当前计划、历史阶段、依赖、风险和验证证据入口。
-- 文件名使用 `yyyy-MM-dd-<task-id>.html`，日期取首次创建时的本地日期，后续保持稳定路径。
-- 可以关联多个 active/archive change、code-only 工作和外部依赖，不随单个 change archive 移动。
-- 不是 current-state facts 全集、canonical specs、active change、代码或验证结果的替代事实源；冲突时必须回到对应权威来源核实并修正驾驶舱。
+- 保持现有文件的原路径和原内容，不迁移、不重写、不删除或重新接管。
+- 只作为历史过程和来源线索，不再承担当前任务工作状态或导航职责。
+- 当前 Task、Parent/Child、Development、Review 与 Verification 状态必须通过各专业 Application/read model、Local App、canonical specs 和有效 evidence 核实。
+- 不创建新的 `task-boards/*.html` 或 `task-cockpits/*.html`。
 
 ## Roadmap 规则
 
@@ -76,7 +76,7 @@
 
 - 新增当前产品说明时，优先更新 `docs/buildr-product.md`。
 - 新增当前实现事实时，按影响更新 `openspec/knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/` 或 `services/` 中真正相关的资产；不生成空文档。
-- 复杂任务需要持续可视化认知入口时，使用 `task-board` Skill 维护任务看板；每个看板至少关联一个真实 OpenSpec change，并以交付批次和依赖池表达进度，不要把任务进度混入 current-state facts 文档。既有 `task-cockpits/` 页面是保留原路径和原内容的历史资产，不迁移到新目录。
+- 正式 Task 的协调和进度使用 Task Record、Parent/Child、各专业公开 read model、Local App 与对话汇报；不要创建第二份 Board authority。既有 `task-boards/` 与 `task-cockpits/` 页面保持原路径和原内容，只作为历史旁证。
 - 新增规范性行为时，更新 `openspec/specs/` 或创建 OpenSpec change。
 - 新增尚未进入实现的详细产品方向时，维护 `docs/roadmap/` 并保持非当前事实声明。
 - 新增 Agent runtime adapter 前，先按 `services/buildr/docs/agent-runtime-adapter-contribution.md` 取得目标 Agent 的版本化证据；进入实现后仍必须创建独立 OpenSpec change。

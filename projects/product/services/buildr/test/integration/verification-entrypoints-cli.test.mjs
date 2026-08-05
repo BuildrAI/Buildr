@@ -42,7 +42,7 @@ test('candidate rejects invalid scheduling and execution profiles before verific
 
 test('candidate full plan unions changed owners once and rejects unknown options before execution', () => {
   const runner = path.join(productRoot, 'test', 'verification', 'candidate.mjs');
-  const planned = spawnSync(process.execPath, [runner, '--base', 'HEAD^', '--json'], { cwd: productRoot, encoding: 'utf8' });
+  const planned = spawnSync(process.execPath, [runner, '--base', 'HEAD^', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 });
   assert.equal(planned.status, 0, planned.stderr);
   const payload = JSON.parse(planned.stdout);
   assert.equal(payload.schemaVersion, 'buildr.verification-full-plan/v1');

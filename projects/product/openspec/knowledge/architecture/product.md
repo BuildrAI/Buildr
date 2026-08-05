@@ -36,6 +36,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task Finish：P0.5保留固定五阶段窄adapter，只消费当前研发交接（Development Handoff）；Git adapter区分任务贡献（Task Contribution）与交付基线（Delivery Baseline），只在隔离交付载体（Delivery Carrier）上机械应用并证明delta identity等价。目标基线前进不自动使Candidate失效；Change/current knowledge收敛、formal Verification、Completion Review、Candidate generation与风险决定均在进入Finish前完成。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
 - Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联；Parent/Child 只表达 Task 间协调层级，不传播这些专业事实。
+- Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Local App动态投影，不提供独立Board Domain或静态Board writer。既有Task Board/Cockpit HTML只保留历史原文，不是当前Task、进度、证据或协调authority。
 
 ## 产品边界
 

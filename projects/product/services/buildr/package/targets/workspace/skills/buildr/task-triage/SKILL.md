@@ -5,7 +5,7 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 
 # Task Triage Skill
 
-本 Skill 只核对任务事实、作出正交决策并交接专业动作；不复制 Task Environment、任务看板、OpenSpec 或验证手册，也不建立确定性路由器。
+本 Skill 只核对任务事实、作出正交决策并交接专业动作；不复制 Task Environment、OpenSpec 或验证手册，也不建立确定性路由器。
 
 ## 1. 核对任务事实
 
@@ -18,7 +18,7 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 
 authority 冲突、授权或 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
 
-## 2. 三轴决策
+## 2. 两轴决策
 
 ### 语义治理
 
@@ -39,14 +39,6 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 该轴独立于语义治理：正式持久交付都需要 Task Environment；`metadata-only` 可以使用共享执行根，不必创建 Git worktree；进入实现时仍复用同一 Receipt 或由 Environment 确定性恢复。
 
-### 任务跟踪
-
-- `none`：简单、短时、无持续跟踪价值。
-- `create-board`：跨批次、Change、服务或团队，存在依赖、长期跟踪、多次用户判断，或用户明确要求任务看板/整体进度。
-- `continue-board`：已存在同一 Project task identity 的任务看板。
-
-任务看板以 Project task identity 为主，OpenSpec Changes 是 `0..N` 个真实关联。复杂 `code-only` 任务可以在没有 Change 时创建看板；不得为了看板格式创建虚假 Change 或用 planned name 冒充关联。
-
 ## 3. 条件化交接
 
 执行前读取相应 optional binding、contract 和 selected provider；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
@@ -56,9 +48,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 正式持久交付 | `buildr.task-record/v1` 的 `create` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次持久交付写入前返回 `created|inspected`、path 和 effects | provider 不 ready 或 blocked 时停止正式交付写入；讨论、只读和 metadata maintenance 不依赖 |
 | 正式执行位置 | `buildr.task-environment/v1` 的 `prepare` 或 `inspect` | Task ID、canonical Workspace 与完整 repository set；首次持久交付写入前取得 `ready`、实际 execution roots、validation root 和执行 CLI | 只阻塞 execution；不回退到 cwd 或旧 receipt |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
-| `create-board|continue-board` | `buildr.task-board-maintenance/v1` | task identity、真实 Change ids 或 `none`；返回 `created|updated|aligned`、路径和时间 | `blocked` 只影响 tracking |
-
-正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change；看板 provider 不可用时，不得把文件存在冒充创建成功。
+正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
@@ -75,17 +65,16 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 - Repository set：<selectors 或 unresolved>
 - Task Record：create / inspect / none / blocked
 - Task Environment：prepare / inspect / none / blocked
-- 任务跟踪：none / create-board / continue-board / blocked
 - 事实依据：<最小 authority/evidence>
 - 未决事项：<none 或冲突/授权问题>
 - 下一动作：<selected capability/provider action 或用户决定>
 ```
 
-只有选中 OpenSpec 或任务看板时追加对应状态。不得把 readiness、planned identity、文件存在或单次 finding 冒充行为成功。
+只有选中 OpenSpec 时追加对应状态。任务进度直接使用 Task Record、Parent/Child、各专业公开 read model、Local App 与对话表达；不得把 readiness、planned identity、文件存在或单次 finding 冒充行为成功。
 
 ## Guardrails
 
-- 不为过去事实补造 Change 历史，不把任务看板或 current knowledge 变成第二套规范。
+- 不为过去事实补造 Change 历史，不把 current knowledge 变成第二套规范。
 - 不在正式 Task 的首次持久交付写入后才补做 Task Record 或 Task Environment 决策。
 - 不使用未经 authority 或 CLI 确认的路径、状态、进度和完成结论。
 - 不把一次集中验证解释为覆盖尚未执行、stale 或存在 coverage gap 的适用 delivery-required capability。
