@@ -36,10 +36,10 @@ preflight → prepare → verify → deliver → cleanup
 - Agent只在carrier完成交付适配（Delivery Adaptation）；resume核验ownership、baseline、source/handoff、cleanliness与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
 - `deliver`只做fast-forward、普通push/回读、类型化activation、适用install与Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；不读取Project/Service配置，不执行sync，也不接受任意命令字符串。
-- render不得产生tracked/staged delta。`remoteAfterRef`与`finalRemoteRef`都等于carrier远端回读。
+- render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
 - `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 
-target前进时返回`task-finish.target-race`与精确token，恢复carrier phases，不增加 Candidate generation、不重跑formal Verification或Completion Review。Git conflict返回Delivery Adaptation facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
+target前进时先证明carrier ancestry及全部changed-path after mode/blob/删除状态；完整包含则跳过重复apply/fast-forward/push并继续Doctor与cleanup，否则返回`task-finish.target-race`与精确token。恢复carrier phases不增加 Candidate generation、不重跑formal Verification或Completion Review。Git conflict返回Delivery Adaptation facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
 
 恢复命令：
 
@@ -63,5 +63,5 @@ Finish不创建或改变Candidate/generation，不修改Development Receipt，�
 - Result引用Development handoff、Candidate/generation、Content Target、Task Contribution、Delivery Baseline和Delivery Carrier；
 - Result标记`deterministic-reuse`或`agent-reviewed-delivery-adaptation`，后者不声称Buildr证明语义等价；
 - carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
-- Git-backed delivery 的 configured remote、普通 push 和 after ref 回读均已证明，且 `remoteAfterRef` 与 `finalRemoteRef` 都等于 carrier ref；
+- Git-backed delivery 的 configured remote与after ref回读已证明；普通路径完成push且`remoteAfterRef`、`finalRemoteRef`等于carrier，`already-contained`路径保留逐路径证明、原carrier ref与最新后代final remote ref；
 - `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。

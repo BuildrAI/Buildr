@@ -72,7 +72,7 @@ bindings:
     provider: git-operations
 ```
 
-`task-finish/v1`的Task Environment路径通过产品application service执行固定Git carrier transition，并由自身contract约束内容等价、真实delivery remote、fast-forward、普通push、push后远端ref回读与结果证据；只有回读值等于carrier才能报告`remoteAfterRef`。它不拥有Candidate freeze。只有retained metadata-only handoff把optional`buildr.git-operations@1` dependency提升为required，并由Task Finish分别选择commit与push；独立已选Git Operation由同一个`git-operations` provider处理。
+`task-finish/v1`的Task Environment路径通过产品application service执行固定Git carrier transition，并由自身contract约束内容等价、真实delivery remote、fast-forward、普通push、远端ref回读与结果证据。普通路径要求回读值等于carrier；仅当最新target精确保留carrier ancestry与全部changed-path after state时，允许`already-contained`记录原carrier与最新后代ref。它不拥有Candidate freeze。只有retained metadata-only handoff把optional`buildr.git-operations@1` dependency提升为required，并由Task Finish分别选择commit与push；独立已选Git Operation由同一个`git-operations` provider处理。
 
 任务验证单独建模，是因为它既可以在 Task Environment 中执行，也可以在当前分支、无 Git Project 或非代码交付目标中执行。`buildr.task-environment/v1` 保护 Task 的执行资格与环境处置；`buildr.git-worktree-provider/v1` 只保护 Git checkout evidence；`buildr.task-verification/v3` 保护 Project capability 选择、transient execution 与 current Task Verification Result 的边界。Project `verification.yml` 是测试能力事实，不进入 `capabilities.yml`。
 

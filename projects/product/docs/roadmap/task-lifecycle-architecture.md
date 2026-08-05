@@ -609,7 +609,7 @@ P0.8 第一阶段 `simplify-task-finish-delivery-boundary` 只收敛现有 v2 �
 
 Candidate 由 Development 冻结，不强制等于 Git commit。Finish 可以创建内容等价的交付载体，但不能用 amend/rebase/merge 改变 Candidate bytes，也不能把 commit/tree identity 写回 Candidate。Git tracking、staging 或 commit 同一 bytes 不改变 Content Target/Candidate。
 
-交付目标前进不是 Environment 漂移，也不自动使 Candidate stale。当前 adapter 从最新 Delivery Baseline 重新准备隔离 carrier：clean apply 记录 deterministic reuse，Git conflict进入 Delivery Adaptation，push 前 target race 用 exact token 重做 `prepare → verify → deliver → cleanup`；三者都复用原 Candidate/generation，且不重跑 Formal Verification。只有原 Task source 或其他 Development applicability input 真实变化时返回 Development。
+交付目标前进不是 Environment 漂移，也不自动使 Candidate stale。当前 adapter 先检查已有carrier是否被最新target精确包含：carrier为ancestor且全部changed-path after mode/blob/删除状态保留时跳过重复transition；否则从最新Delivery Baseline重新准备隔离carrier，clean apply记录deterministic reuse，Git conflict进入Delivery Adaptation，target race用exact token重做`prepare → verify → deliver → cleanup`。这些路径都复用原Candidate/generation，且不重跑Formal Verification。只有原Task source或其他Development applicability input真实变化时返回Development。
 
 ### Run、Result 与完成
 

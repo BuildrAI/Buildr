@@ -459,6 +459,7 @@ function validateCompletion(value, taskId, file) {
   for (const field of ['runId', 'handoffIdentity', 'candidateIdentity', 'contentTargetIdentity', 'carrierIdentity', 'carrierRef', 'completedAt']) {
     if (typeof value[field] !== 'string' || !value[field]) throw new Error(`completion 缺少 ${field}。`);
   }
+  if (value.finalRemoteRef !== undefined && (typeof value.finalRemoteRef !== 'string' || !value.finalRemoteRef)) throw new Error('completion finalRemoteRef 无效。');
   if (!Number.isInteger(value.candidateGeneration) || value.candidateGeneration < 1) throw new Error('completion candidateGeneration 无效。');
   if (Number.isNaN(Date.parse(value.completedAt))) throw new Error('completion completedAt 无效。');
   if (path.basename(file) !== `${value.runId}.json`) throw new Error('completion 文件名与 runId 不匹配。');
@@ -491,7 +492,7 @@ export function readTaskFinishResults({ root, taskId, clock = Date.now }) {
         [result.candidate.generation, completion.candidateGeneration, 'candidate generation'],
         [result.candidate.contentTargetIdentity, completion.contentTargetIdentity, 'content target'],
         [result.carrier?.identity, completion.carrierIdentity, 'carrier'],
-        [result.delivery?.finalRemoteRef, completion.carrierRef, 'final remote ref'],
+        [result.delivery?.finalRemoteRef, completion.finalRemoteRef || completion.carrierRef, 'final remote ref'],
       ]) if (left !== right) throw new Error(`Finish run 与 completion 的 ${label} identity 不匹配。`);
       results.push({ result, completion });
     } catch (error) {

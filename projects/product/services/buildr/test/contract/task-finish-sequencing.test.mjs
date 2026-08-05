@@ -33,6 +33,9 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.doesNotMatch(executor, /sync-workspace/);
   assert.match(executor, /finalRemoteRef/);
   assert.match(executor, /finalRemoteRef: remoteAfterRef/);
+  assert.match(executor, /targetDisposition: alreadyContained \? 'already-contained' : 'carrier'/);
+  assert.match(executor, /inspectGitCarrierContainment/);
+  assert.doesNotMatch(executor, /components\.update_available|buildr-self-bootstrap|package\/targets\/workspace/);
   assert.doesNotMatch(executor, /git', \['add', '-A'/);
   assert.doesNotMatch(executor, /gitNulList|changedDeliverySourcePaths/);
 });
@@ -52,6 +55,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   const packageFinish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
   for (const phrase of ['task-finish@append', 'skills/buildr-self-bootstrap-sync', 'source: workspace']) assert.ok(component.includes(phrase), phrase);
   for (const input of ['projects/product/services/buildr/package/manifest.yml', 'projects/product/services/buildr/package/targets/workspace/**']) assert.ok(skill.includes(input), input);
+  for (const boundary of ['retained-doctor-failed', 'components.update_available', '本地commit', '不得push', '恢复同一个Formal Finish run', 'Formal Finish成功后']) assert.ok(skill.includes(boundary), boundary);
   assert.match(runtimeFinish, /Buildr 自举 Workspace 收敛/);
   assert.ok(runtimeFinish.indexOf('Buildr 自举 Workspace 收敛') > runtimeFinish.indexOf('## 完成标准'));
   assert.doesNotMatch(packageFinish, /post-finish|Workspace 交付后维护|Buildr 自举 Workspace 收敛/);

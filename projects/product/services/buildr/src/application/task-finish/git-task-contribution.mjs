@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -42,6 +43,44 @@ function rawChanges(root, before, after) {
     changes.push({ path: file.replaceAll('\\', '/'), beforeMode: matched[1], afterMode: matched[2], beforeBlob: matched[3], afterBlob: matched[4], status: matched[5] });
   }
   return changes.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function containmentIdentity(value) {
+  return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+}
+
+export function inspectGitCarrierContainment({ repositoryRoot, targetRef, carrier }) {
+  const carrierRef = carrier?.head || null;
+  const changedPaths = [...new Set((carrier?.changedPaths || []).map((value) => String(value).replaceAll('\\', '/')))].sort();
+  const changes = Array.isArray(carrier?.changes) ? [...carrier.changes].sort((left, right) => left.path.localeCompare(right.path)) : [];
+  if (!carrierRef || !targetRef || changes.length === 0 || changedPaths.join('\0') !== changes.map((change) => change.path).join('\0')) {
+    return { status: 'unprovable', code: 'task-finish.carrier-containment-input-invalid', carrierRef, targetRef, changedPaths };
+  }
+  const ancestor = git(repositoryRoot, ['merge-base', '--is-ancestor', carrierRef, targetRef]);
+  if (ancestor.status === 1) return { status: 'not-contained', code: 'task-finish.carrier-not-ancestor', carrierRef, targetRef, changedPaths };
+  if (ancestor.status !== 0) return { status: 'unprovable', code: 'task-finish.carrier-ancestry-unreadable', carrierRef, targetRef, changedPaths, diagnostic: String(ancestor.stderr || ancestor.stdout).trim() };
+
+  const checkedPaths = [];
+  for (const change of changes) {
+    const observed = git(repositoryRoot, ['ls-tree', '-z', '--full-tree', targetRef, '--', change.path]);
+    if (observed.status !== 0) return { status: 'unprovable', code: 'task-finish.carrier-target-path-unreadable', carrierRef, targetRef, path: change.path, diagnostic: String(observed.stderr || observed.stdout).trim() };
+    const entry = String(observed.stdout).split('\0').filter(Boolean)[0] || null;
+    const matched = entry ? /^(\d+) (\S+) ([0-9a-f]+)\t(.*)$/.exec(entry) : null;
+    const deleted = change.afterMode === '000000' || /^0+$/.test(change.afterBlob);
+    const exact = deleted
+      ? entry === null
+      : Boolean(matched && matched[1] === change.afterMode && matched[3] === change.afterBlob && matched[4] === change.path);
+    const evidence = {
+      path: change.path,
+      expected: deleted ? { state: 'absent' } : { state: 'present', mode: change.afterMode, object: change.afterBlob },
+      observed: entry === null ? { state: 'absent' } : matched ? { state: 'present', mode: matched[1], type: matched[2], object: matched[3], path: matched[4] } : { state: 'unparseable' },
+      exact,
+    };
+    checkedPaths.push(evidence);
+    if (!exact) return { status: 'not-contained', code: 'task-finish.carrier-path-not-contained', carrierRef, targetRef, changedPaths, checkedPaths };
+  }
+  const proof = { carrierRef, targetRef, changedPaths, checkedPaths };
+  return { status: 'contained', ...proof, identity: containmentIdentity(proof) };
 }
 
 export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, expectedRoot = null }) {

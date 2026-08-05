@@ -11,6 +11,7 @@ import { acquireFinishTargetLease, releaseFinishTargetLease, writeFinishCompleti
 import {
   adoptAgentReviewedGitCarrier,
   createIsolatedGitCarrier,
+  inspectGitCarrierContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
   verifyGitTaskContributionCarrier,
@@ -368,8 +369,21 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         if (remote.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-observation-failed', exitCode: remote.result.status, message: 'Unable to observe remote target ref.', diagnostic: remote.observation.stderr } };
         const observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
         const alreadyDelivered = observedTargetRef === run.deliveryCarrier.head;
-        if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Target ref changed after carrier preparation; rebuild the isolated carrier on the latest Delivery Baseline.', findings: [{ expected: run.deliveryCarrier.expectedTargetRef, observed: observedTargetRef }] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
-        if (!alreadyDelivered) {
+        let alreadyContained = false;
+        let containment = null;
+        if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) {
+          const fetched = git(retainedRoot, 'deliver-contained-target-fetch', ['fetch', run.identity.remote, run.identity.targetBranch]);
+          operations.push(fetched.observation);
+          const fetchedTargetRef = fetched.result.status === 0 ? gitText(retainedRoot, ['rev-parse', `${run.identity.remote}/${run.identity.targetBranch}^{commit}`]) : null;
+          if (fetched.result.status === 0 && fetchedTargetRef === observedTargetRef) containment = inspectGitCarrierContainment({ repositoryRoot: retainedRoot, targetRef: observedTargetRef, carrier: run.deliveryCarrier });
+          else containment = { status: 'unprovable', code: fetched.result.status === 0 ? 'task-finish.containment-target-race' : 'task-finish.containment-fetch-failed', expected: observedTargetRef, observed: fetchedTargetRef, diagnostic: fetched.observation.stderr };
+          alreadyContained = containment.status === 'contained';
+          if (!alreadyContained) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Target ref changed after carrier preparation and exact carrier containment could not be proved.', findings: [{ expected: run.deliveryCarrier.expectedTargetRef, observed: observedTargetRef }, containment] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
+          const retainedIdentity = currentGitIdentity(retainedRoot);
+          const readiness = retainedWorkspaceReadiness(retainedIdentity);
+          if (retainedIdentity.branch !== run.identity.targetBranch || !readiness.ready || retainedIdentity.head !== observedTargetRef) return { status: 'blocked', operations, failure: { operation: 'retained-workspace', failureClass: 'transient-external-condition', code: 'task-finish.retained-workspace-not-ready', message: 'Retained Workspace is not clean at the exactly-contained remote target ref.', findings: [retainedIdentity] } };
+        }
+        if (!alreadyDelivered && !alreadyContained) {
           const retainedIdentity = currentGitIdentity(retainedRoot);
           const readiness = retainedWorkspaceReadiness(retainedIdentity);
           if (retainedIdentity.branch !== run.identity.targetBranch || !readiness.ready || retainedIdentity.head !== observedTargetRef) return { status: 'blocked', operations, failure: { operation: 'retained-workspace', failureClass: 'transient-external-condition', code: 'task-finish.retained-workspace-not-ready', message: 'Retained Workspace is not clean at the observed target ref.', findings: [retainedIdentity] } };
@@ -385,7 +399,8 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         operations.push(readback.observation);
         if (readback.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-readback', failureClass: 'transient-external-condition', code: 'task-finish.remote-readback-failed', exitCode: readback.result.status, message: 'Unable to read back the remote target ref after delivery.', diagnostic: readback.observation.stderr } };
         const remoteAfterRef = readback.result.stdout.trim().split(/\s+/)[0] || null;
-        if (remoteAfterRef !== run.deliveryCarrier.head) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Remote target ref does not match the carrier after push; delivery remains blocked without Candidate applicability claims.', findings: [{ expected: run.deliveryCarrier.head, observed: remoteAfterRef }] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
+        const expectedRemoteAfterRef = alreadyContained ? observedTargetRef : run.deliveryCarrier.head;
+        if (remoteAfterRef !== expectedRemoteAfterRef) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Remote target ref changed after delivery evidence was established; delivery remains blocked without Candidate applicability claims.', findings: [{ expected: expectedRemoteAfterRef, observed: remoteAfterRef }] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
 
         const retainedCli = path.join(retainedRoot, 'projects', 'product', 'buildr');
         const impact = classifyRetainedConvergencePaths(run.deliveryCarrier.changedPaths || []);
@@ -418,7 +433,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           localAppDelivery = { status: 'passed', channel: 'development' };
         }
         const activation = { status: 'passed', plan };
-        const delivery = { status: 'delivered', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, impact, activation, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery };
+        const delivery = { status: 'delivered', targetDisposition: alreadyContained ? 'already-contained' : 'carrier', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, containment, impact, activation, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery };
         return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery } };
       } finally {
         releaseFinishTargetLease(lease);
@@ -439,6 +454,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         contentTargetIdentity: run.identity.contentTargetIdentity,
         carrierIdentity: run.deliveryCarrier.identity,
         carrierRef: run.deliveryCarrier.head,
+        finalRemoteRef,
         taskContributionIdentity: run.deliveryCarrier.taskContribution.identity,
         deliveryBaseline: run.deliveryCarrier.deliveryBaseline,
         targetBranch: run.identity.targetBranch,

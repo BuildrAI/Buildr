@@ -34,7 +34,8 @@ function repositoryFixture(t) {
   command(seed, 'git', ['config', 'user.email', 'remote@example.com']);
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# baseline\n');
-  command(seed, 'git', ['add', '.gitignore', 'README.md']);
+  writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), '#!/usr/bin/env node\nconsole.log(JSON.stringify({ health: { ready: true }, findings: [] }));\n');
+  command(seed, 'git', ['add', '.gitignore', 'README.md', 'projects/product/buildr']);
   command(seed, 'git', ['commit', '-m', 'baseline']);
   command(fixture, 'git', ['init', '--bare', remote]);
   command(seed, 'git', ['remote', 'add', 'origin', remote]);
@@ -145,4 +146,41 @@ test('push 后远端无法回读时只保留可恢复 deliver 阻塞', async (t)
   assert.equal(result.failure.code, 'task-finish.remote-readback-failed', JSON.stringify(result, null, 2));
   assert.equal(result.output, undefined);
   assert.equal(result.operations.at(-1).id, 'deliver-target-readback');
+});
+
+test('远端 target 已精确包含 carrier 时不重复 merge/push 并继续 Doctor', async (t) => {
+  const data = deliveryFixture(t);
+  command(data.retained, 'git', ['merge', '--ff-only', data.carrierRef]);
+  command(data.retained, 'git', ['push', 'origin', 'dev']);
+  fs.writeFileSync(path.join(data.retained, 'later.txt'), 'independent target advance\n');
+  command(data.retained, 'git', ['add', 'later.txt']);
+  command(data.retained, 'git', ['commit', '-m', 'advance target after carrier']);
+  command(data.retained, 'git', ['push', 'origin', 'dev']);
+  const latestTargetRef = command(data.retained, 'git', ['rev-parse', 'HEAD']);
+
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
+  assert.equal(result.output.delivery.targetDisposition, 'already-contained');
+  assert.equal(result.output.delivery.carrierRef, data.carrierRef);
+  assert.equal(result.output.delivery.finalRemoteRef, latestTargetRef);
+  assert.equal(result.output.delivery.containment.status, 'contained');
+  assert.equal(result.operations.some((operation) => operation.id === 'deliver-contained-target-fetch'), true);
+  assert.equal(result.operations.some((operation) => operation.id === 'deliver-fast-forward'), false);
+  assert.equal(result.operations.some((operation) => operation.id === 'deliver-push'), false);
+});
+
+test('远端 target 覆盖 carrier 路径时仍按 target race 停止', async (t) => {
+  const data = deliveryFixture(t);
+  command(data.retained, 'git', ['merge', '--ff-only', data.carrierRef]);
+  command(data.retained, 'git', ['push', 'origin', 'dev']);
+  fs.writeFileSync(path.join(data.retained, 'feature.txt'), 'changed after carrier\n');
+  command(data.retained, 'git', ['add', 'feature.txt']);
+  command(data.retained, 'git', ['commit', '-m', 'replace carrier path']);
+  command(data.retained, 'git', ['push', 'origin', 'dev']);
+
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.target-race');
+  assert.equal(result.failure.findings[1].code, 'task-finish.carrier-path-not-contained');
+  assert.equal(result.operations.some((operation) => operation.id === 'deliver-push'), false);
 });

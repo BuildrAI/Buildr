@@ -8,6 +8,7 @@ import test from 'node:test';
 import {
   adoptAgentReviewedGitCarrier,
   createIsolatedGitCarrier,
+  inspectGitCarrierContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
   verifyDeliveredGitTaskContribution,
@@ -57,6 +58,42 @@ test('最新 Delivery Baseline 上干净应用时 Task Contribution identity 保
   assert.equal(git(carrier.root, ['show', 'HEAD:baseline-advance.txt']), 'advanced independently');
   assert.equal(git(carrier.root, ['show', 'HEAD:feature.txt']), 'candidate contribution');
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'clean-reuse', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('新 target 保留 carrier 的逐路径结果时形成 exact containment evidence', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'candidate contribution\n');
+  fs.rmSync(path.join(taskRoot, 'shared.txt'));
+  git(taskRoot, ['add', '-A']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'contained', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
+
+  git(root, ['merge', '--ff-only', carrier.head]);
+  fs.writeFileSync(path.join(root, 'unrelated.txt'), 'later target work\n');
+  git(root, ['add', 'unrelated.txt']);
+  git(root, ['commit', '-m', 'advance target independently']);
+  const targetRef = git(root, ['rev-parse', 'HEAD']);
+  const contained = inspectGitCarrierContainment({ repositoryRoot: root, targetRef, carrier });
+  assert.equal(contained.status, 'contained', JSON.stringify(contained, null, 2));
+  assert.equal(contained.checkedPaths.every((entry) => entry.exact), true);
+  assert.match(contained.identity, /^sha256-[0-9a-f]{64}$/);
+
+  const nonAncestor = inspectGitCarrierContainment({ repositoryRoot: root, targetRef: git(taskRoot, ['rev-parse', 'HEAD']), carrier });
+  assert.equal(nonAncestor.status, 'not-contained');
+  assert.equal(nonAncestor.code, 'task-finish.carrier-not-ancestor');
+  const unreadable = inspectGitCarrierContainment({ repositoryRoot: root, targetRef: 'refs/heads/does-not-exist', carrier });
+  assert.equal(unreadable.status, 'unprovable');
+  assert.equal(unreadable.code, 'task-finish.carrier-ancestry-unreadable');
+
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'overwritten after carrier\n');
+  git(root, ['add', 'feature.txt']);
+  git(root, ['commit', '-m', 'replace carrier result']);
+  const rejected = inspectGitCarrierContainment({ repositoryRoot: root, targetRef: 'HEAD', carrier });
+  assert.equal(rejected.status, 'not-contained');
+  assert.equal(rejected.code, 'task-finish.carrier-path-not-contained');
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'contained', expectedRoot: carrier.root }).status, 'removed');
 });
 
 test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 Agent-reviewed adaptation', (t) => {

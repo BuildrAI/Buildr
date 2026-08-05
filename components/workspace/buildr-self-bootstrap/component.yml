@@ -14,5 +14,5 @@ contributions:
   skillFragments:
     - task-finish@append=components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md
 integrity:
-  - skills/buildr-self-bootstrap-sync=sha256-8599319662a25c85c3ccef8b8570b912845c14ed78004b9c229d55a9ea56fbf6
-  - components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-47edd1f53688467e99af3ee7ff710cf558a1ad9f71c2f39491eec2cc7d5e1cef
+  - skills/buildr-self-bootstrap-sync=sha256-10c0235116bc98e1108275c87b1aeca35f5afa980e117d6077fc4d53f3aa417a
+  - components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-adcf5e89f8e4114d0fe6eb48496083a198bb8e5848ae62239084c275a7f70729
