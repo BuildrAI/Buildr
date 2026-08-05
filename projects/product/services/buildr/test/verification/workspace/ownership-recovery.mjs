@@ -28,7 +28,7 @@ try {
   assert.equal(fs.existsSync(path.join(fixture.workspace, 'skills', 'buildr', 'git-operations', 'SKILL.md')), true);
   runBuildr(['sync', 'codex', '--scope', '.', '--target', fixture.workspace]);
 
-  const doctor = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json']), 'ownership recovery doctor');
+  const doctor = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json', '--detail', 'full']), 'ownership recovery doctor');
   assertHealthyDoctor(doctor, 'codex');
   passed = true;
   console.log('Ownership recovery E2E passed.');

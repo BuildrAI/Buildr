@@ -163,7 +163,7 @@ test('Git Project 保存 integrationBranch，实际 branch 与 dirty 状态只�
   assert.equal(stored.dirty, undefined);
 
   assert.equal(run('git', ['checkout', '-b', 'task/demo'], path.join(root, 'projects', 'git-demo')).status, 0);
-  const doctor = runBuildr(['doctor', '--target', root, '--json']);
+  const doctor = runBuildr(['doctor', '--target', root, '--json', '--detail', 'full']);
   const report = JSON.parse(doctor.stdout);
   assert.ok(report.findings.some((finding) => finding.code === 'project.git_branch_drift'));
   const reported = report.projectRegistry.projects.find((project) => project.code === 'git-demo');

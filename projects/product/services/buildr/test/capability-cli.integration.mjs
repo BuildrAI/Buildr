@@ -42,7 +42,7 @@ function manifest(root, scope = '.') {
 }
 
 async function doctor(root, scope = '.', expected = 0) {
-  const result = await run(['doctor', '--target', root, '--scope', scope, '--json'], expected);
+  const result = await run(['doctor', '--target', root, '--scope', scope, '--json', '--detail', 'full'], expected);
   return JSON.parse(result.stdout);
 }
 

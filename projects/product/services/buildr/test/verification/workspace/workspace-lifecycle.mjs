@@ -39,7 +39,7 @@ try {
   assert.match(fs.readFileSync(path.join(fixture.workspace, 'commands', 'manifest.yml'), 'utf8'), /node-runtime/);
   assert.match(fs.readFileSync(path.join(fixture.workspace, 'rules', 'manifest.yml'), 'utf8'), /review-policy/);
 
-  const doctor = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json']), 'workspace lifecycle doctor');
+  const doctor = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json', '--detail', 'full']), 'workspace lifecycle doctor');
   assertHealthyDoctor(doctor, 'codex');
   passed = true;
   console.log('Workspace lifecycle E2E passed.');

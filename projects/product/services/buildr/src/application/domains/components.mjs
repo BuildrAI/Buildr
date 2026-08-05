@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from '../../infrastructure/process.mjs';
+import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
 import { hasManagedSkillMarker } from '../../infrastructure/runtime/render-claude-code.mjs';
 import { getRuntimeAdapter, isSupportedAgent } from '../../infrastructure/runtime/adapter-contract.mjs';
 import { capabilityKey, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
@@ -1022,13 +1022,16 @@ export function registerDomainsComponents(runtime) {
     } catch (error) {
       throw new Error(`Component 源资产已提交，但 ${agent} runtime reconcile 失败：${error.message}\n修复后运行：buildr sync ${agent} --target ${targetRoot}`);
     }
-    const doctorResult = spawnSync(process.execPath, [path.join(productRoot(), 'bin', 'buildr.mjs'), 'doctor', '--agent', agent, '--target', targetRoot, '--json'], {
+    const finalDoctor = runFinalDoctor({
+      executable: process.execPath,
+      cliPath: path.join(productRoot(), 'bin', 'buildr.mjs'),
+      agent,
+      targetRoot,
       cwd: productRoot(),
-      encoding: 'utf8',
     });
-    if (doctorResult.status !== 0) {
-      const detail = [doctorResult.stdout, doctorResult.stderr].filter(Boolean).join('\n').trim();
-      throw new Error(`Component 源资产和 runtime 已 reconcile，但 doctor 仍有错误。\n${detail}\n修复后运行：buildr doctor --agent ${agent} --target ${targetRoot} --json`);
+    if (finalDoctor.classification.status !== 'passed') {
+      const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
+      throw new Error(`Component 源资产和 runtime 已 reconcile，但 ${finalDoctor.classification.message}${detail}\n修复后运行：buildr doctor --agent ${agent} --target ${targetRoot} --json`);
     }
     return rendered;
   }

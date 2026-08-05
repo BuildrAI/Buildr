@@ -122,7 +122,7 @@ test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复�
   const managed = workspaceNodeRuntimePaths(declared, { dataRoot: appData });
   fs.rmSync(managed.root, { recursive: true, force: true });
 
-  result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json'], { env });
+  result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full'], { env });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const report = JSON.parse(result.stdout);
   assert.ok(report.findings.some((finding) => finding.code === 'workspace.node_runtime_missing' && /sync/.test(finding.command)));
@@ -133,7 +133,7 @@ test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复�
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(fs.existsSync(managed.node), true);
   assert.equal(YAML.parse(fs.readFileSync(manifest, 'utf8')).runtime.node.version, declared);
-  result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json'], { env });
+  result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full'], { env });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(JSON.parse(result.stdout).workspaceNode.identity.version, declared);
 });

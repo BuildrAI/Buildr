@@ -165,7 +165,7 @@ try {
   assert.match(result.stdout, /Buildr onboarding 已完成：codex/);
   result = run(['project', 'create', 'demo', '--target', workspace]);
   assert.equal(result.status, 0, result.stderr);
-  result = run(['doctor', '--agent', 'codex', '--target', workspace, '--json']);
+  result = run(['doctor', '--agent', 'codex', '--target', workspace, '--json', '--detail', 'full']);
   assert.equal(result.status, 0, result.stderr);
   const doctor = JSON.parse(result.stdout);
   assert.equal(doctor.ok, true);

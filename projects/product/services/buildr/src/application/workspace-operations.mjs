@@ -218,7 +218,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
     const requestedAgent = optionValue(args, '--agent', null);
     if (requestedAgent !== null) assertAgentId(requestedAgent);
     const json = hasFlag(args, '--json');
-    const detail = optionValue(args, '--detail', 'full');
+    const detail = optionValue(args, '--detail', 'compact');
     if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
     const includeInfo = hasFlag(args, '--include-info') || hasFlag(args, '--verbose');
     const result = {

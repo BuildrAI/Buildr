@@ -445,7 +445,7 @@ const COMMAND_ROUTES = [
     help: [
       "Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]",
       "",
-      "诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。"
+      "诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。JSON 默认输出 compact；完整 inventory 使用 --detail full。"
     ],
     match: ({ domain }) => domain === 'doctor',
     run: (r, c) => r.doctor(c.argv.slice(3)),

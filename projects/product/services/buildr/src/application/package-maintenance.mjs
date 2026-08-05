@@ -102,7 +102,6 @@ export function registerApplicationPackageMaintenance(runtime) {
   } = createBuiltinReceipts({ atomicWriteJson, collectFiles, crypto, ensureDirectory, existsDirectory, existsFile, fs, isPlainObject, path, toPosixRelative });
   const { handleSkillReplacement } = createBuiltinReplacement({ builtinReceiptKey, builtinSnapshot, copyDirectoryIfChanged, existsDirectory, path });
   const { applyCapabilityRetirements } = createCapabilityRetirement({ assertSafeAssetTarget, crypto, existsFile, fs, path, removePath });
-
   const { packageBuiltinMutationPaths, builtinSyncPlanSignature } = createPackageSyncPlan({ assertSafeSyncMutationPaths, missingAncestorForMutation, mutationPathFingerprint, packageRegistryMutationPaths, path, readPackageManifest, targetPathFromBuiltin, toPosixRelative });
 
   function syncPackageBuiltins(targetRoot, options = {}) {

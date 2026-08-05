@@ -20,8 +20,8 @@ try {
   assert.match(bridge, /BEGIN Buildr managed Claude Code rules bridge/);
   assert.match(bridge, /@AGENTS\.md/);
 
-  const codexDoctor = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json']), 'Codex reconciliation doctor');
-  const claudeDoctor = parseJson(runBuildr(['doctor', '--agent', 'claude-code', '--target', fixture.workspace, '--json']), 'Claude Code reconciliation doctor');
+  const codexDoctor = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json', '--detail', 'full']), 'Codex reconciliation doctor');
+  const claudeDoctor = parseJson(runBuildr(['doctor', '--agent', 'claude-code', '--target', fixture.workspace, '--json', '--detail', 'full']), 'Claude Code reconciliation doctor');
   assertHealthyDoctor(codexDoctor, 'codex');
   assertHealthyDoctor(claudeDoctor, 'claude-code');
 
@@ -35,7 +35,7 @@ try {
   fs.copyFileSync(path.join(productRoot, 'package', 'targets', 'workspace', 'skills', 'openspec', 'openspec-propose', 'SKILL.md'), componentSkill);
   runBuildr(['sync', 'codex', '--scope', '.', '--target', fixture.workspace]);
   assert.doesNotMatch(fs.readFileSync(componentSkill, 'utf8'), /workspace source drift/);
-  const recovered = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json']), 'recovered Codex doctor');
+  const recovered = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json', '--detail', 'full']), 'recovered Codex doctor');
   assertHealthyDoctor(recovered, 'codex');
   passed = true;
   console.log('Runtime reconciliation E2E passed.');

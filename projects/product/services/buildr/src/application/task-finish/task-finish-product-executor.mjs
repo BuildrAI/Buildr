@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { acquireFinishTargetLease, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
+import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-process.mjs';
 import {
   adoptAgentReviewedGitCarrier,
   createIsolatedGitCarrier,
@@ -80,6 +81,7 @@ function runCommand(id, command, args, cwd, options = {}) {
   const normalized = {
     status: Number.isInteger(result.status) ? result.status : 1,
     signal: result.signal || null,
+    errorCode: result.error?.code || null,
     stdout: result.stdout || '',
     stderr: result.stderr || result.error?.message || '',
   };
@@ -423,10 +425,11 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           const tracked = (renderDelta || []).filter((entry) => entry.status !== '??');
           if (tracked.length) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'product-execution-failure', code: 'task-finish.render-produced-tracked-delta', message: 'Runtime render produced tracked Git changes.', findings: tracked } };
         }
-        const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--target', retainedRoot, '--json'], retainedRoot, { json: true });
+        const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--target', retainedRoot, '--json', '--detail', 'compact'], retainedRoot, { json: true });
         if (!doctor) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' } };
         operations.push(doctor.observation);
-        if (doctor.result.status !== 0 || doctor.payload?.health?.ready !== true) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-doctor-failed', exitCode: doctor.result.status, message: 'Retained Workspace doctor is not ready.', diagnostic: doctor.payload?.findings || doctor.observation.stderr } };
+        const doctorProcess = classifyFinalDoctorResult(doctor.result);
+        if (doctorProcess.status !== 'passed' || doctor.payload?.health?.ready !== true) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: doctorProcess.status === 'doctor-failed' ? 'task-finish.retained-doctor-failed' : doctorProcess.code === 'doctor.passed' ? 'task-finish.retained-doctor-not-ready' : doctorProcess.code, exitCode: doctor.result.status, message: doctorProcess.status === 'passed' ? 'Retained Workspace doctor is not ready.' : doctorProcess.message, diagnostic: doctor.payload?.findings || doctorProcess.diagnostic || doctor.observation.stderr } };
         const activation = { status: 'passed', plan };
         const delivery = { status: 'delivered', targetDisposition: alreadyContained ? 'already-contained' : 'carrier', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, containment, activation, retainedDoctor: 'passed', runtimeInstall: 'not-applicable', localAppDelivery: 'not-applicable' };
         return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery } };

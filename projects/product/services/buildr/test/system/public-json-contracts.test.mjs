@@ -124,10 +124,25 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
   ]);
 });
 
+test('doctor JSON默认compact且full必须显式请求', async (t) => {
+  const root = fixtureWorkspace(t, 'codex');
+  const compact = await run(['doctor', '--agent', 'codex', '--target', root, '--json']);
+  const explicitCompact = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'compact']);
+  assert.deepEqual(compact, explicitCompact);
+  assert.deepEqual(Object.keys(compact), [
+    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
+  ]);
+  for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in compact, false, field);
+
+  const full = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
+  for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in full, true, field);
+  for (const field of ['ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
+});
+
 test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => {
   const root = fixtureWorkspace(t, 'plain');
 
-  const initialized = await run(['doctor', '--target', root, '--json']);
+  const initialized = await run(['doctor', '--target', root, '--json', '--detail', 'full']);
   assert.equal(initialized.workspace.identity.state, 'valid');
   assert.equal(initialized.workspace.initialized, true);
   assert.equal(initialized.health.workspaceValid, true);
@@ -140,7 +155,7 @@ test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => 
   assert.equal(initialized.findings.some((finding) => finding.code.startsWith('runtime.')), false);
 
   fs.rmSync(path.join(root, '.buildr', 'workspace.yml'));
-  const incomplete = await run(['doctor', '--target', root, '--json'], { expectedStatus: 1 });
+  const incomplete = await run(['doctor', '--target', root, '--json', '--detail', 'full'], { expectedStatus: 1 });
   assert.equal(incomplete.ok, false);
   assert.equal(incomplete.workspace.initialized, false);
   assert.equal(incomplete.workspace.identity.state, 'incomplete');
@@ -152,7 +167,7 @@ test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => 
 
   fs.rmSync(path.join(root, 'AGENTS.md'));
   fs.rmSync(path.join(root, 'projects'), { recursive: true, force: true });
-  const absent = await run(['doctor', '--target', root, '--json'], { expectedStatus: 1 });
+  const absent = await run(['doctor', '--target', root, '--json', '--detail', 'full'], { expectedStatus: 1 });
   assert.equal(absent.workspace.identity.state, 'absent');
   assert.deepEqual(absent.workspace.identity.missing, ['AGENTS.md', '.buildr/workspace.yml', 'projects']);
   assert.ok(absent.findings.some((finding) => finding.code === 'workspace.not_initialized'));
@@ -161,7 +176,7 @@ test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => 
 test('Codex partial inventory 作为 assurance metadata 保留且不产生 doctor warning', async (t) => {
   const root = fixtureWorkspace(t, 'codex');
 
-  const report = await run(['doctor', '--agent', 'codex', '--target', root, '--json']);
+  const report = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
   assert.equal(report.findings.some((finding) => finding.code === 'runtime.codex_warning'), false);
   assert.equal(report.summary.warning, 0);
   assert.deepEqual(report.runtime.codex[0].skillInventoryEvidence, {

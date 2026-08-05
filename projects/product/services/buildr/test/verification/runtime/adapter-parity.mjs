@@ -106,7 +106,7 @@ async function prepareAdapterContext(seed, adapterId, lifecycleAdapters) {
     if (adapterId === 'workbuddy') assert.doesNotMatch(check.stdout, /runtime\.workbuddy_reference_smoke_pending|reference traversal cannot be proven/);
   }
 
-  const doctor = JSON.parse((await harness.runAsync(['doctor', '--agent', adapterId, '--target', workspace, '--json'])).stdout);
+  const doctor = JSON.parse((await harness.runAsync(['doctor', '--agent', adapterId, '--target', workspace, '--json', '--detail', 'full'])).stdout);
   assert.equal(doctor.agentRuntime.requested, adapterId, `${adapterId} doctor must inspect the requested adapter`);
   assert.equal(doctor.agentRuntime.supported, true, `${adapterId} doctor must recognize a supported adapter`);
   return { adapterId, workspace, doctor };

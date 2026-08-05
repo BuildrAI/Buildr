@@ -56,11 +56,11 @@ test('Commands CLI 分离 catalog、Project requirements 和 machine observation
   assert.equal(alpha.effectiveConstraints.find((item) => item.id === 'optional-missing').required, false);
   assert.equal(alpha.observations.find((item) => item.id === 'optional-missing').reason, 'command_executable_missing');
   assert.ok(alpha.requirements.find((item) => item.project === 'alpha').provenance.path.endsWith('projects/alpha/commands.yml'));
-  const projectDoctor = JSON.parse(run(['doctor', '--scope', 'projects/alpha', '--target', root, '--json']).stdout);
+  const projectDoctor = JSON.parse(run(['doctor', '--scope', 'projects/alpha', '--target', root, '--json', '--detail', 'full']).stdout);
   assert.deepEqual(projectDoctor.commandLineTools.context.projects, ['alpha']);
   assert.equal(projectDoctor.commandLineTools.observations.find((item) => item.id === 'optional-missing').reason, 'command_executable_missing');
   assert.ok(projectDoctor.findings.some((item) => item.code === 'commands.executable_missing' && item.commandId === 'optional-missing'));
-  const rootDoctor = JSON.parse(run(['doctor', '--scope', '.', '--target', root, '--json']).stdout);
+  const rootDoctor = JSON.parse(run(['doctor', '--scope', '.', '--target', root, '--json', '--detail', 'full']).stdout);
   assert.deepEqual(rootDoctor.commandLineTools.context.projects, []);
   assert.equal(rootDoctor.findings.some((item) => item.commandId === 'optional-missing'), false, 'unrelated Project machine warning must not pollute root doctor');
 

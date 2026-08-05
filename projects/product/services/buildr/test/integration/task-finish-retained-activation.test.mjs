@@ -28,6 +28,7 @@ const args = process.argv.slice(2);
 const target = args[args.indexOf('--target') + 1];
 if (args[0] === 'doctor') {
   const skill = fs.readFileSync(path.join(target, 'skills', 'example', 'SKILL.md'), 'utf8');
+  if (skill.includes('doctor-overflow')) process.stdout.write('x'.repeat(5 * 1024 * 1024));
   const ready = !skill.includes('doctor-failure') && !args.includes('--agent');
   process.stdout.write(JSON.stringify({ health: { ready }, findings: ready ? [] : [{ code: 'fixture.not-ready' }] }) + '\\n');
   if (!ready) process.exitCode = 1;
@@ -116,6 +117,14 @@ test('Doctor failure blocks cleanup without generic sync', async (t) => {
   assert.equal(result.status, 'blocked');
   assert.equal(result.failure.code, 'task-finish.retained-doctor-failed');
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
+});
+
+test('Doctor compact输出超限保留独立失败分类', async (t) => {
+  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'doctor-overflow\n' });
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'doctor.output_limit_exceeded');
+  assert.match(result.failure.message, /4194304 bytes/);
 });
 
 test('Buildr package contribution is delivered without generic sync', async (t) => {

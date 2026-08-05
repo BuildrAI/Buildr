@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
-import { spawnSync } from '../infrastructure/process.mjs';
+import { runFinalDoctor } from '../infrastructure/final-doctor-process.mjs';
 import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.mjs';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.mjs';
 import { getRuntimeAdapter, reconcileRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
@@ -246,9 +246,12 @@ export function registerApplicationRuntime(runtime) {
     const canAdoptCurrentNode = workspaceRecord.workspace.runtime?.node?.version === process.versions.node;
     const workspaceNode = runtime.ensureWorkspaceNodeRuntime(workspaceRecord.workspace, { adoptCurrent: canAdoptCurrentNode });
     const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
-    const doctorResult = spawnSync(process.execPath, [path.join(productRoot(), 'bin', 'buildr.mjs'), 'doctor', '--agent', agent, '--target', targetRoot, '--json'], {
+    const finalDoctor = runFinalDoctor({
+      executable: process.execPath,
+      cliPath: path.join(productRoot(), 'bin', 'buildr.mjs'),
+      agent,
+      targetRoot,
       cwd: productRoot(),
-      encoding: 'utf8',
     });
     console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
     if (environmentMigration?.status === 'migrated' && environmentMigration.counts.total > 0) console.log(`Task Environment 迁移：A=${environmentMigration.counts.A} B=${environmentMigration.counts.B} C=${environmentMigration.counts.C} D=${environmentMigration.counts.D}`);
@@ -266,11 +269,9 @@ export function registerApplicationRuntime(runtime) {
       }
     }
     for (const warning of rendered.warnings) console.error(`Warning: ${warning}`);
-    if (doctorResult.status !== 0) {
-      console.log('doctor 仍有需要处理的问题：');
-      process.stdout.write(doctorResult.stdout || '');
-      process.stderr.write(doctorResult.stderr || '');
-      throw new Error(`${agent} sync 未完成：最终 doctor 未通过。`);
+    if (finalDoctor.classification.status !== 'passed') {
+      const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
+      throw new Error(`${agent} sync 未完成：${finalDoctor.classification.message}${detail}`);
     }
     console.log('doctor 通过。');
   }
