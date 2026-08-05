@@ -5,7 +5,6 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
-import { classifyRetainedConvergencePaths } from './task-finish-impact.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { acquireFinishTargetLease, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
 import {
@@ -161,6 +160,13 @@ function activationGitDelta(root) {
   const entries = statusEntries(root);
   if (entries === null) return null;
   return entries.filter((entry) => !controlMetadataPath(entry.path));
+}
+
+function runThroughRetainedController(context, id, args, cwd, { json = false } = {}) {
+  const invocation = context?.controllerInvocation;
+  if (!invocation?.command || !Array.isArray(invocation.argsPrefix)) return null;
+  const execute = json ? runJsonCommand : runCommand;
+  return execute(id, invocation.command, [...invocation.argsPrefix, ...args], cwd);
 }
 
 function retainedWorkspaceReadiness(identity) {
@@ -402,38 +408,27 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         const expectedRemoteAfterRef = alreadyContained ? observedTargetRef : run.deliveryCarrier.head;
         if (remoteAfterRef !== expectedRemoteAfterRef) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Remote target ref changed after delivery evidence was established; delivery remains blocked without Candidate applicability claims.', findings: [{ expected: expectedRemoteAfterRef, observed: remoteAfterRef }] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
 
-        const retainedCli = path.join(retainedRoot, 'projects', 'product', 'buildr');
-        const impact = classifyRetainedConvergencePaths(run.deliveryCarrier.changedPaths || []);
+        const context = taskEnvironment(run);
+        if (!context?.ready) return { status: 'blocked', operations, failure: { operation: 'retained-controller', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.retained-controller-unavailable', message: context?.blocked?.message || 'Retained Environment controller is unavailable.' } };
         const plan = run.deliveryCarrier.activationPlan || activationPlan(run, run.deliveryCarrier.changedPaths || []);
         const beforeActivation = activationGitDelta(retainedRoot);
         if (beforeActivation === null) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-status-unavailable', message: 'Unable to observe retained Git status before activation.' } };
         if (beforeActivation.length) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-workspace-dirty', message: 'Retained Workspace has non-metadata changes before activation.', findings: beforeActivation } };
         if (plan.mode === 'render-runtime') {
-          const rendered = runCommand('deliver-retained-render', retainedCli, ['render', run.identity.agent, '--target', retainedRoot], retainedRoot);
+          const rendered = runThroughRetainedController(context, 'deliver-retained-render', ['render', run.identity.agent, '--target', retainedRoot], retainedRoot);
+          if (!rendered) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' } };
           operations.push(rendered.observation);
           if (rendered.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'transient-external-condition', code: 'task-finish.retained-render-failed', exitCode: rendered.result.status, message: 'Retained Workspace runtime render failed.', diagnostic: rendered.observation.stderr } };
           const renderDelta = activationGitDelta(retainedRoot);
           const tracked = (renderDelta || []).filter((entry) => entry.status !== '??');
           if (tracked.length) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'product-execution-failure', code: 'task-finish.render-produced-tracked-delta', message: 'Runtime render produced tracked Git changes.', findings: tracked } };
         }
-        const doctor = runJsonCommand('deliver-retained-doctor', retainedCli, ['doctor', '--agent', run.identity.agent, '--target', retainedRoot, '--json'], retainedRoot);
+        const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--agent', run.identity.agent, '--target', retainedRoot, '--json'], retainedRoot, { json: true });
+        if (!doctor) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' } };
         operations.push(doctor.observation);
         if (doctor.result.status !== 0 || doctor.payload?.health?.ready !== true) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-doctor-failed', exitCode: doctor.result.status, message: 'Retained Workspace doctor is not ready.', diagnostic: doctor.payload?.findings || doctor.observation.stderr } };
-        if (impact.requiresCliInstall || impact.requiresLocalAppInstall) {
-          const installer = path.join(retainedRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli');
-          const installed = runCommand('deliver-cli-install', installer, ['--node-executable', process.execPath], retainedRoot);
-          operations.push(installed.observation);
-          if (installed.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'runtime-install', failureClass: 'transient-external-condition', code: 'task-finish.cli-install-failed', exitCode: installed.result.status, message: 'Default Buildr CLI installation failed.', diagnostic: installed.observation.stderr } };
-        }
-        let localAppDelivery = 'not-applicable';
-        if (impact.requiresLocalAppInstall) {
-          const installed = runJsonCommand('deliver-local-app-install', retainedCli, ['app', 'launcher', 'install', '--channel', 'development', '--json'], retainedRoot);
-          operations.push(installed.observation);
-          if (installed.result.status !== 0 || installed.payload?.installed !== true) return { status: 'blocked', operations, failure: { operation: 'local-app-install', failureClass: 'transient-external-condition', code: 'task-finish.local-app-install-failed', exitCode: installed.result.status, message: 'Buildr development launcher installation failed.', diagnostic: installed.payload || installed.observation.stderr } };
-          localAppDelivery = { status: 'passed', channel: 'development' };
-        }
         const activation = { status: 'passed', plan };
-        const delivery = { status: 'delivered', targetDisposition: alreadyContained ? 'already-contained' : 'carrier', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, containment, impact, activation, retainedDoctor: 'passed', runtimeInstall: impact.requiresCliInstall || impact.requiresLocalAppInstall ? 'passed' : 'not-applicable', localAppDelivery };
+        const delivery = { status: 'delivered', targetDisposition: alreadyContained ? 'already-contained' : 'carrier', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, containment, activation, retainedDoctor: 'passed', runtimeInstall: 'not-applicable', localAppDelivery: 'not-applicable' };
         return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery } };
       } finally {
         releaseFinishTargetLease(lease);

@@ -84,7 +84,17 @@ function deliveryFixture(t, hook) {
       changedPaths: ['feature.txt'],
     },
   };
-  const runtime = { assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }) };
+  const runtime = {
+    assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }),
+    resolveTaskEnvironmentExecution: () => ({
+      ready: true,
+      controllerInvocation: {
+        command: path.join(data.retained, 'projects', 'product', 'buildr'),
+        argsPrefix: [],
+        sourceRoot: path.join(data.retained, 'projects', 'product'),
+      },
+    }),
+  };
   return { ...data, environmentRoot, expectedTargetRef, carrierRef, run, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
 

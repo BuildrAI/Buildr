@@ -65,7 +65,7 @@ const requiredRuntime = [
   'application/task-environment/task-environment-application.mjs', 'application/task-environment/legacy-migration.mjs',
   'domain/task-environment/task-environment.mjs', 'infrastructure/filesystem/task-environment-repository.mjs',
   'application/task-finish/task-finish-application.mjs', 'application/task-finish/task-finish-run.mjs',
-  'application/task-finish/task-finish-product-executor.mjs', 'application/task-finish/task-finish-impact.mjs',
+  'application/task-finish/task-finish-product-executor.mjs',
   'application/task-verification/task-verification-application.mjs', 'domain/task-verification/task-verification.mjs',
   'infrastructure/sqlite/task-development-repository.mjs', 'infrastructure/sqlite/task-review-repository.mjs',
   'infrastructure/sqlite/task-verification-repository.mjs',

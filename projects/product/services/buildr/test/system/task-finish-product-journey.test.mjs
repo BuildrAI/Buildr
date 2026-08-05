@@ -69,7 +69,7 @@ const fakeOpenSpec = `#!/usr/bin/env node
 process.stdout.write(JSON.stringify({ summary: { passed: 1, failed: 0 } }) + '\\n');
 `;
 
-function taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRemote = 'origin', repositoryStartPoint = 'dev' }) {
+function taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand = path.join(retained, 'projects', 'product', 'buildr'), controllerSourceRoot = path.dirname(controllerCommand), repositoryRemote = 'origin', repositoryStartPoint = 'dev' }) {
   const execution = () => ({
     ready: true,
     taskId: task,
@@ -80,11 +80,11 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRem
     executionRoots: [environmentRoot],
     allowedExecutionRoots: [environmentRoot],
     controller: { identity: 'fixture-controller', adapter: 'codex' },
-    controllerInvocation: { command: path.join(retained, 'projects', 'product', 'buildr'), argsPrefix: [], sourceRoot: path.join(retained, 'projects', 'product', 'services', 'buildr'), kind: 'stable-controller' },
+    controllerInvocation: { command: controllerCommand, argsPrefix: [], sourceRoot: controllerSourceRoot, kind: 'stable-controller' },
     cliInvocation: {
-      command: path.join(environmentRoot, 'projects', 'product', 'buildr'),
+      command: controllerCommand,
       argsPrefix: [],
-      sourceRoot: path.join(environmentRoot, 'projects', 'product', 'services', 'buildr'),
+      sourceRoot: controllerSourceRoot,
       kind: 'task-environment-candidate',
     },
     repositories: [{
@@ -395,14 +395,14 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const seed = path.join(fixture, 'seed');
   const remote = path.join(fixture, 'remote.git');
   const retained = path.join(fixture, 'workspace');
+  const controller = path.join(fixture, 'controller', 'buildr');
   fs.mkdirSync(seed);
   command(seed, 'git', ['init', '-b', 'dev']);
   command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
-  writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
-  writeExecutable(path.join(seed, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs'), '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ schemaVersion: "buildr.version/v1", version: "2.0.0-test" }) + "\\n");\n');
-  writeExecutable(path.join(seed, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli'), '#!/bin/sh\nexit 0\n');
+  writeExecutable(controller, fakeBuildr);
+  fs.mkdirSync(path.join(seed, 'projects', 'product'), { recursive: true });
   fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# Code-only Task Finish journey\n');
   command(seed, 'git', ['add', '-A']);
@@ -429,7 +429,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
   const runtime = {
-    ...taskEnvironmentFixture({ task, environmentRoot, retained }),
+    ...taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand: controller, controllerSourceRoot: path.dirname(controller) }),
     ...taskDevelopmentFixture(),
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
   };
@@ -462,8 +462,11 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   ]);
   const operations = result.phases.flatMap((phase) => phase.operations);
   assert.equal(operations.some((operation) => operation.id?.includes('openspec') || operation.args?.includes('openspec')), false);
-  assert.deepEqual(operations.filter((operation) => operation.id?.startsWith('deliver-local-app-')).map((operation) => operation.id), ['deliver-local-app-install']);
-  assert.equal(result.delivery.localAppDelivery.status, 'passed');
+  assert.equal(operations.some((operation) => operation.id === 'deliver-cli-install'), false);
+  assert.equal(operations.some((operation) => operation.id === 'deliver-local-app-install'), false);
+  assert.equal(result.delivery.runtimeInstall, 'not-applicable');
+  assert.equal(result.delivery.localAppDelivery, 'not-applicable');
+  assert.equal(fs.existsSync(path.join(retained, 'projects', 'product', 'buildr')), false);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
   const completion = JSON.parse(fs.readFileSync(result.completion.receipt, 'utf8'));

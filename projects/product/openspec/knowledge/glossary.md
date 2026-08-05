@@ -324,6 +324,13 @@
 - 避免混用：不是原任务基线、Content Target或Task Candidate；它前进不自动表示任务贡献变化，也不自动递增Candidate generation或重跑Verification/Completion Review。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
+## 自举激活（Self-bootstrap Activation）
+
+- 定义：Buildr自举Workspace在Formal Task Finish成功后，由`buildr-self-bootstrap` Component只按该Result绑定的冻结Task Contribution paths选择并执行的本机产品收敛动作。
+- 适用范围：去重组合retained package sync、development CLI安装、development Local App安装与最终Doctor；只存在于显式安装该Component的Buildr自举Workspace。
+- 避免混用：不是Formal Task Finish阶段、通用retained runtime activation、Task Verification、Task Record完成状态或新的workflow authority；失败不得改写已成功的Finish Result、Environment cleanup或上游研发事实。
+- 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)与[Buildr package assets specification](../specs/buildr-package-assets/spec.md)
+
 ## 交付适配（Delivery Adaptation）
 
 - 定义：Task Contribution无法机械应用到最新Delivery Baseline时，Agent只在run-owned隔离Delivery Carrier中完成的语义兼容处理；Buildr随后核验确定性Git、identity、cleanliness与Project policy要求的compatibility check facts。

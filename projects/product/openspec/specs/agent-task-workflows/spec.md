@@ -1092,20 +1092,41 @@ Buildr MUST在 apply 入口执行 apply-ready 和 proposal/delta 门禁，并 MU
 - **THEN** prepend MUST拒绝确认绕过并转用 `buildr openspec converge`
 - **AND**只有converge返回passed或幂等archived结果时才 MUST报告canonical sync/archive完成
 
-### Requirement: 自举 Workspace 必须分离同步准备与发布
-Buildr自举Workspace的`buildr-self-bootstrap` Component MUST在不改变通用Task Finish产品五阶段的前提下处理自身package同步。其Contribution MAY在同一Finish run已成功push/readback carrier、但retained Doctor仅因可归因的`components.update_available`阻塞时，调用专属Skill形成clean的本地sync commit；该准备阶段 MUST NOT push。只有同一run的Formal Task Finish成功后，专属Skill才 MUST发布该prepared commit并完成远端回读与最终Doctor。
+### Requirement: 通用 Task Finish 不得执行 Buildr development 产品安装
+通用 Task Finish MUST只保留current Development handoff消费、Task Contribution、Delivery Baseline、Delivery Carrier、carrier equivalence、fast-forward或普通push、远端回读、必要retained runtime render、retained Doctor与Environment cleanup。它 MUST NOT安装默认Buildr CLI、安装或更新`Buildr Dev.app`、硬编码development launcher channel，或根据Product源码路径推断本机产品安装。
 
-#### Scenario: 精确自举更新阻塞 Finish
-- **WHEN** blocked Finish Result的failure code为`task-finish.retained-doctor-failed`、全部actionable findings均为`components.update_available`、冻结Task Contribution命中声明的package inputs，且carrier push/readback已成功
-- **THEN** self-bootstrap Skill MAY执行retained sync、核验受管mutation plan并只创建本地精确commit
-- **AND** MUST保留远端target不变，再用产品生成的current token恢复同一Finish run
+#### Scenario: 普通用户 Workspace 完成交付
+- **WHEN** 未安装`buildr-self-bootstrap` Component的用户Workspace完成Formal Task Finish
+- **THEN** Finish MUST执行通用交付、Doctor与cleanup，并观察到CLI installer和Local App installer调用次数都为零
+- **AND** MUST NOT要求`projects/product/buildr`存在或访问`/Applications/Buildr Dev.app`
 
-#### Scenario: Formal Finish成功后发布prepared commit
-- **WHEN** 同一run随后返回成功Formal Result，且retained checkout仍clean并可证明本地prepared commit与该Result匹配
-- **THEN** self-bootstrap Skill MUST通过Git Operations普通push完整范围、回读远端并运行最终Doctor
-- **AND** 失败 MUST报告“主任务已交付、自举Workspace收敛未完成”，不得改写Formal Result
+#### Scenario: Buildr源码路径进入共用Finish
+- **WHEN** Task Contribution包含Buildr CLI或Local App实现路径
+- **THEN** 共用Finish MUST仍只执行通用activation与Doctor
+- **AND** MUST NOT把development CLI或Local App安装成功作为delivered必要条件
 
-#### Scenario: Doctor含有其他问题
-- **WHEN** Finish failure不是`retained-doctor-failed`、存在非`components.update_available` actionable finding、package inputs未命中或carrier push/readback未证明
-- **THEN** self-bootstrap Skill MUST停止preparation并保留原Finish恢复动作
-- **AND** 通用Task Finish MUST不知道或执行任何self-bootstrap、package path或Component更新逻辑
+### Requirement: Task Finish v2 delivered证明必须兼容旧安装字段但解除其门禁权责
+`buildr.task-finish-result/v2` MUST继续作为Finish JSON authority，并 MUST让delivered证明绑定Task、handoff、Candidate/generation、Content Target、carrier equivalence、remote readback、通用retained activation、Doctor与cleanup。`runtimeInstall`和`localAppDelivery`若继续输出 MUST为deprecated兼容字段且不拥有delivered gate authority；产品 MUST NOT仅为重命名创建新schema或把self-bootstrap evidence复制到其他store。
+
+#### Scenario: 新Finish Result不含产品安装成功
+- **WHEN** 新v2 run完成通用delivery与cleanup且兼容字段为`not-applicable`或缺失
+- **THEN** terminal projection MUST认定该handoff已delivered
+- **AND** MUST NOT要求self-bootstrap activation evidence存在
+
+#### Scenario: 读取旧已完成v2 Result
+- **WHEN** terminal reader读取包含`runtimeInstall: passed`与development `localAppDelivery: passed`的旧完整v2 Result
+- **THEN** reader MUST安全保持其既有delivered判断
+- **AND** MUST NOT迁移、重写或复制该Result
+
+### Requirement: Formal Finish成功后的自举activation失败不得改写研发与交付事实
+Workspace专属self-bootstrap activation MUST位于Formal Finish成功之后。失败 MUST明确报告“主任务已交付、自举Workspace激活未完成”、失败动作与恢复事实，并 MUST NOT改写Finish Result、Candidate、Verification、Review、decision、handoff、Task Record或Environment cleanup。
+
+#### Scenario: CLI activation失败
+- **WHEN** Formal Finish已complete且post-Finish development CLI安装失败
+- **THEN** Finish Result MUST保持complete且Environment MUST保持cleaned
+- **AND** Agent MUST返回精确installer失败与恢复入口，不得重跑Formal Verification、生成Candidate或重新执行Finish
+
+#### Scenario: Local App activation失败
+- **WHEN** Formal Finish已complete且development Local App安装失败
+- **THEN** Agent MUST保留主任务已交付事实并报告自举activation未完成
+- **AND** MUST NOT触碰稳定版Local App或修改共享历史

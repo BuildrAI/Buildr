@@ -1,8 +1,7 @@
-### Buildr 自举 Workspace 收敛
+### Buildr 自举 Workspace 激活
 
-在以下两个时点调用`buildr-self-bootstrap-sync`，且只消费同一run的冻结Task Contribution paths和已有Finish evidence：
+只在同一个Formal Task Finish Result成功、Environment cleanup完成后且最终报告完整收尾前调用一次`buildr-self-bootstrap-sync`。只传递该Result绑定的Task/run、Agent、canonical Workspace、remote/target/final ref、Environment retained Node/CLI identity与冻结Task Contribution paths；不得从HEAD、dirty tree、当前diff或时间重新分类贡献。
 
-- Formal Finish仅以`retained-doctor-failed`阻塞、阻塞ready的Doctor findings全部为`components.update_available`，且package inputs证明更新来自当前Task Contribution时，执行prepare：retained sync与精确本地commit，但不得push；然后恢复同一个Formal Finish run。
-- 同一个Formal Finish成功后、最终报告完整收尾前，执行publish：push已准备commit、远端ref回读与最终Doctor。没有prepare且未命中固定package inputs时记录`not-applicable`。
+专属Skill形成单一去重plan：package inputs执行retained sync与精确普通commit/push/readback；CLI inputs安装development CLI；Local App inputs复用CLI依赖并只安装development launcher；任一动作适用时最后运行一次Doctor。没有匹配时记录`not-applicable`。
 
-条件不唯一、证据不闭合或任一步失败时停止，不得把其他Doctor问题伪装为自举恢复。Formal Finish尚未成功时不得报告主任务已交付；Formal Finish成功但publish失败时明确报告“主任务已交付、自举Workspace收敛未完成”，不得改写Formal Result。
+条件不唯一、evidence不闭合或任一步失败时停止后续不安全动作，并明确报告“主任务已交付、自举Workspace激活未完成”、失败动作与恢复事实。不得改写Formal Result、Candidate、Verification、Review、decision、handoff、Task Record或Environment cleanup，也不得启动第二个orchestrator。

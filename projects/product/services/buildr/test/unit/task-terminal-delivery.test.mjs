@@ -67,6 +67,15 @@ test('terminal composer separates delivered snapshot from live applicability', (
   assert.equal(projection.reviews.slots.completion.applicability, 'unknown');
 });
 
+test('terminal composer does not gate new v2 delivery on deprecated product install fields', () => {
+  const current = finishEntry({
+    delivery: { status: 'delivered', carrierRef: 'abc123', remoteAfterRef: 'abc123', finalRemoteRef: 'abc123', activation: { status: 'passed' }, retainedDoctor: 'passed' },
+  });
+  const projection = runtimeFor('completed', current).inspectTaskTerminalDelivery('/workspace', TASK);
+  assert.equal(projection.status, 'delivered');
+  assert.equal(projection.delivered, true);
+});
+
 test('terminal composer covers active, no-change, abandoned, unproven and identity mismatch', () => {
   assert.equal(runtimeFor('active').inspectTaskTerminalDelivery('/workspace', TASK).status, 'active');
   const noChange = runtimeFor(); noChange.inspectTaskRecord = () => ({ record: { taskId: TASK, status: 'completed', result: { noChange: true } } });

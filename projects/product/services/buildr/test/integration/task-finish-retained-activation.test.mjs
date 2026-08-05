@@ -52,7 +52,6 @@ function fixture(t, { contributionPath, contributionContent }) {
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n/.agents/\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# activation\n');
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
-  writeExecutable(path.join(seed, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli'), '#!/bin/sh\nexit 0\n');
   fs.mkdirSync(path.join(seed, 'rules', 'buildr'), { recursive: true });
   fs.writeFileSync(path.join(seed, 'rules', 'buildr', 'core.md'), 'old managed rule\n');
   fs.mkdirSync(path.join(seed, 'skills', 'example'), { recursive: true });
@@ -83,6 +82,10 @@ function fixture(t, { contributionPath, contributionContent }) {
   const run = { runId: 'activation-delivery', identity: { task: 'activation', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot, workspaceRoot: retained, workspaceNodeIdentity: 'sha256-node' }, deliveryCarrier: carrier, delivery: null };
   const runtime = {
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }),
+    resolveTaskEnvironmentExecution: () => ({
+      ready: true,
+      controllerInvocation: { command: path.join(retained, 'projects', 'product', 'buildr'), argsPrefix: [], sourceRoot: path.join(retained, 'projects', 'product', 'services', 'buildr') },
+    }),
   };
   return { retained, remote, run, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
@@ -122,6 +125,10 @@ test('Buildr package contribution is delivered without generic sync', async (t) 
   const delivery = result.output.delivery;
   assert.equal(delivery.activation.plan.mode, 'none');
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
+  assert.equal(result.operations.some((item) => item.id === 'deliver-cli-install'), false);
+  assert.equal(result.operations.some((item) => item.id === 'deliver-local-app-install'), false);
+  assert.equal(delivery.runtimeInstall, 'not-applicable');
+  assert.equal(delivery.localAppDelivery, 'not-applicable');
   assert.equal(delivery.finalRemoteRef, delivery.carrierRef);
   assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], delivery.finalRemoteRef);
 });
