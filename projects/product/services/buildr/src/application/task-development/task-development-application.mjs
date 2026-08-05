@@ -508,6 +508,22 @@ export function registerTaskDevelopmentApplication(runtime) {
     return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], { code: 'task_development_carrier_not_equivalent', message: 'Delivery carrier与current handoff Candidate不等价。', details: observed.reasons }, ['返回task-development重新建立stable target、Verification、Candidate、Completion Review与handoff。']);
   }
 
-  Object.assign(runtime, { inspectTaskDevelopment, beginTaskDevelopment, recordTaskDevelopmentPlanning, observeTaskDevelopment, recordTaskDevelopmentPolicy, recordTaskDevelopmentGate, freezeTaskDevelopmentCandidate, decideTaskDevelopment, createTaskDevelopmentHandoff, assertTaskDevelopmentCarrier });
+  const scoped = (operation) => (targetRoot, ...args) => {
+    const invoke = () => operation(targetRoot, ...args);
+    if (typeof runtime.withWorkspaceStructuredStoreOperation !== 'function') return invoke();
+    return runtime.withWorkspaceStructuredStoreOperation(targetRoot, invoke);
+  };
+  Object.assign(runtime, {
+    inspectTaskDevelopment: scoped(inspectTaskDevelopment),
+    beginTaskDevelopment: scoped(beginTaskDevelopment),
+    recordTaskDevelopmentPlanning: scoped(recordTaskDevelopmentPlanning),
+    observeTaskDevelopment: scoped(observeTaskDevelopment),
+    recordTaskDevelopmentPolicy: scoped(recordTaskDevelopmentPolicy),
+    recordTaskDevelopmentGate: scoped(recordTaskDevelopmentGate),
+    freezeTaskDevelopmentCandidate: scoped(freezeTaskDevelopmentCandidate),
+    decideTaskDevelopment: scoped(decideTaskDevelopment),
+    createTaskDevelopmentHandoff: scoped(createTaskDevelopmentHandoff),
+    assertTaskDevelopmentCarrier: scoped(assertTaskDevelopmentCarrier),
+  });
   return runtime;
 }

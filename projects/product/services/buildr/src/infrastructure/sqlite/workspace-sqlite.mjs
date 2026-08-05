@@ -21,6 +21,7 @@ import { observeGitCheckoutIdentity } from '../git/checkout-identity.mjs';
 const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/u;
 const MIGRATIONS_ROOT = fileURLToPath(new URL('./migrations/', import.meta.url));
 const BUSY_TIMEOUT_MS = 5_000;
+let defaultMigrationScripts = null;
 
 function digest(bytes) {
   return `sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}`;
@@ -37,6 +38,8 @@ function structuredStoreError(code, message, status = 409, details = undefined, 
 }
 
 export function loadWorkspaceSqliteMigrations(root = MIGRATIONS_ROOT) {
+  const defaultRoot = path.resolve(root) === path.resolve(MIGRATIONS_ROOT);
+  if (defaultRoot && defaultMigrationScripts) return defaultMigrationScripts;
   let entries;
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
@@ -55,7 +58,8 @@ export function loadWorkspaceSqliteMigrations(root = MIGRATIONS_ROOT) {
     if (scripts[index].version !== index) throw structuredStoreError('workspace_store_schema_assets_invalid', `SQLite migration version 必须连续；期望 ${String(index).padStart(4, '0')}，实际为 ${scripts[index].name}。`, 500, { root, expectedVersion: index, actualVersion: scripts[index].version });
     if (index > 0 && scripts[index - 1].name === scripts[index].name) throw structuredStoreError('workspace_store_schema_assets_invalid', `SQLite migration 名称重复：${scripts[index].name}。`, 500, { root });
   }
-  return scripts;
+  if (defaultRoot) defaultMigrationScripts = Object.freeze(scripts.map((script) => Object.freeze(script)));
+  return defaultRoot ? defaultMigrationScripts : scripts;
 }
 
 function sqliteFailure(error, details = {}) {
@@ -121,13 +125,59 @@ function configure(database, { writable }) {
   }
 }
 
-export function registerWorkspaceSqlite(runtime) {
+export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitCheckoutIdentity } = {}) {
+  const operationScopes = [];
+
+  function workspaceOperationIdentity(targetRoot) {
+    const root = path.resolve(targetRoot);
+    try { return fs.realpathSync(root); } catch { return root; }
+  }
+
+  function activeOperationScope(targetRoot) {
+    const scope = operationScopes.at(-1);
+    return scope?.identity === workspaceOperationIdentity(targetRoot) ? scope : null;
+  }
+
+  function withWorkspaceStructuredStoreOperation(targetRoot, operation) {
+    const root = path.resolve(targetRoot);
+    const identity = workspaceOperationIdentity(root);
+    const active = operationScopes.at(-1);
+    if (active) {
+      if (active.identity !== identity) throw structuredStoreError('workspace_store_operation_scope_mismatch', 'Workspace operation scope 不允许切换 canonical Workspace。', 409, { expected: active.root, actual: root });
+      const result = operation();
+      if (result && typeof result.then === 'function') throw structuredStoreError('workspace_store_operation_scope_async_forbidden', 'Workspace operation scope 当前只支持同步 Application action。', 500);
+      return result;
+    }
+    const scope = { root, identity, canonicalRoot: null, memo: new Map() };
+    operationScopes.push(scope);
+    try {
+      const result = operation();
+      if (result && typeof result.then === 'function') throw structuredStoreError('workspace_store_operation_scope_async_forbidden', 'Workspace operation scope 当前只支持同步 Application action。', 500);
+      return result;
+    } finally {
+      operationScopes.pop();
+    }
+  }
+
+  function memoizeWorkspaceOperation(targetRoot, key, read) {
+    const scope = activeOperationScope(targetRoot);
+    if (!scope) return read();
+    if (scope.memo.has(key)) return scope.memo.get(key);
+    const value = read();
+    if (value && typeof value.then === 'function') throw structuredStoreError('workspace_store_operation_scope_async_forbidden', 'Workspace operation memo 当前只支持同步 read model。', 500);
+    scope.memo.set(key, value);
+    return value;
+  }
+
   function assertCanonicalStructuredWorkspace(targetRoot) {
     const root = path.resolve(targetRoot);
+    const scope = activeOperationScope(root);
+    if (scope?.canonicalRoot) return scope.canonicalRoot;
     try { runtime.assertInitializedBuildrWorkspace(root); }
     catch (error) { throw structuredStoreError('workspace_store_workspace_invalid', error.message, 409, { target: root }, '显式选择一个已初始化的 canonical Workspace。'); }
-    const checkout = observeGitCheckoutIdentity(root);
+    const checkout = observeCheckout(root);
     if (checkout?.linkedWorktree) throw structuredStoreError('workspace_store_workspace_not_canonical', 'Workspace structured store target 必须是 canonical Workspace，不能是 linked task worktree。', 409, { target: root }, '显式传入 retained canonical Workspace 的路径。');
+    if (scope) scope.canonicalRoot = root;
     return root;
   }
 
@@ -180,6 +230,8 @@ export function registerWorkspaceSqlite(runtime) {
 
   Object.assign(runtime, {
     assertCanonicalStructuredWorkspace,
+    withWorkspaceStructuredStoreOperation,
+    memoizeWorkspaceOperation,
     workspaceStructuredStorePath,
     openWorkspaceStructuredStore,
     inspectWorkspaceStructuredStore,

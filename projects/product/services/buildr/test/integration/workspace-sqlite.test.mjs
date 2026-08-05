@@ -6,13 +6,14 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
+import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-sqlite-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Test Workspace\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1
 id: 123e4567-e89b-42d3-a456-426614174000
@@ -73,6 +74,44 @@ test('只读打开未初始化 Workspace 不创建目录或数据库', (t) => {
   });
   assert.equal(fs.existsSync(path.join(root, '.buildr', 'local')), false);
   assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'uninitialized', version: null, integrity: null });
+});
+
+test('operation scope 只复用单次action的canonical与owner Application read model', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  let checkoutObservations = 0;
+  registerWorkspaceSqlite(runtime, { observeCheckout: () => { checkoutObservations += 1; return null; } });
+  runtime.createTaskRecord(root, { taskId: 'operation-scope', title: 'Operation scope', intent: 'Verify bounded memoization.', projects: [], services: [], changes: [] });
+  checkoutObservations = 0;
+
+  let taskReads = 0;
+  const readTaskRecordPersistence = runtime.readTaskRecordPersistence;
+  runtime.readTaskRecordPersistence = (...args) => { taskReads += 1; return readTaskRecordPersistence(...args); };
+  let environmentReads = 0;
+  const readTaskEnvironmentPersistence = runtime.readTaskEnvironmentPersistence;
+  runtime.readTaskEnvironmentPersistence = (...args) => { environmentReads += 1; return readTaskEnvironmentPersistence(...args); };
+
+  runtime.withWorkspaceStructuredStoreOperation(root, () => {
+    assert.equal(runtime.assertCanonicalStructuredWorkspace(root), root);
+    assert.equal(runtime.assertCanonicalStructuredWorkspace(root), root);
+    assert.deepEqual(runtime.inspectTaskRecord(root, 'operation-scope'), runtime.inspectTaskRecord(root, 'operation-scope'));
+    assert.deepEqual(runtime.inspectTaskEnvironment(root, 'operation-scope'), runtime.inspectTaskEnvironment(root, 'operation-scope'));
+  });
+  assert.equal(checkoutObservations, 1);
+  assert.equal(taskReads, 3, 'Task Record owner read + Environment owner/repository validation');
+  assert.equal(environmentReads, 1);
+
+  runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTaskRecord(root, 'operation-scope'));
+  assert.equal(checkoutObservations, 2, '下一action必须重新观察canonical Workspace');
+  assert.equal(taskReads, 4);
+
+  assert.throws(() => runtime.withWorkspaceStructuredStoreOperation(root, () => {
+    runtime.assertCanonicalStructuredWorkspace(root);
+    throw new Error('operation failed');
+  }), /operation failed/);
+  runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.assertCanonicalStructuredWorkspace(root));
+  assert.equal(checkoutObservations, 4, '异常结束的scope不得泄漏canonical缓存');
+  assert.throws(() => runtime.withWorkspaceStructuredStoreOperation(root, () => Promise.resolve()), (error) => error.code === 'workspace_store_operation_scope_async_forbidden');
 });
 
 test('version 1 Task Store 原位升级到 latest 且保留既有 Task', (t) => {
@@ -151,6 +190,7 @@ test('version 3 current schema连续升级且不迁移旧YAML', (t) => {
 });
 
 test('migration loader 拒绝缺口并以原始 package bytes 计算稳定 checksum', (t) => {
+  assert.equal(loadWorkspaceSqliteMigrations(), loadWorkspaceSqliteMigrations(), '默认package migrations复用不可变解析结果');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-sqlite-migrations-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, '0000_create_migration_ledger.sql'), 'CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, name TEXT, checksum TEXT, applied_at TEXT);\n');

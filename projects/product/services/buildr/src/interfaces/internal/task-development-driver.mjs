@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
+import { performance } from 'node:perf_hooks';
 
-import { createRuntime } from '../../application/compose-runtime.mjs';
+const moduleLoadStartedAt = performance.now();
+const { createRuntime } = await import('../../application/compose-runtime.mjs');
+const moduleLoadMs = performance.now() - moduleLoadStartedAt;
 
 function option(args, name, fallback = undefined) {
   const index = args.indexOf(name);
@@ -31,7 +34,9 @@ if (!['inspect', 'begin', 'planning', 'observe', 'policy', 'gate', 'freeze', 'de
 }
 
 try {
+  const compositionStartedAt = performance.now();
   const runtime = createRuntime();
+  const compositionMs = performance.now() - compositionStartedAt;
   const payload = input(args);
   const operations = {
     inspect: () => runtime.inspectTaskDevelopment(targetRoot, taskId),
@@ -45,7 +50,24 @@ try {
     handoff: () => runtime.createTaskDevelopmentHandoff(targetRoot, taskId, payload),
     carrier: () => runtime.assertTaskDevelopmentCarrier(targetRoot, taskId, payload),
   };
-  console.log(JSON.stringify(operations[action](), null, 2));
+  const applicationStartedAt = performance.now();
+  const result = operations[action]();
+  const applicationMs = performance.now() - applicationStartedAt;
+  const serializationStartedAt = performance.now();
+  const serialized = JSON.stringify(result, null, 2);
+  const serializationMs = performance.now() - serializationStartedAt;
+  if (args.includes('--profile')) {
+    const timing = {
+      moduleLoadMs,
+      compositionMs,
+      applicationMs,
+      serializationMs,
+      totalMs: moduleLoadMs + compositionMs + applicationMs + serializationMs,
+    };
+    console.log(JSON.stringify({ schemaVersion: 'buildr.task-development-driver-profile/v1', action, result, timing }, null, 2));
+  } else {
+    console.log(serialized);
+  }
 } catch (error) {
   console.error(JSON.stringify({
     schemaVersion: 'buildr.task-development-driver-error/v1',

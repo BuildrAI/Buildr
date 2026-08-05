@@ -44,6 +44,22 @@ test('不暴露 public Development CLI，Local App 只读投影复用 Applicatio
   assert.match(skill, /Local App只消费Application `inspect`的只读投影/);
   assert.doesNotMatch(skill, /没有 Local App 专业投影/);
   assert.equal(fs.existsSync(path.join(root, 'src/interfaces/internal/task-development-driver.mjs')), true);
+  const driver = read('src/interfaces/internal/task-development-driver.mjs');
+  assert.match(driver, /buildr\.task-development-driver-profile\/v1/);
+  assert.match(driver, /args\.includes\('--profile'\)/);
+  assert.match(driver, /moduleLoadMs[\s\S]*compositionMs[\s\S]*applicationMs[\s\S]*serializationMs[\s\S]*totalMs/);
+});
+
+test('Task Development action使用有界operation scope且不直接缓存专业repository', () => {
+  const application = read('src/application/task-development/task-development-application.mjs');
+  const sqlite = read('src/infrastructure/sqlite/workspace-sqlite.mjs');
+  const taskRecord = read('src/application/task-record/task-record-application.mjs');
+  const environment = read('src/application/task-environment/task-environment-application.mjs');
+  assert.match(application, /withWorkspaceStructuredStoreOperation/);
+  assert.match(sqlite, /operationScopes[\s\S]*finally[\s\S]*operationScopes\.pop/);
+  assert.match(taskRecord, /memoizeWorkspaceOperation\(targetRoot, `task-record:inspect:/);
+  assert.match(environment, /memoizeWorkspaceOperation\(targetRoot, `task-environment:inspect:/);
+  assert.doesNotMatch(application, /readTaskReviewResultPersistence|readTaskVerificationResultPersistence|readTaskEnvironmentPersistence/);
 });
 
 test('v2 package声明精确退休v1 contract与binding', () => {

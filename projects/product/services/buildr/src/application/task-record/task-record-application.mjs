@@ -215,7 +215,9 @@ export function registerTaskRecordApplication(runtime) {
   }
 
   function inspectTaskRecord(targetRoot, taskId) {
-    return result('inspect', 'inspected', readCurrent(targetRoot, taskId));
+    const read = () => result('inspect', 'inspected', readCurrent(targetRoot, taskId));
+    if (typeof runtime.memoizeWorkspaceOperation !== 'function') return read();
+    return runtime.memoizeWorkspaceOperation(targetRoot, `task-record:inspect:${taskId}`, read);
   }
 
   function createTaskRecord(targetRoot, input) {

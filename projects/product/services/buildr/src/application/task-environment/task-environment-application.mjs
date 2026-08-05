@@ -466,6 +466,12 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function inspectTaskEnvironment(targetRoot, taskId) {
+    const read = () => inspectTaskEnvironmentCurrent(targetRoot, taskId);
+    if (typeof runtime.memoizeWorkspaceOperation !== 'function') return read();
+    return runtime.memoizeWorkspaceOperation(targetRoot, `task-environment:inspect:${taskId}`, read);
+  }
+
+  function inspectTaskEnvironmentCurrent(targetRoot, taskId) {
     let root = path.resolve(targetRoot);
     let persistence = null;
     try {
@@ -588,7 +594,7 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function resolveTaskEnvironmentExecution(targetRoot, taskId) {
-    const inspected = inspectTaskEnvironment(targetRoot, taskId);
+    const inspected = runtime.inspectTaskEnvironment(targetRoot, taskId);
     if (inspected.status !== 'ready') return { ready: false, blocked: inspected.diagnostic, taskId, environment: inspected.environment, observedAt: inspected.observedAt };
     const persistence = runtime.readTaskEnvironmentPersistence(inspected.environment.workspace.root, taskId);
     const handles = new Map(persistence.receipt.resources.map((resource) => [resource.id, resource.handle]));
