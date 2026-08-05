@@ -197,11 +197,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-5aaa6c9b21088874d739ac5aa0041f67cbde6d834b8e5e0b584c94ada9a3a2f1",
+      "integrity": "sha256-1f508c439ddf5bce19d04ab98b1cd86e7b6b13669eaddb9461c30c6b5c5eb371",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-f5e75b7d2395a2cfeaee9e233bcb086ad6552759bd51ea4b6a6e4ff11db6653c"
+          "integrity": "sha256-21e7f2d7889a3750c517925bc0eddf2cc4b545e6f3059cc915ab2a3ba60700d4"
         },
         {
           "path": "references/project-verification-v2.md",
