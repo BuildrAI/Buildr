@@ -60,6 +60,22 @@ test('project-testing 分离测试边界、成本、范围与验证目标', () =
   ]) assert.ok(testingModel.includes(required), `testing model must include ${required}`);
 });
 
+test('project-testing 指导 Agent 建立可证伪的最小测试质量闭环', () => {
+  for (const required of [
+    '公共行为', '正常、失败、边界和必要状态转换案例',
+    '目标错误存在时失败', '不复制被测算法后验证自身',
+    '必要幂等、失败后清理和重复运行', '替代证据并报告 gap',
+  ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
+
+  for (const required of [
+    '测试质量闭环', '公共可观察结果', '最小关键案例',
+    '反例证据或明确 gap', 'Bug 修复', '有状态行为',
+  ]) assert.ok(testingModel.includes(required), `testing model must include ${required}`);
+
+  assert.match(projectTestingSkill, /mock、fake 或内存实现只隔离外部协作者/);
+  assert.match(testingModel, /不要 mock 幂等判断后只验证数据库方法被调用/);
+});
+
 test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(taskTriage, /测试框架.*`project-testing`/s);
   assert.match(taskTriage, /selected `buildr\.task-verification\/v3` provider/);

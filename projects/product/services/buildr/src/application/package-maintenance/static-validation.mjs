@@ -954,6 +954,11 @@ export function createPackageStaticValidator(deps) {
           '`focus` 只用于失败诊断',
           'primaryEvidenceOwner',
           '最低充分边界',
+          '公共行为',
+          '正常、失败、边界和必要状态转换案例',
+          '目标错误存在时失败',
+          '不复制被测算法后验证自身',
+          '必要幂等、失败后清理和重复运行',
           '不写 `verification.yml`',
           '交给 `task-verification`',
         ]) {
