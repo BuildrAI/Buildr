@@ -91,3 +91,7 @@ sync/archive prepend 明确拒绝上游 agent-driven canonical 写入、直接�
 ## Open Questions
 
 无。
+
+## Delivery Adaptation
+
+收尾期间目标分支并行前进，但新 Delivery Baseline 已通过祖先提交完整包含本 Change 的 Task Contribution 及 retained Workspace 自举同步。本记录仅证明该包含关系下的交付适配；实现、canonical specs、Candidate identity 与 Formal Verification evidence 均未改变。
