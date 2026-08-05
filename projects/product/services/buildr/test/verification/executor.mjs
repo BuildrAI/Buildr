@@ -14,15 +14,16 @@ export function workerBudgetEnvironment(step, executionProfile) {
 export function createVerificationExecutor(options) {
   const productRoot = path.resolve(options.productRoot);
   const projectRoot = path.resolve(options.projectRoot ?? productRoot);
+  const nodeBin = path.dirname(process.execPath);
   const nodeModulesBin = path.join(productRoot, 'node_modules', '.bin');
-  const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const npmExecutable = path.join(nodeBin, process.platform === 'win32' ? 'npm.cmd' : 'npm');
   const openspecExecutable = path.join(nodeModulesBin, process.platform === 'win32' ? 'openspec.cmd' : 'openspec');
+  const inheritedEnv = { ...process.env, ...options.env };
   const baseEnv = {
-    ...process.env,
-    ...options.env,
+    ...inheritedEnv,
     BUILDR_PROJECT_ROOT: projectRoot,
     BUILDR_SERVICE_ROOT: productRoot,
-    PATH: `${nodeModulesBin}${path.delimiter}${process.env.PATH || ''}`,
+    PATH: [nodeBin, nodeModulesBin, inheritedEnv.PATH].filter(Boolean).join(path.delimiter),
   };
   const artifacts = {};
 

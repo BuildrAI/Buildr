@@ -2,4 +2,11 @@
 set -euo pipefail
 
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec node "$product_root/test/verification/candidate.mjs" "$@"
+node_executable="${npm_node_execpath:-${BUILDR_NODE_EXECUTABLE:-}}"
+if [[ -z "$node_executable" || ! -x "$node_executable" ]]; then
+  echo "Workspace Node executable is missing. Run verification through Workspace npm." >&2
+  exit 1
+fi
+node_bin="$(dirname "$node_executable")"
+export PATH="$node_bin:$PATH"
+exec "$node_executable" "$product_root/test/verification/candidate.mjs" "$@"
