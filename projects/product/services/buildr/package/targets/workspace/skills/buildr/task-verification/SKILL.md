@@ -62,6 +62,8 @@ buildr verification run --project <code> \
   --json
 ```
 
+`verification run` 只执行已选择的 command capability 并产生 transient execution evidence；它不接受 `--declaration-root`。`--declaration-root` 只用于 `task verification inspect` 或 `task verification record`，用于让 Application 读取当前 ready Task Environment 中尚未进入 canonical Workspace 的 declaration bytes。
+
 声明 `effects.authorization: explicit` 时，取得对应授权后逐项增加 `--authorize-capability <id>`；声明为 explicit 的资源同理增加 `--authorize-resource <id>`。不得用一次宽泛授权覆盖其他 capability 或 resource。
 
 - Agent capability 按声明 instructions 做有界操作，保留实际事实；不要硬塞进 command runner。

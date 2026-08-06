@@ -24,12 +24,48 @@ function gitOutput(cwd, args) {
   try { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
 }
 
+function gitPathList(cwd, args) {
+  return (gitOutput(cwd, args) || '').split('\0').filter(Boolean).sort();
+}
+
+function filesystemSnapshot(root) {
+  const entries = [];
+  const visit = (current) => {
+    for (const name of fs.readdirSync(current).sort()) {
+      const file = path.join(current, name);
+      const relative = path.relative(root, file).split(path.sep).join('/');
+      const stat = fs.lstatSync(file);
+      if (stat.isSymbolicLink()) entries.push([relative, 'symlink', fs.readlinkSync(file)]);
+      else if (stat.isDirectory()) {
+        entries.push([relative, 'directory']);
+        visit(file);
+      } else if (stat.isFile()) entries.push([relative, 'file', digest(fs.readFileSync(file))]);
+      else entries.push([relative, 'other', stat.mode]);
+    }
+  };
+  visit(root);
+  return entries;
+}
+
 function executionContentObservation(root) {
   const top = gitOutput(root, ['rev-parse', '--show-toplevel'])?.trim();
-  if (!top) return { kind: 'filesystem', root, reusable: false, fingerprint: null };
+  if (!top) {
+    const snapshot = filesystemSnapshot(root);
+    return {
+      kind: 'filesystem',
+      root,
+      changedPaths: snapshot.map(([relative]) => relative),
+      fingerprint: digest(snapshot),
+      reusable: false,
+    };
+  }
   const status = gitOutput(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']) || '';
   const diff = gitOutput(root, ['diff', '--binary', 'HEAD', '--']) || '';
-  const untracked = status.split('\0').filter((line) => line.startsWith('?? ')).map((line) => line.slice(3)).sort();
+  const changedPaths = [...new Set([
+    ...gitPathList(root, ['diff', '--name-only', '-z', 'HEAD', '--']),
+    ...gitPathList(root, ['ls-files', '--others', '--exclude-standard', '-z', '--']),
+  ])];
+  const untracked = changedPaths.filter((relative) => status.split('\0').some((line) => line === `?? ${relative}`));
   const untrackedContent = untracked.map((relative) => {
     const file = path.join(top, relative);
     try { return [relative, fs.statSync(file).isFile() ? digest(fs.readFileSync(file)) : 'non-file']; } catch { return [relative, 'missing']; }
@@ -39,8 +75,22 @@ function executionContentObservation(root) {
     root: path.resolve(top),
     head: gitOutput(root, ['rev-parse', 'HEAD'])?.trim() || null,
     tree: gitOutput(root, ['rev-parse', 'HEAD^{tree}'])?.trim() || null,
+    changedPaths,
     fingerprint: digest({ status, diff, untrackedContent }),
     reusable: false,
+  };
+}
+
+function targetDriftSummary(before, after) {
+  if (!before || !after || before.fingerprint === after.fingerprint) return null;
+  const beforePaths = new Set(before.changedPaths || []);
+  const afterPaths = new Set(after.changedPaths || []);
+  return {
+    beforeFingerprint: before.fingerprint,
+    afterFingerprint: after.fingerprint,
+    addedPaths: [...afterPaths].filter((value) => !beforePaths.has(value)),
+    removedPaths: [...beforePaths].filter((value) => !afterPaths.has(value)),
+    statusChanged: before.status !== after.status,
   };
 }
 
@@ -120,6 +170,11 @@ export function registerVerificationApplication(runtime) {
     const authorizedCapabilities = [...new Set(optionValues(args, '--authorize-capability'))];
     const authorizedResources = optionValues(args, '--authorize-resource');
     const concurrency = Number(runtime.optionValue(args, '--concurrency', '4'));
+    if (args.includes('--declaration-root')) {
+      const error = new Error('--declaration-root 仅用于 buildr task verification inspect|record；verification run 只产生 transient execution evidence。');
+      error.code = 'verification.run_declaration_root_unsupported';
+      throw error;
+    }
     runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--target-identity', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--json']), new Set(['--json']));
     if (runtime.positionalArgs(args).length) throw new Error('verification run does not accept positional arguments.');
     if (!projectCode) throw new Error('verification run requires --project <code>.');
@@ -188,6 +243,7 @@ export function registerVerificationApplication(runtime) {
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
     const checks = results.map(sanitizeCheck);
     const targetStable = digest(before) === digest(after);
+    const targetDrift = targetDriftSummary(before, after);
     const passed = targetStable && checks.every((check) => check.status === 'passed');
     const declarationIdentity = digest(declarationContent);
     const identityMaterial = verificationExecutionIdentityMaterial({
@@ -203,7 +259,7 @@ export function registerVerificationApplication(runtime) {
     const base = {
       operation: 'execute',
       status: passed ? 'passed' : 'failed',
-      target: { identity: targetIdentity, stable: targetStable, observation: after },
+      target: { identity: targetIdentity, stable: targetStable, observation: after, drift: targetDrift },
       project: { code: projectCode, root: projectRoot },
       declaration: { path: declarationPath, identity: declarationIdentity },
       environment: context ? { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot, scopes: context.scopes.map((scope) => ({ selector: scope.selector, executionRoot: scope.executionRoot, sourceIdentity: scope.cli.identity, projectionIdentity: scope.projection.identity })), allowedExecutionRoots: context.allowedExecutionRoots } : null,

@@ -5,7 +5,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
+import { collectChangedProductPaths } from './changed-paths.mjs';
+
 export const BROWSER_SELECTORS = Object.freeze(['core', 'shell', 'project', 'service', 'change', 'task', 'articles']);
+
+const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const projectRoot = path.resolve(productRoot, '../..');
 
 function normalize(value) {
   return value.replaceAll('\\', '/').replace(/^\.\//, '');
@@ -13,9 +18,17 @@ function normalize(value) {
 
 export function parseChangedPaths(raw = process.env.BUILDR_CHANGED_PATHS_JSON) {
   if (!raw) {
-    const error = new Error('Browser changed dispatcher 需要 BUILDR_CHANGED_PATHS_JSON；请使用显式 selector 或 full 入口。');
-    error.code = 'browser_changed_paths_missing';
-    throw error;
+    try {
+      return collectChangedProductPaths({
+        productRoot,
+        projectRoot,
+        base: process.env.BUILDR_VERIFICATION_BASE || null,
+      }).paths;
+    } catch (error) {
+      const diagnostic = new Error(`Browser changed dispatcher 无法解析 changed paths：${error.message}；请提供 BUILDR_CHANGED_PATHS_JSON 或 BUILDR_VERIFICATION_BASE。`);
+      diagnostic.code = 'browser_changed_paths_unresolvable';
+      throw diagnostic;
+    }
   }
   let parsed;
   try { parsed = JSON.parse(raw); } catch (error) {

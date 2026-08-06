@@ -31,10 +31,28 @@ test('Browser Smoke and selection mechanism changes choose explicit full selecto
   assert.deepEqual(selectBrowserSelectors(['test/verification/registry.mjs']).selectors, ['all']);
 });
 
-test('Browser dispatcher rejects absent or malformed changed path input', () => {
-  assert.throws(() => parseChangedPaths(), (error) => error.code === 'browser_changed_paths_missing');
+test('Browser dispatcher accepts explicit input and falls back to Git changed paths', () => {
+  const explicit = parseChangedPaths(JSON.stringify(['src/interfaces/local-app/web/router.js']));
+  assert.deepEqual(explicit, ['src/interfaces/local-app/web/router.js']);
+  const derived = parseChangedPaths(null);
+  assert.ok(derived.includes('test/verification/browser-selector-dispatcher.mjs'));
+});
+
+test('Browser dispatcher rejects malformed or unresolvable changed path input', () => {
   assert.throws(() => parseChangedPaths('{bad'), (error) => error.code === 'browser_changed_paths_invalid');
   assert.throws(() => parseChangedPaths('{"paths": [3]}'), (error) => error.code === 'browser_changed_paths_invalid');
+  const previousBase = process.env.BUILDR_VERIFICATION_BASE;
+  const previousPaths = process.env.BUILDR_CHANGED_PATHS_JSON;
+  try {
+    delete process.env.BUILDR_CHANGED_PATHS_JSON;
+    process.env.BUILDR_VERIFICATION_BASE = '__missing-verification-base__';
+    assert.throws(() => parseChangedPaths(), (error) => error.code === 'browser_changed_paths_unresolvable');
+  } finally {
+    if (previousBase === undefined) delete process.env.BUILDR_VERIFICATION_BASE;
+    else process.env.BUILDR_VERIFICATION_BASE = previousBase;
+    if (previousPaths === undefined) delete process.env.BUILDR_CHANGED_PATHS_JSON;
+    else process.env.BUILDR_CHANGED_PATHS_JSON = previousPaths;
+  }
 });
 
 test('changed planner gives Local App HTTP its narrow System owner', () => {

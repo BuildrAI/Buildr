@@ -90,6 +90,7 @@ capabilities:
       paths: ["services/buildr/src/interfaces/local-app/web/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**"]
       conditions:
         - 本机应用路由、DOM 交互或 Agent Action 发生变化
+        - 未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths
     proves:
       - Project、Service、Change 与 Task 页面关键浏览器交互和错误反馈可用
     requiredForDelivery: true

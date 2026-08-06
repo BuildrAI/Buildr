@@ -140,6 +140,38 @@ test('verification run 不再提供 caller-managed evidence writer', (t) => {
   assert.equal(fs.existsSync(output), false);
 });
 
+test('verification run rejects declaration-root before starting a capability', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [declaredCapability('demo.only', 'require("fs").writeFileSync("started.txt", "no")')],
+  }));
+  const args = runArgs(root, ['demo.only']);
+  args.splice(-1, 0, '--declaration-root', root);
+  const result = runBuildr(args);
+  assert.equal(result.status, 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.error.code, 'verification.run_declaration_root_unsupported');
+  assert.match(payload.error.message, /task verification inspect\|record/);
+  assert.equal(fs.existsSync(path.join(projectRoot, 'started.txt')), false);
+});
+
+test('verification run reports target drift separately from a passed capability', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [declaredCapability('demo.drift', 'require("fs").writeFileSync("drift.txt", "changed")')],
+  }));
+  const result = runBuildr(runArgs(root, ['demo.drift']));
+  assert.equal(result.status, 1);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'failed');
+  assert.equal(payload.target.stable, false);
+  assert.equal(payload.checks[0].status, 'passed');
+  assert.deepEqual(payload.target.drift.addedPaths, ['projects/demo/drift.txt']);
+  assert.deepEqual(payload.target.drift.removedPaths, []);
+});
+
 test('verification run 对无 capability/target 的请求返回单一 JSON envelope', (t) => {
   const root = fixture(t);
   const result = runBuildr(['verification', 'run', '--project', 'demo', '--target', root, '--json']);
