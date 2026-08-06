@@ -207,11 +207,13 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     if (scope?.canonicalRoot) return scope.canonicalRoot;
     try { runtime.assertInitializedBuildrWorkspace(root); }
     catch (error) { throw structuredStoreError('workspace_store_workspace_invalid', error.message, 409, { target: root }, '显式选择一个已初始化的 canonical Workspace。'); }
-    const checkout = observeCheckout(root);
-    if (checkout?.linkedWorktree && !isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, checkout)) {
-      throw structuredStoreError('workspace_store_workspace_not_canonical', 'Workspace structured store target 必须是 canonical Workspace，不能是 linked task worktree。', 409, { target: root }, '显式传入 retained canonical Workspace 的路径。');
+    if (writable) {
+      const checkout = observeCheckout(root);
+      if (checkout?.linkedWorktree && !isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, checkout)) {
+        throw structuredStoreError('workspace_store_workspace_not_canonical', 'Workspace structured store target 必须是 canonical Workspace，不能是 linked task worktree。', 409, { target: root }, '显式传入 retained canonical Workspace 的路径。');
+      }
+      assertStructuredStoreWriterProvenance(root, checkout);
     }
-    if (writable) assertStructuredStoreWriterProvenance(root, checkout);
     if (scope) scope.canonicalRoot = root;
     return root;
   }

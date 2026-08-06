@@ -124,6 +124,20 @@ test('候选 runtime 只能写自身 linked validation Workspace，不能污染 
   assert.equal(fs.existsSync(retainedStore), false);
 });
 
+test('candidate/validation 自身 store 可只读打开且不观察 Git', (t) => {
+  const validation = workspace(t);
+  const writer = createRuntime();
+  writer.openWorkspaceStructuredStore(validation, { writable: true }).database.close();
+
+  const reader = createRuntime();
+  registerWorkspaceSqlite(reader, { observeCheckout: () => { throw new Error('只读 store 不得观察 Git'); } });
+  const opened = reader.openWorkspaceStructuredStore(validation, { writable: false });
+  assert.equal(opened.present, true);
+  assert.equal(opened.version, 6);
+  opened.database.close();
+  assert.equal(reader.inspectWorkspaceStructuredStore(validation).status, 'healthy');
+});
+
 test('候选 runtime 对无关普通 Workspace 保持单库写入能力', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();
@@ -146,6 +160,7 @@ test('operation scope 只复用单次action的canonical与owner Application read
   let checkoutObservations = 0;
   registerWorkspaceSqlite(runtime, { observeCheckout: () => { checkoutObservations += 1; return null; } });
   runtime.createTaskRecord(root, { taskId: 'operation-scope', title: 'Operation scope', intent: 'Verify bounded memoization.', projects: [], services: [], changes: [] });
+  assert.ok(checkoutObservations > 0, 'writable action 必须观察 provenance');
   checkoutObservations = 0;
 
   let taskReads = 0;
@@ -161,12 +176,12 @@ test('operation scope 只复用单次action的canonical与owner Application read
     assert.deepEqual(runtime.inspectTaskRecord(root, 'operation-scope'), runtime.inspectTaskRecord(root, 'operation-scope'));
     assert.deepEqual(runtime.inspectTaskEnvironment(root, 'operation-scope'), runtime.inspectTaskEnvironment(root, 'operation-scope'));
   });
-  assert.equal(checkoutObservations, 1);
+  assert.equal(checkoutObservations, 0, '只读 action 不得观察 canonical Workspace provenance');
   assert.equal(taskReads, 3, 'Task Record owner read + Environment owner/repository validation');
   assert.equal(environmentReads, 0, 'Local Environment inspect 只查询 SQLite lifecycle snapshot');
 
   runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTaskRecord(root, 'operation-scope'));
-  assert.equal(checkoutObservations, 2, '下一action必须重新观察canonical Workspace');
+  assert.equal(checkoutObservations, 0, '下一只读 action 仍不得观察 canonical Workspace provenance');
   assert.equal(taskReads, 4);
 
   assert.throws(() => runtime.withWorkspaceStructuredStoreOperation(root, () => {
@@ -174,7 +189,7 @@ test('operation scope 只复用单次action的canonical与owner Application read
     throw new Error('operation failed');
   }), /operation failed/);
   runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.assertCanonicalStructuredWorkspace(root));
-  assert.equal(checkoutObservations, 4, '异常结束的scope不得泄漏canonical缓存');
+  assert.equal(checkoutObservations, 0, '异常只读 scope 也不得触发 Git 观察');
   assert.throws(() => runtime.withWorkspaceStructuredStoreOperation(root, () => Promise.resolve()), (error) => error.code === 'workspace_store_operation_scope_async_forbidden');
 });
 

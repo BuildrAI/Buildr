@@ -7,6 +7,7 @@ import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {
   runBuildr as run,
@@ -31,6 +32,23 @@ test('Task Record target 必须是 canonical Workspace，不能是 linked worktr
   assert.equal(json(['task', 'create', 'standalone-task', '--title', '独立 Workspace', '--intent', '目录名不决定 authority', '--target', standalone]).status, 'created');
   const uninitialized = json(['task', 'create', 'missing-root', '--title', '错误目标', '--intent', '未初始化', '--target', path.join(root, 'not-a-workspace')], 1);
   assert.equal(uninitialized.diagnostic.code, 'task_record_workspace_invalid');
+});
+
+test('Local App 已解析 Workspace root 的 Task 读取不观察 Git', async (t) => {
+  const { base, root } = fixture(t, 'task-local-app-no-git-read');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-no-git-read'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const writer = createRuntime();
+  writer.createTaskRecord(root, { taskId: 'read-without-git', title: '只读无需 Git', intent: '验证 Local App read boundary', projects: [], services: [], changes: [] });
+
+  const reader = createRuntime();
+  registerWorkspaceSqlite(reader, { observeCheckout: () => { throw new Error('Local App GET 不得调用 Git/worktree provenance'); } });
+  const instance = createLocalWorkspaceServer(reader, { targetRoot: root });
+  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
+  const { url, initialWorkspaceId } = await instance.ready;
+  const response = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.tasks.map((item) => item.record.taskId), ['read-without-git']);
 });
 
 test('Local App Task API 提供轻量查询与既有任务维护，不暴露创建入口', async (t) => {
