@@ -179,6 +179,7 @@ export function createPackageStaticValidator(deps) {
       'src/infrastructure/sqlite/migrations/0002_create_parent_task_relations.sql',
       'src/infrastructure/sqlite/migrations/0003_inline_parent_task_column.sql',
       'src/infrastructure/sqlite/migrations/0004_create_task_current_records.sql',
+      'src/infrastructure/sqlite/migrations/0005_create_task_retrospective_current.sql',
     ];
     for (const relative of sqliteMigrations) {
       const file = path.join(root, relative);
@@ -933,7 +934,7 @@ export function createPackageStaticValidator(deps) {
           '没有明确 Candidate identity 就停止',
           '中断时不要调用 record',
           '不生成总 receipt',
-          '不取代 `task-asset-review`',
+          'Task Retrospective',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-review Skill must include ${JSON.stringify(requiredText)}.`);
         }
@@ -1081,54 +1082,23 @@ export function createPackageStaticValidator(deps) {
         }
         if (skillContent.includes('buildr openspec')) problems.push('task-finish source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
       }
-      if (skill.id === 'task-asset-review') {
+      if (skill.id === 'task-retrospective') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-asset-review/v3` 的默认 provider',
-          '探索、设计、诊断、实现或验证',
-          'Workspace-local untracked inbox',
-          '/.buildr/asset-review/',
-          'legacy inbox',
-          'root Agent 是单一写者',
-          'owner mismatch',
-          '原子替换',
-          '完整原始对话',
-          '完整工具日志',
-          '模型隐藏推理',
-          '高信息量转折点',
-          '核验候选目标源资产',
-          '完整覆盖',
-          '部分覆盖',
-          '存在冲突',
-          '尚无资产',
-          '`capability-contract`',
-          '`product-followup`',
-          'Command、Component 和普通 docs 不作为直接候选',
-          '重新进入 `task-triage`',
-          'asset-maintenance/',
-          '不要创建 `asset.yml`',
-          '--outcome asset-integrated',
-          '--outcome product-absorbed',
-          '--outcome no-change',
-          'discard',
-          'source.task',
-          'identity 不同',
-          '--completion',
-          '`no-observation`',
-          '`discarded`',
-          '`awaiting-human`',
+          '本 Skill 是 `buildr.task-retrospective/v1` 的默认 provider',
+          'Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率',
+          'Task 必须是 `completed` 或 `abandoned`',
+          '自由Markdown',
+          '数据缺口',
+          '隐藏推理、完整对话、完整工具日志或后台事件',
+          '不读取、迁移或删除`.buildr/asset-review/`',
+          'task-retrospective-driver.mjs inspect',
+          'task-retrospective-driver.mjs record',
+          '不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁',
         ]) {
-          if (!skillContent.includes(requiredText)) problems.push(`task-asset-review Skill must include ${JSON.stringify(requiredText)}.`);
+          if (!skillContent.includes(requiredText)) problems.push(`task-retrospective Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        for (const companion of [
-          'scripts/observation.mjs',
-          'templates/observation.md',
-          'templates/asset-maintenance-record.md',
-        ]) {
-          if (!existsFile(path.join(skillDir, companion))) problems.push(`task-asset-review Skill must include ${companion}.`);
-        }
-        for (const forbiddenText of ['安装 runtime Hook', '启动 daemon', '启动 watcher', '接入事件总线']) {
-          if (skillContent.includes(forbiddenText)) problems.push(`task-asset-review Skill must not instruct Agents to ${JSON.stringify(forbiddenText)}.`);
-        }
+        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 1);
+        if (!provided) problems.push('task-retrospective must provide buildr.task-retrospective@1.');
       }
       if (skill.id === 'task-triage') {
         for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
@@ -1163,8 +1133,14 @@ export function createPackageStaticValidator(deps) {
     if (manifest.builtins.skills.some((skill) => skill.id.includes('openspec-store'))) {
       problems.push('OpenSpec Stores are beta and must not be registered as a Buildr builtin Skill.');
     }
-    if (!manifest.builtins.skills.some((skill) => skill.id === 'task-asset-review' && skill.required === false)) {
-      problems.push('builtins.skills must declare optional task-asset-review.');
+    if (!manifest.builtins.skills.some((skill) => skill.id === 'task-retrospective' && skill.required === false)) {
+      problems.push('builtins.skills must declare optional task-retrospective.');
+    }
+    if (manifest.builtins.skills.some((skill) => skill.id === 'task-asset-review')
+      || (manifest.capabilityContracts || []).some((contract) => contract.id === 'buildr.task-asset-review')
+      || (manifest.initialSkillBindings || []).some((binding) => binding.capability === 'buildr.task-asset-review')
+      || manifest.builtins.skills.some((skill) => (skill.requires || []).some((dependency) => dependency.capability === 'buildr.task-asset-review'))) {
+      problems.push('Task Asset Review must not remain in active package skills, contracts, bindings, or consumer requirements.');
     }
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-review' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-review.');
@@ -1249,9 +1225,12 @@ export function createPackageStaticValidator(deps) {
         if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 1)) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@1.');
         }
-        const taskAssetReview = baselineSkills.find((entry) => entry.id === 'task-asset-review');
-        if (!taskAssetReview || taskAssetReview.source !== 'buildr' || taskAssetReview.state !== 'installed' || taskAssetReview.enabled !== true) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-asset-review.');
+        const taskRetrospective = baselineSkills.find((entry) => entry.id === 'task-retrospective');
+        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || !(taskRetrospective.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 1)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-retrospective providing buildr.task-retrospective@1.');
+        }
+        if (baselineSkills.some((entry) => entry.id === 'task-asset-review' || (entry.provides || []).some((item) => item.capability === 'buildr.task-asset-review') || (entry.requires || []).some((item) => item.capability === 'buildr.task-asset-review'))) {
+          problems.push('Workspace skills baseline must not retain Task Asset Review provider or consumer declarations.');
         }
         const gitOperations = baselineSkills.find((entry) => entry.id === 'git-operations');
         if (!gitOperations || gitOperations.source !== 'buildr' || gitOperations.state !== 'installed' || gitOperations.enabled !== true || !(gitOperations.provides || []).some((item) => item.capability === 'buildr.git-operations' && item.version === 1)) {

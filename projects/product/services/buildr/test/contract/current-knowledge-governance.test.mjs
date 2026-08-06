@@ -49,7 +49,6 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
     ['buildr.task-review', 'required'],
     ['buildr.task-verification', 'required'],
     ['buildr.current-knowledge-maintenance', 'required'],
-    ['buildr.task-asset-review', 'optional'],
   ]);
   assert.deepEqual(finish.dependencies.map((item) => [item.capability, item.mode]), [
     ['buildr.task-development', 'required'],
@@ -66,7 +65,6 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
     { capability: 'buildr.task-review', version: 1, mode: 'required' },
     { capability: 'buildr.task-verification', version: 3, mode: 'required' },
     { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'required' },
-    { capability: 'buildr.task-asset-review', version: 3, mode: 'optional' },
   ]);
   assert.deepEqual(packagedFinish.requires, [
     { capability: 'buildr.task-development', version: 2, mode: 'required' },

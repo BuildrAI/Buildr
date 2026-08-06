@@ -124,3 +124,15 @@ Fixture.
   assert.equal(updated.bindings.some((item) => item.capability === 'buildr.retired-example'), false);
   assert.equal(fs.existsSync(target), false);
 });
+
+test('sync 不读取、迁移或删除既有 Task Asset Review observation 数据', (t) => {
+  const root = fixtureRoot(t);
+  const legacy = path.join(root, '.buildr', 'asset-review', 'inbox', 'legacy.md');
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  const before = Buffer.from('legacy observation bytes\n\u0000preserved');
+  fs.writeFileSync(legacy, before);
+
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  assert.deepEqual(fs.readFileSync(legacy), before);
+});

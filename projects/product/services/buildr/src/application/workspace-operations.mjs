@@ -387,7 +387,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '/.buildr/mutations/',
       '# Workspace local structured data',
       '/.buildr/local/',
-      '# Task asset review runtime state',
+      '# Retired Task asset review data remains untracked',
       '/.buildr/asset-review/',
       '/.buildr/task-finish/',
       '# Task machine-local state',

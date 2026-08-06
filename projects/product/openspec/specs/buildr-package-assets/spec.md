@@ -640,11 +640,11 @@ Buildr product verification MUST 防止产品入口 Buildr Skill 和随包引导
 - **AND** 验证 MUST 确认 Git 更新属于 Buildr Skill 的 consumer 编排，而不是 `buildr sync` CLI 或 Git Operations provider 的隐式行为
 
 ### Requirement: 产品验证覆盖 capability provider replacement
-Buildr product verification MUST 覆盖默认 provider、内部 provider 替换、provider 卸载、歧义、版本冲突和 optional degradation，并 MUST 验证所有 supported runtime adapters 获得一致 binding 语义。
+Buildr product verification MUST 覆盖默认 provider、内部 provider 替换、provider 卸载、歧义、版本冲突和 required dependency failure，并 MUST 验证所有 supported runtime adapters 获得一致 binding 语义。
 
 #### Scenario: 默认 providers 完成现有工作流
 - **WHEN** a temporary workspace uses package defaults
-- **THEN** Git Operations、worktree and task consumers MUST resolve to the declared builtin providers
+- **THEN** Git Operations、worktree、task consumers与Task Retrospective MUST resolve to the declared builtin providers
 - **AND** existing workspace update、worktree and retained metadata-only finish behavior MUST remain available
 
 #### Scenario: 内部 provider 替换 Git Ops
@@ -656,11 +656,6 @@ Buildr product verification MUST 覆盖默认 provider、内部 provider 替换�
 - **WHEN** a test removes the only compatible required provider or leaves multiple unbound providers in the nearest scope
 - **THEN** doctor MUST report `blocked` with `missing_provider` or `ambiguous_provider` reason、affected consumers、candidates and nextActions
 - **AND** runtime render MUST retain affected consumers with blocked safety guidance and retain unrelated Skills
-
-#### Scenario: Optional provider 缺失
-- **WHEN** `task-asset-review` is unavailable to `task-finish`
-- **THEN** doctor MUST report non-blocking degradation
-- **AND** rendered Task Finish binding evidence MUST declare the skipped optional stage
 
 #### Scenario: Runtime adapters 接收相同解析结果
 - **WHEN** Buildr renders the same scope for each supported Agent adapter
@@ -768,24 +763,6 @@ Buildr package MUST 原子交付 `buildr.task-verification/v3` contract、默认
 - **WHEN** Workspace 安装并绑定兼容的内部 `buildr.task-verification/v3` provider
 - **THEN** consumers MUST 通过 binding 发现 provider 而不修改 consumer Skill
 - **AND** 默认 provider 在不再被选中时 MUST 可安全卸载
-
-### Requirement: Package 原子交付任务资产观察 v2
-Buildr package MUST 原子交付 `buildr.task-asset-review/v2` contract、默认 provider、内部 helper 与模板、workspace binding、产品入口路由和 Task Finish optional dependency。
-
-#### Scenario: Package 安装 v2
-- **WHEN** Buildr 初始化或同步 workspace
-- **THEN** package MUST 安装 v2 contract 和完整 task-asset-review Skill 目录
-- **AND** default binding 与 Task Finish requirement MUST 引用 v2
-
-#### Scenario: Package 校验内部资源
-- **WHEN** Agent 运行 package check 或产品 affected verification
-- **THEN** verifier MUST 检查 helper、模板、manifest contract identity 和 provider/consumer version 一致性
-- **AND** verifier MUST 覆盖共享路径、owner mismatch、原子写入、accept、reject 和 handoff 行为
-
-#### Scenario: Optional provider 缺失
-- **WHEN** `buildr.task-asset-review/v2` 对 Task Finish 不可用
-- **THEN** doctor MUST 报告 non-blocking degradation
-- **AND** runtime binding evidence MUST 声明 finalize stage skipped
 
 ### Requirement: 随包 task-worktree guidance 必须简洁且结构化
 Buildr package MUST 以单一 routing description 和结构化正文交付窄 `task-worktree` guidance；description MUST 只匹配明确 Git worktree/本地任务分支意图或 selected Environment provider handoff。正文 MUST 只覆盖 Git plan、创建/复用/检查/保留/清理、evidence、授权与停止条件，并 MUST NOT 声明 Environment 生命周期、Runtime/依赖、session adoption、验证政策或总 cleanup。
@@ -1016,21 +993,21 @@ Buildr package MUST 原子交付 `buildr.task-review/v1` contract、默认 `task
 - **WHEN** contract、Skill、manifest/binding、Application/CLI、JSON registry、Local App route 或 tests 任一缺失/漂移
 - **THEN** package check/doctor MUST 报告 blocked，MUST 不把 capability 描述为 ready 或正式生效
 
-### Requirement: Package residual gate 必须防止 Task Review 双 authority
-Buildr package verification MUST 区分 Task Review、普通 Change review 与 Task Asset Review，并 MUST 拒绝任何第二个正式 Task Review writer/store、按类型拆分的 capability、Task Record/Environment Review 字段或绕过 Application 的 Task-scoped review route。
+### Requirement: Package residual gate 防止 Task Review 与 Retrospective 双 authority
+Buildr package verification MUST 区分 Task Review、普通 Change review 与 Task Retrospective，并 MUST 拒绝任何第二个正式 Task Review writer/store、按类型拆分的 capability、Task Record/Environment Review 字段或绕过 Application 的 Task-scoped review route。
 
-#### Scenario: task-asset-review 保持独立
-- **WHEN** package 同时包含 `task-review` 与 `task-asset-review`
-- **THEN** capability graph MUST 显示不同 contract identity、provider、store 与 consumer purpose
-- **AND** Task Finish 的 asset observation dependency MUST 保持指向 `task-asset-review`
+#### Scenario: Task Retrospective 保持独立
+- **WHEN** package 同时包含`task-review`与`task-retrospective`
+- **THEN** capability graph MUST显示不同contract identity、provider、store与consumer purpose
+- **AND** 两者 MUST不互写 Result 或互为 lifecycle dependency
 
 #### Scenario: Task-scoped route 仍使用普通 Change review
 - **WHEN** Local App 或 Agent action 在明确 Task context 下仍生成不记录 Planning Result 的旧通用 Change review prompt
 - **THEN** residual gate/browser contract MUST 失败
 
 #### Scenario: sibling records 受到写入影响
-- **WHEN** Task Record、Environment 或 Task Review repository 写入同一 `.buildr/tasks/<task-id>/` 目录
-- **THEN**专项 fixture MUST 证明每个 writer 只创建或替换自己的精确 owned path，并逐字节保留其他专业 records
+- **WHEN** Task Record、Environment、Task Review或Task Retrospective repository写入同一Workspace SQLite
+- **THEN** 专项 fixture MUST证明每个writer只替换自己的精确current row并保留其他专业records
 
 ### Requirement: 候选 Task Review authority 必须在 retained cutover 前保持隔离
 Task worktree 中新增的 Task Review Skill、CLI、Application 或 runtime assets MUST 只在该任务验证工作区和临时 Workspace 中验证；它们 MUST NOT 写 retained Workspace 的 Review Result、替换正式 runtime 或宣称 selected authority 已切换。只有候选集成、retained source sync/render/doctor 和真实 E2E 成功后，P0.3 authority 才 MUST 被报告为生效。
@@ -1249,3 +1226,29 @@ Buildr package、Workspace 初始化与 Workspace sync MUST 统一维护根 `.gi
 - **WHEN** Workspace Git index 已跟踪 `.buildr/tasks/` 下的历史文件
 - **THEN** init 或 sync MUST NOT 自动执行 `git rm --cached`、删除或改写这些文件
 - **AND** broad ignore entry MUST 只影响 Git 对未跟踪路径的发现
+
+### Requirement: Package 原子交付 Task Retrospective 第一版
+Buildr package MUST 原子交付 `buildr.task-retrospective/v1` contract、默认 provider、内部 driver、workspace binding、产品入口路由以及 Local App 只读投影，并 MUST 不建立任何 lifecycle consumer dependency。
+
+#### Scenario: Package 安装 Task Retrospective
+- **WHEN** Buildr 初始化或同步 workspace
+- **THEN** package MUST 安装 v1 contract 与完整 `task-retrospective` Skill
+- **AND** default binding MUST 指向该 provider
+
+#### Scenario: Package 校验第一版边界
+- **WHEN** Agent 运行 package check 或产品 affected verification
+- **THEN** verifier MUST 检查 contract、provider、binding、driver、SQLite migration/repository、Local App read-only route 和 Result closed schema
+- **AND** verifier MUST拒绝history、自动采集、公共CLI、写UI或lifecycle gate
+
+### Requirement: Package 完整退役当前 Task Asset Review 能力
+Buildr package 与 active product source MUST 删除 `task-asset-review` provider、全部 capability contract versions、binding、helper、templates、consumer requirements、routing 和专项 mutation tests；历史 archives 与用户 `.buildr/asset-review/` 数据 MUST不在退役范围内。
+
+#### Scenario: 新 workspace 不再安装旧能力
+- **WHEN** Buildr 初始化或同步 workspace
+- **THEN** runtime MUST不包含`task-asset-review` Skill、contract或binding
+- **AND** doctor MUST不报告该能力的ready、degraded或blocked状态
+
+#### Scenario: 升级 workspace 保留旧 observation 数据
+- **WHEN** update/sync 前 canonical Workspace 存在`.buildr/asset-review/`文件
+- **THEN** package operation MUST不读取、迁移、覆盖或删除这些文件
+- **AND** `.gitignore` MAY继续保留旧目录排除规则

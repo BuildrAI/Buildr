@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import YAML from 'yaml';
+
+import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
+
+const root = path.resolve('package/targets/workspace');
+const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
+
+test('Task Retrospective contract/provider/binding保持terminal-only与非门禁边界', () => {
+  const manifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
+  const contract = manifest.contracts.find((item) => item.id === 'buildr.task-retrospective' && item.version === 1);
+  assert.ok(contract);
+  assert.equal(parseCapabilityContract(path.join(root, 'skills', contract.path), contract).id, 'buildr.task-retrospective');
+  assert.deepEqual(manifest.bindings.find((item) => item.capability === 'buildr.task-retrospective'), { capability: 'buildr.task-retrospective', version: 1, provider: 'task-retrospective' });
+  const provider = manifest.skills.find((item) => item.id === 'task-retrospective');
+  assert.deepEqual(provider.provides, [{ capability: 'buildr.task-retrospective', version: 1 }]);
+  const development = manifest.skills.find((item) => item.id === 'task-development');
+  const finish = manifest.skills.find((item) => item.id === 'task-finish');
+  assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
+  assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
+  const skill = read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md');
+  assert.match(skill, /自由Markdown/);
+  assert.match(skill, /数据缺口/);
+  assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
+});
+
+test('active package不再发布Task Asset Review', () => {
+  const productManifest = read('package/manifest.yml');
+  const workspaceManifest = read('package/targets/workspace/skills/manifest.yml');
+  for (const content of [productManifest, workspaceManifest]) {
+    const parsed = YAML.parse(content);
+    const skills = parsed.builtins?.skills || parsed.skills || [];
+    const contracts = parsed.capabilityContracts || parsed.contracts || [];
+    const bindings = parsed.initialSkillBindings || parsed.bindings || [];
+    assert.equal(skills.some((item) => item.id === 'task-asset-review'), false);
+    assert.equal(contracts.some((item) => item.id === 'buildr.task-asset-review'), false);
+    assert.equal(bindings.some((item) => item.capability === 'buildr.task-asset-review'), false);
+    assert.equal(skills.some((item) => (item.requires || []).some((dependency) => dependency.capability === 'buildr.task-asset-review')), false);
+  }
+  const oldSkill = path.resolve('package/targets/workspace/skills/buildr/task-asset-review');
+  const oldContracts = path.resolve('package/targets/workspace/skills/contracts/buildr/task-asset-review');
+  assert.equal(fs.existsSync(oldSkill) && fs.readdirSync(oldSkill, { recursive: true }).some((entry) => fs.statSync(path.join(oldSkill, entry)).isFile()), false);
+  assert.equal(fs.existsSync(oldContracts) && fs.readdirSync(oldContracts, { recursive: true }).some((entry) => fs.statSync(path.join(oldContracts, entry)).isFile()), false);
+});
+
+test('Task Retrospective Application是唯一repository writer caller', () => {
+  const sourceRoot = path.resolve('src');
+  const callers = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else if (file.endsWith('static-validation.mjs')) continue;
+      else if (/\.(?:mjs|js)$/.test(entry.name) && fs.readFileSync(file, 'utf8').includes('.writeTaskRetrospectiveResultPersistence(')) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
+    }
+  };
+  visit(sourceRoot);
+  assert.deepEqual(callers, ['application/task-retrospective/task-retrospective-application.mjs']);
+});

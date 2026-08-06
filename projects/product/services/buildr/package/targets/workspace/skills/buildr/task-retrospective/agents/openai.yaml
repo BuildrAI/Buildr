@@ -1,0 +1,4 @@
+interface:
+  display_name: "任务复盘"
+  short_description: "复盘终态 Task 的 Agent 执行效率并保存当前报告"
+  default_prompt: "Use $task-retrospective to review Agent execution efficiency for a terminal Buildr Task and record the current report."

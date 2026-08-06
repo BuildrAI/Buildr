@@ -219,6 +219,13 @@
 - 避免混用：不是 Receipt、历史日志或状态机；不持久化 revision、current、applicability 或 digest，适用性由读取时目标比较派生。
 - 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
 
+## 任务复盘（Task Retrospective）
+
+- 定义：用户明确要求时，Agent面向terminal Task检查自身执行时间、token消耗、重复尝试、人机协作和Buildr workflow/harness成本，并形成一份自由Markdown效率报告。
+- 适用范围：Workspace SQLite中按Task ID唯一的current Result；重复复盘完整替换，Local App“复盘”Tab只读展示。
+- 避免混用：不是Task Review、Verification、Development或Finish gate，不采集隐藏推理或完整轨迹，不自动写回Rule/Skill/产品资产。旧Task Asset Review与`.buildr/asset-review/`已退出current能力，数据保持inert。
+- 来源：canonical `openspec/specs/task-retrospectives/spec.md`（本 Change converge 时建立）
+
 ## 项目测试（Project Testing）
 
 - 定义：面向 Project / Service 的无状态专业指导，帮助 Agent 根据真实技术栈设计测试框架、开发测试并编排反馈；分别判断测试主要意图、执行边界，以及一次编排的成本约束、选择范围和验证目标。

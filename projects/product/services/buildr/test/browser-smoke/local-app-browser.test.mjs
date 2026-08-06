@@ -422,10 +422,14 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
-    assert.equal(await page.locator('[data-task-tab]').count(), 4);
+    assert.equal(await page.locator('[data-task-tab]').count(), 5);
     await unique(page.getByRole('button', { name: '研发', exact: true }), '任务研发页签');
     await unique(page.getByRole('button', { name: '证据', exact: true }), '任务证据页签');
+    await unique(page.getByRole('button', { name: '复盘', exact: true }), '任务复盘页签');
     await unique(page.getByRole('button', { name: '环境', exact: true }), '任务环境页签');
+    await page.getByRole('button', { name: '复盘', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('尚未复盘'));
+    assert.equal(await page.locator('#task-retrospective-panel button').count(), 1, '复盘页签只提供只读刷新');
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.locator('#task-development-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-development-status').innerText(), '尚未形成研发回执');
@@ -453,6 +457,11 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await page.locator('#task-terminal-note').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-detail-status').innerText(), '已完成');
     assert.equal(await page.locator('#task-active-actions').isHidden(), true);
+    runtime.recordTaskRetrospective(workspaceRoot, 'created-in-app', { reportMarkdown: '# 执行效率\n\n减少重复读取。' });
+    await page.getByRole('button', { name: '复盘', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('减少重复读取'));
+    assert.match(await page.locator('#task-retrospective-content').innerText(), /Agent 执行效率[\s\S]*执行效率[\s\S]*减少重复读取/);
+    assert.equal(await page.locator('#task-retrospective-content h2').innerText(), '执行效率');
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });

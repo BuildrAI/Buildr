@@ -33,10 +33,10 @@ contracts:
     version: 1
     path: contracts/buildr/task-finish/v1.md
     description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
-  - id: buildr.task-asset-review
-    version: 3
-    path: contracts/buildr/task-asset-review/v3.md
-    description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
+  - id: buildr.task-retrospective
+    version: 1
+    path: contracts/buildr/task-retrospective/v1.md
+    description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
   - id: buildr.terminology-governance
     version: 1
     path: contracts/buildr/terminology-governance/v1.md
@@ -74,9 +74,9 @@ bindings:
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
-  - capability: buildr.task-asset-review
-    version: 3
-    provider: task-asset-review
+  - capability: buildr.task-retrospective
+    version: 1
+    provider: task-retrospective
   - capability: buildr.terminology-governance
     version: 1
     provider: terminology-governance
@@ -161,20 +161,20 @@ skills:
     state: installed
     runtimes: [claude-code, codex, cursor, qoder, trae, trae-work, workbuddy]
     runtimePath: capability-adaptation
-  - id: task-asset-review
-    assetIdentity: buildr:skill:task-asset-review
-    sourceIdentity: package:workspace:buildr/task-asset-review
+  - id: task-retrospective
+    assetIdentity: buildr:skill:task-retrospective
+    sourceIdentity: package:workspace:buildr/task-retrospective
     source: buildr
-    path: buildr/task-asset-review
-    description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时持续收集轻量资产信号，用户要求复盘或沉淀，或 Task Development 在正式 handoff 前触发 finalize 时使用。
+    path: buildr/task-retrospective
+    description: 用户明确要求复盘已完成或已放弃的正式 Task，重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率，并把一份当前报告写入 SQLite 时使用；不用于过程 observation、任务审查、门禁或资产自动写回。
     enabled: true
     required: false
     state: installed
     runtimes: [claude-code, codex, cursor, qoder, trae, trae-work, workbuddy]
-    runtimePath: task-asset-review
+    runtimePath: task-retrospective
     provides:
-      - capability: buildr.task-asset-review
-        version: 3
+      - capability: buildr.task-retrospective
+        version: 1
   - id: task-environment
     assetIdentity: buildr:skill:task-environment
     sourceIdentity: package:workspace:buildr/task-environment
@@ -247,9 +247,6 @@ skills:
       - capability: buildr.current-knowledge-maintenance
         version: 2
         mode: required
-      - capability: buildr.task-asset-review
-        version: 3
-        mode: optional
   - id: task-finish
     assetIdentity: buildr:skill:task-finish
     sourceIdentity: package:workspace:buildr/task-finish

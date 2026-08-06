@@ -12,7 +12,7 @@
 - Commands 只声明和诊断外部 CLI，不执行本机安装、升级或登录。
 - 远端 Skill 当前只支持 raw `SKILL.md` 的 `resolved.kind: skill-url`；未声明 integrity 时允许 render，但 doctor 会警告。
 - Agent 没有统一 API 枚举已加载的 admin/system/plugin Skills。adapter 会在 runtime scope 保留 `partial` inventory evidence，但不把不可观测性本身报告为健康 warning；Buildr 只检查自身管理候选的可观测同名项并阻止真实冲突，不盘点无关 runtime Skills，也不宣称已证明 Agent 全局唯一。首版不提供自动 adopt/transfer，外部资产必须重命名、显式移除/禁用或保持现场。
-- `task-asset-review/v3` 依赖 Agent 在非简单任务中加载 Skill 并主动写入精炼 observation；没有 runtime Hook、daemon、watcher、事件总线或自动全量采集。它不读取隐藏推理，也不持久化完整对话、工具日志或逐节点任务轨迹。运行期 observation 只保存在 canonical Workspace 的 untracked `.buildr/asset-review/`，MVP 使用单任务 owner 与原子替换，不提供 CAS、复杂锁、数据库、全局索引或资产改名/拆分/合并历史。
+- `task-retrospective/v1` 只在用户明确要求时复盘 terminal Task，报告聚焦 Agent 执行效率并保存为一份自由 Markdown current Result。它不自动采集耗时/token，不读取隐藏推理、完整对话或工具日志；精确数据不可见时只能标明缺口。首版不提供历史、评分、结构化优化项、全局索引或跨任务聚合。旧 `.buildr/asset-review/` 数据不会迁移、读取或自动清理。
 - Service branch intent 不负责 pull、merge、rebase 或长期分支同步；它只控制首次 clone、metadata 和 drift 诊断。
 - `@buildr-ai/buildr@0.1.0-rc.6` 是当前已发布 RC，`next` 指向该版本；`0.1.0-rc.7` 正在准备，尚未发布。`latest` 仍可能指向历史 prerelease，它不代表稳定版。稳定版 `0.1.0` 尚未发布，公开试用应显式安装 `@next`。`0.1.0-rc.4` 因发布范围错误已弃用。
 - `package check/build` 是维护表面；旧 OpenSpec 阶段命令仅作弃用兼容。普通 workspace 使用 `openspec converge`，状态无法证明时使用只读 `openspec audit`。

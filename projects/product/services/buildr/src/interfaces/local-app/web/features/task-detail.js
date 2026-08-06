@@ -1,3 +1,5 @@
+import { renderMarkdown } from '/markdown.js';
+
 function text(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value;
@@ -120,7 +122,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   root.innerHTML = `
     <section class="detail-page-header"><a class="back-link" href="/tasks" data-route>← 返回任务列表</a><div class="detail-title-row"><div><p class="eyebrow">任务</p><h1 id="task-detail-title">正在读取…</h1><p id="task-detail-intent" class="page-copy"></p></div><span id="task-detail-status" class="lifecycle-badge">—</span></div></section>
     <div id="task-detail-alert" class="alert hidden" role="status"></div>
-    <nav class="detail-tabs" aria-label="任务详情"><button class="detail-tab active" type="button" data-task-tab="overview" aria-selected="true">概览</button><button class="detail-tab" type="button" data-task-tab="development" aria-selected="false">研发</button><button class="detail-tab" type="button" data-task-tab="evidence" aria-selected="false">证据</button><button class="detail-tab" type="button" data-task-tab="environment" aria-selected="false">环境</button></nav>
+    <nav class="detail-tabs" aria-label="任务详情"><button class="detail-tab active" type="button" data-task-tab="overview" aria-selected="true">概览</button><button class="detail-tab" type="button" data-task-tab="development" aria-selected="false">研发</button><button class="detail-tab" type="button" data-task-tab="evidence" aria-selected="false">证据</button><button class="detail-tab" type="button" data-task-tab="retrospective" aria-selected="false">复盘</button><button class="detail-tab" type="button" data-task-tab="environment" aria-selected="false">环境</button></nav>
     <div id="task-overview-panel" data-task-panel="overview">
     <section class="detail-layout">
       <article class="panel"><div class="panel-heading"><div><h2>任务记录（Task Record）</h2><p class="section-copy">只展示顶层任务事实；Parent/Child 表达管理层级，不自动推断状态或专业结果。</p></div></div><dl class="read-facts detail-facts"><div><dt>任务 ID</dt><dd id="task-detail-id">—</dd></div><div><dt>Parent Task</dt><dd id="task-detail-parent">—</dd></div><div><dt>直接 Child Tasks</dt><dd id="task-detail-children">—</dd></div><div><dt>项目范围</dt><dd id="task-detail-projects">—</dd></div><div><dt>服务范围</dt><dd id="task-detail-services">—</dd></div><div><dt>OpenSpec 变更</dt><dd id="task-detail-changes">—</dd></div><div><dt>结果</dt><dd id="task-detail-result">进行中</dd></div><div><dt>创建时间</dt><dd id="task-detail-created">—</dd></div><div><dt>更新时间</dt><dd id="task-detail-updated">—</dd></div></dl></article>
@@ -160,6 +162,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
         <div id="task-verification-loading" class="page-loading hidden"><span class="loader"></span><p>正在读取验证结果…</p></div>
         <div id="task-verification-result" class="review-slot-grid"></div>
       </section>
+    </section>
+    <section id="task-retrospective-panel" class="hidden" data-task-panel="retrospective" aria-live="polite">
+      <article class="panel review-summary"><div class="panel-heading"><div><p class="eyebrow">Agent 执行效率</p><h2>任务复盘（Task Retrospective）</h2><p class="section-copy">只读展示当前复盘；复盘不会影响任务状态、研发交接或收尾。</p></div><button id="task-retrospective-refresh" class="button secondary" type="button">刷新复盘</button></div><div id="task-retrospective-diagnostic" class="environment-diagnostic hidden"></div></article>
+      <div id="task-retrospective-loading" class="page-loading hidden"><span class="loader"></span><p>正在读取复盘…</p></div>
+      <section id="task-retrospective-content" class="panel"></section>
     </section>`;
 
   let current;
@@ -249,11 +256,13 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   const environmentPanel = document.getElementById('task-environment-panel');
   const reviewPanel = document.getElementById('task-review-panel');
   const verificationPanel = document.getElementById('task-verification-panel');
+  const retrospectivePanel = document.getElementById('task-retrospective-panel');
   let activeTab = 'overview';
   let developmentLoading = false;
   let environmentLoading = false;
   let reviewLoading = false;
   let verificationLoading = false;
+  let retrospectiveLoading = false;
 
   function developmentAxisCard(label, status) {
     const card = document.createElement('article'); card.className = `development-axis-card ${status}`;
@@ -642,6 +651,44 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     }
   }
 
+  function renderRetrospective(data) {
+    if (!retrospectivePanel.isConnected) return;
+    const diagnostic = document.getElementById('task-retrospective-diagnostic'); diagnostic.classList.add('hidden'); diagnostic.textContent = '';
+    const container = document.getElementById('task-retrospective-content'); container.replaceChildren();
+    if (!data.slot.present) {
+      container.className = 'empty-state';
+      const title = document.createElement('h2'); title.textContent = '尚未复盘';
+      const copy = document.createElement('p'); copy.textContent = '当前 Task 没有复盘记录；这不会阻止任务完成、交付或清理。';
+      container.append(title, copy);
+      return;
+    }
+    container.className = 'panel retrospective-result';
+    const meta = document.createElement('dl'); meta.className = 'read-facts retrospective-facts';
+    meta.append(
+      fact('关注范围', 'Agent 执行效率'),
+      fact('完成时间', new Date(data.slot.result.completedAt).toLocaleString('zh-CN')),
+    );
+    const report = renderMarkdown(data.slot.result.reportMarkdown, { headingOffset: 1 });
+    const technical = document.createElement('small'); technical.className = 'review-result-path'; technical.textContent = `${data.slot.resultDigest} · ${data.slot.path}`;
+    container.append(meta, report, technical);
+  }
+
+  async function refreshRetrospective() {
+    if (retrospectiveLoading || !retrospectivePanel.isConnected) return;
+    retrospectiveLoading = true;
+    document.getElementById('task-retrospective-loading').classList.remove('hidden');
+    const button = document.getElementById('task-retrospective-refresh'); button.disabled = true;
+    try {
+      renderRetrospective(await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/retrospective`));
+    } catch (error) {
+      const diagnostic = document.getElementById('task-retrospective-diagnostic'); diagnostic.classList.remove('hidden'); diagnostic.textContent = `${error.code || 'task_retrospective_read_failed'}：${error.message}`;
+      document.getElementById('task-retrospective-content').replaceChildren();
+    } finally {
+      retrospectiveLoading = false;
+      if (retrospectivePanel.isConnected) { document.getElementById('task-retrospective-loading').classList.add('hidden'); button.disabled = false; }
+    }
+  }
+
   function selectTab(tab) {
     activeTab = tab;
     for (const button of document.querySelectorAll('[data-task-tab]')) {
@@ -651,6 +698,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     if (tab === 'development') refreshDevelopment();
     if (tab === 'environment') refreshEnvironment();
     if (tab === 'evidence') { refreshReview(); refreshVerification(); }
+    if (tab === 'retrospective') refreshRetrospective();
   }
 
   async function refresh() {
@@ -669,12 +717,14 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
   document.getElementById('task-environment-refresh').addEventListener('click', refreshEnvironment);
   document.getElementById('task-review-refresh').addEventListener('click', refreshReview);
   document.getElementById('task-verification-refresh').addEventListener('click', refreshVerification);
+  document.getElementById('task-retrospective-refresh').addEventListener('click', refreshRetrospective);
   document.getElementById('task-edit-parent').addEventListener('focus', loadParentOptions);
   const refreshOnFocus = () => {
     if (!developmentPanel.isConnected) { window.removeEventListener('focus', refreshOnFocus); return; }
     if (activeTab === 'development') refreshDevelopment();
     if (activeTab === 'environment') refreshEnvironment();
     if (activeTab === 'evidence') { refreshReview(); refreshVerification(); }
+    if (activeTab === 'retrospective') refreshRetrospective();
   };
   window.addEventListener('focus', refreshOnFocus);
 

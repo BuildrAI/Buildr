@@ -141,20 +141,20 @@ async function verifyLifecycle(context) {
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
   assert.equal(fs.existsSync(path.join(runtimeRoot, 'skills', 'complete-runtime-skill', 'assets', 'sample.bin')), false, `${adapterId} must safely remove a source-deleted managed asset`);
 
-  await harness.runAsync(['builtin', 'uninstall', 'task-asset-review', '--target', workspace, '--reason', 'runtime lifecycle fixture']);
+  await harness.runAsync(['builtin', 'uninstall', 'task-retrospective', '--target', workspace, '--reason', 'runtime lifecycle fixture']);
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
-  assert.equal(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-asset-review')), false, `${adapterId} must remove uninstalled task-asset-review`);
+  assert.equal(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-retrospective')), false, `${adapterId} must remove uninstalled task-retrospective`);
   assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md')), `${adapterId} task-finish must remain after review uninstall`);
 
-  await harness.runAsync(['builtin', 'restore', 'task-asset-review', '--target', workspace]);
+  await harness.runAsync(['builtin', 'restore', 'task-retrospective', '--target', workspace]);
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
-  assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-asset-review', 'SKILL.md')), `${adapterId} must restore task-asset-review`);
+  assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-retrospective', 'SKILL.md')), `${adapterId} must restore task-retrospective`);
 
   if (adapterId === 'codex' || adapterId === 'claude-code') {
     const renderedFinish = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
     assert.ok(renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
     assert.ok(renderedFinish.includes('不由 Agent 编排阶段、补 evidence 或设计 recovery'));
-    assert.ok(renderedFinish.includes('asset observation'));
+    assert.ok(renderedFinish.includes('Task Retrospective不是Finish前置条件'));
     assert.ok(renderedFinish.includes('不得手写token、recovery manifest或claimed semantic equivalence'));
     assert.ok(renderedFinish.includes('原Task source/handoff真实stale时才返回'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));
@@ -201,15 +201,15 @@ async function verifyRulesSymlinkGuard(seed) {
 async function verifyGuardedOrphan(seed) {
   const workspace = harness.cloneWorkspace(seed, 'buildr-runtime-guarded-orphan-');
   await harness.runAsync(['render', 'codex', '--scope', '.', '--target', workspace]);
-  const orphanDirectory = path.join(workspace, '.agents', 'skills', 'task-asset-review');
+  const orphanDirectory = path.join(workspace, '.agents', 'skills', 'task-retrospective');
   const userFile = path.join(orphanDirectory, 'user-notes.md');
   fs.writeFileSync(userFile, 'user-owned\n');
-  const result = await harness.runAsync(['builtin', 'uninstall', 'task-asset-review', '--target', workspace, '--reason', 'guarded orphan fixture'], { allowFailure: true });
+  const result = await harness.runAsync(['builtin', 'uninstall', 'task-retrospective', '--target', workspace, '--reason', 'guarded orphan fixture'], { allowFailure: true });
   assert.notEqual(result.status, 0, 'builtin uninstall must stop when a runtime Skill directory contains an unknown user file');
   assert.match(`${result.stdout}\n${result.stderr}`, /非 Buildr 管理的额外文件/);
   assert.equal(fs.readFileSync(userFile, 'utf8'), 'user-owned\n');
   assert.ok(fs.existsSync(path.join(orphanDirectory, 'SKILL.md')), 'conflicted orphan cleanup must preserve managed files too');
-  assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-asset-review', 'SKILL.md')), 'failed uninstall must roll back source asset changes');
+  assert.ok(fs.existsSync(path.join(workspace, 'skills', 'buildr', 'task-retrospective', 'SKILL.md')), 'failed uninstall must roll back source asset changes');
 }
 
 async function verifyRulesOrphanCleanup(seed) {

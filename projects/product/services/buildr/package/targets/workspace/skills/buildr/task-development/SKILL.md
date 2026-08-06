@@ -47,8 +47,6 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 - `blocked`：说明未获接受的风险或仍需处理的问题，不修改Task顶层status；
 - `proceed`：必须绑定current Candidate。Verification not-passed、coverage gap或Completion changes-required时，每项风险都要绑定`verification|completion`、精确Result digest、scope、summary和用户授权source；跳过整个适用gate使用`gate`记录waiver，不伪造Result或混入风险列表。
 
-selected `buildr.task-asset-review@3` provider ready且存在当前Task observation时，在handoff前调用`finalize`；结果为 `awaiting-human` 时停止，不生成Finish handoff，待人工accept/reject。provider缺失或没有observation时保持non-blocking degraded，不创建空observation或让Finish补做判断。
-
 只有 current Candidate、三个 current gates 和合法 proceed decision 同时成立时生成正式 handoff。Application append immutable snapshot；不得因后续 Result 刷新或新 generation 改写旧 snapshot。
 
 ## 交给 Finish

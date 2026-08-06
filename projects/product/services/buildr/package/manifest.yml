@@ -107,11 +107,30 @@ capabilityContracts:
     description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
     path: package/targets/workspace/skills/contracts/buildr/task-finish/v1.md
     target: skills/contracts/buildr/task-finish/v1.md
-  - id: buildr.task-asset-review
-    version: 3
-    description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
-    path: package/targets/workspace/skills/contracts/buildr/task-asset-review/v3.md
-    target: skills/contracts/buildr/task-asset-review/v3.md
+  - id: buildr.task-retrospective
+    version: 1
+    description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
+    path: package/targets/workspace/skills/contracts/buildr/task-retrospective/v1.md
+    target: skills/contracts/buildr/task-retrospective/v1.md
+    replaces:
+      - id: buildr.task-asset-review
+        version: 1
+        target: skills/contracts/buildr/task-asset-review/v1.md
+        integrity: sha256-eb7d2d92f1cea492763a107d5c35ee0fe38406cb8480ade679b5595e6855f856
+        provider: task-asset-review
+        description: 审查任务过程并提出可沉淀工作资产候选。
+      - id: buildr.task-asset-review
+        version: 2
+        target: skills/contracts/buildr/task-asset-review/v2.md
+        integrity: sha256-5b7dc8921816574f8981b10d01ff7dd472330cd5d6e33a70407f51ff8ec65b81
+        provider: task-asset-review
+        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
+      - id: buildr.task-asset-review
+        version: 3
+        target: skills/contracts/buildr/task-asset-review/v3.md
+        integrity: sha256-428ea04129a4701035617c3d35fa944cd1b20e863c4d7f9cafb76ae2a7485804
+        provider: task-asset-review
+        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
   - id: buildr.terminology-governance
     version: 1
     description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
@@ -152,9 +171,9 @@ initialSkillBindings:
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
-  - capability: buildr.task-asset-review
-    version: 3
-    provider: task-asset-review
+  - capability: buildr.task-retrospective
+    version: 1
+    provider: task-retrospective
   - capability: buildr.terminology-governance
     version: 1
     provider: terminology-governance
@@ -221,14 +240,18 @@ builtins:
       description: 用户要求采用内部流程、调整工作方式、修改默认 Skill 行为、创建或替换专业 Skill、卸载可能被编排的 Skill，或 Agent 准备改变 capability contract 及跨 Skill 协作边界时使用。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: task-asset-review
-      path: package/targets/workspace/skills/buildr/task-asset-review
-      target: skills/buildr/task-asset-review
-      description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时持续收集轻量资产信号，用户要求复盘或沉淀，或 Task Development 在正式 handoff 前触发 finalize 时使用。
+    - id: task-retrospective
+      path: package/targets/workspace/skills/buildr/task-retrospective
+      target: skills/buildr/task-retrospective
+      description: 用户明确要求复盘已完成或已放弃的正式 Task，重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率，并把一份当前报告写入 SQLite 时使用；不用于过程 observation、任务审查、门禁或资产自动写回。
       required: false
       provides:
-        - capability: buildr.task-asset-review
-          version: 3
+        - capability: buildr.task-retrospective
+          version: 1
+      replaces:
+        id: task-asset-review
+        target: skills/buildr/task-asset-review
+        runtimePath: task-asset-review
       legacyIntegrities:
         - sha256-e7224325aa5b2d183d9a152f336e4f24699e3fd10ea5505e08d90bd77f09f642
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
@@ -286,9 +309,6 @@ builtins:
         - capability: buildr.current-knowledge-maintenance
           version: 2
           mode: required
-        - capability: buildr.task-asset-review
-          version: 3
-          mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-finish
       path: package/targets/workspace/skills/buildr/task-finish
@@ -434,9 +454,7 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/task-verification/v3.md => skills/contracts/buildr/task-verification/v3.md copy
   - package/targets/workspace/skills/contracts/buildr/task-development/v2.md => skills/contracts/buildr/task-development/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-asset-review/v1.md => skills/contracts/buildr/task-asset-review/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-asset-review/v2.md => skills/contracts/buildr/task-asset-review/v2.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-asset-review/v3.md => skills/contracts/buildr/task-asset-review/v3.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-retrospective/v1.md => skills/contracts/buildr/task-retrospective/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy
@@ -449,11 +467,8 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-review/agents/openai.yaml => skills/buildr/task-review/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/capability-adaptation/SKILL.md => skills/buildr/capability-adaptation/SKILL.md copy
   - package/targets/workspace/skills/buildr/capability-adaptation/agents/openai.yaml => skills/buildr/capability-adaptation/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/task-asset-review/SKILL.md => skills/buildr/task-asset-review/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-asset-review/agents/openai.yaml => skills/buildr/task-asset-review/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/task-asset-review/scripts/observation.mjs => skills/buildr/task-asset-review/scripts/observation.mjs copy
-  - package/targets/workspace/skills/buildr/task-asset-review/templates/observation.md => skills/buildr/task-asset-review/templates/observation.md copy
-  - package/targets/workspace/skills/buildr/task-asset-review/templates/asset-maintenance-record.md => skills/buildr/task-asset-review/templates/asset-maintenance-record.md copy
+  - package/targets/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-environment/SKILL.md => skills/buildr/task-environment/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-environment/agents/openai.yaml => skills/buildr/task-environment/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy

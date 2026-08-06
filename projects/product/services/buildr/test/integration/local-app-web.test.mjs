@@ -126,16 +126,22 @@ test('Local App 提供独立文章入口、只读内容视图和受控本地图�
   assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content/);
 });
 
-test('任务详情使用概览、研发、证据、环境四个一级视图', () => {
+test('任务详情使用概览、研发、证据、复盘、环境五个一级视图', () => {
   const source = fs.readFileSync('src/interfaces/local-app/web/features/task-detail.js', 'utf8');
   const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
-  assert.equal(source.match(/data-task-tab=/g)?.length, 4);
+  assert.equal(source.match(/data-task-tab=/g)?.length, 5);
   assert.match(source, /data-task-tab="overview"[^>]*>概览/);
   assert.match(source, /data-task-tab="development"[^>]*>研发/);
   assert.match(source, /data-task-tab="evidence"[^>]*>证据/);
+  assert.match(source, /data-task-tab="retrospective"[^>]*>复盘/);
   assert.match(source, /data-task-tab="environment"[^>]*>环境/);
   assert.doesNotMatch(source, /data-task-tab="(?:review|verification)"/);
   assert.match(source, /data-task-panel="evidence"/);
+  assert.match(source, /data-task-panel="retrospective"/);
+  assert.match(source, /尚未复盘/);
+  assert.match(source, /renderMarkdown\(data\.slot\.result\.reportMarkdown/);
+  assert.match(source, /\/retrospective`\)\)/);
+  assert.doesNotMatch(source, /openAgentAction\('task-retrospective'/);
   assert.match(source, /if \(tab === 'evidence'\) \{ refreshReview\(\); refreshVerification\(\); \}/);
   assert.match(source, /renderReviewSlot\('planning'/);
   assert.match(source, /renderReviewSlot\('completion'/);

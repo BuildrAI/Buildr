@@ -12,7 +12,7 @@ description: 用户要求“收尾”或交付已有 current formal Development 
 1. 明确正式 Task ID 与 canonical Workspace，通过 `task-environment` 确认 matching ready Environment。
 2. 通过 `task-development` Application inspect current formal handoff；必须能取得精确 handoff、Candidate/generation、Content Target identities 和 proceed decision。
 3. handoff missing/stale、Change 仍未处置、Verification/Completion 不完整或风险未获接受时停止，返回 Task Development；Finish 不补齐这些事实。
-4. handoff必须已闭合资产决定；Finish不读取或finalize asset observation。用户排除push或cleanup而改变交付语义时停止。
+4. Task Retrospective不是Finish前置条件，Finish不读取、生成或等待复盘。用户排除push、install或cleanup而改变交付语义时停止。
 5. Git-backed run使用retained checkout当前符号分支；显式`--target-branch`必须一致，Environment `startPoint`不提供交付authority。remote按显式值、Environment、branch upstream、唯一配置依次解析；缺失或歧义时停止。
 
 ## 执行

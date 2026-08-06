@@ -43,7 +43,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 接入业务、产品线、系统或长期工作单元 | 项目（Project） |
 | 接入代码仓、服务仓或可执行资产 | 服务（Service） |
 | 查看正式 Task、Parent/Child 与各专业当前状态 | `buildr.task-record/v1` 及 Development、Review、Verification 公开 read model；Local App 动态投影 |
-| 非简单 Workspace 任务开始后的轻量资产观察、任务复盘、人工决定和新任务交接 | `buildr.task-asset-review/v3` selected provider；optional 不可用时按 consumer 声明降级 |
+| 明确复盘已完成或已放弃Task的Agent执行效率并保存当前报告 | `buildr.task-retrospective/v1` selected provider；不进入生命周期门禁 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
 | 运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化/更新验证能力声明，或实现任务到达正式验证节点 | `buildr.task-verification/v3` selected provider；不开发测试 |
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |

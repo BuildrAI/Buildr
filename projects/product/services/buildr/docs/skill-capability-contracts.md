@@ -80,7 +80,7 @@ bindings:
 
 `buildr.task-record/v1` 是正式 Task 顶层记录的薄能力边界，默认由 `task-manager` 提供并绑定。它只保证通过产品 create/inspect/update/complete/abandon action 创建或恢复 Task ID、标题、意图、Project/Service scope、Change 引用、至多一个直接 Parent、直接 Children read model 与顶层终态；不得读取或复制 Task Environment、Development、Review、Verification、Git、Finish、独立 Board 或 Retrospective 事实。Parent/Child 只表达协调层级，不传播状态、Result 或专业动作，也不形成通用依赖图。`task-triage` 以 optional dependency 消费该能力：讨论、只读探索和非持久路径保持可用；只有已经对齐、即将首次写入的持久交付在 provider ready 时先创建或恢复 Task Record，provider not-ready 时明确 degraded/blocked，而不让 Agent 直接写 YAML。Local App 是同一 Application 的观察与有限维护客户端，不是 capability provider 或第二份 authority；它不创建正式 Task，普通列表/详情只消费 SQLite stored-state projection。
 
-`buildr.task-development@2` 默认由 `task-development` 提供，并 required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge v2，optional 消费 task-asset-review v3。从proposal、design或直接实现等首个正式研发动作开始，provider通过随包内部driver调用唯一Task Development Application，独占Development Receipt、planning聚合事实、Content Target、verification policy、Task Candidate/generation、decision与不可变研发交接（Development Handoff）；它只引用OpenSpec/Review/Verification的专业identity，不复制正文或Result。产品不注册公共Development CLI或写surface，Local App只消费Application `inspect` read model。OpenSpec是`0..N`可选关联，Git、Node/npm、Product registry和具体测试框架都不进入通用contract。
+`buildr.task-development@2` 默认由 `task-development` 提供，并 required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge v2。从proposal、design或直接实现等首个正式研发动作开始，provider通过随包内部driver调用唯一Task Development Application，独占Development Receipt、planning聚合事实、Content Target、verification policy、Task Candidate/generation、decision与不可变研发交接（Development Handoff）；它只引用OpenSpec/Review/Verification的专业identity，不复制正文或Result。产品不注册公共Development CLI或写surface，Local App只消费Application `inspect` read model。OpenSpec是`0..N`可选关联，Git、Node/npm、Product registry、Task Retrospective和具体测试框架都不进入通用contract。
 
 `buildr.task-environment/v1`默认由`task-environment`提供。它要求正式Task，调用Task Environment Application的公共`prepare/inspect/cleanup`CLI，并消费`buildr.task-environment-result/v1`。Git隔离是可选实现细节：需要时Application调用`buildr.git-worktree-provider/v1`；共享根和非Git环境不依赖该provider。Local App、Preview、Development、Verification与Finish复用同一Application/read model，不直接解析Receipt或写第二份环境状态。
 
@@ -98,7 +98,7 @@ render/sync会在`task-development`和`task-finish`的runtime派生版本中注�
 
 产品中的verification领域服务遵守`buildr.task-verification/v3`：已有Result只有在Content Target与declaration identity都匹配且policy所需fact/coverage gap完整时，才可供Development freeze消费。`not-passed`或coverage gap保持专业事实，只有Development在Candidate/Completion之后取得绑定精确Result digest与scope的用户风险接受才可proceed；Finish不能改写或补齐。transient execution evidence在提炼Result后由对应验证workflow安全清理。
 
-对optional`buildr.task-asset-review/v3`，provider从非简单Workspace任务期间开始维护canonical Workspace的`.buildr/asset-review/inbox/` observation，并独占信号筛选、资格审查、人工决定和新任务交接政策。该运行期目录必须由根`.gitignore`排除；长期维护历史仍只随真实资产修改提交到`asset-maintenance/`。Task Development consumer只在正式handoff前传递Workspace/task identity与最终证据引用并触发finalize；Task Finish不读取observation或触发finalize。v3允许写当前owner的本地observation、迁移匹配的v2用户级草稿，并要求独立任务handoff与类型化完成证据，因此不能用v1/v2 contract替代。
+`buildr.task-retrospective/v1`默认由`task-retrospective`提供。provider只在用户明确要求时复盘terminal Task的Agent执行效率，自由Markdown由Agent生成；Application独占terminal校验、系统时间与Workspace SQLite单一current row的事务替换，Local App只读消费`inspect`。它不依赖完整轨迹或精确telemetry，不创建history、评分、候选或跨任务索引，也不被Task Record、Development、Finish、cleanup或OpenSpec消费为门禁。旧`task-asset-review`contracts/provider/binding已经退役；`.buildr/asset-review/`数据保持inert。
 
 ### 6. 用户替换实现
 

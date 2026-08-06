@@ -391,7 +391,7 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/filesystem/**', 'src/infrastructure/runtime/**',
     'package/manifest.yml', 'package/targets/workspace/manifest.yml',
     'package/targets/workspace/components/**',
-    'package/targets/workspace/skills/buildr/task-asset-review/**',
+    'package/targets/workspace/skills/buildr/task-retrospective/**',
     'test/verification/integrity/**',
   ], schedulingCostMs: 9000, concurrencyClass: 'workspace-heavy' }),
 

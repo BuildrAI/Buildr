@@ -22,7 +22,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 ## 领域与能力模块
 
 - Workspace：Organization/root 范围、identity、资产治理和 runtime 投射入口。
-- Workspace Structured Store：Buildr Local中每个canonical Workspace独立的local-only SQLite，用于索引、关系、聚合和事务；是Task Record、Development、Verification与Planning/Completion Review current records的唯一持久化authority，不属于portable工作资产，也不进入Git或同步。
+- Workspace Structured Store：Buildr Local中每个canonical Workspace独立的local-only SQLite，用于索引、关系、聚合和事务；是Task Record、Development、Verification、Planning/Completion Review与Retrospective current records的唯一持久化authority，不属于portable工作资产，也不进入Git或同步。
 - Project：业务事实、OpenSpec、capability/applicability context 和 Service 关系。
 - Service：职责与代码/资产边界。
 - Work Assets：工作事实与工作方法；Rules、Skills、Commands、Specs 等只是当前示例。
@@ -30,9 +30,10 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task Record：正式 Task 的最小顶层事实；Task Manager 通过同一产品 Application 创建/恢复并维护，Local App 只观察和有限维护已有记录。closed v1 可表达至多一个直接 Parent 与直接 Children，只用于协调层级，不保存任何专业阶段内容。Local App 普通列表/详情使用同一 SQLite authority 的 stored-state query projection，专业 currentness 在具体交互中按需读取。Task专业模块与Task Record进入同一个SQLite但仍保持独立Domain、Application和writer，不共享状态机。
 - Task Environment：正式 Task 的本机执行基础与环境 authority；唯一 Environment Receipt 保存实际执行根、ready/blocked probes、动态资源和 cleanup。它可以组合共享根或 Git worktree provider，但不是 Workspace、Agent runtime 或 Task Record。
 - Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Environment candidate 或 retained Project 解析限定 Change；全局 Change 索引保持 retained-only。
-- Task Review：一个 `buildr.task-review/v1` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。语义 Skill 执行审查，确定性 Application 是唯一 Result writer；目标适用性由读取时比较派生，Task Record、Environment、Verification、Finish 和 Task Asset Review 不复制或改写 Review 事实。
+- Task Review：一个 `buildr.task-review/v1` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。语义 Skill 执行审查，确定性 Application 是唯一 Result writer；目标适用性由读取时比较派生，Task Record、Environment、Verification、Finish 和 Retrospective 不复制或改写 Review 事实。
 - Task Verification：一个 `buildr.task-verification/v3` capability 读取 Project verification declarations，执行已有能力并维护一个 Task-scoped current Result。确定性 Application 独占 Result writer/reader，按 target/declaration identity 派生适用性；它不拥有测试开发、Task 推进、Candidate generation、Review、Environment 或业务验收。
 - Task Development：一个`buildr.task-development@2`capability和唯一Application从首个正式研发动作到Finish handoff维护Development Receipt、planning snapshot、stable Content Target、verification policy、Task Candidate/generation、gate dispositions、推进决定与不可变研发交接。它只通过Task Record、Environment、Review、Verification Applications/read models消费专业事实；Local App仅调用同一Application的只读`inspect`投影。
+- Task Retrospective：一个`buildr.task-retrospective/v1`capability，在Task完成或放弃后由Agent按需分析执行时间、token消耗、重复尝试和人机协作成本。唯一Application按Task ID维护SQLite current Result；Local App只读展示，不参与Task终态、Development、Finish或cleanup门禁。
 - Task Finish：P0.5保留固定五阶段窄adapter，只消费当前研发交接（Development Handoff）；Git adapter区分任务贡献（Task Contribution）与交付基线（Delivery Baseline），只在隔离交付载体（Delivery Carrier）上机械应用并证明delta identity等价。carrier进入retained source后，只按Task Contribution选择`none | render-runtime`：Workspace根Rule、Skill、Component、Command等runtime source变化只render，其他变化none，通用Finish不读取Project/Service配置或执行sync。Workspace专属的交付后维护由Component通过`task-finish@append`组合，不要求通用Skill声明slot，也不进入产品五阶段或Formal Result。目标基线前进不自动使Candidate失效；Change/current knowledge收敛、formal Verification、Completion Review、Candidate generation与风险决定均在进入Finish前完成。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
 - Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联；Parent/Child 只表达 Task 间协调层级，不传播这些专业事实。

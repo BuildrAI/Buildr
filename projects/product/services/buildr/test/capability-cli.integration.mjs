@@ -106,14 +106,13 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   assert.equal(manifest(root).skills.find((item) => item.id === 'git-operations').state, 'installed');
 });
 
-test('CLI 集成验证 optional provider 卸载后 consumer 降级', { concurrency: true }, async (t) => {
+test('CLI 集成验证独立Task Retrospective卸载不影响生命周期consumer', { concurrency: true }, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-optional-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   await run(['init', '--target', root, '--name', 'capability-optional', '--profile', 'personal']);
-  const uninstallReview = await run(['builtin', 'uninstall', 'task-asset-review', '--target', root, '--reason', 'optional fixture']);
-  assert.match(uninstallReview.stdout, /\[optional\].*task-development.*buildr\.task-asset-review@3/);
+  await run(['builtin', 'uninstall', 'task-retrospective', '--target', root, '--reason', 'optional fixture']);
   const report = await doctor(root);
-  assert.equal(consumer(report, '.', 'task-development').readiness, 'degraded');
+  assert.equal(consumer(report, '.', 'task-development').readiness, 'ready');
   assert.equal(consumer(report, '.', 'task-finish').readiness, 'ready');
 });
 

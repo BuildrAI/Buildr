@@ -19,6 +19,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskRecordView: 'buildr.task-record-view/v1',
   taskRecordList: 'buildr.task-record-list/v3',
   taskReviewOperationResult: 'buildr.task-review-operation-result/v1',
+  taskRetrospectiveOperationResult: 'buildr.task-retrospective-operation-result/v1',
   taskVerificationOperationResult: 'buildr.task-verification-operation-result/v1',
   taskFinishRun: 'buildr.task-finish-run/v2',
   taskFinishResult: 'buildr.task-finish-result/v2',

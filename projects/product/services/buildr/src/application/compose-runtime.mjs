@@ -6,6 +6,7 @@ import { registerServiceManifestRepository } from '../infrastructure/filesystem/
 import { registerWorkspaceSqlite } from '../infrastructure/sqlite/workspace-sqlite.mjs';
 import { registerTaskRecordRepository } from '../infrastructure/sqlite/task-record-repository.mjs';
 import { registerTaskReviewRepository } from '../infrastructure/sqlite/task-review-repository.mjs';
+import { registerTaskRetrospectiveRepository } from '../infrastructure/sqlite/task-retrospective-repository.mjs';
 import { registerTaskVerificationRepository } from '../infrastructure/sqlite/task-verification-repository.mjs';
 import { registerTaskDevelopmentRepository } from '../infrastructure/sqlite/task-development-repository.mjs';
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
@@ -35,6 +36,7 @@ import { registerTaskFinishApplication } from './task-finish/task-finish-applica
 import { registerTaskTerminalDeliveryApplication } from './task-terminal-delivery/task-terminal-delivery-application.mjs';
 import { registerTaskRecordApplication } from './task-record/task-record-application.mjs';
 import { registerTaskReviewApplication } from './task-review/task-review-application.mjs';
+import { registerTaskRetrospectiveApplication } from './task-retrospective/task-retrospective-application.mjs';
 import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
 import { registerTaskDevelopmentApplication } from './task-development/task-development-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
@@ -53,6 +55,7 @@ const REGISTRATIONS = [
   registerWorkspaceSqlite,
   registerTaskRecordRepository,
   registerTaskReviewRepository,
+  registerTaskRetrospectiveRepository,
   registerTaskVerificationRepository,
   registerTaskDevelopmentRepository,
   registerTaskEnvironmentRepository,
@@ -80,6 +83,7 @@ const REGISTRATIONS = [
   registerTaskEnvironmentLegacyMigration,
   registerTaskRecordApplication,
   registerTaskReviewApplication,
+  registerTaskRetrospectiveApplication,
   registerTaskVerificationApplication,
   registerTaskDevelopmentApplication,
   registerVerificationApplication,

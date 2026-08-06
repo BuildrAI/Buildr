@@ -301,8 +301,8 @@ Buildr 的 `task-triage` Skill MUST 先核对任务相关事实，再分别判�
 - **THEN** triage MUST NOT 因 `buildr.task-verification/v2` 暂时不可用而阻塞语义和位置判断
 - **AND** 实际验证开始前仍 MUST 由相应 consumer 解析 selected verification provider
 
-### Requirement: 内置任务 Skills 按 capability contract 协作
-Buildr内置任务Skills MUST依赖capability contracts而不是硬编码optional Skill identity。`task-development` MUST required消费Task Record、Task Environment、Task Review、Task Verification与current knowledge capabilities，并 MAY optional消费`buildr.task-asset-review/v3`；`task-triage` MAY optional消费`buildr.task-development/v2`以在首个正式研发动作建立聚合事实；`task-finish` MUST required消费`buildr.task-development@2`与Task Environment，MUST不再消费Task Review、Task Verification、current knowledge或task-asset-review authority。
+### Requirement: 内置任务 Skills 只按 current capability contract 协作
+Buildr内置任务Skills MUST依赖capability contracts而不是硬编码optional Skill identity。`task-development` MUST required消费Task Record、Task Environment、Task Review、Task Verification与current knowledge capabilities；`task-triage` MAY optional消费`buildr.task-development/v2`以在首个正式研发动作建立聚合事实；`task-finish` MUST required消费`buildr.task-development@2`与Task Environment。Task Development与Task Finish MUST NOT消费Task Retrospective或已退役task-asset-review authority。
 
 #### Scenario: Task Development使用required providers
 - **WHEN** Buildr声明`task-development` builtin
@@ -314,30 +314,20 @@ Buildr内置任务Skills MUST依赖capability contracts而不是硬编码optiona
 - **THEN** routing MUST调用selected `buildr.task-development/v2` provider的begin action
 - **AND** provider缺失或blocked MUST在内容写入前fail closed，不得形成第二个Development writer
 
-#### Scenario: Task Development使用optional asset review
-- **WHEN** selected `buildr.task-asset-review/v3` provider ready且Task存在observation
-- **THEN** Development MUST在形成Finish handoff前消费其finalize result
-- **AND** provider缺失或没有observation MUST保持non-blocking degraded，不创建空observation
-
 #### Scenario: Task Finish消费Development
 - **WHEN** Buildr声明`task-finish` builtin
 - **THEN** manifest MUST required依赖`buildr.task-development@2`与`buildr.task-environment/v1`
-- **AND** MUST删除旧Task Review、Task Verification、current knowledge与task-asset-review dependencies
+- **AND** MUST不依赖Task Review、Task Verification、current knowledge、Task Retrospective或task-asset-review
 
 #### Scenario: provider替换
 - **WHEN** compatible provider替换任一默认Skill
 - **THEN** consumer MUST按capability identity与selected binding继续工作
 - **AND** MUST NOT按Skill ID、目录或store path硬编码调用
 
-#### Scenario: Task Finish 使用 optional v2 provider
-- **WHEN** 旧runtime manifest仍把`buildr.task-asset-review/v2`声明为Task Finish optional dependency
-- **THEN** P0.5 package切换 MUST从Task Finish移除该binding，并只允许Task Development optional消费`buildr.task-asset-review/v3`
-- **AND** runtime MUST NOT同时保留旧Finish finalize route与新Development authority
-
-#### Scenario: Optional provider 缺失
-- **WHEN** Task Development的optional`buildr.task-asset-review/v3` provider不可用
-- **THEN** Development readiness MUST保持non-blocking degraded
-- **AND** 其他required providers与没有observation的正常handoff MUST不受影响
+#### Scenario: 没有复盘不影响研发交接
+- **WHEN** terminal Task 尚无Task Retrospective Result
+- **THEN** Development与Finish applicability MUST保持不变
+- **AND** MUST NOT创建空复盘或等待复盘完成
 
 ### Requirement: OpenSpec workflow 必须通过能力契约组合当前认知维护
 Buildr MUST通过capability dependencies和OpenSpec Component-owned Skill Contributions将当前认知维护组合进外部OpenSpec workflow，并 MUST保持external `openspec-*` Skill源可独立升级。OpenSpec planning/apply/sync与Task Development MUST消费current knowledge capability；Task Finish MUST不再解释或收敛knowledge impact。
@@ -562,19 +552,6 @@ Task Finish workflow MUST把current Development handoff作为前置条件。只�
 - **THEN** Agent MUST结束当前Finish并请求或使用已有授权进入Development workflow
 - **AND** MUST NOT在当前Finish run修改原Task内容、接受风险或重跑Formal Verification
 
-### Requirement: 任务资产审查不得扩展 Finish 执行器
-Task asset review MUST保持独立Skill lifecycle。存在observation且finalize需要人工accept/reject时，Task Development MUST在形成Finish handoff前完成该决定；没有observation或provider确定性discard时 MUST不增加Development/Finish空action。Task Finish product run MUST NOT读取asset observation、隐藏推理或判断长期资产候选。
-
-#### Scenario: 没有任务资产 observation
-- **WHEN** Development准备handoff且当前Task没有observation
-- **THEN** Development MUST继续既有gate判断
-- **AND** MUST NOT创建空observation或asset-review checkpoint
-
-#### Scenario: Observation 等待人工决定
-- **WHEN** task-asset-review finalize返回`awaiting-human`
-- **THEN** Development MUST在handoff前等待accept/reject
-- **AND** 决定完成后才 MAY形成current handoff
-
 ### Requirement: Task Finish handoff 必须保持 Git 单项能力边界
 Task Finish 的 retained metadata-only handoff MUST 只在该分支把 optional `buildr.git-operations/v1` dependency 提升为 required，并 MUST 让 selected provider 保持精确 repository、operation、path/ref、授权、完整 push range 与最小 Result。完整“收尾”意图和 commit/push 顺序仍由 Task Finish 解释；Git Operations MUST NOT 接管 OpenSpec、验证政策、retained sync 或 task cleanup。
 
@@ -795,13 +772,13 @@ Planning与Completion MUST继续是两个可选current Result槽位；Task Recor
 - **THEN** Development MUST单独判定gate不满足
 - **AND** Task Review MUST NOT把policy mismatch持久化为target stale
 
-### Requirement: Task Review 与 Task Asset Review 必须保持独立 authority
-`task-review` MUST 只拥有当前方案/完成目标的 Review Result；`task-asset-review` MUST 继续拥有长期资产 observation、资格审查、人工 accept/reject 和独立任务 handoff。两个 Skill MUST NOT 互写 store、互相别名或因名称相似共享 capability identity。
+### Requirement: Task Review 与 Task Retrospective 必须保持独立 authority
+`task-review` MUST只拥有当前方案/完成目标的Review Result；`task-retrospective` MUST只拥有terminal Task的执行效率复盘current Result。两个Skill MUST NOT互写store、互相别名或形成lifecycle dependency。
 
-#### Scenario: Task 同时产生 Review Result 与资产 observation
-- **WHEN** 同一正式 Task 在研发中完成 Planning/Completion Review，且另有长期资产 observation
-- **THEN** 两类记录 MUST 由各自 provider 独立维护
-- **AND** Task Finish 的 asset observation finalize MUST NOT 读取、替换或批准 Task Review Result
+#### Scenario: Task 同时存在 Review 与 Retrospective
+- **WHEN** 同一正式Task已有Planning/Completion Review并在terminal后形成Retrospective
+- **THEN** 两类Result MUST由各自provider独立维护
+- **AND** Development与Finish MUST不读取、替换或等待Retrospective Result
 
 ### Requirement: task-verification Skill 必须作为语义验证入口
 Buildr MUST交付`task-verification` Workspace Skill并通过selected `buildr.task-verification/v3` provider工作。Skill MUST理解Task Intent与Development提供的stable Content Target，读取Task scope内Project v2 declarations、选择适用已有能力、取得transient execution evidence、提炼current facts，并只在完整结论形成后调用Task Verification Application record。

@@ -29,7 +29,7 @@
 | 父任务 / 子任务 | Parent Task / Child Task | Task Record 内的直接协调层级；一个 Task 至多一个 Parent，可有多个直接 Children |
 | 协调任务 | Coordinating Task | 通过 Parent/Child 组织直接子 Task 的普通 Task；没有独立状态机或自动传播 |
 | 结构化任务看板 | Structured Task Board | 仅作为后续评估方向；只有 Parent/Child 无法覆盖真实协调需求时才考虑独立 Domain |
-| 任务复盘 | Task Retrospective | 任务终态后的非阻塞复盘和未来改进候选 |
+| 任务复盘 | Task Retrospective | 任务终态后的非阻塞 Agent 执行效率复盘；后续可扩展到更广的改进复盘 |
 | 工作区本地数据存储 | Workspace Local Data Store / `.buildr/` | Workspace File Store 与本机 SQLite Workspace Structured Store 的总边界；源码 clean、发布和本地数据分别处理 |
 | 交付目标前进 | Target Advancement | Candidate 交付期间目标分支或目标位置出现了更新；不是 Task Environment 自动更新事件 |
 | 生命周期权威 | lifecycle authority | 对某类生命周期事实拥有唯一写入和最终解释责任的模块 |
@@ -73,11 +73,11 @@ flowchart TB
     V["Task Verification"] <--> D
     F -. "执行具体 Git Operation" .-> G["Git Operations<br/>Git 行为约定"]
     G -. "Git evidence" .-> F
-    A["Task Retrospective"] -. "读取 Task ID 与各模块事实" .-> X
+    A["Task Retrospective"] -. "终态后读取可见执行事实" .-> X
     P["Coordinating Task<br/>Parent / Children"] <--> M
 ```
 
-主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 只接收 Task Record 内容，Local App 则在同一 Task 详情中组合各模块的只读投影。当前一级视图固定为“概览、研发、证据、环境”：研发调用 Task Development reader，证据连续展示 Review 与 Verification，环境调用 Task Environment reader；这些专业内容都不写入 Task Record。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
+主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 只接收 Task Record 内容，Local App 则在同一 Task 详情中组合各模块的只读投影。当前已交付的一级视图为“概览、研发、证据、环境”：研发调用 Task Development reader，证据连续展示 Review 与 Verification，环境调用 Task Environment reader；P2.1 随任务复盘增加只读“复盘”Tab。这些专业内容都不写入 Task Record。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
 
 ## 系统基础
 
@@ -105,8 +105,8 @@ flowchart TB
 | Git Operations | 定义单项 Git 行为、安全默认值、硬边界和最小 evidence；不负责流程编排 |
 | Parent Task | 让一个普通 Task 管理直接子 Task；只表达协调层级，不传播状态、结果或专业动作 |
 | Structured Task Board 评估 | Parent/Child 无法覆盖非 Task 规划项、多协调者成员关系、显式依赖、稳定排序/分组或跨 Task 决策记录时，再评估独立 Domain |
-| Task Retrospective | 在任务中按高价值线索持续观察，并在任务终态后形成面向未来工作的复盘结论与改进候选 |
-| Local App | P0.1 提供 Task 最小列表、详情和受控管理；P0.2/P0.3/P0.4 交付环境、审查与验证 reader；P0.5a 将一级视图收敛为“概览、研发、证据、环境”并增加 Development 只读投影；Parent Task Change 增加层级展示、导航和维护；后续按真实缺口补充专业投影 |
+| Task Retrospective | 第一版在任务终态后由 Agent 对可见执行过程作一次非阻塞的效率复盘，并将自由文本报告保存为 SQLite current record；后续再按真实价值扩展 |
+| Local App | P0.1 提供 Task 最小列表、详情和受控管理；P0.2/P0.3/P0.4 交付环境、审查与验证 reader；P0.5a 将一级视图收敛为“概览、研发、证据、环境”并增加 Development 只读投影；Parent Task Change 增加层级展示、导航和维护；P2.1 增加任务复盘只读 Tab；后续按真实缺口补充专业投影 |
 
 ## Workspace Foundation
 
@@ -281,7 +281,7 @@ Receipt 不保存 Agent session 上下文、任务计划、开发进度、完整
 - Task Environment 按 receipt 编排清理，各资源 provider 执行具体动作。用户明确放弃 Task、且结束编排者已经处置需要保留的交付事实与关联 Change 后，可以不经过 Finish 直接清理该 Task 独占的环境，包括 dirty worktree，不再要求二次确认。
 - 用户明确放弃 Task 本身构成清理 Task-owned 改动的授权。只有 Environment Receipt、Git evidence 或其他可靠事实能证明归属时，才可以清理共享执行根中的对应改动；没有 Git 时尤其不能假设能自动回滚源码。来源不明、混有其他 Task 改动或 ownership 无法证明时返回 `blocked`，不得扩大范围全部丢弃。
 - 清理成功后只在原 Environment Receipt 中保留最小清理结果。
-- Task Environment 不触发、不写入也不清理 Task Retrospective。它只返回环境处置事实；正常完成或放弃路径的结束编排者在 Task 到达稳定终态后另行请求最终复盘。
+- Task Environment 不触发、不写入也不清理 Task Retrospective。它只返回环境处置事实；终态后的结束 Agent 可以按任务复盘 Skill 请求一次非阻塞效率复盘，遗漏或失败均不影响终态。
 
 ### 建设形态
 
@@ -379,7 +379,7 @@ HTTP/Web 层只接收已登记的 `workspaceId` 与真实 Task ID，拒绝 `targ
 
 ### P0.5a Local App 研发与证据视图
 
-P0.5a 不增加第五个模块页签，而把任务详情一级信息架构固定为“概览、研发、证据、环境”。“研发”通过 Workspace-scoped、no-store 的只读 API 调用 Task Development Application `inspect`，展示 `missing / developing / candidate-current / handoff-current / unknown` 的中文结论、最小输入适用性、候选代次、三个门禁、保存的推进决定、风险和最近一次研发交接；页面不打开SQLite或读取旧YAML，不重新推导 currentness，也不提供 Development writer。
+P0.5a 当时不增加第五个模块页签，而将已交付的信息架构收敛为“概览、研发、证据、环境”。“研发”通过 Workspace-scoped、no-store 的只读 API 调用 Task Development Application `inspect`，展示 `missing / developing / candidate-current / handoff-current / unknown` 的中文结论、最小输入适用性、候选代次、三个门禁、保存的推进决定、风险和最近一次研发交接；P2.1 再以同样的只读边界加入“复盘”Tab。页面不打开SQLite或读取旧YAML，不重新推导 currentness，也不提供 Development writer。
 
 “证据”不增加二级导航，连续放置审查结果与验证结果两个独立区块；打开视图时分别调用 Task Review 与 Task Verification reader，任一 loading/diagnostic 不隐藏另一方。Environment 已清理或当前观察失败时，Development reader 返回 `unknown`；页面保留已保存候选、决定与最近交接，并明确说明历史事实当前无法实时复核，不把它显示为 current、stale 或 failed。首版不展示日志、diff、完整 Result、全部交接历史、后台轮询或写操作。
 
@@ -400,20 +400,18 @@ Task Record 与后续专业记录都属于 canonical Workspace，但每类记录
 │       │   ├── planning.*
 │       │   └── completion.*
 │       └── finish.*
-└── retrospectives/
-    └── <task-id>.*
 ```
 
-Task Record Application只维护SQLite中的Task表及规范化关系表；Task Manager/CLI与Local App只调用Application。Task Development、Verification与Review分别通过自己的Application和SQLite repository独占专业current records；进入同一个数据库不等于合并Domain、writer或状态机。Task Environment、Finish、Board与Retrospective继续独占自己的专业记录。linked task worktree不是Structured Store authority，不能创建或修改canonical Workspace数据库。
+Task Record Application只维护SQLite中的Task表及规范化关系表；Task Manager/CLI与Local App只调用Application。Task Development、Verification、Review与Retrospective分别通过自己的Application和SQLite repository独占专业current records；进入同一个数据库不等于合并Domain、writer或状态机。Task Environment、Finish与Board继续独占自己的专业记录。linked task worktree不是Structured Store authority，不能创建或修改canonical Workspace数据库。
 
-`.buildr/`作为**Workspace Local Data Store**处理：Structured Store承载Task Record及Development、Verification、Planning/Completion Review全部current records；File Store只继续承载Environment、Finish、日志等各owner明确保留的本机运行/交付事实。`.buildr/local/`整体忽略且不发布、不同步；Task current records不进入Git。未来组织协作由Buildr Server/Cloud承担，本任务不设计其schema、API或同步协议。
+`.buildr/`作为**Workspace Local Data Store**处理：Structured Store承载Task Record及Development、Verification、Planning/Completion Review、Retrospective全部current records；File Store只继续承载Environment、Finish、日志等各owner明确保留的本机运行/交付事实。`.buildr/local/`整体忽略且不发布、不同步；Task current records不进入Git。未来组织协作由Buildr Server/Cloud承担，本任务不设计其schema、API或同步协议。
 
 ### 首版 SQLite 写入纪律
 
 第一版只保留低成本、确定性的文件安全：
 
 - closed schema 和字段级校验由产品实现；
-- Task Record repository只拥有`tasks`及其Project、Service、Change关系表；三个专业repositories只拥有各自current tables，业务判断不下沉到SQL；
+- Task Record repository只拥有`tasks`及其Project、Service、Change关系表；各专业repository只拥有各自current tables，业务判断不下沉到SQL；
 - schema 由有序、带 checksum 的 SQL migration assets 建立；版本缺口、漂移、未知更新版本或完整性失败均 fail closed；
 - 每个 create/update/terminal mutation 在单个 SQLite transaction 中完成，foreign keys 和 closed domain constraints 同时生效；
 - Local App mutation 以不持久化的 `recordDigest` 拒绝已经陈旧的页面；
@@ -545,7 +543,7 @@ Formal Verification 与 Completion Review 的顺序固定：前者绑定稳定 C
 
 每个检查点都必须如实评估。Task Verification 只记录能力事实、coverage gaps 和 `passed / not-passed`；Task Development 独占 `proceed / blocked` 与风险接受。`not-passed`、coverage gap 或 Completion `changes-required` 不禁止冻结 Candidate，但会阻止 `proceed`，除非用户接受当前 Task、精确 gate Result digest 与明确 scope 的风险；旧 Result 或泛化授权不能复用。
 
-Task Retrospective 不属于 Development 检查点或 Finish handoff 条件。Development 只在出现具体高价值线索时按需调用它记录事实，不为每个 Task 预先加载完整复盘流程。
+Task Retrospective 不属于 Development 检查点或 Finish handoff 条件。第一版不在任务过程中记录 observation；只在终态后按需进行一次非阻塞效率复盘。
 
 ### Candidate 与 Finish handoff
 
@@ -579,7 +577,7 @@ Task Finish 发现 carrier 不等价、目标前进或任何 handoff 前提变�
 
 ### 建设形态
 
-P0.5 已实现 **Skill + capability contract + 唯一 Application + internal driver**。`task-development` required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge，optional 消费 Task Asset Review；不注册公共 Development CLI。P0.5a 只增加 Application `inspect` 的 Local App read surface，并把任务详情收敛为四个一级视图；仍不提供写 API、浏览器 mutation，也不建设 Task Core、planner、通用状态机、独立数据存储、history、revision/CAS 或锁协议。
+P0.5 已实现 **Skill + capability contract + 唯一 Application + internal driver**。`task-development` required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge，不消费 Task Retrospective；不注册公共 Development CLI。P0.5a 增加 Application `inspect` 的 Local App read surface；P2.1 再把任务详情扩展为“概览、研发、证据、复盘、环境”五个一级视图。仍不提供 Development 写 API、浏览器 mutation，也不建设 Task Core、planner、通用状态机、独立数据存储、history、revision/CAS 或锁协议。
 
 ## Task Finish
 
@@ -819,85 +817,35 @@ Application 在 canonical Workspace 写 current Result 后，retained source cle
 
 P0.4 保持 **Project declaration + transient execution + current Task Result + 一个 Application authority**。同一 Change 完成旧 v1 声明、固定 assurance、旧 run schema、旧 plan/DAG lifecycle、旧 Finish summary 输入与重复文档的迁移或删除，不留下双 writer、双 schema 或兼容 mutation path。
 
-## Task Retrospective
+## 任务复盘（Task Retrospective）
 
 ### 定位
 
-> Task Retrospective（任务复盘）不是再次检查任务做得对不对，而是基于本次 Task 的真实事实，识别能让未来同类工作更正确、更高效或更安全的改进。
+> 第一版 Task Retrospective（任务复盘）只帮助 Agent 在任务终态后识别本次执行中的主要时间和 Token 消耗点，并提出下一次可能更快的做法。
 
-Task Review 与 Task Verification 面向当前方案、实现和 Candidate；Task Retrospective 面向任务暴露出的未来改进。它不是 Development 检查点，不参与 Candidate handoff，也不自动修改 Rule、Skill、Project 或产品能力。复盘是否执行、是否成功写入、是否形成候选本身不构成 Task Finish、Task 终态或 Task Environment 清理的门禁；复盘意外暴露当前交付问题时，仍按下文的当前 Task 问题边界处理。
+Task Review 与 Task Verification 面向当前方案、实现和 Candidate；Task Retrospective 不重新判断任务是否正确，也不参与 Candidate handoff。它不自动修改 Rule、Skill、Project 或产品能力；是否执行、是否成功写入都不构成 Task Finish、Task 终态或 Task Environment cleanup 的门禁。
 
-现有 Task Asset Review 只作为迁移参考。新能力不沿用“只审查工作资产”的范围，也不沿用 observation inbox、固定候选类型、`awaiting-human`、强制 accept / reject、独立任务 handoff 或 Finish cleanup 前门禁。
+### 第一版：Agent 执行效率复盘
 
-### 持续观察与最终扫描
+只有已经终态的正式 Task 可以复盘，包括正常交付、`completed + no-change` 和最终放弃。结束任务的 Agent 按需加载 `task-retrospective`，在自己的可见任务上下文、工具调用和可读取的 Task facts 范围内作一次自由复盘；它不在任务过程中维护 observation，也不记录或回放完整对话、工具日志、隐藏推理或 prompt。
 
-Task Retrospective 延迟加载，不在每个 Task 开始时预先加载完整 Skill：
+复盘只关心本次执行效率，优先找出一到三个最重要的点：重复读取、搜索、验证或重试；大而无效的工具输出；不必要的等待或人机接力；本可由 Buildr 确定性完成、却反复交给 Agent 推理的步骤；以及明显值得保留的高效做法。Agent 自由组织判断，不使用固定检查表、候选类型、评分或必须得出结论的模板。
 
-- 任务过程中出现具体高价值线索时，Agent 首次加载 Skill，以精炼事实和最小 evidence 记录线索；当时不强制分类或作最终结论。
-- 用户明确要求复盘时，Agent 加载 Skill 处理当前 Task 已有事实。
-- Task 完成或放弃后，由结束 Task 的 Agent 或上层编排者加载 Skill 执行一次最终扫描；存在 Environment Receipt 时，必须先完成适用环境处置或明确保留。cleanup blocked 等非终态不触发最终扫描。
-- 此前没有过程线索，也仍执行最终扫描；确实没有候选时形成 `no-candidate`，不能因为没有提前记录就声称没有复盘价值。
+Token、调用次数和耗时只能使用 Agent host 或 Task facts 实际可见的数值。数值不可得时，报告必须说明数据缺口，可以依据可见的重复、输出量或阶段耗时判断热点，但不得猜测精确 Token 或把 Task 的完整墙钟跨度当作 Agent 实际执行时间。
 
-最终扫描只读取 Task Intent、实际 Project / Service 范围、最终改动、Receipts、Review / Verification evidence、用户纠正、返工和真实执行摩擦等高信息量事实，不重放完整历史。用户可以明确要求跳过最终扫描；跳过、Skill 不可用或记录失败都必须如实报告，不能伪造 `no-candidate`，也不改变 Task 终态。
+### SQLite 记录与 Local App
 
-用户明确跳过最终扫描时，已有 Task ID 仍保留一份最小记录，说明未执行及对应用户决定；它不是 `no-candidate` 结论。
+Task Retrospective Application 是这一类事实的唯一 writer/reader。在 canonical Workspace SQLite 中按 Task ID 保存至多一行 `task_retrospective_current`：`taskId`、固定的第一版范围 `agent-execution-efficiency`、自由文本 `reportMarkdown` 和完成时间。重跑时整值替换该行，不保存 history、候选状态、评分、全局索引或跨 Task 聚合；没有记录只表示尚未复盘。
 
-只有已经存在 Task ID 的正式 Task 才默认形成复盘记录，包括正常交付、`completed + no-change` 和最终放弃的 Task。纯讨论、只读探索、单次测试、临时启动服务、调用 API、简单问答或其他没有 Task ID 的互动不创建记录，Task Retrospective 也不为复盘单独补建 Task ID。
+`task-retrospective` Skill 负责让 Agent 形成报告并调用该 Application，Task Record 不复制摘要或状态。Local App 在任务详情增加只读“复盘”Tab：存在记录时渲染完整报告，报告建议清楚说明效率结论、主要消耗点、可见依据、优化方向和数据缺口；没有记录时只显示“尚未复盘”。页面不生成、编辑、关闭或自动转化任何改进事项。
 
-### 复盘视角
+### 旧能力处置
 
-第一版提供四个非封闭、可重叠的观察视角，帮助 Agent 根据 Task 事实动态选择，不要求逐项检查或填写固定分类：
+P2.1 删除 `task-asset-review` 及其 observation、finalize、accept/reject、handoff、contract、binding、helper、template、mutation tests 和所有 consumer routing。Development 不再在 handoff 前调用它，Finish、cleanup 与 Task terminal 也不等待复盘。既有 `.buildr/asset-review/` observation 暂时原样保留：不迁移、不读取、不删除。
 
-| 视角 | 主要观察内容 |
-|---|---|
-| Project / Service 演进 | 产品能力、领域知识、架构、服务边界、职责归属和长期事实 |
-| 工程基础 | 代码规范、模板、公共实现、测试、验证声明、构建和工程工具 |
-| 工作资产与任务机制 | Rules、Skills、capability contracts，以及 Triage、Environment、Development、Review、Verification、Finish 等任务机制 |
-| Agent 协作与执行效率 | 人与 Agent 的对齐成本，Buildr 提供上下文和默认编排的效率，以及重复读取、推理、调用、等待、返工、时间和 Token 消耗 |
+### 后续演进方向
 
-一个发现可以同时来自多个视角，最终改进落点也不受视角限制。正向有效做法可以成为复用候选；已有做法可以被简化、替换或删除。第一版不把候选硬分为“长期改进”与“时效性适配”，也不要求预测有效期或下线时间；只忠于当前证据，明显依赖特定 Agent、模型或工具行为时说明前提，后续再根据新事实修订或移除。
-
-### 线索与改进候选
-
-任务过程记录的是待复盘线索，只有最终扫描后才形成改进候选。候选至少需要同时满足：
-
-- 有具体事实和 evidence，不是泛泛感想；
-- 对未来同类工作有复用价值，或揭示了重要的系统性风险；
-- 能说明建议作用域和可执行的下一步；
-- 没有被当前 Task 或既有事实完整处理和覆盖。
-
-候选不使用 `rule / skill / capability-contract / product-followup` 等固定类型。Agent 根据实际事实描述问题或机会、未来价值、建议作用域和动作；以后出现稳定聚合需求时再评估结构化分类。
-
-形成新候选前，Agent 可以扫描现有 `open` 候选。明确属于同一作用域和同一根本问题时，本次复盘保留新增 evidence 并引用已有候选，不再创建第二个独立候选；无法确定时分别保留，不能猜测合并。已经 `closed` 的问题再次出现时，创建新的 `open` 候选并关联旧记录。
-
-### 当前 Task 问题边界
-
-Task Retrospective 不主动重复 Completion Review，但如果复盘意外发现当前 Task 实际没有满足 Task Intent，必须先处理当前交付问题，不能把它包装成未来改进候选：
-
-- Task 终态前已经发现时，按当前生命周期边界交给 Development、Review 或 Verification 处理；Candidate 已 handoff 给 Finish 后，普通授权必须先取得用户同意才能返回 Development 形成新 Candidate，Goal 级持续授权才可以在原 Task Intent 内自主循环；
-- Task 终态后才发现时，立即向用户披露具体问题、evidence 和影响；原 Task 不重新打开，需要修改时创建引用原 Task 的 correction / continuation Task，用户也可以决定暂不处理。Task Retrospective 不自行改写完成事实。
-
-当前问题披露后，Agent 再基于 evidence 判断是否同时存在 Completion Review 覆盖缺口、Agent 能力限制或任务机制问题。原因无法确定时记录未知，不能简单归因于“Review 有缺陷”或“Agent 不够智能”。
-
-### 复盘记录
-
-Task Retrospective 使用 Task ID 在 canonical Workspace 维护自己的记录：
-
-```text
-.buildr/retrospectives/<task-id>.*
-```
-
-Task Retrospective Skill 是唯一 writer；其他模块只提供事实或读取结果。Task Record v1 不保存 Retrospective reference 或摘要，Task Retrospective 也不修改 Task 顶层状态。Local App 以后通过 Task ID 聚合展示。
-
-### 候选处理与用户呈现
-
-任务结束回复只提供简短复盘结果：没有候选时一句话说明；存在候选时列出标题、核心依据、建议方向和复盘文件位置。复盘不自动创建新 Task、不修改 Rule/Skill/产品能力，也不成为 Finish、cleanup 或 Task 终态门禁。
-
-### 建设形态
-
-P2.1 建设 `task-retrospective` Skill 与最小 Workspace 记录，并在同一个 Change 中接管观察 authority、处置仍需保留的旧 observation、移除 Asset Review 对 Finish/cleanup 的门禁及旧 mutation/routing/binding。不是先并行保留两套 writer，再到后续批量清退。
-
-Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不恢复Git metadata publication或本机SQLite同步。
+第一版的自由效率报告是观察飞轮的起点，不预先限制 Agent 的判断。后续只有在真实报告反复暴露同类需求时，再逐步考虑：任务过程中的轻量线索、业务/工程/工作方法/人机协作四个可交叉维度、结构化改进候选、跨 Task 去重与效果追踪。届时仍由人决定重要业务判断和授权，Buildr 负责确定性记录、边界和投影；不恢复 Finish 门禁，也不建设完整 Agent transcript、通用监控平台或本机多机同步。
 
 ## 实施与验证顺序
 
@@ -934,7 +882,7 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 | 自举主 Workspace 的正式 runtime 激活只能发生在Formal Finish成功且内容进入retained source之后 | P0.8 Task Finish / Workspace Foundation | Common Finish只执行通用render与inventory Doctor；self-bootstrap Component随后执行sync、产品安装与selected-Agent最终Doctor |
 | target advancement 不自动更新 Environment，也不自动使 Candidate stale；Finish 在隔离 carrier deterministic reuse、Delivery Adaptation 或 exact-token target-race resume，不在原 Task worktree rebase、重验或生成 Candidate | P0.5 Task Development / Candidate、P0.8 Task Finish | 已固定 applicability 与交付基线分层；只有 Development Application 报告真实 stale 才返回 Development |
 | Local App 在 Task 详情展示当前机器 Environment 时调用 Environment Application，不复制进 Task Record | P0.2 Task Environment | 已交付只读“环境”视图、Workspace-scoped API 与本机不可用状态 |
-| Local App 通过各模块 reader 组合 Development、Review 与 Verification，不复制进 Task Record | P0.5a Local App 专业投影 | 固定“概览、研发、证据、环境”四个一级视图；Development 保持只读，Review/Verification 在证据视图独立加载 |
+| Local App 通过各模块 reader 组合 Development、Review 与 Verification，不复制进 Task Record | P0.5a Local App 专业投影 | 已交付“概览、研发、证据、环境”四个一级视图；P2.1 以同一只读边界新增“复盘”Tab，Development 保持只读，Review/Verification 在证据视图独立加载 |
 | Local App 展示 Parent/Children 时调用 Task Record Application 的直接关系 read model，不在 Web 层推导或复制 | Parent Task / Local App | 延续既有四视图边界；关系编辑仍复用 Task writer，不重建专业 reader/API |
 
 ### 开发交付跟踪
@@ -947,19 +895,16 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 | P0.1a | Parent Task `introduce-parent-task` | 已交付并生效（2026-08-05） | SQLite Task Store 已提供单 Parent/多直接 Child、循环保护、Task Manager/CLI/Local App 双向查看与维护；协调模型已切换为普通 Task + Parent/Child + dynamic projection | 未创建独立 Board Domain，未迁移旧 Board 数据，不传播 Parent/Child 生命周期 |
 | P0.1b | Local App Task 轻量查询 `simplify-and-optimize-local-app-task-list` | 已收敛（2026-08-05） | Local App 列表/详情首屏改为固定批量 SQLite stored-state projection，加入封闭过滤、派生直接 Child 数量、竞态防护和 Parent 候选延迟读取 | 删除 Local App Task create UI/route；CLI、Task Manager 五个 action、完整 inspect 与专业 currentness authority 保持不变；不增加 migration、物化计数或缓存 |
 | P0.2 | Task Environment `introduce-task-environment` | 已交付并生效（2026-08-02，`dev@29f9c74`） | 已交付唯一 Task Environment Application、薄 CLI/Skill、Environment Receipt、真实 ready/恢复/runtime projection、动态资源与 cleanup、Local App 环境页签、Task-scoped Change Resolver 和窄 Git provider；retained runtime 已同步并通过 Doctor | 已按 A=1/B=1/C=31/D=0 完成一次性迁移；删除旧 environment writer、receipt authority、routing、JSON/help 与 consumer 残留，旧 worktree 能力仅保留为窄 Git provider evidence |
-| P0.3 | Task Review Result `introduce-task-review-results` | 已交付并生效（2026-08-02，`dev@7764a99`） | 已交付一个 Task Review Application、Planning/Completion 两个可选 current Result 槽位、最小 closed schema、明确 target identity、执行方式、覆盖、findings、结论与派生适用性；CLI、`task-review` Skill 和 Local App 任务 Review 管理复用同一 authority，retained runtime/CLI/Local App 已安装并通过 Candidate verification、Doctor 与真实 Result 写入回读 | Task-scoped Change 审查已切到 Planning Review；删除冲突旧 task-review route/store/schema/test，全局 retained-only generic Change review 与 Task Asset Review 保留各自 authority |
+| P0.3 | Task Review Result `introduce-task-review-results` | 已交付并生效（2026-08-02，`dev@7764a99`） | 已交付一个 Task Review Application、Planning/Completion 两个可选 current Result 槽位、最小 closed schema、明确 target identity、执行方式、覆盖、findings、结论与派生适用性；CLI、`task-review` Skill 和 Local App 任务 Review 管理复用同一 authority，retained runtime/CLI/Local App 已安装并通过 Candidate verification、Doctor 与真实 Result 写入回读 | Task-scoped Change 审查已切到 Planning Review；删除冲突旧 task-review route/store/schema/test，全局 retained-only generic Change review保持独立authority；后续P2.1退役Task Asset Review |
 | P0.4 | Task Verification Result `introduce-task-verification-results` | 已交付并生效（2026-08-03，`introduce-task-verification-results`） | 已交付 Project declaration v2、显式 transient execution、唯一 Task Verification Application、原子 current Result、target/declaration staleness、CLI 与 Local App；P0.5 已把正式 lifecycle consumer 切换为 Development | 删除旧声明 v1、固定 assurance/层级、旧 run schema、声明级 plan/DAG、Finish summary 输入和重复 writer；Product-only DAG 留在 test harness，真实资源协调按 claim 保留 |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | 已交付并生效（2026-08-04） | 已交付唯一 Task Development Application/Receipt、通用 Content Target observer、verification policy、Task Candidate/generation、gates/decision、append-only immutable handoff、internal driver 与非 Git/no Change System fixture；Formal Verification 先于 Candidate freeze，Completion Review 绑定 Candidate | Development 成为唯一 Candidate/decision/handoff authority；Verification/Review 保留 Result authority；Finish 收窄为 v2 handoff adapter，删除旧 Verification、Change convergence、Candidate/risk mutation path |
-| P0.5a | Task Development Local App 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情收敛为“概览、研发、证据、环境”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
+| P0.5a | Task Development Local App 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情当时收敛为“概览、研发、证据、环境”，P2.1在不改变Development authority的前提下新增“复盘”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
 | P0.6 | Git Operations `formalize-git-operations` | 已交付并生效（2026-08-04） | 已交付唯一 Skill-only `git-operations` / `buildr.git-operations/v1`、consumer-selected operation 边界、精确暂存、commit/push 分离、完整 push range、共享冻结、最小 Result 与部分失败 evidence；retained runtime 已同步并通过 Doctor | Task Finish optional dependency 与 Buildr 产品入口已迁移；删除 `git-ops` 和三项旧 contracts/bindings/router/schema，`git-worktree-provider/v1` 保持独立 |
 | P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 已收敛（2026-08-05） | Development、Verification与Planning/Completion Review current records通过连续migration进入Workspace SQLite；各专业Application与Local App reader边界不变 | 旧YAML保持inert；Task Metadata Publication source、contract、binding、helper、tests、spec与runtime整体清退 |
 | P0.7a | 静态 Task Board 清退 `simplify-task-board-after-sqlite-consolidation` | 已收敛（2026-08-05） | `task-board` Skill、maintenance contract、binding、Triage分支、template、package/runtime与专属tests退出；协调只组合Task/Parent与专业read models | 两类历史HTML原路径原内容保留；SQLite schema与Task Record shape零变更；通用builtin replacement继续服务真实consumer |
 | P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 已收敛（2026-08-04） | current specs、Roadmap、CLI help、package/runtime 与 residual verification 统一为现有 v2 delivery boundary；保留单一直接接线 Product/Git adapter、Delivery Adaptation、exact-token target-race resume、remote readback、retained activation 与 Environment cleanup | 审计 active run/Application/CLI/registry/compose/schema/managed mutations/capability graph；没有真实可达旧 writer/router/binding，故以 zero-delete evidence 关闭，不制造 framework 或迁移 |
-| P1.1 | Structured Task Board 有限探索 | 延后，等待真实缺口 | 无 | 仅在非 Task 规划项、多协调者成员、显式依赖、稳定排序/分组或跨 Task 决策记录无法由 Parent/Child 覆盖时再提案 |
-| P1.2 | 其余专业投影 | 未开始 | 无 | 基于既有四视图按真实缺口扩展，不预设 Board 页面，不重建 Development/Review/Verification/Environment authority |
-| P2.1 | Task Retrospective `introduce-task-retrospective` | 未开始 | 无 | 同 Change 替换并清退 Task Asset Review |
-| P2.2 | Local App Retrospective Projection | 未开始 | 无 | 只读投影，不新增 writer |
-| 最终审计 | lifecycle residual audit | 未开始 | 无 | 只检查残留；发现问题归回 owner 模块修复 |
+| P2.1 | 任务复盘（Task Retrospective）`introduce-task-retrospective` | 已收敛（2026-08-06） | SQLite 单行执行效率复盘记录、Skill、内部driver、Local App只读Tab与旧数据不变验证已实现 | 同Change清退Task Asset Review及全部门禁/routing；旧observation保留但不读取、不迁移、不删除 |
+| P2.2 | 生命周期残留审计（Lifecycle Residual Audit）`audit-task-lifecycle-residuals` | 未开始 | 无 | 只检查残留；发现问题归回 owner 模块修复 |
 
 ### 阶段 0：共同实施约束
 
@@ -982,7 +927,7 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 |---|---|---|---|
 | P0.1 | Task Manager / Task Record / Local App `introduce-task-record` + `introduce-parent-task` + `simplify-and-optimize-local-app-task-list` | Task ID、最小 Task Record、唯一 Task Record Application、`task-manager`、产品化 create/inspect/update/complete/abandon、Local App Task 轻量列表/详情与已有记录编辑/完成/放弃、三态/no-change、`0..N` 个 `project/change`，以及单 Parent/多直接 Child；正式 Task 只由 Agent/Task Manager 创建，当前以本机 SQLite 规范化持久化，不含通用依赖图、Environment、专业 references、持久 revision、跨 Task Change ownership或同步 | CLI/Task Manager 保留五个 action 与完整 inspect；Local App 复用同一 Application 的 stored-state query projection 和有限 writer，不提供 create；SQL schema、foreign keys、迁移 ledger 和完整性 fail closed；陈旧页面冲突刷新；关系拒绝自引用/循环/terminal 新 Parent；Parent/Child 生命周期独立；linked worktree 不得成为 authority |
 | P0.2 | Task Environment `introduce-task-environment` | Task 级 Environment Receipt、唯一 Application、薄公共 CLI/Skill、`.worktrees/<task-id>` 任务验证 Workspace、真实 ready 探测、task-scoped runtime projection identity、Task-scoped Change Resolver、Local App 只读环境页签、串行恢复、资源登记和 cleanup | 创建 Task → 保留工作区 Buildr 环境管理器准备环境 → 候选 Change 可被 Task 范围解析 → Local App 查看本机环境 → 候选投射自身 runtime → 跨 session 恢复 → Finish/放弃 cleanup；同 Change 将 task-worktree 收窄为 Git provider，按 A/B/C/D 一次性迁移旧 v1 receipt，并删除旧 environment mutation/routing/help/JSON/consumer；不把 worktree 称为主/retained/开发 Workspace 或 Agent runtime |
-| P0.3 | Task Review `introduce-task-review-results` | 一个 Result 模型、Planning/Completion 两个可选 current 槽位、目标 identity、执行方式、覆盖、findings、结论与派生适用性；无持久 revision/history，不编排 Development、Candidate 或门禁 | 两类 Result 可独立存在并绑定明确目标；同类型完整替换、跨类型隔离，中断不覆盖 current；Task-scoped Change 单次切到 Planning Review，全局 generic Change review 与 Task Asset Review 保留各自 authority；同 Change 删除或迁移冲突的旧 Review route/store/test |
+| P0.3 | Task Review `introduce-task-review-results` | 一个 Result 模型、Planning/Completion 两个可选 current 槽位、目标 identity、执行方式、覆盖、findings、结论与派生适用性；无持久 revision/history，不编排 Development、Candidate 或门禁 | 两类 Result 可独立存在并绑定明确目标；同类型完整替换、跨类型隔离，中断不覆盖 current；Task-scoped Change 单次切到 Planning Review，全局 generic Change review保持独立authority；P2.1另行退役Task Asset Review |
 | P0.4 | Task Verification `introduce-task-verification-results` | Project declaration v2、transient execution evidence、一个 current Verification Result、Content Target/declaration identity 与派生 applicability；不包含推进决定、Candidate generation 或 Environment Receipt | 真实 command/Agent facts 可提炼完整 Result；中断或写入失败不覆盖 current；target/declaration 变化派生 stale；CLI、Skill、Local App、Development consumer 共用唯一 Application；删除旧 assurance、run/plan/DAG lifecycle、summary 输入与重复 schema |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | Development Receipt、`0..N` Change 处置、Content Target/policy、Candidate identity/generation、三个 gates、decision 与 immutable handoff；明确 control metadata/carrier/runtime/session 不是 Candidate | Environment ready → Planning Review → stable Content Target/policy → Formal Verification → generation 1 Candidate → Completion Review → proceed handoff；非 Git/no Change fixture 证明通用边界；Finish v2 adapter 只消费 handoff且 formal execution count 为 0 |
 | P0.6 | Git Operations `formalize-git-operations` | 单次 Git operation 授权、安全边界、前后 identity 与最小 Result | 精确暂存；commit/push 分离；不 force push；同 Change 迁移有效安全约束并删除冲突旧 capability/binding/router/schema |
@@ -991,21 +936,15 @@ Retrospective如需团队协作，由未来Server/Cloud能力独立设计；不�
 
 P0.1 到 P0.8 分别在各自交付时切换自己拥有的 authority。过渡期允许“新 Task Record + 尚未替换的专业模块”组合，但同一类事实不能有两个 writer；P0.8 不再承担统一默认 authority 切换。
 
-### P1：协调、投影与交互
+### P1：协调、投影与交互（Coordination, Projection, and Interaction）
 
-| 顺序 | 单一模块与建议 Change | 本次只完成 | 最小模块验收与旧能力处置 |
-|---|---|---|---|
-| P1.1 | Structured Task Board 有限探索（条件触发） | 只验证 Parent/Child 是否已无法覆盖经过实际使用证明的协调需求；不预设实现或创建 Change | 仅当非 Task 规划项、多协调者成员、显式依赖、稳定排序/分组或跨 Task 决策记录成为真实缺口时，才决定是否需要独立 Domain |
-| P1.2 | 其余专业投影 | 在既有“概览、研发、证据、环境”任务信息架构上按真实缺口补充专业 records 只读投影 | Task-owned 编辑继续通过 Task Record Application，Environment 与证据继续只读调用既有 reader；不因页面需求预设第二份 authority |
+P1 不再登记独立待实施模块或预设 Change。当前协调继续使用普通 Task 与 Parent/Child；只有实际使用证明它无法覆盖非 Task 规划项、多协调者成员、显式依赖、稳定排序/分组或跨 Task 决策记录时，才重新提出独立协调能力。Local App 也不作为单独任务排期；每个功能模块在自己的 Change 中按需补充只读投影，并继续复用该模块的唯一 Application/reader，不建立第二 writer。
 
-P1 不再预设 Local App Board Change。Parent/Child 层级投影随 Task Record Application 一起交付；其余专业投影按真实缺口创建窄 Change。
-
-### P2：复盘与残留审计
+### P2：复盘与残留审计（Retrospective and Residual Audit）
 
 | 顺序 | 单一模块与建议 Change | 最小验收与旧能力处置 |
 |---|---|---|
-| P2.1 | Task Retrospective `introduce-task-retrospective` | 每个 Task 最多一份记录；覆盖无候选、开放/关闭、跳过和失败；不自动创建新 Task；同 Change 处置未决 observation、切换观察 authority、移除 Finish/cleanup 门禁并删除 Asset Review Skill/helper/template/contract/binding/mutation tests |
-| P2.2 | Local App Retrospective Projection `project-task-retrospective-in-local-app` | 只读展示复盘结论与本机缺口；不修改复盘记录，不自动关闭候选，也不成为第二份 authority |
-| P2.3 | 生命周期残留审计 `audit-task-lifecycle-residuals` | 纯负向检查 manifest、runtime、CLI、public JSON、specs、docs 和 tests 是否仍路由旧 authority；不预设批量删除，发现残留就归回对应 owner 模块创建窄修复 Change |
+| P2.1 | 任务复盘（Task Retrospective）`introduce-task-retrospective` | 每个终态 Task 至多一行 SQLite current record；结束 Agent 基于可见过程和可读取 Task facts 自由复盘时间与 Token 消耗点，不记录完整 transcript 或隐藏推理；Local App 只读“复盘”Tab 渲染报告与数据缺口；复盘遗漏/失败不阻塞终态；同 Change 删除 Task Asset Review 的 Skill、contract、binding、helper、template、tests 与所有门禁/routing，既有 observation 保留但不读取、不迁移、不删除 |
+| P2.2 | 生命周期残留审计（Lifecycle Residual Audit）`audit-task-lifecycle-residuals` | 纯负向检查 manifest、runtime、CLI、public JSON、specs、docs 和 tests 是否仍路由旧 authority；不预设批量删除，发现残留就归回对应 owner 模块创建窄修复 Change |
 
 旧测试不整体删除。禁止 force push、精确归属、部分交付效果保留、Candidate 失效停止写入和 cleanup ownership 等仍有效安全不变量，必须在对应新模块 Change 中迁移；只删除绑定旧 shape、旧 mutation path 或旧协议的断言。
