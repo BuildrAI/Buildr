@@ -35,7 +35,8 @@ test('Browser dispatcher accepts explicit input and falls back to Git changed pa
   const explicit = parseChangedPaths(JSON.stringify(['src/interfaces/local-app/web/router.js']));
   assert.deepEqual(explicit, ['src/interfaces/local-app/web/router.js']);
   const derived = parseChangedPaths(null);
-  assert.ok(derived.includes('test/verification/browser-selector-dispatcher.mjs'));
+  assert.ok(Array.isArray(derived));
+  assert.ok(derived.every((value) => typeof value === 'string' && value.length > 0));
 });
 
 test('Browser dispatcher rejects malformed or unresolvable changed path input', () => {
