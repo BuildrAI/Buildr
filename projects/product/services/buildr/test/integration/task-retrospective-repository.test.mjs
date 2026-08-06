@@ -25,6 +25,18 @@ function fixture(t) {
   return { root: fs.realpathSync(root), runtime, legacy };
 }
 
+function isolateLocalAppData(t) {
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-retrospective-app-data-'));
+  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = appData;
+  t.after(() => {
+    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  });
+  return appData;
+}
+
 function terminal(runtime, root, status = 'completed') {
   const task = runtime.readTaskRecordPersistence(root, 'demo-task');
   runtime.writeTaskRecordPersistence(root, {
@@ -77,9 +89,13 @@ test('serialization或mutation失败保留last-valid current row', (t) => {
 
 test('Local App只读返回current Result或尚未复盘', async (t) => {
   const { root, runtime } = fixture(t);
+  const appData = isolateLocalAppData(t);
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId } = await instance.ready;
+  const registry = runtime.readWorkspaceRegistryPersistence();
+  assert.equal(registry.file, path.join(appData, 'workspace-registry.json'));
+  assert.deepEqual(registry.registry.roots, [root]);
   const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/demo-task/retrospective`;
   let response = await fetch(endpoint);
   assert.equal(response.status, 200);
