@@ -51,6 +51,21 @@ test('Local App 已解析 Workspace root 的 Task 读取不观察 Git', async (t
   assert.deepEqual(body.tasks.map((item) => item.record.taskId), ['read-without-git']);
 });
 
+test('Local App 专业 Task read view 使用默认 bounded Worker executor', async (t) => {
+  const { base, root } = fixture(t, 'task-local-app-bounded-worker');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-bounded-worker'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const writer = createRuntime();
+  writer.createTaskRecord(root, { taskId: 'bounded-read', title: '有界读取', intent: '验证默认 Worker executor', projects: [], services: [], changes: [] });
+  const instance = createLocalWorkspaceServer(createRuntime(), { targetRoot: root });
+  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
+  const { url, initialWorkspaceId } = await instance.ready;
+  const response = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/bounded-read/development`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.schemaVersion, 'buildr.task-development-operation-result/v1');
+  assert.equal(body.status, 'missing');
+});
+
 test('Local App Task API 提供轻量查询与既有任务维护，不暴露创建入口', async (t) => {
   const { base, root } = fixture(t, 'task-local-app');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
@@ -79,7 +94,11 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: '%_' }).tasks.map((item) => item.record.taskId), ['app-task'], 'SQL wildcard 必须按普通文本匹配');
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: "%' OR 1=1 --" }).tasks, [], 'query input 必须保持参数绑定');
   bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true }); bulkStore.database.prepare("DELETE FROM tasks WHERE task_id LIKE 'bulk-%'").run(); bulkStore.database.close();
-  const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
+  const readExecutor = {
+    run: (operation, input) => Promise.resolve(runtime[{ development: 'inspectTaskDevelopmentView', reviews: 'inspectTaskReviewView', verification: 'inspectTaskVerificationView' }[operation]](input.targetRoot, input.taskId)),
+    close: async () => {},
+  };
+  const instance = createLocalWorkspaceServer(runtime, { targetRoot: root, readExecutor });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId, sessionToken } = await instance.ready;
   const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks`;

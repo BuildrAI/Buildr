@@ -24,6 +24,7 @@ import {
 } from '../runtime/preview-manager.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
 import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
+import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
@@ -84,6 +85,7 @@ function binaryResponse(response, status, content, contentType) {
 }
 
 function apiError(response, error) {
+  if (response.destroyed || response.writableEnded) return;
   const status = Number.isInteger(error.status) ? error.status : 500;
   jsonResponse(response, status, {
     error: {
@@ -211,12 +213,25 @@ function ensureRegisteredTarget(runtime, targetRoot) {
   return entry?.workspace?.id || null;
 }
 
-export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 0, instanceSecret = null, launcherIdentity = null, previewIdentity = null, onShutdown = null } = {}) {
+export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 0, instanceSecret = null, launcherIdentity = null, previewIdentity = null, onShutdown = null, readExecutor = null } = {}) {
   const initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
+  const ownsReadExecutor = !readExecutor;
+  const taskReadExecutor = readExecutor || createBoundedLocalAppReadExecutor();
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin = null;
   let closing = false;
+
+  function submitTaskRead(request, response, operation, root, taskId) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    request.once('aborted', abort);
+    response.once('close', abort);
+    return taskReadExecutor.run(operation, { targetRoot: root, taskId, signal: controller.signal }).finally(() => {
+      request.removeListener('aborted', abort);
+      response.removeListener('close', abort);
+    });
+  }
 
   const server = http.createServer((request, response) => {
     Promise.resolve().then(async () => {
@@ -352,11 +367,11 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         }
         const taskDevelopmentMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/development$`));
         if (request.method === 'GET' && taskDevelopmentMatch) {
-          return jsonResponse(response, 200, runtime.inspectTaskDevelopmentView(root, taskDevelopmentMatch[1]));
+          return jsonResponse(response, 200, await submitTaskRead(request, response, 'development', root, taskDevelopmentMatch[1]));
         }
         const taskReviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/reviews$`));
         if (request.method === 'GET' && taskReviewsMatch) {
-          return jsonResponse(response, 200, runtime.inspectTaskReviewView(root, taskReviewsMatch[1]));
+          return jsonResponse(response, 200, await submitTaskRead(request, response, 'reviews', root, taskReviewsMatch[1]));
         }
         const taskRetrospectiveMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/retrospective$`));
         if (request.method === 'GET' && taskRetrospectiveMatch) {
@@ -364,7 +379,7 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         }
         const taskVerificationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/verification$`));
         if (request.method === 'GET' && taskVerificationMatch) {
-          return jsonResponse(response, 200, runtime.inspectTaskVerificationView(root, taskVerificationMatch[1]));
+          return jsonResponse(response, 200, await submitTaskRead(request, response, 'verification', root, taskVerificationMatch[1]));
         }
         const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
         if (request.method === 'GET' && taskChangeMatch) {
@@ -425,6 +440,7 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
       jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr 本地应用资源不存在。' } });
     }).catch((error) => apiError(response, error));
   });
+  if (ownsReadExecutor) server.once('close', () => { void taskReadExecutor.close(); });
 
   const ready = new Promise((resolve, reject) => {
     server.once('error', reject);
