@@ -100,6 +100,18 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   assert.equal(terminal.delivered, false);
   assert.equal(terminal.snapshot.generation, 2);
   assert.equal(developmentReads, 1);
+  const inspectReview = runtime.inspectTaskReview.bind(runtime);
+  const inspectVerification = runtime.inspectTaskVerification.bind(runtime);
+  let reviewReads = 0;
+  let verificationReads = 0;
+  runtime.inspectTaskReview = (...args) => { reviewReads += 1; return inspectReview(...args); };
+  runtime.inspectTaskVerification = (...args) => { verificationReads += 1; return inspectVerification(...args); };
+  runtime.inspectTaskTerminalDelivery = () => { throw new Error('Local App Tab 不得调用完整 terminal 聚合器。'); };
+  response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
+  response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
+  assert.equal(developmentReads, 1, 'Reviews/Verification GET 不得读取 Development');
+  assert.equal(reviewReads, 1, 'Reviews GET 应只读取一次 Review');
+  assert.equal(verificationReads, 1, 'Verification GET 应只读取一次 Verification');
   response = await request(`${taskEndpoint}/development?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(`${endpoint}/missing-task/development`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');
   const taskBeforeRejectedDevelopmentWrite = runtime.inspectTaskRecord(root, 'app-task');

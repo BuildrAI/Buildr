@@ -112,3 +112,43 @@ test('terminal composer covers active, no-change, abandoned, unproven and identi
   unavailable.readTaskFinishResults = () => { throw new Error('GET must not scan Finish Result files.'); };
   assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
 });
+
+test('三个专业 Tab 只读取自身节点与已写交付关联', () => {
+  const assertNoAggregate = (runtime) => {
+    runtime.inspectTaskTerminalDelivery = () => { throw new Error('专业 Tab 不得调用完整 terminal 聚合器。'); };
+  };
+
+  const developmentRuntime = runtimeFor();
+  let developmentReads = 0;
+  const inspectDevelopment = developmentRuntime.inspectTaskDevelopment;
+  developmentRuntime.inspectTaskDevelopment = (...args) => { developmentReads += 1; return inspectDevelopment(...args); };
+  developmentRuntime.inspectTaskReview = () => { throw new Error('Development Tab 不得读取 Review。'); };
+  developmentRuntime.inspectTaskVerification = () => { throw new Error('Development Tab 不得读取 Verification。'); };
+  assertNoAggregate(developmentRuntime);
+  const development = developmentRuntime.inspectTaskDevelopmentView('/workspace', TASK);
+  assert.equal(developmentReads, 1);
+  assert.equal(development.terminal.status, 'delivered');
+  assert.equal(development.terminal.snapshot.handoff.identity, ids.handoff);
+
+  const reviewRuntime = runtimeFor();
+  let reviewReads = 0;
+  const inspectReview = reviewRuntime.inspectTaskReview;
+  reviewRuntime.inspectTaskReview = (...args) => { reviewReads += 1; return inspectReview(...args); };
+  reviewRuntime.inspectTaskDevelopment = () => { throw new Error('Review Tab 不得读取 Development。'); };
+  reviewRuntime.inspectTaskVerification = () => { throw new Error('Review Tab 不得读取 Verification。'); };
+  assertNoAggregate(reviewRuntime);
+  const reviews = reviewRuntime.inspectTaskReviewView('/workspace', TASK);
+  assert.equal(reviewReads, 1);
+  assert.equal(reviews.terminal.associations.completion.status, 'adopted-at-delivery');
+
+  const verificationRuntime = runtimeFor();
+  let verificationReads = 0;
+  const inspectVerification = verificationRuntime.inspectTaskVerification;
+  verificationRuntime.inspectTaskVerification = (...args) => { verificationReads += 1; return inspectVerification(...args); };
+  verificationRuntime.inspectTaskDevelopment = () => { throw new Error('Verification Tab 不得读取 Development。'); };
+  verificationRuntime.inspectTaskReview = () => { throw new Error('Verification Tab 不得读取 Review。'); };
+  assertNoAggregate(verificationRuntime);
+  const verification = verificationRuntime.inspectTaskVerificationView('/workspace', TASK);
+  assert.equal(verificationReads, 1);
+  assert.equal(verification.terminal.associations.verification.status, 'verified-at-delivery');
+});
