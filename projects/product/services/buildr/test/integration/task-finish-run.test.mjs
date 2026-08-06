@@ -98,6 +98,7 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   assert.equal(result.carrier.identity, 'carrier-abc');
   assert.equal(result.equivalence.status, 'equivalent');
   assert.equal(result.metrics.formalVerificationExecutions, 0);
+  assert.match(result.nextAction, /是否进行任务复盘.*Token 数据仅在 Agent 可取得时记录/);
   assert.equal(Object.hasOwn(result.identity, 'project'), false);
   assert.equal(Object.hasOwn(result.identity, 'change'), false);
 });
@@ -128,6 +129,7 @@ test('carrier equivalence 缺陷终止 run 并返回 Task Development', async (t
   const result = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'defect', identity: identity(root, 'defect') }), handlers });
   assert.equal(result.status, 'failed');
   assert.equal(result.nextWorkflow, 'task-development');
+  assert.equal(result.nextAction, null);
   assert.equal(result.primaryFailure.phase, 'verify');
   assert.deepEqual(calls, ['preflight', 'prepare', 'verify']);
   assert.equal(result.resume, null);
@@ -145,6 +147,7 @@ test('连续 target race 每次使用新精确 token 重建 carrier，复用 Can
   const first = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'target-race', identity: identity(root, 'target-race') }), handlers });
   assert.equal(first.status, 'blocked');
   assert.equal(first.nextWorkflow, null);
+  assert.equal(first.nextAction, 'repeat-task-finish-run-with-resume-token');
   assert.match(first.resume.token, /^sha256-/);
   assert.deepEqual(firstCalls, ['preflight', 'prepare', 'verify', 'deliver']);
   const secondCalls = [];
@@ -170,6 +173,7 @@ test('连续 target race 每次使用新精确 token 重建 carrier，复用 Can
   assert.equal(third.phases.find((phase) => phase.id === 'verify').attempts, 3);
   assert.equal(third.phases.find((phase) => phase.id === 'deliver').attempts, 3);
   assert.equal(third.metrics.formalVerificationExecutions, 0);
+  assert.match(third.nextAction, /任务复盘/);
   assert.equal(inspectFinishRun({ root, runId: 'target-race' }).status, 'complete');
 });
 

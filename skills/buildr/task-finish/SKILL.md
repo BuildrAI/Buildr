@@ -12,7 +12,7 @@ description: 用户要求“收尾”或交付已有 current formal Development 
 1. 明确正式 Task ID 与 canonical Workspace，通过 `task-environment` 确认 matching ready Environment。
 2. 通过 `task-development` Application inspect current formal handoff；必须能取得精确 handoff、Candidate/generation、Content Target identities 和 proceed decision。
 3. handoff missing/stale、Change 仍未处置、Verification/Completion 不完整或风险未获接受时停止，返回 Task Development；Finish 不补齐这些事实。
-4. Task Retrospective不是Finish前置条件，Finish不读取、生成或等待复盘。用户排除push、install或cleanup而改变交付语义时停止。
+4. 用户排除push、install或cleanup而改变交付语义时停止。
 5. Git-backed run使用retained checkout当前符号分支；显式`--target-branch`必须一致，Environment `startPoint`不提供交付authority。remote按显式值、Environment、branch upstream、唯一配置依次解析；缺失或歧义时停止。
 
 ## 执行
@@ -29,7 +29,7 @@ buildr task finish run --task <task-id> --target <canonical-workspace> --json
 preflight → prepare → verify → deliver → cleanup
 ```
 
-五阶段由产品连续执行，不由 Agent 编排阶段、补 evidence 或设计 recovery。
+五阶段由产品连续执行，Agent不编排阶段、补evidence或设计recovery。
 
 - `preflight` 只核对 current handoff、Environment、carrier adapter 与 retained target；activation不读取Project或Service声明。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
@@ -55,7 +55,7 @@ buildr task finish inspect --run <run-id> --target <canonical-workspace> --json
 
 ## 禁止事项
 
-Finish不创建或改变Candidate/generation，不修改Development Receipt，不收敛Change，不改变原Candidate/Task worktree，不发起 Task Verification或Completion Review，不决定proceed/blocked或接受风险。两种reuse mode都复用既有handoff；clean apply、resume或路径不重叠都不等于语义安全。
+Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定proceed/blocked或接受风险。两种reuse mode都复用handoff；clean apply、resume或路径不重叠都不等于语义安全。
 
 ## 完成标准
 
@@ -63,5 +63,7 @@ Finish不创建或改变Candidate/generation，不修改Development Receipt，�
 - Result引用Development handoff、Candidate/generation、Content Target、Task Contribution、Delivery Baseline和Delivery Carrier；
 - Result标记`deterministic-reuse`或`agent-reviewed-delivery-adaptation`，后者不声称Buildr证明语义等价；
 - carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
-- Git-backed delivery 的 configured remote与after ref回读已证明；普通路径完成push且`remoteAfterRef`、`finalRemoteRef`等于carrier，`already-contained`路径保留逐路径证明、原carrier ref与最新后代final remote ref；
+- Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留逐路径证明、原carrier与最新后代final ref；
 - `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。
+
+complete 后先报告终态，再询问是否进行“任务复盘”：当前关注 Agent 耗时、Token、重复尝试和人机协作，Token 不可得可缺失。仅用户同意后路由 `task-retrospective`；blocked/failed 不提示，且复盘不影响终态。

@@ -73,7 +73,10 @@ function blockedResult(runtime, operation, taskId, targetRoot, error) {
 function printTaskRecordResult(payload, json) {
   if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else if (payload.status === 'blocked') console.error(`[${payload.diagnostic.code}] ${payload.diagnostic.message}\nNext: ${payload.nextActions[0]}`);
-  else console.log(`Task ${payload.taskId} ${payload.status}`);
+  else {
+    console.log(`Task ${payload.taskId} ${payload.status}`);
+    for (const action of payload.nextActions) console.log(`Next: ${action}`);
+  }
   return payload;
 }
 

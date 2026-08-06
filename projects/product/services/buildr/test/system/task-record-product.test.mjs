@@ -17,7 +17,7 @@ test('CLI 和 Application 覆盖五个动作、0/1/N Change、跨 Project 同名
   const { root } = fixture(t, 'task-lifecycle');
   const runtime = createRuntime();
   const empty = runtime.createTaskRecord(root, { taskId: 'empty-task', title: '空引用', intent: '允许没有 Change', projects: [], services: [], changes: [] });
-  assert.equal(empty.schemaVersion, 'buildr.task-record-result/v3'); assert.deepEqual(empty.record.changes, []); assert.equal(empty.status, 'created'); assert.equal('path' in empty, false);
+  assert.equal(empty.schemaVersion, 'buildr.task-record-result/v3'); assert.deepEqual(empty.record.changes, []); assert.equal(empty.status, 'created'); assert.deepEqual(empty.nextActions, []); assert.equal('path' in empty, false);
 
   const created = json(['task', 'create', 'multi-task', '--title', '多范围任务', '--intent', '验证限定引用', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/same-change', '--change', 'demo/second-change', '--change', 'other/same-change', '--target', root]);
   assert.equal(created.record.changes.length, 3); assert.match(created.recordDigest, /^sha256-/); assert.deepEqual(created.effects, [{ type: 'created', taskId: 'multi-task' }]); assert.equal('path' in created, false);
@@ -29,9 +29,13 @@ test('CLI 和 Application 覆盖五个动作、0/1/N Change、跨 Project 同名
 
   const completed = json(['task', 'complete', 'empty-task', '--summary', '确认无需修改', '--no-change', '--target', root]);
   assert.deepEqual(completed.record.result, { summary: '确认无需修改', noChange: true });
+  assert.match(completed.nextActions[0], /是否进行任务复盘.*Token 数据仅在 Agent 可取得时记录.*缺失不影响复盘/);
   const abandoned = runtime.createTaskRecord(root, { taskId: 'abandoned-task', title: '取消任务', intent: '验证放弃', projects: [], services: [], changes: [] });
   assert.equal(abandoned.status, 'created');
-  const ended = runtime.abandonTaskRecord(root, 'abandoned-task', { reason: '目标取消' }); assert.deepEqual(ended.record.result, { summary: '目标取消' });
+  const ended = runtime.abandonTaskRecord(root, 'abandoned-task', { reason: '目标取消' }); assert.deepEqual(ended.record.result, { summary: '目标取消' }); assert.deepEqual(ended.nextActions, completed.nextActions);
+  runtime.createTaskRecord(root, { taskId: 'human-output-task', title: '人类输出', intent: '验证终态提示', projects: [], services: [], changes: [] });
+  const human = run(['task', 'complete', 'human-output-task', '--summary', '完成', '--no-change', '--target', root]);
+  assert.match(human.stdout, /Task human-output-task completed[\s\S]*Next: 是否进行任务复盘/);
   const terminal = json(['task', 'update', 'abandoned-task', '--title', '不可重开', '--target', root], 1); assert.equal(terminal.status, 'blocked'); assert.equal(terminal.diagnostic.code, 'task_record_terminal'); assert.deepEqual(terminal.effects, []);
   assert.throws(() => runtime.createTaskRecord(root, { taskId: 'multi-task', title: '重复', intent: '不得覆盖', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_already_exists');
   const syntax = json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
@@ -47,6 +51,7 @@ test('Formal Finish 通过 Task Record Application 幂等完成 active Task，�
   assert.equal(completed.status, 'completed');
   assert.deepEqual(completed.record.result, { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false });
   assert.deepEqual(completed.effects, [{ type: 'updated', taskId: 'finish-task' }]);
+  assert.match(completed.nextActions[0], /任务复盘/);
 
   const repeated = runtime.completeTaskRecordFromFinish(root, 'finish-task');
   assert.equal(repeated.status, 'completed');

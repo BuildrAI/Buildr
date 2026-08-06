@@ -1,5 +1,6 @@
 import { normalizeTaskRecord, taskRecordError } from '../../domain/task-record/task-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
 
 const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
 const TASK_FINISH_COMPLETION_SUMMARY = 'Formal Task Finish 已完成交付与环境清理。';
@@ -160,7 +161,7 @@ export function registerTaskRecordApplication(runtime) {
       taskRelations: { parent, children },
       diagnostic: null,
       effects,
-      nextActions: [],
+      nextActions: ['completed', 'abandoned'].includes(status) ? [TASK_RETROSPECTIVE_PROMPT] : [],
     });
   }
 

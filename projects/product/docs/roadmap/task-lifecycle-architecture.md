@@ -827,11 +827,11 @@ Task Review 与 Task Verification 面向当前方案、实现和 Candidate；Tas
 
 ### 第一版：Agent 执行效率复盘
 
-只有已经终态的正式 Task 可以复盘，包括正常交付、`completed + no-change` 和最终放弃。结束任务的 Agent 按需加载 `task-retrospective`，在自己的可见任务上下文、工具调用和可读取的 Task facts 范围内作一次自由复盘；它不在任务过程中维护 observation，也不记录或回放完整对话、工具日志、隐藏推理或 prompt。
+只有已经终态的正式 Task 可以复盘，包括正常交付、`completed + no-change` 和最终放弃。Task Record terminal operation 与 Formal Finish complete result 在终态成立后提供非阻塞“任务复盘”建议；结束任务的 Agent 先报告终态事实，再询问用户是否复盘，只有用户明确同意后才加载 `task-retrospective`。提示缺失、用户拒绝或复盘失败都不改变终态、Finish 或 cleanup。Agent 只在自己的可见任务上下文、工具调用和可读取的 Task facts 范围内作一次自由复盘；它不在任务过程中维护 observation，也不记录或回放完整对话、工具日志、隐藏推理或 prompt。
 
 复盘只关心本次执行效率，优先找出一到三个最重要的点：重复读取、搜索、验证或重试；大而无效的工具输出；不必要的等待或人机接力；本可由 Buildr 确定性完成、却反复交给 Agent 推理的步骤；以及明显值得保留的高效做法。Agent 自由组织判断，不使用固定检查表、候选类型、评分或必须得出结论的模板。
 
-Token、调用次数和耗时只能使用 Agent host 或 Task facts 实际可见的数值。数值不可得时，报告必须说明数据缺口，可以依据可见的重复、输出量或阶段耗时判断热点，但不得猜测精确 Token 或把 Task 的完整墙钟跨度当作 Agent 实际执行时间。
+Token、调用次数和耗时只能使用 Agent host 或 Task facts 实际可见的数值。Token 可信可得时记录数值、来源和覆盖范围；部分可得时明确实际覆盖范围及其不代表完整 Task；不可得时直接标记缺失。报告仍可依据可见的重复、输出量或阶段耗时判断热点，但不得为了补齐 Token 回放完整上下文、读取隐藏推理、强制估算、新增采集流程或增加任务消耗，也不得把 Task 的完整墙钟跨度当作 Agent 实际执行时间。
 
 ### SQLite 记录与 Local App
 

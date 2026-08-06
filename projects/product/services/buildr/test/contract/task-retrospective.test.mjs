@@ -23,7 +23,10 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   const skill = read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md');
   assert.match(skill, /自由Markdown/);
-  assert.match(skill, /数据缺口/);
+  assert.match(skill, /数值、来源和覆盖范围/);
+  assert.match(skill, /部分可得.*不代表完整 Task/);
+  assert.match(skill, /不可得时直接标记缺失/);
+  assert.match(skill, /不得为了补齐 Token 数字.*强制估算.*增加任务消耗/);
   assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
 });
 

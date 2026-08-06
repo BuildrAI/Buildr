@@ -23,6 +23,8 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(finish, /current formal Development handoff/);
   assert.match(finish, /formalVerificationExecutions.*0/);
   assert.match(finish, /nextWorkflow: task-development/);
+  assert.match(finish, /complete 后.*任务复盘.*Token 不可得可缺失.*用户同意后路由 `task-retrospective`/s);
+  assert.match(finishContract, /complete result.*`nextAction`.*任务复盘.*blocked result继续优先提供确定性恢复动作/s);
   for (const phrase of ['任务贡献（Task Contribution）', '交付基线（Delivery Baseline）', '不增加 Candidate generation', '路径不重叠都不等于语义安全']) assert.ok(finish.includes(phrase), phrase);
   const executor = read('src/application/task-finish/task-finish-product-executor.mjs');
   for (const forbidden of ['recordTaskVerification', 'recordTaskReview', 'freezeTaskDevelopmentCandidate', 'openspec', 'runtime-resync', 'target-rebase']) assert.equal(executor.includes(forbidden), false, forbidden);

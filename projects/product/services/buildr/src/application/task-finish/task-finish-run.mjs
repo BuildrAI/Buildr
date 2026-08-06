@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
+
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v2';
 export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v2';
 export const FINISH_PHASES = Object.freeze(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
@@ -414,7 +416,7 @@ export function finishResult(run, clock = Date.now) {
       ? (run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
         ? 'adapt-run-owned-delivery-carrier-and-repeat-task-finish-run-with-resume-token'
         : 'repeat-task-finish-run-with-resume-token')
-      : null,
+      : run.status === 'complete' ? TASK_RETROSPECTIVE_PROMPT : null,
     reuseMode: run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
     equivalence: clone(run.equivalence),
     delivery: clone(run.delivery),

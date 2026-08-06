@@ -41,4 +41,6 @@ buildr task abandon <task-id> --reason <text> --target <canonical-workspace> --j
 
 canonical target、identity、引用或授权不明，provider 不 ready，数据库或记录损坏、已终态、动作冲突或 result 为 blocked 时停止对应 Task Record 动作，保留原状态并报告唯一 next action。不得回退为 Agent 手写 YAML，也不得把专业记录复制进 Task Record。
 
-成功后报告 operation、Task ID、status、effects 和必要的 nextActions；不得返回本地数据库路径。随后仅按用户意图把工作交给 Triage、Environment 或其他专业 Skill；Task Manager 本身不执行这些阶段，也不自动 commit、push、publication、Finish 或 cleanup。
+成功后报告 operation、Task ID、status、effects 和必要的 nextActions；不得返回本地数据库路径。`complete|abandon` 成功时，先报告已经成立的终态，再使用长期名称“任务复盘”询问用户是否复盘，并说明当前重点包括 Agent 执行耗时、Token 消耗、重复尝试和人机协作效率；Token 数据仅在 Agent 可取得时记录，缺失不影响复盘。该提示非阻塞，只有用户明确同意后才路由 `task-retrospective`，不得自动执行或改变终态结果。
+
+随后仅按用户意图把工作交给 Triage、Environment 或其他专业 Skill；Task Manager 本身不执行这些阶段，也不自动 commit、push、publication、Finish 或 cleanup。
