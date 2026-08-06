@@ -125,8 +125,40 @@ function configure(database, { writable }) {
   }
 }
 
-export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitCheckoutIdentity } = {}) {
+export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitCheckoutIdentity, sourceRoot = null } = {}) {
   const operationScopes = [];
+
+  function runtimeSourceCheckout() {
+    const root = path.resolve(sourceRoot || runtime.productRoot());
+    return { root, checkout: observeCheckout(root) };
+  }
+
+  function isCandidateValidationWorkspace(source, target) {
+    return Boolean(
+      source?.linkedWorktree
+      && target?.linkedWorktree
+      && source.gitCommonDirectory === target.gitCommonDirectory
+      && source.checkoutRoot === target.checkoutRoot,
+    );
+  }
+
+  function assertStructuredStoreWriterProvenance(root, targetCheckout) {
+    if (!targetCheckout) return;
+    const source = runtimeSourceCheckout();
+    if (!source.checkout?.linkedWorktree || !targetCheckout || source.checkout.gitCommonDirectory !== targetCheckout.gitCommonDirectory) return;
+    if (isCandidateValidationWorkspace(source.checkout, targetCheckout)) return;
+    throw structuredStoreError(
+      'workspace_store_writer_provenance_forbidden',
+      '候选 Buildr runtime 不能写入 retained canonical Workspace structured store。',
+      409,
+      {
+        target: root,
+        caller: { checkoutRoot: source.checkout.checkoutRoot, linkedWorktree: true },
+        targetCheckout: { checkoutRoot: targetCheckout.checkoutRoot, linkedWorktree: targetCheckout.linkedWorktree },
+      },
+      '从 retained Buildr runtime 写 canonical Workspace；候选验证请使用自身 Task Validation Workspace。',
+    );
+  }
 
   function workspaceOperationIdentity(targetRoot) {
     const root = path.resolve(targetRoot);
@@ -169,14 +201,17 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     return value;
   }
 
-  function assertCanonicalStructuredWorkspace(targetRoot) {
+  function assertCanonicalStructuredWorkspace(targetRoot, { writable = false } = {}) {
     const root = path.resolve(targetRoot);
     const scope = activeOperationScope(root);
     if (scope?.canonicalRoot) return scope.canonicalRoot;
     try { runtime.assertInitializedBuildrWorkspace(root); }
     catch (error) { throw structuredStoreError('workspace_store_workspace_invalid', error.message, 409, { target: root }, '显式选择一个已初始化的 canonical Workspace。'); }
     const checkout = observeCheckout(root);
-    if (checkout?.linkedWorktree) throw structuredStoreError('workspace_store_workspace_not_canonical', 'Workspace structured store target 必须是 canonical Workspace，不能是 linked task worktree。', 409, { target: root }, '显式传入 retained canonical Workspace 的路径。');
+    if (checkout?.linkedWorktree && !isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, checkout)) {
+      throw structuredStoreError('workspace_store_workspace_not_canonical', 'Workspace structured store target 必须是 canonical Workspace，不能是 linked task worktree。', 409, { target: root }, '显式传入 retained canonical Workspace 的路径。');
+    }
+    if (writable) assertStructuredStoreWriterProvenance(root, checkout);
     if (scope) scope.canonicalRoot = root;
     return root;
   }
@@ -190,7 +225,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
   }
 
   function openWorkspaceStructuredStore(targetRoot, { writable = false } = {}) {
-    const root = assertCanonicalStructuredWorkspace(targetRoot);
+    const root = assertCanonicalStructuredWorkspace(targetRoot, { writable });
     const file = workspaceStructuredStorePathAtRoot(root);
     const scripts = loadWorkspaceSqliteMigrations();
     if (!fs.existsSync(file) && !writable) return { root, file, present: false, database: null, version: null, scripts };

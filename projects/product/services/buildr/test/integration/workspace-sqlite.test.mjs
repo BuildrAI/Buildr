@@ -78,6 +78,68 @@ test('只读打开未初始化 Workspace 不创建目录或数据库', (t) => {
   assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'uninitialized', version: null, integrity: null });
 });
 
+test('候选 runtime 只能写自身 linked validation Workspace，不能污染 retained canonical store', (t) => {
+  const retained = workspace(t);
+  const validation = workspace(t);
+  const peerValidation = workspace(t);
+  const candidateSource = path.join(validation, 'projects', 'product', 'services', 'buildr');
+  const peerCandidateSource = path.join(peerValidation, 'projects', 'product', 'services', 'buildr');
+  const commonDirectory = path.join(retained, '.git');
+  const checkouts = new Map([
+    [path.resolve(candidateSource), { checkoutRoot: validation, gitDirectory: path.join(commonDirectory, 'worktrees', 'candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+    [path.resolve(peerCandidateSource), { checkoutRoot: peerValidation, gitDirectory: path.join(commonDirectory, 'worktrees', 'peer-candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+    [path.resolve(retained), { checkoutRoot: retained, gitDirectory: commonDirectory, gitCommonDirectory: commonDirectory, linkedWorktree: false }],
+    [path.resolve(validation), { checkoutRoot: validation, gitDirectory: path.join(commonDirectory, 'worktrees', 'candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+    [path.resolve(peerValidation), { checkoutRoot: peerValidation, gitDirectory: path.join(commonDirectory, 'worktrees', 'peer-candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+  ]);
+  const runtime = createRuntime();
+  registerWorkspaceSqlite(runtime, { sourceRoot: candidateSource, observeCheckout: (root) => checkouts.get(path.resolve(root)) || null });
+  const retainedStore = path.join(retained, '.buildr', 'local', 'workspace.sqlite');
+
+  assert.throws(
+    () => runtime.openWorkspaceStructuredStore(retained, { writable: true }),
+    (error) => error.code === 'workspace_store_writer_provenance_forbidden',
+  );
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'local')), false);
+  assert.equal(fs.existsSync(retainedStore), false);
+
+  const validationStore = runtime.openWorkspaceStructuredStore(validation, { writable: true });
+  assert.equal(validationStore.version, 6);
+  validationStore.database.close();
+  runtime.createTaskRecord(validation, { taskId: 'candidate-validation-probe', title: 'Candidate validation', intent: 'Verify isolated Task data.', projects: [], services: [], changes: [] });
+  assert.equal(runtime.readTaskRecordPersistence(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
+  assert.equal(fs.existsSync(path.join(validation, '.buildr', 'local', 'workspace.sqlite')), true);
+  assert.equal(fs.existsSync(retainedStore), false);
+
+  assert.throws(
+    () => runtime.openWorkspaceStructuredStore(peerValidation, { writable: true }),
+    (error) => error.code === 'workspace_store_workspace_not_canonical',
+  );
+  const peerRuntime = createRuntime();
+  registerWorkspaceSqlite(peerRuntime, { sourceRoot: peerCandidateSource, observeCheckout: (root) => checkouts.get(path.resolve(root)) || null });
+  peerRuntime.createTaskRecord(peerValidation, { taskId: 'candidate-validation-probe', title: 'Peer candidate validation', intent: 'Verify concurrent isolated Task data.', projects: [], services: [], changes: [] });
+  assert.equal(peerRuntime.readTaskRecordPersistence(peerValidation, 'candidate-validation-probe').record.title, 'Peer candidate validation');
+  assert.equal(runtime.readTaskRecordPersistence(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
+  assert.equal(fs.existsSync(path.join(peerValidation, '.buildr', 'local', 'workspace.sqlite')), true);
+  assert.equal(fs.existsSync(retainedStore), false);
+});
+
+test('候选 runtime 对无关普通 Workspace 保持单库写入能力', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  const candidateSource = path.join(os.tmpdir(), 'candidate-source');
+  registerWorkspaceSqlite(runtime, {
+    sourceRoot: candidateSource,
+    observeCheckout: (target) => path.resolve(target) === path.resolve(candidateSource)
+      ? { checkoutRoot: candidateSource, gitDirectory: '/tmp/common/worktrees/candidate', gitCommonDirectory: '/tmp/common', linkedWorktree: true }
+      : null,
+  });
+
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  opened.database.close();
+  assert.equal(fs.existsSync(path.join(root, '.buildr', 'local', 'workspace.sqlite')), true);
+});
+
 test('operation scope 只复用单次action的canonical与owner Application read model', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();

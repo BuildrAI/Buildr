@@ -13,7 +13,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 ## 数据与依赖
 
 - Workspace/Project/Service、Rules、Skills、Commands 和 Components 使用 YAML manifests/registries。
-- Workspace Structured Store使用`.buildr/local/workspace.sqlite`，由随npm package交付的连续SQL migrations、checksum ledger和Doctor管理。它是Buildr Local单机数据，不进入Git或同步；未来Server/Cloud不复用数据库文件作为共享协议。
+- Workspace Structured Store使用`.buildr/local/workspace.sqlite`，由随npm package交付的连续SQL migrations、checksum ledger和Doctor管理。它是Buildr Local单机数据，不进入Git或同步；未来Server/Cloud不复用数据库文件作为共享协议。自举 candidate runtime 在与 retained Workspace 共享 Git common-dir 时，只能写入自己的 linked Task Validation Workspace store；写 retained canonical store 或 peer checkout 会在创建目录、SQLite、WAL/SHM、ledger 或业务 row 前被 provenance guard 拒绝。验证 store 从完整 migration chain 建立，数据不回灌主库；最终集成后的 retained runtime 才能升级主库。
 - Task Record 使用Workspace Structured Store中的规范化`tasks`、Project/Service/Change关系表及closed `buildr.task-record/v1` schema；nullable `tasks.parent_task_id` self-reference foreign key直接表达单Parent/多直接Child，并由主表索引支持Children查询，不建立独立关系表。repository以单transaction维护，并按Git topology拒绝linked-worktree authority。关系拒绝不存在/terminal Parent、自引用与祖先循环，但不传播生命周期或专业动作。旧`task.yml`不读取、不迁移、不双写、不删除；同目录其他专业模块文件继续保留。Task Record只保存最小顶层事实，不保存Task Environment或其他专业模块字段。
 - Task Review 使用 Workspace SQLite 中的`(task_id, planning|completion)`两个可选current slots与统一closed `buildr.task-review-result/v1` schema。同类型事务整值替换、跨类型隔离，持久模型不含revision、history、current、applicability或digest；Task Review Application仍是唯一writer。
 - Task Retrospective使用Workspace SQLite中按Task ID唯一的closed `buildr.task-retrospective-result/v1` current row，只允许terminal Task写入固定执行效率focus与自由Markdown。重复复盘整值替换；Skill通过内部driver写入，Local App只调用Application `inspect`。它不提供公共CLI、history、评分、跨任务聚合或lifecycle gate，旧`.buildr/asset-review/`保持inert。
