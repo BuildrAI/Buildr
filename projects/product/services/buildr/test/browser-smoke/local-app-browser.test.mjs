@@ -176,7 +176,20 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
     status: 'delivered', runId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
     candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity,
     completedAt, finalRemoteRef: delivery.finalRemoteRef, targetBranch: 'dev', remote: 'origin', cleanup: cleanupResult,
-    reuseMode: carrier.reuseMode, equivalence, semanticEquivalence: equivalence.semanticEquivalence, diagnostics: [],
+    reuseMode: carrier.reuseMode, equivalence, semanticEquivalence: equivalence.semanticEquivalence,
+    association: {
+      schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: handoff.identity,
+      candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation,
+      gates: {
+        planning: handoff.gates.planning.disposition
+          ? { status: 'gate-disposition', disposition: handoff.gates.planning.disposition, targetIdentity: handoff.gates.planning.targetIdentity, summary: handoff.gates.planning.summary, source: handoff.gates.planning.source }
+          : { status: 'adopted-at-delivery', targetIdentity: handoff.gates.planning.targetIdentity, resultDigest: handoff.gates.planning.resultDigest, outcome: handoff.gates.planning.outcome },
+        completion: { status: 'adopted-at-delivery', targetIdentity: handoff.gates.completion.targetIdentity, resultDigest: handoff.gates.completion.resultDigest, outcome: handoff.gates.completion.outcome },
+        verification: { status: 'verified-at-delivery', targetIdentity: handoff.gates.verification.targetIdentity, resultDigest: handoff.gates.verification.resultDigest, outcome: handoff.gates.verification.outcome },
+      },
+      observedAt: completedAt, source: 'task-finish-application',
+    },
+    diagnostics: [],
   });
 }
 

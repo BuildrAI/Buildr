@@ -100,6 +100,12 @@ export function writeFinishCompletion({ root, runId, completion }) {
   return file;
 }
 
+export function readFinishCompletion({ root, runId }) {
+  const file = finishCompletionFile(root, runId);
+  if (!fs.existsSync(file)) return null;
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
 function phase(id) {
   return {
     id,

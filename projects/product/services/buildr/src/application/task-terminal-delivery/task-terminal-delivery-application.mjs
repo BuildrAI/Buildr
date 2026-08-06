@@ -1,17 +1,3 @@
-function associateReview(slot, gate, delivered) {
-  if (!delivered || !gate) return null;
-  if (gate.disposition) return { status: 'gate-disposition', disposition: gate.disposition, targetIdentity: gate.targetIdentity, summary: gate.summary, source: gate.source };
-  const matches = slot?.present && slot.resultDigest === gate.resultDigest && slot.result.targetIdentity === gate.targetIdentity && slot.result.conclusion.outcome === gate.outcome;
-  return { status: matches ? 'adopted-at-delivery' : 'unproven', targetIdentity: gate.targetIdentity, resultDigest: gate.resultDigest, outcome: gate.outcome };
-}
-
-function associateVerification(slot, gate, delivered) {
-  if (!delivered || !gate) return null;
-  if (gate.disposition) return { status: 'gate-disposition', disposition: gate.disposition, targetIdentity: gate.targetIdentity, summary: gate.summary, source: gate.source };
-  const matches = slot?.present && slot.resultDigest === gate.resultDigest && slot.result.target.identity === gate.targetIdentity && slot.result.conclusion.outcome === gate.outcome;
-  return { status: matches ? 'verified-at-delivery' : 'unproven', targetIdentity: gate.targetIdentity, resultDigest: gate.resultDigest, outcome: gate.outcome };
-}
-
 function baseProjection(task, development, reviews, verification) {
   return {
     schemaVersion: 'buildr.task-terminal-delivery/v1',
@@ -43,10 +29,10 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     if (task.result?.noChange === true) return { ...projection, status: 'completed-no-change' };
     const lifecycle = runtime.inspectTaskLifecycleReadModel?.(targetRoot, taskId);
     const finish = lifecycle?.model?.finish;
-    if (!finish || finish.status !== 'delivered') {
+    if (!finish || finish.status !== 'delivered' || !finish.association) {
       return { ...projection, status: 'completed-unproven', diagnostics: [{ code: 'task_delivery_summary_missing', message: 'Task 已完成，但 SQLite lifecycle read model 没有匹配成功 Finish summary。' }] };
     }
-    const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === finish.handoffIdentity) || null;
+    const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === finish.association.handoffIdentity) || null;
     const cleanupSummary = finish.cleanup?.environment?.latest?.cleanup || finish.cleanup?.latest?.cleanup || {};
     const terminal = {
       status: 'delivered',
@@ -66,9 +52,9 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       delivery: terminal,
       snapshot: { taskContext: receipt?.taskContext || null, planning: receipt?.planning || null, contentTarget: receipt?.contentTarget || null, verificationPolicy: receipt?.verificationPolicy || null, candidate: selectedHandoff?.candidate || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null },
       associations: {
-        planning: associateReview(reviews.slots.planning, selectedHandoff?.gates?.planning, true),
-        completion: associateReview(reviews.slots.completion, selectedHandoff?.gates?.completion, true),
-        verification: associateVerification(verification.slot, selectedHandoff?.gates?.verification, true),
+        planning: finish.association.gates?.planning || null,
+        completion: finish.association.gates?.completion || null,
+        verification: finish.association.gates?.verification || null,
       },
       diagnostics: finish.diagnostics || [],
     };

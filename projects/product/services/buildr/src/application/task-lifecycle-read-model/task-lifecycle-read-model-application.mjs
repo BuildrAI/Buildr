@@ -1,4 +1,5 @@
 const SCHEMA_VERSION = 'buildr.task-lifecycle-read-model/v1';
+const TERMINAL_ASSOCIATION_SCHEMA = 'buildr.task-terminal-delivery-associations/v1';
 
 function now() { return new Date().toISOString(); }
 
@@ -41,6 +42,52 @@ function slotSummary(slot, observedAt, source) {
     applicability: clone(slot.applicability),
     observedAt,
     source,
+  };
+}
+
+function requiredText(value, field) {
+  if (typeof value !== 'string' || !value.trim()) throw Object.assign(new Error(`${field} 必须是非空字符串。`), { code: 'task_terminal_association_invalid', status: 400, details: { field } });
+  return value.trim();
+}
+
+function terminalGate(value, field) {
+  if (value == null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error(`${field} 必须是对象或 null。`), { code: 'task_terminal_association_invalid', status: 400, details: { field } });
+  const status = requiredText(value.status, `${field}.status`);
+  const targetIdentity = requiredText(value.targetIdentity, `${field}.targetIdentity`);
+  if (status === 'gate-disposition') {
+    return {
+      status,
+      disposition: requiredText(value.disposition, `${field}.disposition`),
+      targetIdentity,
+      summary: requiredText(value.summary, `${field}.summary`),
+      source: requiredText(value.source, `${field}.source`),
+    };
+  }
+  if (!['adopted-at-delivery', 'verified-at-delivery'].includes(status)) throw Object.assign(new Error(`${field}.status 不受支持：${status}。`), { code: 'task_terminal_association_invalid', status: 400, details: { field: `${field}.status`, value: status } });
+  return {
+    status,
+    targetIdentity,
+    resultDigest: requiredText(value.resultDigest, `${field}.resultDigest`),
+    outcome: requiredText(value.outcome, `${field}.outcome`),
+  };
+}
+
+function terminalAssociation(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('Delivered Finish projection 必须包含 terminal association。'), { code: 'task_terminal_association_required', status: 400 });
+  if (value.schemaVersion !== TERMINAL_ASSOCIATION_SCHEMA) throw Object.assign(new Error(`Terminal association schema 不受支持：${value.schemaVersion || '<missing>'}。`), { code: 'task_terminal_association_schema_invalid', status: 400 });
+  return {
+    schemaVersion: TERMINAL_ASSOCIATION_SCHEMA,
+    handoffIdentity: requiredText(value.handoffIdentity, 'association.handoffIdentity'),
+    candidateIdentity: requiredText(value.candidateIdentity, 'association.candidateIdentity'),
+    candidateGeneration: Number.isInteger(value.candidateGeneration) && value.candidateGeneration > 0 ? value.candidateGeneration : (() => { throw Object.assign(new Error('association.candidateGeneration 必须是正整数。'), { code: 'task_terminal_association_invalid', status: 400, details: { field: 'association.candidateGeneration' } }); })(),
+    gates: {
+      planning: terminalGate(value.gates?.planning, 'association.gates.planning'),
+      completion: terminalGate(value.gates?.completion, 'association.gates.completion'),
+      verification: terminalGate(value.gates?.verification, 'association.gates.verification'),
+    },
+    observedAt: value.observedAt && !Number.isNaN(Date.parse(value.observedAt)) ? value.observedAt : now(),
+    source: 'task-finish-application',
   };
 }
 
@@ -100,9 +147,11 @@ export function registerTaskLifecycleReadModelApplication(runtime) {
   }
 
   function projectTaskFinish(targetRoot, taskId, finish) {
+    const normalized = clone(finish);
+    if (normalized?.status === 'delivered') normalized.association = terminalAssociation(normalized.association);
     return project(targetRoot, taskId, (current) => ({
       ...current,
-      finish: { ...clone(finish), observedAt: finish?.observedAt || now(), source: 'task-finish-application' },
+      finish: { ...normalized, observedAt: normalized?.observedAt || now(), source: 'task-finish-application' },
     }));
   }
 

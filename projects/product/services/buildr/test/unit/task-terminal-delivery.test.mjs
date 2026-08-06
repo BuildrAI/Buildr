@@ -56,7 +56,17 @@ function runtimeFor(status = 'completed', finish = finishEntry()) {
       contentTargetIdentity: finish.result.identity.contentTargetIdentity, completedAt: finish.result.completedAt,
       finalRemoteRef: finish.result.delivery.finalRemoteRef, targetBranch: finish.result.identity.targetBranch,
       remote: finish.result.identity.remote, cleanup: finish.result.completion.cleanup, reuseMode: finish.result.reuseMode,
-      equivalence: finish.result.equivalence, diagnostics: [],
+      equivalence: finish.result.equivalence,
+      association: {
+        schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: ids.handoff, candidateIdentity: ids.candidate, candidateGeneration: 1,
+        gates: {
+          planning: { status: 'gate-disposition', disposition: 'not-applicable', targetIdentity: ids.plan, summary: '无需独立方案审查。', source: 'change guard' },
+          completion: { status: 'adopted-at-delivery', targetIdentity: ids.candidate, resultDigest: 'sha256-completion-result', outcome: 'ready' },
+          verification: { status: 'verified-at-delivery', targetIdentity: ids.target, resultDigest: ids.result, outcome: 'passed' },
+        },
+        observedAt: '2026-08-05T00:00:06.000Z', source: 'task-finish-application',
+      },
+      diagnostics: [],
     } : null } }),
   };
   registerTaskTerminalDeliveryApplication(runtime);
@@ -64,14 +74,19 @@ function runtimeFor(status = 'completed', finish = finishEntry()) {
 }
 
 test('terminal composer separates delivered snapshot from live applicability', () => {
-  const projection = runtimeFor().inspectTaskTerminalDelivery('/workspace', TASK);
+  const runtime = runtimeFor();
+  runtime.inspectTaskReview = () => ({ slots: { planning: { present: false }, completion: { present: true, resultDigest: 'sha256-new-completion', result: { targetIdentity: 'sha256-new-target', conclusion: { outcome: 'changes-required' } } } } });
+  runtime.inspectTaskVerification = () => ({ slot: { present: true, resultDigest: 'sha256-new-verification', result: { target: { identity: 'sha256-new-target' }, conclusion: { outcome: 'failed' } } } });
+  const projection = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
   assert.equal(projection.status, 'delivered');
   assert.equal(projection.delivered, true);
   assert.equal(projection.delivery.finalRemoteRef, 'abc123');
   assert.equal(projection.associations.planning.status, 'gate-disposition');
   assert.equal(projection.associations.completion.status, 'adopted-at-delivery');
   assert.equal(projection.associations.verification.status, 'verified-at-delivery');
-  assert.equal(projection.reviews.slots.completion.applicability, 'unknown');
+  assert.equal(projection.reviews.slots.completion.resultDigest, 'sha256-new-completion');
+  assert.equal(projection.associations.completion.resultDigest, 'sha256-completion-result');
+  assert.equal(projection.associations.verification.resultDigest, ids.result);
 });
 
 test('terminal composer does not gate new v2 delivery on deprecated product install fields', () => {
@@ -89,6 +104,10 @@ test('terminal composer covers active, no-change, abandoned, unproven and identi
   assert.equal(noChange.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-no-change');
   assert.equal(runtimeFor('abandoned').inspectTaskTerminalDelivery('/workspace', TASK).status, 'abandoned');
   assert.equal(runtimeFor('completed', null).inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
+  const missingAssociation = runtimeFor();
+  const readLifecycle = missingAssociation.inspectTaskLifecycleReadModel;
+  missingAssociation.inspectTaskLifecycleReadModel = (...args) => { const value = readLifecycle(...args); delete value.model.finish.association; return value; };
+  assert.equal(missingAssociation.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
   const unavailable = runtimeFor('completed', null);
   unavailable.readTaskFinishResults = () => { throw new Error('GET must not scan Finish Result files.'); };
   assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');

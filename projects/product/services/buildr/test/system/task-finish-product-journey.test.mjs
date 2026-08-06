@@ -242,6 +242,11 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   command(environmentRoot, 'git', ['add', '-f', path.relative(environmentRoot, nestedMetadata)]);
   const environment = taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRemote: null, repositoryStartPoint: 'HEAD' });
   const runtime = realTaskDevelopmentFixture({ task, environmentRoot, retained, environment });
+  let projectedFinish = null;
+  runtime.projectTaskFinish = (_root, projectedTask, finish) => {
+    assert.equal(projectedTask, task);
+    projectedFinish = finish;
+  };
   const frozen = runtime.inspectTaskDevelopment(retained, task).development.receipt.candidate;
   fs.writeFileSync(path.join(retained, 'baseline-advance.txt'), 'new delivery baseline\n');
   command(retained, 'git', ['add', 'baseline-advance.txt']);
@@ -269,6 +274,7 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   });
   registerTaskFinishApplication(runtime);
   const gateObservation = runtime.inspectTaskDevelopment(retained, task);
+  const expectedHandoff = gateObservation.development.receipt.handoffs.at(-1);
   assert.equal(gateObservation.development.applicability.contentTarget, 'current');
   assert.equal(gateObservation.development.applicability.candidate, 'current');
   assert.equal(gateObservation.development.applicability.handoff, 'current');
@@ -298,6 +304,11 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
+  assert.equal(projectedFinish?.association?.handoffIdentity, expectedHandoff.identity);
+  assert.equal(projectedFinish?.association?.candidateIdentity, frozen.identity);
+  assert.equal(projectedFinish?.association?.gates.planning.status, 'adopted-at-delivery');
+  assert.equal(projectedFinish?.association?.gates.verification.status, 'verified-at-delivery');
+  assert.equal(projectedFinish?.association?.gates.completion.status, 'adopted-at-delivery');
   assert.deepEqual(result.candidate, { identity: frozen.identity, generation: 1, contentTargetIdentity: frozen.contentTargetIdentity });
   assert.equal(result.identity.remote, 'origin');
   assert.equal(result.identity.targetBranch, 'dev');

@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
-import { acquireFinishTargetLease, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
+import { acquireFinishTargetLease, readFinishCompletion, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
 import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-process.mjs';
 import {
   adoptAgentReviewedGitCarrier,
@@ -21,6 +21,39 @@ const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
+}
+
+function deliveredGate(gate, type) {
+  if (!gate) return null;
+  if (gate.disposition) return {
+    status: 'gate-disposition',
+    disposition: gate.disposition,
+    targetIdentity: gate.targetIdentity,
+    summary: gate.summary,
+    source: gate.source,
+  };
+  return {
+    status: type === 'verification' ? 'verified-at-delivery' : 'adopted-at-delivery',
+    targetIdentity: gate.targetIdentity,
+    resultDigest: gate.resultDigest,
+    outcome: gate.outcome,
+  };
+}
+
+function terminalAssociation(handoff, observedAt) {
+  return {
+    schemaVersion: 'buildr.task-terminal-delivery-associations/v1',
+    handoffIdentity: handoff.identity,
+    candidateIdentity: handoff.candidate.identity,
+    candidateGeneration: handoff.candidate.generation,
+    gates: {
+      planning: deliveredGate(handoff.gates?.planning, 'planning'),
+      completion: deliveredGate(handoff.gates?.completion, 'completion'),
+      verification: deliveredGate(handoff.gates?.verification, 'verification'),
+    },
+    observedAt,
+    source: 'task-finish-application',
+  };
 }
 
 function deliveryCarrier(run, isolated, { reuseMode, status = 'prepared', activationPlan = null }) {
@@ -442,6 +475,16 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const operations = [];
       const finalRemoteRef = run.delivery?.finalRemoteRef;
       if (run.delivery?.carrierRef !== run.deliveryCarrier?.head || !finalRemoteRef) return { status: 'blocked', failure: { operation: 'cleanup-readiness', failureClass: 'transient-external-condition', code: 'task-finish.delivery-not-complete', message: 'Cleanup requires completed carrier and final remote delivery evidence.' } };
+      const previousCompletion = readFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId });
+      let association = previousCompletion?.association || null;
+      if (association && (previousCompletion.task !== run.identity.task || previousCompletion.handoffIdentity !== run.identity.handoffIdentity || previousCompletion.candidateIdentity !== run.identity.candidateIdentity)) {
+        return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'product-execution-failure', code: 'task-finish.terminal-association-identity-mismatch', message: 'Prepared terminal association does not match the current Finish run identity.' } };
+      }
+      if (!association) {
+        const development = developmentCarrier(run);
+        if (!development.matches) return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'upstream-candidate-defect', code: 'task-finish.development-handoff-not-current', message: 'Cannot persist terminal delivery associations because the current Development handoff no longer matches this run.' } };
+        association = terminalAssociation(development.handoff, new Date().toISOString());
+      }
       const prepared = {
         schemaVersion: 'buildr.task-finish-completion/v1',
         runId: run.runId,
@@ -458,6 +501,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         targetBranch: run.identity.targetBranch,
         status: 'prepared',
         preparedAt: new Date().toISOString(),
+        association,
       };
       const completionFile = writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: prepared });
       const context = taskEnvironment(run);
@@ -492,23 +536,31 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete });
       if (typeof runtime.projectTaskFinish === 'function') {
-        runtime.projectTaskFinish(run.identity.workspaceRoot, run.identity.task, {
-          status: 'delivered',
-          runId: run.runId,
-          handoffIdentity: run.identity.handoffIdentity,
-          candidateIdentity: run.identity.candidateIdentity,
-          candidateGeneration: run.identity.candidateGeneration,
-          contentTargetIdentity: run.identity.contentTargetIdentity,
-          completedAt: complete.completedAt,
-          finalRemoteRef: complete.finalRemoteRef,
-          targetBranch: complete.targetBranch,
-          remote: run.identity.remote,
-          cleanup: cleanedEnvironment,
-          reuseMode: run.reuseMode || run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
-          equivalence: run.equivalence,
-          semanticEquivalence: run.equivalence?.semanticEquivalence || null,
-          diagnostics: [],
-        });
+        try {
+          runtime.projectTaskFinish(run.identity.workspaceRoot, run.identity.task, {
+            status: 'delivered',
+            runId: run.runId,
+            handoffIdentity: run.identity.handoffIdentity,
+            candidateIdentity: run.identity.candidateIdentity,
+            candidateGeneration: run.identity.candidateGeneration,
+            contentTargetIdentity: run.identity.contentTargetIdentity,
+            completedAt: complete.completedAt,
+            finalRemoteRef: complete.finalRemoteRef,
+            targetBranch: complete.targetBranch,
+            remote: run.identity.remote,
+            cleanup: cleanedEnvironment,
+            reuseMode: run.reuseMode || run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
+            equivalence: run.equivalence,
+            semanticEquivalence: run.equivalence?.semanticEquivalence || null,
+            association,
+            diagnostics: [],
+          });
+          operations.push({ operation: 'project-terminal-association', status: 'projected', taskId: run.identity.task, handoffIdentity: run.identity.handoffIdentity });
+        } catch (error) {
+          const diagnostic = { code: error.code || 'task-finish.terminal-association-projection-failed', message: error.message, details: error.details || null };
+          operations.push({ operation: 'project-terminal-association', status: 'blocked', taskId: run.identity.task, diagnostic });
+          return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'product-execution-failure', code: diagnostic.code, message: diagnostic.message, diagnostic } };
+        }
       }
       return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { status: 'complete', receipt: completionFile, cleanup: cleanedEnvironment } } };
     },
