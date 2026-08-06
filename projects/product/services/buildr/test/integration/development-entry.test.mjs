@@ -55,11 +55,11 @@ test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Nod
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-workspace-'));
   const workspace = path.join(fixture, 'workspace');
   const appData = path.join(fixture, 'app-data');
-  const managed = workspaceNodeRuntimePaths('24.18.0', { dataRoot: appData }).node;
+  const managed = workspaceNodeRuntimePaths('24.15.0', { dataRoot: appData }).node;
   const pathNode = path.join(fixture, 'path/node');
   fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
-  fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 24.18.0\n');
-  fakeNode(managed, '24.18.0', 'managed');
+  fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 24.15.0\n');
+  fakeNode(managed, '24.15.0', 'managed');
   fakeNode(pathNode, '24.0.0', 'path');
   const result = run(runner, ['--help'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: appData, PATH: `${path.dirname(pathNode)}:/usr/bin:/bin` });
   assert.equal(result.status, 0, result.stderr);
@@ -71,11 +71,11 @@ test('受管 Node 缺失时仅 doctor/sync 可使用 bootstrap Node', () => {
   const workspace = path.join(fixture, 'workspace');
   const bootstrap = path.join(fixture, 'path/node');
   fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
-  fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 24.18.0\n');
+  fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 24.15.0\n');
   fakeNode(bootstrap, '24.15.0', 'bootstrap');
   const blocked = run(runner, ['project', 'create', 'demo'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(bootstrap)}:/usr/bin:/bin` });
   assert.equal(blocked.status, 1);
-  assert.match(blocked.stderr, /Workspace Node runtime 24\.18\.0 is unavailable.*sync/u);
+  assert.match(blocked.stderr, /Workspace Node runtime 24\.15\.0 is unavailable.*sync/u);
   const recovery = run(runner, ['doctor', '--json'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(bootstrap)}:/usr/bin:/bin` });
   assert.equal(recovery.status, 0, recovery.stderr);
   assert.match(recovery.stdout, /^bootstrap\|.*doctor --json\n$/u);

@@ -182,7 +182,8 @@ test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t) => {
   const synced = run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const database = new DatabaseSync(file, { readOnly: true });
-  assert.deepEqual(database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [0, 1, 2, 3, 4, 5, 6]);
+  const expectedMigrations = loadWorkspaceSqliteMigrations().map(({ version, name }) => ({ version, name }));
+  assert.deepEqual(database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), expectedMigrations);
   assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_retrospective_current', 'task_lifecycle_current')").get().count, 2);
   database.close();
 });
