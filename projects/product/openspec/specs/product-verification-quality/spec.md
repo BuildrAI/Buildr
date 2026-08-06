@@ -7,17 +7,17 @@
 ## Requirements
 
 ### Requirement: CI 必须覆盖最低 Node、当前 Node 和目标桌面平台
-Buildr CI MUST 在 Linux Node 20 和 Node 22 上运行完整产品候选验证，并 MUST 在 macOS、Windows Node 22 上运行可移植 release smoke；CI MUST NOT 为已经由 Linux Node 22 完整验证覆盖的相同 release lifecycle 建立独立 Linux smoke job。
+Buildr CI MUST 在 Linux Node 24.15.0 和当前 Node 24 上运行完整产品候选验证，并 MUST 在 macOS、Windows Node 24.15.0 上运行可移植 release smoke；CI MUST NOT 为已经由 Linux 当前 Node 24 完整验证覆盖的相同 release lifecycle 建立独立 Linux smoke job。
 
 #### Scenario: 验证最低 Node 版本
 - **WHEN** push 或 pull request 触发产品 CI
-- **THEN** Linux Node 20 job MUST 安装锁定依赖和支持的 OpenSpec CLI
+- **THEN** Linux Node 24.15.0 job MUST 安装锁定依赖和支持的 OpenSpec CLI
 - **AND** job MUST 运行完整产品候选验证
 
 #### Scenario: 验证当前 Node 与桌面平台
 - **WHEN** push 或 pull request 触发产品 CI
-- **THEN** Linux Node 22 MUST 运行完整产品候选验证
-- **AND** macOS、Windows Node 22 MUST 运行 standalone release smoke
+- **THEN** Linux 当前 Node 24 MUST 运行完整产品候选验证
+- **AND** macOS、Windows Node 24.15.0 MUST 运行 standalone release smoke
 - **AND** 桌面平台 job MUST NOT 重复运行只依赖 Node 和产品源码的 unit tests
 
 ### Requirement: release smoke 必须验证安装后生命周期
@@ -36,7 +36,7 @@ Buildr MUST 提供不依赖 development checkout runtime 的跨平台 release sm
 - **AND** verifier MUST 完成与 standalone 模式相同的安装后生命周期
 
 #### Scenario: release smoke 跨平台运行
-- **WHEN** verifier 在 Linux、macOS 或 Windows Node 22 运行
+- **WHEN** verifier 在 Linux、macOS 或 Windows Node 24.15.0 运行
 - **THEN** verifier MUST 使用平台对应的 npm executable 和 installed bin 路径
 - **AND** verifier MUST NOT 依赖 Bash、Unix-only 临时目录命令或固定 `/tmp` 路径
 
