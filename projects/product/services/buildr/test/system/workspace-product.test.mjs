@@ -24,6 +24,16 @@ function temporaryRoot(t) {
   return root;
 }
 
+function isolateLocalAppData(t, appData) {
+  const previous = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = appData;
+  t.after(() => {
+    if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previous;
+  });
+  return appData;
+}
+
 function runBuildr(args, options = {}) {
   const env = options.env || { ...process.env, BUILDR_APP_DATA_DIR: process.env.BUILDR_APP_DATA_DIR || TEST_APP_DATA };
   return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
@@ -185,10 +195,7 @@ test('Getting Started projection 汇总 Workspace 范围，开始工作 prompt �
 });
 
 test('目录选择候选以结构化结果恢复，不在失败时写入 Registry', (t) => {
-  const appData = path.join(temporaryRoot(t), 'picker-app-data');
-  const previous = process.env.BUILDR_APP_DATA_DIR;
-  process.env.BUILDR_APP_DATA_DIR = appData;
-  t.after(() => { if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR; else process.env.BUILDR_APP_DATA_DIR = previous; });
+  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'picker-app-data'));
   const runtime = createRuntime();
   const candidate = path.join(temporaryRoot(t), 'not-initialized'); fs.mkdirSync(candidate);
   const result = runtime.inspectLocalWorkspaceCandidate(candidate, runtime.listRegisteredWorkspaces().revision);
@@ -198,13 +205,7 @@ test('目录选择候选以结构化结果恢复，不在失败时写入 Registr
 });
 
 test('本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t) => {
-  const appData = path.join(temporaryRoot(t), 'app-data');
-  const previous = process.env.BUILDR_APP_DATA_DIR;
-  process.env.BUILDR_APP_DATA_DIR = appData;
-  t.after(() => {
-    if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR;
-    else process.env.BUILDR_APP_DATA_DIR = previous;
-  });
+  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data'));
   const first = initWorkspace(t, { name: 'First' });
   const second = initWorkspace(t, { name: 'Second' });
   const runtime = createRuntime();
@@ -236,13 +237,7 @@ test('本机 Workspace 登记只保存 root，并支持幂等登记、切换、�
 });
 
 test('本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t) => {
-  const appData = path.join(temporaryRoot(t), 'app-data-conflict');
-  const previous = process.env.BUILDR_APP_DATA_DIR;
-  process.env.BUILDR_APP_DATA_DIR = appData;
-  t.after(() => {
-    if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR;
-    else process.env.BUILDR_APP_DATA_DIR = previous;
-  });
+  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
   const first = initWorkspace(t, { name: 'Original' });
   const duplicate = path.join(temporaryRoot(t), 'duplicate');
   fs.cpSync(first, duplicate, { recursive: true });
@@ -318,13 +313,7 @@ test('sync 显式迁移 legacy Workspace，并在 identity 冲突时保持零写
 
 test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
   const root = initWorkspace(t);
-  const appData = path.join(temporaryRoot(t), 'local-app-data');
-  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
-  process.env.BUILDR_APP_DATA_DIR = appData;
-  t.after(() => {
-    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
-    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
-  });
+  isolateLocalAppData(t, path.join(temporaryRoot(t), 'local-app-data'));
   const runtime = createRuntime();
   const metadataFile = path.join(root, '.buildr', 'workspace.yml');
   const beforeHash = sha256(metadataFile);
@@ -436,6 +425,7 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
 
 test('本地应用文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
   const root = initWorkspace(t);
+  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'publication-app-data'));
   const created = runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '文章测试项目']);
   assert.equal(created.status, 0, created.stderr);
   const publicationRoot = path.join(root, 'projects', 'product', 'docs', 'publications');
@@ -443,9 +433,13 @@ test('本地应用文章入口只读投影项目文章、配图和稳定错误�
   fs.writeFileSync(path.join(publicationRoot, 'README.md'), '# index\n');
   fs.writeFileSync(path.join(publicationRoot, 'article.md'), '---\nid: article\ntitle: 测试文章\nstatus: published\ntargets:\n  - platform: local-app\n    status: published\n---\n\n# 测试文章\n\n![封面](assets/cover.png)\n');
   fs.writeFileSync(path.join(publicationRoot, 'assets', 'cover.png'), 'png');
-  const instance = createLocalWorkspaceServer(createRuntime(), { targetRoot: root });
+  const runtime = createRuntime();
+  const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => instance.server.close());
   const { url, initialWorkspaceId } = await instance.ready;
+  const registry = runtime.readWorkspaceRegistryPersistence();
+  assert.equal(registry.file, path.join(appData, 'workspace-registry.json'));
+  assert.deepEqual(registry.registry.roots, [root]);
   const apiBase = `${url}/api/v1/workspaces/${initialWorkspaceId}`;
   let response = await fetch(`${url}/workspaces/${initialWorkspaceId}/articles`);
   assert.equal(response.status, 200);
@@ -468,8 +462,7 @@ test('本地应用文章入口只读投影项目文章、配图和稳定错误�
 
 test('全局本机应用隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
   const base = temporaryRoot(t);
-  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'global-app-data');
-  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  isolateLocalAppData(t, path.join(base, 'global-app-data'));
   const first = initWorkspace(t, { name: 'global-first' });
   const second = initWorkspace(t, { name: 'global-second' });
   const runtime = createRuntime();
