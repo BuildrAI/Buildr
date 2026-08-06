@@ -141,11 +141,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-9d426aa1f78dcba9ea2a4e6c350a880b272b0fc0386beecc437fb98d97e96a85",
+      "integrity": "sha256-d3920996c599ccb0eec9a8c93358e84868265dbb884669e4e1ed468c9b8d6a95",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-81c66999124c209d6b9d535a299a0b29ca821f407af0b36319ffbd7712a03fef"
+          "integrity": "sha256-67518434e2a821e169698f2bdf6ab354f8129e4ba6aa53c129479b41afb466cd"
         }
       ]
     },
