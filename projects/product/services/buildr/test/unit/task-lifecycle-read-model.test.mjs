@@ -47,6 +47,28 @@ test('Finish projection persists a normalized terminal association snapshot', ()
   assert.equal(inspected.model.finish.association.source, 'task-finish-application');
 });
 
+test('not-applicable planning gate may omit target identity while delivery gates remain strict', () => {
+  const runtime = runtimeFor();
+  assert.doesNotThrow(() => runtime.projectTaskFinish('/workspace', TASK, {
+    status: 'delivered',
+    association: association({ gates: {
+      planning: { status: 'gate-disposition', disposition: 'not-applicable', targetIdentity: null, summary: '无需审查。', source: 'task-plan' },
+      completion: association().gates.completion,
+      verification: association().gates.verification,
+    } }),
+    completedAt: '2026-08-06T00:00:01.000Z',
+  }));
+  const strict = runtimeFor();
+  assert.throws(() => strict.projectTaskFinish('/workspace', TASK, {
+    status: 'delivered',
+    association: association({ gates: {
+      planning: association().gates.planning,
+      completion: { status: 'adopted-at-delivery', targetIdentity: null, resultDigest: 'sha256-completion', outcome: 'ready' },
+      verification: association().gates.verification,
+    } }),
+  }), (error) => error.code === 'task_terminal_association_invalid' && error.details.field === 'association.gates.completion.targetIdentity');
+});
+
 test('missing lifecycle snapshot remains an explicit read-only absence', () => {
   const inspected = runtimeFor().inspectTaskLifecycleReadModel('/workspace', TASK);
   assert.equal(inspected.present, false);

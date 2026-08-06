@@ -54,16 +54,20 @@ function terminalGate(value, field) {
   if (value == null) return null;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error(`${field} 必须是对象或 null。`), { code: 'task_terminal_association_invalid', status: 400, details: { field } });
   const status = requiredText(value.status, `${field}.status`);
-  const targetIdentity = requiredText(value.targetIdentity, `${field}.targetIdentity`);
   if (status === 'gate-disposition') {
+    const disposition = requiredText(value.disposition, `${field}.disposition`);
+    const targetIdentity = disposition === 'not-applicable' && value.targetIdentity == null
+      ? null
+      : requiredText(value.targetIdentity, `${field}.targetIdentity`);
     return {
       status,
-      disposition: requiredText(value.disposition, `${field}.disposition`),
+      disposition,
       targetIdentity,
       summary: requiredText(value.summary, `${field}.summary`),
       source: requiredText(value.source, `${field}.source`),
     };
   }
+  const targetIdentity = requiredText(value.targetIdentity, `${field}.targetIdentity`);
   if (!['adopted-at-delivery', 'verified-at-delivery'].includes(status)) throw Object.assign(new Error(`${field}.status 不受支持：${status}。`), { code: 'task_terminal_association_invalid', status: 400, details: { field: `${field}.status`, value: status } });
   return {
     status,
