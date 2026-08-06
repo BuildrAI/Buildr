@@ -1,4 +1,5 @@
 import { renderMarkdown } from '/markdown.js';
+import { changeBriefPanel } from '/features/change-detail.js';
 
 function text(id, value) {
   const element = document.getElementById(id);
@@ -124,12 +125,13 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     <div id="task-detail-alert" class="alert hidden" role="status"></div>
     <nav class="detail-tabs" aria-label="任务详情"><button class="detail-tab active" type="button" data-task-tab="overview" aria-selected="true">概览</button><button class="detail-tab" type="button" data-task-tab="development" aria-selected="false">研发</button><button class="detail-tab" type="button" data-task-tab="evidence" aria-selected="false">证据</button><button class="detail-tab" type="button" data-task-tab="retrospective" aria-selected="false">复盘</button><button class="detail-tab" type="button" data-task-tab="environment" aria-selected="false">环境</button></nav>
     <div id="task-overview-panel" data-task-panel="overview">
+    <section id="task-change-briefs" class="task-change-briefs" aria-live="polite"></section>
     <section class="detail-layout">
       <article class="panel"><div class="panel-heading"><div><h2>任务记录（Task Record）</h2><p class="section-copy">只展示顶层任务事实；Parent/Child 表达管理层级，不自动推断状态或专业结果。</p></div></div><dl class="read-facts detail-facts"><div><dt>任务 ID</dt><dd id="task-detail-id">—</dd></div><div><dt>Parent Task</dt><dd id="task-detail-parent">—</dd></div><div><dt>直接 Child Tasks</dt><dd id="task-detail-children">—</dd></div><div><dt>项目范围</dt><dd id="task-detail-projects">—</dd></div><div><dt>服务范围</dt><dd id="task-detail-services">—</dd></div><div><dt>OpenSpec 变更</dt><dd id="task-detail-changes">—</dd></div><div><dt>结果</dt><dd id="task-detail-result">进行中</dd></div><div><dt>创建时间</dt><dd id="task-detail-created">—</dd></div><div><dt>更新时间</dt><dd id="task-detail-updated">—</dd></div></dl></article>
       <aside class="panel facts-panel"><p class="eyebrow">技术事实</p><h2>读取证据</h2><dl class="fact-list"><div><dt>数据格式</dt><dd>buildr.task-record/v1</dd></div><div><dt>存储范围</dt><dd>Workspace 本地数据</dd></div><div><dt>记录摘要（recordDigest）</dt><dd id="task-detail-digest">—</dd></div></dl></aside>
     </section>
     <section id="task-active-actions" class="task-actions">
-      <article class="panel"><div class="panel-heading"><div><h2>编辑进行中的任务</h2><p class="section-copy">保存时只提交明确的设置与增删操作；陈旧页面不会覆盖新内容。修改 Parent 不会自动处置任何关联 Task。</p></div><span id="task-edit-state" class="state">可以修改</span></div><form id="task-edit-form" class="prompt-grid"><label>标题<input id="task-edit-title" required></label><label>Parent Task<select id="task-edit-parent"><option value="">无 Parent（独立 Task）</option></select></label><label class="full">意图<textarea id="task-edit-intent" rows="3" required></textarea></label><label>项目范围<textarea id="task-edit-projects" rows="3"></textarea></label><label>服务范围（project/service）<textarea id="task-edit-services" rows="3"></textarea></label><label class="full">OpenSpec 变更（project/change）<textarea id="task-edit-changes" rows="3"></textarea></label><div class="actions full"><button id="task-edit-button" class="button primary" type="submit">保存任务记录</button></div></form></article>
+      <article class="panel"><div class="panel-heading"><div><h2>编辑进行中的任务</h2><p class="section-copy">保存时只提交明确的设置与增删操作；Change 由 Agent 在任务过程中维护，页面只读展示。修改 Parent 不会自动处置任何关联 Task。</p></div><span id="task-edit-state" class="state">可以修改</span></div><form id="task-edit-form" class="prompt-grid"><label>标题<input id="task-edit-title" required></label><label>Parent Task<select id="task-edit-parent"><option value="">无 Parent（独立 Task）</option></select></label><label class="full">意图<textarea id="task-edit-intent" rows="3" required></textarea></label><label>项目范围<textarea id="task-edit-projects" rows="3"></textarea></label><label>服务范围（project/service）<textarea id="task-edit-services" rows="3"></textarea></label><div class="actions full"><button id="task-edit-button" class="button primary" type="submit">保存任务记录</button></div></form></article>
       <article class="panel terminal-panel"><div class="panel-heading"><div><h2>结束任务</h2><p class="section-copy">只更新顶层状态；不会执行任务收尾（Task Finish）、Git、任务验证、任务环境清理或其他专业动作。</p></div></div><div class="terminal-action-grid"><form id="task-complete-form"><h3>完成</h3><label>完成摘要<textarea id="task-complete-summary" rows="3" required></textarea></label><label>是否无需交付变更<select id="task-complete-no-change" required><option value="">请选择</option><option value="false">有交付变更</option><option value="true">确认无需变更</option></select></label><button class="button secondary" type="submit">确认完成</button></form><form id="task-abandon-form"><h3>放弃</h3><label>放弃原因<textarea id="task-abandon-reason" rows="3" required></textarea></label><button class="button danger" type="submit">确认放弃</button></form></div></article>
     </section>
     <section id="task-terminal-note" class="empty-state hidden"><h2>这是终态任务记录</h2><p>顶层事实与 Parent/Child 关系保持只读，不提供重开、重新挂接或自动处置关联 Task 的入口。专业模块仍由各自权威来源管理。</p></section>
@@ -247,9 +249,21 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     }
     text('task-detail-result', record.result ? `${record.result.summary}${record.status === 'completed' ? `（${record.result.noChange ? '无需变更' : '有交付变更'}）` : ''}` : '进行中');
     text('task-detail-created', new Date(record.createdAt).toLocaleString('zh-CN')); text('task-detail-updated', new Date(record.updatedAt).toLocaleString('zh-CN')); text('task-detail-digest', data.recordDigest);
-    document.getElementById('task-edit-title').value = record.title; document.getElementById('task-edit-intent').value = record.intent; document.getElementById('task-edit-projects').value = lines(record.scope.projects); document.getElementById('task-edit-services').value = lines(record.scope.services, 'service'); document.getElementById('task-edit-changes').value = lines(record.changes, 'change');
+    document.getElementById('task-edit-title').value = record.title; document.getElementById('task-edit-intent').value = record.intent; document.getElementById('task-edit-projects').value = lines(record.scope.projects); document.getElementById('task-edit-services').value = lines(record.scope.services, 'service');
+    void renderChangeBriefs(record.changes);
     renderParentOptions(record);
     const terminal = record.status !== 'active'; document.getElementById('task-active-actions').classList.toggle('hidden', terminal); document.getElementById('task-terminal-note').classList.toggle('hidden', !terminal);
+  }
+
+  async function renderChangeBriefs(references) {
+    const container = document.getElementById('task-change-briefs'); container.replaceChildren();
+    if (!references.length) { const note = document.createElement('section'); note.className = 'panel'; note.textContent = '这个任务没有关联 Change，因此没有 Brief 可展示。'; container.append(note); return; }
+    for (const reference of references) {
+      try {
+        const data = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`);
+        container.append(changeBriefPanel(data.resolution.workingCopy.change));
+      } catch (error) { const note = document.createElement('section'); note.className = 'panel brief-missing'; note.textContent = `${reference.project}/${reference.change} 当前不可读取：${error.message}`; container.append(note); }
+    }
   }
 
   const developmentPanel = document.getElementById('task-development-panel');
@@ -733,13 +747,11 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     const record = current.record;
     const nextProjects = parseLines(document.getElementById('task-edit-projects').value);
     const nextServices = parseLines(document.getElementById('task-edit-services').value).map((item) => qualified(item, 'service'));
-    const nextChanges = parseLines(document.getElementById('task-edit-changes').value).map((item) => qualified(item, 'change'));
     const projects = diff(record.scope.projects, nextProjects);
     const services = diff(record.scope.services, nextServices, (item) => typeof item === 'string' ? item : `${item.project}/${item.service}`);
-    const changes = diff(record.changes, nextChanges, (item) => typeof item === 'string' ? item : `${item.project}/${item.change}`);
     const nextParentTaskId = document.getElementById('task-edit-parent').value || null;
     try {
-      const updated = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: JSON.stringify({ expectedRecordDigest: current.recordDigest, title: document.getElementById('task-edit-title').value, intent: document.getElementById('task-edit-intent').value, ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }), addProjects: projects.add, removeProjects: projects.remove, addServices: services.add, removeServices: services.remove, addChanges: changes.add, removeChanges: changes.remove }) });
+      const updated = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: JSON.stringify({ expectedRecordDigest: current.recordDigest, title: document.getElementById('task-edit-title').value, intent: document.getElementById('task-edit-intent').value, ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }), addProjects: projects.add, removeProjects: projects.remove, addServices: services.add, removeServices: services.remove }) });
       parentOptionsLoaded = false; render(updated); text('task-edit-state', updated.effects.length ? '保存成功' : '内容一致'); button.disabled = false; document.getElementById('task-detail-alert').classList.add('hidden');
     } catch (error) { showError(error); button.disabled = false; }
   });

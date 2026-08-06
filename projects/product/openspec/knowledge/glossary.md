@@ -362,8 +362,8 @@
 ## 方案审查（Planning Review）
 
 - 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result 绑定调用方提供的 plan target identity。
-- 适用范围：实现前方案检查，以及 Task-scoped Change 详情中的审查 Agent action；没有执行时 planning slot 可以不存在。
-- 避免混用：不要求固定为 OpenSpec artifacts，也不把全局 retained-only Change review 改造成 Task Review。
+- 适用范围：实现前方案检查；没有执行时 planning slot 可以不存在。
+- 避免混用：不要求固定为 OpenSpec artifacts，也不由 Local App Change 详情发起；Local App 只读展示 Change。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)
 
 ## 完成审查（Completion Review）

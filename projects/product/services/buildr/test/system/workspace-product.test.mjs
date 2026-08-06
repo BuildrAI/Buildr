@@ -341,12 +341,12 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
   assert.match(html, /工作空间设置/);
   assert.doesNotMatch(html, /https?:\/\//);
   let response;
-  for (const route of [`${workspaceBase}/`, `${workspaceBase}/settings`, `${workspaceBase}/projects`, `${workspaceBase}/projects/product`, `${workspaceBase}/services`, `${workspaceBase}/changes`, `${workspaceBase}/changes/product/active~demo`]) {
+  for (const route of [`${workspaceBase}/`, `${workspaceBase}/settings`, `${workspaceBase}/projects`, `${workspaceBase}/projects/product`, `${workspaceBase}/services`]) {
     response = await fetch(`${url}${route}`);
     assert.equal(response.status, 200);
     assert.match(await response.text(), /Buildr 工作空间/);
   }
-  for (const asset of ['/app.js', '/api-client.js', '/router.js', '/markdown.js', '/features/workspaces.js', '/features/workspace.js', '/features/projects.js', '/features/project-detail.js', '/features/services.js', '/features/changes.js', '/features/change-detail.js', '/features/agent-actions.js']) {
+  for (const asset of ['/app.js', '/api-client.js', '/router.js', '/markdown.js', '/features/workspaces.js', '/features/workspace.js', '/features/projects.js', '/features/project-detail.js', '/features/services.js', '/features/change-detail.js', '/features/agent-actions.js']) {
     response = await fetch(`${url}${asset}`);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /text\/javascript/);
@@ -371,8 +371,8 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
   assert.equal(gettingStarted.phase, 'service-empty');
   assert.equal(gettingStarted.projects.length, 1);
   assert.equal('selectedProject' in gettingStarted, false);
-  const changes = await fetch(`${url}${apiBase}/changes`).then((response) => response.json());
-  assert.deepEqual(changes.changes, []);
+  response = await fetch(`${url}${apiBase}/changes`);
+  assert.equal(response.status, 404);
 
   response = await fetch(`${url}${apiBase}`, {
     method: 'PUT',

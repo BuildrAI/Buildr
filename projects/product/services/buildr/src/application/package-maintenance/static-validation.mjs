@@ -333,8 +333,7 @@ export function createPackageStaticValidator(deps) {
     const changeDetail = path.join(root, 'src', 'interfaces', 'local-app', 'web', 'features', 'change-detail.js');
     if (existsFile(changeDetail)) {
       const content = fs.readFileSync(changeDetail, 'utf8');
-      if (!content.includes("openAgentAction('task-review', { taskId, reviewType: 'planning', projectCode, change: change.code })")) problems.push('Task-scoped Change review must route to Planning Task Review.');
-      if (!content.includes("openAgentAction('change', { projectCode, ref: changeRef, action: 'review' })")) problems.push('Global retained Change review route must remain available.');
+      if (content.includes('openAgentAction(')) problems.push('Task-scoped Change must remain read-only and must not expose Agent actions.');
     }
   }
 

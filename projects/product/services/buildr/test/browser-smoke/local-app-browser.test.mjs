@@ -19,7 +19,7 @@ const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const SELECTOR = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR = process.env.BUILDR_SCREENSHOT_DIR;
-const KNOWN_SELECTORS = new Set(['all', 'shell', 'task', 'project', 'service', 'change', 'articles']);
+const KNOWN_SELECTORS = new Set(['all', 'shell', 'task', 'project', 'service', 'articles']);
 
 if (!KNOWN_SELECTORS.has(SELECTOR)) throw new Error(`Unknown browser integration selector: ${SELECTOR}`);
 const selected = (name) => SELECTOR === 'all' || SELECTOR === name;
@@ -471,6 +471,8 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });
+    await page.locator('#task-change-briefs .change-brief-panel').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-change-briefs').innerText(), /普通用户先从这里了解变更/);
     assert.equal(await page.locator('#task-edit-parent').inputValue(), 'browser-parent');
     await page.locator('#task-edit-parent').selectOption('');
     await page.getByRole('button', { name: '保存任务记录', exact: true }).click();
@@ -481,20 +483,10 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.match(await taskChange.innerText(), /打开时检查当前状态/);
     await taskChange.click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
-    await page.waitForFunction(() => document.getElementById('change-detail-code')?.textContent === 'browser-flow');
-    assert.equal(await page.locator('#change-detail-code').innerText(), 'browser-flow');
-    assert.equal(await page.locator('#change-detail-provenance').innerText(), '任务环境候选');
     await page.locator('#task-change-provenance').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#task-change-provenance-facts').innerText(), /Working copy/);
-    assert.match(await page.locator('#task-change-provenance-facts').innerText(), /Retained baseline/);
-    assert.equal(await page.locator('#continue-change').isHidden(), true, 'Task-scoped Change 不保留旧 continue route');
-    const planningReview = page.getByRole('button', { name: '方案审查（Planning Review）', exact: true });
-    await unique(planningReview, 'Task-scoped Planning Review 操作');
-    await planningReview.click();
-    await page.getByRole('button', { name: '生成审查指令', exact: true }).click();
-    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#action-prompt-output').inputValue(), /限定的 Task-scoped Change：demo\/browser-flow/);
-    await page.locator('#close-agent-action').click();
+    assert.match(await page.locator('#task-change-provenance-facts').innerText(), /工作副本/);
+    assert.match(await page.locator('#task-change-provenance-facts').innerText(), /保留基线/);
+    assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Task-scoped Change 只读展示');
     await page.locator('.back-link').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
 
@@ -615,125 +607,6 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'local-app-task-detail-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });
-  });
-
-  if (selected('change')) await t.test('变更目录过滤、详情和 Agent prompt 保持只读', async () => {
-    await page.goto(`${workspaceUrl}/changes`);
-    const lifecycle = page.locator('#change-lifecycle-filter');
-    await unique(lifecycle, '变更生命周期过滤器');
-    await lifecycle.selectOption('archived');
-    assert.equal(await page.locator('#change-table-body tr').count(), 1);
-    await lifecycle.selectOption('active');
-    await unique(page.getByRole('button', { name: '让 Agent 创建变更', exact: true }), '创建变更操作');
-    await page.getByRole('button', { name: '让 Agent 创建变更', exact: true }).click();
-    await page.locator('#action-project option[value="demo"]').waitFor({ state: 'attached' });
-    assert.equal(await page.locator('#action-project').evaluate((element) => element.tagName), 'SELECT');
-    assert.equal(await page.locator('#action-project option').count(), 2);
-    assert.equal(await page.locator('#action-project').inputValue(), 'demo');
-    await page.locator('#action-project').selectOption('other');
-    await page.locator('#action-goal').fill('为另一项目创建变更契约');
-    await page.getByRole('button', { name: '生成变更指令', exact: true }).click();
-    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#action-prompt-output').inputValue(), /项目“另一项目（other）”/);
-    await page.getByRole('button', { name: '关闭', exact: true }).click();
-
-    let releaseProjects;
-    const projectsGate = new Promise((resolve) => { releaseProjects = resolve; });
-    let staleFulfilled = false;
-    const projectsRoute = /\/api\/v1\/workspaces\/[^/]+\/projects$/;
-    await page.route(projectsRoute, async (route) => {
-      await projectsGate;
-      staleFulfilled = true;
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          projects: [
-            { code: 'stale-demo', name: '过期项目' },
-            { code: 'stale-other', name: '过期另一项目' },
-          ],
-        }),
-      });
-    });
-    await page.getByRole('button', { name: '让 Agent 创建变更', exact: true }).click();
-    await page.locator('#action-project').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#action-project option').first().innerText(), '正在读取已登记项目…');
-    await page.locator('[data-back]').click();
-    await page.locator('[data-action="project"]').click();
-    await page.locator('#action-name').waitFor({ state: 'visible' });
-    releaseProjects();
-    for (let attempt = 0; attempt < 40 && !staleFulfilled; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.equal(staleFulfilled, true);
-    assert.equal(await page.locator('#action-name').count(), 1);
-    assert.equal(await page.locator('#action-project').count(), 0);
-    assert.equal(await page.locator('#agent-action-error').evaluate((element) => element.classList.contains('hidden')), true);
-    await page.unroute(projectsRoute);
-    await page.getByRole('button', { name: '关闭', exact: true }).click();
-
-    const row = page.locator('#change-table-body tr').filter({ hasText: 'browser-flow' });
-    await unique(row, '进行中变更行');
-    const detail = row.getByRole('link', { name: '详情', exact: true });
-    await unique(detail, '变更详情操作');
-    await detail.click();
-    await page.waitForURL(`${workspaceUrl}/changes/demo/active~browser-flow`);
-    assert.equal(await page.locator('#change-detail-code').innerText(), 'browser-flow');
-    assert.equal(await page.locator('#change-detail-lifecycle').innerText(), '进行中');
-    assert.equal(await page.locator('#change-detail-progress').innerText(), '1 / 2');
-    assert.equal(await page.locator('.change-brief-panel').count(), 1);
-    assert.match(await page.locator('.brief-content.markdown-body').innerText(), /普通用户先从这里了解变更/);
-    const briefTop = await page.locator('.change-brief-panel').evaluate((element) => element.getBoundingClientRect().top);
-    const artifactsTop = await page.locator('.technical-artifacts-panel').evaluate((element) => element.getBoundingClientRect().top);
-    assert.ok(briefTop < artifactsTop, 'Brief 必须位于技术 artifacts 之前');
-    assert.equal(await page.locator('#change-artifacts .artifact-panel').count(), 4);
-    assert.equal(await page.locator('#change-artifacts .artifact-content.markdown-body').count(), 4);
-    assert.equal(await page.locator('#change-artifacts .content-view-source').count(), 4);
-    assert.match(await page.locator('#change-artifacts .artifact-content.markdown-body').first().innerText(), /浏览器流程|验证本机应用/);
-    assert.equal(await page.locator('#change-artifacts .artifact-content.markdown-body h1').count(), 0, '产物 Markdown 不得再渲染页面级 h1');
-    assert.ok(await page.locator('#change-artifacts .artifact-content.markdown-body h2').count() > 0);
-    assert.equal(await page.locator('#change-detail-name').evaluate((element) => element.tagName), 'H1');
-    assert.equal(await page.locator('#change-artifacts .artifact-panel > pre').count(), 0);
-    assert.ok(await page.locator('#change-artifacts .task-list-item input[type="checkbox"]').count() >= 2);
-    const firstArtifact = page.locator('#change-artifacts .artifact-panel').first();
-    await unique(firstArtifact.getByRole('button', { name: '原文', exact: true }), '产物原文视图');
-    await firstArtifact.getByRole('button', { name: '原文', exact: true }).click();
-    assert.equal(await firstArtifact.locator('.content-view-source').isVisible(), true);
-    assert.equal(await firstArtifact.locator('.markdown-body').isHidden(), true);
-    assert.match(await firstArtifact.locator('.content-view-source').innerText(), /浏览器流程|验证本机应用|# /);
-    await firstArtifact.getByRole('button', { name: '渲染', exact: true }).click();
-    assert.equal(await firstArtifact.locator('.markdown-body').isVisible(), true);
-    assert.equal(await firstArtifact.locator('.content-view-source').isHidden(), true);
-    const proceed = page.getByRole('button', { name: '继续推进', exact: true });
-    await unique(proceed, '继续推进操作');
-    await proceed.click();
-    const generate = page.getByRole('button', { name: '生成继续推进指令', exact: true });
-    await unique(generate, '生成继续推进指令操作');
-    await generate.click();
-    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#action-prompt-output').inputValue(), /browser-flow/);
-    assert.equal(await page.locator('#action-copy-state').innerText(), '变更文件未被修改。');
-  });
-
-  if (selected('change')) await t.test('无已登记项目时创建变更显示空态且不可提交', async () => {
-    await page.goto(url);
-    await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
-    const emptyTarget = page.locator('#workspace-grid .workspace-card').filter({ has: page.locator('h2').filter({ hasText: /^other-workspace$/ }) });
-    await unique(emptyTarget, '无项目工作空间卡片');
-    await emptyTarget.getByRole('link', { name: '进入工作空间' }).click();
-    await page.waitForURL(/\/workspaces\/[^/]+\/?$/);
-    const emptyWorkspaceUrl = page.url().replace(/\/?$/, '');
-    await page.goto(`${emptyWorkspaceUrl}/changes`);
-    await unique(page.getByRole('button', { name: '让 Agent 创建变更', exact: true }), '无项目时创建变更操作');
-    await page.getByRole('button', { name: '让 Agent 创建变更', exact: true }).click();
-    await page.locator('#action-project').waitFor({ state: 'visible' });
-    await page.locator('#action-project option', { hasText: '请先创建项目' }).waitFor({ state: 'attached' });
-    assert.equal(await page.locator('#action-project').evaluate((element) => element.tagName), 'SELECT');
-    assert.equal(await page.locator('#action-project option').count(), 1);
-    assert.equal(await page.locator('#action-project option').first().textContent(), '请先创建项目');
-    assert.equal(await page.locator('#action-project').inputValue(), '');
-    await page.locator('#action-goal').fill('尝试在无项目工作空间创建变更');
-    assert.equal(await page.locator('#agent-action-form').evaluate((form) => form.reportValidity()), false, '无所属项目时表单不得通过校验');
-    assert.equal(await page.locator('#action-prompt-output').count(), 0);
-    await page.getByRole('button', { name: '关闭', exact: true }).click();
   });
 
   const unexpectedBrowserErrors = browserErrors.filter((error) => ![...expectedBrowserErrors].some((expected) => error.includes(expected)));

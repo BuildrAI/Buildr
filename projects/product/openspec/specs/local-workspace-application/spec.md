@@ -461,87 +461,15 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 从资源目录访问关联资源
 - **WHEN** 用户查看任一 Project 行
-- **THEN** 操作列 MUST 提供该项目的服务目录和变更目录入口
+- **THEN** 操作列 MUST 仅提供该项目的服务目录入口
 - **WHEN** 用户查看任一 Service 行
 - **THEN** 操作列 MUST 提供所属 Project 详情入口
 - **AND** Project 与 Service 详情 MUST NOT 重复提供这些关联资源跳转
 
 #### Scenario: 侧边栏指示当前资源
-- **WHEN** 用户打开项目、服务、变更目录或其详情/编辑页
+- **WHEN** 用户打开项目、服务目录或其详情/编辑页
 - **THEN** 相应侧边栏资源项 MUST 显示明显的当前状态
 - **AND** 资源分组状态 MUST NOT 取代当前资源项的高亮
-
-### Requirement: 本机应用必须提供 Change 管理视图
-Buildr 本机应用 MUST 在资源导航中提供独立的变更（Change）管理视图，并 MUST 使用明确的表格操作栏、过滤和详情入口展示真实 Project Change。
-
-#### Scenario: 打开 Change 表格
-- **WHEN** 用户访问 `/changes`
-- **THEN** 页面 MUST 展示 Change 名称、所属项目、生命周期、任务进度、更新时间和操作栏
-- **AND** 页面 MUST 提供项目与 active/archived 生命周期过滤
-
-#### Scenario: 使用表格操作栏
-- **WHEN** 用户查看任一 Change 行
-- **THEN** 操作栏 MUST 提供详情和交给 Agent 的明确行为
-- **AND** 表格行本身 MUST NOT 是唯一的信息或行为入口
-
-#### Scenario: 创建 Change
-- **WHEN** 用户点击“创建变更”
-- **THEN** 页面 MUST 使用抽屉或弹窗，从当前 Workspace 已登记 Project 中选择所属项目，并收集目标说明
-- **AND** MUST NOT 允许自由输入未登记的项目代码
-- **AND** 当上下文提供的 Project code 属于已登记 Project 时，所属项目 MUST 默认选中该 Project
-- **AND** MUST 展示可复制的 Agent prompt，不得直接写入 OpenSpec
-
-#### Scenario: 无已登记 Project 时创建 Change
-- **WHEN** 用户打开“创建变更”且当前 Workspace 没有已登记 Project
-- **THEN** 页面 MUST 展示明确空态（例如“请先创建项目”）
-- **AND** MUST NOT 生成创建变更 prompt
-
-#### Scenario: 异步加载期间切换抽屉
-- **WHEN** 用户打开“创建变更”后，在项目列表请求完成前关闭抽屉或切换到其他 Agent Action 表单
-- **THEN** 过期的项目列表响应 MUST NOT 修改当前可见表单中的同名控件
-- **AND** MUST NOT 向当前表单额外绑定“创建变更”提交处理器
-- **AND** MUST NOT 把错误展示到当前其他表单
-
-### Requirement: 本机应用必须提供可链接的 Change 详情页
-Buildr 本机应用 MUST 使用稳定独立路由展示 Change 详情，并 MUST 将生命周期摘要、人类可读 Brief、技术 artifacts 与短 prompt 交互分离。页面 MUST 优先帮助普通用户理解 Change，再提供 proposal、design、specs 和 tasks 的可深入入口。
-
-#### Scenario: 打开 Change 详情
-- **WHEN** 用户访问 `/changes/<projectCode>/<changeRef>` 且 read model 返回 Brief
-- **THEN** 页面 MUST 先展示 identity、lifecycle、任务进度和更新时间，再展示 Brief 的人类可读内容
-- **AND** proposal、design、specs、tasks MUST 位于 Brief 之后并可按 artifact 深入查看
-- **AND** 页面刷新后 MUST 保持同一 Change 上下文
-
-#### Scenario: 打开缺少 Brief 的 Change 详情
-- **WHEN** 用户访问合法 Change 且 read model 报告 Brief unavailable
-- **THEN** 页面 MUST 显示明确缺失状态并继续展示可用的标准 artifacts
-- **AND** 页面 MUST NOT 在浏览器或 API 请求期间生成、保存或推断 Brief
-
-#### Scenario: Change 不存在
-- **WHEN** 详情 API 返回 not found
-- **THEN** 页面 MUST 显示明确空状态并提供返回 Change 表格的入口
-
-#### Scenario: 详情中的 Agent 行为
-- **WHEN** 用户在详情中选择继续或审阅
-- **THEN** 页面 MUST 打开短交互抽屉并生成可复制 prompt
-- **AND** MUST NOT 叠加承载第二份完整 Change 详情的二级抽屉
-
-#### Scenario: 普通用户深入技术 artifacts
-- **WHEN** 用户从 Brief 继续查看 proposal、design、specs 或 tasks
-- **THEN** 页面 MUST 保留每类 artifact 的身份、availability 和原始内容
-- **AND** Brief 摘要 MUST NOT 覆盖、截断或改写技术 artifact 的权威内容
-
-### Requirement: 项目详情必须展示所属 Change 摘要
-Buildr 本机应用 MUST 在项目详情中展示该 Project 的 Change 数量、有限列表和进入过滤后 Change 表格的稳定入口。
-
-#### Scenario: Project 存在 Change
-- **WHEN** 项目详情读取到 active 或 archived Change
-- **THEN** 页面 MUST 展示总数和最近 Change 摘要
-- **AND** “管理变更” MUST 进入带 Project filter 的 Change 表格
-
-#### Scenario: Project 没有 Change
-- **WHEN** Change read model 返回空集合
-- **THEN** 项目详情 MUST 显示明确空状态
-- **AND** MUST 保留创建 Change 的 Agent 入口
 
 ### Requirement: 本机应用必须管理多个已登记 Workspace
 Buildr MUST 在现有 Workspace 产品能力中维护本机登记 root 列表，并 MUST 以各 root 的 `.buildr/workspace.yml` 作为 Workspace 信息的事实来源。
@@ -891,7 +819,7 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **AND** 已有 Result 仍可只读查看
 
 ### Requirement: Local App Task 视图必须只消费 Workspace structured Task read model
-Buildr Local App MUST继续通过 Task Record Application 列出、查看和维护 Workspace Task，并 MUST将 SQLite repository 保持为 interface 后的本地 infrastructure。页面和 HTTP interface MUST NOT读取旧 `task.yml`、打开数据库、执行 SQL、解释 migration ledger 或暴露 database path/table/row id。
+Buildr Local App MUST继续通过 Task Record Application 列出、查看和维护 Workspace Task，并 MUST将 SQLite repository 保持为 interface 后的本地 infrastructure。页面和 HTTP interface MUST NOT读取旧 `task.yml`、打开数据库、执行 SQL、解释 migration ledger 或暴露 database path/table/row id。Local App 的 Task mutation MUST NOT 添加、移除或以其他方式维护 Change 引用。
 
 #### Scenario: 浏览 SQLite-backed Task 列表
 - **WHEN** 用户进入已登记 Workspace 的 Task 列表
@@ -911,7 +839,8 @@ Buildr Local App MUST继续通过 Task Record Application 列出、查看和维�
 #### Scenario: Local App 修改 Task
 - **WHEN** 用户通过受保护的 Task API 创建、更新、完成或放弃 Task
 - **THEN** HTTP interface MUST只提交明确 action input 和适用的 `expectedRecordDigest` 给 Task Application
-- **AND** MUST NOT接受 SQL、database path、table、row id、migration version 或完整 next-state document
+- **AND** Local App update input MUST NOT 接受 `addChanges` 或 `removeChanges`
+- **AND** HTTP interface MUST NOT接受 SQL、database path、table、row id、migration version 或完整 next-state document
 
 ### Requirement: Local App 必须动态投影和维护 Parent Task 层级
 Local App Task 列表与详情 MUST 通过 Task Record Application read model 展示直接 Parent/Children；active Task 的创建与编辑 MUST 允许选择或清除合法 Parent，并 MUST 复用 expected `recordDigest` 冲突边界。
@@ -1055,3 +984,45 @@ Local App Markdown renderer MUST 支持标准 Markdown 图片语法，并 MUST �
 - **WHEN** Markdown 图片路径为绝对路径、包含 `..`、反斜杠或未通过文章资源映射
 - **THEN** renderer MUST NOT 加载该图片
 - **AND** 页面 MUST 保留安全的文本或空内容表现
+
+### Requirement: Task 概览必须以关联 Change Brief 为主要说明
+Local App MUST 仅在 Task 详情概览中，从该 Task Record 已保存的 Change 引用读取关联 Change，并 MUST 将每个可用的 Change Brief 作为主要人类可读说明。Task title、intent、范围和其他 Task 专业事实 MUST 保持可读，但 MUST NOT 取代 Brief 成为关联 Change 的主要说明。
+
+#### Scenario: 查看含 Brief 的关联 Change
+- **WHEN** 用户打开一个含有可解析 Change 引用且该 Change 提供 Brief 的 Task 概览
+- **THEN** 页面 MUST 在概览中展示该 Brief 的原始人类可读内容和 Change identity
+- **AND** 页面 MUST 提供从当前 Task 进入该 Change 技术 artifacts 的 Task-scoped 链接
+
+#### Scenario: 一个 Task 关联多个 Change
+- **WHEN** Task Record 保存多个 Change 引用
+- **THEN** 页面 MUST 按每个已保存引用分别展示可用 Brief 或其不可用状态
+- **AND** 页面 MUST NOT 推断、标记或合并任一“主 Change”
+
+#### Scenario: Brief 或关联 Change 不可用
+- **WHEN** 已保存的 Change 引用无法解析，或可解析 Change 没有 Brief
+- **THEN** 页面 MUST 展示该引用的真实 unavailable 状态
+- **AND** Task 的 title、intent 和其他可用事实 MUST 继续可读
+- **AND** 页面 MUST NOT 生成、保存、推断或从全局目录查找 Brief
+
+#### Scenario: Task 没有关联 Change
+- **WHEN** Task Record 没有 Change 引用
+- **THEN** 页面 MUST 显示明确的无关联 Change 状态
+- **AND** 页面 MUST NOT 扫描 Workspace、Project 或 Task Environment 以发现 Change
+
+### Requirement: Local App 必须将 Change 限定为 Task-scoped 只读内容
+Local App MUST 只通过当前 Task 的已保存 Change 引用读取 Change 内容。HTTP/Web MUST NOT 提供 Local App 的 Change 创建、修改、关联、移除、继续、审查、同步或归档操作；这些 Change 动作 MUST 保持为 Agent 在 Task 过程中使用相应 authority 推进的工作。
+
+#### Scenario: 查看关联 Change 的完整 artifacts
+- **WHEN** 用户从 Task 概览打开关联 Change
+- **THEN** 页面 MUST 只通过 `/tasks/<task-id>/changes/<project>/<change>` 的 Task-scoped read model 展示 Brief、proposal、design、specs 和 tasks
+- **AND** 页面 MUST 验证该 Change 引用属于当前 Task
+
+#### Scenario: Local App 尝试通过 Change 修改 Task
+- **WHEN** 浏览器请求包含 `addChanges`、`removeChanges` 或 Change-specific prompt 的 Local App 路由
+- **THEN** HTTP interface MUST 在 Application mutation 前拒绝该请求
+- **AND** Task Record 与 OpenSpec artifacts MUST 保持不变
+
+#### Scenario: 未关联真实 Task 的 Change
+- **WHEN** Workspace 中存在没有真实 Task Record 引用的 Change
+- **THEN** Local App MUST NOT 在本次能力中列出、扫描、关联或处置该 Change
+- **AND** Local App MUST NOT 将其显示为待处理 Task 或空态计数

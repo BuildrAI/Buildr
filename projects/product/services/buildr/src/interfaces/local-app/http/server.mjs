@@ -30,7 +30,7 @@ const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren']);
-const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/changes(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[^/]+)?)?/?$`);
+const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
 const STATIC_ASSETS = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/api-client.js', ['api-client.js', 'text/javascript; charset=utf-8']],
@@ -47,7 +47,6 @@ const STATIC_ASSETS = new Map([
   ['/features/services.js', ['features/services.js', 'text/javascript; charset=utf-8']],
   ['/features/service-detail.js', ['features/service-detail.js', 'text/javascript; charset=utf-8']],
   ['/features/service-edit.js', ['features/service-edit.js', 'text/javascript; charset=utf-8']],
-  ['/features/changes.js', ['features/changes.js', 'text/javascript; charset=utf-8']],
   ['/features/change-detail.js', ['features/change-detail.js', 'text/javascript; charset=utf-8']],
   ['/features/publications.js', ['features/publications.js', 'text/javascript; charset=utf-8']],
   ['/features/publication-detail.js', ['features/publication-detail.js', 'text/javascript; charset=utf-8']],
@@ -340,7 +339,7 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecordView(root, taskMatch[1]));
         if (request.method === 'PATCH' && taskMatch) {
           assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges']), 'Task update');
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices']), 'Task update');
           if (!Object.hasOwn(input, 'expectedRecordDigest')) {
             const error = new Error('Task update 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error;
           }
@@ -386,7 +385,6 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task abandon 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
           return jsonResponse(response, 200, runtime.abandonTaskRecord(root, taskAbandonMatch[1], input));
         }
-        if (request.method === 'GET' && suffix === '/changes') return jsonResponse(response, 200, runtime.listChanges(root));
         const projectMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
         if (request.method === 'GET' && projectMatch) return jsonResponse(response, 200, runtime.projectDetail(root, projectMatch[1]));
         if (request.method === 'PUT' && projectMatch) {
@@ -401,10 +399,6 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           assertWriteRequest(request, origin, sessionToken);
           return jsonResponse(response, 200, runtime.updateServiceMetadata(root, serviceMatch[1], serviceMatch[2], await readJsonBody(request)));
         }
-        const changesMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/changes$/);
-        if (request.method === 'GET' && changesMatch) return jsonResponse(response, 200, runtime.listProjectChanges(root, changesMatch[1]));
-        const changeMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/changes\/([^/]+)$/);
-        if (request.method === 'GET' && changeMatch) return jsonResponse(response, 200, runtime.changeDetail(root, changeMatch[1], decodeURIComponent(changeMatch[2])));
         if (request.method === 'POST' && suffix === '/prompts/project-create') {
           assertWriteRequest(request, origin, sessionToken);
           return jsonResponse(response, 200, runtime.generateProjectCreatePrompt(await readJsonBody(request)));
@@ -416,14 +410,6 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         if (request.method === 'POST' && suffix === '/prompts/start-work') {
           assertWriteRequest(request, origin, sessionToken);
           return jsonResponse(response, 200, runtime.generateStartWorkPrompt(root, await readJsonBody(request)));
-        }
-        if (request.method === 'POST' && suffix === '/prompts/change-create') {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.generateChangeCreatePrompt(root, await readJsonBody(request)));
-        }
-        if (request.method === 'POST' && suffix === '/prompts/change-action') {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.generateChangeActionPrompt(root, await readJsonBody(request)));
         }
         if (request.method === 'POST' && suffix === '/prompts/task-review') {
           assertWriteRequest(request, origin, sessionToken);

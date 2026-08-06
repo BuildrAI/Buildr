@@ -60,22 +60,19 @@ test('api client 只为写请求附加 session，并保留服务端错误结构'
   assert.deepEqual(calls[1].options.headers, { 'content-type': 'application/json', 'x-buildr-session': 'session-token' });
 });
 
-test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
+test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
   const source = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
   const styles = fs.readFileSync('src/interfaces/local-app/web/styles.css', 'utf8');
   const markdown = fs.readFileSync('src/interfaces/local-app/web/markdown.js', 'utf8');
   assert.ok(source.indexOf('id="change-brief"') < source.indexOf('technical-artifacts-panel'));
   assert.match(source, /import \{ renderMarkdown \} from '\/markdown\.js'/);
-  assert.match(source, /briefPanel\(change\.brief\)/);
-  assert.match(source, /这个变更还没有人类可读 Brief/);
+  assert.match(source, /changeBriefPanel/);
+  assert.match(source, /没有可读取的 Brief/);
   assert.match(source, /contentView\(artifact\.content/);
-  assert.match(source, /contentView\(brief\.content/);
+  assert.match(source, /contentView\(change\.brief\.content/);
   assert.match(source, /headingOffset:\s*1/);
   assert.match(source, /allowRelativeLinks:\s*true/);
-  assert.match(source, /textContent = '渲染'/);
-  assert.match(source, /textContent = '原文'/);
-  assert.match(source, /content-view-source/);
-  assert.doesNotMatch(source, /brief\.content.*innerHTML/);
+  assert.doesNotMatch(source, /change\.brief\.content.*innerHTML/);
   assert.doesNotMatch(source, /artifact\.content.*innerHTML/);
   assert.doesNotMatch(markdown, /innerHTML/);
   assert.match(markdown, /headingOffset/);
@@ -88,20 +85,14 @@ test('Change 详情先提供人类可读 Brief，再展示技术 artifacts', () 
   assert.match(styles, /\.content-view-toggle/);
 });
 
-test('全局 Change 详情按需关联已有 Task，不增加首屏 Task 读取', () => {
+test('Change 仅作为 Task-scoped 只读内容', () => {
   const change = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
-  const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');
-  assert.match(change, /id="associate-change"/);
-  assert.match(change, /id="change-task-association"/);
-  assert.match(change, /api\('\/api\/v1\/tasks\?status=active'\)/);
-  assert.match(change, /expectedRecordDigest: selected\.recordDigest/);
-  assert.match(change, /addChanges: \[`\$\{change\.project\.code\}\/\$\{change\.code\}`\]/);
-  assert.match(change, /navigate\(`\/tasks\/\$\{encodeURIComponent\(selected\.record\.taskId\)\}`\)/);
-  assert.match(change, /task_record_conflict/);
-  assert.match(change, /openAgentAction\('start', \{ projectCode: change\.project\.code/);
-  assert.match(actions, /if \(context\.goal\) document\.getElementById\('action-goal'\)\.value = context\.goal/);
-  const initialRead = change.slice(change.indexOf('const \[workspace, data\]'), change.indexOf('const associateButton'));
-  assert.doesNotMatch(initialRead, /\/api\/v1\/tasks/);
+  const app = fs.readFileSync('src/interfaces/local-app/web/app.js', 'utf8');
+  const server = fs.readFileSync('src/interfaces/local-app/http/server.mjs', 'utf8');
+  assert.match(change, /\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/changes/);
+  assert.doesNotMatch(change, /associate-change|addChanges|openAgentAction/);
+  assert.doesNotMatch(app, /'\/changes'/);
+  assert.doesNotMatch(server, /suffix === '\/changes'|change-create|change-action|addChanges/);
 });
 
 test('Local App 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
@@ -215,27 +206,18 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
   assert.doesNotMatch(tasks, />Project scope/);
   assert.doesNotMatch(tasks, />Service scope/);
   assert.doesNotMatch(tasks, />OpenSpec Changes/);
-  assert.match(change, /任务范围解析器（Task-scoped Resolver）/);
-  assert.match(change, /按任务 \$\{taskId\}/);
-  assert.match(change, /文件系统路径（filesystem path）/);
-  assert.match(change, /保留工作区（Retained）/);
-  assert.match(change, /工作副本（Working copy）/);
-  assert.match(change, /保留基线（Retained baseline）/);
-  assert.doesNotMatch(change, /row\('Working copy'/);
-  assert.doesNotMatch(change, /row\('Retained baseline'/);
+  assert.match(change, /任务关联变更/);
+  assert.match(change, /只读展示当前任务已关联的 OpenSpec 内容/);
+  assert.match(change, /工作副本/);
+  assert.match(change, /保留基线/);
+  assert.doesNotMatch(change, /openAgentAction|addChanges/);
 });
 
-test('Task-scoped Change 使用 Planning Review，global Change 保留通用审查 route', () => {
+test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
   const change = fs.readFileSync('src/interfaces/local-app/web/features/change-detail.js', 'utf8');
   const tasks = fs.readFileSync('src/interfaces/local-app/web/features/tasks.js', 'utf8');
-  const actions = fs.readFileSync('src/interfaces/local-app/web/features/agent-actions.js', 'utf8');
-  assert.match(change, /openAgentAction\('task-review', \{ taskId, reviewType: 'planning', projectCode, change: change\.code \}\)/);
-  assert.match(change, /openAgentAction\('change', \{ projectCode, ref: changeRef, action: 'review' \}\)/);
-  assert.doesNotMatch(change, /querySelector\('\.panel-actions'\)\.classList\.add\('hidden'\)/);
-  assert.match(actions, /\/api\/v1\/prompts\/task-review/);
-  assert.match(actions, /审查结果尚未记录/);
+  assert.doesNotMatch(change, /openAgentAction|方案审查|continue-change|review-change|associate-change/);
   assert.doesNotMatch(tasks, /创建任务记录|task-create-form/);
-  assert.match(change, /方案审查（Planning Review）/);
 });
 
 test('任务列表使用可取消的服务端筛选，详情首屏只读轻量视图并延迟读取 Parent 候选', () => {
