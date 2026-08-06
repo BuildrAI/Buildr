@@ -27,7 +27,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
     'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
-    'unit', 'component', 'integration', 'integration-task-development', 'contract', 'system', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
+    'unit', 'component', 'integration', 'integration-task-development', 'contract', 'system-local-app-http', 'system', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'integration-candidate-recovery', 'concurrent-task-acceptance', 'candidate-tarball', 'open-source-candidate',
     'openspec-candidate-audit', 'managed-mutations', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'openspec-convergence-recovery', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
@@ -158,7 +158,7 @@ test('local app Changed 路由只选择内部 owner，Browser 由独立 capabili
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/changes.js'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/app.js'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/web/features/workspaces.js'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['unit', 'integration', 'system']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['unit', 'integration', 'system-local-app-http', 'system']);
   const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
   assert.deepEqual(ids(browserTest), []);
   assert.deepEqual(browserTest.delegated, [{ path: 'test/browser-smoke/local-app-browser.test.mjs', owners: ['product.browser-smoke'] }]);

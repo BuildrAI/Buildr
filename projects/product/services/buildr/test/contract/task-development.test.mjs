@@ -39,8 +39,10 @@ test('不暴露 public Development CLI，Local App 只读投影复用 Applicatio
   assert.doesNotMatch(registry, /task development/);
   assert.doesNotMatch(help, /buildr task development/);
   assert.match(server, /\/tasks\/\(\$\{TASK_ID\}\)\/development/);
-  assert.match(server, /request\.method === 'GET'[\s\S]*runtime\.inspectTaskDevelopment/);
+  assert.match(server, /submitTaskRead\(request, response, 'development', root, taskDevelopmentMatch\[1\]\)/);
   assert.doesNotMatch(server, /runtime\.(?:observe|record|freeze|decide|create)TaskDevelopment/);
+  const readWorker = read('src/interfaces/local-app/http/read-worker.mjs');
+  assert.match(readWorker, /development:\s*'inspectTaskDevelopmentView'/);
   assert.match(skill, /Local App只消费Application `inspect`的只读投影/);
   assert.doesNotMatch(skill, /没有 Local App 专业投影/);
   assert.equal(fs.existsSync(path.join(root, 'src/interfaces/internal/task-development-driver.mjs')), true);

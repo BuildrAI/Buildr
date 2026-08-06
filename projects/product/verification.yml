@@ -78,16 +78,16 @@ capabilities:
       authorization: implicit
     resourceClaims: []
   - id: product.browser-smoke
-    title: Buildr 本机应用浏览器冒烟验证
+    title: Buildr 本机应用 affected 浏览器冒烟验证
     scope:
       project: product
       services: [buildr]
     invocation:
       kind: command
-      argv: ["npm", "run", "test:browser:smoke"]
+      argv: ["npm", "run", "test:browser:changed"]
       cwd: services/buildr
     applicability:
-      paths: ["services/buildr/src/interfaces/local-app/**", "services/buildr/test/browser-smoke/**"]
+      paths: ["services/buildr/src/interfaces/local-app/web/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**"]
       conditions:
         - 本机应用路由、DOM 交互或 Agent Action 发生变化
     proves:

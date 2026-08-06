@@ -324,8 +324,15 @@ export function createPackageStaticValidator(deps) {
     if (!existsFile(localServer)) problems.push('Task Review Local App interface is missing.');
     else {
       const content = fs.readFileSync(localServer, 'utf8');
-      for (const required of ['runtime.inspectTaskReviewView(root, taskReviewsMatch[1])', "suffix === '/prompts/task-review'", 'runtime.generateTaskReviewPrompt(root, input)']) {
-        if (!content.includes(required)) problems.push(`Task Review Local App interface must include ${JSON.stringify(required)}.`);
+      const readWorker = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'read-worker.mjs');
+      const readWorkerContent = existsFile(readWorker) ? fs.readFileSync(readWorker, 'utf8') : '';
+      for (const [owner, required] of [
+        [content, "submitTaskRead(request, response, 'reviews', root, taskReviewsMatch[1])"],
+        [readWorkerContent, "reviews: 'inspectTaskReviewView'"],
+        [content, "suffix === '/prompts/task-review'"],
+        [content, 'runtime.generateTaskReviewPrompt(root, input)'],
+      ]) {
+        if (!owner.includes(required)) problems.push(`Task Review Local App interface must include ${JSON.stringify(required)}.`);
       }
       if (content.includes('runtime.recordTaskReview(')) problems.push('Local App must not expose a direct Task Review Result writer.');
     }

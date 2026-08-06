@@ -26,8 +26,9 @@ const startFirst = [
   'workspace-product.test.mjs',
 ];
 const startRank = new Map(startFirst.map((name, index) => [name, index]));
+const excludedFromGeneral = new Set(['local-app-http.test.mjs']);
 const fileNames = fs.readdirSync(systemRoot)
-  .filter((name) => name.endsWith('.test.mjs'))
+  .filter((name) => name.endsWith('.test.mjs') && !excludedFromGeneral.has(name))
   .sort((left, right) => (startRank.get(left) ?? startFirst.length) - (startRank.get(right) ?? startFirst.length) || left.localeCompare(right));
 
 for (const name of startFirst) {

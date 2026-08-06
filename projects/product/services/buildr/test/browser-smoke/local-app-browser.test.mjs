@@ -17,12 +17,15 @@ import { materializeCleanProductSource } from '../helpers/clean-product-source.m
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-const SELECTOR = process.argv[2] ?? 'all';
+const SELECTOR_INPUT = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR = process.env.BUILDR_SCREENSHOT_DIR;
-const KNOWN_SELECTORS = new Set(['all', 'shell', 'task', 'project', 'service', 'articles']);
+const KNOWN_SELECTORS = new Set(['all', 'core', 'shell', 'task', 'project', 'service', 'change', 'articles']);
+const SELECTORS = new Set(SELECTOR_INPUT.split(',').map((item) => item.trim()).filter(Boolean));
 
-if (!KNOWN_SELECTORS.has(SELECTOR)) throw new Error(`Unknown browser integration selector: ${SELECTOR}`);
-const selected = (name) => SELECTOR === 'all' || SELECTOR === name;
+for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
+if (SELECTORS.size === 0) throw new Error('Browser integration selector cannot be empty.');
+const selected = (name) => SELECTORS.has('all') || SELECTORS.has(name);
+const selectorLabel = [...SELECTORS].join(',');
 
 function runBuildr(args, buildr = BUILDR) {
   const result = spawnSync(process.execPath, [buildr, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
@@ -68,6 +71,68 @@ function writeChange(projectRoot, relative, title) {
   fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\nBrowser smoke fixture.\n');
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 准备 fixture\n- [ ] 验证页面\n');
   fs.writeFileSync(path.join(changeRoot, 'specs', 'demo-capability', 'spec.md'), '# Demo Capability Specification\n\n## Purpose\n\nFixture.\n\n## Requirements\n');
+}
+
+function createCoreFixture(root) {
+  runBuildr(['init', '--target', root, '--name', 'browser-smoke-core', '--description', '核心 Browser Smoke fixture']);
+  runBuildr(['task', 'create', 'core-task', '--title', '核心浏览器任务', '--intent', '验证核心 Browser Smoke 路由与只读 Tab', '--target', root]);
+}
+
+function createServiceFixture(root) {
+  runBuildr(['init', '--target', root, '--name', 'browser-smoke-service', '--description', '服务目录 Browser Smoke fixture']);
+  runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
+  const source = path.join(path.dirname(root), 'service-source');
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, 'README.md'), '# Demo API\n');
+  runBuildr(['service', 'create', 'demo/api', source, '--target', root, '--name', '演示服务', '--description', '浏览器测试服务', '--type', 'backend']);
+}
+
+function createProjectFixture(root) {
+  runBuildr(['init', '--target', root, '--name', 'browser-smoke-project', '--description', '项目目录 Browser Smoke fixture']);
+  runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
+  const source = path.join(path.dirname(root), 'service-source');
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, 'README.md'), '# Demo API\n');
+  runBuildr(['service', 'create', 'demo/api', source, '--target', root, '--name', '演示服务', '--description', '浏览器测试服务', '--type', 'backend']);
+}
+
+function createArticlesFixture(root) {
+  runBuildr(['init', '--target', root, '--name', 'browser-smoke-articles', '--description', '文章入口 Browser Smoke fixture']);
+  runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '对外文章测试项目']);
+  const publicationRoot = path.join(root, 'projects', 'product', 'docs', 'publications');
+  fs.mkdirSync(path.join(publicationRoot, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(publicationRoot, 'article.md'), '---\nid: browser-article\ntitle: 浏览器测试文章\nkind: product-article\nstatus: published\npublished_at: 2026-08-05\ntargets:\n  - platform: local-app\n    status: published\n---\n\n# 浏览器测试文章\n\n![测试配图](assets/cover.png)\n');
+  fs.writeFileSync(path.join(publicationRoot, 'assets', 'cover.png'), Buffer.from('not-a-real-image'));
+}
+
+function createShellFixture(root) {
+  runBuildr(['init', '--target', root, '--name', 'browser-smoke', '--description', 'Shell Browser Smoke fixture']);
+  runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
+  runBuildr(['project', 'create', 'other', '--target', root, '--name', '另一项目', '--description', '用于验证 Workspace 摘要不锁定项目']);
+  const source = path.join(path.dirname(root), 'service-source');
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, 'README.md'), '# Demo API\n');
+  runBuildr(['service', 'create', 'demo/api', source, '--target', root, '--name', '演示服务', '--description', '浏览器测试服务', '--type', 'backend']);
+  writeChange(path.join(root, 'projects', 'demo'), 'browser-flow', '浏览器流程');
+  runGit(root, ['init', '-q']);
+  runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
+  runGit(root, ['config', 'user.email', 'fixture@example.com']);
+  runGit(root, ['add', '.']);
+  runGit(root, ['commit', '-qm', 'browser shell fixture baseline']);
+  runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Shell Browser Smoke 路由', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+}
+
+function createChangeFixture(root) {
+  runBuildr(['init', '--target', root, '--name', 'browser-smoke-change', '--description', 'Change 详情 Browser Smoke fixture']);
+  runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  writeChange(projectRoot, 'browser-flow', '浏览器流程');
+  runGit(root, ['init', '-q']);
+  runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
+  runGit(root, ['config', 'user.email', 'fixture@example.com']);
+  runGit(root, ['add', '.']);
+  runGit(root, ['commit', '-qm', 'browser change fixture baseline']);
+  runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Change 详情页面', '--project', 'demo', '--change', 'demo/browser-flow', '--target', root]);
 }
 
 function createFixture(root, controllerCli, options = {}) {
@@ -121,6 +186,26 @@ capabilities:
   runBuildr(['task', 'create', 'browser-unproven', '--title', '交付未经证明任务', '--intent', '验证 completed 但缺少 matching Finish', '--target', root]);
   runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
+}
+
+function createSelectedFixture(root, controllerCli) {
+  if (SELECTORS.size === 2 && SELECTORS.has('shell') && SELECTORS.has('core')) {
+    createShellFixture(root);
+    return 'shell+core';
+  }
+  if (SELECTORS.size !== 1) {
+    createFixture(root, controllerCli, { articles: selected('articles') });
+    return 'full';
+  }
+  const selector = [...SELECTORS][0];
+  if (selector === 'core') createCoreFixture(root);
+  else if (selector === 'shell') createShellFixture(root);
+  else if (selector === 'project') createProjectFixture(root);
+  else if (selector === 'service') createServiceFixture(root);
+  else if (selector === 'change') createChangeFixture(root);
+  else if (selector === 'articles') createArticlesFixture(root);
+  else createFixture(root, controllerCli, { articles: selected('articles') });
+  return selector;
 }
 
 function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
@@ -205,7 +290,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true });
 }
 
-test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t) => {
+test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 180_000 : 45_000 }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
   const workspaceRoot = path.join(base, 'workspace');
   let browser;
@@ -216,13 +301,16 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     if (server) await new Promise((resolve) => server.close(resolve));
     if (previewServer) await new Promise((resolve) => previewServer.close(resolve));
     fs.rmSync(base, { recursive: true, force: true });
+    process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-complete\n`);
   });
+
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
 
   const controller = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
   const controllerRuntime = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'application', 'compose-runtime.mjs')).href}?browser=${Date.now()}`)).createRuntime();
-  createFixture(workspaceRoot, controller.cli, { articles: SELECTOR === 'articles' });
-  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
-  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const fixtureProfile = createSelectedFixture(workspaceRoot, controller.cli);
+  process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   const otherRoot = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
   const runtime = createRuntime();
@@ -253,10 +341,23 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
   const workspaceUrl = `${url}/workspaces/${initialWorkspaceId}`;
   browser = await chromium.launch({ executablePath: resolveBrowserExecutable(), headless: true });
   const page = await browser.newPage({ locale: 'zh-CN' });
+  process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=browser-ready\n`);
   const browserErrors = [];
   const expectedBrowserErrors = new Set();
   page.on('pageerror', (error) => browserErrors.push(`pageerror ${page.url()}: ${error.message}`));
   page.on('console', (message) => { if (message.type() === 'error') browserErrors.push(`console.error ${page.url()} [${message.location().url}]: ${message.text()}`); });
+
+  if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
+    await page.goto(`${workspaceUrl}/tasks`);
+    await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
+    assert.ok(await page.locator('#task-table-body tr').count() > 0, '核心 smoke 必须存在可进入的 Task');
+    await page.getByRole('link', { name: '详情', exact: true }).first().click();
+    await page.waitForURL(/\/workspaces\/[^/]+\/tasks\/[^/]+$/);
+    await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '研发', exact: true }).click();
+    await page.locator('#task-development-panel').waitFor({ state: 'visible' });
+    assert.ok((await page.locator('#task-development-status').innerText()).length > 0, '核心 smoke 必须展示研发 Tab 状态');
+  });
 
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
     await page.goto(url);
@@ -273,7 +374,8 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await target.getByRole('link', { name: '进入工作空间' }).click();
     await page.waitForURL(`${workspaceUrl}/`);
     assert.equal(await page.locator('#overview-title').innerText(), 'browser-smoke');
-    assert.equal(await page.locator('#project-count').innerText(), '2');
+    const expectedProjectCount = selected('articles') ? 3 : 2;
+    assert.equal(await page.locator('#project-count').innerText(), String(expectedProjectCount));
     assert.equal(await page.locator('#service-count').innerText(), '1');
     assert.equal(await page.locator('#start-actions select').count(), 0);
     await page.goto(`${workspaceUrl}/?project=other`);
@@ -282,7 +384,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await unique(page.getByRole('button', { name: '用 Agent 开始', exact: true }), '开始工作操作');
     await page.getByRole('button', { name: '用 Agent 开始', exact: true }).click();
     await page.locator('#action-project').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#action-project option').count(), 2);
+    assert.equal(await page.locator('#action-project option').count(), expectedProjectCount);
     await page.locator('#action-project').selectOption('other');
     await page.locator('#action-goal').fill('梳理浏览器 fixture 的下一步工作');
     await page.getByRole('button', { name: '生成开始工作指令', exact: true }).click();
@@ -306,7 +408,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: current.revision });
   });
 
-  if (SELECTOR === 'articles') await t.test('文章入口展示列表、详情和项目内配图', async () => {
+  if (selected('articles')) await t.test('文章入口展示列表、详情和项目内配图', async () => {
     await page.goto(`${workspaceUrl}/articles`);
     await page.locator('.publication-card').first().waitFor({ state: 'visible' });
     assert.equal(await page.locator('.publication-card').count(), 1);
@@ -402,6 +504,18 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await unique(page.getByRole('link', { name: '编辑服务', exact: true }).first(), '服务详情编辑操作');
     await capture(page, 'local-app-service-detail-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });
+  });
+
+  if (selected('change')) await t.test('Change 详情展示任务关联事实与 OpenSpec 只读内容', async () => {
+    await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await unique(page.locator('#task-detail-changes a').filter({ hasText: 'demo/browser-flow' }), '任务 Change 关联');
+    await page.locator('#task-detail-changes a').filter({ hasText: 'demo/browser-flow' }).click();
+    await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
+    await page.locator('#task-change-provenance').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-change-provenance-facts').innerText(), /工作副本/);
+    assert.match(await page.locator('#change-brief').innerText(), /浏览器流程/);
+    assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Change 详情只读展示');
   });
 
   if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
@@ -562,6 +676,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     assert.equal(await page.locator('#task-development-history-note').innerText(), 'Environment 已按正常流程清理；刷新只会重读交付事实，不会重新创建 Environment。');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
+    await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
     assert.match(await page.locator('#task-review-slots').innerText(), /已随交付候选采用/);
     assert.match(await page.locator('#task-verification-result').innerText(), /已随交付目标验证通过/);
     assert.equal(await page.locator('#task-verification-result .review-slot-card').evaluate((item) => item.getBoundingClientRect().width <= 800), true);
@@ -624,4 +739,5 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
 
   const unexpectedBrowserErrors = browserErrors.filter((error) => ![...expectedBrowserErrors].some((expected) => error.includes(expected)));
   assert.deepEqual(unexpectedBrowserErrors, [], unexpectedBrowserErrors.join('\n'));
+  process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=assertions-complete errors=${unexpectedBrowserErrors.length}\n`);
 });

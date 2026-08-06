@@ -39,6 +39,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Task Development lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish behaves correctly across its real filesystem, Git, and process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
   system: testing(PROJECT_OWNER, 'Development', 'System', 70000, 'Buildr public CLI and Workspace lifecycle journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-local-app-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Local App HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Task Finish public CLI and delivery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle, 'system'),
   contract: testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.', TEST_ENVIRONMENTS.sourceReadOnly),
   'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 3000, 'CLI modules and wrappers preserve the declared architecture.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -164,6 +165,7 @@ export const verificationSteps = Object.freeze([
     'test/verification/planner.mjs',
     'test/verification/resource-coordinator.mjs',
     'test/verification/registry.mjs',
+    'test/verification/browser-selector-dispatcher.mjs',
     'test/verification/unit-coverage.mjs',
   ], concurrencyClass: 'cpu-heavy' }),
   step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'], inputs: [
@@ -253,6 +255,12 @@ export const verificationSteps = Object.freeze([
     budgetMs: 3000,
     sideEffects: 'none',
   } }),
+  step({ id: 'system-local-app-http', name: 'Local App HTTP boundary system tests', executor: { type: 'node-test', files: ['test/system/local-app-http.test.mjs'], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], inputs: [
+    'test/system/local-app-http.test.mjs',
+    'src/interfaces/local-app/http/**',
+    'src/interfaces/local-app/runtime/**',
+    'src/infrastructure/sqlite/**',
+  ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'system', name: 'public CLI and Workspace system tests', executor: { type: 'node', file: 'test/verification/system.mjs' }, profiles: ['candidate'], inputs: [
     'test/system/**',
     'test/helpers/clean-product-source.mjs',
@@ -281,7 +289,6 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/platform.mjs',
     'src/infrastructure/process.mjs',
     'src/infrastructure/product-layout.mjs',
-    'src/interfaces/local-app/http/**',
     'src/interfaces/local-app/runtime/**',
     'src/interfaces/local-app/web/api-client.js',
     'scripts/release/bridge-main-to-dev.mjs',
@@ -292,6 +299,7 @@ export const verificationSteps = Object.freeze([
     'test/verification/workspace/fixture.mjs',
     'test/verification/workspace/suites.mjs',
   ], inputExclusions: [
+    'test/system/local-app-http.test.mjs',
     'test/system/task-finish-*.test.mjs',
     'src/application/task-finish/**',
   ], schedulingCostMs: 65000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),

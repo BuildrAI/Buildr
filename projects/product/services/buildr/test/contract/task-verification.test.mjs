@@ -94,8 +94,10 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.match(cli, /runtime\.recordTaskVerification/);
   assert.match(cli, /--declaration-root/);
   assert.doesNotMatch(cli, /node:fs|YAML|writeTaskVerificationResultPersistence/);
-  assert.match(server, /runtime\.inspectTaskVerification/);
+  assert.match(server, /submitTaskRead\(request, response, 'verification', root, taskVerificationMatch\[1\]\)/);
   assert.doesNotMatch(server, /recordTaskVerification/);
+  const readWorker = read('src/interfaces/local-app/http/read-worker.mjs');
+  assert.match(readWorker, /verification:\s*'inspectTaskVerificationView'/);
   assert.doesNotMatch(taskDetail, /node:fs|YAML|recordTaskVerification|writeFileSync/);
   assert.match(developmentApplication, /runtime\.inspectTaskVerification/);
   assert.doesNotMatch(developmentApplication, /runtime\.recordTaskVerification/);
