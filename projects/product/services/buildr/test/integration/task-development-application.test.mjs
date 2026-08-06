@@ -285,7 +285,7 @@ test('Verification not-passed 与 Completion changes-required 可经精确用户
   assert.equal(result.development.receipt.handoffs[0].decision.risks.length, 2);
 });
 
-test('Delivery Baseline 前进保持 current；只有原 Task source 变化使 Development stale', (t) => {
+test('读取只返回最近一次 Development lifecycle snapshot，不重新观察外部内容', (t) => {
   const shared = gitDevelopmentFixture(t, 'baseline-applicability-shared', { sharedPath: true });
   fs.writeFileSync(path.join(shared.root, 'baseline-advance.txt'), 'independent baseline advance\n');
   git(shared.root, ['add', 'baseline-advance.txt']);
@@ -307,9 +307,9 @@ test('Delivery Baseline 前进保持 current；只有原 Task source 变化使 D
   const taskSource = fs.readFileSync(path.join(shared.taskRoot, 'shared.txt'));
   fs.appendFileSync(path.join(shared.taskRoot, 'shared.txt'), 'changed contribution\n');
   result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);
-  assert.equal(result.development.applicability.contentTarget, 'stale');
-  assert.equal(result.development.applicability.candidate, 'stale');
-  assert.equal(result.development.applicability.handoff, 'stale');
+  assert.equal(result.development.applicability.contentTarget, 'current');
+  assert.equal(result.development.applicability.candidate, 'current');
+  assert.equal(result.development.applicability.handoff, 'current');
 
   fs.writeFileSync(path.join(shared.taskRoot, 'shared.txt'), taskSource);
   result = shared.runtime.inspectTaskDevelopment(shared.root, shared.taskId);

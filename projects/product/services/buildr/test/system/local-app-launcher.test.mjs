@@ -54,6 +54,13 @@ test('macOS launcher bundle 携带 Node runtime、Buildr Web 资源和可双击 
   assert.doesNotMatch(fs.readFileSync(path.join(app, 'Info.plist'), 'utf8'), /LSBackgroundOnly/);
   assert.ok(fs.existsSync(path.join(buildr, 'src', 'interfaces', 'local-app', 'web', 'index.html')));
   assert.ok(fs.existsSync(path.join(buildr, 'node_modules', 'yaml', 'package.json')));
+  const nodeLibraries = spawnSync('otool', ['-L', node], { encoding: 'utf8' });
+  assert.equal(nodeLibraries.status, 0, nodeLibraries.stderr);
+  assert.doesNotMatch(nodeLibraries.stdout, /\/opt\/homebrew\/|\/usr\/local\//, 'Release Launcher must not retain package-manager dylib paths');
+  const bundledLibraries = [...nodeLibraries.stdout.matchAll(/@loader_path\/(\S+\.dylib)/g)].map((match) => match[1]);
+  const sourceLibraries = spawnSync('otool', ['-L', process.execPath], { encoding: 'utf8' });
+  if (/\/opt\/homebrew\/|\/usr\/local\//.test(sourceLibraries.stdout)) assert.ok(bundledLibraries.length > 0, 'Release Launcher must rewrite Node dylibs to bundle-relative paths');
+  for (const library of bundledLibraries) assert.ok(fs.existsSync(path.join(app, 'MacOS', library)), `missing bundled runtime library ${library}`);
   const version = spawnSync(node, [path.join(buildr, 'bin', 'buildr.mjs'), '--version'], { encoding: 'utf8' });
   assert.equal(version.status, 0, version.stderr);
   const packageVersion = JSON.parse(fs.readFileSync(path.join(PRODUCT_ROOT, 'package.json'), 'utf8')).version;

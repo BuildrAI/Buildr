@@ -244,6 +244,7 @@ export function registerTaskRecordApplication(runtime) {
     assertChangeReferencesAvailable(root, taskIdValue, record.changes, { allowMissingTask: true });
     try {
       const written = runtime.createTaskRecordPersistence(root, record);
+      if (typeof runtime.projectTaskRecord === 'function') runtime.projectTaskRecord(root, written.record);
       return result('create', 'created', written, [effect('created', written.record.taskId)]);
     } catch (error) {
       if (error.taskRecordBusiness) throw error;
@@ -309,6 +310,7 @@ export function registerTaskRecordApplication(runtime) {
         changed = true;
         return { ...candidate, updatedAt: nowIso() };
       });
+      if (typeof runtime.projectTaskRecord === 'function') runtime.projectTaskRecord(root, written.record);
       return result(operation, operation === 'update' ? 'updated' : operation === 'complete' ? 'completed' : 'abandoned', written, changed ? [effect('updated', taskId)] : []);
     } catch (error) {
       if (error.taskRecordBusiness) throw error;
@@ -362,6 +364,7 @@ export function registerTaskRecordApplication(runtime) {
           updatedAt: nowIso(),
         }, { expectedTaskId: taskId });
       });
+      if (typeof runtime.projectTaskRecord === 'function') runtime.projectTaskRecord(root, written.record);
       return result('complete', 'completed', written, changed ? [effect('updated', taskId)] : []);
     } catch (error) {
       if (error.taskRecordBusiness) throw error;

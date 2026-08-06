@@ -85,12 +85,12 @@ test('Task Verification CLI 维护单一 current Result 并派生 target/declara
   assert.equal(response.slot.applicability.status, 'stale');
   assert.equal(response.slot.applicability.target.status, 'stale');
   response = runtime.inspectTaskVerification(root, 'verification-task');
-  assert.equal(response.slot.applicability.status, 'unknown');
+  assert.equal(response.slot.applicability.status, 'current');
 
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(declaration('Changed policy fact')));
   response = runtime.inspectTaskVerification(root, 'verification-task', { targetIdentity: 'delivery:v1' });
-  assert.equal(response.slot.applicability.declarations.status, 'stale');
-  assert.ok(response.slot.applicability.reasons.some((reason) => reason.code === 'declaration-identity-changed'));
+  assert.equal(response.slot.applicability.declarations.status, 'current');
+  assert.equal(response.slot.applicability.status, 'current');
 
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
   const payload = opened.database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'verification-task'").get().result_json;
@@ -122,7 +122,7 @@ test('Local App 只读投影 current Result，并只生成 Task Verification Age
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.body.slot.present, true);
-  assert.equal(response.body.slot.applicability.status, 'unknown');
+  assert.equal(response.body.slot.applicability.status, 'current');
   response = await request(`${endpoint}/tasks/verification-task/verification?target=delivery:v1`);
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, 'target_forbidden');

@@ -26,12 +26,12 @@ function relative(root, file) {
 }
 
 export function registerTaskReviewApplication(runtime) {
-  function slot(targetRoot, taskId, reviewType, targetIdentity) {
+  function slot(targetRoot, taskId, reviewType, targetIdentity, saved = null) {
     const persisted = runtime.readTaskReviewResultPersistence(targetRoot, taskId, reviewType, { optional: true });
     if (!persisted) {
       return { path: runtime.taskReviewResultPath(targetRoot, taskId, reviewType), present: false, result: null, resultDigest: null, applicability: null };
     }
-    const applicability = targetIdentity === undefined ? 'unknown' : persisted.result.targetIdentity === targetIdentity ? 'current' : 'stale';
+    const applicability = targetIdentity === undefined ? (saved?.applicability ?? 'unknown') : persisted.result.targetIdentity === targetIdentity ? 'current' : 'stale';
     return { path: persisted.file, present: true, result: persisted.result, resultDigest: persisted.resultDigest, applicability };
   }
 
@@ -39,9 +39,10 @@ export function registerTaskReviewApplication(runtime) {
     assertFields(input, new Set(['planningTargetIdentity', 'completionTargetIdentity']), 'Task Review inspect');
     const planningTargetIdentity = currentTarget(input.planningTargetIdentity, 'planningTargetIdentity');
     const completionTargetIdentity = currentTarget(input.completionTargetIdentity, 'completionTargetIdentity');
+    const lifecycle = runtime.readTaskLifecyclePersistence?.(targetRoot, taskId, { optional: true });
     return {
-      planning: slot(targetRoot, taskId, 'planning', planningTargetIdentity),
-      completion: slot(targetRoot, taskId, 'completion', completionTargetIdentity),
+      planning: slot(targetRoot, taskId, 'planning', planningTargetIdentity, lifecycle?.model?.reviews?.planning),
+      completion: slot(targetRoot, taskId, 'completion', completionTargetIdentity, lifecycle?.model?.reviews?.completion),
     };
   }
 
@@ -84,7 +85,9 @@ export function registerTaskReviewApplication(runtime) {
     const inspectInput = result.reviewType === 'planning'
       ? { planningTargetIdentity: result.targetIdentity }
       : { completionTargetIdentity: result.targetIdentity };
-    return operationResult('record', 'recorded', task.record.taskId, slots(task.root, task.record.taskId, inspectInput), [{
+    const reviewSlots = slots(task.root, task.record.taskId, inspectInput);
+    if (typeof runtime.projectTaskReview === 'function') runtime.projectTaskReview(task.root, task.record.taskId, reviewSlots);
+    return operationResult('record', 'recorded', task.record.taskId, reviewSlots, [{
       type: written.created ? 'created' : 'updated',
       path: relative(task.root, written.file),
     }]);

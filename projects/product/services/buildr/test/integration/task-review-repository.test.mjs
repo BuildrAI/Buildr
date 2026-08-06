@@ -49,7 +49,7 @@ test('Planning和Completion维护独立SQLite current slots并派生applicabilit
 
   const completion = runtime.recordTaskReview(root, 'demo-task', input('completion'));
   assert.equal(stored(runtime, root, 'planning'), planningValue);
-  assert.equal(completion.slots.planning.applicability, 'unknown');
+  assert.equal(completion.slots.planning.applicability, 'current');
   assert.equal(completion.slots.completion.applicability, 'current');
   const inspected = runtime.inspectTaskReview(root, 'demo-task', { planningTargetIdentity: 'changed', completionTargetIdentity: 'completion:identity-1' });
   assert.equal(inspected.slots.planning.applicability, 'stale');

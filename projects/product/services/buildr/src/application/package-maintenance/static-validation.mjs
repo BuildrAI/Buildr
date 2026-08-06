@@ -180,6 +180,7 @@ export function createPackageStaticValidator(deps) {
       'src/infrastructure/sqlite/migrations/0003_inline_parent_task_column.sql',
       'src/infrastructure/sqlite/migrations/0004_create_task_current_records.sql',
       'src/infrastructure/sqlite/migrations/0005_create_task_retrospective_current.sql',
+      'src/infrastructure/sqlite/migrations/0006_create_task_lifecycle_current.sql',
     ];
     for (const relative of sqliteMigrations) {
       const file = path.join(root, relative);

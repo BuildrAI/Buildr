@@ -491,6 +491,25 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       }
       const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete });
+      if (typeof runtime.projectTaskFinish === 'function') {
+        runtime.projectTaskFinish(run.identity.workspaceRoot, run.identity.task, {
+          status: 'delivered',
+          runId: run.runId,
+          handoffIdentity: run.identity.handoffIdentity,
+          candidateIdentity: run.identity.candidateIdentity,
+          candidateGeneration: run.identity.candidateGeneration,
+          contentTargetIdentity: run.identity.contentTargetIdentity,
+          completedAt: complete.completedAt,
+          finalRemoteRef: complete.finalRemoteRef,
+          targetBranch: complete.targetBranch,
+          remote: run.identity.remote,
+          cleanup: cleanedEnvironment,
+          reuseMode: run.reuseMode || run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
+          equivalence: run.equivalence,
+          semanticEquivalence: run.equivalence?.semanticEquivalence || null,
+          diagnostics: [],
+        });
+      }
       return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { status: 'complete', receipt: completionFile, cleanup: cleanedEnvironment } } };
     },
   };

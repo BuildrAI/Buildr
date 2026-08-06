@@ -82,7 +82,7 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(rejected.status, 2, rejected.stderr || rejected.stdout);
-  assert.equal(JSON.parse(rejected.stdout).error.code, 'task_environment_no_receipt');
+  assert.equal(JSON.parse(rejected.stdout).error.code, 'task_environment_snapshot_missing');
 
   const runHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'run'], { encoding: 'utf8' });
   const inspectHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'inspect'], { encoding: 'utf8' });

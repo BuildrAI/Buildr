@@ -350,7 +350,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     });
   }
 
-  function environmentResult(operation, status, targetRoot, taskId, persistence = null, environment = null, diagnostic = null, effects = [], nextActions = [], observedAt = now()) {
+  function environmentResult(operation, status, targetRoot, taskId, persistence = null, environment = null, diagnostic = null, effects = [], nextActions = [], observedAt = now(), persist = operation !== 'inspect') {
     let execution = null;
     if (status === 'ready' && persistence && environment) {
       const controller = receiptController(persistence.receipt);
@@ -364,7 +364,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         cliInvocation: { command: cli.command, argsPrefix: cli.argsPrefix, sourceRoot: cli.sourceRoot, kind: cli.kind },
       };
     }
-    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskEnvironmentResult, {
+    const response = withJsonSchema(PUBLIC_JSON_SCHEMAS.taskEnvironmentResult, {
       operation,
       status,
       taskId,
@@ -377,6 +377,25 @@ export function registerTaskEnvironmentApplication(runtime) {
       effects,
       nextActions,
     });
+    if (persist && typeof runtime.projectTaskEnvironment === 'function') runtime.projectTaskEnvironment(targetRoot, taskId, response);
+    return response;
+  }
+
+  function projectEnvironmentPersistence(targetRoot, taskId, persistence) {
+    if (!persistence) return;
+    environmentResult(
+      'inspect',
+      persistence.receipt.status === 'cleaned' ? 'cleaned' : 'ready',
+      targetRoot,
+      taskId,
+      persistence,
+      taskEnvironmentReadModel(persistence.receipt),
+      null,
+      [],
+      [],
+      now(),
+      true,
+    );
   }
 
   function blocked(operation, targetRoot, taskId, error, persistence = null, effects = []) {
@@ -466,7 +485,19 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function inspectTaskEnvironment(targetRoot, taskId) {
-    const read = () => inspectTaskEnvironmentCurrent(targetRoot, taskId);
+    const read = () => {
+      if (typeof runtime.readTaskLifecyclePersistence !== 'function') return inspectTaskEnvironmentCurrent(targetRoot, taskId);
+      try {
+        const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+        const root = task.root || targetRoot;
+        const lifecycle = runtime.readTaskLifecyclePersistence(root, task.record.taskId, { optional: true });
+        const snapshot = lifecycle?.model?.environment;
+        if (snapshot) return snapshot;
+        return environmentResult('inspect', 'unavailable', root, task.record.taskId, null, null, { code: 'task_environment_snapshot_missing', message: '尚未形成 Task Environment lifecycle snapshot。' }, [], ['先执行 Task Environment prepare，再读取保存的环境状态。']);
+      } catch (error) {
+        return blocked('inspect', targetRoot, taskId, error);
+      }
+    };
     if (typeof runtime.memoizeWorkspaceOperation !== 'function') return read();
     return runtime.memoizeWorkspaceOperation(targetRoot, `task-environment:inspect:${taskId}`, read);
   }
@@ -518,6 +549,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     const timestamp = now();
     const resource = { ...input, status: 'running', registeredAt: timestamp, updatedAt: timestamp };
     const written = runtime.writeTaskEnvironmentPersistence(root, { ...persistence.receipt, resources: [...persistence.receipt.resources, resource], updatedAt: timestamp });
+    projectEnvironmentPersistence(root, taskId, written);
     return { resource: written.receipt.resources.find((item) => item.id === input.id), path: written.file };
   }
 
@@ -533,6 +565,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     const timestamp = now();
     const resources = persistence.receipt.resources.map((item) => item.id === input.id ? { ...item, status: 'released', probe: input.probe, updatedAt: timestamp } : item);
     const written = runtime.writeTaskEnvironmentPersistence(root, { ...persistence.receipt, resources, updatedAt: timestamp });
+    projectEnvironmentPersistence(root, taskId, written);
     return { resource: written.receipt.resources.find((item) => item.id === input.id), path: written.file };
   }
 
@@ -564,6 +597,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         const releasedAt = now();
         const resources = persistence.receipt.resources.map((item) => item.id === resource.id ? { ...item, status: 'released', probe: providerResult.probe, updatedAt: releasedAt } : item);
         persistence = runtime.writeTaskEnvironmentPersistence(root, { ...persistence.receipt, resources, updatedAt: releasedAt });
+        projectEnvironmentPersistence(root, taskId, persistence);
         effects.push({ type: 'resource-released', id: resource.id, provider: resource.provider });
       }
       const hasGit = persistence.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER);

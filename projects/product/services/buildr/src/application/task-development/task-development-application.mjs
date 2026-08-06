@@ -308,6 +308,9 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function result(operation, status, taskId, persistence, applicability, effects = [], diagnostic = null, nextActions = []) {
+    if (operation !== 'inspect' && persistence && typeof runtime.projectTaskDevelopment === 'function') {
+      runtime.projectTaskDevelopment(persistence.root, taskId, { persistence, applicability });
+    }
     return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, diagnostic, effects, nextActions };
   }
 
@@ -329,12 +332,18 @@ export function registerTaskDevelopmentApplication(runtime) {
     const inspectedTask = task(targetRoot, taskId);
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
     if (!persistence) return result('inspect', 'missing', inspectedTask.taskId, null, null, [], null, ['在首个正式研发动作时使用task-development begin建立current planning facts。']);
-    try {
-      const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
-      return result('inspect', 'inspected', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
-    } catch (error) {
-      return result('inspect', 'inspected', taskId, persistence, { status: 'unknown', reasons: [{ axis: 'observation', code: error.code || 'unavailable', message: error.message }] }, [], null, []);
+    if (typeof runtime.readTaskLifecyclePersistence !== 'function') {
+      try {
+        const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
+        return result('inspect', 'inspected', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
+      } catch (error) {
+        return result('inspect', 'inspected', taskId, persistence, { status: 'unknown', reasons: [{ axis: 'observation', code: error.code || 'unavailable', message: error.message }] }, [], null, []);
+      }
     }
+    const lifecycle = runtime.readTaskLifecyclePersistence?.(targetRoot, taskId, { optional: true });
+    const snapshot = lifecycle?.model?.development;
+    const applicability = snapshot?.applicability || { status: 'unknown', reasons: [{ axis: 'lifecycle', code: 'snapshot_missing', message: '尚未形成 Development lifecycle snapshot。' }] };
+    return result('inspect', 'inspected', taskId, persistence, applicability);
   }
 
   function planningMutation(operation, targetRoot, taskId, input) {

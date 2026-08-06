@@ -114,6 +114,13 @@
 - 避免混用：Parent/Child 只表达协调层级，不是依赖或通用关系图，不传播状态、Result或专业动作；Task Record不保存Task Environment、Development、Review、Verification、Git、Finish、独立Board或Retrospective的专业事实，响应级`recordDigest`也不是持久字段。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
+## 任务生命周期当前读模型（Task Lifecycle Current Read Model）
+
+- 定义：Buildr 在 Workspace SQLite 中按 Task ID 保存的跨专业生命周期状态摘要，记录最近一次正式动作确认的 status、applicability、identity/digest、observedAt、诊断和 terminal summary。
+- 适用范围：Task Record、Task Environment、Task Development、Task Review、Task Verification、Task Finish 成功动作后的 Local App 与 Application inspect 查询。
+- 避免混用：不是 Task、Development Receipt、Review/Verification Result、Environment Receipt 或 Finish Result 的第二权威；不保存完整 Result、命令输出、diff 或历史事件，不在 GET 请求中自动刷新。
+- 来源：canonical `openspec/specs/task-lifecycle-read-model/spec.md`（本 Change convergence 时建立）。
+
 ## 任务管理器（Task Manager）
 
 - 定义：`buildr.task-record/v1` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复和维护 Task Record。

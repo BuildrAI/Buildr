@@ -148,17 +148,26 @@ export function registerTaskVerificationApplication(runtime) {
     };
   }
 
-  function slot(task, targetIdentity, declarationRoot = undefined) {
+  function slot(task, targetIdentity, declarationRoot = undefined, saved = null, live = false) {
     const persisted = runtime.readTaskVerificationResultPersistence(task.root, task.record.taskId, { optional: true });
     if (!persisted) {
       return { path: runtime.taskVerificationResultPath(task.root, task.record.taskId), present: false, result: null, resultDigest: null, applicability: null };
     }
+    const savedApplicability = saved?.applicability || { status: 'unknown', reasons: [{ axis: 'lifecycle', code: 'snapshot_missing', message: '尚未形成 Verification lifecycle snapshot。' }] };
+    const persistedApplicability = targetIdentity === undefined || !savedApplicability?.target
+      ? savedApplicability
+      : {
+        ...savedApplicability,
+        status: savedApplicability.target.resultIdentity === targetIdentity ? savedApplicability.status : 'stale',
+        target: { ...savedApplicability.target, status: savedApplicability.target.resultIdentity === targetIdentity ? 'current' : 'stale', currentIdentity: targetIdentity },
+        ...(savedApplicability.target.resultIdentity === targetIdentity ? {} : { reasons: [{ axis: 'target', code: 'target-identity-changed', message: `${savedApplicability.target.resultIdentity} -> ${targetIdentity}` }, ...(savedApplicability.reasons || [])] }),
+      };
     return {
       path: persisted.file,
       present: true,
       result: persisted.result,
       resultDigest: persisted.resultDigest,
-      applicability: applicability(persisted.result, targetIdentity, observeDeclarations(task, declarationRoot)),
+      applicability: live ? applicability(persisted.result, targetIdentity, observeDeclarations(task, declarationRoot)) : persistedApplicability,
     };
   }
 
@@ -177,7 +186,9 @@ export function registerTaskVerificationApplication(runtime) {
   function inspectTaskVerification(targetRoot, taskId, input = {}) {
     assertFields(input, new Set(['targetIdentity', 'declarationRoot']), 'Task Verification inspect');
     const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
-    return operationResult('inspect', 'inspected', task.record.taskId, slot(task, currentTarget(input.targetIdentity), input.declarationRoot));
+    const lifecycle = runtime.readTaskLifecyclePersistence?.(task.root, task.record.taskId, { optional: true });
+    const targetIdentity = currentTarget(input.targetIdentity);
+    return operationResult('inspect', 'inspected', task.record.taskId, slot(task, targetIdentity, input.declarationRoot, lifecycle?.model?.verification, input.declarationRoot !== undefined));
   }
 
   function validateRecordAgainstDeclarations(task, observations, capabilities, coverageGaps) {
@@ -232,7 +243,9 @@ export function registerTaskVerificationApplication(runtime) {
     }, { expectedTaskId: task.record.taskId });
     validateRecordAgainstDeclarations(task, observations, draft.capabilities, draft.coverageGaps);
     const written = runtime.writeTaskVerificationResultPersistence(task.root, draft);
-    return operationResult('record', 'recorded', task.record.taskId, slot(task, draft.target.identity, input.declarationRoot), [{
+    const resultSlot = slot(task, draft.target.identity, input.declarationRoot, null, true);
+    if (typeof runtime.projectTaskVerification === 'function') runtime.projectTaskVerification(task.root, task.record.taskId, resultSlot);
+    return operationResult('record', 'recorded', task.record.taskId, resultSlot, [{
       type: written.created ? 'created' : 'updated',
       path: relative(task.root, written.file),
     }]);

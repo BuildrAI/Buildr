@@ -50,7 +50,14 @@ function runtimeFor(status = 'completed', finish = finishEntry()) {
       completion: { present: true, resultDigest: 'sha256-completion-result', applicability: 'unknown', result: { targetIdentity: ids.candidate, conclusion: { outcome: 'ready' } } },
     } }),
     inspectTaskVerification: () => ({ slot: { present: true, resultDigest: ids.result, applicability: { status: 'unknown' }, result: { target: { identity: ids.target }, conclusion: { outcome: 'passed' } } } }),
-    readTaskFinishResults: () => ({ results: finish ? [finish] : [], diagnostics: [] }),
+    inspectTaskLifecycleReadModel: () => ({ model: { finish: finish ? {
+      status: 'delivered', runId: finish.result.runId, handoffIdentity: finish.result.identity.handoffIdentity,
+      candidateIdentity: finish.result.identity.candidateIdentity, candidateGeneration: finish.result.identity.candidateGeneration,
+      contentTargetIdentity: finish.result.identity.contentTargetIdentity, completedAt: finish.result.completedAt,
+      finalRemoteRef: finish.result.delivery.finalRemoteRef, targetBranch: finish.result.identity.targetBranch,
+      remote: finish.result.identity.remote, cleanup: finish.result.completion.cleanup, reuseMode: finish.result.reuseMode,
+      equivalence: finish.result.equivalence, diagnostics: [],
+    } : null } }),
   };
   registerTaskTerminalDeliveryApplication(runtime);
   return runtime;
@@ -82,40 +89,7 @@ test('terminal composer covers active, no-change, abandoned, unproven and identi
   assert.equal(noChange.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-no-change');
   assert.equal(runtimeFor('abandoned').inspectTaskTerminalDelivery('/workspace', TASK).status, 'abandoned');
   assert.equal(runtimeFor('completed', null).inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
-  for (const field of ['task', 'handoff', 'candidate', 'generation', 'target']) {
-    const mismatch = finishEntry();
-    if (field === 'task') {
-      mismatch.result.identity.task = 'other-task';
-      mismatch.completion.task = 'other-task';
-    }
-    if (field === 'handoff') {
-      mismatch.result.identity.handoffIdentity = 'sha256-other';
-      mismatch.result.handoff.identity = 'sha256-other';
-      mismatch.result.equivalence.handoffIdentity = 'sha256-other';
-      mismatch.completion.handoffIdentity = 'sha256-other';
-    }
-    if (field === 'candidate') {
-      mismatch.result.identity.candidateIdentity = 'sha256-other';
-      mismatch.result.candidate.identity = 'sha256-other';
-      mismatch.result.equivalence.candidateIdentity = 'sha256-other';
-      mismatch.completion.candidateIdentity = 'sha256-other';
-    }
-    if (field === 'generation') {
-      mismatch.result.identity.candidateGeneration = 2;
-      mismatch.result.candidate.generation = 2;
-      mismatch.result.equivalence.candidateGeneration = 2;
-      mismatch.completion.candidateGeneration = 2;
-    }
-    if (field === 'target') {
-      mismatch.result.identity.contentTargetIdentity = 'sha256-other';
-      mismatch.result.candidate.contentTargetIdentity = 'sha256-other';
-      mismatch.result.equivalence.contentTargetIdentity = 'sha256-other';
-      mismatch.completion.contentTargetIdentity = 'sha256-other';
-    }
-    assert.equal(runtimeFor('completed', mismatch).inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven', field);
-  }
-
   const unavailable = runtimeFor('completed', null);
-  unavailable.readTaskFinishResults = () => ({ results: [], diagnostics: [{ code: 'task_finish_completion_invalid' }] });
-  assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'unavailable');
+  unavailable.readTaskFinishResults = () => { throw new Error('GET must not scan Finish Result files.'); };
+  assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
 });

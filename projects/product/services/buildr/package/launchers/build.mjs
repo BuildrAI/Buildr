@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -37,6 +38,92 @@ function appPortArgs(identity) {
   return identity.channel === 'development' ? ` --port ${DEVELOPMENT_APP_PORT}` : '';
 }
 
+function darwinTool(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${(result.stderr || result.stdout || '').trim()}`);
+  return result.stdout;
+}
+
+function machoDependencies(file) {
+  return darwinTool('otool', ['-L', file])
+    .split('\n')
+    .slice(1)
+    .map((line) => line.match(/^\s+(\S+)\s+\(/)?.[1])
+    .filter(Boolean);
+}
+
+function machoRpaths(file) {
+  const lines = darwinTool('otool', ['-l', file]).split('\n');
+  const rpaths = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].includes('LC_RPATH')) {
+      const match = lines.slice(index, index + 6).join('\n').match(/path (\S+) \(/);
+      if (match) rpaths.push(match[1]);
+    }
+  }
+  return rpaths;
+}
+
+function expandMachPath(value, { loader, executable }) {
+  return value
+    .replaceAll('@loader_path', path.dirname(loader))
+    .replaceAll('@executable_path', path.dirname(executable));
+}
+
+function resolveMachDependency(reference, loader, executable) {
+  const candidates = reference.startsWith('@rpath/')
+    ? machoRpaths(loader).map((rpath) => path.join(expandMachPath(rpath, { loader, executable }), reference.slice('@rpath/'.length)))
+    : [expandMachPath(reference, { loader, executable })];
+  return candidates.map((candidate) => path.resolve(candidate)).find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function isSystemMachLibrary(file) {
+  const resolved = path.resolve(file);
+  return resolved === '/usr/lib' || resolved.startsWith('/usr/lib/') || resolved === '/System' || resolved.startsWith('/System/');
+}
+
+function bundleDarwinRuntime(runtime, executableRoot) {
+  if (process.platform !== 'darwin') throw new Error('Building a darwin launcher requires macOS otool and install_name_tool.');
+  const executable = path.join(executableRoot, 'node');
+  const bundled = new Map();
+  const destinations = new Map();
+  const queue = [path.resolve(runtime)];
+  const changes = [];
+  while (queue.length) {
+    const loader = queue.shift();
+    for (const reference of machoDependencies(loader)) {
+      const resolved = resolveMachDependency(reference, loader, executable);
+      if (!resolved || isSystemMachLibrary(resolved)) continue;
+      const real = fs.realpathSync(resolved);
+      const destination = path.join(executableRoot, path.basename(real));
+      const existing = bundled.get(real);
+      const destinationOwner = destinations.get(destination);
+      if ((existing && existing !== destination) || (destinationOwner && destinationOwner !== real)) {
+        throw new Error(`Duplicate bundled macOS runtime dependency name: ${path.basename(real)}`);
+      }
+      if (!existing) {
+        bundled.set(real, destination);
+        destinations.set(destination, real);
+        fs.copyFileSync(real, destination);
+        fs.chmodSync(destination, 0o644);
+        queue.push(real);
+      }
+      changes.push({ loader, reference, destination: `@loader_path/${path.basename(real)}` });
+    }
+  }
+  for (const destination of bundled.values()) {
+    if (path.extname(destination) === '.dylib') darwinTool('install_name_tool', ['-id', `@loader_path/${path.basename(destination)}`, destination]);
+  }
+  for (const change of changes) {
+    const target = change.loader === path.resolve(runtime) ? executable : bundled.get(fs.realpathSync(change.loader));
+    if (!target) throw new Error(`Unable to locate bundled loader for ${change.loader}`);
+    darwinTool('install_name_tool', ['-change', change.reference, change.destination, target]);
+  }
+  for (const destination of bundled.values()) darwinTool('codesign', ['--force', '--sign', '-', '--timestamp=none', destination]);
+  darwinTool('codesign', ['--force', '--sign', '-', '--timestamp=none', executable]);
+  return [...bundled.values()];
+}
+
 function buildMac(output, runtime, identity) {
   const appName = identity.channel === 'development' ? 'Buildr Dev' : 'Buildr';
   const root = path.join(output, `${appName}.app`, 'Contents');
@@ -46,6 +133,7 @@ function buildMac(output, runtime, identity) {
   fs.mkdirSync(resources, { recursive: true });
   fs.copyFileSync(runtime, path.join(executableRoot, 'node'));
   fs.chmodSync(path.join(executableRoot, 'node'), 0o755);
+  bundleDarwinRuntime(runtime, executableRoot);
   fs.copyFileSync(path.join(ASSET_ROOT, 'Buildr.icns'), path.join(resources, 'Buildr.icns'));
   copyApplication(path.join(resources, 'buildr'));
   writeIdentity(path.join(resources, 'launcher-identity.json'), identity);

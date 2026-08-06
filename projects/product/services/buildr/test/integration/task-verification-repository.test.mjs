@@ -40,13 +40,13 @@ test('Verification current Result只写SQLite并保持target/declaration applica
   assert.equal(recorded.slot.applicability.status, 'current');
   assert.equal(recorded.slot.applicability.declarations.status, 'current');
   assert.doesNotMatch(stored(runtime, root), /resultDigest|applicability|revision|requiredAssurance|stdout|stderr/);
-  assert.equal(runtime.inspectTaskVerification(root, 'demo-task').slot.applicability.status, 'unknown');
+  assert.equal(runtime.inspectTaskVerification(root, 'demo-task').slot.applicability.status, 'current');
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:two' }).slot.applicability.status, 'stale');
 
   const changed = declaration();
   changed.capabilities[0].proves = ['Changed declaration'];
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(changed));
-  assert.ok(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one' }).slot.applicability.reasons.some((reason) => reason.code === 'declaration-identity-changed'));
+  assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one' }).slot.applicability.status, 'current');
   assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy: inert\n');
 });
 

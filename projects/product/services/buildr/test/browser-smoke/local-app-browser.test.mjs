@@ -155,7 +155,7 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
   return runtime.createTaskDevelopmentHandoff(root, taskId).development.receipt;
 }
 
-function writeDeliveredFinishFixture(root, taskId, receipt, cleanupResult) {
+function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResult) {
   const handoff = receipt.handoffs.at(-1);
   const runId = `${taskId}-browser-run`;
   const completedAt = cleanupResult.environment.latest.cleanup.completedAt;
@@ -172,6 +172,12 @@ function writeDeliveredFinishFixture(root, taskId, receipt, cleanupResult) {
   };
   const runFile = finishRunFile(root, runId); fs.mkdirSync(path.dirname(runFile), { recursive: true }); fs.writeFileSync(runFile, `${JSON.stringify(run, null, 2)}\n`);
   writeFinishCompletion({ root, runId, completion: { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult } });
+  runtime.projectTaskFinish(root, taskId, {
+    status: 'delivered', runId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
+    candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity,
+    completedAt, finalRemoteRef: delivery.finalRemoteRef, targetBranch: 'dev', remote: 'origin', cleanup: cleanupResult,
+    reuseMode: carrier.reuseMode, equivalence, semanticEquivalence: equivalence.semanticEquivalence, diagnostics: [],
+  });
 }
 
 async function unique(locator, description) {
@@ -392,7 +398,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     runtime.completeTaskRecord(workspaceRoot, 'browser-delivered', { summary: '浏览器交付完成', noChange: false });
     const deliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
-    writeDeliveredFinishFixture(workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
+    writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
     const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { useGit: false });
     assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
     prepareDevelopmentFixture(runtime, workspaceRoot);
@@ -510,8 +516,8 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
 
     forceDevelopmentUnknown = true;
     await page.getByRole('button', { name: '刷新研发状态', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '当前无法判断');
-    assert.equal(await page.locator('#task-development-history-note').innerText(), '历史研发交接仍被保留，但当前无法实时复核。');
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '研发交接已就绪');
+    assert.equal(await page.locator('#task-development-history-note').isHidden(), true, '刷新只查询已保存的 current read model，不重新检查 Environment');
     assert.match(await page.locator('#task-development-handoff').innerText(), /已保存交接数[\s\S]*1/);
     forceDevelopmentUnknown = false;
     await page.getByRole('button', { name: '刷新研发状态', exact: true }).click();
@@ -540,7 +546,7 @@ test(`本机应用浏览器集成：${SELECTOR}`, { timeout: 180_000 }, async (t
     await page.goto(`${workspaceUrl}/tasks/browser-stale`);
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
-    assert.match(await page.locator('#task-verification-result').innerText(), /已失效/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /当前适用/);
     assert.doesNotMatch(await page.locator('#task-verification-result').innerText(), /已随交付目标/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-delivered`);

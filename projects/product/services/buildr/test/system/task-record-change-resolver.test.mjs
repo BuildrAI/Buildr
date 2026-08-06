@@ -119,6 +119,20 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
     createdAt: observedAt,
     updatedAt: observedAt,
   });
+  runtime.projectTaskEnvironment(root, taskId, {
+    schemaVersion: 'buildr.task-environment-result/v1',
+    operation: 'inspect',
+    status: 'ready',
+    taskId,
+    receipt: { path: path.join(workspaceRoot, '.buildr', 'tasks', taskId, 'environment.json'), available: true },
+    observedAt,
+    source: 'task-environment-application',
+    environment: runtime.readTaskEnvironmentPersistence(workspaceRoot, taskId).receipt,
+    execution: null,
+    diagnostic: null,
+    effects: [],
+    nextActions: [],
+  });
   runtime.workspaceNodeExecution = () => ({ ready: true, identity: { digest: 'workspace-node' }, executable: process.execPath, npmExecutable: process.execPath, environment: process.env });
   runtime.checkRuntimeAdapter = () => ({ runtimeSourceEvidence: { projectionReady: true, projectionIdentity: 'projection' } });
   const bundleRoot = path.join(base, 'Buildr Dev.app', 'Contents', 'Resources', 'buildr');
