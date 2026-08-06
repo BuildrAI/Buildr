@@ -6,12 +6,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elevenching/Buildr.git",
+    "url": "git+https://github.com/BuildrAI/Buildr.git",
     "directory": "projects/product/services/buildr"
   },
-  "homepage": "https://github.com/elevenching/Buildr#readme",
+  "homepage": "https://github.com/BuildrAI/Buildr#readme",
   "bugs": {
-    "url": "https://github.com/elevenching/Buildr/issues"
+    "url": "https://github.com/BuildrAI/Buildr/issues"
   },
   "keywords": [
     "agent",

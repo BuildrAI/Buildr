@@ -152,9 +152,9 @@ export function createPackageStaticValidator(deps) {
         if (!/^\d+\.\d+\.\d+(?:[-+].+)?$/.test(packageMetadata.version || '') || packageMetadata.version === '0.0.0') problems.push('package.json must declare a non-placeholder semantic version.');
         if (packageMetadata.private === true) problems.push('package.json must not block public packaging with private: true.');
         if (packageMetadata.license !== 'MIT') problems.push('package.json must declare the MIT license.');
-        if (packageMetadata.repository?.url !== 'git+https://github.com/elevenching/Buildr.git' || packageMetadata.repository?.directory !== 'projects/product/services/buildr') problems.push('package.json repository must identify the canonical GitHub Buildr Service directory.');
-        if (packageMetadata.homepage !== 'https://github.com/elevenching/Buildr#readme') problems.push('package.json homepage must identify the canonical GitHub README.');
-        if (packageMetadata.bugs?.url !== 'https://github.com/elevenching/Buildr/issues') problems.push('package.json bugs URL must identify canonical GitHub Issues.');
+        if (packageMetadata.repository?.url !== 'git+https://github.com/BuildrAI/Buildr.git' || packageMetadata.repository?.directory !== 'projects/product/services/buildr') problems.push('package.json repository must identify the canonical GitHub Buildr Service directory.');
+        if (packageMetadata.homepage !== 'https://github.com/BuildrAI/Buildr#readme') problems.push('package.json homepage must identify the canonical GitHub README.');
+        if (packageMetadata.bugs?.url !== 'https://github.com/BuildrAI/Buildr/issues') problems.push('package.json bugs URL must identify canonical GitHub Issues.');
         if (packageMetadata.publishConfig?.access !== 'public') problems.push('package.json publishConfig.access must be public.');
         for (const keyword of ['agent', 'agentic-coding', 'cli', 'developer-tools', 'workspace']) {
           if (!packageMetadata.keywords?.includes(keyword)) problems.push(`package.json keywords must include ${keyword}.`);

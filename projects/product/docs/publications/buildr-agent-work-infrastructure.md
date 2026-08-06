@@ -18,7 +18,7 @@ targets:
 
 ![共享工作资产支撑产品、开发与验证的示意图](assets/buildr-agent-work-infrastructure.webp)
 
-GitHub：[https://github.com/elevenching/Buildr](https://github.com/elevenching/Buildr)
+GitHub：[https://github.com/BuildrAI/Buildr](https://github.com/BuildrAI/Buildr)
 
 当 Agent 开始进入真实工作，难题很快不再是“它能不能完成一项任务”，而是“它能不能接住前面已经完成的工作，并把结果交给下一步”。
 

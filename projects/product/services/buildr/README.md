@@ -1,6 +1,6 @@
 # Buildr
 
-中文 | [English](https://github.com/elevenching/Buildr/blob/main/README.en.md)
+中文 | [English](https://github.com/BuildrAI/Buildr/blob/main/README.en.md)
 
 ## 让 Agent 接着已有积累，把工作持续推进下去
 

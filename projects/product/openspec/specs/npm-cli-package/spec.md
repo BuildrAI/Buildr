@@ -103,7 +103,7 @@ Buildr npm package MUST 声明非占位版本、开源 License、可执行 bin�
 - **AND** verifier MUST 证明更新动作没有修改测试 workspace，后续显式 sync 才完成 workspace reconcile
 
 ### Requirement: 公开 registry package identity 必须稳定
-Buildr 公开 npm package MUST 使用 `@buildr-ai/buildr` identity、`buildr` executable 和指向 `https://github.com/elevenching/Buildr` 的完整 registry metadata。
+Buildr 公开 npm package MUST 使用 `@buildr-ai/buildr` identity、`buildr` executable 和指向 `https://github.com/BuildrAI/Buildr` 的完整 registry metadata。
 
 #### Scenario: 检查准备发布的 package
 - **WHEN** 维护者运行 package check 或 `npm pack --json`

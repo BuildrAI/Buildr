@@ -22,7 +22,7 @@ test('open-source candidate content rules block secrets without echoing values',
   const findings = inspectCandidateFile('fixture.txt', secret);
   assert.equal(findings[0].rule, 'secret.private-key');
   assert.equal(JSON.stringify(findings).includes(secret), false);
-  assert.equal(inspectCandidateFile('README.md', 'https://github.com/elevenching/Buildr').length, 0);
+  assert.equal(inspectCandidateFile('README.md', 'https://github.com/BuildrAI/Buildr').length, 0);
   assert.equal(inspectCandidateFile('fixture.md', 'buildr@example.com').length, 0);
   assert.equal(inspectCandidateFile('fixture.md', ['person', 'private.test'].join('@'))[0].rule, 'private.email-address');
 });
@@ -31,9 +31,9 @@ test('open-source metadata and tarball contracts enforce public identity and inv
   const valid = {
     name: '@buildr-ai/buildr',
     bin: { buildr: 'bin/buildr.mjs' },
-    repository: { url: 'git+https://github.com/elevenching/Buildr.git', directory: 'projects/product/services/buildr' },
-    homepage: 'https://github.com/elevenching/Buildr#readme',
-    bugs: { url: 'https://github.com/elevenching/Buildr/issues' },
+    repository: { url: 'git+https://github.com/BuildrAI/Buildr.git', directory: 'projects/product/services/buildr' },
+    homepage: 'https://github.com/BuildrAI/Buildr#readme',
+    bugs: { url: 'https://github.com/BuildrAI/Buildr/issues' },
     publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
   };
   assert.deepEqual(inspectPackageMetadata(valid), []);
@@ -135,6 +135,15 @@ test('publish workflow is tag-gated, OIDC-ready, and token-free', () => {
   const npmPublish = workflow.indexOf('Publish public npm package');
   assert.equal(releaseNotes < registryCheck, true);
   assert.equal(releaseNotes < npmPublish, true);
+});
+
+test('CI and publish workflows use the supported Node runtime', () => {
+  const verifyWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8');
+  const publishWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
+  assert.match(verifyWorkflow, /node: \[24\.15\.0, 24\.x\]/);
+  assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
+  assert.match(publishWorkflow, /node-version: "24\.15\.0"/);
+  assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);
 });
 
 test('Buildr release Skill fixes release identity, dependency preparation, and tree-gated history bridging', () => {

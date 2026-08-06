@@ -49,9 +49,9 @@ export function inspectPackageMetadata(metadata) {
   const findings = [];
   if (metadata.name !== '@buildr-ai/buildr') findings.push(finding('package.identity', 'projects/product/services/buildr/package.json', 'expected @buildr-ai/buildr'));
   if (metadata.bin?.buildr !== 'bin/buildr.mjs') findings.push(finding('package.bin', 'projects/product/services/buildr/package.json', 'expected normalized buildr executable'));
-  if (metadata.repository?.url !== 'git+https://github.com/elevenching/Buildr.git' || metadata.repository?.directory !== 'projects/product/services/buildr') findings.push(finding('package.repository', 'projects/product/services/buildr/package.json', 'canonical repository metadata is missing'));
-  if (metadata.homepage !== 'https://github.com/elevenching/Buildr#readme') findings.push(finding('package.homepage', 'projects/product/services/buildr/package.json', 'canonical homepage is missing'));
-  if (metadata.bugs?.url !== 'https://github.com/elevenching/Buildr/issues') findings.push(finding('package.bugs', 'projects/product/services/buildr/package.json', 'canonical issue URL is missing'));
+  if (metadata.repository?.url !== 'git+https://github.com/BuildrAI/Buildr.git' || metadata.repository?.directory !== 'projects/product/services/buildr') findings.push(finding('package.repository', 'projects/product/services/buildr/package.json', 'canonical repository metadata is missing'));
+  if (metadata.homepage !== 'https://github.com/BuildrAI/Buildr#readme') findings.push(finding('package.homepage', 'projects/product/services/buildr/package.json', 'canonical homepage is missing'));
+  if (metadata.bugs?.url !== 'https://github.com/BuildrAI/Buildr/issues') findings.push(finding('package.bugs', 'projects/product/services/buildr/package.json', 'canonical issue URL is missing'));
   if (metadata.publishConfig?.access !== 'public') findings.push(finding('package.access', 'projects/product/services/buildr/package.json', 'publishConfig.access must be public'));
   if (metadata.publishConfig?.registry !== 'https://registry.npmjs.org/') findings.push(finding('package.registry', 'projects/product/services/buildr/package.json', 'publishConfig.registry must be the official npm registry'));
   return findings;
@@ -117,7 +117,7 @@ function packAndInspect() {
 function inspectReadmes() {
   const findings = [];
   const readmes = ['README.md', 'README.en.md'].map((file) => [file, fs.readFileSync(path.join(workspaceRoot, file), 'utf8')]);
-  for (const token of ['https://github.com/elevenching/Buildr', '@buildr-ai/buildr', 'buildr runtime list --json']) {
+  for (const token of ['https://github.com/BuildrAI/Buildr', '@buildr-ai/buildr', 'buildr runtime list --json']) {
     for (const [file, content] of readmes) {
       if (!content.includes(token)) findings.push(finding('readme.parity', file, `missing canonical token: ${token}`));
     }
