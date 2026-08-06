@@ -57,7 +57,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.equal(delivery.requiredForDelivery, true);
   assert.deepEqual(delivery.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(delivery.applicability.paths, ['**']);
-  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['npm', 'run', 'test:candidate', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
+  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
   assert.equal(fullRegression.requiredForDelivery, false);
   assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
@@ -89,7 +89,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
   assert.ok(wrapper.includes('"$@"'));
   assert.ok(candidate.includes("profiles: ['candidate']"));
-  assert.ok(candidate.includes('createVerificationPreflightPlan'));
+  assert.doesNotMatch(candidate, /collectChangedProductPaths|createVerificationPreflightPlan|--base/);
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
   assert.ok(candidate.split(/\r?\n/).length < 100);

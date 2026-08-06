@@ -9,12 +9,21 @@ import { installLauncher, launcherStatus, uninstallLauncher } from '../../packag
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDER = path.join(PRODUCT_ROOT, 'package', 'launchers', 'build.mjs');
+const builtBundles = new Map();
+
+test.after(() => {
+  for (const output of builtBundles.values()) fs.rmSync(output, { recursive: true, force: true });
+  builtBundles.clear();
+});
 
 function build(t, platform, channel = 'release') {
+  const key = `${platform}:${channel}`;
+  const cached = builtBundles.get(key);
+  if (cached) return cached;
   const output = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${platform}-launcher-`));
-  t.after(() => fs.rmSync(output, { recursive: true, force: true }));
   const result = spawnSync(process.execPath, [BUILDER, '--platform', platform, '--channel', channel, '--runtime', process.execPath, '--output', output], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
+  builtBundles.set(key, output);
   return output;
 }
 

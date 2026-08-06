@@ -59,7 +59,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["npm", "run", "test:candidate", "--", "--base", "origin/dev"]
+      argv: ["npm", "run", "test:candidate"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
@@ -68,7 +68,7 @@ capabilities:
         - 显式 Full 交付时只选择本 capability，不同时选择 product.delivery；verification policy 通过 required override 将本能力设为交付必需
     proves:
       - Product Project 与 Buildr Service 登记为完整回归主证据的全部步骤通过
-      - 冻结目标相对 Product 集成分支的 changed paths 均有 owner，并与 Candidate profile 合并为一个按 step identity 去重的执行计划
+      - Candidate profile 登记的全部 required gate identities 通过一次完整执行计划
     requiredForDelivery: false
     environment:
       requires: [node, npm, git]

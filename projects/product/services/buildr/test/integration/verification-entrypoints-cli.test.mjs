@@ -40,14 +40,22 @@ test('candidate rejects invalid scheduling and execution profiles before verific
   assert.doesNotMatch(`${invalidProfile.stdout}${invalidProfile.stderr}`, /\[verify-product\]/);
 });
 
-test('candidate full plan unions changed owners once and rejects unknown options before execution', () => {
+test('candidate full plan only uses Candidate profile and rejects changed-path options', () => {
   const runner = path.join(productRoot, 'test', 'verification', 'candidate.mjs');
-  const planned = spawnSync(process.execPath, [runner, '--base', 'HEAD^', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  const planned = spawnSync(process.execPath, [runner, '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 });
   assert.equal(planned.status, 0, planned.stderr);
   const payload = JSON.parse(planned.stdout);
   assert.equal(payload.schemaVersion, 'buildr.verification-full-plan/v1');
+  assert.equal(payload.base, null);
+  assert.equal(payload.source, 'candidate-profile');
+  assert.deepEqual(payload.paths, []);
+  assert.deepEqual(payload.preflightSteps, []);
   assert.equal(new Set(payload.steps.map((step) => step.id)).size, payload.steps.length);
+  assert.equal(payload.steps.some((step) => step.id === 'repository-onboarding'), false);
   for (const id of ['system', 'docs-quality']) assert.equal(payload.steps.filter((step) => step.id === id).length, 1);
+  const changed = spawnSync(process.execPath, [runner, '--base', 'HEAD^', '--json'], { cwd: productRoot, encoding: 'utf8' });
+  assert.equal(changed.status, 1);
+  assert.match(changed.stderr, /Unknown test:candidate option: --base/);
   const unknown = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, /Unknown test:candidate option/);
