@@ -26,6 +26,8 @@ export function registerApplicationRuntime(runtime) {
   const assertInitializedBuildrWorkspace = (...args) => runtime.assertInitializedBuildrWorkspace(...args);
   const workspaceMigrationPlan = (...args) => runtime.workspaceMigrationPlan(...args);
   const migrateWorkspaceMetadata = (...args) => runtime.migrateWorkspaceMetadata(...args);
+  const openWorkspaceStructuredStore = (...args) => runtime.openWorkspaceStructuredStore(...args);
+  const workspaceStructuredStorePath = (...args) => runtime.workspaceStructuredStorePath(...args);
   const projectMigrationPlan = (...args) => runtime.projectMigrationPlan(...args);
   const migrateProjectRegistry = (...args) => runtime.migrateProjectRegistry(...args);
 
@@ -205,6 +207,18 @@ export function registerApplicationRuntime(runtime) {
     throw new Error(`sync 暂停：旧 Task Environment authority 无法安全迁移。${conflicts.length ? `\n- ${conflicts.join('\n- ')}` : `\n- ${migration.diagnostic?.message || '检查 migration evidence。'}`}`);
   }
 
+  function migrateWorkspaceStructuredStore(targetRoot) {
+    const file = workspaceStructuredStorePath(targetRoot);
+    if (!fs.existsSync(file)) return { status: 'uninitialized', file, migrations: [] };
+    const opened = openWorkspaceStructuredStore(targetRoot, { writable: true });
+    try {
+      const applied = opened.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ version: row.version, name: row.name }));
+      return { status: 'current', file: opened.file, version: opened.version, migrations: applied };
+    } finally {
+      opened.database.close();
+    }
+  }
+
   function syncRuntime(agent, args) {
     const adapter = getRuntimeAdapter(agent);
     const syncArgs = [...args];
@@ -216,6 +230,7 @@ export function registerApplicationRuntime(runtime) {
     assertEnvironmentMigrationReady(environmentMigrationPlan);
     const preflight = buildSyncSourcePlan(targetRoot, agent);
     assertSyncSourcePlanReady(preflight);
+    const structuredStoreMigration = migrateWorkspaceStructuredStore(targetRoot);
     const environmentMigration = runtime.migrateLegacyTaskEnvironments?.(targetRoot, { apply: true }) || null;
     assertEnvironmentMigrationReady(environmentMigration);
     let lockedPlan = null;
@@ -256,6 +271,7 @@ export function registerApplicationRuntime(runtime) {
     console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
     if (environmentMigration?.status === 'migrated' && environmentMigration.counts.total > 0) console.log(`Task Environment 迁移：A=${environmentMigration.counts.A} B=${environmentMigration.counts.B} C=${environmentMigration.counts.C} D=${environmentMigration.counts.D}`);
     console.log(`Workspace Node：${workspaceNode.identity.version}（${workspaceNode.action}）`);
+    if (structuredStoreMigration.migrations.length > 0) console.log(`Workspace structured store：已确认 migration 0000-${String(structuredStoreMigration.migrations.at(-1).version).padStart(4, '0')}。`);
     if (updated.changed.length > 0) {
       console.log('产品能力变更：');
       for (const file of updated.changed) console.log(`  ${file}`);

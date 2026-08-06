@@ -665,6 +665,15 @@ export function createPackageStaticValidator(deps) {
           if (contractIds.has(key)) throw new Error(`${label} cannot retire a currently declared contract: ${key}`);
           if (retirementIds.has(key)) throw new Error(`Duplicate package capability retirement: ${key}`);
           if (!retirement.target?.startsWith('skills/contracts/') || !retirement.description || !retirement.provider || !/^sha256-[a-f0-9]{64}$/.test(retirement.integrity || '')) throw new Error(`${label} must include a safe target, description, provider, and SHA-256 integrity`);
+          if (retirement.legacyIntegrities !== undefined) {
+            if (!Array.isArray(retirement.legacyIntegrities)) throw new Error(`${label}.legacyIntegrities must be an array.`);
+            const seen = new Set([retirement.integrity]);
+            for (const integrity of retirement.legacyIntegrities) {
+              if (!/^sha256-[a-f0-9]{64}$/.test(integrity || '')) throw new Error(`${label}.legacyIntegrities contains an invalid SHA-256 integrity.`);
+              if (seen.has(integrity)) throw new Error(`${label}.legacyIntegrities contains a duplicate integrity: ${integrity}`);
+              seen.add(integrity);
+            }
+          }
           retirementIds.add(key);
         } catch (error) {
           problems.push(error.message);

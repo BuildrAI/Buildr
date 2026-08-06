@@ -117,6 +117,8 @@ capabilityContracts:
         version: 1
         target: skills/contracts/buildr/task-asset-review/v1.md
         integrity: sha256-eb7d2d92f1cea492763a107d5c35ee0fe38406cb8480ade679b5595e6855f856
+        legacyIntegrities:
+          - sha256-8812af33714611af6b92c888a8204a26376e27116dc7cc63baa979141d6b2d89
         provider: task-asset-review
         description: 审查任务过程并提出可沉淀工作资产候选。
       - id: buildr.task-asset-review

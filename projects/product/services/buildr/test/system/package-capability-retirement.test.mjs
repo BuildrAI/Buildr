@@ -5,7 +5,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import YAML from 'yaml';
+
+import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -40,6 +43,22 @@ function injectLegacy(root) {
   }
   fs.writeFileSync(manifestFile, YAML.stringify(manifest));
   return manifestFile;
+}
+
+function injectLegacyAssetReviewContract(root) {
+  const target = path.join(root, 'skills', 'contracts', 'buildr', 'task-asset-review', 'v1.md');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(path.join(PRODUCT_ROOT, 'test', 'fixtures', 'legacy-task-asset-review-contract-v1.md'), target);
+  return target;
+}
+
+function seedMigrationV4(root) {
+  const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const database = new DatabaseSync(file);
+  for (const migration of loadWorkspaceSqliteMigrations().slice(0, 5)) applyWorkspaceSqliteMigration(database, migration);
+  database.close();
+  return file;
 }
 
 test('sync 只在旧 contract、binding 与文件 identity 匹配时完整退休旧 authority', (t) => {
@@ -135,4 +154,36 @@ test('sync 不读取、迁移或删除既有 Task Asset Review observation 数�
   const synced = run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   assert.deepEqual(fs.readFileSync(legacy), before);
+});
+
+test('sync 接受已登记的历史 Task Asset Review contract 并安全退休', (t) => {
+  const root = fixtureRoot(t);
+  const target = injectLegacyAssetReviewContract(root);
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  assert.equal(fs.existsSync(target), false);
+});
+
+test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t) => {
+  const root = fixtureRoot(t);
+  const file = seedMigrationV4(root);
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  const database = new DatabaseSync(file, { readOnly: true });
+  assert.deepEqual(database.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => row.version), [0, 1, 2, 3, 4, 5, 6]);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_retrospective_current', 'task_lifecycle_current')").get().count, 2);
+  database.close();
+});
+
+test('sync 的 SQLite migration 失败时不写源资产', (t) => {
+  const root = fixtureRoot(t);
+  const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'not a sqlite database\n');
+  const manifestFile = path.join(root, 'skills', 'manifest.yml');
+  const manifestBefore = fs.readFileSync(manifestFile);
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.notEqual(synced.status, 0);
+  assert.match(`${synced.stderr}\n${synced.stdout}`, /Workspace structured store/);
+  assert.deepEqual(fs.readFileSync(manifestFile), manifestBefore);
 });

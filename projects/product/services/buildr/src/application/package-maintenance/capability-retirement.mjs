@@ -37,7 +37,8 @@ export function createCapabilityRetirement({ assertSafeAssetTarget, crypto, exis
       if (bindingEntry && bindingEntry.provider !== retirement.provider) throw new Error(`Capability retirement binding has drifted: ${retirement.id}@${retirement.version}`);
       if (targetExists) {
         const integrity = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(targetFile)).digest('hex')}`;
-        if (integrity !== retirement.integrity) throw new Error(`Capability retirement file has drifted: ${retirement.target}`);
+        const acceptedIntegrities = new Set([retirement.integrity, ...(retirement.legacyIntegrities || [])]);
+        if (!acceptedIntegrities.has(integrity)) throw new Error(`Capability retirement file has drifted: ${retirement.target}`);
       }
       findings.push({ type: 'contract', id: `${retirement.id}@${retirement.version}`, required: false, status: checkOnly ? 'retiring' : 'retired', path: retirement.target, converge: true });
       if (!checkOnly) {
