@@ -141,11 +141,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-f1fcb267b5ed727ab391d4472b08568a59a91561815ad89da7a51807ae9d74ca",
+      "integrity": "sha256-9d426aa1f78dcba9ea2a4e6c350a880b272b0fc0386beecc437fb98d97e96a85",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-9bf7667943d017e2f93df2dbc3709bba8611e7e822d8848f49deb3393dee3d56"
+          "integrity": "sha256-81c66999124c209d6b9d535a299a0b29ca821f407af0b36319ffbd7712a03fef"
         }
       ]
     },
@@ -153,11 +153,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-186a43aaf655947a34081cd9aeabb2426edd681565ff71517b242e4a05c1693c",
+      "integrity": "sha256-9e81217436ed4e66c39bfbe4aa992f0cc49ee4d660a3b82b9ea61b46d6fb0873",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-2b3b5f0d43f1950116b50ab7151d83c8cd60b2fec1c255c0763bb7f2c19a5253"
+          "integrity": "sha256-778d4e69b63fef3076e02c364038c58a43d40d6127056b558d10bd7d41a9a054"
         },
         {
           "path": "agents/openai.yaml",
@@ -169,11 +169,11 @@
       "type": "skill",
       "id": "task-retrospective",
       "target": "skills/buildr/task-retrospective",
-      "integrity": "sha256-e9b9610cb85d48bf1eefcd621c4c8079e1cae834115d87fae39b4cf9de2db9b1",
+      "integrity": "sha256-ff54df38cd816c8e9e3b5a0c844c960185f8f50e0d863bb56245b640f643d853",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-49fe81857702ffc5cb9c3f326227e3d7969c1fd8b1f04c396ed0d28eb1ffe42a"
+          "integrity": "sha256-a757d2a4fb2af309312db6c8a5d1d69cbaa97b1e1c6a645bf69086b1d773c8e2"
         },
         {
           "path": "agents/openai.yaml",
