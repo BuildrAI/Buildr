@@ -142,11 +142,15 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     );
   }
 
-  function assertStructuredStoreWriterProvenance(root, targetCheckout) {
+  function assertStructuredStoreWriterProvenance(root, targetCheckout, { writerRole = null } = {}) {
     if (!targetCheckout) return;
     const source = runtimeSourceCheckout();
     if (!source.checkout?.linkedWorktree || !targetCheckout || source.checkout.gitCommonDirectory !== targetCheckout.gitCommonDirectory) return;
     if (isCandidateValidationWorkspace(source.checkout, targetCheckout)) return;
+    if (['task-finish-retained', 'retained-task-state'].includes(writerRole)
+      && !targetCheckout.linkedWorktree
+      && source.checkout.linkedWorktree
+      && source.checkout.gitCommonDirectory === targetCheckout.gitCommonDirectory) return;
     throw structuredStoreError(
       'workspace_store_writer_provenance_forbidden',
       '候选 Buildr runtime 不能写入 retained canonical Workspace structured store。',
@@ -201,7 +205,34 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     return value;
   }
 
-  function assertCanonicalStructuredWorkspace(targetRoot, { writable = false } = {}) {
+  function withWorkspaceStructuredStoreReadCompatibility(targetRoot, operation) {
+    const root = path.resolve(targetRoot);
+    const identity = workspaceOperationIdentity(root);
+    const active = operationScopes.at(-1);
+    if (active) {
+      if (active.identity !== identity) throw structuredStoreError('workspace_store_operation_scope_mismatch', 'Workspace operation scope 不允许切换 canonical Workspace。', 409, { expected: active.root, actual: root });
+      const previous = active.allowPendingRead === true;
+      active.allowPendingRead = true;
+      try {
+        const result = operation();
+        if (result && typeof result.then === 'function') throw structuredStoreError('workspace_store_operation_scope_async_forbidden', 'Workspace operation scope 当前只支持同步 Application action。', 500);
+        return result;
+      } finally {
+        active.allowPendingRead = previous;
+      }
+    }
+    const scope = { root, identity, canonicalRoot: null, allowPendingRead: true, memo: new Map() };
+    operationScopes.push(scope);
+    try {
+      const result = operation();
+      if (result && typeof result.then === 'function') throw structuredStoreError('workspace_store_operation_scope_async_forbidden', 'Workspace operation scope 当前只支持同步 Application action。', 500);
+      return result;
+    } finally {
+      operationScopes.pop();
+    }
+  }
+
+  function assertCanonicalStructuredWorkspace(targetRoot, { writable = false, writerRole = null } = {}) {
     const root = path.resolve(targetRoot);
     const scope = activeOperationScope(root);
     if (scope?.canonicalRoot) return scope.canonicalRoot;
@@ -212,7 +243,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
       if (checkout?.linkedWorktree && !isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, checkout)) {
         throw structuredStoreError('workspace_store_workspace_not_canonical', 'Workspace structured store target 必须是 canonical Workspace，不能是 linked task worktree。', 409, { target: root }, '显式传入 retained canonical Workspace 的路径。');
       }
-      assertStructuredStoreWriterProvenance(root, checkout);
+      assertStructuredStoreWriterProvenance(root, checkout, { writerRole });
     }
     if (scope) scope.canonicalRoot = root;
     return root;
@@ -226,8 +257,8 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     return workspaceStructuredStorePathAtRoot(assertCanonicalStructuredWorkspace(targetRoot));
   }
 
-  function openWorkspaceStructuredStore(targetRoot, { writable = false } = {}) {
-    const root = assertCanonicalStructuredWorkspace(targetRoot, { writable });
+  function openWorkspaceStructuredStore(targetRoot, { writable = false, allowPendingRead = false, writerRole = null } = {}) {
+    const root = assertCanonicalStructuredWorkspace(targetRoot, { writable, writerRole });
     const file = workspaceStructuredStorePathAtRoot(root);
     const scripts = loadWorkspaceSqliteMigrations();
     if (!fs.existsSync(file) && !writable) return { root, file, present: false, database: null, version: null, scripts };
@@ -239,12 +270,20 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
         try { fs.chmodSync(file, 0o600); } catch {}
       }
       configure(database, { writable });
-      const state = validateAppliedMigrations(database, scripts, { allowPending: writable });
+      const state = validateAppliedMigrations(database, scripts, { allowPending: writable || allowPendingRead || activeOperationScope(root)?.allowPendingRead === true });
       if (writable) {
         for (const script of state.pending) applyWorkspaceSqliteMigration(database, script);
         validateAppliedMigrations(database, scripts, { allowPending: false });
       }
-      return { root, file, present: true, database, version: scripts.at(-1).version, scripts };
+      return {
+        root,
+        file,
+        present: true,
+        database,
+        version: writable ? scripts.at(-1).version : state.applied.at(-1)?.version ?? null,
+        migrationRequired: state.pending.length > 0,
+        scripts,
+      };
     } catch (error) {
       try { database?.close(); } catch {}
       if (error.structuredStoreBusiness) throw error;
@@ -269,6 +308,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     assertCanonicalStructuredWorkspace,
     withWorkspaceStructuredStoreOperation,
     memoizeWorkspaceOperation,
+    withWorkspaceStructuredStoreReadCompatibility,
     workspaceStructuredStorePath,
     openWorkspaceStructuredStore,
     inspectWorkspaceStructuredStore,

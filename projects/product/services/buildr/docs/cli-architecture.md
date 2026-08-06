@@ -76,6 +76,8 @@ Task Development 是无公共 CLI 的垂直切片：`domain/task-development` �
 
 Task Finish的CLI adapter只解析`run|inspect`。首次run从Environment与Task Development Application取得Task、current handoff、Candidate/generation和Content Target，不接受Project/Change、Candidate/generation或Verification authority输入。Git-backed Product run在创建时冻结retained checkout当前符号分支；显式target必须与其一致，Environment checkout `startPoint`不取得交付分支authority。随后按显式值、Environment evidence、target branch upstream或唯一配置remote冻结真实delivery remote；任一identity无法确定时不创建run。`task-finish-run.mjs`持有breaking v2 canonical run store、产品resume token与结果投射；`application/task-finish/git-task-contribution.mjs`兼容转发共享Git contribution基础设施，并在最新交付基线（Delivery Baseline）的run-owned detached worktree中机械应用任务贡献（Task Contribution）、复核raw Git delta identity；`task-finish-product-executor.mjs`只组合该isolated carrier、fast-forward/普通push、远端ref回读、retained runtime activation/Doctor和Environment cleanup，不根据Product路径安装development CLI或Local App。普通路径只有after ref等于carrier才进入cleanup；target前进时可通过carrier ancestor及全部changed-path after mode/blob/删除状态证明`already-contained`，保留原carrier和最新后代ref并跳过重复transition。无法证明才用精确token重做`prepare → verify → deliver → cleanup`，Candidate generation与既有gates保持不变；冲突、贡献漂移或不等价时返回Development。路径不重叠不构成语义安全判断。没有action registry、caller completion、typed recovery parser或旧v1 reader；retained metadata-only精确Git handoff属于Task Finish Skill，不进入CLI产品executor。
 
+Task Finish 的 current run、lease 和 compact terminal Result 统一写入 Workspace SQLite；完整诊断与 Carrier 只登记在 run-owned transient root，并在成功后清理。`.buildr/task-finish` 仅作为一次性 legacy cutover 或 Doctor 诊断输入，不是执行 authority。`task complete` 只表达 Task Record terminal status，不建立第二套 Finish 状态机。
+
 ## Product verifier 与仓库 verification
 
 分类依据是安装后 CLI 的运行依赖，而不是文件名：

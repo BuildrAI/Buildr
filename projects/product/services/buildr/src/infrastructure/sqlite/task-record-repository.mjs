@@ -216,7 +216,7 @@ export function registerTaskRecordRepository(runtime) {
     if (!isTaskRecordId(taskId)) throw taskRecordError('task_record_identity_invalid', `Task ID 不合法：${taskId || '<missing>'}。`, 400, { taskId });
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(root, { writable });
+      opened = runtime.openWorkspaceStructuredStore(root, { writable, writerRole: writable ? 'retained-task-state' : null });
       if (!opened.present) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
       const record = readRecord(opened.database, taskId);
       if (!record) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
@@ -283,7 +283,7 @@ export function registerTaskRecordRepository(runtime) {
     const record = normalizeTaskRecord(value, { expectedTaskId: value?.taskId });
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+      opened = runtime.openWorkspaceStructuredStore(root, { writable: true, writerRole: 'retained-task-state' });
       return withTransaction(opened.database, () => {
         if (readRecord(opened.database, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId }, `运行 buildr task inspect ${record.taskId} 查看现有记录。`);
         assertParentRelation(opened.database, record.taskId, record.parentTaskId);
@@ -301,7 +301,7 @@ export function registerTaskRecordRepository(runtime) {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+      opened = runtime.openWorkspaceStructuredStore(root, { writable: true, writerRole: 'retained-task-state' });
       return withTransaction(opened.database, () => {
         const currentRecord = readRecord(opened.database, taskId);
         if (!currentRecord) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);

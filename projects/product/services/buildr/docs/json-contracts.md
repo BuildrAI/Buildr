@@ -35,6 +35,8 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `task finish run/inspect` | `buildr.task-finish-result/v2` |
 | `app preview start/list/stop` | `buildr.local-app-preview/v1` |
 
+Task Finish 的 v2 Result 是 SQLite terminal read model；current run、lease 和 cleanup-pending checkpoint 不通过旧 `.buildr/task-finish/runs`、`completed` 或 file lease 暴露。完整命令诊断与 Carrier 只通过有界 transient locator 绑定，不能写入长期 Result。`task complete` 不是新的 JSON contract，而是 Task Record 的 terminal status。
+
 `buildr.task-environment-result/v1` 统一返回 `operation`、`status`、Task ID、Receipt availability/path、`current-machine`、`observedAt`、Environment read model、ready 时的 `execution` binding、diagnostic、effects 与 next actions。`execution` 包含明确 workdir、execution/allowed roots、兼容的 Receipt 创建 controller fingerprint 与绝对 `cliInvocation`；该 fingerprint 不参与 ready、resource ownership 或 Verification applicability。read model 展示 probes 和非敏感资源事实，不暴露资源 cleanup handle 或 controller CLI 私有路径。`unavailable` 表示当前机器没有 Receipt；`blocked` 表示当前 probe、manager trust、provider/resource identity、占用或授权不满足；`cleaned` 保留最小处置摘要。
 
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。

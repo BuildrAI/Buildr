@@ -5,29 +5,39 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 
 const cli = path.resolve('bin/buildr.mjs');
 
-function fixture(t) {
+function fixture(t, initialized = false) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-cli-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  if (initialized) {
+    const result = spawnSync(process.execPath, [cli, 'init', '--target', root, '--name', 'finish-cli', '--description', 'Task Finish CLI fixture', '--profile', 'team'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
   return root;
 }
 
 function create(root, runId = 'current-inspect') {
-  return createFinishRun({
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: runId, title: 'Finish CLI Task', intent: 'Inspect a SQLite Finish run.', projects: [], services: [], changes: [] });
+  const run = createFinishRun({
     root,
     runId,
     identity: {
       task: runId, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: null,
       environmentRoot: root, workspaceRoot: root,
     },
+    runtime,
   });
+  runtime.writeTaskFinishRunPersistence(root, run);
+  return run;
 }
 
 test('task finish inspect 只暴露当前固定五阶段', (t) => {
-  const root = fixture(t);
+  const root = fixture(t, true);
   create(root);
   const inspected = spawnSync(process.execPath, [cli, 'task', 'finish', 'inspect', '--run', 'current-inspect', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(inspected.status, 0, inspected.stderr);
@@ -39,7 +49,7 @@ test('task finish inspect 只暴露当前固定五阶段', (t) => {
 });
 
 test('当前实现直接使用 canonical store，并拒绝恢复旧 run shape', (t) => {
-  const root = fixture(t);
+  const root = fixture(t, true);
   create(root, 'migration');
   const oldRoot = path.join(root, '.buildr', 'task-finish');
   fs.mkdirSync(path.join(oldRoot, 'runs'), { recursive: true });

@@ -14,7 +14,7 @@ import {
 export { observeGitTaskContribution } from '../../infrastructure/git/git-task-contribution.mjs';
 
 function carrierRoot(workspaceRoot, runId) {
-  const base = path.resolve(workspaceRoot, '.buildr', 'task-finish', 'carriers');
+  const base = path.resolve(workspaceRoot, '.buildr', 'transient', 'task-finish', 'carriers');
   const target = path.resolve(base, runId);
   if (path.dirname(target) !== base) throw new Error('Task Finish carrier path escapes its run-owned root.');
   return target;

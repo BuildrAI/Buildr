@@ -236,9 +236,7 @@ function retainedWorkspaceReadiness(identity) {
 }
 
 function targetLeasePath(root, targetBranch) {
-  const common = gitText(root, ['rev-parse', '--git-common-dir']);
-  if (!common) throw new Error('Unable to resolve Git common directory for Task Finish target lease.');
-  return path.join(path.resolve(root, common), 'buildr', 'task-finish', 'leases', `${targetBranch.replaceAll('/', '_')}.json`);
+  return path.join(path.resolve(root), '.buildr', 'transient', 'task-finish-lease', `${targetBranch.replaceAll('/', '_')}.json`);
 }
 
 function finding(check, severity, code, message, extra = {}) {
@@ -419,7 +417,13 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       if (carrier.status !== 'equivalent') return { status: 'blocked', failure: { operation: 'carrier', failureClass: 'semantic-review-required', code: carrier.code || 'task-finish.carrier-changed', message: 'Delivery Carrier facts changed before delivery.' } };
       if (runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task).status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Development handoff is no longer current before delivery.' } };
       const retainedRoot = run.identity.workspaceRoot;
-      const lease = acquireFinishTargetLease({ file: targetLeasePath(retainedRoot, run.identity.targetBranch), run });
+      const lease = acquireFinishTargetLease({
+        file: targetLeasePath(retainedRoot, run.identity.targetBranch),
+        root: retainedRoot,
+        runtime,
+        targetIdentity: `${run.identity.remote || 'local'}:${run.identity.targetBranch}`,
+        run,
+      });
       if (lease.blocked) return { status: 'blocked', failure: { operation: 'target-lease', failureClass: 'transient-external-condition', code: 'task-finish.target-lease-held', message: 'Target branch lease is held by another Finish run.', findings: [lease.existing] } };
       try {
         if (!run.identity.remote) return { status: 'failed', operations, failure: { operation: 'delivery-remote', failureClass: 'product-execution-failure', code: 'task-finish.delivery-remote-missing', message: 'Task Finish cannot deliver without a frozen delivery remote.' } };
@@ -485,7 +489,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         const delivery = { status: 'delivered', targetDisposition: alreadyContained ? 'already-contained' : 'carrier', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, containment, activation, retainedDoctor: 'passed', runtimeInstall: 'not-applicable', localAppDelivery: 'not-applicable' };
         return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery } };
       } finally {
-        releaseFinishTargetLease(lease);
+        releaseFinishTargetLease(lease, { root: retainedRoot, runtime });
       }
     },
 
@@ -493,7 +497,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const operations = [];
       const finalRemoteRef = run.delivery?.finalRemoteRef;
       if (run.delivery?.carrierRef !== run.deliveryCarrier?.head || !finalRemoteRef) return { status: 'blocked', failure: { operation: 'cleanup-readiness', failureClass: 'transient-external-condition', code: 'task-finish.delivery-not-complete', message: 'Cleanup requires completed carrier and final remote delivery evidence.' } };
-      const previousCompletion = readFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId });
+      const previousCompletion = readFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, runtime });
       let association = previousCompletion?.association || null;
       if (association && (previousCompletion.task !== run.identity.task || previousCompletion.handoffIdentity !== run.identity.handoffIdentity || previousCompletion.candidateIdentity !== run.identity.candidateIdentity)) {
         return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'product-execution-failure', code: 'task-finish.terminal-association-identity-mismatch', message: 'Prepared terminal association does not match the current Finish run identity.' } };
@@ -521,20 +525,26 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         preparedAt: new Date().toISOString(),
         association,
       };
-      const completionFile = writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: prepared });
+      const completionFile = writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: prepared, runtime });
       const context = taskEnvironment(run);
       const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
       const integratedContributions = { workspace: run.deliveryCarrier };
-      const delegated = await cleanupThroughRetainedController(runtime, context, run, deliveries, integratedContributions);
-      if (delegated.observation) operations.push(delegated.observation);
-      const cleanedEnvironment = delegated.payload || {
-        status: 'blocked', effects: [], diagnostic: {
-          code: 'task-finish.retained-cleanup-unavailable',
-          message: 'Receipt-bound retained Environment Manager cleanup entry is unavailable.',
-        },
-      };
+      let cleanedEnvironment = previousCompletion?.cleanup?.status === 'cleaned' ? previousCompletion.cleanup : null;
+      if (cleanedEnvironment) {
+        operations.push({ operation: 'cleanup-task-environment', status: 'reused-cleaned-boundary', effects: [], diagnostic: null });
+      } else {
+        const delegated = await cleanupThroughRetainedController(runtime, context, run, deliveries, integratedContributions);
+        if (delegated.observation) operations.push(delegated.observation);
+        cleanedEnvironment = delegated.payload || {
+          status: 'blocked', effects: [], diagnostic: {
+            code: 'task-finish.retained-cleanup-unavailable',
+            message: 'Receipt-bound retained Environment Manager cleanup entry is unavailable.',
+          },
+        };
+      }
       operations.push({ operation: 'cleanup-task-environment', status: cleanedEnvironment.status, effects: cleanedEnvironment.effects, diagnostic: cleanedEnvironment.diagnostic });
       if (cleanedEnvironment.status !== 'cleaned') return { status: 'blocked', operations, failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: cleanedEnvironment.diagnostic?.code || 'task-finish.environment-cleanup-failed', message: cleanedEnvironment.diagnostic?.message || 'Task Environment cleanup failed.', diagnostic: cleanedEnvironment } };
+      writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: { ...prepared, status: 'prepared', cleanup: cleanedEnvironment, environmentCleanedAt: cleanedEnvironment.completedAt || new Date().toISOString() }, runtime });
       const carrierCleanup = removeIsolatedGitCarrier({ repositoryRoot: run.identity.workspaceRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, expectedRoot: run.deliveryCarrier.root });
       operations.push({ kind: 'product', id: 'cleanup-isolated-carrier', status: carrierCleanup.status, details: carrierCleanup });
       if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-cleanup', failureClass: 'transient-external-condition', code: carrierCleanup.code || 'task-finish.carrier-cleanup-failed', message: 'Unable to clean the run-owned isolated Delivery Carrier.', diagnostic: carrierCleanup } };
@@ -552,7 +562,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         return { status: 'blocked', operations, failure: { operation: 'task-record-completion', failureClass: 'product-execution-failure', code: 'task-finish.task-record-completion-invalid', message: 'Task Record Application did not confirm a delivered completed Task.', diagnostic: taskCompletion } };
       }
       const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
-      writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete });
+      writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete, runtime });
       if (typeof runtime.projectTaskFinish === 'function') {
         try {
           await refreshTaskLifecycleReadModelRuntime(runtime, context, run.runId);
@@ -581,7 +591,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'product-execution-failure', code: diagnostic.code, message: diagnostic.message, diagnostic } };
         }
       }
-      return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { status: 'complete', receipt: completionFile, cleanup: cleanedEnvironment } } };
+      return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { ...complete, receipt: completionFile, cleanup: cleanedEnvironment } } };
     },
   };
 }

@@ -7,6 +7,8 @@ description: 用户要求“收尾”或交付已有 current formal Development 
 
 本 Skill 是 `buildr.task-finish/v1` 的窄入口。它不编排 Development、Review 或 Verification，也不手写 Receipt。
 
+Finish 状态进 SQLite；transient 清理；complete 是 Task Record 终态
+
 ## 调用前
 
 1. 明确正式 Task ID 与 canonical Workspace，通过 `task-environment` 确认 matching ready Environment。

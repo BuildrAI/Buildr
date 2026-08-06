@@ -29,12 +29,22 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       associations: { planning: null, completion: null, verification: null },
       diagnostics: [],
     };
-    if (task.status === 'active') return base;
+    const finishReadModel = runtime.inspectTaskFinishReadModel?.({ targetRoot, taskId }) || { state: 'none', result: null, diagnostics: [] };
+    if (task.status === 'active') {
+      if (finishReadModel.state === 'current') {
+        const status = finishReadModel.result?.status === 'cleanup_pending' ? 'cleanup-pending' : finishReadModel.result?.status || 'finishing';
+        return { ...base, status, delivery: { runId: finishReadModel.result?.runId || null, phase: finishReadModel.result?.resume?.phase || finishReadModel.result?.phases?.find((item) => ['running', 'blocked', 'failed'].includes(item.status))?.id || null, nextAction: finishReadModel.result?.nextAction || finishReadModel.result?.nextWorkflow || null }, diagnostics: finishReadModel.diagnostics || [] };
+      }
+      return base;
+    }
     if (task.status === 'abandoned') return { ...base, status: 'abandoned' };
     if (task.result?.noChange === true) return { ...base, status: 'completed-no-change' };
     const lifecycle = runtime.inspectTaskLifecycleReadModel?.(targetRoot, taskId);
     const finish = lifecycle?.model?.finish;
-    if (!finish || finish.status !== 'delivered' || !finish.association) {
+    const terminalResult = typeof runtime.inspectTaskFinishReadModel === 'function'
+      ? (finishReadModel.state === 'terminal' ? finishReadModel.result : null)
+      : finish;
+    if (!finish || finish.status !== 'delivered' || !finish.association || !terminalResult) {
       return { ...base, status: 'completed-unproven', diagnostics: [{ code: 'task_delivery_summary_missing', message: 'Task 已完成，但 SQLite lifecycle read model 没有匹配成功 Finish summary。' }] };
     }
     const cleanupSummary = finish.cleanup?.environment?.latest?.cleanup || finish.cleanup?.latest?.cleanup || {};
@@ -45,14 +55,14 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       status: 'delivered',
       delivered: true,
       delivery: {
-        completedAt: finish.completedAt,
-        finalRemoteRef: finish.finalRemoteRef,
-        targetBranch: finish.targetBranch,
-        remote: finish.remote,
+        completedAt: terminalResult.completedAt || finish.completedAt,
+        finalRemoteRef: terminalResult.delivery?.finalRemoteRef || finish.finalRemoteRef,
+        targetBranch: terminalResult.identity?.targetBranch || finish.targetBranch,
+        remote: terminalResult.identity?.remote || finish.remote,
         cleanup: { status: finish.cleanup?.status || 'unknown', completedAt: cleanupSummary.completedAt || null, summary: cleanupSummary.summary || null },
-        reuseMode: finish.reuseMode,
-        semanticEquivalence: finish.equivalence?.semanticEquivalence || finish.semanticEquivalence || null,
-        runId: finish.runId,
+        reuseMode: terminalResult.reuseMode || finish.reuseMode,
+        semanticEquivalence: terminalResult.equivalence?.semanticEquivalence || finish.equivalence?.semanticEquivalence || finish.semanticEquivalence || null,
+        runId: terminalResult.runId || finish.runId,
       },
       associations: {
         planning: finish.association.gates?.planning || null,

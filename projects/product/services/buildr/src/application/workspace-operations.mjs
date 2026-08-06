@@ -25,6 +25,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const diagnoseSkillsManifestSchemas = (...args) => runtime.diagnoseSkillsManifestSchemas(...args);
   const diagnoseSkillCapabilities = (...args) => runtime.diagnoseSkillCapabilities(...args);
   const diagnoseProjectVerification = (...args) => runtime.diagnoseProjectVerification(...args);
+  const inspectTaskFinishPersistence = (...args) => runtime.inspectTaskFinishPersistence(...args);
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
   const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
   const printDoctorReport = (...args) => runtime.printDoctorReport(...args);
@@ -109,6 +110,33 @@ export function registerApplicationWorkspaceOperations(runtime) {
         suggestion: error.nextAction || '保留数据库现场并检查 migration 与 integrity 诊断；不要自动删除或从旧 Task 文件恢复。',
         userActionRequired: true,
       });
+    }
+  }
+
+  function diagnoseTaskFinishStore(result, targetRoot) {
+    if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
+      result.taskFinish = { status: 'not-applicable', current: [], completions: [], leases: [], artifacts: [], legacy: { present: false, residue: [], diagnostics: [] } };
+      return;
+    }
+    try {
+      const observation = inspectTaskFinishPersistence(targetRoot);
+      result.taskFinish = observation;
+      for (const lease of observation.leases || []) if (lease.expired) addDoctorFinding(result, 'error', 'task_finish.expired_lease', `Task Finish target lease 已过期：${lease.targetIdentity}`, {
+        path: '.buildr/local/workspace.sqlite', taskId: lease.taskId, runId: lease.runId,
+        suggestion: '确认没有仍在运行的 Finish 进程后重试或恢复对应 run；Doctor 不会自动删除 lease。', userActionRequired: true,
+      });
+      for (const artifact of observation.invalidArtifacts || []) addDoctorFinding(result, 'error', artifact.escaped ? 'task_finish.artifact_path_escape' : 'task_finish.artifact_missing', `Task Finish transient artifact ${artifact.artifactId} ${artifact.escaped ? '越界' : '缺失'}。`, {
+        path: artifact.relativeLocator, runId: artifact.runId, suggestion: '保留 SQLite 与文件现场，按当前 run 的 cleanup/resume 边界处理；Doctor 不会扩大删除范围。', userActionRequired: true,
+      });
+      for (const item of observation.current || []) if (item.status === 'cleanup_pending') addDoctorFinding(result, 'warning', 'task_finish.cleanup_pending', `Task Finish run 等待 cleanup：${item.runId}`, {
+        path: '.buildr/local/workspace.sqlite', taskId: item.taskId, runId: item.runId, suggestion: '使用同一 Task Finish run 与 resume token 继续 cleanup；不要重新执行已完成的 delivery。', userActionRequired: true,
+      });
+      if (observation.legacy?.present) addDoctorFinding(result, 'warning', 'task_finish.legacy_residue', '检测到旧 `.buildr/task-finish` residue；它不是当前 Finish authority。', {
+        path: '.buildr/task-finish', residue: observation.legacy.residue?.slice(0, 20) || [], suggestion: '执行受控 legacy cutover；确认 SQLite durable 后再清理旧文件。Doctor 不自动删除。', userActionRequired: true,
+      });
+    } catch (error) {
+      result.taskFinish = { status: 'unavailable', error: error.message };
+      addDoctorFinding(result, 'error', error.code || 'task_finish.persistence_failed', error.message, { path: '.buildr/local/workspace.sqlite', suggestion: '保留数据库现场并运行 Buildr Doctor；不要从旧 Finish 文件恢复。', userActionRequired: true });
     }
   }
 
@@ -243,6 +271,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
       summary: { ok: 0, info: 0, warning: 0, error: 0 },
       workspace: null,
       structuredStore: null,
+      taskFinish: null,
       projectRegistry: null,
       projectVerification: [],
       organizations: [],
@@ -264,6 +293,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
     diagnoseWorkspace(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceMetadata(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo);
+    if (result.workspace?.initialized) diagnoseTaskFinishStore(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceNode(result, targetRoot, requestedAgent);
     diagnoseMutations(result, targetRoot);
     if (result.workspace?.initialized) diagnoseRules(result, targetRoot);
@@ -429,6 +459,6 @@ export function registerApplicationWorkspaceOperations(runtime) {
     console.log('  完整 Agent onboarding guidance：buildr bootstrap guide');
   }
 
-  Object.assign(runtime, { bootstrapGuide, mutationTransactions, diagnoseMutations, diagnoseWorkspaceNode, diagnoseWorkspaceStructuredStore, mutationRecover, doctor, initBuildr });
+  Object.assign(runtime, { bootstrapGuide, mutationTransactions, diagnoseMutations, diagnoseWorkspaceNode, diagnoseWorkspaceStructuredStore, diagnoseTaskFinishStore, mutationRecover, doctor, initBuildr });
   return runtime;
 }

@@ -58,7 +58,7 @@ export function registerTaskDevelopmentRepository(runtime) {
     let opened;
     let stage = 'mutation';
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const current = database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get(normalized.taskId);

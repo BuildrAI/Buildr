@@ -10,6 +10,7 @@ import { registerTaskRetrospectiveRepository } from '../infrastructure/sqlite/ta
 import { registerTaskVerificationRepository } from '../infrastructure/sqlite/task-verification-repository.mjs';
 import { registerTaskDevelopmentRepository } from '../infrastructure/sqlite/task-development-repository.mjs';
 import { registerTaskLifecycleRepository } from '../infrastructure/sqlite/task-lifecycle-repository.mjs';
+import { registerTaskFinishRepository } from '../infrastructure/sqlite/task-finish-repository.mjs';
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
@@ -61,6 +62,7 @@ const REGISTRATIONS = [
   registerTaskVerificationRepository,
   registerTaskDevelopmentRepository,
   registerTaskLifecycleRepository,
+  registerTaskFinishRepository,
   registerTaskEnvironmentRepository,
   registerContentTargetObserver,
   registerProjectGitObserver,

@@ -53,7 +53,7 @@ export function registerTaskLifecycleRepository(runtime) {
     const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const current = database.prepare('SELECT model_json FROM task_lifecycle_current WHERE task_id = ?').get(taskId);

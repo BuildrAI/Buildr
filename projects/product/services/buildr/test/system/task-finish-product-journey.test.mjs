@@ -291,7 +291,7 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
     return completeTaskRecordFromFinish(...args);
   };
   const blocked = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
-  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.status, 'cleanup_pending');
   assert.equal(blocked.primaryFailure.code, 'task_record_write_failed');
   assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
   const result = await runtime.taskFinish('run', ['--task', task, '--run', blocked.runId, '--resume', blocked.resume.token, '--target', retained]);

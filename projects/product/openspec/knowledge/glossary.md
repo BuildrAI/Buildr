@@ -118,6 +118,13 @@
 
 - 定义：Buildr 在 Workspace SQLite 中按 Task ID 保存的跨专业生命周期状态摘要，记录最近一次正式动作确认的 status、applicability、identity/digest、observedAt、诊断和 terminal summary。
 - 适用范围：Task Record、Task Environment、Task Development、Task Review、Task Verification、Task Finish 成功动作后的 Local App 与 Application inspect 查询。
+
+## Task Finish
+
+- 定义：消费 current Development Handoff、执行 `preflight → prepare → verify → deliver → cleanup` 的固定五阶段交付收尾 adapter；current run、target lease 与 compact terminal Result 由 Workspace SQLite 持久化。
+- 适用范围：Delivery Carrier、目标推进、远端回读、Environment cleanup、run-owned transient cleanup 和可恢复 blocked/cleanup-pending 状态；完整诊断与 Carrier 不进入长期 Result。
+- 避免混用：不是 Task Development、Task Verification、Task Record writer 或第二套 Task complete 状态机；`task complete` 只表示所有 Finish gates 通过后的 Task Record terminal status。`.buildr/task-finish` 只用于一次性 legacy cutover 或 Doctor 诊断。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 - 避免混用：不是 Task、Development Receipt、Review/Verification Result、Environment Receipt 或 Finish Result 的第二权威；不保存完整 Result、命令输出、diff 或历史事件，不在 GET 请求中自动刷新。
 - 来源：canonical `openspec/specs/task-lifecycle-read-model/spec.md`（本 Change convergence 时建立）。
 

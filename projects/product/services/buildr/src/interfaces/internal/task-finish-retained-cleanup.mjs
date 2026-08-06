@@ -4,7 +4,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { createRuntime } from '../../application/compose-runtime.mjs';
-import { finishCompletionFile, readFinishRun } from '../../application/task-finish/task-finish-run.mjs';
+import { readFinishCompletion, readFinishRun } from '../../application/task-finish/task-finish-run.mjs';
 
 function cleanupError(code, message, details = null) {
   const error = new Error(message);
@@ -33,10 +33,9 @@ function parseArgs(argv) {
   return { runId: values.get('--run'), targetRoot: path.resolve(values.get('--target')) };
 }
 
-function assertPreparedCompletion(root, run) {
-  const file = finishCompletionFile(root, run.runId);
-  if (!fs.existsSync(file)) throw cleanupError('task-finish.retained-cleanup-completion-missing', 'Durable prepared Finish completion is missing.');
-  const completion = JSON.parse(fs.readFileSync(file, 'utf8'));
+function assertPreparedCompletion(root, run, runtime) {
+  const completion = readFinishCompletion({ root, runId: run.runId, runtime });
+  if (!completion) throw cleanupError('task-finish.retained-cleanup-completion-missing', 'Durable prepared Finish completion is missing from Workspace SQLite.');
   const matches = completion.schemaVersion === 'buildr.task-finish-completion/v1'
     && completion.status === 'prepared'
     && completion.runId === run.runId
@@ -53,7 +52,7 @@ function assertPreparedCompletion(root, run) {
 
 export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runtime = createRuntime() }) {
   const root = fs.realpathSync(path.resolve(targetRoot));
-  const run = readFinishRun({ root, runId });
+  const run = readFinishRun({ root, runId, runtime });
   if (resolvedPath(run.identity.workspaceRoot) !== root) throw cleanupError('task-finish.retained-cleanup-workspace-mismatch', 'Task Finish run is bound to another retained Workspace.');
   const deliver = run.phases.find((phase) => phase.id === 'deliver');
   const cleanup = run.phases.find((phase) => phase.id === 'cleanup');
@@ -66,7 +65,7 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
     || !finalRemoteRef) {
     throw cleanupError('task-finish.retained-cleanup-run-not-ready', 'Task Finish run does not contain a completed delivery and active cleanup boundary.');
   }
-  assertPreparedCompletion(root, run);
+  assertPreparedCompletion(root, run, runtime);
   const context = runtime.resolveTaskEnvironmentExecution(root, run.identity.task);
   if (!context?.ready || resolvedPath(context.workspaceRoot) !== root || resolvedPath(context.environmentRoot) !== resolvedPath(run.identity.environmentRoot)) {
     throw cleanupError('task-finish.retained-cleanup-environment-mismatch', 'Current Task Environment does not match the Finish run.', context?.blocked || null);

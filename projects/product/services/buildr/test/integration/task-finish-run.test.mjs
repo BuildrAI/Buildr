@@ -186,6 +186,7 @@ test('cleanup 暂态阻塞恢复只重试 cleanup', async (t) => {
     return { status: 'blocked', failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: 'task-finish.environment-busy', message: 'Task-owned process is still running.' } };
   };
   const first = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'cleanup-resume', identity: identity(root, 'cleanup-resume') }), handlers });
+  assert.equal(first.status, 'cleanup_pending');
   const secondCalls = [];
   const second = await executeFinishRun({ root, run: readFinishRun({ root, runId: 'cleanup-resume' }), handlers: passingHandlers(secondCalls), resumeToken: first.resume.token });
   assert.equal(second.status, 'complete');
