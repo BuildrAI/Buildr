@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
@@ -202,6 +203,23 @@ function runThroughRetainedController(context, id, args, cwd, { json = false } =
   if (!invocation?.command || !Array.isArray(invocation.argsPrefix)) return null;
   const execute = json ? runJsonCommand : runCommand;
   return execute(id, invocation.command, [...invocation.argsPrefix, ...args], cwd);
+}
+
+export async function refreshTaskLifecycleReadModelRuntime(runtime, context, runId) {
+  const sourceRoot = context?.controllerInvocation?.sourceRoot || context?.controller?.sourceRoot;
+  if (!sourceRoot) return false;
+  const relativeModule = ['src', 'application', 'task-lifecycle-read-model', 'task-lifecycle-read-model-application.mjs'];
+  const candidates = [
+    path.join(sourceRoot, ...relativeModule),
+    path.join(sourceRoot, 'services', 'buildr', ...relativeModule),
+  ];
+  const modulePath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!modulePath) return false;
+  const moduleUrl = `${pathToFileURL(modulePath).href}?finishRun=${encodeURIComponent(runId)}`;
+  const module = await import(moduleUrl);
+  if (typeof module.registerTaskLifecycleReadModelApplication !== 'function') return false;
+  module.registerTaskLifecycleReadModelApplication(runtime);
+  return true;
 }
 
 function retainedWorkspaceReadiness(identity) {
@@ -537,6 +555,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete });
       if (typeof runtime.projectTaskFinish === 'function') {
         try {
+          await refreshTaskLifecycleReadModelRuntime(runtime, context, run.runId);
           runtime.projectTaskFinish(run.identity.workspaceRoot, run.identity.task, {
             status: 'delivered',
             runId: run.runId,
