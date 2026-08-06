@@ -153,8 +153,8 @@ async function verifyLifecycle(context) {
   if (adapterId === 'codex' || adapterId === 'claude-code') {
     const renderedFinish = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
     assert.ok(renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
-    assert.ok(renderedFinish.includes('不由 Agent 编排阶段、补 evidence 或设计 recovery'));
-    assert.ok(renderedFinish.includes('Task Retrospective不是Finish前置条件'));
+    assert.ok(renderedFinish.includes('Agent不编排阶段、补evidence或设计recovery'));
+    assert.ok(renderedFinish.includes('target前进时先证明carrier ancestry'));
     assert.ok(renderedFinish.includes('不得手写token、recovery manifest或claimed semantic equivalence'));
     assert.ok(renderedFinish.includes('原Task source/handoff真实stale时才返回'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));

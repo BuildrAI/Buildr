@@ -51,6 +51,41 @@ test('Commands version parser 和 constraint comparator 处理边界', () => {
   assert.equal(commands.parseVersionConstraint('not-a-version'), null);
 });
 
+test('Command version probe 为 Windows shim 选择受限平台启动策略', () => {
+  const commands = registerDomainsCommands(runtime());
+  const args = ['--version'];
+  const windowsShim = commands.buildCommandProbeInvocation('C:\\npm\\openspec.cmd', args, { platform: 'win32' });
+  assert.deepEqual(windowsShim, { executable: 'C:\\npm\\openspec.cmd', args: ['--version'], shell: true });
+  args.push('--extra');
+  assert.deepEqual(windowsShim.args, ['--version'], 'probe invocation must own its token array');
+  const nativeWindows = commands.buildCommandProbeInvocation('C:\\tools\\openspec.exe', ['--version'], { platform: 'win32' });
+  assert.equal(nativeWindows.shell, false);
+  const posix = commands.buildCommandProbeInvocation('/usr/local/bin/openspec', ['--version'], { platform: 'linux' });
+  assert.equal(posix.shell, false);
+});
+
+test('Command version probe 区分启动失败与输出不可解析', () => {
+  const commands = registerDomainsCommands(runtime());
+  const failed = commands.probeCommandVersion('C:\\npm\\openspec.cmd', ['--version'], {
+    platform: 'win32',
+    spawn: () => ({ error: Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }) }),
+  });
+  assert.equal(failed.status, 'spawn-failed');
+  assert.equal(failed.error.code, 'ENOENT');
+  assert.equal(failed.invocation.shell, true);
+  const unknown = commands.probeCommandVersion('/usr/local/bin/openspec', ['--version'], {
+    platform: 'linux',
+    spawn: () => ({ status: 0, stdout: 'OpenSpec development build', stderr: '' }),
+  });
+  assert.equal(unknown.status, 'unknown');
+  assert.equal(unknown.invocation.shell, false);
+  const parsed = commands.probeCommandVersion('/usr/local/bin/openspec', ['--version'], {
+    platform: 'linux',
+    spawn: () => ({ status: 0, stdout: 'openspec 1.6.0', stderr: '' }),
+  });
+  assert.deepEqual(parsed.currentVersion, [1, 6, 0]);
+});
+
 test('Project Commands schema 只接受 requirement references', () => {
   const commands = registerDomainsCommands(runtime());
   assert.ok(commands.validateProjectCommandsDocument({ schemaVersion: 'buildr.project-commands/v1' })

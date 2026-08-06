@@ -19,13 +19,14 @@ import {
   reconcileRuntimePlan,
   runtimeAdapterImplementationMatrix,
   runtimeDiscoveryPayload,
+  selectPlatformEnvironmentProbe,
   selectAdapterImplementation,
   validateRuntimePlan,
 } from '../../../src/infrastructure/runtime/adapter-contract.mjs';
 import { validateSkillPublication } from '../../../src/infrastructure/runtime/skills/publication.mjs';
 import { resolveSkillContributions } from '../../../src/infrastructure/runtime/render-claude-code.mjs';
 import { assembleRuntimeProjection } from '../../../src/infrastructure/runtime/projection.mjs';
-import { checkRuntimeAdapter } from '../../../src/infrastructure/runtime/check-runtime.mjs';
+import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/infrastructure/runtime/check-runtime.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryRoot = path.resolve(productRoot, '../../../..');
@@ -136,6 +137,27 @@ assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.skills.root, '.codebuddy');
 assert.deepEqual(RUNTIME_ADAPTERS.workbuddy.traits.surfaces, [{ kind: 'desktop' }, { kind: 'cli', variant: 'desktop-bundled' }]);
 assert.deepEqual(Object.keys(RUNTIME_ADAPTERS.workbuddy.evidence).sort(), ['rules', 'skills']);
 assert.ok(adapterDoc.includes('`.codebuddy/skills`'));
+
+const traeWorkDarwinProbe = selectPlatformEnvironmentProbe({
+  platform: 'darwin',
+  command: { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+  guidance: 'Confirm TRAE Work manually.',
+});
+assert.deepEqual(traeWorkDarwinProbe, { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 });
+const workbuddyWindowsProbe = selectPlatformEnvironmentProbe({
+  platform: 'win32',
+  command: { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+  guidance: 'Confirm WorkBuddy manually.',
+});
+assert.deepEqual(workbuddyWindowsProbe, { kind: 'manual', guidance: 'Confirm WorkBuddy manually.' });
+assert.deepEqual(runEnvironmentProbe(workbuddyWindowsProbe), { status: 'manual', probe: 'manual', guidance: 'Confirm WorkBuddy manually.' });
+const spawnCalls = [];
+const commandProbe = runEnvironmentProbe(
+  { kind: 'command', executable: 'tool', args: ['--version'], timeoutMs: 3000 },
+  { spawn: (...args) => { spawnCalls.push(args); return { status: 0, stdout: 'tool 1.2.3', stderr: '' }; } },
+);
+assert.equal(commandProbe.status, 'ok');
+assert.deepEqual(spawnCalls[0], ['tool', ['--version'], { encoding: 'utf8', timeout: 3000, shell: false, stdio: ['ignore', 'pipe', 'pipe'] }]);
 
 assert.throws(() => getRuntimeAdapter('fake-runtime'), /Unsupported Agent runtime/);
 assert.throws(() => createRuntimeAdapterRegistry([{ id: 'fake-runtime', runtimeTargets: [], renderCapabilities: {}, recommendedCommands: {} }], { testOnly: true }), /Invalid runtime adapter registry/);

@@ -499,6 +499,40 @@ export function registerDomainsCommands(runtime) {
     return null;
   }
 
+  function buildCommandProbeInvocation(executablePath, args, options = {}) {
+    const platform = options.platform ?? process.platform;
+    const shell = platform === 'win32' && /\.(?:cmd|bat)$/i.test(executablePath);
+    return {
+      executable: executablePath,
+      args: [...args],
+      shell,
+    };
+  }
+
+  function probeCommandVersion(executablePath, args, options = {}) {
+    const probe = buildCommandProbeInvocation(executablePath, args, options);
+    const spawn = options.spawn || spawnSync;
+    const result = spawn(probe.executable, probe.args, {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true,
+      shell: probe.shell,
+    });
+    if (result.error) return {
+      status: 'spawn-failed',
+      invocation: probe,
+      error: { code: result.error.code || null, message: result.error.message },
+    };
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`.trim();
+    const currentVersion = parseVersion(output);
+    return {
+      status: currentVersion ? 'parsed' : 'unknown',
+      invocation: probe,
+      output,
+      currentVersion,
+    };
+  }
+
   function createCommandsCheckResult(targetRoot) {
     return {
       targetRoot,
@@ -672,6 +706,7 @@ export function registerDomainsCommands(runtime) {
     result.effectiveConstraints = [];
     result.observations = [];
     result.context = { projects: [...(options.projects || [])] };
+    const spawn = options.spawn || spawnSync;
     const rootManifestPath = commandsManifestPath(targetRoot);
     const manifestPaths = listCommandsManifestPaths(targetRoot);
     result.manifest.exists = existsFile(rootManifestPath);
@@ -848,14 +883,30 @@ export function registerDomainsCommands(runtime) {
         continue;
       }
 
-      const versionCheck = spawnSync(command.executable, command.version.args, {
-        encoding: 'utf8',
-        timeout: 5000,
-        windowsHide: true,
-      });
-      const output = `${versionCheck.stdout || ''}\n${versionCheck.stderr || ''}`.trim();
-      const currentVersion = parseVersion(output);
-      if (!currentVersion) {
+      const versionCheck = probeCommandVersion(executablePath, command.version.args, { spawn });
+      if (versionCheck.status === 'spawn-failed') {
+        item.status = 'warning';
+        item.reason = 'command_version_probe_spawn_failed';
+        item.message = `无法启动 ${command.id} 的版本探测。`;
+        item.difference = { expected: command.version.constraint, actual: null };
+        addCommandsFinding(result, 'warning', 'commands.version_probe_spawn_failed', item.message, {
+          path: sources[0],
+          sources,
+          commandId: command.id,
+          executable: command.executable,
+          executablePath,
+          versionArgs: command.version.args,
+          installHint: command.installHint || null,
+          reason: item.reason,
+          probeError: versionCheck.error,
+          provenance: effective.provenance,
+          suggestion: command.installHint || '请确认该命令行工具可执行入口和版本探测参数。',
+        });
+        continue;
+      }
+      const output = versionCheck.output;
+      const currentVersion = versionCheck.currentVersion;
+      if (versionCheck.status === 'unknown') {
         item.status = 'warning';
         item.reason = 'command_version_unknown';
         item.message = `无法从版本输出判断 ${command.id} 的版本。`;
@@ -865,6 +916,7 @@ export function registerDomainsCommands(runtime) {
           sources,
           commandId: command.id,
           executable: command.executable,
+          executablePath,
           versionArgs: command.version.args,
           installHint: command.installHint || null,
           reason: item.reason,
@@ -938,6 +990,6 @@ export function registerDomainsCommands(runtime) {
     process.exitCode = result.ok ? 0 : 1;
   }
 
-  Object.assign(runtime, { PROJECT_COMMANDS_SCHEMA, normalizeCommandCollection, commandsManifestPath, projectCommandsPath, assertSafeCommandCollectionTarget, listCommandsManifestPaths, parseCommandsManifestYaml, parseProjectCommandsYaml, validateProjectCommandsDocument, renderProjectCommandsYaml, isPlainObject, validateCommandsManifest, renderCommandsManifestYaml, readCommandsManifestForWrite, writeCommandsManifest, parseVersionArgs, repeatedOptionValues, assertNoUnknownOptions, positionalArgs, buildCommandEntry, printCommandsMutationReceipt, commandsAddUnsafe, commandsAdd, commandsRemoveUnsafe, commandsRemove, parseVersionConstraint, parseVersion, compareVersions, versionSatisfies, intersectVersionConstraints, findExecutableOnPath, createCommandsCheckResult, addCommandsFinding, stableValue, commandDefinitionIdentity, normalizedCommandSignature, readRegisteredProjects, readProjectRequirementRecords, commandRemovalBlockers, finalizeCommandsCheckResult, runCommandsCheck, printCommandsCheckReport, commandsCheck });
+  Object.assign(runtime, { PROJECT_COMMANDS_SCHEMA, normalizeCommandCollection, commandsManifestPath, projectCommandsPath, assertSafeCommandCollectionTarget, listCommandsManifestPaths, parseCommandsManifestYaml, parseProjectCommandsYaml, validateProjectCommandsDocument, renderProjectCommandsYaml, isPlainObject, validateCommandsManifest, renderCommandsManifestYaml, readCommandsManifestForWrite, writeCommandsManifest, parseVersionArgs, repeatedOptionValues, assertNoUnknownOptions, positionalArgs, buildCommandEntry, printCommandsMutationReceipt, commandsAddUnsafe, commandsAdd, commandsRemoveUnsafe, commandsRemove, parseVersionConstraint, parseVersion, compareVersions, versionSatisfies, intersectVersionConstraints, findExecutableOnPath, buildCommandProbeInvocation, probeCommandVersion, createCommandsCheckResult, addCommandsFinding, stableValue, commandDefinitionIdentity, normalizedCommandSignature, readRegisteredProjects, readProjectRequirementRecords, commandRemovalBlockers, finalizeCommandsCheckResult, runCommandsCheck, printCommandsCheckReport, commandsCheck });
   return runtime;
 }

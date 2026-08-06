@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import {
   ownerExecutable,
   runtimeFileMatches,
@@ -40,6 +41,11 @@ export const UNSUPPORTED_AGENT_GUIDANCE = Object.freeze({
 });
 
 const AGENT_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+export function selectPlatformEnvironmentProbe({ platform = process.platform, command, guidance }) {
+  if (platform === 'darwin') return structuredClone(command);
+  return { kind: 'manual', guidance };
+}
 
 function freeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -435,8 +441,14 @@ const DESCRIPTORS = [
       activation: { rules: 'session-start', skills: 'immediate', reloadGuidance: 'Start a new TRAE Work conversation after adding or changing imported Rules.' },
       checker: {
         kind: 'projection', implementation: 'projection', resultKey: 'traeWork',
-        installationProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
-        versionProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+        installationProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+          guidance: '请在 TRAE Work 的 About 或安装信息中确认已安装及应用版本。',
+        }),
+        versionProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+          guidance: '请在 TRAE Work 的 About 或安装信息中确认应用版本。',
+        }),
       },
     },
     recommendedCommands: recommendedCommands('trae-work'),
@@ -456,8 +468,14 @@ const DESCRIPTORS = [
       activation: { rules: 'session-start', skills: 'session-start', reloadGuidance: 'Start a new WorkBuddy task after adding or changing Rules or Skills.' },
       checker: {
         kind: 'projection', implementation: 'projection', resultKey: 'workbuddy',
-        installationProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
-        versionProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+        installationProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+          guidance: '请在 WorkBuddy 的 About 或安装信息中确认已安装及应用版本。',
+        }),
+        versionProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+          guidance: '请在 WorkBuddy 的 About 或安装信息中确认应用版本。',
+        }),
       },
     },
     recommendedCommands: recommendedCommands('workbuddy'),

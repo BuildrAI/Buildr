@@ -80,7 +80,7 @@ Buildr 当前不定义或维护真实 Agent marker smoke、品牌通过状态或
 - TRAE Work 与 TRAE IDE 是两个独立 adapter：TRAE IDE 的 workspace destination Skills 使用 `.agents/skills`，TRAE Work 使用 `.trae/skills`；两者的 Rules、Skills root、surface 和 activation 都必须分别认证。
 - Buildr 生成 root `CLAUDE.local.md`。bridge 明确要求 Agent 读取 root 和当前工作路径 ancestor chain 中适用的 `AGENTS.md`，并列出 source index；普通 Markdown 链接本身不视为 include。
 - 使用前必须在桌面 Settings 中启用对应 Rules import；修改 Rules 后开启新会话。Skills 写入后的实际即时发现仍以产品版本为准。
-- checker 读取 `/Applications/TRAE SOLO.app` 版本，并报告 projection 与 activation guidance；不会把缺少真实 Agent 验证当作当前 workspace prerequisite。
+- checker 在 macOS 读取 `/Applications/TRAE SOLO.app` 版本；Windows/Linux 使用人工确认 guidance，并报告 projection 与 activation guidance；不会把缺少真实 Agent 验证当作当前 workspace prerequisite。
 - 兼容证据来自 [TRAE Work Rules](https://docs.trae.cn/work_rules)、[TRAE Work Skills](https://docs.trae.cn/work_skills) 与本机机制 intake。
 
 ## WorkBuddy (`workbuddy`)
@@ -88,7 +88,7 @@ Buildr 当前不定义或维护真实 Agent marker smoke、品牌通过状态或
 - Buildr 生成 root `CODEBUDDY.md`，其中包含 imperative ancestor-chain 读取指令和 source index；内容不得超过 WorkBuddy 5.2.5 已观察到的 8,000 字符 project guidance 上限。
 - WorkBuddy 5.2.5 安装源码的 first-match 顺序是 `CODEBUDDY.md`、`.codebuddy/CODEBUDDY.md`、`AGENTS.md`，只读取 workspace root 第一个存在的入口。非 Buildr 管理的 `CODEBUDDY.md` 会触发 conflict，Buildr 不覆盖也不静默降级。
 - Skills 与 install plans 使用 `.codebuddy/`。WorkBuddy 5.2.5 内置的 CodeBuddy CLI 2.106.4 文档和 Skills panel 源码都将当前工作目录的 workspace destination Skills root 声明为 `.codebuddy/skills/`；`.workbuddy/skills` 只出现在 sandbox 可写路径中，不能据此认定为发现入口。Rules 与 Skills 修改后都要开启新任务。
-- checker 读取 `/Applications/WorkBuddy.app` 的 bundle id/版本，并检查 bridge、Skills 和 install plans 的 projection 状态。
+- checker 在 macOS 读取 `/Applications/WorkBuddy.app` 的 bundle id/版本；Windows/Linux 使用人工确认 guidance，并检查 bridge、Skills 和 install plans 的 projection 状态。
 - 兼容证据来自本机 app.asar 源码、随应用交付的 CodeBuddy CLI 文档/源码和运行时 intake；官方公开文档只覆盖产品与 Marketplace，未公开 project guidance 与工作目录 Skills discovery 的完整实现。
 
 ## Checker 与限制
