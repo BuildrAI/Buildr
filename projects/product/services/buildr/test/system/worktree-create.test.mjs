@@ -226,6 +226,8 @@ test('Git-backed Task Environment 组合 provider 并把 Git evidence 保持为�
   assert.equal(cleaned.status, 'cleaned');
   assert.equal(fs.existsSync(scope.executionRoot), false);
   assert.equal(fs.existsSync(scope.provider.evidence), false);
-  const receipt = JSON.parse(fs.readFileSync(path.join(root, '.buildr', 'tasks', taskId, 'environment.json'), 'utf8'));
-  assert.equal(receipt.status, 'cleaned');
+  const opened = taskRuntime.openWorkspaceStructuredStore(root, { writable: false });
+  const current = opened.database.prepare('SELECT status FROM task_environment_current WHERE task_id = ?').get(taskId);
+  opened.database.close();
+  assert.equal(current.status, 'cleaned');
 });

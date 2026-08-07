@@ -39,6 +39,25 @@ test('Workspace Node identity 不包含机器路径且按 platform/arch 稳定',
   assert.throws(() => normalizeNodePlatform('freebsd', 'x64'), /Unsupported/);
 });
 
+test('临时 App Data 只隔离应用状态，不改变 Workspace Node runtime locator', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-data-boundary-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const previousRuntimeData = process.env.BUILDR_NODE_RUNTIME_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = path.join(root, 'app-state');
+  delete process.env.BUILDR_NODE_RUNTIME_DATA_DIR;
+  t.after(() => {
+    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    if (previousRuntimeData === undefined) delete process.env.BUILDR_NODE_RUNTIME_DATA_DIR;
+    else process.env.BUILDR_NODE_RUNTIME_DATA_DIR = previousRuntimeData;
+  });
+  const defaultRuntime = workspaceNodeRuntimePaths('22.4.1');
+  assert.equal(defaultRuntime.dataRoot.includes(path.join(root, 'app-state')), false);
+  process.env.BUILDR_NODE_RUNTIME_DATA_DIR = path.join(root, 'runtime-state');
+  assert.equal(workspaceNodeRuntimePaths('22.4.1').dataRoot, path.join(root, 'runtime-state'));
+});
+
 test('受管 runtime 从确定 source 原子准备、复用并在删除后按原版本恢复', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

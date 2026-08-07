@@ -124,7 +124,7 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
     operation: 'inspect',
     status: 'ready',
     taskId,
-    receipt: { path: path.join(workspaceRoot, '.buildr', 'tasks', taskId, 'environment.json'), available: true },
+    receipt: { locator: `workspace-sqlite:task-environment/${taskId}`, available: true, path: null },
     observedAt,
     source: 'task-environment-application',
     environment: runtime.readTaskEnvironmentPersistence(workspaceRoot, taskId).receipt,

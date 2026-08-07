@@ -85,7 +85,7 @@ else process.exitCode = 1;
   let persistence = withReceipt ? {
     root,
     directory: path.join(root, '.buildr', 'tasks', TASK_ID),
-    file: path.join(root, '.buildr', 'tasks', TASK_ID, 'environment.json'),
+    file: `workspace-sqlite:task-environment/${TASK_ID}`,
     receipt: receipt({ root, controllerRoot, executionRoot: isolated ? taskRoot : root, isolated, timestamp }),
   } : null;
   const calls = { writes: 0, providerPlans: 0, providerMutations: 0, providerCleanups: 0, projectionChecks: 0, resourceProbes: 0, resourceCleanups: 0 };
@@ -97,6 +97,7 @@ else process.exitCode = 1;
   const runtime = {
     productRoot: () => productRoot,
     assertCanonicalTaskWorkspace: () => root,
+    taskEnvironmentPath: (_target, taskId) => `workspace-sqlite:task-environment/${taskId}`,
     readTaskRecordPersistence: () => ({ record: { taskId: TASK_ID, status: 'active', scope: { projects: [], services: [] }, changes: [] } }),
     readTaskEnvironmentPersistence: (_target, _taskId, options = {}) => {
       if (!persistence && !options.optional) throw new Error('Environment Receipt missing');
@@ -107,7 +108,7 @@ else process.exitCode = 1;
       persistence = {
         root,
         directory: path.join(root, '.buildr', 'tasks', TASK_ID),
-        file: path.join(root, '.buildr', 'tasks', TASK_ID, 'environment.json'),
+        file: `workspace-sqlite:task-environment/${TASK_ID}`,
         receipt: structuredClone(value),
       };
       return persistence;

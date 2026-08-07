@@ -33,7 +33,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(fs.existsSync(file), false);
 
   const writable = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  assert.equal(writable.version, 7);
+  assert.equal(writable.version, 8);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), [
     { version: 0, name: '0000_create_migration_ledger.sql' },
     { version: 1, name: '0001_create_task_store.sql' },
@@ -43,9 +43,10 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
     { version: 5, name: '0005_create_task_retrospective_current.sql' },
     { version: 6, name: '0006_create_task_lifecycle_current.sql' },
     { version: 7, name: '0007_create_task_finish_current.sql' },
+    { version: 8, name: '0008_create_task_environment_current.sql' },
   ]);
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_development_current', 'task_finish_completions', 'task_finish_runs', 'task_finish_target_leases', 'task_finish_transient_artifacts', 'task_lifecycle_current', 'task_projects', 'task_retrospective_current', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
+    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_finish_completions', 'task_finish_runs', 'task_finish_target_leases', 'task_finish_transient_artifacts', 'task_lifecycle_current', 'task_projects', 'task_retrospective_current', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
   ]);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
@@ -60,10 +61,10 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
 
   const before = fs.statSync(file).mtimeMs;
   const readOnly = runtime.openWorkspaceStructuredStore(root, { writable: false });
-  assert.equal(readOnly.version, 7);
+  assert.equal(readOnly.version, 8);
   readOnly.database.close();
   assert.equal(fs.statSync(file).mtimeMs, before);
-  assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'healthy', version: 7, integrity: 'ok' });
+  assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'healthy', version: 8, integrity: 'ok' });
 });
 
 test('只读打开未初始化 Workspace 不创建目录或数据库', (t) => {
@@ -107,7 +108,7 @@ test('候选 runtime 只能写自身 linked validation Workspace，不能污染 
   assert.equal(fs.existsSync(retainedStore), false);
 
   const validationStore = runtime.openWorkspaceStructuredStore(validation, { writable: true });
-  assert.equal(validationStore.version, 7);
+  assert.equal(validationStore.version, 8);
   validationStore.database.close();
   runtime.createTaskRecord(validation, { taskId: 'candidate-validation-probe', title: 'Candidate validation', intent: 'Verify isolated Task data.', projects: [], services: [], changes: [] });
   assert.equal(runtime.readTaskRecordPersistence(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
@@ -136,7 +137,7 @@ test('candidate/validation 自身 store 可只读打开且不观察 Git', (t) =>
   registerWorkspaceSqlite(reader, { observeCheckout: () => { throw new Error('只读 store 不得观察 Git'); } });
   const opened = reader.openWorkspaceStructuredStore(validation, { writable: false });
   assert.equal(opened.present, true);
-  assert.equal(opened.version, 7);
+  assert.equal(opened.version, 8);
   opened.database.close();
   assert.equal(reader.inspectWorkspaceStructuredStore(validation).status, 'healthy');
 });
@@ -181,7 +182,7 @@ test('operation scope 只复用单次action的canonical与owner Application read
   });
   assert.equal(checkoutObservations, 0, '只读 action 不得观察 canonical Workspace provenance');
   assert.equal(taskReads, 3, 'Task Record owner read + Environment owner/repository validation');
-  assert.equal(environmentReads, 0, 'Local Environment inspect 只查询 SQLite lifecycle snapshot');
+  assert.equal(environmentReads, 1, 'Local Environment inspect 只查询 SQLite Environment current');
 
   runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTaskRecord(root, 'operation-scope'));
   assert.equal(checkoutObservations, 0, '下一只读 action 仍不得观察 canonical Workspace provenance');
@@ -210,7 +211,7 @@ test('version 1 Task Store 原位升级到 latest 且保留既有 Task', (t) => 
 
   const runtime = createRuntime();
   const upgraded = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  assert.equal(upgraded.version, 7);
+  assert.equal(upgraded.version, 8);
   assert.equal(upgraded.database.prepare("SELECT title FROM tasks WHERE task_id = 'existing-task'").get().title, '既有任务');
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 0);
   assert.equal(upgraded.database.prepare("SELECT parent_task_id FROM tasks WHERE task_id = 'existing-task'").get().parent_task_id, null);
@@ -236,7 +237,7 @@ test('version 2 Parent 关系原位迁入 tasks.parent_task_id 并删除关系�
 
   const runtime = createRuntime();
   const upgraded = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  assert.equal(upgraded.version, 7);
+  assert.equal(upgraded.version, 8);
   assert.equal(upgraded.database.prepare("SELECT parent_task_id FROM tasks WHERE task_id = 'child-task'").get().parent_task_id, 'parent-task');
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 0);
   upgraded.database.close();
@@ -262,7 +263,7 @@ test('version 3 current schema连续升级且不迁移旧YAML', (t) => {
   const prepared = runtime.prepareTaskRecordPersistence(root, 'existing-task');
   assert.equal(prepared.record.title, 'Existing');
   const upgraded = runtime.openWorkspaceStructuredStore(root, { writable: false });
-  assert.equal(upgraded.version, 7);
+  assert.equal(upgraded.version, 8);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_development_current').get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_verification_current').get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_review_current').get().count, 0);
@@ -310,7 +311,7 @@ test('checksum 漂移、版本超前和损坏数据库均 fail closed', (t) => {
 
   const newerRoot = workspace(t);
   opened = runtime.openWorkspaceStructuredStore(newerRoot, { writable: true });
-  opened.database.prepare(`INSERT INTO schema_migrations(version, name, checksum, applied_at) VALUES (8, '0008_future.sql', 'sha256-${'f'.repeat(64)}', ?)`).run(new Date().toISOString());
+  opened.database.prepare(`INSERT INTO schema_migrations(version, name, checksum, applied_at) VALUES (9, '0009_future.sql', 'sha256-${'f'.repeat(64)}', ?)`).run(new Date().toISOString());
   opened.database.close();
   assert.throws(() => runtime.openWorkspaceStructuredStore(newerRoot, { writable: false }), (error) => error.code === 'workspace_store_database_newer_than_runtime');
 
@@ -332,7 +333,7 @@ test('Doctor 区分未初始化、healthy 与 unavailable 且不暴露数据库 
   runtime.openWorkspaceStructuredStore(root, { writable: true }).database.close();
   result = { findings: [], structuredStore: null };
   runtime.diagnoseWorkspaceStructuredStore(result, root);
-  assert.deepEqual(result.structuredStore, { status: 'healthy', version: 7, integrity: 'ok' });
+  assert.deepEqual(result.structuredStore, { status: 'healthy', version: 8, integrity: 'ok' });
   assert.deepEqual(result.findings, []);
 
   const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');

@@ -207,6 +207,12 @@ export function registerApplicationRuntime(runtime) {
     throw new Error(`sync 暂停：旧 Task Environment authority 无法安全迁移。${conflicts.length ? `\n- ${conflicts.join('\n- ')}` : `\n- ${migration.diagnostic?.message || '检查 migration evidence。'}`}`);
   }
 
+  function assertCurrentEnvironmentMigrationReady(migration) {
+    if (migration?.status !== 'blocked') return;
+    const conflicts = migration.entries?.filter((entry) => entry.classification === 'D').map((entry) => `${entry.taskId}: ${entry.reason}`) || [];
+    throw new Error(`sync 暂停：旧 environment.json 无法安全导入 SQLite current。${conflicts.length ? `\n- ${conflicts.join('\n- ')}` : `\n- ${migration.diagnostic?.message || '检查 migration evidence。'}`}`);
+  }
+
   function migrateWorkspaceStructuredStore(targetRoot) {
     const file = workspaceStructuredStorePath(targetRoot);
     if (!fs.existsSync(file)) return { status: 'uninitialized', file, migrations: [] };
@@ -228,6 +234,8 @@ export function registerApplicationRuntime(runtime) {
     assertInitializedBuildrWorkspace(targetRoot);
     const environmentMigrationPlan = runtime.migrateLegacyTaskEnvironments?.(targetRoot, { apply: false }) || null;
     assertEnvironmentMigrationReady(environmentMigrationPlan);
+    const currentEnvironmentMigrationPlan = runtime.migrateTaskEnvironmentCurrentFiles?.(targetRoot, { apply: false }) || null;
+    assertCurrentEnvironmentMigrationReady(currentEnvironmentMigrationPlan);
     const preflight = buildSyncSourcePlan(targetRoot, agent);
     assertSyncSourcePlanReady(preflight);
     const structuredStoreMigration = migrateWorkspaceStructuredStore(targetRoot);
@@ -257,6 +265,8 @@ export function registerApplicationRuntime(runtime) {
         if (lockedPlan.signature !== preflight.signature) throw new Error('sync source plan changed after preflight; rerun sync against the current workspace state.');
       },
     });
+    const currentEnvironmentMigration = runtime.migrateTaskEnvironmentCurrentFiles?.(targetRoot, { apply: true }) || null;
+    assertCurrentEnvironmentMigrationReady(currentEnvironmentMigration);
     const workspaceRecord = runtime.readWorkspaceRecord(targetRoot);
     const canAdoptCurrentNode = workspaceRecord.workspace.runtime?.node?.version === process.versions.node;
     const workspaceNode = runtime.ensureWorkspaceNodeRuntime(workspaceRecord.workspace, { adoptCurrent: canAdoptCurrentNode });
@@ -270,6 +280,7 @@ export function registerApplicationRuntime(runtime) {
     });
     console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
     if (environmentMigration?.status === 'migrated' && environmentMigration.counts.total > 0) console.log(`Task Environment 迁移：A=${environmentMigration.counts.A} B=${environmentMigration.counts.B} C=${environmentMigration.counts.C} D=${environmentMigration.counts.D}`);
+    if (currentEnvironmentMigration?.status === 'migrated' && currentEnvironmentMigration.counts.total > 0) console.log(`Environment SQLite current 迁移：导入=${currentEnvironmentMigration.counts.importable} 已存在=${currentEnvironmentMigration.counts.alreadyCurrent}`);
     console.log(`Workspace Node：${workspaceNode.identity.version}（${workspaceNode.action}）`);
     if (structuredStoreMigration.migrations.length > 0) console.log(`Workspace structured store：已确认 migration 0000-${String(structuredStoreMigration.migrations.at(-1).version).padStart(4, '0')}。`);
     if (updated.changed.length > 0) {

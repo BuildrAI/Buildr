@@ -38,7 +38,7 @@ export function workspaceNodeIdentity(workspace, options = {}) {
 
 export function workspaceNodeRuntimePaths(version, options = {}) {
   const target = normalizeNodePlatform(options.platform, options.arch);
-  const dataRoot = path.resolve(options.dataRoot || localAppDataRoot());
+  const dataRoot = path.resolve(options.dataRoot || process.env.BUILDR_NODE_RUNTIME_DATA_DIR || localAppDataRoot({ respectOverride: false }));
   const root = path.join(dataRoot, 'runtimes', 'node', version, target.key);
   const windows = target.platform === 'win';
   return {

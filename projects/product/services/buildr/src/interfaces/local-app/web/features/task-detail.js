@@ -440,7 +440,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     text('task-environment-status', environmentStatusLabel(data.status));
     text('task-environment-observed', data.observedAt ? new Date(data.observedAt).toLocaleString('zh-CN') : '—');
     text('task-environment-source', data.source === 'current-machine' || !data.source ? '当前机器（current-machine）' : data.source);
-    text('task-environment-receipt', `${data.receipt?.available ? '可用' : '不可用'} · ${data.receipt?.path || '—'}`);
+    text('task-environment-receipt', `${data.receipt?.available ? '可用' : '不可用'} · ${data.receipt?.locator || 'workspace-sqlite current'}`);
     const diagnostic = document.getElementById('task-environment-diagnostic'); diagnostic.replaceChildren();
     if (data.diagnostic || data.nextActions?.length) {
       diagnostic.classList.remove('hidden');
@@ -519,7 +519,7 @@ export async function renderTaskDetail({ root, api, onWorkspace, onBreadcrumb, n
     try {
       renderEnvironment(await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/environment`));
     } catch (error) {
-      renderEnvironment({ status: 'blocked', source: 'current-machine', observedAt: new Date().toISOString(), receipt: { available: false, path: '—' }, environment: null, diagnostic: { code: error.code || 'environment_read_failed', message: error.message }, nextActions: ['确认任务与当前工作空间后重试。'] });
+      renderEnvironment({ status: 'blocked', source: 'current-machine', observedAt: new Date().toISOString(), receipt: { available: false, locator: 'workspace-sqlite current' }, environment: null, diagnostic: { code: error.code || 'environment_read_failed', message: error.message }, nextActions: ['确认任务与当前工作空间后重试。'] });
     } finally {
       environmentLoading = false;
       if (environmentPanel.isConnected) { document.getElementById('task-environment-loading').classList.add('hidden'); button.disabled = false; }

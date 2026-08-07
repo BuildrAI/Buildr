@@ -210,26 +210,30 @@ export function registerTaskEnvironmentApplication(runtime) {
   function assertSharedScopesAvailable(workspaceRoot, taskId, scopes) {
     const requested = scopes.filter((scope) => scope.shared);
     if (!requested.length) return;
-    const tasksRoot = path.join(workspaceRoot, '.buildr', 'tasks');
-    if (!fs.existsSync(tasksRoot)) return;
-    for (const entry of fs.readdirSync(tasksRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name === taskId) continue;
-      const environmentFile = path.join(tasksRoot, entry.name, 'environment.json');
-      if (!fs.existsSync(environmentFile)) continue;
+    if (typeof runtime.openWorkspaceStructuredStore !== 'function') return;
+    let opened;
+    try {
+      opened = runtime.openWorkspaceStructuredStore(workspaceRoot, { writable: false });
+      if (!opened.present || opened.version < 8) return;
+      const taskIds = opened.database.prepare('SELECT task_id FROM task_environment_current WHERE task_id <> ? ORDER BY task_id').all(taskId).map((entry) => entry.task_id);
+      for (const otherTaskId of taskIds) {
       let other;
-      try { other = runtime.readTaskEnvironmentPersistence(workspaceRoot, entry.name, { optional: true }); } catch (error) {
-        throw taskEnvironmentError('task_environment_shared_occupancy_unreadable', `无法确认共享执行根是否被 Task ${entry.name} 占用：${error.message}`, 409, { taskId: entry.name, path: environmentFile }, '先修复该 Task 的 Environment Receipt，再重试。');
+      try { other = runtime.readTaskEnvironmentPersistence(workspaceRoot, otherTaskId, { optional: true }); } catch (error) {
+        throw taskEnvironmentError('task_environment_shared_occupancy_unreadable', `无法确认共享执行根是否被 Task ${otherTaskId} 占用：${error.message}`, 409, { taskId: otherTaskId, locator: runtime.taskEnvironmentPath(workspaceRoot, otherTaskId) }, '先修复该 Task 的 Environment current，再重试。');
       }
       if (!other || other.receipt.status === 'cleaned') continue;
       for (const ownScope of requested) {
         const conflict = other.receipt.scopes.find((candidate) => candidate.shared && (inside(candidate.executionRoot, ownScope.executionRoot) || inside(ownScope.executionRoot, candidate.executionRoot)));
         if (conflict) {
-          throw taskEnvironmentError('task_environment_shared_occupancy_conflict', `共享执行根已由 Task ${entry.name} 占用。`, 409, {
+          throw taskEnvironmentError('task_environment_shared_occupancy_conflict', `共享执行根已由 Task ${otherTaskId} 占用。`, 409, {
             requested: { taskId, selector: ownScope.selector, executionRoot: ownScope.executionRoot },
-            occupied: { taskId: entry.name, selector: conflict.selector, executionRoot: conflict.executionRoot },
-          }, `先完成或放弃 Task ${entry.name} 并清理其 Environment。`);
+            occupied: { taskId: otherTaskId, selector: conflict.selector, executionRoot: conflict.executionRoot },
+          }, `先完成或放弃 Task ${otherTaskId} 并清理其 Environment。`);
         }
       }
+      }
+    } finally {
+      try { opened?.database?.close(); } catch {}
     }
   }
 
@@ -368,7 +372,11 @@ export function registerTaskEnvironmentApplication(runtime) {
       operation,
       status,
       taskId,
-      receipt: { path: path.join(path.resolve(targetRoot), '.buildr', 'tasks', taskId, 'environment.json'), available: Boolean(persistence) },
+      receipt: {
+        locator: persistence?.file || runtime.taskEnvironmentPath(targetRoot, taskId),
+        available: Boolean(persistence),
+        path: null,
+      },
       observedAt,
       source: 'current-machine',
       environment,
@@ -486,14 +494,13 @@ export function registerTaskEnvironmentApplication(runtime) {
 
   function inspectTaskEnvironment(targetRoot, taskId) {
     const read = () => {
-      if (typeof runtime.readTaskLifecyclePersistence !== 'function') return inspectTaskEnvironmentCurrent(targetRoot, taskId);
       try {
         const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
         const root = task.root || targetRoot;
-        const lifecycle = runtime.readTaskLifecyclePersistence(root, task.record.taskId, { optional: true });
-        const snapshot = lifecycle?.model?.environment;
-        if (snapshot) return snapshot;
-        return environmentResult('inspect', 'unavailable', root, task.record.taskId, null, null, { code: 'task_environment_snapshot_missing', message: '尚未形成 Task Environment lifecycle snapshot。' }, [], ['先执行 Task Environment prepare，再读取保存的环境状态。']);
+        const persistence = runtime.readTaskEnvironmentPersistence(root, task.record.taskId, { optional: true });
+        if (!persistence) return environmentResult('inspect', 'unavailable', root, task.record.taskId, null, null, { code: 'task_environment_snapshot_missing', message: '尚未形成 Task Environment SQLite current。' }, [], ['先执行 Task Environment prepare，再读取保存的环境状态。']);
+        const status = persistence.receipt.status === 'cleaned' ? 'cleaned' : persistence.receipt.status;
+        return environmentResult('inspect', status, root, task.record.taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
       } catch (error) {
         return blocked('inspect', targetRoot, taskId, error);
       }
@@ -502,40 +509,6 @@ export function registerTaskEnvironmentApplication(runtime) {
     return runtime.memoizeWorkspaceOperation(targetRoot, `task-environment:inspect:${taskId}`, read);
   }
 
-  function inspectTaskEnvironmentCurrent(targetRoot, taskId) {
-    let root = path.resolve(targetRoot);
-    let persistence = null;
-    try {
-      root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(root));
-      runtime.readTaskRecordPersistence(root, taskId);
-      persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
-      if (!persistence) return environmentResult('inspect', 'unavailable', root, taskId, null, null, { code: 'task_environment_no_receipt', message: '当前机器没有该 Task 的 Environment Receipt。' }, [], [`运行 buildr task environment prepare ${taskId}。`]);
-      if (persistence.receipt.status === 'cleaned') return environmentResult('inspect', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
-      const providerScopes = persistence.receipt.scopes.filter((scope) => scope.provider);
-      let providerReady = true;
-      let providerDiagnostic = null;
-      if (providerScopes.length) {
-        const provider = runtime.inspectGitWorktrees({ workspaceRoot: root, taskId });
-        providerReady = provider.status === 'ready';
-        providerDiagnostic = provider.diagnostic?.message || null;
-      }
-      const controller = environmentInspector(root, persistence.receipt);
-      const foundations = prepareFoundations(persistence.receipt, controller, [], { mutate: false });
-      const scopes = foundations.scopes.map((scope) => ({ ...scope }));
-      const resources = observeResources(persistence.receipt);
-      const resourcesReady = resources.every((resource) => resource.status !== 'stale');
-      const observedReceipt = { ...persistence.receipt, scopes, resources };
-      const ready = persistence.receipt.status === 'ready' && providerReady && foundations.ready && resourcesReady;
-      const resourceDiagnostic = resources.find((resource) => resource.status === 'stale')?.probe.diagnostic || null;
-      const diagnostic = ready ? null : {
-        code: providerReady ? 'task_environment_drift' : 'task_environment_provider_drift',
-        message: providerDiagnostic || foundations.diagnostic || resourceDiagnostic || persistence.receipt.latest.ready.diagnostic || 'Environment 当前不可执行。',
-      };
-      return environmentResult('inspect', ready ? 'ready' : 'blocked', root, taskId, persistence, taskEnvironmentReadModel(observedReceipt), diagnostic, [], ready ? [] : ['重新运行 prepare 以恢复可确定修复的执行基础。']);
-    } catch (error) {
-      return blocked('inspect', root, taskId, error, persistence);
-    }
-  }
 
   function registerTaskEnvironmentResource(targetRoot, taskId, input) {
     const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(targetRoot));
