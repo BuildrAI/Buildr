@@ -14,9 +14,9 @@
 | 功能等价清单 | 见 [parity-checklist.md](parity-checklist.md) |
 | 并行 Change 依赖说明 | 见 [dependency-notes.md](dependency-notes.md) |
 | 基线测试 / React 实现 | **未开始**（需另行授权「可以开发」） |
-| 仅文档交付（OpenSpec Change 进 retained） | **进行中**（用户 2026-08-07 授权：只交付文档，不 converge/archive、不写 React） |
+| 仅文档交付（OpenSpec Change 进 retained） | **已完成**（2026-08-07 Formal Finish；不 converge/archive、不写 React） |
 
-**当前闸门：** 本轮 Formal Finish 只合入 `openspec/changes/migrate-local-app-to-react/` 规划产物；不应用 canonical specs、不实现 React。后续实现须另行授权。
+**当前闸门：** OpenSpec Change 规划产物已在 retained `openspec/changes/migrate-local-app-to-react/`。尚未应用 canonical specs、未实现 React；后续实现须另行授权「可以开发」。
 
 ## 背景与问题
 
