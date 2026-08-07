@@ -34,7 +34,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
 
   const fast = read('scripts/verify-buildr-product-fast');
-  assert.match(fast, /verification\/profile\.mjs" fast/);
+  assert.match(fast, /run-workspace-node\.mjs" test\/verification\/profile\.mjs fast/);
   const fastIds = createVerificationPlan({ profiles: ['fast'] }).steps.map((step) => step.id);
   assert.deepEqual(fastIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.equal(fastIds.includes('system'), false);

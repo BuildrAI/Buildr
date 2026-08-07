@@ -123,7 +123,7 @@ test('Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
 test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复且不改版本', (t) => {
   const appData = path.join(temporaryRoot(t), 'node-app-data');
   const root = path.join(temporaryRoot(t), 'workspace');
-  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData, BUILDR_NODE_RUNTIME_DATA_DIR: appData };
   let result = runBuildr(['init', '--target', root, '--name', 'node-recovery', '--description', 'Node recovery workspace'], { env });
   assert.equal(result.status, 0, result.stderr);
   const manifest = path.join(root, '.buildr', 'workspace.yml');

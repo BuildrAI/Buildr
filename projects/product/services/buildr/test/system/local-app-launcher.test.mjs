@@ -29,21 +29,23 @@ function build(t, platform, channel = 'release') {
 }
 
 test('development launcher 固定 4317 端口，release launcher 保持动态端口', (t) => {
-  const developmentMac = build(t, 'darwin', 'development');
-  const releaseMac = build(t, 'darwin', 'release');
+  if (process.platform === 'darwin') {
+    const developmentMac = build(t, 'darwin', 'development');
+    const releaseMac = build(t, 'darwin', 'release');
+    const macCommand = (root, name) => fs.readFileSync(path.join(root, `${name}.app`, 'Contents', 'MacOS', 'Buildr'), 'utf8');
+    assert.match(macCommand(developmentMac, 'Buildr Dev'), /app --port 4317/);
+    assert.doesNotMatch(macCommand(developmentMac, 'Buildr Dev'), /Resources\/buildr|MacOS\/node/);
+    assert.doesNotMatch(macCommand(releaseMac, 'Buildr'), /app --port 4317/);
+    assert.equal(fs.existsSync(path.join(developmentMac, 'Buildr Dev.app', 'Contents', 'MacOS', 'node')), false);
+    assert.equal(fs.existsSync(path.join(developmentMac, 'Buildr Dev.app', 'Contents', 'Resources', 'buildr')), false);
+  }
   const developmentWindows = build(t, 'win32', 'development');
   const releaseWindows = build(t, 'win32', 'release');
-  const macCommand = (root, name) => fs.readFileSync(path.join(root, `${name}.app`, 'Contents', 'MacOS', 'Buildr'), 'utf8');
   const windowsCommand = (root, name) => fs.readFileSync(path.join(root, name, 'Launch-Buildr.cmd'), 'utf8');
 
-  assert.match(macCommand(developmentMac, 'Buildr Dev'), /app --port 4317/);
-  assert.doesNotMatch(macCommand(developmentMac, 'Buildr Dev'), /Resources\/buildr|MacOS\/node/);
-  assert.doesNotMatch(macCommand(releaseMac, 'Buildr'), /app --port 4317/);
   assert.match(windowsCommand(developmentWindows, 'Buildr Dev'), /app --port 4317/);
   assert.doesNotMatch(windowsCommand(developmentWindows, 'Buildr Dev'), /runtime\\node\.exe|app\\bin\\buildr\.mjs/);
   assert.doesNotMatch(windowsCommand(releaseWindows, 'Buildr'), /app --port 4317/);
-  assert.equal(fs.existsSync(path.join(developmentMac, 'Buildr Dev.app', 'Contents', 'MacOS', 'node')), false);
-  assert.equal(fs.existsSync(path.join(developmentMac, 'Buildr Dev.app', 'Contents', 'Resources', 'buildr')), false);
   assert.equal(fs.existsSync(path.join(developmentWindows, 'Buildr Dev', 'runtime', 'node.exe')), false);
   assert.equal(fs.existsSync(path.join(developmentWindows, 'Buildr Dev', 'app')), false);
 });
@@ -70,6 +72,7 @@ test('development launcher 支持带空格的 checkout 路径', (t) => {
 });
 
 test('macOS launcher bundle 携带 Node runtime、Buildr Web 资源和可双击 App 入口', (t) => {
+  if (process.platform !== 'darwin') return t.skip('仅在 macOS 构建 Darwin launcher bundle');
   const output = build(t, 'darwin');
   const app = path.join(output, 'Buildr.app', 'Contents');
   const node = path.join(app, 'MacOS', 'node');

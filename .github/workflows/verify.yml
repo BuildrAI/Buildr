@@ -15,11 +15,12 @@ concurrency:
 
 jobs:
   product:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        os: [macos-latest, windows-latest]
         node: [24.15.0, 24.x]
     defaults:
       run:
@@ -35,24 +36,26 @@ jobs:
         run: npm ci
       - name: Prepare Codex runtime
         working-directory: .
+        shell: bash
         run: projects/product/buildr sync codex --target .
       - name: Verify final product candidate
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-verification-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-verification-diagnostics
+        shell: bash
         run: npm run test:candidate
       - name: Upload verification timing
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: verification-timing-linux-node-${{ matrix.node }}
+          name: verification-timing-${{ matrix.os }}-node-${{ matrix.node }}
           path: ${{ runner.temp }}/buildr-verification-timing.json
           if-no-files-found: warn
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: verification-diagnostics-linux-node-${{ matrix.node }}
+          name: verification-diagnostics-${{ matrix.os }}-node-${{ matrix.node }}
           path: ${{ runner.temp }}/buildr-verification-diagnostics
           if-no-files-found: ignore
 

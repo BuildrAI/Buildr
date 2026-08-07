@@ -80,29 +80,50 @@ test('verification executor preserves upstream PATH while pinning Node and npm t
   assert.doesNotMatch(`${npmResult.stdout}\n${npmResult.stderr}`, /fake-low-version-npm/);
 });
 
-test('verification shell wrappers use the npm-provided Workspace Node with a hostile PATH', (t) => {
+test('verification shell wrappers use the declared Workspace Node with a hostile PATH', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-wrapper-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const fakeBin = fakeLowVersionPath(root);
   const scripts = path.join(root, 'scripts');
   const verification = path.join(root, 'test', 'verification');
+  const appData = path.join(root, 'app-data');
+  const managedBin = path.join(appData, 'runtimes', 'node', '24.15.0', 'darwin-arm64', 'bin');
   fs.mkdirSync(scripts, { recursive: true });
   fs.mkdirSync(verification, { recursive: true });
+  fs.mkdirSync(path.join(root, 'node_modules', '.bin'), { recursive: true });
+  fs.symlinkSync(path.join(productRoot, 'src'), path.join(root, 'src'), 'junction');
+  fs.symlinkSync(path.join(productRoot, 'node_modules', 'yaml'), path.join(root, 'node_modules', 'yaml'), 'junction');
+  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), [
+    'schemaVersion: buildr.workspace/v1',
+    'id: f2f40b71-2382-5906-82bd-76a7927b59f3',
+    'name: Wrapper test',
+    'description: Wrapper test',
+    'runtime:',
+    '  node:',
+    '    version: 24.15.0',
+    '',
+  ].join('\n'));
+  executable(path.join(managedBin, 'node'), '#!/bin/sh\nif [ "$1" = "-p" ] && [ "$2" = "process.versions.node" ]; then echo 24.15.0; exit 0; fi\nexport BUILDR_TEST_SELECTED_RUNTIME=workspace-node\nexec "$BUILDR_TEST_REAL_NODE" "$@"\n');
+  executable(path.join(managedBin, 'npm'), '#!/bin/sh\necho 11.12.1\n');
   fs.copyFileSync(path.join(productRoot, 'scripts', 'verify-buildr-product-fast'), path.join(scripts, 'verify-buildr-product-fast'));
   fs.copyFileSync(path.join(productRoot, 'scripts', 'verify-buildr-product'), path.join(scripts, 'verify-buildr-product'));
-  fs.writeFileSync(path.join(verification, 'profile.mjs'), 'process.stdout.write(process.execPath);\n');
-  fs.writeFileSync(path.join(verification, 'candidate.mjs'), 'process.stdout.write(process.execPath);\n');
+  fs.copyFileSync(path.join(productRoot, 'scripts', 'run-workspace-node.mjs'), path.join(scripts, 'run-workspace-node.mjs'));
+  fs.writeFileSync(path.join(verification, 'profile.mjs'), 'process.stdout.write(process.env.BUILDR_TEST_SELECTED_RUNTIME || "missing");\n');
+  fs.writeFileSync(path.join(verification, 'candidate.mjs'), 'process.stdout.write(process.env.BUILDR_TEST_SELECTED_RUNTIME || "missing");\n');
   executable(path.join(root, 'node_modules', '.bin', 'openspec'), '#!/bin/sh\nexit 0\n');
   const env = {
     ...process.env,
     PATH: [fakeBin, '/usr/bin', '/bin'].join(path.delimiter),
     npm_node_execpath: process.execPath,
+    BUILDR_NODE_RUNTIME_DATA_DIR: appData,
+    BUILDR_TEST_REAL_NODE: process.execPath,
   };
 
   for (const wrapper of ['verify-buildr-product-fast', 'verify-buildr-product']) {
     const result = spawnSync('/bin/bash', [path.join(scripts, wrapper)], { encoding: 'utf8', env });
     assert.equal(result.status, 0, `${wrapper}\n${result.stdout}\n${result.stderr}`);
-    assert.equal(result.stdout, process.execPath);
+    assert.equal(result.stdout, 'workspace-node');
     assert.doesNotMatch(result.stderr, /fake-low-version-node/);
   }
 });
