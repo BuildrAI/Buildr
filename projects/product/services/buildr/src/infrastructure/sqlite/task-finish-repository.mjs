@@ -78,70 +78,6 @@ function hasTable(database, name) {
   return Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
 }
 
-function legacyRoot(targetRoot) { return path.join(path.resolve(targetRoot), '.buildr', 'task-finish'); }
-
-function safeLegacyDirectory(root, name) {
-  const directory = path.join(root, name);
-  if (!fs.existsSync(directory)) return { directory, files: [], diagnostics: [] };
-  const diagnostics = [];
-  let stat;
-  try { stat = fs.lstatSync(directory); } catch (cause) { return { directory, files: [], diagnostics: [{ code: 'legacy_stat_failed', path: directory, message: cause.message }] }; }
-  if (!stat.isDirectory() || stat.isSymbolicLink()) return { directory, files: [], diagnostics: [{ code: 'legacy_path_unsafe', path: directory, message: 'legacy Finish directory must be a real directory.' }] };
-  const files = [];
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    const file = path.join(directory, entry.name);
-    let child;
-    try { child = fs.lstatSync(file); } catch (cause) { diagnostics.push({ code: 'legacy_stat_failed', path: file, message: cause.message }); continue; }
-    if (child.isSymbolicLink() || !child.isFile() || !entry.name.endsWith('.json')) {
-      diagnostics.push({ code: 'legacy_path_unsafe', path: file, message: 'legacy Finish residue is not a regular JSON file.' });
-      continue;
-    }
-    files.push(file);
-  }
-  return { directory, files, diagnostics };
-}
-
-function legacyObservation(targetRoot) {
-  const root = legacyRoot(targetRoot);
-  const runs = safeLegacyDirectory(root, 'runs');
-  const completed = safeLegacyDirectory(root, 'completed');
-  const files = [...runs.files, ...completed.files];
-  return { root, runs, completed, files, diagnostics: [...runs.diagnostics, ...completed.diagnostics], present: files.length > 0 || fs.existsSync(root) };
-}
-
-function legacyResult(run, completion) {
-  if (completion.result && typeof completion.result === 'object') return compactResult(completion.result);
-  return compactResult({
-    schemaVersion: 'buildr.task-finish-result/v2',
-    runId: run.runId,
-    status: 'complete',
-    identity: run.identity,
-    handoff: { identity: completion.handoffIdentity },
-    candidate: { identity: completion.candidateIdentity, generation: completion.candidateGeneration, contentTargetIdentity: completion.contentTargetIdentity },
-    carrier: run.deliveryCarrier,
-    phases: run.phases,
-    primaryFailure: null,
-    resume: null,
-    nextWorkflow: null,
-    nextAction: null,
-    equivalence: run.equivalence,
-    delivery: run.delivery,
-    completion,
-    metrics: { canonicalCliInvocations: run.invocations || 0, agentProviderCompletions: 0, manualRecoveryManifests: 0, formalVerificationExecutions: 0, productCommandObservations: 0, productExecutionMs: 0, wallClockMs: 0, coverage: 'product-complete' },
-    createdAt: run.createdAt,
-    updatedAt: run.updatedAt,
-    completedAt: completion.completedAt,
-  });
-}
-
-function validateLegacyPair(run, completion, runFile, completionFile) {
-  if (run?.schemaVersion !== 'buildr.task-finish-run/v2' || run?.status !== 'complete' || run?.completion?.status !== 'complete') throw error('legacy_cutover_not_terminal', 'legacy Finish run 不是可复核的 complete 终态。', 409, { runFile, completionFile });
-  if (completion?.schemaVersion !== 'buildr.task-finish-completion/v1' || completion?.status !== 'complete') throw error('legacy_cutover_not_terminal', 'legacy Finish completion 不是可复核的 complete 终态。', 409, { runFile, completionFile });
-  if (completion.runId !== run.runId || completion.task !== run.identity?.task) throw error('legacy_cutover_identity_conflict', 'legacy Finish run 与 completion identity 不匹配。', 409, { runFile, completionFile });
-  for (const [left, right, label] of [[run.identity.handoffIdentity, completion.handoffIdentity, 'handoff'], [run.identity.candidateIdentity, completion.candidateIdentity, 'candidate'], [run.identity.candidateGeneration, completion.candidateGeneration, 'candidate generation'], [run.identity.contentTargetIdentity, completion.contentTargetIdentity, 'content target'], [run.deliveryCarrier?.identity, completion.carrierIdentity, 'carrier']]) if (left !== right) throw error('legacy_cutover_identity_conflict', `legacy Finish ${label} identity 不匹配。`, 409, { runFile, completionFile, label });
-  if (typeof completion.completedAt !== 'string' || Number.isNaN(Date.parse(completion.completedAt))) throw error('legacy_cutover_completion_invalid', 'legacy Finish completion completedAt 无效。', 409, { runFile, completionFile });
-}
-
 function readRunRow(database, { taskId = null, runId = null } = {}) {
   if (!hasTable(database, 'task_finish_runs')) return null;
   if (taskId) return database.prepare('SELECT task_id AS taskId, run_id AS runId, run_json AS runJson FROM task_finish_runs WHERE task_id = ?').get(taskId) || null;
@@ -402,71 +338,10 @@ export function registerTaskFinishRepository(runtime) {
     } finally { close(opened); }
   }
 
-  function cutoverLegacyTaskFinishStore(targetRoot) {
-    const observation = legacyObservation(targetRoot);
-    if (!observation.present) return { status: 'not-applicable', imported: [], diagnostics: [], residue: [] };
-    const diagnostics = [...observation.diagnostics];
-    const imported = [];
-    const completionFiles = observation.completed.files;
-    for (const completionFile of completionFiles) {
-      const runId = path.basename(completionFile, '.json');
-      const runFile = path.join(observation.runs.directory, `${runId}.json`);
-      if (!observation.runs.files.includes(runFile)) {
-        diagnostics.push({ code: 'legacy_cutover_pair_missing', path: completionFile, message: 'legacy completion 缺少匹配 run；不导入。' });
-        continue;
-      }
-      let run;
-      let completion;
-      try {
-        run = JSON.parse(fs.readFileSync(runFile, 'utf8'));
-        completion = JSON.parse(fs.readFileSync(completionFile, 'utf8'));
-        validateLegacyPair(run, completion, runFile, completionFile);
-      } catch (cause) {
-        diagnostics.push({ code: cause.code || 'legacy_cutover_invalid', path: completionFile, message: cause.message });
-        continue;
-      }
-      let opened;
-      try {
-        opened = open(runtime, targetRoot, true);
-        const database = opened.database;
-        database.exec('BEGIN IMMEDIATE');
-        const taskRow = database.prepare('SELECT task_id AS taskId FROM tasks WHERE task_id = ?').get(run.identity.task);
-        if (!taskRow) throw error('legacy_cutover_task_missing', `legacy Finish Task 不存在：${run.identity.task}。`, 409, { completionFile });
-        const current = database.prepare('SELECT run_id AS runId FROM task_finish_runs WHERE task_id = ?').get(run.identity.task);
-        if (current) throw error('legacy_cutover_current_conflict', '当前 SQLite Finish run 已存在；不导入 legacy completion。', 409, { taskId: run.identity.task, currentRunId: current.runId });
-        const result = legacyResult(run, completion);
-        const serialized = JSON.stringify({ ...completion, task: run.identity.task, runId: run.runId, status: 'complete', result });
-        const existing = database.prepare('SELECT run_id AS runId, result_json AS resultJson FROM task_finish_completions WHERE task_id = ?').get(run.identity.task);
-        if (existing && (existing.runId !== run.runId || existing.resultJson !== serialized)) throw error('legacy_cutover_completion_conflict', 'SQLite 已存在不同 Finish terminal completion。', 409, { taskId: run.identity.task, existingRunId: existing.runId });
-        database.prepare(`INSERT INTO task_finish_completions(task_id, run_id, status, result_json, completed_at, updated_at)
-          VALUES (?, ?, 'complete', ?, ?, ?)
-          ON CONFLICT(task_id) DO UPDATE SET run_id = excluded.run_id, status = excluded.status, result_json = excluded.result_json, completed_at = excluded.completed_at, updated_at = excluded.updated_at`)
-          .run(run.identity.task, run.runId, serialized, completion.completedAt, timestamp());
-        const written = database.prepare('SELECT result_json AS resultJson FROM task_finish_completions WHERE task_id = ?').get(run.identity.task);
-        if (written?.resultJson !== serialized) throw error('legacy_cutover_write_verify_failed', 'legacy Finish completion 写后读取不一致。', 500, { taskId: run.identity.task });
-        database.exec('COMMIT');
-        imported.push({ taskId: run.identity.task, runId: run.runId });
-      } catch (cause) {
-        try { opened?.database?.exec('ROLLBACK'); } catch {}
-        diagnostics.push({ code: cause.code || 'legacy_cutover_write_failed', path: completionFile, message: cause.message });
-        continue;
-      } finally { close(opened); }
-      try {
-        fs.unlinkSync(completionFile);
-        fs.unlinkSync(runFile);
-      } catch (cause) {
-        diagnostics.push({ code: 'legacy_cleanup_pending', path: completionFile, message: cause.message });
-      }
-    }
-    const residue = legacyObservation(targetRoot).files;
-    return { status: diagnostics.length || residue.length ? 'blocked' : imported.length ? 'complete' : 'not-applicable', imported, diagnostics, residue };
-  }
-
   function inspectTaskFinishPersistence(targetRoot) {
-    const legacy = legacyObservation(targetRoot);
     let opened;
     if (!fs.existsSync(runtime.workspaceStructuredStorePath(targetRoot))) {
-      return { status: legacy.present ? 'legacy-residue' : 'uninitialized', current: [], completions: [], leases: [], artifacts: [], legacy: { present: legacy.present, residue: legacy.files.map((file) => path.relative(path.resolve(targetRoot), file).split(path.sep).join('/')), diagnostics: legacy.diagnostics } };
+      return { status: 'uninitialized', current: [], completions: [], leases: [], artifacts: [], invalidArtifacts: [] };
     }
     try {
       opened = open(runtime, targetRoot, false);
@@ -485,7 +360,7 @@ export function registerTaskFinishRepository(runtime) {
         return { ...item, present, escaped };
       });
       const invalidArtifacts = artifacts.filter((item) => item.escaped || (item.retentionStatus !== 'cleaned' && !item.present));
-      return { status: leases.some((item) => item.expired) || invalidArtifacts.length || legacy.present ? 'attention' : 'healthy', current, completions, leases, artifacts, invalidArtifacts, legacy: { present: legacy.present, residue: legacy.files.map((file) => path.relative(opened.root, file).split(path.sep).join('/')), diagnostics: legacy.diagnostics } };
+      return { status: leases.some((item) => item.expired) || invalidArtifacts.length ? 'attention' : 'healthy', current, completions, leases, artifacts, invalidArtifacts };
     } finally { close(opened); }
   }
 
@@ -503,7 +378,6 @@ export function registerTaskFinishRepository(runtime) {
     readTaskFinishResultsPersistence,
     registerTaskFinishTransientArtifactPersistence,
     updateTaskFinishTransientArtifactPersistence,
-    cutoverLegacyTaskFinishStore,
     inspectTaskFinishPersistence,
   });
   return runtime;

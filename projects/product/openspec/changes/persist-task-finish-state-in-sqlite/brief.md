@@ -6,7 +6,7 @@
 
 ## 背景与问题
 
-Task Finish已经是固定五阶段的产品执行器，但current run、completion和lease仍保存在`.buildr/task-finish`，与Task/Development/Review/Verification等SQLite current records形成两套本机状态协议。结果是恢复与终态读取依赖JSON配对，完整日志和失败现场长期累积，Local App、Doctor与清理边界也更复杂。
+Task Finish已经是固定五阶段的产品执行器；本 Change 将其 current run、completion、lease 和 transient metadata 统一收敛到 Workspace SQLite，退出旧的`.buildr/task-finish`文件协议。
 
 ## 目标与非目标
 
@@ -25,14 +25,14 @@ Task Finish继续消费current Development handoff并运行五阶段。每个pha
 ## 关键变化
 
 - 新增Finish run、completion、lease与transient metadata的SQLite窄表和事务边界。
-- 删除`.buildr/task-finish`作为current authority；旧数据只做一次性可验证cutover。
+- 删除`.buildr/task-finish`作为current authority；启用 SQLite-only runtime 前直接清理旧目录，不迁移旧 run/completion。
 - 成功后删除current checkpoint、lease、Carrier和完整日志，只留compact delivered evidence。
 - CLI、Doctor、Terminal Delivery Application与Local App统一消费Task Finish Application read model。
 - 保留`task-finish`；`task complete`只表示Task Record terminal transition。
 
 ## 影响、风险与兼容性
 
-这是本机持久化协议的breaking切换。新runtime不双写也不长期读取旧协议；仅可复核的completed摘要会导入，其他legacy run从current Development/Git/remote/Environment事实重新建立。SQLite busy/corrupt会影响Finish，因此实现必须保持migration、transaction、integrity、writer provenance与bounded diagnostic边界。
+这是本机持久化协议的breaking切换。新runtime不双写、不读取、不扫描旧协议；启用前遗留目录由受控清理直接删除，旧的 incomplete/failed/blocked 状态不恢复。SQLite busy/corrupt会影响Finish，因此实现必须保持migration、transaction、integrity、writer provenance与bounded diagnostic边界。
 
 ## 验收摘要
 

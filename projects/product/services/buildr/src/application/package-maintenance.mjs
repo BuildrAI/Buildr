@@ -151,7 +151,6 @@ export function registerApplicationPackageMaintenance(runtime) {
         '# Workspace local structured data', '/.buildr/local/',
         '# Retired Task asset review data remains untracked',
         '/.buildr/asset-review/',
-        '/.buildr/task-finish/',
         '# Task machine-local state', '/.buildr/tasks/',
         '# Task worktrees', '/.worktrees/',
       ])) {

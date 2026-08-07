@@ -1,6 +1,6 @@
 ## Context
 
-Task Finish 当前已经拥有稳定的专业边界：消费 current Development handoff，在隔离 Delivery Carrier 上依次执行 `preflight → prepare → verify → deliver → cleanup`，处理 target-race/Delivery Adaptation，完成远端回读、retained activation、Doctor、Environment cleanup，并形成终态交付证明。问题不在这套职责，而在它仍以 `.buildr/task-finish/runs`、`completed` 和文件 lease 保存 current 状态。
+Task Finish 当前已经拥有稳定的专业边界：消费 current Development handoff，在隔离 Delivery Carrier 上依次执行 `preflight → prepare → verify → deliver → cleanup`，处理 target-race/Delivery Adaptation，完成远端回读、retained activation、Doctor、Environment cleanup，并形成终态交付证明。问题不在这套职责，而在旧实现曾以 `.buildr/task-finish/runs`、`completed` 和文件 lease 保存 current 状态；本 Change 将其统一到 SQLite。
 
 Workspace SQLite 已是 Task Record、Development、Review、Verification 与 terminal delivery read model 的单机结构化 authority。继续保留 Finish File Store 会形成第二套 current-state 协议：CLI/Local App 需要配对 run/completion 文件，失败诊断与终态摘要一起长期累积，进程恢复、并发 lease、最终清理也分散在文件和数据库之间。
 
@@ -16,7 +16,7 @@ Workspace SQLite 已是 Task Record、Development、Review、Verification 与 te
 - 保持 Finish 的五阶段、精确恢复、Delivery Adaptation、远端回读和 Environment cleanup 行为不变。
 - 将 stdout/stderr、完整诊断与 Delivery Carrier 限定为 run-owned transient data，并在成功后确定性删除。
 - 只长期保留足以证明 delivered 的有界终态摘要；blocked/failed run 只保留恢复所需 current 状态。
-- 一次性处理既有 `.buildr/task-finish` 数据后退出旧协议，不让新 runtime 长期读取或写入旧目录。
+- 启用 SQLite-only runtime 前直接清理既有 `.buildr/task-finish` 目录；新 runtime 永不读取、扫描或写入旧目录，也不提供 migration/cutover adapter。
 - 让 CLI、Doctor、Terminal Delivery Application 与 Local App 通过 Application/repository 边界消费同一份 SQLite 事实。
 
 **Non-Goals:**
@@ -64,29 +64,22 @@ blocked/failed 且可恢复的 run 保留当前恢复所需 transient data。成
 
 如果进程在 Environment 已 cleaned、Finish 尚未完成时崩溃，resume 从 Environment Receipt 与 SQLite `cleanup_pending` 恢复，只完成 Finish-owned transient cleanup、completion 和 Task terminal transition。任何一步失败都保留足够 current state，不能产生 delivered completion 与 active Task、或 completed Task 与缺失 Finish proof 的新不一致。
 
-### 6. 一次性 cutover 只导入可验证终态，非终态重新建 run
+### 6. 旧文件协议直接退役
 
-已集成 retained runtime 在首次启用新 Finish writer 前执行幂等 cutover：
-
-1. 只读枚举 canonical `.buildr/task-finish` 的 legacy completion/run/lease；拒绝 path/symlink 逃逸。
-2. 对可配对、schema 合法且能由 current Task/Development/Git/remote/Environment 事实复核的 completed delivery，写入 compact SQLite completion。
-3. 不导入 incomplete、blocked、failed、未知 schema、冲突或无法复核的 token/checkpoint。其 Task 保持原顶层状态，下一次 Finish 必须依据 current facts 建立全新 SQLite run。
-4. SQLite transaction 成功并写后读取验证后，删除 legacy Finish-owned files；删除失败由 Doctor 报告 `legacy_cleanup_pending`，但新 writer 不回退到旧协议。
-
-cutover 期间不得双写。新 runtime 不提供 permanent legacy inspect/resume adapter；旧客户端行为不由新代码兼容。
+SQLite-only runtime 激活前，受控升级步骤直接删除 `.buildr/task-finish`。旧目录中的 run、completion、lease、token 和 checkpoint 不属于新系统的可恢复输入；不迁移、不配对、不导入，也不因旧目录残留而改变 SQLite read model。新 runtime 不提供 legacy inspect/resume/cutover adapter。
 
 ### 7. 所有 consumer 通过 Task Finish Application read model
 
 CLI `run|inspect`、Doctor、Terminal Delivery Application 和 Local App 不直接写 SQL，也不扫描/配对 Finish files。Task Finish Application 返回 current run 或 compact completion read model；Local App 继续只消费 Terminal Delivery Application，展示 current blocked/cleanup 状态和 terminal delivered proof，不自行判断 live currentness。
 
-Doctor 检查 migration identity、foreign keys、唯一 current run/lease、dangling Task/run reference、expired lease、missing/escaped transient locator、orphan transient directory、`cleanup_pending` 与 legacy store 残留。Doctor 只输出有界诊断，不输出 Task 正文、完整命令日志或数据库页。
+Doctor 检查 migration identity、foreign keys、唯一 current run/lease、dangling Task/run reference、expired lease、missing/escaped transient locator、orphan transient directory 与 `cleanup_pending`。Doctor 不扫描旧 Finish 目录，只输出有界诊断，不输出 Task 正文、完整命令日志或数据库页。
 
 ## Risks / Trade-offs
 
 - [Risk] SQLite 把更多生命周期状态集中到单文件，busy/corrupt 会同时影响多个专业动作。→ 继续使用 bounded busy timeout、WAL、foreign keys、integrity check、连续 migration 与 fail-closed writer provenance；不自动删除或重建数据库。
 - [Risk] 外部 Git/remote/Environment 副作用无法与 SQLite 做真正分布式事务。→ 每个副作用前后冻结 identity，恢复时先重观测再决定跳过或重试；completion 只在全部外部结果与清理可证明后提交。
 - [Risk] 成功即删除完整日志会降低事后排障深度。→ compact Result 保留 phase timing、命令 observation、failure 摘要、digest、大小与最终 identity；需要长期审计的内容应由独立显式能力承担，不能让运行垃圾无限积累。
-- [Risk] legacy completion 可能表面 complete 但无法重新证明。→ 只导入可验证摘要，其余不猜测、不伪造 delivered；保留 Task 顶层事实并要求新 run 从 current facts 开始。
+- [Risk] 旧目录可能包含尚未观察的 Finish 状态。→ 不把旧文件当作新系统输入；启用前直接清理，后续只从 SQLite current facts 开始。
 - [Risk] 并发 Change 同时增加 Structured Store 行为。→ 不修改现有 read-only provenance Requirement，合并/归档前重放 strict validation、migration chain 与 Local App system tests。
 
 ## Migration Plan
@@ -94,9 +87,9 @@ Doctor 检查 migration identity、foreign keys、唯一 current run/lease、dan
 1. 增加连续 SQLite migration、Domain schemas、repository 与 Application transaction tests，在隔离 validation Workspace 覆盖 fresh/upgrade/busy/corrupt/rollback。
 2. 将五阶段执行器、lease、CLI inspect/result、Terminal Delivery writer 和 Doctor 切换到 SQLite repository；删除正常 routing 对 legacy File Store 的依赖。
 3. 引入受限 transient artifact registry 和幂等 cleanup，覆盖 crash、blocked/resume、Environment 已 cleaned、target-race 与 cleanup failure。
-4. 在候选 Workspace 构造 legacy completed/incomplete/invalid/escaped 数据，验证一次性 cutover、零双写与旧目录清理。
-5. 完成 integration/System journey 后交付 retained runtime；由 retained controller 应用 canonical migration 和 cutover，再运行 Doctor 确认 SQLite current、无 orphan/legacy residue。
-6. 回滚只允许回滚尚未激活的候选。canonical migration/cutover 已激活后不得恢复旧 File Store writer；修复必须通过新的 forward migration/runtime 继续使用 SQLite authority。
+4. 在隔离 Workspace 构造旧目录数据，验证 SQLite-only runtime 不读取、不导入、不扫描旧文件，且启用前清理旧目录。
+5. 完成 integration/System journey 后交付 retained runtime；由 retained controller 应用 canonical migration，再运行 Doctor 确认 SQLite current、无 orphan transient。
+6. 回滚只允许回滚尚未激活的候选。SQLite-only runtime 已激活后不得恢复旧 File Store writer；修复必须通过新的 forward migration/runtime 继续使用 SQLite authority。
 
 ## Open Questions
 

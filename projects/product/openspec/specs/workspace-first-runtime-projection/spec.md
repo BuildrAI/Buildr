@@ -679,7 +679,7 @@ Buildr MUST 将产品 Buildr Skill、workspace Skills 和 Skill install plans �
 - **AND** Buildr MUST NOT 将文件已写入描述为当前会话已经加载
 
 ### Requirement: 新增 adapters 的 checker 报告环境与前置条件事实
-Buildr MUST 让每个新增 adapter 的 `runtime-check` 区分投射状态、安装/版本 probe 状态和 activation guidance，并且只执行随产品静态声明的有限时无 shell probe；产品级真实 Agent 验证缺口 MUST NOT 作为当前 workspace prerequisite finding。
+Buildr MUST 让每个新增 adapter 的 `runtime-check` 区分投射状态、安装/版本 probe 状态和 activation guidance，并且只执行随产品静态声明的有限时 probe；probe MUST 与目标平台适配。没有稳定、安全、跨安装形态的自动 probe 时，descriptor MUST 使用 `manual` probe 并给出确认 guidance。
 
 #### Scenario: Environment probe 可自动执行
 - **WHEN** descriptor 声明静态 command installation 或 version probe
@@ -695,6 +695,23 @@ Buildr MUST 让每个新增 adapter 的 `runtime-check` 区分投射状态、安
 - **WHEN** Buildr 只能证明 Rules 或 Skills 投射存在，无法从文件系统证明目标 Agent 已在会话中加载
 - **THEN** runtime list、runtime check 或权威文档 MUST 提供对应 activation guidance
 - **AND** runtime check MUST NOT 仅因没有真实 Agent marker smoke 而生成当前用户必须处理的 prerequisite warning
+
+#### Scenario: macOS desktop probe 仅在 macOS 执行
+- **WHEN** TRAE Work 或 WorkBuddy descriptor 在 `darwin` 平台执行 runtime check
+- **THEN** installation/version probe MAY 使用静态声明的 macOS `defaults` executable 和参数
+- **AND** 输出 MUST 包含 probe 状态与可审计 evidence
+
+#### Scenario: 非 macOS desktop probe 使用人工确认
+- **WHEN** TRAE Work 或 WorkBuddy descriptor 在 Windows 或 Linux 平台执行 runtime check
+- **THEN** descriptor MUST 使用 `manual` installation/version probe 和确认应用版本或安装位置的 guidance
+- **AND** runtime check MUST 返回 `manual` 状态
+- **AND** MUST NOT 将 macOS `defaults` 的 ENOENT 或其他平台不适用错误报告为 installation missing、version unavailable 或 `userActionRequired` prerequisite warning
+
+#### Scenario: 其他自动 probe 仍保持安全边界
+- **WHEN** descriptor 声明 command installation 或 version probe
+- **THEN** runtime check MUST 使用静态 executable 和 arguments，在有限超时内执行
+- **AND** 除 Windows `.cmd`/`.bat` shim 所需的平台启动适配外 MUST 不经过任意 shell command 字符串
+- **AND** 输出 MUST 包含 probe 状态与可审计 evidence
 
 ### Requirement: 每个新增 adapter 保留独立兼容证据与分层验证状态
 Buildr MUST 为每个新增 adapter 记录 runtime-specific 官方文档、本机观察或安装包源码 provenance，并 MUST 以可重复的 descriptor、plan、projection、checker 和 lifecycle tests 验证 Buildr 可负责的兼容边界；descriptor MUST NOT 编码真实 Agent marker smoke 状态或品牌特有的历史通过快照。

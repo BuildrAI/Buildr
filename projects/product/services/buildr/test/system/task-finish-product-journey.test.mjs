@@ -8,9 +8,10 @@ import test from 'node:test';
 import { registerTaskDevelopmentApplication } from '../../src/application/task-development/task-development-application.mjs';
 import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
 import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 import { registerContentTargetObserver } from '../../src/infrastructure/content/content-target-observer.mjs';
+import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -119,7 +120,11 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, controllerCom
 
 function taskDevelopmentFixture() {
   const candidate = { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target', taskContextIdentity: 'sha256-task-context', policyIdentity: 'sha256-policy' };
-  const gates = { planning: { resultDigest: 'sha256-planning' }, verification: { resultDigest: 'sha256-verification' }, completion: { resultDigest: 'sha256-completion' } };
+  const gates = {
+    planning: { targetIdentity: 'sha256-planning-target', resultDigest: 'sha256-planning', outcome: 'ready' },
+    verification: { targetIdentity: 'sha256-verification-target', resultDigest: 'sha256-verification', outcome: 'passed' },
+    completion: { targetIdentity: 'sha256-completion-target', resultDigest: 'sha256-completion', outcome: 'ready' },
+  };
   const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'ready', risks: [] };
   const handoff = { identity: 'sha256-handoff', candidate, gates, decision };
   const receipt = { candidate, gates, decision, handoffs: [handoff] };
@@ -141,7 +146,9 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   let taskRecord = { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active', result: null };
   const planningTargetIdentity = taskDevelopmentDigest(`${task}:planning`);
   const declarationIdentity = taskDevelopmentDigest(`${task}:declaration`);
+  const sqliteRuntime = createTaskFinishSqliteRuntime(retained, task);
   const runtime = {
+    ...sqliteRuntime,
     ...environment,
     inspectTaskRecord: () => ({ record: taskRecord }),
     prepareTaskRecordPersistence: () => ({ record: taskRecord }),
@@ -203,6 +210,9 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   const remote = path.join(fixture, 'remote.git');
   const retained = path.join(fixture, 'workspace');
   fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Finish journey test fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   command(seed, 'git', ['init', '-b', 'dev']);
   command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
@@ -324,7 +334,9 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   assert.equal(result.carrier.changedPaths.includes('.buildr/tracked-metadata.json'), false);
   assert.equal(result.carrier.changedPaths.some((changedPath) => changedPath.split('/').includes('.buildr')), false);
   assert.notEqual(spawnSync('git', ['cat-file', '-e', `${result.carrier.head}:projects/product/openspec/changes/archive/finish-journey/.buildr/convergence-receipt.json`], { cwd: retained }).status, 0);
-  assert.equal(fs.existsSync(result.completion.receipt), true);
+  assert.equal(result.completion.receipt, `workspace-sqlite:task-finish-completion/${task}`);
+  const completion = runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }, { optional: false }).completion;
+  assert.equal(completion.status, 'complete');
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', result.runId)), false);
   assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'completed');
   assert.deepEqual(runtime.inspectTaskRecord(retained, task).record.result, { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false });
@@ -339,6 +351,9 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   const remote = path.join(fixture, 'remote.git');
   const retained = path.join(fixture, 'workspace');
   fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Finish adaptation test fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   command(seed, 'git', ['init', '-b', 'dev']);
   command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
@@ -440,6 +455,9 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const retained = path.join(fixture, 'workspace');
   const controller = path.join(fixture, 'controller', 'buildr');
   fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Finish code-only test fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   command(seed, 'git', ['init', '-b', 'dev']);
   command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
@@ -471,15 +489,14 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const originalPath = process.env.PATH;
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
+  const sqliteRuntime = createTaskFinishSqliteRuntime(retained, task);
   const runtime = {
+    ...sqliteRuntime,
     ...taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand: controller, controllerSourceRoot: path.dirname(controller) }),
     ...taskDevelopmentFixture(),
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
   };
-  const run = createFinishRun({
-    root: environmentRoot,
-    runId: 'product-code-only-journey',
-    identity: {
+  const run = persistTaskFinishRun(runtime, retained, {
       task,
       handoffIdentity: 'sha256-handoff',
       candidateIdentity: 'sha256-candidate',
@@ -491,10 +508,10 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
       environmentRoot,
       workspaceRoot: retained,
       workspaceNodeIdentity: 'sha256-workspace-node',
-    },
-  });
+    }, 'product-code-only-journey');
+  /* The helper persists the SQLite current run; the executor owns subsequent checkpoints. */
   const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot });
-  const result = await executeFinishRun({ root: environmentRoot, run, handlers });
+  const result = await executeFinishRun({ root: retained, run, handlers, runtime });
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
   assert.equal(result.handoff.identity, 'sha256-handoff');
@@ -512,7 +529,8 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   assert.equal(fs.existsSync(path.join(retained, 'projects', 'product', 'buildr')), false);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
-  const completion = JSON.parse(fs.readFileSync(result.completion.receipt, 'utf8'));
+  assert.equal(result.completion.receipt, `workspace-sqlite:task-finish-completion/${task}`);
+  const completion = runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }, { optional: false }).completion;
   assert.equal(completion.handoffIdentity, 'sha256-handoff');
   assert.equal(completion.candidateIdentity, 'sha256-candidate');
   assert.equal(completion.candidateGeneration, 1);

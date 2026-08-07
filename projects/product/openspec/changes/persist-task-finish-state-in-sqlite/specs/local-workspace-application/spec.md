@@ -19,6 +19,6 @@ Terminal Delivery Application MUST从Workspace SQLite中的Task Finish current/c
 - **AND** GET MUST不访问Git、remote、Environment provider、legacy files或transient root
 
 #### Scenario: legacy store 残留
-- **WHEN** `.buildr/task-finish`仍存在但SQLite中没有匹配completion，或Doctor报告legacy cleanup pending
-- **THEN** Local App MUST不把legacy文件当作交付authority
-- **AND** MAY只展示Application提供的有界维护诊断，不得自行导入或删除文件
+- **WHEN** `.buildr/task-finish`仍存在但SQLite中没有匹配completion
+- **THEN** Local App MUST不扫描、不读取、不把legacy文件当作交付authority
+- **AND** MUST只展示SQLite-backed Application read model；旧目录清理由升级步骤负责

@@ -14,21 +14,21 @@ Canonical Task Finish MUST在Workspace SQLite唯一current store中写入`buildr
 - **AND** 已解决的历史失败 MUST NOT继续作为current primary failure
 
 ### Requirement: 客户端升级必须直接替换 Task Finish 实现
-Buildr Client升级后 MUST直接以Workspace SQLite-backed五阶段执行器替换旧Task Finish实现，并 MUST只使用SQLite run、completion与target lease authority。客户端 MUST NOT继续以`.buildr/task-finish/runs`、`completed`或文件lease作为current authority，也 MUST NOT创建并行协议目录、长期双写、permanent legacy reader或第二套executor。升级 MAY执行一次性、幂等cutover；cutover MUST只导入可由current Task、Development、Git、remote与Environment事实复核的已完成交付摘要，其他legacy run MUST不被恢复。
+Buildr Client升级后 MUST直接以Workspace SQLite-backed五阶段执行器替换旧Task Finish实现，并 MUST只使用SQLite run、completion与target lease authority。客户端 MUST NOT继续以`.buildr/task-finish/runs`、`completed`或文件lease作为current authority，也 MUST NOT创建并行协议目录、长期双写、permanent legacy reader、cutover adapter或第二套executor。旧`.buildr/task-finish`目录 MUST在SQLite-only runtime启用前直接清理，旧数据 MUST不被迁移或恢复。
 
 #### Scenario: 升级后存在旧的未完成 run shape
-- **WHEN** legacy File Store中存在未完成、blocked、failed、未知schema或无法复核的run
-- **THEN** cutover MUST不导入其token、checkpoint、failure history或lease，新Finish MUST依据current上游与环境事实建立新run
-- **AND** 客户端 MUST NOT advance、finalize、转换或继续该旧run
+- **WHEN** SQLite-only runtime启用前发现旧File Store中存在未完成、blocked、failed、未知schema或无法复核的run
+- **THEN** 受控升级步骤 MUST 直接删除旧目录；新Finish MUST依据SQLite current上游与环境事实建立新run
+- **AND** 客户端 MUST NOT读取、导入、advance、finalize、转换或继续该旧run
 
 #### Scenario: 升级后存在可验证的已完成交付
-- **WHEN** legacy completion与run可安全配对，且Task、handoff、target、remote、Doctor和Environment cleanup事实仍可复核
-- **THEN** cutover MUST在单一SQLite transaction中写入compact terminal Result并写后读取验证
-- **AND** 只有新Result durable后才 MUST删除对应legacy Finish-owned files
+- **WHEN** SQLite-only runtime启用前发现旧File Store中存在看似已完成的run/completion
+- **THEN** 受控升级步骤 MUST 直接删除旧目录，不得配对、导入或恢复其completion
+- **AND** 新Result MUST只由SQLite-backed Finish重新产生
 
 #### Scenario: legacy 路径不安全或清理失败
-- **WHEN** cutover发现symlink/path escape、冲突completion或无法删除的legacy文件
-- **THEN** Buildr MUST fail closed或报告`legacy_cleanup_pending`，并保留可诊断事实
+- **WHEN** 受控清理发现旧目录存在symlink、path escape或无法删除的文件
+- **THEN** Buildr MUST fail closed，不得把旧文件作为Finish输入
 - **AND** 新writer MUST NOT回退为旧协议写入或形成双写
 
 #### Scenario: 用户不升级客户端

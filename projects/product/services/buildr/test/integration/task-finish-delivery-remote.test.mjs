@@ -9,6 +9,7 @@ import { resolveTaskFinishDeliveryRemote } from '../../src/application/task-fini
 import { resolveTaskFinishTargetBranch } from '../../src/application/task-finish/task-finish-delivery-target.mjs';
 import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
 import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
+import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -29,13 +30,16 @@ function repositoryFixture(t) {
   const remote = path.join(fixture, 'remote.git');
   const retained = path.join(fixture, 'workspace');
   fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Finish remote test fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   command(seed, 'git', ['init', '-b', 'dev']);
   command(seed, 'git', ['config', 'user.name', 'Buildr Remote Test']);
   command(seed, 'git', ['config', 'user.email', 'remote@example.com']);
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# baseline\n');
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), '#!/usr/bin/env node\nconsole.log(JSON.stringify({ health: { ready: true }, findings: [] }));\n');
-  command(seed, 'git', ['add', '.gitignore', 'README.md', 'projects/product/buildr']);
+  command(seed, 'git', ['add', 'AGENTS.md', 'projects/manifest.yml', '.gitignore', 'README.md', 'projects/product/buildr']);
   command(seed, 'git', ['commit', '-m', 'baseline']);
   command(fixture, 'git', ['init', '--bare', remote]);
   command(seed, 'git', ['remote', 'add', 'origin', remote]);
@@ -84,7 +88,12 @@ function deliveryFixture(t, hook) {
       changedPaths: ['feature.txt'],
     },
   };
+  const sqliteRuntime = createTaskFinishSqliteRuntime(data.retained, 'delivery-remote-evidence');
+  const persistedRun = persistTaskFinishRun(sqliteRuntime, data.retained, run.identity, run.runId);
+  persistedRun.deliveryCarrier = run.deliveryCarrier;
+  sqliteRuntime.writeTaskFinishRunPersistence(data.retained, persistedRun);
   const runtime = {
+    ...sqliteRuntime,
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }),
     resolveTaskEnvironmentExecution: () => ({
       ready: true,
@@ -95,7 +104,7 @@ function deliveryFixture(t, hook) {
       },
     }),
   };
-  return { ...data, environmentRoot, expectedTargetRef, carrierRef, run, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
+  return { ...data, environmentRoot, expectedTargetRef, carrierRef, run: persistedRun, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
 
 test('workspace source 缺少 Environment remote 时解析 retained branch upstream', (t) => {

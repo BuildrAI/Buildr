@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { FINISH_PHASES, FINISH_RUN_SCHEMA, finishRunFile, writeFinishCompletion } from '../../src/application/task-finish/task-finish-run.mjs';
+import { FINISH_PHASES, FINISH_RUN_SCHEMA, writeFinishCompletion } from '../../src/application/task-finish/task-finish-run.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
@@ -255,8 +255,8 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
     deliveryCarrier: carrier, equivalence, delivery, completion, resume: null, primaryFailure: null,
     phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: completedAt, completedAt, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
   };
-  const runFile = finishRunFile(root, runId); fs.mkdirSync(path.dirname(runFile), { recursive: true }); fs.writeFileSync(runFile, `${JSON.stringify(run, null, 2)}\n`);
-  writeFinishCompletion({ root, runId, completion: { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult } });
+  runtime.writeTaskFinishRunPersistence(root, run);
+  writeFinishCompletion({ root, runId, runtime, completion: { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult } });
   runtime.projectTaskFinish(root, taskId, {
     status: 'delivered', runId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
     candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity,

@@ -115,7 +115,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
 
   function diagnoseTaskFinishStore(result, targetRoot) {
     if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
-      result.taskFinish = { status: 'not-applicable', current: [], completions: [], leases: [], artifacts: [], legacy: { present: false, residue: [], diagnostics: [] } };
+      result.taskFinish = { status: 'not-applicable', current: [], completions: [], leases: [], artifacts: [], invalidArtifacts: [] };
       return;
     }
     try {
@@ -130,9 +130,6 @@ export function registerApplicationWorkspaceOperations(runtime) {
       });
       for (const item of observation.current || []) if (item.status === 'cleanup_pending') addDoctorFinding(result, 'warning', 'task_finish.cleanup_pending', `Task Finish run 等待 cleanup：${item.runId}`, {
         path: '.buildr/local/workspace.sqlite', taskId: item.taskId, runId: item.runId, suggestion: '使用同一 Task Finish run 与 resume token 继续 cleanup；不要重新执行已完成的 delivery。', userActionRequired: true,
-      });
-      if (observation.legacy?.present) addDoctorFinding(result, 'warning', 'task_finish.legacy_residue', '检测到旧 `.buildr/task-finish` residue；它不是当前 Finish authority。', {
-        path: '.buildr/task-finish', residue: observation.legacy.residue?.slice(0, 20) || [], suggestion: '执行受控 legacy cutover；确认 SQLite durable 后再清理旧文件。Doctor 不自动删除。', userActionRequired: true,
       });
     } catch (error) {
       result.taskFinish = { status: 'unavailable', error: error.message };
@@ -419,7 +416,6 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '/.buildr/local/',
       '# Retired Task asset review data remains untracked',
       '/.buildr/asset-review/',
-      '/.buildr/task-finish/',
       '# Task machine-local state',
       '/.buildr/tasks/',
       '# Task worktrees',

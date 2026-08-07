@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 
 import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
@@ -23,106 +22,35 @@ function sha256(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
 }
 
-function atomicWriteJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomUUID()}.tmp`);
-  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
-  fs.renameSync(temporary, file);
+function requireTaskFinishRuntime(runtime, operation) {
+  if (!runtime) throw new Error(`Task Finish ${operation} requires the Workspace SQLite runtime.`);
+  return runtime;
 }
 
-export function canonicalFinishWorkspaceRoot(root) {
-  const resolved = path.resolve(root);
-  const marker = `${path.sep}.worktrees${path.sep}`;
-  const index = resolved.indexOf(marker);
-  return index >= 0 ? resolved.slice(0, index) : resolved;
-}
-
-export function finishRunRoot(root) {
-  return path.join(canonicalFinishWorkspaceRoot(root), '.buildr', 'task-finish', 'runs');
-}
-
-export function finishRunFile(root, runId) {
-  if (!RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish run id must use lowercase letters, numbers, dots, underscores, or hyphens.');
-  const directory = finishRunRoot(root);
-  const file = path.resolve(directory, `${runId}.json`);
-  if (path.dirname(file) !== directory) throw new Error('Task Finish run path escapes the canonical run root.');
-  return file;
-}
-
-export function acquireFinishTargetLease({ file, run, root = null, runtime = null, targetIdentity = null, clock = Date.now }) {
-  if (runtime?.acquireTaskFinishTargetLease) {
-    return runtime.acquireTaskFinishTargetLease(root || run.identity.workspaceRoot, { run, targetIdentity: targetIdentity || run.identity.targetBranch, clock });
-  }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const token = crypto.randomUUID();
-  const currentTime = clock();
-  const value = {
-    schemaVersion: 'buildr.task-finish-target-lease/v1',
-    runId: run.runId,
-    task: run.identity.task,
-    targetBranch: run.identity.targetBranch,
-    token,
-    acquiredAt: new Date(currentTime).toISOString(),
-    expiresAt: new Date(currentTime + 60_000).toISOString(),
-  };
-  try {
-    const descriptor = fs.openSync(file, 'wx');
-    try { fs.writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`); } finally { fs.closeSync(descriptor); }
-    return { file, token, value };
-  } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    let existing = null;
-    try { existing = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* malformed is still occupied */ }
-    if (existing && Date.parse(existing.expiresAt) <= currentTime) {
-      fs.unlinkSync(file);
-      return acquireFinishTargetLease({ file, run, clock });
-    }
-    return { blocked: true, file, existing };
-  }
+export function acquireFinishTargetLease({ run, root = null, runtime = null, targetIdentity = null, clock = Date.now }) {
+  return requireTaskFinishRuntime(runtime, 'target lease').acquireTaskFinishTargetLease(
+    root || run.identity.workspaceRoot,
+    { run, targetIdentity: targetIdentity || run.identity.targetBranch, clock },
+  );
 }
 
 export function releaseFinishTargetLease(lease, { root = null, runtime = null } = {}) {
-  if (runtime?.releaseTaskFinishTargetLease) {
-    runtime.releaseTaskFinishTargetLease(root || lease?.value?.workspaceRoot || process.cwd(), lease);
-    return;
-  }
-  if (!lease?.file || !lease.token || !fs.existsSync(lease.file)) return;
-  try {
-    const current = JSON.parse(fs.readFileSync(lease.file, 'utf8'));
-    if (current.token === lease.token) fs.unlinkSync(lease.file);
-  } catch { /* retain malformed or replaced lease */ }
-}
-
-export function finishCompletionFile(root, runId) {
-  if (!RUN_ID_PATTERN.test(String(runId || ''))) throw new Error('Task Finish completion run id is invalid.');
-  const directory = path.join(canonicalFinishWorkspaceRoot(root), '.buildr', 'task-finish', 'completed');
-  const file = path.resolve(directory, `${runId}.json`);
-  if (path.dirname(file) !== directory) throw new Error('Task Finish completion path escapes the canonical completion root.');
-  return file;
+  if (!lease?.token) return;
+  requireTaskFinishRuntime(runtime, 'target lease').releaseTaskFinishTargetLease(root || lease?.value?.workspaceRoot || process.cwd(), lease);
 }
 
 export function writeFinishCompletion({ root, runId, completion, runtime = null }) {
-  if (runtime?.writeTaskFinishCompletionPersistence) {
-    const persisted = runtime.writeTaskFinishCompletionPersistence(root, {
-      taskId: completion?.task || completion?.identity?.task,
-      runId,
-      result: completion,
-      status: completion?.status === 'complete' ? 'complete' : 'cleanup_pending',
-    });
-    return persisted?.file || persisted;
-  }
-  const file = finishCompletionFile(root, runId);
-  atomicWriteJson(file, completion);
-  return file;
+  const persisted = requireTaskFinishRuntime(runtime, 'completion persistence').writeTaskFinishCompletionPersistence(root, {
+    taskId: completion?.task || completion?.identity?.task,
+    runId,
+    result: completion,
+    status: completion?.status === 'complete' ? 'complete' : 'cleanup_pending',
+  });
+  return persisted?.file || persisted;
 }
 
 export function readFinishCompletion({ root, runId, runtime = null }) {
-  if (runtime?.readTaskFinishCompletionPersistence) {
-    return runtime.readTaskFinishCompletionPersistence(root, { runId }, { optional: true })?.completion || null;
-  }
-  const file = finishCompletionFile(root, runId);
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  return requireTaskFinishRuntime(runtime, 'completion persistence').readTaskFinishCompletionPersistence(root, { runId }, { optional: true })?.completion || null;
 }
 
 function phase(id) {
@@ -172,33 +100,11 @@ function generateRunId(identity, clock) {
 export function createFinishRun({ root, identity, runId = null, clock = Date.now, runtime = null }) {
   const normalized = normalizeIdentity(identity);
   const actualRunId = runId || generateRunId(normalized, clock);
-  if (runtime?.readTaskFinishRunPersistence) {
-    const current = runtime.readTaskFinishRunPersistence(root, { taskId: normalized.task }, { optional: true });
-    if (current) return current.run;
-    const createdAt = now(clock);
-    return clone({
-      schemaVersion: FINISH_RUN_SCHEMA,
-      runId: actualRunId,
-      status: 'active',
-      identity: normalized,
-      identityDigest: sha256(normalized),
-      createdAt,
-      updatedAt: createdAt,
-      completedAt: null,
-      invocations: 0,
-      deliveryCarrier: null,
-      equivalence: null,
-      delivery: null,
-      completion: null,
-      resume: null,
-      primaryFailure: null,
-      phases: FINISH_PHASES.map(phase),
-    });
-  }
-  const file = finishRunFile(root, actualRunId);
-  if (fs.existsSync(file)) return readFinishRun({ root, runId: actualRunId });
+  const sqlite = requireTaskFinishRuntime(runtime, 'run persistence');
+  const current = sqlite.readTaskFinishRunPersistence(root, { taskId: normalized.task }, { optional: true });
+  if (current) return current.run;
   const createdAt = now(clock);
-  const run = {
+  return clone({
     schemaVersion: FINISH_RUN_SCHEMA,
     runId: actualRunId,
     status: 'active',
@@ -215,57 +121,23 @@ export function createFinishRun({ root, identity, runId = null, clock = Date.now
     resume: null,
     primaryFailure: null,
     phases: FINISH_PHASES.map(phase),
-  };
-  atomicWriteJson(file, run);
-  return clone(run);
+  });
 }
 
 export function readFinishRun({ root, runId, runtime = null }) {
-  if (runtime?.readTaskFinishRunPersistence) {
-    const current = runtime.readTaskFinishRunPersistence(root, { runId }, { optional: true });
-    if (!current) throw new Error(`Unknown Task Finish run: ${runId}`);
-    return current.run;
-  }
-  const file = finishRunFile(root, runId);
-  if (!fs.existsSync(file)) throw new Error(`Unknown Task Finish run: ${runId}`);
-  const run = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error(`Unsupported Task Finish run schema: ${run.schemaVersion}`);
-  if (!Array.isArray(run.phases) || FINISH_PHASES.some((id) => !run.phases.some((item) => item.id === id))) {
-    throw new Error(`Task Finish run has an invalid phase model: ${runId}`);
-  }
-  for (const field of ['handoffIdentity', 'candidateIdentity', 'contentTargetIdentity']) if (typeof run.identity?.[field] !== 'string' || !run.identity[field]) throw new Error(`Task Finish run has an invalid Development handoff identity: ${runId}`);
-  if (!Number.isInteger(run.identity?.candidateGeneration) || run.identity.candidateGeneration < 1) throw new Error(`Task Finish run has an invalid Candidate generation: ${runId}`);
-  return run;
+  const current = requireTaskFinishRuntime(runtime, 'run persistence').readTaskFinishRunPersistence(root, { runId }, { optional: true });
+  if (!current) throw new Error(`Unknown Task Finish run: ${runId}`);
+  return current.run;
 }
 
 function writeRun(root, run, clock, runtime = null) {
   run.updatedAt = now(clock);
-  if (runtime?.writeTaskFinishRunPersistence) {
-    runtime.writeTaskFinishRunPersistence(root, run);
-    return;
-  }
-  atomicWriteJson(finishRunFile(root, run.runId), run);
+  requireTaskFinishRuntime(runtime, 'run persistence').writeTaskFinishRunPersistence(root, run);
 }
 
 function resumableRunCandidates(root, identity, runtime = null) {
-  if (runtime?.readTaskFinishRunPersistence) {
-    const current = runtime.readTaskFinishRunPersistence(root, { taskId: identity.task }, { optional: true });
-    return ['blocked', 'cleanup_pending'].includes(current?.run?.status) && current.run.identityDigest === sha256(normalizeIdentity(identity)) ? [current.run] : [];
-  }
-  const directory = finishRunRoot(root);
-  if (!fs.existsSync(directory)) return [];
-  const expected = sha256(normalizeIdentity(identity));
-  return fs.readdirSync(directory)
-    .filter((name) => name.endsWith('.json'))
-    .flatMap((name) => {
-      try {
-        const value = JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
-        return value.schemaVersion === FINISH_RUN_SCHEMA && value.identityDigest === expected && value.status === 'blocked' ? [value] : [];
-      } catch {
-        return [];
-      }
-    })
-    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+  const current = requireTaskFinishRuntime(runtime, 'run persistence').readTaskFinishRunPersistence(root, { taskId: identity.task }, { optional: true });
+  return ['blocked', 'cleanup_pending'].includes(current?.run?.status) && current.run.identityDigest === sha256(normalizeIdentity(identity)) ? [current.run] : [];
 }
 
 export function resolveFinishRun({ root, identity, runId = null, resumeToken = null, clock = Date.now, runtime = null }) {
@@ -521,74 +393,15 @@ export function finishResult(run, clock = Date.now) {
 }
 
 export function inspectFinishRun({ root, runId, clock = Date.now, runtime = null }) {
-  const current = runtime?.readTaskFinishRunPersistence?.(root, { runId }, { optional: true });
+  const sqlite = requireTaskFinishRuntime(runtime, 'read model');
+  const current = sqlite.readTaskFinishRunPersistence(root, { runId }, { optional: true });
   if (current) return finishResult(current.run, clock);
-  const completed = runtime?.readTaskFinishCompletionPersistence?.(root, { runId }, { optional: true });
+  const completed = sqlite.readTaskFinishCompletionPersistence(root, { runId }, { optional: true });
   if (completed?.completion?.result) return completed.completion.result;
-  if (runtime) throw new Error(`Unknown Task Finish run: ${runId}`);
-  return finishResult(readFinishRun({ root, runId }), clock);
-}
-
-function regularJsonFiles(directory) {
-  if (!fs.existsSync(directory)) return [];
-  return fs.readdirSync(directory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && entry.name.endsWith('.json'))
-    .map((entry) => path.join(directory, entry.name));
-}
-
-function completionDiagnostic(file, code, message) {
-  return { code, message, file: path.basename(file) };
-}
-
-function validateCompletion(value, taskId, file) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('completion 必须是对象。');
-  if (value.schemaVersion !== 'buildr.task-finish-completion/v1') throw new Error(`completion schemaVersion 不受支持：${value.schemaVersion || 'missing'}。`);
-  if (value.task !== taskId) throw new Error(`completion Task identity 不匹配：${value.task || 'missing'}。`);
-  if (value.status !== 'complete') throw new Error(`completion status 不是 complete：${value.status || 'missing'}。`);
-  for (const field of ['runId', 'handoffIdentity', 'candidateIdentity', 'contentTargetIdentity', 'carrierIdentity', 'carrierRef', 'completedAt']) {
-    if (typeof value[field] !== 'string' || !value[field]) throw new Error(`completion 缺少 ${field}。`);
-  }
-  if (value.finalRemoteRef !== undefined && (typeof value.finalRemoteRef !== 'string' || !value.finalRemoteRef)) throw new Error('completion finalRemoteRef 无效。');
-  if (!Number.isInteger(value.candidateGeneration) || value.candidateGeneration < 1) throw new Error('completion candidateGeneration 无效。');
-  if (Number.isNaN(Date.parse(value.completedAt))) throw new Error('completion completedAt 无效。');
-  if (path.basename(file) !== `${value.runId}.json`) throw new Error('completion 文件名与 runId 不匹配。');
-  return value;
+  throw new Error(`Unknown Task Finish run: ${runId}`);
 }
 
 export function readTaskFinishResults({ root, taskId, clock = Date.now, runtime = null }) {
   if (!RUN_ID_PATTERN.test(String(taskId || ''))) throw new Error('Task Finish query requires a valid Task ID.');
-  if (runtime?.readTaskFinishResultsPersistence) return runtime.readTaskFinishResultsPersistence(root, taskId);
-  const completionRoot = path.join(canonicalFinishWorkspaceRoot(root), '.buildr', 'task-finish', 'completed');
-  const results = [];
-  const diagnostics = [];
-  for (const file of regularJsonFiles(completionRoot)) {
-    const name = path.basename(file, '.json');
-    let value;
-    try { value = JSON.parse(fs.readFileSync(file, 'utf8')); }
-    catch (error) {
-      if (name.startsWith(`${taskId}-`)) diagnostics.push(completionDiagnostic(file, 'task_finish_completion_invalid', `Finish completion 无法解析：${error.message}`));
-      continue;
-    }
-    if (value?.task !== taskId) continue;
-    try {
-      const completion = validateCompletion(value, taskId, file);
-      const run = readFinishRun({ root, runId: completion.runId });
-      if (run.status !== 'complete' || run.completion?.status !== 'complete') throw new Error('matching Finish run 未完整完成 cleanup。');
-      const result = finishResult(run, clock);
-      for (const [left, right, label] of [
-        [result.identity.task, completion.task, 'task'],
-        [result.handoff.identity, completion.handoffIdentity, 'handoff'],
-        [result.candidate.identity, completion.candidateIdentity, 'candidate'],
-        [result.candidate.generation, completion.candidateGeneration, 'candidate generation'],
-        [result.candidate.contentTargetIdentity, completion.contentTargetIdentity, 'content target'],
-        [result.carrier?.identity, completion.carrierIdentity, 'carrier'],
-        [result.delivery?.finalRemoteRef, completion.finalRemoteRef || completion.carrierRef, 'final remote ref'],
-      ]) if (left !== right) throw new Error(`Finish run 与 completion 的 ${label} identity 不匹配。`);
-      results.push({ result, completion });
-    } catch (error) {
-      diagnostics.push(completionDiagnostic(file, 'task_finish_completion_invalid', error.message));
-    }
-  }
-  results.sort((left, right) => Date.parse(right.result.completedAt) - Date.parse(left.result.completedAt));
-  return { taskId, results, diagnostics };
+  return requireTaskFinishRuntime(runtime, 'read model').readTaskFinishResultsPersistence(root, taskId, { clock });
 }

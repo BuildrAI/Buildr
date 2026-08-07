@@ -18,9 +18,6 @@ CODEBUDDY.md
 # Retired Task asset review data remains untracked
 /.buildr/asset-review/
 
-# Task Finish checkpoint runtime state
-/.buildr/task-finish/
-
 # Task machine-local state
 /.buildr/tasks/
 

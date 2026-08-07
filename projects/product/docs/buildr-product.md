@@ -189,7 +189,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 - 实际自举 workspace 的 sync 是独立状态变更，执行后按 Buildr Core 运行 doctor，不作为相同 tree 的第二轮产品验证；`buildr update` 只更新 CLI 来源。
 - 其他 Agent 在存在 adapter 前，不使用 supported fallback adapter；Agent 应读取标准资产或 bootstrap guide 理解边界，并联系 Buildr 作者反馈 adapter 需求。
 
-Task Finish 的 current run、lease 和 compact terminal Result 统一写入 Workspace SQLite；完整诊断与 Carrier 只登记在 run-owned transient root，并在成功后清理。`.buildr/task-finish` 仅作为一次性 legacy cutover 或 Doctor 诊断输入，不是执行 authority。`task complete` 只表达所有 Finish gates 通过后的 Task Record terminal status，不建立第二套 Finish 状态机。
+Task Finish 的 current run、lease 和 compact terminal Result 统一写入 Workspace SQLite；完整诊断与 Carrier 只登记在 run-owned transient root，并在成功后清理。`.buildr/task-finish` 是已退役的旧文件协议，启用 SQLite-only 前由受控步骤直接清理，不作为执行输入。`task complete` 只表达所有 Finish gates 通过后的 Task Record terminal status，不建立第二套 Finish 状态机。
 
 ## MVP 边界
 

@@ -86,45 +86,20 @@ test('Task Finish current run、lease和completion由Workspace SQLite统一持�
   database.close();
 });
 
-test('legacy completed Finish 只在显式 cutover 后导入 SQLite，非终态不恢复', (t) => {
+test('SQLite-only Finish 不迁移旧目录中的 completed 或 blocked 状态', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();
-  runtime.createTaskRecord(root, { taskId: 'legacy-finish', title: 'Legacy Finish', intent: 'Cut over a completed result.', projects: [], services: [], changes: [] });
-  const runIdentity = identity(root, 'legacy-finish');
-  const run = {
-    schemaVersion: 'buildr.task-finish-run/v2', runId: 'legacy-finish-run', status: 'complete', identity: runIdentity,
-    identityDigest: 'sha256-legacy', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completedAt: new Date().toISOString(),
-    invocations: 1, deliveryCarrier: { identity: 'sha256-carrier', head: 'carrier-head', tree: 'carrier-tree', changedPaths: [] },
-    equivalence: null, delivery: { finalRemoteRef: 'remote-head' }, completion: { status: 'complete' }, resume: null, primaryFailure: null,
-    phases: ['preflight', 'prepare', 'verify', 'deliver', 'cleanup'].map((id) => ({ id, status: 'passed', attempts: 1, durationMs: 1 })),
-  };
-  const completion = {
-    schemaVersion: 'buildr.task-finish-completion/v1', runId: run.runId, task: run.identity.task,
-    handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, candidateGeneration: run.identity.candidateGeneration,
-    contentTargetIdentity: run.identity.contentTargetIdentity, carrierIdentity: 'sha256-carrier', carrierRef: 'carrier-head',
-    finalRemoteRef: 'remote-head', targetBranch: run.identity.targetBranch, status: 'complete', completedAt: run.completedAt,
-  };
+  runtime.createTaskRecord(root, { taskId: 'legacy-finish', title: 'Legacy Finish', intent: 'Prove old files are not migrated.', projects: [], services: [], changes: [] });
   const legacyRoot = path.join(root, '.buildr', 'task-finish');
   fs.mkdirSync(path.join(legacyRoot, 'runs'), { recursive: true });
   fs.mkdirSync(path.join(legacyRoot, 'completed'), { recursive: true });
-  fs.writeFileSync(path.join(legacyRoot, 'runs', `${run.runId}.json`), JSON.stringify(run));
-  fs.writeFileSync(path.join(legacyRoot, 'completed', `${run.runId}.json`), JSON.stringify(completion));
+  fs.writeFileSync(path.join(legacyRoot, 'runs', 'legacy-finish-run.json'), '{"schemaVersion":"buildr.task-finish-run/v2","status":"complete"}');
+  fs.writeFileSync(path.join(legacyRoot, 'completed', 'legacy-finish-run.json'), '{"schemaVersion":"buildr.task-finish-completion/v1","status":"complete"}');
 
-  const cutover = runtime.cutoverLegacyTaskFinishStore(root);
-  assert.equal(cutover.status, 'complete');
-  assert.deepEqual(cutover.imported, [{ taskId: 'legacy-finish', runId: run.runId }]);
-  assert.equal(runtime.readTaskFinishCompletionPersistence(root, { taskId: 'legacy-finish' }).completion.result.status, 'complete');
-  assert.equal(fs.existsSync(path.join(legacyRoot, 'runs', `${run.runId}.json`)), false);
-  assert.equal(fs.existsSync(path.join(legacyRoot, 'completed', `${run.runId}.json`)), false);
-  const blockedRun = { ...run, runId: 'legacy-blocked-run', status: 'blocked', completion: { status: 'prepared' } };
-  const blockedCompletion = { ...completion, runId: blockedRun.runId, status: 'prepared' };
-  fs.writeFileSync(path.join(legacyRoot, 'runs', `${blockedRun.runId}.json`), JSON.stringify(blockedRun));
-  fs.writeFileSync(path.join(legacyRoot, 'completed', `${blockedRun.runId}.json`), JSON.stringify(blockedCompletion));
-  const rejected = runtime.cutoverLegacyTaskFinishStore(root);
-  assert.equal(rejected.imported.length, 0);
-  assert.equal(rejected.diagnostics[0].code, 'legacy_cutover_not_terminal');
-  assert.equal(fs.existsSync(path.join(legacyRoot, 'runs', `${blockedRun.runId}.json`)), true);
-  assert.deepEqual(runtime.cutoverLegacyTaskFinishStore(root).imported, []);
+  assert.equal(runtime.readTaskFinishCompletionPersistence(root, { taskId: 'legacy-finish' }), null);
+  assert.equal(runtime.inspectTaskFinishPersistence(root).legacy, undefined);
+  assert.equal(fs.existsSync(path.join(legacyRoot, 'runs', 'legacy-finish-run.json')), true);
+  assert.equal(fs.existsSync(path.join(legacyRoot, 'completed', 'legacy-finish-run.json')), true);
 });
 
 test('transient artifact locator 必须被 run-owned root 限制，Doctor 只报告不删除', (t) => {

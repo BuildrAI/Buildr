@@ -8,6 +8,7 @@ import test from 'node:test';
 import { planRetainedTaskFinishActivation } from '../../src/application/task-finish/task-finish-activation.mjs';
 import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
 import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
+import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -47,6 +48,9 @@ function fixture(t, { contributionPath, contributionContent }) {
   const remote = path.join(root, 'remote.git');
   const retained = path.join(root, 'workspace');
   fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Finish activation test fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   command(seed, 'git', ['init', '-b', 'dev']);
   command(seed, 'git', ['config', 'user.name', 'Buildr Activation']);
   command(seed, 'git', ['config', 'user.email', 'activation@example.com']);
@@ -81,14 +85,19 @@ function fixture(t, { contributionPath, contributionContent }) {
   const activationPlan = planRetainedTaskFinishActivation({ agent: 'codex', changedPaths: isolated.changedPaths });
   const carrier = { identity: 'sha256-carrier', ...isolated, kind: 'git-isolated-commit', branch: null, expectedTargetRef, targetRef: 'origin/dev', activationPlan };
   const run = { runId: 'activation-delivery', identity: { task: 'activation', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot, workspaceRoot: retained, workspaceNodeIdentity: 'sha256-node' }, deliveryCarrier: carrier, delivery: null };
+  const sqliteRuntime = createTaskFinishSqliteRuntime(retained, run.identity.task);
+  const persistedRun = persistTaskFinishRun(sqliteRuntime, retained, run.identity, run.runId);
+  persistedRun.deliveryCarrier = run.deliveryCarrier;
+  sqliteRuntime.writeTaskFinishRunPersistence(retained, persistedRun);
   const runtime = {
+    ...sqliteRuntime,
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }),
     resolveTaskEnvironmentExecution: () => ({
       ready: true,
       controllerInvocation: { command: path.join(retained, 'projects', 'product', 'buildr'), argsPrefix: [], sourceRoot: path.join(retained, 'projects', 'product', 'services', 'buildr') },
     }),
   };
-  return { retained, remote, run, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
+  return { retained, remote, run: persistedRun, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
 
 test('Workspace Skill contribution renders and never syncs', async (t) => {

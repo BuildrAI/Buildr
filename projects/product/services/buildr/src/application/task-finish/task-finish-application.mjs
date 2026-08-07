@@ -42,9 +42,6 @@ export function registerTaskFinishApplication(runtime) {
     let prepared;
     try {
       prepared = withReadCompatibility(() => {
-        try { runtime.cutoverLegacyTaskFinishStore?.(root); } catch (error) {
-          throw inputError(error.code || 'task_finish.legacy_cutover_failed', error.message, 'run', error.details);
-        }
         const runId = optionValue(command.args, '--run', null);
         let finishRun = null;
         if (runId) {

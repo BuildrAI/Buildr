@@ -235,10 +235,6 @@ function retainedWorkspaceReadiness(identity) {
   return { ready: unrelated.length === 0, workspaceMetadata: [...new Set(workspaceMetadata)].sort(), unrelated };
 }
 
-function targetLeasePath(root, targetBranch) {
-  return path.join(path.resolve(root), '.buildr', 'transient', 'task-finish-lease', `${targetBranch.replaceAll('/', '_')}.json`);
-}
-
 function finding(check, severity, code, message, extra = {}) {
   return { check, severity, code, message, ...extra };
 }
@@ -418,7 +414,6 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       if (runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task).status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Development handoff is no longer current before delivery.' } };
       const retainedRoot = run.identity.workspaceRoot;
       const lease = acquireFinishTargetLease({
-        file: targetLeasePath(retainedRoot, run.identity.targetBranch),
         root: retainedRoot,
         runtime,
         targetIdentity: `${run.identity.remote || 'local'}:${run.identity.targetBranch}`,
