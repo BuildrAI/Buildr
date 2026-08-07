@@ -10,6 +10,12 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 - Local App：loopback HTTP 与浏览器界面；Workspace 是全局目录，Project、Service、Task Record、Change 使用稳定详情路由。Task 列表/详情首屏使用 SQLite stored-state query projection，列表默认 active 并支持封闭过滤，详情按需读取 Parent 候选；正式 Task 只由 Agent/Task Manager 创建，Local App 只编辑或结束已有 active Task。Task 详情固定为“概览、研发、证据、复盘、环境”五个一级视图及 Task-scoped Change route；研发只读调用 Task Development `inspect`，reviews 与 verification 分别只读调用自身 Review/Verification `inspect`，三个专业视图只附加读取 Task Record 与 Finish 已写入的 terminal delivery association，不依赖完整 terminal 聚合投影或其他专业 reader；复盘只读渲染 Retrospective current Result 或空态。Development/Environment mutation 和专业 Result CRUD 都不进入 UI，专业动作只生成受限 Agent action。全局 Change 详情的 Task 关联面板按用户动作读取 active Task stored-state projection，使用既有 Task Record PATCH 与 `recordDigest`，不增加首屏 Task/Environment/Git 读取；Task-scoped Change 仍由共享 Resolver 提供只读详情。Local App 另提供独立的“文章”入口，通过 Publication Application 只读投影已登记 Workspace 中 Product Project 的 `docs/publications/` Markdown、发布目标元数据和固定目录内的本地图片；不提供文章 writer、平台发布 adapter、数据库副本或任意文件路径读取。
 - Package：`services/buildr/package/manifest.yml` 定义发布边界、workspace/project baseline、builtins、contracts、bindings 和 Components；Component definition 同时拥有 Skill fragments 与其引入的结构化 capability dependencies，package builtin descriptor 不重复维护 Component-owned `requires`。
 
+## Launcher 与发布运行时
+
+- Release launcher 由 `package/launchers/build.mjs` 构建为自包含平台入口，内置 Node、Buildr application、Web 资源、依赖、图标和 macOS 动态库，用户不需要安装 Node、配置 PATH 或保留 Buildr checkout。Development launcher 同样由当前 checkout 构建，但只包含图标、identity 和平台启动脚本，绑定当前 Service source root 与 Workspace Node executable/version，不复制 Node、dylib、Buildr source、package 或 `node_modules`。
+- Development 启动脚本只使用 identity 中记录的绝对 source/runtime 路径，校验 `bin/buildr.mjs`、Node version 和路径含空格等边界后固定启动 `app --port 4317`。source root、CLI 或 Node 不可用时 fail closed，status/日志返回重新安装 launcher、`buildr sync` 等恢复动作；不从 PATH 或另一个 checkout 静默回退。源码变化在重启服务后由当前 checkout 读取。
+- `app launcher install` 只更新目标 channel，先 staging/verify，再停止同 channel 实例并原子替换，保留 previous rollback；Release 与 `Buildr Dev` 的安装、运行身份、诊断和卸载互不覆盖。`launcher-status/v1` 继续公开平台、channel、目标、identity 和 running instance，并为 Development 附带 source/runtime diagnostics。
+
 ## 数据与依赖
 
 - Workspace/Project/Service、Rules、Skills、Commands 和 Components 使用 YAML manifests/registries。

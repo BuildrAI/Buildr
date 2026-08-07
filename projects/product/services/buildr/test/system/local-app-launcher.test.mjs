@@ -6,6 +6,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { installLauncher, launcherStatus, uninstallLauncher } from '../../package/launchers/manage.mjs';
+import { buildLauncher } from '../../package/launchers/build.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDER = path.join(PRODUCT_ROOT, 'package', 'launchers', 'build.mjs');
@@ -36,9 +37,36 @@ test('development launcher 固定 4317 端口，release launcher 保持动态端
   const windowsCommand = (root, name) => fs.readFileSync(path.join(root, name, 'Launch-Buildr.cmd'), 'utf8');
 
   assert.match(macCommand(developmentMac, 'Buildr Dev'), /app --port 4317/);
+  assert.doesNotMatch(macCommand(developmentMac, 'Buildr Dev'), /Resources\/buildr|MacOS\/node/);
   assert.doesNotMatch(macCommand(releaseMac, 'Buildr'), /app --port 4317/);
   assert.match(windowsCommand(developmentWindows, 'Buildr Dev'), /app --port 4317/);
+  assert.doesNotMatch(windowsCommand(developmentWindows, 'Buildr Dev'), /runtime\\node\.exe|app\\bin\\buildr\.mjs/);
   assert.doesNotMatch(windowsCommand(releaseWindows, 'Buildr'), /app --port 4317/);
+  assert.equal(fs.existsSync(path.join(developmentMac, 'Buildr Dev.app', 'Contents', 'MacOS', 'node')), false);
+  assert.equal(fs.existsSync(path.join(developmentMac, 'Buildr Dev.app', 'Contents', 'Resources', 'buildr')), false);
+  assert.equal(fs.existsSync(path.join(developmentWindows, 'Buildr Dev', 'runtime', 'node.exe')), false);
+  assert.equal(fs.existsSync(path.join(developmentWindows, 'Buildr Dev', 'app')), false);
+});
+
+test('development launcher 支持带空格的 checkout 路径', (t) => {
+  const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr checkout with spaces-'));
+  const output = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-space-launcher-'));
+  t.after(() => { fs.rmSync(sourceRoot, { recursive: true, force: true }); fs.rmSync(output, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(sourceRoot, 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(sourceRoot, 'bin', 'buildr.mjs'), '#!/usr/bin/env node\n');
+  buildLauncher({
+    platform: 'darwin',
+    output,
+    runtime: process.execPath,
+    identity: {
+      schemaVersion: 'buildr.launcher-identity/v1', version: '0.0.0', channel: 'development', source: 'checkout',
+      buildId: 'space-test', buildNumber: '1', protocolVersion: 1, platform: 'darwin', builtAt: new Date().toISOString(),
+      sourceRoot, nodeRuntime: { executable: process.execPath, version: process.versions.node },
+    },
+  });
+  const launcher = fs.readFileSync(path.join(output, 'Buildr Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
+  assert.match(launcher, new RegExp(`SOURCE_ROOT='${sourceRoot.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}'`));
+  assert.match(launcher, /bin\/buildr\.mjs/);
 });
 
 test('macOS launcher bundle 携带 Node runtime、Buildr Web 资源和可双击 App 入口', (t) => {
@@ -146,12 +174,22 @@ test('development launcher 使用 staging 安全切换并精确清理', async (t
   assert.equal(first.installed, true);
   assert.equal(first.identity.channel, 'development');
   assert.equal(first.identity.source, 'checkout');
-  assert.ok(fs.existsSync(path.join(first.target, 'Contents', 'MacOS', 'node')));
+  assert.equal(first.identity.sourceRoot, PRODUCT_ROOT);
+  assert.ok(first.identity.nodeRuntime?.executable);
+  assert.equal(fs.existsSync(path.join(first.target, 'Contents', 'MacOS', 'node')), false);
   const second = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });
   assert.equal(second.target, first.target);
   assert.ok(second.previous);
   assert.ok(fs.existsSync(path.join(official, 'official-sentinel')));
   assert.equal(launcherStatus({ platform: 'darwin', channel: 'development', installRoot: root }).installed, true);
+
+  const identityPath = path.join(first.target, 'Contents', 'Resources', 'launcher-identity.json');
+  const identity = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
+  identity.sourceRoot = path.join(root, 'missing-checkout');
+  identity.nodeRuntime.executable = path.join(root, 'missing-node');
+  fs.writeFileSync(identityPath, `${JSON.stringify(identity, null, 2)}\n`);
+  const broken = launcherStatus({ platform: 'darwin', channel: 'development', installRoot: root });
+  assert.deepEqual(broken.diagnostics.map((finding) => finding.code), ['development.source_missing', 'development.node_missing']);
 
   fs.mkdirSync(process.env.BUILDR_APP_DATA_DIR, { recursive: true });
   fs.writeFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), '{"schemaVersion":"buildr.local-app-instance/v1","url":"http://127.0.0.1:1","secret":"legacy","pid":999999}\n');

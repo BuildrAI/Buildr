@@ -30,11 +30,11 @@ const COMMAND_ROUTES = [
   {
     key: "app launcher install",
     surface: "primary",
-    summary: "构建到新的 staging、验证后安全切换 launcher；development 安装为隔离的 Buildr Dev。",
+    summary: "构建到新的 staging、验证后安全切换 launcher；Release 自包含，development 绑定当前 checkout 的 Buildr Dev thin launcher。",
     help: [
       "Usage: buildr app launcher install [--channel <release|development>] [--target <dir>] [--json]",
       "",
-      "构建到新的 staging、验证后安全切换 launcher；development 安装为隔离的 Buildr Dev。",
+      "构建到新的 staging、验证后安全切换 launcher；Release 自包含，development 绑定当前 checkout 与 Workspace Node 的 Buildr Dev thin launcher。",
       "默认安装到用户级应用目录，不安装 Buildr Skill，也不修改 Workspace 源资产。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'install',
@@ -43,11 +43,11 @@ const COMMAND_ROUTES = [
   {
     key: "app launcher status",
     surface: "primary",
-    summary: "报告 launcher 的真实安装位置、channel、版本与 checkout identity。",
+    summary: "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。",
     help: [
       "Usage: buildr app launcher status [--channel <release|development>] [--target <dir>] [--json]",
       "",
-      "报告 launcher 的真实安装位置、channel、版本与 checkout identity。"
+      "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'status',
     run: (r, c) => r.manageLocalAppLauncher('status', c.argv.slice(5)),
