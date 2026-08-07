@@ -91,6 +91,39 @@ function fixture(t, taskId) {
   return { root, runtime, taskId, planningTargetIdentity, targetIdentity: policy.development.receipt.contentTarget.identity };
 }
 
+function changeFixture(t, taskId, initial = { availability: 'available', lifecycle: 'archived' }) {
+  const { root } = copyFixtureWorkspace(t, 'change-convergence');
+  const runtime = createRuntime();
+  let observed = { availability: 'available', lifecycle: 'archived' };
+  runtime.resolveTaskScopedChange = (_workspace, currentTaskId, reference) => ({
+    schemaVersion: 'buildr.task-scoped-change-reference/v1',
+    taskId: currentTaskId,
+    reference,
+    availability: observed.availability,
+    workingCopy: observed.availability === 'available' && observed.lifecycle
+      ? { provenance: 'task-environment-candidate', root: path.join(root, 'projects', 'demo'), change: { lifecycle: observed.lifecycle } }
+      : null,
+    retainedBaseline: { provenance: 'retained-baseline', root: path.join(root, 'projects', 'demo'), change: { lifecycle: 'active' } },
+    diagnostic: observed.availability === 'available' ? null : { code: 'task_change_unavailable', message: 'Resolver unavailable.' },
+  });
+  runtime.createTaskRecord(root, { taskId, title: 'Converge demo change', intent: 'Require observed Change convergence.', projects: ['demo'], services: [], changes: ['demo/convergence-guard'] });
+  observed = initial;
+  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
+    ready: true,
+    taskId: currentTask,
+    receiptSchema: 'buildr.task-environment-receipt/v2',
+    workspaceRoot: root,
+    environmentRoot: root,
+    validationRoot: root,
+    scopes: [{ selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(root, 'projects', 'demo') }],
+  });
+  pinImmutableTaskRecord(runtime, root, taskId);
+  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Change convergence guard'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  const dispositions = [{ project: 'demo', change: 'convergence-guard', disposition: 'converged', summary: 'Change converged.' }];
+  return { root, runtime, taskId, planningTargetIdentity, dispositions, setObserved(value) { observed = value; } };
+}
+
 function recordVerification(current, outcome = 'passed') {
   return current.runtime.recordTaskVerification(current.root, current.taskId, {
     targetIdentity: current.targetIdentity,
@@ -101,6 +134,54 @@ function recordVerification(current, outcome = 'passed') {
     declarationRoot: current.root,
   });
 }
+
+test('converged disposition只接受Task working copy archived，retained active不阻塞', (t) => {
+  const current = changeFixture(t, 'working-copy-archived');
+  const result = current.runtime.observeTaskDevelopment(current.root, current.taskId, {
+    changeDispositions: current.dispositions,
+    planningTargetIdentity: current.planningTargetIdentity,
+  });
+  assert.equal(result.development.receipt.taskContext.changes[0].disposition, 'converged');
+  assert.ok(result.development.receipt.contentTarget);
+});
+
+test('active或resolver不可用的Change不能伪报converged', (t) => {
+  const active = changeFixture(t, 'working-copy-active', { availability: 'available', lifecycle: 'active' });
+  assert.throws(() => active.runtime.observeTaskDevelopment(active.root, active.taskId, {
+    changeDispositions: active.dispositions,
+    planningTargetIdentity: active.planningTargetIdentity,
+  }), (error) => error.code === 'task_development_change_not_converged'
+    && error.details.availability === 'available'
+    && error.details.lifecycle === 'active');
+
+  const unavailable = changeFixture(t, 'working-copy-unavailable', { availability: 'unavailable', lifecycle: null });
+  assert.throws(() => unavailable.runtime.observeTaskDevelopment(unavailable.root, unavailable.taskId, {
+    changeDispositions: unavailable.dispositions,
+    planningTargetIdentity: unavailable.planningTargetIdentity,
+  }), (error) => error.code === 'task_development_change_not_converged'
+    && error.details.availability === 'unavailable'
+    && error.details.lifecycle === null);
+});
+
+test('已保存converged后lifecycle漂移会让inspect与Candidate currentness失效', (t) => {
+  const current = changeFixture(t, 'working-copy-drift');
+  let result = current.runtime.observeTaskDevelopment(current.root, current.taskId, {
+    changeDispositions: current.dispositions,
+    planningTargetIdentity: current.planningTargetIdentity,
+  });
+  result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
+  current.targetIdentity = result.development.receipt.contentTarget.identity;
+  recordVerification(current);
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  assert.equal(result.development.receipt.candidate.generation, 1);
+
+  current.setObserved({ availability: 'available', lifecycle: 'active' });
+  result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.equal(result.development.applicability.taskContext, 'stale');
+  assert.equal(result.development.applicability.candidate, 'stale');
+  assert.ok(result.development.applicability.reasons.some((reason) => reason.code === 'task_development_change_not_converged'));
+  assert.throws(() => current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId), (error) => error.code === 'task_development_change_not_converged');
+});
 
 function completion(current, candidate, outcome = 'ready') {
   return current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Task Candidate'], uncovered: [], findings: outcome === 'ready' ? [] : ['Known acceptance concern.'], conclusion: { outcome, summary: outcome === 'ready' ? 'Ready.' : 'Requires explicit risk acceptance.' } });

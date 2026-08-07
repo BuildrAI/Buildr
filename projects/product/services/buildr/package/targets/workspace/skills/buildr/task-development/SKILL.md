@@ -19,7 +19,7 @@ Development只拥有这些专业事实如何构成当前Task研发过程，不�
 
 ## 开发到稳定目标
 
-在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 sync/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。
+在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 deterministic convergence/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。
 
 内容固定后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。code-only Task提交空数组。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 
@@ -40,7 +40,7 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 ## Candidate、Completion 与决定
 
-所有Change disposition非pending、planning nodes与适用gates已得到current专业Result、`not-applicable`或明确`waived`处置，policy current且Verification facts满足policy后，调用Development Application freeze。freeze不修改内容、不运行命令，只创建或复用current Candidate；planning、Content、Task context、policy或gate disposition变化会使旧Candidate失效并在下一次freeze递增generation。
+所有Change disposition非pending，且每个`converged`均由current working copy archived事实证明后，planning nodes与适用gates已得到current专业Result、`not-applicable`或明确`waived`处置，policy current且Verification facts满足policy，才调用Development Application freeze。freeze不修改内容、不运行命令，只创建或复用current Candidate；Change lifecycle、planning、Content、Task context、policy或gate disposition变化会使旧Candidate失效并在下一次freeze递增generation。
 
 随后用 `task-review` 对 Candidate identity 执行 Completion Review。根据 current gates 记录：
 

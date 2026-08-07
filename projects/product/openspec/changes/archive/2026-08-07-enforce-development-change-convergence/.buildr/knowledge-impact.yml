@@ -1,0 +1,36 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: enforce-development-change-convergence
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/enforce-development-change-convergence/brief.md
+    reason: 记录问题、窄方案、职责边界与验收摘要
+    status: updated
+    sourceIdentities:
+      - openspec/changes/enforce-development-change-convergence/proposal.md
+      - openspec/changes/enforce-development-change-convergence/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Development 的 Change disposition authority 与 currentness 边界收紧
+    status: updated
+    sourceIdentities:
+      - openspec/changes/enforce-development-change-convergence/design.md
+      - openspec/changes/enforce-development-change-convergence/specs/task-development/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Task Development
+    - Change lifecycle
+    - convergence
+    - working copy
+    - retained baseline
+  canonicalTerms: Task Development、Change lifecycle、convergence、working copy、retained baseline
+  changedAssets:
+    - openspec/changes/enforce-development-change-convergence/brief.md
+    - openspec/knowledge/services/buildr.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/changes/enforce-development-change-convergence/design.md
+    - openspec/changes/enforce-development-change-convergence/specs/task-development/spec.md
+unresolvedItems: []

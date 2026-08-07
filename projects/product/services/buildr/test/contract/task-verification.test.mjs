@@ -184,7 +184,7 @@ test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调�
   assert.match(openSpecApplySidebar, /Convergence\/archive在Task Development观察stable Content Target/);
   assert.match(openSpecApplySidebar, /change-checklist-incomplete/);
   assert.doesNotMatch(openSpecApplySidebar, /Canonical sync\/archive 只由 Task Finish|完整 Candidate|current Task Verification Result/);
-  assert.match(developmentSkill, /current knowledge 维护，以及每个关联 Change 的 sync\/archive/);
+  assert.match(developmentSkill, /current knowledge 维护，以及每个关联 Change 的 deterministic convergence\/archive/);
   assert.doesNotMatch(finishExecutor, /openspec|archiveChange|legacyConvergence|openspecConverge/);
   assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);
 });

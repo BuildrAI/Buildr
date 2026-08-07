@@ -41,7 +41,9 @@ function inputText(value, field) {
 
 export function registerTaskDevelopmentApplication(runtime) {
   function task(targetRoot, taskId, { active = false, mutation = false } = {}) {
-    const inspected = mutation ? runtime.prepareTaskRecordPersistence(targetRoot, taskId) : runtime.inspectTaskRecord(targetRoot, taskId);
+    const persistence = mutation ? runtime.prepareTaskRecordPersistence(targetRoot, taskId) : null;
+    const readModel = runtime.inspectTaskRecord(targetRoot, taskId);
+    const inspected = persistence ? { ...persistence, changeReferences: readModel.changeReferences } : readModel;
     if (active && inspected.record.status !== 'active') throw taskDevelopmentError('task_development_task_terminal', `Task ${taskId} 已是 ${inspected.record.status}，不能修改Development Receipt。`, 409, { status: inspected.record.status });
     return inspected;
   }
@@ -52,7 +54,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     return context;
   }
 
-  function normalizedDispositions(record, values) {
+  function normalizedDispositions(inspected, values) {
     if (!Array.isArray(values)) throw taskDevelopmentError('task_development_change_dispositions_required', 'changeDispositions 必须是数组；code-only Task 使用空数组。', 400, { field: 'changeDispositions' });
     const input = new Map();
     for (const [index, value] of values.entries()) {
@@ -64,9 +66,25 @@ export function registerTaskDevelopmentApplication(runtime) {
       if (input.has(key)) throw taskDevelopmentError('task_development_change_disposition_duplicate', `Change disposition重复：${key}。`, 400, { key });
       input.set(key, { project, change, disposition: value.disposition, summary });
     }
-    const expected = new Set(record.changes.map((item) => `${item.project}/${item.change}`));
+    const expected = new Set(inspected.record.changes.map((item) => `${item.project}/${item.change}`));
     for (const key of input.keys()) if (!expected.has(key)) throw taskDevelopmentError('task_development_change_out_of_scope', `Change不属于Task：${key}。`, 409, { key });
     for (const key of expected) if (!input.has(key)) throw taskDevelopmentError('task_development_change_disposition_missing', `Change缺少Development disposition：${key}。`, 409, { key });
+    const references = new Map((inspected.changeReferences || []).map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
+    for (const [key, disposition] of input) {
+      if (disposition.disposition !== 'converged') continue;
+      const reference = references.get(key);
+      const availability = reference?.availability || 'unavailable';
+      const lifecycle = reference?.workingCopy?.change?.lifecycle || null;
+      if (availability !== 'available' || lifecycle !== 'archived') {
+        throw taskDevelopmentError(
+          'task_development_change_not_converged',
+          `Change尚未由当前Task working copy证明已收敛：${key}。`,
+          409,
+          { project: disposition.project, change: disposition.change, availability, lifecycle },
+          '先通过关联Change的专业流程完成deterministic convergence/archive，再重试Task Development。',
+        );
+      }
+    }
     return [...input.values()];
   }
 
@@ -75,7 +93,7 @@ export function registerTaskDevelopmentApplication(runtime) {
       taskId: inspected.record.taskId,
       intent: inspected.record.intent,
       scope: inspected.record.scope,
-      changes: normalizedDispositions(inspected.record, dispositions),
+      changes: normalizedDispositions(inspected, dispositions),
     };
     return normalizeTaskDevelopmentContext({ identity: taskDevelopmentDigest({
       taskId: payload.taskId,
@@ -332,16 +350,33 @@ export function registerTaskDevelopmentApplication(runtime) {
     const inspectedTask = task(targetRoot, taskId);
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
     if (!persistence) return result('inspect', 'missing', inspectedTask.taskId, null, null, [], null, ['在首个正式研发动作时使用task-development begin建立current planning facts。']);
+    const convergenceFailure = (snapshot, error) => {
+      const current = snapshot?.applicability || {};
+      return {
+        ...current,
+        status: persistence.receipt.contentTarget ? 'developing' : 'planning',
+        taskContext: 'stale',
+        candidate: persistence.receipt.candidate ? 'stale' : 'missing',
+        handoff: persistence.receipt.handoffs.length ? 'stale' : 'missing',
+        gates: { ...(current.gates || {}), completion: null },
+        reasons: [...(current.reasons || []), { axis: 'task-context', code: error.code || 'task_development_change_not_converged', message: error.message }],
+      };
+    };
     if (typeof runtime.readTaskLifecyclePersistence !== 'function') {
       try {
         const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
         return result('inspect', 'inspected', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
       } catch (error) {
-        return result('inspect', 'inspected', taskId, persistence, { status: 'unknown', reasons: [{ axis: 'observation', code: error.code || 'unavailable', message: error.message }] }, [], null, []);
+        return result('inspect', 'inspected', taskId, persistence, convergenceFailure(null, error), [], null, []);
       }
     }
     const lifecycle = runtime.readTaskLifecyclePersistence?.(targetRoot, taskId, { optional: true });
     const snapshot = lifecycle?.model?.development;
+    try {
+      taskContext(inspectedTask, persistence.receipt.taskContext.changes);
+    } catch (error) {
+      return result('inspect', 'inspected', taskId, persistence, convergenceFailure(snapshot, error));
+    }
     const applicability = snapshot?.applicability || { status: 'unknown', reasons: [{ axis: 'lifecycle', code: 'snapshot_missing', message: '尚未形成 Development lifecycle snapshot。' }] };
     return result('inspect', 'inspected', taskId, persistence, applicability);
   }
