@@ -1,13 +1,11 @@
 ---
 name: task-finish
-description: 用户要求“收尾”或交付已有 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
+description: 用户要求已有 active formal Task 的“收尾”或交付 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
 ---
 
 # Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的窄入口。它不编排 Development、Review 或 Verification，也不手写 Receipt。
-
-Finish 状态进 SQLite；transient 清理；complete 是 Task Record 终态
+本 Skill 只处理 active formal Task，提供 `buildr.task-finish/v1` 入口；不编排 Development/Review/Verification，不写 Receipt。没有 active Task 时用户说“收尾”，转由直接 Git 路径执行；不得创建临时 Task，也不把 Git Result 冒充 Formal Finish。
 
 ## 调用前
 
@@ -41,7 +39,7 @@ preflight → prepare → verify → deliver → cleanup
 - render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
 - `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 
-target前进时先证明carrier ancestry及全部changed-path after mode/blob/删除状态；完整包含则跳过重复apply/fast-forward/push并继续Doctor与cleanup，否则返回`task-finish.target-race`与精确token。恢复carrier phases不增加 Candidate generation、不重跑formal Verification或Completion Review。Git conflict返回Delivery Adaptation facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
+target前进时先证明carrier ancestry及changed paths；完整包含则跳过apply/fast-forward/push并继续Doctor与cleanup，否则返回精确token。恢复不增加 Candidate generation、不重跑formal Verification或Completion Review。Git conflict返回适配facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
 
 恢复命令：
 
