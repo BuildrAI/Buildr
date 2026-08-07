@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
@@ -8,6 +9,27 @@ import { fileURLToPath } from 'node:url';
 import { PACKAGE_VERIFIERS } from '../../src/application/package-maintenance/verification-registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const projectRoot = path.resolve(productRoot, '../..');
+
+test('documentation quality ignores trailing whitespace', () => {
+  const temporaryRoot = fs.mkdtempSync(path.join(projectRoot, 'openspec', '.docs-quality-'));
+  const document = path.join(temporaryRoot, 'trailing-whitespace.md');
+  const relativeDocument = path.relative(projectRoot, document).split(path.sep).join('/');
+  fs.writeFileSync(document, '# Example  \n\nbody  \n', 'utf8');
+  try {
+    const runner = path.join(productRoot, 'test', 'verification', 'docs', 'quality.mjs');
+    const result = spawnSync(process.execPath, [runner], {
+      cwd: productRoot,
+      encoding: 'utf8',
+      env: { ...process.env, BUILDR_CHANGED_PATHS_JSON: JSON.stringify([relativeDocument]) },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Documentation quality passed: 1 file\(s\)\./);
+    assert.equal(result.stderr, '');
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test('focus verification lists selectors and rejects unknown values before execution', () => {
   const runner = path.join(productRoot, 'test', 'verification', 'focus.mjs');

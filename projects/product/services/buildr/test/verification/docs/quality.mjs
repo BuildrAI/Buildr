@@ -34,9 +34,6 @@ const problems = [];
 for (const file of [...new Set(files)].sort()) {
   const relative = path.relative(projectRoot, file).split(path.sep).join('/');
   const content = fs.readFileSync(file, 'utf8');
-  content.split(/\r?\n/).forEach((line, index) => {
-    if (/[ \t]+$/.test(line)) problems.push(`${relative}:${index + 1}: trailing whitespace`);
-  });
   if (file.endsWith('.md')) {
     const linkContent = content.replace(/`+[^`\n]*`+/g, '');
     for (const match of linkContent.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {

@@ -224,6 +224,7 @@ export const verificationSteps = Object.freeze([
     'test/integration/task-finish-task-contribution.test.mjs',
   ] }, inputs: [
     'test/integration/task-finish-*.test.mjs',
+    'test/helpers/task-finish-sqlite-fixture.mjs',
     'src/application/task-finish/**',
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
@@ -308,6 +309,7 @@ export const verificationSteps = Object.freeze([
     'test/system/task-finish-product-journey.test.mjs',
   ], args: ['--test-concurrency=2', '--test-reporter=dot'] }, inputs: [
     'test/system/task-finish-*.test.mjs',
+    'test/helpers/task-finish-sqlite-fixture.mjs',
     'src/application/task-finish/**',
   ], schedulingCostMs: 25000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.mjs' }, profiles: ['fast', 'candidate'], inputs: ['bin/**', 'src/interfaces/cli/**', 'src/application/compose-runtime.mjs', 'src/application/json-contracts.mjs', 'scripts/**', 'test/verification/cli/**', 'package.json'] }),

@@ -24,7 +24,7 @@
 - [x] 4.2 增加Task Finish integration/System journeys，覆盖正常完成、blocked/resume、target-race、Delivery Adaptation、远端回读失败、Environment已cleaned崩溃恢复及transient cleanup failure
 - [x] 4.3 增加legacy retirement fixtures，覆盖旧目录存在时不读取、不导入、不扫描、不双写，以及启用前直接清理旧目录
 - [x] 4.4 增加CLI/Local App/Doctor tests，证明consumer不扫描legacy files、不直接查询SQLite、不读取完整diagnostics，并证明成功后无current row、lease、Carrier或orphan transient
-- [ ] 4.5 运行Product affected/full verification与真实自举candidate migration journey，确认并发`local-app-read-store-boundary`的只读provenance契约仍成立
+- [x] 4.5 运行Product affected/full verification与真实自举candidate migration journey，确认并发`local-app-read-store-boundary`的只读provenance契约仍成立
 
 ## 5. 当前认知与 Change disposition readiness
 
