@@ -31,6 +31,9 @@ jobs:
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Install product dependencies
         run: npm ci
+      - name: Prepare Codex runtime
+        working-directory: .
+        run: projects/product/buildr sync codex --target .
       - name: Verify final product candidate
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-verification-timing.json
