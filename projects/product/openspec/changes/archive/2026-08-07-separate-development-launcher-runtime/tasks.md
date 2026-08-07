@@ -15,5 +15,5 @@
 ## 3. 文档与交付验证
 
 - [x] 3.1 更新 CLI、产品架构和 launcher 文档，说明 Release 自包含、Development checkout-backed、源码变更后的重启与 Node 恢复规则。
-- [ ] 3.2 完成 current knowledge reconcile，确认 launcher/runtime/安装责任的当前事实与 OpenSpec 一致。
-- [ ] 3.3 运行 affected launcher tests、package/static validation、Buildr Dev 安装与启动健康检查，记录 Release 不变和 Development 体积/来源证据。
+- [x] 3.2 完成 current knowledge reconcile，确认 launcher/runtime/安装责任的当前事实与 OpenSpec 一致。
+- [x] 3.3 运行 affected launcher tests、package/static validation、Buildr Dev 安装与启动健康检查，记录 Release 不变和 Development 体积/来源证据。

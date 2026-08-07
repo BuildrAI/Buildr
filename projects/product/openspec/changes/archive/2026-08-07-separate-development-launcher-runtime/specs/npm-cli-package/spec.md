@@ -50,7 +50,7 @@ Buildr MUST 让 npm、平台 installer 和开发 launcher 工具只更新各自�
 ### Requirement: Launcher 发布产物必须接受安装生命周期验证
 Buildr product Candidate MUST 验证 macOS 和 Windows launcher 的结构、identity、安装、首次启动、更新、回滚与卸载；Release MUST self-contained，Development MUST checkout-backed。
 
-#### Scenario: 验证正式平台安装产物
+#### Scenario: 验证平台安装产物
 - **WHEN** Product Candidate 构建 release launcher
 - **THEN** verification MUST 证明 bundle 包含匹配版本的 Node runtime、应用依赖、Web 资源、图标和 metadata
 - **AND** MUST 证明启动不依赖 development checkout、系统 Node 或 PATH

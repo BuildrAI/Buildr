@@ -3,10 +3,11 @@
 ### Requirement: Launcher 必须暴露可诊断的运行身份和失败反馈
 Buildr launcher MUST 携带版本、channel、构建来源和平台 identity，并 MUST 在启动失败、source checkout 不可用、受管 Node 缺失或版本不兼容时提供用户可见反馈。
 
-#### Scenario: Release launcher 成功启动
-- **WHEN** release launcher 启动或复用兼容的 Buildr 单实例
-- **THEN** launcher MUST 使用自身 bundle runtime 启动或复用实例，并用实例返回的 loopback URL 打开浏览器
-- **AND** 随机端口 MUST 保持为内部状态
+#### Scenario: Launcher 成功启动
+- **WHEN** launcher 启动或复用兼容的 Buildr 单实例
+- **THEN** release launcher MUST 使用自身 bundle runtime，development launcher MUST 使用绑定 checkout 的当前 `bin/buildr.mjs` 启动或复用实例
+- **AND** launcher MUST 使用实例返回的实际 loopback URL 打开默认浏览器
+- **AND** 随机端口 MUST 保持为内部状态而不是用户配置
 
 #### Scenario: Development launcher 成功启动
 - **WHEN** 绑定 checkout、Buildr CLI 入口和受管 Node probe 均通过
