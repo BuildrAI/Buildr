@@ -2,7 +2,9 @@ name: Verify Buildr
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [dev, main]
 
 permissions:
   contents: read
