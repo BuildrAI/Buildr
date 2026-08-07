@@ -29,7 +29,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       associations: { planning: null, completion: null, verification: null },
       diagnostics: [],
     };
-    const finishReadModel = runtime.inspectTaskFinishReadModel?.({ targetRoot, taskId }) || { state: 'none', result: null, diagnostics: [] };
+    const finishReadModel = runtime.inspectTaskFinishReadModel?.({ root: targetRoot, taskId }) || { state: 'none', result: null, diagnostics: [] };
     if (task.status === 'active') {
       if (finishReadModel.state === 'current') {
         const status = finishReadModel.result?.status === 'cleanup_pending' ? 'cleanup-pending' : finishReadModel.result?.status || 'finishing';

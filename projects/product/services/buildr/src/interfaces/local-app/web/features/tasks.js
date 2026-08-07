@@ -42,6 +42,7 @@ export async function renderTasks({ root, api, onWorkspace }) {
         <label>项目<select id="task-filter-project"><option value="">全部项目</option></select></label>
         <label>服务<select id="task-filter-service"><option value="">全部服务</option></select></label>
         <label>Child Task<select id="task-filter-children"><option value="all">不限</option><option value="yes">有直接 Child</option><option value="no">无直接 Child</option></select></label>
+        <label>复盘<select id="task-filter-retrospective"><option value="all">不限</option><option value="yes">已复盘</option><option value="no">未复盘</option></select></label>
       </form>
     </section>
     <section class="resource-list-section">
@@ -64,6 +65,7 @@ export async function renderTasks({ root, api, onWorkspace }) {
       service: document.getElementById('task-filter-service').value,
       status: document.getElementById('task-filter-status').value,
       hasChildren: document.getElementById('task-filter-children').value,
+      hasRetrospective: document.getElementById('task-filter-retrospective').value,
     };
     for (const [key, value] of Object.entries(values)) if (value && value !== 'all') query.set(key, value);
     return query.toString();
@@ -135,7 +137,7 @@ export async function renderTasks({ root, api, onWorkspace }) {
 
   document.getElementById('task-filter-form').addEventListener('submit', (event) => event.preventDefault());
   document.getElementById('task-filter-q').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 200); });
-  for (const id of ['task-filter-status', 'task-filter-service', 'task-filter-children']) document.getElementById(id).addEventListener('change', load);
+  for (const id of ['task-filter-status', 'task-filter-service', 'task-filter-children', 'task-filter-retrospective']) document.getElementById(id).addEventListener('change', load);
   document.getElementById('task-filter-project').addEventListener('change', () => { document.getElementById('task-filter-service').value = ''; load(); });
   document.getElementById('task-filter-clear').addEventListener('click', () => {
     document.getElementById('task-filter-q').value = '';
@@ -143,6 +145,7 @@ export async function renderTasks({ root, api, onWorkspace }) {
     document.getElementById('task-filter-service').value = '';
     document.getElementById('task-filter-status').value = 'active';
     document.getElementById('task-filter-children').value = 'all';
+    document.getElementById('task-filter-retrospective').value = 'all';
     load();
   });
 

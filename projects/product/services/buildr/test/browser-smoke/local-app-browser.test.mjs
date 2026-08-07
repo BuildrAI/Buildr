@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { FINISH_PHASES, FINISH_RUN_SCHEMA, writeFinishCompletion } from '../../src/application/task-finish/task-finish-run.mjs';
+import { FINISH_PHASES, FINISH_RUN_SCHEMA, inspectFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
@@ -256,7 +256,8 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
     phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: completedAt, completedAt, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
   };
   runtime.writeTaskFinishRunPersistence(root, run);
-  writeFinishCompletion({ root, runId, runtime, completion: { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult } });
+  const completionRecord = { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult };
+  runtime.finalizeTaskFinishPersistence(root, { run, result: inspectFinishRun({ root, runId, runtime }), completion: completionRecord });
   runtime.projectTaskFinish(root, taskId, {
     status: 'delivered', runId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
     candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity,
@@ -290,7 +291,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true });
 }
 
-test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 180_000 : 45_000 }, async (t) => {
+test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 180_000 : SELECTORS.has('task') ? 90_000 : 45_000 }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
   const workspaceRoot = path.join(base, 'workspace');
   let browser;
@@ -591,6 +592,12 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.equal(await page.locator('#task-detail-status').innerText(), '已完成');
     assert.equal(await page.locator('#task-active-actions').isHidden(), true);
     runtime.recordTaskRetrospective(workspaceRoot, 'created-in-app', { reportMarkdown: '# 执行效率\n\n减少重复读取。' });
+    await page.goto(`${workspaceUrl}/tasks`);
+    await page.locator('#task-filter-status').selectOption('all');
+    await page.locator('#task-filter-retrospective').selectOption('yes');
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr').length === 1);
+    assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
+    await page.goto(`${workspaceUrl}/tasks/created-in-app`);
     await page.getByRole('button', { name: '复盘', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('减少重复读取'));
     assert.match(await page.locator('#task-retrospective-content').innerText(), /Agent 执行效率[\s\S]*执行效率[\s\S]*减少重复读取/);

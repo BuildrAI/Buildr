@@ -85,7 +85,7 @@ function effect(type, taskId) {
 
 export function registerTaskRecordApplication(runtime) {
   function normalizedQueryFilters(input = {}) {
-    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren']), 'Task query');
+    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective']), 'Task query');
     const filters = {};
     if (input.q !== undefined && String(input.q).trim()) filters.q = String(input.q).trim();
     if (input.project !== undefined && String(input.project).trim()) filters.project = text(input.project, 'project');
@@ -97,6 +97,10 @@ export function registerTaskRecordApplication(runtime) {
     if (input.hasChildren !== undefined) {
       if (!['yes', 'no', 'all'].includes(input.hasChildren)) throw taskRecordError('task_record_filter_invalid', 'hasChildren 只支持 yes、no 或 all。', 400, { field: 'hasChildren', value: input.hasChildren });
       filters.hasChildren = input.hasChildren;
+    }
+    if (input.hasRetrospective !== undefined) {
+      if (!['yes', 'no', 'all'].includes(input.hasRetrospective)) throw taskRecordError('task_record_filter_invalid', 'hasRetrospective 只支持 yes、no 或 all。', 400, { field: 'hasRetrospective', value: input.hasRetrospective });
+      filters.hasRetrospective = input.hasRetrospective;
     }
     return filters;
   }
@@ -199,7 +203,7 @@ export function registerTaskRecordApplication(runtime) {
       filters: {
         q: filters.q ?? '', project: filters.project ?? null,
         service: filters.service ? referenceKey(filters.service, 'service') : null,
-        status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all',
+        status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', hasRetrospective: filters.hasRetrospective ?? 'all',
       },
       filterOptions: {
         projects: persistence.filterOptions.projects,

@@ -227,6 +227,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /new AbortController\(\)/);
   assert.match(tasks, /setTimeout\(load, 200\)/);
   assert.match(tasks, /hasChildren/);
+  assert.match(tasks, /hasRetrospective/);
   assert.match(tasks, /childTaskCount/);
   assert.match(tasks, /data\.totalTaskCount === 0/);
   assert.doesNotMatch(tasks, /method: 'POST'/);

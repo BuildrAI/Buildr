@@ -94,6 +94,10 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: '%_' }).tasks.map((item) => item.record.taskId), ['app-task'], 'SQL wildcard 必须按普通文本匹配');
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: "%' OR 1=1 --" }).tasks, [], 'query input 必须保持参数绑定');
   bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true }); bulkStore.database.prepare("DELETE FROM tasks WHERE task_id LIKE 'bulk-%'").run(); bulkStore.database.close();
+  runtime.createTaskRecord(root, { taskId: 'app-retrospective', title: '已复盘任务', intent: '验证复盘筛选', projects: [], services: [], changes: [] });
+  const retrospectiveTask = runtime.inspectTaskRecord(root, 'app-retrospective');
+  runtime.completeTaskRecord(root, 'app-retrospective', { expectedRecordDigest: retrospectiveTask.recordDigest, summary: '复盘筛选夹具', noChange: false });
+  runtime.recordTaskRetrospective(root, 'app-retrospective', { reportMarkdown: '# 复盘\n\n列表筛选验证。' });
   const readExecutor = {
     run: (operation, input) => Promise.resolve(runtime[{ development: 'inspectTaskDevelopmentView', reviews: 'inspectTaskReviewView', verification: 'inspectTaskVerificationView' }[operation]](input.targetRoot, input.taskId)),
     close: async () => {},
@@ -107,14 +111,17 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
     const response = await fetch(resource, options); return { status: response.status, headers: response.headers, body: await response.json() };
   };
 
-  let response = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v3'); assert.equal(response.body.totalTaskCount, 2); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task']));
+  let response = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v3'); assert.equal(response.body.totalTaskCount, 3); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task', 'app-retrospective']));
   const parentReadModel = response.body.tasks.find((item) => item.record.taskId === 'app-parent'); assert.deepEqual(parentReadModel.record.childTaskIds, ['app-task']); assert.equal(parentReadModel.taskRelations.children[0].status, 'active');
   assert.equal(parentReadModel.childTaskCount, 1);
-  response = await request(`${endpoint}?q=%E8%BD%BB%E9%87%8F&project=demo&service=demo%2Fapi&status=active&hasChildren=no`);
+  response = await request(`${endpoint}?q=%E8%BD%BB%E9%87%8F&project=demo&service=demo%2Fapi&status=active&hasChildren=no&hasRetrospective=no`);
   assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-task']);
-  assert.deepEqual(response.body.filters, { q: '轻量', project: 'demo', service: 'demo/api', status: 'active', hasChildren: 'no' });
+  assert.deepEqual(response.body.filters, { q: '轻量', project: 'demo', service: 'demo/api', status: 'active', hasChildren: 'no', hasRetrospective: 'no' });
   assert.deepEqual(response.body.filterOptions, { projects: ['demo'], services: ['demo/api'] });
   response = await request(`${endpoint}?hasChildren=yes`); assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-parent']);
+  response = await request(`${endpoint}?hasRetrospective=yes`); assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-retrospective']);
+  response = await request(`${endpoint}?hasRetrospective=no`); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task']));
+  response = await request(`${endpoint}?hasRetrospective=invalid`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
   response = await request(`${endpoint}?status=invalid`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
   response = await request(`${endpoint}?q=a&q=b`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_invalid');
   const taskEndpoint = `${endpoint}/app-task`;
