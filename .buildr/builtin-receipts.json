@@ -45,11 +45,11 @@
       "type": "skill",
       "id": "git-operations",
       "target": "skills/buildr/git-operations",
-      "integrity": "sha256-1252b22bfa1760928c276c2b237d3d964674766d55600a6d4f6215c22f16c54a",
+      "integrity": "sha256-8bf8e51f4f03d4845d168c382672a35565ce20603342a5689e5e62dc77f67d72",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8a4606a36a0d4de5e53fefb84781175e6bedb8520121a7803b394a477fee4615"
+          "integrity": "sha256-118de9da069520586769f76b0b672a2101e927450e47456d2b6ed3982000ae3c"
         }
       ]
     },
@@ -113,11 +113,11 @@
       "type": "skill",
       "id": "task-development",
       "target": "skills/buildr/task-development",
-      "integrity": "sha256-485799d3f1f3f4221810ac54fe9590dee5cb19921b6ba9a74369e80256f88701",
+      "integrity": "sha256-b177f3d854b838e01b10fb3c34dc99aec2235ff6353bb333515a18360e8b2846",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-605999974d07ce8feb222bbff894cd7dd11ef8c4ca2d13a9526e573270493466"
+          "integrity": "sha256-74b182060669b1aeac64d3584605360c2755a1ab7570dfaf6530709bac2fda36"
         }
       ]
     },
@@ -201,11 +201,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-001b213bb6727da49ea82c5551875bb1d857d801ed9ea157ef73330fc43e1d44",
+      "integrity": "sha256-8170f0c739d10441d1a89484de265e094d2b8fff63bc994910151acc3c194dd3",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-bfc12bc15faee663ee8caaf710645896c0761b86d1f10717513048eef9b2d8ce"
+          "integrity": "sha256-010486788222c193f70842cba641da1eeff7878f6e942c65f03e2abf74212639"
         }
       ]
     },

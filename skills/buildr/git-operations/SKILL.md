@@ -1,6 +1,6 @@
 ---
 name: git-operations
-description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
+description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 fetch、commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
 ---
 
 # Git Operations
@@ -23,6 +23,8 @@ description: 用户或上游 consumer 已明确选择 repository、Git Operation
 
 ## 2. 保持 operation 单一
 
+- `fetch`：只更新 consumer 明确提供的 remote/ref，不改变 working tree 或 local branch history。
+- `rebase`：只把 consumer 明确提供的 clean local branch rebase 到已核验 target ref，不隐含 push、merge、stash 或其他 branch/remote 选择。
 - `commit`：只创建或安全 amend local commit，不 push。
 - `push`：只发布已有 commit，不把 dirty 自动 commit。
 - `commit+push`：caller 依次执行一次 commit 和一次 push，保留两个独立 Result；不是原子 transaction。
@@ -33,6 +35,14 @@ description: 用户或上游 consumer 已明确选择 repository、Git Operation
 本版不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
 
 默认硬边界是不自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略。
+
+### Fetch 与显式 rebase
+
+`fetch` 前核验实际 repository、remote identity 与目标 ref；成功后报告 remote-tracking ref 的 before/after identity，`treeChanged: false`、`historyChanged: false`，并把 ref 更新列入 effects。fetch 失败时保留已在其他 repository 发生的独立 Result，不把多仓库 caller 编排伪装为原子 transaction。
+
+`rebase` 只有在 consumer 已明确选择 local branch、target ref、允许 local tree/history effect，并且 provider证明当前分支匹配、index/working tree clean、没有进行中的 Git operation、local-only commits 未 push 且未共享时才能执行。已对齐、仅落后与 clean 未共享分叉都返回真实 before/after 与 tree/history 变化；共享风险或 target drift 无法证明时在 rebase 前 `blocked`。
+
+consumer 可以在选择 rebase 时同时明确授权冲突后的有界 `rebase --abort`。provider 只在 pre-state 已证明 clean 时执行；必须把 conflict、abort 命令效果和恢复核验写入同一 blocked Result。只有 branch、HEAD、index 与 working tree 都恢复到 pre-rebase facts 才能标记 recovered；abort 失败或恢复不可证明时保留现场。该动作不是静默 reset/回滚，也不授权换成 merge、stash、force push 或其他策略。
 
 ## 3. 精确暂存与 commit
 
@@ -77,11 +87,11 @@ currentFacts: <repository facts after success or failure>
 
 不创建 Git Operations Receipt，不保存完整命令日志，不为不适用动作填充统一大 schema。
 
-任何失败都必须保留并报告已经发生的 effects。尤其是 commit 成功而后续 push 被拒绝时，commit Result 仍是成功，push Result 是 `blocked`；local history 已改变、remote 未改变。不得静默 stash/reset/回滚、换策略，或把部分成功报告为零 effect。
+任何失败都必须保留并报告已经发生的 effects。尤其是 commit 成功而后续 push 被拒绝时，commit Result 仍是成功，push Result 是 `blocked`；local history 已改变、remote 未改变。明确授权且核验恢复 identity 的 `rebase --abort` 必须作为可见 effect 报告；除此之外不得静默 stash/reset/回滚、换策略，或把部分成功报告为零 effect。
 
 ## 7. Workspace tree transition
 
-普通 commit、push 不改变已检出 tree，返回 `treeChanged: false`。当前已选 operation 若成功改变 checkout，返回 `treeChanged: true`；consumer 随即遵守 required Core workspace-transition invariant，对所在 Buildr workspace 运行对应 Agent 的 Doctor。Git Operations 不复制 sync/Doctor 手册，也不判断 Review 或 Verification 是否仍有效。
+普通 fetch、commit、push 不改变已检出 tree，返回 `treeChanged: false`。当前已选 operation 若成功改变 checkout，返回 `treeChanged: true`；consumer 随即遵守 required Core workspace-transition invariant，对所在 Buildr workspace 运行对应 Agent 的 Doctor。Git Operations 不复制 sync/Doctor 手册，也不判断 Review 或 Verification 是否仍有效。
 
 ## 8. 停止并交还决定
 

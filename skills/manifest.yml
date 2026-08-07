@@ -22,6 +22,9 @@ skills:
       - capability: buildr.task-record
         version: 1
         mode: optional
+      - capability: buildr.git-operations
+        version: 1
+        mode: optional
       - capability: buildr.current-knowledge-maintenance
         version: 2
         mode: optional
@@ -57,7 +60,7 @@ skills:
     sourceIdentity: package:skills/buildr/git-operations
     source: buildr
     path: buildr/git-operations
-    description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
+    description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 fetch、commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
     enabled: true
     required: false
     state: installed
