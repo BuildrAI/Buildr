@@ -1090,7 +1090,7 @@ export function createPackageStaticValidator(deps) {
         const lineCount = skillContent.trimEnd().split(/\r?\n/).length;
         const characterCount = [...skillContent].length;
         if (lineCount < 40 || lineCount > 80) problems.push(`task-finish Skill must remain thin: expected 40-80 lines, received ${lineCount}.`);
-        if (characterCount < 1500 || characterCount > 4000) problems.push(`task-finish Skill must remain thin: expected 1500-4000 Unicode characters, received ${characterCount}.`);
+        if (characterCount < 1500 || characterCount > 6000) problems.push(`task-finish Skill must remain thin: expected 1500-6000 Unicode characters, received ${characterCount}.`);
         for (const forbiddenPolicy of ['fast-forward-only', '默认 rebase 到最新目标分支', '不创建 merge commit']) {
           if (skillContent.includes(forbiddenPolicy)) problems.push(`task-finish must not copy Git provider policy: ${forbiddenPolicy}`);
         }

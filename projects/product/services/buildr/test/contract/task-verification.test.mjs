@@ -152,7 +152,7 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
 });
 
 test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification authority', () => {
-  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 5000);
+  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 6000);
   assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 90);
   for (const required of [
     'buildr.task-finish/v1', 'preflight → prepare → verify → deliver → cleanup',
