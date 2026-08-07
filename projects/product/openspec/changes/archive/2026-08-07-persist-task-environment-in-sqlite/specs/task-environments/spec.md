@@ -51,6 +51,8 @@ Buildr MUST 在 Workspace SQLite 的 `task_environment_current` 中按 `task_id`
 - **THEN** Buildr MUST rollback 当前 Environment mutation 并保留最后一份有效 current row
 - **AND** MUST 保留历史 `environment.json` bytes，不得用失败输入覆盖或删除它
 
+## ADDED Requirements
+
 ### Requirement: Environment current store 必须支持一次性受控迁移
 Buildr MUST 通过连续 SQLite migration 建立 `task_environment_current`，并 MUST 提供由 retained controller 执行的一次性受控 importer，将合法 v2 `environment.json` 导入对应 Task current row。导入完成后新 runtime MUST 不读取、更新、删除或双写旧文件；迁移冲突、损坏、identity 不匹配或 ownership 不明时 MUST fail closed。没有 matching Task Record 的历史文件 MUST 标记为 inert legacy，不导入、不删除且不阻塞其他合法 Task 的导入。
 

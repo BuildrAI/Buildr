@@ -27,4 +27,4 @@
 
 - [x] 5.1 运行受影响的 SQLite、Environment、lifecycle、Local App、package/contract/system tests，修复真实失败。
 - [x] 5.2 对稳定 Content Target 执行 Task Verification，形成 current Result、Completion Review、decision 与 Development handoff。
-- [ ] 5.3 通过 Task Finish 交付、验证 retained runtime/Doctor、完成 Environment cleanup，并确认新数据库 schema 与旧 Environment files 的最终边界。
+- [x] 5.3 通过 Task Finish 交付、验证 retained runtime/Doctor、完成 Environment cleanup，并确认新数据库 schema 与旧 Environment files 的最终边界。

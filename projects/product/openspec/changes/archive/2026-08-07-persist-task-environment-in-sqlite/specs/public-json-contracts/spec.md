@@ -13,7 +13,7 @@
 - **THEN** stdout MUST 仍返回 `buildr.task-environment-result/v1` blocked 对象并以非零状态退出
 - **AND** payload MUST 包含稳定 error code、已发生/未发生 effects、可用 Environment identity 与唯一 next action
 
-#### Scenario: Inspect 尚无 Environment current
+#### Scenario: Inspect 尚无 Environment Receipt
 - **WHEN** 有效 Task 尚未形成 `task_environment_current` row 且调用方执行 `inspect --json`
 - **THEN** payload MUST 返回成功的只读 `unavailable` 结果、稳定 no-receipt diagnostic、`observedAt`、空 read model、SQLite locator与prepare next action
 - **AND** MUST NOT 把缺少 current row 作为损坏 Task、创建 row、解析 `environment.json` 或伪造 blocked preparation effect
