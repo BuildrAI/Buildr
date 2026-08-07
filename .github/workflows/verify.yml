@@ -1,3 +1,4 @@
+# Product verification runs only on the supported desktop runners.
 name: Verify Buildr
 
 on:
