@@ -58,9 +58,10 @@ test('Workspace、Project 与 Service Domain 保持纯净且 local app 静态资
   assert.doesNotMatch(serviceDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   for (const relative of [
     'src/interfaces/local-app/http/server.mjs',
-    'src/interfaces/local-app/web/index.html',
-    'src/interfaces/local-app/web/styles.css',
-    'src/interfaces/local-app/web/app.js',
+    'src/interfaces/local-app/web-dist/index.html',
+    'web/src/styles.css',
+    'web/src/main.tsx',
+    'web/src/App.tsx',
   ]) {
     assert.ok(fs.existsSync(path.join(productRoot, relative)), `missing ${relative}`);
   }

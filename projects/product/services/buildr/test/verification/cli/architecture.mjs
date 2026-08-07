@@ -58,7 +58,7 @@ const requiredRuntime = [
   'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs', 'interfaces/cli/task-record.mjs',
   'interfaces/cli/task-verification.mjs',
   'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
-  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web/app.js',
+  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web-dist/index.html',
   'application/compose-runtime.mjs', 'application/doctor.mjs', 'application/package-maintenance.mjs',
   'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
   'application/worktree/git-worktree-provider.mjs',

@@ -22,8 +22,8 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
-  assert.equal(scripts['test:browser:smoke'], 'node --test test/browser-smoke/*.test.mjs');
-  assert.equal(scripts['test:browser:changed'], 'node test/verification/browser-selector-dispatcher.mjs --run');
+  assert.equal(scripts['test:browser:smoke'], 'npm run build:web && node --test test/browser-smoke/*.test.mjs');
+  assert.equal(scripts['test:browser:changed'], 'npm run build:web && node test/verification/browser-selector-dispatcher.mjs --run');
   assert.equal(scripts['test:integration:candidate:recovery'], 'node --test test/integration-candidate-recovery/*.test.mjs');
   assert.equal(scripts['test:integration:candidate:release'], 'node --test test/integration-candidate-release/*.test.mjs');
   assert.equal(scripts['coverage:unit'], 'node test/verification/unit-coverage.mjs');
@@ -65,7 +65,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
   assert.equal(browser.requiredForDelivery, true);
-  assert.deepEqual(browser.applicability.paths, ['services/buildr/src/interfaces/local-app/web/**', 'services/buildr/src/interfaces/local-app/runtime/**', 'services/buildr/test/browser-smoke/**']);
+  assert.deepEqual(browser.applicability.paths, ['services/buildr/web/**', 'services/buildr/src/interfaces/local-app/web-dist/**', 'services/buildr/src/interfaces/local-app/runtime/**', 'services/buildr/test/browser-smoke/**']);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
   assert.deepEqual(browser.effects.externalSystems, []);
   assert.equal(browser.effects.authorization, 'implicit');

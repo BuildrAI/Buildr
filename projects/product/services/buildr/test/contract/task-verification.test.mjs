@@ -89,7 +89,8 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.deepEqual(runtimeCallSites('readTaskVerificationResultPersistence'), ['src/application/task-verification/task-verification-application.mjs']);
   const cli = read('src/interfaces/cli/task-verification.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
-  const taskDetail = read('src/interfaces/local-app/web/features/task-detail.js');
+  const taskDetail = read('web/src/pages/TaskDetailPage.tsx');
+  const evidenceTab = read('web/src/pages/task-detail/EvidenceTab.tsx');
   assert.match(cli, /runtime\.inspectTaskVerification/);
   assert.match(cli, /runtime\.recordTaskVerification/);
   assert.match(cli, /--declaration-root/);
@@ -99,6 +100,7 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   const readWorker = read('src/interfaces/local-app/http/read-worker.mjs');
   assert.match(readWorker, /verification:\s*'inspectTaskVerificationView'/);
   assert.doesNotMatch(taskDetail, /node:fs|YAML|recordTaskVerification|writeFileSync/);
+  assert.doesNotMatch(evidenceTab, /node:fs|YAML|recordTaskVerification|writeFileSync/);
   assert.match(developmentApplication, /runtime\.inspectTaskVerification/);
   assert.doesNotMatch(developmentApplication, /runtime\.recordTaskVerification/);
   assert.doesNotMatch(finishExecutor, /inspectTaskVerification|recordTaskVerification/);

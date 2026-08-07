@@ -83,8 +83,9 @@ Buildr MUST 保护本地页面的写操作，避免其他网页或任意路径�
 
 #### Scenario: 离线静态资源
 - **WHEN** 用户加载本地应用页面
-- **THEN** 页面 MUST 使用 Buildr npm package 内的静态资源
+- **THEN** 页面 MUST 使用 Buildr npm package（或等价 launcher bundle）内已包含的 Local App 构建产物静态资源
 - **AND** MUST NOT 依赖 CDN、远程字体、远程脚本或远程图片
+- **AND** MUST NOT 要求运行时从远程仓库拉取前端源码
 
 ### Requirement: 本地应用必须提供 Project 列表与详情
 Buildr MUST 在固定 Workspace 的本地应用中提供 Project read model，且 Interfaces MUST 通过 Project Application 查询。
@@ -1066,3 +1067,21 @@ Local App 的任务终态投影 MUST 展示最近一次 Finish 已保存的 term
 - **WHEN** 用户读取已有 terminal association snapshot 的已完成 Task
 - **THEN** HTTP interface MUST 通过 Application 返回保存的 handoff/gate 关联
 - **AND** Web 页面 MUST 将其呈现为最近一次正式交付采用的事实
+
+### Requirement: Local App HTTP interface 必须托管构建产物并支持 SPA 深链
+Buildr Local App HTTP interface MUST 从 Local App Web 构建产物目录提供 `index.html` 与静态资产，并 MUST 在注入本机 session token 与可选 preview identity 后返回 shell。对已登记 Workspace 的应用深链（非 `/api/`），当请求不是已声明的静态资产时，HTTP interface MUST 返回同一注入后的 `index.html`，以便 React Router 恢复路由。静态托管 MUST 限制为构建产物内可证明的资产，MUST NOT 递归托管任意未纳入产物清单的远程或用户路径。
+
+#### Scenario: 深链恢复
+- **WHEN** 用户直接打开 `/workspaces/<workspaceId>/tasks/<taskId>` 之类的 Local App 深链
+- **THEN** HTTP interface MUST 返回注入 session 的构建产物 `index.html`
+- **AND** 客户端 MUST 能够恢复对应 Task 详情路由
+
+#### Scenario: API 与静态资源分离
+- **WHEN** 请求路径以 `/api/` 开头
+- **THEN** HTTP interface MUST 走既有 API 处理
+- **AND** MUST NOT 将 API 请求回退为 `index.html`
+
+#### Scenario: preview meta 保持
+- **WHEN** Local App 以 preview 实例启动
+- **THEN** 返回的 shell MUST 继续注入 preview identity 信息
+- **AND** 页面 MUST 能显示 preview 身份条且不得改写 `Buildr Dev.app` identity

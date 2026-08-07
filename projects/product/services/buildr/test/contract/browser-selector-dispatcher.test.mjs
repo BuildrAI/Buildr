@@ -12,17 +12,17 @@ test('Browser dispatcher skips Chrome for HTTP-only Local App changes', () => {
 
 test('Browser dispatcher selects only affected resource selectors', () => {
   const plan = selectBrowserSelectors([
-    'src/interfaces/local-app/web/features/task-detail.js',
-    'src/interfaces/local-app/web/features/project-detail.js',
+    'web/src/pages/TaskDetailPage.tsx',
+    'web/src/pages/ProjectDetailPage.tsx',
   ]);
   assert.deepEqual(plan.selectors, ['task', 'project']);
   assert.equal(plan.reasons.length, 2);
 });
 
 test('Browser dispatcher uses core fallback for unknown web paths and shared router', () => {
-  const unknown = selectBrowserSelectors(['src/interfaces/local-app/web/features/settings.js']);
+  const unknown = selectBrowserSelectors(['web/src/pages/SettingsPage.tsx']);
   assert.deepEqual(unknown.selectors, ['core']);
-  const router = selectBrowserSelectors(['src/interfaces/local-app/web/router.js']);
+  const router = selectBrowserSelectors(['web/src/App.tsx']);
   assert.deepEqual(router.selectors, ['shell', 'core']);
 });
 
@@ -32,8 +32,8 @@ test('Browser Smoke and selection mechanism changes choose explicit full selecto
 });
 
 test('Browser dispatcher accepts explicit input and falls back to Git changed paths', () => {
-  const explicit = parseChangedPaths(JSON.stringify(['src/interfaces/local-app/web/router.js']));
-  assert.deepEqual(explicit, ['src/interfaces/local-app/web/router.js']);
+  const explicit = parseChangedPaths(JSON.stringify(['web/src/App.tsx']));
+  assert.deepEqual(explicit, ['web/src/App.tsx']);
   const derived = parseChangedPaths(null);
   assert.ok(Array.isArray(derived));
   assert.ok(derived.every((value) => typeof value === 'string' && value.length > 0));

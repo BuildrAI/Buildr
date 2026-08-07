@@ -1,0 +1,75 @@
+date: 2026-08-07 16:18:29 +0800
+ended: 2026-08-07 16:19:26 +0800
+cwd: /Users/wangzhihong/Desktop/Buildr-1/.worktrees/implement-local-app-react/projects/product/services/buildr
+command: npm run test:browser:smoke
+exit_code: 1
+duration_seconds: 57
+duration_human: 57s
+
+=== summary ===
+tests: 8
+pass: 6
+fail: 2  (node:test 将 suite「本机应用浏览器集成：all」与子用例各计 1；真实失败用例 1 个)
+cancelled/skipped/todo: 0
+
+=== failed test case names ===
+1. 任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record
+   file: test/browser-smoke/local-app-browser.test.mjs:521
+   error: page.waitForFunction: Timeout 30000ms exceeded. (at line 673)
+   duration: 40402.278ms
+
+suite also marked fail:
+- 本机应用浏览器集成：all (55896.721583ms)
+
+=== passed ===
+- 全局首页展示多个工作空间并进入选定上下文
+- 文章入口展示列表、详情和项目内配图
+- 项目目录在操作栏提供关联跳转，详情只展示统一事实
+- 服务目录在操作栏提供关联跳转，详情与编辑分离
+- 390px 下目录与详情不产生页面横向溢出
+- Change 详情展示任务关联事实与 OpenSpec 只读内容
+
+=== notes ===
+Chrome/环境可用；未另跑 test:browser:shell（smoke 已在 57s 内完成，非缺 Chrome）。
+并行 openspec changes（product checkout）:
+- migrate-local-app-to-react  7/29 tasks
+- persist-task-finish-state-in-sqlite  Complete
+
+=== full log ===
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @buildr-ai/buildr@0.1.0-rc.7 test:browser:smoke
+> node --test test/browser-smoke/*.test.mjs
+
+[buildr-browser] selector=all fixture=all phase=fixture-ready
+[buildr-browser] selector=all fixture=all phase=browser-ready
+▶ 本机应用浏览器集成：all
+  ✔ 全局首页展示多个工作空间并进入选定上下文 (882.733458ms)
+  ✔ 文章入口展示列表、详情和项目内配图 (387.109458ms)
+  ✔ 项目目录在操作栏提供关联跳转，详情只展示统一事实 (309.65475ms)
+  ✔ 服务目录在操作栏提供关联跳转，详情与编辑分离 (376.339167ms)
+  ✔ 390px 下目录与详情不产生页面横向溢出 (271.602166ms)
+  ✔ Change 详情展示任务关联事实与 OpenSpec 只读内容 (186.630084ms)
+[buildr-browser] selector=all fixture=all phase=assertions-complete errors=0
+  ✖ 任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record (40402.278ms)
+[buildr-browser] selector=all phase=cleanup-complete
+✖ 本机应用浏览器集成：all (55896.721583ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 6
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 56136.097584
+
+✖ failing tests:
+
+test at test/browser-smoke/local-app-browser.test.mjs:521:33
+✖ 任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record (40402.278ms)
+  page.waitForFunction: Timeout 30000ms exceeded.
+      at TestContext.<anonymous> (/Users/wangzhihong/Desktop/Buildr-1/.worktrees/implement-local-app-react/projects/product/services/buildr/test/browser-smoke/local-app-browser.test.mjs:673:16)
+      at async TestContext.<anonymous> (/Users/wangzhihong/Desktop/Buildr-1/.worktrees/implement-local-app-react/projects/product/services/buildr/test/browser-smoke/local-app-browser.test.mjs:521:25) {
+    name: 'TimeoutError',
+    log: []
+  }

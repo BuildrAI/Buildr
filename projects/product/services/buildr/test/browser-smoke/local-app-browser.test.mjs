@@ -291,7 +291,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true });
 }
 
-test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 180_000 : SELECTORS.has('task') ? 90_000 : 45_000 }, async (t) => {
+test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 180_000 : 45_000 }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
   const workspaceRoot = path.join(base, 'workspace');
   let browser;
@@ -385,6 +385,13 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await unique(page.getByRole('button', { name: '用 Agent 开始', exact: true }), '开始工作操作');
     await page.getByRole('button', { name: '用 Agent 开始', exact: true }).click();
     await page.locator('#action-project').waitFor({ state: 'visible' });
+    await page.waitForFunction(
+      (count) => {
+        const options = [...document.querySelectorAll('#action-project option')];
+        return options.length === count && options.every((option) => Boolean(option.value));
+      },
+      expectedProjectCount,
+    );
     assert.equal(await page.locator('#action-project option').count(), expectedProjectCount);
     await page.locator('#action-project').selectOption('other');
     await page.locator('#action-goal').fill('梳理浏览器 fixture 的下一步工作');

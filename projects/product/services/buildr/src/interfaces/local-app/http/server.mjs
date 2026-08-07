@@ -27,31 +27,26 @@ import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
-const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
+const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web-dist');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective']);
 const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
-const STATIC_ASSETS = new Map([
-  ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
-  ['/api-client.js', ['api-client.js', 'text/javascript; charset=utf-8']],
-  ['/router.js', ['router.js', 'text/javascript; charset=utf-8']],
-  ['/markdown.js', ['markdown.js', 'text/javascript; charset=utf-8']],
-  ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
-  ['/features/workspaces.js', ['features/workspaces.js', 'text/javascript; charset=utf-8']],
-  ['/features/workspace.js', ['features/workspace.js', 'text/javascript; charset=utf-8']],
-  ['/features/tasks.js', ['features/tasks.js', 'text/javascript; charset=utf-8']],
-  ['/features/task-detail.js', ['features/task-detail.js', 'text/javascript; charset=utf-8']],
-  ['/features/projects.js', ['features/projects.js', 'text/javascript; charset=utf-8']],
-  ['/features/project-detail.js', ['features/project-detail.js', 'text/javascript; charset=utf-8']],
-  ['/features/project-edit.js', ['features/project-edit.js', 'text/javascript; charset=utf-8']],
-  ['/features/services.js', ['features/services.js', 'text/javascript; charset=utf-8']],
-  ['/features/service-detail.js', ['features/service-detail.js', 'text/javascript; charset=utf-8']],
-  ['/features/service-edit.js', ['features/service-edit.js', 'text/javascript; charset=utf-8']],
-  ['/features/change-detail.js', ['features/change-detail.js', 'text/javascript; charset=utf-8']],
-  ['/features/publications.js', ['features/publications.js', 'text/javascript; charset=utf-8']],
-  ['/features/publication-detail.js', ['features/publication-detail.js', 'text/javascript; charset=utf-8']],
-  ['/features/agent-actions.js', ['features/agent-actions.js', 'text/javascript; charset=utf-8']],
+const STATIC_CONTENT_TYPES = new Map([
+  ['.html', 'text/html; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+  ['.ico', 'image/x-icon'],
+  ['.woff', 'font/woff'],
+  ['.woff2', 'font/woff2'],
+  ['.map', 'application/json; charset=utf-8'],
 ]);
 
 function jsonResponse(response, status, value) {
@@ -194,8 +189,49 @@ function taskQueryInput(searchParams) {
   return input;
 }
 
-function staticFile(name) {
-  return fs.readFileSync(path.join(STATIC_ROOT, name), 'utf8');
+function resolveDistFile(pathname) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+  if (!decoded.startsWith('/') || decoded.includes('\0')) return null;
+  const relative = decoded.slice(1);
+  if (!relative || relative.split('/').some((part) => part === '..')) return null;
+  const resolved = path.resolve(STATIC_ROOT, relative);
+  const rootWithSep = STATIC_ROOT.endsWith(path.sep) ? STATIC_ROOT : `${STATIC_ROOT}${path.sep}`;
+  if (resolved !== STATIC_ROOT && !resolved.startsWith(rootWithSep)) return null;
+  return resolved;
+}
+
+function contentTypeFor(filePath) {
+  return STATIC_CONTENT_TYPES.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream';
+}
+
+function injectedIndexHtml(sessionToken, previewIdentity) {
+  const indexPath = path.join(STATIC_ROOT, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    const error = new Error('Local App web dist 缺失，请先运行 npm run build:web。');
+    error.code = 'web_dist_missing';
+    error.status = 503;
+    throw error;
+  }
+  return fs.readFileSync(indexPath, 'utf8')
+    .replace('__BUILDR_SESSION_TOKEN__', sessionToken)
+    .replace('__BUILDR_PREVIEW_IDENTITY__', previewIdentity ? encodeURIComponent(JSON.stringify(previewIdentity)) : '');
+}
+
+function serveDistAsset(response, pathname) {
+  const filePath = resolveDistFile(pathname);
+  if (!filePath || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return false;
+  const contentType = contentTypeFor(filePath);
+  if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript') || contentType.includes('svg')) {
+    textResponse(response, 200, fs.readFileSync(filePath, 'utf8'), contentType);
+  } else {
+    binaryResponse(response, 200, fs.readFileSync(filePath), contentType);
+  }
+  return true;
 }
 
 function workspaceApiMatch(pathname) {
@@ -242,14 +278,10 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         return;
       }
       if (request.method === 'GET' && (pathname === '/' || WORKSPACE_APP_ROUTE.test(pathname))) {
-        textResponse(response, 200, staticFile('index.html')
-          .replace('__BUILDR_SESSION_TOKEN__', sessionToken)
-          .replace('__BUILDR_PREVIEW_IDENTITY__', previewIdentity ? encodeURIComponent(JSON.stringify(previewIdentity)) : ''), 'text/html; charset=utf-8');
+        textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity), 'text/html; charset=utf-8');
         return;
       }
-      const staticAsset = STATIC_ASSETS.get(pathname);
-      if (request.method === 'GET' && staticAsset) {
-        textResponse(response, 200, staticFile(staticAsset[0]), staticAsset[1]);
+      if (request.method === 'GET' && serveDistAsset(response, pathname)) {
         return;
       }
       if (request.method === 'GET' && pathname === '/api/v1/health') {

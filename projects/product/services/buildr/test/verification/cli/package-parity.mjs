@@ -51,9 +51,13 @@ try {
   const installed = spawn('npm', ['install', '--prefix', prefix, tarball]);
   assert.equal(installed.status, 0, installed.stderr);
   const packagedCli = path.join(prefix, 'node_modules', '.bin', 'buildr');
-  for (const relative of ['index.html', 'styles.css', 'app.js', 'features/tasks.js', 'features/task-detail.js']) {
-    assert.ok(fs.existsSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web', relative)), `packaged local app asset is missing: ${relative}`);
+  for (const relative of ['index.html', 'assets']) {
+    assert.ok(fs.existsSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web-dist', relative)), `packaged local app dist asset is missing: ${relative}`);
   }
+  assert.ok(fs.existsSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), 'packaged local app web-dist index.html is missing');
+  const distAssets = fs.readdirSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web-dist', 'assets'));
+  assert.ok(distAssets.some((name) => name.endsWith('.js')), 'packaged local app web-dist must include built JS assets');
+  assert.ok(distAssets.some((name) => name.endsWith('.css')), 'packaged local app web-dist must include built CSS assets');
 
   const runCheckout = (args) => spawn(process.execPath, [checkoutCli, ...args]);
   const runPackaged = (args) => spawn(packagedCli, args);

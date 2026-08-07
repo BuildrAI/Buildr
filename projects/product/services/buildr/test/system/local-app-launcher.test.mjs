@@ -92,7 +92,7 @@ test('macOS launcher bundle 携带 Node runtime、Buildr Web 资源和可双击 
   assert.match(fs.readFileSync(path.join(app, 'Info.plist'), 'utf8'), /CFBundleShortVersionString/);
   assert.match(fs.readFileSync(path.join(app, 'Info.plist'), 'utf8'), /<key>LSUIElement<\/key><true\/>/);
   assert.doesNotMatch(fs.readFileSync(path.join(app, 'Info.plist'), 'utf8'), /LSBackgroundOnly/);
-  assert.ok(fs.existsSync(path.join(buildr, 'src', 'interfaces', 'local-app', 'web', 'index.html')));
+  assert.ok(fs.existsSync(path.join(buildr, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')));
   assert.ok(fs.existsSync(path.join(buildr, 'node_modules', 'yaml', 'package.json')));
   const nodeLibraries = spawnSync('otool', ['-L', node], { encoding: 'utf8' });
   assert.equal(nodeLibraries.status, 0, nodeLibraries.stderr);
@@ -131,7 +131,7 @@ test('macOS launcher 不等待本地服务进程，避免 Finder 将图标判为
 test('Windows launcher bundle 携带 runtime、Web 资源与桌面/开始菜单快捷方式安装入口', (t) => {
   const output = build(t, 'win32');
   const root = path.join(output, 'Buildr');
-  for (const file of ['runtime/node.exe', 'Buildr.ico', 'Buildr.vbs', 'Launch-Buildr.cmd', 'Install-Buildr-Shortcuts.ps1', 'Install Buildr.cmd', 'app/bin/buildr.mjs', 'app/src/interfaces/local-app/web/index.html']) {
+  for (const file of ['runtime/node.exe', 'Buildr.ico', 'Buildr.vbs', 'Launch-Buildr.cmd', 'Install-Buildr-Shortcuts.ps1', 'Install Buildr.cmd', 'app/bin/buildr.mjs', 'app/src/interfaces/local-app/web-dist/index.html']) {
     assert.ok(fs.existsSync(path.join(root, file)), `missing ${file}`);
   }
   const script = fs.readFileSync(path.join(root, 'Install-Buildr-Shortcuts.ps1'), 'utf8');

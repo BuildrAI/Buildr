@@ -70,13 +70,13 @@ export function selectBrowserSelectors(changedPaths) {
       plan.reasons.push({ path: value, selector: null, reason: 'HTTP/API owner; verify through the Local App HTTP/System owner without starting Chrome.' });
       continue;
     }
-    if (value.startsWith('src/interfaces/local-app/web/')) {
-      if (/\/(?:project|projects)[^/]*\.(?:js|mjs)$/.test(value) || value.includes('/features/project')) add(plan, 'project', value, 'Project page or interaction changed.');
-      else if (/\/(?:service|services)[^/]*\.(?:js|mjs)$/.test(value) || value.includes('/features/service')) add(plan, 'service', value, 'Service page or interaction changed.');
-      else if (/\/(?:change|changes)[^/]*\.(?:js|mjs)$/.test(value) || value.includes('/features/change')) add(plan, 'change', value, 'Change page or Agent Action interaction changed.');
-      else if (/\/(?:task|tasks)[^/]*\.(?:js|mjs)$/.test(value) || value.includes('/features/task')) add(plan, 'task', value, 'Task page, tab or lifecycle interaction changed.');
-      else if (value.includes('/features/article') || value.includes('/features/publication') || value.includes('/articles')) add(plan, 'articles', value, 'Articles page or publication interaction changed.');
-      else if (value.endsWith('/app.js') || value.endsWith('/router.js')) {
+    if (value.startsWith('web/src/') || value.startsWith('src/interfaces/local-app/web-dist/')) {
+      if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(value) || value.includes('/pages/Project')) add(plan, 'project', value, 'Project page or interaction changed.');
+      else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(value) || value.includes('/pages/Service')) add(plan, 'service', value, 'Service page or interaction changed.');
+      else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(value) || value.includes('/pages/TaskChange') || value.includes('AgentAction')) add(plan, 'change', value, 'Change page or Agent Action interaction changed.');
+      else if (/\/(?:pages\/)?(?:[Tt]ask|[Tt]asks)|task-detail/.test(value) || value.includes('/pages/Task') || value.includes('/pages/task-detail')) add(plan, 'task', value, 'Task page, tab or lifecycle interaction changed.');
+      else if (value.includes('/pages/Article') || value.includes('/pages/Articles') || value.includes('/articles')) add(plan, 'articles', value, 'Articles page or publication interaction changed.');
+      else if (value.endsWith('/main.tsx') || value.endsWith('/App.tsx') || value.endsWith('/AppLayout.tsx') || value.endsWith('/index.html') || value.includes('/web-dist/')) {
         add(plan, 'shell', value, 'Global app bootstrap or router changed.');
         add(plan, 'core', value, 'Shared routing changed; run the representative Task route smoke.');
       } else add(plan, 'core', value, 'Unclassified Local App Web path uses the core smoke fallback.');

@@ -162,6 +162,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/unit/**',
     'src/**',
+    'web/**',
     'test/verification/dag-scheduler.mjs',
     'test/verification/planner.mjs',
     'test/verification/resource-coordinator.mjs',
@@ -193,8 +194,8 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/filesystem/workspace-node-runtime.mjs',
     'src/infrastructure/runtime/**',
     'src/interfaces/local-app/runtime/**',
-    'src/interfaces/local-app/web/api-client.js',
-    'src/interfaces/local-app/web/router.js',
+    'web/src/api/client.ts',
+    'web/src/App.tsx',
   ], inputExclusions: [
     'test/integration/task-development-application.test.mjs',
     'test/integration/task-finish-*.test.mjs',
@@ -292,7 +293,7 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/process.mjs',
     'src/infrastructure/product-layout.mjs',
     'src/interfaces/local-app/runtime/**',
-    'src/interfaces/local-app/web/api-client.js',
+    'web/src/api/client.ts',
     'scripts/release/bridge-main-to-dev.mjs',
     'src/application/json-contracts.mjs',
     'test/verification/changed-paths.mjs',
@@ -339,7 +340,7 @@ export const verificationSteps = Object.freeze([
     'openspec/specs/concurrent-task-acceptance/**', 'openspec/specs/task-environments/**',
   ], schedulingCostMs: 20000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
 
-  step({ id: 'candidate-tarball', name: 'candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate'], inputs: ['package.json', 'package-lock.json', 'buildr', 'bin/buildr.mjs', 'scripts/install-buildr-cli', 'scripts/uninstall-buildr-cli'] }),
+  step({ id: 'candidate-tarball', name: 'candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate'], inputs: ['package.json', 'package-lock.json', '.npmignore', 'buildr', 'bin/buildr.mjs', 'scripts/install-buildr-cli', 'scripts/uninstall-buildr-cli'] }),
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'], inputs: ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/**', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'docs/agent-runtime-adapters.md'], dependsOn: ['candidate-tarball'] }),
   step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.mjs' }, profiles: ['candidate'], groups: ['openspec'], inputs: ['openspec/**', 'test/verification/openspec/contract-audit.mjs'] }),
   step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: ['src/application/package-maintenance/**', 'src/application/workspace-operations.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/runtime/**', 'package.json'] }),

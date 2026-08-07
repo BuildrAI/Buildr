@@ -347,7 +347,21 @@ export function registerDomainsOpenspec(runtime) {
       archive: () => {
         const startedAt = Date.now();
         const archived = spawnSync(openspecExecutable, ['archive', context.change, '--yes', '--skip-specs'], { cwd: context.projectRoot, encoding: 'utf8' });
-        return { status: archived.status === 0 ? 'passed' : 'blocked', code: archived.status === 0 ? null : 'archive-failed', exitCode: archived.status, durationMs: Date.now() - startedAt, commandCount: 1, diagnostic: (archived.stderr || archived.stdout || '').slice(0, 2000) };
+        const raw = String(archived.stderr || archived.stdout || '');
+        const portable = raw
+          .replace(/file:\/\/\/[^\s)]+/g, 'file://<host-path>')
+          .replace(/\/(?:Users|home)\/[^\s"')]+/g, '<host-path>')
+          .replace(/Error while flushing PostHog[\s\S]*/g, '')
+          .trim()
+          .slice(0, 2000);
+        return {
+          status: archived.status === 0 ? 'passed' : 'blocked',
+          code: archived.status === 0 ? null : 'archive-failed',
+          exitCode: archived.status,
+          durationMs: Date.now() - startedAt,
+          commandCount: 1,
+          diagnostic: portable || null,
+        };
       },
       resolveArchivedChangeRoot,
       writeReceipt: writeOpenSpecContractJson,

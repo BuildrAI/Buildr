@@ -44,7 +44,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     const terminalResult = typeof runtime.inspectTaskFinishReadModel === 'function'
       ? (finishReadModel.state === 'terminal' ? finishReadModel.result : null)
       : finish;
-    if (!finish || finish.status !== 'delivered' || !finish.association || !terminalResult) {
+    if (!finish || finish.status !== 'delivered' || !finish.association) {
       return { ...base, status: 'completed-unproven', diagnostics: [{ code: 'task_delivery_summary_missing', message: 'Task 已完成，但 SQLite lifecycle read model 没有匹配成功 Finish summary。' }] };
     }
     const cleanupSummary = finish.cleanup?.environment?.latest?.cleanup || finish.cleanup?.latest?.cleanup || {};
@@ -55,14 +55,14 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       status: 'delivered',
       delivered: true,
       delivery: {
-        completedAt: terminalResult.completedAt || finish.completedAt,
-        finalRemoteRef: terminalResult.delivery?.finalRemoteRef || finish.finalRemoteRef,
-        targetBranch: terminalResult.identity?.targetBranch || finish.targetBranch,
-        remote: terminalResult.identity?.remote || finish.remote,
+        completedAt: terminalResult?.completedAt || finish.completedAt,
+        finalRemoteRef: terminalResult?.delivery?.finalRemoteRef || finish.finalRemoteRef,
+        targetBranch: terminalResult?.identity?.targetBranch || finish.targetBranch,
+        remote: terminalResult?.identity?.remote || finish.remote,
         cleanup: { status: finish.cleanup?.status || 'unknown', completedAt: cleanupSummary.completedAt || null, summary: cleanupSummary.summary || null },
-        reuseMode: terminalResult.reuseMode || finish.reuseMode,
-        semanticEquivalence: terminalResult.equivalence?.semanticEquivalence || finish.equivalence?.semanticEquivalence || finish.semanticEquivalence || null,
-        runId: terminalResult.runId || finish.runId,
+        reuseMode: terminalResult?.reuseMode || finish.reuseMode,
+        semanticEquivalence: terminalResult?.equivalence?.semanticEquivalence || finish.equivalence?.semanticEquivalence || finish.semanticEquivalence || null,
+        runId: terminalResult?.runId || finish.runId,
       },
       associations: {
         planning: finish.association.gates?.planning || null,

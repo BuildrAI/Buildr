@@ -326,8 +326,9 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
 
   const html = await fetch(url).then((response) => response.text());
   assert.match(html, /Buildr 工作空间/);
-  assert.match(html, /id="resource-nav-toggle"/);
-  assert.match(html, /工作空间设置/);
+  assert.match(html, /id="root"/);
+  assert.match(html, /\/assets\/index-[^"]+\.js/);
+  assert.match(html, /\/assets\/index-[^"]+\.css/);
   assert.doesNotMatch(html, /https?:\/\//);
   let response;
   for (const route of [`${workspaceBase}/`, `${workspaceBase}/settings`, `${workspaceBase}/projects`, `${workspaceBase}/projects/product`, `${workspaceBase}/services`]) {
@@ -335,11 +336,15 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
     assert.equal(response.status, 200);
     assert.match(await response.text(), /Buildr 工作空间/);
   }
-  for (const asset of ['/app.js', '/api-client.js', '/router.js', '/markdown.js', '/features/workspaces.js', '/features/workspace.js', '/features/projects.js', '/features/project-detail.js', '/features/services.js', '/features/change-detail.js', '/features/agent-actions.js']) {
+  const assetMatches = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
+  assert.ok(assetMatches.length >= 2, 'SPA shell must reference built web-dist assets');
+  for (const asset of assetMatches) {
     response = await fetch(`${url}${asset}`);
     assert.equal(response.status, 200);
-    assert.match(response.headers.get('content-type'), /text\/javascript/);
+    assert.match(response.headers.get('content-type'), asset.endsWith('.css') ? /text\/css/ : /(?:text|application)\/javascript/);
   }
+  response = await fetch(`${url}/app.js`);
+  assert.equal(response.status, 404);
   response = await fetch(`${url}/unknown-page`);
   assert.equal(response.status, 404);
   response = await fetch(`${url}${workspaceBase}/projects/product/extra`);
