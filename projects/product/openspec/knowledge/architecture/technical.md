@@ -20,7 +20,7 @@
 - `skills/manifest.yml` 注册 capability contracts、providers、consumers 和 workspace default bindings。
 - Consumer 依赖 capability identity，不依赖 provider Skill id；required/optional 分别产生 blocked/degraded readiness。
 - Component definition 可在 `contributions.skillDependencies` 中为同一 Component fragment 的目标 Skill 声明结构化 capability、major version 与 required/optional mode。runtime 将 enabled/installed Component dependency 与 base `requires` 按 `capability@version` 合并，required 优先并保留来源；install/update/uninstall 与 fragment 原子生效。Doctor 只读取该结构化结果，不从 Markdown 推断依赖，也不以 capability graph 代替直接 CLI 的 Application 检查。
-- `task-manager` 提供并默认绑定 `buildr.task-record/v1`；`task-triage` 只在正式持久交付分支 optional 消费，provider 不 ready 不影响讨论或只读分支。
+- `task-manager` 提供并默认绑定 `buildr.task-record/v1`；`task-triage` optional 消费 Task Record 与 `buildr.git-operations/v1`。新正式 Task create 分支先把 Git Operations 提升为 required，在完整 repository set 的 clean `dev` 上执行独立 fetch/rebase 和适用 Workspace transition check，全部成功后才调用 Task Record create；provider 或任一 Git 门禁 blocked 只阻塞新建，不影响讨论、只读、已有 Task inspect 或其他分支。Task Record Application、Local App 与 Task Environment 不因此获得 Git mutation authority。
 - `task-environment` 提供并默认绑定 `buildr.task-environment/v1`；正式 workflow 在持久写入前消费它。`task-worktree` 只提供 `buildr.git-worktree-provider/v1`，Environment 按实际 Git scope 组合该 provider。
 - `task-review` 提供并默认绑定唯一 `buildr.task-review/v1`；planning/completion 是动态参数，不注册类型专属 capability 或 provider。`task-retrospective`独立提供并默认绑定`buildr.task-retrospective/v1`，不参与任何lifecycle dependency。
 - `task-verification` 提供并默认绑定 `buildr.task-verification/v3`；Project `verification.yml` v2 是测试能力声明，不进入 capability binding manifest。Skill 负责执行与语义提炼，Task Verification Application 独占 current Result writer/reader。

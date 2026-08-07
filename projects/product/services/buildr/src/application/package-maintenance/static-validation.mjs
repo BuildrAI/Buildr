@@ -1119,10 +1119,11 @@ export function createPackageStaticValidator(deps) {
         if (!provided) problems.push('task-retrospective must provide buildr.task-retrospective@1.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛统一 dev 基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');
+        if (!(skill.requires || []).some((item) => item.capability === 'buildr.git-operations' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.git-operations@1.');
         for (const retiredText of ['`create-board`', '`continue-board`', '`buildr.task-board-maintenance/v1`']) {
           if (skillContent.includes(retiredText)) problems.push(`task-triage Skill must not route retired Task Board behavior: ${JSON.stringify(retiredText)}.`);
         }
