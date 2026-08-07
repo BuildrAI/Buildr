@@ -57,6 +57,7 @@ export function TasksPage() {
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
   const [hasChildren, setHasChildren] = useState('all');
+  const [hasRetrospective, setHasRetrospective] = useState('all');
   const [reloadToken, setReloadToken] = useState(0);
 
   const workspaceLoaded = useRef(false);
@@ -87,6 +88,7 @@ export function TasksPage() {
       service,
       status,
       hasChildren,
+      hasRetrospective,
     };
     for (const [key, value] of Object.entries(values)) {
       if (value && value !== 'all') query.set(key, value);
@@ -122,7 +124,7 @@ export function TasksPage() {
     } finally {
       if (generation === requestGeneration.current) setLoading(false);
     }
-  }, [workspaceId, project, service, status, hasChildren, setWorkspace, setBreadcrumbParts]);
+  }, [workspaceId, project, service, status, hasChildren, hasRetrospective, setWorkspace, setBreadcrumbParts]);
 
   useEffect(() => {
     setBreadcrumbParts([(document.getElementById('shell-workspace-name')?.textContent || '工作空间'), '任务']);
@@ -139,6 +141,7 @@ export function TasksPage() {
     setService('');
     setStatus('active');
     setHasChildren('all');
+    setHasRetrospective('all');
     setReloadToken((value) => value + 1);
   };
 
@@ -228,6 +231,14 @@ export function TasksPage() {
               <option value="all">不限</option>
               <option value="yes">有直接 Child</option>
               <option value="no">无直接 Child</option>
+            </select>
+          </label>
+          <label>
+            任务复盘
+            <select id="task-filter-retrospective" value={hasRetrospective} onChange={(event) => setHasRetrospective(event.target.value)}>
+              <option value="all">不限</option>
+              <option value="yes">已复盘</option>
+              <option value="no">未复盘</option>
             </select>
           </label>
         </form>

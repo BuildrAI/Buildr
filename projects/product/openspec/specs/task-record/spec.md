@@ -113,6 +113,7 @@ Buildr Local App MUST 在已登记 Workspace 下提供 Task 核心导航、SQLit
 #### Scenario: 浏览 Workspace Task 列表
 - **WHEN** 用户进入 `/workspaces/:workspaceId/tasks`
 - **THEN** 页面 MUST 从 SQLite authority 的轻量 query projection 列出匹配过滤条件的 Task ID、title、intent、Project/Service scope、stored Change references、status、直接 Child 数量、terminal result 摘要和 `updatedAt`
+- **AND** MUST 支持按复盘 current row 是否存在筛选任务
 - **AND** MUST NOT 为列表调用 Environment、Git、OpenSpec Change resolution、Development、Review、Verification 或 Finish reader
 
 #### Scenario: 查看 Task 详情
@@ -154,9 +155,10 @@ Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路
 - **AND** 结果 MUST NOT 混入其他 Workspace 的 Task 或路径
 
 #### Scenario: Task list 使用合法 query
-- **WHEN** collection GET 使用 `q`、`project`、`service`、`status` 或 `hasChildren`
+- **WHEN** collection GET 使用 `q`、`project`、`service`、`status`、`hasChildren` 或 `hasRetrospective`
 - **THEN** HTTP interface MUST 规范化封闭 filter input 并调用 Task Record Application query projection
-- **AND** `status` MUST 只接受 `active|completed|abandoned|all`，`hasChildren` MUST 只接受 `yes|no|all`，`service` MUST 使用 `project/service`
+- **AND** `status` MUST 只接受 `active|completed|abandoned|all`，`hasChildren` MUST 只接受 `yes|no|all`，`hasRetrospective` MUST 只接受 `yes|no|all`，`service` MUST 使用 `project/service`
+- **AND** `hasRetrospective=yes` MUST 只返回存在 `task_retrospective_current` current row 的 Task，`hasRetrospective=no` MUST 只返回不存在该 row 的 Task
 
 #### Scenario: Task API 提交路径或越界字段
 - **WHEN** Task query/body 包含 `target`、`root`、`path`、未知 query、完整 next-state document、专业记录字段或其他未知字段
