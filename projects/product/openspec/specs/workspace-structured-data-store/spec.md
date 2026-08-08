@@ -226,27 +226,32 @@ Buildr MUST 只允许已携带当前 migration assets 的 retained controller �
 - **AND** MUST NOT 导入 Task Validation Workspace 的任何测试或任务数据
 
 ### Requirement: Environment current 必须使用独立窄 SQLite schema
-Workspace Structured Store MUST 以独立 `task_environment_current` table 保存每个正式 Task 的 Environment current Receipt。该表 MUST 使用 `task_id` 作为唯一主键并以 foreign key 绑定 `tasks(task_id)`，至少保存经过 Domain 校验的 `receipt_json`、可查询的 `status` 和 `updated_at`；MUST NOT 把 Environment 字段并入 `tasks`、建设通用 key/value/history/event/audit 表或复制 Environment facts到其他current projection。
+Workspace Structured Store MUST以独立`task_environment_current` table保存每个正式Task的Environment current Receipt。该表 MUST使用task_id唯一绑定tasks，保存经过Domain校验的receipt_json、可查询status和updated_at；Receipt v3的dependency roots MUST保留在同一JSON current中。repository MUST兼容读取旧v2，但 MUST只允许显式prepare把active current收敛为v3；MUST NOT把Environment字段并入tasks、建设第二张dependency表、通用history/event/audit表或复制facts到其他projection。
 
 #### Scenario: fresh Workspace 初始化 Environment schema
-- **WHEN** current runtime 初始化新的 Workspace Structured Store
-- **THEN** 连续 migrations MUST 建立 `task_environment_current`、Task foreign key、JSON validity constraint 与唯一 current slot
-- **AND** MUST NOT 建立 Environment file index、双写 ledger、history 或远端同步 table
+- **WHEN** current runtime初始化新的Workspace Structured Store
+- **THEN** migrations MUST建立task_environment_current、Task foreign key、JSON validity与唯一current slot
+- **AND** MUST NOT建立Environment file index、dependency root副本表、history或远端同步table
 
 #### Scenario: 已有 Workspace 升级
-- **WHEN** 健康数据库已应用到前一 migration version且retained controller执行合法writable action
-- **THEN** runner MUST原子应用pending migrations并登记准确checksum
-- **AND** MUST保留已有Task、专业current rows与Finish rows，并以Environment current row为唯一authority
+- **WHEN** 健康数据库已应用到前一migration version且retained controller执行合法writable action
+- **THEN** runner MUST原子应用pending migrations并登记准硬checksum
+- **AND** MUST保留已有Task、专业current rows、v2/v3 Environment rows与Finish rows，并以Environment current row为唯一authority
+
+#### Scenario: 已有Workspace读取v2 current
+- **WHEN** 健康数据库包含合法v2 Environment Receipt并由新runtime只读访问
+- **THEN** repository MUST保留row bytes并返回兼容read model或legacy blocked diagnostic
+- **AND** GET/inspect MUST NOT因兼容读取自动写v3
 
 #### Scenario: Environment current value 被替换
-- **WHEN** Task Environment Application 已完成 Domain normalization 并开始保存完整新 current Receipt
-- **THEN** repository MUST 在单一 transaction 中替换精确 `task_id` slot，写后读取验证并提交
-- **AND** 任一校验、busy、foreign key 或 integrity failure MUST rollback并保留最后一份有效 current value
+- **WHEN** Task Environment Application已观察正式声明并完成root normalization/preparation
+- **THEN** repository MUST在单一transaction中以v3完整替换精确task_id slot，写后读取验证并提交
+- **AND** 任一校验、busy、foreign key或integrity failure MUST rollback并保留最后有效current
 
 #### Scenario: 不存在的 Task 被 Environment writer 引用
-- **WHEN** Environment Application 尝试为不存在的 Task ID 写入 current Receipt
-- **THEN** foreign key 与 Application validation MUST 拒绝 mutation
-- **AND** transaction MUST rollback并保留其他 Environment rows
+- **WHEN** Environment Application尝试为不存在Task ID写入current
+- **THEN** foreign key与Application validation MUST拒绝mutation
+- **AND** transaction MUST rollback并保留其他Environment rows
 
 ### Requirement: Task Finish current 与 terminal facts 必须使用窄 SQLite schema
 Workspace Structured Store MUST通过连续migration建立Task Finish专业表，分别保存current run、compact terminal completion、target lease与transient artifact metadata。run/completion MUST以foreign key绑定`tasks(task_id)`；每个Task至多一个未终结current run和一个terminal completion，每个规范化target至多一个current lease。表 MUST只规范化定位、唯一性、完整性与真实查询所需字段，其余数据 MUST保存为经Domain验证的closed payload；MUST NOT扩展为通用history、event、audit、scheduler、sync或key/value store。

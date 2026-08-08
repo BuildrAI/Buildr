@@ -222,7 +222,7 @@ Task Triage 是可选上游。无论是否经过 Triage，正式 Task 首次修�
 
 ### Environment Receipt
 
-每个 Task ID 只维护一份 Environment Receipt。它是 Workspace 本机状态中的动态资源清单和控制记录，由 Task Environment Application 独占写入 canonical Workspace SQLite 的 `task_environment_current`，使用 `buildr.task-environment-receipt/v2` 并通过 `workspace-sqlite:task-environment/<task-id>` locator 公开；同一 Workspace 的共享执行根、task worktree 和不同 Agent session 必须能解析到同一份记录。不同 Task 不共用 receipt 或 Task-owned 资源归属；它们只有在实际使用同一执行根、Git repository 或其他共享写入面时才产生共享边界。Receipt 不是 Source Authority 或 Task Context，也不代替对真实环境的核验；旧 Environment 文件不再读取、导入或作为 fallback。
+每个 Task ID 只维护一份 Environment Receipt。它是 Workspace 本机状态中的动态资源清单和控制记录，由 Task Environment Application 独占写入 canonical Workspace SQLite 的 `task_environment_current`，使用 `buildr.task-environment-receipt/v3` 并通过 `workspace-sqlite:task-environment/<task-id>` locator 公开；它以逐 dependency-root 事实保存 Task scope 所需的显式 Service 依赖闭包，scope 只保留聚合结论。同一 Workspace 的共享执行根、task worktree 和不同 Agent session 必须能解析到同一份记录。不同 Task 不共用 receipt、`node_modules` 或 Task-owned 资源归属；它们只有在实际使用同一执行根、Git repository、下载缓存或其他共享写入面时才产生共享边界。Receipt 不是 Source Authority 或 Task Context，也不代替 CLI live inspect 对真实环境的只读核验；旧 Environment 文件不再读取、导入或作为 fallback。
 
 Task Environment Receipt 是 Task 级环境事实的唯一汇总入口。长期保留的 Git 证据使用新的窄 `buildr.git-worktree-evidence/v1`，只记录 repository、checkout、branch、HEAD、clean 和 Git effects，并由 Git worktree provider 维护。旧 worktree-centric v1 receipt 只用于一次性迁移输入：匹配正式 Task 的活跃环境转换为 v2 Receipt 与窄 Git evidence；无 Task 的 live worktree 只保留窄 Git evidence；无真实资源的陈旧 receipt 删除；identity/ownership 冲突则原样保留并阻止 authority 切换。旧 receipt 不作为永久兼容 reader 或第二套 authority 留下。
 

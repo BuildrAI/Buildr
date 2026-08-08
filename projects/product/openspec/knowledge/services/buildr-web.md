@@ -14,6 +14,7 @@
 ## 数据与依赖
 
 - 依赖 React 19、React Router、Vite 与 TypeScript；前端工程自有 `package-lock.json`。
+- Product `task-environment.yml` 将本Service的package root登记为独立required npm dependency root，并由`buildr`的source-build关系显式纳入Task闭包。Task worktree只使用本root的lockfile、`node_modules`和Workspace Foundation受管npm，不从retained checkout或系统PATH借用TypeScript/Vite。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
 

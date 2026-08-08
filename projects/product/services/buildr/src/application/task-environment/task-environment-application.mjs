@@ -3,7 +3,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { TASK_ENVIRONMENT_RECEIPT_SCHEMA, taskEnvironmentError, taskEnvironmentReadModel } from '../../domain/task-environment/task-environment.mjs';
+import {
+  LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA,
+  TASK_ENVIRONMENT_RECEIPT_SCHEMA,
+  taskEnvironmentError,
+  taskEnvironmentReadModel,
+} from '../../domain/task-environment/task-environment.mjs';
+import {
+  parseProjectTaskEnvironmentDeclaration,
+  projectServiceDependencyClosure,
+} from '../../domain/task-environment/task-environment-declaration.mjs';
 import { observeGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
 import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
 import { spawnSync } from '../../infrastructure/process.mjs';
@@ -47,6 +56,27 @@ function digestFiles(root) {
 
 function probe(status, identity = null, diagnostic = null, observedAt = now()) {
   return { status, identity, observedAt, diagnostic };
+}
+
+function fileIdentity(file) {
+  return fs.existsSync(file) && fs.statSync(file).isFile()
+    ? `sha256-${crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')}`
+    : null;
+}
+
+function observeLocalNodeModules(root) {
+  const directory = path.join(root, 'node_modules');
+  if (!fs.existsSync(directory)) return { status: 'missing', diagnostic: `worktree-local node_modules 不存在：${root}` };
+  const stat = fs.lstatSync(directory);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    return { status: 'blocked', diagnostic: `node_modules 必须是 dependency root 内的实体目录，不得软链接或共享：${directory}` };
+  }
+  const realRoot = fs.realpathSync(root);
+  const realDirectory = fs.realpathSync(directory);
+  if (!inside(realRoot, realDirectory)) {
+    return { status: 'blocked', diagnostic: `node_modules 真实路径越出 dependency root：${directory}` };
+  }
+  return { status: 'ready', diagnostic: null };
 }
 
 export function registerTaskEnvironmentApplication(runtime) {
@@ -149,45 +179,89 @@ export function registerTaskEnvironmentApplication(runtime) {
     return result.status === 0 && path.resolve(result.stdout.trim()) === fs.realpathSync(workspaceRoot);
   }
 
-  function taskScopes(workspaceRoot, task) {
+  function readProjectDependencyDeclaration(workspaceRoot, contentRoot, projectCode, projects, serviceRecords) {
+    const project = projects.projects[projectCode];
+    const declarationPath = path.join(contentRoot, project.source.path, 'task-environment.yml');
+    if (!fs.existsSync(declarationPath)) return { schemaVersion: null, services: {} };
+    let input;
+    try {
+      input = runtime.parseYamlDocument(fs.readFileSync(declarationPath, 'utf8'), path.relative(contentRoot, declarationPath));
+    } catch (error) {
+      throw taskEnvironmentError('task_environment_declaration_invalid', `无法读取 ${path.relative(workspaceRoot, declarationPath)}：${error.message}`, 409, { project: projectCode, declarationPath });
+    }
+    return parseProjectTaskEnvironmentDeclaration(input, { project: projectCode, knownServices: Object.keys(serviceRecords.services) });
+  }
+
+  function taskScopes(workspaceRoot, task, controller, contentRoot = workspaceRoot) {
     const projects = runtime.readProjectRegistryRecord(workspaceRoot);
     if (projects.registry.migrationRequired) throw taskEnvironmentError('task_environment_project_registry_migration_required', 'Project registry 需要先完成 canonical 迁移。', 409, undefined, '从 retained Workspace 运行 buildr sync。');
     const scopes = [{ selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.', sourceType: workspaceHasRootGit(workspaceRoot) ? 'git' : 'workspace' }];
     const seen = new Set(['workspace']);
-    for (const projectCode of new Set([...task.scope.projects, ...task.changes.map((reference) => reference.project)])) {
+    const requirements = new Map();
+    const declarations = new Map();
+    const serviceRegistries = new Map();
+    const serviceRegistry = (projectCode) => {
+      if (!serviceRegistries.has(projectCode)) serviceRegistries.set(projectCode, runtime.readServiceRegistryRecord(workspaceRoot, projectCode));
+      return serviceRegistries.get(projectCode);
+    };
+    const declaration = (projectCode) => {
+      if (!declarations.has(projectCode)) declarations.set(projectCode, readProjectDependencyDeclaration(workspaceRoot, contentRoot, projectCode, projects, serviceRegistry(projectCode)));
+      return declarations.get(projectCode);
+    };
+    const addProject = (projectCode) => {
       const project = projects.projects[projectCode];
       if (!project) throw taskEnvironmentError('task_environment_project_not_found', `Project 不存在：${projectCode}。`, 409, { project: projectCode });
       const selector = `project:${projectCode}`;
       if (!seen.has(selector)) scopes.push({ selector, kind: 'project', project: projectCode, service: null, sourcePath: project.source.path, sourceType: project.source.type });
       seen.add(selector);
+      return project;
+    };
+    const addService = (projectCode, serviceCode, requiredBy) => {
+      const project = addProject(projectCode);
+      const services = serviceRegistry(projectCode);
+      const service = services.services[serviceCode];
+      if (!service) throw taskEnvironmentError('task_environment_service_not_found', `Service 不存在：${projectCode}/${serviceCode}。`, 409, { project: projectCode, service: serviceCode });
+      const selector = `service:${projectCode}/${serviceCode}`;
+      if (!seen.has(selector)) scopes.push({ selector, kind: 'service', project: projectCode, service: serviceCode, sourcePath: service.source.path, sourceType: service.source.type || project.source.type });
+      seen.add(selector);
+      if (!requirements.has(selector)) requirements.set(selector, new Set());
+      requirements.get(selector).add(requiredBy);
+    };
+    for (const projectCode of new Set([...task.scope.projects, ...task.changes.map((reference) => reference.project)])) {
+      addProject(projectCode);
     }
     for (const reference of task.scope.services) {
-      const project = projects.projects[reference.project];
-      if (!project) throw taskEnvironmentError('task_environment_project_not_found', `Project 不存在：${reference.project}。`, 409, reference);
-      const projectSelector = `project:${reference.project}`;
-      if (project.source.type === 'git' && !seen.has(projectSelector)) {
-        scopes.push({ selector: projectSelector, kind: 'project', project: reference.project, service: null, sourcePath: project.source.path, sourceType: project.source.type });
-        seen.add(projectSelector);
-      }
-      const services = runtime.readServiceRegistryRecord(workspaceRoot, reference.project);
-      const service = services.services[reference.service];
-      if (!service) throw taskEnvironmentError('task_environment_service_not_found', `Service 不存在：${reference.project}/${reference.service}。`, 409, reference);
-      const selector = `service:${reference.project}/${reference.service}`;
-      if (!seen.has(selector)) scopes.push({ selector, kind: 'service', project: reference.project, service: reference.service, sourcePath: service.source.path, sourceType: service.source.type });
-      seen.add(selector);
+      const entrySelector = `service:${reference.project}/${reference.service}`;
+      const closure = projectServiceDependencyClosure(declaration(reference.project), [reference.service]);
+      for (const serviceCode of closure.keys()) addService(reference.project, serviceCode, entrySelector);
     }
-    return scopes;
+    if (inside(workspaceRoot, controller.sourceRoot)) {
+      const relativeController = path.relative(workspaceRoot, controller.sourceRoot).split(path.sep).join('/');
+      for (const [projectCode, project] of Object.entries(projects.projects)) {
+        const services = serviceRegistry(projectCode);
+        const owner = Object.values(services.services).find((service) => service.source.path === relativeController);
+        if (owner) {
+          declaration(projectCode);
+          addService(projectCode, owner.code, 'workspace');
+          break;
+        }
+      }
+    }
+    return { scopes, requirements, declarations };
   }
 
   function providerIncludes(scopes) {
     return scopes.filter((scope) => scope.selector !== 'workspace' && scope.sourceType === 'git').map((scope) => scope.selector);
   }
 
-  function executionScopes(scopes, workspaceRoot, checkoutRoot, providerResult, observedAt) {
+  function executionScopes(scopes, workspaceRoot, checkoutRoot, providerResult, observedAt, currentScopes = []) {
     const repositories = new Map((providerResult?.repositories || []).map((item) => [item.selector, item]));
+    const current = new Map(currentScopes.map((scope) => [scope.selector, scope]));
     return scopes.map((scope) => {
       const repository = repositories.get(scope.selector);
-      const root = repository?.checkoutPath || path.resolve(checkoutRoot || workspaceRoot, scope.sourcePath);
+      const saved = current.get(scope.selector);
+      const root = repository?.checkoutPath || saved?.executionRoot || path.resolve(checkoutRoot || workspaceRoot, scope.sourcePath);
+      const validationRoot = checkoutRoot || saved?.validationRoot || workspaceRoot;
       const provider = repository ? { capability: GIT_PROVIDER, selector: scope.selector, evidence: providerResult.evidencePath } : null;
       return {
         selector: scope.selector,
@@ -196,9 +270,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         service: scope.service,
         sourcePath: scope.sourcePath,
         executionRoot: root,
-        validationRoot: checkoutRoot || workspaceRoot,
-        shared: !checkoutRoot,
-        provider,
+        validationRoot,
+        shared: repository ? false : saved?.shared ?? !checkoutRoot,
+        provider: provider || saved?.provider || null,
         runtime: probe('blocked', null, '尚未探测 Runtime。', observedAt),
         cli: probe('blocked', null, '尚未探测 Workspace CLI。', observedAt),
         dependencies: probe('blocked', null, '尚未探测依赖。', observedAt),
@@ -237,20 +311,123 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
   }
 
-  function ensureCandidateDependencies(cli, workspaceNode, effects) {
-    if (cli.kind !== 'task-environment-candidate') return probe('not-applicable', 'stable-controller', null);
-    const lockfile = path.join(cli.sourceRoot, 'package-lock.json');
-    if (!fs.existsSync(lockfile)) return probe('blocked', null, `Candidate CLI lockfile 不存在：${lockfile}`);
-    const packageFile = path.join(cli.sourceRoot, 'package.json');
-    const lockIdentity = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(lockfile)).digest('hex')}`;
-    const dependencyReady = fs.existsSync(path.join(cli.sourceRoot, 'node_modules')) && fs.existsSync(packageFile);
-    if (!dependencyReady) {
-      if (!workspaceNode?.ready) return probe('blocked', lockIdentity, 'Workspace Node/npm 未就绪，不能准备 candidate 依赖。');
-      const installed = spawnSync(workspaceNode.npmExecutable, ['ci'], { cwd: cli.sourceRoot, encoding: 'utf8', env: workspaceNode.environment, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
-      if (installed.status !== 0) return probe('blocked', lockIdentity, (installed.stderr || installed.stdout || 'npm ci failed').trim().slice(0, 2000));
-      effects.push({ type: 'dependencies-prepared', root: cli.sourceRoot, manager: 'npm', lockfile });
+  function dependencyPlan(receipt, scopePlan) {
+    const scopes = new Map(receipt.scopes.map((scope) => [scope.selector, scope]));
+    const roots = [];
+    for (const [selector, requiredBy] of scopePlan.requirements.entries()) {
+      const scope = scopes.get(selector);
+      if (!scope) throw taskEnvironmentError('task_environment_dependency_scope_invalid', `Dependency scope 未形成执行根：${selector}。`, 409, { selector });
+      const declared = scopePlan.declarations.get(scope.project)?.services?.[scope.service];
+      if (!declared) continue;
+      for (const dependency of declared.dependencyRoots) {
+        const root = path.resolve(scope.executionRoot, dependency.root);
+        if (!inside(scope.executionRoot, root)) throw taskEnvironmentError('task_environment_dependency_path_invalid', `Dependency root 超出 Service execution root：${selector}/${dependency.id}。`, 409, { selector, root, executionRoot: scope.executionRoot });
+        roots.push({
+          id: `${selector}/${dependency.id}`,
+          scope: selector,
+          project: scope.project,
+          service: scope.service,
+          requiredBy: [...requiredBy].sort(),
+          root,
+          manager: dependency.manager,
+          manifest: path.resolve(root, dependency.manifest),
+          lockfile: path.resolve(root, dependency.lockfile),
+          required: dependency.required,
+        });
+      }
     }
-    return fs.existsSync(path.join(cli.sourceRoot, 'node_modules')) ? probe('ready', lockIdentity) : probe('blocked', lockIdentity, 'npm ci 完成后 node_modules 仍不存在。');
+    return roots.sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  function observeDependencyRoot(planned, saved = null, legacy = null) {
+    const observedAt = now();
+    const manifestIdentity = fileIdentity(planned.manifest);
+    const lockfileIdentity = fileIdentity(planned.lockfile);
+    const preparedManifestIdentity = saved?.preparedManifestIdentity || legacy?.preparedManifestIdentity || null;
+    const preparedLockfileIdentity = saved?.preparedLockfileIdentity || legacy?.preparedLockfileIdentity || null;
+    let status = 'ready';
+    let diagnostic = null;
+    if (!manifestIdentity) {
+      status = 'missing';
+      diagnostic = `package manifest 不存在：${planned.manifest}`;
+    } else if (!lockfileIdentity) {
+      status = 'missing';
+      diagnostic = `lockfile 不存在：${planned.lockfile}`;
+    } else if (!preparedManifestIdentity || !preparedLockfileIdentity) {
+      status = 'blocked';
+      diagnostic = `依赖根尚未由 Task Environment prepare：${planned.scope}`;
+    } else if (manifestIdentity !== preparedManifestIdentity || lockfileIdentity !== preparedLockfileIdentity) {
+      status = 'drifted';
+      diagnostic = `依赖声明已漂移：${planned.scope}`;
+    } else {
+      const nodeModules = observeLocalNodeModules(planned.root);
+      if (nodeModules.status !== 'ready') {
+        status = nodeModules.status;
+        diagnostic = nodeModules.diagnostic;
+      }
+    }
+    return {
+      ...planned,
+      manifestIdentity,
+      lockfileIdentity,
+      preparedManifestIdentity,
+      preparedLockfileIdentity,
+      status,
+      observedAt,
+      diagnostic,
+    };
+  }
+
+  function legacyPreparedRoot(previousReceipt, planned, cli) {
+    if (previousReceipt?.schemaVersion !== LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA || cli.kind !== 'task-environment-candidate' || path.resolve(planned.root) !== path.resolve(cli.sourceRoot)) return null;
+    const legacyProbe = previousReceipt.scopes.find((scope) => scope.selector === planned.scope)?.dependencies
+      || previousReceipt.scopes.find((scope) => scope.selector === 'workspace')?.dependencies;
+    const manifestIdentity = fileIdentity(planned.manifest);
+    const lockfileIdentity = fileIdentity(planned.lockfile);
+    if (legacyProbe?.status !== 'ready' || legacyProbe.identity !== lockfileIdentity || !manifestIdentity || observeLocalNodeModules(planned.root).status !== 'ready') return null;
+    return { preparedManifestIdentity: manifestIdentity, preparedLockfileIdentity: lockfileIdentity };
+  }
+
+  function prepareDependencyRoots(plannedRoots, previousReceipt, cli, workspaceNode, effects, { mutate }) {
+    const savedRoots = new Map((previousReceipt?.dependencyRoots || []).map((root) => [root.id, root]));
+    return plannedRoots.map((planned) => {
+      let observed = observeDependencyRoot(planned, savedRoots.get(planned.id), legacyPreparedRoot(previousReceipt, planned, cli));
+      if (!mutate || !planned.required || observed.status === 'ready') return observed;
+      if (!observed.manifestIdentity || !observed.lockfileIdentity) return observed;
+      if (!workspaceNode?.ready) return { ...observed, status: 'blocked', diagnostic: `Workspace Node/npm 未就绪，不能准备 ${planned.scope}：${workspaceNode?.diagnostic || 'unknown'}` };
+      const installed = spawnSync(workspaceNode.npmExecutable, ['ci'], { cwd: planned.root, encoding: 'utf8', env: workspaceNode.environment, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
+      if (installed.status !== 0) {
+        const diagnostic = (installed.stderr || installed.stdout || 'npm ci failed').trim().slice(0, 2000);
+        return { ...observed, status: 'failed', observedAt: now(), diagnostic: `${planned.scope} npm ci 失败（exit ${installed.status ?? 'unknown'}）：${diagnostic}` };
+      }
+      effects.push({ type: 'dependency-root-prepared', id: planned.id, scope: planned.scope, root: planned.root, manager: planned.manager, manifest: planned.manifest, lockfile: planned.lockfile });
+      observed = observeDependencyRoot(planned, {
+        preparedManifestIdentity: fileIdentity(planned.manifest),
+        preparedLockfileIdentity: fileIdentity(planned.lockfile),
+      });
+      if (observed.status !== 'ready') return { ...observed, status: 'failed', diagnostic: `${planned.scope} npm ci 完成后依赖根仍未 ready：${observed.diagnostic}` };
+      return observed;
+    });
+  }
+
+  function aggregateDependencies(scopes, dependencyRoots) {
+    return scopes.map((scope) => {
+      const relevant = dependencyRoots.filter((dependency) => {
+        if (scope.kind === 'workspace') return true;
+        if (scope.kind === 'project') return dependency.project === scope.project;
+        return dependency.requiredBy.includes(scope.selector) || dependency.scope === scope.selector;
+      });
+      if (!relevant.length) return { ...scope, dependencies: probe('not-applicable', null, null) };
+      const required = relevant.filter((dependency) => dependency.required);
+      const blockedRoot = required.find((dependency) => dependency.status !== 'ready');
+      const identity = `sha256-${crypto.createHash('sha256').update(JSON.stringify(relevant.map((dependency) => [dependency.id, dependency.lockfileIdentity, dependency.status]))).digest('hex')}`;
+      return {
+        ...scope,
+        dependencies: blockedRoot
+          ? probe('blocked', identity, `${blockedRoot.scope}: ${blockedRoot.diagnostic}`, blockedRoot.observedAt)
+          : probe('ready', identity, null, relevant.reduce((latest, dependency) => dependency.observedAt > latest ? dependency.observedAt : latest, relevant[0].observedAt)),
+      };
+    });
   }
 
   function probeCli(cli, executionRoot, workspaceNode) {
@@ -314,27 +491,27 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
   }
 
-  function prepareFoundations(receipt, controller, effects, { mutate }) {
+  function prepareFoundations(receipt, controller, scopePlan, previousReceipt, effects, { mutate }) {
     const validationRoot = receipt.scopes[0].validationRoot;
     const workspaceNode = runtime.workspaceNodeExecution(validationRoot);
     const runtimeProbe = workspaceNode.ready ? probe('ready', workspaceNode.identity.digest) : probe('blocked', workspaceNode.identity?.digest || null, workspaceNode.diagnostic || 'Workspace Node 未就绪。');
     const cli = candidateCli(controller, receipt.workspace.root, validationRoot);
-    const dependencies = mutate ? ensureCandidateDependencies(cli, workspaceNode, effects) : (() => {
-      if (cli.kind !== 'task-environment-candidate') return probe('not-applicable', 'stable-controller');
-      const lockfile = path.join(cli.sourceRoot, 'package-lock.json');
-      const lockIdentity = fs.existsSync(lockfile) ? `sha256-${crypto.createHash('sha256').update(fs.readFileSync(lockfile)).digest('hex')}` : null;
-      return fs.existsSync(path.join(cli.sourceRoot, 'node_modules')) ? probe('ready', lockIdentity) : probe('blocked', lockIdentity, 'Candidate dependencies 不可用。');
-    })();
-    const cliProbe = dependencies.status === 'blocked' ? probe('blocked', null, '依赖未就绪，跳过 CLI probe。') : probeCli(cli, validationRoot, workspaceNode);
-    const projection = dependencies.status === 'blocked'
+    const dependencyRoots = prepareDependencyRoots(dependencyPlan(receipt, scopePlan), previousReceipt, cli, workspaceNode, effects, { mutate });
+    let scopes = aggregateDependencies(receipt.scopes, dependencyRoots);
+    const dependenciesBlocked = dependencyRoots.some((dependency) => dependency.required && dependency.status !== 'ready');
+    const cliProbe = dependenciesBlocked ? probe('blocked', null, '必需依赖根未就绪，跳过 CLI probe。') : probeCli(cli, validationRoot, workspaceNode);
+    const projection = dependenciesBlocked
       ? probe('blocked', null, '依赖未就绪，跳过 runtime projection。')
       : mutate
         ? prepareProjection(controller.adapter, validationRoot, cli, workspaceNode, effects)
         : observeProjection(controller.adapter, validationRoot, cli, workspaceNode);
-    const scopes = receipt.scopes.map((scope) => ({ ...scope, runtime: runtimeProbe, cli: cliProbe, dependencies, projection }));
+    scopes = scopes.map((scope) => ({ ...scope, runtime: runtimeProbe, cli: cliProbe, projection }));
     const ready = scopes.every((scope) => [scope.runtime, scope.cli, scope.dependencies, scope.projection].every((item) => item.status !== 'blocked'));
-    const diagnostic = ready ? null : scopes.flatMap((scope) => [scope.runtime, scope.cli, scope.dependencies, scope.projection].filter((item) => item.status === 'blocked').map((item) => `${scope.selector}: ${item.diagnostic}`))[0];
-    return { scopes, ready, diagnostic, cli };
+    const blockedDependency = dependencyRoots.find((dependency) => dependency.required && dependency.status !== 'ready');
+    const diagnostic = ready ? null : blockedDependency
+      ? `${blockedDependency.scope}: ${blockedDependency.diagnostic}`
+      : scopes.flatMap((scope) => [scope.runtime, scope.cli, scope.dependencies, scope.projection].filter((item) => item.status === 'blocked').map((item) => `${scope.selector}: ${item.diagnostic}`))[0];
+    return { scopes, dependencyRoots, ready, diagnostic, cli };
   }
 
   function observeResources(receipt) {
@@ -425,7 +602,9 @@ export function registerTaskEnvironmentApplication(runtime) {
       if (persistence && options.adapter && options.adapter !== persistence.receipt.controller.adapter) throw taskEnvironmentError('task_environment_manager_mismatch', '恢复参数中的 adapter 与 Environment Receipt 登记值不一致。', 409, { expected: persistence.receipt.controller.adapter, actual: options.adapter });
       if (!runtime.isSupportedAgent(adapter)) throw taskEnvironmentError('task_environment_adapter_unsupported', `Agent runtime 不受支持：${adapter}。`, 409);
       const controller = assertEnvironmentManager(root, persistence?.receipt || null, adapter);
-      const scopes = taskScopes(root, taskPersistence.record);
+      const previousReceipt = persistence?.receipt || null;
+      let scopePlan = taskScopes(root, taskPersistence.record, controller);
+      const scopes = scopePlan.scopes;
       const createdAt = persistence?.receipt.createdAt || now();
       const existingUsesGit = Boolean(persistence?.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER));
       if (persistence && options.useGit === false && existingUsesGit) throw taskEnvironmentError('task_environment_plan_mismatch', '现有 Task Environment 使用 Git provider，恢复时不能切换为共享根。', 409, undefined, '按原计划重试 prepare；新放置方式请创建新的正式 Task。');
@@ -450,6 +629,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         controller: persistence?.receipt.controller || { sourceRoot: controller.sourceRoot, cliSource: controller.cliSource, identity: controller.identity, adapter },
         status: 'blocked',
         scopes: initialScopes,
+        dependencyRoots: [],
         resources: persistence?.receipt.resources || [],
         latest: { ready: { status: 'blocked', observedAt: now(), diagnostic: '环境准备尚未完成。' }, cleanup: persistence?.receipt.latest.cleanup || null },
         createdAt,
@@ -463,8 +643,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         effects.push(...providerResult.effects.map((effect) => ({ ...effect, provider: GIT_PROVIDER })));
         if (providerResult.status === 'blocked') throw taskEnvironmentError(providerResult.diagnostic?.code || 'task_environment_provider_blocked', providerResult.diagnostic?.message || 'Git worktree provider blocked.', 409, providerResult.diagnostic);
       }
-      const withLocations = { ...persistence.receipt, scopes: executionScopes(scopes, root, checkoutRoot, providerResult, now()), updatedAt: now() };
-      const foundations = prepareFoundations(withLocations, controller, effects, { mutate: true });
+      scopePlan = taskScopes(root, taskPersistence.record, controller, checkoutRoot || root);
+      const withLocations = { ...persistence.receipt, scopes: executionScopes(scopePlan.scopes, root, checkoutRoot, providerResult, now()), updatedAt: now() };
+      const foundations = prepareFoundations(withLocations, controller, scopePlan, previousReceipt, effects, { mutate: true });
       const resources = observeResources(withLocations);
       const resourcesReady = resources.every((resource) => resource.status !== 'stale');
       const ready = foundations.ready && resourcesReady;
@@ -473,13 +654,20 @@ export function registerTaskEnvironmentApplication(runtime) {
         ...withLocations,
         status: ready ? 'ready' : 'blocked',
         scopes: foundations.scopes,
+        dependencyRoots: foundations.dependencyRoots,
         resources,
         latest: { ...withLocations.latest, ready: { status: ready ? 'ready' : 'blocked', observedAt: now(), diagnostic } },
         updatedAt: now(),
       };
       persistence = runtime.writeTaskEnvironmentPersistence(root, finalReceipt);
       effects.push({ type: 'receipt-updated', path: persistence.file });
-      if (!ready) return environmentResult('prepare', 'blocked', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), { code: 'task_environment_probe_blocked', message: diagnostic }, effects, ['按诊断修复执行基础或 Task-owned 资源后重新运行 prepare。']);
+      if (!ready) {
+        const blockedDependency = foundations.dependencyRoots.find((dependency) => dependency.required && dependency.status !== 'ready');
+        const nextActions = blockedDependency
+          ? [`修复 ${blockedDependency.scope} 的依赖诊断后，按同一 Task ID 重新运行 prepare；其他已成功 root 将被复用。`]
+          : ['按诊断修复执行基础或 Task-owned 资源后重新运行 prepare。'];
+        return environmentResult('prepare', 'blocked', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), { code: 'task_environment_probe_blocked', message: diagnostic }, effects, nextActions);
+      }
       return environmentResult('prepare', 'ready', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), null, effects, []);
     } catch (error) {
       if (receiptMutationStarted && persistence && persistence.receipt.status !== 'cleaned') {
@@ -491,15 +679,69 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
   }
 
+  function readTaskEnvironmentCurrent(targetRoot, taskId) {
+    try {
+      const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+      const root = task.root || targetRoot;
+      const persistence = runtime.readTaskEnvironmentPersistence(root, task.record.taskId, { optional: true });
+      if (!persistence) return environmentResult('inspect', 'unavailable', root, task.record.taskId, null, null, { code: 'task_environment_snapshot_missing', message: '尚未形成 Task Environment SQLite current。' }, [], ['先执行 Task Environment prepare，再读取保存的环境状态。']);
+      if (persistence.receipt.status === 'cleaned') return environmentResult('inspect', 'cleaned', root, task.record.taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
+      if (persistence.receipt.schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA) {
+        return environmentResult('inspect', 'blocked', root, task.record.taskId, persistence, taskEnvironmentReadModel(persistence.receipt), {
+          code: 'task_environment_legacy_receipt',
+          message: '保存的 Environment current 是 legacy v2；需要显式 prepare 升级后才能证明多依赖根 readiness。',
+        }, [], ['运行 Task Environment prepare，升级并保存 dependency-root facts。']);
+      }
+      return environmentResult('inspect', persistence.receipt.status, root, task.record.taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
+    } catch (error) {
+      return blocked('inspect', targetRoot, taskId, error);
+    }
+  }
+
   function inspectTaskEnvironment(targetRoot, taskId) {
     const read = () => {
       try {
-        const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
-        const root = task.root || targetRoot;
-        const persistence = runtime.readTaskEnvironmentPersistence(root, task.record.taskId, { optional: true });
-        if (!persistence) return environmentResult('inspect', 'unavailable', root, task.record.taskId, null, null, { code: 'task_environment_snapshot_missing', message: '尚未形成 Task Environment SQLite current。' }, [], ['先执行 Task Environment prepare，再读取保存的环境状态。']);
-        const status = persistence.receipt.status === 'cleaned' ? 'cleaned' : persistence.receipt.status;
-        return environmentResult('inspect', status, root, task.record.taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
+      const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+      const root = task.root || targetRoot;
+      const persistence = runtime.readTaskEnvironmentPersistence(root, task.record.taskId, { optional: true });
+      if (!persistence) return environmentResult('inspect', 'unavailable', root, task.record.taskId, null, null, { code: 'task_environment_snapshot_missing', message: '尚未形成 Task Environment SQLite current。' }, [], ['先执行 Task Environment prepare，再读取保存的环境状态。']);
+      if (persistence.receipt.status === 'cleaned') return environmentResult('inspect', 'cleaned', root, task.record.taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
+      const controller = environmentInspector(root, persistence.receipt);
+      const validationRoot = persistence.receipt.scopes[0].validationRoot;
+      const scopePlan = taskScopes(root, task.record, controller, validationRoot);
+      const hasGit = persistence.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER);
+      const providerObservation = hasGit ? runtime.inspectGitWorktrees({ workspaceRoot: root, taskId: task.record.taskId }) : null;
+      const providerResult = providerObservation ? {
+        ...providerObservation,
+        evidencePath: providerObservation.evidencePath || persistence.receipt.scopes.find((scope) => scope.provider)?.provider?.evidence,
+      } : null;
+      const checkoutRoot = persistence.receipt.scopes[0].shared ? null : validationRoot;
+      const observedBase = {
+        ...persistence.receipt,
+        schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
+        scopes: executionScopes(scopePlan.scopes, root, checkoutRoot, providerResult, now(), persistence.receipt.scopes),
+        dependencyRoots: [],
+        updatedAt: now(),
+      };
+      const foundations = prepareFoundations(observedBase, controller, scopePlan, persistence.receipt, [], { mutate: false });
+      const resources = observeResources(observedBase);
+      const providerReady = !providerResult || providerResult.status !== 'blocked';
+      const resourcesReady = resources.every((resource) => resource.status !== 'stale');
+      const ready = foundations.ready && providerReady && resourcesReady;
+      const diagnostic = foundations.diagnostic
+        || providerResult?.diagnostic?.message
+        || resources.find((resource) => resource.status === 'stale')?.probe.diagnostic
+        || null;
+      const observedReceipt = {
+        ...observedBase,
+        status: ready ? 'ready' : 'blocked',
+        scopes: foundations.scopes,
+        dependencyRoots: foundations.dependencyRoots,
+        resources,
+        latest: { ...observedBase.latest, ready: { status: ready ? 'ready' : 'blocked', observedAt: now(), diagnostic } },
+        updatedAt: now(),
+      };
+        return environmentResult('inspect', ready ? 'ready' : 'blocked', root, task.record.taskId, persistence, taskEnvironmentReadModel(observedReceipt), ready ? null : { code: 'task_environment_probe_blocked', message: diagnostic }, [], ready ? [] : ['按诊断修复后运行 prepare；inspect 不会修改依赖或 Receipt。']);
       } catch (error) {
         return blocked('inspect', targetRoot, taskId, error);
       }
@@ -640,6 +882,7 @@ export function registerTaskEnvironmentApplication(runtime) {
   Object.assign(runtime, {
     prepareTaskEnvironment,
     inspectTaskEnvironment,
+    readTaskEnvironmentCurrent,
     cleanupTaskEnvironment,
     registerTaskEnvironmentResource,
     releaseTaskEnvironmentResource,

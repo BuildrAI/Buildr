@@ -920,32 +920,42 @@ Buildr package verification MUST 在 checkout、初始化 Workspace、同步 Wor
 - **AND** 两个入口同时写出相同错误结果 MUST NOT 掩盖 canonical Task Record contract 失败
 
 ### Requirement: Package 必须原子交付 Task Environment authority
-Buildr package MUST 原子交付 `buildr.task-environment/v1` contract、Task Environment Application、`task-environment` Skill、公共 CLI/JSON、Environment Receipt writer、Task-scoped Change Reference Resolver、Local App Environment reader/API、`buildr.git-worktree-provider/v1` contract、更新后的 `task-worktree` provider、default bindings、consumer edges、runtime source mappings 与迁移验证。任一 identity、version、provider、binding、CLI/schema 或 source mapping 不一致时 package check 与 doctor MUST fail closed。
+Buildr package MUST原子交付`buildr.task-environment/v1` contract、Task Environment Application、`task-environment` Skill、公共CLI/`buildr.task-environment-result/v2`、Environment Receipt v3/v2 compatibility reader、Project dependency declaration parser、唯一SQLite writer、Task-scoped Change Resolver、Local App saved-current reader/API、Git provider contract、default bindings、runtime mappings与迁移验证。任一identity、version、provider、binding、CLI/schema、source mapping或Local App reader不一致时package check与doctor MUST fail closed。
 
 #### Scenario: 初始化或同步新 package
-- **WHEN** Buildr 初始化或同步包含 P0.2 的 Workspace
-- **THEN** workspace Skills manifest MUST 登记两个新 contracts、enabled/installed 的 `task-environment` 与收窄后的 `task-worktree`
-- **AND** default bindings MUST 分别选择 `task-environment` 和 `task-worktree`，不得保留 `buildr.task-worktree-lifecycle@2`
+- **WHEN** Buildr初始化或同步包含Task Environment的Workspace
+- **THEN** workspace Skills manifest MUST登记matching contracts、enabled/installed task-environment与收窄task-worktree
+- **AND** default bindings MUST分别选择对应providers，不得恢复旧worktree lifecycle authority
 
 #### Scenario: capability graph 解析
-- **WHEN** doctor 解析 task-triage、task-environment、task-worktree 与 task-finish
-- **THEN** graph MUST 显示正式 workflow 消费 `buildr.task-environment/v1`，Environment 按需消费 `buildr.git-worktree-provider/v1`
-- **AND** 旧 capability、缺失 provider、歧义或版本冲突 MUST 产生精确 blocked/degraded 诊断
+- **WHEN** doctor解析task-triage、task-environment、task-worktree与task-finish
+- **THEN** graph MUST显示正式workflow消费task-environment，Environment按需消费Git provider
+- **AND** 旧capability、缺失provider、歧义或版本冲突 MUST产生精确诊断
 
 #### Scenario: 公共 Task Environment CLI 完整登记
-- **WHEN** package verification 检查 root help、topic help、CLI registry 与 public JSON schema registry
-- **THEN** `buildr task environment prepare|inspect|cleanup` MUST 全部出现并使用 `buildr.task-environment-result/v1`，内部 `resource register/release` MUST NOT 出现
-- **AND** `worktree create|inspect|cleanup` MUST 只使用 `buildr.git-worktree-result/v1` 描述 Git provider evidence，`worktree context|adopt` 与 Environment ready/restore/runtime/cleanup authority MUST 不再存在
+- **WHEN** package verification检查help、CLI registry与public JSON registry
+- **THEN** prepare/inspect/cleanup MUST全部出现并使用`buildr.task-environment-result/v2`，内部resource/saved-current actions MUST NOT出现
+- **AND** worktree actions MUST只描述Git provider evidence
+
+#### Scenario: Local App只读保存事实
+- **WHEN** package verification从checkout或npm tarball访问Task Environment API
+- **THEN** Local App MUST通过Application saved-current reader返回v3 dependency roots或v2 legacy diagnostic
+- **AND** GET MUST不执行npm、文件系统dependency probe或Receipt写入
 
 #### Scenario: 候选 package 在自身验证工作区测试
-- **WHEN** task worktree 中的候选新增 Task Environment Skill、contracts、Application/CLI 或 runtime assets
-- **THEN** candidate CLI MAY 只向同一 receipt 绑定的任务验证工作区或其内隔离 user destination 投射
-- **AND** MUST 在写入前阻止 retained Workspace、peer task worktree 和验证根外共享 user runtime target
+- **WHEN** task worktree中的候选新增Task Environment Skill、contracts、Application/CLI、dependency declaration或runtime assets
+- **THEN** candidate CLI MAY只向同一receipt绑定的任务验证工作区或其内隔离user destination投射
+- **AND** MUST在写入前阻止retained Workspace、peer task worktree和验证根外共享user runtime target
+
+#### Scenario: 候选package在隔离Workspace证明fresh依赖
+- **WHEN** candidate CLI作为外部稳定controller为fresh canonical fixture准备包含buildr/buildr-web声明的Task
+- **THEN** 一次prepare MUST在fixture task worktree准备两个独立node_modules并使`npm run build:web`使用buildr-web lockfile工具成功
+- **AND** candidate MUST不认领或清理其自身正式Task Environment
 
 #### Scenario: 集成后激活
-- **WHEN** P0.2 候选已进入 retained checkout
-- **THEN** Agent MUST 从 retained Product source 执行适用 sync/render/doctor
-- **AND** 只有 retained package/runtime identity 匹配且专项验证通过后，Task Environment authority 才 MUST 被报告为正式生效
+- **WHEN** 候选已进入retained checkout
+- **THEN** Agent MUST从retained Product source执行适用sync/render/doctor
+- **AND** 只有package/runtime identity匹配且专项验证通过后Task Environment authority才能报告正式生效
 
 ### Requirement: Package 必须原子交付 Task Review authority
 Buildr package MUST 原子交付 `buildr.task-review/v1` contract、默认 `task-review` Skill、Task Review Domain/Application/repository、CLI/JSON、Local App Review API/Web assets、Task-scoped Planning Review route、workspace binding、runtime source mappings 与专项验证。任一 identity、version、provider、path、schema、binding 或 Application client 接线不一致时 package check 与 doctor MUST fail closed。

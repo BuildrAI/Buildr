@@ -75,6 +75,9 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
   ]) assert.ok(worktreeSkill.includes(required), `task-worktree must include ${required}`);
   assert.match(environmentSkill, /`buildr.task-environment\/v1` 的默认 provider/);
   assert.match(environmentSkill, /Environment Receipt 独占 Runtime、CLI、依赖、projection、动态资源、ready、恢复和总 cleanup/);
+  assert.match(environmentSkill, /依赖以逐 dependency-root 事实和 scope 聚合表达/);
+  assert.match(environmentSkill, /不运行 package manager、不创建 `node_modules`、不回写 Receipt/);
+  assert.match(environmentSkill, /不要递归扫描 package manifest\/lockfile/);
   assert.doesNotMatch(worktreeSkill, /executionReady|worktree context|worktree adopt/);
 
   const packagedTriage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');

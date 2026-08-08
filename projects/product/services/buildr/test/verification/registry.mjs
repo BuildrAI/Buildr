@@ -135,6 +135,7 @@ export const VERIFICATION_IGNORED_INPUTS = Object.freeze([
 ]);
 
 export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
+  'task-environment.yml',
   'verification.yml',
   'package.json',
   'package-lock.json',

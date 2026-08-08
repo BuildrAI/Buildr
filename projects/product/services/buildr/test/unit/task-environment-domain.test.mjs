@@ -23,6 +23,14 @@ function receipt(overrides = {}) {
       dependencies: { status: 'ready', identity: 'lock-one', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
       projection: { status: 'ready', identity: 'projection-one', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
     }],
+    dependencyRoots: [{
+      id: 'service:product/buildr/npm', scope: 'workspace', project: 'product', service: 'buildr', requiredBy: ['workspace'],
+      root: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr', manager: 'npm',
+      manifest: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr/package.json',
+      lockfile: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr/package-lock.json',
+      manifestIdentity: 'sha256-manifest', lockfileIdentity: 'sha256-lock', preparedManifestIdentity: 'sha256-manifest', preparedLockfileIdentity: 'sha256-lock',
+      required: true, status: 'ready', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null,
+    }],
     resources: [{
       id: 'preview-demo', kind: 'preview', scope: 'workspace', provider: 'local-app-preview', handle: { instance: 'demo' }, status: 'running',
       identity: { productCheckout: '/workspace/projects/product/services/buildr', url: 'http://127.0.0.1:4321', port: 4321, pid: 1234, providerIdentity: 'preview-demo-1234' },
@@ -36,10 +44,18 @@ function receipt(overrides = {}) {
   };
 }
 
-test('Environment Receipt v2 规范化唯一 Task/Workspace、实际 scope、执行基础和资源事实', () => {
+test('Environment Receipt v3 规范化唯一 Task/Workspace、逐根依赖、实际 scope 和资源事实', () => {
   assert.deepEqual(normalizeTaskEnvironmentReceipt(receipt()), receipt());
   assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedTaskId: 'other-task' }), (error) => error.code === 'task_environment_identity_mismatch');
   assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedWorkspaceRoot: '/tmp/other' }), (error) => error.code === 'task_environment_workspace_mismatch');
+});
+
+test('legacy Environment Receipt v2 保持只读兼容且 read model 明确标记 legacy', () => {
+  const legacy = receipt({ schemaVersion: 'buildr.task-environment-receipt/v2' });
+  delete legacy.dependencyRoots;
+  assert.deepEqual(normalizeTaskEnvironmentReceipt(legacy), legacy);
+  assert.equal(taskEnvironmentReadModel(legacy).legacy, true);
+  assert.deepEqual(taskEnvironmentReadModel(legacy).dependencyRoots, []);
 });
 
 test('Environment Receipt 是 closed schema，拒绝 Task Record、session、凭证和任意 cleanup 命令', () => {
@@ -58,4 +74,6 @@ test('公开 Environment read model 保留判断事实但不暴露 cleanup handl
   assert.equal(model.controller.cliSource, undefined);
   assert.equal(model.scopes[0].provider.capability, 'buildr.git-worktree-provider/v1');
   assert.equal(model.scopes[0].projection.identity, 'projection-one');
+  assert.equal(model.dependencyRoots[0].service, 'buildr');
+  assert.equal(model.legacy, false);
 });

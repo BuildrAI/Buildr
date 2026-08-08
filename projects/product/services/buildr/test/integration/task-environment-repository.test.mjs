@@ -47,6 +47,7 @@ function receipt(root, status = 'ready') {
       dependencies: { status: 'not-applicable', identity: 'none', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
       projection: { status: 'ready', identity: 'projection', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
     }],
+    dependencyRoots: [],
     resources: [],
     latest: { ready: { status: 'ready', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null }, cleanup: null },
     createdAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',

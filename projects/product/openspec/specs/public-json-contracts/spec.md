@@ -118,32 +118,32 @@ Buildr CLI MUST 在无法匹配命令且输入请求 `--json` 时输出登记的
 - **AND** MUST NOT保留 v1 alias 或按运行时存储选择不同 schema
 
 ### Requirement: Task Environment CLI 必须提供稳定公开 JSON identity
-`buildr task environment prepare|inspect|cleanup --json` MUST 返回 `buildr.task-environment-result/v1` 顶层 identity，并 MUST 至少包含 operation、`status: ready|blocked|unavailable|cleaned`、taskId、SQLite-backed Environment current availability/locator、`observedAt`、sanitized environment read model、diagnostic、effects 与 nextActions；checkout 和 npm tarball CLI MUST 保持 schema parity。read model MUST 区分 Environment 总事实与 provider evidence summary，并 MUST NOT 把这些字段解释为 Task Record 内容或暴露 SQLite path、数据库页、完整 Receipt 与内部 resource handle。
+`buildr task environment prepare|inspect|cleanup --json` MUST返回`buildr.task-environment-result/v2`顶层identity，并 MUST至少包含operation、`status: ready|blocked|unavailable|cleaned`、taskId、SQLite-backed current availability/locator、observedAt、sanitized Environment read model、逐dependency-root facts、diagnostic、effects与nextActions；checkout和npm tarball CLI MUST保持schema parity。read model MUST区分Environment总事实、scope聚合、dependency roots与provider summary，并 MUST NOT把这些字段解释为Task Record内容或暴露SQLite path、完整Receipt、resource handle或完整npm输出。
 
 #### Scenario: Environment 操作成功
-- **WHEN** 三个 action 中任一成功并请求 JSON
-- **THEN** stdout MUST 是单一有效 `buildr.task-environment-result/v1` 对象且 stderr 为空
-- **AND** payload MUST 返回实际 operation、对应 `ready|unavailable|cleaned` status、当前观察时间、SQLite current locator、read model 与精确 effects；不得用 status 重复建立通用生命周期状态机
+- **WHEN** 三个action中任一成功并请求JSON
+- **THEN** stdout MUST是单一有效`buildr.task-environment-result/v2`对象且stderr为空
+- **AND** payload MUST返回实际operation、status、观察时间、SQLite locator、read model与精确effects
 
 #### Scenario: Environment 业务阻塞
-- **WHEN** action 因 Task 不存在、identity/drift、scope/provider、Runtime/CLI/依赖/projection、资源、cleanup authorization 或 migration conflict 被 blocked
-- **THEN** stdout MUST 仍返回 `buildr.task-environment-result/v1` blocked 对象并以非零状态退出
-- **AND** payload MUST 包含稳定 error code、已发生/未发生 effects、可用 Environment identity 与唯一 next action
+- **WHEN** action因identity/drift、scope/provider、Runtime/CLI、某dependency root、projection、resource、cleanup authorization或migration conflict blocked
+- **THEN** stdout MUST仍返回`buildr.task-environment-result/v2`blocked对象并以非零状态退出
+- **AND** payload MUST包含稳定error code、具体root/scope、已发生effects、可用Environment identity与next action
 
 #### Scenario: Inspect 尚无 Environment Receipt
-- **WHEN** 有效 Task 尚未形成 `task_environment_current` row 且调用方执行 `inspect --json`
-- **THEN** payload MUST 返回成功的只读 `unavailable` 结果、稳定 no-receipt diagnostic、`observedAt`、空 read model、SQLite locator与prepare next action
-- **AND** MUST NOT 把缺少 current row 作为损坏 Task、创建 row、解析 `environment.json` 或伪造 blocked preparation effect
+- **WHEN** 有效Task尚未形成current row且调用方执行inspect JSON
+- **THEN** payload MUST返回成功的只读unavailable结果、stable diagnostic、observedAt、空read model、SQLite locator与prepare next action
+- **AND** MUST NOT创建row、解析environment.json或伪造preparation effect
 
 #### Scenario: JSON 暴露敏感或越权字段
-- **WHEN** public result 包含凭证、进程 secret、任意 cleanup shell、内部 resource handle、完整 provider receipt、Agent session handle、SQLite database path 或 Task Record 环境字段
-- **THEN** public schema verification MUST 失败
-- **AND** public read model MUST 只保留 UI/Agent 判断所需的 sanitized identity、状态、摘要与 evidence reference
+- **WHEN** public result包含凭证、完整npm输出、任意cleanup shell、resource handle、完整provider receipt、Agent session handle、SQLite database path或Task Record环境字段
+- **THEN** public schema verification MUST失败
+- **AND** checkout/npm两端同时漂移 MUST NOT被视为parity通过
 
 #### Scenario: JSON coverage 未登记 Environment action
-- **WHEN** command registry 已启用任一 Task Environment JSON action，但 schema registry、关键字段检查或 checkout/npm parity 没有覆盖
-- **THEN** 产品验证 MUST 失败并报告遗漏的 command/schema family
-- **AND** 内部 `resource register/release` MUST NOT 被误列为 public JSON 命令
+- **WHEN** command registry已启用任一Task Environment JSON action，但schema registry、关键字段检查或checkout/npm parity没有覆盖
+- **THEN** 产品验证 MUST失败并报告遗漏的command/schema family
+- **AND** 内部`resource register/release`与saved-current read MUST NOT被误列为public JSON命令
 
 ### Requirement: Git worktree provider CLI 必须使用窄公开 JSON identity
 `buildr worktree create|inspect|cleanup --json` MUST 返回 `buildr.git-worktree-result/v1` 顶层 identity，并 MUST 至少包含 operation、status、taskId、repository plan/evidence、Git effects、diagnostic 与 nextActions。payload MUST 只表达 repository、checkout、branch、HEAD、remote、clean、registration 与本地 Git cleanup 事实；checkout 和 npm tarball CLI MUST 保持 schema parity。

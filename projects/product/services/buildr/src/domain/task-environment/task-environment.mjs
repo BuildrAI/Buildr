@@ -2,14 +2,16 @@ import path from 'node:path';
 
 import { isTaskRecordId } from '../task-record/task-record.mjs';
 
-export const TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v2';
-export const TASK_ENVIRONMENT_RESULT_SCHEMA = 'buildr.task-environment-result/v1';
+export const TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v3';
+export const LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v2';
+export const TASK_ENVIRONMENT_RESULT_SCHEMA = 'buildr.task-environment-result/v2';
 export const TASK_ENVIRONMENT_STATUSES = Object.freeze(['ready', 'blocked', 'cleaned']);
 export const TASK_ENVIRONMENT_RESOURCE_PROVIDERS = Object.freeze(['local-app-preview']);
 
 const SCOPE_KINDS = new Set(['workspace', 'project', 'service']);
 const PROBE_STATUSES = new Set(['ready', 'blocked', 'not-applicable']);
 const RESOURCE_STATUSES = new Set(['running', 'stale', 'released']);
+const DEPENDENCY_ROOT_STATUSES = new Set(['ready', 'missing', 'drifted', 'failed', 'blocked', 'not-applicable']);
 const TEXT_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/;
 
 export function taskEnvironmentError(code, message, status = 400, details = undefined, nextAction = undefined) {
@@ -147,6 +149,47 @@ function normalizeResource(value, index, scopes) {
   };
 }
 
+function normalizeDependencyRoot(value, index, scopes) {
+  const field = `dependencyRoots[${index}]`;
+  const dependency = object(value, field);
+  closed(dependency, new Set([
+    'id', 'scope', 'project', 'service', 'requiredBy', 'root', 'manager', 'manifest', 'lockfile',
+    'manifestIdentity', 'lockfileIdentity', 'preparedManifestIdentity', 'preparedLockfileIdentity',
+    'required', 'status', 'observedAt', 'diagnostic',
+  ]), field);
+  const scope = identity(dependency.scope, `${field}.scope`);
+  if (!scopes.has(scope)) throw taskEnvironmentError('task_environment_dependency_scope_invalid', `依赖根 scope 不属于当前 Environment：${scope}。`, 409, { scope });
+  if (!Array.isArray(dependency.requiredBy) || dependency.requiredBy.length === 0) throw taskEnvironmentError('task_environment_dependency_required_by_invalid', `${field}.requiredBy 必须是非空数组。`, 400, { field: `${field}.requiredBy` });
+  const requiredBy = dependency.requiredBy.map((selector, requiredByIndex) => identity(selector, `${field}.requiredBy[${requiredByIndex}]`));
+  for (const selector of requiredBy) if (!scopes.has(selector)) throw taskEnvironmentError('task_environment_dependency_scope_invalid', `依赖根 requiredBy scope 不属于当前 Environment：${selector}。`, 409, { scope: selector });
+  if (dependency.manager !== 'npm') throw taskEnvironmentError('task_environment_dependency_manager_unsupported', `依赖根 package manager 不受支持：${dependency.manager}。`, 409, { manager: dependency.manager });
+  if (typeof dependency.required !== 'boolean') throw taskEnvironmentError('task_environment_field_invalid', `${field}.required 必须是 boolean。`, 400, { field: `${field}.required` });
+  if (!DEPENDENCY_ROOT_STATUSES.has(dependency.status)) throw taskEnvironmentError('task_environment_dependency_status_invalid', `${field}.status 不受支持：${dependency.status}。`, 400, { field: `${field}.status` });
+  const root = absolute(dependency.root, `${field}.root`);
+  const manifest = absolute(dependency.manifest, `${field}.manifest`);
+  const lockfile = absolute(dependency.lockfile, `${field}.lockfile`);
+  if (!inside(root, manifest) || !inside(root, lockfile)) throw taskEnvironmentError('task_environment_dependency_path_invalid', `${field} 的 manifest/lockfile 必须位于 dependency root 内。`, 400, { field });
+  return {
+    id: identity(dependency.id, `${field}.id`),
+    scope,
+    project: identity(dependency.project, `${field}.project`),
+    service: identity(dependency.service, `${field}.service`),
+    requiredBy: [...new Set(requiredBy)],
+    root,
+    manager: dependency.manager,
+    manifest,
+    lockfile,
+    manifestIdentity: nullableText(dependency.manifestIdentity, `${field}.manifestIdentity`),
+    lockfileIdentity: nullableText(dependency.lockfileIdentity, `${field}.lockfileIdentity`),
+    preparedManifestIdentity: nullableText(dependency.preparedManifestIdentity, `${field}.preparedManifestIdentity`),
+    preparedLockfileIdentity: nullableText(dependency.preparedLockfileIdentity, `${field}.preparedLockfileIdentity`),
+    required: dependency.required,
+    status: dependency.status,
+    observedAt: timestamp(dependency.observedAt, `${field}.observedAt`),
+    diagnostic: nullableText(dependency.diagnostic, `${field}.diagnostic`),
+  };
+}
+
 function normalizeLatest(value) {
   const latest = object(value, 'latest');
   closed(latest, new Set(['ready', 'cleanup']), 'latest');
@@ -170,8 +213,12 @@ function inside(root, candidate) {
 
 export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, expectedWorkspaceRoot = null } = {}) {
   const receipt = object(value, 'Environment Receipt');
-  closed(receipt, new Set(['schemaVersion', 'taskId', 'workspace', 'controller', 'status', 'scopes', 'resources', 'latest', 'createdAt', 'updatedAt']), '');
-  if (receipt.schemaVersion !== TASK_ENVIRONMENT_RECEIPT_SCHEMA) throw taskEnvironmentError('task_environment_schema_unsupported', `Environment Receipt schemaVersion 必须是 ${TASK_ENVIRONMENT_RECEIPT_SCHEMA}。`, 409, { actual: receipt.schemaVersion });
+  const supportedSchemas = new Set([LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA, TASK_ENVIRONMENT_RECEIPT_SCHEMA]);
+  if (!supportedSchemas.has(receipt.schemaVersion)) throw taskEnvironmentError('task_environment_schema_unsupported', `Environment Receipt schemaVersion 必须是 ${LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA} 或 ${TASK_ENVIRONMENT_RECEIPT_SCHEMA}。`, 409, { actual: receipt.schemaVersion });
+  const v3 = receipt.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA;
+  closed(receipt, new Set(['schemaVersion', 'taskId', 'workspace', 'controller', 'status', 'scopes', 'dependencyRoots', 'resources', 'latest', 'createdAt', 'updatedAt']), '');
+  if (v3 && !Array.isArray(receipt.dependencyRoots)) throw taskEnvironmentError('task_environment_field_invalid', 'dependencyRoots 必须是数组。', 400, { field: 'dependencyRoots' });
+  if (!v3 && receipt.dependencyRoots !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', 'Environment Receipt v2 不支持字段：dependencyRoots。', 400, { field: 'dependencyRoots' });
   const taskId = text(receipt.taskId, 'taskId');
   if (!isTaskRecordId(taskId)) throw taskEnvironmentError('task_environment_identity_invalid', `Task ID 不合法：${taskId}。`, 400, { taskId });
   if (expectedTaskId && taskId !== expectedTaskId) throw taskEnvironmentError('task_environment_identity_mismatch', `Environment Receipt Task identity 不匹配：${expectedTaskId} != ${taskId}。`, 409);
@@ -189,6 +236,12 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
     if (scopeIds.has(scope.selector)) throw taskEnvironmentError('task_environment_scope_duplicate', `Environment scope 重复：${scope.selector}。`, 409, { selector: scope.selector });
     scopeIds.add(scope.selector);
   }
+  const dependencyRoots = v3 ? receipt.dependencyRoots.map((dependency, index) => normalizeDependencyRoot(dependency, index, scopeIds)) : [];
+  const dependencyIds = new Set();
+  for (const dependency of dependencyRoots) {
+    if (dependencyIds.has(dependency.id)) throw taskEnvironmentError('task_environment_dependency_duplicate', `Environment dependency root 重复：${dependency.id}。`, 409, { id: dependency.id });
+    dependencyIds.add(dependency.id);
+  }
   if (!Array.isArray(receipt.resources)) throw taskEnvironmentError('task_environment_field_invalid', 'resources 必须是数组。', 400, { field: 'resources' });
   const resources = receipt.resources.map((resource, index) => normalizeResource(resource, index, scopeIds));
   const resourceIds = new Set();
@@ -200,12 +253,13 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
   const updatedAt = timestamp(receipt.updatedAt, 'updatedAt');
   if (Date.parse(updatedAt) < Date.parse(createdAt)) throw taskEnvironmentError('task_environment_timestamp_invalid', 'updatedAt 不能早于 createdAt。', 400, { field: 'updatedAt' });
   return {
-    schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
+    schemaVersion: receipt.schemaVersion,
     taskId,
     workspace: { id: identity(workspace.id, 'workspace.id'), root: workspaceRoot },
     controller: { sourceRoot: absolute(controller.sourceRoot, 'controller.sourceRoot'), cliSource: absolute(controller.cliSource, 'controller.cliSource'), identity: text(controller.identity, 'controller.identity'), adapter: identity(controller.adapter, 'controller.adapter') },
     status: receipt.status,
     scopes,
+    ...(v3 ? { dependencyRoots } : {}),
     resources,
     latest: normalizeLatest(receipt.latest),
     createdAt,
@@ -216,6 +270,7 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
 export function taskEnvironmentReadModel(receipt) {
   const normalized = normalizeTaskEnvironmentReceipt(receipt, { expectedTaskId: receipt?.taskId, expectedWorkspaceRoot: receipt?.workspace?.root });
   return {
+    schemaVersion: normalized.schemaVersion,
     taskId: normalized.taskId,
     workspace: normalized.workspace,
     controller: { sourceRoot: normalized.controller.sourceRoot, identity: normalized.controller.identity, adapter: normalized.controller.adapter },
@@ -235,6 +290,8 @@ export function taskEnvironmentReadModel(receipt) {
       dependencies: scope.dependencies,
       projection: scope.projection,
     })),
+    dependencyRoots: normalized.dependencyRoots || [],
+    legacy: normalized.schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA,
     resources: normalized.resources.map(({ handle: _handle, ...resource }) => resource),
     latest: normalized.latest,
     updatedAt: normalized.updatedAt,

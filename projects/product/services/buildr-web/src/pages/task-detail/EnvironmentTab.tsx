@@ -23,7 +23,7 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
           <div>
             <p className="eyebrow">当前机器事实</p>
             <h2>任务环境（Task Environment）</h2>
-            <p className="section-copy">只读探测当前环境；不会准备、恢复或清理任何资源。</p>
+            <p className="section-copy">读取 Workspace SQLite 中最近保存的环境事实；GET 不探测、不准备也不修复依赖。</p>
           </div>
           <button id="task-environment-refresh" className="button secondary" type="button" disabled={loading} onClick={onRefresh}>
             刷新当前事实
@@ -44,7 +44,7 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
             label="环境回执（Environment Receipt）"
             value={(
               <span id="task-environment-receipt">
-                {data ? `${data.receipt?.available ? '可用' : '不可用'} · ${data.receipt?.path || '—'}` : '—'}
+                {data ? `${data.receipt?.available ? '可用' : '不可用'} · ${data.receipt?.locator || '—'}` : '—'}
               </span>
             )}
           />
@@ -60,7 +60,7 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
       </article>
       <div id="task-environment-loading" className={`page-loading${loading ? '' : ' hidden'}`}>
         <span className="loader" />
-        <p>正在探测当前环境…</p>
+        <p>正在读取保存的环境事实…</p>
       </div>
       <div id="task-environment-detail" className={`environment-detail${environment ? '' : ' hidden'}`}>
         {environment ? (
@@ -109,6 +109,36 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
                         </div>
                       ))}
                     </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>依赖根</h2>
+                  <p className="section-copy">每个 Service 使用自己的 manifest、lockfile 和 worktree-local node_modules；此处展示最近一次 prepare 保存的事实。</p>
+                </div>
+              </div>
+              <div id="task-environment-dependency-roots" className="environment-scope-list">
+                {!environment.dependencyRoots?.length ? (
+                  <div className="empty-state">{environment.legacy ? 'Legacy Receipt 尚未保存逐根依赖事实，请运行 prepare 升级。' : '当前 Task 没有适用的依赖根。'}</div>
+                ) : environment.dependencyRoots.map((dependency: any) => (
+                  <article key={dependency.id} className="environment-scope-card">
+                    <div className="environment-scope-heading">
+                      <h3>{dependency.id}</h3>
+                      <span className="state">{dependency.status}</span>
+                    </div>
+                    <dl className="read-facts">
+                      <Fact label="Service" value={dependency.scope} />
+                      <Fact label="依赖根" value={dependency.root} />
+                      <Fact label="包管理器" value={dependency.manager} />
+                      <Fact label="Manifest" value={`${dependency.manifest} · ${dependency.manifestIdentity || 'missing'}`} />
+                      <Fact label="Lockfile" value={`${dependency.lockfile} · ${dependency.lockfileIdentity || 'missing'}`} />
+                      <Fact label="Required" value={dependency.required ? '是' : '否'} />
+                      <Fact label="最近观察" value={formatDateTime(dependency.observedAt)} />
+                      <Fact label="诊断" value={dependency.diagnostic || '—'} />
+                    </dl>
                   </article>
                 ))}
               </div>

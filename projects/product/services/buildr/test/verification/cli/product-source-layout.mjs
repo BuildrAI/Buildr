@@ -19,6 +19,7 @@ const allowedProjectRootEntries = new Set([
   'docs',
   'openspec',
   'services',
+  'task-environment.yml',
   'verification.yml',
 ]);
 

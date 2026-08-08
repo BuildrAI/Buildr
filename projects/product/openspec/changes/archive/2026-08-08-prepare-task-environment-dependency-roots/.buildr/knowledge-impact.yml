@@ -1,0 +1,37 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: prepare-task-environment-dependency-roots
+operation: reconcile
+treeIdentity: working-tree-sha256-7d4c092e16eee378c32e4e7c2fccb12bac9a0ac14000705d043640dad636f773
+impacts:
+  - type: brief
+    target: openspec/changes/prepare-task-environment-dependency-roots/brief.md
+    reason: 记录变更目标、边界、流程与验收入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/prepare-task-environment-dependency-roots/proposal.md
+      - openspec/changes/prepare-task-environment-dependency-roots/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Task Environment新增Project声明authority、逐root current与双读取边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/prepare-task-environment-dependency-roots/specs/task-environments/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service的Task Environment dependency planner、Receipt和reader职责变化。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/prepare-task-environment-dependency-roots/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Buildr Web成为显式source-build dependency root且运行时边界保持不变。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/prepare-task-environment-dependency-roots/specs/task-environment-dependency-declarations/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 正式Task Environment prepare/inspect的依赖闭包和恢复语义变化。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/prepare-task-environment-dependency-roots/specs/task-environments/spec.md
+unresolvedItems: []
