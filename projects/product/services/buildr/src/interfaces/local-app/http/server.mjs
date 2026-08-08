@@ -30,7 +30,7 @@ const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web-dist');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
-const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective']);
+const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective', 'retrospectiveState']);
 const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
 const STATIC_CONTENT_TYPES = new Map([
   ['.html', 'text/html; charset=utf-8'],
@@ -412,6 +412,14 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         const taskRetrospectiveMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/retrospective$`));
         if (request.method === 'GET' && taskRetrospectiveMatch) {
           return jsonResponse(response, 200, runtime.inspectTaskRetrospective(root, taskRetrospectiveMatch[1]));
+        }
+        if (request.method === 'PATCH' && taskRetrospectiveMatch) {
+          assertWriteRequest(request, origin, sessionToken);
+          const input = await readAllowedJsonBody(request, new Set(['status', 'note', 'expectedCurrentDigest']), 'Task retrospective handle');
+          if (!Object.hasOwn(input, 'expectedCurrentDigest')) {
+            const error = new Error('Task retrospective handle 必须包含 expectedCurrentDigest。'); error.code = 'task_retrospective_digest_required'; error.status = 400; throw error;
+          }
+          return jsonResponse(response, 200, runtime.handleTaskRetrospective(root, taskRetrospectiveMatch[1], input));
         }
         const taskVerificationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/verification$`));
         if (request.method === 'GET' && taskVerificationMatch) {

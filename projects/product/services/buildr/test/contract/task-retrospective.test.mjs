@@ -27,6 +27,10 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /部分可得.*不代表完整 Task/);
   assert.match(skill, /不可得时直接标记缺失/);
   assert.match(skill, /不得为了补齐 Token 数字.*强制估算.*增加任务消耗/);
+  assert.match(skill, /task-retrospective-driver\.mjs handle/);
+  assert.match(skill, /`handled\|no-action` 必须提供非空说明/);
+  assert.match(skill, /digest 冲突.*重新 `inspect`/);
+  assert.match(skill, /`handled`.*不等于建议已落地.*另建正式 Task/);
   assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
 });
 
@@ -57,7 +61,7 @@ test('Task Retrospective Application是唯一repository writer caller', () => {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(file);
       else if (file.endsWith('static-validation.mjs')) continue;
-      else if (/\.(?:mjs|js)$/.test(entry.name) && fs.readFileSync(file, 'utf8').includes('.writeTaskRetrospectiveResultPersistence(')) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
+      else if (/\.(?:mjs|js)$/.test(entry.name) && /\.writeTaskRetrospective(?:Result|Disposition)Persistence\(/.test(fs.readFileSync(file, 'utf8'))) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
     }
   };
   visit(sourceRoot);

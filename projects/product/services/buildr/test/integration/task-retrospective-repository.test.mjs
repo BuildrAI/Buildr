@@ -49,6 +49,7 @@ function terminal(runtime, root, status = 'completed') {
 test('terminal Task维护单一SQLite current Result且旧observation保持原样', (t) => {
   const { root, runtime, legacy } = fixture(t);
   assert.equal(runtime.inspectTaskRetrospective(root, 'demo-task').slot.present, false);
+  assert.throws(() => runtime.handleTaskRetrospective(root, 'demo-task', { status: 'no-action', note: '没有报告', expectedCurrentDigest: 'sha256-missing' }), (error) => error.code === 'task_retrospective_result_not_found');
   assert.throws(() => runtime.recordTaskRetrospective(root, 'demo-task', { reportMarkdown: 'active' }), (error) => error.code === 'task_retrospective_task_not_terminal');
   runtime.recordTaskReview(root, 'demo-task', {
     reviewType: 'planning', targetIdentity: 'plan:demo', method: 'self', reviewed: ['任务计划'],
@@ -61,15 +62,35 @@ test('terminal Task维护单一SQLite current Result且旧observation保持原�
   assert.equal(first.status, 'recorded');
   assert.deepEqual(first.effects, [{ type: 'created', path: 'workspace-sqlite:task-retrospective/demo-task' }]);
   assert.equal(first.slot.result.focus, 'agent-execution-efficiency');
+  assert.deepEqual(first.slot.disposition, { status: 'pending', note: null, disposedAt: null });
+  assert.match(first.slot.currentDigest, /^sha256-[a-f0-9]{64}$/);
+  const noAction = runtime.handleTaskRetrospective(root, 'demo-task', {
+    status: 'no-action', note: '  已确认无需后续行动。 ', expectedCurrentDigest: first.slot.currentDigest,
+  });
+  assert.equal(noAction.operation, 'handle');
+  assert.equal(noAction.status, 'updated');
+  assert.equal(noAction.slot.disposition.status, 'no-action');
+  assert.equal(noAction.slot.disposition.note, '已确认无需后续行动。');
+  assert.ok(noAction.slot.disposition.disposedAt);
+  assert.notEqual(noAction.slot.currentDigest, first.slot.currentDigest);
+  assert.throws(() => runtime.handleTaskRetrospective(root, 'demo-task', {
+    status: 'handled', note: '陈旧页面', expectedCurrentDigest: first.slot.currentDigest,
+  }), (error) => error.code === 'task_retrospective_conflict' && error.status === 409);
+  const reopened = runtime.handleTaskRetrospective(root, 'demo-task', {
+    status: 'pending', expectedCurrentDigest: noAction.slot.currentDigest,
+  });
+  assert.deepEqual(reopened.slot.disposition, { status: 'pending', note: null, disposedAt: null });
   const second = runtime.recordTaskRetrospective(root, 'demo-task', { reportMarkdown: '# 第二次\n\n先确认任务范围。' });
   assert.deepEqual(second.effects, [{ type: 'updated', path: 'workspace-sqlite:task-retrospective/demo-task' }]);
   assert.equal(runtime.inspectTaskRetrospective(root, 'demo-task').slot.result.reportMarkdown, '# 第二次\n\n先确认任务范围。');
+  assert.deepEqual(second.slot.disposition, { status: 'pending', note: null, disposedAt: null });
 
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
   assert.equal(opened.database.prepare("SELECT count(*) AS count FROM task_retrospective_current WHERE task_id = 'demo-task'").get().count, 1);
-  const stored = opened.database.prepare("SELECT result_json FROM task_retrospective_current WHERE task_id = 'demo-task'").get().result_json;
+  const storedRow = opened.database.prepare("SELECT result_json, disposition_status, disposition_note, disposed_at FROM task_retrospective_current WHERE task_id = 'demo-task'").get();
   opened.database.close();
-  assert.doesNotMatch(stored, /history|revision|score|resultDigest/);
+  assert.doesNotMatch(storedRow.result_json, /history|revision|score|resultDigest|disposition/);
+  assert.deepEqual({ ...storedRow, result_json: undefined }, { result_json: undefined, disposition_status: 'pending', disposition_note: null, disposed_at: null });
   assert.equal(JSON.stringify(runtime.inspectTaskReview(root, 'demo-task')), reviewBefore, '复盘写入不得修改 sibling review records');
   assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy observation bytes\n');
 });

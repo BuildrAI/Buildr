@@ -1,4 +1,4 @@
-import { TASK_RETROSPECTIVE_FOCUS, TASK_RETROSPECTIVE_RESULT_SCHEMA, normalizeTaskRetrospectiveResult, taskRetrospectiveError } from '../../domain/task-retrospective/task-retrospective.mjs';
+import { TASK_RETROSPECTIVE_FOCUS, TASK_RETROSPECTIVE_RESULT_SCHEMA, normalizeTaskRetrospectiveDisposition, normalizeTaskRetrospectiveResult, taskRetrospectiveError } from '../../domain/task-retrospective/task-retrospective.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
 function assertInput(input, allowed, label) {
@@ -14,14 +14,25 @@ function result(operation, status, taskId, slot, effects = []) {
   });
 }
 
+function slot(persisted) {
+  return {
+    path: persisted.file,
+    present: true,
+    result: persisted.result,
+    resultDigest: persisted.resultDigest,
+    disposition: persisted.disposition,
+    currentDigest: persisted.currentDigest,
+  };
+}
+
 export function registerTaskRetrospectiveApplication(runtime) {
   function inspectTaskRetrospective(targetRoot, taskId) {
     const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
     const persisted = runtime.readTaskRetrospectiveResultPersistence(task.root, task.record.taskId, { optional: true });
-    const slot = persisted
-      ? { path: persisted.file, present: true, result: persisted.result, resultDigest: persisted.resultDigest }
-      : { path: runtime.taskRetrospectiveResultPath(task.root, task.record.taskId), present: false, result: null, resultDigest: null };
-    return result('inspect', 'inspected', task.record.taskId, slot);
+    const currentSlot = persisted
+      ? slot(persisted)
+      : { path: runtime.taskRetrospectiveResultPath(task.root, task.record.taskId), present: false, result: null, resultDigest: null, disposition: null, currentDigest: null };
+    return result('inspect', 'inspected', task.record.taskId, currentSlot);
   }
 
   function recordTaskRetrospective(targetRoot, taskId, input) {
@@ -38,11 +49,24 @@ export function registerTaskRetrospectiveApplication(runtime) {
       completedAt: new Date().toISOString(),
     }, { expectedTaskId: task.record.taskId });
     const written = runtime.writeTaskRetrospectiveResultPersistence(task.root, normalized);
-    return result('record', 'recorded', task.record.taskId, {
-      path: written.file, present: true, result: written.result, resultDigest: written.resultDigest,
-    }, [{ type: written.created ? 'created' : 'updated', path: written.file }]);
+    return result('record', 'recorded', task.record.taskId, slot(written), [{ type: written.created ? 'created' : 'updated', path: written.file }]);
   }
 
-  Object.assign(runtime, { inspectTaskRetrospective, recordTaskRetrospective });
+  function handleTaskRetrospective(targetRoot, taskId, input) {
+    assertInput(input, new Set(['status', 'note', 'expectedCurrentDigest']), 'Task Retrospective handle');
+    if (typeof input.expectedCurrentDigest !== 'string' || !input.expectedCurrentDigest.trim()) {
+      throw taskRetrospectiveError('task_retrospective_current_digest_required', 'expectedCurrentDigest 必须是非空字符串。', 400, { field: 'expectedCurrentDigest' });
+    }
+    const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+    const disposition = normalizeTaskRetrospectiveDisposition({
+      status: input.status,
+      note: input.status === 'pending' ? null : input.note,
+      disposedAt: input.status === 'pending' ? null : new Date().toISOString(),
+    });
+    const written = runtime.writeTaskRetrospectiveDispositionPersistence(task.root, task.record.taskId, disposition, input.expectedCurrentDigest.trim());
+    return result('handle', 'updated', task.record.taskId, slot(written), [{ type: 'updated', path: written.file }]);
+  }
+
+  Object.assign(runtime, { inspectTaskRetrospective, recordTaskRetrospective, handleTaskRetrospective });
   return runtime;
 }

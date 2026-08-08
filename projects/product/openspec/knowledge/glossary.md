@@ -239,6 +239,13 @@
 - 避免混用：不是Task Review、Verification、Development或Finish gate，不采集隐藏推理或完整轨迹，不自动写回Rule/Skill/产品资产。旧Task Asset Review与`.buildr/asset-review/`已退出current能力，数据保持inert。
 - 来源：canonical `openspec/specs/task-retrospectives/spec.md`（本 Change converge 时建立）
 
+## 复盘处置状态（Retrospective Disposition）
+
+- 定义：一份 current Task Retrospective 的当前处置结论，只取 `pending | handled | no-action`。
+- 适用范围：与 Result 保存在同一 `task_retrospective_current` row；重新记录报告会回到 `pending`，Agent 与 Local App 共用同一 Application `handle`。
+- 避免混用：`handled` 表示已完成处置判断，不表示建议已落地或改进 Task 已完成；`no-action` 必须有明确理由。
+- 来源：canonical `openspec/specs/task-retrospectives/spec.md`
+
 ## 项目测试（Project Testing）
 
 - 定义：面向 Project / Service 的无状态专业指导，帮助 Agent 根据真实技术栈设计测试框架、开发测试并编排反馈；分别判断测试主要意图、执行边界，以及一次编排的成本约束、选择范围和验证目标。

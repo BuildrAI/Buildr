@@ -115,6 +115,12 @@ test('任务详情使用概览、研发、证据、复盘、环境五个一级�
   assert.match(retrospective, /尚未复盘/);
   assert.match(retrospective, /MarkdownHost[\s\S]*reportMarkdown|reportMarkdown[\s\S]*MarkdownHost/);
   assert.match(source, /\/retrospective`\)/);
+  assert.match(source, /method: 'PATCH'[\s\S]*expectedCurrentDigest/);
+  assert.match(source, /task_retrospective_conflict[\s\S]*已刷新为最新状态/);
+  assert.match(source, /retrospectiveMutationRef\.current === mutationId[\s\S]*taskIdRef\.current === currentTaskId/);
+  assert.match(retrospective, /task-retrospective-no-action[\s\S]*无需处理/);
+  assert.match(retrospective, /task-retrospective-handle[\s\S]*标记已处理/);
+  assert.match(retrospective, /task-retrospective-reopen[\s\S]*重新打开/);
   assert.doesNotMatch(source, /openAgentAction\('task-retrospective'/);
   assert.match(source, /if \(tab === 'evidence'\) \{[\s\S]*refreshReview\(\);[\s\S]*refreshVerification\(\);/);
   assert.match(evidence, /reviewType === 'planning'|openAgentAction\('task-review'/);
@@ -217,7 +223,10 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /new AbortController\(\)/);
   assert.match(tasks, /setTimeout\([\s\S]*200/);
   assert.match(tasks, /hasChildren/);
-  assert.match(tasks, /hasRetrospective/);
+  assert.match(tasks, /retrospectiveState/);
+  assert.match(tasks, /value="pending">未处理/);
+  assert.match(tasks, /value="handled">已处理/);
+  assert.match(tasks, /value="no-action">无需处理/);
   assert.match(tasks, /childTaskCount/);
   assert.match(tasks, /totalTaskCount|还没有正式任务记录/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);

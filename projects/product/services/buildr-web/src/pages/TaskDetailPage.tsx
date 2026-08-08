@@ -73,6 +73,7 @@ export function TaskDetailPage() {
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [retrospectiveData, setRetrospectiveData] = useState<any>(null);
   const [retrospectiveLoading, setRetrospectiveLoading] = useState(false);
+  const [retrospectiveMutating, setRetrospectiveMutating] = useState(false);
   const [retrospectiveError, setRetrospectiveError] = useState<string | null>(null);
 
   const dataRef = useRef(data);
@@ -87,6 +88,7 @@ export function TaskDetailPage() {
   const reviewRequestRef = useRef(0);
   const verificationRequestRef = useRef(0);
   const retrospectiveRequestRef = useRef(0);
+  const retrospectiveMutationRef = useRef(0);
 
   const applyRecord = useCallback((next: TaskDetailData, workspaceName?: string) => {
     setData(next);
@@ -264,6 +266,35 @@ export function TaskDetailPage() {
     }
   }, [taskId]);
 
+  const handleRetrospective = useCallback(async (status: 'pending' | 'handled' | 'no-action', note?: string) => {
+    const currentTaskId = taskId;
+    const currentDigest = retrospectiveData?.slot?.currentDigest;
+    if (!currentDigest) return;
+    const mutationId = ++retrospectiveMutationRef.current;
+    setRetrospectiveMutating(true);
+    setRetrospectiveError(null);
+    try {
+      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/retrospective`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, note, expectedCurrentDigest: currentDigest }),
+      });
+      if (retrospectiveMutationRef.current === mutationId && taskIdRef.current === currentTaskId) setRetrospectiveData(next);
+    } catch (err) {
+      const apiError = err as ApiError;
+      if (retrospectiveMutationRef.current !== mutationId || taskIdRef.current !== currentTaskId) return;
+      if (apiError.code === 'task_retrospective_conflict') {
+        await refreshRetrospective();
+        if (retrospectiveMutationRef.current === mutationId && taskIdRef.current === currentTaskId) {
+          setRetrospectiveError('复盘处置已被其他操作更新，已刷新为最新状态，请重新判断。');
+        }
+      } else {
+        setRetrospectiveError(`${apiError.code || 'task_retrospective_handle_failed'}：${err instanceof Error ? err.message : '处置失败'}`);
+      }
+    } finally {
+      if (retrospectiveMutationRef.current === mutationId) setRetrospectiveMutating(false);
+    }
+  }, [retrospectiveData?.slot?.currentDigest, refreshRetrospective, taskId]);
+
   const selectTab = useCallback((tab: TaskTab) => {
     setActiveTab(tab);
     if (tab === 'overview') void refreshOverview();
@@ -297,12 +328,14 @@ export function TaskDetailPage() {
     reviewRequestRef.current += 1;
     verificationRequestRef.current += 1;
     retrospectiveRequestRef.current += 1;
+    retrospectiveMutationRef.current += 1;
     setDevelopmentLoading(false);
     setOverviewLoading(false);
     setEnvironmentLoading(false);
     setReviewLoading(false);
     setVerificationLoading(false);
     setRetrospectiveLoading(false);
+    setRetrospectiveMutating(false);
 
     let cancelled = false;
     void (async () => {
@@ -741,9 +774,10 @@ export function TaskDetailPage() {
       <RetrospectiveTab
         active={activeTab === 'retrospective'}
         data={retrospectiveData}
-        loading={retrospectiveLoading}
+        loading={retrospectiveLoading || retrospectiveMutating}
         error={retrospectiveError}
         onRefresh={() => { void refreshRetrospective(); }}
+        onHandle={(status, note) => { void handleRetrospective(status, note); }}
       />
       <EnvironmentTab
         active={activeTab === 'environment'}

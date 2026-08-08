@@ -1,0 +1,47 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: add-task-retrospective-disposition
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/add-task-retrospective-disposition/brief.md
+    reason: 需要为人和 Agent 提供本 Change 的问题、处置语义、核心流程与验收入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-task-retrospective-disposition/proposal.md
+      - openspec/changes/add-task-retrospective-disposition/design.md
+      - openspec/changes/add-task-retrospective-disposition/specs/task-retrospectives/spec.md
+      - openspec/changes/add-task-retrospective-disposition/specs/task-record/spec.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: Task Retrospective 从只读 current Result 扩展为同一 authority 下的 current 处置元数据与受控人机处置。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-task-retrospective-disposition/specs/task-retrospectives/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: SQLite row、Application mutation、current digest、HTTP 与列表 query 的所有权和并发边界发生变化。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-task-retrospective-disposition/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 增加 Retrospective handle writer、Local App PATCH 与列表处置过滤。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-task-retrospective-disposition/design.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 需要固定“复盘处置状态”以及“已处理不等于改进完成”的长期边界。
+    status: updated
+    sourceIdentities:
+      - user-decision:2026-08-08
+      - openspec/changes/add-task-retrospective-disposition/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Local App React 列表与复盘 Tab 增加处置筛选和受控 mutation 交互。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-task-retrospective-disposition/design.md
+      - openspec/changes/add-task-retrospective-disposition/specs/task-record/spec.md
+unresolvedItems: []

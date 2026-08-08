@@ -593,8 +593,8 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.equal(await page.locator('#task-active-actions').isHidden(), true);
     runtime.recordTaskRetrospective(workspaceRoot, 'created-in-app', { reportMarkdown: '# 执行效率\n\n减少重复读取。' });
     await page.goto(`${workspaceUrl}/tasks`);
-    await page.locator('#task-filter-status').selectOption('all');
-    await page.locator('#task-filter-retrospective').selectOption('yes');
+    await page.locator('#task-filter-retrospective').selectOption('pending');
+    assert.equal(await page.locator('#task-filter-status').inputValue(), 'all', '处置状态筛选应解除默认的进行中限制');
     await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.goto(`${workspaceUrl}/tasks/created-in-app`);
@@ -602,6 +602,15 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('减少重复读取'));
     assert.match(await page.locator('#task-retrospective-content').innerText(), /Agent 执行效率[\s\S]*执行效率[\s\S]*减少重复读取/);
     assert.equal(await page.locator('#task-retrospective-content h2').innerText(), '执行效率');
+    assert.match(await page.locator('.retrospective-disposition').innerText(), /未处理[\s\S]*无需处理/);
+    await page.locator('#task-retrospective-disposition-note').fill('没有可转化为改进任务的事项');
+    await page.locator('#task-retrospective-no-action').click();
+    await page.waitForFunction(() => document.querySelector('.retrospective-disposition')?.textContent.includes('没有可转化为改进任务的事项'));
+    assert.match(await page.locator('.retrospective-disposition').innerText(), /无需处理[\s\S]*重新打开[\s\S]*没有可转化为改进任务的事项/);
+    await page.goto(`${workspaceUrl}/tasks`);
+    await page.locator('#task-filter-retrospective').selectOption('no-action');
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr').length === 1);
+    assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });

@@ -310,7 +310,8 @@ test('失败 migration 完整 rollback 且不登记 ledger row', () => {
 test('退役 migration迁移专业查询字段、保留Environment authority并删除Lifecycle副本', () => {
   const database = new DatabaseSync(':memory:');
   const migrations = loadWorkspaceSqliteMigrations();
-  for (const migration of migrations.slice(0, -1)) applyWorkspaceSqliteMigration(database, migration);
+  const retirement = migrations.find((migration) => migration.name === '0009_retire_task_lifecycle_current.sql');
+  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
   database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
     VALUES ('migration-task', 'buildr.task-record/v1', 'Migration', 'Retire lifecycle', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
   database.prepare("INSERT INTO task_development_current(task_id, record_json) VALUES ('migration-task', '{}')").run();
@@ -321,7 +322,7 @@ test('退役 migration迁移专业查询字段、保留Environment authority并�
   database.prepare("INSERT INTO task_finish_completions(task_id, run_id, status, result_json, completed_at, updated_at) VALUES ('migration-task', 'migration-run', 'complete', ?, '2026-08-01T05:00:00.000Z', '2026-08-01T05:00:00.000Z')").run(JSON.stringify({ association }));
   database.prepare("INSERT INTO task_lifecycle_current(task_id, model_json) VALUES ('migration-task', ?)").run(JSON.stringify({ development: { applicability: { status: 'developing', reasons: [] }, observedAt: '2026-08-01T04:00:00.000Z' }, environment: { status: 'blocked' }, finish: { association } }));
 
-  applyWorkspaceSqliteMigration(database, migrations.at(-1));
+  applyWorkspaceSqliteMigration(database, retirement);
   assert.deepEqual({ ...database.prepare("SELECT applicability_status, observed_at FROM task_development_current WHERE task_id = 'migration-task'").get() }, { applicability_status: 'developing', observed_at: '2026-08-01T04:00:00.000Z' });
   assert.deepEqual({ ...database.prepare("SELECT target_identity, outcome, updated_at FROM task_review_current WHERE task_id = 'migration-task'").get() }, { target_identity: 'sha256-plan', outcome: 'ready', updated_at: '2026-08-01T01:00:00.000Z' });
   assert.deepEqual({ ...database.prepare("SELECT target_identity, outcome, updated_at FROM task_verification_current WHERE task_id = 'migration-task'").get() }, { target_identity: 'sha256-target', outcome: 'passed', updated_at: '2026-08-01T02:00:00.000Z' });
@@ -333,15 +334,38 @@ test('退役 migration迁移专业查询字段、保留Environment authority并�
 test('退役 migration遇到无法证明的terminal association时完整rollback', () => {
   const database = new DatabaseSync(':memory:');
   const migrations = loadWorkspaceSqliteMigrations();
-  for (const migration of migrations.slice(0, -1)) applyWorkspaceSqliteMigration(database, migration);
+  const retirement = migrations.find((migration) => migration.name === '0009_retire_task_lifecycle_current.sql');
+  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
   database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
     VALUES ('terminal-task', 'buildr.task-record/v1', 'Terminal', 'Fail closed', 'completed', 'done', 0, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
   const association = { schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, gates: { planning: null, completion: null, verification: null } };
   database.prepare("INSERT INTO task_lifecycle_current(task_id, model_json) VALUES ('terminal-task', ?)").run(JSON.stringify({ finish: { association } }));
-  assert.throws(() => applyWorkspaceSqliteMigration(database, migrations.at(-1)), (error) => error.code === 'workspace_store_database_failed');
+  assert.throws(() => applyWorkspaceSqliteMigration(database, retirement), (error) => error.code === 'workspace_store_database_failed');
   assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 1);
   assert.deepEqual(database.prepare('PRAGMA table_info(task_development_current)').all().map((row) => row.name), ['task_id', 'record_json']);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, migrations.at(-2).version);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version - 1);
+  database.close();
+});
+
+test('复盘处置 migration把既有Result初始化为pending并建立三态约束', () => {
+  const database = new DatabaseSync(':memory:');
+  const migrations = loadWorkspaceSqliteMigrations();
+  const disposition = migrations.find((migration) => migration.name === '0010_add_task_retrospective_disposition.sql');
+  for (const migration of migrations.filter((item) => item.version < disposition.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('retrospective-task', 'buildr.task-record/v1', 'Retrospective', 'Disposition migration', 'completed', 'done', 0, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
+  database.prepare("INSERT INTO task_retrospective_current(task_id, result_json) VALUES ('retrospective-task', ?)").run(JSON.stringify({
+    schemaVersion: 'buildr.task-retrospective-result/v1', taskId: 'retrospective-task', focus: 'agent-execution-efficiency', reportMarkdown: '# 复盘', completedAt: '2026-08-01T01:00:00.000Z',
+  }));
+
+  applyWorkspaceSqliteMigration(database, disposition);
+  assert.deepEqual({ ...database.prepare("SELECT disposition_status, disposition_note, disposed_at FROM task_retrospective_current WHERE task_id = 'retrospective-task'").get() }, {
+    disposition_status: 'pending', disposition_note: null, disposed_at: null,
+  });
+  assert.throws(() => database.prepare("UPDATE task_retrospective_current SET disposition_status = 'handled' WHERE task_id = 'retrospective-task'").run());
+  assert.throws(() => database.prepare("UPDATE task_retrospective_current SET disposition_note = '不应保留' WHERE task_id = 'retrospective-task'").run());
+  database.prepare("UPDATE task_retrospective_current SET disposition_status = 'no-action', disposition_note = '无需行动', disposed_at = '2026-08-01T02:00:00.000Z' WHERE task_id = 'retrospective-task'").run();
+  assert.equal(database.prepare("SELECT disposition_status FROM task_retrospective_current WHERE task_id = 'retrospective-task'").get().disposition_status, 'no-action');
   database.close();
 });
 

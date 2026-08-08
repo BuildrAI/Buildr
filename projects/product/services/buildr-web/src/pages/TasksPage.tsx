@@ -57,7 +57,7 @@ export function TasksPage() {
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
   const [hasChildren, setHasChildren] = useState('all');
-  const [hasRetrospective, setHasRetrospective] = useState('all');
+  const [retrospectiveState, setRetrospectiveState] = useState('all');
   const [reloadToken, setReloadToken] = useState(0);
 
   const workspaceLoaded = useRef(false);
@@ -88,7 +88,7 @@ export function TasksPage() {
       service,
       status,
       hasChildren,
-      hasRetrospective,
+      retrospectiveState,
     };
     for (const [key, value] of Object.entries(values)) {
       if (value && value !== 'all') query.set(key, value);
@@ -124,7 +124,7 @@ export function TasksPage() {
     } finally {
       if (generation === requestGeneration.current) setLoading(false);
     }
-  }, [workspaceId, project, service, status, hasChildren, hasRetrospective, setWorkspace, setBreadcrumbParts]);
+  }, [workspaceId, project, service, status, hasChildren, retrospectiveState, setWorkspace, setBreadcrumbParts]);
 
   useEffect(() => {
     setBreadcrumbParts([(document.getElementById('shell-workspace-name')?.textContent || '工作空间'), '任务']);
@@ -141,7 +141,7 @@ export function TasksPage() {
     setService('');
     setStatus('active');
     setHasChildren('all');
-    setHasRetrospective('all');
+    setRetrospectiveState('all');
     setReloadToken((value) => value + 1);
   };
 
@@ -193,7 +193,15 @@ export function TasksPage() {
           </label>
           <label>
             状态
-            <select id="task-filter-status" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <select
+              id="task-filter-status"
+              value={status}
+              onChange={(event) => {
+                const next = event.target.value;
+                setStatus(next);
+                if (next === 'active' && ['pending', 'handled', 'no-action'].includes(retrospectiveState)) setRetrospectiveState('all');
+              }}
+            >
               <option value="active">进行中</option>
               <option value="completed">已完成</option>
               <option value="abandoned">已放弃</option>
@@ -234,11 +242,21 @@ export function TasksPage() {
             </select>
           </label>
           <label>
-            任务复盘
-            <select id="task-filter-retrospective" value={hasRetrospective} onChange={(event) => setHasRetrospective(event.target.value)}>
+            复盘处置
+            <select
+              id="task-filter-retrospective"
+              value={retrospectiveState}
+              onChange={(event) => {
+                const next = event.target.value;
+                setRetrospectiveState(next);
+                if (['pending', 'handled', 'no-action'].includes(next) && status === 'active') setStatus('all');
+              }}
+            >
               <option value="all">不限</option>
-              <option value="yes">已复盘</option>
-              <option value="no">未复盘</option>
+              <option value="missing">未复盘</option>
+              <option value="pending">未处理</option>
+              <option value="handled">已处理</option>
+              <option value="no-action">无需处理</option>
             </select>
           </label>
         </form>

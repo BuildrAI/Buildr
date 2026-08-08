@@ -1,5 +1,6 @@
 export const TASK_RETROSPECTIVE_RESULT_SCHEMA = 'buildr.task-retrospective-result/v1';
 export const TASK_RETROSPECTIVE_FOCUS = 'agent-execution-efficiency';
+export const TASK_RETROSPECTIVE_DISPOSITION_STATUSES = Object.freeze(['pending', 'handled', 'no-action']);
 
 export function taskRetrospectiveError(code, message, status = 400, details = undefined, nextAction = undefined) {
   const error = new Error(message);
@@ -51,4 +52,27 @@ export function normalizeTaskRetrospectiveResult(value, { expectedTaskId = null 
     reportMarkdown: nonEmptyText(result.reportMarkdown, 'reportMarkdown'),
     completedAt: result.completedAt,
   };
+}
+
+export function normalizeTaskRetrospectiveDisposition(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw taskRetrospectiveError('task_retrospective_disposition_invalid', 'Task Retrospective disposition 必须是对象。');
+  }
+  const allowed = new Set(['status', 'note', 'disposedAt']);
+  for (const field of Object.keys(value)) {
+    if (!allowed.has(field)) throw taskRetrospectiveError('task_retrospective_field_forbidden', `Task Retrospective disposition 不支持字段：${field}。`, 400, { field });
+  }
+  if (!TASK_RETROSPECTIVE_DISPOSITION_STATUSES.includes(value.status)) {
+    throw taskRetrospectiveError('task_retrospective_disposition_status_invalid', '复盘处置状态只支持 pending、handled 或 no-action。', 400, { field: 'status', value: value.status });
+  }
+  if (value.status === 'pending') {
+    if (value.note !== null && value.note !== undefined) throw taskRetrospectiveError('task_retrospective_disposition_pending_note_forbidden', 'pending 处置状态不能保留说明。', 400, { field: 'note' });
+    if (value.disposedAt !== null && value.disposedAt !== undefined) throw taskRetrospectiveError('task_retrospective_disposition_pending_time_forbidden', 'pending 处置状态不能保留处置时间。', 400, { field: 'disposedAt' });
+    return { status: 'pending', note: null, disposedAt: null };
+  }
+  const note = nonEmptyText(value.note, 'note');
+  if (typeof value.disposedAt !== 'string' || Number.isNaN(Date.parse(value.disposedAt))) {
+    throw taskRetrospectiveError('task_retrospective_disposition_timestamp_invalid', 'disposedAt 必须是 ISO 时间。', 400, { field: 'disposedAt' });
+  }
+  return { status: value.status, note, disposedAt: value.disposedAt };
 }

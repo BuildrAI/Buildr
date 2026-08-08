@@ -15,8 +15,8 @@ const args = process.argv.slice(2);
 const action = args[0];
 const taskId = option(args, '--task');
 const targetRoot = option(args, '--target');
-if (!['inspect', 'record'].includes(action) || !taskId || !targetRoot) {
-  console.error('Internal usage: node task-retrospective-driver.mjs <inspect|record> --task <task-id> --target <canonical-workspace> [--report-markdown <text>]');
+if (!['inspect', 'record', 'handle'].includes(action) || !taskId || !targetRoot) {
+  console.error('Internal usage: node task-retrospective-driver.mjs <inspect|record|handle> --task <task-id> --target <canonical-workspace> [--report-markdown <text>] [--status <pending|handled|no-action> --note <text> --expected-current-digest <digest>]');
   process.exit(2);
 }
 
@@ -24,7 +24,13 @@ try {
   const runtime = createRuntime();
   const output = action === 'inspect'
     ? runtime.inspectTaskRetrospective(targetRoot, taskId)
-    : runtime.recordTaskRetrospective(targetRoot, taskId, { reportMarkdown: option(args, '--report-markdown') });
+    : action === 'record'
+      ? runtime.recordTaskRetrospective(targetRoot, taskId, { reportMarkdown: option(args, '--report-markdown') })
+      : runtime.handleTaskRetrospective(targetRoot, taskId, {
+          status: option(args, '--status'),
+          note: option(args, '--note'),
+          expectedCurrentDigest: option(args, '--expected-current-digest'),
+        });
   console.log(JSON.stringify(output, null, 2));
 } catch (error) {
   console.error(JSON.stringify({

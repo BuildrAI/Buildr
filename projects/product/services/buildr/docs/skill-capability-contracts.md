@@ -98,7 +98,7 @@ render/sync会在`task-development`和`task-finish`的runtime派生版本中注�
 
 产品中的verification领域服务遵守`buildr.task-verification/v3`：已有Result只有在Content Target与declaration identity都匹配且policy所需fact/coverage gap完整时，才可供Development freeze消费。`not-passed`或coverage gap保持专业事实，只有Development在Candidate/Completion之后取得绑定精确Result digest与scope的用户风险接受才可proceed；Finish不能改写或补齐。transient execution evidence在提炼Result后由对应验证workflow安全清理。
 
-`buildr.task-retrospective/v1`默认由`task-retrospective`提供。provider只在用户明确要求时复盘terminal Task的Agent执行效率，自由Markdown由Agent生成；Application独占terminal校验、系统时间与Workspace SQLite单一current row的事务替换，Local App只读消费`inspect`。它不依赖完整轨迹或精确telemetry，不创建history、评分、候选或跨任务索引，也不被Task Record、Development、Finish、cleanup或OpenSpec消费为门禁。旧`task-asset-review`contracts/provider/binding已经退役；`.buildr/asset-review/`数据保持inert。
+`buildr.task-retrospective/v1`默认由`task-retrospective`提供。provider只在用户明确要求时复盘terminal Task的Agent执行效率，自由Markdown由Agent生成；Application独占terminal校验、系统时间与Workspace SQLite单一current row的事务替换。同一row以`pending|handled|no-action`保存复盘处置状态，Agent和Local App都通过Application `inspect + handle`、current digest和非空说明受控处置；Markdown Result保持只读，重新记录会原子回到`pending`。处置结论不跟踪改进执行，需落地的建议另建正式Task。它不依赖完整轨迹或精确telemetry，不创建history、评分、候选或跨任务索引，也不被Task Record、Development、Finish、cleanup或OpenSpec消费为门禁。旧`task-asset-review`contracts/provider/binding已经退役；`.buildr/asset-review/`数据保持inert。
 
 ### 6. 用户替换实现
 

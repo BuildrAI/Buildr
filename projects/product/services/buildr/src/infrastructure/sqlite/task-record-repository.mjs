@@ -89,6 +89,11 @@ function taskViewQuery(filters = {}, taskId = null) {
   if (filters.hasChildren === 'no') conditions.push('NOT EXISTS (SELECT 1 FROM tasks child_filter WHERE child_filter.parent_task_id = t.task_id)');
   if (filters.hasRetrospective === 'yes') conditions.push('EXISTS (SELECT 1 FROM task_retrospective_current retrospective_filter WHERE retrospective_filter.task_id = t.task_id)');
   if (filters.hasRetrospective === 'no') conditions.push('NOT EXISTS (SELECT 1 FROM task_retrospective_current retrospective_filter WHERE retrospective_filter.task_id = t.task_id)');
+  if (filters.retrospectiveState === 'missing') conditions.push('NOT EXISTS (SELECT 1 FROM task_retrospective_current retrospective_state_filter WHERE retrospective_state_filter.task_id = t.task_id)');
+  if (['pending', 'handled', 'no-action'].includes(filters.retrospectiveState)) {
+    conditions.push('EXISTS (SELECT 1 FROM task_retrospective_current retrospective_state_filter WHERE retrospective_state_filter.task_id = t.task_id AND retrospective_state_filter.disposition_status = ?)');
+    parameters.push(filters.retrospectiveState);
+  }
   return {
     sql: `SELECT t.*, parent.title AS parent_title, parent.status AS parent_status,
       (SELECT COUNT(*) FROM tasks child_count WHERE child_count.parent_task_id = t.task_id) AS child_task_count

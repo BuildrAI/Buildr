@@ -1137,6 +1137,9 @@ export function createPackageStaticValidator(deps) {
           '不读取、迁移或删除`.buildr/asset-review/`',
           'task-retrospective-driver.mjs inspect',
           'task-retrospective-driver.mjs record',
+          'task-retrospective-driver.mjs handle',
+          'expected-current-digest',
+          '`handled|no-action` 必须提供非空说明',
           '不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-retrospective Skill must include ${JSON.stringify(requiredText)}.`);

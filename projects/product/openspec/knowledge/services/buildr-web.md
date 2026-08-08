@@ -17,6 +17,7 @@
 - Product `task-environment.yml` 将本Service的package root登记为独立required npm dependency root，并由`buildr`的source-build关系显式纳入Task闭包。Task worktree只使用本root的lockfile、`node_modules`和Workspace Foundation受管npm，不从retained checkout或系统PATH借用TypeScript/Vite。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
+- Task 列表以 `retrospectiveState` 筛选未复盘、未处理、已处理和无需处理；复盘 Tab 保持 Markdown 报告只读，通过 sibling `buildr` 的同源/session 受保护 API 更新处置状态。
 
 ## 运行与验证
 

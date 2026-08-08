@@ -85,7 +85,7 @@ function effect(type, taskId) {
 
 export function registerTaskRecordApplication(runtime) {
   function normalizedQueryFilters(input = {}) {
-    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective']), 'Task query');
+    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective', 'retrospectiveState']), 'Task query');
     const filters = {};
     if (input.q !== undefined && String(input.q).trim()) filters.q = String(input.q).trim();
     if (input.project !== undefined && String(input.project).trim()) filters.project = text(input.project, 'project');
@@ -101,6 +101,10 @@ export function registerTaskRecordApplication(runtime) {
     if (input.hasRetrospective !== undefined) {
       if (!['yes', 'no', 'all'].includes(input.hasRetrospective)) throw taskRecordError('task_record_filter_invalid', 'hasRetrospective 只支持 yes、no 或 all。', 400, { field: 'hasRetrospective', value: input.hasRetrospective });
       filters.hasRetrospective = input.hasRetrospective;
+    }
+    if (input.retrospectiveState !== undefined) {
+      if (!['missing', 'pending', 'handled', 'no-action', 'all'].includes(input.retrospectiveState)) throw taskRecordError('task_record_filter_invalid', 'retrospectiveState 只支持 missing、pending、handled、no-action 或 all。', 400, { field: 'retrospectiveState', value: input.retrospectiveState });
+      filters.retrospectiveState = input.retrospectiveState;
     }
     return filters;
   }
@@ -203,7 +207,7 @@ export function registerTaskRecordApplication(runtime) {
       filters: {
         q: filters.q ?? '', project: filters.project ?? null,
         service: filters.service ? referenceKey(filters.service, 'service') : null,
-        status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', hasRetrospective: filters.hasRetrospective ?? 'all',
+        status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', hasRetrospective: filters.hasRetrospective ?? 'all', retrospectiveState: filters.retrospectiveState ?? 'all',
       },
       filterOptions: {
         projects: persistence.filterOptions.projects,
