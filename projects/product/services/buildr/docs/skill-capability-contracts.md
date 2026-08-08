@@ -84,6 +84,8 @@ bindings:
 
 `buildr.task-environment/v1`默认由`task-environment`提供。Project `preparation.yml`长期声明Project-wide或Service-scoped Recipe；Agent根据正式Task完整Project/Service scope及构建/验证事实提交Plan Request，Application解析Declaration/Recipe identity并保存Task Plan快照，通过公共`plan record|inspect`和`prepare|inspect|cleanup`CLI执行，消费`buildr.task-environment-plan-result/v2`与`buildr.task-environment-result/v4`。核心不枚举技术栈或package manager，只执行closed Recipe中的无shellStep并保存分层current/prepared identity。CLI`inspect`只读实时观察，Local App GET只读SQLite current。Git隔离是可选实现细节；所有消费者复用同一Application/read model，不直接解析Receipt或写第二份环境状态。
 
+`declaration-intake`不是capability provider，而是Preparation与Verification长期声明的Agent路由入口。它在注册、首次Task、入口变化或专业gap时只读发现候选，用户确认精确diff后再交给两个既有owner Skill；不新增统一contract、binding、store或writer。`capabilities.yml`和`commands.yml`只作为外部readiness诊断，Intake不安装或修改Skill/provider/CLI。
+
 ### 3. Resolver 与 readiness
 
 Buildr 从当前 scope 向 workspace root 查找最近的显式 binding，校验 contract version、provider `provides`、runtime 可用性和 provider 自身的 required dependencies。当前 binding 选择 `git-operations`，供直接用户已选动作、产品入口动态 routing 或 retained metadata-only handoff 使用；它不决定 `task-finish/v1` 产品执行器是否可运行，只有命中 handoff 时 provider 不 ready 才 blocked。

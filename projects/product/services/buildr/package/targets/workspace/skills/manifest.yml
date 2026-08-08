@@ -114,6 +114,17 @@ skills:
       - capability: buildr.task-development
         version: 2
         mode: optional
+  - id: declaration-intake
+    assetIdentity: buildr:skill:declaration-intake
+    sourceIdentity: package:workspace:buildr/declaration-intake
+    source: buildr
+    path: buildr/declaration-intake
+    description: 用户要求初始化、刷新或审查 Project 的环境准备与任务验证声明，或 Project/Service 注册、首次 Task scope、Environment 缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；只读发现 preparation.yml 与 verification.yml 候选，长期写入必须经用户确认并交给各声明 owner Skill。
+    enabled: true
+    required: false
+    state: installed
+    runtimes: [claude-code, codex, cursor, qoder, trae, trae-work, workbuddy]
+    runtimePath: declaration-intake
   - id: project-testing
     assetIdentity: buildr:skill:project-testing
     sourceIdentity: package:workspace:buildr/project-testing
@@ -211,7 +222,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-verification
     source: buildr
     path: buildr/task-verification
-    description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish。
+    description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、经 Declaration Intake 授权后维护 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish；声明发现交给 Declaration Intake。
     enabled: true
     required: false
     state: installed

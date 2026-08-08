@@ -50,6 +50,8 @@ Task Finish 的 v2 Result 是 SQLite terminal read model；current run、lease �
 
 `buildr.task-verification-operation-result/v1` 统一覆盖 current Result 的 `inspect|record`。成功时返回 `operation`、`status`、`taskId`、`slot`、`effects` 与 `nextActions`；`slot` 包含 path、present、完整 `buildr.task-verification-result/v1`、响应级 digest 和派生 applicability。没有 current Result 时 inspect 返回 `unknown`；target 或 declaration identity 变化时返回 `stale`。业务拒绝返回同一 envelope、`status: blocked`、稳定 diagnostic 和非零退出，且不得覆盖旧 slot。
 
+当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
+
 `buildr.task-record-result/v3` 统一覆盖五个 Task Record 动作。成功时返回 `operation`、`status`、`taskId`、closed v1 `record`、响应级 `recordDigest`、直接关系摘要 `taskRelations`、`effects` 与 `nextActions`，不返回本地数据库路径；`diagnostic` 为 `null`。`record.parentTaskId` 是直接 Parent，`record.childTaskIds` 是按 ID 排序的直接 Children；`taskRelations.parent/children` 补充真实标题与状态，不递归展开。完整 Application 列表继续使用 `buildr.task-record-list/v2`。
 
 Local App 普通观察路径使用独立 stored-state projection：详情 `buildr.task-record-view/v1` 与列表 `buildr.task-record-list/v3` 都来自同一 SQLite authority，返回 response-level `recordDigest`、stored Change references、直接关系与非持久化 `childTaskCount`，但不解析 Change availability、Environment、Development、Review、Verification 或 Finish currentness。列表 v3 另返回规范化 `filters`、从 Task scope rows 派生的 `filterOptions` 与用于区分“Workspace 无 Task/筛选无结果”的 `totalTaskCount`。业务拒绝仍返回现有 error envelope 或 action envelope，且不得产生 mutation effects。CLI 参数或路由语法错误继续使用 `buildr.cli-error/v1`。`recordDigest` 和 `childTaskCount` 都不进入 Task Record 持久 schema。

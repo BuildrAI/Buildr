@@ -1,13 +1,13 @@
 ---
 name: task-verification
-description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化或更新 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish。
+description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、经 Declaration Intake 授权后维护 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish；声明发现交给 Declaration Intake。
 ---
 
 # Task Verification Skill
 
 本 Skill 是 `buildr.task-verification/v3` 的默认 provider。它只负责两部分：Project 的 Verification Capability Declaration，以及针对正式 Task 目标的 transient Execution + Workspace本地current Result。它不开发测试，不拥有 Task Environment、Task Review、Task Development、Candidate generation、Task progression、风险接受、部署或业务验收。
 
-开始行动时必须读取 `references/project-verification-v2.md`；初始化或更新声明时再使用 `templates/project-verification.yml`。正式 Result 必须通过 Task Verification Application 维护，不能直接读写Workspace SQLite或旧`.buildr/tasks/<task-id>/verification.yml`。
+开始行动时必须读取 `references/project-verification-v2.md`；只有经`declaration-intake`完成只读发现、展示精确diff并取得用户授权后，才使用`templates/project-verification.yml`维护长期声明。正式 Result 必须通过 Task Verification Application 维护，不能直接读写Workspace SQLite或旧`.buildr/tasks/<task-id>/verification.yml`。
 
 ## 1. 建立验证边界
 
@@ -41,7 +41,7 @@ current Result 只有在 target 与全部 declaration identities 都 `current` �
 - 不使用 minimal/affected/candidate、maturity、mode、enforcement、dependsOn 或 supersedes。
 - `coordinated`/`external` resource 只有被真实能力 claim 时才保留；本地临时文件不建设资源平台。
 
-用户明确要求初始化或更新声明时，读取真实 package/POM scripts、CI、AGENTS 和项目文档，只写已确认事实并保留已有稳定 capability id。测试不存在时保持空声明或 coverage gap，不借此任务开发测试。
+收到`declaration-intake`的已授权精确handoff后，读取真实 package/POM scripts、CI、AGENTS 和项目文档，只写已确认事实并保留已有稳定 capability id。测试不存在时保持空声明或 coverage gap，不借此任务开发测试。用户仅提出初始化、刷新或gap时先交回Intake，不把发现请求直接当成写入授权。
 
 声明前还必须核对真实测试入口、内部 registry、环境、副作用和可用的近期耗时 evidence；必要且已授权时可以有界运行现有入口取得事实。不得根据 capability id、`fast`、`unit`、目录名或技术栈惯例推断成本与覆盖。
 

@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { createProject } from '../../domain/project/project.mjs';
+import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 
 export function projectError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
@@ -181,7 +182,8 @@ export function registerProjectApplication(runtime) {
           ? '3. 在任何写入前核对 Git 地址、远端名称、集成分支与既有目录/登记身份；不得盲目 checkout、stash 或 relink。'
           : '3. 确认该项目应跟随根目录 Git，不要写入项目级集成分支。',
         '4. 使用 canonical buildr project create 完成创建或幂等修复。',
-        '5. 完成后运行适用的 doctor，说明项目范围、实际路径、Git 状态和仍需处理的问题。',
+        `5. 创建成功后，${declarationIntakeNextAction({ trigger: 'project-registered', project: code || '<confirmed-project-code>' })}`,
+        '6. 完成后运行适用的 doctor，说明项目范围、实际路径、Git 状态和仍需处理的问题。',
       ].join('\n'),
       copiedMeansCreated: false,
     };

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { normalizeTaskVerificationResult, taskVerificationError } from '../../domain/task-verification/task-verification.mjs';
 import { parseProjectVerification, validateProjectVerification } from '../doctor/project-verification-diagnostics.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { declarationIntakeGapNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')}`;
@@ -164,6 +165,25 @@ export function registerTaskVerificationApplication(runtime) {
     };
   }
 
+  function coverageGapNextActions(resultSlot) {
+    const gaps = resultSlot?.result?.coverageGaps || [];
+    const byProject = new Map();
+    for (const gap of gaps) {
+      const match = /^(?:project:([^/]+)|service:([^/]+)\/(.+))$/.exec(gap.scope);
+      const project = match?.[1] || match?.[2];
+      if (!project) continue;
+      if (!byProject.has(project)) byProject.set(project, { services: new Set(), scopes: [] });
+      if (match[3]) byProject.get(project).services.add(match[3]);
+      byProject.get(project).scopes.push(gap.scope);
+    }
+    return [...byProject.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([project, value]) => declarationIntakeGapNextAction({
+      kind: 'verification',
+      project,
+      services: [...value.services],
+      scopes: value.scopes,
+    }));
+  }
+
   function operationResult(operation, status, taskId, resultSlot, effects = []) {
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult, {
       operation,
@@ -172,7 +192,7 @@ export function registerTaskVerificationApplication(runtime) {
       slot: resultSlot,
       diagnostic: null,
       effects,
-      nextActions: [],
+      nextActions: coverageGapNextActions(resultSlot),
     });
   }
 
@@ -262,7 +282,7 @@ export function registerTaskVerificationApplication(runtime) {
         '执行要求：',
         '1. 读取并遵循 task-verification Skill 与 selected buildr.task-verification/v3 contract；先 inspect Task 和 existing current Result。',
         '2. 按 Task ID 恢复 ready Task Environment，只在 receipt 允许的 execution roots 工作。',
-        '3. 读取 Task scope 内 Project verification.yml v2，针对当前目标选择适用的已有 capabilities；没有能力只报告 coverage gap，不开发测试。',
+        '3. 读取 Task scope 内 Project verification.yml v2，针对当前目标选择适用的已有 capabilities；没有能力只报告 coverage gap，不开发测试，并以只读 Declaration Intake 候选作为后续 next action。',
         '4. command runner 或 bounded Agent operation 产生的是 transient Execution Evidence；完整 stdout/stderr、耗时、资源与临时路径不得复制进 current Result。',
         '5. 只有全部适用执行与事实提炼完成后才通过 Task Verification Application record 一份完整 replacement；中断或结论不完整时不得覆盖 current。',
         '6. Result 只记录 target、declarations、实际 capabilities/facts、coverage gaps 与 passed|not-passed；是否 proceed/blocked 留给用户或未来 Task Development。',

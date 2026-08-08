@@ -247,6 +247,8 @@ test('Project Declaration按Task多Service scope选择Recipe，漂移只读block
   const stale = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
   assert.equal(stale.status, 'blocked');
   assert.equal(stale.environment.preparationDeclarations[0].status, 'drifted');
+  assert.match(stale.nextActions[0], /trigger: environment-gap/);
+  assert.match(stale.nextActions[0], /declaration-intake Skill/);
   assert.equal(current.writes(), writesBeforeInspect);
 
   const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: request });
@@ -254,4 +256,17 @@ test('Project Declaration按Task多Service scope选择Recipe，漂移只读block
   assert.notEqual(recovered.environment.preparationPlan.identity, prepared.environment.preparationPlan.identity);
   assert.equal(recovered.environment.preparationSteps.every((step) => step.executed), true);
   assert.equal(current.installRoots().length, 4);
+});
+
+test('Preparation Declaration缺失时Environment blocked并只返回Intake恢复入口', (t) => {
+  const current = fixture(t);
+  const declarationPath = path.join(current.root, 'projects', 'product', 'preparation.yml');
+  assert.equal(fs.existsSync(declarationPath), false);
+  const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: declarationRequest(['buildr', 'buildr-web']) });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'project_environment_preparation_missing');
+  assert.match(result.nextActions[0], /declaration-intake Skill/);
+  assert.match(result.nextActions[0], /service:product\/buildr-web/);
+  assert.equal(fs.existsSync(declarationPath), false);
+  assert.equal(current.installRoots().length, 0);
 });

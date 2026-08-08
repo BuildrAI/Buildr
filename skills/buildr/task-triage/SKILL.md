@@ -31,6 +31,8 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 工程细节默认不进入 OpenSpec；但默认值、存储或内部机制一旦改变外部行为、数据含义、兼容性、安全边界或业务承诺，仍走 `change-flow`。不得用 `spec-maintenance` 绕过新需求评审，也不得用 `code-only` 掩盖规范缺失或事实不明。
 
+若任务改变依赖、构建或测试入口，先把已确认Task scope与变更事实交给`declaration-intake`做只读差异检查；长期`preparation.yml`/`verification.yml`写入仍需用户确认并由各owner Skill完成。Triage不直接维护声明。
+
 ### 执行形态
 
 - `implementation`：修改代码、运行构建/测试，或需要长期开发上下文。

@@ -213,6 +213,10 @@ test('Getting Started projection 汇总 Workspace 范围，开始工作 prompt �
   const prompt = runtime.generateStartWorkPrompt(root, { projectCode: 'demo', goal: '先梳理项目范围' });
   assert.match(prompt.prompt, /项目：Demo（demo）/);
   assert.match(prompt.prompt, /本次不限定/);
+  assert.match(prompt.prompt, /trigger: first-task-scope/);
+  assert.match(prompt.prompt, /scope: project:demo/);
+  assert.doesNotMatch(prompt.prompt, /service:demo\//);
+  assert.match(prompt.prompt, /未经用户确认不得写入长期声明/);
   assert.equal(prompt.copiedMeansStarted, false);
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'missing', goal: '不应回退' }), (error) => error.code === 'project_not_found');
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'demo', goal: 'x', rootPath: root }), (error) => error.code === 'workspace_start_work_field_forbidden');

@@ -102,6 +102,28 @@ test('Task Verification CLI 维护单一 current Result 并派生 target/declara
   assert.doesNotMatch(payload, /stdout|stderr|duration|applicability|resultDigest|revision|Environment Receipt/);
 });
 
+test('Verification coverage gap保留current事实并返回只读Intake next action', (t) => {
+  const { root } = fixture(t);
+  const declarationPath = path.join(root, 'projects', 'demo', 'verification.yml');
+  fs.rmSync(declarationPath);
+  const response = json([
+    'task', 'verification', 'record', 'verification-task',
+    '--target-identity', 'delivery:gap', '--target-summary', 'Gap target',
+    '--coverage-gap', 'project:demo::No declared verification capability',
+    '--outcome', 'not-passed', '--summary', 'Coverage gap remains',
+    '--declaration-root', root, '--target', root,
+  ]);
+  assert.equal(response.slot.result.coverageGaps[0].scope, 'project:demo');
+  assert.equal(response.slot.result.conclusion.outcome, 'not-passed');
+  assert.match(response.nextActions[0], /trigger: verification-gap/);
+  assert.match(response.nextActions[0], /gap: project:demo/);
+  assert.equal(fs.existsSync(declarationPath), false);
+
+  const inspected = json(['task', 'verification', 'inspect', 'verification-task', '--target', root]);
+  assert.deepEqual(inspected.nextActions, response.nextActions);
+  assert.equal(fs.existsSync(declarationPath), false);
+});
+
 test('Local App 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {
   const { base, root } = fixture(t);
   createRuntime().recordTaskVerification(root, 'verification-task', recordInput(root));

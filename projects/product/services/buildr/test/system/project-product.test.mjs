@@ -38,6 +38,8 @@ test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt
   const root = initWorkspace(t);
   let result = runBuildr(['project', 'create', 'demo', '--target', root, '--name', 'Demo Project', '--description', 'Project description']);
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Next: 运行 declaration-intake Skill/);
+  assert.match(result.stdout, /trigger: project-registered/);
   const runtime = createRuntime();
   const list = runtime.listProjects(root);
   assert.equal(list.schemaVersion, 'buildr.projects/v2');
@@ -56,6 +58,8 @@ test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt
   const prompt = runtime.generateProjectCreatePrompt({ code: 'next', name: 'Next', description: 'Next project', sourceType: 'git', gitUrl: 'https://example.com/next.git', remote: 'upstream', integrationBranch: 'dev' });
   assert.match(prompt.prompt, /集成分支：dev/);
   assert.match(prompt.prompt, /不得盲目 checkout、stash 或 relink/);
+  assert.match(prompt.prompt, /trigger: project-registered/);
+  assert.match(prompt.prompt, /未经用户确认不得写入长期声明/);
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
@@ -169,6 +173,8 @@ test('Git Project 保存 integrationBranch，实际 branch 与 dirty 状态只�
   const reported = report.projectRegistry.projects.find((project) => project.code === 'git-demo');
   assert.equal(reported.source.git.integrationBranch, 'dev');
   assert.equal(reported.currentBranch, undefined);
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'git-demo', 'preparation.yml')), false, 'doctor does not initialize declarations');
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'git-demo', 'verification.yml')), false, 'doctor does not initialize declarations');
 });
 
 test('sync 显式把 v1 Project registry 迁移为 v2', (t) => {
@@ -241,6 +247,10 @@ test('Project HTTP API 复用本机安全边界、CAS 与 prompt-only 创建', a
   assert.equal(response.status, 200);
   const prompt = await response.json();
   assert.match(prompt.prompt, /canonical buildr project create/);
+  assert.match(prompt.prompt, /declaration-intake Skill/);
   assert.equal(prompt.copiedMeansCreated, false);
   assert.equal(runtime.listProjects(root).projects.length, 1, 'prompt generation does not create Project');
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'demo', 'preparation.yml')), false, 'GET and prompt generation do not initialize declarations');
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'demo', 'verification.yml')), false, 'GET and prompt generation do not initialize declarations');
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'next')), false, 'prompt generation does not materialize candidate Project');
 });

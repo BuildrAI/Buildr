@@ -72,6 +72,8 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 
 Project根可选`preparation.yml`（`buildr.project-environment-preparation/v1`），长期声明Project-wide或Service-scoped Recipe。Agent按Task完整Project/Service scope提交closed`buildr.task-environment-plan-request/v1`；Application解析声明identity并把resolved`buildr.task-environment-plan/v2`与Receipt v5保存到canonical Workspace SQLite唯一`task_environment_current`。`task environment plan record|inspect`管理saved Plan，`prepare --plan <file>`可一次选择并准备。Recipe Step只接受无shellexecutable、args、所属Project/Service相对cwd、inputs、expected outputs、required和timeout；核心不枚举package manager、不扫描manifest。Receipt分别保存Declaration、Scope、Recipe与Step current/prepared identity、状态、诊断和本次是否执行。任一required Recipe/Step缺失、漂移或失败都会阻断整体ready。`inspect`只读实时观察且不执行Step、不创建输出、不升级Plan、不回写；Local App GET只读取saved current。旧Receipt只读兼容，必须显式提供Plan Request才能升级。
 
+`project create`、`service create`及Local App对应Agent prompt会返回`declaration-intake` next action；首次Task prompt、Environment declaration/Recipe gap与Verification coverage gap也使用同一入口。该入口只让Agent检查`preparation.yml`/`verification.yml`候选或diff，注册事务和所有GET/inspect都不写声明。用户确认精确长期变更后，仍由`task-environment`或`task-verification`各自owner维护。
+
 Git provider evidence 使用 `buildr.git-worktree-evidence/v1`，保存在 Git common-dir 的 `buildr/task-worktrees/<task-id>.json`。它只包含 repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote 和 Git effects。Environment cleanup 先停止已登记资源，再把每仓 delivery identity 交给 provider；明确 abandon 时可以清理可证明属于该 Task 的 dirty checkout。provider 不删除远端分支，也不执行交付、验证或总 cleanup 判断。
 
 ## Runtime 与诊断

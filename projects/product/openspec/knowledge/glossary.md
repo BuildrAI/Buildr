@@ -169,6 +169,13 @@
 - 避免混用：不是Task Plan、Receipt、技术栈自动发现结果或状态store；候选可由Agent只读发现，但长期写入必须经用户授权。
 - 来源：[Project Environment Preparation Declaration specification](../specs/project-environment-preparation-declarations/spec.md)
 
+## 项目声明接入（Project Declaration Intake）
+
+- 定义：面向Project `preparation.yml`与`verification.yml`的无状态Agent编排入口，在注册、首次Task、入口变化、专业gap或显式请求时只读发现候选与差异。
+- 适用范围：确认Project-only或多Service scope、汇总证据与外部诊断、向用户请求精确长期写入授权，并把已授权动作交给各声明owner Skill。
+- 避免混用：不是统一Declaration store/schema/writer、后台扫描器或Task结果；不管理`capabilities.yml`/`commands.yml`，未经用户确认不写长期声明。
+- 来源：[Project Declaration Intake specification](../specs/project-declaration-intake/spec.md) 与 [Buildr 项目声明体系](../../docs/architecture/buildr-project-declaration-system.md)
+
 ## 环境准备配方（Environment Preparation Recipe）
 
 - 定义：Preparation Declaration中的稳定可选单元，绑定一个Project或Service scope，并包含一个或多个明确、无shell、有输入输出身份的有序Step。

@@ -1,6 +1,7 @@
 import { createWorkspace, isWorkspaceId } from '../../domain/workspace/workspace.mjs';
 import process from 'node:process';
 import { WORKSPACE_DESCRIPTION_TODO } from '../../infrastructure/filesystem/workspace-manifest-repository.mjs';
+import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 
 function workspaceError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
@@ -466,8 +467,9 @@ export function registerWorkspaceApplication(runtime) {
         '',
         '执行要求：',
         '1. 先读取当前工作空间、项目与可选服务范围的适用工作资产。',
-        '2. 只在必要时询问范围、业务判断或授权；不要根据排序猜测其他项目或服务。',
-        '3. 根据任务性质推进理解、设计、实现和验证，并按当前项目规则报告结果。',
+        `2. ${declarationIntakeNextAction({ trigger: 'first-task-scope', project: project.code, services: service ? [service.code] : [] })}`,
+        '3. 只在必要时询问范围、业务判断或授权；不要根据排序猜测其他项目或服务。',
+        '4. 根据任务性质推进理解、设计、实现和验证，并按当前项目规则报告结果。',
       ].join('\n'),
       copiedMeansStarted: false,
     };

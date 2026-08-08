@@ -24,6 +24,7 @@ import { observeGitCheckoutIdentity } from '../../infrastructure/git/checkout-id
 import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
 import { spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { declarationIntakeGapNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
 const ENVIRONMENT_MANAGER_SOURCE_PATHS = ['bin', 'src', 'package', 'package.json', 'package-lock.json'];
@@ -238,19 +239,28 @@ export function registerTaskEnvironmentApplication(runtime) {
     const request = normalizeTaskEnvironmentPlanRequest(requestInput, { scopeSelectors: selectors });
     const execution = new Map(currentScopes.map((scope) => [scope.selector, scope]));
     const projects = request.projects.map((requested) => {
+      const projectServices = scopePlan.scopes
+        .filter((scope) => scope.kind === 'service' && scope.project === requested.project)
+        .map((scope) => scope.service);
+      const intakeNextAction = declarationIntakeGapNextAction({ kind: 'environment', project: requested.project, services: projectServices });
       const projectScope = execution.get(`project:${requested.project}`);
       if (!projectScope) throw taskEnvironmentError('task_environment_plan_scope_incomplete', `Plan Project不属于Task：${requested.project}。`, 409, { project: requested.project });
       let declaration = null;
       let source;
       if (requested.source.kind === 'project-declaration') {
         const declarationFile = path.join(projectScope.executionRoot, 'preparation.yml');
-        if (!fs.existsSync(declarationFile)) throw taskEnvironmentError('project_environment_preparation_missing', `Project ${requested.project} 缺少preparation.yml。`, 409, { project: requested.project, path: path.join(projectScope.sourcePath, 'preparation.yml') }, '由Agent提交task-inline Plan，或经用户授权初始化Project Environment Preparation Declaration。');
+        if (!fs.existsSync(declarationFile)) throw taskEnvironmentError('project_environment_preparation_missing', `Project ${requested.project} 缺少preparation.yml。`, 409, { project: requested.project, path: path.join(projectScope.sourcePath, 'preparation.yml') }, `${intakeNextAction} 当前Task也可由Agent显式提交task-inline Plan。`);
         const serviceRegistry = runtime.readServiceRegistryRecord(workspaceRoot, requested.project);
-        declaration = normalizeProjectEnvironmentPreparation(parseProjectEnvironmentPreparation(fs.readFileSync(declarationFile, 'utf8'), path.join(projectScope.sourcePath, 'preparation.yml')), {
-          projectCode: requested.project,
-          services: Object.keys(serviceRegistry.services || {}),
-        });
-        if (requested.source.identity && requested.source.identity !== declaration.identity) throw taskEnvironmentError('project_environment_preparation_stale', `Project ${requested.project} Preparation Declaration identity已漂移。`, 409, { expected: requested.source.identity, actual: declaration.identity, project: requested.project });
+        try {
+          declaration = normalizeProjectEnvironmentPreparation(parseProjectEnvironmentPreparation(fs.readFileSync(declarationFile, 'utf8'), path.join(projectScope.sourcePath, 'preparation.yml')), {
+            projectCode: requested.project,
+            services: Object.keys(serviceRegistry.services || {}),
+          });
+        } catch (error) {
+          if (!error.nextAction) error.nextAction = intakeNextAction;
+          throw error;
+        }
+        if (requested.source.identity && requested.source.identity !== declaration.identity) throw taskEnvironmentError('project_environment_preparation_stale', `Project ${requested.project} Preparation Declaration identity已漂移。`, 409, { expected: requested.source.identity, actual: declaration.identity, project: requested.project }, intakeNextAction);
         source = { kind: 'project-declaration', path: path.join(projectScope.sourcePath, 'preparation.yml').split(path.sep).join('/'), identity: declaration.identity };
       } else source = { kind: 'task-inline', path: null, identity: null };
       const scopes = requested.scopes.map((scopeRequest) => {
@@ -259,9 +269,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         if (declaration) {
           recipes = scopeRequest.recipeIds.map((recipeId) => {
             const recipe = declaration.recipes.find((candidate) => candidate.id === recipeId);
-            if (!recipe) throw taskEnvironmentError('project_environment_preparation_recipe_missing', `Preparation Recipe不存在：${requested.project}/${recipeId}。`, 409, { project: requested.project, recipe: recipeId });
+            if (!recipe) throw taskEnvironmentError('project_environment_preparation_recipe_missing', `Preparation Recipe不存在：${requested.project}/${recipeId}。`, 409, { project: requested.project, recipe: recipeId }, intakeNextAction);
             const selector = projectEnvironmentPreparationScopeSelector(requested.project, recipe);
-            if (selector !== scopeRequest.selector) throw taskEnvironmentError('project_environment_preparation_recipe_scope_mismatch', `Recipe ${recipeId}不适用于${scopeRequest.selector}。`, 409, { recipe: recipeId, expected: selector, actual: scopeRequest.selector });
+            if (selector !== scopeRequest.selector) throw taskEnvironmentError('project_environment_preparation_recipe_scope_mismatch', `Recipe ${recipeId}不适用于${scopeRequest.selector}。`, 409, { recipe: recipeId, expected: selector, actual: scopeRequest.selector }, intakeNextAction);
             return { id: recipe.id, title: recipe.title, required: recipe.required, steps: recipe.steps, identity: recipe.identity };
           });
         } else {
@@ -560,6 +570,18 @@ export function registerTaskEnvironmentApplication(runtime) {
       return { ...scope, preparation: blockedScope ? probe('blocked', preparationIdentity, `${blockedScope.selector}: ${blockedScope.diagnostic}`, blockedScope.observedAt) : probe('ready', preparationIdentity, null) };
     });
     return { scopes, declarations, preparationScopes, recipes };
+  }
+
+  function preparationDeclarationGapActions(declarations, scopePlan) {
+    return declarations
+      .filter((declaration) => declaration.source === 'project-declaration' && declaration.status !== 'ready')
+      .sort((left, right) => left.project.localeCompare(right.project))
+      .map((declaration) => declarationIntakeGapNextAction({
+        kind: 'environment',
+        project: declaration.project,
+        services: scopePlan.scopes.filter((scope) => scope.kind === 'service' && scope.project === declaration.project).map((scope) => scope.service),
+        scopes: [`project:${declaration.project}`],
+      }));
   }
 
   function pendingPreparationFacts(plan, currentScopes = [], diagnostic = '尚未 prepare。') {
@@ -866,9 +888,12 @@ export function registerTaskEnvironmentApplication(runtime) {
       if (!ready) {
         const planMissing = !preparationPlan;
         const code = planMissing ? 'task_environment_plan_missing' : 'task_environment_probe_blocked';
-        const nextActions = planMissing
-          ? ['由 Agent 从Project Preparation Declaration选择Recipe，或登记显式task-inline Plan，然后重新运行 prepare。']
-          : ['按具体 Preparation Step 诊断修复后重新运行 prepare；已 ready 的 Step 将被复用。'];
+        const declarationActions = preparationDeclarationGapActions(foundations.preparationDeclarations, scopePlan);
+        const nextActions = declarationActions.length
+          ? declarationActions
+          : planMissing
+            ? scopePlan.scopes.filter((scope) => scope.kind === 'project').map((scope) => `${declarationIntakeGapNextAction({ kind: 'environment', project: scope.project, services: scopePlan.scopes.filter((item) => item.kind === 'service' && item.project === scope.project).map((item) => item.service) })} 或由Agent登记显式task-inline Plan，然后重新运行 prepare。`)
+            : ['按具体 Preparation Step 诊断修复后重新运行 prepare；已 ready 的 Step 将被复用。'];
         return environmentResult('prepare', 'blocked', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), { code, message: diagnostic }, effects, nextActions);
       }
       return environmentResult('prepare', 'ready', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), null, effects, []);
@@ -952,7 +977,8 @@ export function registerTaskEnvironmentApplication(runtime) {
         latest: { ...observedBase.latest, ready: { status: ready ? 'ready' : 'blocked', observedAt: now(), diagnostic } },
         updatedAt: now(),
       };
-        return environmentResult('inspect', ready ? 'ready' : 'blocked', root, task.record.taskId, persistence, taskEnvironmentReadModel(observedReceipt), ready ? null : { code: !observedBase.preparationPlan ? 'task_environment_plan_missing' : 'task_environment_probe_blocked', message: diagnostic }, [], ready ? [] : ['按诊断修复后运行 prepare；inspect 不会执行 Step、创建输出或回写 Receipt。']);
+        const declarationActions = preparationDeclarationGapActions(foundations.preparationDeclarations, scopePlan);
+        return environmentResult('inspect', ready ? 'ready' : 'blocked', root, task.record.taskId, persistence, taskEnvironmentReadModel(observedReceipt), ready ? null : { code: !observedBase.preparationPlan ? 'task_environment_plan_missing' : 'task_environment_probe_blocked', message: diagnostic }, [], ready ? [] : declarationActions.length ? declarationActions : ['按诊断修复后运行 prepare；inspect 不会执行 Step、创建输出或回写 Receipt。']);
       } catch (error) {
         return blocked('inspect', targetRoot, taskId, error);
       }

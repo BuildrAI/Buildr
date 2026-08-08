@@ -30,7 +30,11 @@ test('Service create 写入 v2 Domain、父 UUID 与受控 metadata', (t) => {
   fs.writeFileSync(path.join(source, 'README.md'), '# api\n');
   const result = runBuildr(['service', 'create', 'demo/api', source, '--target', root, '--name', 'Public API', '--description', '接口服务', '--type', 'backend', '--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).service.code, 'api');
+  const created = JSON.parse(result.stdout);
+  assert.equal(created.service.code, 'api');
+  assert.match(created.nextActions[0], /trigger: service-registered/);
+  assert.match(created.nextActions[0], /service:demo\/api/);
+  assert.match(created.nextActions[0], /未经用户确认不得写入长期声明/);
   const runtime = createRuntime();
   const list = runtime.listServices(root, 'demo');
   assert.equal(list.schemaVersion, 'buildr.services/v2');
@@ -108,5 +112,7 @@ test('Service HTTP API 复用安全边界、CAS 与 prompt-only 创建', async (
   assert.equal(response.status, 200);
   const prompt = await response.json();
   assert.match(prompt.prompt, /标准命令 buildr service create demo\/worker/);
+  assert.match(prompt.prompt, /trigger: service-registered/);
+  assert.match(prompt.prompt, /service:demo\/worker/);
   assert.equal(runtime.listServices(root, 'demo').services.length, 1);
 });

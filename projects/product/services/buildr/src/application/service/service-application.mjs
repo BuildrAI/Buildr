@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { createService } from '../../domain/service/service.mjs';
+import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 
 export function serviceError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
@@ -142,7 +143,7 @@ export function registerServiceApplication(runtime) {
     if (type) options.push(`--type ${JSON.stringify(type)}`);
     if (sourceType === 'git') options.push(`--remote ${JSON.stringify(String(input.remote || '').trim() || 'origin')}`, `--integration-branch ${JSON.stringify(String(input.integrationBranch || '').trim() || '<请先解析远端 HEAD 或询问>')}`);
     return {
-      prompt: ['请在当前 Buildr 工作空间中创建或接入一个服务。', '', `所属项目：${project ? `${project.name}（${project.code}）` : projectCode}`, `代码：${code || '<尚未提供，请根据名称、来源和现有资产提出候选并确认>'}`, `名称：${name}`, `用途：${description}`, `类型：${type || '<尚未提供，请由 Agent 根据真实资产提出候选>'}`, `来源：${sourceType === 'git' ? 'Git 仓库' : '本地路径'}`, `来源引用：${ref}`, ...(code ? [`物化路径：projects/${projectCode}/services/${code}`] : ['物化路径：尚未确定；先确认代码后再计算。']), '', '执行要求：', '1. 读取并遵循 Buildr Skill，核对工作空间与所属项目身份。', '2. 先确认该项目是否确实需要代码仓、应用、模块或可执行资产；不需要时可直接保持项目范围工作。', '3. 在写入前核对来源、目标目录和嵌套 Git 所有权，不保留工作空间外部本地路径。', sourceType === 'git' ? '4. 核对 Git 地址、远端名称、集成分支与既有仓库/元数据身份，不盲目 checkout 或 stash。' : '4. 校验本地来源可访问且目标不存在，不创建外部目录链接。', code ? `5. 使用标准命令 buildr service create ${projectCode}/${code} ${JSON.stringify(ref)} ${options.join(' ')} 完成创建。` : '5. 补齐必要代码、类型和来源声明后，再使用标准 buildr service create；不要猜测缺失信息。', '6. 完成后运行适用 doctor，说明服务范围、实际路径、Git 状态和剩余问题。'].join('\n'),
+      prompt: ['请在当前 Buildr 工作空间中创建或接入一个服务。', '', `所属项目：${project ? `${project.name}（${project.code}）` : projectCode}`, `代码：${code || '<尚未提供，请根据名称、来源和现有资产提出候选并确认>'}`, `名称：${name}`, `用途：${description}`, `类型：${type || '<尚未提供，请由 Agent 根据真实资产提出候选>'}`, `来源：${sourceType === 'git' ? 'Git 仓库' : '本地路径'}`, `来源引用：${ref}`, ...(code ? [`物化路径：projects/${projectCode}/services/${code}`] : ['物化路径：尚未确定；先确认代码后再计算。']), '', '执行要求：', '1. 读取并遵循 Buildr Skill，核对工作空间与所属项目身份。', '2. 先确认该项目是否确实需要代码仓、应用、模块或可执行资产；不需要时可直接保持项目范围工作。', '3. 在写入前核对来源、目标目录和嵌套 Git 所有权，不保留工作空间外部本地路径。', sourceType === 'git' ? '4. 核对 Git 地址、远端名称、集成分支与既有仓库/元数据身份，不盲目 checkout 或 stash。' : '4. 校验本地来源可访问且目标不存在，不创建外部目录链接。', code ? `5. 使用标准命令 buildr service create ${projectCode}/${code} ${JSON.stringify(ref)} ${options.join(' ')} 完成创建。` : '5. 补齐必要代码、类型和来源声明后，再使用标准 buildr service create；不要猜测缺失信息。', `6. 创建成功后，${declarationIntakeNextAction({ trigger: 'service-registered', project: projectCode, services: [code || '<confirmed-service-code>'] })}`, '7. 完成后运行适用 doctor，说明服务范围、实际路径、Git 状态和剩余问题。'].join('\n'),
       copiedMeansCreated: false,
     };
   }

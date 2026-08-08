@@ -7,7 +7,7 @@ description: 正式 Task 需要准备、检查、恢复或清理实际执行环�
 
 本 Skill 是 `buildr.task-environment/v1` 的默认 provider。它调用公开 CLI，不手写或解析 Environment Receipt。
 
-开始行动时必须读取 `references/project-environment-preparation-v1.md`。需要初始化长期声明时使用 `templates/project-preparation.yml`，提交Task选择时使用 `templates/task-environment-plan-request.json`；未经用户授权不得把候选声明写入Project。
+开始行动时必须读取 `references/project-environment-preparation-v1.md`。只有经`declaration-intake`完成只读发现、展示精确diff并取得用户授权后，才使用`templates/project-preparation.yml`维护长期声明；提交Task选择时使用 `templates/task-environment-plan-request.json`。未经用户授权不得把候选声明写入Project。
 
 ## 使用方式
 

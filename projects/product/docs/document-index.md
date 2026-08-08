@@ -9,6 +9,7 @@
 | [../README.md](../README.md) | 产品入口、快速开始和文档导航 |
 | [buildr-product.md](buildr-product.md) | 产品理解：定位、核心模型、工作资产、协作方式和后续方向 |
 | [architecture/buildr-skill-system.md](architecture/buildr-skill-system.md) | Buildr Skill 的来源、组合、能力依赖、runtime 投射与 Doctor/receipt 分层 |
+| [architecture/buildr-project-declaration-system.md](architecture/buildr-project-declaration-system.md) | Project Preparation/Verification 声明、Declaration Intake、Task 选择、专业 authority 与非 Node 边界 |
 | [../openspec/knowledge/overview.md](../openspec/knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
 | [../openspec/specs/](../openspec/specs/) | 规范性产品行为契约 |
 | [roadmap/](roadmap/) | 尚未实现的产品方向和详细设计候选，不作为当前事实或实施契约 |

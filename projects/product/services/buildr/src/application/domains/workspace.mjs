@@ -6,6 +6,7 @@ import { execFileSync, spawnSync } from '../../infrastructure/process.mjs';
 import YAML from 'yaml';
 import { createProject as createProjectEntity } from '../../domain/project/project.mjs';
 import { createService as createServiceEntity } from '../../domain/service/service.mjs';
+import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 import { parseProjectsManifest, renderProjectsManifest } from '../../infrastructure/filesystem/project-manifest-repository.mjs';
 
 export function registerDomainsWorkspace(runtime) {
@@ -418,7 +419,7 @@ export function registerDomainsWorkspace(runtime) {
     }
   }
 
-  function printResult(title, targetRoot, created, changed = []) {
+  function printResult(title, targetRoot, created, changed = [], nextActions = []) {
     console.log(title);
     if (created.length > 0) {
       console.log('Created:');
@@ -428,6 +429,7 @@ export function registerDomainsWorkspace(runtime) {
       console.log('Updated:');
       for (const file of changed) console.log(`  ${file}`);
     }
+    for (const action of nextActions) console.log(`Next: ${action}`);
   }
 
   function displayScope(scope) {
@@ -539,7 +541,7 @@ export function registerDomainsWorkspace(runtime) {
         const registryPath = registryRecord.manifestPath;
         changed.push(toPosixRelative(targetRoot, registryPath));
         changed.push(...ensureGitBoundaries(targetRoot, [{ type: 'project', project, assetRoot: projectRoot }]));
-        printResult(`Created project ${project}`, targetRoot, created, changed);
+        printResult(`Created project ${project}`, targetRoot, created, changed, [declarationIntakeNextAction({ trigger: 'project-registered', project })]);
       } finally {
         if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
       }
@@ -635,8 +637,9 @@ export function registerDomainsWorkspace(runtime) {
         const metadataPath = registryRecord.manifestPath;
         changed.push(path.relative(targetRoot, metadataPath).split(path.sep).join('/'));
         for (const file of ensureGitBoundaries(targetRoot, [{ type: 'service', project, service, assetRoot: servicePath }])) changed.push(file);
-        if (jsonOutput) console.log(JSON.stringify({ ...runtime.serviceDetail(targetRoot, project, service), changed }, null, 2));
-        else printResult(`Created service ${project}/${service}`, targetRoot, [], changed);
+        const nextActions = [declarationIntakeNextAction({ trigger: 'service-registered', project, services: [service] })];
+        if (jsonOutput) console.log(JSON.stringify({ ...runtime.serviceDetail(targetRoot, project, service), changed, nextActions }, null, 2));
+        else printResult(`Created service ${project}/${service}`, targetRoot, [], changed, nextActions);
       } finally {
         if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
       }
