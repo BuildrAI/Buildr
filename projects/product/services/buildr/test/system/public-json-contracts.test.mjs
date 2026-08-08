@@ -196,6 +196,33 @@ test('Codex partial inventory 作为 assurance metadata 保留且不产生 docto
   assert.deepEqual(report.nextSteps, []);
 });
 
+test('doctor 从 canonical 所有权回执发现 runtime，并明确报告旧路径迁移与 dual conflict', async (t) => {
+  const root = fixtureWorkspace(t, 'codex');
+  const canonicalRoot = path.join(root, '.buildr', 'agent-runtime', 'workspace', 'codex', 'skill-projection-ownership-receipts');
+  const legacyRoot = path.join(root, '.agents', 'buildr', 'skill-projection-receipts', 'codex');
+  fs.mkdirSync(path.dirname(legacyRoot), { recursive: true });
+  fs.renameSync(canonicalRoot, legacyRoot);
+
+  const legacyOnly = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
+  assert.deepEqual(legacyOnly.agentRuntime.detectedAgents, ['codex']);
+  const runtimeFindings = legacyOnly.runtime.codex.flatMap((scope) => scope.findings);
+  assert.ok(runtimeFindings.some((finding) => finding.code === 'runtime.skill_projection_ownership_receipt_missing'));
+  assert.ok(runtimeFindings.some((finding) => finding.code === 'runtime.skill_projection_ownership_receipt_legacy'));
+
+  const legacyFile = fs.readdirSync(legacyRoot, { recursive: true })
+    .map((relative) => path.join(legacyRoot, relative))
+    .find((file) => fs.existsSync(file) && fs.lstatSync(file).isFile() && file.endsWith('.json'));
+  const relative = path.relative(legacyRoot, legacyFile);
+  const canonicalFile = path.join(canonicalRoot, relative);
+  const conflicting = JSON.parse(fs.readFileSync(legacyFile, 'utf8'));
+  conflicting.sourceIdentity = 'conflicting-owner';
+  fs.mkdirSync(path.dirname(canonicalFile), { recursive: true });
+  fs.writeFileSync(canonicalFile, `${JSON.stringify(conflicting, null, 2)}\n`);
+
+  const conflict = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full'], { expectedStatus: 1 });
+  assert.match(JSON.stringify(conflict), /canonical and legacy receipts differ/);
+});
+
 test('doctor 默认只盘点受管 runtime，显式 agent 才把对应 drift 变为可操作项', async (t) => {
   const root = fixtureWorkspace(t, 'managed');
 

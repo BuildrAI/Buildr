@@ -412,6 +412,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '.qoder/',
       '# Buildr transaction state',
       '/.buildr/mutations/',
+      '# Buildr Agent runtime ownership receipts',
+      '/.buildr/agent-runtime/',
       '# Workspace local structured data',
       '/.buildr/local/',
       '# Retired Task asset review data remains untracked',

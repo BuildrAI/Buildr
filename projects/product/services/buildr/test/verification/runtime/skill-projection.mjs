@@ -10,7 +10,7 @@ import {
   parseSkillProjectionReceipt,
   runtimeFileMatches,
   sha256Integrity,
-  skillProjectionReceiptTarget,
+  skillProjectionOwnershipReceiptTarget,
 } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
 import { mapLimit, RuntimeVerificationHarness } from './fixture.mjs';
 
@@ -50,7 +50,7 @@ function assertSkillProjection(workspace, adapterId, skill) {
   const targetRoot = path.join(workspace, adapter.traits.skills.root, 'skills', ...runtimePath.split('/'));
   assert.ok(fs.existsSync(path.join(targetRoot, 'SKILL.md')), `${adapterId} must project ${skill.id}`);
   const inventory = sourceInventory(sourceRoot);
-  const receiptFile = skillProjectionReceiptTarget(workspace, adapter.traits.skills.root, adapterId, runtimePath);
+  const receiptFile = skillProjectionOwnershipReceiptTarget(workspace, 'workspace', adapterId, runtimePath);
   assert.ok(fs.existsSync(receiptFile), `${adapterId} must record a projection receipt for ${skill.id}`);
   const receipt = parseSkillProjectionReceipt(fs.readFileSync(receiptFile, 'utf8'));
   assert.equal(receipt.sourceDigest, sha256Integrity(Buffer.from(JSON.stringify(inventory), 'utf8')), `${adapterId} must bind ${skill.id} to the current source inventory`);

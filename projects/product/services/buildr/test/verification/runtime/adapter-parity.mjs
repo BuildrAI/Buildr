@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/infrastructure/runtime/adapter-contract.mjs';
 import { parseSkillsManifest } from '../../../src/infrastructure/runtime/skills/manifests.mjs';
-import { skillProjectionReceiptTarget } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
+import { skillProjectionOwnershipReceiptTarget } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.mjs';
 
 const harness = new RuntimeVerificationHarness();
@@ -53,7 +53,7 @@ function assertCompleteSkillInventory(workspace, adapterId) {
   for (const skill of projectedSkills) {
     const runtimePath = skill.runtimePath || skill.id;
     assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', ...runtimePath.split('/'), 'SKILL.md')), `${adapterId} must render ${skill.id}`);
-    assert.ok(fs.existsSync(skillProjectionReceiptTarget(workspace, adapter.traits.skills.root, adapterId, runtimePath)), `${adapterId} must record a projection receipt for ${skill.id}`);
+    assert.ok(fs.existsSync(skillProjectionOwnershipReceiptTarget(workspace, 'workspace', adapterId, runtimePath)), `${adapterId} must record a projection ownership receipt for ${skill.id}`);
   }
 
   assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-manager', 'agents', 'openai.yaml')), `${adapterId} must preserve task-manager OpenAI vendor metadata`);

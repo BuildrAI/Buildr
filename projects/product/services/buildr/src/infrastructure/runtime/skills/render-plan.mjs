@@ -15,12 +15,12 @@ import {
   buildCompanionWrite,
   buildSkillProjectionReceipt,
   enumerateSkillSourceFiles,
+  legacySkillProjectionOwnershipReceiptRoot,
+  observeSkillProjectionOwnershipReceipt,
   parseSkillProjectionReceipt,
-  readSkillProjectionReceipt,
   renderSkillProjectionReceipt,
   runtimeWriteBuffer,
   sha256Integrity,
-  skillProjectionReceiptTarget,
 } from './projection-files.mjs';
 
 export function hasManagedSkillMarker(content) {
@@ -365,8 +365,17 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
   }
 
   for (const projection of byRuntimePath.values()) {
-    const receiptFile = skillProjectionReceiptTarget(targetRoot, adapter.traits.skills.root, runtime, projection.runtimePath);
-    const previousReceipt = readSkillProjectionReceipt(receiptFile, { adapterId: runtime, runtimePath: projection.runtimePath });
+    const destination = options.destination || 'workspace';
+    const receiptObservation = observeSkillProjectionOwnershipReceipt({
+      targetRoot,
+      runtimeRoot: adapter.traits.skills.root,
+      destination,
+      adapterId: runtime,
+      runtimePath: projection.runtimePath,
+      runtimeSkillDir: projection.targetDir,
+    });
+    const receiptFile = receiptObservation.canonicalFile;
+    const previousReceipt = receiptObservation.receipt;
     const previousByPath = new Map((previousReceipt?.files || []).map((file) => [file.path, file]));
     const currentPaths = new Set();
     for (const item of projection.writes) {
@@ -399,7 +408,7 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
     }));
     const receipt = buildSkillProjectionReceipt({
       adapterId: runtime,
-      destination: options.destination || 'workspace',
+      destination,
       skillId: projection.skill.id,
       runtimePath: projection.runtimePath,
       assetIdentity: projection.skill.assetIdentity || `product:${projection.skill.id}`,
@@ -424,7 +433,34 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
       kind: 'skill-projection-receipt',
       isManaged: receiptManaged,
       commitLast: true,
+      diagnostic: {
+        label: `Skill projection ownership receipt ${projection.runtimePath}`,
+        codes: {
+          ok: 'runtime.skill_projection_ownership_receipt_current',
+          missing: 'runtime.skill_projection_ownership_receipt_missing',
+          stale: 'runtime.skill_projection_ownership_receipt_stale',
+          conflict: 'runtime.skill_projection_ownership_receipt_conflict',
+        },
+        repair: 'skills-render',
+      },
     }, conflicts);
+    if (receiptObservation.legacyReceipt) {
+      removals.push({
+        targetFile: receiptObservation.legacyFile,
+        expectedIntegrity: sha256Integrity(fs.readFileSync(receiptObservation.legacyFile)),
+        pruneEmptyRoot: legacySkillProjectionOwnershipReceiptRoot(targetRoot, adapter.traits.skills.root),
+        source: projection.sources.join(', '),
+        skillId: projection.writes[0].skillId,
+        runtimePath: projection.runtimePath,
+        kind: 'legacy-skill-projection-ownership-receipt',
+        removeLast: true,
+        diagnostic: {
+          label: `legacy Skill projection ownership receipt ${projection.runtimePath}`,
+          codes: { orphan: 'runtime.skill_projection_ownership_receipt_legacy' },
+          repair: 'skills-render',
+        },
+      });
+    }
   }
 
   if (Array.isArray(options.conflicts)) options.conflicts.push(...conflicts);

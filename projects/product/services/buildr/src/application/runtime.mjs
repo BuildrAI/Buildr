@@ -7,7 +7,12 @@ import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-r
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.mjs';
 import { getRuntimeAdapter, reconcileRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../infrastructure/runtime/skills/inventory.mjs';
-import { parseSkillProjectionReceipt, sha256Integrity } from '../infrastructure/runtime/skills/projection-files.mjs';
+import {
+  legacySkillProjectionOwnershipReceiptTarget,
+  parseSkillProjectionReceipt,
+  sha256Integrity,
+  skillProjectionOwnershipReceiptTarget,
+} from '../infrastructure/runtime/skills/projection-files.mjs';
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
 import { observeGitCheckoutIdentity } from '../infrastructure/git/checkout-identity.mjs';
 
@@ -160,8 +165,11 @@ export function registerApplicationRuntime(runtime) {
         });
       }
       const targetDir = path.join(targetRoot, runtimeRoot, 'skills', ...finding.replacementRuntimePath.split('/'));
-      const targetReceipt = path.join(targetRoot, runtimeRoot, 'buildr', 'skill-projection-receipts', agent, `${finding.replacementRuntimePath}.json`);
-      if (fs.existsSync(targetDir) || fs.existsSync(targetReceipt)) {
+      const targetReceipts = [
+        skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, finding.replacementRuntimePath),
+        legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, finding.replacementRuntimePath),
+      ];
+      if (fs.existsSync(targetDir) || targetReceipts.some((file) => fs.existsSync(file))) {
         conflicts.push({
           type: 'runtime', id: finding.id, status: 'modified', path: finding.replacementRuntimePath,
           replacementFrom: finding.replacementFrom, reason: 'replacement runtime target already exists',

@@ -258,7 +258,7 @@ assert.equal(fs.readFileSync(targetFile, 'utf8'), 'user content\n');
 const binaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-binary-'));
 const binaryFile = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'sample.bin');
 const staleFile = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'stale.bin');
-const receiptFile = path.join(binaryRoot, '.agents', 'buildr', 'skill-projection-receipts', 'codex', 'demo.json');
+const receiptFile = path.join(binaryRoot, '.buildr', 'agent-runtime', 'workspace', 'codex', 'skill-projection-ownership-receipts', 'demo.json');
 fs.mkdirSync(path.dirname(staleFile), { recursive: true });
 fs.writeFileSync(staleFile, Buffer.from([9, 8, 7]));
 const staleIntegrity = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(staleFile)).digest('hex')}`;

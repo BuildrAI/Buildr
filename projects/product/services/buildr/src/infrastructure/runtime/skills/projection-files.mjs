@@ -4,6 +4,7 @@ import path from 'node:path';
 
 export const RUNTIME_SKILL_PROJECTION_SCHEMA_V1 = 'buildr.runtime-skill-projection/v1';
 export const RUNTIME_SKILL_PROJECTION_SCHEMA = 'buildr.skill-projection/v2';
+export const SKILL_PROJECTION_OWNERSHIP_RECEIPTS_DIRECTORY = 'skill-projection-ownership-receipts';
 export const SUPPORTED_SKILL_SOURCE_ENTRIES = Object.freeze([
   'SKILL.md',
   'agents',
@@ -99,9 +100,34 @@ export function runtimeFileMatches(file, integrity, executable) {
   return executable === undefined || ownerExecutable(fs.statSync(file).mode) === executable;
 }
 
-export function skillProjectionReceiptTarget(targetRoot, runtimeRoot, adapterId, runtimePath) {
+function normalizedReceiptSegments(adapterId, runtimePath) {
   const normalized = assertSafeRelativeFile(`${runtimePath}.json`, 'Skill runtime path');
   const adapter = assertSafeRelativeFile(`${adapterId}.json`, 'Skill adapter id').slice(0, -5);
+  return { adapter, normalized };
+}
+
+export function skillProjectionOwnershipReceiptRoot(targetRoot, destination, adapterId = null) {
+  if (!['workspace', 'user'].includes(destination)) throw new Error(`Unsupported Skill projection ownership receipt destination: ${destination}.`);
+  const root = path.join(targetRoot, '.buildr', 'agent-runtime', destination);
+  if (!adapterId) return root;
+  const { adapter } = normalizedReceiptSegments(adapterId, 'receipt-root');
+  return path.join(root, adapter, SKILL_PROJECTION_OWNERSHIP_RECEIPTS_DIRECTORY);
+}
+
+export function skillProjectionOwnershipReceiptTarget(targetRoot, destination, adapterId, runtimePath) {
+  const { adapter, normalized } = normalizedReceiptSegments(adapterId, runtimePath);
+  return path.join(targetRoot, '.buildr', 'agent-runtime', destination, adapter, SKILL_PROJECTION_OWNERSHIP_RECEIPTS_DIRECTORY, ...normalized.split('/'));
+}
+
+export function legacySkillProjectionOwnershipReceiptRoot(targetRoot, runtimeRoot, adapterId = null) {
+  const root = path.join(targetRoot, runtimeRoot, 'buildr', 'skill-projection-receipts');
+  if (!adapterId) return root;
+  const { adapter } = normalizedReceiptSegments(adapterId, 'receipt-root');
+  return path.join(root, adapter);
+}
+
+export function legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, adapterId, runtimePath) {
+  const { adapter, normalized } = normalizedReceiptSegments(adapterId, runtimePath);
   return path.join(targetRoot, runtimeRoot, 'buildr', 'skill-projection-receipts', adapter, ...normalized.split('/'));
 }
 
@@ -164,7 +190,51 @@ export function readSkillProjectionReceipt(file, expected = {}) {
   const receipt = parseSkillProjectionReceipt(fs.readFileSync(file, 'utf8'), file);
   if (expected.adapterId && receipt.adapterId !== expected.adapterId) throw new Error(`Runtime Skill projection receipt adapter mismatch: ${file}`);
   if (expected.runtimePath && receipt.runtimePath !== expected.runtimePath) throw new Error(`Runtime Skill projection receipt path mismatch: ${file}`);
+  if (expected.destination && receipt.schemaVersion === RUNTIME_SKILL_PROJECTION_SCHEMA && receipt.destination !== expected.destination) throw new Error(`Runtime Skill projection receipt destination mismatch: ${file}`);
   return receipt;
+}
+
+function stableReceiptValue(value) {
+  if (Array.isArray(value)) return value.map(stableReceiptValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableReceiptValue(value[key])]));
+}
+
+export function skillProjectionOwnershipReceiptsEquivalent(left, right) {
+  return JSON.stringify(stableReceiptValue(left)) === JSON.stringify(stableReceiptValue(right));
+}
+
+function assertLegacyReceiptStillOwnsRuntime(receipt, runtimeSkillDir, legacyFile) {
+  const mismatches = receipt.files.filter((file) => !runtimeFileMatches(path.join(runtimeSkillDir, ...file.path.split('/')), file.integrity, file.executable));
+  if (mismatches.length > 0) {
+    throw new Error(`Legacy Skill projection ownership receipt cannot prove the current runtime files; no files were changed: ${legacyFile}\n- ${mismatches.map((file) => file.path).join('\n- ')}`);
+  }
+}
+
+export function observeSkillProjectionOwnershipReceipt({ targetRoot, runtimeRoot, destination, adapterId, runtimePath, runtimeSkillDir }) {
+  const canonicalFile = skillProjectionOwnershipReceiptTarget(targetRoot, destination, adapterId, runtimePath);
+  const legacyFile = legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, adapterId, runtimePath);
+  const expected = { adapterId, runtimePath, destination };
+  const canonicalReceipt = readSkillProjectionReceipt(canonicalFile, expected);
+  let legacyReceipt;
+  try {
+    legacyReceipt = readSkillProjectionReceipt(legacyFile, expected);
+  } catch (error) {
+    throw new Error(`Legacy Skill projection ownership receipt migration is blocked; no files were changed: ${error.message}`);
+  }
+  if (canonicalReceipt && legacyReceipt && !skillProjectionOwnershipReceiptsEquivalent(canonicalReceipt, legacyReceipt)) {
+    throw new Error(`Skill projection ownership receipt conflict; canonical and legacy receipts differ, so no files were changed:\n- ${canonicalFile}\n- ${legacyFile}`);
+  }
+  if (!canonicalReceipt && legacyReceipt) assertLegacyReceiptStillOwnsRuntime(legacyReceipt, runtimeSkillDir, legacyFile);
+  return {
+    receipt: canonicalReceipt || legacyReceipt,
+    receiptFile: canonicalReceipt ? canonicalFile : legacyReceipt ? legacyFile : null,
+    canonicalFile,
+    legacyFile,
+    canonicalReceipt,
+    legacyReceipt,
+    migration: !legacyReceipt ? null : canonicalReceipt ? 'dual-equivalent' : 'legacy-only',
+  };
 }
 
 export function buildCompanionWrite(targetFile, sourceFile, relativePath, content, executable, metadata = {}) {

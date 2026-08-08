@@ -22,6 +22,10 @@ import {
 } from '../../src/infrastructure/runtime/skills/render-plan.mjs';
 import { RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, getRuntimeAdapter, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/infrastructure/runtime/skills/inventory.mjs';
+import {
+  legacySkillProjectionOwnershipReceiptTarget,
+  skillProjectionOwnershipReceiptTarget,
+} from '../../src/infrastructure/runtime/skills/projection-files.mjs';
 
 test('render 参数解析拒绝未知和缺失参数', (t) => {
   t.mock.method(console, 'error', () => {});
@@ -113,7 +117,7 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
     for (const relative of ['SKILL.md', 'agents/openai.yaml', 'assets/sample.bin', 'scripts/run.sh']) {
       assert.ok(relativeTargets.includes(`${runtimeRoot}/skills/team/complete-demo/${relative}`), `${adapterId} missing ${relative}`);
     }
-    assert.ok(relativeTargets.includes(`${runtimeRoot}/buildr/skill-projection-receipts/${adapterId}/team/complete-demo.json`));
+    assert.ok(relativeTargets.includes(`.buildr/agent-runtime/workspace/${adapterId}/skill-projection-ownership-receipts/team/complete-demo.json`));
   }
 
   const first = buildSkillRenderPlan(root, targetRoot, [skill], 'codex');
@@ -130,6 +134,103 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
   assert.equal(stale.removals.length, 1);
   applySkillRenderPlan(stale, targetRoot);
   assert.equal(fs.existsSync(path.join(runtimeDir, 'assets', 'sample.bin')), false);
+});
+
+test('Skill 投射所有权回执按 destination 与 adapter 隔离，并保留嵌套 runtime path', () => {
+  const workspace = '/tmp/buildr-workspace';
+  assert.equal(
+    skillProjectionOwnershipReceiptTarget(workspace, 'workspace', 'codex', 'team/review'),
+    path.join(workspace, '.buildr', 'agent-runtime', 'workspace', 'codex', 'skill-projection-ownership-receipts', 'team', 'review.json'),
+  );
+  assert.equal(
+    skillProjectionOwnershipReceiptTarget(workspace, 'user', 'codex', 'team/review'),
+    path.join(workspace, '.buildr', 'agent-runtime', 'user', 'codex', 'skill-projection-ownership-receipts', 'team', 'review.json'),
+  );
+  assert.notEqual(
+    skillProjectionOwnershipReceiptTarget(workspace, 'workspace', 'codex', 'review'),
+    skillProjectionOwnershipReceiptTarget(workspace, 'user', 'codex', 'review'),
+  );
+});
+
+test('旧 Skill 投射回执只在仍能证明 runtime 文件时迁移', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-receipt-migration-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceDir = path.join(root, 'source');
+  fs.mkdirSync(sourceDir, { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, 'SKILL.md'), '---\nname: demo\ndescription: demo\n---\n');
+  const skill = { id: 'demo', sourceDir, sourceFile: path.join(sourceDir, 'SKILL.md'), origin: 'workspace', runtimePath: 'team/demo', declaredScope: '.' };
+  applySkillRenderPlan(buildSkillRenderPlan(root, root, [skill], 'codex'), root);
+  const canonical = skillProjectionOwnershipReceiptTarget(root, 'workspace', 'codex', 'team/demo');
+  const legacy = legacySkillProjectionOwnershipReceiptTarget(root, '.agents', 'codex', 'team/demo');
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.renameSync(canonical, legacy);
+
+  const migration = buildSkillRenderPlan(root, root, [skill], 'codex');
+  assert.ok(migration.writes.some((item) => item.targetFile === canonical));
+  assert.ok(migration.removals.some((item) => item.targetFile === legacy));
+  applySkillRenderPlan(migration, root);
+  assert.equal(fs.existsSync(canonical), true);
+  assert.equal(fs.existsSync(legacy), false);
+
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  const reordered = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(canonical, 'utf8'))).reverse());
+  fs.writeFileSync(legacy, `${JSON.stringify(reordered)}\n`);
+  const dualEquivalent = buildSkillRenderPlan(root, root, [skill], 'codex');
+  assert.ok(dualEquivalent.removals.some((item) => item.targetFile === legacy && item.removeLast === true));
+  applySkillRenderPlan(dualEquivalent, root);
+  assert.equal(fs.existsSync(canonical), true);
+  assert.equal(fs.existsSync(legacy), false);
+
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(legacy, fs.readFileSync(canonical));
+  fs.writeFileSync(path.join(root, '.agents', 'skills', 'team', 'demo', 'SKILL.md'), 'modified');
+  fs.rmSync(canonical);
+  assert.throws(() => buildSkillRenderPlan(root, root, [skill], 'codex'), /cannot prove the current runtime files/);
+});
+
+test('canonical 与旧 Skill 投射所有权回执不一致时零写入停止', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-receipt-conflict-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceDir = path.join(root, 'source');
+  fs.mkdirSync(sourceDir, { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, 'SKILL.md'), '---\nname: demo\ndescription: demo\n---\n');
+  const skill = { id: 'demo', sourceDir, sourceFile: path.join(sourceDir, 'SKILL.md'), origin: 'workspace', runtimePath: 'demo', declaredScope: '.' };
+  applySkillRenderPlan(buildSkillRenderPlan(root, root, [skill], 'codex'), root);
+  const canonical = skillProjectionOwnershipReceiptTarget(root, 'workspace', 'codex', 'demo');
+  const legacy = legacySkillProjectionOwnershipReceiptTarget(root, '.agents', 'codex', 'demo');
+  const receipt = JSON.parse(fs.readFileSync(canonical, 'utf8'));
+  receipt.sourceIdentity = 'different-owner';
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(legacy, `${JSON.stringify(receipt, null, 2)}\n`);
+  assert.throws(() => buildSkillRenderPlan(root, root, [skill], 'codex'), /canonical and legacy receipts differ/);
+});
+
+test('旧回执迁移提交失败时恢复 runtime 文件与旧 ownership receipt', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-receipt-rollback-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceDir = path.join(root, 'source');
+  const sourceFile = path.join(sourceDir, 'SKILL.md');
+  fs.mkdirSync(sourceDir, { recursive: true });
+  fs.writeFileSync(sourceFile, '---\nname: demo\ndescription: before\n---\n');
+  const skill = { id: 'demo', sourceDir, sourceFile, origin: 'workspace', runtimePath: 'demo', declaredScope: '.' };
+  applySkillRenderPlan(buildSkillRenderPlan(root, root, [skill], 'codex'), root);
+  const canonical = skillProjectionOwnershipReceiptTarget(root, 'workspace', 'codex', 'demo');
+  const legacy = legacySkillProjectionOwnershipReceiptTarget(root, '.agents', 'codex', 'demo');
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.renameSync(canonical, legacy);
+  const runtimeFile = path.join(root, '.agents', 'skills', 'demo', 'SKILL.md');
+  const before = fs.readFileSync(runtimeFile);
+  fs.writeFileSync(sourceFile, '---\nname: demo\ndescription: after\n---\n');
+  const plan = buildSkillRenderPlan(root, root, [skill], 'codex');
+  const originalWrite = fs.writeFileSync.bind(fs);
+  t.mock.method(fs, 'writeFileSync', (file, ...args) => {
+    if (path.resolve(file) === path.resolve(canonical)) throw new Error('injected canonical receipt failure');
+    return originalWrite(file, ...args);
+  });
+  assert.throws(() => applySkillRenderPlan(plan, root), /injected canonical receipt failure/);
+  assert.deepEqual(fs.readFileSync(runtimeFile), before);
+  assert.equal(fs.existsSync(legacy), true);
+  assert.equal(fs.existsSync(canonical), false);
 });
 
 test('完整 Skill 投射拒绝 source symlink 与已修改受管资源', (t) => {

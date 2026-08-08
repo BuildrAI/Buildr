@@ -167,7 +167,7 @@ test('skills render 将 source workspace 与 user/workspace destination 分离�
   const userSkill = path.join(userHome, '.agents', 'skills', 'task-triage', 'SKILL.md');
   assert.equal(fs.existsSync(userSkill), true);
   assert.equal(fs.existsSync(path.join(root, '.agents', 'skills', 'task-triage', 'SKILL.md')), false);
-  const receipt = JSON.parse(fs.readFileSync(path.join(userHome, '.agents', 'buildr', 'skill-projection-receipts', 'codex', 'task-triage.json'), 'utf8'));
+  const receipt = JSON.parse(fs.readFileSync(path.join(userHome, '.buildr', 'agent-runtime', 'user', 'codex', 'skill-projection-ownership-receipts', 'task-triage.json'), 'utf8'));
   assert.equal(receipt.schemaVersion, 'buildr.skill-projection/v2');
   assert.equal(receipt.destination, 'user');
   assert.ok(receipt.assetIdentity && receipt.sourceIdentity && receipt.sourceDigest && receipt.renderDigest);

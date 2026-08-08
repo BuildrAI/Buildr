@@ -12,6 +12,8 @@
 /.worktrees/
 # Buildr transaction state
 /.buildr/mutations/
+# Buildr Agent runtime ownership receipts
+/.buildr/agent-runtime/
 CLAUDE.md
 CLAUDE.local.md
 # Task asset review runtime state

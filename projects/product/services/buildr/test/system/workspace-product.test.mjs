@@ -126,6 +126,24 @@ test('Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
   assert.equal(fs.readFileSync(gitignore, 'utf8'), afterFirstSync);
 });
 
+test('Skill 投射所有权回执 runtime state 在 package、init 与 sync 中整体忽略', (t) => {
+  const entry = '/.buildr/agent-runtime/';
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  assert.equal(packageGitignore.filter((line) => line === entry).length, 1);
+
+  const root = initWorkspaceViaCli(t);
+  const gitignore = path.join(root, '.gitignore');
+  let lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
+  assert.equal(lines.filter((line) => line === entry).length, 1);
+
+  fs.writeFileSync(gitignore, `${lines.filter((line) => line !== entry).join('\n').replace(/\n*$/u, '')}\ncustom-user-entry\n`);
+  const result = runBuildr(['sync', 'codex', '--target', root]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
+  assert.equal(lines.filter((line) => line === entry).length, 1);
+  assert.equal(lines.includes('custom-user-entry'), true);
+});
+
 test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复且不改版本', (t) => {
   const appData = path.join(temporaryRoot(t), 'node-app-data');
   const root = path.join(temporaryRoot(t), 'workspace');

@@ -1,5 +1,9 @@
 import { selectedProviderImpacts } from '../../infrastructure/runtime/skills/capabilities.mjs';
 import { REQUIRED_RENDER_CAPABILITIES, createRuntimePlan, reconcileRuntimePlan } from '../../infrastructure/runtime/adapter-contract.mjs';
+import {
+  legacySkillProjectionOwnershipReceiptTarget,
+  skillProjectionOwnershipReceiptTarget,
+} from '../../infrastructure/runtime/skills/projection-files.mjs';
 
 export function createBuiltinLifecycle(deps) {
   const {
@@ -117,14 +121,10 @@ export function createBuiltinLifecycle(deps) {
         agentsByRuntimeRoot.get(runtimeRoot).push(agent);
       }
       for (const [runtimeRoot, agents] of agentsByRuntimeRoot) {
-        const receiptAgents = agents.filter((agent) => existsFile(path.join(
-          targetRoot,
-          runtimeRoot,
-          'buildr',
-          'skill-projection-receipts',
-          agent,
-          `${runtimePath}.json`,
-        )));
+        const receiptAgents = agents.filter((agent) => [
+          skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath),
+          legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, runtimePath),
+        ].some((file) => existsFile(file)));
         // A shared filesystem Skills root can retain receipts for more than one
         // adapter. Consume those receipts before considering the legacy
         // SKILL.md-only fallback, so valid vendor files are never mislabeled as

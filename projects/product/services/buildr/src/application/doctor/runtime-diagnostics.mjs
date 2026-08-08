@@ -66,6 +66,7 @@ export function createRuntimeDiagnostics(deps) {
     return SUPPORTED_AGENT_IDS.filter((agent) => {
       const adapter = getRuntimeAdapter(agent);
       const runtimeRoot = path.join(targetRoot, adapter.traits.skills.root);
+      if (directoryContainsJson(path.join(targetRoot, '.buildr', 'agent-runtime', 'workspace', agent, 'skill-projection-ownership-receipts'))) return true;
       if (directoryContainsJson(path.join(runtimeRoot, 'buildr', 'skill-projection-receipts', agent))) return true;
       if (directoryContainsJson(path.join(runtimeRoot, 'buildr', 'skill-satisfaction', agent))) return true;
       try {
@@ -277,7 +278,19 @@ export function createRuntimeDiagnostics(deps) {
       ? isSupportedAgent(selectedAgent) ? [selectedAgent] : []
       : detectedAgents;
     for (const agent of componentRuntimeAgents) {
-      for (const orphan of managedRuntimeSkillOrphans(targetRoot, agent)) {
+      let runtimeOrphans;
+      try {
+        runtimeOrphans = managedRuntimeSkillOrphans(targetRoot, agent);
+      } catch (error) {
+        addDoctorFinding(result, selectedAgent ? 'error' : 'warning', `runtime.${agent.replaceAll('-', '_')}_ownership_receipt_conflict`, `无法确认 ${agent} Skill 投射所有权回执。`, {
+          path: '.buildr/agent-runtime',
+          agent,
+          userActionRequired: Boolean(selectedAgent),
+          suggestion: error.message,
+        });
+        continue;
+      }
+      for (const orphan of runtimeOrphans) {
         const componentId = uninstalledOwners.get(orphan.runtimePath) || null;
         addDoctorFinding(result, 'warning', 'components.runtime_orphan', componentId
           ? `已卸载 Component ${componentId} 仍有 ${agent} runtime Skill 投射：${orphan.runtimePath}`

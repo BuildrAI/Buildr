@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- Breaking：把 Buildr 为 Agent Skill 投射保存的所有权回执迁移到 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`；实际 Agent Skills 路径不变。新版本会安全迁移仍能证明 runtime 文件的旧回执，新旧冲突或 runtime 漂移时零写入停止；旧 CLI 不再能自动管理已迁移投射。
 - Breaking：清退 CLI Legacy 产品表面，删除 `openspec baseline create`、阶段型 `openspec check` 与 `skills migrate-project-assets` 的 route、实现和 JSON schema；连同已删除的 `sync-plan`/`sync-apply`，旧调用统一返回零写入 unknown-command。OpenSpec apply 改用 strict validation、current Planning Review 与单一 `converge`，legacy Project Skill source 只 fail closed，不再自动迁移。
 - 收敛 Buildr CLI 产品表面：以单一 command catalog 统一 dispatch、canonical help、未知命令建议和 `primary`、`agent-machine`、`maintenance` 三层分类；补齐 `task finish` 聚合帮助。
 

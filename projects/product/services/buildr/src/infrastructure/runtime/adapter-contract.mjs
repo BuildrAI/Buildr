@@ -686,6 +686,7 @@ export function validateRuntimePlan(plan, adapter = getRuntimeAdapter(plan?.adap
     catch (error) { errors.push(error.message); }
     if (typeof item !== 'string' && item.expectedIntegrity !== undefined && !/^sha256-[a-f0-9]{64}$/.test(item.expectedIntegrity)) errors.push(`runtime removal integrity is invalid: ${targetFile}`);
     if (typeof item !== 'string' && item.expectedExecutable !== undefined && typeof item.expectedExecutable !== 'boolean') errors.push(`runtime removal executable is invalid: ${targetFile}`);
+    if (typeof item !== 'string' && item.removeLast !== undefined && typeof item.removeLast !== 'boolean') errors.push(`runtime removal removeLast must be boolean: ${targetFile}`);
     if (writes.has(path.resolve(targetFile))) errors.push(`runtime target cannot be written and removed: ${targetFile}`);
     if (removals.has(path.resolve(targetFile))) errors.push(`runtime removals contain duplicate target: ${targetFile}`);
     removals.add(path.resolve(targetFile));
@@ -728,6 +729,40 @@ function diagnosticFinding(item, observedStatus, plan) {
 
 export function reconcileRuntimePlan(plan, options = {}) {
   validateRuntimePlan(plan);
+  const snapshotRuntimePlanTargets = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-rollback-'));
+    const targets = [...new Set([
+      ...plan.writes.map((item) => path.resolve(item.targetFile)),
+      ...plan.removals.map((item) => path.resolve(typeof item === 'string' ? item : item.targetFile)),
+    ])].sort((left, right) => left.localeCompare(right));
+    const snapshots = targets.map((target, index) => {
+      let existingAncestor = path.dirname(target);
+      while (existingAncestor !== plan.targetRoot && !fs.existsSync(existingAncestor)) existingAncestor = path.dirname(existingAncestor);
+      const existed = fs.existsSync(target);
+      const backup = path.join(root, String(index));
+      if (existed) fs.cpSync(target, backup, { recursive: true, preserveTimestamps: true });
+      return { target, backup, existed, existingAncestor };
+    });
+    return {
+      restore: () => {
+        for (const snapshot of [...snapshots].reverse()) {
+          fs.rmSync(snapshot.target, { recursive: true, force: true });
+          if (snapshot.existed) {
+            fs.mkdirSync(path.dirname(snapshot.target), { recursive: true });
+            fs.cpSync(snapshot.backup, snapshot.target, { recursive: true, preserveTimestamps: true });
+          } else {
+            let current = path.dirname(snapshot.target);
+            while (current !== snapshot.existingAncestor && current.startsWith(`${plan.targetRoot}${path.sep}`)) {
+              if (!fs.existsSync(current) || fs.readdirSync(current).length > 0) break;
+              fs.rmdirSync(current);
+              current = path.dirname(current);
+            }
+          }
+        }
+      },
+      cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+    };
+  };
   const compareOnly = options.compareOnly === true;
   const conflicts = [];
   const changed = [];
@@ -761,6 +796,9 @@ export function reconcileRuntimePlan(plan, options = {}) {
   if (!compareOnly && plannedConflicts.length > 0) {
     throw new Error(`Runtime reconcile found conflict(s); no files were changed:\n- ${plannedConflicts.map((finding) => finding.message || finding.path).sort().join('\n- ')}`);
   }
+  const rollback = !compareOnly && plan.removals.some((item) => typeof item !== 'string' && item.kind === 'legacy-skill-projection-ownership-receipt')
+    ? snapshotRuntimePlanTargets()
+    : null;
   const reconcileWrite = (item) => {
     if (conflicts.includes(item)) return;
     const current = fs.existsSync(item.targetFile) ? fs.readFileSync(item.targetFile) : null;
@@ -784,33 +822,42 @@ export function reconcileRuntimePlan(plan, options = {}) {
       changed.push(item.targetFile);
     }
   };
-  for (const item of plan.writes.filter((write) => write.commitLast !== true)) reconcileWrite(item);
-  for (const nativeAsset of plan.nativeAssets) {
-    const item = typeof nativeAsset === 'string' ? { targetFile: nativeAsset, source: nativeAsset } : nativeAsset;
-    const status = fs.existsSync(item.targetFile) ? 'ok' : 'missing';
-    findings.push(diagnosticFinding(item, status, plan));
-  }
-  for (const removal of plan.removals) {
-    const item = typeof removal === 'string' ? { targetFile: removal } : removal;
-    if (conflicts.includes(item)) continue;
-    if (!fs.existsSync(item.targetFile)) continue;
-    if (item.isManaged && !item.isManaged(item.type === 'directory' ? null : fs.readFileSync(item.targetFile, 'utf8'))) continue;
-    findings.push(diagnosticFinding(item, 'orphan', plan));
-    if (!compareOnly) {
-      fs.rmSync(item.targetFile, { recursive: item.type === 'directory', force: true });
-      removed.push(item.targetFile);
-      if (item.pruneEmptyRoot) {
-        const root = path.resolve(item.pruneEmptyRoot);
-        let current = path.dirname(path.resolve(item.targetFile));
-        while ((current === root || current.startsWith(`${root}${path.sep}`)) && current !== path.dirname(root)) {
-          if (!fs.existsSync(current) || fs.readdirSync(current).length > 0) break;
-          fs.rmdirSync(current);
-          if (current === root) break;
-          current = path.dirname(current);
+  try {
+    for (const item of plan.writes.filter((write) => write.commitLast !== true)) reconcileWrite(item);
+    for (const nativeAsset of plan.nativeAssets) {
+      const item = typeof nativeAsset === 'string' ? { targetFile: nativeAsset, source: nativeAsset } : nativeAsset;
+      const status = fs.existsSync(item.targetFile) ? 'ok' : 'missing';
+      findings.push(diagnosticFinding(item, status, plan));
+    }
+    const reconcileRemoval = (removal) => {
+      const item = typeof removal === 'string' ? { targetFile: removal } : removal;
+      if (conflicts.includes(item)) return;
+      if (!fs.existsSync(item.targetFile)) return;
+      if (item.isManaged && !item.isManaged(item.type === 'directory' ? null : fs.readFileSync(item.targetFile, 'utf8'))) return;
+      findings.push(diagnosticFinding(item, 'orphan', plan));
+      if (!compareOnly) {
+        fs.rmSync(item.targetFile, { recursive: item.type === 'directory', force: true });
+        removed.push(item.targetFile);
+        if (item.pruneEmptyRoot) {
+          const root = path.resolve(item.pruneEmptyRoot);
+          let current = path.dirname(path.resolve(item.targetFile));
+          while ((current === root || current.startsWith(`${root}${path.sep}`)) && current !== path.dirname(root)) {
+            if (!fs.existsSync(current) || fs.readdirSync(current).length > 0) break;
+            fs.rmdirSync(current);
+            if (current === root) break;
+            current = path.dirname(current);
+          }
         }
       }
-    }
+    };
+    for (const removal of plan.removals.filter((item) => typeof item === 'string' || item.removeLast !== true)) reconcileRemoval(removal);
+    for (const item of plan.writes.filter((write) => write.commitLast === true)) reconcileWrite(item);
+    for (const removal of plan.removals.filter((item) => typeof item !== 'string' && item.removeLast === true)) reconcileRemoval(removal);
+    return { targetRoot: plan.targetRoot, adapterId: plan.adapterId, scope: plan.scope, changed, removed, findings, repairs: plan.repairs, warnings: plan.warnings, ruleActions: plan.ruleActions };
+  } catch (error) {
+    rollback?.restore();
+    throw error;
+  } finally {
+    rollback?.cleanup();
   }
-  for (const item of plan.writes.filter((write) => write.commitLast === true)) reconcileWrite(item);
-  return { targetRoot: plan.targetRoot, adapterId: plan.adapterId, scope: plan.scope, changed, removed, findings, repairs: plan.repairs, warnings: plan.warnings, ruleActions: plan.ruleActions };
 }

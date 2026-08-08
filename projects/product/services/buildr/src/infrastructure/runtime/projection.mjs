@@ -35,6 +35,25 @@ export function runtimeSkillScope(scope) {
 }
 
 function skillDiagnostic(item, product) {
+  if (item.kind === 'skill-projection-receipt') {
+    return {
+      label: `${product ? 'product' : 'workspace'} Skill ${item.skillId} projection ownership receipt`,
+      codes: {
+        ok: 'runtime.skill_projection_ownership_receipt_current',
+        missing: 'runtime.skill_projection_ownership_receipt_missing',
+        stale: 'runtime.skill_projection_ownership_receipt_stale',
+        conflict: 'runtime.skill_projection_ownership_receipt_conflict',
+      },
+      repair: product ? 'skill-install' : 'skills-render',
+    };
+  }
+  if (item.kind === 'legacy-skill-projection-ownership-receipt') {
+    return {
+      label: `legacy Skill projection ownership receipt ${item.runtimePath}`,
+      codes: { orphan: 'runtime.skill_projection_ownership_receipt_legacy' },
+      repair: product ? 'skill-install' : 'skills-render',
+    };
+  }
   const installPlan = item.targetFile.includes(`${path.sep}skill-install-plans${path.sep}`);
   if (installPlan) {
     return {
@@ -46,9 +65,7 @@ function skillDiagnostic(item, product) {
     };
   }
   const conflict = `Refusing to overwrite non-Buildr-managed file: ${item.targetFile}`;
-  const label = item.kind === 'skill-projection-receipt'
-    ? `${product ? 'product' : 'workspace'} Skill ${item.skillId} projection receipt`
-    : `${product ? 'product Agent' : 'workspace'} Skill ${item.skillId || path.basename(path.dirname(item.targetFile))}${item.skillRelativePath && item.skillRelativePath !== 'SKILL.md' ? ` ${item.skillRelativePath}` : ''}`;
+  const label = `${product ? 'product Agent' : 'workspace'} Skill ${item.skillId || path.basename(path.dirname(item.targetFile))}${item.skillRelativePath && item.skillRelativePath !== 'SKILL.md' ? ` ${item.skillRelativePath}` : ''}`;
   return product
     ? { label, codes: { ok: 'runtime.product_skill_ok', missing: 'runtime.product_skill_missing', stale: 'runtime.product_skill_stale', conflict: 'runtime.product_skill_conflict' }, messages: { conflict }, repair: 'skill-install' }
     : { label, codes: { ok: 'runtime.skill_ok', missing: 'runtime.skill_missing', stale: 'runtime.skill_stale', conflict: 'runtime.skill_conflict' }, messages: { conflict }, repair: 'skills-render' };

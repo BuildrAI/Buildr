@@ -34,6 +34,8 @@ Task Environment 会把 adapter、runtime source root 与 projection identity �
 
 所有表中 Skills root 同时具有 workspace 与 user 两个 destination：前者相对 `--target` 工作目录，后者相对当前用户目录。adapter 还声明可观测 discovery roots、`complete|partial` inventory evidence、未知 admin/system/plugin 边界和 activation；当前 adapters 的内部来源均只能部分观察，因此成功 render 只证明可观测范围内没有冲突。该 `partial` 事实保留在 runtime scope 的 `skillInventoryEvidence` 中，不作为健康 warning 或 repair action。Buildr 只以自身计划投射或 receipt 已管理的 Skill identity 为候选检查可观测同名项，不盘点无关 runtime Skills；它使用 `buildr.skill-projection/v2` receipt 记录 destination、asset/source identity、source workspace、source/render digest 和文件 inventory。外部等价、其他 owner 或同名异内容均不由 `--replace` 接管。
 
+实际 Skill 继续写入各 adapter 的 Skills root；Buildr 私有的 Skill 投射所有权回执不再放进 Agent runtime 目录。workspace 回执位于 `<workspace>/.buildr/agent-runtime/workspace/<adapter>/skill-projection-ownership-receipts/`，user 回执位于 `<user-home>/.buildr/agent-runtime/user/<adapter>/skill-projection-ownership-receipts/`。新版本只在旧回执有效且仍能证明对应 runtime 文件时，从 `<runtime-root>/buildr/skill-projection-receipts/<adapter>/` 自动迁移；新旧不一致或 runtime 已漂移时整次零写入停止。迁移后旧 CLI 会把现有 Skill 视为 external，因此不要用旧 CLI 管理已经迁移的投射。
+
 Skill 校验分为两层：可移植核心和 Codex 发布都只要求有效 `SKILL.md`，其 `name` 与 `description` 承担发现和路由；随附目录均为可选。Codex/OpenAI profile 将 `agents/openai.yaml` 视为可选 UI extension：文件存在时校验 `display_name`、`short_description`、`default_prompt` 等结构，缺失时不阻塞发布、发现或 render，也不由 Buildr 机械生成或反写。其他 adapter 会随完整目录保留已有文件，但不解释它。Skill 的模板、脚本等执行资源始终相对于当前 runtime `SKILL.md` 所在目录解析，核心行为不能依赖 vendor metadata。
 
 Buildr 当前不定义或维护真实 Agent marker smoke、品牌通过状态或 GUI automation。未来如重新引入，必须独立设计版本、surface、证据失效、执行 owner 与当前机器配置模型。

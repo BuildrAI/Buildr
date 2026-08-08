@@ -8,10 +8,14 @@ import { getRuntimeAdapter, isSupportedAgent } from '../../infrastructure/runtim
 import { capabilityKey, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import {
+  legacySkillProjectionOwnershipReceiptRoot,
+  legacySkillProjectionOwnershipReceiptTarget,
   readSkillProjectionReceipt,
   runtimeFileMatches,
   sha256Integrity,
-  skillProjectionReceiptTarget,
+  skillProjectionOwnershipReceiptRoot,
+  skillProjectionOwnershipReceiptsEquivalent,
+  skillProjectionOwnershipReceiptTarget,
 } from '../../infrastructure/runtime/skills/projection-files.mjs';
 
 export function registerDomainsComponents(runtime) {
@@ -928,17 +932,30 @@ export function registerDomainsComponents(runtime) {
     const skillsRoot = path.join(targetRoot, runtimeRoot, 'skills');
     const declared = declaredRuntimeSkillPaths(targetRoot, agent);
     const orphans = [];
-    const receiptRoot = path.join(targetRoot, runtimeRoot, 'buildr', 'skill-projection-receipts', agent);
     const receiptRuntimePaths = new Set();
-    for (const receiptFile of existsDirectory(receiptRoot) ? collectFiles(receiptRoot) : []) {
-      if (!receiptFile.endsWith('.json')) continue;
-      const receipt = readSkillProjectionReceipt(receiptFile, { adapterId: agent });
-      const expectedReceipt = skillProjectionReceiptTarget(targetRoot, runtimeRoot, agent, receipt.runtimePath);
-      if (path.resolve(expectedReceipt) !== path.resolve(receiptFile)) throw new Error(`Runtime Skill projection receipt target mismatch: ${receiptFile}`);
-      receiptRuntimePaths.add(receipt.runtimePath);
-      if (declared.has(receipt.runtimePath) && options.runtimePath !== receipt.runtimePath) continue;
-      const targetDir = path.join(skillsRoot, ...receipt.runtimePath.split('/'));
-      orphans.push({ runtimePath: receipt.runtimePath, path: toPosixRelative(targetRoot, targetDir), targetDir, receipt, receiptFile });
+    const receiptsByRuntimePath = new Map();
+    const receiptRoots = [
+      { root: skillProjectionOwnershipReceiptRoot(targetRoot, 'workspace', agent), target: (runtimePath) => skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath) },
+      { root: legacySkillProjectionOwnershipReceiptRoot(targetRoot, runtimeRoot, agent), target: (runtimePath) => legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, runtimePath) },
+    ];
+    for (const location of receiptRoots) {
+      for (const receiptFile of existsDirectory(location.root) ? collectFiles(location.root) : []) {
+        if (!receiptFile.endsWith('.json')) continue;
+        const receipt = readSkillProjectionReceipt(receiptFile, { adapterId: agent, destination: 'workspace' });
+        const expectedReceipt = location.target(receipt.runtimePath);
+        if (path.resolve(expectedReceipt) !== path.resolve(receiptFile)) throw new Error(`Runtime Skill projection ownership receipt target mismatch: ${receiptFile}`);
+        const existing = receiptsByRuntimePath.get(receipt.runtimePath);
+        if (existing && !skillProjectionOwnershipReceiptsEquivalent(existing.receipt, receipt)) {
+          throw new Error(`Skill projection ownership receipt conflict; canonical and legacy receipts differ, so no files were changed: ${receipt.runtimePath}`);
+        }
+        receiptsByRuntimePath.set(receipt.runtimePath, { receipt, receiptFiles: [...(existing?.receiptFiles || []), receiptFile] });
+      }
+    }
+    for (const [runtimePath, receiptEntry] of receiptsByRuntimePath) {
+      receiptRuntimePaths.add(runtimePath);
+      if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
+      const targetDir = path.join(skillsRoot, ...runtimePath.split('/'));
+      orphans.push({ runtimePath, path: toPosixRelative(targetRoot, targetDir), targetDir, ...receiptEntry });
     }
     for (const runtimePath of listManagedDirectories(skillsRoot)) {
       if (receiptRuntimePaths.has(runtimePath)) continue;
@@ -982,13 +999,15 @@ export function registerDomainsComponents(runtime) {
             source: `runtime Skill ${orphan.runtimePath}`,
           });
         }
-        removals.push({
-          type: 'file',
-          path: orphan.receiptFile,
-          expectedIntegrity: sha256Integrity(fs.readFileSync(orphan.receiptFile)),
-          pruneEmptyRoot: path.dirname(orphan.receiptFile),
-          source: `runtime Skill projection receipt ${orphan.runtimePath}`,
-        });
+        for (const receiptFile of orphan.receiptFiles) {
+          removals.push({
+            type: 'file',
+            path: receiptFile,
+            expectedIntegrity: sha256Integrity(fs.readFileSync(receiptFile)),
+            pruneEmptyRoot: path.dirname(receiptFile),
+            source: `Skill projection ownership receipt ${orphan.runtimePath}`,
+          });
+        }
         continue;
       }
       const files = collectFiles(orphan.targetDir);
