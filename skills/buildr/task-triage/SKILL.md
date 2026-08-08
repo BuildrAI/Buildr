@@ -37,7 +37,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 - `metadata-only`：仅维护 OpenSpec artifacts、Rules、Skills、文档或模板，不进入代码、构建或测试。
 - `unknown`：信息不足；先澄清，不提前写 Change artifacts 或当前事实。
 
-该轴独立于语义治理：正式持久交付都需要 Task Environment；`metadata-only` 可以使用共享执行根，不必创建 Git worktree；进入实现时仍复用同一 Receipt 或由 Environment 确定性恢复。
+该轴独立于语义治理：正式持久交付都需要 Task Environment；Agent 根据 Task 完整 Service scope 与当前构建/验证事实登记 Environment Preparation Plan。`metadata-only` 可以使用共享执行根，不必创建 Git worktree，并对每个 Service 或无 Service Task 显式声明 not-applicable；进入实现时仍复用同一 Receipt 或由 Environment 确定性恢复。
 
 ## 3. 条件化交接
 
@@ -47,7 +47,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 |---|---|---|---|
 | 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 均证明当前为 clean `dev`、upstream 为 `origin/dev`；每个 operation 返回 before/after、effects 与 current facts，适用 Workspace transition check ready | 任一前置事实、provider、fetch、rebase、冲突恢复或 Doctor blocked 时不调用 Task Record `create`；报告全部部分 effects，不换策略 |
 | 正式持久交付 | `buildr.task-record/v1` 的 `create` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次持久交付写入前返回 `created|inspected`、path 和 effects | provider 不 ready 或 blocked 时停止正式交付写入；讨论、只读和 metadata maintenance 不依赖 |
-| 正式执行位置 | `buildr.task-environment/v1` 的 `prepare` 或 `inspect` | Task ID、canonical Workspace 与完整 repository set；首次持久交付写入前取得 `ready`、实际 execution roots、validation root 和执行 CLI | 只阻塞 execution；不回退到 cwd 或旧 receipt |
+| 正式执行位置 | `buildr.task-environment/v1` 的 Plan `record/inspect` 与 Environment `prepare/inspect` | Task ID、canonical Workspace、完整 Task Service scope 及 Agent 判断的多 Service Plan；首次持久交付写入前取得 `ready`、实际 execution roots、validation root 和执行 CLI | Plan 缺失或 scope 不完整时只阻塞 execution；不猜技术栈，不回退到 cwd 或旧 receipt |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
 
