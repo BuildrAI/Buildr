@@ -33,5 +33,5 @@
 
 ## 6. Archive readiness
 
-- [ ] 6.1 核对 delta specs 与实现一致，`openspec validate introduce-buildr-web-service --strict` 仍通过
-- [ ] 6.2 完成 Change 收敛/归档所需的 specs sync 与 archive readiness 检查（不含 Task Finish）
+- [x] 6.1 核对 delta specs 与实现一致，`openspec validate introduce-buildr-web-service --strict` 仍通过
+- [x] 6.2 完成 Change 收敛/归档所需的 specs sync 与 archive readiness 检查（不含 Task Finish）

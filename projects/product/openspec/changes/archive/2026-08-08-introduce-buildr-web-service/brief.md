@@ -11,10 +11,11 @@
 | 产品决策（1A + 2A） | **已确认** |
 | OpenSpec propose | **已完成**且 `--strict` 通过 |
 | 本 Brief | 已按确认决策撰写；产品已确认 |
-| 实现 / 建目录 / 搬代码 | **已授权，进行中**（闸门已放行） |
-| 正式 Verification / Finish | 实现稳定后按 Task Development 推进 |
+| 实现 / 建目录 / 搬代码 | **已完成** |
+| OpenSpec 收敛 / 归档 | **已完成**（ passed / archived） |
+| 正式 Verification / Finish | 按 Task Development 推进 Formal Finish 前置 |
 
-**当前闸门：** Brief / design 已确认，用户已授权「可以开发」。实现在 task worktree 进行；合入 retained 靠正式收尾。
+**当前闸门：** 实现与 archive readiness 已完成；待 `buildr openspec converge` 与正式 Development 门禁后 Finish。
 
 ## 背景与问题
 
@@ -47,10 +48,10 @@ React 等价迁移已在 `product/buildr` 同仓完成，但前端源码仍嵌�
 |------|------|------|
 | 0. 文档与契约 | OpenSpec + Brief + knowledge impact assess | **完成** |
 | 1. 文档确认 | 产品确认 Brief / design | **已确认并授权开发** |
-| 2. Service 登记与骨架 | manifest + `buildr-web` 目录 | 进行中 |
-| 3. 源码迁移与构建交接 | 迁 `web/`、消费到 `web-dist` | 进行中 |
-| 4. 三入口与验证反馈 | 托管/打包/browser smoke | 进行中 |
-| 5. 当前认知 reconcile | technical / services knowledge | 进行中 |
+| 2. Service 登记与骨架 | manifest + `buildr-web` 目录 | **完成** |
+| 3. 源码迁移与构建交接 | 迁 `web/`、消费到 `web-dist` | **完成** |
+| 4. 三入口与验证反馈 | 托管/打包/browser smoke | **完成** |
+| 5. 当前认知 reconcile | technical / services knowledge | **完成** |
 
 ## 硬约束（不可妥协）
 
