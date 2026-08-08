@@ -58,6 +58,12 @@ function abandonTask(root, taskId, reason) {
   return taskRuntime.abandonTaskRecord(root, taskId, { reason });
 }
 
+function noServicePlan(taskId) {
+  const file = path.join(managerFixtureRoot, `${taskId}-environment-plan.json`);
+  fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 'buildr.task-environment-plan/v1', notApplicableReason: 'This fixture has no Service-scoped technical preparation.', services: [] })}\n`);
+  return file;
+}
+
 test('worktree CLI 只维护窄 Git provider evidence', (t) => {
   const root = fixtureWorkspace(t);
   const taskId = 'git-provider';
@@ -163,8 +169,8 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   createTask(root, waiterTask);
   const taskRecordBefore = owner.record;
   const taskDigestBefore = owner.recordDigest;
-  const prepared = buildr(['task', 'environment', 'prepare', ownerTask, '--shared', '--agent', 'codex', '--target', root, '--json']);
-  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v2');
+  const prepared = buildr(['task', 'environment', 'prepare', ownerTask, '--plan', noServicePlan(ownerTask), '--shared', '--agent', 'codex', '--target', root, '--json']);
+  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v3');
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.status, 'ready');
   assert.equal(prepared.environment.scopes[0].executionRoot, root);
@@ -184,7 +190,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   assert.equal(inspected.source, 'current-machine');
   assert.ok(inspected.observedAt);
 
-  const blocked = buildr(['task', 'environment', 'prepare', waiterTask, '--shared', '--target', root, '--json'], 1);
+  const blocked = buildr(['task', 'environment', 'prepare', waiterTask, '--plan', noServicePlan(waiterTask), '--shared', '--target', root, '--json'], 1);
   assert.equal(blocked.status, 'blocked');
   assert.equal(blocked.diagnostic.code, 'task_environment_shared_occupancy_conflict');
   assert.equal(blocked.diagnostic.details.occupied.taskId, ownerTask);
@@ -198,7 +204,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   assert.match(cleaned.environment.latest.cleanup.summary, /共享执行根已保留/);
   assert.equal(buildr(['task', 'inspect', ownerTask, '--target', root, '--json']).record.status, 'abandoned');
 
-  const resumed = buildr(['task', 'environment', 'prepare', waiterTask, '--shared', '--target', root, '--json']);
+  const resumed = buildr(['task', 'environment', 'prepare', waiterTask, '--plan', noServicePlan(waiterTask), '--shared', '--target', root, '--json']);
   assert.equal(resumed.status, 'ready');
   abandonTask(root, waiterTask, 'fixture complete');
   buildr(['task', 'environment', 'cleanup', waiterTask, '--target', root, '--json']);
@@ -208,7 +214,7 @@ test('Git-backed Task Environment 组合 provider 并把 Git evidence 保持为�
   const root = fixtureWorkspace(t);
   const taskId = 'git-environment';
   createTask(root, taskId);
-  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'main', '--target', root, '--json']);
+  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--plan', noServicePlan(taskId), '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'main', '--target', root, '--json']);
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   const scope = prepared.environment.scopes[0];
   assert.equal(scope.executionRoot, path.join(root, '.worktrees', taskId));

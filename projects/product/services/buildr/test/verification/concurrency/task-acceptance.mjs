@@ -119,9 +119,11 @@ try {
   for (const taskId of taskIds) {
     requireSuccess(runBuildr(['task', 'create', taskId, '--title', taskId, '--intent', '验证双 Task Environment 并发', '--project', 'nested', '--target', workspace, '--json']), `create Task ${taskId}`);
   }
+  const environmentPlan = path.join(path.dirname(workspace), 'task-acceptance-environment-plan.json');
+  fs.writeFileSync(environmentPlan, `${JSON.stringify({ schemaVersion: 'buildr.task-environment-plan/v1', notApplicableReason: 'Project-only fixture has no Service-scoped technical preparation.', services: [] })}\n`);
   const prepareProcesses = taskIds.map((taskId) => spawnSupervised(process.execPath, [
     BUILDR, 'task', 'environment', 'prepare', taskId,
-    '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', workspace, '--json',
+    '--plan', environmentPlan, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', workspace, '--json',
   ], { cwd: PRODUCT_ROOT, env, owner: { taskId, runId: 'environment-prepare' }, timeoutMs: 60_000, outputLimit: 128 * 1024 }));
   const prepareResults = await Promise.all(prepareProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(prepareResults[0], prepareResults[1]), true);

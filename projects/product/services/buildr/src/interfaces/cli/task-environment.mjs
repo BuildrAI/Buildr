@@ -1,9 +1,14 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
 function syntax(operation, message) {
   const usage = operation === 'prepare'
-    ? 'buildr task environment prepare <task-id> [--agent <adapter>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]'
+    ? 'buildr task environment prepare <task-id> [--plan <json-file>] [--agent <adapter>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]'
+    : operation === 'plan-record'
+      ? 'buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]'
+      : operation === 'plan-inspect'
+        ? 'buildr task environment plan inspect <task-id> [--target <canonical-workspace>] [--json]'
     : `buildr task environment ${operation} <task-id> [--target <canonical-workspace>] [--json]`;
   const error = new Error(message);
   error.code = 'task_environment_cli.syntax';
@@ -14,7 +19,9 @@ function syntax(operation, message) {
 
 function parse(operation, args) {
   const allowed = operation === 'prepare'
-    ? new Set(['--agent', '--branch', '--start-point', '--shared', '--target', '--json'])
+    ? new Set(['--plan', '--agent', '--branch', '--start-point', '--shared', '--target', '--json'])
+    : operation === 'plan-record'
+      ? new Set(['--input', '--target', '--json'])
     : new Set(['--target', '--json']);
   const boolean = new Set(['--json', '--shared']);
   const values = new Map();
@@ -36,6 +43,12 @@ function parse(operation, args) {
     }
   }
   if (positions.length !== 1) throw syntax(operation, `task environment ${operation} requires exactly one <task-id>.`);
+  if (operation === 'plan-record' && !values.has('--input')) throw syntax(operation, '--input is required.');
+  const readJson = (flag) => {
+    if (!values.has(flag)) return null;
+    const file = path.resolve(values.get(flag));
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { throw syntax(operation, `Cannot read ${flag} JSON: ${error.message}`); }
+  };
   return {
     taskId: positions[0],
     targetRoot: path.resolve(values.get('--target') || process.cwd()),
@@ -44,6 +57,7 @@ function parse(operation, args) {
     branch: values.get('--branch') || null,
     startPoint: values.get('--start-point') || null,
     shared: values.get('--shared') === true,
+    plan: readJson(operation === 'plan-record' ? '--input' : '--plan'),
   };
 }
 
@@ -69,8 +83,17 @@ export async function taskEnvironmentCommand(runtime, operation, args) {
       branch: parsed.branch,
       startPoint: parsed.startPoint,
       useGit: parsed.shared ? false : undefined,
+      plan: parsed.plan,
     });
   } else if (operation === 'inspect') payload = runtime.inspectTaskEnvironment(parsed.targetRoot, parsed.taskId);
   else payload = await runtime.cleanupTaskEnvironment(parsed.targetRoot, parsed.taskId);
+  return print(payload, parsed.json);
+}
+
+export async function taskEnvironmentPlanCommand(runtime, operation, args) {
+  const parsed = parse(`plan-${operation}`, args);
+  const payload = operation === 'record'
+    ? runtime.recordTaskEnvironmentPlan(parsed.targetRoot, parsed.taskId, parsed.plan)
+    : runtime.inspectTaskEnvironmentPlan(parsed.targetRoot, parsed.taskId);
   return print(payload, parsed.json);
 }

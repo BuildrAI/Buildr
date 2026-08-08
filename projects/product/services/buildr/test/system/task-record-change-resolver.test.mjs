@@ -6,6 +6,7 @@ import process from 'node:process';
 import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {
@@ -101,8 +102,13 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
   const taskId = 'installed-reader-task';
   runtime.createTaskRecord(workspaceRoot, { taskId, title: 'Installed reader', intent: '读取候选 Change', projects: ['demo'], services: [], changes: [] });
   const observedAt = new Date().toISOString();
+  const plan = normalizeTaskEnvironmentPlan({
+    schemaVersion: 'buildr.task-environment-plan/v1',
+    notApplicableReason: 'This project-only fixture has no Service preparation requirements.',
+    services: [],
+  });
   runtime.writeTaskEnvironmentPersistence(root, {
-    schemaVersion: 'buildr.task-environment-receipt/v2',
+    schemaVersion: 'buildr.task-environment-receipt/v4',
     taskId,
     workspace: { id: runtime.readWorkspaceRecord(workspaceRoot).workspace.id, root: workspaceRoot },
     controller: { sourceRoot: PRODUCT_ROOT, cliSource: BUILDR, identity: 'sha256-installed-reader-fixture', adapter: 'codex' },
@@ -111,9 +117,12 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
       selector: 'project:demo', kind: 'project', project: 'demo', service: null, sourcePath: 'projects/demo', executionRoot: candidateProjectRoot, validationRoot: workspaceRoot, shared: true, provider: null,
       runtime: { status: 'ready', identity: 'node', observedAt, diagnostic: null },
       cli: { status: 'ready', identity: 'cli', observedAt, diagnostic: null },
-      dependencies: { status: 'not-applicable', identity: 'stable-controller', observedAt, diagnostic: null },
+      preparation: { status: 'not-applicable', identity: plan.identity, observedAt, diagnostic: null },
       projection: { status: 'ready', identity: 'projection', observedAt, diagnostic: null },
     }],
+    preparationPlan: plan,
+    preparationServices: [],
+    preparationSteps: [],
     resources: [],
     latest: { ready: { status: 'ready', observedAt, diagnostic: null }, cleanup: null },
     createdAt: observedAt,

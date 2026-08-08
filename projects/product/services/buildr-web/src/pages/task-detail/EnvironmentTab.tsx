@@ -23,7 +23,7 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
           <div>
             <p className="eyebrow">当前机器事实</p>
             <h2>任务环境（Task Environment）</h2>
-            <p className="section-copy">读取 Workspace SQLite 中最近保存的环境事实；GET 不探测、不准备也不修复依赖。</p>
+            <p className="section-copy">读取 Workspace SQLite 中最近保存的环境事实；GET 不探测、不执行准备步骤也不回写。</p>
           </div>
           <button id="task-environment-refresh" className="button secondary" type="button" disabled={loading} onClick={onRefresh}>
             刷新当前事实
@@ -99,7 +99,7 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
                       {([
                         ['运行时（Runtime）', scope.runtime],
                         ['工作区 CLI', scope.cli],
-                        ['依赖', scope.dependencies],
+                        ['环境准备', scope.preparation || scope.dependencies],
                         ['运行时投影', scope.projection],
                       ] as const).map(([label, value]) => (
                         <div key={label} className={`environment-probe ${value.status}`}>
@@ -116,28 +116,43 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
             <section className="panel">
               <div className="panel-heading">
                 <div>
-                  <h2>依赖根</h2>
-                  <p className="section-copy">每个 Service 使用自己的 manifest、lockfile 和 worktree-local node_modules；此处展示最近一次 prepare 保存的事实。</p>
+                  <h2>环境准备计划</h2>
+                  <p className="section-copy">Agent按Task scope登记多个Service及有序Step；此处只展示Environment current中保存的计划与执行事实。</p>
                 </div>
               </div>
-              <div id="task-environment-dependency-roots" className="environment-scope-list">
-                {!environment.dependencyRoots?.length ? (
-                  <div className="empty-state">{environment.legacy ? 'Legacy Receipt 尚未保存逐根依赖事实，请运行 prepare 升级。' : '当前 Task 没有适用的依赖根。'}</div>
-                ) : environment.dependencyRoots.map((dependency: any) => (
-                  <article key={dependency.id} className="environment-scope-card">
+              {!environment.legacy && environment.preparationServices?.length ? (
+                <div className="environment-probe-grid">
+                  {environment.preparationServices.map((service: any) => (
+                    <div key={service.selector} className={`environment-probe ${service.status}`}>
+                      <span>{service.selector}</span>
+                      <strong>{probeStatusLabel(service.status)}</strong>
+                      <small>{service.diagnostic || `${service.stepIds.length} 个Step`}</small>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div id="task-environment-preparation-steps" className="environment-scope-list">
+                {environment.legacy ? (
+                  <div className="empty-state">Legacy Receipt没有Agent登记的Preparation Plan；需要显式登记后再prepare。</div>
+                ) : !environment.preparationPlan ? (
+                  <div className="empty-state">当前Task尚未登记Environment Preparation Plan。</div>
+                ) : !environment.preparationSteps?.length ? (
+                  <div className="empty-state">计划identity：{environment.preparationPlan.identity}。当前Task无需执行Step，或尚未prepare。</div>
+                ) : environment.preparationSteps.map((step: any) => (
+                  <article key={step.id} className="environment-scope-card">
                     <div className="environment-scope-heading">
-                      <h3>{dependency.id}</h3>
-                      <span className="state">{dependency.status}</span>
+                      <h3>{step.id}</h3>
+                      <span className="state">{step.status}</span>
                     </div>
                     <dl className="read-facts">
-                      <Fact label="Service" value={dependency.scope} />
-                      <Fact label="依赖根" value={dependency.root} />
-                      <Fact label="包管理器" value={dependency.manager} />
-                      <Fact label="Manifest" value={`${dependency.manifest} · ${dependency.manifestIdentity || 'missing'}`} />
-                      <Fact label="Lockfile" value={`${dependency.lockfile} · ${dependency.lockfileIdentity || 'missing'}`} />
-                      <Fact label="Required" value={dependency.required ? '是' : '否'} />
-                      <Fact label="最近观察" value={formatDateTime(dependency.observedAt)} />
-                      <Fact label="诊断" value={dependency.diagnostic || '—'} />
+                      <Fact label="Service" value={step.scope} />
+                      <Fact label="工作目录" value={step.cwd} />
+                      <Fact label="可执行文件" value={`${step.executable} · ${step.executableIdentity || 'missing'}`} />
+                      <Fact label="输入" value={step.inputs.map((input: any) => `${input.path} · ${input.identity || 'missing'}`).join('；') || '无'} />
+                      <Fact label="输出" value={step.outputs.map((output: any) => `${output.path} · ${output.kind} · ${output.status}`).join('；')} />
+                      <Fact label="Required" value={step.required ? '是' : '否'} />
+                      <Fact label="最近观察" value={formatDateTime(step.observedAt)} />
+                      <Fact label="诊断" value={step.diagnostic || '—'} />
                     </dl>
                   </article>
                 ))}

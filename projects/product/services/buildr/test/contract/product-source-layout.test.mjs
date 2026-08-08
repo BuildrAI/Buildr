@@ -15,7 +15,6 @@ const canonicalProjectEntries = [
   'docs',
   'openspec',
   'services',
-  'task-environment.yml',
 ];
 const canonicalServiceEntries = [
   'AGENTS.md',

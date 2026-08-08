@@ -148,7 +148,7 @@ export function verificationExecutionIdentityMaterial({ project, declaration, ta
         executionRoot: scope.executionRoot,
         runtimeIdentity: scope.runtime.identity,
         cliIdentity: scope.cli.identity,
-        dependenciesIdentity: scope.dependencies.identity,
+        dependenciesIdentity: (scope.preparation || scope.dependencies).identity,
         projectionIdentity: scope.projection.identity,
       })),
     } : null,

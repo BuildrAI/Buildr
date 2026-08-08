@@ -1,10 +1,13 @@
 import path from 'node:path';
 
 import { isTaskRecordId } from '../task-record/task-record.mjs';
+import { normalizeTaskEnvironmentPlan } from './task-environment-plan.mjs';
 
-export const TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v3';
+export const TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v4';
+export const LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V3 = 'buildr.task-environment-receipt/v3';
 export const LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v2';
-export const TASK_ENVIRONMENT_RESULT_SCHEMA = 'buildr.task-environment-result/v2';
+export const TASK_ENVIRONMENT_RESULT_SCHEMA = 'buildr.task-environment-result/v3';
+export const TASK_ENVIRONMENT_PLAN_RESULT_SCHEMA = 'buildr.task-environment-plan-result/v1';
 export const TASK_ENVIRONMENT_STATUSES = Object.freeze(['ready', 'blocked', 'cleaned']);
 export const TASK_ENVIRONMENT_RESOURCE_PROVIDERS = Object.freeze(['local-app-preview']);
 
@@ -12,6 +15,8 @@ const SCOPE_KINDS = new Set(['workspace', 'project', 'service']);
 const PROBE_STATUSES = new Set(['ready', 'blocked', 'not-applicable']);
 const RESOURCE_STATUSES = new Set(['running', 'stale', 'released']);
 const DEPENDENCY_ROOT_STATUSES = new Set(['ready', 'missing', 'drifted', 'failed', 'blocked', 'not-applicable']);
+const PREPARATION_STEP_STATUSES = new Set(['ready', 'missing', 'drifted', 'failed', 'blocked']);
+const PREPARATION_OUTPUT_STATUSES = new Set(['ready', 'missing', 'blocked']);
 const TEXT_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/;
 
 export function taskEnvironmentError(code, message, status = 400, details = undefined, nextAction = undefined) {
@@ -87,10 +92,10 @@ function normalizeProvider(value, field) {
   };
 }
 
-function normalizeScope(value, index, workspaceRoot) {
+function normalizeScope(value, index, workspaceRoot, schemaVersion) {
   const field = `scopes[${index}]`;
   const scope = object(value, field);
-  closed(scope, new Set(['selector', 'kind', 'project', 'service', 'sourcePath', 'executionRoot', 'validationRoot', 'shared', 'provider', 'runtime', 'cli', 'dependencies', 'projection']), field);
+  closed(scope, new Set(['selector', 'kind', 'project', 'service', 'sourcePath', 'executionRoot', 'validationRoot', 'shared', 'provider', 'runtime', 'cli', 'dependencies', 'preparation', 'projection']), field);
   if (!SCOPE_KINDS.has(scope.kind)) throw taskEnvironmentError('task_environment_scope_invalid', `${field}.kind 不受支持：${scope.kind}。`, 400, { field: `${field}.kind` });
   if (typeof scope.shared !== 'boolean') throw taskEnvironmentError('task_environment_field_invalid', `${field}.shared 必须是 boolean。`, 400, { field: `${field}.shared` });
   const sourcePath = text(scope.sourcePath, `${field}.sourcePath`).replaceAll('\\', '/');
@@ -100,6 +105,11 @@ function normalizeScope(value, index, workspaceRoot) {
   if (!scope.shared && !inside(validationRoot, executionRoot) && !inside(executionRoot, validationRoot)) {
     throw taskEnvironmentError('task_environment_scope_invalid', `${field} 的 executionRoot 与 validationRoot 不属于同一任务根。`, 400, { field });
   }
+  const v4 = schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA;
+  if (v4 && !scope.preparation) throw taskEnvironmentError('task_environment_field_invalid', `${field}.preparation 必须存在。`, 400, { field: `${field}.preparation` });
+  if (!v4 && !scope.dependencies) throw taskEnvironmentError('task_environment_field_invalid', `${field}.dependencies 必须存在。`, 400, { field: `${field}.dependencies` });
+  if (v4 && scope.dependencies !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', `Environment Receipt v4 不支持字段：${field}.dependencies。`, 400, { field: `${field}.dependencies` });
+  if (!v4 && scope.preparation !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', `Legacy Environment Receipt 不支持字段：${field}.preparation。`, 400, { field: `${field}.preparation` });
   return {
     selector: identity(scope.selector, `${field}.selector`),
     kind: scope.kind,
@@ -112,8 +122,61 @@ function normalizeScope(value, index, workspaceRoot) {
     provider: normalizeProvider(scope.provider, `${field}.provider`),
     runtime: normalizeProbe(scope.runtime, `${field}.runtime`),
     cli: normalizeProbe(scope.cli, `${field}.cli`),
-    dependencies: normalizeProbe(scope.dependencies, `${field}.dependencies`),
+    ...(v4 ? { preparation: normalizeProbe(scope.preparation, `${field}.preparation`) } : { dependencies: normalizeProbe(scope.dependencies, `${field}.dependencies`) }),
     projection: normalizeProbe(scope.projection, `${field}.projection`),
+  };
+}
+
+function normalizePreparationService(value, index, scopes, stepIds) {
+  const field = `preparationServices[${index}]`;
+  const service = object(value, field);
+  closed(service, new Set(['selector', 'disposition', 'status', 'stepIds', 'observedAt', 'diagnostic']), field);
+  const selector = identity(service.selector, `${field}.selector`);
+  if (!scopes.has(selector)) throw taskEnvironmentError('task_environment_preparation_scope_invalid', `Preparation Service scope 不属于当前Environment：${selector}。`, 409, { selector });
+  if (!['required', 'not-applicable'].includes(service.disposition)) throw taskEnvironmentError('task_environment_preparation_status_invalid', `${field}.disposition 不受支持。`, 400, { field: `${field}.disposition` });
+  if (!['ready', 'blocked', 'not-applicable'].includes(service.status)) throw taskEnvironmentError('task_environment_preparation_status_invalid', `${field}.status 不受支持。`, 400, { field: `${field}.status` });
+  if (!Array.isArray(service.stepIds)) throw taskEnvironmentError('task_environment_field_invalid', `${field}.stepIds 必须是数组。`, 400, { field: `${field}.stepIds` });
+  const normalizedStepIds = service.stepIds.map((stepId, stepIndex) => identity(stepId, `${field}.stepIds[${stepIndex}]`));
+  for (const stepId of normalizedStepIds) if (!stepIds.has(stepId)) throw taskEnvironmentError('task_environment_preparation_step_unknown', `Preparation Service引用未知Step：${stepId}。`, 409, { selector, stepId });
+  return { selector, disposition: service.disposition, status: service.status, stepIds: normalizedStepIds, observedAt: timestamp(service.observedAt, `${field}.observedAt`), diagnostic: nullableText(service.diagnostic, `${field}.diagnostic`) };
+}
+
+function normalizePreparationStep(value, index, scopes) {
+  const field = `preparationSteps[${index}]`;
+  const step = object(value, field);
+  closed(step, new Set(['id', 'scope', 'required', 'cwd', 'executable', 'executableIdentity', 'preparedExecutableIdentity', 'inputs', 'outputs', 'status', 'observedAt', 'diagnostic']), field);
+  const scope = identity(step.scope, `${field}.scope`);
+  if (!scopes.has(scope)) throw taskEnvironmentError('task_environment_preparation_scope_invalid', `Preparation Step scope 不属于当前Environment：${scope}。`, 409, { scope });
+  if (typeof step.required !== 'boolean') throw taskEnvironmentError('task_environment_field_invalid', `${field}.required 必须是boolean。`, 400, { field: `${field}.required` });
+  if (!PREPARATION_STEP_STATUSES.has(step.status)) throw taskEnvironmentError('task_environment_preparation_status_invalid', `${field}.status 不受支持：${step.status}。`, 400, { field: `${field}.status` });
+  if (!Array.isArray(step.inputs) || !Array.isArray(step.outputs)) throw taskEnvironmentError('task_environment_field_invalid', `${field}.inputs/outputs 必须是数组。`, 400, { field });
+  const inputs = step.inputs.map((input, inputIndex) => {
+    const inputField = `${field}.inputs[${inputIndex}]`;
+    const item = object(input, inputField);
+    closed(item, new Set(['path', 'identity', 'preparedIdentity']), inputField);
+    return { path: absolute(item.path, `${inputField}.path`), identity: nullableText(item.identity, `${inputField}.identity`), preparedIdentity: nullableText(item.preparedIdentity, `${inputField}.preparedIdentity`) };
+  });
+  const outputs = step.outputs.map((output, outputIndex) => {
+    const outputField = `${field}.outputs[${outputIndex}]`;
+    const item = object(output, outputField);
+    closed(item, new Set(['path', 'kind', 'status', 'diagnostic']), outputField);
+    if (!['file', 'directory', 'executable'].includes(item.kind)) throw taskEnvironmentError('task_environment_preparation_output_invalid', `${outputField}.kind 不受支持。`, 400, { field: `${outputField}.kind` });
+    if (!PREPARATION_OUTPUT_STATUSES.has(item.status)) throw taskEnvironmentError('task_environment_preparation_output_invalid', `${outputField}.status 不受支持。`, 400, { field: `${outputField}.status` });
+    return { path: absolute(item.path, `${outputField}.path`), kind: item.kind, status: item.status, diagnostic: nullableText(item.diagnostic, `${outputField}.diagnostic`) };
+  });
+  return {
+    id: identity(step.id, `${field}.id`),
+    scope,
+    required: step.required,
+    cwd: absolute(step.cwd, `${field}.cwd`),
+    executable: absolute(step.executable, `${field}.executable`),
+    executableIdentity: nullableText(step.executableIdentity, `${field}.executableIdentity`),
+    preparedExecutableIdentity: nullableText(step.preparedExecutableIdentity, `${field}.preparedExecutableIdentity`),
+    inputs,
+    outputs,
+    status: step.status,
+    observedAt: timestamp(step.observedAt, `${field}.observedAt`),
+    diagnostic: nullableText(step.diagnostic, `${field}.diagnostic`),
   };
 }
 
@@ -213,12 +276,15 @@ function inside(root, candidate) {
 
 export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, expectedWorkspaceRoot = null } = {}) {
   const receipt = object(value, 'Environment Receipt');
-  const supportedSchemas = new Set([LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA, TASK_ENVIRONMENT_RECEIPT_SCHEMA]);
-  if (!supportedSchemas.has(receipt.schemaVersion)) throw taskEnvironmentError('task_environment_schema_unsupported', `Environment Receipt schemaVersion 必须是 ${LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA} 或 ${TASK_ENVIRONMENT_RECEIPT_SCHEMA}。`, 409, { actual: receipt.schemaVersion });
-  const v3 = receipt.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA;
-  closed(receipt, new Set(['schemaVersion', 'taskId', 'workspace', 'controller', 'status', 'scopes', 'dependencyRoots', 'resources', 'latest', 'createdAt', 'updatedAt']), '');
+  const supportedSchemas = new Set([LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V3, TASK_ENVIRONMENT_RECEIPT_SCHEMA]);
+  if (!supportedSchemas.has(receipt.schemaVersion)) throw taskEnvironmentError('task_environment_schema_unsupported', 'Environment Receipt schemaVersion 必须是受支持的v2、v3或v4。', 409, { actual: receipt.schemaVersion });
+  const v4 = receipt.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA;
+  const v3 = receipt.schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V3;
+  closed(receipt, new Set(['schemaVersion', 'taskId', 'workspace', 'controller', 'status', 'scopes', 'dependencyRoots', 'preparationPlan', 'preparationServices', 'preparationSteps', 'resources', 'latest', 'createdAt', 'updatedAt']), '');
   if (v3 && !Array.isArray(receipt.dependencyRoots)) throw taskEnvironmentError('task_environment_field_invalid', 'dependencyRoots 必须是数组。', 400, { field: 'dependencyRoots' });
-  if (!v3 && receipt.dependencyRoots !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', 'Environment Receipt v2 不支持字段：dependencyRoots。', 400, { field: 'dependencyRoots' });
+  if (!v3 && receipt.dependencyRoots !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', '只有Environment Receipt v3支持dependencyRoots。', 400, { field: 'dependencyRoots' });
+  if (v4 && (!Array.isArray(receipt.preparationServices) || !Array.isArray(receipt.preparationSteps))) throw taskEnvironmentError('task_environment_field_invalid', 'v4 preparationServices/preparationSteps 必须是数组。', 400, { field: 'preparationServices' });
+  if (!v4 && ['preparationPlan', 'preparationServices', 'preparationSteps'].some((field) => receipt[field] !== undefined)) throw taskEnvironmentError('task_environment_field_forbidden', 'Legacy Environment Receipt不支持Preparation Plan字段。', 400);
   const taskId = text(receipt.taskId, 'taskId');
   if (!isTaskRecordId(taskId)) throw taskEnvironmentError('task_environment_identity_invalid', `Task ID 不合法：${taskId}。`, 400, { taskId });
   if (expectedTaskId && taskId !== expectedTaskId) throw taskEnvironmentError('task_environment_identity_mismatch', `Environment Receipt Task identity 不匹配：${expectedTaskId} != ${taskId}。`, 409);
@@ -230,7 +296,7 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
   closed(controller, new Set(['sourceRoot', 'cliSource', 'identity', 'adapter']), 'controller');
   if (!TASK_ENVIRONMENT_STATUSES.includes(receipt.status)) throw taskEnvironmentError('task_environment_status_invalid', `Environment status 不受支持：${receipt.status}。`, 400, { field: 'status' });
   if (!Array.isArray(receipt.scopes) || receipt.scopes.length === 0) throw taskEnvironmentError('task_environment_scope_invalid', 'Environment Receipt 至少需要一个工作范围。', 400, { field: 'scopes' });
-  const scopes = receipt.scopes.map((scope, index) => normalizeScope(scope, index, workspaceRoot));
+  const scopes = receipt.scopes.map((scope, index) => normalizeScope(scope, index, workspaceRoot, receipt.schemaVersion));
   const scopeIds = new Set();
   for (const scope of scopes) {
     if (scopeIds.has(scope.selector)) throw taskEnvironmentError('task_environment_scope_duplicate', `Environment scope 重复：${scope.selector}。`, 409, { selector: scope.selector });
@@ -241,6 +307,20 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
   for (const dependency of dependencyRoots) {
     if (dependencyIds.has(dependency.id)) throw taskEnvironmentError('task_environment_dependency_duplicate', `Environment dependency root 重复：${dependency.id}。`, 409, { id: dependency.id });
     dependencyIds.add(dependency.id);
+  }
+  const serviceSelectors = scopes.filter((scope) => scope.kind === 'service').map((scope) => scope.selector);
+  const preparationPlan = v4 && receipt.preparationPlan ? normalizeTaskEnvironmentPlan(receipt.preparationPlan, { serviceSelectors }) : null;
+  const preparationSteps = v4 ? receipt.preparationSteps.map((step, index) => normalizePreparationStep(step, index, scopeIds)) : [];
+  const preparationStepIds = new Set();
+  for (const step of preparationSteps) {
+    if (preparationStepIds.has(step.id)) throw taskEnvironmentError('task_environment_preparation_step_duplicate', `Preparation Step重复：${step.id}。`, 409, { id: step.id });
+    preparationStepIds.add(step.id);
+  }
+  const preparationServices = v4 ? receipt.preparationServices.map((service, index) => normalizePreparationService(service, index, scopeIds, preparationStepIds)) : [];
+  if (v4 && preparationPlan) {
+    const plannedServices = preparationPlan.services.map((service) => service.selector).sort();
+    const observedServices = preparationServices.map((service) => service.selector).sort();
+    if (JSON.stringify(plannedServices) !== JSON.stringify(observedServices)) throw taskEnvironmentError('task_environment_preparation_scope_invalid', 'preparationServices与current Plan不一致。', 409, { plannedServices, observedServices });
   }
   if (!Array.isArray(receipt.resources)) throw taskEnvironmentError('task_environment_field_invalid', 'resources 必须是数组。', 400, { field: 'resources' });
   const resources = receipt.resources.map((resource, index) => normalizeResource(resource, index, scopeIds));
@@ -260,6 +340,7 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
     status: receipt.status,
     scopes,
     ...(v3 ? { dependencyRoots } : {}),
+    ...(v4 ? { preparationPlan, preparationServices, preparationSteps } : {}),
     resources,
     latest: normalizeLatest(receipt.latest),
     createdAt,
@@ -287,11 +368,11 @@ export function taskEnvironmentReadModel(receipt) {
       provider: scope.provider,
       runtime: scope.runtime,
       cli: scope.cli,
-      dependencies: scope.dependencies,
+      ...(scope.preparation ? { preparation: scope.preparation } : { dependencies: scope.dependencies }),
       projection: scope.projection,
     })),
-    dependencyRoots: normalized.dependencyRoots || [],
-    legacy: normalized.schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA,
+    ...(normalized.preparationPlan !== undefined ? { preparationPlan: normalized.preparationPlan, preparationServices: normalized.preparationServices, preparationSteps: normalized.preparationSteps } : { dependencyRoots: normalized.dependencyRoots || [] }),
+    legacy: normalized.schemaVersion !== TASK_ENVIRONMENT_RECEIPT_SCHEMA,
     resources: normalized.resources.map(({ handle: _handle, ...resource }) => resource),
     latest: normalized.latest,
     updatedAt: normalized.updatedAt,

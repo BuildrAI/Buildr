@@ -6,9 +6,14 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { registerTaskEnvironmentApplication } from '../../src/application/task-environment/task-environment-application.mjs';
+import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
 
 const TASK_ID = 'controller-binding';
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
+const PLAN_INPUT = {
+  schemaVersion: 'buildr.task-environment-plan/v1',
+  services: [{ selector: 'service:product/buildr', disposition: 'not-applicable', reason: 'Controller fixture has no technical preparation Step.', steps: [] }],
+};
 
 function git(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
@@ -28,8 +33,15 @@ function writeController(controllerRoot, marker = 'm1') {
 }
 
 function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
+  const plan = normalizeTaskEnvironmentPlan(PLAN_INPUT, { serviceSelectors: ['service:product/buildr'] });
+  const probes = {
+    runtime: { status: 'ready', identity: 'runtime-m1', observedAt: timestamp, diagnostic: null },
+    cli: { status: 'ready', identity: 'cli-m1', observedAt: timestamp, diagnostic: null },
+    preparation: { status: 'ready', identity: plan.identity, observedAt: timestamp, diagnostic: null },
+    projection: { status: 'ready', identity: 'projection-m1', observedAt: timestamp, diagnostic: null },
+  };
   return {
-    schemaVersion: 'buildr.task-environment-receipt/v2',
+    schemaVersion: 'buildr.task-environment-receipt/v4',
     taskId: TASK_ID,
     workspace: { id: 'workspace-fixture', root },
     controller: { sourceRoot: controllerRoot, cliSource: path.join(controllerRoot, 'bin', 'buildr.mjs'), identity: 'sha256-created-at-m1', adapter: 'codex' },
@@ -37,11 +49,15 @@ function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
     scopes: [{
       selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.', executionRoot, validationRoot: executionRoot, shared: !isolated,
       provider: isolated ? { capability: GIT_PROVIDER, selector: 'workspace', evidence: path.join(root, '.git', 'buildr', 'task-worktrees', `${TASK_ID}.json`) } : null,
-      runtime: { status: 'ready', identity: 'runtime-m1', observedAt: timestamp, diagnostic: null },
-      cli: { status: 'ready', identity: 'cli-m1', observedAt: timestamp, diagnostic: null },
-      dependencies: { status: 'ready', identity: 'dependencies-m1', observedAt: timestamp, diagnostic: null },
-      projection: { status: 'ready', identity: 'projection-m1', observedAt: timestamp, diagnostic: null },
+      ...probes,
+    }, {
+      selector: 'project:product', kind: 'project', project: 'product', service: null, sourcePath: 'projects/product', executionRoot: path.join(executionRoot, 'projects', 'product'), validationRoot: executionRoot, shared: !isolated, provider: null, ...probes,
+    }, {
+      selector: 'service:product/buildr', kind: 'service', project: 'product', service: 'buildr', sourcePath: 'projects/product/services/buildr', executionRoot: path.join(executionRoot, 'projects', 'product', 'services', 'buildr'), validationRoot: executionRoot, shared: !isolated, provider: null, ...probes,
     }],
+    preparationPlan: plan,
+    preparationServices: [{ selector: 'service:product/buildr', disposition: 'not-applicable', status: 'not-applicable', stepIds: [], observedAt: timestamp, diagnostic: 'Controller fixture has no technical preparation Step.' }],
+    preparationSteps: [],
     resources: [],
     latest: { ready: { status: 'ready', observedAt: timestamp, diagnostic: null }, cleanup: null },
     createdAt: timestamp,
@@ -98,7 +114,7 @@ else process.exitCode = 1;
     productRoot: () => productRoot,
     assertCanonicalTaskWorkspace: () => root,
     taskEnvironmentPath: (_target, taskId) => `workspace-sqlite:task-environment/${taskId}`,
-    readTaskRecordPersistence: () => ({ record: { taskId: TASK_ID, status: 'active', scope: { projects: [], services: [] }, changes: [] } }),
+    readTaskRecordPersistence: () => ({ record: { taskId: TASK_ID, status: 'active', scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] }, changes: [] } }),
     readTaskEnvironmentPersistence: (_target, _taskId, options = {}) => {
       if (!persistence && !options.optional) throw new Error('Environment Receipt missing');
       return persistence;
@@ -113,7 +129,8 @@ else process.exitCode = 1;
       };
       return persistence;
     },
-    readProjectRegistryRecord: () => ({ registry: { migrationRequired: false }, projects: {} }),
+    readProjectRegistryRecord: () => ({ registry: { migrationRequired: false }, projects: { product: { code: 'product', source: { type: 'workspace', path: 'projects/product' } } } }),
+    readServiceRegistryRecord: () => ({ services: { buildr: { code: 'buildr', source: { type: 'workspace', path: 'projects/product/services/buildr' } } } }),
     readWorkspaceRecord: () => ({ workspace: { id: 'workspace-fixture' } }),
     isSupportedAgent: (adapter) => ['codex', 'claude-code'].includes(adapter),
     workspaceNodeExecution: () => ({ ready: true, identity: { digest: 'workspace-node' }, executable: process.execPath, npmExecutable: process.execPath, environment: process.env }),
@@ -153,6 +170,7 @@ else process.exitCode = 1;
     alternateControllerRoot,
     taskRoot,
     m1,
+    plan: PLAN_INPUT,
     runtime,
     calls,
     receipt: () => persistence?.receipt || null,
@@ -216,7 +234,7 @@ test('.buildr lifecycle changes do not affect manager clean or Receipt creation 
   const metadata = path.join(current.root, '.buildr', 'tasks', 'other-task');
   fs.mkdirSync(metadata, { recursive: true });
   fs.writeFileSync(path.join(metadata, 'task.yml'), 'taskId: other-task\n');
-  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: current.plan });
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   const createdIdentity = current.receipt().controller.identity;
   fs.appendFileSync(path.join(metadata, 'task.yml'), 'status: active\n');

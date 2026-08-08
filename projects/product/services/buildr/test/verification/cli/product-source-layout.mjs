@@ -7,6 +7,7 @@ const forbiddenProjectRootEntries = new Set([
   'src',
   'test',
   'node_modules',
+  'task-environment.yml',
 ]);
 
 const allowedProjectRootEntries = new Set([
@@ -19,7 +20,6 @@ const allowedProjectRootEntries = new Set([
   'docs',
   'openspec',
   'services',
-  'task-environment.yml',
   'verification.yml',
 ]);
 

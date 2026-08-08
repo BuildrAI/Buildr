@@ -82,7 +82,7 @@ bindings:
 
 `buildr.task-development@2` 默认由 `task-development` 提供，并 required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge v2。从proposal、design或直接实现等首个正式研发动作开始，provider通过随包内部driver调用唯一Task Development Application，独占Development Receipt、planning聚合事实、Content Target、verification policy、Task Candidate/generation、decision与不可变研发交接（Development Handoff）；它只引用OpenSpec/Review/Verification的专业identity，不复制正文或Result。产品不注册公共Development CLI或写surface，Local App只消费Application `inspect` read model。OpenSpec是`0..N`可选关联，Git、Node/npm、Product registry、Task Retrospective和具体测试框架都不进入通用contract。
 
-`buildr.task-environment/v1`默认由`task-environment`提供。它要求正式Task，调用Task Environment Application的公共`prepare/inspect/cleanup`CLI，并消费`buildr.task-environment-result/v2`。Project 可用 closed `task-environment.yml` 显式声明 scoped Service 的 npm roots 与 sibling source-build closure；Application 不扫描 package-lock。`prepare` 使用 Workspace Foundation 受管 npm逐根恢复，CLI `inspect` 只读实时观察，Local App GET 只读 SQLite current。Git隔离是可选实现细节：需要时Application调用`buildr.git-worktree-provider/v1`；共享根和非Git环境不依赖该provider。Local App、Preview、Development、Verification与Finish复用同一Application/read model，不直接解析Receipt或写第二份环境状态。
+`buildr.task-environment/v1`默认由`task-environment`提供。Agent根据正式Task的完整Service scope及构建/验证事实登记多Service Environment Preparation Plan；Application通过公共`plan record|inspect`和`prepare|inspect|cleanup`CLI保存并执行该Plan，消费`buildr.task-environment-plan-result/v1`与`buildr.task-environment-result/v3`。核心不枚举技术栈或package manager，只执行closed Plan中的无shellStep并保存executable/input/output identity。CLI`inspect`只读实时观察，Local App GET只读SQLite current。Git隔离是可选实现细节；所有消费者复用同一Application/read model，不直接解析Receipt或写第二份环境状态。
 
 ### 3. Resolver 与 readiness
 

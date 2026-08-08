@@ -8,7 +8,7 @@ import { registerLauncherInterface } from './launcher.mjs';
 import { taskRecordCommand } from './task-record.mjs';
 import { taskReviewCommand } from './task-review.mjs';
 import { taskVerificationCommand } from './task-verification.mjs';
-import { taskEnvironmentCommand } from './task-environment.mjs';
+import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 
 const COMMAND_ROUTES = [
@@ -372,15 +372,39 @@ const COMMAND_ROUTES = [
   {
     key: "task environment prepare",
     surface: "agent-machine",
-    summary: "按正式 Task scope 准备 checkout 或共享执行根、Workspace Node/CLI/依赖和 runtime projection，并在每次返回前执行真实 probe。",
+    summary: "按Agent登记的多Service Environment Preparation Plan幂等准备执行根、步骤、Workspace CLI和runtime projection。",
     help: [
-      "Usage: buildr task environment prepare <task-id> [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task environment prepare <task-id> [--plan <json-file>] [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
       "",
-      "按正式 Task scope 准备 checkout 或共享执行根、Workspace Node/CLI/依赖和 runtime projection，并在每次返回前执行真实 probe。",
-      "默认使用 Git worktree；--shared 仅在明确共享根时使用。候选 Product CLI 只能准备自身任务验证工作区，不能控制 retained/peer 环境。"
+      "Plan必须恰好覆盖Task Record中的全部Service scope；每个Service可声明多个有序Step或显式not-applicable。",
+      "默认使用Git worktree；inspect严格只读，不执行Step或回写current。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'prepare',
     run: (r, c) => taskEnvironmentCommand(r, 'prepare', c.argv.slice(5)),
+  },
+  {
+    key: "task environment plan record",
+    surface: "agent-machine",
+    summary: "原子登记Agent为当前Task判断出的多Service环境准备计划，不执行任何准备Step。",
+    help: [
+      "Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]",
+      "",
+      "Plan必须是closed buildr.task-environment-plan/v1，并恰好覆盖Task Record中的全部Service scope。"
+    ],
+    match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'record',
+    run: (r, c) => taskEnvironmentPlanCommand(r, 'record', c.args.slice(1)),
+  },
+  {
+    key: "task environment plan inspect",
+    surface: "agent-machine",
+    summary: "只读返回Environment current中保存的Preparation Plan，不探测或修复环境。",
+    help: [
+      "Usage: buildr task environment plan inspect <task-id> [--target <canonical-workspace>] [--json]",
+      "",
+      "只读取Workspace SQLite current；缺少Plan时返回unavailable。"
+    ],
+    match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'inspect',
+    run: (r, c) => taskEnvironmentPlanCommand(r, 'inspect', c.args.slice(1)),
   },
   {
     key: "task environment inspect",
@@ -871,10 +895,10 @@ const COMMAND_GROUPS = [
     surface: "agent-machine",
     summary: "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
     help: [
-      "Usage: buildr task environment <prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task environment <plan record|plan inspect|prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]",
       "",
       "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
-      "prepare 幂等承担首次准备与恢复；inspect 只读复核当前机器；cleanup 只接受 Task Finish handoff 或已持久化的 abandon 终态。"
+      "Agent登记Plan；prepare幂等执行与恢复；inspect只读复核；cleanup只接受Task Finish handoff或已持久化的abandon终态。"
     ],
     executable: false,
   },

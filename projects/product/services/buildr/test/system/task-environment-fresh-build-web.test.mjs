@@ -68,18 +68,6 @@ services:
     type: application
     source: { type: workspace, path: projects/product/services/buildr-web }
 `);
-  fs.writeFileSync(path.join(productRoot, 'task-environment.yml'), `schemaVersion: buildr.project-task-environment/v1
-services:
-  buildr:
-    dependencyRoots:
-      - { id: npm, manager: npm, root: ., manifest: package.json, lockfile: package-lock.json, required: true }
-    requires:
-      - { service: buildr-web, purpose: Local App source build }
-  buildr-web:
-    dependencyRoots:
-      - { id: npm, manager: npm, root: ., manifest: package.json, lockfile: package-lock.json, required: true }
-    requires: []
-`);
   run('git', ['init', '-b', 'dev'], { cwd: root });
   run('git', ['config', 'user.name', 'Buildr Test'], { cwd: root });
   run('git', ['config', 'user.email', 'buildr-test@example.com'], { cwd: root });
@@ -87,18 +75,30 @@ services:
   run('git', ['commit', '-m', 'fresh workspace baseline'], { cwd: root });
 
   const taskId = 'fresh-build-web';
-  buildr(['task', 'create', taskId, '--title', 'Fresh build web', '--intent', 'Prove dependency closure', '--project', 'product', '--service', 'product/buildr', '--target', root, '--json']);
+  buildr(['task', 'create', taskId, '--title', 'Fresh build web', '--intent', 'Prove explicit multi-Service preparation', '--project', 'product', '--service', 'product/buildr', '--service', 'product/buildr-web', '--target', root, '--json']);
   assert.equal(fs.existsSync(path.join(candidateBuildr, 'node_modules')), false);
   assert.equal(fs.existsSync(path.join(candidateWeb, 'node_modules')), false);
-  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--agent', 'codex', '--target', root, '--json']);
+  const planFile = path.join(base, 'environment-plan.json');
+  fs.writeFileSync(planFile, `${JSON.stringify({
+    schemaVersion: 'buildr.task-environment-plan/v1',
+    services: ['buildr', 'buildr-web'].map((service) => ({
+      selector: `service:product/${service}`,
+      disposition: 'required',
+      steps: [{
+        id: 'npm-ci', cwd: '.', executable: { kind: 'workspace-foundation', name: 'npm' }, args: ['ci'],
+        inputs: ['package.json', 'package-lock.json'], outputs: [{ path: 'node_modules', kind: 'directory' }], required: true, timeoutMs: 240_000,
+      }],
+    })),
+  }, null, 2)}\n`);
+  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, '--agent', 'codex', '--target', root, '--json']);
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
-  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v2');
-  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v3');
-  assert.deepEqual(prepared.environment.dependencyRoots.map((dependency) => [dependency.scope, dependency.status]), [
-    ['service:product/buildr-web', 'ready'],
+  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v3');
+  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v4');
+  assert.deepEqual(prepared.environment.preparationSteps.map((step) => [step.scope, step.status]), [
     ['service:product/buildr', 'ready'],
+    ['service:product/buildr-web', 'ready'],
   ]);
-  assert.equal(prepared.effects.filter((effect) => effect.type === 'dependency-root-prepared').length, 2);
+  assert.equal(prepared.effects.filter((effect) => effect.type === 'preparation-step-executed').length, 2);
   const worktree = prepared.execution.workdir;
   const worktreeBuildr = path.join(worktree, 'projects', 'product', 'services', 'buildr');
   const worktreeWeb = path.join(worktree, 'projects', 'product', 'services', 'buildr-web');
@@ -107,6 +107,7 @@ services:
   assert.equal(fs.realpathSync(path.join(worktreeWeb, 'node_modules', '.bin', 'tsc')).startsWith(worktreeWeb), true);
   assert.equal(fs.realpathSync(path.join(worktreeWeb, 'node_modules', '.bin', 'vite')).startsWith(worktreeWeb), true);
 
-  run(process.execPath, [npmCli, 'run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin` } });
+  const managedNpm = prepared.environment.preparationSteps.find((step) => step.scope === 'service:product/buildr').executable;
+  run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, PATH: `${path.dirname(managedNpm)}:/usr/bin:/bin` } });
   assert.equal(fs.existsSync(path.join(worktreeBuildr, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), true);
 });
