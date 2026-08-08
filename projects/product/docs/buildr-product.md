@@ -91,6 +91,8 @@ Organization/Root
 
 Buildr 源资产不保存 binary、token、cookie、登录态或个人私有配置。
 
+Skill 的来源、Component 组合、能力依赖、runtime 投射和 Doctor/receipt 分层详见 [Buildr 技能体系](architecture/buildr-skill-system.md)。
+
 Practices 不再是独立受管资产。已有 workspace 或 Project 中的 `practices/` 属于用户保留数据，Buildr 不会自动读取、迁移、覆盖或删除，也不会让该目录阻塞正常命令。整理遗留内容时，由用户或 Agent 人工审阅语义：约束和值守边界转为 Rule，可复用专业动作和操作流程转为 Skill，产品事实、需求和变更转为 OpenSpec，其他说明保留为普通 docs。
 
 Component 是 workspace 源资产的生命周期边界，不是可执行插件。Agent 负责根据用户意图和权威来源识别资源组成，CLI 必须校验 Component definition、全部成员 integrity、唯一 ownership 和 Skill Contribution 完整性后，才能把验证通过的源输入交给 runtime 管线。Component 不能注册、替换或注入 Agent runtime adapter，也不能提供 runtime hook、可执行 member 或 registry patch。当前只支持 workspace Component；它只能拥有 workspace Command catalog collection，不能拥有 Project requirements 或本机状态，删除仍被 Project 引用的 definition 必须在事务前阻止。

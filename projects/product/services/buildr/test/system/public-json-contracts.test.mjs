@@ -138,6 +138,9 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   const full = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in full, true, field);
   for (const field of ['ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
+  const contracts = full.capabilities.graphs.flatMap((graph) => graph.contracts);
+  assert.ok(contracts.length > 0);
+  assert.ok(contracts.every((contract) => /^[a-f0-9]{64}$/.test(contract.digest)));
 });
 
 test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => {

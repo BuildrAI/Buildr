@@ -71,43 +71,53 @@ function prependAfterFrontmatter(source, block) {
 
 function capabilityBindingBlock(skill) {
   const consumer = skill.capabilityBindings;
-  const routing = skill.capabilityRoutingEvidence;
-  if (!consumer && !routing?.length) return '';
+  if (!consumer) return '';
   const lines = ['<!-- buildr:capability-bindings begin -->', '## Buildr Capability Bindings', ''];
-  if (consumer) {
-    lines.push(`Consumer readiness: \`${consumer.readiness}\`${consumer.reason ? ` (\`${consumer.reason}\`)` : ''}. \`ready\` 只表示结构可路由，不表示 provider 行为或本次执行已经成功。`, '');
-    for (const dependency of consumer.dependencies) {
-      const selected = dependency.selectedProvider;
-      const providerPath = selected ? `${getRuntimeAdapter(skill.runtime).traits.skills.root}/skills/${selected.runtimePath}/SKILL.md` : null;
-      lines.push(`### \`${dependency.capability}@${dependency.version}\``, '');
-      lines.push(`- mode: \`${dependency.mode}\``);
-      lines.push(`- readiness: \`${dependency.readiness}\``);
-      lines.push(`- reason: \`${dependency.reason || 'none'}\``);
-      lines.push(`- contract: \`${dependency.contract?.contractPath || 'unresolved'}\``);
-      lines.push(`- contract SHA-256: \`${dependency.contract?.digest || 'unresolved'}\``);
-      lines.push(`- selected provider: \`${selected?.id || 'none'}\``);
-      lines.push(`- provider runtime: \`${providerPath || 'unresolved'}\``);
-      lines.push(`- provider scope: \`${selected?.scope || 'unresolved'}\``);
-      lines.push(`- provenance: \`${dependency.provenance}\``, '');
-    }
-    if (consumer.readiness === 'blocked') {
-      lines.push('**Safety stop:** required capability 尚未 ready。不得执行 provider-dependent action；只能解释阻塞并按 doctor 的 nextActions 修复。', '');
-    } else {
-      lines.push('执行 provider-dependent action 前，必须读取上面已解析的 contract 与 selected provider；成功由 contract 要求的授权披露和 result evidence 判断。', '');
-    }
+  lines.push(`Consumer readiness: \`${consumer.readiness}\`${consumer.reason ? ` (reason: \`${consumer.reason}\`)` : ''}. \`ready\` 只表示结构可路由。`, '');
+  for (const dependency of consumer.dependencies) {
+    const selected = dependency.selectedProvider;
+    const providerPath = selected ? `${getRuntimeAdapter(skill.runtime).traits.skills.root}/skills/${selected.runtimePath}/SKILL.md` : 'unresolved';
+    lines.push(`- \`${dependency.capability}@${dependency.version}\` — mode \`${dependency.mode}\`, readiness \`${dependency.readiness}\`, reason \`${dependency.reason || 'none'}\``);
+    lines.push(`  - contract: \`${dependency.contract?.contractPath || 'unresolved'}\``);
+    lines.push(`  - provider: \`${selected?.id || 'none'}\` → \`${providerPath}\` (scope \`${selected?.scope || 'unresolved'}\`)`);
   }
-  if (routing?.length) {
-    lines.push('### Workspace routing evidence', '');
-    for (const group of routing) {
-      lines.push(`- scope \`${group.scope}\``);
-      for (const route of group.routes) {
-        lines.push(`  - \`${route.capability}@${route.version}\` → \`${route.selectedProvider?.id || 'unresolved'}\` (consumer \`${route.consumer}\`, ${route.readiness}${route.reason ? `/${route.reason}` : ''}, contract SHA-256 \`${route.contract?.digest || 'unresolved'}\`)`);
-      }
-    }
-    lines.push('', '若 evidence 不适用于当前 scope、runtime check 显示 stale，或当前 session 已知 manifest/contract/provider 已变化，先运行当前 workspace doctor 读取最新 capability graph；不得猜测 builtin，也不需要独立 dispatch 命令。', '');
+  lines.push('');
+  if (consumer.readiness === 'blocked') {
+    lines.push('**Safety stop:** required capability 尚未 ready。不得执行 provider-dependent action；只能解释阻塞并通过当前 workspace Doctor 获取修复动作。', '');
+  } else {
+    lines.push('执行 provider-dependent action 前，读取上面已解析的 contract 与 provider；成功仍由 contract 要求的授权和 result evidence 判断。', '');
   }
   lines.push('<!-- buildr:capability-bindings end -->');
   return lines.join('\n');
+}
+
+function capabilityBindingReceipt(consumer) {
+  if (!consumer) return null;
+  return {
+    consumer: consumer.consumer,
+    scope: consumer.scope,
+    readiness: consumer.readiness,
+    reason: consumer.reason,
+    dependencies: consumer.dependencies.map((dependency) => ({
+      capability: dependency.capability,
+      version: dependency.version,
+      mode: dependency.mode,
+      readiness: dependency.readiness,
+      reason: dependency.reason,
+      contract: dependency.contract ? {
+        id: dependency.contract.id,
+        version: dependency.contract.version,
+        path: dependency.contract.contractPath,
+        digest: dependency.contract.digest,
+      } : null,
+      selectedProvider: dependency.selectedProvider ? {
+        id: dependency.selectedProvider.id,
+        scope: dependency.selectedProvider.scope,
+        runtimePath: dependency.selectedProvider.runtimePath,
+      } : null,
+      provenance: dependency.provenance,
+    })),
+  };
 }
 
 export function buildSkillTarget(targetRoot, skill, runtime = 'claude-code') {
@@ -416,6 +426,7 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
       sourceWorkspaceId: projection.skill.workspaceId || options.sourceWorkspaceId || sha256Integrity(Buffer.from(path.resolve(repoRoot), 'utf8')),
       sourceDigest: digestInventory(projection.writes, true),
       renderDigest: digestInventory(projection.writes),
+      capabilityBindings: capabilityBindingReceipt(projection.skill.capabilityBindings),
       sources: projection.sources,
       files: inventory,
     });

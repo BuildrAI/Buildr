@@ -15,7 +15,6 @@ import {
   resolvePackageAgentSkill,
   resolveRenderSkills,
 } from './render-claude-code.mjs';
-import { resolveCapabilityRoutingEvidence } from './skills/capabilities.mjs';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from './skills/inventory.mjs';
 import { parseSkillProjectionReceipt } from './skills/projection-files.mjs';
 import {
@@ -355,7 +354,6 @@ export function assembleRuntimeProjection(options) {
   const skillConflicts = [];
   const workspaceSkills = selection.workspaceSkills ? resolveRenderSkills(repoRoot, skillScope, adapter.id) : [];
   const productSkill = selection.productSkill ? resolvePackageAgentSkill(adapter.id, 'buildr') : null;
-  if (productSkill && selection.workspaceSkills) productSkill.capabilityRoutingEvidence = resolveCapabilityRoutingEvidence(repoRoot, adapter.id);
   const productProjection = productSkill
     ? buildSkillRenderPlan(repoRoot, targetRoot, [productSkill], adapter.id, { deferConflicts: true, conflicts: skillConflicts, destination: options.destination || 'workspace' })
     : { writes: [], removals: [] };

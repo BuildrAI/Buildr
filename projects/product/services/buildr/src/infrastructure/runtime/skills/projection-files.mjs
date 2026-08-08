@@ -135,13 +135,13 @@ function receiptInventoryIntegrity(files) {
   return sha256Integrity(Buffer.from(JSON.stringify(files), 'utf8'));
 }
 
-export function buildSkillProjectionReceipt({ adapterId, destination = 'workspace', skillId, runtimePath, sources, assetIdentity, sourceIdentity, sourceWorkspaceId, sourceDigest, renderDigest, files }) {
+export function buildSkillProjectionReceipt({ adapterId, destination = 'workspace', skillId, runtimePath, sources, assetIdentity, sourceIdentity, sourceWorkspaceId, sourceDigest, renderDigest, capabilityBindings = null, files }) {
   const inventory = files.map((file) => ({
     path: assertSafeRelativeFile(file.path, 'Skill receipt file'),
     integrity: file.integrity,
     executable: file.executable === true,
   })).sort((left, right) => left.path.localeCompare(right.path));
-  return {
+  const receipt = {
     schemaVersion: RUNTIME_SKILL_PROJECTION_SCHEMA,
     agent: adapterId,
     adapterId,
@@ -157,6 +157,11 @@ export function buildSkillProjectionReceipt({ adapterId, destination = 'workspac
     files: inventory,
     integrity: receiptInventoryIntegrity(inventory),
   };
+  if (capabilityBindings) {
+    receipt.capabilityBindings = capabilityBindings;
+    receipt.capabilityBindingsIntegrity = sha256Integrity(Buffer.from(JSON.stringify(capabilityBindings), 'utf8'));
+  }
+  return receipt;
 }
 
 export function renderSkillProjectionReceipt(receipt) {
@@ -172,6 +177,12 @@ export function parseSkillProjectionReceipt(content, label = 'runtime Skill proj
     throw new Error(`Invalid ${label} schema.`);
   }
   if (receipt.schemaVersion === RUNTIME_SKILL_PROJECTION_SCHEMA && (!['user', 'workspace'].includes(receipt.destination) || typeof receipt.skillId !== 'string' || typeof receipt.assetIdentity !== 'string' || typeof receipt.sourceIdentity !== 'string' || typeof receipt.sourceWorkspaceId !== 'string' || !SHA256_PATTERN.test(receipt.sourceDigest || '') || !SHA256_PATTERN.test(receipt.renderDigest || ''))) throw new Error(`Invalid ${label} v2 identity or digest evidence.`);
+  const hasCapabilityBindings = receipt.capabilityBindings !== undefined;
+  const hasCapabilityBindingsIntegrity = receipt.capabilityBindingsIntegrity !== undefined;
+  if (hasCapabilityBindings !== hasCapabilityBindingsIntegrity) throw new Error(`Invalid ${label} capability binding evidence.`);
+  if (hasCapabilityBindings && (!receipt.capabilityBindings || typeof receipt.capabilityBindings !== 'object' || Array.isArray(receipt.capabilityBindings) || !SHA256_PATTERN.test(receipt.capabilityBindingsIntegrity || '') || sha256Integrity(Buffer.from(JSON.stringify(receipt.capabilityBindings), 'utf8')) !== receipt.capabilityBindingsIntegrity)) {
+    throw new Error(`Invalid ${label} capability binding evidence.`);
+  }
   const seen = new Set();
   const files = receipt.files.map((file) => {
     if (!file || typeof file.path !== 'string' || !SHA256_PATTERN.test(file.integrity || '') || typeof file.executable !== 'boolean') throw new Error(`Invalid ${label} file entry.`);

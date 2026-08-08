@@ -587,8 +587,8 @@ export function createPackageStaticValidator(deps) {
       if (skill.id === 'buildr') {
         for (const requiredText of [
           'buildr.git-operations/v1',
-          'Buildr Capability Bindings',
-          'capabilities` graph',
+          'Doctor 的 full detail',
+          '`capabilities` graph',
           'Agent 是 Buildr 功能的默认操作入口',
           '询问用户是否由 Agent 立即同步',
           '准确手动命令作为备选',

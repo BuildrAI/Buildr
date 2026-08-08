@@ -7,7 +7,9 @@ import YAML from 'yaml';
 import crypto from 'node:crypto';
 
 import { getRuntimeAdapter, SUPPORTED_AGENT_IDS } from '../../src/infrastructure/runtime/adapter-contract.mjs';
-import { buildSkillContent, hasManagedSkillMarker, resolveRenderSkills } from '../../src/infrastructure/runtime/skills/render-plan.mjs';
+import { assembleRuntimeProjection } from '../../src/infrastructure/runtime/projection.mjs';
+import { buildSkillContent, buildSkillRenderPlan, hasManagedSkillMarker, resolveRenderSkills } from '../../src/infrastructure/runtime/skills/render-plan.mjs';
+import { parseSkillProjectionReceipt } from '../../src/infrastructure/runtime/skills/projection-files.mjs';
 
 const sections = ['Purpose', 'Consumer Obligations', 'Minimum Guarantees', 'Effects and Authorization', 'Result Evidence', 'Decision Points', 'Allowed Variations'];
 
@@ -98,11 +100,19 @@ test('全部 supported adapters 投射一致的 ready/degraded binding，且不�
     const optionalContent = buildSkillContent(root, { ...optional, runtime });
     assert.match(requiredContent, /buildr:capability-bindings begin/);
     assert.match(requiredContent, /Consumer readiness: `ready`/);
-    assert.match(requiredContent, /contract SHA-256: `[a-f0-9]{64}`/);
+    assert.match(requiredContent, /`example\.required@1` — mode `required`, readiness `ready`, reason `none`/);
+    assert.doesNotMatch(requiredContent, /SHA-256|provenance|example\.optional/);
     assert.match(requiredContent, new RegExp(`${getRuntimeAdapter(runtime).traits.skills.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/skills/provider/SKILL\\.md`));
-    assert.match(optionalContent, /Consumer readiness: `degraded` \(`missing_provider`\)/);
+    assert.match(optionalContent, /Consumer readiness: `degraded` \(reason: `missing_provider`\)/);
     assert.doesNotMatch(optionalContent, /\*\*Safety stop:\*\*/);
     assert.equal(hasManagedSkillMarker(requiredContent), true);
+    const target = path.join(root, `target-${runtime}`);
+    fs.mkdirSync(target);
+    const receiptWrite = buildSkillRenderPlan(root, target, [{ ...required, runtime }], runtime).writes.find((item) => item.kind === 'skill-projection-receipt');
+    const receipt = parseSkillProjectionReceipt(receiptWrite.content);
+    assert.equal(receipt.capabilityBindings.consumer, 'required-consumer', runtime);
+    assert.equal(receipt.capabilityBindings.dependencies.length, 1, runtime);
+    assert.match(receipt.capabilityBindings.dependencies[0].contract.digest, /^[a-f0-9]{64}$/, runtime);
   }
 
   assert.equal(fs.readFileSync(sourceFile, 'utf8'), sourceBefore);
@@ -116,9 +126,11 @@ test('Component dependency contribution 拒绝未接收 fragment 的 target', (t
   assert.throws(() => resolveRenderSkills(root, '.', 'codex'), /dependency target must also receive a Skill fragment: optional-consumer/);
 });
 
-test('required provider 缺失时保留 blocked consumer，binding 或 contract 变化会改变 managed hash', (t) => {
+test('required provider 缺失时保留 blocked consumer，contract 变化只更新 receipt 机器证据', (t) => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const target = path.join(root, 'target');
+  fs.mkdirSync(target);
   const blockedDocument = writeManifest(root, {
     bindings: [],
     skills: [
@@ -128,7 +140,7 @@ test('required provider 缺失时保留 blocked consumer，binding 或 contract 
   let consumer = resolveRenderSkills(root, '.', 'codex').find((skill) => skill.id === 'required-consumer');
   const blocked = buildSkillContent(root, { ...consumer, runtime: 'codex' });
   assert.equal(consumer.capabilityBindings.readiness, 'blocked');
-  assert.match(blocked, /Consumer readiness: `blocked` \(`missing_provider`\)/);
+  assert.match(blocked, /Consumer readiness: `blocked` \(reason: `missing_provider`\)/);
   assert.match(blocked, /\*\*Safety stop:\*\*/);
 
   blockedDocument.bindings = [{ capability: 'example.required', version: 1, provider: 'provider' }];
@@ -138,12 +150,39 @@ test('required provider 缺失时保留 blocked consumer，binding 或 contract 
   const ready = buildSkillContent(root, { ...consumer, runtime: 'codex' });
   assert.equal(consumer.capabilityBindings.readiness, 'ready');
   assert.notEqual(ready.match(/Hash: ([a-f0-9]+)/)?.[1], blocked.match(/Hash: ([a-f0-9]+)/)?.[1]);
+  const readyReceiptWrite = buildSkillRenderPlan(root, target, [{ ...consumer, runtime: 'codex' }], 'codex').writes.find((item) => item.kind === 'skill-projection-receipt');
+  const readyReceipt = parseSkillProjectionReceipt(readyReceiptWrite.content);
+  assert.match(readyReceipt.capabilityBindings.dependencies[0].contract.digest, /^[a-f0-9]{64}$/);
+  assert.equal(readyReceipt.capabilityBindings.dependencies[0].provenance, 'explicit:.');
 
   const contractFile = path.join(root, 'skills', 'contracts', 'example', 'required.md');
   fs.appendFileSync(contractFile, '\nProvider-neutral clarification.\n');
   consumer = resolveRenderSkills(root, '.', 'codex').find((skill) => skill.id === 'required-consumer');
   const contractChanged = buildSkillContent(root, { ...consumer, runtime: 'codex' });
-  assert.notEqual(contractChanged.match(/Hash: ([a-f0-9]+)/)?.[1], ready.match(/Hash: ([a-f0-9]+)/)?.[1]);
+  const changedReceiptWrite = buildSkillRenderPlan(root, target, [{ ...consumer, runtime: 'codex' }], 'codex').writes.find((item) => item.kind === 'skill-projection-receipt');
+  const changedReceipt = parseSkillProjectionReceipt(changedReceiptWrite.content);
+  assert.equal(contractChanged, ready);
+  assert.notEqual(changedReceipt.capabilityBindingsIntegrity, readyReceipt.capabilityBindingsIntegrity);
+  assert.throws(() => parseSkillProjectionReceipt(JSON.stringify({ ...changedReceipt, capabilityBindingsIntegrity: `sha256-${'0'.repeat(64)}` })), /capability binding evidence/);
+});
+
+test('产品入口与 workspace Skills 同时投射时不注入全局 routing dump', (t) => {
+  const root = fixture();
+  const target = path.join(root, 'target');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(target);
+  writeManifest(root);
+
+  const plan = assembleRuntimeProjection({
+    repoRoot: root,
+    targetRoot: target,
+    adapterId: 'codex',
+    selection: { productSkill: true, workspaceSkills: true },
+  });
+  const productSkill = plan.plan.writes.find((item) => item.capability === 'product-buildr-skill' && item.skillRelativePath === 'SKILL.md');
+  assert.ok(productSkill);
+  assert.doesNotMatch(productSkill.content, /Workspace routing evidence|contract SHA-256|buildr:capability-bindings begin/);
+  assert.match(productSkill.content, /Doctor 的 full detail/);
 });
 
 test('Component dependency contribution 与 fragment 同生命周期合并且 required 覆盖 optional', (t) => {

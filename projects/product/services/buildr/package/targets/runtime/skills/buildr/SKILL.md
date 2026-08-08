@@ -30,7 +30,7 @@ Agent 是 Buildr 功能的默认操作入口。Agent 能在当前工具、权限
 ## 任务路由
 Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。本 Skill 只有在 Buildr 管理意图与自身 description 匹配后才会被加载；它不是所有用户意图之前的全局 dispatcher，也不拦截 prompt。“收尾”等专业意图通常由 Agent 直接命中对应入口 Skill，再由该 Skill 读取自身的受管 capability bindings。
 
-本 Skill 已加载后，完整 sync 生成的 `Buildr Capability Bindings` 是当前 scope 的受管路由证据。证据缺失、不适用或 runtime check 显示 stale 时，在已初始化 workspace 先运行当前 Agent doctor 读取 `capabilities` graph；`ready` 只表示结构可路由。调用 provider 前读取 contract 和 selected provider。不得根据 Skill id、description 或安装顺序猜测 provider conformance，也不需要 capability dispatch 命令。
+本 Skill 已加载后，只对下面明确列出的 Buildr 管理意图按需解析对应 capability。需要可替换 provider 时，在已初始化 workspace 运行当前 Agent Doctor 的 full detail，读取当前 scope 的 `capabilities` graph，再定位该项 contract 和 selected provider；不要把整张 consumer graph 当成本 Skill 的依赖表。`ready` 只表示结构可路由。调用 provider 前读取 contract 和 provider；不得根据 Skill id、description 或安装顺序猜测 conformance，也不需要 capability dispatch 命令。
 
 | 用户意图 | 资产类型 |
 |---|---|

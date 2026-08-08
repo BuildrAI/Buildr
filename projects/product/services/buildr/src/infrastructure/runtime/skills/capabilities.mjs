@@ -247,26 +247,3 @@ export function selectedProviderImpacts(organizationRoot, providerId, options = 
       })))
   );
 }
-
-export function resolveCapabilityRoutingEvidence(organizationRoot, runtime) {
-  const graphs = capabilityGraphsForWorkspace(organizationRoot, runtime);
-  return graphs.map((graph) => {
-    const routes = graph.consumers.flatMap((consumer) => consumer.dependencies.map((dependency) => ({ ...dependency, consumer: consumer.consumer })));
-    for (const binding of graph.bindings) {
-      if (routes.some((route) => route.capability === binding.capability && route.version === binding.version)) continue;
-      const provider = graph.skills.find((skill) => skill.id === binding.provider && (skill.provides || []).some((item) => item.capability === binding.capability && item.version === binding.version));
-      const contract = graph.contracts.find((item) => item.id === binding.capability && item.version === binding.version) || null;
-      routes.push({
-        consumer: 'product:buildr',
-        capability: binding.capability,
-        version: binding.version,
-        readiness: provider && contract ? 'ready' : 'blocked',
-        reason: provider && contract ? null : 'invalid_binding',
-        contract,
-        selectedProvider: provider ? { id: provider.id, scope: provider.declaredScope || graph.scope, runtimePath: provider.runtimePath || provider.id } : null,
-        provenance: `explicit:${binding.scope}`,
-      });
-    }
-    return { scope: graph.scope, routes };
-  });
-}
