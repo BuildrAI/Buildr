@@ -125,15 +125,27 @@
       "type": "skill",
       "id": "task-environment",
       "target": "skills/buildr/task-environment",
-      "integrity": "sha256-943be6241bfb19ae9903ca140f9b663977592ca2b505d8f793042f295e1b3564",
+      "integrity": "sha256-d7418b2d67e466eb1aa229100dbeb9469180823b64381da390d8ba0eb0d3c10e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8d6544c68f24f2bc60cc054d1c73b06b40eaece3a51669d56af5579e3757d474"
+          "integrity": "sha256-9d940d397bcee7dd06a66ff4af3f1c4476c51fe3fda2e1953f5c0f15303c161d"
         },
         {
           "path": "agents/openai.yaml",
           "integrity": "sha256-79062f92b36b43a124443335bfabfecd822ed991dba29c11ff82d2fe7fff582e"
+        },
+        {
+          "path": "references/project-environment-preparation-v1.md",
+          "integrity": "sha256-09b21a7a9ef9cfd11f3136e41a2bc6369fcfe55678b7fde4268196f458673212"
+        },
+        {
+          "path": "templates/project-preparation.yml",
+          "integrity": "sha256-d94e2f613cf993fa51a4c59101e1ecf22830615c85eefaced1c4325b8c78129b"
+        },
+        {
+          "path": "templates/task-environment-plan-request.json",
+          "integrity": "sha256-c9aead90a56725541396c4def413488109878d2e0e83870e57d85f7eeeb15bed"
         }
       ]
     },
@@ -201,11 +213,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-fe1a49e07f870042e08c9f74821499a31a59578c0da316ca05f9302c9d703911",
+      "integrity": "sha256-e2d1eb6345751ab7477dcf49fc477e78737e8dd35f005156e52818b94d8583bc",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-aee2aa87b8e4225388994ed6446be1356f0902372dfebf762fbf21ac9fc952f9"
+          "integrity": "sha256-b5fa5e15885cd2a4809b085312184a497d9d7d49fff798b24c6bc129dde84e64"
         }
       ]
     },
