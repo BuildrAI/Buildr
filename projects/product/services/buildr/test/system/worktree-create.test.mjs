@@ -170,7 +170,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   const taskRecordBefore = owner.record;
   const taskDigestBefore = owner.recordDigest;
   const prepared = buildr(['task', 'environment', 'prepare', ownerTask, '--plan', noServicePlan(ownerTask), '--shared', '--agent', 'codex', '--target', root, '--json']);
-  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v3');
+  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v4');
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.status, 'ready');
   assert.equal(prepared.environment.scopes[0].executionRoot, root);

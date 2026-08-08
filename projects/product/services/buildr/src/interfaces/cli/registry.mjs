@@ -372,11 +372,11 @@ const COMMAND_ROUTES = [
   {
     key: "task environment prepare",
     surface: "agent-machine",
-    summary: "按Agent登记的多Service Environment Preparation Plan幂等准备执行根、步骤、Workspace CLI和runtime projection。",
+    summary: "按Project Preparation Declaration与Agent选择的Task Plan幂等准备Project/Service执行环境。",
     help: [
       "Usage: buildr task environment prepare <task-id> [--plan <json-file>] [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
       "",
-      "Plan必须恰好覆盖Task Record中的全部Service scope；每个Service可声明多个有序Step或显式not-applicable。",
+      "Plan Request必须恰好覆盖Task Record中的全部Project/Service scope，可引用Project preparation.yml的Recipe或显式task-inline Recipe。",
       "默认使用Git worktree；inspect严格只读，不执行Step或回写current。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'prepare',
@@ -385,11 +385,11 @@ const COMMAND_ROUTES = [
   {
     key: "task environment plan record",
     surface: "agent-machine",
-    summary: "原子登记Agent为当前Task判断出的多Service环境准备计划，不执行任何准备Step。",
+    summary: "解析Project Preparation Declaration并原子保存当前Task的Plan执行快照，不执行任何准备Step。",
     help: [
       "Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]",
       "",
-      "Plan必须是closed buildr.task-environment-plan/v1，并恰好覆盖Task Record中的全部Service scope。"
+      "输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v2。"
     ],
     match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'record',
     run: (r, c) => taskEnvironmentPlanCommand(r, 'record', c.args.slice(1)),

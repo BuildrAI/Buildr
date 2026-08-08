@@ -32,8 +32,8 @@ test('task triage 输出两轴决策、repository set 与 Task Environment 动�
 
   assert.doesNotMatch(triageSkill, /create-board|continue-board|buildr\.task-board-maintenance/);
 
-  assert.match(triageSkill, /首次持久交付写入前取得 `ready`、实际 execution roots、validation root 和执行 CLI/);
-  assert.match(triageSkill, /`metadata-only` 可以使用共享执行根，不必创建 Git worktree/);
+  assert.match(triageSkill, /首次持久交付写入前取得`ready`、实际execution roots、validation root和执行CLI/);
+  assert.match(triageSkill, /`metadata-only`可以使用共享执行根，不必创建Git worktree/);
   assert.match(triageSkill, /Task Environment：prepare \/ inspect \/ none \/ blocked/);
 });
 
@@ -74,11 +74,11 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
     '不登记动态资源',
   ]) assert.ok(worktreeSkill.includes(required), `task-worktree must include ${required}`);
   assert.match(environmentSkill, /`buildr.task-environment\/v1` 的默认 provider/);
-  assert.match(environmentSkill, /Environment Receipt 独占 Runtime、CLI、依赖、projection、动态资源、ready、恢复和总 cleanup/);
-  assert.match(environmentSkill, /v4 中的依赖事实由 Plan 及逐 Service\/Step 事实表达/);
-  assert.match(environmentSkill, /Buildr核心不猜技术栈、不扫描package manifests/);
+  assert.match(environmentSkill, /Environment Receipt 独占 Runtime、CLI、Preparation Declaration\/Scope\/Recipe\/Step、projection、动态资源、ready、恢复和总 cleanup/);
+  assert.match(environmentSkill, /buildr\.task-environment-plan-request\/v1/);
+  assert.match(environmentSkill, /Buildr不实现Node\/Python\/Go\/Rust适配器，也不扫描manifest/);
   assert.match(environmentSkill, /不执行Step、不创建或修复输出、不回写Receipt/);
-  assert.match(environmentSkill, /Agent先读取Task Record的全部Service scope/);
+  assert.match(environmentSkill, /Agent读取Task Record的完整Project\/Service scope/);
   assert.doesNotMatch(worktreeSkill, /executionReady|worktree context|worktree adopt/);
 
   const packagedTriage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');

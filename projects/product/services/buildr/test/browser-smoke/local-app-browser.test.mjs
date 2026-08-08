@@ -712,6 +712,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.match(await page.locator('#task-environment-receipt').innerText(), /^可用 · /);
     assert.ok(await page.locator('#task-environment-scopes .environment-scope-card').count() >= 2, '应展示稳定控制面与实际工作范围');
     assert.match(await page.locator('#task-environment-scopes').innerText(), /共享根/);
+    assert.match(await page.locator('#task-environment-detail').innerText(), /Task inline（没有长期声明/);
     assert.match(await page.locator('#task-environment-preparation-steps').innerText(), /当前Task无需执行Step/);
     assert.match(await page.locator('#task-environment-resources').innerText(), /没有已登记的任务所属动态资源/);
     assert.equal(await page.locator('#task-environment-panel button').count(), 1, '环境页签只提供只读刷新');

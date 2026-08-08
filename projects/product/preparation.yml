@@ -1,0 +1,40 @@
+schemaVersion: buildr.project-environment-preparation/v1
+recipes:
+  - id: buildr.npm-ci
+    title: Prepare Buildr CLI and Local App runtime dependencies
+    scope:
+      kind: service
+      service: buildr
+    required: true
+    steps:
+      - id: npm-ci
+        cwd: .
+        executable:
+          kind: workspace-foundation
+          name: npm
+        args: [ci]
+        inputs: [package.json, package-lock.json]
+        outputs:
+          - path: node_modules
+            kind: directory
+        required: true
+        timeoutMs: 300000
+  - id: buildr-web.npm-ci
+    title: Prepare Buildr Local App web dependencies
+    scope:
+      kind: service
+      service: buildr-web
+    required: true
+    steps:
+      - id: npm-ci
+        cwd: .
+        executable:
+          kind: workspace-foundation
+          name: npm
+        args: [ci]
+        inputs: [package.json, package-lock.json]
+        outputs:
+          - path: node_modules
+            kind: directory
+        required: true
+        timeoutMs: 300000

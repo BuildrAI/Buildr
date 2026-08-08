@@ -6,7 +6,7 @@ import process from 'node:process';
 import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {
@@ -102,13 +102,22 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
   const taskId = 'installed-reader-task';
   runtime.createTaskRecord(workspaceRoot, { taskId, title: 'Installed reader', intent: '读取候选 Change', projects: ['demo'], services: [], changes: [] });
   const observedAt = new Date().toISOString();
-  const plan = normalizeTaskEnvironmentPlan({
-    schemaVersion: 'buildr.task-environment-plan/v1',
-    notApplicableReason: 'This project-only fixture has no Service preparation requirements.',
-    services: [],
-  });
+  const planPayload = {
+    schemaVersion: 'buildr.task-environment-plan/v2',
+    projects: [{
+      project: 'demo',
+      source: { kind: 'task-inline', path: null, identity: null },
+      scopes: [{
+        selector: 'project:demo',
+        disposition: 'not-applicable',
+        reason: 'This project-only fixture has no preparation requirements.',
+        recipes: [],
+      }],
+    }],
+  };
+  const plan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:demo'] });
   runtime.writeTaskEnvironmentPersistence(root, {
-    schemaVersion: 'buildr.task-environment-receipt/v4',
+    schemaVersion: 'buildr.task-environment-receipt/v5',
     taskId,
     workspace: { id: runtime.readWorkspaceRecord(workspaceRoot).workspace.id, root: workspaceRoot },
     controller: { sourceRoot: PRODUCT_ROOT, cliSource: BUILDR, identity: 'sha256-installed-reader-fixture', adapter: 'codex' },
@@ -121,7 +130,9 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
       projection: { status: 'ready', identity: 'projection', observedAt, diagnostic: null },
     }],
     preparationPlan: plan,
-    preparationServices: [],
+    preparationDeclarations: [{ project: 'demo', source: 'task-inline', path: null, identity: null, preparedIdentity: null, status: 'ready', observedAt, diagnostic: null }],
+    preparationScopes: [{ selector: 'project:demo', disposition: 'not-applicable', status: 'not-applicable', recipeIds: [], observedAt, diagnostic: 'This project-only fixture has no preparation requirements.' }],
+    preparationRecipes: [],
     preparationSteps: [],
     resources: [],
     latest: { ready: { status: 'ready', observedAt, diagnostic: null }, cleanup: null },

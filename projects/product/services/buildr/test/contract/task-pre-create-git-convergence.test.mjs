@@ -62,6 +62,6 @@ test('package manifests 声明 task-triage optional Git Operations dependency', 
 
 test('Task Record 与 Environment 继续排除创建前 Git 编排', () => {
   assert.doesNotMatch(taskManager, /git fetch|git rebase|origin\/dev/);
-  assert.match(environment, /不要由 Environment 自动 fetch\/rebase/);
+  assert.match(environment, /不要由Environment自动fetch\/rebase/);
   assert.doesNotMatch(environment, /rebase --abort|origin\/dev/);
 });

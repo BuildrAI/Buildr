@@ -8,7 +8,18 @@ import {
   taskEnvironmentError,
   taskEnvironmentReadModel,
 } from '../../domain/task-environment/task-environment.mjs';
-import { normalizeTaskEnvironmentPlan } from '../../domain/task-environment/task-environment-plan.mjs';
+import {
+  LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA,
+  TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA,
+  normalizeTaskEnvironmentPlan,
+  normalizeTaskEnvironmentPlanRequest,
+  taskEnvironmentPlanDigest,
+} from '../../domain/task-environment/task-environment-plan.mjs';
+import {
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+  projectEnvironmentPreparationScopeSelector,
+} from '../../domain/task-environment/project-environment-preparation.mjs';
 import { observeGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
 import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
 import { spawnSync } from '../../infrastructure/process.mjs';
@@ -196,6 +207,82 @@ export function registerTaskEnvironmentApplication(runtime) {
     return { scopes };
   }
 
+  function preparationScopeSelectors(scopes) {
+    return scopes.filter((scope) => scope.kind === 'project' || scope.kind === 'service').map((scope) => scope.selector);
+  }
+
+  function legacyPlanRequest(input, scopes) {
+    const serviceSelectors = scopes.filter((scope) => scope.kind === 'service').map((scope) => scope.selector);
+    const legacy = normalizeTaskEnvironmentPlan(input, { serviceSelectors });
+    const byProject = new Map();
+    for (const scope of scopes.filter((item) => item.kind === 'project' || item.kind === 'service')) {
+      const project = scope.project;
+      if (!byProject.has(project)) byProject.set(project, { project, source: { kind: 'task-inline' }, scopes: [] });
+      if (scope.kind === 'project') {
+        byProject.get(project).scopes.push({ selector: scope.selector, disposition: 'not-applicable', reason: legacy.notApplicableReason || 'Legacy inline Plan did not declare Project-wide preparation.' });
+        continue;
+      }
+      const service = legacy.services.find((item) => item.selector === scope.selector);
+      byProject.get(project).scopes.push(service?.disposition === 'required'
+        ? { selector: scope.selector, disposition: 'required', reason: 'Explicit legacy Task inline Plan.', recipes: [{ id: `task-inline-${scope.service}`, title: null, required: true, steps: service.steps }] }
+        : { selector: scope.selector, disposition: 'not-applicable', reason: service?.reason || 'Legacy inline Plan declared no Service preparation.' });
+    }
+    const projects = [...byProject.values()];
+    return { schemaVersion: TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA, ...(projects.length ? {} : { notApplicableReason: legacy.notApplicableReason }), projects };
+  }
+
+  function resolveTaskEnvironmentPlanRequest(input, scopePlan, currentScopes, workspaceRoot) {
+    if (!input) return null;
+    const requestInput = input.schemaVersion === LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA ? legacyPlanRequest(input, scopePlan.scopes) : input;
+    const selectors = preparationScopeSelectors(scopePlan.scopes);
+    const request = normalizeTaskEnvironmentPlanRequest(requestInput, { scopeSelectors: selectors });
+    const execution = new Map(currentScopes.map((scope) => [scope.selector, scope]));
+    const projects = request.projects.map((requested) => {
+      const projectScope = execution.get(`project:${requested.project}`);
+      if (!projectScope) throw taskEnvironmentError('task_environment_plan_scope_incomplete', `Plan Project不属于Task：${requested.project}。`, 409, { project: requested.project });
+      let declaration = null;
+      let source;
+      if (requested.source.kind === 'project-declaration') {
+        const declarationFile = path.join(projectScope.executionRoot, 'preparation.yml');
+        if (!fs.existsSync(declarationFile)) throw taskEnvironmentError('project_environment_preparation_missing', `Project ${requested.project} 缺少preparation.yml。`, 409, { project: requested.project, path: path.join(projectScope.sourcePath, 'preparation.yml') }, '由Agent提交task-inline Plan，或经用户授权初始化Project Environment Preparation Declaration。');
+        const serviceRegistry = runtime.readServiceRegistryRecord(workspaceRoot, requested.project);
+        declaration = normalizeProjectEnvironmentPreparation(parseProjectEnvironmentPreparation(fs.readFileSync(declarationFile, 'utf8'), path.join(projectScope.sourcePath, 'preparation.yml')), {
+          projectCode: requested.project,
+          services: Object.keys(serviceRegistry.services || {}),
+        });
+        if (requested.source.identity && requested.source.identity !== declaration.identity) throw taskEnvironmentError('project_environment_preparation_stale', `Project ${requested.project} Preparation Declaration identity已漂移。`, 409, { expected: requested.source.identity, actual: declaration.identity, project: requested.project });
+        source = { kind: 'project-declaration', path: path.join(projectScope.sourcePath, 'preparation.yml').split(path.sep).join('/'), identity: declaration.identity };
+      } else source = { kind: 'task-inline', path: null, identity: null };
+      const scopes = requested.scopes.map((scopeRequest) => {
+        if (scopeRequest.disposition === 'not-applicable') return { selector: scopeRequest.selector, disposition: scopeRequest.disposition, reason: scopeRequest.reason, recipes: [] };
+        let recipes;
+        if (declaration) {
+          recipes = scopeRequest.recipeIds.map((recipeId) => {
+            const recipe = declaration.recipes.find((candidate) => candidate.id === recipeId);
+            if (!recipe) throw taskEnvironmentError('project_environment_preparation_recipe_missing', `Preparation Recipe不存在：${requested.project}/${recipeId}。`, 409, { project: requested.project, recipe: recipeId });
+            const selector = projectEnvironmentPreparationScopeSelector(requested.project, recipe);
+            if (selector !== scopeRequest.selector) throw taskEnvironmentError('project_environment_preparation_recipe_scope_mismatch', `Recipe ${recipeId}不适用于${scopeRequest.selector}。`, 409, { recipe: recipeId, expected: selector, actual: scopeRequest.selector });
+            return { id: recipe.id, title: recipe.title, required: recipe.required, steps: recipe.steps, identity: recipe.identity };
+          });
+        } else {
+          const inlineValues = scopeRequest.recipes.map((recipe, index) => {
+            const allowed = new Set(['id', 'title', 'required', 'steps']);
+            for (const key of Object.keys(recipe || {})) if (!allowed.has(key)) throw taskEnvironmentError('task_environment_plan_field_forbidden', `Inline Recipe不支持字段：${key}。`, 409, { field: `recipes[${index}].${key}` });
+            const match = /^(project|service):([^/]+)(?:\/(.+))?$/.exec(scopeRequest.selector);
+            return { ...recipe, scope: match[1] === 'project' ? { kind: 'project' } : { kind: 'service', service: match[3] } };
+          });
+          const services = scopePlan.scopes.filter((scope) => scope.project === requested.project && scope.kind === 'service').map((scope) => scope.service);
+          const normalizedInline = normalizeProjectEnvironmentPreparation({ schemaVersion: 'buildr.project-environment-preparation/v1', recipes: inlineValues }, { projectCode: requested.project, services });
+          recipes = normalizedInline.recipes.map((recipe) => ({ id: recipe.id, title: recipe.title, required: recipe.required, steps: recipe.steps, identity: recipe.identity }));
+        }
+        return { selector: scopeRequest.selector, disposition: scopeRequest.disposition, reason: scopeRequest.reason, recipes };
+      });
+      return { project: requested.project, source, scopes };
+    });
+    const payload = { schemaVersion: 'buildr.task-environment-plan/v2', ...(request.notApplicableReason ? { notApplicableReason: request.notApplicableReason } : {}), projects };
+    return normalizeTaskEnvironmentPlan({ ...payload, identity: taskEnvironmentPlanDigest(payload) }, { scopeSelectors: selectors });
+  }
+
   function providerIncludes(scopes) {
     return scopes.filter((scope) => scope.selector !== 'workspace' && scope.sourceType === 'git').map((scope) => scope.selector);
   }
@@ -268,7 +355,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
   }
 
-  function resolveExecutable(step, serviceRoot, workspaceNode) {
+  function resolveExecutable(step, scopeRoot, projectRoot, serviceRoot, workspaceNode) {
     if (step.executable.kind === 'workspace-foundation') {
       const executables = {
         node: workspaceNode?.executable,
@@ -280,25 +367,27 @@ export function registerTaskEnvironmentApplication(runtime) {
       return executable;
     }
     if (step.executable.kind === 'absolute') return step.executable.path;
-    const executable = path.resolve(serviceRoot, step.executable.path);
-    if (!inside(serviceRoot, executable)) throw taskEnvironmentError('task_environment_plan_path_invalid', `Service executable 越出执行根：${step.executable.path}。`, 409, { executable, serviceRoot });
+    const executableRoot = step.executable.kind === 'project' ? projectRoot : serviceRoot;
+    if (!executableRoot) throw taskEnvironmentError('task_environment_plan_executable_scope_invalid', `${step.executable.kind} executable不适用于当前Recipe scope。`, 409, { kind: step.executable.kind });
+    const executable = path.resolve(executableRoot, step.executable.path);
+    if (!inside(executableRoot, executable)) throw taskEnvironmentError('task_environment_plan_path_invalid', `Recipe executable 越出执行根：${step.executable.path}。`, 409, { executable, executableRoot });
     try {
       const real = fs.realpathSync(executable);
-      if (!inside(fs.realpathSync(serviceRoot), real)) throw new Error('real path escapes Service root');
+      if (!inside(fs.realpathSync(executableRoot), real)) throw new Error('real path escapes Recipe executable root');
     } catch (error) {
-      if (fs.existsSync(executable)) throw taskEnvironmentError('task_environment_plan_executable_untrusted', `Service executable 不可信：${executable}（${error.message}）。`, 409, { executable });
+      if (fs.existsSync(executable)) throw taskEnvironmentError('task_environment_plan_executable_untrusted', `Recipe executable 不可信：${executable}（${error.message}）。`, 409, { executable });
     }
     return executable;
   }
 
-  function observeOutput(serviceRoot, output) {
-    const target = path.resolve(serviceRoot, output.path);
-    if (!inside(serviceRoot, target)) return { path: target, kind: output.kind, status: 'blocked', diagnostic: '输出路径越出 Service execution root。' };
+  function observeOutput(scopeRoot, output) {
+    const target = path.resolve(scopeRoot, output.path);
+    if (!inside(scopeRoot, target)) return { path: target, kind: output.kind, status: 'blocked', diagnostic: '输出路径越出 Recipe execution root。' };
     if (!fs.existsSync(target)) return { path: target, kind: output.kind, status: 'missing', diagnostic: `准备输出不存在：${target}` };
     try {
       const stat = fs.lstatSync(target);
       if (stat.isSymbolicLink()) return { path: target, kind: output.kind, status: 'blocked', diagnostic: `准备输出不得是符号链接：${target}` };
-      if (!inside(fs.realpathSync(serviceRoot), fs.realpathSync(target))) return { path: target, kind: output.kind, status: 'blocked', diagnostic: `准备输出真实路径越出 Service execution root：${target}` };
+      if (!inside(fs.realpathSync(scopeRoot), fs.realpathSync(target))) return { path: target, kind: output.kind, status: 'blocked', diagnostic: `准备输出真实路径越出 Recipe execution root：${target}` };
       const valid = output.kind === 'directory' ? stat.isDirectory() : stat.isFile() && (output.kind !== 'executable' || process.platform === 'win32' || Boolean(stat.mode & 0o111));
       return valid
         ? { path: target, kind: output.kind, status: 'ready', diagnostic: null }
@@ -311,18 +400,24 @@ export function registerTaskEnvironmentApplication(runtime) {
   function plannedSteps(receipt, workspaceNode) {
     if (!receipt.preparationPlan) return [];
     const scopes = new Map(receipt.scopes.map((scope) => [scope.selector, scope]));
-    return receipt.preparationPlan.services.flatMap((service) => {
-      const scope = scopes.get(service.selector);
-      if (!scope) throw taskEnvironmentError('task_environment_preparation_scope_invalid', `Environment Plan Service 没有执行根：${service.selector}。`, 409, { selector: service.selector });
-      return service.steps.map((step) => ({
+    return receipt.preparationPlan.projects.flatMap((project) => project.scopes.flatMap((plannedScope) => {
+      const scope = scopes.get(plannedScope.selector);
+      const projectScope = scopes.get(`project:${project.project}`);
+      if (!scope || !projectScope) throw taskEnvironmentError('task_environment_preparation_scope_invalid', `Environment Plan scope没有执行根：${plannedScope.selector}。`, 409, { selector: plannedScope.selector });
+      const serviceRoot = scope.kind === 'service' ? scope.executionRoot : null;
+      return plannedScope.recipes.flatMap((recipe) => recipe.steps.map((step) => ({
         ...step,
-        id: `${service.selector}/${step.id}`,
-        scope: service.selector,
-        serviceRoot: scope.executionRoot,
+        id: `${plannedScope.selector}/${recipe.id}/${step.id}`,
+        scope: plannedScope.selector,
+        recipe: recipe.id,
+        recipeRequired: recipe.required,
+        scopeRoot: scope.executionRoot,
+        projectRoot: projectScope.executionRoot,
+        serviceRoot,
         cwd: path.resolve(scope.executionRoot, step.cwd),
-        executablePath: resolveExecutable(step, scope.executionRoot, workspaceNode),
-      }));
-    });
+        executablePath: resolveExecutable(step, scope.executionRoot, projectScope.executionRoot, serviceRoot, workspaceNode),
+      })));
+    }));
   }
 
   function observePreparationStep(planned, saved = null, prepared = null) {
@@ -331,18 +426,18 @@ export function registerTaskEnvironmentApplication(runtime) {
     const currentExecutableIdentity = executableIdentity(executable);
     const preparedExecutableIdentity = prepared?.executableIdentity ?? saved?.preparedExecutableIdentity ?? null;
     const inputs = planned.inputs.map((relative) => {
-      const target = path.resolve(planned.serviceRoot, relative);
+      const target = path.resolve(planned.scopeRoot, relative);
       return {
         path: target,
-        identity: inside(planned.serviceRoot, target) ? fileIdentity(target) : null,
+        identity: inside(planned.scopeRoot, target) ? fileIdentity(target) : null,
         preparedIdentity: prepared?.inputIdentities?.get(target) ?? saved?.inputs?.find((input) => input.path === target)?.preparedIdentity ?? null,
       };
     });
-    const outputs = planned.outputs.map((output) => observeOutput(planned.serviceRoot, output));
+    const outputs = planned.outputs.map((output) => observeOutput(planned.scopeRoot, output));
     let status = 'ready';
     let diagnostic = null;
-    if (!inside(planned.serviceRoot, planned.cwd)) {
-      status = 'blocked'; diagnostic = `Step cwd 越出 Service execution root：${planned.cwd}`;
+    if (!inside(planned.scopeRoot, planned.cwd)) {
+      status = 'blocked'; diagnostic = `Step cwd 越出 Recipe execution root：${planned.cwd}`;
     } else if (!fs.existsSync(planned.cwd) || !fs.statSync(planned.cwd).isDirectory()) {
       status = 'missing'; diagnostic = `Step cwd 不存在：${planned.cwd}`;
     } else if (!currentExecutableIdentity) {
@@ -360,7 +455,9 @@ export function registerTaskEnvironmentApplication(runtime) {
     return {
       id: planned.id,
       scope: planned.scope,
+      recipe: planned.recipe,
       required: planned.required,
+      executed: Boolean(prepared?.executed),
       cwd: planned.cwd,
       executable,
       executableIdentity: currentExecutableIdentity,
@@ -391,14 +488,15 @@ export function registerTaskEnvironmentApplication(runtime) {
         });
         if (result.status !== 0) {
           const output = (result.stderr || result.stdout || 'preparation command failed').trim().slice(0, 2000);
-          step = { ...step, status: 'failed', observedAt: now(), diagnostic: `${planned.scope} Step ${planned.id} 失败（exit ${result.status ?? 'unknown'}）：${output}` };
+          step = { ...step, executed: true, status: 'failed', observedAt: now(), diagnostic: `${planned.scope} Step ${planned.id} 失败（exit ${result.status ?? 'unknown'}）：${output}` };
         } else {
           step = observePreparationStep(planned, null, {
             executableIdentity: executableIdentity(step.executable),
             inputIdentities: new Map(step.inputs.map((input) => [input.path, fileIdentity(input.path)])),
+            executed: true,
           });
           if (step.status !== 'ready') step = { ...step, status: 'failed', diagnostic: `Step 执行成功但输出未 ready：${step.diagnostic}` };
-          effects.push({ type: 'preparation-step-executed', id: planned.id, scope: planned.scope, cwd: planned.cwd, executable: step.executable, status: step.status });
+          effects.push({ type: 'preparation-step-executed', id: planned.id, scope: planned.scope, recipe: planned.recipe, cwd: planned.cwd, executable: step.executable, status: step.status });
         }
       }
       observed.push(step);
@@ -408,41 +506,68 @@ export function registerTaskEnvironmentApplication(runtime) {
     return observed;
   }
 
-  function aggregatePreparation(receipt, preparationSteps) {
-    const services = (receipt.preparationPlan?.services || []).map((planned) => {
-      const steps = preparationSteps.filter((step) => step.scope === planned.selector);
-      if (planned.disposition === 'not-applicable') return { selector: planned.selector, disposition: planned.disposition, status: 'not-applicable', stepIds: [], observedAt: now(), diagnostic: planned.reason };
-      const expectedStepIds = planned.steps.map((step) => `${planned.selector}/${step.id}`);
-      const missingStep = expectedStepIds.find((id) => !steps.some((step) => step.id === id));
-      const blockedStep = steps.find((step) => step.required && step.status !== 'ready');
-      return {
-        selector: planned.selector,
-        disposition: planned.disposition,
-        status: missingStep || blockedStep ? 'blocked' : 'ready',
-        stepIds: steps.map((step) => step.id),
-        observedAt: steps.reduce((latest, step) => step.observedAt > latest ? step.observedAt : latest, now()),
-        diagnostic: missingStep ? `尚未观察 Preparation Step：${missingStep}` : blockedStep ? `${blockedStep.id}: ${blockedStep.diagnostic}` : null,
-      };
+  function observePreparationDeclarations(receipt) {
+    return (receipt.preparationPlan?.projects || []).map((project) => {
+      const observedAt = now();
+      if (project.source.kind === 'task-inline') return { project: project.project, source: 'task-inline', path: null, identity: null, preparedIdentity: null, status: 'ready', observedAt, diagnostic: null };
+      const declarationFile = path.resolve(receipt.scopes[0].validationRoot, project.source.path);
+      if (!inside(receipt.scopes[0].validationRoot, declarationFile) || !fs.existsSync(declarationFile)) return { project: project.project, source: project.source.kind, path: declarationFile, identity: null, preparedIdentity: project.source.identity, status: 'missing', observedAt, diagnostic: `Preparation Declaration不存在：${declarationFile}` };
+      try {
+        const registry = runtime.readServiceRegistryRecord(receipt.workspace.root, project.project);
+        const current = normalizeProjectEnvironmentPreparation(parseProjectEnvironmentPreparation(fs.readFileSync(declarationFile, 'utf8'), project.source.path), { projectCode: project.project, services: Object.keys(registry.services || {}) });
+        return { project: project.project, source: project.source.kind, path: declarationFile, identity: current.identity, preparedIdentity: project.source.identity, status: current.identity === project.source.identity ? 'ready' : 'drifted', observedAt, diagnostic: current.identity === project.source.identity ? null : `Preparation Declaration已漂移：${project.project}` };
+      } catch (error) {
+        return { project: project.project, source: project.source.kind, path: declarationFile, identity: null, preparedIdentity: project.source.identity, status: 'blocked', observedAt, diagnostic: error.message };
+      }
     });
-    const scopes = receipt.scopes.map((scope) => {
-      const relevant = services.filter((service) => scope.kind === 'workspace' || (scope.kind === 'project' && service.selector.startsWith(`service:${scope.project}/`)) || service.selector === scope.selector);
-      if (!relevant.length) return { ...scope, preparation: probe('not-applicable', null, null) };
-      const blockedService = relevant.find((service) => service.status === 'blocked');
-      const identity = `sha256-${crypto.createHash('sha256').update(JSON.stringify(relevant.map((service) => [service.selector, service.status, ...service.stepIds]))).digest('hex')}`;
-      return { ...scope, preparation: blockedService ? probe('blocked', identity, `${blockedService.selector}: ${blockedService.diagnostic}`, blockedService.observedAt) : probe('ready', identity, null) };
-    });
-    return { scopes, services };
   }
 
-  function pendingPreparationServices(plan, diagnostic = '尚未 prepare。') {
-    return (plan?.services || []).map((service) => ({
-      selector: service.selector,
-      disposition: service.disposition,
-      status: service.disposition === 'not-applicable' ? 'not-applicable' : 'blocked',
-      stepIds: [],
-      observedAt: now(),
-      diagnostic: service.reason || diagnostic,
+  function aggregatePreparation(receipt, preparationSteps, declarations = observePreparationDeclarations(receipt)) {
+    const declarationByProject = new Map(declarations.map((item) => [item.project, item]));
+    const recipes = (receipt.preparationPlan?.projects || []).flatMap((project) => project.scopes.flatMap((plannedScope) => plannedScope.recipes.map((recipe) => {
+      const declaration = declarationByProject.get(project.project);
+      const stepIds = recipe.steps.map((step) => `${plannedScope.selector}/${recipe.id}/${step.id}`);
+      const steps = preparationSteps.filter((step) => step.recipe === recipe.id && step.scope === plannedScope.selector);
+      const missingStep = stepIds.find((id) => !steps.some((step) => step.id === id));
+      const blockedStep = steps.find((step) => step.required && step.status !== 'ready');
+      const blockedDeclaration = declaration?.status !== 'ready' ? declaration : null;
+      return {
+        id: `${plannedScope.selector}/${recipe.id}`,
+        project: project.project,
+        scope: plannedScope.selector,
+        recipe: recipe.id,
+        source: project.source.kind,
+        required: recipe.required,
+        identity: blockedDeclaration ? null : recipe.identity,
+        preparedIdentity: recipe.identity,
+        status: blockedDeclaration || missingStep || blockedStep ? 'blocked' : 'ready',
+        stepIds: steps.map((step) => step.id),
+        observedAt: steps.reduce((latest, step) => step.observedAt > latest ? step.observedAt : latest, declaration?.observedAt || now()),
+        diagnostic: blockedDeclaration?.diagnostic || (missingStep ? `尚未观察 Preparation Step：${missingStep}` : blockedStep ? `${blockedStep.id}: ${blockedStep.diagnostic}` : null),
+      };
+    })));
+    const preparationScopes = (receipt.preparationPlan?.projects || []).flatMap((project) => project.scopes.map((planned) => {
+      if (planned.disposition === 'not-applicable') return { selector: planned.selector, disposition: planned.disposition, status: 'not-applicable', recipeIds: [], observedAt: now(), diagnostic: planned.reason };
+      const selected = recipes.filter((recipe) => recipe.scope === planned.selector);
+      const blockedRecipe = selected.find((recipe) => recipe.required && recipe.status !== 'ready');
+      return { selector: planned.selector, disposition: planned.disposition, status: blockedRecipe ? 'blocked' : 'ready', recipeIds: selected.map((recipe) => recipe.id), observedAt: selected.reduce((latest, recipe) => recipe.observedAt > latest ? recipe.observedAt : latest, now()), diagnostic: blockedRecipe ? `${blockedRecipe.id}: ${blockedRecipe.diagnostic}` : null };
     }));
+    const scopes = receipt.scopes.map((scope) => {
+      const relevant = preparationScopes.filter((item) => scope.kind === 'workspace' || (scope.kind === 'project' && (item.selector === scope.selector || item.selector.startsWith(`service:${scope.project}/`))) || item.selector === scope.selector);
+      if (!relevant.length) return { ...scope, preparation: probe('not-applicable', null, null) };
+      const blockedScope = relevant.find((item) => item.status === 'blocked');
+      const preparationIdentity = `sha256-${crypto.createHash('sha256').update(JSON.stringify(relevant.map((item) => [item.selector, item.status, ...item.recipeIds]))).digest('hex')}`;
+      return { ...scope, preparation: blockedScope ? probe('blocked', preparationIdentity, `${blockedScope.selector}: ${blockedScope.diagnostic}`, blockedScope.observedAt) : probe('ready', preparationIdentity, null) };
+    });
+    return { scopes, declarations, preparationScopes, recipes };
+  }
+
+  function pendingPreparationFacts(plan, currentScopes = [], diagnostic = '尚未 prepare。') {
+    const validationRoot = currentScopes[0]?.validationRoot || null;
+    const declarations = (plan?.projects || []).map((project) => ({ project: project.project, source: project.source.kind, path: project.source.path && validationRoot ? path.resolve(validationRoot, project.source.path) : null, identity: project.source.identity, preparedIdentity: project.source.identity, status: project.source.kind === 'task-inline' ? 'ready' : 'blocked', observedAt: now(), diagnostic: project.source.kind === 'task-inline' ? null : diagnostic }));
+    const preparationScopes = (plan?.projects || []).flatMap((project) => project.scopes.map((scope) => ({ selector: scope.selector, disposition: scope.disposition, status: scope.disposition === 'not-applicable' ? 'not-applicable' : 'blocked', recipeIds: [], observedAt: now(), diagnostic: scope.reason || diagnostic })));
+    const recipes = (plan?.projects || []).flatMap((project) => project.scopes.flatMap((scope) => scope.recipes.map((recipe) => ({ id: `${scope.selector}/${recipe.id}`, project: project.project, scope: scope.selector, recipe: recipe.id, source: project.source.kind, required: recipe.required, identity: recipe.identity, preparedIdentity: recipe.identity, status: 'blocked', stepIds: [], observedAt: now(), diagnostic }))));
+    return { declarations, preparationScopes, recipes };
   }
 
   function probeCli(cli, executionRoot, workspaceNode) {
@@ -509,7 +634,7 @@ export function registerTaskEnvironmentApplication(runtime) {
   function planOwnsCandidateController(receipt, controller) {
     if (!receipt.preparationPlan || !inside(receipt.workspace.root, controller.sourceRoot)) return false;
     const sourcePath = path.relative(receipt.workspace.root, controller.sourceRoot).split(path.sep).join('/');
-    const planned = new Set(receipt.preparationPlan.services.map((service) => service.selector));
+    const planned = new Set(receipt.preparationPlan.projects.flatMap((project) => project.scopes.map((scope) => scope.selector)));
     return receipt.scopes.some((scope) => scope.kind === 'service' && scope.sourcePath === sourcePath && planned.has(scope.selector));
   }
 
@@ -521,12 +646,14 @@ export function registerTaskEnvironmentApplication(runtime) {
     if (!receipt.preparationPlan) {
       const diagnostic = 'Task 尚未登记 Environment Preparation Plan。';
       const scopes = receipt.scopes.map((scope) => ({ ...scope, runtime: runtimeProbe, cli: probe('blocked', null, diagnostic), preparation: probe('blocked', null, diagnostic), projection: probe('blocked', null, diagnostic) }));
-      return { scopes, preparationServices: [], preparationSteps: [], ready: false, diagnostic, cli };
+      return { scopes, preparationDeclarations: [], preparationScopes: [], preparationRecipes: [], preparationSteps: [], ready: false, diagnostic, cli };
     }
-    const preparationSteps = prepareSteps(receipt, workspaceNode, effects, { mutate, onStep });
-    const aggregated = aggregatePreparation(receipt, preparationSteps);
+    const declarations = observePreparationDeclarations(receipt);
+    const declarationBlocked = declarations.find((declaration) => declaration.status !== 'ready');
+    const preparationSteps = declarationBlocked ? (receipt.preparationSteps || []).map((step) => ({ ...step, executed: false })) : prepareSteps(receipt, workspaceNode, effects, { mutate, onStep });
+    const aggregated = aggregatePreparation(receipt, preparationSteps, declarations);
     let scopes = aggregated.scopes;
-    const preparationBlocked = aggregated.services.some((service) => service.status === 'blocked');
+    const preparationBlocked = aggregated.preparationScopes.some((scope) => scope.status === 'blocked');
     const cliProbe = preparationBlocked ? probe('blocked', null, '必需环境准备 Step 未就绪，跳过 CLI probe。') : probeCli(cli, validationRoot, workspaceNode);
     const projection = preparationBlocked
       ? probe('blocked', null, '环境准备未就绪，跳过 runtime projection。')
@@ -535,11 +662,11 @@ export function registerTaskEnvironmentApplication(runtime) {
         : observeProjection(controller.adapter, validationRoot, cli, workspaceNode);
     scopes = scopes.map((scope) => ({ ...scope, runtime: runtimeProbe, cli: cliProbe, projection }));
     const ready = scopes.every((scope) => [scope.runtime, scope.cli, scope.preparation, scope.projection].every((item) => item.status !== 'blocked'));
-    const blockedService = aggregated.services.find((service) => service.status === 'blocked');
-    const diagnostic = ready ? null : blockedService
-      ? `${blockedService.selector}: ${blockedService.diagnostic}`
+    const blockedScope = aggregated.preparationScopes.find((scope) => scope.status === 'blocked');
+    const diagnostic = ready ? null : blockedScope
+      ? `${blockedScope.selector}: ${blockedScope.diagnostic}`
       : scopes.flatMap((scope) => [scope.runtime, scope.cli, scope.preparation, scope.projection].filter((item) => item.status === 'blocked').map((item) => `${scope.selector}: ${item.diagnostic}`))[0];
-    return { scopes, preparationServices: aggregated.services, preparationSteps, ready, diagnostic, cli };
+    return { scopes, preparationDeclarations: aggregated.declarations, preparationScopes: aggregated.preparationScopes, preparationRecipes: aggregated.recipes, preparationSteps, ready, diagnostic, cli };
   }
 
   function observeResources(receipt) {
@@ -636,12 +763,9 @@ export function registerTaskEnvironmentApplication(runtime) {
       }
       let scopePlan = taskScopes(root, taskPersistence.record);
       const scopes = scopePlan.scopes;
-      const serviceSelectors = scopes.filter((scope) => scope.kind === 'service').map((scope) => scope.selector);
-      const preparationPlan = options.plan
-        ? normalizeTaskEnvironmentPlan(options.plan, { serviceSelectors })
-        : previousReceipt?.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA ? previousReceipt.preparationPlan : null;
-      const reusePreparation = previousReceipt?.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA
-        && previousReceipt.preparationPlan?.identity === preparationPlan?.identity;
+      let preparationPlan = previousReceipt?.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA ? previousReceipt.preparationPlan : null;
+      if (options.plan && previousReceipt) preparationPlan = resolveTaskEnvironmentPlanRequest(options.plan, scopePlan, previousReceipt.scopes, root);
+      let reusePreparation = previousReceipt?.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA && previousReceipt.preparationPlan?.identity === preparationPlan?.identity;
       const createdAt = persistence?.receipt.createdAt || now();
       const existingUsesGit = Boolean(persistence?.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER));
       if (persistence && options.useGit === false && existingUsesGit) throw taskEnvironmentError('task_environment_plan_mismatch', '现有 Task Environment 使用 Git provider，恢复时不能切换为共享根。', 409, undefined, '按原计划重试 prepare；新放置方式请创建新的正式 Task。');
@@ -659,6 +783,9 @@ export function registerTaskEnvironmentApplication(runtime) {
       const plannedProvider = providerPlan ? { repositories: providerPlan.repositories, evidencePath: runtime.gitWorktreeEvidencePath(root, taskId) } : null;
       const initialScopes = executionScopes(scopes, root, checkoutRoot, plannedProvider, now());
       assertSharedScopesAvailable(root, taskId, initialScopes);
+      const pending = reusePreparation
+        ? { declarations: previousReceipt.preparationDeclarations, preparationScopes: previousReceipt.preparationScopes, recipes: previousReceipt.preparationRecipes }
+        : pendingPreparationFacts(preparationPlan, initialScopes);
       const initial = {
         schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
         taskId,
@@ -667,7 +794,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         status: 'blocked',
         scopes: initialScopes,
         preparationPlan,
-        preparationServices: reusePreparation ? previousReceipt.preparationServices : pendingPreparationServices(preparationPlan),
+        preparationDeclarations: pending.declarations,
+        preparationScopes: pending.preparationScopes,
+        preparationRecipes: pending.recipes,
         preparationSteps: reusePreparation ? previousReceipt.preparationSteps : [],
         resources: persistence?.receipt.resources || [],
         latest: { ready: { status: 'blocked', observedAt: now(), diagnostic: '环境准备尚未完成。' }, cleanup: persistence?.receipt.latest.cleanup || null },
@@ -683,7 +812,22 @@ export function registerTaskEnvironmentApplication(runtime) {
         if (providerResult.status === 'blocked') throw taskEnvironmentError(providerResult.diagnostic?.code || 'task_environment_provider_blocked', providerResult.diagnostic?.message || 'Git worktree provider blocked.', 409, providerResult.diagnostic);
       }
       scopePlan = taskScopes(root, taskPersistence.record);
-      const withLocations = { ...persistence.receipt, scopes: executionScopes(scopePlan.scopes, root, checkoutRoot, providerResult, now()), updatedAt: now() };
+      const locatedScopes = executionScopes(scopePlan.scopes, root, checkoutRoot, providerResult, now());
+      if (options.plan && !previousReceipt) preparationPlan = resolveTaskEnvironmentPlanRequest(options.plan, scopePlan, locatedScopes, root);
+      reusePreparation = previousReceipt?.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA && previousReceipt.preparationPlan?.identity === preparationPlan?.identity;
+      const locatedPending = reusePreparation
+        ? { declarations: previousReceipt.preparationDeclarations, preparationScopes: previousReceipt.preparationScopes, recipes: previousReceipt.preparationRecipes }
+        : pendingPreparationFacts(preparationPlan, locatedScopes);
+      const withLocations = {
+        ...persistence.receipt,
+        scopes: locatedScopes,
+        preparationPlan,
+        preparationDeclarations: locatedPending.declarations,
+        preparationScopes: locatedPending.preparationScopes,
+        preparationRecipes: locatedPending.recipes,
+        preparationSteps: reusePreparation ? previousReceipt.preparationSteps : [],
+        updatedAt: now(),
+      };
       const foundations = prepareFoundations(withLocations, controller, effects, {
         mutate: true,
         onStep: (steps) => {
@@ -692,7 +836,9 @@ export function registerTaskEnvironmentApplication(runtime) {
             ...withLocations,
             status: 'blocked',
             scopes: progress.scopes,
-            preparationServices: progress.services,
+            preparationDeclarations: progress.declarations,
+            preparationScopes: progress.preparationScopes,
+            preparationRecipes: progress.recipes,
             preparationSteps: steps,
             latest: { ...withLocations.latest, ready: { status: 'blocked', observedAt: now(), diagnostic: 'Environment Preparation Plan 执行中。' } },
             updatedAt: now(),
@@ -707,7 +853,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         ...withLocations,
         status: ready ? 'ready' : 'blocked',
         scopes: foundations.scopes,
-        preparationServices: foundations.preparationServices,
+        preparationDeclarations: foundations.preparationDeclarations,
+        preparationScopes: foundations.preparationScopes,
+        preparationRecipes: foundations.preparationRecipes,
         preparationSteps: foundations.preparationSteps,
         resources,
         latest: { ...withLocations.latest, ready: { status: ready ? 'ready' : 'blocked', observedAt: now(), diagnostic } },
@@ -719,7 +867,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         const planMissing = !preparationPlan;
         const code = planMissing ? 'task_environment_plan_missing' : 'task_environment_probe_blocked';
         const nextActions = planMissing
-          ? ['由 Agent 为 Task 的全部 Service scope 登记 Environment Preparation Plan，然后重新运行 prepare。']
+          ? ['由 Agent 从Project Preparation Declaration选择Recipe，或登记显式task-inline Plan，然后重新运行 prepare。']
           : ['按具体 Preparation Step 诊断修复后重新运行 prepare；已 ready 的 Step 将被复用。'];
         return environmentResult('prepare', 'blocked', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), { code, message: diagnostic }, effects, nextActions);
       }
@@ -770,7 +918,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       const controller = environmentInspector(root, persistence.receipt);
       const validationRoot = persistence.receipt.scopes[0].validationRoot;
       const scopePlan = taskScopes(root, task.record);
-      if (persistence.receipt.preparationPlan) normalizeTaskEnvironmentPlan(persistence.receipt.preparationPlan, { serviceSelectors: scopePlan.scopes.filter((scope) => scope.kind === 'service').map((scope) => scope.selector) });
+      if (persistence.receipt.preparationPlan) normalizeTaskEnvironmentPlan(persistence.receipt.preparationPlan, { scopeSelectors: preparationScopeSelectors(scopePlan.scopes) });
       const hasGit = persistence.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER);
       const providerObservation = hasGit ? runtime.inspectGitWorktrees({ workspaceRoot: root, taskId: task.record.taskId }) : null;
       const providerResult = providerObservation ? {
@@ -796,7 +944,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         ...observedBase,
         status: ready ? 'ready' : 'blocked',
         scopes: foundations.scopes,
-        preparationServices: foundations.preparationServices,
+        preparationDeclarations: foundations.preparationDeclarations,
+        preparationScopes: foundations.preparationScopes,
+        preparationRecipes: foundations.preparationRecipes,
         preparationSteps: foundations.preparationSteps,
         resources,
         latest: { ...observedBase.latest, ready: { status: ready ? 'ready' : 'blocked', observedAt: now(), diagnostic } },
@@ -838,8 +988,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       if (persistence.receipt.status === 'cleaned') throw taskEnvironmentError('task_environment_already_cleaned', `Task Environment 已清理：${taskId}。`, 409);
       assertEnvironmentManager(root, persistence.receipt);
       const scopePlan = taskScopes(root, task);
-      const serviceSelectors = scopePlan.scopes.filter((scope) => scope.kind === 'service').map((scope) => scope.selector);
-      const plan = normalizeTaskEnvironmentPlan(input, { serviceSelectors });
+      const plan = resolveTaskEnvironmentPlanRequest(input, scopePlan, persistence.receipt.scopes, root);
       const savedScopes = new Map(persistence.receipt.scopes.map((scope) => [scope.selector, scope]));
       const scopes = scopePlan.scopes.map((scope) => {
         const saved = savedScopes.get(scope.selector);
@@ -848,6 +997,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         return { ...base, preparation: probe('blocked', plan.identity, 'Environment Plan 已登记，尚未 prepare。') };
       });
       const timestamp = now();
+      const pending = pendingPreparationFacts(plan, scopes, 'Environment Plan 已登记，尚未 prepare。');
       persistence = runtime.writeTaskEnvironmentPersistence(root, {
         schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
         taskId,
@@ -856,7 +1006,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         status: 'blocked',
         scopes,
         preparationPlan: plan,
-        preparationServices: pendingPreparationServices(plan),
+        preparationDeclarations: pending.declarations,
+        preparationScopes: pending.preparationScopes,
+        preparationRecipes: pending.recipes,
         preparationSteps: [],
         resources: persistence.receipt.resources,
         latest: { ...persistence.receipt.latest, ready: { status: 'blocked', observedAt: timestamp, diagnostic: 'Environment Plan 已登记，尚未 prepare。' } },
@@ -875,7 +1027,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       const root = task.root || targetRoot;
       const persistence = runtime.readTaskEnvironmentPersistence(root, task.record.taskId, { optional: true });
       if (!persistence || persistence.receipt.schemaVersion !== TASK_ENVIRONMENT_RECEIPT_SCHEMA || !persistence.receipt.preparationPlan) {
-        return planResult('inspect', 'unavailable', root, task.record.taskId, persistence, { code: 'task_environment_plan_missing', message: '当前 Environment current 尚未保存 Preparation Plan。' }, [], ['由 Agent 登记覆盖全部 Task Service scope 的 Plan。']);
+        return planResult('inspect', 'unavailable', root, task.record.taskId, persistence, { code: 'task_environment_plan_missing', message: '当前 Environment current 尚未保存 Preparation Plan v2。' }, [], ['由 Agent 从Project Preparation Declaration选择Recipe，或登记显式task-inline Plan。']);
       }
       return planResult('inspect', 'ready', root, task.record.taskId, persistence);
     } catch (error) {

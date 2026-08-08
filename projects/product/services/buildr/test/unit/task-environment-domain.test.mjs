@@ -6,16 +6,26 @@ import {
   TASK_ENVIRONMENT_RECEIPT_SCHEMA,
   taskEnvironmentReadModel,
 } from '../../src/domain/task-environment/task-environment.mjs';
-import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import { normalizePreparationStepDefinition, normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
 
 function receipt(overrides = {}) {
-  const plan = normalizeTaskEnvironmentPlan({
-    schemaVersion: 'buildr.task-environment-plan/v1',
-    services: [{ selector: 'service:product/buildr', disposition: 'required', steps: [{
-      id: 'install', cwd: '.', executable: { kind: 'workspace-foundation', name: 'npm' }, args: ['ci'],
-      inputs: ['package.json', 'package-lock.json'], outputs: [{ path: 'node_modules', kind: 'directory' }], required: true, timeoutMs: 180_000,
-    }] }],
-  }, { serviceSelectors: ['service:product/buildr'] });
+  const step = normalizePreparationStepDefinition({
+    id: 'install', cwd: '.', executable: { kind: 'workspace-foundation', name: 'npm' }, args: ['ci'],
+    inputs: ['package.json', 'package-lock.json'], outputs: [{ path: 'node_modules', kind: 'directory' }], required: true, timeoutMs: 180_000,
+  }, 'fixture', 0);
+  const recipePayload = { project: 'product', id: 'install-buildr', title: null, scope: { kind: 'service', service: 'buildr' }, required: true, steps: [step] };
+  const recipe = { id: recipePayload.id, title: null, required: true, steps: [step], identity: taskEnvironmentPlanDigest(recipePayload) };
+  const planPayload = {
+    schemaVersion: 'buildr.task-environment-plan/v2',
+    projects: [{
+      project: 'product', source: { kind: 'task-inline', path: null, identity: null },
+      scopes: [
+        { selector: 'project:product', disposition: 'not-applicable', reason: 'No Project-wide preparation.', recipes: [] },
+        { selector: 'service:product/buildr', disposition: 'required', reason: 'Buildr dependencies are required.', recipes: [recipe] },
+      ],
+    }],
+  };
+  const plan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:product', 'service:product/buildr'] });
   const scopeProbe = {
     runtime: { status: 'ready', identity: 'node-23', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
     cli: { status: 'ready', identity: 'cli-one', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
@@ -41,9 +51,17 @@ function receipt(overrides = {}) {
       executionRoot: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr', validationRoot: '/tmp/workspace/.worktrees/demo-task', shared: false, provider: null, ...scopeProbe,
     }],
     preparationPlan: plan,
-    preparationServices: [{ selector: 'service:product/buildr', disposition: 'required', status: 'ready', stepIds: ['service:product/buildr/install'], observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null }],
+    preparationDeclarations: [{ project: 'product', source: 'task-inline', path: null, identity: null, preparedIdentity: null, status: 'ready', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null }],
+    preparationScopes: [
+      { selector: 'project:product', disposition: 'not-applicable', status: 'not-applicable', recipeIds: [], observedAt: '2026-08-02T00:00:00.000Z', diagnostic: 'No Project-wide preparation.' },
+      { selector: 'service:product/buildr', disposition: 'required', status: 'ready', recipeIds: ['service:product/buildr/install-buildr'], observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
+    ],
+    preparationRecipes: [{
+      id: 'service:product/buildr/install-buildr', project: 'product', scope: 'service:product/buildr', recipe: 'install-buildr', source: 'task-inline', required: true,
+      identity: recipe.identity, preparedIdentity: recipe.identity, status: 'ready', stepIds: ['service:product/buildr/install-buildr/install'], observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null,
+    }],
     preparationSteps: [{
-      id: 'service:product/buildr/install', scope: 'service:product/buildr', required: true,
+      id: 'service:product/buildr/install-buildr/install', scope: 'service:product/buildr', recipe: 'install-buildr', required: true, executed: true,
       cwd: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr', executable: '/opt/node/bin/npm',
       executableIdentity: 'sha256-npm', preparedExecutableIdentity: 'sha256-npm',
       inputs: [
@@ -66,7 +84,7 @@ function receipt(overrides = {}) {
   };
 }
 
-test('Environment Receipt v4规范化Plan、多Service/Step、实际scope和资源事实', () => {
+test('Environment Receipt v5规范化Declaration、Plan、Recipe/Step、实际scope和资源事实', () => {
   assert.deepEqual(normalizeTaskEnvironmentReceipt(receipt()), receipt());
   assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedTaskId: 'other-task' }), (error) => error.code === 'task_environment_identity_mismatch');
   assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedWorkspaceRoot: '/tmp/other' }), (error) => error.code === 'task_environment_workspace_mismatch');
@@ -75,7 +93,9 @@ test('Environment Receipt v4规范化Plan、多Service/Step、实际scope和资�
 test('legacy Environment Receipt v2 保持只读兼容且 read model 明确标记 legacy', () => {
   const legacy = receipt({ schemaVersion: 'buildr.task-environment-receipt/v2' });
   delete legacy.preparationPlan;
-  delete legacy.preparationServices;
+  delete legacy.preparationDeclarations;
+  delete legacy.preparationScopes;
+  delete legacy.preparationRecipes;
   delete legacy.preparationSteps;
   legacy.scopes = legacy.scopes.map(({ preparation, ...scope }) => ({ ...scope, dependencies: preparation }));
   assert.deepEqual(normalizeTaskEnvironmentReceipt(legacy), legacy);
@@ -100,6 +120,7 @@ test('公开 Environment read model 保留判断事实但不暴露 cleanup handl
   assert.equal(model.scopes[0].provider.capability, 'buildr.git-worktree-provider/v1');
   assert.equal(model.scopes[0].projection.identity, 'projection-one');
   assert.equal(model.preparationSteps[0].scope, 'service:product/buildr');
-  assert.equal(model.preparationPlan.services[0].steps[0].executable.name, 'npm');
+  assert.equal(model.preparationPlan.projects[0].scopes[1].recipes[0].steps[0].executable.name, 'npm');
+  assert.equal(model.preparationRecipes[0].recipe, 'install-buildr');
   assert.equal(model.legacy, false);
 });

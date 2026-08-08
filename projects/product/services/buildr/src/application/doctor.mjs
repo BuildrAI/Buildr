@@ -14,6 +14,7 @@ import { createScopeDiagnostics } from './doctor/scope-diagnostics.mjs';
 import { createServiceDiagnostics } from './doctor/service-diagnostics.mjs';
 import { createCapabilityDiagnostics } from './doctor/capability-diagnostics.mjs';
 import { createProjectVerificationDiagnostics } from './doctor/project-verification-diagnostics.mjs';
+import { createProjectEnvironmentPreparationDiagnostics } from './doctor/project-environment-preparation-diagnostics.mjs';
 import { buildDoctorHealth, buildDoctorRepairPlan } from './doctor/result-model.mjs';
 
 export function registerApplicationDoctor(runtime) {
@@ -130,6 +131,7 @@ export function registerApplicationDoctor(runtime) {
   });
   const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path });
   const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding });
+  const { diagnoseProjectEnvironmentPreparation } = createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding });
 
   function diagnoseSkillsManifestSchemas(result, targetRoot, scopes) {
     const checked = new Set();
@@ -232,6 +234,7 @@ export function registerApplicationDoctor(runtime) {
     diagnoseSkillsManifestSchemas,
     diagnoseSkillCapabilities,
     diagnoseProjectVerification,
+    diagnoseProjectEnvironmentPreparation,
     finalizeDoctorResult,
     printDoctorReport,
   });

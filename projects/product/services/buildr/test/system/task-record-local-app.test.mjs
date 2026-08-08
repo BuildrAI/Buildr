@@ -183,7 +183,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   let environmentCurrentReads = 0;
   runtime.inspectTaskEnvironment = () => { throw new Error('Local App Environment GET 不得执行 live inspect。'); };
   runtime.readTaskEnvironmentCurrent = (...args) => { environmentCurrentReads += 1; return readEnvironmentCurrent(...args); };
-  response = await request(`${taskEndpoint}/environment`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-environment-result/v3'); assert.equal(response.body.status, 'unavailable'); assert.equal(response.body.source, 'current-machine'); assert.equal(response.headers.get('cache-control'), 'no-store'); assert.equal(environmentCurrentReads, 1);
+  response = await request(`${taskEndpoint}/environment`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-environment-result/v4'); assert.equal(response.body.status, 'unavailable'); assert.equal(response.body.source, 'current-machine'); assert.equal(response.headers.get('cache-control'), 'no-store'); assert.equal(environmentCurrentReads, 1);
   runtime.inspectTaskEnvironment = inspectEnvironment;
   response = await request(`${taskEndpoint}/environment?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(`${endpoint}/missing-task/environment`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');

@@ -117,23 +117,52 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
               <div className="panel-heading">
                 <div>
                   <h2>环境准备计划</h2>
-                  <p className="section-copy">Agent按Task scope登记多个Service及有序Step；此处只展示Environment current中保存的计划与执行事实。</p>
+                  <p className="section-copy">Project长期声明Recipe，Agent按Task的Project/Service scope选择；此处只展示Environment current中保存的Plan快照与执行事实。</p>
                 </div>
               </div>
-              {!environment.legacy && environment.preparationServices?.length ? (
+              {!environment.legacy && environment.preparationDeclarations?.length ? (
+                <div className="environment-scope-list">
+                  {environment.preparationDeclarations.map((declaration: any) => (
+                    <article key={declaration.project} className="environment-scope-card">
+                      <div className="environment-scope-heading">
+                        <h3>{`Project ${declaration.project} 声明`}</h3>
+                        <span className="state">{declaration.status}</span>
+                      </div>
+                      <dl className="read-facts">
+                        <Fact label="来源" value={declaration.source === 'project-declaration' ? declaration.path : 'Task inline（没有长期声明；可由Agent在用户授权后初始化Project preparation.yml）'} />
+                        <Fact label="当前身份" value={declaration.identity || '不适用'} />
+                        <Fact label="Plan采用身份" value={declaration.preparedIdentity || '不适用'} />
+                        <Fact label="诊断" value={declaration.diagnostic || '—'} />
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+              {!environment.legacy && environment.preparationScopes?.length ? (
                 <div className="environment-probe-grid">
-                  {environment.preparationServices.map((service: any) => (
-                    <div key={service.selector} className={`environment-probe ${service.status}`}>
-                      <span>{service.selector}</span>
-                      <strong>{probeStatusLabel(service.status)}</strong>
-                      <small>{service.diagnostic || `${service.stepIds.length} 个Step`}</small>
+                  {environment.preparationScopes.map((scope: any) => (
+                    <div key={scope.selector} className={`environment-probe ${scope.status}`}>
+                      <span>{scope.selector}</span>
+                      <strong>{probeStatusLabel(scope.status)}</strong>
+                      <small>{scope.diagnostic || `${scope.recipeIds.length} 个Recipe`}</small>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {!environment.legacy && environment.preparationRecipes?.length ? (
+                <div id="task-environment-preparation-recipes" className="environment-probe-grid">
+                  {environment.preparationRecipes.map((recipe: any) => (
+                    <div key={recipe.id} className={`environment-probe ${recipe.status}`}>
+                      <span>{`${recipe.scope} · ${recipe.recipe}`}</span>
+                      <strong>{probeStatusLabel(recipe.status)}</strong>
+                      <small>{recipe.diagnostic || `${recipe.stepIds.length} 个Step · ${recipe.source}`}</small>
                     </div>
                   ))}
                 </div>
               ) : null}
               <div id="task-environment-preparation-steps" className="environment-scope-list">
                 {environment.legacy ? (
-                  <div className="empty-state">Legacy Receipt没有Agent登记的Preparation Plan；需要显式登记后再prepare。</div>
+                  <div className="empty-state">Legacy Receipt没有可审计的Declaration/Recipe分层；需要显式提交Plan Request后再prepare升级。</div>
                 ) : !environment.preparationPlan ? (
                   <div className="empty-state">当前Task尚未登记Environment Preparation Plan。</div>
                 ) : !environment.preparationSteps?.length ? (
@@ -145,7 +174,9 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
                       <span className="state">{step.status}</span>
                     </div>
                     <dl className="read-facts">
-                      <Fact label="Service" value={step.scope} />
+                      <Fact label="Scope" value={step.scope} />
+                      <Fact label="Recipe" value={step.recipe || 'Legacy'} />
+                      <Fact label="本次执行" value={step.executed === undefined ? 'Legacy未知' : step.executed ? '是' : '否（复用或只读观察）'} />
                       <Fact label="工作目录" value={step.cwd} />
                       <Fact label="可执行文件" value={`${step.executable} · ${step.executableIdentity || 'missing'}`} />
                       <Fact label="输入" value={step.inputs.map((input: any) => `${input.path} · ${input.identity || 'missing'}`).join('；') || '无'} />

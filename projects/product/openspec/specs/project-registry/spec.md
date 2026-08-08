@@ -3,6 +3,7 @@
 ## Purpose
 定义 root Project registry 的结构、Project 创建与修复、Git 边界，以及从 `projects/` 目录事实收敛 registry 状态的行为。
 ## Requirements
+
 ### Requirement: root project registry
 Buildr MUST 维护 root `projects/manifest.yml` registry，将由 Workspace 管理的 Projects 投影为存储无关 Project Domain。
 
@@ -241,3 +242,16 @@ Buildr MUST 在创建 Project 时使用父实体 identity 初始化 `buildr.serv
 #### Scenario: Project 创建回滚
 - **WHEN** Service registry 初始化失败
 - **THEN** Project create transaction MUST 不留下半完成 Project 或 registry
+
+### Requirement: Project context必须识别Preparation Declaration
+Buildr MUST将已登记Project根的`preparation.yml`识别为可选Project context asset，保持Project ownership并独立于`capabilities.yml`、`commands.yml`和`verification.yml`。Project create、sync、Doctor或GET MUST不静默生成或更新该声明。
+
+#### Scenario: Project没有Preparation Declaration
+- **WHEN** 创建或诊断一个没有`preparation.yml`的Project
+- **THEN** Project registry MUST保持有效
+- **AND** Buildr MUST不根据Service目录内容自动写入声明
+
+#### Scenario: 未登记Project目录包含声明
+- **WHEN** `projects/`下未登记目录包含`preparation.yml`
+- **THEN** Buildr MUST不把它当作已登记Project声明执行
+- **AND** Doctor MAY按现有未登记资产政策报告目录事实

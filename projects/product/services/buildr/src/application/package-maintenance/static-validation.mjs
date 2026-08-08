@@ -887,9 +887,9 @@ export function createPackageStaticValidator(deps) {
           'buildr task environment inspect <task-id>',
           'buildr task environment cleanup <task-id>',
           '`prepare` 同时承担首次准备和幂等恢复',
-          'Environment Receipt 独占 Runtime、CLI、依赖、projection、动态资源、ready、恢复和总 cleanup',
+          'Environment Receipt 独占 Runtime、CLI、Preparation Declaration/Scope/Recipe/Step、projection、动态资源、ready、恢复和总 cleanup',
           '真实 Agent session 是否采用候选 runtime 属于 Task Verification',
-          '不要从 cwd、分支、同一 HEAD 或旧 worktree receipt 猜 ownership',
+          '不要从cwd、分支、同一HEAD或旧worktree receipt猜ownership',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-environment Skill must include ${JSON.stringify(requiredText)}.`);
         }

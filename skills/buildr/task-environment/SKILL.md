@@ -7,6 +7,8 @@ description: 正式 Task 需要准备、检查、恢复或清理实际执行环�
 
 本 Skill 是 `buildr.task-environment/v1` 的默认 provider。它调用公开 CLI，不手写或解析 Environment Receipt。
 
+开始行动时必须读取 `references/project-environment-preparation-v1.md`。需要初始化长期声明时使用 `templates/project-preparation.yml`，提交Task选择时使用 `templates/task-environment-plan-request.json`；未经用户授权不得把候选声明写入Project。
+
 ## 使用方式
 
 必须已有正式 Task Record，并明确 canonical Workspace：
@@ -20,7 +22,7 @@ buildr task environment inspect <task-id> --target <canonical-workspace> --json
 buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 ```
 
-- Agent先读取Task Record的全部Service scope，并审查各Service的构建、验证和工具链事实，然后登记closed `buildr.task-environment-plan/v1`。每个Service必须声明一个或多个有序Step，或显式`not-applicable`；Buildr核心不猜技术栈、不扫描package manifests。
+- Project可选维护closed `preparation.yml`，长期声明Project-wide或Service-scoped Recipe。Agent读取Task Record的完整Project/Service scope与构建、验证事实，只选择当前Task需要的Recipe，提交`buildr.task-environment-plan-request/v1`；Application解析声明identity并保存`buildr.task-environment-plan/v2`执行快照。没有长期声明时可显式提交`task-inline` Recipe，但不得静默回写Project。
 - `prepare --plan`可一次完成登记与准备；若Agent必须先检查Task checkout，可先运行无Plan的`prepare`取得受控执行根（结果明确blocked），再运行`plan record`和`prepare`。
 - `prepare` 同时承担首次准备和幂等恢复；只重跑输出缺失或 executable/input identity 漂移的 Step，没有单独 `restore`。
 - `inspect`只读重新观察已保存Plan的executable、inputs和outputs；它不执行Step、不创建或修复输出、不回写Receipt。
@@ -28,10 +30,10 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 
 ## 执行边界
 
-取得 `ready` 后，只在结果的实际 execution roots / validation root 中写入、构建和测试，并使用结果指定的执行 CLI。Environment Receipt 独占 Runtime、CLI、依赖、projection、动态资源、ready、恢复和总 cleanup；v4 中的依赖事实由 Plan 及逐 Service/Step 事实表达，Task Record 不保存这些字段。Plan 只允许无 shell 的明确 executable、args、Service 相对 cwd、input 与预期 output；受管 Node/npm 等使用 `workspace-foundation` executable，其他技术栈使用 Service 内或明确绝对 executable。不得提交 env、secret、stdin 或任意 shell。Local App Environment GET 只展示已保存 current，不等同于 CLI live inspect。
+取得 `ready` 后，只在结果的实际 execution roots / validation root 中写入、构建和测试，并使用结果指定的执行 CLI。Environment Receipt 独占 Runtime、CLI、Preparation Declaration/Scope/Recipe/Step、projection、动态资源、ready、恢复和总 cleanup；Task Record 不保存这些字段。Recipe只允许无 shell 的明确 executable、args、Project或Service相对cwd、input与预期output；受管Node/npm等使用`workspace-foundation` executable，其他技术栈可使用Project/Service wrapper或明确绝对executable。Buildr不实现Node/Python/Go/Rust适配器，也不扫描manifest。不得提交env、secret、stdin或任意shell。Local App Environment GET只展示已保存current，不等同于CLI live inspect。
 
 候选 Skill、CLI 与 runtime 可以在自身任务验证工作区测试，但候选不能写 retained Workspace、其他 Task worktree 或共享 user runtime，也不能认领或清理自己的 Environment。真实 Agent session 是否采用候选 runtime 属于 Task Verification，不在这里证明。
 
 ## 停止条件
 
-Task/Workspace 不匹配、Plan 缺失或未完整覆盖 Task Service scope、Receipt 损坏、retained Environment Manager 不可信或源码 dirty、provider/resource identity 漂移、required Step 缺失/漂移/执行失败、必需 probe blocked、执行根越界或 cleanup 未授权时停止，保留现场并报告具体 Service/Step diagnostic 与 next action。Task checkout/provider evidence 决定源码版本；不要从 cwd、分支、同一 HEAD 或旧 worktree receipt 猜 ownership，retained Buildr hash 同样不是 ownership；也不要由 Environment 自动 fetch/rebase。
+Task/Workspace不匹配、Plan Request未完整覆盖Task Project/Service scope、声明/Recipe identity漂移、Receipt损坏、retained Environment Manager不可信或源码dirty、provider/resource identity漂移、required Recipe/Step缺失/漂移/执行失败、必需probe blocked、执行根越界或cleanup未授权时停止，保留现场并报告具体Declaration/Scope/Recipe/Step diagnostic与next action。Task checkout/provider evidence决定源码版本；不要从cwd、分支、同一HEAD或旧worktree receipt猜ownership，retained Buildr hash同样不是ownership；也不要由Environment自动fetch/rebase。

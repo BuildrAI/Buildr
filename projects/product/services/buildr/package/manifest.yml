@@ -476,6 +476,9 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/task-environment/SKILL.md => skills/buildr/task-environment/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-environment/agents/openai.yaml => skills/buildr/task-environment/agents/openai.yaml copy
+  - package/targets/workspace/skills/buildr/task-environment/references/project-environment-preparation-v1.md => skills/buildr/task-environment/references/project-environment-preparation-v1.md copy
+  - package/targets/workspace/skills/buildr/task-environment/templates/project-preparation.yml => skills/buildr/task-environment/templates/project-preparation.yml copy
+  - package/targets/workspace/skills/buildr/task-environment/templates/task-environment-plan-request.json => skills/buildr/task-environment/templates/task-environment-plan-request.json copy
   - package/targets/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md => skills/buildr/task-verification/references/project-verification-v2.md copy

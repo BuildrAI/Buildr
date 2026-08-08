@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { registerTaskEnvironmentApplication } from '../../src/application/task-environment/task-environment-application.mjs';
-import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
 
 const TASK_ID = 'controller-binding';
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
@@ -33,7 +33,17 @@ function writeController(controllerRoot, marker = 'm1') {
 }
 
 function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
-  const plan = normalizeTaskEnvironmentPlan(PLAN_INPUT, { serviceSelectors: ['service:product/buildr'] });
+  const planPayload = {
+    schemaVersion: 'buildr.task-environment-plan/v2',
+    projects: [{
+      project: 'product', source: { kind: 'task-inline', path: null, identity: null },
+      scopes: [
+        { selector: 'project:product', disposition: 'not-applicable', reason: 'Controller fixture has no Project preparation Step.', recipes: [] },
+        { selector: 'service:product/buildr', disposition: 'not-applicable', reason: 'Controller fixture has no technical preparation Step.', recipes: [] },
+      ],
+    }],
+  };
+  const plan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:product', 'service:product/buildr'] });
   const probes = {
     runtime: { status: 'ready', identity: 'runtime-m1', observedAt: timestamp, diagnostic: null },
     cli: { status: 'ready', identity: 'cli-m1', observedAt: timestamp, diagnostic: null },
@@ -41,7 +51,7 @@ function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
     projection: { status: 'ready', identity: 'projection-m1', observedAt: timestamp, diagnostic: null },
   };
   return {
-    schemaVersion: 'buildr.task-environment-receipt/v4',
+    schemaVersion: 'buildr.task-environment-receipt/v5',
     taskId: TASK_ID,
     workspace: { id: 'workspace-fixture', root },
     controller: { sourceRoot: controllerRoot, cliSource: path.join(controllerRoot, 'bin', 'buildr.mjs'), identity: 'sha256-created-at-m1', adapter: 'codex' },
@@ -56,7 +66,12 @@ function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
       selector: 'service:product/buildr', kind: 'service', project: 'product', service: 'buildr', sourcePath: 'projects/product/services/buildr', executionRoot: path.join(executionRoot, 'projects', 'product', 'services', 'buildr'), validationRoot: executionRoot, shared: !isolated, provider: null, ...probes,
     }],
     preparationPlan: plan,
-    preparationServices: [{ selector: 'service:product/buildr', disposition: 'not-applicable', status: 'not-applicable', stepIds: [], observedAt: timestamp, diagnostic: 'Controller fixture has no technical preparation Step.' }],
+    preparationDeclarations: [{ project: 'product', source: 'task-inline', path: null, identity: null, preparedIdentity: null, status: 'ready', observedAt: timestamp, diagnostic: null }],
+    preparationScopes: [
+      { selector: 'project:product', disposition: 'not-applicable', status: 'not-applicable', recipeIds: [], observedAt: timestamp, diagnostic: 'Controller fixture has no Project preparation Step.' },
+      { selector: 'service:product/buildr', disposition: 'not-applicable', status: 'not-applicable', recipeIds: [], observedAt: timestamp, diagnostic: 'Controller fixture has no technical preparation Step.' },
+    ],
+    preparationRecipes: [],
     preparationSteps: [],
     resources: [],
     latest: { ready: { status: 'ready', observedAt: timestamp, diagnostic: null }, cleanup: null },

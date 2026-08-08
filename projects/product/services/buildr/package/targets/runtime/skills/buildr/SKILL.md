@@ -73,7 +73,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 - 创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Project 表示业务、产品线、系统或长期工作单元；canonical entity 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`，`source.path` 定位文件系统位置。创建入口是 `buildr project create <code> --name <name> --description <description> --target <dir>`；独立 Git Project 再用 `--repo <url> --remote <name> --integration-branch <branch>` 声明来源，integration branch 是稳定集成目标而非当前 checkout。
 - `currentBranch`、HEAD、dirty、upstream、ahead/behind 和实际 remote URL 由 doctor/app 实时观察，不写入 Domain；分支偏移可能是合法任务状态，任何 checkout、stash、merge 或 remote 修改前都核对任务、clean 状态、ownership 和授权，不盲目纠正。
 - `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr app` 可查看 Project/Git 状态并受控修改 `name`、`description`；新增页面只生成 Agent prompt，不直接创建或 clone。
-- Project 可以按需维护可选 `verification.yml`，使用 closed `buildr.project-verification/v2` 声明已经存在且团队确认可调用的能力 identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求及必要环境/副作用边界。文件缺失或没有适用能力时只形成 coverage gap；不得在声明中加入测试层级、成熟度、阶段、通用 DAG 或借此开发测试。
+- Project 可以按需维护可选 `verification.yml`，使用 closed `buildr.project-verification/v2` 声明已经存在且团队确认可调用的能力 identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求及必要环境/副作用边界。文件缺失或没有适用能力时只形成 coverage gap；不得在声明中加入测试层级、成熟度、阶段、通用 DAG 或借此开发测试。Project也可按需维护可选`preparation.yml`，使用closed `buildr.project-environment-preparation/v1`声明Project-wide或Service-scoped Preparation Recipe；Agent按正式Task scope选择Recipe形成Task Plan，文件缺失时只允许显式task-inline选择，不得由Buildr扫描技术栈或静默回写长期声明。
 
 ### 遗留 Practices
 

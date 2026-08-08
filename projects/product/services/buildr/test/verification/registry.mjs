@@ -135,6 +135,7 @@ export const VERIFICATION_IGNORED_INPUTS = Object.freeze([
 ]);
 
 export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
+  'preparation.yml',
   'verification.yml',
   'package.json',
   'package-lock.json',
@@ -230,7 +231,7 @@ export const verificationSteps = Object.freeze([
     'src/application/task-finish/**',
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
-    'test/contract/**', 'test/fixtures/**', 'verification.yml', 'task-finish.yml',
+    'test/contract/**', 'test/fixtures/**', 'preparation.yml', 'verification.yml', 'task-finish.yml',
     'src/infrastructure/runtime/render-claude-code.mjs',
     'test/verification/candidate.mjs',
     'test/verification/changed.mjs',

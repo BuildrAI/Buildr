@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import {
+  normalizePreparationStepDefinition,
+  normalizeTaskEnvironmentPlan,
+  normalizeTaskEnvironmentPlanRequest,
+  taskEnvironmentPlanDigest,
+} from '../../src/domain/task-environment/task-environment-plan.mjs';
 
 function service(selector, id = 'prepare') {
   return {
@@ -38,4 +43,36 @@ test('无Service Task与not-applicable Service都必须显式说明', () => {
   const notApplicable = normalizeTaskEnvironmentPlan({ schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:docs/site', disposition: 'not-applicable', reason: 'No local technical preparation.', steps: [] }] }, { serviceSelectors: ['service:docs/site'] });
   assert.equal(notApplicable.services[0].disposition, 'not-applicable');
   assert.throws(() => normalizeTaskEnvironmentPlan({ schemaVersion: 'buildr.task-environment-plan/v1', services: [] }, { serviceSelectors: [] }), (error) => error.code === 'task_environment_plan_scope_incomplete');
+});
+
+test('Plan Request覆盖Project/Service scope，resolved Plan绑定Declaration与Recipe identity', () => {
+  const selectors = ['project:product', 'service:product/buildr'];
+  const request = normalizeTaskEnvironmentPlanRequest({
+    schemaVersion: 'buildr.task-environment-plan-request/v1',
+    projects: [{
+      project: 'product', source: { kind: 'project-declaration', identity: 'sha256-declaration' },
+      scopes: [
+        { selector: 'project:product', disposition: 'not-applicable', reason: 'No Project-wide preparation.' },
+        { selector: 'service:product/buildr', disposition: 'required', reason: 'Buildr preparation is required.', recipeIds: ['buildr.npm-ci'] },
+      ],
+    }],
+  }, { scopeSelectors: selectors });
+  assert.equal(request.projects[0].source.identity, 'sha256-declaration');
+
+  const step = normalizePreparationStepDefinition(service('service:product/buildr').steps[0], 'fixture', 0);
+  const recipePayload = { project: 'product', id: 'buildr.npm-ci', title: null, scope: { kind: 'service', service: 'buildr' }, required: true, steps: [step] };
+  const payload = {
+    schemaVersion: 'buildr.task-environment-plan/v2',
+    projects: [{
+      project: 'product', source: { kind: 'project-declaration', path: 'projects/product/preparation.yml', identity: 'sha256-declaration' },
+      scopes: [
+        { selector: 'project:product', disposition: 'not-applicable', reason: 'No Project-wide preparation.', recipes: [] },
+        { selector: 'service:product/buildr', disposition: 'required', reason: 'Buildr preparation is required.', recipes: [{ id: 'buildr.npm-ci', title: null, required: true, steps: [step], identity: taskEnvironmentPlanDigest(recipePayload) }] },
+      ],
+    }],
+  };
+  const plan = normalizeTaskEnvironmentPlan({ ...payload, identity: taskEnvironmentPlanDigest(payload) }, { scopeSelectors: selectors });
+  assert.equal(plan.projects[0].source.identity, 'sha256-declaration');
+  assert.match(plan.projects[0].scopes[1].recipes[0].identity, /^sha256-/);
+  assert.throws(() => normalizeTaskEnvironmentPlanRequest({ ...request, projects: [{ ...request.projects[0], scopes: request.projects[0].scopes.slice(1) }] }, { scopeSelectors: selectors }), (error) => error.code === 'task_environment_plan_scope_incomplete');
 });

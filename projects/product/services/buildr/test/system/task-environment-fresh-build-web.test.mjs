@@ -68,6 +68,33 @@ services:
     type: application
     source: { type: workspace, path: projects/product/services/buildr-web }
 `);
+  fs.writeFileSync(path.join(productRoot, 'preparation.yml'), `schemaVersion: buildr.project-environment-preparation/v1
+recipes:
+  - id: buildr.npm-ci
+    scope: { kind: service, service: buildr }
+    required: true
+    steps:
+      - id: npm-ci
+        cwd: .
+        executable: { kind: workspace-foundation, name: npm }
+        args: [ci]
+        inputs: [package.json, package-lock.json]
+        outputs: [{ path: node_modules, kind: directory }]
+        required: true
+        timeoutMs: 240000
+  - id: buildr-web.npm-ci
+    scope: { kind: service, service: buildr-web }
+    required: true
+    steps:
+      - id: npm-ci
+        cwd: .
+        executable: { kind: workspace-foundation, name: npm }
+        args: [ci]
+        inputs: [package.json, package-lock.json]
+        outputs: [{ path: node_modules, kind: directory }]
+        required: true
+        timeoutMs: 240000
+`);
   run('git', ['init', '-b', 'dev'], { cwd: root });
   run('git', ['config', 'user.name', 'Buildr Test'], { cwd: root });
   run('git', ['config', 'user.email', 'buildr-test@example.com'], { cwd: root });
@@ -80,25 +107,32 @@ services:
   assert.equal(fs.existsSync(path.join(candidateWeb, 'node_modules')), false);
   const planFile = path.join(base, 'environment-plan.json');
   fs.writeFileSync(planFile, `${JSON.stringify({
-    schemaVersion: 'buildr.task-environment-plan/v1',
-    services: ['buildr', 'buildr-web'].map((service) => ({
-      selector: `service:product/${service}`,
-      disposition: 'required',
-      steps: [{
-        id: 'npm-ci', cwd: '.', executable: { kind: 'workspace-foundation', name: 'npm' }, args: ['ci'],
-        inputs: ['package.json', 'package-lock.json'], outputs: [{ path: 'node_modules', kind: 'directory' }], required: true, timeoutMs: 240_000,
-      }],
-    })),
+    schemaVersion: 'buildr.task-environment-plan-request/v1',
+    projects: [{
+      project: 'product', source: { kind: 'project-declaration' },
+      scopes: [
+        { selector: 'project:product', disposition: 'not-applicable', reason: 'No Project-wide preparation is required.' },
+        { selector: 'service:product/buildr', disposition: 'required', reason: 'Buildr runtime dependencies are required.', recipeIds: ['buildr.npm-ci'] },
+        { selector: 'service:product/buildr-web', disposition: 'required', reason: 'Buildr web build dependencies are required.', recipeIds: ['buildr-web.npm-ci'] },
+      ],
+    }],
   }, null, 2)}\n`);
   const prepared = buildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, '--agent', 'codex', '--target', root, '--json']);
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
-  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v3');
-  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v4');
+  assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v4');
+  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v5');
+  assert.equal(prepared.environment.preparationDeclarations[0].source, 'project-declaration');
+  assert.equal(prepared.environment.preparationDeclarations[0].status, 'ready');
+  assert.deepEqual(prepared.environment.preparationRecipes.map((recipe) => [recipe.scope, recipe.status]), [
+    ['service:product/buildr', 'ready'],
+    ['service:product/buildr-web', 'ready'],
+  ]);
   assert.deepEqual(prepared.environment.preparationSteps.map((step) => [step.scope, step.status]), [
     ['service:product/buildr', 'ready'],
     ['service:product/buildr-web', 'ready'],
   ]);
   assert.equal(prepared.effects.filter((effect) => effect.type === 'preparation-step-executed').length, 2);
+  assert.deepEqual(prepared.environment.preparationSteps.map((step) => step.executed), [true, true]);
   const worktree = prepared.execution.workdir;
   const worktreeBuildr = path.join(worktree, 'projects', 'product', 'services', 'buildr');
   const worktreeWeb = path.join(worktree, 'projects', 'product', 'services', 'buildr-web');

@@ -25,8 +25,8 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `update check` | `buildr.update-check/v1` |
 | `openspec converge` | `buildr.openspec-convergence/v1` |
 | `openspec audit` | `buildr.openspec-convergence-audit/v1` |
-| `task environment prepare/inspect/cleanup` | `buildr.task-environment-result/v3` |
-| `task environment plan record/inspect` | `buildr.task-environment-plan-result/v1` |
+| `task environment prepare/inspect/cleanup` | `buildr.task-environment-result/v4` |
+| `task environment plan record/inspect` | `buildr.task-environment-plan-result/v2` |
 | `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
 | `verification run` | `buildr.verification-execution/v1` |
 | `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
@@ -38,9 +38,9 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 
 Task Finish 的 v2 Result 是 SQLite terminal read model；current run、lease 和 cleanup-pending checkpoint 不通过旧 `.buildr/task-finish/runs`、`completed` 或 file lease 暴露，旧目录不被新 runtime 读取。完整命令诊断与 Carrier 只通过有界 transient locator 绑定，不能写入长期 Result。`task complete` 不是新的 JSON contract，而是 Task Record 的 terminal status。
 
-`buildr.task-environment-result/v3`统一返回`operation`、`status`、Task ID、Receipt availability/locator、`current-machine`、`observedAt`、Environment read model、ready时的`execution`binding、diagnostic、effects与next actions。read model包含Plan、逐Service聚合、逐Step cwd/executable/current与prepared identity/inputs/outputs/required/status/diagnostic及scope聚合probe；`prepare`本次真实执行通过`preparation-step-executed`effects表达。`execution`包含明确workdir、execution/allowed roots与绝对`cliInvocation`。read model不暴露资源cleanup handle或controller CLI私有路径。
+`buildr.task-environment-result/v4`统一返回`operation`、`status`、Task ID、Receipt availability/locator、`current-machine`、`observedAt`、Environment read model、ready时的`execution`binding、diagnostic、effects与next actions。read model包含resolved Plan及逐Declaration/Scope/Recipe/Step current与prepared identity、inputs/outputs/required/executed/status/diagnostic；`preparation-step-executed`effect给出本次真实执行。`execution`包含明确workdir、execution/allowed roots与绝对`cliInvocation`。read model不暴露资源cleanup handle或controller CLI私有路径。
 
-`buildr.task-environment-plan-result/v1`统一覆盖Plan`record|inspect`，返回saved Plan、Receipt locator、diagnostic、effects与next actions。`record`原子替换Plan并将Environment标为blocked但不执行Step；`inspect`只读saved current。
+`buildr.task-environment-plan-result/v2`统一覆盖Plan`record|inspect`，返回saved Plan v2、Receipt locator、diagnostic、effects与next actions。`record`接收Plan Request，解析当前Task execution root中的Project Declaration，原子替换Plan并将Environment标为blocked但不执行Step；`inspect`只读saved current。
 
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
 
