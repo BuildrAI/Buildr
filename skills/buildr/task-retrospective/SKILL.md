@@ -1,11 +1,11 @@
 ---
 name: task-retrospective
-description: 用户明确要求复盘已完成或已放弃的正式 Task，重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率，并把一份当前报告写入 SQLite 时使用；不用于过程 observation、任务审查、门禁或资产自动写回。
+description: 用户明确要求复盘已完成或已放弃的正式 Task，或要查看、处理、标记无需处理、重新打开已有复盘时使用；复盘重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。不用于过程 observation、任务审查、门禁或资产自动写回。
 ---
 
 # Task Retrospective
 
-本 Skill 是 `buildr.task-retrospective/v1` 的默认 provider。Agent负责复盘判断；Task Retrospective Application只负责terminal校验与SQLite current Result读写。
+本 Skill 是 `buildr.task-retrospective/v1` 的默认 provider。Agent负责复盘与处置判断；Task Retrospective Application只负责terminal校验与SQLite current Result/处置状态读写。
 
 ## 1. 恢复任务事实
 
@@ -15,7 +15,7 @@ description: 用户明确要求复盘已完成或已放弃的正式 Task，重�
 node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs inspect --task <task-id> --target <canonical-workspace>
 ```
 
-已有Result可以重做并完整替换；没有Result只是“尚未复盘”。不要打开SQLite；不读取、迁移或删除`.buildr/asset-review/`。
+已有Result可以重做并完整替换；没有Result只是“尚未复盘”。同时读取 `disposition` 与 `currentDigest`；不要打开SQLite；不读取、迁移或删除`.buildr/asset-review/`。
 
 ## 2. 生成一份自由复盘
 
@@ -39,7 +39,21 @@ node <buildr-controller-source>/src/interfaces/internal/task-retrospective-drive
 
 Application会完整替换同一Task的current row；不创建历史、候选或draft。若命令行承载长Markdown存在转义风险，使用安全的进程参数调用方式，不借此新增临时持久化store。
 
-## 4. 报告边界
+## 4. 处置 current 复盘
+
+用户要求处理已有复盘时，先 `inspect` 并基于报告做出一次判断：
+
+- `handled`：已经完成处置判断；不等于建议已落地。需要实施的改进按正常流程另建正式 Task。
+- `no-action`：当前没有值得转化的行动；必须说明理由。
+- `pending`：重新打开，清空上次处置说明与时间。
+
+```text
+node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs handle --task <task-id> --target <canonical-workspace> --status <pending|handled|no-action> --note <reason> --expected-current-digest <current-digest>
+```
+
+`handled|no-action` 必须提供非空说明；`pending` 不保留说明。若 digest 冲突，重新 `inspect` 并基于最新复盘与处置状态重新判断，不得盲目覆盖。重新 `record` 一份报告会把处置状态原子重置为 `pending`。
+
+## 5. 报告边界
 
 向用户返回主要高成本点、优化方向、数据缺口，以及operation status、resultDigest与effects。优化建议不自动修改Rule、Skill、workflow或产品；用户采纳后按正常Task流程另行实现。
 

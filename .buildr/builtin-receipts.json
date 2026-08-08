@@ -169,11 +169,11 @@
       "type": "skill",
       "id": "task-retrospective",
       "target": "skills/buildr/task-retrospective",
-      "integrity": "sha256-ff54df38cd816c8e9e3b5a0c844c960185f8f50e0d863bb56245b640f643d853",
+      "integrity": "sha256-be5d818659c6514eff976d9deed72187c21aa2feefe3c0b091b7fcb7877b3f5e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-a757d2a4fb2af309312db6c8a5d1d69cbaa97b1e1c6a645bf69086b1d773c8e2"
+          "integrity": "sha256-31fd25069d534101aebd486e18fe345fdf385805b38c26c581c4b2a212b71e5d"
         },
         {
           "path": "agents/openai.yaml",
