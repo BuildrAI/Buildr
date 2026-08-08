@@ -70,7 +70,7 @@ export function selectBrowserSelectors(changedPaths) {
       plan.reasons.push({ path: value, selector: null, reason: 'HTTP/API owner; verify through the Local App HTTP/System owner without starting Chrome.' });
       continue;
     }
-    if (value.startsWith('web/src/') || value.startsWith('src/interfaces/local-app/web-dist/')) {
+    if (value.startsWith('services/buildr-web/src/') || value.startsWith('src/interfaces/local-app/web-dist/')) {
       if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(value) || value.includes('/pages/Project')) add(plan, 'project', value, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(value) || value.includes('/pages/Service')) add(plan, 'service', value, 'Service page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(value) || value.includes('/pages/TaskChange') || value.includes('AgentAction')) add(plan, 'change', value, 'Change page or Agent Action interaction changed.');

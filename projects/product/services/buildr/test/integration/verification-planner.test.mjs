@@ -150,14 +150,14 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
 });
 
 test('local app Changed 路由只选择内部 owner，Browser 由独立 capability 拥有', () => {
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/api/client.ts'] })), ['unit', 'integration', 'system']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/App.tsx'] })), ['unit', 'integration']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/pages/ProjectsPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/pages/ServicesPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/pages/TasksPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/pages/TaskChangeDetailPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/main.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['web/src/pages/WorkspacesPage.tsx'] })), ['unit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/api/client.ts'] })), ['unit', 'integration', 'system']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/App.tsx'] })), ['unit', 'integration']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ProjectsPage.tsx'] })), ['unit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ServicesPage.tsx'] })), ['unit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TasksPage.tsx'] })), ['unit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TaskChangeDetailPage.tsx'] })), ['unit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/main.tsx'] })), ['unit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/WorkspacesPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['unit', 'integration', 'system-local-app-http', 'system']);
   const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
   assert.deepEqual(ids(browserTest), []);

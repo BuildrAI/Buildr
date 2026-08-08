@@ -954,7 +954,7 @@ export function createPackageStaticValidator(deps) {
         } catch {
           // Shared frontmatter validation reports the original error.
         }
-        for (const relative of ['web/src/pages/TasksPage.tsx', 'web/src/pages/TaskDetailPage.tsx']) {
+        for (const relative of ['../buildr-web/src/pages/TasksPage.tsx', '../buildr-web/src/pages/TaskDetailPage.tsx']) {
           const webFile = path.join(root, relative);
           if (!existsFile(webFile)) {
             problems.push(`Task Manager Local App asset is missing: ${relative}.`);

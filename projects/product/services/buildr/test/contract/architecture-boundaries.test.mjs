@@ -59,9 +59,9 @@ test('Workspace、Project 与 Service Domain 保持纯净且 local app 静态资
   for (const relative of [
     'src/interfaces/local-app/http/server.mjs',
     'src/interfaces/local-app/web-dist/index.html',
-    'web/src/styles.css',
-    'web/src/main.tsx',
-    'web/src/App.tsx',
+    '../buildr-web/src/styles.css',
+    '../buildr-web/src/main.tsx',
+    '../buildr-web/src/App.tsx',
   ]) {
     assert.ok(fs.existsSync(path.join(productRoot, relative)), `missing ${relative}`);
   }

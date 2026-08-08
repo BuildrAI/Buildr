@@ -89,8 +89,8 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.deepEqual(runtimeCallSites('readTaskVerificationResultPersistence'), ['src/application/task-verification/task-verification-application.mjs']);
   const cli = read('src/interfaces/cli/task-verification.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
-  const taskDetail = read('web/src/pages/TaskDetailPage.tsx');
-  const evidenceTab = read('web/src/pages/task-detail/EvidenceTab.tsx');
+  const taskDetail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const evidenceTab = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
   assert.match(cli, /runtime\.inspectTaskVerification/);
   assert.match(cli, /runtime\.recordTaskVerification/);
   assert.match(cli, /--declaration-root/);

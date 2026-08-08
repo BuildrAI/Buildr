@@ -86,6 +86,13 @@
 - 避免混用：Project 不是独立 Workspace，也不保存 Agent runtime Skill 副本作为 authority。
 - 来源：[Product current facts](overview.md)
 
+
+### Buildr Web（buildr-web）
+
+- 含义：Product 下与 `buildr` 同仓同级的 workspace Service，拥有 Local App React/Vite 前端源码与构建；产物由 `buildr` 消费到 `web-dist` 并同源托管。
+- 适用范围：前端工程边界、构建交接与 Service registry；不表示独立 Git 仓或独立生产端口。
+- 避免混用：不是 Local App HTTP/runtime authority，也不改变 session 安全模型。
+
 ## Service
 
 - 定义：Project 下具有明确职责、代码或资产边界的服务节点，由 Project Service registry 登记。

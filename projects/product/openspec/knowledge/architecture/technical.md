@@ -3,7 +3,8 @@
 ## 所有权与源码边界
 
 - Product Project root：`projects/product/`，拥有产品治理、OpenSpec、docs、knowledge 与 Service registry。
-- Buildr Service root：`projects/product/services/buildr/`，拥有 CLI、Local App、runtime adapters、验证、package 和发布实现。
+- Buildr Service root：`projects/product/services/buildr/`，拥有 CLI、Local App HTTP/runtime、session 托管、`web-dist` 消费、验证、package 和发布实现；不再拥有 Local App React/Vite 权威前端源。
+- Buildr Web Service root：`projects/product/services/buildr-web/`，与 `buildr` 同仓同级的 workspace Service，拥有 Local App React/Vite 前端源码与正式构建；构建产物写入 `buildr` 的 `src/interfaces/local-app/web-dist/`。
 - 用户 Workspace 中由 Buildr 交付的 Rules/Skills/Components 是安装结果，只能由 Product checkout 的 update/sync 单向物化。
 
 ## 运行结构

@@ -62,10 +62,10 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
   assert.equal(declaration.capabilities.some((capability) => ['product.task-affected', 'product.candidate'].includes(capability.id)), false);
-  assert.deepEqual(browser.scope, { project: 'product', services: ['buildr'] });
+  assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
   assert.equal(browser.requiredForDelivery, true);
-  assert.deepEqual(browser.applicability.paths, ['services/buildr/web/**', 'services/buildr/src/interfaces/local-app/web-dist/**', 'services/buildr/src/interfaces/local-app/runtime/**', 'services/buildr/test/browser-smoke/**']);
+  assert.deepEqual(browser.applicability.paths, ['services/buildr-web/**', 'services/buildr/src/interfaces/local-app/web-dist/**', 'services/buildr/src/interfaces/local-app/runtime/**', 'services/buildr/test/browser-smoke/**']);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
   assert.deepEqual(browser.effects.externalSystems, []);
   assert.equal(browser.effects.authorization, 'implicit');

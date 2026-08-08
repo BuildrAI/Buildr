@@ -11,7 +11,7 @@ function read(relative) {
 }
 
 test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
-  const app = read('web/src/App.tsx');
+  const app = read('../buildr-web/src/App.tsx');
   assert.match(app, /path="\/workspaces\/:workspaceId"/);
   assert.match(app, /path="tasks"/);
   assert.match(app, /path="tasks\/:taskId"/);
@@ -27,8 +27,8 @@ test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
 });
 
 test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒绝 filesystem path 字段语义', () => {
-  const client = read('web/src/api/client.ts');
-  const adapter = read('web/src/api/LocalSessionAdapter.ts');
+  const client = read('../buildr-web/src/api/client.ts');
+  const adapter = read('../buildr-web/src/api/LocalSessionAdapter.ts');
   const server = read('src/interfaces/local-app/http/server.mjs');
   assert.match(adapter, /x-buildr-session/);
   assert.match(adapter, /meta\[name="buildr-session"\]/);
@@ -42,9 +42,9 @@ test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒�
 });
 
 test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
-  const source = read('web/src/pages/TaskChangeDetailPage.tsx');
-  const styles = read('web/src/styles.css');
-  const markdown = read('web/src/markdown.ts');
+  const source = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
+  const styles = read('../buildr-web/src/styles.css');
+  const markdown = read('../buildr-web/src/markdown.ts');
   assert.ok(source.indexOf('id="change-brief"') < source.indexOf('technical-artifacts-panel'));
   assert.match(source, /MarkdownHost/);
   assert.match(source, /ChangeBriefPanel/);
@@ -64,8 +64,8 @@ test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 art
 });
 
 test('Change 仅作为 Task-scoped 只读内容', () => {
-  const change = read('web/src/pages/TaskChangeDetailPage.tsx');
-  const app = read('web/src/App.tsx');
+  const change = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
+  const app = read('../buildr-web/src/App.tsx');
   const server = read('src/interfaces/local-app/http/server.mjs');
   assert.match(change, /\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/changes/);
   assert.doesNotMatch(change, /associate-change|addChanges|openAgentAction/);
@@ -74,12 +74,12 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
 });
 
 test('Local App 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
-  const app = read('web/src/App.tsx');
-  const layout = read('web/src/app/AppLayout.tsx');
-  const index = read('web/index.html');
+  const app = read('../buildr-web/src/App.tsx');
+  const layout = read('../buildr-web/src/app/AppLayout.tsx');
+  const index = read('../buildr-web/index.html');
   const server = read('src/interfaces/local-app/http/server.mjs');
-  const detail = read('web/src/pages/ArticleDetailPage.tsx');
-  const publications = read('web/src/pages/ArticlesPage.tsx');
+  const detail = read('../buildr-web/src/pages/ArticleDetailPage.tsx');
+  const publications = read('../buildr-web/src/pages/ArticlesPage.tsx');
   assert.match(layout, /data-nav="articles"[^>]*>[\s\S]*文章/);
   assert.match(app, /path="articles"/);
   assert.match(app, /path="articles\/:publicationId"/);
@@ -99,10 +99,10 @@ test('Local App 提供独立文章入口、只读内容视图和受控本地图�
 });
 
 test('任务详情使用概览、研发、证据、复盘、环境五个一级视图', () => {
-  const source = read('web/src/pages/TaskDetailPage.tsx');
-  const evidence = read('web/src/pages/task-detail/EvidenceTab.tsx');
-  const retrospective = read('web/src/pages/task-detail/RetrospectiveTab.tsx');
-  const styles = read('web/src/styles.css');
+  const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
+  const retrospective = read('../buildr-web/src/pages/task-detail/RetrospectiveTab.tsx');
+  const styles = read('../buildr-web/src/styles.css');
   assert.equal(source.match(/data-task-tab=\{tab\.id\}/g)?.length, 1);
   assert.match(source, /id: 'overview', label: '概览'/);
   assert.match(source, /id: 'development', label: '研发'/);
@@ -128,10 +128,10 @@ test('任务详情使用概览、研发、证据、复盘、环境五个一级�
 });
 
 test('任务研发视图只读投影 current Development Receipt、候选、门禁、决策与最近交接', () => {
-  const source = read('web/src/pages/task-detail/DevelopmentTab.tsx');
-  const labels = read('web/src/lib/taskLabels.ts');
-  const detail = read('web/src/pages/TaskDetailPage.tsx');
-  const styles = read('web/src/styles.css');
+  const source = read('../buildr-web/src/pages/task-detail/DevelopmentTab.tsx');
+  const labels = read('../buildr-web/src/lib/taskLabels.ts');
+  const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const styles = read('../buildr-web/src/styles.css');
   assert.match(source, /任务研发（Task Development）/);
   assert.match(detail, /\/development`\)/);
   assert.match(labels, /'handoff-current': '研发交接已就绪'/);
@@ -157,9 +157,9 @@ test('任务研发视图只读投影 current Development Receipt、候选、门�
 });
 
 test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {
-  const source = read('web/src/pages/task-detail/EvidenceTab.tsx');
-  const actions = read('web/src/app/AgentActionDrawer.tsx');
-  const detail = read('web/src/pages/TaskDetailPage.tsx');
+  const source = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
+  const actions = read('../buildr-web/src/app/AgentActionDrawer.tsx');
+  const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   assert.match(source, /验证结果（Verification Result）/);
   assert.match(source, /目标适用性/);
   assert.match(source, /声明适用性/);
@@ -171,11 +171,11 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
 });
 
 test('任务详情面向用户的核心术语使用中文或中英文并列', () => {
-  const source = read('web/src/pages/TaskDetailPage.tsx');
-  const evidence = read('web/src/pages/task-detail/EvidenceTab.tsx');
-  const environment = read('web/src/pages/task-detail/EnvironmentTab.tsx');
-  const tasks = read('web/src/pages/TasksPage.tsx');
-  const change = read('web/src/pages/TaskChangeDetailPage.tsx');
+  const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
+  const environment = read('../buildr-web/src/pages/task-detail/EnvironmentTab.tsx');
+  const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
+  const change = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
   assert.match(source, /任务记录（Task Record）/);
   assert.match(environment, /任务环境（Task Environment）/);
   assert.match(evidence, /方案审查（Planning Review）/);
@@ -202,17 +202,17 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
 });
 
 test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
-  const change = read('web/src/pages/TaskChangeDetailPage.tsx');
-  const tasks = read('web/src/pages/TasksPage.tsx');
-  const app = read('web/src/App.tsx');
+  const change = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
+  const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
+  const app = read('../buildr-web/src/App.tsx');
   assert.doesNotMatch(change, /openAgentAction|continue-change|review-change|associate-change/);
   assert.doesNotMatch(tasks, /创建任务记录|task-create-form/);
   assert.doesNotMatch(app, /path=["'][^"']*review-change/);
 });
 
 test('任务列表使用可取消的服务端筛选，详情首屏只读轻量视图并延迟读取 Parent 候选', () => {
-  const detail = read('web/src/pages/TaskDetailPage.tsx');
-  const tasks = read('web/src/pages/TasksPage.tsx');
+  const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
   const server = read('src/interfaces/local-app/http/server.mjs');
   assert.match(tasks, /new AbortController\(\)/);
   assert.match(tasks, /setTimeout\([\s\S]*200/);

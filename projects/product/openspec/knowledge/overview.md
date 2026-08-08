@@ -25,5 +25,6 @@ Buildr 是 Agent-first 的工作基础设施：治理适合长期复用的工作
 - [技术架构](architecture/technical.md)
 - [OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 - [Buildr Service](services/buildr.md)
+- [Buildr Web Service](services/buildr-web.md)
 
 既有 `task-boards/` 与 `task-cockpits/` 都是原地保留的历史任务页面，只能作为历史旁证；它们不再被创建或维护，也不替代 Task/Parent、各专业 current records、current knowledge、canonical specs、active Change、实现或验证 evidence。

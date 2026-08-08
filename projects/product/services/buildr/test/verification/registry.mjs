@@ -162,7 +162,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/unit/**',
     'src/**',
-    'web/**',
+    'services/buildr-web/**',
     'test/verification/dag-scheduler.mjs',
     'test/verification/planner.mjs',
     'test/verification/resource-coordinator.mjs',
@@ -194,8 +194,8 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/filesystem/workspace-node-runtime.mjs',
     'src/infrastructure/runtime/**',
     'src/interfaces/local-app/runtime/**',
-    'web/src/api/client.ts',
-    'web/src/App.tsx',
+    'services/buildr-web/src/api/client.ts',
+    'services/buildr-web/src/App.tsx',
   ], inputExclusions: [
     'test/integration/task-development-application.test.mjs',
     'test/integration/task-finish-*.test.mjs',
@@ -293,7 +293,7 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/process.mjs',
     'src/infrastructure/product-layout.mjs',
     'src/interfaces/local-app/runtime/**',
-    'web/src/api/client.ts',
+    'services/buildr-web/src/api/client.ts',
     'scripts/release/bridge-main-to-dev.mjs',
     'src/application/json-contracts.mjs',
     'test/verification/changed-paths.mjs',
@@ -371,7 +371,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'ownership-recovery', name: 'Workspace E2E: ownership recovery', executor: { type: 'workspace-suite', selector: 'ownership-recovery' }, profiles: ['candidate'], inputs: ['src/application/domains/components.mjs', 'src/application/package-maintenance/**', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/ownership-recovery.mjs'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'runtime-reconciliation', name: 'Workspace E2E: runtime reconciliation', executor: { type: 'workspace-suite', selector: 'runtime-reconciliation' }, profiles: ['candidate'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/runtime-reconciliation.mjs', 'package/targets/runtime/**', 'package/targets/workspace/rules/**'], schedulingCostMs: 10000, concurrencyClass: 'workspace-heavy' }),
 
-  step({ id: 'repository-onboarding', name: 'repository onboarding from a clean checkout', executor: { type: 'node', file: 'test/verification/onboarding/repository.mjs' }, inputs: ['scripts/install-buildr-cli', 'test/verification/onboarding/repository.mjs', 'services/**', 'package.json', 'package-lock.json', 'README.md'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'repository-onboarding', name: 'repository onboarding from a clean checkout', executor: { type: 'node', file: 'test/verification/onboarding/repository.mjs' }, inputs: ['scripts/install-buildr-cli', 'test/verification/onboarding/repository.mjs', 'services/**', 'package.json', 'package-lock.json', 'README.md'], inputExclusions: ['services/buildr-web/**'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'init-onboarding', name: 'single-command init onboarding', executor: { type: 'node', file: 'test/verification/onboarding/init.mjs' }, profiles: ['candidate'], inputs: ['src/application/domains/workspace.mjs', 'src/application/workspace-operations.mjs', 'test/verification/onboarding/init.mjs', 'package/targets/workspace/manifest.yml', 'package/targets/workspace/components/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'cli-compatibility', name: 'CLI compatibility', executor: { type: 'node', file: 'test/verification/cli/compatibility.mjs' }, profiles: ['candidate'], groups: ['cli'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
@@ -385,7 +385,7 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/product-layout.mjs',
     'test/verification/cli/package-parity.mjs', 'package.json', 'package-lock.json',
   ], dependsOn: ['candidate-tarball'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.mjs' }, profiles: ['candidate'], inputs: ['src/application/domains/workspace.mjs', 'test/verification/onboarding/service-branch.mjs', 'services/**'], schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.mjs' }, profiles: ['candidate'], inputs: ['src/application/domains/workspace.mjs', 'test/verification/onboarding/service-branch.mjs', 'services/**'], inputExclusions: ['services/buildr-web/**'], schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'remote-skill-timeout', name: 'remote Skill timeout contract', executor: { type: 'node', file: 'test/verification/network/remote-text.mjs' }, profiles: ['candidate'], inputs: ['src/infrastructure/network/fetch-remote-text.mjs', 'src/application/domains/skills.mjs', 'test/verification/network/**'], concurrencyClass: 'network' }),
   step({ id: 'release-tarball-smoke', name: 'release tarball smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',

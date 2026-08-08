@@ -12,3 +12,14 @@ services:
     source:
       type: workspace
       path: projects/product/services/buildr
+  buildr-web:
+    id: dc709c32-ea13-4eaa-9516-7047a6fc56a4
+    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
+    projectId: 62bc8f4b-f8b6-4e8b-b40c-f93b466e3993
+    code: buildr-web
+    name: Buildr Web
+    description: Local App React/Vite 前端源码与构建
+    type: application
+    source:
+      type: workspace
+      path: projects/product/services/buildr-web

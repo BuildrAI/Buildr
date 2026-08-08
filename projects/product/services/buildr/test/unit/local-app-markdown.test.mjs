@@ -117,7 +117,7 @@ test.after(() => {
 });
 
 async function loadRenderer() {
-  return import(`../../web/src/markdown.ts?test=${Date.now()}-${Math.random()}`);
+  return import(`../../../buildr-web/src/markdown.ts?test=${Date.now()}-${Math.random()}`);
 }
 
 function textOf(root) {

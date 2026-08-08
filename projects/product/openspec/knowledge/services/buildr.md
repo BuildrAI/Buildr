@@ -2,7 +2,7 @@
 
 ## 职责
 
-Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment/Task Review/Task Retrospective/Task Verification/Task Development/Task Finish domain、Skill-only Git Operations、Project Testing 指导、Local App、runtime adapters、受管资产与 Component 生命周期、capability graph、验证执行、package 和发布。
+Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Workspace/Project/Service/Task Record/Task Environment/Task Review/Task Retrospective/Task Verification/Task Development/Task Finish domain、Skill-only Git Operations、Project Testing 指导、Local App HTTP/runtime 与 session 同源托管、runtime adapters、受管资产与 Component 生命周期、capability graph、验证执行、package 和发布。Local App React/Vite 权威前端源码与构建属于 sibling Service `buildr-web`；本 Service 在构建/打包时消费其产物到 `src/interfaces/local-app/web-dist/`，运行时不依赖 `buildr-web` 源码或 Vite。
 
 ## 接口与入口
 
@@ -56,6 +56,13 @@ Finish不解析或收敛Change/current knowledge，不执行target rebase、form
 retained canonical Workspace 中明确的 metadata-only候选不进入产品执行器，因为无关dirty state无法形成隔离交付载体。Task Finish Skill只有在任务paths、当前研发交接、目标branch/remote与retained context都可证明时，才选择精确commit与push的目标和顺序，并分别交接给optional selected`buildr.git-operations/v1` provider；provider只能stage任务paths、检查完整push range并保留无关改动，返回两项各自适用的最小Result。任一事实或provider readiness不可证明时正式blocked，不使用`git add -A`、stash、reset、rebase、merge、force push、虚假Change或手写Git回退。
 
 Task Environment 候选集成后，主 Workspace runtime 仍从 retained checkout sync/doctor；未合并 task checkout 不更新主 runtime。sync 只维护当前 SQLite authority 与 runtime assets，不扫描旧 Task Environment receipt 或 `.buildr/tasks/`；Git provider evidence 继续由窄 provider authority 维护。
+
+
+## 与 buildr-web 的交接
+
+- `buildr-web` 拥有前端源码；`npm run build:web` / `dev:web` 委托 sibling `../buildr-web`。
+- 正式静态资产落在本 Service 的 `web-dist`；checkout、npm package 与 launcher 三入口只打包/服务该 dist。
+- Local App HTTP 继续从 `web-dist` 同源 loopback 托管并注入 session，不改为独立前端端口。
 
 ## 局部术语
 

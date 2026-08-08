@@ -20,7 +20,7 @@ function option(args, name, fallback = null) {
 function copyApplication(target) {
   const webDist = path.join(PRODUCT_ROOT, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html');
   if (!fs.existsSync(webDist)) {
-    throw new Error('Launcher build requires Local App web dist；请先运行 npm run build:web。');
+    throw new Error('Launcher build requires Local App web dist；请先在 services/buildr 运行 npm run build:web（会构建 sibling buildr-web 并写入 web-dist）。');
   }
   fs.mkdirSync(target, { recursive: true });
   for (const item of ['bin', 'src', 'package', 'package.json', 'LICENSE']) fs.cpSync(path.join(PRODUCT_ROOT, item), path.join(target, item), { recursive: true });

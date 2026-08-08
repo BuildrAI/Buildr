@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: '../src/interfaces/local-app/web-dist',
+    outDir: '../buildr/src/interfaces/local-app/web-dist',
     emptyOutDir: true,
     assetsDir: 'assets',
   },

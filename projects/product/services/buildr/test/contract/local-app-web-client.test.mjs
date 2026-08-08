@@ -11,8 +11,8 @@ function read(relative) {
 }
 
 test('公共 API client 不读取 DOM session，LocalSessionAdapter 负责写头', () => {
-  const client = read('web/src/api/client.ts');
-  const adapter = read('web/src/api/LocalSessionAdapter.ts');
+  const client = read('../buildr-web/src/api/client.ts');
+  const adapter = read('../buildr-web/src/api/LocalSessionAdapter.ts');
   assert.doesNotMatch(client, /document\.|querySelector|buildr-session/);
   assert.match(adapter, /meta\[name="buildr-session"\]/);
   assert.match(adapter, /x-buildr-session/);
@@ -27,5 +27,5 @@ test('Local App 生产托管指向 web-dist 且不再依赖 STATIC_ASSETS 白名
   assert.match(server, /resolveDistFile/);
   assert.match(server, /serveDistAsset|injectedIndexHtml/);
   assert.doesNotMatch(server, /STATIC_ASSETS/);
-  assert.ok(fs.existsSync(path.join(productRoot, 'web/package.json')));
+  assert.ok(fs.existsSync(path.join(productRoot, '../buildr-web/package.json')));
 });
