@@ -85,3 +85,19 @@ test('Environment repository 写入失败保留最后一份有效 current', (t) 
   assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), updatedAt: '2026-08-01T00:00:00.000Z' }), /updatedAt 不能早于 createdAt/);
   assert.equal(runtime.readTaskEnvironmentPersistence(root, 'demo-task').receipt.status, 'ready');
 });
+
+test('cleanup context 只读取保存的 ownership facts，不要求执行 foundations ready', (t) => {
+  const root = fixture(t);
+  const runtime = createRuntime();
+  const blocked = receipt(root, 'blocked');
+  blocked.scopes[0].projection = { status: 'blocked', identity: 'projection', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: 'Runtime projection is stale.' };
+  blocked.latest.ready = { status: 'blocked', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: 'Runtime projection is stale.' };
+  runtime.writeTaskEnvironmentPersistence(root, blocked);
+
+  const context = runtime.resolveTaskEnvironmentCleanupContext(root, 'demo-task');
+  assert.equal(context.ready, true);
+  assert.equal(context.workspaceRoot, root);
+  assert.equal(context.environmentRoot, root);
+  assert.equal(context.controllerInvocation.sourceRoot, '/opt/buildr');
+  assert.deepEqual(context.repositories, []);
+});

@@ -94,6 +94,28 @@ test('retained cleanup bootstrap derives Environment authorization from durable 
   });
 });
 
+test('retained cleanup uses saved cleanup context when execution foundations are blocked', async (t) => {
+  const { root, run, runtime: sqliteRuntime } = readyRun(t);
+  let cleanupCalled = false;
+  const runtime = {
+    ...sqliteRuntime,
+    resolveTaskEnvironmentExecution: () => ({ ready: false, blocked: { code: 'task_environment_probe_blocked', message: 'Runtime projection is stale.' } }),
+    resolveTaskEnvironmentCleanupContext: () => ({
+      ready: true,
+      workspaceRoot: root,
+      environmentRoot: run.identity.environmentRoot,
+      repositories: [{ selector: 'workspace', startPoint: 'dev' }],
+    }),
+    cleanupTaskEnvironment: async () => {
+      cleanupCalled = true;
+      return { status: 'cleaned', effects: [], diagnostic: null };
+    },
+  };
+  const result = await executeRetainedTaskFinishCleanup({ targetRoot: root, runId: run.runId, runtime });
+  assert.equal(result.status, 'cleaned');
+  assert.equal(cleanupCalled, true);
+});
+
 test('retained cleanup rejects legacy delivery without finalRemoteRef', async (t) => {
   const { root, run, runtime } = readyRun(t);
   delete run.delivery.finalRemoteRef;

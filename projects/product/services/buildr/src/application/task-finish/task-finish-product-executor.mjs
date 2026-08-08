@@ -503,7 +503,10 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         association,
       };
       const completionFile = writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: prepared, runtime });
-      const context = taskEnvironment(run);
+      let context = taskEnvironment(run);
+      if (!context?.ready && typeof runtime.resolveTaskEnvironmentCleanupContext === 'function') {
+        context = runtime.resolveTaskEnvironmentCleanupContext(run.identity.workspaceRoot, run.identity.task);
+      }
       const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
       const integratedContributions = { workspace: run.deliveryCarrier };
       let cleanedEnvironment = previousCompletion?.cleanup?.status === 'cleaned' ? previousCompletion.cleanup : null;

@@ -873,6 +873,38 @@ export function registerTaskEnvironmentApplication(runtime) {
     };
   }
 
+  function resolveTaskEnvironmentCleanupContext(targetRoot, taskId) {
+    try {
+      const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(path.resolve(targetRoot)));
+      runtime.readTaskRecordPersistence(root, taskId);
+      const persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
+      if (!persistence) return { ready: false, blocked: { code: 'task_environment_no_receipt', message: '当前机器没有可清理的 Environment Receipt。' }, taskId };
+      if (persistence.receipt.status === 'cleaned') return { ready: false, blocked: { code: 'task_environment_already_cleaned', message: `Task Environment 已清理：${taskId}。` }, taskId, environment: taskEnvironmentReadModel(persistence.receipt) };
+      const providerResult = persistence.receipt.scopes.some((scope) => scope.provider)
+        ? runtime.inspectGitWorktrees({ workspaceRoot: root, taskId })
+        : null;
+      if (providerResult?.status === 'blocked') return { ready: false, blocked: providerResult.diagnostic, taskId, environment: taskEnvironmentReadModel(persistence.receipt) };
+      return {
+        ready: true,
+        taskId,
+        receiptSchema: persistence.receipt.schemaVersion,
+        workspaceRoot: persistence.receipt.workspace.root,
+        environmentRoot: persistence.receipt.scopes[0].validationRoot,
+        controller: persistence.receipt.controller,
+        controllerInvocation: {
+          command: process.execPath,
+          argsPrefix: [persistence.receipt.controller.cliSource],
+          sourceRoot: persistence.receipt.controller.sourceRoot,
+          kind: 'stable-controller',
+        },
+        repositories: providerResult?.repositories || [],
+        observedAt: now(),
+      };
+    } catch (error) {
+      return { ready: false, blocked: { code: error.code || 'task_environment_cleanup_context_blocked', message: error.message, details: error.details }, taskId };
+    }
+  }
+
   function assertTaskEnvironmentController(targetRoot, taskId) {
     const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(targetRoot));
     const persistence = runtime.readTaskEnvironmentPersistence(root, taskId);
@@ -887,6 +919,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     registerTaskEnvironmentResource,
     releaseTaskEnvironmentResource,
     resolveTaskEnvironmentExecution,
+    resolveTaskEnvironmentCleanupContext,
     assertTaskEnvironmentController,
   });
   return runtime;

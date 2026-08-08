@@ -66,7 +66,10 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
     throw cleanupError('task-finish.retained-cleanup-run-not-ready', 'Task Finish run does not contain a completed delivery and active cleanup boundary.');
   }
   assertPreparedCompletion(root, run, runtime);
-  const context = runtime.resolveTaskEnvironmentExecution(root, run.identity.task);
+  let context = runtime.resolveTaskEnvironmentExecution(root, run.identity.task);
+  if (!context?.ready && typeof runtime.resolveTaskEnvironmentCleanupContext === 'function') {
+    context = runtime.resolveTaskEnvironmentCleanupContext(root, run.identity.task);
+  }
   if (!context?.ready || resolvedPath(context.workspaceRoot) !== root || resolvedPath(context.environmentRoot) !== resolvedPath(run.identity.environmentRoot)) {
     throw cleanupError('task-finish.retained-cleanup-environment-mismatch', 'Current Task Environment does not match the Finish run.', context?.blocked || null);
   }
