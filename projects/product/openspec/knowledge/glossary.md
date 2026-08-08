@@ -165,9 +165,9 @@
 
 ## 环境回执（Environment Receipt）
 
-- 定义：Task Environment Application 在 canonical Workspace SQLite 的 `task_environment_current` 中按 Task ID 维护的本机事实，独占 ready/blocked、Task checkout/provider、执行根、真实 probes、资源和 cleanup 结果；历史 `.buildr/tasks/<task-id>/environment.json` 只可作为受控一次性迁移输入。
+- 定义：Task Environment Application 在 canonical Workspace SQLite 的 `task_environment_current` 中按 Task ID 维护的本机事实，独占 ready/blocked、Task checkout/provider、执行根、真实 probes、资源和 cleanup 结果；旧 Environment 文件不再是迁移输入或兼容读取来源。
 - 适用范围：按 Task ID prepare/inspect/cleanup，以及 Verification、Preview、Finish 等正式消费者的执行绑定。
-- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt；其中的 controller identity 只是创建指纹，不是 lifecycle generation；不要把 `task_lifecycle_current.environment` 或旧 `environment.json` 当作完整 Environment authority。
+- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt；其中的 controller identity 只是创建指纹，不是 lifecycle generation；不要把 `task_lifecycle_current.environment` 或任何旧文件当作 Environment authority。
 - 来源：[Task Environment specification](../specs/task-environments/spec.md)
 
 ## Task checkout

@@ -230,16 +230,16 @@ Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只
 - **AND** MUST 只允许产品已登记 provider 的结构化 identity/handle
 
 ### Requirement: Environment restore 必须按 Task ID 串行复核真实事实
-Task Environment MUST 通过 canonical Task ID 恢复同一份 Environment Receipt，并 MUST 重新探测执行根、provider、Runtime/CLI、依赖、projection 与动态资源。恢复 MUST NOT 按 cwd、branch、相同 HEAD 或 Agent session 猜测 ownership；第一版 MUST 按同一 Task 单一 active writer 处理，发现可见并发或漂移时 fail closed。
+Task Environment MUST 通过 canonical Task ID 从 Workspace SQLite 恢复同一份 Environment Receipt，并 MUST 重新探测执行根、provider、Runtime/CLI、依赖、projection 与动态资源。恢复 MUST NOT 按 cwd、branch、相同 HEAD、Agent session 或旧文件猜测 ownership；第一版 MUST 按同一 Task 单一 active writer 处理，发现可见并发或漂移时 fail closed。
 
 #### Scenario: 新 Agent session 恢复 active Task
 - **WHEN** Task Manager 已按 Task ID 恢复 active Task 顶层事实，随后请求 Environment restore
-- **THEN** Task Environment MUST 定位 canonical `environment.json` 并返回同一环境 identity
+- **THEN** Task Environment MUST 定位 `task_environment_current` 中的 current row 并返回同一环境 identity
 - **AND** MUST 在返回 `ready` 前重新执行最小真实 probe
 
 #### Scenario: 从 task worktree 内恢复
 - **WHEN** 请求 cwd 位于已登记 worktree，但调用方提供匹配 Task ID 和 canonical Workspace
-- **THEN** Environment MUST 通过 receipt/provider evidence 核对 membership 后返回执行 binding
+- **THEN** Environment MUST 通过 SQLite Receipt 与 provider evidence 核对 membership 后返回执行 binding
 - **AND** MUST NOT 把 cwd 或分支名本身当作 ownership 证明
 
 #### Scenario: receipt 与实际环境漂移
@@ -287,46 +287,8 @@ Task Environment MUST独占Task级环境cleanup编排和结果。正常完成时
 
 #### Scenario: 清理成功后的最小留痕
 - **WHEN** 全部适用资源已删除或按明确决定安全保留
-- **THEN** Buildr MUST在原`environment.json`保留Task/Workspace identity、完成时间、最终status与最小处置摘要
+- **THEN** Buildr MUST在 `task_environment_current` 保留Task/Workspace identity、完成时间、最终status与最小处置摘要
 - **AND** MUST NOT删除Task Record、Development/Review/Verification/Finish Result或Retrospective
-
-### Requirement: P0.2 必须原子切换旧 environment authority
-P0.2 MUST 在同一 Change 中交付新的 Task Environment authority、窄 Git provider、一次性旧数据迁移和全部 consumer/routing 切换，并 MUST 删除 `buildr.task-worktree-lifecycle@1/@2`、旧 worktree environment writer、session adoption 与其他竞争 `ready / restore / cleanup` 的 mutation path。旧 v1 读取 MUST 与正常 routing 隔离、只服务于一次性迁移，MUST NOT 写回 v1、形成双写/双路由或保留 permanent legacy inspect/cleanup adapter。
-
-#### Scenario: 迁移真实活跃旧环境
-- **WHEN** 正式 Task Record 存在、旧 v1 receipt 与实际 registered worktree 的 Task/Workspace/repository/branch/path identity 全部匹配，且没有冲突 v2 receipt
-- **THEN** retained stable controller MUST 写入新的 Environment Receipt 和 Git provider evidence，并重新探测真实基础
-- **AND** 只在新记录成功复核后才 MUST 删除对应旧 receipt/adoption state
-
-#### Scenario: 旧 receipt 含 session/runtime 总结
-- **WHEN** v1 receipt 包含 adoption、session evidence、runtime expectation 或旧 `ready` 结论
-- **THEN** migrator MUST 只复制能从当前实际环境重新证明的 provider/基础 identity
-- **AND** MUST NOT 把旧 session evidence 或总 `ready` 结论直接写入 v2 Environment Receipt
-
-#### Scenario: 活跃 worktree 没有正式 Task
-- **WHEN** 旧 v1 receipt 对应 identity-matching live worktree，但没有正式 Task Record
-- **THEN** migrator MUST 只生成或复核窄 Git provider evidence，MUST NOT 创建 Task 或 v2 Environment Receipt
-- **AND** evidence 成功复核后 MUST 删除旧 environment receipt，使该 worktree 只剩 Git provider 事实
-
-#### Scenario: 陈旧 receipt 没有真实资源
-- **WHEN** 旧 v1 receipt 对应的 worktree、持久资源与其他可证明 ownership 事实均已不存在
-- **THEN** migrator MUST 在记录无资源 evidence 后删除旧 receipt
-- **AND** MUST NOT 创建 Task、v2 Environment Receipt、Git checkout 或永久兼容状态
-
-#### Scenario: 旧数据 identity 冲突
-- **WHEN** 旧 receipt、Task、Workspace、repository、branch、path 或 live resource ownership 任一冲突或无法确定
-- **THEN** Buildr MUST 原样保留旧 bytes 与真实资源，并阻止该 Workspace 宣告 P0.2 authority 生效
-- **AND** MUST 返回精确冲突和人工解决 next action，不得回退到旧 writer/routing
-
-#### Scenario: canonical routing 检查
-- **WHEN** package、doctor、runtime 与 help verification 检查 P0.2 候选
-- **THEN** `task-environment` MUST 是 `buildr.task-environment/v1` selected provider，`task-worktree` MUST 只提供 `buildr.git-worktree-provider/v1`
-- **AND** MUST 不存在旧 contract binding、直接 consumer edge、`worktree context/adopt`、environment-shaped worktree JSON/help、第二个 Environment writer 或正常 routing 可达的 legacy adapter
-
-#### Scenario: 根层旧 contract 与 binding 退休
-- **WHEN** canonical `sync` 发现根层仍有 `buildr.task-worktree-lifecycle@1/@2` contract、binding 或文件
-- **THEN** package replacement MUST 先核对 capability/version、provider、目标路径和文件 integrity，再在同一 source mutation 中删除全部匹配旧资产
-- **AND** 任一 identity 或文件漂移 MUST 在首次退休 mutation 前阻断，保留旧 manifest 与文件，不得只删一部分
 
 ### Requirement: Task checkout/provider evidence 必须是 Environment 的源码版本基础
 Task Environment MUST 以 Receipt scopes、实际 execution roots 与适用 provider evidence 表达 Task 的源码版本基础。对于 Git task checkout，start point、branch、HEAD、checkout/registration/clean evidence MUST 决定该 Task 当前源码位置；retained Workspace 或 retained Buildr 的后续前进 MUST NOT 自动更新、失效或重写该基础。
@@ -404,28 +366,6 @@ Task Environment mutation MUST 由 canonical retained Workspace 的可信 Enviro
 - **WHEN** Agent 或候选测试上下文需要创建、更新或记录 canonical Task lifecycle facts
 - **THEN** dispatch MUST 调用 receipt-pinned retained controller
 - **AND** candidate runtime MUST 只作为被测对象或 validation Workspace writer，不得成为 canonical writer
-
-### Requirement: Environment current store 必须支持一次性受控迁移
-Buildr MUST 通过连续 SQLite migration 建立 `task_environment_current`，并 MUST 提供由 retained controller 执行的一次性受控 importer，将合法 v2 `environment.json` 导入对应 Task current row。导入完成后新 runtime MUST 不读取、更新、删除或双写旧文件；迁移冲突、损坏、identity 不匹配或 ownership 不明时 MUST fail closed。没有 matching Task Record 的历史文件 MUST 标记为 inert legacy，不导入、不删除且不阻塞其他合法 Task 的导入。
-
-#### Scenario: 合法旧 receipt 导入
-- **WHEN** 旧 `environment.json` 是普通文件，Task Record 存在，receipt schema、Task ID 和 Workspace root 全部匹配
-- **THEN** importer MUST 在单一 SQLite transaction 中写入 normalized current row并记录 migration effect
-- **AND** 后续 `inspect`、`prepare`、resource action 与 `cleanup` MUST 只使用 SQLite current row
-
-#### Scenario: 旧 receipt 导入冲突
-- **WHEN** 旧文件不是普通文件、JSON/schema 无效或 identity/ownership 无法证明
-- **THEN** importer MUST 保留原文件与已有 SQLite 数据并返回稳定 blocked diagnostic
-- **AND** MUST NOT 删除、覆盖、双写或让旧文件继续作为正常 runtime fallback
-
-#### Scenario: 孤立旧 receipt 保持 inert
-- **WHEN** 旧文件没有 matching Task Record
-- **THEN** importer MUST 将其标记为 inert legacy，不导入或删除，也不得阻塞其他合法 Task 的导入
-
-#### Scenario: Candidate importer 与 retained store
-- **WHEN** candidate runtime 在 Task Validation Workspace 验证 importer 或 migration
-- **THEN** candidate MUST 只写自己的 validation store
-- **AND** MUST NOT 导入、修改或删除 retained canonical Workspace 的 Environment current row 或历史文件
 
 ### Requirement: Task Finish SQLite completion 必须与 Environment cleanup 幂等交接
 Task Environment MUST继续独占Task级资源cleanup；Task Finish MUST在调用Environment cleanup前，将已交付scope identities、carrier/contribution proof与`cleanup_pending` checkpoint持久化到Workspace SQLite。Environment cleanup成功后，Finish MUST以Environment Receipt的current identity恢复并完成自身transient cleanup与terminal transaction，MUST NOT让Environment写Finish表或让Finish直接删除Environment-owned资源。

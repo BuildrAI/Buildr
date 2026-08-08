@@ -67,7 +67,7 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 
 `service create --integration-branch` 只适用于 Git 来源，`--branch` 仅为兼容别名。Canonical Service Domain 保存 UUID `id`、`workspaceId`、`projectId`、`code`、`name`、`description`、`type` 和 `source`；`source.path` 定位文件系统中的实际 Service，Git source 保存 URL、remote 与稳定 integration branch。当前分支、HEAD、dirty、upstream 与 ahead/behind 只实时观察，不写回 Domain。
 
-Environment Receipt 固定保存在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.json`，使用 `buildr.task-environment-receipt/v2`。它记录实际 scope、Task checkout/provider evidence、执行根、任务验证工作区根、Receipt 创建时的 manager 指纹、Runtime/CLI/依赖/projection probes、已知动态资源以及最近 ready/cleanup 事实；不写入 Task Record，不保存凭证、任意 cleanup 命令或 Agent session。manager 指纹不决定 Task 源码版本、ready、资源 ownership 或 Verification applicability。共享执行根只允许一个未清理的重叠 Task 占用；同一 Task 的 `prepare` 复用原放置计划，不在恢复时静默切换 shared/Git，也不自动 fetch/rebase Task checkout。
+Environment Receipt 使用 `buildr.task-environment-receipt/v2`，由 Task Environment Application 固定保存在 canonical Workspace SQLite 的 `task_environment_current`，公开 locator 为 `workspace-sqlite:task-environment/<task-id>`。它记录实际 scope、Task checkout/provider evidence、执行根、任务验证工作区根、Receipt 创建时的 manager 指纹、Runtime/CLI/依赖/projection probes、已知动态资源以及最近 ready/cleanup 事实；不写入 Task Record，不保存凭证、任意 cleanup 命令或 Agent session。manager 指纹不决定 Task 源码版本、ready、资源 ownership 或 Verification applicability。共享执行根只允许一个未清理的重叠 Task 占用；同一 Task 的 `prepare` 复用原放置计划，不在恢复时静默切换 shared/Git，也不自动 fetch/rebase Task checkout。旧 Environment 文件不再读取、导入或作为 fallback。
 
 Git provider evidence 使用 `buildr.git-worktree-evidence/v1`，保存在 Git common-dir 的 `buildr/task-worktrees/<task-id>.json`。它只包含 repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote 和 Git effects。Environment cleanup 先停止已登记资源，再把每仓 delivery identity 交给 provider；明确 abandon 时可以清理可证明属于该 Task 的 dirty checkout。provider 不删除远端分支，也不执行交付、验证或总 cleanup 判断。
 
@@ -78,7 +78,7 @@ Git provider evidence 使用 `buildr.git-worktree-evidence/v1`，保存在 Git c
 | `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
 | `buildr doctor` | 只读聚合 workspace、Workspace Node 声明/runtime/CLI/npm/验证环境、registries、Components 和 Commands；Node 缺失或漂移时建议运行 `sync`，不直接修复。 |
 | `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime。P0.2 cutover 时先执行一次性旧 Environment reader/migrator；任何 D 类 identity/ownership 冲突会在新写入前阻止该 Workspace 切换。 |
+| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime；不扫描或迁移旧 Task Environment 文件。 |
 | `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
 | `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |

@@ -84,26 +84,3 @@ test('Environment repository 写入失败保留最后一份有效 current', (t) 
   assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), updatedAt: '2026-08-01T00:00:00.000Z' }), /updatedAt 不能早于 createdAt/);
   assert.equal(runtime.readTaskEnvironmentPersistence(root, 'demo-task').receipt.status, 'ready');
 });
-
-test('受控迁移把合法 v2 environment.json 导入 SQLite，并保留旧文件但不再读取它', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
-  const legacyFile = path.join(root, '.buildr', 'tasks', 'demo-task', 'environment.json');
-  fs.mkdirSync(path.dirname(legacyFile), { recursive: true });
-  fs.writeFileSync(legacyFile, `${JSON.stringify(receipt(root), null, 2)}\n`);
-
-  const planned = runtime.migrateTaskEnvironmentCurrentFiles(root, { apply: false });
-  assert.equal(planned.status, 'planned');
-  assert.deepEqual(planned.counts, { total: 1, importable: 1, alreadyCurrent: 0, inertLegacy: 0, D: 0 });
-  const migrated = runtime.migrateTaskEnvironmentCurrentFiles(root, { apply: true });
-  assert.equal(migrated.status, 'migrated');
-  assert.equal(migrated.effects[0].locator, 'workspace-sqlite:task-environment/demo-task');
-  assert.equal(fs.existsSync(legacyFile), true);
-  assert.equal(runtime.inspectTaskEnvironment(root, 'demo-task').status, 'ready');
-
-  runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), status: 'blocked' });
-  const conflict = runtime.migrateTaskEnvironmentCurrentFiles(root, { apply: false });
-  assert.equal(conflict.status, 'blocked');
-  assert.equal(conflict.entries[0].classification, 'D');
-  assert.equal(fs.existsSync(legacyFile), true);
-});

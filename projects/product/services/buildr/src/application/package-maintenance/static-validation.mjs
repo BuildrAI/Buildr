@@ -232,7 +232,6 @@ export function createPackageStaticValidator(deps) {
   function validateTaskEnvironmentAuthorityResidue(context) {
     const { root, problems } = context;
     const allowedLegacyFiles = new Set([
-      path.join(root, 'src', 'application', 'task-environment', 'legacy-migration.mjs'),
       path.join(root, 'src', 'application', 'package-maintenance', 'static-validation.mjs'),
       path.join(root, 'package', 'manifest.yml'),
     ].map((file) => path.resolve(file)));
@@ -262,6 +261,8 @@ export function createPackageStaticValidator(deps) {
     }
     for (const relative of [
       'src/application/worktree/worktree-application.mjs',
+      'src/application/task-environment/legacy-migration.mjs',
+      'src/application/task-environment/current-migration.mjs',
       'package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md',
     ]) {
       if (existsFile(path.join(root, relative))) problems.push(`Legacy Task Environment authority file must be removed: ${relative}`);

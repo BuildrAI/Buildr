@@ -107,8 +107,14 @@ test('Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
   assert.equal(lines.includes(preciseEntry), false);
 
   fs.writeFileSync(gitignore, `${lines.filter((line) => line !== broadEntry).join('\n').replace(/\n*$/u, '')}\n${preciseEntry}\ncustom-user-entry\n`);
-  let result = runBuildr(['sync', 'codex', '--target', root]);
+  let result = runBuildr(['task', 'create', 'legacy-file', '--title', 'Legacy file', '--intent', 'prove sync ignores retired Task files', '--target', root]);
   assert.equal(result.status, 0, result.stderr || result.stdout);
+  const retiredEnvironmentFile = path.join(root, '.buildr', 'tasks', 'legacy-file', 'environment.json');
+  fs.mkdirSync(path.dirname(retiredEnvironmentFile), { recursive: true });
+  fs.writeFileSync(retiredEnvironmentFile, '{invalid retired input\n');
+  result = runBuildr(['sync', 'codex', '--target', root]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.readFileSync(retiredEnvironmentFile, 'utf8'), '{invalid retired input\n');
   lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
   assert.equal(lines.filter((line) => line === broadEntry).length, 1);
   assert.equal(lines.filter((line) => line === preciseEntry).length, 1);

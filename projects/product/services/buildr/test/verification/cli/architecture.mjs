@@ -62,7 +62,7 @@ const requiredRuntime = [
   'application/compose-runtime.mjs', 'application/doctor.mjs', 'application/package-maintenance.mjs',
   'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
   'application/worktree/git-worktree-provider.mjs',
-  'application/task-environment/task-environment-application.mjs', 'application/task-environment/legacy-migration.mjs',
+  'application/task-environment/task-environment-application.mjs',
   'domain/task-environment/task-environment.mjs', 'infrastructure/filesystem/task-environment-repository.mjs',
   'application/task-finish/task-finish-application.mjs', 'application/task-finish/task-finish-run.mjs',
   'application/task-finish/task-finish-product-executor.mjs',

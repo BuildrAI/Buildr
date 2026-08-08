@@ -43,8 +43,6 @@ import { registerTaskVerificationApplication } from './task-verification/task-ve
 import { registerTaskDevelopmentApplication } from './task-development/task-development-application.mjs';
 import { registerTaskLifecycleReadModelApplication } from './task-lifecycle-read-model/task-lifecycle-read-model-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
-import { registerTaskEnvironmentLegacyMigration } from './task-environment/legacy-migration.mjs';
-import { registerTaskEnvironmentCurrentMigration } from './task-environment/current-migration.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
 import * as platform from '../infrastructure/platform.mjs';
 
@@ -86,8 +84,6 @@ const REGISTRATIONS = [
   registerApplicationRuntime,
   registerGitWorktreeProvider,
   registerTaskEnvironmentApplication,
-  registerTaskEnvironmentLegacyMigration,
-  registerTaskEnvironmentCurrentMigration,
   registerTaskRecordApplication,
   registerTaskReviewApplication,
   registerTaskRetrospectiveApplication,

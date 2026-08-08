@@ -248,24 +248,6 @@ Workspace Structured Store MUST 以独立 `task_environment_current` table 保�
 - **THEN** foreign key 与 Application validation MUST 拒绝 mutation
 - **AND** transaction MUST rollback并保留其他 Environment rows
 
-### Requirement: Environment current migration 必须隔离旧文件输入
-Environment legacy importer MUST 只在明确的 retained migration boundary 读取合法 `environment.json`，并 MUST 在导入前验证普通文件、canonical Workspace、Task identity、schema 和 ownership。正常 SQLite read/write、Local App GET、Environment inspect 与生命周期 mutation MUST NOT 扫描或解析旧 Environment 文件。
-
-#### Scenario: Local App 读取 SQLite Environment
-- **WHEN** Local App 请求已登记 Workspace 中某 Task 的 Environment
-- **THEN** Application MUST 从 `task_environment_current` 返回最近一次保存的 current read model
-- **AND** MUST NOT 读取 `environment.json`、执行文件 inventory 或从 lifecycle snapshot 缺失回退到文件
-
-#### Scenario: migration 输入不可信
-- **WHEN** legacy importer 发现 symlink、路径逃逸、文件占用、损坏 JSON 或不匹配的 Task/Workspace identity
-- **THEN** importer MUST fail closed并保留原输入与已有数据库
-- **AND** MUST NOT 猜测归属、删除文件或创建部分 current rows
-
-#### Scenario: candidate store migration
-- **WHEN** candidate runtime 验证 Environment migration
-- **THEN** migration MUST 使用 candidate/validation Workspace 自身 structured store
-- **AND** MUST NOT 打开 retained store、写 retained WAL/SHM 或把 fixture rows 回灌 canonical database
-
 ### Requirement: Task Finish current 与 terminal facts 必须使用窄 SQLite schema
 Workspace Structured Store MUST通过连续migration建立Task Finish专业表，分别保存current run、compact terminal completion、target lease与transient artifact metadata。run/completion MUST以foreign key绑定`tasks(task_id)`；每个Task至多一个未终结current run和一个terminal completion，每个规范化target至多一个current lease。表 MUST只规范化定位、唯一性、完整性与真实查询所需字段，其余数据 MUST保存为经Domain验证的closed payload；MUST NOT扩展为通用history、event、audit、scheduler、sync或key/value store。
 

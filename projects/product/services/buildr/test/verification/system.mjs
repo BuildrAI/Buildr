@@ -18,7 +18,6 @@ const startFirst = [
   'worktree-create.test.mjs',
   'task-record-product.test.mjs',
   'public-json-contracts.test.mjs',
-  'task-environment-migration.test.mjs',
   'task-review-product.test.mjs',
   'task-record-change-resolver.test.mjs',
   'task-record-local-app.test.mjs',

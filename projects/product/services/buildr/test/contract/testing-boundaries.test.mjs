@@ -27,7 +27,6 @@ const fullIsolationOwners = [
   'project-product.test.mjs',
   'public-json-contracts.test.mjs',
   'service-product.test.mjs',
-  'task-environment-migration.test.mjs',
   'task-finish-product-journey.test.mjs',
   'workspace-product.test.mjs',
   'worktree-create.test.mjs',

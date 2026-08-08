@@ -222,7 +222,7 @@ Task Triage 是可选上游。无论是否经过 Triage，正式 Task 首次修�
 
 ### Environment Receipt
 
-每个 Task ID 只维护一份 Environment Receipt。它是 Workspace 本机状态中的动态资源清单和控制记录，由 Task Environment Application 独占写入，使用 `buildr.task-environment-receipt/v2` 并保存在 canonical Workspace 的 `.buildr/tasks/<task-id>/environment.json`，该文件不进入 Git；同一 Workspace 的共享执行根、task worktree 和不同 Agent session 必须能解析到同一份记录。不同 Task 不共用 receipt 或 Task-owned 资源归属；它们只有在实际使用同一执行根、Git repository 或其他共享写入面时才产生共享边界。文件写入遵守下文统一的“最低文件写入纪律”。Receipt 不是 Source Authority 或 Task Context，也不代替对真实环境的核验。
+每个 Task ID 只维护一份 Environment Receipt。它是 Workspace 本机状态中的动态资源清单和控制记录，由 Task Environment Application 独占写入 canonical Workspace SQLite 的 `task_environment_current`，使用 `buildr.task-environment-receipt/v2` 并通过 `workspace-sqlite:task-environment/<task-id>` locator 公开；同一 Workspace 的共享执行根、task worktree 和不同 Agent session 必须能解析到同一份记录。不同 Task 不共用 receipt 或 Task-owned 资源归属；它们只有在实际使用同一执行根、Git repository 或其他共享写入面时才产生共享边界。Receipt 不是 Source Authority 或 Task Context，也不代替对真实环境的核验；旧 Environment 文件不再读取、导入或作为 fallback。
 
 Task Environment Receipt 是 Task 级环境事实的唯一汇总入口。长期保留的 Git 证据使用新的窄 `buildr.git-worktree-evidence/v1`，只记录 repository、checkout、branch、HEAD、clean 和 Git effects，并由 Git worktree provider 维护。旧 worktree-centric v1 receipt 只用于一次性迁移输入：匹配正式 Task 的活跃环境转换为 v2 Receipt 与窄 Git evidence；无 Task 的 live worktree 只保留窄 Git evidence；无真实资源的陈旧 receipt 删除；identity/ownership 冲突则原样保留并阻止 authority 切换。旧 receipt 不作为永久兼容 reader 或第二套 authority 留下。
 
@@ -385,21 +385,12 @@ P0.5a 当时不增加第五个模块页签，而将已交付的信息架构收�
 
 ### 主 Workspace 存放边界
 
-Task Record 与后续专业记录都属于 canonical Workspace，但每类记录有自己的唯一 writer。Task Record 进入本机 Structured Store，专业记录仍保留在 File Store：
+Task Record 与后续专业 current records 都属于 canonical Workspace，但每类记录有自己的唯一 writer，并统一持久化到本机 Structured Store：
 
 ```text
 .buildr/
-├── local/
-│   └── workspace.sqlite
-├── tasks/
-│   └── <task-id>/
-│       ├── environment.json
-│       ├── development.*
-│       ├── verification.*
-│       ├── reviews/
-│       │   ├── planning.*
-│       │   └── completion.*
-│       └── finish.*
+└── local/
+    └── workspace.sqlite
 ```
 
 Task Record Application只维护SQLite中的Task表及规范化关系表；Task Manager/CLI与Local App只调用Application。Task Development、Verification、Review与Retrospective分别通过自己的Application和SQLite repository独占专业current records；进入同一个数据库不等于合并Domain、writer或状态机。Task Environment、Finish与Board继续独占自己的专业记录。linked task worktree不是Structured Store authority，不能创建或修改canonical Workspace数据库。
