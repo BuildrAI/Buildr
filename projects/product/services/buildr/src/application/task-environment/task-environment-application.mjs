@@ -385,7 +385,6 @@ export function registerTaskEnvironmentApplication(runtime) {
       effects,
       nextActions,
     });
-    if (persist && typeof runtime.projectTaskEnvironment === 'function') runtime.projectTaskEnvironment(targetRoot, taskId, response);
     return response;
   }
 

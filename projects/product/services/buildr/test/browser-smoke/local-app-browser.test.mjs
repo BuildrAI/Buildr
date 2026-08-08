@@ -210,11 +210,11 @@ function createSelectedFixture(root, controllerCli) {
 
 function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
   runtime.beginTaskDevelopment(root, taskId, {
-    changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'converged', summary: '浏览器夹具变更已收敛。' }],
+    changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'not-applicable', summary: '浏览器夹具不验证Change收敛。' }],
     planning: { targetIdentity: 'plan:browser-v1', nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/browser-flow/proposal', identity: taskDevelopmentDigest('browser-flow-proposal'), disposition: 'current', summary: '浏览器夹具提案已形成。' }] },
   });
   let development = runtime.observeTaskDevelopment(root, taskId, {
-    changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'converged', summary: '浏览器夹具变更已收敛。' }],
+    changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'not-applicable', summary: '浏览器夹具不验证Change收敛。' }],
     planningTargetIdentity: 'plan:browser-v1',
   });
   development = runtime.recordTaskDevelopmentPolicy(root, taskId, {
@@ -256,27 +256,20 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
     phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: completedAt, completedAt, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
   };
   runtime.writeTaskFinishRunPersistence(root, run);
-  const completionRecord = { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult };
-  runtime.finalizeTaskFinishPersistence(root, { run, result: inspectFinishRun({ root, runId, runtime }), completion: completionRecord });
-  runtime.projectTaskFinish(root, taskId, {
-    status: 'delivered', runId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
-    candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity,
-    completedAt, finalRemoteRef: delivery.finalRemoteRef, targetBranch: 'dev', remote: 'origin', cleanup: cleanupResult,
-    reuseMode: carrier.reuseMode, equivalence, semanticEquivalence: equivalence.semanticEquivalence,
-    association: {
-      schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: handoff.identity,
-      candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation,
-      gates: {
-        planning: handoff.gates.planning.disposition
-          ? { status: 'gate-disposition', disposition: handoff.gates.planning.disposition, targetIdentity: handoff.gates.planning.targetIdentity, summary: handoff.gates.planning.summary, source: handoff.gates.planning.source }
-          : { status: 'adopted-at-delivery', targetIdentity: handoff.gates.planning.targetIdentity, resultDigest: handoff.gates.planning.resultDigest, outcome: handoff.gates.planning.outcome },
-        completion: { status: 'adopted-at-delivery', targetIdentity: handoff.gates.completion.targetIdentity, resultDigest: handoff.gates.completion.resultDigest, outcome: handoff.gates.completion.outcome },
-        verification: { status: 'verified-at-delivery', targetIdentity: handoff.gates.verification.targetIdentity, resultDigest: handoff.gates.verification.resultDigest, outcome: handoff.gates.verification.outcome },
-      },
-      observedAt: completedAt, source: 'task-finish-application',
+  const association = {
+    schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: handoff.identity,
+    candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation,
+    gates: {
+      planning: handoff.gates.planning.disposition
+        ? { status: 'gate-disposition', disposition: handoff.gates.planning.disposition, targetIdentity: handoff.gates.planning.targetIdentity, summary: handoff.gates.planning.summary, source: handoff.gates.planning.source }
+        : { status: 'adopted-at-delivery', targetIdentity: handoff.gates.planning.targetIdentity, resultDigest: handoff.gates.planning.resultDigest, outcome: handoff.gates.planning.outcome },
+      completion: { status: 'adopted-at-delivery', targetIdentity: handoff.gates.completion.targetIdentity, resultDigest: handoff.gates.completion.resultDigest, outcome: handoff.gates.completion.outcome },
+      verification: { status: 'verified-at-delivery', targetIdentity: handoff.gates.verification.targetIdentity, resultDigest: handoff.gates.verification.resultDigest, outcome: handoff.gates.verification.outcome },
     },
-    diagnostics: [],
-  });
+    observedAt: completedAt, source: 'task-finish-application',
+  };
+  const completionRecord = { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, finalRemoteRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult, association };
+  runtime.finalizeTaskFinishPersistence(root, { run, result: inspectFinishRun({ root, runId, runtime }), completion: completionRecord });
 }
 
 async function unique(locator, description) {
@@ -659,12 +652,12 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
-    assert.equal(await page.locator('#task-review-slots').getByText('当前适用', { exact: true }).count(), 2);
+    assert.equal(await page.locator('#task-review-slots').getByText('适用性未知', { exact: true }).count(), 2);
     assert.match(await page.locator('#task-review-slots').innerText(), /plan:browser-v1/);
     assert.match(await page.locator('#task-review-slots').innerText(), /sha256-/);
     assert.match(await page.locator('#task-review-slots').innerText(), /计划可执行/);
     assert.match(await page.locator('#task-review-slots').innerText(), /没有阻断问题/);
-    assert.match(await page.locator('#task-verification-result').innerText(), /当前适用/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
     assert.match(await page.locator('#task-verification-result').innerText(), /sha256-/);
     assert.match(await page.locator('#task-verification-result').innerText(), /浏览器验证已通过/);
     assert.match(await page.locator('#task-verification-result').innerText(), /demo\/demo.browser · 已通过 · Local App 验证投影已通过/);
@@ -679,7 +672,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.goto(`${workspaceUrl}/tasks/browser-stale`);
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
-    assert.match(await page.locator('#task-verification-result').innerText(), /当前适用/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
     assert.doesNotMatch(await page.locator('#task-verification-result').innerText(), /已随交付目标/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-delivered`);

@@ -49,7 +49,7 @@ test('Task Review CLI 提供单一稳定 JSON、两槽位与 current/stale/unkno
   response = json(['task', 'review', 'inspect', 'review-task', '--planning-target', 'plan:v2', '--target', root]);
   assert.equal(response.slots.planning.applicability, 'stale');
   response = runtime.inspectTaskReview(root, 'review-task');
-  assert.equal(response.slots.planning.applicability, 'current');
+  assert.equal(response.slots.planning.applicability, 'unknown');
 
   const missingIdentity = json(['task', 'review', 'record', 'review-task', '--type', 'completion', '--method', 'self', '--reviewed', 'candidate', '--outcome', 'ready', '--summary', 'done', '--target', root], 1);
   assert.equal(missingIdentity.status, 'blocked');
@@ -121,7 +121,7 @@ test('Local App 只读查看双槽位，并只生成 Task Review Agent prompt', 
   });
   response = await request(`${endpoint}/tasks/review-task/reviews`);
   assert.equal(response.body.slots.planning.present, true);
-  assert.equal(response.body.slots.planning.applicability, 'current');
+  assert.equal(response.body.slots.planning.applicability, 'unknown');
   assert.equal(response.body.slots.completion.present, false);
   const taskAfter = runtime.inspectTaskRecord(root, 'review-task');
   assert.equal(taskAfter.recordDigest, taskBefore.recordDigest);

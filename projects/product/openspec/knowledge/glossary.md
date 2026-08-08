@@ -114,20 +114,12 @@
 - 避免混用：Parent/Child 只表达协调层级，不是依赖或通用关系图，不传播状态、Result或专业动作；Task Record不保存Task Environment、Development、Review、Verification、Git、Finish、独立Board或Retrospective的专业事实，响应级`recordDigest`也不是持久字段。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
-## 任务生命周期当前读模型（Task Lifecycle Current Read Model）
-
-- 定义：Buildr 在 Workspace SQLite 中按 Task ID 保存的跨专业生命周期状态摘要，记录最近一次正式动作确认的 status、applicability、identity/digest、observedAt、诊断和 terminal summary。
-- 适用范围：Task Record、Task Environment、Task Development、Task Review、Task Verification、Task Finish 成功动作后的 Local App 与 Application inspect 查询。
-
 ## Task Finish
 
 - 定义：消费 current Development Handoff、执行 `preflight → prepare → verify → deliver → cleanup` 的固定五阶段交付收尾 adapter；current run、target lease 与 compact terminal Result 由 Workspace SQLite 持久化。
 - 适用范围：Delivery Carrier、目标推进、远端回读、Environment cleanup、run-owned transient cleanup 和可恢复 blocked/cleanup-pending 状态；完整诊断与 Carrier 不进入长期 Result。
 - 避免混用：不是 Task Development、Task Verification、Task Record writer 或第二套 Task complete 状态机；`task complete` 只表示所有 Finish gates 通过后的 Task Record terminal status。`.buildr/task-finish` 是已退役的旧文件协议，不属于新 runtime 的输入。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
-- 避免混用：不是 Task、Development Receipt、Review/Verification Result、Environment Receipt 或 Finish Result 的第二权威；不保存完整 Result、命令输出、diff 或历史事件，不在 GET 请求中自动刷新。
-- 来源：canonical `openspec/specs/task-lifecycle-read-model/spec.md`（本 Change convergence 时建立）。
-
 ## 任务管理器（Task Manager）
 
 - 定义：`buildr.task-record/v1` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复和维护 Task Record。
@@ -167,7 +159,7 @@
 
 - 定义：Task Environment Application 在 canonical Workspace SQLite 的 `task_environment_current` 中按 Task ID 维护的本机事实，独占 ready/blocked、Task checkout/provider、执行根、真实 probes、资源和 cleanup 结果；旧 Environment 文件不再是迁移输入或兼容读取来源。
 - 适用范围：按 Task ID prepare/inspect/cleanup，以及 Verification、Preview、Finish 等正式消费者的执行绑定。
-- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt；其中的 controller identity 只是创建指纹，不是 lifecycle generation；不要把 `task_lifecycle_current.environment` 或任何旧文件当作 Environment authority。
+- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt；其中的 controller identity 只是创建指纹，不是 lifecycle generation；不要把任何旧文件或已退役的跨专业投影当作 Environment authority。
 - 来源：[Task Environment specification](../specs/task-environments/spec.md)
 
 ## Task checkout

@@ -153,7 +153,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   runtime.inspectTaskTerminalDelivery = () => { throw new Error('Local App Tab 不得调用完整 terminal 聚合器。'); };
   response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
   response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
-  assert.equal(developmentReads, 1, 'Reviews/Verification GET 不得读取 Development');
+  assert.equal(developmentReads, 3, 'Reviews/Verification 的terminal section各读取一次Development handoff authority');
   assert.equal(reviewReads, 1, 'Reviews GET 应只读取一次 Review');
   assert.equal(verificationReads, 1, 'Verification GET 应只读取一次 Verification');
   response = await request(`${taskEndpoint}/development?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');

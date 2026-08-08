@@ -4,6 +4,7 @@ import { createRuntime } from '../../../application/compose-runtime.mjs';
 
 const runtime = createRuntime();
 const operations = Object.freeze({
+  overview: 'inspectTaskOverview',
   development: 'inspectTaskDevelopmentView',
   reviews: 'inspectTaskReviewView',
   verification: 'inspectTaskVerificationView',

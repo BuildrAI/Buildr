@@ -171,7 +171,7 @@ export function registerVerificationApplication(runtime) {
     const authorizedResources = optionValues(args, '--authorize-resource');
     const concurrency = Number(runtime.optionValue(args, '--concurrency', '4'));
     if (args.includes('--declaration-root')) {
-      const error = new Error('--declaration-root 仅用于 buildr task verification inspect|record；verification run 只产生 transient execution evidence。');
+      const error = new Error('--declaration-root 仅用于 buildr task verification record；verification run 与 inspect 都不重新观察 declaration source。');
       error.code = 'verification.run_declaration_root_unsupported';
       throw error;
     }

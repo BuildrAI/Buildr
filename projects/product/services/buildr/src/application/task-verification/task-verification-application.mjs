@@ -122,24 +122,25 @@ export function registerTaskVerificationApplication(runtime) {
     return observations.map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity }));
   }
 
-  function applicability(result, currentTargetIdentity, observations) {
+  function applicability(result, currentTargetIdentity, declarationsInput) {
     const targetStatus = currentTargetIdentity === undefined ? 'unknown' : result.target.identity === currentTargetIdentity ? 'current' : 'stale';
     const expected = new Map(result.declarations.map((item) => [item.project, item]));
-    const actual = new Map(observations.map((item) => [item.project, item]));
+    const actual = declarationsInput === undefined ? null : new Map(declarationsInput.map((item) => [item.project, item]));
     const reasons = [];
-    for (const [project, declaration] of expected) {
-      const observed = actual.get(project);
-      if (!observed) reasons.push({ axis: 'declaration', project, code: 'project-scope-removed', message: `Project 已不在 Task scope：${project}` });
-      else if (!observed.valid) reasons.push({ axis: 'declaration', project, code: 'declaration-invalid', message: observed.diagnostic });
-      else if (observed.path !== declaration.path) reasons.push({ axis: 'declaration', project, code: 'declaration-path-changed', message: `${declaration.path} -> ${observed.path}` });
-      else if (observed.identity !== declaration.identity) reasons.push({ axis: 'declaration', project, code: 'declaration-identity-changed', message: `${declaration.identity} -> ${observed.identity}` });
-    }
-    for (const project of actual.keys()) {
-      if (!expected.has(project)) reasons.push({ axis: 'declaration', project, code: 'project-scope-added', message: `Task scope 新增 Project：${project}` });
+    if (actual) {
+      for (const [project, declaration] of expected) {
+        const observed = actual.get(project);
+        if (!observed) reasons.push({ axis: 'declaration', project, code: 'project-scope-removed', message: `Project 已不在 Task scope：${project}` });
+        else if (observed.path !== declaration.path) reasons.push({ axis: 'declaration', project, code: 'declaration-path-changed', message: `${declaration.path} -> ${observed.path}` });
+        else if (observed.identity !== declaration.identity) reasons.push({ axis: 'declaration', project, code: 'declaration-identity-changed', message: `${declaration.identity} -> ${observed.identity}` });
+      }
+      for (const project of actual.keys()) {
+        if (!expected.has(project)) reasons.push({ axis: 'declaration', project, code: 'project-scope-added', message: `Task scope 新增 Project：${project}` });
+      }
     }
     if (targetStatus === 'stale') reasons.unshift({ axis: 'target', code: 'target-identity-changed', message: `${result.target.identity} -> ${currentTargetIdentity}` });
-    const declarationsStatus = reasons.some((item) => item.axis === 'declaration') ? 'stale' : 'current';
-    const status = targetStatus === 'stale' || declarationsStatus === 'stale' ? 'stale' : targetStatus === 'unknown' ? 'unknown' : 'current';
+    const declarationsStatus = actual == null ? 'unknown' : reasons.some((item) => item.axis === 'declaration') ? 'stale' : 'current';
+    const status = targetStatus === 'stale' || declarationsStatus === 'stale' ? 'stale' : targetStatus === 'current' && declarationsStatus === 'current' ? 'current' : 'unknown';
     return {
       status,
       target: { status: targetStatus, resultIdentity: result.target.identity, currentIdentity: currentTargetIdentity ?? null },
@@ -148,26 +149,18 @@ export function registerTaskVerificationApplication(runtime) {
     };
   }
 
-  function slot(task, targetIdentity, declarationRoot = undefined, saved = null, live = false) {
+  function slot(task, targetIdentity, declarationsInput = undefined) {
     const persisted = runtime.readTaskVerificationResultPersistence(task.root, task.record.taskId, { optional: true });
     if (!persisted) {
       return { path: runtime.taskVerificationResultPath(task.root, task.record.taskId), present: false, result: null, resultDigest: null, applicability: null };
     }
-    const savedApplicability = saved?.applicability || { status: 'unknown', reasons: [{ axis: 'lifecycle', code: 'snapshot_missing', message: '尚未形成 Verification lifecycle snapshot。' }] };
-    const persistedApplicability = targetIdentity === undefined || !savedApplicability?.target
-      ? savedApplicability
-      : {
-        ...savedApplicability,
-        status: savedApplicability.target.resultIdentity === targetIdentity ? savedApplicability.status : 'stale',
-        target: { ...savedApplicability.target, status: savedApplicability.target.resultIdentity === targetIdentity ? 'current' : 'stale', currentIdentity: targetIdentity },
-        ...(savedApplicability.target.resultIdentity === targetIdentity ? {} : { reasons: [{ axis: 'target', code: 'target-identity-changed', message: `${savedApplicability.target.resultIdentity} -> ${targetIdentity}` }, ...(savedApplicability.reasons || [])] }),
-      };
     return {
       path: persisted.file,
       present: true,
       result: persisted.result,
       resultDigest: persisted.resultDigest,
-      applicability: live ? applicability(persisted.result, targetIdentity, observeDeclarations(task, declarationRoot)) : persistedApplicability,
+      observedAt: persisted.observedAt,
+      applicability: applicability(persisted.result, targetIdentity, declarationsInput),
     };
   }
 
@@ -184,11 +177,11 @@ export function registerTaskVerificationApplication(runtime) {
   }
 
   function inspectTaskVerification(targetRoot, taskId, input = {}) {
-    assertFields(input, new Set(['targetIdentity', 'declarationRoot']), 'Task Verification inspect');
+    assertFields(input, new Set(['targetIdentity', 'declarations']), 'Task Verification inspect');
     const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
-    const lifecycle = runtime.readTaskLifecyclePersistence?.(task.root, task.record.taskId, { optional: true });
     const targetIdentity = currentTarget(input.targetIdentity);
-    return operationResult('inspect', 'inspected', task.record.taskId, slot(task, targetIdentity, input.declarationRoot, lifecycle?.model?.verification, input.declarationRoot !== undefined));
+    if (input.declarations !== undefined && !Array.isArray(input.declarations)) throw taskVerificationError('task_verification_declarations_invalid', 'declarations必须是保存identity数组。', 400, { field: 'declarations' });
+    return operationResult('inspect', 'inspected', task.record.taskId, slot(task, targetIdentity, input.declarations));
   }
 
   function validateRecordAgainstDeclarations(task, observations, capabilities, coverageGaps) {
@@ -243,8 +236,7 @@ export function registerTaskVerificationApplication(runtime) {
     }, { expectedTaskId: task.record.taskId });
     validateRecordAgainstDeclarations(task, observations, draft.capabilities, draft.coverageGaps);
     const written = runtime.writeTaskVerificationResultPersistence(task.root, draft);
-    const resultSlot = slot(task, draft.target.identity, input.declarationRoot, null, true);
-    if (typeof runtime.projectTaskVerification === 'function') runtime.projectTaskVerification(task.root, task.record.taskId, resultSlot);
+    const resultSlot = slot(task, draft.target.identity, draft.declarations);
     return operationResult('record', 'recorded', task.record.taskId, resultSlot, [{
       type: written.created ? 'created' : 'updated',
       path: relative(task.root, written.file),

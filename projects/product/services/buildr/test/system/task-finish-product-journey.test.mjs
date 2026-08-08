@@ -143,6 +143,7 @@ function taskDevelopmentFixture() {
 
 function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment }) {
   let receipt = null;
+  let savedObservation = null;
   let taskRecord = { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active', result: null };
   const planningTargetIdentity = taskDevelopmentDigest(`${task}:planning`);
   const declarationIdentity = taskDevelopmentDigest(`${task}:declaration`);
@@ -184,11 +185,12 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
     readTaskDevelopmentPersistence: (_root, _task, options = {}) => {
       if (!receipt && options.optional) return null;
       assert.ok(receipt, 'Development Receipt must exist.');
-      return { root: retained, file: `workspace-sqlite:task-development/${task}`, receipt, receiptDigest: taskDevelopmentDigest(receipt) };
+      return { root: retained, file: `workspace-sqlite:task-development/${task}`, receipt, receiptDigest: taskDevelopmentDigest(receipt), applicability: savedObservation?.applicability, observedAt: savedObservation?.observedAt };
     },
-    writeTaskDevelopmentPersistence: (_root, next) => {
+    writeTaskDevelopmentPersistence: (_root, next, observation) => {
       receipt = next;
-      return { root: retained, file: `workspace-sqlite:task-development/${task}`, receipt, receiptDigest: taskDevelopmentDigest(receipt) };
+      savedObservation = observation;
+      return { root: retained, file: `workspace-sqlite:task-development/${task}`, receipt, receiptDigest: taskDevelopmentDigest(receipt), applicability: savedObservation.applicability, observedAt: savedObservation.observedAt };
     },
   };
   registerContentTargetObserver(runtime);
@@ -252,11 +254,6 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   command(environmentRoot, 'git', ['add', '-f', path.relative(environmentRoot, nestedMetadata)]);
   const environment = taskEnvironmentFixture({ task, environmentRoot, retained, repositoryRemote: null, repositoryStartPoint: 'HEAD' });
   const runtime = realTaskDevelopmentFixture({ task, environmentRoot, retained, environment });
-  let projectedFinish = null;
-  runtime.projectTaskFinish = (_root, projectedTask, finish) => {
-    assert.equal(projectedTask, task);
-    projectedFinish = finish;
-  };
   const frozen = runtime.inspectTaskDevelopment(retained, task).development.receipt.candidate;
   fs.writeFileSync(path.join(retained, 'baseline-advance.txt'), 'new delivery baseline\n');
   command(retained, 'git', ['add', 'baseline-advance.txt']);
@@ -314,11 +311,12 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
-  assert.equal(projectedFinish?.association?.handoffIdentity, expectedHandoff.identity);
-  assert.equal(projectedFinish?.association?.candidateIdentity, frozen.identity);
-  assert.equal(projectedFinish?.association?.gates.planning.status, 'adopted-at-delivery');
-  assert.equal(projectedFinish?.association?.gates.verification.status, 'verified-at-delivery');
-  assert.equal(projectedFinish?.association?.gates.completion.status, 'adopted-at-delivery');
+  const terminalAssociation = runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }, { optional: false }).completion.association;
+  assert.equal(terminalAssociation.handoffIdentity, expectedHandoff.identity);
+  assert.equal(terminalAssociation.candidateIdentity, frozen.identity);
+  assert.equal(terminalAssociation.gates.planning.status, 'adopted-at-delivery');
+  assert.equal(terminalAssociation.gates.verification.status, 'verified-at-delivery');
+  assert.equal(terminalAssociation.gates.completion.status, 'adopted-at-delivery');
   assert.deepEqual(result.candidate, { identity: frozen.identity, generation: 1, contentTargetIdentity: frozen.contentTargetIdentity });
   assert.equal(result.identity.remote, 'origin');
   assert.equal(result.identity.targetBranch, 'dev');
@@ -382,7 +380,7 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   const frozen = runtime.inspectTaskDevelopment(retained, task).development.receipt.candidate;
 
   fs.writeFileSync(path.join(environmentRoot, 'shared.txt'), 'drifted task meaning\n');
-  assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'stale');
+  assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current', 'GET只返回最近一次正式action保存的观察');
   fs.writeFileSync(path.join(environmentRoot, 'shared.txt'), 'task meaning\n');
   assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current');
 

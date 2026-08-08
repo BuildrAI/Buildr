@@ -36,7 +36,7 @@ Result MUST绑定非空Content Target `target.identity`和可移植`target.summa
 - **AND** Result MUST NOT决定是否带风险继续推进
 
 ### Requirement: Task Verification Application 必须是唯一 writer 和 reader
-Task Verification Application MUST独占Result normalization、Task/Project resolution、declaration identity观察、persistence调用、Result digest与applicability派生。CLI、Skill、Local App、Development、Finish、Task Record与Task Environment MUST NOT直接读写Result store或复制其字段authority；Development MUST只消费Application inspect/declaration read model，Finish MUST不再消费Verification。
+Task Verification Application MUST独占Result normalization、Task/Project resolution、正式record action中的declaration identity观察、persistence调用、Result digest与保存值applicability派生。CLI、Skill、Local App、Development、Finish、Task Record与Task Environment MUST NOT直接读写Result store或复制其字段authority；inspect MUST NOT接收declaration root或打开声明路径，Development MAY只提交已经由其正式action观察的declaration identity值做纯比较，Finish MUST不再消费Verification。
 
 #### Scenario: CLI 记录 Result
 - **WHEN** Agent调用`buildr task verification record <task-id>`
@@ -45,18 +45,18 @@ Task Verification Application MUST独占Result normalization、Task/Project reso
 
 #### Scenario: declaration 尚在 Task Environment
 - **WHEN** 当前Content Target使用的Project declaration bytes尚未进入canonical Workspace
-- **THEN** inspect/record MAY提供`--declaration-root`，但Application MUST只接受该Task当前matching ready Environment的精确根
-- **AND** Result MUST只保存Workspace相对declaration path与content identity，不得保存declaration root
+- **THEN** 只有record MAY提供`--declaration-root`，且Application MUST只接受该Task当前matching ready Environment的精确根
+- **AND** inspect MUST拒绝该参数，Result MUST只保存Workspace相对declaration path与content identity
 
 #### Scenario: Development检查Result
 - **WHEN** Task Development准备冻结Candidate
-- **THEN** Development MUST调用Task Verification Application inspect并提供current Content Target identity/declaration root
-- **AND** MUST不直接读取YAML、计算Result digest或自行派生declaration applicability
+- **THEN** Development MUST调用Task Verification Application inspect并提供current Content Target与已观察declaration identities
+- **AND** MUST不提交declaration path、直接读取Result store或自行计算Result digest
 
 #### Scenario: Local App 查看 Result
 - **WHEN** 用户在Task详情查看Verification
-- **THEN** Local App MUST调用同一Application的inspect read model
-- **AND** 页面/API MUST NOT暴露direct Result writer
+- **THEN** Local App MUST调用同一Application的inspect read model且未提供axis为unknown
+- **AND** 页面/API MUST NOT暴露direct Result writer或触发declaration observation
 
 ### Requirement: Result 必须原子整值替换且失败时保留 current
 Repository MUST 在写入前完成 closed-schema normalization 与 serialization round-trip，再以单一 SQLite transaction 精确替换 current row并在提交前重读验证。任何写入阶段失败 MUST rollback并返回精确 stage diagnostic，且 MUST 保留原 current value。
@@ -77,46 +77,56 @@ Repository MUST 在写入前完成 closed-schema normalization 与 serialization
 - **AND** 原current Result与其他Task current records MUST保持不变
 
 ### Requirement: Applicability 必须由 target 与 declaration identities 派生
-Application inspect MUST对Content Target与Task scope内全部Project declaration分别派生applicability，不得把applicability持久化。任一declaration出现、消失、内容、registry/path或validity变化 MUST使current Result stale；Content Target identity不同时 MUST stale；未提供当前target时target轴 MUST为unknown。
+Task Verification `record` MUST在正式action中观察并保存Content Target与Task scope内全部Project declaration identities，并返回该action时点的current applicability。后续`inspect` MUST只读取保存的Result/查询字段，并只对调用方显式提供的target/declaration identity值做纯值比较；MUST NOT接受路径作为读取时观察authority，不得读取Project registry、`verification.yml`、Git、Content Target或Environment来刷新applicability。未提供某axis的current identity值时，该axis MUST为unknown或明确表达最近一次record action的历史观察，MUST NOT声称live current。
+
+#### Scenario: record 时 target 与 declarations 已确认
+- **WHEN** Application在合法record action中观察的target与全部Project declarations被写入同一Result
+- **THEN** operation result MUST返回该action observedAt下的current applicability
+- **AND** Result与查询字段 MUST在同一transaction中保存
 
 #### Scenario: target 与 declarations 均未变化
-- **WHEN** inspect提供的Content Target identity等于Result target，且所有当前declaration observations与Result相等
-- **THEN** overall applicability MUST为`current`
+- **WHEN** caller提供Content Target与declaration identity值且分别等于Result保存值
+- **THEN** inspect MUST通过纯值比较返回对应axis current
+- **AND** MUST NOT打开caller path或重新读取declaration bytes
 
 #### Scenario: Local App 没有当前 target identity
-- **WHEN** Local App只读inspect且declarations仍current
-- **THEN** overall applicability MUST为`unknown`
-- **AND** Application MUST NOT从HEAD、Candidate、dirty tree、Environment或时间伪造target identity
+- **WHEN** Local App只读inspect但没有提供current target/declaration identity值
+- **THEN** Application MUST返回已有Result、record observedAt与unknown/last-observed语义
+- **AND** MUST NOT从HEAD、Candidate、dirty tree、Environment、Project文件或时间伪造live identity
 
 #### Scenario: policy 内容变化
-- **WHEN** 任一Project `verification.yml` bytes与Result中绑定的identity不同
-- **THEN** overall applicability MUST为`stale`
-- **AND** reader MUST返回可解释的declaration reason
+- **WHEN** caller显式提供的任一Project declaration identity与Result保存值不同
+- **THEN** overall applicability MUST为`stale`并返回可解释的declaration reason
+- **AND** reader MUST NOT打开`verification.yml`或从path自行观察变化
+
+#### Scenario: 显式 identity 已变化
+- **WHEN** caller提供的target或任一declaration identity与Result保存值不同
+- **THEN**对应axis与overall applicability MUST为stale并返回保存值差异reason
+- **AND** MUST NOT删除、覆盖或改写current Result
 
 ### Requirement: Verification Execution 必须保持 transient
-`buildr verification run` MUST 针对显式 Project、target identity 与 capability identities 执行 Project v2 中已有的 command invocation，并 MUST 把完整命令输出、真实 wall-clock、资源等待、执行上下文、Workspace Node、target stability 和诊断写入 `buildr.verification-execution/v1` transient summary。Runner MUST NOT 写 current Result。`verification run` MUST 只接受 execution contract 定义的参数；`--declaration-root` MUST 只由 `task verification inspect|record` 接收，误用时 MUST 在启动任何 capability 前返回说明正确 action 的 syntax diagnostic。
+`buildr verification run` MUST针对显式Project、target identity与capability identities执行Project v2中已有的command invocation，并把完整执行事实写入transient summary。Runner MUST NOT写current Result。`--declaration-root` MUST只由`task verification record`接收；run或inspect误用时MUST在启动任何capability或读取任何声明路径前返回syntax diagnostic。
 
 #### Scenario: 显式命令能力执行完成
-- **WHEN** 调用方选择一个或多个有效 command capabilities
-- **THEN** runner MUST 有界执行并返回每项真实 passed/failed 事实与完整 transient output
-- **AND** caller MUST 在形成完整 Task 结论后另行通过 Application record
+- **WHEN** 调用方选择一个或多个有效command capabilities
+- **THEN** runner MUST有界执行并返回每项真实passed/failed事实与完整transient output
+- **AND** caller MUST在形成完整Task结论后另行通过Application record
 
 #### Scenario: declaration-root 误用于 execution
-- **WHEN** 调用方把 `--declaration-root` 传给 `buildr verification run`
-- **THEN** runner MUST 在启动 capability 前返回 `verification run` 参数错误
-- **AND** diagnostic MUST 指向 `task verification inspect|record` 作为该参数的合法 action
-- **AND** runner MUST NOT 启动测试、写 current Result 或产生 capability side effect
+- **WHEN** 调用方把`--declaration-root`传给`buildr verification run`
+- **THEN** runner MUST在启动capability前返回参数错误并指向`task verification record`
+- **AND** MUST NOT启动测试、写current Result或产生capability side effect
 
 #### Scenario: target 在执行期间发生内容漂移
-- **WHEN** capability checks 已完成但 execution root 的 tracked diff、status 或 untracked content fingerprint 与执行前不同
-- **THEN** transient summary MUST 返回 `target.stable=false` 并将整体 status 设为 `failed`
-- **AND** summary MUST 提供相对于 target root 的有限变化分类或路径摘要，以区分 target drift 与 capability assertion failure
-- **AND** summary MUST NOT 把 Candidate dirty status 单独解释为 drift，也 MUST NOT 将本机绝对路径写入 current Result
+- **WHEN** capability checks已完成但execution root的tracked diff、status或untracked content fingerprint与执行前不同
+- **THEN** transient summary MUST返回`target.stable=false`并将整体status设为`failed`
+- **AND** summary MUST提供相对于target root的有限变化分类或路径摘要，以区分target drift与capability assertion failure
+- **AND** summary MUST NOT把Candidate dirty status单独解释为drift，也 MUST NOT将本机绝对路径写入current Result
 
 #### Scenario: 选择 Agent invocation
-- **WHEN** `verification run` 收到 `invocation.kind: agent` 的 capability
-- **THEN** runner MUST 在启动任何命令前拒绝
-- **AND** Skill MAY 按 bounded instructions 执行并最终通过同一 record Application 提炼事实
+- **WHEN** `verification run`收到`invocation.kind: agent`的capability
+- **THEN** runner MUST在启动任何命令前拒绝
+- **AND** Skill MAY按bounded instructions执行并最终通过同一record Application提炼事实
 
 ### Requirement: 执行可靠性实现只服务真实声明能力
 Runner MUST 继续使用受管 Workspace Node、Environment allowed roots、进程 descendant 有界收敛、单次 transient cleanup 与被实际 capability claim 的资源协调。Project declaration execution MUST NOT 新建通用 DAG、dependency、supersedes、scheduler 或资源平台语义。对同一 coordinated resource 的有效 waiter，coordinator MUST 按确定的先到顺序授予可用容量，并 MUST 让取消、timeout、崩溃或过期 waiter 可被精确、有界恢复；新 waiter MUST NOT 越过仍有效的更早 waiter。
@@ -152,19 +162,32 @@ Task Verification MUST NOT创建Candidate/generation、更新Task顶层状态、
 - **AND** Finish MUST只消费current Development handoff，不得运行Verification或决定风险
 
 ### Requirement: terminal delivery association 必须证明交付目标使用了对应 Verification Result
-Application 层 terminal projection MUST 只在成功 Finish 与 immutable handoff 等价，且 handoff verification gate 的 Result digest、Content Target identity 与 Verification current slot 完全一致时，返回 `verified-at-delivery` 及原始 passed/not-passed 结论。该关联 MUST NOT 改写 Verification Result、applicability 或 declaration currentness。
+Application 层 terminal projection MUST只读取matching Finish completion中保存的association；当handoff verification gate的Result digest、Content Target identity与Verification current slot完全一致时，才返回`verified-at-delivery`及原始passed/not-passed结论。该关联 MUST NOT改写Verification Result、保存时applicability或declaration facts，也MUST NOT依赖独立lifecycle projection。
 
 #### Scenario: 交付目标已验证通过
-- **WHEN** completed delivered Task 的 Verification Result、handoff gate、Candidate Content Target 与 Finish identities 完全一致
-- **THEN** terminal projection MUST 表达“已随交付目标验证通过”
-- **AND** MUST 保留原始能力事实、coverage gaps 与 conclusion 内容
+- **WHEN** completed delivered Task的Verification Result、Finish completion association与Development handoff identities完全一致
+- **THEN** terminal projection MUST表达“已随交付目标验证通过”
+- **AND** MUST保留原始能力事实、coverage gaps与conclusion内容
 
 #### Scenario: 交付目标未验证通过但风险已明确接受
-- **WHEN** matching handoff 保存 not-passed Verification Result digest 与合法 proceed risk decision
-- **THEN** terminal projection MUST 表达“已随交付目标验证未通过”及已保存风险事实
-- **AND** MUST NOT 改写为 passed
+- **WHEN** matching completion association保存not-passed Verification Result digest且handoff含合法proceed risk decision
+- **THEN** terminal projection MUST表达“已随交付目标验证未通过”及已保存风险事实
+- **AND** MUST NOT改写为passed
 
 #### Scenario: active declaration currentness
-- **WHEN** Task 仍 active 且调用方提供 current target/declaration inputs
-- **THEN** Verification Application MUST 保持既有 current/stale/unknown 派生行为
-- **AND** terminal delivery association MUST 不参与 live applicability
+- **WHEN** Task仍active且Overview同时读取Verification row与Development verification gate
+- **THEN** Application MAY比较已保存target/result digest并报告matched/mismatched/unknown
+- **AND** terminal delivery association MUST不参与live applicability，也不得触发外部观察
+
+### Requirement: Verification current row 必须保存稳定查询字段
+Task Verification repository MUST在同一current row保存Domain验证的完整`result_json`、同一Result的`target_identity`、`outcome`与`updated_at`。这些字段MUST只用于结果定位、Overview查询与保存值一致性检查，MUST NOT复制capability facts、coverage gaps、declarations、Development adoption或terminal association。
+
+#### Scenario: 记录 Verification Result
+- **WHEN** Application完成declaration observation并形成完整Result
+- **THEN** repository MUST在单一transaction中原子替换JSON与查询字段并写后验证
+- **AND** target/outcome/time与Result JSON不一致时 MUST rollback并保留原current
+
+#### Scenario: 读取 Overview
+- **WHEN** Task Overview查询Verification摘要
+- **THEN** repository MUST返回row presence、target、outcome与updated time
+- **AND** MUST NOT复制完整Result或重新解析Project declaration

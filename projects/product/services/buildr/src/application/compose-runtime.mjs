@@ -9,7 +9,7 @@ import { registerTaskReviewRepository } from '../infrastructure/sqlite/task-revi
 import { registerTaskRetrospectiveRepository } from '../infrastructure/sqlite/task-retrospective-repository.mjs';
 import { registerTaskVerificationRepository } from '../infrastructure/sqlite/task-verification-repository.mjs';
 import { registerTaskDevelopmentRepository } from '../infrastructure/sqlite/task-development-repository.mjs';
-import { registerTaskLifecycleRepository } from '../infrastructure/sqlite/task-lifecycle-repository.mjs';
+import { registerTaskOverviewRepository } from '../infrastructure/sqlite/task-overview-repository.mjs';
 import { registerTaskFinishRepository } from '../infrastructure/sqlite/task-finish-repository.mjs';
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
@@ -41,7 +41,7 @@ import { registerTaskReviewApplication } from './task-review/task-review-applica
 import { registerTaskRetrospectiveApplication } from './task-retrospective/task-retrospective-application.mjs';
 import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
 import { registerTaskDevelopmentApplication } from './task-development/task-development-application.mjs';
-import { registerTaskLifecycleReadModelApplication } from './task-lifecycle-read-model/task-lifecycle-read-model-application.mjs';
+import { registerTaskOverviewApplication } from './task-overview/task-overview-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
 import * as platform from '../infrastructure/platform.mjs';
@@ -60,7 +60,7 @@ const REGISTRATIONS = [
   registerTaskRetrospectiveRepository,
   registerTaskVerificationRepository,
   registerTaskDevelopmentRepository,
-  registerTaskLifecycleRepository,
+  registerTaskOverviewRepository,
   registerTaskFinishRepository,
   registerTaskEnvironmentRepository,
   registerContentTargetObserver,
@@ -89,7 +89,7 @@ const REGISTRATIONS = [
   registerTaskRetrospectiveApplication,
   registerTaskVerificationApplication,
   registerTaskDevelopmentApplication,
-  registerTaskLifecycleReadModelApplication,
+  registerTaskOverviewApplication,
   registerVerificationApplication,
   registerTaskFinishApplication,
   registerTaskTerminalDeliveryApplication,

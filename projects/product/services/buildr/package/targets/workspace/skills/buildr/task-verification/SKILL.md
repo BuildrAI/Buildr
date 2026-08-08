@@ -29,7 +29,7 @@ buildr task verification inspect <task-id> --target-identity <identity> --target
 
 current Result 只有在 target 与全部 declaration identities 都 `current` 时才适用于当前目标。target 未提供为 `unknown`；任一声明缺失/出现、内容、path、Project scope 或有效性变化为 `stale`。不要写回 applicability 标记。
 
-当前目标来自 ready Task Environment 且其中的 declaration bytes 尚未进入 canonical Workspace 时，inspect/record 都追加 `--declaration-root <task-environment-root>`。Application 只接受该 Task 当前 ready Environment 的精确根目录；本机路径只用于读取，不进入 current Result。
+当前目标来自 ready Task Environment 且其中的 declaration bytes 尚未进入 canonical Workspace 时，只在`record`追加 `--declaration-root <task-environment-root>`。Application只在正式写入动作中观察该Task当前ready Environment的精确根目录；`inspect`不接受路径，只比较调用方显式提供的保存identity。本机路径不进入current Result。
 
 ## 2. 读取和维护 Project declaration
 
@@ -62,7 +62,7 @@ buildr verification run --project <code> \
   --json
 ```
 
-`verification run` 只执行已选择的 command capability 并产生 transient execution evidence；它不接受 `--declaration-root`。`--declaration-root` 只用于 `task verification inspect` 或 `task verification record`，用于让 Application 读取当前 ready Task Environment 中尚未进入 canonical Workspace 的 declaration bytes。
+`verification run` 只执行已选择的 command capability 并产生 transient execution evidence；它不接受 `--declaration-root`。`--declaration-root` 只用于 `task verification record`，让 Application 在正式写入动作中读取当前 ready Task Environment 内尚未进入 canonical Workspace 的 declaration bytes；`inspect`不重新观察声明。
 
 声明 `effects.authorization: explicit` 时，取得对应授权后逐项增加 `--authorize-capability <id>`；声明为 explicit 的资源同理增加 `--authorize-resource <id>`。不得用一次宽泛授权覆盖其他 capability 或 resource。
 

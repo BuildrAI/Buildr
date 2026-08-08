@@ -163,7 +163,7 @@ test('active或resolver不可用的Change不能伪报converged', (t) => {
     && error.details.lifecycle === null);
 });
 
-test('已保存converged后lifecycle漂移会让inspect与Candidate currentness失效', (t) => {
+test('已保存converged后外部漂移不改变inspect快照，下一正式action会fail closed', (t) => {
   const current = changeFixture(t, 'working-copy-drift');
   let result = current.runtime.observeTaskDevelopment(current.root, current.taskId, {
     changeDispositions: current.dispositions,
@@ -174,12 +174,14 @@ test('已保存converged后lifecycle漂移会让inspect与Candidate currentness�
   recordVerification(current);
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   assert.equal(result.development.receipt.candidate.generation, 1);
+  const savedObservedAt = result.development.observedAt;
+  assert.match(savedObservedAt, /^2026-|^20\d\d-/);
 
   current.setObserved({ availability: 'available', lifecycle: 'active' });
   result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
-  assert.equal(result.development.applicability.taskContext, 'stale');
-  assert.equal(result.development.applicability.candidate, 'stale');
-  assert.ok(result.development.applicability.reasons.some((reason) => reason.code === 'task_development_change_not_converged'));
+  assert.equal(result.development.applicability.taskContext, 'current');
+  assert.equal(result.development.applicability.candidate, 'current');
+  assert.equal(result.development.observedAt, savedObservedAt);
   assert.throws(() => current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId), (error) => error.code === 'task_development_change_not_converged');
 });
 

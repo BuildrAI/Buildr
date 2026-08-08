@@ -16,7 +16,9 @@ function decode(serialized, taskId) {
     throw taskVerificationError('task_verification_result_invalid', `${locator(taskId)} 无法读取：${error.message}`, 409, { taskId, path: locator(taskId), cause: error.code || 'invalid_json', ...(error.details?.field === undefined ? {} : { field: error.details.field }) }, '保留数据库现场并运行Buildr Doctor；不要从旧YAML恢复。');
   }
 }
-function persistence(root, taskId, serialized, result) { return { root, file: locator(taskId), content: serialized, resultDigest: digest(serialized), result }; }
+function persistence(root, taskId, serialized, result, row = {}) {
+  return { root, file: locator(taskId), content: serialized, resultDigest: digest(serialized), result, targetIdentity: row.target_identity ?? result.target.identity, outcome: row.outcome ?? result.conclusion.outcome, observedAt: row.updated_at ?? result.completedAt };
+}
 export function renderTaskVerificationResult(result) { return JSON.stringify(normalizeTaskVerificationResult(result, { expectedTaskId: result?.taskId })); }
 
 export function registerTaskVerificationRepository(runtime) {
@@ -26,12 +28,14 @@ export function registerTaskVerificationRepository(runtime) {
     let opened;
     try {
       opened = runtime.openWorkspaceStructuredStore(task.root, { writable: false });
-      const row = opened.database.prepare('SELECT result_json FROM task_verification_current WHERE task_id = ?').get(taskId);
+      const row = opened.database.prepare('SELECT result_json, target_identity, outcome, updated_at FROM task_verification_current WHERE task_id = ?').get(taskId);
       if (!row) {
         if (optional) return null;
         throw taskVerificationError('task_verification_result_not_found', `Task Verification Result 不存在：${taskId}。`, 404, { taskId, path: locator(taskId) });
       }
-      return persistence(task.root, taskId, row.result_json, decode(row.result_json, taskId));
+      const result = decode(row.result_json, taskId);
+      if (row.target_identity !== result.target.identity || row.outcome !== result.conclusion.outcome || row.updated_at !== result.completedAt) throw taskVerificationError('task_verification_query_fields_inconsistent', `${locator(taskId)} 查询字段与Result不一致。`, 409, { taskId });
+      return persistence(task.root, taskId, row.result_json, result, row);
     } catch (error) { throw asError(error, '读取', taskId); }
     finally { try { opened?.database?.close(); } catch {} }
   }
@@ -56,13 +60,15 @@ export function registerTaskVerificationRepository(runtime) {
       const current = database.prepare('SELECT result_json FROM task_verification_current WHERE task_id = ?').get(normalized.taskId);
       if (current) decode(current.result_json, normalized.taskId);
       const existed = Boolean(current);
-      database.prepare(`INSERT INTO task_verification_current(task_id, result_json) VALUES (?, ?)
-        ON CONFLICT(task_id) DO UPDATE SET result_json = excluded.result_json`).run(normalized.taskId, serialized);
+      database.prepare(`INSERT INTO task_verification_current(task_id, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(task_id) DO UPDATE SET result_json = excluded.result_json, target_identity = excluded.target_identity, outcome = excluded.outcome, updated_at = excluded.updated_at`)
+        .run(normalized.taskId, serialized, normalized.target.identity, normalized.conclusion.outcome, normalized.completedAt);
       stage = 'post-read';
-      const row = database.prepare('SELECT result_json FROM task_verification_current WHERE task_id = ?').get(normalized.taskId);
+      const row = database.prepare('SELECT result_json, target_identity, outcome, updated_at FROM task_verification_current WHERE task_id = ?').get(normalized.taskId);
       const written = decode(row.result_json, normalized.taskId);
+      if (row.target_identity !== written.target.identity || row.outcome !== written.conclusion.outcome || row.updated_at !== written.completedAt) throw taskVerificationError('task_verification_post_read_mismatch', 'Task Verification Result与查询字段写后读取不一致。', 500, { taskId: normalized.taskId });
       database.exec('COMMIT');
-      return { ...persistence(task.root, normalized.taskId, row.result_json, written), created: !existed };
+      return { ...persistence(task.root, normalized.taskId, row.result_json, written, row), created: !existed };
     } catch (error) {
       try { opened?.database?.exec('ROLLBACK'); } catch {}
       throw asError(error, `写入（${stage}）`, task.record.taskId, stage);

@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
 
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
@@ -203,23 +202,6 @@ function runThroughRetainedController(context, id, args, cwd, { json = false } =
   if (!invocation?.command || !Array.isArray(invocation.argsPrefix)) return null;
   const execute = json ? runJsonCommand : runCommand;
   return execute(id, invocation.command, [...invocation.argsPrefix, ...args], cwd);
-}
-
-export async function refreshTaskLifecycleReadModelRuntime(runtime, context, runId) {
-  const sourceRoot = context?.controllerInvocation?.sourceRoot || context?.controller?.sourceRoot;
-  if (!sourceRoot) return false;
-  const relativeModule = ['src', 'application', 'task-lifecycle-read-model', 'task-lifecycle-read-model-application.mjs'];
-  const candidates = [
-    path.join(sourceRoot, ...relativeModule),
-    path.join(sourceRoot, 'services', 'buildr', ...relativeModule),
-  ];
-  const modulePath = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!modulePath) return false;
-  const moduleUrl = `${pathToFileURL(modulePath).href}?finishRun=${encodeURIComponent(runId)}`;
-  const module = await import(moduleUrl);
-  if (typeof module.registerTaskLifecycleReadModelApplication !== 'function') return false;
-  module.registerTaskLifecycleReadModelApplication(runtime);
-  return true;
 }
 
 function retainedWorkspaceReadiness(identity) {
@@ -558,34 +540,6 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       }
       const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete, runtime });
-      if (typeof runtime.projectTaskFinish === 'function') {
-        try {
-          await refreshTaskLifecycleReadModelRuntime(runtime, context, run.runId);
-          runtime.projectTaskFinish(run.identity.workspaceRoot, run.identity.task, {
-            status: 'delivered',
-            runId: run.runId,
-            handoffIdentity: run.identity.handoffIdentity,
-            candidateIdentity: run.identity.candidateIdentity,
-            candidateGeneration: run.identity.candidateGeneration,
-            contentTargetIdentity: run.identity.contentTargetIdentity,
-            completedAt: complete.completedAt,
-            finalRemoteRef: complete.finalRemoteRef,
-            targetBranch: complete.targetBranch,
-            remote: run.identity.remote,
-            cleanup: cleanedEnvironment,
-            reuseMode: run.reuseMode || run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
-            equivalence: run.equivalence,
-            semanticEquivalence: run.equivalence?.semanticEquivalence || null,
-            association,
-            diagnostics: [],
-          });
-          operations.push({ operation: 'project-terminal-association', status: 'projected', taskId: run.identity.task, handoffIdentity: run.identity.handoffIdentity });
-        } catch (error) {
-          const diagnostic = { code: error.code || 'task-finish.terminal-association-projection-failed', message: error.message, details: error.details || null };
-          operations.push({ operation: 'project-terminal-association', status: 'blocked', taskId: run.identity.task, diagnostic });
-          return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'product-execution-failure', code: diagnostic.code, message: diagnostic.message, diagnostic } };
-        }
-      }
       return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { ...complete, receipt: completionFile, cleanup: cleanedEnvironment } } };
     },
   };

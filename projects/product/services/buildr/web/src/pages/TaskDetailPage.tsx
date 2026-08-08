@@ -40,6 +40,8 @@ export function TaskDetailPage() {
   const href = (path: string) => workspaceHref(workspaceId, path);
 
   const [data, setData] = useState<TaskDetailData | null>(null);
+  const [overviewData, setOverviewData] = useState<any>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ message: string; error: boolean } | null>(null);
   const [editState, setEditState] = useState('可以修改');
@@ -80,6 +82,7 @@ export function TaskDetailPage() {
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
   const developmentRequestRef = useRef(0);
+  const overviewRequestRef = useRef(0);
   const environmentRequestRef = useRef(0);
   const reviewRequestRef = useRef(0);
   const verificationRequestRef = useRef(0);
@@ -137,6 +140,22 @@ export function TaskDetailPage() {
     applyRecord(detail, workspace.workspace.name);
     void loadBriefs(detail.record.changes);
   }, [taskId, setWorkspace, applyRecord, loadBriefs]);
+
+  const refreshOverview = useCallback(async () => {
+    const requestId = ++overviewRequestRef.current;
+    const currentTaskId = taskId;
+    setOverviewLoading(true);
+    try {
+      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/overview`);
+      if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setOverviewData(next);
+    } catch (err) {
+      if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+        setOverviewData({ error: `${(err as ApiError).code || 'task_overview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}` });
+      }
+    } finally {
+      if (overviewRequestRef.current === requestId) setOverviewLoading(false);
+    }
+  }, [taskId]);
 
   const refreshDevelopment = useCallback(async () => {
     const requestId = ++developmentRequestRef.current;
@@ -247,6 +266,7 @@ export function TaskDetailPage() {
 
   const selectTab = useCallback((tab: TaskTab) => {
     setActiveTab(tab);
+    if (tab === 'overview') void refreshOverview();
     if (tab === 'development') void refreshDevelopment();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
@@ -254,12 +274,13 @@ export function TaskDetailPage() {
       void refreshVerification();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
+  }, [refreshOverview, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
     setAlert(null);
     setActiveTab('overview');
+    setOverviewData(null);
     setDevelopmentData(null);
     setEnvironmentData(null);
     setReviewData(null);
@@ -271,11 +292,13 @@ export function TaskDetailPage() {
     setAbandonReason('');
     setEditState('可以修改');
     developmentRequestRef.current += 1;
+    overviewRequestRef.current += 1;
     environmentRequestRef.current += 1;
     reviewRequestRef.current += 1;
     verificationRequestRef.current += 1;
     retrospectiveRequestRef.current += 1;
     setDevelopmentLoading(false);
+    setOverviewLoading(false);
     setEnvironmentLoading(false);
     setReviewLoading(false);
     setVerificationLoading(false);
@@ -284,7 +307,7 @@ export function TaskDetailPage() {
     let cancelled = false;
     void (async () => {
       try {
-        await refresh();
+        await Promise.all([refresh(), refreshOverview()]);
       } catch (err) {
         if (!cancelled && taskIdRef.current === taskId) {
           setPageError(err instanceof Error ? err.message : '任务不可用');
@@ -294,11 +317,12 @@ export function TaskDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [taskId, refresh]);
+  }, [taskId, refresh, refreshOverview]);
 
   useEffect(() => {
     const onFocus = () => {
       const tab = activeTabRef.current;
+      if (tab === 'overview') void refreshOverview();
       if (tab === 'development') void refreshDevelopment();
       if (tab === 'environment') void refreshEnvironment();
       if (tab === 'evidence') {
@@ -309,7 +333,7 @@ export function TaskDetailPage() {
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
+  }, [refreshOverview, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
 
   const loadParentOptions = async () => {
     const current = dataRef.current;
@@ -499,6 +523,25 @@ export function TaskDetailPage() {
       </nav>
 
       <div id="task-overview-panel" className={activeTab === 'overview' ? '' : 'hidden'} data-task-panel="overview">
+        <section className="panel" id="task-professional-overview" aria-live="polite">
+          <div className="panel-heading">
+            <div>
+              <h2>专业进展摘要</h2>
+              <p className="section-copy">一次只读查询组合各专业最近保存事实；顶层状态仍由 Task Record 管理。</p>
+            </div>
+            <button className="button secondary" type="button" onClick={() => { void refreshOverview(); }} disabled={overviewLoading}>{overviewLoading ? '读取中…' : '刷新摘要'}</button>
+          </div>
+          {overviewData?.error ? <p className="alert error">{overviewData.error}</p> : (
+            <dl className="read-facts detail-facts">
+              <Fact label="研发" value={overviewData?.development?.present ? `${overviewData.development.status || 'unknown'} · ${formatDateTime(overviewData.development.observedAt)}` : '尚未形成'} />
+              <Fact label="规划审查" value={overviewData?.reviews?.planning?.present ? `${overviewData.reviews.planning.outcome} · ${overviewData.reviews.planning.gateMatch}` : '尚未记录'} />
+              <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${overviewData.reviews.completion.gateMatch}` : '尚未记录'} />
+              <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${overviewData.verification.gateMatch}` : '尚未记录'} />
+              <Fact label="环境" value={overviewData?.environment?.present ? `${overviewData.environment.status} · ${formatDateTime(overviewData.environment.updatedAt)}` : '尚未形成'} />
+              <Fact label="交付" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '尚未形成'} />
+            </dl>
+          )}
+        </section>
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {
             if (item.kind === 'empty') {

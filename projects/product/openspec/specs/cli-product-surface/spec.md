@@ -452,27 +452,32 @@ Buildr CLI MUST 公开 `buildr task review inspect <task-id>` 与 `buildr task r
 - **AND** help MUST 不把命令描述为 Review engine、Development gate 或 Candidate generator
 
 ### Requirement: CLI 必须提供最小 Task Verification Result 管理入口
-Buildr CLI MUST 只通过 `task verification inspect|record` 管理一个 Task current Result。`inspect` MUST 接受 Task ID 与可选 current target identity；`record` MUST 接受完整 target、实际 capability facts、coverage gaps 和 `passed|not-passed` conclusion。两者 MAY 接受 matching ready Task Environment 根作为 `--declaration-root`，但 MUST 通过 Task Verification Application 完成 ownership、领域校验与持久化。
+Buildr CLI MUST只通过`task verification inspect|record`管理一个Task current Result。`inspect` MUST接受Task ID与可选current target identity，只比较保存值并MUST NOT接受filesystem/declaration path；`record` MUST接受完整target、实际capability facts、coverage gaps和`passed|not-passed` conclusion，并MAY接受matching ready Task Environment根作为`--declaration-root`，但MUST通过Task Verification Application完成ownership、领域校验与持久化。
 
 #### Scenario: inspect current Result
-- **WHEN** Agent 调用 `buildr task verification inspect <task-id> [--target-identity <identity>] --json`
-- **THEN** stdout MUST 返回一个稳定 operation envelope、current Result、digest 与派生 applicability
-- **AND** 命令 MUST 不准备 Environment、不执行 capability、不改变任何记录
+- **WHEN** Agent调用`buildr task verification inspect <task-id> [--target-identity <identity>] --json`
+- **THEN** stdout MUST返回稳定operation envelope、current Result、digest与保存值applicability
+- **AND** 命令 MUST不接受`--declaration-root`、准备Environment、执行capability或改变任何记录
+
+#### Scenario: record观察Task Environment declaration
+- **WHEN** Agent为尚未集成的target调用record并追加`--declaration-root <task-environment-root>`
+- **THEN** Application MUST证明该root属于当前Task的ready Environment后再观察declaration
+- **AND** 任意其他本机目录 MUST被拒绝且原current不变
 
 #### Scenario: inspect Task Environment declaration
-- **WHEN** Agent 为尚未集成的 target 追加 `--declaration-root <task-environment-root>`
-- **THEN** Application MUST 证明该 root 属于当前 Task 的 ready Environment 后再观察 declaration
-- **AND** 任意其他本机目录 MUST 被拒绝且原 current 不变
+- **WHEN** Agent为inspect追加`--declaration-root <task-environment-root>`
+- **THEN** CLI MUST在读取任何声明路径前拒绝该参数并指向record action
+- **AND** 原current与Task Environment MUST保持不变
 
 #### Scenario: record 完整 Result
-- **WHEN** Agent 为 active Task 提供完整合法 facts 与 conclusion
-- **THEN** CLI MUST 调用 Application 原子整值替换 current
+- **WHEN** Agent为active Task提供完整合法facts与conclusion
+- **THEN** CLI MUST调用Application原子整值替换current
 - **AND** 返回effects MUST只披露created/updated的Workspace SQLite logical locator
 
 #### Scenario: record 不完整
-- **WHEN** target、capability fact、coverage gap 或 conclusion 不能构成完整 closed-schema Result
-- **THEN** CLI MUST 返回 blocked operation result 与具体 field diagnostic
-- **AND** 原 current MUST 保持不变
+- **WHEN** target、capability fact、coverage gap或conclusion不能构成完整closed-schema Result
+- **THEN** CLI MUST返回blocked operation result与具体field diagnostic
+- **AND** 原current MUST保持不变
 
 ### Requirement: OpenSpec CLI help 不得恢复 Task Finish 的旧 Change authority
 Buildr CLI MUST 只把 `openspec converge` 与 `openspec audit`描述为当前 OpenSpec maintenance 入口，并 MUST NOT 注册或帮助展示 `openspec baseline create`、`openspec check`。Task Finish current help MUST 明确 Change convergence、sync 与 archive 在 Development stable Content Target 之前完成。

@@ -173,27 +173,17 @@ export function createPackageStaticValidator(deps) {
     for (const required of ['LICENSE', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md']) {
       if (!fs.existsSync(path.join(root, required))) problems.push(`Open-source product baseline is missing: ${required}`);
     }
-    const sqliteMigrations = [
-      'src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
-      'src/infrastructure/sqlite/migrations/0001_create_task_store.sql',
-      'src/infrastructure/sqlite/migrations/0002_create_parent_task_relations.sql',
-      'src/infrastructure/sqlite/migrations/0003_inline_parent_task_column.sql',
-      'src/infrastructure/sqlite/migrations/0004_create_task_current_records.sql',
-      'src/infrastructure/sqlite/migrations/0005_create_task_retrospective_current.sql',
-      'src/infrastructure/sqlite/migrations/0006_create_task_lifecycle_current.sql',
-      'src/infrastructure/sqlite/migrations/0007_create_task_finish_current.sql',
-      'src/infrastructure/sqlite/migrations/0008_create_task_environment_current.sql',
-    ];
-    for (const relative of sqliteMigrations) {
-      const file = path.join(root, relative);
-      if (!existsFile(file)) problems.push(`Workspace SQLite migration asset is missing: ${relative}`);
-      else if (!fs.readFileSync(file, 'utf8').trim()) problems.push(`Workspace SQLite migration asset is empty: ${relative}`);
-    }
     const migrationDirectory = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations');
     if (existsDirectory(migrationDirectory)) {
       const names = fs.readdirSync(migrationDirectory).sort();
-      if (JSON.stringify(names) !== JSON.stringify(sqliteMigrations.map((relative) => path.basename(relative)))) {
-        problems.push(`Workspace SQLite migrations must be the contiguous reviewed set: ${names.join(', ') || '<none>'}.`);
+      for (const [index, name] of names.entries()) {
+        const match = name.match(/^(\d{4})_[a-z0-9_]+\.sql$/u);
+        if (!match || Number(match[1]) !== index) problems.push(`Workspace SQLite migrations must be contiguous from 0000: ${names.join(', ') || '<none>'}.`);
+        const file = path.join(migrationDirectory, name);
+        if (!existsFile(file) || !fs.readFileSync(file, 'utf8').trim()) problems.push(`Workspace SQLite migration asset is missing or empty: ${name}`);
+      }
+      for (const historical of ['0000_create_migration_ledger.sql', '0006_create_task_lifecycle_current.sql', '0008_create_task_environment_current.sql', '0009_retire_task_lifecycle_current.sql']) {
+        if (!names.includes(historical)) problems.push(`Workspace SQLite migration history is missing: ${historical}`);
       }
     }
     const parentColumnMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0003_inline_parent_task_column.sql');
@@ -212,6 +202,14 @@ export function createPackageStaticValidator(deps) {
       for (const forbidden of ['history', 'event_log', 'revision', 'lease', 'scheduler', 'sync_state']) {
         if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task current-record migration must stay current-only: ${forbidden}`);
       }
+    }
+    const lifecycleRetirementMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0009_retire_task_lifecycle_current.sql');
+    if (existsFile(lifecycleRetirementMigration)) {
+      const sql = fs.readFileSync(lifecycleRetirementMigration, 'utf8');
+      for (const required of ['ADD COLUMN applicability_status', 'ADD COLUMN target_identity', 'task_finish_completions', 'DROP TABLE task_lifecycle_current']) {
+        if (!sql.includes(required)) problems.push(`Workspace SQLite lifecycle retirement migration must include: ${required}`);
+      }
+      if (sql.indexOf('DROP TABLE task_lifecycle_current') < sql.indexOf('task_finish_completions')) problems.push('Workspace SQLite lifecycle retirement must validate Finish completion before dropping lifecycle data.');
     }
     for (const legacyRepository of ['task-development-repository.mjs', 'task-verification-repository.mjs', 'task-review-repository.mjs']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
@@ -266,6 +264,33 @@ export function createPackageStaticValidator(deps) {
       'package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md',
     ]) {
       if (existsFile(path.join(root, relative))) problems.push(`Legacy Task Environment authority file must be removed: ${relative}`);
+    }
+  }
+
+  function validateTaskLifecycleRetirement(context) {
+    const { root, problems } = context;
+    for (const relative of [
+      'src/infrastructure/sqlite/task-lifecycle-repository.mjs',
+      'src/application/task-lifecycle-read-model/task-lifecycle-read-model-application.mjs',
+    ]) {
+      if (existsFile(path.join(root, relative))) problems.push(`Retired Task Lifecycle runtime path must not remain: ${relative}`);
+    }
+    for (const relative of [
+      'src/application/compose-runtime.mjs',
+      'src/application/task-development/task-development-application.mjs',
+      'src/application/task-review/task-review-application.mjs',
+      'src/application/task-verification/task-verification-application.mjs',
+      'src/application/task-environment/task-environment-application.mjs',
+      'src/application/task-record/task-record-application.mjs',
+      'src/application/task-finish/task-finish-product-executor.mjs',
+      'src/application/task-terminal-delivery/task-terminal-delivery-application.mjs',
+    ]) {
+      const file = path.join(root, relative);
+      if (!existsFile(file)) continue;
+      const content = fs.readFileSync(file, 'utf8');
+      for (const forbidden of ['registerTaskLifecycleRepository', 'registerTaskLifecycleReadModelApplication', 'readTaskLifecyclePersistence', 'updateTaskLifecyclePersistence', 'inspectTaskLifecycleReadModel', 'projectTaskLifecycle', 'projectTaskRecord', 'projectTaskDevelopment', 'projectTaskReview', 'projectTaskVerification', 'projectTaskEnvironment', 'projectTaskFinish', 'refreshTaskLifecycleReadModelRuntime']) {
+        if (content.includes(forbidden)) problems.push(`Retired Task Lifecycle symbol ${forbidden} remains in ${relative}.`);
+      }
     }
   }
 
@@ -1326,6 +1351,7 @@ export function createPackageStaticValidator(deps) {
   function validatePackageStatic(context) {
     validatePackageMetadata(context);
     validateTaskEnvironmentAuthorityResidue(context);
+    validateTaskLifecycleRetirement(context);
     validateTaskReviewAuthority(context);
     validateMappedEntries(context);
     validatePackageComponents(context);

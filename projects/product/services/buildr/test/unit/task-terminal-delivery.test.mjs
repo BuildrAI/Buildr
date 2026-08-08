@@ -39,6 +39,18 @@ function handoff() {
   };
 }
 
+function association() {
+  return {
+    schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: ids.handoff, candidateIdentity: ids.candidate, candidateGeneration: 1,
+    gates: {
+      planning: { status: 'gate-disposition', disposition: 'not-applicable', targetIdentity: ids.plan, summary: '无需独立方案审查。', source: 'change guard' },
+      completion: { status: 'adopted-at-delivery', targetIdentity: ids.candidate, resultDigest: 'sha256-completion-result', outcome: 'ready' },
+      verification: { status: 'verified-at-delivery', targetIdentity: ids.target, resultDigest: ids.result, outcome: 'passed' },
+    },
+    observedAt: '2026-08-05T00:00:06.000Z', source: 'task-finish-application',
+  };
+}
+
 function runtimeFor(status = 'completed', finish = finishEntry()) {
   const immutable = handoff();
   const receipt = { taskContext: { identity: 'sha256-context' }, planning: { identity: ids.plan, nodes: [] }, contentTarget: { identity: ids.target }, verificationPolicy: { identity: 'sha256-policy' }, candidate: immutable.candidate, handoffs: [immutable] };
@@ -50,24 +62,7 @@ function runtimeFor(status = 'completed', finish = finishEntry()) {
       completion: { present: true, resultDigest: 'sha256-completion-result', applicability: 'unknown', result: { targetIdentity: ids.candidate, conclusion: { outcome: 'ready' } } },
     } }),
     inspectTaskVerification: () => ({ slot: { present: true, resultDigest: ids.result, applicability: { status: 'unknown' }, result: { target: { identity: ids.target }, conclusion: { outcome: 'passed' } } } }),
-    inspectTaskLifecycleReadModel: () => ({ model: { finish: finish ? {
-      status: 'delivered', runId: finish.result.runId, handoffIdentity: finish.result.identity.handoffIdentity,
-      candidateIdentity: finish.result.identity.candidateIdentity, candidateGeneration: finish.result.identity.candidateGeneration,
-      contentTargetIdentity: finish.result.identity.contentTargetIdentity, completedAt: finish.result.completedAt,
-      finalRemoteRef: finish.result.delivery.finalRemoteRef, targetBranch: finish.result.identity.targetBranch,
-      remote: finish.result.identity.remote, cleanup: finish.result.completion.cleanup, reuseMode: finish.result.reuseMode,
-      equivalence: finish.result.equivalence,
-      association: {
-        schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: ids.handoff, candidateIdentity: ids.candidate, candidateGeneration: 1,
-        gates: {
-          planning: { status: 'gate-disposition', disposition: 'not-applicable', targetIdentity: ids.plan, summary: '无需独立方案审查。', source: 'change guard' },
-          completion: { status: 'adopted-at-delivery', targetIdentity: ids.candidate, resultDigest: 'sha256-completion-result', outcome: 'ready' },
-          verification: { status: 'verified-at-delivery', targetIdentity: ids.target, resultDigest: ids.result, outcome: 'passed' },
-        },
-        observedAt: '2026-08-05T00:00:06.000Z', source: 'task-finish-application',
-      },
-      diagnostics: [],
-    } : null } }),
+    inspectTaskFinishReadModel: () => finish ? ({ state: 'terminal', result: finish.result, completion: { ...finish.completion, runId: finish.result.runId, completedAt: finish.result.completedAt, finalRemoteRef: finish.result.delivery.finalRemoteRef, targetBranch: finish.result.identity.targetBranch, cleanup: finish.result.completion.cleanup, association: association() }, diagnostics: [] }) : ({ state: 'none', result: null, completion: null, diagnostics: [] }),
   };
   registerTaskTerminalDeliveryApplication(runtime);
   return runtime;
@@ -105,8 +100,8 @@ test('terminal composer covers active, no-change, abandoned, unproven and identi
   assert.equal(runtimeFor('abandoned').inspectTaskTerminalDelivery('/workspace', TASK).status, 'abandoned');
   assert.equal(runtimeFor('completed', null).inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
   const missingAssociation = runtimeFor();
-  const readLifecycle = missingAssociation.inspectTaskLifecycleReadModel;
-  missingAssociation.inspectTaskLifecycleReadModel = (...args) => { const value = readLifecycle(...args); delete value.model.finish.association; return value; };
+  const readFinish = missingAssociation.inspectTaskFinishReadModel;
+  missingAssociation.inspectTaskFinishReadModel = (...args) => { const value = readFinish(...args); delete value.completion.association; return value; };
   assert.equal(missingAssociation.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
   const unavailable = runtimeFor('completed', null);
   unavailable.readTaskFinishResults = () => { throw new Error('GET must not scan Finish Result files.'); };
@@ -134,21 +129,27 @@ test('三个专业 Tab 只读取自身节点与已写交付关联', () => {
   let reviewReads = 0;
   const inspectReview = reviewRuntime.inspectTaskReview;
   reviewRuntime.inspectTaskReview = (...args) => { reviewReads += 1; return inspectReview(...args); };
-  reviewRuntime.inspectTaskDevelopment = () => { throw new Error('Review Tab 不得读取 Development。'); };
+  let reviewDevelopmentReads = 0;
+  const reviewDevelopment = reviewRuntime.inspectTaskDevelopment;
+  reviewRuntime.inspectTaskDevelopment = (...args) => { reviewDevelopmentReads += 1; return reviewDevelopment(...args); };
   reviewRuntime.inspectTaskVerification = () => { throw new Error('Review Tab 不得读取 Verification。'); };
   assertNoAggregate(reviewRuntime);
   const reviews = reviewRuntime.inspectTaskReviewView('/workspace', TASK);
   assert.equal(reviewReads, 1);
+  assert.equal(reviewDevelopmentReads, 1);
   assert.equal(reviews.terminal.associations.completion.status, 'adopted-at-delivery');
 
   const verificationRuntime = runtimeFor();
   let verificationReads = 0;
   const inspectVerification = verificationRuntime.inspectTaskVerification;
   verificationRuntime.inspectTaskVerification = (...args) => { verificationReads += 1; return inspectVerification(...args); };
-  verificationRuntime.inspectTaskDevelopment = () => { throw new Error('Verification Tab 不得读取 Development。'); };
+  let verificationDevelopmentReads = 0;
+  const verificationDevelopment = verificationRuntime.inspectTaskDevelopment;
+  verificationRuntime.inspectTaskDevelopment = (...args) => { verificationDevelopmentReads += 1; return verificationDevelopment(...args); };
   verificationRuntime.inspectTaskReview = () => { throw new Error('Verification Tab 不得读取 Review。'); };
   assertNoAggregate(verificationRuntime);
   const verification = verificationRuntime.inspectTaskVerificationView('/workspace', TASK);
   assert.equal(verificationReads, 1);
+  assert.equal(verificationDevelopmentReads, 1);
   assert.equal(verification.terminal.associations.verification.status, 'verified-at-delivery');
 });

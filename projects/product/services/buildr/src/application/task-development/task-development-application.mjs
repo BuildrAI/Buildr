@@ -265,7 +265,7 @@ export function registerTaskDevelopmentApplication(runtime) {
       ...(planningTargetIdentity ? { planningTargetIdentity } : {}),
       ...(receipt.candidate ? { completionTargetIdentity: receipt.candidate.identity } : {}),
     });
-    const verification = target ? runtime.inspectTaskVerification(targetRoot, taskId, { targetIdentity: target.identity, declarationRoot: execution.environmentRoot }) : { slot: null };
+    const verification = target ? runtime.inspectTaskVerification(targetRoot, taskId, { targetIdentity: target.identity, declarations: declarationValues(observedDeclarations) }) : { slot: null };
     const planningCurrent = planningGate(planning, receipt.gates.planning, review);
     const savedVerificationDisposition = gateDisposition(receipt.gates.verification);
     const verificationCurrent = policyIsCurrent
@@ -309,12 +309,14 @@ export function registerTaskDevelopmentApplication(runtime) {
     return normalizeTaskDevelopmentReceipt({ schemaVersion: 'buildr.task-development-receipt/v2', taskId, environment: { taskId, receiptSchema: execution.receiptSchema }, taskContext: context, planning, contentTarget: content, verificationPolicy: null, generation: 0, candidate: null, gates: { planning: planningGateValue, verification: null, completion: null }, decision: null, handoffs: [], createdAt: timestamp, updatedAt: timestamp }, { expectedTaskId: taskId });
   }
 
-  function writeDevelopment(targetRoot, previous, receipt) {
+  function writeDevelopment(targetRoot, taskId, previous, receipt, currentObservation = null, options = {}) {
     if (previous) {
       const prefix = previous.handoffs;
       if (receipt.handoffs.length < prefix.length || !prefix.every((item, index) => same(item, receipt.handoffs[index]))) throw taskDevelopmentError('task_development_handoff_immutable', '已正式形成的 handoff snapshot 不得改写或删除。', 409);
     }
-    return runtime.writeTaskDevelopmentPersistence(targetRoot, receipt);
+    const observed = currentObservation || observeCurrent(targetRoot, taskId, receipt, options);
+    const applicability = applicabilityFromObserved(receipt, observed);
+    return runtime.writeTaskDevelopmentPersistence(targetRoot, receipt, { applicability, observedAt: now() });
   }
 
   function effect(root, written) {
@@ -322,13 +324,10 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function readModel(persistence, applicability) {
-    return { path: persistence.file, receiptDigest: persistence.receiptDigest, receipt: persistence.receipt, applicability };
+    return { path: persistence.file, receiptDigest: persistence.receiptDigest, receipt: persistence.receipt, applicability, observedAt: persistence.observedAt ?? null };
   }
 
   function result(operation, status, taskId, persistence, applicability, effects = [], diagnostic = null, nextActions = []) {
-    if (operation !== 'inspect' && persistence && typeof runtime.projectTaskDevelopment === 'function') {
-      runtime.projectTaskDevelopment(persistence.root, taskId, { persistence, applicability });
-    }
     return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, diagnostic, effects, nextActions };
   }
 
@@ -350,35 +349,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     const inspectedTask = task(targetRoot, taskId);
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
     if (!persistence) return result('inspect', 'missing', inspectedTask.taskId, null, null, [], null, ['在首个正式研发动作时使用task-development begin建立current planning facts。']);
-    const convergenceFailure = (snapshot, error) => {
-      const current = snapshot?.applicability || {};
-      return {
-        ...current,
-        status: persistence.receipt.contentTarget ? 'developing' : 'planning',
-        taskContext: 'stale',
-        candidate: persistence.receipt.candidate ? 'stale' : 'missing',
-        handoff: persistence.receipt.handoffs.length ? 'stale' : 'missing',
-        gates: { ...(current.gates || {}), completion: null },
-        reasons: [...(current.reasons || []), { axis: 'task-context', code: error.code || 'task_development_change_not_converged', message: error.message }],
-      };
-    };
-    if (typeof runtime.readTaskLifecyclePersistence !== 'function') {
-      try {
-        const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
-        return result('inspect', 'inspected', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
-      } catch (error) {
-        return result('inspect', 'inspected', taskId, persistence, convergenceFailure(null, error), [], null, []);
-      }
-    }
-    const lifecycle = runtime.readTaskLifecyclePersistence?.(targetRoot, taskId, { optional: true });
-    const snapshot = lifecycle?.model?.development;
-    try {
-      taskContext(inspectedTask, persistence.receipt.taskContext.changes);
-    } catch (error) {
-      return result('inspect', 'inspected', taskId, persistence, convergenceFailure(snapshot, error));
-    }
-    const applicability = snapshot?.applicability || { status: 'unknown', reasons: [{ axis: 'lifecycle', code: 'snapshot_missing', message: '尚未形成 Development lifecycle snapshot。' }] };
-    return result('inspect', 'inspected', taskId, persistence, applicability);
+    return result('inspect', 'inspected', taskId, persistence, persistence.applicability);
   }
 
   function planningMutation(operation, targetRoot, taskId, input) {
@@ -409,9 +380,8 @@ export function registerTaskDevelopmentApplication(runtime) {
         updatedAt: now(),
       }, { expectedTaskId: taskId });
     }
-    const written = writeDevelopment(targetRoot, current?.receipt || null, receipt);
-    const observed = observeCurrent(targetRoot, taskId, written.receipt);
-    return result(operation, current ? 'updated' : 'created', taskId, written, applicabilityFromObserved(written.receipt, observed), [effect(written.root, written)]);
+    const written = writeDevelopment(targetRoot, taskId, current?.receipt || null, receipt);
+    return result(operation, current ? 'updated' : 'created', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function beginTaskDevelopment(targetRoot, taskId, input) {
@@ -449,9 +419,8 @@ export function registerTaskDevelopmentApplication(runtime) {
         updatedAt: now(),
       }, { expectedTaskId: taskId });
     }
-    const written = writeDevelopment(targetRoot, current?.receipt || null, receipt);
-    const observed = observeCurrent(targetRoot, taskId, written.receipt);
-    return result('observe', current ? 'updated' : 'created', taskId, written, applicabilityFromObserved(written.receipt, observed), [effect(written.root, written)]);
+    const written = writeDevelopment(targetRoot, taskId, current?.receipt || null, receipt);
+    return result('observe', current ? 'updated' : 'created', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function recordTaskDevelopmentPolicy(targetRoot, taskId, input) {
@@ -467,9 +436,8 @@ export function registerTaskDevelopmentApplication(runtime) {
     const planning = planningGate(persistence.receipt.planning, persistence.receipt.gates.planning, review);
     const inputsChanged = context.identity !== persistence.receipt.taskContext.identity || target.identity !== persistence.receipt.contentTarget?.identity || policy.identity !== persistence.receipt.verificationPolicy?.identity || !same(planning, persistence.receipt.gates.planning);
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, taskContext: context, contentTarget: target, verificationPolicy: policy, candidate: inputsChanged ? null : persistence.receipt.candidate, gates: { planning, verification: inputsChanged ? null : persistence.receipt.gates.verification, completion: inputsChanged ? null : persistence.receipt.gates.completion }, decision: inputsChanged ? null : persistence.receipt.decision, updatedAt: now() }, { expectedTaskId: taskId });
-    const written = writeDevelopment(targetRoot, persistence.receipt, receipt);
-    const observed = observeCurrent(targetRoot, taskId, written.receipt);
-    return result('policy', 'recorded', taskId, written, applicabilityFromObserved(written.receipt, observed), [effect(written.root, written)]);
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('policy', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function invalidateForObserved(receipt, observed) {
@@ -489,9 +457,8 @@ export function registerTaskDevelopmentApplication(runtime) {
     const gates = { ...persistence.receipt.gates, [input.gate]: gate };
     const invalidatesCandidate = input.gate !== 'completion';
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, candidate: invalidatesCandidate ? null : persistence.receipt.candidate, gates: { ...gates, completion: invalidatesCandidate ? null : gates.completion }, decision: null, updatedAt: now() }, { expectedTaskId: taskId });
-    const written = writeDevelopment(targetRoot, persistence.receipt, receipt);
-    const observed = observeCurrent(targetRoot, taskId, written.receipt);
-    return result('gate', 'recorded', taskId, written, applicabilityFromObserved(written.receipt, observed), [effect(written.root, written)]);
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('gate', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function freezeTaskDevelopmentCandidate(targetRoot, taskId, input = {}) {
@@ -502,16 +469,15 @@ export function registerTaskDevelopmentApplication(runtime) {
     const pendingChanges = observed.context.changes.filter((item) => item.disposition === 'pending');
     const ready = observed.policyIsCurrent && gateResolved(observed.gates.planning, ['ready']) && gateResolved(observed.gates.verification, ['passed', 'not-passed']) && observed.coverage.complete && pendingChanges.length === 0;
     if (!ready) {
-      const invalidated = writeDevelopment(targetRoot, persistence.receipt, invalidateForObserved(persistence.receipt, observed));
+      const invalidated = writeDevelopment(targetRoot, taskId, persistence.receipt, invalidateForObserved(persistence.receipt, observed));
       throw taskDevelopmentError('task_development_candidate_not_ready', 'Candidate freeze前置gate未满足。', 409, { reasons: observed.reasons, pendingChanges: pendingChanges.map((item) => `${item.project}/${item.change}`), receiptDigest: invalidated.receiptDigest }, '完成Change convergence、Planning Review与stable Content Target formal Verification后重试。');
     }
     const canReuse = observed.candidateCurrent;
     const generation = canReuse ? persistence.receipt.generation : persistence.receipt.generation + 1;
     const candidate = canReuse ? persistence.receipt.candidate : createTaskCandidate({ generation, contentTargetIdentity: observed.target.identity, taskContextIdentity: observed.context.identity, policyIdentity: persistence.receipt.verificationPolicy.identity });
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, taskContext: observed.context, contentTarget: observed.target, generation, candidate, gates: { planning: observed.gates.planning, verification: observed.gates.verification, completion: canReuse ? observed.gates.completion : null }, decision: canReuse ? persistence.receipt.decision : null, updatedAt: now() }, { expectedTaskId: taskId });
-    const written = writeDevelopment(targetRoot, persistence.receipt, receipt);
-    const refreshed = observeCurrent(targetRoot, taskId, written.receipt, input);
-    return result('freeze', canReuse ? 'unchanged' : 'frozen', taskId, written, applicabilityFromObserved(written.receipt, refreshed), [effect(written.root, written)]);
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt, null, input);
+    return result('freeze', canReuse ? 'unchanged' : 'frozen', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function decideTaskDevelopment(targetRoot, taskId, input) {
@@ -524,9 +490,8 @@ export function registerTaskDevelopmentApplication(runtime) {
     const decision = { outcome: input.outcome, candidateIdentity: observed.candidateCurrent ? persistence.receipt.candidate.identity : null, summary: input.summary, risks: input.risks };
     if (input.outcome === 'proceed') createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, decision, createdAt: now() });
     const receipt = normalizeTaskDevelopmentReceipt({ ...base, decision, updatedAt: now() }, { expectedTaskId: taskId });
-    const written = writeDevelopment(targetRoot, persistence.receipt, receipt);
-    const refreshed = observeCurrent(targetRoot, taskId, written.receipt);
-    return result('decide', 'recorded', taskId, written, applicabilityFromObserved(written.receipt, refreshed), [effect(written.root, written)]);
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('decide', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function createTaskDevelopmentHandoff(targetRoot, taskId, input = {}) {
@@ -538,9 +503,8 @@ export function registerTaskDevelopmentApplication(runtime) {
     const handoff = createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, decision: persistence.receipt.decision, createdAt: now() });
     const handoffs = persistence.receipt.handoffs.some((item) => item.identity === handoff.identity) ? persistence.receipt.handoffs : [...persistence.receipt.handoffs, handoff];
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, gates: observed.gates, handoffs, updatedAt: now() }, { expectedTaskId: taskId });
-    const written = writeDevelopment(targetRoot, persistence.receipt, receipt);
-    const refreshed = observeCurrent(targetRoot, taskId, written.receipt);
-    return result('handoff', 'ready', taskId, written, applicabilityFromObserved(written.receipt, refreshed), [effect(written.root, written)]);
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('handoff', 'ready', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function assertTaskDevelopmentCarrier(targetRoot, taskId, input = {}) {

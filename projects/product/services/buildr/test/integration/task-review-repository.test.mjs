@@ -49,7 +49,7 @@ test('Planning和Completion维护独立SQLite current slots并派生applicabilit
 
   const completion = runtime.recordTaskReview(root, 'demo-task', input('completion'));
   assert.equal(stored(runtime, root, 'planning'), planningValue);
-  assert.equal(completion.slots.planning.applicability, 'current');
+  assert.equal(completion.slots.planning.applicability, 'unknown');
   assert.equal(completion.slots.completion.applicability, 'current');
   const inspected = runtime.inspectTaskReview(root, 'demo-task', { planningTargetIdentity: 'changed', completionTargetIdentity: 'completion:identity-1' });
   assert.equal(inspected.slots.planning.applicability, 'stale');
@@ -87,7 +87,7 @@ test('损坏current与terminal Task均fail closed，terminal仍可读取既有Re
   assert.throws(() => runtime.recordTaskReview(root, 'demo-task', input('planning', { targetIdentity: 'planning:new' })), (error) => error.code === 'task_review_result_invalid');
 
   opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  opened.database.prepare("UPDATE task_review_current SET result_json = ? WHERE task_id = 'demo-task' AND review_type = 'planning'").run(JSON.stringify({ schemaVersion: 'buildr.task-review-result/v1', taskId: 'demo-task', reviewType: 'planning', targetIdentity: 'planning:identity-1', method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'ready' }, completedAt: '2026-08-02T00:00:01.000Z' }));
+  opened.database.prepare("UPDATE task_review_current SET result_json = ?, target_identity = 'planning:identity-1', outcome = 'ready', updated_at = '2026-08-02T00:00:01.000Z' WHERE task_id = 'demo-task' AND review_type = 'planning'").run(JSON.stringify({ schemaVersion: 'buildr.task-review-result/v1', taskId: 'demo-task', reviewType: 'planning', targetIdentity: 'planning:identity-1', method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'ready' }, completedAt: '2026-08-02T00:00:01.000Z' }));
   opened.database.close();
   const task = runtime.readTaskRecordPersistence(root, 'demo-task');
   runtime.writeTaskRecordPersistence(root, { ...task.record, status: 'completed', result: { summary: 'done', noChange: false }, updatedAt: '2026-08-02T00:00:02.000Z' });

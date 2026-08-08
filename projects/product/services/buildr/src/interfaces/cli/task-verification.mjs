@@ -49,11 +49,11 @@ function groupCapabilities(values, usage) {
 
 function parseTaskVerificationCli(operation, args) {
   const usages = {
-    inspect: 'buildr task verification inspect <task-id> [--target-identity <identity>] [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]',
+    inspect: 'buildr task verification inspect <task-id> [--target-identity <identity>] [--target <canonical-workspace>] [--json]',
     record: 'buildr task verification record <task-id> --target-identity <identity> --target-summary <text> [--capability <project>/<capability>::<passed|failed>::<fact> ...] [--coverage-gap <scope>::<summary> ...] --outcome <passed|not-passed> --summary <text> [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]',
   };
   const allowed = operation === 'inspect'
-    ? new Set(['--target-identity', '--declaration-root', '--target', '--json'])
+    ? new Set(['--target-identity', '--target', '--json'])
     : new Set(['--target-identity', '--target-summary', '--capability', '--coverage-gap', '--outcome', '--summary', '--declaration-root', '--target', '--json']);
   const repeatable = new Set(['--capability', '--coverage-gap']);
   const values = new Map();
@@ -88,9 +88,9 @@ function parseTaskVerificationCli(operation, args) {
 
 function emptySlot() { return { path: null, present: false, result: null, resultDigest: null, applicability: null }; }
 
-function blockedResult(runtime, operation, taskId, targetRoot, declarationRoot, error) {
+function blockedResult(runtime, operation, taskId, targetRoot, error) {
   let resultSlot = emptySlot();
-  try { resultSlot = runtime.inspectTaskVerification(targetRoot, taskId, { declarationRoot }).slot; } catch {}
+  try { resultSlot = runtime.inspectTaskVerification(targetRoot, taskId).slot; } catch {}
   return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult, {
     operation,
     status: 'blocked',
@@ -113,7 +113,7 @@ export function taskVerificationCommand(runtime, operation, args) {
   const parsed = parseTaskVerificationCli(operation, args);
   try {
     const payload = operation === 'inspect'
-      ? runtime.inspectTaskVerification(parsed.targetRoot, parsed.taskId, { targetIdentity: parsed.one('--target-identity'), declarationRoot: parsed.one('--declaration-root') })
+      ? runtime.inspectTaskVerification(parsed.targetRoot, parsed.taskId, { targetIdentity: parsed.one('--target-identity') })
       : runtime.recordTaskVerification(parsed.targetRoot, parsed.taskId, {
         targetIdentity: parsed.one('--target-identity'),
         targetSummary: parsed.one('--target-summary'),
@@ -125,7 +125,7 @@ export function taskVerificationCommand(runtime, operation, args) {
     return print(payload, parsed.json);
   } catch (error) {
     if (!error.taskVerificationBusiness && !error.taskRecordBusiness) throw error;
-    const payload = blockedResult(runtime, operation, parsed.taskId, parsed.targetRoot, parsed.one('--declaration-root'), error);
+    const payload = blockedResult(runtime, operation, parsed.taskId, parsed.targetRoot, error);
     print(payload, parsed.json);
     process.exitCode = 1;
     return payload;

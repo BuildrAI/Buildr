@@ -15,9 +15,26 @@ function baseProjection(task, development, reviews, verification) {
   };
 }
 
+function deliveredGate(gate, type) {
+  if (!gate) return null;
+  if (gate.disposition) return { status: 'gate-disposition', disposition: gate.disposition, targetIdentity: gate.targetIdentity ?? null, summary: gate.summary, source: gate.source };
+  return { status: type === 'verification' ? 'verified-at-delivery' : 'adopted-at-delivery', targetIdentity: gate.targetIdentity, resultDigest: gate.resultDigest, outcome: gate.outcome };
+}
+
+function associationMatches(association, handoff) {
+  if (!association || !handoff) return false;
+  if (association.handoffIdentity !== handoff.identity || association.candidateIdentity !== handoff.candidate?.identity || association.candidateGeneration !== handoff.candidate?.generation) return false;
+  return JSON.stringify(association.gates || {}) === JSON.stringify({
+    planning: deliveredGate(handoff.gates?.planning, 'planning'),
+    completion: deliveredGate(handoff.gates?.completion, 'completion'),
+    verification: deliveredGate(handoff.gates?.verification, 'verification'),
+  });
+}
+
 export function registerTaskTerminalDeliveryApplication(runtime) {
   function terminalDeliverySection(targetRoot, taskId, { taskRecord = null, development = null } = {}) {
     const task = taskRecord || runtime.inspectTaskRecord(targetRoot, taskId).record;
+    const developmentReadModel = development || runtime.inspectTaskDevelopment(targetRoot, taskId);
     const base = {
       schemaVersion: 'buildr.task-terminal-delivery/v1',
       taskId: task.taskId,
@@ -25,7 +42,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       status: task.status === 'active' ? 'active' : task.status,
       delivered: false,
       delivery: null,
-      snapshot: development?.development?.receipt || null,
+      snapshot: developmentReadModel?.development?.receipt || null,
       associations: { planning: null, completion: null, verification: null },
       diagnostics: [],
     };
@@ -39,38 +56,36 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     }
     if (task.status === 'abandoned') return { ...base, status: 'abandoned' };
     if (task.result?.noChange === true) return { ...base, status: 'completed-no-change' };
-    const lifecycle = runtime.inspectTaskLifecycleReadModel?.(targetRoot, taskId);
-    const finish = lifecycle?.model?.finish;
-    const terminalResult = typeof runtime.inspectTaskFinishReadModel === 'function'
-      ? (finishReadModel.state === 'terminal' ? finishReadModel.result : null)
-      : finish;
-    if (!finish || finish.status !== 'delivered' || !finish.association) {
-      return { ...base, status: 'completed-unproven', diagnostics: [{ code: 'task_delivery_summary_missing', message: 'Task 已完成，但 SQLite lifecycle read model 没有匹配成功 Finish summary。' }] };
+    const terminalResult = finishReadModel.state === 'terminal' ? finishReadModel.result : null;
+    const completion = finishReadModel.state === 'terminal' ? finishReadModel.completion : null;
+    const association = completion?.association || null;
+    const receipt = developmentReadModel?.development?.receipt;
+    const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === association?.handoffIdentity) || null;
+    if (!terminalResult || !completion || !association || !associationMatches(association, selectedHandoff)) {
+      return { ...base, status: 'completed-unproven', diagnostics: [{ code: 'task_finish_completion_association_missing_or_mismatched', message: 'Task 已完成，但SQLite Finish completion没有与Development handoff匹配的terminal association。' }] };
     }
-    const cleanupSummary = finish.cleanup?.environment?.latest?.cleanup || finish.cleanup?.latest?.cleanup || {};
-    const receipt = development?.development?.receipt;
-    const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === finish.association.handoffIdentity) || null;
+    const cleanupSummary = completion.cleanup?.environment?.latest?.cleanup || completion.cleanup?.latest?.cleanup || completion.cleanup || {};
     return {
       ...base,
       status: 'delivered',
       delivered: true,
       delivery: {
-        completedAt: terminalResult?.completedAt || finish.completedAt,
-        finalRemoteRef: terminalResult?.delivery?.finalRemoteRef || finish.finalRemoteRef,
-        targetBranch: terminalResult?.identity?.targetBranch || finish.targetBranch,
-        remote: terminalResult?.identity?.remote || finish.remote,
-        cleanup: { status: finish.cleanup?.status || 'unknown', completedAt: cleanupSummary.completedAt || null, summary: cleanupSummary.summary || null },
-        reuseMode: terminalResult?.reuseMode || finish.reuseMode,
-        semanticEquivalence: terminalResult?.equivalence?.semanticEquivalence || finish.equivalence?.semanticEquivalence || finish.semanticEquivalence || null,
-        runId: terminalResult?.runId || finish.runId,
+        completedAt: completion.completedAt || terminalResult.completedAt,
+        finalRemoteRef: completion.finalRemoteRef || terminalResult.delivery?.finalRemoteRef || null,
+        targetBranch: completion.targetBranch || terminalResult.identity?.targetBranch || null,
+        remote: terminalResult.identity?.remote || null,
+        cleanup: { status: completion.cleanup?.status || 'unknown', completedAt: cleanupSummary.completedAt || null, summary: cleanupSummary.summary || null },
+        reuseMode: terminalResult.reuseMode || terminalResult.equivalence?.reuseMode || null,
+        semanticEquivalence: terminalResult.equivalence?.semanticEquivalence || null,
+        runId: completion.runId || terminalResult.runId,
       },
       associations: {
-        planning: finish.association.gates?.planning || null,
-        completion: finish.association.gates?.completion || null,
-        verification: finish.association.gates?.verification || null,
+        planning: association.gates?.planning || null,
+        completion: association.gates?.completion || null,
+        verification: association.gates?.verification || null,
       },
       snapshot: receipt ? { taskContext: receipt.taskContext || null, planning: receipt.planning || null, contentTarget: receipt.contentTarget || null, verificationPolicy: receipt.verificationPolicy || null, candidate: selectedHandoff?.candidate || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null } : null,
-      diagnostics: finish.diagnostics || [],
+      diagnostics: finishReadModel.diagnostics || [],
     };
   }
 
@@ -78,19 +93,11 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     const taskResult = runtime.inspectTaskRecord(targetRoot, taskId);
     const task = taskResult.record;
     const development = runtime.inspectTaskDevelopment(targetRoot, taskId);
-    const receipt = development.development?.receipt;
     const reviews = runtime.inspectTaskReview(targetRoot, taskId);
     const verification = runtime.inspectTaskVerification(targetRoot, taskId);
     const projection = baseProjection(task, development, reviews, verification);
     const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task, development });
-    if (terminal.status !== 'delivered') return { ...projection, ...terminal };
-    const finish = runtime.inspectTaskLifecycleReadModel(targetRoot, taskId).model.finish;
-    const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === finish.association.handoffIdentity) || null;
-    return {
-      ...projection,
-      ...terminal,
-      snapshot: { taskContext: receipt?.taskContext || null, planning: receipt?.planning || null, contentTarget: receipt?.contentTarget || null, verificationPolicy: receipt?.verificationPolicy || null, candidate: selectedHandoff?.candidate || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null },
-    };
+    return { ...projection, ...terminal };
   }
 
   function inspectTaskDevelopmentView(targetRoot, taskId) {

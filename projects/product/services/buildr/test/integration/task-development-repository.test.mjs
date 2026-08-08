@@ -42,6 +42,10 @@ function stored(runtime, root) {
   finally { opened.database.close(); }
 }
 
+function observation(status = 'planning', observedAt = '2026-08-04T00:00:00.000Z') {
+  return { applicability: { status, taskContext: 'current', planning: 'current', contentTarget: 'missing', policy: 'missing', candidate: 'missing', handoff: 'missing', gates: { planning: null, verification: null, completion: null }, reasons: [] }, observedAt };
+}
+
 test('Development current Receipt 只在SQLite写入、替换和读取，旧YAML保持inert', (t) => {
   const { root, runtime } = fixture(t);
   const legacy = path.join(root, '.buildr', 'tasks', 'demo-task', 'development.yml');
@@ -49,13 +53,13 @@ test('Development current Receipt 只在SQLite写入、替换和读取，旧YAML
   fs.writeFileSync(legacy, 'legacy: inert\n');
 
   assert.equal(runtime.readTaskDevelopmentPersistence(root, 'demo-task', { optional: true }), null);
-  const first = runtime.writeTaskDevelopmentPersistence(root, receipt());
+  const first = runtime.writeTaskDevelopmentPersistence(root, receipt(), observation());
   assert.equal(first.created, true);
   assert.equal(first.file, 'workspace-sqlite:task-development/demo-task');
   assert.match(first.receiptDigest, /^sha256-/);
   assert.equal(JSON.parse(stored(runtime, root)).schemaVersion, 'buildr.task-development-receipt/v2');
 
-  const second = runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:01:00.000Z'));
+  const second = runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:01:00.000Z'), observation('planning', '2026-08-04T00:01:00.000Z'));
   assert.equal(second.created, false);
   assert.notEqual(second.receiptDigest, first.receiptDigest);
   assert.equal(runtime.readTaskDevelopmentPersistence(root, 'demo-task', { optional: false }).receipt.updatedAt, '2026-08-04T00:01:00.000Z');
@@ -64,24 +68,24 @@ test('Development current Receipt 只在SQLite写入、替换和读取，旧YAML
 
 test('Development serialization或SQLite mutation失败时保留最后有效current', (t) => {
   const { root, runtime } = fixture(t);
-  runtime.writeTaskDevelopmentPersistence(root, receipt());
+  runtime.writeTaskDevelopmentPersistence(root, receipt(), observation());
   const original = stored(runtime, root);
 
   runtime.taskDevelopmentSerialize = () => { throw new Error('serialization failed'); };
-  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:01:00.000Z')), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'serialization');
+  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:01:00.000Z'), observation()), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'serialization');
   runtime.taskDevelopmentSerialize = null;
   assert.equal(stored(runtime, root), original);
 
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
   opened.database.exec("CREATE TRIGGER reject_development_update BEFORE UPDATE ON task_development_current BEGIN SELECT RAISE(ABORT, 'injected mutation failure'); END;");
   opened.database.close();
-  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:02:00.000Z')), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'mutation' && error.details.rollback.status === 'restored');
+  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:02:00.000Z'), observation()), (error) => error.code === 'task_development_write_failed' && error.details.stage === 'mutation' && error.details.rollback.status === 'restored');
   assert.equal(stored(runtime, root), original);
 });
 
 test('Development repository拒绝不存在Task且不产生orphan row', (t) => {
   const { root, runtime } = fixture(t);
-  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, { ...receipt(), taskId: 'missing-task' }), (error) => error.code === 'task_record_not_found');
+  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, { ...receipt(), taskId: 'missing-task' }, observation()), (error) => error.code === 'task_record_not_found');
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
   assert.equal(opened.database.prepare('SELECT count(*) AS count FROM task_development_current').get().count, 0);
   opened.database.close();

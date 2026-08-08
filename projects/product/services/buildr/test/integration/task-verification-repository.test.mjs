@@ -40,13 +40,13 @@ test('Verification current Result只写SQLite并保持target/declaration applica
   assert.equal(recorded.slot.applicability.status, 'current');
   assert.equal(recorded.slot.applicability.declarations.status, 'current');
   assert.doesNotMatch(stored(runtime, root), /resultDigest|applicability|revision|requiredAssurance|stdout|stderr/);
-  assert.equal(runtime.inspectTaskVerification(root, 'demo-task').slot.applicability.status, 'current');
+  assert.equal(runtime.inspectTaskVerification(root, 'demo-task').slot.applicability.status, 'unknown');
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:two' }).slot.applicability.status, 'stale');
 
   const changed = declaration();
   changed.capabilities[0].proves = ['Changed declaration'];
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(changed));
-  assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one' }).slot.applicability.status, 'current');
+  assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one' }).slot.applicability.status, 'unknown');
   assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy: inert\n');
 });
 
@@ -66,7 +66,8 @@ test('Verification只从canonical或matching ready Task Environment观察declara
   const recorded = runtime.recordTaskVerification(root, 'demo-task', input({ declarationRoot: candidateRoot }));
   assert.equal(recorded.slot.result.declarations[0].path, 'projects/demo/verification.yml');
   assert.equal(JSON.stringify(recorded.slot.result).includes(candidateRoot), false);
-  assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one', declarationRoot: candidateRoot }).slot.applicability.status, 'current');
+  assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one', declarations: recorded.slot.result.declarations }).slot.applicability.status, 'current');
+  assert.throws(() => runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one', declarationRoot: candidateRoot }), (error) => error.code === 'task_verification_field_forbidden');
 });
 
 test('Verification serialization或SQLite mutation失败保留last-valid current', (t) => {

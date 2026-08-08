@@ -26,6 +26,9 @@ test('Local App HTTP owner 只读读取不依赖 Git，并传播明确的 API �
   const development = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/development`);
   assert.equal(development.status, 200);
   assert.equal((await development.json()).schemaVersion, 'buildr.task-development-operation-result/v1');
+  const overview = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/overview`);
+  assert.equal(overview.status, 200);
+  assert.equal((await overview.json()).schemaVersion, 'buildr.task-overview/v1');
   const missing = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/missing/development`);
   assert.equal(missing.status, 404);
   assert.equal((await missing.json()).error.code, 'task_record_not_found');

@@ -805,28 +805,28 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **AND** MUST 保持 Workspace 源资产和用户级 Registry 零写入
 
 ### Requirement: Task 详情必须只读投影 current Verification Result
-本机应用 MUST 在 Task 详情“证据”视图提供“验证结果（Verification Result）”区块，并 MUST 通过 Task Verification Application inspect 展示 Result presence、target、declarations、实际 capability facts、coverage gaps、结论、resultDigest 与由最近一次正式 Verification action 保存的 applicability。页面 MUST 不直接读取 Result YAML，不得伪造当前 target identity，也不得暴露 Result writer；inspect MUST 只查询 SQLite current record 与 lifecycle read model，不执行 declaration 或 Content Target 观察。
+本机应用 MUST在Task详情“证据”视图提供“验证结果（Verification Result）”区块，并 MUST通过Task Verification Application inspect展示Result presence、target、declarations、实际capability facts、coverage gaps、结论、resultDigest、record observedAt，以及与Development gate/显式保存identity的匹配关系。页面 MUST不直接读取Result YAML，不得伪造当前target identity，也不得暴露Result writer；GET MUST只查询SQLite专业current rows，不执行declaration、Content Target、Git或Environment observation。
 
 #### Scenario: 查看已有 Result
-- **WHEN** 用户打开 Task 的“证据”视图
-- **THEN** API MUST 返回 Application 的 current read model 并设置 no-store
-- **AND** 验证结果区块 MUST 显示保存时的 declaration/target applicability、observedAt 与当前结果
-- **AND** GET MUST NOT 执行 declaration、Git、文件或 Environment observation
+- **WHEN** 用户打开Task的“证据”视图
+- **THEN** API MUST返回Application的current read model并设置no-store
+- **AND** 验证结果区块 MUST显示Result保存事实、record observedAt与保存identity的matched/mismatched/unknown关系
+- **AND** GET MUST NOT执行declaration、Git、文件或Environment observation
 
 #### Scenario: Result 不存在
-- **WHEN** Task 尚无 current Verification Result
-- **THEN** 验证结果区块 MUST 显示空状态与“交给 Agent 验证”的动作
-- **AND** Task Record、Environment、Development、Review 与其他视图 MUST 正常工作
+- **WHEN** Task尚无current Verification Result
+- **THEN** 验证结果区块 MUST显示空状态与“交给Agent验证”的动作
+- **AND** Task Record、Environment、Development、Review与其他视图 MUST正常工作
 
 #### Scenario: lifecycle snapshot 不存在
-- **WHEN** Task 有 current Verification Result 但尚无对应 lifecycle read model snapshot
-- **THEN** 验证结果区块 MUST 显示已有 Result 与稳定的 unknown/unavailable applicability
-- **AND** GET MUST NOT 为了补齐 snapshot 修改数据库或读取外部声明
+- **WHEN** Task有current Verification Result但没有保存Development verification gate
+- **THEN** 验证结果区块 MUST显示已有Result与稳定unknown/not-adopted-yet关系
+- **AND** GET MUST NOT为了补齐关系修改数据库、扫描外部声明或创建Development Receipt
 
 #### Scenario: 尝试直接写 Result API
-- **WHEN** 客户端向 Task verification resource 发送 POST/PUT/PATCH/DELETE
-- **THEN** 本机应用 MUST 不提供该路由
-- **AND** Task Record、Environment、Development、Review、已有 Result bytes 与 lifecycle read model MUST 保持不变
+- **WHEN** 客户端向Task verification resource发送POST/PUT/PATCH/DELETE
+- **THEN** 本机应用 MUST不提供该路由
+- **AND** Task Record、Environment、Development、Review与已有Result bytes MUST保持不变
 
 ### Requirement: Local App 必须生成受限 Task Verification Agent prompt
 本机应用 MAY 在 Task“证据”视图的验证结果区块提供 Agent Action 以生成 Task Verification prompt。prompt MUST 绑定正式 Task ID、Task Intent 和可选调用方已知 target identity，指导 Agent 读取 v3 Skill、inspect current Result、恢复 ready Environment、执行适用声明能力，并只在完整结论后通过 Application record；复制 prompt 本身 MUST NOT 等于 recorded。
@@ -899,35 +899,35 @@ Local App Task 列表与详情 MUST 通过 Task Record Application read model �
 - **AND** MUST NOT 提供自动处置关联 Task 的按钮
 
 ### Requirement: Local App 必须以 Application terminal projection 展示 Task 交付事实
-Local App Task 详情 MUST 保持“概览、研发、证据、环境”四个一级页签，并 MUST 只通过 Application read model 获取 terminal delivery facts。HTTP/Web MUST NOT 直接读取 SQLite、扫描 Finish JSON、计算 identity、判断 live currentness 或接受 target/root/path filesystem query；Terminal Delivery Application MUST 只查询 SQLite 中由 Finish/Task Development lifecycle action 保存的 terminal summary。
+Local App Task详情 MUST保持“概览、研发、证据、复盘、环境”五个一级页签，并 MUST只通过Application read model获取current/terminal facts。“概览”MUST调用Task Overview Application的一次SQLite联表读取；其他页签MUST继续调用所属专业Application reader。HTTP/Web MUST NOT直接读取SQLite、扫描Finish JSON、计算live identity、接受target/root/path filesystem query或依赖独立lifecycle projection；Terminal Delivery Application MUST只查询Task、Development与Finish current/completion保存事实。
 
 #### Scenario: completed delivered Task
-- **WHEN** terminal projection 返回 delivered
-- **THEN** 研发页主结论 MUST 显示“已交付”，并展示交付时 Task context、planning disposition、Content Target、verification policy、Candidate/generation 与 Development handoff
-- **AND** MUST 展示 final commit/ref、完成时间与 Environment cleanup 为正常结果
-- **AND** GET MUST NOT 扫描 Finish Result、恢复 Environment 或观察 Git
+- **WHEN** terminal projection返回delivered
+- **THEN** 研发页主结论 MUST显示“已交付”，并展示交付时Task context、planning disposition、Content Target、verification policy、Candidate/generation与Development handoff
+- **AND** MUST展示final commit/ref、完成时间与Environment cleanup为正常结果
+- **AND** GET MUST NOT扫描Finish Result、恢复Environment或观察Git
 
 #### Scenario: completed noChange Task
-- **WHEN** Task completed 且 result.noChange 为 true
-- **THEN** 页面 MUST 显示“已完成，无需交付变更”
-- **AND** MUST NOT 要求或伪造 Finish Result
+- **WHEN** Task completed且result.noChange为true
+- **THEN** 页面 MUST显示“已完成，无需交付变更”
+- **AND** MUST NOT要求或伪造Finish Result
 
 #### Scenario: completed Task 缺少匹配 Finish
-- **WHEN** Task completed、非 noChange 且 lifecycle read model 没有匹配成功 Finish summary
-- **THEN** 页面 MUST 显示“已完成，但交付未经证明”
-- **AND** MUST NOT 使用 delivered 的绿色成功语义
+- **WHEN** Task completed、非noChange且Finish completion没有matching association
+- **THEN** 页面 MUST显示“已完成，但交付未经证明”
+- **AND** MUST NOT使用delivered的绿色成功语义或从其他来源补造
 
 #### Scenario: terminal 证据视图
-- **WHEN** terminal projection 返回 Review/Verification delivery association
-- **THEN** 证据页 MUST 使用“已随交付候选采用”与“已随交付目标验证通过/未通过”等交付时文案
-- **AND** MUST 将 live applicability 改为最近一次生命周期确认的 persisted applicability，不得在读取时重算
+- **WHEN** terminal projection从Finish completion返回Review/Verification delivery association
+- **THEN** 证据页 MUST使用“已随交付候选采用”与“已随交付目标验证通过/未通过”等交付时文案
+- **AND** MUST将active保存值匹配关系与terminal association分开表达，不得在读取时重算live applicability
 
 #### Scenario: 技术详情与单卡宽度
-- **WHEN** 页面展示 SHA、digest、`workspace-sqlite:` locator 或单一 Verification Result
-- **THEN** 技术标识 MUST 位于次要或可展开详情，Verification 单卡 MUST 使用合理最大宽度
-- **AND** Agent 生成的原始 evidence 内容 MUST 保持原文，不由 Web 翻译或改写
+- **WHEN** 页面展示SHA、digest、`workspace-sqlite:` locator或单一Verification Result
+- **THEN** 技术标识 MUST位于次要或可展开详情，Verification单卡 MUST使用合理最大宽度
+- **AND** Agent生成的原始evidence内容 MUST保持原文，不由Web翻译或改写
 
-Task Finish MAY 请求Development Application针对一个允许的carrier root重观测complete Content Target，但MUST NOT创建Candidate。只有carrier Content Target与handoff Candidate绑定的target逐component相等且Task context/policy仍current时，Application MUST 返回equivalent；否则MUST返回Development handoff失效。上述 Finish 动作完成后 MUST 写入 terminal read model；读取 terminal Task 时不得重新执行该重观测。
+Task Finish MAY请求Development Application针对一个允许的carrier root重观测complete Content Target，但MUST NOT创建Candidate。只有carrier Content Target与handoff Candidate绑定的target逐component相等且Task context/policy仍current时，Application MUST返回equivalent；否则MUST返回Development handoff失效。上述Finish动作完成后 MUST写入Finish completion association；读取terminal Task时不得重新执行该重观测。
 
 #### Scenario: 只增加delivery commit
 - **WHEN** Finish机械提交当前内容但所有scope bytes与逻辑语义未变化
@@ -1087,7 +1087,7 @@ Buildr Local App HTTP interface MUST 从 Local App Web 构建产物目录提供 
 - **AND** 页面 MUST 能显示 preview 身份条且不得改写 `Buildr Dev.app` identity
 
 ### Requirement: Local App 必须通过 Task Finish Application 投影 current 与 terminal 状态
-Terminal Delivery Application MUST从Workspace SQLite中的Task Finish current/completion repository形成read model；Local App HTTP/Web MUST只消费该Application结果，不得直接查询SQLite、扫描或配对legacy Finish files、读取transient diagnostics、恢复run或计算live identity。terminal delivered判断 MUST只使用匹配Task/Development lifecycle的compact completion，current run只用于展示进行中、blocked或cleanup pending状态。
+Terminal Delivery Application MUST从Workspace SQLite中的Task Finish current/completion repository形成read model；Local App HTTP/Web MUST只消费该Application结果，不得直接查询SQLite、扫描或配对legacy Finish files、读取transient diagnostics、恢复run、计算live identity或读取lifecycle projection。terminal delivered判断 MUST只使用同Task且与保存Development handoff匹配的compact completion association，current run只用于展示进行中、blocked或cleanup pending状态。
 
 #### Scenario: Finish 正在执行
 - **WHEN** Task存在SQLite current run且尚无terminal completion
@@ -1100,11 +1100,11 @@ Terminal Delivery Application MUST从Workspace SQLite中的Task Finish current/c
 - **AND** MUST NOT提前显示Task completed或terminal delivered成功语义
 
 #### Scenario: Finish terminal completion
-- **WHEN** Application返回与Task lifecycle匹配的compact completion
+- **WHEN** Application返回与Task/Development保存identity匹配的compact completion association
 - **THEN** Local App MUST以其commit/ref、remote readback、Doctor、cleanup与完成时间投影“已交付”
-- **AND** GET MUST不访问Git、remote、Environment provider、legacy files或transient root
+- **AND** GET MUST不访问Git、remote、Environment provider、legacy files、transient root或已删除lifecycle table
 
 #### Scenario: legacy store 残留
-- **WHEN** `.buildr/task-finish`仍存在但SQLite中没有匹配completion
+- **WHEN** `.buildr/task-finish`仍存在但SQLite中没有matching completion
 - **THEN** Local App MUST不扫描、不读取、不把legacy文件当作交付authority
 - **AND** MUST只展示SQLite-backed Application read model；旧目录清理由升级步骤负责

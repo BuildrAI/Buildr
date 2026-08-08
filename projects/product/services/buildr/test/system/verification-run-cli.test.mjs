@@ -152,7 +152,7 @@ test('verification run rejects declaration-root before starting a capability', (
   assert.equal(result.status, 2);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.error.code, 'verification.run_declaration_root_unsupported');
-  assert.match(payload.error.message, /task verification inspect\|record/);
+  assert.match(payload.error.message, /task verification record/);
   assert.equal(fs.existsSync(path.join(projectRoot, 'started.txt')), false);
 });
 
