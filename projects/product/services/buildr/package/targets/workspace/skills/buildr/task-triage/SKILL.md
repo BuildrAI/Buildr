@@ -53,6 +53,14 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
 
+### 从 Parent 规划项启动独立 Child Task
+
+当用户选择 active Parent Task 中的某个规划项作为独立 Child Task 实施时，先 inspect Parent Task，并只读读取其 current planning facts、关联 Change working copy和适用 Planning Review，从中提取该 Child 的稳定 intent、实际Project/Service scope、边界、验收目标与父级planning identity。Parent导引只作为Child启动输入；Parent/Child关系不表达Git继承、Change共享或专业状态传播。
+
+Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初始不引用Parent Change；`0..N` Change允许此时保持空列表。取得Child自己的matching ready Environment并调用selected `buildr.task-development/v2` provider建立研发事实后，才在Child execution root中创建该独立目标自己的窄Change，通过Task Record update添加引用，并刷新Development planning snapshot与适用Planning Review。不得把Parent Change、Parent worktree、branch、Environment Receipt或Development事实复制或继承为Child authority。
+
+如果Child真实依赖Parent尚未交付的代码，必须在Parent active时先建立Parent/Child关系，但延后Child Environment prepare；Parent完成正式Finish且贡献进入最新`dev`后，再从收敛后的canonical `dev`准备Child Environment。不得通过从Parent worktree派生Child checkout或提前共享未归档Change绕过该顺序。
+
 ### 新正式 Task 创建前收敛统一 dev 基线
 
 只有即将调用 Task Record `create` 时执行本门禁；`inspect`、已有 Task 继续、纯讨论、只读探索和不创建 Task 的分支不执行。
