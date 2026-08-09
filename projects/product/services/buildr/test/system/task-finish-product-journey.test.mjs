@@ -62,7 +62,12 @@ else if (args[0] === 'verification' && args[1] === 'run') {
     workspaceNode: { identity: { digest: 'sha256-workspace-node', version: '22.4.1' } },
     checks, executionIdentity: 'execution-' + targetIdentity, evidenceReference: null, durationMs: 7,
   });
-} else if (args[0] === 'doctor') output({ schemaVersion: 'buildr.doctor/v1', health: { ready: true }, findings: [] });
+} else if (args[0] === 'doctor') {
+  const target = option('--target');
+  const ready = option('--agent') === 'codex' && !fs.existsSync(path.join(target, '.doctor-not-ready'));
+  output({ schemaVersion: 'buildr.doctor/v1', health: { ready }, findings: ready ? [] : [{ code: 'fixture.agent-runtime-not-ready' }] });
+  if (!ready) process.exitCode = 1;
+}
 else { process.stderr.write('unsupported fake Buildr invocation: ' + args.join(' ')); process.exit(2); }
 `;
 
@@ -205,7 +210,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   return runtime;
 }
 
-test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup', async (t) => {
+test('retained Doctor阻塞后经自举后继commit恢复同一run并完成cleanup', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-journey-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -219,6 +224,7 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  fs.writeFileSync(path.join(seed, '.doctor-not-ready'), 'self-bootstrap activation required\n');
   fs.mkdirSync(path.join(seed, '.buildr'), { recursive: true });
   fs.writeFileSync(path.join(seed, '.buildr', 'tracked-metadata.json'), 'baseline metadata\n');
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
@@ -297,17 +303,36 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
     if (completionAttempts === 1) throw Object.assign(new Error('Injected transient Task Record failure.'), { code: 'task_record_write_failed' });
     return completeTaskRecordFromFinish(...args);
   };
-  const blocked = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
-  assert.equal(blocked.status, 'cleanup_pending');
-  assert.equal(blocked.primaryFailure.code, 'task_record_write_failed');
+  const doctorBlocked = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
+  assert.equal(doctorBlocked.status, 'blocked');
+  assert.equal(doctorBlocked.primaryFailure.operation, 'retained-doctor');
+  assert.equal(doctorBlocked.primaryFailure.code, 'task-finish.retained-doctor-failed');
+  assert.equal(doctorBlocked.delivery.status, 'activation-blocked');
+  assert.equal(doctorBlocked.delivery.remoteAfterRef, doctorBlocked.carrier.head);
+  assert.equal(doctorBlocked.delivery.retainedDoctor, 'blocked');
+  assert.deepEqual(doctorBlocked.phases.find((phase) => phase.id === 'deliver').operations.filter((operation) => operation.id === 'deliver-push' || operation.id === 'deliver-target-readback').map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
+  assert.equal(fs.existsSync(environmentRoot), true);
   assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
-  const result = await runtime.taskFinish('run', ['--task', task, '--run', blocked.runId, '--resume', blocked.resume.token, '--target', retained]);
+
+  fs.unlinkSync(path.join(retained, '.doctor-not-ready'));
+  command(retained, 'git', ['add', '.doctor-not-ready']);
+  command(retained, 'git', ['commit', '-m', 'activate self-bootstrap runtime']);
+  const activationHead = command(retained, 'git', ['rev-parse', 'HEAD']);
+  command(retained, 'git', ['push', 'origin', 'dev']);
+  const cleanupBlocked = await runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', doctorBlocked.resume.token, '--target', retained]);
+  assert.equal(cleanupBlocked.status, 'cleanup_pending');
+  assert.equal(cleanupBlocked.primaryFailure.code, 'task_record_write_failed');
+  assert.equal(cleanupBlocked.delivery.targetDisposition, 'already-contained');
+  assert.equal(cleanupBlocked.delivery.carrierRef, doctorBlocked.carrier.head);
+  assert.equal(cleanupBlocked.delivery.finalRemoteRef, activationHead);
+  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
+  const result = await runtime.taskFinish('run', ['--task', task, '--run', cleanupBlocked.runId, '--resume', cleanupBlocked.resume.token, '--target', retained]);
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
   ]);
-  assert.equal(result.metrics.canonicalCliInvocations, 2);
+  assert.equal(result.metrics.canonicalCliInvocations, 3);
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
@@ -320,13 +345,15 @@ test('目标分支前进后复用同一 Candidate 完成远端交付与 cleanup'
   assert.deepEqual(result.candidate, { identity: frozen.identity, generation: 1, contentTargetIdentity: frozen.contentTargetIdentity });
   assert.equal(result.identity.remote, 'origin');
   assert.equal(result.identity.targetBranch, 'dev');
-  assert.equal(result.delivery.remoteAfterRef, result.carrier.head);
+  assert.equal(result.delivery.targetDisposition, 'already-contained');
+  assert.equal(result.delivery.remoteAfterRef, activationHead);
+  assert.equal(result.delivery.finalRemoteRef, activationHead);
   assert.equal(result.carrier.deliveryBaseline.head, advancedBaselineHead);
   assert.notEqual(result.carrier.head, candidateHead);
-  assert.deepEqual(result.phases.find((phase) => phase.id === 'deliver').operations.filter((operation) => operation.id === 'deliver-push' || operation.id === 'deliver-target-readback').map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
+  assert.deepEqual(result.phases.find((phase) => phase.id === 'deliver').operations.filter((operation) => operation.id === 'deliver-push' || operation.id === 'deliver-target-readback').map((operation) => operation.id), ['deliver-target-readback']);
   assert.equal(fs.existsSync(environmentRoot), false);
-  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
-  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.carrier.head);
+  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), activationHead);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], activationHead);
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:.buildr/tracked-metadata.json`]), 'baseline metadata');
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:baseline-advance.txt`]), 'new delivery baseline');
   assert.equal(result.carrier.changedPaths.includes('.buildr/tracked-metadata.json'), false);

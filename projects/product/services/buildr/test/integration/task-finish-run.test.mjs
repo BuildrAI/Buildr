@@ -197,6 +197,48 @@ test('连续 target race 每次使用新精确 token 重建 carrier，复用 Can
   assert.equal(inspectFinishRun({ root, runId: 'target-race' }).status, 'complete');
 });
 
+test('retained Doctor blocked保留partial delivery并只恢复deliver与cleanup', async (t) => {
+  const root = fixture(t);
+  const firstCalls = [];
+  const handlers = passingHandlers(firstCalls);
+  handlers.deliver = async () => {
+    firstCalls.push('deliver');
+    return {
+      status: 'blocked',
+      failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-doctor-failed', message: 'Selected Agent Doctor is not ready.' },
+      output: {
+        delivery: {
+          status: 'activation-blocked',
+          targetDisposition: 'carrier',
+          carrierRef: 'abc',
+          remoteAfterRef: 'abc',
+          finalRemoteRef: 'abc',
+          activation: { status: 'blocked', doctorCode: 'task-finish.retained-doctor-failed' },
+          retainedDoctor: 'blocked',
+        },
+      },
+    };
+  };
+
+  const first = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'doctor-resume', identity: identity(root, 'doctor-resume') }), handlers });
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.primaryFailure.operation, 'retained-doctor');
+  assert.equal(first.delivery.status, 'activation-blocked');
+  assert.equal(first.delivery.remoteAfterRef, 'abc');
+  assert.equal(first.phases.find((phase) => phase.id === 'cleanup').status, 'pending');
+  assert.match(first.resume.token, /^sha256-/);
+
+  const secondCalls = [];
+  const second = await executeFinishRun({ root, run: readFinishRun({ root, runId: 'doctor-resume' }), handlers: passingHandlers(secondCalls), resumeToken: first.resume.token });
+  assert.equal(second.status, 'complete');
+  assert.deepEqual(secondCalls, ['deliver', 'cleanup']);
+  assert.equal(second.delivery.status, 'delivered');
+  assert.equal(second.phases.find((phase) => phase.id === 'prepare').attempts, 1);
+  assert.equal(second.phases.find((phase) => phase.id === 'verify').attempts, 1);
+  assert.equal(second.phases.find((phase) => phase.id === 'deliver').attempts, 2);
+  assert.equal(second.metrics.formalVerificationExecutions, 0);
+});
+
 test('cleanup 暂态阻塞恢复只重试 cleanup', async (t) => {
   const root = fixture(t);
   const firstCalls = [];

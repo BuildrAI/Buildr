@@ -457,11 +457,40 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           const tracked = (renderDelta || []).filter((entry) => entry.status !== '??');
           if (tracked.length) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'product-execution-failure', code: 'task-finish.render-produced-tracked-delta', message: 'Runtime render produced tracked Git changes.', findings: tracked } };
         }
-        const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--target', retainedRoot, '--json', '--detail', 'compact'], retainedRoot, { json: true });
-        if (!doctor) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' } };
+        const blockedDelivery = (doctorCode = null) => ({
+          status: 'activation-blocked',
+          targetDisposition: alreadyContained ? 'already-contained' : 'carrier',
+          expectedTargetRef: run.deliveryCarrier.expectedTargetRef,
+          observedTargetRef,
+          carrierRef: run.deliveryCarrier.head,
+          remoteAfterRef,
+          finalRemoteRef: remoteAfterRef,
+          containment,
+          activation: { status: 'blocked', plan, doctorCode },
+          retainedDoctor: 'blocked',
+          runtimeInstall: 'not-applicable',
+          localAppDelivery: 'not-applicable',
+        });
+        const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--agent', run.identity.agent, '--target', retainedRoot, '--json', '--detail', 'compact'], retainedRoot, { json: true });
+        if (!doctor) return {
+          status: 'blocked', operations,
+          failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' },
+          output: { delivery: blockedDelivery('task-finish.retained-controller-unavailable') },
+        };
         operations.push(doctor.observation);
         const doctorProcess = classifyFinalDoctorResult(doctor.result);
-        if (doctorProcess.status !== 'passed' || doctor.payload?.health?.ready !== true) return { status: 'blocked', operations, failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: doctorProcess.status === 'doctor-failed' ? 'task-finish.retained-doctor-failed' : doctorProcess.code === 'doctor.passed' ? 'task-finish.retained-doctor-not-ready' : doctorProcess.code, exitCode: doctor.result.status, message: doctorProcess.status === 'passed' ? 'Retained Workspace doctor is not ready.' : doctorProcess.message, diagnostic: doctor.payload?.findings || doctorProcess.diagnostic || doctor.observation.stderr } };
+        if (doctorProcess.status !== 'passed' || doctor.payload?.health?.ready !== true) {
+          const doctorCode = doctorProcess.status === 'doctor-failed'
+            ? 'task-finish.retained-doctor-failed'
+            : doctorProcess.code === 'doctor.passed'
+              ? 'task-finish.retained-doctor-not-ready'
+              : doctorProcess.code;
+          return {
+            status: 'blocked', operations,
+            failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: doctorCode, exitCode: doctor.result.status, message: doctorProcess.status === 'passed' ? 'Retained Workspace doctor is not ready.' : doctorProcess.message, diagnostic: doctor.payload?.findings || doctorProcess.diagnostic || doctor.observation.stderr },
+            output: { delivery: blockedDelivery(doctorCode) },
+          };
+        }
         const activation = { status: 'passed', plan };
         const delivery = { status: 'delivered', targetDisposition: alreadyContained ? 'already-contained' : 'carrier', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, containment, activation, retainedDoctor: 'passed', runtimeInstall: 'not-applicable', localAppDelivery: 'not-applicable' };
         return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery } };

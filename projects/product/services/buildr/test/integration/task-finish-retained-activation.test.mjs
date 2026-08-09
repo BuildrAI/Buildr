@@ -30,7 +30,7 @@ const target = args[args.indexOf('--target') + 1];
 if (args[0] === 'doctor') {
   const skill = fs.readFileSync(path.join(target, 'skills', 'example', 'SKILL.md'), 'utf8');
   if (skill.includes('doctor-overflow')) process.stdout.write('x'.repeat(5 * 1024 * 1024));
-  const ready = !skill.includes('doctor-failure') && !args.includes('--agent');
+  const ready = !skill.includes('doctor-failure') && args[args.indexOf('--agent') + 1] === 'codex';
   process.stdout.write(JSON.stringify({ health: { ready }, findings: ready ? [] : [{ code: 'fixture.not-ready' }] }) + '\\n');
   if (!ready) process.exitCode = 1;
 }
@@ -107,7 +107,8 @@ test('Workspace Skill contribution renders and never syncs', async (t) => {
   assert.equal(result.output.delivery.activation.plan.mode, 'render-runtime');
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-render'), true);
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
-  assert.equal(result.operations.find((item) => item.id === 'deliver-retained-doctor').args.includes('--agent'), false);
+  const doctor = result.operations.find((item) => item.id === 'deliver-retained-doctor');
+  assert.deepEqual(doctor.args.slice(0, 3), ['doctor', '--agent', 'codex']);
   assert.equal(result.output.delivery.finalRemoteRef, data.run.deliveryCarrier.head);
 });
 
@@ -126,6 +127,10 @@ test('Doctor failure blocks cleanup without generic sync', async (t) => {
   assert.equal(result.status, 'blocked');
   assert.equal(result.failure.code, 'task-finish.retained-doctor-failed');
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
+  assert.equal(result.output.delivery.status, 'activation-blocked');
+  assert.equal(result.output.delivery.remoteAfterRef, data.run.deliveryCarrier.head);
+  assert.equal(result.output.delivery.activation.doctorCode, 'task-finish.retained-doctor-failed');
+  assert.equal(result.output.delivery.retainedDoctor, 'blocked');
 });
 
 test('Doctor compact输出超限保留独立失败分类', async (t) => {

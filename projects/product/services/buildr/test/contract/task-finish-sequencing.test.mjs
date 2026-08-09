@@ -37,6 +37,9 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(executor, /finalRemoteRef: remoteAfterRef/);
   assert.match(executor, /targetDisposition: alreadyContained \? 'already-contained' : 'carrier'/);
   assert.match(executor, /inspectGitCarrierContainment/);
+  assert.match(executor, /\['doctor', '--agent', run\.identity\.agent/);
+  assert.match(executor, /status: 'activation-blocked'/);
+  assert.match(executor, /output: \{ delivery: blockedDelivery/);
   assert.doesNotMatch(executor, /components\.update_available|buildr-self-bootstrap|package\/targets\/workspace/);
   assert.doesNotMatch(executor, /install-buildr-cli|launcher', 'install|deliver-cli-install|deliver-local-app-install/);
   assert.doesNotMatch(executor, /git', \['add', '-A'/);
@@ -54,6 +57,7 @@ test('Task Finish activation is a closed render decision, not a Project process 
 test('Buildr self-bootstrap is a Workspace Component contribution, not a package capability', () => {
   const component = fs.readFileSync(path.join(workspaceRoot, 'components/workspace/buildr-self-bootstrap/component.yml'), 'utf8');
   const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
+  const contribution = fs.readFileSync(path.join(workspaceRoot, 'components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md'), 'utf8');
   const runtimeFinish = fs.readFileSync(path.join(workspaceRoot, '.agents/skills/task-finish/SKILL.md'), 'utf8');
   const packageFinish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
   for (const phrase of ['task-finish@append', 'skills/buildr-self-bootstrap-sync', 'source: workspace']) assert.ok(component.includes(phrase), phrase);
@@ -65,8 +69,10 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
     'projects/product/services/buildr/src/interfaces/cli/launcher.mjs',
     'projects/product/services/buildr/package/launchers/**',
   ]) assert.ok(skill.includes(input), input);
-  for (const boundary of ['Formal Finish已经成功', '冻结Task Contribution', 'install-development-cli', 'install-development-local-app', '同一动作即使被多条路径命中也只执行一次', '最后执行一次', '不创建receipt、数据库记录、事件或状态机', '自举Workspace激活未完成']) assert.ok(skill.includes(boundary), boundary);
+  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-cli', 'install-development-local-app', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
+  for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
   assert.match(runtimeFinish, /Buildr 自举 Workspace 激活/);
+  assert.match(runtimeFinish, /doctor-blocked/);
   assert.ok(runtimeFinish.indexOf('Buildr 自举 Workspace 激活') > runtimeFinish.indexOf('## 完成标准'));
   assert.doesNotMatch(packageFinish, /post-Finish activation|Buildr 自举 Workspace 激活/);
   assert.equal(packageManifest.includes('buildr-self-bootstrap-sync'), false);
