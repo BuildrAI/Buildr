@@ -35,6 +35,9 @@ const allowed = new Map([
   ['src/infrastructure/filesystem/workspace-node-runtime.mjs', new Set([
     'downloadFile', 'installFromOfficial', 'installFromCurrent', 'ensureWorkspaceNodeRuntime',
   ])],
+  ['src/infrastructure/filesystem/task-execution-record-body-store.mjs', new Set([
+    'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
+  ])],
   ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
     'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
   ])],

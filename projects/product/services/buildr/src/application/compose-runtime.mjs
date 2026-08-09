@@ -11,6 +11,8 @@ import { registerTaskVerificationRepository } from '../infrastructure/sqlite/tas
 import { registerTaskDevelopmentRepository } from '../infrastructure/sqlite/task-development-repository.mjs';
 import { registerTaskOverviewRepository } from '../infrastructure/sqlite/task-overview-repository.mjs';
 import { registerTaskFinishRepository } from '../infrastructure/sqlite/task-finish-repository.mjs';
+import { registerTaskExecutionRecordRepository } from '../infrastructure/sqlite/task-execution-record-repository.mjs';
+import { registerTaskExecutionRecordBodyStore } from '../infrastructure/filesystem/task-execution-record-body-store.mjs';
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
@@ -43,6 +45,7 @@ import { registerTaskVerificationApplication } from './task-verification/task-ve
 import { registerTaskDevelopmentApplication } from './task-development/task-development-application.mjs';
 import { registerTaskOverviewApplication } from './task-overview/task-overview-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
+import { registerTaskExecutionRecordApplication } from './task-execution-record/task-execution-record-application.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
 import * as platform from '../infrastructure/platform.mjs';
 
@@ -62,6 +65,8 @@ const REGISTRATIONS = [
   registerTaskDevelopmentRepository,
   registerTaskOverviewRepository,
   registerTaskFinishRepository,
+  registerTaskExecutionRecordRepository,
+  registerTaskExecutionRecordBodyStore,
   registerTaskEnvironmentRepository,
   registerContentTargetObserver,
   registerProjectGitObserver,
@@ -85,6 +90,7 @@ const REGISTRATIONS = [
   registerGitWorktreeProvider,
   registerTaskEnvironmentApplication,
   registerTaskRecordApplication,
+  registerTaskExecutionRecordApplication,
   registerTaskReviewApplication,
   registerTaskRetrospectiveApplication,
   registerTaskVerificationApplication,

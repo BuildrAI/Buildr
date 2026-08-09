@@ -121,6 +121,48 @@
 - 避免混用：Parent/Child 只表达协调层级，不是依赖或通用关系图，不传播状态、Result或专业动作；Task Record不保存Task Environment、Development、Review、Verification、Git、Finish、独立Board或Retrospective的专业事实，响应级`recordDigest`也不是持久字段。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
+## 任务事实（Task Fact）
+
+- 定义：对Current Fact与Terminal Fact的产品说明总称。
+- 适用范围：讨论Task当前专业状态或最终完成/放弃与交付结论时的分类表达。
+- 避免混用：不是通用Domain、表或聚合store；事实仍由Task Record、Development、Environment、Review、Verification、Retrospective与Finish等专业authority分别持有。
+- 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
+
+## 当前事实（Current Fact）
+
+- 定义：某个专业Application对Task当前可恢复、可替换状态持有的事实。
+- 适用范围：Development、Environment、Review、Verification与Retrospective current records等专业current authority。
+- 避免混用：不是历史执行日志或终态快照；`task_lifecycle_current`已退役，不创建替代聚合表。
+- 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
+
+## 终态事实（Terminal Fact）
+
+- 定义：Task完成或放弃后需要长期证明最终结果的专业事实。
+- 适用范围：Task Record terminal result与Finish completion等由专业authority长期持有的结论。
+- 避免混用：不是一次执行的stdout/stderr或可按retention清理的执行记录。
+- 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
+
+## 任务执行记录（Task Execution Record）
+
+- 定义：一次Task专业执行发生了什么的有限期记录；SQLite保存closed metadata，受限Workspace-local目录保存已脱敏正文。
+- 适用范围：v1的Verification execution与Finish diagnostics，以及固定quota、retention、resolution和cleanup状态。
+- 避免混用：不是Current/Terminal Fact、执行资源、通用event/history payload或Consumer/Adoption关系；本阶段不接入producer。
+- 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
+
+## 执行资源（Execution Resource）
+
+- 定义：执行中实际占用、需要恢复或清理的资源。
+- 适用范围：Environment checkout、Delivery Carrier、worktree、target lease与verification ticket等由原专业owner管理的资源。
+- 避免混用：不是Task Execution Record正文或统一资源表；Inventory只能组合owner提供的最小read model。
+- 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
+
+## 证据（Evidence）
+
+- 定义：某份专业事实或执行记录能够证明什么的语义角色。
+- 适用范围：Review、Verification、Finish及其他consumer解释已有事实或记录的证明范围。
+- 避免混用：Evidence不是独立存储类别，也不要求Consumer/Adoption表；authority仍属于被引用的专业事实或执行记录。
+- 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
+
 ## Task Finish
 
 - 定义：消费 current Development Handoff、执行 `preflight → prepare → verify → deliver → cleanup` 的固定五阶段交付收尾 adapter；current run、target lease 与 compact terminal Result 由 Workspace SQLite 持久化。

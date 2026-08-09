@@ -38,7 +38,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_finish_completions', 'task_finish_runs', 'task_finish_target_leases', 'task_finish_transient_artifacts', 'task_projects', 'task_retrospective_current', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
+    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_execution_records', 'task_finish_completions', 'task_finish_runs', 'task_finish_target_leases', 'task_finish_transient_artifacts', 'task_projects', 'task_retrospective_current', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
   ]);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
@@ -47,6 +47,9 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
     assert.ok(writable.database.prepare(`PRAGMA foreign_key_list(${table})`).all().some((row) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'CASCADE'));
   }
   assert.ok(writable.database.prepare('PRAGMA foreign_key_list(task_finish_target_leases)').all().some((row) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'CASCADE'));
+  assert.ok(writable.database.prepare('PRAGMA foreign_key_list(task_execution_records)').all().some((row) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'NO ACTION'));
+  assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_execution_record_consumers'").get().count, 0);
+  assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
   assert.ok(writable.database.prepare('PRAGMA foreign_key_list(task_finish_transient_artifacts)').all().some((row) => row.from === 'run_id' && row.table === 'task_finish_runs' && row.on_delete === 'CASCADE'));
   assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_development_current)').all().map((row) => row.name), ['task_id', 'record_json', 'applicability_status', 'applicability_json', 'observed_at']);
   assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_review_current)').all().map((row) => row.name), ['task_id', 'review_type', 'result_json', 'target_identity', 'outcome', 'updated_at']);
@@ -305,6 +308,39 @@ test('失败 migration 完整 rollback 且不登记 ledger row', () => {
   assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'transient_value'").get().count, 0);
   assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 1);
   database.close();
+});
+
+test('execution record migration建立closed单表、非级联Task FK与完整rollback', () => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  const execution = migrations.find((migration) => migration.name === '0011_create_task_execution_records.sql');
+  const database = new DatabaseSync(':memory:');
+  for (const migration of migrations.filter((item) => item.version < execution.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('execution-task', 'buildr.task-record/v1', 'Execution', 'Closed record', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
+  applyWorkspaceSqliteMigration(database, execution);
+  const insert = database.prepare(`INSERT INTO task_execution_records(
+    record_id, schema_version, task_id, owner, kind, run_identity, target_identity, producer,
+    outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest,
+    stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until,
+    opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at
+  ) VALUES (?, 'buildr.task-execution-record/v1', 'execution-task', ?, ?, ?, 'target-1', 'test',
+    'running', 'open', 'not-required', 'staging', 'reserved', NULL, NULL, 0, 0, 0,
+    'buildr.task-execution-record-redaction/v1', 16777216, NULL, '2026-08-01T00:00:00.000Z', NULL, NULL, NULL, NULL, NULL, '2026-08-01T00:00:00.000Z')`);
+  insert.run('record-valid', 'task-verification', 'verification-execution', 'run-valid');
+  assert.throws(() => insert.run('record-owner', 'task-review', 'review-execution', 'run-owner'));
+  assert.throws(() => insert.run('record-kind', 'task-verification', 'finish-diagnostics', 'run-kind'));
+  assert.throws(() => database.prepare("UPDATE task_execution_records SET lifecycle_status = 'cleaned' WHERE record_id = 'record-valid'").run());
+  assert.throws(() => database.prepare("DELETE FROM tasks WHERE task_id = 'execution-task'").run());
+  assert.ok(database.prepare("SELECT name FROM pragma_index_list('task_execution_records')").all().some((row) => row.name === 'task_execution_records_lifecycle_retention_idx'));
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_execution_record_consumers', 'task_lifecycle_current')").get().count, 0);
+  database.close();
+
+  const rollback = new DatabaseSync(':memory:');
+  for (const migration of migrations.filter((item) => item.version < execution.version)) applyWorkspaceSqliteMigration(rollback, migration);
+  assert.throws(() => applyWorkspaceSqliteMigration(rollback, { ...execution, checksum: 'sha256-injected', sql: `${execution.sql}\nINSERT INTO missing_execution_table(id) VALUES (1);` }), (error) => error.code === 'workspace_store_database_failed');
+  assert.equal(rollback.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_execution_records'").get().count, 0);
+  assert.equal(rollback.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, execution.version - 1);
+  rollback.close();
 });
 
 test('退役 migration迁移专业查询字段、保留Environment authority并删除Lifecycle副本', () => {
