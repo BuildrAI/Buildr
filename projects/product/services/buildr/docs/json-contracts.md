@@ -31,6 +31,8 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `verification run` | `buildr.verification-execution/v1` |
 | `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
 | `task create/inspect/update/complete/abandon` | `buildr.task-record-result/v3` |
+| `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v1` |
+| Parent coordination嵌套值对象 | `buildr.parent-plan/v1` / `buildr.contribution-handoff/v1` |
 | Local App Task stored detail/list query | `buildr.task-record-view/v1` / `buildr.task-record-list/v3` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
 | `task finish run/inspect` | `buildr.task-finish-result/v2` |
@@ -53,6 +55,8 @@ Task Finish 的 v2 Result 是 SQLite terminal read model；current run、lease �
 当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
 
 `buildr.task-record-result/v3` 统一覆盖五个 Task Record 动作。成功时返回 `operation`、`status`、`taskId`、closed v1 `record`、响应级 `recordDigest`、直接关系摘要 `taskRelations`、`effects` 与 `nextActions`，不返回本地数据库路径；`diagnostic` 为 `null`。`record.parentTaskId` 是直接 Parent，`record.childTaskIds` 是按 ID 排序的直接 Children；`taskRelations.parent/children` 补充真实标题与状态，不递归展开。完整 Application 列表继续使用 `buildr.task-record-list/v2`。
+
+`buildr.parent-coordination-result/v1`覆盖Parent coordination五个action。根对象返回operation/status/taskId、`legacy|parent-plan` mode、Parent status/Plan/final acceptance/Planning Review、直接Children及其planned binding和matching Contribution Handoff、按Contribution派生的disposition、blockers、final acceptance readiness、effects/diagnostic/nextActions。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child状态和交付不复制进Parent Record/Plan，completed无matching handoff为`unproven`，最终验收不自动完成Parent。legacy Task返回absent diagnostic且不backfill。
 
 Local App 普通观察路径使用独立 stored-state projection：详情 `buildr.task-record-view/v1` 与列表 `buildr.task-record-list/v3` 都来自同一 SQLite authority，返回 response-level `recordDigest`、stored Change references、直接关系与非持久化 `childTaskCount`，但不解析 Change availability、Environment、Development、Review、Verification 或 Finish currentness。列表 v3 另返回规范化 `filters`、从 Task scope rows 派生的 `filterOptions` 与用于区分“Workspace 无 Task/筛选无结果”的 `totalTaskCount`。业务拒绝仍返回现有 error envelope 或 action envelope，且不得产生 mutation effects。CLI 参数或路由语法错误继续使用 `buildr.cli-error/v1`。`recordDigest` 和 `childTaskCount` 都不进入 Task Record 持久 schema。
 

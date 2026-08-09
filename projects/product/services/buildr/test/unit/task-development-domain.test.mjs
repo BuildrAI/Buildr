@@ -98,7 +98,10 @@ test('v1 Receipt只读迁移保持Candidate、decision与handoff identity', () =
   legacy.schemaVersion = 'buildr.task-development-receipt/v1';
   delete legacy.planning;
   const migrated = normalizeTaskDevelopmentReceipt(legacy);
-  assert.equal(migrated.schemaVersion, 'buildr.task-development-receipt/v2');
+  assert.equal(migrated.schemaVersion, 'buildr.task-development-receipt/v3');
+  assert.equal(migrated.parentPlan, null);
+  assert.deepEqual(migrated.plannedContributions, []);
+  assert.equal(migrated.parentAcceptance, null);
   assert.equal(migrated.candidate.identity, legacy.candidate.identity);
   assert.deepEqual(migrated.decision, legacy.decision);
   assert.equal(migrated.handoffs[0].identity, legacy.handoffs[0].identity);

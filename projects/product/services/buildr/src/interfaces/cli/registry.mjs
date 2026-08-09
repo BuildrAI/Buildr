@@ -10,6 +10,7 @@ import { taskReviewCommand } from './task-review.mjs';
 import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
+import { parentCoordinationCommand } from './parent-coordination.mjs';
 
 const COMMAND_ROUTES = [
   {
@@ -252,6 +253,46 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'cleanup',
     run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
+  },
+  {
+    key: "task parent inspect",
+    surface: "primary",
+    summary: "只读返回Parent Plan、Child Contribution交付事实与最终验收前置条件；历史Task保持legacy模式。",
+    help: ["Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]", "", "只组合Task Record与已保存专业事实，不扫描文件系统或回填Parent。"],
+    match: ({ domain, action, runtimeId, operation }) => domain === 'task' && action === 'parent' && runtimeId === 'inspect' && !operation,
+    run: (r, c) => parentCoordinationCommand(r, 'inspect', c.argv.slice(5)),
+  },
+  {
+    key: "task parent record",
+    surface: "agent-machine",
+    summary: "为active Parent首次记录closed Parent Plan。",
+    help: ["Usage: buildr task parent record <task-id> --input <parent-plan.json> [--target <canonical-workspace>] [--json]"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'record',
+    run: (r, c) => parentCoordinationCommand(r, 'record', c.argv.slice(5)),
+  },
+  {
+    key: "task parent reconcile",
+    surface: "agent-machine",
+    summary: "以expected Parent Plan identity显式收敛Contribution、依赖或最终验收变化。",
+    help: ["Usage: buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json]"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'reconcile',
+    run: (r, c) => parentCoordinationCommand(r, 'reconcile', c.argv.slice(5)),
+  },
+  {
+    key: "task parent bind-child",
+    surface: "agent-machine",
+    summary: "把已有Child Development明确绑定到Parent Plan的一个或多个Contribution。",
+    help: ["Usage: buildr task parent bind-child <child-task-id> --parent <parent-task-id> --contribution <id> ... [--target <canonical-workspace>] [--json]"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'bind-child',
+    run: (r, c) => parentCoordinationCommand(r, 'bind', c.argv.slice(5)),
+  },
+  {
+    key: "task parent accept",
+    surface: "agent-machine",
+    summary: "在全部Contribution得到可证明处置后显式记录Parent最终集成验收；不会自动完成Task。",
+    help: ["Usage: buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'accept',
+    run: (r, c) => parentCoordinationCommand(r, 'accept', c.argv.slice(5)),
   },
   {
     key: "task create",

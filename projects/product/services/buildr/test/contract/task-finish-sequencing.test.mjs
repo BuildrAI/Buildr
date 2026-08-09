@@ -73,7 +73,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
 });
 
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {
-  for (const phrase of ['Content Target', 'verification policy', 'Candidate', 'append-only', 'buildr.task-development-receipt/v2', 'planning', 'waived']) assert.ok(developmentContract.includes(phrase), phrase);
+  for (const phrase of ['Content Target', 'verification policy', 'Candidate', 'append-only', 'buildr.task-development-receipt/v3', 'Parent Plan', 'Contribution Handoff', 'planning', 'waived']) assert.ok(developmentContract.includes(phrase), phrase);
   assert.match(development, /没有公共Development CLI/);
   assert.match(finish, /buildr task finish run --task <task-id> --target/);
   assert.doesNotMatch(finish, /--project|--change/);

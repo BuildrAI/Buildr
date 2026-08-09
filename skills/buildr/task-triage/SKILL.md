@@ -55,9 +55,9 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 ### 从 Parent 规划项启动独立 Child Task
 
-当用户选择 active Parent Task 中的某个规划项作为独立 Child Task 实施时，先 inspect Parent Task，并只读读取其 current planning facts、关联 Change working copy和适用 Planning Review，从中提取该 Child 的稳定 intent、实际Project/Service scope、边界、验收目标与父级planning identity。Parent导引只作为Child启动输入；Parent/Child关系不表达Git继承、Change共享或专业状态传播。
+当用户选择 active Parent Task 中的某个Contribution作为独立 Child Task 实施时，先调用`task parent inspect`读取current Parent Plan、Contribution、依赖与适用Planning Review，从中提取该 Child 的稳定 intent、实际Project/Service scope、边界和验收目标。Parent导引只作为Child启动输入；Parent/Child关系不表达Git继承、Change共享或专业状态传播。legacy Parent不得被自动转换或从旧Change/checkbox推断Contribution。
 
-Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初始不引用Parent Change；`0..N` Change允许此时保持空列表。取得Child自己的matching ready Environment并调用selected `buildr.task-development/v2` provider建立研发事实后，才在Child execution root中创建该独立目标自己的窄Change，通过Task Record update添加引用，并刷新Development planning snapshot与适用Planning Review。不得把Parent Change、Parent worktree、branch、Environment Receipt或Development事实复制或继承为Child authority。
+Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初始不引用Parent Change；`0..N` Change允许此时保持空列表。取得Child自己的matching ready Environment并调用selected `buildr.task-development/v2` provider建立研发事实后，用`task parent bind-child`绑定planned Contributions，才在Child execution root中创建该独立目标自己的窄Change，通过Task Record update添加引用，并刷新Development planning snapshot与适用Planning Review。不得把Parent Change、Parent worktree、branch、Environment Receipt或Development事实复制或继承为Child authority。
 
 如果Child真实依赖Parent尚未交付的代码，必须在Parent active时先建立Parent/Child关系，但延后Child Environment prepare；Parent完成正式Finish且贡献进入最新`dev`后，再从收敛后的canonical `dev`准备Child Environment。不得通过从Parent worktree派生Child checkout或提前共享未归档Change绕过该顺序。
 

@@ -109,6 +109,11 @@ test('任务详情使用概览、研发、证据、复盘、环境五个一级�
   assert.match(source, /id: 'evidence', label: '证据'/);
   assert.match(source, /id: 'retrospective', label: '复盘'/);
   assert.match(source, /id: 'environment', label: '环境'/);
+  assert.match(source, /id="task-parent-coordination"/);
+  assert.match(source, /\/coordination`\)/);
+  assert.match(source, /Parent Coordination Application 的派生 read model/);
+  assert.match(source, /parent_plan_absent/);
+  assert.match(source, /prerequisitesSatisfied[\s\S]*显式最终集成验收/);
   assert.doesNotMatch(source, /id: '(?:review|verification)'/);
   assert.match(evidence, /data-task-panel="evidence"/);
   assert.match(retrospective, /data-task-panel="retrospective"/);

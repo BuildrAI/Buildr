@@ -57,7 +57,11 @@ test('Development current Receipt 只在SQLite写入、替换和读取，旧YAML
   assert.equal(first.created, true);
   assert.equal(first.file, 'workspace-sqlite:task-development/demo-task');
   assert.match(first.receiptDigest, /^sha256-/);
-  assert.equal(JSON.parse(stored(runtime, root)).schemaVersion, 'buildr.task-development-receipt/v2');
+  const persisted = JSON.parse(stored(runtime, root));
+  assert.equal(persisted.schemaVersion, 'buildr.task-development-receipt/v3');
+  assert.equal(persisted.parentPlan, null);
+  assert.deepEqual(persisted.plannedContributions, []);
+  assert.equal(persisted.parentAcceptance, null);
 
   const second = runtime.writeTaskDevelopmentPersistence(root, receipt('2026-08-04T00:01:00.000Z'), observation('planning', '2026-08-04T00:01:00.000Z'));
   assert.equal(second.created, false);

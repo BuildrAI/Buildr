@@ -558,6 +558,8 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
+    await page.locator('#task-parent-coordination').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-parent-coordination').innerText(), /历史Task继续使用既有模型|没有 Parent Plan/);
     assert.equal(await page.locator('[data-task-tab]').count(), 5);
     await unique(page.getByRole('button', { name: '研发', exact: true }), '任务研发页签');
     await unique(page.getByRole('button', { name: '证据', exact: true }), '任务证据页签');

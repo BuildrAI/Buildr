@@ -5,7 +5,19 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 # Task Development
 
-本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；没有公共Development CLI，Local App只消费Application `inspect`的只读投影，不提供Development写操作。不得手写Development Receipt。
+本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Local App只消费Application `inspect`的只读投影来展示通用Development。Parent coordination另有受控公共CLI/Local App surface，但Development Receipt仍只能由Application写入。不得手写Development Receipt。
+
+## Parent Plan 与 Child Contribution
+
+新建Parent可以显式采用Parent Plan。先用`task parent inspect`确认`legacy|parent-plan`模式；首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
+
+Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。Child仍拥有独立Environment、窄Change、Planning Review、Verification、Completion Review与Finish；同一个具体规范变化同一时间只能由一个active Change持有。
+
+Child形成正式handoff时必须提交`contributionHandoff`，完整表达planned、delivered、extra、residual、superseded、affected与唯一`nextAction`。Application要求planned精确匹配已保存binding，全部引用属于current Parent Plan，且parentTaskId与Task Record关系一致；`completed`状态不能替代handoff证明。Parent自己承担窄集成Contribution时，在Plan中把`plannedChildTaskId`设为Parent Task ID，并由Parent自己的current Development handoff证明。
+
+Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖未来Child范围时，先根据已保存handoff显式`reconcile` Parent Plan，再分别更新或放弃受影响Child：全部覆盖用Task Record `abandon`并在handoff/Plan中表达superseded，部分覆盖只保留residual intent与窄Change；不得伪装completed，也不得从代码、文件或canonical specs猜测delivery。
+
+所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。随后继续正常Candidate、Completion Review、decision、handoff与Formal Finish。
 
 ## 从首个研发动作接入
 
@@ -47,7 +59,7 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 - `blocked`：说明未获接受的风险或仍需处理的问题，不修改Task顶层status；
 - `proceed`：必须绑定current Candidate。Verification not-passed、coverage gap或Completion changes-required时，每项风险都要绑定`verification|completion`、精确Result digest、scope、summary和用户授权source；跳过整个适用gate使用`gate`记录waiver，不伪造Result或混入风险列表。
 
-只有 current Candidate、三个 current gates 和合法 proceed decision 同时成立时生成正式 handoff。Application append immutable snapshot；不得因后续 Result 刷新或新 generation 改写旧 snapshot。
+只有 current Candidate、三个 current gates 和合法 proceed decision 同时成立时生成正式 handoff。Application append immutable snapshot；不得因后续 Result 刷新或新 generation 改写旧 snapshot。承担Parent Contribution的Task必须同时提供上述Contribution Handoff。
 
 ## 交给 Finish
 

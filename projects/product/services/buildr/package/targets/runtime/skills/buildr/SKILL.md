@@ -6,9 +6,7 @@ description: 在 Buildr workspace 中安装、更新或同步 Buildr、更新或
 
 ## Buildr 是什么
 
-Buildr 是为组织和 Agent 构建的工作资产治理系统。
-
-它把散落在员工个人经验、文档、仓库和工具中的工作事实与工作方法，沉淀为可共享、可审计、可适配不同 Agent 的工作区（workspace）源资产。工作事实回答“干的是什么”，工作方法回答“怎么干”；Rules、Skills、Commands、Projects、Services 和专业能力等是当前示例，不是工作资产概念的封闭边界。Agent 是这些资产的主要使用者；人通过 Agent 表达目标、提供业务判断并确认重要决策。
+Buildr 是为组织和 Agent 构建的工作资产治理系统。它把散落在员工个人经验、文档、仓库和工具中的工作事实与工作方法，沉淀为可共享、可审计、可适配不同 Agent 的工作区（workspace）源资产。工作事实回答“干的是什么”，工作方法回答“怎么干”；Rules、Skills、Commands、Projects、Services 和专业能力等是当前示例，不是工作资产概念的封闭边界。Agent 是这些资产的主要使用者；人通过 Agent 表达目标、提供业务判断并确认重要决策。
 
 Buildr workspace 是组织（Organization/Root）资产根；Agent runtime 是面向当前 Agent 的可重建入口。Buildr 不成为另一个 Agent，也不接管 Agent 的理解、推理和任务执行。Buildr 组织并投射 Agent 可发现、可选择、可使用的工作资产，不替 Agent 构造 context window；Agent 根据当前任务发现并选择相关内容，形成任务上下文并推进工作。本机状态和临时提示不由 Buildr 维护。
 
@@ -42,6 +40,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 接入业务、产品线、系统或长期工作单元 | 项目（Project） |
 | 接入代码仓、服务仓或可执行资产 | 服务（Service） |
 | 查看正式 Task、Parent/Child 与各专业当前状态 | `buildr.task-record/v1` 及 Development、Review、Verification 公开 read model；Local App 动态投影 |
+| 创建或检查opt-in Parent Plan、绑定Child Contribution、显式reconcile范围变化或记录Parent最终集成验收 | `buildr.task-development/v2` selected provider + `task parent inspect|record|bind-child|reconcile|accept`；progress只由Application动态派生 |
 | 明确复盘已完成或已放弃Task的Agent执行效率并保存当前报告 | `buildr.task-retrospective/v1` selected provider；不进入生命周期门禁 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
 | 运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化/更新验证能力声明，或实现任务到达正式验证节点 | `buildr.task-verification/v3` selected provider；不开发测试 |

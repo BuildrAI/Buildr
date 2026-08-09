@@ -355,12 +355,33 @@
 
 - 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority。
 - 适用范围：全研发区间的可选节点引用/currentness、实现收敛、formal Verification编排、Candidate freeze、Completion Review消费、风险/豁免决定和研发交接；Local App可通过Application`inspect`只读展示这些事实。
-- 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；没有公共 Development CLI、写 API 或 Local App mutation。
+- 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；通用Development没有公共CLI，Parent coordination只开放受控Application薄接口。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
+
+## Parent Plan
+
+- 定义：采用新父子任务协调模型的Parent在唯一Development Receipt中保存的closed、内容寻址协调计划，只包含outcome、architecture invariants、Contribution Map、dependencies与final acceptance。
+- 适用范围：Parent Planning Review target、Child Contribution binding、显式reconciliation与最终集成验收前置判断。
+- 避免混用：不是OpenSpec delta Change、Child状态/Result副本、实现清单、Markdown checkbox进度或lifecycle authority；普通Child状态变化不改变其bytes或identity。
+- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+
+## Contribution Handoff
+
+- 定义：承担Parent Contribution的Task在既有immutable Development handoff中保存的实际交付事实，明确planned、delivered、extra、residual、superseded、affected与唯一next action。
+- 适用范围：Parent Coordination Application只在Child Finish terminal association匹配时据此证明delivery；Parent亲自承担的窄Contribution可由Parent current handoff证明。
+- 避免混用：不是第二套Result、delivery registry、event/history/audit log，也不能由Task `completed`、代码或canonical specs推断。
+- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+
+## Parent reconciliation
+
+- 定义：以current Parent Plan expected identity、完整next Plan和理由执行的显式计划mutation，用于处理越界/提前交付、依赖或验收变化及后续Child residual/superseded scope。
+- 适用范围：新Plan identity形成后重做Parent Planning Review，并由Agent分别更新或abandon受影响Child。
+- 避免混用：不是Child状态同步、自动scope推断、数据库migration或历史backfill；它不自动修改Child Task/Change。
+- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
 
 ## 研发回执（Development Receipt）
 
-- 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；v2保存Environment逻辑引用、最小Task context、planning snapshot、可空Content Target、verification policy、current Candidate/generation、最小gates/dispositions、decision与不可变研发交接snapshots，不读取或迁移旧YAML/v1。
+- 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；v3保存Environment逻辑引用、最小Task context、planning snapshot、可空Parent Plan/planned Contribution/final acceptance、可空Content Target、verification policy、current Candidate/generation、最小gates/dispositions、decision与不可变研发/Contribution handoff snapshots；v1/v2只读归一化为Parent facts absent，不读取或迁移旧YAML。
 - 适用范围：Development inspect/begin/planning/observe/policy/gate/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
 - 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接打开SQLite，只消费Application handoff port。
 - 来源：[Task Development capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-development/v2.md)

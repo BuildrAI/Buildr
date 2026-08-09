@@ -11,6 +11,7 @@ import {
   taskDevelopmentDigest,
   taskDevelopmentError,
 } from '../../domain/task-development/task-development.mjs';
+import { createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizePlannedContributionBindings, parentCoordinationError, validateContributionHandoffAgainstPlan } from '../../domain/parent-coordination/parent-coordination.mjs';
 
 function assertObject(input, label) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskDevelopmentError('task_development_input_invalid', `${label} 必须是对象。`);
@@ -306,7 +307,7 @@ export function registerTaskDevelopmentApplication(runtime) {
 
   function initialReceipt(taskId, execution, context, planning, content = null, planningGateValue = null) {
     const timestamp = now();
-    return normalizeTaskDevelopmentReceipt({ schemaVersion: 'buildr.task-development-receipt/v2', taskId, environment: { taskId, receiptSchema: execution.receiptSchema }, taskContext: context, planning, contentTarget: content, verificationPolicy: null, generation: 0, candidate: null, gates: { planning: planningGateValue, verification: null, completion: null }, decision: null, handoffs: [], createdAt: timestamp, updatedAt: timestamp }, { expectedTaskId: taskId });
+    return normalizeTaskDevelopmentReceipt({ schemaVersion: 'buildr.task-development-receipt/v3', taskId, environment: { taskId, receiptSchema: execution.receiptSchema }, taskContext: context, planning, parentPlan: null, plannedContributions: [], parentAcceptance: null, contentTarget: content, verificationPolicy: null, generation: 0, candidate: null, gates: { planning: planningGateValue, verification: null, completion: null }, decision: null, handoffs: [], createdAt: timestamp, updatedAt: timestamp }, { expectedTaskId: taskId });
   }
 
   function writeDevelopment(targetRoot, taskId, previous, receipt, currentObservation = null, options = {}) {
@@ -495,12 +496,27 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function createTaskDevelopmentHandoff(targetRoot, taskId, input = {}) {
-    assertFields(input, new Set(), 'Task Development handoff');
+    assertFields(input, new Set(['contributionHandoff']), 'Task Development handoff');
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
     if (!observed.candidateCurrent || !observed.completionCurrent || persistence.receipt.decision?.outcome !== 'proceed') throw taskDevelopmentError('task_development_handoff_not_ready', 'Finish handoff需要current Candidate、Planning/Verification/Completion gates与proceed decision。', 409, { reasons: observed.reasons });
-    const handoff = createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, decision: persistence.receipt.decision, createdAt: now() });
+    let contributionHandoff = null;
+    if (input.contributionHandoff) {
+      contributionHandoff = input.contributionHandoff.identity ? normalizeContributionHandoff(input.contributionHandoff) : createContributionHandoff(input.contributionHandoff);
+      const taskRecord = runtime.inspectTaskRecord(targetRoot, taskId).record;
+      const selfDelivery = contributionHandoff.parentTaskId === taskId && persistence.receipt.parentPlan;
+      if (!selfDelivery && taskRecord.parentTaskId !== contributionHandoff.parentTaskId) throw parentCoordinationError('contribution_handoff_parent_mismatch', 'Contribution Handoff parentTaskId必须等于Child Task Record parent。', 409, { recordParent: taskRecord.parentTaskId, handoffParent: contributionHandoff.parentTaskId });
+      const parentReceipt = selfDelivery ? persistence.receipt : runtime.inspectTaskDevelopment(targetRoot, contributionHandoff.parentTaskId).development?.receipt;
+      const parentPlan = parentReceipt?.parentPlan;
+      if (!parentPlan) throw parentCoordinationError('parent_plan_missing', 'Contribution Handoff必须绑定current Parent Plan。', 409, { parentTaskId: contributionHandoff.parentTaskId });
+      const expectedPlanned = (selfDelivery
+        ? parentPlan.contributions.filter((item) => item.plannedChildTaskId === taskId).map((item) => item.id)
+        : persistence.receipt.plannedContributions.filter((item) => item.parentTaskId === contributionHandoff.parentTaskId).map((item) => item.contributionId)
+      ).sort();
+      contributionHandoff = validateContributionHandoffAgainstPlan(contributionHandoff, parentPlan, expectedPlanned);
+    }
+    const handoff = createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, decision: persistence.receipt.decision, contributionHandoff, createdAt: now() });
     const handoffs = persistence.receipt.handoffs.some((item) => item.identity === handoff.identity) ? persistence.receipt.handoffs : [...persistence.receipt.handoffs, handoff];
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, gates: observed.gates, handoffs, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
@@ -512,8 +528,62 @@ export function registerTaskDevelopmentApplication(runtime) {
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
-    if (observed.handoffCurrent) return result('carrier', 'equivalent', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
+    const parentAcceptanceCurrent = !persistence.receipt.parentPlan
+      || persistence.receipt.parentAcceptance?.planIdentity === persistence.receipt.parentPlan.identity;
+    if (observed.handoffCurrent && parentAcceptanceCurrent) return result('carrier', 'equivalent', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
+    if (observed.handoffCurrent && !parentAcceptanceCurrent) return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], { code: 'parent_final_acceptance_required', message: '采用Parent Plan的Task必须先记录绑定current Plan identity的显式最终集成验收。' }, ['调用task parent inspect确认Contribution前置条件，再执行task parent accept。']);
     return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], { code: 'task_development_carrier_not_equivalent', message: 'Delivery carrier与current handoff Candidate不等价。', details: observed.reasons }, ['返回task-development重新建立stable target、Verification、Candidate、Completion Review与handoff。']);
+  }
+
+  function recordTaskParentPlan(targetRoot, taskId, input) {
+    assertFields(input, new Set(['plan', 'expectedPlanIdentity', 'reason']), 'Task Development parent plan');
+    task(targetRoot, taskId, { active: true, mutation: true });
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
+    const currentIdentity = persistence.receipt.parentPlan?.identity ?? null;
+    if (input.expectedPlanIdentity !== undefined && input.expectedPlanIdentity !== currentIdentity) throw parentCoordinationError('parent_plan_conflict', 'Parent Plan expected identity已陈旧。', 409, { expected: input.expectedPlanIdentity, current: currentIdentity }, '重新inspect Parent coordination后显式reconcile。');
+    const plan = input.plan?.identity ? input.plan : createParentPlan(input.plan);
+    if (currentIdentity === null && input.expectedPlanIdentity !== undefined) throw parentCoordinationError('parent_plan_conflict', '首次record不得提交非空expected identity。', 409);
+    const planning = createTaskDevelopmentPlanning({ targetIdentity: plan.identity, nodes: [{ id: 'parent-plan', kind: 'parent-plan', authority: 'buildr.task-development/v3', reference: `workspace-sqlite:task-development/${taskId}#parent-plan`, identity: plan.identity, disposition: 'current', summary: 'Parent outcome、architecture invariants、Contribution Map、dependencies与final acceptance。', source: null }] });
+    const changed = currentIdentity !== plan.identity;
+    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, parentPlan: plan, parentAcceptance: changed ? null : persistence.receipt.parentAcceptance, planning, candidate: changed ? null : persistence.receipt.candidate, gates: { planning: changed ? null : persistence.receipt.gates.planning, verification: changed ? null : persistence.receipt.gates.verification, completion: changed ? null : persistence.receipt.gates.completion }, decision: changed ? null : persistence.receipt.decision, updatedAt: now() }, { expectedTaskId: taskId });
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('parent-plan', changed ? (currentIdentity ? 'reconciled' : 'recorded') : 'unchanged', taskId, written, written.applicability, changed ? [effect(written.root, written)] : []);
+  }
+
+  function bindTaskPlannedContributions(targetRoot, taskId, input) {
+    assertFields(input, new Set(['parentTaskId', 'contributionIds']), 'Task Development contribution binding');
+    const child = task(targetRoot, taskId, { active: true, mutation: true });
+    if (child.record.parentTaskId !== input.parentTaskId) throw parentCoordinationError('parent_contribution_parent_mismatch', 'Child Task Record parent与binding不一致。', 409, { recordParent: child.record.parentTaskId, requestedParent: input.parentTaskId });
+    const parent = runtime.inspectTaskDevelopment(targetRoot, input.parentTaskId);
+    const plan = parent.development?.receipt?.parentPlan;
+    if (!plan) throw parentCoordinationError('parent_plan_missing', 'Parent尚未采用Parent Plan。', 409, { parentTaskId: input.parentTaskId });
+    const contributionIds = [...new Set(input.contributionIds || [])].sort();
+    if (!contributionIds.length || contributionIds.some((id) => !plan.contributions.some((item) => item.id === id))) throw parentCoordinationError('parent_contribution_unknown', 'binding必须引用Parent Plan中的一个或多个Contribution。', 409, { contributionIds });
+    const conflictingOwner = plan.contributions.find((item) => contributionIds.includes(item.id) && item.plannedChildTaskId && item.plannedChildTaskId !== taskId);
+    if (conflictingOwner) throw parentCoordinationError('parent_contribution_owner_conflict', 'Contribution已由Parent Plan分配给其他Task；必须先显式reconcile。', 409, { contributionId: conflictingOwner.id, plannedChildTaskId: conflictingOwner.plannedChildTaskId, requestedChildTaskId: taskId });
+    const parentRecord = runtime.inspectTaskRecord(targetRoot, input.parentTaskId).record;
+    for (const siblingTaskId of parentRecord.childTaskIds.filter((id) => id !== taskId)) {
+      const siblingBindings = runtime.inspectTaskDevelopment(targetRoot, siblingTaskId).development?.receipt?.plannedContributions || [];
+      const duplicate = siblingBindings.find((item) => item.parentTaskId === input.parentTaskId && contributionIds.includes(item.contributionId));
+      if (duplicate) throw parentCoordinationError('parent_contribution_owner_conflict', 'Contribution已绑定其他Child；必须先显式reconcile并收敛旧Child scope。', 409, { contributionId: duplicate.contributionId, plannedChildTaskId: siblingTaskId, requestedChildTaskId: taskId });
+    }
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
+    const bindings = normalizePlannedContributionBindings(contributionIds.map((contributionId) => ({ parentTaskId: input.parentTaskId, contributionId })));
+    const changed = !same(bindings, persistence.receipt.plannedContributions);
+    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, plannedContributions: bindings, candidate: changed ? null : persistence.receipt.candidate, gates: { ...persistence.receipt.gates, verification: changed ? null : persistence.receipt.gates.verification, completion: changed ? null : persistence.receipt.gates.completion }, decision: changed ? null : persistence.receipt.decision, updatedAt: now() }, { expectedTaskId: taskId });
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('contribution-bind', changed ? 'recorded' : 'unchanged', taskId, written, written.applicability, changed ? [effect(written.root, written)] : []);
+  }
+
+  function recordTaskParentAcceptance(targetRoot, taskId, input) {
+    assertFields(input, new Set(['expectedPlanIdentity', 'summary']), 'Task Development parent acceptance');
+    task(targetRoot, taskId, { active: true, mutation: true });
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
+    if (!persistence.receipt.parentPlan || persistence.receipt.parentPlan.identity !== input.expectedPlanIdentity) throw parentCoordinationError('parent_plan_conflict', 'Parent final acceptance必须绑定current Parent Plan identity。', 409, { current: persistence.receipt.parentPlan?.identity ?? null, expected: input.expectedPlanIdentity });
+    const acceptance = { planIdentity: input.expectedPlanIdentity, summary: inputText(input.summary, 'summary'), acceptedAt: now() };
+    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, parentAcceptance: acceptance, updatedAt: now() }, { expectedTaskId: taskId });
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('parent-acceptance', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   const scoped = (operation) => (targetRoot, ...args) => {
@@ -532,6 +602,9 @@ export function registerTaskDevelopmentApplication(runtime) {
     decideTaskDevelopment: scoped(decideTaskDevelopment),
     createTaskDevelopmentHandoff: scoped(createTaskDevelopmentHandoff),
     assertTaskDevelopmentCarrier: scoped(assertTaskDevelopmentCarrier),
+    recordTaskParentPlan: scoped(recordTaskParentPlan),
+    bindTaskPlannedContributions: scoped(bindTaskPlannedContributions),
+    recordTaskParentAcceptance: scoped(recordTaskParentAcceptance),
   });
   return runtime;
 }

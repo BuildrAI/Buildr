@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
 
-export const TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v2';
-export const LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v1';
+import { createContributionHandoff, normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings } from '../parent-coordination/parent-coordination.mjs';
+
+export const TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v3';
+export const LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMAS = Object.freeze(['buildr.task-development-receipt/v1', 'buildr.task-development-receipt/v2']);
 export const TASK_DEVELOPMENT_DECISIONS = Object.freeze(['proceed', 'blocked']);
 export const TASK_DEVELOPMENT_CHANGE_DISPOSITIONS = Object.freeze(['pending', 'converged', 'not-applicable']);
 export const TASK_DEVELOPMENT_PLANNING_DISPOSITIONS = Object.freeze(['pending', 'current', 'stale', 'not-applicable', 'waived']);
@@ -336,7 +338,7 @@ function normalizeDecision(value) {
   return { outcome: decision.outcome, candidateIdentity, summary: portableText(decision.summary, 'decision.summary'), risks: decision.risks.map(normalizeRisk) };
 }
 
-export function createTaskFinishHandoff({ candidate, changes, gates, decision, createdAt }) {
+export function createTaskFinishHandoff({ candidate, changes, gates, decision, contributionHandoff = null, createdAt }) {
   const normalizedCandidate = normalizeTaskCandidate(candidate);
   if (!Array.isArray(changes)) throw taskDevelopmentError('task_development_handoff_changes_invalid', 'handoff.changes 必须是数组。', 400);
   const canonicalChanges = changes.map((item, index) => {
@@ -373,14 +375,15 @@ export function createTaskFinishHandoff({ candidate, changes, gates, decision, c
   for (const item of adverse) {
     if (!normalizedDecision.risks.some((risk) => risk.gate === item.gate && risk.resultDigest === item.digest)) throw taskDevelopmentError('task_development_risk_acceptance_required', `proceed 必须显式接受 ${item.gate} gate 风险。`, 409, item);
   }
-  const payload = { candidate: normalizedCandidate, changes: normalizedChanges, gates: normalizedGates, decision: normalizedDecision };
+  const normalizedContributionHandoff = contributionHandoff === null ? null : (contributionHandoff.identity ? normalizeContributionHandoff(contributionHandoff) : createContributionHandoff(contributionHandoff));
+  const payload = { candidate: normalizedCandidate, changes: normalizedChanges, gates: normalizedGates, decision: normalizedDecision, ...(normalizedContributionHandoff ? { contributionHandoff: normalizedContributionHandoff } : {}) };
   return { identity: taskDevelopmentDigest(payload), ...payload, createdAt: timestamp(createdAt, 'handoff.createdAt') };
 }
 
 function normalizeHandoff(value, index) {
   const field = `handoffs[${index}]`;
   const handoff = object(value, 'handoff');
-  closed(handoff, new Set(['identity', 'candidate', 'changes', 'gates', 'decision', 'createdAt']), field);
+  closed(handoff, new Set(['identity', 'candidate', 'changes', 'gates', 'decision', 'contributionHandoff', 'createdAt']), field);
   const normalized = createTaskFinishHandoff(handoff);
   assertDerivedIdentity(handoff.identity, normalized.identity, `${field}.identity`);
   return normalized;
@@ -388,13 +391,14 @@ function normalizeHandoff(value, index) {
 
 export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null } = {}) {
   let receipt = object(value, 'Development Receipt');
-  const legacy = receipt.schemaVersion === LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMA;
-  closed(receipt, new Set(['schemaVersion', 'taskId', 'environment', 'taskContext', 'planning', 'contentTarget', 'verificationPolicy', 'generation', 'candidate', 'gates', 'decision', 'handoffs', 'createdAt', 'updatedAt']), '');
+  const legacy = LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMAS.includes(receipt.schemaVersion);
+  closed(receipt, new Set(['schemaVersion', 'taskId', 'environment', 'taskContext', 'planning', 'parentPlan', 'plannedContributions', 'parentAcceptance', 'contentTarget', 'verificationPolicy', 'generation', 'candidate', 'gates', 'decision', 'handoffs', 'createdAt', 'updatedAt']), '');
   if (!legacy && receipt.schemaVersion !== TASK_DEVELOPMENT_RECEIPT_SCHEMA) throw taskDevelopmentError('task_development_schema_unsupported', `Development Receipt schemaVersion 必须是 ${TASK_DEVELOPMENT_RECEIPT_SCHEMA}。`, 409, { actual: receipt.schemaVersion });
-  if (legacy) {
+  if (receipt.schemaVersion === 'buildr.task-development-receipt/v1') {
     const targetIdentity = receipt.gates?.planning?.targetIdentity || null;
-    receipt = { ...receipt, schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, planning: createTaskDevelopmentPlanning({ targetIdentity, nodes: [] }) };
+    receipt = { ...receipt, planning: createTaskDevelopmentPlanning({ targetIdentity, nodes: [] }) };
   }
+  if (legacy) receipt = { ...receipt, schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, parentPlan: null, plannedContributions: [], parentAcceptance: null };
   const taskId = portableText(receipt.taskId, 'taskId');
   if (expectedTaskId && taskId !== expectedTaskId) throw taskDevelopmentError('task_development_task_identity_mismatch', `Development Receipt taskId 与目录不一致：${expectedTaskId} != ${taskId}。`, 409, { expectedTaskId, taskId });
   const environment = normalizeEnvironmentReference(receipt.environment);
@@ -403,6 +407,15 @@ export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null }
   const taskContext = normalizeTaskDevelopmentContext(receipt.taskContext);
   if (taskContext.taskId !== taskId) throw taskDevelopmentError('task_development_task_identity_mismatch', 'taskContext.taskId 与 Receipt taskId 不一致。', 409, { taskId, contextTaskId: taskContext.taskId });
   const planning = normalizeTaskDevelopmentPlanning(receipt.planning);
+  const parentPlan = receipt.parentPlan == null ? null : normalizeParentPlan(receipt.parentPlan);
+  const plannedContributions = normalizePlannedContributionBindings(receipt.plannedContributions ?? []);
+  let parentAcceptance = receipt.parentAcceptance ?? null;
+  if (parentAcceptance !== null) {
+    const acceptance = object(parentAcceptance, 'parentAcceptance');
+    closed(acceptance, new Set(['planIdentity', 'summary', 'acceptedAt']), 'parentAcceptance');
+    parentAcceptance = { planIdentity: digestIdentity(acceptance.planIdentity, 'parentAcceptance.planIdentity'), summary: portableText(acceptance.summary, 'parentAcceptance.summary'), acceptedAt: timestamp(acceptance.acceptedAt, 'parentAcceptance.acceptedAt') };
+    if (!parentPlan || parentAcceptance.planIdentity !== parentPlan.identity) throw taskDevelopmentError('task_development_parent_acceptance_stale', 'Parent final acceptance必须绑定current Parent Plan。', 409);
+  }
   const contentTarget = receipt.contentTarget === null ? null : normalizeTaskContentTarget(receipt.contentTarget);
   const verificationPolicy = receipt.verificationPolicy === null ? null : normalizeTaskVerificationPolicy(receipt.verificationPolicy);
   const candidate = receipt.candidate === null ? null : normalizeTaskCandidate(receipt.candidate);
@@ -419,5 +432,5 @@ export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null }
   const createdAt = timestamp(receipt.createdAt, 'createdAt');
   const updatedAt = timestamp(receipt.updatedAt, 'updatedAt');
   if (Date.parse(updatedAt) < Date.parse(createdAt)) throw taskDevelopmentError('task_development_timestamp_invalid', 'updatedAt 不能早于 createdAt。', 400, { field: 'updatedAt' });
-  return { schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, taskId, environment, taskContext, planning, contentTarget, verificationPolicy, generation: receipt.generation, candidate, gates, decision, handoffs, createdAt, updatedAt };
+  return { schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, taskId, environment, taskContext, planning, parentPlan, plannedContributions, parentAcceptance, contentTarget, verificationPolicy, generation: receipt.generation, candidate, gates, decision, handoffs, createdAt, updatedAt };
 }

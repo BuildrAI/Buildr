@@ -42,6 +42,8 @@ export function TaskDetailPage() {
   const [data, setData] = useState<TaskDetailData | null>(null);
   const [overviewData, setOverviewData] = useState<any>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  const [coordinationData, setCoordinationData] = useState<any>(null);
+  const [coordinationLoading, setCoordinationLoading] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ message: string; error: boolean } | null>(null);
   const [editState, setEditState] = useState('可以修改');
@@ -84,6 +86,7 @@ export function TaskDetailPage() {
   taskIdRef.current = taskId;
   const developmentRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
+  const coordinationRequestRef = useRef(0);
   const environmentRequestRef = useRef(0);
   const reviewRequestRef = useRef(0);
   const verificationRequestRef = useRef(0);
@@ -156,6 +159,22 @@ export function TaskDetailPage() {
       }
     } finally {
       if (overviewRequestRef.current === requestId) setOverviewLoading(false);
+    }
+  }, [taskId]);
+
+  const refreshCoordination = useCallback(async () => {
+    const requestId = ++coordinationRequestRef.current;
+    const currentTaskId = taskId;
+    setCoordinationLoading(true);
+    try {
+      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`);
+      if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) setCoordinationData(next);
+    } catch (err) {
+      if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+        setCoordinationData({ diagnostic: { code: (err as ApiError).code || 'parent_coordination_read_failed', message: err instanceof Error ? err.message : '读取失败' } });
+      }
+    } finally {
+      if (coordinationRequestRef.current === requestId) setCoordinationLoading(false);
     }
   }, [taskId]);
 
@@ -297,7 +316,10 @@ export function TaskDetailPage() {
 
   const selectTab = useCallback((tab: TaskTab) => {
     setActiveTab(tab);
-    if (tab === 'overview') void refreshOverview();
+    if (tab === 'overview') {
+      void refreshOverview();
+      void refreshCoordination();
+    }
     if (tab === 'development') void refreshDevelopment();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
@@ -305,13 +327,14 @@ export function TaskDetailPage() {
       void refreshVerification();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
     setAlert(null);
     setActiveTab('overview');
     setOverviewData(null);
+    setCoordinationData(null);
     setDevelopmentData(null);
     setEnvironmentData(null);
     setReviewData(null);
@@ -324,6 +347,7 @@ export function TaskDetailPage() {
     setEditState('可以修改');
     developmentRequestRef.current += 1;
     overviewRequestRef.current += 1;
+    coordinationRequestRef.current += 1;
     environmentRequestRef.current += 1;
     reviewRequestRef.current += 1;
     verificationRequestRef.current += 1;
@@ -331,6 +355,7 @@ export function TaskDetailPage() {
     retrospectiveMutationRef.current += 1;
     setDevelopmentLoading(false);
     setOverviewLoading(false);
+    setCoordinationLoading(false);
     setEnvironmentLoading(false);
     setReviewLoading(false);
     setVerificationLoading(false);
@@ -340,7 +365,7 @@ export function TaskDetailPage() {
     let cancelled = false;
     void (async () => {
       try {
-        await Promise.all([refresh(), refreshOverview()]);
+        await Promise.all([refresh(), refreshOverview(), refreshCoordination()]);
       } catch (err) {
         if (!cancelled && taskIdRef.current === taskId) {
           setPageError(err instanceof Error ? err.message : '任务不可用');
@@ -350,12 +375,15 @@ export function TaskDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [taskId, refresh, refreshOverview]);
+  }, [taskId, refresh, refreshOverview, refreshCoordination]);
 
   useEffect(() => {
     const onFocus = () => {
       const tab = activeTabRef.current;
-      if (tab === 'overview') void refreshOverview();
+      if (tab === 'overview') {
+        void refreshOverview();
+        void refreshCoordination();
+      }
       if (tab === 'development') void refreshDevelopment();
       if (tab === 'environment') void refreshEnvironment();
       if (tab === 'evidence') {
@@ -366,7 +394,7 @@ export function TaskDetailPage() {
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshOverview, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
 
   const loadParentOptions = async () => {
     const current = dataRef.current;
@@ -573,6 +601,53 @@ export function TaskDetailPage() {
               <Fact label="环境" value={overviewData?.environment?.present ? `${overviewData.environment.status} · ${formatDateTime(overviewData.environment.updatedAt)}` : '尚未形成'} />
               <Fact label="交付" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '尚未形成'} />
             </dl>
+          )}
+        </section>
+        <section className="panel" id="task-parent-coordination" aria-live="polite">
+          <div className="panel-heading">
+            <div>
+              <h2>父子任务协调</h2>
+              <p className="section-copy">直接展示 Parent Coordination Application 的派生 read model；不在 Parent Task Record 复制 Child 状态或交付结果。</p>
+            </div>
+            <button className="button secondary" type="button" onClick={() => { void refreshCoordination(); }} disabled={coordinationLoading}>{coordinationLoading ? '读取中…' : '刷新协调事实'}</button>
+          </div>
+          {coordinationData?.mode === 'parent-plan' ? (
+            <>
+              <dl className="read-facts detail-facts">
+                <Fact label="Parent outcome" value={coordinationData.parentPlan?.outcome || '—'} />
+                <Fact label="Plan identity" value={coordinationData.parentPlan?.identity || '—'} />
+                <Fact label="前置条件" value={coordinationData.prerequisitesSatisfied ? '已满足，仍需显式最终集成验收' : `未满足（${coordinationData.blockers?.length || 0} 项）`} />
+                <Fact label="最终集成验收" value={coordinationData.parentAcceptance ? `${coordinationData.parentAcceptance.summary} · ${formatDateTime(coordinationData.parentAcceptance.acceptedAt)}` : '尚未记录'} />
+                <Fact label="Planning Review" value={coordinationData.planningReview?.present ? `${coordinationData.planningReview.outcome} · ${coordinationData.planningReview.gateMatch}` : '尚未记录'} />
+              </dl>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Contribution</th><th>计划结果</th><th>派生状态</th><th>承担 / 交付</th></tr></thead>
+                  <tbody>
+                    {(coordinationData.contributions || []).map((contribution: any) => (
+                      <tr key={contribution.id}>
+                        <td><strong>{contribution.id}</strong></td>
+                        <td>{contribution.summary}</td>
+                        <td>{contribution.disposition}</td>
+                        <td>{contribution.deliveredBy?.taskId || contribution.plannedChildTaskId || '尚未分配'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <h3>直接 Child Tasks</h3>
+              {coordinationData.children?.length ? (
+                <dl className="read-facts detail-facts">
+                  {coordinationData.children.map((child: any) => (
+                    <Fact key={child.taskId} label={child.taskId} value={`${taskStatusLabel(child.status)} · planned: ${child.plannedContributions.join('、') || '无'} · handoff: ${child.deliveryProven ? '已证明' : '未证明'}`} />
+                  ))}
+                </dl>
+              ) : <p className="empty-copy">尚无直接 Child Task。</p>}
+            </>
+          ) : (
+            <p className={coordinationData?.diagnostic?.code && coordinationData.diagnostic.code !== 'parent_plan_absent' ? 'alert error' : 'section-copy'}>
+              {coordinationData?.diagnostic?.message || '该 Task 没有 Parent Plan；历史 Task 保持可读且不会自动 backfill。'}
+            </p>
           )}
         </section>
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">

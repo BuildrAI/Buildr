@@ -18,9 +18,10 @@ function fixture(t) {
 
 test('正文先脱敏再原子发布，重试复用匹配manifest', (t) => {
   const { root, runtime, record } = fixture(t);
+  const privateKeyFixture = `-----BEGIN ${'PRIVATE'} KEY-----\nsecret\n-----END ${'PRIVATE'} KEY-----`;
   const files = [
     { name: 'summary.json', content: { token: 'top-secret', workspace: `${root}/projects/product`, external: '/Users/alice/private/file' } },
-    { name: 'stdout.txt', content: 'Authorization: Bearer abc.def\npassword="two word secret"\ncache=/var/folders/private/cache\n-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----' },
+    { name: 'stdout.txt', content: `Authorization: Bearer abc.def\npassword="two word secret"\ncache=/var/folders/private/cache\n${privateKeyFixture}` },
   ];
   const first = runtime.publishTaskExecutionRecordBody(root, record, files);
   const second = runtime.publishTaskExecutionRecordBody(root, record, files);

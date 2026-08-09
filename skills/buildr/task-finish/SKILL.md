@@ -12,6 +12,8 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 1. 明确正式 Task ID 与 canonical Workspace，通过 `task-environment` 确认 matching ready Environment。
 2. 通过 `task-development` Application inspect current formal handoff；必须能取得精确 handoff、Candidate/generation、Content Target identities 和 proceed decision。
 3. handoff missing/stale、Change 仍未处置、Verification/Completion 不完整或风险未获接受时停止，返回 Task Development；Finish 不补齐这些事实。
+   - Child承担Parent Contribution时，handoff还必须包含与current Parent Plan和planned binding一致的Contribution Handoff。
+   - Parent采用Parent Plan时，必须已记录current plan identity的显式最终集成验收；Child全部完成本身不满足该条件。
 4. 用户排除push、install或cleanup而改变交付语义时停止。
 5. Git-backed run使用retained checkout当前符号分支；显式`--target-branch`必须一致，Environment `startPoint`不提供交付authority。remote按显式值、Environment、branch upstream、唯一配置依次解析；缺失或歧义时停止。
 

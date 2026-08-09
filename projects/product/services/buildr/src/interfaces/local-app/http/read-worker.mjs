@@ -8,6 +8,7 @@ const operations = Object.freeze({
   development: 'inspectTaskDevelopmentView',
   reviews: 'inspectTaskReviewView',
   verification: 'inspectTaskVerificationView',
+  coordination: 'inspectParentCoordination',
 });
 
 function serializeError(error) {

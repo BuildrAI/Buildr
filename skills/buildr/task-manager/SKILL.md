@@ -5,7 +5,7 @@ description: 用户明确要求创建、查看、更新、设置 Parent、完成
 
 # Task Manager Skill
 
-本 Skill 是 `buildr.task-record/v1` 的默认 provider，只管理正式 Task 的最小顶层记录和直接 Parent/Child 层级。它不是全局任务 dispatcher；Local App 是调用同一 Task Record Application 的独立人类客户端。
+本 Skill 是 `buildr.task-record/v1` 的默认 provider，只管理正式 Task 的最小顶层记录和直接 Parent/Child 层级。它不是全局任务 dispatcher；Local App 是调用同一 Task Record Application 的独立人类客户端。Parent Plan、Contribution和交付证明属于Task Development/Parent Coordination，不得复制到Task Record。
 
 ## 1. 何时使用
 
@@ -19,7 +19,7 @@ description: 用户明确要求创建、查看、更新、设置 Parent、完成
 
 ## 2. 输入与 canonical target
 
-确认 operation、稳定小写 Task ID、已初始化 canonical Workspace target，以及动作所需的明确字段。create 需要 title、intent 和可为空的 Parent、Project/Service scope、`0..N` 个真实 `project/change`；update 需要 setter 或 add/remove；complete 需要 summary 和明确 no-change；abandon 需要 reason。设置 Parent 时只选择同一 Workspace 中已存在且 active 的 Task；不得用 Parent/Child 表达依赖或期待自动状态传播。
+确认 operation、稳定小写 Task ID、已初始化 canonical Workspace target，以及动作所需的明确字段。create 需要 title、intent 和可为空的 Parent、Project/Service scope、`0..N` 个真实 `project/change`；update 需要 setter 或 add/remove；complete 需要 summary 和明确 no-change；abandon 需要 reason。设置 Parent 时只选择同一 Workspace 中已存在且 active 的 Task；不得用 Parent/Child 表达依赖或期待自动状态传播。即使全部Child completed，Parent也只能在显式最终集成验收及正常Formal Finish后完成；范围全部被覆盖的未来Child用abandon/superseded，不伪装completed。
 
 当前位于 task environment 时，只接受上游已确认的 canonical Workspace target；不读取 environment receipt，不扫描父目录，不从 worktree 推断 retained root，也不把 environment identity 写入 Task Record。Local App 已创建或用户按 Task ID 继续时先 inspect，同一记录即为权威来源。
 

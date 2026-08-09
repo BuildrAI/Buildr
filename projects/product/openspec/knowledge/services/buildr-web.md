@@ -18,6 +18,7 @@
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
 - Task 列表以 `retrospectiveState` 筛选未复盘、未处理、已处理和无需处理；复盘 Tab 保持 Markdown 报告只读，通过 sibling `buildr` 的同源/session 受保护 API 更新处置状态。
+- Task概览的“父子任务协调”区块直接消费sibling `buildr` Parent Coordination Application read model，展示Parent Plan、Contribution disposition、直接Child顶层状态与saved handoff证明；前端不查询SQLite、不扫描文件系统、不缓存或回写Parent progress。legacy Task只展示absent提示。
 
 ## 运行与验证
 

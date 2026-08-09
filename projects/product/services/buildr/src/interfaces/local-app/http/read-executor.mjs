@@ -2,7 +2,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['overview', 'development', 'reviews', 'verification']);
+const OPERATIONS = new Set(['overview', 'development', 'reviews', 'verification', 'coordination']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_URL = new URL('./read-worker.mjs', import.meta.url);

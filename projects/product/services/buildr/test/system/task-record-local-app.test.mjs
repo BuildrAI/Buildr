@@ -98,8 +98,10 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   const retrospectiveTask = runtime.inspectTaskRecord(root, 'app-retrospective');
   runtime.completeTaskRecord(root, 'app-retrospective', { expectedRecordDigest: retrospectiveTask.recordDigest, summary: '复盘筛选夹具', noChange: false });
   runtime.recordTaskRetrospective(root, 'app-retrospective', { reportMarkdown: '# 复盘\n\n列表筛选验证。' });
+  runtime.resolveTaskEnvironmentExecution = (_workspace, taskId) => ({ ready: true, taskId, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root, scopes: [] });
+  runtime.beginTaskDevelopment(root, 'app-parent', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Parent Plan尚未记录。', source: 'system fixture' } });
   const readExecutor = {
-    run: (operation, input) => Promise.resolve(runtime[{ development: 'inspectTaskDevelopmentView', reviews: 'inspectTaskReviewView', verification: 'inspectTaskVerificationView' }[operation]](input.targetRoot, input.taskId)),
+    run: (operation, input) => Promise.resolve(runtime[{ development: 'inspectTaskDevelopmentView', reviews: 'inspectTaskReviewView', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination' }[operation]](input.targetRoot, input.taskId)),
     close: async () => {},
   };
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root, readExecutor });
@@ -131,6 +133,13 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   response = await request(`${endpoint}?q=a&q=b`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_invalid');
   const taskEndpoint = `${endpoint}/app-task`;
   response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v1'); assert.deepEqual(response.body.storedChangeReferences, [{ project: 'demo', change: 'same-change' }]); assert.equal('changeReferences' in response.body, false);
+  const coordinationEndpoint = `${endpoint}/app-parent/coordination`;
+  response = await request(coordinationEndpoint); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.parent-coordination-result/v1'); assert.equal(response.body.mode, 'legacy');
+  const parentPlan = { outcome: 'Local App displays one shared coordination model.', architectureInvariants: ['No Child status is copied into Parent Plan.'], contributions: [{ id: 'app-child-delivery', summary: 'The existing Child delivers its narrow scope.', plannedChildTaskId: 'app-task' }], dependencies: [], finalAcceptance: ['The saved delivery is explicitly accepted.'] };
+  response = await request(coordinationEndpoint, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ operation: 'record', plan: parentPlan }) }); assert.equal(response.status, 403);
+  response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ operation: 'record', plan: parentPlan, root }) }); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
+  response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ operation: 'record', plan: parentPlan, reason: 'Wrong operation field.' }) }); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'parent_coordination_field_forbidden');
+  response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ operation: 'record', plan: parentPlan }) }); assert.equal(response.status, 200); assert.equal(response.body.mode, 'parent-plan'); assert.equal(response.body.parentPlan.contributions[0].id, 'app-child-delivery');
   response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.schemaVersion, 'buildr.task-development-operation-result/v1'); assert.equal(response.body.status, 'missing'); assert.equal(response.headers.get('cache-control'), 'no-store');
   const inspectDevelopment = runtime.inspectTaskDevelopment.bind(runtime);
   const developmentReadModel = { schemaVersion: 'buildr.task-development-operation-result/v1', operation: 'inspect', status: 'inspected', taskId: 'app-task', development: { path: 'workspace-sqlite:task-development/app-task', receiptDigest: 'sha256-development', receipt: { generation: 2 }, applicability: { status: 'candidate-current' } }, diagnostic: null, effects: [], nextActions: [] };

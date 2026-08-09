@@ -343,6 +343,8 @@ export function registerTaskRecordApplication(runtime) {
   function completeTaskRecord(targetRoot, taskId, input) {
     assertFields(input, new Set(['expectedRecordDigest', 'summary', 'noChange']), 'Task complete');
     if (typeof input.noChange !== 'boolean') throw taskRecordError('task_record_no_change_required', 'complete 必须明确提供 noChange boolean。', 400, { field: 'noChange' });
+    const coordination = typeof runtime.inspectParentCoordination === 'function' ? runtime.inspectParentCoordination(targetRoot, taskId) : null;
+    if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.parentPlan.identity)) throw taskRecordError('parent_final_acceptance_required', '采用Parent Plan的Task必须先完成显式最终集成验收，不能只凭Child状态完成Parent。', 409, { planIdentity: coordination.parentPlan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
     const summary = text(input.summary, 'summary');
     return mutate(targetRoot, taskId, 'complete', input, (current) => ({ ...current, status: 'completed', result: { summary, noChange: input.noChange } }));
   }
@@ -350,6 +352,8 @@ export function registerTaskRecordApplication(runtime) {
   function completeTaskRecordFromFinish(targetRoot, taskId) {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     try {
+      const coordination = typeof runtime.inspectParentCoordination === 'function' ? runtime.inspectParentCoordination(root, taskId) : null;
+      if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.parentPlan.identity)) throw taskRecordError('parent_final_acceptance_required', 'Formal Finish不能在缺少current Parent最终集成验收时完成Task。', 409, { planIdentity: coordination.parentPlan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
       let changed = false;
       const written = runtime.mutateTaskRecordPersistence(root, taskId, (current) => {
         validateScopeReferences(root, current.record);
