@@ -12,4 +12,6 @@
 
 `buildr openspec converge`会在任何receipt/canonical/archive写入前检查现有checkbox；存在未完成项时必须消费`change-checklist-incomplete`并修订或完成真实Change task，不得自动勾选、删除任务或用归档后lifecycle evidence绕过门禁。
 
+Converge正常返回`passed + archived`后直接继续Development后续阶段，不运行`buildr openspec convergence inspect`。只有Converge中断或报告恢复不确定，且当前Task Environment现场仍存在时，才用该只读Inspect区分before、expected与unknown；Formal Task Finish、Environment cleanup及清理后的历史读取不得要求Receipt或重新运行Inspect。
+
 实现期间读取 required `buildr.current-knowledge-maintenance/v1` binding、contract 和 selected provider，执行 tasks 中的 Brief/current knowledge/terminology impacts；发现新的长期事实影响时同步更新 tasks 与 `.buildr/knowledge-impact.yml`。Implementation content 完成后、任何最终 verification 前执行 `reconcile`；结果 unresolved 时停止，结果 updated 时以更新后的 delivery tree 建立验证 evidence。

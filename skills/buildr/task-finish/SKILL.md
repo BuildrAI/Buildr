@@ -57,7 +57,7 @@ buildr task finish inspect --run <run-id> --target <canonical-workspace> --json
 
 ## 禁止事项
 
-Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定proceed/blocked或接受风险。两种reuse mode都复用handoff；clean apply、resume或路径不重叠都不等于语义安全。
+Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定proceed/blocked或接受风险。Finish不运行OpenSpec Converge或Convergence Inspect，不要求Convergence Receipt进入Delivery Carrier，也不在Environment cleanup后追索该事务材料。两种reuse mode都复用handoff；clean apply、resume或路径不重叠都不等于语义安全。
 
 ## 完成标准
 

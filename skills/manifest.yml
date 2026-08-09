@@ -112,7 +112,7 @@ skills:
     sourceIdentity: package:skills/buildr/openspec-contract-guard
     source: buildr
     path: buildr/openspec-contract-guard
-    description: 创建、同步或归档 OpenSpec change 时建立契约基线，并检测并行冲突、陈旧 delta 和同步结果漂移。
+    description: 创建、收敛或归档OpenSpec Change，且需要检查active Change冲突、隔离验证、canonical并发漂移或未决事务恢复事实时使用。
     enabled: true
     required: false
     state: installed
