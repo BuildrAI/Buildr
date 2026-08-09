@@ -1159,7 +1159,7 @@ export function createPackageStaticValidator(deps) {
         if (skillContent.includes('buildr openspec')) problems.push('task-triage source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec converge', 'passed|blocked|recovery-unprovable', 'archive --skip-specs', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec converge', 'buildr openspec convergence inspect', 'passed|blocked|recovery-unprovable', '`not-applicable`', 'archive --skip-specs', '正常archive成功后释放本次Receipt', 'Formal Task Finish与Environment cleanup不调用Inspect', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }
@@ -1234,8 +1234,9 @@ export function createPackageStaticValidator(deps) {
         'selected `buildr.task-verification/v3` provider',
         'Task-scoped current Result',
         '不作为相同 tree 后续 Git 动作的重复产品验证门禁',
-        '使用 `task-finish` 编排',
-        '不授权 force push、merge commit、远端任务分支删除',
+        '使用`task-finish`只消费current Development Handoff',
+        '不授权force push、merge commit、远端任务分支删除',
+        'Environment cleanup后不得追索Receipt',
         'Buildr 功能默认由 Agent 操作',
         '取得所需授权后直接执行',
         '不得把命令或操作步骤作为默认交付结果要求用户代为执行',

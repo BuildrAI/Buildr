@@ -15,6 +15,6 @@
 - `task-retrospective/v1` 只在用户明确要求时复盘 terminal Task，报告聚焦 Agent 执行效率并保存为一份自由 Markdown current Result。它不自动采集耗时/token，不读取隐藏推理、完整对话或工具日志；精确数据不可见时只能标明缺口。current row 另维护待处理、已处理或无需处理的处置结论，但不跟踪改进 Task 执行进度，不代表建议已落地。当前不提供历史、评分、结构化优化项、全局索引、批量处理或跨任务聚合。旧 `.buildr/asset-review/` 数据不会迁移、读取或自动清理。
 - Service branch intent 不负责 pull、merge、rebase 或长期分支同步；它只控制首次 clone、metadata 和 drift 诊断。
 - `@buildr-ai/buildr@0.1.0-rc.6` 是当前已发布 RC，`next` 指向该版本；`0.1.0-rc.7` 正在准备，尚未发布。`latest` 仍可能指向历史 prerelease，它不代表稳定版。稳定版 `0.1.0` 尚未发布，公开试用应显式安装 `@next`。`0.1.0-rc.4` 因发布范围错误已弃用。
-- `package check/build` 是维护表面；旧 OpenSpec 阶段命令仅作弃用兼容。普通 workspace 使用 `openspec converge`，状态无法证明时使用只读 `openspec audit`。
+- `package check/build`是维护表面。普通workspace使用`openspec converge`；只有未决收敛现场仍存在且恢复状态不确定时使用只读`openspec convergence inspect`。Inspect不提供归档后的长期漂移、合规或forensic audit；正常archive后Receipt会释放，历史读取使用Archived Change、Canonical Specs与Git。旧`openspec audit`和阶段命令已删除并返回unknown-command。
 
 遇到 unsupported runtime 或不能确定的资产边界时，Agent 应停止自动变更、保留源资产，并报告可执行下一步。

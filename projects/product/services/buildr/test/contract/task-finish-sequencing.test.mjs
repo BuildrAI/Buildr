@@ -91,7 +91,7 @@ test('Task Verification 只表达 transient execution 与 current Result authori
   }
 });
 
-test('convergence receipt writer持久化portable executable identity', () => {
+test('convergence事务Receipt只保存portable executable identity', () => {
   const source = read('src/application/domains/openspec.mjs');
   assert.match(source, /portableExecutableIdentity/);
   assert.doesNotMatch(source, /openspecExecutable:\s*executable/);
@@ -108,13 +108,15 @@ test('convergence receipt writer持久化portable executable identity', () => {
   for (const file of receiptFiles) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /\/(?:Users|home)\/[^/]+\//, path.relative(productRoot, file));
 });
 
-test('新 convergence 路径只有一份长期 receipt 且恢复不依赖 stage', () => {
+test('新 convergence 路径只有一份事务期Receipt且成功archive后释放', () => {
   const orchestrator = read('src/application/openspec/openspec-converge.mjs');
   const model = read('src/application/openspec/convergence-model.mjs');
   for (const module of ['convergence-planner.mjs', 'projected-validator.mjs', 'canonical-applier.mjs', 'convergence-observer.mjs']) {
     assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/openspec', module)), true, module);
   }
   assert.match(orchestrator, /convergence-receipt\.json/);
+  assert.match(orchestrator, /receipt-release/);
+  assert.match(model, /retention: 'transaction'/);
   assert.doesNotMatch(orchestrator, /contract-pre-sync-receipt\.json/);
   assert.doesNotMatch(orchestrator, /writeReceipt\(recoveryFile/);
   assert.doesNotMatch(model, /pre-sync|post-sync|canonical-sync|transitions/);

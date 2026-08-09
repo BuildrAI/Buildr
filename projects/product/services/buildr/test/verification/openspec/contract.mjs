@@ -8,6 +8,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { resolveVerificationWorkerBudget } from '../worker-budget.mjs';
+import { createConvergencePlan } from '../../../src/application/openspec/convergence-planner.mjs';
+import { createConvergenceReceipt } from '../../../src/application/openspec/convergence-model.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -34,7 +36,7 @@ function run(args, expected = 0, fixtureRoot = root) {
   const payload = args.includes('--json') && result.stdout.trim() ? JSON.parse(result.stdout) : null;
   if (payload && args[0] === 'openspec') {
     const expectedSchema = args[1] === 'converge' ? 'buildr.openspec-convergence/v1'
-      : 'buildr.openspec-convergence-audit/v1';
+      : 'buildr.openspec-convergence-inspect/v1';
     if (payload.schemaVersion !== expectedSchema) fail(`Expected ${expectedSchema}, got ${payload.schemaVersion}`);
   }
   return payload;
@@ -59,7 +61,22 @@ function change(id, capability, kind, delta) {
 }
 function removeChange(id) { fs.rmSync(path.join(changesRoot, id), { recursive: true, force: true }); }
 function converge(id, expected = 0) { return run(['openspec', 'converge', id, '--project', project, '--target', root, '--json'], expected); }
-function audit(id, expected = 0) { return run(['openspec', 'audit', id, '--project', project, '--target', root, '--json'], expected); }
+function inspect(id, expected = 0) { return run(['openspec', 'convergence', 'inspect', id, '--project', project, '--target', root, '--json'], expected); }
+function writeTransactionReceipt(id, operation) {
+  const canonicalFile = path.join(specsRoot, 'demo', 'spec.md');
+  const content = fs.readFileSync(canonicalFile, 'utf8');
+  const executableIdentity = { sourceKind: 'external-declared', reference: 'external:openspec', version: '1.6.0', sha256: 'fixture' };
+  const delta = { hash: `sha256-${crypto.createHash('sha256').update(JSON.stringify(operation)).digest('hex')}`, operations: [operation], capabilities: new Map([['demo', { operations: [operation] }]]) };
+  const plan = createConvergencePlan({
+    change: id, project, delta, executableIdentity,
+    canonicalFiles: new Map([['demo', { path: 'openspec/specs/demo/spec.md', exists: true, content }]]),
+    capabilityPurposes: new Map(), activeConflicts: [],
+  });
+  if (plan.status !== 'safe') fail(`fixture transaction plan blocked: ${JSON.stringify(plan.blocked)}`);
+  const receipt = createConvergenceReceipt({ plan, executableIdentity });
+  write(path.join(changesRoot, id, '.buildr', 'convergence-receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
+  return { plan, receipt, canonicalFile };
+}
 
 const existing = requirement('Existing', '保留既有行为');
 const untouched = requirement('Untouched', '保持不变');
@@ -91,24 +108,26 @@ const cases = {
     if (!canonicalContent.includes('Requirement: Added')) fail('convergence did not apply canonical result');
     const archived = fs.readdirSync(path.join(changesRoot, 'archive')).find((name) => name.endsWith('-convergence-safe'));
     if (!archived) fail('convergence did not archive Change');
-    const buildrRoot = path.join(changesRoot, 'archive', archived, '.buildr');
-    const receipt = JSON.parse(fs.readFileSync(path.join(buildrRoot, 'convergence-receipt.json'), 'utf8'));
-    if (receipt.disposition !== 'archived' || fs.readdirSync(buildrRoot).some((name) => ['contract-pre-sync-receipt.json', 'deterministic-sync-plan.json', 'deterministic-convergence.json', 'convergence-recovery.json'].includes(name))) fail('new convergence wrote legacy sidecars');
+    const receiptFile = path.join(changesRoot, 'archive', archived, '.buildr', 'convergence-receipt.json');
+    if (fs.existsSync(receiptFile) || result.receipt !== null || result.receiptReleased !== true) fail('normal convergence must release its transaction receipt');
     const repeated = converge('convergence-safe');
     if (repeated.status !== 'passed' || repeated.commandCount !== 0) fail('archived convergence repeat must be idempotent');
-    const audited = audit('convergence-safe');
-    if (audited.status !== 'passed' || audited.disposition !== 'archived' || audited.files.some((item) => !['before', 'expected'].includes(item.state))) fail('archived convergence audit must report actual file facts');
+    const terminal = inspect('convergence-safe');
+    if (terminal.status !== 'not-applicable' || terminal.reason?.code !== 'convergence-terminal' || terminal.files.length !== 0) fail('archived convergence inspect must be terminal not-applicable');
   },
-  'convergence-audit-unprovable'() {
-    change('audit-missing', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
-    const missing = audit('audit-missing', 2);
-    if (missing.status !== 'recovery-unprovable' || missing.diagnostic?.code !== 'convergence-receipt-unprovable') fail('missing receipt audit must fail closed');
-    removeChange('audit-missing');
-    change('audit-unknown', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
-    if (converge('audit-unknown').status !== 'passed') fail('audit fixture convergence failed');
-    fs.appendFileSync(path.join(specsRoot, 'demo', 'spec.md'), '\nmanual drift\n');
-    const unknown = audit('audit-unknown', 2);
-    if (unknown.status !== 'recovery-unprovable' || unknown.disposition !== 'state-unknown' || !unknown.files.some((item) => item.state === 'unknown')) fail('unknown audit must report per-file actual digest');
+  'convergence-inspect-boundaries'() {
+    change('inspect-state', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const notStarted = inspect('inspect-state');
+    if (notStarted.status !== 'not-applicable' || notStarted.reason?.code !== 'convergence-not-started' || notStarted.files.length !== 0) fail('missing transaction receipt must be not-applicable');
+    const fixture = writeTransactionReceipt('inspect-state', { type: 'ADDED', capability: 'demo', title: 'Added', requirement: added });
+    const before = inspect('inspect-state');
+    if (before.status !== 'passed' || before.disposition !== 'planned-not-applied' || before.files.some((item) => item.state !== 'before')) fail('before inspect must be recoverable');
+    fs.writeFileSync(fixture.canonicalFile, fixture.plan.files[0].expectedContent);
+    const expected = inspect('inspect-state');
+    if (expected.status !== 'passed' || expected.disposition !== 'applied-and-matched' || expected.files.some((item) => item.state !== 'expected')) fail('expected inspect must be recoverable');
+    fs.appendFileSync(fixture.canonicalFile, '\nmanual drift\n');
+    const unknown = inspect('inspect-state', 2);
+    if (unknown.status !== 'recovery-unprovable' || unknown.diagnostic?.code !== 'convergence-state-unknown' || !unknown.files.some((item) => item.state === 'unknown')) fail('unknown inspect must report per-file facts');
   },
   'convergence-transaction-conflict-and-disjoint'() {
     change('same-a', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
@@ -135,7 +154,7 @@ const suites = Object.freeze({
   recovery: Object.freeze([
     'upstream-archive-safety',
     'convergence-transaction-safe',
-    'convergence-audit-unprovable',
+    'convergence-inspect-boundaries',
     'convergence-transaction-conflict-and-disjoint',
   ]),
 });

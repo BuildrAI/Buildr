@@ -139,7 +139,7 @@ Buildr 按用途和承诺区分三层 CLI 产品表面：
 
 该分类只控制可发现性与兼容承诺，不是权限或安全边界。`agent-machine` 与 `maintenance` 命令仍然可执行并具有 canonical help；具体授权、安全和 effects 继续由对应 Application/Skill contract 决定。
 
-当前 `package check/build`、`app preview *`、`openspec converge/audit` 属于 maintenance。`openspec baseline create`、阶段型 `openspec check`、`openspec sync-plan`、`openspec sync-apply` 与 `skills migrate-project-assets` 已删除；旧调用返回标准 unknown-command，确定性 planning/apply 仅由 `converge` 事务内部持有。legacy Project Skill source 不受支持且当前 Buildr 不执行自动迁移。`package:<source-id>` 是 package manifest 与随包 Skill resolver 的内部 source identity，不是用户资产 id 或公开 source scheme。`service create --rules` 仅保留 deprecated warning compatibility no-op；canonical Service 规则入口是 Service 目录中的 `AGENTS.md`。
+当前`package check/build`、`app preview *`、`openspec converge`与`openspec convergence inspect`属于maintenance。`openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`、`openspec sync-apply`与`skills migrate-project-assets`已删除；旧调用返回标准unknown-command。确定性planning/apply仅由Converge事务内部持有；Inspect只读仍存在的未决事务Receipt，正常archive或环境清理后不运行。legacy Project Skill source不受支持且当前Buildr不执行自动迁移。`package:<source-id>`是package manifest与随包Skill resolver的内部source identity，不是用户资产id或公开source scheme。`service create --rules`仅保留deprecated warning compatibility no-op；canonical Service规则入口是Service目录中的`AGENTS.md`。
 
 ## Runtime 投射
 
@@ -202,7 +202,7 @@ Buildr 当前 MVP 已验证文件系统、Git、CLI、Buildr Skill、bootstrap g
 
 MVP 不解决完整企业云服务、权限系统、托管 Web/SaaS、多用户协作、代码托管平台集成、跨机器自动恢复、系统级 hook 或所有 Agent adapter。
 
-OpenSpec Component 还包含 Buildr 自有的契约门禁 sidebar：它在 Requirement 粒度记录 change 基线、检测 active change 冲突和陈旧 delta，并在同步前后验证结果；OpenSpec CLI 与上游 workflow Skills 仍可独立升级。
+OpenSpec Component还包含Buildr自有的契约门禁sidebar：它在Requirement粒度检测active change冲突和陈旧delta，由唯一Converge事务完成投射验证、条件写入、确认与archive；事务Receipt在正常archive后释放。Convergence Inspect只处理仍存在的未决恢复现场，不是归档后的长期审计；OpenSpec CLI与上游workflow Skills仍可独立升级。
 
 Sidebar 是 Buildr 对外部能力的独立、可卸载增强模式；Skill Contribution 是其通用组合机制。fragment 作为 Component member 参与 integrity 和统一生命周期：Buildr 自有 Skill 可使用稳定 slot，外部 Skill 使用 prepend/append boundary composition。runtime source assembly 先验证 Component 全部成员，通过后才由纯上游正文与 sidebar fragments 生成 Agent runtime 派生 Skill，不回写 workspace Skill 源。它不是 Adapter 扩展、可执行 Hook、事件总线或任意脚本机制。
 

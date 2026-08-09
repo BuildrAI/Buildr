@@ -34,16 +34,23 @@ openspec validate <change> --strict
 buildr openspec converge <change> --project <project> --target <workspace> --json
 ```
 
-产品计算单一 identity/plan，在临时 Project 投射 expected files并运行 `validate --all --strict`；随后重验 delta、executable 与全部 canonical before digests，条件一致才替换文件。写后只确认 expected digests 与真实 strict validation，再执行 `archive --skip-specs`。正常路径只写 `.buildr/convergence-receipt.json`。
+产品计算单一 identity/plan，在临时 Project 投射 expected files并运行 `validate --all --strict`；随后重验 delta、executable 与全部 canonical before digests，条件一致才替换文件。首次canonical mutation前写入唯一事务期`.buildr/convergence-receipt.json`；写后只确认expected digests与真实strict validation，再执行`archive --skip-specs`，正常archive成功后释放本次Receipt再返回`passed`。
 
-## 3. 失败处理
+## 3. OpenSpec Convergence Inspect
+
+`buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`只在Converge中断、返回`recovery-unprovable`或事务终态释放失败，且当前Task Environment恢复现场仍存在时使用。它只读比较当前事务Receipt的before/expected与canonical actual；active Change没有Receipt或Change已经archived时返回`not-applicable`。
+
+正常Converge返回`passed + archived`后直接继续Development后续阶段，不再运行Inspect。Formal Task Finish与Environment cleanup不调用Inspect；Worktree清理后不得恢复环境、追索Receipt或把Receipt缺失报告为恢复失败。正常长期事实使用Archived Change、Canonical Specs、Git与Task Development/Finish事实。
+
+## 4. 失败处理
 
 - `blocked`：列出语义冲突、冲突 change/Requirement 或 strict validation 诊断，修订 artifacts 后重试。
 - `recovery-unprovable`：canonical 出现 before/expected 之外的值、混合状态或旧 identity 链不完整；停止并人工核对，禁止自动覆盖。
 - delta identity 变化：丢弃旧 plan，以当前 canonical 重新规划，不恢复旧 before。
 - executable identity 变化：旧 validation 不复用，以当前 executable 重新投射验证。
 - archive 失败：canonical 保持 `applied-and-matched`，重试只做确认和 archive。
+- archive成功但Receipt释放失败：保持canonical和archive终态，重试Converge只完成事务Receipt release。
 - upstream strict validation 失败：修复上游诊断后再运行 Buildr 门禁。
 - CLI/Component version 不一致：使本机 OpenSpec CLI 与 Component 声明一致；Buildr 不代为安装。
 
-用户可见状态必须包含 change、`passed|blocked|recovery-unprovable`、receipt identity/disposition、耗时、命令次数和 `nextActions`。Agent 不拼装内部 guard 命令，也不解释多个 receipt。外部 `openspec-*` Skills 继续承担 explore、propose、update 和 apply；确定性 sync/archive 由 Buildr 事务持有。
+用户可见Converge状态必须包含change、`passed|blocked|recovery-unprovable`、disposition、Receipt是否已释放、耗时、命令次数和`nextActions`；Inspect另外使用`not-applicable`表达未开始或已终结。Agent不拼装内部guard命令，不解释多个Receipt，也不把事务Receipt升级为长期authority。外部`openspec-*` Skills继续承担explore、propose、update和apply；确定性sync/archive由Buildr事务持有。

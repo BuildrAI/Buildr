@@ -41,8 +41,8 @@ Agent 在 `product` Project 中的最小运行规则。
 - Product Project 的本节与 `verification.yml` 定义“已经有什么能力、何时适用、能证明什么”；selected `buildr.task-verification/v3` provider 负责执行适用能力、测量 transient wall-clock，并通过唯一 Application 维护 Task-scoped current Result。`task-worktree` 只提供 checkout 与 tree identity，不拥有验证政策或 Result。
 - 验证进程仍在运行或暂时无输出时继续等待同一进程，不重复启动相同命令；完整验证失败后的修复循环优先重跑失败项和受影响检查，候选重新稳定后再运行一次最终完整验证。
 - 最终交付验证必须在所有 rebase、冲突解决、OpenSpec 收敛、runtime sync、review 修订和内容修改完成后冻结明确 target identity；current Task Verification Result 同时绑定该 target 与 Project declaration identities。commit、相同内容集成、push 和 worktree 清理不改变 target 时可以复用；tree 或 declaration bytes 发生任何变化后 Result 直接派生为 stale，并针对新目标重新执行适用能力，不保留 checkbox 或 closeout metadata 的特殊复用协议。
-- 用户在 task worktree 中明确要求“收尾”时，使用 `task-finish` 编排已完成 change 的 specs 同步与归档、相关校验、提交、必要的本地未推送 rebase、fast-forward 集成、目标分支 push 和本地 worktree/任务分支清理；该意图不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
-- `task-finish` 是 Buildr 自有编排层，不直接修改外部 `openspec-*` Skills；OpenSpec archive/specs sync 后只对可证明由本次操作产生的 Markdown EOF 多余空行自动规范化。
+- 用户在task worktree中明确要求“收尾”时，先在Task Development阶段完成Change checklist、current knowledge reconcile、`buildr openspec converge`、Formal Verification、Completion Review和研发交接，再使用`task-finish`只消费current Development Handoff，执行carrier、交付与cleanup；该意图不授权force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
+- `task-finish`不调用、不拥有也不解释OpenSpec sync/archive或Convergence Inspect。正常Converge成功归档后释放事务Receipt并直接继续Development；只有未决收敛现场仍存在时才运行只读Inspect，Environment cleanup后不得追索Receipt。
 - 实际自举 workspace 如需消费新版产品资产，再从仍保留的当前产品 checkout 执行 sync；CLI update 只更新 Product checkout 或 registry package。workspace 状态变更后按 Buildr Core 运行当前 Agent doctor，但不作为相同 tree 后续 Git 动作的重复产品验证门禁。
 - 私有业务 workspace、私有业务规则和私有服务内容不得进入 `package/`。
 - 开发阶段执行 Buildr 命令时，从 workspace root 使用 `projects/product/buildr`，不要依赖本机 PATH 上安装的 `buildr`。

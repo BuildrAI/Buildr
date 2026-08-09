@@ -39,6 +39,7 @@ try {
 const publicHelpTopics = [
   [], ['init'], ['app', 'preview', 'start'], ['task', 'environment', 'prepare'],
   ['task', 'verification', 'record'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
+  ['openspec', 'convergence', 'inspect'],
 ];
 const helpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));
 try {
@@ -82,6 +83,7 @@ for (const [surface, heading] of Object.entries(surfaceHeadings)) {
 const removedHelpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-removed-help-'));
 try {
   const removedCommands = [
+    { key: 'openspec audit', args: ['openspec', 'audit', 'demo', '--target', removedHelpCwd, '--json'] },
     { key: 'openspec baseline create', args: ['openspec', 'baseline', 'create', 'demo', '--target', removedHelpCwd, '--json'] },
     { key: 'openspec check', args: ['openspec', 'check', 'demo', '--target', removedHelpCwd, '--json'] },
     { key: 'openspec sync-plan', args: ['openspec', 'sync-plan', 'demo', '--target', removedHelpCwd, '--json'] },

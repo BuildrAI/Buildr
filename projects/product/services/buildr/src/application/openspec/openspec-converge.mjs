@@ -20,6 +20,13 @@ function publicReceipt(projectRoot, file, receipt) {
   };
 }
 
+function releaseTransactionReceipt(file, { io }) {
+  if (!io.existsSync(file)) return;
+  io.rmSync(file);
+  const directory = path.dirname(file);
+  if (io.existsSync(directory) && io.readdirSync(directory).length === 0) io.rmdirSync(directory);
+}
+
 function result(status, context, startedAt, execution, extra = {}) {
   return {
     status,
@@ -155,10 +162,12 @@ export function runOpenSpecConvergence({
   archive,
   resolveArchivedChangeRoot,
   writeReceipt,
+  releaseReceipt = null,
   io = fs,
 }) {
   const startedAt = Date.now();
   const execution = [];
+  const release = releaseReceipt || ((file) => releaseTransactionReceipt(file, { io }));
   if (!context.archived) {
     const checklist = inspectChangeChecklist(context.changeRoot, { io });
     const incomplete = checklist.exists && checklist.remaining > 0;
@@ -174,6 +183,14 @@ export function runOpenSpecConvergence({
   }
   let receiptFile = convergenceReceiptPath(context.changeRoot);
   let receipt = null;
+  if (context.archived && !io.existsSync(receiptFile)) {
+    return result('passed', context, startedAt, execution, {
+      disposition: 'archived',
+      receipt: null,
+      receiptReleased: true,
+      effects: [],
+    });
+  }
   if (io.existsSync(receiptFile)) {
     try { receipt = validateConvergenceReceipt(JSON.parse(io.readFileSync(receiptFile, 'utf8'))); }
     catch (error) { return result('recovery-unprovable', context, startedAt, execution, { code: 'convergence-receipt-invalid', message: error.message, nextActions: ['人工核对 receipt 与 canonical 文件；不得删除 sidecar 后继续。'] }); }
@@ -181,6 +198,26 @@ export function runOpenSpecConvergence({
     const legacy = migrateLegacyReceipt({ context, executableIdentity, io });
     if (legacy.status === 'recovery-unprovable') return result('recovery-unprovable', context, startedAt, execution, { code: legacy.code, nextActions: ['人工核对历史 sidecar identity chain 与 canonical 文件。'] });
     if (legacy.status === 'migrated') receipt = legacy.receipt;
+  }
+
+  if (context.archived && receipt) {
+    if (receipt.retention !== 'transaction') {
+      return result('passed', context, startedAt, execution, {
+        disposition: 'archived', receipt: publicReceipt(context.projectRoot, receiptFile, receipt), receiptReleased: false, effects: [],
+      });
+    }
+    try {
+      release(receiptFile);
+      execution.push({ id: 'receipt-release', status: 'passed', durationMs: 0, commandCount: 0 });
+    } catch (error) {
+      execution.push({ id: 'receipt-release', status: 'blocked', durationMs: 0, commandCount: 0 });
+      return result('blocked', context, startedAt, execution, {
+        code: 'convergence-receipt-release-failed', disposition: 'archived',
+        receipt: publicReceipt(context.projectRoot, receiptFile, receipt), receiptReleased: false,
+        message: error.message, effects: [], nextActions: ['重新运行 converge 只完成事务 Receipt release。'],
+      });
+    }
+    return result('passed', context, startedAt, execution, { disposition: 'archived', receipt: null, receiptReleased: true, effects: [] });
   }
 
   if (receipt) {
@@ -195,10 +232,6 @@ export function runOpenSpecConvergence({
       return result('recovery-unprovable', context, startedAt, execution, { code: 'canonical-state-unknown', files: observation.files, receipt: publicReceipt(context.projectRoot, receiptFile, unknown), nextActions: ['人工核对 canonical 文件；Buildr 不会自动覆盖混合或未知状态。'] });
     }
     if (safeCurrentDeltaReplan) receipt = null;
-    if (receipt && context.archived && observation.disposition === 'archived') {
-      if (receipt.disposition !== 'archived') { receipt = { ...receipt, disposition: 'archived', updatedAt: new Date().toISOString() }; writeReceipt(receiptFile, receipt); }
-      return result('passed', context, startedAt, execution, { disposition: 'archived', receipt: publicReceipt(context.projectRoot, receiptFile, receipt), effects: [] });
-    }
     if (receipt) {
       if (receipt.deltaDigest !== context.delta.hash) receipt = null;
       else if (receipt.executableIdentity.sha256 !== executableIdentity.sha256 || receipt.executableIdentity.version !== executableIdentity.version) receipt = null;
@@ -258,7 +291,19 @@ export function runOpenSpecConvergence({
   }
   const archivedRoot = resolveArchivedChangeRoot();
   receiptFile = convergenceReceiptPath(archivedRoot);
-  receipt = { ...receipt, disposition: 'archived', archive: archiveResult, updatedAt: new Date().toISOString() };
-  writeReceipt(receiptFile, receipt);
-  return result('passed', context, startedAt, execution, { disposition: 'archived', receipt: publicReceipt(context.projectRoot, receiptFile, receipt), effects: receipt.apply?.effects || [] });
+  try {
+    release(receiptFile);
+    execution.push({ id: 'receipt-release', status: 'passed', durationMs: 0, commandCount: 0 });
+  } catch (error) {
+    execution.push({ id: 'receipt-release', status: 'blocked', durationMs: 0, commandCount: 0 });
+    return result('blocked', context, startedAt, execution, {
+      code: 'convergence-receipt-release-failed', disposition: 'archived',
+      receipt: publicReceipt(context.projectRoot, receiptFile, receipt), receiptReleased: false,
+      message: error.message, effects: receipt.apply?.effects || [],
+      nextActions: ['重新运行 converge 只完成事务 Receipt release。'],
+    });
+  }
+  return result('passed', context, startedAt, execution, {
+    disposition: 'archived', receipt: null, receiptReleased: true, effects: receipt.apply?.effects || [],
+  });
 }

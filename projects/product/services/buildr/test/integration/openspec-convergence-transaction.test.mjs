@@ -153,8 +153,15 @@ function journey(options = {}) {
   const operations = [{ type: 'ADDED', capability: 'demo', title: 'Added', requirement: requirement('Added') }];
   const context = { change: 'change-a', project: 'product', projectRoot: root, changeRoot, archived: false, delta: delta(operations, options.hash) };
   let archiveCalls = 0;
+  let releaseCalls = 0;
   let currentExecutableIdentity = executableIdentity;
   const archivedRoot = path.join(root, 'openspec', 'changes', 'archive', '2026-07-27-change-a');
+  const releaseReceipt = options.releaseFailsOnce ? (target) => {
+    releaseCalls += 1;
+    if (releaseCalls === 1) throw new Error('fixture receipt release failure');
+    fs.rmSync(target);
+    if (fs.readdirSync(path.dirname(target)).length === 0) fs.rmdirSync(path.dirname(target));
+  } : null;
   const run = () => runOpenSpecConvergence({
     context,
     executable: '/fixture/openspec', executableIdentity: currentExecutableIdentity,
@@ -171,10 +178,12 @@ function journey(options = {}) {
     },
     resolveArchivedChangeRoot: () => archivedRoot,
     writeReceipt: (target, value) => { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`); },
+    releaseReceipt,
     io: fs,
   });
   return {
     root, file, changeRoot, archivedRoot, context, run, archiveCalls: () => archiveCalls,
+    releaseCalls: () => releaseCalls,
     setExecutableIdentity: (value) => { currentExecutableIdentity = value; },
   };
 }
@@ -209,11 +218,51 @@ test('完整journey正常应用归档并重复执行幂等', () => {
     const first = fixture.run();
     assert.equal(first.status, 'passed');
     assert.equal(first.disposition, 'archived');
+    assert.equal(first.receiptReleased, true);
+    assert.equal(first.receipt, null);
+    assert.equal(fs.existsSync(convergenceReceiptPath(fixture.archivedRoot)), false);
     assert.equal(fs.readFileSync(fixture.file, 'utf8').includes('Requirement: Added'), true);
     const second = fixture.run();
     assert.equal(second.status, 'passed');
     assert.equal(second.disposition, 'archived');
     assert.equal(fixture.archiveCalls(), 1);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('archive成功但事务Receipt释放失败时只重试终态释放', () => {
+  const fixture = journey({ releaseFailsOnce: true });
+  try {
+    const first = fixture.run();
+    assert.equal(first.status, 'blocked');
+    assert.equal(first.code, 'convergence-receipt-release-failed');
+    assert.equal(first.disposition, 'archived');
+    assert.equal(fs.existsSync(convergenceReceiptPath(fixture.archivedRoot)), true);
+    const second = fixture.run();
+    assert.equal(second.status, 'passed');
+    assert.equal(second.receiptReleased, true);
+    assert.equal(fs.existsSync(convergenceReceiptPath(fixture.archivedRoot)), false);
+    assert.equal(fixture.archiveCalls(), 1);
+    assert.equal(fixture.releaseCalls(), 2);
+    assert.equal(second.execution.some((item) => ['plan', 'apply', 'archive'].includes(item.id)), false);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('历史Archived Change的旧Receipt保持原样且不重新审计canonical', () => {
+  const fixture = journey({ releaseFailsOnce: true });
+  try {
+    assert.equal(fixture.run().code, 'convergence-receipt-release-failed');
+    const receiptFile = convergenceReceiptPath(fixture.archivedRoot);
+    const historical = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+    delete historical.retention;
+    fs.writeFileSync(receiptFile, `${JSON.stringify(historical, null, 2)}\n`);
+    fs.appendFileSync(fixture.file, '\npost-archive canonical evolution\n');
+    const repeated = fixture.run();
+    assert.equal(repeated.status, 'passed');
+    assert.equal(repeated.disposition, 'archived');
+    assert.equal(repeated.receiptReleased, false);
+    assert.equal(fs.existsSync(receiptFile), true);
+    assert.equal(fixture.archiveCalls(), 1);
+    assert.equal(fixture.releaseCalls(), 1);
   } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
 });
 
@@ -319,7 +368,7 @@ test('完整旧plan与post-sync receipt按真实expected迁移且不恢复canoni
     assert.equal(result.status, 'passed');
     assert.equal(result.execution.some((item) => item.id === 'apply'), false);
     assert.equal(fs.readFileSync(fixture.file, 'utf8'), oldPlan.files[0].expected);
-    assert.equal(fs.existsSync(path.join(fixture.archivedRoot, '.buildr', 'convergence-receipt.json')), true);
+    assert.equal(fs.existsSync(path.join(fixture.archivedRoot, '.buildr', 'convergence-receipt.json')), false);
   } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
 });
 
@@ -350,7 +399,7 @@ test('旧v2 receipt仅在同步transitions保存唯一plan identity时仍可迁�
     assert.equal(result.status, 'passed');
     assert.equal(result.execution.some((item) => item.id === 'apply'), false);
     assert.equal(fs.readFileSync(fixture.file, 'utf8'), oldPlan.files[0].expected);
-    assert.equal(fs.existsSync(path.join(fixture.archivedRoot, '.buildr', 'convergence-receipt.json')), true);
+    assert.equal(fs.existsSync(path.join(fixture.archivedRoot, '.buildr', 'convergence-receipt.json')), false);
   } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
 });
 

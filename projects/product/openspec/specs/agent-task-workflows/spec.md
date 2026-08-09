@@ -484,17 +484,27 @@ Buildr MUST 让 Agent 只处理 `blocked` 的语义冲突或 `recovery-unprovabl
 - **AND** MUST NOT通过删除sidecar、采用当前baseline或覆盖canonical绕过失败
 
 ### Requirement: Agent 只能处理收敛事务外的语义决定
-Agent MUST 将 Buildr 的确定性收敛结果视为产品事实：`passed` 继续收尾，`blocked` 只处理最小语义冲突，`recovery-unprovable` 停止并进行人工检查。Agent MUST NOT 手工恢复正式规范、刷新基线、选择内部恢复阶段、拼装旧门禁命令，或用自报成功证据覆盖产品失败。
+Agent MUST 将 Buildr 的确定性收敛结果视为产品事实：`passed`直接继续Development后续阶段，`blocked`只处理最小语义冲突，`recovery-unprovable`只在当前Task执行位置仍保留恢复现场时使用OpenSpec Convergence Inspect或进行人工核对。Agent MUST NOT手工恢复Canonical Specs、刷新baseline、选择内部恢复stage、拼装旧门禁命令、把Inspect变成正常验收门禁，或在Formal Task Finish/Environment cleanup后追索Receipt。
 
 #### Scenario: 产品报告状态无法证明
-- **WHEN** `buildr openspec converge` 或只读审计返回 `recovery-unprovable`
-- **THEN** Agent MUST 停止正式文件写入并向用户报告逐文件事实
-- **AND** MUST NOT 删除回执、刷新 baseline 或尝试从旧阶段继续
+- **WHEN** `buildr openspec converge`返回`recovery-unprovable`且当前Task Environment尚未清理
+- **THEN** Agent MAY调用`buildr openspec convergence inspect`读取逐文件事实，并停止其他正式文件写入
+- **AND** MUST NOT删除Receipt、刷新baseline或从旧stage继续
 
 #### Scenario: 产品报告确定性通过
-- **WHEN** `buildr openspec converge` 返回 `passed`
-- **THEN** Agent MUST 直接消费该结果继续 Task Finish
-- **AND** MUST NOT 重演 planner、validator、applier、observer 或 archive 内部步骤
+- **WHEN** `buildr openspec converge`返回`passed`与`archived`
+- **THEN** Agent MUST直接消费该结果继续current knowledge检查、Content Target、Verification与后续Task流程
+- **AND** MUST NOT再次运行Convergence Inspect或要求Receipt进入Git交付
+
+#### Scenario: Task Environment已经清理
+- **WHEN** Formal Task Finish已经成功且Task Environment cleanup完成
+- **THEN** Agent MUST使用Archived Change、Canonical Specs、Git交付事实和Formal Finish Result回答正常历史问题
+- **AND** MUST NOT要求恢复Worktree、读取Receipt或把Receipt缺失报告为`recovery-unprovable`
+
+#### Scenario: Inspect返回not-applicable
+- **WHEN** Convergence Inspect报告事务尚未开始或Change已经终结
+- **THEN** Agent MUST按reason code分别启动Converge或停止恢复检查
+- **AND** MUST NOT把`not-applicable`解释为同步失败、归档失败或长期证据缺失
 
 ### Requirement: Task Finish Skill 必须收窄为授权与单命令入口
 Buildr MUST提供实现`buildr.task-finish/v1`的Task Finish Skill。Skill MUST解析用户交付意图、Task ID与execution context，先通过selected `buildr.task-development@1`确认current handoff，再披露隔离Delivery Carrier、Task Contribution/Delivery Baseline identity、普通integration/push、retained与cleanup授权及明确排除项。Receipt-bound Task MUST只启动canonical `buildr task finish run --task <task-id>`；normal path MUST NOT收敛Change、运行Review/Verification、生成Candidate、领取checkpoint、构造recovery JSON或从普通PATH选择runtime。产品返回target-race resume token时，Skill MAY只用该精确token恢复同一run，不得把它解释为新的Development/Candidate流程。

@@ -107,6 +107,34 @@
 - 避免混用：Change archive 是历史与 provenance，不是 Project 当前事实源。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## OpenSpec 收敛（OpenSpec Convergence）
+
+- 定义：把一个apply-ready Change的delta确定性应用到Canonical Specs、严格确认结果并归档Change的单一事务边界。
+- 适用范围：`buildr openspec converge`写操作及其未终结时的恢复检查；Converge是唯一canonical writer。
+- 避免混用：不是Formal Verification、Task Finish、Git交付或归档后的长期审计。
+- 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
+
+## OpenSpec 收敛执行（OpenSpec Converge）
+
+- 定义：执行OpenSpec Convergence的公开maintenance动作，完成规划、投射strict validation、条件canonical写入、写后确认、archive与事务Receipt release。
+- 适用范围：`buildr openspec converge <change> --project <project>`；正常成功返回`passed + archived`后直接进入Development后续阶段。
+- 避免混用：不是只读检查；不会把Receipt变成长期交付物，也不属于Task Finish operation。
+- 来源：[OpenSpec确定性同步规范](../specs/openspec-deterministic-sync/spec.md)
+
+## OpenSpec 收敛检查（OpenSpec Convergence Inspect）
+
+- 定义：对仍存在的未决Convergence transaction，只读比较Receipt中的before/expected与canonical actual的恢复诊断动作。
+- 适用范围：`buildr openspec convergence inspect`；只有Converge中断、恢复不确定或终态释放失败且Task Environment现场仍在时使用。
+- 避免混用：不是`OpenSpec Audit`、正常验收或长期漂移检查；事务未开始或Change已归档时返回`not-applicable`，Environment cleanup后不得追索。
+- 来源：[OpenSpec确定性同步规范](../specs/openspec-deterministic-sync/spec.md)
+
+## OpenSpec 收敛回执（OpenSpec Convergence Receipt）
+
+- 定义：Converge在首次canonical mutation前写入active Change `.buildr/convergence-receipt.json`的事务期恢复材料，保存identity、before/expected内容与执行处置。
+- 适用范围：同一Task执行位置中尚未终结的Converge重试和Convergence Inspect。
+- 避免混用：不是Archived Change、Canonical Specs、Task Result、Git证据或history/event/audit store；正常archive后释放，不进入Delivery Carrier。
+- 来源：[技术架构](architecture/technical.md)
+
 ## 正式任务（Formal Task）
 
 - 定义：目标与持久交付意图已经对齐，并以稳定 Task ID 进入 Buildr 生命周期管理的任务。

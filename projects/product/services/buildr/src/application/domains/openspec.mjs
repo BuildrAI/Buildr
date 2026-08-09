@@ -9,6 +9,7 @@ import { CONVERGENCE_RECEIPT_SCHEMA } from '../openspec/convergence-model.mjs';
 import { convergenceReceiptPath, runOpenSpecConvergence } from '../openspec/openspec-converge.mjs';
 import { observeConvergence } from '../openspec/convergence-observer.mjs';
 import { validateActualOpenSpec, validateProjectedOpenSpec } from '../openspec/projected-validator.mjs';
+import { normalizeOpenSpecContractText, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecRequirementBlocks } from '../openspec/delta-parser.mjs';
 
 const OPENSPEC_CONTRACT_SUPPORTED_UPSTREAM_VERSIONS = new Set(['1.6.0']);
 
@@ -34,10 +35,6 @@ export function registerDomainsOpenspec(runtime) {
   const existsDirectory = (...args) => runtime.existsDirectory(...args);
   const existsFile = (...args) => runtime.existsFile(...args);
   const assertInitializedBuildrWorkspace = (...args) => runtime.assertInitializedBuildrWorkspace(...args);
-
-  function normalizeOpenSpecContractText(content) {
-    return String(content).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '\n');
-  }
 
   function openSpecContractHash(value) {
     return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
@@ -104,22 +101,6 @@ export function registerDomainsOpenspec(runtime) {
     return { entry, definition, upstreamVersion };
   }
 
-  function parseOpenSpecRequirementBlocks(content, label) {
-    // OpenSpec strict validation owns Markdown and delta correctness. Buildr
-    // only extracts identities and full blocks needed for baseline and receipt facts.
-    const normalized = normalizeOpenSpecContractText(content);
-    const matches = [...normalized.matchAll(/^### Requirement:\s*(.+?)\s*$/gm)];
-    const requirements = new Map();
-    for (let index = 0; index < matches.length; index += 1) {
-      const title = matches[index][1].trim();
-      if (!title) continue;
-      const start = matches[index].index;
-      const end = index + 1 < matches.length ? matches[index + 1].index : normalized.length;
-      requirements.set(title, normalizeOpenSpecContractText(normalized.slice(start, end)));
-    }
-    return requirements;
-  }
-
   function validateUpstreamOpenSpecStrict(projectRoot, change) {
     const result = spawnSync('openspec', ['validate', change, '--strict', '--no-interactive'], {
       cwd: projectRoot,
@@ -130,33 +111,6 @@ export function registerDomainsOpenspec(runtime) {
       const detail = (result.stderr || result.stdout || '').trim();
       throw new Error('OpenSpec strict validation failed for ' + change + (detail ? ': ' + detail : ''));
     }
-  }
-
-  function openSpecSection(content, name) {
-    const normalized = normalizeOpenSpecContractText(content);
-    const header = new RegExp(`^## ${name}\\s*$`, 'm');
-    const match = header.exec(normalized);
-    if (!match) return '';
-    const next = /^## /gm;
-    next.lastIndex = match.index + match[0].length;
-    const nextMatch = next.exec(normalized);
-    return normalized.slice(match.index + match[0].length, nextMatch ? nextMatch.index : normalized.length);
-  }
-
-  function parseOpenSpecDeltaSpec(content, capability, label) {
-    const operations = [];
-    for (const [section, type] of [['ADDED Requirements', 'ADDED'], ['MODIFIED Requirements', 'MODIFIED'], ['REMOVED Requirements', 'REMOVED']]) {
-      const requirements = parseOpenSpecRequirementBlocks(openSpecSection(content, section), `${label} ${section}`);
-      for (const [title, requirement] of requirements) operations.push({ type, capability, title, requirement });
-    }
-    const renamed = openSpecSection(content, 'RENAMED Requirements');
-    const renamePattern = /-\s*FROM:\s*`?### Requirement:\s*(.+?)`?\s*\n\s*-\s*TO:\s*`?### Requirement:\s*(.+?)`?\s*(?=\n|$)/g;
-    for (const match of renamed.matchAll(renamePattern)) {
-      const from = match[1].trim();
-      const to = match[2].trim();
-      if (from && to && from !== to) operations.push({ type: 'RENAMED', capability, from, to });
-    }
-    return operations;
   }
 
   function parseOpenSpecChangeDelta(changeRoot) {
@@ -372,40 +326,58 @@ export function registerDomainsOpenspec(runtime) {
     process.exitCode = payload.status === 'passed' ? 0 : 2;
   }
 
-  function openspecAudit(args) {
+  function openspecConvergenceInspect(args) {
     assertNoUnknownOptions(args, new Set(['--target', '--project', '--json']), new Set(['--json']));
     const positionals = positionalArgs(args);
     const change = positionals[0];
-    if (!change || positionals.length !== 1) throw new Error('Usage: buildr openspec audit <change> --project <project> [--target <dir>] [--json]');
+    if (!change || positionals.length !== 1) throw new Error('Usage: buildr openspec convergence inspect <change> --project <project> [--target <dir>] [--json]');
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
     const project = optionValue(args, '--project');
     const { projectRoot } = resolveOpenSpecContractProject(targetRoot, project);
     const resolved = openSpecConvergenceChangePath(projectRoot, change);
     const receiptFile = convergenceReceiptPath(resolved.changeRoot);
     let payload;
-    try {
+    if (resolved.archived) {
+      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecConvergenceInspect, {
+        change, project, status: 'not-applicable', disposition: null, files: [], receipt: null,
+        reason: { code: 'convergence-terminal', message: 'OpenSpec Change已经归档；当前没有可恢复的Convergence transaction。' },
+        diagnostic: null, nextActions: [],
+      });
+    } else if (!existsFile(receiptFile)) {
+      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecConvergenceInspect, {
+        change, project, status: 'not-applicable', disposition: null, files: [], receipt: null,
+        reason: { code: 'convergence-not-started', message: 'OpenSpec Convergence尚未开始，没有事务Receipt需要检查。' },
+        diagnostic: null, nextActions: [`运行 buildr openspec converge ${change} --project ${project}。`],
+      });
+    } else try {
       const receipt = readOpenSpecContractJson(receiptFile, CONVERGENCE_RECEIPT_SCHEMA);
-      if (!receipt) throw new Error('OpenSpec convergence receipt is missing.');
       const observed = observeConvergence({ projectRoot, receipt, archived: resolved.archived, io: fs });
-      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecAudit, {
+      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecConvergenceInspect, {
         change, project, status: observed.disposition === 'state-unknown' ? 'recovery-unprovable' : 'passed',
         disposition: observed.disposition, files: observed.files,
         receipt: toPosixRelative(projectRoot, receiptFile),
-        nextActions: observed.disposition === 'state-unknown' ? ['停止正式文件写入并人工核对 unknown 文件；不得刷新旧 baseline 或删除回执。'] : [],
+        reason: null,
+        diagnostic: observed.disposition === 'state-unknown'
+          ? { code: 'convergence-state-unknown', message: 'Canonical files do not match one provable transaction state.' }
+          : null,
+        nextActions: observed.disposition === 'state-unknown'
+          ? ['停止正式文件写入并人工核对 unknown 文件；不得刷新旧 baseline 或删除回执。']
+          : [`重新运行 buildr openspec converge ${change} --project ${project}。`],
       });
     } catch (error) {
-      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecAudit, {
+      payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.openspecConvergenceInspect, {
         change, project, status: 'recovery-unprovable', disposition: 'state-unknown', files: [],
         receipt: toPosixRelative(projectRoot, receiptFile),
-        diagnostic: { code: 'convergence-receipt-unprovable', message: error.message },
+        reason: null,
+        diagnostic: { code: 'convergence-receipt-invalid', message: error.message },
         nextActions: ['人工核对唯一 convergence receipt 与正式文件；不得从旧旁路状态生成授权事实。'],
       });
     }
     if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-    else console.log(`OpenSpec convergence audit: ${payload.status} (${payload.disposition})`);
-    process.exitCode = payload.status === 'passed' ? 0 : 2;
+    else console.log(`OpenSpec convergence inspect: ${payload.status}${payload.disposition ? ` (${payload.disposition})` : ''}`);
+    process.exitCode = payload.status === 'recovery-unprovable' ? 2 : 0;
   }
 
-  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, readOpenSpecContractJson, writeOpenSpecContractJson, createOpenSpecContractResult, addOpenSpecContractFinding, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, openSpecContractContext, openspecConverge, openspecAudit });
+  Object.assign(runtime, { normalizeOpenSpecContractText, openSpecContractHash, openSpecContractChangePath, resolveOpenSpecContractProject, openSpecContractComponent, parseOpenSpecRequirementBlocks, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecChangeDelta, readOpenSpecCanonicalRequirements, parseOpenSpecProposalCapabilities, readOpenSpecContractJson, writeOpenSpecContractJson, createOpenSpecContractResult, addOpenSpecContractFinding, listActiveOpenSpecChangeRoots, openSpecDeltaIdentities, detectOpenSpecActiveConflicts, openSpecContractContext, openspecConverge, openspecConvergenceInspect });
   return runtime;
 }

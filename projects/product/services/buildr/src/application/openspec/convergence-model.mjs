@@ -62,6 +62,7 @@ export function createConvergenceReceipt({ plan, executableIdentity, now = new D
   if (plan.schemaVersion !== CONVERGENCE_PLAN_SCHEMA || convergencePlanIdentity(plan) !== plan.planIdentity) throw new Error('OpenSpec convergence plan identity is invalid.');
   return {
     schemaVersion: CONVERGENCE_RECEIPT_SCHEMA,
+    retention: 'transaction',
     algorithmVersion: plan.algorithmVersion,
     change: plan.change,
     project: plan.project,
@@ -84,6 +85,7 @@ export function createConvergenceReceipt({ plan, executableIdentity, now = new D
 export function validateConvergenceReceipt(receipt) {
   if (!receipt || receipt.schemaVersion !== CONVERGENCE_RECEIPT_SCHEMA) throw new Error('Unsupported OpenSpec convergence receipt schema.');
   if (!['planned-not-applied', 'applied-and-matched', 'state-unknown', 'archived'].includes(receipt.disposition)) throw new Error('OpenSpec convergence receipt disposition is invalid.');
+  if (receipt.retention !== undefined && receipt.retention !== 'transaction') throw new Error('OpenSpec convergence receipt retention is invalid.');
   const plan = {
     schemaVersion: CONVERGENCE_PLAN_SCHEMA,
     algorithmVersion: receipt.algorithmVersion,

@@ -210,7 +210,7 @@ if (fs.existsSync(registry)) {
     if (!descriptor.executable && (descriptor.match || descriptor.run)) problems.push(`aggregate command must not execute: ${descriptor.key}`);
   }
   if (COMMAND_REGISTRY.some((item) => !item.executable)) problems.push('COMMAND_REGISTRY must contain executable descriptors only');
-  for (const retired of ['openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'skills migrate-project-assets']) {
+  for (const retired of ['openspec audit', 'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'skills migrate-project-assets']) {
     if (keys.includes(retired)) problems.push(`retired command remains in catalog: ${retired}`);
   }
   if (!source.includes('registerCommandHelp(runtime, COMMAND_CATALOG)')) problems.push('dispatch and help must consume the same command catalog');

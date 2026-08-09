@@ -591,16 +591,16 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.openspecConverge(c.argv.slice(4)),
   },
   {
-    key: "openspec audit",
+    key: "openspec convergence inspect",
     surface: "maintenance",
-    summary: "只读比较唯一收敛回执的 before/expected 与当前实际摘要；不会写 canonical、回执或归档。",
+    summary: "只读检查未终结收敛事务的 before/expected 与当前实际摘要；未开始或已归档时不适用。",
     help: [
-      "Usage: buildr openspec audit <change> --project <project> [--target <dir>] [--json]",
+      "Usage: buildr openspec convergence inspect <change> --project <project> [--target <dir>] [--json]",
       "",
-      "只读比较唯一收敛回执的 before/expected 与当前实际摘要；不会写 canonical、回执或归档。"
+      "只读检查当前事务 Receipt；不会写 canonical、Receipt 或 archive，也不用于归档后的长期审计。"
     ],
-    match: ({ domain, action }) => domain === 'openspec' && action === 'audit',
-    run: (r, c) => r.openspecAudit(c.argv.slice(4)),
+    match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'convergence' && runtimeId === 'inspect',
+    run: (r, c) => r.openspecConvergenceInspect(c.argv.slice(5)),
   },
   {
     key: "component list",

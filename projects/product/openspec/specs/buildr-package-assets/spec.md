@@ -538,33 +538,37 @@ Buildr package MUST 发布 OpenSpec 契约门禁 Skill、Contribution fragments�
 - **AND** Component 卸载并 reconcile 后 runtime MUST 移除 sidebar 和 Component-owned workflow Skills，不得遗留 Buildr fork
 
 ### Requirement: 产品验证覆盖 OpenSpec 契约漂移门禁
-Buildr 产品总验证 MUST 覆盖契约基线、同步前后检查、上游兼容性和候选 tree 的 canonical spec 变更审计。
+Buildr 产品总验证 MUST覆盖deterministic convergence、事务期Convergence Inspect、上游兼容性和candidate tree的Canonical Specs变更关联。正常候选验证 MUST使用同一candidate中的Archived Change delta与canonical文件事实，不得要求tracked active/archive Convergence Receipt或创建替代审计记录。
 
 #### Scenario: 门禁 fixture corpus
-- **WHEN** 产品验证运行 OpenSpec contract fixtures
-- **THEN** 验证 MUST 覆盖安全 ADDED、MODIFIED、REMOVED 和 RENAMED 同步
-- **AND** 验证 MUST 覆盖 proposal/delta 不一致、active change 冲突、stale baseline、缺失基线、delta 后改动和未触达 Requirement 被破坏
+- **WHEN** 产品验证运行OpenSpec contract fixtures
+- **THEN** 验证 MUST覆盖安全ADDED、MODIFIED、REMOVED和RENAMED收敛，以及未开始、before、expected、mixed/unknown和archived Inspect边界
+- **AND** 验证 MUST覆盖proposal/delta不一致、active Change冲突、delta后改动、未触达Requirement被破坏、Receipt释放和归档后`not-applicable`
 
 #### Scenario: Product candidate 修改 canonical specs
-- **WHEN** Product Project 的候选 Git tree 包含 canonical spec 变化
-- **THEN** 产品验证 MUST 要求变化能够关联到通过 post-sync 的 active change 或本次归档 change receipt
-- **AND** 只有 `openspec validate --all --strict` 通过 MUST NOT 被视为充分证据
+- **WHEN** Product Project的candidate Git tree包含canonical Requirement变化
+- **THEN** 产品验证 MUST证明每个变化capability能够关联到同一candidate中归档Change的delta语义，并要求`openspec validate --all --strict`通过
+- **AND** 缺少对应Archived Change、delta与canonical事实不匹配或只有strict validation通过 MUST被拒绝
+
+#### Scenario: Candidate不包含Convergence Receipt
+- **WHEN** 正常Converge已成功归档并释放本次Receipt
+- **THEN** 产品候选与package验证 MUST在没有tracked Convergence Receipt时通过既有Archived Change/canonical门禁
+- **AND** MUST NOT扫描Worktree外路径、恢复已清理Receipt或把Receipt复制到新的store
 
 #### Scenario: OpenSpec Component 上游升级
-- **WHEN** package 中声明的 OpenSpec upstream version 变化
-- **THEN** package check 和产品验证 MUST 对该版本运行 contract fixture corpus
-- **AND** 未经支持或 fixture 失败 MUST 阻止 package verification 通过
+- **WHEN** package中声明的OpenSpec upstream version变化
+- **THEN** package check和产品验证 MUST对该版本运行contract fixture corpus
+- **AND** 未经支持或fixture失败 MUST阻止package verification通过
 
 #### Scenario: Runtime 投射门禁 Skill
-- **WHEN** 临时 workspace 初始化、update 或 sync 支持的 Agent runtime
-- **THEN** 产品 E2E MUST 验证 `openspec-contract-guard` 随 OpenSpec Component 物化并投射
-- **AND** OpenSpec Component 被显式卸载时该 Skill MUST 随集合安全移除
+- **WHEN** 临时Workspace初始化、update或sync支持的Agent runtime
+- **THEN** 产品E2E MUST验证`openspec-contract-guard`随OpenSpec Component物化并投射
+- **AND** OpenSpec Component被显式卸载时该Skill MUST随集合安全移除
 
 #### Scenario: Runtime 组合和移除门禁 Contribution
-- **WHEN** 临时 workspace 对支持的 Agent 安装或卸载 OpenSpec Component
-- **THEN** 产品 E2E MUST 验证安装后的 `task-triage` 与 `task-finish` runtime 包含 Component-owned 门禁片段
-- **AND** 产品 E2E MUST 验证卸载并 reconcile 后通用 runtime Skills 仍存在但门禁片段与命令完全消失
-- **AND** workspace 中的通用 Skill 源 MUST NOT 因安装或卸载被注入门禁正文
+- **WHEN** 临时Workspace对支持的Agent安装或卸载OpenSpec Component
+- **THEN** 产品E2E MUST验证安装后的workflow Skills获得current Converge/Convergence Inspect边界
+- **AND** 卸载后 MUST不残留Buildr-owned contribution或旧`openspec audit`调用
 
 ### Requirement: Package output 只能安全接管和替换
 Buildr MUST 将 package build 输出视为带版本化 receipt 和 integrity 的受管生成树，并在替换前验证目标 ownership。
