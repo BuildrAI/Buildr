@@ -211,6 +211,16 @@ export function createPackageStaticValidator(deps) {
       }
       if (sql.indexOf('DROP TABLE task_lifecycle_current') < sql.indexOf('task_finish_completions')) problems.push('Workspace SQLite lifecycle retirement must validate Finish completion before dropping lifecycle data.');
     }
+    const taskFinishCompactionMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0012_compact_task_finish_current.sql');
+    if (existsFile(taskFinishCompactionMigration)) {
+      const sql = fs.readFileSync(taskFinishCompactionMigration, 'utf8');
+      for (const required of ['CREATE TABLE task_finish_current', 'phases_json TEXT NOT NULL', 'lease_target_identity TEXT', 'DROP TABLE task_finish_transient_artifacts', 'DROP TABLE task_finish_target_leases', 'DROP TABLE task_finish_completions', 'DROP TABLE task_finish_runs']) {
+        if (!sql.includes(required)) problems.push(`Workspace SQLite Task Finish compaction migration must include: ${required}`);
+      }
+      for (const forbidden of ['CREATE TABLE task_finish_phase_current', 'CREATE TABLE task_finish_target_leases']) {
+        if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task Finish current authority must stay one-table: ${forbidden}`);
+      }
+    }
     for (const legacyRepository of ['task-development-repository.mjs', 'task-verification-repository.mjs', 'task-review-repository.mjs']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }

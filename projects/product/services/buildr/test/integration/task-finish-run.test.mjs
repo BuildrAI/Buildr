@@ -111,7 +111,7 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   const calls = [];
   const result = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'normal', identity: identity(root) }), handlers: passingHandlers(calls) });
   assert.equal(result.schemaVersion, 'buildr.task-finish-result/v2');
-  assert.equal(result.status, 'complete');
+  assert.equal(result.status, 'complete', JSON.stringify(result.primaryFailure));
   assert.deepEqual(calls, FINISH_PHASES);
   assert.deepEqual(result.phases.map((phase) => phase.id), FINISH_PHASES);
   assert.equal(result.handoff.identity, 'sha256-handoff');

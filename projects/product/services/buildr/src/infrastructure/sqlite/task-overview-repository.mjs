@@ -34,14 +34,12 @@ export function registerTaskOverviewRepository(runtime) {
         verification.updated_at AS verification_updated_at,
         environment.status AS environment_status,
         environment.updated_at AS environment_updated_at,
-        finish_run.run_id AS finish_run_id,
-        finish_run.status AS finish_run_status,
-        finish_run.updated_at AS finish_run_updated_at,
-        finish_completion.run_id AS finish_completion_run_id,
-        finish_completion.status AS finish_completion_status,
-        finish_completion.result_json AS finish_completion_json,
-        finish_completion.completed_at AS finish_completed_at,
-        finish_completion.updated_at AS finish_completion_updated_at
+        finish.run_id AS finish_run_id,
+        finish.status AS finish_status,
+        finish.current_phase AS finish_current_phase,
+        finish.updated_at AS finish_updated_at,
+        finish.completed_at AS finish_completed_at,
+        finish.association_handoff_identity AS finish_association_handoff_identity
       FROM tasks task
       LEFT JOIN tasks parent ON parent.task_id = task.parent_task_id
       LEFT JOIN task_development_current development ON development.task_id = task.task_id
@@ -49,8 +47,7 @@ export function registerTaskOverviewRepository(runtime) {
       LEFT JOIN task_review_current completion_review ON completion_review.task_id = task.task_id AND completion_review.review_type = 'completion'
       LEFT JOIN task_verification_current verification ON verification.task_id = task.task_id
       LEFT JOIN task_environment_current environment ON environment.task_id = task.task_id
-      LEFT JOIN task_finish_runs finish_run ON finish_run.task_id = task.task_id
-      LEFT JOIN task_finish_completions finish_completion ON finish_completion.task_id = task.task_id
+      LEFT JOIN task_finish_current finish ON finish.task_id = task.task_id
       WHERE task.task_id = ?`).get(taskId);
       if (!row) throw error('task_overview_not_found', `Task不存在：${taskId}。`, 404, { taskId });
       return { root, row, queryCount: 1 };

@@ -47,7 +47,7 @@ test('模型不恢复lifecycle/progress/event/history authority且没有历史Ta
   ].join('\n');
   for (const forbidden of ['task_lifecycle_current', 'completed_child_count', 'parent_progress', 'coordination_events', 'coordination_history', 'delivery_registry', 'govern-task-intermediate-artifacts']) assert.equal(sources.includes(forbidden), false, forbidden);
   const migrations = fs.readdirSync(path.join(root, 'src/infrastructure/sqlite/migrations')).sort();
-  assert.equal(migrations.at(-1), '0011_create_task_execution_records.sql');
+  assert.equal(migrations.at(-1), '0012_compact_task_finish_current.sql');
   assert.equal(migrations.some((name) => name.includes('parent_coordination') || name.includes('parent_plan') || name.includes('progress')), false);
 });
 

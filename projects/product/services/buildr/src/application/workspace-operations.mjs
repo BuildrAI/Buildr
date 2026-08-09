@@ -116,7 +116,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
 
   function diagnoseTaskFinishStore(result, targetRoot) {
     if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
-      result.taskFinish = { status: 'not-applicable', current: [], completions: [], leases: [], artifacts: [], invalidArtifacts: [] };
+      result.taskFinish = { status: 'not-applicable', current: [], leases: [] };
       return;
     }
     try {
@@ -125,9 +125,6 @@ export function registerApplicationWorkspaceOperations(runtime) {
       for (const lease of observation.leases || []) if (lease.expired) addDoctorFinding(result, 'error', 'task_finish.expired_lease', `Task Finish target lease 已过期：${lease.targetIdentity}`, {
         path: '.buildr/local/workspace.sqlite', taskId: lease.taskId, runId: lease.runId,
         suggestion: '确认没有仍在运行的 Finish 进程后重试或恢复对应 run；Doctor 不会自动删除 lease。', userActionRequired: true,
-      });
-      for (const artifact of observation.invalidArtifacts || []) addDoctorFinding(result, 'error', artifact.escaped ? 'task_finish.artifact_path_escape' : 'task_finish.artifact_missing', `Task Finish transient artifact ${artifact.artifactId} ${artifact.escaped ? '越界' : '缺失'}。`, {
-        path: artifact.relativeLocator, runId: artifact.runId, suggestion: '保留 SQLite 与文件现场，按当前 run 的 cleanup/resume 边界处理；Doctor 不会扩大删除范围。', userActionRequired: true,
       });
       for (const item of observation.current || []) if (item.status === 'cleanup_pending') addDoctorFinding(result, 'warning', 'task_finish.cleanup_pending', `Task Finish run 等待 cleanup：${item.runId}`, {
         path: '.buildr/local/workspace.sqlite', taskId: item.taskId, runId: item.runId, suggestion: '使用同一 Task Finish run 与 resume token 继续 cleanup；不要重新执行已完成的 delivery。', userActionRequired: true,

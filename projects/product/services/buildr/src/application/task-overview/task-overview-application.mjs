@@ -33,7 +33,7 @@ export function registerTaskOverviewApplication(runtime) {
     const planning = resultSlot(row, 'planning');
     const completion = resultSlot(row, 'completion_review');
     const verification = resultSlot(row, 'verification');
-    const finishCompletion = parsed(row.finish_completion_json);
+    const finishTerminal = row.finish_status === 'complete';
     return {
       schemaVersion: 'buildr.task-overview/v1',
       taskId: row.task_id,
@@ -61,8 +61,8 @@ export function registerTaskOverviewApplication(runtime) {
       verification: { ...verification, gateMatch: gateMatch(developmentReceipt?.gates?.verification, verification) },
       environment: { present: row.environment_status != null, status: row.environment_status ?? 'unknown', updatedAt: row.environment_updated_at ?? null },
       finish: {
-        current: { present: row.finish_run_id != null, runId: row.finish_run_id ?? null, status: row.finish_run_status ?? null, updatedAt: row.finish_run_updated_at ?? null },
-        completion: { present: row.finish_completion_run_id != null, runId: row.finish_completion_run_id ?? null, status: row.finish_completion_status ?? null, completedAt: row.finish_completed_at ?? null, updatedAt: row.finish_completion_updated_at ?? null, associationPresent: Boolean(finishCompletion?.association) },
+        current: { present: row.finish_run_id != null && !finishTerminal, runId: !finishTerminal ? row.finish_run_id ?? null : null, status: !finishTerminal ? row.finish_status ?? null : null, phase: !finishTerminal ? row.finish_current_phase ?? null : null, updatedAt: !finishTerminal ? row.finish_updated_at ?? null : null },
+        completion: { present: row.finish_run_id != null && finishTerminal, runId: finishTerminal ? row.finish_run_id ?? null : null, status: finishTerminal ? row.finish_status : null, completedAt: finishTerminal ? row.finish_completed_at ?? null : null, updatedAt: finishTerminal ? row.finish_updated_at ?? null : null, associationPresent: finishTerminal && row.finish_association_handoff_identity != null },
       },
       diagnostics: [],
     };

@@ -81,9 +81,34 @@ test('Task Finish current run、lease和completion由Workspace SQLite统一持�
   assert.equal(terminal.completion.result.status, 'complete');
 
   const database = runtime.openWorkspaceStructuredStore(root, { writable: false }).database;
-  assert.equal(database.prepare('SELECT count(*) AS count FROM task_finish_target_leases').get().count, 0);
-  assert.equal(database.prepare('SELECT count(*) AS count FROM task_finish_transient_artifacts').get().count, 0);
+  const row = database.prepare('SELECT status, lease_target_identity AS leaseTargetIdentity, json_extract(phases_json, \'$[4].id\') AS cleanupPhase FROM task_finish_current').get();
+  assert.deepEqual({ ...row }, { status: 'complete', leaseTargetIdentity: null, cleanupPhase: 'cleanup' });
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_finish_runs', 'task_finish_completions', 'task_finish_target_leases', 'task_finish_transient_artifacts')").get().count, 0);
   database.close();
+});
+
+test('target lease使用expiry与token fencing避免旧owner释放新owner', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  for (const taskId of ['lease-owner-a', 'lease-owner-b']) {
+    runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove lease fencing.', projects: [], services: [], changes: [] });
+  }
+  const ownerA = createFinishRun({ root, runId: 'lease-owner-a-run', identity: identity(root, 'lease-owner-a'), runtime });
+  const ownerB = createFinishRun({ root, runId: 'lease-owner-b-run', identity: identity(root, 'lease-owner-b'), runtime });
+  runtime.writeTaskFinishRunPersistence(root, ownerA);
+  runtime.writeTaskFinishRunPersistence(root, ownerB);
+
+  const leaseA = runtime.acquireTaskFinishTargetLease(root, { run: ownerA, targetIdentity: 'origin:dev', clock: () => 0 });
+  const wrongToken = { ...leaseA, token: 'wrong-token' };
+  assert.equal(runtime.releaseTaskFinishTargetLease(root, wrongToken).released, false);
+  assert.equal(runtime.acquireTaskFinishTargetLease(root, { run: ownerB, targetIdentity: 'origin:dev', clock: () => 30_000 }).blocked, true);
+
+  runtime.writeTaskFinishRunPersistence(root, { ...ownerA, status: 'failed', updatedAt: new Date(45_000).toISOString() });
+  const leaseB = runtime.acquireTaskFinishTargetLease(root, { run: ownerB, targetIdentity: 'origin:dev', clock: () => 61_000 });
+  assert.equal(leaseB.blocked, undefined);
+  assert.notEqual(leaseB.token, leaseA.token);
+  assert.equal(runtime.releaseTaskFinishTargetLease(root, leaseA).released, false);
+  assert.equal(runtime.releaseTaskFinishTargetLease(root, leaseB).released, true);
 });
 
 test('SQLite-only Finish 不迁移旧目录中的 completed 或 blocked 状态', (t) => {
@@ -102,19 +127,22 @@ test('SQLite-only Finish 不迁移旧目录中的 completed 或 blocked 状态',
   assert.equal(fs.existsSync(path.join(legacyRoot, 'completed', 'legacy-finish-run.json')), true);
 });
 
-test('transient artifact locator 必须被 run-owned root 限制，Doctor 只报告不删除', (t) => {
+test('单表拒绝损坏phase JSON且不再暴露per-artifact metadata API', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();
   runtime.createTaskRecord(root, { taskId: 'artifact-finish', title: 'Artifact Finish', intent: 'Check transient ownership.', projects: [], services: [], changes: [] });
   const run = createFinishRun({ root, runId: 'artifact-finish-run', identity: identity(root, 'artifact-finish'), runtime });
   runtime.writeTaskFinishRunPersistence(root, run);
-  assert.throws(() => runtime.registerTaskFinishTransientArtifactPersistence(root, { runId: run.runId, artifactId: 'escape', kind: 'stderr', relativeLocator: '../outside.log', sizeBytes: 1, sha256: 'sha256-x' }), (error) => error.code === 'task_finish_artifact_path_escape');
-  const artifactRoot = path.join(root, '.buildr', 'transient', 'task-finish', run.runId);
-  fs.mkdirSync(artifactRoot, { recursive: true });
-  fs.writeFileSync(path.join(artifactRoot, 'stderr.log'), 'x');
-  runtime.registerTaskFinishTransientArtifactPersistence(root, { runId: run.runId, artifactId: 'stderr', kind: 'stderr', relativeLocator: `.buildr/transient/task-finish/${run.runId}/stderr.log`, sizeBytes: 1, sha256: 'sha256-x' });
+  assert.equal(runtime.registerTaskFinishTransientArtifactPersistence, undefined);
+  assert.equal(runtime.updateTaskFinishTransientArtifactPersistence, undefined);
+  const database = runtime.openWorkspaceStructuredStore(root, { writable: true }).database;
+  assert.throws(() => database.prepare("UPDATE task_finish_current SET phases_json = '[]' WHERE task_id = ?").run(run.identity.task));
+  assert.throws(() => database.prepare("UPDATE task_finish_current SET phases_json = json_set(phases_json, '$[0].status', 'unknown') WHERE task_id = ?").run(run.identity.task));
+  database.prepare("UPDATE task_finish_current SET candidate_identity = 'sha256-corrupt' WHERE task_id = ?").run(run.identity.task);
+  database.close();
+  assert.throws(() => runtime.readTaskFinishRunPersistence(root, { taskId: run.identity.task }), (failure) => failure.code === 'task_finish_current_query_fields_mismatch');
   const report = runtime.inspectTaskFinishPersistence(root);
-  assert.equal(report.artifacts[0].present, true);
   assert.equal(report.status, 'healthy');
-  assert.equal(fs.existsSync(path.join(artifactRoot, 'stderr.log')), true);
+  assert.equal(report.current.length, 1);
+  assert.equal('artifacts' in report, false);
 });
