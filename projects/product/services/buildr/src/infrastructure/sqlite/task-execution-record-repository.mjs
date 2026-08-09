@@ -137,7 +137,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
     const task = runtime.readTaskRecordPersistence(targetRoot, record.taskId);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const existingRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND run_identity = ?`).get(record.taskId, record.owner, record.kind, record.runIdentity);
@@ -171,7 +171,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
     const task = runtime.readTaskRecordPersistence(targetRoot, previous.taskId);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const currentRow = database.prepare(`${SELECT} WHERE record_id = ?`).get(previous.recordId);

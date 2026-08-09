@@ -174,7 +174,7 @@
 
 - 定义：一次Task专业执行发生了什么的有限期记录；SQLite保存closed metadata，受限Workspace-local目录保存已脱敏正文。
 - 适用范围：v1的Verification execution与Finish diagnostics，以及固定quota、retention、resolution和cleanup状态。
-- 避免混用：不是Current/Terminal Fact、执行资源、通用event/history payload或Consumer/Adoption关系；本阶段不接入producer。
+- 避免混用：不是Current/Terminal Fact、执行资源、通用event/history payload或Consumer/Adoption关系；当前仅正式Task command Verification已接producer，Finish仍待后续贡献。
 - 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
 
 ## 执行资源（Execution Resource）
@@ -360,9 +360,9 @@
 
 ## 验证执行证据（Verification Execution Evidence）
 
-- 定义：一次显式 capability invocation 产生的 transient `buildr.verification-execution/v1` 事实，包含完整命令终态、stdout/stderr、耗时、临时路径、资源协调和诊断。
-- 适用范围：Task Verification提炼current Result之前的本机execution，以及消费后的有界cleanup。
-- 避免混用：不是current Verification Result，不进入Workspace SQLite current slot，也不表达Task推进或风险接受。
+- 定义：一次显式 capability invocation 产生的`buildr.verification-execution/v1`公开执行事实；Task外只对应transient evidence，正式Task还对应一条有限期Task Execution Record。
+- 适用范围：Task Verification提炼current Result之前的本机execution、正式Task受控记录及transient evidence的有界cleanup。
+- 避免混用：不是current Verification Result；Execution Record进入独立SQLite metadata authority但不进入Verification current slot，也不表达Task推进或风险接受。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 任务验证（Task Verification）

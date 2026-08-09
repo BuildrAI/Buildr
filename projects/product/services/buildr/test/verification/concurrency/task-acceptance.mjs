@@ -186,7 +186,12 @@ try {
     const payload = parseSuccessfulJson(result, `verification ${taskIds[index]}`);
     assert.equal(payload.schemaVersion, 'buildr.verification-execution/v1');
     assert.match(payload.executionIdentity, /^sha256-/);
-    return { taskId: taskIds[index], executionIdentity: payload.executionIdentity, environment: payload.environment, durationMs: payload.durationMs, checks: payload.checks };
+    assert.equal(payload.executionRecord.status, 'retained');
+    assert.equal(payload.executionRecord.outcome, 'passed');
+    assert.equal(payload.executionRecord.lifecycleStatus, 'retained');
+    assert.equal('locator' in payload.executionRecord.body, false);
+    assert.equal(fs.existsSync(payload.evidenceReference), false);
+    return { taskId: taskIds[index], executionIdentity: payload.executionIdentity, executionRecord: payload.executionRecord, environment: payload.environment, durationMs: payload.durationMs, checks: payload.checks };
   });
   assert.equal(summary.verificationRuns.every((run) => run.environment.taskId === run.taskId), true);
   assert.equal(summary.verificationRuns.some((run) => run.checks.find((check) => check.id === 'nested.coordinated').resourceCoordination.waitDurationMs > 50), true);

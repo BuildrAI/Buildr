@@ -62,7 +62,7 @@ buildr verification run --project <code> \
   --json
 ```
 
-`verification run` 只执行已选择的 command capability 并产生 transient execution evidence；它不接受 `--declaration-root`。`--declaration-root` 只用于 `task verification record`，让 Application 在正式写入动作中读取当前 ready Task Environment 内尚未进入 canonical Workspace 的 declaration bytes；`inspect`不重新观察声明。
+`verification run` 只执行已选择的 command capability，并返回 `buildr.verification-execution/v1`；它不接受 `--declaration-root`。带 matching Task Environment 的正式 execution 会在启动 capability 前 open 一条 Task Execution Record，完成后先 seal 受控、脱敏、有限期正文，再精确清理 transient evidence；容量不足时不得启动 capability。Task 外 execution 仍只产生 transient evidence。`--declaration-root` 只用于 `task verification record`，让 Application 在正式写入动作中读取当前 ready Task Environment 内尚未进入 canonical Workspace 的 declaration bytes；`inspect`不重新观察声明。
 
 声明 `effects.authorization: explicit` 时，取得对应授权后逐项增加 `--authorize-capability <id>`；声明为 explicit 的资源同理增加 `--authorize-resource <id>`。不得用一次宽泛授权覆盖其他 capability 或 resource。
 
@@ -71,7 +71,7 @@ buildr verification run --project <code> \
 - Product 内部测试可以使用其专用 registry/DAG；不要把它提升为通用 Project declaration policy。
 - coordinated resource 由 runner 通过 owner-bound waiting ticket 公平排队；最早的有效 waiter 优先取得可用容量。取消、timeout、崩溃或过期 ticket 由 coordinator 按 owner/token 与 expiry 精确恢复；Agent 不清空共享队列、不删除其他 waiter/lease，也不通过重复启动 verification 抢占容量。
 
-完整 stdout/stderr、命令、耗时、排队、waiting ticket、资源 lease、临时路径和 Environment 诊断属于 `buildr.verification-execution/v1` transient evidence。运行中或暂时无输出时继续等待同一 execution，不启动重复 verifier。整体耗时只从 execution wall-clock 读取，不相加并行检查耗时。
+完整命令、本机路径、waiting ticket、资源 lease 和 Environment handle 只属于 transient execution evidence。正式 Task Execution Record 只保留可移植摘要、按 capability 分段且受配额/脱敏控制的 stdout/stderr、闭合时间线与诊断；不进入 current Verification Result。运行中或暂时无输出时继续等待同一 execution，不启动重复 verifier。整体耗时只从 execution wall-clock 读取，不相加并行检查耗时。
 
 ## 4. 提炼并原子记录 current Result
 

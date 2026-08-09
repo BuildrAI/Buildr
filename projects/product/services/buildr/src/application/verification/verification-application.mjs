@@ -10,6 +10,14 @@ import { runVerificationCapabilities } from './capability-runner.mjs';
 import { executeVerificationCommand } from './process-executor.mjs';
 import { createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.mjs';
 import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle } from './evidence-lifecycle.mjs';
+import {
+  VERIFICATION_EXECUTION_RECORD_KIND,
+  VERIFICATION_EXECUTION_RECORD_OWNER,
+  VERIFICATION_EXECUTION_RECORD_PRODUCER,
+  createVerificationExecutionRecordFiles,
+  publicVerificationExecutionRecord,
+  verificationExecutionRecordOutcome,
+} from './execution-record.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')}`;
@@ -219,6 +227,25 @@ export function registerVerificationApplication(runtime) {
     });
 
     const runId = `verification-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    let openedExecutionRecord = null;
+    if (context) {
+      try {
+        openedExecutionRecord = runtime.openTaskExecutionRecord(path.resolve(requestedWorkspace), context.taskId, {
+          owner: VERIFICATION_EXECUTION_RECORD_OWNER,
+          kind: VERIFICATION_EXECUTION_RECORD_KIND,
+          runIdentity: runId,
+          targetIdentity,
+          producer: VERIFICATION_EXECUTION_RECORD_PRODUCER,
+        });
+      } catch (error) {
+        error.verificationExecutionRecord = publicVerificationExecutionRecord('blocked', {
+          outcome: 'blocked',
+          diagnostic: error,
+          nextActions: error.nextAction ? [error.nextAction] : [],
+        });
+        throw error;
+      }
+    }
     const before = executionContentObservation(targetRoot);
     const startedAt = new Date().toISOString();
     const started = process.hrtime.bigint();
@@ -241,10 +268,12 @@ export function registerVerificationApplication(runtime) {
     });
     const after = executionContentObservation(targetRoot);
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
+    const finishedAt = new Date().toISOString();
     const checks = results.map(sanitizeCheck);
     const targetStable = digest(before) === digest(after);
     const targetDrift = targetDriftSummary(before, after);
     const passed = targetStable && checks.every((check) => check.status === 'passed');
+    const executionRecordOutcome = verificationExecutionRecordOutcome({ passed, checks });
     const declarationIdentity = digest(declarationContent);
     const identityMaterial = verificationExecutionIdentityMaterial({
       project: projectCode,
@@ -270,22 +299,93 @@ export function registerVerificationApplication(runtime) {
       durationMs,
       timingSource: 'wrapper-measured',
       startedAt,
-      finishedAt: new Date().toISOString(),
+      finishedAt,
       failures: checks.filter((check) => check.status === 'failed').map((check) => check.id),
       executionIdentity,
       runId,
       run: { id: runId },
     };
     const evidence = createVerificationEvidenceLifecycle(runId);
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationExecution, { ...base, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle });
+    let executionRecord = openedExecutionRecord
+      ? publicVerificationExecutionRecord('attention', {
+        record: openedExecutionRecord.record,
+        outcome: executionRecordOutcome,
+        diagnostic: { code: 'verification.execution_record_open', message: 'Execution record已open，等待seal。' },
+      })
+      : publicVerificationExecutionRecord('not-applicable');
+    let payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationExecution, { ...base, executionRecord, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle });
     runtime.atomicWriteFile(evidence.summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
+    if (openedExecutionRecord) {
+      let sealedExecutionRecord = null;
+      try {
+        sealedExecutionRecord = runtime.sealTaskExecutionRecord(path.resolve(requestedWorkspace), openedExecutionRecord.record.recordId, {
+          outcome: executionRecordOutcome,
+          files: createVerificationExecutionRecordFiles({
+            runId,
+            executionIdentity,
+            context,
+            targetRoot,
+            targetIdentity,
+            targetStable,
+            targetDrift,
+            before,
+            after,
+            projectCode,
+            declarationPath,
+            declarationIdentity,
+            workspaceNode,
+            selectedCapabilities: selected,
+            authorizedCapabilities,
+            authorizedResources,
+            checks,
+            outcome: executionRecordOutcome,
+            durationMs,
+            startedAt,
+            finishedAt,
+          }),
+        });
+        const cleanup = cleanupVerificationEvidence(payload, { removePath: runtime.removePath });
+        const cleanupAttention = !cleanup.ok;
+        executionRecord = publicVerificationExecutionRecord(cleanupAttention ? 'attention' : 'retained', {
+          record: sealedExecutionRecord.record,
+          transientCleanup: cleanup,
+          diagnostic: cleanupAttention ? { code: cleanup.code, message: cleanup.message } : null,
+          nextActions: cleanupAttention ? ['保留transient evidence，检查cleanup diagnostic后重试精确清理。'] : [],
+        });
+        payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationExecution, {
+          ...base,
+          status: passed && !cleanupAttention ? 'passed' : 'failed',
+          executionRecord,
+          evidenceReference: evidence.summaryPath,
+          evidenceLifecycle: { ...evidence.lifecycle, cleanupStatus: cleanup.status },
+        });
+      } catch (error) {
+        executionRecord = publicVerificationExecutionRecord('attention', {
+          record: sealedExecutionRecord?.record,
+          recordId: openedExecutionRecord.record.recordId,
+          outcome: executionRecordOutcome,
+          lifecycleStatus: sealedExecutionRecord?.record.lifecycleStatus || 'open',
+          diagnostic: error,
+          nextActions: error.nextAction ? [error.nextAction] : ['保留open record与transient evidence，检查diagnostic后恢复seal。'],
+        });
+        payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationExecution, {
+          ...base,
+          status: 'failed',
+          executionRecord,
+          evidenceReference: evidence.summaryPath,
+          evidenceLifecycle: evidence.lifecycle,
+          error: { code: error.code || 'verification.execution_record_seal_failed', message: error.message },
+        });
+        if (fs.existsSync(evidence.lifecycle.cleanupReference)) runtime.atomicWriteFile(evidence.summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
+      }
+    }
     if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
       console.log(`Verification execution: ${payload.status}`);
       console.log(`Project: ${projectCode}; capabilities: ${checks.length}; duration: ${durationMs} ms`);
       console.log(`Evidence: ${evidence.summaryPath}`);
     }
-    if (!passed) process.exitCode = 1;
+    if (payload.status !== 'passed') process.exitCode = 1;
     return payload;
   }
 
@@ -303,12 +403,15 @@ export function registerVerificationApplication(runtime) {
         checks: [],
         failures: [],
         executionIdentity: null,
+        executionRecord: error.verificationExecutionRecord || publicVerificationExecutionRecord('not-opened', {
+          diagnostic: error,
+        }),
         evidenceReference: null,
         evidenceLifecycle: null,
         error: { code: error.code || 'verification.invalid_request', message: error.message },
       });
       process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      process.exitCode = 2;
+      process.exitCode = error.taskExecutionRecordBusiness ? 1 : 2;
       return payload;
     }
   }

@@ -229,7 +229,7 @@ const COMMAND_ROUTES = [
   {
     key: "verification run",
     surface: "agent-machine",
-    summary: "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；applicability 选择与 bounded Agent operation 由 task-verification Skill 负责。",
+    summary: "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；正式 Task execution 会保留受控 execution record。",
     help: [
       "Usage: buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--json]",
       "",
@@ -237,7 +237,7 @@ const COMMAND_ROUTES = [
       "--declaration-root 只属于 task verification record；verification run 与 task verification inspect 都不读取 declaration source。",
       "采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。",
       "effects.authorization: explicit 必须逐项 --authorize-capability；显式授权资源必须逐项 --authorize-resource。被实际 claim 的 coordinated 资源通过 Git common-dir lease 跨 Task 排队。该命令不创建任务、调度 Agent 或写 current Result。",
-      "execution evidence 始终写入 provider-owned 临时目录；全部 consumer 完成后通过 verification cleanup 精确清理。--json 返回 buildr.verification-execution/v1。"
+      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量，完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json 返回buildr.verification-execution/v1及portable executionRecord摘要。"
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'run',
     run: (r, c) => r.verificationRun(c.argv.slice(4)),
