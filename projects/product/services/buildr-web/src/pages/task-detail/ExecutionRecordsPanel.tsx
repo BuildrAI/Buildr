@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button, Card, Space } from 'antd';
 import { api, type ApiError } from '../../api';
 import { formatDateTime } from '../../lib/taskLabels';
 import { Fact } from './shared';
@@ -85,33 +86,41 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
             <h2>执行记录（Execution Records）</h2>
             <p className="section-copy">同一 authority 的只读视图；记录 outcome 不等于当前 Verification Result 或 Finish 交付事实。</p>
           </div>
-          <button className="button secondary" type="button" disabled={loading} onClick={onRefresh}>刷新执行记录</button>
+          <Button disabled={loading} onClick={onRefresh}>刷新执行记录</Button>
         </div>
-        <div className="execution-record-filters" role="group" aria-label="执行记录筛选">
+        <Space className="execution-record-filters" wrap role="group" aria-label="执行记录筛选">
           {(Object.keys(VIEW_LABELS) as ExecutionRecordView[]).map((candidate) => (
-            <button
+            <Button
               key={candidate}
               id={`task-execution-record-filter-${candidate}`}
-              type="button"
-              className={`button ${view === candidate ? 'primary' : 'secondary'}`}
+              type={view === candidate ? 'primary' : 'default'}
               aria-pressed={view === candidate}
               onClick={() => onSelectView(candidate)}
             >
               {VIEW_LABELS[candidate]}
-            </button>
+            </Button>
           ))}
-        </div>
+        </Space>
         {error ? <p className="environment-diagnostic">{error}</p> : null}
       </article>
       {loading ? <div className="page-loading"><span className="loader" /><p>正在读取执行记录…</p></div> : null}
       {!loading && !records.length ? <section className="empty-state"><h3>没有{VIEW_LABELS[view]}执行记录</h3><p>这里不会从 Result、Finish current 或文件系统推断历史记录。</p></section> : null}
       <div id="task-execution-record-list" className="execution-record-list">
         {records.map((record: any) => (
-          <button key={record.recordId} type="button" className={`execution-record-card ${record.outcome}`} onClick={() => { void openRecord(record.recordId); }}>
-            <span className="execution-record-card-heading"><strong>{ownerLabel(record.owner)} · {record.outcome}</strong><span>{formatDateTime(record.timestamps.sealedAt || record.timestamps.openedAt)}</span></span>
-            <span>{record.runIdentity}</span>
+          <Card
+            key={record.recordId}
+            size="small"
+            hoverable
+            className={`execution-record-card ${record.outcome}`}
+            onClick={() => { void openRecord(record.recordId); }}
+          >
+            <div className="execution-record-card-heading">
+              <strong>{ownerLabel(record.owner)} · {record.outcome}</strong>
+              <span>{formatDateTime(record.timestamps.sealedAt || record.timestamps.openedAt)}</span>
+            </div>
+            <div>{record.runIdentity}</div>
             <small>{record.lifecycleStatus} · {record.resolutionStatus} · {bodyState(record)}</small>
-          </button>
+          </Card>
         ))}
       </div>
       {detailLoading ? <div className="page-loading"><span className="loader" /><p>正在读取记录详情…</p></div> : null}
@@ -135,9 +144,9 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
           {selected.body.files?.length ? (
             <div className="execution-record-files">
               {selected.body.files.map((file: any) => (
-                <button key={file.name} type="button" className="button secondary" disabled={bodyLoading} onClick={() => { void openBody(selected.recordId, file.name); }}>
+                <Button key={file.name} disabled={bodyLoading} onClick={() => { void openBody(selected.recordId, file.name); }}>
                   {file.name} · {file.storedSizeBytes} B{file.truncated ? ' · 已截断保存' : ''}
-                </button>
+                </Button>
               ))}
             </div>
           ) : <p className="section-copy">当前没有可读取的正文文件。</p>}

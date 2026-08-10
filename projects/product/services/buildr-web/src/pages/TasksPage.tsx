@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { Alert, Button, Empty, Form, Input, Select, Table, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
@@ -33,11 +35,28 @@ type TasksResponse = {
   };
 };
 
+type ProjectInfo = { code: string; name: string };
+type ServiceInfo = { code: string; name: string; projectCode: string };
+
 function scopeText(record: TaskListItem['record']): string {
   const projects = record.scope.projects.join('、') || '无项目';
   const services = record.scope.services.map((item) => `${item.project}/${item.service}`).join('、');
   return services ? `${projects}；${services}` : projects;
 }
+
+function projectOptionLabel(code: string, names: Record<string, string>): string {
+  return names[code] || code;
+}
+
+function serviceOptionLabel(key: string, serviceNames: Record<string, string>): string {
+  if (serviceNames[key]) return serviceNames[key];
+  const slash = key.indexOf('/');
+  return slash >= 0 ? key.slice(slash + 1) : key;
+}
+
+const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
+  <tbody id="task-table-body" {...props} />
+);
 
 export function TasksPage() {
   const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
@@ -49,8 +68,11 @@ export function TasksPage() {
   const [totalTaskCount, setTotalTaskCount] = useState(0);
   const [filterProjects, setFilterProjects] = useState<string[]>([]);
   const [filterServices, setFilterServices] = useState<string[]>([]);
+  const [projectNames, setProjectNames] = useState<Record<string, string>>({});
+  const [serviceNames, setServiceNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const catalogsLoaded = useRef(false);
 
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('active');
@@ -102,12 +124,46 @@ export function TasksPage() {
       if (!workspaceLoaded.current) {
         requests.push(api('/api/v1/workspace', { signal: controller.signal }));
       }
-      const [data, workspace] = await Promise.all(requests) as [TasksResponse, WorkspacePayload | undefined];
+      if (!catalogsLoaded.current) {
+        requests.push(api('/api/v1/projects', { signal: controller.signal }));
+      }
+      const settled = await Promise.all(requests);
       if (generation !== requestGeneration.current) return;
-      if (workspace) {
-        setWorkspace(workspace);
-        setBreadcrumbParts([workspace.workspace.name, '任务']);
-        workspaceLoaded.current = true;
+      const data = settled[0] as TasksResponse;
+      let offset = 1;
+      if (!workspaceLoaded.current) {
+        const workspace = settled[offset++] as WorkspacePayload | undefined;
+        if (workspace) {
+          setWorkspace(workspace);
+          setBreadcrumbParts([workspace.workspace.name, '任务']);
+          workspaceLoaded.current = true;
+        }
+      }
+      if (!catalogsLoaded.current) {
+        const projectsPayload = settled[offset] as { projects: ProjectInfo[] } | undefined;
+        if (projectsPayload?.projects) {
+          const nextProjectNames = Object.fromEntries(
+            projectsPayload.projects.map((item) => [item.code, item.name || item.code]),
+          );
+          setProjectNames(nextProjectNames);
+          const serviceEntries = await Promise.all(projectsPayload.projects.map(async (project) => {
+            try {
+              const payload = await api(
+                `/api/v1/projects/${encodeURIComponent(project.code)}/services`,
+                { signal: controller.signal },
+              ) as { services: ServiceInfo[] };
+              return payload.services.map((service) => [
+                `${project.code}/${service.code}`,
+                service.name || service.code,
+              ] as const);
+            } catch {
+              return [] as Array<readonly [string, string]>;
+            }
+          }));
+          if (generation !== requestGeneration.current) return;
+          setServiceNames(Object.fromEntries(serviceEntries.flat()));
+          catalogsLoaded.current = true;
+        }
       }
       setTasks(data.tasks);
       setDiagnostics(data.diagnostics);
@@ -148,12 +204,63 @@ export function TasksPage() {
   const showTable = tasks.length > 0 && !errorMessage;
   const showEmpty = Boolean(errorMessage) || (tasks.length === 0 && diagnostics.length === 0);
 
+  const columns: ColumnsType<TaskListItem> = [
+    {
+      title: '任务',
+      width: 220,
+      ellipsis: true,
+      render: (_value, item) => (
+        <>
+          <strong>{item.record.title}</strong>
+          <small>{item.record.taskId}</small>
+        </>
+      ),
+    },
+    { title: '意图', ellipsis: true, render: (_value, item) => item.record.intent },
+    {
+      title: '层级',
+      width: 160,
+      render: (_value, item) => (
+        <>
+          <div>{item.taskRelations.parent ? `Parent：${item.taskRelations.parent.taskId}` : 'Parent：无'}</div>
+          <small>{`直接 Child：${item.childTaskCount}`}</small>
+        </>
+      ),
+    },
+    { title: '范围', ellipsis: true, render: (_value, item) => scopeText(item.record) },
+    {
+      title: '状态',
+      width: 96,
+      render: (_value, item) => (
+        <span className={`lifecycle-badge ${item.record.status}`}>{taskStatusLabel(item.record.status)}</span>
+      ),
+    },
+    {
+      title: '更新时间',
+      width: 168,
+      render: (_value, item) => formatShortDateTime(item.record.updatedAt),
+    },
+    {
+      title: '操作',
+      width: 88,
+      fixed: 'right',
+      className: 'operation-column',
+      render: (_value, item) => (
+        <div className="table-operations">
+          <Link className="table-action" to={href(`/tasks/${encodeURIComponent(item.record.taskId)}`)}>
+            详情
+          </Link>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <>
       <section className="resource-toolbar">
         <div>
           <p className="eyebrow">任务</p>
-          <h1>任务记录</h1>
+          <Typography.Title level={2} style={{ margin: 0 }}>任务记录</Typography.Title>
           <p className="page-copy">查看正式任务的顶层事实并进行有限维护。正式任务由 Agent 创建，Local App 不提供创建入口。</p>
         </div>
         <span id="tasks-state" className="count-label">{state}</span>
@@ -162,22 +269,23 @@ export function TasksPage() {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">筛选</p>
-            <h2>缩小任务范围</h2>
+            <Typography.Title level={4} style={{ margin: 0 }}>缩小任务范围</Typography.Title>
           </div>
-          <button id="task-filter-clear" className="button secondary" type="button" onClick={clearFilters}>
+          <Button id="task-filter-clear" onClick={clearFilters}>
             清除筛选
-          </button>
+          </Button>
         </div>
-        <form
+        <Form
           id="task-filter-form"
           className={`task-filter-grid${loading ? ' is-loading' : ''}`}
-          onSubmit={(event: FormEvent) => event.preventDefault()}
+          layout="vertical"
+          onSubmitCapture={(event: FormEvent) => event.preventDefault()}
         >
-          <label className="task-filter-query">
-            标题或意图
-            <input
+          <Form.Item className="task-filter-query" label="标题或意图">
+            <Input
               id="task-filter-q"
               type="search"
+              allowClear
               autoComplete="off"
               placeholder="输入关键词"
               value={q}
@@ -190,137 +298,127 @@ export function TasksPage() {
                 }, 200);
               }}
             />
-          </label>
-          <label>
-            状态
-            <select
+          </Form.Item>
+          <Form.Item label="状态">
+            <Select
               id="task-filter-status"
+              style={{ width: '100%' }}
               value={status}
-              onChange={(event) => {
-                const next = event.target.value;
+              onChange={(next) => {
                 setStatus(next);
                 if (next === 'active' && ['pending', 'handled', 'no-action'].includes(retrospectiveState)) setRetrospectiveState('all');
               }}
-            >
-              <option value="active">进行中</option>
-              <option value="completed">已完成</option>
-              <option value="abandoned">已放弃</option>
-              <option value="all">全部</option>
-            </select>
-          </label>
-          <label>
-            项目
-            <select
+              options={[
+                { value: 'active', label: '进行中' },
+                { value: 'completed', label: '已完成' },
+                { value: 'abandoned', label: '已放弃' },
+                { value: 'all', label: '全部' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item label="项目">
+            <Select
               id="task-filter-project"
-              value={project}
-              onChange={(event) => {
-                setProject(event.target.value);
+              style={{ width: '100%' }}
+              value={project || 'all'}
+              onChange={(next) => {
+                setProject(next === 'all' ? '' : next);
                 setService('');
               }}
-            >
-              <option value="">全部项目</option>
-              {filterProjects.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            服务
-            <select id="task-filter-service" value={service} onChange={(event) => setService(event.target.value)}>
-              <option value="">全部服务</option>
-              {serviceOptions.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Child Task
-            <select id="task-filter-children" value={hasChildren} onChange={(event) => setHasChildren(event.target.value)}>
-              <option value="all">不限</option>
-              <option value="yes">有直接 Child</option>
-              <option value="no">无直接 Child</option>
-            </select>
-          </label>
-          <label>
-            复盘处置
-            <select
+              options={[
+                { value: 'all', label: '全部项目' },
+                ...filterProjects.map((item) => ({
+                  value: item,
+                  label: projectOptionLabel(item, projectNames),
+                })),
+              ]}
+            />
+          </Form.Item>
+          <Form.Item label="服务">
+            <Select
+              id="task-filter-service"
+              style={{ width: '100%' }}
+              value={service || 'all'}
+              onChange={(next) => setService(next === 'all' ? '' : next)}
+              options={[
+                { value: 'all', label: '全部服务' },
+                ...serviceOptions.map((item) => ({
+                  value: item,
+                  label: serviceOptionLabel(item, serviceNames),
+                })),
+              ]}
+            />
+          </Form.Item>
+          <Form.Item label="Child Task">
+            <Select
+              id="task-filter-children"
+              style={{ width: '100%' }}
+              value={hasChildren}
+              onChange={setHasChildren}
+              options={[
+                { value: 'all', label: '不限' },
+                { value: 'yes', label: '有直接 Child' },
+                { value: 'no', label: '无直接 Child' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item label="复盘处置">
+            <Select
               id="task-filter-retrospective"
+              style={{ width: '100%' }}
               value={retrospectiveState}
-              onChange={(event) => {
-                const next = event.target.value;
+              onChange={(next) => {
                 setRetrospectiveState(next);
                 if (['pending', 'handled', 'no-action'].includes(next) && status === 'active') setStatus('all');
               }}
-            >
-              <option value="all">不限</option>
-              <option value="missing">未复盘</option>
-              <option value="pending">未处理</option>
-              <option value="handled">已处理</option>
-              <option value="no-action">无需处理</option>
-            </select>
-          </label>
-        </form>
+              options={[
+                { value: 'all', label: '不限' },
+                { value: 'missing', label: '未复盘' },
+                { value: 'pending', label: '未处理' },
+                { value: 'handled', label: '已处理' },
+                { value: 'no-action', label: '无需处理' },
+              ]}
+            />
+          </Form.Item>
+        </Form>
       </section>
       <section className="resource-list-section">
         <div className="section-heading">
           <div>
-            <h2>任务</h2>
+            <Typography.Title level={4} style={{ margin: 0 }}>任务</Typography.Title>
             <p className="section-copy">默认只显示进行中的任务，按最近更新时间排列。</p>
           </div>
         </div>
-        <div id="task-diagnostics" className={`alert error${diagnostics.length ? '' : ' hidden'}`} role="status">
-          {diagnostics.length
-            ? `有 ${diagnostics.length} 条诊断：${diagnostics.map((item) => item.message).join('；')}`
-            : ''}
+        <div id="task-diagnostics" className={diagnostics.length ? '' : 'hidden'} role="status">
+          {diagnostics.length ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={`有 ${diagnostics.length} 条诊断：${diagnostics.map((item) => item.message).join('；')}`}
+            />
+          ) : null}
         </div>
         <div id="task-table-wrap" className={`management-table-wrap${showTable ? '' : ' hidden'}`}>
-          <table className="management-table">
-            <thead>
-              <tr>
-                <th>任务</th>
-                <th>意图</th>
-                <th>层级</th>
-                <th>范围</th>
-                <th>状态</th>
-                <th>更新时间</th>
-                <th className="operation-column">操作</th>
-              </tr>
-            </thead>
-            <tbody id="task-table-body">
-              {tasks.map((item) => {
-                const record = item.record;
-                return (
-                  <tr key={record.taskId}>
-                    <td>
-                      <strong>{record.title}</strong>
-                      <small>{record.taskId}</small>
-                    </td>
-                    <td>{record.intent}</td>
-                    <td>
-                      <div>{item.taskRelations.parent ? `Parent：${item.taskRelations.parent.taskId}` : 'Parent：无'}</div>
-                      <small>{`直接 Child：${item.childTaskCount}`}</small>
-                    </td>
-                    <td>{scopeText(record)}</td>
-                    <td>
-                      <span className={`lifecycle-badge ${record.status}`}>{taskStatusLabel(record.status)}</span>
-                    </td>
-                    <td>{formatShortDateTime(record.updatedAt)}</td>
-                    <td className="table-operations">
-                      <Link className="table-action" to={href(`/tasks/${encodeURIComponent(record.taskId)}`)}>
-                        详情
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <Table
+            rowKey={(item) => item.record.taskId}
+            pagination={false}
+            tableLayout="fixed"
+            scroll={{ x: 980 }}
+            dataSource={tasks}
+            columns={columns}
+            components={{ body: { wrapper: TableBody } }}
+          />
         </div>
         <div id="task-empty" className={`empty-state${showEmpty ? '' : ' hidden'}`}>
-          {errorMessage
-            || (totalTaskCount === 0
-              ? '当前工作空间还没有正式任务记录。正式任务由 Agent 创建。'
-              : '没有符合当前筛选条件的任务。')}
+          {showEmpty ? (
+            <Empty
+              description={errorMessage
+                || (totalTaskCount === 0
+                  ? '当前工作空间还没有正式任务记录。正式任务由 Agent 创建。'
+                  : '没有符合当前筛选条件的任务。')}
+            />
+          ) : null}
         </div>
       </section>
     </>

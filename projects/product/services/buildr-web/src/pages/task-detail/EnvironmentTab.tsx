@@ -1,3 +1,4 @@
+import { Button } from 'antd';
 import {
   environmentStatusLabel,
   formatDateTime,
@@ -25,9 +26,9 @@ export function EnvironmentTab({ active, data, loading, onRefresh }: Props) {
             <h2>任务环境（Task Environment）</h2>
             <p className="section-copy">读取 Workspace SQLite 中最近保存的环境事实；GET 不探测、不执行准备步骤也不回写。</p>
           </div>
-          <button id="task-environment-refresh" className="button secondary" type="button" disabled={loading} onClick={onRefresh}>
+          <Button id="task-environment-refresh" disabled={loading} onClick={onRefresh}>
             刷新当前事实
-          </button>
+          </Button>
         </div>
         <dl className="read-facts">
           <Fact label="状态" value={<span id="task-environment-status">{data ? environmentStatusLabel(data.status) : '尚未读取'}</span>} />

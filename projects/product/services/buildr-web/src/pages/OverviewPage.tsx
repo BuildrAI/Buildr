@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Alert, Button, Descriptions, Space, Spin, Statistic, Typography } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 
@@ -61,9 +62,9 @@ export function OverviewPage() {
       <>
         <section className="page-header">
           <p className="eyebrow">工作空间</p>
-          <h1>无法读取工作空间</h1>
+          <Typography.Title level={2} style={{ margin: 0 }}>无法读取工作空间</Typography.Title>
         </section>
-        <div className="alert error" role="alert">{error}</div>
+        <Alert type="error" showIcon message={error} />
       </>
     );
   }
@@ -71,8 +72,7 @@ export function OverviewPage() {
   if (!data) {
     return (
       <div className="page-loading">
-        <span className="loader" />
-        <p>正在读取真实信息…</p>
+        <Spin tip="正在读取真实信息…" />
       </div>
     );
   }
@@ -84,16 +84,20 @@ export function OverviewPage() {
       <section className="detail-page-header">
         <div>
           <p className="eyebrow">开始使用 Buildr</p>
-          <h1 id="overview-title">{data.workspace.workspace.name}</h1>
+          <Typography.Title id="overview-title" level={2} style={{ margin: 0 }}>
+            {data.workspace.workspace.name}
+          </Typography.Title>
           <p id="overview-description" className="page-copy">
             {data.workspace.workspace.description || '这是你和 Agent 共同工作的顶层目录。'}
           </p>
         </div>
-        <Link className="button secondary" to={settingsHref}>工作空间设置</Link>
+        <Link to={settingsHref}>
+          <Button>工作空间设置</Button>
+        </Link>
       </section>
       <section className="onboarding-panel">
         <p className="eyebrow">工作空间中的项目与服务</p>
-        <h2 id="start-heading">{heading}</h2>
+        <Typography.Title id="start-heading" level={4} style={{ marginTop: 0 }}>{heading}</Typography.Title>
         <p id="start-copy" className="page-copy">{copy}</p>
         <div id="start-scope" className="scope-summary">
           <span>{`工作空间：${data.workspace.workspace.name}`}</span>
@@ -102,72 +106,75 @@ export function OverviewPage() {
         </div>
         <div id="start-actions" className="actions">
           {data.phase === 'project-empty' ? (
-            <button className="button primary" type="button" onClick={() => openAgentAction('project')}>
+            <Button type="primary" onClick={() => openAgentAction('project')}>
               让 Agent 创建第一个项目
-            </button>
+            </Button>
           ) : null}
           {data.phase === 'degraded' ? (
-            <button className="button primary" type="button" onClick={() => openAgentAction('workspace')}>
+            <Button type="primary" onClick={() => openAgentAction('workspace')}>
               生成修复指令
-            </button>
+            </Button>
           ) : null}
           {data.phase !== 'project-empty' && data.phase !== 'degraded' ? (
-            <>
-              <button className="button primary" type="button" onClick={() => openAgentAction('start')}>
+            <Space wrap>
+              <Button type="primary" onClick={() => openAgentAction('start')}>
                 用 Agent 开始
-              </button>
-              <Link className="button secondary" to={projectsHref}>查看项目</Link>
+              </Button>
+              <Link to={projectsHref}><Button>查看项目</Button></Link>
               {data.phase === 'service-empty' ? (
-                <button className="button secondary" type="button" onClick={() => openAgentAction('service')}>
+                <Button onClick={() => openAgentAction('service')}>
                   让 Agent 接入服务
-                </button>
+                </Button>
               ) : null}
-            </>
+            </Space>
           ) : null}
         </div>
         <div
           id="start-diagnostics"
-          className={`alert${data.diagnostics?.length ? '' : ' hidden'}`}
+          className={data.diagnostics?.length ? '' : 'hidden'}
           role="status"
+          style={{ marginTop: 12 }}
         >
-          {(data.diagnostics || []).map((item) => (typeof item === 'string' ? item : item.message)).join(' ')}
+          {data.diagnostics?.length ? (
+            <Alert
+              type="info"
+              showIcon
+              message={(data.diagnostics || []).map((item) => (typeof item === 'string' ? item : item.message)).join(' ')}
+            />
+          ) : null}
         </div>
       </section>
       <section className="content-grid secondary-summary">
         <article className="panel">
           <p className="eyebrow">当前事实</p>
-          <h2>工作范围摘要</h2>
-          <dl className="fact-list">
-            <div>
-              <dt>已登记项目</dt>
-              <dd id="project-count">{String(data.projects.length)}</dd>
-            </div>
-            <div>
-              <dt>已登记服务</dt>
-              <dd id="service-count">{data.completeness === 'partial' ? '部分不可用' : String(data.services.length)}</dd>
-            </div>
-          </dl>
+          <Typography.Title level={4} style={{ marginTop: 0 }}>工作范围摘要</Typography.Title>
+          <Space size={48}>
+            <Statistic
+              title="已登记项目"
+              value={data.projects.length}
+              formatter={() => <span id="project-count">{String(data.projects.length)}</span>}
+            />
+            <Statistic
+              title="已登记服务"
+              value={data.services.length}
+              formatter={() => (
+                <span id="service-count">
+                  {data.completeness === 'partial' ? '部分不可用' : String(data.services.length)}
+                </span>
+              )}
+            />
+          </Space>
         </article>
         <aside className="panel facts-panel">
           <p className="eyebrow">技术信息</p>
-          <h2>按需查看</h2>
-          <dl className="fact-list">
-            <div>
-              <dt>本地目录</dt>
-              <dd id="overview-root">{data.workspace.rootPath}</dd>
-            </div>
-            <div>
-              <dt>数据格式版本</dt>
-              <dd id="overview-schema">{data.workspace.schemaVersion}</dd>
-            </div>
-            <div>
-              <dt>修订版本</dt>
-              <dd id="overview-revision">{data.workspace.revision}</dd>
-            </div>
-          </dl>
+          <Typography.Title level={4} style={{ marginTop: 0 }}>按需查看</Typography.Title>
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="本地目录"><span id="overview-root">{data.workspace.rootPath}</span></Descriptions.Item>
+            <Descriptions.Item label="数据格式版本"><span id="overview-schema">{data.workspace.schemaVersion}</span></Descriptions.Item>
+            <Descriptions.Item label="修订版本"><span id="overview-revision">{data.workspace.revision}</span></Descriptions.Item>
+          </Descriptions>
         </aside>
       </section>
-      {/* keep shell name in sync when remounting */}
       <span className="hidden">{workspace?.name}</span>
     </>
   );

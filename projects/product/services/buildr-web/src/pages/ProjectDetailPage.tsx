@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Button } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
@@ -58,7 +59,7 @@ export function ProjectDetailPage() {
           <h1>项目不存在</h1>
           <p className="page-copy">{error}</p>
         </section>
-        <Link className="button secondary" to={href('/projects')}>返回项目目录</Link>
+        <Link className="ant-btn-link-wrap" to={href('/projects')}>返回项目目录</Link>
       </>
     );
   }
@@ -92,8 +93,8 @@ export function ProjectDetailPage() {
             <h1 id="project-detail-name">{project.name}</h1>
             <p className="page-copy">只读详情</p>
           </div>
-          <Link id="project-edit-link" className="button primary" to={href(`/projects/${encodeURIComponent(projectCode)}/edit`)}>
-            编辑项目
+          <Link id="project-edit-link" to={href(`/projects/${encodeURIComponent(projectCode)}/edit`)}>
+            <Button type="primary">编辑项目</Button>
           </Link>
         </div>
       </section>

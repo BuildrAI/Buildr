@@ -13,7 +13,7 @@
 
 ## 数据与依赖
 
-- 依赖 React 19、React Router、Vite 与 TypeScript；前端工程自有 `package-lock.json`。
+- 依赖 React 19、React Router、Vite、TypeScript，以及 Ant Design 5（`antd` + 必要 icons）；UI 方向为柔和产品感，依赖与字体均由 Vite 打入 `web-dist`，禁止 CDN/远程字体/远程脚本；前端工程自有 `package-lock.json`。
 - 当Task构建或验证Local App前端时，Agent从Task scope、`buildr`的`build:web`委托和Verification能力判断本Service需要准备，并在Task专属Environment Plan中为本Service登记独立Step。npm场景的Step使用本root的`package.json`/`package-lock.json`作为inputs、worktree-local`node_modules`作为output、Workspace Foundation受管npm作为executable，不从retained checkout或系统PATH借用TypeScript/Vite。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
@@ -23,7 +23,7 @@
 
 ## 运行与验证
 
-- 前端路由、DOM 交互或 Agent Action 变更后，在 `buildr` 生产托管路径下运行 browser smoke（或 affected selector）做直接反馈。
+- 前端路由、DOM 交互或 Agent Action 变更后，在 `buildr` 生产托管路径下运行 browser smoke（或 affected selector）做直接反馈；尽量保留稳定 DOM id / `data-*` 钩子，不以 Vite HMR 冒充正式验收。
 - Service registry 中 `source.path` 为 `projects/product/services/buildr-web`，与 `buildr` 路径不重叠。
 
 ## 局部术语

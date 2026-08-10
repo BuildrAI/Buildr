@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Card, Empty, List, Tag, Typography } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
@@ -61,7 +62,7 @@ export function ArticlesPage() {
       <section className="resource-toolbar">
         <div>
           <p className="eyebrow">文章</p>
-          <h1>对外发布材料</h1>
+          <Typography.Title level={2} style={{ margin: 0 }}>对外发布材料</Typography.Title>
           <p className="page-copy">项目内维护的文章源；Local App 只读展示，不在这里编辑或发布。</p>
         </div>
         <div className="toolbar-actions">
@@ -71,35 +72,49 @@ export function ArticlesPage() {
       <section className="resource-list-section">
         <div className="section-heading">
           <div>
-            <h2>文章目录</h2>
+            <Typography.Title level={4} style={{ margin: 0 }}>文章目录</Typography.Title>
             <p className="section-copy">正文与配图来自 Product Project 的 docs/publications/。</p>
           </div>
         </div>
         <div id="publications-list" className="publication-list">
-          {publications.map((publication) => (
-            <article className="publication-card" key={publication.id}>
-              <div className="publication-card-heading">
-                <h3>
-                  <Link to={href(`/articles/${encodeURIComponent(publication.id)}`)}>{publication.title}</Link>
-                </h3>
-                <span className={`state publication-status ${publication.status}`}>
-                  {statusLabel[publication.status] || publication.status}
-                </span>
-              </div>
-              <p className="publication-meta">{`${publication.kind} · ${publication.publishedAt || '未设置日期'}`}</p>
-              <div className="publication-targets">
-                {publication.targets.map((target) => (
-                  <span key={`${target.platform}-${target.status}`}>
-                    {`${platformLabel[target.platform] || target.platform} · ${statusLabel[target.status] || target.status}`}
-                  </span>
-                ))}
-              </div>
-            </article>
-          ))}
+          <List
+            dataSource={publications}
+            locale={{ emptyText: ' ' }}
+            renderItem={(publication) => (
+              <List.Item style={{ padding: 0, border: 'none', marginBottom: 12 }}>
+                <Card className="publication-card" styles={{ body: { padding: 16 } }} style={{ width: '100%' }}>
+                  <div className="publication-card-heading">
+                    <h3>
+                      <Link to={href(`/articles/${encodeURIComponent(publication.id)}`)}>{publication.title}</Link>
+                    </h3>
+                    <Tag className={`state publication-status ${publication.status}`}>
+                      {statusLabel[publication.status] || publication.status}
+                    </Tag>
+                  </div>
+                  <p className="publication-meta">{`${publication.kind} · ${publication.publishedAt || '未设置日期'}`}</p>
+                  <div className="publication-targets">
+                    {publication.targets.map((target) => (
+                      <span key={`${target.platform}-${target.status}`}>
+                        {`${platformLabel[target.platform] || target.platform} · ${statusLabel[target.status] || target.status}`}
+                      </span>
+                    ))}
+                  </div>
+                </Card>
+              </List.Item>
+            )}
+          />
         </div>
         <div id="publications-empty" className={`empty-state${empty ? '' : ' hidden'}`}>
-          <h2>{emptyTitle}</h2>
-          <p>{emptyCopy}</p>
+          {empty ? (
+            <Empty
+              description={(
+                <>
+                  <Typography.Title level={4}>{emptyTitle}</Typography.Title>
+                  <Typography.Paragraph type="secondary">{emptyCopy}</Typography.Paragraph>
+                </>
+              )}
+            />
+          ) : null}
         </div>
       </section>
     </>

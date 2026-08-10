@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Alert, Button, Input, Select } from 'antd';
 import { api } from '../api';
 
 const ACTION_LABELS: Record<string, string> = {
@@ -265,23 +266,21 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
     return (
       <>
         <div className="form-header">
-          <button className="text-button" type="button" onClick={backToChooser}>← 返回</button>
+          <Button type="link" style={{ paddingInline: 0 }} onClick={backToChooser}>← 返回</Button>
           <span>处理工作空间</span>
         </div>
         <div id="agent-action-result" className="prompt-result">
           <label>
             可复制指令
-            <textarea id="action-prompt-output" rows={13} readOnly value={context.prompt} />
+            <Input.TextArea id="action-prompt-output" rows={13} readOnly value={context.prompt} />
           </label>
           <div className="copy-row">
-            <button
+            <Button
               id="copy-action-prompt"
-              className="button secondary"
-              type="button"
               onClick={() => void copyPrompt('工作空间', '目录尚未被初始化、迁移或登记。')}
             >
               复制指令
-            </button>
+            </Button>
             <span id="action-copy-state">{copyState || '目录尚未被初始化、迁移或登记。'}</span>
           </div>
         </div>
@@ -294,31 +293,31 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
       <>
         <p className="drawer-copy">Buildr 帮你确认工作范围并生成受约束指令；真正的创建、迁移和专业执行仍由 Agent 完成。</p>
         <div className="action-choice-grid">
-          <button className="action-choice" type="button" onClick={() => setAction('start')}>
+          <Button className="action-choice" type="default" block onClick={() => setAction('start')}>
             <span className="action-symbol">→</span>
             <span><strong>用 Agent 开始</strong><small>选择项目、可选服务，并描述第一项工作</small></span>
             <span>→</span>
-          </button>
-          <button className="action-choice" type="button" onClick={() => setAction('workspace')}>
+          </Button>
+          <Button className="action-choice" type="default" block onClick={() => setAction('workspace')}>
             <span className="action-symbol">⌂</span>
             <span><strong>创建工作空间</strong><small>建立一个共同工作的顶层目录</small></span>
             <span>→</span>
-          </button>
-          <button className="action-choice" type="button" onClick={() => setAction('project')}>
+          </Button>
+          <Button className="action-choice" type="default" block onClick={() => setAction('project')}>
             <span className="action-symbol">◇</span>
             <span><strong>创建项目</strong><small>登记业务、产品、系统或长期工作</small></span>
             <span>→</span>
-          </button>
-          <button className="action-choice" type="button" onClick={() => { setSourceType('local'); setAction('service'); }}>
+          </Button>
+          <Button className="action-choice" type="default" block onClick={() => { setSourceType('local'); setAction('service'); }}>
             <span className="action-symbol">◫</span>
             <span><strong>接入服务</strong><small>按需接入代码仓、应用、模块或可执行资产</small></span>
             <span>→</span>
-          </button>
-          <button className="action-choice secondary-choice" type="button" onClick={() => setAction('change')}>
+          </Button>
+          <Button className="action-choice secondary-choice" type="default" block onClick={() => setAction('change')}>
             <span className="action-symbol">△</span>
             <span><strong>创建变更</strong><small>建立 OpenSpec 变更契约</small></span>
             <span>→</span>
-          </button>
+          </Button>
         </div>
       </>
     );
@@ -327,7 +326,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
   const formHeader = (noun: string, verb = '创建') => (
     <>
       <div className="form-header">
-        <button className="text-button" type="button" onClick={backToChooser}>← 返回</button>
+        <Button type="link" style={{ paddingInline: 0 }} onClick={backToChooser}>← 返回</Button>
         <span>{verb}{noun}</span>
       </div>
       <p className="drawer-copy">
@@ -335,8 +334,8 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
           ? `先描述你的意图，再生成交给 Agent 的指令。复制指令不代表${noun}已经创建。`
           : `选择已登记范围并描述目标。Buildr 只完成交接，不会在页面内${verb}任务。`}
       </p>
-      <div id="agent-action-error" className={`alert error${error ? '' : ' hidden'}`} role="alert">
-        {error}
+      <div id="agent-action-error" className={error ? '' : 'hidden'} role="alert" style={{ marginBottom: 12 }}>
+        {error ? <Alert type="error" showIcon message={error} /> : null}
       </div>
     </>
   );
@@ -346,17 +345,15 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
       <div id="agent-action-result" className="prompt-result">
         <label>
           可复制指令
-          <textarea id="action-prompt-output" rows={13} readOnly value={prompt} />
+          <Input.TextArea id="action-prompt-output" rows={13} readOnly value={prompt} />
         </label>
         <div className="copy-row">
-          <button
+          <Button
             id="copy-action-prompt"
-            className="button secondary"
-            type="button"
             onClick={() => void copyPrompt(noun, unchangedState)}
           >
             复制指令
-          </button>
+          </Button>
           <span id="action-copy-state">{copyState}</span>
         </div>
       </div>
@@ -370,32 +367,38 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
         <form id="agent-action-form" className="prompt-grid" onSubmit={(event) => void submitStart(event)}>
           <label>
             项目
-            <select
+            <Select
               id="action-project"
-              required
+              style={{ width: '100%' }}
               disabled={!projectsLoaded}
-              value={projectCode}
-              onChange={(event) => setProjectCode(event.target.value)}
-            >
-              {!projectsLoaded ? <option value="">正在读取范围…</option> : null}
-              {projectsLoaded && projects.length === 0 ? <option value="">请先创建项目</option> : null}
-              {projects.map((project) => (
-                <option key={project.code} value={project.code}>{`${project.name}（${project.code}）`}</option>
-              ))}
-            </select>
+              loading={!projectsLoaded}
+              placeholder={projectsLoaded && projects.length === 0 ? '请先创建项目' : '正在读取范围…'}
+              value={projectCode || undefined}
+              onChange={(value) => setProjectCode(value || '')}
+              options={projects.map((project) => ({
+                value: project.code,
+                label: `${project.name}（${project.code}）`,
+              }))}
+            />
           </label>
           <label>
             服务（可选）
-            <select id="action-service" value={serviceCode} onChange={(event) => setServiceCode(event.target.value)}>
-              <option value="">本次不限定服务</option>
-              {services.map((service) => (
-                <option key={service.code} value={service.code}>{`${service.name}（${service.code}）`}</option>
-              ))}
-            </select>
+            <Select
+              id="action-service"
+              style={{ width: '100%' }}
+              allowClear
+              placeholder="本次不限定服务"
+              value={serviceCode || undefined}
+              onChange={(value) => setServiceCode(value || '')}
+              options={services.map((service) => ({
+                value: service.code,
+                label: `${service.name}（${service.code}）`,
+              }))}
+            />
           </label>
           <label className="full">
             你想推进什么？
-            <textarea
+            <Input.TextArea
               id="action-goal"
               rows={5}
               required
@@ -405,7 +408,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
             />
           </label>
           <div className="actions full">
-            <button className="button primary" type="submit">生成开始工作指令</button>
+            <Button type="primary" htmlType="submit">生成开始工作指令</Button>
           </div>
         </form>
         {promptResult(ACTION_LABELS.start, '任务尚未在 Buildr App 中开始或完成。')}
@@ -420,18 +423,18 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
         <form id="agent-action-form" onSubmit={(event) => void submitWorkspace(event)}>
           <label>
             名称
-            <input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
+            <Input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
           </label>
           <label>
             目标位置（可选）
-            <input id="action-target" autoComplete="off" placeholder="不确定时留空，由 Agent 询问" value={targetPath} onChange={(event) => setTargetPath(event.target.value)} />
+            <Input id="action-target" autoComplete="off" placeholder="不确定时留空，由 Agent 询问" value={targetPath} onChange={(event) => setTargetPath(event.target.value)} />
           </label>
           <label>
             说明
-            <textarea id="action-description" rows={5} required value={description} onChange={(event) => setDescription(event.target.value)} />
+            <Input.TextArea id="action-description" rows={5} required value={description} onChange={(event) => setDescription(event.target.value)} />
           </label>
           <div className="actions">
-            <button className="button primary" type="submit">生成工作空间指令</button>
+            <Button type="primary" htmlType="submit">生成工作空间指令</Button>
           </div>
         </form>
         {promptResult(ACTION_LABELS.workspace)}
@@ -446,11 +449,11 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
         <form id="agent-action-form" className="prompt-grid" onSubmit={(event) => void submitProject(event)}>
           <label>
             名称
-            <input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
+            <Input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
           </label>
           <label className="full">
             用途或长期目标
-            <textarea
+            <Input.TextArea
               id="action-description"
               rows={4}
               required
@@ -464,31 +467,37 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
             <div className="prompt-grid advanced-fields">
               <label>
                 代码（可选）
-                <input id="action-code" autoComplete="off" placeholder="不确定时由 Agent 提议" value={code} onChange={(event) => setCode(event.target.value)} />
+                <Input id="action-code" autoComplete="off" placeholder="不确定时由 Agent 提议" value={code} onChange={(event) => setCode(event.target.value)} />
               </label>
               <label>
                 来源
-                <select id="action-source" value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
-                  <option value="workspace">当前工作空间</option>
-                  <option value="git">独立 Git 仓库</option>
-                </select>
+                <Select
+                  id="action-source"
+                  style={{ width: '100%' }}
+                  value={sourceType}
+                  onChange={setSourceType}
+                  options={[
+                    { value: 'workspace', label: '当前工作空间' },
+                    { value: 'git', label: '独立 Git 仓库' },
+                  ]}
+                />
               </label>
               <label>
                 Git 地址（可选）
-                <input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} />
+                <Input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} />
               </label>
               <label>
                 远端名称（可选）
-                <input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => setRemote(event.target.value)} />
+                <Input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => setRemote(event.target.value)} />
               </label>
               <label>
                 集成分支（可选）
-                <input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => setIntegrationBranch(event.target.value)} />
+                <Input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => setIntegrationBranch(event.target.value)} />
               </label>
             </div>
           </details>
           <div className="actions full">
-            <button className="button primary" type="submit">生成项目指令</button>
+            <Button type="primary" htmlType="submit">生成项目指令</Button>
           </div>
         </form>
         {promptResult(ACTION_LABELS.project)}
@@ -503,27 +512,27 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
         <form id="agent-action-form" className="prompt-grid" onSubmit={(event) => void submitService(event)}>
           <label>
             所属项目
-            <select
+            <Select
               id="action-project"
-              required
+              style={{ width: '100%' }}
               disabled={!projectsLoaded}
-              value={projectCode}
-              onChange={(event) => setProjectCode(event.target.value)}
-            >
-              {!projectsLoaded ? <option value="">正在读取已登记项目…</option> : null}
-              {projectsLoaded && projects.length === 0 ? <option value="">请先创建项目</option> : null}
-              {projects.map((project) => (
-                <option key={project.code} value={project.code}>{`${project.name}（${project.code}）`}</option>
-              ))}
-            </select>
+              loading={!projectsLoaded}
+              placeholder={projectsLoaded && projects.length === 0 ? '请先创建项目' : '正在读取已登记项目…'}
+              value={projectCode || undefined}
+              onChange={(value) => setProjectCode(value || '')}
+              options={projects.map((project) => ({
+                value: project.code,
+                label: `${project.name}（${project.code}）`,
+              }))}
+            />
           </label>
           <label>
             名称
-            <input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
+            <Input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
           </label>
           <label className="full">
             用途
-            <textarea
+            <Input.TextArea
               id="action-description"
               rows={4}
               required
@@ -537,39 +546,45 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
             <div className="prompt-grid advanced-fields">
               <label>
                 代码（可选）
-                <input id="action-code" autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} />
+                <Input id="action-code" autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} />
               </label>
               <label>
                 类型（可选）
-                <input id="action-type" autoComplete="off" value={serviceType} onChange={(event) => setServiceType(event.target.value)} />
+                <Input id="action-type" autoComplete="off" value={serviceType} onChange={(event) => setServiceType(event.target.value)} />
               </label>
               <label>
                 来源
-                <select id="action-source" value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
-                  <option value="local">本地目录</option>
-                  <option value="git">Git 仓库</option>
-                </select>
+                <Select
+                  id="action-source"
+                  style={{ width: '100%' }}
+                  value={sourceType}
+                  onChange={setSourceType}
+                  options={[
+                    { value: 'local', label: '本地目录' },
+                    { value: 'git', label: 'Git 仓库' },
+                  ]}
+                />
               </label>
               <label>
                 本地目录（可选）
-                <input id="action-local-path" autoComplete="off" value={localPath} onChange={(event) => setLocalPath(event.target.value)} />
+                <Input id="action-local-path" autoComplete="off" value={localPath} onChange={(event) => setLocalPath(event.target.value)} />
               </label>
               <label>
                 Git 地址（可选）
-                <input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} />
+                <Input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} />
               </label>
               <label>
                 远端名称（可选）
-                <input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => setRemote(event.target.value)} />
+                <Input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => setRemote(event.target.value)} />
               </label>
               <label>
                 集成分支（可选）
-                <input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => setIntegrationBranch(event.target.value)} />
+                <Input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => setIntegrationBranch(event.target.value)} />
               </label>
             </div>
           </details>
           <div className="actions full">
-            <button className="button primary" type="submit">生成服务指令</button>
+            <Button type="primary" htmlType="submit">生成服务指令</Button>
           </div>
         </form>
         {promptResult(ACTION_LABELS.service)}
@@ -593,7 +608,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
               中的变更。Buildr 只生成指令，不直接修改变更文件。
             </div>
             <div className="actions">
-              <button className="button primary" type="submit">{`生成${actionLabel}指令`}</button>
+              <Button type="primary" htmlType="submit">{`生成${actionLabel}指令`}</Button>
             </div>
           </form>
           {promptResult(ACTION_LABELS.change, '变更文件未被修改。')}
@@ -606,26 +621,26 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
         <form id="agent-action-form" onSubmit={(event) => void submitChange(event)}>
           <label>
             所属项目
-            <select
+            <Select
               id="action-project"
-              required
+              style={{ width: '100%' }}
               disabled={!projectsLoaded}
-              value={projectCode}
-              onChange={(event) => setProjectCode(event.target.value)}
-            >
-              {!projectsLoaded ? <option value="">正在读取已登记项目…</option> : null}
-              {projectsLoaded && projects.length === 0 ? <option value="">请先创建项目</option> : null}
-              {projects.map((project) => (
-                <option key={project.code} value={project.code}>{`${project.name}（${project.code}）`}</option>
-              ))}
-            </select>
+              loading={!projectsLoaded}
+              placeholder={projectsLoaded && projects.length === 0 ? '请先创建项目' : '正在读取已登记项目…'}
+              value={projectCode || undefined}
+              onChange={(value) => setProjectCode(value || '')}
+              options={projects.map((project) => ({
+                value: project.code,
+                label: `${project.name}（${project.code}）`,
+              }))}
+            />
           </label>
           <label>
             变更目标
-            <textarea id="action-goal" rows={6} required placeholder="描述要解决的问题、期望结果与重要边界" value={goal} onChange={(event) => setGoal(event.target.value)} />
+            <Input.TextArea id="action-goal" rows={6} required placeholder="描述要解决的问题、期望结果与重要边界" value={goal} onChange={(event) => setGoal(event.target.value)} />
           </label>
           <div className="actions">
-            <button className="button primary" type="submit">生成变更指令</button>
+            <Button type="primary" htmlType="submit">生成变更指令</Button>
           </div>
         </form>
         {promptResult(ACTION_LABELS.change)}
@@ -659,7 +674,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
             。Buildr 只生成受约束指令，不在页面内执行审查或写入结果。
           </div>
           <div className="actions">
-            <button className="button primary" type="submit">生成审查指令</button>
+            <Button type="primary" htmlType="submit">生成审查指令</Button>
           </div>
         </form>
         {promptResult(ACTION_LABELS['task-review'], '审查结果尚未记录。')}
@@ -680,7 +695,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
             准备任务验证（Task Verification）。Buildr 只生成受约束指令，不在页面内执行测试、生成目标身份或写入结果。
           </div>
           <div className="actions">
-            <button className="button primary" type="submit">生成验证指令</button>
+            <Button type="primary" htmlType="submit">生成验证指令</Button>
           </div>
         </form>
         {promptResult(ACTION_LABELS['task-verification'], '验证结果未被修改。')}

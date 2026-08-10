@@ -9,6 +9,11 @@
 - OpenSpec、verification policy 与跨服务产品治理仍在父级 `projects/product/`；本目录不维护独立 OpenSpec 根。
 - 已安装或仅含 dist 的环境不得依赖本 Service 源码树或 Vite 开发服务器。
 
+## UI 栈与验收
+
+- UI 以 Ant Design 5（`antd` + 必要 icons）承载布局/表格/表单/弹层，视觉方向为柔和产品感；依赖与字体均由 Vite 打入 `web-dist`，禁止 CDN/远程字体/远程脚本。
+- 正式浏览器验收走 `buildr app` 生产托管的 `web-dist`；尽量保留稳定 DOM id / `data-*` 钩子供 browser smoke 使用。
+
 ## 开发与构建
 
 - 在本目录执行 `npm install`、`npm run dev`、`npm run build`。

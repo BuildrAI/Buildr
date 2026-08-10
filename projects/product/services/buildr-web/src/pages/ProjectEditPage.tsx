@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Alert, Button, Form, Input, Space, Typography } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
@@ -77,7 +78,7 @@ export function ProjectEditPage() {
   if (error) {
     return (
       <section className="page-header">
-        <h1>无法编辑项目</h1>
+        <Typography.Title level={2}>无法编辑项目</Typography.Title>
         <p className="page-copy">{error}</p>
       </section>
     );
@@ -91,14 +92,18 @@ export function ProjectEditPage() {
       <section className="detail-page-header">
         <Link className="back-link" to={detailHref}>← 返回项目详情</Link>
         <p className="eyebrow">编辑项目</p>
-        <h1 id="project-edit-name">{current?.project.name || '正在读取…'}</h1>
+        <Typography.Title id="project-edit-name" level={2} style={{ margin: 0 }}>
+          {current?.project.name || '正在读取…'}
+        </Typography.Title>
         <p className="page-copy">仅修改稳定元数据；身份、来源和 Git 观察状态保持只读。</p>
       </section>
-      <div id="project-edit-alert" className={`alert${alert ? '' : ' hidden'}`} role="status">{alert}</div>
+      <div id="project-edit-alert" className={alert ? '' : 'hidden'} role="status">
+        {alert ? <Alert type="warning" showIcon message={alert} style={{ marginBottom: 16 }} /> : null}
+      </div>
       <section className="edit-layout">
-        <div className="edit-form">
+        <div className="edit-form panel">
           <div className="section-heading">
-            <div><h2>名称与说明</h2></div>
+            <div><Typography.Title level={4} style={{ margin: 0 }}>名称与说明</Typography.Title></div>
             <span id="project-save-state" className="state">{saveState}</span>
           </div>
           <form
@@ -106,9 +111,9 @@ export function ProjectEditPage() {
             key={current?.revision || 'loading'}
             onSubmit={(event) => void onSubmit(event)}
           >
-            <label>
-              名称
-              <input
+          <Form layout="vertical" component={false}>
+            <Form.Item label="名称" required>
+              <Input
                 id="project-name"
                 name="name"
                 autoComplete="off"
@@ -116,10 +121,9 @@ export function ProjectEditPage() {
                 disabled={!current || readOnly}
                 defaultValue={current?.project.name || ''}
               />
-            </label>
-            <label>
-              说明
-              <textarea
+            </Form.Item>
+            <Form.Item label="说明" required>
+              <Input.TextArea
                 id="project-description"
                 name="description"
                 rows={6}
@@ -127,14 +131,17 @@ export function ProjectEditPage() {
                 disabled={!current || readOnly}
                 defaultValue={current?.project.description || ''}
               />
-            </label>
-            <div className="actions">
-              <Link className="button secondary" to={detailHref}>取消</Link>
-              <button id="project-save-button" className="button primary" type="submit" disabled={!current || readOnly}>保存修改</button>
-            </div>
+            </Form.Item>
+            <Space>
+              <Link to={detailHref}><Button>取消</Button></Link>
+              <Button id="project-save-button" type="primary" htmlType="submit" disabled={!current || readOnly}>
+                保存修改
+              </Button>
+            </Space>
+          </Form>
           </form>
         </div>
-        <aside className="read-only-section">
+        <aside className="read-only-section panel">
           <details className="technical-details" open>
             <summary>技术信息</summary>
             <dl className="read-facts technical-facts">

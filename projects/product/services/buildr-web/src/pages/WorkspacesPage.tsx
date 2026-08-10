@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
+import { confirmModal } from '../lib/confirm';
 
 type WorkspaceEntry = {
   status: string;
@@ -46,7 +48,13 @@ export function WorkspacesPage() {
   }, [load]);
 
   const removeWorkspace = async (entry: WorkspaceEntry, revision: string) => {
-    if (!window.confirm(`只从 Buildr App 移除“${entry.workspace?.name || entry.rootPath}”，不会删除目录。继续吗？`)) return;
+    const ok = await confirmModal({
+      title: '移除工作空间',
+      content: `只从 Buildr App 移除“${entry.workspace?.name || entry.rootPath}”，不会删除目录。继续吗？`,
+      okText: '移除',
+      okButtonProps: { danger: true },
+    });
+    if (!ok) return;
     await api('/api/v1/workspaces', {
       method: 'DELETE',
       body: JSON.stringify({ revision, rootPath: entry.rootPath }),
@@ -92,17 +100,17 @@ export function WorkspacesPage() {
       <section className="resource-toolbar">
         <div>
           <p className="eyebrow">从这里建立工作范围</p>
-          <h1>工作空间</h1>
+          <Typography.Title level={2} style={{ margin: 0 }}>工作空间</Typography.Title>
           <p className="page-copy">工作空间是你和 Agent 共同工作的顶层目录；项目表示长期工作单元，服务按需登记代码仓、应用或模块。</p>
         </div>
         <div className="toolbar-actions">
-          <button id="add-workspace" className="button primary" type="button" disabled={adding} onClick={() => void pickWorkspace()}>
+          <Button id="add-workspace" type="primary" loading={adding} onClick={() => void pickWorkspace()}>
             添加已有工作空间
-          </button>
+          </Button>
         </div>
       </section>
-      <div id="workspace-global-message" className={`alert${message ? '' : ' hidden'}`} role="status">
-        {message}
+      <div id="workspace-global-message" className={message ? '' : 'hidden'} role="status">
+        {message ? <Alert type="info" showIcon message={message} style={{ marginBottom: 16 }} /> : null}
       </div>
       <section id="workspace-grid" className="workspace-grid" aria-label="已登记工作空间">
         {(registry?.workspaces || []).map((entry) => {
@@ -110,7 +118,7 @@ export function WorkspacesPage() {
           const main = (
             <>
               <div className="workspace-card-heading">
-                <span className={`state ${ready ? 'success' : 'warning'}`}>{healthLabel(entry.status)}</span>
+                <Tag color={ready ? 'success' : 'warning'}>{healthLabel(entry.status)}</Tag>
                 <span className="workspace-health">
                   {entry.updatedAt ? `最近登记 ${new Date(entry.updatedAt).toLocaleDateString('zh-CN')}` : '本机登记'}
                 </span>
@@ -136,37 +144,49 @@ export function WorkspacesPage() {
                   {main}
                 </div>
               )}
-              <button
+              <Button
                 className="workspace-remove"
-                type="button"
+                size="small"
+                type="text"
+                danger
                 onClick={() => void removeWorkspace(entry, registry!.revision)}
               >
                 移除
-              </button>
+              </Button>
             </article>
           );
         })}
       </section>
       <section id="workspace-empty" className={`empty-state${empty ? '' : ' hidden'}`}>
-        <p className="eyebrow">工作空间 → 项目 → 服务</p>
-        <h2>先选择一个共同工作的目录</h2>
-        <p>添加已有工作空间只保存本机入口：不会移动目录、修改源资产或自动扫描磁盘。进入后，Buildr 会再引导你建立项目，并按需接入服务。</p>
-        <div className="actions">
-          <button id="empty-add-workspace" className="button primary" type="button" onClick={() => void pickWorkspace()}>
-            添加已有工作空间
-          </button>
-          <button id="empty-create-workspace" className="button secondary" type="button" onClick={() => openAgentAction('workspace')}>
-            让 Agent 创建工作空间
-          </button>
-          <button
-            id="empty-later"
-            className="text-button"
-            type="button"
-            onClick={() => setMessage('没有登记任何工作空间。你可以直接退出 Buildr，稍后再次打开。')}
+        {empty ? (
+          <Empty
+            description={(
+              <Space direction="vertical" size={8}>
+                <p className="eyebrow">工作空间 → 项目 → 服务</p>
+                <Typography.Title level={4} style={{ margin: 0 }}>先选择一个共同工作的目录</Typography.Title>
+                <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+                  添加已有工作空间只保存本机入口：不会移动目录、修改源资产或自动扫描磁盘。进入后，Buildr 会再引导你建立项目，并按需接入服务。
+                </Typography.Paragraph>
+              </Space>
+            )}
           >
-            稍后处理
-          </button>
-        </div>
+            <Space wrap>
+              <Button id="empty-add-workspace" type="primary" onClick={() => void pickWorkspace()}>
+                添加已有工作空间
+              </Button>
+              <Button id="empty-create-workspace" onClick={() => openAgentAction('workspace')}>
+                让 Agent 创建工作空间
+              </Button>
+              <Button
+                id="empty-later"
+                type="link"
+                onClick={() => setMessage('没有登记任何工作空间。你可以直接退出 Buildr，稍后再次打开。')}
+              >
+                稍后处理
+              </Button>
+            </Space>
+          </Empty>
+        ) : null}
       </section>
     </>
   );

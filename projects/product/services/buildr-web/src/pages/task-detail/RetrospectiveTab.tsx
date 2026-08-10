@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button, Input } from 'antd';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import { formatDateTime } from '../../lib/taskLabels';
 import { Fact } from './shared';
@@ -39,9 +40,9 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
             <h2>任务复盘（Task Retrospective）</h2>
             <p className="section-copy">复盘报告保持只读；处置状态只记录已做出判断，不会影响任务状态、研发交接或收尾。</p>
           </div>
-          <button id="task-retrospective-refresh" className="button secondary" type="button" disabled={loading} onClick={onRefresh}>
+          <Button id="task-retrospective-refresh" disabled={loading} onClick={onRefresh}>
             刷新复盘
-          </button>
+          </Button>
         </div>
         <div id="task-retrospective-diagnostic" className={`environment-diagnostic${error ? '' : ' hidden'}`}>
           {error || ''}
@@ -68,9 +69,9 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
                   <h3>{DISPOSITION_LABELS[disposition.status as keyof typeof DISPOSITION_LABELS]}</h3>
                 </div>
                 {!pending ? (
-                  <button id="task-retrospective-reopen" className="button secondary" type="button" disabled={loading} onClick={() => onHandle('pending')}>
+                  <Button id="task-retrospective-reopen" disabled={loading} onClick={() => onHandle('pending')}>
                     重新打开
-                  </button>
+                  </Button>
                 ) : null}
               </div>
               {!pending ? (
@@ -82,7 +83,7 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
                 <div className="retrospective-disposition-form">
                   <label htmlFor="task-retrospective-disposition-note">
                     处置说明
-                    <textarea
+                    <Input.TextArea
                       id="task-retrospective-disposition-note"
                       rows={3}
                       placeholder="记录处理结论，或说明为什么无需处理"
@@ -92,12 +93,12 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
                     />
                   </label>
                   <div className="actions">
-                    <button id="task-retrospective-handle" className="button primary" type="button" disabled={loading || !noteReady} onClick={() => onHandle('handled', note.trim())}>
+                    <Button id="task-retrospective-handle" type="primary" disabled={loading || !noteReady} onClick={() => onHandle('handled', note.trim())}>
                       标记已处理
-                    </button>
-                    <button id="task-retrospective-no-action" className="button secondary" type="button" disabled={loading || !noteReady} onClick={() => onHandle('no-action', note.trim())}>
+                    </Button>
+                    <Button id="task-retrospective-no-action" disabled={loading || !noteReady} onClick={() => onHandle('no-action', note.trim())}>
                       无需处理
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}

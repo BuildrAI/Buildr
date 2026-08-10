@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { Button, Drawer, Space, Typography } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AgentActionDrawer } from './AgentActionDrawer';
+import { confirmModal } from '../lib/confirm';
 
 type PreviewIdentity = {
   instance: string;
@@ -76,19 +79,17 @@ export function AppLayout() {
   }, []);
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeAgentAction();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  });
-
-  useEffect(() => {
     document.body.classList.toggle('drawer-open', drawerOpen);
   }, [drawerOpen]);
 
   const quit = async () => {
-    if (!window.confirm('退出 Buildr 后，本机服务将停止。确定退出吗？')) return;
+    const ok = await confirmModal({
+      title: '退出 Buildr？',
+      content: '退出 Buildr 后，本机服务将停止。确定退出吗？',
+      okText: '退出',
+      okButtonProps: { danger: true },
+    });
+    if (!ok) return;
     await api('/api/v1/app/quit', { method: 'POST', body: '{}' });
     setExited(true);
   };
@@ -118,98 +119,99 @@ export function AppLayout() {
 
   if (exited) {
     return (
-      <section className="empty-state">
-        <h1>Buildr 已退出</h1>
-        <p>你可以关闭此页面；再次点击 Buildr 图标即可重新打开。</p>
-      </section>
+      <div className="exit-screen">
+        <Typography.Title level={2}>Buildr 已退出</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          你可以关闭此页面；再次点击 Buildr 图标即可重新打开。
+        </Typography.Paragraph>
+      </div>
     );
   }
 
   return (
     <AppShellContext.Provider value={shellValue}>
       <div className="app-shell">
-        <aside className="sidebar" aria-label="Buildr 主导航">
-          <Link className="brand" to="/" aria-label="Buildr 工作空间首页">
-            <span className="brand-mark">B</span>
-            <span>
-              <strong>Buildr</strong>
-              <small>全局应用</small>
-            </span>
-          </Link>
-          <div className="workspace-context">
-            <span className="context-label">当前工作空间</span>
-            <strong id="shell-workspace-name">
-              {isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')}
-            </strong>
-            <span id="shell-workspace-path">
-              {isGlobal ? '本机登记列表' : (workspace?.rootPath || '本机应用')}
-            </span>
-          </div>
-          <nav className="nav-list">
-            <NavLink to="/" data-nav="workspaces" className={navClass} end>
-              <span className="nav-icon">▦</span>
-              <span>工作空间</span>
-            </NavLink>
-            <NavLink
-              to={workspaceHref('/')}
-              data-nav="overview"
-              data-workspace-route="/"
-              className={() => (routeId === 'overview' ? 'active' : '')}
-              aria-current={routeId === 'overview' ? 'page' : undefined}
-            >
-              <span className="nav-icon">⌂</span>
-              <span>开始</span>
-            </NavLink>
-          </nav>
-          <div className={`nav-group${resourceActive ? ' active' : ''}`} data-nav-group="resources">
-            <button
-              id="resource-nav-toggle"
-              className="nav-group-toggle"
-              type="button"
-              aria-expanded={resourceExpanded}
-              aria-controls="resource-nav-children"
-              onClick={() => setResourceExpanded((value) => !value)}
-            >
-              <span className="nav-icon">◇</span>
-              <span>核心范围</span>
-              <span className="nav-chevron">{resourceExpanded ? '⌄' : '›'}</span>
-            </button>
-            <nav
-              id="resource-nav-children"
-              className={`nav-children${resourceExpanded ? '' : ' collapsed'}`}
-              aria-label="资源类型"
-            >
-              <NavLink to={workspaceHref('/tasks')} data-nav="tasks" data-workspace-route="/tasks" className={navClass}>
-                <span>任务</span>
-                <small>顶层任务记录</small>
+        <aside className="app-sider" aria-label="Buildr 主导航">
+          <div className="sider-top">
+            <Link className="brand-link" to="/" aria-label="Buildr 工作空间首页">
+              <span className="brand-mark">B</span>
+              <span>
+                <strong>Buildr</strong>
+                <small>全局应用</small>
+              </span>
+            </Link>
+            <div className="workspace-context">
+              <span className="context-label">当前工作空间</span>
+              <strong id="shell-workspace-name">
+                {isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')}
+              </strong>
+              <span id="shell-workspace-path">
+                {isGlobal ? '本机登记列表' : (workspace?.rootPath || '本机应用')}
+              </span>
+            </div>
+            <nav className="nav-list">
+              <NavLink to="/" data-nav="workspaces" className={navClass} end>
+                工作空间
               </NavLink>
-              <NavLink to={workspaceHref('/projects')} data-nav="projects" data-workspace-route="/projects" className={navClass}>
-                <span>项目</span>
-                <small>长期工作单元</small>
-              </NavLink>
-              <NavLink to={workspaceHref('/services')} data-nav="services" data-workspace-route="/services" className={navClass}>
-                <span>服务</span>
-                <small>代码与应用资产</small>
-              </NavLink>
-              <NavLink to={workspaceHref('/articles')} data-nav="articles" data-workspace-route="/articles" className={navClass}>
-                <span>文章</span>
-                <small>对外发布材料</small>
+              <NavLink
+                to={workspaceHref('/')}
+                data-nav="overview"
+                data-workspace-route="/"
+                className={() => (routeId === 'overview' ? 'active' : '')}
+                aria-current={routeId === 'overview' ? 'page' : undefined}
+              >
+                开始
               </NavLink>
             </nav>
+            <div className={`nav-group${resourceActive ? ' active' : ''}`} data-nav-group="resources">
+              <Button
+                id="resource-nav-toggle"
+                className="nav-group-toggle"
+                type="text"
+                aria-expanded={resourceExpanded}
+                aria-controls="resource-nav-children"
+                onClick={() => setResourceExpanded((value) => !value)}
+              >
+                <span>核心范围</span>
+                <span className="nav-chevron">{resourceExpanded ? '⌄' : '›'}</span>
+              </Button>
+              <nav
+                id="resource-nav-children"
+                className={`nav-children${resourceExpanded ? '' : ' collapsed'}`}
+                aria-label="资源类型"
+              >
+                <NavLink to={workspaceHref('/tasks')} data-nav="tasks" data-workspace-route="/tasks" className={navClass}>
+                  <span>任务</span>
+                  <small>顶层任务记录</small>
+                </NavLink>
+                <NavLink to={workspaceHref('/projects')} data-nav="projects" data-workspace-route="/projects" className={navClass}>
+                  <span>项目</span>
+                  <small>长期工作单元</small>
+                </NavLink>
+                <NavLink to={workspaceHref('/services')} data-nav="services" data-workspace-route="/services" className={navClass}>
+                  <span>服务</span>
+                  <small>代码与应用资产</small>
+                </NavLink>
+                <NavLink to={workspaceHref('/articles')} data-nav="articles" data-workspace-route="/articles" className={navClass}>
+                  <span>文章</span>
+                  <small>对外发布材料</small>
+                </NavLink>
+              </nav>
+            </div>
           </div>
-          <nav className="nav-list nav-secondary">
-            <NavLink to={workspaceHref('/settings')} data-nav="settings" data-workspace-route="/settings" className={navClass}>
-              <span className="nav-icon">⚙</span>
-              <span>工作空间设置</span>
-            </NavLink>
-            <button id="quit-buildr" className="nav-quit" type="button" onClick={() => void quit()}>
-              <span className="nav-icon">⏻</span>
-              <span>退出 Buildr</span>
-            </button>
-          </nav>
-          <div className="local-note">
-            <span className="status-dot" />
-            仅限本机访问
+          <div className="sider-bottom">
+            <nav className="nav-list nav-secondary">
+              <NavLink to={workspaceHref('/settings')} data-nav="settings" data-workspace-route="/settings" className={navClass}>
+                工作空间设置
+              </NavLink>
+              <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
+                退出 Buildr
+              </Button>
+            </nav>
+            <div className="local-note">
+              <span className="status-dot" />
+              仅限本机访问
+            </div>
           </div>
         </aside>
 
@@ -226,26 +228,26 @@ export function AppLayout() {
                   : <span key={`${part}-${index}`}>{part}</span>
               ))}
             </div>
-            <div
-              id="preview-identity"
-              className={`preview-identity${preview ? '' : ' hidden'}`}
-              aria-label="开发预览身份"
-              title={preview?.worktree || undefined}
-            >
-              {preview
-                ? `开发预览：${preview.instance} · ${preview.branch} · ${preview.head.slice(0, 12)}${preview.dirty ? ' · 有未提交修改' : ''}`
-                : null}
+            <div className="topbar-actions">
+              <div
+                id="preview-identity"
+                className={`preview-identity${preview ? '' : ' hidden'}`}
+                aria-label="开发预览身份"
+                title={preview?.worktree || undefined}
+              >
+                {preview
+                  ? `开发预览：${preview.instance} · ${preview.branch} · ${preview.head.slice(0, 12)}${preview.dirty ? ' · 有未提交修改' : ''}`
+                  : null}
+              </div>
+              <Button
+                id="open-agent-action"
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => openAgentAction()}
+              >
+                交给 Agent
+              </Button>
             </div>
-            <button
-              id="open-agent-action"
-              className="button primary"
-              type="button"
-              onClick={() => openAgentAction()}
-            >
-              <span>＋</span>
-              {' '}
-              交给 Agent
-            </button>
           </header>
           <main id="app-view" tabIndex={-1} aria-live="polite">
             <Outlet />
@@ -255,30 +257,34 @@ export function AppLayout() {
 
       <div
         id="agent-action-backdrop"
-        className={`drawer-backdrop${drawerOpen ? '' : ' hidden'}`}
+        className={drawerOpen ? '' : 'hidden'}
         onClick={closeAgentAction}
+        aria-hidden
       />
-      <aside
+      <Drawer
         id="agent-action-drawer"
-        className={`drawer${drawerOpen ? '' : ' hidden'}`}
-        aria-hidden={!drawerOpen}
-        aria-labelledby="agent-action-title"
-      >
-        <div className="drawer-header">
-          <div>
-            <p className="eyebrow">AGENT ACTION</p>
-            <h2 id="agent-action-title">交给 Agent</h2>
-          </div>
-          <button
+        open={drawerOpen}
+        onClose={closeAgentAction}
+        width={440}
+        destroyOnClose
+        title={(
+          <Space direction="vertical" size={0}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>AGENT ACTION</Typography.Text>
+            <Typography.Title id="agent-action-title" level={4} style={{ margin: 0 }}>交给 Agent</Typography.Title>
+          </Space>
+        )}
+        extra={(
+          <Button
             id="close-agent-action"
-            className="icon-button"
-            type="button"
+            type="text"
             aria-label="关闭"
             onClick={closeAgentAction}
           >
-            ×
-          </button>
-        </div>
+            关闭
+          </Button>
+        )}
+        closable={false}
+      >
         <div id="agent-action-content">
           {drawerOpen ? (
             <AgentActionDrawer
@@ -287,7 +293,7 @@ export function AppLayout() {
             />
           ) : null}
         </div>
-      </aside>
+      </Drawer>
     </AppShellContext.Provider>
   );
 }

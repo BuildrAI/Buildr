@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Alert, Button, Descriptions, Form, Input, Space, Typography } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 
@@ -72,26 +73,28 @@ export function SettingsPage() {
   return (
     <>
       <section className="page-header">
-        <p className="eyebrow">工作空间</p>
-        <h1>工作空间设置</h1>
-        <p className="page-copy">只修改稳定元数据；身份、目录和数据格式版本始终保持只读。</p>
+        <div>
+          <p className="eyebrow">工作空间</p>
+          <Typography.Title level={2} style={{ margin: 0 }}>工作空间设置</Typography.Title>
+          <p className="page-copy">只修改稳定元数据；身份、目录和数据格式版本始终保持只读。</p>
+        </div>
       </section>
-      <div id="settings-migration" className={`alert${migrationMessage ? '' : ' hidden'}`} role="status">
-        {migrationMessage}
+      <div id="settings-migration" className={migrationMessage ? '' : 'hidden'} role="status">
+        {migrationMessage ? <Alert type="warning" showIcon message={migrationMessage} style={{ marginBottom: 16 }} /> : null}
       </div>
       <section className="content-grid settings-grid">
         <article className="panel">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">基本信息</p>
-              <h2>名称与说明</h2>
+              <Typography.Title level={4} style={{ margin: 0 }}>名称与说明</Typography.Title>
             </div>
             <span id="workspace-save-state" className="state">{saveState}</span>
           </div>
           <form id="workspace-form" onSubmit={(event) => void onSubmit(event)}>
-            <label>
-              名称
-              <input
+          <Form layout="vertical" component={false}>
+            <Form.Item label="名称" required>
+              <Input
                 id="workspace-name"
                 name="name"
                 autoComplete="off"
@@ -100,10 +103,9 @@ export function SettingsPage() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
               />
-            </label>
-            <label>
-              说明
-              <textarea
+            </Form.Item>
+            <Form.Item label="说明" required>
+              <Input.TextArea
                 id="workspace-description-input"
                 name="description"
                 rows={7}
@@ -112,35 +114,24 @@ export function SettingsPage() {
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
               />
-            </label>
-            <div className="actions">
-              <button id="workspace-save-button" className="button primary" type="submit" disabled={!current || readOnly}>
+            </Form.Item>
+            <Space>
+              <Button id="workspace-save-button" type="primary" htmlType="submit" disabled={!current || readOnly}>
                 保存修改
-              </button>
-            </div>
+              </Button>
+            </Space>
+          </Form>
           </form>
         </article>
         <aside className="panel facts-panel">
           <p className="eyebrow">技术事实</p>
-          <h2>只读事实</h2>
-          <dl className="fact-list">
-            <div>
-              <dt>工作空间 ID</dt>
-              <dd id="workspace-id">{current?.workspace.id || '迁移后生成'}</dd>
-            </div>
-            <div>
-              <dt>本地目录</dt>
-              <dd id="workspace-root">{current?.rootPath || '—'}</dd>
-            </div>
-            <div>
-              <dt>数据格式版本</dt>
-              <dd id="workspace-schema">{current?.schemaVersion || '—'}</dd>
-            </div>
-            <div>
-              <dt>修订版本</dt>
-              <dd id="workspace-revision">{current?.revision || '—'}</dd>
-            </div>
-          </dl>
+          <Typography.Title level={4} style={{ marginTop: 0 }}>只读事实</Typography.Title>
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="工作空间 ID"><span id="workspace-id">{current?.workspace.id || '迁移后生成'}</span></Descriptions.Item>
+            <Descriptions.Item label="本地目录"><span id="workspace-root">{current?.rootPath || '—'}</span></Descriptions.Item>
+            <Descriptions.Item label="数据格式版本"><span id="workspace-schema">{current?.schemaVersion || '—'}</span></Descriptions.Item>
+            <Descriptions.Item label="修订版本"><span id="workspace-revision">{current?.revision || '—'}</span></Descriptions.Item>
+          </Descriptions>
         </aside>
       </section>
     </>

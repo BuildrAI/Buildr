@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Alert, Button, Empty, Form, Select, Table, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { serviceTypeLabel, workspaceHref } from '../lib/labels';
@@ -14,6 +16,10 @@ type Service = {
 };
 
 type WorkspacePayload = { rootPath: string; workspace: { name: string } };
+
+const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
+  <tbody id="service-table-body" {...props} />
+);
 
 export function ServicesPage() {
   const { workspaceId, setWorkspace, openAgentAction, setBreadcrumbParts } = useAppShell();
@@ -102,86 +108,92 @@ export function ServicesPage() {
     setSearchParams(code ? { project: code } : {});
   };
 
+  const columns: ColumnsType<Service> = [
+    {
+      title: '名称',
+      render: (_value, service) => (
+        <>
+          <strong>{service.name}</strong>
+          <small>{service.description}</small>
+        </>
+      ),
+    },
+    { title: '代码', dataIndex: 'code', className: 'code-cell' },
+    { title: '类型', render: (_value, service) => serviceTypeLabel(service.type) },
+    { title: '来源', render: (_value, service) => (service.source.type === 'git' ? 'Git' : '本地路径') },
+    {
+      title: '操作',
+      className: 'operation-column',
+      render: (_value, service) => (
+        <div className="table-operations">
+          <Link className="table-action" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}`)}>详情</Link>
+          <Link className="table-action" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}/edit`)}>编辑</Link>
+          <Link className="table-action" to={href(`/projects/${encodeURIComponent(projectCode)}`)}>项目</Link>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <>
       <section className="resource-toolbar">
         <div>
           <p className="eyebrow">服务</p>
-          <h1>服务目录</h1>
+          <Typography.Title level={2} style={{ margin: 0 }}>服务目录</Typography.Title>
           <p className="page-copy">按项目查看已登记服务；详情与编辑使用独立页面。</p>
         </div>
         <div className="toolbar-actions">
           <span id="services-count" className="count-label">{count}</span>
-          <button
+          <Button
             id="create-service-button"
-            className="button primary"
-            type="button"
+            type="primary"
             disabled={!projectCode}
             onClick={() => openAgentAction('service', { projectCode })}
           >
             让 Agent 创建服务
-          </button>
+          </Button>
         </div>
       </section>
-      <div id="services-migration-alert" className={`alert${migrationMessage ? '' : ' hidden'}`} role="status">
-        {migrationMessage}
+      <div id="services-migration-alert" className={migrationMessage ? '' : 'hidden'} role="status">
+        {migrationMessage ? <Alert type="warning" showIcon message={migrationMessage} style={{ marginBottom: 16 }} /> : null}
       </div>
       <section className="list-controls">
-        <label>
-          所属项目
-          <select
-            id="service-project-select"
-            disabled={projects.length === 0}
-            value={projectCode}
-            onChange={(event) => onProjectChange(event.target.value)}
-          >
-            {projects.length === 0 ? <option>正在读取项目…</option> : null}
-            {projects.map((project) => (
-              <option key={project.code} value={project.code}>{`${project.name}（${project.code}）`}</option>
-            ))}
-          </select>
-        </label>
+        <Form layout="vertical" style={{ maxWidth: 360 }}>
+          <Form.Item label="所属项目">
+            <Select
+              id="service-project-select"
+              style={{ width: '100%' }}
+              disabled={projects.length === 0}
+              loading={projects.length === 0 && !loaded}
+              placeholder={projects.length === 0 ? '正在读取项目…' : undefined}
+              value={projectCode || undefined}
+              onChange={onProjectChange}
+              options={projects.map((project) => ({
+                value: project.code,
+                label: `${project.name}（${project.code}）`,
+              }))}
+            />
+          </Form.Item>
+        </Form>
       </section>
       <section className="resource-list-section">
         <div className="section-heading">
           <div>
-            <h2 id="services-title">{title}</h2>
+            <Typography.Title id="services-title" level={4} style={{ margin: 0 }}>{title}</Typography.Title>
             <p id="services-copy" className="section-copy">{copy}</p>
           </div>
         </div>
         <div id="service-empty" className={`empty-state${loaded && services.length === 0 ? '' : ' hidden'}`}>
-          {emptyText}
+          {loaded && services.length === 0 ? <Empty description={emptyText} /> : null}
         </div>
         <div id="service-table-wrap" className={`management-table-wrap${services.length === 0 ? ' hidden' : ''}`}>
-          <table className="management-table">
-            <thead>
-              <tr>
-                <th scope="col">名称</th>
-                <th scope="col">代码</th>
-                <th scope="col">类型</th>
-                <th scope="col">来源</th>
-                <th scope="col" className="operation-column">操作</th>
-              </tr>
-            </thead>
-            <tbody id="service-table-body">
-              {services.map((service) => (
-                <tr key={service.code}>
-                  <td>
-                    <strong>{service.name}</strong>
-                    <small>{service.description}</small>
-                  </td>
-                  <td className="code-cell">{service.code}</td>
-                  <td>{serviceTypeLabel(service.type)}</td>
-                  <td>{service.source.type === 'git' ? 'Git' : '本地路径'}</td>
-                  <td className="table-operations">
-                    <Link className="table-action" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}`)}>详情</Link>
-                    <Link className="table-action" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}/edit`)}>编辑</Link>
-                    <Link className="table-action" to={href(`/projects/${encodeURIComponent(projectCode)}`)}>项目</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Table
+            rowKey="code"
+            pagination={false}
+            dataSource={services}
+            columns={columns}
+            components={{ body: { wrapper: TableBody } }}
+          />
         </div>
       </section>
       <span className="hidden">{projectName}</span>

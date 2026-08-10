@@ -1,3 +1,4 @@
+import { Button } from 'antd';
 import {
   applicabilityLabel,
   capabilityOutcomeLabel,
@@ -118,14 +119,12 @@ function ReviewSlotCard({
         </>
       )}
       <div className="review-slot-actions">
-        <button
-          type="button"
-          className="button secondary"
+        <Button
           disabled={!taskActive}
           onClick={() => openAgentAction('task-review', { taskId, reviewType })}
         >
           {taskActive ? '交给智能体审查' : '终态只读'}
-        </button>
+        </Button>
       </div>
     </article>
   );
@@ -179,9 +178,9 @@ export function EvidenceTab({
               <h2>审查结果（Review Results）</h2>
               <p className="section-copy">方案审查与完成审查是两个可选的当前槽位；这里只读展示，不在页面内编辑结果。</p>
             </div>
-            <button id="task-review-refresh" className="button secondary" type="button" disabled={reviewLoading} onClick={onRefreshReview}>
+            <Button id="task-review-refresh" disabled={reviewLoading} onClick={onRefreshReview}>
               刷新审查结果
-            </button>
+            </Button>
           </div>
           <div id="task-review-diagnostic" className={`environment-diagnostic${reviewError ? '' : ' hidden'}`}>
             {reviewError || ''}
@@ -223,10 +222,10 @@ export function EvidenceTab({
               <p className="section-copy">这里只读展示一个当前结果；完整命令输出和临时执行证据不进入本页。</p>
             </div>
             <div className="panel-actions">
-              <button id="task-verification-execution-records" className="button secondary" type="button" onClick={() => onSelectExecutionRecordView('verification')}>查看 Verification 执行记录</button>
-              <button id="task-verification-refresh" className="button secondary" type="button" disabled={verificationLoading} onClick={onRefreshVerification}>
+              <Button id="task-verification-execution-records" onClick={() => onSelectExecutionRecordView('verification')}>查看 Verification 执行记录</Button>
+              <Button id="task-verification-refresh" disabled={verificationLoading} onClick={onRefreshVerification}>
                 刷新验证结果
-              </button>
+              </Button>
             </div>
           </div>
           <div id="task-verification-diagnostic" className={`environment-diagnostic${verificationError ? '' : ' hidden'}`}>
@@ -273,14 +272,12 @@ export function EvidenceTab({
                 </>
               )}
               <div className="review-slot-actions">
-                <button
-                  type="button"
-                  className="button secondary"
+                <Button
                   disabled={!taskActive}
                   onClick={() => openAgentAction('task-verification', { taskId })}
                 >
                   {taskActive ? '交给智能体验证' : '终态只读'}
-                </button>
+                </Button>
               </div>
             </article>
           ) : null}

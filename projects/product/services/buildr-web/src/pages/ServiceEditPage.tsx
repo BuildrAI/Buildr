@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Alert, Button, Form, Input, Space, Typography } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
@@ -81,7 +82,7 @@ export function ServiceEditPage() {
   if (error) {
     return (
       <section className="page-header">
-        <h1>无法编辑服务</h1>
+        <Typography.Title level={2}>无法编辑服务</Typography.Title>
         <p className="page-copy">{error}</p>
       </section>
     );
@@ -94,14 +95,18 @@ export function ServiceEditPage() {
       <section className="detail-page-header">
         <Link className="back-link" to={detailHref}>← 返回服务详情</Link>
         <p className="eyebrow">编辑服务</p>
-        <h1 id="service-edit-name">{current?.service.name || '正在读取…'}</h1>
+        <Typography.Title id="service-edit-name" level={2} style={{ margin: 0 }}>
+          {current?.service.name || '正在读取…'}
+        </Typography.Title>
         <p className="page-copy">仅修改稳定元数据；来源和 Git 观察状态保持只读。</p>
       </section>
-      <div id="service-edit-alert" className={`alert${alert ? '' : ' hidden'}`} role="status">{alert}</div>
+      <div id="service-edit-alert" className={alert ? '' : 'hidden'} role="status">
+        {alert ? <Alert type="warning" showIcon message={alert} style={{ marginBottom: 16 }} /> : null}
+      </div>
       <section className="edit-layout">
-        <div className="edit-form">
+        <div className="edit-form panel">
           <div className="section-heading">
-            <div><h2>名称、说明与类型</h2></div>
+            <div><Typography.Title level={4} style={{ margin: 0 }}>名称、说明与类型</Typography.Title></div>
             <span id="service-save-state" className="state">{saveState}</span>
           </div>
           <form
@@ -109,9 +114,9 @@ export function ServiceEditPage() {
             key={current?.revision || 'loading'}
             onSubmit={(event) => void onSubmit(event)}
           >
-            <label>
-              名称
-              <input
+          <Form layout="vertical" component={false}>
+            <Form.Item label="名称" required>
+              <Input
                 id="service-name"
                 name="name"
                 autoComplete="off"
@@ -119,10 +124,9 @@ export function ServiceEditPage() {
                 disabled={!current || readOnly}
                 defaultValue={current?.service.name || ''}
               />
-            </label>
-            <label>
-              说明
-              <textarea
+            </Form.Item>
+            <Form.Item label="说明" required>
+              <Input.TextArea
                 id="service-description"
                 name="description"
                 rows={6}
@@ -130,10 +134,9 @@ export function ServiceEditPage() {
                 disabled={!current || readOnly}
                 defaultValue={current?.service.description || ''}
               />
-            </label>
-            <label>
-              类型
-              <input
+            </Form.Item>
+            <Form.Item label="类型" required>
+              <Input
                 id="service-type"
                 name="type"
                 autoComplete="off"
@@ -141,14 +144,17 @@ export function ServiceEditPage() {
                 disabled={!current || readOnly}
                 defaultValue={current?.service.type || ''}
               />
-            </label>
-            <div className="actions">
-              <Link className="button secondary" to={detailHref}>取消</Link>
-              <button id="service-save-button" className="button primary" type="submit" disabled={!current || readOnly}>保存修改</button>
-            </div>
+            </Form.Item>
+            <Space>
+              <Link to={detailHref}><Button>取消</Button></Link>
+              <Button id="service-save-button" type="primary" htmlType="submit" disabled={!current || readOnly}>
+                保存修改
+              </Button>
+            </Space>
+          </Form>
           </form>
         </div>
-        <aside className="read-only-section">
+        <aside className="read-only-section panel">
           <details className="technical-details" open>
             <summary>技术信息</summary>
             <dl className="read-facts technical-facts">

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Button, Segmented } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
@@ -83,7 +84,7 @@ export function ArticleDetailPage() {
           <h1>文章不可用</h1>
           <p className="page-copy">{error}</p>
         </section>
-        <Link className="button secondary" to={href('/articles')}>返回文章目录</Link>
+        <Link to={href('/articles')}><Button>返回文章目录</Button></Link>
       </>
     );
   }
@@ -98,7 +99,6 @@ export function ArticleDetailPage() {
   }
 
   const publication = data.publication;
-  const renderedMode = view === 'rendered';
 
   return (
     <>
@@ -142,28 +142,20 @@ export function ArticleDetailPage() {
       <section id="publication-content-panel" className="panel publication-content-panel">
         <div className="content-view">
           <div className="content-view-toggle" role="group" aria-label="内容视图">
-            <button
-              type="button"
-              className={`content-view-option${renderedMode ? ' is-active' : ''}`}
-              aria-pressed={renderedMode}
-              onClick={() => setView('rendered')}
-            >
-              渲染
-            </button>
-            <button
-              type="button"
-              className={`content-view-option${!renderedMode ? ' is-active' : ''}`}
-              aria-pressed={!renderedMode}
-              onClick={() => setView('source')}
-            >
-              原文
-            </button>
+            <Segmented
+              value={view}
+              onChange={(value) => setView(value as 'rendered' | 'source')}
+              options={[
+                { label: '渲染', value: 'rendered' },
+                { label: '原文', value: 'source' },
+              ]}
+            />
           </div>
-          <div ref={renderedRef} hidden={!renderedMode} />
+          <div ref={renderedRef} hidden={view !== 'rendered'} />
           <pre
             className="publication-content content-view-pane content-view-source"
             data-view="source"
-            hidden={renderedMode}
+            hidden={view === 'rendered'}
           >
             {data.content ?? ''}
           </pre>

@@ -63,7 +63,9 @@ function textResponse(response, status, content, contentType) {
   response.writeHead(status, {
     'content-type': contentType,
     'cache-control': 'no-store',
-    'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
+    // style-src allows 'unsafe-inline' so Ant Design 5 css-in-js / motion can apply
+    // element styles; scripts and network stay same-origin (no CDN).
+    'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',

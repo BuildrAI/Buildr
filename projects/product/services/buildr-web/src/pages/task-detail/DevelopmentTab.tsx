@@ -1,3 +1,4 @@
+import { Button } from 'antd';
 import {
   decisionOutcomeLabel,
   developmentAxisLabel,
@@ -44,9 +45,9 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
             <h2>任务研发（Task Development）</h2>
             <p className="section-copy">从首个正式研发动作开始，只读聚合规划节点、当前目标、候选、门禁与最近一次交接；terminal Task 另行展示交付时事实，不伪装实时 currentness。</p>
           </div>
-          <button id="task-development-refresh" className="button secondary" type="button" disabled={loading} onClick={onRefresh}>
+          <Button id="task-development-refresh" disabled={loading} onClick={onRefresh}>
             刷新研发状态
-          </button>
+          </Button>
         </div>
         <dl className="read-facts">
           <div>
@@ -105,7 +106,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
             <h2>Finish 执行记录</h2>
             <p className="section-copy">查看每次 Finish invocation 的 diagnostics、失败与恢复记录；这里不替代 current/terminal 交付事实。</p>
           </div>
-          <button type="button" className="button secondary" onClick={onSelectFinishExecutionRecords}>查看 Finish 执行记录</button>
+          <Button onClick={onSelectFinishExecutionRecords}>查看 Finish 执行记录</Button>
         </div>
         <dl className="read-facts">
           <Fact label="当前专业事实" value={terminalStatus ? developmentStatusLabel(terminalStatus) : terminal?.status || '尚未形成'} />
@@ -249,7 +250,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                           : (unknown ? '当前无法实时复核目标。' : '尚未形成当前门禁结果。')}
                       </small>
                       {gate?.resultDigest ? (
-                        <button type="button" className="text-button" onClick={onSelectEvidence}>查看证据</button>
+                        <Button type="link" className="text-button" onClick={onSelectEvidence}>查看证据</Button>
                       ) : null}
                     </article>
                   );

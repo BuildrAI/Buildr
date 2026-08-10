@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Button } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
@@ -111,7 +112,7 @@ export function TaskChangeDetailPage() {
           <h1>变更不可用</h1>
           <p className="page-copy">{error}</p>
         </section>
-        <Link className="button secondary" to={backPath}>返回任务详情</Link>
+        <Link to={backPath}><Button>返回任务详情</Button></Link>
       </>
     );
   }

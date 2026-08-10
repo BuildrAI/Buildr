@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Button, Input, Select, Table } from 'antd';
 import { api, type ApiError } from '../api';
 import { useAppShell } from '../app/AppShellContext';
+import { confirmModal } from '../lib/confirm';
 import { ChangeBriefPanel } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
@@ -524,7 +526,12 @@ export function TaskDetailPage() {
   const onComplete = async (event: FormEvent) => {
     event.preventDefault();
     if (!data || !completeNoChange) return;
-    if (!window.confirm('确认只把顶层任务记录标记为完成？这不会执行任务收尾（Task Finish）、Git、任务验证或任务环境清理。')) return;
+    const ok = await confirmModal({
+      title: '确认完成？',
+      content: '确认只把顶层任务记录标记为完成？这不会执行任务收尾（Task Finish）、Git、任务验证或任务环境清理。',
+      okText: '确认完成',
+    });
+    if (!ok) return;
     try {
       await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/complete`, {
         method: 'POST',
@@ -544,7 +551,13 @@ export function TaskDetailPage() {
   const onAbandon = async (event: FormEvent) => {
     event.preventDefault();
     if (!data) return;
-    if (!window.confirm('确认只把顶层任务记录标记为放弃？这不会清理任务环境、执行 Git 或其他专业动作。')) return;
+    const ok = await confirmModal({
+      title: '确认放弃？',
+      content: '确认只把顶层任务记录标记为放弃？这不会清理任务环境、执行 Git 或其他专业动作。',
+      okText: '确认放弃',
+      okButtonProps: { danger: true },
+    });
+    if (!ok) return;
     try {
       await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/abandon`, {
         method: 'POST',
@@ -568,7 +581,7 @@ export function TaskDetailPage() {
           <h1>任务不可用</h1>
           <p className="page-copy">{pageError}</p>
         </section>
-        <Link className="button secondary" to={href('/tasks')}>返回任务列表</Link>
+        <Link to={href('/tasks')}><Button>返回任务列表</Button></Link>
       </>
     );
   }
@@ -613,16 +626,16 @@ export function TaskDetailPage() {
       </div>
       <nav className="detail-tabs" aria-label="任务详情">
         {TABS.map((tab) => (
-          <button
+          <Button
             key={tab.id}
             className={`detail-tab${activeTab === tab.id ? ' active' : ''}`}
-            type="button"
+            type="text"
             data-task-tab={tab.id}
             aria-selected={activeTab === tab.id}
             onClick={() => selectTab(tab.id)}
           >
             {tab.label}
-          </button>
+          </Button>
         ))}
       </nav>
 
@@ -633,7 +646,7 @@ export function TaskDetailPage() {
               <h2>专业进展摘要</h2>
               <p className="section-copy">一次只读查询组合各专业最近保存事实；顶层状态仍由 Task Record 管理。</p>
             </div>
-            <button className="button secondary" type="button" onClick={() => { void refreshOverview(); }} disabled={overviewLoading}>{overviewLoading ? '读取中…' : '刷新摘要'}</button>
+            <Button onClick={() => { void refreshOverview(); }} disabled={overviewLoading}>{overviewLoading ? '读取中…' : '刷新摘要'}</Button>
           </div>
           {overviewData?.error ? <p className="alert error">{overviewData.error}</p> : (
             <dl className="read-facts detail-facts">
@@ -652,7 +665,7 @@ export function TaskDetailPage() {
               <h2>父子任务协调</h2>
               <p className="section-copy">直接展示 Parent Coordination Application 的派生 read model；不在 Parent Task Record 复制 Child 状态或交付结果。</p>
             </div>
-            <button className="button secondary" type="button" onClick={() => { void refreshCoordination(); }} disabled={coordinationLoading}>{coordinationLoading ? '读取中…' : '刷新协调事实'}</button>
+            <Button onClick={() => { void refreshCoordination(); }} disabled={coordinationLoading}>{coordinationLoading ? '读取中…' : '刷新协调事实'}</Button>
           </div>
           {coordinationData?.mode === 'parent-plan' ? (
             <>
@@ -663,21 +676,26 @@ export function TaskDetailPage() {
                 <Fact label="最终集成验收" value={coordinationData.parentAcceptance ? `${coordinationData.parentAcceptance.summary} · ${formatDateTime(coordinationData.parentAcceptance.acceptedAt)}` : '尚未记录'} />
                 <Fact label="Planning Review" value={coordinationData.planningReview?.present ? `${coordinationData.planningReview.outcome} · ${coordinationData.planningReview.gateMatch}` : '尚未记录'} />
               </dl>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Contribution</th><th>计划结果</th><th>派生状态</th><th>承担 / 交付</th></tr></thead>
-                  <tbody>
-                    {(coordinationData.contributions || []).map((contribution: any) => (
-                      <tr key={contribution.id}>
-                        <td><strong>{contribution.id}</strong></td>
-                        <td>{contribution.summary}</td>
-                        <td>{contribution.disposition}</td>
-                        <td>{contribution.deliveredBy?.taskId || contribution.plannedChildTaskId || '尚未分配'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="id"
+                dataSource={coordinationData.contributions || []}
+                columns={[
+                  {
+                    title: 'Contribution',
+                    render: (_value: unknown, contribution: { id: string }) => <strong>{contribution.id}</strong>,
+                  },
+                  { title: '计划结果', dataIndex: 'summary' },
+                  { title: '派生状态', dataIndex: 'disposition' },
+                  {
+                    title: '承担 / 交付',
+                    render: (_value: unknown, contribution: any) => (
+                      contribution.deliveredBy?.taskId || contribution.plannedChildTaskId || '尚未分配'
+                    ),
+                  },
+                ]}
+              />
               <h3>直接 Child Tasks</h3>
               {coordinationData.children?.length ? (
                 <dl className="read-facts detail-facts">
@@ -793,36 +811,34 @@ export function TaskDetailPage() {
             <form id="task-edit-form" className="prompt-grid" onSubmit={(event) => void onSave(event)}>
               <label>
                 标题
-                <input id="task-edit-title" required value={title} onChange={(event) => setTitle(event.target.value)} />
+                <Input id="task-edit-title" required value={title} onChange={(event) => setTitle(event.target.value)} />
               </label>
               <label>
                 Parent Task
-                <select
+                <Select
                   id="task-edit-parent"
+                  style={{ width: '100%' }}
                   value={parentTaskId}
-                  disabled={parentOptionsLoading}
-                  onFocus={() => { void loadParentOptions(); }}
-                  onChange={(event) => setParentTaskId(event.target.value)}
-                >
-                  {parentOptions.map((option) => (
-                    <option key={option.value || 'none'} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+                  loading={parentOptionsLoading}
+                  onDropdownVisibleChange={(open) => { if (open) void loadParentOptions(); }}
+                  onChange={(value) => setParentTaskId(value ?? '')}
+                  options={parentOptions}
+                />
               </label>
               <label className="full">
                 意图
-                <textarea id="task-edit-intent" rows={3} required value={intent} onChange={(event) => setIntent(event.target.value)} />
+                <Input.TextArea id="task-edit-intent" rows={3} required value={intent} onChange={(event) => setIntent(event.target.value)} />
               </label>
               <label>
                 项目范围
-                <textarea id="task-edit-projects" rows={3} value={projectsText} onChange={(event) => setProjectsText(event.target.value)} />
+                <Input.TextArea id="task-edit-projects" rows={3} value={projectsText} onChange={(event) => setProjectsText(event.target.value)} />
               </label>
               <label>
                 服务范围（project/service）
-                <textarea id="task-edit-services" rows={3} value={servicesText} onChange={(event) => setServicesText(event.target.value)} />
+                <Input.TextArea id="task-edit-services" rows={3} value={servicesText} onChange={(event) => setServicesText(event.target.value)} />
               </label>
               <div className="actions full">
-                <button id="task-edit-button" className="button primary" type="submit" disabled={saving}>保存任务记录</button>
+                <Button id="task-edit-button" type="primary" htmlType="submit" loading={saving}>保存任务记录</Button>
               </div>
             </form>
           </article>
@@ -838,25 +854,31 @@ export function TaskDetailPage() {
                 <h3>完成</h3>
                 <label>
                   完成摘要
-                  <textarea id="task-complete-summary" rows={3} required value={completeSummary} onChange={(event) => setCompleteSummary(event.target.value)} />
+                  <Input.TextArea id="task-complete-summary" rows={3} required value={completeSummary} onChange={(event) => setCompleteSummary(event.target.value)} />
                 </label>
                 <label>
                   是否无需交付变更
-                  <select id="task-complete-no-change" required value={completeNoChange} onChange={(event) => setCompleteNoChange(event.target.value)}>
-                    <option value="">请选择</option>
-                    <option value="false">有交付变更</option>
-                    <option value="true">确认无需变更</option>
-                  </select>
+                  <Select
+                    id="task-complete-no-change"
+                    style={{ width: '100%' }}
+                    placeholder="请选择"
+                    value={completeNoChange || undefined}
+                    onChange={(value) => setCompleteNoChange(value || '')}
+                    options={[
+                      { value: 'false', label: '有交付变更' },
+                      { value: 'true', label: '确认无需变更' },
+                    ]}
+                  />
                 </label>
-                <button className="button secondary" type="submit">确认完成</button>
+                <Button type="default" htmlType="submit">确认完成</Button>
               </form>
               <form id="task-abandon-form" onSubmit={(event) => void onAbandon(event)}>
                 <h3>放弃</h3>
                 <label>
                   放弃原因
-                  <textarea id="task-abandon-reason" rows={3} required value={abandonReason} onChange={(event) => setAbandonReason(event.target.value)} />
+                  <Input.TextArea id="task-abandon-reason" rows={3} required value={abandonReason} onChange={(event) => setAbandonReason(event.target.value)} />
                 </label>
-                <button className="button danger" type="submit">确认放弃</button>
+                <Button danger htmlType="submit">确认放弃</Button>
               </form>
             </div>
           </article>

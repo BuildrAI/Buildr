@@ -286,6 +286,43 @@ async function unique(locator, description) {
   return locator;
 }
 
+async function openAntdSelect(page, id) {
+  await page.locator(`.ant-select:has(#${id}) .ant-select-selector`).click();
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').last().waitFor({ state: 'visible' });
+}
+
+async function antdSelectOptionTexts(page) {
+  return page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').last().locator('.ant-select-item-option-content').allTextContents();
+}
+
+async function selectAntdOption(page, id, optionText) {
+  await openAntdSelect(page, id);
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').last()
+    .locator('.ant-select-item-option')
+    .filter({ hasText: optionText })
+    .first()
+    .click();
+  await page.waitForFunction(
+    ({ selectId, text }) => {
+      const root = document.querySelector(`.ant-select:has(#${selectId})`);
+      return Boolean(root?.querySelector('.ant-select-selection-item')?.textContent?.includes(text));
+    },
+    { selectId: id, text: optionText },
+  );
+}
+
+async function antdSelectDisplay(page, id) {
+  return page.locator(`.ant-select:has(#${id})`).evaluate((root) => (
+    root.querySelector('.ant-select-selection-item')?.textContent?.trim()
+      || root.querySelector('.ant-select-selection-placeholder')?.textContent?.trim()
+      || ''
+  ));
+}
+
+async function confirmAntModal(page) {
+  await page.locator('.ant-modal-confirm .ant-btn-primary').click();
+}
+
 async function capture(page, name) {
   if (!SCREENSHOT_DIR) return;
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
@@ -352,7 +389,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.ok(await page.locator('#task-table-body tr').count() > 0, '核心 smoke 必须存在可进入的 Task');
+    assert.ok(await page.locator('#task-table-body tr.ant-table-row').count() > 0, '核心 smoke 必须存在可进入的 Task');
     await page.getByRole('link', { name: '详情', exact: true }).first().click();
     await page.waitForURL(/\/workspaces\/[^/]+\/tasks\/[^/]+$/);
     await page.locator('#task-detail-title').waitFor({ state: 'visible' });
@@ -386,15 +423,24 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await unique(page.getByRole('button', { name: '用 Agent 开始', exact: true }), '开始工作操作');
     await page.getByRole('button', { name: '用 Agent 开始', exact: true }).click();
     await page.locator('#action-project').waitFor({ state: 'visible' });
+    await openAntdSelect(page, 'action-project');
     await page.waitForFunction(
       (count) => {
-        const options = [...document.querySelectorAll('#action-project option')];
-        return options.length === count && options.every((option) => Boolean(option.value));
+        const dropdown = [...document.querySelectorAll('.ant-select-dropdown')]
+          .find((node) => !node.classList.contains('ant-select-dropdown-hidden'));
+        if (!dropdown) return false;
+        return dropdown.querySelectorAll('.ant-select-item-option').length === count;
       },
       expectedProjectCount,
     );
-    assert.equal(await page.locator('#action-project option').count(), expectedProjectCount);
-    await page.locator('#action-project').selectOption('other');
+    assert.equal(
+      await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option').count(),
+      expectedProjectCount,
+    );
+    await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+      .filter({ hasText: 'other' })
+      .first()
+      .click();
     await page.locator('#action-goal').fill('梳理浏览器 fixture 的下一步工作');
     await page.getByRole('button', { name: '生成开始工作指令', exact: true }).click();
     await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
@@ -429,7 +475,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.match(await page.locator('#publication-targets').innerText(), /Local App/);
     assert.equal(await page.locator('.publication-content img').count(), 1);
     assert.match(await page.locator('.publication-content img').getAttribute('src'), /\/api\/v1\/workspaces\/[^/]+\/publications\/browser-article\/assets\/assets\/cover\.png$/);
-    await page.getByRole('button', { name: '原文', exact: true }).click();
+    await page.locator('.ant-segmented-item').filter({ hasText: '原文' }).click();
     assert.equal(await page.locator('.content-view-source').isVisible(), true);
     expectedBrowserErrors.add(`${url}/api/v1/workspaces/${initialWorkspaceId}/publications/missing`);
     await page.goto(`${workspaceUrl}/articles/missing`);
@@ -473,7 +519,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.goto(`${workspaceUrl}/services?project=demo`);
     const projectSelect = page.locator('#service-project-select');
     await unique(projectSelect, '服务所属项目过滤器');
-    assert.equal(await projectSelect.inputValue(), 'demo');
+    assert.match(await antdSelectDisplay(page, 'service-project-select'), /demo/);
     const row = page.locator('#service-table-body tr').filter({ hasText: '演示服务' });
     await unique(row, '服务行');
     await capture(page, 'local-app-services-desktop.png');
@@ -541,15 +587,22 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成', noChange: false });
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-table-body tr').count(), 5, '默认目录只显示 active Task；terminal fixtures 通过深链接验证');
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 5, '默认目录只显示 active Task；terminal fixtures 通过深链接验证');
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item) => item.classList.contains('active')), true);
     assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
     assert.equal(await page.locator('#task-create-form').count(), 0);
-    await page.locator('#task-filter-project').selectOption('demo');
-    assert.deepEqual(await page.locator('#task-filter-service option').allTextContents(), ['全部服务', 'demo/api']);
-    await page.locator('#task-filter-service').selectOption('demo/api');
+    await selectAntdOption(page, 'task-filter-project', '演示项目');
+    await openAntdSelect(page, 'task-filter-service');
+    assert.deepEqual(await antdSelectOptionTexts(page), ['全部服务', '演示服务']);
+    await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+      .filter({ hasText: '演示服务' })
+      .first()
+      .click();
+    await page.waitForFunction(
+      () => document.querySelector(`.ant-select:has(#task-filter-service) .ant-select-selection-item`)?.textContent?.includes('演示服务'),
+    );
     await page.locator('#task-filter-q').fill('轻量查询');
-    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr').length === 1);
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.getByRole('link', { name: '详情', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
@@ -595,17 +648,18 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.getByRole('button', { name: '概览', exact: true }).click();
 
     await page.locator('#task-complete-summary').fill('页面确认完成');
-    await page.locator('#task-complete-no-change').selectOption('false');
-    page.once('dialog', (dialog) => dialog.accept());
-    await page.getByRole('button', { name: '确认完成', exact: true }).click();
+    await selectAntdOption(page, 'task-complete-no-change', '有交付变更');
+    await page.locator('#task-complete-form').getByRole('button', { name: '确认完成', exact: true }).click();
+    await page.locator('.ant-modal-confirm').waitFor({ state: 'visible' });
+    await confirmAntModal(page);
     await page.locator('#task-terminal-note').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-detail-status').innerText(), '已完成');
     assert.equal(await page.locator('#task-active-actions').isHidden(), true);
     runtime.recordTaskRetrospective(workspaceRoot, 'created-in-app', { reportMarkdown: '# 执行效率\n\n减少重复读取。' });
     await page.goto(`${workspaceUrl}/tasks`);
-    await page.locator('#task-filter-retrospective').selectOption('pending');
-    assert.equal(await page.locator('#task-filter-status').inputValue(), 'all', '处置状态筛选应解除默认的进行中限制');
-    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr').length === 1);
+    await selectAntdOption(page, 'task-filter-retrospective', '未处理');
+    assert.equal(await antdSelectDisplay(page, 'task-filter-status'), '全部', '处置状态筛选应解除默认的进行中限制');
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.goto(`${workspaceUrl}/tasks/created-in-app`);
     await page.getByRole('button', { name: '复盘', exact: true }).click();
@@ -618,16 +672,16 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.waitForFunction(() => document.querySelector('.retrospective-disposition')?.textContent.includes('没有可转化为改进任务的事项'));
     assert.match(await page.locator('.retrospective-disposition').innerText(), /无需处理[\s\S]*重新打开[\s\S]*没有可转化为改进任务的事项/);
     await page.goto(`${workspaceUrl}/tasks`);
-    await page.locator('#task-filter-retrospective').selectOption('no-action');
-    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr').length === 1);
+    await selectAntdOption(page, 'task-filter-retrospective', '无需处理');
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });
     await page.locator('#task-change-briefs .change-brief-panel').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-change-briefs').innerText(), /普通用户先从这里了解变更/);
-    assert.equal(await page.locator('#task-edit-parent').inputValue(), 'browser-parent');
-    await page.locator('#task-edit-parent').selectOption('');
+    assert.match(await antdSelectDisplay(page, 'task-edit-parent'), /browser-parent/);
+    await selectAntdOption(page, 'task-edit-parent', '无 Parent（独立 Task）');
     await page.getByRole('button', { name: '保存任务记录', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-edit-state')?.textContent === '保存成功');
     assert.equal(await page.locator('#task-detail-parent').innerText(), '无（独立 Task）');
@@ -761,8 +815,9 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
 
     await page.goto(`${workspaceUrl}/tasks/browser-abandon`);
     await page.locator('#task-abandon-reason').fill('浏览器验收取消');
-    page.once('dialog', (dialog) => dialog.accept());
-    await page.getByRole('button', { name: '确认放弃', exact: true }).click();
+    await page.locator('#task-abandon-form').getByRole('button', { name: '确认放弃', exact: true }).click();
+    await page.locator('.ant-modal-confirm').waitFor({ state: 'visible' });
+    await confirmAntModal(page);
     await page.locator('#task-terminal-note').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-detail-status').innerText(), '已放弃');
 

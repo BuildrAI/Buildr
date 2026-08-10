@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Button } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { serviceTypeLabel, sourceTypeLabel, workspaceHref } from '../lib/labels';
@@ -55,7 +56,7 @@ export function ServiceDetailPage() {
           <h1>服务不存在</h1>
           <p className="page-copy">{error}</p>
         </section>
-        <Link className="button secondary" to={href('/services')}>返回服务目录</Link>
+        <Link className="ant-btn-link-wrap" to={href('/services')}>返回服务目录</Link>
       </>
     );
   }
@@ -84,12 +85,8 @@ export function ServiceDetailPage() {
             <h1 id="service-detail-name">{service.name}</h1>
             <p className="page-copy">只读详情</p>
           </div>
-          <Link
-            id="service-edit-link"
-            className="button primary"
-            to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(serviceCode)}/edit`)}
-          >
-            编辑服务
+          <Link id="service-edit-link" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(serviceCode)}/edit`)}>
+            <Button type="primary">编辑服务</Button>
           </Link>
         </div>
       </section>
