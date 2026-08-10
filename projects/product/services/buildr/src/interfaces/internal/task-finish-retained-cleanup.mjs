@@ -2,8 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { createRuntime } from '../../application/compose-runtime.mjs';
+import { inspectGitCarrierContainment } from '../../application/task-finish/git-task-contribution.mjs';
 import { readFinishCompletion, readFinishRun } from '../../application/task-finish/task-finish-run.mjs';
 
 function cleanupError(code, message, details = null) {
@@ -33,6 +35,23 @@ function parseArgs(argv) {
   return { runId: values.get('--run'), targetRoot: path.resolve(values.get('--target')) };
 }
 
+function completedDelivery(root, run) {
+  const carrierRef = run.deliveryCarrier?.head;
+  const delivery = run.delivery;
+  if (delivery?.status !== 'delivered' || delivery.carrierRef !== carrierRef
+    || !delivery.remoteAfterRef || delivery.finalRemoteRef !== delivery.remoteAfterRef) return false;
+  const disposition = delivery.targetDisposition || 'carrier';
+  if (disposition === 'carrier') return delivery.remoteAfterRef === carrierRef;
+  if (disposition !== 'already-contained') return false;
+  const observed = inspectGitCarrierContainment({
+    repositoryRoot: root,
+    targetRef: delivery.finalRemoteRef,
+    carrier: run.deliveryCarrier,
+  });
+  return observed.status === 'contained'
+    && isDeepStrictEqual(delivery.containment, observed);
+}
+
 function assertPreparedCompletion(root, run, runtime) {
   const completion = readFinishCompletion({ root, runId: run.runId, runtime });
   if (!completion) throw cleanupError('task-finish.retained-cleanup-completion-missing', 'Durable prepared Finish completion is missing from Workspace SQLite.');
@@ -45,6 +64,7 @@ function assertPreparedCompletion(root, run, runtime) {
     && completion.contentTargetIdentity === run.identity.contentTargetIdentity
     && completion.carrierIdentity === run.deliveryCarrier?.identity
     && completion.carrierRef === run.deliveryCarrier?.head
+    && completion.finalRemoteRef === run.delivery?.finalRemoteRef
     && completion.targetBranch === run.identity.targetBranch;
   if (!matches) throw cleanupError('task-finish.retained-cleanup-completion-mismatch', 'Durable prepared Finish completion does not match the current run.');
   return completion;
@@ -56,13 +76,8 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
   if (resolvedPath(run.identity.workspaceRoot) !== root) throw cleanupError('task-finish.retained-cleanup-workspace-mismatch', 'Task Finish run is bound to another retained Workspace.');
   const deliver = run.phases.find((phase) => phase.id === 'deliver');
   const cleanup = run.phases.find((phase) => phase.id === 'cleanup');
-  const finalRemoteRef = typeof run.delivery?.finalRemoteRef === 'string' && run.delivery.finalRemoteRef
-    ? run.delivery.finalRemoteRef
-    : null;
   if (run.status !== 'active' || deliver?.status !== 'passed' || cleanup?.status !== 'running'
-    || run.delivery?.status !== 'delivered' || run.delivery?.carrierRef !== run.deliveryCarrier?.head
-    || run.delivery?.remoteAfterRef !== run.deliveryCarrier?.head
-    || !finalRemoteRef) {
+    || !completedDelivery(root, run)) {
     throw cleanupError('task-finish.retained-cleanup-run-not-ready', 'Task Finish run does not contain a completed delivery and active cleanup boundary.');
   }
   assertPreparedCompletion(root, run, runtime);
