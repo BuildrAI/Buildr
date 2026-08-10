@@ -257,11 +257,11 @@
       "type": "skill",
       "id": "task-worktree",
       "target": "skills/buildr/task-worktree",
-      "integrity": "sha256-4b033be846d4d2e1f9ff5bb50e9f9bd1b53f85f7c6899a4a710dfece75594af9",
+      "integrity": "sha256-ec5a7ae20dd36e96140c538b8bd20adc4a0a2c8604037171a1933b876840cce6",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-d060a9da4f9e66feac80738c204f20363b0e60797ab5761b3d438adaa92af850"
+          "integrity": "sha256-0eef94c04b752f4ac31ac60eb46dea44acfcb68f38f7866a220513cf516a17d9"
         }
       ]
     },

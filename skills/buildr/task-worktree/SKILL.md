@@ -12,7 +12,7 @@ description: 用户明确要求创建、检查或清理 Task 的 Git worktree �
 ```bash
 buildr worktree create <task-id> --target <canonical-workspace> --branch <branch> --start-point <ref> [--include <selector>] --json
 buildr worktree inspect <task-id> --target <canonical-workspace> --json
-buildr worktree cleanup <task-id> --target <canonical-workspace> [--integrated <selector>=<ref>] --json
+buildr worktree cleanup <task-id> --target <canonical-workspace> [--integrated-ref <selector>=<ref>] --json
 ```
 
 root 固定为 `<workspace-root>/.worktrees/<task-id>`；独立 Project/Service repository 放在其 canonical nested source path。不得静默回退到 `/tmp`。
