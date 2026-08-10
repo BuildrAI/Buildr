@@ -427,6 +427,11 @@ export function createPackageSmokeChecks(deps) {
           problems.push(`Generated Buildr Skill required text ${JSON.stringify(required)} is missing.`);
         }
       }
+      for (const forbidden of bootstrapContract?.generatedSkillForbiddenText ?? []) {
+        if (forbidden && installedContent.includes(forbidden)) {
+          problems.push(`Generated Buildr Skill forbidden text ${JSON.stringify(forbidden)} is present.`);
+        }
+      }
     }
     if (existsFile(path.join(tempRoot, 'ASSETS.md'))) {
       problems.push('buildr init generated ASSETS.md, but ASSETS.md is not part of the default root baseline.');

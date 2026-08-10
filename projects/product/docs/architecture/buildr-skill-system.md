@@ -100,12 +100,13 @@ Provider 正文不会复制进 Consumer。Agent 在执行 provider-dependent act
 源 SKILL.md
 → 内容增强
 → 当前 consumer 的 capability bindings
-→ adapter context（仅有明确需要时）
+→ 非身份型 adapter context（仅有明确消费需要时）
 → generated marker
 → runtime Skill 目录
 ```
 
 所有支持 filesystem Skills primitive 的 adapter 使用相同 Skill inventory 和组合结果，只改变 runtime root、诊断 identity 与 activation metadata。
+投射 adapter 只说明 Buildr 写入目标，不证明读取 Skill 的宿主身份。产品入口 Buildr Skill 保持 adapter-neutral；当前 `<agent>` 只能来自宿主明确身份或用户明确指定的维护目标，Skill 路径、marker、receipt 和 Doctor 投射字段都不能提供默认值。
 
 ## runtime Skill 应该包含什么
 
@@ -116,7 +117,7 @@ runtime `SKILL.md` 是 Agent 命中 Skill 后读取的 playbook，也应该让�
 - 当前 consumer 自己的 capability identity、mode、readiness/reason；
 - contract 路径、selected provider 及其 runtime 路径/scope；
 - required dependency blocked 时的 safety stop；
-- 必要的 adapter context 和 generated marker。
+- 必要的非身份型 adapter context 和 generated marker。
 
 它不承载：
 

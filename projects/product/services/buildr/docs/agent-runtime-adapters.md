@@ -16,6 +16,8 @@ buildr doctor --agent <agent> --target <workspace> --json
 
 adapter id 不做 alias 或 fallback。目标 Agent 不在列表中时必须停止自动投射并反馈，而不是借用“兼容”的 adapter。
 
+当前宿主身份与投射目标是不同事实。普通当前环境操作从宿主明确身份选择 `<agent>`；用户可以显式维护其他 runtime。Skill discovery root、generated marker、receipt，以及 Doctor 的 `requested`、`selected`、`detectedAgents` 只描述投射或本次检查，不能证明读取者身份。产品入口 Buildr Skill 因此不注入 adapter 专属身份或固定维护命令。
+
 Task Environment 会把 adapter、runtime source root 与 projection identity 写入 Environment Receipt，并通过真实 `runtime check` probe 形成 ready 的一部分。projection ready 只证明任务验证工作区中的文件系统投射；它不证明真实 Agent session 已加载候选内容。真实 session 采用证据只在 runtime 发现、加载或激活机制发生变化且专项验证需要时，由 P0.4 Task Verification 处理，不进入 P0.2 ready 门禁。
 
 ## 支持矩阵

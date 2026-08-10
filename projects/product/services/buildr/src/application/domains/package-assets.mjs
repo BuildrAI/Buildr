@@ -324,6 +324,7 @@ export function registerDomainsPackageAssets(runtime) {
         'buildrSkillForbiddenText',
         'globalForbiddenText',
         'generatedSkillRequiredText',
+        'generatedSkillForbiddenText',
       ],
       ['bootstrapGuidePath', 'bootstrapGuideMaxLines', 'buildrSkillPath', 'buildrSkillMaxLines'],
     );

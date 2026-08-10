@@ -77,8 +77,10 @@ buildrSkillRequiredText:
   - "state: installed"
   - 不替 Agent 判断 optional Rule
   - buildr runtime list --json
-  - 识别当前 Agent
-  - 支持列表中对应的参数
+  - 当前宿主明确身份
+  - 用户明确指定其他 runtime
+  - 不得从 Skill 路径
+  - detectedAgents
   - buildr doctor --agent <agent>
   - 不要省略 `--agent`
   - buildr skills add
@@ -92,7 +94,7 @@ buildrSkillRequiredText:
   - buildr sync
   - buildr update
   - buildr builtin list
-  - 请联系 Buildr 作者反馈该 Agent
+  - 不得借用其他 adapter 作为 fallback
   - task-environment
   - task-verification
   - task-finish
@@ -123,11 +125,18 @@ globalForbiddenText:
   - buildr use
 
 generatedSkillRequiredText:
-  - 当前 Agent Adapter
   - buildr runtime list --json
+  - 当前宿主明确身份
+  - 用户明确指定其他 runtime
+  - 不得从 Skill 路径
+  - detectedAgents
+  - buildr skill install <agent>
+  - buildr sync <agent>
+  - buildr doctor --agent <agent> --target <dir> --json
+
+generatedSkillForbiddenText:
+  - 当前 Agent Adapter
+  - 当前安装 adapter
   - buildr skill install claude-code
   - buildr sync claude-code
-  - buildr doctor --agent claude-code --target <dir> --json
-  - buildr runtime check claude-code
-  - buildr rules render claude-code
-  - buildr skills render claude-code
+  - buildr doctor --agent claude-code

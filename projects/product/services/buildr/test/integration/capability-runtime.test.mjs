@@ -166,23 +166,31 @@ test('required provider 缺失时保留 blocked consumer，contract 变化只更
   assert.throws(() => parseSkillProjectionReceipt(JSON.stringify({ ...changedReceipt, capabilityBindingsIntegrity: `sha256-${'0'.repeat(64)}` })), /capability binding evidence/);
 });
 
-test('产品入口与 workspace Skills 同时投射时不注入全局 routing dump', (t) => {
+test('全部 supported adapters 的产品入口保持 adapter-neutral 且不注入全局 routing dump', (t) => {
   const root = fixture();
-  const target = path.join(root, 'target');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(target);
   writeManifest(root);
 
-  const plan = assembleRuntimeProjection({
-    repoRoot: root,
-    targetRoot: target,
-    adapterId: 'codex',
-    selection: { productSkill: true, workspaceSkills: true },
-  });
-  const productSkill = plan.plan.writes.find((item) => item.capability === 'product-buildr-skill' && item.skillRelativePath === 'SKILL.md');
-  assert.ok(productSkill);
-  assert.doesNotMatch(productSkill.content, /Workspace routing evidence|contract SHA-256|buildr:capability-bindings begin/);
-  assert.match(productSkill.content, /Doctor 的 full detail/);
+  let expectedContent = null;
+  for (const runtime of SUPPORTED_AGENT_IDS) {
+    const target = path.join(root, `target-${runtime}`);
+    fs.mkdirSync(target);
+    const plan = assembleRuntimeProjection({
+      repoRoot: root,
+      targetRoot: target,
+      adapterId: runtime,
+      selection: { productSkill: true, workspaceSkills: true },
+    });
+    const productSkill = plan.plan.writes.find((item) => item.capability === 'product-buildr-skill' && item.skillRelativePath === 'SKILL.md');
+    assert.ok(productSkill, runtime);
+    assert.doesNotMatch(productSkill.content, /Workspace routing evidence|contract SHA-256|buildr:capability-bindings begin/, runtime);
+    assert.doesNotMatch(productSkill.content, /当前 Agent Adapter|当前安装 adapter|buildr (?:sync|skill install|doctor --agent) (?:claude-code|codex|cursor|qoder|trae|trae-work|workbuddy)/, runtime);
+    assert.match(productSkill.content, /`<agent>` 只取当前宿主明确身份/, runtime);
+    assert.match(productSkill.content, /不得从 Skill 路径.*`detectedAgents` 推断宿主/, runtime);
+    assert.match(productSkill.content, /Doctor 的 full detail/, runtime);
+    expectedContent ??= productSkill.content;
+    assert.equal(productSkill.content, expectedContent, runtime);
+  }
 });
 
 test('Component dependency contribution 与 fragment 同生命周期合并且 required 覆盖 optional', (t) => {

@@ -18,8 +18,8 @@ Agent 是 Buildr 功能的默认操作入口。Agent 能在当前工具、权限
 ## 执行循环
 
 1. 确认 `target`。未指定时默认当前目录；如果当前目录在服务（Service）代码仓内，先定位 Buildr 组织（Organization/Root）。
-2. 运行或参考 `buildr runtime list --json` 获取受支持的 Agent runtime；识别当前 Agent，并将后续 `<agent>` 固定为支持列表中对应的参数。
-3. 如果当前 Agent 无法和支持列表对齐，停止 Buildr 操作，并请联系 Buildr 作者反馈该 Agent。
+2. `<agent>` 只取当前宿主明确身份；用户明确指定其他 runtime 时才改用该目标。用 `buildr runtime list --json` 确认支持映射；不得从 Skill 路径、generated marker、投射回执或 Doctor 的 `requested`、`selected`、`detectedAgents` 推断宿主。
+3. 宿主身份无法和支持列表对齐时，停止需要 `<agent>` 的 Buildr 操作并请求确认；不得借用其他 adapter 作为 fallback。
 4. 判断 workspace 是否已初始化。未初始化时运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>`，并使用命令内置的最终 doctor 结果；已有 workspace 运行 `buildr doctor --agent <agent> --target <dir> --json` 建立事实基线。不要省略 `--agent`。
 5. 根据用户目标和 doctor 结果选择资产类型：组织（Organization/Root）、项目（Project）、服务（Service）、组件（Components）、规则（Rules）、命令（Commands）、技能（Skills）、内置能力（Builtins）、工作能力适配或 Agent runtime 渲染。用户要求采用内部流程、调整工作方式、修改或替换 Skill 行为时，不要求用户指出 Skill/capability；先加载 `capability-adaptation` 判断是否触达或产生跨 Skill 稳定依赖边界。
 6. 执行对应维护动作。用户要求“更新 Buildr”或“同步 Buildr”时，先运行 `buildr update`；成功后重新解析当前 `buildr` 入口，再运行 `buildr skill install <agent> --target <dir>`，不因此同步整个 workspace。用户明确要求“只更新 CLI”时只运行 `update`。用户要求“更新 workspace”或“同步 workspace”时，先判断 workspace root 是否由 Git 管理：如果是，解析 `buildr.git-operations/v1` 并读取 selected provider，向它提供明确 workspace、upstream 和 update operation；安全更新本地 checkout 后直接运行 `buildr sync <agent> --target <dir>`；如果不是 Git workspace，直接运行 sync。该意图不先更新 CLI。required capability blocked 时停止并报告 reason/nextActions，不回退到已删除 builtin 或手写 Git route。update 受阻时不得继续用旧 CLI 安装 Buildr Skill。
