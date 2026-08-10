@@ -134,6 +134,21 @@ test('Git provider cleanup 可从 worktree 已删除但本地分支尚未删除�
   assert.equal(fs.existsSync(created.evidencePath), false);
 });
 
+test('Git provider cleanup 幂等确认已提前消失的 worktree 与本地分支', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'provider-cleanup-absent-branch';
+  const created = buildr(['worktree', 'create', taskId, '--branch', `codex/${taskId}`, '--start-point', 'main', '--target', root, '--json']);
+  command(root, 'git', ['worktree', 'remove', created.repositories[0].checkoutPath]);
+  command(root, 'git', ['branch', '-D', `codex/${taskId}`]);
+  assert.equal(fs.existsSync(created.evidencePath), true);
+
+  const cleaned = buildr(['worktree', 'cleanup', taskId, '--integrated-ref', 'workspace=main', '--target', root, '--json']);
+  assert.equal(cleaned.status, 'cleaned');
+  assert.equal(cleaned.effects.some((effect) => effect.type === 'worktree-absence-confirmed'), true);
+  assert.equal(cleaned.effects.some((effect) => effect.type === 'local-branch-absence-confirmed'), true);
+  assert.equal(fs.existsSync(created.evidencePath), false);
+});
+
 test('Git provider cleanup 只容忍任意层级 Buildr control metadata，source dirt 仍 fail closed', (t) => {
   const root = fixtureWorkspace(t);
   const controlTask = 'provider-control-metadata-cleanup';

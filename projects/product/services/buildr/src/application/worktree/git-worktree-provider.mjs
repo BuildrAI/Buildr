@@ -402,11 +402,17 @@ export function registerGitWorktreeProvider(runtime) {
           effects.push({ type: 'worktree-removed', selector: record.selector, checkoutPath: record.checkoutPath });
         } else effects.push({ type: 'worktree-absence-confirmed', selector: record.selector, checkoutPath: record.checkoutPath });
         removed.push({ ...record, state: 'removed' });
-        const branchRemoval = process.env.BUILDR_FAULT_WORKTREE_BRANCH_REMOVE_SELECTOR === record.selector
-          ? { status: 1, stdout: '', stderr: `Injected branch removal failure: ${record.selector}` }
-          : git(record.sourceRepository, ['update-ref', '-d', `refs/heads/${record.branch}`, record.head]);
-        if (branchRemoval.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_branch_remove_failed', message: (branchRemoval.stderr || branchRemoval.stdout).trim() }, ['人工核对本地 branch 后重试。']);
-        effects.push({ type: 'local-branch-removed', selector: record.selector, branch: record.branch, head: record.head });
+        const branchRef = `refs/heads/${record.branch}`;
+        const branchPresence = git(record.sourceRepository, ['show-ref', '--verify', '--quiet', branchRef]);
+        if (branchPresence.status === 1) effects.push({ type: 'local-branch-absence-confirmed', selector: record.selector, branch: record.branch, head: record.head });
+        else if (branchPresence.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_branch_inspect_failed', message: (branchPresence.stderr || branchPresence.stdout).trim() }, ['保留 evidence 并检查本地 branch ref。']);
+        else {
+          const branchRemoval = process.env.BUILDR_FAULT_WORKTREE_BRANCH_REMOVE_SELECTOR === record.selector
+            ? { status: 1, stdout: '', stderr: `Injected branch removal failure: ${record.selector}` }
+            : git(record.sourceRepository, ['update-ref', '-d', branchRef, record.head]);
+          if (branchRemoval.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, removed, effects, { code: 'git_worktree_branch_remove_failed', message: (branchRemoval.stderr || branchRemoval.stdout).trim() }, ['人工核对本地 branch 后重试。']);
+          effects.push({ type: 'local-branch-removed', selector: record.selector, branch: record.branch, head: record.head });
+        }
       }
       runtime.removePath(stored.file);
       effects.push({ type: 'provider-evidence-removed', path: stored.file });

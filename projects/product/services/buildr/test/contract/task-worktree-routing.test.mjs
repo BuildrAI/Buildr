@@ -73,6 +73,8 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
     '不判断 Task 是否 ready',
     '不登记动态资源',
   ]) assert.ok(worktreeSkill.includes(required), `task-worktree must include ${required}`);
+  assert.match(worktreeSkill, /worktree cleanup <task-id>[^\n]*--integrated-ref <selector>=<ref>/);
+  assert.doesNotMatch(worktreeSkill, /--integrated(?:\s|<)/);
   assert.match(environmentSkill, /`buildr.task-environment\/v1` 的默认 provider/);
   assert.match(environmentSkill, /Environment Receipt 独占 Runtime、CLI、Preparation Declaration\/Scope\/Recipe\/Step、projection、动态资源、ready、恢复和总 cleanup/);
   assert.match(environmentSkill, /buildr\.task-environment-plan-request\/v1/);
