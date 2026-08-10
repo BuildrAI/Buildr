@@ -5,11 +5,11 @@
       "type": "rule",
       "id": "buildr-core",
       "target": "rules/buildr/core.md",
-      "integrity": "sha256-19099eddd7fc3ef8e71884b8e2b7d35719d2f370787dbb10a261417671e966cb",
+      "integrity": "sha256-02357a5852ec3f9e41be3a22e160b18be340932458d5d6c0060072eeccec7716",
       "files": [
         {
           "path": "core.md",
-          "integrity": "sha256-a6c25463a7fd5ce412f6dfebb93d449e168c9ef89cc6b8f69878e907bdecf988"
+          "integrity": "sha256-b57c004344e9bb5af086d6a78c793d42da24726186687e026eab105f7ba9cb7f"
         }
       ]
     },
