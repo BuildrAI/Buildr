@@ -9,6 +9,13 @@ import {
   sealTaskExecutionRecord,
   taskExecutionRecordError,
 } from '../../domain/task-execution-record/task-execution-record.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+
+const PUBLIC_VIEWS = Object.freeze({
+  all: null,
+  verification: 'task-verification',
+  finish: 'task-finish',
+});
 
 function assertInput(input, allowed, label) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskExecutionRecordError('task_execution_record_input_invalid', `${label}必须是对象。`);
@@ -29,6 +36,57 @@ function result(operation, status, persisted, effects = []) {
     diagnostic: null,
     nextActions: [],
   };
+}
+
+function portableBody(record, { files = null, diagnostic = null } = {}) {
+  return {
+    status: record.bodyStatus,
+    available: record.bodyStatus === 'available' && diagnostic === null,
+    digest: record.body.digest,
+    storedSizeBytes: record.body.storedSizeBytes,
+    originalSizeBytes: record.body.originalSizeBytes,
+    truncated: record.body.truncated,
+    redactionVersion: record.body.redactionVersion,
+    files,
+    diagnostic,
+  };
+}
+
+function portableRecord(record, body = portableBody(record)) {
+  return {
+    recordId: record.recordId,
+    taskId: record.taskId,
+    owner: record.owner,
+    kind: record.kind,
+    runIdentity: record.runIdentity,
+    targetIdentity: record.targetIdentity,
+    producer: record.producer,
+    outcome: record.outcome,
+    lifecycleStatus: record.lifecycleStatus,
+    resolutionStatus: record.resolutionStatus,
+    body,
+    retention: { retainUntil: record.retention.retainUntil },
+    timestamps: { ...record.timestamps },
+    cleanupCode: record.cleanupCode,
+  };
+}
+
+function publicView(value = 'all') {
+  if (typeof value !== 'string' || !Object.hasOwn(PUBLIC_VIEWS, value)) {
+    throw taskExecutionRecordError('task_execution_record_view_invalid', `execution record view不受支持：${String(value)}。`, 400, { view: value });
+  }
+  return value;
+}
+
+function sameTask(record, taskId) {
+  if (record.taskId !== taskId) {
+    throw taskExecutionRecordError('task_execution_record_not_found', `Task ${taskId} 中不存在该Execution Record。`, 404, { taskId });
+  }
+  return record;
+}
+
+function safeBodyDiagnostic(error) {
+  return { code: error?.code || 'task_execution_record_body_unavailable', message: 'Execution Record正文当前不可验证或不可读取。' };
 }
 
 export function registerTaskExecutionRecordApplication(runtime) {
@@ -62,6 +120,58 @@ export function registerTaskExecutionRecordApplication(runtime) {
       diagnostic: null,
       nextActions: [],
     };
+  }
+
+  function listTaskExecutionRecordView(targetRoot, taskId, input = {}) {
+    assertInput(input, new Set(['view']), 'Task Execution Record public list');
+    const view = publicView(input.view ?? 'all');
+    const records = runtime.listTaskExecutionRecordPersistence(targetRoot, taskId, PUBLIC_VIEWS[view] ? { owner: PUBLIC_VIEWS[view] } : {});
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordListView, {
+      taskId,
+      view,
+      records: records.map((item) => portableRecord(item.record)),
+      diagnostic: null,
+    });
+  }
+
+  function inspectTaskExecutionRecordView(targetRoot, taskId, recordId) {
+    const persisted = runtime.readTaskExecutionRecordPersistence(targetRoot, recordId);
+    const record = sameTask(persisted.record, taskId);
+    let body = portableBody(record);
+    if (record.bodyStatus === 'available') {
+      try {
+        const inspected = runtime.inspectTaskExecutionRecordBody(persisted.root, record);
+        body = portableBody(record, {
+          files: inspected.files.map((file) => ({
+            name: file.name,
+            format: file.format,
+            digest: file.digest,
+            storedSizeBytes: file.storedSizeBytes,
+            originalSizeBytes: file.originalSizeBytes,
+            truncated: file.truncated,
+          })),
+        });
+      } catch (error) {
+        body = portableBody(record, { files: [], diagnostic: safeBodyDiagnostic(error) });
+      }
+    }
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordDetailView, { taskId, record: portableRecord(record, body), diagnostic: null });
+  }
+
+  function readTaskExecutionRecordBodyFileView(targetRoot, taskId, recordId, filename) {
+    const persisted = runtime.readTaskExecutionRecordPersistence(targetRoot, recordId);
+    const record = sameTask(persisted.record, taskId);
+    if (record.bodyStatus !== 'available') {
+      throw taskExecutionRecordError('task_execution_record_body_unavailable', `Execution Record正文状态为${record.bodyStatus}。`, record.bodyStatus === 'cleaned' ? 410 : 409, { recordId, bodyStatus: record.bodyStatus });
+    }
+    let file;
+    try {
+      file = runtime.readTaskExecutionRecordBodyFile(persisted.root, record, filename);
+    } catch (error) {
+      if (['task_execution_record_body_name_forbidden', 'task_execution_record_body_file_not_found'].includes(error?.code)) throw error;
+      throw taskExecutionRecordError(error?.code || 'task_execution_record_body_unavailable', 'Execution Record正文完整性校验失败，未返回任何内容。', Number.isInteger(error?.status) ? error.status : 409, { recordId, filename });
+    }
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordBodyFile, { taskId, recordId, file, diagnostic: null });
   }
 
   function sealTaskExecutionRecordOperation(targetRoot, recordId, input) {
@@ -121,6 +231,9 @@ export function registerTaskExecutionRecordApplication(runtime) {
     openTaskExecutionRecord,
     inspectTaskExecutionRecord,
     listTaskExecutionRecords,
+    listTaskExecutionRecordView,
+    inspectTaskExecutionRecordView,
+    readTaskExecutionRecordBodyFileView,
     sealTaskExecutionRecord: sealTaskExecutionRecordOperation,
     resolveTaskExecutionRecord: resolveTaskExecutionRecordOperation,
     cleanupTaskExecutionRecord,

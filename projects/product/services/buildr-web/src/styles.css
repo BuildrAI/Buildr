@@ -435,3 +435,85 @@ details summary { cursor: pointer; color: var(--ink); font-size: 12px; font-weig
   .management-table-wrap { width: 100%; }
   .full { grid-column: auto; }
 }
+.execution-records-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.execution-record-filters,
+.execution-record-files,
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.execution-record-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.execution-record-card {
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong, var(--border));
+  border-radius: 0.8rem;
+  background: var(--surface, #fff);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.execution-record-card:hover,
+.execution-record-card:focus-visible {
+  border-color: var(--accent, #2563eb);
+  outline: none;
+}
+
+.execution-record-card.passed { border-left-color: #16803c; }
+.execution-record-card.failed,
+.execution-record-card.blocked,
+.execution-record-card.cancelled { border-left-color: #b42318; }
+
+.execution-record-card-heading,
+.execution-record-body-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.execution-record-card span,
+.execution-record-card small {
+  overflow-wrap: anywhere;
+}
+
+.execution-record-detail {
+  display: grid;
+  gap: 1rem;
+}
+
+.execution-record-body {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.execution-record-body pre {
+  max-height: 32rem;
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  border-radius: 0.65rem;
+  background: #111827;
+  color: #f9fafb;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.finish-execution-records-entry {
+  margin-top: 1rem;
+}

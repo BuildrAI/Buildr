@@ -231,6 +231,12 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
     conclusion: { outcome: 'passed', summary: '浏览器验证已通过。' },
     declarationRoot: root,
   });
+  const failedVerification = runtime.openTaskExecutionRecord(root, taskId, { owner: 'task-verification', kind: 'verification-execution', runIdentity: 'browser-verification-failed', targetIdentity, producer: 'browser-smoke' });
+  runtime.sealTaskExecutionRecord(root, failedVerification.record.recordId, { outcome: 'failed', files: [{ name: 'stdout.txt', content: 'browser verification failed output' }, { name: 'summary.json', content: { outcome: 'failed' } }] });
+  const passedVerification = runtime.openTaskExecutionRecord(root, taskId, { owner: 'task-verification', kind: 'verification-execution', runIdentity: 'browser-verification-passed', targetIdentity, producer: 'browser-smoke' });
+  runtime.sealTaskExecutionRecord(root, passedVerification.record.recordId, { outcome: 'passed', files: [{ name: 'stdout.txt', content: 'browser verification passed output' }] });
+  const finishDiagnostics = runtime.openTaskExecutionRecord(root, taskId, { owner: 'task-finish', kind: 'finish-diagnostics', runIdentity: 'browser-finish-passed', targetIdentity, producer: 'browser-smoke' });
+  runtime.sealTaskExecutionRecord(root, finishDiagnostics.record.recordId, { outcome: 'passed', files: [{ name: 'diagnostics.json', content: { outcome: 'passed' } }] });
   development = runtime.freezeTaskDevelopmentCandidate(root, taskId);
   const candidate = development.development.receipt.candidate;
   runtime.recordTaskReview(root, taskId, {
@@ -572,7 +578,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.locator('#task-development-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-development-status').innerText(), '尚未形成研发回执');
     assert.equal(await page.locator('#task-development-detail').isHidden(), true);
-    assert.equal(await page.locator('#task-development-panel button').count(), 1, '研发页只提供只读刷新');
+    assert.equal(await page.locator('#task-development-panel button').count(), 2, '研发页提供只读刷新与 Finish 执行记录入口');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
@@ -650,7 +656,13 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.match(await page.locator('#task-development-decision').innerText(), /允许推进/);
     assert.match(await page.locator('#task-development-decision').innerText(), /已接受风险数[\s\S]*0/);
     assert.match(await page.locator('#task-development-handoff').innerText(), /已保存交接数[\s\S]*1/);
-    assert.equal(await page.locator('#task-development-panel button').count(), 4, '研发页只有刷新与三个证据跳转');
+    assert.equal(await page.locator('#task-development-panel button').count(), 5, '研发页只有刷新、三个门禁证据跳转与 Finish 执行记录入口');
+    await page.locator('#task-finish-execution-records-entry').getByRole('button', { name: '查看 Finish 执行记录', exact: true }).click();
+    await page.locator('#task-execution-record-filter-finish[aria-pressed="true"]').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 1);
+    assert.match(await page.locator('#task-execution-record-list').innerText(), /Finish · passed/);
+    await page.getByRole('button', { name: '研发', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '研发交接已就绪');
     await capture(page, 'local-app-task-development-desktop.png');
 
     forceDevelopmentUnknown = true;
@@ -665,6 +677,16 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
+    await page.locator('#task-execution-record-filter-all').click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 3);
+    assert.match(await page.locator('#task-execution-record-list').innerText(), /Verification · failed/);
+    await page.locator('#task-execution-record-list .execution-record-card.failed').click();
+    await page.locator('#task-execution-record-detail').waitFor({ state: 'visible' });
+    await page.locator('#task-execution-record-detail').getByRole('button', { name: /stdout\.txt/ }).click();
+    await page.waitForFunction(() => document.querySelector('.execution-record-body pre')?.textContent?.includes('browser verification failed output'));
+    await page.locator('#task-verification-execution-records').click();
+    await page.locator('#task-execution-record-filter-verification[aria-pressed="true"]').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 2);
     assert.equal(await page.locator('#task-review-slots').getByText('适用性未知', { exact: true }).count(), 2);
     assert.match(await page.locator('#task-review-slots').innerText(), /plan:browser-v1/);
     assert.match(await page.locator('#task-review-slots').innerText(), /sha256-/);

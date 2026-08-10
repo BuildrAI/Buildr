@@ -6,6 +6,7 @@ import {
   reviewMethodLabel,
 } from '../../lib/taskLabels';
 import { Fact, TechnicalDetails } from './shared';
+import { ExecutionRecordsPanel, type ExecutionRecordView } from './ExecutionRecordsPanel';
 
 type Props = {
   active: boolean;
@@ -17,8 +18,14 @@ type Props = {
   verificationLoading: boolean;
   reviewError: string | null;
   verificationError: string | null;
+  executionRecordView: ExecutionRecordView;
+  executionRecordsData: any;
+  executionRecordsLoading: boolean;
+  executionRecordsError: string | null;
   onRefreshReview: () => void;
   onRefreshVerification: () => void;
+  onSelectExecutionRecordView: (view: ExecutionRecordView) => void;
+  onRefreshExecutionRecords: () => void;
   openAgentAction: (action: string, context?: Record<string, unknown>) => void;
 };
 
@@ -134,8 +141,14 @@ export function EvidenceTab({
   verificationLoading,
   reviewError,
   verificationError,
+  executionRecordView,
+  executionRecordsData,
+  executionRecordsLoading,
+  executionRecordsError,
   onRefreshReview,
   onRefreshVerification,
+  onSelectExecutionRecordView,
+  onRefreshExecutionRecords,
   openAgentAction,
 }: Props) {
   const slot = verificationData?.slot;
@@ -149,6 +162,15 @@ export function EvidenceTab({
 
   return (
     <section id="task-evidence-panel" className={active ? '' : 'hidden'} data-task-panel="evidence" aria-live="polite">
+      <ExecutionRecordsPanel
+        taskId={taskId}
+        view={executionRecordView}
+        data={executionRecordsData}
+        loading={executionRecordsLoading}
+        error={executionRecordsError}
+        onSelectView={onSelectExecutionRecordView}
+        onRefresh={onRefreshExecutionRecords}
+      />
       <section id="task-review-panel" className="evidence-section">
         <article className="panel review-summary">
           <div className="panel-heading">
@@ -200,9 +222,12 @@ export function EvidenceTab({
               <h2>验证结果（Verification Result）</h2>
               <p className="section-copy">这里只读展示一个当前结果；完整命令输出和临时执行证据不进入本页。</p>
             </div>
-            <button id="task-verification-refresh" className="button secondary" type="button" disabled={verificationLoading} onClick={onRefreshVerification}>
-              刷新验证结果
-            </button>
+            <div className="panel-actions">
+              <button id="task-verification-execution-records" className="button secondary" type="button" onClick={() => onSelectExecutionRecordView('verification')}>查看 Verification 执行记录</button>
+              <button id="task-verification-refresh" className="button secondary" type="button" disabled={verificationLoading} onClick={onRefreshVerification}>
+                刷新验证结果
+              </button>
+            </div>
           </div>
           <div id="task-verification-diagnostic" className={`environment-diagnostic${verificationError ? '' : ' hidden'}`}>
             {verificationError || ''}

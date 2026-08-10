@@ -19,6 +19,7 @@
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
 - Task 列表以 `retrospectiveState` 筛选未复盘、未处理、已处理和无需处理；复盘 Tab 保持 Markdown 报告只读，通过 sibling `buildr` 的同源/session 受保护 API 更新处置状态。
 - Task概览的“父子任务协调”区块直接消费sibling `buildr` Parent Coordination Application read model，展示Parent Plan、Contribution disposition、直接Child顶层状态与saved handoff证明；前端不查询SQLite、不扫描文件系统、不缓存或回写Parent progress。legacy Task只展示absent提示。
+- Task“证据”页使用一个共享Execution Record浏览器展示全部、Verification与Finish三种只读视图，按需读取detail与manifest声明的限量正文；Verification Result与研发页的Finish区块只提供进入同一浏览器的专业筛选入口，不复制record、Result或Finish current/terminal authority，也不提供locator、cleanup、GC或资源Inventory。
 
 ## 运行与验证
 

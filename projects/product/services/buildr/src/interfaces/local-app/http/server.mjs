@@ -258,12 +258,12 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
   let origin = null;
   let closing = false;
 
-  function submitTaskRead(request, response, operation, root, taskId) {
+  function submitTaskRead(request, response, operation, root, taskId, input = {}) {
     const controller = new AbortController();
     const abort = () => controller.abort();
     request.once('aborted', abort);
     response.once('close', abort);
-    return taskReadExecutor.run(operation, { targetRoot: root, taskId, signal: controller.signal }).finally(() => {
+    return taskReadExecutor.run(operation, { targetRoot: root, taskId, ...input, signal: controller.signal }).finally(() => {
       request.removeListener('aborted', abort);
       response.removeListener('close', abort);
     });
@@ -375,7 +375,9 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
           return binaryResponse(response, 200, fs.readFileSync(asset.file), asset.contentType);
         }
         const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
-        if (taskApi && requestUrl.searchParams.size > 0 && !(request.method === 'GET' && suffix === '/tasks')) {
+        const taskExecutionRecordsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/execution-records$`));
+        const taskQueryAllowed = request.method === 'GET' && (suffix === '/tasks' || taskExecutionRecordsMatch);
+        if (taskApi && requestUrl.searchParams.size > 0 && !taskQueryAllowed) {
           const error = new Error('Task API 不接受 query 参数。');
           error.code = 'task_api_query_forbidden';
           error.status = 400;
@@ -445,6 +447,21 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
         const taskVerificationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/verification$`));
         if (request.method === 'GET' && taskVerificationMatch) {
           return jsonResponse(response, 200, await submitTaskRead(request, response, 'verification', root, taskVerificationMatch[1]));
+        }
+        if (request.method === 'GET' && taskExecutionRecordsMatch) {
+          const fields = [...new Set(requestUrl.searchParams.keys())];
+          if (fields.some((field) => field !== 'view') || requestUrl.searchParams.getAll('view').length > 1) {
+            const error = new Error('Task execution records 只接受一个 view query 参数。'); error.code = 'task_api_query_forbidden'; error.status = 400; throw error;
+          }
+          return jsonResponse(response, 200, await submitTaskRead(request, response, 'execution-records', root, taskExecutionRecordsMatch[1], { view: requestUrl.searchParams.get('view') || 'all' }));
+        }
+        const taskExecutionRecordDetailMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/execution-records/(${TASK_ID})$`));
+        if (request.method === 'GET' && taskExecutionRecordDetailMatch) {
+          return jsonResponse(response, 200, await submitTaskRead(request, response, 'execution-record-detail', root, taskExecutionRecordDetailMatch[1], { recordId: taskExecutionRecordDetailMatch[2] }));
+        }
+        const taskExecutionRecordBodyMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/execution-records/(${TASK_ID})/body/([^/]+)$`));
+        if (request.method === 'GET' && taskExecutionRecordBodyMatch) {
+          return jsonResponse(response, 200, await submitTaskRead(request, response, 'execution-record-body', root, taskExecutionRecordBodyMatch[1], { recordId: taskExecutionRecordBodyMatch[2], filename: decodeURIComponent(taskExecutionRecordBodyMatch[3]) }));
         }
         const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
         if (request.method === 'GET' && taskChangeMatch) {

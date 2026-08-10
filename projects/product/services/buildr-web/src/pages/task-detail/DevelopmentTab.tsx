@@ -16,9 +16,10 @@ type Props = {
   loading: boolean;
   onRefresh: () => void;
   onSelectEvidence: () => void;
+  onSelectFinishExecutionRecords: () => void;
 };
 
-export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvidence }: Props) {
+export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvidence, onSelectFinishExecutionRecords }: Props) {
   const development = data?.development;
   const terminal = data?.terminal;
   const applicability = development?.applicability;
@@ -96,6 +97,19 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
             </ul>
           ) : null}
         </div>
+      </article>
+      <article id="task-finish-execution-records-entry" className="panel finish-execution-records-entry">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Task Finish</p>
+            <h2>Finish 执行记录</h2>
+            <p className="section-copy">查看每次 Finish invocation 的 diagnostics、失败与恢复记录；这里不替代 current/terminal 交付事实。</p>
+          </div>
+          <button type="button" className="button secondary" onClick={onSelectFinishExecutionRecords}>查看 Finish 执行记录</button>
+        </div>
+        <dl className="read-facts">
+          <Fact label="当前专业事实" value={terminalStatus ? developmentStatusLabel(terminalStatus) : terminal?.status || '尚未形成'} />
+        </dl>
       </article>
       <div id="task-development-loading" className={`page-loading${loading ? '' : ' hidden'}`}>
         <span className="loader" />

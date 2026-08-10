@@ -2,7 +2,10 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['overview', 'development', 'reviews', 'verification', 'coordination']);
+const OPERATIONS = new Set(['overview', 'development', 'reviews', 'verification', 'coordination', 'execution-records', 'execution-record-detail', 'execution-record-body']);
+const RECORD_ID_PATTERN = TASK_ID_PATTERN;
+const EXECUTION_RECORD_VIEWS = new Set(['all', 'verification', 'finish']);
+const EXECUTION_RECORD_BODY_FILES = new Set(['summary.json', 'stdout.txt', 'stderr.txt', 'timeline.json', 'diagnostics.json']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_URL = new URL('./read-worker.mjs', import.meta.url);
@@ -32,6 +35,18 @@ function validateRequest(operation, input) {
   if (input.signal !== undefined && (typeof input.signal !== 'object' || typeof input.signal.addEventListener !== 'function')) {
     throw readExecutorError('local_app_read_signal_invalid', 'Local App read executor signal 不合法。', 400);
   }
+  const allowed = new Set(['targetRoot', 'taskId', 'signal']);
+  if (operation === 'execution-records') allowed.add('view');
+  if (operation === 'execution-record-detail' || operation === 'execution-record-body') allowed.add('recordId');
+  if (operation === 'execution-record-body') allowed.add('filename');
+  for (const field of Object.keys(input)) {
+    if (!allowed.has(field)) throw readExecutorError('local_app_read_field_forbidden', `Local App read executor 不支持字段：${field}。`, 400, { field });
+  }
+  if (operation === 'execution-records' && !EXECUTION_RECORD_VIEWS.has(input.view ?? 'all')) throw readExecutorError('task_execution_record_view_invalid', `execution record view不受支持：${String(input.view)}。`, 400);
+  if ((operation === 'execution-record-detail' || operation === 'execution-record-body') && (typeof input.recordId !== 'string' || !RECORD_ID_PATTERN.test(input.recordId))) {
+    throw readExecutorError('task_execution_record_identity_invalid', 'Execution Record ID 不合法。', 400);
+  }
+  if (operation === 'execution-record-body' && !EXECUTION_RECORD_BODY_FILES.has(input.filename)) throw readExecutorError('task_execution_record_body_name_forbidden', `正文文件名不受支持：${String(input.filename)}。`, 400);
 }
 
 function defaultWorkerFactory() {
@@ -113,7 +128,15 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
       state.item = item;
       item.state = 'running';
       try {
-        state.worker.postMessage({ id: item.id, operation: item.operation, targetRoot: item.targetRoot, taskId: item.taskId });
+        state.worker.postMessage({
+          id: item.id,
+          operation: item.operation,
+          targetRoot: item.targetRoot,
+          taskId: item.taskId,
+          ...(item.view === undefined ? {} : { view: item.view }),
+          ...(item.recordId === undefined ? {} : { recordId: item.recordId }),
+          ...(item.filename === undefined ? {} : { filename: item.filename }),
+        });
       } catch (error) {
         state.item = null;
         settle(item, workerError({ code: error.code, message: error.message }));
@@ -136,6 +159,9 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
         operation,
         targetRoot: input.targetRoot,
         taskId: input.taskId,
+        view: input.view,
+        recordId: input.recordId,
+        filename: input.filename,
         state: 'queued',
         settled: false,
         resolve,

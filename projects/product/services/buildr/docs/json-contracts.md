@@ -35,6 +35,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v1` / `buildr.contribution-handoff/v1` |
 | Local App Task stored detail/list query | `buildr.task-record-view/v1` / `buildr.task-record-list/v3` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
+| Local App Task execution record list/detail/body file | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-detail-view/v1` / `buildr.task-execution-record-body-file/v1` |
 | `task finish run/inspect` | `buildr.task-finish-result/v2` |
 | `app preview start/list/stop` | `buildr.local-app-preview/v1` |
 
@@ -59,6 +60,8 @@ Task Finish 的 v2 Result 继续由SQLite current/terminal authority决定；`ru
 `buildr.parent-coordination-result/v1`覆盖Parent coordination五个action。根对象返回operation/status/taskId、`legacy|parent-plan` mode、Parent status/Plan/final acceptance/Planning Review、直接Children及其planned binding和matching Contribution Handoff、按Contribution派生的disposition、blockers、final acceptance readiness、effects/diagnostic/nextActions。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child状态和交付不复制进Parent Record/Plan，completed无matching handoff为`unproven`，最终验收不自动完成Parent。legacy Task返回absent diagnostic且不backfill。
 
 Local App 普通观察路径使用独立 stored-state projection：详情 `buildr.task-record-view/v1` 与列表 `buildr.task-record-list/v3` 都来自同一 SQLite authority，返回 response-level `recordDigest`、stored Change references、直接关系与非持久化 `childTaskCount`，但不解析 Change availability、Environment、Development、Review、Verification 或 Finish currentness。列表 v3 另返回规范化 `filters`、从 Task scope rows 派生的 `filterOptions` 与用于区分“Workspace 无 Task/筛选无结果”的 `totalTaskCount`。业务拒绝仍返回现有 error envelope 或 action envelope，且不得产生 mutation effects。CLI 参数或路由语法错误继续使用 `buildr.cli-error/v1`。`recordDigest` 和 `childTaskCount` 都不进入 Task Record 持久 schema。
+
+Task Execution Record 的三个 Local App read model 只读取同一 `task_execution_records` authority。list v1 固定支持 `all|verification|finish`，detail v1 返回 portable metadata 与经完整性验证的 closed正文文件清单，body-file v1 只返回单个白名单文件最多 512 KiB 的 UTF-8 preview 和双重截断状态。三者都不暴露 SQLite、locator、本机路径、reserved quota、resource token 或 mutation；cleaned tombstone 仍可列出，但正文读取返回 unavailable diagnostic。
 
 ## Doctor v1 结果语义
 

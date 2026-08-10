@@ -18,6 +18,7 @@ const BODY_FILES = Object.freeze({
 });
 const MANIFEST_FILE = '.record-manifest.json';
 const MANIFEST_RESERVE_BYTES = 64 * 1024;
+export const TASK_EXECUTION_RECORD_BODY_READ_LIMIT_BYTES = 512 * 1024;
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
@@ -185,12 +186,14 @@ function readPublished(directory, expectedRecord) {
   }
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) throw bodyError('task_execution_record_body_manifest_invalid', '正文manifest files必须是非空数组。', 409);
   const manifestNames = new Set();
+  const verifiedFiles = [];
   for (const file of manifest.files) {
     if (!Object.hasOwn(BODY_FILES, file.name)) throw bodyError('task_execution_record_body_manifest_invalid', '正文manifest包含未知文件。', 409, { name: file.name });
     if (manifestNames.has(file.name)) throw bodyError('task_execution_record_body_manifest_invalid', '正文manifest包含重复文件。', 409, { name: file.name });
     manifestNames.add(file.name);
     const content = fs.readFileSync(path.join(directory, file.name));
     if (content.length !== file.storedSizeBytes || digest(content) !== file.digest) throw bodyError('task_execution_record_body_integrity_mismatch', `正文完整性不匹配：${file.name}。`, 409, { name: file.name });
+    verifiedFiles.push({ ...file, format: BODY_FILES[file.name], content });
   }
   const actualNames = fs.readdirSync(directory).filter((name) => name !== MANIFEST_FILE);
   if (actualNames.length !== manifestNames.size || actualNames.some((name) => !manifestNames.has(name))) throw bodyError('task_execution_record_body_manifest_invalid', '正文目录与manifest文件集合不一致。', 409);
@@ -198,7 +201,7 @@ function readPublished(directory, expectedRecord) {
   const manifestBytes = fs.statSync(path.join(directory, MANIFEST_FILE)).size;
   if (manifest.storedSizeBytes !== fileBytes + manifestBytes || manifest.storedSizeBytes > TASK_EXECUTION_RECORD_LIMITS.recordBytes) throw bodyError('task_execution_record_body_manifest_invalid', '正文manifest stored size不一致。', 409);
   const locator = `.buildr/local/task-execution-records/${expectedRecord.owner}/${expectedRecord.recordId}/`;
-  return manifestBody(manifest, locator);
+  return { body: manifestBody(manifest, locator), files: verifiedFiles };
 }
 
 export function registerTaskExecutionRecordBodyStore(runtime) {
@@ -209,7 +212,7 @@ export function registerTaskExecutionRecordBodyStore(runtime) {
     const prepared = normalizeFiles(files, root);
     const ownerRoot = prepareOwnerRoot(root, record.owner);
     const finalDirectory = path.join(ownerRoot, record.recordId);
-    if (fs.existsSync(finalDirectory)) return readPublished(finalDirectory, record);
+    if (fs.existsSync(finalDirectory)) return readPublished(finalDirectory, record).body;
     const staging = path.join(ownerRoot, `.staging-${record.recordId}-${crypto.randomUUID()}`);
     fs.mkdirSync(staging, { mode: 0o700 });
     try {
@@ -237,7 +240,7 @@ export function registerTaskExecutionRecordBodyStore(runtime) {
       syncDirectory(staging);
       fs.renameSync(staging, finalDirectory);
       syncDirectory(ownerRoot);
-      return readPublished(finalDirectory, record);
+      return readPublished(finalDirectory, record).body;
     } finally {
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
     }
@@ -263,15 +266,49 @@ export function registerTaskExecutionRecordBodyStore(runtime) {
     if (!record.body.locator) throw bodyError('task_execution_record_body_locator_missing', 'record没有可验证的正文locator。', 409, { recordId: record.recordId });
     const expectedLocator = `.buildr/local/task-execution-records/${record.owner}/${record.recordId}/`;
     if (record.body.locator !== expectedLocator) throw bodyError('task_execution_record_body_locator_mismatch', 'record locator不是其owned正文目录。', 409, { expectedLocator, locator: record.body.locator });
-    const body = readPublished(path.join(path.resolve(targetRoot), ...expectedLocator.split('/').filter(Boolean)), record);
+    const published = readPublished(path.join(path.resolve(targetRoot), ...expectedLocator.split('/').filter(Boolean)), record);
+    const body = published.body;
     if (body.digest !== record.body.digest || body.storedSizeBytes !== record.body.storedSizeBytes || body.originalSizeBytes !== record.body.originalSizeBytes || body.truncated !== record.body.truncated) throw bodyError('task_execution_record_body_metadata_mismatch', '正文manifest与SQLite metadata不一致。', 409, { recordId: record.recordId });
-    return body;
+    return published;
+  }
+
+  function inspectTaskExecutionRecordBody(targetRoot, recordValue) {
+    const published = verifyTaskExecutionRecordBody(targetRoot, recordValue);
+    return {
+      ...published.body,
+      files: published.files.map(({ content: _content, ...file }) => file),
+    };
+  }
+
+  function readTaskExecutionRecordBodyFile(targetRoot, recordValue, filename) {
+    if (typeof filename !== 'string' || !Object.hasOwn(BODY_FILES, filename)) {
+      throw bodyError('task_execution_record_body_name_forbidden', `正文文件名不受支持：${String(filename)}。`, 400, { name: filename });
+    }
+    const published = verifyTaskExecutionRecordBody(targetRoot, recordValue);
+    const file = published.files.find((item) => item.name === filename);
+    if (!file) throw bodyError('task_execution_record_body_file_not_found', `正文manifest未声明文件：${filename}。`, 404, { name: filename });
+    const content = file.content.toString('utf8');
+    const responseTruncated = file.content.length > TASK_EXECUTION_RECORD_BODY_READ_LIMIT_BYTES;
+    const preview = responseTruncated ? utf8Prefix(content, TASK_EXECUTION_RECORD_BODY_READ_LIMIT_BYTES) : content;
+    return {
+      name: file.name,
+      format: file.format,
+      digest: file.digest,
+      storedSizeBytes: file.storedSizeBytes,
+      originalSizeBytes: file.originalSizeBytes,
+      storedTruncated: file.truncated,
+      content: preview,
+      responseSizeBytes: Buffer.byteLength(preview),
+      responseTruncated,
+    };
   }
 
   Object.assign(runtime, {
     taskExecutionRecordBodyFiles: BODY_FILES,
     publishTaskExecutionRecordBody,
     verifyTaskExecutionRecordBody,
+    inspectTaskExecutionRecordBody,
+    readTaskExecutionRecordBodyFile,
     cleanupTaskExecutionRecordBody,
   });
   return runtime;

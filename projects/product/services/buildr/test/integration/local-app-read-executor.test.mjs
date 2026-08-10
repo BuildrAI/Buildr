@@ -12,6 +12,7 @@ function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }) {
     worker.postMessage = (message) => {
       metrics.calls += 1;
       metrics.started.push(message.id);
+      metrics.messages?.push(message);
       metrics.active += 1;
       metrics.maxActive = Math.max(metrics.maxActive, metrics.active);
       setTimeout(() => {
@@ -79,6 +80,26 @@ test('Worker failure 只结算当前请求并恢复固定容量', async () => {
     assert.equal(recovered.taskId, 'task-recovered');
     assert.equal(metrics.calls, 2);
     assert.equal(metrics.maxActive, 1);
+  } finally {
+    await executor.close();
+  }
+});
+
+test('Execution Record读取只转发closed参数并拒绝任意path', async () => {
+  const metrics = { calls: 0, active: 0, maxActive: 0, started: [], messages: [] };
+  const executor = createBoundedLocalAppReadExecutor({ workerCount: 1, queueLimit: 1, workerFactory: fakeWorkerFactory({ metrics }) });
+  try {
+    await executor.run('execution-records', { ...input('task-a'), view: 'finish' });
+    await executor.run('execution-record-detail', { ...input('task-a'), recordId: 'task-exec-1' });
+    await executor.run('execution-record-body', { ...input('task-a'), recordId: 'task-exec-1', filename: 'stdout.txt' });
+    assert.deepEqual(metrics.messages.map(({ id: _id, ...message }) => message), [
+      { operation: 'execution-records', targetRoot: '/tmp/buildr-read-executor', taskId: 'task-a', view: 'finish' },
+      { operation: 'execution-record-detail', targetRoot: '/tmp/buildr-read-executor', taskId: 'task-a', recordId: 'task-exec-1' },
+      { operation: 'execution-record-body', targetRoot: '/tmp/buildr-read-executor', taskId: 'task-a', recordId: 'task-exec-1', filename: 'stdout.txt' },
+    ]);
+    assert.throws(() => executor.run('execution-records', { ...input('task-a'), view: 'resources' }), (error) => error.code === 'task_execution_record_view_invalid');
+    assert.throws(() => executor.run('execution-record-body', { ...input('task-a'), recordId: 'task-exec-1', filename: '../secret' }), (error) => error.code === 'task_execution_record_body_name_forbidden');
+    assert.throws(() => executor.run('execution-record-detail', { ...input('task-a'), recordId: 'task-exec-1', path: '/tmp/private' }), (error) => error.code === 'local_app_read_field_forbidden');
   } finally {
     await executor.close();
   }
