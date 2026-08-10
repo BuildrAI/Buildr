@@ -146,3 +146,35 @@ test('单表拒绝损坏phase JSON且不再暴露per-artifact metadata API', (t)
   assert.equal(report.current.length, 1);
   assert.equal('artifacts' in report, false);
 });
+
+test('Task Finish current只保存compact phase与current failure owner facts', async (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'compact-finish', title: 'Compact Finish', intent: 'Keep attempt diagnostics outside current.', projects: [], services: [], changes: [] });
+  const run = createFinishRun({ root, runId: 'compact-finish-run', identity: identity(root, 'compact-finish'), runtime });
+  const handlers = {
+    preflight: async () => ({
+      status: 'blocked',
+      checks: [{ check: 'retained-workspace', severity: 'error', code: 'task-finish.retained-workspace-dirty', localPath: '/Users/example/workspace' }],
+      operations: [{ kind: 'command', id: 'git-status', command: 'git', args: ['status'], cwd: '/Users/example/workspace', stdout: { preview: 'token=secret', bytes: 12, digest: 'sha256-output', truncated: false }, stderr: { preview: '', bytes: 0, digest: 'sha256-empty', truncated: false } }],
+      observations: [{ root: '/Users/example/workspace' }],
+      output: { raw: 'not-current-authority' },
+      failure: { operation: 'retained-workspace', failureClass: 'transient-external-condition', code: 'task-finish.retained-workspace-dirty', message: 'Workspace is dirty.', findings: [{ path: '/Users/example/workspace/private' }], diagnostic: { token: 'secret-token', root: '/Users/example/workspace' } },
+    }),
+  };
+  const result = await executeFinishRun({ root, run, handlers, runtime });
+  assert.equal(result.status, 'blocked');
+  const current = runtime.readTaskFinishRunPersistence(root, { taskId: 'compact-finish' }).run;
+  const phase = current.phases[0];
+  assert.equal('checks' in phase, false);
+  assert.equal('operations' in phase, false);
+  assert.equal('observations' in phase, false);
+  assert.equal('output' in phase, false);
+  assert.deepEqual(phase.failure.diagnostic, { digest: phase.failure.diagnostic.digest });
+  assert.equal('findings' in phase.failure, false);
+  const database = runtime.openWorkspaceStructuredStore(root, { writable: false }).database;
+  const row = database.prepare('SELECT phases_json AS phasesJson, payload_json AS payloadJson FROM task_finish_current WHERE task_id = ?').get('compact-finish');
+  database.close();
+  assert.doesNotMatch(row.phasesJson, /checks|operations|observations|stdout|stderr|secret-token|\/Users\/example/);
+  assert.doesNotMatch(row.payloadJson, /executionRecord|recordId|task-execution-record|secret-token|\/Users\/example/);
+});

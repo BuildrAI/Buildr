@@ -174,7 +174,7 @@
 
 - 定义：一次Task专业执行发生了什么的有限期记录；SQLite保存closed metadata，受限Workspace-local目录保存已脱敏正文。
 - 适用范围：v1的Verification execution与Finish diagnostics，以及固定quota、retention、resolution和cleanup状态。
-- 避免混用：不是Current/Terminal Fact、执行资源、通用event/history payload或Consumer/Adoption关系；当前仅正式Task command Verification已接producer，Finish仍待后续贡献。
+- 避免混用：不是Current/Terminal Fact、执行资源、通用event/history payload或Consumer/Adoption关系；正式Task command Verification与每次真正执行的Finish invocation均已接producer，但各自专业current与恢复资源仍由原owner管理。
 - 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
 
 ## 执行资源（Execution Resource）
@@ -194,8 +194,8 @@
 ## Task Finish
 
 - 定义：消费 current Development Handoff、执行 `preflight → prepare → verify → deliver → cleanup` 的固定五阶段交付收尾 adapter；current run、target lease 与 compact terminal Result 由 Workspace SQLite 持久化。
-- 适用范围：Delivery Carrier、目标推进、远端回读、Environment cleanup、run-owned transient cleanup 和可恢复 blocked/cleanup-pending 状态；完整诊断与 Carrier 不进入长期 Result。
-- 避免混用：不是 Task Development、Task Verification、Task Record writer 或第二套 Task complete 状态机；`task complete` 只表示所有 Finish gates 通过后的 Task Record terminal status。`.buildr/task-finish` 是已退役的旧文件协议，不属于新 runtime 的输入。
+- 适用范围：Delivery Carrier、目标推进、远端回读、Environment cleanup、可恢复 blocked/cleanup-pending 状态，以及每次真正执行的首次run/resume在专业副作用前open并retained的独立Finish diagnostics Execution Record。
+- 避免混用：不是 Task Development、Task Verification、Task Record writer 或第二套 Task complete 状态机；`task_finish_current`不保存record identity/history或完整checks/operations/output，Delivery Carrier、target、lease、resume与恢复资源也不转交Execution Record owner。`task complete`只表示所有Finish gates通过后的Task Record terminal status；`.buildr/task-finish`是已退役的旧文件协议，不属于新runtime的输入。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 ## 任务管理器（Task Manager）
 

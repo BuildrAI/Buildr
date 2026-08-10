@@ -38,7 +38,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `task finish run/inspect` | `buildr.task-finish-result/v2` |
 | `app preview start/list/stop` | `buildr.local-app-preview/v1` |
 
-Task Finish 的 v2 Result 是 SQLite terminal read model；current run、lease 和 cleanup-pending checkpoint 不通过旧 `.buildr/task-finish/runs`、`completed` 或 file lease 暴露，旧目录不被新 runtime 读取。完整命令诊断与 Carrier 只通过有界 transient locator 绑定，不能写入长期 Result。`task complete` 不是新的 JSON contract，而是 Task Record 的 terminal status。
+Task Finish 的 v2 Result 继续由SQLite current/terminal authority决定；`run` additive返回portable `executionRecord` operation summary，表达`not-opened|blocked|retained|attention`、record outcome/body大小与diagnostics transient cleanup，但不暴露SQLite、body/transient locator、Carrier路径或token。`inspect`不读取或列举records。每次真实run/resume独立保留受控diagnostics；record attention不改写已成立的delivery、cleanup、Task terminal或Finish status。Carrier、lease、resume和恢复资源仍只由Finish current管理。`task complete`不是新的JSON contract，而是Task Record terminal status。
 
 `buildr.task-environment-result/v4`统一返回`operation`、`status`、Task ID、Receipt availability/locator、`current-machine`、`observedAt`、Environment read model、ready时的`execution`binding、diagnostic、effects与next actions。read model包含resolved Plan及逐Declaration/Scope/Recipe/Step current与prepared identity、inputs/outputs/required/executed/status/diagnostic；`preparation-step-executed`effect给出本次真实执行。`execution`包含明确workdir、execution/allowed roots与绝对`cliInvocation`。read model不暴露资源cleanup handle或controller CLI私有路径。
 

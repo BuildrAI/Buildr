@@ -175,7 +175,7 @@ function currentRecord(run, { preparedCompletion = null, lease = null } = {}) {
     lease_target_identity: lease?.targetIdentity || null,
     lease_token: lease?.token || null,
     lease_expires_at: lease?.expiresAt || null,
-    phases_json: JSON.stringify(normalized.phases),
+    phases_json: JSON.stringify(normalized.phases.map(compactPhase)),
     payload_json: JSON.stringify({ kind: 'run', run: runDetail(normalized), preparedCompletion: clone(preparedCompletion) }),
     created_at: normalized.createdAt || normalized.updatedAt || timestamp(),
     updated_at: normalized.updatedAt || timestamp(),

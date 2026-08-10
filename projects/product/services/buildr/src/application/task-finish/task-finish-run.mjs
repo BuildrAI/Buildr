@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 
 import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
+import { compactTaskFinishFailure } from './execution-record.mjs';
 
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v2';
 export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v2';
@@ -114,6 +115,7 @@ export function createFinishRun({ root, identity, runId = null, clock = Date.now
     updatedAt: createdAt,
     completedAt: null,
     invocations: 0,
+    productCommandObservations: 0,
     deliveryCarrier: null,
     equivalence: null,
     delivery: null,
@@ -228,17 +230,29 @@ function resetTargetRaceCarrierPhases(run) {
   return true;
 }
 
-export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now, runtime = null }) {
+function compactStoredPhaseDiagnostics(run) {
+  for (const item of run.phases) {
+    item.checks = [];
+    item.operations = [];
+    item.observations = [];
+    item.output = null;
+    item.failure = compactTaskFinishFailure(item.failure, item.id);
+  }
+}
+
+export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now, runtime = null, observer = null }) {
   if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error('Task Finish executor requires a current run.');
   if (['failed', 'complete'].includes(run.status)) return finishResult(run, clock);
   if (['blocked', 'cleanup_pending'].includes(run.status) && (!resumeToken || resumeToken !== run.resume?.token)) {
     throw new Error('Task Finish blocked run requires its current product-generated resume token.');
   }
   resetTargetRaceCarrierPhases(run);
+  compactStoredPhaseDiagnostics(run);
   run.invocations += 1;
   run.status = 'active';
   run.primaryFailure = null;
   run.resume = null;
+  observer?.runOpened?.(clone(run));
   writeRun(root, run, clock, runtime);
 
   for (const phaseId of FINISH_PHASES) {
@@ -251,6 +265,7 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
     item.completedAt = null;
     item.failure = null;
     const started = clock();
+    observer?.phaseStarted?.({ phase: phaseId, attempt: item.attempts, at: item.startedAt });
     writeRun(root, run, clock, runtime);
     let normalized;
     try {
@@ -273,18 +288,29 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
     }
     item.status = normalized.status;
     item.completedAt = now(clock);
-    item.durationMs += Math.max(0, clock() - started);
+    const phaseDurationMs = Math.max(0, clock() - started);
+    item.durationMs += phaseDurationMs;
+    observer?.phaseFinished?.({
+      phase: phaseId,
+      attempt: item.attempts,
+      result: normalized,
+      startedAt: item.startedAt,
+      completedAt: item.completedAt,
+      durationMs: phaseDurationMs,
+    });
+    run.productCommandObservations = (run.productCommandObservations || 0)
+      + normalized.operations.filter((entry) => entry?.kind === 'command').length;
     item.inputIdentity = normalized.inputIdentity;
     item.outputIdentity = normalized.outputIdentity;
-    item.checks = clone(normalized.checks);
-    item.operations = clone(normalized.operations);
-    item.observations = clone(normalized.observations);
-    item.output = clone(normalized.output);
-    item.failure = normalized.failure;
     applyPhaseOutput(run, phaseId, normalized.output);
+    item.checks = [];
+    item.operations = [];
+    item.observations = [];
+    item.output = null;
+    item.failure = compactTaskFinishFailure(normalized.failure, phaseId);
     if (normalized.status === 'blocked') {
       run.status = phaseId === 'cleanup' ? 'cleanup_pending' : 'blocked';
-      run.primaryFailure = clone(normalized.failure);
+      run.primaryFailure = compactTaskFinishFailure(normalized.failure, phaseId);
       run.resume = {
         phase: phaseId,
         token: resumeTokenFor(run, phaseId, normalized.failure),
@@ -292,13 +318,15 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
         carrierIdentity: run.deliveryCarrier?.identity || null,
       };
       writeRun(root, run, clock, runtime);
+      observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
       return finishResult(run, clock);
     }
     if (normalized.status === 'failed') {
       run.status = 'failed';
-      run.primaryFailure = clone(normalized.failure);
+      run.primaryFailure = compactTaskFinishFailure(normalized.failure, phaseId);
       run.resume = null;
       writeRun(root, run, clock, runtime);
+      observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
       return finishResult(run, clock);
     }
     writeRun(root, run, clock, runtime);
@@ -324,11 +352,14 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
       }, 'cleanup');
       run.resume = { phase: 'cleanup', token: resumeTokenFor(run, 'cleanup', run.primaryFailure), generatedAt: now(clock), carrierIdentity: run.deliveryCarrier?.identity || null };
       writeRun(root, run, clock, runtime);
+      observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
       return finishResult(run, clock);
     }
+    observer?.finishStopped?.({ status: run.status, at: result.completedAt || run.updatedAt });
     return result;
   }
   writeRun(root, run, clock, runtime);
+  observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
   return result;
 }
 
@@ -342,15 +373,15 @@ function publicPhase(item) {
     durationMs: item.durationMs,
     inputIdentity: item.inputIdentity,
     outputIdentity: item.outputIdentity,
-    checks: item.checks,
-    operations: item.operations,
+    checks: item.checks || [],
+    operations: item.operations || [],
     failure: item.failure,
   };
 }
 
 export function finishResult(run, clock = Date.now) {
   const phaseDurationMs = run.phases.reduce((total, item) => total + (item.durationMs || 0), 0);
-  const commandObservations = run.phases.reduce((total, item) => total + (item.operations || []).filter((entry) => entry.kind === 'command').length, 0);
+  const commandObservations = run.productCommandObservations || 0;
   const formalVerificationExecutions = 0;
   const result = {
     schemaVersion: FINISH_RESULT_SCHEMA,

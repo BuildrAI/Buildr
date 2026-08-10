@@ -26,6 +26,12 @@ export function createTaskFinishSqliteRuntime(root, task) {
     'releaseTaskFinishTargetLease',
     'writeTaskFinishCompletionPersistence',
     'writeTaskFinishRunPersistence',
+    'openTaskExecutionRecord',
+    'sealTaskExecutionRecord',
+    'inspectTaskExecutionRecord',
+    'listTaskExecutionRecords',
+    'atomicWriteFile',
+    'removePath',
   ];
   return Object.fromEntries(persistenceMethods.map((name) => [name, runtime[name]]));
 }

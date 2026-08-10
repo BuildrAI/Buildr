@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { acquireFinishTargetLease, readFinishCompletion, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
+import { TASK_FINISH_RAW_COMMAND_OUTPUT } from './execution-record.mjs';
 import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-process.mjs';
 import {
   adoptAgentReviewedGitCarrier,
@@ -94,11 +95,16 @@ function boundedText(value, limit = 2000) {
 }
 
 function commandObservation(id, command, args, cwd, result, startedAt, durationMs) {
-  return {
+  const observation = {
     kind: 'command', id, command, args, cwd,
     status: result.status, signal: result.signal || null, startedAt, durationMs,
     stdout: boundedText(result.stdout), stderr: boundedText(result.stderr),
   };
+  Object.defineProperty(observation, TASK_FINISH_RAW_COMMAND_OUTPUT, {
+    value: { stdout: result.stdout, stderr: result.stderr },
+    enumerable: false,
+  });
+  return observation;
 }
 
 function runCommand(id, command, args, cwd, options = {}) {

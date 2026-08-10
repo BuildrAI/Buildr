@@ -1,9 +1,19 @@
+import crypto from 'node:crypto';
 import path from 'node:path';
 
 import { removeIsolatedGitCarrier } from './git-task-contribution.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { resolveTaskFinishTargetBranch } from './task-finish-delivery-target.mjs';
 import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolveFinishRun } from './task-finish-run.mjs';
+import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
+import {
+  TASK_FINISH_EXECUTION_RECORD_KIND,
+  TASK_FINISH_EXECUTION_RECORD_OWNER,
+  TASK_FINISH_EXECUTION_RECORD_PRODUCER,
+  createTaskFinishExecutionRecordFiles,
+  publicTaskFinishExecutionRecord,
+  taskFinishExecutionRecordOutcome,
+} from './execution-record.mjs';
 
 function inputError(code, message, action, details = null) {
   const error = new Error(message);
@@ -29,6 +39,61 @@ function assertArgs(action, args) {
   }
 }
 
+function finishInvocationId(task) {
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+  return `${task}-${stamp}-${crypto.randomBytes(6).toString('hex')}`;
+}
+
+function withExecutionRecord(result, executionRecord) {
+  return { ...result, executionRecord };
+}
+
+function executionGateResult(identity, executionRecord, diagnostic) {
+  return {
+    schemaVersion: 'buildr.task-finish-result/v2',
+    runId: null,
+    status: 'blocked',
+    identity: { ...identity, environmentRoot: null, workspaceRoot: null },
+    handoff: { identity: identity.handoffIdentity },
+    candidate: { identity: identity.candidateIdentity, generation: identity.candidateGeneration, contentTargetIdentity: identity.contentTargetIdentity },
+    carrier: null,
+    phases: [],
+    primaryFailure: {
+      phase: null,
+      operation: 'execution-record-open',
+      check: null,
+      failureClass: 'transient-external-condition',
+      code: diagnostic.code || 'task-finish.execution-record-open-failed',
+      status: 'blocked',
+      exitCode: null,
+      message: diagnostic.message,
+      findings: [],
+      diagnostic: null,
+    },
+    resume: null,
+    nextWorkflow: null,
+    nextAction: 'resolve-or-cleanup-task-finish-execution-record-capacity-and-retry',
+    reuseMode: null,
+    equivalence: null,
+    delivery: null,
+    completion: null,
+    metrics: {
+      canonicalCliInvocations: 0,
+      agentProviderCompletions: 0,
+      manualRecoveryManifests: 0,
+      formalVerificationExecutions: 0,
+      productCommandObservations: 0,
+      productExecutionMs: 0,
+      wallClockMs: 0,
+      coverage: 'not-started',
+    },
+    createdAt: null,
+    updatedAt: null,
+    completedAt: null,
+    executionRecord,
+  };
+}
+
 export function registerTaskFinishApplication(runtime) {
   const optionValue = (...args) => runtime.optionValue(...args);
   const withResolvedTarget = (...args) => runtime.withResolvedTarget(...args);
@@ -39,9 +104,7 @@ export function registerTaskFinishApplication(runtime) {
     const withReadCompatibility = runtime.withWorkspaceStructuredStoreReadCompatibility
       ? (operation) => runtime.withWorkspaceStructuredStoreReadCompatibility(root, operation)
       : (operation) => operation();
-    let prepared;
-    try {
-      prepared = withReadCompatibility(() => {
+    const prepared = withReadCompatibility(() => {
         const runId = optionValue(command.args, '--run', null);
         let finishRun = null;
         if (runId) {
@@ -68,18 +131,7 @@ export function registerTaskFinishApplication(runtime) {
             || currentRun.identity?.candidateIdentity !== handoff.candidate.identity
             || currentRun.identity?.candidateGeneration !== handoff.candidate.generation
             || currentRun.identity?.contentTargetIdentity !== handoff.candidate.contentTargetIdentity);
-          if (currentRun?.status === 'failed' && handoffChanged) {
-            const oldWorkspaceRoot = currentRun.identity?.workspaceRoot || root;
-            if (currentRun.deliveryCarrier?.root) {
-              removeIsolatedGitCarrier({
-                repositoryRoot: oldWorkspaceRoot,
-                workspaceRoot: oldWorkspaceRoot,
-                runId: currentRun.runId,
-                expectedRoot: currentRun.deliveryCarrier.root,
-              });
-            }
-            runtime.discardFailedTaskFinishRunPersistence?.(root, { taskId: task, runId: currentRun.runId });
-          }
+          const staleFailedRun = currentRun?.status === 'failed' && handoffChanged ? currentRun : null;
           const repository = context.repositories?.find((entry) => entry.selector === 'workspace') || context.repositories?.[0] || {};
           const workspaceNodeIdentity = runtime.workspaceNodeExecution(context.validationRoot).identity?.digest;
           if (!workspaceNodeIdentity) throw inputError('task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.', 'run');
@@ -106,12 +158,7 @@ export function registerTaskFinishApplication(runtime) {
           } catch (error) {
             throw inputError(error.code || 'task_finish.remote_unavailable', error.message, 'run', error.details);
           }
-          finishRun = resolveFinishRun({
-            root,
-            runId,
-            resumeToken,
-            runtime,
-            identity: {
+          const identity = {
               task,
               handoffIdentity: handoff.identity,
               candidateIdentity: handoff.candidate.identity,
@@ -123,19 +170,106 @@ export function registerTaskFinishApplication(runtime) {
               environmentRoot: context.validationRoot,
               workspaceRoot: context.workspaceRoot,
               workspaceNodeIdentity,
-            },
-          });
+            };
+          if (staleFailedRun) return { identity, staleFailedRun, finishRun: null };
+          finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity });
         } else if (path.resolve(finishRun.identity.workspaceRoot) !== path.resolve(root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
-        return { finishRun };
+        if (finishRun && ['blocked', 'cleanup_pending'].includes(finishRun.status) && (!resumeToken || finishRun.resume?.token !== resumeToken)) {
+          throw inputError('task_finish.resume_token_mismatch', 'Task Finish blocked run requires its current product-generated resume token.', 'run');
+        }
+        return { finishRun, identity: finishRun?.identity || null, staleFailedRun: null };
+      });
+    const notOpened = publicTaskFinishExecutionRecord('not-opened');
+    if (prepared.completed) return print(withExecutionRecord(prepared.completed, notOpened), command.args);
+    let finishRun = prepared.finishRun;
+    if (finishRun && ['failed', 'complete'].includes(finishRun.status)) return print(withExecutionRecord(inspectFinishRun({ root, runId: finishRun.runId, runtime }), notOpened), command.args);
+    const identity = prepared.identity || finishRun?.identity;
+    const invocationId = finishInvocationId(identity.task);
+    let openedExecutionRecord;
+    try {
+      openedExecutionRecord = runtime.openTaskExecutionRecord(root, identity.task, {
+        owner: TASK_FINISH_EXECUTION_RECORD_OWNER,
+        kind: TASK_FINISH_EXECUTION_RECORD_KIND,
+        runIdentity: invocationId,
+        targetIdentity: identity.contentTargetIdentity,
+        producer: TASK_FINISH_EXECUTION_RECORD_PRODUCER,
       });
     } catch (error) {
-      throw error;
+      const executionRecord = publicTaskFinishExecutionRecord('blocked', {
+        outcome: 'blocked',
+        diagnostic: error,
+        nextActions: error.nextAction ? [error.nextAction] : ['处置或cleanup eligible execution records后重试Task Finish。'],
+      });
+      return print(executionGateResult(identity, executionRecord, error), command.args);
     }
-    if (prepared.completed) return print(prepared.completed, command.args);
-    const finishRun = prepared.finishRun;
+    let evidence;
+    try {
+      evidence = createTaskFinishDiagnosticsEvidence(root, invocationId, { writeFile: runtime.atomicWriteFile });
+    } catch (error) {
+      const executionRecord = publicTaskFinishExecutionRecord('attention', {
+        record: openedExecutionRecord.record,
+        outcome: null,
+        lifecycleStatus: 'open',
+        diagnostic: error,
+        nextActions: ['保留open record；修复diagnostics transient writer后由owner recovery处理。'],
+      });
+      return print(executionGateResult(identity, executionRecord, error), command.args);
+    }
+    if (prepared.staleFailedRun) {
+      const oldRun = prepared.staleFailedRun;
+      const oldWorkspaceRoot = oldRun.identity?.workspaceRoot || root;
+      if (oldRun.deliveryCarrier?.root) {
+        removeIsolatedGitCarrier({
+          repositoryRoot: oldWorkspaceRoot,
+          workspaceRoot: oldWorkspaceRoot,
+          runId: oldRun.runId,
+          expectedRoot: oldRun.deliveryCarrier.root,
+        });
+      }
+      runtime.discardFailedTaskFinishRunPersistence?.(root, { taskId: identity.task, runId: oldRun.runId });
+      finishRun = resolveFinishRun({ root, resumeToken, runtime, identity });
+    }
     const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
     const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot });
-    return print(await executeFinishRun({ root, run: finishRun, handlers, resumeToken, runtime }), command.args);
+    const result = await executeFinishRun({ root, run: finishRun, handlers, resumeToken, runtime, observer: evidence });
+    const snapshot = evidence.snapshot();
+    const outcome = taskFinishExecutionRecordOutcome(result);
+    let executionRecord;
+    try {
+      const sealed = runtime.sealTaskExecutionRecord(root, openedExecutionRecord.record.recordId, {
+        outcome,
+        files: createTaskFinishExecutionRecordFiles({
+          invocationId,
+          run: { ...finishRun, status: result.status, deliveryCarrier: result.carrier, delivery: result.delivery, completion: result.completion, primaryFailure: result.primaryFailure },
+          invocationOrdinal: snapshot.invocationOrdinal,
+          outcome,
+          startedAt: snapshot.startedAt,
+          finishedAt: snapshot.finishedAt,
+          durationMs: Math.max(0, Date.parse(snapshot.finishedAt) - Date.parse(snapshot.startedAt)),
+          timeline: snapshot.timeline,
+          phaseResults: snapshot.phaseResults,
+          stdout: snapshot.stdout,
+          stderr: snapshot.stderr,
+          failure: snapshot.failure,
+        }),
+      });
+      const cleanup = cleanupTaskFinishDiagnosticsEvidence(evidence, { removePath: runtime.removePath });
+      executionRecord = publicTaskFinishExecutionRecord(cleanup.ok ? 'retained' : 'attention', {
+        record: sealed.record,
+        transientCleanup: cleanup,
+        diagnostic: cleanup.ok ? null : cleanup,
+        nextActions: cleanup.ok ? [] : ['record已retained；检查diagnostics cleanup diagnostic并重试精确cleanup。'],
+      });
+    } catch (error) {
+      executionRecord = publicTaskFinishExecutionRecord('attention', {
+        recordId: openedExecutionRecord.record.recordId,
+        outcome,
+        lifecycleStatus: 'open',
+        diagnostic: error,
+        nextActions: error.nextAction ? [error.nextAction] : ['保留open record与diagnostics transient，由Task Finish record owner恢复seal。'],
+      });
+    }
+    return print(withExecutionRecord(result, executionRecord), command.args);
   }
 
   function inspect(command) {
