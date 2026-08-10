@@ -69,10 +69,17 @@ capabilityContracts:
     path: package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md
     target: skills/contracts/buildr/git-worktree-provider/v1.md
   - id: buildr.task-record
-    version: 1
-    description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
-    path: package/targets/workspace/skills/contracts/buildr/task-record/v1.md
-    target: skills/contracts/buildr/task-record/v1.md
+    version: 2
+    description: 管理 canonical Workspace 中待办与正式 Task 的最小顶层记录及复盘来源。
+    path: package/targets/workspace/skills/contracts/buildr/task-record/v2.md
+    target: skills/contracts/buildr/task-record/v2.md
+    replaces:
+      - id: buildr.task-record
+        version: 1
+        target: skills/contracts/buildr/task-record/v1.md
+        integrity: sha256-a6c1c645f9ad03345a1e7c3ec104d215e0281a6ac6452afa90cdbc2b0923c30d
+        provider: task-manager
+        description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
   - id: buildr.task-review
     version: 1
     description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
@@ -108,11 +115,17 @@ capabilityContracts:
     path: package/targets/workspace/skills/contracts/buildr/task-finish/v1.md
     target: skills/contracts/buildr/task-finish/v1.md
   - id: buildr.task-retrospective
-    version: 1
-    description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
-    path: package/targets/workspace/skills/contracts/buildr/task-retrospective/v1.md
-    target: skills/contracts/buildr/task-retrospective/v1.md
+    version: 2
+    description: 按需复盘terminal Task，并把有效改进通过Task来源关系落地。
+    path: package/targets/workspace/skills/contracts/buildr/task-retrospective/v2.md
+    target: skills/contracts/buildr/task-retrospective/v2.md
     replaces:
+      - id: buildr.task-retrospective
+        version: 1
+        target: skills/contracts/buildr/task-retrospective/v1.md
+        integrity: sha256-db41f691851dfe8e7d1f9fb2f858d605eea27e3991e8d95faef298a504f88499
+        provider: task-retrospective
+        description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
       - id: buildr.task-asset-review
         version: 1
         target: skills/contracts/buildr/task-asset-review/v1.md
@@ -159,7 +172,7 @@ initialSkillBindings:
     version: 1
     provider: task-worktree
   - capability: buildr.task-record
-    version: 1
+    version: 2
     provider: task-manager
   - capability: buildr.task-review
     version: 1
@@ -174,7 +187,7 @@ initialSkillBindings:
     version: 1
     provider: task-finish
   - capability: buildr.task-retrospective
-    version: 1
+    version: 2
     provider: task-retrospective
   - capability: buildr.terminology-governance
     version: 1
@@ -200,7 +213,7 @@ builtins:
       required: false
       requires:
         - capability: buildr.task-record
-          version: 1
+          version: 2
           mode: optional
         - capability: buildr.git-operations
           version: 1
@@ -230,11 +243,11 @@ builtins:
     - id: task-manager
       path: package/targets/workspace/skills/buildr/task-manager
       target: skills/buildr/task-manager
-      description: 用户明确要求创建、查看、更新、设置 Parent、完成或放弃正式 Task Record，或按 Task ID 恢复正式任务顶层事实时使用；不用于普通任务分流、只读探索、Task Environment 或任何专业阶段动作。
+      description: 用户明确要求创建或查看待办/正式 Task Record、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；不用于普通任务分流、Task Environment 或专业阶段动作。
       required: false
       provides:
         - capability: buildr.task-record
-          version: 1
+          version: 2
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-review
       path: package/targets/workspace/skills/buildr/task-review
@@ -254,11 +267,15 @@ builtins:
     - id: task-retrospective
       path: package/targets/workspace/skills/buildr/task-retrospective
       target: skills/buildr/task-retrospective
-      description: 用户明确要求复盘已完成或已放弃的正式 Task，重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率，并把一份当前报告写入 SQLite 时使用；不用于过程 observation、任务审查、门禁或资产自动写回。
+      description: 用户明确要求复盘已完成或已放弃的正式 Task，或要查看、处理、标记无需处理、重新打开已有复盘时使用；复盘重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。不用于过程 observation、任务审查、门禁或资产自动写回。
       required: false
       provides:
         - capability: buildr.task-retrospective
-          version: 1
+          version: 2
+      requires:
+        - capability: buildr.task-record
+          version: 2
+          mode: required
       replaces:
         id: task-asset-review
         target: skills/buildr/task-asset-review
@@ -306,7 +323,7 @@ builtins:
           version: 2
       requires:
         - capability: buildr.task-record
-          version: 1
+          version: 2
           mode: required
         - capability: buildr.task-environment
           version: 1
@@ -460,12 +477,12 @@ workspaceFiles:
   - package/targets/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-record/v1.md => skills/contracts/buildr/task-record/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-record/v2.md => skills/contracts/buildr/task-record/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-review/v1.md => skills/contracts/buildr/task-review/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-verification/v3.md => skills/contracts/buildr/task-verification/v3.md copy
   - package/targets/workspace/skills/contracts/buildr/task-development/v2.md => skills/contracts/buildr/task-development/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-retrospective/v1.md => skills/contracts/buildr/task-retrospective/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-retrospective/v2.md => skills/contracts/buildr/task-retrospective/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy

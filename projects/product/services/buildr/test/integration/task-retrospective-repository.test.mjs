@@ -18,8 +18,8 @@ function fixture(t) {
   fs.writeFileSync(legacy, 'legacy observation bytes\n');
   const runtime = createRuntime();
   runtime.createTaskRecordPersistence(root, {
-    schemaVersion: 'buildr.task-record/v1', taskId: 'demo-task', title: 'Demo', intent: 'Review efficiency',
-    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], status: 'active', result: null,
+    schemaVersion: 'buildr.task-record/v2', taskId: 'demo-task', title: 'Demo', intent: 'Review efficiency',
+    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null,
     createdAt: '2026-08-05T00:00:00.000Z', updatedAt: '2026-08-05T00:00:00.000Z',
   });
   return { root: fs.realpathSync(root), runtime, legacy };

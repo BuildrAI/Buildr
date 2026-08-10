@@ -51,13 +51,13 @@ test('Task Review 与 Task Retrospective authority 独立且都不成为 Finish 
   const development = manifest.builtins.skills.find((item) => item.id === 'task-development');
   const finish = manifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.deepEqual(review.provides, [{ capability: 'buildr.task-review', version: 1 }]);
-  assert.deepEqual(retrospective.provides, [{ capability: 'buildr.task-retrospective', version: 1 }]);
+  assert.deepEqual(retrospective.provides, [{ capability: 'buildr.task-retrospective', version: 2 }]);
   assert.equal(development.requires.some((item) => item.capability === 'buildr.task-review' && item.version === 1 && item.mode === 'required'), true);
   assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-review'), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.match(read('package/targets/workspace/skills/buildr/task-review/SKILL.md'), /Task Retrospective/);
-  assert.match(read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md'), /buildr\.task-retrospective\/v1/);
+  assert.match(read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md'), /buildr\.task-retrospective\/v2/);
 });
 
 test('Task Review Application 是唯一 repository writer caller', () => {

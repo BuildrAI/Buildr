@@ -14,7 +14,7 @@ const environment = read('package/targets/workspace/skills/buildr/task-environme
 
 test('task-triage 在新正式 Task create 前按统一 dev 顺序消费 Git Operations', () => {
   for (const required of [
-    '只有即将调用 Task Record `create` 时执行本门禁',
+    '只有即将创建 active Task 或把 todo 激活为 active 时执行本门禁',
     '当前符号分支恰为 `dev`',
     'upstream 恰为 `origin/dev`',
     '先为全部 repositories 逐一选择独立 `fetch` operation',
@@ -23,12 +23,13 @@ test('task-triage 在新正式 Task create 前按统一 dev 顺序消费 Git Ope
     '`rebase --abort`',
     '已经在其他 repository 成功的 fetch/rebase 不反向回滚',
     'Workspace transition check',
-    '才调用 selected `buildr.task-record/v1` provider 的 `create`',
+    '才调用 selected `buildr.task-record/v2` provider 的 active `create` 或 `activate`',
   ]) assert.ok(triage.includes(required), required);
 
   assert.match(triage, /不 checkout、不 stash\/autostash、不猜其他 branch\/remote/);
-  assert.match(triage, /Task Record Application、Local App 与 Task Environment 不获得任何 Git mutation/);
+  assert.match(triage, /Task Record Application、Local App 与 Task Environment 不获得任何Git mutation/);
   assert.match(triage, /Git 基线：converged \/ none \/ blocked/);
+  assert.match(triage, /todo create.*不执行/);
 });
 
 test('Git Operations 明确提供独立 fetch、selected rebase 与可见 abort recovery', () => {

@@ -26,8 +26,8 @@ function fixture(t) {
     '',
   ].join('\n'));
   createRuntime().createTaskRecordPersistence(root, {
-    schemaVersion: 'buildr.task-record/v1', taskId: 'demo-task', title: 'Demo', intent: 'Verify Environment repository',
-    scope: { projects: [], services: [] }, changes: [], status: 'active', result: null,
+    schemaVersion: 'buildr.task-record/v2', taskId: 'demo-task', title: 'Demo', intent: 'Verify Environment repository',
+    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null,
     createdAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
   });
   return fs.realpathSync(root);

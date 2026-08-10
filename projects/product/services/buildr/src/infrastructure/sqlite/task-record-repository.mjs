@@ -22,12 +22,12 @@ function asTaskRecordError(error, operation) {
 }
 
 function resultValue(row) {
-  if (row.status === 'active') return null;
+  if (['todo', 'active'].includes(row.status)) return null;
   if (row.status === 'completed') return { summary: row.result_summary, noChange: row.result_no_change === 1 };
   return { summary: row.result_summary };
 }
 
-function recordValue(row, { projects = [], services = [], changes = [], childTaskIds = [] } = {}) {
+function recordValue(row, { projects = [], services = [], changes = [], childTaskIds = [], retrospectiveSourceTaskIds = [] } = {}) {
   return normalizeTaskRecord({
     schemaVersion: row.schema_version,
     taskId: row.task_id,
@@ -37,6 +37,7 @@ function recordValue(row, { projects = [], services = [], changes = [], childTas
     changes,
     parentTaskId: row.parent_task_id ?? null,
     childTaskIds,
+    retrospectiveSourceTaskIds,
     status: row.status,
     result: resultValue(row),
     createdAt: row.created_at,
@@ -51,7 +52,8 @@ function readRecord(database, taskId) {
   const services = database.prepare('SELECT project, service FROM task_services WHERE task_id = ? ORDER BY project, service').all(taskId);
   const changes = database.prepare('SELECT project, change_name AS change FROM task_changes WHERE task_id = ? ORDER BY project, change_name').all(taskId);
   const childTaskIds = database.prepare('SELECT task_id FROM tasks WHERE parent_task_id = ? ORDER BY task_id').all(taskId).map((item) => item.task_id);
-  return recordValue(row, { projects, services, changes, childTaskIds });
+  const retrospectiveSourceTaskIds = database.prepare('SELECT source_task_id FROM task_retrospective_sources WHERE target_task_id = ? ORDER BY source_task_id').all(taskId).map((item) => item.source_task_id);
+  return recordValue(row, { projects, services, changes, childTaskIds, retrospectiveSourceTaskIds });
 }
 
 function persistence(root, record) {
@@ -84,7 +86,8 @@ function taskViewQuery(filters = {}, taskId = null) {
     conditions.push('EXISTS (SELECT 1 FROM task_services service_filter WHERE service_filter.task_id = t.task_id AND service_filter.project = ? AND service_filter.service = ?)');
     parameters.push(filters.service.project, filters.service.service);
   }
-  if (filters.status && filters.status !== 'all') { conditions.push('t.status = ?'); parameters.push(filters.status); }
+  if (filters.status === 'open') conditions.push("t.status IN ('todo', 'active')");
+  else if (filters.status && filters.status !== 'all') { conditions.push('t.status = ?'); parameters.push(filters.status); }
   if (filters.hasChildren === 'yes') conditions.push('EXISTS (SELECT 1 FROM tasks child_filter WHERE child_filter.parent_task_id = t.task_id)');
   if (filters.hasChildren === 'no') conditions.push('NOT EXISTS (SELECT 1 FROM tasks child_filter WHERE child_filter.parent_task_id = t.task_id)');
   if (filters.hasRetrospective === 'yes') conditions.push('EXISTS (SELECT 1 FROM task_retrospective_current retrospective_filter WHERE retrospective_filter.task_id = t.task_id)');
@@ -112,6 +115,12 @@ function taskViews(database, rows, root) {
   const services = group(database.prepare(`SELECT task_id, project, service FROM task_services WHERE task_id IN (${slots}) ORDER BY task_id, project, service`).all(...taskIds), (row) => row.task_id, ({ project, service }) => ({ project, service }));
   const changes = group(database.prepare(`SELECT task_id, project, change_name AS change FROM task_changes WHERE task_id IN (${slots}) ORDER BY task_id, project, change_name`).all(...taskIds), (row) => row.task_id, ({ project, change }) => ({ project, change }));
   const children = group(database.prepare(`SELECT task_id, parent_task_id, title, status FROM tasks WHERE parent_task_id IN (${slots}) ORDER BY parent_task_id, task_id`).all(...taskIds), (row) => row.parent_task_id);
+  const sources = group(database.prepare(`SELECT relation.target_task_id, source.task_id, source.title, source.status
+    FROM task_retrospective_sources relation JOIN tasks source ON source.task_id = relation.source_task_id
+    WHERE relation.target_task_id IN (${slots}) ORDER BY relation.target_task_id, source.task_id`).all(...taskIds), (row) => row.target_task_id);
+  const followups = group(database.prepare(`SELECT relation.source_task_id, target.task_id, target.title, target.status
+    FROM task_retrospective_sources relation JOIN tasks target ON target.task_id = relation.target_task_id
+    WHERE relation.source_task_id IN (${slots}) ORDER BY relation.source_task_id, target.task_id`).all(...taskIds), (row) => row.source_task_id);
   return rows.map((row) => {
     const childRows = children.get(row.task_id) || [];
     const record = recordValue(row, {
@@ -119,6 +128,7 @@ function taskViews(database, rows, root) {
       services: services.get(row.task_id) || [],
       changes: changes.get(row.task_id) || [],
       childTaskIds: childRows.map((child) => child.task_id),
+      retrospectiveSourceTaskIds: (sources.get(row.task_id) || []).map((source) => source.task_id),
     });
     return {
       ...persistence(root, record),
@@ -126,6 +136,10 @@ function taskViews(database, rows, root) {
       taskRelations: {
         parent: row.parent_task_id ? { taskId: row.parent_task_id, title: row.parent_title, status: row.parent_status } : null,
         children: childRows.map((child) => ({ taskId: child.task_id, title: child.title, status: child.status })),
+      },
+      retrospectiveRelations: {
+        sources: (sources.get(row.task_id) || []).map(({ task_id, title, status }) => ({ taskId: task_id, title, status })),
+        followups: (followups.get(row.task_id) || []).map(({ task_id, title, status }) => ({ taskId: task_id, title, status })),
       },
     };
   });
@@ -157,13 +171,40 @@ function assertParentRelation(database, taskId, parentTaskId) {
   }
 }
 
-function insertRelations(database, record) {
+function insertRelations(database, record, { includeRetrospectiveSources = true } = {}) {
   const projectStatement = database.prepare('INSERT INTO task_projects(task_id, project) VALUES (?, ?)');
   const serviceStatement = database.prepare('INSERT INTO task_services(task_id, project, service) VALUES (?, ?, ?)');
   const changeStatement = database.prepare('INSERT INTO task_changes(task_id, project, change_name) VALUES (?, ?, ?)');
+  const retrospectiveSourceStatement = database.prepare('INSERT INTO task_retrospective_sources(target_task_id, source_task_id, created_at) VALUES (?, ?, ?)');
   for (const project of record.scope.projects) projectStatement.run(record.taskId, project);
   for (const service of record.scope.services) serviceStatement.run(record.taskId, service.project, service.service);
   for (const change of record.changes) changeStatement.run(record.taskId, change.project, change.change);
+  if (includeRetrospectiveSources) {
+    for (const sourceTaskId of record.retrospectiveSourceTaskIds) retrospectiveSourceStatement.run(record.taskId, sourceTaskId, record.updatedAt);
+  }
+}
+
+function assertRetrospectiveSources(database, taskId, sourceTaskIds) {
+  const readSource = database.prepare(`SELECT task.task_id, task.status,
+    EXISTS (SELECT 1 FROM task_retrospective_current retrospective WHERE retrospective.task_id = task.task_id) AS has_retrospective
+    FROM tasks task WHERE task.task_id = ?`);
+  for (const sourceTaskId of sourceTaskIds) {
+    if (sourceTaskId === taskId) throw taskRecordError('task_record_retrospective_source_self_reference', 'Task 不能把自己设为复盘来源。', 409, { taskId });
+    const source = readSource.get(sourceTaskId);
+    if (!source) throw taskRecordError('task_record_retrospective_source_not_found', `复盘来源 Task 不存在：${sourceTaskId}。`, 409, { taskId, sourceTaskId });
+    if (!['completed', 'abandoned'].includes(source.status)) throw taskRecordError('task_record_retrospective_source_not_terminal', `复盘来源 Task ${sourceTaskId} 尚未结束。`, 409, { taskId, sourceTaskId, status: source.status });
+    if (source.has_retrospective !== 1) throw taskRecordError('task_record_retrospective_source_missing', `Task ${sourceTaskId} 尚无 current 复盘。`, 409, { taskId, sourceTaskId });
+  }
+}
+
+function replaceRetrospectiveSources(database, record) {
+  const desired = new Set(record.retrospectiveSourceTaskIds);
+  const current = database.prepare('SELECT source_task_id FROM task_retrospective_sources WHERE target_task_id = ?').all(record.taskId).map((row) => row.source_task_id);
+  const remove = database.prepare('DELETE FROM task_retrospective_sources WHERE target_task_id = ? AND source_task_id = ?');
+  const insert = database.prepare('INSERT INTO task_retrospective_sources(target_task_id, source_task_id, created_at) VALUES (?, ?, ?)');
+  for (const sourceTaskId of current) if (!desired.has(sourceTaskId)) remove.run(record.taskId, sourceTaskId);
+  const currentSet = new Set(current);
+  for (const sourceTaskId of desired) if (!currentSet.has(sourceTaskId)) insert.run(record.taskId, sourceTaskId, record.updatedAt);
 }
 
 function replaceRecord(database, record) {
@@ -172,7 +213,8 @@ function replaceRecord(database, record) {
     record.status === 'completed' ? Number(record.result.noChange) : null, record.createdAt, record.updatedAt, record.parentTaskId, record.taskId,
   );
   for (const table of ['task_projects', 'task_services', 'task_changes']) database.prepare(`DELETE FROM ${table} WHERE task_id = ?`).run(record.taskId);
-  insertRelations(database, record);
+  insertRelations(database, record, { includeRetrospectiveSources: false });
+  replaceRetrospectiveSources(database, record);
 }
 
 function withTransaction(database, callback) {
@@ -245,7 +287,7 @@ export function registerTaskRecordRepository(runtime) {
 
   function listTaskRecordPersistence(targetRoot) {
     const query = queryTaskRecordViewPersistence(targetRoot);
-    return { root: query.root, records: query.views.map(({ childTaskCount, taskRelations, ...record }) => record), diagnostics: [] };
+    return { root: query.root, records: query.views.map(({ childTaskCount, taskRelations, retrospectiveRelations, ...record }) => record), diagnostics: [] };
   }
 
   function queryTaskRecordViewPersistence(targetRoot, filters = {}) {
@@ -294,6 +336,7 @@ export function registerTaskRecordRepository(runtime) {
       return withTransaction(opened.database, () => {
         if (readRecord(opened.database, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId }, `运行 buildr task inspect ${record.taskId} 查看现有记录。`);
         assertParentRelation(opened.database, record.taskId, record.parentTaskId);
+        assertRetrospectiveSources(opened.database, record.taskId, record.retrospectiveSourceTaskIds);
         insertRecord(opened.database, record);
         return persistence(root, readRecord(opened.database, record.taskId));
       });
@@ -318,6 +361,7 @@ export function registerTaskRecordRepository(runtime) {
         const next = normalizeTaskRecord(nextValue, { expectedTaskId: taskId });
         if (JSON.stringify(next.childTaskIds) !== JSON.stringify(currentRecord.childTaskIds)) throw taskRecordError('task_record_children_read_only', 'childTaskIds 是由 Child Task 关系派生的只读投影。', 409, { taskId });
         if (next.parentTaskId !== currentRecord.parentTaskId) assertParentRelation(opened.database, taskId, next.parentTaskId);
+        assertRetrospectiveSources(opened.database, taskId, next.retrospectiveSourceTaskIds);
         replaceRecord(opened.database, next);
         return persistence(root, readRecord(opened.database, taskId));
       });

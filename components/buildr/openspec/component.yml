@@ -1,7 +1,7 @@
 schemaVersion: buildr.component/v1
 id: openspec
 kind: integration
-version: "1.6.0+buildr.5"
+version: "1.6.0+buildr.6"
 source: buildr
 upstream:
   name: "@fission-ai/openspec"
@@ -20,7 +20,7 @@ contributions:
       mode: optional
     - skill: openspec-propose
       capability: buildr.task-record
-      version: 1
+      version: 2
       mode: required
     - skill: openspec-propose
       capability: buildr.task-environment
@@ -48,7 +48,7 @@ contributions:
       mode: optional
     - skill: openspec-apply-change
       capability: buildr.task-record
-      version: 1
+      version: 2
       mode: required
     - skill: openspec-apply-change
       capability: buildr.task-environment

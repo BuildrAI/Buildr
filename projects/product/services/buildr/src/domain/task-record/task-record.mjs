@@ -1,5 +1,5 @@
-export const TASK_RECORD_SCHEMA = 'buildr.task-record/v1';
-export const TASK_RECORD_STATUSES = Object.freeze(['active', 'completed', 'abandoned']);
+export const TASK_RECORD_SCHEMA = 'buildr.task-record/v2';
+export const TASK_RECORD_STATUSES = Object.freeze(['todo', 'active', 'completed', 'abandoned']);
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const SCOPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -105,8 +105,8 @@ function taskIds(value, field) {
 }
 
 function normalizeResult(status, value) {
-  if (status === 'active') {
-    if (value !== null) throw taskRecordError('task_record_result_invalid', 'active Task 的 result 必须为 null。', 400, { field: 'result' });
+  if (['todo', 'active'].includes(status)) {
+    if (value !== null) throw taskRecordError('task_record_result_invalid', `${status} Task 的 result 必须为 null。`, 400, { field: 'result' });
     return null;
   }
   const result = object(value, 'result');
@@ -121,7 +121,7 @@ function normalizeResult(status, value) {
 
 export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
   const record = object(value, 'Task Record');
-  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'status', 'result', 'createdAt', 'updatedAt']), '');
+  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'retrospectiveSourceTaskIds', 'status', 'result', 'createdAt', 'updatedAt']), '');
   if (record.schemaVersion !== TASK_RECORD_SCHEMA) {
     throw taskRecordError('task_record_schema_unsupported', `Task Record schemaVersion 必须是 ${TASK_RECORD_SCHEMA}。`, 409, { field: 'schemaVersion', actual: record.schemaVersion });
   }
@@ -142,6 +142,14 @@ export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
   if (Date.parse(updatedAt) < Date.parse(createdAt)) {
     throw taskRecordError('task_record_timestamp_invalid', 'updatedAt 不能早于 createdAt。', 400, { field: 'updatedAt' });
   }
+  const changes = qualifiedIdentities(record.changes, 'changes', 'change');
+  if (record.status === 'todo' && changes.length) {
+    throw taskRecordError('task_record_todo_change_forbidden', 'todo Task 不能关联 OpenSpec Change；请先激活 Task。', 409, { field: 'changes' });
+  }
+  const retrospectiveSourceTaskIds = taskIds(record.retrospectiveSourceTaskIds, 'retrospectiveSourceTaskIds');
+  if (retrospectiveSourceTaskIds.includes(taskId)) {
+    throw taskRecordError('task_record_retrospective_source_self_reference', 'Task 不能把自己设为复盘来源。', 409, { taskId });
+  }
   return {
     schemaVersion: TASK_RECORD_SCHEMA,
     taskId,
@@ -151,9 +159,10 @@ export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
       projects: stringIdentities(scope.projects, 'scope.projects'),
       services: qualifiedIdentities(scope.services, 'scope.services', 'service'),
     },
-    changes: qualifiedIdentities(record.changes, 'changes', 'change'),
+    changes,
     parentTaskId: optionalTaskId(record.parentTaskId, 'parentTaskId'),
     childTaskIds: taskIds(record.childTaskIds, 'childTaskIds'),
+    retrospectiveSourceTaskIds,
     status: record.status,
     result: normalizeResult(record.status, record.result),
     createdAt,

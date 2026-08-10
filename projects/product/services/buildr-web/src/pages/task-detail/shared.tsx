@@ -67,6 +67,7 @@ export type TaskRecord = {
     services: Array<{ project: string; service: string }>;
   };
   changes: Array<{ project: string; change: string }>;
+  retrospectiveSourceTaskIds: string[];
   result: { summary: string; noChange?: boolean } | null;
 };
 
@@ -77,6 +78,10 @@ export type TaskDetailData = {
   taskRelations: {
     parent: TaskRelationSummary | null;
     children: TaskRelationSummary[];
+  };
+  retrospectiveRelations: {
+    sources: TaskRelationSummary[];
+    followups: TaskRelationSummary[];
   };
 };
 

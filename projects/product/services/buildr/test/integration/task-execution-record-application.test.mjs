@@ -20,8 +20,8 @@ const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 
 function taskRecord(taskId) {
   return {
-    schemaVersion: 'buildr.task-record/v1', taskId, title: taskId, intent: 'Exercise execution record base',
-    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], status: 'active', result: null,
+    schemaVersion: 'buildr.task-record/v2', taskId, title: taskId, intent: 'Exercise execution record base',
+    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null,
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   };
 }

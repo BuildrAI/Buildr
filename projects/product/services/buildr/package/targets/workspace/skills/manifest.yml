@@ -14,9 +14,9 @@ contracts:
     path: contracts/buildr/git-worktree-provider/v1.md
     description: 管理 Task 的 Git worktree 并返回窄 Git provider evidence。
   - id: buildr.task-record
-    version: 1
-    path: contracts/buildr/task-record/v1.md
-    description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
+    version: 2
+    path: contracts/buildr/task-record/v2.md
+    description: 管理 canonical Workspace 中待办与正式 Task 的最小顶层记录及复盘来源。
   - id: buildr.task-review
     version: 1
     path: contracts/buildr/task-review/v1.md
@@ -34,9 +34,9 @@ contracts:
     path: contracts/buildr/task-finish/v1.md
     description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
   - id: buildr.task-retrospective
-    version: 1
-    path: contracts/buildr/task-retrospective/v1.md
-    description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
+    version: 2
+    path: contracts/buildr/task-retrospective/v2.md
+    description: 按需复盘terminal Task，并把有效改进通过Task来源关系落地。
   - id: buildr.terminology-governance
     version: 1
     path: contracts/buildr/terminology-governance/v1.md
@@ -60,7 +60,7 @@ bindings:
     version: 1
     provider: task-worktree
   - capability: buildr.task-record
-    version: 1
+    version: 2
     provider: task-manager
   - capability: buildr.task-review
     version: 1
@@ -75,7 +75,7 @@ bindings:
     version: 1
     provider: task-finish
   - capability: buildr.task-retrospective
-    version: 1
+    version: 2
     provider: task-retrospective
   - capability: buildr.terminology-governance
     version: 1
@@ -100,7 +100,7 @@ skills:
     runtimePath: task-triage
     requires:
       - capability: buildr.task-record
-        version: 1
+        version: 2
         mode: optional
       - capability: buildr.git-operations
         version: 1
@@ -141,7 +141,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 用户明确要求创建、查看、更新、设置 Parent、完成或放弃正式 Task Record，或按 Task ID 恢复正式任务顶层事实时使用；不用于普通任务分流、只读探索、Task Environment 或任何专业阶段动作。
+    description: 用户明确要求创建或查看待办/正式 Task Record、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；不用于普通任务分流、Task Environment 或专业阶段动作。
     enabled: true
     required: false
     state: installed
@@ -149,7 +149,7 @@ skills:
     runtimePath: task-manager
     provides:
       - capability: buildr.task-record
-        version: 1
+        version: 2
   - id: task-review
     assetIdentity: buildr:skill:task-review
     sourceIdentity: package:workspace:buildr/task-review
@@ -180,7 +180,7 @@ skills:
     sourceIdentity: package:workspace:buildr/task-retrospective
     source: buildr
     path: buildr/task-retrospective
-    description: 用户明确要求复盘已完成或已放弃的正式 Task，重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率，并把一份当前报告写入 SQLite 时使用；不用于过程 observation、任务审查、门禁或资产自动写回。
+    description: 用户明确要求复盘已完成或已放弃的正式 Task，或要查看、处理、标记无需处理、重新打开已有复盘时使用；复盘重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。不用于过程 observation、任务审查、门禁或资产自动写回。
     enabled: true
     required: false
     state: installed
@@ -188,7 +188,11 @@ skills:
     runtimePath: task-retrospective
     provides:
       - capability: buildr.task-retrospective
-        version: 1
+        version: 2
+    requires:
+      - capability: buildr.task-record
+        version: 2
+        mode: required
   - id: task-environment
     assetIdentity: buildr:skill:task-environment
     sourceIdentity: package:workspace:buildr/task-environment
@@ -247,7 +251,7 @@ skills:
         version: 2
     requires:
       - capability: buildr.task-record
-        version: 1
+        version: 2
         mode: required
       - capability: buildr.task-environment
         version: 1

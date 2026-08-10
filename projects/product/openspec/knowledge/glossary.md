@@ -144,10 +144,16 @@
 
 ## 任务记录（Task Record）
 
-- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、Project/Service scope、0..N 个限定 Change、状态、终态摘要和系统时间。
-- 适用范围：Workspace Structured Store中的规范化Task数据、至多一个直接Parent与直接Children，以及Task Record Application的create、inspect、update、complete、abandon动作。
-- 避免混用：Parent/Child 只表达协调层级，不是依赖或通用关系图，不传播状态、Result或专业动作；Task Record不保存Task Environment、Development、Review、Verification、Git、Finish、独立Board或Retrospective的专业事实，响应级`recordDigest`也不是持久字段。
+- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、scope、Change、顶层状态、终态摘要与复盘来源 Task ID。
+- 适用范围：Workspace Structured Store 中的 closed v2 Task、Parent/Children、复盘来源/后续关系，以及 create、inspect、update、activate、complete、abandon。
+- 避免混用：Parent/Child 只表达协调层级；复盘来源只表达信源。Task Record 不保存 Environment、Development、复盘正文、action item 或其他专业事实。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 待办任务（Todo Task）
+
+- 定义：已接受但尚未启动的 data-only Task Record。
+- 适用范围：只存 Workspace SQLite；`open` 作为 todo + active 的派生查询。
+- 避免混用：不是文件系统 Task、Git 基线、Environment、Change、提案、排期或执行计划。
 
 ## 任务事实（Task Fact）
 
@@ -199,17 +205,17 @@
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 ## 任务管理器（Task Manager）
 
-- 定义：`buildr.task-record/v1` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复和维护 Task Record。
+- 定义：`buildr.task-record/v2` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复、激活和维护 Task Record。
 - 适用范围：用户明确管理正式 Task Record，或 `task-triage` 判断正式持久交付即将首次写入的时点。
 - 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Local App 是同一 Application 的人类客户端，不通过 Task Manager 写入。
-- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md)
+- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v2.md)
 
 ## 父任务 / 子任务（Parent Task / Child Task）
 
 - 定义：同一canonical Workspace内Task Record之间的直接协调层级；每个Child至多一个Parent，一个Parent可有多个直接Children。
 - 适用范围：协调Task拆分、Local App层级展示与导航，以及Task Manager显式设置、重挂或清除Parent。
 - 避免混用：不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
-- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v1.md)
+- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v2.md)
 
 ## 协调任务（Coordinating Task）
 
@@ -343,6 +349,12 @@
 - 适用范围：与 Result 保存在同一 `task_retrospective_current` row；重新记录报告会回到 `pending`，Agent 与 Local App 共用同一 Application `handle`。
 - 避免混用：`handled` 表示已完成处置判断，不表示建议已落地或改进 Task 已完成；`no-action` 必须有明确理由。
 - 来源：canonical `openspec/specs/task-retrospectives/spec.md`
+
+## 复盘来源（Retrospective Source）
+
+- 定义：终态且存在 current 复盘的源 Task，由后续 Task Record 仅以 Task ID 关联。
+- 适用范围：多个源 Task 指向同一后续 Task，或一个源 Task 指向多个后续 Task。
+- 避免混用：不是 action item、Parent/Child、依赖或完成证明。
 
 ## 项目测试（Project Testing）
 

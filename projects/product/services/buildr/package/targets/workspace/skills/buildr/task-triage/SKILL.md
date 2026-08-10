@@ -48,7 +48,8 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
 | 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 均证明当前为 clean `dev`、upstream 为 `origin/dev`；每个 operation 返回 before/after、effects 与 current facts，适用 Workspace transition check ready | 任一前置事实、provider、fetch、rebase、冲突恢复或 Doctor blocked 时不调用 Task Record `create`；报告全部部分 effects，不换策略 |
-| 正式持久交付 | `buildr.task-record/v1` 的 `create` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次持久交付写入前返回 `created|inspected`、path 和 effects | provider 不 ready 或 blocked 时停止正式交付写入；讨论、只读和 metadata maintenance 不依赖 |
+| 待办意向 | `buildr.task-record/v2` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent、scope与可选复盘来源；只返回SQLite record/effects | 不运行Git基线，不创建Environment、Change或专业placeholder |
+| 正式持久交付 | `buildr.task-record/v2` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
 | 正式执行位置 | `buildr.task-environment/v1` 的 Plan `record/inspect` 与 Environment `prepare/inspect` | Task ID、canonical Workspace、完整 Task Project/Service scope、Project `preparation.yml`及Agent选择的Recipe；首次持久交付写入前取得`ready`、实际execution roots、validation root和执行CLI | Declaration/Plan缺失或scope不完整时只阻塞execution；不猜技术栈，不回退到cwd或旧Receipt |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
@@ -63,14 +64,14 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 
 ### 新正式 Task 创建前收敛统一 dev 基线
 
-只有即将调用 Task Record `create` 时执行本门禁；`inspect`、已有 Task 继续、纯讨论、只读探索和不创建 Task 的分支不执行。
+只有即将创建 active Task 或把 todo 激活为 active 时执行本门禁；todo create、inspect、已有active继续、纯讨论和只读探索不执行。
 
 1. 以已经解析的完整 repository set 为输入，按 selector 固定顺序逐个核验真实 Git root、当前符号分支恰为 `dev`、upstream 恰为 `origin/dev`、remote/ref 可读、index 与 working tree clean，并且没有 rebase、merge、cherry-pick 等进行中的 Git operation。任一事实不成立时在 tree/history 零写入状态返回 `blocked`；不 checkout、不 stash/autostash、不猜其他 branch/remote。
 2. 读取 optional `buildr.git-operations/v1` binding；在本 create 分支把 ready selected provider 作为 required。先为全部 repositories 逐一选择独立 `fetch` operation，明确 `origin` 与 `dev`，消费每个 Result。任一 fetch blocked 时不执行尚未开始的 rebase，不创建 Task，并报告全部已发生的 remote-ref effects。
 3. 全部 fetch 成功后重新核验 `dev`、`origin/dev` 与 clean 状态，再按同一顺序为每个 repository 明确选择 `rebase` operation，将本地 `dev` rebase 到本次观察的 `origin/dev`。本地已对齐、仅落后或含未 push 且未共享 commit 都使用同一 operation；provider 不自行选择 merge 或 push。
 4. rebase 冲突时，consumer 明确授权 provider 只在 pre-state 已证明 clean 时执行有界 `rebase --abort`。只有 branch、HEAD、index 与 working tree 精确恢复到 pre-rebase facts 才记为 recovered；无论恢复是否成功，本次 Task create 都是 `blocked`。abort 失败或恢复不可证明时保留现场。已经在其他 repository 成功的 fetch/rebase 不反向回滚，必须作为部分 effects 报告。
 5. 任一 rebase 返回 `treeChanged: true` 时，按 required Core 对相应 Buildr Workspace 执行当前 Agent 的 workspace transition check；Doctor 或必要收敛未 ready 时不创建 Task。
-6. 只有完整 repository set 的 fetch、rebase、恢复检查与适用 transition check 全部成功，才调用 selected `buildr.task-record/v1` provider 的 `create`。Task Record Application、Local App 与 Task Environment 不获得任何 Git mutation 或本门禁状态 authority。
+6. 只有完整 repository set 的 fetch、rebase、恢复检查与适用 transition check 全部成功，才调用 selected `buildr.task-record/v2` provider 的 active `create` 或 `activate`。任一门禁blocked时todo保持不变。Task Record Application、Local App 与 Task Environment 不获得任何Git mutation或本门禁状态authority。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 

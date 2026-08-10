@@ -940,13 +940,16 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-manager') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-record/v1` 的默认 provider',
-          '不是全局任务 dispatcher',
+          '本 Skill 是 `buildr.task-record/v2` 的默认 provider',
+          '`todo` 是已接受但未启动的 data-only 意向',
+          'buildr task activate <task-id>',
+          '--retrospective-source <task-id>',
+          '普通任务分流',
           '不要仅因用户说“任务”就触发',
           '不读取 environment receipt',
           '不从 worktree 推断 retained root',
-          'Local App 是调用同一 Task Record Application 的独立人类客户端',
-          '不直接读写Workspace SQLite或旧 `.buildr/tasks/<task-id>/task.yml`',
+          'Local App 是同一 Application 的独立人类客户端',
+          '不直接读写 Workspace SQLite 或旧 `.buildr/tasks/<task-id>/task.yml`',
           '不自动 commit、push、publication、Finish 或 cleanup',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-manager Skill must include ${JSON.stringify(requiredText)}.`);
@@ -954,8 +957,8 @@ export function createPackageStaticValidator(deps) {
         for (const forbiddenText of ['buildr worktree create', 'buildr verification run', 'buildr task finish run', 'git commit', 'git push']) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-manager Skill must not execute professional action ${JSON.stringify(forbiddenText)}.`);
         }
-        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1);
-        if (!provided) problems.push('task-manager must provide buildr.task-record@1.');
+        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2);
+        if (!provided) problems.push('task-manager must provide buildr.task-record@2.');
         try {
           const { description = '' } = parseSkillFrontmatter(skillFile);
           const sentenceStops = description.match(/[。！？]/g)?.length || 0;
@@ -1137,30 +1140,34 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-retrospective') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-retrospective/v1` 的默认 provider',
+          '本 Skill 是 `buildr.task-retrospective/v2` 的默认 provider',
           'Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率',
           'Task 必须是 `completed` 或 `abandoned`',
           '自由Markdown',
-          '数据缺口',
+          '不可得时直接标记缺失',
           '隐藏推理、完整对话、完整工具日志或后台事件',
           '不读取、迁移或删除`.buildr/asset-review/`',
           'task-retrospective-driver.mjs inspect',
           'task-retrospective-driver.mjs record',
           'task-retrospective-driver.mjs handle',
           'expected-current-digest',
-          '`handled|no-action` 必须提供非空说明',
+          '`handled|no-action` 必须提供非空完整处理意见',
+          '完整原始 `reportMarkdown`',
+          'task create --status todo --retrospective-source',
+          '不生成新 action item ID',
           '不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-retrospective Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 1);
-        if (!provided) problems.push('task-retrospective must provide buildr.task-retrospective@1.');
+        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 2);
+        if (!provided) problems.push('task-retrospective must provide buildr.task-retrospective@2.');
+        if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@2.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v1`', '首次持久交付写入前', '`buildr.git-operations/v1`', '从 Parent 规划项启动独立 Child Task', '初始不引用Parent Change', 'Child execution root中创建该独立目标自己的窄Change', '新正式 Task 创建前收敛统一 dev 基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', '首次持久交付写入前', '`buildr.git-operations/v1`', '从 Parent 规划项启动独立 Child Task', '初始不引用Parent Change', 'Child execution root中创建该独立目标自己的窄Change', '新正式 Task 创建前收敛统一 dev 基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@1.');
+        if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@2.');
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.git-operations' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.git-operations@1.');
         for (const retiredText of ['`create-board`', '`continue-board`', '`buildr.task-board-maintenance/v1`']) {
           if (skillContent.includes(retiredText)) problems.push(`task-triage Skill must not route retired Task Board behavior: ${JSON.stringify(retiredText)}.`);
@@ -1276,16 +1283,16 @@ export function createPackageStaticValidator(deps) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-verification.');
         }
         const taskManager = baselineSkills.find((entry) => entry.id === 'task-manager');
-        if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 1)) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@1.');
+        if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@2.');
         }
         const taskReview = baselineSkills.find((entry) => entry.id === 'task-review');
         if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 1)) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@1.');
         }
         const taskRetrospective = baselineSkills.find((entry) => entry.id === 'task-retrospective');
-        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || !(taskRetrospective.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 1)) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-retrospective providing buildr.task-retrospective@1.');
+        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || !(taskRetrospective.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 2)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-retrospective providing buildr.task-retrospective@2.');
         }
         if (baselineSkills.some((entry) => entry.id === 'task-asset-review' || (entry.provides || []).some((item) => item.capability === 'buildr.task-asset-review') || (entry.requires || []).some((item) => item.capability === 'buildr.task-asset-review'))) {
           problems.push('Workspace skills baseline must not retain Task Asset Review provider or consumer declarations.');

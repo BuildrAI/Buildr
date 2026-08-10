@@ -1,5 +1,5 @@
 export function taskStatusLabel(status: string): string {
-  return status === 'active' ? '进行中' : status === 'completed' ? '已完成' : status === 'abandoned' ? '已放弃' : status;
+  return status === 'todo' ? '待办' : status === 'active' ? '进行中' : status === 'completed' ? '已完成' : status === 'abandoned' ? '已放弃' : status;
 }
 
 export function environmentStatusLabel(status: string): string {

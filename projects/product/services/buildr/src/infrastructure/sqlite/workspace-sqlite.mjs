@@ -101,13 +101,26 @@ function validateAppliedMigrations(database, scripts, { allowPending }) {
 }
 
 export function applyWorkspaceSqliteMigration(database, script) {
+  const rebuildsReferencedTable = script.sql.includes('-- buildr:foreign-keys-off');
   try {
+    if (rebuildsReferencedTable) {
+      database.exec('PRAGMA foreign_keys = OFF;');
+      if (database.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 0) throw new Error('migration could not disable foreign keys');
+    }
     database.exec('BEGIN IMMEDIATE');
     database.exec(script.sql);
+    if (rebuildsReferencedTable) {
+      const violations = database.prepare('PRAGMA foreign_key_check').all();
+      if (violations.length) throw new Error(`migration foreign key check failed: ${JSON.stringify(violations)}`);
+    }
     database.prepare('INSERT INTO schema_migrations(version, name, checksum, applied_at) VALUES (?, ?, ?, ?)').run(script.version, script.name, script.checksum, new Date().toISOString());
     database.exec('COMMIT');
+    if (rebuildsReferencedTable) database.exec('PRAGMA foreign_keys = ON;');
   } catch (error) {
     try { database.exec('ROLLBACK'); } catch {}
+    if (rebuildsReferencedTable) {
+      try { database.exec('PRAGMA foreign_keys = ON;'); } catch {}
+    }
     if (error.structuredStoreBusiness) throw error;
     throw sqliteFailure(error, { migration: { version: script.version, name: script.name } });
   }

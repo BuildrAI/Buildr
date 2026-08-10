@@ -121,6 +121,7 @@ export function TaskDetailPage() {
     }
     setParentOptions(options);
     setParentOptionsLoaded(false);
+    setCompleteNoChange(record.status === 'todo' ? 'true' : '');
   }, [setBreadcrumbParts]);
 
   const loadBriefs = useCallback(async (references: TaskDetailData['record']['changes']) => {
@@ -443,7 +444,7 @@ export function TaskDetailPage() {
 
   const loadParentOptions = async () => {
     const current = dataRef.current;
-    if (!current || parentOptionsLoaded || parentOptionsLoading || current.record.status !== 'active') return;
+    if (!current || parentOptionsLoaded || parentOptionsLoading || !['todo', 'active'].includes(current.record.status)) return;
     setParentOptionsLoading(true);
     try {
       const list = await api('/api/v1/tasks?status=active') as { tasks: Array<{ record: { taskId: string; title: string; status: string } }> };
@@ -603,10 +604,10 @@ export function TaskDetailPage() {
   }
 
   const record = data.record;
-  const terminal = record.status !== 'active';
+  const terminal = !['todo', 'active'].includes(record.status);
   const resultText = record.result
     ? `${record.result.summary}${record.status === 'completed' ? `（${record.result.noChange ? '无需变更' : '有交付变更'}）` : ''}`
-    : '进行中';
+    : record.status === 'todo' ? '待办，尚未启动' : '进行中';
 
   return (
     <>
@@ -760,6 +761,24 @@ export function TaskDetailPage() {
                   )}
                 </dd>
               </div>
+              <div>
+                <dt>复盘来源</dt>
+                <dd id="task-detail-retrospective-sources">
+                  {!data.retrospectiveRelations.sources.length ? '无' : (
+                    <span className="task-change-links">
+                      {data.retrospectiveRelations.sources.map((source) => (
+                        <Link
+                          key={source.taskId}
+                          className={`task-change-link ${source.status}`}
+                          to={href(`/tasks/${encodeURIComponent(source.taskId)}`)}
+                        >
+                          {`${source.title} · ${source.taskId} · ${taskStatusLabel(source.status)}`}
+                        </Link>
+                      ))}
+                    </span>
+                  )}
+                </dd>
+              </div>
               <Fact label="项目范围" value={<span id="task-detail-projects">{record.scope.projects.join('、') || '无'}</span>} />
               <Fact label="服务范围" value={<span id="task-detail-services">{lines(record.scope.services, 'service').replaceAll('\n', '、') || '无'}</span>} />
               <div>
@@ -793,7 +812,7 @@ export function TaskDetailPage() {
             <p className="eyebrow">技术事实</p>
             <h2>读取证据</h2>
             <dl className="fact-list">
-              <Fact label="数据格式" value="buildr.task-record/v1" />
+              <Fact label="数据格式" value="buildr.task-record/v2" />
               <Fact label="存储范围" value="Workspace 本地数据" />
               <Fact label="记录摘要（recordDigest）" value={<span id="task-detail-digest">{data.recordDigest}</span>} />
             </dl>
@@ -803,7 +822,7 @@ export function TaskDetailPage() {
           <article className="panel">
             <div className="panel-heading">
               <div>
-                <h2>编辑进行中的任务</h2>
+                <h2>{record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}</h2>
                 <p className="section-copy">保存时只提交明确的设置与增删操作；Change 由 Agent 在任务过程中维护，页面只读展示。修改 Parent 不会自动处置任何关联 Task。</p>
               </div>
               <span id="task-edit-state" className="state">{editState}</span>
@@ -864,10 +883,12 @@ export function TaskDetailPage() {
                     placeholder="请选择"
                     value={completeNoChange || undefined}
                     onChange={(value) => setCompleteNoChange(value || '')}
-                    options={[
-                      { value: 'false', label: '有交付变更' },
-                      { value: 'true', label: '确认无需变更' },
-                    ]}
+                    options={record.status === 'todo'
+                      ? [{ value: 'true', label: '确认无需变更' }]
+                      : [
+                          { value: 'false', label: '有交付变更' },
+                          { value: 'true', label: '确认无需变更' },
+                        ]}
                   />
                 </label>
                 <Button type="default" htmlType="submit">确认完成</Button>
@@ -925,6 +946,7 @@ export function TaskDetailPage() {
         error={retrospectiveError}
         onRefresh={() => { void refreshRetrospective(); }}
         onHandle={(status, note) => { void handleRetrospective(status, note); }}
+        taskHref={(relatedTaskId) => href(`/tasks/${encodeURIComponent(relatedTaskId)}`)}
       />
       <EnvironmentTab
         active={activeTab === 'environment'}

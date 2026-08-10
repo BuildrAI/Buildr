@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Button, Input } from 'antd';
+import { Link } from 'react-router-dom';
 import { MarkdownHost } from '../../components/MarkdownHost';
-import { formatDateTime } from '../../lib/taskLabels';
+import { formatDateTime, taskStatusLabel } from '../../lib/taskLabels';
 import { Fact } from './shared';
 
 type Props = {
@@ -11,6 +12,7 @@ type Props = {
   error: string | null;
   onRefresh: () => void;
   onHandle: (status: 'pending' | 'handled' | 'no-action', note?: string) => void;
+  taskHref: (taskId: string) => string;
 };
 
 const DISPOSITION_LABELS = {
@@ -19,7 +21,7 @@ const DISPOSITION_LABELS = {
   'no-action': '无需处理',
 } as const;
 
-export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHandle }: Props) {
+export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHandle, taskHref }: Props) {
   const present = Boolean(data?.slot?.present);
   const disposition = data?.slot?.disposition;
   const [note, setNote] = useState('');
@@ -103,6 +105,26 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
                 </div>
               )}
             </section>
+            <section className="retrospective-followups" aria-label="后续承接任务">
+              <div className="retrospective-disposition-heading">
+                <div>
+                  <p className="eyebrow">落地结果</p>
+                  <h3>后续承接任务</h3>
+                </div>
+              </div>
+              {!data.followupTasks?.length ? (
+                <p className="empty-copy">当前没有关联的承接 Task。</p>
+              ) : (
+                <span className="task-change-links">
+                  {data.followupTasks.map((task: { taskId: string; title: string; status: string }) => (
+                    <Link key={task.taskId} className={`task-change-link ${task.status}`} to={taskHref(task.taskId)}>
+                      {`${task.title} · ${task.taskId} · ${taskStatusLabel(task.status)}`}
+                    </Link>
+                  ))}
+                </span>
+              )}
+            </section>
+            <h3>原始复盘</h3>
             <MarkdownHost markdown={data.slot.result.reportMarkdown} options={{ headingOffset: 1 }} />
             <small className="review-result-path">{`${data.slot.resultDigest} · ${data.slot.path}`}</small>
           </>

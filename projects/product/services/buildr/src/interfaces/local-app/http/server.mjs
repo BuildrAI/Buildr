@@ -401,7 +401,7 @@ export function createLocalWorkspaceServer(runtime, {
         if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecordView(root, taskMatch[1]));
         if (request.method === 'PATCH' && taskMatch) {
           assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices']), 'Task update');
+          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addRetrospectiveSources', 'removeRetrospectiveSources']), 'Task update');
           if (!Object.hasOwn(input, 'expectedRecordDigest')) {
             const error = new Error('Task update 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error;
           }

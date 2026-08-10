@@ -75,7 +75,7 @@ export function TasksPage() {
   const catalogsLoaded = useRef(false);
 
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('active');
+  const [status, setStatus] = useState('open');
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
   const [hasChildren, setHasChildren] = useState('all');
@@ -195,7 +195,7 @@ export function TasksPage() {
     setQ('');
     setProject('');
     setService('');
-    setStatus('active');
+    setStatus('open');
     setHasChildren('all');
     setRetrospectiveState('all');
     setReloadToken((value) => value + 1);
@@ -306,9 +306,11 @@ export function TasksPage() {
               value={status}
               onChange={(next) => {
                 setStatus(next);
-                if (next === 'active' && ['pending', 'handled', 'no-action'].includes(retrospectiveState)) setRetrospectiveState('all');
+                if (['open', 'todo', 'active'].includes(next) && ['pending', 'handled', 'no-action'].includes(retrospectiveState)) setRetrospectiveState('all');
               }}
               options={[
+                { value: 'open', label: '未结束（待办 + 进行中）' },
+                { value: 'todo', label: '待办' },
                 { value: 'active', label: '进行中' },
                 { value: 'completed', label: '已完成' },
                 { value: 'abandoned', label: '已放弃' },
@@ -369,7 +371,7 @@ export function TasksPage() {
               value={retrospectiveState}
               onChange={(next) => {
                 setRetrospectiveState(next);
-                if (['pending', 'handled', 'no-action'].includes(next) && status === 'active') setStatus('all');
+                if (['pending', 'handled', 'no-action'].includes(next) && ['open', 'todo', 'active'].includes(status)) setStatus('all');
               }}
               options={[
                 { value: 'all', label: '不限' },
@@ -386,7 +388,7 @@ export function TasksPage() {
         <div className="section-heading">
           <div>
             <Typography.Title level={4} style={{ margin: 0 }}>任务</Typography.Title>
-            <p className="section-copy">默认只显示进行中的任务，按最近更新时间排列。</p>
+            <p className="section-copy">默认显示未结束的待办和进行中任务，按最近更新时间排列。</p>
           </div>
         </div>
         <div id="task-diagnostics" className={diagnostics.length ? '' : 'hidden'} role="status">

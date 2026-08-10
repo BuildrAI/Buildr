@@ -7,5 +7,14 @@ export default defineConfig({
     outDir: '../buildr/src/interfaces/local-app/web-dist',
     emptyOutDir: true,
     assetsDir: 'assets',
+    chunkSizeWarningLimit: 1024,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          antd: ['antd', '@ant-design/icons'],
+        },
+      },
+    },
   },
 });

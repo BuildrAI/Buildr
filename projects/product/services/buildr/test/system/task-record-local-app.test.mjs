@@ -108,7 +108,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   let bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true });
   const insertBulk = bulkStore.database.prepare('INSERT INTO tasks(task_id, schema_version, title, intent, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
   bulkStore.database.exec('BEGIN');
-  for (let index = 0; index < 200; index += 1) insertBulk.run(`bulk-${String(index).padStart(3, '0')}`, 'buildr.task-record/v1', `批量任务 ${index}`, '固定查询次数夹具', 'active', '2026-08-05T00:00:00.000Z', '2026-08-05T00:00:00.000Z');
+  for (let index = 0; index < 200; index += 1) insertBulk.run(`bulk-${String(index).padStart(3, '0')}`, 'buildr.task-record/v2', `批量任务 ${index}`, '固定查询次数夹具', 'active', '2026-08-05T00:00:00.000Z', '2026-08-05T00:00:00.000Z');
   bulkStore.database.exec('COMMIT'); bulkStore.database.close();
   const openStore = runtime.openWorkspaceStructuredStore.bind(runtime);
   let preparedStatements = 0;
@@ -120,8 +120,8 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
       const value = Reflect.get(database, field); return typeof value === 'function' ? value.bind(database) : value;
     } }) };
   };
-  const bulkView = runtime.queryTaskRecordViews(root); assert.equal(bulkView.tasks.length, 202); assert.equal(bulkView.totalTaskCount, 202); assert.equal(preparedStatements, 8, '列表 SQL 次数必须与 Task 数量无关');
-  preparedStatements = 0; runtime.inspectTaskRecordView(root, 'app-task'); assert.equal(preparedStatements, 5, '详情轻量视图不得扫描或解析其他 Task');
+  const bulkView = runtime.queryTaskRecordViews(root); assert.equal(bulkView.tasks.length, 202); assert.equal(bulkView.totalTaskCount, 202); assert.equal(preparedStatements, 10, '列表 SQL 次数必须与 Task 数量无关');
+  preparedStatements = 0; runtime.inspectTaskRecordView(root, 'app-task'); assert.equal(preparedStatements, 7, '详情轻量视图不得扫描或解析其他 Task');
   runtime.openWorkspaceStructuredStore = openStore;
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: '%_' }).tasks.map((item) => item.record.taskId), ['app-task'], 'SQL wildcard 必须按普通文本匹配');
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: "%' OR 1=1 --" }).tasks, [], 'query input 必须保持参数绑定');
@@ -145,7 +145,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
     const response = await fetch(resource, options); return { status: response.status, headers: response.headers, body: await response.json() };
   };
 
-  let response = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v3'); assert.equal(response.body.totalTaskCount, 3); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task', 'app-retrospective']));
+  let response = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v4'); assert.equal(response.body.totalTaskCount, 3); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task', 'app-retrospective']));
   const parentReadModel = response.body.tasks.find((item) => item.record.taskId === 'app-parent'); assert.deepEqual(parentReadModel.record.childTaskIds, ['app-task']); assert.equal(parentReadModel.taskRelations.children[0].status, 'active');
   assert.equal(parentReadModel.childTaskCount, 1);
   response = await request(`${endpoint}?q=%E8%BD%BB%E9%87%8F&project=demo&service=demo%2Fapi&status=active&hasChildren=no&hasRetrospective=no`);
@@ -164,7 +164,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   response = await request(`${endpoint}?status=invalid`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
   response = await request(`${endpoint}?q=a&q=b`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_invalid');
   const taskEndpoint = `${endpoint}/app-task`;
-  response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v1'); assert.deepEqual(response.body.storedChangeReferences, [{ project: 'demo', change: 'same-change' }]); assert.equal('changeReferences' in response.body, false);
+  response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v2'); assert.deepEqual(response.body.storedChangeReferences, [{ project: 'demo', change: 'same-change' }]); assert.equal('changeReferences' in response.body, false);
   const coordinationEndpoint = `${endpoint}/app-parent/coordination`;
   response = await request(coordinationEndpoint); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.parent-coordination-result/v1'); assert.equal(response.body.mode, 'legacy');
   const parentPlan = { outcome: 'Local App displays one shared coordination model.', architectureInvariants: ['No Child status is copied into Parent Plan.'], contributions: [{ id: 'app-child-delivery', summary: 'The existing Child delivers its narrow scope.', plannedChildTaskId: 'app-task' }], dependencies: [], finalAcceptance: ['The saved delivery is explicitly accepted.'] };

@@ -88,7 +88,7 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
   assert.deepEqual(packagedTriage.provides || [], []);
   assert.deepEqual(workspaceTriage.provides || [], []);
   const expected = [
-    { capability: 'buildr.task-record', version: 1, mode: 'optional' },
+    { capability: 'buildr.task-record', version: 2, mode: 'optional' },
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
     { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'optional' },
     { capability: 'buildr.task-environment', version: 1, mode: 'optional' },

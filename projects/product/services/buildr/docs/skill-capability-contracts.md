@@ -78,7 +78,7 @@ bindings:
 
 顶层验证provider不是只有用户主动说“验证”才加载。用户直接要求测试、耗时报告或初始化/更新测试声明时由description发现；正式实现任务到达stable Content Target后，由selected`buildr.task-development@2` provider形成policy并请求formal Verification。Skill读取v2 declaration，选择已有能力并把transient execution提炼成绑定Content Target的完整current Result；能力不存在时只报告coverage gap，不创建测试。Task Development只通过同一个Task Verification Application reader检查target/declarations与policy facts，Task Finish不路由或调用Verification。
 
-`buildr.task-record/v1` 是正式 Task 顶层记录的薄能力边界，默认由 `task-manager` 提供并绑定。它只保证通过产品 create/inspect/update/complete/abandon action 创建或恢复 Task ID、标题、意图、Project/Service scope、Change 引用、至多一个直接 Parent、直接 Children read model 与顶层终态；不得读取或复制 Task Environment、Development、Review、Verification、Git、Finish、独立 Board 或 Retrospective 事实。Parent/Child 只表达协调层级，不传播状态、Result 或专业动作，也不形成通用依赖图。`task-triage` 以 optional dependency 消费该能力：讨论、只读探索和非持久路径保持可用；只有已经对齐、即将首次写入的持久交付在 provider ready 时先创建或恢复 Task Record，provider not-ready 时明确 degraded/blocked，而不让 Agent 直接写 YAML。Local App 是同一 Application 的观察与有限维护客户端，不是 capability provider 或第二份 authority；它不创建正式 Task，普通列表/详情只消费 SQLite stored-state projection。
+`buildr.task-record/v2` 是正式 Task 顶层记录的薄能力，默认由 `task-manager` 提供。todo 只保存已接受意向，显式 activate 后才进入 active 研发路径；`open` 为 todo + active 查询态。Task Record 可以仅以 Task ID 关联多个终态且已有 current 复盘的来源，并派生反向后续列表；不保存 action item、复盘正文或执行计划。Parent/Child 与所有专业 authority 边界不变。Local App 只观察和有限维护已有 Task，不创建或激活。
 
 `buildr.task-development@2` 默认由 `task-development` 提供，并 required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge v2。从proposal、design或直接实现等首个正式研发动作开始，provider通过随包内部driver调用唯一Task Development Application，独占closed Receipt v3、planning聚合事实、可选Parent Plan/planned Contribution/final acceptance、Content Target、verification policy、Task Candidate/generation、decision与不可变研发/Contribution handoff；它只引用OpenSpec/Review/Verification的专业identity，不复制正文或Result。通用Development不注册公共CLI；Parent coordination另提供只调用同一Application的窄CLI/HTTP，Local App动态消费同一read model。OpenSpec是`0..N`可选关联，Git、Node/npm、Product registry、Task Retrospective和具体测试框架都不进入通用contract。v1/v2 Receipt只读归一化为Parent facts absent，不新增表或backfill。
 
@@ -100,7 +100,7 @@ render/sync会在`task-development`和`task-finish`的runtime派生版本中注�
 
 产品中的verification领域服务遵守`buildr.task-verification/v3`：已有Result只有在Content Target与declaration identity都匹配且policy所需fact/coverage gap完整时，才可供Development freeze消费。`not-passed`或coverage gap保持专业事实，只有Development在Candidate/Completion之后取得绑定精确Result digest与scope的用户风险接受才可proceed；Finish不能改写或补齐。transient execution evidence在提炼Result后由对应验证workflow安全清理。
 
-`buildr.task-retrospective/v1`默认由`task-retrospective`提供。provider只在用户明确要求时复盘terminal Task的Agent执行效率，自由Markdown由Agent生成；Application独占terminal校验、系统时间与Workspace SQLite单一current row的事务替换。同一row以`pending|handled|no-action`保存复盘处置状态，Agent和Local App都通过Application `inspect + handle`、current digest和非空说明受控处置；Markdown Result保持只读，重新记录会原子回到`pending`。处置结论不跟踪改进执行，需落地的建议另建正式Task。它不依赖完整轨迹或精确telemetry，不创建history、评分、候选或跨任务索引，也不被Task Record、Development、Finish、cleanup或OpenSpec消费为门禁。旧`task-asset-review`contracts/provider/binding已经退役；`.buildr/asset-review/`数据保持inert。
+`buildr.task-retrospective/v2`默认由`task-retrospective`提供。处理时先返回原始Markdown/current digest，再以当前项目事实重新判断和拆分方向：失效项说明理由，有效项关联已有 todo/active Task 或创建 data-only todo。不创建 action item ID，也不自动生成 Change/提案/设计。所有有效方向均已关联后才标记 handled；无有效方向则标记 no-action。Result current row 与处置状态仍由 Retrospective Application 独占。
 
 ### 6. 用户替换实现
 

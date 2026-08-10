@@ -11,12 +11,13 @@ const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
 
 test('Task Retrospective contract/provider/binding保持terminal-only与非门禁边界', () => {
   const manifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
-  const contract = manifest.contracts.find((item) => item.id === 'buildr.task-retrospective' && item.version === 1);
+  const contract = manifest.contracts.find((item) => item.id === 'buildr.task-retrospective' && item.version === 2);
   assert.ok(contract);
   assert.equal(parseCapabilityContract(path.join(root, 'skills', contract.path), contract).id, 'buildr.task-retrospective');
-  assert.deepEqual(manifest.bindings.find((item) => item.capability === 'buildr.task-retrospective'), { capability: 'buildr.task-retrospective', version: 1, provider: 'task-retrospective' });
+  assert.deepEqual(manifest.bindings.find((item) => item.capability === 'buildr.task-retrospective'), { capability: 'buildr.task-retrospective', version: 2, provider: 'task-retrospective' });
   const provider = manifest.skills.find((item) => item.id === 'task-retrospective');
-  assert.deepEqual(provider.provides, [{ capability: 'buildr.task-retrospective', version: 1 }]);
+  assert.deepEqual(provider.provides, [{ capability: 'buildr.task-retrospective', version: 2 }]);
+  assert.ok(provider.requires.some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required'));
   const development = manifest.skills.find((item) => item.id === 'task-development');
   const finish = manifest.skills.find((item) => item.id === 'task-finish');
   assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
@@ -28,9 +29,12 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /不可得时直接标记缺失/);
   assert.match(skill, /不得为了补齐 Token 数字.*强制估算.*增加任务消耗/);
   assert.match(skill, /task-retrospective-driver\.mjs handle/);
-  assert.match(skill, /`handled\|no-action` 必须提供非空说明/);
-  assert.match(skill, /digest 冲突.*重新 `inspect`/);
-  assert.match(skill, /`handled`.*不等于建议已落地.*另建正式 Task/);
+  assert.match(skill, /`handled\|no-action` 必须提供非空完整处理意见/);
+  assert.match(skill, /digest冲突，重新inspect/);
+  assert.match(skill, /完整原始 `reportMarkdown`/);
+  assert.match(skill, /不生成新 action item ID/);
+  assert.match(skill, /create --status todo --retrospective-source/);
+  assert.match(skill, /`handled`.*所有有效方向均已有承接 Task/);
   assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
 });
 

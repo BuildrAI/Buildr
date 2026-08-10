@@ -12,7 +12,7 @@ src/
     task-record/             Task Record closed schema、状态与纯字段约束
   application/               用例、跨模块组合和产品 verifier
     domains/                 现有领域操作 handler；尚非纯领域模型
-    task-record/             五个 Task Record action、引用校验与 read/result model
+    task-record/             六个 Task Record action、引用校验与 read/result model
     workspace/               Workspace 查询、修改、迁移和 prompt 用例
     worktree/                Canonical task checkout 与创建后环境 bootstrap 用例
   infrastructure/            filesystem、network、platform、Agent runtime adapters

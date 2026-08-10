@@ -8,9 +8,9 @@ function assertInput(input, allowed, label) {
   }
 }
 
-function result(operation, status, taskId, slot, effects = []) {
+function result(operation, status, taskId, slot, effects = [], followupTasks = []) {
   return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRetrospectiveOperationResult, {
-    operation, status, taskId, slot, diagnostic: null, effects, nextActions: [],
+    operation, status, taskId, slot, followupTasks, diagnostic: null, effects, nextActions: [],
   });
 }
 
@@ -26,13 +26,17 @@ function slot(persisted) {
 }
 
 export function registerTaskRetrospectiveApplication(runtime) {
+  function followups(targetRoot, taskId) {
+    return runtime.readTaskRecordViewPersistence(targetRoot, taskId).retrospectiveRelations.followups;
+  }
+
   function inspectTaskRetrospective(targetRoot, taskId) {
     const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
     const persisted = runtime.readTaskRetrospectiveResultPersistence(task.root, task.record.taskId, { optional: true });
     const currentSlot = persisted
       ? slot(persisted)
       : { path: runtime.taskRetrospectiveResultPath(task.root, task.record.taskId), present: false, result: null, resultDigest: null, disposition: null, currentDigest: null };
-    return result('inspect', 'inspected', task.record.taskId, currentSlot);
+    return result('inspect', 'inspected', task.record.taskId, currentSlot, [], followups(task.root, task.record.taskId));
   }
 
   function recordTaskRetrospective(targetRoot, taskId, input) {
@@ -49,7 +53,7 @@ export function registerTaskRetrospectiveApplication(runtime) {
       completedAt: new Date().toISOString(),
     }, { expectedTaskId: task.record.taskId });
     const written = runtime.writeTaskRetrospectiveResultPersistence(task.root, normalized);
-    return result('record', 'recorded', task.record.taskId, slot(written), [{ type: written.created ? 'created' : 'updated', path: written.file }]);
+    return result('record', 'recorded', task.record.taskId, slot(written), [{ type: written.created ? 'created' : 'updated', path: written.file }], followups(task.root, task.record.taskId));
   }
 
   function handleTaskRetrospective(targetRoot, taskId, input) {
@@ -64,7 +68,7 @@ export function registerTaskRetrospectiveApplication(runtime) {
       disposedAt: input.status === 'pending' ? null : new Date().toISOString(),
     });
     const written = runtime.writeTaskRetrospectiveDispositionPersistence(task.root, task.record.taskId, disposition, input.expectedCurrentDigest.trim());
-    return result('handle', 'updated', task.record.taskId, slot(written), [{ type: 'updated', path: written.file }]);
+    return result('handle', 'updated', task.record.taskId, slot(written), [{ type: 'updated', path: written.file }], followups(task.root, task.record.taskId));
   }
 
   Object.assign(runtime, { inspectTaskRetrospective, recordTaskRetrospective, handleTaskRetrospective });

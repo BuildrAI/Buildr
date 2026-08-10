@@ -45,7 +45,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_execution_records', 'task_finish_current', 'task_projects', 'task_retrospective_current', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
+    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_execution_records', 'task_finish_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
   ]);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));

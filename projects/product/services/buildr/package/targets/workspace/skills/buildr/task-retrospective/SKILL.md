@@ -5,7 +5,7 @@ description: 用户明确要求复盘已完成或已放弃的正式 Task，或�
 
 # Task Retrospective
 
-本 Skill 是 `buildr.task-retrospective/v1` 的默认 provider。Agent负责复盘与处置判断；Task Retrospective Application只负责terminal校验与SQLite current Result/处置状态读写。
+本 Skill 是 `buildr.task-retrospective/v2` 的默认 provider。Agent负责复盘、当前事实重评与后续承接；Retrospective Application只负责terminal校验与SQLite current Result/处置状态，Task来源关系只通过selected `buildr.task-record/v2` provider维护。
 
 ## 1. 恢复任务事实
 
@@ -39,11 +39,20 @@ node <buildr-controller-source>/src/interfaces/internal/task-retrospective-drive
 
 Application会完整替换同一Task的current row；不创建历史、候选或draft。若命令行承载长Markdown存在转义风险，使用安全的进程参数调用方式，不借此新增临时持久化store。
 
-## 4. 处置 current 复盘
+## 4. 处理 current 复盘
 
-用户要求处理已有复盘时，先 `inspect` 并基于报告做出一次判断：
+用户要求处理已有复盘时，先 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Local App 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
 
-- `handled`：已经完成处置判断；不等于建议已落地。需要实施的改进按正常流程另建正式 Task。
+每个仍有效方向按以下顺序落地：
+
+1. 已有 todo 或 active Task 覆盖目标时，通过 `task update --add-retrospective-source` 关联，不重复创建。
+2. 没有承接 Task 且用户已同意保留意向时，通过 `task create --status todo --retrospective-source` 只写数据；不运行Git基线、不创建Environment、Change、proposal或design。
+3. 多个方向可以合并到同一Task，一个源Task也可以关联多个Task；关系只到source Task ID，不绑定具体建议文本。
+4. 已失效、已解决、收益不足或不适用的方向说明当前证据和丢弃理由，不创建Task。
+
+全部有效方向完成关系写入后才处置：
+
+- `handled`：所有有效方向均已有承接 Task，处置说明包含当前事实判断、目标 Task ID 与丢弃理由；不等于目标 Task 已实施完成。
 - `no-action`：当前没有值得转化的行动；必须说明理由。
 - `pending`：重新打开，清空上次处置说明与时间。
 
@@ -51,10 +60,10 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs handle --task <task-id> --target <canonical-workspace> --status <pending|handled|no-action> --note <reason> --expected-current-digest <current-digest>
 ```
 
-`handled|no-action` 必须提供非空说明；`pending` 不保留说明。若 digest 冲突，重新 `inspect` 并基于最新复盘与处置状态重新判断，不得盲目覆盖。重新 `record` 一份报告会把处置状态原子重置为 `pending`。
+`handled|no-action` 必须提供非空完整处理意见；`pending` 不保留说明。任一Task创建或关系写入失败时保持pending并报告恢复动作。若digest冲突，重新inspect并基于最新报告、关系与处置状态重新判断。重新record会原子重置为pending。
 
 ## 5. 报告边界
 
-向用户返回主要高成本点、优化方向、数据缺口，以及operation status、resultDigest与effects。优化建议不自动修改Rule、Skill、workflow或产品；用户采纳后按正常Task流程另行实现。
+向用户返回原始复盘或不可变引用、当前有效性证据、重新拆分方向、丢弃理由、实际承接Task IDs、关系effects、operation status与current digest。todo只表示意向，后续明确启动时再走task-triage和activate。
 
 本Skill不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁，也不创建空复盘。

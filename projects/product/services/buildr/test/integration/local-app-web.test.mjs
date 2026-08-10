@@ -57,7 +57,7 @@ test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 art
   assert.match(markdown, /allowRelativeLinks/);
   assert.match(markdown, /resolveSafeHref/);
   assert.match(styles, /\.change-brief-panel/);
-  assert.match(styles, /\.brief-content/);
+  assert.match(source, /className="brief-content markdown-body"/);
   assert.match(styles, /\.markdown-body/);
   assert.match(styles, /\.artifact-content/);
   assert.match(styles, /\.content-view-toggle/);
@@ -135,7 +135,7 @@ test('任务详情使用概览、研发、证据、复盘、环境五个一级�
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.doesNotMatch(evidence, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.match(styles, /\.review-slot-grid \{[^}]*grid-template-columns: repeat\(2/);
-  assert.match(styles, /\.review-slot-grid \{ grid-template-columns: 1fr; \}/);
+  assert.match(styles, /\.review-slot-grid \{ display: grid; grid-template-columns: repeat\(2/);
 });
 
 test('任务研发视图只读投影 current Development Receipt、候选、门禁、决策与最近交接', () => {
@@ -164,7 +164,8 @@ test('任务研发视图只读投影 current Development Receipt、候选、门�
   assert.match(styles, /\.development-axis-grid/);
   assert.match(styles, /\.development-gate-grid/);
   assert.match(styles, /\.development-planning-list/);
-  assert.match(styles, /\.development-axis-grid, \.development-gate-grid/);
+  assert.match(styles, /\.development-axis-grid \{ display: grid/);
+  assert.match(styles, /\.development-gate-grid \{ display: grid/);
 });
 
 test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {
@@ -229,9 +230,12 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /setTimeout\([\s\S]*200/);
   assert.match(tasks, /hasChildren/);
   assert.match(tasks, /retrospectiveState/);
-  assert.match(tasks, /value="pending">未处理/);
-  assert.match(tasks, /value="handled">已处理/);
-  assert.match(tasks, /value="no-action">无需处理/);
+  assert.match(tasks, /value: 'pending', label: '未处理'/);
+  assert.match(tasks, /value: 'handled', label: '已处理'/);
+  assert.match(tasks, /value: 'no-action', label: '无需处理'/);
+  assert.match(tasks, /useState\('open'\)/);
+  assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
+  assert.match(tasks, /value: 'todo', label: '待办'/);
   assert.match(tasks, /childTaskCount/);
   assert.match(tasks, /totalTaskCount|还没有正式任务记录/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
