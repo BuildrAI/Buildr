@@ -293,7 +293,10 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.equal(gateObservation.development.applicability.handoff, 'current');
   await assert.rejects(
     runtime.taskFinish('run', ['--task', task, '--target-branch', 'main', '--target', retained]),
-    (error) => error.code === 'task_finish.target_branch_mismatch' && error.details.retainedBranch === 'dev',
+    (error) => error.code === 'task_finish.entry_gaps'
+      && error.details?.nextWorkflow == null
+      && error.details?.gaps?.delivery?.some((item) => item.code === 'task_finish.target_branch_mismatch' && item.details?.retainedBranch === 'dev')
+      && (error.details?.gaps?.development || []).length === 0,
   );
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'runs')), false);
   const completeTaskRecordFromFinish = runtime.completeTaskRecordFromFinish;

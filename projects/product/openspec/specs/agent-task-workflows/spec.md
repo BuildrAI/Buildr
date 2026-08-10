@@ -507,7 +507,7 @@ Agent MUST 将 Buildr 的确定性收敛结果视为产品事实：`passed`直�
 - **AND** MUST NOT把`not-applicable`解释为同步失败、归档失败或长期证据缺失
 
 ### Requirement: Task Finish Skill 必须收窄为授权与单命令入口
-Buildr MUST提供实现`buildr.task-finish/v1`的Task Finish Skill。Skill MUST解析用户交付意图、Task ID与execution context，先通过selected `buildr.task-development@1`确认current handoff，再披露隔离Delivery Carrier、Task Contribution/Delivery Baseline identity、普通integration/push、retained与cleanup授权及明确排除项。Receipt-bound Task MUST只启动canonical `buildr task finish run --task <task-id>`；normal path MUST NOT收敛Change、运行Review/Verification、生成Candidate、领取checkpoint、构造recovery JSON或从普通PATH选择runtime。产品返回target-race resume token时，Skill MAY只用该精确token恢复同一run，不得把它解释为新的Development/Candidate流程。
+Buildr MUST提供实现`buildr.task-finish/v1`的Task Finish Skill。Skill MUST解析用户交付意图、Task ID与execution context，优先启动canonical `buildr task finish run --task <task-id>`并消费产品返回的入口聚合结果或五阶段Result；不得在调用产品前用自行链式Environment→handoff检查替代产品聚合分类回报。当产品返回入口聚合缺口时，Skill MUST按`development`/`environment`/`delivery`分类向用户说明，并在存在研发缺口时路由`task-development`。Receipt-bound Task 的 normal path MUST NOT收敛Change、运行Review/Verification、生成Candidate、领取checkpoint、构造recovery JSON或从普通PATH选择runtime。产品返回target-race resume token时，Skill MAY只用该精确token恢复同一run，不得把它解释为新的Development/Candidate流程。
 
 #### Scenario: 用户要求收尾
 - **WHEN** 用户在canonical Task Environment中明确要求收尾且Development handoff current
@@ -515,9 +515,14 @@ Buildr MUST提供实现`buildr.task-finish/v1`的Task Finish Skill。Skill MUST�
 - **AND** 没有待人工语义决定时 MUST只启动canonical Task Finish executor并消费最终结果
 
 #### Scenario: Development handoff缺失
-- **WHEN** Task Development Application报告missing、blocked或stale
+- **WHEN** Task Development Application报告missing、blocked或stale，或产品入口聚合在`development`分类返回缺口
 - **THEN** Task Finish Skill MUST停止并路由`task-development`
 - **AND** MUST NOT从Change、Git、Review或Verification facts自行拼装finish-ready Candidate
+
+#### Scenario: 产品一次返回多模块入口缺口
+- **WHEN** `task finish run`返回`task_finish.entry_gaps`且`gaps`同时含环境与研发缺口
+- **THEN** Skill MUST完整转述各模块缺口，不得只报告第一项
+- **AND** MUST优先路由`task-development`处理研发缺口
 
 #### Scenario: 目标分支前进但贡献等价
 - **WHEN** 产品证明最新Delivery Baseline上的Task Contribution无冲突且identity等价，并完成同一Candidate的delivery/cleanup

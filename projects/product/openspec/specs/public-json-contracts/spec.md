@@ -251,6 +251,8 @@ Buildr MUST登记Parent Plan、Contribution binding、Contribution Handoff、coo
 ### Requirement: Task Finish run 必须提供 portable execution record operation summary
 `buildr task finish run --json` MUST继续输出`buildr.task-finish-result/v2`并以additive `executionRecord` summary表达`not-opened|retained|blocked|attention`、portable record identity/outcome/lifecycle/body summary、diagnostics transient cleanup、diagnostic与next action。Payload MUST NOT暴露SQLite/database、body或transient locator、本机持久路径、Carrier路径、remote credential、lease/resume/resource token，也 MUST NOT把execution record解释为Finish current、delivery、Task terminal或Result adoption authority。`task finish inspect --json` MUST保持既有pure Finish read model且不添加record列表或正文。
 
+当`buildr task finish run --json`在创建run之前因入口聚合缺口失败时，CLI MUST输出`buildr.cli-error/v1`，且`error.code` MUST为`task_finish.entry_gaps`；`error.details.gaps` MUST包含`development`、`environment`、`delivery`三个数组（可空），每项至少含既有`code`与`message`；若`development`非空，`suggestions`或等价next指示 MUST指向`task-development`。该失败路径 MUST NOT返回伪Finish run result或`executionRecord`。
+
 #### Scenario: Finish invocation retained
 - **WHEN**一次实际执行的Finish invocation已terminal seal且record retained
 - **THEN** run JSON MUST返回portable record ID、outcome、lifecycle、body digest/size/truncated与diagnostics cleanup disposition
@@ -270,6 +272,11 @@ Buildr MUST登记Parent Plan、Contribution binding、Contribution Handoff、coo
 - **WHEN** request在open前无效，或既有Finish已经complete且run只返回幂等no-op
 - **THEN** JSON MUST返回`executionRecord.status: not-opened`与零record effect
 - **AND** MUST不创建execution record、diagnostics transient或改变既有Finish facts
+
+#### Scenario: 入口聚合缺口的 CLI 错误
+- **WHEN** `task finish run --json`在创建run前同时观察到环境与研发入口缺口
+- **THEN** CLI MUST输出`buildr.cli-error/v1`且`error.details.gaps`同时包含非空的`environment`与`development`
+- **AND** MUST NOT输出`buildr.task-finish-result/v2` run payload
 
 ### Requirement: Task Execution Record 查询必须提供稳定 portable JSON
 Buildr MUST 为 Task-scoped execution record list、detail 与 body-file read 登记稳定 v1 public JSON identity。List MUST 表达 requested view 与 records；detail MUST 表达单条 portable record 和可用正文文件；body-file read MUST 表达 record/file identity、完整性 metadata、内容与截断状态。三类 payload MUST 使用 closed 字段白名单，且 MUST NOT 暴露 SQLite、database row、body locator、本机路径、resource token 或 mutation action。

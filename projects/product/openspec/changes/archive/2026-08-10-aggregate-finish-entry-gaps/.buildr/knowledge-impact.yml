@@ -1,0 +1,26 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: aggregate-finish-entry-gaps
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/aggregate-finish-entry-gaps/brief.md
+    reason: 正式 Change 需要 Brief 说明入口聚合分类回报的目标、非目标与验收。
+    status: updated
+    sourceIdentities: []
+  - type: overview
+    target: docs/overview.md
+    reason: 不改变 Product 定位或全局入口叙事。
+    status: not-applicable
+    sourceIdentities: []
+  - type: technical-architecture
+    target: docs/architecture/technical.md
+    reason: 仅收窄 Finish 入口错误回报契约，不改变 Service 拓扑。
+    status: not-applicable
+    sourceIdentities: []
+  - type: glossary
+    target: docs/glossary.md
+    reason: 未引入需治理的新术语；development/environment/delivery 沿用既有模块名。
+    status: not-applicable
+    sourceIdentities: []
+unresolvedItems: []

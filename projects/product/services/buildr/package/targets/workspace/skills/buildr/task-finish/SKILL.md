@@ -9,13 +9,13 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 
 ## 调用前
 
-1. 明确正式 Task ID 与 canonical Workspace，通过 `task-environment` 确认 matching ready Environment。
-2. 通过 `task-development` Application inspect current formal handoff；必须能取得精确 handoff、Candidate/generation、Content Target identities 和 proceed decision。
-3. handoff missing/stale、Change 仍未处置、Verification/Completion 不完整或风险未获接受时停止，返回 Task Development；Finish 不补齐这些事实。
+1. 明确正式 Task ID 与 canonical Workspace。
+2. 用户排除 push、install 或 cleanup 而改变交付语义时停止。
+3. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
+4. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
+5. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。
    - Child承担Parent Contribution时，handoff还必须包含与current Parent Plan和planned binding一致的Contribution Handoff。
    - Parent采用Parent Plan时，必须已记录current plan identity的显式最终集成验收；Child全部完成本身不满足该条件。
-4. 用户排除push、install或cleanup而改变交付语义时停止。
-5. Git-backed run使用retained checkout当前符号分支；显式`--target-branch`必须一致，Environment `startPoint`不提供交付authority。remote按显式值、Environment、branch upstream、唯一配置依次解析；缺失或歧义时停止。
 
 ## 执行
 
@@ -25,7 +25,7 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 buildr task finish run --task <task-id> --target <canonical-workspace> --json
 ```
 
-产品固定执行：
+产品在创建 run 前一次聚合 Environment / Development / 交付入口观察；通过后固定执行：
 
 ```text
 preflight → prepare → verify → deliver → cleanup

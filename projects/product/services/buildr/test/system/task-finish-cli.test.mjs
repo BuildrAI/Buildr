@@ -92,7 +92,12 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(rejected.status, 2, rejected.stderr || rejected.stdout);
-  assert.equal(JSON.parse(rejected.stdout).error.code, 'task_environment_snapshot_missing');
+  const rejectedPayload = JSON.parse(rejected.stdout);
+  assert.equal(rejectedPayload.error.code, 'task_finish.entry_gaps');
+  assert.ok(rejectedPayload.error.details.gaps.environment.some((item) => item.code === 'task_environment_snapshot_missing'));
+  assert.ok(rejectedPayload.error.details.gaps.development.some((item) => item.code === 'task_finish.development_handoff_not_current'));
+  assert.equal(rejectedPayload.error.details.nextWorkflow, 'task-development');
+  assert.match(rejectedPayload.suggestions.join('\n'), /task-development/);
 
   const runHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'run'], { encoding: 'utf8' });
   const inspectHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'inspect'], { encoding: 'utf8' });

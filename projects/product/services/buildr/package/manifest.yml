@@ -359,6 +359,7 @@ builtins:
       legacyIntegrities:
         - sha256-0607663344932ed85cdff84fe5c8dc817e4fc12a159a047eac054fa307fc1fd1
         - sha256-1e0e321129f98abb33c4b82d6eddecd960ca0888e58a8ab47bc0776847f05fcf
+        - sha256-47d716eff00cc7b20a0ff42d81b6140c7c1bb30ea9591204303bc192c48d3e4d
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: terminology-governance
       path: package/targets/workspace/skills/buildr/terminology-governance

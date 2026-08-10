@@ -14,9 +14,12 @@ const projectRoot = path.resolve(productRoot, '../..');
 const sourceRoot = path.join(productRoot, 'src');
 const entry = path.join(productRoot, 'bin', 'buildr.mjs');
 const problems = [];
+const ignoredProjectRootEntries = new Set([
+  '.agents', '.claude', '.codebuddy', '.cursor', '.qoder', '.trae', '.buildr', '.git',
+]);
 
 problems.push(...validateProductSourceLayout({
-  projectEntries: fs.readdirSync(projectRoot),
+  projectEntries: fs.readdirSync(projectRoot).filter((entryName) => !ignoredProjectRootEntries.has(entryName)),
   serviceEntries: fs.readdirSync(productRoot).filter((entryName) => entryName !== 'node_modules'),
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));

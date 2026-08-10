@@ -2,8 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 
 import { removeIsolatedGitCarrier } from './git-task-contribution.mjs';
-import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
-import { resolveTaskFinishTargetBranch } from './task-finish-delivery-target.mjs';
+import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
 import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolveFinishRun } from './task-finish-run.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import {
@@ -116,15 +115,17 @@ export function registerTaskFinishApplication(runtime) {
         if (!finishRun) {
           const task = optionValue(command.args, '--task', null);
           if (!task) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --task <task-id>.', 'run');
-          const context = runtime.resolveTaskEnvironmentExecution(root, task);
-          if (!context?.ready) throw inputError(context?.blocked?.code || 'task_finish.not_task_environment', context?.blocked?.message || 'Task Finish requires a ready Task Environment.', 'run');
-          const development = runtime.inspectTaskDevelopment(root, task);
-          const receipt = development.development?.receipt;
-          if (!receipt || development.development?.applicability?.handoff !== 'current') throw inputError('task_finish.development_handoff_not_current', 'Task Finish requires a current formal Development handoff.', 'run');
-          const handoff = [...receipt.handoffs].reverse().find((item) => item.candidate.identity === receipt.candidate?.identity
-            && JSON.stringify(item.gates) === JSON.stringify(receipt.gates)
-            && JSON.stringify(item.decision) === JSON.stringify(receipt.decision));
-          if (!handoff) throw inputError('task_finish.development_handoff_not_current', 'Task Finish could not resolve the current immutable Development handoff snapshot.', 'run');
+          const entry = observeTaskFinishEntryReadiness({
+            runtime,
+            root,
+            task,
+            requestedAgent: optionValue(command.args, '--agent', null),
+            requestedTargetBranch: optionValue(command.args, '--target-branch', null),
+            requestedRemote: optionValue(command.args, '--remote', null),
+          });
+          if (!entry.ready) throw taskFinishEntryGapsError(entry, 'run');
+          const handoff = entry.handoff;
+          const identity = entry.identityParts;
           const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task }, { optional: true });
           const currentRun = current?.run;
           const handoffChanged = currentRun && (currentRun.identity?.handoffIdentity !== handoff.identity
@@ -132,45 +133,6 @@ export function registerTaskFinishApplication(runtime) {
             || currentRun.identity?.candidateGeneration !== handoff.candidate.generation
             || currentRun.identity?.contentTargetIdentity !== handoff.candidate.contentTargetIdentity);
           const staleFailedRun = currentRun?.status === 'failed' && handoffChanged ? currentRun : null;
-          const repository = context.repositories?.find((entry) => entry.selector === 'workspace') || context.repositories?.[0] || {};
-          const workspaceNodeIdentity = runtime.workspaceNodeExecution(context.validationRoot).identity?.digest;
-          if (!workspaceNodeIdentity) throw inputError('task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.', 'run');
-          let deliveryTarget;
-          try {
-            deliveryTarget = resolveTaskFinishTargetBranch({
-              root: context.workspaceRoot,
-              requestedTargetBranch: optionValue(command.args, '--target-branch', null),
-            });
-          } catch (error) {
-            throw inputError(error.code || 'task_finish.target_branch_unavailable', error.message, 'run', error.details);
-          }
-          const targetBranch = deliveryTarget.targetBranch;
-          const requestedAgent = optionValue(command.args, '--agent', context.controller.adapter);
-          if (requestedAgent !== context.controller.adapter) throw inputError('task_finish.environment_mismatch', 'Task Finish agent must match the Task Environment adapter.', 'run');
-          let deliveryRemote;
-          try {
-            deliveryRemote = resolveTaskFinishDeliveryRemote({
-              root: context.workspaceRoot,
-              targetBranch,
-              requestedRemote: optionValue(command.args, '--remote', null),
-              environmentRemote: repository.remote || null,
-            });
-          } catch (error) {
-            throw inputError(error.code || 'task_finish.remote_unavailable', error.message, 'run', error.details);
-          }
-          const identity = {
-              task,
-              handoffIdentity: handoff.identity,
-              candidateIdentity: handoff.candidate.identity,
-              candidateGeneration: handoff.candidate.generation,
-              contentTargetIdentity: handoff.candidate.contentTargetIdentity,
-              agent: requestedAgent,
-              targetBranch,
-              remote: deliveryRemote.remote,
-              environmentRoot: context.validationRoot,
-              workspaceRoot: context.workspaceRoot,
-              workspaceNodeIdentity,
-            };
           if (staleFailedRun) return { identity, staleFailedRun, finishRun: null };
           finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity });
         } else if (path.resolve(finishRun.identity.workspaceRoot) !== path.resolve(root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
