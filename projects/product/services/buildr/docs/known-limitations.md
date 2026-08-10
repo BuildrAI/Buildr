@@ -13,6 +13,7 @@
 - 远端 Skill 当前只支持 raw `SKILL.md` 的 `resolved.kind: skill-url`；未声明 integrity 时允许 render，但 doctor 会警告。
 - Agent 没有统一 API 枚举已加载的 admin/system/plugin Skills。adapter 会在 runtime scope 保留 `partial` inventory evidence，但不把不可观测性本身报告为健康 warning；Buildr 只检查自身管理候选的可观测同名项并阻止真实冲突，不盘点无关 runtime Skills，也不宣称已证明 Agent 全局唯一。首版不提供自动 adopt/transfer，外部资产必须重命名、显式移除/禁用或保持现场。
 - `task-retrospective/v2` 处理 current Markdown 时可关联后续 Task，但不保存历史、评分、结构化行动项或进度；也不自动采集耗时/token、创建 Change 或跨 Workspace 聚合。旧 `.buildr/asset-review/` 数据保持 inert。
+- Formal Task Finish 在 carrier 已交付、自举 successor 已包含该 carrier 时依赖一次远端 fetch 形成 exact-containment evidence；若该 fetch 瞬时失败，当前 resume 会重建 carrier 并可能转入 Delivery Adaptation，不会自动把本地 ancestry 当作最终远程证据。
 - Service branch intent 不负责 pull、merge、rebase 或长期分支同步；它只控制首次 clone、metadata 和 drift 诊断。
 - `@buildr-ai/buildr@0.1.0-rc.6` 是当前已发布 RC，`next` 指向该版本；`0.1.0-rc.7` 正在准备，尚未发布。`latest` 仍可能指向历史 prerelease，它不代表稳定版。稳定版 `0.1.0` 尚未发布，公开试用应显式安装 `@next`。`0.1.0-rc.4` 因发布范围错误已弃用。
 - `package check/build`是维护表面。普通workspace使用`openspec converge`；只有未决收敛现场仍存在且恢复状态不确定时使用只读`openspec convergence inspect`。Inspect不提供归档后的长期漂移、合规或forensic audit；正常archive后Receipt会释放，历史读取使用Archived Change、Canonical Specs与Git。旧`openspec audit`和阶段命令已删除并返回unknown-command。
