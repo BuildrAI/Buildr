@@ -1,9 +1,11 @@
 import {
+  TASK_EXECUTION_RECORD_GC_LIMITS,
   TASK_EXECUTION_RECORD_OWNER_KINDS,
   beginTaskExecutionRecordCleanup,
   completeTaskExecutionRecordCleanup,
   createOpenTaskExecutionRecord,
   evaluateTaskExecutionRecordCleanup,
+  evaluateTaskExecutionRecordTombstonePurge,
   recoverTaskExecutionRecordAttention,
   resolveTaskExecutionRecord,
   sealTaskExecutionRecord,
@@ -87,6 +89,26 @@ function sameTask(record, taskId) {
 
 function safeBodyDiagnostic(error) {
   return { code: error?.code || 'task_execution_record_body_unavailable', message: 'Execution Record正文当前不可验证或不可读取。' };
+}
+
+function gcInput(input) {
+  assertInput(input, new Set(['dryRun', 'limit']), 'Task Execution Record GC');
+  if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') throw taskExecutionRecordError('task_execution_record_gc_dry_run_invalid', 'dryRun必须是boolean。', 400, { field: 'dryRun' });
+  const limit = input.limit ?? TASK_EXECUTION_RECORD_GC_LIMITS.defaultBatch;
+  if (!Number.isInteger(limit) || limit < 1 || limit > TASK_EXECUTION_RECORD_GC_LIMITS.maximumBatch) {
+    throw taskExecutionRecordError('task_execution_record_gc_limit_invalid', `limit必须是1..${TASK_EXECUTION_RECORD_GC_LIMITS.maximumBatch}整数。`, 400, { field: 'limit', limit });
+  }
+  return { dryRun: input.dryRun === true, limit };
+}
+
+function portableGcDiagnostic(error, status) {
+  const conflict = ['task_execution_record_conflict', 'task_execution_record_not_found', 'task_execution_record_cleanup_not_eligible'].includes(error.code);
+  return {
+    code: error.code || 'task_execution_record_gc_action_failed',
+    message: conflict || status === 'skipped'
+      ? 'Record current 已变化，本次 GC action 已跳过。'
+      : 'Record GC action 失败；现场已保留，请通过 Task Execution Record authority 检查。',
+  };
 }
 
 export function registerTaskExecutionRecordApplication(runtime) {
@@ -227,6 +249,77 @@ export function registerTaskExecutionRecordApplication(runtime) {
     return result('cleanup', 'cleaned', written, [{ type: removed.removed ? 'deleted' : 'absent', path: removed.locator }, { type: 'updated', path: written.file }]);
   }
 
+  function gcTaskExecutionRecords(targetRoot, input = {}) {
+    const options = gcInput(input);
+    const observedAt = new Date().toISOString();
+    const selection = runtime.listTaskExecutionRecordGcCandidates(targetRoot, { now: observedAt, limit: options.limit });
+    const records = [];
+    let cleaned = 0;
+    let purged = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const candidate of selection.candidates) {
+      const record = candidate.persisted.record;
+      const base = { recordId: record.recordId, taskId: record.taskId, owner: record.owner, kind: record.kind, action: candidate.action };
+      const eligibility = candidate.action === 'purge'
+        ? evaluateTaskExecutionRecordTombstonePurge(record, { now: observedAt, recentRank: candidate.recentRank })
+        : record.lifecycleStatus === 'cleanup_pending'
+          ? { eligible: true, reasons: [] }
+          : evaluateTaskExecutionRecordCleanup(record, { now: observedAt, recentRank: candidate.recentRank });
+      if (!eligibility.eligible) {
+        skipped += 1;
+        records.push({ ...base, status: 'skipped', diagnostic: { code: 'task_execution_record_gc_candidate_stale', message: 'Record 不再满足本次 GC action 条件。' } });
+        continue;
+      }
+      if (options.dryRun) {
+        records.push({ ...base, status: 'eligible', diagnostic: null });
+        continue;
+      }
+      try {
+        if (candidate.action === 'cleanup') {
+          cleanupTaskExecutionRecord(selection.root, record.recordId);
+          cleaned += 1;
+          records.push({ ...base, status: 'cleaned', diagnostic: null });
+        } else {
+          const deleted = runtime.deleteTaskExecutionRecordTombstonePersistence(selection.root, record);
+          if (!deleted.deleted) {
+            skipped += 1;
+            records.push({ ...base, status: 'skipped', diagnostic: { code: 'task_execution_record_tombstone_absent', message: 'Tombstone 已由其他 GC 删除。' } });
+          } else {
+            purged += 1;
+            records.push({ ...base, status: 'purged', diagnostic: null });
+          }
+        }
+      } catch (error) {
+        const isSkipped = ['task_execution_record_conflict', 'task_execution_record_not_found', 'task_execution_record_cleanup_not_eligible'].includes(error.code);
+        if (isSkipped) skipped += 1;
+        else failed += 1;
+        records.push({ ...base, status: isSkipped ? 'skipped' : 'failed', diagnostic: portableGcDiagnostic(error, isSkipped ? 'skipped' : 'failed') });
+      }
+    }
+    const status = options.dryRun ? 'planned' : failed ? (cleaned || purged || skipped ? 'partial' : 'failed') : 'completed';
+    return {
+      schemaVersion: 'buildr.task-execution-record-gc-result/v1',
+      operation: 'gc',
+      status,
+      mode: options.dryRun ? 'dry-run' : 'run',
+      limit: options.limit,
+      observedAt,
+      counts: {
+        scanned: selection.scanned,
+        eligible: selection.eligible,
+        selected: selection.candidates.length,
+        cleaned,
+        purged,
+        skipped,
+        failed,
+      },
+      records,
+      diagnostic: failed ? { code: 'task_execution_record_gc_partial_failure', message: '部分 ExecRecord GC action 未完成，其他 action 已保留各自结果。' } : null,
+      nextActions: failed ? ['检查 failed record 的 portable diagnostic；GC 不会自动处置、修复或扫描正文。'] : [],
+    };
+  }
+
   Object.assign(runtime, {
     openTaskExecutionRecord,
     inspectTaskExecutionRecord,
@@ -237,6 +330,7 @@ export function registerTaskExecutionRecordApplication(runtime) {
     sealTaskExecutionRecord: sealTaskExecutionRecordOperation,
     resolveTaskExecutionRecord: resolveTaskExecutionRecordOperation,
     cleanupTaskExecutionRecord,
+    gcTaskExecutionRecords,
   });
   return runtime;
 }

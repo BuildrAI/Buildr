@@ -11,6 +11,7 @@ import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
+import { taskExecutionRecordGcCommand } from './task-execution-record.mjs';
 
 const COMMAND_ROUTES = [
   {
@@ -253,6 +254,19 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'cleanup',
     run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
+  },
+  {
+    key: "task execution-record gc",
+    surface: "maintenance",
+    summary: "按固定 retention、resolution 与 recent-count 规则执行 bounded Workspace ExecRecord GC；支持 dry-run，不扫描文件系统或清理执行资源。",
+    help: [
+      "Usage: buildr task execution-record gc [--target <canonical-workspace>] [--dry-run] [--limit <1..500>] [--json]",
+      "",
+      "按固定 retention、resolution 与 recent-count 规则选择 eligible records，复用单记录 cleanup，并删除到期 cleaned tombstone。",
+      "不接受 Task/owner/path、force、retention override 或 failure disposition；不调用 Workspace Doctor。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'gc',
+    run: (r, c) => taskExecutionRecordGcCommand(r, c.argv.slice(5)),
   },
   {
     key: "task parent inspect",
@@ -893,6 +907,17 @@ const COMMAND_GROUPS = [
       "Usage: buildr app preview <start|list|stop> ...",
       "",
       "预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。"
+    ],
+    executable: false,
+  },
+  {
+    key: "task execution-record",
+    surface: "maintenance",
+    summary: "管理 Task Execution Record authority 的 Workspace 级维护操作。",
+    help: [
+      "Usage: buildr task execution-record <gc> ...",
+      "",
+      "当前只提供 bounded GC；不提供文件系统 discovery、failure 自动处置或执行资源 cleanup。"
     ],
     executable: false,
   },

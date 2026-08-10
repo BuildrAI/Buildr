@@ -1,5 +1,7 @@
 import {
+  TASK_EXECUTION_RECORD_GC_LIMITS,
   TASK_EXECUTION_RECORD_LIMITS,
+  TASK_EXECUTION_RECORD_RETENTION,
   normalizeTaskExecutionRecord,
   taskExecutionRecordError,
 } from '../../domain/task-execution-record/task-execution-record.mjs';
@@ -204,12 +206,104 @@ export function registerTaskExecutionRecordRepository(runtime) {
     finally { try { opened?.database?.close(); } catch {} }
   }
 
+  function listTaskExecutionRecordGcCandidates(targetRoot, { now = new Date().toISOString(), limit = TASK_EXECUTION_RECORD_GC_LIMITS.defaultBatch } = {}) {
+    let opened;
+    try {
+      opened = runtime.openWorkspaceStructuredStore(targetRoot, { writable: false });
+      if (!opened.present) return { root: opened.root, scanned: 0, eligible: 0, candidates: [] };
+      const cutoff = new Date(Date.parse(now) - TASK_EXECUTION_RECORD_RETENTION.tombstoneDays * 24 * 60 * 60 * 1000).toISOString();
+      const scanned = Number(opened.database.prepare('SELECT COUNT(*) AS count FROM task_execution_records').get().count);
+      const rows = opened.database.prepare(`WITH ranked AS (
+        SELECT *,
+          ROW_NUMBER() OVER (
+            PARTITION BY task_id, owner, kind, outcome
+            ORDER BY sealed_at DESC, record_id
+          ) AS outcome_rank,
+          ROW_NUMBER() OVER (
+            PARTITION BY task_id, owner, kind, lifecycle_status
+            ORDER BY cleaned_at DESC, record_id
+          ) AS tombstone_rank
+        FROM task_execution_records
+      ), eligible AS (
+        SELECT *, CASE lifecycle_status
+          WHEN 'cleanup_pending' THEN 'cleanup'
+          WHEN 'retained' THEN 'cleanup'
+          ELSE 'purge'
+        END AS gc_action,
+        CASE lifecycle_status
+          WHEN 'cleanup_pending' THEN 0
+          WHEN 'retained' THEN 1
+          ELSE 2
+        END AS gc_priority,
+        CASE lifecycle_status
+          WHEN 'cleanup_pending' THEN cleanup_started_at
+          WHEN 'retained' THEN retain_until
+          ELSE cleaned_at
+        END AS gc_order
+        FROM ranked
+        WHERE lifecycle_status = 'cleanup_pending'
+          OR (lifecycle_status = 'retained' AND retain_until <= ? AND (
+            (outcome = 'passed' AND outcome_rank > ?)
+            OR (outcome IN ('failed', 'blocked', 'cancelled') AND resolution_status IN ('acknowledged', 'recovered'))
+          ))
+          OR (lifecycle_status = 'cleaned' AND cleaned_at <= ? AND tombstone_rank > ?)
+      )
+      SELECT *, COUNT(*) OVER () AS eligible_count
+      FROM eligible
+      ORDER BY gc_priority, gc_order, record_id
+      LIMIT ?`).all(
+        now,
+        TASK_EXECUTION_RECORD_RETENTION.passedRecentCount,
+        cutoff,
+        TASK_EXECUTION_RECORD_RETENTION.tombstoneRecentCount,
+        limit,
+      );
+      return {
+        root: opened.root,
+        scanned,
+        eligible: rows.length ? Number(rows[0].eligible_count) : 0,
+        candidates: rows.map((row) => ({
+          action: row.gc_action,
+          recentRank: row.lifecycle_status === 'cleaned' ? Number(row.tombstone_rank) : Number(row.outcome_rank),
+          persisted: persisted(opened.root, rowToRecord(row)),
+        })),
+      };
+    } catch (error) { throw asError(error, 'GC候选查询', { limit }); }
+    finally { try { opened?.database?.close(); } catch {} }
+  }
+
+  function deleteTaskExecutionRecordTombstonePersistence(targetRoot, expectedValue) {
+    const expected = normalizeTaskExecutionRecord(expectedValue);
+    if (expected.lifecycleStatus !== 'cleaned') throw taskExecutionRecordError('task_execution_record_tombstone_required', '只有cleaned tombstone可以删除metadata。', 409, { recordId: expected.recordId });
+    let opened;
+    try {
+      opened = runtime.openWorkspaceStructuredStore(targetRoot, { writable: true, writerRole: 'retained-task-state' });
+      const database = opened.database;
+      database.exec('BEGIN IMMEDIATE');
+      const row = database.prepare(`${SELECT} WHERE record_id = ?`).get(expected.recordId);
+      if (!row) {
+        database.exec('COMMIT');
+        return { root: opened.root, recordId: expected.recordId, deleted: false, status: 'absent' };
+      }
+      const current = rowToRecord(row);
+      if (!same(current, expected)) throw taskExecutionRecordError('task_execution_record_conflict', 'Task Execution Record current已变化，请刷新后重试。', 409, { recordId: expected.recordId, lifecycleStatus: current.lifecycleStatus, updatedAt: current.timestamps.updatedAt });
+      const result = database.prepare('DELETE FROM task_execution_records WHERE record_id = ?').run(expected.recordId);
+      database.exec('COMMIT');
+      return { root: opened.root, recordId: expected.recordId, deleted: result.changes === 1, status: result.changes === 1 ? 'deleted' : 'absent' };
+    } catch (error) {
+      try { opened?.database?.exec('ROLLBACK'); } catch {}
+      throw asError(error, 'tombstone删除', { recordId: expected.recordId, rollback: { status: 'restored' } });
+    } finally { try { opened?.database?.close(); } catch {} }
+  }
+
   Object.assign(runtime, {
     readTaskExecutionRecordPersistence,
     listTaskExecutionRecordPersistence,
     openTaskExecutionRecordPersistence,
     replaceTaskExecutionRecordPersistence,
     taskExecutionRecordRecentRank,
+    listTaskExecutionRecordGcCandidates,
+    deleteTaskExecutionRecordTombstonePersistence,
   });
   return runtime;
 }

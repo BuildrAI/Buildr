@@ -24,6 +24,10 @@ export const TASK_EXECUTION_RECORD_RETENTION = Object.freeze({
   tombstoneDays: 90,
   tombstoneRecentCount: 20,
 });
+export const TASK_EXECUTION_RECORD_GC_LIMITS = Object.freeze({
+  defaultBatch: 100,
+  maximumBatch: 500,
+});
 
 const TERMINAL_OUTCOMES = new Set(['passed', 'failed', 'blocked', 'cancelled']);
 const FAILURE_OUTCOMES = new Set(['failed', 'blocked', 'cancelled']);
@@ -304,6 +308,20 @@ export function evaluateTaskExecutionRecordCleanup(record, { now = new Date().to
   if (current.retention.retainUntil && Date.parse(now) < Date.parse(current.retention.retainUntil)) reasons.push('retention-time-protected');
   if (current.outcome === 'passed' && Number.isInteger(recentRank) && recentRank <= TASK_EXECUTION_RECORD_RETENTION.passedRecentCount) reasons.push('recent-count-protected');
   if (FAILURE_OUTCOMES.has(current.outcome) && !['acknowledged', 'recovered'].includes(current.resolutionStatus)) reasons.push('resolution-pending');
+  return { eligible: reasons.length === 0, reasons };
+}
+
+export function evaluateTaskExecutionRecordTombstonePurge(record, { now = new Date().toISOString(), recentRank = null } = {}) {
+  const current = normalizeTaskExecutionRecord(record);
+  const reasons = [];
+  if (current.lifecycleStatus !== 'cleaned') reasons.push('record-not-cleaned');
+  if (!current.timestamps.cleanedAt) reasons.push('cleaned-at-missing');
+  else {
+    const retainUntil = addDays(current.timestamps.cleanedAt, TASK_EXECUTION_RECORD_RETENTION.tombstoneDays);
+    if (Date.parse(now) < Date.parse(retainUntil)) reasons.push('tombstone-time-protected');
+  }
+  if (!Number.isInteger(recentRank)) reasons.push('tombstone-recent-rank-unknown');
+  else if (recentRank <= TASK_EXECUTION_RECORD_RETENTION.tombstoneRecentCount) reasons.push('tombstone-recent-count-protected');
   return { eligible: reasons.length === 0, reasons };
 }
 

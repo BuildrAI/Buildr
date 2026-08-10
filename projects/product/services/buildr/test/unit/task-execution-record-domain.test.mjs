@@ -7,6 +7,7 @@ import {
   completeTaskExecutionRecordCleanup,
   createOpenTaskExecutionRecord,
   evaluateTaskExecutionRecordCleanup,
+  evaluateTaskExecutionRecordTombstonePurge,
   resolveTaskExecutionRecord,
   sealTaskExecutionRecord,
 } from '../../src/domain/task-execution-record/task-execution-record.mjs';
@@ -59,4 +60,14 @@ test('passed最近三条与固定七天窗口都受保护', () => {
   assert.deepEqual(evaluateTaskExecutionRecordCleanup(passed, { now: '2026-01-05T00:00:00.000Z', recentRank: 4 }).reasons, ['retention-time-protected']);
   assert.deepEqual(evaluateTaskExecutionRecordCleanup(passed, { now: '2026-02-01T00:00:00.000Z', recentRank: 3 }).reasons, ['recent-count-protected']);
   assert.equal(evaluateTaskExecutionRecordCleanup(passed, { now: '2026-02-01T00:00:00.000Z', recentRank: 4 }).eligible, true);
+});
+
+test('cleaned tombstone同时受90天与最近20条保护', () => {
+  const failed = sealTaskExecutionRecord(opened(), body, 'failed', '2025-10-01T00:00:00.000Z');
+  const resolved = resolveTaskExecutionRecord(failed, 'recovered', '2025-11-01T00:00:00.000Z');
+  const pending = beginTaskExecutionRecordCleanup(resolved, '2025-11-02T00:00:00.000Z');
+  const cleaned = completeTaskExecutionRecordCleanup(pending, 'body-removed', '2025-11-03T00:00:00.000Z');
+  assert.deepEqual(evaluateTaskExecutionRecordTombstonePurge(cleaned, { now: '2025-12-01T00:00:00.000Z', recentRank: 21 }).reasons, ['tombstone-time-protected']);
+  assert.deepEqual(evaluateTaskExecutionRecordTombstonePurge(cleaned, { now: '2026-03-01T00:00:00.000Z', recentRank: 20 }).reasons, ['tombstone-recent-count-protected']);
+  assert.equal(evaluateTaskExecutionRecordTombstonePurge(cleaned, { now: '2026-03-01T00:00:00.000Z', recentRank: 21 }).eligible, true);
 });

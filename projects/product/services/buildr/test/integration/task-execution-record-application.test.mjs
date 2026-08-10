@@ -2,11 +2,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createOpenTaskExecutionRecord, resolveTaskExecutionRecord, sealTaskExecutionRecord } from '../../src/domain/task-execution-record/task-execution-record.mjs';
+import {
+  beginTaskExecutionRecordCleanup,
+  completeTaskExecutionRecordCleanup,
+  createOpenTaskExecutionRecord,
+  resolveTaskExecutionRecord,
+  sealTaskExecutionRecord,
+} from '../../src/domain/task-execution-record/task-execution-record.mjs';
 import { TASK_EXECUTION_RECORD_BODY_READ_LIMIT_BYTES } from '../../src/infrastructure/filesystem/task-execution-record-body-store.mjs';
+
+const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
+const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 
 function taskRecord(taskId) {
   return {
@@ -73,6 +83,34 @@ function seedReservations(runtime, root, entries) {
     try { opened.database.exec('ROLLBACK'); } catch {}
     throw error;
   } finally { opened.database.close(); }
+}
+
+function retained(runtime, root, runIdentity, { outcome = 'passed', sealedAt = '2025-01-01T00:00:00.000Z' } = {}) {
+  const opened = open(runtime, root, 'record-task', runIdentity);
+  const persisted = runtime.readTaskExecutionRecordPersistence(root, opened.record.recordId);
+  const body = runtime.publishTaskExecutionRecordBody(root, persisted.record, [{ name: 'summary.json', content: { runIdentity } }]);
+  let record = sealTaskExecutionRecord(persisted.record, body, outcome, sealedAt);
+  if (outcome !== 'passed') record = resolveTaskExecutionRecord(record, 'recovered', '2025-02-15T00:00:00.000Z');
+  runtime.replaceTaskExecutionRecordPersistence(root, persisted.record, record);
+  return record;
+}
+
+function cleanedTombstone(runtime, root, runIdentity, cleanedAt) {
+  const opened = open(runtime, root, 'record-task', runIdentity);
+  const persisted = runtime.readTaskExecutionRecordPersistence(root, opened.record.recordId);
+  const body = {
+    locator: `.buildr/local/task-execution-records/task-verification/${persisted.record.recordId}/`,
+    digest: `sha256-${persisted.record.recordId.replace(/[^a-f0-9]/gu, 'a').padEnd(64, 'a').slice(0, 64)}`,
+    storedSizeBytes: 1,
+    originalSizeBytes: 1,
+    truncated: false,
+  };
+  const failed = sealTaskExecutionRecord(persisted.record, body, 'failed', '2025-01-01T00:00:00.000Z');
+  const resolved = resolveTaskExecutionRecord(failed, 'recovered', '2025-02-01T00:00:00.000Z');
+  const pending = beginTaskExecutionRecordCleanup(resolved, '2025-02-02T00:00:00.000Z');
+  const cleaned = completeTaskExecutionRecordCleanup(pending, 'body-already-absent', cleanedAt);
+  runtime.replaceTaskExecutionRecordPersistence(root, persisted.record, cleaned);
+  return cleaned;
 }
 
 test('Application open幂等、seal、inspect/list和failure resolution共享单一authority', (t) => {
@@ -202,4 +240,77 @@ test('eligible failure单记录cleanup可从cleanup_pending重试并保留tombst
   assert.equal(detail.record.body.status, 'cleaned');
   assert.throws(() => runtime.readTaskExecutionRecordBodyFileView(root, 'record-task', opened.record.recordId, 'diagnostics.json'), (error) => error.code === 'task_execution_record_body_unavailable' && error.status === 410);
   assert.equal(runtime.cleanupTaskExecutionRecord(root, opened.record.recordId).status, 'reused');
+});
+
+test('Workspace GC dry-run零写入且bounded run只清理最近三条之外的passed正文', (t) => {
+  const { root, runtime } = fixture(t);
+  const records = Array.from({ length: 5 }, (_, index) => retained(runtime, root, `passed-${index}`, { sealedAt: `2025-01-0${index + 1}T00:00:00.000Z` }));
+  const dryRun = runtime.gcTaskExecutionRecords(root, { dryRun: true, limit: 1 });
+  assert.equal(dryRun.status, 'planned');
+  assert.equal(dryRun.counts.selected, 1);
+  assert.equal(dryRun.records[0].status, 'eligible');
+  assert.equal(runtime.inspectTaskExecutionRecord(root, dryRun.records[0].recordId).record.lifecycleStatus, 'retained');
+
+  const result = runtime.gcTaskExecutionRecords(root, { limit: 1 });
+  assert.equal(result.status, 'completed');
+  assert.equal(result.counts.cleaned, 1);
+  assert.equal(runtime.inspectTaskExecutionRecord(root, result.records[0].recordId).record.lifecycleStatus, 'cleaned');
+  const protectedRecords = records.slice(-3).map((record) => runtime.inspectTaskExecutionRecord(root, record.recordId).record.lifecycleStatus);
+  assert.deepEqual(protectedRecords, ['retained', 'retained', 'retained']);
+});
+
+test('Workspace GC恢复cleanup_pending、隔离单条失败并继续后续candidate', (t) => {
+  const { root, runtime } = fixture(t);
+  retained(runtime, root, 'failure-one', { outcome: 'failed' });
+  retained(runtime, root, 'failure-two', { outcome: 'failed' });
+  const cleanupBody = runtime.cleanupTaskExecutionRecordBody;
+  let injected = false;
+  runtime.cleanupTaskExecutionRecordBody = (...args) => {
+    if (!injected) { injected = true; throw new Error('injected body cleanup failure'); }
+    return cleanupBody(...args);
+  };
+  const result = runtime.gcTaskExecutionRecords(root, { limit: 2 });
+  assert.equal(result.status, 'partial');
+  assert.equal(result.counts.failed, 1);
+  assert.equal(result.counts.cleaned, 1);
+  assert.equal(result.records.some((record) => record.diagnostic?.message.includes(root)), false);
+
+  const pending = result.records.find((record) => record.status === 'failed');
+  assert.equal(runtime.inspectTaskExecutionRecord(root, pending.recordId).record.lifecycleStatus, 'cleanup_pending');
+  runtime.cleanupTaskExecutionRecordBody = cleanupBody;
+  const resumed = runtime.gcTaskExecutionRecords(root, { limit: 1 });
+  assert.equal(resumed.records[0].recordId, pending.recordId);
+  assert.equal(resumed.records[0].status, 'cleaned');
+});
+
+test('Workspace GC仅删除满90天且超出最近20条的cleaned tombstone', (t) => {
+  const { root, runtime } = fixture(t);
+  const tombstones = Array.from({ length: 21 }, (_, index) => cleanedTombstone(runtime, root, `tombstone-${index}`, `2025-01-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`));
+  const result = runtime.gcTaskExecutionRecords(root, { limit: 10 });
+  assert.equal(result.counts.purged, 1);
+  assert.equal(result.records[0].recordId, tombstones[0].recordId);
+  assert.equal(runtime.readTaskExecutionRecordPersistence(root, tombstones[0].recordId, { optional: true }), null);
+  assert.notEqual(runtime.readTaskExecutionRecordPersistence(root, tombstones[1].recordId, { optional: true }), null);
+});
+
+test('ExecRecord GC CLI提供stable dry-run JSON并拒绝force/path策略输入', (t) => {
+  const { root, runtime } = fixture(t);
+  for (let index = 0; index < 4; index += 1) retained(runtime, root, `cli-passed-${index}`, { sealedAt: `2025-01-0${index + 1}T00:00:00.000Z` });
+  const run = (args, expected = 0) => {
+    const result = spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
+    assert.equal(result.status, expected, `${result.stdout}\n${result.stderr}`);
+    assert.equal(result.stderr, '');
+    return JSON.parse(result.stdout);
+  };
+  const dryRun = run(['task', 'execution-record', 'gc', '--target', root, '--dry-run', '--limit', '1', '--json']);
+  assert.equal(dryRun.schemaVersion, 'buildr.task-execution-record-gc-result/v1');
+  assert.equal(dryRun.status, 'planned');
+  assert.equal(dryRun.counts.selected, 1);
+  assert.equal(JSON.stringify(dryRun).includes(root), false);
+  assert.equal(runtime.inspectTaskExecutionRecord(root, dryRun.records[0].recordId).record.lifecycleStatus, 'retained');
+
+  const invalid = run(['task', 'execution-record', 'gc', '--target', root, '--force', '--json'], 1);
+  assert.equal(invalid.status, 'blocked');
+  assert.equal(invalid.diagnostic.code, 'task_execution_record_gc_cli.syntax');
+  assert.equal(invalid.counts.selected, 0);
 });

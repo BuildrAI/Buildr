@@ -58,3 +58,42 @@ test('Local App HTTP owner 传播 read executor 错误并保持写请求保护',
   assert.equal(rejectedWrite.status, 403);
   assert.equal((await rejectedWrite.json()).error.code, 'origin_forbidden');
 });
+
+test('正式 Local HTTP Server 启动scheduler，Task Preview Server完全不创建scheduled maintenance', async (t) => {
+  const { base, root } = fixture(t, 'local-app-scheduled-maintenance');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'scheduler-boundary', title: 'Scheduler Boundary', intent: '验证Preview零后台维护', projects: [], services: [], changes: [] });
+  const taskBefore = runtime.inspectTaskRecord(root, 'scheduler-boundary').record;
+
+  let formalCreated = 0;
+  let formalStarted = 0;
+  let formalStopped = 0;
+  const formal = createLocalWorkspaceServer(runtime, {
+    targetRoot: root,
+    scheduledMaintenanceFactory: () => {
+      formalCreated += 1;
+      return { start: () => { formalStarted += 1; }, stop: () => { formalStopped += 1; } };
+    },
+  });
+  await formal.ready;
+  assert.equal(formalCreated, 1);
+  assert.equal(formalStarted, 1);
+  await new Promise((resolve) => formal.server.close(resolve));
+  assert.equal(formalStopped, 1);
+
+  let previewFactoryCalls = 0;
+  const preview = createLocalWorkspaceServer(runtime, {
+    targetRoot: root,
+    previewIdentity: { schemaVersion: 'buildr.local-app-preview/v1', instance: 'test-preview' },
+    scheduledMaintenanceFactory: () => {
+      previewFactoryCalls += 1;
+      throw new Error('Preview must not create scheduled maintenance.');
+    },
+  });
+  await preview.ready;
+  assert.equal(previewFactoryCalls, 0);
+  await new Promise((resolve) => preview.server.close(resolve));
+  assert.deepEqual(runtime.inspectTaskRecord(root, 'scheduler-boundary').record, taskBefore);
+});

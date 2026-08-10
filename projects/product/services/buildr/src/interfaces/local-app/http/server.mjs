@@ -25,6 +25,7 @@ import {
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
 import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
+import { createLocalAppScheduledMaintenance } from '../runtime/scheduled-maintenance.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web-dist');
@@ -249,7 +250,16 @@ function ensureRegisteredTarget(runtime, targetRoot) {
   return entry?.workspace?.id || null;
 }
 
-export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 0, instanceSecret = null, launcherIdentity = null, previewIdentity = null, onShutdown = null, readExecutor = null } = {}) {
+export function createLocalWorkspaceServer(runtime, {
+  targetRoot = null,
+  port = 0,
+  instanceSecret = null,
+  launcherIdentity = null,
+  previewIdentity = null,
+  onShutdown = null,
+  readExecutor = null,
+  scheduledMaintenanceFactory = createLocalAppScheduledMaintenance,
+} = {}) {
   const initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
   const ownsReadExecutor = !readExecutor;
   const taskReadExecutor = readExecutor || createBoundedLocalAppReadExecutor();
@@ -257,6 +267,7 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin = null;
   let closing = false;
+  let scheduledMaintenance = null;
 
   function submitTaskRead(request, response, operation, root, taskId, input = {}) {
     const controller = new AbortController();
@@ -522,7 +533,10 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
       jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr 本地应用资源不存在。' } });
     }).catch((error) => apiError(response, error));
   });
-  if (ownsReadExecutor) server.once('close', () => { void taskReadExecutor.close(); });
+  server.once('close', () => {
+    scheduledMaintenance?.stop();
+    if (ownsReadExecutor) void taskReadExecutor.close();
+  });
 
   const ready = new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -530,6 +544,16 @@ export function createLocalWorkspaceServer(runtime, { targetRoot = null, port = 
       server.removeListener('error', reject);
       const address = server.address();
       origin = `http://127.0.0.1:${address.port}`;
+      try {
+        if (!previewIdentity) {
+          scheduledMaintenance = scheduledMaintenanceFactory(runtime);
+          scheduledMaintenance.start();
+        }
+      } catch (error) {
+        server.close();
+        reject(error);
+        return;
+      }
       resolve({ server, url: origin, initialWorkspaceId, sessionToken, instanceSecret: healthSecret });
     });
   });
