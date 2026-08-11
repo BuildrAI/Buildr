@@ -61,12 +61,13 @@ async function run(current, id) {
 
 test('formal Verification 为passed/failed/retry/drift/cancelled保留独立execution records', async (t) => {
   const current = setup(t);
+  const selfSignalOutcome = process.platform === 'win32' ? 'failed' : 'cancelled';
   const cases = [
     ['demo.pass', 'process.stdout.write("token=very-secret /private/local/path")', 'passed'],
     ['demo.fail', 'process.stderr.write("fail"); process.exit(3)', 'failed'],
     ['demo.fail', 'process.stderr.write("retry"); process.exit(3)', 'failed'],
     ['demo.drift', 'require("fs").writeFileSync("drift.txt", "changed")', 'failed'],
-    ['demo.cancel', 'process.kill(process.pid, "SIGTERM")', 'cancelled'],
+    ['demo.cancel', 'process.kill(process.pid, "SIGTERM")', selfSignalOutcome],
   ];
   for (const [id, script, outcome] of cases) {
     declare(current.projectRoot, [capability(id, script)]);
@@ -80,7 +81,7 @@ test('formal Verification 为passed/failed/retry/drift/cancelled保留独立exec
   const listed = current.runtime.listTaskExecutionRecords(current.root, current.taskId, { owner: 'task-verification', kind: 'verification-execution' });
   assert.equal(listed.records.length, cases.length);
   assert.equal(new Set(listed.records.map((record) => record.runIdentity)).size, cases.length);
-  assert.deepEqual(listed.records.map((record) => record.outcome).sort(), ['cancelled', 'failed', 'failed', 'failed', 'passed']);
+  assert.deepEqual(listed.records.map((record) => record.outcome).sort(), [selfSignalOutcome, 'failed', 'failed', 'failed', 'passed'].sort());
   const passedRecord = listed.records.find((record) => record.outcome === 'passed');
   const retainedStdout = fs.readFileSync(path.join(current.root, passedRecord.body.locator, 'stdout.txt'), 'utf8');
   assert.doesNotMatch(retainedStdout, /very-secret|\/private\/local\/path/);

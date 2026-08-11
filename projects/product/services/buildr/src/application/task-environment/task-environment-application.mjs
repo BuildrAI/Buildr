@@ -22,7 +22,7 @@ import {
 } from '../../domain/task-environment/project-environment-preparation.mjs';
 import { observeGitCheckoutIdentity, sameFilesystemPath, sameGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
 import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
-import { spawnSync } from '../../infrastructure/process.mjs';
+import { spawnCommandSync, spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { declarationIntakeGapNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 
@@ -30,7 +30,10 @@ const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
 const ENVIRONMENT_MANAGER_SOURCE_PATHS = ['bin', 'src', 'package', 'package.json', 'package-lock.json'];
 
 function inside(parent, child) {
-  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  const canonical = (value) => {
+    try { return fs.realpathSync(value); } catch { return path.resolve(value); }
+  };
+  const relative = path.relative(canonical(parent), canonical(child));
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
@@ -141,7 +144,7 @@ export function registerTaskEnvironmentApplication(runtime) {
   function assertEnvironmentManager(workspaceRoot, receipt = null, adapter = null) {
     const expectedAdapter = receipt?.controller.adapter || adapter || 'codex';
     const current = currentEnvironmentManager(workspaceRoot, expectedAdapter);
-    if (receipt && (path.resolve(receipt.controller.sourceRoot) !== current.sourceRoot || receipt.controller.adapter !== current.adapter)) {
+    if (receipt && (!sameFilesystemPath(receipt.controller.sourceRoot, current.sourceRoot) || receipt.controller.adapter !== current.adapter)) {
       throw taskEnvironmentError('task_environment_manager_mismatch', '当前 Buildr 不是该 Environment Receipt 登记的 retained Environment Manager。', 409, {
         expected: { sourceRoot: receipt.controller.sourceRoot, adapter: receipt.controller.adapter },
         actual: { sourceRoot: current.sourceRoot, adapter: current.adapter },
@@ -157,13 +160,14 @@ export function registerTaskEnvironmentApplication(runtime) {
   function candidateCli(controller, workspaceRoot, executionRoot, enabled = true) {
     const controllerCheckout = controller.sourceCheckout;
     const workspaceCheckout = controller.workspaceCheckout;
-    if (enabled && controllerCheckout && workspaceCheckout && controllerCheckout.checkoutRoot === workspaceCheckout.checkoutRoot && inside(workspaceRoot, controller.sourceRoot)) {
+    if (enabled && controllerCheckout && workspaceCheckout && sameFilesystemPath(controllerCheckout.checkoutRoot, workspaceCheckout.checkoutRoot) && inside(workspaceRoot, controller.sourceRoot)) {
       const sourceRoot = path.resolve(executionRoot, path.relative(workspaceRoot, controller.sourceRoot));
+      const source = path.join(sourceRoot, 'bin', 'buildr.mjs');
       return {
         sourceRoot,
-        source: path.join(sourceRoot, 'bin', 'buildr.mjs'),
-        command: path.resolve(sourceRoot, '..', '..', 'buildr'),
-        argsPrefix: [],
+        source,
+        command: process.platform === 'win32' ? process.execPath : path.resolve(sourceRoot, '..', '..', 'buildr'),
+        argsPrefix: process.platform === 'win32' ? [source] : [],
         kind: 'task-environment-candidate',
       };
     }
@@ -172,7 +176,7 @@ export function registerTaskEnvironmentApplication(runtime) {
 
   function workspaceHasRootGit(workspaceRoot) {
     const result = spawnSync('git', ['-C', workspaceRoot, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-    return result.status === 0 && path.resolve(result.stdout.trim()) === fs.realpathSync(workspaceRoot);
+    return result.status === 0 && sameFilesystemPath(result.stdout.trim(), workspaceRoot);
   }
 
   function taskScopes(workspaceRoot, task) {
@@ -492,7 +496,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       if (blockedServices.has(planned.scope)) {
         step = { ...step, status: 'blocked', observedAt: now(), diagnostic: `前序 required Step 失败，未执行：${planned.id}` };
       } else if (mutate && step.status !== 'ready' && step.executableIdentity && step.inputs.every((input) => input.identity)) {
-        const result = spawnSync(step.executable, planned.args, {
+        const result = spawnCommandSync(step.executable, planned.args, {
           cwd: step.cwd,
           encoding: 'utf8',
           env: planned.executable.kind === 'workspace-foundation' ? workspaceNode.environment : process.env,

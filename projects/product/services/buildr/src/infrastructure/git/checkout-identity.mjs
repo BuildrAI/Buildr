@@ -16,8 +16,8 @@ function gitPath(root, argument) {
 
 export function sameFilesystemPath(left, right) {
   try {
-    const leftReal = fs.realpathSync.native(left);
-    const rightReal = fs.realpathSync.native(right);
+    const leftReal = path.normalize(fs.realpathSync(left));
+    const rightReal = path.normalize(fs.realpathSync(right));
     if (process.platform === 'win32'
       ? leftReal.toLowerCase() === rightReal.toLowerCase()
       : leftReal === rightReal) return true;

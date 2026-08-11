@@ -74,8 +74,13 @@ function fixture(t, { services = ['buildr', 'buildr-web', 'unrelated'], scoped =
   fs.writeFileSync(path.join(controllerRoot, 'bin', 'buildr.mjs'), "if (process.argv[2] === 'version') process.stdout.write(JSON.stringify({version:'fixture'}) + '\\n'); else process.exitCode = 1;\n");
   for (const service of services) writePackage(path.join(projectRoot, 'services', service), service);
   const installLog = path.join(base, 'installs.log');
-  const npmExecutable = path.join(base, 'managed-npm');
-  fs.writeFileSync(npmExecutable, `#!/bin/sh
+  const npmExecutable = path.join(base, process.platform === 'win32' ? 'managed-npm.cmd' : 'managed-npm');
+  fs.writeFileSync(npmExecutable, process.platform === 'win32' ? `@echo off
+if not "%FAIL_ROOT%"=="" if /I "%FAIL_ROOT%"=="%CD%" (echo declared install failure 1>&2 & exit /b 17)
+if exist node_modules rmdir /s /q node_modules
+mkdir node_modules
+echo %CD%>>"%INSTALL_LOG%"
+` : `#!/bin/sh
 if [ -n "$FAIL_ROOT" ] && [ "$FAIL_ROOT" = "$PWD" ]; then echo "declared install failure" >&2; exit 17; fi
 rm -rf node_modules
 mkdir -p node_modules
@@ -194,15 +199,16 @@ test('没有Plan时prepare形成受控执行根但明确blocked，plan record不
 test('非npm Service executable同样按input/executable/output identity准备和恢复', (t) => {
   const current = fixture(t, { services: ['buildr'], scoped: ['buildr'] });
   const root = current.serviceRoot('buildr');
-  const executable = path.join(root, 'prepare.sh');
+  const executableName = process.platform === 'win32' ? 'prepare.cmd' : 'prepare.sh';
+  const executable = path.join(root, executableName);
   fs.writeFileSync(path.join(root, 'input.txt'), 'v1\n');
-  fs.writeFileSync(executable, '#!/bin/sh\nset -eu\nprintf prepared > prepared.txt\n');
+  fs.writeFileSync(executable, process.platform === 'win32' ? '@echo off\n<nul set /p=prepared>prepared.txt\n' : '#!/bin/sh\nset -eu\nprintf prepared > prepared.txt\n');
   fs.chmodSync(executable, 0o755);
   const plan = {
     schemaVersion: 'buildr.task-environment-plan/v1',
     services: [{
       selector: 'service:product/buildr', disposition: 'required',
-      steps: [{ id: 'custom', cwd: '.', executable: { kind: 'service', path: 'prepare.sh' }, args: [], inputs: ['input.txt'], outputs: [{ path: 'prepared.txt', kind: 'file' }], required: true, timeoutMs: 10_000 }],
+      steps: [{ id: 'custom', cwd: '.', executable: { kind: 'service', path: executableName }, args: [], inputs: ['input.txt'], outputs: [{ path: 'prepared.txt', kind: 'file' }], required: true, timeoutMs: 10_000 }],
     }],
   };
   const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan });

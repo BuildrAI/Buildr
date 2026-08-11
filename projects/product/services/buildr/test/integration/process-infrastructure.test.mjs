@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildCommandInvocation, findExecutableOnPath } from '../../src/infrastructure/process.mjs';
+import { buildCommandInvocation, findExecutableOnPath, quoteWindowsCommandArgument } from '../../src/infrastructure/process.mjs';
 
 test('共享进程基础层保留参数并只为 Windows command shim 启用 shell', () => {
   const args = ['--version'];
@@ -14,6 +14,12 @@ test('共享进程基础层保留参数并只为 Windows command shim 启用 she
   assert.deepEqual(shim.args, ['--version']);
   assert.equal(buildCommandInvocation('C:\\tools\\openspec.exe', [], { platform: 'win32' }).shell, false);
   assert.equal(buildCommandInvocation('/usr/local/bin/openspec', [], { platform: 'darwin' }).shell, false);
+  assert.deepEqual(
+    buildCommandInvocation('C:\\tools\\buildr.cmd', ['--description', 'Package parity workspace'], { platform: 'win32' }).args,
+    ['--description', '"Package parity workspace"'],
+  );
+  assert.equal(quoteWindowsCommandArgument(''), '""');
+  assert.equal(quoteWindowsCommandArgument('plain'), 'plain');
 });
 
 test('共享 PATH 解析器在 Windows 语义下解析 PATHEXT shim', (t) => {

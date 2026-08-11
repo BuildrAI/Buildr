@@ -43,7 +43,7 @@ if (node.status !== 0 || npm.status !== 0) process.exitCode = 1;
 `;
 }
 
-test('verification executor preserves upstream PATH while pinning Node and npm to the current distribution', async (t) => {
+test('verification executor preserves upstream PATH while pinning Node and npm to the current distribution', { skip: process.platform === 'win32' }, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-node-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const fakeBin = fakeLowVersionPath(root);
@@ -80,7 +80,7 @@ test('verification executor preserves upstream PATH while pinning Node and npm t
   assert.doesNotMatch(`${npmResult.stdout}\n${npmResult.stderr}`, /fake-low-version-npm/);
 });
 
-test('verification shell wrappers use the declared Workspace Node with a hostile PATH', (t) => {
+test('verification shell wrappers use the declared Workspace Node with a hostile PATH', { skip: process.platform === 'win32' }, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-wrapper-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const fakeBin = fakeLowVersionPath(root);

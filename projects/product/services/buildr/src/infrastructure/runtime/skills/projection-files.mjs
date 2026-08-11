@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
+import { spawnSync } from '../../process.mjs';
 
 export const RUNTIME_SKILL_PROJECTION_SCHEMA_V1 = 'buildr.runtime-skill-projection/v1';
 export const RUNTIME_SKILL_PROJECTION_SCHEMA = 'buildr.skill-projection/v2';
@@ -38,12 +40,30 @@ function assertSafeRelativeFile(relative, label) {
   return normalized;
 }
 
-function inspectSourceEntry(sourceDir, absolute, relative, files) {
+function gitExecutablePaths(sourceDir) {
+  const root = spawnSync('git', ['-C', sourceDir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 5_000 });
+  if (root.status !== 0) return new Set();
+  const repositoryRoot = root.stdout.trim();
+  const sourceRelative = path.relative(repositoryRoot, sourceDir) || '.';
+  const indexed = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '--stage', '-z', '--', sourceRelative], { encoding: 'buffer', timeout: 5_000 });
+  if (indexed.status !== 0) return new Set();
+  const executable = new Set();
+  for (const record of indexed.stdout.toString('utf8').split('\0').filter(Boolean)) {
+    const match = /^(\d{6}) [0-9a-f]+ \d\t([\s\S]+)$/u.exec(record);
+    if (!match || match[1] !== '100755') continue;
+    const absolute = path.resolve(repositoryRoot, ...match[2].split('/'));
+    const relative = path.relative(sourceDir, absolute);
+    if (relative && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) executable.add(toPosix(relative));
+  }
+  return executable;
+}
+
+function inspectSourceEntry(sourceDir, absolute, relative, files, indexedExecutable) {
   const stat = fs.lstatSync(absolute);
   if (stat.isSymbolicLink()) throw new Error(`Skill source must not contain symbolic links: ${path.join(sourceDir, relative)}`);
   if (stat.isDirectory()) {
     for (const child of fs.readdirSync(absolute).sort()) {
-      inspectSourceEntry(sourceDir, path.join(absolute, child), path.posix.join(relative, child), files);
+      inspectSourceEntry(sourceDir, path.join(absolute, child), path.posix.join(relative, child), files, indexedExecutable);
     }
     return;
   }
@@ -52,7 +72,7 @@ function inspectSourceEntry(sourceDir, absolute, relative, files) {
     relativePath: assertSafeRelativeFile(relative, 'Skill source file'),
     sourceFile: absolute,
     content: fs.readFileSync(absolute),
-    executable: ownerExecutable(stat.mode),
+    executable: indexedExecutable.has(relative) || ownerExecutable(stat.mode),
   });
 }
 
@@ -64,8 +84,9 @@ export function enumerateSkillSourceFiles(sourceDir) {
   const entries = fs.readdirSync(sourceDir).sort();
   const unknown = entries.filter((entry) => !SUPPORTED_SKILL_SOURCE_ENTRY_SET.has(entry));
   if (unknown.length) throw new Error(`Skill source contains unsupported top-level entries: ${unknown.join(', ')}`);
+  const indexedExecutable = gitExecutablePaths(sourceDir);
   const files = [];
-  for (const entry of entries) inspectSourceEntry(sourceDir, path.join(sourceDir, entry), entry, files);
+  for (const entry of entries) inspectSourceEntry(sourceDir, path.join(sourceDir, entry), entry, files, indexedExecutable);
   if (!files.some((file) => file.relativePath === 'SKILL.md')) throw new Error(`Skill source must contain SKILL.md: ${sourceDir}`);
   return files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
@@ -97,7 +118,7 @@ export function runtimeWriteMode(item) {
 export function runtimeFileMatches(file, integrity, executable) {
   if (!fs.existsSync(file) || !fs.lstatSync(file).isFile() || fs.lstatSync(file).isSymbolicLink()) return false;
   if (sha256Integrity(fs.readFileSync(file)) !== integrity) return false;
-  return executable === undefined || ownerExecutable(fs.statSync(file).mode) === executable;
+  return executable === undefined || process.platform === 'win32' || ownerExecutable(fs.statSync(file).mode) === executable;
 }
 
 function normalizedReceiptSegments(adapterId, runtimePath) {

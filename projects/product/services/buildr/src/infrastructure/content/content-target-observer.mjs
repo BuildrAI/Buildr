@@ -14,8 +14,10 @@ function posix(value) {
   return value.split(path.sep).join('/');
 }
 
-function inside(parent, child) {
-  const relative = path.relative(path.resolve(parent), path.resolve(child));
+function inside(parent, child, io = fs) {
+  const left = physicalPath(io, parent);
+  const right = physicalPath(io, child);
+  const relative = path.relative(left, right);
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
@@ -55,11 +57,11 @@ function gitPaths(root, run, io) {
   const top = run('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 5000 });
   if (top.status !== 0 || !top.stdout.trim()) return null;
   const repository = physicalPath(io, top.stdout.trim());
-  if (!inside(repository, root)) return null;
+  if (!inside(repository, root, io)) return null;
   const scope = posix(path.relative(repository, root)) || '.';
   const listed = run('git', ['-C', repository, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', scope], { encoding: 'utf8', timeout: 30_000, maxBuffer: 64 * 1024 * 1024 });
   if (listed.status !== 0) return null;
-  return [...new Set(listed.stdout.split('\0').filter(Boolean).map((relative) => path.resolve(repository, relative)).filter((target) => inside(root, target) && deliverablePath(root, target) && io.existsSync(target)))].sort((left, right) => posix(path.relative(root, left)).localeCompare(posix(path.relative(root, right))));
+  return [...new Set(listed.stdout.split('\0').filter(Boolean).map((relative) => path.resolve(repository, relative)).filter((target) => inside(root, target, io) && deliverablePath(root, target) && io.existsSync(target)))].sort((left, right) => posix(path.relative(root, left)).localeCompare(posix(path.relative(root, right))));
 }
 
 export function contentInventoryIdentity(root, files, io = fs) {

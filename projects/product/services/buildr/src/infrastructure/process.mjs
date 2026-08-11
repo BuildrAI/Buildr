@@ -30,11 +30,19 @@ export function findExecutableOnPath(executable, options = {}) {
 
 export function buildCommandInvocation(executable, args, options = {}) {
   const platform = options.platform ?? process.platform;
+  const windowsShim = platform === 'win32' && /\.(?:cmd|bat)$/i.test(executable);
   return {
     executable,
-    args: [...args],
-    shell: platform === 'win32' && /\.(?:cmd|bat)$/i.test(executable),
+    args: windowsShim ? args.map(quoteWindowsCommandArgument) : [...args],
+    shell: windowsShim,
   };
+}
+
+export function quoteWindowsCommandArgument(value) {
+  const argument = String(value);
+  if (argument.length === 0) return '""';
+  if (!/[\s"]/u.test(argument)) return argument;
+  return `"${argument.replace(/(\\*)"/gu, '$1$1\\"').replace(/(\\+)$/u, '$1$1')}"`;
 }
 
 export function spawnCommandSync(executable, args, options = {}) {

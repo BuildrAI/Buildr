@@ -81,7 +81,7 @@ function receipt(overrides = {}) {
     }],
     resources: [{
       id: 'preview-demo', kind: 'preview', scope: 'workspace', provider: 'local-app-preview', handle: { instance: 'demo' }, status: 'running',
-      identity: { productCheckout: '/workspace/projects/product/services/buildr', url: 'http://127.0.0.1:4321', port: 4321, pid: 1234, providerIdentity: 'preview-demo-1234' },
+      identity: { productCheckout: path.join(WORKSPACE_ROOT, 'projects', 'product', 'services', 'buildr'), url: 'http://127.0.0.1:4321', port: 4321, pid: 1234, providerIdentity: 'preview-demo-1234' },
       probe: { status: 'ready', identity: 'preview-one', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
       registeredAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
     }],

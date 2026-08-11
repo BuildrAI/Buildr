@@ -13,9 +13,9 @@ function read(relative) {
 test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   const app = read('../buildr-web/src/App.tsx');
   assert.match(app, /path="\/workspaces\/:workspaceId"/);
-  assert.match(app, /path="tasks"/);
-  assert.match(app, /path="tasks\/:taskId"/);
-  assert.match(app, /path="tasks\/:taskId\/changes\/:projectCode\/:changeCode"/);
+  assert.match(app, /path="tasks" element=\{<TasksSection \/>\}/);
+  assert.match(app, /path=":taskId"/);
+  assert.match(app, /path=":taskId\/changes\/:projectCode\/:changeCode"/);
   assert.match(app, /path="projects"/);
   assert.match(app, /path="projects\/:projectCode"/);
   assert.match(app, /path="services"/);

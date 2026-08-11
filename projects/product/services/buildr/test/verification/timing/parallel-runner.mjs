@@ -206,8 +206,8 @@ export async function runVerificationStep(step, runtime = {}) {
     let cleanupCompleted = false;
     let exitCloseTimer = null;
     let exitResult = null;
-    const requestedExitCloseGraceMs = runtime.exitCloseGraceMs ?? 1_000;
-    const exitCloseGraceMs = Number.isFinite(requestedExitCloseGraceMs) && requestedExitCloseGraceMs >= 0 ? requestedExitCloseGraceMs : 1_000;
+    const requestedExitCloseGraceMs = runtime.exitCloseGraceMs ?? 10_000;
+    const exitCloseGraceMs = Number.isFinite(requestedExitCloseGraceMs) && requestedExitCloseGraceMs >= 0 ? requestedExitCloseGraceMs : 10_000;
     const scheduleTimeout = runtime.setTimeout ?? setTimeout;
     const cancelTimeout = runtime.clearTimeout ?? clearTimeout;
     const cleanup = () => {

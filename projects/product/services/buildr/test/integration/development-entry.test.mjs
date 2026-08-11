@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +40,7 @@ function run(entry, args, env) {
   });
 }
 
-test('Project bridge 使用 PATH 中首个兼容 Node 启动 Service CLI', () => {
+test('Project bridge 使用 PATH 中首个兼容 Node 启动 Service CLI', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-path-'));
   const oldBin = path.join(fixture, 'old');
   const currentBin = path.join(fixture, 'current');
@@ -51,7 +52,7 @@ test('Project bridge 使用 PATH 中首个兼容 Node 启动 Service CLI', () =>
   assert.match(result.stdout, /^current\|.*bin\/buildr\.mjs doctor --json\n$/u);
 });
 
-test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Node', () => {
+test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Node', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-workspace-'));
   const workspace = path.join(fixture, 'workspace');
   const appData = path.join(fixture, 'app-data');
@@ -66,7 +67,7 @@ test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Nod
   assert.match(result.stdout, /^managed\|.*bin\/buildr\.mjs --help\n$/u);
 });
 
-test('受管 Node 缺失时仅 doctor/sync 可使用 bootstrap Node', () => {
+test('受管 Node 缺失时仅 doctor/sync 可使用 bootstrap Node', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-recovery-'));
   const workspace = path.join(fixture, 'workspace');
   const bootstrap = path.join(fixture, 'path/node');
@@ -81,7 +82,7 @@ test('受管 Node 缺失时仅 doctor/sync 可使用 bootstrap Node', () => {
   assert.match(recovery.stdout, /^bootstrap\|.*doctor --json\n$/u);
 });
 
-test('BUILDR_NODE 优先于 PATH 且不兼容 override 会 fail fast', () => {
+test('BUILDR_NODE 优先于 PATH 且不兼容 override 会 fail fast', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-override-'));
   const pathNode = path.join(fixture, 'path', 'node');
   const explicitNode = path.join(fixture, 'explicit', 'node');
@@ -100,7 +101,7 @@ test('BUILDR_NODE 优先于 PATH 且不兼容 override 会 fail fast', () => {
   assert.equal(rejected.stdout, '');
 });
 
-test('开发入口可发现 Agent runtime PATH 相邻的 bundled Node', () => {
+test('开发入口可发现 Agent runtime PATH 相邻的 bundled Node', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-bundled-'));
   const overrideBin = path.join(fixture, 'dependencies/bin/override');
   fs.mkdirSync(overrideBin, { recursive: true });
@@ -111,7 +112,7 @@ test('开发入口可发现 Agent runtime PATH 相邻的 bundled Node', () => {
   assert.match(result.stdout, /^bundled\|.*bin\/buildr\.mjs status\n$/u);
 });
 
-test('没有兼容 Node 时返回最低版本和恢复动作', () => {
+test('没有兼容 Node 时返回最低版本和恢复动作', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-missing-'));
   const oldBin = path.join(fixture, 'old');
   fakeNode(path.join(oldBin, 'node'), '18', 'old');

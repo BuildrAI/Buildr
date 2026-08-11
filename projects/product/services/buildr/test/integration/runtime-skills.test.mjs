@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import {
@@ -108,6 +109,9 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
   fs.writeFileSync(path.join(sourceDir, 'scripts', 'run.sh'), '#!/bin/sh\necho demo\n');
   fs.chmodSync(path.join(sourceDir, 'scripts', 'run.sh'), 0o744);
   fs.writeFileSync(path.join(sourceDir, 'agents', 'openai.yaml'), 'interface:\n  display_name: Complete Demo\n');
+  assert.equal(spawnSync('git', ['init', '--quiet'], { cwd: root }).status, 0);
+  assert.equal(spawnSync('git', ['add', '--', 'source'], { cwd: root }).status, 0);
+  assert.equal(spawnSync('git', ['update-index', '--chmod=+x', '--', 'source/scripts/run.sh'], { cwd: root }).status, 0);
   const skill = { id: 'complete-demo', sourceDir, sourceFile, origin: 'workspace', runtimePath: 'team/complete-demo', declaredScope: '.' };
 
   for (const adapterId of SUPPORTED_AGENT_IDS) {

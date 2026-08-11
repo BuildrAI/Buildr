@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 import { buildCommandInvocation } from '../../src/infrastructure/process.mjs';
 import { createCandidatePackage, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_TARBALL_ENV } from './release/candidate-package.mjs';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
@@ -27,13 +28,14 @@ export function createVerificationExecutor(options) {
     PATH: [nodeBin, nodeModulesBin, inheritedEnv.PATH].filter(Boolean).join(path.delimiter),
   };
   const artifacts = {};
+  const nodeTestFile = (file) => process.platform === 'win32' ? pathToFileURL(file).href : file;
 
   const commandFor = (step) => {
     const executor = step.executor;
     if (executor.type === 'node') return { command: process.execPath, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') return {
       command: process.execPath,
-      args: ['--test', ...(executor.args ?? []), ...executor.files.map((file) => path.join(productRoot, file))],
+      args: ['--test', ...(executor.args ?? []), ...executor.files.map((file) => nodeTestFile(path.join(productRoot, file)))],
     };
     if (executor.type === 'npm') {
       const invocation = buildCommandInvocation(npmExecutable, executor.args ?? []);

@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/infrastructure/runtime/adapter-contract.mjs';
 import { parseSkillsManifest } from '../../../src/infrastructure/runtime/skills/manifests.mjs';
 import { skillProjectionOwnershipReceiptTarget } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
@@ -27,6 +28,10 @@ function prepareSeed() {
   fs.writeFileSync(path.join(completeSkillSource, 'scripts', 'run.sh'), '#!/bin/sh\necho complete\n');
   fs.chmodSync(path.join(completeSkillSource, 'scripts', 'run.sh'), 0o744);
   fs.writeFileSync(path.join(completeSkillSource, 'templates', 'template.txt'), 'template\n');
+  const fixtureSourceRoot = path.dirname(completeSkillSource);
+  assert.equal(spawnSync('git', ['init', '--quiet'], { cwd: fixtureSourceRoot }).status, 0);
+  assert.equal(spawnSync('git', ['add', '--', 'complete-runtime-skill'], { cwd: fixtureSourceRoot }).status, 0);
+  assert.equal(spawnSync('git', ['update-index', '--chmod=+x', '--', 'complete-runtime-skill/scripts/run.sh'], { cwd: fixtureSourceRoot }).status, 0);
   harness.run(['skills', 'add', '--source', completeSkillSource, '--scope', '.', '--target', seed]);
   fs.rmSync(path.join(seed, '.fixture-source'), { recursive: true, force: true });
 
