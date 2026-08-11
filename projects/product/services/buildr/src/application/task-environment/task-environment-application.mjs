@@ -78,7 +78,7 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function currentEnvironmentManager(workspaceRoot, adapter) {
-    const sourceRoot = path.resolve(runtime.productRoot());
+    const sourceRoot = fs.realpathSync(path.resolve(runtime.productRoot()));
     const sourceCheckout = observeGitCheckoutIdentity(sourceRoot);
     const workspaceCheckout = observeGitCheckoutIdentity(workspaceRoot);
     if (candidateController(sourceCheckout, workspaceCheckout)) {

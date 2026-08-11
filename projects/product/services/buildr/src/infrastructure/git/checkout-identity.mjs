@@ -10,7 +10,7 @@ function gitPath(root, argument) {
   });
   if (observed.status !== 0 || !observed.stdout?.trim()) return null;
   const resolved = path.resolve(root, observed.stdout.trim());
-  try { return fs.realpathSync.native(resolved); } catch { return resolved; }
+  try { return fs.realpathSync(resolved); } catch { return resolved; }
 }
 
 export function observeGitCheckoutIdentity(root) {

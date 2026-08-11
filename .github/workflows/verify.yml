@@ -18,6 +18,8 @@ jobs:
   product:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
     strategy:
       fail-fast: false
       matrix:
@@ -41,11 +43,23 @@ jobs:
         working-directory: .
         shell: bash
         run: projects/product/buildr sync codex --target .
+      - name: Resolve verification base
+        id: verification-base
+        working-directory: .
+        shell: bash
+        run: |
+          base="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+          if [[ "${GITHUB_REF_NAME:-}" == "main" || ("${GITHUB_HEAD_REF:-}" == "dev" && "${GITHUB_BASE_REF:-}" == "main") ]]; then
+            git fetch origin dev --quiet
+            release_commit="$(git log origin/dev --format=%H --grep='^chore(release): 准备 ' -1)"
+            if [[ -n "$release_commit" ]]; then base="$(git rev-parse "$release_commit^")"; fi
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
       - name: Verify final product candidate
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-verification-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-verification-diagnostics
-          BUILDR_VERIFICATION_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          BUILDR_VERIFICATION_BASE: ${{ steps.verification-base.outputs.base }}
         shell: bash
         run: npm run test:candidate
       - name: Upload verification timing
