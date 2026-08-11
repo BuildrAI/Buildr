@@ -12,7 +12,7 @@ import { ServicesPage } from './pages/ServicesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TaskChangeDetailPage } from './pages/TaskChangeDetailPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
-import { TasksPage } from './pages/TasksPage';
+import { TasksSection } from './pages/TasksSection';
 import { WorkspacesPage } from './pages/WorkspacesPage';
 
 export function App() {
@@ -25,9 +25,10 @@ export function App() {
         <Route index element={<OverviewPage />} />
         <Route path="overview" element={<OverviewPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="tasks" element={<TasksPage />} />
-        <Route path="tasks/:taskId/changes/:projectCode/:changeCode" element={<TaskChangeDetailPage />} />
-        <Route path="tasks/:taskId" element={<TaskDetailPage />} />
+        <Route path="tasks" element={<TasksSection />}>
+          <Route path=":taskId/changes/:projectCode/:changeCode" element={<TaskChangeDetailPage />} />
+          <Route path=":taskId" element={<TaskDetailPage />} />
+        </Route>
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:projectCode" element={<ProjectDetailPage />} />
         <Route path="projects/:projectCode/edit" element={<ProjectEditPage />} />

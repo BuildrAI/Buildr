@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Space } from 'antd';
+import { Button, Card, Modal, Space } from 'antd';
 import { api, type ApiError } from '../../api';
 import { formatDateTime } from '../../lib/taskLabels';
 import { Fact } from './shared';
@@ -39,17 +39,21 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
   const [body, setBody] = useState<any>(null);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [bodyError, setBodyError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     setDetail(null);
     setDetailError(null);
     setBody(null);
     setBodyError(null);
+    setModalOpen(false);
   }, [taskId, view]);
 
   async function openRecord(recordId: string) {
+    setModalOpen(true);
     setDetailLoading(true);
     setDetailError(null);
+    setDetail(null);
     setBody(null);
     setBodyError(null);
     try {
@@ -72,6 +76,14 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
     } finally {
       setBodyLoading(false);
     }
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setDetail(null);
+    setDetailError(null);
+    setBody(null);
+    setBodyError(null);
   }
 
   const records = data?.records || [];
@@ -123,42 +135,60 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
           </Card>
         ))}
       </div>
-      {detailLoading ? <div className="page-loading"><span className="loader" /><p>正在读取记录详情…</p></div> : null}
-      {detailError ? <p className="environment-diagnostic">{detailError}</p> : null}
-      {selected ? (
-        <article id="task-execution-record-detail" className="panel execution-record-detail">
-          <div className="panel-heading">
-            <div><p className="eyebrow">{ownerLabel(selected.owner)}</p><h3>{selected.recordId}</h3></div>
-            <span className={`state review-state ${selected.outcome}`}>{selected.outcome}</span>
-          </div>
-          <dl className="read-facts detail-facts">
-            <Fact label="执行身份" value={selected.runIdentity} />
-            <Fact label="目标身份" value={selected.targetIdentity} />
-            <Fact label="Producer" value={selected.producer} />
-            <Fact label="Lifecycle" value={selected.lifecycleStatus} />
-            <Fact label="失败处置" value={selected.resolutionStatus} />
-            <Fact label="正文状态" value={bodyState(selected)} />
-            <Fact label="保留至" value={formatDateTime(selected.retention.retainUntil)} />
-          </dl>
-          {selected.body.diagnostic ? <p className="environment-diagnostic">{selected.body.diagnostic.message}</p> : null}
-          {selected.body.files?.length ? (
-            <div className="execution-record-files">
-              {selected.body.files.map((file: any) => (
-                <Button key={file.name} disabled={bodyLoading} onClick={() => { void openBody(selected.recordId, file.name); }}>
-                  {file.name} · {file.storedSizeBytes} B{file.truncated ? ' · 已截断保存' : ''}
-                </Button>
-              ))}
-            </div>
-          ) : <p className="section-copy">当前没有可读取的正文文件。</p>}
-          {bodyError ? <p className="environment-diagnostic">{bodyError}</p> : null}
-          {body?.file ? (
-            <section className="execution-record-body">
-              <div className="execution-record-body-heading"><strong>{body.file.name}</strong><span>{body.file.responseSizeBytes} B{body.file.responseTruncated ? ' · 响应已限量' : ''}</span></div>
-              <pre>{body.file.content}</pre>
-            </section>
+
+      <Modal
+        open={modalOpen}
+        onCancel={closeModal}
+        footer={null}
+        width={720}
+        destroyOnClose
+        title={selected ? `${ownerLabel(selected.owner)} · ${selected.outcome}` : '执行记录详情'}
+      >
+        <div id="task-execution-record-detail" className="execution-record-detail-modal">
+          {detailLoading ? <div className="page-loading"><span className="loader" /><p>正在读取记录详情…</p></div> : null}
+          {detailError ? <p className="environment-diagnostic">{detailError}</p> : null}
+          {selected ? (
+            <>
+              <div className="panel-heading" style={{ marginBottom: 12 }}>
+                <div>
+                  <p className="eyebrow">{ownerLabel(selected.owner)}</p>
+                  <h3 style={{ margin: 0 }}>{selected.recordId}</h3>
+                </div>
+                <span className={`state review-state ${selected.outcome}`}>{selected.outcome}</span>
+              </div>
+              <dl className="read-facts detail-facts">
+                <Fact label="执行身份" value={selected.runIdentity} />
+                <Fact label="目标身份" value={selected.targetIdentity} />
+                <Fact label="Producer" value={selected.producer} />
+                <Fact label="Lifecycle" value={selected.lifecycleStatus} />
+                <Fact label="失败处置" value={selected.resolutionStatus} />
+                <Fact label="正文状态" value={bodyState(selected)} />
+                <Fact label="保留至" value={formatDateTime(selected.retention.retainUntil)} />
+              </dl>
+              {selected.body.diagnostic ? <p className="environment-diagnostic">{selected.body.diagnostic.message}</p> : null}
+              {selected.body.files?.length ? (
+                <div className="execution-record-files">
+                  {selected.body.files.map((file: any) => (
+                    <Button key={file.name} disabled={bodyLoading} onClick={() => { void openBody(selected.recordId, file.name); }}>
+                      {file.name} · {file.storedSizeBytes} B{file.truncated ? ' · 已截断保存' : ''}
+                    </Button>
+                  ))}
+                </div>
+              ) : <p className="section-copy">当前没有可读取的正文文件。</p>}
+              {bodyError ? <p className="environment-diagnostic">{bodyError}</p> : null}
+              {body?.file ? (
+                <section className="execution-record-body">
+                  <div className="execution-record-body-heading">
+                    <strong>{body.file.name}</strong>
+                    <span>{body.file.responseSizeBytes} B{body.file.responseTruncated ? ' · 响应已限量' : ''}</span>
+                  </div>
+                  <pre>{body.file.content}</pre>
+                </section>
+              ) : null}
+            </>
           ) : null}
-        </article>
-      ) : null}
+        </div>
+      </Modal>
     </section>
   );
 }

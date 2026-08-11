@@ -45,6 +45,7 @@ export function AppLayout() {
   const [drawerAction, setDrawerAction] = useState<string | undefined>();
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
   const [exited, setExited] = useState(false);
+  const [taskListResetToken, setTaskListResetToken] = useState(0);
 
   const preview = useMemo(() => readPreviewIdentity(), []);
 
@@ -76,6 +77,10 @@ export function AppLayout() {
     setDrawerOpen(false);
     setDrawerAction(undefined);
     setDrawerContext({});
+  }, []);
+
+  const resetTaskList = useCallback(() => {
+    setTaskListResetToken((value) => value + 1);
   }, []);
 
   useEffect(() => {
@@ -115,6 +120,8 @@ export function AppLayout() {
     openAgentAction,
     breadcrumbParts,
     setBreadcrumbParts,
+    taskListResetToken,
+    resetTaskList,
   };
 
   if (exited) {
@@ -177,7 +184,13 @@ export function AppLayout() {
                 className={`nav-children${resourceExpanded ? '' : ' collapsed'}`}
                 aria-label="资源类型"
               >
-                <NavLink to={workspaceHref('/tasks')} data-nav="tasks" data-workspace-route="/tasks" className={navClass}>
+                <NavLink
+                  to={workspaceHref('/tasks')}
+                  data-nav="tasks"
+                  data-workspace-route="/tasks"
+                  className={navClass}
+                  onClick={resetTaskList}
+                >
                   <span>任务</span>
                   <small>顶层任务记录</small>
                 </NavLink>

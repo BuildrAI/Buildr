@@ -259,7 +259,6 @@ export function TasksPage() {
     <>
       <section className="resource-toolbar">
         <div>
-          <p className="eyebrow">任务</p>
           <Typography.Title level={2} style={{ margin: 0 }}>任务记录</Typography.Title>
           <p className="page-copy">查看正式任务的顶层事实并进行有限维护。正式任务由 Agent 创建，Local App 不提供创建入口。</p>
         </div>
@@ -269,7 +268,6 @@ export function TasksPage() {
         <div className="panel-heading">
           <div>
             <p className="eyebrow">筛选</p>
-            <Typography.Title level={4} style={{ margin: 0 }}>缩小任务范围</Typography.Title>
           </div>
           <Button id="task-filter-clear" onClick={clearFilters}>
             清除筛选
@@ -288,6 +286,7 @@ export function TasksPage() {
               allowClear
               autoComplete="off"
               placeholder="输入关键词"
+              style={{ width: 280 }}
               value={q}
               onChange={(event) => {
                 const value = event.target.value;
@@ -385,12 +384,6 @@ export function TasksPage() {
         </Form>
       </section>
       <section className="resource-list-section">
-        <div className="section-heading">
-          <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>任务</Typography.Title>
-            <p className="section-copy">默认显示未结束的待办和进行中任务，按最近更新时间排列。</p>
-          </div>
-        </div>
         <div id="task-diagnostics" className={diagnostics.length ? '' : 'hidden'} role="status">
           {diagnostics.length ? (
             <Alert
