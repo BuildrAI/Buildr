@@ -13,7 +13,7 @@ import { createConvergenceReceipt } from '../../../src/application/openspec/conv
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
-const openspec = path.join(productRoot, 'node_modules', '.bin', 'openspec');
+const openspec = path.join(productRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'openspec.cmd' : 'openspec');
 const commandEnv = { ...process.env, PATH: `${path.dirname(openspec)}${path.delimiter}${process.env.PATH || ''}` };
 const project = 'demo';
 const argv = process.argv.slice(2);

@@ -98,14 +98,25 @@ export function registerTaskEnvironmentApplication(runtime) {
     const checkout = manager.sourceCheckout;
     if (!checkout) return manager;
     const relativeSource = path.relative(checkout.checkoutRoot, manager.sourceRoot);
-    if (path.isAbsolute(relativeSource) || relativeSource === '..' || relativeSource.startsWith(`..${path.sep}`)) {
+    const sourceOutsideCheckout = path.isAbsolute(relativeSource) || relativeSource === '..' || relativeSource.startsWith(`..${path.sep}`);
+    const sourceCheckout = sourceOutsideCheckout ? observeGitCheckoutIdentity(manager.sourceRoot) : checkout;
+    let sameFilesystemLocation = false;
+    if (sourceOutsideCheckout) {
+      try {
+        const sourceStat = fs.statSync(manager.sourceRoot);
+        const checkoutStat = fs.statSync(checkout.checkoutRoot);
+        sameFilesystemLocation = sourceStat.dev === checkoutStat.dev && sourceStat.ino === checkoutStat.ino;
+      } catch { /* fall through to the explicit trust failure */ }
+    }
+    if (!sourceCheckout || (sourceOutsideCheckout && (!sameFilesystemLocation || sourceCheckout.linkedWorktree !== checkout.linkedWorktree))) {
       throw taskEnvironmentError('task_environment_manager_source_untrusted', '无法证明当前 Environment Manager source 属于其 Git checkout。', 409, {
         sourceRoot: manager.sourceRoot,
         checkoutRoot: checkout.checkoutRoot,
       }, '从可信 retained Buildr source 重试。');
     }
-    const pathspecs = ENVIRONMENT_MANAGER_SOURCE_PATHS.map((relative) => (relativeSource ? path.join(relativeSource, relative) : relative).split(path.sep).join('/'));
-    const observed = spawnSync('git', ['-C', checkout.checkoutRoot, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...pathspecs], { encoding: 'utf8', timeout: 5000 });
+    const statusRoot = sourceOutsideCheckout ? manager.sourceRoot : checkout.checkoutRoot;
+    const pathspecs = ENVIRONMENT_MANAGER_SOURCE_PATHS.map((relative) => (sourceOutsideCheckout ? relative : (relativeSource ? path.join(relativeSource, relative) : relative)).split(path.sep).join('/'));
+    const observed = spawnSync('git', ['-C', statusRoot, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...pathspecs], { encoding: 'utf8', timeout: 5000 });
     if (observed.status !== 0) {
       throw taskEnvironmentError('task_environment_manager_source_untrusted', '无法取得当前 Environment Manager source 的 Git clean evidence。', 409, {
         sourceRoot: manager.sourceRoot,

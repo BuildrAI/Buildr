@@ -34,11 +34,12 @@ function fixture(t) {
 }
 
 function receipt(root, status = 'ready') {
+  const controllerRoot = path.resolve('opt', 'buildr');
   return {
     schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
     taskId: 'demo-task',
     workspace: { id: 'fixture-workspace', root },
-    controller: { sourceRoot: '/opt/buildr', cliSource: '/opt/buildr/bin/buildr.mjs', identity: 'sha256-controller', adapter: 'codex' },
+    controller: { sourceRoot: controllerRoot, cliSource: path.join(controllerRoot, 'bin', 'buildr.mjs'), identity: 'sha256-controller', adapter: 'codex' },
     status,
     scopes: [{
       selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.', executionRoot: root, validationRoot: root, shared: true, provider: null,
@@ -102,6 +103,6 @@ test('cleanup context 只读取保存的 ownership facts，不要求执行 found
   assert.equal(context.ready, true);
   assert.equal(context.workspaceRoot, root);
   assert.equal(context.environmentRoot, root);
-  assert.equal(context.controllerInvocation.sourceRoot, '/opt/buildr');
+  assert.equal(context.controllerInvocation.sourceRoot, path.resolve('opt', 'buildr'));
   assert.deepEqual(context.repositories, []);
 });

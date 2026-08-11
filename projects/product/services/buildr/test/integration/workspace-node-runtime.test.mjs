@@ -58,7 +58,7 @@ test('临时 App Data 只隔离应用状态，不改变 Workspace Node runtime l
   assert.equal(workspaceNodeRuntimePaths('22.4.1').dataRoot, path.join(root, 'runtime-state'));
 });
 
-test('受管 runtime 从确定 source 原子准备、复用并在删除后按原版本恢复', (t) => {
+test('受管 runtime 从确定 source 原子准备、复用并在删除后按原版本恢复', { skip: process.platform === 'win32' }, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const source = path.join(root, 'source');
@@ -77,7 +77,7 @@ test('受管 runtime 从确定 source 原子准备、复用并在删除后按原
   assert.equal(restored.status, 'ready');
 });
 
-test('Windows 受管 runtime 通过 npm.cmd 探测', (t) => {
+test('Windows 受管 runtime 通过 npm.cmd 探测', { skip: process.platform === 'win32' }, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-windows-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const source = path.join(root, 'source');

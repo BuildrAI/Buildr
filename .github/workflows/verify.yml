@@ -19,8 +19,6 @@ jobs:
   product:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    env:
-      BUILDR_NODE_RUNTIME_DATA_DIR: ${{ github.workspace }}/.buildr-node-runtime
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +40,8 @@ jobs:
         run: npm ci
       - name: Prepare Codex runtime
         working-directory: .
+        env:
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
         shell: bash
         run: projects/product/buildr sync codex --target .
       - name: Resolve verification base
@@ -60,6 +60,7 @@ jobs:
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-verification-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-verification-diagnostics
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_BASE: ${{ steps.verification-base.outputs.base }}
         shell: bash
         run: npm run test:candidate

@@ -11,6 +11,7 @@
 - 收敛 Buildr CLI 产品表面：以单一 command catalog 统一 dispatch、canonical help、未知命令建议和 `primary`、`agent-machine`、`maintenance` 三层分类；补齐 `task finish` 聚合帮助。
 - 修复候选验证的跨平台 npm 入口，并让 CI 在 Pull Request 与推送场景显式使用对应 Git 基线，保证 Windows 和 OpenSpec changed-path 审计可以执行。
 - 修复 Windows 8.3 checkout 路径导致的 Environment Manager 误判，并隔离候选矩阵的 Node runtime 临时目录。
+- 提升 Windows 受管 Node runtime 安装等待时间，并修正候选验证中的 Windows OpenSpec 与跨平台测试 fixture。
 
 ## 0.1.0-rc.7 - 2026-07-24
 

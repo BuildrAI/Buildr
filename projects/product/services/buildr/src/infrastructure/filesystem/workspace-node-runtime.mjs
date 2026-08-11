@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { localAppDataRoot } from './workspace-registry-repository.mjs';
 
 export const WORKSPACE_NODE_IDENTITY_SCHEMA = 'buildr.workspace-node-identity/v1';
-const INSTALL_TIMEOUT_MS = 60_000;
+const INSTALL_TIMEOUT_MS = 180_000;
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
