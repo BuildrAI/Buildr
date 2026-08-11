@@ -81,6 +81,14 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
   assert.match(environmentSkill, /Buildr不实现Node\/Python\/Go\/Rust适配器，也不扫描manifest/);
   assert.match(environmentSkill, /不执行Step、不创建或修复输出、不回写Receipt/);
   assert.match(environmentSkill, /Agent读取Task Record的完整Project\/Service scope/);
+  for (const required of [
+    'Plan Request只是CLI的一次性输入',
+    '操作系统临时目录',
+    '不得写入Workspace的`.buildr/tmp/`、`.buildr/transient/`',
+    '`prepare --plan`或`plan record`成功后必须立即删除',
+    '原始Plan Request不进入SQLite',
+    '不扫描或删除调用方临时输入',
+  ]) assert.ok(environmentSkill.includes(required), `task-environment must govern temporary Plan Request lifecycle: ${required}`);
   assert.doesNotMatch(worktreeSkill, /executionReady|worktree context|worktree adopt/);
 
   const packagedTriage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');
