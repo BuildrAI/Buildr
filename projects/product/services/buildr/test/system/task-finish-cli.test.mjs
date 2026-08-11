@@ -43,6 +43,9 @@ test('task finish inspect 只暴露当前固定五阶段', (t) => {
   assert.equal(inspected.status, 0, inspected.stderr);
   const result = JSON.parse(inspected.stdout);
   assert.equal(result.schemaVersion, 'buildr.task-finish-result/v2');
+  assert.deepEqual(result.resolvedContext.capability, { id: 'buildr.task-finish', version: 1 });
+  assert.deepEqual(result.resolvedContext.task, { taskId: 'current-inspect' });
+  assert.match(result.resolvedContext.identity, /^sha256-/);
   assert.deepEqual(result.phases.map((phase) => phase.id), ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);

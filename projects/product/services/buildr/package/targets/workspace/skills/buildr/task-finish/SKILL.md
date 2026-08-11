@@ -25,6 +25,8 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 buildr task finish run --task <task-id> --target <canonical-workspace> --json
 ```
 
+直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding，不猜测contract版本，也不为调用创建或修改execution capsule。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
+
 产品在创建 run 前一次聚合 Environment / Development / 交付入口观察；通过后固定执行：
 
 ```text

@@ -23,6 +23,26 @@ function sha256(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
 }
 
+export function resolvedFinishContext(identity) {
+  const context = {
+    capability: { id: 'buildr.task-finish', version: 1 },
+    task: { taskId: identity.task },
+    handoff: { identity: identity.handoffIdentity },
+    candidate: {
+      identity: identity.candidateIdentity,
+      generation: identity.candidateGeneration,
+      contentTargetIdentity: identity.contentTargetIdentity,
+    },
+    environment: { workspaceNodeIdentity: identity.workspaceNodeIdentity || null },
+    delivery: {
+      agent: identity.agent,
+      targetBranch: identity.targetBranch,
+      remote: identity.remote || null,
+    },
+  };
+  return { ...context, identity: sha256(context) };
+}
+
 function requireTaskFinishRuntime(runtime, operation) {
   if (!runtime) throw new Error(`Task Finish ${operation} requires the Workspace SQLite runtime.`);
   return runtime;
@@ -388,6 +408,7 @@ export function finishResult(run, clock = Date.now) {
     runId: run.runId,
     status: run.status,
     identity: clone(run.identity),
+    resolvedContext: resolvedFinishContext(run.identity),
     handoff: { identity: run.identity.handoffIdentity },
     candidate: { identity: run.identity.candidateIdentity, generation: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity },
     carrier: clone(run.deliveryCarrier),
@@ -428,11 +449,21 @@ export function inspectFinishRun({ root, runId, clock = Date.now, runtime = null
   const current = sqlite.readTaskFinishRunPersistence(root, { runId }, { optional: true });
   if (current) return finishResult(current.run, clock);
   const completed = sqlite.readTaskFinishCompletionPersistence(root, { runId }, { optional: true });
-  if (completed?.completion?.result) return completed.completion.result;
+  if (completed?.completion?.result) {
+    const result = completed.completion.result;
+    return Object.hasOwn(result, 'resolvedContext') ? result : { ...result, resolvedContext: null };
+  }
   throw new Error(`Unknown Task Finish run: ${runId}`);
 }
 
 export function readTaskFinishResults({ root, taskId, clock = Date.now, runtime = null }) {
   if (!RUN_ID_PATTERN.test(String(taskId || ''))) throw new Error('Task Finish query requires a valid Task ID.');
-  return requireTaskFinishRuntime(runtime, 'read model').readTaskFinishResultsPersistence(root, taskId, { clock });
+  const read = requireTaskFinishRuntime(runtime, 'read model').readTaskFinishResultsPersistence(root, taskId, { clock });
+  return {
+    ...read,
+    results: (read.results || []).map((entry) => ({
+      ...entry,
+      result: Object.hasOwn(entry.result || {}, 'resolvedContext') ? entry.result : { ...entry.result, resolvedContext: null },
+    })),
+  };
 }

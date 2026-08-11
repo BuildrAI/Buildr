@@ -74,6 +74,9 @@ export function inspectTarballFiles(files) {
     if (tarballForbiddenPrefixes.some((prefix) => entry === prefix.slice(0, -1) || entry.startsWith(prefix))) {
       findings.push(finding('tarball.forbidden', entry, 'non-publish asset is present in npm tarball'));
     }
+    if (entry.includes('self-bootstrap-closeout') || entry.endsWith('/buildr-self-bootstrap-closeout-driver.mjs')) {
+      findings.push(finding('tarball.self-bootstrap-runner', entry, 'Buildr self-bootstrap runner must remain owned by the self-bootstrap Workspace Skill'));
+    }
   }
   return findings;
 }

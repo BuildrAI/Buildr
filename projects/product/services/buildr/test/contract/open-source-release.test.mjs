@@ -41,6 +41,7 @@ test('open-source metadata and tarball contracts enforce public identity and inv
   const files = ['LICENSE', 'README.md', 'package.json', 'bin/buildr.mjs', 'package/manifest.yml'].map((path) => ({ path }));
   assert.deepEqual(inspectTarballFiles(files), []);
   assert.equal(inspectTarballFiles([...files, { path: 'openspec/spec.md' }]).at(-1).rule, 'tarball.forbidden');
+  assert.equal(inspectTarballFiles([...files, { path: 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs' }]).at(-1).rule, 'tarball.self-bootstrap-runner');
 });
 
 test('package and lockfile versions remain identical', () => {

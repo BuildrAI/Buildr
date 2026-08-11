@@ -69,13 +69,26 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
     'projects/product/services/buildr/src/interfaces/cli/launcher.mjs',
     'projects/product/services/buildr/package/launchers/**',
   ]) assert.ok(skill.includes(input), input);
-  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-cli', 'install-development-local-app', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
-  for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
+  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-cli', 'install-development-local-app', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
+  for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', 'Skill本地runner', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
   assert.match(runtimeFinish, /Buildr 自举 Workspace 激活/);
   assert.match(runtimeFinish, /doctor-blocked/);
   assert.ok(runtimeFinish.indexOf('Buildr 自举 Workspace 激活') > runtimeFinish.indexOf('## 完成标准'));
   assert.doesNotMatch(packageFinish, /post-Finish activation|Buildr 自举 Workspace 激活/);
   assert.equal(packageManifest.includes('buildr-self-bootstrap-sync'), false);
+  const runnerPath = path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
+  const runner = fs.readFileSync(runnerPath, 'utf8');
+  for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-cli'", "'install-local-app'", "'finalize'"]) assert.ok(runner.includes(phrase), phrase);
+  assert.match(runner, /task', 'finish', 'inspect'/);
+  assert.match(runner, /node-identity-mismatch/);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs')), false);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/interfaces/internal/buildr-self-bootstrap-closeout-driver.mjs')), false);
+  assert.equal(packageManifest.includes('skills/buildr-self-bootstrap-sync'), false);
+  for (const forbidden of ["'reset'", "'rebase'", "'merge'", "'stash'", "'push', '--force'"]) assert.equal(runner.includes(forbidden), false, forbidden);
+});
+
+test('Task Finish使用resolved capability binding和同一session有界长等待', () => {
+  for (const phrase of ['精确`buildr.task-finish/v1` capability binding', '有界长等待', '同一进程/session', '不是Finish业务timeout', '不启动第二个Finish', '不高频读取普通输出', '不承诺固定两次调用', '45/60秒']) assert.ok(finish.includes(phrase), phrase);
 });
 
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {

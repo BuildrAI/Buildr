@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { removeIsolatedGitCarrier } from './git-task-contribution.mjs';
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
-import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolveFinishRun } from './task-finish-run.mjs';
+import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
@@ -53,6 +53,7 @@ function executionGateResult(identity, executionRecord, diagnostic) {
     runId: null,
     status: 'blocked',
     identity: { ...identity, environmentRoot: null, workspaceRoot: null },
+    resolvedContext: resolvedFinishContext(identity),
     handoff: { identity: identity.handoffIdentity },
     candidate: { identity: identity.candidateIdentity, generation: identity.candidateGeneration, contentTargetIdentity: identity.contentTargetIdentity },
     carrier: null,

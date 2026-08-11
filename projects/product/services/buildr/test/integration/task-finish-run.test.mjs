@@ -115,6 +115,13 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   assert.deepEqual(calls, FINISH_PHASES);
   assert.deepEqual(result.phases.map((phase) => phase.id), FINISH_PHASES);
   assert.equal(result.handoff.identity, 'sha256-handoff');
+  assert.deepEqual(result.resolvedContext.capability, { id: 'buildr.task-finish', version: 1 });
+  assert.deepEqual(result.resolvedContext.task, { taskId: 'finish-handoff' });
+  assert.deepEqual(result.resolvedContext.handoff, { identity: 'sha256-handoff' });
+  assert.deepEqual(result.resolvedContext.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
+  assert.deepEqual(result.resolvedContext.environment, { workspaceNodeIdentity: 'sha256-workspace-node' });
+  assert.deepEqual(result.resolvedContext.delivery, { agent: 'codex', targetBranch: 'dev', remote: null });
+  assert.match(result.resolvedContext.identity, /^sha256-/);
   assert.deepEqual(result.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
   assert.equal(result.carrier.identity, 'carrier-abc');
   assert.equal(result.equivalence.status, 'equivalent');
@@ -122,6 +129,24 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   assert.match(result.nextAction, /是否进行任务复盘.*Token 数据仅在 Agent 可取得时记录/);
   assert.equal(Object.hasOwn(result.identity, 'project'), false);
   assert.equal(Object.hasOwn(result.identity, 'change'), false);
+});
+
+test('resolvedContext identity只由run identity确定，terminal legacy v2保持只读兼容', (t) => {
+  const root = fixture(t);
+  const runtime = runtimeFor(root, 'resolved-context');
+  const run = createFinishRun({ root, runId: 'resolved-context', identity: identity(root, 'resolved-context'), runtime });
+  runtime.writeTaskFinishRunPersistence(root, run);
+  const first = inspectFinishRun({ root, runId: run.runId, runtime });
+  const second = inspectFinishRun({ root, runId: run.runId, runtime });
+  assert.deepEqual(first.resolvedContext, second.resolvedContext);
+
+  const legacy = { ...first };
+  delete legacy.resolvedContext;
+  runtime.finalizeTaskFinishPersistence(root, { run: { ...run, status: 'complete', completedAt: run.updatedAt }, result: legacy, completion: null });
+  const inspected = inspectFinishRun({ root, runId: run.runId, runtime });
+  assert.equal(inspected.resolvedContext, null);
+  const queried = readTaskFinishResults({ root, taskId: 'resolved-context', runtime });
+  assert.equal(queried.results[0].result.resolvedContext, null);
 });
 
 test('run identity 强制绑定 Development handoff/Candidate/Content Target，且不回退旧文件协议', (t) => {
