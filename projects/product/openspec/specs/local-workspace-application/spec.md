@@ -334,10 +334,10 @@ Buildr MUST 为项目与服务提供独立管理视图和稳定的项目详情�
 - **THEN** HTTP API MUST 继续执行已有 session、Origin、JSON、body size、字段白名单和 revision conflict 约束
 
 ### Requirement: 新 Workspace 动作必须统一表达为交给 Agent
-Buildr MUST 在 App Shell 中提供“交给 Agent”入口来生成新 Workspace prompt，并 MUST 明确该动作不会切换当前 Workspace 或直接完成创建。
+Buildr MUST 在全局工作空间目录提供“让 Agent 创建工作空间”入口来生成新 Workspace prompt，并 MUST 明确该动作不会切换当前 Workspace 或直接完成创建。App Shell 顶栏的“交给 Agent”按钮 MUST 仅在已进入某个工作空间后显示。
 
 #### Scenario: 生成新 Workspace prompt
-- **WHEN** 用户从 App Shell 打开 Agent Action 并填写名称、说明和可选目标位置
+- **WHEN** 用户从全局工作空间目录打开创建工作空间 Agent Action 并填写名称、说明和可选目标位置
 - **THEN** 页面 MUST 调用现有 Workspace prompt Application 用例
 - **AND** MUST 展示可复制的完整 prompt
 
@@ -345,6 +345,11 @@ Buildr MUST 在 App Shell 中提供“交给 Agent”入口来生成新 Workspac
 - **WHEN** prompt 成功复制
 - **THEN** 页面 MUST 提示指令已复制但 Workspace 尚未创建
 - **AND** 当前 App Shell MUST 继续显示原 Workspace 上下文
+
+#### Scenario: 顶栏交给 Agent 仅在工作空间内显示
+- **WHEN** 用户停留在全局工作空间目录（未进入任一工作空间）
+- **THEN** App Shell 顶栏 MUST NOT 显示“交给 Agent”按钮
+- **AND** 全局工作空间目录 MUST 仍提供“让 Agent 创建工作空间”入口
 
 ### Requirement: 项目与服务创建必须使用抽屉式 Agent Action
 Buildr MUST 通过资源页面中的创建按钮触发统一的“交给 Agent”抽屉，并 MUST 使用“基础意图 + 高级声明”的渐进表单；页面正文 MUST NOT 平铺创建表单，抽屉 MUST NOT 把 canonical CLI 参数作为普通用户的默认必填项。
@@ -368,8 +373,8 @@ Buildr MUST 通过资源页面中的创建按钮触发统一的“交给 Agent�
 - **AND** prompt MUST 要求 Agent 根据真实目录、Git 与用户目标提出候选并只询问必要信息
 - **AND** Application MUST NOT 为缺失字段编造声明
 
-#### Scenario: 从全局入口选择创建类型
-- **WHEN** 用户点击 App Shell 的“交给 Agent”按钮
+#### Scenario: 从工作空间内顶栏入口选择创建类型
+- **WHEN** 用户已进入某个工作空间并点击 App Shell 的“交给 Agent”按钮
 - **THEN** 抽屉 MUST 优先展示创建 Workspace、Project、Service 和开始工作等核心动作
 - **AND** Change 等后续能力 MUST 作为次级动作呈现
 - **AND** 生成与复制结果 MUST 明确说明对象或任务尚未创建或开始

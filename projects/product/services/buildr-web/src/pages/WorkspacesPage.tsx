@@ -107,6 +107,9 @@ export function WorkspacesPage() {
           <Button id="add-workspace" type="primary" loading={adding} onClick={() => void pickWorkspace()}>
             添加已有工作空间
           </Button>
+          <Button id="create-workspace-agent" onClick={() => openAgentAction('workspace')}>
+            让 Agent 创建工作空间
+          </Button>
         </div>
       </section>
       <div id="workspace-global-message" className={message ? '' : 'hidden'} role="status">

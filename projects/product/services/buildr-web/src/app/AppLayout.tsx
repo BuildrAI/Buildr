@@ -145,9 +145,6 @@ export function AppLayout() {
               <strong id="shell-workspace-name">
                 {isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')}
               </strong>
-              <span id="shell-workspace-path">
-                {isGlobal ? '本机登记列表' : (workspace?.rootPath || '本机应用')}
-              </span>
             </div>
             <nav className="nav-list">
               <NavLink to="/" data-nav="workspaces" className={navClass} end>
@@ -239,14 +236,16 @@ export function AppLayout() {
                   ? `开发预览：${preview.instance} · ${preview.branch} · ${preview.head.slice(0, 12)}${preview.dirty ? ' · 有未提交修改' : ''}`
                   : null}
               </div>
-              <Button
-                id="open-agent-action"
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => openAgentAction()}
-              >
-                交给 Agent
-              </Button>
+              {!isGlobal ? (
+                <Button
+                  id="open-agent-action"
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => openAgentAction()}
+                >
+                  交给 Agent
+                </Button>
+              ) : null}
             </div>
           </header>
           <main id="app-view" tabIndex={-1} aria-live="polite">
