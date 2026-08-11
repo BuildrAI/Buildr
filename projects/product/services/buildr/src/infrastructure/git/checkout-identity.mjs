@@ -13,6 +13,16 @@ function gitPath(root, argument) {
   try { return fs.realpathSync(resolved); } catch { return resolved; }
 }
 
+function sameFilesystemPath(left, right) {
+  try {
+    const leftStat = fs.statSync(left);
+    const rightStat = fs.statSync(right);
+    return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+  } catch {
+    return false;
+  }
+}
+
 export function observeGitCheckoutIdentity(root) {
   const checkoutRoot = gitPath(root, '--show-toplevel');
   const gitDirectory = gitPath(root, '--git-dir');
@@ -22,6 +32,6 @@ export function observeGitCheckoutIdentity(root) {
     checkoutRoot,
     gitDirectory,
     gitCommonDirectory,
-    linkedWorktree: gitDirectory !== gitCommonDirectory,
+    linkedWorktree: !sameFilesystemPath(gitDirectory, gitCommonDirectory) && gitDirectory !== gitCommonDirectory,
   };
 }

@@ -63,7 +63,7 @@ function assertCompleteSkillInventory(workspace, adapterId) {
     assert.ok(fs.existsSync(path.join(completeRuntime, ...relative.split('/'))), `${adapterId} must render ${relative}`);
   }
   assert.deepEqual(fs.readFileSync(path.join(completeRuntime, 'assets', 'sample.bin')), Buffer.from([0, 255, 16, 128]), `${adapterId} must preserve binary bytes`);
-  assert.equal((fs.statSync(path.join(completeRuntime, 'scripts', 'run.sh')).mode & 0o100) === 0o100, true, `${adapterId} must preserve owner executable intent`);
+  if (process.platform !== 'win32') assert.equal((fs.statSync(path.join(completeRuntime, 'scripts', 'run.sh')).mode & 0o100) === 0o100, true, `${adapterId} must preserve owner executable intent`);
 }
 
 function assertAdapterSpecificProjection(workspace, adapterId) {

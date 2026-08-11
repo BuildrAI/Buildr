@@ -42,7 +42,7 @@ function run(args, expected = 0, fixtureRoot = root) {
   return payload;
 }
 function runUpstream(args, cwd = projectRoot, expected = 0) {
-  const result = spawnSync(openspec, args, { cwd, encoding: 'utf8', env: commandEnv });
+  const result = spawnSync(openspec, args, { cwd, encoding: 'utf8', env: commandEnv, shell: process.platform === 'win32' });
   if (result.status !== expected) fail(`openspec ${args.join(' ')} exited ${result.status}, expected ${expected}: ${(result.error?.message || result.stderr || result.stdout || '').trim()}`);
   return result;
 }

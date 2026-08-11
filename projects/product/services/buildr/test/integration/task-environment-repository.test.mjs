@@ -79,7 +79,7 @@ test('Environment repository 要求正式 Task、canonical Workspace 和匹配 i
   const root = fixture(t);
   const runtime = createRuntime();
   assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), taskId: 'missing-task' }), (error) => error.code === 'task_record_not_found');
-  assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), workspace: { id: 'fixture-workspace', root: '/tmp/other' } }), (error) => error.code === 'task_environment_workspace_mismatch');
+  assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), workspace: { id: 'fixture-workspace', root: path.resolve('other') } }), (error) => error.code === 'task_environment_workspace_mismatch');
   assert.equal(runtime.readTaskEnvironmentPersistence(root, 'demo-task', { optional: true }), null);
 });
 

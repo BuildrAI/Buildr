@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 import { createCandidatePackage, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_TARBALL_ENV } from './release/candidate-package.mjs';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
 
@@ -32,10 +33,10 @@ export function createVerificationExecutor(options) {
     if (executor.type === 'node') return { command: process.execPath, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') return {
       command: process.execPath,
-      args: ['--test', ...(executor.args ?? []), ...executor.files.map((file) => path.join(productRoot, file))],
+      args: ['--test', ...(executor.args ?? []), ...executor.files.map((file) => process.platform === 'win32' ? pathToFileURL(path.join(productRoot, file)).href : path.join(productRoot, file))],
     };
-    if (executor.type === 'npm') return { command: npmExecutable, args: executor.args ?? [] };
-    if (executor.type === 'openspec') return { command: openspecExecutable, args: executor.args ?? [], cwd: projectRoot };
+    if (executor.type === 'npm') return { command: npmExecutable, args: executor.args ?? [], shell: process.platform === 'win32' };
+    if (executor.type === 'openspec') return { command: openspecExecutable, args: executor.args ?? [], cwd: projectRoot, shell: process.platform === 'win32' };
     if (executor.type === 'package-selector') return { command: process.execPath, args: [path.join(productRoot, 'test/verification/package/run.mjs'), executor.selector] };
     if (executor.type === 'workspace-suite') return { command: process.execPath, args: [path.join(productRoot, 'test/verification/workspace', `${executor.selector}.mjs`)] };
     throw new Error(`Executor ${executor.type} does not resolve to a command`);

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 import { resolveVerificationWorkerBudget } from './worker-budget.mjs';
 
@@ -26,7 +27,10 @@ const suite = parseArgs(process.argv.slice(2));
 const files = fs.readdirSync(integrationRoot)
   .filter((name) => name.endsWith('.test.mjs') && !excludedFromGeneral.has(name))
   .sort()
-  .map((name) => path.join(integrationRoot, name));
+  .map((name) => {
+    const file = path.join(integrationRoot, name);
+    return process.platform === 'win32' ? pathToFileURL(file).href : file;
+  });
 
 if (suite !== 'general' || files.length === 0) throw new Error('Integration general suite has no test files.');
 const workerBudget = resolveVerificationWorkerBudget({ env: process.env, fallback: 6, maximum: files.length, label: 'Integration general suite' });

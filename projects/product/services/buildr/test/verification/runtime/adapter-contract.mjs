@@ -276,7 +276,7 @@ const binaryPlan = createRuntimePlan({
 });
 const binaryResult = reconcileRuntimePlan(binaryPlan);
 assert.deepEqual(fs.readFileSync(binaryFile), Buffer.from([0, 255, 16]));
-assert.equal((fs.statSync(binaryFile).mode & 0o100) === 0o100, true);
+if (process.platform !== 'win32') assert.equal((fs.statSync(binaryFile).mode & 0o100) === 0o100, true);
 assert.equal(fs.existsSync(staleFile), false);
 assert.equal(binaryResult.changed.at(-1), receiptFile, 'commitLast receipt must be written after payload files and stale removals');
 
