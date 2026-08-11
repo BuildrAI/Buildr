@@ -176,6 +176,13 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.ok(verificationSteps.find((step) => step.id === 'system').schedulingCostMs >= 60_000);
 });
 
+test('release tarball smoke preserves the caller-prepared managed runtime locator', () => {
+  const releaseSmoke = read('test/verification/release/release-smoke.mjs');
+  assert.match(releaseSmoke, /const runtimeData = process\.env\.BUILDR_NODE_RUNTIME_DATA_DIR \|\| appData;/);
+  assert.match(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData/);
+  assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: appData/);
+});
+
 test('双任务并发验收输出完整的组合证据并执行归属清理', () => {
   const source = read('test/verification/concurrency/task-acceptance.mjs');
   for (const phrase of [

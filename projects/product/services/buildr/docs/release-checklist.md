@@ -101,6 +101,8 @@ npm run --silent test:focus -- --json release-tarball-smoke
 
 显式完整回归自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`，但发布使用登记的默认 profile。
 
+Candidate CI 在进入 `release-tarball-smoke` 前必须先准备并校验受管 Node runtime；发布包冒烟保持应用状态与 workspace 隔离，但继承调用方的 `BUILDR_NODE_RUNTIME_DATA_DIR`，避免每个矩阵重复访问 Node 分发网络。独立运行且调用方未提供 runtime locator 时，冒烟仍使用自己的临时目录验证从零安装。
+
 开发期间需要复现跨组件 workspace 生命周期问题时，通过同一个 focus 入口定点运行独立 Workspace E2E suites：
 
 ```bash

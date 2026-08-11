@@ -15,6 +15,7 @@ const packDirectory = path.join(root, 'pack');
 const prefix = path.join(root, 'prefix');
 const workspace = path.join(root, 'workspace');
 const appData = path.join(root, 'app-data');
+const runtimeData = process.env.BUILDR_NODE_RUNTIME_DATA_DIR || appData;
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function run(command, args, options = {}) {
@@ -33,7 +34,7 @@ function run(command, args, options = {}) {
 function runBuildr(buildrScript, args) {
   return run(process.execPath, [buildrScript, ...args], {
     cwd: workspace,
-    env: { BUILDR_APP_DATA_DIR: appData, BUILDR_NODE_RUNTIME_DATA_DIR: appData },
+    env: { BUILDR_APP_DATA_DIR: appData, BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData },
   });
 }
 
@@ -65,7 +66,7 @@ try {
     expectedStatus: 1,
     env: {
       BUILDR_APP_DATA_DIR: appData,
-      BUILDR_NODE_RUNTIME_DATA_DIR: appData,
+      BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData,
       npm_config_registry: 'http://127.0.0.1:9',
       npm_config_fetch_retries: '0',
       npm_config_fetch_timeout: '1000',
