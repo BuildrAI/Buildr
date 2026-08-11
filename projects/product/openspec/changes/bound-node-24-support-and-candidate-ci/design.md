@@ -24,7 +24,9 @@
 
 ### 使用两级 CI，而不是每次运行完整候选矩阵
 
-合入 `dev` 前仅运行 Windows × Node 24.15.0/当前 24.x 的定向平台预检，覆盖已识别的高风险边界及 Candidate tarball 生命周期。`dev -> main`、手工候选验证和 `main` push 才运行四个完整 `test:candidate` 作业。这样缩短 Windows 修复反馈，同时不降低最终候选证明。
+合入 `dev` 前仅运行 Windows × Node 24.15.0/当前 24.x 的定向平台预检，覆盖已识别的高风险 System 文件、双 Task 并发、runtime parity、Workspace lifecycle 及 Candidate tarball 生命周期。预检专用 System slice 只允许由显式 group 选择，不参与普通 affected 路径规划；其内部串行运行文件，避免多个生命周期夹具争用同一受管 runtime 安装锁。普通 Integration 留给本地完整回归和最终 Candidate，不在预检中重复执行。`dev -> main`、手工候选验证和 `main` push 才运行四个完整 `test:candidate` 作业。这样缩短 Windows 修复反馈，同时不降低最终候选证明。
+
+双 Task acceptance 仍并发启动两套 Environment、verification 和 Preview；Windows 仅把各阶段子进程监督上限放宽为其他平台的三倍，避免较慢的进程创建被 10 秒边界误判为功能失败。完整 CI 的 30 分钟作业上限不变，确定性失败仍立即返回。
 
 备选方案是继续对每个任务分支运行完整矩阵；它提供的覆盖更广，但重复验证稳定的 macOS 路径，不能解决平台问题反馈过慢。
 

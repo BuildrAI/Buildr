@@ -30,7 +30,7 @@
 
 ## 验收摘要
 
-- Windows 定向组必须覆盖 Integration、System、并发 Task、runtime parity、Workspace lifecycle 和 release tarball smoke。
+- Windows 定向组必须覆盖精确的高风险 System 文件、并发 Task、runtime parity、Workspace lifecycle 和 release tarball smoke；普通 Integration 由本地完整回归与最终 Candidate 持有，不在预检中重复运行。
 - 最终 CI 必须只有四个完整 Candidate 矩阵且禁用 fail-fast。
 - Node 24.15.0 和更高 24.x 可用，Node 25 被兼容边界拒绝。
 - 本 Change 停在候选发布准备之前，不创建 tag、npm 发布或 GitHub Release。

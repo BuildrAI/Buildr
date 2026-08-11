@@ -64,6 +64,24 @@ test('runtime ownership receipt stale 诊断报告字段级差异和双侧摘要
   assert.match(finding.message, /current=sha256-[a-f0-9]{64} expected=sha256-[a-f0-9]{64}/);
 });
 
+test('runtime ownership receipt stale 诊断列出具体文件差异', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-receipt-file-diff-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const targetFile = path.join(root, '.agents', 'receipt.json');
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  const current = { files: [{ path: 'scripts/run.sh', integrity: 'sha256-a', executable: true }] };
+  const expected = { files: [{ path: 'scripts/run.sh', integrity: 'sha256-a', executable: false }] };
+  fs.writeFileSync(targetFile, `${JSON.stringify(current)}\n`);
+  const plan = createRuntimePlan({
+    adapterId: 'codex', targetRoot: root, scope: '.',
+    writes: [{ targetFile, content: `${JSON.stringify(expected)}\n`, kind: 'skill-projection-receipt', source: 'workspace:demo', diagnostic: { label: 'demo receipt', repair: 'skills-render' } }],
+    capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability) => ({ capability, supported: true, adapterId: 'codex' })),
+  });
+  const finding = reconcileRuntimePlan(plan, { compareOnly: true }).findings[0];
+  assert.match(finding.message, /File differences: scripts\/run\.sh/);
+  assert.match(finding.message, /"executable":true.*"executable":false/);
+});
+
 test('render 参数解析拒绝未知和缺失参数', (t) => {
   t.mock.method(console, 'error', () => {});
   assert.deepEqual(parseRenderClaudeCodeArgs(['--scope', '.', '--target', 'tmp']), { scope: '.', target: 'tmp' });

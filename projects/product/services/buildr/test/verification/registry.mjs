@@ -176,7 +176,7 @@ export const verificationSteps = Object.freeze([
     'test/component/**',
     'src/application/service/**',
   ], concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.mjs', args: ['--suite', 'general'] }, profiles: ['candidate'], groups: ['windows-platform-preflight'], inputs: [
+  step({ id: 'integration', name: 'technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.mjs', args: ['--suite', 'general'] }, profiles: ['candidate'], inputs: [
     'test/integration/**',
     'test/verification/integration.mjs',
     'test/verification/worker-budget.mjs',
@@ -316,7 +316,7 @@ export const verificationSteps = Object.freeze([
     'test/system/task-finish-cli.test.mjs',
     'test/system/task-finish-product-journey.test.mjs',
     'test/system/worktree-create.test.mjs',
-  ], args: ['--test-concurrency=2', '--test-reporter=dot'] }, groups: ['windows-platform-preflight'], inputs: [
+  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-platform-preflight'], selection: 'explicit-only', inputs: [
     'test/system/cli-update.test.mjs',
     'test/system/install-buildr-cli-runtime.test.mjs',
     'test/system/local-app-launcher.test.mjs',

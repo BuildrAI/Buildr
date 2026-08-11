@@ -86,7 +86,6 @@ test('focus verification de-duplicates groups without attaching fast', () => {
 test('Windows platform preflight keeps the bounded high-risk owners and tarball dependency', () => {
   const plan = createVerificationPlan({ groups: ['windows-platform-preflight'] });
   assert.deepEqual(plan.steps.map((step) => step.id), [
-    'integration',
     'system-windows-platform',
     'concurrent-task-acceptance',
     'candidate-tarball',

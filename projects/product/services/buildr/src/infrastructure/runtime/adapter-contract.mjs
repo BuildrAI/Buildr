@@ -716,7 +716,15 @@ function runtimeWriteMismatchSummary(item, current, expected) {
     const fields = [...new Set([...Object.keys(currentReceipt), ...Object.keys(expectedReceipt)])]
       .filter((field) => JSON.stringify(currentReceipt[field]) !== JSON.stringify(expectedReceipt[field]))
       .sort();
-    return ` Receipt differences: ${fields.join(', ') || 'serialized bytes only'}; ${hashes}.`;
+    const currentFiles = new Map((currentReceipt.files || []).map((file) => [file.path, file]));
+    const expectedFiles = new Map((expectedReceipt.files || []).map((file) => [file.path, file]));
+    const fileDifferences = [...new Set([...currentFiles.keys(), ...expectedFiles.keys()])]
+      .sort()
+      .filter((file) => JSON.stringify(currentFiles.get(file)) !== JSON.stringify(expectedFiles.get(file)))
+      .slice(0, 5)
+      .map((file) => `${file}: current=${JSON.stringify(currentFiles.get(file) ?? null)} expected=${JSON.stringify(expectedFiles.get(file) ?? null)}`);
+    const files = fileDifferences.length > 0 ? ` File differences: ${fileDifferences.join('; ')}.` : '';
+    return ` Receipt differences: ${fields.join(', ') || 'serialized bytes only'}; ${hashes}.${files}`;
   } catch {
     return ` Receipt bytes differ; ${hashes}.`;
   }

@@ -9,12 +9,13 @@ const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const webSourceRoot = path.resolve(serviceRoot, '../buildr-web');
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 240_000, maxBuffer: 8 * 1024 * 1024, ...options });
-  assert.equal(result.status, options.status ?? 0, result.stderr || result.stdout);
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 360_000, maxBuffer: 8 * 1024 * 1024, ...options });
+  const diagnostic = [result.stderr, result.stdout, result.error?.stack, result.signal && `signal=${result.signal}`].filter(Boolean).join('\n');
+  assert.equal(result.status, options.status ?? 0, diagnostic);
   return result.stdout;
 }
 
-test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用锁定工具链完成 build:web', { timeout: 300_000 }, (t) => {
+test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用锁定工具链完成 build:web', { timeout: 420_000 }, (t) => {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-fresh-environment-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'workspace');

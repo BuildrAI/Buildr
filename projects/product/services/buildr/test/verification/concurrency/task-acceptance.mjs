@@ -15,6 +15,7 @@ const { root: PRODUCT_ROOT, cli: BUILDR } = materializeCleanProductSource(SOURCE
 const workspace = path.join(fixtureRoot, 'workspace');
 const appData = path.join(fixtureRoot, 'app-data');
 const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+const platformTimeout = (milliseconds) => process.platform === 'win32' ? milliseconds * 3 : milliseconds;
 const previews = [];
 const taskIds = ['acceptance-task-a', 'acceptance-task-b'];
 const summary = {
@@ -50,7 +51,7 @@ function finishPhase(status = 'passed') {
 }
 
 function runBuildr(args, options = {}) {
-  return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: 30_000, ...options });
+  return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: platformTimeout(30_000), ...options });
 }
 
 function requireSuccess(result, label) {
@@ -124,7 +125,7 @@ try {
   const prepareProcesses = taskIds.map((taskId) => spawnSupervised(process.execPath, [
     BUILDR, 'task', 'environment', 'prepare', taskId,
     '--plan', environmentPlan, '--agent', 'codex', '--branch', `codex/${taskId}`, '--start-point', 'dev', '--target', workspace, '--json',
-  ], { cwd: PRODUCT_ROOT, env, owner: { taskId, runId: 'environment-prepare' }, timeoutMs: 60_000, outputLimit: 128 * 1024 }));
+  ], { cwd: PRODUCT_ROOT, env, owner: { taskId, runId: 'environment-prepare' }, timeoutMs: platformTimeout(60_000), outputLimit: 128 * 1024 }));
   const prepareResults = await Promise.all(prepareProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(prepareResults[0], prepareResults[1]), true);
   summary.environmentPreparation = {
@@ -158,7 +159,7 @@ try {
       run: spawnSupervised(task.cliInvocation.command, [
         ...task.cliInvocation.argsPrefix,
         'task', 'environment', 'inspect', task.taskId, '--target', workspace, '--json',
-      ], { cwd, env, owner: { taskId: task.taskId, runId: 'task-invocation' }, timeoutMs: 10_000, outputLimit: 64 * 1024 }),
+      ], { cwd, env, owner: { taskId: task.taskId, runId: 'task-invocation' }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }),
     };
   });
   const invocationResults = await Promise.all(invocationProcesses.map(({ run }) => run.completed));
@@ -179,7 +180,7 @@ try {
     'verification', 'run', '--project', 'nested', '--capability', 'nested.parallel-a', '--capability', 'nested.parallel-b', '--capability', 'nested.coordinated',
     '--target-identity', `target:${task.taskId}`, '--target', task.environmentRoot,
     '--environment', task.taskId, '--workspace', workspace, '--json',
-  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: 15_000, outputLimit: 64 * 1024 }));
+  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: platformTimeout(15_000), outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);
   summary.verificationRuns = verificationResults.map((result, index) => {
@@ -205,7 +206,7 @@ try {
     ...summary.verificationRuns[index].checks.flatMap((check) => ['--capability', `nested/${check.id}::passed::Verification ${check.id} passed`]),
     '--outcome', 'passed', '--summary', 'Concurrent task verification passed',
     '--declaration-root', task.environmentRoot, '--target', workspace, '--json',
-  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'verification-result-record' }, timeoutMs: 10_000, outputLimit: 64 * 1024 }));
+  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'verification-result-record' }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }));
   const recordedResults = await Promise.all(recordProcesses.map((run) => run.completed));
   summary.portableResults = recordedResults.map((result, index) => {
     const recorded = parseSuccessfulJson(result, `record verification result ${taskIds[index]}`);
@@ -252,7 +253,7 @@ try {
       cwd: task.repositories[1].checkoutPath,
       env,
       owner: { taskId: task.taskId, instance },
-      timeoutMs: 10_000,
+      timeoutMs: platformTimeout(10_000),
     });
   });
   const previewResults = await Promise.all(previewRuns.map((run) => run.completed));
@@ -316,7 +317,7 @@ try {
       : [BUILDR, 'app', 'preview', 'stop', instance, '--json'];
     previewStops.push({
       instance,
-      run: spawnSupervised(process.execPath, args, { cwd: PRODUCT_ROOT, env, owner: { taskId, instance }, timeoutMs: 10_000, outputLimit: 64 * 1024 }),
+      run: spawnSupervised(process.execPath, args, { cwd: PRODUCT_ROOT, env, owner: { taskId, instance }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }),
     });
   }
   const previewStopResults = await Promise.all(previewStops.map(({ run }) => run.completed));
@@ -328,7 +329,7 @@ try {
     const activeTasks = summary.tasks.filter((task) => fs.existsSync(task.environmentRoot));
     const abandonRuns = activeTasks.map((task) => spawnSupervised(process.execPath, [
       BUILDR, 'task', 'abandon', task.taskId, '--reason', 'concurrent acceptance fixture complete', '--target', workspace, '--json',
-    ], { cwd: PRODUCT_ROOT, env, owner: { taskId: task.taskId, runId: 'task-abandon' }, timeoutMs: 10_000, outputLimit: 64 * 1024 }));
+    ], { cwd: PRODUCT_ROOT, env, owner: { taskId: task.taskId, runId: 'task-abandon' }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }));
     const abandonResults = await Promise.all(abandonRuns.map((run) => run.completed));
     for (let index = 0; index < abandonResults.length; index += 1) {
       if (abandonResults[index].exitCode !== 0) summary.cleanup.receipts.push({ taskId: activeTasks[index].taskId, abandon: 'failed' });
