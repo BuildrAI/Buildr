@@ -36,7 +36,7 @@
 
 ### 平台身份和启动语义必须有共享 owner
 
-文件系统身份比较统一使用 checkout identity 基础设施提供的平台感知比较；Windows 允许短路径、长路径和大小写差异在解析后表示同一对象。Node 脚本统一通过当前 Node executable 和脚本参数启动，测试夹具不得依赖 Windows 直接执行无扩展名脚本。runtime 文件一致性由一个平台感知 helper 判断，Windows 不把 POSIX executable bit 当作 stale 依据。
+文件系统身份比较统一使用 checkout identity 基础设施提供的平台感知比较；Windows 允许短路径、长路径和大小写差异在解析后表示同一对象。Node 脚本统一通过当前 Node executable 和脚本参数启动，测试夹具不得依赖 Windows 直接执行无扩展名脚本。runtime 文件一致性由一个平台感知 helper 判断，Windows 不把 POSIX executable bit 当作 stale 依据。Buildr 初始化的 Workspace 同时写入 `.gitattributes`，固定文本资产以 LF 检出，避免新 worktree 在 Windows 上把组件字节身份改写为 CRLF。
 
 备选方案是继续在每个调用点增加 Windows 特判；这种做法会产生新的分叉，无法形成可审查的统一语义。
 
@@ -58,8 +58,9 @@
 1. 在独立 Task worktree 中完成共享平台语义和回归测试。
 2. 同步 `engines.node`、锁文件、安装检查、公开说明和 current knowledge。
 3. 调整 CI 触发分层并删除重复作业，先通过本地受影响和完整验证。
-4. 合入冻结的 `dev` 后运行 Windows 两版本定向预检；通过后再发起 `dev -> main` 的最终四矩阵候选验证。
-5. 若定向预检失败，停留在任务分支修复；若最终矩阵失败，完整汇总所有失败后回到独立 Task，不在单个作业内即时修改。
+4. 任务分支通过目标为 `dev` 的临时验证 PR 运行 Windows 两版本定向预检；通过后再正式收尾合入冻结的 `dev`。
+5. 发起 `dev -> main` 候选 PR，运行最终四矩阵候选验证并停在发布边界，不创建 release tag。
+6. 若定向预检失败，停留在任务分支修复；若最终矩阵失败，完整汇总所有失败后回到独立 Task，不在单个作业内即时修改。
 
 回滚时可恢复旧 CI 触发和 `engines.node` 声明；平台语义修复与新增测试可以保留，因为它们不依赖新 CI 拓扑。
 

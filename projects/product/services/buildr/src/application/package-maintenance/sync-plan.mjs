@@ -11,6 +11,7 @@ export function createPackageSyncPlan({
   function packageBuiltinMutationPaths(targetRoot, manifest = readPackageManifest(), receipts = { builtins: [] }) {
     const affected = new Set([
       path.join(targetRoot, 'AGENTS.md'),
+      path.join(targetRoot, '.gitattributes'),
       path.join(targetRoot, '.gitignore'),
       path.join(targetRoot, 'rules', 'manifest.yml'),
       path.join(targetRoot, 'skills', 'manifest.yml'),

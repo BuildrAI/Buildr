@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import {
   runtimeFileMatches,
+  sha256Integrity,
   runtimeWriteBuffer,
   runtimeWriteMode,
   runtimeWriteModeMatches,
@@ -706,21 +707,37 @@ function runtimePath(targetRoot, targetFile) {
   return path.relative(targetRoot, targetFile).split(path.sep).join('/');
 }
 
-function diagnosticFinding(item, observedStatus, plan) {
+function runtimeWriteMismatchSummary(item, current, expected) {
+  if (item.kind !== 'skill-projection-receipt' || current === null) return '';
+  const hashes = `current=${sha256Integrity(current)} expected=${sha256Integrity(expected)}`;
+  try {
+    const currentReceipt = JSON.parse(current.toString('utf8'));
+    const expectedReceipt = JSON.parse(expected.toString('utf8'));
+    const fields = [...new Set([...Object.keys(currentReceipt), ...Object.keys(expectedReceipt)])]
+      .filter((field) => JSON.stringify(currentReceipt[field]) !== JSON.stringify(expectedReceipt[field]))
+      .sort();
+    return ` Receipt differences: ${fields.join(', ') || 'serialized bytes only'}; ${hashes}.`;
+  } catch {
+    return ` Receipt bytes differ; ${hashes}.`;
+  }
+}
+
+function diagnosticFinding(item, observedStatus, plan, detail = '') {
   const diagnostic = item.diagnostic || {};
   const status = observedStatus === 'ok' && diagnostic.currentStatus
     ? diagnostic.currentStatus
     : observedStatus === 'ok' && diagnostic.actionRequiredWhenCurrent ? 'stale' : observedStatus;
   const code = diagnostic.codes?.[status] || diagnostic.code;
-  const message = diagnostic.messages?.[status]
-    || (status === 'ok' ? `${diagnostic.label || item.source || 'runtime target'} is up to date.` : `${diagnostic.label || item.source || 'runtime target'} is ${status}.`);
+  const message = (diagnostic.messages?.[status]
+    || (status === 'ok' ? `${diagnostic.label || item.source || 'runtime target'} is up to date.` : `${diagnostic.label || item.source || 'runtime target'} is ${status}.`));
+  const detailedMessage = `${message}${detail}`;
   const repair = status === 'ok' ? undefined : diagnostic.repairs?.[status] || diagnostic.repair;
   return {
     status,
     path: runtimePath(plan.targetRoot, item.targetFile),
     adapter: plan.adapterId,
     source: item.source,
-    message,
+    message: detailedMessage,
     ...(code ? { code } : {}),
     ...(repair ? { repair } : {}),
     userActionRequired: status !== 'ok' && status !== 'info' && status !== 'warning',
@@ -810,7 +827,7 @@ export function reconcileRuntimePlan(plan, options = {}) {
       : (current.equals(expected) && modeMatches) || (currentText !== null && item.matchesCurrent?.(currentText) === true)
         ? 'ok'
         : 'stale';
-    findings.push(diagnosticFinding(item, status, plan));
+    findings.push(diagnosticFinding(item, status, plan, status === 'stale' ? runtimeWriteMismatchSummary(item, current, expected) : ''));
     if (!compareOnly && status !== 'ok') {
       fs.mkdirSync(path.dirname(item.targetFile), { recursive: true });
       fs.writeFileSync(item.targetFile, expected);

@@ -87,7 +87,7 @@ test('Windows platform preflight keeps the bounded high-risk owners and tarball 
   const plan = createVerificationPlan({ groups: ['windows-platform-preflight'] });
   assert.deepEqual(plan.steps.map((step) => step.id), [
     'integration',
-    'system',
+    'system-windows-platform',
     'concurrent-task-acceptance',
     'candidate-tarball',
     'runtime-adapter-parity',

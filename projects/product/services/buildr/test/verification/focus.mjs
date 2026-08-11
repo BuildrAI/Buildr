@@ -9,8 +9,10 @@ import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesyst
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile, VERIFICATION_GROUPS, verificationSteps } from './registry.mjs';
+import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const projectRoot = path.resolve(productRoot, '../..');
 
 export function usage(stream = process.stdout) {
   stream.write('Usage: npm run test:focus -- [--plan|--json] <step-id|group:<group>>...\n');
@@ -70,14 +72,36 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       else {
         temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-focus-verification-'));
         const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+        const evidence = createVerificationEvidencePaths('focus', { temporaryRoot });
+        const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
+        const startedAt = Date.now();
+        fs.rmSync(evidence.diagnosticsOutput, { recursive: true, force: true });
+        fs.mkdirSync(evidence.diagnosticsOutput, { recursive: true });
         const execution = await executePlan(plan, {
           productRoot,
-          diagnosticsDirectory: path.join(temporaryRoot, 'diagnostics'),
+          projectRoot,
+          diagnosticsDirectory: evidence.diagnosticsOutput,
           artifactDirectory: path.join(temporaryRoot, 'candidate-package'),
           stream: process.stdout,
           errorStream: process.stderr,
           prefix: 'focus',
           concurrency: executionProfile.limits,
+          executionProfile,
+          runId: evidence.runId,
+          taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'focus',
+        });
+        writeVerificationTimingEvidence({
+          ...evidence,
+          kind: 'focus',
+          source,
+          status: execution.passed ? 'passed' : 'failed',
+          results: execution.results,
+          startedAt,
+          finishedAt: Date.now(),
+          diagnosticsDirectory: evidence.diagnosticsOutput,
+          prefix: 'focus',
+          stream: process.stdout,
+          errorStream: process.stderr,
           executionProfile,
         });
         if (!execution.passed) process.exitCode = 1;

@@ -33,6 +33,7 @@ function fixtureWorkspace(_t, { git = true } = {}) {
   if (fixtureWorkspaces.has(key)) return fixtureWorkspaces.get(key);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-task-environment-${key}-`));
   command(productRoot, process.execPath, [cli, 'init', '--agent', 'codex', '--target', root, '--name', 'environment-fixture', '--description', 'Task Environment fixture', '--profile', 'team']);
+  assert.equal(fs.readFileSync(path.join(root, '.gitattributes'), 'utf8'), '* text=auto eol=lf\n');
   if (git) {
     command(root, 'git', ['init', '-b', 'main']);
     command(root, 'git', ['config', 'user.name', 'Buildr Test']);

@@ -470,6 +470,7 @@ workspaceFiles:
   - package/targets/workspace/AGENTS.md => AGENTS.md render
   - package/targets/workspace/.buildr/workspace.yml => .buildr/workspace.yml render
   - package/targets/workspace/projects/manifest.yml => projects/manifest.yml copy
+  - package/targets/workspace/gitattributes => .gitattributes copy
   - package/targets/workspace/gitignore => .gitignore copy
   - package/targets/workspace/rules/manifest.yml => rules/manifest.yml copy
   - package/targets/workspace/rules/buildr/core.md => rules/buildr/core.md copy
