@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+
+import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const webSourceRoot = path.resolve(serviceRoot, '../buildr-web');
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 360_000, maxBuffer: 8 * 1024 * 1024, ...options });
+  const result = spawnCommandSync(command, args, { encoding: 'utf8', timeout: 360_000, maxBuffer: 8 * 1024 * 1024, ...options });
   const diagnostic = [result.stderr, result.stdout, result.error?.stack, result.signal && `signal=${result.signal}`].filter(Boolean).join('\n');
   assert.equal(result.status, options.status ?? 0, diagnostic);
   return result.stdout;
@@ -145,6 +146,10 @@ recipes:
   assert.equal(fs.realpathSync(path.join(worktreeWeb, 'node_modules', '.bin', 'vite')).startsWith(worktreeWeb), true);
 
   const managedNpm = prepared.environment.preparationSteps.find((step) => step.scope === 'service:product/buildr').executable;
-  run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, PATH: `${path.dirname(managedNpm)}:/usr/bin:/bin` } });
+  const systemCommandPaths = process.platform === 'win32'
+    ? [process.env.SystemRoot && path.join(process.env.SystemRoot, 'System32'), process.env.SystemRoot].filter(Boolean)
+    : ['/usr/bin', '/bin'];
+  const managedPath = [path.dirname(managedNpm), ...systemCommandPaths].join(path.delimiter);
+  run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, PATH: managedPath } });
   assert.equal(fs.existsSync(path.join(worktreeBuildr, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), true);
 });
