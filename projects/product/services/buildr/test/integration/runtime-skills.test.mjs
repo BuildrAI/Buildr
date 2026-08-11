@@ -25,8 +25,19 @@ import { RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, getRuntimeAdapter, skillDestinat
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/infrastructure/runtime/skills/inventory.mjs';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
+  runtimeWriteModeMatches,
   skillProjectionOwnershipReceiptTarget,
 } from '../../src/infrastructure/runtime/skills/projection-files.mjs';
+
+test('Windows runtime 文件一致性忽略 POSIX executable bit', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-mode-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'run.sh');
+  fs.writeFileSync(file, '#!/bin/sh\n', { mode: 0o600 });
+  const write = { targetFile: file, mode: 0o100 };
+  assert.equal(runtimeWriteModeMatches(file, write, 'win32'), true);
+  if (process.platform !== 'win32') assert.equal(runtimeWriteModeMatches(file, write, process.platform), false);
+});
 
 test('render 参数解析拒绝未知和缺失参数', (t) => {
   t.mock.method(console, 'error', () => {});

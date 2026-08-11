@@ -76,6 +76,7 @@ process.stdout.write(JSON.stringify({ summary: { passed: 1, failed: 0 } }) + '\\
 `;
 
 function taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand = path.join(retained, 'projects', 'product', 'buildr'), controllerSourceRoot = path.dirname(controllerCommand), repositoryRemote = 'origin', repositoryStartPoint = 'dev' }) {
+  const controllerInvocation = { command: process.execPath, argsPrefix: [controllerCommand], sourceRoot: controllerSourceRoot, kind: 'stable-controller' };
   const execution = () => ({
     ready: true,
     taskId: task,
@@ -86,10 +87,10 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, controllerCom
     executionRoots: [environmentRoot],
     allowedExecutionRoots: [environmentRoot],
     controller: { identity: 'fixture-controller', adapter: 'codex' },
-    controllerInvocation: { command: controllerCommand, argsPrefix: [], sourceRoot: controllerSourceRoot, kind: 'stable-controller' },
+    controllerInvocation,
     cliInvocation: {
-      command: controllerCommand,
-      argsPrefix: [],
+      command: process.execPath,
+      argsPrefix: [controllerCommand],
       sourceRoot: controllerSourceRoot,
       kind: 'task-environment-candidate',
     },

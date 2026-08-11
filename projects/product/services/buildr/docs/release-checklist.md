@@ -36,7 +36,8 @@
 - [x] 准备公开 example workspace，展示 Organization/Root、Project、Service、Rules、Skills 和 runtime 投射的最小路径。
 - [x] 完成去私有化检查，覆盖模板、默认目录、归档文档、示例内容、作者信息、URL、邮箱和组织内部术语。
 - [x] 建立 GitHub Actions 最小 CI，运行 `projects/product/services/buildr/scripts/verify-buildr-product`。
-- [ ] 在 Linux Node 24.15.0/24.x 完整验证，并在 Linux/macOS/Windows Node 24.15.0 验证正式 tarball 生命周期（切换 Node 基线后待 CI 重跑）。
+- [ ] 在 macOS/Windows × Node 24.15.0/当前 24.x 的四个完整 Candidate 中验证正式 tarball 生命周期；Node 25 及未来主版本须另建适配任务后再加入支持范围。
+- [ ] 新 workflow 首次产生 check contexts 后更新 branch protection：`dev` 要求两个 `windows-platform-preflight` Node 矩阵，`main` 要求四个 `product` OS/Node 矩阵；删除历史 `product (20)`、`product (22)` 和两个独立 `release-smoke` required contexts。修改前后均从 GitHub 回读精确 context 名称，不凭文档猜测。
 - [x] 明确 npm registry 发布流程：`@buildr-ai/buildr`、RC 使用 `next`、稳定版使用 `latest`、tag/version fail closed、GitHub Environment 审批和 OIDC trusted publishing。
 - [x] 将干净候选快照推到 `BuildrAI/Buildr`，在真实 GitHub runner 通过 CI，并配置 `main`/`dev` branch protection 与 Private Vulnerability Reporting。
 - [x] 通过 2FA 首次发布 `0.1.0-rc.1`，随后为 `@buildr-ai/buildr` 配置 GitHub trusted publisher。

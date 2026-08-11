@@ -105,7 +105,7 @@ The Agent should complete the following initialization flow. This section is mai
 
 **1. Prepare Node.js and Buildr CLI**
 
-Buildr requires Node.js 24.15.0 or later. First check the Node.js version and whether the `buildr` command is available. If a requirement is not met, ask the user before installing or upgrading:
+Buildr supports Node.js from 24.15.0 up to, but not including, 25 (`>=24.15.0 <25`). First check the Node.js version and whether the `buildr` command is available. If a requirement is not met, ask the user before installing or upgrading. A Workspace's managed runtime uses the exact version in version-controlled metadata; this bootstrap Workspace currently pins 24.15.0:
 
 - **Pre-release (currently recommended for evaluation; current candidate: `0.1.0-rc.8`)**: `npm install -g @buildr-ai/buildr@next`
 - **Development checkout**: after the user confirms where to save it, run `git clone https://github.com/BuildrAI/Buildr.git <path>`, then use `<path>/projects/product/buildr`

@@ -6,6 +6,7 @@ import { normalizeTaskVerificationResult, taskVerificationError } from '../../do
 import { parseProjectVerification, validateProjectVerification } from '../doctor/project-verification-diagnostics.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { declarationIntakeGapNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')}`;
@@ -57,7 +58,7 @@ export function registerTaskVerificationApplication(runtime) {
       const sourceRoot = fs.realpathSync(value.trim());
       if (!fs.lstatSync(sourceRoot).isDirectory()) throw new Error('not a directory');
       const canonicalRoot = fs.realpathSync(task.root);
-      if (sourceRoot !== canonicalRoot) {
+      if (!sameFilesystemPath(sourceRoot, canonicalRoot)) {
         const context = runtime.resolveTaskEnvironmentExecution?.(canonicalRoot, task.record.taskId);
         if (!context?.ready) {
           throw taskVerificationError('task_verification_declaration_root_unowned', 'declarationRoot 只能使用 canonical Workspace 或当前 ready Task Environment 根。', 409, {
@@ -67,7 +68,7 @@ export function registerTaskVerificationApplication(runtime) {
           });
         }
         const environmentRoot = fs.realpathSync(context.environmentRoot);
-        if (sourceRoot !== environmentRoot) {
+        if (!sameFilesystemPath(sourceRoot, environmentRoot)) {
           throw taskVerificationError('task_verification_declaration_root_unowned', 'declarationRoot 与当前 Task Environment 根不一致。', 409, {
             taskId: task.record.taskId,
             declarationRoot: sourceRoot,

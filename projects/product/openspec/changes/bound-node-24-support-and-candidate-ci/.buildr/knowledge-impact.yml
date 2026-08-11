@@ -1,0 +1,37 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: bound-node-24-support-and-candidate-ci
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/bound-node-24-support-and-candidate-ci/brief.md
+    reason: Change 需要提供 Windows 修复、CI 分层与 Node 支持边界的人类入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/bound-node-24-support-and-candidate-ci/proposal.md
+      - openspec/changes/bound-node-24-support-and-candidate-ci/design.md
+      - openspec/changes/bound-node-24-support-and-candidate-ci/specs/product-verification-quality/spec.md
+      - openspec/changes/bound-node-24-support-and-candidate-ci/specs/workspace-node-toolchain/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的平台身份、Node 兼容范围和 CI 验证分层发生变化
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/infrastructure/filesystem/filesystem-path-identity.mjs
+      - services/buildr/test/verification/registry.mjs
+      - services/buildr/package.json
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 文件系统 identity owner、受管 runtime 与产品兼容范围及最终候选证明边界需要长期记录
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/infrastructure/filesystem/filesystem-path-identity.mjs
+      - openspec/changes/bound-node-24-support-and-candidate-ci/specs/workspace-node-toolchain/spec.md
+      - openspec/changes/bound-node-24-support-and-candidate-ci/specs/product-verification-quality/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: Workspace Node version、产品兼容范围、Candidate 和 release smoke 均为既有术语
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

@@ -22,7 +22,14 @@ test('CLI installer prefers receipt-bound Node over an unsupported shell default
 
   const rejected = spawnSync(INSTALLER, ['--install-dir', installDir], { cwd: PRODUCT_ROOT, env, encoding: 'utf8' });
   assert.equal(rejected.status, 1);
-  assert.match(rejected.stderr, /Node\.js 24\.15\.0 or newer/);
+  assert.match(rejected.stderr, /Node\.js >=24\.15\.0 <25/);
+
+  const futureNode = path.join(fakeBin, 'node-25');
+  fs.writeFileSync(futureNode, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo v25.0.0; else echo 0; fi\n');
+  fs.chmodSync(futureNode, 0o755);
+  const futureRejected = spawnSync(INSTALLER, ['--node-executable', futureNode, '--install-dir', installDir], { cwd: PRODUCT_ROOT, env, encoding: 'utf8' });
+  assert.equal(futureRejected.status, 1);
+  assert.match(futureRejected.stderr, /Node\.js >=24\.15\.0 <25/);
 
   const installed = spawnSync(INSTALLER, ['--node-executable', process.execPath, '--install-dir', installDir], { cwd: PRODUCT_ROOT, env, encoding: 'utf8' });
   assert.equal(installed.status, 0, installed.stderr || installed.stdout);

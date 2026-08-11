@@ -107,7 +107,7 @@ Agent 读到这个任务后，按以下流程完成初始化。本节主要给 A
 
 **1. 准备 Node.js 和 Buildr CLI**
 
-Buildr 需要 Node.js 24.15.0 或更高版本。先检查 Node.js 版本和本机是否已有 `buildr` 命令；条件不满足时，先询问用户再安装或升级：
+Buildr 支持 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`）。先检查 Node.js 版本和本机是否已有 `buildr` 命令；条件不满足时，先询问用户再安装或升级。Workspace 的受管 runtime 使用受版本控制声明中的精确版本，当前自举 Workspace 固定为 24.15.0：
 
 - **预发布版（当前推荐试用，当前候选版：`0.1.0-rc.8`）**：`npm install -g @buildr-ai/buildr@next`
 - **开发版**：让用户确认保存位置后，执行 `git clone https://github.com/BuildrAI/Buildr.git <path>`，后续使用 `<path>/projects/product/buildr`

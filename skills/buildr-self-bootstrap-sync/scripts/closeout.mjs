@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../../projects/product/services/buildr/src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
 export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
@@ -145,6 +146,11 @@ function command(execute, executable, args, cwd, id, phaseResult, extra = {}) {
   return result;
 }
 
+function productCommand(execute, root, nodeExecutable, args, id, phaseResult) {
+  const script = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');
+  return command(execute, nodeExecutable, [script, ...args], root, id, phaseResult, { kind: 'product', script, args });
+}
+
 function requirePassed(result, code, message, details = null) {
   if (result.status !== 0) throw closeoutError(code, message, { ...details, exitCode: result.status, stderr: String(result.stderr || '').trim() });
   return result;
@@ -222,7 +228,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       throw closeoutError('self-bootstrap-closeout.capability-binding-missing', 'Finish Result没有已解析的buildr.task-finish/v1 capability binding。');
     }
     const finishWorkspaceRoot = finishResult.identity?.workspaceRoot ? fs.realpathSync(path.resolve(finishResult.identity.workspaceRoot)) : null;
-    if (finishWorkspaceRoot !== root) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', 'Finish Result绑定的canonical Workspace与runner target不一致。');
+    if (!finishWorkspaceRoot || !sameFilesystemPath(finishWorkspaceRoot, root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', 'Finish Result绑定的canonical Workspace与runner target不一致。');
     plan = createSelfBootstrapCloseoutPlan(finishResult);
     if (!plan.runId || !plan.taskId || !plan.agent || !plan.targetBranch || !plan.remote || !plan.baseRef) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish Result缺少run、Task、Agent、target、remote或final ref。');
     const applicable = Object.values(plan.actions).some((paths) => paths.length);
@@ -235,7 +241,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     }
 
     const actualRoot = gitText(execute, root, ['rev-parse', '--show-toplevel'], 'workspace-root', active, 'self-bootstrap-closeout.git-root-unavailable');
-    if (fs.realpathSync(path.resolve(actualRoot)) !== root) throw closeoutError('self-bootstrap-closeout.git-root-mismatch', 'Runner target不是retained Git根目录。', { actualRoot });
+    if (!sameFilesystemPath(actualRoot, root)) throw closeoutError('self-bootstrap-closeout.git-root-mismatch', 'Runner target不是retained Git根目录。', { actualRoot });
     const branch = gitText(execute, root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], 'target-branch', active, 'self-bootstrap-closeout.detached-head');
     if (branch !== plan.targetBranch) throw closeoutError('self-bootstrap-closeout.target-branch-mismatch', 'Retained checkout不在Finish绑定的target branch。', { expected: plan.targetBranch, actual: branch });
     const initialChanges = changedPaths(execute, root, active, 'preflight');
@@ -265,8 +271,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     let successor = head;
     if (syncRequired) {
       active = stages.get('sync');
-      const cli = path.join(root, PRODUCT_ROOT, 'buildr');
-      const synced = command(execute, cli, ['sync', plan.agent, '--target', root, '--json'], root, 'workspace-sync', active, { kind: 'product' });
+      const synced = productCommand(execute, root, nodeExecutable, ['sync', plan.agent, '--target', root, '--json'], 'workspace-sync', active);
       requirePassed(synced, 'self-bootstrap-closeout.sync-failed', 'Retained Workspace sync失败。');
       const ownedPaths = changedPaths(execute, root, active, 'post-sync');
       if (recovery !== 'fresh' && ownedPaths.length) throw closeoutError('self-bootstrap-closeout.successor-sync-drift', '合法successor存在，但重算sync仍产生delta。', { changedPaths: ownedPaths });
@@ -320,23 +325,21 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
 
     active = stages.get('install-local-app');
     if (plan.actions['install-development-local-app'].length) {
-      const cli = path.join(root, PRODUCT_ROOT, 'buildr');
-      const installed = command(execute, cli, ['app', 'launcher', 'install', '--channel', 'development', '--json'], root, 'install-development-local-app', active, { kind: 'product' });
+      const installed = productCommand(execute, root, nodeExecutable, ['app', 'launcher', 'install', '--channel', 'development', '--json'], 'install-development-local-app', active);
       requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', 'Development Local App安装失败。');
       const payload = parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', 'Development Local App installer没有返回JSON。');
       markPassed(active, plan.identity, digest(payload), [{ type: 'install-development-local-app', ref: successor, channel: 'development' }]);
     } else markNotApplicable(active, 'frozen paths未命中Development Local App输入。');
 
     active = stages.get('finalize');
-    const cli = path.join(root, PRODUCT_ROOT, 'buildr');
     if (plan.mode === 'complete') {
-      const doctor = command(execute, cli, ['doctor', '--agent', plan.agent, '--target', root, '--json'], root, 'final-doctor', active, { kind: 'product' });
+      const doctor = productCommand(execute, root, nodeExecutable, ['doctor', '--agent', plan.agent, '--target', root, '--json'], 'final-doctor', active);
       requirePassed(doctor, 'self-bootstrap-closeout.doctor-failed', '最终Doctor命令失败。');
       const payload = parseJson(doctor, 'self-bootstrap-closeout.doctor-result-invalid', '最终Doctor没有返回JSON。');
       if (payload.health?.ready !== true) throw closeoutError('self-bootstrap-closeout.doctor-not-ready', '最终Doctor未ready。', { findings: payload.findings || [] });
       markPassed(active, successor, digest(payload));
     } else {
-      const resumed = command(execute, cli, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', finishResult.resume.token, '--target', root, '--detail', 'full', '--json'], root, 'resume-finish-run', active, { kind: 'product' });
+      const resumed = productCommand(execute, root, nodeExecutable, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', finishResult.resume.token, '--target', root, '--detail', 'full', '--json'], 'resume-finish-run', active);
       requirePassed(resumed, 'self-bootstrap-closeout.finish-resume-failed', '同一Finish run恢复命令失败。');
       const payload = parseJson(resumed, 'self-bootstrap-closeout.finish-resume-result-invalid', 'Finish resume没有返回JSON。');
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
@@ -382,13 +385,13 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   if (!runId || !targetRoot || !nodeExecutable) {
     throw closeoutError('self-bootstrap-closeout.arguments-incomplete', 'Usage: node closeout.mjs --run <finish-run-id> --target <canonical-workspace> --node-executable <retained-node>');
   }
-  if (path.resolve(actualNodeExecutable) !== path.resolve(nodeExecutable)) {
+  if (!sameFilesystemPath(actualNodeExecutable, nodeExecutable)) {
     throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', 'Runner必须由Environment绑定的retained Node启动。', { expected: nodeExecutable, actual: actualNodeExecutable });
   }
 
   const root = fs.realpathSync(path.resolve(targetRoot));
-  const cli = path.join(root, PRODUCT_ROOT, 'buildr');
-  const inspected = execute(cli, ['task', 'finish', 'inspect', '--run', runId, '--target', root, '--detail', 'full', '--json'], { cwd: root });
+  const cli = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');
+  const inspected = execute(nodeExecutable, [cli, 'task', 'finish', 'inspect', '--run', runId, '--target', root, '--detail', 'full', '--json'], { cwd: root });
   if (inspected.status !== 0) throw commandResultError('self-bootstrap-closeout.finish-inspect-failed', '无法通过Product CLI读取Finish Result。', inspected);
   let finishResult;
   try { finishResult = JSON.parse(inspected.stdout); } catch (error) {
@@ -413,4 +416,4 @@ function main() {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) main();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) main();

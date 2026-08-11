@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { buildLauncher } from './build.mjs';
 import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 const PRODUCT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -77,7 +78,7 @@ function validateBundle(bundle, platform, expected) {
   const actual = readIdentity(bundle, platform);
   if (!actual || actual.buildId !== expected.buildId || actual.channel !== expected.channel) throw new Error('Staged launcher identity validation failed.');
   if (expected.channel === 'development') {
-    if (actual.sourceRoot !== expected.sourceRoot || actual.nodeRuntime?.executable !== expected.nodeRuntime?.executable || actual.nodeRuntime?.version !== expected.nodeRuntime?.version) throw new Error('Staged Development launcher checkout/runtime identity validation failed.');
+    if (!sameFilesystemPath(actual.sourceRoot, expected.sourceRoot) || !sameFilesystemPath(actual.nodeRuntime?.executable, expected.nodeRuntime?.executable) || actual.nodeRuntime?.version !== expected.nodeRuntime?.version) throw new Error('Staged Development launcher checkout/runtime identity validation failed.');
     if (!fs.existsSync(actual.sourceRoot) || !fs.existsSync(path.join(actual.sourceRoot, 'bin', 'buildr.mjs')) || !fs.existsSync(path.join(actual.sourceRoot, 'package.json')) || !fs.existsSync(path.join(actual.sourceRoot, 'src')) || !fs.existsSync(path.join(actual.sourceRoot, 'package'))) throw new Error('Staged Development launcher checkout is missing.');
     if (!fs.existsSync(actual.nodeRuntime.executable)) throw new Error('Staged Development launcher Workspace Node runtime is missing.');
   } else {

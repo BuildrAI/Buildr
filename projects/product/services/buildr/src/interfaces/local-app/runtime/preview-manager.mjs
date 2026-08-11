@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { localAppDataRoot } from '../../../infrastructure/filesystem/workspace-registry-repository.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import { healthyLocalAppInstance, openDefaultBrowser } from './instance-manager.mjs';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
@@ -75,7 +76,7 @@ export function previewOwnerForWorktree(name, targetRoot, productCheckout = null
 
 function samePreviewOwner(left, right) {
   return Boolean(left && right
-    && path.resolve(left.environmentRoot || left.worktree) === path.resolve(right.environmentRoot || right.worktree)
+    && sameFilesystemPath(left.environmentRoot || left.worktree, right.environmentRoot || right.worktree)
     && (left.taskId || null) === (right.taskId || null)
     && (left.workspaceRoot || null) === (right.workspaceRoot || null)
     && (left.resourceProvider || PREVIEW_RESOURCE_PROVIDER) === (right.resourceProvider || PREVIEW_RESOURCE_PROVIDER)
@@ -96,8 +97,8 @@ export function assertPreviewStopOwner(owner, caller) {
     || caller.taskId !== owner.taskId
     || typeof caller.workspaceRoot !== 'string'
     || typeof caller.environmentRoot !== 'string'
-    || path.resolve(caller.workspaceRoot) !== path.resolve(owner.workspaceRoot)
-    || path.resolve(caller.environmentRoot) !== path.resolve(owner.environmentRoot)
+    || !sameFilesystemPath(caller.workspaceRoot, owner.workspaceRoot)
+    || !sameFilesystemPath(caller.environmentRoot, owner.environmentRoot)
     || caller.resourceId !== owner.resourceId
     || caller.resourceProvider !== (owner.resourceProvider || PREVIEW_RESOURCE_PROVIDER)
     || caller.resourceHandle?.instance !== (owner.resourceHandle?.instance || owner.instance)

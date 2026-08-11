@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
+
 import { removeIsolatedGitCarrier } from './git-task-contribution.mjs';
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
 import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
@@ -136,7 +138,7 @@ export function registerTaskFinishApplication(runtime) {
           const staleFailedRun = currentRun?.status === 'failed' && handoffChanged ? currentRun : null;
           if (staleFailedRun) return { identity, staleFailedRun, finishRun: null };
           finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity });
-        } else if (path.resolve(finishRun.identity.workspaceRoot) !== path.resolve(root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
+        } else if (!sameFilesystemPath(finishRun.identity.workspaceRoot, root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
         if (finishRun && ['blocked', 'cleanup_pending'].includes(finishRun.status) && (!resumeToken || finishRun.resume?.token !== resumeToken)) {
           throw inputError('task_finish.resume_token_mismatch', 'Task Finish blocked run requires its current product-generated resume token.', 'run');
         }

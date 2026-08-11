@@ -97,8 +97,15 @@ test('BUILDR_NODE 优先于 PATH 且不兼容 override 会 fail fast', { skip: p
   fakeNode(incompatibleNode, '18', 'incompatible');
   const rejected = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: incompatibleNode });
   assert.equal(rejected.status, 1);
-  assert.match(rejected.stderr, /requires Node\.js >=24\.15\.0; BUILDR_NODE/u);
+  assert.match(rejected.stderr, /requires Node\.js >=24\.15\.0 <25; BUILDR_NODE/u);
   assert.equal(rejected.stdout, '');
+
+  const futureNode = path.join(fixture, 'future', 'node');
+  fakeNode(futureNode, '25.0.0', 'future');
+  const futureRejected = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: futureNode });
+  assert.equal(futureRejected.status, 1);
+  assert.match(futureRejected.stderr, /requires Node\.js >=24\.15\.0 <25; BUILDR_NODE/u);
+  assert.equal(futureRejected.stdout, '');
 });
 
 test('开发入口可发现 Agent runtime PATH 相邻的 bundled Node', { skip: process.platform === 'win32' }, () => {
@@ -120,7 +127,7 @@ test('没有兼容 Node 时返回最低版本和恢复动作', { skip: process.p
   const result = run(runner, ['doctor'], { PATH: oldBin });
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /requires Node\.js >=24\.15\.0/u);
+  assert.match(result.stderr, /requires Node\.js >=24\.15\.0 <25/u);
   assert.match(result.stderr, /Set BUILDR_NODE.*add one to PATH/u);
   assert.doesNotMatch(result.stderr, /SyntaxError/u);
 });
@@ -128,6 +135,7 @@ test('没有兼容 Node 时返回最低版本和恢复动作', { skip: process.p
 test('开发启动器最低版本与 package engines 保持一致', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8'));
   const source = fs.readFileSync(runner, 'utf8');
-  assert.equal(packageJson.engines.node, '>=24.15.0');
+  assert.equal(packageJson.engines.node, '>=24.15.0 <25');
   assert.match(source, /minimum_node_version=24\.15\.0/u);
+  assert.match(source, /candidate_major" -eq 24/u);
 });

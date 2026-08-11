@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import { isDeepStrictEqual } from 'node:util';
 
 import { createRuntime } from '../../application/compose-runtime.mjs';
@@ -120,4 +121,4 @@ async function main() {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) await main();

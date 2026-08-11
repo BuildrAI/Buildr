@@ -79,17 +79,19 @@ function executor(root, options = {}) {
       if (args[0] === 'push' && options.failPush) return { status: 1, stdout: '', stderr: 'simulated push failure' };
       return run(executable, args, context.cwd);
     }
-    if (executable === path.join(canonicalRoot, 'projects', 'product', 'buildr')) {
-      if (args[0] === 'task' && args[1] === 'finish' && args[2] === 'inspect') {
+    const productScript = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
+    if (executable === process.execPath && args[0] === productScript) {
+      const productArgs = args.slice(1);
+      if (productArgs[0] === 'task' && productArgs[1] === 'finish' && productArgs[2] === 'inspect') {
         return { status: 0, stdout: JSON.stringify(options.finishInspection), stderr: '' };
       }
-      if (args[0] === 'sync') {
+      if (productArgs[0] === 'sync') {
         fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v2\n');
         return { status: options.failSync ? 1 : 0, stdout: '{"status":"synced"}', stderr: options.failSync ? 'sync failed' : '' };
       }
-      if (args[0] === 'doctor') return { status: 0, stdout: JSON.stringify({ health: { ready: true } }), stderr: '' };
-      if (args[0] === 'app') return { status: 0, stdout: JSON.stringify({ status: 'installed', channel: 'development' }), stderr: '' };
-      if (args[0] === 'task') return { status: 0, stdout: JSON.stringify({ status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' } }), stderr: '' };
+      if (productArgs[0] === 'doctor') return { status: 0, stdout: JSON.stringify({ health: { ready: true } }), stderr: '' };
+      if (productArgs[0] === 'app') return { status: 0, stdout: JSON.stringify({ status: 'installed', channel: 'development' }), stderr: '' };
+      if (productArgs[0] === 'task') return { status: 0, stdout: JSON.stringify({ status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' } }), stderr: '' };
     }
     if (executable === path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli')) return { status: options.failCliInstall ? 1 : 0, stdout: 'installed', stderr: options.failCliInstall ? 'install failed' : '' };
     return { status: 1, stdout: '', stderr: `unexpected command: ${executable} ${args.join(' ')}` };
@@ -217,5 +219,7 @@ test('Skill命令入口通过Product CLI只读取得同一Finish Result', (t) =>
   });
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
   assert.equal(phase(result, 'install-cli').status, 'passed');
+  const productOperation = phase(result, 'finalize').operations.find((item) => item.kind === 'product');
+  assert.equal(productOperation.script, path.join(fs.realpathSync(root), 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs'));
   assert.equal(result.runId, finish.runId);
 });

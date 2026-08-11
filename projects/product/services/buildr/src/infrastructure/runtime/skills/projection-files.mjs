@@ -119,10 +119,15 @@ export function runtimeWriteMode(item) {
   return item.mode;
 }
 
-export function runtimeFileMatches(file, integrity, executable) {
+export function runtimeWriteModeMatches(file, item, platform = process.platform) {
+  const expectedMode = runtimeWriteMode(item);
+  return expectedMode === null || platform === 'win32' || ownerExecutable(fs.statSync(file).mode) === (expectedMode === 0o100);
+}
+
+export function runtimeFileMatches(file, integrity, executable, platform = process.platform) {
   if (!fs.existsSync(file) || !fs.lstatSync(file).isFile() || fs.lstatSync(file).isSymbolicLink()) return false;
   if (sha256Integrity(fs.readFileSync(file)) !== integrity) return false;
-  return executable === undefined || process.platform === 'win32' || ownerExecutable(fs.statSync(file).mode) === executable;
+  return executable === undefined || platform === 'win32' || ownerExecutable(fs.statSync(file).mode) === executable;
 }
 
 function normalizedReceiptSegments(adapterId, runtimePath) {

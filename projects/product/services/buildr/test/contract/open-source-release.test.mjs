@@ -142,7 +142,14 @@ test('CI and publish workflows use the supported Node runtime', () => {
   const verifyWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8');
   const publishWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   assert.match(verifyWorkflow, /node: \[24\.15\.0, 24\.x\]/);
-  assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
+  assert.match(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
+  assert.match(verifyWorkflow, /group:windows-platform-preflight/);
+  assert.match(verifyWorkflow, /github\.base_ref == 'dev'/);
+  assert.match(verifyWorkflow, /github\.base_ref == 'main'/);
+  assert.match(verifyWorkflow, /github\.head_ref == 'dev'/);
+  assert.doesNotMatch(verifyWorkflow, /^  release-smoke:/m);
+  assert.equal((verifyWorkflow.match(/npm run test:candidate/g) || []).length, 1);
+  assert.equal((verifyWorkflow.match(/release-tarball-smoke/g) || []).length, 0);
   assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);
   assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);

@@ -33,13 +33,13 @@ if [[ -z "$node_executable" ]]; then
 fi
 
 if [[ -z "$node_executable" || ! -x "$node_executable" ]]; then
-  echo "Buildr requires Node.js 24.15.0 or newer." >&2
+  echo "Buildr requires Node.js >=24.15.0 <25." >&2
   exit 1
 fi
 
-node_compatible="$("$node_executable" -p 'const [major, minor] = process.versions.node.split(".").map(Number); Number(major > 24 || (major === 24 && minor >= 15))')"
+node_compatible="$("$node_executable" -p 'const [major, minor] = process.versions.node.split(".").map(Number); Number(major === 24 && minor >= 15)')"
 if [[ "$node_compatible" != 1 ]]; then
-  echo "Buildr requires Node.js 24.15.0 or newer; current version: $("$node_executable" --version)" >&2
+  echo "Buildr requires Node.js >=24.15.0 <25; current version: $("$node_executable" --version)" >&2
   exit 1
 fi
 

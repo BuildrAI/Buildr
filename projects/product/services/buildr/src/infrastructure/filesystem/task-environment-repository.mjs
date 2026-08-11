@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { normalizeTaskEnvironmentReceipt, taskEnvironmentError } from '../../domain/task-environment/task-environment.mjs';
+import { sameFilesystemPath } from './filesystem-path-identity.mjs';
 
 function locator(taskId) { return `workspace-sqlite:task-environment/${taskId}`; }
 
@@ -74,7 +75,7 @@ export function registerTaskEnvironmentRepository(runtime) {
       let taskRoot;
       try { receiptRoot = fs.realpathSync(normalized.workspace.root); } catch { throw taskEnvironmentError('task_environment_workspace_mismatch', 'Environment Receipt 不属于当前 canonical Workspace。', 409, { expected: path.resolve(task.root), actual: path.resolve(normalized.workspace.root) }); }
       try { taskRoot = fs.realpathSync(task.root); } catch { throw taskEnvironmentError('task_environment_workspace_mismatch', '当前 Task Record 不属于可访问的 canonical Workspace。', 409, { expected: path.resolve(task.root) }); }
-      if (path.resolve(receiptRoot) !== path.resolve(taskRoot)) {
+      if (!sameFilesystemPath(receiptRoot, taskRoot)) {
         throw taskEnvironmentError('task_environment_workspace_mismatch', 'Environment Receipt 不属于当前 canonical Workspace。', 409, { expected: path.resolve(taskRoot), actual: path.resolve(receiptRoot) });
       }
       normalized = { ...normalized, workspace: { ...normalized.workspace, root: taskRoot } };

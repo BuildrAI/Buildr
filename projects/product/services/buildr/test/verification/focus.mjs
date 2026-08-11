@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile, VERIFICATION_GROUPS, verificationSteps } from './registry.mjs';
@@ -48,7 +49,7 @@ export function printFocusCatalog(stream = process.stdout) {
   for (const step of verificationSteps) stream.write(`  ${step.id.padEnd(32)} ${step.name}\n`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   let temporaryRoot;
   try {
     const parsed = parseFocusArgs(process.argv.slice(2));

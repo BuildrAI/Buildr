@@ -3,10 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import {
-  ownerExecutable,
   runtimeFileMatches,
   runtimeWriteBuffer,
   runtimeWriteMode,
+  runtimeWriteModeMatches,
 } from './skills/projection-files.mjs';
 
 export const REQUIRED_RENDER_CAPABILITIES = Object.freeze([
@@ -771,8 +771,7 @@ export function reconcileRuntimePlan(plan, options = {}) {
     if (!fs.existsSync(item.targetFile)) continue;
     const current = fs.readFileSync(item.targetFile);
     const expected = runtimeWriteBuffer(item);
-    const expectedMode = runtimeWriteMode(item);
-    const modeMatches = expectedMode === null || ownerExecutable(fs.statSync(item.targetFile).mode) === (expectedMode === 0o100);
+    const modeMatches = runtimeWriteModeMatches(item.targetFile, item);
     const currentText = (item.contentEncoding || 'utf8') === 'utf8' ? current.toString('utf8') : null;
     const matches = (current.equals(expected) && modeMatches) || (currentText !== null && item.matchesCurrent?.(currentText) === true);
     const source = runtimeWriteBuffer(item, true);
@@ -805,7 +804,7 @@ export function reconcileRuntimePlan(plan, options = {}) {
     const expected = runtimeWriteBuffer(item);
     const expectedMode = runtimeWriteMode(item);
     const currentText = current !== null && (item.contentEncoding || 'utf8') === 'utf8' ? current.toString('utf8') : null;
-    const modeMatches = current === null || expectedMode === null || ownerExecutable(fs.statSync(item.targetFile).mode) === (expectedMode === 0o100);
+    const modeMatches = current === null || runtimeWriteModeMatches(item.targetFile, item);
     const status = current === null
       ? 'missing'
       : (current.equals(expected) && modeMatches) || (currentText !== null && item.matchesCurrent?.(currentText) === true)

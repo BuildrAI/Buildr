@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 function fail(message, details = {}) {
   const error = new Error(message);
@@ -137,7 +138,7 @@ export function bridgeMainToDev(options) {
   };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     console.log(JSON.stringify(bridgeMainToDev(parseArgs(process.argv.slice(2))), null, 2));
   } catch (error) {

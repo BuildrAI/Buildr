@@ -13,6 +13,7 @@ import {
   validateProjectCapabilitiesDocument,
 } from '../../infrastructure/runtime/skills/manifests.mjs';
 import { selectedProviderImpacts } from '../../infrastructure/runtime/skills/capabilities.mjs';
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 export function registerDomainsSkills(runtime) {
   const doctor = (...args) => runtime.doctor(...args);
@@ -320,13 +321,7 @@ export function registerDomainsSkills(runtime) {
   }
 
   function samePath(left, right) {
-    const leftResolved = path.resolve(left);
-    const rightResolved = path.resolve(right);
-    try {
-      return fs.realpathSync(leftResolved) === fs.realpathSync(rightResolved);
-    } catch {
-      return leftResolved === rightResolved;
-    }
+    return sameFilesystemPath(left, right);
   }
 
   function copySupportedSkillSource(sourceDir, targetDir, entries, options = {}) {

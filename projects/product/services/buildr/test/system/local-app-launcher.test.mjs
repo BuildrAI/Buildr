@@ -69,7 +69,7 @@ test('development launcher 支持带空格的 checkout 路径', (t) => {
   const launcher = fs.readFileSync(path.join(output, 'Buildr Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
   const escapedSourceRoot = sourceRoot.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   assert.match(launcher, new RegExp(`SOURCE_ROOT='${escapedSourceRoot}'`));
-  assert.match(launcher, /bin\/buildr\.mjs/);
+  assert.match(launcher.replaceAll('\\', '/'), /bin\/buildr\.mjs/);
 });
 
 test('macOS launcher bundle 携带 Node runtime、Buildr Web 资源和可双击 App 入口', (t) => {

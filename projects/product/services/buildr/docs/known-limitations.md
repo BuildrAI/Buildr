@@ -3,7 +3,7 @@
 - 当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy` runtime adapter；目标路径与兼容证据来源见 [Agent Runtime Adapters](agent-runtime-adapters.md)。自动 contract/parity 覆盖 Buildr 的投射和维护边界，但不证明目标 Agent 已在当前版本、workspace 或会话加载文件。
 - TRAE Work 依赖桌面 Rules import toggle，WorkBuddy 依赖 `CODEBUDDY.md` 中的 imperative reference bridge；checker 报告 projection、environment probe 和 activation guidance，不把缺少真实 Agent marker smoke 作为当前 workspace 故障。Buildr 暂不维护品牌 smoke 状态或历史通过快照。
 - runtime trait catalog 只降低新增 adapter 的重复实现；它不会把尚未独立验证五项 capabilities 的 Agent 自动视为 supported。
-- CLI 要求 Node.js 24.15.0 及以上版本，以使用稳定支持同步事务与迁移的内置 `node:sqlite`。Workspace 继续声明并使用精确受管 Node 版本；更低版本不能作为 bootstrap 或产品 runtime。
+- CLI 支持 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`），以使用已经验证的内置 `node:sqlite`、进程和文件系统语义。Workspace 继续声明并使用精确受管 Node 版本；低于 24.15.0 或尚未独立适配验证的未来主版本不能作为 bootstrap 或产品 runtime。
 - Buildr Global App 当前仍是浏览器中的本机 Web 应用，不提供 Desktop WebView、菜单栏、登录启动、静默自动更新或系统通知。macOS 与 Windows launcher 只启动/复用随机 loopback 端口上的服务并打开默认浏览器；Linux 首批使用 CLI。官方签名、公证和 Windows SmartScreen 交付仍需在发布阶段单独启用与验证。
 - App 不扫描磁盘或跨 Workspace 聚合资源；用户显式登记 root，关闭浏览器不等于退出，必须使用页面“退出 Buildr”或终止进程。
 - Component 只支持 workspace scope；没有 Project/Service Component、远程 registry、依赖求解或可执行 Hook。
