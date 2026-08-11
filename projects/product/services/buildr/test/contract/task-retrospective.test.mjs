@@ -23,6 +23,7 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   const skill = read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md');
+  const capabilityContract = read('package/targets/workspace/skills/contracts/buildr/task-retrospective/v2.md');
   assert.match(skill, /自由Markdown/);
   assert.match(skill, /数值、来源和覆盖范围/);
   assert.match(skill, /部分可得.*不代表完整 Task/);
@@ -35,6 +36,16 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /不生成新 action item ID/);
   assert.match(skill, /create --status todo --retrospective-source/);
   assert.match(skill, /`handled`.*所有有效方向均已有承接 Task/);
+  assert.match(skill, /用户只说“处理”“检查”“查看”或“分析”复盘时，只授权只读阶段/);
+  assert.match(skill, /不得调用 Task Record `create\|update` 或 Task Retrospective `handle`/);
+  assert.match(skill, /完整动作本身就是本次精确 mutation 的明确授权，不再机械要求第二次确认/);
+  assert.match(skill, /任一事实或 effect 发生实质变化时旧授权失效/);
+  assert.match(skill, /保持 current disposition.*重新展示变化后的完整方案并取得新授权/);
+  assert.match(capabilityContract, /宽泛请求只授权只读阶段/);
+  assert.match(capabilityContract, /不得调用 Task Record create\/update 或 Task Retrospective handle/);
+  assert.match(capabilityContract, /完整动作本身已构成授权时不得要求重复确认/);
+  assert.match(capabilityContract, /current digest、拟 disposition、理由、目标 Task 或关系 effects 发生实质变化时，旧授权失效/);
+  assert.match(capabilityContract, /保持 current disposition，不用旧授权继续写入/);
   assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
 });
 

@@ -43,14 +43,36 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 
 用户要求处理已有复盘时，先 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Local App 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
 
-每个仍有效方向按以下顺序落地：
+### 4.1 先完成只读讨论
+
+用户只说“处理”“检查”“查看”或“分析”复盘时，只授权只读阶段。Agent 可以 inspect、调查当前事实、重判方向并形成拟处置方案，但不得调用 Task Record `create|update` 或 Task Retrospective `handle`。先向用户完整展示：
+
+- current disposition 与 `currentDigest`；
+- 拟 disposition 及完整处置理由；
+- 将复用、创建或关联的目标 Task IDs；
+- 每一项 Task Record 与 Retrospective mutation effect；没有 Task effect 时明确写 none。
+
+展示后停止写入并等待用户决定。用户继续讨论、要求调整、提出异议、只表示“看看再说”或没有明确接受时，保持 current disposition 和全部 Task Record rows 不变；不得把“处理复盘”推断成 `no-action`、`handled`、`pending` 或创建/关联 Task 的授权。
+
+### 4.2 判断是否已有明确授权
+
+以下任一情况可以进入写入阶段：
+
+1. 用户直接指定了完整 mutation，例如“把这个复盘标记为无需处理，理由是……”，或明确指定 `handled`、处置说明和全部目标 Task effects；完整动作本身就是本次精确 mutation 的明确授权，不再机械要求第二次确认。
+2. 用户明确接受 Agent 刚展示的完整方案，且 disposition、理由、目标 Task IDs 与关系 effects 均未变化。
+
+授权只覆盖已指定或已展示的精确 effects。表达不完整或含糊时继续保持只读。实际写入前重新 inspect，并复核 current digest、拟 disposition、处置理由、目标 Task 与关系 effects；任一事实或 effect 发生实质变化时旧授权失效，立即停止后续写入、保持 current disposition、重新展示变化后的完整方案并取得新授权。若已有部分已授权 effects 成功，原样报告实际 effects，不回滚、不扩大授权，也不得把部分落地冒充完整处置。
+
+### 4.3 只执行已授权 effects
+
+取得明确授权且复核无变化后，每个仍有效方向按以下顺序落地：
 
 1. 已有 todo 或 active Task 覆盖目标时，通过 `task update --add-retrospective-source` 关联，不重复创建。
 2. 没有承接 Task 且用户已同意保留意向时，通过 `task create --status todo --retrospective-source` 只写数据；不运行Git基线、不创建Environment、Change、proposal或design。
 3. 多个方向可以合并到同一Task，一个源Task也可以关联多个Task；关系只到source Task ID，不绑定具体建议文本。
 4. 已失效、已解决、收益不足或不适用的方向说明当前证据和丢弃理由，不创建Task。
 
-全部有效方向完成关系写入后才处置：
+全部已授权的有效方向完成关系写入后才处置：
 
 - `handled`：所有有效方向均已有承接 Task，处置说明包含当前事实判断、目标 Task ID 与丢弃理由；不等于目标 Task 已实施完成。
 - `no-action`：当前没有值得转化的行动；必须说明理由。
@@ -60,7 +82,7 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs handle --task <task-id> --target <canonical-workspace> --status <pending|handled|no-action> --note <reason> --expected-current-digest <current-digest>
 ```
 
-`handled|no-action` 必须提供非空完整处理意见；`pending` 不保留说明。任一Task创建或关系写入失败时保持pending并报告恢复动作。若digest冲突，重新inspect并基于最新报告、关系与处置状态重新判断。重新record会原子重置为pending。
+`handled|no-action` 必须提供非空完整处理意见；`pending` 不保留说明。任一Task创建或关系写入失败时不提交最终 `handle`，保持 current disposition并报告实际 effects 与恢复动作。若digest冲突，重新inspect并基于最新报告、关系与处置状态重新判断、展示方案并取得新授权。重新record会原子重置为pending。
 
 ## 5. 报告边界
 
