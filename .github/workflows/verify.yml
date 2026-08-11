@@ -62,6 +62,7 @@ jobs:
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-verification-diagnostics
           BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_BASE: ${{ steps.verification-base.outputs.base }}
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         shell: bash
         run: npm run test:candidate
       - name: Upload verification timing

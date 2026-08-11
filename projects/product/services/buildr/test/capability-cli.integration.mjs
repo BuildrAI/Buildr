@@ -161,7 +161,7 @@ test('skills render 将 source workspace 与 user/workspace destination 分离�
   const userHome = path.join(root, 'user-home');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(userHome, { recursive: true });
-  const env = { ...process.env, HOME: userHome };
+  const env = { ...process.env, HOME: userHome, USERPROFILE: userHome };
   await run(['init', '--target', root, '--name', 'destinations', '--profile', 'personal'], 0, { env });
   await run(['skills', 'render', 'codex', '--destination', 'user', '--target', root], 0, { env });
   const userSkill = path.join(userHome, '.agents', 'skills', 'task-triage', 'SKILL.md');
@@ -184,7 +184,7 @@ test('skills render 对用户层同名外部资产输出稳定 JSON 并整次零
   const external = path.join(userHome, '.agents', 'skills', 'task-triage');
   fs.mkdirSync(external, { recursive: true });
   fs.writeFileSync(path.join(external, 'SKILL.md'), '---\nname: task-triage\ndescription: foreign\n---\nforeign\n');
-  const env = { ...process.env, HOME: userHome };
+  const env = { ...process.env, HOME: userHome, USERPROFILE: userHome };
   await run(['init', '--target', root, '--name', 'conflict', '--profile', 'personal'], 0, { env });
   const result = await run(['skills', 'render', 'codex', '--destination', 'workspace', '--target', root, '--json'], 1, { env });
   const report = JSON.parse(result.stdout);

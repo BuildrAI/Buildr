@@ -75,7 +75,7 @@ export function runUnitCoverage(args = process.argv.slice(2)) {
       '--test-reporter=lcov',
       `--test-reporter-destination=${lcovPath}`,
       ...testFiles,
-    ], { cwd: productRoot, encoding: 'utf8', shell: process.platform === 'win32' });
+    ], { cwd: productRoot, encoding: 'utf8' });
     process.stdout.write(result.stdout || '');
     process.stderr.write(result.stderr || '');
     if (result.status !== 0) return result.status ?? 1;

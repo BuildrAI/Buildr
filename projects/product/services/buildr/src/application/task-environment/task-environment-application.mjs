@@ -20,7 +20,7 @@ import {
   parseProjectEnvironmentPreparation,
   projectEnvironmentPreparationScopeSelector,
 } from '../../domain/task-environment/project-environment-preparation.mjs';
-import { observeGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
+import { observeGitCheckoutIdentity, sameFilesystemPath, sameGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
 import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
 import { spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
@@ -74,7 +74,8 @@ function fileIdentity(file) {
 
 export function registerTaskEnvironmentApplication(runtime) {
   function candidateController(sourceCheckout, workspaceCheckout) {
-    return Boolean(sourceCheckout?.linkedWorktree && workspaceCheckout && sourceCheckout.gitCommonDirectory === workspaceCheckout.gitCommonDirectory);
+    return Boolean(sourceCheckout?.linkedWorktree && workspaceCheckout
+      && sameFilesystemPath(sourceCheckout.gitCommonDirectory, workspaceCheckout.gitCommonDirectory));
   }
 
   function currentEnvironmentManager(workspaceRoot, adapter) {
@@ -100,22 +101,14 @@ export function registerTaskEnvironmentApplication(runtime) {
     const relativeSource = path.relative(checkout.checkoutRoot, manager.sourceRoot);
     const sourceOutsideCheckout = path.isAbsolute(relativeSource) || relativeSource === '..' || relativeSource.startsWith(`..${path.sep}`);
     const sourceCheckout = sourceOutsideCheckout ? observeGitCheckoutIdentity(manager.sourceRoot) : checkout;
-    const sameCheckout = sourceCheckout
-      && sourceCheckout.gitDirectory === checkout.gitDirectory
-      && sourceCheckout.gitCommonDirectory === checkout.gitCommonDirectory
-      && sourceCheckout.linkedWorktree === checkout.linkedWorktree;
+    const sameCheckout = sameGitCheckoutIdentity(sourceCheckout, checkout);
     if (!sourceCheckout || (sourceOutsideCheckout && !sameCheckout)) {
       throw taskEnvironmentError('task_environment_manager_source_untrusted', '无法证明当前 Environment Manager source 属于其 Git checkout。', 409, {
         sourceRoot: manager.sourceRoot,
         checkoutRoot: checkout.checkoutRoot,
       }, '从可信 retained Buildr source 重试。');
     }
-    const statusRoot = checkout.checkoutRoot;
-    const statusRelativeSource = sourceOutsideCheckout
-      ? path.relative(checkout.checkoutRoot, manager.sourceRoot)
-      : relativeSource;
-    const pathspecs = ENVIRONMENT_MANAGER_SOURCE_PATHS.map((relative) => (statusRelativeSource ? path.join(statusRelativeSource, relative) : relative).split(path.sep).join('/'));
-    const observed = spawnSync('git', ['-C', statusRoot, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...pathspecs], { encoding: 'utf8', timeout: 5000 });
+    const observed = spawnSync('git', ['-C', manager.sourceRoot, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...ENVIRONMENT_MANAGER_SOURCE_PATHS], { encoding: 'utf8', timeout: 5000 });
     if (observed.status !== 0) {
       throw taskEnvironmentError('task_environment_manager_source_untrusted', '无法取得当前 Environment Manager source 的 Git clean evidence。', 409, {
         sourceRoot: manager.sourceRoot,

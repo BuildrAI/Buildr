@@ -142,6 +142,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   const publishWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   assert.match(verifyWorkflow, /node: \[24\.15\.0, 24\.x\]/);
   assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
+  assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);
   assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);
 });

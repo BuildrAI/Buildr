@@ -2,13 +2,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnCommandSync } from '../../infrastructure/process.mjs';
 
 const diagnosticDigest = (value) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 
 // Legacy recovery callers keep this adapter during the convergence receipt
 // migration. New transactions use validateProjectedOpenSpec below.
-export function validateProjectedOpenSpecTree({ projectRoot, delta, files, executable, includeBaselineTargets = false, collectBaselineTargets, io, spawn = spawnSync }) {
+export function validateProjectedOpenSpecTree({ projectRoot, delta, files, executable, includeBaselineTargets = false, collectBaselineTargets, io, spawn = spawnCommandSync }) {
   const startedAt = Date.now();
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-projected-'));
   try {
@@ -42,7 +42,7 @@ export function validateProjectedOpenSpecTree({ projectRoot, delta, files, execu
   }
 }
 
-export function validateProjectedOpenSpec({ projectRoot, files = [], executable, copyDirectory, atomicWriteFile, removePath, spawn = spawnSync, mode = 'projected' }) {
+export function validateProjectedOpenSpec({ projectRoot, files = [], executable, copyDirectory, atomicWriteFile, removePath, spawn = spawnCommandSync, mode = 'projected' }) {
   const startedAt = Date.now();
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-convergence-'));
   try {
@@ -69,7 +69,7 @@ export function validateProjectedOpenSpec({ projectRoot, files = [], executable,
   }
 }
 
-export function validateActualOpenSpec({ projectRoot, executable, spawn = spawnSync }) {
+export function validateActualOpenSpec({ projectRoot, executable, spawn = spawnCommandSync }) {
   const startedAt = Date.now();
   if (!path.isAbsolute(executable) || !fs.existsSync(executable)) return { status: 'blocked', code: 'openspec-executable-unavailable', durationMs: 0, commandCount: 0 };
   const validation = spawn(executable, ['validate', '--all', '--strict', '--no-interactive'], { cwd: projectRoot, encoding: 'utf8' });

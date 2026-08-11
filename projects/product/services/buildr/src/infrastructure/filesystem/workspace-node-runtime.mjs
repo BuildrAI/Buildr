@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { spawnCommandSync } from '../process.mjs';
 
 import { localAppDataRoot } from './workspace-registry-repository.mjs';
 
@@ -53,10 +54,7 @@ export function workspaceNodeRuntimePaths(version, options = {}) {
 }
 
 function probeRuntimeCommand(executable, args, { platform, ...options } = {}) {
-  return spawnSync(executable, args, {
-    ...options,
-    shell: platform === 'win' && path.extname(executable).toLowerCase() === '.cmd',
-  });
+  return spawnCommandSync(executable, args, { ...options, platform: platform === 'win' ? 'win32' : platform });
 }
 
 export function probeWorkspaceNodeRuntime(workspace, options = {}) {

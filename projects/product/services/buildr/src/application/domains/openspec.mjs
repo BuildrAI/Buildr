@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
+import { spawnCommandSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { portableExecutableIdentity } from '../openspec/convergence-model.mjs';
 import { CONVERGENCE_RECEIPT_SCHEMA } from '../openspec/convergence-model.mjs';
@@ -98,11 +98,14 @@ export function registerDomainsOpenspec(runtime) {
       const actual = openspec?.version?.current || openspec?.status || '<missing>';
       throw new Error(`OpenSpec CLI does not satisfy Component upstream version ${upstreamVersion}: ${actual}. ${openspec?.installHint || 'Install the declared OpenSpec CLI version; Buildr does not install it automatically.'}`);
     }
-    return { entry, definition, upstreamVersion };
+    if (!path.isAbsolute(openspec.executablePath || '') || !existsFile(openspec.executablePath)) {
+      throw new Error('Unable to resolve the declared OpenSpec executable.');
+    }
+    return { entry, definition, upstreamVersion, executablePath: openspec.executablePath };
   }
 
-  function validateUpstreamOpenSpecStrict(projectRoot, change) {
-    const result = spawnSync('openspec', ['validate', change, '--strict', '--no-interactive'], {
+  function validateUpstreamOpenSpecStrict(projectRoot, change, executable) {
+    const result = spawnCommandSync(executable, ['validate', change, '--strict', '--no-interactive'], {
       cwd: projectRoot,
       encoding: 'utf8',
     });
@@ -215,13 +218,13 @@ export function registerDomainsOpenspec(runtime) {
     return identities;
   }
 
-  function detectOpenSpecActiveConflicts(projectRoot, change, delta, result) {
+  function detectOpenSpecActiveConflicts(projectRoot, change, delta, result, executable) {
     const current = new Set(openSpecDeltaIdentities(delta).map((item) => `${item.capability}\u0000${item.requirement}`));
     for (const candidate of listActiveOpenSpecChangeRoots(projectRoot)) {
       if (candidate.id === change) continue;
       let other;
       try {
-        validateUpstreamOpenSpecStrict(projectRoot, candidate.id);
+        validateUpstreamOpenSpecStrict(projectRoot, candidate.id, executable);
         other = parseOpenSpecChangeDelta(candidate.root);
       } catch (error) {
         addOpenSpecContractFinding(result, 'error', 'openspec_contract.active_change_invalid', `无法解析 active change ${candidate.id}：${error.message}`, {
@@ -256,7 +259,7 @@ export function registerDomainsOpenspec(runtime) {
     const component = openSpecContractComponent(targetRoot);
     const resolvedChange = options.allowArchived ? openSpecConvergenceChangePath(projectRoot, change) : { changeRoot: openSpecContractChangePath(projectRoot, change), archived: false };
     const { changeRoot, archived } = resolvedChange;
-    if (!archived) validateUpstreamOpenSpecStrict(projectRoot, change);
+    if (!archived) validateUpstreamOpenSpecStrict(projectRoot, change, component.executablePath);
     const delta = parseOpenSpecChangeDelta(changeRoot);
     if (delta.operations.length === 0) throw new Error(`OpenSpec change has no delta Requirements: ${change}`);
     return { targetRoot, project, projectRoot, component, change, changeRoot, delta, archived };
@@ -267,10 +270,8 @@ export function registerDomainsOpenspec(runtime) {
       usage: 'buildr openspec converge <change> --project <project> [--target <dir>] [--json]',
       allowArchived: true,
     });
-    const executableLookup = spawnSync('which', ['openspec'], { encoding: 'utf8' });
-    const openspecExecutable = executableLookup.status === 0 ? executableLookup.stdout.trim() : '';
-    if (!path.isAbsolute(openspecExecutable) || !existsFile(openspecExecutable)) throw new Error('Unable to resolve the declared OpenSpec executable for convergence.');
-    const openspecVersionResult = spawnSync(openspecExecutable, ['--version'], { cwd: context.projectRoot, encoding: 'utf8' });
+    const openspecExecutable = context.component.executablePath;
+    const openspecVersionResult = spawnCommandSync(openspecExecutable, ['--version'], { cwd: context.projectRoot, encoding: 'utf8' });
     const executableIdentity = portableExecutableIdentity({
       projectRoot: context.projectRoot,
       executable: openspecExecutable,
@@ -279,7 +280,7 @@ export function registerDomainsOpenspec(runtime) {
     });
     const proposal = parseOpenSpecProposalCapabilities(context.changeRoot);
     const conflictResult = createOpenSpecContractResult('converge', context.change, context.project, context.component.upstreamVersion);
-    if (!context.archived) detectOpenSpecActiveConflicts(context.projectRoot, context.change, context.delta, conflictResult);
+    if (!context.archived) detectOpenSpecActiveConflicts(context.projectRoot, context.change, context.delta, conflictResult, openspecExecutable);
     const activeConflicts = [
       ...conflictResult.conflicts.map((item) => ({ ...item, code: 'active-change-conflict' })),
       ...conflictResult.findings.filter((item) => item.severity === 'error' && item.code !== 'openspec_contract.active_conflict')
@@ -300,7 +301,7 @@ export function registerDomainsOpenspec(runtime) {
       validateActual: () => validateActualOpenSpec({ projectRoot: context.projectRoot, executable: openspecExecutable }),
       archive: () => {
         const startedAt = Date.now();
-        const archived = spawnSync(openspecExecutable, ['archive', context.change, '--yes', '--skip-specs'], { cwd: context.projectRoot, encoding: 'utf8' });
+        const archived = spawnCommandSync(openspecExecutable, ['archive', context.change, '--yes', '--skip-specs'], { cwd: context.projectRoot, encoding: 'utf8' });
         const raw = String(archived.stderr || archived.stdout || '');
         const portable = raw
           .replace(/file:\/\/\/[^\s)]+/g, 'file://<host-path>')

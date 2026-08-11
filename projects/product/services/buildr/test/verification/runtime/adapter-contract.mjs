@@ -275,6 +275,7 @@ const binaryPlan = createRuntimePlan({
   capabilityEvidence: evidence,
 });
 const binaryResult = reconcileRuntimePlan(binaryPlan);
+assert.equal(binaryPlan.writes.find((item) => item.targetFile === binaryFile)?.mode, 0o100, 'runtime plan must preserve executable intent on every platform');
 assert.deepEqual(fs.readFileSync(binaryFile), Buffer.from([0, 255, 16]));
 if (process.platform !== 'win32') assert.equal((fs.statSync(binaryFile).mode & 0o100) === 0o100, true);
 assert.equal(fs.existsSync(staleFile), false);

@@ -194,7 +194,6 @@ try {
     return { taskId: taskIds[index], executionIdentity: payload.executionIdentity, executionRecord: payload.executionRecord, environment: payload.environment, durationMs: payload.durationMs, checks: payload.checks };
   });
   assert.equal(summary.verificationRuns.every((run) => run.environment.taskId === run.taskId), true);
-  assert.equal(summary.verificationRuns.some((run) => run.checks.find((check) => check.id === 'nested.coordinated').resourceCoordination.waitDurationMs > 50), true);
 
   finishPhase();
   startPhase('verification-result');
@@ -231,7 +230,8 @@ try {
     assert.equal(check.resourceCoordination.release.some((claim) => claim.status === 'released' && claim.resource === 'shared-slot'), true);
     summary.cleanup.resources.push(...check.resourceCoordination.release);
   }
-  const orderedCoordination = [...coordinated].sort((left, right) => left.resourceCoordination.waitDurationMs - right.resourceCoordination.waitDurationMs);
+  const orderedCoordination = [...coordinated].sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
+  assert.equal(Date.parse(orderedCoordination[0].finishedAt) <= Date.parse(orderedCoordination[1].startedAt), true, 'capacity-one coordinated checks must not overlap');
   summary.resourceCoordination = {
     isolatedParallel: { overlapped: true, owners: taskIds },
     coordinated: {
@@ -239,6 +239,7 @@ try {
       firstOwner: orderedCoordination[0].resourceCoordination.claims[0].owner.taskId,
       secondOwner: orderedCoordination[1].resourceCoordination.claims[0].owner.taskId,
       secondWaitDurationMs: orderedCoordination[1].resourceCoordination.waitDurationMs,
+      overlapped: false,
     },
   };
   finishPhase();

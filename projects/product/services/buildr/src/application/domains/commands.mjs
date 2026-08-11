@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from '../../infrastructure/process.mjs';
+import { buildCommandInvocation, findExecutableOnPath as resolveExecutableOnPath, spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
 export function registerDomainsCommands(runtime) {
@@ -480,33 +480,11 @@ export function registerDomainsCommands(runtime) {
   }
 
   function findExecutableOnPath(executable) {
-    const pathValue = process.env.PATH || '';
-    const pathExt = process.platform === 'win32'
-      ? (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';')
-      : [''];
-
-    for (const dir of pathValue.split(path.delimiter).filter(Boolean)) {
-      for (const ext of pathExt) {
-        const candidate = path.join(dir, process.platform === 'win32' ? `${executable}${ext}` : executable);
-        try {
-          fs.accessSync(candidate, fs.constants.X_OK);
-          return candidate;
-        } catch {
-          // Try the next PATH entry.
-        }
-      }
-    }
-    return null;
+    return resolveExecutableOnPath(executable);
   }
 
   function buildCommandProbeInvocation(executablePath, args, options = {}) {
-    const platform = options.platform ?? process.platform;
-    const shell = platform === 'win32' && /\.(?:cmd|bat)$/i.test(executablePath);
-    return {
-      executable: executablePath,
-      args: [...args],
-      shell,
-    };
+    return buildCommandInvocation(executablePath, args, options);
   }
 
   function probeCommandVersion(executablePath, args, options = {}) {

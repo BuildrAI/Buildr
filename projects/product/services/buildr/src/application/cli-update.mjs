@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from '../infrastructure/process.mjs';
+import { spawnCommandSync } from '../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { encoding: 'utf8', ...options });
+  const result = spawnCommandSync(command, args, { encoding: 'utf8', ...options });
   return {
     ok: result.status === 0,
     status: result.status,
@@ -218,10 +218,7 @@ export function executeCliUpdatePlan(plan, options = {}) {
   if (plan.status !== 'update-available') return { ok: ['up-to-date', 'version-stale'].includes(plan.status), status: ['up-to-date', 'version-stale'].includes(plan.status) ? 0 : 1, stdout: '', stderr: '', error: null };
   return plan.mode === 'development-checkout'
     ? run('git', ['-C', plan.current.gitRoot, plan.strategy === 'fast-forward' ? 'merge' : 'rebase', ...(plan.strategy === 'fast-forward' ? ['--ff-only'] : []), plan.current.upstream], options)
-    : run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--global', '--prefix', plan.current.installPrefix, `${plan.current.package}@${plan.available.version}`], {
-        ...options,
-        shell: process.platform === 'win32',
-      });
+    : run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--global', '--prefix', plan.current.installPrefix, `${plan.current.package}@${plan.available.version}`], options);
 }
 
 function printPlan(plan, label) {

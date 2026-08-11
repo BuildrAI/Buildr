@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
 
 export const CANDIDATE_TARBALL_ENV = 'BUILDR_CANDIDATE_TARBALL';
 export const CANDIDATE_PACK_METADATA_ENV = 'BUILDR_CANDIDATE_PACK_METADATA';
@@ -37,10 +37,9 @@ export function readSharedCandidatePackage(env = process.env) {
 export function createCandidatePackage(productRoot, destination, options = {}) {
   const npmExecutable = options.npmExecutable ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   fs.mkdirSync(destination, { recursive: true });
-  const result = spawnSync(npmExecutable, ['pack', productRoot, '--pack-destination', destination, '--json'], {
+  const result = spawnCommandSync(npmExecutable, ['pack', productRoot, '--pack-destination', destination, '--json'], {
     cwd: productRoot,
     encoding: 'utf8',
-    shell: process.platform === 'win32' && npmExecutable.endsWith('.cmd'),
   });
   if (result.status !== 0) throw new Error(`npm pack failed with exit ${result.status}: ${(result.stderr || '').trim()}`);
   const metadataPath = path.join(destination, 'npm-pack.json');

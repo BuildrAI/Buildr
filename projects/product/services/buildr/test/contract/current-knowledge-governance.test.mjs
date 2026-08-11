@@ -149,7 +149,7 @@ test('正式 Change 可从 active 或唯一 archived identity 解析', () => {
   const activeOrArchived = resolveChangeRoot('optimize-task-finish-final-candidate-sequencing');
   assert.equal(fs.existsSync(path.join(activeOrArchived, 'brief.md')), true);
   const archived = resolveChangeRoot('enhance-openspec-human-readable-knowledge');
-  assert.match(path.relative(PRODUCT_ROOT, archived), /^openspec\/changes\/archive\//);
+  assert.match(path.relative(PRODUCT_ROOT, archived).split(path.sep).join('/'), /^openspec\/changes\/archive\//);
 });
 
 test('Context 四层模型、知识导航和 Service 局部术语边界保持一致', () => {

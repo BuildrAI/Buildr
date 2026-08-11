@@ -7,6 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
+import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
 import { resolveVerificationWorkerBudget } from '../worker-budget.mjs';
 import { createConvergencePlan } from '../../../src/application/openspec/convergence-planner.mjs';
 import { createConvergenceReceipt } from '../../../src/application/openspec/convergence-model.mjs';
@@ -42,7 +43,7 @@ function run(args, expected = 0, fixtureRoot = root) {
   return payload;
 }
 function runUpstream(args, cwd = projectRoot, expected = 0) {
-  const result = spawnSync(openspec, args, { cwd, encoding: 'utf8', env: commandEnv, shell: process.platform === 'win32' });
+  const result = spawnCommandSync(openspec, args, { cwd, encoding: 'utf8', env: commandEnv });
   if (result.status !== expected) fail(`openspec ${args.join(' ')} exited ${result.status}, expected ${expected}: ${(result.error?.message || result.stderr || result.stdout || '').trim()}`);
   return result;
 }

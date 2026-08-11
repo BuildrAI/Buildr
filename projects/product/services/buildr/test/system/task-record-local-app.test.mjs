@@ -142,7 +142,15 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks`;
   const writeHeaders = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
   const request = async (resource, options = {}) => {
-    const response = await fetch(resource, options); return { status: response.status, headers: response.headers, body: await response.json() };
+    const headers = new Headers(options.headers);
+    headers.set('connection', 'close');
+    const method = options.method || 'GET';
+    try {
+      const response = await fetch(resource, { ...options, headers });
+      return { status: response.status, headers: response.headers, body: await response.json() };
+    } catch (error) {
+      throw new Error(`Local App request failed: ${method} ${resource}: ${error.message}`, { cause: error });
+    }
   };
 
   let response = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v4'); assert.equal(response.body.totalTaskCount, 3); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task', 'app-retrospective']));

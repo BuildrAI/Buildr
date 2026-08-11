@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -7,6 +9,12 @@ import {
   taskEnvironmentReadModel,
 } from '../../src/domain/task-environment/task-environment.mjs';
 import { normalizePreparationStepDefinition, normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
+
+const WORKSPACE_ROOT = path.join(os.tmpdir(), 'buildr-task-environment-domain', 'workspace');
+const EXECUTION_ROOT = path.join(WORKSPACE_ROOT, '.worktrees', 'demo-task');
+const CONTROLLER_ROOT = path.join(os.tmpdir(), 'buildr-task-environment-domain', 'controller');
+const CONTROLLER_CLI = path.join(CONTROLLER_ROOT, 'bin', 'buildr.mjs');
+const NPM_EXECUTABLE = path.join(os.tmpdir(), 'buildr-task-environment-domain', 'node', 'bin', 'npm');
 
 function receipt(overrides = {}) {
   const step = normalizePreparationStepDefinition({
@@ -35,20 +43,20 @@ function receipt(overrides = {}) {
   return {
     schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
     taskId: 'demo-task',
-    workspace: { id: 'workspace-id', root: '/tmp/workspace' },
-    controller: { sourceRoot: '/opt/buildr', cliSource: '/opt/buildr/bin/buildr.mjs', identity: 'sha256-controller', adapter: 'codex' },
+    workspace: { id: 'workspace-id', root: WORKSPACE_ROOT },
+    controller: { sourceRoot: CONTROLLER_ROOT, cliSource: CONTROLLER_CLI, identity: 'sha256-controller', adapter: 'codex' },
     status: 'ready',
     scopes: [{
       selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.',
-      executionRoot: '/tmp/workspace/.worktrees/demo-task', validationRoot: '/tmp/workspace/.worktrees/demo-task', shared: false,
-      provider: { capability: 'buildr.git-worktree-provider/v1', selector: 'workspace', evidence: '/tmp/workspace/.git/buildr/task-worktrees/demo-task.json' },
+      executionRoot: EXECUTION_ROOT, validationRoot: EXECUTION_ROOT, shared: false,
+      provider: { capability: 'buildr.git-worktree-provider/v1', selector: 'workspace', evidence: path.join(WORKSPACE_ROOT, '.git', 'buildr', 'task-worktrees', 'demo-task.json') },
       ...scopeProbe,
     }, {
       selector: 'project:product', kind: 'project', project: 'product', service: null, sourcePath: 'projects/product',
-      executionRoot: '/tmp/workspace/.worktrees/demo-task/projects/product', validationRoot: '/tmp/workspace/.worktrees/demo-task', shared: false, provider: null, ...scopeProbe,
+      executionRoot: path.join(EXECUTION_ROOT, 'projects', 'product'), validationRoot: EXECUTION_ROOT, shared: false, provider: null, ...scopeProbe,
     }, {
       selector: 'service:product/buildr', kind: 'service', project: 'product', service: 'buildr', sourcePath: 'projects/product/services/buildr',
-      executionRoot: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr', validationRoot: '/tmp/workspace/.worktrees/demo-task', shared: false, provider: null, ...scopeProbe,
+      executionRoot: path.join(EXECUTION_ROOT, 'projects', 'product', 'services', 'buildr'), validationRoot: EXECUTION_ROOT, shared: false, provider: null, ...scopeProbe,
     }],
     preparationPlan: plan,
     preparationDeclarations: [{ project: 'product', source: 'task-inline', path: null, identity: null, preparedIdentity: null, status: 'ready', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null }],
@@ -62,13 +70,13 @@ function receipt(overrides = {}) {
     }],
     preparationSteps: [{
       id: 'service:product/buildr/install-buildr/install', scope: 'service:product/buildr', recipe: 'install-buildr', required: true, executed: true,
-      cwd: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr', executable: '/opt/node/bin/npm',
+      cwd: path.join(EXECUTION_ROOT, 'projects', 'product', 'services', 'buildr'), executable: NPM_EXECUTABLE,
       executableIdentity: 'sha256-npm', preparedExecutableIdentity: 'sha256-npm',
       inputs: [
-        { path: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr/package.json', identity: 'sha256-manifest', preparedIdentity: 'sha256-manifest' },
-        { path: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr/package-lock.json', identity: 'sha256-lock', preparedIdentity: 'sha256-lock' },
+        { path: path.join(EXECUTION_ROOT, 'projects', 'product', 'services', 'buildr', 'package.json'), identity: 'sha256-manifest', preparedIdentity: 'sha256-manifest' },
+        { path: path.join(EXECUTION_ROOT, 'projects', 'product', 'services', 'buildr', 'package-lock.json'), identity: 'sha256-lock', preparedIdentity: 'sha256-lock' },
       ],
-      outputs: [{ path: '/tmp/workspace/.worktrees/demo-task/projects/product/services/buildr/node_modules', kind: 'directory', status: 'ready', diagnostic: null }],
+      outputs: [{ path: path.join(EXECUTION_ROOT, 'projects', 'product', 'services', 'buildr', 'node_modules'), kind: 'directory', status: 'ready', diagnostic: null }],
       status: 'ready', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null,
     }],
     resources: [{
@@ -87,7 +95,7 @@ function receipt(overrides = {}) {
 test('Environment Receipt v5规范化Declaration、Plan、Recipe/Step、实际scope和资源事实', () => {
   assert.deepEqual(normalizeTaskEnvironmentReceipt(receipt()), receipt());
   assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedTaskId: 'other-task' }), (error) => error.code === 'task_environment_identity_mismatch');
-  assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedWorkspaceRoot: '/tmp/other' }), (error) => error.code === 'task_environment_workspace_mismatch');
+  assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedWorkspaceRoot: path.join(os.tmpdir(), 'buildr-task-environment-domain', 'other') }), (error) => error.code === 'task_environment_workspace_mismatch');
 });
 
 test('legacy Environment Receipt v2 保持只读兼容且 read model 明确标记 legacy', () => {

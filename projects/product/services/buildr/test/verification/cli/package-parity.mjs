@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
 import { readSharedCandidatePackage } from '../release/candidate-package.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -13,7 +13,7 @@ const checkoutCli = path.join(productRoot, 'bin', 'buildr.mjs');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-parity-'));
 
 function spawn(command, args, options = {}) {
-  return spawnSync(command, args, { cwd: options.cwd || productRoot, encoding: 'utf8', env: process.env });
+  return spawnCommandSync(command, args, { cwd: options.cwd || productRoot, encoding: 'utf8', env: process.env });
 }
 
 function snapshot(directory) {
@@ -44,13 +44,13 @@ try {
   const shared = readSharedCandidatePackage();
   let tarball = shared?.tarball;
   if (!tarball) {
-    const packed = spawn('npm', ['pack', '--json', '--pack-destination', packDir]);
+    const packed = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--json', '--pack-destination', packDir]);
     assert.equal(packed.status, 0, packed.stderr);
     tarball = path.join(packDir, JSON.parse(packed.stdout)[0].filename);
   }
-  const installed = spawn('npm', ['install', '--prefix', prefix, tarball]);
+  const installed = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--prefix', prefix, tarball]);
   assert.equal(installed.status, 0, installed.stderr);
-  const packagedCli = path.join(prefix, 'node_modules', '.bin', 'buildr');
+  const packagedCli = path.join(prefix, 'node_modules', '.bin', process.platform === 'win32' ? 'buildr.cmd' : 'buildr');
   for (const relative of ['index.html', 'assets']) {
     assert.ok(fs.existsSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web-dist', relative)), `packaged local app dist asset is missing: ${relative}`);
   }

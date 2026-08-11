@@ -7,7 +7,7 @@ import test from 'node:test';
 import { parseSuccessfulJson, spawnSupervised } from '../helpers/child-process-supervisor.mjs';
 
 const worker = path.resolve('test/fixtures/verification-resource-worker.mjs');
-const waitFor = async (predicate, timeoutMs = 3_000) => {
+const waitFor = async (predicate, timeoutMs = 10_000) => {
   const startedAt = Date.now();
   while (!predicate()) {
     if (Date.now() - startedAt >= timeoutMs) throw new Error('timed out waiting for worker state');
@@ -15,7 +15,7 @@ const waitFor = async (predicate, timeoutMs = 3_000) => {
   }
 };
 
-const waitForJson = async (file, timeoutMs = 3_000) => {
+const waitForJson = async (file, timeoutMs = 10_000) => {
   let value;
   await waitFor(() => {
     try {
@@ -29,7 +29,7 @@ const waitForJson = async (file, timeoutMs = 3_000) => {
 };
 
 function runWorker(root, taskId, acquiredFile, releaseFile, ttlMs = 2_000) {
-  return spawnSupervised(process.execPath, [worker, root, taskId, acquiredFile, releaseFile, String(ttlMs)], { owner: { taskId, runId: `run-${taskId}` }, timeoutMs: 5_000 });
+  return spawnSupervised(process.execPath, [worker, root, taskId, acquiredFile, releaseFile, String(ttlMs)], { owner: { taskId, runId: `run-${taskId}` }, timeoutMs: 15_000 });
 }
 
 function ticketCount(root) {

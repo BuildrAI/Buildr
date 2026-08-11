@@ -63,6 +63,8 @@ function assertCompleteSkillInventory(workspace, adapterId) {
     assert.ok(fs.existsSync(path.join(completeRuntime, ...relative.split('/'))), `${adapterId} must render ${relative}`);
   }
   assert.deepEqual(fs.readFileSync(path.join(completeRuntime, 'assets', 'sample.bin')), Buffer.from([0, 255, 16, 128]), `${adapterId} must preserve binary bytes`);
+  const completeReceipt = JSON.parse(fs.readFileSync(skillProjectionOwnershipReceiptTarget(workspace, 'workspace', adapterId, 'complete-runtime-skill'), 'utf8'));
+  assert.equal(completeReceipt.files.find((file) => file.path === 'scripts/run.sh')?.executable, true, `${adapterId} must preserve executable intent in portable receipt evidence`);
   if (process.platform !== 'win32') assert.equal((fs.statSync(path.join(completeRuntime, 'scripts', 'run.sh')).mode & 0o100) === 0o100, true, `${adapterId} must preserve owner executable intent`);
 }
 

@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
 
 import {
   prepareTaskLifecycleSystemContext,
@@ -34,10 +33,7 @@ const fileNames = fs.readdirSync(systemRoot)
 for (const name of startFirst) {
   if (!fileNames.includes(name)) throw new Error(`Unknown start-first System owner: ${name}.`);
 }
-const files = fileNames.map((name) => {
-  const file = path.join(systemRoot, name);
-  return process.platform === 'win32' ? pathToFileURL(file).href : file;
-});
+const files = fileNames.map((name) => path.join(systemRoot, name));
 
 if (files.length === 0) throw new Error(`No System tests found in ${systemRoot}.`);
 const workerBudget = resolveVerificationWorkerBudget({ env: process.env, fallback: 14, maximum: files.length, label: 'System suite' });

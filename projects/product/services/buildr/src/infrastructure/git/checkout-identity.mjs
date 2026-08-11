@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 
 import { spawnSync } from '../process.mjs';
 
@@ -13,14 +14,26 @@ function gitPath(root, argument) {
   try { return fs.realpathSync(resolved); } catch { return resolved; }
 }
 
-function sameFilesystemPath(left, right) {
+export function sameFilesystemPath(left, right) {
   try {
+    const leftReal = fs.realpathSync.native(left);
+    const rightReal = fs.realpathSync.native(right);
+    if (process.platform === 'win32'
+      ? leftReal.toLowerCase() === rightReal.toLowerCase()
+      : leftReal === rightReal) return true;
     const leftStat = fs.statSync(left);
     const rightStat = fs.statSync(right);
-    return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+    return leftStat.ino !== 0 && rightStat.ino !== 0 && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
   } catch {
     return false;
   }
+}
+
+export function sameGitCheckoutIdentity(left, right) {
+  return Boolean(left && right
+    && sameFilesystemPath(left.gitDirectory, right.gitDirectory)
+    && sameFilesystemPath(left.gitCommonDirectory, right.gitCommonDirectory)
+    && left.linkedWorktree === right.linkedWorktree);
 }
 
 export function observeGitCheckoutIdentity(root) {
