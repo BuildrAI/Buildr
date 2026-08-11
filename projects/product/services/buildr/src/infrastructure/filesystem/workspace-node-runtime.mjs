@@ -10,6 +10,16 @@ import { localAppDataRoot } from './workspace-registry-repository.mjs';
 export const WORKSPACE_NODE_IDENTITY_SCHEMA = 'buildr.workspace-node-identity/v1';
 const INSTALL_TIMEOUT_MS = 180_000;
 
+export function runtimeTreeRemovalOptions(platform = process.platform) {
+  return platform === 'win32'
+    ? { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }
+    : { recursive: true, force: true };
+}
+
+function removeRuntimeTree(target) {
+  fs.rmSync(target, runtimeTreeRemovalOptions());
+}
+
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
@@ -129,7 +139,7 @@ function installFromOfficial(version, stage, options = {}) {
       execFileSync('tar', ['-xzf', archive, '--strip-components=1', '-C', stage], { stdio: 'pipe', timeout: INSTALL_TIMEOUT_MS });
     }
   } finally {
-    fs.rmSync(temp, { recursive: true, force: true });
+    removeRuntimeTree(temp);
   }
 }
 
@@ -187,7 +197,7 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
   try {
     const ready = probeWorkspaceNodeRuntime(workspace, options);
     if (ready.status === 'ready') return { ...ready, action: 'reused-after-lock' };
-    fs.rmSync(stage, { recursive: true, force: true });
+    removeRuntimeTree(stage);
     const source = options.sourceRoot || process.env.BUILDR_NODE_RUNTIME_SOURCE_ROOT;
     if (source) fs.cpSync(path.resolve(source), stage, { recursive: true });
     else if (options.adoptCurrent === true && process.platform !== 'win32') installFromCurrent(stage, initial.identity.version);
@@ -213,14 +223,14 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
     if (nodeProbe.status !== 0 || nodeProbe.stdout.trim() !== initial.identity.version || npmProbe.status !== 0) {
       throw new Error(`Prepared Workspace Node runtime failed probe for ${initial.identity.version}.`);
     }
-    fs.rmSync(paths.root, { recursive: true, force: true });
+    removeRuntimeTree(paths.root);
     const winner = renameRuntimeStage(stage, paths.root, workspace, options);
     if (winner) return { ...winner, action: 'reused-after-race' };
     const result = probeWorkspaceNodeRuntime(workspace, options);
     if (result.status !== 'ready') throw new Error(`Workspace Node runtime did not become ready for ${initial.identity.version}.`);
     return { ...result, action: initial.status === 'missing' ? 'installed' : 'repaired' };
   } finally {
-    fs.rmSync(stage, { recursive: true, force: true });
+    removeRuntimeTree(stage);
     try { fs.closeSync(descriptor); } catch { /* already closed */ }
     fs.rmSync(lock, { force: true });
   }

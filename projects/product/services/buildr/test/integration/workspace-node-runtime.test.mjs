@@ -8,6 +8,7 @@ import {
   ensureWorkspaceNodeRuntime,
   normalizeNodePlatform,
   probeWorkspaceNodeRuntime,
+  runtimeTreeRemovalOptions,
   workspaceNodeIdentity,
   workspaceNodeRuntimePaths,
 } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
@@ -37,6 +38,16 @@ test('Workspace Node identity 不包含机器路径且按 platform/arch 稳定',
   assert.equal('executable' in identity, false);
   assert.deepEqual(normalizeNodePlatform('linux', 'x64'), { platform: 'linux', arch: 'x64', key: 'linux-x64' });
   assert.throws(() => normalizeNodePlatform('freebsd', 'x64'), /Unsupported/);
+});
+
+test('Workspace Node runtime 临时目录在 Windows 使用 bounded EPERM retry', () => {
+  assert.deepEqual(runtimeTreeRemovalOptions('win32'), {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
+  assert.deepEqual(runtimeTreeRemovalOptions('darwin'), { recursive: true, force: true });
 });
 
 test('临时 App Data 只隔离应用状态，不改变 Workspace Node runtime locator', (t) => {

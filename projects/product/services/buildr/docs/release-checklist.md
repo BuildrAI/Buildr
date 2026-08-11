@@ -103,6 +103,8 @@ npm run --silent test:focus -- --json release-tarball-smoke
 
 Candidate CI 在进入 `release-tarball-smoke` 前必须先准备并校验受管 Node runtime；发布包冒烟保持应用状态与 workspace 隔离，但继承调用方的 `BUILDR_NODE_RUNTIME_DATA_DIR`，避免每个矩阵重复访问 Node 分发网络。独立运行且调用方未提供 runtime locator 时，冒烟仍使用自己的临时目录验证从零安装。
 
+资源受限 CI 的完整 System 文件固定串行执行；Integration 仍可保持有界并发。Windows runtime 临时目录清理对短暂 `EPERM` 使用 bounded retry，不通过放宽单个测试断言掩盖资源争用。
+
 开发期间需要复现跨组件 workspace 生命周期问题时，通过同一个 focus 入口定点运行独立 Workspace E2E suites：
 
 ```bash
