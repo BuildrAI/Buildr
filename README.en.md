@@ -107,7 +107,7 @@ The Agent should complete the following initialization flow. This section is mai
 
 Buildr requires Node.js 24.15.0 or later. First check the Node.js version and whether the `buildr` command is available. If a requirement is not met, ask the user before installing or upgrading:
 
-- **Pre-release (currently recommended for evaluation)**: `npm install -g @buildr-ai/buildr@next`
+- **Pre-release (currently recommended for evaluation; current candidate: `0.1.0-rc.8`)**: `npm install -g @buildr-ai/buildr@next`
 - **Development checkout**: after the user confirms where to save it, run `git clone https://github.com/BuildrAI/Buildr.git <path>`, then use `<path>/projects/product/buildr`
 
 In the commands below, `buildr` means the selected entry point: the global command for the pre-release or `<path>/projects/product/buildr` for a development checkout.
