@@ -3,8 +3,6 @@ name: Verify Buildr
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
   pull_request:
     branches: [dev, main]
 
@@ -67,15 +65,14 @@ jobs:
           path: ${{ runner.temp }}/buildr-verification-diagnostics
           if-no-files-found: ignore
 
-  product:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
+  managed-runtime-candidate:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
-        node: [24.15.0, 24.x]
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -85,11 +82,23 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 24.15.0
           cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
+          cache-dependency-path: |
+            projects/product/services/buildr/package-lock.json
+            projects/product/services/buildr-web/package-lock.json
       - name: Install product dependencies
         run: npm ci
+      - name: Prepare Buildr Web dependencies for offline Candidate
+        working-directory: projects/product/services/buildr-web
+        run: npm ci --ignore-scripts
+      - name: Verify minimum Host Node compatibility
+        env:
+          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-host-node-timing.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-host-node-diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        shell: bash
+        run: npm run test:host-node
       - name: Prepare Codex runtime
         working-directory: .
         env:
@@ -101,7 +110,7 @@ jobs:
         working-directory: .
         shell: bash
         run: |
-          base="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+          base="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}"
           if [[ "${GITHUB_REF_NAME:-}" == "main" || "${GITHUB_REF_NAME:-}" == "dev" || ("${GITHUB_HEAD_REF:-}" == "dev" && "${GITHUB_BASE_REF:-}" == "main") ]]; then
             git fetch origin dev --quiet
             release_commit="$(git log origin/dev --format=%H --grep='^chore(release): 准备 ' -1)"
@@ -121,13 +130,71 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: verification-timing-${{ matrix.os }}-node-${{ matrix.node }}
+          name: managed-candidate-timing-${{ matrix.os }}-node-24.15.0
           path: ${{ runner.temp }}/buildr-verification-timing.json
           if-no-files-found: warn
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: verification-diagnostics-${{ matrix.os }}-node-${{ matrix.node }}
+          name: managed-candidate-diagnostics-${{ matrix.os }}-node-24.15.0
           path: ${{ runner.temp }}/buildr-verification-diagnostics
+          if-no-files-found: ignore
+      - name: Upload minimum Host Node timing
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-node-minimum-timing-${{ matrix.os }}
+          path: ${{ runner.temp }}/buildr-host-node-timing.json
+          if-no-files-found: warn
+      - name: Upload minimum Host Node failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-node-minimum-diagnostics-${{ matrix.os }}
+          path: ${{ runner.temp }}/buildr-host-node-diagnostics
+          if-no-files-found: ignore
+
+  current-host-node:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Install product dependencies
+        run: npm ci
+      - name: Verify current Host Node compatibility
+        env:
+          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-host-node-timing.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-host-node-diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        shell: bash
+        run: npm run test:host-node
+      - name: Upload current Host Node timing
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-node-current-timing-${{ matrix.os }}
+          path: ${{ runner.temp }}/buildr-host-node-timing.json
+          if-no-files-found: warn
+      - name: Upload current Host Node failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-node-current-diagnostics-${{ matrix.os }}
+          path: ${{ runner.temp }}/buildr-host-node-diagnostics
           if-no-files-found: ignore

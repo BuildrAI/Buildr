@@ -12,11 +12,10 @@ import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/w
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
 
+export function registerWorkspaceProductSuite(selectedSuite) {
+
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-const TEST_APP_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-app-data-'));
-const setupRuntime = createRuntime();
-process.once('exit', () => fs.rmSync(TEST_APP_DATA, { recursive: true, force: true }));
 
 function temporaryRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-'));
@@ -35,8 +34,15 @@ function isolateLocalAppData(t, appData) {
 }
 
 function runBuildr(args, options = {}) {
-  const env = options.env || { ...process.env, BUILDR_APP_DATA_DIR: process.env.BUILDR_APP_DATA_DIR || TEST_APP_DATA };
-  return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
+  const transientAppData = options.env || process.env.BUILDR_APP_DATA_DIR
+    ? null
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-command-'));
+  const env = options.env || { ...process.env, ...(transientAppData ? { BUILDR_APP_DATA_DIR: transientAppData } : {}) };
+  try {
+    return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
+  } finally {
+    if (transientAppData) fs.rmSync(transientAppData, { recursive: true, force: true });
+  }
 }
 
 function initWorkspaceViaCli(t, options = {}) {
@@ -52,7 +58,7 @@ function initWorkspace(t, options = {}) {
   const previousLog = console.log;
   console.log = () => {};
   try {
-    setupRuntime.initBuildr(['--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team']);
+    createRuntime().initBuildr(['--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team']);
   } finally {
     console.log = previousLog;
   }
@@ -82,7 +88,11 @@ function writeLegacyWorkspace(root, workspaceId) {
   fs.writeFileSync(path.join(root, 'skills', 'manifest.yml'), YAML.stringify({ schemaVersion: 'buildr.skills/v3', workspaceId, skills: [] }));
 }
 
-test('init 生成 canonical Workspace，并让两个 Manifest 复用同一 UUID', (t) => {
+const suiteTest = (suite, ...args) => {
+  if (suite === selectedSuite) test(...args);
+};
+
+suiteTest('manifest-registry', 'init 生成 canonical Workspace，并让两个 Manifest 复用同一 UUID', (t) => {
   const root = initWorkspaceViaCli(t);
   const workspace = YAML.parse(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'));
   const skills = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
@@ -93,7 +103,7 @@ test('init 生成 canonical Workspace，并让两个 Manifest 复用同一 UUID'
   assert.equal(workspace.runtime.node.version, process.versions.node);
 });
 
-test('Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
+suiteTest('manifest-registry', 'Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
   const broadEntry = '/.buildr/tasks/';
   const preciseEntry = '/.buildr/tasks/*/environment.json';
   const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
@@ -126,7 +136,7 @@ test('Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
   assert.equal(fs.readFileSync(gitignore, 'utf8'), afterFirstSync);
 });
 
-test('Skill 投射所有权回执 runtime state 在 package、init 与 sync 中整体忽略', (t) => {
+suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 package、init 与 sync 中整体忽略', (t) => {
   const entry = '/.buildr/agent-runtime/';
   const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === entry).length, 1);
@@ -144,10 +154,20 @@ test('Skill 投射所有权回执 runtime state 在 package、init 与 sync 中�
   assert.equal(lines.includes('custom-user-entry'), true);
 });
 
-test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复且不改版本', (t) => {
+suiteTest('runtime-recovery', 'doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复且不改版本', (t) => {
   const appData = path.join(temporaryRoot(t), 'node-app-data');
   const root = path.join(temporaryRoot(t), 'workspace');
-  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData, BUILDR_NODE_RUNTIME_DATA_DIR: appData };
+  const windowsRuntimeSource = process.platform === 'win32' ? path.dirname(fs.realpathSync(process.execPath)) : null;
+  const env = {
+    ...process.env,
+    BUILDR_APP_DATA_DIR: appData,
+    BUILDR_NODE_RUNTIME_DATA_DIR: appData,
+    ...(windowsRuntimeSource ? { BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource } : {}),
+  };
+  if (windowsRuntimeSource) {
+    assert.equal(fs.existsSync(path.join(windowsRuntimeSource, 'npm.cmd')), true,
+      'Windows Candidate 必须复用已验证的本地 Node distribution，而不是再次访问公网');
+  }
   let result = runBuildr(['init', '--target', root, '--name', 'node-recovery', '--description', 'Node recovery workspace'], { env });
   assert.equal(result.status, 0, result.stderr);
   const manifest = path.join(root, '.buildr', 'workspace.yml');
@@ -172,7 +192,7 @@ test('doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复�
   assert.equal(JSON.parse(result.stdout).workspaceNode.identity.version, declared);
 });
 
-test('未提供 description 时 init 写入 TODO，doctor 返回可见诊断', (t) => {
+suiteTest('manifest-registry', '未提供 description 时 init 写入 TODO，doctor 返回可见诊断', (t) => {
   const root = path.join(temporaryRoot(t), 'workspace');
   let result = runBuildr(['init', '--target', root, '--name', 'needs-description']);
   assert.equal(result.status, 0, result.stderr);
@@ -181,7 +201,7 @@ test('未提供 description 时 init 写入 TODO，doctor 返回可见诊断', (
   assert.ok(report.findings.some((finding) => finding.code === 'workspace.description_todo'));
 });
 
-test('Workspace 应用层只修改白名单字段并防止 revision 覆盖', (t) => {
+suiteTest('manifest-registry', 'Workspace 应用层只修改白名单字段并防止 revision 覆盖', (t) => {
   const root = initWorkspace(t);
   const runtime = createRuntime();
   const before = runtime.getWorkspace(root);
@@ -193,7 +213,7 @@ test('Workspace 应用层只修改白名单字段并防止 revision 覆盖', (t)
   assert.equal(runtime.getWorkspace(root).workspace.name, 'Renamed');
 });
 
-test('Getting Started projection 汇总 Workspace 范围，开始工作 prompt 再选择任务范围', (t) => {
+suiteTest('manifest-registry', 'Getting Started projection 汇总 Workspace 范围，开始工作 prompt 再选择任务范围', (t) => {
   const root = initWorkspace(t);
   const runtime = createRuntime();
   let projection = runtime.getWorkspaceGettingStarted(root);
@@ -222,7 +242,7 @@ test('Getting Started projection 汇总 Workspace 范围，开始工作 prompt �
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'demo', goal: 'x', rootPath: root }), (error) => error.code === 'workspace_start_work_field_forbidden');
 });
 
-test('目录选择候选以结构化结果恢复，不在失败时写入 Registry', (t) => {
+suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不在失败时写入 Registry', (t) => {
   const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'picker-app-data'));
   const runtime = createRuntime();
   const candidate = path.join(temporaryRoot(t), 'not-initialized'); fs.mkdirSync(candidate);
@@ -232,7 +252,7 @@ test('目录选择候选以结构化结果恢复，不在失败时写入 Registr
   assert.deepEqual(runtime.listRegisteredWorkspaces().workspaces, []);
 });
 
-test('本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t) => {
+suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t) => {
   const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data'));
   const first = initWorkspace(t, { name: 'First' });
   const second = initWorkspace(t, { name: 'Second' });
@@ -264,7 +284,7 @@ test('本机 Workspace 登记只保存 root，并支持幂等登记、切换、�
   assert.ok(fs.existsSync(second), '移除登记不得删除 Workspace');
 });
 
-test('本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t) => {
+suiteTest('manifest-registry', '本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t) => {
   const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
   const first = initWorkspace(t, { name: 'Original' });
   const duplicate = path.join(temporaryRoot(t), 'duplicate');
@@ -281,7 +301,7 @@ test('本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t)
   assert.equal(registry.workspaces[0].status, 'unavailable');
 });
 
-test('legacy migration 复用 Skills UUID，失败时回滚，identity 冲突零写入', (t) => {
+suiteTest('manifest-registry', 'legacy migration 复用 Skills UUID，失败时回滚，identity 冲突零写入', (t) => {
   const runtime = createRuntime();
   const workspaceId = crypto.randomUUID();
   const root = path.join(temporaryRoot(t), 'legacy');
@@ -317,7 +337,7 @@ test('legacy migration 复用 Skills UUID，失败时回滚，identity 冲突零
   assert.equal(sha256(path.join(conflictRoot, 'skills', 'manifest.yml')), conflictSkillsHash);
 });
 
-test('sync 显式迁移 legacy Workspace，并在 identity 冲突时保持零写入', (t) => {
+suiteTest('manifest-registry', 'sync 显式迁移 legacy Workspace，并在 identity 冲突时保持零写入', (t) => {
   const root = initWorkspace(t, { name: 'legacy-sync' });
   const skills = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
   const workspaceId = skills.workspaceId;
@@ -339,7 +359,7 @@ test('sync 显式迁移 legacy Workspace，并在 identity 冲突时保持零写
   assert.equal(sha256(path.join(conflictRoot, '.buildr', 'workspace.yml')), before);
 });
 
-test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
+suiteTest('local-app-http', '本地应用只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
   const root = initWorkspace(t);
   isolateLocalAppData(t, path.join(temporaryRoot(t), 'local-app-data'));
   const runtime = createRuntime();
@@ -456,7 +476,7 @@ test('本地应用只监听 loopback，并保护写 API、revision 与 prompt-on
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
-test('本地应用文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
+suiteTest('local-app-http', '本地应用文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
   const root = initWorkspace(t);
   const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'publication-app-data'));
   const created = runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '文章测试项目']);
@@ -493,7 +513,7 @@ test('本地应用文章入口只读投影项目文章、配图和稳定错误�
   assert.equal(response.status, 400);
 });
 
-test('全局本机应用隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
+suiteTest('local-app-http', '全局本机应用隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
   const base = temporaryRoot(t);
   isolateLocalAppData(t, path.join(base, 'global-app-data'));
   const first = initWorkspace(t, { name: 'global-first' });
@@ -529,7 +549,7 @@ test('全局本机应用隔离多个 Workspace，并保护 health 与退出操�
   assert.equal(shutdown, true);
 });
 
-test('buildr app 重复启动复用单实例并从陈旧 runtime state 恢复', { timeout: 15_000 }, async (t) => {
+suiteTest('app-process', 'buildr app 重复启动复用单实例并从陈旧 runtime state 恢复', { timeout: 15_000 }, async (t) => {
   const base = temporaryRoot(t);
   const root = initWorkspace(t, { name: 'single-instance' });
   const appData = path.join(base, 'single-instance-data');
@@ -571,7 +591,7 @@ test('buildr app 重复启动复用单实例并从陈旧 runtime state 恢复', 
   }
 });
 
-test('独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: 20_000 }, async (t) => {
+suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: 20_000 }, async (t) => {
   const base = temporaryRoot(t);
   const appData = path.join(base, 'preview-data');
   const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
@@ -633,7 +653,7 @@ test('独立 checkout preview 并行隔离、输出身份并只停止自身实�
   assert.throws(() => process.kill(secondPid, 0), (error) => error.code === 'ESRCH');
 });
 
-test('public CLI 暴露 app 与 init description help', () => {
+suiteTest('manifest-registry', 'public CLI 暴露 app 与 init description help', () => {
   const appHelp = runBuildr(['app', '--help']);
   assert.equal(appHelp.status, 0, appHelp.stderr);
   assert.match(appHelp.stdout, /只监听 127\.0\.0\.1/);
@@ -645,3 +665,4 @@ test('public CLI 暴露 app 与 init description help', () => {
   assert.equal(initHelp.status, 0, initHelp.stderr);
   assert.match(initHelp.stdout, /--description <text>/);
 });
+}

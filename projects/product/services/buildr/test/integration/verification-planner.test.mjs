@@ -27,7 +27,9 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
     'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
-    'unit', 'component', 'integration', 'integration-task-development', 'contract', 'system-local-app-http', 'system', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
+    'unit', 'component', 'integration', 'integration-task-development', 'contract',
+    'system-verification-contracts', 'system-workspace-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-fresh-build',
+    'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'integration-candidate-recovery', 'concurrent-task-acceptance', 'candidate-tarball', 'open-source-candidate',
     'openspec-candidate-audit', 'managed-mutations', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'openspec-convergence-recovery', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
@@ -41,7 +43,7 @@ test('Full plan 联合 Candidate 与 changed owner 并按 step identity 去重',
   const plan = createVerificationPlan({ profiles: ['candidate'], paths: ['test/integration-candidate-release/release.test.mjs', 'test/system/public-json-contracts.test.mjs'] });
   const selected = ids(plan);
   assert.equal(new Set(selected).size, selected.length);
-  assert.equal(selected.filter((id) => id === 'system').length, 1);
+  assert.equal(selected.filter((id) => id === 'system-verification-contracts').length, 1);
   assert.equal(selected.filter((id) => id === 'integration-candidate-release').length, 1);
 });
 
@@ -74,7 +76,7 @@ test('Project Testing 分类完整且 Quick 只包含低成本非 System step', 
   assert.deepEqual(verificationSteps.find((step) => step.id === 'repository-onboarding').profiles, []);
   assert.equal(verificationSteps.find((step) => step.id === 'integration-task-finish').testing.primaryEvidenceOwner, 'integration');
   assert.equal(verificationSteps.find((step) => step.id === 'integration-task-development').testing.primaryEvidenceOwner, 'integration');
-  assert.equal(verificationSteps.find((step) => step.id === 'system-task-finish').testing.primaryEvidenceOwner, 'system');
+  assert.equal(verificationSteps.find((step) => step.id === 'system-task-finish').testing.primaryEvidenceOwner, 'system-task-finish');
   assert.equal(verificationSteps.some((step) => step.id.startsWith('browser-')), false);
 });
 
@@ -113,12 +115,12 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
   const cases = [
     {
       path: 'src/infrastructure/network/fetch-remote-text.mjs',
-      required: ['system', 'remote-skill-timeout'],
+      required: ['system-runtime-recovery', 'remote-skill-timeout'],
       excluded: ['contract', 'cli-architecture', 'managed-mutations', 'capability-cli-integration', 'managed-data-integrity'],
     },
     {
       path: 'src/infrastructure/product-layout.mjs',
-      required: ['system', 'cli-package-parity', 'release-tarball-smoke'],
+      required: ['system-workspace-lifecycle', 'cli-package-parity', 'release-tarball-smoke'],
       excluded: ['contract', 'cli-architecture', 'managed-mutations', 'capability-cli-integration', 'managed-data-integrity'],
     },
     {
@@ -150,7 +152,7 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
 });
 
 test('local app Changed 路由只选择内部 owner，Browser 由独立 capability 拥有', () => {
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/api/client.ts'] })), ['unit', 'integration', 'system']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/api/client.ts'] })), ['unit', 'integration', 'system-local-app-http']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/App.tsx'] })), ['unit', 'integration']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ProjectsPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ServicesPage.tsx'] })), ['unit']);
@@ -158,7 +160,7 @@ test('local app Changed 路由只选择内部 owner，Browser 由独立 capabili
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TaskChangeDetailPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/main.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/WorkspacesPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['unit', 'integration', 'system-local-app-http', 'system']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['unit', 'integration', 'system-app-process']);
   const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
   assert.deepEqual(ids(browserTest), []);
   assert.deepEqual(browserTest.delegated, [{ path: 'test/browser-smoke/local-app-browser.test.mjs', owners: ['product.browser-smoke'] }]);
@@ -204,7 +206,7 @@ test('Task Finish affected 路径使用有界 Integration/System slice', () => {
 
 test('Task Development lifecycle 路径使用独立重型 Integration owner', () => {
   const sourcePlan = ids(createVerificationPlan({ paths: ['src/application/task-development/task-development-application.mjs'] }));
-  assert.deepEqual(sourcePlan, ['unit', 'integration-task-development', 'system']);
+  assert.deepEqual(sourcePlan, ['unit', 'integration-task-development', 'system-workspace-lifecycle']);
   assert.equal(sourcePlan.includes('integration'), false);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-development-application.test.mjs'] })), [
     'integration-task-development',

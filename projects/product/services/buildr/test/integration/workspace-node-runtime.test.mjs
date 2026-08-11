@@ -100,3 +100,17 @@ test('Windows 受管 runtime 通过 npm.cmd 探测', { skip: process.platform ==
   assert.equal(installed.status, 'ready');
   assert.equal(probeWorkspaceNodeRuntime(WORKSPACE, options).npmVersion, '10.8.0');
 });
+
+test('离线验证拒绝回退到公网下载 Workspace Node', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-offline-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.throws(
+    () => ensureWorkspaceNodeRuntime(WORKSPACE, {
+      dataRoot: path.join(root, 'data'),
+      platform: 'darwin',
+      arch: 'arm64',
+      env: { BUILDR_VERIFICATION_NETWORK_MODE: 'offline' },
+    }),
+    /Workspace Node download is disabled during offline verification/,
+  );
+});

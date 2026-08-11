@@ -141,7 +141,7 @@ test('publish workflow is tag-gated, OIDC-ready, and token-free', () => {
 test('CI and publish workflows use the supported Node runtime', () => {
   const verifyWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8');
   const publishWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
-  assert.match(verifyWorkflow, /node: \[24\.15\.0, 24\.x\]/);
+  assert.match(verifyWorkflow, /node: \[24\.15\.0, 24\.x\]/, 'Windows PR preflight must retain both supported Node representatives');
   assert.match(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
   assert.match(verifyWorkflow, /group:windows-platform-preflight/);
   assert.match(verifyWorkflow, /github\.base_ref == 'dev'/);
@@ -149,6 +149,12 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.match(verifyWorkflow, /github\.head_ref == 'dev'/);
   assert.doesNotMatch(verifyWorkflow, /^  release-smoke:/m);
   assert.equal((verifyWorkflow.match(/npm run test:candidate/g) || []).length, 1);
+  assert.equal((verifyWorkflow.match(/npm run test:host-node/g) || []).length, 2);
+  assert.match(verifyWorkflow, /^  managed-runtime-candidate:/m);
+  assert.match(verifyWorkflow, /^  current-host-node:/m);
+  assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
+  assert.match(verifyWorkflow, /node-version: 24\.x/);
+  assert.doesNotMatch(verifyWorkflow, /^  push:/m, 'main push must not duplicate the already verified Candidate tree');
   assert.equal((verifyWorkflow.match(/release-tarball-smoke/g) || []).length, 0);
   assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);

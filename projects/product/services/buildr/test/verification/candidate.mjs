@@ -8,6 +8,7 @@ import { executePlan } from './plan-runner.mjs';
 import { parseVerificationSchedulingMode } from './dag-scheduler.mjs';
 import { createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
+import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.mjs';
 import { CANDIDATE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
 
@@ -31,6 +32,12 @@ if (request.json) {
   await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', base: null, source: 'candidate-profile', paths: plan.paths, delegated: plan.delegated, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error) => error ? reject(error) : resolve()));
   process.exit(0);
 }
+const managedNodeVersion = process.env.BUILDR_WORKSPACE_NODE_VERSION;
+const managedNodeIdentity = process.env.BUILDR_WORKSPACE_NODE_IDENTITY;
+if (!managedNodeVersion || !managedNodeIdentity) throw new Error('Candidate verification must run through the managed Workspace Node runtime.');
+if (process.versions.node !== managedNodeVersion) throw new Error(`Managed Workspace Node mismatch: expected ${managedNodeVersion}, active ${process.versions.node}.`);
+enforceOfflineVerification();
+process.stdout.write(`[verify-product] managedNode=${managedNodeVersion} identity=${managedNodeIdentity} executable=${process.execPath}\n`);
 const executionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-verification-'));
 const evidence = createVerificationEvidencePaths('candidate');
 const source = collectVerificationSourceIdentity(productRoot, { projectRoot });

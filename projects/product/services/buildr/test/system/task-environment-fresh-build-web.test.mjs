@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
+import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const webSourceRoot = path.resolve(serviceRoot, '../buildr-web');
@@ -20,15 +21,13 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-fresh-environment-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'workspace');
-  const controllerRoot = path.join(base, 'controller');
-  const npmCli = fs.realpathSync(process.platform === 'win32'
-    ? path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
-    : path.join(path.dirname(process.execPath), 'npm'));
-  fs.cpSync(serviceRoot, controllerRoot, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
-  run(process.execPath, [npmCli, 'ci'], { cwd: controllerRoot });
-  const controllerCli = path.join(controllerRoot, 'bin', 'buildr.mjs');
-  const buildr = (args) => JSON.parse(run(process.execPath, [controllerCli, ...args], { cwd: controllerRoot }));
-  run(process.execPath, [controllerCli, 'init', '--target', root, '--name', 'fresh-environment', '--description', 'Task Environment dependency closure fixture', '--profile', 'team'], { cwd: controllerRoot });
+  const managerStatus = run('git', ['status', '--porcelain', '--', 'bin', 'src', 'package', 'package.json', 'package-lock.json'], { cwd: serviceRoot });
+  const controller = managerStatus.trim()
+    ? materializeCleanProductSource(serviceRoot, path.join(base, 'prepared-controller'))
+    : { root: serviceRoot, cli: path.join(serviceRoot, 'bin', 'buildr.mjs') };
+  assert.equal(fs.existsSync(path.join(controller.root, 'node_modules')), true, 'System controller must reuse prepared dependencies without another npm ci');
+  const buildr = (args) => JSON.parse(run(process.execPath, [controller.cli, ...args], { cwd: controller.root }));
+  run(process.execPath, [controller.cli, 'init', '--target', root, '--name', 'fresh-environment', '--description', 'Task Environment dependency closure fixture', '--profile', 'team'], { cwd: controller.root });
 
   const productRoot = path.join(root, 'projects', 'product');
   const candidateBuildr = path.join(productRoot, 'services', 'buildr');

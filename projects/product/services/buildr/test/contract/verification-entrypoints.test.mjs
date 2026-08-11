@@ -29,8 +29,10 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['coverage:unit'], 'node test/verification/unit-coverage.mjs');
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
+  assert.equal(scripts['test:host-node'], 'node test/verification/host-node.mjs');
   assert.equal(scripts['test:candidate'], 'bash scripts/verify-buildr-product');
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.mjs');
+  assert.doesNotMatch(scripts['test:host-node'], /run-workspace-node/, 'Host Node compatibility must run on the caller-selected Node');
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
 
   const fast = read('scripts/verify-buildr-product-fast');
@@ -106,15 +108,27 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.doesNotMatch(candidate, /collectChangedProductPaths|createVerificationPreflightPlan|--base/);
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
+  assert.match(candidate, /process\.versions\.node !== managedNodeVersion/);
+  assert.match(candidate, /Candidate verification must run through the managed Workspace Node runtime/);
+  assert.match(candidate, /enforceOfflineVerification\(\)/);
   assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan = createVerificationPlan({ profiles: ['candidate'] });
+  for (const step of candidatePlan.steps) {
+    assert.equal(step.testing.environment.footprints.includes('network'), false, `${step.id} must not depend on external network`);
+  }
   for (const stage of [
     'fine-grained unit tests',
     'bounded component tests',
     'technical boundary integration tests',
     'Task Development lifecycle integration',
     'repository contract tests',
-    'public CLI and Workspace system tests',
+    'System verification contracts',
+    'System Workspace lifecycle',
+    'System runtime recovery',
+    'System Local App HTTP',
+    'System App process and preview',
+    'System Task Finish',
+    'System fresh build',
     'Candidate integration: builtin recovery and migration',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
@@ -153,27 +167,24 @@ test('candidate verification retains necessary Candidate facts without Browser a
     assert.ok(workspaceSuites.some((step) => step.id === suite), `Workspace E2E registry must retain ${suite}`);
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
-  const system = candidatePlan.steps.find((step) => step.id === 'system');
-  assert.equal(system.executor.file, 'test/verification/system.mjs');
-  for (const helper of ['test/helpers/task-lifecycle-system-context.mjs', 'test/helpers/task-record-system-fixture.mjs']) {
-    assert.ok(system.inputs.includes(helper), `${helper} must map to the System owner`);
+  const systemOwners = candidatePlan.steps.filter((step) => step.id.startsWith('system-'));
+  assert.equal(systemOwners.length, 7);
+  for (const owner of systemOwners) {
+    assert.equal(owner.executor.file, 'test/verification/system.mjs');
+    assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.mjs'));
   }
-  assert.deepEqual(candidatePlan.steps.filter((step) => step.resources?.includes('workspace-saturating')).map((step) => step.id), [
-    'integration-task-development', 'system-local-app-http', 'system', 'integration-candidate-recovery', 'concurrent-task-acceptance', 'openspec-convergence-recovery', 'runtime-adapter-parity',
-  ]);
+  assert.equal(candidatePlan.steps.some((step) => step.id === 'system'), false);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.resources['workspace-saturating'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['workspace-saturating'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['workspace-saturating'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
-  assert.deepEqual(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency, {
-    integration: 6, system: 8, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3,
-  });
-  assert.deepEqual(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency, {
-    integration: 3, system: 1, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2,
-  });
-  assert.ok(verificationSteps.find((step) => step.id === 'system').schedulingCostMs >= 60_000);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 4);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], 1);
+  assert.ok(verificationSteps.find((step) => step.id === 'system-fresh-build').schedulingCostMs >= 120_000);
 });
 
 test('release tarball smoke preserves the caller-prepared managed runtime locator', () => {
@@ -181,6 +192,37 @@ test('release tarball smoke preserves the caller-prepared managed runtime locato
   assert.match(releaseSmoke, /const runtimeData = process\.env\.BUILDR_NODE_RUNTIME_DATA_DIR \|\| appData;/);
   assert.match(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData/);
   assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: appData/);
+  assert.match(releaseSmoke, /\['install', '--offline', '--global'/);
+});
+
+test('Host Node compatibility runs offline and reuses the active Windows distribution', () => {
+  const packageManifest = JSON.parse(read('package.json'));
+  const hostNode = read('test/verification/host-node.mjs');
+  const cliSmoke = read('test/verification/host-node/cli-smoke.mjs');
+  const policy = read('src/infrastructure/network/verification-network-policy.mjs');
+  assert.deepEqual(packageManifest.bundleDependencies, ['yaml']);
+  assert.match(hostNode, /enforceOfflineVerification\(\)/);
+  assert.match(policy, /npm_config_offline = 'true'/);
+  assert.match(policy, /BUILDR_VERIFICATION_NETWORK_MODE/);
+  assert.match(cliSmoke, /\['install', '--offline', '--global'/);
+  assert.match(cliSmoke, /BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource/);
+});
+
+test('managed Candidate 在离线验证前准备两个 Service 的依赖缓存', () => {
+  const workflow = read('../../../../.github/workflows/verify.yml');
+  const managedJob = workflow.slice(workflow.indexOf('  managed-runtime-candidate:'), workflow.indexOf('  current-host-node:'));
+  assert.match(managedJob, /projects\/product\/services\/buildr\/package-lock\.json/);
+  assert.match(managedJob, /projects\/product\/services\/buildr-web\/package-lock\.json/);
+  assert.match(managedJob, /Prepare Buildr Web dependencies for offline Candidate[\s\S]*working-directory: projects\/product\/services\/buildr-web[\s\S]*npm ci --ignore-scripts/);
+  assert.ok(managedJob.indexOf('Prepare Buildr Web dependencies for offline Candidate') < managedJob.indexOf('Verify final product candidate'));
+});
+
+test('fresh build reuses prepared controller dependencies without weakening tested installs', () => {
+  const source = read('test/system/task-environment-fresh-build-web.test.mjs');
+  assert.doesNotMatch(source, /\[npmCli, 'ci'\]/);
+  assert.match(source, /reuse prepared dependencies without another npm ci/);
+  assert.match(source, /preparationSteps\.map\(\(step\) => step\.executed\), \[true, true\]/);
+  assert.match(source, /managedNpm, \['run', 'build:web'\]/);
 });
 
 test('双任务并发验收输出完整的组合证据并执行归属清理', () => {

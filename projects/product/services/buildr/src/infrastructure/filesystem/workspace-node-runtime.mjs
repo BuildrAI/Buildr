@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { spawnCommandSync } from '../process.mjs';
+import { assertVerificationNetworkAllowed } from '../network/verification-network-policy.mjs';
 
 import { localAppDataRoot } from './workspace-registry-repository.mjs';
 
@@ -124,6 +125,7 @@ function installFromOfficial(version, stage, options = {}) {
     const archive = path.join(temp, descriptor.archive);
     const sums = path.join(temp, 'SHASUMS256.txt');
     const baseUrl = String(options.distributionBaseUrl || process.env.BUILDR_NODE_DISTRIBUTION_BASE_URL || 'https://nodejs.org/dist').replace(/\/$/, '');
+    assertVerificationNetworkAllowed(baseUrl, { env: options.env, label: 'Workspace Node download' });
     downloadFile(`${baseUrl}/v${version}/SHASUMS256.txt`, sums);
     downloadFile(`${baseUrl}/v${version}/${descriptor.archive}`, archive);
     const expected = fs.readFileSync(sums, 'utf8').split(/\r?\n/).map((line) => line.trim().split(/\s+/)).find((parts) => parts[1] === descriptor.archive)?.[0];

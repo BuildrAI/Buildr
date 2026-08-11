@@ -1,4 +1,5 @@
 import { PACKAGE_VERIFIERS } from '../../src/application/package-maintenance/verification-registry.mjs';
+import { SYSTEM_SUITES } from './system-suites.mjs';
 
 const PROJECT_OWNER = 'project:product';
 const SERVICE_OWNER = 'service:product/buildr';
@@ -19,7 +20,7 @@ const TEST_ENVIRONMENTS = Object.freeze({
   isolatedGitCli: environment(['filesystem', 'cli', 'git'], 'unique-temporary-root', 'single-cleanup'),
   repeatedGitCli: environment(['filesystem', 'cli', 'git'], 'unique-temporary-root', 'repeated-cleanup'),
   workspaceLifecycle: environment(['filesystem', 'cli', 'git', 'workspace-lifecycle'], 'unique-temporary-root', 'lifecycle'),
-  network: environment(['network'], 'unique-temporary-root', 'single-cleanup'),
+  loopbackNetwork: environment(['loopback-network'], 'unique-temporary-root', 'single-cleanup'),
 });
 
 const testing = (ownerScope, primaryIntent, executionBoundary, targetDurationMs, proves, executionEnvironment, primaryEvidenceOwner = null) => Object.freeze({
@@ -38,10 +39,14 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 30000, 'Buildr modules behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Task Development lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish behaves correctly across its real filesystem, Git, and process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
-  system: testing(PROJECT_OWNER, 'Development', 'System', 70000, 'Buildr public CLI and Workspace lifecycle journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle, 'system'),
+  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-local-app-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Local App HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Task Finish public CLI and delivery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle, 'system'),
+  'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Task Finish public CLI and delivery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'Verification contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
+  'system-workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 35000, 'Workspace and Task lifecycle journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-runtime-recovery': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Runtime installation and recovery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Local App process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-fresh-build': testing(PROJECT_OWNER, 'Development', 'System', 180000, 'A clean Task Environment performs real dependency installation and Web build.', TEST_ENVIRONMENTS.workspaceLifecycle),
   contract: testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.', TEST_ENVIRONMENTS.sourceReadOnly),
   'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 3000, 'CLI modules and wrappers preserve the declared architecture.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-spec-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 3000, 'Canonical OpenSpec specifications meet Product quality rules.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -52,6 +57,9 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release branch convergence behaves correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
   'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 30000, 'Concurrent Task workflows satisfy the declared acceptance contract.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 10000, 'The Buildr npm candidate artifact can be assembled.', TEST_ENVIRONMENTS.isolatedCli),
+  'host-node-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 2000, 'The active Host Node satisfies the bounded package engine contract.', TEST_ENVIRONMENTS.sourceReadOnly),
+  'host-node-boundaries': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Node-sensitive SQLite, process, and filesystem boundaries work on the active Host Node.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'host-node-cli-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'The candidate tarball installs and its minimal public CLI lifecycle works on the active Host Node.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'open-source-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Static', 10000, 'The candidate contains the required public release materials.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-candidate-audit': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Candidate OpenSpec contracts are current and internally consistent.', TEST_ENVIRONMENTS.sourceReadOnly),
   'managed-mutations': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Production filesystem mutations remain behind declared owners.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -74,7 +82,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'cli-compatibility': testing(SERVICE_OWNER, 'Development', 'System', 15000, 'Documented CLI commands remain compatible.', TEST_ENVIRONMENTS.repeatedCli),
   'cli-package-parity': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 15000, 'Representative source and packaged CLI outputs and one init mutation remain equivalent.', TEST_ENVIRONMENTS.repeatedCli),
   'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', 10000, 'Service branch configuration works in an isolated repository.', TEST_ENVIRONMENTS.isolatedGitCli),
-  'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Remote Skill reads fail within the declared timeout boundary.', TEST_ENVIRONMENTS.network),
+  'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Remote Skill reads fail within the declared timeout boundary.', TEST_ENVIRONMENTS.loopbackNetwork),
   'release-tarball-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 10000, 'The release tarball installs and serves its public CLI surface.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'managed-data-integrity': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Managed mutations remain atomic and preserve nested repositories.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'docs-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product documentation links and required content remain valid.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -106,19 +114,19 @@ const packageVerifier = (selector) => {
 const concurrency = (global, workspaceHeavy, workspaceSaturating, innerConcurrency) => Object.freeze({
   global,
   classes: Object.freeze({ default: global, 'cpu-heavy': 2, 'workspace-heavy': workspaceHeavy, network: 2, exclusive: 1 }),
-  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating, 'task-lifecycle-heavy': 1 }),
+  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating, 'task-lifecycle-heavy': 1, 'app-runtime': 1 }),
   innerConcurrency: Object.freeze(innerConcurrency),
 });
 
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
-  local: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
-  ci: concurrency(4, 3, 2, { integration: 6, system: 8, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, system: 1, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }),
+  local: concurrency(4, 3, 2, { integration: 6, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
+  ci: concurrency(4, 3, 2, { integration: 6, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY = VERIFICATION_EXECUTION_PROFILES.local;
 
-export const VERIFICATION_ENVIRONMENT_FOOTPRINTS = Object.freeze(['filesystem', 'cli', 'git', 'network', 'workspace-lifecycle']);
+export const VERIFICATION_ENVIRONMENT_FOOTPRINTS = Object.freeze(['filesystem', 'cli', 'git', 'loopback-network', 'network', 'workspace-lifecycle']);
 export const VERIFICATION_ENVIRONMENT_ISOLATIONS = Object.freeze(['none', 'read-only', 'unique-temporary-root', 'shared']);
 export const VERIFICATION_RESET_BURDENS = Object.freeze(['none', 'single-cleanup', 'repeated-cleanup', 'lifecycle']);
 
@@ -159,6 +167,16 @@ export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
 export const VERIFICATION_DELEGATED_INPUTS = Object.freeze([
   Object.freeze({ owner: 'product.browser-smoke', inputs: Object.freeze(['test/browser-smoke/**']) }),
 ]);
+
+const SYSTEM_OWNER_INPUTS = Object.freeze({
+  'system-verification-contracts': Object.freeze(['test/verification/changed*.mjs', 'test/verification/focus.mjs', 'test/verification/executor.mjs', 'test/verification/plan-runner.mjs', 'test/verification/planner.mjs', 'test/verification/registry.mjs', 'test/verification/resource-coordinator.mjs', 'test/verification/system*.mjs', 'test/verification/timing/**', 'test/verification/workspace/**', 'src/application/verification/**', 'src/application/json-contracts.mjs', 'src/application/openspec/**']),
+  'system-workspace-lifecycle': Object.freeze(['src/application/project/**', 'src/application/service/**', 'src/application/task-record/**', 'src/application/task-development/**', 'src/application/task-review/**', 'src/application/task-verification/**', 'src/application/worktree/**', 'src/application/workspace/**', 'src/domain/**', 'src/infrastructure/git/**', 'src/infrastructure/platform.mjs', 'src/infrastructure/product-layout.mjs', 'test/helpers/task-record-system-fixture.mjs', 'test/helpers/workspace-product-suite.mjs']),
+  'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
+  'system-local-app-http': Object.freeze(['src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
+  'system-app-process': Object.freeze(['src/interfaces/local-app/runtime/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
+  'system-task-finish': Object.freeze(['src/application/task-finish/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
+  'system-fresh-build': Object.freeze(['src/application/task-environment/**', 'src/domain/task-environment/**', 'preparation.yml', 'services/buildr-web/package.json', 'services/buildr-web/package-lock.json', 'services/buildr-web/vite.config.*', 'services/buildr-web/tsconfig*.json', 'test/helpers/clean-product-source.mjs']),
+});
 
 export const verificationSteps = Object.freeze([
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'], inputs: [
@@ -260,54 +278,16 @@ export const verificationSteps = Object.freeze([
     budgetMs: 3000,
     sideEffects: 'none',
   } }),
-  step({ id: 'system-local-app-http', name: 'Local App HTTP boundary system tests', executor: { type: 'node-test', files: ['test/system/local-app-http.test.mjs'], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], inputs: [
-    'test/system/local-app-http.test.mjs',
-    'src/interfaces/local-app/http/**',
-    'src/interfaces/local-app/runtime/**',
-    'src/infrastructure/sqlite/**',
-  ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
-  step({ id: 'system', name: 'public CLI and Workspace system tests', executor: { type: 'node', file: 'test/verification/system.mjs' }, profiles: ['candidate'], inputs: [
-    'test/system/**',
-    'test/helpers/clean-product-source.mjs',
-    'test/helpers/task-lifecycle-system-context.mjs',
-    'test/helpers/task-record-system-fixture.mjs',
-    'test/verification/system-file-timing-reporter.mjs',
-    'test/verification/system.mjs',
-    'bin/buildr.mjs', 'buildr',
-    'src/application/cli-update.mjs',
-    'src/application/change/**',
-    'src/application/project/**',
-    'src/application/service/**',
-    'src/application/task-record/**',
-    'src/application/task-development/**',
-    'src/application/task-review/**',
-    'src/application/task-verification/**',
-    'src/application/worktree/**',
-    'src/application/task-finish/**',
-    'src/application/verification/**',
-    'src/application/workspace/**',
-    'src/application/doctor.mjs',
-    'src/application/runtime.mjs',
-    'src/domain/**',
-    'src/infrastructure/git/**',
-    'src/infrastructure/network/**',
-    'src/infrastructure/platform.mjs',
-    'src/infrastructure/process.mjs',
-    'src/infrastructure/product-layout.mjs',
-    'src/interfaces/local-app/runtime/**',
-    'services/buildr-web/src/api/client.ts',
-    'scripts/release/bridge-main-to-dev.mjs',
-    'src/application/json-contracts.mjs',
-    'test/verification/changed-paths.mjs',
-    'scripts/release/release-convergence.mjs',
-    'test/verification/timing/**',
-    'test/verification/workspace/fixture.mjs',
-    'test/verification/workspace/suites.mjs',
-  ], inputExclusions: [
-    'test/system/local-app-http.test.mjs',
-    'test/system/task-finish-*.test.mjs',
-    'src/application/task-finish/**',
-  ], schedulingCostMs: 65000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
+  ...SYSTEM_SUITES.map((suite) => step({
+    id: suite.id,
+    name: suite.name,
+    executor: { type: 'node', file: 'test/verification/system.mjs', args: ['--owner', suite.id] },
+    profiles: ['candidate'],
+    inputs: [...suite.files, ...(SYSTEM_OWNER_INPUTS[suite.id] ?? []), 'test/verification/system-suites.mjs', 'test/verification/system.mjs', 'test/helpers/task-lifecycle-system-context.mjs', 'test/verification/system-file-timing-reporter.mjs'],
+    schedulingCostMs: suite.schedulingCostMs,
+    concurrencyClass: suite.concurrencyClass,
+    resources: [...suite.resources],
+  })),
   step({ id: 'system-windows-platform', name: 'Windows high-risk system journey slice', executor: { type: 'node-test', files: [
     'test/system/cli-update.test.mjs',
     'test/system/install-buildr-cli-runtime.test.mjs',
@@ -334,14 +314,6 @@ export const verificationSteps = Object.freeze([
     'src/interfaces/local-app/runtime/**',
     'package/targets/workspace/**',
   ], schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
-  step({ id: 'system-task-finish', name: 'Task Finish public journey slice', executor: { type: 'node-test', files: [
-    'test/system/task-finish-cli.test.mjs',
-    'test/system/task-finish-product-journey.test.mjs',
-  ], args: ['--test-concurrency=2', '--test-reporter=dot'] }, inputs: [
-    'test/system/task-finish-*.test.mjs',
-    'test/helpers/task-finish-sqlite-fixture.mjs',
-    'src/application/task-finish/**',
-  ], schedulingCostMs: 25000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.mjs' }, profiles: ['fast', 'candidate'], inputs: ['bin/**', 'src/interfaces/cli/**', 'src/application/compose-runtime.mjs', 'src/application/json-contracts.mjs', 'scripts/**', 'test/verification/cli/**', 'package.json'] }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.mjs' }, profiles: ['fast', 'candidate'], inputs: ['openspec/**/*.md', 'openspec/**/*.yaml', 'test/verification/openspec/spec-quality.mjs'] }),
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], inputs: ['openspec/**'] }),
@@ -368,7 +340,27 @@ export const verificationSteps = Object.freeze([
     'openspec/specs/concurrent-task-acceptance/**', 'openspec/specs/task-environments/**',
   ], schedulingCostMs: 20000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
 
-  step({ id: 'candidate-tarball', name: 'candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate'], inputs: ['package.json', 'package-lock.json', '.npmignore', 'buildr', 'bin/buildr.mjs', 'scripts/install-buildr-cli', 'scripts/uninstall-buildr-cli'] }),
+  step({ id: 'host-node-contract', name: 'Host Node engine contract', executor: { type: 'node', file: 'test/verification/host-node/contract.mjs' }, profiles: ['host-node'], inputs: ['package.json', 'test/verification/host-node/**', 'test/verification/host-node.mjs'] }),
+  step({ id: 'host-node-boundaries', name: 'Host Node sensitive boundaries', executor: { type: 'node-test', files: [
+    'test/integration/process-infrastructure.test.mjs',
+    'test/integration/workspace-node-runtime.test.mjs',
+    'test/integration/workspace-sqlite.test.mjs',
+  ], args: ['--test-concurrency=2', '--test-reporter=dot'] }, profiles: ['host-node'], inputs: [
+    'test/integration/process-infrastructure.test.mjs',
+    'test/integration/workspace-node-runtime.test.mjs',
+    'test/integration/workspace-sqlite.test.mjs',
+    'src/infrastructure/process.mjs',
+    'src/infrastructure/filesystem/**',
+    'src/infrastructure/sqlite/**',
+    'test/verification/host-node.mjs',
+    'test/verification/host-node/**',
+  ], concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'candidate-tarball', name: 'candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate', 'host-node'], inputs: ['package.json', 'package-lock.json', '.npmignore', 'buildr', 'bin/buildr.mjs', 'scripts/install-buildr-cli', 'scripts/uninstall-buildr-cli'] }),
+  step({ id: 'host-node-cli-smoke', name: 'Host Node installed CLI smoke', executor: { type: 'node', file: 'test/verification/host-node/cli-smoke.mjs', consumesArtifact: true }, profiles: ['host-node'], inputs: [
+    'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**', 'src/application/doctor/**',
+    'src/application/workspace-operations.mjs', 'package.json', 'package-lock.json',
+    'test/verification/host-node.mjs', 'test/verification/host-node/**', 'test/verification/release/candidate-package.mjs',
+  ], dependsOn: ['candidate-tarball'], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'], inputs: ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/**', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'docs/agent-runtime-adapters.md'], dependsOn: ['candidate-tarball'] }),
   step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.mjs' }, profiles: ['candidate'], groups: ['openspec'], inputs: ['openspec/**', 'test/verification/openspec/contract-audit.mjs'] }),
   step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: ['src/application/package-maintenance/**', 'src/application/workspace-operations.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/runtime/**', 'package.json'] }),
@@ -440,7 +432,7 @@ export const verificationSteps = Object.freeze([
 
 export const VERIFICATION_TEST_INTENTS = Object.freeze(['Development', 'Acceptance', 'Static Conformance', 'Delivery / Release']);
 export const VERIFICATION_EXECUTION_BOUNDARIES = Object.freeze(['Static', 'Unit', 'Component', 'Integration', 'System']);
-export const VERIFICATION_PROFILES = Object.freeze(['fast', 'candidate']);
+export const VERIFICATION_PROFILES = Object.freeze(['fast', 'candidate', 'host-node']);
 export const VERIFICATION_GROUPS = Object.freeze(['public', 'cli', 'runtime', 'package', 'openspec', 'release', 'recovery', 'windows-platform-preflight']);
 export const VERIFICATION_EXECUTORS = Object.freeze(['node', 'node-test', 'npm', 'openspec', 'package-selector', 'workspace-suite', 'candidate-artifact']);
 

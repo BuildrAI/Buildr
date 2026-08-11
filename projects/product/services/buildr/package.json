@@ -65,6 +65,7 @@
     "coverage:unit": "node test/verification/unit-coverage.mjs",
     "test:changed": "node test/verification/changed.mjs",
     "test:focus": "node test/verification/focus.mjs",
+    "test:host-node": "node test/verification/host-node.mjs",
     "test:candidate": "bash scripts/verify-buildr-product",
     "test:release": "node test/verification/release/release-smoke.mjs",
     "package:launcher": "node package/launchers/build.mjs",
@@ -78,6 +79,9 @@
   "dependencies": {
     "yaml": "^2.9.0"
   },
+  "bundleDependencies": [
+    "yaml"
+  ],
   "devDependencies": {
     "@fission-ai/openspec": "1.6.0",
     "playwright-core": "^1.61.1"

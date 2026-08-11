@@ -46,6 +46,21 @@ function ticketCount(root) {
   return count;
 }
 
+function expireTickets(root) {
+  const visit = (directory) => {
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const current = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(current);
+      else if (entry.name === 'ticket.json') {
+        const ticket = JSON.parse(fs.readFileSync(current, 'utf8'));
+        fs.writeFileSync(current, `${JSON.stringify({ ...ticket, expiresAt: new Date(0).toISOString() }, null, 2)}\n`);
+      }
+    }
+  };
+  visit(root);
+}
+
 test('独立进程共享 Workspace 容量槽并按 owner 释放', async (t) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-resource-process-'));
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
@@ -99,21 +114,22 @@ test('独立进程按已登记 ticket 顺序取得容量', async (t) => {
   parseSuccessfulJson(await third.completed, 'third FIFO worker');
 });
 
-test('崩溃进程的过期 ticket 不永久阻塞队列', async (t) => {
+test('崩溃进程的已过期 ticket 不永久阻塞队列', async (t) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-resource-stale-ticket-'));
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
   const root = path.join(temporary, 'leases');
   const state = (name) => path.join(temporary, name);
-  const first = runWorker(root, 'task-a', state('first-acquired'), state('first-release'), 100);
+  const first = runWorker(root, 'task-a', state('first-acquired'), state('first-release'));
   t.after(() => first.child.kill());
   await waitFor(() => fs.existsSync(state('first-acquired')));
-  const crashed = runWorker(root, 'task-b', state('crashed-acquired'), state('crashed-release'), 100);
+  const crashed = runWorker(root, 'task-b', state('crashed-acquired'), state('crashed-release'));
   t.after(() => crashed.child.kill());
   await waitFor(() => ticketCount(root) === 1);
   const crashedCompletion = crashed.completed.catch((error) => error);
   crashed.child.kill();
   await crashedCompletion;
-  const later = runWorker(root, 'task-c', state('later-acquired'), state('later-release'), 100);
+  expireTickets(root);
+  const later = runWorker(root, 'task-c', state('later-acquired'), state('later-release'));
   t.after(() => later.child.kill());
   await waitFor(() => ticketCount(root) >= 1);
   fs.writeFileSync(state('first-release'), 'release\n');

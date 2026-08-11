@@ -74,7 +74,10 @@ test('candidate full plan only uses Candidate profile and rejects changed-path o
   assert.deepEqual(payload.preflightSteps, []);
   assert.equal(new Set(payload.steps.map((step) => step.id)).size, payload.steps.length);
   assert.equal(payload.steps.some((step) => step.id === 'repository-onboarding'), false);
-  for (const id of ['system', 'docs-quality']) assert.equal(payload.steps.filter((step) => step.id === id).length, 1);
+  for (const id of ['system-verification-contracts', 'system-workspace-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-fresh-build', 'docs-quality']) {
+    assert.equal(payload.steps.filter((step) => step.id === id).length, 1);
+  }
+  assert.equal(payload.steps.some((step) => step.id === 'system'), false);
   const changed = spawnSync(process.execPath, [runner, '--base', 'HEAD^', '--json'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(changed.status, 1);
   assert.match(changed.stderr, /Unknown test:candidate option: --base/);

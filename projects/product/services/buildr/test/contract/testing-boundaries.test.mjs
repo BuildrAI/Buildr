@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { inspectTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import { verificationSteps } from '../verification/registry.mjs';
+import { SYSTEM_SUITES, validateSystemSuiteRegistry } from '../verification/system-suites.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const contractRoot = path.join(productRoot, 'test', 'contract');
@@ -28,7 +29,7 @@ const fullIsolationOwners = [
   'public-json-contracts.test.mjs',
   'service-product.test.mjs',
   'task-finish-product-journey.test.mjs',
-  'workspace-product.test.mjs',
+  'workspace-manifest-registry.test.mjs',
   'worktree-create.test.mjs',
 ];
 
@@ -76,6 +77,17 @@ test('Quick registry membership 由环境足迹与重置负担约束', () => {
   assert.equal(runtimeAdapter.testing.resetBurden, 'repeated-cleanup');
 });
 
+test('Candidate 的网络协议仅使用本机回环 fixture', () => {
+  const candidate = verificationSteps.filter((step) => step.profiles.includes('candidate'));
+  for (const step of candidate) {
+    assert.equal(step.testing.environment.footprints.includes('network'), false, step.id);
+  }
+  const remoteSkill = verificationSteps.find((step) => step.id === 'remote-skill-timeout');
+  assert.deepEqual(remoteSkill.testing.environment.footprints, ['loopback-network']);
+  const source = fs.readFileSync(path.join(productRoot, remoteSkill.executor.file), 'utf8');
+  assert.match(source, /http:\/\/127\.0\.0\.1:/);
+});
+
 test('Task lifecycle System context 只共享不可变基线并保留全生命周期测试的独立 owner', () => {
   const helper = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'task-lifecycle-system-context.mjs'), 'utf8');
   const runner = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'system.mjs'), 'utf8');
@@ -95,12 +107,25 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   assert.match(runner, /system-file-timing-reporter\.mjs/);
   assert.match(runner, /--test-reporter-destination=stderr/,
     'file timing must remain transient process diagnostics instead of portable Verification Result data');
-  assert.match(runner, /const startFirst = \[[\s\S]*worktree-create\.test\.mjs[\s\S]*task-record-product\.test\.mjs/,
-    'the bounded System runner must start known long owners before alphabetic tail scheduling');
-  assert.match(runner, /startRank\.get\(left\)[\s\S]*left\.localeCompare\(right\)/,
-    'start-first ordering must retain deterministic alphabetic fallback');
-  assert.match(runner, /Unknown start-first System owner/,
-    'a stale start-first owner must fail closed instead of silently losing the intended ordering');
+  assert.match(runner, /validateSystemSuiteRegistry\(discovered\)/,
+    'the System runner must fail closed when a file has no primary owner');
+  assert.match(runner, /--owner/,
+    'Candidate must be able to schedule one bounded System owner');
+  const systemFiles = fs.readdirSync(path.join(productRoot, 'test', 'system'))
+    .filter((name) => name.endsWith('.test.mjs'))
+    .map((name) => `test/system/${name}`).sort();
+  const registry = validateSystemSuiteRegistry(systemFiles);
+  assert.equal(registry.ok, true, JSON.stringify(registry.findings));
+  assert.equal(new Set(SYSTEM_SUITES.flatMap((suite) => suite.files)).size, systemFiles.length);
+  assert.equal(fs.existsSync(path.join(productRoot, 'test', 'system', 'workspace-product.test.mjs')), false);
+  for (const owner of ['system-verification-contracts', 'system-workspace-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-fresh-build']) {
+    assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
+  }
+  assert.equal(SYSTEM_SUITES.find((suite) => suite.id === 'system-runtime-recovery')?.innerConcurrency, 1,
+    'runtime recovery copies and replaces a full local distribution on Windows and must remain sequential');
+  const workspaceSuite = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'workspace-product-suite.mjs'), 'utf8');
+  assert.match(workspaceSuite, /BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource/,
+    'Windows runtime recovery must reuse the verified local distribution instead of depending on public network');
 
   for (const file of taskLifecycleContextConsumers) {
     const source = fs.readFileSync(path.join(productRoot, 'test', 'system', file), 'utf8');

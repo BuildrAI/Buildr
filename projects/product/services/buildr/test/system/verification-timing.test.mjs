@@ -373,7 +373,13 @@ test('parallel verification preserves declaration order and failure identity', a
 
 test('identified expensive candidate steps have non-blocking target budgets', () => {
   for (const id of [
-    'system',
+    'system-verification-contracts',
+    'system-workspace-lifecycle',
+    'system-runtime-recovery',
+    'system-local-app-http',
+    'system-app-process',
+    'system-task-finish',
+    'system-fresh-build',
     'capability-cli-integration',
     'integration-candidate-recovery',
     'runtime-adapter-parity',

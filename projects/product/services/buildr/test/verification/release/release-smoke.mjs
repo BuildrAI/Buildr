@@ -55,7 +55,7 @@ try {
     assert.equal(pack.length, 1, 'release smoke must produce one tarball');
     tarball = path.join(packDirectory, pack[0].filename);
   }
-  run(npmExecutable, ['install', '--global', '--prefix', prefix, tarball]);
+  run(npmExecutable, ['install', '--offline', '--global', '--prefix', prefix, tarball]);
 
   const modulesRoot = process.platform === 'win32' ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib', 'node_modules');
   const buildrScript = path.join(modulesRoot, '@buildr-ai', 'buildr', 'bin', 'buildr.mjs');
