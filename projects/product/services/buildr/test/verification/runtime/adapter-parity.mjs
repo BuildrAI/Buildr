@@ -34,6 +34,10 @@ function prepareSeed() {
   assert.equal(spawnSync('git', ['update-index', '--chmod=+x', '--', 'complete-runtime-skill/scripts/run.sh'], { cwd: fixtureSourceRoot }).status, 0);
   harness.run(['skills', 'add', '--source', completeSkillSource, '--scope', '.', '--target', seed]);
   fs.rmSync(path.join(seed, '.fixture-source'), { recursive: true, force: true });
+  const canonicalSkillsRoot = path.join(seed, 'skills');
+  assert.equal(spawnSync('git', ['init', '--quiet'], { cwd: canonicalSkillsRoot }).status, 0);
+  assert.equal(spawnSync('git', ['add', '--', 'complete-runtime-skill'], { cwd: canonicalSkillsRoot }).status, 0);
+  assert.equal(spawnSync('git', ['update-index', '--chmod=+x', '--', 'complete-runtime-skill/scripts/run.sh'], { cwd: canonicalSkillsRoot }).status, 0);
 
   fs.mkdirSync(path.join(seed, 'projects', 'scope-alpha', 'services', 'api'), { recursive: true });
   fs.mkdirSync(path.join(seed, 'projects', 'scope-alpha', 'services', 'web'), { recursive: true });

@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { pathToFileURL } from 'node:url';
 import { buildCommandInvocation } from '../../src/infrastructure/process.mjs';
 import { createCandidatePackage, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_TARBALL_ENV } from './release/candidate-package.mjs';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
@@ -28,7 +27,10 @@ export function createVerificationExecutor(options) {
     PATH: [nodeBin, nodeModulesBin, inheritedEnv.PATH].filter(Boolean).join(path.delimiter),
   };
   const artifacts = {};
-  const nodeTestFile = (file) => process.platform === 'win32' ? pathToFileURL(file).href : file;
+  const nodeTestFile = (file) => {
+    const relative = path.relative(productRoot, file).split(path.sep).join('/');
+    return relative.startsWith('.') ? relative : `./${relative}`;
+  };
 
   const commandFor = (step) => {
     const executor = step.executor;

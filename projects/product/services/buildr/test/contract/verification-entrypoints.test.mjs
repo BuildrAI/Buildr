@@ -157,7 +157,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
     integration: 6, system: 8, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3,
   });
   assert.deepEqual(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency, {
-    integration: 3, system: 6, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2,
+    integration: 3, system: 3, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2,
   });
   assert.ok(verificationSteps.find((step) => step.id === 'system').schedulingCostMs >= 60_000);
 });

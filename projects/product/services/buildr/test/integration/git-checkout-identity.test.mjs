@@ -4,7 +4,18 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { sameFilesystemPath, sameGitCheckoutIdentity } from '../../src/infrastructure/git/checkout-identity.mjs';
+import { normalizeFilesystemPath, sameFilesystemPath, sameGitCheckoutIdentity } from '../../src/infrastructure/git/checkout-identity.mjs';
+
+test('Windows 文件系统路径统一盘符、扩展路径与 UNC 拼写', () => {
+  assert.equal(
+    normalizeFilesystemPath('\\\\?\\D:\\Work\\Buildr\\', 'win32'),
+    normalizeFilesystemPath('d:\\work\\buildr', 'win32'),
+  );
+  assert.equal(
+    normalizeFilesystemPath('\\\\?\\UNC\\server\\share\\repo\\', 'win32'),
+    normalizeFilesystemPath('\\\\server\\share\\repo', 'win32'),
+  );
+});
 
 test('Git checkout identity 使用文件系统事实而非路径拼写', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-checkout-identity-'));
