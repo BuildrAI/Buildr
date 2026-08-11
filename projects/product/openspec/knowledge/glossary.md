@@ -505,10 +505,17 @@
 
 ## 方案审查（Planning Review）
 
-- 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result 绑定调用方提供的 plan target identity。
+- 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result 绑定对应专业authority提供的计划目标身份（Plan Target Identity）。
 - 适用范围：实现前方案检查；没有执行时 planning slot 可以不存在。
-- 避免混用：不要求固定为 OpenSpec artifacts，也不由 Local App Change 详情发起；Local App 只读展示 Change。
+- 避免混用：不要求所有Task固定为OpenSpec artifacts；正式Task的OpenSpec计划必须使用Task Planning Identity resolver，不由Agent手工摘要artifact、路径或执行进度。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)
+
+## 计划目标身份（Plan Target Identity）
+
+- 定义：专业planning authority对当前Task计划语义生成的稳定opaque identity；OpenSpec场景由Task Planning Identity Application基于Task Intent/scope及proposal、design、delta specs、tasks的closed semantic projection确定性生成。
+- 适用范围：Task Development planning snapshot与Planning Review applicability比较；OpenSpec active/archive、checkbox、path、mtime、progress、Brief及workflow sidecar变化不改变该identity。
+- 避免混用：不是raw file digest、Git ref、Environment identity、Review Result identity、Content Target或Candidate；无法可靠解析时为空并`blocked`，不得沿用旧值。
+- 来源：[Task Planning Identity specification](../specs/task-planning-identity/spec.md)
 
 ## 完成审查（Completion Review）
 

@@ -25,7 +25,7 @@ change artifacts complete 且上游严格验证通过后运行：
 openspec validate <change> --strict
 ```
 
-正式 Task 同时要求 current Planning Review。Buildr 不提供 baseline/create 或阶段型 check，也不创建、刷新、读取或依赖这些 sidecar。
+正式 Task 同时要求 current Planning Review。先使用Task Environment声明的Node与Buildr Service execution root调用`task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>`；只把`resolved`结果的`target.identity`和`planningNodes`交给Task Development与Planning Review。`blocked`时停止apply，禁止用raw digest、文件路径、mtime、checklist progress、Git ref或旧Review target回退。Buildr 不提供 baseline/create 或阶段型 check，也不创建、刷新、读取或依赖这些 sidecar。
 
 ## 2. 单一收敛事务
 
@@ -40,7 +40,7 @@ buildr openspec converge <change> --project <project> --target <workspace> --jso
 
 `buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`只在Converge中断、返回`recovery-unprovable`或事务终态释放失败，且当前Task Environment恢复现场仍存在时使用。它只读比较当前事务Receipt的before/expected与canonical actual；active Change没有Receipt或Change已经archived时返回`not-applicable`。
 
-正常Converge返回`passed + archived`后直接继续Development后续阶段，不再运行Inspect。Formal Task Finish与Environment cleanup不调用Inspect；Worktree清理后不得恢复环境、追索Receipt或把Receipt缺失报告为恢复失败。正常长期事实使用Archived Change、Canonical Specs、Git与Task Development/Finish事实。
+正常Converge返回`passed + archived`后，正式Task再次调用Task Planning Identity resolver。target与apply前相同则复用current Planning Review并继续Development；不同或`blocked`则停止并按当前计划重新审查。该检查不运行Convergence Inspect；Formal Task Finish与Environment cleanup不调用Inspect。Worktree清理后不得恢复环境、追索Receipt或把Receipt缺失报告为恢复失败。正常长期事实使用Archived Change、Canonical Specs、Git与Task Development/Finish事实。
 
 ## 4. 失败处理
 

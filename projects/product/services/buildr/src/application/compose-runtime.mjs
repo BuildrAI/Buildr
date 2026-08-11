@@ -43,6 +43,7 @@ import { registerTaskReviewApplication } from './task-review/task-review-applica
 import { registerTaskRetrospectiveApplication } from './task-retrospective/task-retrospective-application.mjs';
 import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
 import { registerTaskDevelopmentApplication } from './task-development/task-development-application.mjs';
+import { registerTaskPlanningIdentityApplication } from './task-planning-identity/task-planning-identity-application.mjs';
 import { registerTaskOverviewApplication } from './task-overview/task-overview-application.mjs';
 import { registerParentCoordinationApplication } from './parent-coordination/parent-coordination-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
@@ -96,6 +97,7 @@ const REGISTRATIONS = [
   registerTaskRetrospectiveApplication,
   registerTaskVerificationApplication,
   registerTaskDevelopmentApplication,
+  registerTaskPlanningIdentityApplication,
   registerParentCoordinationApplication,
   registerTaskOverviewApplication,
   registerVerificationApplication,

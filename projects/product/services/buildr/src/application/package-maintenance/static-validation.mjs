@@ -382,6 +382,52 @@ export function createPackageStaticValidator(deps) {
     }
   }
 
+  function validateTaskPlanningIdentityAuthority(context) {
+    const { root, problems } = context;
+    const sourceContracts = new Map([
+      ['src/domain/task-planning-identity/task-planning-identity.mjs', ['createTaskPlanningIdentity', 'checklist-completion', 'change-lifecycle-provenance']],
+      ['src/application/task-planning-identity/task-planning-identity-application.mjs', ['inspectTaskPlanningIdentity', 'resolveTaskScopedChange', 'includeContent: true', "effects: []"]],
+      ['src/interfaces/internal/task-planning-identity-driver.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
+      ['src/application/compose-runtime.mjs', ['registerTaskPlanningIdentityApplication']],
+    ]);
+    for (const [relative, requiredTexts] of sourceContracts) {
+      const file = path.join(root, relative);
+      if (!existsFile(file)) {
+        problems.push(`Task Planning Identity runtime asset is missing: ${relative}.`);
+        continue;
+      }
+      const content = fs.readFileSync(file, 'utf8');
+      for (const required of requiredTexts) {
+        if (!content.includes(required)) problems.push(`Task Planning Identity runtime asset ${relative} must include ${JSON.stringify(required)}.`);
+      }
+    }
+
+    const consumers = new Map([
+      ['package/targets/workspace/skills/buildr/task-development/SKILL.md', ['task-planning-identity-driver.mjs inspect', '`planningNodes`', 'raw digest']],
+      ['package/targets/workspace/skills/buildr/task-review/SKILL.md', ['task-planning-identity-driver.mjs inspect', 'checkbox progress', '不重复record']],
+      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['task-planning-identity-driver.mjs inspect', '再次调用Task Planning Identity resolver']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['task-planning-identity-driver.mjs inspect', '`planningNodes`']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['task-planning-identity-driver.mjs inspect', 'target不变则不重复record Review']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['task-planning-identity-driver.mjs inspect', 'target与apply前相同则复用current Planning Review']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md', ['重新调用Task Planning Identity resolver']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md', ['重新调用Task Planning Identity resolver']],
+    ]);
+    for (const [relative, requiredTexts] of consumers) {
+      const file = path.join(root, relative);
+      if (!existsFile(file)) {
+        problems.push(`Task Planning Identity consumer asset is missing: ${relative}.`);
+        continue;
+      }
+      const content = fs.readFileSync(file, 'utf8');
+      for (const required of requiredTexts) {
+        if (!content.includes(required)) problems.push(`Task Planning Identity consumer ${relative} must include ${JSON.stringify(required)}.`);
+      }
+      for (const forbidden of ['shasum proposal.md', 'sha256sum proposal.md']) {
+        if (content.includes(forbidden)) problems.push(`Task Planning Identity consumer ${relative} must not instruct manual OpenSpec target hashing with ${JSON.stringify(forbidden)}.`);
+      }
+    }
+  }
+
   function parseJsonOutput(label, output) {
     try {
       return JSON.parse(output);
@@ -1373,6 +1419,7 @@ export function createPackageStaticValidator(deps) {
     validateTaskEnvironmentAuthorityResidue(context);
     validateTaskLifecycleRetirement(context);
     validateTaskReviewAuthority(context);
+    validateTaskPlanningIdentityAuthority(context);
     validateMappedEntries(context);
     validatePackageComponents(context);
     const skillSourceIds = validatePackageSkills(context);

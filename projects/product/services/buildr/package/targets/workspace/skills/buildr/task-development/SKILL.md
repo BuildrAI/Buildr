@@ -27,11 +27,19 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。
 5. 通过`task-review`inspect Planning Result。Review可按当前policy不存在、not-applicable或明确waived；存在时必须绑定current planning target。旧Result和handoff snapshot即使stale也不删除或改写。
 
+正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用Task Environment声明的Node与Buildr Service execution root调用只读resolver：
+
+```text
+node <buildr-service-root>/src/interfaces/internal/task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>
+```
+
+只有返回`resolved`时，才能把原样`target.identity`与全部`planningNodes`提交给`planning`并交给Planning Review。不得用artifact path、raw digest、mtime、checkbox progress、Git ref或旧Review target替代；返回`blocked`时停止推进并执行唯一`nextActions[0]`。归档后再次调用resolver：target相同则沿用current Planning Review，只更新Change disposition；target不同则先更新planning并重审。
+
 Development只拥有这些专业事实如何构成当前Task研发过程，不生成或复制proposal、design、Review/Verification Result正文。
 
 ## 开发到稳定目标
 
-在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 deterministic convergence/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。
+在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 deterministic convergence/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。OpenSpec归档路径、provenance、checkbox完成态和filesystem时间不属于plan target；只有Task Planning Identity resolver返回的新target才能使Planning Review stale。
 
 内容固定后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。code-only Task提交空数组。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 

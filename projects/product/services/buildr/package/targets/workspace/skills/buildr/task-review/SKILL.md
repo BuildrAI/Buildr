@@ -17,11 +17,13 @@ buildr task review inspect <task-id> [--planning-target <identity>] [--completio
 
 读取 Task Record 的 Intent、scope 与限定 Change 引用。实际执行目标位于 Task Environment 时，使用 `task-environment` 返回的 execution/validation root 读取，不从 cwd 或 Review Result 猜环境 authority。
 
-- `planning` 绑定当前计划上下文的明确稳定 identity。计划可以是 OpenSpec Change、任务清单或其他 owner 已界定的计划，不要求固定形态。
+- `planning` 绑定当前计划上下文的明确稳定 identity。计划可以是 OpenSpec Change、任务清单或其他 owner 已界定的计划，不要求固定形态。正式Task的OpenSpec计划必须先用Task Environment声明的Node与Buildr Service execution root调用`task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>`；只消费`resolved`结果的`target.identity`和`planningNodes`。不得手工摘要artifact、路径、mtime、checkbox progress、Git ref或沿用旧Result；resolver `blocked`时停止且不record Review。
 - 采用Parent Plan的Parent只审查outcome、architecture invariants、Contribution Map、dependencies与final acceptance，并把Parent Plan identity作为target。Child status、Verification、Change归档、实现字段/migration定稿或未改变Plan的Finish不得单独使Review stale；只有显式reconcile产生的新Plan identity需要重做Planning Review。不得要求Parent复制Child delta、测试清单或执行进度。
 - `completion` 只绑定上游已形成的 current Candidate identity。没有明确 Candidate identity 就停止，不得用 HEAD、dirty tree、Environment identity、时间或任意临时摘要代替。
 
 Result 存在但未提供 current target 时 applicability 是 `unknown`；identity 不同是 `stale`。两者都不能描述为仍满足审查。
+
+同一OpenSpec语义从active移动到archive，或只改变tasks checkbox时，resolver target保持不变，已有current Planning Review继续适用，不重复record。proposal、design、delta Requirement/Scenario、关键任务文本或Task Intent/scope使resolver target改变时，才以新target重新审查。
 
 ## 2. 动态执行语义审查
 
