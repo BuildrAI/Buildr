@@ -45,6 +45,7 @@ export function matchesInput(productPath, pattern) {
 }
 
 function matchedStepInput(step, productPath) {
+  if (step.selection === 'explicit-only') return null;
   const matched = step.inputs.find((pattern) => matchesInput(productPath, pattern));
   if (!matched) return null;
   if ((step.inputExclusions ?? []).some((pattern) => matchesInput(productPath, pattern))) return null;
@@ -59,6 +60,7 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     ids.add(item.id);
     if (!item.name) findings.push({ step: item.id, code: 'missing_name' });
     if (!Array.isArray(item.inputs) || item.inputs.length === 0) findings.push({ step: item.id, code: 'missing_inputs' });
+    if (item.selection != null && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'invalid_selection', value: item.selection });
     if (item.inputExclusions != null && !Array.isArray(item.inputExclusions)) findings.push({ step: item.id, code: 'invalid_input_exclusions' });
     else for (const pattern of item.inputExclusions ?? []) {
       try { normalizeProductPath(pattern); } catch { findings.push({ step: item.id, code: 'invalid_input_exclusion', value: pattern }); }

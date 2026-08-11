@@ -16,7 +16,59 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-platform-preflight:
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24.15.0, 24.x]
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Install product dependencies
+        run: npm ci
+      - name: Prepare Codex runtime
+        working-directory: .
+        env:
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+        shell: bash
+        run: projects/product/buildr sync codex --target .
+      - name: Verify Windows platform boundaries
+        env:
+          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-verification-timing.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-verification-diagnostics
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        shell: bash
+        run: npm run test:focus -- group:windows-platform-preflight
+      - name: Upload Windows preflight timing
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-preflight-timing-node-${{ matrix.node }}
+          path: ${{ runner.temp }}/buildr-verification-timing.json
+          if-no-files-found: warn
+      - name: Upload Windows preflight failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-preflight-diagnostics-node-${{ matrix.node }}
+          path: ${{ runner.temp }}/buildr-verification-diagnostics
+          if-no-files-found: ignore
+
   product:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -79,25 +131,3 @@ jobs:
           name: verification-diagnostics-${{ matrix.os }}-node-${{ matrix.node }}
           path: ${{ runner.temp }}/buildr-verification-diagnostics
           if-no-files-found: ignore
-
-  release-smoke:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    defaults:
-      run:
-        working-directory: projects/product/services/buildr
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.15.0
-          cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - name: Install product dependencies
-        run: npm ci
-      - name: Verify packed release lifecycle
-        run: npm run test:release

@@ -2,6 +2,7 @@
 set -u
 
 minimum_node_version=24.15.0
+supported_node_range='>=24.15.0 <25'
 self=$0
 while [ -L "$self" ]; do
   link=$(readlink "$self")
@@ -30,7 +31,7 @@ is_compatible_node() {
   case "$candidate_major.$candidate_minor.$candidate_patch" in
     *[!0-9.]*) return 1 ;;
   esac
-  [ "$candidate_major" -gt 24 ] || { [ "$candidate_major" -eq 24 ] && [ "$candidate_minor" -ge 15 ]; }
+  [ "$candidate_major" -eq 24 ] && [ "$candidate_minor" -ge 15 ]
 }
 
 run_with_node() {
@@ -112,7 +113,7 @@ if [ "${BUILDR_NODE+x}" = x ]; then
     *) explicit_node=$(command -v "$explicit_node" 2>/dev/null || true) ;;
   esac
   if ! is_compatible_node "$explicit_node"; then
-    echo "Buildr bootstrap requires Node.js >=${minimum_node_version}; BUILDR_NODE must name a compatible executable." >&2
+    echo "Buildr bootstrap requires Node.js ${supported_node_range}; BUILDR_NODE must name a compatible executable." >&2
     exit 1
   fi
   run_with_node "$explicit_node" "$@"
@@ -139,8 +140,8 @@ done
 IFS=$old_ifs
 
 if [ -n "$declared_version" ]; then
-  echo "Workspace Node runtime $declared_version is unavailable and no compatible bootstrap Node can run $command_name. Restore a Node >=${minimum_node_version}, then run buildr sync." >&2
+  echo "Workspace Node runtime $declared_version is unavailable and no compatible bootstrap Node can run $command_name. Restore a Node ${supported_node_range}, then run buildr sync." >&2
 else
-  echo "Buildr bootstrap requires Node.js >=${minimum_node_version}. Set BUILDR_NODE to a compatible executable or add one to PATH." >&2
+  echo "Buildr bootstrap requires Node.js ${supported_node_range}. Set BUILDR_NODE to a compatible executable or add one to PATH." >&2
 fi
 exit 1

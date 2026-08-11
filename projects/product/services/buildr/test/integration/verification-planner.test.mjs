@@ -306,12 +306,13 @@ test('registry validation 拒绝非法 input exclusion 与 node-test files', () 
     },
     {
       id: 'invalid-file', name: 'invalid file', executor: { type: 'node-test', files: ['../outside.test.mjs'] }, profiles: [], groups: [], inputs: ['test/**'],
-      inputExclusions: [], concurrencyClass: 'default', dependsOn: [], testing: { ...testing, primaryEvidenceOwner: 'invalid-file' },
+      inputExclusions: [], selection: 'implicit', concurrencyClass: 'default', dependsOn: [], testing: { ...testing, primaryEvidenceOwner: 'invalid-file' },
     },
   ]);
   assert.ok(result.findings.some((finding) => finding.code === 'invalid_input_exclusions'));
   assert.ok(result.findings.some((finding) => finding.code === 'node_test_files_missing'));
   assert.ok(result.findings.some((finding) => finding.code === 'node_test_file_invalid'));
+  assert.ok(result.findings.some((finding) => finding.code === 'invalid_selection'));
 });
 
 test('registry validation 拒绝缺少 producer 依赖的 artifact consumer', () => {

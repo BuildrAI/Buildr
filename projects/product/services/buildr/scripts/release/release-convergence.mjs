@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 function runGit(repo, args, { allowFailure = false } = {}) {
   const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
@@ -107,7 +108,7 @@ function parseArgs(argv) {
   };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const result = checkReleaseConvergence(parseArgs(process.argv.slice(2)));
     console.log(JSON.stringify(result, null, 2));

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/infrastructure/runtime/adapter-contract.mjs';
 import { parseSkillsManifest } from '../../../src/infrastructure/runtime/skills/manifests.mjs';
 import { skillProjectionOwnershipReceiptTarget } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
+import { findExecutableOnPath } from '../../../src/infrastructure/process.mjs';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.mjs';
 
 const harness = new RuntimeVerificationHarness();
@@ -289,7 +290,9 @@ try {
 
   const contexts = await mapLimit(supportedAdapters, MAX_PARALLEL_WORKSPACES, (adapterId) => prepareAdapterContext(seed, adapterId, lifecycleAdapters));
   const qoder = contexts.find((context) => context.adapterId === 'qoder');
-  const missingQoderEnvironment = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: '' } });
+  const gitExecutable = findExecutableOnPath('git');
+  assert.ok(gitExecutable, 'runtime parity requires Git while isolating the Qoder installation probe');
+  const missingQoderEnvironment = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: path.dirname(gitExecutable) } });
   assert.match(missingQoderEnvironment.stdout, /\[warning\] \. - Qoder installation probe failed\./);
   assert.match(missingQoderEnvironment.stdout, /installation: missing \(command\)/);
 

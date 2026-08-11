@@ -49,6 +49,29 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
   assert.deepEqual(violations, []);
 });
 
+test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owner', () => {
+  const identityConsumers = [
+    'src/application/worktree/git-worktree-provider.mjs',
+    'src/infrastructure/filesystem/task-environment-repository.mjs',
+    'src/application/task-verification/task-verification-application.mjs',
+    'src/application/task-finish/task-finish-application.mjs',
+    'src/interfaces/local-app/runtime/preview-manager.mjs',
+    'package/launchers/manage.mjs',
+  ];
+  for (const relative of identityConsumers) {
+    const source = fs.readFileSync(path.join(productRoot, relative), 'utf8');
+    assert.match(source, /sameFilesystemPath/, `${relative} must use the shared filesystem identity owner`);
+  }
+  const worktree = fs.readFileSync(path.join(productRoot, 'src/application/worktree/git-worktree-provider.mjs'), 'utf8');
+  assert.doesNotMatch(worktree, /identity\.repository\s*!==\s*item\.checkoutPath/);
+  const adapter = fs.readFileSync(path.join(productRoot, 'src/infrastructure/runtime/adapter-contract.mjs'), 'utf8');
+  assert.match(adapter, /runtimeWriteModeMatches/);
+  assert.doesNotMatch(adapter, /ownerExecutable/);
+  const closeout = fs.readFileSync(path.join(productRoot, '../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
+  assert.match(closeout, /productCommand\(execute, root, nodeExecutable/);
+  assert.doesNotMatch(closeout, /path\.join\(root, PRODUCT_ROOT, 'buildr'\)/);
+});
+
 test('Workspace、Project 与 Service Domain 保持纯净且 local app 静态资源随 src 交付', () => {
   const domain = fs.readFileSync(path.join(productRoot, 'src/domain/workspace/workspace.mjs'), 'utf8');
   assert.doesNotMatch(domain, /yaml|filesystem|http|process|repository/i);

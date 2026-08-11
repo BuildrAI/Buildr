@@ -320,7 +320,7 @@ export function registerGitWorktreeProvider(runtime) {
           state = 'created';
         }
         const identity = worktreeIdentity(item.checkoutPath);
-        if (!identity || identity.repository !== item.checkoutPath || identity.branch !== item.branch || !identity.registered) {
+        if (!identity || !sameFilesystemPath(identity.repository, item.checkoutPath) || identity.branch !== item.branch || !identity.registered) {
           repositories.push(repositoryEvidence(item, 'blocked', identity, 'Checkout identity does not match the Git worktree plan.'));
           const evidence = { schemaVersion: GIT_WORKTREE_EVIDENCE_SCHEMA, taskId: plan.taskId, workspaceRoot: plan.workspaceRoot, branch: plan.branch, planDigest: plan.digest, status: 'blocked', repositories, effects, updatedAt: new Date().toISOString() };
           const written = writeGitWorktreeEvidence(plan.workspaceRoot, evidence);

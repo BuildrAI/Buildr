@@ -6,6 +6,7 @@ import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 
 import { buildCliUpdatePlan, compareVersions, executeCliUpdatePlan, identifyCliSource } from '../../src/application/cli-update.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 function git(cwd, ...args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -31,7 +32,7 @@ test('CLI 来源识别关联 Git workspace 中的 Product Project 与 Buildr Ser
   git(root, 'commit', '-qm', 'initial');
   const source = identifyCliSource(productRoot);
   assert.equal(source.mode, 'development-checkout');
-  assert.equal(source.projectRoot, fs.realpathSync(path.join(root, 'projects', 'product')));
+  assert.equal(sameFilesystemPath(source.projectRoot, path.join(root, 'projects', 'product')), true);
   assert.deepEqual(source.service, { projectCode: 'product', code: 'buildr' });
 });
 
@@ -68,7 +69,7 @@ test('npm global prefix 布局识别为 registry package', (t) => {
   fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.0.0"}\n');
   const source = identifyCliSource(productRoot);
   assert.equal(source.mode, 'registry-package');
-  assert.equal(source.installPrefix, fs.realpathSync(prefix));
+  assert.equal(sameFilesystemPath(source.installPrefix, prefix), true);
 });
 
 test('开发者模式自动 fast-forward 到 upstream', (t) => {

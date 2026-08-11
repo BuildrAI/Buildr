@@ -21,12 +21,66 @@ import {
   buildRuntimeSkillTarget,
   hasManagedSkillMarker,
 } from '../../src/infrastructure/runtime/skills/render-plan.mjs';
-import { RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, getRuntimeAdapter, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
+import { REQUIRED_RENDER_CAPABILITIES, RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, createRuntimePlan, getRuntimeAdapter, reconcileRuntimePlan, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/infrastructure/runtime/skills/inventory.mjs';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
+  runtimeWriteModeMatches,
   skillProjectionOwnershipReceiptTarget,
 } from '../../src/infrastructure/runtime/skills/projection-files.mjs';
+
+test('Windows runtime 文件一致性忽略 POSIX executable bit', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-mode-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'run.sh');
+  fs.writeFileSync(file, '#!/bin/sh\n', { mode: 0o600 });
+  const write = { targetFile: file, mode: 0o100 };
+  assert.equal(runtimeWriteModeMatches(file, write, 'win32'), true);
+  if (process.platform !== 'win32') assert.equal(runtimeWriteModeMatches(file, write, process.platform), false);
+});
+
+test('runtime ownership receipt stale 诊断报告字段级差异和双侧摘要', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-receipt-diff-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const targetFile = path.join(root, '.agents', 'receipt.json');
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  fs.writeFileSync(targetFile, '{"sourceDigest":"sha256-current"}\n');
+  const plan = createRuntimePlan({
+    adapterId: 'codex',
+    targetRoot: root,
+    scope: '.',
+    writes: [{
+      targetFile,
+      content: '{"sourceDigest":"sha256-expected"}\n',
+      kind: 'skill-projection-receipt',
+      source: 'workspace:demo',
+      diagnostic: { label: 'demo receipt', codes: { stale: 'runtime.demo_stale' }, repair: 'skills-render' },
+    }],
+    capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability) => ({ capability, supported: true, adapterId: 'codex' })),
+  });
+  const finding = reconcileRuntimePlan(plan, { compareOnly: true }).findings[0];
+  assert.equal(finding.status, 'stale');
+  assert.match(finding.message, /Receipt differences: sourceDigest/);
+  assert.match(finding.message, /current=sha256-[a-f0-9]{64} expected=sha256-[a-f0-9]{64}/);
+});
+
+test('runtime ownership receipt stale 诊断列出具体文件差异', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-receipt-file-diff-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const targetFile = path.join(root, '.agents', 'receipt.json');
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  const current = { files: [{ path: 'scripts/run.sh', integrity: 'sha256-a', executable: true }] };
+  const expected = { files: [{ path: 'scripts/run.sh', integrity: 'sha256-a', executable: false }] };
+  fs.writeFileSync(targetFile, `${JSON.stringify(current)}\n`);
+  const plan = createRuntimePlan({
+    adapterId: 'codex', targetRoot: root, scope: '.',
+    writes: [{ targetFile, content: `${JSON.stringify(expected)}\n`, kind: 'skill-projection-receipt', source: 'workspace:demo', diagnostic: { label: 'demo receipt', repair: 'skills-render' } }],
+    capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability) => ({ capability, supported: true, adapterId: 'codex' })),
+  });
+  const finding = reconcileRuntimePlan(plan, { compareOnly: true }).findings[0];
+  assert.match(finding.message, /File differences: scripts\/run\.sh/);
+  assert.match(finding.message, /"executable":true.*"executable":false/);
+});
 
 test('render 参数解析拒绝未知和缺失参数', (t) => {
   t.mock.method(console, 'error', () => {});

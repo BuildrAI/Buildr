@@ -88,7 +88,7 @@ Task Finish Application在完整调用前校验和no-op判断之后、任何curr
 
 Workspace E2E 位于 `test/verification/workspace/`，保留 `workspace-lifecycle`、`ownership-recovery` 和 `runtime-reconciliation` 三条跨组件路径。其他 help、onboarding、runtime family parity、tarball inventory 与安装后生命周期由各自 focused verifier 持有。
 
-验证 registry 是 step identity、executor、inputs、依赖、profile/group、并发类别、artifact metadata 与 Project Testing 分类的唯一规划事实源；分类只给出 owner、主要意图、执行边界、证明范围、目标耗时和主要证据 owner。`fast` profile 表达低成本 Quick，inputs 表达 affected owner，`candidate` profile 是显式完整回归组合；它们不再被复制成一份混合 Quick、Task-affected、Candidate、Release 的场景分类。planner 对未映射的 Product 路径 fail closed；验证选择基础路径命中全局 owner 时，同一个 changed plan 扩展为完整回归。显式 Candidate 入口选择完整 profile，并只创建一个共享只读 tarball artifact。
+验证 registry 是 step identity、executor、inputs、依赖、profile/group、并发类别、artifact metadata 与 Project Testing 分类的唯一规划事实源；分类只给出 owner、主要意图、执行边界、证明范围、目标耗时和主要证据 owner。`fast` profile 表达低成本 Quick，inputs 表达 affected owner，`candidate` profile 是显式完整回归组合；它们不再被复制成一份混合 Quick、Task-affected、Candidate、Release 的场景分类。只服务于 CI 定向诊断的复合 slice 可声明 `selection: explicit-only`，保留 inputs 作为覆盖边界但不得被 changed planner 自动选择。planner 对未映射的 Product 路径 fail closed；验证选择基础路径命中全局 owner 时，同一个 changed plan 扩展为完整回归。显式 Candidate 入口选择完整 profile，并只创建一个共享只读 tarball artifact。
 
 ## npm 与交付边界
 

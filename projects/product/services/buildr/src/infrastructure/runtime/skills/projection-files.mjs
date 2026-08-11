@@ -19,6 +19,7 @@ export const SUPPORTED_SKILL_SOURCE_ENTRIES = Object.freeze([
 
 const SUPPORTED_SKILL_SOURCE_ENTRY_SET = new Set(SUPPORTED_SKILL_SOURCE_ENTRIES);
 const SHA256_PATTERN = /^sha256-[a-f0-9]{64}$/;
+const gitExecutableIndexCache = new Map();
 
 function toPosix(value) {
   return value.split(path.sep).join('/');
@@ -40,26 +41,58 @@ function assertSafeRelativeFile(relative, label) {
   return normalized;
 }
 
-function gitExecutablePaths(sourceDir) {
-  const root = spawnSync('git', ['-C', sourceDir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 5_000 });
-  const prefix = spawnSync('git', ['-C', sourceDir, 'rev-parse', '--show-prefix'], { encoding: 'utf8', timeout: 5_000 });
-  if (root.status !== 0 || prefix.status !== 0) return new Set();
-  const repositoryRoot = root.stdout.trim();
-  const sourceRelative = prefix.stdout.trim().replace(/\/+$/u, '') || '.';
-  const indexed = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '--stage', '-z', '--', sourceRelative], { encoding: 'buffer', timeout: 5_000 });
-  if (indexed.status !== 0) return new Set();
+function findGitRepository(sourceDir) {
+  let current = path.resolve(sourceDir);
+  while (true) {
+    const marker = path.join(current, '.git');
+    if (fs.existsSync(marker)) {
+      const markerStat = fs.statSync(marker);
+      if (markerStat.isDirectory()) return { root: current, index: path.join(marker, 'index') };
+      if (markerStat.isFile()) {
+        const match = /^gitdir:\s*(.+)\s*$/u.exec(fs.readFileSync(marker, 'utf8'));
+        if (match) {
+          const gitDirectory = path.resolve(current, match[1]);
+          return { root: current, index: path.join(gitDirectory, 'index') };
+        }
+      }
+      return null;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+function repositoryExecutablePaths(repository) {
+  if (!fs.existsSync(repository.index)) return new Set();
+  const stat = fs.statSync(repository.index);
+  const identity = `${stat.size}:${stat.mtimeMs}`;
+  const cached = gitExecutableIndexCache.get(repository.root);
+  if (cached?.identity === identity) return cached.paths;
+  const indexed = spawnSync('git', ['-C', repository.root, 'ls-files', '--stage', '-z'], { encoding: 'buffer', timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
+  if (indexed.status !== 0) {
+    const detail = indexed.error?.message || indexed.stderr?.toString('utf8').trim() || `status=${indexed.status} signal=${indexed.signal || 'none'}`;
+    throw new Error(`Unable to read executable intent from Git index: ${repository.root} (${detail})`);
+  }
   const executable = new Set();
   for (const record of indexed.stdout.toString('utf8').split('\0').filter(Boolean)) {
     const match = /^(\d{6}) [0-9a-f]+ \d\t([\s\S]+)$/u.exec(record);
     if (!match || match[1] !== '100755') continue;
-    const relative = sourceRelative === '.'
-      ? match[2]
-      : match[2].startsWith(`${sourceRelative}/`)
-        ? match[2].slice(sourceRelative.length + 1)
-        : null;
-    if (relative) executable.add(relative);
+    executable.add(match[2]);
   }
+  gitExecutableIndexCache.set(repository.root, { identity, paths: executable });
   return executable;
+}
+
+function gitExecutablePaths(sourceDir) {
+  const repository = findGitRepository(sourceDir);
+  if (!repository) return new Set();
+  const sourceRelative = toPosix(path.relative(repository.root, sourceDir));
+  const prefix = sourceRelative ? `${sourceRelative}/` : '';
+  return new Set([...repositoryExecutablePaths(repository)]
+    .filter((file) => file.startsWith(prefix))
+    .map((file) => file.slice(prefix.length))
+    .filter(Boolean));
 }
 
 function inspectSourceEntry(sourceDir, absolute, relative, files, indexedExecutable) {
@@ -119,10 +152,15 @@ export function runtimeWriteMode(item) {
   return item.mode;
 }
 
-export function runtimeFileMatches(file, integrity, executable) {
+export function runtimeWriteModeMatches(file, item, platform = process.platform) {
+  const expectedMode = runtimeWriteMode(item);
+  return expectedMode === null || platform === 'win32' || ownerExecutable(fs.statSync(file).mode) === (expectedMode === 0o100);
+}
+
+export function runtimeFileMatches(file, integrity, executable, platform = process.platform) {
   if (!fs.existsSync(file) || !fs.lstatSync(file).isFile() || fs.lstatSync(file).isSymbolicLink()) return false;
   if (sha256Integrity(fs.readFileSync(file)) !== integrity) return false;
-  return executable === undefined || process.platform === 'win32' || ownerExecutable(fs.statSync(file).mode) === executable;
+  return executable === undefined || platform === 'win32' || ownerExecutable(fs.statSync(file).mode) === executable;
 }
 
 function normalizedReceiptSegments(adapterId, runtimePath) {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 export const TASK_LIFECYCLE_CONTEXT_ENV = 'BUILDR_SYSTEM_TASK_LIFECYCLE_CONTEXT';
 export const TASK_LIFECYCLE_CONTEXT_ID = 'task-lifecycle/v1';
@@ -105,7 +106,7 @@ export function inspectTaskLifecycleSystemContext(contextRoot) {
   }
   const marker = parseMarker(resolvedContextRoot);
   const workspaceRoot = path.resolve(resolvedContextRoot, marker.workspace);
-  if (!inside(resolvedContextRoot, workspaceRoot) || !fs.existsSync(workspaceRoot) || fs.realpathSync(workspaceRoot) !== workspaceRoot) {
+  if (!inside(resolvedContextRoot, workspaceRoot) || !fs.existsSync(workspaceRoot) || !sameFilesystemPath(fs.realpathSync(workspaceRoot), workspaceRoot)) {
     throw contextError('system_test_context_workspace_invalid', 'Task lifecycle context Workspace is missing, linked, or outside the context root.', {
       contextRoot: resolvedContextRoot,
       workspaceRoot,
@@ -191,7 +192,7 @@ export function copyTaskLifecycleWorkspace(t, name = 'task-lifecycle') {
   try {
     fs.cpSync(context.workspaceRoot, root, { recursive: true });
     inspectTaskLifecycleSystemContext(context.contextRoot);
-    if (fs.realpathSync(root) === context.workspaceRoot) throw contextError('system_test_context_sandbox_invalid', 'Task lifecycle sandbox aliases the immutable baseline.', { root });
+    if (sameFilesystemPath(fs.realpathSync(root), context.workspaceRoot)) throw contextError('system_test_context_sandbox_invalid', 'Task lifecycle sandbox aliases the immutable baseline.', { root });
     t.after(() => fs.rmSync(base, { recursive: true, force: true }));
     return {
       base,

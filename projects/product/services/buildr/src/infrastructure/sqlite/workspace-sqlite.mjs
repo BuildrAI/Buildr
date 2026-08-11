@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Node 24.15+ supports the API used here, but some 24.x builds still emit the
+// Supported Node 24.15.0 through 24.x builds provide the API used here, but some still emit the
 // historical module-level ExperimentalWarning. Suppress only that known load
 // warning so public JSON and npm/checkout parity remain clean.
 const originalEmitWarning = process.emitWarning;

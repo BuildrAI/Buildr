@@ -83,6 +83,20 @@ test('focus verification de-duplicates groups without attaching fast', () => {
   assert.equal(plan.steps.filter((step) => step.id === 'candidate-tarball').length, 1);
 });
 
+test('Windows platform preflight keeps the bounded high-risk owners and tarball dependency', () => {
+  const plan = createVerificationPlan({ groups: ['windows-platform-preflight'] });
+  assert.deepEqual(plan.steps.map((step) => step.id), [
+    'system-windows-platform',
+    'concurrent-task-acceptance',
+    'candidate-tarball',
+    'runtime-adapter-parity',
+    'workspace-lifecycle',
+    'release-tarball-smoke',
+  ]);
+  assert.equal(plan.steps.some((step) => step.id === 'unit'), false);
+  assert.equal(plan.steps.some((step) => step.id === 'open-source-candidate'), false);
+});
+
 test('candidate verification retains necessary Candidate facts without Browser and Release-only owners', () => {
   const wrapper = read('scripts/verify-buildr-product');
   const candidate = read('test/verification/candidate.mjs');

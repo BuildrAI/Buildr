@@ -26,8 +26,8 @@ export function normalizeWorkspaceNodeRuntime(runtime, { required = true } = {})
   const version = String(runtime.node.version || '').trim().replace(/^v/, '');
   if (!NODE_VERSION_PATTERN.test(version)) throw new Error('Workspace.runtime.node.version must be an exact major.minor.patch version.');
   const [major, minor] = version.split('.').map(Number);
-  if (major < 24 || (major === 24 && minor < 15)) {
-    throw new Error('Workspace.runtime.node.version must satisfy Buildr engines.node >=24.15.0.');
+  if (major !== 24 || minor < 15) {
+    throw new Error('Workspace.runtime.node.version must satisfy Buildr engines.node >=24.15.0 <25.');
   }
   return Object.freeze({ node: Object.freeze({ version }) });
 }

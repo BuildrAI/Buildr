@@ -26,7 +26,7 @@ Workspace → Project → Service (optional)
 
 ## Manual fallback
 
-When an Agent cannot perform setup, Buildr requires Node.js 24.15+:
+When an Agent cannot perform setup, Buildr supports Node.js `>=24.15.0 <25`; each Workspace still uses the exact managed runtime version declared in its metadata:
 
 ```bash
 npm install --global @buildr-ai/buildr@next
