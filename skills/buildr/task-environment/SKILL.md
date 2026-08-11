@@ -24,6 +24,8 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 
 - Project可选维护closed `preparation.yml`，长期声明Project-wide或Service-scoped Recipe。Agent读取Task Record的完整Project/Service scope与构建、验证事实，只选择当前Task需要的Recipe，提交`buildr.task-environment-plan-request/v1`；Application解析声明identity并保存`buildr.task-environment-plan/v2`执行快照。没有长期声明时可显式提交`task-inline` Recipe，但不得静默回写Project。
 - `prepare --plan`可一次完成登记与准备；若Agent必须先检查Task checkout，可先运行无Plan的`prepare`取得受控执行根（结果明确blocked），再运行`plan record`和`prepare`。
+- Plan Request只是CLI的一次性输入，不是Environment资源或长期事实。需要JSON文件时，Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`prepare --plan`或`plan record`成功后必须立即删除。命令失败时，只有仍需用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。
+- Application保存的resolved `buildr.task-environment-plan/v2`与`buildr.task-environment-receipt/v5`是Plan和机器状态authority；原始Plan Request不进入SQLite。Environment cleanup只清理Receipt已登记资源与provider-owned执行位置，不扫描或删除调用方临时输入。
 - `prepare` 同时承担首次准备和幂等恢复；只重跑输出缺失或 executable/input identity 漂移的 Step，没有单独 `restore`。
 - `inspect`只读重新观察已保存Plan的executable、inputs和outputs；它不执行Step、不创建或修复输出、不回写Receipt。
 - `cleanup` 只在 Task 已明确 abandon，或由 Task Finish 提交 durable handoff 时成立。普通 Agent 不绕过授权。
