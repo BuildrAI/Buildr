@@ -50,7 +50,7 @@ jobs:
         shell: bash
         run: |
           base="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
-          if [[ "${GITHUB_REF_NAME:-}" == "main" || ("${GITHUB_HEAD_REF:-}" == "dev" && "${GITHUB_BASE_REF:-}" == "main") ]]; then
+          if [[ "${GITHUB_REF_NAME:-}" == "main" || "${GITHUB_REF_NAME:-}" == "dev" || ("${GITHUB_HEAD_REF:-}" == "dev" && "${GITHUB_BASE_REF:-}" == "main") ]]; then
             git fetch origin dev --quiet
             release_commit="$(git log origin/dev --format=%H --grep='^chore(release): 准备 ' -1)"
             if [[ -n "$release_commit" ]]; then base="$(git rev-parse "$release_commit^")"; fi
