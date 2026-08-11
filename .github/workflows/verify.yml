@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
-      BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+      BUILDR_NODE_RUNTIME_DATA_DIR: ${{ github.workspace }}/.buildr-node-runtime
     strategy:
       fail-fast: false
       matrix:
