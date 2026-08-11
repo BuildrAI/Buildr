@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { spawnSync } from '../../infrastructure/process.mjs';
+import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { verifyDeliveredGitTaskContribution } from '../task-finish/git-task-contribution.mjs';
 
@@ -88,7 +89,7 @@ export function registerGitWorktreeProvider(runtime) {
     const status = git(targetRoot, ['status', '--porcelain']);
     if ([root, branch, head, status].some((item) => item.status !== 0)) return null;
     const listed = git(targetRoot, ['worktree', 'list', '--porcelain']);
-    const registered = listed.status === 0 && parseGitWorktreeList(listed.stdout).some((item) => path.resolve(item.path) === path.resolve(root.stdout.trim()) && item.branch === branch.stdout.trim());
+    const registered = listed.status === 0 && parseGitWorktreeList(listed.stdout).some((item) => sameFilesystemPath(item.path, root.stdout.trim()) && item.branch === branch.stdout.trim());
     return { repository: path.resolve(root.stdout.trim()), branch: branch.stdout.trim(), head: head.stdout.trim(), clean: status.stdout.trim() === '', registered };
   }
 
@@ -108,7 +109,7 @@ export function registerGitWorktreeProvider(runtime) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Git worktree evidence must be an object.');
     const allowed = new Set(['schemaVersion', 'taskId', 'workspaceRoot', 'branch', 'planDigest', 'status', 'repositories', 'effects', 'updatedAt']);
     for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Git worktree evidence field is unsupported: ${key}`);
-    if (value.schemaVersion !== GIT_WORKTREE_EVIDENCE_SCHEMA || value.taskId !== taskId || typeof value.workspaceRoot !== 'string' || fs.realpathSync(value.workspaceRoot) !== fs.realpathSync(workspaceRoot)) throw new Error('Git worktree evidence identity does not match the requested Workspace/Task.');
+    if (value.schemaVersion !== GIT_WORKTREE_EVIDENCE_SCHEMA || value.taskId !== taskId || typeof value.workspaceRoot !== 'string' || !sameFilesystemPath(value.workspaceRoot, workspaceRoot)) throw new Error('Git worktree evidence identity does not match the requested Workspace/Task.');
     if (!['ready', 'blocked'].includes(value.status) || !Array.isArray(value.repositories) || !Array.isArray(value.effects)) throw new Error('Git worktree evidence shape is invalid.');
     if (typeof value.branch !== 'string' || !value.branch || typeof value.planDigest !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value.planDigest) || Number.isNaN(Date.parse(value.updatedAt))) throw new Error('Git worktree evidence metadata is invalid.');
     const selectors = new Set();
@@ -182,7 +183,7 @@ export function registerGitWorktreeProvider(runtime) {
   function sourceDescriptor({ selector, entityType, sourcePath, source, workspaceRoot, checkoutRoot, branch, startPoint }) {
     const sourceRepository = fs.realpathSync(path.resolve(workspaceRoot, sourcePath));
     const actualRoot = gitText(sourceRepository, ['rev-parse', '--show-toplevel']);
-    if (!actualRoot || path.resolve(actualRoot) !== sourceRepository) throw new Error(`${selector} source is not an independent Git repository: ${sourcePath}`);
+    if (!actualRoot || !sameFilesystemPath(actualRoot, sourceRepository)) throw new Error(`${selector} source is not an independent Git repository: ${sourcePath}`);
     const remote = source.git?.remote || null;
     const remoteUrl = remote ? gitText(sourceRepository, ['remote', 'get-url', remote]) : null;
     if (remote && !remoteUrl) throw new Error(`${selector} declared remote is missing: ${remote}`);
@@ -261,7 +262,7 @@ export function registerGitWorktreeProvider(runtime) {
       const listed = git(item.sourceRepository, ['worktree', 'list', '--porcelain']);
       if (listed.status !== 0) throw new Error(`Unable to inspect Git worktrees: ${item.selector}`);
       const worktrees = parseGitWorktreeList(listed.stdout);
-      const atTarget = worktrees.find((entry) => path.resolve(entry.path) === item.checkoutPath);
+      const atTarget = worktrees.find((entry) => sameFilesystemPath(entry.path, item.checkoutPath));
       const branchOwner = worktrees.find((entry) => entry.branch === item.branch);
       if (atTarget && atTarget.branch !== item.branch) throw new Error(`${item.selector} target is registered to branch ${atTarget.branch || '(detached)'}.`);
       if (!atTarget && branchOwner) throw new Error(`${item.selector} branch is already checked out at ${branchOwner.path}.`);
@@ -342,7 +343,7 @@ export function registerGitWorktreeProvider(runtime) {
       if (!stored) return result('inspect', 'blocked', taskId, gitWorktreeEvidencePath(root, taskId), [], [], { code: 'git_worktree_evidence_missing', message: 'Git worktree evidence was not found.' }, []);
       const repositories = stored.evidence.repositories.map((record) => {
         const identity = fs.existsSync(record.checkoutPath) ? worktreeIdentity(record.checkoutPath) : null;
-        const matches = Boolean(identity && identity.repository === path.resolve(record.checkoutPath) && identity.branch === record.branch && identity.registered);
+        const matches = Boolean(identity && sameFilesystemPath(identity.repository, record.checkoutPath) && identity.branch === record.branch && identity.registered);
         return { ...record, head: identity?.head || null, clean: identity?.clean ?? null, registered: identity?.registered ?? false, state: matches ? 'ready' : 'blocked', diagnostic: matches ? null : 'Current Git identity does not match evidence.' };
       });
       const ready = stored.evidence.status === 'ready' && repositories.every((item) => item.state === 'ready');
@@ -364,10 +365,10 @@ export function registerGitWorktreeProvider(runtime) {
       for (const record of stored.evidence.repositories) {
         const checkoutExists = fs.existsSync(record.checkoutPath);
         const identity = checkoutExists ? worktreeIdentity(record.checkoutPath) : null;
-        if (checkoutExists && (!identity || identity.repository !== path.resolve(record.checkoutPath) || identity.branch !== record.branch || !identity.registered)) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_identity_mismatch', message: `Checkout identity does not match evidence: ${record.selector}.` }, ['核对 ownership 后重试。']);
+        if (checkoutExists && (!identity || !sameFilesystemPath(identity.repository, record.checkoutPath) || identity.branch !== record.branch || !identity.registered)) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_identity_mismatch', message: `Checkout identity does not match evidence: ${record.selector}.` }, ['核对 ownership 后重试。']);
         if (!checkoutExists) {
           const listed = git(record.sourceRepository, ['worktree', 'list', '--porcelain']);
-          const registration = listed.status === 0 ? parseGitWorktreeList(listed.stdout).find((item) => path.resolve(item.path) === path.resolve(record.checkoutPath)) : null;
+          const registration = listed.status === 0 ? parseGitWorktreeList(listed.stdout).find((item) => sameFilesystemPath(item.path, record.checkoutPath)) : null;
           if (registration) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_checkout_missing_registered', message: `Task checkout 路径缺失但仍保留 Git registration：${record.selector}。` }, ['先恢复或清理悬空 Git worktree registration。']);
           const branchHead = gitText(record.sourceRepository, ['rev-parse', '--verify', `refs/heads/${record.branch}^{commit}`]);
           if (branchHead && branchHead !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_branch_drift', message: `Task checkout 已缺失，且本地任务分支已漂移：${record.selector}。` }, ['保留 evidence 并人工核对 branch ownership。']);

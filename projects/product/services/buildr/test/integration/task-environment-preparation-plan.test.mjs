@@ -202,7 +202,7 @@ test('非npm Service executable同样按input/executable/output identity准备�
   const executableName = process.platform === 'win32' ? 'prepare.cmd' : 'prepare.sh';
   const executable = path.join(root, executableName);
   fs.writeFileSync(path.join(root, 'input.txt'), 'v1\n');
-  fs.writeFileSync(executable, process.platform === 'win32' ? '@echo off\r\n>prepared.txt <nul set /p "=prepared"\r\n' : '#!/bin/sh\nset -eu\nprintf prepared > prepared.txt\n');
+  fs.writeFileSync(executable, process.platform === 'win32' ? '@echo off\r\n>prepared.txt <nul set /p "=prepared"\r\nexit /b 0\r\n' : '#!/bin/sh\nset -eu\nprintf prepared > prepared.txt\n');
   fs.chmodSync(executable, 0o755);
   const plan = {
     schemaVersion: 'buildr.task-environment-plan/v1',

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../infrastructure/process.mjs';
+import { sameFilesystemPath } from '../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 
 function run(command, args, options = {}) {
@@ -77,7 +78,7 @@ export function identifyCliSource(productRoot) {
   if (gitRoot.ok) {
     const resolvedGitRoot = fs.realpathSync(path.resolve(gitRoot.stdout));
     const expectedServiceRoot = path.join(resolvedGitRoot, 'projects', 'product', 'services', 'buildr');
-    const canonicalService = path.resolve(root) === path.resolve(expectedServiceRoot);
+    const canonicalService = sameFilesystemPath(root, expectedServiceRoot);
     return {
       ...base,
       mode: 'development-checkout',

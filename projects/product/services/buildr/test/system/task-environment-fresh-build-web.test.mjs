@@ -19,7 +19,9 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'workspace');
   const controllerRoot = path.join(base, 'controller');
-  const npmCli = fs.realpathSync(path.join(path.dirname(process.execPath), 'npm'));
+  const npmCli = fs.realpathSync(process.platform === 'win32'
+    ? path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    : path.join(path.dirname(process.execPath), 'npm'));
   fs.cpSync(serviceRoot, controllerRoot, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   run(process.execPath, [npmCli, 'ci'], { cwd: controllerRoot });
   const controllerCli = path.join(controllerRoot, 'bin', 'buildr.mjs');

@@ -14,7 +14,7 @@ import {
   skillProjectionOwnershipReceiptTarget,
 } from '../infrastructure/runtime/skills/projection-files.mjs';
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
-import { observeGitCheckoutIdentity } from '../infrastructure/git/checkout-identity.mjs';
+import { observeGitCheckoutIdentity, sameFilesystemPath } from '../infrastructure/git/checkout-identity.mjs';
 
 export function registerApplicationRuntime(runtime) {
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
@@ -51,7 +51,7 @@ export function registerApplicationRuntime(runtime) {
       throw error;
     }
     const target = observeGitCheckoutIdentity(targetRoot);
-    if (target && source.gitCommonDirectory === target.gitCommonDirectory && source.checkoutRoot !== target.checkoutRoot) {
+    if (target && sameFilesystemPath(source.gitCommonDirectory, target.gitCommonDirectory) && !sameFilesystemPath(source.checkoutRoot, target.checkoutRoot)) {
       const error = new Error('候选 Product checkout 只能渲染自己的任务验证 Workspace；不能更新 retained Workspace 或另一个 task worktree 的 Agent runtime。');
       error.code = 'runtime.candidate_cross_checkout_target';
       error.details = { source: source.checkoutRoot, target: target.checkoutRoot };

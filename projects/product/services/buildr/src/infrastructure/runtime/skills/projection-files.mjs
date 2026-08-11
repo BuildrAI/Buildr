@@ -42,18 +42,22 @@ function assertSafeRelativeFile(relative, label) {
 
 function gitExecutablePaths(sourceDir) {
   const root = spawnSync('git', ['-C', sourceDir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 5_000 });
-  if (root.status !== 0) return new Set();
+  const prefix = spawnSync('git', ['-C', sourceDir, 'rev-parse', '--show-prefix'], { encoding: 'utf8', timeout: 5_000 });
+  if (root.status !== 0 || prefix.status !== 0) return new Set();
   const repositoryRoot = root.stdout.trim();
-  const sourceRelative = toPosix(path.relative(repositoryRoot, sourceDir)) || '.';
+  const sourceRelative = prefix.stdout.trim().replace(/\/+$/u, '') || '.';
   const indexed = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '--stage', '-z', '--', sourceRelative], { encoding: 'buffer', timeout: 5_000 });
   if (indexed.status !== 0) return new Set();
   const executable = new Set();
   for (const record of indexed.stdout.toString('utf8').split('\0').filter(Boolean)) {
     const match = /^(\d{6}) [0-9a-f]+ \d\t([\s\S]+)$/u.exec(record);
     if (!match || match[1] !== '100755') continue;
-    const absolute = path.resolve(repositoryRoot, ...match[2].split('/'));
-    const relative = path.relative(sourceDir, absolute);
-    if (relative && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) executable.add(toPosix(relative));
+    const relative = sourceRelative === '.'
+      ? match[2]
+      : match[2].startsWith(`${sourceRelative}/`)
+        ? match[2].slice(sourceRelative.length + 1)
+        : null;
+    if (relative) executable.add(relative);
   }
   return executable;
 }

@@ -9,6 +9,7 @@ const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const INSTALLER = path.join(PRODUCT_ROOT, 'scripts', 'install-buildr-cli');
 
 test('CLI installer prefers receipt-bound Node over an unsupported shell default', (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX CLI installer 只在 macOS/Linux 验证；Windows 使用 npm cmd shim。');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-runtime-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const fakeBin = path.join(root, 'fake-bin');

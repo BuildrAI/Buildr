@@ -10,6 +10,7 @@ import {
   requireGitContributionText as requireGitText,
   withGitTaskContributionSnapshot as withTemporaryIndex,
 } from '../../infrastructure/git/git-task-contribution.mjs';
+import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
 
 export { observeGitTaskContribution } from '../../infrastructure/git/git-task-contribution.mjs';
 
@@ -23,11 +24,7 @@ function carrierRoot(workspaceRoot, runId) {
 function carrierRegistration(root, target) {
   const result = git(root, ['worktree', 'list', '--porcelain']);
   if (result.status !== 0) return null;
-  const physical = (value) => {
-    try { return fs.realpathSync(value); } catch { return path.resolve(value); }
-  };
-  const expected = physical(target);
-  return String(result.stdout).split(/\n\n+/).map((entry) => entry.split('\n').find((line) => line.startsWith('worktree '))?.slice(9)).find((entry) => entry && physical(entry) === expected) || null;
+  return String(result.stdout).split(/\n\n+/).map((entry) => entry.split('\n').find((line) => line.startsWith('worktree '))?.slice(9)).find((entry) => entry && sameFilesystemPath(entry, target)) || null;
 }
 
 function rawChanges(root, before, after) {
@@ -85,7 +82,7 @@ export function inspectGitCarrierContainment({ repositoryRoot, targetRef, carrie
 
 export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, expectedRoot = null }) {
   const target = carrierRoot(workspaceRoot, runId);
-  if (expectedRoot && path.resolve(expectedRoot) !== target) return { status: 'blocked', code: 'task-finish.carrier-root-mismatch', root: target };
+  if (expectedRoot && !sameFilesystemPath(expectedRoot, target)) return { status: 'blocked', code: 'task-finish.carrier-root-mismatch', root: target };
   const registered = carrierRegistration(repositoryRoot, target);
   if (!registered) return fs.existsSync(target)
     ? { status: 'blocked', code: 'task-finish.carrier-ownership-unprovable', root: target }

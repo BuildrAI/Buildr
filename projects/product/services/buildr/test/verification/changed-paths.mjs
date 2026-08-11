@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { normalizeProductPath } from './planner.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.mjs';
 
 function git(gitRoot, args, options = {}) {
   return execFileSync('git', args, { cwd: gitRoot, encoding: options.encoding ?? 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -36,10 +37,10 @@ export function collectChangedProductPaths(options) {
     return { base: null, paths: [...new Set(options.explicitPaths.map(normalizeProductPath))].sort(), source: 'explicit' };
   }
   const gitRoot = fs.realpathSync(git(productRoot, ['rev-parse', '--show-toplevel']).trim());
-  const productPrefix = path.relative(gitRoot, productRoot).split(path.sep).join('/');
-  const projectPrefix = path.relative(gitRoot, projectRoot).split(path.sep).join('/');
-  if (productPrefix.startsWith('../') || path.isAbsolute(productPrefix)) throw new Error('Product root is outside Git root');
-  if (projectPrefix.startsWith('../') || path.isAbsolute(projectPrefix)) throw new Error('Project root is outside Git root');
+  const projectGitRoot = git(projectRoot, ['rev-parse', '--show-toplevel']).trim();
+  if (!sameFilesystemPath(gitRoot, projectGitRoot)) throw new Error('Project root is outside Product Git root');
+  const productPrefix = git(productRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
+  const projectPrefix = git(projectRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const base = resolveVerificationBase(gitRoot, options.base);
   const pathspec = projectPrefix || '.';
   const commands = [

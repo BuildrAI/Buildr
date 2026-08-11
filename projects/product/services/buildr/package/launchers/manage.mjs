@@ -52,7 +52,9 @@ function defaultInstallRoot(platform) {
   return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs');
 }
 function targetPath(platform, channel, installRoot = defaultInstallRoot(platform)) {
-  return path.join(installRoot, platform === 'darwin' ? `${appName(channel)}.app` : appName(channel));
+  return platform === 'darwin'
+    ? path.posix.join(installRoot.replaceAll('\\', '/'), `${appName(channel)}.app`)
+    : path.win32.join(installRoot, appName(channel));
 }
 function appDataRoot() {
   if (process.env.BUILDR_APP_DATA_DIR) return path.resolve(process.env.BUILDR_APP_DATA_DIR);

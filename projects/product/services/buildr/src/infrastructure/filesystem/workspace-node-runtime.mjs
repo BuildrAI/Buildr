@@ -153,6 +153,21 @@ function waitForLock(lock, deadline) {
   while (fs.existsSync(lock) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
 }
 
+function renameRuntimeStage(stage, target, workspace, options) {
+  const deadline = Date.now() + (options.renameTimeoutMs || 5_000);
+  while (true) {
+    try {
+      fs.renameSync(stage, target);
+      return null;
+    } catch (error) {
+      const winner = probeWorkspaceNodeRuntime(workspace, options);
+      if (winner.status === 'ready') return winner;
+      if (!['EACCES', 'EBUSY', 'EPERM'].includes(error.code) || Date.now() >= deadline) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+}
+
 export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
   const initial = probeWorkspaceNodeRuntime(workspace, options);
   if (initial.status === 'ready') return { ...initial, action: 'reused' };
@@ -199,7 +214,8 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
       throw new Error(`Prepared Workspace Node runtime failed probe for ${initial.identity.version}.`);
     }
     fs.rmSync(paths.root, { recursive: true, force: true });
-    fs.renameSync(stage, paths.root);
+    const winner = renameRuntimeStage(stage, paths.root, workspace, options);
+    if (winner) return { ...winner, action: 'reused-after-race' };
     const result = probeWorkspaceNodeRuntime(workspace, options);
     if (result.status !== 'ready') throw new Error(`Workspace Node runtime did not become ready for ${initial.identity.version}.`);
     return { ...result, action: initial.status === 'missing' ? 'installed' : 'repaired' };

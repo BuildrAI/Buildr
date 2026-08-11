@@ -564,7 +564,11 @@ test('buildr app 重复启动复用单实例并从陈旧 runtime state 恢复', 
   assert.match(reused.stdout, /Buildr 本地应用已运行/);
   child.kill('SIGTERM');
   await new Promise((resolve) => child.once('exit', resolve));
-  assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false);
+  if (process.platform === 'win32') {
+    fs.rmSync(path.join(appData, 'instance.json'), { force: true });
+  } else {
+    assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false);
+  }
 });
 
 test('独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: 20_000 }, async (t) => {

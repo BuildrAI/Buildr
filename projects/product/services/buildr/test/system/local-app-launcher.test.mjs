@@ -67,7 +67,8 @@ test('development launcher 支持带空格的 checkout 路径', (t) => {
     },
   });
   const launcher = fs.readFileSync(path.join(output, 'Buildr Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
-  assert.match(launcher, new RegExp(`SOURCE_ROOT='${sourceRoot.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}'`));
+  const escapedSourceRoot = sourceRoot.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  assert.match(launcher, new RegExp(`SOURCE_ROOT='${escapedSourceRoot}'`));
   assert.match(launcher, /bin\/buildr\.mjs/);
 });
 
