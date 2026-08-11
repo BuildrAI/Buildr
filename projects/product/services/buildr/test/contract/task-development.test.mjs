@@ -48,8 +48,14 @@ test('不暴露 public Development CLI，Local App 只读投影复用 Applicatio
   assert.equal(fs.existsSync(path.join(root, 'src/interfaces/internal/task-development-driver.mjs')), true);
   const driver = read('src/interfaces/internal/task-development-driver.mjs');
   assert.match(driver, /buildr\.task-development-driver-profile\/v1/);
+  assert.match(driver, /buildr\.task-development-driver-(?:help|schema|example)\/v1|taskDevelopmentDriverHelp/);
   assert.match(driver, /args\.includes\('--profile'\)/);
   assert.match(driver, /moduleLoadMs[\s\S]*compositionMs[\s\S]*applicationMs[\s\S]*serializationMs[\s\S]*totalMs/);
+  const application = read('src/application/task-development/task-development-application.mjs');
+  assert.match(application, /taskDevelopmentActionFields/);
+  const operationContracts = read('src/application/task-development/task-development-operation-contracts.mjs');
+  assert.match(operationContracts, /additionalProperties:\s*false/);
+  assert.match(operationContracts, /buildr\.task-development-driver-schema\/v1/);
 });
 
 test('Task Development action使用有界operation scope且不直接缓存专业repository', () => {

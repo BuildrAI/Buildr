@@ -3,9 +3,13 @@
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 
-const moduleLoadStartedAt = performance.now();
-const { createRuntime } = await import('../../application/compose-runtime.mjs');
-const moduleLoadMs = performance.now() - moduleLoadStartedAt;
+import {
+  TASK_DEVELOPMENT_ACTIONS,
+  taskDevelopmentActionContract,
+  taskDevelopmentDriverExample,
+  taskDevelopmentDriverHelp,
+  taskDevelopmentDriverSchema,
+} from '../../application/task-development/task-development-operation-contracts.mjs';
 
 function option(args, name, fallback = undefined) {
   const index = args.indexOf(name);
@@ -24,16 +28,42 @@ function input(args) {
 }
 
 const args = process.argv.slice(2);
-const action = args[0];
-const taskId = option(args, '--task');
-const targetRoot = option(args, '--target');
+const action = args[0] && !args[0].startsWith('--') ? args[0] : null;
+const discoveryFlags = ['--help', '--schema', '--example'].filter((flag) => args.includes(flag));
 
-if (!['inspect', 'begin', 'planning', 'observe', 'policy', 'gate', 'freeze', 'decide', 'handoff', 'carrier'].includes(action) || !taskId || !targetRoot) {
-  console.error('Internal usage: node task-development-driver.mjs <inspect|begin|planning|observe|policy|gate|freeze|decide|handoff|carrier> --task <task-id> --target <canonical-workspace> [--input-json <json>]');
+function usageError(message) {
+  console.error(JSON.stringify({
+    schemaVersion: 'buildr.task-development-driver-error/v1',
+    status: 'blocked',
+    diagnostic: { code: 'task_development_driver_usage_invalid', message },
+    nextActions: ['运行 task-development-driver.mjs --help 查看受支持 action 与发现方式。'],
+  }, null, 2));
   process.exit(2);
 }
 
+if (discoveryFlags.length > 1) usageError('每次只能选择 --help、--schema 或 --example 中的一种发现模式。');
+if (discoveryFlags.length === 1) {
+  const mode = discoveryFlags[0];
+  if (!action && mode !== '--help') usageError(`${mode} 需要一个受支持的 Task Development action。`);
+  if (action && !taskDevelopmentActionContract(action)) usageError(`未知 Task Development action：${action}。`);
+  const output = mode === '--help'
+    ? taskDevelopmentDriverHelp(action)
+    : mode === '--schema'
+      ? taskDevelopmentDriverSchema(action)
+      : taskDevelopmentDriverExample(action);
+  console.log(JSON.stringify(output, null, 2));
+  process.exit(0);
+}
+
+const taskId = option(args, '--task');
+const targetRoot = option(args, '--target');
+
+if (!TASK_DEVELOPMENT_ACTIONS.includes(action) || !taskId || !targetRoot) usageError('普通 action 需要受支持的 action、--task 与 --target。');
+
 try {
+  const moduleLoadStartedAt = performance.now();
+  const { createRuntime } = await import('../../application/compose-runtime.mjs');
+  const moduleLoadMs = performance.now() - moduleLoadStartedAt;
   const compositionStartedAt = performance.now();
   const runtime = createRuntime();
   const compositionMs = performance.now() - compositionStartedAt;

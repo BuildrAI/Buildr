@@ -12,6 +12,7 @@ import {
   taskDevelopmentError,
 } from '../../domain/task-development/task-development.mjs';
 import { createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizePlannedContributionBindings, parentCoordinationError, validateContributionHandoffAgainstPlan } from '../../domain/parent-coordination/parent-coordination.mjs';
+import { taskDevelopmentActionFields } from './task-development-operation-contracts.mjs';
 
 function assertObject(input, label) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskDevelopmentError('task_development_input_invalid', `${label} 必须是对象。`);
@@ -20,6 +21,10 @@ function assertObject(input, label) {
 function assertFields(input, fields, label) {
   assertObject(input, label);
   for (const field of Object.keys(input)) if (!fields.has(field)) throw taskDevelopmentError('task_development_field_forbidden', `${label} 不支持字段：${field}。`, 400, { field });
+}
+
+function assertActionFields(action, input, label) {
+  assertFields(input, taskDevelopmentActionFields(action), label);
 }
 
 function relative(root, file) {
@@ -147,7 +152,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function buildPolicy(inspected, observations, input) {
-    assertFields(input, new Set(['capabilities', 'coverageGaps', 'overrides']), 'Task Development policy');
+    assertActionFields('policy', input, 'Task Development policy');
     if (!Array.isArray(input.capabilities) || !Array.isArray(input.coverageGaps) || !Array.isArray(input.overrides || [])) throw taskDevelopmentError('task_development_policy_input_invalid', 'capabilities、coverageGaps与overrides必须是数组。', 400);
     const observationByProject = new Map(observations.map((item) => [item.project, item]));
     const capabilities = input.capabilities.map((item, index) => {
@@ -354,7 +359,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function planningMutation(operation, targetRoot, taskId, input) {
-    assertFields(input, new Set(['changeDispositions', 'planning', 'planningGate']), `Task Development ${operation}`);
+    assertActionFields(operation, input, `Task Development ${operation}`);
     const inspected = task(targetRoot, taskId, { active: true, mutation: true });
     const execution = environment(targetRoot, taskId);
     const context = taskContext(inspected, input.changeDispositions);
@@ -394,7 +399,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function observeTaskDevelopment(targetRoot, taskId, input) {
-    assertFields(input, new Set(['changeDispositions', 'planningTargetIdentity']), 'Task Development observe');
+    assertActionFields('observe', input, 'Task Development observe');
     const inspected = task(targetRoot, taskId, { active: true, mutation: true });
     const execution = environment(targetRoot, taskId);
     const context = taskContext(inspected, input.changeDispositions);
@@ -447,7 +452,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function recordTaskDevelopmentGate(targetRoot, taskId, input) {
-    assertFields(input, new Set(['gate', 'disposition', 'targetIdentity', 'summary', 'source']), 'Task Development gate');
+    assertActionFields('gate', input, 'Task Development gate');
     if (!['planning', 'verification', 'completion'].includes(input.gate)) throw taskDevelopmentError('task_development_gate_invalid', 'gate必须是planning、verification或completion。', 400, { field: 'gate' });
     if (!['waived', 'not-applicable'].includes(input.disposition)) throw taskDevelopmentError('task_development_gate_disposition_invalid', 'gate disposition必须是waived或not-applicable。', 400, { field: 'disposition' });
     task(targetRoot, taskId, { active: true, mutation: true });
@@ -463,7 +468,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function freezeTaskDevelopmentCandidate(targetRoot, taskId, input = {}) {
-    assertFields(input, new Set(['planningTargetIdentity']), 'Task Development freeze');
+    assertActionFields('freeze', input, 'Task Development freeze');
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt, input);
@@ -482,7 +487,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function decideTaskDevelopment(targetRoot, taskId, input) {
-    assertFields(input, new Set(['outcome', 'summary', 'risks']), 'Task Development decide');
+    assertActionFields('decide', input, 'Task Development decide');
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
@@ -496,7 +501,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function createTaskDevelopmentHandoff(targetRoot, taskId, input = {}) {
-    assertFields(input, new Set(['contributionHandoff']), 'Task Development handoff');
+    assertActionFields('handoff', input, 'Task Development handoff');
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
@@ -524,7 +529,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function assertTaskDevelopmentCarrier(targetRoot, taskId, input = {}) {
-    assertFields(input, new Set(), 'Task Development carrier');
+    assertActionFields('carrier', input, 'Task Development carrier');
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
