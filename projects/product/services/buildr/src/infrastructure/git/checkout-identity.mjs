@@ -11,7 +11,9 @@ function gitPath(root, argument) {
   });
   if (observed.status !== 0 || !observed.stdout?.trim()) return null;
   const resolved = path.resolve(root, observed.stdout.trim());
-  try { return fs.realpathSync(resolved); } catch { return resolved; }
+  let value = resolved;
+  try { value = fs.realpathSync(resolved); } catch { /* retain Git's absolute spelling */ }
+  return { value, identity: normalizeFilesystemPath(resolved) };
 }
 
 export function normalizeFilesystemPath(value, platform = process.platform) {
@@ -51,8 +53,8 @@ export function sameFilesystemPath(left, right) {
 
 export function sameGitCheckoutIdentity(left, right) {
   return Boolean(left && right
-    && sameFilesystemPath(left.gitDirectory, right.gitDirectory)
-    && sameFilesystemPath(left.gitCommonDirectory, right.gitCommonDirectory)
+    && (left.gitDirectoryIdentity === right.gitDirectoryIdentity || sameFilesystemPath(left.gitDirectory, right.gitDirectory))
+    && (left.gitCommonDirectoryIdentity === right.gitCommonDirectoryIdentity || sameFilesystemPath(left.gitCommonDirectory, right.gitCommonDirectory))
     && left.linkedWorktree === right.linkedWorktree);
 }
 
@@ -62,9 +64,13 @@ export function observeGitCheckoutIdentity(root) {
   const gitCommonDirectory = gitPath(root, '--git-common-dir');
   if (!checkoutRoot || !gitDirectory || !gitCommonDirectory) return null;
   return {
-    checkoutRoot,
-    gitDirectory,
-    gitCommonDirectory,
-    linkedWorktree: !sameFilesystemPath(gitDirectory, gitCommonDirectory) && gitDirectory !== gitCommonDirectory,
+    checkoutRoot: checkoutRoot.value,
+    checkoutRootIdentity: checkoutRoot.identity,
+    gitDirectory: gitDirectory.value,
+    gitDirectoryIdentity: gitDirectory.identity,
+    gitCommonDirectory: gitCommonDirectory.value,
+    gitCommonDirectoryIdentity: gitCommonDirectory.identity,
+    linkedWorktree: gitDirectory.identity !== gitCommonDirectory.identity
+      && !sameFilesystemPath(gitDirectory.value, gitCommonDirectory.value),
   };
 }

@@ -56,12 +56,22 @@ function deliverablePath(root, target) {
 function gitPaths(root, run, io) {
   const top = run('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 5000 });
   if (top.status !== 0 || !top.stdout.trim()) return null;
+  const prefix = run('git', ['-C', root, 'rev-parse', '--show-prefix'], { encoding: 'utf8', timeout: 5000 });
+  if (prefix.status !== 0) return null;
   const repository = physicalPath(io, top.stdout.trim());
-  if (!inside(repository, root, io)) return null;
-  const scope = posix(path.relative(repository, root)) || '.';
+  const scopePrefix = prefix.stdout.trim().replace(/\/$/u, '');
+  const scope = scopePrefix || '.';
   const listed = run('git', ['-C', repository, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', scope], { encoding: 'utf8', timeout: 30_000, maxBuffer: 64 * 1024 * 1024 });
   if (listed.status !== 0) return null;
-  return [...new Set(listed.stdout.split('\0').filter(Boolean).map((relative) => path.resolve(repository, relative)).filter((target) => inside(root, target, io) && deliverablePath(root, target) && io.existsSync(target)))].sort((left, right) => posix(path.relative(root, left)).localeCompare(posix(path.relative(root, right))));
+  const prefixWithSlash = scopePrefix ? `${scopePrefix}/` : '';
+  return [...new Set(listed.stdout.split('\0').filter(Boolean).flatMap((relative) => {
+    if (prefixWithSlash && !relative.startsWith(prefixWithSlash)) return [];
+    const scopedRelative = prefixWithSlash ? relative.slice(prefixWithSlash.length) : relative;
+    const normalized = path.posix.normalize(scopedRelative.replaceAll('\\', '/'));
+    if (!normalized || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) return [];
+    const target = path.resolve(root, ...normalized.split('/'));
+    return deliverablePath(root, target) && io.existsSync(target) ? [target] : [];
+  }))].sort((left, right) => posix(path.relative(root, left)).localeCompare(posix(path.relative(root, right))));
 }
 
 export function contentInventoryIdentity(root, files, io = fs) {

@@ -26,7 +26,13 @@ function writeController(controllerRoot, marker = 'm1') {
   fs.mkdirSync(path.join(controllerRoot, 'bin'), { recursive: true });
   fs.mkdirSync(path.join(controllerRoot, 'package'), { recursive: true });
   fs.writeFileSync(path.join(controllerRoot, 'src', 'controller.mjs'), `export const controller = '${marker}';\n`);
-  fs.writeFileSync(path.join(controllerRoot, 'bin', 'buildr.mjs'), '#!/usr/bin/env node\n');
+  fs.writeFileSync(path.join(controllerRoot, 'bin', 'buildr.mjs'), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
+else if (args[0] === 'sync') process.stdout.write('synced\\n');
+else if (args[0] === 'runtime' && args[1] === 'check') process.stdout.write('Projection identity: candidate-projection\\n');
+else process.exitCode = 1;
+`);
   fs.writeFileSync(path.join(controllerRoot, 'package', 'marker.txt'), `${marker}\n`);
   fs.writeFileSync(path.join(controllerRoot, 'package.json'), '{"name":"fixture","version":"1.0.0"}\n');
   fs.writeFileSync(path.join(controllerRoot, 'package-lock.json'), '{"name":"fixture","version":"1.0.0","lockfileVersion":3,"packages":{}}\n');

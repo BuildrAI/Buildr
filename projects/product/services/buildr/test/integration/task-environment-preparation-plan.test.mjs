@@ -123,7 +123,7 @@ printf '%s\\n' "$PWD" >> "$INSTALL_LOG"
     runtime,
     plan: planFor(scoped),
     writes: () => writes,
-    installRoots: () => fs.existsSync(installLog) ? fs.readFileSync(installLog, 'utf8').trim().split('\n').filter(Boolean) : [],
+    installRoots: () => fs.existsSync(installLog) ? fs.readFileSync(installLog, 'utf8').split(/\r?\n/u).map((line) => line.trim()).filter(Boolean) : [],
     serviceRoot: (service) => path.join(projectRoot, 'services', service),
     writeDeclaration(value = declarationFor(services)) { fs.writeFileSync(path.join(projectRoot, 'preparation.yml'), `${JSON.stringify(value, null, 2)}\n`); },
     fail(service = null) { failRoot = service ? path.join(projectRoot, 'services', service) : ''; },
@@ -202,7 +202,7 @@ test('非npm Service executable同样按input/executable/output identity准备�
   const executableName = process.platform === 'win32' ? 'prepare.cmd' : 'prepare.sh';
   const executable = path.join(root, executableName);
   fs.writeFileSync(path.join(root, 'input.txt'), 'v1\n');
-  fs.writeFileSync(executable, process.platform === 'win32' ? '@echo off\n<nul set /p=prepared>prepared.txt\n' : '#!/bin/sh\nset -eu\nprintf prepared > prepared.txt\n');
+  fs.writeFileSync(executable, process.platform === 'win32' ? '@echo off\r\n>prepared.txt <nul set /p "=prepared"\r\n' : '#!/bin/sh\nset -eu\nprintf prepared > prepared.txt\n');
   fs.chmodSync(executable, 0o755);
   const plan = {
     schemaVersion: 'buildr.task-environment-plan/v1',

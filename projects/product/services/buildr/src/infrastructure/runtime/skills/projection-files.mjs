@@ -44,7 +44,7 @@ function gitExecutablePaths(sourceDir) {
   const root = spawnSync('git', ['-C', sourceDir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 5_000 });
   if (root.status !== 0) return new Set();
   const repositoryRoot = root.stdout.trim();
-  const sourceRelative = path.relative(repositoryRoot, sourceDir) || '.';
+  const sourceRelative = toPosix(path.relative(repositoryRoot, sourceDir)) || '.';
   const indexed = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '--stage', '-z', '--', sourceRelative], { encoding: 'buffer', timeout: 5_000 });
   if (indexed.status !== 0) return new Set();
   const executable = new Set();

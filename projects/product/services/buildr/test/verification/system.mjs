@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 import {
   prepareTaskLifecycleSystemContext,
@@ -14,6 +15,7 @@ import { resolveVerificationWorkerBudget } from './worker-budget.mjs';
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const systemRoot = path.join(productRoot, 'test', 'system');
 const fileTimingReporter = path.join(import.meta.dirname, 'system-file-timing-reporter.mjs');
+const fileTimingReporterSpecifier = process.platform === 'win32' ? pathToFileURL(fileTimingReporter).href : fileTimingReporter;
 const startFirst = [
   'worktree-create.test.mjs',
   'task-record-product.test.mjs',
@@ -50,7 +52,7 @@ try {
     `--test-concurrency=${workerBudget}`,
     '--test-reporter=dot',
     '--test-reporter-destination=stdout',
-    `--test-reporter=${fileTimingReporter}`,
+    `--test-reporter=${fileTimingReporterSpecifier}`,
     '--test-reporter-destination=stderr',
     ...files,
   ], {

@@ -175,8 +175,8 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function workspaceHasRootGit(workspaceRoot) {
-    const result = spawnSync('git', ['-C', workspaceRoot, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-    return result.status === 0 && sameFilesystemPath(result.stdout.trim(), workspaceRoot);
+    const result = spawnSync('git', ['-C', workspaceRoot, 'rev-parse', '--show-prefix'], { encoding: 'utf8' });
+    return result.status === 0 && result.stdout.trim() === '';
   }
 
   function taskScopes(workspaceRoot, task) {

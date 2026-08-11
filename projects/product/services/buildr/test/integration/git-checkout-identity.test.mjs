@@ -17,6 +17,19 @@ test('Windows 文件系统路径统一盘符、扩展路径与 UNC 拼写', () =
   );
 });
 
+test('Git checkout identity 优先复用 Git 自身稳定路径身份', () => {
+  assert.equal(sameGitCheckoutIdentity(
+    {
+      gitDirectory: 'C:\\short\\repo\\.git', gitDirectoryIdentity: 'c:\\repo\\.git',
+      gitCommonDirectory: 'C:\\short\\repo\\.git', gitCommonDirectoryIdentity: 'c:\\repo\\.git', linkedWorktree: false,
+    },
+    {
+      gitDirectory: 'C:\\long-name\\repo\\.git', gitDirectoryIdentity: 'c:\\repo\\.git',
+      gitCommonDirectory: 'C:\\long-name\\repo\\.git', gitCommonDirectoryIdentity: 'c:\\repo\\.git', linkedWorktree: false,
+    },
+  ), true);
+});
+
 test('Git checkout identity 使用文件系统事实而非路径拼写', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-checkout-identity-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
