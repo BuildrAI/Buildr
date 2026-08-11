@@ -29,7 +29,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['coverage:unit'], 'node test/verification/unit-coverage.mjs');
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
-  assert.equal(scripts['test:candidate'], './scripts/verify-buildr-product');
+  assert.equal(scripts['test:candidate'], 'bash scripts/verify-buildr-product');
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.mjs');
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
 

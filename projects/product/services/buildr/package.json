@@ -65,7 +65,7 @@
     "coverage:unit": "node test/verification/unit-coverage.mjs",
     "test:changed": "node test/verification/changed.mjs",
     "test:focus": "node test/verification/focus.mjs",
-    "test:candidate": "./scripts/verify-buildr-product",
+    "test:candidate": "bash scripts/verify-buildr-product",
     "test:release": "node test/verification/release/release-smoke.mjs",
     "package:launcher": "node package/launchers/build.mjs",
     "install:local": "./scripts/install-buildr-local",
