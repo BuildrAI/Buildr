@@ -6,6 +6,6 @@
 
 若本次修订改变 scope、核心流程、影响、验收或 delta requirements，读取 required `buildr.current-knowledge-maintenance/v1` binding、contract 和 selected provider，刷新 `brief.md` 并重新执行 `assess`；tasks 与 `.buildr/knowledge-impact.yml` 必须反映修订后的真实影响。Provider unresolved 或 dependency blocked 时停止并报告，不得保留已知陈旧 Brief/evidence。
 
-正式Task中的planning artifact一旦改变，必须调用selected`buildr.task-development/v2`provider的`planning`更新portable references、content identities与dispositions；该动作使旧Planning Review/Candidate/handoff按Application事实失效，但不复制artifact正文或改写Review Result。
+正式Task中的planning artifact一旦改变，先重新运行strict validation，再使用Environment声明的Node与Buildr Service execution root调用`task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>`。只有`resolved`时才用返回的`target.identity`和全部`planningNodes`调用selected`buildr.task-development/v2`provider的`planning`；target变化使旧Planning Review/Candidate/handoff按Application事实失效，target不变则不重复record Review。`blocked`时停止，且不复制正文、不改写Review Result、不回退raw digest或旧target。
 
 修订`tasks.md`时保持Change disposition前边界：每个checkbox都必须能在convergence/archive前完成。Formal Development、Task Verification/Candidate、Completion Review、Task Finish、Environment cleanup与Task terminal state属于archive后的Task lifecycle authority，不得作为Change task加入或保留。
