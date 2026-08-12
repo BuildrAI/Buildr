@@ -332,7 +332,7 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
   const paths = initial.paths;
   fs.mkdirSync(path.dirname(paths.root), { recursive: true });
   const lock = `${paths.root}.lock`;
-  const installLock = acquireRuntimeInstallLock(lock, workspace, { ...options, platform: paths.platform });
+  const installLock = acquireRuntimeInstallLock(lock, workspace, options);
   if (!installLock.owner) return { ...installLock.winner, action: 'reused-after-wait' };
   const stage = `${paths.root}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
   let primaryError = null;

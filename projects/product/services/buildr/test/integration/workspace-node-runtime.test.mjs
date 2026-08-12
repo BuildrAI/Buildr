@@ -133,6 +133,28 @@ test('runtime install lock 等待活跃 owner，并回收已退出 owner 的遗�
   assert.equal(fs.existsSync(lockFile), false);
 });
 
+test('Windows runtime 并发等待沿用 win32 探测参数', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-lock-windows-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const options = { dataRoot: path.join(root, 'data'), platform: 'win32', arch: 'x64' };
+  const paths = workspaceNodeRuntimePaths(WORKSPACE.runtime.node.version, options);
+  fs.mkdirSync(path.dirname(paths.root), { recursive: true });
+  fs.writeFileSync(`${paths.root}.lock`, `${JSON.stringify({
+    schemaVersion: 'buildr.workspace-node-runtime-install-lock/v1',
+    pid: 4242,
+    token: 'windows-owner',
+    createdAt: '2026-08-12T00:00:00.000Z',
+  })}\n`);
+
+  const reused = ensureWorkspaceNodeRuntime(WORKSPACE, {
+    ...options,
+    runtimeInstallOwnerAlive: () => true,
+    runtimeInstallLockWait: () => fixtureWindowsRuntime(paths.root),
+  });
+  assert.equal(reused.status, 'ready');
+  assert.equal(reused.action, 'reused-after-wait');
+});
+
 test('runtime install lock 只允许当前 token 释放，等待耗尽保留 owner 诊断', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-lock-token-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
