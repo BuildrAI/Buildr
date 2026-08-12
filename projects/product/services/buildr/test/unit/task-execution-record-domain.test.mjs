@@ -42,6 +42,13 @@ test('closed Domain固定owner/kind、quota reservation与terminal组合', () =>
   assert.throws(() => sealTaskExecutionRecord(record, body, 'running'), (error) => error.code === 'task_execution_record_outcome_not_terminal');
 });
 
+test('Execution Record 接受正式 release Task ID，同时保持 record ID 为目录安全标识', () => {
+  const record = opened({ taskId: 'release-0.1.0-rc.8' });
+  assert.equal(record.taskId, 'release-0.1.0-rc.8');
+  assert.throws(() => opened({ taskId: 'release/0.1.0' }), (error) => error.code === 'task_execution_record_identity_invalid');
+  assert.throws(() => opened({ recordId: 'record.1' }), (error) => error.code === 'task_execution_record_identity_invalid');
+});
+
 test('failure resolution与retention共同决定单记录cleanup eligibility', () => {
   const failed = sealTaskExecutionRecord(opened(), body, 'failed', '2026-01-02T00:00:00.000Z');
   assert.deepEqual(evaluateTaskExecutionRecordCleanup(failed, { now: '2026-03-01T00:00:00.000Z', recentRank: 9 }), { eligible: false, reasons: ['resolution-pending'] });

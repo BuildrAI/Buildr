@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 
+import { isTaskRecordId } from '../task-record/task-record.mjs';
+
 export const TASK_EXECUTION_RECORD_SCHEMA = 'buildr.task-execution-record/v1';
 export const TASK_EXECUTION_RECORD_REDACTION_VERSION = 'buildr.task-execution-record-redaction/v1';
 export const TASK_EXECUTION_RECORD_OWNER_KINDS = Object.freeze({
@@ -97,6 +99,12 @@ function recordIdentity(value, field = 'recordId') {
   return normalized;
 }
 
+function taskIdentity(value) {
+  const normalized = text(value, 'taskId');
+  if (!isTaskRecordId(normalized)) throw taskExecutionRecordError('task_execution_record_identity_invalid', 'taskId 必须符合正式 Task ID 契约。', 400, { field: 'taskId' });
+  return normalized;
+}
+
 function addDays(iso, days) {
   return new Date(Date.parse(iso) + days * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -179,7 +187,7 @@ export function normalizeTaskExecutionRecord(value, { expectedTaskId = null, exp
   ]), 'record');
   if (record.schemaVersion !== TASK_EXECUTION_RECORD_SCHEMA) throw taskExecutionRecordError('task_execution_record_schema_unsupported', `schemaVersion必须是${TASK_EXECUTION_RECORD_SCHEMA}。`, 409, { actual: record.schemaVersion });
   const recordId = recordIdentity(record.recordId);
-  const taskId = recordIdentity(record.taskId, 'taskId');
+  const taskId = taskIdentity(record.taskId);
   if (expectedTaskId && taskId !== expectedTaskId) throw taskExecutionRecordError('task_execution_record_task_identity_mismatch', `Task identity不一致：${expectedTaskId} != ${taskId}。`, 409, { expectedTaskId, taskId });
   if (expectedRecordId && recordId !== expectedRecordId) throw taskExecutionRecordError('task_execution_record_identity_mismatch', `record identity不一致：${expectedRecordId} != ${recordId}。`, 409, { expectedRecordId, recordId });
   const owner = oneOf(record.owner, Object.keys(TASK_EXECUTION_RECORD_OWNER_KINDS), 'owner');

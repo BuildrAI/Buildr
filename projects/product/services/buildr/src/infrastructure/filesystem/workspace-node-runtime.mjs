@@ -257,6 +257,7 @@ function reclaimRuntimeInstallLock(lock, observed, options = {}) {
 export function acquireRuntimeInstallLock(lock, workspace, options = {}) {
   const now = options.runtimeInstallLockNow || Date.now;
   const pause = options.runtimeInstallLockWait || wait;
+  const probeInstallWinner = options.runtimeInstallLockProbe || probeWorkspaceNodeRuntime;
   const timeoutMs = options.lockTimeoutMs ?? INSTALL_TIMEOUT_MS;
   const deadline = now() + timeoutMs;
   while (true) {
@@ -277,7 +278,7 @@ export function acquireRuntimeInstallLock(lock, workspace, options = {}) {
         try { fs.closeSync(descriptor); } catch { /* already closed */ }
       }
       if (error.code !== 'EEXIST') throw runtimeFilesystemError('acquire-lock', lock, error);
-      const winner = probeWorkspaceNodeRuntime(workspace, options);
+      const winner = probeInstallWinner(workspace, options);
       if (winner.status === 'ready') return { owner: false, file: lock, record: null, winner };
       const observed = readRuntimeInstallLock(lock);
       const observedAt = now();

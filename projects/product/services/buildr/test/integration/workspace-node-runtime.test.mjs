@@ -35,6 +35,21 @@ function fixtureWindowsRuntime(root) {
   fs.writeFileSync(path.join(root, 'node_modules/npm/bin/npm-cli.js'), '// fixture\n');
 }
 
+function readyRuntimeProbe(workspace, options) {
+  const identity = workspaceNodeIdentity(workspace, options);
+  const paths = workspaceNodeRuntimePaths(identity.version, options);
+  return {
+    status: 'ready',
+    identity,
+    executable: paths.node,
+    npmExecutable: paths.npm,
+    actualVersion: identity.version,
+    npmVersion: '10.8.0',
+    diagnostic: null,
+    paths,
+  };
+}
+
 test('Workspace Node identity 不包含机器路径且按 platform/arch 稳定', () => {
   const identity = workspaceNodeIdentity(WORKSPACE, { platform: 'darwin', arch: 'arm64' });
   assert.equal(identity.version, '22.4.1');
@@ -92,9 +107,7 @@ test('runtime install lock 等待活跃 owner，并回收已退出 owner 的遗�
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-lock-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const dataRoot = path.join(root, 'data');
-  const source = path.join(root, 'source');
-  fixtureRuntime(source);
-  const options = { dataRoot, platform: 'darwin', arch: 'arm64', sourceRoot: source };
+  const options = { dataRoot, platform: 'darwin', arch: 'arm64' };
   const paths = workspaceNodeRuntimePaths(WORKSPACE.runtime.node.version, options);
   fs.mkdirSync(path.dirname(paths.root), { recursive: true });
   const lockFile = `${paths.root}.lock`;
@@ -106,13 +119,21 @@ test('runtime install lock 等待活跃 owner，并回收已退出 owner 的遗�
     createdAt: '2026-08-12T00:00:00.000Z',
   };
   fs.writeFileSync(lockFile, `${JSON.stringify(active)}\n`);
+  let now = 0;
+  let ready = false;
   let waits = 0;
   const reused = acquireRuntimeInstallLock(lockFile, WORKSPACE, {
     ...options,
+    lockTimeoutMs: 100,
     runtimeInstallOwnerAlive: () => true,
-    runtimeInstallLockWait() {
+    runtimeInstallLockNow: () => now,
+    runtimeInstallLockProbe: (workspace, probeOptions) => ready
+      ? readyRuntimeProbe(workspace, probeOptions)
+      : { status: 'missing' },
+    runtimeInstallLockWait(milliseconds) {
       waits += 1;
-      fixtureRuntime(paths.root);
+      now += milliseconds;
+      ready = true;
     },
   });
   assert.equal(reused.owner, false);
@@ -146,13 +167,26 @@ test('Windows runtime 并发等待沿用 win32 探测参数', (t) => {
     createdAt: '2026-08-12T00:00:00.000Z',
   })}\n`);
 
+  let now = 0;
+  let ready = false;
+  const observedPlatforms = [];
   const reused = ensureWorkspaceNodeRuntime(WORKSPACE, {
     ...options,
+    lockTimeoutMs: 100,
     runtimeInstallOwnerAlive: () => true,
-    runtimeInstallLockWait: () => fixtureWindowsRuntime(paths.root),
+    runtimeInstallLockNow: () => now,
+    runtimeInstallLockProbe(workspace, probeOptions) {
+      observedPlatforms.push(probeOptions.platform);
+      return ready ? readyRuntimeProbe(workspace, probeOptions) : { status: 'missing' };
+    },
+    runtimeInstallLockWait(milliseconds) {
+      now += milliseconds;
+      ready = true;
+    },
   });
   assert.equal(reused.status, 'ready');
   assert.equal(reused.action, 'reused-after-wait');
+  assert.deepEqual(observedPlatforms, ['win32', 'win32']);
 });
 
 test('runtime install lock 只允许当前 token 释放，等待耗尽保留 owner 诊断', (t) => {
