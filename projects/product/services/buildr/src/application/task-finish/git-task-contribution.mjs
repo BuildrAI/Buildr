@@ -100,6 +100,80 @@ export function inspectGitCarrierContainment({ repositoryRoot, targetRef, carrie
   return { status: 'contained', ...proof, identity: containmentIdentity(proof) };
 }
 
+export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, targetRef, carrier, runId }) {
+  const carrierRef = carrier?.head || null;
+  const baseline = carrier?.deliveryBaseline || null;
+  const changedPaths = Array.isArray(carrier?.changedPaths) ? carrier.changedPaths : null;
+  const changes = Array.isArray(carrier?.changes) ? carrier.changes : null;
+  let expectedRoot = null;
+  try { expectedRoot = runId ? carrierRoot(repositoryRoot, runId) : null; } catch { /* invalid run identity remains unprovable */ }
+  if (!carrierRef || !targetRef || !expectedRoot || !carrier?.root || !sameFilesystemPath(carrier.root, expectedRoot)
+    || carrier?.reuseMode !== 'agent-reviewed-delivery-adaptation'
+    || carrier?.zeroDelta !== true
+    || !baseline?.head || !baseline?.tree
+    || carrierRef !== baseline.head || carrier?.tree !== baseline.tree
+    || changedPaths === null || changedPaths.length !== 0
+    || changes === null || changes.length !== 0
+    || !carrier?.carrierDeltaIdentity) {
+    return {
+      status: 'unprovable',
+      code: 'task-finish.zero-delta-containment-input-invalid',
+      carrierRef,
+      targetRef,
+      changedPaths: changedPaths || [],
+    };
+  }
+
+  const verified = verifyGitTaskContributionCarrier({ repositoryRoot, carrier });
+  if (verified.status !== 'equivalent') {
+    return {
+      status: 'unprovable',
+      code: 'task-finish.zero-delta-carrier-unprovable',
+      carrierRef,
+      targetRef,
+      changedPaths: [],
+      observed: verified,
+    };
+  }
+
+  const resolvedTargetRef = gitText(repositoryRoot, ['rev-parse', `${targetRef}^{commit}`]);
+  const targetTree = resolvedTargetRef ? gitText(repositoryRoot, ['rev-parse', `${resolvedTargetRef}^{tree}`]) : null;
+  if (!resolvedTargetRef || !targetTree) {
+    return {
+      status: 'unprovable',
+      code: 'task-finish.zero-delta-target-unreadable',
+      carrierRef,
+      targetRef,
+      changedPaths: [],
+    };
+  }
+  if (resolvedTargetRef !== carrierRef || targetTree !== carrier.tree) {
+    return {
+      status: 'not-contained',
+      code: 'task-finish.zero-delta-target-not-contained',
+      carrierRef,
+      targetRef: resolvedTargetRef,
+      changedPaths: [],
+      observed: { targetTree },
+    };
+  }
+
+  const proof = {
+    carrierRef,
+    targetRef: resolvedTargetRef,
+    proof: 'agent-reviewed-zero-delta',
+  };
+  return {
+    status: 'contained',
+    code: 'task-finish.agent-reviewed-zero-delta-contained',
+    proof: proof.proof,
+    carrierRef,
+    targetRef: resolvedTargetRef,
+    changedPaths: [],
+    identity: containmentIdentity(proof),
+  };
+}
+
 export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, expectedRoot = null }) {
   const target = carrierRoot(workspaceRoot, runId);
   if (expectedRoot && !sameFilesystemPath(expectedRoot, target)) return { status: 'blocked', code: 'task-finish.carrier-root-mismatch', root: target };

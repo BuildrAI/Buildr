@@ -164,6 +164,14 @@ function phase(result, id) {
   return result.phases.find((item) => item.id === id);
 }
 
+function commitBuildrTask(root, taskId, pathname = `${taskId}.txt`) {
+  fs.writeFileSync(path.join(root, pathname), `${taskId}\n`);
+  git(root, 'add', '--', pathname);
+  git(root, 'commit', '-m', `deliver ${taskId}`, '-m', `Buildr-Task: ${taskId}`);
+  git(root, 'push', 'origin', 'dev');
+  return git(root, 'rev-parse', 'HEAD');
+}
+
 test('fresh closeout以精确successor commit和remote readback完成', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const result = runSelfBootstrapCloseout({
@@ -215,6 +223,101 @@ test('remote已包含合法successor时不重复commit或push', (t) => {
   assert.equal(git(root, 'rev-parse', 'HEAD'), successor);
   assert.equal(phase(second, 'commit').effects.length, 0);
   assert.equal(phase(second, 'push').effects.length, 0);
+});
+
+test('较早Result在已push的Buildr Task descendant上选择当前activation base', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const descendant = commitBuildrTask(root, 'later-finish');
+  const result = runSelfBootstrapCloseout({
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']),
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root),
+    environment,
+  });
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.equal(git(root, 'rev-parse', 'HEAD'), descendant);
+  assert.equal(phase(result, 'commit').status, 'not-applicable');
+  assert.deepEqual(phase(result, 'preflight').effects.find((item) => item.type === 'activation-base-selected'), {
+    type: 'activation-base-selected',
+    frozenRef: baseRef,
+    activationBaseRef: descendant,
+    recovery: 'fresh-descendant',
+  });
+});
+
+test('descendant sync successor以当前activation base为parent并可被下一Result顺序消费', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const delivered = commitBuildrTask(root, 'later-finish');
+  const first = runSelfBootstrapCloseout({
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root),
+    environment,
+  });
+  assert.equal(first.status, 'passed', JSON.stringify(first.diagnostic));
+  const successor = git(root, 'rev-parse', 'HEAD');
+  assert.notEqual(successor, delivered);
+  assert.equal(git(root, 'rev-parse', 'HEAD^'), delivered);
+
+  const secondInput = finishResult(root, delivered, ['projects/product/services/buildr/src/example.mjs'], {
+    runId: 'second-closeout-run',
+    identity: {
+      ...finishResult(root, delivered, []).identity,
+      task: 'second-closeout-task',
+    },
+  });
+  const second = runSelfBootstrapCloseout({
+    finishResult: secondInput,
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root),
+    environment,
+  });
+  assert.equal(second.status, 'passed', JSON.stringify(second.diagnostic));
+  assert.equal(git(root, 'rev-parse', 'HEAD'), successor);
+  assert.equal(phase(second, 'install-cli').status, 'passed');
+});
+
+test('Buildr descendant chain仍拒绝merge provenance', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  git(root, 'checkout', '-b', 'side');
+  fs.writeFileSync(path.join(root, 'side.txt'), 'side\n');
+  git(root, 'add', '--', 'side.txt');
+  git(root, 'commit', '-m', 'side delivery', '-m', 'Buildr-Task: side-task');
+  git(root, 'checkout', 'dev');
+  fs.writeFileSync(path.join(root, 'main.txt'), 'main\n');
+  git(root, 'add', '--', 'main.txt');
+  git(root, 'commit', '-m', 'main delivery', '-m', 'Buildr-Task: main-task');
+  git(root, 'merge', '--no-ff', 'side', '-m', 'merge deliveries', '-m', 'Buildr-Task: merge-task');
+  git(root, 'push', 'origin', 'dev');
+  const result = runSelfBootstrapCloseout({
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']),
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root),
+    environment,
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.descendant-merge-unprovable');
+});
+
+test('Buildr-owned descendant尚未push时拒绝选择activation base', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  fs.writeFileSync(path.join(root, 'local-only.txt'), 'local only\n');
+  git(root, 'add', '--', 'local-only.txt');
+  git(root, 'commit', '-m', 'local task delivery', '-m', 'Buildr-Task: local-only-task');
+  const result = runSelfBootstrapCloseout({
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']),
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root),
+    environment,
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.remote-drift');
+  assert.equal(phase(result, 'install-cli').status, 'not-applicable');
 });
 
 test('无匹配动作not-applicable且身份漂移fail closed', (t) => {

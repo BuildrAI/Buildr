@@ -13,6 +13,7 @@ import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-pro
 import {
   adoptAgentReviewedGitCarrier,
   createIsolatedGitCarrier,
+  inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
@@ -443,19 +444,26 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
         if (remote.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-observation-failed', exitCode: remote.result.status, message: 'Unable to observe remote target ref.', diagnostic: remote.observation.stderr } };
         const observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
         const alreadyDelivered = observedTargetRef === run.deliveryCarrier.head;
-        const zeroDeltaAlreadyContained = run.deliveryCarrier.zeroDelta === true
+        const zeroDeltaContainment = run.deliveryCarrier.zeroDelta === true
           && observedTargetRef === run.deliveryCarrier.expectedTargetRef
-          && observedTargetRef === run.deliveryCarrier.head;
-        let alreadyContained = zeroDeltaAlreadyContained;
-        let containment = zeroDeltaAlreadyContained ? {
-          status: 'contained',
-          code: 'task-finish.agent-reviewed-zero-delta-contained',
-          proof: 'agent-reviewed-zero-delta',
-          carrierRef: run.deliveryCarrier.head,
-          targetRef: observedTargetRef,
-          changedPaths: [],
-          identity: digest({ carrierRef: run.deliveryCarrier.head, targetRef: observedTargetRef, proof: 'agent-reviewed-zero-delta' }),
-        } : null;
+          && observedTargetRef === run.deliveryCarrier.head
+          ? inspectAgentReviewedZeroDeltaContainment({ repositoryRoot: retainedRoot, targetRef: observedTargetRef, carrier: run.deliveryCarrier, runId: run.runId })
+          : null;
+        if (zeroDeltaContainment && zeroDeltaContainment.status !== 'contained') {
+          return {
+            status: 'blocked',
+            operations,
+            failure: {
+              operation: 'carrier-containment',
+              failureClass: 'semantic-review-required',
+              code: zeroDeltaContainment.code,
+              message: 'Agent-reviewed zero-delta Delivery Carrier containment cannot be reconstructed.',
+              findings: [zeroDeltaContainment],
+            },
+          };
+        }
+        let alreadyContained = zeroDeltaContainment?.status === 'contained';
+        let containment = zeroDeltaContainment;
         if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) {
           const fetched = git(retainedRoot, 'deliver-contained-target-fetch', ['fetch', run.identity.remote, run.identity.targetBranch]);
           operations.push(fetched.observation);

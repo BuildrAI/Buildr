@@ -6,7 +6,10 @@ import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-p
 import { isDeepStrictEqual } from 'node:util';
 
 import { createRuntime } from '../../application/compose-runtime.mjs';
-import { inspectGitCarrierContainment } from '../../application/task-finish/git-task-contribution.mjs';
+import {
+  inspectAgentReviewedZeroDeltaContainment,
+  inspectGitCarrierContainment,
+} from '../../application/task-finish/git-task-contribution.mjs';
 import { readFinishCompletion, readFinishRun } from '../../application/task-finish/task-finish-run.mjs';
 
 function cleanupError(code, message, details = null) {
@@ -44,10 +47,14 @@ function completedDelivery(root, run) {
   const disposition = delivery.targetDisposition || 'carrier';
   if (disposition === 'carrier') return delivery.remoteAfterRef === carrierRef;
   if (disposition !== 'already-contained') return false;
-  const observed = inspectGitCarrierContainment({
+  const inspectContainment = delivery.containment?.proof === 'agent-reviewed-zero-delta' || run.deliveryCarrier?.zeroDelta === true
+    ? inspectAgentReviewedZeroDeltaContainment
+    : inspectGitCarrierContainment;
+  const observed = inspectContainment({
     repositoryRoot: root,
     targetRef: delivery.finalRemoteRef,
     carrier: run.deliveryCarrier,
+    runId: run.runId,
   });
   return observed.status === 'contained'
     && isDeepStrictEqual(delivery.containment, observed);

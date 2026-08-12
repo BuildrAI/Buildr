@@ -4,9 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { inspectGitCarrierContainment } from '../../src/application/task-finish/git-task-contribution.mjs';
+import {
+  inspectAgentReviewedZeroDeltaContainment,
+  inspectGitCarrierContainment,
+} from '../../src/application/task-finish/git-task-contribution.mjs';
+import { gitTaskContributionIdentity } from '../../src/infrastructure/git/git-task-contribution.mjs';
 import {
   createFinishRun,
   writeFinishCompletion,
@@ -125,6 +130,213 @@ function alreadyContainedRun(t) {
   return current;
 }
 
+function zeroDeltaContainedRun(t) {
+  const current = readyRun(t);
+  const { root, run, runtime } = current;
+  fs.writeFileSync(path.join(root, '.gitignore'), '/.buildr/\n');
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'original meaning\n');
+  git(root, ['init', '-b', 'dev']);
+  git(root, ['config', 'user.name', 'Buildr Retained Cleanup']);
+  git(root, ['config', 'user.email', 'retained-cleanup@example.com']);
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-m', 'original baseline']);
+  const originalHead = git(root, ['rev-parse', 'HEAD']);
+  const originalTree = git(root, ['rev-parse', 'HEAD^{tree}']);
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'task meaning already present\n');
+  git(root, ['add', 'shared.txt']);
+  git(root, ['commit', '-m', 'later target already contains task meaning']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const baselineTree = git(root, ['rev-parse', 'HEAD^{tree}']);
+  const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', run.runId);
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  git(root, ['worktree', 'add', '--detach', carrierRoot, baselineHead]);
+
+  run.deliveryCarrier = {
+    identity: 'sha256-zero-delta-carrier',
+    status: 'verified',
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    kind: 'git-isolated-commit',
+    root: carrierRoot,
+    head: baselineHead,
+    tree: baselineTree,
+    changedPaths: [],
+    changes: [],
+    activationPaths: ['shared.txt'],
+    zeroDelta: true,
+    deliveryBaseline: { head: baselineHead, tree: baselineTree },
+    taskContribution: {
+      identity: gitTaskContributionIdentity(root, originalTree, baselineTree),
+      originalBaseline: { head: originalHead, tree: originalTree },
+      source: { head: baselineHead, tree: baselineTree },
+    },
+    carrierDeltaIdentity: gitTaskContributionIdentity(carrierRoot, baselineTree, baselineTree),
+    cleanliness: { clean: true },
+  };
+  const containment = inspectAgentReviewedZeroDeltaContainment({
+    repositoryRoot: root,
+    targetRef: baselineHead,
+    carrier: run.deliveryCarrier,
+    runId: run.runId,
+  });
+  assert.equal(containment.status, 'contained');
+  run.delivery = {
+    status: 'delivered',
+    targetDisposition: 'already-contained',
+    carrierRef: baselineHead,
+    remoteAfterRef: baselineHead,
+    finalRemoteRef: baselineHead,
+    containment,
+  };
+  runtime.writeTaskFinishRunPersistence(root, run);
+  writePreparedCompletion(root, run, runtime);
+  return current;
+}
+
+async function realZeroDeltaCleanupRun(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-retained-cleanup-subprocess-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceServiceRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const targetServiceRoot = path.join(root, 'projects', 'product', 'services', 'buildr');
+  fs.mkdirSync(targetServiceRoot, { recursive: true });
+  for (const entry of ['src', 'bin', 'package']) {
+    fs.cpSync(path.join(sourceServiceRoot, entry), path.join(targetServiceRoot, entry), { recursive: true });
+  }
+  for (const entry of ['package.json', 'package-lock.json']) {
+    fs.copyFileSync(path.join(sourceServiceRoot, entry), path.join(targetServiceRoot, entry));
+  }
+  fs.symlinkSync(path.join(sourceServiceRoot, 'node_modules'), path.join(targetServiceRoot, 'node_modules'), 'dir');
+  fs.mkdirSync(path.join(root, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 123e4567-e89b-42d3-a456-426614174004\nname: Retained cleanup subprocess test\ndescription: Retained cleanup subprocess test\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
+  fs.writeFileSync(path.join(root, '.gitignore'), '/.buildr/\n/.agents/\n/.claude/\n/.codex/\n/.cursor/\n/.qoder/\n/.trae/\n/.trae-work/\n/.workbuddy/\n**/node_modules/\n');
+  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Retained cleanup subprocess test\n');
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'original meaning\n');
+  git(root, ['init', '-b', 'dev']);
+  git(root, ['config', 'user.name', 'Buildr Retained Cleanup']);
+  git(root, ['config', 'user.email', 'retained-cleanup@example.com']);
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-m', 'original baseline']);
+
+  const composeRuntimeUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'application', 'compose-runtime.mjs')).href;
+  const executorUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'application', 'task-finish', 'task-finish-product-executor.mjs')).href;
+  const [{ createRuntime: createRetainedRuntime }, { createTaskFinishProductHandlers }] = await Promise.all([
+    import(composeRuntimeUrl),
+    import(executorUrl),
+  ]);
+  const runtime = createRetainedRuntime();
+  runtime.createTaskRecord(root, {
+    taskId: 'zero-delta-subprocess',
+    title: 'Zero Delta Subprocess',
+    intent: 'Exercise retained cleanup through the real subprocess consumer.',
+    projects: [],
+    services: [],
+    changes: [],
+  });
+  const preparedEnvironment = runtime.prepareTaskEnvironment(root, 'zero-delta-subprocess', {
+    useGit: false,
+    plan: {
+      schemaVersion: 'buildr.task-environment-plan/v1',
+      notApplicableReason: 'This fixture has no scoped technical preparation.',
+      services: [],
+    },
+  });
+  assert.equal(preparedEnvironment.status, 'ready', JSON.stringify(preparedEnvironment, null, 2));
+  const originalHead = git(root, ['rev-parse', 'HEAD']);
+  const originalTree = git(root, ['rev-parse', 'HEAD^{tree}']);
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'task meaning already present\n');
+  git(root, ['add', 'shared.txt']);
+  git(root, ['commit', '-m', 'later target already contains task meaning', '-m', 'Buildr-Task: prior-task']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const baselineTree = git(root, ['rev-parse', 'HEAD^{tree}']);
+  const runId = 'zero-delta-subprocess-run';
+  const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  git(root, ['worktree', 'add', '--detach', carrierRoot, baselineHead]);
+  const run = createFinishRun({
+    root,
+    runId,
+    identity: {
+      task: 'zero-delta-subprocess',
+      handoffIdentity: 'sha256-handoff',
+      candidateIdentity: 'sha256-candidate',
+      candidateGeneration: 1,
+      contentTargetIdentity: 'sha256-content-target',
+      agent: 'codex',
+      targetBranch: 'dev',
+      remote: 'origin',
+      environmentRoot: root,
+      workspaceRoot: root,
+      workspaceNodeIdentity: 'sha256-workspace-node',
+    },
+    runtime,
+  });
+  run.deliveryCarrier = {
+    identity: 'sha256-zero-delta-subprocess-carrier',
+    status: 'verified',
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    kind: 'git-isolated-commit',
+    root: carrierRoot,
+    head: baselineHead,
+    tree: baselineTree,
+    changedPaths: [],
+    changes: [],
+    activationPaths: ['shared.txt'],
+    zeroDelta: true,
+    deliveryBaseline: { head: baselineHead, tree: baselineTree },
+    taskContribution: {
+      identity: gitTaskContributionIdentity(root, originalTree, baselineTree),
+      originalBaseline: { head: originalHead, tree: originalTree },
+      source: { head: baselineHead, tree: baselineTree },
+    },
+    carrierDeltaIdentity: gitTaskContributionIdentity(carrierRoot, baselineTree, baselineTree),
+    cleanliness: { clean: true },
+  };
+  const containment = inspectAgentReviewedZeroDeltaContainment({ repositoryRoot: root, targetRef: baselineHead, carrier: run.deliveryCarrier, runId });
+  assert.equal(containment.status, 'contained');
+  run.delivery = {
+    status: 'delivered',
+    targetDisposition: 'already-contained',
+    carrierRef: baselineHead,
+    remoteAfterRef: baselineHead,
+    finalRemoteRef: baselineHead,
+    containment,
+  };
+  run.phases.find((phase) => phase.id === 'deliver').status = 'passed';
+  run.phases.find((phase) => phase.id === 'cleanup').status = 'running';
+  runtime.writeTaskFinishRunPersistence(root, run);
+  writeFinishCompletion({
+    root,
+    runId,
+    completion: {
+      schemaVersion: 'buildr.task-finish-completion/v1',
+      runId,
+      task: run.identity.task,
+      handoffIdentity: run.identity.handoffIdentity,
+      candidateIdentity: run.identity.candidateIdentity,
+      candidateGeneration: run.identity.candidateGeneration,
+      contentTargetIdentity: run.identity.contentTargetIdentity,
+      carrierIdentity: run.deliveryCarrier.identity,
+      carrierRef: baselineHead,
+      finalRemoteRef: baselineHead,
+      targetBranch: 'dev',
+      status: 'prepared',
+      preparedAt: new Date().toISOString(),
+      association: {
+        schemaVersion: 'buildr.task-terminal-delivery-associations/v1',
+        handoffIdentity: run.identity.handoffIdentity,
+        candidateIdentity: run.identity.candidateIdentity,
+        candidateGeneration: run.identity.candidateGeneration,
+        gates: { planning: null, completion: null, verification: null },
+        observedAt: new Date().toISOString(),
+        source: 'task-finish-application',
+      },
+    },
+    runtime,
+  });
+  return { root, run, runtime, carrierRoot, createTaskFinishProductHandlers };
+}
+
 test('retained cleanup bootstrap derives Environment authorization from durable Finish facts', async (t) => {
   const { root, run, runtime: sqliteRuntime } = readyRun(t);
   let authorization = null;
@@ -195,6 +407,60 @@ test('retained cleanup accepts an exact already-contained successor and preserve
   assert.equal(result.status, 'cleaned');
   assert.equal(authorization.candidateRef, run.deliveryCarrier.head);
   assert.deepEqual(authorization.integratedContributions, { workspace: run.deliveryCarrier });
+});
+
+test('retained cleanup reconstructs the dedicated Agent-reviewed zero-delta proof', async (t) => {
+  const { root, run, runtime: sqliteRuntime } = zeroDeltaContainedRun(t);
+  let authorization = null;
+  const runtime = {
+    ...sqliteRuntime,
+    resolveTaskEnvironmentExecution: () => ({
+      ready: true,
+      workspaceRoot: root,
+      environmentRoot: run.identity.environmentRoot,
+      repositories: [{ selector: 'workspace', startPoint: 'dev' }],
+    }),
+    cleanupTaskEnvironment: async (_workspaceRoot, _task, value) => {
+      authorization = value;
+      return { status: 'cleaned', effects: [], diagnostic: null };
+    },
+  };
+  const result = await executeRetainedTaskFinishCleanup({ targetRoot: root, runId: run.runId, runtime });
+  assert.equal(result.status, 'cleaned');
+  assert.equal(authorization.candidateRef, run.deliveryCarrier.head);
+  assert.equal(run.delivery.containment.code, 'task-finish.agent-reviewed-zero-delta-contained');
+  assert.equal(run.delivery.containment.proof, 'agent-reviewed-zero-delta');
+});
+
+test('real retained cleanup subprocess closes zero-delta Environment and carrier ownership', async (t) => {
+  const { root, run, runtime, carrierRoot, createTaskFinishProductHandlers } = await realZeroDeltaCleanupRun(t);
+  const handlers = createTaskFinishProductHandlers({ runtime, root });
+  const result = await handlers.cleanup({ run });
+  assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
+  assert.equal(result.operations.find((item) => item.id === 'cleanup-retained-environment-manager')?.status, 0);
+  assert.equal(runtime.inspectTaskEnvironment(root, run.identity.task).status, 'cleaned');
+  assert.equal(fs.existsSync(carrierRoot), false);
+  assert.equal(runtime.inspectTaskRecord(root, run.identity.task).record.status, 'completed');
+});
+
+test('retained cleanup rejects zero-delta proof, carrier, baseline and target drift before cleanup', async (t) => {
+  const cases = [
+    (run) => { run.delivery.containment = { ...run.delivery.containment, identity: 'sha256-tampered' }; },
+    (run) => { run.deliveryCarrier.zeroDelta = false; },
+    (run, root) => { run.deliveryCarrier.root = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', 'another-run'); },
+    (run) => { run.deliveryCarrier.changedPaths = ['shared.txt']; },
+    (run) => { run.deliveryCarrier.deliveryBaseline = { ...run.deliveryCarrier.deliveryBaseline, tree: '0'.repeat(40) }; },
+    (run) => { run.delivery.finalRemoteRef = run.deliveryCarrier.taskContribution.originalBaseline.head; run.delivery.remoteAfterRef = run.delivery.finalRemoteRef; },
+  ];
+  for (const mutate of cases) {
+    const { root, run, runtime } = zeroDeltaContainedRun(t);
+    mutate(run, root);
+    runtime.writeTaskFinishRunPersistence(root, run);
+    await assert.rejects(
+      executeRetainedTaskFinishCleanup({ targetRoot: root, runId: run.runId, runtime }),
+      (error) => error.code === 'task-finish.retained-cleanup-run-not-ready',
+    );
+  }
 });
 
 test('retained cleanup rejects missing or mismatched already-contained evidence', async (t) => {

@@ -24,6 +24,7 @@ const PRODUCT_ROOT = 'projects/product';
 const SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr`;
 const COMPONENT_PATH = 'components/workspace/buildr-self-bootstrap/component.yml';
 const FINISH_CARRIER_ROOT = '.buildr/transient/task-finish/carriers';
+const TASK_TRAILER = 'Buildr-Task';
 const FINISH_RUN_TRAILER = 'Buildr-Finish-Run';
 const PLAN_TRAILER = 'Buildr-Closeout-Plan';
 
@@ -390,6 +391,50 @@ function commitTrailers(message) {
   return trailers;
 }
 
+function inspectBuildrDescendantChain(execute, workspaceRoot, baseRef, targetRef, phaseResult) {
+  const ancestor = git(execute, workspaceRoot, ['merge-base', '--is-ancestor', baseRef, targetRef], 'descendant-ancestor', phaseResult);
+  if (ancestor.status !== 0) {
+    throw closeoutError(
+      ancestor.status === 1 ? 'self-bootstrap-closeout.descendant-not-ancestor' : 'self-bootstrap-closeout.descendant-ancestry-unreadable',
+      '当前HEAD不是Finish final ref的可证明后继。',
+      { baseRef, targetRef, exitCode: ancestor.status, stderr: String(ancestor.stderr || '').trim() },
+    );
+  }
+  const merges = gitText(execute, workspaceRoot, ['rev-list', '--merges', `${baseRef}..${targetRef}`], 'descendant-merges', phaseResult, 'self-bootstrap-closeout.descendant-history-unreadable');
+  if (merges) {
+    throw closeoutError('self-bootstrap-closeout.descendant-merge-unprovable', 'Finish final ref之后的Buildr后继链包含merge commit。', {
+      baseRef,
+      targetRef,
+      merges: merges.split('\n').filter(Boolean),
+    });
+  }
+  const commits = gitText(execute, workspaceRoot, ['rev-list', '--reverse', '--first-parent', `${baseRef}..${targetRef}`], 'descendant-commits', phaseResult, 'self-bootstrap-closeout.descendant-history-unreadable')
+    .split('\n').filter(Boolean);
+  const provenance = [];
+  for (const commit of commits) {
+    const message = gitText(execute, workspaceRoot, ['show', '-s', '--format=%B', commit], `descendant-message-${commit.slice(0, 12)}`, phaseResult, 'self-bootstrap-closeout.descendant-message-unreadable');
+    const trailers = commitTrailers(message);
+    const taskOwned = Boolean(trailers[TASK_TRAILER]);
+    const closeoutOwned = Boolean(trailers[FINISH_RUN_TRAILER] && trailers[PLAN_TRAILER]);
+    if (!taskOwned && !closeoutOwned) {
+      throw closeoutError('self-bootstrap-closeout.successor-identity-unprovable', 'Finish final ref之后存在无法证明由Buildr拥有的commit。', {
+        baseRef,
+        targetRef,
+        commit,
+        trailers,
+      });
+    }
+    provenance.push({
+      commit,
+      owner: taskOwned ? 'task-finish' : 'self-bootstrap-closeout',
+      taskId: trailers[TASK_TRAILER] || null,
+      finishRunId: trailers[FINISH_RUN_TRAILER] || null,
+      closeoutPlanIdentity: trailers[PLAN_TRAILER] || null,
+    });
+  }
+  return provenance;
+}
+
 function markNotApplicable(stage, reason) {
   stage.status = 'not-applicable';
   stage.diagnostic = { code: 'self-bootstrap-closeout.not-applicable', message: reason };
@@ -458,20 +503,32 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     const head = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'head', active, 'self-bootstrap-closeout.head-unavailable');
     const remote = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-before');
     let recovery = 'fresh';
+    let activationBaseRef = plan.baseRef;
     if (head === plan.baseRef) {
       if (remote !== plan.baseRef) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Remote已偏离Finish final ref。', { expected: plan.baseRef, actual: remote });
     } else {
+      const provenance = inspectBuildrDescendantChain(execute, root, plan.baseRef, head, active);
       const parent = gitText(execute, root, ['rev-parse', 'HEAD^'], 'successor-parent', active, 'self-bootstrap-closeout.successor-parent-unavailable');
-      const count = gitText(execute, root, ['rev-list', '--count', `${plan.baseRef}..HEAD`], 'successor-count', active, 'self-bootstrap-closeout.successor-count-unavailable');
       const message = gitText(execute, root, ['show', '-s', '--format=%B', 'HEAD'], 'successor-message', active, 'self-bootstrap-closeout.successor-message-unavailable');
       const trailers = commitTrailers(message);
-      if (parent !== plan.baseRef || count !== '1' || trailers[FINISH_RUN_TRAILER] !== plan.runId || trailers[PLAN_TRAILER] !== plan.identity) {
-        throw closeoutError('self-bootstrap-closeout.successor-identity-unprovable', 'HEAD不是当前run/plan绑定的单一successor。', { head, parent, count, trailers });
+      const currentRunSuccessor = trailers[FINISH_RUN_TRAILER] === plan.runId && trailers[PLAN_TRAILER] === plan.identity;
+      if (currentRunSuccessor) {
+        if (![parent, head].includes(remote)) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Remote既不是当前activation base，也不是当前run的合法successor。', { baseRef: plan.baseRef, activationBaseRef: parent, head, remote });
+        activationBaseRef = parent;
+        recovery = remote === head ? 'already-complete' : 'resume-after-commit';
+      } else {
+        if (remote !== head) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Buildr后继链尚未完整发布到目标remote。', { baseRef: plan.baseRef, head, remote });
+        activationBaseRef = head;
+        recovery = 'fresh-descendant';
       }
-      if (![plan.baseRef, head].includes(remote)) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Remote既不是Finish final ref，也不是当前合法successor。', { baseRef: plan.baseRef, head, remote });
-      recovery = remote === head ? 'already-complete' : 'resume-after-commit';
+      active.effects.push({ type: 'buildr-descendant-chain', baseRef: plan.baseRef, head, provenance });
     }
-    markPassed(active, finishResult.resolvedContext.identity, head);
+    markPassed(active, finishResult.resolvedContext.identity, head, [{
+      type: 'activation-base-selected',
+      frozenRef: plan.baseRef,
+      activationBaseRef,
+      recovery,
+    }]);
 
     active = stages.get('plan');
     markPassed(active, finishResult.resolvedContext.identity, plan.identity);
@@ -483,11 +540,11 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       const synced = productCommand(execute, root, nodeExecutable, ['sync', plan.agent, '--target', root, '--json'], 'workspace-sync', active);
       requirePassed(synced, 'self-bootstrap-closeout.sync-failed', 'Retained Workspace sync失败。');
       const ownedPaths = changedPaths(execute, root, active, 'post-sync', changeObservation);
-      if (recovery !== 'fresh' && ownedPaths.length) throw closeoutError('self-bootstrap-closeout.successor-sync-drift', '合法successor存在，但重算sync仍产生delta。', { changedPaths: ownedPaths });
+      if (['resume-after-commit', 'already-complete'].includes(recovery) && ownedPaths.length) throw closeoutError('self-bootstrap-closeout.successor-sync-drift', '当前run的合法successor存在，但重算sync仍产生delta。', { changedPaths: ownedPaths });
       markPassed(active, plan.identity, digest({ ownedPaths }), ownedPaths.length ? [{ type: 'workspace-sync', paths: ownedPaths }] : []);
 
       active = stages.get('commit');
-      if (recovery === 'fresh' && ownedPaths.length) {
+      if (['fresh', 'fresh-descendant'].includes(recovery) && ownedPaths.length) {
         const added = git(execute, root, ['add', '--', ...ownedPaths], 'stage-owned-paths', active);
         requirePassed(added, 'self-bootstrap-closeout.stage-failed', '精确stage sync delta失败。', { ownedPaths });
         const staged = zeroList(gitText(execute, root, ['diff', '--cached', '--name-only', '-z'], 'staged-readback', active, 'self-bootstrap-closeout.staged-readback-failed'));
@@ -500,17 +557,17 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
         requirePassed(committed, 'self-bootstrap-closeout.commit-failed', '创建独立successor commit失败。');
         successor = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'successor-head', active, 'self-bootstrap-closeout.successor-head-unavailable');
         const parent = gitText(execute, root, ['rev-parse', 'HEAD^'], 'successor-parent-readback', active, 'self-bootstrap-closeout.successor-parent-unavailable');
-        if (parent !== plan.baseRef) throw closeoutError('self-bootstrap-closeout.successor-parent-mismatch', 'successor commit不是Finish final ref的单一后继。', { expected: plan.baseRef, actual: parent });
-        markPassed(active, plan.baseRef, successor, [{ type: 'git-commit', ref: successor, paths: ownedPaths }]);
+        if (parent !== activationBaseRef) throw closeoutError('self-bootstrap-closeout.successor-parent-mismatch', 'successor commit不是当前activation base的单一后继。', { expected: activationBaseRef, actual: parent, frozenRef: plan.baseRef });
+        markPassed(active, activationBaseRef, successor, [{ type: 'git-commit', ref: successor, paths: ownedPaths }]);
       } else {
         successor = head;
-        markPassed(active, plan.baseRef, successor);
+        markPassed(active, activationBaseRef, successor);
       }
 
       active = stages.get('push');
       const beforePush = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-before-push');
       if (beforePush !== successor) {
-        if (beforePush !== plan.baseRef) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Push前remote不再等于Finish final ref。', { expected: plan.baseRef, actual: beforePush });
+        if (beforePush !== activationBaseRef) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Push前remote不再等于当前activation base。', { expected: activationBaseRef, actual: beforePush, frozenRef: plan.baseRef });
         const pushed = git(execute, root, ['push', plan.remote, `HEAD:${plan.targetBranch}`], 'successor-push', active);
         requirePassed(pushed, 'self-bootstrap-closeout.push-failed', '普通push失败；本地successor commit已保留。', { successor, remoteBefore: beforePush });
         active.effects.push({ type: 'git-push', remote: plan.remote, branch: plan.targetBranch, ref: successor });
