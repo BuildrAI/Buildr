@@ -5,14 +5,14 @@
 ## 所有权边界
 
 - Service 拥有 Local App 前端工程：`package.json`、Vite/TypeScript 配置、`src/` 与前端依赖锁定。
-- 正式构建产物写入相邻 `buildr` Service 的 `../buildr/src/interfaces/local-app/web-dist/`；运行时同源 loopback 托管、session 注入与三入口打包仍由该 Service 负责。
+- 正式构建产物的交付位置是相邻 `buildr` Service 的 `../buildr/src/interfaces/local-app/web-dist/`；运行时同源 loopback 托管、session 注入与三入口打包仍由该 Service 负责。
 - OpenSpec、verification policy 与跨服务产品治理仍在父级 `projects/product/`；本目录不维护独立 OpenSpec 根。
 - 已安装或仅含 dist 的环境不得依赖本 Service 源码树或 Vite 开发服务器。
 
 ## UI 栈与验收
 
 - UI 以 Ant Design 5（`antd` + 必要 icons）承载布局/表格/表单/弹层，视觉方向为柔和产品感；依赖与字体均由 Vite 打入 `web-dist`，禁止 CDN/远程字体/远程脚本。
-- 正式浏览器验收走 `buildr app` 生产托管的 `web-dist`；尽量保留稳定 DOM id / `data-*` 钩子供 browser smoke 使用。
+- 正式浏览器验收目标必须是生产托管的 `web-dist`，不得以 Vite 开发服务器替代；尽量保留稳定 DOM id / `data-*` 钩子供 browser smoke 使用。
 
 ## 前端开发规则
 
@@ -96,7 +96,7 @@
 
 ### 可维护性硬约束
 
-- 单文件过长（大致超过 ~400 行）或同时承担“请求 + 表格配置 + 表单 + 弹层 + 样式”时，必须拆分后再继续加功能。
+- 同一文件同时承担“请求 + 表格配置 + 表单 + 弹层 + 样式”等多类职责时，必须先按职责拆分再继续加功能。
 - 修改现有页面时保持原模块边界；重构拆分优先抽出：类型与常量 → 纯函数 → 页面内组件 → 数据 hooks；确认跨页复用后再提升为公共组件。
 - 稳定 DOM `id` / `data-*` 钩子是验收契约，重命名或删除前必须确认 browser smoke / 自动化仍可用。
 - 新增依赖必须服务明确前端职责，并保持同源打包；不得为样式或逻辑引入会破坏 CSP / 离线托管的远程资源。
@@ -109,9 +109,3 @@
 - 在展示组件内发起未封装的网络请求，或在 `api/` 中操作 React 状态。
 - 未证明跨页共享必要就引入 Redux/Zustand 等正式全局 Store，或并行维护多套状态方案。
 - 用新的全局 class 名覆盖 antd 内部结构作为默认定制方式（优先 theme token；确需覆盖时范围最小化并注释原因）。
-
-## 开发与构建
-
-- 在本目录执行 `npm install`、`npm run dev`、`npm run build`。
-- 从相邻 `../buildr` 目录也可使用 `npm run build:web` / `npm run dev:web`（委托到本目录）。
-- 修改前端路由、DOM 交互或 Agent Action 后，在相邻 `../buildr` 目录走生产托管路径的 browser smoke 做反馈。

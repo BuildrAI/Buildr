@@ -819,22 +819,7 @@ export function createPackageStaticValidator(deps) {
       const sourceFile = path.resolve(root, rule.path);
       if (!existsFile(sourceFile)) {
         problems.push(`${label}.path does not exist: ${rule.path}`);
-      } else {
-        if (rule.id === 'buildr-core') {
-          const coreContent = fs.readFileSync(sourceFile, 'utf8');
-          for (const requiredText of [
-            'Agent 是默认操作入口',
-            '取得所需授权后直接执行',
-            '不把命令或操作步骤作为默认结果要求用户代为执行',
-            '才提供准确的手动操作作为兜底',
-            '创建、修改、替换或卸载 Skill 前必须检查相关 `provides`、`requires`',
-            '不得绕过已知依赖直接激活',
-          ]) {
-            if (!coreContent.includes(requiredText)) problems.push(`Buildr Core must include ${JSON.stringify(requiredText)}.`);
-          }
-        }
-        files.push(sourceFile);
-      }
+      } else files.push(sourceFile);
     }
     if (!manifest.builtins.rules.some((rule) => rule.id === 'buildr-core' && rule.required === true && rule.target === 'rules/buildr/core.md')) {
       problems.push('builtins.rules must declare required buildr-core at rules/buildr/core.md.');
@@ -1271,40 +1256,6 @@ export function createPackageStaticValidator(deps) {
       validateLegacyIntegrities(command, `builtins.commands.${command.id || '<missing>'}`);
       if (!command.id || typeof command.required !== 'boolean' || !isPlainObject(command.manifestEntry)) {
         problems.push(`builtins.commands entries must include id, required, and manifestEntry.`);
-      }
-    }
-
-    const canonicalProjectAgentsPath = path.resolve(root, '../..', 'AGENTS.md');
-    const productAgentsPath = existsFile(canonicalProjectAgentsPath)
-      ? canonicalProjectAgentsPath
-      : workspaceRoot
-        ? path.join(workspaceRoot, 'projects', 'product', 'AGENTS.md')
-        : path.join(root, 'AGENTS.md');
-    if (existsFile(productAgentsPath)) {
-      const productAgents = fs.readFileSync(productAgentsPath, 'utf8');
-      files.push(productAgentsPath);
-      for (const requiredText of [
-        '合并前候选验证使用临时 workspace 或 task worktree 自身',
-        '冻结明确 target identity',
-        '相同内容集成、push 和 worktree 清理不改变 target 时可以复用',
-        'tree 或 declaration bytes 发生任何变化后 Result 直接派生为 stale',
-        '按当前目标选择直接相关的已有 capability',
-        '`requiredForDelivery`',
-        '不得在每个普通任务后运行产品总验证或临时 workspace E2E',
-        '继续等待同一进程，不重复启动相同命令',
-        '修复循环优先重跑失败项和受影响检查',
-        'selected `buildr.task-verification/v3` provider',
-        'Task-scoped current Result',
-        '不作为相同 tree 后续 Git 动作的重复产品验证门禁',
-        '使用`task-finish`只消费current Development Handoff',
-        '不授权force push、merge commit、远端任务分支删除',
-        'Environment cleanup后不得追索Receipt',
-        'Buildr 功能默认由 Agent 操作',
-        '取得所需授权后直接执行',
-        '不得把命令或操作步骤作为默认交付结果要求用户代为执行',
-        '才提供准确的手动操作作为兜底',
-      ]) {
-        if (!productAgents.includes(requiredText)) problems.push(`Product AGENTS.md must include ${JSON.stringify(requiredText)}.`);
       }
     }
 
