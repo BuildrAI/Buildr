@@ -6,8 +6,10 @@ import test from 'node:test';
 
 import {
   ensureWorkspaceNodeRuntime,
+  acquireRuntimeInstallLock,
   normalizeNodePlatform,
   probeWorkspaceNodeRuntime,
+  releaseRuntimeInstallLock,
   runRuntimeFilesystemOperation,
   runtimeTreeRemovalOptions,
   workspaceNodeIdentity,
@@ -83,6 +85,78 @@ test('Windows runtime 文件操作会恢复瞬时 EPERM，并在耗尽后保留�
       && error.operation === 'cleanup-stage'
       && error.target === 'C:\\runtime.tmp'
       && /cleanup-stage failed/.test(error.message),
+  );
+});
+
+test('runtime install lock 等待活跃 owner，并回收已退出 owner 的遗留锁', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-lock-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dataRoot = path.join(root, 'data');
+  const source = path.join(root, 'source');
+  fixtureRuntime(source);
+  const options = { dataRoot, platform: 'darwin', arch: 'arm64', sourceRoot: source };
+  const paths = workspaceNodeRuntimePaths(WORKSPACE.runtime.node.version, options);
+  fs.mkdirSync(path.dirname(paths.root), { recursive: true });
+  const lockFile = `${paths.root}.lock`;
+
+  const active = {
+    schemaVersion: 'buildr.workspace-node-runtime-install-lock/v1',
+    pid: 4242,
+    token: 'active-owner',
+    createdAt: '2026-08-12T00:00:00.000Z',
+  };
+  fs.writeFileSync(lockFile, `${JSON.stringify(active)}\n`);
+  let waits = 0;
+  const reused = acquireRuntimeInstallLock(lockFile, WORKSPACE, {
+    ...options,
+    runtimeInstallOwnerAlive: () => true,
+    runtimeInstallLockWait() {
+      waits += 1;
+      fixtureRuntime(paths.root);
+    },
+  });
+  assert.equal(reused.owner, false);
+  assert.equal(reused.winner.status, 'ready');
+  assert.equal(waits, 1);
+  fs.rmSync(lockFile, { force: true });
+  fs.rmSync(paths.root, { recursive: true, force: true });
+
+  const stale = { ...active, pid: 4343, token: 'stale-owner' };
+  fs.writeFileSync(lockFile, `${JSON.stringify(stale)}\n`);
+  const acquired = acquireRuntimeInstallLock(lockFile, WORKSPACE, {
+    ...options,
+    runtimeInstallOwnerAlive: () => false,
+  });
+  assert.equal(acquired.owner, true);
+  assert.notEqual(acquired.record.token, stale.token);
+  assert.equal(releaseRuntimeInstallLock(acquired, options), true);
+  assert.equal(fs.existsSync(lockFile), false);
+});
+
+test('runtime install lock 只允许当前 token 释放，等待耗尽保留 owner 诊断', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-lock-token-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const lockFile = path.join(root, 'runtime.lock');
+  const workspace = { ...WORKSPACE, runtime: { node: { version: '99.0.0' } } };
+  const owner = acquireRuntimeInstallLock(lockFile, workspace, { platform: 'darwin', dataRoot: root });
+  const replacement = { ...owner.record, token: 'replacement-owner' };
+  fs.writeFileSync(lockFile, `${JSON.stringify(replacement)}\n`);
+  assert.equal(releaseRuntimeInstallLock(owner, { platform: 'darwin' }), false);
+  assert.equal(fs.existsSync(lockFile), true);
+
+  let now = 0;
+  assert.throws(
+    () => acquireRuntimeInstallLock(lockFile, workspace, {
+      platform: 'darwin',
+      dataRoot: root,
+      lockTimeoutMs: 100,
+      runtimeInstallOwnerAlive: () => true,
+      runtimeInstallLockNow: () => now,
+      runtimeInstallLockWait: (milliseconds) => { now += milliseconds; },
+    }),
+    (error) => error.code === 'workspace_node_runtime_install_locked'
+      && error.operation === 'wait-for-lock'
+      && /pid=/.test(error.message),
   );
 });
 

@@ -13,6 +13,8 @@ const INSTALL_TIMEOUT_MS = 180_000;
 const WINDOWS_FILESYSTEM_RETRY_TIMEOUT_MS = 5_000;
 const WINDOWS_FILESYSTEM_RETRY_DELAY_MS = 100;
 const TRANSIENT_WINDOWS_FILESYSTEM_ERRORS = new Set(['EACCES', 'EBUSY', 'EPERM']);
+const RUNTIME_INSTALL_LOCK_SCHEMA = 'buildr.workspace-node-runtime-install-lock/v1';
+const RUNTIME_INSTALL_LOCK_INITIALIZATION_GRACE_MS = 1_000;
 
 function wait(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
@@ -218,8 +220,92 @@ function installFromCurrent(stage, version) {
   if (fs.existsSync(npx)) fs.symlinkSync(fs.realpathSync(npx), path.join(bin, 'npx'));
 }
 
-function waitForLock(lock, deadline) {
-  while (fs.existsSync(lock) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+function readRuntimeInstallLock(lock) {
+  try {
+    const raw = fs.readFileSync(lock, 'utf8');
+    const value = JSON.parse(raw);
+    const record = value?.schemaVersion === RUNTIME_INSTALL_LOCK_SCHEMA
+      && Number.isInteger(value.pid) && value.pid > 0
+      && typeof value.token === 'string' && value.token.length > 0
+      && typeof value.createdAt === 'string'
+      ? value
+      : null;
+    return { raw, record, modifiedAtMs: fs.statSync(lock).mtimeMs };
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    try { return { raw: null, record: null, modifiedAtMs: fs.statSync(lock).mtimeMs }; } catch { return null; }
+  }
+}
+
+function runtimeInstallOwnerAlive(pid, options = {}) {
+  if (options.runtimeInstallOwnerAlive) return options.runtimeInstallOwnerAlive(pid);
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== 'ESRCH';
+  }
+}
+
+function reclaimRuntimeInstallLock(lock, observed, options = {}) {
+  const current = readRuntimeInstallLock(lock);
+  if (!current || current.raw !== observed.raw || current.modifiedAtMs !== observed.modifiedAtMs) return false;
+  runRuntimeFilesystemOperation('reclaim-stale-lock', lock, () => fs.rmSync(lock, { force: true }), options);
+  return true;
+}
+
+export function acquireRuntimeInstallLock(lock, workspace, options = {}) {
+  const now = options.runtimeInstallLockNow || Date.now;
+  const pause = options.runtimeInstallLockWait || wait;
+  const timeoutMs = options.lockTimeoutMs ?? INSTALL_TIMEOUT_MS;
+  const deadline = now() + timeoutMs;
+  while (true) {
+    let descriptor;
+    try {
+      descriptor = fs.openSync(lock, 'wx');
+      const record = {
+        schemaVersion: RUNTIME_INSTALL_LOCK_SCHEMA,
+        pid: process.pid,
+        token: crypto.randomBytes(12).toString('hex'),
+        createdAt: new Date(now()).toISOString(),
+      };
+      fs.writeFileSync(descriptor, `${JSON.stringify(record)}\n`);
+      fs.closeSync(descriptor);
+      return { owner: true, file: lock, record, winner: null };
+    } catch (error) {
+      if (descriptor !== undefined) {
+        try { fs.closeSync(descriptor); } catch { /* already closed */ }
+      }
+      if (error.code !== 'EEXIST') throw runtimeFilesystemError('acquire-lock', lock, error);
+      const winner = probeWorkspaceNodeRuntime(workspace, options);
+      if (winner.status === 'ready') return { owner: false, file: lock, record: null, winner };
+      const observed = readRuntimeInstallLock(lock);
+      const observedAt = now();
+      const initializing = observed && !observed.record && observedAt - observed.modifiedAtMs < RUNTIME_INSTALL_LOCK_INITIALIZATION_GRACE_MS;
+      const ownerAlive = observed?.record ? runtimeInstallOwnerAlive(observed.record.pid, options) : false;
+      if (observed && !initializing && !ownerAlive) {
+        reclaimRuntimeInstallLock(lock, observed, options);
+        continue;
+      }
+      if (observedAt >= deadline) {
+        const owner = observed?.record ? `pid=${observed.record.pid} createdAt=${observed.record.createdAt}` : 'owner=initializing-or-unknown';
+        const error = new Error(`Workspace Node runtime install lock wait expired for ${lock}: ${owner}`);
+        error.code = 'workspace_node_runtime_install_locked';
+        error.operation = 'wait-for-lock';
+        error.target = lock;
+        throw error;
+      }
+      pause(Math.min(50, Math.max(1, deadline - observedAt)));
+    }
+  }
+}
+
+export function releaseRuntimeInstallLock(lock, options = {}) {
+  if (!lock?.owner) return false;
+  const current = readRuntimeInstallLock(lock.file);
+  if (!current?.record || current.record.token !== lock.record.token) return false;
+  runRuntimeFilesystemOperation('release-lock', lock.file, () => fs.rmSync(lock.file, { force: true }), options);
+  return true;
 }
 
 function renameRuntimeStage(stage, target, workspace, options) {
@@ -246,14 +332,8 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
   const paths = initial.paths;
   fs.mkdirSync(path.dirname(paths.root), { recursive: true });
   const lock = `${paths.root}.lock`;
-  const deadline = Date.now() + (options.lockTimeoutMs || 30_000);
-  waitForLock(lock, deadline);
-  let descriptor;
-  try { descriptor = fs.openSync(lock, 'wx'); } catch (error) {
-    const afterWait = probeWorkspaceNodeRuntime(workspace, options);
-    if (afterWait.status === 'ready') return { ...afterWait, action: 'reused-after-wait' };
-    throw new Error(`Workspace Node runtime install is locked: ${lock}`);
-  }
+  const installLock = acquireRuntimeInstallLock(lock, workspace, { ...options, platform: paths.platform });
+  if (!installLock.owner) return { ...installLock.winner, action: 'reused-after-wait' };
   const stage = `${paths.root}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
   let primaryError = null;
   try {
@@ -297,9 +377,8 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
     } catch (error) {
       cleanupErrors.push(error);
     }
-    try { fs.closeSync(descriptor); } catch { /* already closed */ }
     try {
-      runRuntimeFilesystemOperation('release-lock', lock, () => fs.rmSync(lock, { force: true }), { ...options, platform: initial.paths.platform });
+      releaseRuntimeInstallLock(installLock, { ...options, platform: initial.paths.platform });
     } catch (error) {
       cleanupErrors.push(error);
     }
