@@ -36,8 +36,8 @@
 - [x] 准备公开 example workspace，展示 Organization/Root、Project、Service、Rules、Skills 和 runtime 投射的最小路径。
 - [x] 完成去私有化检查，覆盖模板、默认目录、归档文档、示例内容、作者信息、URL、邮箱和组织内部术语。
 - [x] 建立 GitHub Actions 最小 CI，运行 `projects/product/services/buildr/scripts/verify-buildr-product`。
-- [ ] 在 macOS/Windows × Node 24.15.0/当前 24.x 的四个完整 Candidate 中验证正式 tarball 生命周期；Node 25 及未来主版本须另建适配任务后再加入支持范围。
-- [ ] 新 workflow 首次产生 check contexts 后更新 branch protection：`dev` 要求两个 `windows-platform-preflight` Node 矩阵，`main` 要求四个 `product` OS/Node 矩阵；删除历史 `product (20)`、`product (22)` 和两个独立 `release-smoke` required contexts。修改前后均从 GitHub 回读精确 context 名称，不凭文档猜测。
+- [ ] 在 macOS/Windows × Node 24.15.0 的两个完整受管 runtime Candidate，以及 macOS/Windows × 最低/当前 24.x 的四个短版 Host Node 兼容验证中证明支持范围；Node 25 及未来主版本须另建适配任务后再加入。
+- [ ] 新 workflow 首次产生 check contexts 后更新 branch protection：`dev` 要求两个 `windows-platform-preflight` Node 矩阵，`main` 要求两个 `managed-runtime-candidate` 与两个 `current-host-node` context；删除历史 `product (20)`、`product (22)` 和两个独立 `release-smoke` required contexts。修改前后均从 GitHub 回读精确 context 名称，不凭文档猜测。
 - [x] 明确 npm registry 发布流程：`@buildr-ai/buildr`、RC 使用 `next`、稳定版使用 `latest`、tag/version fail closed、GitHub Environment 审批和 OIDC trusted publishing。
 - [x] 将干净候选快照推到 `BuildrAI/Buildr`，在真实 GitHub runner 通过 CI，并配置 `main`/`dev` branch protection 与 Private Vulnerability Reporting。
 - [x] 通过 2FA 首次发布 `0.1.0-rc.1`，随后为 `@buildr-ai/buildr` 配置 GitHub trusted publisher。
@@ -112,7 +112,7 @@ npm run test:focus -- workspace-lifecycle
 npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
-正式任务在所有 rebase、冲突解决和内容修改结束后，通过 Task Verification 对最终冻结 Candidate 执行 delivery-required `product.delivery`。普通任务由 changed planner 运行 affected；全局验证 owner 变化时同一 plan 运行 full。Release、用户明确全量要求和 CI/publish 另行调用以下显式完整回归兼容入口：
+正式任务在所有 rebase、冲突解决和内容修改结束后，通过 Task Verification 对最终冻结 Candidate 执行 delivery-required `product.delivery`。普通任务由 changed planner 运行 affected；全局验证 owner 变化时同一 plan 运行 full。候选发布准备、用户明确全量要求和 `dev → main` Candidate CI 另行调用以下显式完整回归兼容入口。tag 发布不重复运行它，而是验证唯一 release artifact：
 
 ```bash
 npm run test:candidate
@@ -138,9 +138,11 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 4. package version 与 Git tag 必须完全一致。当前准备的 `0.1.0-rc.8` 将对应 `v0.1.0-rc.8` 和 `next`；稳定版 `0.1.0` 对应 `v0.1.0` 和 `latest`。
 5. 首个 `@buildr-ai/buildr` package 已由 npm Organization owner `elevenching2` 使用 2FA 执行 `npm publish --access public --tag next`，于 2026-07-13 完成。
 6. npm trusted publisher 已配置为 GitHub user `elevenching`、repository `Buildr`、workflow `publish.yml`、Environment `npm-production`、allowed action `npm publish`。
-7. 后续发布只由 release tag 触发 GitHub-hosted workflow；workflow 在 registry write 和 npm publish 前使用同一提取器生成临时 notes file，缺失、重复或空的目标版本章节会 fail closed。Environment 人工批准后运行完整验证、候选安全检查、publish，并使用该 notes file、已有远端 tag 和正确 prerelease/Latest 状态创建 GitHub Release。
-8. 已发布版本不覆盖。RC 问题发布新的 prerelease；正式版本问题优先发布 patch，必要时 deprecate 或移动 dist-tag，不把 unpublish 当作常规回滚。
-9. tag、npm version/dist-tag、GitHub Release 和安装 smoke 全部验证成功后，查询远端 `tasks/release-<version>`。如存在，先展示 ref、commit 和稳定发布证据并取得用户明确授权，再删除并复核远端 ref 不存在；未授权或清理失败只记录 follow-up，不回滚或重做发布。
+7. 后续发布只由 release tag 触发 GitHub-hosted workflow；workflow 在 registry write 前提取 notes，并只执行一次 `npm pack`，生成带 filename、inventory、SHA-256 与 SHA-512 integrity 的 manifest。发布前 smoke、`npm publish <tarball>` 和 CI artifact upload 必须消费同一个 tarball，不再重复完整 Candidate。
+8. 目标 npm version 不存在时才发布；已存在时必须比较官方 registry `dist.integrity`，一致才跳过 publish，不一致立即 fail closed。publish 后以有界重试确认 version、integrity 与目标 dist-tag，再从官方 registry 安装精确 `name@version` 并运行同一 CLI 生命周期 smoke。
+9. GitHub Release 使用 ensure 语义：不存在时按 CHANGELOG 创建，存在时核对 tag、commit、body 与 prerelease/Latest，不一致时不覆盖。npm 或 GitHub Release 已成功但后续失败时，保留这些不可逆事实；同一 tag 重跑只补齐缺失步骤，不删除 tag、不重复 publish、不 unpublish。
+10. 已发布版本不覆盖。RC 问题发布新的 prerelease；正式版本问题优先发布 patch，必要时 deprecate 或移动 dist-tag，不把 unpublish 当作常规回滚。
+11. tag、npm version/dist-tag、GitHub Release 和官方 registry 精确版本安装 smoke 全部验证成功后，查询远端 `tasks/release-<version>`。如存在，先展示 ref、commit 和稳定发布证据并取得用户明确授权，再删除并复核远端 ref 不存在；未授权或清理失败只记录 follow-up，不回滚或重做发布。
 
 `0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6` 和 `0.1.0-rc.7` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用；`0.1.0-rc.8` 当前按同一 trusted publishing 流程准备，发布事实以 npm 官方 registry 和对应 GitHub prerelease 为准。后续发布仍需每次具有明确发布意图。
 

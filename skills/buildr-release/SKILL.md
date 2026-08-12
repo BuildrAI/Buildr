@@ -25,7 +25,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 3. 检查工作区、worktree、`dev`、`main`、远端、现有 tags、对应 GitHub Releases 和最近 publish workflow。
 4. 使用 npm 官方 registry 查询 package 版本和 dist-tags；本机 install 镜像不能替代发布状态事实。
 5. 确认当前版本、目标版本、发布类型和预期 npm tag：prerelease 使用 `next`，稳定版使用 `latest`。
-6. 证明目标 package version、Git tag 和 GitHub Release 尚不存在。已经发布的版本不得覆盖或复用。
+6. 新发布必须证明目标 package version、Git tag 和 GitHub Release 尚不存在；恢复同一 tag 的中断发布时分别核对已有事实，不把“已存在”直接视为成功或冲突。已经发布的 npm version 不得覆盖或复用为另一制品。
 7. 使用 `node projects/product/services/buildr/scripts/release/release-notes.mjs <version> CHANGELOG.md` 生成目标版本的最终 GitHub Release notes 预览；目标章节缺失、重复或没有具体内容时视为发布阻塞。
 
 版本不明确时，根据现有版本提出下一合法版本并让用户确认。RC 问题使用新的 prerelease 序号；稳定版本问题使用新的 patch，不把 unpublish 当作常规回滚。
@@ -39,6 +39,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - CHANGELOG、README 当前版本入口、known limitations 和 release checklist 与目标类型一致。
 - `CHANGELOG.md` 存在唯一的 `## <version> - <YYYY-MM-DD>` 章节，release notes 提取器输出与目标版本一致且不包含相邻版本内容。
 - CI、trusted publisher、`npm-production` Environment 和 publish workflow 仍存在。
+- tag workflow 只生成一次带 manifest/integrity 的 release tarball，发布前 smoke 与 `npm publish <tarball>` 消费同一文件，并且不重复运行完整 Candidate。
 - 候选版没有误用 `latest`；稳定版没有误用 `next`。
 - 稳定版的 RC 反馈、发布阻塞 Issue 和已知限制已经明确评估。
 
@@ -71,17 +72,18 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 只有用户明确要求发布对应候选版或稳定版时执行：
 
 1. fetch 远端并确认本地 `main`、`origin/main` 和已准备的候选提交一致；工作区必须干净。
-2. 再次执行只读发布检查，确认目标 npm version、Git tag 和 GitHub Release 不存在。
+2. 再次执行只读发布检查。首次发布确认目标 npm version、Git tag 和 GitHub Release 不存在；继续中断发布则记录已有 tag、npm version/integrity、dist-tag 和 GitHub Release 的精确状态。
 3. 确认 `package.json` version 与将创建的 `v<version>` 完全一致。
 4. 在已验证的 `main` 提交创建 annotated 或仓库约定的 release tag，并普通 push 该 tag；不得 force push 或移动已有 tag。
 5. tag push 后只使用 GitHub-hosted publish workflow。不得因为 workflow 等待、失败或 npm 认证问题改为本机 `npm publish`。
 6. workflow 等待 `npm-production` Environment 审批时，向用户报告审批入口并暂停；审批必须由用户完成。
-7. 审批后继续跟踪同一 workflow，直到验证、registry check、publish 和 GitHub Release 步骤结束。
-8. 使用 npm 官方 registry 验证目标版本存在且 dist-tag 正确；验证 GitHub Release 指向相同 tag，RC 必须是 prerelease 且不是 Latest，稳定版必须不是 prerelease。
-9. 使用同一 release notes 提取器生成期望 Markdown，并核对 `gh release view <tag> --json body` 返回的 GitHub Release body 与目标版本内容一致；不得只因 Release 已存在就接受笼统 PR 摘要。
-10. 用明确版本或正确 dist-tag 执行正式 tarball 安装 smoke；不得用本地 checkout 冒充发布后验证。
-11. 上述发布事实全部验证成功后，默认直接清理本地 release task environment，不把它留作长期恢复点。从保留的 checkout 执行：确认 `<workspace-root>/.worktrees/release-<version>` 干净、`tasks/release-<version>` 已集成到目标开发分支、没有该 environment 所属的健康 preview，且本机 `buildr` 不指向该 worktree；随后删除该本地 worktree 和本地分支，并复核 worktree 列表与本地 ref 均已不存在。此清理不依赖远端 release task ref 是否存在；任一检查或删除失败时保留现场，报告具体阻塞和恢复路径。
-12. 远端 release task 分支只服务于发布准备与中断恢复；本地清理完成后，该远端分支不再承载有用工作，必须进入发布后清理检查，不得把长期保留当作默认结果。查询远端 `tasks/release-<version>`；如 ref 存在，展示待删除 ref、commit，以及已验证的 tag、npm version/dist-tag、GitHub Release 和安装 smoke 证据，并请求用户明确授权删除；只有取得该授权后才删除远端分支，随后重新查询远端确认 ref 不存在。用户未授权、查询不可用或删除失败时保留分支并报告清理 follow-up，不得因此重做 tag、npm publish 或 GitHub Release。
+7. 审批后继续跟踪同一 workflow。它必须只执行一次 `npm pack` 并保留 release artifact manifest；发布前 smoke、CI artifact evidence 和 `npm publish <tarball>` 必须绑定同一 filename、SHA-256 与 SHA-512 integrity，不得在 tag 阶段重跑完整 Candidate 或从 checkout 隐式重新打包。
+8. registry 已存在目标版本时，只有 `dist.integrity` 与本次 manifest 一致才允许跳过 publish；不一致立即停止。publish 后等待有界 registry readback，确认目标 version、integrity 和 dist-tag 全部一致。
+9. GitHub Release 使用 ensure 语义：不存在时创建，存在时核对 tag target、正文和 prerelease/Latest；RC 必须是 prerelease 且不是 Latest，稳定版必须不是 prerelease 且成为 Latest。不一致时停止且不得覆盖。该步骤成功后仍需继续跟踪发布后 smoke，不能把 Release 已创建单独视为完成。
+10. 使用同一 release notes 提取器生成期望 Markdown，并核对 `gh release view <tag> --json body` 返回的 GitHub Release body 与目标版本内容一致；不得只因 Release 已存在就接受笼统 PR 摘要。
+11. 从 npm 官方 registry 安装精确 `@buildr-ai/buildr@<version>` 并运行发布后 CLI 生命周期 smoke；不得使用 checkout、本地 tarball 或浮动 dist-tag 冒充发布后验证。
+12. 上述发布事实全部验证成功后，默认直接清理本地 release task environment，不把它留作长期恢复点。从保留的 checkout 执行：确认 `<workspace-root>/.worktrees/release-<version>` 干净、`tasks/release-<version>` 已集成到目标开发分支、没有该 environment 所属的健康 preview，且本机 `buildr` 不指向该 worktree；随后删除该本地 worktree 和本地分支，并复核 worktree 列表与本地 ref 均已不存在。此清理不依赖远端 release task ref 是否存在；任一检查或删除失败时保留现场，报告具体阻塞和恢复路径。
+13. 远端 release task 分支只服务于发布准备与中断恢复；本地清理完成后，该远端分支不再承载有用工作，必须进入发布后清理检查，不得把长期保留当作默认结果。查询远端 `tasks/release-<version>`；如 ref 存在，展示待删除 ref、commit，以及已验证的 tag、npm version/dist-tag、GitHub Release 和安装 smoke 证据，并请求用户明确授权删除；只有取得该授权后才删除远端分支，随后重新查询远端确认 ref 不存在。用户未授权、查询不可用或删除失败时保留分支并报告清理 follow-up，不得因此重做 tag、npm publish 或 GitHub Release。
 
 发布候选版不得主动把 `latest` 当作稳定版更新。发布稳定版后确认 `latest` 指向稳定版本，并报告 `next` 的当前状态，不擅自移动或删除它。
 
@@ -91,9 +93,10 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - squash merge 已成功但 `main -> dev` 历史衔接未完成：保留已合入 `main` 和已验证 candidate tree 证据，从 tree-identity 门禁重新检查。tree mismatch、远端竞争或 push 拒绝时不创建 tag，不回滚 `main`，不 force push `dev`。
 - 已发布版本高于 `dev` package version：停止新版本准备，先创建独立 recovery change，把 package/lockfile 和缺失发布事实语义合并回当前 dev；不得直接使用 `ours` merge 声称发布内容已收敛。
 - tag 已 push、workflow 未开始或失败：保留 tag，检查 workflow 和 Environment，不删除 tag 后重发。
-- npm 版本已经存在：不得再次 publish；确认内容和 provenance，再恢复尚未完成的 GitHub Release 或验证步骤。
-- GitHub Release 已存在：不得重复创建；核对它与 npm version、tag 和 prerelease 状态。
+- npm 版本已经存在：不得再次 publish；先比较官方 registry `dist.integrity` 与本次 release artifact manifest，一致才恢复尚未完成的 dist-tag readback、GitHub Release 或发布后 smoke，不一致时 fail closed。
+- GitHub Release 已存在：不得重复创建或自动覆盖；核对 tag target、CHANGELOG 正文和 prerelease/Latest 状态，一致才复用。
 - npm version 已存在但 GitHub Release 缺失：从目标版本 changelog 重新生成 notes，恢复 Release 创建时继续使用已有 tag，不回退到 `--generate-notes`。
+- npm publish、GitHub Release 或 dist-tag 已成功但后续 smoke/网络步骤失败：保留这些不可逆事实；同一 tag 重跑从 manifest integrity 和远端 readback 恢复，不删除 tag、不 unpublish、不重复 publish。
 - push、PR merge、workflow、npm 或 GitHub 状态不一致：停止后续不可逆动作，报告已完成步骤、当前事实和最小恢复路径。
 - 发布后发现问题：候选版发布新 RC；稳定版发布 patch，必要时 deprecate 或移动 dist-tag，不默认 unpublish。
 

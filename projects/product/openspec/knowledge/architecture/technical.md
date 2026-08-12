@@ -58,7 +58,7 @@ Workspace manifest 的 `runtime.node.version` 是实际采用的精确 Node tool
 
 ## 验证
 
-开发反馈与最终候选证明使用不同CI边界：目标为`dev`的任务分支只运行Windows Node 24.15.0/当前24.x平台预检，两个矩阵禁用fail-fast并保留完整失败集合；最终`dev -> main`、手工候选和`main` push在macOS/Windows × Node 24.15.0/当前24.x运行四个完整Candidate。每个Candidate内置release tarball smoke，独立CI smoke job不得重复持有相同生命周期。
+开发反馈、最终候选与正式发布物使用不同CI边界：目标为`dev`的任务分支只运行Windows Node 24.15.0/当前24.x平台预检，两个矩阵禁用fail-fast并保留完整失败集合；最终`dev -> main`和手工候选在macOS/Windows × Node 24.15.0运行两个完整受管runtime Candidate，并在两个平台分别验证最低24.15.0与当前24.x Host Node兼容。每个完整Candidate内置本地release tarball smoke，独立CI smoke job不得重复持有相同生命周期。正式tag workflow不再运行完整Candidate，只执行一次`npm pack`，让发布前smoke、`npm publish <tarball>`、CI artifact与官方registry `dist.integrity`绑定同一manifest；publish后有界核对version/integrity/dist-tag，从官方registry安装精确版本并复用同一CLI生命周期smoke。GitHub Release不存在时创建、存在时核对且不覆盖，部分成功后的同一tag重跑只补齐缺失事实。
 
 Project `preparation.yml`使用closed `buildr.project-environment-preparation/v1`，只声明已知Project/Service Recipe及其明确无shell Step，不保存Task选择或机器状态；Project `verification.yml`使用closed `buildr.project-verification/v2`，只声明已存在capability的identity、Project/Service scope、invocation、applicability、可证明事实、delivery policy及必要environment/effects/resource边界。两者都由Agent只读发现并在用户授权后维护长期文件；Task级选择与结果分别进入Environment Plan/Receipt和Verification Result。声明缺失不会触发Buildr扫描或自动开发能力。
 

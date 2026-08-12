@@ -5,25 +5,136 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { readReleaseArtifact } from './release-artifact.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const officialRegistry = 'https://registry.npmjs.org/';
+export const officialRegistry = 'https://registry.npmjs.org/';
+
+async function responseJson(response, label) {
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new Error(`${label} returned invalid JSON: ${error.message}`);
+  }
+}
 
 export async function registryVersionState(packageName, version, fetchImpl = fetch) {
   const url = new URL(`${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`, officialRegistry);
   const response = await fetchImpl(url, { headers: { accept: 'application/json' } });
-  if (response.status === 200) return { package: packageName, version, published: true, registry: officialRegistry };
   if (response.status === 404) return { package: packageName, version, published: false, registry: officialRegistry };
-  throw new Error(`Official npm registry version check failed with HTTP ${response.status}.`);
+  if (response.status !== 200) throw new Error(`Official npm registry version check failed with HTTP ${response.status}.`);
+  const metadata = await responseJson(response, 'Official npm registry version check');
+  if (metadata?.name !== packageName || metadata?.version !== version || typeof metadata?.dist?.integrity !== 'string') {
+    throw new Error('Official npm registry version metadata is missing the expected identity or dist.integrity.');
+  }
+  return {
+    package: packageName,
+    version,
+    published: true,
+    registry: officialRegistry,
+    integrity: metadata.dist.integrity,
+    shasum: metadata.dist.shasum ?? null,
+    tarball: metadata.dist.tarball ?? null,
+  };
+}
+
+export function assertRegistryArtifact(state, artifact) {
+  if (!state.published) return;
+  if (state.package !== artifact.packageName || state.version !== artifact.version) {
+    throw new Error('Official npm registry package identity does not match the release artifact.');
+  }
+  if (state.integrity !== artifact.integrity) {
+    throw new Error(`Official npm registry integrity mismatch for ${state.package}@${state.version}.`);
+  }
+}
+
+export async function registryTagState(packageName, npmTag, fetchImpl = fetch) {
+  const url = new URL(encodeURIComponent(packageName), officialRegistry);
+  const response = await fetchImpl(url, { headers: { accept: 'application/json' } });
+  if (response.status !== 200) throw new Error(`Official npm registry dist-tag check failed with HTTP ${response.status}.`);
+  const metadata = await responseJson(response, 'Official npm registry dist-tag check');
+  return {
+    package: packageName,
+    npmTag,
+    version: metadata?.['dist-tags']?.[npmTag] ?? null,
+    registry: officialRegistry,
+  };
+}
+
+export async function confirmRegistryRelease({ packageName, version, npmTag, integrity, fetchImpl = fetch }) {
+  const versionState = await registryVersionState(packageName, version, fetchImpl);
+  if (!versionState.published) throw new Error(`Official npm registry does not contain ${packageName}@${version}.`);
+  assertRegistryArtifact(versionState, { packageName, version, integrity });
+  const tagState = await registryTagState(packageName, npmTag, fetchImpl);
+  if (tagState.version !== version) {
+    throw new Error(`Official npm registry dist-tag ${npmTag} points to ${tagState.version ?? 'nothing'}, not ${version}.`);
+  }
+  return { ...versionState, npmTag, taggedVersion: tagState.version };
+}
+
+export async function waitForRegistryRelease(contract, options = {}) {
+  const attempts = options.attempts ?? 12;
+  const delayMs = options.delayMs ?? 5000;
+  const sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await confirmRegistryRelease({ ...contract, fetchImpl: options.fetchImpl ?? fetch });
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(delayMs);
+    }
+  }
+  throw new Error(`Official npm registry did not converge after ${attempts} attempts: ${lastError.message}`);
+}
+
+function parseArgs(argv) {
+  const options = { version: argv[0], manifest: null, npmTag: null, requirePublished: false, wait: false };
+  for (let index = 1; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (value === '--manifest') options.manifest = argv[++index];
+    else if (value === '--tag') options.npmTag = argv[++index];
+    else if (value === '--require-published') options.requirePublished = true;
+    else if (value === '--wait') options.wait = true;
+    else throw new Error(`Unsupported registry check option: ${value}`);
+  }
+  if ((options.requirePublished || options.wait) && (!options.manifest || !options.npmTag)) {
+    throw new Error('--require-published and --wait require both --manifest and --tag');
+  }
+  return options;
 }
 
 async function main() {
   const metadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
-  const version = process.argv[2] || metadata.version;
+  const options = parseArgs(process.argv.slice(2));
+  const version = options.version || metadata.version;
   if (version !== metadata.version) throw new Error(`Registry check version ${version} does not match package version ${metadata.version}.`);
-  const state = await registryVersionState(metadata.name, version);
+  const artifact = options.manifest
+    ? readReleaseArtifact(options.manifest, { packageName: metadata.name, version }).manifest
+    : null;
+
+  let state;
+  if (options.wait) {
+    state = await waitForRegistryRelease({
+      packageName: metadata.name,
+      version,
+      npmTag: options.npmTag,
+      integrity: artifact.integrity,
+    });
+  } else {
+    state = await registryVersionState(metadata.name, version);
+    if (artifact) assertRegistryArtifact(state, artifact);
+    if (options.requirePublished && !state.published) {
+      throw new Error(`Official npm registry does not contain ${metadata.name}@${version}.`);
+    }
+  }
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `published=${state.published}\n`);
   process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
 }
 
-if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) main();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
+  main().catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
+}

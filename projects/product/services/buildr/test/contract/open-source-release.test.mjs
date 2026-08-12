@@ -12,7 +12,14 @@ import {
 } from '../../test/verification/release/open-source-candidate.mjs';
 import { resolveReleaseContract } from '../../scripts/release/release-contract.mjs';
 import { extractReleaseNotes } from '../../scripts/release/release-notes.mjs';
-import { registryVersionState } from '../../scripts/release/registry-version-state.mjs';
+import { ensureGitHubRelease } from '../../scripts/release/github-release-ensure.mjs';
+import {
+  assertRegistryArtifact,
+  confirmRegistryRelease,
+  registryVersionState,
+  waitForRegistryRelease,
+} from '../../scripts/release/registry-version-state.mjs';
+import { resolveReleaseSmokeSource } from '../../test/verification/release/release-smoke.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot = path.resolve(serviceRoot, '../../../..');
@@ -53,14 +60,160 @@ test('package and lockfile versions remain identical', () => {
 });
 
 test('official registry version check distinguishes published, absent, and unavailable states', async () => {
-  const published = await registryVersionState('@buildr-ai/buildr', '0.1.0-rc.1', async () => ({ status: 200 }));
+  const published = await registryVersionState('@buildr-ai/buildr', '0.1.0-rc.1', async () => ({
+    status: 200,
+    async json() {
+      return {
+        name: '@buildr-ai/buildr',
+        version: '0.1.0-rc.1',
+        dist: { integrity: 'sha512-fixture', shasum: 'fixture-sha1', tarball: 'https://registry.npmjs.org/package.tgz' },
+      };
+    },
+  }));
   assert.equal(published.published, true);
+  assert.equal(published.integrity, 'sha512-fixture');
   const absent = await registryVersionState('@buildr-ai/buildr', '0.1.0-rc.1', async () => ({ status: 404 }));
   assert.equal(absent.published, false);
   await assert.rejects(
     registryVersionState('@buildr-ai/buildr', '0.1.0-rc.1', async () => ({ status: 503 })),
     /HTTP 503/,
   );
+});
+
+test('official registry recovery compares artifact integrity and exact dist-tag', async () => {
+  const responses = [
+    {
+      status: 200,
+      async json() {
+        return { name: '@buildr-ai/buildr', version: '0.1.0-rc.8', dist: { integrity: 'sha512-same' } };
+      },
+    },
+    {
+      status: 200,
+      async json() {
+        return { 'dist-tags': { next: '0.1.0-rc.8' } };
+      },
+    },
+  ];
+  const state = await confirmRegistryRelease({
+    packageName: '@buildr-ai/buildr',
+    version: '0.1.0-rc.8',
+    npmTag: 'next',
+    integrity: 'sha512-same',
+    fetchImpl: async () => responses.shift(),
+  });
+  assert.equal(state.taggedVersion, '0.1.0-rc.8');
+  assert.throws(
+    () => assertRegistryArtifact({
+      package: '@buildr-ai/buildr', version: '0.1.0-rc.8', published: true, integrity: 'sha512-other',
+    }, {
+      packageName: '@buildr-ai/buildr', version: '0.1.0-rc.8', integrity: 'sha512-same',
+    }),
+    /integrity mismatch/,
+  );
+});
+
+test('official registry confirmation retries only within a bounded window', async () => {
+  let attempts = 0;
+  const state = await waitForRegistryRelease({
+    packageName: '@buildr-ai/buildr', version: '0.1.0-rc.8', npmTag: 'next', integrity: 'sha512-same',
+  }, {
+    attempts: 2,
+    delayMs: 0,
+    sleep: async () => {},
+    fetchImpl: async (url) => {
+      if (new URL(url).pathname.endsWith('/0.1.0-rc.8')) {
+        attempts += 1;
+        if (attempts === 1) return { status: 404 };
+        return {
+          status: 200,
+          async json() {
+            return { name: '@buildr-ai/buildr', version: '0.1.0-rc.8', dist: { integrity: 'sha512-same' } };
+          },
+        };
+      }
+      return { status: 200, async json() { return { 'dist-tags': { next: '0.1.0-rc.8' } }; } };
+    },
+  });
+  assert.equal(attempts, 2);
+  assert.equal(state.published, true);
+});
+
+test('release smoke selects one explicit immutable source', () => {
+  assert.deepEqual(resolveReleaseSmokeSource({ BUILDR_RELEASE_PACKAGE_SPEC: '@buildr-ai/buildr@0.1.0-rc.8' }), {
+    kind: 'official-registry',
+    installTarget: '@buildr-ai/buildr@0.1.0-rc.8',
+    expectedName: '@buildr-ai/buildr',
+    expectedVersion: '0.1.0-rc.8',
+    offline: false,
+  });
+  assert.throws(
+    () => resolveReleaseSmokeSource({
+      BUILDR_RELEASE_PACKAGE_SPEC: '@buildr-ai/buildr@0.1.0-rc.8',
+      BUILDR_RELEASE_ARTIFACT_MANIFEST: '/tmp/release-artifact.json',
+    }),
+    /exactly one explicit package source/,
+  );
+  assert.throws(
+    () => resolveReleaseSmokeSource({ BUILDR_RELEASE_PACKAGE_SPEC: '@buildr-ai/buildr@next' }),
+    /requires exact/,
+  );
+});
+
+test('GitHub Release ensure reuses an exact release and fails closed on drift', async () => {
+  const expected = {
+    repository: 'BuildrAI/Buildr',
+    tag: 'v0.1.0-rc.8',
+    title: 'v0.1.0-rc.8',
+    body: 'release notes\n',
+    prerelease: true,
+    targetCommit: 'commit-sha',
+  };
+  const release = {
+    tag_name: expected.tag,
+    name: expected.title,
+    body: expected.body,
+    draft: false,
+    prerelease: true,
+  };
+  const responses = [
+    { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 200, async json() { return release; } },
+    { status: 200, async json() { return { tag_name: 'v0.1.0' }; } },
+  ];
+  const result = await ensureGitHubRelease(expected, { token: 'fixture', fetchImpl: async () => responses.shift() });
+  assert.equal(result.action, 'reused');
+
+  const drifted = [
+    { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 200, async json() { return { ...release, body: 'wrong\n' }; } },
+  ];
+  await assert.rejects(
+    ensureGitHubRelease(expected, { token: 'fixture', fetchImpl: async () => drifted.shift() }),
+    /body does not match/,
+  );
+});
+
+test('GitHub Release ensure creates only a missing release', async () => {
+  const expected = {
+    repository: 'BuildrAI/Buildr', tag: 'v0.1.0', title: 'v0.1.0', body: 'stable\n', prerelease: false, targetCommit: 'commit-sha',
+  };
+  const requests = [];
+  const responses = [
+    { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 404 },
+    { status: 201, async json() { return { tag_name: expected.tag, name: expected.title, body: expected.body, draft: false, prerelease: false }; } },
+    { status: 200, async json() { return { tag_name: expected.tag }; } },
+  ];
+  const result = await ensureGitHubRelease(expected, {
+    token: 'fixture',
+    fetchImpl: async (url, options) => {
+      requests.push({ url, method: options.method });
+      return responses.shift();
+    },
+  });
+  assert.equal(result.action, 'created');
+  assert.equal(requests.filter((request) => request.method === 'POST').length, 1);
 });
 
 test('release contract maps prerelease to next and stable to latest', () => {
@@ -121,21 +274,40 @@ test('release notes fail closed for missing, duplicate, or empty target sections
   );
 });
 
-test('publish workflow is tag-gated, OIDC-ready, and token-free', () => {
+test('publish workflow is tag-gated, pack-once, recoverable, OIDC-ready, and npm-token-free', () => {
   const workflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   for (const required of [
     'tags:', 'id-token: write', 'environment: npm-production', 'release-contract.mjs',
-    'release-notes.mjs', './scripts/verify-buildr-product', 'registry-version-state.mjs',
-    "steps.registry.outputs.published != 'true'", 'npm publish --access public', 'gh release create',
-    '--notes-file', '--verify-tag', '--latest=false',
+    'release-notes.mjs', 'release-artifact.mjs', 'registry-version-state.mjs',
+    "steps.registry_before.outputs.published != 'true'", 'npm publish "${{ steps.artifact.outputs.tarball }}"',
+    'github-release-ensure.mjs', 'BUILDR_RELEASE_ARTIFACT_MANIFEST',
+    'BUILDR_RELEASE_PACKAGE_SPEC', '--manifest', '--require-published', '--wait',
+    'release-artifact-${{ github.ref_name }}', 'release-verification-diagnostics-${{ github.ref_name }}',
   ]) assert.equal(workflow.includes(required), true, required);
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
+  assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);
+  assert.equal(workflow.includes('./scripts/verify-buildr-product'), false);
+  assert.equal(workflow.includes('gh release create'), false);
+  assert.equal((workflow.match(/npm publish/g) || []).length, 1);
+  assert.equal((workflow.match(/release-artifact\.mjs/g) || []).length, 1);
+  assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 2);
   const releaseNotes = workflow.indexOf('Generate GitHub release notes');
-  const registryCheck = workflow.indexOf('Check official registry version');
+  const artifact = workflow.indexOf('Prepare immutable release artifact');
+  const prepublishSmoke = workflow.indexOf('Smoke immutable release artifact before publish');
+  const registryCheck = workflow.indexOf('Check official registry artifact');
   const npmPublish = workflow.indexOf('Publish public npm package');
+  const registryConfirm = workflow.indexOf('Confirm official registry artifact and dist-tag');
+  const releaseEnsure = workflow.indexOf('Ensure GitHub release');
+  const postpublishSmoke = workflow.indexOf('Smoke exact package from official registry');
+  assert.equal(releaseNotes < artifact, true);
+  assert.equal(artifact < prepublishSmoke, true);
+  assert.equal(prepublishSmoke < registryCheck, true);
   assert.equal(releaseNotes < registryCheck, true);
-  assert.equal(releaseNotes < npmPublish, true);
+  assert.equal(registryCheck < npmPublish, true);
+  assert.equal(npmPublish < registryConfirm, true);
+  assert.equal(registryConfirm < releaseEnsure, true);
+  assert.equal(releaseEnsure < postpublishSmoke, true);
 });
 
 test('CI and publish workflows use the supported Node runtime', () => {
@@ -187,5 +359,8 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '展示待删除 ref、commit', '请求用户明确授权删除',
     '重新查询远端确认 ref 不存在', '清理 follow-up',
     '不得把长期保留当作默认结果', '未取得删除授权时必须明确报告待清理项',
+    '只执行一次 `npm pack`', '`npm publish <tarball>`', '`dist.integrity`',
+    'GitHub Release 使用 ensure 语义', '安装精确 `@buildr-ai/buildr@<version>`',
+    '不删除 tag、不 unpublish、不重复 publish',
   ]) assert.equal(skill.includes(required), true, required);
 });
