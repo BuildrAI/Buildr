@@ -295,6 +295,7 @@ export const verificationSteps = Object.freeze([
     'test/system/task-environment-fresh-build-web.test.mjs',
     'test/system/task-finish-cli.test.mjs',
     'test/system/task-finish-product-journey.test.mjs',
+    'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.mjs',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-platform-preflight'], selection: 'explicit-only', inputs: [
     'test/system/cli-update.test.mjs',
@@ -302,6 +303,7 @@ export const verificationSteps = Object.freeze([
     'test/system/local-app-launcher.test.mjs',
     'test/system/task-environment-fresh-build-web.test.mjs',
     'test/system/task-finish-*.test.mjs',
+    'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.mjs',
     'test/helpers/task-finish-sqlite-fixture.mjs',
     'src/application/cli-update.mjs',

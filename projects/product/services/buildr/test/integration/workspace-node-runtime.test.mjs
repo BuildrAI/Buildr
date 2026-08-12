@@ -8,6 +8,7 @@ import {
   ensureWorkspaceNodeRuntime,
   normalizeNodePlatform,
   probeWorkspaceNodeRuntime,
+  runRuntimeFilesystemOperation,
   runtimeTreeRemovalOptions,
   workspaceNodeIdentity,
   workspaceNodeRuntimePaths,
@@ -26,8 +27,10 @@ function fixtureRuntime(root) {
 }
 
 function fixtureWindowsRuntime(root) {
-  fs.writeFileSync(path.join(root, 'node.exe'), '#!/bin/sh\nif [ "$1" = "-p" ]; then echo 22.4.1; else echo v22.4.1; fi\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(root, 'npm.cmd'), '#!/bin/sh\necho 10.8.0\n', { mode: 0o755 });
+  fs.mkdirSync(path.join(root, 'node_modules/npm/bin'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node.exe'), '#!/bin/sh\nif [ "$1" = "-p" ]; then echo 22.4.1; else echo 10.8.0; fi\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(root, 'npm.cmd'), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(root, 'node_modules/npm/bin/npm-cli.js'), '// fixture\n');
 }
 
 test('Workspace Node identity 不包含机器路径且按 platform/arch 稳定', () => {
@@ -47,7 +50,40 @@ test('Workspace Node runtime 临时目录在 Windows 使用 bounded EPERM retry'
     maxRetries: 10,
     retryDelay: 100,
   });
+  assert.deepEqual(runtimeTreeRemovalOptions('win'), runtimeTreeRemovalOptions('win32'));
   assert.deepEqual(runtimeTreeRemovalOptions('darwin'), { recursive: true, force: true });
+});
+
+test('Windows runtime 文件操作会恢复瞬时 EPERM，并在耗尽后保留操作诊断', () => {
+  let attempts = 0;
+  const waits = [];
+  const result = runRuntimeFilesystemOperation('copy-source-to-stage', 'C:\\runtime.tmp', () => {
+    attempts += 1;
+    if (attempts < 3) throw Object.assign(new Error('temporarily locked'), { code: 'EPERM' });
+    return 'copied';
+  }, {
+    platform: 'win32',
+    filesystemRetryWait: (milliseconds) => waits.push(milliseconds),
+  });
+  assert.equal(result, 'copied');
+  assert.equal(attempts, 3);
+  assert.deepEqual(waits, [100, 100]);
+
+  let now = 0;
+  assert.throws(
+    () => runRuntimeFilesystemOperation('cleanup-stage', 'C:\\runtime.tmp', () => {
+      throw Object.assign(new Error('still locked'), { code: 'EBUSY' });
+    }, {
+      platform: 'win32',
+      filesystemRetryTimeoutMs: 150,
+      filesystemRetryNow: () => now,
+      filesystemRetryWait: (milliseconds) => { now += milliseconds; },
+    }),
+    (error) => error.code === 'EBUSY'
+      && error.operation === 'cleanup-stage'
+      && error.target === 'C:\\runtime.tmp'
+      && /cleanup-stage failed/.test(error.message),
+  );
 });
 
 test('临时 App Data 只隔离应用状态，不改变 Workspace Node runtime locator', (t) => {
@@ -88,16 +124,29 @@ test('受管 runtime 从确定 source 原子准备、复用并在删除后按原
   assert.equal(restored.status, 'ready');
 });
 
-test('Windows 受管 runtime 通过 npm.cmd 探测', { skip: process.platform === 'win32' }, (t) => {
+test('Windows 受管 runtime 直接通过 node.exe 执行 npm CLI，并恢复 source copy 的瞬时 EPERM', { skip: process.platform === 'win32' }, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-runtime-windows-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const source = path.join(root, 'source');
   const dataRoot = path.join(root, 'data');
   fs.mkdirSync(source, { recursive: true });
   fixtureWindowsRuntime(source);
-  const options = { dataRoot, platform: 'win32', arch: 'x64', sourceRoot: source };
+  let copyAttempts = 0;
+  const options = {
+    dataRoot,
+    platform: 'win32',
+    arch: 'x64',
+    sourceRoot: source,
+    filesystemRetryWait: () => {},
+    copyRuntimeTree(from, to, copyOptions) {
+      copyAttempts += 1;
+      if (copyAttempts < 3) throw Object.assign(new Error('scanner lock'), { code: 'EPERM' });
+      fs.cpSync(from, to, copyOptions);
+    },
+  };
   const installed = ensureWorkspaceNodeRuntime(WORKSPACE, options);
   assert.equal(installed.status, 'ready');
+  assert.equal(copyAttempts, 3);
   assert.equal(probeWorkspaceNodeRuntime(WORKSPACE, options).npmVersion, '10.8.0');
 });
 
