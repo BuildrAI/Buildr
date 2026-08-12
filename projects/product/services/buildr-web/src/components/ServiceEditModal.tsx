@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Alert, Button, Form, Input, Modal, Space } from 'antd';
+import { Alert, Button, Form, Input, Modal, Select, Space } from 'antd';
 import { api } from '../api';
+import { SERVICE_TYPE_OPTIONS } from '../lib/labels';
 
 type ServiceEditPayload = {
   revision: string;
@@ -37,6 +38,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [editAlert, setEditAlert] = useState('');
+  const [serviceType, setServiceType] = useState('');
 
   useEffect(() => {
     if (!open || !projectCode || !serviceCode) {
@@ -44,6 +46,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
       setLoadError('');
       setSaveError('');
       setEditAlert('');
+      setServiceType('');
       setLoading(false);
       setSaving(false);
       return;
@@ -59,6 +62,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
         ) as ServiceEditPayload;
         if (cancelled) return;
         setCurrent(data);
+        setServiceType(data.service.type);
         setEditAlert(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : '无法读取服务');
@@ -69,13 +73,18 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
     return () => { cancelled = true; };
   }, [open, projectCode, serviceCode]);
 
+  const typeOptions = SERVICE_TYPE_OPTIONS.some((option) => option.value === serviceType)
+    ? [...SERVICE_TYPE_OPTIONS]
+    : serviceType
+      ? [...SERVICE_TYPE_OPTIONS, { value: serviceType, label: serviceType }]
+      : [...SERVICE_TYPE_OPTIONS];
+
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!current || !projectCode || !serviceCode) return;
+    if (!current || !projectCode || !serviceCode || !serviceType) return;
     const form = event.currentTarget;
     const nameInput = form.elements.namedItem('name') as HTMLInputElement;
     const descriptionInput = form.elements.namedItem('description') as HTMLTextAreaElement;
-    const typeInput = form.elements.namedItem('type') as HTMLInputElement;
     setSaving(true);
     setSaveError('');
     try {
@@ -87,7 +96,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
             revision: current.revision,
             name: nameInput.value,
             description: descriptionInput.value,
-            type: typeInput.value,
+            type: serviceType,
           }),
         },
       ) as ServiceEditPayload;
@@ -159,13 +168,15 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
                 />
               </Form.Item>
               <Form.Item label="类型" required>
-                <Input
+                <Select
                   id="service-type"
-                  name="type"
-                  autoComplete="off"
-                  required
+                  style={{ width: '100%' }}
                   disabled={readOnly || saving}
-                  defaultValue={current.service.type}
+                  value={serviceType || undefined}
+                  onChange={setServiceType}
+                  options={typeOptions}
+                  placeholder="选择服务类型"
+                  getPopupContainer={(node) => node.parentElement || document.body}
                 />
               </Form.Item>
               <Space>

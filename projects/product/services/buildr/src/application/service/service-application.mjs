@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { createService } from '../../domain/service/service.mjs';
@@ -9,6 +10,33 @@ export function serviceError(code, message, status = 400, details = undefined) {
   error.status = status;
   if (details !== undefined) error.details = details;
   return error;
+}
+
+const SERVICE_DOCUMENTS = new Set(['README.md', 'AGENTS.md']);
+
+function inside(parent, child) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+}
+
+function normalizeServiceDocumentPath(documentPath) {
+  const raw = typeof documentPath === 'string' ? documentPath.trim() : '';
+  if (!raw) throw serviceError('service_document_not_allowed', '不支持读取服务文档：<empty>。', 400);
+  if (raw.includes('\0') || raw.includes('\\') || path.isAbsolute(raw) || /^[A-Za-z]:/.test(raw)) {
+    throw serviceError('service_document_path_forbidden', '服务文档路径越界。', 400);
+  }
+  const posix = raw.replace(/\\/g, '/');
+  const normalized = path.posix.normalize(posix);
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) {
+    throw serviceError('service_document_path_forbidden', '服务文档路径越界。', 400);
+  }
+  if (normalized.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    throw serviceError('service_document_path_forbidden', '服务文档路径越界。', 400);
+  }
+  if (!normalized.endsWith('.md')) {
+    throw serviceError('service_document_not_allowed', `不支持读取服务文档：${normalized}。`, 400);
+  }
+  return normalized;
 }
 
 function assertObject(input, code, message) {
@@ -74,6 +102,34 @@ export function registerServiceApplication(runtime) {
       comparison = compareServiceGit(service, observed, runtime.sameGitIdentity);
     }
     return { project: record.project, schemaVersion: record.registry.schemaVersion, revision: record.revision, migrationRequired: record.registry.migrationRequired, service, observed, comparison, nextActions: publicRegistry(record).nextActions };
+  }
+
+  function serviceDocument(targetRoot, projectCode, code, documentPath) {
+    const relativePath = normalizeServiceDocumentPath(documentPath);
+    const record = readServiceRegistryRecord(targetRoot, projectCode);
+    const service = record.services[code];
+    if (!service) throw serviceError('service_not_found', `Service 不存在：${projectCode}/${code}。`, 404);
+    const serviceRoot = path.resolve(record.root, service.source.path);
+    const filePath = path.resolve(serviceRoot, relativePath);
+    if (!inside(serviceRoot, filePath)) {
+      throw serviceError('service_document_path_forbidden', '服务文档路径越界。', 400);
+    }
+    let exists = false;
+    try {
+      exists = fs.statSync(filePath).isFile();
+    } catch {
+      exists = false;
+    }
+    return {
+      schemaVersion: 'buildr.service-document/v1',
+      projectCode,
+      serviceCode: code,
+      path: relativePath,
+      name: path.posix.basename(relativePath),
+      entry: SERVICE_DOCUMENTS.has(relativePath),
+      exists,
+      content: exists ? fs.readFileSync(filePath, 'utf8') : null,
+    };
   }
 
   function migrateServiceRegistry(targetRoot, projectCode) {
@@ -148,6 +204,6 @@ export function registerServiceApplication(runtime) {
     };
   }
 
-  Object.assign(runtime, { readServiceRegistryRecord, listServices, serviceDetail, serviceMigrationPlan, migrateServiceRegistry, updateServiceMetadata, generateServiceCreatePrompt });
+  Object.assign(runtime, { readServiceRegistryRecord, listServices, serviceDetail, serviceDocument, serviceMigrationPlan, migrateServiceRegistry, updateServiceMetadata, generateServiceCreatePrompt });
   return runtime;
 }

@@ -102,7 +102,16 @@ test('Service HTTP API 复用安全边界、CAS 与 prompt-only 创建', async (
   const list = await fetch(`${apiBase}/projects/demo/services`).then((response) => response.json());
   assert.equal(list.services[0].code, 'api');
   const detail = await fetch(`${apiBase}/projects/demo/services/api`).then((response) => response.json());
-  let response = await fetch(`${apiBase}/projects/demo/services/api`, { method: 'PUT', headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken }, body: JSON.stringify({ revision: detail.revision, name: 'From UI', description: 'Saved', type: 'application' }) });
+  const readmeDoc = await fetch(`${apiBase}/projects/demo/services/api/documents/README.md`).then((response) => response.json());
+  assert.equal(readmeDoc.exists, true);
+  assert.match(readmeDoc.content, /# api/);
+  const agentsDoc = await fetch(`${apiBase}/projects/demo/services/api/documents/AGENTS.md`).then((response) => response.json());
+  assert.equal(agentsDoc.exists, false);
+  assert.equal(agentsDoc.content, null);
+  let response = await fetch(`${apiBase}/projects/demo/services/api/documents/secrets.env`);
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, 'service_document_not_allowed');
+  response = await fetch(`${apiBase}/projects/demo/services/api`, { method: 'PUT', headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken }, body: JSON.stringify({ revision: detail.revision, name: 'From UI', description: 'Saved', type: 'application' }) });
   assert.equal(response.status, 200);
   const updated = await response.json();
   assert.equal(updated.service.name, 'From UI');

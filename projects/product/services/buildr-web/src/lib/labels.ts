@@ -17,12 +17,14 @@ export function projectListSourceLabel(type: string): string {
   return type;
 }
 
+export const SERVICE_TYPE_OPTIONS = [
+  { value: 'backend', label: '后端' },
+  { value: 'frontend', label: '前端' },
+  { value: 'application', label: '应用' },
+  { value: 'library', label: '库' },
+  { value: 'tool', label: '工具' },
+] as const;
+
 export function serviceTypeLabel(type: string): string {
-  return ({
-    backend: '后端',
-    frontend: '前端',
-    application: '应用',
-    library: '库',
-    tool: '工具',
-  } as Record<string, string>)[type] || type;
+  return SERVICE_TYPE_OPTIONS.find((option) => option.value === type)?.label || type;
 }

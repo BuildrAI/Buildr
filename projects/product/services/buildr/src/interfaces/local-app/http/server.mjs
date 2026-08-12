@@ -513,6 +513,16 @@ export function createLocalWorkspaceServer(runtime, {
         }
         const servicesMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services$/);
         if (request.method === 'GET' && servicesMatch) return jsonResponse(response, 200, runtime.listServices(root, servicesMatch[1]));
+        const serviceDocumentMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services\/([A-Za-z0-9][A-Za-z0-9._-]*)\/documents\/(.+)$/);
+        if (request.method === 'GET' && serviceDocumentMatch) {
+          let documentPath = serviceDocumentMatch[3];
+          try {
+            documentPath = decodeURIComponent(documentPath);
+          } catch {
+            throw Object.assign(new Error('服务文档路径无效。'), { code: 'service_document_path_forbidden', status: 400 });
+          }
+          return jsonResponse(response, 200, runtime.serviceDocument(root, serviceDocumentMatch[1], serviceDocumentMatch[2], documentPath));
+        }
         const serviceMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
         if (request.method === 'GET' && serviceMatch) return jsonResponse(response, 200, runtime.serviceDetail(root, serviceMatch[1], serviceMatch[2]));
         if (request.method === 'PUT' && serviceMatch) {

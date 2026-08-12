@@ -524,7 +524,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
   });
 
-  if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情编辑使用弹框', async () => {
+  if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情展示基础事实与文档', async () => {
     await page.goto(`${workspaceUrl}/services?project=demo`);
     const projectSelect = page.locator('#service-project-select');
     await unique(projectSelect, '服务所属项目过滤器');
@@ -540,13 +540,24 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await detail.click();
     await page.waitForURL(`${workspaceUrl}/services/demo/api`);
     assert.equal(await page.locator('#service-detail-name').innerText(), '演示服务');
-    assert.equal(await page.locator('#service-project-code').textContent(), 'demo');
+    assert.equal(await page.locator('#service-detail-description').innerText(), '浏览器测试服务');
     assert.equal(await page.locator('#service-detail-type').innerText(), '后端');
     assert.equal(await page.locator('#app-view input, #app-view textarea').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.detail-facts > div').count(), 6);
+    assert.equal(await page.locator('.detail-facts > div').count(), 3);
     assert.equal(await page.locator('[data-nav="services"]').evaluate((item) => item.classList.contains('active')), true);
+    await page.waitForFunction(() => {
+      const body = document.getElementById('service-document-README-md')?.textContent || '';
+      return !body.includes('正在读取') && /Demo API|README/.test(body);
+    });
+    assert.match(await page.locator('#service-document-README-md').innerText(), /Demo API|README/);
+    await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).click();
+    await page.waitForFunction(() => {
+      const pathLabel = document.getElementById('service-document-path')?.textContent?.trim();
+      const body = document.getElementById('service-document-AGENTS-md')?.textContent || '';
+      return pathLabel === 'AGENTS.md' && !body.includes('正在读取') && /未找到 AGENTS\.md/.test(body);
+    });
     await page.getByRole('button', { name: '编辑服务', exact: true }).click();
     await page.locator('#service-edit-form').waitFor({ state: 'visible' });
     assert.equal(await page.url(), `${workspaceUrl}/services/demo/api`);
