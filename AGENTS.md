@@ -8,7 +8,7 @@
 
 本 workspace 是 Buildr 用来开发 Buildr 自身的自举 workspace。每个 Buildr 开发任务收尾时，必须检查本次变更是否影响 Rules、Skills、Components、Commands、项目结构或 Agent runtime 入口；如有影响，按需运行 `projects/product/buildr sync <agent> --target .` / `projects/product/buildr render <agent> --target .` 更新当前 workspace。
 
-- Buildr 产品治理事实只在 `projects/product/` 维护；可执行产品的唯一源码根是 `projects/product/services/buildr/`。当前 workspace 中由 Buildr 交付的资产只能通过当前 Product checkout 的 `update` / `sync` 更新，不直接编辑。
+- Buildr 产品治理事实只在 `projects/product/` 维护；可执行产品实现分属两个 Service：`projects/product/services/buildr/` 负责 npm package、CLI、本机应用 HTTP/运行时（runtime）、`web-dist` 托管与打包，`projects/product/services/buildr-web/` 负责 Local App React/Vite 权威前端源码与正式构建。当前 workspace 中由 Buildr 交付的资产只能通过当前 Product checkout 的 `update` / `sync` 更新，不直接编辑。
 
 开发阶段执行 Buildr 命令时，使用本 workspace 内的产品 CLI 入口 `projects/product/buildr`，不要依赖本机 PATH 上安装的 `buildr`。
 

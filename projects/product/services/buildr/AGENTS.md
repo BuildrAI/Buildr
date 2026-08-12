@@ -1,6 +1,6 @@
 # Buildr Service
 
-本目录是 Product Project 下 `product/buildr` Service 的规则入口，承载 Buildr 可执行产品的唯一实现。
+本目录是 Product Project 下 `buildr` Service 的规则入口，承载 Buildr 的 npm package、CLI、本机应用 HTTP/运行时（runtime）、`web-dist` 托管与打包等可执行实现。
 
 ## 所有权边界
 
