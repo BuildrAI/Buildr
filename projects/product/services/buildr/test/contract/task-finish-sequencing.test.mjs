@@ -81,6 +81,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-cli'", "'install-local-app'", "'finalize'"]) assert.ok(runner.includes(phrase), phrase);
   assert.match(runner, /task', 'finish', 'inspect'/);
   assert.match(runner, /node-identity-mismatch/);
+  assert.doesNotMatch(runner, /(?:from\s+|import\s*\()['"]\.\.\//, 'workspace-only runner must not import modules outside its Skill directory');
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs')), false);
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/interfaces/internal/buildr-self-bootstrap-closeout-driver.mjs')), false);
   assert.equal(packageManifest.includes('skills/buildr-self-bootstrap-sync'), false);
