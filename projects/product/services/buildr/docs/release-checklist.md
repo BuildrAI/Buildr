@@ -137,7 +137,7 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 3. 对冻结候选完成完整验证并记录 candidate tree identity；release task 必须先通过 task-finish fast-forward 集成到 `dev`，再运行 `release-convergence.mjs --stage pre-main`。通过 PR 将 `dev` squash merge 到 `main` 后，只有 main/dev version 与 tree 均匹配候选时才运行带 `--version` 的 history bridge，随后运行 `--stage post-main` 证明 main 已是 dev ancestor。任一 base、version、tree、task ref、远端竞争或 push finding 都停止 tag 动作。
 4. package version 与 Git tag 必须完全一致。当前准备的 `0.1.0-rc.8` 将对应 `v0.1.0-rc.8` 和 `next`；稳定版 `0.1.0` 对应 `v0.1.0` 和 `latest`。
 5. 首个 `@buildr-ai/buildr` package 已由 npm Organization owner `elevenching2` 使用 2FA 执行 `npm publish --access public --tag next`，于 2026-07-13 完成。
-6. npm trusted publisher 已配置为 GitHub user `elevenching`、repository `Buildr`、workflow `publish.yml`、Environment `npm-production`、allowed action `npm publish`。
+6. npm 可信发布者（Trusted Publisher）已配置为 GitHub 组织（Organization）`BuildrAI`、仓库（Repository）`Buildr`、工作流文件（Workflow filename）`publish.yml`、环境（Environment）`npm-production`，允许操作（Allowed action）为 `npm publish`；该配置已通过 `0.1.0-rc.8` 的 GitHub 托管发布验证。
 7. 后续发布只由 release tag 触发 GitHub-hosted workflow；workflow 在 registry write 前提取 notes，并只执行一次 `npm pack`，生成带 filename、inventory、SHA-256 与 SHA-512 integrity 的 manifest。发布前 smoke、`npm publish <tarball>` 和 CI artifact upload 必须消费同一个 tarball，不再重复完整 Candidate。
 8. 目标 npm version 不存在时才发布；已存在时必须比较官方 registry `dist.integrity`，一致才跳过 publish，不一致立即 fail closed。publish 后以有界重试确认 version、integrity 与目标 dist-tag，再从官方 registry 安装精确 `name@version` 并运行同一 CLI 生命周期 smoke。
 9. GitHub Release 使用 ensure 语义：不存在时按 CHANGELOG 创建，存在时核对 tag、commit、body 与 prerelease/Latest，不一致时不覆盖。npm 或 GitHub Release 已成功但后续失败时，保留这些不可逆事实；同一 tag 重跑只补齐缺失步骤，不删除 tag、不重复 publish、不 unpublish。
