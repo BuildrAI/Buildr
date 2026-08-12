@@ -47,6 +47,11 @@ function rawChanges(root, before, after) {
   return changes.sort((left, right) => left.path.localeCompare(right.path));
 }
 
+function carrierChanges(root, before, after) {
+  const changes = rawChanges(root, before, after);
+  return { changes, changedPaths: changes.map((change) => change.path) };
+}
+
 function containmentIdentity(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
@@ -166,14 +171,14 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
       code: 'task-finish.commit-message-mismatch',
       details: { expected: publicTaskFinishDeliveryCommit(expectedDeliveryCommit), observed: publicTaskFinishDeliveryCommit(messageMatch.observed) },
     });
-    const changedPaths = String(gitText(target, ['diff', '--name-only', `${deliveryBaselineHead}..${head}`]) || '').split('\n').filter(Boolean).sort();
+    const { changes, changedPaths } = carrierChanges(target, deliveryBaselineHead, head);
     return {
       status: 'prepared',
       root: target,
       head,
       tree,
       changedPaths,
-      changes: rawChanges(target, deliveryBaselineHead, head),
+      changes,
       deliveryBaseline: { head: deliveryBaselineHead, tree: deliveryBaselineTree },
       taskContribution: { ...taskContribution, appliedIdentity },
       deliveryCommit: publicTaskFinishDeliveryCommit(expectedDeliveryCommit),
@@ -201,14 +206,14 @@ export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier }) {
   if (merges) return { status: 'blocked', code: 'task-finish.delivery-adaptation-merge-commit', observed: { merges: merges.split('\n') } };
   const deliveryCommit = verifyCarrierDeliveryCommit({ ...carrier, head });
   if (!deliveryCommit.matches) return { status: 'blocked', code: 'task-finish.commit-message-mismatch', observed: { deliveryCommit: publicTaskFinishDeliveryCommit(deliveryCommit.observed) } };
-  const changedPaths = String(gitText(carrier.root, ['diff', '--name-only', `${baselineHead}..${head}`]) || '').split('\n').filter(Boolean).sort();
+  const { changes, changedPaths } = carrierChanges(carrier.root, baselineHead, head);
   const carrierDeltaIdentity = deltaIdentity(carrier.root, baselineTree, tree);
   return {
     status: 'adopted',
     head,
     tree,
     changedPaths,
-    changes: rawChanges(carrier.root, baselineHead, head),
+    changes,
     carrierDeltaIdentity,
     cleanliness: { clean: true },
     deliveryCommit: publicTaskFinishDeliveryCommit(deliveryCommit.observed),
