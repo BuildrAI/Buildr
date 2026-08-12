@@ -99,7 +99,7 @@ Buildr MUST允许Agent提交closed `buildr.task-environment-plan-request/v1`，�
 #### Scenario: 首次Task使用task-inline
 - **WHEN** Project没有Preparation Declaration且Agent已明确判断准备Steps
 - **THEN** `prepare --plan` MUST能够形成v2 Task Plan并执行
-- **AND** CLI与Local App MUST将来源显示为`task-inline`
+- **AND** CLI与Buildr Web MUST将来源显示为`task-inline`
 
 ### Requirement: Plan替换必须绑定当前声明
 Plan record与`prepare --plan` MUST在mutation前从Task Environment拥有的execution root读取当前声明，验证Project ownership、path、Declaration identity与Recipe identity，并原子替换同一SQLite current中的Plan。任何验证失败 MUST保留旧Plan/Receipt；Plan record MUST不执行Step。

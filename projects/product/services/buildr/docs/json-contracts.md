@@ -33,11 +33,11 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v4` |
 | `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v1` |
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v1` / `buildr.contribution-handoff/v1` |
-| Local App Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
+| Buildr Web Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
-| Local App Task execution record list/detail/body file | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-detail-view/v1` / `buildr.task-execution-record-body-file/v1` |
+| Buildr Web Task execution record list/detail/body file | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-detail-view/v1` / `buildr.task-execution-record-body-file/v1` |
 | `task finish run/inspect` | `buildr.task-finish-result/v2` |
-| `app preview start/list/stop` | `buildr.local-app-preview/v1` |
+| `web preview start/list/stop` | `buildr.local-app-preview/v1` |
 
 Task Finish 的 v2 Result 继续由SQLite current/terminal authority决定；`run` additive返回portable `executionRecord` operation summary，表达`not-opened|blocked|retained|attention`、record outcome/body大小与diagnostics transient cleanup，但不暴露SQLite、body/transient locator、Carrier路径或token。`inspect`不读取或列举records。每次真实run/resume独立保留受控diagnostics；record attention不改写已成立的delivery、cleanup、Task terminal或Finish status。Carrier、lease、resume和恢复资源仍只由Finish current管理。`task complete`不是新的JSON contract，而是Task Record terminal status。
 
@@ -59,9 +59,9 @@ Task Finish 的 v2 Result 继续由SQLite current/terminal authority决定；`ru
 
 `buildr.parent-coordination-result/v1`覆盖Parent coordination五个action。根对象返回operation/status/taskId、`legacy|parent-plan` mode、Parent status/Plan/final acceptance/Planning Review、直接Children及其planned binding和matching Contribution Handoff、按Contribution派生的disposition、blockers、final acceptance readiness、effects/diagnostic/nextActions。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child状态和交付不复制进Parent Record/Plan，completed无matching handoff为`unproven`，最终验收不自动完成Parent。legacy Task返回absent diagnostic且不backfill。
 
-Local App stored-state projection 使用详情 v2 和列表 v4，在既有字段上增加 `retrospectiveRelations`并支持 `open|todo|active|completed|abandoned|all`过滤。`open` 只是查询语义，不持久。这两个视图仍不解析专业 currentness，`recordDigest`、`childTaskCount` 与关系摘要都不进入 Task Record schema。
+Buildr Web stored-state projection 使用详情 v2 和列表 v4，在既有字段上增加 `retrospectiveRelations`并支持 `open|todo|active|completed|abandoned|all`过滤。`open` 只是查询语义，不持久。这两个视图仍不解析专业 currentness，`recordDigest`、`childTaskCount` 与关系摘要都不进入 Task Record schema。
 
-Task Execution Record 的三个 Local App read model 只读取同一 `task_execution_records` authority。list v1 固定支持 `all|verification|finish`，detail v1 返回 portable metadata 与经完整性验证的 closed正文文件清单，body-file v1 只返回单个白名单文件最多 512 KiB 的 UTF-8 preview 和双重截断状态。三者都不暴露 SQLite、locator、本机路径、reserved quota、resource token 或 mutation；cleaned tombstone 仍可列出，但正文读取返回 unavailable diagnostic。
+Task Execution Record 的三个 Buildr Web read model 只读取同一 `task_execution_records` authority。list v1 固定支持 `all|verification|finish`，detail v1 返回 portable metadata 与经完整性验证的 closed正文文件清单，body-file v1 只返回单个白名单文件最多 512 KiB 的 UTF-8 preview 和双重截断状态。三者都不暴露 SQLite、locator、本机路径、reserved quota、resource token 或 mutation；cleaned tombstone 仍可列出，但正文读取返回 unavailable diagnostic。
 
 ## Doctor v1 结果语义
 

@@ -151,7 +151,7 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
   }
 });
 
-test('local app Changed 路由只选择内部 owner，Browser 由独立 capability 拥有', () => {
+test('Buildr Web Changed 路由只选择内部 owner，Browser 由独立 capability 拥有', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/api/client.ts'] })), ['unit', 'integration', 'system-local-app-http']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/App.tsx'] })), ['unit', 'integration']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ProjectsPage.tsx'] })), ['unit']);

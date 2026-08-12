@@ -34,14 +34,14 @@ test('Task Record target 必须是 canonical Workspace，不能是 linked worktr
   assert.equal(uninitialized.diagnostic.code, 'task_record_workspace_invalid');
 });
 
-test('Local App 已解析 Workspace root 的 Task 读取不观察 Git', async (t) => {
+test('Buildr Web 已解析 Workspace root 的 Task 读取不观察 Git', async (t) => {
   const { base, root } = fixture(t, 'task-local-app-no-git-read');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-no-git-read'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const writer = createRuntime();
-  writer.createTaskRecord(root, { taskId: 'read-without-git', title: '只读无需 Git', intent: '验证 Local App read boundary', projects: [], services: [], changes: [] });
+  writer.createTaskRecord(root, { taskId: 'read-without-git', title: '只读无需 Git', intent: '验证 Buildr Web read boundary', projects: [], services: [], changes: [] });
 
   const reader = createRuntime();
-  registerWorkspaceSqlite(reader, { observeCheckout: () => { throw new Error('Local App GET 不得调用 Git/worktree provenance'); } });
+  registerWorkspaceSqlite(reader, { observeCheckout: () => { throw new Error('Buildr Web GET 不得调用 Git/worktree provenance'); } });
   const instance = createLocalWorkspaceServer(reader, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId } = await instance.ready;
@@ -51,7 +51,7 @@ test('Local App 已解析 Workspace root 的 Task 读取不观察 Git', async (t
   assert.deepEqual(body.tasks.map((item) => item.record.taskId), ['read-without-git']);
 });
 
-test('Local App 专业 Task read view 使用默认 bounded Worker executor', async (t) => {
+test('Buildr Web 专业 Task read view 使用默认 bounded Worker executor', async (t) => {
   const { base, root } = fixture(t, 'task-local-app-bounded-worker');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-bounded-worker'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const writer = createRuntime();
@@ -66,11 +66,11 @@ test('Local App 专业 Task read view 使用默认 bounded Worker executor', asy
   assert.equal(body.status, 'missing');
 });
 
-test('Local App Task Execution Record routes提供三种只读view和受限正文', async (t) => {
+test('Buildr Web Task Execution Record routes提供三种只读view和受限正文', async (t) => {
   const { base, root } = fixture(t, 'task-local-app-execution-records');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-execution-records'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const writer = createRuntime();
-  writer.createTaskRecord(root, { taskId: 'execution-record-task', title: '执行记录', intent: '验证 Local App execution records', projects: [], services: [], changes: [] });
+  writer.createTaskRecord(root, { taskId: 'execution-record-task', title: '执行记录', intent: '验证 Buildr Web execution records', projects: [], services: [], changes: [] });
   const verification = writer.openTaskExecutionRecord(root, 'execution-record-task', { owner: 'task-verification', kind: 'verification-execution', runIdentity: 'verification-1', targetIdentity: 'target-1', producer: 'system-test' });
   writer.sealTaskExecutionRecord(root, verification.record.recordId, { outcome: 'failed', files: [{ name: 'stdout.txt', content: 'verification output' }] });
   const finish = writer.openTaskExecutionRecord(root, 'execution-record-task', { owner: 'task-finish', kind: 'finish-diagnostics', runIdentity: 'finish-1', targetIdentity: 'target-1', producer: 'system-test' });
@@ -98,7 +98,7 @@ test('Local App Task Execution Record routes提供三种只读view和受限正�
   response = await fetch(`${endpoint}/${verification.record.recordId}/body/secret.txt`); body = await response.json(); assert.equal(response.status, 400); assert.equal(body.error.code, 'task_execution_record_body_name_forbidden');
 });
 
-test('Local App Task API 提供轻量查询与既有任务维护，不暴露创建入口', async (t) => {
+test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创建入口', async (t) => {
   const { base, root } = fixture(t, 'task-local-app');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const runtime = createRuntime();
@@ -149,7 +149,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
       const response = await fetch(resource, { ...options, headers });
       return { status: response.status, headers: response.headers, body: await response.json() };
     } catch (error) {
-      throw new Error(`Local App request failed: ${method} ${resource}: ${error.message}`, { cause: error });
+      throw new Error(`Buildr Web request failed: ${method} ${resource}: ${error.message}`, { cause: error });
     }
   };
 
@@ -175,7 +175,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v2'); assert.deepEqual(response.body.storedChangeReferences, [{ project: 'demo', change: 'same-change' }]); assert.equal('changeReferences' in response.body, false);
   const coordinationEndpoint = `${endpoint}/app-parent/coordination`;
   response = await request(coordinationEndpoint); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.parent-coordination-result/v1'); assert.equal(response.body.mode, 'legacy');
-  const parentPlan = { outcome: 'Local App displays one shared coordination model.', architectureInvariants: ['No Child status is copied into Parent Plan.'], contributions: [{ id: 'app-child-delivery', summary: 'The existing Child delivers its narrow scope.', plannedChildTaskId: 'app-task' }], dependencies: [], finalAcceptance: ['The saved delivery is explicitly accepted.'] };
+  const parentPlan = { outcome: 'Buildr Web displays one shared coordination model.', architectureInvariants: ['No Child status is copied into Parent Plan.'], contributions: [{ id: 'app-child-delivery', summary: 'The existing Child delivers its narrow scope.', plannedChildTaskId: 'app-task' }], dependencies: [], finalAcceptance: ['The saved delivery is explicitly accepted.'] };
   response = await request(coordinationEndpoint, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ operation: 'record', plan: parentPlan }) }); assert.equal(response.status, 403);
   response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ operation: 'record', plan: parentPlan, root }) }); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ operation: 'record', plan: parentPlan, reason: 'Wrong operation field.' }) }); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'parent_coordination_field_forbidden');
@@ -204,7 +204,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   let verificationReads = 0;
   runtime.inspectTaskReview = (...args) => { reviewReads += 1; return inspectReview(...args); };
   runtime.inspectTaskVerification = (...args) => { verificationReads += 1; return inspectVerification(...args); };
-  runtime.inspectTaskTerminalDelivery = () => { throw new Error('Local App Tab 不得调用完整 terminal 聚合器。'); };
+  runtime.inspectTaskTerminalDelivery = () => { throw new Error('Buildr Web Tab 不得调用完整 terminal 聚合器。'); };
   response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
   response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
   assert.equal(developmentReads, 3, 'Reviews/Verification 的terminal section各读取一次Development handoff authority');
@@ -230,7 +230,7 @@ test('Local App Task API 提供轻量查询与既有任务维护，不暴露创�
   const inspectEnvironment = runtime.inspectTaskEnvironment;
   const readEnvironmentCurrent = runtime.readTaskEnvironmentCurrent.bind(runtime);
   let environmentCurrentReads = 0;
-  runtime.inspectTaskEnvironment = () => { throw new Error('Local App Environment GET 不得执行 live inspect。'); };
+  runtime.inspectTaskEnvironment = () => { throw new Error('Buildr Web Environment GET 不得执行 live inspect。'); };
   runtime.readTaskEnvironmentCurrent = (...args) => { environmentCurrentReads += 1; return readEnvironmentCurrent(...args); };
   response = await request(`${taskEndpoint}/environment`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-environment-result/v4'); assert.equal(response.body.status, 'unavailable'); assert.equal(response.body.source, 'current-machine'); assert.equal(response.headers.get('cache-control'), 'no-store'); assert.equal(environmentCurrentReads, 2, 'Task Record Change projection 与 Environment GET 各复用一次 saved current，且都不得执行 live inspect');
   runtime.inspectTaskEnvironment = inspectEnvironment;

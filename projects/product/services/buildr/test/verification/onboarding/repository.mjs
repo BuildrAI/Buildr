@@ -64,6 +64,17 @@ try {
   assert.equal(fs.existsSync(buildr), true, 'installer must create the buildr command');
   assert.equal(fs.realpathSync(buildr), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')), 'installer must target the Node-aware Service launcher');
   run(buildr, ['sync', 'codex', '--target', checkout], { cwd: checkout, env });
+  const synchronizedStatus = run('git', ['status', '--short'], { cwd: checkout, env, capture: true }).trimEnd();
+  if (synchronizedStatus.trim()) {
+    const managedRoots = ['.buildr/builtin-receipts.json', 'rules/', 'skills/', 'commands/', 'components/'];
+    const unexpected = synchronizedStatus.split('\n')
+      .map((line) => line.slice(3).split(' -> ').at(-1))
+      .filter((file) => !managedRoots.some((root) => file === root || file.startsWith(root)));
+    assert.deepEqual(unexpected, [], `sync must only update Buildr-owned projections:\n${synchronizedStatus}`);
+    run('git', ['add', '-A', '--', '.buildr/builtin-receipts.json', 'rules', 'skills', 'commands', 'components'], { cwd: checkout });
+    run('git', ['commit', '-qm', 'synchronize Buildr-owned projections'], { cwd: checkout });
+    run('git', ['push', '-q'], { cwd: checkout });
+  }
   const runtime = JSON.parse(run(buildr, ['runtime', 'list', '--json'], { cwd: checkout, env, capture: true }));
   assert(runtime.supportedAgents.includes('codex'));
   const update = JSON.parse(run(buildr, ['update', 'check', '--json'], { cwd: checkout, env, capture: true }));

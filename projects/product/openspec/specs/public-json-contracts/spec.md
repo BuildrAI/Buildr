@@ -282,12 +282,12 @@ Buildr MUST登记Parent Plan、Contribution binding、Contribution Handoff、coo
 Buildr MUST 为 Task-scoped execution record list、detail 与 body-file read 登记稳定 v1 public JSON identity。List MUST 表达 requested view 与 records；detail MUST 表达单条 portable record 和可用正文文件；body-file read MUST 表达 record/file identity、完整性 metadata、内容与截断状态。三类 payload MUST 使用 closed 字段白名单，且 MUST NOT 暴露 SQLite、database row、body locator、本机路径、resource token 或 mutation action。
 
 #### Scenario: list 与 detail JSON
-- **WHEN** Local App HTTP 返回 execution record list 或 detail
+- **WHEN** Buildr Web HTTP 返回 execution record list 或 detail
 - **THEN** payload MUST 分别使用已登记的 v1 schema identity
 - **AND** 同一 record 在不同 view 中 MUST 保持相同 record identity 与 metadata 语义
 
 #### Scenario: body-file JSON
-- **WHEN** Local App HTTP 成功读取 execution record 正文文件
+- **WHEN** Buildr Web HTTP 成功读取 execution record 正文文件
 - **THEN** payload MUST 返回 UTF-8 content、digest、stored size、stored truncation、response bytes 与 response truncation
 - **AND** payload MUST NOT 返回 locator 或任何可用于读取其他文件的路径
 
@@ -313,3 +313,15 @@ Buildr MUST 提供 `buildr task execution-record gc [--target <canonical-workspa
 - **WHEN** caller 提供越界 limit、force、owner、path 或 retention override
 - **THEN** CLI MUST在 GC mutation 前拒绝请求并返回稳定 input diagnostic
 - **AND** MUST NOT创建第二策略或绕过固定 retention
+
+### Requirement: Buildr Web 术语迁移不得机械重命名已发布 JSON identity
+Buildr MUST 将公开帮助、文档和用户可见字段说明迁移为 Buildr Web，但 MUST 保留本次任务前已经发布并参与兼容读取的 JSON schema id、protocol identity 与 closed payload field。只有独立规范证明用户价值、版本迁移与兼容读取时，未来 Change 才能修改这些 identity。
+
+#### Scenario: 验证 JSON schema registry
+- **WHEN** verifier 比较术语迁移前后的 public JSON registry 与代表性 launcher/instance/preview payload
+- **THEN** 既有 `buildr.local-app-*`、`buildr.launcher-*` 或等价已发布 identity MUST 保持可读且未被机械改名
+- **AND** CLI/help/docs 中的产品名称和 canonical command MUST 使用 Buildr Web 与 `buildr web`
+
+#### Scenario: 内部 identity 不形成 legacy command
+- **WHEN** internal schema、环境变量、SQLite 或目录仍保留 `app` / `local-app` compatibility identity
+- **THEN** CLI executable catalog、help topics、suggestions 与 Launcher command MUST NOT 因此重新暴露 `buildr app`

@@ -153,7 +153,7 @@ function executor(root, options = {}) {
         fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v2\n');
         return { status: options.failSync ? 1 : 0, stdout: '{"status":"synced"}', stderr: options.failSync ? 'sync failed' : '' };
       }
-      if (productArgs[0] === 'app') return { status: 0, stdout: JSON.stringify({ status: 'installed', channel: 'development' }), stderr: '' };
+      if (productArgs[0] === 'web') return { status: 0, stdout: JSON.stringify({ status: 'installed', channel: 'development' }), stderr: '' };
     }
     if (executable === path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli')) return { status: options.failCliInstall ? 1 : 0, stdout: 'installed', stderr: options.failCliInstall ? 'install failed' : '' };
     return { status: 1, stdout: '', stderr: `unexpected command: ${executable} ${args.join(' ')}` };

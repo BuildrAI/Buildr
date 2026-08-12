@@ -18,7 +18,7 @@ export class LocalSessionAdapter implements SessionAdapter {
   writeHeaders(): SessionHeaders {
     const token = this.getToken();
     if (!token) {
-      const error = new Error('Buildr 本地应用 session 已失效，请刷新页面。');
+      const error = new Error('Buildr Web session 已失效，请刷新页面。');
       (error as Error & { code?: string }).code = 'session_forbidden';
       throw error;
     }

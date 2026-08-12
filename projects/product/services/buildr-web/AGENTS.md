@@ -1,11 +1,11 @@
-# Buildr Web Service
+# Buildr Web Frontend Service
 
-本目录是 Product Project 下 `buildr-web` Service 的规则入口，承载 Local App 的 React/Vite 权威前端源码与正式构建。
+本目录是 Product Project 下 Buildr Web Frontend Service（`buildr-web`）的规则入口，承载 Buildr Web 的 React/Vite 权威前端源码与正式构建。
 
 ## 所有权边界
 
-- Service 拥有 Local App 前端工程：`package.json`、Vite/TypeScript 配置、`src/` 与前端依赖锁定。
-- 正式构建产物的交付位置是相邻 `buildr` Service 的 `../buildr/src/interfaces/local-app/web-dist/`；运行时同源 loopback 托管、session 注入与三入口打包仍由该 Service 负责。
+- Service 拥有 Buildr Web 前端工程：`package.json`、Vite/TypeScript 配置、`src/` 与前端依赖锁定。
+- 正式构建产物的交付位置是相邻 `buildr` Service 的 `../buildr/src/interfaces/local-app/web-dist/`；Buildr Web Runtime 的同源 loopback 托管、session 注入与三入口打包仍由该 Service 负责。
 - OpenSpec、verification policy 与跨服务产品治理仍在父级 `projects/product/`；本目录不维护独立 OpenSpec 根。
 - 已安装或仅含 dist 的环境不得依赖本 Service 源码树或 Vite 开发服务器。
 

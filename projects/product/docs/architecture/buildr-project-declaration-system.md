@@ -66,7 +66,7 @@ Discovery 只读取已登记 Project/Service、当前声明、明确 wrapper、l
 | 本次目标的验证事实 | Task Verification Application | Workspace SQLite Verification Result |
 | 声明候选与 diff | 无持久 authority | 当前 Agent 对话/临时工作上下文 |
 
-Task Record 只保存 Task 的 intent 与 Project/Service scope，不保存声明、Plan、Receipt 或 Result。Local App 只读取各专业 current；GET 不发现、探测、修复或回写声明。
+Task Record 只保存 Task 的 intent 与 Project/Service scope，不保存声明、Plan、Receipt 或 Result。Buildr Web 只读取各专业 current；GET 不发现、探测、修复或回写声明。
 
 ## Environment 如何消费 Preparation
 
@@ -116,7 +116,7 @@ Project-only 用户直接声明 Project-wide Recipe 和 Project scope Capability
 
 - 自动 trigger 与 Intake Discovery；
 - Project/Service 注册事务本身；
-- Local App GET；
+- Buildr Web GET；
 - Doctor、sync 的诊断阶段；
 - Environment `inspect`；
 - Verification `inspect`；

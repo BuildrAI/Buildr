@@ -78,7 +78,7 @@ test('Review Result只在SQLite持久化且数据库保持Git ignore', (t) => {
   assert.doesNotMatch(payload, /revision|resultDigest|applicability/);
 });
 
-test('Local App 只读查看双槽位，并只生成 Task Review Agent prompt', async (t) => {
+test('Buildr Web 只读查看双槽位，并只生成 Task Review Agent prompt', async (t) => {
   const { base, root } = fixture(t);
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
@@ -109,7 +109,7 @@ test('Local App 只读查看双槽位，并只生成 Task Review Agent prompt', 
   assert.equal(response.status, 404);
   assert.equal(response.body.error.code, 'task_record_not_found');
   response = await request(`${endpoint}/tasks/review-task/reviews`, { method: 'POST', headers: writeHeaders, body: '{}' });
-  assert.equal(response.status, 404, 'Local App must not expose direct Review Result writer');
+  assert.equal(response.status, 404, 'Buildr Web must not expose direct Review Result writer');
 
   runtime.ensureTaskRecordDirectory(root, 'review-task');
   const environmentFile = path.join(root, '.buildr', 'tasks', 'review-task', 'environment.json');

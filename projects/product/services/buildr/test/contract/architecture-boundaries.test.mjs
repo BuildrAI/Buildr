@@ -72,7 +72,7 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
   assert.doesNotMatch(closeout, /path\.join\(root, PRODUCT_ROOT, 'buildr'\)/);
 });
 
-test('Workspace、Project 与 Service Domain 保持纯净且 local app 静态资源随 src 交付', () => {
+test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源随 src 交付', () => {
   const domain = fs.readFileSync(path.join(productRoot, 'src/domain/workspace/workspace.mjs'), 'utf8');
   assert.doesNotMatch(domain, /yaml|filesystem|http|process|repository/i);
   const projectDomain = fs.readFileSync(path.join(productRoot, 'src/domain/project/project.mjs'), 'utf8');

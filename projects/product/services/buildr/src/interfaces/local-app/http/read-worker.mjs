@@ -28,7 +28,7 @@ function serializeError(error) {
   return {
     code: error?.code || 'local_app_read_application_failed',
     status: Number.isInteger(error?.status) ? error.status : 500,
-    message: error?.message || 'Local App read Application failed.',
+    message: error?.message || 'Buildr Web read Application failed.',
     ...(error?.details === undefined ? {} : { details: error.details }),
   };
 }
@@ -36,7 +36,7 @@ function serializeError(error) {
 parentPort.on('message', (message) => {
   const method = operations[message?.operation];
   if (!validMessage(message)) {
-    parentPort.postMessage({ id: message?.id ?? null, ok: false, error: { code: 'local_app_read_input_invalid', status: 400, message: 'Local App read Worker input invalid.' } });
+    parentPort.postMessage({ id: message?.id ?? null, ok: false, error: { code: 'local_app_read_input_invalid', status: 400, message: 'Buildr Web read Worker input invalid.' } });
     return;
   }
   try {

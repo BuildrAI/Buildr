@@ -142,7 +142,7 @@ test('Task Verification CLI记录workspace-only负向Result且不伪造passed', 
   assert.deepEqual(response.nextActions, []);
 });
 
-test('Local App 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {
+test('Buildr Web 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {
   const { base, root } = fixture(t);
   createRuntime().recordTaskVerification(root, 'verification-task', recordInput(root));
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
@@ -171,7 +171,7 @@ test('Local App 只读投影 current Result，并只生成 Task Verification Age
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(`${endpoint}/tasks/verification-task/verification`, { method: 'POST', headers: writeHeaders, body: '{}' });
-  assert.equal(response.status, 404, 'Local App must not expose direct Verification Result writer');
+  assert.equal(response.status, 404, 'Buildr Web must not expose direct Verification Result writer');
 
   response = await request(`${endpoint}/prompts/task-verification`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'verification-task', targetIdentity: 'delivery:v1' }) });
   assert.equal(response.status, 200);

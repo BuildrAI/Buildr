@@ -2,11 +2,11 @@
 
 本目录维护 Buildr 准备对外发布的文章和其他公开材料。
 
-项目文件是内容源。文章可以发布到墨问、微信公众号、Local App 或其他平台；平台只记录为发布目标，不在平台目录中维护第二份内容。
+项目文件是内容源。文章可以发布到墨问、微信公众号、Buildr Web 或其他平台；平台只记录为发布目标，不在平台目录中维护第二份内容。
 
 ## 当前材料
 
-| 文档 | 类型 | 墨问 | 微信公众号 | Local App |
+| 文档 | 类型 | 墨问 | 微信公众号 | Buildr Web |
 |---|---|---|---|---|
 | [Buildr：让 Agent 越做越多，越做越好](buildr-agent-more-and-better.md) | 产品文章 | [已发布](https://note.mowen.cn/detail/j6vflXphhowJiL7aTsknP) | 待发布 | 已提供 |
 | [Buildr：Agent 的工作基础设施](buildr-agent-work-infrastructure.md) | 产品文章 | [已发布](https://note.mowen.cn/detail/BuWFSl_5H3CqrC4xnXe2f) | 待发布 | 已提供 |

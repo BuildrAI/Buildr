@@ -5,7 +5,7 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 # Task Development
 
-本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Local App只消费Application `inspect`的只读投影来展示通用Development。Parent coordination另有受控公共CLI/Local App surface，但Development Receipt仍只能由Application写入。不得手写Development Receipt。
+本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Buildr Web只消费Application `inspect`的只读投影来展示通用Development。Parent coordination另有受控公共CLI/Buildr Web surface，但Development Receipt仍只能由Application写入。不得手写Development Receipt。
 
 ## Parent Plan 与 Child Contribution
 

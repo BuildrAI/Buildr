@@ -37,7 +37,7 @@ try {
 }
 
 const publicHelpTopics = [
-  [], ['init'], ['app', 'preview', 'start'], ['task', 'environment', 'prepare'],
+  [], ['init'], ['web'], ['web', 'preview', 'start'], ['task', 'environment', 'prepare'],
   ['task', 'verification', 'record'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
   ['openspec', 'convergence', 'inspect'],
 ];
@@ -63,6 +63,9 @@ try {
 
 const rootHelp = run([]);
 assert.equal(rootHelp.status, 0);
+assert.match(rootHelp.stdout, /^  web\s/m);
+assert.doesNotMatch(rootHelp.stdout, /^  app(?:\s|$)/m);
+assert.equal(COMMAND_CATALOG.some((item) => item.key === 'app' || item.key.startsWith('app ')), false);
 const surfaceHeadings = {
   primary: 'Primary workspace commands:',
   'agent-machine': 'Agent machine commands:',
@@ -89,6 +92,8 @@ try {
     { key: 'openspec sync-plan', args: ['openspec', 'sync-plan', 'demo', '--target', removedHelpCwd, '--json'] },
     { key: 'openspec sync-apply', args: ['openspec', 'sync-apply', 'demo', '--target', removedHelpCwd, '--json'] },
     { key: 'skills migrate-project-assets', args: ['skills', 'migrate-project-assets', '--target', removedHelpCwd, '--check', '--json'] },
+    { key: 'app', args: ['app', '--json'] },
+    { key: 'app preview start', args: ['app', 'preview', 'start', 'legacy', '--json'] },
   ];
   for (const command of removedCommands) {
     const result = run(command.args, { cwd: removedHelpCwd });
@@ -100,6 +105,16 @@ try {
 } finally {
   fs.rmSync(removedHelpCwd, { recursive: true, force: true });
 }
+
+for (const args of [['app', '--help'], ['help', 'app']]) {
+  const result = run(args);
+  assert.equal(result.status, 2);
+  assert.match(`${result.stdout}${result.stderr}`, /Unknown (?:command|help topic): app/);
+}
+const removedAppJson = run(['app', '--json']);
+assert.equal(removedAppJson.status, 2);
+assert.equal(JSON.parse(removedAppJson.stdout).error.code, 'cli.unknown_command');
+assert.equal(JSON.parse(removedAppJson.stdout).suggestions.includes('app'), false);
 
 for (const [args, expected] of [
   [['unknown'], /Unknown command: unknown/],
@@ -159,6 +174,16 @@ assert.equal(runtimeJson.agents.qoder.traits.rules.format, 'qoder-markdown');
 assert.equal(runtimeJson.agents.trae.traits.rules.format, 'trae-markdown');
 assert.equal(runtimeJson.agents['trae-work'].traits.rules.placement, 'root-index');
 assert.equal(runtimeJson.agents.workbuddy.traits.rules.placement, 'root-index');
+
+const ordinaryCliRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-demand-start-'));
+try {
+  const appData = path.join(ordinaryCliRoot, 'app-data');
+  const ordinary = run(['runtime', 'list', '--json'], { env: { BUILDR_APP_DATA_DIR: appData } });
+  assert.equal(ordinary.status, 0, ordinary.stderr);
+  assert.equal(fs.existsSync(appData), false, 'ordinary CLI must not start Buildr Web or create instance state');
+} finally {
+  fs.rmSync(ordinaryCliRoot, { recursive: true, force: true });
+}
 
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-compat-'));
 try {

@@ -132,7 +132,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
         method: 'POST',
         body: JSON.stringify({ projectCode, serviceCode, goal }),
       }) as { prompt: string };
-      showResult(result.prompt, ACTION_LABELS.start, '任务尚未在 Buildr App 中开始或完成。');
+      showResult(result.prompt, ACTION_LABELS.start, '任务尚未在 Buildr Web 中开始或完成。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成指令失败。');
     }
@@ -411,7 +411,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
             <Button type="primary" htmlType="submit">生成开始工作指令</Button>
           </div>
         </form>
-        {promptResult(ACTION_LABELS.start, '任务尚未在 Buildr App 中开始或完成。')}
+        {promptResult(ACTION_LABELS.start, '任务尚未在 Buildr Web 中开始或完成。')}
       </>
     );
   }

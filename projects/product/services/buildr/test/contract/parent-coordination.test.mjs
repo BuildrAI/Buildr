@@ -25,7 +25,7 @@ test('Parent Plan是closed计划值且Task Record不复制计划或Child状态',
   for (const forbidden of ['parentPlan', 'plannedContributions', 'contributionHandoff', 'parentAcceptance']) assert.equal(taskRecord.includes(forbidden), false, forbidden);
 });
 
-test('CLI、Local App与Agent共用Parent Coordination Application和单一public JSON identity', () => {
+test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一public JSON identity', () => {
   const registry = read('src/interfaces/cli/registry.mjs');
   const cli = read('src/interfaces/cli/parent-coordination.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');

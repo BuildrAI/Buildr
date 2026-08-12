@@ -52,7 +52,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 正式持久交付 | `buildr.task-record/v2` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
 | 正式执行位置 | `buildr.task-environment/v1` 的 Plan `record/inspect` 与 Environment `prepare/inspect` | Task ID、canonical Workspace、完整 Task Project/Service scope、Project `preparation.yml`及Agent选择的Recipe；首次持久交付写入前取得`ready`、实际execution roots、validation root和执行CLI | Declaration/Plan缺失或scope不完整时只阻塞execution；不猜技术栈，不回退到cwd或旧Receipt |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
-正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Local App 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
+正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Buildr Web 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
 
 ### 从 Parent 规划项启动独立 Child Task
 
@@ -71,7 +71,7 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 3. 全部 fetch 成功后重新核验 `dev`、`origin/dev` 与 clean 状态，再按同一顺序为每个 repository 明确选择 `rebase` operation，将本地 `dev` rebase 到本次观察的 `origin/dev`。本地已对齐、仅落后或含未 push 且未共享 commit 都使用同一 operation；provider 不自行选择 merge 或 push。
 4. rebase 冲突时，consumer 明确授权 provider 只在 pre-state 已证明 clean 时执行有界 `rebase --abort`。只有 branch、HEAD、index 与 working tree 精确恢复到 pre-rebase facts 才记为 recovered；无论恢复是否成功，本次 Task create 都是 `blocked`。abort 失败或恢复不可证明时保留现场。已经在其他 repository 成功的 fetch/rebase 不反向回滚，必须作为部分 effects 报告。
 5. 任一 rebase 返回 `treeChanged: true` 时，按 required Core 对相应 Buildr Workspace 执行当前 Agent 的 workspace transition check；Doctor 或必要收敛未 ready 时不创建 Task。
-6. 只有完整 repository set 的 fetch、rebase、恢复检查与适用 transition check 全部成功，才调用 selected `buildr.task-record/v2` provider 的 active `create` 或 `activate`。任一门禁blocked时todo保持不变。Task Record Application、Local App 与 Task Environment 不获得任何Git mutation或本门禁状态authority。
+6. 只有完整 repository set 的 fetch、rebase、恢复检查与适用 transition check 全部成功，才调用 selected `buildr.task-record/v2` provider 的 active `create` 或 `activate`。任一门禁blocked时todo保持不变。Task Record Application、Buildr Web 与 Task Environment 不获得任何Git mutation或本门禁状态authority。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
@@ -92,12 +92,12 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 - 下一动作：<selected capability/provider action 或用户决定>
 ```
 
-只有选中 OpenSpec 时追加对应状态。任务进度直接使用 Task Record、Parent/Child、各专业公开 read model、Local App 与对话表达；不得把 readiness、planned identity、文件存在或单次 finding 冒充行为成功。
+只有选中 OpenSpec 时追加对应状态。任务进度直接使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话表达；不得把 readiness、planned identity、文件存在或单次 finding 冒充行为成功。
 
 ## Guardrails
 
 - 不为过去事实补造 Change 历史，不把 current knowledge 变成第二套规范。
 - 不在正式 Task 的首次持久交付写入后才补做 Task Record 或 Task Environment 决策。
-- 不把创建前 Git 基线门禁塞进 Task Record Application、Local App 或 Task Environment，也不把多仓库操作伪装为原子 transaction。
+- 不把创建前 Git 基线门禁塞进 Task Record Application、Buildr Web 或 Task Environment，也不把多仓库操作伪装为原子 transaction。
 - 不使用未经 authority 或 CLI 确认的路径、状态、进度和完成结论。
 - 不把一次集中验证解释为覆盖尚未执行、stale 或存在 coverage gap 的适用 delivery-required capability。

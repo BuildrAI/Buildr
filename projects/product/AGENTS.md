@@ -18,8 +18,8 @@ Agent 在 `product` Project 中的最小运行规则。
 | OpenSpec | `openspec/` | Buildr 产品事实、能力规范、变更和归档 |
 | Product docs | `docs/` | 产品定位、设计说明、发布和维护文档 |
 | Package assets | `services/buildr/package/` | 随包 manifest、bootstrap、workspace/runtime targets |
-| Buildr 可执行实现 | `services/buildr/` | npm package、CLI、本机应用 HTTP/运行时（runtime）、`web-dist` 托管与打包、验证及维护脚本的实现根 |
-| Local App 前端源码 | `services/buildr-web/` | Local App React/Vite 权威前端源码与正式构建 |
+| Buildr 可执行实现 | `services/buildr/` | npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包、验证及维护脚本的实现根 |
+| Buildr Web 前端源码 | `services/buildr-web/` | Buildr Web Frontend Service 的 React/Vite 权威前端源码与正式构建 |
 | Compatibility bridge | `buildr` | 只加载 `services/buildr/bin/buildr.mjs` 的稳定开发入口 |
 | Service registry | `services/manifest.yml` | 当前 Product Project 的 Service registry |
 | Service assets | `services/<service>/` | Service 实现目录；是否独立 Git repo 以 registry source 和实际 Git 边界为准 |

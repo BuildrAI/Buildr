@@ -14,7 +14,7 @@ Agent 使用本 Skill 判断用户意图属于哪类 Buildr 资产，并通过 B
 组织资产先改变源资产（使用 Buildr CLI），再同步 Agent runtime（使用 render/sync）。
 Agent 是 Buildr 功能的默认操作入口。Agent 能在当前工具、权限和安全边界内完成的动作，应先说明必要影响并取得所需授权，再直接执行和验证；不得默认把命令交给用户代为执行。用户明确选择手动方式，或 Agent 因工具不可用、权限、登录态、外部环境等原因无法完成时，再提供准确的手动操作兜底。
 
-用户要求“安装 Buildr”且未限制范围时，在 macOS 或 Windows 默认先安装 npm CLI，再运行 `buildr app launcher install --channel release --json`，并分别验证命令、版本、launcher status 和启动能力；部分失败时报告各自状态与恢复动作。全局安装不猜测 Workspace 或写 Agent runtime；`init --agent` 在目标 Workspace 首次投射 Buildr Skill，之后由 `sync`/`render` 收敛。Buildr 产品 checkout 使用 `npm run install:development` 同时更新当前 checkout CLI 与隔离的 `Buildr Dev`，launcher 变化后重复执行，禁止覆盖运行中 bundle 或正式 launcher。
+用户要求“安装 Buildr”且未限制范围时，在 macOS 或 Windows 默认先安装 npm CLI，再运行 `buildr web launcher install --channel release --json`，并分别验证命令、版本、Buildr Web Launcher status 和启动能力；部分失败时报告各自状态与恢复动作。全局安装不猜测 Workspace 或写 Agent runtime；`init --agent` 在目标 Workspace 首次投射 Buildr Skill，之后由 `sync`/`render` 收敛。Buildr 产品 checkout 使用 `npm run install:development` 同时更新当前 checkout CLI 与隔离的 `Buildr Web Dev`，Launcher 变化后重复执行，禁止覆盖运行中 bundle 或正式 Launcher。
 ## 执行循环
 
 1. 确认 `target`。未指定时默认当前目录；如果当前目录在服务（Service）代码仓内，先定位 Buildr 组织（Organization/Root）。
@@ -39,7 +39,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 恢复内置能力 | 内置能力（Builtins）/ Agent runtime 渲染 |
 | 接入业务、产品线、系统或长期工作单元 | 项目（Project） |
 | 接入代码仓、服务仓或可执行资产 | 服务（Service） |
-| 查看待办/正式 Task、Parent/Child、复盘来源与各专业当前状态 | `buildr.task-record/v2` 及 Development、Review、Verification 公开 read model；Local App 动态投影 |
+| 查看待办/正式 Task、Parent/Child、复盘来源与各专业当前状态 | `buildr.task-record/v2` 及 Development、Review、Verification 公开 read model；Buildr Web 动态投影 |
 | 创建或检查opt-in Parent Plan、绑定Child Contribution、显式reconcile范围变化或记录Parent最终集成验收 | `buildr.task-development/v2` selected provider + `task parent inspect|record|bind-child|reconcile|accept`；progress只由Application动态派生 |
 | 记录、查看或处理已结束Task的Agent执行效率复盘 | `buildr.task-retrospective/v2` selected provider；有效方向由todo/active Task承接，不进入生命周期门禁 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
@@ -71,7 +71,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 - 创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Project 表示业务、产品线、系统或长期工作单元；canonical entity 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`，`source.path` 定位文件系统位置。创建入口是 `buildr project create <code> --name <name> --description <description> --target <dir>`；独立 Git Project 再用 `--repo <url> --remote <name> --integration-branch <branch>` 声明来源，integration branch 是稳定集成目标而非当前 checkout。
 - `currentBranch`、HEAD、dirty、upstream、ahead/behind 和实际 remote URL 由 doctor/app 实时观察，不写入 Domain；分支偏移可能是合法任务状态，任何 checkout、stash、merge 或 remote 修改前都核对任务、clean 状态、ownership 和授权，不盲目纠正。
-- `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr app` 可查看 Project/Git 状态并受控修改 `name`、`description`；新增页面只生成 Agent prompt，不直接创建或 clone。
+- `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr web` 可查看 Project/Git 状态并受控修改 `name`、`description`；新增页面只生成 Agent prompt，不直接创建或 clone。
 - Project 可以按需维护可选 `verification.yml`，使用 closed `buildr.project-verification/v2` 声明已经存在且团队确认可调用的能力 identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求及必要环境/副作用边界。文件缺失或没有适用能力时只形成 coverage gap；不得在声明中加入测试层级、成熟度、阶段、通用 DAG 或借此开发测试。Project也可按需维护可选`preparation.yml`，使用closed `buildr.project-environment-preparation/v1`声明Project-wide或Service-scoped Preparation Recipe；Agent按正式Task scope选择Recipe形成Task Plan，文件缺失时只允许显式task-inline选择，不得由Buildr扫描技术栈或静默回写长期声明。初始化、刷新、Project/Service注册、首次Task或专业gap先路由`declaration-intake`做只读发现；长期写入必须由用户确认后交给各声明owner Skill。
 
 ### 遗留 Practices

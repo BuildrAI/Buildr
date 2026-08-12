@@ -8,7 +8,7 @@ import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.mjs';
 
-test('Local App HTTP owner 只读读取不依赖 Git，并传播明确的 API 边界', async (t) => {
+test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确的 API 边界', async (t) => {
   const { base, root } = fixture(t, 'local-app-http-owner');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
@@ -34,7 +34,7 @@ test('Local App HTTP owner 只读读取不依赖 Git，并传播明确的 API �
   assert.equal((await missing.json()).error.code, 'task_record_not_found');
 });
 
-test('Local App HTTP owner 传播 read executor 错误并保持写请求保护', async (t) => {
+test('Buildr Web Runtime HTTP owner 传播 read executor 错误并保持写请求保护', async (t) => {
   const { base, root } = fixture(t, 'local-app-http-errors');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);

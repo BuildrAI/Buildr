@@ -78,7 +78,7 @@ capabilities:
       authorization: implicit
     resourceClaims: []
   - id: product.browser-smoke
-    title: Buildr 本机应用 affected 浏览器冒烟验证
+    title: Buildr Web affected 浏览器冒烟验证
     scope:
       project: product
       services: [buildr, buildr-web]
@@ -89,7 +89,7 @@ capabilities:
     applicability:
       paths: ["services/buildr-web/**", "services/buildr/src/interfaces/local-app/web-dist/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**"]
       conditions:
-        - 本机应用路由、DOM 交互或 Agent Action 发生变化
+        - Buildr Web 路由、DOM 交互或 Agent Action 发生变化
         - 未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths
     proves:
       - Project、Service、Change 与 Task 页面关键浏览器交互和错误反馈可用

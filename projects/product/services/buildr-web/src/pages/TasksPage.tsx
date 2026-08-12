@@ -260,7 +260,7 @@ export function TasksPage() {
       <section className="resource-toolbar">
         <div>
           <Typography.Title level={2} style={{ margin: 0 }}>任务记录</Typography.Title>
-          <p className="page-copy">查看正式任务的顶层事实并进行有限维护。正式任务由 Agent 创建，Local App 不提供创建入口。</p>
+          <p className="page-copy">查看正式任务的顶层事实并进行有限维护。正式任务由 Agent 创建，Buildr Web 不提供创建入口。</p>
         </div>
         <span id="tasks-state" className="count-label">{state}</span>
       </section>

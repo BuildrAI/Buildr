@@ -125,8 +125,8 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'System verification contracts',
     'System Workspace lifecycle',
     'System runtime recovery',
-    'System Local App HTTP',
-    'System App process and preview',
+    'System Buildr Web Runtime',
+    'System Buildr Web process and preview',
     'System Task Finish',
     'System fresh build',
     'Candidate integration: builtin recovery and migration',
@@ -228,7 +228,7 @@ test('fresh build reuses prepared controller dependencies without weakening test
 test('双任务并发验收输出完整的组合证据并执行归属清理', () => {
   const source = read('test/verification/concurrency/task-acceptance.mjs');
   for (const phrase of [
-    'buildr.concurrent-task-acceptance/v1', 'cliInvocation', 'app', 'preview',
+    'buildr.concurrent-task-acceptance/v1', 'cliInvocation', 'web', 'preview',
     'previewRegistrationFailure', 'resourceCoordination', 'environmentPreparation', 'portableResults', 'phases',
     'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
   ]) assert.ok(source.includes(phrase), phrase);

@@ -44,7 +44,7 @@ preflight → prepare → verify → deliver → cleanup
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
 - Agent只在carrier完成交付适配（Delivery Adaptation）；最终carrier HEAD必须保持run冻结的完整message，否则resume保持blocked。resume核验ownership、baseline、source/handoff、cleanliness、message identity与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
-- `deliver`只做fast-forward、普通push/回读、类型化runtime activation与run绑定的指定Agent Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；Doctor要求Workspace health ready，失败时保留已经完成的remote readback、partial delivery与精确resume事实并停止cleanup。通用Product executor不读取Project/Service配置，不执行sync，不安装Buildr development CLI或Local App，也不接受任意命令字符串。
+- `deliver`只做fast-forward、普通push/回读、类型化runtime activation与run绑定的指定Agent Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；Doctor要求Workspace health ready，失败时保留已经完成的remote readback、partial delivery与精确resume事实并停止cleanup。通用Product executor不读取Project/Service配置，不执行sync，不安装Buildr development CLI或Buildr Web，也不接受任意命令字符串。
 - render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
 - `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 

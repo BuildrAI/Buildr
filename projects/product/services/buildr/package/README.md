@@ -14,7 +14,7 @@ Help me start using Buildr: check and install what is needed, confirm or create 
 
 The first success is not merely running `init`. It is confirming a Workspace, a Project, an optional Service, and then giving the Agent a real goal.
 
-The local Buildr App offers the same path visually: add an existing Workspace, understand the Project and optional Service scope, and choose **Start with Agent**. It only explains scope, maintains low-risk metadata, and creates a constrained handoff prompt. It does not create repositories, migrate assets, or execute professional work.
+Buildr Web offers the same path visually in the default browser: add an existing Workspace, understand the Project and optional Service scope, and choose **Start with Agent**. It only explains scope, maintains low-risk metadata, and creates a constrained handoff prompt. It does not create repositories, migrate assets, or execute professional work. Buildr App is reserved for a future desktop product and is not implemented today.
 
 ```text
 Workspace → Project → Service (optional)
@@ -32,7 +32,7 @@ When an Agent cannot perform setup, Buildr supports Node.js `>=24.15.0 <25`; eac
 npm install --global @buildr-ai/buildr@next
 buildr runtime list --json
 buildr init --agent <agent> --target . --name <name> --profile <personal|team|company>
-buildr app --target .
+buildr web --target .
 ```
 
 `init --agent` uses the final doctor result as technical onboarding evidence; the Agent should then complete a brief first-use handoff from the real Project and Service state.

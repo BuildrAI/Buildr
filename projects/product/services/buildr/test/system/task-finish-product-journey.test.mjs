@@ -46,11 +46,11 @@ else if (args[0] === 'openspec' && args[1] === 'converge') {
 else if (args[0] === 'task' && args[1] === 'environment' && args[2] === 'prepare') {
   output({ schemaVersion: 'buildr.task-environment-operation-result/v1', operation: 'prepare', status: 'ready', taskId: args[3] });
 }
-else if (args[0] === 'app' && args[1] === 'launcher' && ['install', 'status'].includes(args[2])) {
+else if (args[0] === 'web' && args[1] === 'launcher' && ['install', 'status'].includes(args[2])) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   output({
     schemaVersion: 'buildr.launcher-status/v1', platform: 'darwin', channel: 'development',
-    target: '/Applications/Buildr Dev.app', installed: true,
+    target: '/Applications/Buildr Web Dev.app', installed: true,
     identity: { schemaVersion: 'buildr.launcher-identity/v1', channel: 'development', source: 'checkout', buildId: head.slice(0, 12) + '-fixture', checkout: { head, dirty: false } },
   });
 }

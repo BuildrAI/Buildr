@@ -7,7 +7,7 @@ import { workspaceHref } from '../lib/labels';
 import { renderMarkdown } from '../markdown';
 
 const statusLabel: Record<string, string> = { published: '已发布', planned: '待发布', draft: '草稿' };
-const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'local-app': 'Local App' };
+const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'local-app': 'Buildr Web' };
 
 type PublicationDetail = {
   content: string;

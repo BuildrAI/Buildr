@@ -359,7 +359,7 @@ export function createPackageStaticValidator(deps) {
     }
 
     const localServer = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'server.mjs');
-    if (!existsFile(localServer)) problems.push('Task Review Local App interface is missing.');
+    if (!existsFile(localServer)) problems.push('Task Review Buildr Web interface is missing.');
     else {
       const content = fs.readFileSync(localServer, 'utf8');
       const readWorker = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'read-worker.mjs');
@@ -370,9 +370,9 @@ export function createPackageStaticValidator(deps) {
         [content, "suffix === '/prompts/task-review'"],
         [content, 'runtime.generateTaskReviewPrompt(root, input)'],
       ]) {
-        if (!owner.includes(required)) problems.push(`Task Review Local App interface must include ${JSON.stringify(required)}.`);
+        if (!owner.includes(required)) problems.push(`Task Review Buildr Web interface must include ${JSON.stringify(required)}.`);
       }
-      if (content.includes('runtime.recordTaskReview(')) problems.push('Local App must not expose a direct Task Review Result writer.');
+      if (content.includes('runtime.recordTaskReview(')) problems.push('Buildr Web must not expose a direct Task Review Result writer.');
     }
 
     const changeDetail = path.join(root, 'src', 'interfaces', 'local-app', 'web', 'features', 'change-detail.js');
@@ -979,7 +979,7 @@ export function createPackageStaticValidator(deps) {
           '不要仅因用户说“任务”就触发',
           '不读取 environment receipt',
           '不从 worktree 推断 retained root',
-          'Local App 是同一 Application 的独立人类客户端',
+          'Buildr Web 是同一 Application 的独立人类客户端',
           '不直接读写 Workspace SQLite 或旧 `.buildr/tasks/<task-id>/task.yml`',
           '不自动 commit、push、publication、Finish 或 cleanup',
         ]) {
@@ -1000,7 +1000,7 @@ export function createPackageStaticValidator(deps) {
         for (const relative of ['../buildr-web/src/pages/TasksPage.tsx', '../buildr-web/src/pages/TaskDetailPage.tsx']) {
           const webFile = path.join(root, relative);
           if (!existsFile(webFile)) {
-            problems.push(`Task Manager Local App asset is missing: ${relative}.`);
+            problems.push(`Task Manager Buildr Web asset is missing: ${relative}.`);
             continue;
           }
           const content = fs.readFileSync(webFile, 'utf8');

@@ -320,7 +320,7 @@ export function registerWorkspaceApplication(runtime) {
       ? '检查 Workspace metadata、确认正确 identity 后执行 canonical buildr sync <agent>'
       : '检查该目录是否应作为 Buildr Workspace 初始化，并在获得授权后执行 canonical buildr init --agent <agent>';
     return [
-      '请帮我处理一个通过 Buildr App 选择的本机目录。',
+      '请帮我处理一个通过 Buildr Web 选择的本机目录。',
       '',
       `候选位置：${rootPath}`,
       `当前情况：${kind === 'migration_required' ? '目录需要迁移或修复，尚未登记。' : '目录尚不是可登记的 Buildr Workspace。'}`,
@@ -328,7 +328,7 @@ export function registerWorkspaceApplication(runtime) {
       '执行要求：',
       '1. 先核对目录、Git 边界、权限和其中已有内容；不要猜测或覆盖 identity。',
       `2. ${action}。`,
-      '3. 运行适用 doctor，确认真实结果后再建议我回到 Buildr App 登记。',
+      '3. 运行适用 doctor，确认真实结果后再建议我回到 Buildr Web 登记。',
     ].join('\n');
   }
 
@@ -489,7 +489,7 @@ export function registerWorkspaceApplication(runtime) {
       if (workspace.workspace.description === WORKSPACE_DESCRIPTION_TODO) {
         runtime.addDoctorFinding(result, 'warning', 'workspace.description_todo', 'Workspace 说明仍是待补全内容。', {
           path: '.buildr/workspace.yml',
-          suggestion: '通过 buildr app 或 Agent 补充 Workspace 的管理范围和用途。',
+          suggestion: '通过 buildr web 或 Agent 补充 Workspace 的管理范围和用途。',
           userActionRequired: true,
         });
       }

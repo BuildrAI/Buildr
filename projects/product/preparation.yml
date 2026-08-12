@@ -1,7 +1,7 @@
 schemaVersion: buildr.project-environment-preparation/v1
 recipes:
   - id: buildr.npm-ci
-    title: Prepare Buildr CLI and Local App runtime dependencies
+    title: Prepare Buildr CLI and Buildr Web Runtime dependencies
     scope:
       kind: service
       service: buildr
@@ -20,7 +20,7 @@ recipes:
         required: true
         timeoutMs: 300000
   - id: buildr-web.npm-ci
-    title: Prepare Buildr Local App web dependencies
+    title: Prepare Buildr Web Frontend Service dependencies
     scope:
       kind: service
       service: buildr-web

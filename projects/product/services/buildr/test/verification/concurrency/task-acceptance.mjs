@@ -249,7 +249,7 @@ try {
   const previewRuns = summary.tasks.map((task) => {
     const instance = `${task.taskId}-preview`;
     previews.push(instance);
-    return spawnSupervised(process.execPath, [BUILDR, 'app', 'preview', 'start', instance, '--task', task.taskId, '--target', workspace, '--no-open', '--json'], {
+    return spawnSupervised(process.execPath, [BUILDR, 'web', 'preview', 'start', instance, '--task', task.taskId, '--target', workspace, '--no-open', '--json'], {
       cwd: task.repositories[1].checkoutPath,
       env,
       owner: { taskId: task.taskId, instance },
@@ -267,12 +267,12 @@ try {
   assert.equal(summary.previews.every((item) => fs.existsSync(item.stateRoot)), true);
   const failedPreviewInstance = 'acceptance-register-failure';
   const failedPreview = runBuildr([
-    'app', 'preview', 'start', failedPreviewInstance,
+    'web', 'preview', 'start', failedPreviewInstance,
     '--task', taskIds[0], '--target', workspace, '--no-open', '--json',
   ], { env: { ...env, BUILDR_FAULT_TASK_ENVIRONMENT_RESOURCE_REGISTER: '1' } });
   assert.notEqual(failedPreview.status, 0);
   assert.match(failedPreview.stderr, /Preview Environment 登记失败，实例已回收/);
-  const afterFailedPreview = requireSuccess(runBuildr(['app', 'preview', 'list', '--json']), 'list previews after registration failure');
+  const afterFailedPreview = requireSuccess(runBuildr(['web', 'preview', 'list', '--json']), 'list previews after registration failure');
   assert.deepEqual(afterFailedPreview.previews.map((item) => item.instance).sort(), [...previews].sort());
   const environmentAfterFailedPreview = requireSuccess(runBuildr(['task', 'environment', 'inspect', taskIds[0], '--target', workspace, '--json']), 'inspect Environment after preview registration failure');
   assert.equal(environmentAfterFailedPreview.environment.resources.some((resource) => resource.id === `preview:${failedPreviewInstance}`), false);
@@ -309,12 +309,12 @@ try {
     const task = summary.tasks.find((item) => item.taskId === taskId);
     const other = summary.tasks.find((item) => item.taskId !== taskId);
     if (task && other && instance === previews[1]) {
-      const wrongOwner = runBuildr(['app', 'preview', 'stop', instance, '--target', workspace, '--task', other.taskId, '--json']);
+      const wrongOwner = runBuildr(['web', 'preview', 'stop', instance, '--target', workspace, '--task', other.taskId, '--json']);
       summary.cleanup.previews.push({ instance, status: wrongOwner.status === 0 ? 'owner-guard-failed' : 'wrong-owner-rejected', diagnostic: (wrongOwner.stderr || wrongOwner.stdout).trim() });
     }
     const args = task
-      ? [BUILDR, 'app', 'preview', 'stop', instance, '--target', workspace, '--task', task.taskId, '--json']
-      : [BUILDR, 'app', 'preview', 'stop', instance, '--json'];
+      ? [BUILDR, 'web', 'preview', 'stop', instance, '--target', workspace, '--task', task.taskId, '--json']
+      : [BUILDR, 'web', 'preview', 'stop', instance, '--json'];
     previewStops.push({
       instance,
       run: spawnSupervised(process.execPath, args, { cwd: PRODUCT_ROOT, env, owner: { taskId, instance }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }),

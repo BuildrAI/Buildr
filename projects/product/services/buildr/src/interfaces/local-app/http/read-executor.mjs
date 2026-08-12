@@ -20,7 +20,7 @@ function readExecutorError(code, message, status = 503, details = undefined) {
 }
 
 function workerError(message, fallbackCode = 'local_app_read_worker_failed') {
-  const error = new Error(message?.message || 'Local App read Worker failed.');
+  const error = new Error(message?.message || 'Buildr Web read Worker failed.');
   error.code = message?.code || fallbackCode;
   error.status = Number.isInteger(message?.status) ? message.status : 500;
   if (message?.details !== undefined) error.details = message.details;
@@ -28,19 +28,19 @@ function workerError(message, fallbackCode = 'local_app_read_worker_failed') {
 }
 
 function validateRequest(operation, input) {
-  if (!OPERATIONS.has(operation)) throw readExecutorError('local_app_read_operation_forbidden', `Local App read operation 不受支持：${operation}。`, 400);
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw readExecutorError('local_app_read_input_invalid', 'Local App read executor input 必须是对象。', 400);
-  if (typeof input.targetRoot !== 'string' || !path.isAbsolute(input.targetRoot)) throw readExecutorError('local_app_read_root_invalid', 'Local App read executor 只接受已解析的绝对 Workspace root。', 400);
-  if (typeof input.taskId !== 'string' || !TASK_ID_PATTERN.test(input.taskId)) throw readExecutorError('local_app_read_task_invalid', 'Local App read executor Task ID 不合法。', 400);
+  if (!OPERATIONS.has(operation)) throw readExecutorError('local_app_read_operation_forbidden', `Buildr Web read operation 不受支持：${operation}。`, 400);
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw readExecutorError('local_app_read_input_invalid', 'Buildr Web read executor input 必须是对象。', 400);
+  if (typeof input.targetRoot !== 'string' || !path.isAbsolute(input.targetRoot)) throw readExecutorError('local_app_read_root_invalid', 'Buildr Web read executor 只接受已解析的绝对 Workspace root。', 400);
+  if (typeof input.taskId !== 'string' || !TASK_ID_PATTERN.test(input.taskId)) throw readExecutorError('local_app_read_task_invalid', 'Buildr Web read executor Task ID 不合法。', 400);
   if (input.signal !== undefined && (typeof input.signal !== 'object' || typeof input.signal.addEventListener !== 'function')) {
-    throw readExecutorError('local_app_read_signal_invalid', 'Local App read executor signal 不合法。', 400);
+    throw readExecutorError('local_app_read_signal_invalid', 'Buildr Web read executor signal 不合法。', 400);
   }
   const allowed = new Set(['targetRoot', 'taskId', 'signal']);
   if (operation === 'execution-records') allowed.add('view');
   if (operation === 'execution-record-detail' || operation === 'execution-record-body') allowed.add('recordId');
   if (operation === 'execution-record-body') allowed.add('filename');
   for (const field of Object.keys(input)) {
-    if (!allowed.has(field)) throw readExecutorError('local_app_read_field_forbidden', `Local App read executor 不支持字段：${field}。`, 400, { field });
+    if (!allowed.has(field)) throw readExecutorError('local_app_read_field_forbidden', `Buildr Web read executor 不支持字段：${field}。`, 400, { field });
   }
   if (operation === 'execution-records' && !EXECUTION_RECORD_VIEWS.has(input.view ?? 'all')) throw readExecutorError('task_execution_record_view_invalid', `execution record view不受支持：${String(input.view)}。`, 400);
   if ((operation === 'execution-record-detail' || operation === 'execution-record-body') && (typeof input.recordId !== 'string' || !RECORD_ID_PATTERN.test(input.recordId))) {
@@ -96,7 +96,7 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
     worker.on('exit', (code) => {
       const item = state.item;
       state.item = null;
-      if (item) settle(item, readExecutorError('local_app_read_worker_failed', `Local App read Worker exited unexpectedly (${code}).`, 500));
+      if (item) settle(item, readExecutorError('local_app_read_worker_failed', `Buildr Web read Worker exited unexpectedly (${code}).`, 500));
       if (closed) return;
       try {
         spawn(state);
@@ -104,7 +104,7 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
       } catch (error) {
         state.failed = true;
         state.worker = null;
-        rejectQueued(readExecutorError('local_app_read_executor_unavailable', `Local App read executor 无法补充 Worker：${error.message}`, 503));
+        rejectQueued(readExecutorError('local_app_read_executor_unavailable', `Buildr Web read executor 无法补充 Worker：${error.message}`, 503));
       }
     });
   }
@@ -120,7 +120,7 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
           spawn(state);
         } catch (error) {
           state.failed = true;
-          settle(item, readExecutorError('local_app_read_executor_unavailable', `Local App read executor 无法启动 Worker：${error.message}`, 503));
+          settle(item, readExecutorError('local_app_read_executor_unavailable', `Buildr Web read executor 无法启动 Worker：${error.message}`, 503));
           continue;
         }
       }
@@ -148,10 +148,10 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
 
   function run(operation, input = {}) {
     validateRequest(operation, input);
-    if (closed) return Promise.reject(readExecutorError('local_app_read_executor_closed', 'Local App read executor 已关闭。', 503));
-    if (input.signal?.aborted) return Promise.reject(readExecutorError('local_app_read_cancelled', 'Local App read request 已取消。', 499));
+    if (closed) return Promise.reject(readExecutorError('local_app_read_executor_closed', 'Buildr Web read executor 已关闭。', 503));
+    if (input.signal?.aborted) return Promise.reject(readExecutorError('local_app_read_cancelled', 'Buildr Web read request 已取消。', 499));
     if (queue.length >= queueLimit && workers.every((state) => state.item)) {
-      return Promise.reject(readExecutorError('local_app_read_queue_full', 'Local App read executor 当前已达到并发与队列上限。', 503, { workerCount, queueLimit }));
+      return Promise.reject(readExecutorError('local_app_read_queue_full', 'Buildr Web read executor 当前已达到并发与队列上限。', 503, { workerCount, queueLimit }));
     }
     return new Promise((resolve, reject) => {
       const item = {
@@ -173,7 +173,7 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
         item.state = 'cancelled';
         const index = queue.indexOf(item);
         if (index >= 0) queue.splice(index, 1);
-        settle(item, readExecutorError('local_app_read_cancelled', 'Local App read request 已取消。', 499));
+        settle(item, readExecutorError('local_app_read_cancelled', 'Buildr Web read request 已取消。', 499));
       };
       if (input.signal) {
         input.signal.addEventListener('abort', onAbort, { once: true });
@@ -187,10 +187,10 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
   async function close() {
     if (closed) return;
     closed = true;
-    rejectQueued(readExecutorError('local_app_read_executor_closed', 'Local App read executor 已关闭。', 503));
+    rejectQueued(readExecutorError('local_app_read_executor_closed', 'Buildr Web read executor 已关闭。', 503));
     const terminations = [];
     for (const state of workers) {
-      if (state.item) settle(state.item, readExecutorError('local_app_read_executor_closed', 'Local App read executor 已关闭。', 503));
+      if (state.item) settle(state.item, readExecutorError('local_app_read_executor_closed', 'Buildr Web read executor 已关闭。', 503));
       state.item = null;
       if (state.worker) terminations.push(Promise.resolve(state.worker.terminate()).catch(() => {}));
     }

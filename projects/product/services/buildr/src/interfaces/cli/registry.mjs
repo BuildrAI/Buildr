@@ -30,85 +30,85 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.initBuildr(c.argv.slice(3)),
   },
   {
-    key: "app launcher install",
+    key: "web launcher install",
     surface: "primary",
-    summary: "构建到新的 staging、验证后安全切换 launcher；Release 自包含，development 绑定当前 checkout 的 Buildr Dev thin launcher。",
+    summary: "构建到新的 staging、验证后安全切换 Buildr Web Launcher；release 自包含，development 绑定当前 checkout 的 Buildr Web Dev thin launcher。",
     help: [
-      "Usage: buildr app launcher install [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher install [--channel <release|development>] [--target <dir>] [--json]",
       "",
-      "构建到新的 staging、验证后安全切换 launcher；Release 自包含，development 绑定当前 checkout 与 Workspace Node 的 Buildr Dev thin launcher。",
+      "构建到新的 staging、验证后安全切换 Buildr Web Launcher；release 自包含，development 绑定当前 checkout 与 Workspace Node 的 Buildr Web Dev thin launcher。",
       "默认安装到用户级应用目录，不安装 Buildr Skill，也不修改 Workspace 源资产。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'install',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
     run: (r, c) => r.manageLocalAppLauncher('install', c.argv.slice(5)),
   },
   {
-    key: "app launcher status",
+    key: "web launcher status",
     surface: "primary",
     summary: "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。",
     help: [
-      "Usage: buildr app launcher status [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher status [--channel <release|development>] [--target <dir>] [--json]",
       "",
       "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'status',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'status',
     run: (r, c) => r.manageLocalAppLauncher('status', c.argv.slice(5)),
   },
   {
-    key: "app launcher uninstall",
+    key: "web launcher uninstall",
     surface: "primary",
     summary: "只移除对应 channel 拥有的 launcher 和上一版本；保留 Workspace Registry 与 Workspace 源资产。",
     help: [
-      "Usage: buildr app launcher uninstall [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher uninstall [--channel <release|development>] [--target <dir>] [--json]",
       "",
       "只移除对应 channel 拥有的 launcher 和上一版本；保留 Workspace Registry 与 Workspace 源资产。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'uninstall',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'uninstall',
     run: (r, c) => r.manageLocalAppLauncher('uninstall', c.argv.slice(5)),
   },
   {
-    key: "app preview start",
+    key: "web preview start",
     surface: "maintenance",
     summary: "提供 --task 时，从该 Task Environment 的任务验证工作区启动，并在健康后登记为 Environment 动态资源；登记失败会认证停止刚创建的实例。",
     help: [
-      "Usage: buildr app preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]",
+      "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]",
       "",
       "提供 --task 时，从该 Task Environment 的任务验证工作区启动，并在健康后登记为 Environment 动态资源；登记失败会认证停止刚创建的实例。",
-      "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认本机应用。"
+      "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'preview' && runtimeId === 'start',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'start',
     run: (r, c) => r.manageLocalAppPreview('start', c.argv.slice(5)),
   },
   {
-    key: "app preview list",
+    key: "web preview list",
     surface: "maintenance",
     summary: "列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。",
     help: [
-      "Usage: buildr app preview list [--json]",
+      "Usage: buildr web preview list [--json]",
       "",
       "列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'preview' && runtimeId === 'list',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'list',
     run: (r, c) => r.manageLocalAppPreview('list', c.argv.slice(5)),
   },
   {
-    key: "app preview stop",
+    key: "web preview stop",
     surface: "maintenance",
     summary: "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Environment resource、preview metadata 和进程 secret 完全匹配；停止后释放同一资源。独立 preview 保持实例级停止。",
     help: [
-      "Usage: buildr app preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]",
+      "Usage: buildr web preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]",
       "",
       "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Environment resource、preview metadata 和进程 secret 完全匹配；停止后释放同一资源。独立 preview 保持实例级停止。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'preview' && runtimeId === 'stop',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'stop',
     run: (r, c) => r.manageLocalAppPreview('stop', c.argv.slice(5)),
   },
   {
-    key: "app",
+    key: "web",
     surface: "primary",
     summary: "启动或复用只监听 127.0.0.1 的全局本机 Web 应用，并默认打开浏览器；--no-open 只启动服务。",
     help: [
-      "Usage: buildr app [--target <workspace>] [--port <port>] [--no-open]",
+      "Usage: buildr web [--target <workspace>] [--port <port>] [--no-open]",
       "",
       "启动或复用只监听 127.0.0.1 的全局本机 Web 应用，并默认打开浏览器；--no-open 只启动服务。",
       "--target 验证并登记指定 Workspace，然后打开该 Workspace；不提供时显示本机已登记 Workspace。",
@@ -118,9 +118,9 @@ const COMMAND_ROUTES = [
       "页面不会 checkout、stash、merge 或改写 Project Git source。",
       "旧 Workspace metadata 可以只读查看，完成 canonical sync 迁移后才能从页面保存。",
       "本机登记列表只保存 Workspace root；事实仍来自各 Workspace，应用不提供远程服务或 Agent session connector。",
-      "任务验证工作区的并行验收可使用 app preview；每个 preview 具有独立状态和 loopback URL，不会改变默认应用或 Buildr Dev.app。"
+      "任务验证工作区的并行验收可使用 web preview；每个 preview 具有独立状态和 loopback URL，不会改变默认 Buildr Web 或 Buildr Web Dev.app。"
     ],
-    match: ({ domain }) => domain === 'app',
+    match: ({ domain }) => domain === 'web',
     run: (r, c) => r.startLocalWorkspaceApp(c.argv.slice(3)),
   },
   {
@@ -915,11 +915,11 @@ const COMMAND_ROUTES = [
 
 const COMMAND_GROUPS = [
   {
-    key: "app preview",
+    key: "web preview",
     surface: "maintenance",
     summary: "预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。",
     help: [
-      "Usage: buildr app preview <start|list|stop> ...",
+      "Usage: buildr web preview <start|list|stop> ...",
       "",
       "预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。"
     ],
@@ -945,7 +945,7 @@ const COMMAND_GROUPS = [
       "",
       "Task Manager 只管理 canonical Workspace 中的 Task Record：创建、查看、明确更新、设置或清除 Parent Task、完成或放弃。",
       "它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
-      "Agent 和 Local App 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
+      "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],
     executable: false,
   },

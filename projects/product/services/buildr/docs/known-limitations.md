@@ -4,8 +4,8 @@
 - TRAE Work 依赖桌面 Rules import toggle，WorkBuddy 依赖 `CODEBUDDY.md` 中的 imperative reference bridge；checker 报告 projection、environment probe 和 activation guidance，不把缺少真实 Agent marker smoke 作为当前 workspace 故障。Buildr 暂不维护品牌 smoke 状态或历史通过快照。
 - runtime trait catalog 只降低新增 adapter 的重复实现；它不会把尚未独立验证五项 capabilities 的 Agent 自动视为 supported。
 - CLI 支持 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`），以使用已经验证的内置 `node:sqlite`、进程和文件系统语义。Workspace 继续声明并使用精确受管 Node 版本；低于 24.15.0 或尚未独立适配验证的未来主版本不能作为 bootstrap 或产品 runtime。
-- Buildr Global App 当前仍是浏览器中的本机 Web 应用，不提供 Desktop WebView、菜单栏、登录启动、静默自动更新或系统通知。macOS 与 Windows launcher 只启动/复用随机 loopback 端口上的服务并打开默认浏览器；Linux 首批使用 CLI。官方签名、公证和 Windows SmartScreen 交付仍需在发布阶段单独启用与验证。
-- App 不扫描磁盘或跨 Workspace 聚合资源；用户显式登记 root，关闭浏览器不等于退出，必须使用页面“退出 Buildr”或终止进程。
+- Buildr Web 当前是浏览器中的本机 Web 界面，不提供 Desktop WebView、菜单栏、登录启动、静默自动更新或系统通知。macOS 与 Windows Buildr Web Launcher 只启动/复用随机 loopback 端口上的 Buildr Web Runtime 并打开默认浏览器；Linux 首批使用 CLI。官方签名、公证和 Windows SmartScreen 交付仍需在发布阶段单独启用与验证。
+- Buildr Web 不扫描磁盘或跨 Workspace 聚合资源；用户显式登记 root，关闭浏览器不等于退出，必须使用页面“退出 Buildr”或终止进程。Buildr App 为未来桌面产品保留，当前未实现。
 - Component 只支持 workspace scope；没有 Project/Service Component、远程 registry、依赖求解或可执行 Hook。
 - Buildr Local 使用文件系统/Git保存portable工作资产，并在每个Workspace的本地SQLite中保存适合索引、关系、聚合和事务的structured data。SQLite文件不提交、不同步，也不提供多人并发协作；未来组织协作需要独立的Buildr Server/Cloud authority。
 - Task Record 与各专业 current records 使用 Workspace SQLite；旧 `.buildr/tasks/<task-id>/` 文件不迁移、不读取、不双写。todo 只是本地意向，不同步、不含排期/责任人/优先级，也不自动创建 Change 或执行资产。复盘来源关系仅关联 Task ID，不结构化跟踪每个行动项。Parent/Child 仍只支持同 Workspace 的单 Parent/多直接 Child，不是通用依赖图。

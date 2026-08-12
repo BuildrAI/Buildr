@@ -108,7 +108,7 @@ test('serialization或mutation失败保留last-valid current row', (t) => {
   assert.equal(runtime.inspectTaskRetrospective(root, 'demo-task').slot.result.reportMarkdown, 'last valid');
 });
 
-test('Local App只读返回current Result或尚未复盘', async (t) => {
+test('Buildr Web只读返回current Result或尚未复盘', async (t) => {
   const { root, runtime } = fixture(t);
   const appData = isolateLocalAppData(t);
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
@@ -126,5 +126,5 @@ test('Local App只读返回current Result或尚未复盘', async (t) => {
   response = await fetch(endpoint);
   assert.equal((await response.json()).slot.result.reportMarkdown, '# 可见报告');
   response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-  assert.equal(response.status, 404, 'Local App不得暴露复盘writer');
+  assert.equal(response.status, 404, 'Buildr Web不得暴露复盘writer');
 });

@@ -180,7 +180,7 @@ Buildr candidate verifier MUST 在同一冻结候选 run 内复用不可变 npm 
 #### Scenario: System 文件按资源 owner 调度
 - **WHEN** Candidate 编排全部 System tests
 - **THEN** 每个 System test file MUST 恰好归属一个 Candidate primary owner
-- **AND** fresh build、runtime recovery、Task Finish、Workspace lifecycle、Local App HTTP、App process 和轻量验证契约 MUST 可按不同资源容量独立调度与计时
+- **AND** fresh build、runtime recovery、Task Finish、Workspace lifecycle、Buildr Web HTTP、App process 和轻量验证契约 MUST 可按不同资源容量独立调度与计时
 - **AND** monolithic System 入口 MUST 复用同一文件归属事实运行完整 System 集合
 
 #### Scenario: Workspace E2E suites 使用隔离状态
@@ -196,7 +196,7 @@ Buildr candidate verifier MUST 在同一冻结候选 run 内复用不可变 npm 
 #### Scenario: 复用只读 fixture 基线
 - **WHEN** 多个 System tests 需要相同 controller dependencies、Workspace baseline 或 Web dist
 - **THEN** verifier MAY 复用只读不变输入或将其复制到独立临时 root
-- **AND** 每个测试 MUST 继续隔离 `.buildr`、SQLite、Git worktree、Task/Finish、Local App runtime state 与其他可变 Workspace 内容
+- **AND** 每个测试 MUST 继续隔离 `.buildr`、SQLite、Git worktree、Task/Finish、Buildr Web runtime state 与其他可变 Workspace 内容
 
 #### Scenario: fresh build 保持真实依赖闭包
 - **WHEN** `system-fresh-build` 验证 Task Environment 的多 Service preparation
@@ -594,7 +594,7 @@ Buildr Product MUST 将 Node tests 按 Unit、Component、Contract、Integration
 
 #### Scenario: 运行系统测试
 - **WHEN** 维护者运行 `npm run test:system`
-- **THEN** verifier MUST 运行完整 CLI、Workspace、Local App 或 Task 生命周期 System 测试
+- **THEN** verifier MUST 运行完整 CLI、Workspace、Buildr Web 或 Task 生命周期 System 测试
 - **AND** Product MUST NOT 保留将同一 System 集合命名为 `test:integration:fast` 的第二入口
 - **AND** runner MUST 保留明确的文件集合、退出码、signal 与失败 diagnostics，不得把无 TAP 输出的聚合失败变成不可定位结果
 
@@ -711,10 +711,10 @@ Buildr Product MAY 继续在 `test/verification/` 使用 Fast、Changed、Focus�
 - **AND** package inventory MUST 不包含或导入 Product test planner/scheduler
 
 ### Requirement: P0.4 验证必须覆盖 current Result authority
-Buildr Product focused/fast/candidate tests MUST 覆盖 Result closed schema、Project scope declaration binding、atomic replacement rollback、target/declaration stale、absent declaration gap、unique writer、CLI/Local App parity、transient execution separation、Finish shared consumer 与旧 authority absence。
+Buildr Product focused/fast/candidate tests MUST 覆盖 Result closed schema、Project scope declaration binding、atomic replacement rollback、target/declaration stale、absent declaration gap、unique writer、CLI/Buildr Web parity、transient execution separation、Finish shared consumer 与旧 authority absence。
 
 #### Scenario: 运行 P0.4 focused verification
-- **WHEN** 维护者修改 Verification domain、Application、declaration、Skill/contract、Finish 或 Local App
+- **WHEN** 维护者修改 Verification domain、Application、declaration、Skill/contract、Finish 或 Buildr Web
 - **THEN** affected tests MUST 证明 Result current path 与 failure preservation
 - **AND** MUST 不以 fixture 字段存在代替真实 CLI、filesystem 或 HTTP journey
 

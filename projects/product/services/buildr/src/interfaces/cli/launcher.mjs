@@ -12,7 +12,7 @@ export function registerLauncherInterface(runtime) {
     if (!['release', 'development'].includes(options.channel)) throw new Error(`Invalid launcher channel: ${options.channel}`);
     const result = action === 'install' ? await installLauncher(options) : action === 'uninstall' ? await uninstallLauncher(options) : launcherStatus(options);
     if (args.includes('--json')) console.log(JSON.stringify(result, null, 2));
-    else console.log(result.installed ? `${options.channel} launcher 已安装：${result.target}` : `${options.channel} launcher 未安装：${result.target}`);
+    else console.log(result.installed ? `${options.channel} Buildr Web Launcher 已安装：${result.target}` : `${options.channel} Buildr Web Launcher 未安装：${result.target}`);
     return result;
   }
   Object.assign(runtime, { manageLocalAppLauncher });

@@ -3,7 +3,7 @@ set -euo pipefail
 
 service_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 "$service_root/scripts/install-buildr-cli"
-"$service_root/bin/buildr.mjs" app launcher install --channel development "$@"
-"$service_root/bin/buildr.mjs" app launcher status --channel development --json
+"$service_root/bin/buildr.mjs" web launcher install --channel development "$@"
+"$service_root/bin/buildr.mjs" web launcher status --channel development --json
 command -v buildr >/dev/null
 buildr --version

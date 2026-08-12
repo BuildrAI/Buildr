@@ -78,8 +78,8 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['version', '--json'], PUBLIC_JSON_SCHEMAS.version],
     [['unknown-command', '--json'], PUBLIC_JSON_SCHEMAS.cliError, 2],
     [['runtime', 'list', '--json'], PUBLIC_JSON_SCHEMAS.runtimeList],
-    [['app', 'preview', 'list', '--json'], PUBLIC_JSON_SCHEMAS.localAppPreview],
-    [['app', 'launcher', 'status', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.launcherStatus],
+    [['web', 'preview', 'list', '--json'], PUBLIC_JSON_SCHEMAS.localAppPreview],
+    [['web', 'launcher', 'status', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.launcherStatus],
     [['doctor', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.doctor],
     [['commands', 'check', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.commandsCheck],
     [['component', 'list', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.componentList],
@@ -97,6 +97,8 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
 });
 
 test('schema registry 覆盖全部当前公开 JSON family', () => {
+  assert.equal(PUBLIC_JSON_SCHEMAS.localAppPreview, 'buildr.local-app-preview/v1');
+  assert.equal(PUBLIC_JSON_SCHEMAS.launcherStatus, 'buildr.launcher-status/v1');
   assert.deepEqual(Object.keys(PUBLIC_JSON_SCHEMAS).sort(), [
     'builtinList',
     'cliError',

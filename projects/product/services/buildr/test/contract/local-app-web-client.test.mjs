@@ -21,7 +21,7 @@ test('公共 API client 不读取 DOM session，LocalSessionAdapter 负责写头
   assert.match(client, /\/api\/v1\/workspaces\/\$\{encodeURIComponent\(workspaceId\)\}/);
 });
 
-test('Local App 生产托管指向 web-dist 且不再依赖 STATIC_ASSETS 白名单入口', () => {
+test('Buildr Web 生产托管指向 web-dist 且不再依赖 STATIC_ASSETS 白名单入口', () => {
   const server = read('src/interfaces/local-app/http/server.mjs');
   assert.match(server, /web-dist/);
   assert.match(server, /resolveDistFile/);

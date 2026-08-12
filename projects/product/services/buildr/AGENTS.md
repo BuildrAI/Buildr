@@ -1,11 +1,11 @@
 # Buildr Service
 
-本目录是 Product Project 下 `buildr` Service 的规则入口，承载 Buildr 的 npm package、CLI、本机应用 HTTP/运行时（runtime）、`web-dist` 托管与打包等可执行实现。
+本目录是 Product Project 下 `buildr` Service 的规则入口，承载 Buildr 的 npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包等可执行实现。
 
 ## 所有权边界
 
-- Service 负责 npm package、CLI、本机应用 HTTP/runtime、`web-dist` 托管与打包、运行源码、测试、维护脚本、随包交付资产及实现型文档。
-- Local App React/Vite 权威前端源码属于 sibling Service `../buildr-web`；本 Service 只消费其正式构建产物并负责 `web-dist` 的托管与打包。
+- Service 负责 npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包、运行源码、测试、维护脚本、随包交付资产及实现型文档。
+- Buildr Web Frontend Service 的 React/Vite 权威前端源码属于 sibling Service `../buildr-web`；本 Service 拥有 Buildr Web Runtime，只消费正式构建产物并负责 `web-dist` 的托管与打包。
 - Product Project 根负责 OpenSpec、项目级规则、capabilities、Command requirements、verification policy 与跨服务产品治理。
 - 不在 Product Project 根和本 Service 之间复制 `src/`、`bin/`、`test/`、`scripts/`、`package/` 或 package metadata；`projects/product/buildr` 只允许作为薄兼容入口。
 

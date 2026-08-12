@@ -5,7 +5,7 @@ description: 用户明确要求创建或查看待办/正式 Task Record、更新
 
 # Task Manager Skill
 
-本 Skill 是 `buildr.task-record/v2` 的默认 provider，只管理 Task 的最小顶层记录、直接 Parent/Child 和复盘来源。`todo` 是已接受但未启动的 data-only 意向，`active` 才进入正式执行。Local App 是同一 Application 的独立人类客户端；Parent Plan、Contribution、复盘正文和专业事实不得复制到 Task Record。
+本 Skill 是 `buildr.task-record/v2` 的默认 provider，只管理 Task 的最小顶层记录、直接 Parent/Child 和复盘来源。`todo` 是已接受但未启动的 data-only 意向，`active` 才进入正式执行。Buildr Web 是同一 Application 的独立人类客户端；Parent Plan、Contribution、复盘正文和专业事实不得复制到 Task Record。
 
 ## 1. 何时使用
 
@@ -21,7 +21,7 @@ description: 用户明确要求创建或查看待办/正式 Task Record、更新
 
 确认 operation、稳定小写 Task ID、canonical Workspace 和明确字段。create 默认 active；只有用户已接受意向但尚未授权执行时使用 `--status todo`。todo 不得带 Change，也不运行 Git、Environment 或专业动作。复盘来源可在 create 或 update 中重复提供，但每个来源必须是已有 current 复盘的 completed/abandoned Task；只保存 source Task ID，不保存行动项或报告副本。activate 仅做 todo-to-active，调用前置门禁由 task-triage 负责。complete 需要 summary 和明确 no-change，todo 只允许 no-change；abandon 需要 reason。
 
-当前位于 task environment 时，只接受上游已确认的 canonical Workspace target；不读取 environment receipt，不扫描父目录，不从 worktree 推断 retained root，也不把 environment identity 写入 Task Record。Local App 已创建或用户按 Task ID 继续时先 inspect，同一记录即为权威来源。
+当前位于 task environment 时，只接受上游已确认的 canonical Workspace target；不读取 environment receipt，不扫描父目录，不从 worktree 推断 retained root，也不把 environment identity 写入 Task Record。Buildr Web 已创建或用户按 Task ID 继续时先 inspect，同一记录即为权威来源。
 
 ## 3. 执行动作
 

@@ -108,7 +108,7 @@ Child顶层`completed`但没有与Finish completion association匹配的Contribu
 - 每个Contribution的`unassigned | planned | delivered | residual | superseded | unproven` disposition；
 - `prerequisitesSatisfied`、blockers与`finalAcceptanceReady`。
 
-Application不直接查询SQLite，不在GET/inspect时扫描文件系统，不回填历史事实。CLI `task parent ...`、Local App `/api/v1/tasks/:id/coordination`和Agent workflow都消费这一Application；Web层不再拼装自己的进度算法。
+Application不直接查询SQLite，不在GET/inspect时扫描文件系统，不回填历史事实。CLI `task parent ...`、Buildr Web `/api/v1/tasks/:id/coordination`和Agent workflow都消费这一Application；Web层不再拼装自己的进度算法。
 
 `prerequisitesSatisfied`只表示全部Contribution已由saved delivery或明确superseded处置。它不改变Parent Task Record。`task parent accept`记录显式最终集成验收后，Parent仍保持active，直到正常Formal Finish完成。
 
