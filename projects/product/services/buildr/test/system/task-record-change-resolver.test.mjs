@@ -41,10 +41,10 @@ test('Task-scoped Change Resolver 在 Application 与 Local App 复用候选、b
   fs.writeFileSync(path.join(candidateChanges, 'same-change', 'proposal.md'), '# candidate version\n');
 
   const runtime = createRuntime();
-  runtime.inspectTaskEnvironment = () => ({
+  runtime.readTaskEnvironmentCurrent = () => ({
     status: 'ready',
     environment: {
-      scopes: [{ selector: 'project:demo', executionRoot: candidateProjectRoot, validationRoot: base }],
+      scopes: [{ selector: 'project:demo', kind: 'project', project: 'demo', sourcePath: 'projects/demo', executionRoot: candidateProjectRoot, validationRoot: base }],
     },
   });
   runtime.createTaskRecord(root, { taskId: 'resolver-task', title: 'Resolver Task', intent: '读取任务环境 Change', projects: ['demo'], services: [], changes: [] });
@@ -79,7 +79,7 @@ test('Task-scoped Change Resolver 在 Application 与 Local App 复用候选、b
   assert.equal(runtime.abandonTaskRecord(root, 'resolver-task', { reason: 'resolver fixture complete' }).status, 'abandoned');
 });
 
-test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 candidate-only Change', async (t) => {
+test('安装版 Local App 在 saved Receipt blocked 时仍读取 Task worktree 的 candidate-only Change', async (t) => {
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-installed-task-change-reader-app-'));
   process.env.BUILDR_APP_DATA_DIR = appData;
@@ -121,7 +121,7 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
     taskId,
     workspace: { id: runtime.readWorkspaceRecord(workspaceRoot).workspace.id, root: workspaceRoot },
     controller: { sourceRoot: PRODUCT_ROOT, cliSource: BUILDR, identity: 'sha256-installed-reader-fixture', adapter: 'codex' },
-    status: 'ready',
+    status: 'blocked',
     scopes: [{
       selector: 'project:demo', kind: 'project', project: 'demo', service: null, sourcePath: 'projects/demo', executionRoot: candidateProjectRoot, validationRoot: workspaceRoot, shared: true, provider: null,
       runtime: { status: 'ready', identity: 'node', observedAt, diagnostic: null },
@@ -135,7 +135,7 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
     preparationRecipes: [],
     preparationSteps: [],
     resources: [],
-    latest: { ready: { status: 'ready', observedAt, diagnostic: null }, cleanup: null },
+    latest: { ready: { status: 'blocked', observedAt, diagnostic: 'Runtime projection is temporarily blocked.' }, cleanup: null },
     createdAt: observedAt,
     updatedAt: observedAt,
   });
@@ -147,6 +147,8 @@ test('安装版 Local App 使用 Receipt controller 读取 Task worktree 的 can
 
   const inspected = runtime.inspectTaskEnvironment(workspaceRoot, taskId);
   assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
+  const saved = runtime.readTaskEnvironmentCurrent(workspaceRoot, taskId);
+  assert.equal(saved.status, 'blocked');
   const linked = runtime.updateTaskRecord(workspaceRoot, taskId, { addChanges: ['demo/candidate-only'] });
   assert.equal(linked.changeReferences[0].workingCopy.provenance, 'task-environment-candidate');
   assert.equal(runtime.listProjectChanges(workspaceRoot, 'demo').changes.some((change) => change.code === 'candidate-only'), false, '全局 Change collection 保持 retained-only');

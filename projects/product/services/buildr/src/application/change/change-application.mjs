@@ -164,14 +164,24 @@ function decodeRef(ref) {
 
 export function registerChangeApplication(runtime) {
   function taskScopedProjectRoot(targetRoot, taskId, projectCode, project) {
-    const inspected = runtime.inspectTaskEnvironment(targetRoot, taskId);
-    if (inspected.status !== 'ready' || !inspected.environment) return null;
-    const direct = inspected.environment.scopes.find((scope) => scope.selector === `project:${projectCode}`);
-    if (direct) return direct.executionRoot;
-    const workspace = inspected.environment.scopes.find((scope) => scope.selector === 'workspace');
+    const current = runtime.readTaskEnvironmentCurrent(targetRoot, taskId);
+    if (!['ready', 'blocked'].includes(current.status) || !current.environment) return null;
+    const scopes = Array.isArray(current.environment.scopes) ? current.environment.scopes : [];
+    const direct = scopes.find((scope) => scope.selector === `project:${projectCode}`);
+    if (direct) {
+      if (direct.kind !== 'project' || direct.project !== projectCode || direct.sourcePath !== project.source.path) return null;
+      if (typeof direct.executionRoot !== 'string' || typeof direct.validationRoot !== 'string') return null;
+      const candidate = path.resolve(direct.executionRoot);
+      return direct.shared === true || inside(direct.validationRoot, candidate) ? candidate : null;
+    }
+    const workspace = scopes.find((scope) => scope.selector === 'workspace');
     if (!workspace) return null;
-    const candidate = path.resolve(workspace.executionRoot, project.source.path);
-    return inside(workspace.validationRoot, candidate) ? candidate : null;
+    if (workspace.kind !== 'workspace' || workspace.sourcePath !== '.') return null;
+    if (typeof workspace.executionRoot !== 'string' || typeof workspace.validationRoot !== 'string') return null;
+    const executionRoot = path.resolve(workspace.executionRoot);
+    if (!inside(workspace.validationRoot, executionRoot)) return null;
+    const candidate = path.resolve(executionRoot, project.source.path);
+    return inside(executionRoot, candidate) && inside(workspace.validationRoot, candidate) ? candidate : null;
   }
 
   function resolveTaskScopedChange(targetRoot, taskId, reference, { includeContent = false, allowMissingTask = false } = {}) {

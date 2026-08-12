@@ -133,3 +133,59 @@ test('Change prompt-only 操作解析真实 Change 且保护归档历史', (t) =
   assert.match(reviewed.prompt, /不要直接修改/);
   assert.throws(() => runtime.generateChangeActionPrompt(root, { projectCode: 'product', ref: 'archived~2026-07-22-finished', action: 'archive' }), /仅支持/);
 });
+
+test('Task-scoped Change 使用 saved Environment current，并让 ready 与 blocked 共享只读 locator', (t) => {
+  const { root, runtime } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const validationRoot = path.join(root, 'task-root');
+  const candidateProjectRoot = path.join(validationRoot, 'projects', 'product');
+  writeChange(candidateProjectRoot, 'candidate-only', { 'proposal.md': '# Candidate only\n' });
+  runtime.readTaskRecordPersistence = () => ({ record: { taskId: 'reader-task' } });
+  runtime.inspectTaskEnvironment = () => { throw new Error('Task-scoped Change 不得运行 live Environment inspect。'); };
+
+  for (const status of ['ready', 'blocked']) {
+    runtime.readTaskEnvironmentCurrent = () => ({
+      status,
+      environment: {
+        scopes: [{
+          selector: 'project:product',
+          kind: 'project',
+          project: 'product',
+          sourcePath: 'projects/product',
+          executionRoot: candidateProjectRoot,
+          validationRoot,
+        }],
+      },
+    });
+    const resolved = runtime.resolveTaskScopedChange(root, 'reader-task', { project: 'product', change: 'candidate-only' }, { includeContent: true });
+    assert.equal(resolved.availability, 'available');
+    assert.equal(resolved.workingCopy.provenance, 'task-environment-candidate');
+    assert.equal(resolved.workingCopy.change.artifacts.proposal.content, '# Candidate only\n');
+  }
+});
+
+test('Task-scoped Change 对失效路径和无法证明的 Project scope 保持 fail closed', (t) => {
+  const { root, runtime } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const validationRoot = path.join(root, 'task-root');
+  const candidateProjectRoot = path.join(validationRoot, 'projects', 'product');
+  writeChange(candidateProjectRoot, 'candidate-only', { 'proposal.md': '# Candidate only\n' });
+  runtime.readTaskRecordPersistence = () => ({ record: { taskId: 'reader-task' } });
+
+  const scope = {
+    selector: 'project:product',
+    kind: 'project',
+    project: 'product',
+    sourcePath: 'projects/product',
+    executionRoot: candidateProjectRoot,
+    validationRoot,
+  };
+  const resolveWith = (candidateScope) => {
+    runtime.readTaskEnvironmentCurrent = () => ({ status: 'blocked', environment: { scopes: [candidateScope] } });
+    return runtime.resolveTaskScopedChange(root, 'reader-task', { project: 'product', change: 'candidate-only' });
+  };
+
+  assert.equal(resolveWith({ ...scope, executionRoot: path.join(validationRoot, 'missing') }).availability, 'unavailable');
+  assert.equal(resolveWith({ ...scope, sourcePath: 'projects/renamed-product' }).availability, 'unavailable');
+  assert.equal(resolveWith({ ...scope, validationRoot: path.join(root, 'different-task-root') }).availability, 'unavailable');
+});
