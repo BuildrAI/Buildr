@@ -10,15 +10,72 @@ import { localAppDataRoot } from './workspace-registry-repository.mjs';
 
 export const WORKSPACE_NODE_IDENTITY_SCHEMA = 'buildr.workspace-node-identity/v1';
 const INSTALL_TIMEOUT_MS = 180_000;
+const WINDOWS_FILESYSTEM_RETRY_TIMEOUT_MS = 5_000;
+const WINDOWS_FILESYSTEM_RETRY_DELAY_MS = 100;
+const TRANSIENT_WINDOWS_FILESYSTEM_ERRORS = new Set(['EACCES', 'EBUSY', 'EPERM']);
+const RUNTIME_INSTALL_LOCK_SCHEMA = 'buildr.workspace-node-runtime-install-lock/v1';
+const RUNTIME_INSTALL_LOCK_INITIALIZATION_GRACE_MS = 1_000;
+
+function wait(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function runtimeFilesystemError(operation, target, error) {
+  const wrapped = new Error(`Workspace Node runtime ${operation} failed for ${target}: ${error.message}`, { cause: error });
+  for (const field of ['code', 'errno', 'syscall', 'path', 'dest']) {
+    if (error?.[field] !== undefined) wrapped[field] = error[field];
+  }
+  wrapped.operation = operation;
+  wrapped.target = target;
+  return wrapped;
+}
+
+export function runRuntimeFilesystemOperation(operation, target, action, options = {}) {
+  const platform = options.platform || process.platform;
+  const windows = platform === 'win32' || platform === 'win';
+  const now = options.filesystemRetryNow || Date.now;
+  const pause = options.filesystemRetryWait || wait;
+  const timeoutMs = options.filesystemRetryTimeoutMs ?? WINDOWS_FILESYSTEM_RETRY_TIMEOUT_MS;
+  const delayMs = options.filesystemRetryDelayMs ?? WINDOWS_FILESYSTEM_RETRY_DELAY_MS;
+  let deadline = null;
+  while (true) {
+    try {
+      return action();
+    } catch (error) {
+      if (!windows || !TRANSIENT_WINDOWS_FILESYSTEM_ERRORS.has(error?.code)) {
+        throw runtimeFilesystemError(operation, target, error);
+      }
+      const observedAt = now();
+      if (deadline === null) deadline = observedAt + timeoutMs;
+      else if (observedAt >= deadline) throw runtimeFilesystemError(operation, target, error);
+      pause(delayMs);
+    }
+  }
+}
 
 export function runtimeTreeRemovalOptions(platform = process.platform) {
-  return platform === 'win32'
+  return platform === 'win32' || platform === 'win'
     ? { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }
     : { recursive: true, force: true };
 }
 
-function removeRuntimeTree(target) {
-  fs.rmSync(target, runtimeTreeRemovalOptions());
+function removeRuntimeTree(target, options = {}) {
+  return runRuntimeFilesystemOperation(
+    options.operation || 'remove-tree',
+    target,
+    () => fs.rmSync(target, runtimeTreeRemovalOptions(options.platform)),
+    options,
+  );
+}
+
+function copyRuntimeTree(source, target, options = {}) {
+  const copy = options.copyRuntimeTree || fs.cpSync;
+  return runRuntimeFilesystemOperation(
+    options.operation || 'copy-tree',
+    target,
+    () => copy(source, target, { recursive: true }),
+    options,
+  );
 }
 
 function sha256(value) {
@@ -59,6 +116,7 @@ export function workspaceNodeRuntimePaths(version, options = {}) {
     root,
     node: windows ? path.join(root, 'node.exe') : path.join(root, 'bin', 'node'),
     npm: windows ? path.join(root, 'npm.cmd') : path.join(root, 'bin', 'npm'),
+    npmCli: windows ? path.join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js') : null,
     npx: windows ? path.join(root, 'npx.cmd') : path.join(root, 'bin', 'npx'),
     bin: windows ? root : path.join(root, 'bin'),
   };
@@ -68,11 +126,18 @@ function probeRuntimeCommand(executable, args, { platform, ...options } = {}) {
   return spawnCommandSync(executable, args, { ...options, platform: platform === 'win' ? 'win32' : platform });
 }
 
+function probeRuntimeNpm(paths) {
+  const env = { ...process.env, PATH: `${paths.bin}${path.delimiter}${process.env.PATH || ''}` };
+  return paths.platform === 'win'
+    ? probeRuntimeCommand(paths.node, [paths.npmCli, '--version'], { encoding: 'utf8', timeout: 10_000, env, platform: paths.platform })
+    : probeRuntimeCommand(paths.npm, ['--version'], { encoding: 'utf8', timeout: 10_000, env, platform: paths.platform });
+}
+
 export function probeWorkspaceNodeRuntime(workspace, options = {}) {
   const identity = workspaceNodeIdentity(workspace, options);
   if (!identity) return { status: 'missing-declaration', identity: null, executable: null, npmExecutable: null, actualVersion: null };
   const paths = workspaceNodeRuntimePaths(identity.version, options);
-  if (!fs.existsSync(paths.node) || !fs.existsSync(paths.npm)) {
+  if (!fs.existsSync(paths.node) || !fs.existsSync(paths.npm) || (paths.platform === 'win' && !fs.existsSync(paths.npmCli))) {
     return { status: 'missing', identity, executable: paths.node, npmExecutable: paths.npm, actualVersion: null, paths };
   }
   const nodeProbe = probeRuntimeCommand(paths.node, ['-p', 'process.versions.node'], {
@@ -81,13 +146,7 @@ export function probeWorkspaceNodeRuntime(workspace, options = {}) {
     platform: paths.platform,
   });
   const actualVersion = nodeProbe.status === 0 ? nodeProbe.stdout.trim() : null;
-  const env = { ...process.env, PATH: `${paths.bin}${path.delimiter}${process.env.PATH || ''}` };
-  const npmProbe = probeRuntimeCommand(paths.npm, ['--version'], {
-    encoding: 'utf8',
-    timeout: 10_000,
-    env,
-    platform: paths.platform,
-  });
+  const npmProbe = probeRuntimeNpm(paths);
   const status = actualVersion === identity.version && npmProbe.status === 0 ? 'ready' : 'invalid';
   return {
     status,
@@ -136,7 +195,7 @@ function installFromOfficial(version, stage, options = {}) {
     if (target.platform === 'win') {
       const command = `Expand-Archive -LiteralPath '${archive.replaceAll("'", "''")}' -DestinationPath '${temp.replaceAll("'", "''")}' -Force`;
       execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { stdio: 'pipe', timeout: INSTALL_TIMEOUT_MS });
-      fs.cpSync(path.join(temp, descriptor.base), stage, { recursive: true });
+      copyRuntimeTree(path.join(temp, descriptor.base), stage, { ...options, platform: target.platform, operation: 'copy-official-distribution' });
     } else {
       execFileSync('tar', ['-xzf', archive, '--strip-components=1', '-C', stage], { stdio: 'pipe', timeout: INSTALL_TIMEOUT_MS });
     }
@@ -161,8 +220,92 @@ function installFromCurrent(stage, version) {
   if (fs.existsSync(npx)) fs.symlinkSync(fs.realpathSync(npx), path.join(bin, 'npx'));
 }
 
-function waitForLock(lock, deadline) {
-  while (fs.existsSync(lock) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+function readRuntimeInstallLock(lock) {
+  try {
+    const raw = fs.readFileSync(lock, 'utf8');
+    const value = JSON.parse(raw);
+    const record = value?.schemaVersion === RUNTIME_INSTALL_LOCK_SCHEMA
+      && Number.isInteger(value.pid) && value.pid > 0
+      && typeof value.token === 'string' && value.token.length > 0
+      && typeof value.createdAt === 'string'
+      ? value
+      : null;
+    return { raw, record, modifiedAtMs: fs.statSync(lock).mtimeMs };
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    try { return { raw: null, record: null, modifiedAtMs: fs.statSync(lock).mtimeMs }; } catch { return null; }
+  }
+}
+
+function runtimeInstallOwnerAlive(pid, options = {}) {
+  if (options.runtimeInstallOwnerAlive) return options.runtimeInstallOwnerAlive(pid);
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== 'ESRCH';
+  }
+}
+
+function reclaimRuntimeInstallLock(lock, observed, options = {}) {
+  const current = readRuntimeInstallLock(lock);
+  if (!current || current.raw !== observed.raw || current.modifiedAtMs !== observed.modifiedAtMs) return false;
+  runRuntimeFilesystemOperation('reclaim-stale-lock', lock, () => fs.rmSync(lock, { force: true }), options);
+  return true;
+}
+
+export function acquireRuntimeInstallLock(lock, workspace, options = {}) {
+  const now = options.runtimeInstallLockNow || Date.now;
+  const pause = options.runtimeInstallLockWait || wait;
+  const timeoutMs = options.lockTimeoutMs ?? INSTALL_TIMEOUT_MS;
+  const deadline = now() + timeoutMs;
+  while (true) {
+    let descriptor;
+    try {
+      descriptor = fs.openSync(lock, 'wx');
+      const record = {
+        schemaVersion: RUNTIME_INSTALL_LOCK_SCHEMA,
+        pid: process.pid,
+        token: crypto.randomBytes(12).toString('hex'),
+        createdAt: new Date(now()).toISOString(),
+      };
+      fs.writeFileSync(descriptor, `${JSON.stringify(record)}\n`);
+      fs.closeSync(descriptor);
+      return { owner: true, file: lock, record, winner: null };
+    } catch (error) {
+      if (descriptor !== undefined) {
+        try { fs.closeSync(descriptor); } catch { /* already closed */ }
+      }
+      if (error.code !== 'EEXIST') throw runtimeFilesystemError('acquire-lock', lock, error);
+      const winner = probeWorkspaceNodeRuntime(workspace, options);
+      if (winner.status === 'ready') return { owner: false, file: lock, record: null, winner };
+      const observed = readRuntimeInstallLock(lock);
+      const observedAt = now();
+      const initializing = observed && !observed.record && observedAt - observed.modifiedAtMs < RUNTIME_INSTALL_LOCK_INITIALIZATION_GRACE_MS;
+      const ownerAlive = observed?.record ? runtimeInstallOwnerAlive(observed.record.pid, options) : false;
+      if (observed && !initializing && !ownerAlive) {
+        reclaimRuntimeInstallLock(lock, observed, options);
+        continue;
+      }
+      if (observedAt >= deadline) {
+        const owner = observed?.record ? `pid=${observed.record.pid} createdAt=${observed.record.createdAt}` : 'owner=initializing-or-unknown';
+        const error = new Error(`Workspace Node runtime install lock wait expired for ${lock}: ${owner}`);
+        error.code = 'workspace_node_runtime_install_locked';
+        error.operation = 'wait-for-lock';
+        error.target = lock;
+        throw error;
+      }
+      pause(Math.min(50, Math.max(1, deadline - observedAt)));
+    }
+  }
+}
+
+export function releaseRuntimeInstallLock(lock, options = {}) {
+  if (!lock?.owner) return false;
+  const current = readRuntimeInstallLock(lock.file);
+  if (!current?.record || current.record.token !== lock.record.token) return false;
+  runRuntimeFilesystemOperation('release-lock', lock.file, () => fs.rmSync(lock.file, { force: true }), options);
+  return true;
 }
 
 function renameRuntimeStage(stage, target, workspace, options) {
@@ -174,8 +317,10 @@ function renameRuntimeStage(stage, target, workspace, options) {
     } catch (error) {
       const winner = probeWorkspaceNodeRuntime(workspace, options);
       if (winner.status === 'ready') return winner;
-      if (!['EACCES', 'EBUSY', 'EPERM'].includes(error.code) || Date.now() >= deadline) throw error;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      if (!TRANSIENT_WINDOWS_FILESYSTEM_ERRORS.has(error.code) || Date.now() >= deadline) {
+        throw runtimeFilesystemError('publish-stage', target, error);
+      }
+      wait(50);
     }
   }
 }
@@ -187,21 +332,16 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
   const paths = initial.paths;
   fs.mkdirSync(path.dirname(paths.root), { recursive: true });
   const lock = `${paths.root}.lock`;
-  const deadline = Date.now() + (options.lockTimeoutMs || 30_000);
-  waitForLock(lock, deadline);
-  let descriptor;
-  try { descriptor = fs.openSync(lock, 'wx'); } catch (error) {
-    const afterWait = probeWorkspaceNodeRuntime(workspace, options);
-    if (afterWait.status === 'ready') return { ...afterWait, action: 'reused-after-wait' };
-    throw new Error(`Workspace Node runtime install is locked: ${lock}`);
-  }
+  const installLock = acquireRuntimeInstallLock(lock, workspace, options);
+  if (!installLock.owner) return { ...installLock.winner, action: 'reused-after-wait' };
   const stage = `${paths.root}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+  let primaryError = null;
   try {
     const ready = probeWorkspaceNodeRuntime(workspace, options);
     if (ready.status === 'ready') return { ...ready, action: 'reused-after-lock' };
-    removeRuntimeTree(stage);
+    removeRuntimeTree(stage, { ...options, platform: initial.paths.platform, operation: 'remove-stale-stage' });
     const source = options.sourceRoot || process.env.BUILDR_NODE_RUNTIME_SOURCE_ROOT;
-    if (source) fs.cpSync(path.resolve(source), stage, { recursive: true });
+    if (source) copyRuntimeTree(path.resolve(source), stage, { ...options, platform: initial.paths.platform, operation: 'copy-source-to-stage' });
     else if (options.adoptCurrent === true && process.platform !== 'win32') installFromCurrent(stage, initial.identity.version);
     else installFromOfficial(initial.identity.version, stage, options);
     const stagedPaths = {
@@ -209,6 +349,7 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
       root: stage,
       node: initial.paths.platform === 'win' ? path.join(stage, 'node.exe') : path.join(stage, 'bin', 'node'),
       npm: initial.paths.platform === 'win' ? path.join(stage, 'npm.cmd') : path.join(stage, 'bin', 'npm'),
+      npmCli: initial.paths.platform === 'win' ? path.join(stage, 'node_modules', 'npm', 'bin', 'npm-cli.js') : null,
       bin: initial.paths.platform === 'win' ? stage : path.join(stage, 'bin'),
     };
     const nodeProbe = probeRuntimeCommand(stagedPaths.node, ['-p', 'process.versions.node'], {
@@ -216,25 +357,35 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
       timeout: 10_000,
       platform: initial.paths.platform,
     });
-    const npmProbe = probeRuntimeCommand(stagedPaths.npm, ['--version'], {
-      encoding: 'utf8',
-      timeout: 10_000,
-      env: { ...process.env, PATH: `${stagedPaths.bin}${path.delimiter}${process.env.PATH || ''}` },
-      platform: initial.paths.platform,
-    });
+    const npmProbe = probeRuntimeNpm(stagedPaths);
     if (nodeProbe.status !== 0 || nodeProbe.stdout.trim() !== initial.identity.version || npmProbe.status !== 0) {
       throw new Error(`Prepared Workspace Node runtime failed probe for ${initial.identity.version}.`);
     }
-    removeRuntimeTree(paths.root);
+    removeRuntimeTree(paths.root, { ...options, platform: initial.paths.platform, operation: 'remove-invalid-target' });
     const winner = renameRuntimeStage(stage, paths.root, workspace, options);
     if (winner) return { ...winner, action: 'reused-after-race' };
     const result = probeWorkspaceNodeRuntime(workspace, options);
     if (result.status !== 'ready') throw new Error(`Workspace Node runtime did not become ready for ${initial.identity.version}.`);
     return { ...result, action: initial.status === 'missing' ? 'installed' : 'repaired' };
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    removeRuntimeTree(stage);
-    try { fs.closeSync(descriptor); } catch { /* already closed */ }
-    fs.rmSync(lock, { force: true });
+    const cleanupErrors = [];
+    try {
+      removeRuntimeTree(stage, { ...options, platform: initial.paths.platform, operation: 'cleanup-stage' });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      releaseRuntimeInstallLock(installLock, { ...options, platform: initial.paths.platform });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if (cleanupErrors.length > 0) {
+      if (primaryError) primaryError.cleanupErrors = cleanupErrors;
+      else throw cleanupErrors[0];
+    }
   }
 }
 

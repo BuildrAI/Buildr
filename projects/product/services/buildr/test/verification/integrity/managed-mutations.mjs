@@ -33,7 +33,7 @@ const allowed = new Map([
   ])],
   ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
   ['src/infrastructure/filesystem/workspace-node-runtime.mjs', new Set([
-    'downloadFile', 'removeRuntimeTree', 'installFromOfficial', 'installFromCurrent', 'renameRuntimeStage', 'ensureWorkspaceNodeRuntime',
+    'downloadFile', 'removeRuntimeTree', 'copyRuntimeTree', 'reclaimRuntimeInstallLock', 'acquireRuntimeInstallLock', 'releaseRuntimeInstallLock', 'installFromOfficial', 'installFromCurrent', 'renameRuntimeStage', 'ensureWorkspaceNodeRuntime',
   ])],
   ['src/infrastructure/filesystem/task-execution-record-body-store.mjs', new Set([
     'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
