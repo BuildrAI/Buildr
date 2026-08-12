@@ -16,6 +16,7 @@ export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
   'push',
   'install-cli',
   'install-local-app',
+  'verify-cli-identity',
   'finalize',
 ]);
 
@@ -63,6 +64,25 @@ function sameFilesystemPath(left, right) {
   }
 }
 
+export function resolveDefaultBuildr(environment = process.env) {
+  const pathValue = environment.PATH || (process.platform === 'win32' ? environment.Path : '') || '';
+  const executableNames = process.platform === 'win32'
+    ? ['', ...(environment.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';')].map((extension) => `buildr${extension.toLowerCase()}`)
+    : ['buildr'];
+  for (const entry of pathValue.split(path.delimiter)) {
+    const directory = entry || '.';
+    for (const executableName of executableNames) {
+      const candidate = path.resolve(directory, executableName);
+      try {
+        if (!fs.statSync(candidate).isFile()) continue;
+        if (process.platform !== 'win32') fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch { /* keep searching in PATH order */ }
+    }
+  }
+  return null;
+}
+
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
@@ -88,6 +108,7 @@ function classifications(changedPaths) {
       `${SERVICE_ROOT}/package.json`,
       `${SERVICE_ROOT}/package-lock.json`,
       `${SERVICE_ROOT}/scripts/install-buildr-cli`,
+      `${SERVICE_ROOT}/scripts/run-development-cli`,
       `${SERVICE_ROOT}/scripts/uninstall-buildr-cli`,
     ], [`${SERVICE_ROOT}/bin/`, `${SERVICE_ROOT}/src/`])) cli.push(pathname);
     if (matches(pathname, [
@@ -163,7 +184,7 @@ function operation(id, result, extra = {}) {
 }
 
 function defaultExecute(executable, args, options) {
-  const result = spawnSync(executable, args, { cwd: options.cwd, encoding: 'utf8', env: process.env });
+  const result = spawnSync(executable, args, { cwd: options.cwd, encoding: 'utf8', env: options.env || process.env });
   return { status: Number.isInteger(result.status) ? result.status : 1, stdout: result.stdout || '', stderr: result.stderr || result.error?.message || '' };
 }
 
@@ -211,8 +232,8 @@ function belongsToUntrackedRoot(pathname, root) {
   return normalized === root || normalized.startsWith(`${root}/`);
 }
 
-function command(execute, executable, args, cwd, id, phaseResult, extra = {}) {
-  const result = execute(executable, args, { cwd });
+function command(execute, executable, args, cwd, id, phaseResult, extra = {}, environment = process.env) {
+  const result = execute(executable, args, { cwd, env: environment });
   phaseResult.operations.push(operation(id, result, extra));
   return result;
 }
@@ -220,6 +241,117 @@ function command(execute, executable, args, cwd, id, phaseResult, extra = {}) {
 function productCommand(execute, root, nodeExecutable, args, id, phaseResult) {
   const script = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');
   return command(execute, nodeExecutable, [script, ...args], root, id, phaseResult, { kind: 'product', script, args });
+}
+
+function cliIdentityFailure(evidence, code, message, details = null) {
+  evidence.status = 'blocked';
+  throw closeoutError(code, message, { cliIdentity: evidence, ...details });
+}
+
+function verifyDefaultCliIdentity({ execute, root, nodeExecutable, environment, phaseResult }) {
+  const expectedLauncher = path.join(root, SERVICE_ROOT, 'scripts', 'run-development-cli');
+  const expectedCliEntry = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');
+  const packageFile = path.join(root, SERVICE_ROOT, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+  const evidence = {
+    status: 'pending',
+    command: 'buildr',
+    pathEntry: null,
+    launcher: { expected: expectedLauncher, observed: null },
+    cliEntry: { expected: expectedCliEntry, observed: null },
+    nodeExecutable: { expected: nodeExecutable, observed: null },
+    package: { expected: packageJson.name, observed: null },
+    version: { expected: packageJson.version, observed: null },
+  };
+
+  const defaultBuildr = resolveDefaultBuildr(environment);
+  evidence.pathEntry = defaultBuildr;
+  if (!defaultBuildr) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-not-found', 'PATH中没有可执行的默认buildr。');
+  }
+  let observedLauncher;
+  try { observedLauncher = fs.realpathSync(defaultBuildr); } catch (error) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-unresolvable', '无法解析PATH命中的默认buildr入口。', { error: error.message });
+  }
+  evidence.launcher.observed = observedLauncher;
+  if (!sameFilesystemPath(observedLauncher, expectedLauncher)) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-launcher-mismatch', 'PATH命中的默认buildr没有绑定本次retained checkout launcher。');
+  }
+
+  const inspected = execute(defaultBuildr, [], {
+    cwd: root,
+    env: { ...environment, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
+  });
+  phaseResult.operations.push(operation('inspect-default-cli-identity', inspected, {
+    kind: 'default-cli',
+    executable: defaultBuildr,
+    args: [],
+  }));
+  if (inspected.status !== 0) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-inspection-failed', '默认buildr入口无法返回development CLI identity。', {
+      exitCode: inspected.status,
+      stderr: String(inspected.stderr || '').trim(),
+    });
+  }
+  let inspectedIdentity;
+  try { inspectedIdentity = JSON.parse(inspected.stdout); } catch (error) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-inspection-invalid', '默认buildr入口返回的development CLI identity不是合法JSON。', {
+      parseError: error.message,
+      stdout: String(inspected.stdout || '').slice(0, 2000),
+    });
+  }
+  if (inspectedIdentity.schemaVersion !== 'buildr.development-cli-identity/v1') {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-inspection-schema-invalid', '默认buildr入口返回了未知的development CLI identity schema。', {
+      schemaVersion: inspectedIdentity.schemaVersion || null,
+    });
+  }
+  evidence.launcher.observed = inspectedIdentity.launcher || evidence.launcher.observed;
+  evidence.cliEntry.observed = inspectedIdentity.cliEntry || null;
+  evidence.nodeExecutable.observed = inspectedIdentity.nodeExecutable || null;
+  if (!sameFilesystemPath(evidence.launcher.observed, expectedLauncher)) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-launcher-mismatch', '默认buildr运行时launcher与本次retained checkout不一致。');
+  }
+  if (!sameFilesystemPath(evidence.cliEntry.observed, expectedCliEntry)) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-entry-mismatch', '默认buildr运行时CLI entry与本次retained checkout不一致。');
+  }
+  if (!sameFilesystemPath(evidence.nodeExecutable.observed, nodeExecutable)) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-node-mismatch', '默认buildr没有使用Environment绑定的retained Node。');
+  }
+
+  const versioned = execute(defaultBuildr, ['version', '--json'], { cwd: root, env: environment });
+  phaseResult.operations.push(operation('default-cli-version', versioned, {
+    kind: 'default-cli',
+    executable: defaultBuildr,
+    args: ['version', '--json'],
+  }));
+  if (versioned.status !== 0) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-version-failed', '默认buildr无法执行version --json。', {
+      exitCode: versioned.status,
+      stderr: String(versioned.stderr || '').trim(),
+    });
+  }
+  let versionPayload;
+  try { versionPayload = JSON.parse(versioned.stdout); } catch (error) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-version-invalid', '默认buildr version --json没有返回合法JSON。', {
+      parseError: error.message,
+      stdout: String(versioned.stdout || '').slice(0, 2000),
+    });
+  }
+  evidence.package.observed = versionPayload.package || null;
+  evidence.version.observed = versionPayload.version || null;
+  if (evidence.package.observed !== evidence.package.expected || evidence.version.observed !== evidence.version.expected) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-version-mismatch', '默认buildr package/version与本次retained checkout不一致。');
+  }
+  evidence.status = 'passed';
+  return evidence;
+}
+
+function defaultCliCommand(execute, evidence, environment, root, args, id, phaseResult) {
+  return command(execute, evidence.pathEntry, args, root, id, phaseResult, {
+    kind: 'default-cli',
+    executable: evidence.pathEntry,
+    args,
+  }, environment);
 }
 
 function requirePassed(result, code, message, details = null) {
@@ -269,7 +401,7 @@ function markPassed(stage, inputIdentity, outputIdentity, effects = []) {
   stage.effects.push(...effects);
 }
 
-function closeoutResult(result, plan, stages, status, diagnostic = null) {
+function closeoutResult(result, plan, stages, status, diagnostic = null, cliIdentity = null) {
   return {
     schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA,
     status,
@@ -277,23 +409,25 @@ function closeoutResult(result, plan, stages, status, diagnostic = null) {
     taskId: result?.identity?.task || null,
     mode: plan?.mode || null,
     plan: plan || null,
+    cliIdentity,
     phases: SELF_BOOTSTRAP_CLOSEOUT_PHASES.map((id) => stages.get(id)),
     effects: SELF_BOOTSTRAP_CLOSEOUT_PHASES.flatMap((id) => stages.get(id).effects),
     diagnostic,
   };
 }
 
-export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExecutable, execute = defaultExecute }) {
+export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExecutable, execute = defaultExecute, environment = process.env }) {
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const stages = new Map(SELF_BOOTSTRAP_CLOSEOUT_PHASES.map((id) => [id, phase(id)]));
   let plan = null;
+  let cliIdentity = null;
   let active = stages.get('preflight');
   try {
     const componentFile = path.join(root, COMPONENT_PATH);
     if (!fs.existsSync(componentFile) || !/^id:\s*buildr-self-bootstrap\s*$/m.test(fs.readFileSync(componentFile, 'utf8'))) {
       markNotApplicable(active, 'canonical Workspace没有buildr-self-bootstrap Component。');
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(1)) markNotApplicable(stages.get(id), 'Workspace不适用self-bootstrap closeout。');
-      return closeoutResult(finishResult, null, stages, 'not-applicable');
+      return closeoutResult(finishResult, null, stages, 'not-applicable', null, cliIdentity);
     }
     if (finishResult?.schemaVersion !== 'buildr.task-finish-result/v2') throw closeoutError('self-bootstrap-closeout.finish-result-schema-invalid', 'Runner只消费buildr.task-finish-result/v2。');
     if (finishResult.resolvedContext?.capability?.id !== 'buildr.task-finish' || finishResult.resolvedContext?.capability?.version !== 1) {
@@ -309,7 +443,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       active = stages.get('plan');
       markPassed(active, finishResult.resolvedContext.identity, plan.identity);
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(2)) markNotApplicable(stages.get(id), '当前plan没有适用动作。');
-      return closeoutResult(finishResult, plan, stages, 'not-applicable');
+      return closeoutResult(finishResult, plan, stages, 'not-applicable', null, cliIdentity);
     }
 
     const actualRoot = gitText(execute, root, ['rev-parse', '--show-toplevel'], 'workspace-root', active, 'self-bootstrap-closeout.git-root-unavailable');
@@ -405,29 +539,39 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       markPassed(active, plan.identity, digest(payload), [{ type: 'install-development-local-app', ref: successor, channel: 'development' }]);
     } else markNotApplicable(active, 'frozen paths未命中Development Local App输入。');
 
+    active = stages.get('verify-cli-identity');
+    cliIdentity = verifyDefaultCliIdentity({ execute, root, nodeExecutable, environment, phaseResult: active });
+    markPassed(active, plan.identity, digest(cliIdentity), [{ type: 'verify-default-cli-identity', path: cliIdentity.pathEntry }]);
+
     active = stages.get('finalize');
     if (plan.mode === 'complete') {
-      const doctor = productCommand(execute, root, nodeExecutable, ['doctor', '--agent', plan.agent, '--target', root, '--json'], 'final-doctor', active);
+      const doctor = defaultCliCommand(execute, cliIdentity, environment, root, ['doctor', '--agent', plan.agent, '--target', root, '--json'], 'final-doctor', active);
       requirePassed(doctor, 'self-bootstrap-closeout.doctor-failed', '最终Doctor命令失败。');
       const payload = parseJson(doctor, 'self-bootstrap-closeout.doctor-result-invalid', '最终Doctor没有返回JSON。');
       if (payload.health?.ready !== true) throw closeoutError('self-bootstrap-closeout.doctor-not-ready', '最终Doctor未ready。', { findings: payload.findings || [] });
       markPassed(active, successor, digest(payload));
     } else {
-      const resumed = productCommand(execute, root, nodeExecutable, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', finishResult.resume.token, '--target', root, '--detail', 'full', '--json'], 'resume-finish-run', active);
+      const resumed = defaultCliCommand(execute, cliIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', finishResult.resume.token, '--target', root, '--detail', 'full', '--json'], 'resume-finish-run', active);
       requirePassed(resumed, 'self-bootstrap-closeout.finish-resume-failed', '同一Finish run恢复命令失败。');
       const payload = parseJson(resumed, 'self-bootstrap-closeout.finish-resume-result-invalid', 'Finish resume没有返回JSON。');
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
       markPassed(active, finishResult.resume.token, payload.resolvedContext?.identity || payload.runId);
     }
-    return closeoutResult(finishResult, plan, stages, 'passed');
+    return closeoutResult(finishResult, plan, stages, 'passed', null, cliIdentity);
   } catch (error) {
+    const { cliIdentity: failedCliIdentity = null, ...diagnosticDetails } = error.details || {};
+    if (failedCliIdentity) cliIdentity = failedCliIdentity;
     active.status = 'blocked';
-    active.diagnostic = { code: error.code || 'self-bootstrap-closeout.failed', message: error.message, details: error.details || null };
+    active.diagnostic = {
+      code: error.code || 'self-bootstrap-closeout.failed',
+      message: error.message,
+      details: Object.keys(diagnosticDetails).length ? diagnosticDetails : null,
+    };
     for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES) {
       const item = stages.get(id);
       if (item.status === 'pending') markNotApplicable(item, '前序阶段已停止。');
     }
-    return closeoutResult(finishResult, plan, stages, 'blocked', active.diagnostic);
+    return closeoutResult(finishResult, plan, stages, 'blocked', active.diagnostic, cliIdentity);
   }
 }
 
@@ -447,7 +591,7 @@ function commandResultError(code, message, result) {
   });
 }
 
-export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute } = {}) {
+export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
   const allowed = new Set(['--run', '--target', '--node-executable']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', 'Runner参数必须为成对的option和值。');
   for (let index = 0; index < args.length; index += 2) {
@@ -472,7 +616,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
     throw closeoutError('self-bootstrap-closeout.finish-inspect-result-invalid', 'Product CLI没有返回合法Finish Result JSON。', { parseError: error.message, stdout: String(inspected.stdout || '').slice(0, 2000) });
   }
   if (finishResult.runId !== runId) throw closeoutError('self-bootstrap-closeout.finish-run-mismatch', 'Product CLI返回的Finish run identity不匹配。', { expected: runId, actual: finishResult.runId || null });
-  return runSelfBootstrapCloseout({ finishResult, workspaceRoot: root, nodeExecutable, execute });
+  return runSelfBootstrapCloseout({ finishResult, workspaceRoot: root, nodeExecutable, execute, environment });
 }
 
 function main() {

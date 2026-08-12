@@ -56,7 +56,7 @@ Project 服务通过 `services/manifest.yml` 维护 Service registry，默认目
 
 - task environment 必须使用其 receipt 返回的绝对 CLI invocation；不得运行主机全局安装脚本，也不得修改 `~/.local/bin/buildr`。需要验证安装行为时，只能通过 `BUILDR_CLI_INSTALL_DIR` 指向任务专用临时目录。
 - 改动涉及 Buildr 产品 CLI 入口或实现（`buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、安装/卸载脚本或 npm CLI 映射）时，普通用户 Workspace 的 Formal Task Finish 不执行本机产品安装。Buildr 自举 Workspace 仅由已安装的 `buildr-self-bootstrap` Component 在 Formal Finish 成功后，根据冻结 Task Contribution选择development CLI activation。
-- self-bootstrap activation安装后必须运行 `command -v buildr`、`buildr --help` 和 `buildr doctor --agent <agent> --target <workspace-root> --json`，确认默认入口绑定仍保留的 checkout，且目标 workspace 状态有效。
+- self-bootstrap activation成功时，PATH中默认`buildr`的实际入口链必须可证明绑定本次delivered retained checkout，且最终Workspace Doctor必须ready；正式sync、安装、CLI identity检查与最终Doctor或Finish resume只由`buildr-self-bootstrap-sync`唯一runner执行，Agent不得自行编排或补跑。
 - 如目标位置存在非 Buildr 管理的文件或命令冲突，停止自动安装并明确报告，不得覆盖。
 
 ## 验证入口

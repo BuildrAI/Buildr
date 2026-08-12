@@ -6,7 +6,7 @@
 
 ## Buildr 自举原则
 
-本 workspace 是 Buildr 用来开发 Buildr 自身的自举 workspace。每个 Buildr 开发任务收尾时，必须检查本次变更是否影响 Rules、Skills、Components、Commands、项目结构或 Agent runtime 入口；如有影响，按需运行 `projects/product/buildr sync <agent> --target .` / `projects/product/buildr render <agent> --target .` 更新当前 workspace。
+本 workspace 是 Buildr 用来开发 Buildr 自身的自举 workspace。正式自举激活成功时，PATH 中的默认 `buildr` 必须可证明绑定本次 delivered retained checkout，且最终 workspace Doctor 必须 ready。正式 sync、安装、CLI identity 检查与最终 Doctor 或 Finish resume 只由 `buildr-self-bootstrap-sync` Skill 的唯一 runner 编排；Agent 不得自行拆分、补跑或替代其中步骤。
 
 - Buildr 产品治理事实只在 `projects/product/` 维护；可执行产品实现分属两个 Service：`projects/product/services/buildr/` 负责 npm package、CLI、本机应用 HTTP/运行时（runtime）、`web-dist` 托管与打包，`projects/product/services/buildr-web/` 负责 Local App React/Vite 权威前端源码与正式构建。当前 workspace 中由 Buildr 交付的资产只能通过当前 Product checkout 的 `update` / `sync` 更新，不直接编辑。
 

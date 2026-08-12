@@ -67,6 +67,20 @@ test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Nod
   assert.match(result.stdout, /^managed\|.*bin\/buildr\.mjs --help\n$/u);
 });
 
+test('runner-only identity inspection返回launcher、CLI entry和实际Node', { skip: process.platform === 'win32' }, () => {
+  const result = run(runner, [], {
+    PATH: path.dirname(process.execPath),
+    BUILDR_NODE: process.execPath,
+    BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const identity = JSON.parse(result.stdout);
+  assert.equal(identity.schemaVersion, 'buildr.development-cli-identity/v1');
+  assert.equal(identity.launcher, runner);
+  assert.equal(identity.cliEntry, path.join(serviceRoot, 'bin', 'buildr.mjs'));
+  assert.equal(identity.nodeExecutable, process.execPath);
+});
+
 test('受管 Node 缺失时仅 doctor/sync 可使用 bootstrap Node', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-recovery-'));
   const workspace = path.join(fixture, 'workspace');
