@@ -339,7 +339,15 @@ export function registerTaskFinishRepository(runtime) {
         throw error('task_finish_run_not_found', `Task Finish current run 不存在：${taskId || runId}。`, 404, { taskId, runId });
       }
       const serialized = JSON.stringify(decoded.run);
-      return { root: opened.root, file: runLocator(row.run_id), content: serialized, runDigest: digest(serialized), run: decoded.run };
+      return {
+        root: opened.root,
+        file: runLocator(row.run_id),
+        content: serialized,
+        runDigest: digest(serialized),
+        run: decoded.run,
+        preparedCompletion: clone(decoded.preparedCompletion),
+        lease: leaseFromRow(row),
+      };
     } catch (cause) {
       if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
       throw error('task_finish_run_read_failed', `Task Finish current run 读取失败：${cause.message}`, 500, { taskId, runId });

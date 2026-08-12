@@ -125,15 +125,20 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, controllerCom
 }
 
 function taskDevelopmentFixture() {
-  const candidate = { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target', taskContextIdentity: 'sha256-task-context', policyIdentity: 'sha256-policy' };
+  let generation = 1;
   const gates = {
     planning: { targetIdentity: 'sha256-planning-target', resultDigest: 'sha256-planning', outcome: 'ready' },
     verification: { targetIdentity: 'sha256-verification-target', resultDigest: 'sha256-verification', outcome: 'passed' },
     completion: { targetIdentity: 'sha256-completion-target', resultDigest: 'sha256-completion', outcome: 'ready' },
   };
-  const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'ready', risks: [] };
-  const handoff = { identity: 'sha256-handoff', candidate, gates, decision };
-  const receipt = { candidate, gates, decision, handoffs: [handoff] };
+  const history = [];
+  const snapshot = () => {
+    const candidate = { identity: `sha256-candidate-${generation}`, generation, contentTargetIdentity: `sha256-content-target-${generation}`, taskContextIdentity: 'sha256-task-context', policyIdentity: 'sha256-policy' };
+    const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'ready', risks: [] };
+    const handoff = { identity: `sha256-handoff-${generation}`, candidate, gates, decision };
+    if (!history.some((item) => item.identity === handoff.identity)) history.push(handoff);
+    return { candidate, decision, handoff, receipt: { candidate, gates, decision, handoffs: [...history] } };
+  };
   let taskRecord = null;
   return {
     inspectTaskRecord: (_root, task) => ({ record: taskRecord || { taskId: task, status: 'active', result: null } }),
@@ -142,10 +147,129 @@ function taskDevelopmentFixture() {
       if (taskRecord.status === 'active') taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: [{ type: 'updated', taskId: task }] };
     },
-    inspectTaskDevelopment: () => ({ development: { receipt, applicability: { handoff: 'current' } } }),
-    assertTaskDevelopmentCarrier: () => ({ status: 'equivalent', development: { receipt, applicability: { handoff: 'current' } }, effects: [] }),
+    inspectTaskDevelopment: () => {
+      const current = snapshot();
+      return { development: { receipt: current.receipt, applicability: { handoff: 'current' } } };
+    },
+    assertTaskDevelopmentCarrier: (_root, _task, expected) => {
+      const current = snapshot();
+      const observed = {
+        handoffIdentity: current.handoff.identity,
+        candidateIdentity: current.candidate.identity,
+        candidateGeneration: current.candidate.generation,
+        contentTargetIdentity: current.candidate.contentTargetIdentity,
+      };
+      const mismatches = Object.keys(observed).filter((field) => observed[field] !== expected?.[field]);
+      return mismatches.length
+        ? { status: 'stale', development: { receipt: current.receipt, applicability: { handoff: 'current' } }, diagnostic: { code: 'task_development_carrier_identity_mismatch', details: { expected, current: observed, mismatches } }, effects: [] }
+        : { status: 'equivalent', development: { receipt: current.receipt, applicability: { handoff: 'current' } }, effects: [] };
+    },
+    advanceTaskDevelopmentHandoff: () => { generation += 1; return snapshot().handoff; },
   };
 }
+
+test('preflight-only陈旧run要求新commit message；已有carrier事实时保留现场并拒绝换绑', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-stale-run-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const seed = path.join(fixture, 'seed');
+  const remote = path.join(fixture, 'remote.git');
+  const retained = path.join(fixture, 'workspace');
+  fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Stale Finish run fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+  fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  command(seed, 'git', ['init', '-b', 'dev']);
+  command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
+  fs.writeFileSync(path.join(seed, 'README.md'), '# baseline\n');
+  command(seed, 'git', ['add', '-A']);
+  command(seed, 'git', ['commit', '-m', 'baseline']);
+  command(fixture, 'git', ['init', '--bare', remote]);
+  command(seed, 'git', ['remote', 'add', 'origin', remote]);
+  command(seed, 'git', ['push', '-u', 'origin', 'dev']);
+  command(fixture, 'git', ['clone', '--branch', 'dev', remote, retained]);
+  command(retained, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(retained, 'git', ['config', 'user.email', 'journey@example.com']);
+
+  const task = 'stale-finish-run';
+  const environmentRoot = path.join(retained, '.worktrees', task);
+  command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
+  fs.writeFileSync(path.join(environmentRoot, 'feature.txt'), 'generation one\n');
+  command(environmentRoot, 'git', ['add', 'feature.txt']);
+  command(environmentRoot, 'git', ['commit', '-m', 'candidate generation one']);
+  fs.writeFileSync(path.join(retained, 'retained-blocker.txt'), 'keep preflight blocked\n');
+
+  const development = taskDevelopmentFixture();
+  const environment = taskEnvironmentFixture({ task, environmentRoot, retained });
+  const runtime = {
+    ...createTaskFinishSqliteRuntime(retained, task),
+    ...environment,
+    ...development,
+    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
+    optionValue: (args, name, fallback) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget: (args) => {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? retained : args[index + 1]) };
+    },
+  };
+  registerTaskFinishApplication(runtime);
+
+  const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation one', '--target', retained]);
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.primaryFailure.phase, 'preflight');
+  assert.equal(first.carrier, null);
+  const firstRunId = first.runId;
+  const firstRecordCount = runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length;
+  assert.equal(firstRecordCount, 1);
+
+  development.advanceTaskDevelopmentHandoff();
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--target', retained]),
+    (error) => error.code === 'task_finish.entry_gaps'
+      && error.details?.gaps?.delivery?.some((gap) => gap.code === 'task_finish.commit_message_required'),
+  );
+  assert.equal(runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run.runId, firstRunId);
+
+  const second = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation two', '--target', retained]);
+  assert.equal(second.status, 'blocked');
+  assert.notEqual(second.runId, firstRunId);
+  assert.equal(second.candidate.generation, 2);
+  assert.equal(second.deliveryCommit.subject, 'fix(task-finish): deliver generation two');
+  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 2);
+
+  const persisted = runtime.readTaskFinishRunPersistence(retained, { taskId: task });
+  persisted.run.deliveryCarrier = { identity: 'sha256-owned-carrier', root: path.join(retained, '.buildr', 'task-finish', 'carriers', second.runId) };
+  persisted.run.status = 'blocked';
+  persisted.run.phases.find((phase) => phase.id === 'preflight').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'prepare').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'prepare').attempts = 1;
+  persisted.run.phases.find((phase) => phase.id === 'verify').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'verify').attempts = 1;
+  persisted.run.phases.find((phase) => phase.id === 'deliver').status = 'blocked';
+  persisted.run.phases.find((phase) => phase.id === 'deliver').attempts = 1;
+  persisted.run.primaryFailure = { phase: 'deliver', operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', status: 'blocked', exitCode: null, message: 'Target changed.', findings: [], diagnostic: null };
+  persisted.run.resume = { phase: 'deliver', token: 'sha256-deliver-resume', generatedAt: new Date().toISOString(), carrierIdentity: 'sha256-owned-carrier' };
+  runtime.writeTaskFinishRunPersistence(retained, persisted.run);
+  development.advanceTaskDevelopmentHandoff();
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation three', '--target', retained]),
+    (error) => error.code === 'task_finish.current_run_identity_conflict'
+      && error.details?.sideEffectFacts?.includes('carrier'),
+  );
+  await assert.rejects(
+    runtime.taskFinish('run', ['--run', second.runId, '--resume', 'sha256-deliver-resume', '--target', retained]),
+    (error) => error.code === 'task_finish.current_run_identity_conflict'
+      && error.details?.runId === second.runId,
+  );
+  const retainedCurrent = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
+  assert.equal(retainedCurrent.runId, second.runId);
+  assert.equal(retainedCurrent.deliveryCarrier.identity, 'sha256-owned-carrier');
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], command(retained, 'git', ['rev-parse', 'HEAD']));
+});
 
 function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment, workspaceOnly = false }) {
   let receipt = null;

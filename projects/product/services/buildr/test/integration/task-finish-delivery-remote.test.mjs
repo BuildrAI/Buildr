@@ -104,7 +104,7 @@ function deliveryFixture(t, hook) {
       },
     }),
   };
-  return { ...data, environmentRoot, expectedTargetRef, carrierRef, run: persistedRun, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
+  return { ...data, environmentRoot, expectedTargetRef, carrierRef, run: persistedRun, runtime, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
 
 test('workspace source 缺少 Environment remote 时解析 retained branch upstream', (t) => {
@@ -156,6 +156,28 @@ test('push 后远端回读不一致时返回 target race 且不形成 remoteAfte
   assert.equal(Object.hasOwn(result.output.delivery, 'remoteAfterRef'), false);
   assert.deepEqual(result.operations.slice(-2).map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
   assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], data.expectedTargetRef);
+});
+
+test('deliver 前Development handoff漂移时零lease零push', async (t) => {
+  const data = deliveryFixture(t);
+  const remoteBefore = command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0];
+  let expected = null;
+  data.runtime.assertTaskDevelopmentCarrier = (_root, _task, identity) => {
+    expected = identity;
+    return { status: 'stale', diagnostic: { code: 'task_development_carrier_identity_mismatch' } };
+  };
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.failure.code, 'task-finish.carrier-not-equivalent');
+  assert.deepEqual(expected, {
+    handoffIdentity: data.run.identity.handoffIdentity,
+    candidateIdentity: data.run.identity.candidateIdentity,
+    candidateGeneration: data.run.identity.candidateGeneration,
+    contentTargetIdentity: data.run.identity.contentTargetIdentity,
+  });
+  assert.deepEqual(result.operations, undefined);
+  assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], remoteBefore);
+  assert.equal(data.runtime.readTaskFinishRunPersistence(data.retained, { taskId: data.run.identity.task }).lease, null);
 });
 
 test('push 后远端无法回读时只保留可恢复 deliver 阻塞', async (t) => {

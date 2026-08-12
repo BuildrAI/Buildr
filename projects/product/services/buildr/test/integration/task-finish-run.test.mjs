@@ -151,7 +151,8 @@ test('resolvedContext identity只由run identity确定，terminal legacy v2保�
 
 test('run identity 强制绑定 Development handoff/Candidate/Content Target，且不回退旧文件协议', (t) => {
   const root = fixture(t);
-  const run = createFinishRun({ root, runId: 'current', identity: identity(root) });
+  const runtime = runtimeFor(root, 'finish-handoff');
+  const run = createFinishRun({ root, runId: 'current', identity: identity(root), runtime });
   assert.equal(run.schemaVersion, 'buildr.task-finish-run/v2');
   for (const field of ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']) {
     const invalid = identity(root);
@@ -161,6 +162,14 @@ test('run identity 强制绑定 Development handoff/Candidate/Content Target，�
   fs.mkdirSync(path.join(root, '.buildr', 'task-finish', 'runs'), { recursive: true });
   fs.writeFileSync(path.join(root, '.buildr', 'task-finish', 'runs', 'old-v1.json'), JSON.stringify({ schemaVersion: 'buildr.task-finish-run/v1', runId: 'old-v1', phases: [] }));
   assert.throws(() => readFinishRun({ root, runId: 'old-v1' }), /Unknown Task Finish run/);
+  runtime.writeTaskFinishRunPersistence(root, run);
+  const changed = { ...identity(root), candidateIdentity: 'sha256-candidate-2', candidateGeneration: 2 };
+  assert.throws(
+    () => createFinishRun({ root, runId: 'different', identity: changed, runtime }),
+    (error) => error.code === 'task_finish.current_run_identity_conflict'
+      && error.details.currentRunId === 'current'
+      && error.details.currentIdentityDigest !== error.details.requestedIdentityDigest,
+  );
 });
 
 test('carrier equivalence 缺陷终止 run 并返回 Task Development', async (t) => {

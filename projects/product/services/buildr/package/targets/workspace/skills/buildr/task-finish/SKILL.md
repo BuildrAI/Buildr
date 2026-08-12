@@ -36,11 +36,11 @@ preflight → prepare → verify → deliver → cleanup
 
 五阶段由产品连续执行，Agent不编排阶段、补evidence或设计recovery。
 
-完整message只在首次创建run时提供。产品规范化换行、确定性加入`Buildr-Task: <task-id>` trailer并冻结identity；公开Result和Execution Record只投影subject与identity。已有run的resume命令不得再次提供或覆盖message。
+完整message只在首次创建run时提供并冻结identity；公开结果只投影subject与identity，resume不得覆盖。新handoff必须以新message创建新run。旧run仅在preflight且无carrier、lease、delivery、retained、cleanup事实时失效；否则保留现场并返回identity conflict，不删除carrier或换绑。
 
 每次真正执行的首次run或resume会先以独立invocation identity预留`task-finish/finish-diagnostics` Execution Record容量；backpressure时五阶段与所有Finish owner副作用都不启动。产品在invocation期间把timeline、diagnostics和受控stdout/stderr写入独立transient files，record retained后只清理该diagnostics目录。Delivery Carrier、lease、resume与cleanup资源仍由Finish current独立管理；Agent不得用record恢复或删除这些资源。
 
-- `preflight` 只核对 current handoff、Environment、carrier adapter 与 retained target；activation不读取Project或Service声明。
+- `preflight`核对current handoff、Environment、carrier adapter与retained target；preflight、prepare、verify、deliver及resume都由Development精确核对run冻结的handoff、Candidate、generation与Content Target identity，不回查历史handoffs。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
 - Agent只在carrier完成交付适配（Delivery Adaptation）；最终carrier HEAD必须保持run冻结的完整message，否则resume保持blocked。resume核验ownership、baseline、source/handoff、cleanliness、message identity与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。

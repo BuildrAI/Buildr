@@ -542,14 +542,34 @@ export function registerTaskDevelopmentApplication(runtime) {
 
   function assertTaskDevelopmentCarrier(targetRoot, taskId, input = {}) {
     assertActionFields('carrier', input, 'Task Development carrier');
+    const expected = {
+      handoffIdentity: inputText(input.handoffIdentity, 'handoffIdentity'),
+      candidateIdentity: inputText(input.candidateIdentity, 'candidateIdentity'),
+      candidateGeneration: input.candidateGeneration,
+      contentTargetIdentity: inputText(input.contentTargetIdentity, 'contentTargetIdentity'),
+    };
+    if (!Number.isInteger(expected.candidateGeneration) || expected.candidateGeneration < 1) {
+      throw taskDevelopmentError('task_development_field_invalid', 'candidateGeneration 必须是大于等于1的整数。', 400, { field: 'candidateGeneration' });
+    }
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
+    const current = observed.currentHandoff ? {
+      handoffIdentity: observed.currentHandoff.identity,
+      candidateIdentity: observed.currentHandoff.candidate.identity,
+      candidateGeneration: observed.currentHandoff.candidate.generation,
+      contentTargetIdentity: observed.currentHandoff.candidate.contentTargetIdentity,
+    } : null;
+    const mismatches = Object.keys(expected).filter((field) => current?.[field] !== expected[field]);
     const parentAcceptanceCurrent = !persistence.receipt.parentPlan
       || persistence.receipt.parentAcceptance?.planIdentity === persistence.receipt.parentPlan.identity;
-    if (observed.handoffCurrent && parentAcceptanceCurrent) return result('carrier', 'equivalent', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
-    if (observed.handoffCurrent && !parentAcceptanceCurrent) return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], { code: 'parent_final_acceptance_required', message: '采用Parent Plan的Task必须先记录绑定current Plan identity的显式最终集成验收。' }, ['调用task parent inspect确认Contribution前置条件，再执行task parent accept。']);
-    return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], { code: 'task_development_carrier_not_equivalent', message: 'Delivery carrier与current handoff Candidate不等价。', details: observed.reasons }, ['返回task-development重新建立stable target、Verification、Candidate、Completion Review与handoff。']);
+    if (observed.handoffCurrent && mismatches.length === 0 && parentAcceptanceCurrent) return result('carrier', 'equivalent', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed));
+    if (observed.handoffCurrent && mismatches.length === 0 && !parentAcceptanceCurrent) return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], { code: 'parent_final_acceptance_required', message: '采用Parent Plan的Task必须先记录绑定current Plan identity的显式最终集成验收。' }, ['调用task parent inspect确认Contribution前置条件，再执行task parent accept。']);
+    return result('carrier', 'stale', taskId, persistence, applicabilityFromObserved(persistence.receipt, observed), [], {
+      code: mismatches.length ? 'task_development_carrier_identity_mismatch' : 'task_development_carrier_not_equivalent',
+      message: mismatches.length ? 'Finish run冻结identity与current Development handoff不一致。' : 'Delivery carrier与current handoff Candidate不等价。',
+      details: { expected, current, mismatches, reasons: observed.reasons },
+    }, ['返回task-development重新建立stable target、Verification、Candidate、Completion Review与handoff。']);
   }
 
   function recordTaskParentPlan(targetRoot, taskId, input) {

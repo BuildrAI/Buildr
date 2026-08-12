@@ -73,7 +73,7 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 ## 交给 Finish
 
-handoff 完成后调用 `task-finish`。Finish 只能读取该 snapshot、准备或保留隔离Delivery Carrier、交付并清理；它不得收敛Change、同步Candidate内容、生成Candidate、发起正式Verification/Completion Review、接受风险或修改Development Receipt。只有Development Application报告applicability stale时才回到本Skill；Finish机械冲突留在carrier适配路径。
+handoff 完成后调用 `task-finish`。Finish 只能读取该 snapshot、准备或保留隔离Delivery Carrier、交付并清理；它每次核验都必须把run冻结的handoff、Candidate、generation与Content Target identity提交给Development Application，不能从历史handoffs自行选择。Finish不得收敛Change、同步Candidate内容、生成Candidate、发起正式Verification/Completion Review、接受风险或修改Development Receipt。只有Development Application报告applicability stale时才回到本Skill；Finish机械冲突留在carrier适配路径。
 
 ## 完成证据
 
