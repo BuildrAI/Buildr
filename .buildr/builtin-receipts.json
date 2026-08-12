@@ -45,11 +45,11 @@
       "type": "skill",
       "id": "declaration-intake",
       "target": "skills/buildr/declaration-intake",
-      "integrity": "sha256-de6a8ae934a24f5aa665ab7c07faa4fb06b434782de80f50c447ea2a0d694ee1",
+      "integrity": "sha256-e5252fa352e8e65e0a3de8bcdd03522e1125a84ebd5f5b858dd5e52b50232d3e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-0f8ac5094dda5a41689bbbfc90b0e0f53b09f5fdb297ead177533c766017d760"
+          "integrity": "sha256-4a8812566e5f1d7faa13399a5a096b0eafc175b214a944ed3c9f2c5e74aab719"
         }
       ]
     },
@@ -125,11 +125,11 @@
       "type": "skill",
       "id": "task-development",
       "target": "skills/buildr/task-development",
-      "integrity": "sha256-97eb4729dcbe8302adafaeae07d92033be8df07fcaa812844494528db81ffca4",
+      "integrity": "sha256-0c22e0e59eef68270db9ebad66c9374a26ebb0ad4fe9bd61a44f75f6b9d309c8",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-6638c92a899c5b7b5d3dc1bf913a719b734a30f819286dbb261348fa89a92023"
+          "integrity": "sha256-557dd07817d6f76416e9835eab85209d1a0d5a50c7d630a692b53a773131206f"
         }
       ]
     },
@@ -137,11 +137,11 @@
       "type": "skill",
       "id": "task-environment",
       "target": "skills/buildr/task-environment",
-      "integrity": "sha256-be6dcbb058a658f3c6b7e7042a2ed2d967b08cb9212e87d7c56fd368583abc86",
+      "integrity": "sha256-87640c46107d34f79b0620770dcb6d093b183bd1db77d686ba6df2d57371d353",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-216bef916183d0d6b4505661b9dfe4b057f46ec6a869b6820038a158e881ad1b"
+          "integrity": "sha256-b136d9702f4a6d90a77b65a895fd48df71d1f9960825e9f48f38f2bc030978cb"
         },
         {
           "path": "agents/openai.yaml",
@@ -165,11 +165,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-7cee9cee48cd4c4209e85106b86cea92a09c0a84b6dbffe5511a50318d8d08c7",
+      "integrity": "sha256-7061572d5d7d1e15d5e60d92c54b24cc64b7a4083ce4deb81fce5b278ed69e4e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8022246dd4f82240c3589e534bf2ecddd12d6f69097872084b28b370e7fe1c8b"
+          "integrity": "sha256-e35d3e9e45895fece3feba7d01dc878755dbd08625b7a9e278fbd735be392eaf"
         }
       ]
     },
@@ -177,11 +177,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-9aa6eb11d4dd31ebdf04d680a6d5f92bc8fa6c44386f764ea41fb78a10a44c2c",
+      "integrity": "sha256-f0e46a29d2cdda7f09580ec850796547418b0bcd0a0b9a76c87e52c2cd790947",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-249ae78b6d5ae7f612a3604802fbb883f0ab45f901dbb14ddabfd5a2393e54d1"
+          "integrity": "sha256-ff8fa072981fe2c372e0808cf72b1101bd2c44935e0532e967047c12217b2270"
         },
         {
           "path": "agents/openai.yaml",
@@ -193,11 +193,11 @@
       "type": "skill",
       "id": "task-retrospective",
       "target": "skills/buildr/task-retrospective",
-      "integrity": "sha256-452646201d0974a7109dfaaf6352e41a2c06f0e8a40f5fe53769c4e0bafece1f",
+      "integrity": "sha256-94a4f8d9f6defaf4d543a7b29f8bfa557a02b4d18faf0c8afd9bdcadf869a2d5",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-bdefac1aa5fd0b4f0428e584acca40ce1463b3e3cbcd8881351f7f1f26a046b4"
+          "integrity": "sha256-697aeb8939e72b417be43b0d2cd97e3d298091c0f2b54bf327e45e0b0a59585c"
         },
         {
           "path": "agents/openai.yaml",
@@ -225,11 +225,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-2c9c896f75c4690c38b5f92c8e0224f5e8f40d8ccacda50c11634471848154a7",
+      "integrity": "sha256-ccbb9926f62cc35bfa68abe6d7b338b188c4fc06957e050b5cb422e7aaf9e9f9",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-55d0e6261b15310f7cee15cdc0239cee609ccc6ede00f314ac11de277655eaae"
+          "integrity": "sha256-b41858f69a2545cd89270aeaee634578c0a87a15379716d636dae15b3a703d42"
         }
       ]
     },
