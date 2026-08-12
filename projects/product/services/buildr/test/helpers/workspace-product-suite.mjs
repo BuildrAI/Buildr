@@ -16,6 +16,8 @@ export function registerWorkspaceProductSuite(selectedSuite) {
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
+const PREVIEW_ISOLATION_TIMEOUT_MS = process.platform === 'win32' ? 60_000 : 20_000;
+const PREVIEW_COMMAND_TIMEOUT_MS = 15_000;
 
 function temporaryRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-'));
@@ -591,20 +593,35 @@ suiteTest('app-process', 'buildr app 重复启动复用单实例并从陈旧 run
   }
 });
 
-suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: 20_000 }, async (t) => {
+suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: PREVIEW_ISOLATION_TIMEOUT_MS }, async (t) => {
   const base = temporaryRoot(t);
   const appData = path.join(base, 'preview-data');
   const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
-  const first = initGitWorkspace(t, { name: 'preview-first' });
-  const second = initGitWorkspace(t, { name: 'preview-second' });
+  const timings = [];
+  let currentPhase = 'setup';
+  const measure = async (phase, operation) => {
+    currentPhase = phase;
+    const startedAt = performance.now();
+    try {
+      return await operation();
+    } finally {
+      timings.push(`${phase}=${Math.round(performance.now() - startedAt)}ms`);
+    }
+  };
+  const runPreviewCommand = (phase, args) => measure(phase, () => runBuildr(args, { env, timeout: PREVIEW_COMMAND_TIMEOUT_MS }));
+  const first = await measure('workspace-first', () => initGitWorkspace(t, { name: 'preview-first' }));
+  const second = await measure('workspace-second', () => initGitWorkspace(t, { name: 'preview-second' }));
   const started = [];
   t.after(async () => {
+    const cleanupStartedAt = performance.now();
     for (const name of started) {
       try { await stopPreview(name, { dataRoot: appData, caller: null }); } catch { /* assertion path retains diagnostic */ }
     }
+    timings.push(`cleanup=${Math.round(performance.now() - cleanupStartedAt)}ms`);
+    t.diagnostic(`[preview-isolation-timing] current=${currentPhase} ${timings.join(' ')}`);
   });
 
-  const firstStart = runBuildr(['app', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json'], { env });
+  const firstStart = await runPreviewCommand('start-first', ['app', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json']);
   assert.equal(firstStart.status, 0, firstStart.stderr);
   started.push('first-task');
   const firstPreview = JSON.parse(firstStart.stdout);
@@ -617,11 +634,11 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   assert.equal(firstPreview.owner.identityMode, 'standalone-checkout');
   assert.equal(firstPreview.owner.repositorySet[0].selector, 'workspace');
   assert.equal(firstPreview.owner.productCheckout, PRODUCT_ROOT);
-  const firstPage = await fetch(firstPreview.url).then((response) => response.text());
+  const firstPage = await measure('fetch-first', () => fetch(firstPreview.url).then((response) => response.text()));
   assert.match(firstPage, /first-task/);
   assert.match(firstPage, /buildr-preview/);
 
-  const secondStart = runBuildr(['app', 'preview', 'start', 'second-task', '--target', second, '--no-open', '--json'], { env });
+  const secondStart = await runPreviewCommand('start-second', ['app', 'preview', 'start', 'second-task', '--target', second, '--no-open', '--json']);
   assert.equal(secondStart.status, 0, secondStart.stderr);
   started.push('second-task');
   const secondPreview = JSON.parse(secondStart.stdout);
@@ -629,28 +646,33 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   assert.equal(secondPreview.owner.worktree, second);
   assert.equal(secondPreview.owner.identityMode, 'standalone-checkout');
 
-  const collision = runBuildr(['app', 'preview', 'start', 'first-task', '--target', second, '--no-open', '--json'], { env });
+  const collision = await runPreviewCommand('reject-collision', ['app', 'preview', 'start', 'first-task', '--target', second, '--no-open', '--json']);
   assert.notEqual(collision.status, 0);
   assert.match(collision.stderr, /正由 .* 使用/);
 
-  const listed = runBuildr(['app', 'preview', 'list', '--json'], { env });
+  const listed = await runPreviewCommand('list-both', ['app', 'preview', 'list', '--json']);
   assert.equal(listed.status, 0, listed.stderr);
   assert.deepEqual(JSON.parse(listed.stdout).previews.map((item) => item.instance).sort(), ['first-task', 'second-task']);
 
-  const stopped = await stopPreview('first-task', { dataRoot: appData, caller: null });
+  const stopped = await measure('stop-first', () => stopPreview('first-task', { dataRoot: appData, caller: null }));
   started.splice(started.indexOf('first-task'), 1);
   assert.equal(stopped.status, 'stopped');
-  const remaining = JSON.parse(runBuildr(['app', 'preview', 'list', '--json'], { env }).stdout).previews;
+  const remainingResult = await runPreviewCommand('list-remaining', ['app', 'preview', 'list', '--json']);
+  assert.equal(remainingResult.status, 0, remainingResult.stderr);
+  const remaining = JSON.parse(remainingResult.stdout).previews;
   assert.deepEqual(remaining.map((item) => item.instance), ['second-task']);
   const secondPid = secondPreview.pid;
-  const secondStopped = runBuildr(['app', 'preview', 'stop', 'second-task', '--json'], { env });
+  const secondStopped = await runPreviewCommand('stop-second', ['app', 'preview', 'stop', 'second-task', '--json']);
   assert.equal(secondStopped.status, 0, secondStopped.stderr);
   started.splice(started.indexOf('second-task'), 1);
-  for (let index = 0; index < 40; index += 1) {
-    try { process.kill(secondPid, 0); } catch (error) { if (error.code === 'ESRCH') break; throw error; }
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
+  await measure('confirm-second-exit', async () => {
+    for (let index = 0; index < 40; index += 1) {
+      try { process.kill(secondPid, 0); } catch (error) { if (error.code === 'ESRCH') break; throw error; }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  });
   assert.throws(() => process.kill(secondPid, 0), (error) => error.code === 'ESRCH');
+  currentPhase = 'completed';
 });
 
 suiteTest('manifest-registry', 'public CLI 暴露 app 与 init description help', () => {
