@@ -533,7 +533,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
 
     active = stages.get('install-local-app');
     if (plan.actions['install-development-local-app'].length) {
-      const installed = productCommand(execute, root, nodeExecutable, ['app', 'launcher', 'install', '--channel', 'development', '--json'], 'install-development-local-app', active);
+      const installed = productCommand(execute, root, nodeExecutable, ['web', 'launcher', 'install', '--channel', 'development', '--json'], 'install-development-local-app', active);
       requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', 'Development Local App安装失败。');
       const payload = parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', 'Development Local App installer没有返回JSON。');
       markPassed(active, plan.identity, digest(payload), [{ type: 'install-development-local-app', ref: successor, channel: 'development' }]);
