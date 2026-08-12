@@ -73,6 +73,27 @@ function finishResult(root, baseRef, changedPaths, overrides = {}) {
   };
 }
 
+function doctorBlockedResult(root, baseRef, changedPaths, overrides = {}) {
+  const base = finishResult(root, baseRef, changedPaths);
+  const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', base.runId);
+  return {
+    ...base,
+    status: 'blocked',
+    primaryFailure: { phase: 'deliver', operation: 'retained-doctor' },
+    carrier: { ...base.carrier, root: carrierRoot },
+    delivery: { status: 'activation-blocked', remoteAfterRef: baseRef, finalRemoteRef: baseRef },
+    resume: { phase: 'deliver', token: 'sha256-resume' },
+    ...overrides,
+  };
+}
+
+function createCarrier(root, runId = 'closeout-run') {
+  const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
+  fs.mkdirSync(carrierRoot, { recursive: true });
+  fs.writeFileSync(path.join(carrierRoot, 'carrier.txt'), 'owned\n');
+  return carrierRoot;
+}
+
 function executor(root, options = {}) {
   const canonicalRoot = fs.realpathSync(root);
   return (executable, args, context) => {
@@ -183,17 +204,79 @@ test('安装失败保留前序事实，Doctor blocked使用同一run resume', (t
   assert.equal(phase(installFailure, 'finalize').status, 'not-applicable');
 
   const secondFixture = fixture(t);
-  const base = finishResult(secondFixture.root, secondFixture.baseRef, ['projects/product/services/buildr/src/example.mjs']);
-  const blocked = {
-    ...base,
-    status: 'blocked',
-    primaryFailure: { phase: 'deliver', operation: 'retained-doctor' },
-    delivery: { status: 'activation-blocked', remoteAfterRef: secondFixture.baseRef, finalRemoteRef: secondFixture.baseRef },
-    resume: { phase: 'deliver', token: 'sha256-resume' },
-  };
+  const blocked = doctorBlockedResult(secondFixture.root, secondFixture.baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(secondFixture.root);
   const resumed = runSelfBootstrapCloseout({ finishResult: blocked, workspaceRoot: secondFixture.root, nodeExecutable: process.execPath, execute: executor(secondFixture.root) });
   assert.equal(resumed.status, 'passed', JSON.stringify(resumed.diagnostic));
   assert.equal(phase(resumed, 'finalize').operations.at(-1).id, 'resume-finish-run');
+});
+
+test('Doctor blocked preflight只排除同一run自有carrier', (t) => {
+  const { root, baseRef } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(root);
+
+  const result = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root) });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.match(phase(result, 'preflight').operations.find((item) => item.id === 'preflight-untracked').stdout, /closeout-run/);
+});
+
+test('Doctor blocked preflight拒绝与run identity不匹配的carrier root', (t) => {
+  const { root, baseRef } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs'], {
+    carrier: {
+      identity: 'sha256-carrier',
+      changedPaths: ['projects/product/services/buildr/src/example.mjs'],
+      root: createCarrier(root, 'different-run'),
+    },
+  });
+
+  const result = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root) });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.carrier-root-mismatch');
+});
+
+test('Doctor blocked preflight拒绝symlink carrier root', (t) => {
+  const { root, baseRef } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  const outside = path.join(path.dirname(root), 'outside-carrier');
+  const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', input.runId);
+  fs.mkdirSync(outside, { recursive: true });
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  fs.symlinkSync(outside, carrierRoot);
+
+  const result = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root) });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.carrier-root-invalid');
+});
+
+test('Doctor blocked preflight仍阻断carrier外的untracked差异', (t) => {
+  const { root, baseRef } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(root);
+  fs.writeFileSync(path.join(root, 'unrelated.txt'), 'unrelated\n');
+
+  const result = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root) });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.workspace-dirty');
+  assert.deepEqual(result.diagnostic.details.changedPaths, ['unrelated.txt']);
+});
+
+test('Doctor blocked preflight不排除carrier路径下的staged差异', (t) => {
+  const { root, baseRef } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  const carrierRoot = createCarrier(root);
+  git(root, 'add', '--', path.relative(root, path.join(carrierRoot, 'carrier.txt')));
+
+  const result = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root) });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.workspace-dirty');
+  assert.deepEqual(result.diagnostic.details.changedPaths, ['.buildr/transient/task-finish/carriers/closeout-run/carrier.txt']);
 });
 
 test('plan identity由run、frozen paths和去重动作确定', () => {

@@ -22,6 +22,7 @@ export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
 const PRODUCT_ROOT = 'projects/product';
 const SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr`;
 const COMPONENT_PATH = 'components/workspace/buildr-self-bootstrap/component.yml';
+const FINISH_CARRIER_ROOT = '.buildr/transient/task-finish/carriers';
 const FINISH_RUN_TRAILER = 'Buildr-Finish-Run';
 const PLAN_TRAILER = 'Buildr-Closeout-Plan';
 
@@ -176,6 +177,40 @@ function zeroList(value) {
   return String(value || '').split('\0').filter(Boolean).sort();
 }
 
+function ownedFinishCarrierPath(finishResult, workspaceRoot) {
+  if (finishMode(finishResult) !== 'doctor-blocked') return null;
+  const runId = portable(finishResult.runId);
+  if (!runId || runId === '.' || runId.includes('/')) throw closeoutError('self-bootstrap-closeout.carrier-run-invalid', 'Doctor blocked Finish Result的run identity不能安全定位Delivery Carrier。');
+  const relativeRoot = `${FINISH_CARRIER_ROOT}/${runId}`;
+  const expectedRoot = path.resolve(workspaceRoot, ...relativeRoot.split('/'));
+  const declaredRoot = finishResult.carrier?.root;
+  if (!declaredRoot || !sameFilesystemPath(declaredRoot, expectedRoot)) {
+    throw closeoutError('self-bootstrap-closeout.carrier-root-mismatch', 'Doctor blocked Finish Result声明的Delivery Carrier不属于当前run。', {
+      expectedRoot,
+      declaredRoot: declaredRoot || null,
+    });
+  }
+  let carrierStat;
+  try { carrierStat = fs.lstatSync(expectedRoot); } catch {
+    throw closeoutError('self-bootstrap-closeout.carrier-root-missing', 'Doctor blocked Finish Result声明的Delivery Carrier不存在。', { expectedRoot });
+  }
+  if (!carrierStat.isDirectory() || carrierStat.isSymbolicLink()) {
+    throw closeoutError('self-bootstrap-closeout.carrier-root-invalid', 'Doctor blocked Finish Result声明的Delivery Carrier必须是真实目录且不能是symlink。', { expectedRoot });
+  }
+  const realWorkspaceRoot = fs.realpathSync(workspaceRoot);
+  const realCarrierRoot = fs.realpathSync(expectedRoot);
+  const realRelative = path.relative(realWorkspaceRoot, realCarrierRoot);
+  if (!realRelative || path.isAbsolute(realRelative) || realRelative.split(path.sep).includes('..')) {
+    throw closeoutError('self-bootstrap-closeout.carrier-root-invalid', 'Doctor blocked Finish Result声明的Delivery Carrier越出canonical Workspace。', { expectedRoot });
+  }
+  return relativeRoot;
+}
+
+function belongsToUntrackedRoot(pathname, root) {
+  const normalized = String(pathname || '').replaceAll('\\', '/').replace(/\/+$/, '');
+  return normalized === root || normalized.startsWith(`${root}/`);
+}
+
 function command(execute, executable, args, cwd, id, phaseResult, extra = {}) {
   const result = execute(executable, args, { cwd });
   phaseResult.operations.push(operation(id, result, extra));
@@ -205,10 +240,11 @@ function remoteRef(execute, workspaceRoot, remote, branch, phaseResult, id = 're
   return observed.stdout.trim().split(/\s+/)[0] || null;
 }
 
-function changedPaths(execute, workspaceRoot, phaseResult, idPrefix) {
+function changedPaths(execute, workspaceRoot, phaseResult, idPrefix, { ignoredUntrackedRoots = [] } = {}) {
   const tracked = zeroList(gitText(execute, workspaceRoot, ['diff', '--name-only', '-z'], `${idPrefix}-tracked`, phaseResult, 'self-bootstrap-closeout.git-diff-failed'));
   const staged = zeroList(gitText(execute, workspaceRoot, ['diff', '--cached', '--name-only', '-z'], `${idPrefix}-staged`, phaseResult, 'self-bootstrap-closeout.git-diff-failed'));
-  const untracked = zeroList(gitText(execute, workspaceRoot, ['ls-files', '--others', '--exclude-standard', '-z'], `${idPrefix}-untracked`, phaseResult, 'self-bootstrap-closeout.git-status-failed'));
+  const untracked = zeroList(gitText(execute, workspaceRoot, ['ls-files', '--others', '--exclude-standard', '-z'], `${idPrefix}-untracked`, phaseResult, 'self-bootstrap-closeout.git-status-failed'))
+    .filter((pathname) => !ignoredUntrackedRoots.some((ownedRoot) => belongsToUntrackedRoot(pathname, ownedRoot)));
   return [...new Set([...tracked, ...staged, ...untracked])].sort();
 }
 
@@ -280,7 +316,9 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     if (!sameFilesystemPath(actualRoot, root)) throw closeoutError('self-bootstrap-closeout.git-root-mismatch', 'Runner target不是retained Git根目录。', { actualRoot });
     const branch = gitText(execute, root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], 'target-branch', active, 'self-bootstrap-closeout.detached-head');
     if (branch !== plan.targetBranch) throw closeoutError('self-bootstrap-closeout.target-branch-mismatch', 'Retained checkout不在Finish绑定的target branch。', { expected: plan.targetBranch, actual: branch });
-    const initialChanges = changedPaths(execute, root, active, 'preflight');
+    const ownedCarrierPath = ownedFinishCarrierPath(finishResult, root);
+    const changeObservation = ownedCarrierPath ? { ignoredUntrackedRoots: [ownedCarrierPath] } : {};
+    const initialChanges = changedPaths(execute, root, active, 'preflight', changeObservation);
     if (initialChanges.length) throw closeoutError('self-bootstrap-closeout.workspace-dirty', 'Retained Workspace在runner启动前不clean。', { changedPaths: initialChanges });
     const head = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'head', active, 'self-bootstrap-closeout.head-unavailable');
     const remote = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-before');
@@ -309,7 +347,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       active = stages.get('sync');
       const synced = productCommand(execute, root, nodeExecutable, ['sync', plan.agent, '--target', root, '--json'], 'workspace-sync', active);
       requirePassed(synced, 'self-bootstrap-closeout.sync-failed', 'Retained Workspace sync失败。');
-      const ownedPaths = changedPaths(execute, root, active, 'post-sync');
+      const ownedPaths = changedPaths(execute, root, active, 'post-sync', changeObservation);
       if (recovery !== 'fresh' && ownedPaths.length) throw closeoutError('self-bootstrap-closeout.successor-sync-drift', '合法successor存在，但重算sync仍产生delta。', { changedPaths: ownedPaths });
       markPassed(active, plan.identity, digest({ ownedPaths }), ownedPaths.length ? [{ type: 'workspace-sync', paths: ownedPaths }] : []);
 
@@ -318,7 +356,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
         const added = git(execute, root, ['add', '--', ...ownedPaths], 'stage-owned-paths', active);
         requirePassed(added, 'self-bootstrap-closeout.stage-failed', '精确stage sync delta失败。', { ownedPaths });
         const staged = zeroList(gitText(execute, root, ['diff', '--cached', '--name-only', '-z'], 'staged-readback', active, 'self-bootstrap-closeout.staged-readback-failed'));
-        const remaining = changedPaths(execute, root, active, 'post-stage');
+        const remaining = changedPaths(execute, root, active, 'post-stage', changeObservation);
         if (JSON.stringify(staged) !== JSON.stringify(ownedPaths) || remaining.some((item) => !staged.includes(item))) {
           throw closeoutError('self-bootstrap-closeout.owned-path-mismatch', 'staged set与sync owned paths不一致。', { ownedPaths, staged, remaining });
         }
