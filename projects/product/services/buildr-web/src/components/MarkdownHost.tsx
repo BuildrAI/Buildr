@@ -15,9 +15,20 @@ export function MarkdownHost({ markdown, className, options }: Props) {
   useEffect(() => {
     const host = ref.current;
     if (!host) return;
-    const view = renderMarkdown(markdown, optionsRef.current || {});
+    const currentOptions = optionsRef.current || {};
+    const view = renderMarkdown(markdown, currentOptions);
     if (className) {
       for (const token of className.split(/\s+/).filter(Boolean)) view.classList.add(token);
+    }
+    const onRelativeLinkClick = currentOptions.onRelativeLinkClick;
+    if (onRelativeLinkClick) {
+      for (const link of view.querySelectorAll<HTMLAnchorElement>('a.markdown-relative-link')) {
+        link.addEventListener('click', (event) => {
+          event.preventDefault();
+          const href = link.getAttribute('href') || '';
+          onRelativeLinkClick(href, event);
+        });
+      }
     }
     host.replaceChildren(view);
   }, [markdown, className]);

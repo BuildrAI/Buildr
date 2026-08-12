@@ -487,9 +487,10 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.match(await page.locator('#publications-empty').innerText(), /暂无文章/);
   });
 
-  if (selected('project')) await t.test('项目目录在操作栏提供关联跳转，详情只展示统一事实', async () => {
+  if (selected('project')) await t.test('项目目录在操作栏提供关联跳转，详情展示基础事实与文档', async () => {
     await page.goto(`${workspaceUrl}/projects`);
     const row = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });
+    await row.waitFor({ state: 'visible' });
     await unique(row, '项目行');
     const detail = row.getByRole('link', { name: '详情', exact: true });
     await unique(detail, '项目详情操作');
@@ -498,21 +499,29 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await detail.click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     assert.equal(await page.locator('#project-detail-name').innerText(), '演示项目');
-    assert.equal(await page.locator('#project-detail-code').innerText(), 'demo');
+    assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
     assert.equal(await page.locator('#project-service-summary').innerText(), '1 个已登记服务');
     assert.equal(await page.locator('#app-view input, #app-view textarea').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.detail-facts > div').count(), 5);
+    assert.equal(await page.locator('.detail-facts > div').count(), 2);
     assert.equal(await page.locator('[data-nav="projects"]').evaluate((item) => item.classList.contains('active')), true);
-    await page.getByRole('link', { name: '编辑项目', exact: true }).first().click();
-    await page.waitForURL(`${workspaceUrl}/projects/demo/edit`);
-    assert.equal(await page.locator('.read-only-section .technical-details').count(), 1);
-    assert.equal(await page.getByText('技术信息', { exact: true }).count(), 1);
-    await page.locator('#project-description').fill('已在独立编辑页更新');
+    assert.match(await page.locator('#project-document-missing-README-md').innerText(), /未找到 README\.md/);
+    await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).click();
+    await page.waitForFunction(() => {
+      const path = document.getElementById('project-document-path')?.textContent?.trim();
+      const body = document.getElementById('project-document-AGENTS-md')?.textContent || '';
+      return path === 'AGENTS.md' && !body.includes('正在读取') && /AGENTS\.md|Project|项目/.test(body);
+    });
+    assert.match(await page.locator('#project-document-AGENTS-md').innerText(), /AGENTS\.md|Project|项目/);
+    await page.getByRole('button', { name: '编辑项目', exact: true }).click();
+    await page.locator('#project-edit-form').waitFor({ state: 'visible' });
+    assert.equal(await page.url(), `${workspaceUrl}/projects/demo`);
+    await page.locator('#project-description').fill('已在弹框中更新');
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('project-save-state')?.textContent === '保存成功');
-    assert.equal(await page.locator('#project-save-state').innerText(), '保存成功');
+    await page.waitForFunction(() => document.getElementById('project-detail-description')?.textContent === '已在弹框中更新');
+    assert.equal(await page.locator('#project-detail-description').innerText(), '已在弹框中更新');
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
   });
 
   if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情与编辑分离', async () => {

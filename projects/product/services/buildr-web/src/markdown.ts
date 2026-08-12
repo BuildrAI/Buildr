@@ -3,10 +3,13 @@ export type MarkdownRenderOptions = {
   document?: Document;
   headingOffset?: number;
   allowRelativeLinks?: boolean;
+  /** When true with allowRelativeLinks, relative href may include `..` segments (still sanitized by consumer / API). */
+  allowParentRelativeLinks?: boolean;
   imageResolver?: (href: string) => { href: string } | null | undefined;
+  onRelativeLinkClick?: (href: string, event: MouseEvent) => void;
 };
 
-function resolveSafeHref(href, { allowRelativeLinks = false } = {}) {
+function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false } = {}) {
   const value = String(href ?? '').trim();
   if (!value) return null;
 
@@ -34,7 +37,7 @@ function resolveSafeHref(href, { allowRelativeLinks = false } = {}) {
   const pathPart = value.slice(0, pathEnd);
   const suffix = value.slice(pathEnd);
   const segments = pathPart.split('/');
-  if (segments.some((segment) => segment === '..')) return null;
+  if (!allowParentRelativeLinks && segments.some((segment) => segment === '..')) return null;
 
   const normalizedPath = segments.filter((segment) => segment && segment !== '.').join('/');
   if (!normalizedPath && !suffix.startsWith('#')) return null;
@@ -91,7 +94,7 @@ function appendInline(parent, text, doc, linkOptions) {
           link.setAttribute('target', '_blank');
         } else {
           link.className = 'markdown-relative-link';
-          link.setAttribute('title', `Change 内相对路径：${resolved.href}`);
+          link.setAttribute('title', `相对路径：${resolved.href}`);
         }
         link.textContent = label;
         parent.append(link);
@@ -201,7 +204,11 @@ function normalizeRenderArgs(docOrOptions, maybeOptions) {
 export function renderMarkdown(markdown: string, docOrOptions: Document | MarkdownRenderOptions = globalThis.document, maybeOptions: MarkdownRenderOptions = {}): HTMLElement {
   const { doc, options } = normalizeRenderArgs(docOrOptions, maybeOptions);
   const headingOffset = Math.max(0, Number.isFinite(options.headingOffset) ? options.headingOffset : 0);
-  const linkOptions = { allowRelativeLinks: Boolean(options.allowRelativeLinks), imageResolver: options.imageResolver };
+  const linkOptions = {
+    allowRelativeLinks: Boolean(options.allowRelativeLinks),
+    allowParentRelativeLinks: Boolean(options.allowParentRelativeLinks),
+    imageResolver: options.imageResolver,
+  };
   const root = doc.createElement('div');
   root.className = 'markdown-body';
   const lines = String(markdown ?? '').replace(/\r\n/g, '\n').split('\n');

@@ -215,7 +215,26 @@ test('Project HTTP API 复用本机安全边界、CAS 与 prompt-only 创建', a
   const detail = await fetch(`${apiBase}/projects/demo`).then((response) => response.json());
   assert.equal(detail.project.name, 'Demo');
 
-  let response = await fetch(`${apiBase}/projects/demo`, {
+  const agentsDoc = await fetch(`${apiBase}/projects/demo/documents/AGENTS.md`).then((response) => response.json());
+  assert.equal(agentsDoc.exists, true);
+  assert.match(agentsDoc.content, /AGENTS\.md|Project|项目/);
+  const readmeDoc = await fetch(`${apiBase}/projects/demo/documents/README.md`).then((response) => response.json());
+  assert.equal(readmeDoc.exists, false);
+  assert.equal(readmeDoc.content, null);
+  fs.mkdirSync(path.join(root, 'projects', 'demo', 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'docs', 'guide.md'), '# Guide\n\nNested document.\n');
+  const nestedDoc = await fetch(`${apiBase}/projects/demo/documents/docs%2Fguide.md`).then((response) => response.json());
+  assert.equal(nestedDoc.exists, true);
+  assert.equal(nestedDoc.path, 'docs/guide.md');
+  assert.match(nestedDoc.content, /Nested document/);
+  let response = await fetch(`${apiBase}/projects/demo/documents/secrets.env`);
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, 'project_document_not_allowed');
+  response = await fetch(`${apiBase}/projects/demo/documents/..%2F..%2Fetc%2Fpasswd.md`);
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, 'project_document_path_forbidden');
+
+  response = await fetch(`${apiBase}/projects/demo`, {
     method: 'PUT',
     headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken },
     body: JSON.stringify({ revision: detail.revision, name: 'From UI', description: 'Saved' }),

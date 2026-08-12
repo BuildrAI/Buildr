@@ -253,6 +253,27 @@ test('renderMarkdown 在启用相对链接时安全渲染 Change 内路径', asy
   assert.match(textOf(root), /\[脚本\]\(javascript:alert\(1\)\)/);
 });
 
+test('renderMarkdown 可按需允许父级相对路径段', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('[上级](../docs/guide.md)', {
+    allowRelativeLinks: true,
+    allowParentRelativeLinks: true,
+  });
+  const links = [...root.querySelectorAll('a')];
+  assert.equal(links.length, 1);
+  assert.equal(links[0].getAttribute('href'), '../docs/guide.md');
+  assert.equal(links[0].className.includes('markdown-relative-link'), true);
+});
+
+test('resolveProjectMarkdownHref 相对当前文档解析并只接受 .md', async () => {
+  const { resolveProjectMarkdownHref } = await import(`../../../buildr-web/src/lib/projectDocuments.ts?test=${Date.now()}`);
+  assert.equal(resolveProjectMarkdownHref('README.md', 'docs/guide.md'), 'docs/guide.md');
+  assert.equal(resolveProjectMarkdownHref('docs/guide.md', '../README.md'), 'README.md');
+  assert.equal(resolveProjectMarkdownHref('docs/guide.md', './note.md'), 'docs/note.md');
+  assert.equal(resolveProjectMarkdownHref('README.md', 'services/buildr/'), null);
+  assert.equal(resolveProjectMarkdownHref('README.md', 'docs/guide.md#section'), 'docs/guide.md');
+});
+
 test('renderMarkdown 只通过显式 resolver 渲染本地图片', async () => {
   const { renderMarkdown } = await loadRenderer();
   const root = renderMarkdown('![封面](assets/cover.png) ![危险](/tmp/secret.png)', {

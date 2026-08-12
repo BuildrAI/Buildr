@@ -501,6 +501,16 @@ export function createLocalWorkspaceServer(runtime, {
           assertWriteRequest(request, origin, sessionToken);
           return jsonResponse(response, 200, runtime.updateProjectMetadata(root, projectMatch[1], await readJsonBody(request)));
         }
+        const projectDocumentMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/documents\/(.+)$/);
+        if (request.method === 'GET' && projectDocumentMatch) {
+          let documentPath = projectDocumentMatch[2];
+          try {
+            documentPath = decodeURIComponent(documentPath);
+          } catch {
+            throw Object.assign(new Error('项目文档路径无效。'), { code: 'project_document_path_forbidden', status: 400 });
+          }
+          return jsonResponse(response, 200, runtime.projectDocument(root, projectDocumentMatch[1], documentPath));
+        }
         const servicesMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services$/);
         if (request.method === 'GET' && servicesMatch) return jsonResponse(response, 200, runtime.listServices(root, servicesMatch[1]));
         const serviceMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
