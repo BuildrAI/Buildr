@@ -48,7 +48,7 @@ const capability = closed({
   required: { type: 'boolean' },
 }, ['project', 'capability', 'required']);
 
-const coverageGap = closed({ scope: text(), summary: text() }, ['scope', 'summary']);
+const coverageGap = closed({ scope: text('真正仅工作区Task使用workspace；其他Task使用project:<code>或service:<project>/<service>。'), summary: text() }, ['scope', 'summary']);
 const override = closed({
   project: text(),
   capability: text(),

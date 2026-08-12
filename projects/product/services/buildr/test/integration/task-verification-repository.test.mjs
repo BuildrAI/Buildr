@@ -94,3 +94,42 @@ test('terminal Task仍可读取既有Verification且拒绝新写入', (t) => {
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one' }).slot.present, true);
   assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', input()), (error) => error.code === 'task_verification_task_terminal');
 });
+
+test('workspace-only Result写入同一SQLite authority，scope变化后兼容读取并派生stale', (t) => {
+  const root = fixture(t);
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'workspace-task', title: 'Workspace only', intent: 'Persist a typed workspace coverage gap.', projects: [], services: [], changes: [] });
+  const recorded = runtime.recordTaskVerification(root, 'workspace-task', {
+    targetIdentity: 'workspace:one', targetSummary: 'Workspace target', capabilities: [],
+    coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }],
+    conclusion: { outcome: 'not-passed', summary: 'Workspace coverage gap remains.' }, declarationRoot: root,
+  });
+  assert.equal(recorded.slot.path, 'workspace-sqlite:task-verification/workspace-task');
+  assert.deepEqual(recorded.slot.result.declarations, []);
+  assert.equal(recorded.slot.result.conclusion.outcome, 'not-passed');
+
+  const current = runtime.readTaskRecordPersistence(root, 'workspace-task').record;
+  runtime.writeTaskRecordPersistence(root, {
+    ...current,
+    scope: { projects: ['demo'], services: [] },
+    updatedAt: new Date(Date.parse(current.updatedAt) + 1000).toISOString(),
+  });
+  assert.deepEqual(runtime.readTaskVerificationResultPersistence(root, 'workspace-task').result.declarations, [], 'old self-described Result remains readable');
+  const declarations = runtime.observeTaskVerificationDeclarations(root, 'workspace-task', root).map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity }));
+  const inspected = runtime.inspectTaskVerification(root, 'workspace-task', { targetIdentity: 'workspace:one', declarations });
+  assert.equal(inspected.slot.applicability.declarations.status, 'stale');
+  assert.equal(inspected.slot.applicability.status, 'stale');
+  assert.ok(inspected.slot.applicability.reasons.some((reason) => reason.code === 'project-scope-added' && reason.project === 'demo'));
+});
+
+test('Project Task repository仍拒绝空 declarations workspace shape', (t) => {
+  const root = fixture(t);
+  const runtime = createRuntime();
+  assert.throws(() => runtime.writeTaskVerificationResultPersistence(root, {
+    schemaVersion: 'buildr.task-verification-result/v1', taskId: 'demo-task',
+    target: { identity: 'workspace:forged', summary: 'Forged workspace target' }, declarations: [], capabilities: [],
+    coverageGaps: [{ scope: 'workspace', summary: 'Must not bypass Project declarations.' }],
+    conclusion: { outcome: 'not-passed', summary: 'Forged.' }, completedAt: '2026-08-12T00:00:00.000Z',
+  }), (error) => error.code === 'task_verification_write_failed' && /有效 Project 集合/.test(error.message));
+  assert.equal(runtime.inspectTaskVerification(root, 'demo-task').slot.present, false);
+});

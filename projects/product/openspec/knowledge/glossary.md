@@ -379,21 +379,21 @@
 
 ## 任务验证（Task Verification）
 
-- 定义：面向正式 Task 的专业验证能力，读取相关 Project declarations、选择并执行适用的已有 capability，再通过唯一 Task Verification Application 记录或读取 current Result。
-- 适用范围：明确 target identity 的测试执行、coverage gap 报告、Result 记录与 applicability 检查。
+- 定义：面向正式 Task 的专业验证能力，按显式Project、Service所属Project与Change所属Project的有效并集读取declarations、选择并执行适用已有capability；有效并集为空时以唯一workspace coverage gap记录没有验证能力的负向事实，再通过唯一Application维护current Result。
+- 适用范围：明确 target identity 的测试执行、Project/Service/workspace coverage gap 报告、Result 记录与 applicability 检查。
 - 避免混用：不替代 Task Review、Task Environment 或业务验收，不开发缺失测试，也不拥有 Task Development、Candidate generation、`proceed / blocked` 或 Task 顶层状态。
 - 来源：[Task Verification capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-verification/v3.md)
 
 ## 验证结果（Verification Result）
 
-- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v1` current row，绑定Task、stable Content Target与实际declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间。
+- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v1` current row，绑定Task、stable Content Target与实际declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间；真正仅工作区时使用空declarations、空capabilities、唯一workspace gap与`not-passed`。
 - 适用范围：CLI、Skill、Local App 与 Task Development 共用的 current verification authority；读取时按 Content Target/declaration identity 派生 `current / stale / unknown`。Task Finish不直接消费该Result。
 - 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 任务研发（Task Development）
 
-- 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority。
+- 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority；仅工作区不是第二种Task authority，只是有效Project集合为空时的受约束policy/Result语义。
 - 适用范围：全研发区间的可选节点引用/currentness、实现收敛、formal Verification编排、Candidate freeze、Completion Review消费、风险/豁免决定和研发交接；Local App可通过Application`inspect`只读展示这些事实。
 - 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；通用Development没有公共CLI，Parent coordination只开放受控Application薄接口。
 - 来源：[Task Development specification](../specs/task-development/spec.md)

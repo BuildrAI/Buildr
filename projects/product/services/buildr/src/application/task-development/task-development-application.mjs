@@ -13,6 +13,7 @@ import {
 } from '../../domain/task-development/task-development.mjs';
 import { createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizePlannedContributionBindings, parentCoordinationError, validateContributionHandoffAgainstPlan } from '../../domain/parent-coordination/parent-coordination.mjs';
 import { taskDevelopmentActionFields } from './task-development-operation-contracts.mjs';
+import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
 
 function assertObject(input, label) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskDevelopmentError('task_development_input_invalid', `${label} 必须是对象。`);
@@ -147,14 +148,21 @@ export function registerTaskDevelopmentApplication(runtime) {
     return observations.map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity })).sort((left, right) => left.project.localeCompare(right.project));
   }
 
-  function currentPolicy(policy, observations) {
-    return Boolean(policy) && same(policy.declarations, declarationValues(observations));
+  function currentPolicy(policy, observations, contentTargetCurrent = true) {
+    return Boolean(policy)
+      && same(policy.declarations, declarationValues(observations))
+      && (policy.declarations.length > 0 || contentTargetCurrent);
   }
 
   function buildPolicy(inspected, observations, input) {
     assertActionFields('policy', input, 'Task Development policy');
     if (!Array.isArray(input.capabilities) || !Array.isArray(input.coverageGaps) || !Array.isArray(input.overrides || [])) throw taskDevelopmentError('task_development_policy_input_invalid', 'capabilities、coverageGaps与overrides必须是数组。', 400);
     const observationByProject = new Map(observations.map((item) => [item.project, item]));
+    const effectiveProjects = taskRecordEffectiveProjectCodes(inspected.record);
+    const workspaceOnly = isWorkspaceOnlyTaskRecord(inspected.record);
+    if (!same([...observationByProject.keys()].sort((left, right) => left.localeCompare(right)), effectiveProjects)) {
+      throw taskDevelopmentError('task_development_policy_declarations_incomplete', 'Policy declaration observations 必须精确覆盖 Task 的有效 Project 集合。', 409, { expectedProjects: effectiveProjects, observedProjects: [...observationByProject.keys()].sort((left, right) => left.localeCompare(right)) });
+    }
     const capabilities = input.capabilities.map((item, index) => {
       assertFields(item, new Set(['project', 'capability', 'required']), `capabilities[${index}]`);
       const project = inputText(item.project, `capabilities[${index}].project`);
@@ -167,8 +175,9 @@ export function registerTaskDevelopmentApplication(runtime) {
       return { project, capability, required: item.required };
     });
     const allowedGapScopes = new Set([
-      ...inspected.record.scope.projects.map((project) => `project:${project}`),
+      ...effectiveProjects.map((project) => `project:${project}`),
       ...inspected.record.scope.services.map((item) => `service:${item.project}/${item.service}`),
+      ...(workspaceOnly ? ['workspace'] : []),
     ]);
     const coverageGaps = input.coverageGaps.map((item, index) => {
       assertFields(item, new Set(['scope', 'summary']), `coverageGaps[${index}]`);
@@ -177,6 +186,9 @@ export function registerTaskDevelopmentApplication(runtime) {
       if (!allowedGapScopes.has(scope)) throw taskDevelopmentError('task_development_policy_gap_out_of_scope', `coverage gap不属于Task scope：${scope}。`, 400, { scope });
       return { scope, summary };
     });
+    if (workspaceOnly && (capabilities.length !== 0 || coverageGaps.length !== 1 || coverageGaps[0].scope !== 'workspace' || (input.overrides || []).length !== 0)) {
+      throw taskDevelopmentError('task_development_policy_workspace_shape_invalid', '仅工作区 policy 必须使用空 declarations、空 capabilities、唯一 workspace coverage gap 与空 overrides。', 400);
+    }
     for (const observation of observations) {
       const selected = capabilities.some((item) => item.project === observation.project);
       const gap = coverageGaps.some((item) => item.scope === `project:${observation.project}`);
@@ -265,7 +277,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     const planning = options.planning ? planningSnapshot(options.planning) : receipt.planning;
     const target = receipt.contentTarget ? contentTarget(execution) : null;
     const observedDeclarations = target ? declarations(targetRoot, taskId, execution.environmentRoot) : [];
-    const policyIsCurrent = Boolean(target) && currentPolicy(receipt.verificationPolicy, observedDeclarations);
+    const policyIsCurrent = Boolean(target) && currentPolicy(receipt.verificationPolicy, observedDeclarations, target.identity === receipt.contentTarget?.identity);
     const planningTargetIdentity = planning.targetIdentity;
     const review = runtime.inspectTaskReview(targetRoot, taskId, {
       ...(planningTargetIdentity ? { planningTargetIdentity } : {}),
@@ -412,7 +424,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     let receipt = current?.receipt || initialReceipt(taskId, execution, context, planning, target, currentPlanningGate);
     if (current) {
       const observedDeclarations = declarations(targetRoot, taskId, execution.environmentRoot);
-      const policy = currentPolicy(receipt.verificationPolicy, observedDeclarations) ? receipt.verificationPolicy : null;
+      const policy = currentPolicy(receipt.verificationPolicy, observedDeclarations, target.identity === receipt.contentTarget?.identity) ? receipt.verificationPolicy : null;
       const upstreamChanged = context.identity !== receipt.taskContext.identity || target.identity !== receipt.contentTarget?.identity || policy?.identity !== receipt.verificationPolicy?.identity || !same(currentPlanningGate, receipt.gates.planning);
       receipt = normalizeTaskDevelopmentReceipt({
         ...receipt,

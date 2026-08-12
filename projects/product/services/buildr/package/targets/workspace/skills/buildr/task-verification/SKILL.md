@@ -13,11 +13,11 @@ description: 用户要求运行已有测试、验证改动、查看 current 验�
 
 先确认：
 
-- 正式 Task ID、Intent、Project/Service scope 和 active 状态；
+- 正式 Task ID、Intent、Project/Service/Project-bound Change scope 和 active 状态，并计算三者所属Project的去重排序并集；
 - canonical Workspace，以及由 Task Environment 交接的实际 execution root；
 - 当前交付目标的明确、稳定 target identity 和可移植 summary；
 - operation：`inspect`、`execute`、`record` 或 transient `cleanup`；
-- Task scope 内每个 Project 当前 `verification.yml`，以及实际变更路径、条件、环境和副作用。
+- Task有效Project集合内每个 Project 当前 `verification.yml`，以及实际变更路径、条件、环境和副作用；有效Project集合为空时明确采用仅工作区分支。
 
 没有正式 Task 时可以按用户要求执行已有测试并报告 transient 事实，但不得伪造 Task Result。没有稳定 target identity 时可以 inspect 为 `unknown`，不能 record。
 
@@ -36,6 +36,7 @@ current Result 只有在 target 与全部 declaration identities 都 `current` �
 `buildr.project-verification/v2` 只登记已经存在的能力：identity、Project/Service scope、command 或 bounded Agent invocation、applicability、proves、是否 delivery required，以及确有需要的 environment/effects/resource claims。
 
 - 不存在声明或适用能力时，只记录 `project:<code>` 或 `service:<project>/<service>` coverage gap；不自动创建测试、脚本、CI 或框架。
+- 只有有效Project集合确实为空且没有workspace验证能力时，记录唯一`workspace` coverage gap、空declarations、空capabilities与`not-passed`；不得把Service或Change所属Project伪装成仅工作区，也不得自动passed。
 - 声明无效时停止执行其中的能力，先报告具体字段诊断。
 - `requiredForDelivery` 是 Project policy，不是 Verification 的 proceed/blocked 决定。
 - 不使用 minimal/affected/candidate、maturity、mode、enforcement、dependsOn 或 supersedes。
@@ -82,13 +83,15 @@ buildr task verification record <task-id> \
   --target-identity <identity> \
   --target-summary <portable-summary> \
   --capability '<project>/<id>::<passed|failed>::<portable-fact>' \
-  --coverage-gap '<project:code|service:project/service>::<summary>' \
+  --coverage-gap '<workspace|project:code|service:project/service>::<summary>' \
   --outcome <passed|not-passed> \
   --summary <portable-conclusion> \
   --target <canonical-workspace> --json
 ```
 
 同一 capability 的多个 `--capability` 会合并 facts。至少需要一个实际 capability 或 coverage gap。存在 failed capability 或 coverage gap 时 outcome 必须为 `not-passed`。
+
+仅工作区Result不执行不存在的能力，直接以唯一workspace gap形成完整负向事实；Project/Service/Change Task仍必须绑定全部有效Project declarations并拒绝workspace gap。
 
 Result 只回答 target、采用的 declarations、实际执行能力及事实、coverage gaps 和总体验证结论。不要复制 stdout/stderr、耗时、临时 evidence path、Environment Receipt、本机绝对路径、applicability、digest、history/revision，或写入 proceed/blocked、Task 状态和 Candidate generation。
 

@@ -38,8 +38,16 @@ before(() => {
   fixtureTemplateRoot = path.join(fixtureTemplateBase, 'workspace');
   run(['init', '--target', fixtureTemplateRoot, '--name', 'development-fixture', '--description', 'Task Development integration fixture']);
   run(['project', 'create', 'demo', '--target', fixtureTemplateRoot, '--name', 'Demo', '--description', 'Demo project']);
+  run(['project', 'create', 'other', '--target', fixtureTemplateRoot, '--name', 'Other', '--description', 'Other project']);
+  const serviceSource = path.join(fixtureTemplateBase, 'service-source');
+  fs.mkdirSync(serviceSource);
+  fs.writeFileSync(path.join(serviceSource, 'README.md'), '# Demo API\n');
+  run(['service', 'create', 'demo/api', serviceSource, '--target', fixtureTemplateRoot, '--name', 'Demo API', '--description', 'Demo service', '--type', 'backend']);
   fs.writeFileSync(path.join(fixtureTemplateRoot, 'projects', 'demo', 'README.md'), '# Demo\n');
   writeVerificationDeclaration(fixtureTemplateRoot);
+  fs.writeFileSync(path.join(fixtureTemplateRoot, 'projects', 'other', 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [],
+  }));
 });
 
 after(() => {
@@ -134,6 +142,94 @@ function recordVerification(current, outcome = 'passed') {
     declarationRoot: current.root,
   });
 }
+
+function workspaceOnlyFixture(t, taskId) {
+  const { root } = copyFixtureWorkspace(t, 'workspace-only');
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId, title: 'Develop workspace content', intent: 'Deliver a workspace-only formal Task.', projects: [], services: [], changes: [] });
+  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
+    ready: true,
+    taskId: currentTask,
+    receiptSchema: 'buildr.task-environment-receipt/v2',
+    workspaceRoot: root,
+    environmentRoot: root,
+    validationRoot: root,
+    scopes: [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: root }],
+  });
+  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Workspace-only Task plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
+  return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity };
+}
+
+test('workspace-only policy、负向 Verification、风险决定与 handoff 形成完整 current 生命周期', (t) => {
+  const current = workspaceOnlyFixture(t, 'workspace-only-lifecycle');
+  assert.deepEqual(current.runtime.observeTaskVerificationDeclarations(current.root, current.taskId, current.root), []);
+  let result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, {
+    capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [],
+  });
+  const policy = result.development.receipt.verificationPolicy;
+  assert.deepEqual(policy.declarations, []);
+  assert.match(policy.identity, /^sha256-/);
+  assert.equal(result.development.applicability.policy, 'current');
+  assert.throws(() => current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId), (error) => error.code === 'task_development_candidate_not_ready'
+    && error.details.reasons.some((reason) => reason.axis === 'verification'));
+
+  const verification = current.runtime.recordTaskVerification(current.root, current.taskId, {
+    targetIdentity: current.targetIdentity,
+    targetSummary: 'Workspace-only Content Target',
+    capabilities: [],
+    coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }],
+    conclusion: { outcome: 'not-passed', summary: 'Workspace coverage gap remains.' },
+    declarationRoot: current.root,
+  });
+  assert.equal(verification.slot.applicability.status, 'current');
+  assert.equal(verification.slot.result.conclusion.outcome, 'not-passed');
+  assert.deepEqual(verification.nextActions, []);
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  const candidate = result.development.receipt.candidate;
+  assert.equal(candidate.generation, 1);
+  const review = current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Workspace-only Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready with explicit verification risk acceptance.' } });
+  assert.throws(() => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Risk missing.', risks: [] }), (error) => error.code === 'task_development_risk_acceptance_required');
+  current.runtime.decideTaskDevelopment(current.root, current.taskId, {
+    outcome: 'proceed', summary: 'Authorized workspace coverage risk.',
+    risks: [{ gate: 'verification', resultDigest: verification.slot.resultDigest, scope: 'workspace', summary: 'No workspace verification capability is available.', source: 'user:workspace-only-regression' }],
+  });
+  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
+  const handoff = result.development.receipt.handoffs.at(-1);
+  assert.equal(result.development.applicability.handoff, 'current');
+  assert.equal(handoff.gates.completion.resultDigest, review.slots.completion.resultDigest);
+  assert.equal(handoff.decision.risks[0].scope, 'workspace');
+
+  fs.appendFileSync(path.join(current.root, 'README.md'), '\nworkspace target changed\n');
+  result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: current.planningTargetIdentity });
+  assert.equal(result.development.receipt.verificationPolicy, null);
+  assert.equal(result.development.receipt.candidate, null);
+  assert.deepEqual(result.development.receipt.handoffs, [handoff]);
+  assert.equal(result.development.applicability.handoff, 'stale');
+});
+
+test('Service-only、Change-only 与多 Project Task 观察完整 declaration，不能伪装成 workspace-only', (t) => {
+  const { root } = copyFixtureWorkspace(t, 'effective-projects');
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'service-only', title: 'Service only', intent: 'Observe parent Project declaration.', projects: [], services: ['demo/api'], changes: [] });
+  assert.deepEqual(runtime.observeTaskVerificationDeclarations(root, 'service-only', root).map((item) => item.project), ['demo']);
+  runtime.createTaskRecord(root, { taskId: 'multi-project', title: 'Multi Project', intent: 'Observe all Project declarations.', projects: ['other', 'demo'], services: ['demo/api'], changes: [] });
+  assert.deepEqual(runtime.observeTaskVerificationDeclarations(root, 'multi-project', root).map((item) => item.project), ['demo', 'other']);
+  runtime.createTaskRecordPersistence(root, {
+    schemaVersion: 'buildr.task-record/v2', taskId: 'change-only', title: 'Change only', intent: 'Observe the Change parent Project declaration.',
+    scope: { projects: [], services: [] }, changes: [{ project: 'demo', change: 'declaration-scope' }],
+    parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null,
+    createdAt: '2026-08-12T00:00:00.000Z', updatedAt: '2026-08-12T00:00:00.000Z',
+  });
+  assert.deepEqual(runtime.observeTaskVerificationDeclarations(root, 'change-only', root).map((item) => item.project), ['demo']);
+
+  runtime.resolveTaskEnvironmentExecution = () => ({ ready: true, taskId: 'service-only', receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root, scopes: [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: root }, { selector: 'service:demo/api', kind: 'service', sourcePath: '.', executionRoot: root }] });
+  const planningTargetIdentity = taskDevelopmentDigest('service-only:plan');
+  runtime.recordTaskReview(root, 'service-only', { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Service plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  runtime.observeTaskDevelopment(root, 'service-only', { changeDispositions: [], planningTargetIdentity });
+  assert.throws(() => runtime.recordTaskDevelopmentPolicy(root, 'service-only', { capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'Forged workspace gap.' }], overrides: [] }), (error) => error.code === 'task_development_policy_gap_out_of_scope');
+});
 
 test('converged disposition只接受Task working copy archived，retained active不阻塞', (t) => {
   const current = changeFixture(t, 'working-copy-archived');

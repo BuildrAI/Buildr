@@ -23,7 +23,7 @@ Buildr MUST 为每个正式Task在Workspace SQLite中提供至多一份`buildr.t
 - **AND** MUST NOT迁移、双写、删除或生成兼容YAML
 
 ### Requirement: Result 必须使用关闭且最小的数据模型
-Result MUST绑定非空Content Target `target.identity`和可移植`target.summary`；每个declaration MUST绑定Project、相对path与当前content identity或`absent`；每个实际capability MUST绑定Project、capability identity、`passed|failed` outcome与至少一个portable fact；结论MUST只使用`passed|not-passed`。
+Result MUST绑定非空Content Target `target.identity`和可移植`target.summary`；Project模式的declarations MUST非空且每个declaration MUST绑定Project、相对path与当前content identity或`absent`；仅工作区模式 MAY保存空declarations，但 MUST同时保存空capabilities、唯一`scope: workspace` coverage gap与`not-passed`结论。每个实际capability MUST绑定Project、capability identity、`passed|failed` outcome与至少一个portable fact；结论MUST只使用`passed|not-passed`。
 
 #### Scenario: 调用方提交 lifecycle authority 字段
 - **WHEN** record输入或持久Result包含Candidate identity/generation、verification policy decision、assurance level、proceed、blocked decision、Task status、revision、history、CAS、execution path或raw output字段
@@ -34,6 +34,11 @@ Result MUST绑定非空Content Target `target.identity`和可移植`target.summa
 - **WHEN** 已完成的能力执行产生失败事实且整体结论已经形成
 - **THEN** Agent MAY记录`not-passed` current Result
 - **AND** Result MUST NOT决定是否带风险继续推进
+
+#### Scenario: 仅工作区缺少验证能力
+- **WHEN** current Task的有效Project集合为空且没有适用workspace验证能力
+- **THEN** Result MUST以空declarations、空capabilities、唯一workspace coverage gap与`not-passed`形成完整负向事实
+- **AND** MUST不自动生成declaration、capability fact、passed结论或风险处置
 
 ### Requirement: Task Verification Application 必须是唯一 writer 和 reader
 Task Verification Application MUST独占Result normalization、Task/Project resolution、正式record action中的declaration identity观察、persistence调用、Result digest与保存值applicability派生。CLI、Skill、Local App、Development、Finish、Task Record与Task Environment MUST NOT直接读写Result store或复制其字段authority；inspect MUST NOT接收declaration root或打开声明路径，Development MAY只提交已经由其正式action观察的declaration identity值做纯比较，Finish MUST不再消费Verification。
@@ -77,7 +82,7 @@ Repository MUST 在写入前完成 closed-schema normalization 与 serialization
 - **AND** 原current Result与其他Task current records MUST保持不变
 
 ### Requirement: Applicability 必须由 target 与 declaration identities 派生
-Task Verification `record` MUST在正式action中观察并保存Content Target与Task scope内全部Project declaration identities，并返回该action时点的current applicability。后续`inspect` MUST只读取保存的Result/查询字段，并只对调用方显式提供的target/declaration identity值做纯值比较；MUST NOT接受路径作为读取时观察authority，不得读取Project registry、`verification.yml`、Git、Content Target或Environment来刷新applicability。未提供某axis的current identity值时，该axis MUST为unknown或明确表达最近一次record action的历史观察，MUST NOT声称live current。
+Task Verification `record` MUST在正式action中观察并保存Content Target与Task有效Project集合内全部Project declaration identities，并返回该action时点的current applicability；仅工作区Task MUST观察并保存空declarations。后续`inspect` MUST只读取保存的Result/查询字段，并只对调用方显式提供的target/declaration identity值做纯值比较；MUST NOT接受路径作为读取时观察authority，不得读取Project registry、`verification.yml`、Git、Content Target或Environment来刷新applicability。未提供某axis的current identity值时，该axis MUST为unknown或明确表达最近一次record action的历史观察，MUST NOT声称live current。
 
 #### Scenario: record 时 target 与 declarations 已确认
 - **WHEN** Application在合法record action中观察的target与全部Project declarations被写入同一Result
@@ -101,8 +106,13 @@ Task Verification `record` MUST在正式action中观察并保存Content Target�
 
 #### Scenario: 显式 identity 已变化
 - **WHEN** caller提供的target或任一declaration identity与Result保存值不同
-- **THEN**对应axis与overall applicability MUST为stale并返回保存值差异reason
+- **THEN** 对应axis与overall applicability MUST为stale并返回保存值差异reason
 - **AND** MUST NOT删除、覆盖或改写current Result
+
+#### Scenario: 仅工作区declarations保持空集合
+- **WHEN** caller提供的target与保存值相同，且current Task有效Project集合与declaration observations仍为空
+- **THEN** declarations axis MUST通过空数组纯值比较返回current
+- **AND** Task新增Project、Service或Project-bound Change后 MUST以非空observations使旧Result返回stale
 
 ### Requirement: Verification Execution 必须保持 transient
 `buildr verification run` MUST针对显式Project、target identity与capability identities执行Project v2中已有的command invocation，并把完整执行事实写入provider-owned transient summary。带合法`--environment <task-id> --workspace <canonical-workspace>`的正式Task execution MUST另外在producer启动前打开一条`task-verification/verification-execution` record，并在execution完成后通过Task Execution Record Application持久化受控正文；Task外runner MUST继续只使用transient evidence。Runner MUST NOT写current Result。`--declaration-root` MUST只由`task verification record`接收；run或inspect误用时MUST在启动任何capability、打开execution record或读取任何声明路径前返回syntax diagnostic。
@@ -233,3 +243,36 @@ Formal Task command runner MUST在调用前语义校验完成后、任何produce
 - **WHEN** Project、declaration、capability、authorization、execution root或Workspace Node在open前校验失败
 - **THEN** runner MUST返回既有invalid request envelope且execution record为not-opened
 - **AND** MUST NOT创建metadata、quota reservation、transient evidence或专业Result
+
+### Requirement: Task Verification 必须为仅工作区Task记录类型化coverage gap
+Task Verification MUST从Task Record的显式Project、Service所属Project与Change所属Project派生按code排序的有效Project集合，并观察该集合中的全部Project declarations。只有集合为空时，Application MUST允许Result保存空declarations；该Result MUST包含唯一`scope: workspace` coverage gap、空capabilities与`not-passed` conclusion。有效Project集合非空时，Application MUST要求非空且完整的Project declarations，并 MUST拒绝workspace gap。
+
+#### Scenario: workspace-only Result不自动passed
+- **WHEN** workspace-only Task没有已声明或适用的workspace验证能力
+- **THEN** record MUST保存空Project declarations、唯一workspace coverage gap与`not-passed` conclusion
+- **AND** MUST不自动创建测试、声明、capability fact或passed结论
+
+#### Scenario: Project Task仍拒绝空declarations
+- **WHEN** Task具有显式Project、Service所属Project或Change所属Project
+- **THEN** declaration observer MUST返回每个有效Project的current declaration或absent observation
+- **AND** Application/repository新写入 MUST拒绝空declarations和workspace coverage gap
+
+#### Scenario: Service-only Task观察父Project
+- **WHEN** Task只在`scope.services`引用一个或多个Service且未冗余填写`scope.projects`
+- **THEN** Task Verification MUST观察每个Service所属Project的declaration并执行现有Service applicability检查
+- **AND** MUST不把该Task分类为workspace-only
+
+#### Scenario: 多Project与Project-bound Change完整观察
+- **WHEN** 有效Project集合来自显式Project、多个Service或多个Change且存在重复Project
+- **THEN** Application MUST去重排序并精确绑定全部Project declaration identities
+- **AND**任一 declaration新增、删除或identity变化 MUST使旧Result declaration applicability stale
+
+#### Scenario: workspace Result currentness
+- **WHEN** caller提供的Content Target与保存值相同且current declaration observations仍为空
+- **THEN** inspect MUST通过纯值比较返回target与declarations current
+- **AND**Content Target变化或有效Project集合变为非空 MUST返回stale而不是修改、回填或删除旧Result
+
+#### Scenario: workspace Result closed shape不完整
+- **WHEN** 空declarations与缺失workspace gap、Project/Service gap、非空capabilities、overrides语义或passed conclusion组合
+- **THEN** domain或Application MUST拒绝整个Result并保留原current值
+- **AND** MUST返回稳定类型化diagnostic

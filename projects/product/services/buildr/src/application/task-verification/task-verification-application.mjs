@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { normalizeTaskVerificationResult, taskVerificationError } from '../../domain/task-verification/task-verification.mjs';
+import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
 import { parseProjectVerification, validateProjectVerification } from '../doctor/project-verification-diagnostics.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { declarationIntakeGapNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
@@ -85,8 +86,10 @@ export function registerTaskVerificationApplication(runtime) {
 
   function observeDeclarations(task, rootInput = undefined) {
     const sourceRoot = declarationSourceRoot(task, rootInput);
+    const projectCodes = taskRecordEffectiveProjectCodes(task.record);
+    if (projectCodes.length === 0) return [];
     const registry = runtime.readProjectRegistryPersistence(sourceRoot).registry.projects;
-    return task.record.scope.projects.map((projectCode) => {
+    return projectCodes.map((projectCode) => {
       const project = registry[projectCode];
       if (!project) {
         return { project: projectCode, path: `projects/${projectCode}/verification.yml`, identity: 'unavailable', valid: false, declaration: null, diagnostic: `Project 未登记：${projectCode}` };
@@ -206,8 +209,18 @@ export function registerTaskVerificationApplication(runtime) {
   }
 
   function validateRecordAgainstDeclarations(task, observations, capabilities, coverageGaps) {
-    const projects = new Set(task.record.scope.projects);
+    const projects = new Set(taskRecordEffectiveProjectCodes(task.record));
+    const workspaceOnly = isWorkspaceOnlyTaskRecord(task.record);
     const byProject = new Map(observations.map((item) => [item.project, item]));
+    if (workspaceOnly) {
+      if (observations.length !== 0 || capabilities.length !== 0 || coverageGaps.length !== 1 || coverageGaps[0].scope !== 'workspace') {
+        throw taskVerificationError('task_verification_workspace_shape_invalid', '仅工作区 Task 必须记录空 declarations、空 capabilities 与唯一 workspace coverage gap。', 400, { taskId: task.record.taskId });
+      }
+      return;
+    }
+    if (observations.length === 0) {
+      throw taskVerificationError('task_verification_declarations_required', '具有有效 Project scope 的 Task 必须绑定非空 declarations。', 400, { projects: [...projects] });
+    }
     for (const observation of observations) {
       if (!observation.valid) {
         throw taskVerificationError('task_verification_declaration_invalid', `Project ${observation.project} verification declaration 无法绑定：${observation.diagnostic}`, 409, { project: observation.project, path: observation.path, identity: observation.identity });
@@ -228,6 +241,7 @@ export function registerTaskVerificationApplication(runtime) {
       }
     }
     for (const gap of coverageGaps) {
+      if (gap.scope === 'workspace') throw taskVerificationError('task_verification_gap_scope_invalid', 'workspace coverage gap 只属于真正的仅工作区 Task。', 400, { scope: gap.scope });
       const projectMatch = gap.scope.match(/^project:([^/]+)$/);
       const serviceMatch = gap.scope.match(/^service:([^/]+)\/(.+)$/);
       const project = projectMatch?.[1] || serviceMatch?.[1];

@@ -56,7 +56,9 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 - applicability override 必须包含 Project、capability、required decision、scope、basis 和 source；
 - 不在 Verification 阶段开发测试，也不复制 Project 测试 registry。
 
-然后对 Content Target identity 执行正式 `task-verification`。Result target/declarations 必须 current；policy 中每个 required capability 都必须有明确 passed/failed fact，每个 policy gap 都必须在 Result 中有对应 coverage gap。正式 Verification 可能得到 `not-passed`，但不能缺少事实。
+有效Project集合必须合并显式Project、Service所属Project与Change所属Project。只有并集为空时才使用仅工作区policy：空declarations、空capabilities、唯一`workspace` coverage gap与空overrides；Service或Change不能因省略`scope.projects`进入该分支。仅工作区Content Target变化后重新形成policy；Project集合或declaration变化时旧policy必须stale。
+
+然后对 Content Target identity 执行正式 `task-verification`。Result target/declarations 必须 current；policy 中每个 required capability 都必须有明确 passed/failed fact，每个 policy gap 都必须在 Result 中有对应 coverage gap。仅工作区没有验证能力时记录空declarations、空capabilities、唯一workspace gap与`not-passed`，不得自动passed。gap尚未进入matching current Result时不得freeze；事实完整后仍按现有风险授权门禁推进。
 
 ## Candidate、Completion 与决定
 

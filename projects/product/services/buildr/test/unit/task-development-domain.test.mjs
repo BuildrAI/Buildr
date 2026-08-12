@@ -6,6 +6,7 @@ import {
   createTaskCandidate,
   createTaskFinishHandoff,
   normalizeTaskDevelopmentReceipt,
+  normalizeTaskVerificationPolicy,
   taskDevelopmentDigest,
 } from '../../src/domain/task-development/task-development.mjs';
 
@@ -147,4 +148,22 @@ test('generation 只在新 Candidate 时变化，并形成不同 identity', () =
   assert.equal(current.candidate.generation, 1);
   assert.equal(next.generation, 2);
   assert.notEqual(next.identity, current.candidate.identity);
+});
+
+test('workspace-only policy 只接受空 declarations 与唯一 workspace gap 的自描述 shape', () => {
+  const payload = { declarations: [], capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [] };
+  const normalized = normalizeTaskVerificationPolicy({ identity: sha(payload), ...payload });
+  assert.deepEqual(normalized, { identity: sha(payload), ...payload });
+  for (const invalid of [
+    { ...payload, coverageGaps: [] },
+    { ...payload, coverageGaps: [{ scope: 'project:demo', summary: 'Not workspace.' }] },
+    { ...payload, capabilities: [{ project: 'demo', capability: 'demo.check', required: true }] },
+    { ...payload, overrides: [{ project: 'demo', capability: 'demo.check', required: true, scope: 'workspace', basis: 'invalid', source: 'test' }] },
+  ]) {
+    assert.throws(() => normalizeTaskVerificationPolicy({ identity: sha(invalid), ...invalid }), (error) => error.code === 'task_development_policy_workspace_shape_invalid');
+  }
+  const projectPayload = policy();
+  projectPayload.coverageGaps = [{ scope: 'workspace', summary: 'Invalid for Project policy.' }];
+  projectPayload.identity = sha({ declarations: projectPayload.declarations, capabilities: projectPayload.capabilities, coverageGaps: projectPayload.coverageGaps, overrides: projectPayload.overrides });
+  assert.throws(() => normalizeTaskVerificationPolicy(projectPayload), (error) => error.code === 'task_development_policy_workspace_shape_invalid');
 });

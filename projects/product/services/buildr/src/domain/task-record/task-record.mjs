@@ -18,6 +18,18 @@ export function isTaskRecordId(value) {
   return typeof value === 'string' && TASK_ID_PATTERN.test(value);
 }
 
+export function taskRecordEffectiveProjectCodes(record) {
+  return [...new Set([
+    ...(record?.scope?.projects || []),
+    ...(record?.scope?.services || []).map((item) => item.project),
+    ...(record?.changes || []).map((item) => item.project),
+  ])].sort((left, right) => left.localeCompare(right));
+}
+
+export function isWorkspaceOnlyTaskRecord(record) {
+  return taskRecordEffectiveProjectCodes(record).length === 0;
+}
+
 function object(value, field) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw taskRecordError('task_record_field_invalid', `${field} 必须是对象。`, 400, { field });

@@ -147,10 +147,10 @@ function taskDevelopmentFixture() {
   };
 }
 
-function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment }) {
+function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment, workspaceOnly = false }) {
   let receipt = null;
   let savedObservation = null;
-  let taskRecord = { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active', result: null };
+  let taskRecord = { taskId: task, intent: workspaceOnly ? 'Deliver a workspace-only formal Task.' : 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: workspaceOnly ? [] : ['product'], services: [] }, changes: [], status: 'active', result: null };
   const planningTargetIdentity = taskDevelopmentDigest(`${task}:planning`);
   const declarationIdentity = taskDevelopmentDigest(`${task}:declaration`);
   const sqliteRuntime = createTaskFinishSqliteRuntime(retained, task);
@@ -164,7 +164,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
       if (changed) taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: changed ? [{ type: 'updated', taskId: task }] : [] };
     },
-    observeTaskVerificationDeclarations: () => [{
+    observeTaskVerificationDeclarations: () => workspaceOnly ? [] : [{
       project: 'product', path: 'projects/product/verification.yml', identity: declarationIdentity, valid: true,
       declaration: { capabilities: [{ id: 'product.delivery', requiredForDelivery: true }] },
     }],
@@ -184,8 +184,9 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
       resultDigest: taskDevelopmentDigest(`${task}:verification-result`),
       result: {
         target: { identity: options.targetIdentity },
-        capabilities: [{ project: 'product', capability: 'product.delivery', outcome: 'passed', facts: ['Passed.'] }],
-        coverageGaps: [], conclusion: { outcome: 'passed' },
+        capabilities: workspaceOnly ? [] : [{ project: 'product', capability: 'product.delivery', outcome: 'passed', facts: ['Passed.'] }],
+        coverageGaps: workspaceOnly ? [{ scope: 'workspace', summary: 'No workspace verification capability.' }] : [],
+        conclusion: { outcome: workspaceOnly ? 'not-passed' : 'passed' },
       },
     } }),
     readTaskDevelopmentPersistence: (_root, _task, options = {}) => {
@@ -202,9 +203,14 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   registerContentTargetObserver(runtime);
   registerTaskDevelopmentApplication(runtime);
   runtime.observeTaskDevelopment(retained, task, { changeDispositions: [], planningTargetIdentity });
-  runtime.recordTaskDevelopmentPolicy(retained, task, { capabilities: [{ project: 'product', capability: 'product.delivery', required: true }], coverageGaps: [], overrides: [] });
+  runtime.recordTaskDevelopmentPolicy(retained, task, workspaceOnly
+    ? { capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [] }
+    : { capabilities: [{ project: 'product', capability: 'product.delivery', required: true }], coverageGaps: [], overrides: [] });
   runtime.freezeTaskDevelopmentCandidate(retained, task, { planningTargetIdentity });
-  runtime.decideTaskDevelopment(retained, task, { outcome: 'proceed', summary: 'Current gates.', risks: [] });
+  runtime.decideTaskDevelopment(retained, task, {
+    outcome: 'proceed', summary: 'Current gates.',
+    risks: workspaceOnly ? [{ gate: 'verification', resultDigest: taskDevelopmentDigest(`${task}:verification-result`), scope: 'workspace', summary: 'Workspace coverage gap accepted for this Candidate.', source: 'user:system-regression' }] : [],
+  });
   runtime.createTaskDevelopmentHandoff(retained, task);
   const before = runtime.inspectTaskDevelopment(retained, task);
   assert.equal(before.development.applicability.handoff, 'current');
@@ -584,19 +590,22 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const originalPath = process.env.PATH;
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
-  const sqliteRuntime = createTaskFinishSqliteRuntime(retained, task);
-  const runtime = {
-    ...sqliteRuntime,
-    ...taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand: controller, controllerSourceRoot: path.dirname(controller) }),
-    ...taskDevelopmentFixture(),
-    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
-  };
+  const environment = taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand: controller, controllerSourceRoot: path.dirname(controller) });
+  const runtime = realTaskDevelopmentFixture({ task, environmentRoot, retained, environment, workspaceOnly: true });
+  runtime.workspaceNodeExecution = () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath });
+  const development = runtime.inspectTaskDevelopment(retained, task).development;
+  const handoff = development.receipt.handoffs.at(-1);
+  const candidate = development.receipt.candidate;
+  assert.equal(development.applicability.handoff, 'current');
+  assert.equal(development.receipt.verificationPolicy.declarations.length, 0);
+  assert.equal(development.receipt.gates.verification.outcome, 'not-passed');
+  assert.equal(development.receipt.decision.risks[0].scope, 'workspace');
   const run = persistTaskFinishRun(runtime, retained, {
       task,
-      handoffIdentity: 'sha256-handoff',
-      candidateIdentity: 'sha256-candidate',
-      candidateGeneration: 1,
-      contentTargetIdentity: 'sha256-content-target',
+      handoffIdentity: handoff.identity,
+      candidateIdentity: candidate.identity,
+      candidateGeneration: candidate.generation,
+      contentTargetIdentity: candidate.contentTargetIdentity,
       agent: 'codex',
       targetBranch: 'dev',
       remote: 'origin',
@@ -621,8 +630,8 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   });
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
-  assert.equal(result.handoff.identity, 'sha256-handoff');
-  assert.equal(result.candidate.identity, 'sha256-candidate');
+  assert.equal(result.handoff.identity, handoff.identity);
+  assert.equal(result.candidate.identity, candidate.identity);
   assert.equal(result.candidate.generation, 1);
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
@@ -638,8 +647,9 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
   assert.equal(result.completion.receipt, `workspace-sqlite:task-finish-completion/${task}`);
   const completion = runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }, { optional: false }).completion;
-  assert.equal(completion.handoffIdentity, 'sha256-handoff');
-  assert.equal(completion.candidateIdentity, 'sha256-candidate');
+  assert.equal(completion.handoffIdentity, handoff.identity);
+  assert.equal(completion.candidateIdentity, candidate.identity);
   assert.equal(completion.candidateGeneration, 1);
-  assert.equal(completion.contentTargetIdentity, 'sha256-content-target');
+  assert.equal(completion.contentTargetIdentity, candidate.contentTargetIdentity);
+  assert.equal(result.metrics.formalVerificationExecutions, 0);
 });
