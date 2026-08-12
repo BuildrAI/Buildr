@@ -10,6 +10,7 @@ import {
   runSelfBootstrapCloseout,
   runSelfBootstrapCloseoutCommand,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
+import { RUNTIME_ADAPTERS, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
 
 function run(executable, args, cwd) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -224,19 +225,26 @@ test('Skill命令入口通过Product CLI只读取得同一Finish Result', (t) =>
   assert.equal(result.runId, finish.runId);
 });
 
-test('Skill runner从Agent runtime投射位置启动时不依赖Product源码相对路径', (t) => {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-self-bootstrap-rendered-runner-'));
-  const renderedDirectory = path.join(base, '.agents', 'skills', 'buildr-self-bootstrap-sync', 'scripts');
-  const renderedRunner = path.join(renderedDirectory, 'closeout.mjs');
-  fs.mkdirSync(renderedDirectory, { recursive: true });
-  fs.copyFileSync(new URL('../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs', import.meta.url), renderedRunner);
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+test('Skill runner从每个Agent声明的runtime投射位置启动时不依赖Product源码相对路径', async (t) => {
+  const sourceRunner = new URL('../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs', import.meta.url);
 
-  const result = spawnSync(process.execPath, [renderedRunner], { cwd: base, encoding: 'utf8' });
-  assert.equal(result.status, 1);
-  assert.equal(result.stdout, '');
-  const error = JSON.parse(result.stderr);
-  assert.equal(error.schemaVersion, 'buildr.self-bootstrap-closeout-result/v1');
-  assert.equal(error.status, 'blocked');
-  assert.equal(error.diagnostic.code, 'self-bootstrap-closeout.arguments-incomplete');
+  for (const adapter of Object.values(RUNTIME_ADAPTERS)) {
+    await t.test(adapter.id, (t) => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-self-bootstrap-${adapter.id}-`));
+      const runtimeRoot = skillDestinationRoot(adapter, 'workspace', base);
+      const renderedDirectory = path.join(runtimeRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts');
+      const renderedRunner = path.join(renderedDirectory, 'closeout.mjs');
+      fs.mkdirSync(renderedDirectory, { recursive: true });
+      fs.copyFileSync(sourceRunner, renderedRunner);
+      t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+
+      const result = spawnSync(process.execPath, [renderedRunner], { cwd: base, encoding: 'utf8' });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      const error = JSON.parse(result.stderr);
+      assert.equal(error.schemaVersion, 'buildr.self-bootstrap-closeout-result/v1');
+      assert.equal(error.status, 'blocked');
+      assert.equal(error.diagnostic.code, 'self-bootstrap-closeout.arguments-incomplete');
+    });
+  }
 });
