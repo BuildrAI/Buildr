@@ -115,7 +115,7 @@ test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 
 
   fs.writeFileSync(path.join(carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
   git(carrier.root, ['add', 'shared.txt']);
-  git(carrier.root, ['commit', '-m', 'adapt delivery carrier']);
+  git(carrier.root, ['commit', '-m', 'delivery carrier']);
   const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
   assert.equal(adopted.status, 'adopted');
   assert.equal(adopted.changes[0].beforeMode, '100644');
@@ -135,6 +135,27 @@ test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 
   assert.equal(convergedProof.status, 'equivalent');
   assert.equal(convergedProof.reuseMode, 'agent-reviewed-delivery-adaptation');
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'conflict', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('Agent-reviewed adaptation改变冻结message时保持blocked', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
+  git(taskRoot, ['add', 'shared.txt']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline meaning\n');
+  git(root, ['add', 'shared.txt']);
+  git(root, ['commit', '-m', 'conflicting baseline']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'message-drift', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'fix(carrier): preserve semantics' });
+  assert.equal(carrier.status, 'adaptation-required');
+
+  fs.writeFileSync(path.join(carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
+  git(carrier.root, ['add', 'shared.txt']);
+  git(carrier.root, ['commit', '-m', 'wrong subject']);
+  const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
+  assert.equal(adopted.status, 'blocked');
+  assert.equal(adopted.code, 'task-finish.commit-message-mismatch');
 });
 
 test('Task source 在 proof 后漂移时 cleanup 拒绝贡献复用', (t) => {

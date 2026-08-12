@@ -90,6 +90,10 @@ function portableRun(run) {
     candidateIdentity: identity.candidateIdentity || null,
     candidateGeneration: identity.candidateGeneration || null,
     contentTargetIdentity: identity.contentTargetIdentity || null,
+    deliveryCommit: run?.deliveryCommit ? {
+      subject: run.deliveryCommit.subject || null,
+      identity: run.deliveryCommit.identity || null,
+    } : null,
     agent: identity.agent || null,
     target: {
       branch: identity.targetBranch || null,
@@ -152,6 +156,7 @@ export function createTaskFinishExecutionRecordFiles(input) {
     agent: run.agent,
     target: run.target,
     carrier: run.carrier,
+    deliveryCommit: run.deliveryCommit,
     phases,
     outcome: input.outcome,
     finishStatus: run.status,
@@ -222,4 +227,3 @@ export function publicTaskFinishExecutionRecord(status, options = {}) {
     nextActions: options.nextActions || [],
   };
 }
-

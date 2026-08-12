@@ -7,6 +7,7 @@ import { removeIsolatedGitCarrier } from './git-task-contribution.mjs';
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
 import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
+import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
   TASK_FINISH_EXECUTION_RECORD_OWNER,
@@ -25,7 +26,7 @@ function inputError(code, message, action, details = null) {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--resume', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -58,6 +59,7 @@ function executionGateResult(identity, executionRecord, diagnostic) {
     resolvedContext: resolvedFinishContext(identity),
     handoff: { identity: identity.handoffIdentity },
     candidate: { identity: identity.candidateIdentity, generation: identity.candidateGeneration, contentTargetIdentity: identity.contentTargetIdentity },
+    deliveryCommit: null,
     carrier: null,
     phases: [],
     primaryFailure: {
@@ -103,6 +105,7 @@ export function registerTaskFinishApplication(runtime) {
   async function run(command) {
     const root = command.targetRoot;
     const resumeToken = optionValue(command.args, '--resume', null);
+    const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
     const withReadCompatibility = runtime.withWorkspaceStructuredStoreReadCompatibility
       ? (operation) => runtime.withWorkspaceStructuredStoreReadCompatibility(root, operation)
       : (operation) => operation();
@@ -112,12 +115,17 @@ export function registerTaskFinishApplication(runtime) {
         if (runId) {
           try { finishRun = readFinishRun({ root, runId, runtime }); } catch {
             const completed = runtime.readTaskFinishCompletionPersistence?.(root, { runId }, { optional: true });
-            if (completed?.completion?.result) return { completed: completed.completion.result };
+            if (completed?.completion?.result) {
+              if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
+              return { completed: completed.completion.result };
+            }
           }
         }
         if (!finishRun) {
           const task = optionValue(command.args, '--task', null);
           if (!task) throw inputError('task_finish.missing_parameter', 'Task Finish run requires --task <task-id>.', 'run');
+          const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task }, { optional: true });
+          const currentRun = current?.run;
           const entry = observeTaskFinishEntryReadiness({
             runtime,
             root,
@@ -125,24 +133,45 @@ export function registerTaskFinishApplication(runtime) {
             requestedAgent: optionValue(command.args, '--agent', null),
             requestedTargetBranch: optionValue(command.args, '--target-branch', null),
             requestedRemote: optionValue(command.args, '--remote', null),
+            requestedCommitMessage,
+            requireCommitMessage: !currentRun,
           });
           if (!entry.ready) throw taskFinishEntryGapsError(entry, 'run');
           const handoff = entry.handoff;
-          const identity = entry.identityParts;
-          const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task }, { optional: true });
-          const currentRun = current?.run;
+          const identity = {
+            ...entry.identityParts,
+            deliveryCommitIdentity: currentRun?.identity?.deliveryCommitIdentity || entry.deliveryCommit?.identity || null,
+          };
           const handoffChanged = currentRun && (currentRun.identity?.handoffIdentity !== handoff.identity
             || currentRun.identity?.candidateIdentity !== handoff.candidate.identity
             || currentRun.identity?.candidateGeneration !== handoff.candidate.generation
             || currentRun.identity?.contentTargetIdentity !== handoff.candidate.contentTargetIdentity);
           const staleFailedRun = currentRun?.status === 'failed' && handoffChanged ? currentRun : null;
-          if (staleFailedRun) return { identity, staleFailedRun, finishRun: null };
-          finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity });
-        } else if (!sameFilesystemPath(finishRun.identity.workspaceRoot, root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
+          if (staleFailedRun) {
+            if (!entry.deliveryCommit) {
+              const missing = observeTaskFinishEntryReadiness({
+                runtime, root, task,
+                requestedAgent: optionValue(command.args, '--agent', null),
+                requestedTargetBranch: optionValue(command.args, '--target-branch', null),
+                requestedRemote: optionValue(command.args, '--remote', null),
+                requestedCommitMessage,
+                requireCommitMessage: true,
+              });
+              throw taskFinishEntryGapsError(missing, 'run');
+            }
+            identity.deliveryCommitIdentity = entry.deliveryCommit.identity;
+            return { identity, deliveryCommit: entry.deliveryCommit, staleFailedRun, finishRun: null };
+          }
+          if (currentRun && requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
+          finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity, deliveryCommit: entry.deliveryCommit });
+        } else {
+          if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
+          if (!sameFilesystemPath(finishRun.identity.workspaceRoot, root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
+        }
         if (finishRun && ['blocked', 'cleanup_pending'].includes(finishRun.status) && (!resumeToken || finishRun.resume?.token !== resumeToken)) {
           throw inputError('task_finish.resume_token_mismatch', 'Task Finish blocked run requires its current product-generated resume token.', 'run');
         }
-        return { finishRun, identity: finishRun?.identity || null, staleFailedRun: null };
+        return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, staleFailedRun: null };
       });
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
     if (prepared.completed) return print(withExecutionRecord(prepared.completed, notOpened), command.args);
@@ -192,7 +221,7 @@ export function registerTaskFinishApplication(runtime) {
         });
       }
       runtime.discardFailedTaskFinishRunPersistence?.(root, { taskId: identity.task, runId: oldRun.runId });
-      finishRun = resolveFinishRun({ root, resumeToken, runtime, identity });
+      finishRun = resolveFinishRun({ root, resumeToken, runtime, identity, deliveryCommit: prepared.deliveryCommit });
     }
     const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
     const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot });
@@ -205,7 +234,7 @@ export function registerTaskFinishApplication(runtime) {
         outcome,
         files: createTaskFinishExecutionRecordFiles({
           invocationId,
-          run: { ...finishRun, status: result.status, deliveryCarrier: result.carrier, delivery: result.delivery, completion: result.completion, primaryFailure: result.primaryFailure },
+          run: { ...finishRun, deliveryCommit: publicTaskFinishDeliveryCommit(finishRun.deliveryCommit), status: result.status, deliveryCarrier: result.carrier, delivery: result.delivery, completion: result.completion, primaryFailure: result.primaryFailure },
           invocationOrdinal: snapshot.invocationOrdinal,
           outcome,
           startedAt: snapshot.startedAt,

@@ -1,5 +1,6 @@
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { resolveTaskFinishTargetBranch } from './task-finish-delivery-target.mjs';
+import { normalizeTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 
 export const TASK_FINISH_ENTRY_GAP_MODULES = Object.freeze(['development', 'environment', 'delivery']);
 
@@ -37,6 +38,8 @@ export function observeTaskFinishEntryReadiness({
   requestedAgent = null,
   requestedTargetBranch = null,
   requestedRemote = null,
+  requestedCommitMessage = null,
+  requireCommitMessage = false,
 }) {
   const gaps = emptyGaps();
   const context = runtime.resolveTaskEnvironmentExecution(root, task);
@@ -47,6 +50,17 @@ export function observeTaskFinishEntryReadiness({
   let handoff = null;
   let targetBranch = null;
   let remote = null;
+  let deliveryCommit = null;
+
+  if (requireCommitMessage || requestedCommitMessage != null) {
+    try {
+      deliveryCommit = normalizeTaskFinishDeliveryCommit(requestedCommitMessage, task);
+    } catch (error) {
+      pushGap(gaps, gap('delivery', error.code || 'task_finish.commit_message_invalid', error.message, {
+        nextAction: error.nextAction,
+      }));
+    }
+  }
 
   if (!context?.ready) {
     pushGap(gaps, gap(
@@ -131,6 +145,7 @@ export function observeTaskFinishEntryReadiness({
     nextWorkflow,
     context: context?.ready ? context : null,
     handoff,
+    deliveryCommit,
     identityParts: total === 0 ? {
       task,
       handoffIdentity: handoff.identity,
@@ -143,13 +158,18 @@ export function observeTaskFinishEntryReadiness({
       environmentRoot: context.validationRoot,
       workspaceRoot: context.workspaceRoot,
       workspaceNodeIdentity,
+      deliveryCommitIdentity: deliveryCommit?.identity || null,
     } : null,
   };
 }
 
 export function taskFinishEntryGapsError(observation, action = 'run') {
   const error = new Error('Task Finish entry readiness failed with one or more module gaps.');
-  const nextAction = observation.nextWorkflow === 'task-development'
+  const allGaps = TASK_FINISH_ENTRY_GAP_MODULES.flatMap((module) => observation.gaps[module]);
+  const commitMessageOnly = allGaps.length === 1 && allGaps[0].module === 'delivery' && allGaps[0].code.startsWith('task_finish.commit_message_');
+  const nextAction = commitMessageOnly
+    ? allGaps[0].nextAction
+    : observation.nextWorkflow === 'task-development'
     ? 'Return to task-development and restore a current formal Development handoff before Task Finish.'
     : 'Resolve the reported environment and delivery gaps, then retry Task Finish.';
   Object.assign(error, {

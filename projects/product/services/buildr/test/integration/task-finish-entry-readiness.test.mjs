@@ -111,9 +111,15 @@ test('全部入口就绪时返回 identityParts', (t) => {
     }),
     workspaceNodeExecution: () => ({ identity: { digest: 'sha256-node' } }),
   };
-  const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task' });
+  const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task', requestedCommitMessage: 'fix(task-finish): freeze delivery message', requireCommitMessage: true });
   assert.equal(observed.ready, true);
   assert.equal(observed.identityParts.remote, 'origin');
   assert.equal(observed.identityParts.targetBranch, 'dev');
   assert.equal(observed.identityParts.handoffIdentity, 'sha256-handoff');
+  assert.equal(observed.identityParts.deliveryCommitIdentity, observed.deliveryCommit.identity);
+  assert.match(observed.deliveryCommit.message, /Buildr-Task: demo-task$/);
+
+  const missing = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task', requireCommitMessage: true });
+  assert.equal(missing.ready, false);
+  assert.ok(missing.gaps.delivery.some((item) => item.code === 'task_finish.commit_message_required'));
 });

@@ -23,6 +23,10 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(finish, /current formal Development handoff/);
   assert.match(finish, /formalVerificationExecutions.*0/);
   assert.match(finish, /nextWorkflow: task-development/);
+  assert.match(finish, /--commit-message '<semantic-message>'/);
+  assert.match(finish, /最终carrier HEAD必须保持run冻结的完整message/);
+  assert.match(finishContract, /Buildr-Task.*trailer/);
+  assert.match(finishContract, /公开投影只含subject与identity/);
   assert.match(finish, /complete 后.*任务复盘.*Token 不可得可缺失.*用户同意后路由 `task-retrospective`/s);
   assert.match(finishContract, /complete result.*`nextAction`.*任务复盘.*blocked result继续优先提供确定性恢复动作/s);
   for (const phrase of ['任务贡献（Task Contribution）', '交付基线（Delivery Baseline）', '不增加 Candidate generation', '路径不重叠都不等于语义安全']) assert.ok(finish.includes(phrase), phrase);
@@ -95,7 +99,7 @@ test('Task Finish使用resolved capability binding和同一session有界长等�
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {
   for (const phrase of ['Content Target', 'verification policy', 'Candidate', 'append-only', 'buildr.task-development-receipt/v3', 'Parent Plan', 'Contribution Handoff', 'planning', 'waived']) assert.ok(developmentContract.includes(phrase), phrase);
   assert.match(development, /没有公共Development CLI/);
-  assert.match(finish, /buildr task finish run --task <task-id> --target/);
+  assert.match(finish, /buildr task finish run --task <task-id> --commit-message/);
   assert.doesNotMatch(finish, /--project|--change/);
   for (const manifest of [packageManifest, workspaceSkills]) {
     assert.match(manifest, /task-development[\s\S]*provides:[\s\S]*buildr\.task-development[\s\S]*version: 2/);

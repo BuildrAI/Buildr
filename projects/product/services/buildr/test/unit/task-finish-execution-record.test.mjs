@@ -25,6 +25,11 @@ function run(status = 'blocked') {
       environmentRoot: '/Users/example/worktree',
       workspaceNodeIdentity: 'sha256-node',
     },
+    deliveryCommit: {
+      message: 'fix(task-finish): preserve delivery semantics\n\nprivate body',
+      subject: 'fix(task-finish): preserve delivery semantics',
+      identity: 'sha256-delivery-message',
+    },
     deliveryCarrier: {
       identity: 'sha256-carrier',
       kind: 'git-isolated-commit',
@@ -72,8 +77,9 @@ test('Finish execution record mapper只生成closed portable正文', () => {
   assert.equal(summary.finishRunId, 'finish-run-1');
   assert.equal(summary.invocationOrdinal, 2);
   assert.equal(summary.carrier.identity, 'sha256-carrier');
+  assert.deepEqual(summary.deliveryCommit, { subject: 'fix(task-finish): preserve delivery semantics', identity: 'sha256-delivery-message' });
   const structured = JSON.stringify([summary, files.find((file) => file.name === 'diagnostics.json').content]);
-  assert.doesNotMatch(structured, /workspaceRoot|environmentRoot|secret-token|\/Users\/example|carrier.*root/i);
+  assert.doesNotMatch(structured, /workspaceRoot|environmentRoot|secret-token|\/Users\/example|carrier.*root|private body/i);
   assert.throws(() => createTaskFinishExecutionRecordFiles({ invocationId: 'x', run: run(), outcome: 'blocked', rawArgv: ['git', 'push'] }), /Unsupported Task Finish execution record field/);
 });
 
@@ -97,4 +103,3 @@ test('公开Finish executionRecord摘要不暴露locator', () => {
   assert.equal(result.body.digest, 'sha256-body');
   assert.equal(JSON.stringify(result).includes('locator'), false);
 });
-

@@ -72,7 +72,7 @@ bindings:
     provider: git-operations
 ```
 
-`task-finish/v1`的Task Environment路径通过产品application service执行固定Git carrier transition，并由自身contract约束内容等价、真实delivery remote、fast-forward、普通push、远端ref回读与结果证据。普通路径要求回读值等于carrier；仅当最新target精确保留carrier ancestry与全部changed-path after state时，允许`already-contained`记录原carrier与最新后代ref。它不拥有Candidate freeze。只有retained metadata-only handoff把optional`buildr.git-operations@1` dependency提升为required，并由Task Finish分别选择commit与push；独立已选Git Operation由同一个`git-operations` provider处理。
+`task-finish/v1`的Task Environment路径通过产品application service执行固定Git carrier transition，并由自身contract约束Agent提供语义commit message、产品冻结并复用message identity、内容等价、真实delivery remote、fast-forward、普通push、远端ref回读与结果证据。普通路径要求回读值等于carrier；仅当最新target精确保留carrier ancestry与全部changed-path after state时，允许`already-contained`记录原carrier与最新后代ref。它不拥有Candidate freeze。只有retained metadata-only handoff把optional`buildr.git-operations@1` dependency提升为required，并由Task Finish分别选择commit与push；独立已选Git Operation由同一个`git-operations` provider处理。
 
 任务验证单独建模，是因为它既可以在 Task Environment 中执行，也可以在当前分支、无 Git Project 或非代码交付目标中执行。`buildr.task-environment/v1` 保护 Task 的执行资格与环境处置；`buildr.git-worktree-provider/v1` 只保护 Git checkout evidence；`buildr.task-verification/v3` 保护 Project capability 选择、transient execution 与 current Task Verification Result 的边界。Project `verification.yml` 是测试能力事实，不进入 `capabilities.yml`。
 
@@ -96,7 +96,7 @@ render/sync会在`task-development`和`task-finish`的runtime派生版本中注�
 
 ### 5. Agent 实际执行
 
-正式实现内容稳定后，Agent runtime根据description命中`task-development`，依次完成current knowledge/Change fixed point、Planning gate、Content Target/policy、formal Verification、Candidate、Completion Review、decision和handoff。用户随后说“收尾”时才加载`task-finish`；ready Environment中的current handoff只调用一次`buildr task finish run --task ...`，五阶段carrier/delivery/cleanup事实和暂态恢复由产品执行器持有。没有ready Environment或current handoff时正式产品run直接阻塞；retained metadata-only独立安全交接不伪装成Environment，也不得stage无关dirty state。
+正式实现内容稳定后，Agent runtime根据description命中`task-development`，依次完成current knowledge/Change fixed point、Planning gate、Content Target/policy、formal Verification、Candidate、Completion Review、decision和handoff。用户随后说“收尾”时才加载`task-finish`；Agent根据最终内容形成语义message，ready Environment中的current handoff只调用一次`buildr task finish run --task ... --commit-message ...`，五阶段carrier/delivery/cleanup事实、冻结message与暂态恢复由产品执行器持有。已有run的resume不重新提供message。没有ready Environment或current handoff时正式产品run直接阻塞；retained metadata-only独立安全交接不伪装成Environment，也不得stage无关dirty state。
 
 产品中的verification领域服务遵守`buildr.task-verification/v3`：已有Result只有在Content Target与declaration identity都匹配且policy所需fact/coverage gap完整时，才可供Development freeze消费。`not-passed`或coverage gap保持专业事实，只有Development在Candidate/Completion之后取得绑定精确Result digest与scope的用户风险接受才可proceed；Finish不能改写或补齐。transient execution evidence在提炼Result后由对应验证workflow安全清理。
 

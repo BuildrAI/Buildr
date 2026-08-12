@@ -13,8 +13,8 @@ import { taskDevelopmentDigest } from '../../src/domain/task-development/task-de
 import { registerContentTargetObserver } from '../../src/infrastructure/content/content-target-observer.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
-function command(cwd, executable, args) {
-  const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
+function command(cwd, executable, args, options = {}) {
+  const result = spawnSync(executable, args, { cwd, encoding: 'utf8', ...options });
   assert.equal(result.status, 0, `${executable} ${args.join(' ')}\n${result.stderr || result.stdout}`);
   return result.stdout.trim();
 }
@@ -293,7 +293,16 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.equal(gateObservation.development.applicability.candidate, 'current');
   assert.equal(gateObservation.development.applicability.handoff, 'current');
   await assert.rejects(
-    runtime.taskFinish('run', ['--task', task, '--target-branch', 'main', '--target', retained]),
+    runtime.taskFinish('run', ['--task', task, '--target', retained]),
+    (error) => error.code === 'task_finish.entry_gaps'
+      && error.details?.gaps?.delivery?.length === 1
+      && error.details.gaps.delivery[0].code === 'task_finish.commit_message_required'
+      && /semantic commit message/.test(error.nextAction),
+  );
+  assert.equal(runtime.readTaskFinishRunPersistence(retained, { taskId: task }, { optional: true }), null);
+  assert.deepEqual(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records, []);
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--target-branch', 'main', '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]),
     (error) => error.code === 'task_finish.entry_gaps'
       && error.details?.nextWorkflow == null
       && error.details?.gaps?.delivery?.some((item) => item.code === 'task_finish.target_branch_mismatch' && item.details?.retainedBranch === 'dev')
@@ -310,7 +319,7 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   const openTaskExecutionRecord = runtime.openTaskExecutionRecord;
   const retainedHeadBeforeBackpressure = command(retained, 'git', ['rev-parse', 'HEAD']);
   runtime.openTaskExecutionRecord = () => { throw Object.assign(new Error('Injected execution record quota backpressure.'), { code: 'task_execution_record_quota_exceeded', nextAction: 'cleanup eligible execution records' }); };
-  const backpressure = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
+  const backpressure = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
   assert.equal(backpressure.status, 'blocked');
   assert.equal(backpressure.runId, null);
   assert.equal(backpressure.executionRecord.status, 'blocked');
@@ -319,7 +328,7 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers')), false);
   assert.equal(fs.existsSync(environmentRoot), true);
   runtime.openTaskExecutionRecord = openTaskExecutionRecord;
-  const doctorBlocked = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
+  const doctorBlocked = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
   assert.equal(doctorBlocked.status, 'blocked');
   assert.equal(doctorBlocked.primaryFailure.operation, 'retained-doctor');
   assert.equal(doctorBlocked.primaryFailure.code, 'task-finish.retained-doctor-failed');
@@ -328,6 +337,15 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.equal(doctorBlocked.delivery.retainedDoctor, 'blocked');
   assert.deepEqual(doctorBlocked.phases.find((phase) => phase.id === 'deliver').operations, []);
   assert.equal(doctorBlocked.executionRecord.status, 'retained');
+  const frozenBeforeOverride = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', doctorBlocked.resume.token, '--commit-message', 'fix(task-finish): override frozen message', '--target', retained]),
+    (error) => error.code === 'task_finish.commit_message_override',
+  );
+  const frozenAfterOverride = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
+  assert.equal(frozenAfterOverride.identityDigest, frozenBeforeOverride.identityDigest);
+  assert.equal(frozenAfterOverride.deliveryCommit.identity, frozenBeforeOverride.deliveryCommit.identity);
+  assert.equal(frozenAfterOverride.resume.token, frozenBeforeOverride.resume.token);
   assert.equal(doctorBlocked.executionRecord.outcome, 'blocked');
   const firstRecords = runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records;
   assert.equal(firstRecords.length, 1);
@@ -482,7 +500,8 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
     },
   });
   registerTaskFinishApplication(runtime);
-  const first = await runtime.taskFinish('run', ['--task', task, '--target', retained]);
+  const firstSubject = 'fix(task-finish): deliver adapted journey candidate';
+  const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', firstSubject, '--target', retained]);
 
   assert.equal(first.status, 'blocked', JSON.stringify(first, null, 2));
   assert.equal(first.primaryFailure.code, 'task-finish.delivery-adaptation-required');
@@ -497,7 +516,7 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
 
   fs.writeFileSync(path.join(first.carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
   command(first.carrier.root, 'git', ['add', 'shared.txt']);
-  command(first.carrier.root, 'git', ['commit', '-m', 'adapt delivery carrier']);
+  command(first.carrier.root, 'git', ['commit', '-F', '-'], { input: `${firstSubject}\n\nBuildr-Task: ${task}\n` });
   const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
   assert.equal(compatibilityFailure.status, 'blocked');
   assert.equal(compatibilityFailure.primaryFailure.code, 'task-finish.compatibility-checks-failed');

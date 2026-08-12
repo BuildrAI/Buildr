@@ -8,6 +8,7 @@ import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { acquireFinishTargetLease, readFinishCompletion, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
 import { TASK_FINISH_RAW_COMMAND_OUTPUT } from './execution-record.mjs';
+import { legacyTaskFinishDeliveryCommit, publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-process.mjs';
 import {
   adoptAgentReviewedGitCarrier,
@@ -58,8 +59,9 @@ function terminalAssociation(handoff, observedAt) {
 }
 
 function deliveryCarrier(run, isolated, { reuseMode, status = 'prepared', activationPlan = null }) {
+  const deliveryCommit = isolated.deliveryCommit || publicTaskFinishDeliveryCommit(run.deliveryCommit || legacyTaskFinishDeliveryCommit(run.identity.task));
   const carrier = {
-    identity: digest({ head: isolated.head, tree: isolated.tree, expectedTargetRef: isolated.deliveryBaseline.head, taskContributionIdentity: isolated.taskContribution.identity, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity, reuseMode, activationPlanIdentity: activationPlan?.identity || null }),
+    identity: digest({ head: isolated.head, tree: isolated.tree, expectedTargetRef: isolated.deliveryBaseline.head, taskContributionIdentity: isolated.taskContribution.identity, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity, deliveryCommitIdentity: deliveryCommit?.identity || null, reuseMode, activationPlanIdentity: activationPlan?.identity || null }),
     status,
     reuseMode,
     kind: 'git-isolated-commit',
@@ -76,6 +78,7 @@ function deliveryCarrier(run, isolated, { reuseMode, status = 'prepared', activa
     handoffIdentity: run.identity.handoffIdentity,
     candidateIdentity: run.identity.candidateIdentity,
     contentTargetIdentity: run.identity.contentTargetIdentity,
+    deliveryCommit,
     preparedAt: new Date().toISOString(),
     activationPlan,
   };
@@ -309,6 +312,10 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const retainedActivation = activationPlan(run, []);
       checks.push(finding('retained-activation', 'ok', 'task-finish.activation-plan-ready', 'Task Finish activation is limited to Workspace root runtime rendering.', { planIdentity: retainedActivation.identity }));
 
+      const deliveryCommit = run.deliveryCommit || legacyTaskFinishDeliveryCommit(run.identity.task);
+      if (run.identity.deliveryCommitIdentity && (!run.deliveryCommit || run.identity.deliveryCommitIdentity !== run.deliveryCommit.identity)) checks.push(finding('delivery-commit', 'error', 'task-finish.commit-message-mismatch', 'Frozen Task Finish delivery commit facts do not match the run identity.'));
+      else checks.push(finding('delivery-commit', 'ok', run.deliveryCommit ? 'task-finish.delivery-commit-frozen' : 'task-finish.delivery-commit-legacy', `Delivery commit ${deliveryCommit.subject} is frozen for this run.`));
+
       const errors = checks.filter((item) => item.severity === 'error');
       if (errors.length) {
         const transientOnly = errors.every((item) => item.failureClass === 'transient-external-condition');
@@ -358,7 +365,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
           runId: run.runId,
           deliveryBaselineHead: expectedTargetRef,
           taskContribution,
-          message: `交付 ${run.identity.task}`,
+          deliveryCommit: run.deliveryCommit || legacyTaskFinishDeliveryCommit(run.identity.task),
         });
       } catch (error) {
         operations.push({ kind: 'product', id: 'prepare-isolated-carrier', status: 'failed', code: error.code || 'task-finish.carrier-prepare-failed' });

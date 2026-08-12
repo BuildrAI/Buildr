@@ -12,8 +12,9 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 1. 明确正式 Task ID 与 canonical Workspace。
 2. 用户排除 push、install 或 cleanup 而改变交付语义时停止。
 3. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
-4. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
-5. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。
+4. 根据最终交付内容与Workspace、Project、Service、repository约定形成完整commit message。subject必须描述内容，优先使用简洁Conventional Commits；Task ID由产品写入trailer，不得使用“交付 + Task ID”占位主题。调用前向用户展示subject，正文存在时一并展示。
+5. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
+6. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。
    - Child承担Parent Contribution时，handoff还必须包含与current Parent Plan和planned binding一致的Contribution Handoff。
    - Parent采用Parent Plan时，必须已记录current plan identity的显式最终集成验收；Child全部完成本身不满足该条件。
 
@@ -22,7 +23,7 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 从 canonical retained Workspace 的可信 Environment Manager 调用：
 
 ```bash
-buildr task finish run --task <task-id> --target <canonical-workspace> --json
+buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --json
 ```
 
 直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding，不猜测contract版本，也不为调用创建或修改execution capsule。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
@@ -35,11 +36,13 @@ preflight → prepare → verify → deliver → cleanup
 
 五阶段由产品连续执行，Agent不编排阶段、补evidence或设计recovery。
 
+完整message只在首次创建run时提供。产品规范化换行、确定性加入`Buildr-Task: <task-id>` trailer并冻结identity；公开Result和Execution Record只投影subject与identity。已有run的resume命令不得再次提供或覆盖message。
+
 每次真正执行的首次run或resume会先以独立invocation identity预留`task-finish/finish-diagnostics` Execution Record容量；backpressure时五阶段与所有Finish owner副作用都不启动。产品在invocation期间把timeline、diagnostics和受控stdout/stderr写入独立transient files，record retained后只清理该diagnostics目录。Delivery Carrier、lease、resume与cleanup资源仍由Finish current独立管理；Agent不得用record恢复或删除这些资源。
 
 - `preflight` 只核对 current handoff、Environment、carrier adapter 与 retained target；activation不读取Project或Service声明。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
-- Agent只在carrier完成交付适配（Delivery Adaptation）；resume核验ownership、baseline、source/handoff、cleanliness与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
+- Agent只在carrier完成交付适配（Delivery Adaptation）；最终carrier HEAD必须保持run冻结的完整message，否则resume保持blocked。resume核验ownership、baseline、source/handoff、cleanliness、message identity与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
 - `deliver`只做fast-forward、普通push/回读、类型化runtime activation与run绑定的指定Agent Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；Doctor要求Workspace health ready，失败时保留已经完成的remote readback、partial delivery与精确resume事实并停止cleanup。通用Product executor不读取Project/Service配置，不执行sync，不安装Buildr development CLI或Local App，也不接受任意命令字符串。
 - render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。

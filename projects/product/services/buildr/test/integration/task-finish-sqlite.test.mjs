@@ -5,7 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { createFinishRun, executeFinishRun, finishResult } from '../../src/application/task-finish/task-finish-run.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
 
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-sqlite-'));
@@ -85,6 +86,28 @@ test('Task Finish current run、lease和completion由Workspace SQLite统一持�
   assert.deepEqual({ ...row }, { status: 'complete', leaseTargetIdentity: null, cleanupPhase: 'cleanup' });
   assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_finish_runs', 'task_finish_completions', 'task_finish_target_leases', 'task_finish_transient_artifacts')").get().count, 0);
   database.close();
+});
+
+test('Task Finish current独占完整delivery message且公开result只投影subject与identity', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  const task = 'delivery-message-owner';
+  runtime.createTaskRecord(root, { taskId: task, title: 'Delivery message owner', intent: 'Prove message ownership.', projects: [], services: [], changes: [] });
+  const deliveryCommit = normalizeTaskFinishDeliveryCommit('fix(task-finish): freeze message\n\nprivate body evidence', task);
+  const run = createFinishRun({
+    root,
+    runId: 'delivery-message-owner-run',
+    identity: { ...identity(root, task), deliveryCommitIdentity: deliveryCommit.identity },
+    deliveryCommit,
+    runtime,
+  });
+  runtime.writeTaskFinishRunPersistence(root, run);
+  const current = runtime.readTaskFinishRunPersistence(root, { taskId: task }).run;
+  assert.equal(current.deliveryCommit.message, deliveryCommit.message);
+  assert.equal(current.identity.deliveryCommitIdentity, deliveryCommit.identity);
+  const result = finishResult(current);
+  assert.deepEqual(result.deliveryCommit, { subject: deliveryCommit.subject, identity: deliveryCommit.identity });
+  assert.doesNotMatch(JSON.stringify(result), /private body evidence/);
 });
 
 test('target lease使用expiry与token fencing避免旧owner释放新owner', (t) => {

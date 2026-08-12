@@ -576,12 +576,12 @@ P0.5 已实现 **Skill + capability contract + 唯一 Application + internal dri
 
 > 当前 Task Finish 是研发交接（Development Handoff）的窄交付适配器：它只把已经冻结并允许推进的 Candidate 放到内容等价的交付载体（Delivery Carrier）上，完成交付、按retained声明选择的`none | render-runtime | sync-workspace`激活与Environment cleanup。
 
-用户说“收尾”时，公共入口仍是单个 `buildr task finish run --task ...`。Run/Result 使用 breaking v2 schema，绑定 Task、研发交接、Candidate、Content Target、Environment、目标和实际 carrier；这不是新的 Finish Receipt，也不建立第二份 Candidate/decision authority。`completed + no-change` 路径不进入 Finish。
+用户说“收尾”时，公共入口仍是单个 `buildr task finish run --task ... --commit-message ...`。Agent根据最终内容与仓库约定提供完整语义message；产品在所有Finish副作用前规范化、校验、加入`Buildr-Task` trailer并冻结，resume只复用同一identity。Run/Result 使用 breaking v2 schema，绑定 Task、研发交接、Candidate、Content Target、Environment、目标、提交信息identity和实际 carrier；这不是新的 Finish Receipt，也不建立第二份 Candidate/decision authority。`completed + no-change` 路径不进入 Finish。
 
 固定执行器只拥有五段确定性流程：
 
 1. `preflight`：读取当前研发交接、ready Environment、retained target 与授权目标。
-2. `prepare`：为当前 Candidate 创建精确、内容等价的 Git carrier，并刷新 Environment 事实。
+2. `prepare`：使用run冻结的完整message为当前 Candidate 创建精确、内容等价的 Git carrier，回读实际commit message identity，并刷新 Environment 事实。
 3. `verify`：只证明 carrier 与 Content Target 等价；Formal Verification 已在 Development 中完成，这里执行次数必须为 0。
 4. `deliver`：普通 fast-forward、普通 push，并在 retained source 更新后执行适用的runtime render与run绑定的selected-Agent Doctor；Doctor未ready时保存partial delivery、remote readback和精确resume token并停止cleanup；不执行sync或产品安装。
 5. `cleanup`：请求 Task Environment Application 清理 Task-owned Environment。
@@ -602,7 +602,7 @@ Candidate 由 Development 冻结，不强制等于 Git commit。Finish 可以创
 
 ### Run、Result 与完成
 
-P0.5 不新增 Finish Receipt。Task Finish run/result v2 是一次窄 adapter execution evidence：成功时记录 handoff/Candidate/Content Target、carrier、目标、retained activation 与 cleanup 事实；失败时记录 terminal phase、真实错误与 `nextWorkflow`。它不保存或改写 Development decision。
+P0.5 不新增 Finish Receipt。Task Finish run/result v2 是一次窄 adapter execution evidence：current run作为唯一恢复owner保存规范化完整message，公开Result只投影subject与identity；成功时记录 handoff/Candidate/Content Target、carrier、目标、retained activation 与 cleanup 事实，失败时记录 terminal phase、真实错误与 `nextWorkflow`。Task Record、Development/Environment Receipt与Execution Record不复制完整message；Finish也不保存或改写 Development decision。
 
 Finish 成功只证明 current handoff 已由内容等价 carrier 交付、目标与远端事实匹配、retained runtime 已按适用事实激活且 Environment 已处置。随后由主 Agent 调用 Task Manager `complete`；终态写入失败时只重试该 action，不重跑 Finish。P0.8 如需持久 delivery effects，必须另行以窄 Change 证明需求，迁移必要 active run/history reader，并删除被替代的旧 mutation path；不得预建 Finish Receipt 或通用状态机。
 

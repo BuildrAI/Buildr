@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
 import { compactTaskFinishFailure } from './execution-record.mjs';
+import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 
 export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v2';
 export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v2';
@@ -110,6 +111,7 @@ function normalizeIdentity(input) {
     environmentRoot: path.resolve(input.environmentRoot),
     workspaceRoot: path.resolve(input.workspaceRoot),
     workspaceNodeIdentity: typeof input.workspaceNodeIdentity === 'string' && input.workspaceNodeIdentity ? input.workspaceNodeIdentity : null,
+    deliveryCommitIdentity: typeof input.deliveryCommitIdentity === 'string' && input.deliveryCommitIdentity ? input.deliveryCommitIdentity : null,
   };
 }
 
@@ -118,8 +120,12 @@ function generateRunId(identity, clock) {
   return `${identity.task}-${stamp}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
-export function createFinishRun({ root, identity, runId = null, clock = Date.now, runtime = null }) {
-  const normalized = normalizeIdentity(identity);
+export function createFinishRun({ root, identity, deliveryCommit = null, runId = null, clock = Date.now, runtime = null }) {
+  if (deliveryCommit?.identity && identity?.deliveryCommitIdentity && deliveryCommit.identity !== identity.deliveryCommitIdentity) throw new Error('Task Finish delivery commit identity does not match the run identity.');
+  const normalized = normalizeIdentity({
+    ...identity,
+    deliveryCommitIdentity: deliveryCommit?.identity || identity?.deliveryCommitIdentity || null,
+  });
   const actualRunId = runId || generateRunId(normalized, clock);
   const sqlite = requireTaskFinishRuntime(runtime, 'run persistence');
   const current = sqlite.readTaskFinishRunPersistence(root, { taskId: normalized.task }, { optional: true });
@@ -136,6 +142,7 @@ export function createFinishRun({ root, identity, runId = null, clock = Date.now
     completedAt: null,
     invocations: 0,
     productCommandObservations: 0,
+    deliveryCommit: clone(deliveryCommit),
     deliveryCarrier: null,
     equivalence: null,
     delivery: null,
@@ -162,7 +169,7 @@ function resumableRunCandidates(root, identity, runtime = null) {
   return ['blocked', 'cleanup_pending'].includes(current?.run?.status) && current.run.identityDigest === sha256(normalizeIdentity(identity)) ? [current.run] : [];
 }
 
-export function resolveFinishRun({ root, identity, runId = null, resumeToken = null, clock = Date.now, runtime = null }) {
+export function resolveFinishRun({ root, identity, deliveryCommit = null, runId = null, resumeToken = null, clock = Date.now, runtime = null }) {
   if (runId) {
     const run = readFinishRun({ root, runId, runtime });
     if (run.identityDigest !== sha256(normalizeIdentity(identity))) throw new Error('Task Finish run identity does not match the requested task/candidate/target.');
@@ -170,7 +177,7 @@ export function resolveFinishRun({ root, identity, runId = null, resumeToken = n
     return run;
   }
   const reusable = resumableRunCandidates(root, identity, runtime).find((run) => !resumeToken || run.resume?.token === resumeToken);
-  return reusable || createFinishRun({ root, identity, clock, runtime });
+  return reusable || createFinishRun({ root, identity, deliveryCommit, clock, runtime });
 }
 
 function normalizeFailure(value, phaseId, fallbackCode = 'task-finish.phase-failed') {
@@ -411,6 +418,7 @@ export function finishResult(run, clock = Date.now) {
     resolvedContext: resolvedFinishContext(run.identity),
     handoff: { identity: run.identity.handoffIdentity },
     candidate: { identity: run.identity.candidateIdentity, generation: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity },
+    deliveryCommit: publicTaskFinishDeliveryCommit(run.deliveryCommit),
     carrier: clone(run.deliveryCarrier),
     phases: run.phases.map(publicPhase),
     primaryFailure: clone(run.primaryFailure),

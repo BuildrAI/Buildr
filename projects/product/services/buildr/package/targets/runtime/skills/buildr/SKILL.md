@@ -47,7 +47,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 从首个proposal、方案或直接实现等正式研发动作开始，维护planning facts、稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与handoff | `buildr.task-development/v2` selected provider |
-| 对已有 active formal Task 消费 current Development handoff、在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进 retained target 并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；只有 Development applicability stale 才返回 Task Development |
+| 对已有 active formal Task 消费 current Development handoff、先按最终内容提供语义化commit message，再在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进 retained target 并交接 Task Environment cleanup | `buildr.task-finish/v1` selected provider；新run冻结message，resume复用；只有 Development applicability stale 才返回 Task Development |
 | Workspace 没有 active Task 时，用户说“收尾”或等价的当前 Git 交付 | 产品入口解析当前 Git facts 后，将已选定的 fetch、必要时精确 commit、rebase、普通 push 等 operation 交给 `buildr.git-operations/v1`；不创建临时 Task 或 Formal Finish evidence |
 | 已明确 repository/ref 的 commit、push、commit+push 或其他已选 Git Operation | `buildr.git-operations/v1` selected provider；本 Skill 或直接用户继续决定 operation、目标与顺序 |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |

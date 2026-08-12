@@ -109,7 +109,9 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   const helpText = `${runHelp.stdout}\n${inspectHelp.stdout}`;
   assert.match(helpText, /task finish run/);
   assert.match(helpText, /task finish inspect/);
-  assert.match(helpText, /--task <task-id> \[--agent <agent>\]/);
+  assert.match(helpText, /--task <task-id> --commit-message <message> \[--agent <agent>\]/);
+  assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
+  assert.match(helpText, /Buildr-Task trailer/);
   assert.match(helpText, /current formal Development handoff/);
   assert.match(helpText, /retained canonical Workspace 的当前符号分支/);
   assert.match(helpText, /Environment startPoint 不提供交付分支 authority/);
