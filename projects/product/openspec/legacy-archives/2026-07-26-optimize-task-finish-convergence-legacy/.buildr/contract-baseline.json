@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-convergence",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-6a76adf9eda27140955a4e4f4a49cc690529fe146b797606d046f7682da8a1d0",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证前收敛 delivery tree",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须在最终保证前收敛 delivery tree\nTask Finish MUST 在调用 selected task-verification provider 执行最终 required assurance 前完成所有当前可预见的 implementation 与 delivery tree 收敛动作，并 MUST 将之后允许发生的动作限制为有独立证据的 closeout-only transition。Delivery convergence MUST 包含适用的 current knowledge 收敛、受管资产完整性、OpenSpec sync compatibility、canonical spec sync、候选提交、目标分支 fetch/rebase 和 tree transition runtime 对齐；不得在明知这些动作尚未完成时把一次 Candidate 表述为最终验证。\n\n#### Scenario: 高风险 Product task 准备最终 Candidate\n- **WHEN** Task Finish 为 Buildr Product 解析出 `requiredAssurance: candidate`\n- **THEN** Task Finish MUST 先完成适用的 OpenSpec sync、候选提交、目标分支 fetch/rebase、doctor 和 runtime sync\n- **AND** MUST 在上述动作收敛且 implementation identity 冻结后才执行最终 Candidate\n\n#### Scenario: 普通任务只要求 affected 保证\n- **WHEN** verification provider 返回 `requiredAssurance: affected`\n- **THEN** Task Finish MUST 使用同一 delivery convergence 顺序准备最终 implementation identity\n- **AND** MUST NOT 因本 Requirement 将普通收尾机械升级为 Candidate\n\n#### Scenario: 最终保证后只发生 closeout-only transition\n- **WHEN** 最终 required assurance 已成功且后续只执行最终验证任务 checkbox、已预演的 archive、归档格式收敛、候选提交 amend、目标分支 fast-forward 或 push\n- **THEN** Task Finish MUST 为每项动作记录来源、精确 diff、tree-equivalence 与 focused checks\n- **AND** 任一无法证明为 closeout-only 的变化 MUST 使旧 evidence 失效\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证前预演 OpenSpec archive compatibility",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须在最终保证前预演 OpenSpec archive compatibility\n当已完成 active Change 包含 delta specs 时，Task Finish MUST 在真实 canonical sync 和最终 required assurance 前，通过当前 OpenSpec CLI 在隔离 planning copy 中执行 archive rehearsal，以检查场景保全、delta merge、新 capability 建立和 archive compatibility。Rehearsal MUST 是可清理的 workflow check，不得修改真实 Change、canonical specs 或外部 OpenSpec Skill，也不得替代 Buildr pre-sync/post-sync guard。\n\n#### Scenario: Rehearsal 发现场景 identity 风险\n- **WHEN** OpenSpec archive rehearsal 报告 MODIFIED Requirement 会遗漏或重命名既有 Scenario\n- **THEN** Task Finish MUST 停止真实 sync 和最终 required assurance\n- **AND** 修正 delta 后 MUST 重新运行 strict validation、baseline/proposal check 和 pre-sync\n\n#### Scenario: Rehearsal 成功\n- **WHEN** 隔离副本完成 archive 且生成的 canonical specs 通过预期检查\n- **THEN** Task Finish MUST 记录 OpenSpec version、Change identity、临时 owner、结果摘要和 cleanup 状态\n- **AND** 真实 sync 仍 MUST 依次通过 pre-sync、agent-driven sync 与 post-sync\n\n#### Scenario: Change 没有 delta specs\n- **WHEN** active Change 不包含 delta specs\n- **THEN** Task Finish MAY 跳过 archive rehearsal\n- **AND** MUST 记录不适用理由而不是伪造 rehearsal success\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须报告验证失效链和重复执行成本",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 必须报告验证失效链和重复执行成本\n当一次收尾执行多次正式验证时，Task Finish MUST 记录每次 evidence 的候选 identity、run reference、状态、真实 wall-clock、失效或失败原因和替代关系，并 MUST 在最终报告汇总 execute count、Candidate executor count、失效次数与重复验证总耗时。\n\n#### Scenario: Rebase 使成功 Candidate 失效\n- **WHEN** 成功 Candidate 后发生改变 implementation identity 的 rebase 或冲突解决\n- **THEN** Task Finish MUST 记录 `implementation-changed` 失效事件和原 run 耗时\n- **AND** 最终报告 MUST 将新 Candidate 与旧 run 分开，不得只报告最后一轮耗时\n\n#### Scenario: Candidate 失败后修复\n- **WHEN** Candidate 失败且修复改变 implementation content\n- **THEN** Task Finish MUST 记录失败检查、失败 run 耗时、修复后的新 identity 和替代 run\n- **AND** 重跑成功 MUST NOT 隐藏本次收尾已经付出的失败验证成本\n\n#### Scenario: 最终保证一次通过且未失效\n- **WHEN** 收尾只执行一次正式验证且后续没有 implementation change\n- **THEN** Task Finish MUST 报告 execute count 为一、失效次数为零\n- **AND** MUST NOT 为满足格式创建虚构的历史 run\n"
+    },
+    {
+      "capability": "openspec-contract-guard",
+      "title": "同步结果必须符合 delta 且保持未触达契约",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 同步结果必须符合 delta 且保持未触达契约\nBuildr MUST 使用成功 pre-sync 产生的 receipt 验证同步结果，只有 delta 结果成立且未触达 Requirement 保持不变时才能通过 post-sync。\n\n#### Scenario: 安全同步完整通过\n- **WHEN** ADDED、MODIFIED、REMOVED 和 RENAMED 结果均符合 delta，且 receipt 中未触达 Requirement 未变化\n- **THEN** post-sync check MUST 成功\n- **AND** JSON 输出 MUST 将 change 状态报告为 contract-applied\n\n#### Scenario: 未声明的 Requirement 被删除或改写\n- **WHEN** 同步结果删除、增加或改变 delta 未触达的 Requirement\n- **THEN** post-sync check MUST 失败\n- **AND** finding MUST 标识 capability、Requirement 和预期/实际摘要\n\n#### Scenario: MODIFIED 使用不完整结果\n- **WHEN** post-sync canonical Requirement 不匹配 delta 中声明的完整 MODIFIED Requirement\n- **THEN** post-sync check MUST 失败\n\n#### Scenario: Delta 在 pre-sync 后变化\n- **WHEN** receipt 记录的 delta hash 与 post-sync 时 delta 不同\n- **THEN** post-sync check MUST 失败\n- **AND** Buildr MUST 要求重新执行 pre-sync\n"
+    },
+    {
+      "capability": "task-verification",
+      "title": "验证能力返回并报告标准结果证据",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 验证能力返回并报告标准结果证据\nTask verification provider MUST 返回 `requiredAssurance`、验证级别、状态、policy sources、policy mode、候选 identity、检查结果、能力选择决策、覆盖与环境摘要、授权决策、Candidate 完整性、整体耗时、timing source、最慢检查、失败项、跳过项、evidence reference 和 evidence 生命周期，并 MUST 在直接验证或开发完成回复中以“受影响验证”或“完整候选验证”作为主要用户表述。\n\n#### Scenario: 受影响验证成功\n- **WHEN** 普通任务的 affected 验证成功并产生与当前候选一致的 evidence\n- **THEN** provider MUST 报告受影响范围、实际能力、总耗时、失败项、跳过项和 evidence reference\n- **AND** provider MUST 明确该证据满足普通交付保证，但不把它描述为完整 Candidate\n\n#### Scenario: 最终候选验证成功\n- **WHEN** Candidate 验证成功并产生可信 evidence\n- **THEN** provider MUST 报告候选、完整验证、选中能力、Candidate 完整性、总耗时、最慢检查、失败项为无、跳过项和 evidence reference\n- **AND** provider MUST 只有在 `candidateCompleteness: confirmed` 时说明实现具备完整候选证据\n\n#### Scenario: 能力因环境或授权未运行\n- **WHEN** 某个适用能力因环境未就绪、副作用未知或缺少授权被跳过或阻塞\n- **THEN** provider MUST 记录能力 id 与原因\n- **AND** 所需保证中的 required gate 未执行时 status MUST NOT 为通过\n\n#### Scenario: 验证失败\n- **WHEN** 任一必要检查失败\n- **THEN** provider MUST 报告失败状态、失败检查、退出状态、已完成检查、实际总耗时和 evidence reference\n- **AND** provider MUST NOT 将任务描述为满足所需保证\n"
+    }
+  ]
+}

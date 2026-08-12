@@ -4,6 +4,7 @@
 
 定义 Buildr Workspace 产品切片在新源码分层中的职责、本机应用入口、受控 metadata 修改、并发保护和 Agent prompt 边界。
 ## Requirements
+
 ### Requirement: Workspace 产品能力必须遵守新源码分层
 Buildr MUST 将 Workspace 实体与纯约束放入 Domain，将用例和 ports 放入 Application，将 Manifest 持久化放入 filesystem Infrastructure，并将 CLI、HTTP 和 Web 放入 Interfaces。
 
@@ -82,8 +83,9 @@ Buildr MUST 保护本地页面的写操作，避免其他网页或任意路径�
 
 #### Scenario: 离线静态资源
 - **WHEN** 用户加载本地应用页面
-- **THEN** 页面 MUST 使用 Buildr npm package 内的静态资源
+- **THEN** 页面 MUST 使用 Buildr npm package（或等价 launcher bundle）内已包含的 Local App 构建产物静态资源
 - **AND** MUST NOT 依赖 CDN、远程字体、远程脚本或远程图片
+- **AND** MUST NOT 要求运行时从远程仓库拉取前端源码
 
 ### Requirement: 本地应用必须提供 Project 列表与详情
 Buildr MUST 在固定 Workspace 的本地应用中提供 Project read model，且 Interfaces MUST 通过 Project Application 查询。
@@ -152,6 +154,7 @@ Project write routes MUST use the same fixed-target, same-origin, token, JSON an
 - **WHEN** request contains target path, filesystem path, invalid token/origin/content type, oversized body or unknown mutation fields
 - **THEN** server MUST reject it before Application mutation
 - **AND** Project registry MUST remain unchanged
+
 ### Requirement: 本地应用必须提供 Service 列表与详情
 固定 Workspace 的本地应用 MUST 按 Project 展示 Service Domain、声明 source 与实时观察状态。
 
@@ -331,10 +334,10 @@ Buildr MUST 为项目与服务提供独立管理视图和稳定的项目详情�
 - **THEN** HTTP API MUST 继续执行已有 session、Origin、JSON、body size、字段白名单和 revision conflict 约束
 
 ### Requirement: 新 Workspace 动作必须统一表达为交给 Agent
-Buildr MUST 在 App Shell 中提供“交给 Agent”入口来生成新 Workspace prompt，并 MUST 明确该动作不会切换当前 Workspace 或直接完成创建。
+Buildr MUST 在全局工作空间目录提供“让 Agent 创建工作空间”入口来生成新 Workspace prompt，并 MUST 明确该动作不会切换当前 Workspace 或直接完成创建。App Shell 顶栏的“交给 Agent”按钮 MUST 仅在已进入某个工作空间后显示。
 
 #### Scenario: 生成新 Workspace prompt
-- **WHEN** 用户从 App Shell 打开 Agent Action 并填写名称、说明和可选目标位置
+- **WHEN** 用户从全局工作空间目录打开创建工作空间 Agent Action 并填写名称、说明和可选目标位置
 - **THEN** 页面 MUST 调用现有 Workspace prompt Application 用例
 - **AND** MUST 展示可复制的完整 prompt
 
@@ -342,6 +345,11 @@ Buildr MUST 在 App Shell 中提供“交给 Agent”入口来生成新 Workspac
 - **WHEN** prompt 成功复制
 - **THEN** 页面 MUST 提示指令已复制但 Workspace 尚未创建
 - **AND** 当前 App Shell MUST 继续显示原 Workspace 上下文
+
+#### Scenario: 顶栏交给 Agent 仅在工作空间内显示
+- **WHEN** 用户停留在全局工作空间目录（未进入任一工作空间）
+- **THEN** App Shell 顶栏 MUST NOT 显示“交给 Agent”按钮
+- **AND** 全局工作空间目录 MUST 仍提供“让 Agent 创建工作空间”入口
 
 ### Requirement: 项目与服务创建必须使用抽屉式 Agent Action
 Buildr MUST 通过资源页面中的创建按钮触发统一的“交给 Agent”抽屉，并 MUST 使用“基础意图 + 高级声明”的渐进表单；页面正文 MUST NOT 平铺创建表单，抽屉 MUST NOT 把 canonical CLI 参数作为普通用户的默认必填项。
@@ -365,24 +373,34 @@ Buildr MUST 通过资源页面中的创建按钮触发统一的“交给 Agent�
 - **AND** prompt MUST 要求 Agent 根据真实目录、Git 与用户目标提出候选并只询问必要信息
 - **AND** Application MUST NOT 为缺失字段编造声明
 
-#### Scenario: 从全局入口选择创建类型
-- **WHEN** 用户点击 App Shell 的“交给 Agent”按钮
+#### Scenario: 从工作空间内顶栏入口选择创建类型
+- **WHEN** 用户已进入某个工作空间并点击 App Shell 的“交给 Agent”按钮
 - **THEN** 抽屉 MUST 优先展示创建 Workspace、Project、Service 和开始工作等核心动作
 - **AND** Change 等后续能力 MUST 作为次级动作呈现
 - **AND** 生成与复制结果 MUST 明确说明对象或任务尚未创建或开始
 
 ### Requirement: 界面领域名词必须使用中文主称
-Buildr 本机应用 MUST 在用户可见界面中使用“工作空间”“项目”“服务”作为领域对象的主要名称，英文名称只能作为首次解释或技术辅助信息。
+Buildr 本机应用 MUST 在用户可见界面中使用“工作空间”“项目”“服务”作为领域对象的主要名称，英文名称只能作为首次解释或技术辅助信息。任务页面及其直接的 Task-scoped 入口 MUST 对任务记录、任务环境、任务研发、审查结果、验证结果、内容目标、任务候选与研发交接使用纯中文或“中文（English Term）”主称，不得使用英文-only 标题或操作名。
 
 #### Scenario: 展示导航和页面标题
-- **WHEN** 应用展示主导航、面包屑、页面标题、按钮、状态或说明
+- **WHEN** 应用展示工作空间、项目或服务的导航、面包屑、页面标题、按钮、状态或说明
 - **THEN** 领域对象 MUST 分别使用“工作空间”“项目”“服务”
 - **AND** MUST NOT 只使用 Workspace、Project 或 Service 作为用户可见主称
 
+#### Scenario: 展示任务页面与直接入口
+- **WHEN** 应用展示任务目录、任务详情页签、专业区块或 Task-scoped Change 的审查入口
+- **THEN** 已有稳定中文名称的任务对象、专业能力、状态与操作 MUST 使用纯中文或“中文（English Term）”形式
+- **AND** MUST NOT 只使用 Task Record、Task Environment、Task Review、Task Verification、Task Development、Planning Review 或 Completion Review 作为用户可见主称
+
 #### Scenario: 展示技术字段
-- **WHEN** 应用展示 Workspace ID、Schema、Revision、Git 或 API 等技术标识
-- **THEN** 应用 MAY 保留不可误译的英文标识
-- **AND** 对象本身仍 MUST 使用中文主称或“中文（English）”形式
+- **WHEN** 应用展示 Workspace ID、schemaVersion、digest、字段名、路径、Git 或 API 等精确技术标识
+- **THEN** 应用 MAY 保留不可误译的英文标识和原始枚举值
+- **AND** 标签与对象主称仍 MUST 使用中文，必要时在首次出现时补充英文术语
+
+#### Scenario: 展示任务专业状态
+- **WHEN** Task 页面展示 current、stale、missing、unknown、ready、passed、not-passed、proceed 或 blocked 等专业枚举
+- **THEN** 用户可见主状态 MUST 使用稳定中文文案
+- **AND** 原始枚举仅 MAY 作为次级技术信息，不得成为唯一可读结论
 
 ### Requirement: 本机应用必须使用统一的资源目录与独立详情模型
 Buildr 本机应用 MUST 将已登记工作空间作为全局目录；进入工作空间后，Project、Service 和 Change MUST 分别提供资源目录和可刷新、可返回的独立详情 URL。资源目录 MUST NOT 承载完整详情或主编辑表单。
@@ -449,63 +467,15 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 从资源目录访问关联资源
 - **WHEN** 用户查看任一 Project 行
-- **THEN** 操作列 MUST 提供该项目的服务目录和变更目录入口
+- **THEN** 操作列 MUST 仅提供该项目的服务目录入口
 - **WHEN** 用户查看任一 Service 行
 - **THEN** 操作列 MUST 提供所属 Project 详情入口
 - **AND** Project 与 Service 详情 MUST NOT 重复提供这些关联资源跳转
 
 #### Scenario: 侧边栏指示当前资源
-- **WHEN** 用户打开项目、服务、变更目录或其详情/编辑页
+- **WHEN** 用户打开项目、服务目录或其详情/编辑页
 - **THEN** 相应侧边栏资源项 MUST 显示明显的当前状态
 - **AND** 资源分组状态 MUST NOT 取代当前资源项的高亮
-
-### Requirement: 本机应用必须提供 Change 管理视图
-Buildr 本机应用 MUST 在资源导航中提供独立的变更（Change）管理视图，并 MUST 使用明确的表格操作栏、过滤和详情入口展示真实 Project Change。
-
-#### Scenario: 打开 Change 表格
-- **WHEN** 用户访问 `/changes`
-- **THEN** 页面 MUST 展示 Change 名称、所属项目、生命周期、任务进度、更新时间和操作栏
-- **AND** 页面 MUST 提供项目与 active/archived 生命周期过滤
-
-#### Scenario: 使用表格操作栏
-- **WHEN** 用户查看任一 Change 行
-- **THEN** 操作栏 MUST 提供详情和交给 Agent 的明确行为
-- **AND** 表格行本身 MUST NOT 是唯一的信息或行为入口
-
-#### Scenario: 创建 Change
-- **WHEN** 用户点击“创建变更”
-- **THEN** 页面 MUST 使用抽屉或弹窗收集所属项目与目标说明
-- **AND** MUST 展示可复制的 Agent prompt，不得直接写入 OpenSpec
-
-### Requirement: 本机应用必须提供可链接的 Change 详情页
-Buildr 本机应用 MUST 使用稳定独立路由展示 Change 详情，并 MUST 将长 artifact 内容与短 prompt 交互分离。
-
-#### Scenario: 打开 Change 详情
-- **WHEN** 用户访问 `/changes/<projectCode>/<changeRef>`
-- **THEN** 页面 MUST 展示 identity、lifecycle、任务进度、artifact availability 和可用的 proposal、design、specs、tasks 内容
-- **AND** 页面刷新后 MUST 保持同一 Change 上下文
-
-#### Scenario: Change 不存在
-- **WHEN** 详情 API 返回 not found
-- **THEN** 页面 MUST 显示明确空状态并提供返回 Change 表格的入口
-
-#### Scenario: 详情中的 Agent 行为
-- **WHEN** 用户在详情中选择继续或审阅
-- **THEN** 页面 MUST 打开短交互抽屉并生成可复制 prompt
-- **AND** MUST NOT 叠加承载第二份完整 Change 详情的二级抽屉
-
-### Requirement: 项目详情必须展示所属 Change 摘要
-Buildr 本机应用 MUST 在项目详情中展示该 Project 的 Change 数量、有限列表和进入过滤后 Change 表格的稳定入口。
-
-#### Scenario: Project 存在 Change
-- **WHEN** 项目详情读取到 active 或 archived Change
-- **THEN** 页面 MUST 展示总数和最近 Change 摘要
-- **AND** “管理变更” MUST 进入带 Project filter 的 Change 表格
-
-#### Scenario: Project 没有 Change
-- **WHEN** Change read model 返回空集合
-- **THEN** 项目详情 MUST 显示明确空状态
-- **AND** MUST 保留创建 Change 的 Agent 入口
 
 ### Requirement: 本机应用必须管理多个已登记 Workspace
 Buildr MUST 在现有 Workspace 产品能力中维护本机登记 root 列表，并 MUST 以各 root 的 `.buildr/workspace.yml` 作为 Workspace 信息的事实来源。
@@ -658,6 +628,7 @@ Buildr MUST 将任意目录选择限制在显式登记用例中，并 MUST 保�
 - **WHEN** 登记或移除请求携带的 registry revision 已过期
 - **THEN** Application MUST 返回 conflict
 - **AND** MUST NOT 覆盖另一页面或进程已经完成的修改
+
 ### Requirement: 平台安装必须提供完整且可解释的 Buildr App
 Buildr MUST 为 macOS 和 Windows 提供不依赖用户预装 Node、npm 或 PATH 的平台安装产物，并 MUST 将安装、启动和后台常驻保持为不同动作。
 
@@ -714,47 +685,69 @@ Buildr MUST 在用户级 Workspace Registry 为空时提供可理解的首次运
 - **AND** MUST NOT 创建虚构 Workspace 或自动扫描磁盘
 
 ### Requirement: Launcher 必须暴露可诊断的运行身份和失败反馈
-Buildr launcher MUST 携带版本、channel、构建来源和平台 identity，并 MUST 在启动失败或版本不兼容时提供普通用户可见的反馈。
+Buildr launcher MUST 携带版本、channel、构建来源和平台 identity，并 MUST 在启动失败、source checkout 不可用、受管 Node 缺失或版本不兼容时提供用户可见反馈。
 
 #### Scenario: Launcher 成功启动
 - **WHEN** launcher 启动或复用兼容的 Buildr 单实例
-- **THEN** launcher MUST 使用实例返回的实际 loopback URL 打开默认浏览器
+- **THEN** release launcher MUST 使用自身 bundle runtime，development launcher MUST 使用绑定 checkout 的当前 `bin/buildr.mjs` 启动或复用实例
+- **AND** launcher MUST 使用实例返回的实际 loopback URL 打开默认浏览器
 - **AND** 随机端口 MUST 保持为内部状态而不是用户配置
+
+#### Scenario: Development launcher 成功启动
+- **WHEN** 绑定 checkout、Buildr CLI 入口和受管 Node probe 均通过
+- **THEN** launcher MUST 使用绑定 checkout 的当前 `bin/buildr.mjs` 启动或复用实例
+- **AND** status MUST 报告 source root、observed checkout、Node identity 和运行实例 identity
+
+#### Scenario: Development source checkout 不可用
+- **WHEN** source root 被移动、删除、不是预期 Buildr Service checkout 或缺少 CLI 入口
+- **THEN** launcher MUST 拒绝启动并输出 source root、原因、日志位置和重新安装 development launcher 的动作
+- **AND** MUST NOT 回退到另一个 checkout、Release bundle 或 PATH 中的 Buildr
+
+#### Scenario: Development Node runtime 不可用
+- **WHEN** identity 指定的受管 Node executable 缺失、版本不匹配或不能启动
+- **THEN** launcher MUST 拒绝启动并输出 Node version、runtime path、日志位置以及 `buildr sync`/重新安装动作
+- **AND** MUST NOT 静默选择 PATH 中的另一个 Node
 
 #### Scenario: Launcher 启动失败
 - **WHEN** runtime 缺失、bundle 不完整、实例未就绪或浏览器打开失败
-- **THEN** launcher MUST 显示简短错误、日志位置和重新尝试动作
+- **THEN** launcher MUST 显示简短错误、日志位置和重试动作
 - **AND** MUST NOT 仅静默退出
 
 #### Scenario: 已运行实例版本不兼容
-- **WHEN** launcher 发现的现有实例与自身 App protocol 或 runtime identity 不兼容
+- **WHEN** 现有实例与自身 App protocol 或 runtime identity 不兼容
 - **THEN** launcher MUST 拒绝静默复用
-- **AND** MUST 安全退出旧实例后启动当前版本，或明确告知用户阻塞原因
+- **AND** MUST 安全退出旧实例后启动当前版本，或明确告知阻塞原因
 
 ### Requirement: 开发 launcher 必须支持安全的重复构建和本机更新
-Buildr MUST 为 development checkout 提供 canonical launcher 安装入口，并 MUST 使用 stage、verify、switch 流程更新独立的开发 launcher。
+Buildr MUST 为 development checkout 提供 canonical launcher 安装入口，并 MUST 使用 stage、verify、switch 更新独立的 development thin launcher；该 launcher MUST 绑定 checkout，而不是复制 Buildr application 或 Node runtime 快照。
 
 #### Scenario: 首次安装开发 launcher
-- **WHEN** 开发者从 Buildr Service checkout 执行 canonical 开发 launcher 安装入口
-- **THEN** Buildr MUST 在新 staging 目录构建带 checkout commit 和 dirty fingerprint 的 bundle
-- **AND** MUST 验证 bundle 后安装为与正式版隔离的 `Buildr Dev` 入口
+- **WHEN** 开发者从 Buildr Service checkout 执行 canonical 安装入口
+- **THEN** Buildr MUST 在 staging 构建带 source root、checkout identity 和受管 Node identity 的 thin bundle
+- **AND** thin bundle MUST NOT 包含 Node executable、Node 动态库、Buildr `src/`、`package/` 或 `node_modules`
+- **AND** MUST 验证后安装为隔离的 `Buildr Dev`
 - **AND** macOS 默认目标 MUST 为 `/Applications/Buildr Dev.app`
-- **AND** macOS launcher MUST 作为不驻留 Dock 的后台入口运行，本机服务生命周期不得表现为应用持续启动
+- **AND** macOS launcher MUST 作为不驻留 Dock 的后台入口运行
+
+#### Scenario: 源码修改后启动 development launcher
+- **WHEN** checkout 的 `src/`、Web resource 或 migration 已改变，但 source root 和 Node identity 仍有效
+- **THEN** development launcher MUST 在重启服务后读取当前 checkout 内容
+- **AND** MUST NOT 要求重新复制 Node 或 Buildr application
 
 #### Scenario: 更新正在使用的开发 launcher
-- **WHEN** 已安装的开发 launcher 或其服务实例仍在使用旧 bundle
+- **WHEN** 已安装 launcher 或服务仍使用旧 thin bundle
 - **THEN** 更新流程 MUST 先构建并验证新版本，再安全退出旧实例并等待释放
 - **AND** MUST NOT 原地覆盖运行中的 bundle
 
 #### Scenario: 开发 launcher 切换失败
 - **WHEN** 新 bundle 验证、退出、安装切换或启动核对失败
 - **THEN** 更新流程 MUST 保留或恢复上一已验证版本
-- **AND** MUST 返回失败阶段、旧版本状态、staging 位置和可执行恢复建议
+- **AND** MUST 返回失败阶段、旧版本状态、staging 位置和恢复建议
 
 #### Scenario: 开发 launcher 更新成功
-- **WHEN** 新 bundle 已原子安装且可选启动核对通过
-- **THEN** 诊断 MUST 显示新 bundle 的 checkout identity、安装目标和运行 identity
-- **AND** 旧 staging 产物 MUST 按保留策略清理而不影响正式 Buildr App
+- **WHEN** 新 thin bundle 已原子安装且启动核对通过
+- **THEN** 诊断 MUST 显示 source root、checkout identity、Node identity、安装目标和运行 identity
+- **AND** 旧 staging MUST 清理而不影响正式 App
 
 ### Requirement: Launcher 卸载必须保留用户工作资产
 Buildr MUST 按安装渠道提供 launcher 卸载能力，并 MUST 默认保留 Workspace Registry、日志和全部 Workspace 源资产。
@@ -815,3 +808,411 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **WHEN** prompt 请求包含 filesystem path、未知字段、无效 session、错误 Origin、非 JSON 或超限 body
 - **THEN** HTTP interface MUST 在 Application 处理前拒绝请求
 - **AND** MUST 保持 Workspace 源资产和用户级 Registry 零写入
+
+### Requirement: Task 详情必须只读投影 current Verification Result
+本机应用 MUST在Task详情“证据”视图提供“验证结果（Verification Result）”区块，并 MUST通过Task Verification Application inspect展示Result presence、target、declarations、实际capability facts、coverage gaps、结论、resultDigest、record observedAt，以及与Development gate/显式保存identity的匹配关系。页面 MUST不直接读取Result YAML，不得伪造当前target identity，也不得暴露Result writer；GET MUST只查询SQLite专业current rows，不执行declaration、Content Target、Git或Environment observation。
+
+#### Scenario: 查看已有 Result
+- **WHEN** 用户打开Task的“证据”视图
+- **THEN** API MUST返回Application的current read model并设置no-store
+- **AND** 验证结果区块 MUST显示Result保存事实、record observedAt与保存identity的matched/mismatched/unknown关系
+- **AND** GET MUST NOT执行declaration、Git、文件或Environment observation
+
+#### Scenario: Result 不存在
+- **WHEN** Task尚无current Verification Result
+- **THEN** 验证结果区块 MUST显示空状态与“交给Agent验证”的动作
+- **AND** Task Record、Environment、Development、Review与其他视图 MUST正常工作
+
+#### Scenario: lifecycle snapshot 不存在
+- **WHEN** Task有current Verification Result但没有保存Development verification gate
+- **THEN** 验证结果区块 MUST显示已有Result与稳定unknown/not-adopted-yet关系
+- **AND** GET MUST NOT为了补齐关系修改数据库、扫描外部声明或创建Development Receipt
+
+#### Scenario: 尝试直接写 Result API
+- **WHEN** 客户端向Task verification resource发送POST/PUT/PATCH/DELETE
+- **THEN** 本机应用 MUST不提供该路由
+- **AND** Task Record、Environment、Development、Review与已有Result bytes MUST保持不变
+
+### Requirement: Local App 必须生成受限 Task Verification Agent prompt
+本机应用 MAY 在 Task“证据”视图的验证结果区块提供 Agent Action 以生成 Task Verification prompt。prompt MUST 绑定正式 Task ID、Task Intent 和可选调用方已知 target identity，指导 Agent 读取 v3 Skill、inspect current Result、恢复 ready Environment、执行适用声明能力，并只在完整结论后通过 Application record；复制 prompt 本身 MUST NOT 等于 recorded。
+
+#### Scenario: 用户请求开始验证
+- **WHEN** 用户从 Task“证据”视图的验证结果区块触发 Agent Action
+- **THEN** prompt MUST明确execution evidence与Workspace-local current Result分离、中断不覆盖和coverage gap边界
+- **AND** Local App MUST 不执行测试、不生成 target identity、不写 Result
+
+#### Scenario: terminal Task 请求新验证
+- **WHEN** Task Record 已是 completed 或 abandoned
+- **THEN** prompt Application MUST fail closed
+- **AND** 已有 Result 仍可只读查看
+
+### Requirement: Local App Task 视图必须只消费 Workspace structured Task read model
+Buildr Local App MUST 继续通过 Task Record Application 列出、查看和维护 Workspace Task，并 MUST 将 SQLite repository 保持为 interface 后的本地 infrastructure。页面和 HTTP interface MUST NOT 读取旧 `task.yml`、打开数据库、执行 SQL、解释 migration ledger 或暴露 database path/table/row id。Local App MUST 先通过已登记 Workspace identity 将请求解析为 root，再由 Task Application 消费该 root 的 structured Task read model；对已经解析 root 的只读调用 MUST NOT 执行 Git/worktree provenance 校验或 `git rev-parse`。Local App 的 Task mutation MUST NOT 添加、移除或以其他方式维护 Change 引用。
+
+#### Scenario: 浏览 SQLite-backed Task 列表
+- **WHEN** 用户进入已登记 Workspace 的 Task 列表
+- **THEN** API MUST 通过 Task Application 返回该 Workspace root 的 SQLite authority 中真实 Task 的排序 read model
+- **AND** 页面 MUST NOT 扫描 `.buildr/tasks/`、合并旧 YAML 或按 Task 专业目录推断缺失记录
+
+#### Scenario: canonical root 读取不依赖 Git
+- **WHEN** 已登记 Workspace registry 将 `workspaceId` 解析为 canonical root，且用户读取 Task 列表或详情
+- **THEN** API MUST 通过 Application 和 Structured Store 返回 read model
+- **AND** 该只读路径 MUST NOT 调用 Git/worktree observer、`git rev-parse` 或重新判断 root provenance
+
+#### Scenario: candidate 或 validation root 读取自身 store
+- **WHEN** candidate 或 validation Workspace 已有自身 local structured store，且 Application 读取该 Workspace 的 Task
+- **THEN** API MUST 只读取该 root 的 store
+- **AND** MUST NOT 打开 retained canonical store 或修改任一 store
+
+#### Scenario: 数据库尚未初始化
+- **WHEN** 已登记 Workspace 尚无 structured store 且用户打开 Task 列表
+- **THEN** API MUST 返回成功的空 Task 集合
+- **AND** GET 请求 MUST NOT 创建数据库、目录或 migration ledger
+
+#### Scenario: 数据库不可用
+- **WHEN** Task Application 返回 schema drift、version newer、busy、corruption 或 integrity diagnostic
+- **THEN** Local App MUST 显示稳定、可操作的 Workspace Task unavailable 状态
+- **AND** MUST NOT 静默显示空列表、自动重建数据库、回退旧 YAML 或把 SQL/本机 path 暴露给浏览器
+
+#### Scenario: Local App 修改 Task
+- **WHEN** 用户通过受保护的 Task API 创建、更新、完成或放弃 Task
+- **THEN** HTTP interface MUST 只提交明确 action input 和适用的 `expectedRecordDigest` 给 Task Application
+- **AND** Local App update input MUST NOT 接受 `addChanges` 或 `removeChanges`
+- **AND** HTTP interface MUST NOT 接受 SQL、database path、table、row id、migration version 或完整 next-state document
+
+### Requirement: Local App 必须动态投影和维护 Parent Task 层级
+Local App Task 列表与详情 MUST 通过 Task Record Application read model 展示直接 Parent/Children；active Task 的创建与编辑 MUST 允许选择或清除合法 Parent，并 MUST 复用 expected `recordDigest` 冲突边界。
+
+#### Scenario: 查看协调 Task
+- **WHEN** 用户打开拥有直接 Children 的 Task 详情
+- **THEN** 页面 MUST 展示可导航的直接 Child 列表及每个 Child 的真实 status
+- **AND** MUST NOT 把 Child completed 自动显示为 Parent completed 或整体目标已满足
+
+#### Scenario: 查看 Child Task
+- **WHEN** 用户打开带 Parent 的 Child Task
+- **THEN** 页面 MUST 展示可导航的 Parent identity、title 与真实 status
+- **AND** MUST NOT 复制 Parent 的专业 Result 到 Child
+
+#### Scenario: 编辑 Parent 发生冲突
+- **WHEN** 页面读取后 Parent/Child 关系已被其他产品动作改变
+- **THEN** mutation MUST 因 expected `recordDigest` 陈旧而 fail closed
+- **AND** 页面 MUST 要求刷新而不是自动合并
+
+#### Scenario: terminal Task 层级只读
+- **WHEN** Task 已 completed 或 abandoned
+- **THEN** 页面 MUST 保留 Parent/Children 投影并禁用关系 mutation
+- **AND** MUST NOT 提供自动处置关联 Task 的按钮
+
+### Requirement: Local App 必须以 Application terminal projection 展示 Task 交付事实
+Local App Task详情 MUST保持“概览、研发、证据、复盘、环境”五个一级页签，并 MUST只通过Application read model获取current/terminal facts。“概览”MUST调用Task Overview Application的一次SQLite联表读取；其他页签MUST继续调用所属专业Application reader。HTTP/Web MUST NOT直接读取SQLite、扫描Finish JSON、计算live identity、接受target/root/path filesystem query或依赖独立lifecycle projection；Terminal Delivery Application MUST只查询Task、Development与唯一Finish current保存事实。
+
+#### Scenario: completed delivered Task
+- **WHEN** terminal projection返回delivered
+- **THEN** 研发页主结论 MUST显示“已交付”，并展示交付时Task context、planning disposition、Content Target、verification policy、Candidate/generation与Development handoff
+- **AND** MUST展示final commit/ref、完成时间与Environment cleanup为正常结果
+- **AND** GET MUST NOT扫描Finish Result、恢复Environment或观察Git
+
+#### Scenario: completed noChange Task
+- **WHEN** Task completed且result.noChange为true
+- **THEN** 页面 MUST显示“已完成，无需交付变更”
+- **AND** MUST NOT要求或伪造Finish Result
+
+#### Scenario: completed Task 缺少匹配 Finish
+- **WHEN** Task completed、非noChange且Finish terminal current没有matching association
+- **THEN** 页面 MUST显示“已完成，但交付未经证明”
+- **AND** MUST NOT使用delivered的绿色成功语义或从其他来源补造
+
+#### Scenario: terminal 证据视图
+- **WHEN** terminal projection从Finish terminal current返回Review/Verification delivery association
+- **THEN** 证据页 MUST使用“已随交付候选采用”与“已随交付目标验证通过/未通过”等交付时文案
+- **AND** MUST将active保存值匹配关系与terminal association分开表达，不得在读取时重算live applicability
+
+#### Scenario: 技术详情与单卡宽度
+- **WHEN** 页面展示SHA、digest、`workspace-sqlite:` locator或单一Verification Result
+- **THEN** 技术标识 MUST位于次要或可展开详情，Verification单卡 MUST使用合理最大宽度
+- **AND** Agent生成的原始evidence内容 MUST保持原文，不由Web翻译或改写
+
+Task Finish MAY请求Development Application针对一个允许的carrier root重观测complete Content Target，但MUST NOT创建Candidate。只有carrier Content Target与handoff Candidate绑定的target逐component相等且Task context/policy仍current时，Application MUST返回equivalent；否则MUST返回Development handoff失效。上述Finish动作完成后 MUST写入Finish terminal association；读取terminal Task时不得重新执行该重观测。
+
+#### Scenario: 只增加delivery commit
+- **WHEN** Finish机械提交当前内容但所有scope bytes与逻辑语义未变化
+- **THEN** carrier equivalence MUST通过且Candidate identity保持不变
+- **AND** commit、branch与ref MUST不进入Content Target或Candidate identity
+
+#### Scenario: carrier prepare改变内容
+- **WHEN** rebase、sync、archive、生成或冲突处理改变任一component identity
+- **THEN** equivalence MUST失败并判定current handoff失效
+- **AND** Finish MUST退出到Development重新验证和生成Candidate
+
+### Requirement: Local App 必须提供独立文章入口
+
+Local App MUST 在 Workspace 级应用外壳中提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
+
+#### Scenario: 从工作空间导航打开文章
+
+- **WHEN** 用户在已选定 Workspace 的 Local App 中点击“文章”
+- **THEN** 应用 MUST 导航到该 Workspace scoped 的文章列表页
+- **AND** 导航项 MUST 在文章列表或详情页保持 active 状态
+
+#### Scenario: 打开文章详情
+
+- **WHEN** 用户从文章列表选择一篇有效文章
+- **THEN** 应用 MUST 展示文章标题、发布状态、发布目标和渲染后的 Markdown 正文
+- **AND** 页面 MUST 提供返回文章列表的可用链接
+- **AND** 页面 MUST NOT 提供修改文章正文或发布状态的写操作
+
+### Requirement: Local App 必须从 canonical publication source 只读投影文章
+
+Local App MUST 通过 Application read model 读取已登记 Workspace 中 Product Project 的 `docs/publications/` Markdown 文件；HTTP/Web MUST NOT 直接扫描任意 root/path、读取 SQLite 中的文章副本或创建第二份文章正文。
+
+#### Scenario: 读取文章列表
+
+- **WHEN** Local App 请求当前 Workspace 的文章列表
+- **THEN** Application MUST 根据 registered Workspace 和 Product Project source 解析固定 publication root
+- **AND** MUST 返回有效文章的稳定 ID、标题、类型、状态、发布日期和发布目标
+- **AND** MUST 排除 `README.md`、隐藏文件和缺少有效文章 ID/标题的 Markdown 文件
+
+#### Scenario: publication 目录不存在或为空
+
+- **WHEN** Product Project 没有 `docs/publications/` 目录或目录中没有有效文章
+- **THEN** API MUST 返回成功的空列表或明确的 `empty` read-model 状态
+- **AND** Local App MUST 展示“暂无文章”空状态
+- **AND** MUST NOT 阻塞工作空间、项目、服务、任务或变更页面
+
+#### Scenario: 文章详情不存在
+
+- **WHEN** 用户请求不存在或已移除的 publication ID
+- **THEN** API MUST 返回稳定的 not-found 诊断
+- **AND** Local App MUST 展示文章不可用状态及返回文章列表的链接
+
+### Requirement: 文章读取必须保护 Workspace 与 publication 资源边界
+
+文章列表、详情和图片资源 API MUST 只接受已登记 Workspace 身份、已发现的 publication ID 和固定目录内的合法相对资源名；MUST 拒绝任意 `target`、`root`、`path`、路径穿越、符号链接和固定 publication root 之外的文件。
+
+#### Scenario: 拒绝任意文件系统路径
+
+- **WHEN** 文章 API query 或 request body 携带 `target`、`root` 或 `path`
+- **THEN** API MUST 返回明确的参数拒绝诊断
+- **AND** MUST NOT 读取请求指定的文件系统位置
+
+#### Scenario: 文章图片可安全读取
+
+- **WHEN** 有效文章引用固定 publication root 下的 regular image file
+- **THEN** API MUST 以对应图片 content type 返回该文件
+- **AND** 响应 MUST 保持 no-store 并限制在 canonical publication root 内
+
+#### Scenario: 文章图片越界或为符号链接
+
+- **WHEN** 图片资源名包含路径穿越、指向 publication root 外部或解析为符号链接
+- **THEN** API MUST 拒绝请求并返回明确诊断
+- **AND** MUST NOT 返回文件内容
+
+### Requirement: Local App Markdown 视图必须支持受控本地图片
+
+Local App Markdown renderer MUST 支持标准 Markdown 图片语法，并 MUST 只将已由文章资源 API 解析的相对图片路径转换为本机同源资源 URL；不受控的图片路径 MUST NOT 绕过既有内容安全策略。
+
+#### Scenario: 渲染文章本地图片
+
+- **WHEN** 文章正文包含 `![alt](assets/<filename>)` 且资源 API 能解析该文件
+- **THEN** 文章详情 MUST 渲染同源图片并保留 alt 文本
+- **AND** 图片 MUST 使用当前 Local App 的资源 URL
+
+#### Scenario: 不受控图片路径
+
+- **WHEN** Markdown 图片路径为绝对路径、包含 `..`、反斜杠或未通过文章资源映射
+- **THEN** renderer MUST NOT 加载该图片
+- **AND** 页面 MUST 保留安全的文本或空内容表现
+
+### Requirement: Task 概览必须以关联 Change Brief 为主要说明
+Local App MUST 仅在 Task 详情概览中，从该 Task Record 已保存的 Change 引用读取关联 Change，并 MUST 将每个可用的 Change Brief 作为主要人类可读说明。Task title、intent、范围和其他 Task 专业事实 MUST 保持可读，但 MUST NOT 取代 Brief 成为关联 Change 的主要说明。
+
+#### Scenario: 查看含 Brief 的关联 Change
+- **WHEN** 用户打开一个含有可解析 Change 引用且该 Change 提供 Brief 的 Task 概览
+- **THEN** 页面 MUST 在概览中展示该 Brief 的原始人类可读内容和 Change identity
+- **AND** 页面 MUST 提供从当前 Task 进入该 Change 技术 artifacts 的 Task-scoped 链接
+
+#### Scenario: 一个 Task 关联多个 Change
+- **WHEN** Task Record 保存多个 Change 引用
+- **THEN** 页面 MUST 按每个已保存引用分别展示可用 Brief 或其不可用状态
+- **AND** 页面 MUST NOT 推断、标记或合并任一“主 Change”
+
+#### Scenario: Brief 或关联 Change 不可用
+- **WHEN** 已保存的 Change 引用无法解析，或可解析 Change 没有 Brief
+- **THEN** 页面 MUST 展示该引用的真实 unavailable 状态
+- **AND** Task 的 title、intent 和其他可用事实 MUST 继续可读
+- **AND** 页面 MUST NOT 生成、保存、推断或从全局目录查找 Brief
+
+#### Scenario: Task 没有关联 Change
+- **WHEN** Task Record 没有 Change 引用
+- **THEN** 页面 MUST 显示明确的无关联 Change 状态
+- **AND** 页面 MUST NOT 扫描 Workspace、Project 或 Task Environment 以发现 Change
+
+### Requirement: Local App 必须将 Change 限定为 Task-scoped 只读内容
+Local App MUST 只通过当前 Task 的已保存 Change 引用读取 Change 内容。HTTP/Web MUST NOT 提供 Local App 的 Change 创建、修改、关联、移除、继续、审查、同步或归档操作；这些 Change 动作 MUST 保持为 Agent 在 Task 过程中使用相应 authority 推进的工作。
+
+#### Scenario: 查看关联 Change 的完整 artifacts
+- **WHEN** 用户从 Task 概览打开关联 Change
+- **THEN** 页面 MUST 只通过 `/tasks/<task-id>/changes/<project>/<change>` 的 Task-scoped read model 展示 Brief、proposal、design、specs 和 tasks
+- **AND** 页面 MUST 验证该 Change 引用属于当前 Task
+
+#### Scenario: Local App 尝试通过 Change 修改 Task
+- **WHEN** 浏览器请求包含 `addChanges`、`removeChanges` 或 Change-specific prompt 的 Local App 路由
+- **THEN** HTTP interface MUST 在 Application mutation 前拒绝该请求
+- **AND** Task Record 与 OpenSpec artifacts MUST 保持不变
+
+#### Scenario: 未关联真实 Task 的 Change
+- **WHEN** Workspace 中存在没有真实 Task Record 引用的 Change
+- **THEN** Local App MUST NOT 在本次能力中列出、扫描、关联或处置该 Change
+- **AND** Local App MUST NOT 将其显示为待处理 Task 或空态计数
+
+### Requirement: Local App 必须展示保存的终态交付事实
+Local App 的任务终态投影 MUST 展示最近一次 Finish 已保存的 terminal association snapshot，并明确其为交付时事实。页面读取 MUST NOT 因当前 Review、Verification 或 Development 状态变化而重新推导历史交付关联。
+
+#### Scenario: 已完成 Task 打开终态信息
+- **WHEN** 用户读取已有 terminal association snapshot 的已完成 Task
+- **THEN** HTTP interface MUST 通过 Application 返回保存的 handoff/gate 关联
+- **AND** Web 页面 MUST 将其呈现为最近一次正式交付采用的事实
+
+### Requirement: Local App HTTP interface 必须托管构建产物并支持 SPA 深链
+Buildr Local App HTTP interface MUST 从 Local App Web 构建产物目录提供 `index.html` 与静态资产，并 MUST 在注入本机 session token 与可选 preview identity 后返回 shell。对已登记 Workspace 的应用深链（非 `/api/`），当请求不是已声明的静态资产时，HTTP interface MUST 返回同一注入后的 `index.html`，以便 React Router 恢复路由。静态托管 MUST 限制为构建产物内可证明的资产，MUST NOT 递归托管任意未纳入产物清单的远程或用户路径。
+
+#### Scenario: 深链恢复
+- **WHEN** 用户直接打开 `/workspaces/<workspaceId>/tasks/<taskId>` 之类的 Local App 深链
+- **THEN** HTTP interface MUST 返回注入 session 的构建产物 `index.html`
+- **AND** 客户端 MUST 能够恢复对应 Task 详情路由
+
+#### Scenario: API 与静态资源分离
+- **WHEN** 请求路径以 `/api/` 开头
+- **THEN** HTTP interface MUST 走既有 API 处理
+- **AND** MUST NOT 将 API 请求回退为 `index.html`
+
+#### Scenario: preview meta 保持
+- **WHEN** Local App 以 preview 实例启动
+- **THEN** 返回的 shell MUST 继续注入 preview identity 信息
+- **AND** 页面 MUST 能显示 preview 身份条且不得改写 `Buildr Dev.app` identity
+
+### Requirement: Local App 必须通过 Task Finish Application 投影 current 与 terminal 状态
+Terminal Delivery Application MUST从Workspace SQLite中的唯一`task_finish_current` authority形成read model；Local App HTTP/Web MUST只消费该Application结果，不得直接查询SQLite、读取phase detail、扫描或配对legacy Finish files、读取transient diagnostics、恢复run、计算live identity或读取lifecycle projection。terminal delivered判断 MUST只使用同Task且与保存Development handoff匹配的compact terminal association；非terminal current row只用于展示进行中、blocked、failed或cleanup pending状态。
+
+#### Scenario: Finish 正在执行
+- **WHEN** Task存在非terminal Finish current row
+- **THEN** Local App MUST展示current phase、有界状态、更新时间与唯一next action
+- **AND** MUST NOT把Task显示为delivered、读取完整stdout/stderr或触发resume
+
+#### Scenario: Finish cleanup pending
+- **WHEN** delivery已证明但Environment或Finish-owned cleanup尚未完成
+- **THEN** Local App MUST显示“交付清理中”或匹配的blocked状态
+- **AND** MUST NOT提前显示Task completed或terminal delivered成功语义
+
+#### Scenario: Finish terminal completion
+- **WHEN** Application返回与Task/Development保存identity匹配且`status: complete`的compact terminal current association
+- **THEN** Local App MUST以其commit/ref、remote readback、Doctor、cleanup与完成时间投影“已交付”
+- **AND** GET MUST不访问Git、remote、Environment provider、旧四表、legacy files、transient root或已删除lifecycle table
+
+#### Scenario: legacy store 残留
+- **WHEN** `.buildr/task-finish`仍存在但SQLite中没有matching terminal current
+- **THEN** Local App MUST不扫描、不读取、不把legacy文件当作交付authority
+- **AND** MUST只展示SQLite-backed Application read model；旧目录清理由升级步骤负责
+
+### Requirement: Local App 静态资源托管必须继续归属 buildr 且不因前端 Service 拆分改变安全模型
+在 `buildr-web` 拥有前端源码后，Buildr MUST 继续由 `product/buildr` 的 Local App HTTP interface 在 loopback 上同源托管已纳入的构建产物。写保护 MUST 继续要求当前应用 Origin、有效 session token 与 JSON content type。拆分 MUST NOT 引入分域 CORS 写路径、远程 CDN 静态依赖，或要求运行时读取 `buildr-web` 源码树。
+
+#### Scenario: 拆分后仍同源托管 dist
+- **WHEN** 用户通过 `buildr app`、已安装 npm package 或 launcher 打开 Local App
+- **THEN** 页面 MUST 使用 `buildr` 内已包含的 Local App 构建产物静态资源
+- **AND** MUST NOT 依赖 CDN、远程字体、远程脚本或远程图片
+- **AND** MUST NOT 要求运行时从 `buildr-web` 或其他远程位置拉取前端源码
+
+#### Scenario: 拆分后写保护不变
+- **WHEN** 写请求来自当前应用 Origin，携带有效 session token、JSON content type、允许大小的请求体和当前 revision
+- **THEN** Buildr MUST 将请求交给对应 Application 用例
+- **AND** Origin 不匹配或缺少有效 session 时 MUST 在 Application mutation 前拒绝
+
+### Requirement: 首次开始工作必须触发scope内Declaration Intake
+Local App生成Start Work Agent prompt时 MUST要求Agent在任务分流前只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
+
+#### Scenario: Project-only开始工作
+- **WHEN**用户选择Project但不选择Service
+- **THEN**prompt MUST触发Project-only Declaration Intake
+- **AND** MUST明确Service不是必需范围
+
+#### Scenario: Service-scoped开始工作
+- **WHEN**用户选择一个Service开始工作
+- **THEN**prompt MUST触发Project与该Service的Declaration Intake
+- **AND** MUST不检查或安装未选择Service
+
+### Requirement: Parent coordination 接口必须共享同一 Application
+CLI与Local App MUST调用同一Parent Coordination Application执行inspect、record、reconcile与final acceptance actions；interface MUST NOT直接查询SQLite、扫描文件系统或在GET中回填状态。
+
+#### Scenario: CLI 与 HTTP 读取同一 Parent
+- **WHEN** 两个client读取同一Parent identity
+- **THEN** 两者 MUST返回相同Parent Plan、Child Contribution与prerequisite facts
+- **AND** GET MUST保持零mutation effects
+
+### Requirement: mutation 必须使用 current identity 并受界面安全保护
+Parent Plan reconciliation与final acceptance mutation MUST使用expected current identity；Local App HTTP MUST另外执行same-origin、session与closed JSON校验。
+
+#### Scenario: 陈旧页面提交reconciliation
+- **WHEN** expected Parent Plan identity与current不一致
+- **THEN** Application MUST返回conflict且零写入
+- **AND** client MUST刷新current read model后再决定
+
+### Requirement: Local App HTTP 必须开放 Task-scoped execution record 只读接口
+Local App HTTP interface MUST 在解析已登记 Workspace 后提供 Task-scoped execution record list、detail 与 body-file GET。List MUST 只接受 closed `view=all|verification|finish`，detail/body MUST 同时验证 record 属于 route Task；所有响应 MUST 使用 `no-store`。HTTP interface MUST 只调用 Task Execution Record Application，MUST NOT 直接查询 SQLite、读取 locator、扫描文件系统或提供 mutation。
+
+#### Scenario: 按 view 查询记录
+- **WHEN** browser 请求 Task execution record list 且 view 合法
+- **THEN** HTTP MUST 返回 Application 的 portable list read model
+- **AND** 未提供 view 时 MUST 使用 `all`
+
+#### Scenario: 查询 detail 与正文
+- **WHEN** browser 请求 Task-scoped record detail 或受支持 filename
+- **THEN** HTTP MUST 通过 Application 验证 Task/record/file identity 后返回 portable JSON
+- **AND** MUST NOT 接受 body、locator 或 path query
+
+#### Scenario: 非法查询参数
+- **WHEN** request 包含未知 view、未知 filename 或额外查询字段
+- **THEN** HTTP MUST 在读取 record body 前返回 closed-input diagnostic
+
+### Requirement: Execution Record 读取必须进入 bounded Local App read executor
+Local App bounded read executor MUST 登记 execution-record list、detail 与 body-file 三项纯读 operation，并 MUST 以 closed Worker message 传递已解析 Workspace root、Task ID 和 operation 所需最小参数。Executor MUST 保持既有固定 Worker/queue 容量、取消和 failure isolation 语义，且 MUST NOT 承载 execution record mutation、cleanup、GC 或 Doctor。
+
+#### Scenario: 正常读取
+- **WHEN** HTTP 提交合法 execution record read operation
+- **THEN** bounded executor MUST 在 Worker runtime 调用同一 Application 并返回其 read model
+
+#### Scenario: 队列饱和或取消
+- **WHEN** executor 队列已满或 request 被取消
+- **THEN** request MUST 使用既有 bounded-read diagnostic 结束
+- **AND** MUST NOT 在 HTTP 主线程回退执行正文读取
+
+### Requirement: 正式 Local HTTP Server 必须整点调度 ExecRecord GC
+Buildr 正式 Local HTTP Server MUST 在 ready 后注册 Workspace scheduled maintenance：从下一个本地整点开始、之后每个本地整点取得当前 Workspace Registry 快照，并对每个已登记且可用的 canonical Workspace 调用默认 bounded ExecRecord GC。Scheduler MUST单进程防重入、隔离各 Workspace 失败、在 server close 时释放 timer，并 MUST直接调用 Application 而不是启动 CLI 子进程或保存第二份 run history。
+
+#### Scenario: 正式 server 到达整点
+- **WHEN** 非 preview 的 Local HTTP Server 已 ready 且到达下一个本地整点
+- **THEN** scheduler MUST 对当前已登记 Workspace 各执行一次默认 bounded ExecRecord GC
+- **AND** 单个 Workspace 失败 MUST NOT阻止其余 Workspace 或下一整点运行
+
+#### Scenario: 上一批仍在运行
+- **WHEN** 新整点到达时上一轮 scheduled maintenance 尚未完成
+- **THEN** scheduler MUST跳过并发重入
+- **AND** MUST NOT创建第二个 timer worker、GC lease 或持久队列
+
+#### Scenario: server 关闭
+- **WHEN** Local HTTP Server 开始关闭或触发 close
+- **THEN** scheduler MUST取消后续 timer
+- **AND** MUST NOT在 server 终止后启动新的 GC batch
+
+### Requirement: Task Preview Server 必须禁用 scheduled maintenance
+Buildr Task Preview Server MUST 在创建任何 scheduled maintenance 之前根据显式 preview identity 禁用调度。Preview MUST NOT注册 ExecRecord GC timer、执行 startup GC 或在后台读取/修改 Workspace execution records；该边界 MUST适用于直接 server factory 测试与由 `BUILDR_LOCAL_APP_PREVIEW` 启动的真实 preview。
+
+#### Scenario: Task Preview 启动并持续运行
+- **WHEN** Local HTTP Server 以有效 preview identity 启动并跨过一个或多个整点
+- **THEN** server MUST从未创建或调用 scheduled maintenance scheduler
+- **AND** execution record SQLite rows 与正文 MUST不因 preview 进程而变化
+
+#### Scenario: 正式 server 与 preview 并存
+- **WHEN** 默认 Local HTTP Server 和 Task Preview Server 同时运行
+- **THEN** 只有默认正式实例 MUST拥有 scheduled maintenance
+- **AND** preview MUST不共享、接管或补跑正式实例的 timer

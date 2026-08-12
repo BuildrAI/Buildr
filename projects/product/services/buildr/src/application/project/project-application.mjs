@@ -1,6 +1,8 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { createProject } from '../../domain/project/project.mjs';
+import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
 
 export function projectError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
@@ -8,6 +10,33 @@ export function projectError(code, message, status = 400, details = undefined) {
   error.status = status;
   if (details !== undefined) error.details = details;
   return error;
+}
+
+const PROJECT_DOCUMENTS = new Set(['README.md', 'AGENTS.md']);
+
+function inside(parent, child) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+}
+
+function normalizeProjectDocumentPath(documentPath) {
+  const raw = typeof documentPath === 'string' ? documentPath.trim() : '';
+  if (!raw) throw projectError('project_document_not_allowed', '不支持读取项目文档：<empty>。', 400);
+  if (raw.includes('\0') || raw.includes('\\') || path.isAbsolute(raw) || /^[A-Za-z]:/.test(raw)) {
+    throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
+  }
+  const posix = raw.replace(/\\/g, '/');
+  const normalized = path.posix.normalize(posix);
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) {
+    throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
+  }
+  if (normalized.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
+  }
+  if (!normalized.endsWith('.md')) {
+    throw projectError('project_document_not_allowed', `不支持读取项目文档：${normalized}。`, 400);
+  }
+  return normalized;
 }
 
 function assertObject(input, code, message) {
@@ -83,6 +112,33 @@ export function registerProjectApplication(runtime) {
       observed,
       comparison,
       nextActions: publicRegistry(record).nextActions,
+    };
+  }
+
+  function projectDocument(targetRoot, code, documentPath) {
+    const relativePath = normalizeProjectDocumentPath(documentPath);
+    const record = readProjectRegistryRecord(targetRoot);
+    const project = record.projects[code];
+    if (!project) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
+    const projectRoot = path.resolve(record.root, project.source.path);
+    const filePath = path.resolve(projectRoot, relativePath);
+    if (!inside(projectRoot, filePath)) {
+      throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
+    }
+    let exists = false;
+    try {
+      exists = fs.statSync(filePath).isFile();
+    } catch {
+      exists = false;
+    }
+    return {
+      schemaVersion: 'buildr.project-document/v1',
+      projectCode: code,
+      path: relativePath,
+      name: path.posix.basename(relativePath),
+      entry: PROJECT_DOCUMENTS.has(relativePath),
+      exists,
+      content: exists ? fs.readFileSync(filePath, 'utf8') : null,
     };
   }
 
@@ -181,7 +237,8 @@ export function registerProjectApplication(runtime) {
           ? '3. 在任何写入前核对 Git 地址、远端名称、集成分支与既有目录/登记身份；不得盲目 checkout、stash 或 relink。'
           : '3. 确认该项目应跟随根目录 Git，不要写入项目级集成分支。',
         '4. 使用 canonical buildr project create 完成创建或幂等修复。',
-        '5. 完成后运行适用的 doctor，说明项目范围、实际路径、Git 状态和仍需处理的问题。',
+        `5. 创建成功后，${declarationIntakeNextAction({ trigger: 'project-registered', project: code || '<confirmed-project-code>' })}`,
+        '6. 完成后运行适用的 doctor，说明项目范围、实际路径、Git 状态和仍需处理的问题。',
       ].join('\n'),
       copiedMeansCreated: false,
     };
@@ -191,6 +248,7 @@ export function registerProjectApplication(runtime) {
     readProjectRegistryRecord,
     listProjects,
     projectDetail,
+    projectDocument,
     projectMigrationPlan,
     migrateProjectRegistry,
     updateProjectMetadata,

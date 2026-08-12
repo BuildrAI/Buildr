@@ -63,6 +63,14 @@ export function registerWorkspaceInfrastructure(runtime) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
+  function copyDirectory(source, target) {
+    fs.cpSync(source, target, { recursive: true });
+  }
+
+  function removePath(target) {
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+
   function atomicWriteFile(file, content, encoding = 'utf8') {
     ensureDirectory(path.dirname(file));
     const temporary = path.join(path.dirname(file), `.${path.basename(file)}.buildr-tmp-${process.pid}-${crypto.randomUUID()}`);
@@ -465,6 +473,6 @@ export function registerWorkspaceInfrastructure(runtime) {
     result.findings.push({ status, code, message, ...extra });
   }
 
-  Object.assign(runtime, { optionValue, optionValueRaw, withResolvedTarget, withOption, skillScopeForRuleScope, ensureDirectory, atomicWriteFile, atomicWriteJson, parseYamlDocument, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, restoreMutationSnapshot, withWorkspaceMutation, productRoot, packageRoot, packageWorkspaceTargetRoot, packageBootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, writeMappedFileIfMissing, appendGitignoreEntries, hasFlag, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
+  Object.assign(runtime, { optionValue, optionValueRaw, withResolvedTarget, withOption, skillScopeForRuleScope, ensureDirectory, copyDirectory, removePath, atomicWriteFile, atomicWriteJson, parseYamlDocument, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, restoreMutationSnapshot, withWorkspaceMutation, productRoot, packageRoot, packageWorkspaceTargetRoot, packageBootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, writeMappedFileIfMissing, appendGitignoreEntries, hasFlag, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
   return runtime;
 }

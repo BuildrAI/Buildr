@@ -1,67 +1,56 @@
 ---
 name: openspec-contract-guard
-description: 创建、修改、同步或归档 OpenSpec change，且需要建立契约基线、检查 active change 冲突、陈旧 delta 或同步结果时使用。此 Skill 是 Buildr 的 OpenSpec sidebar，不修改外部 openspec-* Skills。
+description: 创建、收敛或归档 OpenSpec change，且需要检查 active change 冲突、隔离验证、canonical 并发漂移或恢复事实时使用。此 Skill 是 Buildr 的 OpenSpec sidebar，不修改外部 openspec-* Skills。
 metadata:
   author: buildr
-  version: "1.0"
-  supportedOpenSpec: "1.4.1"
+  version: "1.1"
+  supportedOpenSpec: "1.6.0"
 ---
 
 # OpenSpec Contract Guard
 
-本 Skill 是 Buildr 自有的 OpenSpec 契约门禁。它通过 `buildr openspec` 检查 change 与 canonical specs 的关系，不修改外部 `openspec-*` Skills，也不修改或替换外部 OpenSpec CLI，更不安装外部 CLI。
+父子任务场景额外执行单owner检查：同一个具体规范变化在同一时间只能由一个active Change持有。Parent Plan不是delta Change；Parent自己的Change只能覆盖亲自承担的窄集成实现或验收能力，不能复制Child Change。启动Child或Parent reconcile后若发现active delta重叠，先缩窄/放弃对应Change并重新Planning Review，不得依靠归档后的canonical convergence反复rebase重复authority。
 
-## 适用边界
+本 Skill 只保留 OpenSpec 1.6 未提供的 Buildr 契约保证：并行 active change 冲突、确定性 expected tree、隔离严格验证、条件式 canonical 写入、写后确认和基于文件事实的断点恢复。
 
-- Change 的 proposal、design、specs、tasks 已经 complete，准备进入 apply 时，建立或更新 baseline。
-- 即将同步 delta specs、归档 change 或执行 `task-finish` 时，执行 pre-sync 和 post-sync 门禁。
-- 用户要求排查并行 change、陈旧 delta、spec 回退或同步后契约丢失时，读取 JSON diagnostics 并报告可执行下一步。
+OpenSpec 1.6 负责 delta 格式与 Requirement 结构、单个 change 的规范校验、canonical spec 重建和 archive 的场景保全检查。先运行上游 `openspec validate <change> --strict`；本 Skill 不重复实现这些解析或 archive 安全规则。
 
-先从 workspace root、Project registry 和 OpenSpec status 确认 `<workspace>`、`<project>` 与 `<change>`；不得根据当前目录猜测 Project。
+本 Skill 不修改外部 `openspec-*` Skills、外部 OpenSpec CLI 或本机 CLI 安装。
 
-## 1. 建立基线
+## 1. Apply 前门禁
 
-在 change artifacts 达到 apply-ready、且 delta specs 已完成后运行：
+change artifacts complete 且上游严格验证通过后运行：
 
 ```bash
-buildr openspec baseline create <change> --project <project> --target <workspace> --json
-buildr openspec check <change> --stage proposal --project <project> --target <workspace> --json
+openspec validate <change> --strict
 ```
 
-基线位于 change 的 `.buildr/contract-baseline.json`，记录 touched Requirement 的 canonical facts。普通 check 不会自动创建或刷新基线。
+正式 Task 同时要求 current Planning Review。先使用Task Environment声明的Node与Buildr Service execution root调用`task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>`；只把`resolved`结果的`target.identity`和`planningNodes`交给Task Development与Planning Review。`blocked`时停止apply，禁止用raw digest、文件路径、mtime、checklist progress、Git ref或旧Review target回退。Buildr 不提供 baseline/create 或阶段型 check，也不创建、刷新、读取或依赖这些 sidecar。
 
-历史 active change 缺少基线时，先向用户报告无法证明原始事实；只有用户确认“以当前 canonical specs 作为采用基线”后，才能运行：
+## 2. 单一收敛事务
 
 ```bash
-buildr openspec baseline create <change> --project <project> --target <workspace> --adopt-current --json
+openspec validate <change> --strict
+buildr openspec converge <change> --project <project> --target <workspace> --json
 ```
 
-delta 在基线后新增或改变 touched Requirement 时，先审阅新范围，再显式运行 `--update`。不得把 stale、incomplete 或 adopted warning 描述为已通过门禁。
+产品计算单一 identity/plan，在临时 Project 投射 expected files并运行 `validate --all --strict`；随后重验 delta、executable 与全部 canonical before digests，条件一致才替换文件。首次canonical mutation前写入唯一事务期`.buildr/convergence-receipt.json`；写后只确认expected digests与真实strict validation，再执行`archive --skip-specs`，正常archive成功后释放本次Receipt再返回`passed`。
 
-## 2. 同步前后门禁
+## 3. OpenSpec Convergence Inspect
 
-在任何 canonical spec sync 前：
+`buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`只在Converge中断、返回`recovery-unprovable`或事务终态释放失败，且当前Task Environment恢复现场仍存在时使用。它只读比较当前事务Receipt的before/expected与canonical actual；active Change没有Receipt或Change已经archived时返回`not-applicable`。
 
-```bash
-buildr openspec check <change> --stage pre-sync --project <project> --target <workspace> --json
-```
+正常Converge返回`passed + archived`后，正式Task再次调用Task Planning Identity resolver。target与apply前相同则复用current Planning Review并继续Development；不同或`blocked`则停止并按当前计划重新审查。该检查不运行Convergence Inspect；Formal Task Finish与Environment cleanup不调用Inspect。Worktree清理后不得恢复环境、追索Receipt或把Receipt缺失报告为恢复失败。正常长期事实使用Archived Change、Canonical Specs、Git与Task Development/Finish事实。
 
-只有 `ok: true` 才能调用外部 OpenSpec sync。pre-sync 会检查 proposal/delta 对齐、baseline 完整性、active change 同 Requirement 冲突、当前 canonical Requirement 是否仍匹配基线，并写入本次同步 receipt。
+## 4. 失败处理
 
-完成外部 sync 后、archive 前：
+- `blocked`：列出语义冲突、冲突 change/Requirement 或 strict validation 诊断，修订 artifacts 后重试。
+- `recovery-unprovable`：canonical 出现 before/expected 之外的值、混合状态或旧 identity 链不完整；停止并人工核对，禁止自动覆盖。
+- delta identity 变化：丢弃旧 plan，以当前 canonical 重新规划，不恢复旧 before。
+- executable identity 变化：旧 validation 不复用，以当前 executable 重新投射验证。
+- archive 失败：canonical 保持 `applied-and-matched`，重试只做确认和 archive。
+- archive成功但Receipt释放失败：保持canonical和archive终态，重试Converge只完成事务Receipt release。
+- upstream strict validation 失败：修复上游诊断后再运行 Buildr 门禁。
+- CLI/Component version 不一致：使本机 OpenSpec CLI 与 Component 声明一致；Buildr 不代为安装。
 
-```bash
-buildr openspec check <change> --stage post-sync --project <project> --target <workspace> --json
-```
-
-post-sync 会验证 ADDED、MODIFIED、REMOVED、RENAMED 的结果，并确认 receipt 中未触达的 Requirement 没有被删改。失败时停止 archive、commit、push 和 cleanup；不要手工删除 sidecar 或重新运行 pre-sync 来掩盖已经发生的同步结果。
-
-## 3. 失败处理
-
-- `active_conflict`：列出冲突 change 和 Requirement；合并语义、先完成其中一个 change，或重新建立后续 change 基线。
-- `baseline_stale`：当前 canonical facts 已变化；不要继续 sync，先审阅前序 change 并更新/重建当前 change。
-- `baseline_missing` 或 `baseline_incomplete`：补齐显式基线；历史 change 必须得到采用确认。
-- `post_sync_*`：停止归档与 Git 动作，保留 worktree，报告实际/预期摘要；需要语义选择时请用户决定。
-- upstream 或 CLI version 不一致：按 Component 的 Command declaration 升级或恢复用户本机 OpenSpec CLI；Buildr 不代为安装。
-
-用户可见状态必须包含 change、stage、baselineState、conflicts/findings 和 `nextActions`。外部 `openspec-*` Skills 继续承担 explore、propose、apply、sync 与 archive 的原有职责。
+用户可见Converge状态必须包含change、`passed|blocked|recovery-unprovable`、disposition、Receipt是否已释放、耗时、命令次数和`nextActions`；Inspect另外使用`not-applicable`表达未开始或已终结。Agent不拼装内部guard命令，不解释多个Receipt，也不把事务Receipt升级为长期authority。外部`openspec-*` Skills继续承担explore、propose、update和apply；确定性sync/archive由Buildr事务持有。

@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -75,7 +76,7 @@ export function runUnitCoverage(args = process.argv.slice(2)) {
       '--test-reporter=lcov',
       `--test-reporter-destination=${lcovPath}`,
       ...testFiles,
-    ], { cwd: productRoot, encoding: 'utf8', shell: process.platform === 'win32' });
+    ], { cwd: productRoot, encoding: 'utf8' });
     process.stdout.write(result.stdout || '');
     process.stderr.write(result.stderr || '');
     if (result.status !== 0) return result.status ?? 1;
@@ -95,7 +96,7 @@ export function runUnitCoverage(args = process.argv.slice(2)) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     process.exitCode = runUnitCoverage();
   } catch (error) {

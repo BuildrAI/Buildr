@@ -1,0 +1,34 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-closeout-phase-2
+operation: reconcile
+treeIdentity: implementation-working-tree@627137777eb736f830b9df2292dc0a487fd35992
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-task-finish-closeout-phase-2/brief.md
+    reason: 记录真实收尾耗时、已确认缺口、目标流程与验收边界
+    status: updated
+    sourceIdentities:
+      - .buildr/task-finish/completed/fix-project-create-service-registry.json
+      - openspec/changes/optimize-task-finish-closeout-phase-2/proposal.md
+      - openspec/changes/optimize-task-finish-closeout-phase-2/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Task Finish provider execution、verification lifecycle 与 retained runtime identity 的技术边界发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-task-finish-closeout-phase-2/specs/task-finish-execution/spec.md
+      - openspec/changes/optimize-task-finish-closeout-phase-2/specs/task-verification/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Task Finish、verification cleanup 与默认 CLI 安装行为发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-task-finish-closeout-phase-2/specs/task-finish-execution/spec.md
+      - openspec/changes/optimize-task-finish-closeout-phase-2/specs/buildr-cli-self-update/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 本 Change 复用 Task Finish、provider、evidence lifecycle 与 runtime identity 既有术语，不新增或重定义长期术语
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

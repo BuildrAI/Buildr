@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { readSharedCandidatePackage } from './candidate-package.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -49,9 +50,9 @@ export function inspectPackageMetadata(metadata) {
   const findings = [];
   if (metadata.name !== '@buildr-ai/buildr') findings.push(finding('package.identity', 'projects/product/services/buildr/package.json', 'expected @buildr-ai/buildr'));
   if (metadata.bin?.buildr !== 'bin/buildr.mjs') findings.push(finding('package.bin', 'projects/product/services/buildr/package.json', 'expected normalized buildr executable'));
-  if (metadata.repository?.url !== 'git+https://github.com/elevenching/Buildr.git' || metadata.repository?.directory !== 'projects/product/services/buildr') findings.push(finding('package.repository', 'projects/product/services/buildr/package.json', 'canonical repository metadata is missing'));
-  if (metadata.homepage !== 'https://github.com/elevenching/Buildr#readme') findings.push(finding('package.homepage', 'projects/product/services/buildr/package.json', 'canonical homepage is missing'));
-  if (metadata.bugs?.url !== 'https://github.com/elevenching/Buildr/issues') findings.push(finding('package.bugs', 'projects/product/services/buildr/package.json', 'canonical issue URL is missing'));
+  if (metadata.repository?.url !== 'git+https://github.com/BuildrAI/Buildr.git' || metadata.repository?.directory !== 'projects/product/services/buildr') findings.push(finding('package.repository', 'projects/product/services/buildr/package.json', 'canonical repository metadata is missing'));
+  if (metadata.homepage !== 'https://github.com/BuildrAI/Buildr#readme') findings.push(finding('package.homepage', 'projects/product/services/buildr/package.json', 'canonical homepage is missing'));
+  if (metadata.bugs?.url !== 'https://github.com/BuildrAI/Buildr/issues') findings.push(finding('package.bugs', 'projects/product/services/buildr/package.json', 'canonical issue URL is missing'));
   if (metadata.publishConfig?.access !== 'public') findings.push(finding('package.access', 'projects/product/services/buildr/package.json', 'publishConfig.access must be public'));
   if (metadata.publishConfig?.registry !== 'https://registry.npmjs.org/') findings.push(finding('package.registry', 'projects/product/services/buildr/package.json', 'publishConfig.registry must be the official npm registry'));
   return findings;
@@ -73,6 +74,9 @@ export function inspectTarballFiles(files) {
   for (const entry of paths) {
     if (tarballForbiddenPrefixes.some((prefix) => entry === prefix.slice(0, -1) || entry.startsWith(prefix))) {
       findings.push(finding('tarball.forbidden', entry, 'non-publish asset is present in npm tarball'));
+    }
+    if (entry.includes('self-bootstrap-closeout') || entry.endsWith('/buildr-self-bootstrap-closeout-driver.mjs')) {
+      findings.push(finding('tarball.self-bootstrap-runner', entry, 'Buildr self-bootstrap runner must remain owned by the self-bootstrap Workspace Skill'));
     }
   }
   return findings;
@@ -117,7 +121,7 @@ function packAndInspect() {
 function inspectReadmes() {
   const findings = [];
   const readmes = ['README.md', 'README.en.md'].map((file) => [file, fs.readFileSync(path.join(workspaceRoot, file), 'utf8')]);
-  for (const token of ['https://github.com/elevenching/Buildr', '@buildr-ai/buildr', 'buildr runtime list --json']) {
+  for (const token of ['https://github.com/BuildrAI/Buildr', '@buildr-ai/buildr', 'buildr runtime list --json']) {
     for (const [file, content] of readmes) {
       if (!content.includes(token)) findings.push(finding('readme.parity', file, `missing canonical token: ${token}`));
     }
@@ -160,4 +164,4 @@ function main() {
   console.log('Open-source candidate verification passed: tracked tree, public metadata, bilingual README, file sizes, and npm tarball inventory.');
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) main();

@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fetchRemoteText } from '../../network/fetch-remote-text.mjs';
-import { resolveSkillContributions } from './contributions.mjs';
-import { isSourceLabel, parseSkillsManifestDocument } from './manifests.mjs';
+import { resolveComponentContributions } from './contributions.mjs';
+import { capabilityKey, isSourceLabel, parseSkillsManifestDocument } from './manifests.mjs';
 import { ensureFile, normalizeRelativePath, packageRoot, parseSkillFrontmatterName, parseSkillFrontmatterNameFromContent, productRoot, unquoteYamlScalar } from './primitives.mjs';
 
 function readPackageSkillEntries(section, runtime) {
@@ -294,7 +294,10 @@ export function resolveSkills(organizationRoot, projectRoot, options = {}) {
       resolved.set(skill.id, skill);
     }
   }
-  for (const contribution of options.includeContributions === false ? [] : resolveSkillContributions(organizationRoot)) {
+  const componentContributions = options.includeContributions === false
+    ? { fragments: [], dependencies: [] }
+    : resolveComponentContributions(organizationRoot);
+  for (const contribution of componentContributions.fragments) {
     const target = resolved.get(contribution.skillId);
     if (!target) continue;
     if (contribution.placement === 'slot') {
@@ -307,6 +310,16 @@ export function resolveSkills(organizationRoot, projectRoot, options = {}) {
     }
     if (!target.skillContributions) target.skillContributions = [];
     target.skillContributions.push(contribution);
+  }
+  for (const contribution of componentContributions.dependencies) {
+    const target = resolved.get(contribution.skillId);
+    if (!target) continue;
+    const key = capabilityKey(contribution.capability, contribution.version);
+    const existing = target.requires.find((item) => capabilityKey(item.capability, item.version) === key);
+    if (!existing) target.requires.push({ capability: contribution.capability, version: contribution.version, mode: contribution.mode });
+    else if (contribution.mode === 'required') existing.mode = 'required';
+    if (!target.skillDependencyContributions) target.skillDependencyContributions = [];
+    target.skillDependencyContributions.push(contribution);
   }
   return [...resolved.values()];
 }

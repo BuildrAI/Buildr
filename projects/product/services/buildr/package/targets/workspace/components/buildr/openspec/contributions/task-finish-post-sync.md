@@ -1,1 +1,0 @@
-在 canonical spec sync 后、archive 前运行 `buildr openspec check <change> --stage post-sync --project <project> --target <workspace> --json`。失败时保留 worktree 和 change，停止尚未执行的 archive、commit、rebase、merge、push 或 cleanup，不得通过重跑 pre-sync 掩盖结果。

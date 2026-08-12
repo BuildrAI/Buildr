@@ -10,29 +10,38 @@ const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'ut
 
 const triageSkill = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
 const worktreeSkill = read('package/targets/workspace/skills/buildr/task-worktree/SKILL.md');
+const environmentSkill = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
 const proposeUpstream = read('package/targets/workspace/skills/openspec/openspec-propose/SKILL.md');
 const proposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
+const updateUpstream = read('package/targets/workspace/skills/openspec/openspec-update-change/SKILL.md');
+const updateSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
+const openSpecComponent = YAML.parse(read('package/targets/workspace/components/buildr/openspec/component.yml'));
 const packageManifest = YAML.parse(read('package/manifest.yml'));
 const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 
-test('task triage 在语义路径之外输出执行形态与任务位置', () => {
+test('task triage 输出两轴决策、repository set 与 Task Environment 动作', () => {
   for (const required of [
-    '执行形态：implementation / metadata-only / 待确认',
-    'Worktree：创建 / 复用 / 不需要 / 待确认',
-    '`change-flow + implementation`',
-    '`code-only + implementation`',
-    '`change-flow + metadata-only`',
-    '不得先写入 change artifacts 再决定位置',
+    '## 2. 两轴决策',
+    '### 语义治理',
+    '### 执行形态',
+    'Repository set',
+    '`implementation`',
+    '`metadata-only`',
+    '`buildr.task-environment/v1`',
   ]) assert.ok(triageSkill.includes(required), `task-triage must include ${required}`);
 
-  assert.match(triageSkill, /等 task worktree ready 后才进入 OpenSpec propose/);
-  assert.match(triageSkill, /本 Skill 只选择任务位置，不复制 worktree 创建、doctor、sync、保留或清理流程/);
+  assert.doesNotMatch(triageSkill, /create-board|continue-board|buildr\.task-board-maintenance/);
+
+  assert.match(triageSkill, /首次持久交付写入前取得`ready`、实际execution roots、validation root和执行CLI/);
+  assert.match(triageSkill, /`metadata-only`可以使用共享执行根，不必创建Git worktree/);
+  assert.match(triageSkill, /Task Environment：prepare \/ inspect \/ none \/ blocked/);
 });
 
-test('OpenSpec propose 直接入口在首次写入前执行 worktree 门禁', () => {
+test('OpenSpec propose 直接入口在首次写入前执行 Task Environment 门禁', () => {
   assert.match(proposeSidebar, /执行 `openspec new change` 或写入任何 change artifacts 前/);
   assert.match(proposeSidebar, /代码修改、构建、测试或需要长期开发上下文/);
-  assert.match(proposeSidebar, /先使用 `task-worktree` 声明完整 repository set/);
+  assert.match(proposeSidebar, /使用 `task-environment` 按 Task ID 准备完整 repository set/);
+  assert.match(proposeSidebar, /共享执行根，不必创建 Git worktree/);
   assert.match(proposeSidebar, /无法判断是否会进入实现时，先澄清执行范围/);
   assert.match(proposeSidebar, /不修改外部 `openspec-propose` Skill 的上游正文/);
 
@@ -40,20 +49,85 @@ test('OpenSpec propose 直接入口在首次写入前执行 worktree 门禁', ()
   assert.doesNotMatch(proposeUpstream, /任务执行形态/);
 });
 
-test('worktree provider 保持环境职责且既有 capability 图不扩张', () => {
-  assert.match(worktreeSkill, /它不判断业务语义是否需要 OpenSpec change/);
-  assert.match(worktreeSkill, /propose 和创建 change artifacts 前先完成 worktree 决策/);
-  assert.match(worktreeSkill, /artifacts、实现、CLI、构建、测试和合并前候选验证都只能从 receipt 的 `allowedExecutionRoots` 执行/);
+test('OpenSpec update 只补新的执行效果门槛，不引入新的 capability contract', () => {
+  assert.match(updateUpstream, /generatedBy: "1\.6\.0"/);
+  assert.match(updateSidebar, /只修订既有 planning artifacts/);
+  assert.match(updateSidebar, /不授予实现、同步或归档权限/);
+  assert.match(updateSidebar, /重新运行 Task Environment `prepare`/);
+  assert.match(updateSidebar, /matching `ready`、明确 execution roots 与执行 CLI/);
+  assert.ok(openSpecComponent.members.skills.includes('skills/openspec/openspec-update-change'));
+  assert.ok(openSpecComponent.contributions.skillFragments.some((item) => item.startsWith('openspec-update-change@prepend=')));
+  for (const sidebar of ['openspec-explore-sidebar.md', 'openspec-sync-sidebar.md', 'openspec-archive-sidebar.md']) {
+    assert.ok(!openSpecComponent.members.skillContributions.some((item) => item.endsWith(sidebar)));
+  }
+  assert.ok(!packageManifest.capabilityContracts.some((item) => item.id.startsWith('buildr.openspec-')));
+});
+
+test('Task Environment 独占环境职责，worktree 只保留窄 Git provider 能力', () => {
+  for (const required of [
+    '`buildr.git-worktree-provider/v1` 的默认 provider',
+    '只管理 Git checkout 和窄 Git evidence',
+    'buildr worktree create <task-id>',
+    'buildr worktree inspect <task-id>',
+    'buildr worktree cleanup <task-id>',
+    '不判断 Task 是否 ready',
+    '不登记动态资源',
+  ]) assert.ok(worktreeSkill.includes(required), `task-worktree must include ${required}`);
+  assert.match(worktreeSkill, /worktree cleanup <task-id>[^\n]*--integrated-ref <selector>=<ref>/);
+  assert.doesNotMatch(worktreeSkill, /--integrated(?:\s|<)/);
+  assert.match(environmentSkill, /`buildr.task-environment\/v1` 的默认 provider/);
+  assert.match(environmentSkill, /Environment Receipt 独占 Runtime、CLI、Preparation Declaration\/Scope\/Recipe\/Step、projection、动态资源、ready、恢复和总 cleanup/);
+  assert.match(environmentSkill, /buildr\.task-environment-plan-request\/v1/);
+  assert.match(environmentSkill, /Buildr不实现Node\/Python\/Go\/Rust适配器，也不扫描manifest/);
+  assert.match(environmentSkill, /不执行Step、不创建或修复输出、不回写Receipt/);
+  assert.match(environmentSkill, /Agent读取Task Record的完整Project\/Service scope/);
+  for (const required of [
+    'Plan Request只是CLI的一次性输入',
+    '操作系统临时目录',
+    '不得写入Workspace的`.buildr/tmp/`、`.buildr/transient/`',
+    '`prepare --plan`或`plan record`成功后必须立即删除',
+    '原始Plan Request不进入SQLite',
+    '不扫描或删除调用方临时输入',
+  ]) assert.ok(environmentSkill.includes(required), `task-environment must govern temporary Plan Request lifecycle: ${required}`);
+  assert.doesNotMatch(worktreeSkill, /executionReady|worktree context|worktree adopt/);
 
   const packagedTriage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');
   const workspaceTriage = workspaceManifest.skills.find((item) => item.id === 'task-triage');
   assert.deepEqual(packagedTriage.provides || [], []);
-  assert.deepEqual(packagedTriage.requires || [], []);
   assert.deepEqual(workspaceTriage.provides || [], []);
-  assert.deepEqual(workspaceTriage.requires || [], []);
+  const expected = [
+    { capability: 'buildr.task-record', version: 2, mode: 'optional' },
+    { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
+    { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'optional' },
+    { capability: 'buildr.task-environment', version: 1, mode: 'optional' },
+    { capability: 'buildr.task-development', version: 2, mode: 'optional' },
+  ];
+  assert.deepEqual(packagedTriage.requires, expected);
+  assert.deepEqual(workspaceTriage.requires, expected);
+  assert.equal(packagedTriage.requires.some((item) => item.capability === 'buildr.task-verification'), false);
 
-  const contract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-worktree-lifecycle');
-  const binding = packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-worktree-lifecycle');
-  assert.equal(contract.version, 2);
-  assert.equal(binding.provider, 'task-worktree');
+  const environmentContract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-environment');
+  const worktreeContract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.git-worktree-provider');
+  const environmentBinding = packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-environment');
+  const worktreeBinding = packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.git-worktree-provider');
+  const packagedWorktree = packageManifest.builtins.skills.find((item) => item.id === 'task-worktree');
+  const workspaceWorktree = workspaceManifest.skills.find((item) => item.id === 'task-worktree');
+  assert.equal(environmentContract.version, 1);
+  assert.deepEqual(environmentContract.replaces.map((item) => `${item.id}@${item.version}`), ['buildr.task-worktree-lifecycle@1', 'buildr.task-worktree-lifecycle@2']);
+  assert.equal(worktreeContract.version, 1);
+  assert.equal(environmentBinding.provider, 'task-environment');
+  assert.equal(worktreeBinding.provider, 'task-worktree');
+  assert.equal(packagedWorktree.description, workspaceWorktree.description);
+  assert.match(packagedWorktree.description, /不负责环境 ready、恢复、Runtime、资源或总 cleanup。$/);
+  assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-worktree-lifecycle'), false);
+  assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-worktree-lifecycle'), false);
+
+  for (const id of ['task-triage', 'task-environment', 'task-worktree', 'task-finish']) {
+    const packaged = packageManifest.builtins.skills.find((item) => item.id === id);
+    const workspace = workspaceManifest.skills.find((item) => item.id === id);
+    const source = read(packaged.path.replace(/^package\//, 'package/') + '/SKILL.md');
+    const frontmatter = source.match(/^description: (.+)$/m)?.[1];
+    assert.equal(packaged.description, workspace.description);
+    assert.equal(packaged.description, frontmatter);
+  }
 });

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-convergence",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-9a6b055e898bb0f16dfbb796ae196b2e1af81a27ba28a664b96fc24061004b4e",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须在集成后收敛 retained Workspace",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Retained convergence 必须支持精确恢复",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Retained convergence evidence 必须披露影响与动作",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

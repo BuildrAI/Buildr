@@ -3,6 +3,7 @@
 ## Purpose
 定义 Buildr doctor 的 Agent-readable 诊断行为，包括 workspace 层级、Service registry、Git 忽略和 runtime 状态。
 ## Requirements
+
 ### Requirement: doctor 提供 Agent-readable 诊断
 Buildr MVP MUST 支持 `buildr doctor --json` 输出 Agent-readable 的结构化诊断结果。
 
@@ -461,3 +462,61 @@ Buildr doctor MUST 将 Project registry 作为 Project baseline 和 Service meta
 #### Scenario: Project 登记后继续下游诊断
 - **WHEN** Project directory 已在 registry 登记
 - **THEN** doctor MUST 按现有契约继续检查 Project baseline 和 Service metadata
+
+### Requirement: doctor 必须只读诊断 Workspace Node toolchain
+`buildr doctor` MUST 检查 Workspace Node 声明、受管 runtime、当前 CLI、runtime `npm` 和正式验证执行环境是否解析为同一 Node identity，并 MUST 保持只读。
+
+#### Scenario: Node toolchain 健康
+- **WHEN** 声明有效、受管 runtime probe 成功且 CLI/npm/验证环境均匹配声明
+- **THEN** doctor MUST 报告 Node identity 与健康状态
+- **AND** MUST NOT 修改 metadata、下载 runtime 或重写 PATH
+
+#### Scenario: runtime 缺失
+- **WHEN** 声明有效但对应受管 runtime 不存在
+- **THEN** doctor MUST 返回稳定 warning/error finding 和 `buildr sync <agent> --target <workspace>` 修复建议
+- **AND** MUST NOT 直接安装 runtime
+
+#### Scenario: CLI 或 npm 漂移
+- **WHEN** 当前 CLI、npm 或验证环境使用的 Node 与 Workspace identity 不一致
+- **THEN** doctor MUST 报告每个实际 executable/version 与期望 identity
+- **AND** MUST NOT 因当前版本仍满足 `engines.node` 而把漂移视为健康
+
+### Requirement: Doctor JSON 默认提供紧凑诊断
+Buildr MUST 让 `doctor --json` 默认返回紧凑、稳定且足以判断健康状态和后续动作的结构化结果，并 MUST 仅在调用方显式请求时返回完整诊断 inventory。
+
+#### Scenario: 默认 JSON 使用 compact detail
+- **WHEN** Agent 运行 `buildr doctor --target <root> --json` 且没有传入 `--detail`
+- **THEN** Doctor JSON MUST 包含 schema identity、目标、scope、Agent runtime、`ok`、summary、health、findings、repair plan 和 next steps
+- **AND** 默认结果 MUST NOT 包含完整 capability graph、Component ownership、Builtin inventory、Command inventory 或 runtime inventory
+
+#### Scenario: 显式请求完整诊断
+- **WHEN** Agent 运行 `buildr doctor --target <root> --json --detail full`
+- **THEN** Doctor MUST 返回完整诊断 read model
+- **AND** 完整结果 MUST 保持与相同检查产生的 compact 结果一致的 `ok`、summary、health、findings、repair plan 和 next steps
+
+#### Scenario: 显式请求紧凑诊断
+- **WHEN** Agent 运行 `buildr doctor --target <root> --json --detail compact`
+- **THEN** Doctor MUST 返回与默认 `doctor --json` 相同的紧凑字段集合
+
+#### Scenario: 完整结果超过进程默认缓冲区
+- **WHEN** 一个健康 Workspace 的 full Doctor JSON 超过 1 MiB
+- **THEN** 默认 compact Doctor JSON MUST 仍可完整输出并保持健康判定
+- **AND** Buildr MUST NOT 通过截断 JSON 来缩小结果
+
+### Requirement: Doctor 从 canonical ownership receipt 发现 Agent runtime
+Buildr Doctor MUST 从 `.buildr/agent-runtime/<destination>/<adapter>/skill-projection-ownership-receipts/` 发现和诊断当前 Workspace 的受管 Skill runtime，并 MUST 把旧 runtime-root receipt 仅作为迁移诊断输入。
+
+#### Scenario: 未指定 Agent 时发现 canonical runtime
+- **WHEN** Doctor 未传 `--agent` 且某 adapter 的 canonical workspace receipt root 含有效回执
+- **THEN** Doctor MUST 将该 adapter 纳入 `detectedAgents` 和 `checkedAgents`
+- **AND** MUST 使用 canonical receipt 诊断 runtime Skill 文件
+
+#### Scenario: 只发现 legacy runtime receipt
+- **WHEN** canonical receipt root 为空但旧 adapter runtime root 含有效 receipt
+- **THEN** Doctor MUST 识别该 adapter 并报告需要运行适用 sync、render 或 Skill install 完成迁移
+- **AND** Doctor MUST 保持只读且不得把 legacy 状态报告为 canonical healthy
+
+#### Scenario: Canonical 与 legacy receipt 冲突
+- **WHEN** Doctor 发现同一 adapter/runtime path 的 canonical 与 legacy receipt 不等价
+- **THEN** Doctor MUST 报告 actionable ownership conflict
+- **AND** repair plan MUST 要求保留现场并核对两份 identity，不能建议直接删除任一侧

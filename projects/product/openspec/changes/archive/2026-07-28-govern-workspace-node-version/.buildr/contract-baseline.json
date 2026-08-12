@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "govern-workspace-node-version",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-2cf1e9c21983e489e7b0cc63e50482dfd13c9d53502afbcb320acfebf6c20507",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-readable-doctor",
+      "title": "doctor 必须只读诊断 Workspace Node toolchain",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "npm-cli-package",
+      "title": "已初始化 Workspace 的 Buildr 入口必须消费 Workspace Node identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "root-organization-workspace",
+      "title": "Workspace 生命周期必须管理 Node toolchain 声明",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment execution binding 必须包含 Workspace Node identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须冻结并核验 Workspace Node identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "正式验证必须绑定 Workspace Node identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "workspace-node-toolchain",
+      "title": "Workspace 必须持有精确 Node version",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "workspace-node-toolchain",
+      "title": "Workspace Node runtime 必须可确定性准备和恢复",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "workspace-node-toolchain",
+      "title": "Workspace Node 升级必须显式发生",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { getRuntimeAdapter, skillDestinationRoot } from '../adapter-contract.mjs';
-import { enumerateSkillSourceFiles, readSkillProjectionReceipt, sha256Integrity } from './projection-files.mjs';
+import { enumerateSkillSourceFiles, observeSkillProjectionOwnershipReceipt, sha256Integrity } from './projection-files.mjs';
 import { parseSkillFrontmatterName } from './primitives.mjs';
 
 function inventoryDigest(files) {
@@ -25,17 +26,26 @@ function walkSkillDirectories(root, output = []) {
   return output;
 }
 
-function receiptForRuntimePath(destinationRoot, adapter, runtimePath) {
-  const file = path.join(destinationRoot, 'buildr', 'skill-projection-receipts', adapter.id, ...`${runtimePath}.json`.split('/'));
-  return { file, receipt: readSkillProjectionReceipt(file, { adapterId: adapter.id, runtimePath }) };
+function receiptForRuntimePath({ targetRoot, destination, adapter, runtimePath, runtimeSkillDir }) {
+  const observation = observeSkillProjectionOwnershipReceipt({
+    targetRoot,
+    runtimeRoot: adapter.traits.skills.destinations[destination].root,
+    destination,
+    adapterId: adapter.id,
+    runtimePath,
+    runtimeSkillDir,
+  });
+  return { file: observation.receiptFile, receipt: observation.receipt, migration: observation.migration };
 }
 
 export function buildEffectiveSkillInventory({ adapterId, workspaceRoot, userHome, candidateIds = null }) {
   const adapter = getRuntimeAdapter(adapterId);
+  const resolvedUserHome = userHome || os.homedir();
   const wanted = candidateIds ? new Set(candidateIds) : null;
   const entries = [];
   for (const destination of ['workspace', 'user']) {
-    const destinationRoot = skillDestinationRoot(adapter, destination, workspaceRoot, { userHome });
+    const targetRoot = destination === 'workspace' ? workspaceRoot : resolvedUserHome;
+    const destinationRoot = skillDestinationRoot(adapter, destination, workspaceRoot, { userHome: resolvedUserHome });
     const skillsRoot = path.join(destinationRoot, 'skills');
     for (const directory of walkSkillDirectories(skillsRoot)) {
       const skillFile = path.join(directory, 'SKILL.md');
@@ -44,7 +54,7 @@ export function buildEffectiveSkillInventory({ adapterId, workspaceRoot, userHom
       if (wanted && !wanted.has(skillId)) continue;
       const runtimePath = path.relative(skillsRoot, directory).split(path.sep).join('/');
       const files = enumerateSkillSourceFiles(directory);
-      const { file: receiptFile, receipt } = receiptForRuntimePath(destinationRoot, adapter, runtimePath);
+      const { file: receiptFile, receipt, migration } = receiptForRuntimePath({ targetRoot, destination, adapter, runtimePath, runtimeSkillDir: directory });
       entries.push({
         skillId,
         runtimePath,
@@ -53,6 +63,7 @@ export function buildEffectiveSkillInventory({ adapterId, workspaceRoot, userHom
         sourceCategory: receipt ? 'buildr-managed' : 'external-filesystem',
         receiptPath: receipt ? receiptFile : null,
         receipt,
+        receiptMigration: migration,
         assetIdentity: receipt?.assetIdentity || null,
         sourceIdentity: receipt?.sourceIdentity || null,
         sourceWorkspaceId: receipt?.sourceWorkspaceId || null,

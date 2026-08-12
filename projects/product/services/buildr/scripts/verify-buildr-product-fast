@@ -2,10 +2,15 @@
 set -euo pipefail
 
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bootstrap_node="${npm_node_execpath:-${BUILDR_NODE_EXECUTABLE:-$(command -v node || true)}}"
+if [[ -z "$bootstrap_node" || ! -x "$bootstrap_node" ]]; then
+  echo "Bootstrap Node executable is missing. Run verification through npm or a compatible Node." >&2
+  exit 1
+fi
 export PATH="$product_root/node_modules/.bin:$PATH"
 if ! command -v openspec >/dev/null 2>&1; then
-  echo "OpenSpec CLI is missing. Run npm ci in projects/product before verification." >&2
+  echo "OpenSpec CLI is missing. Run npm ci in projects/product/services/buildr before verification." >&2
   exit 1
 fi
 
-exec node "$product_root/test/verification/profile.mjs" fast
+exec "$bootstrap_node" "$product_root/scripts/run-workspace-node.mjs" test/verification/profile.mjs fast

@@ -2,7 +2,7 @@
 
 本文用于区分“Buildr 产品 MVP 已完成”和“公开发布前还需要补齐的事项”。MVP 完成表示本地产品闭环成立；公开发布需要额外的开源、分发和示例材料收口。
 
-`package check/build` 是 Buildr 产品 maintenance 命令，`openspec baseline/check` 是 change workflow internal 命令；它们仍可直接执行并在 CLI help 中明确分区，但不属于普通 workspace onboarding 的日常命令。该分类描述产品用途，不是权限或安全限制。
+`package check/build`是Buildr产品maintenance命令。OpenSpec当前路径只使用`converge`与事务期只读`convergence inspect`；`openspec audit`和历史阶段命令已删除，调用时必须返回unknown-command且不得有当前产品消费者。该分类描述产品用途，不是权限或安全限制。
 
 ## 已完成 MVP
 
@@ -12,7 +12,7 @@
 - `doctor --agent <agent> --json` 输出面向当前 Agent runtime 的 Agent-readable 诊断结果。
 - `commands add/remove/check` 维护 root 级命令行工具清单。
 - `component list/check/install/uninstall` 管理 workspace 级统一生命周期资产；OpenSpec Component、嵌套 Commands collection、Buildr 自有契约门禁 sidebar 与声明式 Skill Contribution 已纳入 package 与 E2E 验证。
-- `buildr openspec baseline create` 与 `buildr openspec check` 保护 OpenSpec change 的 proposal、同步前和同步后契约边界；fixture corpus 覆盖并行冲突、陈旧基线和破坏性同步结果。
+- `buildr openspec converge`产品化执行OpenSpec Change的规划、隔离验证、条件应用、确认、仅移动归档与事务Receipt release；`buildr openspec convergence inspect`只读解释仍存在的未决事务。fixture corpus覆盖未开始、before、expected、mixed/unknown、archived not-applicable、并行冲突、Receipt release和旧入口unknown-command。Product Candidate通过Archived Change delta重放关联canonical变化，不要求tracked Receipt。
 - `skills add/remove` 只维护 workspace Skill source；`skills render --destination workspace|user` 显式选择 runtime destination，Project 只保存 capability/applicability context。
 - Skill Contribution 只在 runtime render 时组合自然语言 fragments；检查安装后注入、卸载后移除、通用 Skill 源不变，以及无效 slot/integrity fail closed。
 - `skill install <agent>` 为七个 supported adapters 安装 Buildr 产品内置 Agent Skill。
@@ -20,7 +20,7 @@
 - `rules render`、`runtime check` 和 `skills render` 支持当前 adapter 主路径。
 - Supported runtime adapter 由静态 registry 和声明式 RuntimePlan contract 管理；Component 必须验证自身完整性但不能扩展 adapter。
 - `package check` 和 `package build` 校验、构建 Buildr 产品随包资产。
-- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式候选仍由 `test:candidate` 编排全部 steps。
+- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备再显式运行 `test:candidate` 完整回归。
 - Buildr mutation 具备严格 identity、scope/ownership 路径保护、atomic writer、workspace transaction、失败回滚和 doctor recovery；package output 使用 receipt/integrity 安全替换。
 - bootstrap guide 在 Skill 不可用时提供纯文本兜底入口。
 
@@ -36,9 +36,10 @@
 - [x] 准备公开 example workspace，展示 Organization/Root、Project、Service、Rules、Skills 和 runtime 投射的最小路径。
 - [x] 完成去私有化检查，覆盖模板、默认目录、归档文档、示例内容、作者信息、URL、邮箱和组织内部术语。
 - [x] 建立 GitHub Actions 最小 CI，运行 `projects/product/services/buildr/scripts/verify-buildr-product`。
-- [x] Linux Node 20/22 执行完整验证，Linux/macOS/Windows Node 22 验证正式 tarball 生命周期。
+- [ ] 在 macOS/Windows × Node 24.15.0 的两个完整受管 runtime Candidate，以及 macOS/Windows × 最低/当前 24.x 的四个短版 Host Node 兼容验证中证明支持范围；Node 25 及未来主版本须另建适配任务后再加入。
+- [ ] 新 workflow 首次产生 check contexts 后更新 branch protection：`dev` 要求两个 `windows-platform-preflight` Node 矩阵，`main` 要求两个 `managed-runtime-candidate` 与两个 `current-host-node` context；删除历史 `product (20)`、`product (22)` 和两个独立 `release-smoke` required contexts。修改前后均从 GitHub 回读精确 context 名称，不凭文档猜测。
 - [x] 明确 npm registry 发布流程：`@buildr-ai/buildr`、RC 使用 `next`、稳定版使用 `latest`、tag/version fail closed、GitHub Environment 审批和 OIDC trusted publishing。
-- [x] 将干净候选快照推到 `elevenching/Buildr`，在真实 GitHub runner 通过 CI，并配置 `main`/`dev` branch protection 与 Private Vulnerability Reporting。
+- [x] 将干净候选快照推到 `BuildrAI/Buildr`，在真实 GitHub runner 通过 CI，并配置 `main`/`dev` branch protection 与 Private Vulnerability Reporting。
 - [x] 通过 2FA 首次发布 `0.1.0-rc.1`，随后为 `@buildr-ai/buildr` 配置 GitHub trusted publisher。
 - [ ] 完成 RC 试用和反馈收敛后发布 `0.1.0` 稳定版。
 
@@ -58,7 +59,7 @@
 
 开发期间只在单任务后做最小反馈检查，在相关任务组完成后做一次受影响范围验证；不要逐任务运行本节的完整验证。验证命令仍在运行或暂时无输出时继续等待同一进程，不重复启动。
 
-普通任务默认运行 fast gate；该入口并行聚合 unit、静态契约、fast integration、架构、canonical spec quality/strict 和全部 runtime adapter 低成本契约，不创建完整临时用户 workspace，也不执行 npm pack/install 或 Workspace E2E：
+普通任务默认运行兼容名称下的 Quick gate；该入口并行聚合完整低成本 Unit、Component、静态 Contract 和必要静态检查。Registry 同时记录环境足迹、隔离方式与重置负担，并在启动 verifier 前拒绝真实 filesystem 投射、Git、网络、Workspace 生命周期、重复 cleanup 或不满足隔离例外的 Integration：
 
 ```bash
 npm test
@@ -69,14 +70,16 @@ npm test
 
 ```bash
 npm run test:unit
+npm run test:component
 npm run test:contract
-npm run test:integration:fast
+npm run test:integration
+npm run test:system
 npm run test:focus -- integration-candidate-recovery
 npm run test:focus -- integration-candidate-release
 npm run coverage:unit -- --summary /tmp/buildr-unit-coverage.json
 ```
 
-已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。重型 step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以 broad `src/**` 表达“最终可由 CLI 到达”；contract、architecture 等低成本 owner 提供普通源码兜底。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。Candidate 仍按完整 profile 无条件运行，不受 Changed inputs 收窄影响：
+已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。完整 Unit 因低成本可覆盖全部 `src/**`；重型 Integration/System step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以“最终可由 CLI 到达”为由扩大选择。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。registry、planner、runner、声明或 timing 等全局 owner 变化时，同一个 Changed plan 扩展为完整回归：
 
 ```bash
 npm run test:changed -- --plan
@@ -85,7 +88,7 @@ npm run test:changed -- docs/buildr-product.md
 npm run --silent test:changed -- --json docs/buildr-product.md
 ```
 
-需要定位失败或人工重跑领域时使用统一 focus 入口。它按 verifier identity 去重 step/group，只展开真实 artifact 依赖，不自动重复 Fast，也不能替代最终候选完整验证：
+需要定位失败或人工重跑领域时使用统一 focus 入口。它按 verifier identity 去重 step/group，只展开真实 artifact 依赖，不自动重复 Fast，也不能替代冻结目标的正式 delivery plan：
 
 ```bash
 npm run test:focus -- --list
@@ -96,7 +99,11 @@ npm run test:focus -- --plan group:openspec
 npm run --silent test:focus -- --json release-tarball-smoke
 ```
 
-完整 Candidate 自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`，但发布使用登记的默认 profile。
+显式完整回归自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`，但发布使用登记的默认 profile。
+
+Candidate CI 在进入 `release-tarball-smoke` 前必须先准备并校验受管 Node runtime；发布包冒烟保持应用状态与 workspace 隔离，但继承调用方的 `BUILDR_NODE_RUNTIME_DATA_DIR`，避免每个矩阵重复访问 Node 分发网络。独立运行且调用方未提供 runtime locator 时，冒烟仍使用自己的临时目录验证从零安装。
+
+资源受限 CI 的完整 System 文件固定串行执行；Integration 仍可保持有界并发。Windows runtime 临时目录清理对短暂 `EPERM` 使用 bounded retry，不通过放宽单个测试断言掩盖资源争用。
 
 开发期间需要复现跨组件 workspace 生命周期问题时，通过同一个 focus 入口定点运行独立 Workspace E2E suites：
 
@@ -105,38 +112,40 @@ npm run test:focus -- workspace-lifecycle
 npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
-以下完整验证在所有 rebase、冲突解决和内容修改结束后，对 task worktree 的最终候选 Git tree 执行。commit、相同 tree 集成、push 和 worktree 清理复用该结果，不在主开发分支重复执行；tree 改变时才重新运行受影响的验证。仓库 CI/publish 继续调用兼容入口 `scripts/verify-buildr-product`，其语义与 `test:candidate` 相同。
+正式任务在所有 rebase、冲突解决和内容修改结束后，通过 Task Verification 对最终冻结 Candidate 执行 delivery-required `product.delivery`。普通任务由 changed planner 运行 affected；全局验证 owner 变化时同一 plan 运行 full。候选发布准备、用户明确全量要求和 `dev → main` Candidate CI 另行调用以下显式完整回归兼容入口。tag 发布不重复运行它，而是验证唯一 release artifact：
 
 ```bash
 npm run test:candidate
 ```
 
-完整产品验证会把每个阶段和总耗时写入 `BUILDR_TIMING_OUTPUT` 指定的 JSON 文件；未显式指定时，每次 Candidate/Changed run 都在系统临时目录创建唯一 evidence 目录，其中包含 `timing.json` 和 diagnostics，结束时直接打印绝对路径，不维护可被并发覆盖的固定 `latest` 文件。summary 的 `evidenceLifecycle` 将这类目录标记为 `transient`、`consumer-finished` 后可清理并提供精确 `cleanupReference`；它只在当前任务 consumer 使用期间保留，不是长期证据库。显式设置 `BUILDR_TIMING_OUTPUT` / `BUILDR_DIAGNOSTICS_OUTPUT` 时标记为 `caller-managed`，由调用方保证路径唯一并决定保留期，CI 总是上传这些证据。summary 还记录 run kind/id、来源仓库与 Product root、HEAD、branch、dirty、候选 fingerprint、每个 step 日志路径以及 Node、平台、架构和 CI 环境。Workspace E2E 直接运行失败时默认保留失败 fixture 并打印位置，成功时清理；需要主动保留成功 fixture 时可设置 `BUILDR_WORKSPACE_E2E_KEEP=1`。
+Product delivery/full 验证会把每个阶段和总耗时写入 `BUILDR_TIMING_OUTPUT` 指定的 JSON 文件；未显式指定时，每次 Candidate/Changed run 都在系统临时目录创建唯一 evidence 目录，其中包含 `timing.json` 和 diagnostics，结束时直接打印绝对路径，不维护可被并发覆盖的固定 `latest` 文件。summary 的 `evidenceLifecycle` 将这类目录标记为 `transient`、`consumer-finished` 后可清理并提供精确 `cleanupReference`；它只在当前任务 consumer 使用期间保留，不是长期证据库。显式设置 `BUILDR_TIMING_OUTPUT` / `BUILDR_DIAGNOSTICS_OUTPUT` 时标记为 `caller-managed`，由调用方保证路径唯一并决定保留期，CI 总是上传这些证据。summary 还记录 run kind/id、来源仓库与 Product root、HEAD、branch、dirty、候选 fingerprint、每个 step 日志路径以及 Node、平台、架构和 CI 环境。Workspace E2E 直接运行失败时默认保留失败 fixture 并打印位置，成功时清理；需要主动保留成功 fixture 时可设置 `BUILDR_WORKSPACE_E2E_KEEP=1`。
 
 Candidate 总耗时、Workspace E2E suites 和已识别的高耗时专项阶段声明目标预算；summary 使用 `budgetMs` / `budgetStatus` 标记目标内或超预算，超预算只输出 warning。0.1 不因环境波动或单纯超出目标预算阻塞发布。
 
-完成报告必须读取最终 Candidate 命令打印的 timing summary，核对 status、run kind 和 source identity 与最终候选一致，并说明总耗时、预算状态、最慢阶段、失败阶段（成功时为 none）、retention 和 cleanup status；summary 仍保留时报告路径，已清理时只报告已捕获摘要和清理结果。Changed/Focus summary 不得替代 Candidate，也不得把并行 step duration 相加推算整体 wall-clock。分析并行 Candidate 性能时，使用 step 的 `queuedAt`、`startedAt`、`finishedAt` 和 `queueDurationMs` 区分调度等待与 executor 执行耗时；blocked step 读取 `blockedAt`，不得把 `durationMs: 0` 解释为已执行。
+完成报告必须读取正式 delivery plan 的 timing summary；运行显式完整回归时也读取对应 Candidate summary。两者都要核对 status、run kind 和 source identity 与最终候选一致，并说明总耗时、预算状态、最慢阶段、失败阶段（成功时为 none）、retention 和 cleanup status。Focus summary 不得替代正式 delivery；不得把并行 step duration 相加推算整体 wall-clock。分析并行 full 性能时，使用 step 的 `queuedAt`、`startedAt`、`finishedAt` 和 `queueDurationMs` 区分调度等待与 executor 执行耗时；blocked step 读取 `blockedAt`，不得把 `durationMs: 0` 解释为已执行。
 
 Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与推送且没有后续 consumer 后，使用 `node test/verification/timing/cleanup-evidence.mjs <timing-summary.json>` 清理。该入口只接受位于系统临时目录、名称匹配当前 run kind、summary 归属一致且不是符号链接的精确 evidence 目录；caller-managed evidence 和边界不明路径会 fail closed。
 
 调度性能回归可在同一冻结 tree 上交替运行默认 cost 模式与 `BUILDR_VERIFICATION_SCHEDULING=declaration npm run test:candidate`；timing summary 的 `environment.schedulingMode` 标识实际模式。只按多轮总墙钟和关键 step queue/duration 中位数调整 `schedulingCostMs`，不得用 `dependsOn` 固定建议顺序。
 
-验证层级、旧 MVP 覆盖迁移与必要交叉以 Product Project 的[验证覆盖职责矩阵](../../../docs/verification-ownership.md)为维护依据；发现重复时先确认主 owner，再迁移或删除断言。
+Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责矩阵](../../../docs/verification-ownership.md)为维护依据；发现重复时先确认主 owner，再迁移或删除断言。
 
 ## npm Release 流程
 
 1. 日常改动集成到 `dev`；准备 `<version>` 前 fetch 并记录最新 `origin/dev` 为不可变 candidate base，再从该 commit 创建 `release-<version>` task id、`tasks/release-<version>` 分支和 `<workspace-root>/.worktrees/release-<version>` canonical worktree。需要排除 dev 内容时先在 dev 独立撤销，不得从旧 ancestor 挑选发布候选。新建发布 worktree 后先在 `projects/product` 执行 `npm ci`，成功后才修改版本和发布材料。
 2. 根 `CHANGELOG.md` 必须包含唯一的 `## <version> - <YYYY-MM-DD>` 章节和非空正文。冻结候选前从 workspace root 运行 `node projects/product/services/buildr/scripts/release/release-notes.mjs <version> CHANGELOG.md`，预览 GitHub Release 将使用的最终 Markdown。
 3. 对冻结候选完成完整验证并记录 candidate tree identity；release task 必须先通过 task-finish fast-forward 集成到 `dev`，再运行 `release-convergence.mjs --stage pre-main`。通过 PR 将 `dev` squash merge 到 `main` 后，只有 main/dev version 与 tree 均匹配候选时才运行带 `--version` 的 history bridge，随后运行 `--stage post-main` 证明 main 已是 dev ancestor。任一 base、version、tree、task ref、远端竞争或 push finding 都停止 tag 动作。
-4. package version 与 Git tag 必须完全一致。当前准备的 `0.1.0-rc.7` 将对应 `v0.1.0-rc.7` 和 `next`；稳定版 `0.1.0` 对应 `v0.1.0` 和 `latest`。
+4. package version 与 Git tag 必须完全一致。当前准备的 `0.1.0-rc.8` 将对应 `v0.1.0-rc.8` 和 `next`；稳定版 `0.1.0` 对应 `v0.1.0` 和 `latest`。
 5. 首个 `@buildr-ai/buildr` package 已由 npm Organization owner `elevenching2` 使用 2FA 执行 `npm publish --access public --tag next`，于 2026-07-13 完成。
 6. npm trusted publisher 已配置为 GitHub user `elevenching`、repository `Buildr`、workflow `publish.yml`、Environment `npm-production`、allowed action `npm publish`。
-7. 后续发布只由 release tag 触发 GitHub-hosted workflow；workflow 在 registry write 和 npm publish 前使用同一提取器生成临时 notes file，缺失、重复或空的目标版本章节会 fail closed。Environment 人工批准后运行完整验证、候选安全检查、publish，并使用该 notes file、已有远端 tag 和正确 prerelease/Latest 状态创建 GitHub Release。
-8. 已发布版本不覆盖。RC 问题发布新的 prerelease；正式版本问题优先发布 patch，必要时 deprecate 或移动 dist-tag，不把 unpublish 当作常规回滚。
-9. tag、npm version/dist-tag、GitHub Release 和安装 smoke 全部验证成功后，查询远端 `tasks/release-<version>`。如存在，先展示 ref、commit 和稳定发布证据并取得用户明确授权，再删除并复核远端 ref 不存在；未授权或清理失败只记录 follow-up，不回滚或重做发布。
+7. 后续发布只由 release tag 触发 GitHub-hosted workflow；workflow 在 registry write 前提取 notes，并只执行一次 `npm pack`，生成带 filename、inventory、SHA-256 与 SHA-512 integrity 的 manifest。发布前 smoke、`npm publish <tarball>` 和 CI artifact upload 必须消费同一个 tarball，不再重复完整 Candidate。
+8. 目标 npm version 不存在时才发布；已存在时必须比较官方 registry `dist.integrity`，一致才跳过 publish，不一致立即 fail closed。publish 后以有界重试确认 version、integrity 与目标 dist-tag，再从官方 registry 安装精确 `name@version` 并运行同一 CLI 生命周期 smoke。
+9. GitHub Release 使用 ensure 语义：不存在时按 CHANGELOG 创建，存在时核对 tag、commit、body 与 prerelease/Latest，不一致时不覆盖。npm 或 GitHub Release 已成功但后续失败时，保留这些不可逆事实；同一 tag 重跑只补齐缺失步骤，不删除 tag、不重复 publish、不 unpublish。
+10. 已发布版本不覆盖。RC 问题发布新的 prerelease；正式版本问题优先发布 patch，必要时 deprecate 或移动 dist-tag，不把 unpublish 当作常规回滚。
+11. tag、npm version/dist-tag、GitHub Release 和官方 registry 精确版本安装 smoke 全部验证成功后，查询远端 `tasks/release-<version>`。如存在，先展示 ref、commit 和稳定发布证据并取得用户明确授权，再删除并复核远端 ref 不存在；未授权或清理失败只记录 follow-up，不回滚或重做发布。
 
-`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3` 和 `0.1.0-rc.5` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用；`0.1.0-rc.6` 继续使用同一 trusted publishing 流程，发布事实以 npm 官方 registry 和对应 GitHub prerelease 为准。后续发布仍需每次具有明确发布意图。
+`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6` 和 `0.1.0-rc.7` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用；`0.1.0-rc.8` 当前按同一 trusted publishing 流程准备，发布事实以 npm 官方 registry 和对应 GitHub prerelease 为准。后续发布仍需每次具有明确发布意图。
 
 实际自举 workspace 如需消费新版产品资产，可独立执行 sync，并在状态变更后运行当前 Agent doctor；CLI update 只更新当前 Product checkout 或 registry package。这不是第二轮产品 E2E。上述验证只证明当前本地产品包和 MVP 主路径成立；公开发布仍需要完成上面的发布材料和分发流程。
 
-使用 `task-finish` 自动收尾时，canonical specs sync 前必须通过 pre-sync 契约检查，sync 后、archive 前必须通过 post-sync 检查；之后运行 `git diff --check`。只有本次 OpenSpec Markdown 变更的 `new blank line at EOF` 可以自动规范为恰好一个结尾换行，其他格式问题必须停止。已有可信 Candidate 进入收尾时，同时保存 `implementationCandidateIdentity` 并记录最终 `deliveryTreeIdentity`：相同内容或可证明只包含本次 OpenSpec sync/archive 等收尾元数据的 transition 只运行这些 closeout delta checks，不再次调用 task-verification `execute` 或 Candidate executor；实现内容改变，或无法证明为收尾元数据时，旧证据失效并重新执行 Candidate。归档后的相关校验通过后，后续相同 tree 的 commit、fast-forward、push 和本地清理继续复用已有验证结果。
+使用`task-finish`自动收尾时，必须先由`task-development`完成OpenSpec/current knowledge/runtime内容fixed point，观察stable Content Target，形成verification policy，并在Candidate freeze前执行formal Task Verification。Verification target/declarations current且policy facts完整后冻结Task Candidate，Completion Review绑定Candidate，再由Development记录proceed/必要风险接受并固化current handoff。Finish的`preflight`只聚合handoff/Environment/target/retained问题；`prepare`区分任务贡献（Task Contribution）与交付基线（Delivery Baseline），只在run-owned isolated carrier把原贡献机械应用到最新基线；`verify`只证明contribution/baseline/carrier与handoff等价且formal Verification执行次数为0。target前进时先证明carrier ancestry和全部changed-path after state；完整包含则跳过重复transition，否则凭精确产品token重建isolated carrier。两者都不增加Candidate generation、不重跑Verification/Completion Review；冲突、贡献漂移、不等价或无法证明时必须终止run并返回Development。不得在Finish中converge/archive、rebase原Task、修改贡献、生成Candidate、自动解决冲突或force push。

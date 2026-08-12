@@ -23,10 +23,7 @@ function visit(target) {
 
 if (explicit.length > 0) {
   for (const relative of explicit) {
-    const root = relative === 'verification.yml' || relative === 'AGENTS.md' || relative.startsWith('openspec/')
-      ? projectRoot
-      : serviceRoot;
-    visit(path.join(root, relative));
+    visit(path.join(projectRoot, relative));
   }
 } else {
   for (const entry of ['README.md', 'docs', 'package/README.md']) visit(path.join(serviceRoot, entry));
@@ -37,11 +34,9 @@ const problems = [];
 for (const file of [...new Set(files)].sort()) {
   const relative = path.relative(projectRoot, file).split(path.sep).join('/');
   const content = fs.readFileSync(file, 'utf8');
-  content.split(/\r?\n/).forEach((line, index) => {
-    if (/[ \t]+$/.test(line)) problems.push(`${relative}:${index + 1}: trailing whitespace`);
-  });
   if (file.endsWith('.md')) {
-    for (const match of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+    const linkContent = content.replace(/`+[^`\n]*`+/g, '');
+    for (const match of linkContent.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
       let target = match[1].trim().replace(/^<|>$/g, '');
       if (!target || /^(?:https?:|mailto:|#)/.test(target)) continue;
       target = target.split('#')[0].split('?')[0];

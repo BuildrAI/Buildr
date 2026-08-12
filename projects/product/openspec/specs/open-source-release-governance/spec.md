@@ -7,11 +7,11 @@
 ## Requirements
 
 ### Requirement: 公开产品身份必须一致且无占位符
-Buildr MUST 将官方源码仓库声明为 `https://github.com/elevenching/Buildr`，将公开 npm package 声明为 `@buildr-ai/buildr`，并 MUST 在公开 metadata、安装命令、反馈入口和 License 中使用已确认身份而非占位符。
+Buildr MUST 将官方源码仓库声明为 `https://github.com/BuildrAI/Buildr`，将公开 npm package 声明为 `@buildr-ai/buildr`，并 MUST 在公开 metadata、安装命令、反馈入口和 License 中使用已确认身份而非占位符。
 
 #### Scenario: 检查公开候选 metadata
 - **WHEN** 维护者运行开源候选检查
-- **THEN** repository、homepage 和 bugs MUST 指向 `elevenching/Buildr`
+- **THEN** repository、homepage 和 bugs MUST 指向 `BuildrAI/Buildr`
 - **AND** npm package MUST 使用 `@buildr-ai/buildr` 且 bin MUST 继续暴露 `buildr`
 - **AND** License MUST 声明 `Copyright (c) 2025-2026 陈俊`
 - **AND** tracked 公开材料 MUST NOT 包含 repository URL 占位符

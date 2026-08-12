@@ -1,1 +1,0 @@
-在任何 canonical spec sync 前，从 Buildr workspace root 和 Project registry 解析 `<workspace>`、`<project>` 与 `<change>`，并运行 `buildr openspec check <change> --stage pre-sync --project <project> --target <workspace> --json`。结果不是 `ok: true` 时，停止尚未执行的 archive、commit、rebase、merge、push 或 cleanup。

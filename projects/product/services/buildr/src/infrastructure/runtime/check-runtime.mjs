@@ -5,10 +5,11 @@ import { getRuntimeAdapter } from './adapter-contract.mjs';
 import { checkRuntimeProjection, printRuntimeProjectionReport } from './projection.mjs';
 import { parseRenderClaudeCodeArgs } from './render-claude-code.mjs';
 
-function runEnvironmentProbe(probe) {
+export function runEnvironmentProbe(probe, options = {}) {
   if (probe.kind === 'none') return { status: 'not-checked', probe: 'none' };
   if (probe.kind === 'manual') return { status: 'manual', probe: 'manual', guidance: probe.guidance };
-  const result = spawnSync(probe.executable, probe.args, {
+  const spawn = options.spawn || spawnSync;
+  const result = spawn(probe.executable, probe.args, {
     encoding: 'utf8',
     timeout: probe.timeoutMs,
     shell: false,
@@ -92,6 +93,9 @@ export function printRuntimeAdapterCheckReport(result) {
   }
   console.log(`Activation: rules=${result.activation.rules} skills=${result.activation.skills}`);
   if (result.activation.reloadGuidance) console.log(`Reload: ${result.activation.reloadGuidance}`);
+  console.log(`Runtime source: ${result.runtimeSourceEvidence.sourceRoot}`);
+  console.log(`Projection identity: ${result.runtimeSourceEvidence.projectionIdentity}`);
+  console.log(`Session consumption: ${result.runtimeSourceEvidence.sessionConsumption}`);
 }
 
 export const RUNTIME_CHECKERS = Object.freeze({ projection: checkRuntimeAdapter });

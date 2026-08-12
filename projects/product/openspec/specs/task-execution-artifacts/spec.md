@@ -1,0 +1,252 @@
+# task-execution-artifacts Specification
+
+## Purpose
+
+定义正式 Task execution record 的单一 Application authority、受限正文 Store、固定容量/backpressure 和 retention/cleanup 状态边界。
+
+## Requirements
+
+### Requirement: Task execution record 必须由单一 Application 管理
+Buildr MUST提供唯一 Task Execution Record Application，为正式Task管理closed execution record metadata、正文生命周期、固定quota reservation、resolution与cleanup状态。v1 owner/kind MUST只接受`task-verification/verification-execution`与`task-finish/finish-diagnostics`；Application MUST拒绝任意owner、kind、event、tag、history payload、Consumer/Adoption关系或execution resource mutation。
+
+#### Scenario: 幂等打开正式Task record
+- **WHEN** registered producer以相同Task、owner、kind与run identity重复open execution record
+- **THEN**Application MUST返回同一open record及其reservation，而不新增第二row或第二staging root
+- **AND**target或producer identity不一致时 MUST fail closed并保留原record
+
+#### Scenario: 未登记producer或不存在Task
+- **WHEN**caller提交未登记owner/kind、任意payload或不存在的Task ID
+- **THEN**Application MUST拒绝整个mutation
+- **AND**MUST NOT创建metadata、body、quota reservation或专业Result
+
+### Requirement: execution record 正文必须在写入前受限处理
+Buildr MUST只把正文写入canonical Workspace的`.buildr/local/task-execution-records/<owner>/<record-id>/`，并 MUST在任何persistent write前应用版本化redaction、closed file-name与path/symlink/regular-file检查。SQLite MUST只保存Workspace-relative locator、digest、stored/original size、truncated与redaction version，MUST NOT保存stdout/stderr、完整diagnostics、环境变量、stdin、凭证或未经授权的绝对路径。
+
+#### Scenario: 正文正常seal
+- **WHEN**producer为open record提交closed UTF-8或JSON body files并以terminal outcome seal
+- **THEN**writer MUST在owned staging中先脱敏和有界写入、fsync并原子rename，再提交retained metadata
+- **AND**metadata MUST保存可重读的relative locator、aggregate digest/size、truncation与redaction version
+
+#### Scenario: secret和本机路径进入正文
+- **WHEN**body包含Bearer token、private key、credential/secret字段或未经授权的本机绝对路径
+- **THEN**writer MUST在staging write前替换敏感内容并只持久化redacted bytes
+- **AND**任何raw副本、env、stdin或原始命令参数 MUST NOT落盘
+
+#### Scenario: publish后metadata失败
+- **WHEN**final body directory已原子rename但SQLite seal transaction失败
+- **THEN**Application MUST不把record报告为retained，并 MUST保留可识别manifest/attention现场供精确恢复
+- **AND**重试 MUST只复用identity与digest匹配的owned directory，不得覆盖或删除未知内容
+
+### Requirement: execution record 容量必须固定且在execution前backpressure
+Buildr MUST固定单文件4 MiB、单record16 MiB、同一Task/owner 256 MiB与Workspace 2 GiB上限。Application MUST在open transaction中按16 MiB record boundary预留容量；open按reservation计费，seal后按stored bytes计费，cleaned后释放。caller MUST NOT覆盖容量或先执行producer再丢弃正文。
+
+#### Scenario: 文件或record超过上限
+- **WHEN**redacted body file超过4 MiB或record total超过16 MiB
+- **THEN**writer MUST在UTF-8或valid structured boundary安全截断并保存original/stored bytes与`truncated: true`
+- **AND**MUST NOT通过未登记文件或raw旁路绕过上限
+
+#### Scenario: Task-owner或Workspace容量不足
+- **WHEN**新的16 MiB reservation将超过256 MiB Task-owner或2 GiB Workspace上限
+- **THEN**Application MUST在producer execution启动前返回backpressure和唯一cleanup/resolution next action
+- **AND**MUST NOT创建record、staging directory或静默清理未解决/可恢复内容
+
+### Requirement: execution record retention 与单记录cleanup 必须可恢复
+Buildr MUST对passed正文至少保留7天且保留相同Task/owner/kind最近3次，对failed、blocked、cancelled正文至少保留30天并要求resolution为acknowledged或recovered。open、attention或仍不可证明terminal的record MUST NOT cleanup。eligible cleanup MUST先形成cleanup_pending CAS，再删除精确owned body，最后保存cleaned tombstone并保留digest/size/producer/cleanup code。
+
+#### Scenario: passed record仍受时间或最近次数保护
+- **WHEN**passed record未满7天或仍属于相同Task/owner/kind最近3次
+- **THEN**Application MUST拒绝cleanup并返回具体retention原因
+- **AND**record body与metadata MUST保持不变
+
+#### Scenario: failed record尚未解决
+- **WHEN**failed、blocked或cancelled record已满30天但resolution仍是pending
+- **THEN**Application MUST拒绝cleanup并保持正文
+- **AND**MUST NOT用时间到期代替acknowledged或recovered事实
+
+#### Scenario: eligible record完成cleanup
+- **WHEN**age、recent-count、resolution与ownership条件全部满足
+- **THEN**Application MUST只删除该record directory并将metadata写为cleaned、locator清空、quota released
+- **AND**digest、stored/original size、truncated、producer与cleanup code MUST作为tombstone保留
+
+### Requirement: Verification producer 必须映射为 closed execution record
+Registered Verification command runner MUST把一次formal Task invocation映射为一条`task-verification/verification-execution` record：`run_identity` MUST使用执行前生成的run ID，`target_identity` MUST使用请求的stable Content Target identity，`producer` MUST使用稳定registered identity。执行后生成的`executionIdentity`、verification scope、checks与diagnostics MUST进入受控正文而不是新增SQLite列、任意JSON metadata或Consumer/Adoption关系。
+
+#### Scenario: Verification record metadata映射
+- **WHEN** formal Task runner已通过调用前校验并生成run ID
+- **THEN** producer MUST以`taskId + task-verification + verification-execution + runId`幂等open record并绑定请求target identity
+- **AND** retry MUST使用新的run ID，执行后digest MUST NOT替代open时run identity
+
+#### Scenario: Task外runner执行
+- **WHEN** command runner没有合法formal Task Environment context
+- **THEN** producer MUST NOT打开Task execution record
+- **AND**既有transient evidence lifecycle MUST保持唯一runner evidence authority
+
+### Requirement: Verification record正文必须使用closed body dictionary
+Verification producer MUST只提交现有closed正文文件名。`summary.json` MUST保存versioned portable run/scope/execution identity、Project/declaration、selected capability/authorization IDs、安全runtime identity、check/timing与execution outcome；`timeline.json` MUST只保存closed execution milestones；`diagnostics.json` MUST只保存失败、resource coordination、interruption与target drift的有界诊断；stdout/stderr MUST按capability边界进入对应text文件。Producer MUST在persistent write前移除transient locator、本机root/executable、resource token、env、stdin与raw敏感argv，并 MUST继续由正文Store执行最终redaction和截断。
+
+#### Scenario: passed execution seal
+- **WHEN**全部checks通过、target稳定且runner形成完整正文
+- **THEN** producer MUST提交`summary.json`、适用输出与timeline并以`passed` seal
+- **AND** SQLite MUST只保存正文locator/digest/size/truncation与既有governance metadata
+
+#### Scenario: failed或drift execution seal
+- **WHEN** capability失败、timeout或target drift且已有完整terminal诊断
+- **THEN** producer MUST以`failed` seal并提交`diagnostics.json`及已有partial output
+- **AND** diagnostics MUST只包含portable code、exit/signal、resource ID/status、fingerprint与相对变化路径
+
+#### Scenario: catchable cancellation
+- **WHEN**runner有界处理显式取消或signal
+- **THEN** producer MUST以`cancelled` seal并保存已有partial facts
+- **AND** failure-class retention与pending resolution MUST由既有execution record Domain建立
+
+### Requirement: Verification transient cleanup 必须晚于record seal
+Formal Task runner MUST只在execution record seal已返回retained且正文完整性可确认后，调用existing Verification cleanup删除精确provider-owned transient run。seal、metadata post-read或cleanup失败 MUST返回各自可诊断状态；seal失败 MUST保留transient evidence，cleanup失败 MUST保留已retained record且不得回滚其事实。
+
+#### Scenario: record retained后cleanup成功
+- **WHEN** formal execution record已retained且transient summary identity匹配
+- **THEN** runner MUST只删除该run目录并报告transient cleanup成功
+- **AND** retained正文与metadata MUST保持不变
+
+#### Scenario: seal失败
+- **WHEN**body publish或metadata seal无法证明retained
+- **THEN**runner MUST保留transient run并把formal execution报告为failed或attention
+- **AND** MUST NOT写current Verification Result、删除未知目录或声称execution evidence已安全保留
+
+### Requirement: Finish producer 必须把每次 invocation 映射为独立 closed execution record
+Registered Task Finish runner MUST把每次通过调用前校验且真正开始执行的 invocation 映射为一条`task-finish/finish-diagnostics` record。`run_identity` MUST使用执行前生成的独立 Finish invocation identity，`target_identity` MUST使用Development handoff中的stable Content Target identity，`producer` MUST使用稳定registered identity；逻辑`finishRunId`、invocation ordinal、Candidate/handoff、target与Carrier facts MUST进入受控正文而不是新增SQLite列、任意metadata或retry/Consumer关系。
+
+#### Scenario: 首次 Finish invocation metadata 映射
+- **WHEN** caller已通过Task、Environment、Development handoff、target/remote与no-op校验并生成Finish invocation identity
+- **THEN** producer MUST以`taskId + task-finish + finish-diagnostics + finishInvocationId`幂等open record并绑定Content Target identity
+- **AND** Finish current run、Carrier、target lease与其他execution side effect MUST只在open成功后创建
+
+#### Scenario: 同一 Finish run 恢复
+- **WHEN** blocked或cleanup-pending Finish run使用matching product resume token再次执行
+- **THEN** resume invocation MUST生成新的Finish invocation identity与独立record，并在正文引用原`finishRunId`和新ordinal
+- **AND** MUST NOT覆盖旧blocked record、自动建立retry/recovered关系或把record identity写入`task_finish_current`
+
+#### Scenario: invalid或no-op Finish invocation
+- **WHEN** request参数、Task/Environment/handoff、target/remote、resume token不合法，或既有Finish已经complete而本次只返回no-op
+- **THEN** producer MUST NOT打开record、预留quota或创建diagnostics transient
+- **AND** MUST NOT借execution record改变既有Finish current、Carrier、target或terminal facts
+
+### Requirement: Finish record 正文必须使用 closed invocation diagnostics dictionary
+Finish producer MUST只提交既有closed正文文件名。`summary.json` MUST保存versioned portable invocation/run/ordinal、handoff/Candidate/Content Target、target/Carrier identity、固定phase status/timing、Finish outcome与cleanup disposition；`timeline.json` MUST只保存closed record/run/phase/stop/seal milestones；`diagnostics.json` MUST只保存本invocation的failure、target race、adaptation、Doctor、cleanup与cancellation diagnostics；stdout/stderr MUST按固定phase与operation边界保存。Producer MUST在persistent write前移除transient/Carrier locator、本机root/executable、remote credential、lease/resume/resource token、env、stdin、cwd与raw argv，并 MUST继续由正文Store执行最终redaction和截断。
+
+#### Scenario: Finish complete seal
+- **WHEN**五阶段完成且producer形成完整invocation正文
+- **THEN** producer MUST提交`summary.json`、适用output与timeline并以`passed` seal
+- **AND** SQLite MUST只保存既有body locator/digest/size/truncation与governance metadata
+
+#### Scenario: blocked或failed Finish seal
+- **WHEN** invocation因target race、Delivery Adaptation、Doctor、cleanup或产品执行失败停止且已有terminal诊断
+- **THEN** producer MUST分别以`blocked`或`failed` seal并提交diagnostics与已有partial output
+- **AND** diagnostics MUST只包含portable code/class/operation/status/ref identity与有界findings，不得包含恢复token或本机locator
+
+#### Scenario: catchable cancellation
+- **WHEN** runner有界捕获取消或signal并能收敛已启动命令与partial diagnostics
+- **THEN** producer MUST以`cancelled` seal并保存已有facts
+- **AND** 不可捕获进程死亡 MUST保持record open且不得伪造terminal outcome
+
+### Requirement: Finish diagnostics transient cleanup 必须晚于 record retained
+Formal Task Finish runner MUST只在execution record seal返回retained且正文完整性可确认后，删除精确invocation-owned diagnostics transient。seal、metadata post-read或diagnostics cleanup失败 MUST保持各自可诊断状态；seal失败 MUST保留diagnostics transient。Execution record lifecycle MUST NOT拥有、删除、延长或恢复Delivery Carrier、target lease、Delivery Adaptation、Environment resource或其他Finish recovery material。
+
+#### Scenario: record retained 后 diagnostics cleanup成功
+- **WHEN** Finish record已retained且transient summary identity匹配invocation
+- **THEN** producer MUST只删除该invocation diagnostics目录并报告cleaned
+- **AND** retained record、Finish current、Carrier与terminal facts MUST保持不变
+
+#### Scenario: seal失败但 Finish owner facts已变化
+- **WHEN**body publish或metadata seal无法证明retained，而Finish已形成delivery、cleanup或terminal owner facts
+- **THEN** producer MUST保留diagnostics transient并报告attention
+- **AND** MUST NOT回滚、改写或重放remote delivery、Task Environment cleanup、Carrier cleanup、Task terminal transition或`task_finish_current`
+
+#### Scenario: blocked Finish保留恢复资源
+- **WHEN** Finish invocation以blocked record retained，但同一Finish run仍需Carrier、resume token、lease或cleanup resource恢复
+- **THEN** record producer MAY清理本invocation diagnostics transient
+- **AND** Finish owner MUST继续按其current状态保留精确恢复资源，record retention MUST NOT代替或删除这些资源
+
+### Requirement: Task Execution Record 必须提供同 authority 的 portable 只读视图
+Task Execution Record Application MUST 按 Task 提供列表与单条详情的 portable read model，并 MUST 支持 `all`、`verification`、`finish` 三种 closed view；专业 view MUST 只映射既有 owner，所有 view MUST 读取同一 `task_execution_records` authority。Read model MUST NOT 暴露 SQLite、body locator、本机绝对路径、reserved quota、effects path，也 MUST NOT复制 Verification Result、Finish current/terminal 或 execution resource facts。
+
+#### Scenario: 查看全部记录
+- **WHEN** caller 请求一个 Task 的 `all` execution record view
+- **THEN** Application MUST 按稳定顺序返回该 Task 的 Verification 与 Finish records
+- **AND** 每条记录 MUST 使用同一 portable identity 与安全 metadata 投影
+
+#### Scenario: 查看专业记录
+- **WHEN** caller 请求 `verification` 或 `finish` view
+- **THEN** Application MUST 分别只返回 `task-verification` 或 `task-finish` owner 的 records
+- **AND** MUST NOT 创建或读取第二分类 store
+
+#### Scenario: 读取其他 Task 的 record
+- **WHEN** caller 以 Task A 的 route 请求实际属于 Task B 的 record identity
+- **THEN** Application MUST fail closed
+- **AND** MUST NOT 返回 Task B 的 metadata 或正文信息
+
+### Requirement: Task Execution Record 正文必须通过白名单限量读取
+Task Execution Record Application MUST 只接受 Task ID、record identity 与 manifest 中存在的 closed filename 读取正文。Body Store MUST 从 record 派生 owned directory，验证目录、manifest、record identity、owner、redaction version、文件集合、digest、size 与 SQLite metadata 后，返回最多 512 KiB 的 UTF-8 preview。响应 MUST 标明文件 digest、stored size、stored truncation 与 response truncation；MUST NOT 接受 path、locator、glob、range 或任意 filename。
+
+#### Scenario: 读取有效正文文件
+- **WHEN** retained record 的 requested filename 属于正文白名单且存在于已验证 manifest
+- **THEN** Application MUST 返回 integrity-verified 的限量 UTF-8 内容及 portable file metadata
+- **AND** 超过响应上限时 MUST 在 UTF-8 边界截断并标记 `responseTruncated`
+
+#### Scenario: 文件名未声明
+- **WHEN** requested filename 不在 closed 白名单或不在该 record manifest
+- **THEN** Application MUST 在读取任意请求路径前拒绝
+- **AND** MUST NOT 回退到目录扫描、路径拼接或 locator 输入
+
+#### Scenario: cleaned tombstone
+- **WHEN** record 已 cleaned 或正文状态不是 available
+- **THEN** 列表与详情 MUST 继续返回 tombstone metadata
+- **AND** 正文读取 MUST 返回稳定 unavailable diagnostic，不扫描文件系统恢复内容
+
+#### Scenario: 正文完整性不匹配
+- **WHEN** manifest、entry、digest、size 或 metadata 任一校验失败
+- **THEN** body read MUST fail closed 且不返回部分正文
+- **AND** MUST 保留现场供 owner recovery 或 Doctor 后续诊断
+
+### Requirement: ExecRecord GC 必须按既有 authority 执行 bounded Workspace 回收
+Task Execution Record Application MUST 提供 Workspace 级 ExecRecord GC，接受 closed `dryRun` 与 `limit`，并 MUST 只从 `task_execution_records` 选择候选。一次运行 MUST 有固定默认与最大 batch，MUST 优先恢复 `cleanup_pending`，再复用既有 retention、resolution、recent-count 与单记录 cleanup 处理 eligible retained 正文；MUST NOT 扫描文件系统、建立第二 GC store、自动处置 failure resolution、猜测 open record 已死亡或管理 execution resources。
+
+#### Scenario: dry-run 计算候选
+- **WHEN** caller 对 Workspace 执行 dry-run GC
+- **THEN** Application MUST 按真实 current rows 和固定规则返回 bounded 候选与 action 摘要
+- **AND** MUST NOT改变 record lifecycle、删除正文或删除 metadata
+
+#### Scenario: bounded batch 清理 eligible 正文
+- **WHEN** Workspace 同时存在多条 eligible retained 或 cleanup_pending records 且数量超过 limit
+- **THEN** GC MUST 按稳定顺序最多处理 limit 条，并对正文 cleanup 复用单记录 CAS 与 owner-bound deletion
+- **AND** 未选择记录 MUST 保持不变，单条失败 MUST NOT回滚或阻塞其他已选择记录
+
+#### Scenario: 不可自动清理的 record
+- **WHEN** record 仍为 open/attention、retention 未到期、recent-count 受保护，或 failure resolution 仍 pending
+- **THEN** GC MUST 不选择该 record 执行 mutation
+- **AND** MUST NOT通过时间、目录状态或调用方 override 改变其 disposition
+
+### Requirement: ExecRecord GC 必须有限期保留 cleaned tombstone
+ExecRecord GC MUST 对 cleaned metadata 应用固定 tombstone retention：`cleanedAt` 未满 90 天或仍属于同一 Task/owner/kind 最近 20 条 cleaned records 时 MUST 保留；两项保护均失效后 MAY 通过 expected-current 条件删除该 row。Tombstone purge MUST NOT删除或改写 Task、Verification Result、Finish current/terminal 或其他专业事实。
+
+#### Scenario: tombstone 仍受时间保护
+- **WHEN** cleaned record 距 `cleanedAt` 未满 90 天
+- **THEN** GC MUST保留其 metadata
+- **AND** MUST将它排除在本次 purge mutation 外
+
+#### Scenario: tombstone 仍受最近次数保护
+- **WHEN** cleaned record 已满 90 天但仍属于同一 Task/owner/kind 最近 20 条 cleaned records
+- **THEN** GC MUST保留其 metadata
+- **AND** MUST NOT因 Workspace 积压或 quota 状态删除它
+
+#### Scenario: tombstone 到期删除
+- **WHEN** cleaned record 已满 90 天且不再属于最近 20 条，且 mutation 时 current row 仍与已选择事实一致
+- **THEN** GC MUST只删除该 `task_execution_records` row
+- **AND** 并发变化时 MUST返回 skipped/conflict 而不是删除不同 current state
+
+### Requirement: ExecRecord GC 结果必须 portable 且有界
+ExecRecord GC MUST 返回 stable operation result，至少包含 mode、limit、扫描/选择/cleaned/purged/skipped/failed counts、每个已选择 record 的 identity、action、status 与 portable diagnostic。结果 MUST bounded by batch limit，MUST NOT包含 SQLite path、body locator、本机绝对路径、正文、secret 或任意 cleanup shell。
+
+#### Scenario: 部分失败结果
+- **WHEN** batch 中一条 record cleanup 失败而其他 records 成功
+- **THEN** 顶层结果 MUST表达 partial 状态并分别列出成功与失败 action
+- **AND** MUST不返回失败 record 的正文 locator 或底层数据库路径

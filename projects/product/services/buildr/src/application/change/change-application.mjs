@@ -1,10 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { inspectChangeChecklist } from '../openspec/change-checklist.mjs';
 
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
 const ARCHIVED_PREFIX = 'archived~';
-const STANDARD_FILES = ['.openspec.yaml', 'proposal.md', 'design.md', 'tasks.md'];
+const CHANGE_CONTENT_FILES = ['.openspec.yaml', 'brief.md', 'proposal.md', 'design.md', 'tasks.md'];
+
+function inside(parent, child) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+}
 
 export function changeError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
@@ -53,14 +59,6 @@ function readDirectories(root) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-function parseTasks(file) {
-  if (!isFile(file)) return { exists: false, completed: null, total: null, remaining: null };
-  const content = fs.readFileSync(file, 'utf8');
-  const matches = [...content.matchAll(/^\s*-\s*\[([ xX])\]\s+/gm)];
-  const completed = matches.filter((match) => match[1].toLowerCase() === 'x').length;
-  return { exists: true, completed, total: matches.length, remaining: matches.length - completed };
-}
-
 function artifact(file, root, includeContent) {
   const exists = isFile(file);
   return {
@@ -79,7 +77,7 @@ function specs(changeRoot, workspaceRoot, includeContent) {
 }
 
 function updatedAt(changeRoot) {
-  const files = STANDARD_FILES.map((name) => path.join(changeRoot, name));
+  const files = CHANGE_CONTENT_FILES.map((name) => path.join(changeRoot, name));
   for (const capability of readDirectories(path.join(changeRoot, 'specs'))) {
     files.push(path.join(changeRoot, 'specs', capability, 'spec.md'));
   }
@@ -102,8 +100,8 @@ function projectContext(runtime, targetRoot, projectCode) {
   };
 }
 
-function buildChange(targetRoot, project, directory, lifecycle, includeContent = false) {
-  const changesRoot = path.join(targetRoot, project.source.path, 'openspec', 'changes');
+function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, lifecycle, includeContent = false) {
+  const changesRoot = path.join(projectRoot, 'openspec', 'changes');
   const changeRoot = lifecycle === 'active' ? path.join(changesRoot, directory) : path.join(changesRoot, 'archive', directory);
   const identityFile = path.join(changeRoot, '.openspec.yaml');
   if (!isDirectory(changeRoot) || !isFile(identityFile)) return null;
@@ -111,6 +109,10 @@ function buildChange(targetRoot, project, directory, lifecycle, includeContent =
     ? directory.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1] || directory
     : directory;
   const proposal = artifact(path.join(changeRoot, 'proposal.md'), targetRoot, includeContent);
+  const brief = {
+    kind: 'buildr-companion',
+    ...artifact(path.join(changeRoot, 'brief.md'), targetRoot, includeContent),
+  };
   const design = artifact(path.join(changeRoot, 'design.md'), targetRoot, includeContent);
   const tasks = artifact(path.join(changeRoot, 'tasks.md'), targetRoot, includeContent);
   const changeSpecs = specs(changeRoot, targetRoot, includeContent);
@@ -121,7 +123,8 @@ function buildChange(targetRoot, project, directory, lifecycle, includeContent =
     lifecycle,
     project: { id: project.id, code: project.code, name: project.name },
     updatedAt: updatedAt(changeRoot),
-    progress: parseTasks(path.join(changeRoot, 'tasks.md')),
+    progress: inspectChangeChecklist(changeRoot),
+    brief,
     artifacts: {
       root: relativePath(targetRoot, changeRoot),
       proposal,
@@ -130,6 +133,24 @@ function buildChange(targetRoot, project, directory, lifecycle, includeContent =
       specs: changeSpecs,
     },
   };
+}
+
+function buildChange(targetRoot, project, directory, lifecycle, includeContent = false) {
+  return buildChangeAtProjectRoot(targetRoot, project, path.join(targetRoot, project.source.path), directory, lifecycle, includeContent);
+}
+
+function findLogicalChange(targetRoot, project, projectRoot, code, includeContent = false) {
+  const changesRoot = path.join(projectRoot, 'openspec', 'changes');
+  const active = buildChangeAtProjectRoot(targetRoot, project, projectRoot, code, 'active', includeContent);
+  if (active) return active;
+  const archivedDirectories = readDirectories(path.join(changesRoot, 'archive'))
+    .filter((directory) => (directory.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1] || directory) === code)
+    .sort((left, right) => right.localeCompare(left));
+  for (const directory of archivedDirectories) {
+    const archived = buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, 'archived', includeContent);
+    if (archived) return archived;
+  }
+  return null;
 }
 
 function decodeRef(ref) {
@@ -142,6 +163,64 @@ function decodeRef(ref) {
 }
 
 export function registerChangeApplication(runtime) {
+  function taskScopedProjectRoot(targetRoot, taskId, projectCode, project) {
+    const current = runtime.readTaskEnvironmentCurrent(targetRoot, taskId);
+    if (!['ready', 'blocked'].includes(current.status) || !current.environment) return null;
+    const scopes = Array.isArray(current.environment.scopes) ? current.environment.scopes : [];
+    const direct = scopes.find((scope) => scope.selector === `project:${projectCode}`);
+    if (direct) {
+      if (direct.kind !== 'project' || direct.project !== projectCode || direct.sourcePath !== project.source.path) return null;
+      if (typeof direct.executionRoot !== 'string' || typeof direct.validationRoot !== 'string') return null;
+      const candidate = path.resolve(direct.executionRoot);
+      return direct.shared === true || inside(direct.validationRoot, candidate) ? candidate : null;
+    }
+    const workspace = scopes.find((scope) => scope.selector === 'workspace');
+    if (!workspace) return null;
+    if (workspace.kind !== 'workspace' || workspace.sourcePath !== '.') return null;
+    if (typeof workspace.executionRoot !== 'string' || typeof workspace.validationRoot !== 'string') return null;
+    const executionRoot = path.resolve(workspace.executionRoot);
+    if (!inside(workspace.validationRoot, executionRoot)) return null;
+    const candidate = path.resolve(executionRoot, project.source.path);
+    return inside(executionRoot, candidate) && inside(workspace.validationRoot, candidate) ? candidate : null;
+  }
+
+  function resolveTaskScopedChange(targetRoot, taskId, reference, { includeContent = false, allowMissingTask = false } = {}) {
+    assertObject(reference, 'change_reference_invalid', 'Task-scoped Change reference 必须是对象。');
+    const allowed = new Set(['project', 'change']);
+    for (const field of Object.keys(reference)) if (!allowed.has(field)) throw changeError('change_reference_field_forbidden', `Task-scoped Change reference 不支持字段：${field}。`);
+    const projectCode = assertSafeSegment(reference.project, 'Project code');
+    const changeCode = assertSafeSegment(reference.change, 'Change code');
+    let taskAvailable = true;
+    try { runtime.readTaskRecordPersistence(targetRoot, taskId); } catch (error) {
+      if (!allowMissingTask || error.code !== 'task_record_not_found') throw error;
+      taskAvailable = false;
+    }
+    const { project, projectRoot } = projectContext(runtime, targetRoot, projectCode);
+    const candidateRoot = taskAvailable ? taskScopedProjectRoot(targetRoot, taskId, projectCode, project) : null;
+    const candidate = candidateRoot && isDirectory(candidateRoot) ? findLogicalChange(candidateRoot, project, candidateRoot, changeCode, includeContent) : null;
+    const retained = findLogicalChange(targetRoot, project, projectRoot, changeCode, includeContent);
+    const working = candidate
+      ? { provenance: 'task-environment-candidate', root: candidateRoot, change: candidate }
+      : retained
+        ? { provenance: retained.lifecycle === 'active' ? 'retained-active' : 'retained-archive', root: projectRoot, change: retained }
+        : null;
+    return {
+      schemaVersion: 'buildr.task-scoped-change-reference/v1',
+      taskId,
+      reference: { project: projectCode, change: changeCode },
+      availability: working ? 'available' : 'unavailable',
+      workingCopy: working,
+      retainedBaseline: candidate && retained ? { provenance: retained.lifecycle === 'active' ? 'retained-baseline' : 'retained-archive', root: projectRoot, change: retained } : null,
+      diagnostic: working ? null : { code: 'task_change_unavailable', message: `OpenSpec Change 当前不可用：${projectCode}/${changeCode}。` },
+    };
+  }
+
+  function taskScopedChangeDetail(targetRoot, taskId, projectCode, changeCode) {
+    const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { includeContent: true });
+    if (resolution.availability !== 'available') throw changeError('change_not_found', resolution.diagnostic.message, 404, resolution.reference);
+    return { resolution };
+  }
+
   function listProjectChanges(targetRoot, projectCode) {
     const { project, projectRoot } = projectContext(runtime, targetRoot, projectCode);
     const changesRoot = path.join(projectRoot, 'openspec', 'changes');
@@ -229,6 +308,8 @@ export function registerChangeApplication(runtime) {
     changeDetail,
     generateChangeCreatePrompt,
     generateChangeActionPrompt,
+    resolveTaskScopedChange,
+    taskScopedChangeDetail,
   });
   return runtime;
 }

@@ -14,6 +14,7 @@ import { createScopeDiagnostics } from './doctor/scope-diagnostics.mjs';
 import { createServiceDiagnostics } from './doctor/service-diagnostics.mjs';
 import { createCapabilityDiagnostics } from './doctor/capability-diagnostics.mjs';
 import { createProjectVerificationDiagnostics } from './doctor/project-verification-diagnostics.mjs';
+import { createProjectEnvironmentPreparationDiagnostics } from './doctor/project-environment-preparation-diagnostics.mjs';
 import { buildDoctorHealth, buildDoctorRepairPlan } from './doctor/result-model.mjs';
 
 export function registerApplicationDoctor(runtime) {
@@ -130,6 +131,7 @@ export function registerApplicationDoctor(runtime) {
   });
   const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path });
   const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding });
+  const { diagnoseProjectEnvironmentPreparation } = createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding });
 
   function diagnoseSkillsManifestSchemas(result, targetRoot, scopes) {
     const checked = new Set();
@@ -149,10 +151,10 @@ export function registerApplicationDoctor(runtime) {
       const hasV2OnlyKeys = /^(?:contracts|bindings):/m.test(manifestText);
       const supportedLegacy = ['buildr.skills/v1', 'buildr.skills/v2'].includes(schemaVersion) || (schemaVersion === null && !hasV2OnlyKeys);
       const projectLegacy = !isWorkspace && supportedLegacy;
-      addDoctorFinding(result, supportedLegacy ? 'warning' : 'error', projectLegacy ? 'skills.project_assets_legacy' : supportedLegacy ? 'skills.schema_version_legacy' : 'skills.schema_version_invalid', `${projectLegacy ? 'Legacy Project Skill source 等待显式迁移' : supportedLegacy ? 'Skills manifest 等待事务化升级' : 'Skills manifest schemaVersion 不支持'}：${relative}`, {
+      addDoctorFinding(result, projectLegacy ? 'error' : supportedLegacy ? 'warning' : 'error', projectLegacy ? 'skills.project_assets_unsupported' : supportedLegacy ? 'skills.schema_version_legacy' : 'skills.schema_version_invalid', `${projectLegacy ? 'Legacy Project Skill source 已不受支持' : supportedLegacy ? 'Skills manifest 等待事务化升级' : 'Skills manifest schemaVersion 不支持'}：${relative}`, {
           path: relative,
           supportedVersions: ['buildr.skills/v1', 'buildr.skills/v2', 'buildr.skills/v3'],
-          suggestion: projectLegacy ? '运行 buildr skills migrate-project-assets --check，审阅后再 --apply。' : supportedLegacy ? '运行 buildr update 或 buildr sync 迁移 workspace manifest 到 schemaVersion: buildr.skills/v3。' : '先更新 Buildr CLI；不要用当前版本重写该 manifest。',
+          suggestion: projectLegacy ? '当前 Buildr 不提供自动迁移；升级前使用旧版本完成迁移，或人工审阅后把 source 整理到 workspace skills/。' : supportedLegacy ? '运行 buildr update 或 buildr sync 迁移 workspace manifest 到 schemaVersion: buildr.skills/v3。' : '先更新 Buildr CLI；不要用当前版本重写该 manifest。',
           userActionRequired: true,
         });
     }
@@ -232,6 +234,7 @@ export function registerApplicationDoctor(runtime) {
     diagnoseSkillsManifestSchemas,
     diagnoseSkillCapabilities,
     diagnoseProjectVerification,
+    diagnoseProjectEnvironmentPreparation,
     finalizeDoctorResult,
     printDoctorReport,
   });

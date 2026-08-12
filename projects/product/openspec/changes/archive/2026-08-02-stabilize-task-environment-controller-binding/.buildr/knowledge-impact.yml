@@ -1,0 +1,62 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: stabilize-task-environment-controller-binding
+operation: reconcile
+treeIdentity: working-tree@4c6c7bf52f151016244c97219018f386f80b6ec2
+impacts:
+  - type: brief
+    target: openspec/changes/stabilize-task-environment-controller-binding/brief.md
+    reason: 正式 Change 需要说明 Task checkout authority、Environment Manager trust、consumer migration 与非目标
+    status: updated
+    sourceIdentities:
+      - openspec/changes/stabilize-task-environment-controller-binding/proposal.md
+      - openspec/changes/stabilize-task-environment-controller-binding/design.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-environments/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-verification/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/agent-task-workflows/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/concurrent-task-acceptance/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/worktree-local-app-preview/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-finish-execution/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 用户重新定义了 Task Environment 源码版本基础、Environment Manager 与 controller identity 的长期边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/stabilize-task-environment-controller-binding/design.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-environments/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Environment、Preview resource ownership 与 Verification applicability 的 identity authority 发生可观察修正
+    status: updated
+    sourceIdentities:
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-environments/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-verification/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/worktree-local-app-preview/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Environment Manager clean gate、checkout authority、资源 ownership 与验证 identity 需要与实现一致
+    status: updated
+    sourceIdentities:
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-environments/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-verification/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/worktree-local-app-preview/spec.md
+      - openspec/changes/stabilize-task-environment-controller-binding/specs/task-finish-execution/spec.md
+terminology:
+  status: updated
+  termsConsulted:
+    - Task Environment
+    - Environment Receipt
+    - Task checkout
+    - Environment Manager
+    - controller identity
+    - canonical retained Workspace
+  canonicalTerms: 任务环境（Task Environment）、环境回执（Environment Receipt）、Task checkout、Environment Manager、controller identity、canonical retained Workspace
+  changedAssets:
+    - openspec/knowledge/glossary.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/specs/task-environments/spec.md
+    - openspec/specs/task-verification/spec.md
+    - openspec/knowledge/glossary.md
+    - openspec/changes/stabilize-task-environment-controller-binding/design.md
+unresolvedItems: []

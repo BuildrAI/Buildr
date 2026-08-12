@@ -1,0 +1,147 @@
+#!/bin/sh
+set -u
+
+minimum_node_version=24.15.0
+supported_node_range='>=24.15.0 <25'
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case "$link" in
+    /*) self=$link ;;
+    *) self="${self%/*}/$link" ;;
+  esac
+done
+script_root=$(CDPATH= cd "${self%/*}" && pwd)
+cli_entry="$script_root/../bin/buildr.mjs"
+
+node_version() {
+  "$1" -p 'process.versions.node' 2>/dev/null
+}
+
+is_compatible_node() {
+  [ -x "$1" ] || return 1
+  candidate_version=$(node_version "$1") || return 1
+  old_ifs=$IFS
+  IFS=.
+  set -- $candidate_version
+  IFS=$old_ifs
+  candidate_major=${1:-}
+  candidate_minor=${2:-}
+  candidate_patch=${3:-}
+  case "$candidate_major.$candidate_minor.$candidate_patch" in
+    *[!0-9.]*) return 1 ;;
+  esac
+  [ "$candidate_major" -eq 24 ] && [ "$candidate_minor" -ge 15 ]
+}
+
+run_with_node() {
+  selected_node=$1
+  shift
+  exec "$selected_node" "$cli_entry" "$@"
+}
+
+target_hint=
+previous=
+for argument in "$@"; do
+  if [ "$previous" = --target ]; then target_hint=$argument; break; fi
+  previous=$argument
+done
+[ -n "$target_hint" ] || target_hint=$PWD
+case "$target_hint" in
+  /*) search_root=$target_hint ;;
+  *) search_root=$PWD/$target_hint ;;
+esac
+[ -d "$search_root" ] || search_root=${search_root%/*}
+workspace_root=
+while [ -n "$search_root" ] && [ "$search_root" != / ]; do
+  if [ -f "$search_root/.buildr/workspace.yml" ]; then workspace_root=$search_root; break; fi
+  search_root=${search_root%/*}
+  [ -n "$search_root" ] || search_root=/
+done
+
+declared_version=
+if [ -n "$workspace_root" ]; then
+  declared_version=$(awk '
+    /^runtime:[[:space:]]*$/ { runtime=1; next }
+    runtime && /^[[:space:]]+node:[[:space:]]*$/ { node=1; next }
+    node && /^[[:space:]]+version:[[:space:]]*/ {
+      value=$0; sub(/^[[:space:]]+version:[[:space:]]*/, "", value); gsub(/"/, "", value); print value; exit
+    }
+    runtime && /^[^[:space:]]/ { exit }
+  ' "$workspace_root/.buildr/workspace.yml")
+fi
+
+managed_node=
+if [ -n "$declared_version" ]; then
+  case $(uname -s 2>/dev/null || true) in
+    Darwin) runtime_platform=darwin ;;
+    Linux) runtime_platform=linux ;;
+    *) runtime_platform=unsupported ;;
+  esac
+  case $(uname -m 2>/dev/null || true) in
+    x86_64|amd64) runtime_arch=x64 ;;
+    arm64|aarch64) runtime_arch=arm64 ;;
+    *) runtime_arch=unsupported ;;
+  esac
+  if [ -n "${BUILDR_APP_DATA_DIR:-}" ]; then
+    data_root=$BUILDR_APP_DATA_DIR
+  elif [ "$runtime_platform" = darwin ]; then
+    data_root=$HOME/Library/Application\ Support/Buildr
+  else
+    data_root=${XDG_STATE_HOME:-$HOME/.local/state}/buildr
+  fi
+  managed_node="$data_root/runtimes/node/$declared_version/$runtime_platform-$runtime_arch/bin/node"
+  if [ -x "$managed_node" ] && [ "$(node_version "$managed_node")" = "$declared_version" ]; then
+    run_with_node "$managed_node" "$@"
+  fi
+fi
+
+command_name=${1:-}
+bootstrap_allowed=false
+case "$command_name" in
+  init|doctor|sync) bootstrap_allowed=true ;;
+esac
+if [ -n "$declared_version" ] && [ "$bootstrap_allowed" != true ]; then
+  echo "Workspace Node runtime $declared_version is unavailable. Run buildr sync <agent> --target $workspace_root to restore the declared version." >&2
+  exit 1
+fi
+
+if [ "${BUILDR_NODE+x}" = x ]; then
+  explicit_node=$BUILDR_NODE
+  case "$explicit_node" in
+    */*) ;;
+    *) explicit_node=$(command -v "$explicit_node" 2>/dev/null || true) ;;
+  esac
+  if ! is_compatible_node "$explicit_node"; then
+    echo "Buildr bootstrap requires Node.js ${supported_node_range}; BUILDR_NODE must name a compatible executable." >&2
+    exit 1
+  fi
+  run_with_node "$explicit_node" "$@"
+fi
+
+old_ifs=$IFS
+IFS=:
+for path_entry in ${PATH:-}; do
+  [ -n "$path_entry" ] || path_entry=.
+  candidate="$path_entry/node"
+  if is_compatible_node "$candidate"; then
+    IFS=$old_ifs
+    run_with_node "$candidate" "$@"
+  fi
+done
+for path_entry in ${PATH:-}; do
+  [ -n "$path_entry" ] || path_entry=.
+  candidate="$path_entry/../../node/bin/node"
+  if is_compatible_node "$candidate"; then
+    IFS=$old_ifs
+    run_with_node "$candidate" "$@"
+  fi
+done
+IFS=$old_ifs
+
+if [ -n "$declared_version" ]; then
+  echo "Workspace Node runtime $declared_version is unavailable and no compatible bootstrap Node can run $command_name. Restore a Node ${supported_node_range}, then run buildr sync." >&2
+else
+  echo "Buildr bootstrap requires Node.js ${supported_node_range}. Set BUILDR_NODE to a compatible executable or add one to PATH." >&2
+fi
+exit 1

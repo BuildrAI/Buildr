@@ -1,0 +1,32 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: retire-legacy-cli-surface
+operation: inspect
+treeIdentity: sha256-eb34981634859bdbe6993717cfcd3170b9a99824484ac5737db188db7b5a9a35
+impacts:
+  - type: brief
+    target: openspec/changes/retire-legacy-cli-surface/brief.md
+    reason: 正式 Change 需要说明破坏性清退范围、当前 authority 与旧 workspace 风险
+    status: updated
+    sourceIdentities:
+      - openspec/changes/retire-legacy-cli-surface/proposal.md
+      - openspec/changes/retire-legacy-cli-surface/design.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: OpenSpec apply 不再调用 baseline/check，最终只由 converge 收敛
+    status: updated
+    sourceIdentities:
+      - openspec/changes/retire-legacy-cli-surface/specs/cli-product-surface/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 删除 Legacy command、sidecar 和 Project Skill migration 实现
+    status: updated
+    sourceIdentities:
+      - openspec/changes/retire-legacy-cli-surface/specs/cli-product-surface/spec.md
+      - openspec/changes/retire-legacy-cli-surface/specs/buildr-package-assets/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: CLI 产品表面的正式分类从四类收敛为三类
+    status: updated
+    sourceIdentities:
+      - openspec/changes/retire-legacy-cli-surface/specs/cli-product-surface/spec.md
+unresolvedItems: []

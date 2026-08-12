@@ -1,0 +1,39 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: simplify-and-optimize-local-app-task-list
+operation: assess
+treeIdentity: git:c7e8f88fce804b9cf27cd9cda520dbd1e3c194f8+dirty
+impacts:
+  - type: brief
+    target: openspec/changes/simplify-and-optimize-local-app-task-list/brief.md
+    reason: 正式 Change 需要提供 Local App 观察边界、过滤、创建入口清退和兼容性的人类入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-and-optimize-local-app-task-list/proposal.md
+      - openspec/changes/simplify-and-optimize-local-app-task-list/design.md
+      - openspec/changes/simplify-and-optimize-local-app-task-list/specs/task-record/spec.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: Local App 从 Task Record 创建客户端收窄为观察与有限维护客户端
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-and-optimize-local-app-task-list/specs/task-record/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Task list/detail 的 Application-owned SQLite query projection 与 currentness 调用边界发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-and-optimize-local-app-task-list/design.md
+      - openspec/changes/simplify-and-optimize-local-app-task-list/specs/task-record/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Local App API、Task query projection 与测试入口发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-and-optimize-local-app-task-list/tasks.md
+  - type: flow
+    target: docs/roadmap/task-lifecycle-architecture.md
+    reason: Local App 人类入口不再创建正式 Task，Agent/Task Manager 成为唯一创建入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-and-optimize-local-app-task-list/specs/task-record/spec.md
+unresolvedItems: []

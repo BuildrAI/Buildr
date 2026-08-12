@@ -1,0 +1,26 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-convergence
+operation: reconcile
+treeIdentity: task-worktree
+impacts:
+  - type: brief
+    target: brief.md
+    reason: Task Finish 执行架构发生变化
+    status: updated
+    sourceIdentities: [proposal.md, design.md, specs/task-finish-execution/spec.md]
+  - type: flow
+    target: ../../knowledge/flows/openspec-change-lifecycle.md
+    reason: 收尾改为持久化 run 与恢复语义
+    status: updated
+    sourceIdentities: [specs/task-finish-execution/spec.md]
+  - type: service
+    target: ../../knowledge/services/buildr.md
+    reason: Buildr CLI 新增 Task Finish 状态机
+    status: updated
+    sourceIdentities: [specs/task-finish-execution/spec.md]
+  - type: glossary
+    target: ../../knowledge/glossary.md
+    reason: finish run 为执行记录，不新增用户领域术语
+    status: not-applicable
+    sourceIdentities: [../../knowledge/glossary.md]
+unresolvedItems: []

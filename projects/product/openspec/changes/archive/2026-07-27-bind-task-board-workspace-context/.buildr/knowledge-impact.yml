@@ -1,0 +1,18 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: bind-task-board-workspace-context
+operation: reconcile
+treeIdentity: final-candidate
+impacts:
+  - type: brief
+    target: openspec/changes/bind-task-board-workspace-context/brief.md
+    reason: 正式 Change 的人类可读范围和验收入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/bind-task-board-workspace-context/proposal.md
+  - type: product-architecture
+    target: docs/buildr-product.md
+    reason: task environment 到任务看板 authority 的确定性绑定属于产品工作流事实
+    status: updated
+    sourceIdentities:
+      - openspec/changes/bind-task-board-workspace-context/specs/task-board/spec.md
+unresolvedItems: []

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "stabilize-openspec-delta-hash-portability",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-e39c1eef0b1a822f8ee5226a679f20399e11be0950c80108f8819e839053a06e",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "openspec-contract-guard",
+      "title": "OpenSpec delta identity 必须独立于 checkout 位置",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

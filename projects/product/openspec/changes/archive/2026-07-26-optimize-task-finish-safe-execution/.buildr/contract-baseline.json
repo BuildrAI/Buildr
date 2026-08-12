@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-safe-execution",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-094e6e8cc6fa21f067395e687e0f535065ecf2322fded6096cc4be65b48b8a74",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须支持安全自动执行",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

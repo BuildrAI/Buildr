@@ -9,12 +9,15 @@ bin/                         npm executable 薄入口
 src/
   domain/
     workspace/               Workspace 实体、UUID 格式与纯字段约束
+    task-record/             Task Record closed schema、状态与纯字段约束
   application/               用例、跨模块组合和产品 verifier
     domains/                 现有领域操作 handler；尚非纯领域模型
+    task-record/             六个 Task Record action、引用校验与 read/result model
     workspace/               Workspace 查询、修改、迁移和 prompt 用例
     worktree/                Canonical task checkout 与创建后环境 bootstrap 用例
   infrastructure/            filesystem、network、platform、Agent runtime adapters
-    filesystem/              Manifest repository、路径、YAML、revision 与 transaction primitive
+    filesystem/              Manifest 与专业 Task records、路径、YAML、revision 与 transaction primitive
+    sqlite/                  Workspace structured store、migrations 与 Task Record repository
   interfaces/
     cli/                     CLI registry、help、参数与输出 adapter
     local-app/               loopback HTTP 与离线 Workspace Web 页面
@@ -63,7 +66,17 @@ infrastructure/runtime/render-claude-code.mjs
   -> infrastructure/runtime/skills/{arguments,manifests,contributions,sources,render-plan}.mjs
 ```
 
-CLI command 只在 `src/interfaces/cli/registry.mjs` 登记一次。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+CLI command 只在 `src/interfaces/cli/registry.mjs` 的 command catalog 登记一次。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费该 catalog，架构验证检查 descriptor 关系而不复制完整 supported-key 清单。已退役命令不保留 legacy descriptor、alias 或隐藏 route。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr app` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+
+Surface只控制发现层级与兼容承诺，不提供权限。`agent-machine`保留Task Environment、Review/Verification Result、Finish等正式机器接口；`maintenance`隔离package、preview与OpenSpec workflow。`openspec audit`、`openspec sync-plan`/`sync-apply`的公开route、handler和JSON schema已删除；deterministic planner/apply primitive继续由单一`openspec converge`transaction内部组合，事务期只读恢复检查由唯一三段route`openspec convergence inspect`提供。
+
+Task Record 是当前完成垂直切片的领域：`domain/task-record` 只验证 closed v1 record 与状态，`application/task-record` 拥有 create/inspect/update/complete/abandon、Parent setter、registry/Change 引用解析、直接关系 read model 和响应级 digest 前置条件，`interfaces/cli/task-record.mjs` 只拥有 argv/输出/退出码适配，`infrastructure/sqlite/task-record-repository.mjs` 只拥有规范化 Task tables、内联 `tasks.parent_task_id` self-reference foreign key 与 transaction。通用 `infrastructure/sqlite/workspace-sqlite.mjs` 负责 canonical Workspace 边界、connection、migration ledger、checksum 和健康检查。Repository 通过 Git topology 拒绝 linked worktree，不读取或双写旧 Task YAML。CLI 与 Task Manager 使用带 registry/Change currentness 的完整 Application action；Local App 普通列表和详情使用同一 Application 暴露的 SQLite stored-state query projection，只在具体专业交互中调用对应 currentness reader。两类客户端都不接受 caller 提供的 filesystem 或数据库 path。Parent/Child 不传播状态、Result 或专业动作，也不扩展为独立关系实体或通用关系图。Task Environment、Development、Review、Verification、Git、Finish、独立 Board 与 Retrospective 仍由各自模块拥有，不能进入 Task Record repository。
+
+Task Development 是无公共 CLI 的垂直切片：`domain/task-development` 验证 closed Receipt、Content Target、policy、Candidate/generation、gate、decision 与 append-only handoff；`application/task-development` 是唯一 reader/writer，并只通过 Task Record/Environment/Review/Verification Applications 和 Content observer port 取事实。Git-backed Content observer 与 Finish 共用 `infrastructure/git/git-task-contribution.mjs` 的 canonical raw delta identity，使纯交付基线（Delivery Baseline）前进不改变任务内容 identity；SQLite repository只按Task ID事务保存完整closed Receipt，internal driver只转发同一Application methods，不注册command。Review与Verification repositories同样只维护各自current slots；共用数据库不合并专业模块。Local App 使用Workspace-scoped、no-store 的 `GET .../tasks/:taskId/development`，HTTP直接调用Application `inspect`，Web不打开SQLite或暴露writer。
+
+Task Finish的CLI adapter只解析`run|inspect`。首次run从Environment与Task Development Application取得Task、current handoff、Candidate/generation和Content Target，不接受Project/Change、Candidate/generation或Verification authority输入。Git-backed Product run在创建时冻结retained checkout当前符号分支与Agent；显式target必须与其一致，Environment checkout `startPoint`不取得交付分支authority。随后按显式值、Environment evidence、target branch upstream或唯一配置remote冻结真实delivery remote；任一identity无法确定时不创建run。`task-finish-run.mjs`持有breaking v2 canonical run store、产品resume token与结果投射；`application/task-finish/git-task-contribution.mjs`兼容转发共享Git contribution基础设施，并在最新交付基线（Delivery Baseline）的run-owned detached worktree中机械应用任务贡献（Task Contribution）、复核raw Git delta identity；`task-finish-product-executor.mjs`只组合该isolated carrier、fast-forward/普通push、远端ref回读、retained runtime activation、run绑定的selected-Agent Doctor和Environment cleanup，不根据Product路径安装development CLI或Local App。Doctor未ready时Result保留已完成的remote readback、`activation-blocked` partial delivery与精确deliver resume token，并且不cleanup；普通Workspace保持blocked。target前进时可通过carrier ancestor及全部changed-path after mode/blob/删除状态证明`already-contained`，保留原carrier和最新后代ref并跳过重复transition；这也允许自举Workspace在激活后用原run/token恢复，并由Product重跑Doctor后cleanup。无法证明才用精确token重做`prepare → verify → deliver → cleanup`，Candidate generation与既有gates保持不变；冲突、贡献漂移或不等价时返回Development。路径不重叠不构成语义安全判断。没有action registry、caller completion、typed recovery parser或旧v1 reader；retained metadata-only精确Git handoff属于Task Finish Skill，不进入CLI产品executor。
+
+Task Finish Application在完整调用前校验和no-op判断之后、任何current/Carrier/target/recovery副作用之前，以独立invocation identity open `task-finish/finish-diagnostics` Execution Record；backpressure保持Finish owner状态零变化。同一逻辑run的resume创建新record。invocation-local collector把固定phase timeline、diagnostics与非枚举raw command output写入owner transient，并在seal时映射为closed五文件正文；record retained后只精确cleanup diagnostics transient。`task_finish_current`只保存compact phase/current failure和Carrier、target、lease、resume、cleanup、terminal owner facts，不保存record identity/history或attempt diagnostics。seal/confirmation/diagnostics cleanup attention不回滚或重放remote delivery、Environment/Carrier cleanup、Task terminal或Finish current；`inspect`不查询records。`.buildr/task-finish`是已退役旧协议，`task complete`不建立第二Finish状态机。
 
 ## Product verifier 与仓库 verification
 
@@ -75,7 +88,7 @@ CLI command 只在 `src/interfaces/cli/registry.mjs` 登记一次。领域操作
 
 Workspace E2E 位于 `test/verification/workspace/`，保留 `workspace-lifecycle`、`ownership-recovery` 和 `runtime-reconciliation` 三条跨组件路径。其他 help、onboarding、runtime family parity、tarball inventory 与安装后生命周期由各自 focused verifier 持有。
 
-验证 registry 是 step identity、executor、inputs、依赖、profile/group、预算、并发类别和 artifact metadata 的唯一规划事实源。planner 对未映射的 Product 路径 fail closed；Candidate 固定选择完整 profile，并只创建一个共享只读 tarball artifact。
+验证 registry 是 step identity、executor、inputs、依赖、profile/group、并发类别、artifact metadata 与 Project Testing 分类的唯一规划事实源；分类只给出 owner、主要意图、执行边界、证明范围、目标耗时和主要证据 owner。`fast` profile 表达低成本 Quick，inputs 表达 affected owner，`candidate` profile 是显式完整回归组合；它们不再被复制成一份混合 Quick、Task-affected、Candidate、Release 的场景分类。只服务于 CI 定向诊断的复合 slice 可声明 `selection: explicit-only`，保留 inputs 作为覆盖边界但不得被 changed planner 自动选择。planner 对未映射的 Product 路径 fail closed；验证选择基础路径命中全局 owner 时，同一个 changed plan 扩展为完整回归。显式 Candidate 入口选择完整 profile，并只创建一个共享只读 tarball artifact。
 
 ## npm 与交付边界
 
@@ -98,4 +111,4 @@ node test/verification/cli/package-parity.mjs
 node test/verification/integrity/managed-mutations.mjs
 ```
 
-架构 verifier 检查生命周期目录、薄入口、`src` import 方向、无 owner 的 shared、关键 facade、完整 runtime inventory、command 唯一登记、verification registry、Candidate required gates 和 npm 边界。mutation verifier 递归扫描全部发布 runtime module 的直接写入白名单；package parity 从 tarball 安装并比较 checkout/npm 行为。
+架构 verifier 检查生命周期目录、薄入口、`src` import 方向、无 owner 的 shared、关键 facade、完整 runtime inventory、command descriptor schema/唯一 key/surface/help/replacement、verification registry、Candidate required gates 和 npm 边界。CLI compatibility 直接遍历 catalog 验证 retained leaf/aggregate help，并验证已删除 route 返回标准 unknown-command 且零写入。mutation verifier 递归扫描全部发布 runtime module 的直接写入白名单；package parity 从 tarball 安装并比较 checkout/npm 行为。

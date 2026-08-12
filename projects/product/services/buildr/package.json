@@ -1,17 +1,17 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.0-rc.8",
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elevenching/Buildr.git",
+    "url": "git+https://github.com/BuildrAI/Buildr.git",
     "directory": "projects/product/services/buildr"
   },
-  "homepage": "https://github.com/elevenching/Buildr#readme",
+  "homepage": "https://github.com/BuildrAI/Buildr#readme",
   "bugs": {
-    "url": "https://github.com/elevenching/Buildr/issues"
+    "url": "https://github.com/BuildrAI/Buildr/issues"
   },
   "keywords": [
     "agent",
@@ -44,19 +44,29 @@
     "test": "./scripts/verify-buildr-product-fast",
     "test:fast": "./scripts/verify-buildr-product-fast",
     "test:unit": "node --test test/unit/*.test.mjs",
+    "test:component": "node --test test/component/*.test.mjs",
     "test:contract": "node --test test/contract/*.test.mjs",
-    "test:integration:fast": "node --test test/integration-fast/*.test.mjs",
-    "test:browser:smoke": "node --test test/browser-smoke/*.test.mjs",
-    "test:browser:shell": "node test/browser-smoke/local-app-browser.test.mjs shell",
-    "test:browser:project": "node test/browser-smoke/local-app-browser.test.mjs project",
-    "test:browser:service": "node test/browser-smoke/local-app-browser.test.mjs service",
-    "test:browser:change": "node test/browser-smoke/local-app-browser.test.mjs change",
+    "test:integration": "node --test test/integration/*.test.mjs",
+    "test:system": "node test/verification/system.mjs",
+    "test:openspec:convergence": "node --test test/integration/openspec-convergence-transaction.test.mjs test/system/task-finish-cli.test.mjs && node test/verification/openspec/contract.mjs --suite recovery",
+    "build:web": "npm --prefix ../buildr-web run build",
+    "dev:web": "npm --prefix ../buildr-web run dev",
+    "test:browser:smoke": "npm run build:web && node --test test/browser-smoke/*.test.mjs",
+    "test:browser:changed": "npm run build:web && node test/verification/browser-selector-dispatcher.mjs --run",
+    "test:browser:core": "npm run build:web && node test/browser-smoke/local-app-browser.test.mjs core",
+    "test:browser:shell": "npm run build:web && node test/browser-smoke/local-app-browser.test.mjs shell",
+    "test:browser:project": "npm run build:web && node test/browser-smoke/local-app-browser.test.mjs project",
+    "test:browser:service": "npm run build:web && node test/browser-smoke/local-app-browser.test.mjs service",
+    "test:browser:change": "npm run build:web && node test/browser-smoke/local-app-browser.test.mjs change",
+    "test:browser:task": "npm run build:web && node test/browser-smoke/local-app-browser.test.mjs task",
+    "test:browser:articles": "npm run build:web && node test/browser-smoke/local-app-browser.test.mjs articles",
     "test:integration:candidate:recovery": "node --test test/integration-candidate-recovery/*.test.mjs",
     "test:integration:candidate:release": "node --test test/integration-candidate-release/*.test.mjs",
     "coverage:unit": "node test/verification/unit-coverage.mjs",
     "test:changed": "node test/verification/changed.mjs",
     "test:focus": "node test/verification/focus.mjs",
-    "test:candidate": "./scripts/verify-buildr-product",
+    "test:host-node": "node test/verification/host-node.mjs",
+    "test:candidate": "bash scripts/verify-buildr-product",
     "test:release": "node test/verification/release/release-smoke.mjs",
     "package:launcher": "node package/launchers/build.mjs",
     "install:local": "./scripts/install-buildr-local",
@@ -64,13 +74,16 @@
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24.15.0 <25"
   },
   "dependencies": {
     "yaml": "^2.9.0"
   },
+  "bundleDependencies": [
+    "yaml"
+  ],
   "devDependencies": {
-    "@fission-ai/openspec": "1.4.1",
+    "@fission-ai/openspec": "1.6.0",
     "playwright-core": "^1.61.1"
   }
 }

@@ -1,5 +1,11 @@
 schemaVersion: buildr.components/v1
 components:
+  - id: "buildr-self-bootstrap"
+    source: "workspace"
+    path: "components/workspace/buildr-self-bootstrap"
+    enabled: true
+    required: false
+    state: "installed"
   - id: "openspec"
     source: "buildr"
     path: "components/buildr/openspec"

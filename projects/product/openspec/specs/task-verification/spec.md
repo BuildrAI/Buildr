@@ -3,252 +3,233 @@
 ## Purpose
 定义 Buildr 如何通过可替换的任务验证能力解析项目政策、执行分层验证，并生成绑定候选身份、包含真实耗时且具备明确生命周期的结果证据。
 ## Requirements
-### Requirement: 任务验证能力独立于任务环境生命周期
-Buildr MUST 提供 `buildr.task-verification/v2` capability contract 和默认 Workspace provider，负责验证政策解析、分层执行、候选身份绑定、耗时测量与结果报告，并 MUST NOT 把 Git worktree 或 task environment 作为使用该能力的前置条件；当 consumer 声明 task environment context 时，provider MUST 验证并绑定该 context。
 
-#### Scenario: 在 task environment 中验证候选
-- **WHEN** Agent 在 canonical task environment 中完成一个或多个 repository 的实现并请求正式验证
-- **THEN** selected task-verification provider MUST 对准备交付的 environment repository candidate set 执行当前 Workspace 或 Project 定义的所需验证
-- **AND** provider MUST 返回可与该 task environment、实际 execution roots 和各 repository candidate 比较的验证证据
+### Requirement: Task Verification 必须维护一个 Task-scoped current Result
+Buildr MUST 为每个正式Task在Workspace SQLite中提供至多一份`buildr.task-verification-result/v1` current Result。Result MUST只包含Task/stable Content Target、Project declaration identities、实际执行capability facts、coverage gaps、整体结论与完成时间，并MUST保持可移植值语义但不进入Git。Verification Result MUST NOT绑定或生成Task Candidate。
 
-#### Scenario: 在没有 task environment 的项目中验证
-- **WHEN** 当前任务没有 Git worktree/task environment，但 Workspace 或 Project 定义了适用验证入口和候选边界
-- **THEN** selected task-verification provider MUST 能独立执行并报告验证
-- **AND** provider MUST NOT 要求安装或调用 `buildr.task-worktree-lifecycle/v1`
+#### Scenario: 完整验证形成 current Result
+- **WHEN** Agent已针对Development观察到的明确stable Content Target完成全部选择、执行和事实提炼
+- **THEN** Application MUST写入该Task唯一current Result，且`target.identity` MUST等于Content Target identity
+- **AND** Result MUST NOT包含Candidate/generation、stdout、stderr、临时目录、本机绝对路径、Environment Receipt、resultDigest或applicability
 
-### Requirement: 验证政策由当前 workspace 或 Project 定义
-Task verification provider MUST 优先解析当前已登记 Project 的可选测试能力声明，再从当前 scope 的 Rules、明确 Project context、OpenSpec artifacts、项目开发或发布文档以及公开项目入口解析 legacy policy，并 MUST NOT 根据技术栈名称猜测命令或把 Buildr Product 验证入口固定为其他项目的默认值。
+#### Scenario: 没有测试能力
+- **WHEN** Task scope内某个目标没有可用声明或适用能力
+- **THEN** Result MUST通过`coverageGaps`如实记录缺口
+- **AND** Verification MUST NOT自动创建测试、脚本或capability declaration
 
-#### Scenario: Project 定义任意测试能力集合
-- **WHEN** 当前 Project 存在有效 `verification.yml`
-- **THEN** provider MUST 按声明模式、任务级别、成熟度、适用范围、环境和授权选择能力
-- **AND** Result Evidence MUST 记录实际采用的声明和其他 policy sources
+#### Scenario: 旧 Verification YAML 存在
+- **WHEN** `.buildr/tasks/<task-id>/verification.yml` 存在、损坏或与SQLite不同
+- **THEN** Application MUST只读取SQLite current Result
+- **AND** MUST NOT迁移、双写、删除或生成兼容YAML
 
-#### Scenario: Project 没有测试声明
-- **WHEN** 当前 Project 没有 `verification.yml`
-- **THEN** provider MUST 保持现有 AGENTS、POM、项目文档和公开测试入口发现行为
-- **AND** provider MUST NOT 因缺少新声明增加失败、阻塞或自动启动新的 Spring、端到端及外部环境测试
+### Requirement: Result 必须使用关闭且最小的数据模型
+Result MUST绑定非空Content Target `target.identity`和可移植`target.summary`；每个declaration MUST绑定Project、相对path与当前content identity或`absent`；每个实际capability MUST绑定Project、capability identity、`passed|failed` outcome与至少一个portable fact；结论MUST只使用`passed|not-passed`。
 
-#### Scenario: 无法确定完整候选入口
-- **WHEN** 用户要求判断开发是否完整验证，但声明与 legacy policy 都无法确认 Candidate policy
-- **THEN** provider MUST 返回 `incomplete` 并说明已验证范围、缺失政策或入口
-- **AND** provider MUST NOT 将最小反馈或受影响范围结果表述为完整候选验证
+#### Scenario: 调用方提交 lifecycle authority 字段
+- **WHEN** record输入或持久Result包含Candidate identity/generation、verification policy decision、assurance level、proceed、blocked decision、Task status、revision、history、CAS、execution path或raw output字段
+- **THEN** Application MUST拒绝整个值
+- **AND** 原current MUST保持不变
 
-### Requirement: 实现验证采用三级反馈协议
-Task verification provider MUST 将实现循环中的 `minimal` 作为内部快速反馈动作，并 MUST 将 `affected` 与 `candidate` 作为 consumer 可请求的正式保证；provider MUST 根据任务上下文、Project policy、风险和用户意图返回 `requiredAssurance: affected | candidate`，且 MUST 防止同一候选状态机械重复已被显式 supersedes 或可信上层入口覆盖的检查。
+#### Scenario: 完整失败结论
+- **WHEN** 已完成的能力执行产生失败事实且整体结论已经形成
+- **THEN** Agent MAY记录`not-passed` current Result
+- **AND** Result MUST NOT决定是否带风险继续推进
 
-#### Scenario: 单任务最小反馈
-- **WHEN** Agent 完成任务组中的普通实现步骤且尚未请求正式交付保证
-- **THEN** provider MUST 选择直接相关、低成本、环境就绪且已授权的 stable 能力或 legacy 小范围检查
-- **AND** minimal 结果 MUST NOT 被 Task Finish 作为正式交付 evidence
+### Requirement: Task Verification Application 必须是唯一 writer 和 reader
+Task Verification Application MUST独占Result normalization、Task/Project resolution、正式record action中的declaration identity观察、persistence调用、Result digest与保存值applicability派生。CLI、Skill、Local App、Development、Finish、Task Record与Task Environment MUST NOT直接读写Result store或复制其字段authority；inspect MUST NOT接收declaration root或打开声明路径，Development MAY只提交已经由其正式action观察的declaration identity值做纯比较，Finish MUST不再消费Verification。
 
-#### Scenario: 普通开发或普通收尾要求受影响保证
-- **WHEN** 普通实现任务达到完成节点或 Task Finish 提交非发布、未命中 Project 高风险政策的收尾上下文
-- **THEN** provider MUST 返回 `requiredAssurance: affected` 并选择影响面内的 stable required 能力
-- **AND** provider MAY 执行已授权的 trial/advisory 能力，但 MUST NOT 默认启动完整 Candidate
+#### Scenario: CLI 记录 Result
+- **WHEN** Agent调用`buildr task verification record <task-id>`
+- **THEN** CLI MUST只解析输入并调用同一Application
+- **AND** persistence writer与reader的静态调用方 MUST只有Task Verification Application/repository组合
 
-#### Scenario: 发布高风险或显式完整验证要求候选保证
-- **WHEN** 任务属于发布、命中 Project 明示高风险政策或用户明确要求完整验证
-- **THEN** provider MUST 返回 `requiredAssurance: candidate` 并运行项目要求的完整 Candidate 验证
-- **AND** Candidate MUST NOT 根据 Git diff、固定能力数量或技术栈分层缩小权威门禁集合
+#### Scenario: declaration 尚在 Task Environment
+- **WHEN** 当前Content Target使用的Project declaration bytes尚未进入canonical Workspace
+- **THEN** 只有record MAY提供`--declaration-root`，且Application MUST只接受该Task当前matching ready Environment的精确根
+- **AND** inspect MUST拒绝该参数，Result MUST只保存Workspace相对declaration path与content identity
 
-#### Scenario: 高风险或用户指定即时检查
-- **WHEN** 任务跨越安全边界、不可逆迁移或用户明确要求即时检查
-- **THEN** provider MUST 在默认批量节奏之外执行必要且已授权的检查
-- **AND** 即时检查 MUST 进入 Result Evidence，但 MUST NOT 在 Project policy 未要求时自行把普通收尾升级为 Candidate
+#### Scenario: Development检查Result
+- **WHEN** Task Development准备冻结Candidate
+- **THEN** Development MUST调用Task Verification Application inspect并提供current Content Target与已观察declaration identities
+- **AND** MUST不提交declaration path、直接读取Result store或自行计算Result digest
 
-### Requirement: 验证证据绑定候选身份并随内容变化失效
-Task verification Result Evidence MUST 记录当前环境能够证明的候选 identity、验证级别、状态和检查结果；无法建立足够身份时 MUST 标记 evidence 不可复用，候选内容变化后旧 evidence MUST 失效。
+#### Scenario: Local App 查看 Result
+- **WHEN** 用户在Task详情查看Verification
+- **THEN** Local App MUST调用同一Application的inspect read model且未提供axis为unknown
+- **AND** 页面/API MUST NOT暴露direct Result writer或触发declaration observation
 
-#### Scenario: Git 候选生成可复用证据
-- **WHEN** provider 对 Git 管理的候选执行验证
-- **THEN** evidence MUST 记录 repository root 以及可用于比较当前内容的 tree、fingerprint 或等价稳定 identity
-- **AND** commit、checkout 或 push 仅改变提交容器而候选内容相同时 MAY 复用该 evidence
+### Requirement: Result 必须原子整值替换且失败时保留 current
+Repository MUST 在写入前完成 closed-schema normalization 与 serialization round-trip，再以单一 SQLite transaction 精确替换 current row并在提交前重读验证。任何写入阶段失败 MUST rollback并返回精确 stage diagnostic，且 MUST 保留原 current value。
 
-#### Scenario: 验证后候选内容变化
-- **WHEN** rebase 冲突解决、后续编辑、生成资产更新或其他动作改变已验证内容
-- **THEN** 原 evidence MUST 失效
-- **AND** Agent MUST 在交付前对新候选重新运行适当验证
+#### Scenario: 执行中断或完整结论尚未形成
+- **WHEN** execution 被中断、超时、只完成部分能力或 Agent 尚未形成完整 Task 结论
+- **THEN** caller MUST NOT 调用 record
+- **AND** 已有 current MUST 保持不变
 
-#### Scenario: 非 Git 候选无法建立稳定快照
-- **WHEN** provider 无法为非 Git 候选建立可比较的 snapshot identity
-- **THEN** provider MUST 明确标记 evidence 不可跨状态复用
-- **AND** consumer MUST NOT 将其作为后续已变化候选的完成证据
+#### Scenario: mutation 后 post-read 失败
+- **WHEN** 新值已写入 transaction 但 Repository 无法重读确认
+- **THEN** Repository MUST rollback整个transaction
+- **AND** 原 current Result及其他Task current records MUST保持不变
 
-### Requirement: 验证能力测量真实 wall-clock 耗时
-Task verification provider MUST 为每次执行记录整体 wall-clock 耗时和 timing source，优先使用已核对的 verifier summary，否则使用进程外单调时钟测量，并 MUST NOT 通过相加并行检查耗时推算总耗时。
+#### Scenario: rename 后 post-read 失败
+- **WHEN**遗留filesystem rename/post-read fault path被调用或注入
+- **THEN** SQLite repository MUST不执行该已清退stage且MUST不读取或写回旧YAML
+- **AND** 原current Result与其他Task current records MUST保持不变
 
-#### Scenario: Verifier 提供可信 timing summary
-- **WHEN** 验证入口输出可核对状态、候选 identity 和总耗时的 summary
-- **THEN** provider MUST 使用该 summary 并将 timing source 标记为 `verifier-reported`
-- **AND** provider MUST 保留 summary path 或等价 evidence reference
+### Requirement: Applicability 必须由 target 与 declaration identities 派生
+Task Verification `record` MUST在正式action中观察并保存Content Target与Task scope内全部Project declaration identities，并返回该action时点的current applicability。后续`inspect` MUST只读取保存的Result/查询字段，并只对调用方显式提供的target/declaration identity值做纯值比较；MUST NOT接受路径作为读取时观察authority，不得读取Project registry、`verification.yml`、Git、Content Target或Environment来刷新applicability。未提供某axis的current identity值时，该axis MUST为unknown或明确表达最近一次record action的历史观察，MUST NOT声称live current。
 
-#### Scenario: 普通命令没有 timing summary
-- **WHEN** 验证入口只返回进程状态和输出
-- **THEN** provider MUST 从进程启动前到退出后测量单次 wall-clock 并标记为 `wrapper-measured`
-- **AND** provider MUST NOT 声称不存在的逐阶段耗时
+#### Scenario: record 时 target 与 declarations 已确认
+- **WHEN** Application在合法record action中观察的target与全部Project declarations被写入同一Result
+- **THEN** operation result MUST返回该action observedAt下的current applicability
+- **AND** Result与查询字段 MUST在同一transaction中保存
 
-#### Scenario: 验证进程仍在运行
-- **WHEN** 执行工具返回 session、cell、process id 或仍在运行状态
-- **THEN** provider MUST wait、poll 或 resume 同一进程直到结束
-- **AND** provider MUST NOT 因暂时无输出重复启动相同验证
+#### Scenario: target 与 declarations 均未变化
+- **WHEN** caller提供Content Target与declaration identity值且分别等于Result保存值
+- **THEN** inspect MUST通过纯值比较返回对应axis current
+- **AND** MUST NOT打开caller path或重新读取declaration bytes
 
-### Requirement: 验证能力返回并报告标准结果证据
-Task verification provider MUST 返回 `requiredAssurance`、验证级别、状态、policy sources、policy mode、候选 identity、检查结果、能力选择决策、覆盖与环境摘要、授权决策、Candidate 完整性、整体耗时、timing source、最慢检查、失败项、跳过项、evidence reference 和 evidence 生命周期，并 MUST 在直接验证或开发完成回复中以“受影响验证”或“完整候选验证”作为主要用户表述。
+#### Scenario: Local App 没有当前 target identity
+- **WHEN** Local App只读inspect但没有提供current target/declaration identity值
+- **THEN** Application MUST返回已有Result、record observedAt与unknown/last-observed语义
+- **AND** MUST NOT从HEAD、Candidate、dirty tree、Environment、Project文件或时间伪造live identity
 
-#### Scenario: 受影响验证成功
-- **WHEN** 普通任务的 affected 验证成功并产生与当前候选一致的 evidence
-- **THEN** provider MUST 报告受影响范围、实际能力、总耗时、失败项、跳过项和 evidence reference
-- **AND** provider MUST 明确该证据满足普通交付保证，但不把它描述为完整 Candidate
+#### Scenario: policy 内容变化
+- **WHEN** caller显式提供的任一Project declaration identity与Result保存值不同
+- **THEN** overall applicability MUST为`stale`并返回可解释的declaration reason
+- **AND** reader MUST NOT打开`verification.yml`或从path自行观察变化
 
-#### Scenario: 最终候选验证成功
-- **WHEN** Candidate 验证成功并产生可信 evidence
-- **THEN** provider MUST 报告候选、完整验证、选中能力、Candidate 完整性、总耗时、最慢检查、失败项为无、跳过项和 evidence reference
-- **AND** provider MUST 只有在 `candidateCompleteness: confirmed` 时说明实现具备完整候选证据
+#### Scenario: 显式 identity 已变化
+- **WHEN** caller提供的target或任一declaration identity与Result保存值不同
+- **THEN**对应axis与overall applicability MUST为stale并返回保存值差异reason
+- **AND** MUST NOT删除、覆盖或改写current Result
 
-#### Scenario: 能力因环境或授权未运行
-- **WHEN** 某个适用能力因环境未就绪、副作用未知或缺少授权被跳过或阻塞
-- **THEN** provider MUST 记录能力 id 与原因
-- **AND** 所需保证中的 required gate 未执行时 status MUST NOT 为通过
+### Requirement: Verification Execution 必须保持 transient
+`buildr verification run` MUST针对显式Project、target identity与capability identities执行Project v2中已有的command invocation，并把完整执行事实写入provider-owned transient summary。带合法`--environment <task-id> --workspace <canonical-workspace>`的正式Task execution MUST另外在producer启动前打开一条`task-verification/verification-execution` record，并在execution完成后通过Task Execution Record Application持久化受控正文；Task外runner MUST继续只使用transient evidence。Runner MUST NOT写current Result。`--declaration-root` MUST只由`task verification record`接收；run或inspect误用时MUST在启动任何capability、打开execution record或读取任何声明路径前返回syntax diagnostic。
 
-#### Scenario: 验证失败
-- **WHEN** 任一必要检查失败
-- **THEN** provider MUST 报告失败状态、失败检查、退出状态、已完成检查、实际总耗时和 evidence reference
-- **AND** provider MUST NOT 将任务描述为满足所需保证
+#### Scenario: 显式命令能力执行完成
+- **WHEN** 调用方选择一个或多个有效command capabilities且没有正式Task context
+- **THEN** runner MUST有界执行并返回每项真实passed/failed事实与完整transient output
+- **AND** MUST NOT创建Task execution record，caller MUST在形成完整Task结论后另行通过Application record
 
-### Requirement: Provider operation 与验证执行分离计数
-Task verification provider MUST 区分 `inspect`、`execute` 和 `cleanup` operation；consumer 调用 provider 核对或清理 evidence MUST NOT 被表述或计数为重新执行验证。
+#### Scenario: 正式Task命令能力执行完成
+- **WHEN** 调用方提供matching ready Task Environment与canonical Workspace并选择有效command capabilities
+- **THEN** runner MUST在首次resource/process/target execution副作用前以run ID打开一条record并取得quota reservation
+- **AND** execution完成后 MUST以terminal outcome seal受控正文，只有record retained后才能清理该run的transient evidence
+- **AND** current Verification Result MUST保持不变，直到caller另行形成完整结论并调用Task Verification Application record
 
-#### Scenario: 收尾核对已有 Candidate
-- **WHEN** Task Finish 提供当前 implementation Candidate identity 和可复用的成功 Candidate evidence
-- **THEN** provider MUST 执行 `inspect` 并返回 reuse decision
-- **AND** provider MUST NOT 启动验证命令，`taskVerificationExecuteCalls` 和 `candidateExecutorCalls` MUST 均保持 `0`
+#### Scenario: declaration-root 误用于 execution
+- **WHEN** 调用方把`--declaration-root`传给`buildr verification run`
+- **THEN** runner MUST在启动capability前返回参数错误并指向`task verification record`
+- **AND** MUST NOT启动测试、打开execution record、写current Result或产生capability side effect
 
-#### Scenario: 收尾清理已消费 evidence
-- **WHEN** Task Finish 在所有 consumer 完成后请求清理 transient evidence
-- **THEN** provider MUST 执行 `cleanup`
-- **AND** cleanup MUST NOT 增加 verification execute 或 Candidate executor count
+#### Scenario: target 在执行期间发生内容漂移
+- **WHEN** capability checks已完成但execution root的tracked diff、status或untracked content fingerprint与执行前不同
+- **THEN** transient summary MUST返回`target.stable=false`并将整体status设为`failed`
+- **AND** formal Task execution record MUST以`failed` seal并在diagnostics保存有限fingerprint与相对变化路径摘要
+- **AND** summary MUST NOT把Candidate dirty status单独解释为drift，也 MUST NOT将本机绝对路径写入current Result或持久正文
 
-#### Scenario: 实现候选确实改变
-- **WHEN** consumer 将 transition 证明为 `implementation-changed` 或无法证明为 `same-content`/`closeout-metadata-only`
-- **THEN** provider MUST 执行 `execute` 并按请求级别启动验证命令
-- **AND** Result Evidence MUST 记录本次 operation 和实际 executor invocation count
+#### Scenario: 失败后重试
+- **WHEN** 同一Task与target再次运行相同verification scope
+- **THEN** retry MUST生成新的run identity与独立execution record且不得覆盖旧failed attempt
+- **AND** later passed attempt MUST NOT自动声明旧record已被Result采用或在没有owner处置事实时把旧resolution改为recovered
 
-### Requirement: 验证在完成节点自动触发
-Task verification provider MUST 同时支持用户直接验证意图、实现工作流自动验证节点和 Task Finish consumer，并 MUST NOT 要求用户主动说出 Skill、capability 或内部验证级别名称。
+#### Scenario: execution 中断
+- **WHEN** runner收到可捕获取消或signal并能有界收敛已启动process
+- **THEN** runner MUST保存已有partial output并以`cancelled` seal record，且不得覆盖已有current Result
+- **AND** 不可捕获进程死亡 MUST保持open record而不是伪造terminal outcome或执行cleanup
 
-#### Scenario: 用户直接要求验证
-- **WHEN** 用户要求运行测试、验证改动、判断验证是否完成或报告验证耗时
-- **THEN** Agent runtime MUST 能根据 provider description 发现 task-verification 入口
-- **AND** provider MUST 按当前任务阶段和 Project policy执行最低充分验证
+#### Scenario: 选择 Agent invocation
+- **WHEN** `verification run`收到`invocation.kind: agent`的capability
+- **THEN** runner MUST在启动任何命令或打开execution record前拒绝
+- **AND** Skill MAY按bounded instructions执行并最终通过同一Task Verification Result Application提炼事实，但本Change MUST NOT伪造尚未登记的Agent execution record producer
 
-#### Scenario: Agent 准备声称实现完成
-- **WHEN** 实现型任务的候选已经稳定且 Agent 准备向用户声称实现完成
-- **THEN** Agent MUST 在完成回复前调用 selected task-verification provider 获得与当前候选一致的 evidence
-- **AND** 普通任务默认请求 affected，发布、高风险或显式完整验证请求 candidate
+### Requirement: 执行可靠性实现只服务真实声明能力
+Runner MUST 继续使用受管 Workspace Node、Environment allowed roots、进程 descendant 有界收敛、单次 transient cleanup 与被实际 capability claim 的资源协调。Project declaration execution MUST NOT 新建通用 DAG、dependency、supersedes、scheduler 或资源平台语义。对同一 coordinated resource 的有效 waiter，coordinator MUST 按确定的先到顺序授予可用容量，并 MUST 让取消、timeout、崩溃或过期 waiter 可被精确、有界恢复；新 waiter MUST NOT 越过仍有效的更早 waiter。
 
-#### Scenario: Task Finish 消费验证能力
-- **WHEN** 用户要求收尾且 Task Finish 提交任务、发布意图、改动范围、候选 identity 和已有 evidence
-- **THEN** Task Finish MUST 通过 capability binding 调用 selected task-verification provider
-- **AND** provider MUST 返回 `requiredAssurance` 和匹配该保证的执行或复用结论，binding MUST NOT 被解释为顶层意图发现机制
+#### Scenario: 真实 coordinated capability 并发
+- **WHEN** 两个或更多 execution runs 声明并请求同一有限容量 coordinated resource
+- **THEN** coordinator MUST 按有效等待顺序授予 slot、绑定 owner/token/expiry 并精确释放
+- **AND** 新 waiter MUST NOT 在更早 waiter 仍有效且容量不足时先取得 slot
+- **AND** ticket、lease 与等待事实 MUST 只存在于 transient execution evidence
 
-### Requirement: 落盘验证证据具有显式生命周期
-Task verification provider MUST 为落盘 evidence 返回 `evidenceRetention`、`cleanupAfter`、`cleanupStatus` 和可用时的 `cleanupReference`，并 MUST 在所有消费者使用完毕前保留当前有效 Candidate evidence。
+#### Scenario: waiter 取消或过期
+- **WHEN** 排队中的 waiter 被取消、达到 timeout、进程崩溃或其 ticket 已过期
+- **THEN** coordinator MUST 只清理 token 与 owner 匹配或已可证明过期的 ticket
+- **AND** 后续有效 waiter MUST 在有界时间内继续取得可用容量
+- **AND** coordinator MUST NOT 删除其他 waiter 或 lease
 
-#### Scenario: 默认临时 evidence
-- **WHEN** verifier 在系统临时目录创建本次 run 的 summary 和 diagnostics
-- **THEN** provider MUST 将 evidence 标记为 `transient` 并记录受边界约束的精确 cleanup reference
-- **AND** provider MUST NOT 把系统临时目录描述为长期持久存储
+#### Scenario: flat capability set
+- **WHEN** 一个 execution 选择多个互不依赖的 capabilities
+- **THEN** runner MAY 有界并发执行
+- **AND** declaration 与 Result MUST 不包含 `dependsOn`、`supersedes` 或 DAG status
 
-#### Scenario: 新证据替代旧成功证据
-- **WHEN** 新 Candidate evidence 已核对通过并替代同一任务的旧成功 evidence
-- **THEN** provider MAY 清理不再被任何 consumer 引用的旧 transient run
-- **AND** provider MUST 保留当前有效 evidence
+### Requirement: Verification 不得拥有 Task 推进或其他专业 authority
+Task Verification MUST NOT创建Candidate/generation、更新Task顶层状态、决定verification policy或proceed/blocked、实现缺失测试、替代Task Review/Environment/业务验收，或发布metadata。Task Development MAY根据current Result做自己的fail-closed决定，但MUST NOT回写该决定为Verification字段；Task Finish MUST不读取或补齐Verification Result。
 
-#### Scenario: 收尾后清理临时 evidence
-- **WHEN** Task Finish 已捕获最终验证摘要、完成集成与推送且确认没有后续 consumer
-- **THEN** Task Finish MUST 请求 selected verification provider 清理 transient evidence
-- **AND** 最终报告 MUST 说明 cleanup status，不得把已删除路径表述为长期可访问引用
+#### Scenario: Development消费not-passed Result
+- **WHEN** Task Development读取到current且`not-passed`的Result
+- **THEN** Development MAY在policy事实完整时冻结Candidate，但MUST在没有精确用户风险接受时阻止proceed/handoff并形成自己的blocked decision
+- **AND** Verification Result MUST保持原事实，不得新增blocked/proceed、risk、Candidate或Finish stage
 
-#### Scenario: 调用方管理的 evidence
-- **WHEN** 调用方显式指定稳定输出路径或 CI 上传 artifact
-- **THEN** provider MUST 将 evidence 标记为 `caller-managed`
-- **AND** provider MUST NOT 在没有明确生命周期授权时删除该 evidence
+#### Scenario: Finish 消费 not-passed Result
+- **WHEN** 旧Finish consumer尝试读取或解释`not-passed` Verification Result
+- **THEN** P0.5 runtime MUST拒绝该authority路径并返回Task Development
+- **AND** Finish MUST只消费current Development handoff，不得运行Verification或决定风险
 
-#### Scenario: 清理失败
-- **WHEN** provider 无法证明 cleanup reference 属于本次 transient run 或删除失败
-- **THEN** provider MUST 保留现场并返回 `cleanupStatus: retained`
-- **AND** Task Finish MUST 报告保留路径与原因，但不得回滚已经完成的交付
+### Requirement: terminal delivery association 必须证明交付目标使用了对应 Verification Result
+Application 层 terminal projection MUST只读取matching Finish completion中保存的association；当handoff verification gate的Result digest、Content Target identity与Verification current slot完全一致时，才返回`verified-at-delivery`及原始passed/not-passed结论。该关联 MUST NOT改写Verification Result、保存时applicability或declaration facts，也MUST NOT依赖独立lifecycle projection。
 
-### Requirement: Candidate evidence 与验证结果元数据 transition 分离
-Task verification provider MUST 继续将 Candidate evidence 绑定实际验证的 implementation identity；consumer MAY 仅在 Project policy 明确定义且 transition evidence 完整时，将该 evidence 与 `verification-result-metadata-only` transition 组合用于收尾。
+#### Scenario: 交付目标已验证通过
+- **WHEN** completed delivered Task的Verification Result、Finish completion association与Development handoff identities完全一致
+- **THEN** terminal projection MUST表达“已随交付目标验证通过”
+- **AND** MUST保留原始能力事实、coverage gaps与conclusion内容
 
-#### Scenario: Consumer 核对受限 metadata transition
-- **WHEN** consumer 提供与 Candidate identity 一致的 source identity，以及同一会话内唯一最终 Candidate task checkbox 的完整 transition evidence
-- **THEN** provider MUST 以 `inspect` 核对原 Candidate evidence，且 `taskVerificationExecuteCalls` 与 `candidateExecutorCalls` MUST 均保持 `0`
-- **AND** Result Evidence MUST 保持原 `candidateIdentity`，不得改写为 target delivery identity
+#### Scenario: 交付目标未验证通过但风险已明确接受
+- **WHEN** matching completion association保存not-passed Verification Result digest且handoff含合法proceed risk decision
+- **THEN** terminal projection MUST表达“已随交付目标验证未通过”及已保存风险事实
+- **AND** MUST NOT改写为passed
 
-#### Scenario: Consumer 缺少可审计 transition evidence
-- **WHEN** consumer 只有变化后的 tree 或最终 diff，无法证明同一会话动作、唯一任务和精确 marker transition
-- **THEN** provider MUST 将原 Candidate evidence 标记为不可直接复用于变化后的 implementation candidate
-- **AND** consumer MUST 请求新的 Candidate execution 或报告 incomplete
+#### Scenario: active declaration currentness
+- **WHEN** Task仍active且Overview同时读取Verification row与Development verification gate
+- **THEN** Application MAY比较已保存target/result digest并报告matched/mismatched/unknown
+- **AND** terminal delivery association MUST不参与live applicability，也不得触发外部观察
 
-#### Scenario: Transition evidence 仅在当前会话存在
-- **WHEN** verification-result metadata transition 没有 versioned 持久化 receipt
-- **THEN** consumer MUST 将 transition evidence 标记为 `session-only`
-- **AND** 跨会话丢失该证据后 MUST NOT 从路径或 checkbox 状态反推可复用性
+### Requirement: Verification current row 必须保存稳定查询字段
+Task Verification repository MUST在同一current row保存Domain验证的完整`result_json`、同一Result的`target_identity`、`outcome`与`updated_at`。这些字段MUST只用于结果定位、Overview查询与保存值一致性检查，MUST NOT复制capability facts、coverage gaps、declarations、Development adoption或terminal association。
 
-### Requirement: Task environment 验证证据必须绑定实际执行上下文
-当 consumer 提供 task environment context 时，task-verification provider MUST 在启动正式验证前核对 environment owner、repository set、允许执行根和当前 candidates，并 MUST 将实际命令 cwd 与 multi-repository candidate identity 写入 evidence。无法证明一致时 MUST 返回 `incomplete`，不得执行错误 checkout 的正式验证或复用其 evidence。
+#### Scenario: 记录 Verification Result
+- **WHEN** Application完成declaration observation并形成完整Result
+- **THEN** repository MUST在单一transaction中原子替换JSON与查询字段并写后验证
+- **AND** target/outcome/time与Result JSON不一致时 MUST rollback并保留原current
 
-#### Scenario: 单仓 environment 验证
-- **WHEN** task environment 只包含 Workspace root repository
-- **THEN** evidence MUST 记录 task id、environment root、execution root、repository checkout、branch、HEAD、dirty/fingerprint 和 context identity
-- **AND** candidate identity MUST 来自该 environment checkout 而不是原 Workspace checkout
+#### Scenario: 读取 Overview
+- **WHEN** Task Overview查询Verification摘要
+- **THEN** repository MUST返回row presence、target、outcome与updated time
+- **AND** MUST NOT复制完整Result或重新解析Project declaration
 
-#### Scenario: 多仓 environment 验证
-- **WHEN** 所需验证覆盖多个 environment member repositories
-- **THEN** evidence MUST 记录有序 repository candidate set 及每项的 checkout root、branch、HEAD 和 tree/fingerprint
-- **AND** 每个 check MUST 记录实际 cwd 或可核验的 execution root
-- **AND** `reusable: true` MUST 要求当前 environment identity 与全部 required repository candidates 仍匹配
+### Requirement: Verification coverage gap必须触发Declaration Intake提示
+Task Verification形成或读取coverage gap时 MUST提供只读Declaration Intake next action。Verification Result MUST继续只保存gap事实，且Task Verification MUST不在record或inspect中创建测试或写`verification.yml`。
 
-#### Scenario: 命令 cwd 位于环境外
-- **WHEN** 验证计划的 cwd 解析到原 Workspace checkout、其他 task environment 或未登记路径
-- **THEN** provider MUST 在启动该命令前返回 `incomplete`
-- **AND** MUST 报告错误 cwd、预期 environment roots 和修复动作
+#### Scenario: Project没有verification declaration
+- **WHEN**完整Result记录`project:<code>` coverage gap
+- **THEN**operation result MUST提示用户可启动Declaration Intake
+- **AND** current Result MUST保持原gap，不因后续声明候选而改写
 
-#### Scenario: Evidence 来自另一个 worktree
-- **WHEN** 已有 evidence 的 repository content 与当前候选碰巧相同，但 task environment identity 或 execution root 不同
-- **THEN** provider MUST NOT 将其作为当前 task environment 的执行证据复用
-- **AND** consumer MAY 仅在非 task-environment policy 明确允许内容等价复用时按普通 candidate identity 重新判断，不得抹去来源差异
+#### Scenario: 声明存在但Service coverage缺失
+- **WHEN**完整Result记录`service:<project>/<service>` coverage gap
+- **THEN**next action MUST携带该scope供Agent只读发现
+- **AND**用户未授权时 MUST不更新Project声明
 
-### Requirement: 多仓验证必须按 Project policy 和 repository ownership 组合
-Task verification provider MUST 根据显式 Project context、各 repository ownership 和 Project `verification.yml` 选择验证能力；跨 Project binding、cwd 或 policy 无法消歧时 MUST fail closed，不得以 Workspace root 的单仓测试代替全部成员验证。
+### Requirement: 正式 Verification execution 必须先取得持久化容量
+Formal Task command runner MUST在调用前语义校验完成后、任何producer execution启动前调用Task Execution Record Application open。quota backpressure、Task terminal或record identity冲突 MUST阻止resource waiter、process与target observation启动，并 MUST NOT以先执行后丢弃正文绕过固定reservation。
 
-#### Scenario: 多个 Service 属于同一 Project
-- **WHEN** task environment 包含同一 Project 的多个 Service repositories
-- **THEN** provider MUST 以该 Project policy 解析适用 capabilities
-- **AND** MUST 根据每个 capability 的 inputs/cwd 覆盖实际受影响 repositories
+#### Scenario: Task owner quota不足
+- **WHEN** 新record的固定reservation会超过Task/owner或Workspace quota
+- **THEN** runner MUST返回空checks、portable backpressure diagnostic与唯一cleanup/resolution next action
+- **AND** MUST NOT启动capability、创建transient run目录、写current Result或静默清理其他record
 
-#### Scenario: 多个 Project policy 一致
-- **WHEN** task environment 跨多个 Projects 且它们的 selected provider/policy 可以明确组合
-- **THEN** provider MUST 返回每个 Project 的 policy source、selected capabilities 和 repository coverage
-- **AND** overall evidence MUST 只在全部 required checks 通过时 passed
-
-#### Scenario: 跨 Project policy 无法组合
-- **WHEN** 多个 Project 对同一 capability binding、环境或 required gate 存在无法消歧的冲突
-- **THEN** provider MUST 返回 `incomplete` 和 `cross_project_binding_ambiguous` 或等价稳定原因
-- **AND** MUST 要求拆分验证动作或取得明确选择
-
-### Requirement: 验证必须精确披露非 Git 隔离状态
-Task environment verification evidence MUST 区分 source checkout 隔离、Git shared metadata、Buildr-owned namespaced state、Project 既有外部环境和共享可变状态副作用；不得要求只读或已有独立环境的外部依赖为 worktree 复制环境。
-
-#### Scenario: 只产生 task-local 临时文件
-- **WHEN** selected capability 的 effects 为 `none` 或已声明 task-local temporary，且 cwd 位于 environment
-- **THEN** provider MAY 按常规授权执行
-- **AND** evidence MUST 记录 task-local cleanup/retention 边界
-
-#### Scenario: 修改共享可变状态
-- **WHEN** capability 会让并发任务修改同一数据库、队列、对象存储、第三方业务数据或其他共享状态，或 effects 为 unknown
-- **THEN** provider MUST 标记该资源不是由 Git worktree 自动隔离
-- **AND** MUST 按现有副作用授权政策阻塞或取得明确授权
+#### Scenario: 调用前请求无效
+- **WHEN** Project、declaration、capability、authorization、execution root或Workspace Node在open前校验失败
+- **THEN** runner MUST返回既有invalid request envelope且execution record为not-opened
+- **AND** MUST NOT创建metadata、quota reservation、transient evidence或专业Result

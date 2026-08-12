@@ -4,7 +4,8 @@
 
 ## 所有权边界
 
-- Service 负责 npm package、CLI、本机应用、运行源码、测试、维护脚本、随包交付资产及实现型文档。
+- Service 负责 npm package、CLI、本机应用 HTTP/runtime、`web-dist` 托管与打包、运行源码、测试、维护脚本、随包交付资产及实现型文档。
+- Local App React/Vite 权威前端源码属于 sibling Service `../buildr-web`；本 Service 通过 `npm run build:web` 消费其构建产物。
 - Product Project 根负责 OpenSpec、项目级规则、capabilities、Command requirements、verification policy 与跨服务产品治理。
 - 不在 Product Project 根和本 Service 之间复制 `src/`、`bin/`、`test/`、`scripts/`、`package/` 或 package metadata；`projects/product/buildr` 只允许作为薄兼容入口。
 

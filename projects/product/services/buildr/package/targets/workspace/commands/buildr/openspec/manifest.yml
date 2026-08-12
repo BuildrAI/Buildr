@@ -10,6 +10,6 @@ commands:
     purpose: 管理 OpenSpec spec-driven development workflow。
     description: OpenSpec Component 使用的外部 SDD CLI；Buildr 只诊断，不安装或卸载本机 CLI。
     version:
-      constraint: "=1.4.1"
+      constraint: "=1.6.0"
       args: ["--version"]
-    installHint: 按 OpenSpec 官方说明安装 @fission-ai/openspec@1.4.1；Buildr 不代为安装。
+    installHint: 按 OpenSpec 官方说明安装 @fission-ai/openspec@1.6.0；Buildr 不代为安装。

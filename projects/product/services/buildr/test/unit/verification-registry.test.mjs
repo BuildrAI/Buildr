@@ -1,0 +1,70 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { validateVerificationRegistry } from '../../test/verification/planner.mjs';
+import { verificationSteps } from '../../test/verification/registry.mjs';
+
+const unit = verificationSteps.find((step) => step.id === 'unit');
+
+function registryStep(testing, profiles = ['fast']) {
+  return [{
+    ...unit,
+    id: 'sample',
+    profiles,
+    testing: { ...testing, primaryEvidenceOwner: 'sample' },
+  }];
+}
+
+function findingCodes(steps) {
+  return validateVerificationRegistry(steps).findings.map((finding) => finding.code);
+}
+
+test('current verification registry 声明完整环境足迹与重置负担', () => {
+  assert.deepEqual(validateVerificationRegistry(), { ok: true, findings: [] });
+});
+
+test('registry 拒绝缺失环境足迹或重置负担的 step', () => {
+  const { environment: _environment, resetBurden: _resetBurden, ...incomplete } = unit.testing;
+  assert.deepEqual(findingCodes(registryStep(incomplete)).sort(), ['invalid_reset_burden', 'missing_testing_environment']);
+});
+
+test('Component 不得穿过真实 filesystem 或承担 cleanup', () => {
+  const testing = {
+    ...unit.testing,
+    executionBoundary: 'Component',
+    environment: { footprints: ['filesystem'], isolation: 'unique-temporary-root' },
+    resetBurden: 'single-cleanup',
+  };
+  assert.ok(findingCodes(registryStep(testing)).includes('component_environment_boundary'));
+});
+
+test('Quick 拒绝重复重置并只允许无重置的隔离 Integration 例外', () => {
+  const integration = {
+    ...unit.testing,
+    executionBoundary: 'Integration',
+    environment: { footprints: ['filesystem'], isolation: 'unique-temporary-root' },
+    resetBurden: 'repeated-cleanup',
+  };
+  const rejected = findingCodes(registryStep(integration));
+  assert.ok(rejected.includes('quick_reset_burden'));
+  assert.ok(rejected.includes('quick_integration_not_isolated'));
+
+  const admitted = {
+    ...integration,
+    environment: { footprints: ['cli'], isolation: 'read-only' },
+    resetBurden: 'none',
+  };
+  assert.deepEqual(validateVerificationRegistry(registryStep(admitted)), { ok: true, findings: [] });
+});
+
+test('Quick Integration 拒绝 Git、network、Workspace lifecycle 或共享环境', () => {
+  for (const footprint of ['git', 'network', 'workspace-lifecycle']) {
+    const testing = {
+      ...unit.testing,
+      executionBoundary: 'Integration',
+      environment: { footprints: [footprint], isolation: 'unique-temporary-root' },
+      resetBurden: 'none',
+    };
+    assert.ok(findingCodes(registryStep(testing)).includes('quick_integration_not_isolated'), footprint);
+  }
+});

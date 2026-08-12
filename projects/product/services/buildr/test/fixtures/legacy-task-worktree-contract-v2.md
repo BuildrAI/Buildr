@@ -1,0 +1,41 @@
+---
+schemaVersion: buildr.capability-contract/v1
+id: buildr.task-worktree-lifecycle
+version: 2
+---
+
+# 任务环境生命周期
+
+## Purpose
+
+创建、定位、保留并安全清理可包含一个或多个独立 Git 仓库的 canonical task environment。
+
+## Consumer Obligations
+
+consumer 必须提供 Workspace root、稳定 task id、owner Agent、任务分支和 start point，并显式列出本任务涉及的独立 Git Project/Service repository selectors。执行、验证与清理时必须传递 environment receipt/context，不得把入口仓库等同于完整 repository set。
+
+## Minimum Guarantees
+
+provider 必须先解析完整 repository plan，再在 `<workspace>/.worktrees/<task-id>` 创建 root checkout，并把所选独立仓库按 canonical `source.path` 创建为 nested worktrees。写入前必须统一检查 registry/source/remote、路径包含关系、tracked/occupied target、branch ownership 和既有 receipt；不同 plan 不得静默复用。
+
+provider 必须为 environment 和每个 repository 返回可核对 identity，并用 environment receipt、membership、allowed roots、receipt-bound CLI/runtime projection、Workspace Node identity 与明确 target/workdir 判断 `executionReady`。Buildr 自举 workspace 的 receipt 必须绑定 environment-local 产品 CLI；普通消费 workspace 可以绑定 environment 外部的产品 CLI，但 source kind、source path 与 identity 必须和 receipt 一致。session root 不要求等于 environment root。
+
+普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence。只有任务本身修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制已在真实 Agent host 生效时，才检查 Adapter activation；`worktree adopt` evidence 必须同时匹配 session root 与 handle，且只是 agent-attested，不代表 Buildr 内省或自动 handoff。
+
+采用完成后，artifacts、编辑、receipt-bound CLI、构建、测试和验证 evidence 只使用 `allowedExecutionRoots`。原 Workspace、其他 environment、未登记仓库、不匹配 environment/runtime/session identity 必须 fail closed。Buildr 直接核验的 environment evidence 标为 `buildr-verified`；Agent/runtime host 提供的 session evidence 标为 `agent-attested`，不得描述为 Buildr 内省或密码学认证。Git working tree/index 隔离不得表述为 OS 沙箱；Git objects/refs/worktree metadata 是 shared。外部依赖沿用 Project 既有环境，不要求 Buildr 复制；只有并发任务可能修改同一共享状态时，consumer 才必须使用项目已有租户、账号、数据前缀、串行化或显式授权边界。
+
+## Effects and Authorization
+
+实现型任务允许创建本地 task environment 及其全部已选择 checkout。部分创建失败时必须保留并报告现场，不自动回滚。删除本地 worktree 或分支必须具备当前生命周期授权；删除远端分支、丢弃工作或清理外部资源需要单独明确授权。
+
+## Result Evidence
+
+返回 task id、owner、environment root/state、receipt、repository plan/digest、每仓 identity、`allowedExecutionRoots`、实际 membership、CLI source、runtime projection identity、Workspace Node identity 与 executable、明确 target/workdir、`executionReady`，以及可选 activation evidence、lifecycle、`treeChanged`、清理前置条件与隔离披露。
+
+## Decision Points
+
+repository set 无法消歧、canonical path 被占用、registry/remote/branch identity 冲突、target/workdir/CLI source 越界、runtime projection 或 Workspace Node identity stale、缺少验证/集成证据、任一仓库有未提交工作，或清理会影响其他 environment/入口/进程时，必须停止并保留整个 environment。清理时一并删除可选 activation receipt；主 runtime 仍从 retained checkout sync。
+
+## Allowed Variations
+
+provider 可以在声明的 Workspace 和 repository set 内选择 task branch 前缀、保留周期和 runtime namespace 实现；canonical environment root、nested canonical source paths、完整 plan 预检、receipt/context 门禁和精确隔离披露不可省略。

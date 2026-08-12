@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import { parseBooleanScalar } from './manifests.mjs';
+import { capabilityKey, parseBooleanScalar, validateCapabilityIdentity } from './manifests.mjs';
 import { ensureFile, normalizeRelativePath, unquoteYamlScalar } from './primitives.mjs';
 
 function parseInstalledComponentsManifest(manifestPath) {
@@ -48,7 +48,7 @@ function parseComponentContributions(definitionPath) {
     if (!['rules', 'skills', 'commandCollections', 'skillContributions'].includes(key)) throw new Error(`Component member type is not supported and cannot extend runtime adapters: ${key}`);
   }
   for (const key of Object.keys(definition.contributions)) {
-    if (key !== 'skillFragments') throw new Error(`Component contribution type is not supported and cannot extend runtime adapters: ${key}`);
+    if (!['skillFragments', 'skillDependencies'].includes(key)) throw new Error(`Component contribution type is not supported and cannot extend runtime adapters: ${key}`);
   }
   for (const key of ['rules', 'skills', 'commandCollections', 'skillContributions']) {
     definition.members[key] ||= [];
@@ -56,8 +56,20 @@ function parseComponentContributions(definitionPath) {
   }
   definition.contributions.skillFragments ||= [];
   if (!Array.isArray(definition.contributions.skillFragments) || !definition.contributions.skillFragments.every((item) => typeof item === 'string')) throw new Error('Component contributions.skillFragments must be an array of strings.');
+  definition.contributions.skillDependencies ||= [];
+  if (!Array.isArray(definition.contributions.skillDependencies)) throw new Error('Component contributions.skillDependencies must be an array.');
   if (!Array.isArray(definition.integrity) || !definition.integrity.every((item) => typeof item === 'string')) throw new Error('Component integrity must be an array of strings.');
   return definition;
+}
+
+function parseSkillDependencyContribution(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  const allowed = new Set(['skill', 'capability', 'version', 'mode']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`${label}.${key} is not supported.`);
+  if (typeof value.skill !== 'string' || !/^[A-Za-z0-9._-]+$/.test(value.skill)) throw new Error(`${label}.skill must be a valid Skill id.`);
+  validateCapabilityIdentity(value.capability, value.version, label);
+  if (!['required', 'optional'].includes(value.mode)) throw new Error(`${label}.mode must be required or optional.`);
+  return { skillId: value.skill, capability: value.capability, version: value.version, mode: value.mode };
 }
 
 function parseSkillContributionDeclaration(value) {
@@ -117,9 +129,10 @@ function workspaceAssetIntegrity(organizationRoot, relativePath, label) {
   return `sha256-${hash.digest('hex')}`;
 }
 
-export function resolveSkillContributions(organizationRoot) {
+export function resolveComponentContributions(organizationRoot) {
   const manifestPath = path.join(organizationRoot, 'components', 'manifest.yml');
-  const contributions = [];
+  const fragments = [];
+  const dependencies = [];
   const ownership = new Map();
   for (const entry of parseInstalledComponentsManifest(manifestPath)) {
     if (!entry.path) throw new Error(`Installed Component path is missing: ${entry.id}`);
@@ -158,7 +171,7 @@ export function resolveSkillContributions(organizationRoot) {
       const fragmentFile = safeWorkspaceFile(organizationRoot, declaration.fragment, `Component ${entry.id} Skill contribution`);
       const content = fs.readFileSync(fragmentFile, 'utf8').trim();
       if (!content) throw new Error(`Skill contribution fragment is empty: ${declaration.fragment}`);
-      contributions.push({
+      fragments.push({
         ...declaration,
         componentId: entry.id,
         order: index,
@@ -166,6 +179,21 @@ export function resolveSkillContributions(organizationRoot) {
       });
     }
     for (const member of members) if (!seenFragments.has(member)) throw new Error(`Skill contribution member has no declaration: ${member}`);
+    const fragmentTargets = new Set(fragments.filter((item) => item.componentId === entry.id).map((item) => item.skillId));
+    const seenDependencies = new Set();
+    for (const [index, rawDependency] of definition.contributions.skillDependencies.entries()) {
+      const dependency = parseSkillDependencyContribution(rawDependency, `Component ${entry.id} contributions.skillDependencies[${index}]`);
+      if (!fragmentTargets.has(dependency.skillId)) throw new Error(`Component Skill dependency target must also receive a Skill fragment: ${dependency.skillId}`);
+      const key = `${dependency.skillId}:${capabilityKey(dependency.capability, dependency.version)}`;
+      if (seenDependencies.has(key)) throw new Error(`Duplicate Component Skill dependency contribution: ${key}`);
+      seenDependencies.add(key);
+      dependencies.push({ ...dependency, componentId: entry.id, order: index });
+    }
   }
-  return contributions.sort((left, right) => left.componentId.localeCompare(right.componentId) || left.order - right.order);
+  const order = (left, right) => left.componentId.localeCompare(right.componentId) || left.order - right.order;
+  return { fragments: fragments.sort(order), dependencies: dependencies.sort(order) };
+}
+
+export function resolveSkillContributions(organizationRoot) {
+  return resolveComponentContributions(organizationRoot).fragments;
 }

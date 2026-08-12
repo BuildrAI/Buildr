@@ -2,219 +2,193 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-const ROOT_FIELDS = new Set(['schemaVersion', 'mode', 'capabilities']);
-const CAPABILITY_FIELDS = new Set([
-  'id', 'title', 'command', 'maturity', 'stages', 'enforcement', 'applicability',
-  'coverage', 'environment', 'effects', 'authorization', 'dependsOn', 'supersedes', 'sources',
-]);
-const COMMAND_FIELDS = new Set(['argv', 'cwd']);
-const APPLICABILITY_FIELDS = new Set(['paths', 'risks']);
-const COVERAGE_FIELDS = new Set(['kind', 'owns']);
-const ENVIRONMENT_FIELDS = new Set(['requires', 'services']);
-const EFFECT_FIELDS = new Set(['level', 'writes', 'externalSystems']);
-const MODES = new Set(['augment', 'authoritative']);
-const MATURITIES = new Set(['discovered', 'trial', 'stable']);
-const STAGES = new Set(['minimal', 'affected', 'candidate']);
-const ENFORCEMENTS = new Set(['advisory', 'required']);
+const ROOT_FIELDS = new Set(['schemaVersion', 'resources', 'capabilities']);
+const RESOURCE_FIELDS = new Set(['id', 'title', 'strategy', 'capacity', 'authorization']);
+const CAPABILITY_FIELDS = new Set(['id', 'title', 'scope', 'invocation', 'applicability', 'proves', 'requiredForDelivery', 'environment', 'effects', 'resourceClaims']);
+const SCOPE_FIELDS = new Set(['project', 'services']);
+const INVOCATION_FIELDS = new Set(['kind', 'argv', 'cwd', 'instructions']);
+const APPLICABILITY_FIELDS = new Set(['paths', 'conditions']);
+const ENVIRONMENT_FIELDS = new Set(['requires']);
+const EFFECTS_FIELDS = new Set(['writes', 'externalSystems', 'authorization']);
+const RESOURCE_STRATEGIES = new Set(['coordinated', 'external']);
 const AUTHORIZATIONS = new Set(['implicit', 'explicit']);
-const EFFECT_LEVELS = new Set(['none', 'local-temporary', 'local-service', 'shared', 'persistent', 'unknown']);
-const ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function unknownFields(value, allowed, label, errors) {
+function unknownFields(value, fields, label, errors) {
   if (!isObject(value)) return;
-  for (const key of Object.keys(value)) {
-    if (!allowed.has(key)) errors.push(`${label}.${key} is not supported.`);
-  }
+  for (const field of Object.keys(value)) if (!fields.has(field)) errors.push(`${label}.${field} is not supported.`);
 }
 
-function stringArray(value, label, errors, { nonEmpty = false } = {}) {
-  if (!Array.isArray(value) || (nonEmpty && value.length === 0) || value.some((item) => typeof item !== 'string' || !item.trim())) {
-    errors.push(`${label} must be ${nonEmpty ? 'a non-empty ' : 'an '}array of non-empty strings.`);
-    return [];
-  }
-  return value;
+function string(value, label, errors, { optional = false } = {}) {
+  if (value === undefined && optional) return;
+  if (typeof value !== 'string' || !value.trim()) errors.push(`${label} must be a non-empty string.`);
 }
 
-function relativePatternIsSafe(value) {
-  if (typeof value !== 'string' || !value.trim() || path.posix.isAbsolute(value.replaceAll('\\', '/'))) return false;
-  const segments = value.replaceAll('\\', '/').split('/');
-  return !segments.includes('..') && !segments.includes('');
+function strings(value, label, errors, { minimum = 0 } = {}) {
+  if (!Array.isArray(value)) { errors.push(`${label} must be an array.`); return; }
+  if (value.length < minimum) errors.push(`${label} must contain at least ${minimum} item${minimum === 1 ? '' : 's'}.`);
+  value.forEach((item, index) => string(item, `${label}[${index}]`, errors));
+}
+
+function safeRelative(value, label, errors, { glob = false } = {}) {
+  if (typeof value !== 'string' || !value.trim()) { errors.push(`${label} must be a non-empty relative ${glob ? 'pattern' : 'path'}.`); return; }
+  const normalized = value.replaceAll('\\', '/');
+  if (path.posix.isAbsolute(normalized) || /^(?:[A-Za-z]:|file:\/\/)/.test(normalized) || normalized.split('/').includes('..')) {
+    errors.push(`${label} must stay inside the Project.`);
+  }
 }
 
 export function parseProjectVerification(content, label = 'verification.yml') {
-  let document;
   try {
-    document = YAML.parseDocument(content, { uniqueKeys: true, prettyErrors: true });
+    const document = YAML.parseDocument(content, { uniqueKeys: true, prettyErrors: true });
+    if (document.errors.length) throw new Error(document.errors.map((error) => error.message).join('; '));
+    return document.toJS({ mapAsMap: false });
   } catch (error) {
     throw new Error(`${label} is invalid YAML: ${error.message}`);
   }
-  if (document.errors.length > 0) {
-    throw new Error(`${label} is invalid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
-  }
-  const value = document.toJS({ mapAsMap: false });
-  if (!isObject(value)) throw new Error(`${label} must be a YAML mapping.`);
-  return value;
 }
 
-export function validateProjectVerification(value) {
+export function validateProjectVerification(value, context = {}) {
   const errors = [];
   if (!isObject(value)) return ['verification.yml must be a YAML mapping.'];
   unknownFields(value, ROOT_FIELDS, 'verification', errors);
-  if (value.schemaVersion !== 'buildr.project-verification/v1') errors.push('verification.schemaVersion must be buildr.project-verification/v1.');
-  if (!MODES.has(value.mode)) errors.push('verification.mode must be augment or authoritative.');
-  if (!Array.isArray(value.capabilities)) {
-    errors.push('verification.capabilities must be an array.');
-    return errors;
+  if (value.schemaVersion !== 'buildr.project-verification/v2') errors.push('verification.schemaVersion must be buildr.project-verification/v2.');
+  if (value.resources !== undefined && !Array.isArray(value.resources)) errors.push('verification.resources must be an array.');
+  if (!Array.isArray(value.capabilities)) errors.push('verification.capabilities must be an array.');
+
+  const resourceIds = new Set();
+  for (const [index, resource] of (Array.isArray(value.resources) ? value.resources : []).entries()) {
+    const label = `verification.resources[${index}]`;
+    if (!isObject(resource)) { errors.push(`${label} must be an object.`); continue; }
+    unknownFields(resource, RESOURCE_FIELDS, label, errors);
+    if (!IDENTITY.test(resource.id || '')) errors.push(`${label}.id is invalid.`);
+    else if (resourceIds.has(resource.id)) errors.push(`${label}.id is duplicated: ${resource.id}.`);
+    else resourceIds.add(resource.id);
+    string(resource.title, `${label}.title`, errors, { optional: true });
+    if (!RESOURCE_STRATEGIES.has(resource.strategy)) errors.push(`${label}.strategy must be coordinated or external.`);
+    if (resource.strategy === 'coordinated' && (!Number.isInteger(resource.capacity) || resource.capacity < 1)) errors.push(`${label}.capacity must be a positive integer for coordinated resources.`);
+    if (resource.strategy === 'external' && resource.capacity !== undefined) errors.push(`${label}.capacity is not supported for external resources.`);
+    if (!AUTHORIZATIONS.has(resource.authorization)) errors.push(`${label}.authorization must be implicit or explicit.`);
+    if (resource.strategy === 'external' && resource.authorization !== 'explicit') errors.push(`${label}.authorization must be explicit for external resources.`);
   }
 
-  const ids = new Set();
-  const dependencies = new Map();
-  value.capabilities.forEach((capability, index) => {
+  const capabilityIds = new Set();
+  const claimedResources = new Set();
+  const knownServices = new Set(context.services || []);
+  for (const [index, capability] of (Array.isArray(value.capabilities) ? value.capabilities : []).entries()) {
     const label = `verification.capabilities[${index}]`;
-    if (!isObject(capability)) {
-      errors.push(`${label} must be a mapping.`);
-      return;
-    }
+    if (!isObject(capability)) { errors.push(`${label} must be an object.`); continue; }
     unknownFields(capability, CAPABILITY_FIELDS, label, errors);
-    if (typeof capability.id !== 'string' || !ID_PATTERN.test(capability.id)) errors.push(`${label}.id must be a stable lowercase capability id.`);
-    else if (ids.has(capability.id)) errors.push(`${label}.id duplicates ${capability.id}.`);
-    else ids.add(capability.id);
-    if (typeof capability.title !== 'string' || !capability.title.trim()) errors.push(`${label}.title is required.`);
-    if (!MATURITIES.has(capability.maturity)) errors.push(`${label}.maturity must be discovered, trial or stable.`);
+    if (!IDENTITY.test(capability.id || '')) errors.push(`${label}.id is invalid.`);
+    else if (capabilityIds.has(capability.id)) errors.push(`${label}.id is duplicated: ${capability.id}.`);
+    else capabilityIds.add(capability.id);
+    string(capability.title, `${label}.title`, errors, { optional: true });
 
-    const stages = stringArray(capability.stages, `${label}.stages`, errors, { nonEmpty: true });
-    if (new Set(stages).size !== stages.length) errors.push(`${label}.stages must not contain duplicates.`);
-    for (const stage of stages) if (!STAGES.has(stage)) errors.push(`${label}.stages contains unsupported stage ${stage}.`);
-
-    if (!isObject(capability.enforcement)) errors.push(`${label}.enforcement must be a mapping.`);
+    if (!isObject(capability.scope)) errors.push(`${label}.scope must be an object.`);
     else {
-      for (const [stage, enforcement] of Object.entries(capability.enforcement)) {
-        if (!STAGES.has(stage) || !stages.includes(stage)) errors.push(`${label}.enforcement.${stage} must reference a declared stage.`);
-        if (!ENFORCEMENTS.has(enforcement)) errors.push(`${label}.enforcement.${stage} must be advisory or required.`);
-        if (enforcement === 'required' && capability.maturity !== 'stable') errors.push(`${label}.enforcement.${stage} cannot be required unless maturity is stable.`);
+      unknownFields(capability.scope, SCOPE_FIELDS, `${label}.scope`, errors);
+      string(capability.scope.project, `${label}.scope.project`, errors);
+      if (context.projectCode && capability.scope.project !== context.projectCode) errors.push(`${label}.scope.project must equal ${context.projectCode}.`);
+      strings(capability.scope.services, `${label}.scope.services`, errors);
+      for (const service of Array.isArray(capability.scope.services) ? capability.scope.services : []) {
+        if (context.services && !knownServices.has(service)) errors.push(`${label}.scope.services references unknown Service ${service}.`);
       }
-      for (const stage of stages) if (!(stage in capability.enforcement)) errors.push(`${label}.enforcement.${stage} is required for every declared stage.`);
     }
 
-    if (!isObject(capability.command)) errors.push(`${label}.command must be a mapping.`);
+    if (!isObject(capability.invocation)) errors.push(`${label}.invocation must be an object.`);
     else {
-      unknownFields(capability.command, COMMAND_FIELDS, `${label}.command`, errors);
-      stringArray(capability.command.argv, `${label}.command.argv`, errors, { nonEmpty: true });
-      if (!relativePatternIsSafe(capability.command.cwd)) errors.push(`${label}.command.cwd must be a safe relative path.`);
+      unknownFields(capability.invocation, INVOCATION_FIELDS, `${label}.invocation`, errors);
+      if (!['command', 'agent'].includes(capability.invocation.kind)) errors.push(`${label}.invocation.kind must be command or agent.`);
+      if (capability.invocation.kind === 'command') {
+        strings(capability.invocation.argv, `${label}.invocation.argv`, errors, { minimum: 1 });
+        safeRelative(capability.invocation.cwd ?? '.', `${label}.invocation.cwd`, errors);
+        if (capability.invocation.instructions !== undefined) errors.push(`${label}.invocation.instructions is only supported for agent invocation.`);
+      }
+      if (capability.invocation.kind === 'agent') {
+        strings(capability.invocation.instructions, `${label}.invocation.instructions`, errors, { minimum: 1 });
+        for (const forbidden of ['argv', 'cwd']) if (capability.invocation[forbidden] !== undefined) errors.push(`${label}.invocation.${forbidden} is only supported for command invocation.`);
+      }
     }
 
-    if (!isObject(capability.applicability)) errors.push(`${label}.applicability must be a mapping.`);
+    if (!isObject(capability.applicability)) errors.push(`${label}.applicability must be an object.`);
     else {
       unknownFields(capability.applicability, APPLICABILITY_FIELDS, `${label}.applicability`, errors);
-      for (const item of stringArray(capability.applicability.paths, `${label}.applicability.paths`, errors, { nonEmpty: true })) {
-        if (!relativePatternIsSafe(item)) errors.push(`${label}.applicability.paths contains unsafe path ${item}.`);
-      }
-      if (capability.applicability.risks !== undefined) stringArray(capability.applicability.risks, `${label}.applicability.risks`, errors);
+      strings(capability.applicability.paths, `${label}.applicability.paths`, errors, { minimum: 1 });
+      for (const [pathIndex, pattern] of (Array.isArray(capability.applicability.paths) ? capability.applicability.paths : []).entries()) safeRelative(pattern, `${label}.applicability.paths[${pathIndex}]`, errors, { glob: true });
+      if (capability.applicability.conditions !== undefined) strings(capability.applicability.conditions, `${label}.applicability.conditions`, errors);
     }
+    strings(capability.proves, `${label}.proves`, errors, { minimum: 1 });
+    if (typeof capability.requiredForDelivery !== 'boolean') errors.push(`${label}.requiredForDelivery must be boolean.`);
 
-    if (!isObject(capability.coverage)) errors.push(`${label}.coverage must be a mapping.`);
-    else {
-      unknownFields(capability.coverage, COVERAGE_FIELDS, `${label}.coverage`, errors);
-      if (typeof capability.coverage.kind !== 'string' || !capability.coverage.kind.trim()) errors.push(`${label}.coverage.kind is required.`);
-      stringArray(capability.coverage.owns, `${label}.coverage.owns`, errors, { nonEmpty: true });
-    }
-
-    if (!isObject(capability.environment)) errors.push(`${label}.environment must be a mapping.`);
-    else {
-      unknownFields(capability.environment, ENVIRONMENT_FIELDS, `${label}.environment`, errors);
-      stringArray(capability.environment.requires, `${label}.environment.requires`, errors);
-      stringArray(capability.environment.services, `${label}.environment.services`, errors);
-    }
-
-    if (!isObject(capability.effects)) errors.push(`${label}.effects must be a mapping.`);
-    else {
-      unknownFields(capability.effects, EFFECT_FIELDS, `${label}.effects`, errors);
-      if (!EFFECT_LEVELS.has(capability.effects.level)) errors.push(`${label}.effects.level is unsupported.`);
-      for (const item of stringArray(capability.effects.writes, `${label}.effects.writes`, errors)) {
-        if (!relativePatternIsSafe(item)) errors.push(`${label}.effects.writes contains unsafe path ${item}.`);
-      }
-      if (typeof capability.effects.externalSystems !== 'boolean') errors.push(`${label}.effects.externalSystems must be boolean.`);
-    }
-    if (!AUTHORIZATIONS.has(capability.authorization)) errors.push(`${label}.authorization must be implicit or explicit.`);
-    if (capability.authorization === 'implicit' && (capability.effects?.externalSystems === true || !['none', 'local-temporary'].includes(capability.effects?.level))) {
-      errors.push(`${label}.authorization cannot be implicit for external, service, shared, persistent or unknown effects.`);
-    }
-
-    const dependsOn = capability.dependsOn === undefined ? [] : stringArray(capability.dependsOn, `${label}.dependsOn`, errors);
-    const supersedes = capability.supersedes === undefined ? [] : stringArray(capability.supersedes, `${label}.supersedes`, errors);
-    if (capability.sources !== undefined) stringArray(capability.sources, `${label}.sources`, errors, { nonEmpty: true });
-    dependencies.set(capability.id, dependsOn);
-    if (new Set(dependsOn).size !== dependsOn.length) errors.push(`${label}.dependsOn must not contain duplicates.`);
-    if (new Set(supersedes).size !== supersedes.length) errors.push(`${label}.supersedes must not contain duplicates.`);
-  });
-
-  value.capabilities.forEach((capability, index) => {
-    if (!isObject(capability) || typeof capability.id !== 'string') return;
-    for (const field of ['dependsOn', 'supersedes']) {
-      for (const referenced of capability[field] || []) {
-        if (!ids.has(referenced)) errors.push(`verification.capabilities[${index}].${field} references unknown capability ${referenced}.`);
-        if (referenced === capability.id) errors.push(`verification.capabilities[${index}].${field} cannot reference itself.`);
+    if (capability.environment !== undefined) {
+      if (!isObject(capability.environment)) errors.push(`${label}.environment must be an object.`);
+      else {
+        unknownFields(capability.environment, ENVIRONMENT_FIELDS, `${label}.environment`, errors);
+        strings(capability.environment.requires, `${label}.environment.requires`, errors);
       }
     }
-  });
-
-  const visiting = new Set();
-  const visited = new Set();
-  function visit(id, trail) {
-    if (visiting.has(id)) {
-      errors.push(`verification.dependsOn contains a cycle: ${[...trail, id].join(' -> ')}.`);
-      return;
+    if (capability.effects !== undefined) {
+      if (!isObject(capability.effects)) errors.push(`${label}.effects must be an object.`);
+      else {
+        unknownFields(capability.effects, EFFECTS_FIELDS, `${label}.effects`, errors);
+        strings(capability.effects.writes, `${label}.effects.writes`, errors);
+        strings(capability.effects.externalSystems, `${label}.effects.externalSystems`, errors);
+        if (!AUTHORIZATIONS.has(capability.effects.authorization)) errors.push(`${label}.effects.authorization must be implicit or explicit.`);
+        if (Array.isArray(capability.effects.externalSystems) && capability.effects.externalSystems.length > 0 && capability.effects.authorization !== 'explicit') errors.push(`${label}.effects.authorization must be explicit when externalSystems is non-empty.`);
+      }
     }
-    if (visited.has(id) || !ids.has(id)) return;
-    visiting.add(id);
-    for (const dependency of dependencies.get(id) || []) visit(dependency, [...trail, id]);
-    visiting.delete(id);
-    visited.add(id);
+    if (capability.resourceClaims !== undefined) strings(capability.resourceClaims, `${label}.resourceClaims`, errors);
+    for (const resource of Array.isArray(capability.resourceClaims) ? capability.resourceClaims : []) {
+      claimedResources.add(resource);
+      if (!resourceIds.has(resource)) errors.push(`${label}.resourceClaims references unknown resource ${resource}.`);
+    }
   }
-  for (const id of ids) visit(id, []);
+  for (const resource of resourceIds) if (!claimedResources.has(resource)) errors.push(`verification.resources contains unclaimed resource ${resource}.`);
+  return errors;
+}
 
-  if (value.mode === 'authoritative') {
-    const candidateGates = value.capabilities.filter((capability) => capability?.maturity === 'stable' && capability?.stages?.includes('candidate') && capability?.enforcement?.candidate === 'required');
-    if (candidateGates.length === 0) errors.push('verification.mode authoritative requires at least one stable required candidate capability.');
+function serviceCodes(projectRoot) {
+  const file = path.join(projectRoot, 'services', 'manifest.yml');
+  if (!fs.existsSync(file)) return [];
+  try {
+    const value = YAML.parse(fs.readFileSync(file, 'utf8'));
+    return isObject(value?.services) ? Object.keys(value.services) : [];
+  } catch {
+    return [];
   }
-  return [...new Set(errors)];
 }
 
 export function createProjectVerificationDiagnostics({ addDoctorFinding }) {
   function diagnoseProjectVerification(result, targetRoot, registry = null) {
     result.projectVerification = [];
-    for (const [projectName, project] of Object.entries(registry?.projects || {}).sort(([left], [right]) => left.localeCompare(right))) {
-      const projectRoot = path.resolve(targetRoot, project.path || `projects/${projectName}`);
+    for (const [projectName, project] of Object.entries(registry?.projects || {})) {
+      const projectRoot = path.resolve(targetRoot, project.source.path);
       const declarationPath = path.join(projectRoot, 'verification.yml');
-      if (!fs.existsSync(declarationPath) || !fs.statSync(declarationPath).isFile()) continue;
-      const relativePath = path.relative(targetRoot, declarationPath).replaceAll(path.sep, '/');
+      if (!fs.existsSync(declarationPath)) continue;
+      const relativePath = path.relative(targetRoot, declarationPath).split(path.sep).join('/');
       let declaration;
       try {
         declaration = parseProjectVerification(fs.readFileSync(declarationPath, 'utf8'), relativePath);
       } catch (error) {
         addDoctorFinding(result, 'error', 'project.verification_invalid', error.message, {
           path: relativePath,
-          project: projectName,
-          suggestion: '修复 Project verification.yml；在声明有效前不要执行其中的测试能力。',
           userActionRequired: true,
+          suggestion: '修复 Project verification.yml 并迁移到 buildr.project-verification/v2；在声明有效前不要执行其中的能力。',
         });
-        result.projectVerification.push({ project: projectName, path: relativePath, valid: false, mode: null, capabilityCount: 0 });
+        result.projectVerification.push({ project: projectName, path: relativePath, valid: false, capabilityCount: 0 });
         continue;
       }
-      const errors = validateProjectVerification(declaration);
-      result.projectVerification.push({ project: projectName, path: relativePath, valid: errors.length === 0, mode: declaration.mode || null, capabilityCount: Array.isArray(declaration.capabilities) ? declaration.capabilities.length : 0 });
-      for (const message of errors) {
-        addDoctorFinding(result, 'error', 'project.verification_invalid', message, {
-          path: relativePath,
-          project: projectName,
-          suggestion: '修复 Project verification.yml；在声明有效前不要执行其中的测试能力。',
-          userActionRequired: true,
-        });
-      }
+      const errors = validateProjectVerification(declaration, { projectCode: projectName, services: serviceCodes(projectRoot) });
+      result.projectVerification.push({ project: projectName, path: relativePath, valid: errors.length === 0, capabilityCount: Array.isArray(declaration.capabilities) ? declaration.capabilities.length : 0 });
+      for (const message of errors) addDoctorFinding(result, 'error', 'project.verification_invalid', message, {
+        path: relativePath,
+        userActionRequired: true,
+        suggestion: '修复 Project verification.yml 并迁移到 buildr.project-verification/v2；在声明有效前不要执行其中的能力。',
+      });
     }
   }
   return { diagnoseProjectVerification };

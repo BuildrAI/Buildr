@@ -21,65 +21,183 @@ agentSkills:
       - workbuddy
 
 capabilityContracts:
-  - id: buildr.git-single-operation
+  - id: buildr.git-operations
     version: 1
-    description: 安全执行一个明确的 Git 操作并返回可审计结果。
-    path: package/targets/workspace/skills/contracts/buildr/git-single-operation/v1.md
-    target: skills/contracts/buildr/git-single-operation/v1.md
-  - id: buildr.git-task-integration
+    description: 为已选定的单次 Git Operation 提供授权、安全边界、前后 identity 与最小结果。
+    path: package/targets/workspace/skills/contracts/buildr/git-operations/v1.md
+    target: skills/contracts/buildr/git-operations/v1.md
+    replaces:
+      - id: buildr.git-single-operation
+        version: 1
+        target: skills/contracts/buildr/git-single-operation/v1.md
+        integrity: sha256-7a3c956590b7cbb74c0676c6c3999dd078fc298da6c8f83c8c8be7963ad58379
+        provider: git-ops
+        description: 安全执行一个明确的 Git 操作并返回可审计结果。
+      - id: buildr.git-task-integration
+        version: 1
+        target: skills/contracts/buildr/git-task-integration/v1.md
+        integrity: sha256-e751f55c1adab0a5ca30300fec116770232796158681f7b4337ea0cac7aff88d
+        provider: git-ops
+        description: 提交并把已验证任务安全集成到目标分支。
+      - id: buildr.git-workspace-update
+        version: 1
+        target: skills/contracts/buildr/git-workspace-update/v1.md
+        integrity: sha256-026125f83f82e2a0a650b38b2e2ae0291c3f1ef5fd37565066d2fc36b7f0a981
+        provider: git-ops
+        description: 在 workspace sync 前安全更新 Git checkout。
+  - id: buildr.task-environment
     version: 1
-    description: 提交并把已验证任务安全集成到目标分支。
-    path: package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md
-    target: skills/contracts/buildr/git-task-integration/v1.md
-  - id: buildr.git-workspace-update
+    description: 管理正式 Task 的实际执行环境和唯一 Environment Receipt。
+    path: package/targets/workspace/skills/contracts/buildr/task-environment/v1.md
+    target: skills/contracts/buildr/task-environment/v1.md
+    replaces:
+      - id: buildr.task-worktree-lifecycle
+        version: 1
+        target: skills/contracts/buildr/task-worktree-lifecycle/v1.md
+        integrity: sha256-08fab39602e8bbc264286ea228aa9137b49132ce2c232f2b2b3b9319af26fea0
+        provider: task-worktree
+        description: 管理任务 worktree 的放置、保留和安全清理。
+      - id: buildr.task-worktree-lifecycle
+        version: 2
+        target: skills/contracts/buildr/task-worktree-lifecycle/v2.md
+        integrity: sha256-d4baeefd45a23b1276b7f4a6254352b43e79982f046ac44f84ccdb6212560541
+        provider: task-worktree
+        description: 管理单仓或多仓 task environment 的放置、执行边界、保留和安全清理。
+  - id: buildr.git-worktree-provider
     version: 1
-    description: 在 workspace sync 前安全更新 Git checkout。
-    path: package/targets/workspace/skills/contracts/buildr/git-workspace-update/v1.md
-    target: skills/contracts/buildr/git-workspace-update/v1.md
-  - id: buildr.task-worktree-lifecycle
+    description: 管理 Task 的 Git worktree 并返回窄 Git provider evidence。
+    path: package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md
+    target: skills/contracts/buildr/git-worktree-provider/v1.md
+  - id: buildr.task-record
     version: 2
-    description: 管理单仓或多仓 task environment 的放置、执行边界、保留和安全清理。
-    path: package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md
-    target: skills/contracts/buildr/task-worktree-lifecycle/v2.md
+    description: 管理 canonical Workspace 中待办与正式 Task 的最小顶层记录及复盘来源。
+    path: package/targets/workspace/skills/contracts/buildr/task-record/v2.md
+    target: skills/contracts/buildr/task-record/v2.md
+    replaces:
+      - id: buildr.task-record
+        version: 1
+        target: skills/contracts/buildr/task-record/v1.md
+        integrity: sha256-a6c1c645f9ad03345a1e7c3ec104d215e0281a6ac6452afa90cdbc2b0923c30d
+        provider: task-manager
+        description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
+  - id: buildr.task-review
+    version: 1
+    description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
+    path: package/targets/workspace/skills/contracts/buildr/task-review/v1.md
+    target: skills/contracts/buildr/task-review/v1.md
   - id: buildr.task-verification
+    version: 3
+    description: 执行 Project 已声明的验证能力，并维护 Task-scoped Workspace-local current Verification Result。
+    path: package/targets/workspace/skills/contracts/buildr/task-verification/v3.md
+    target: skills/contracts/buildr/task-verification/v3.md
+    replaces:
+      - id: buildr.task-verification
+        version: 2
+        target: skills/contracts/buildr/task-verification/v2.md
+        integrity: sha256-030f4599e84bc24823fe95d93d3a8847335bcb6fa518fd229d8d15b364c9158e
+        provider: task-verification
+        description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
+  - id: buildr.task-development
     version: 2
-    description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
-    path: package/targets/workspace/skills/contracts/buildr/task-verification/v2.md
-    target: skills/contracts/buildr/task-verification/v2.md
+    description: 从首个正式研发动作到 immutable Finish handoff，维护planning聚合事实、稳定 Content Target、verification policy、Task Candidate generation与推进决定。
+    path: package/targets/workspace/skills/contracts/buildr/task-development/v2.md
+    target: skills/contracts/buildr/task-development/v2.md
+    replaces:
+      - id: buildr.task-development
+        version: 1
+        target: skills/contracts/buildr/task-development/v1.md
+        integrity: sha256-c903f0b6b81b1bd28615528c1f80e2b6aa7be27da5f8071c7ec65cd4f8b334db
+        provider: task-development
+        description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
   - id: buildr.task-finish
     version: 1
-    description: 编排已验证任务的归档、集成、推送与本地收尾。
+    description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
     path: package/targets/workspace/skills/contracts/buildr/task-finish/v1.md
     target: skills/contracts/buildr/task-finish/v1.md
-  - id: buildr.task-asset-review
+  - id: buildr.task-retrospective
     version: 2
-    description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
-    path: package/targets/workspace/skills/contracts/buildr/task-asset-review/v2.md
-    target: skills/contracts/buildr/task-asset-review/v2.md
-
+    description: 按需复盘terminal Task，并把有效改进通过Task来源关系落地。
+    path: package/targets/workspace/skills/contracts/buildr/task-retrospective/v2.md
+    target: skills/contracts/buildr/task-retrospective/v2.md
+    replaces:
+      - id: buildr.task-retrospective
+        version: 1
+        target: skills/contracts/buildr/task-retrospective/v1.md
+        integrity: sha256-db41f691851dfe8e7d1f9fb2f858d605eea27e3991e8d95faef298a504f88499
+        provider: task-retrospective
+        description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
+      - id: buildr.task-asset-review
+        version: 1
+        target: skills/contracts/buildr/task-asset-review/v1.md
+        integrity: sha256-eb7d2d92f1cea492763a107d5c35ee0fe38406cb8480ade679b5595e6855f856
+        legacyIntegrities:
+          - sha256-8812af33714611af6b92c888a8204a26376e27116dc7cc63baa979141d6b2d89
+        provider: task-asset-review
+        description: 审查任务过程并提出可沉淀工作资产候选。
+      - id: buildr.task-asset-review
+        version: 2
+        target: skills/contracts/buildr/task-asset-review/v2.md
+        integrity: sha256-5b7dc8921816574f8981b10d01ff7dd472330cd5d6e33a70407f51ff8ec65b81
+        provider: task-asset-review
+        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
+      - id: buildr.task-asset-review
+        version: 3
+        target: skills/contracts/buildr/task-asset-review/v3.md
+        integrity: sha256-428ea04129a4701035617c3d35fa944cd1b20e863c4d7f9cafb76ae2a7485804
+        provider: task-asset-review
+        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
+  - id: buildr.terminology-governance
+    version: 1
+    description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
+    path: package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md
+    target: skills/contracts/buildr/terminology-governance/v1.md
+  - id: buildr.current-knowledge-maintenance
+    version: 1
+    description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
+    path: package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md
+    target: skills/contracts/buildr/current-knowledge-maintenance/v1.md
+  - id: buildr.current-knowledge-maintenance
+    version: 2
+    description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
+    path: package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md
+    target: skills/contracts/buildr/current-knowledge-maintenance/v2.md
 initialSkillBindings:
-  - capability: buildr.git-single-operation
+  - capability: buildr.git-operations
     version: 1
-    provider: git-ops
-  - capability: buildr.git-task-integration
+    provider: git-operations
+  - capability: buildr.task-environment
     version: 1
-    provider: git-ops
-  - capability: buildr.git-workspace-update
+    provider: task-environment
+  - capability: buildr.git-worktree-provider
     version: 1
-    provider: git-ops
-  - capability: buildr.task-worktree-lifecycle
-    version: 2
     provider: task-worktree
-  - capability: buildr.task-verification
+  - capability: buildr.task-record
     version: 2
+    provider: task-manager
+  - capability: buildr.task-review
+    version: 1
+    provider: task-review
+  - capability: buildr.task-verification
+    version: 3
     provider: task-verification
+  - capability: buildr.task-development
+    version: 2
+    provider: task-development
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
-  - capability: buildr.task-asset-review
+  - capability: buildr.task-retrospective
     version: 2
-    provider: task-asset-review
-
+    provider: task-retrospective
+  - capability: buildr.terminology-governance
+    version: 1
+    provider: terminology-governance
+  - capability: buildr.current-knowledge-maintenance
+    version: 1
+    provider: current-knowledge-maintenance
+  - capability: buildr.current-knowledge-maintenance
+    version: 2
+    provider: current-knowledge-maintenance
 builtins:
   rules:
     - id: buildr-core
@@ -91,44 +209,97 @@ builtins:
     - id: task-triage
       path: package/targets/workspace/skills/buildr/task-triage
       target: skills/buildr/task-triage
-      description: 用户要求修 bug、实现或调整功能、改需求、重构、优化、补文档、补测试、调整 API/契约/权限/状态流/数据语义，或询问某项改动是否需要更新 spec、创建 change、只改代码时使用。
+      description: 用户提出修复、实现、重构、优化、文档/测试或契约语义调整，或询问任务应走代码修改、当前事实维护还是 OpenSpec Change 时使用。
+      required: false
+      requires:
+        - capability: buildr.task-record
+          version: 2
+          mode: optional
+        - capability: buildr.git-operations
+          version: 1
+          mode: optional
+        - capability: buildr.current-knowledge-maintenance
+          version: 2
+          mode: optional
+        - capability: buildr.task-environment
+          version: 1
+          mode: optional
+        - capability: buildr.task-development
+          version: 2
+          mode: optional
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: declaration-intake
+      path: package/targets/workspace/skills/buildr/declaration-intake
+      target: skills/buildr/declaration-intake
+      description: 用户要求初始化、刷新或审查 Project 的环境准备与任务验证声明，或 Project/Service 注册、首次 Task scope、Environment 缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；只读发现 preparation.yml 与 verification.yml 候选，长期写入必须经用户确认并交给各声明 owner Skill。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: task-board
-      path: package/targets/workspace/skills/buildr/task-board
-      target: skills/buildr/task-board
-      description: 为复杂、长期、跨批次、跨 change、跨服务或团队的任务维护只读 HTML 任务看板、change 关联、交付批次和依赖池；用户明确要求任务看板、整体进度、长期跟踪，或使用旧称“任务驾驶舱”时也使用。
+    - id: project-testing
+      path: package/targets/workspace/skills/buildr/project-testing
+      target: skills/buildr/project-testing
+      description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，区分测试成本、affected/full 范围与 Candidate/Release 验证目标，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-      replaces:
-        id: task-cockpit
-        target: skills/buildr/task-cockpit
-        runtimePath: task-cockpit
-      legacyIntegrities:
-        - sha256-0ac07cea3870e19c75e097a6f1df556242c8e11488419bd5f9a3bfa52f36c061
+    - id: task-manager
+      path: package/targets/workspace/skills/buildr/task-manager
+      target: skills/buildr/task-manager
+      description: 用户明确要求创建或查看待办/正式 Task Record、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；不用于普通任务分流、Task Environment 或专业阶段动作。
+      required: false
+      provides:
+        - capability: buildr.task-record
+          version: 2
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: task-review
+      path: package/targets/workspace/skills/buildr/task-review
+      target: skills/buildr/task-review
+      description: 用户要求审查正式 Task 的计划或完成候选、查看已有 Task Review Result，或实现任务在计划/完成节点需要形成轻量审查 evidence 时使用；不用于资产沉淀复盘、Task Verification 或通用代码 Review。
+      required: false
+      provides:
+        - capability: buildr.task-review
+          version: 1
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: capability-adaptation
       path: package/targets/workspace/skills/buildr/capability-adaptation
       target: skills/buildr/capability-adaptation
       description: 用户要求采用内部流程、调整工作方式、修改默认 Skill 行为、创建或替换专业 Skill、卸载可能被编排的 Skill，或 Agent 准备改变 capability contract 及跨 Skill 协作边界时使用。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: task-asset-review
-      path: package/targets/workspace/skills/buildr/task-asset-review
-      target: skills/buildr/task-asset-review
-      description: 非简单 Workspace 任务开始探索、设计、诊断、实现或验证时持续收集轻量资产信号，用户要求复盘或沉淀，或 Task Finish 触发 finalize 时使用。
+    - id: task-retrospective
+      path: package/targets/workspace/skills/buildr/task-retrospective
+      target: skills/buildr/task-retrospective
+      description: 用户明确要求复盘已完成或已放弃的正式 Task，或要查看、处理、标记无需处理、重新打开已有复盘时使用；复盘重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。不用于过程 observation、任务审查、门禁或资产自动写回。
       required: false
       provides:
-        - capability: buildr.task-asset-review
+        - capability: buildr.task-retrospective
           version: 2
+      requires:
+        - capability: buildr.task-record
+          version: 2
+          mode: required
+      replaces:
+        id: task-asset-review
+        target: skills/buildr/task-asset-review
+        runtimePath: task-asset-review
+      legacyIntegrities:
+        - sha256-e7224325aa5b2d183d9a152f336e4f24699e3fd10ea5505e08d90bd77f09f642
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: task-environment
+      path: package/targets/workspace/skills/buildr/task-environment
+      target: skills/buildr/task-environment
+      description: 正式 Task 需要准备、检查、恢复或清理实际执行环境，或按 Task ID 取得 Environment Receipt 的当前机器事实时使用；不用于任务分流、Task Record、验证结论或 Git 集成。
+      required: false
+      provides:
+        - capability: buildr.task-environment
+          version: 1
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-worktree
       path: package/targets/workspace/skills/buildr/task-worktree
       target: skills/buildr/task-worktree
-      description: 用户要求创建、定位、复用、保留或清理 task worktree/change-id/任务分支，或处理 task checkout、创建后环境准备与本机入口迁移时使用。
+      description: 用户明确要求创建、检查或清理 Task 的 Git worktree 与本地任务分支，或 Task Environment 需要 Git checkout provider 时使用；不负责环境 ready、恢复、Runtime、资源或总 cleanup。
       required: false
       provides:
-        - capability: buildr.task-worktree-lifecycle
-          version: 2
+        - capability: buildr.git-worktree-provider
+          version: 1
       legacyIntegrities:
         - sha256-23e68c3174887ebbf6990526f93e7f1c047199e1bef1f2e8e293b0cba2a3cfad
         - sha256-7c792606db5d07e9364feb4be20755e184fb83291e4ae83a9cbb4884cf731b6d
@@ -136,49 +307,99 @@ builtins:
     - id: task-verification
       path: package/targets/workspace/skills/buildr/task-verification
       target: skills/buildr/task-verification
-      description: 用户要求测试、验证、耗时报告、初始化或更新测试声明、推进测试能力成熟度，或者实现型任务到达验证节点、Agent 准备判断或声称开发完成、Task Finish 需要核对或补齐正式验证 evidence 时使用；用户无需主动点名本 Skill。
+      description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、经 Declaration Intake 授权后维护 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish；声明发现交给 Declaration Intake。
       required: false
       provides:
         - capability: buildr.task-verification
+          version: 3
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: task-development
+      path: package/targets/workspace/skills/buildr/task-development
+      target: skills/buildr/task-development
+      description: 正式实现任务从 proposal、design 或直接实现等首个正式研发动作开始，持续维护研发聚合事实、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、记录适用门禁与风险决定并生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+      required: false
+      provides:
+        - capability: buildr.task-development
           version: 2
+      requires:
+        - capability: buildr.task-record
+          version: 2
+          mode: required
+        - capability: buildr.task-environment
+          version: 1
+          mode: required
+        - capability: buildr.task-review
+          version: 1
+          mode: required
+        - capability: buildr.task-verification
+          version: 3
+          mode: required
+        - capability: buildr.current-knowledge-maintenance
+          version: 2
+          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-finish
       path: package/targets/workspace/skills/buildr/task-finish
       target: skills/buildr/task-finish
-      description: 用户在 task worktree 中要求“收尾”、完成任务、自动收尾，或要求自动完成已验证 change 的归档、提交、集成、推送和本地清理时使用。
+      description: 用户要求已有 active formal Task 的“收尾”或交付 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
       required: false
       provides:
         - capability: buildr.task-finish
           version: 1
       requires:
-        - capability: buildr.task-verification
+        - capability: buildr.task-development
           version: 2
           mode: required
-        - capability: buildr.task-worktree-lifecycle
-          version: 2
-          mode: required
-        - capability: buildr.git-task-integration
+        - capability: buildr.task-environment
           version: 1
           mode: required
-        - capability: buildr.task-asset-review
-          version: 2
+        - capability: buildr.git-operations
+          version: 1
           mode: optional
       legacyIntegrities:
         - sha256-0607663344932ed85cdff84fe5c8dc817e4fc12a159a047eac054fa307fc1fd1
+        - sha256-86cd3f177367700f31c232fd090e00c8ee194d2baa66ef69970511987e3ec6dd
+        - sha256-1e0e321129f98abb33c4b82d6eddecd960ca0888e58a8ab47bc0776847f05fcf
+        - sha256-47d716eff00cc7b20a0ff42d81b6140c7c1bb30ea9591204303bc192c48d3e4d
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: git-ops
-      path: package/targets/workspace/skills/buildr/git-ops
-      target: skills/buildr/git-ops
-      description: 用户表达提交、推送、拉取、pull、合并、merge、rebase、checkout、switch、reset、cherry-pick、revert、stash、发布、删除分支等单项 Git 意图，或 Git 操作存在授权、范围、amend、远端改写、工作区转换、分支删除等歧义时使用。
+    - id: terminology-governance
+      path: package/targets/workspace/skills/buildr/terminology-governance
+      target: skills/buildr/terminology-governance
+      description: Agent 在探索、提案、设计、实现或文档整理中遇到新术语、同义词、一词多义、中英不一致、Context/Context Window 等概念边界，或 consumer 需要正式术语对齐 evidence 时使用。
       required: false
       provides:
-        - capability: buildr.git-single-operation
+        - capability: buildr.terminology-governance
           version: 1
-        - capability: buildr.git-task-integration
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: current-knowledge-maintenance
+      path: package/targets/workspace/skills/buildr/current-knowledge-maintenance
+      target: skills/buildr/current-knowledge-maintenance
+      description: OpenSpec Change lifecycle 中评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 当前认知追上已确认事实时使用。
+      required: false
+      provides:
+        - capability: buildr.current-knowledge-maintenance
           version: 1
-        - capability: buildr.git-workspace-update
+        - capability: buildr.current-knowledge-maintenance
+          version: 2
+      requires:
+        - capability: buildr.terminology-governance
           version: 1
+          mode: required
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: git-operations
+      path: package/targets/workspace/skills/buildr/git-operations
+      target: skills/buildr/git-operations
+      description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 fetch、commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
+      required: false
+      provides:
+        - capability: buildr.git-operations
+          version: 1
+      replaces:
+        id: git-ops
+        target: skills/buildr/git-ops
+        runtimePath: git-ops
       legacyIntegrities:
+        - sha256-50b5fb04eb75acb1218fc5c34caf4e0e7b66500f0df28e6f296f8b9f89e559b8
         - sha256-badf69cfc2f7983fdbd2c681f7418a542d5538bfab283dfe8da927bfdfdd96c8
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-explore
@@ -192,6 +413,13 @@ builtins:
       path: package/targets/workspace/skills/openspec/openspec-propose
       target: skills/openspec/openspec-propose
       description: 用户要快速创建完整 OpenSpec change 提案、设计、规格和任务时使用。
+      required: false
+      component: openspec
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: openspec-update-change
+      path: package/targets/workspace/skills/openspec/openspec-update-change
+      target: skills/openspec/openspec-update-change
+      description: 用户要修订既有 OpenSpec change 的 proposal、design、specs 或 tasks，且不进入代码实现时使用。
       required: false
       component: openspec
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
@@ -219,7 +447,7 @@ builtins:
     - id: openspec-contract-guard
       path: package/targets/workspace/skills/buildr/openspec-contract-guard
       target: skills/buildr/openspec-contract-guard
-      description: 创建、同步或归档 OpenSpec change 时建立契约基线，并检测并行冲突、陈旧 delta 和同步结果漂移。
+      description: 创建、收敛或归档OpenSpec Change，且需要检查active Change冲突、隔离验证、canonical并发漂移或未决事务恢复事实时使用。
       required: false
       component: openspec
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
@@ -242,37 +470,51 @@ workspaceFiles:
   - package/targets/workspace/AGENTS.md => AGENTS.md render
   - package/targets/workspace/.buildr/workspace.yml => .buildr/workspace.yml render
   - package/targets/workspace/projects/manifest.yml => projects/manifest.yml copy
+  - package/targets/workspace/gitattributes => .gitattributes copy
   - package/targets/workspace/gitignore => .gitignore copy
   - package/targets/workspace/rules/manifest.yml => rules/manifest.yml copy
   - package/targets/workspace/rules/buildr/core.md => rules/buildr/core.md copy
   - package/targets/workspace/commands/manifest.yml => commands/manifest.yml copy
   - package/targets/workspace/components/manifest.yml => components/manifest.yml copy
   - package/targets/workspace/skills/manifest.yml => skills/manifest.yml copy
-  - package/targets/workspace/skills/contracts/buildr/git-single-operation/v1.md => skills/contracts/buildr/git-single-operation/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md => skills/contracts/buildr/git-task-integration/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/git-workspace-update/v1.md => skills/contracts/buildr/git-workspace-update/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md => skills/contracts/buildr/task-worktree-lifecycle/v2.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-verification/v2.md => skills/contracts/buildr/task-verification/v2.md copy
+  - package/targets/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-record/v2.md => skills/contracts/buildr/task-record/v2.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-review/v1.md => skills/contracts/buildr/task-review/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-verification/v3.md => skills/contracts/buildr/task-verification/v3.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-development/v2.md => skills/contracts/buildr/task-development/v2.md copy
   - package/targets/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-asset-review/v1.md => skills/contracts/buildr/task-asset-review/v1.md copy
-  - package/targets/workspace/skills/contracts/buildr/task-asset-review/v2.md => skills/contracts/buildr/task-asset-review/v2.md copy
+  - package/targets/workspace/skills/contracts/buildr/task-retrospective/v2.md => skills/contracts/buildr/task-retrospective/v2.md copy
+  - package/targets/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
+  - package/targets/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy
   - package/targets/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-board/SKILL.md => skills/buildr/task-board/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-board/agents/openai.yaml => skills/buildr/task-board/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/task-board/assets/task-board-template.html => skills/buildr/task-board/assets/task-board-template.html copy
+  - package/targets/workspace/skills/buildr/declaration-intake/SKILL.md => skills/buildr/declaration-intake/SKILL.md copy
+  - package/targets/workspace/skills/buildr/project-testing/SKILL.md => skills/buildr/project-testing/SKILL.md copy
+  - package/targets/workspace/skills/buildr/project-testing/references/testing-model-v1.md => skills/buildr/project-testing/references/testing-model-v1.md copy
+  - package/targets/workspace/skills/buildr/task-manager/SKILL.md => skills/buildr/task-manager/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-manager/agents/openai.yaml => skills/buildr/task-manager/agents/openai.yaml copy
+  - package/targets/workspace/skills/buildr/task-review/SKILL.md => skills/buildr/task-review/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-review/agents/openai.yaml => skills/buildr/task-review/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/capability-adaptation/SKILL.md => skills/buildr/capability-adaptation/SKILL.md copy
   - package/targets/workspace/skills/buildr/capability-adaptation/agents/openai.yaml => skills/buildr/capability-adaptation/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/task-asset-review/SKILL.md => skills/buildr/task-asset-review/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-asset-review/agents/openai.yaml => skills/buildr/task-asset-review/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/task-asset-review/scripts/observation.mjs => skills/buildr/task-asset-review/scripts/observation.mjs copy
-  - package/targets/workspace/skills/buildr/task-asset-review/templates/observation.md => skills/buildr/task-asset-review/templates/observation.md copy
-  - package/targets/workspace/skills/buildr/task-asset-review/templates/asset-maintenance-record.md => skills/buildr/task-asset-review/templates/asset-maintenance-record.md copy
+  - package/targets/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
+  - package/targets/workspace/skills/buildr/task-environment/SKILL.md => skills/buildr/task-environment/SKILL.md copy
+  - package/targets/workspace/skills/buildr/task-environment/agents/openai.yaml => skills/buildr/task-environment/agents/openai.yaml copy
+  - package/targets/workspace/skills/buildr/task-environment/references/project-environment-preparation-v1.md => skills/buildr/task-environment/references/project-environment-preparation-v1.md copy
+  - package/targets/workspace/skills/buildr/task-environment/templates/project-preparation.yml => skills/buildr/task-environment/templates/project-preparation.yml copy
+  - package/targets/workspace/skills/buildr/task-environment/templates/task-environment-plan-request.json => skills/buildr/task-environment/templates/task-environment-plan-request.json copy
   - package/targets/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
-  - package/targets/workspace/skills/buildr/task-verification/references/project-verification-v1.md => skills/buildr/task-verification/references/project-verification-v1.md copy
+  - package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md => skills/buildr/task-verification/references/project-verification-v2.md copy
   - package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
+  - package/targets/workspace/skills/buildr/task-development/SKILL.md => skills/buildr/task-development/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
-  - package/targets/workspace/skills/buildr/git-ops/SKILL.md => skills/buildr/git-ops/SKILL.md copy
+  - package/targets/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
+  - package/targets/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
+  - package/targets/workspace/skills/buildr/git-operations/SKILL.md => skills/buildr/git-operations/SKILL.md copy
 
 projectDirectories:
   - openspec/specs
@@ -291,6 +533,7 @@ templateVariables:
   - description
   - profile
   - workspaceId
+  - nodeVersion
   - project
   - projectId
 

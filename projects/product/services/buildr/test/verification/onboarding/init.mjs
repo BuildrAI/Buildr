@@ -50,7 +50,7 @@ try {
 
   result = run(['init', '--agent', 'codex', '--target', onboarded, '--name', 'onboarded', '--profile', 'team']);
   assert.equal(result.status, 0, `idempotent init --agent failed:\n${output(result)}`);
-  const doctorResult = run(['doctor', '--agent', 'codex', '--target', onboarded, '--json']);
+  const doctorResult = run(['doctor', '--agent', 'codex', '--target', onboarded, '--json', '--detail', 'full']);
   assert.equal(doctorResult.status, 0, output(doctorResult));
   const doctor = JSON.parse(doctorResult.stdout);
   assert.equal(doctor.ok, true);

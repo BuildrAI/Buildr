@@ -4,6 +4,7 @@
 
 定义 Buildr 自身开发如何使用 OpenSpec 管理计划型产品工作、长期文档和可实施变更的分工，以及 OpenSpec 自举对现有 runtime 行为的边界。
 ## Requirements
+
 ### Requirement: Buildr 计划型产品工作使用 OpenSpec
 Buildr MUST 使用 OpenSpec change 来规划产品能力、跨领域规则、CLI 行为变更和影响架构的工作，然后再进入实现。
 
@@ -34,7 +35,7 @@ OpenSpec 自举变更 MUST NOT 修改现有 Buildr CLI runtime check、render �
 - **THEN** 现有 Buildr runtime 命令 MUST 保持原有行为
 
 ### Requirement: Buildr 产品文档分层
-Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历史参考分层维护，避免同一事实在 README、docs、knowledge 和 specs 中重复成为事实源。
+Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历史参考分层维护，避免同一事实在 README、docs、knowledge 和 specs 中重复成为事实源。Project current knowledge MUST 按概览、术语、产品架构、技术架构、核心流程和 Service 说明组织真实当前事实，并 MUST 只在存在已确认内容或真实 Change 影响时逐步创建或更新对应文档。
 
 #### Scenario: README 作为产品入口
 - **WHEN** Buildr 维护根 `README.md`
@@ -50,9 +51,20 @@ Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历�
 
 #### Scenario: knowledge 承载当前事实
 - **WHEN** Buildr 记录已经实现的产品事实
-- **THEN** facts MUST be maintained in `openspec/knowledge/buildr-current-state.md` or an equivalent current-state knowledge file
-- **AND** facts MUST be written as current-state statements aligned with `openspec/specs/`
+- **THEN** facts MUST be maintained in `openspec/knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/`、`services/` 或职责等价的 current-state knowledge assets
+- **AND** facts MUST be written as current-state statements aligned with `openspec/specs/` and the current implementation
 - **AND** knowledge MUST NOT include product value propositions, future roadmap, historical rationale, or design philosophy as current facts
+
+#### Scenario: 产品与技术架构分开维护
+- **WHEN** Buildr 同时记录产品模型和技术系统事实
+- **THEN** 产品架构 MUST 维护用户、角色、业务能力、领域模块、产品边界和信息架构
+- **AND** 技术架构 MUST 维护系统、Service、模块、数据所有权、接口依赖、runtime、部署和安全边界
+- **AND** `architecture/index.md` MUST 在两类真实文档存在时提供统一摘要与导航
+
+#### Scenario: Change 只影响部分当前认知
+- **WHEN** current-knowledge assessment 只识别到一个或部分真实影响目标
+- **THEN** Agent MUST 只创建或更新对应文档
+- **AND** MUST NOT 为保持目录形式完整生成其他空文档
 
 #### Scenario: specs 承载行为契约
 - **WHEN** Buildr 记录规范性产品行为
@@ -60,9 +72,9 @@ Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历�
 - **AND** specs MUST NOT be replaced by explanatory docs or knowledge notes
 
 #### Scenario: archive 不是当前事实源
-- **WHEN** Buildr moves old product docs into `docs/archive/`
-- **THEN** archived docs MUST be marked as historical notes
-- **AND** archived docs MUST NOT be treated as current Buildr product source of truth
+- **WHEN** Buildr moves old product docs into `docs/archive/` or archives an OpenSpec Change
+- **THEN** archived assets MUST be treated as historical notes and provenance
+- **AND** archived assets MUST NOT be treated as current Buildr product source of truth
 
 ### Requirement: Buildr 未来规划资产使用明确 Roadmap 语境
 Buildr MUST 将尚未实现但仍保留为产品方向的详细资料维护在明确的 Roadmap 语境中，并 MUST 将其与当前事实、行为契约、可执行规则、Skills 和历史 archive 区分。
@@ -184,27 +196,27 @@ Buildr MUST 为根 README 提供中文主文档和英文翻译，但 MUST NOT �
 - **AND** 其他文档 MUST 按当前 Project 管理语言维护
 
 ### Requirement: Project knowledge 区分当前事实与任务看板
-Buildr Project `openspec/knowledge/` MUST 允许在明确的 `task-boards/` 子目录保存新创建的 Agent-maintained task-scoped working knowledge，同时 MUST 保持 current-state knowledge、canonical specs、active changes 和历史 archive 的既有职责边界；既有 `task-cockpits/` 页面 MUST 原地保留且不得因产品升级被改写。
+Buildr Project `openspec/knowledge/` MUST 保持 current-state knowledge、canonical specs、active changes 和历史 archive 的职责边界；既有 `task-boards/*.html` 与 `task-cockpits/*.html` MUST 仅作为历史任务页面原地保留，不得被解释为当前 Task、进度、证据或协调 authority，也不得因产品升级被迁移、重写、删除或重新接管。
 
 #### Scenario: 记录任务看板
-- **WHEN** Agent 为复杂 Project 任务维护跨批次目标、计划、依赖、进度、风险和证据索引
-- **THEN** 该 HTML MUST 保存在 `openspec/knowledge/task-boards/`
-- **AND** 它 MUST 被标识为任务认知入口，而不是当前业务事实全集或规范性契约
+- **WHEN** 维护者查看 `openspec/knowledge/task-boards/*.html` 或 `task-cockpits/*.html`
+- **THEN** 页面 MAY 作为历史过程与来源线索读取
+- **AND** 当前状态 MUST 由 Task Record、Parent/Child、各专业 read model、canonical specs、当前实现与有效 evidence 核实
 
 #### Scenario: 任务看板包含未来批次
-- **WHEN** 任务看板展示已经确认但尚未开始的后续批次或外部等待事项
-- **THEN** 这些内容 MUST 被表达为当前任务计划或依赖状态
-- **AND** knowledge 文档规则 MUST NOT 将它们误读为 Buildr 已实现能力或无条件产品承诺
+- **WHEN** Agent 推进普通或 Parent-managed 正式 Task
+- **THEN** Agent MUST 使用 Task Record、Parent/Child、各专业 Application/read model、Local App 与对话汇报
+- **AND** MUST NOT 创建新的 `task-boards/*.html` 或 `task-cockpits/*.html`
 
 #### Scenario: 读取权威事实
-- **WHEN** 任务看板摘要与 canonical specs、active change、代码或验证证据存在冲突
-- **THEN** Agent MUST 以对应权威来源核实并修正任务看板
-- **AND** Agent MUST NOT 使用任务看板覆盖或回写权威事实
+- **WHEN** 历史任务页面与 canonical specs、active change、代码或验证证据存在冲突
+- **THEN** Agent MUST 以对应当前 authority 核实任务事实
+- **AND** Agent MUST NOT 使用历史页面覆盖或回写权威事实
 
 #### Scenario: 旧路径保留历史页面
-- **WHEN** Project 在升级前已经包含 `task-cockpits/*.html`
-- **THEN** Buildr update、sync 和 Agent MUST 保留这些文件的路径与内容
-- **AND** 这些历史页面 MUST NOT 被批量转换为 `task-boards/` 页面或兼容跳转文件
+- **WHEN** Buildr update、sync、Doctor 或 Task Finish 处理包含历史任务页面的 Project
+- **THEN** 这些文件的路径与内容 MUST 保持不变
+- **AND** 产品 MUST NOT 将它们转换为 runtime、compatibility redirect 或新的 current authority
 
 ### Requirement: Product planning root 与 Service verification root 必须协同但保持所有权分离
 Buildr 产品开发 MUST 以 Product Project root 维护 OpenSpec、任务与项目级验证政策，并 MUST 以 Buildr Service root 执行源码、npm package、测试和发布验证；验证编排必须显式识别两个根的所有权。

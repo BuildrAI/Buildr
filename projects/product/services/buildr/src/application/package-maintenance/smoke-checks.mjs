@@ -195,7 +195,7 @@ export function createPackageSmokeChecks(deps) {
     if (referenceRuntime.repairCommands.some((command) => command.includes('rules render'))) {
       problems.push('reference bridge metadata info must not suggest required rules render.');
     }
-    const doctorWithoutInfo = parseJsonOutput('doctor without info', execFileSync(process.execPath, [buildrScript, 'doctor', '--target', tempRoot, '--scope', 'projects/demo', '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const doctorWithoutInfo = parseJsonOutput('doctor without info', execFileSync(process.execPath, [buildrScript, 'doctor', '--target', tempRoot, '--scope', 'projects/demo', '--json', '--detail', 'full'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     if (doctorWithoutInfo.findings.some((finding) => finding.code === 'runtime.reference_bridge_metadata_stale')) {
       problems.push('doctor --json must not include reference bridge metadata info by default.');
     }
@@ -425,6 +425,11 @@ export function createPackageSmokeChecks(deps) {
       for (const required of bootstrapContract?.generatedSkillRequiredText ?? []) {
         if (!installedContent.includes(required)) {
           problems.push(`Generated Buildr Skill required text ${JSON.stringify(required)} is missing.`);
+        }
+      }
+      for (const forbidden of bootstrapContract?.generatedSkillForbiddenText ?? []) {
+        if (forbidden && installedContent.includes(forbidden)) {
+          problems.push(`Generated Buildr Skill forbidden text ${JSON.stringify(forbidden)} is present.`);
         }
       }
     }

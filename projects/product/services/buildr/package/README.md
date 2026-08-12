@@ -1,6 +1,6 @@
 # Buildr
 
-中文 | [English](https://github.com/elevenching/Buildr/blob/main/README.en.md)
+中文 | [English](https://github.com/BuildrAI/Buildr/blob/main/README.en.md)
 
 Buildr helps Agents keep building on organized work facts and work methods instead of repeatedly reconstructing project context from chats, personal experience, and disconnected repositories. It is useful for organizing an existing business and its repositories, continuing long-running work through an Agent, preserving reusable methods, and switching Agents without abandoning accumulated assets.
 
@@ -26,7 +26,7 @@ Workspace → Project → Service (optional)
 
 ## Manual fallback
 
-When an Agent cannot perform setup, Buildr requires Node.js 20+:
+When an Agent cannot perform setup, Buildr supports Node.js `>=24.15.0 <25`; each Workspace still uses the exact managed runtime version declared in its metadata:
 
 ```bash
 npm install --global @buildr-ai/buildr@next
@@ -37,4 +37,4 @@ buildr app --target .
 
 `init --agent` uses the final doctor result as technical onboarding evidence; the Agent should then complete a brief first-use handoff from the real Project and Service state.
 
-Buildr does not replace an Agent's reasoning, planning, or professional execution. It organizes durable work assets and provides deterministic tools and diagnostics. See the repository [README](https://github.com/elevenching/Buildr#readme), [Buildr Product](https://github.com/elevenching/Buildr/blob/main/projects/product/docs/buildr-product.md), [CLI Reference](https://github.com/elevenching/Buildr/blob/main/projects/product/services/buildr/docs/cli-reference.md), and [Runtime Adapters](https://github.com/elevenching/Buildr/blob/main/projects/product/services/buildr/docs/agent-runtime-adapters.md) for details.
+Buildr does not replace an Agent's reasoning, planning, or professional execution. It organizes durable work assets and provides deterministic tools and diagnostics. See the repository [README](https://github.com/BuildrAI/Buildr#readme), [Buildr Product](https://github.com/BuildrAI/Buildr/blob/main/projects/product/docs/buildr-product.md), [CLI Reference](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/cli-reference.md), and [Runtime Adapters](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/agent-runtime-adapters.md) for details.

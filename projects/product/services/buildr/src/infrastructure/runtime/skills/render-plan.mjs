@@ -15,12 +15,12 @@ import {
   buildCompanionWrite,
   buildSkillProjectionReceipt,
   enumerateSkillSourceFiles,
+  legacySkillProjectionOwnershipReceiptRoot,
+  observeSkillProjectionOwnershipReceipt,
   parseSkillProjectionReceipt,
-  readSkillProjectionReceipt,
   renderSkillProjectionReceipt,
   runtimeWriteBuffer,
   sha256Integrity,
-  skillProjectionReceiptTarget,
 } from './projection-files.mjs';
 
 export function hasManagedSkillMarker(content) {
@@ -71,43 +71,53 @@ function prependAfterFrontmatter(source, block) {
 
 function capabilityBindingBlock(skill) {
   const consumer = skill.capabilityBindings;
-  const routing = skill.capabilityRoutingEvidence;
-  if (!consumer && !routing?.length) return '';
+  if (!consumer) return '';
   const lines = ['<!-- buildr:capability-bindings begin -->', '## Buildr Capability Bindings', ''];
-  if (consumer) {
-    lines.push(`Consumer readiness: \`${consumer.readiness}\`${consumer.reason ? ` (\`${consumer.reason}\`)` : ''}. \`ready\` 只表示结构可路由，不表示 provider 行为或本次执行已经成功。`, '');
-    for (const dependency of consumer.dependencies) {
-      const selected = dependency.selectedProvider;
-      const providerPath = selected ? `${getRuntimeAdapter(skill.runtime).traits.skills.root}/skills/${selected.runtimePath}/SKILL.md` : null;
-      lines.push(`### \`${dependency.capability}@${dependency.version}\``, '');
-      lines.push(`- mode: \`${dependency.mode}\``);
-      lines.push(`- readiness: \`${dependency.readiness}\``);
-      lines.push(`- reason: \`${dependency.reason || 'none'}\``);
-      lines.push(`- contract: \`${dependency.contract?.contractPath || 'unresolved'}\``);
-      lines.push(`- contract SHA-256: \`${dependency.contract?.digest || 'unresolved'}\``);
-      lines.push(`- selected provider: \`${selected?.id || 'none'}\``);
-      lines.push(`- provider runtime: \`${providerPath || 'unresolved'}\``);
-      lines.push(`- provider scope: \`${selected?.scope || 'unresolved'}\``);
-      lines.push(`- provenance: \`${dependency.provenance}\``, '');
-    }
-    if (consumer.readiness === 'blocked') {
-      lines.push('**Safety stop:** required capability 尚未 ready。不得执行 provider-dependent action；只能解释阻塞并按 doctor 的 nextActions 修复。', '');
-    } else {
-      lines.push('执行 provider-dependent action 前，必须读取上面已解析的 contract 与 selected provider；成功由 contract 要求的授权披露和 result evidence 判断。', '');
-    }
+  lines.push(`Consumer readiness: \`${consumer.readiness}\`${consumer.reason ? ` (reason: \`${consumer.reason}\`)` : ''}. \`ready\` 只表示结构可路由。`, '');
+  for (const dependency of consumer.dependencies) {
+    const selected = dependency.selectedProvider;
+    const providerPath = selected ? `${getRuntimeAdapter(skill.runtime).traits.skills.root}/skills/${selected.runtimePath}/SKILL.md` : 'unresolved';
+    lines.push(`- \`${dependency.capability}@${dependency.version}\` — mode \`${dependency.mode}\`, readiness \`${dependency.readiness}\`, reason \`${dependency.reason || 'none'}\``);
+    lines.push(`  - contract: \`${dependency.contract?.contractPath || 'unresolved'}\``);
+    lines.push(`  - provider: \`${selected?.id || 'none'}\` → \`${providerPath}\` (scope \`${selected?.scope || 'unresolved'}\`)`);
   }
-  if (routing?.length) {
-    lines.push('### Workspace routing evidence', '');
-    for (const group of routing) {
-      lines.push(`- scope \`${group.scope}\``);
-      for (const route of group.routes) {
-        lines.push(`  - \`${route.capability}@${route.version}\` → \`${route.selectedProvider?.id || 'unresolved'}\` (consumer \`${route.consumer}\`, ${route.readiness}${route.reason ? `/${route.reason}` : ''}, contract SHA-256 \`${route.contract?.digest || 'unresolved'}\`)`);
-      }
-    }
-    lines.push('', '若 evidence 不适用于当前 scope、runtime check 显示 stale，或当前 session 已知 manifest/contract/provider 已变化，先运行当前 workspace doctor 读取最新 capability graph；不得猜测 builtin，也不需要独立 dispatch 命令。', '');
+  lines.push('');
+  if (consumer.readiness === 'blocked') {
+    lines.push('**Safety stop:** required capability 尚未 ready。不得执行 provider-dependent action；只能解释阻塞并通过当前 workspace Doctor 获取修复动作。', '');
+  } else {
+    lines.push('执行 provider-dependent action 前，读取上面已解析的 contract 与 provider；成功仍由 contract 要求的授权和 result evidence 判断。', '');
   }
   lines.push('<!-- buildr:capability-bindings end -->');
   return lines.join('\n');
+}
+
+function capabilityBindingReceipt(consumer) {
+  if (!consumer) return null;
+  return {
+    consumer: consumer.consumer,
+    scope: consumer.scope,
+    readiness: consumer.readiness,
+    reason: consumer.reason,
+    dependencies: consumer.dependencies.map((dependency) => ({
+      capability: dependency.capability,
+      version: dependency.version,
+      mode: dependency.mode,
+      readiness: dependency.readiness,
+      reason: dependency.reason,
+      contract: dependency.contract ? {
+        id: dependency.contract.id,
+        version: dependency.contract.version,
+        path: dependency.contract.contractPath,
+        digest: dependency.contract.digest,
+      } : null,
+      selectedProvider: dependency.selectedProvider ? {
+        id: dependency.selectedProvider.id,
+        scope: dependency.selectedProvider.scope,
+        runtimePath: dependency.selectedProvider.runtimePath,
+      } : null,
+      provenance: dependency.provenance,
+    })),
+  };
 }
 
 export function buildSkillTarget(targetRoot, skill, runtime = 'claude-code') {
@@ -126,43 +136,6 @@ export function buildRuntimeSkillDirectory(targetRoot, skill, runtime) {
 
 function sourceHash(content) {
   return crypto.createHash('sha256').update(content).digest('hex');
-}
-
-function buildAdapterRuntimeContext(skill) {
-  if (skill.origin !== 'product' || skill.id !== 'buildr') {
-    return '';
-  }
-  const adapter = getRuntimeAdapter(skill.runtime);
-  const commands = adapter.recommendedCommands;
-  const ruleGuidance = adapter.renderCapabilities['rules-entry'].mode === 'native'
-    ? `${adapter.displayName} 原生读取 scope \`AGENTS.md\``
-    : `${adapter.displayName} 使用 ${adapter.renderCapabilities['rules-entry'].projection.targetPattern} Rule bridge`;
-  const maintenanceCommands = adapter.renderCapabilities['rules-entry'].writesFiles
-    ? ['buildr update', commands.installProductSkill, commands.runtimeCheckScope.replace('<workspace-relative-path>', '<scope>'), commands.renderRulesScope, commands.renderSkillsScope, commands.syncWorkspaceEntry]
-    : ['buildr update', commands.installProductSkill, commands.syncWorkspaceEntry];
-  return [
-    '## 当前 Agent Adapter',
-    '',
-    `当前安装 adapter：\`${adapter.id}\`。`,
-    '',
-    '默认先确认支持矩阵，再用带当前 adapter 的 doctor 判断 workspace 和 runtime 状态：',
-    '',
-    '```bash',
-    'buildr runtime list --json',
-    commands.doctor,
-    '```',
-    '',
-    adapter.renderCapabilities['rules-entry'].writesFiles
-      ? '用户要求更新或同步 Buildr 时依次运行 update 与 Skill install；更新或同步 workspace 时，Git 管理的 workspace 先解析 `buildr.git-workspace-update/v1` selected provider 安全更新本地 checkout，再运行 sync，非 Git workspace 直接运行 sync。doctor 指向具体 runtime 问题后，再使用其余专项维护命令：'
-      : '用户要求更新或同步 Buildr 时依次运行 update 与 Skill install；更新或同步 workspace 时，Git 管理的 workspace 先解析 `buildr.git-workspace-update/v1` selected provider 安全更新本地 checkout，再运行 sync，非 Git workspace 直接运行 sync：',
-    '',
-    '```bash',
-    ...maintenanceCommands,
-    '```',
-    '',
-    `当前 adapter 的 runtime 入口：${ruleGuidance}；Skills 渲染到当前项目根目录 \`${adapter.traits.skills.root}/skills/\`。如果当前 Agent 不是该 adapter，停止当前 Buildr 操作；请联系 Buildr 作者反馈该 Agent。`,
-    '',
-  ].join('\n');
 }
 
 export function buildSkillContent(repoRoot, skill) {
@@ -190,10 +163,8 @@ export function buildSkillContent(repoRoot, skill) {
   if (appended.length) source = `${source.trimEnd()}\n\n${appended.map(contributionBlock).join('\n\n')}\n`;
   const bindingBlock = capabilityBindingBlock(skill);
   if (bindingBlock) source = prependAfterFrontmatter(source, bindingBlock);
-  const runtimeContext = buildAdapterRuntimeContext(skill);
-  const content = runtimeContext ? `${source.trimEnd()}\n\n${runtimeContext}` : source;
-  const marker = `<!-- Generated by Buildr. Hash: ${sourceHash(content)}. Do not edit. -->`;
-  return addManagedMarker(content, marker);
+  const marker = `<!-- Generated by Buildr. Hash: ${sourceHash(source)}. Do not edit. -->`;
+  return addManagedMarker(source, marker);
 }
 
 export function buildAgentInstallPlanTarget(targetRoot, skill, runtime = 'claude-code') {
@@ -245,7 +216,7 @@ export function resolveRenderSkills(repoRoot, scope, runtime) {
     const error = new Error(`Legacy Project Skill render scope is no longer supported: ${scope}. Use --destination workspace or --destination user from the workspace source authority.`);
     error.code = 'skills.project_scope_unsupported';
     error.reason = 'project_scope_removed';
-    error.nextActions = [`buildr skills migrate-project-assets --target ${organizationRoot} --check`, `buildr skills render ${runtime} --destination workspace --target ${organizationRoot}`];
+    error.nextActions = ['Review the legacy Project Skill source without modifying it; this Buildr version does not migrate it.', `buildr skills render ${runtime} --destination workspace --target ${organizationRoot}`];
     throw error;
   }
   const workspaceGraph = resolveSkillCapabilityGraph(organizationRoot, null, { runtime });
@@ -365,8 +336,17 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
   }
 
   for (const projection of byRuntimePath.values()) {
-    const receiptFile = skillProjectionReceiptTarget(targetRoot, adapter.traits.skills.root, runtime, projection.runtimePath);
-    const previousReceipt = readSkillProjectionReceipt(receiptFile, { adapterId: runtime, runtimePath: projection.runtimePath });
+    const destination = options.destination || 'workspace';
+    const receiptObservation = observeSkillProjectionOwnershipReceipt({
+      targetRoot,
+      runtimeRoot: adapter.traits.skills.root,
+      destination,
+      adapterId: runtime,
+      runtimePath: projection.runtimePath,
+      runtimeSkillDir: projection.targetDir,
+    });
+    const receiptFile = receiptObservation.canonicalFile;
+    const previousReceipt = receiptObservation.receipt;
     const previousByPath = new Map((previousReceipt?.files || []).map((file) => [file.path, file]));
     const currentPaths = new Set();
     for (const item of projection.writes) {
@@ -399,7 +379,7 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
     }));
     const receipt = buildSkillProjectionReceipt({
       adapterId: runtime,
-      destination: options.destination || 'workspace',
+      destination,
       skillId: projection.skill.id,
       runtimePath: projection.runtimePath,
       assetIdentity: projection.skill.assetIdentity || `product:${projection.skill.id}`,
@@ -407,6 +387,7 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
       sourceWorkspaceId: projection.skill.workspaceId || options.sourceWorkspaceId || sha256Integrity(Buffer.from(path.resolve(repoRoot), 'utf8')),
       sourceDigest: digestInventory(projection.writes, true),
       renderDigest: digestInventory(projection.writes),
+      capabilityBindings: capabilityBindingReceipt(projection.skill.capabilityBindings),
       sources: projection.sources,
       files: inventory,
     });
@@ -424,7 +405,34 @@ export function buildSkillRenderPlan(repoRoot, targetRoot, skills, runtime, opti
       kind: 'skill-projection-receipt',
       isManaged: receiptManaged,
       commitLast: true,
+      diagnostic: {
+        label: `Skill projection ownership receipt ${projection.runtimePath}`,
+        codes: {
+          ok: 'runtime.skill_projection_ownership_receipt_current',
+          missing: 'runtime.skill_projection_ownership_receipt_missing',
+          stale: 'runtime.skill_projection_ownership_receipt_stale',
+          conflict: 'runtime.skill_projection_ownership_receipt_conflict',
+        },
+        repair: 'skills-render',
+      },
     }, conflicts);
+    if (receiptObservation.legacyReceipt) {
+      removals.push({
+        targetFile: receiptObservation.legacyFile,
+        expectedIntegrity: sha256Integrity(fs.readFileSync(receiptObservation.legacyFile)),
+        pruneEmptyRoot: legacySkillProjectionOwnershipReceiptRoot(targetRoot, adapter.traits.skills.root),
+        source: projection.sources.join(', '),
+        skillId: projection.writes[0].skillId,
+        runtimePath: projection.runtimePath,
+        kind: 'legacy-skill-projection-ownership-receipt',
+        removeLast: true,
+        diagnostic: {
+          label: `legacy Skill projection ownership receipt ${projection.runtimePath}`,
+          codes: { orphan: 'runtime.skill_projection_ownership_receipt_legacy' },
+          repair: 'skills-render',
+        },
+      });
+    }
   }
 
   if (Array.isArray(options.conflicts)) options.conflicts.push(...conflicts);

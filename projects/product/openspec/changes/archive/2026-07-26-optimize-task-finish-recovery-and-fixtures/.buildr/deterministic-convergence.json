@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "buildr.openspec-convergence-receipt/v2",
+  "change": "optimize-task-finish-recovery-and-fixtures",
+  "project": "product",
+  "deltaHash": "sha256-3ebc86a1102cbba170464c9b9962abe3fedfab82560476bda48225b0b5dd780c",
+  "openspecExecutable": "/opt/homebrew/bin/openspec",
+  "stage": "post-sync",
+  "transitions": [
+    {
+      "stage": "archive-rehearsal",
+      "completedAt": "2026-07-26T17:18:34.281Z"
+    },
+    {
+      "stage": "pre-sync",
+      "completedAt": "2026-07-26T17:18:35.916Z"
+    },
+    {
+      "stage": "sync-plan",
+      "completedAt": "2026-07-26T17:18:37.319Z",
+      "planIdentity": "sha256-aef7f57a2008de45a4986e97028bfcc0946c111ba7f8d28d5277b24612d0536e"
+    },
+    {
+      "stage": "sync-apply",
+      "completedAt": "2026-07-26T17:19:40.716Z",
+      "planIdentity": "sha256-aef7f57a2008de45a4986e97028bfcc0946c111ba7f8d28d5277b24612d0536e",
+      "openspecExecutable": "/opt/homebrew/bin/openspec"
+    },
+    {
+      "stage": "strict-validation",
+      "completedAt": "2026-07-26T17:19:43.000Z"
+    },
+    {
+      "stage": "post-sync",
+      "completedAt": "2026-07-26T17:19:44.395Z"
+    }
+  ]
+}

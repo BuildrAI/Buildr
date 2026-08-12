@@ -1,0 +1,28 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-orchestration-efficiency
+operation: assess
+treeIdentity: implementation-working-tree@86efc2f19523305ee3e63b34dcd28461d396d8b5
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-task-finish-orchestration-efficiency/brief.md
+    reason: 正式Change需要提供人类可读目标、流程、边界和验收入口
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/task-finish-execution/spec.md
+      - specs/task-verification/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: composite convergence与durable finish completion会改变收尾流程说明
+    status: updated
+    sourceIdentities:
+      - specs/task-finish-execution/spec.md
+  - type: task-board
+    target: openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html
+    reason: 持续优化计划需要记录上一轮实测结果和新阶段
+    status: updated
+    sourceIdentities:
+      - optimize-task-finish-safe-execution finish timing
+      - proposal.md
+unresolvedItems: []

@@ -268,6 +268,9 @@ export function registerDomainsPackageAssets(runtime) {
     if (!existsDirectory(entryPath)) return [];
     const files = [];
     for (const entry of fs.readdirSync(entryPath).sort()) {
+      // Agent runtime projection may materialize ignored dirs inside package workspace targets;
+      // they are not package deliverables and must not require manifest mapping.
+      if (['.cursor', '.agents', '.claude', '.trae', '.qoder', '.codebuddy', 'node_modules'].includes(entry)) continue;
       files.push(...collectFiles(path.join(entryPath, entry)));
     }
     return files;
@@ -324,6 +327,7 @@ export function registerDomainsPackageAssets(runtime) {
         'buildrSkillForbiddenText',
         'globalForbiddenText',
         'generatedSkillRequiredText',
+        'generatedSkillForbiddenText',
       ],
       ['bootstrapGuidePath', 'bootstrapGuideMaxLines', 'buildrSkillPath', 'buildrSkillMaxLines'],
     );
@@ -544,9 +548,8 @@ export function registerDomainsPackageAssets(runtime) {
       writeMappedFileIfMissing(targetRoot, projectRoot, entry, variables, changed);
       if (changed.length > before) changed[changed.length - 1] = `projects/${projectName}/${entry.target}`;
     }
-    // Legacy projects/<project>/skills is preserved verbatim until the explicit
-    // migrate-project-assets transaction is run. Ordinary repair/sync never
-    // creates, rewrites, merges, or deletes it.
+    // Unsupported projects/<project>/skills is preserved verbatim. Current
+    // repair/sync never creates, rewrites, merges, migrates, or deletes it.
     const servicesFile = servicesManifestPath(projectRoot);
     if (!existsFile(servicesFile) && !existsFile(path.join(projectRoot, 'services.yml'))) {
       runtime.writeServiceRegistry(servicesFile, projectEntity.id, {});

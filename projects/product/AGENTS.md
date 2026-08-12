@@ -36,12 +36,13 @@ Agent 在 `product` Project 中的最小运行规则。
 - `services/buildr/package/targets/` 和 `services/buildr/package/bootstrap/` 是发布给用户的内容，修改时必须同时从用户初始化、更新和日常使用 Buildr 的视角审视。
 - 预计包含代码、构建或测试的产品 change 必须在 propose 前创建或复用 task worktree；artifacts、实现和合并前候选验证只写入该 worktree。
 - 合并前候选验证使用临时 workspace 或 task worktree 自身，不从未合并 checkout 更新主自举 workspace。
-- OpenSpec apply 期间按单任务最小反馈、任务组受影响范围验证、最终候选完整验证分层执行；不得在每个普通任务后运行产品总验证或临时 workspace E2E。所有实现、自然语言资产、所需同步和 review 修订完成并冻结候选后，才运行一次产品级总验证。
-- Product Project 的本节与验证入口定义“应该跑什么”；selected `buildr.task-verification/v2` provider 负责决定 affected 或 candidate 保证、实际执行、绑定候选、测量验证自身 wall-clock 并向用户报告，`task-worktree` 只提供 checkout 与 tree identity，不拥有验证政策。
+- OpenSpec apply 期间按当前目标选择直接相关的已有 capability 做实现反馈；不得在每个普通任务后运行产品总验证或临时 workspace E2E。所有实现、自然语言资产、所需同步和 review 修订完成并冻结交付目标后，才执行 `verification.yml` 中适用且 `requiredForDelivery` 的产品验证能力。
+- Project Testing 中 Quick 只表示成本约束，affected/full 表示选择范围，Candidate/Release 表示验证目标或节点；不得把三者当作同一层级的测试类型。冻结 Candidate 可以执行 affected，只有全局验证 owner 变化或明确完整回归要求时才执行 full。
+- Product Project 的本节与 `verification.yml` 定义“已经有什么能力、何时适用、能证明什么”；selected `buildr.task-verification/v3` provider 负责执行适用能力、测量 transient wall-clock，并通过唯一 Application 维护 Task-scoped current Result。`task-worktree` 只提供 checkout 与 tree identity，不拥有验证政策或 Result。
 - 验证进程仍在运行或暂时无输出时继续等待同一进程，不重复启动相同命令；完整验证失败后的修复循环优先重跑失败项和受影响检查，候选重新稳定后再运行一次最终完整验证。
-- 完整验证必须绑定所有 rebase、冲突解决和实现内容修改结束后的 implementation Candidate，并记录最终候选 Git tree 作为当时的 delivery identity；commit、相同内容集成、push 和 worktree 清理复用该结果，不在主开发分支重复 E2E。候选 tree 改变时，先按动作来源、实际 diff 和 Project policy 分类：Task Finish 可归因产生的 OpenSpec sync/archive 等 closeout-only delta 只运行对应 workflow checks，不再次启动 Candidate。若唯一变化是同一会话中刚成功的最终 Candidate 任务在 active change `tasks.md` 由 `- [ ]` 精确变为 `- [x]`，将其记录为 `closeout-metadata-only` / `verification-result-metadata-only`：保留已验证 implementation identity，并另存 source/target identity、change/task identity 和精确 marker transition；不得声称 Candidate 直接覆盖变化后的 delivery tree。任何额外编辑、任务歧义、source identity 不匹配或跨会话缺少 transition evidence 时，必须按 implementation change 在集成前重新运行 Candidate。
-- 用户在 task worktree 中明确要求“收尾”时，使用 `task-finish` 编排已完成 change 的 specs 同步与归档、相关校验、提交、必要的本地未推送 rebase、fast-forward 集成、目标分支 push 和本地 worktree/任务分支清理；该意图不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
-- `task-finish` 是 Buildr 自有编排层，不直接修改外部 `openspec-*` Skills；OpenSpec archive/specs sync 后只对可证明由本次操作产生的 Markdown EOF 多余空行自动规范化。
+- 最终交付验证必须在所有 rebase、冲突解决、OpenSpec 收敛、runtime sync、review 修订和内容修改完成后冻结明确 target identity；current Task Verification Result 同时绑定该 target 与 Project declaration identities。commit、相同内容集成、push 和 worktree 清理不改变 target 时可以复用；tree 或 declaration bytes 发生任何变化后 Result 直接派生为 stale，并针对新目标重新执行适用能力，不保留 checkbox 或 closeout metadata 的特殊复用协议。
+- 用户在task worktree中明确要求“收尾”时，先在Task Development阶段完成Change checklist、current knowledge reconcile、`buildr openspec converge`、Formal Verification、Completion Review和研发交接，再使用`task-finish`只消费current Development Handoff，执行carrier、交付与cleanup；该意图不授权force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
+- `task-finish`不调用、不拥有也不解释OpenSpec sync/archive或Convergence Inspect。正常Converge成功归档后释放事务Receipt并直接继续Development；只有未决收敛现场仍存在时才运行只读Inspect，Environment cleanup后不得追索Receipt。
 - 实际自举 workspace 如需消费新版产品资产，再从仍保留的当前产品 checkout 执行 sync；CLI update 只更新 Product checkout 或 registry package。workspace 状态变更后按 Buildr Core 运行当前 Agent doctor，但不作为相同 tree 后续 Git 动作的重复产品验证门禁。
 - 私有业务 workspace、私有业务规则和私有服务内容不得进入 `package/`。
 - 开发阶段执行 Buildr 命令时，从 workspace root 使用 `projects/product/buildr`，不要依赖本机 PATH 上安装的 `buildr`。
@@ -52,17 +53,17 @@ Project 服务通过 `services/manifest.yml` 维护 Service registry，默认 re
 
 ## 本地 CLI 同步
 
-- 改动涉及 Buildr 产品 CLI 入口或实现（`buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、安装/卸载脚本或 npm CLI 映射）时，完成相关验证后必须从包含本次变更的 Product checkout 自动运行 `scripts/install-buildr-cli`，刷新本机 `buildr` 开发入口，无需再次等待用户提醒。
-- 安装后必须运行 `command -v buildr`、`buildr --help` 和 `buildr doctor --agent <agent> --target <workspace-root> --json`，确认本机入口和目标 workspace 状态有效。
-- task worktree 中的候选 CLI 只验证临时 workspace 或 task worktree；本机入口如仍指向即将清理的 task worktree，清理前必须重新安装到仍保留的 workspace checkout。
-- 如目标位置存在非 Buildr 管理的文件或命令冲突，停止自动安装并明确报告，不得覆盖；如果本机 `buildr` 指向 task worktree，清理该 worktree 前必须重新安装到仍保留的 workspace checkout 并验证。
+- task environment 必须使用其 receipt 返回的绝对 CLI invocation；不得运行主机全局安装脚本，也不得修改 `~/.local/bin/buildr`。需要验证安装行为时，只能通过 `BUILDR_CLI_INSTALL_DIR` 指向任务专用临时目录。
+- 改动涉及 Buildr 产品 CLI 入口或实现（`buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、安装/卸载脚本或 npm CLI 映射）时，普通用户 Workspace 的 Formal Task Finish 不执行本机产品安装。Buildr 自举 Workspace 仅由已安装的 `buildr-self-bootstrap` Component 在 Formal Finish 成功后，根据冻结 Task Contribution选择development CLI activation。
+- self-bootstrap activation安装后必须运行 `command -v buildr`、`buildr --help` 和 `buildr doctor --agent <agent> --target <workspace-root> --json`，确认默认入口绑定仍保留的 checkout，且目标 workspace 状态有效。
+- 如目标位置存在非 Buildr 管理的文件或命令冲突，停止自动安装并明确报告，不得覆盖。
 
 ## 验证入口
 
 修改 package baseline、manifest、CLI、bootstrap、Buildr Skill 或 runtime adapter 后，按 `services/buildr/docs/release-checklist.md` 验证。
 
-- 普通任务从 `services/buildr/` 运行 `npm test` 或 `npm run test:fast`，只承担 unit、架构、spec 和全部 adapter 低成本契约反馈。
+- 普通任务从 `services/buildr/` 运行 `npm test` 或 `npm run test:fast`，只承担完整低成本 Unit、Component、静态 Contract 及必要静态检查的 Quick 反馈；需要真实 filesystem 投射、CLI、Git、Workspace、重复 cleanup 或完整生命周期的测试不得因历史名称或暂时较快进入该入口。
 - 日常改动优先运行 `npm run test:changed`；失败定位使用 `npm run test:focus -- <step-id|group:<group>>`，只展开真实依赖并按 identity 去重。
-- 最终候选冻结后运行 `npm run test:candidate`；`scripts/verify-buildr-product` 是供 CI、publish 和历史集成使用的等价兼容入口。
+- 最终候选冻结后通过 Task Verification 执行 delivery-required `product.delivery`；其 changed plan 根据 owner 选择 affected 或 full。用户明确要求完整 Product 回归、发布准备或验证兼容入口时运行 `npm run test:candidate`；`scripts/verify-buildr-product` 是其等价兼容入口。
 
 Buildr 产品完整验证结束后，Agent 必须读取 timing summary，并向维护者汇报总耗时、最慢阶段、失败阶段（如有）、evidence retention 和 cleanup status。summary 仍保留时报告文件路径；transient evidence 已被 consumer 使用并清理后，不得把失效路径表述为长期引用。耗时仅用于观察趋势；除非 OpenSpec 另有阈值契约，不得仅因耗时增长判定验证失败。该要求仅适用于 Buildr Product Project，不扩展为其他 Buildr workspace 的通用 Skill 流程。

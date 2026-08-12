@@ -1,0 +1,25 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: coordinate-concurrent-verification-resources
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/coordinate-concurrent-verification-resources/brief.md
+    reason: Change 的资源策略、执行流程、边界和验收需要稳定摘要
+    status: updated
+    sourceIdentities:
+      - openspec/changes/coordinate-concurrent-verification-resources/proposal.md
+      - openspec/changes/coordinate-concurrent-verification-resources/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr verification runner 新增跨任务资源租约与证据
+    status: updated
+    sourceIdentities:
+      - openspec/changes/coordinate-concurrent-verification-resources/specs/task-verification/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 正式验证执行前新增资源策略解析与协调
+    status: updated
+    sourceIdentities:
+      - openspec/changes/coordinate-concurrent-verification-resources/specs/project-test-capabilities/spec.md
+unresolvedItems: []

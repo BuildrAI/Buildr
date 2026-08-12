@@ -1,129 +1,80 @@
 ---
 name: task-finish
-description: 用户在 task worktree 中要求“收尾”、完成任务、自动收尾，或要求自动完成已验证 change 的归档、提交、集成、推送和本地清理时使用。
+description: 用户要求已有 active formal Task 的“收尾”或交付 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
 ---
 
-# Task Finish Skill
+# Task Finish
 
-本 Skill 是 `buildr.task-finish/v1` 的默认编排 provider。它组合 OpenSpec、已绑定的 `buildr.task-verification/v2`、`buildr.git-task-integration/v1` 和 `buildr.task-worktree-lifecycle/v2` providers，把已完成任务安全推进到目标分支已推送、本地任务环境已按 provider 契约处理的状态。它拥有“收尾”意图、阶段顺序和失败停止条件，不复制验证、Git 集成或 task environment lifecycle provider 的 policy。
+本 Skill 只处理 active formal Task，提供 `buildr.task-finish/v1` 入口；不编排 Development/Review/Verification，不写 Receipt。没有 active Task 时用户说“收尾”，转由直接 Git 路径执行；不得创建临时 Task，也不把 Git Result 冒充 Formal Finish。
 
-## “收尾”的授权
+## 调用前
 
-用户在当前轮次明确说“收尾”、完成任务或自动收尾，表示一次性授权以下常规动作：
+1. 明确正式 Task ID 与 canonical Workspace。
+2. 用户排除 push、install 或 cleanup 而改变交付语义时停止。
+3. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
+4. 根据最终交付内容与Workspace、Project、Service、repository约定形成完整commit message。subject必须描述内容，优先使用简洁Conventional Commits；Task ID由产品写入trailer，不得使用“交付 + Task ID”占位主题。调用前向用户展示subject，正文存在时一并展示。
+5. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
+6. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。
+   - Child承担Parent Contribution时，handoff还必须包含与current Parent Plan和planned binding一致的Contribution Handoff。
+   - Parent采用Parent Plan时，必须已记录current plan identity的显式最终集成验收；Child全部完成本身不满足该条件。
 
-- 对已完成的 OpenSpec change 默认同步 delta specs 并归档。
-- 修复可证明由 OpenSpec archive/specs sync 产生的 Markdown 文件末尾多余空行。
-- 调用已绑定 task-verification provider 核对或补齐当前最终候选的项目验证证据。
-- 提交当前任务直接相关改动。
-- 调用已绑定 task-integration provider 执行其 contract 和执行前披露覆盖的常规提交、集成，以及向已确认目标分支的推送动作。
-- 调用已绑定 worktree-lifecycle provider 执行其 contract 和执行前披露覆盖的本机入口迁移与安全本地清理。
+## 执行
 
-该授权只在当前轮次有效。执行验证或 Git 写操作前，必须向用户一次性说明任务/change、提交范围、commit message、目标分支、远端、三个 required selected provider identities、provider 声明的实际验证/集成/清理策略和本地清理范围；上下文清楚时不再逐项等待确认。
+从 canonical retained Workspace 的可信 Environment Manager 调用：
 
-“收尾”不授权 force push、创建或推送远端任务分支、删除远端任务分支、丢弃改动、改写已推送或共享分支历史，也不授权替用户解决需要业务或语义判断的冲突。merge commit 是否属于常规动作由 selected task-integration contract、provider policy 和执行前披露决定，不由本 Skill 全局禁止。出现固定排除项时停止并请求对具体动作的明确授权或决策。
+```bash
+buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --json
+```
 
-## 1. 收尾前置检查
+直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding，不猜测contract版本，也不为调用创建或修改execution capsule。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
 
-在任何归档、提交、merge、push 或 cleanup 前确认：
+产品在创建 run 前一次聚合 Environment / Development / 交付入口观察；通过后固定执行：
 
-- 使用 `git rev-parse --show-toplevel`、`git worktree list --porcelain` 和当前分支解析真实仓库、Buildr workspace root、canonical task worktree 与本地任务分支。
-- 当前任务/change、目标分支和远端均唯一可确认；不得根据目录名猜测仓库边界或目标分支。
-- 默认推送计划只包含已集成的目标分支；任务分支未推送。只有用户在当前轮次明确要求 PR、远程备份、交接或其他具体目的时，才把远端任务分支及其目的纳入披露与执行计划。
-- `buildr.task-verification/v2`、`buildr.git-task-integration/v1` 与 `buildr.task-worktree-lifecycle/v2` 均已解析为 `ready`；任一 required dependency 为 `blocked` 时，只报告 reason、candidates 和 nextActions，不继续 provider-dependent action。
-- task worktree 中的改动都属于当前任务；存在无关 dirty changes 时不 stage、不丢弃，并在破坏性动作前停止。
-- 主 workspace 可用于集成且没有未处理改动。
-- 如果存在 active OpenSpec change，使用 `openspec status --change <id> --json` 和 apply instructions 确认 artifacts、tasks 与 action context；未完成、blocked 或 workspace planning context 不得自动归档。
-- 将任务/change、发布意图、高风险信号、变更路径、当前候选 identity 与已有 evidence 交给 selected task-verification provider，由 provider 返回 `requiredAssurance`。只有 `status: passed`、`level == requiredAssurance`、`reusable: true`，且 `candidateIdentity` 与当前 `implementationCandidateIdentity` 一致时，才把它作为本次收尾证据；Task Finish 不自行选测试。普通收尾通常为 affected，发布、高风险或显式完整收尾为 candidate。
-- 有可信 evidence 时调用 selected provider `inspect` 并复用，`taskVerificationExecuteCalls: 0`、`candidateExecutorCalls: 0`；summary verifier 或 provider inspection 不得描述为重新执行验证。
-- 当前会话没有满足 `requiredAssurance` 的 evidence、证据不可读/不可复用，或 implementation content 已改变时，才调用 selected task-verification provider `execute` 执行该保证；失败或仍为 incomplete 时停止后续集成、推送和清理。
-- 若 Candidate 成功后唯一变化是 active change 中明确的最终 Candidate 任务由 `- [ ]` 精确变为 `- [x]`，仅在 Project policy 明确定义且当前会话可证明 source identity、target identity、change/task identity、精确 marker transition 及无其他 diff 时，记录 `closeout-metadata-only` / `verification-result-metadata-only`。该 transition evidence 标记为 `session-only`；原 Candidate evidence 继续绑定 source implementation identity。任务歧义、额外编辑、identity 不匹配或跨会话缺少证据时不得仅凭最终 diff 推断，按 implementation content 已改变处理。
-- evidence 必须包含整体 `totalDurationMs`、`timingSource`、最慢检查、失败项、跳过项和 reference。不得引用其他 run，也不得把并行 check duration 相加推算 wall-clock。
-- 落盘 evidence 还必须包含 `evidenceRetention`、`cleanupAfter`、`cleanupStatus` 和可用时的 `cleanupReference`。当前有效 Candidate evidence 在所有 consumer 使用完毕前不得清理。
-- Buildr Product 的 Candidate 输出 `buildr.verification-timing/v1` 时，继续使用 `node test/verification/timing/verify-summary.mjs <summary-path> <product-root> candidate` 做 fail-closed 专项核对；只有 summary status、run kind、`source.repositoryRoot`、`source.productRoot`、`source.head` 和 `source.candidateFingerprint` 与最终候选一致时，才标记 `timingSource: verifier-reported`。Changed 或 Focus summary 不能替代 Candidate。
-- 对照用户已经确认的目标、纠正和决策，检查当前 change 的 proposal、design、delta specs 和 tasks、最终实现、Git diff 与验证结果是否语义完整对齐。任务范围内仍有未记录语义、实现偏差或验证缺口时，在资产审查门控前停止收尾并回到修正流程。
-- OpenSpec contract sidebar 只证明已记录契约、baseline、canonical specs、active conflict 和同步结果的一致性；它不能替代上述用户决策与实现语义检查，selected asset-review provider 也不重复承担当前 change 完整性判断。
+```text
+preflight → prepare → verify → deliver → cleanup
+```
 
-如果此前正式验证失败，收尾前必须确认 selected task-verification provider 在修复期间优先重跑失败项和受影响专项检查，并在候选重新稳定后完成一次新的 `requiredAssurance`。不得把仍在修复循环中的专项检查结果当作正式验证证据。
+五阶段由产品连续执行，Agent不编排阶段、补evidence或设计recovery。
 
-多个 change、多个 worktree、多个远端或目标分支无法消歧时停止，不替用户选择。
+完整message只在首次创建run时提供。产品规范化换行、确定性加入`Buildr-Task: <task-id>` trailer并冻结identity；公开Result和Execution Record只投影subject与identity。已有run的resume命令不得再次提供或覆盖message。
 
-当前任务包含已完成的 active OpenSpec change 时：
+每次真正执行的首次run或resume会先以独立invocation identity预留`task-finish/finish-diagnostics` Execution Record容量；backpressure时五阶段与所有Finish owner副作用都不启动。产品在invocation期间把timeline、diagnostics和受控stdout/stderr写入独立transient files，record retained后只清理该diagnostics目录。Delivery Carrier、lease、resume与cleanup资源仍由Finish current独立管理；Agent不得用record恢复或删除这些资源。
 
-<!-- buildr:skill-contributions pre-spec-sync -->
+- `preflight` 只核对 current handoff、Environment、carrier adapter 与 retained target；activation不读取Project或Service声明。
+- `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
+- Agent只在carrier完成交付适配（Delivery Adaptation）；最终carrier HEAD必须保持run冻结的完整message，否则resume保持blocked。resume核验ownership、baseline、source/handoff、cleanliness、message identity与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
+- `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
+- `deliver`只做fast-forward、普通push/回读、类型化runtime activation与run绑定的指定Agent Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；Doctor要求Workspace health ready，失败时保留已经完成的remote readback、partial delivery与精确resume事实并停止cleanup。通用Product executor不读取Project/Service配置，不执行sync，不安装Buildr development CLI或Local App，也不接受任意命令字符串。
+- render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
+- `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 
-1. 使用外部可用的 OpenSpec CLI/Skills 评估 delta specs，并采用默认推荐路径同步 canonical specs。不得直接修改 Buildr 随附的 `openspec-*` Skill 源来加入收尾逻辑。
+target前进时先证明carrier ancestry及changed paths；完整包含则跳过apply/fast-forward/push并继续Doctor与cleanup，否则返回精确token。恢复不增加 Candidate generation、不重跑formal Verification或Completion Review。Git conflict返回适配facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
 
-<!-- buildr:skill-contributions post-spec-sync -->
+恢复命令：
 
-## 2. 任务资产审查 finalize
+```bash
+buildr task finish run --task <task-id> --run <run-id> --resume <product-token> --target <canonical-workspace> --json
+```
 
-当前任务语义完成、canonical specs 同步结果和 contract sidebar 结论可确认、候选 tree 与最终验证证据有效后，且 cleanup 尚未使来源证据消失时：
+只读查看：
 
-1. 调用 `buildr.task-asset-review/v2` selected provider 的 finalize。Task Finish 只传递 Workspace root、task owner、当前 task/change identity 和最终证据引用，不汇总 observation 信号、不执行资格门禁、不判断最终应沉淀什么。
-2. provider 返回 `no-observation` 或 `discarded` 时继续正常收尾，不增加形式化复盘。
-3. provider 返回 `awaiting-human` 时，在 worktree cleanup 前等待用户明确 accept 或 reject。accept 只建立后续新 `task-triage` handoff，不改变原任务内容，也不构成 Rule、Skill、capability Contract 或产品实现授权。
-4. provider 未解析为 ready、已卸载、本地 observation 状态不可写或 finalize 失败时，记录 readiness/reason 和降级原因并继续既有收尾；Task Finish 不自行实现备用审查。
-5. Task Finish 不创建、编辑或删除 observation，不生成 `asset-maintenance` 记录，也不决定 product follow-up 的 OpenSpec 内容。全部审查和去向政策属于 selected provider。
+```bash
+buildr task finish inspect --run <run-id> --target <canonical-workspace> --json
+```
 
-## 3. OpenSpec 归档与格式收敛
+## 禁止事项
 
-当前任务包含已完成的 active OpenSpec change 时：
+Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定proceed/blocked或接受风险。Finish不运行OpenSpec Converge或Convergence Inspect，不要求Convergence Receipt进入Delivery Carrier，也不在Environment cleanup后追索该事务材料。两种reuse mode都复用handoff；clean apply、resume或路径不重叠都不等于语义安全。
 
-1. 使用外部可用的 OpenSpec CLI/Skills 归档 change。
-2. 归档后立即运行 `git diff --check`。
-3. 只有全部诊断都是本次 archive/specs sync 修改的 OpenSpec Markdown 文件中的 `new blank line at EOF` 时，才自动删除多余结尾空白行，使每个文件恰好以一个换行结束。
-4. 自动规范后重新运行 `git diff --check` 和当前 planning root 的 OpenSpec strict validation。
-5. 任何其他 whitespace error、非 OpenSpec 文件或无法确认来源的问题都停止自动修复并报告。
+## 完成标准
 
-归档改变 delivery tree，但不自动改变 `implementationCandidateIdentity`。只运行归档直接影响的格式、OpenSpec 或项目专项检查；这些 closeout workflow checks 不得计作 task-verification `execute` 或 Candidate executor invocation。
+- 五阶段全部 passed/not-applicable；
+- Result引用Development handoff、Candidate/generation、Content Target、Task Contribution、Delivery Baseline和Delivery Carrier；
+- Result标记`deterministic-reuse`或`agent-reviewed-delivery-adaptation`，后者不声称Buildr证明语义等价；
+- carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
+- Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留逐路径证明、原carrier与最新后代final ref；
+- `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。
 
-## 4. 提交与验证 tree
+`run`结果的additive `executionRecord`必须可解释：`retained`表示本invocation正文已保留；`attention`表示record或diagnostics cleanup需owner后续处理，但不得据此回滚、改写或重跑已经成立的Finish delivery/cleanup/Task终态；`blocked`表示容量门禁在五阶段前停止；invalid或complete no-op为`not-opened`。`task finish inspect`只读Finish current/terminal，不列举records。
 
-- 将已披露的任务范围、目标分支、远端、commit message 和授权交给 selected task-integration provider；由 provider 决定其 rebase、fast-forward 或 merge policy，本 Skill 不复制这些策略。
-- provider 必须返回 `deliveryTreeIdentity`，例如 `git rev-parse HEAD^{tree}`，以及集成前后的 tree/commit/ref evidence；Task Finish 同时保留已验证的 `implementationCandidateIdentity`。
-- `same-content`：delivery tree 的内容与 implementation Candidate 相同。调用 selected provider `inspect` 并复用 evidence；不得启动验证 executor，两个 execute count 均为 `0`。
-- `closeout-metadata-only`：差异完全来自当前 Task Finish 已执行且可归因的 OpenSpec sync/archive、归档格式规范或 Project 明确定义的 closeout-only artifacts。保留 implementation Candidate evidence，只运行 closeout workflow 已要求的 focused checks；不得调用 task-verification `execute`，两个 execute count均为 `0`。
-- `verification-result-metadata-only` 是 `closeout-metadata-only` 的严格 subtype：只允许同一会话内刚成功的 Candidate 对应的唯一最终任务 checkbox 由 `- [ ]` 变为 `- [x]`，并要求 source/target identity、change/task identity、精确 marker transition 与唯一 diff 证据。调用 provider `inspect`，两个 execute count 均为 `0`；最终报告必须明确 Candidate 只验证 source implementation identity，metadata transition 单独解释 target delivery identity。
-- `implementation-changed`：rebase 冲突解决、生成资产更新、代码/配置/runtime 资产变化，或任何无法完全证明属于 closeout-only scope 的差异。原 evidence 失效，在集成完成前调用 selected provider `execute` 重新运行同一 `requiredAssurance`；Candidate 时 `candidateExecutorCalls: 1`，Affected 时保持 `0`，失败时停止尚未执行的 integrate、push 和 cleanup。
-- transition classification 必须基于动作来源、实际 diff 和 Project policy，不得仅按目录名、扩展名、“看起来像文档”或最终 checkbox 状态判断；无法证明 `closeout-metadata-only` 时按 `implementation-changed` fail closed。`verification-result-metadata-only` 没有当前会话的完整 transition evidence 时也必须 fail closed。
-- provider 返回 `treeChanged: true` 时，直接遵守 required Core workspace-transition invariant，并通过产品入口 Buildr Skill 执行具体 doctor、sync 询问和修复边界；不依赖 provider id。
-- selected provider 的验证命令仍返回 session、cell、process id 或运行中状态时，继续 wait、poll 或 resume 同一进程；暂时无输出不得启动第二个相同验证。
-- implementation evidence 必须随 implementation content 一起复用或失效。closeout-only delta 只增加独立 focused evidence；implementation content 改变并重跑时，以 selected provider 返回的同级新 evidence 替换旧证据。
-
-## 5. 集成与推送
-
-在验证证据仍有效且目标 workspace 满足 selected provider 的前置条件时，调用 task-integration provider 完成已披露的集成和推送计划，并核对其 result evidence。默认计划只推送已集成的目标分支，并记录任务分支未推送；不得因为任务分支存在、已提交或已合入而创建或推送其远端 ref。只有用户在当前轮次明确要求远端任务分支时，才可在披露分支、远端、目的和待推送提交后将其纳入计划。provider 报告冲突、远端状态变化、授权不足或写入失败时停止；不得由 Task Finish 改用另一套 Git policy 或扩大授权。
-
-## 6. 本地清理
-
-OpenSpec 和 task-integration 阶段成功后，把 integration/push evidence、当前工作区状态和本机入口信息交给 selected worktree-lifecycle provider。placement、retention、cleanup preconditions 和删除顺序由该 provider contract 与正文决定，本 Skill 不复制。
-
-多仓 task environment 必须按 receipt 逐仓完成验证、提交、集成和 push evidence 核对；这些远端动作不是跨仓原子事务。任一仓库失败时停止 cleanup，报告已完成与未完成仓库并保留整个 environment。只有全部成员 checkout clean、已安全集成且没有 preview/CLI/runtime 依赖时，才按由内到外顺序清理 nested worktrees 与 root worktree。
-
-如果健康的 Local App 或当前 `buildr` 入口仍依赖即将删除的 task worktree，Task Finish 必须先完成入口交接：在停止旧实例前读取用户级 `instance.json`，只接受通过其 secret 的 `/api/v1/health` 验证过的 loopback URL，并记录其中的 port；从已集成、仍保留的 checkout 重装开发 CLI 与 development launcher；停止旧实例后，使用 `buildr app --port <recorded-port> --no-open` 启动或复用新实例。只有新的健康实例仍监听该记录端口、`command -v buildr` 解析到保留 checkout，且静态资源或运行身份不再指向 task worktree 时，才允许删除 worktree。没有健康实例、实例不依赖 task worktree 或没有可验证端口时，不得虚构端口，按普通入口迁移继续。
-
-如果 `buildr app preview list --json` 显示 preview，Task Finish 必须按 owner worktree 分类：owner 等于当前 task worktree 的健康 preview 必须先使用 `buildr app preview stop <instance>` 认证停止并确认不再健康；owner 属于其他 worktree 的 preview 必须保持运行，不得迁移、停止、清理或改写其端口和状态目录。当前任务 preview 无法停止或仍健康时停止 cleanup 并保留 worktree；其他任务 preview 不构成当前任务 cleanup 的阻塞条件。最终报告必须分别列出当前任务 preview 的停止结果与未触碰的并发 preview。
-
-记录端口无法重启、被占用、健康检查失败或新入口仍指向 task worktree 时，禁止以随机端口或其他端口替代；停止 cleanup，保留 task worktree 与任务分支，报告记录端口、失败原因和恢复路径。Task Finish 仍要求：工作目录切换到主 workspace 或其他保留目录后再执行清理；不删除远端任务分支，除非用户另行明确授权；provider 必须返回 retained/removed 状态、入口迁移、Local App 迁移前后端口与健康结果，以及清理后仓库证据。provider 判断应保留时，将保留原因纳入最终报告，不把未清理描述为收尾失败。
-
-## 7. Verification evidence 清理
-
-集成与推送完成、最终验证摘要已捕获、资产审查和其他 evidence consumer 已结束后：
-
-1. `evidenceRetention: transient` 时，请求 selected task-verification provider 使用其 `cleanupReference` 清理精确 run；Task Finish 不自行把该职责转交给 worktree-lifecycle provider。
-2. `caller-managed` 或 `session-only` 时不执行默认删除，按 provider 返回的 caller policy 或当前会话语义处理。
-3. 清理成功后保留摘要字段并记录 `cleanupStatus: cleaned`，最终报告不得继续把已删除路径描述为可访问证据。
-4. provider 无法证明安全边界、仍有 consumer 或删除失败时保留现场，记录 `cleanupStatus: retained`、路径和原因；该失败不回滚已完成的 archive、integration 或 push。
-
-## 8. 最终报告
-
-最终报告除交付、OpenSpec、提交/推送、doctor、active change 和 worktree 清理状态外，还必须基于已核对的 Candidate evidence 说明：`implementationCandidateIdentity`、`deliveryTreeIdentity`、transition class/subtype、provider operations、目标分支推送结果、任务分支未推送状态或其明确授权、`taskVerificationExecuteCalls`、`candidateExecutorCalls`、验证范围与状态、完整验证总耗时、timing source、最慢检查及其耗时、失败项、跳过项、closeout delta checks、evidence retention 和 cleanup status。存在 `verification-result-metadata-only` 时还要报告 source/target identity、change/task identity、marker transition 与 session-only retention，并明确 Candidate 未直接覆盖 target delivery tree。Buildr Product summary 包含预算时同时报告预算状态；summary 仍保留时报告绝对路径，已清理时报告摘要已捕获且 transient evidence 已删除，不得输出失效路径。不得只报告“测试通过”或只列各阶段耗时。
-
-## 失败处理
-
-任一步骤失败时：
-
-- 停止尚未执行的 archive、commit、rebase、merge、push 或 cleanup。
-- 不回滚已经成功的远端操作，不隐藏部分完成状态。
-- 报告失败阶段、已完成动作、当前 Git/OpenSpec 状态和下一步。
-- 保留仍可能用于修复的 task worktree 和本地任务分支。
+complete 后先报告终态，再询问是否进行“任务复盘”：当前关注 Agent 耗时、Token、重复尝试和人机协作，Token 不可得可缺失。仅用户同意后路由 `task-retrospective`；blocked/failed 不提示，且复盘不影响终态。

@@ -1,0 +1,57 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: introduce-buildr-web-service
+operation: reconcile
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/introduce-buildr-web-service/brief.md
+    reason: Brief 已确认并放行实现；状态与分步计划对齐实现进行中
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-buildr-web-service/proposal.md
+      - openspec/changes/introduce-buildr-web-service/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Service 拓扑增加同仓 buildr-web，并明确前端源码与构建所有权交接
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-buildr-web-service/specs/buildr-web-service/spec.md
+      - services/manifest.yml
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: buildr 不再拥有权威前端源工程，改为消费 buildr-web 构建产物并继续托管
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-buildr-web-service/specs/local-app-web-client/spec.md
+      - services/buildr/package.json
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: 新建 buildr-web Service 职责、构建交接与依赖说明
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-buildr-web-service/specs/buildr-web-service/spec.md
+      - services/buildr-web/AGENTS.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 增加 Buildr Web（buildr-web）稳定术语，避免与 Local App HTTP authority 混淆
+    status: updated
+    sourceIdentities:
+      - openspec/changes/introduce-buildr-web-service/proposal.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: 导航增加 Buildr Web Service 入口
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/services/buildr-web.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 产品信息架构未描述前端源码归属细节；实现后无需改动
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/introduce-buildr-web-service/design.md
+  - type: flow
+    target: openspec/knowledge/flows/
+    reason: 无新的跨模块用户旅程；托管与 session 流程不变
+    status: not-applicable
+    sourceIdentities: []
+unresolvedItems: []

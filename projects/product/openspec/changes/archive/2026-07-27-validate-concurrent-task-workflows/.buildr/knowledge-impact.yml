@@ -1,0 +1,33 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: validate-concurrent-task-workflows
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/validate-concurrent-task-workflows/brief.md
+    reason: 组合验收的用户价值、流程和验收边界需要人类可读入口
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/concurrent-task-acceptance/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Candidate 验证新增双任务并发组合门禁
+    status: updated
+    sourceIdentities:
+      - services/buildr/test/verification/concurrency/task-acceptance.mjs
+      - services/buildr/test/verification/registry.mjs
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 最终 Candidate 需要说明组合验收边界
+    status: updated
+    sourceIdentities:
+      - specs/product-verification-quality/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 本次沿用既有 task environment、Candidate、Local App 和 target-race 术语
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

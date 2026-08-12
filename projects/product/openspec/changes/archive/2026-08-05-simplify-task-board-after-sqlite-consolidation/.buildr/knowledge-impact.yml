@@ -1,0 +1,99 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: simplify-task-board-after-sqlite-consolidation
+operation: reconcile
+treeIdentity: git:c7e8f88fce804b9cf27cd9cda520dbd1e3c194f8+dirty
+impacts:
+  - type: brief
+    target: openspec/changes/simplify-task-board-after-sqlite-consolidation/brief.md
+    reason: 需要向审查者明确完整清退、真实 consumer 证据、历史保护和零 SQLite 变更边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/proposal.md
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/design.md
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/brief.md
+  - type: overview
+    target: docs/buildr-product.md
+    reason: 当前产品说明仍把静态 Task Board 表达为已发布协调入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/task-board/spec.md
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/agent-task-workflows/spec.md
+  - type: overview
+    target: docs/document-index.md
+    reason: 文档索引仍指引创建 Task Board 并维护 batches 与 dependencyPool
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/buildr-development-openspec/spec.md
+  - type: product-architecture
+    target: docs/roadmap/task-lifecycle-architecture.md
+    reason: 需要把 Parent Task 与 SQLite current records 更新为已交付事实，并保持 P1.1 仅在真实缺口出现后触发
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/design.md
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/task-board/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 当前 package capability topology 将移除 Task Board Skill、contract、binding 与 runtime projection
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/buildr-package-assets/spec.md
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/buildr-product-capability-sync/spec.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 当前产品模块与协调入口需要明确普通 Task、Parent/Child 与 Local App 动态投影，不再包含静态 Board authority
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/agent-task-workflows/spec.md
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/current-knowledge-maintenance/spec.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: 当前认知导航需要把两类旧页面统一标记为不可继续维护的历史旁证
+    status: updated
+    sourceIdentities:
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/buildr-development-openspec/spec.md
+      - openspec/changes/simplify-task-board-after-sqlite-consolidation/specs/current-knowledge-maintenance/spec.md
+historicalAssetBaseline:
+  policy: preserve-path-and-content
+  files:
+    - path: openspec/knowledge/task-boards/2026-07-20-buildr-productization-modeling.html
+      sha256: e4ae789f8d7cb22b04d9d7460be6d71e1b6b1b22820e86a6e5cef1cc7d9b4af0
+    - path: openspec/knowledge/task-boards/2026-07-22-product-service-structure.html
+      sha256: ce4163c0e01479205d7b027d2891b7ac5cc58ae65dd4a3e1d7b86f2bd63967bd
+    - path: openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html
+      sha256: f5b6e97847064e5f2e8eb837175dd8f1f4eb9bf8d56674e98ea2967150612ad2
+    - path: openspec/knowledge/task-boards/2026-07-27-concurrent-task-development-and-verification.html
+      sha256: 45617a5d15dd166e0b1c3db90183d07480c5ddc316269f9a8e2b846c2d4c7c37
+    - path: openspec/knowledge/task-cockpits/2026-07-16-add-task-asset-promotion-review.html
+      sha256: 8e52b3daeaf5e2e371ecced0cd4eb6696d929a8f927a9a17234e252d67b818bd
+    - path: openspec/knowledge/task-cockpits/2026-07-16-add-task-cockpit.html
+      sha256: 488546e928f958c89b3deea9e29d5e98df10852a765a5602ef8cadd0300ed018
+    - path: openspec/knowledge/task-cockpits/2026-07-17-introduce-skill-capability-contracts.html
+      sha256: cc3cbd81a5aafe7704ee5edbe9dd34a0a1f585193fbdd84288f4b7d338ef9b6d
+    - path: openspec/knowledge/task-cockpits/2026-07-19-buildr-task-assets-evolution.html
+      sha256: 1ead6132ec52ab94f93eb34cc718a99781f803d473e9ce5a1da5bfff58ed66e5
+    - path: openspec/knowledge/task-cockpits/2026-07-19-verification-framework-evolution.html
+      sha256: dc2e34685a454c4e79126dcc9d1083a8213f6a639851d1355fc8814d1fa4bef6
+    - path: openspec/knowledge/task-cockpits/2026-07-20-redesign-skill-scope-and-conflict-governance.html
+      sha256: 705b8fa68643a56329f280e0fb3a5fdb85e6c627d1f1dd9c07857f915e1479e0
+    - path: openspec/knowledge/task-cockpits/2026-07-20-work-asset-scope-governance.html
+      sha256: efd0b3c2cee2a6f6a1fa60d5dfa285d7c060f4d40a0eaa2e2aa97d01b2e1b324
+terminology:
+  status: aligned
+  termsConsulted:
+    - Task Board
+    - Structured Task Board
+    - Parent Task
+    - current record
+  canonicalTerms: 任务看板（Task Board）、结构化任务看板（Structured Task Board）、父任务（Parent Task）、当前记录（current record）
+  changedAssets:
+    - docs/buildr-product.md
+    - docs/document-index.md
+    - docs/roadmap/task-lifecycle-architecture.md
+    - openspec/knowledge/architecture/product.md
+    - openspec/knowledge/overview.md
+    - openspec/knowledge/services/buildr.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/knowledge/glossary.md
+    - docs/roadmap/task-lifecycle-architecture.md
+unresolvedItems: []

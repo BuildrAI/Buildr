@@ -19,12 +19,14 @@ import {
   reconcileRuntimePlan,
   runtimeAdapterImplementationMatrix,
   runtimeDiscoveryPayload,
+  selectPlatformEnvironmentProbe,
   selectAdapterImplementation,
   validateRuntimePlan,
 } from '../../../src/infrastructure/runtime/adapter-contract.mjs';
 import { validateSkillPublication } from '../../../src/infrastructure/runtime/skills/publication.mjs';
 import { resolveSkillContributions } from '../../../src/infrastructure/runtime/render-claude-code.mjs';
 import { assembleRuntimeProjection } from '../../../src/infrastructure/runtime/projection.mjs';
+import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/infrastructure/runtime/check-runtime.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryRoot = path.resolve(productRoot, '../../../..');
@@ -37,6 +39,8 @@ assert.deepEqual(implementationMatrix.representatives.map((entry) => entry.famil
 ]);
 assert.deepEqual(ADAPTER_TRAIT_CATALOG.rules, ['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']);
 assert.equal(runtimeDiscoveryPayload().adapterTraitCatalog, ADAPTER_TRAIT_CATALOG);
+assert.deepEqual(runtimeDiscoveryPayload().agents.codex.taskAdoption.modes, ['new-session', 'reentered']);
+assert.equal(runtimeDiscoveryPayload().agents.codex.taskAdoption.sessionConsumption, 'unknown-until-adopted');
 assert.deepEqual(RUNTIME_ADAPTERS.codex.traits.skills.publicationExtensions, [
   { path: 'agents/openai.yaml', format: 'openai-skill-metadata' },
 ]);
@@ -84,6 +88,12 @@ for (const adapterId of SUPPORTED_AGENT_IDS) {
     assert.ok(targets.some((target) => target.includes(expectedRuleTargets[adapterId])), `${adapterId} must plan its declared Rules target`);
   }
 }
+const codexCheck = checkRuntimeAdapter(['--target', projectionRoot, '--scope', '.'], { repoRoot: projectionRoot, adapterId: 'codex' });
+assert.equal(codexCheck.runtimeSourceEvidence.assurance, 'buildr-verified');
+assert.equal(codexCheck.runtimeSourceEvidence.activation.rules, 'path-read');
+assert.equal(codexCheck.runtimeSourceEvidence.activation.skills, 'session-start');
+assert.match(codexCheck.runtimeSourceEvidence.projectionIdentity, /^sha256-[a-f0-9]{64}$/);
+assert.equal(codexCheck.runtimeSourceEvidence.sessionConsumption, 'unknown');
 fs.rmSync(projectionRoot, { recursive: true, force: true });
 
 for (const adapterId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
@@ -127,6 +137,27 @@ assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.skills.root, '.codebuddy');
 assert.deepEqual(RUNTIME_ADAPTERS.workbuddy.traits.surfaces, [{ kind: 'desktop' }, { kind: 'cli', variant: 'desktop-bundled' }]);
 assert.deepEqual(Object.keys(RUNTIME_ADAPTERS.workbuddy.evidence).sort(), ['rules', 'skills']);
 assert.ok(adapterDoc.includes('`.codebuddy/skills`'));
+
+const traeWorkDarwinProbe = selectPlatformEnvironmentProbe({
+  platform: 'darwin',
+  command: { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+  guidance: 'Confirm TRAE Work manually.',
+});
+assert.deepEqual(traeWorkDarwinProbe, { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 });
+const workbuddyWindowsProbe = selectPlatformEnvironmentProbe({
+  platform: 'win32',
+  command: { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+  guidance: 'Confirm WorkBuddy manually.',
+});
+assert.deepEqual(workbuddyWindowsProbe, { kind: 'manual', guidance: 'Confirm WorkBuddy manually.' });
+assert.deepEqual(runEnvironmentProbe(workbuddyWindowsProbe), { status: 'manual', probe: 'manual', guidance: 'Confirm WorkBuddy manually.' });
+const spawnCalls = [];
+const commandProbe = runEnvironmentProbe(
+  { kind: 'command', executable: 'tool', args: ['--version'], timeoutMs: 3000 },
+  { spawn: (...args) => { spawnCalls.push(args); return { status: 0, stdout: 'tool 1.2.3', stderr: '' }; } },
+);
+assert.equal(commandProbe.status, 'ok');
+assert.deepEqual(spawnCalls[0], ['tool', ['--version'], { encoding: 'utf8', timeout: 3000, shell: false, stdio: ['ignore', 'pipe', 'pipe'] }]);
 
 assert.throws(() => getRuntimeAdapter('fake-runtime'), /Unsupported Agent runtime/);
 assert.throws(() => createRuntimeAdapterRegistry([{ id: 'fake-runtime', runtimeTargets: [], renderCapabilities: {}, recommendedCommands: {} }], { testOnly: true }), /Invalid runtime adapter registry/);
@@ -227,7 +258,7 @@ assert.equal(fs.readFileSync(targetFile, 'utf8'), 'user content\n');
 const binaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-binary-'));
 const binaryFile = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'sample.bin');
 const staleFile = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'stale.bin');
-const receiptFile = path.join(binaryRoot, '.agents', 'buildr', 'skill-projection-receipts', 'codex', 'demo.json');
+const receiptFile = path.join(binaryRoot, '.buildr', 'agent-runtime', 'workspace', 'codex', 'skill-projection-ownership-receipts', 'demo.json');
 fs.mkdirSync(path.dirname(staleFile), { recursive: true });
 fs.writeFileSync(staleFile, Buffer.from([9, 8, 7]));
 const staleIntegrity = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(staleFile)).digest('hex')}`;
@@ -244,8 +275,9 @@ const binaryPlan = createRuntimePlan({
   capabilityEvidence: evidence,
 });
 const binaryResult = reconcileRuntimePlan(binaryPlan);
+assert.equal(binaryPlan.writes.find((item) => item.targetFile === binaryFile)?.mode, 0o100, 'runtime plan must preserve executable intent on every platform');
 assert.deepEqual(fs.readFileSync(binaryFile), Buffer.from([0, 255, 16]));
-assert.equal((fs.statSync(binaryFile).mode & 0o100) === 0o100, true);
+if (process.platform !== 'win32') assert.equal((fs.statSync(binaryFile).mode & 0o100) === 0o100, true);
 assert.equal(fs.existsSync(staleFile), false);
 assert.equal(binaryResult.changed.at(-1), receiptFile, 'commitLast receipt must be written after payload files and stale removals');
 

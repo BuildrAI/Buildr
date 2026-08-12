@@ -6,7 +6,7 @@
 
 限制 Agent 工作结果的，不只是模型能力，还有它能拿到什么、能不能接着已有积累继续做。
 
-Buildr 是 Agent 的工作资产管理工具。它把个人和组织的工作事实与工作方法沉淀为工作资产，让 Agent 可以接着已有积累，在一个窗口里把事情从想法持续推进到交付。
+Buildr 是 Agent 的工作基础设施。它把个人和组织的工作事实与工作方法沉淀为工作资产，让 Agent 可以接着已有积累，把事情从想法持续推进到交付。
 
 **让组织的工作方式，成为所有 Agent 的共同能力。**
 
@@ -93,7 +93,7 @@ workspace/
 
 Skill 只在工作空间的 `skills/` 维护，然后 render 到两种 Agent runtime destination：`workspace` 表示当前工作目录可发现，`user` 表示当前用户的所有工作空间可发现。项目不复制 Skill 内容，也不被 Buildr 当作安装隔离层；若某个 Skill 只适用于一个项目，由该项目的 `capabilities.yml` 表达业务适用性。
 
-Buildr 管理的是长期工作资产，不直接填充模型的 context window。Agent 根据当前任务发现和选择相关内容，形成自己的任务上下文。
+Buildr 管理的是长期工作资产，不直接填充模型的 context window。Agent 根据当前任务发现和选择相关内容，形成自己的任务上下文。Agent 负责理解、检索、推理和专业执行；Buildr 负责工作资产治理、确定性状态变更、runtime 投射、完整性保护和诊断。
 
 ## 快速开始
 
@@ -107,10 +107,10 @@ Agent 读到这个任务后，按以下流程完成初始化。本节主要给 A
 
 **1. 准备 Node.js 和 Buildr CLI**
 
-Buildr 需要 Node.js 20 或更高版本。先检查 Node.js 版本和本机是否已有 `buildr` 命令；条件不满足时，先询问用户再安装或升级：
+Buildr 支持 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`）。先检查 Node.js 版本和本机是否已有 `buildr` 命令；条件不满足时，先询问用户再安装或升级。Workspace 的受管 runtime 使用受版本控制声明中的精确版本，当前自举 Workspace 固定为 24.15.0：
 
-- **预发布版（当前推荐试用）**：`npm install --global @buildr-ai/buildr@next`
-- **开发版**：让用户确认保存位置后，执行 `git clone https://github.com/elevenching/Buildr.git <path>`，后续使用 `<path>/projects/product/buildr`
+- **预发布版（当前推荐试用，当前候选版：`0.1.0-rc.8`）**：`npm install -g @buildr-ai/buildr@next`
+- **开发版**：让用户确认保存位置后，执行 `git clone https://github.com/BuildrAI/Buildr.git <path>`，后续使用 `<path>/projects/product/buildr`
 
 下文中的 `buildr` 表示所选入口：预发布版使用全局命令，开发版使用 `<path>/projects/product/buildr`。
 
@@ -153,12 +153,14 @@ Agent 会帮你确认第一项工作，并把它归入一个项目（Project）�
 
 第一项工作不需要很大；关键是让 Agent 从真实目标开始，而不是让你停在“已经初始化”这一步。Agent 通过 Buildr Skill 理解目标，通过 Buildr CLI 执行可确定的资产操作。
 
-Buildr 当前处于预发布阶段，具体版本和安装来源以 [GitHub Releases](https://github.com/elevenching/Buildr/releases) 为准。
+Buildr 当前处于预发布阶段，版本和安装来源以 [GitHub Releases](https://github.com/BuildrAI/Buildr/releases) 为准。
 
 ## 当前能力
 
 - 一个工作空间（Workspace）管理多个项目（Project）；每个项目可按需要管理多个服务（Service）
 - 规则、工作空间级 Skills、组件和命令等资产的统一管理；Skill 支持 user/workspace destination 与同名冲突预检
+- 任务（Task）及其过程信息管理，包括任务复盘
+- Local App：查看和管理工作空间、项目、服务与任务等信息；当前仍在持续完善
 - 支持 7 个 Agent runtime adapter（claude-code、codex、cursor、qoder、trae、trae-work、workbuddy）
 
 详细边界见[已知限制](projects/product/services/buildr/docs/known-limitations.md)。
@@ -180,4 +182,4 @@ projects/product/buildr runtime list --json
 projects/product/buildr doctor --agent <agent> --target . --json
 ```
 
-[贡献指南](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/elevenching/Buildr/issues)
+[贡献指南](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/BuildrAI/Buildr/issues)

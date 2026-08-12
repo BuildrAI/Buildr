@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-final-candidate-sequencing",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-486dfc78e1563a3a34a1041e13bc69056bfcd5d9ad6e00d9c1c0dea2e231f9af",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证前收敛 delivery tree",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证前预演 OpenSpec archive compatibility",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须在最终保证后检测目标分支竞态",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 必须报告验证失效链和重复执行成本",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Task verification 必须表达前序 evidence 的失效原因与替代关系",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Verification policy 必须识别 archive-sensitive coverage 信号",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

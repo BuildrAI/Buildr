@@ -29,17 +29,32 @@ for (const entry of packageManifest.files.filter((file) => file === 'src/' || fi
 productionFiles.sort();
 const allowed = new Map([
   ['src/infrastructure/filesystem/index.mjs', new Set([
-    'atomicWriteFile', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
+    'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
+  ['src/infrastructure/filesystem/workspace-node-runtime.mjs', new Set([
+    'downloadFile', 'removeRuntimeTree', 'copyRuntimeTree', 'reclaimRuntimeInstallLock', 'acquireRuntimeInstallLock', 'releaseRuntimeInstallLock', 'installFromOfficial', 'installFromCurrent', 'renameRuntimeStage', 'ensureWorkspaceNodeRuntime',
+  ])],
+  ['src/infrastructure/filesystem/task-execution-record-body-store.mjs', new Set([
+    'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
+  ])],
   ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
     'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
   ])],
   ['src/interfaces/local-app/runtime/preview-manager.mjs', new Set(['clearOwner'])],
   ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
+  ['src/application/task-finish/task-finish-run.mjs', new Set([
+    'acquireFinishTargetLease', 'releaseFinishTargetLease',
+  ])],
+  ['src/application/task-finish/diagnostics-evidence.mjs', new Set(['createTaskFinishDiagnosticsEvidence'])],
+  ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
+  ['src/application/verification/resource-coordinator.mjs', new Set([
+    'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
+  ])],
+  ['src/interfaces/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/application/domains/workspace.mjs', new Set(['createProject', 'createService'])],
   ['src/application/domains/rules.mjs', new Set(['rulesRemoveUnsafe'])],
-  ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe', 'applyProjectSkillMigration'])],
+  ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
   ['src/application/domains/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
   ['src/application/domains/package-assets.mjs', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
   ['src/application/package-maintenance.mjs', new Set(['syncPackageBuiltins'])],

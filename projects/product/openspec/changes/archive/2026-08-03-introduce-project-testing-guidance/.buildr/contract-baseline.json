@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "introduce-project-testing-guidance",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-eb3ff3144ac451ea1fe8ac5e6429c66b8dd16399603bbed4a5c21860d5e05c18",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "测试建设与 Task Verification 必须使用独立入口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "project-test-capabilities",
+      "title": "Capability 声明指导必须核对真实测试边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "project-test-capabilities",
+      "title": "Declaration 必须只暴露稳定能力接口",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "project-testing-guidance",
+      "title": "Buildr 必须提供无状态 Project Testing 指导",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "project-testing-guidance",
+      "title": "Project Testing 必须使用正交测试边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "project-testing-guidance",
+      "title": "Project Testing 必须按待证明事实确定 owner",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "project-testing-guidance",
+      "title": "Project Testing 必须优先最低充分执行边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "project-testing-guidance",
+      "title": "第一版验收测试必须保持占位边界",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

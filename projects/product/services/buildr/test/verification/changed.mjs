@@ -6,8 +6,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { collectChangedProductPaths } from './changed-paths.mjs';
-import { createVerificationPlan } from './planner.mjs';
+import { createVerificationPlan, createVerificationPreflightPlan } from './planner.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
+import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -46,8 +47,10 @@ try {
     usage();
   } else {
     const changed = collectChangedProductPaths({ productRoot, projectRoot, base: args.base, explicitPaths: args.paths });
+    const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+    const preflightPlan = createVerificationPreflightPlan({ paths: changed.paths });
     const plan = createVerificationPlan({ paths: changed.paths });
-    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, steps: plan.steps };
+    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, delegated: plan.delegated, preflightSteps: preflightPlan.steps, steps: plan.steps };
     if (args.json) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
     else if (args.planOnly) {
       if (changed.base) process.stdout.write(`Git base: ${changed.base}\n`);
@@ -61,16 +64,29 @@ try {
       source = collectVerificationSourceIdentity(productRoot, { projectRoot });
       fs.rmSync(evidence.diagnosticsOutput, { recursive: true, force: true });
       fs.mkdirSync(evidence.diagnosticsOutput, { recursive: true });
-      const execution = await executePlan(plan, {
+      const executionOptions = {
         productRoot,
         projectRoot,
         diagnosticsDirectory: evidence.diagnosticsOutput,
         artifactDirectory: path.join(executionRoot, 'candidate-package'),
-        env: { BUILDR_CHANGED_PATHS_JSON: JSON.stringify(changed.paths) },
+        env: {
+          BUILDR_CHANGED_PATHS_JSON: JSON.stringify(changed.paths),
+          ...(changed.base ? { BUILDR_VERIFICATION_BASE: changed.base } : {}),
+        },
+        runId: evidence.runId,
+        taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'changed',
+        concurrency: executionProfile.limits,
+        executionProfile,
         stream: process.stdout,
         errorStream: process.stderr,
-      });
-      results = execution.results;
+      };
+      let preflight = { passed: true, results: [] };
+      if (preflightPlan.steps.length) {
+        process.stdout.write(`[verify-changed] preflight: ${preflightPlan.steps.map((item) => item.id).join(', ')}\n`);
+        preflight = await executePlan(preflightPlan, executionOptions);
+      }
+      const execution = preflight.passed ? await executePlan(plan, executionOptions) : { passed: false, results: [] };
+      results = [...preflight.results, ...execution.results];
       writeVerificationTimingEvidence({
         ...evidence,
         kind: 'changed',
@@ -83,6 +99,7 @@ try {
         prefix: 'verify-changed',
         stream: process.stdout,
         errorStream: process.stderr,
+        executionProfile,
       });
       if (!execution.passed) process.exitCode = 1;
       else process.stdout.write('Buildr changed verification passed.\n');
@@ -104,6 +121,7 @@ try {
         prefix: 'verify-changed',
         stream: process.stdout,
         errorStream: process.stderr,
+        executionProfile: resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE),
       });
     } catch {}
   }

@@ -1,4 +1,0 @@
-interface:
-  display_name: "任务看板"
-  short_description: "维护复杂任务的 change、交付批次、依赖池与方案看板"
-  default_prompt: "Use $task-board to create or update the read-only task board for this work."

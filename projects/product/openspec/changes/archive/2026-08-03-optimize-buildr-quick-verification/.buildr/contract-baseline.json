@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-buildr-quick-verification",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-2f286b970a4f831259fa5fd1e5216a88278f4c0ac90312518791f3eec60c0e36",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "cli-modular-architecture",
+      "title": "产品验证入口必须共享声明与薄执行层",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 产品验证入口必须共享声明与薄执行层\nBuildr fast、affected、changed、Workspace/package selectors 和 Candidate entrypoints MUST 共享统一 step registry 与 planner/scheduler，并 MUST 将稳定 shell/npm 表面保持为薄 wrapper。\n\n#### Scenario: 检查验证入口架构\n- **WHEN** CLI architecture verifier 扫描产品验证入口\n- **THEN** step 命令、预算、依赖和 group/profile membership MUST NOT 在多个入口重复维护\n- **AND** wrapper MUST 只负责参数转交、环境前置检查和退出状态传播\n\n#### Scenario: 专项 selector 保持兼容\n- **WHEN** 维护者使用已有 affected group、Workspace suite 或 package selector\n- **THEN** selector MUST 解析为统一 registry 中的稳定 step identity\n- **AND** 未知或重复 selector MUST 保持 fail-closed 与去重行为\n"
+    }
+  ]
+}

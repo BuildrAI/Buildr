@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: fix-task-finish-detached-process-cleanup
+operation: reconcile
+treeIdentity: implementation-complete-pre-verification
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 说明补丁范围和真实收尾证据。
+    status: aligned
+    sourceIdentities: [proposal.md, design.md, specs/agent-task-workflows/spec.md, specs/task-finish-execution/spec.md, ../../services/buildr/test/verification/timing/parallel-runner.mjs]
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 不改变长期系统拓扑，仅修复 runner 内部 ownership 实现。
+    status: not-applicable
+    sourceIdentities: [design.md]
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 不引入新的长期产品术语。
+    status: not-applicable
+    sourceIdentities: [proposal.md]
+unresolvedItems: []

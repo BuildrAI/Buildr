@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "harden-task-finish-verification-boundaries",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-4acbe3bb01aaea828596e9cae3f05bd278e4605a37ffc9ca5377ac4e36a4f3c1",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "openspec-deterministic-sync",
+      "title": "持久化OpenSpec convergence receipt必须可移植",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须在正式保证失败后等待 repair 决策",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 必须区分 workflow 与 closeout-only timing",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish compact diagnostic 必须优先暴露真实失败",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "正式保证前必须执行候选感知的确定性preflight",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Verification evidence 必须区分首次验证与重新验证",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Verification failure summary 必须区分失败与warning",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import {
-  ownerExecutable,
   runtimeFileMatches,
+  sha256Integrity,
   runtimeWriteBuffer,
   runtimeWriteMode,
+  runtimeWriteModeMatches,
 } from './skills/projection-files.mjs';
 
 export const REQUIRED_RENDER_CAPABILITIES = Object.freeze([
@@ -40,6 +42,11 @@ export const UNSUPPORTED_AGENT_GUIDANCE = Object.freeze({
 });
 
 const AGENT_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+export function selectPlatformEnvironmentProbe({ platform = process.platform, command, guidance }) {
+  if (platform === 'darwin') return structuredClone(command);
+  return { kind: 'manual', guidance };
+}
 
 function freeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -346,7 +353,7 @@ const DESCRIPTORS = [
         publicationExtensions: [{ path: 'agents/openai.yaml', format: 'openai-skill-metadata' }],
       },
       surfaces: [{ kind: 'cli' }, { kind: 'desktop' }],
-      activation: { rules: 'path-read', skills: 'session-start' },
+      activation: { rules: 'path-read', skills: 'session-start', reloadGuidance: 'Codex discovers workspace Skills at session start. Only when a task changes runtime discovery, loading, or activation behavior and specialty acceptance explicitly requires host activation proof, use a host-supported reload or session evidence and report any unsupported gap.' },
       checker: { kind: 'projection', implementation: 'projection', resultKey: 'codex', installationProbe: { kind: 'none' }, versionProbe: { kind: 'none' } },
     },
     recommendedCommands: {
@@ -435,8 +442,14 @@ const DESCRIPTORS = [
       activation: { rules: 'session-start', skills: 'immediate', reloadGuidance: 'Start a new TRAE Work conversation after adding or changing imported Rules.' },
       checker: {
         kind: 'projection', implementation: 'projection', resultKey: 'traeWork',
-        installationProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
-        versionProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+        installationProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+          guidance: '请在 TRAE Work 的 About 或安装信息中确认已安装及应用版本。',
+        }),
+        versionProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/TRAE SOLO.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+          guidance: '请在 TRAE Work 的 About 或安装信息中确认应用版本。',
+        }),
       },
     },
     recommendedCommands: recommendedCommands('trae-work'),
@@ -456,8 +469,14 @@ const DESCRIPTORS = [
       activation: { rules: 'session-start', skills: 'session-start', reloadGuidance: 'Start a new WorkBuddy task after adding or changing Rules or Skills.' },
       checker: {
         kind: 'projection', implementation: 'projection', resultKey: 'workbuddy',
-        installationProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
-        versionProbe: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+        installationProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+          guidance: '请在 WorkBuddy 的 About 或安装信息中确认已安装及应用版本。',
+        }),
+        versionProbe: selectPlatformEnvironmentProbe({
+          command: { kind: 'command', executable: 'defaults', args: ['read', '/Applications/WorkBuddy.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+          guidance: '请在 WorkBuddy 的 About 或安装信息中确认应用版本。',
+        }),
       },
     },
     recommendedCommands: recommendedCommands('workbuddy'),
@@ -557,7 +576,15 @@ export function runtimeDiscoveryPayload() {
     supportedAgents: [...SUPPORTED_AGENT_IDS],
     requiredRenderCapabilities: [...REQUIRED_RENDER_CAPABILITIES],
     adapterTraitCatalog: ADAPTER_TRAIT_CATALOG,
-    agents: RUNTIME_ADAPTERS,
+    agents: Object.fromEntries(Object.entries(RUNTIME_ADAPTERS).map(([id, adapter]) => [id, {
+      ...adapter,
+      taskAdoption: {
+        sessionEvidenceRequired: true,
+        modes: adapter.traits.activation.skills === 'explicit-reload' ? ['new-session', 'reentered', 'reload'] : ['new-session', 'reentered'],
+        guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the task environment root as its local project.`,
+        sessionConsumption: 'unknown-until-adopted',
+      },
+    }])),
     unsupportedAgentGuidance: UNSUPPORTED_AGENT_GUIDANCE,
   };
 }
@@ -660,6 +687,7 @@ export function validateRuntimePlan(plan, adapter = getRuntimeAdapter(plan?.adap
     catch (error) { errors.push(error.message); }
     if (typeof item !== 'string' && item.expectedIntegrity !== undefined && !/^sha256-[a-f0-9]{64}$/.test(item.expectedIntegrity)) errors.push(`runtime removal integrity is invalid: ${targetFile}`);
     if (typeof item !== 'string' && item.expectedExecutable !== undefined && typeof item.expectedExecutable !== 'boolean') errors.push(`runtime removal executable is invalid: ${targetFile}`);
+    if (typeof item !== 'string' && item.removeLast !== undefined && typeof item.removeLast !== 'boolean') errors.push(`runtime removal removeLast must be boolean: ${targetFile}`);
     if (writes.has(path.resolve(targetFile))) errors.push(`runtime target cannot be written and removed: ${targetFile}`);
     if (removals.has(path.resolve(targetFile))) errors.push(`runtime removals contain duplicate target: ${targetFile}`);
     removals.add(path.resolve(targetFile));
@@ -679,21 +707,45 @@ function runtimePath(targetRoot, targetFile) {
   return path.relative(targetRoot, targetFile).split(path.sep).join('/');
 }
 
-function diagnosticFinding(item, observedStatus, plan) {
+function runtimeWriteMismatchSummary(item, current, expected) {
+  if (item.kind !== 'skill-projection-receipt' || current === null) return '';
+  const hashes = `current=${sha256Integrity(current)} expected=${sha256Integrity(expected)}`;
+  try {
+    const currentReceipt = JSON.parse(current.toString('utf8'));
+    const expectedReceipt = JSON.parse(expected.toString('utf8'));
+    const fields = [...new Set([...Object.keys(currentReceipt), ...Object.keys(expectedReceipt)])]
+      .filter((field) => JSON.stringify(currentReceipt[field]) !== JSON.stringify(expectedReceipt[field]))
+      .sort();
+    const currentFiles = new Map((currentReceipt.files || []).map((file) => [file.path, file]));
+    const expectedFiles = new Map((expectedReceipt.files || []).map((file) => [file.path, file]));
+    const fileDifferences = [...new Set([...currentFiles.keys(), ...expectedFiles.keys()])]
+      .sort()
+      .filter((file) => JSON.stringify(currentFiles.get(file)) !== JSON.stringify(expectedFiles.get(file)))
+      .slice(0, 5)
+      .map((file) => `${file}: current=${JSON.stringify(currentFiles.get(file) ?? null)} expected=${JSON.stringify(expectedFiles.get(file) ?? null)}`);
+    const files = fileDifferences.length > 0 ? ` File differences: ${fileDifferences.join('; ')}.` : '';
+    return ` Receipt differences: ${fields.join(', ') || 'serialized bytes only'}; ${hashes}.${files}`;
+  } catch {
+    return ` Receipt bytes differ; ${hashes}.`;
+  }
+}
+
+function diagnosticFinding(item, observedStatus, plan, detail = '') {
   const diagnostic = item.diagnostic || {};
   const status = observedStatus === 'ok' && diagnostic.currentStatus
     ? diagnostic.currentStatus
     : observedStatus === 'ok' && diagnostic.actionRequiredWhenCurrent ? 'stale' : observedStatus;
   const code = diagnostic.codes?.[status] || diagnostic.code;
-  const message = diagnostic.messages?.[status]
-    || (status === 'ok' ? `${diagnostic.label || item.source || 'runtime target'} is up to date.` : `${diagnostic.label || item.source || 'runtime target'} is ${status}.`);
+  const message = (diagnostic.messages?.[status]
+    || (status === 'ok' ? `${diagnostic.label || item.source || 'runtime target'} is up to date.` : `${diagnostic.label || item.source || 'runtime target'} is ${status}.`));
+  const detailedMessage = `${message}${detail}`;
   const repair = status === 'ok' ? undefined : diagnostic.repairs?.[status] || diagnostic.repair;
   return {
     status,
     path: runtimePath(plan.targetRoot, item.targetFile),
     adapter: plan.adapterId,
     source: item.source,
-    message,
+    message: detailedMessage,
     ...(code ? { code } : {}),
     ...(repair ? { repair } : {}),
     userActionRequired: status !== 'ok' && status !== 'info' && status !== 'warning',
@@ -702,6 +754,40 @@ function diagnosticFinding(item, observedStatus, plan) {
 
 export function reconcileRuntimePlan(plan, options = {}) {
   validateRuntimePlan(plan);
+  const snapshotRuntimePlanTargets = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-rollback-'));
+    const targets = [...new Set([
+      ...plan.writes.map((item) => path.resolve(item.targetFile)),
+      ...plan.removals.map((item) => path.resolve(typeof item === 'string' ? item : item.targetFile)),
+    ])].sort((left, right) => left.localeCompare(right));
+    const snapshots = targets.map((target, index) => {
+      let existingAncestor = path.dirname(target);
+      while (existingAncestor !== plan.targetRoot && !fs.existsSync(existingAncestor)) existingAncestor = path.dirname(existingAncestor);
+      const existed = fs.existsSync(target);
+      const backup = path.join(root, String(index));
+      if (existed) fs.cpSync(target, backup, { recursive: true, preserveTimestamps: true });
+      return { target, backup, existed, existingAncestor };
+    });
+    return {
+      restore: () => {
+        for (const snapshot of [...snapshots].reverse()) {
+          fs.rmSync(snapshot.target, { recursive: true, force: true });
+          if (snapshot.existed) {
+            fs.mkdirSync(path.dirname(snapshot.target), { recursive: true });
+            fs.cpSync(snapshot.backup, snapshot.target, { recursive: true, preserveTimestamps: true });
+          } else {
+            let current = path.dirname(snapshot.target);
+            while (current !== snapshot.existingAncestor && current.startsWith(`${plan.targetRoot}${path.sep}`)) {
+              if (!fs.existsSync(current) || fs.readdirSync(current).length > 0) break;
+              fs.rmdirSync(current);
+              current = path.dirname(current);
+            }
+          }
+        }
+      },
+      cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+    };
+  };
   const compareOnly = options.compareOnly === true;
   const conflicts = [];
   const changed = [];
@@ -710,8 +796,7 @@ export function reconcileRuntimePlan(plan, options = {}) {
     if (!fs.existsSync(item.targetFile)) continue;
     const current = fs.readFileSync(item.targetFile);
     const expected = runtimeWriteBuffer(item);
-    const expectedMode = runtimeWriteMode(item);
-    const modeMatches = expectedMode === null || ownerExecutable(fs.statSync(item.targetFile).mode) === (expectedMode === 0o100);
+    const modeMatches = runtimeWriteModeMatches(item.targetFile, item);
     const currentText = (item.contentEncoding || 'utf8') === 'utf8' ? current.toString('utf8') : null;
     const matches = (current.equals(expected) && modeMatches) || (currentText !== null && item.matchesCurrent?.(currentText) === true);
     const source = runtimeWriteBuffer(item, true);
@@ -735,19 +820,22 @@ export function reconcileRuntimePlan(plan, options = {}) {
   if (!compareOnly && plannedConflicts.length > 0) {
     throw new Error(`Runtime reconcile found conflict(s); no files were changed:\n- ${plannedConflicts.map((finding) => finding.message || finding.path).sort().join('\n- ')}`);
   }
+  const rollback = !compareOnly && plan.removals.some((item) => typeof item !== 'string' && item.kind === 'legacy-skill-projection-ownership-receipt')
+    ? snapshotRuntimePlanTargets()
+    : null;
   const reconcileWrite = (item) => {
     if (conflicts.includes(item)) return;
     const current = fs.existsSync(item.targetFile) ? fs.readFileSync(item.targetFile) : null;
     const expected = runtimeWriteBuffer(item);
     const expectedMode = runtimeWriteMode(item);
     const currentText = current !== null && (item.contentEncoding || 'utf8') === 'utf8' ? current.toString('utf8') : null;
-    const modeMatches = current === null || expectedMode === null || ownerExecutable(fs.statSync(item.targetFile).mode) === (expectedMode === 0o100);
+    const modeMatches = current === null || runtimeWriteModeMatches(item.targetFile, item);
     const status = current === null
       ? 'missing'
       : (current.equals(expected) && modeMatches) || (currentText !== null && item.matchesCurrent?.(currentText) === true)
         ? 'ok'
         : 'stale';
-    findings.push(diagnosticFinding(item, status, plan));
+    findings.push(diagnosticFinding(item, status, plan, status === 'stale' ? runtimeWriteMismatchSummary(item, current, expected) : ''));
     if (!compareOnly && status !== 'ok') {
       fs.mkdirSync(path.dirname(item.targetFile), { recursive: true });
       fs.writeFileSync(item.targetFile, expected);
@@ -758,33 +846,42 @@ export function reconcileRuntimePlan(plan, options = {}) {
       changed.push(item.targetFile);
     }
   };
-  for (const item of plan.writes.filter((write) => write.commitLast !== true)) reconcileWrite(item);
-  for (const nativeAsset of plan.nativeAssets) {
-    const item = typeof nativeAsset === 'string' ? { targetFile: nativeAsset, source: nativeAsset } : nativeAsset;
-    const status = fs.existsSync(item.targetFile) ? 'ok' : 'missing';
-    findings.push(diagnosticFinding(item, status, plan));
-  }
-  for (const removal of plan.removals) {
-    const item = typeof removal === 'string' ? { targetFile: removal } : removal;
-    if (conflicts.includes(item)) continue;
-    if (!fs.existsSync(item.targetFile)) continue;
-    if (item.isManaged && !item.isManaged(item.type === 'directory' ? null : fs.readFileSync(item.targetFile, 'utf8'))) continue;
-    findings.push(diagnosticFinding(item, 'orphan', plan));
-    if (!compareOnly) {
-      fs.rmSync(item.targetFile, { recursive: item.type === 'directory', force: true });
-      removed.push(item.targetFile);
-      if (item.pruneEmptyRoot) {
-        const root = path.resolve(item.pruneEmptyRoot);
-        let current = path.dirname(path.resolve(item.targetFile));
-        while ((current === root || current.startsWith(`${root}${path.sep}`)) && current !== path.dirname(root)) {
-          if (!fs.existsSync(current) || fs.readdirSync(current).length > 0) break;
-          fs.rmdirSync(current);
-          if (current === root) break;
-          current = path.dirname(current);
+  try {
+    for (const item of plan.writes.filter((write) => write.commitLast !== true)) reconcileWrite(item);
+    for (const nativeAsset of plan.nativeAssets) {
+      const item = typeof nativeAsset === 'string' ? { targetFile: nativeAsset, source: nativeAsset } : nativeAsset;
+      const status = fs.existsSync(item.targetFile) ? 'ok' : 'missing';
+      findings.push(diagnosticFinding(item, status, plan));
+    }
+    const reconcileRemoval = (removal) => {
+      const item = typeof removal === 'string' ? { targetFile: removal } : removal;
+      if (conflicts.includes(item)) return;
+      if (!fs.existsSync(item.targetFile)) return;
+      if (item.isManaged && !item.isManaged(item.type === 'directory' ? null : fs.readFileSync(item.targetFile, 'utf8'))) return;
+      findings.push(diagnosticFinding(item, 'orphan', plan));
+      if (!compareOnly) {
+        fs.rmSync(item.targetFile, { recursive: item.type === 'directory', force: true });
+        removed.push(item.targetFile);
+        if (item.pruneEmptyRoot) {
+          const root = path.resolve(item.pruneEmptyRoot);
+          let current = path.dirname(path.resolve(item.targetFile));
+          while ((current === root || current.startsWith(`${root}${path.sep}`)) && current !== path.dirname(root)) {
+            if (!fs.existsSync(current) || fs.readdirSync(current).length > 0) break;
+            fs.rmdirSync(current);
+            if (current === root) break;
+            current = path.dirname(current);
+          }
         }
       }
-    }
+    };
+    for (const removal of plan.removals.filter((item) => typeof item === 'string' || item.removeLast !== true)) reconcileRemoval(removal);
+    for (const item of plan.writes.filter((write) => write.commitLast === true)) reconcileWrite(item);
+    for (const removal of plan.removals.filter((item) => typeof item !== 'string' && item.removeLast === true)) reconcileRemoval(removal);
+    return { targetRoot: plan.targetRoot, adapterId: plan.adapterId, scope: plan.scope, changed, removed, findings, repairs: plan.repairs, warnings: plan.warnings, ruleActions: plan.ruleActions };
+  } catch (error) {
+    rollback?.restore();
+    throw error;
+  } finally {
+    rollback?.cleanup();
   }
-  for (const item of plan.writes.filter((write) => write.commitLast === true)) reconcileWrite(item);
-  return { targetRoot: plan.targetRoot, adapterId: plan.adapterId, scope: plan.scope, changed, removed, findings, repairs: plan.repairs, warnings: plan.warnings, ruleActions: plan.ruleActions };
 }

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "structure-component-contribution-capability-dependencies",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-15382f1d9ec87de917d1823b3081a8894d512861d6e94fb1044a252df9ab7742",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "OpenSpec 直接 consumers 必须表达真实 capability 停止条件",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "OpenSpec apply、sync 和 archive 必须使用单一 convergence authority",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "Buildr 通过声明式 Skill Contribution 编排 OpenSpec 契约门禁",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: Buildr 通过声明式 Skill Contribution 编排 OpenSpec 契约门禁\nBuildr MUST 由 OpenSpec Component 向通用 workspace Skills 的稳定 slot 贡献门禁说明，在 change 建立、同步和归档边界调用契约门禁，并保持通用 Skills 与外部 OpenSpec Skills 可独立更新。\n\n#### Scenario: Change artifacts 达到 apply-ready\n- **WHEN** task triage 选择 change-flow 且 proposal、design、specs 和 tasks 已达到 apply-ready\n- **THEN** installed OpenSpec Component MUST 在 `task-triage` runtime Skill 的 change-ready slot 贡献建立基线和 proposal stage check 的说明\n- **AND** Agent MUST 使用 `openspec-contract-guard` 建立契约基线并运行 proposal stage check\n- **AND** 门禁未通过时 Agent MUST 将 change 报告为 blocked 而不是开始实现\n\n#### Scenario: Delta 实现期间改变触达范围\n- **WHEN** Agent 修改 delta 使其新增或改变 Requirement identity\n- **THEN** Agent MUST 再次运行 proposal stage check\n- **AND** Agent MUST 显式更新不完整基线而不是由普通 check 自动采用当前事实\n\n#### Scenario: Task Finish 同步前后执行门禁\n- **WHEN** `task-finish` 准备同步并归档带 delta specs 的 change\n- **THEN** installed OpenSpec Component MUST 分别向 `task-finish` runtime Skill 的 pre-sync 和 post-sync slot 贡献对应门禁说明\n- **AND** Task Finish MUST 在 canonical spec sync 前运行 pre-sync check\n- **AND** Task Finish MUST 在 sync 后、archive 前运行 post-sync check\n- **AND** 任一检查失败时 MUST 停止尚未执行的 archive、commit、push 和 cleanup\n\n#### Scenario: OpenSpec Component 已卸载\n- **WHEN** OpenSpec Component 为 disabled 或 uninstalled 且 Agent runtime 被重新渲染\n- **THEN** `task-triage`、`task-finish` 和产品入口 Buildr Skill MUST NOT 包含 OpenSpec contract guard 的专用命令或路由\n- **AND** 通用 Skills MUST 继续支持其不依赖 OpenSpec Component 的既有职责\n\n#### Scenario: 外部 OpenSpec workflow 保持原样\n- **WHEN** Buildr 发布或升级契约门禁\n- **THEN** Buildr MUST 通过 Component-owned contribution、自有 Skill 和 CLI 编排门禁\n- **AND** Buildr MUST NOT 要求修改外部 `openspec-*` Skills 来承载 Buildr 检查逻辑\n\n#### Scenario: 门禁诊断对用户可见\n- **WHEN** 契约检查阻塞 change-flow 或 task finish\n- **THEN** Agent MUST 报告 change、stage、冲突或陈旧 Requirement、当前状态和可执行下一步\n- **AND** Agent MUST NOT 把 warning 或未验证状态描述为门禁通过\n"
+    },
+    {
+      "capability": "agent-task-workflows",
+      "title": "OpenSpec apply 保持 canonical specs 直到受控同步阶段",
+      "operation": "REMOVED",
+      "state": "present",
+      "content": "### Requirement: OpenSpec apply 保持 canonical specs 直到受控同步阶段\nBuildr OpenSpec apply guidance MUST 要求 Agent 在 active change 的实现阶段只修改 change artifacts 与实现内容，MUST NOT 在当前会话的 `pre-sync` contract guard 成功前写入该 change 的 canonical specs。Agent MUST 在 pre-sync 成功后执行 agent-driven canonical sync，并在 `post-sync` guard 返回 `ok: true` 后才使用 `openspec archive <change> --skip-specs --yes`。\n\n#### Scenario: apply 阶段尚未进入受控同步\n- **WHEN** Agent 正在实现 active OpenSpec change，且当前会话尚未取得该 change 的成功 pre-sync receipt\n- **THEN** Agent MUST NOT 将该 change 的 delta 预写入 canonical specs\n- **AND** MUST 保持 canonical Requirement 与 baseline 可比较，直到 Task Finish 进入受控同步阶段\n\n#### Scenario: 受控同步与归档\n- **WHEN** pre-sync guard 返回 `ok: true`，Agent 已按该 change 的 delta 完成 canonical sync，且 post-sync guard 返回 `ok: true`\n- **THEN** Agent MUST 记录同步证据并使用 `openspec archive <change> --skip-specs --yes`\n- **AND** archive 后 MUST 继续执行 strict validation、status 与现有 closeout workflow checks\n\n#### Scenario: pre-sync 或 post-sync 未通过\n- **WHEN** pre-sync 或 post-sync guard 未返回 `ok: true`\n- **THEN** Agent MUST 停止 canonical sync 后续动作或 archive\n- **AND** MUST NOT 通过 baseline adopt、重跑 pre-sync 或 `--skip-specs` 掩盖失败\n"
+    },
+    {
+      "capability": "buildr-package-assets",
+      "title": "Buildr package 必须一致交付 Component dependency contributions",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "managed-components",
+      "title": "Component Contribution 可以声明结构化 Skill capability dependency",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "skill-capability-contracts",
+      "title": "Capability graph 必须消费已安装 Component 的结构化 dependency contribution",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

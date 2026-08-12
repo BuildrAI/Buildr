@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "simplify-task-board-skill",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-2056eaee71931eb80a7b5bbc6f6020a1f15d7fef9821414b497a780ac9bced26",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-board",
+      "title": "任务看板 Skill 必须简洁且职责分层",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-board",
+      "title": "任务看板候选必须先验证再替换",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-board",
+      "title": "任务看板使用稳定的 Project knowledge 路径",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 任务看板使用稳定的 Project knowledge 路径\n任务看板 MUST 保存在拥有该任务的 Project `openspec/knowledge/task-boards/` 下，并 MUST 使用 `yyyy-MM-dd-<task-id>.html` 文件名；日期 MUST 取首次创建时的本地日期，后续更新 MUST 保持同一路径。\n\n#### Scenario: 创建 Project 任务看板\n- **WHEN** Agent 首次为 Project task id `fund-system-integration` 创建任务看板，且本地日期为 2026-07-20\n- **THEN** 文件路径 MUST 以 `openspec/knowledge/task-boards/2026-07-20-fund-system-integration.html` 结尾\n- **AND** 后续批次或 change 变化 MUST 更新该文件而不是按更新时间创建新文件\n\n#### Scenario: 任务看板跨越多个 change\n- **WHEN** 一个任务包含已归档 change、当前 active change、code-only 工作或未来批次\n- **THEN** 任务看板 MUST 保持稳定路径并关联这些批次\n- **AND** OpenSpec change archive MUST NOT 使任务看板入口消失或被移动\n"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createBuiltinReplacement } from '../../src/application/package-maintenance/builtin-replacement.mjs';
 
 const targetRoot = '/workspace';
-const predecessorTarget = 'skills/buildr/task-cockpit';
+const predecessorTarget = 'skills/buildr/git-ops';
 
 function runReplacement(options = {}) {
   const calls = [];
@@ -13,7 +13,7 @@ function runReplacement(options = {}) {
   const restoreOutcomes = [];
   const skillsManifest = [];
   const predecessor = options.predecessor === null ? null : {
-    id: 'task-cockpit', source: 'buildr', path: 'buildr/task-cockpit', runtimePath: 'task-cockpit',
+    id: 'git-ops', source: 'buildr', path: 'buildr/git-ops', runtimePath: 'git-ops',
     enabled: true, state: 'installed', ...options.predecessor,
   };
   const predecessorRecord = predecessor ? { index: 0, skill: predecessor } : null;
@@ -24,14 +24,14 @@ function runReplacement(options = {}) {
   const receipt = options.receipt === null ? null : {
     target: predecessorTarget, integrity: predecessorSnapshot?.integrity || 'sha256:legacy', ...options.receipt,
   };
-  const receiptByKey = new Map(receipt ? [['skill:task-cockpit', receipt]] : []);
+  const receiptByKey = new Map(receipt ? [['skill:git-ops', receipt]] : []);
   const builtin = {
-    id: 'task-board', type: 'skill', required: false,
-    target: 'skills/buildr/task-board', runtimePath: 'task-board',
-    replaces: { id: 'task-cockpit', target: predecessorTarget, runtimePath: 'task-cockpit' },
+    id: 'git-operations', type: 'skill', required: false,
+    target: 'skills/buildr/git-operations', runtimePath: 'git-operations',
+    replaces: { id: 'git-ops', target: predecessorTarget, runtimePath: 'git-ops' },
     legacyIntegrities: options.legacyIntegrities || [],
   };
-  const desired = { id: 'task-board', source: 'buildr', path: 'buildr/task-board', enabled: true, state: 'installed' };
+  const desired = { id: 'git-operations', source: 'buildr', path: 'buildr/git-operations', enabled: true, state: 'installed' };
   const { handleSkillReplacement } = createBuiltinReplacement({
     builtinReceiptKey: (type, id) => `${type}:${id}`,
     builtinSnapshot: (directory) => directory === path.join(targetRoot, predecessorTarget) ? predecessorSnapshot : null,
@@ -45,8 +45,8 @@ function runReplacement(options = {}) {
     liveSnapshot: options.liveSnapshot || null, newSnapshot: { integrity: 'sha256:new' }, receiptByKey,
     removeDirectory: () => calls.push('remove-directory'),
     removeReceipt: () => calls.push('remove-receipt'),
-    skillsById: new Map(predecessorRecord ? [['task-cockpit', predecessorRecord]] : []),
-    skillsManifest, sourceDir: '/package/task-board', targetDir: '/workspace/skills/buildr/task-board',
+    skillsById: new Map(predecessorRecord ? [['git-ops', predecessorRecord]] : []),
+    skillsManifest, sourceDir: '/package/git-operations', targetDir: '/workspace/skills/buildr/git-operations',
     restoreOutcomes, updateReceipt: () => calls.push('update-receipt'), targetRoot,
   });
   return { calls, changed, findings, handled, restoreOutcomes, skillsManifest };
@@ -105,8 +105,8 @@ test('builtin replacement mutation callbacks 只在可执行状态发生', async
   await t.test('installed predecessor is atomically replaced', () => {
     const result = runReplacement({ checkOnly: false, isRestore: true, receipt: null });
     assert.deepEqual(result.calls, ['remove-receipt', 'remove-directory', 'copy', 'update-receipt']);
-    assert.deepEqual(result.changed, [predecessorTarget, 'skills/buildr/task-board']);
-    assert.equal(result.skillsManifest[0].id, 'task-board');
+    assert.deepEqual(result.changed, [predecessorTarget, 'skills/buildr/git-operations']);
+    assert.equal(result.skillsManifest[0].id, 'git-operations');
     assert.equal(result.restoreOutcomes[0].status, 'restored');
   });
   await t.test('uninstalled predecessor migrates metadata without installing files', () => {
@@ -117,7 +117,7 @@ test('builtin replacement mutation callbacks 只在可执行状态发生', async
     assert.deepEqual(result.calls, ['remove-receipt']);
     assert.deepEqual(result.changed, []);
     assert.deepEqual(result.skillsManifest[0], {
-      id: 'task-board', source: 'buildr', path: 'buildr/task-board', enabled: false, state: 'uninstalled', reason: 'user choice',
+      id: 'git-operations', source: 'buildr', path: 'buildr/git-operations', enabled: false, state: 'uninstalled', reason: 'user choice',
     });
   });
   await t.test('blocked classification never mutates', () => {
@@ -127,13 +127,13 @@ test('builtin replacement mutation callbacks 只在可执行状态发生', async
     assert.deepEqual(result.changed, []);
   });
   await t.test('current and predecessor identities conflict without mutation', () => {
-    const result = runReplacement({ checkOnly: false, isRestore: true, existing: { id: 'task-board' } });
+    const result = runReplacement({ checkOnly: false, isRestore: true, existing: { id: 'git-operations' } });
     assert.equal(result.findings[0].status, 'modified');
     assert.equal(result.restoreOutcomes[0].status, 'blocked');
     assert.deepEqual(result.calls, []);
   });
   await t.test('current identity without predecessor is not a replacement', () => {
-    const result = runReplacement({ predecessor: null, predecessorSnapshot: null, receipt: null, existing: { id: 'task-board' } });
+    const result = runReplacement({ predecessor: null, predecessorSnapshot: null, receipt: null, existing: { id: 'git-operations' } });
     assert.equal(result.handled, false);
     assert.deepEqual(result.findings, []);
     assert.deepEqual(result.calls, []);

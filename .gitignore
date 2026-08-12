@@ -12,4 +12,17 @@
 /.worktrees/
 # Buildr transaction state
 /.buildr/mutations/
+# Buildr Agent runtime ownership receipts
+/.buildr/agent-runtime/
 CLAUDE.md
+CLAUDE.local.md
+# Task asset review runtime state
+/.buildr/asset-review/
+/.buildr/task-finish/
+# Task Environment machine-local receipts
+/.buildr/tasks/*/environment.json
+# Workspace local structured data
+/.buildr/local/
+# Task machine-local state
+/.buildr/tasks/
+# Retired Task asset review data remains untracked

@@ -6,7 +6,7 @@
 
 What limits an Agent's results is not just the model's capability, but also what the Agent can access and whether it can keep building on accumulated work.
 
-Buildr is a work asset management tool for the AI era. It turns the work facts and methods of individuals and organizations into work assets, so Agents can build on what has already been accumulated and move work from idea to delivery in one window.
+Buildr is work infrastructure for Agents. It turns the work facts and methods of individuals and organizations into work assets, so Agents can build on what has already been accumulated and move work from idea to delivery.
 
 Anyone entering an organization can start with a single natural-language instruction, with an Agent preparing the work environment and moving into the task.
 
@@ -91,7 +91,7 @@ workspace/
 | Project | A business or product unit containing project facts, Skills, and Service relationships |
 | Service | A repository, application, or module used by a Project |
 
-Buildr manages long-lived work assets. It does not directly fill a model's context window. The Agent discovers and selects relevant content for the current task and forms its own task context.
+Buildr manages long-lived work assets. It does not directly fill a model's context window. The Agent discovers and selects relevant content for the current task and forms its own task context. The Agent handles understanding, retrieval, reasoning, and professional execution; Buildr handles work asset governance, deterministic state changes, runtime projection, integrity protection, and diagnostics.
 
 ## Quick Start
 
@@ -105,10 +105,10 @@ The Agent should complete the following initialization flow. This section is mai
 
 **1. Prepare Node.js and Buildr CLI**
 
-Buildr requires Node.js 20 or later. First check the Node.js version and whether the `buildr` command is available. If a requirement is not met, ask the user before installing or upgrading:
+Buildr supports Node.js from 24.15.0 up to, but not including, 25 (`>=24.15.0 <25`). First check the Node.js version and whether the `buildr` command is available. If a requirement is not met, ask the user before installing or upgrading. A Workspace's managed runtime uses the exact version in version-controlled metadata; this bootstrap Workspace currently pins 24.15.0:
 
-- **Pre-release (currently recommended for evaluation)**: `npm install --global @buildr-ai/buildr@next`
-- **Development checkout**: after the user confirms where to save it, run `git clone https://github.com/elevenching/Buildr.git <path>`, then use `<path>/projects/product/buildr`
+- **Pre-release (currently recommended for evaluation; current candidate: `0.1.0-rc.8`)**: `npm install -g @buildr-ai/buildr@next`
+- **Development checkout**: after the user confirms where to save it, run `git clone https://github.com/BuildrAI/Buildr.git <path>`, then use `<path>/projects/product/buildr`
 
 In the commands below, `buildr` means the selected entry point: the global command for the pre-release or `<path>/projects/product/buildr` for a development checkout.
 
@@ -151,12 +151,14 @@ Create a Payments Project to support online collection and refunds. The project 
 
 The first task does not need to be large. The important part is starting from a real goal rather than stopping at initialization. The Agent uses Buildr Skill to understand the goal and Buildr CLI for deterministic asset operations.
 
-Buildr is currently in pre-release. Use [GitHub Releases](https://github.com/elevenching/Buildr/releases) as the source of truth for versions and installation sources.
+Buildr is currently in pre-release. Use [GitHub Releases](https://github.com/BuildrAI/Buildr/releases) as the source of truth for versions and installation sources.
 
 ## Current Capabilities
 
 - One Workspace manages multiple Projects; each Project can manage multiple Services when needed
 - Unified management of Rules, Skills, Components, and Commands
+- Task records and task process information, including retrospectives
+- Local App views for Workspaces, Projects, Services, and Tasks; the experience is still being refined
 - Seven Agent runtime adapters: `claude-code`, `codex`, `cursor`, `qoder`, `trae`, `trae-work`, and `workbuddy`
 
 See [Known Limitations](projects/product/services/buildr/docs/known-limitations.md) for current boundaries.
@@ -178,4 +180,4 @@ projects/product/buildr runtime list --json
 projects/product/buildr doctor --agent <agent> --target . --json
 ```
 
-[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/elevenching/Buildr/issues)
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/BuildrAI/Buildr/issues)

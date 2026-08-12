@@ -7,6 +7,7 @@ import {
   UNSUPPORTED_AGENT_GUIDANCE,
   isSupportedAgent,
 } from '../infrastructure/runtime/adapter-contract.mjs';
+import { observeGitCheckoutIdentity } from '../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './doctor/result-model.mjs';
 
@@ -24,6 +25,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const diagnoseSkillsManifestSchemas = (...args) => runtime.diagnoseSkillsManifestSchemas(...args);
   const diagnoseSkillCapabilities = (...args) => runtime.diagnoseSkillCapabilities(...args);
   const diagnoseProjectVerification = (...args) => runtime.diagnoseProjectVerification(...args);
+  const diagnoseProjectEnvironmentPreparation = (...args) => runtime.diagnoseProjectEnvironmentPreparation(...args);
+  const inspectTaskFinishPersistence = (...args) => runtime.inspectTaskFinishPersistence(...args);
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
   const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
   const printDoctorReport = (...args) => runtime.printDoctorReport(...args);
@@ -60,6 +63,77 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const createWorkspaceId = (...args) => runtime.createWorkspaceId(...args);
   const renderWorkspaceManifest = (...args) => runtime.renderWorkspaceManifest(...args);
   const diagnoseWorkspaceMetadata = (...args) => runtime.diagnoseWorkspaceMetadata(...args);
+
+  function diagnoseWorkspaceNode(result, targetRoot, requestedAgent) {
+    let record;
+    try { record = runtime.readWorkspaceRecord(targetRoot); } catch { return; }
+    const workspace = record.workspace;
+    const probe = runtime.probeWorkspaceNodeRuntime(workspace);
+    const actualCliVersion = process.versions.node;
+    result.workspaceNode = { declaration: workspace.runtime || null, identity: probe.identity, runtime: probe, cli: { executable: process.execPath, version: actualCliVersion } };
+    const command = `buildr sync ${requestedAgent || '<agent>'} --target ${targetRoot}`;
+    if (!workspace.runtime?.node?.version) {
+      addDoctorFinding(result, 'warning', 'workspace.node_declaration_missing', 'Workspace 缺少精确 Node version 声明。', {
+        path: '.buildr/workspace.yml', suggestion: '运行 canonical sync 完成 Workspace Node 声明迁移并准备 runtime。', command, userActionRequired: true,
+      });
+      return;
+    }
+    if (probe.status !== 'ready') {
+      addDoctorFinding(result, 'warning', `workspace.node_runtime_${probe.status}`, `Workspace Node runtime ${workspace.runtime.node.version} 不可用。`, {
+        path: probe.executable, expected: probe.identity, actual: { version: probe.actualVersion, diagnostic: probe.diagnostic },
+        suggestion: '运行 sync 按 Workspace 声明恢复相同版本；不要修改声明或从 PATH 选择替代版本。', command, userActionRequired: true,
+      });
+      return;
+    }
+    if (actualCliVersion !== workspace.runtime.node.version) {
+      addDoctorFinding(result, 'warning', 'workspace.node_cli_drift', `当前 CLI Node ${actualCliVersion} 与 Workspace Node ${workspace.runtime.node.version} 不一致。`, {
+        path: process.execPath, expected: probe.identity, actual: { executable: process.execPath, version: actualCliVersion },
+        suggestion: '使用 Workspace Node-aware Buildr launcher 重新执行；runtime 缺失时先运行 sync。', command, userActionRequired: true,
+      });
+    }
+  }
+
+  function diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo = false) {
+    if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
+      result.structuredStore = { status: 'not-applicable', version: null, integrity: null };
+      if (includeInfo) addDoctorFinding(result, 'info', 'workspace.structured_store_not_applicable', 'Linked task worktree 不持有 Workspace structured store；数据库只属于 canonical Workspace。');
+      return;
+    }
+    try {
+      const observation = runtime.inspectWorkspaceStructuredStore(targetRoot);
+      result.structuredStore = observation;
+      if (observation.status === 'uninitialized' && includeInfo) {
+        addDoctorFinding(result, 'info', 'workspace.structured_store_uninitialized', 'Workspace structured store 尚未初始化；首次合法结构化写入会创建数据库。');
+      }
+    } catch (error) {
+      result.structuredStore = { status: 'unavailable', version: null, integrity: null };
+      addDoctorFinding(result, 'error', error.code || 'workspace.structured_store_failed', error.message, {
+        suggestion: error.nextAction || '保留数据库现场并检查 migration 与 integrity 诊断；不要自动删除或从旧 Task 文件恢复。',
+        userActionRequired: true,
+      });
+    }
+  }
+
+  function diagnoseTaskFinishStore(result, targetRoot) {
+    if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
+      result.taskFinish = { status: 'not-applicable', current: [], leases: [] };
+      return;
+    }
+    try {
+      const observation = inspectTaskFinishPersistence(targetRoot);
+      result.taskFinish = observation;
+      for (const lease of observation.leases || []) if (lease.expired) addDoctorFinding(result, 'error', 'task_finish.expired_lease', `Task Finish target lease 已过期：${lease.targetIdentity}`, {
+        path: '.buildr/local/workspace.sqlite', taskId: lease.taskId, runId: lease.runId,
+        suggestion: '确认没有仍在运行的 Finish 进程后重试或恢复对应 run；Doctor 不会自动删除 lease。', userActionRequired: true,
+      });
+      for (const item of observation.current || []) if (item.status === 'cleanup_pending') addDoctorFinding(result, 'warning', 'task_finish.cleanup_pending', `Task Finish run 等待 cleanup：${item.runId}`, {
+        path: '.buildr/local/workspace.sqlite', taskId: item.taskId, runId: item.runId, suggestion: '使用同一 Task Finish run 与 resume token 继续 cleanup；不要重新执行已完成的 delivery。', userActionRequired: true,
+      });
+    } catch (error) {
+      result.taskFinish = { status: 'unavailable', error: error.message };
+      addDoctorFinding(result, 'error', error.code || 'task_finish.persistence_failed', error.message, { path: '.buildr/local/workspace.sqlite', suggestion: '保留数据库现场并运行 Buildr Doctor；不要从旧 Finish 文件恢复。', userActionRequired: true });
+    }
+  }
 
   function bootstrapGuide() {
     const guidePath = path.join(packageRoot(), 'bootstrap', 'guide.md');
@@ -167,6 +241,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
     const requestedAgent = optionValue(args, '--agent', null);
     if (requestedAgent !== null) assertAgentId(requestedAgent);
     const json = hasFlag(args, '--json');
+    const detail = optionValue(args, '--detail', 'compact');
+    if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
     const includeInfo = hasFlag(args, '--include-info') || hasFlag(args, '--verbose');
     const result = {
       targetRoot,
@@ -189,8 +265,11 @@ export function registerApplicationWorkspaceOperations(runtime) {
       ok: true,
       summary: { ok: 0, info: 0, warning: 0, error: 0 },
       workspace: null,
+      structuredStore: null,
+      taskFinish: null,
       projectRegistry: null,
       projectVerification: [],
+      projectEnvironmentPreparation: [],
       organizations: [],
       projects: [],
       services: [],
@@ -209,6 +288,9 @@ export function registerApplicationWorkspaceOperations(runtime) {
 
     diagnoseWorkspace(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceMetadata(result, targetRoot);
+    if (result.workspace?.initialized) diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo);
+    if (result.workspace?.initialized) diagnoseTaskFinishStore(result, targetRoot);
+    if (result.workspace?.initialized) diagnoseWorkspaceNode(result, targetRoot, requestedAgent);
     diagnoseMutations(result, targetRoot);
     if (result.workspace?.initialized) diagnoseRules(result, targetRoot);
     const registry = diagnoseProjectRegistry(result, targetRoot);
@@ -222,6 +304,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
     diagnoseLegacyPractices(result, targetRoot, scopes, includeInfo);
     diagnoseHierarchy(result, targetRoot, scopes, registry);
     diagnoseProjectVerification(result, targetRoot, registry);
+    diagnoseProjectEnvironmentPreparation(result, targetRoot, registry);
     diagnoseServices(result, targetRoot, scopes, registry);
     diagnoseSkillsManifestSchemas(result, targetRoot, scopes);
     if (result.workspace?.initialized) diagnoseSkillCapabilities(result, targetRoot, scopes, requestedAgent);
@@ -257,7 +340,12 @@ export function registerApplicationWorkspaceOperations(runtime) {
     finalizeDoctorResult(result);
 
     if (json) {
-      process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, result), null, 2)}\n`);
+      const report = detail === 'compact' ? {
+        targetRoot: result.targetRoot, scope: result.scope, agentRuntime: result.agentRuntime,
+        ok: result.ok, summary: result.summary, health: result.health,
+        findings: result.findings, repairPlan: result.repairPlan, nextSteps: result.nextSteps,
+      } : result;
+      process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, report), null, 2)}\n`);
     } else {
       printDoctorReport(result);
     }
@@ -289,7 +377,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
     }
 
     const workspaceId = createWorkspaceId();
-    const variables = { name, description, profile, workspaceId };
+    const variables = { name, description, profile, workspaceId, nodeVersion: process.versions.node };
     let skillsBaseline = null;
     for (const rawEntry of manifest.workspaceFiles) {
       const entry = parseManifestFileEntry(rawEntry, 'workspaceFiles');
@@ -301,9 +389,10 @@ export function registerApplicationWorkspaceOperations(runtime) {
       writeMappedFileIfMissing(targetRoot, targetRoot, entry, variables, created);
     }
     trackWrite(targetRoot, path.join(targetRoot, '.buildr', 'workspace.yml'), renderWorkspaceManifest({
-      workspace: { id: workspaceId, name, description },
+      workspace: { id: workspaceId, name, description, runtime: { node: { version: process.versions.node } } },
       compatibility: { kind: 'organization', profile },
     }), created);
+    const nodeRuntime = runtime.ensureWorkspaceNodeRuntime({ id: workspaceId, name, description, runtime: { node: { version: process.versions.node } } }, { adoptCurrent: true });
     ensureRootRequiredBlock(targetRoot, changed);
     trackWrite(targetRoot, path.join(targetRoot, 'skills', 'manifest.yml'), renderSkillsManifestYaml({
       ...(skillsBaseline || { schemaVersion: 'buildr.skills/v3', skills: [] }),
@@ -323,6 +412,14 @@ export function registerApplicationWorkspaceOperations(runtime) {
       '.qoder/',
       '# Buildr transaction state',
       '/.buildr/mutations/',
+      '# Buildr Agent runtime ownership receipts',
+      '/.buildr/agent-runtime/',
+      '# Workspace local structured data',
+      '/.buildr/local/',
+      '# Retired Task asset review data remains untracked',
+      '/.buildr/asset-review/',
+      '# Task machine-local state',
+      '/.buildr/tasks/',
       '# Task worktrees',
       '/.worktrees/',
     ]);
@@ -332,6 +429,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
     console.log(`Name: ${name}`);
     console.log(`Description: ${description}`);
     console.log(`Profile: ${profile}`);
+    console.log(`Workspace Node: ${nodeRuntime.identity.version} (${nodeRuntime.action})`);
     printResult('Workspace assets initialized', targetRoot, created, changed);
     if (agent !== null) {
       console.log('');
@@ -359,6 +457,6 @@ export function registerApplicationWorkspaceOperations(runtime) {
     console.log('  完整 Agent onboarding guidance：buildr bootstrap guide');
   }
 
-  Object.assign(runtime, { bootstrapGuide, mutationTransactions, diagnoseMutations, mutationRecover, doctor, initBuildr });
+  Object.assign(runtime, { bootstrapGuide, mutationTransactions, diagnoseMutations, diagnoseWorkspaceNode, diagnoseWorkspaceStructuredStore, diagnoseTaskFinishStore, mutationRecover, doctor, initBuildr });
   return runtime;
 }

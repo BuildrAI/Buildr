@@ -2,15 +2,20 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from '../../infrastructure/process.mjs';
+import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
 import { hasManagedSkillMarker } from '../../infrastructure/runtime/render-claude-code.mjs';
 import { getRuntimeAdapter, isSupportedAgent } from '../../infrastructure/runtime/adapter-contract.mjs';
+import { capabilityKey, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import {
+  legacySkillProjectionOwnershipReceiptRoot,
+  legacySkillProjectionOwnershipReceiptTarget,
   readSkillProjectionReceipt,
   runtimeFileMatches,
   sha256Integrity,
-  skillProjectionReceiptTarget,
+  skillProjectionOwnershipReceiptRoot,
+  skillProjectionOwnershipReceiptsEquivalent,
+  skillProjectionOwnershipReceiptTarget,
 } from '../../infrastructure/runtime/skills/projection-files.mjs';
 
 export function registerDomainsComponents(runtime) {
@@ -132,9 +137,10 @@ export function registerDomainsComponents(runtime) {
     const definition = parseYamlDocument(content, 'component definition');
     definition.upstream = isPlainObject(definition.upstream) ? definition.upstream : {};
     definition.members = isPlainObject(definition.members) ? definition.members : {};
-    definition.contributions = isPlainObject(definition.contributions) ? definition.contributions : { skillFragments: [] };
+    definition.contributions = isPlainObject(definition.contributions) ? definition.contributions : { skillFragments: [], skillDependencies: [] };
     for (const key of ['rules', 'skills', 'commandCollections', 'skillContributions']) if (definition.members[key] === undefined) definition.members[key] = [];
     if (definition.contributions.skillFragments === undefined) definition.contributions.skillFragments = [];
+    if (definition.contributions.skillDependencies === undefined) definition.contributions.skillDependencies = [];
     if (definition.integrity === undefined) definition.integrity = [];
     return definition;
   }
@@ -153,9 +159,18 @@ export function registerDomainsComponents(runtime) {
     }
     lines.push('members:');
     for (const key of ['rules', 'skills', 'commandCollections', 'skillContributions']) lines.push(`  ${key}: ${quoteYaml(definition.members?.[key] || [])}`);
-    if (definition.contributions?.skillFragments?.length) {
+    if (definition.contributions?.skillFragments?.length || definition.contributions?.skillDependencies?.length) {
       lines.push('contributions:');
-      lines.push(`  skillFragments: ${quoteYaml(definition.contributions.skillFragments)}`);
+      lines.push(`  skillFragments: ${quoteYaml(definition.contributions.skillFragments || [])}`);
+      if (definition.contributions.skillDependencies?.length) {
+        lines.push('  skillDependencies:');
+        for (const dependency of definition.contributions.skillDependencies) {
+          lines.push(`    - skill: ${quoteYaml(dependency.skill)}`);
+          lines.push(`      capability: ${quoteYaml(dependency.capability)}`);
+          lines.push(`      version: ${quoteYaml(dependency.version)}`);
+          lines.push(`      mode: ${quoteYaml(dependency.mode)}`);
+        }
+      }
     }
     lines.push(`integrity: ${quoteYaml(definition.integrity || [])}`);
     return `${lines.join('\n')}\n`;
@@ -190,6 +205,16 @@ export function registerDomainsComponents(runtime) {
     return slotMatch
       ? { skillId: slotMatch[1], placement: 'slot', slot: slotMatch[2], fragment: fragment.split(path.sep).join('/') }
       : { skillId: boundaryMatch[1], placement: boundaryMatch[2], slot: null, fragment: fragment.split(path.sep).join('/') };
+  }
+
+  function parseSkillDependencyContribution(value, label = 'Skill dependency contribution') {
+    if (!isPlainObject(value)) throw new Error(`${label} must be an object.`);
+    const allowed = new Set(['skill', 'capability', 'version', 'mode']);
+    for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`${label}.${key} is not supported.`);
+    if (typeof value.skill !== 'string' || !/^[A-Za-z0-9._-]+$/.test(value.skill)) throw new Error(`${label}.skill must be a valid Skill id.`);
+    validateCapabilityIdentity(value.capability, value.version, label);
+    if (!['required', 'optional'].includes(value.mode)) throw new Error(`${label}.mode must be required or optional.`);
+    return { skillId: value.skill, capability: value.capability, version: value.version, mode: value.mode };
   }
 
   function validateComponentDefinition(definition, expectedId = null) {
@@ -234,7 +259,8 @@ export function registerDomainsComponents(runtime) {
       }
     }
     const contributions = definition.contributions || {};
-    for (const key of Object.keys(contributions)) if (key !== 'skillFragments') errors.push(`component contributions field is not supported: ${key}.`);
+    for (const key of Object.keys(contributions)) if (!['skillFragments', 'skillDependencies'].includes(key)) errors.push(`component contributions field is not supported: ${key}.`);
+    const fragmentTargets = new Set();
     if (!Array.isArray(contributions.skillFragments) || !contributions.skillFragments.every((item) => typeof item === 'string')) {
       errors.push('component contributions.skillFragments must be an array of strings.');
     } else {
@@ -246,6 +272,7 @@ export function registerDomainsComponents(runtime) {
         seenDeclarations.add(declaration);
         try {
           const parsed = parseSkillContributionDeclaration(declaration);
+          fragmentTargets.add(parsed.skillId);
           if (!contributionMembers.has(parsed.fragment)) errors.push(`Skill contribution fragment is not declared as a member: ${parsed.fragment}.`);
           if (referencedFragments.has(parsed.fragment)) errors.push(`Skill contribution fragment is referenced more than once: ${parsed.fragment}.`);
           referencedFragments.add(parsed.fragment);
@@ -254,6 +281,22 @@ export function registerDomainsComponents(runtime) {
         }
       }
       for (const member of contributionMembers) if (!referencedFragments.has(member)) errors.push(`Skill contribution member has no declaration: ${member}.`);
+    }
+    if (!Array.isArray(contributions.skillDependencies)) {
+      errors.push('component contributions.skillDependencies must be an array.');
+    } else {
+      const seenDependencies = new Set();
+      for (const [index, dependency] of contributions.skillDependencies.entries()) {
+        try {
+          const parsed = parseSkillDependencyContribution(dependency, `component contributions.skillDependencies[${index}]`);
+          if (!fragmentTargets.has(parsed.skillId)) errors.push(`Component Skill dependency target must also receive a Skill fragment: ${parsed.skillId}.`);
+          const key = `${parsed.skillId}:${capabilityKey(parsed.capability, parsed.version)}`;
+          if (seenDependencies.has(key)) errors.push(`duplicate Component Skill dependency contribution: ${key}.`);
+          seenDependencies.add(key);
+        } catch (error) {
+          errors.push(error.message);
+        }
+      }
     }
     const integrityItems = Array.isArray(definition.integrity) ? definition.integrity : [];
     if (!Array.isArray(definition.integrity)) errors.push('component integrity must be an array.');
@@ -435,6 +478,16 @@ export function registerDomainsComponents(runtime) {
         errors.push(`Package Skill contribution fragment must not be empty: ${parsed.fragment}.`);
       }
     }
+    for (const [index, dependency] of (record.definition.contributions?.skillDependencies || []).entries()) {
+      let parsed;
+      try {
+        parsed = parseSkillDependencyContribution(dependency, `Component ${record.entry.id} contributions.skillDependencies[${index}]`);
+      } catch (error) {
+        errors.push(error.message);
+        continue;
+      }
+      if (!manifest.builtins.skills.some((item) => item.id === parsed.skillId)) errors.push(`Package Skill dependency target is not a declared builtin Skill: ${parsed.skillId}.`);
+    }
     if (record.entry.id === 'openspec') {
       const contributionContent = (record.definition.contributions?.skillFragments || []).map((declaration) => {
         try {
@@ -445,7 +498,7 @@ export function registerDomainsComponents(runtime) {
           return '';
         }
       }).join('\n');
-      for (const requiredText of ['buildr openspec baseline create', '--stage proposal', '--stage pre-sync', '--stage post-sync']) {
+      for (const requiredText of ['openspec validate <change> --strict', 'Planning Review']) {
         if (!contributionContent.includes(requiredText)) errors.push(`OpenSpec Component Skill contributions must include ${JSON.stringify(requiredText)}.`);
       }
     }
@@ -879,17 +932,30 @@ export function registerDomainsComponents(runtime) {
     const skillsRoot = path.join(targetRoot, runtimeRoot, 'skills');
     const declared = declaredRuntimeSkillPaths(targetRoot, agent);
     const orphans = [];
-    const receiptRoot = path.join(targetRoot, runtimeRoot, 'buildr', 'skill-projection-receipts', agent);
     const receiptRuntimePaths = new Set();
-    for (const receiptFile of existsDirectory(receiptRoot) ? collectFiles(receiptRoot) : []) {
-      if (!receiptFile.endsWith('.json')) continue;
-      const receipt = readSkillProjectionReceipt(receiptFile, { adapterId: agent });
-      const expectedReceipt = skillProjectionReceiptTarget(targetRoot, runtimeRoot, agent, receipt.runtimePath);
-      if (path.resolve(expectedReceipt) !== path.resolve(receiptFile)) throw new Error(`Runtime Skill projection receipt target mismatch: ${receiptFile}`);
-      receiptRuntimePaths.add(receipt.runtimePath);
-      if (declared.has(receipt.runtimePath) && options.runtimePath !== receipt.runtimePath) continue;
-      const targetDir = path.join(skillsRoot, ...receipt.runtimePath.split('/'));
-      orphans.push({ runtimePath: receipt.runtimePath, path: toPosixRelative(targetRoot, targetDir), targetDir, receipt, receiptFile });
+    const receiptsByRuntimePath = new Map();
+    const receiptRoots = [
+      { root: skillProjectionOwnershipReceiptRoot(targetRoot, 'workspace', agent), target: (runtimePath) => skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath) },
+      { root: legacySkillProjectionOwnershipReceiptRoot(targetRoot, runtimeRoot, agent), target: (runtimePath) => legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, runtimePath) },
+    ];
+    for (const location of receiptRoots) {
+      for (const receiptFile of existsDirectory(location.root) ? collectFiles(location.root) : []) {
+        if (!receiptFile.endsWith('.json')) continue;
+        const receipt = readSkillProjectionReceipt(receiptFile, { adapterId: agent, destination: 'workspace' });
+        const expectedReceipt = location.target(receipt.runtimePath);
+        if (path.resolve(expectedReceipt) !== path.resolve(receiptFile)) throw new Error(`Runtime Skill projection ownership receipt target mismatch: ${receiptFile}`);
+        const existing = receiptsByRuntimePath.get(receipt.runtimePath);
+        if (existing && !skillProjectionOwnershipReceiptsEquivalent(existing.receipt, receipt)) {
+          throw new Error(`Skill projection ownership receipt conflict; canonical and legacy receipts differ, so no files were changed: ${receipt.runtimePath}`);
+        }
+        receiptsByRuntimePath.set(receipt.runtimePath, { receipt, receiptFiles: [...(existing?.receiptFiles || []), receiptFile] });
+      }
+    }
+    for (const [runtimePath, receiptEntry] of receiptsByRuntimePath) {
+      receiptRuntimePaths.add(runtimePath);
+      if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
+      const targetDir = path.join(skillsRoot, ...runtimePath.split('/'));
+      orphans.push({ runtimePath, path: toPosixRelative(targetRoot, targetDir), targetDir, ...receiptEntry });
     }
     for (const runtimePath of listManagedDirectories(skillsRoot)) {
       if (receiptRuntimePaths.has(runtimePath)) continue;
@@ -933,13 +999,15 @@ export function registerDomainsComponents(runtime) {
             source: `runtime Skill ${orphan.runtimePath}`,
           });
         }
-        removals.push({
-          type: 'file',
-          path: orphan.receiptFile,
-          expectedIntegrity: sha256Integrity(fs.readFileSync(orphan.receiptFile)),
-          pruneEmptyRoot: path.dirname(orphan.receiptFile),
-          source: `runtime Skill projection receipt ${orphan.runtimePath}`,
-        });
+        for (const receiptFile of orphan.receiptFiles) {
+          removals.push({
+            type: 'file',
+            path: receiptFile,
+            expectedIntegrity: sha256Integrity(fs.readFileSync(receiptFile)),
+            pruneEmptyRoot: path.dirname(receiptFile),
+            source: `Skill projection ownership receipt ${orphan.runtimePath}`,
+          });
+        }
         continue;
       }
       const files = collectFiles(orphan.targetDir);
@@ -973,13 +1041,16 @@ export function registerDomainsComponents(runtime) {
     } catch (error) {
       throw new Error(`Component 源资产已提交，但 ${agent} runtime reconcile 失败：${error.message}\n修复后运行：buildr sync ${agent} --target ${targetRoot}`);
     }
-    const doctorResult = spawnSync(process.execPath, [path.join(productRoot(), 'bin', 'buildr.mjs'), 'doctor', '--agent', agent, '--target', targetRoot, '--json'], {
+    const finalDoctor = runFinalDoctor({
+      executable: process.execPath,
+      cliPath: path.join(productRoot(), 'bin', 'buildr.mjs'),
+      agent,
+      targetRoot,
       cwd: productRoot(),
-      encoding: 'utf8',
     });
-    if (doctorResult.status !== 0) {
-      const detail = [doctorResult.stdout, doctorResult.stderr].filter(Boolean).join('\n').trim();
-      throw new Error(`Component 源资产和 runtime 已 reconcile，但 doctor 仍有错误。\n${detail}\n修复后运行：buildr doctor --agent ${agent} --target ${targetRoot} --json`);
+    if (finalDoctor.classification.status !== 'passed') {
+      const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
+      throw new Error(`Component 源资产和 runtime 已 reconcile，但 ${finalDoctor.classification.message}${detail}\n修复后运行：buildr doctor --agent ${agent} --target ${targetRoot} --json`);
     }
     return rendered;
   }
@@ -1064,6 +1135,6 @@ export function registerDomainsComponents(runtime) {
     console.log('doctor 通过。');
   }
 
-  Object.assign(runtime, { componentRegistryPath, parseComponentsManifestYaml, validateComponentsManifest, renderComponentsManifestYaml, readComponentsManifestForWrite, writeComponentsManifest, parseComponentDefinitionYaml, renderComponentDefinitionYaml, componentIntegrityMap, componentMemberPaths, parseSkillContributionDeclaration, validateComponentDefinition, assetIntegrity, readComponentDefinition, componentDefinitionFile, workspaceSymlinkSegment, componentInventory, componentOwnerForMember, packageComponentEntry, packageComponentDefinition, componentMemberKind, componentBuiltinForMember, packageComponentSourcePath, validatePackageComponentMembers, legacyComponentMemberDecision, isAdoptableLegacyComponentMember, buildComponentReconcilePlan, commandCollectionReferenceIssues, removeEmptyCommandCollectionParents, removeComponentMember, installComponentMember, componentReconcileAffectedPaths, applyPackageComponent, packageComponentsStatus, planPackageComponentsSync, syncPackageComponents, assertWorkspaceComponentScope, componentListOrCheck, installWorkspaceComponent, declaredRuntimeSkillPaths, declaredRuntimeInstallPlanIds, managedRuntimeSkillOrphans, buildRuntimeOrphanRemovalPlan, reconcileComponentRuntime, componentInstall, componentUninstall });
+  Object.assign(runtime, { componentRegistryPath, parseComponentsManifestYaml, validateComponentsManifest, renderComponentsManifestYaml, readComponentsManifestForWrite, writeComponentsManifest, parseComponentDefinitionYaml, renderComponentDefinitionYaml, componentIntegrityMap, componentMemberPaths, parseSkillContributionDeclaration, parseSkillDependencyContribution, validateComponentDefinition, assetIntegrity, readComponentDefinition, componentDefinitionFile, workspaceSymlinkSegment, componentInventory, componentOwnerForMember, packageComponentEntry, packageComponentDefinition, componentMemberKind, componentBuiltinForMember, packageComponentSourcePath, validatePackageComponentMembers, legacyComponentMemberDecision, isAdoptableLegacyComponentMember, buildComponentReconcilePlan, commandCollectionReferenceIssues, removeEmptyCommandCollectionParents, removeComponentMember, installComponentMember, componentReconcileAffectedPaths, applyPackageComponent, packageComponentsStatus, planPackageComponentsSync, syncPackageComponents, assertWorkspaceComponentScope, componentListOrCheck, installWorkspaceComponent, declaredRuntimeSkillPaths, declaredRuntimeInstallPlanIds, managedRuntimeSkillOrphans, buildRuntimeOrphanRemovalPlan, reconcileComponentRuntime, componentInstall, componentUninstall });
   return runtime;
 }

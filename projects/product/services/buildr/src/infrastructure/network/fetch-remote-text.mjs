@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
+import { assertVerificationNetworkAllowed } from './verification-network-policy.mjs';
 
 const MAX_TIMEOUT_MS = 120000;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 10000;
@@ -25,7 +26,9 @@ export function remoteTextTimeouts(env = process.env) {
 export function fetchRemoteText(url, options = {}) {
   const parsed = new URL(url);
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(`Remote text URL must use http or https: ${url}`);
-  const { inactivityTimeoutMs, totalTimeoutMs } = remoteTextTimeouts(options.env ?? process.env);
+  const env = options.env ?? process.env;
+  assertVerificationNetworkAllowed(parsed, { env, label: options.label ?? 'Remote text fetch' });
+  const { inactivityTimeoutMs, totalTimeoutMs } = remoteTextTimeouts(env);
   const label = options.label ?? 'remote text';
   const script = `
 const http = require('node:http');

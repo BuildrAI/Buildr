@@ -1,10 +1,17 @@
 import path from 'node:path';
 import {
   VERIFICATION_CONCURRENCY,
+  VERIFICATION_DELEGATED_INPUTS,
+  VERIFICATION_ENVIRONMENT_FOOTPRINTS,
+  VERIFICATION_ENVIRONMENT_ISOLATIONS,
+  VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
+  VERIFICATION_FULL_SCOPE_INPUTS,
   VERIFICATION_GROUPS,
   VERIFICATION_IGNORED_INPUTS,
   VERIFICATION_PROFILES,
+  VERIFICATION_RESET_BURDENS,
+  VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
 
@@ -37,6 +44,14 @@ export function matchesInput(productPath, pattern) {
   return globToRegExp(pattern).test(normalizeProductPath(productPath));
 }
 
+function matchedStepInput(step, productPath) {
+  if (step.selection === 'explicit-only') return null;
+  const matched = step.inputs.find((pattern) => matchesInput(productPath, pattern));
+  if (!matched) return null;
+  if ((step.inputExclusions ?? []).some((pattern) => matchesInput(productPath, pattern))) return null;
+  return matched;
+}
+
 export function validateVerificationRegistry(steps = verificationSteps) {
   const findings = [];
   const ids = new Set();
@@ -45,7 +60,82 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     ids.add(item.id);
     if (!item.name) findings.push({ step: item.id, code: 'missing_name' });
     if (!Array.isArray(item.inputs) || item.inputs.length === 0) findings.push({ step: item.id, code: 'missing_inputs' });
+    if (item.selection != null && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'invalid_selection', value: item.selection });
+    if (item.inputExclusions != null && !Array.isArray(item.inputExclusions)) findings.push({ step: item.id, code: 'invalid_input_exclusions' });
+    else for (const pattern of item.inputExclusions ?? []) {
+      try { normalizeProductPath(pattern); } catch { findings.push({ step: item.id, code: 'invalid_input_exclusion', value: pattern }); }
+    }
+    const classification = item.testing;
+    if (!classification || typeof classification !== 'object') findings.push({ step: item.id, code: 'missing_testing_classification' });
+    else {
+      if (!/^(?:project:[a-z0-9-]+|service:[a-z0-9-]+\/[a-z0-9-]+)$/.test(classification.ownerScope ?? '')) {
+        findings.push({ step: item.id, code: 'invalid_testing_owner', value: classification.ownerScope });
+      }
+      if (!VERIFICATION_TEST_INTENTS.includes(classification.primaryIntent)) {
+        findings.push({ step: item.id, code: 'invalid_testing_intent', value: classification.primaryIntent });
+      }
+      if (!VERIFICATION_EXECUTION_BOUNDARIES.includes(classification.executionBoundary)) {
+        findings.push({ step: item.id, code: 'invalid_testing_boundary', value: classification.executionBoundary });
+      }
+      const quick = (item.profiles ?? []).includes('fast');
+      if (quick && classification.executionBoundary === 'System') findings.push({ step: item.id, code: 'quick_system_boundary' });
+      if (quick && classification.targetDurationMs > 15000) findings.push({ step: item.id, code: 'quick_target_too_slow', value: classification.targetDurationMs });
+      if (!Number.isInteger(classification.targetDurationMs) || classification.targetDurationMs < 1) {
+        findings.push({ step: item.id, code: 'invalid_testing_target_duration', value: classification.targetDurationMs });
+      }
+      if (typeof classification.proves !== 'string' || classification.proves.trim().length === 0) {
+        findings.push({ step: item.id, code: 'missing_testing_proves' });
+      }
+      if (typeof classification.primaryEvidenceOwner !== 'string' || classification.primaryEvidenceOwner.length === 0) {
+        findings.push({ step: item.id, code: 'missing_primary_evidence_owner' });
+      }
+      const executionEnvironment = classification.environment;
+      if (!executionEnvironment || typeof executionEnvironment !== 'object') findings.push({ step: item.id, code: 'missing_testing_environment' });
+      else {
+        if (!Array.isArray(executionEnvironment.footprints)) findings.push({ step: item.id, code: 'invalid_environment_footprints' });
+        else {
+          const uniqueFootprints = new Set(executionEnvironment.footprints);
+          if (uniqueFootprints.size !== executionEnvironment.footprints.length) findings.push({ step: item.id, code: 'duplicate_environment_footprint' });
+          for (const footprint of uniqueFootprints) if (!VERIFICATION_ENVIRONMENT_FOOTPRINTS.includes(footprint)) {
+            findings.push({ step: item.id, code: 'unknown_environment_footprint', value: footprint });
+          }
+        }
+        if (!VERIFICATION_ENVIRONMENT_ISOLATIONS.includes(executionEnvironment.isolation)) {
+          findings.push({ step: item.id, code: 'invalid_environment_isolation', value: executionEnvironment.isolation });
+        }
+      }
+      if (!VERIFICATION_RESET_BURDENS.includes(classification.resetBurden)) {
+        findings.push({ step: item.id, code: 'invalid_reset_burden', value: classification.resetBurden });
+      }
+      if (classification.executionBoundary === 'Component' && (
+        (executionEnvironment?.footprints?.length ?? 0) > 0
+        || executionEnvironment?.isolation !== 'none'
+        || classification.resetBurden !== 'none'
+      )) findings.push({ step: item.id, code: 'component_environment_boundary' });
+      if (quick && ['repeated-cleanup', 'lifecycle'].includes(classification.resetBurden)) {
+        findings.push({ step: item.id, code: 'quick_reset_burden', value: classification.resetBurden });
+      }
+      if (quick && executionEnvironment?.isolation === 'shared') findings.push({ step: item.id, code: 'quick_shared_environment' });
+      if (quick && classification.executionBoundary === 'Integration') {
+        const forbidden = executionEnvironment?.footprints?.filter((footprint) => ['git', 'network', 'workspace-lifecycle'].includes(footprint)) ?? [];
+        if (!['read-only', 'unique-temporary-root'].includes(executionEnvironment?.isolation)
+          || classification.resetBurden !== 'none'
+          || forbidden.length > 0) {
+          findings.push({ step: item.id, code: 'quick_integration_not_isolated', value: forbidden.join(',') || executionEnvironment?.isolation });
+        }
+      }
+      if (item.budgetMs != null && item.budgetMs !== classification.targetDurationMs) {
+        findings.push({ step: item.id, code: 'testing_target_budget_mismatch', value: item.budgetMs });
+      }
+    }
     if (!VERIFICATION_EXECUTORS.includes(item.executor?.type)) findings.push({ step: item.id, code: 'unknown_executor', value: item.executor?.type });
+    if (item.executor?.type === 'node-test' && (!Array.isArray(item.executor.files) || item.executor.files.length === 0)) {
+      findings.push({ step: item.id, code: 'node_test_files_missing' });
+    } else if (item.executor?.type === 'node-test') {
+      for (const file of item.executor.files) {
+        try { normalizeProductPath(file); } catch { findings.push({ step: item.id, code: 'node_test_file_invalid', value: file }); }
+      }
+    }
     if (!VERIFICATION_CONCURRENCY.classes[item.concurrencyClass]) findings.push({ step: item.id, code: 'unknown_concurrency_class', value: item.concurrencyClass });
     for (const resource of item.resources ?? []) {
       if (!VERIFICATION_CONCURRENCY.resources?.[resource]) findings.push({ step: item.id, code: 'unknown_concurrency_resource', value: resource });
@@ -53,11 +143,21 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     if (item.schedulingCostMs != null && (!Number.isInteger(item.schedulingCostMs) || item.schedulingCostMs < 1)) {
       findings.push({ step: item.id, code: 'invalid_scheduling_cost', value: item.schedulingCostMs });
     }
+    if (item.preflight) {
+      if (!Array.isArray(item.preflight.inputs) || item.preflight.inputs.length === 0) findings.push({ step: item.id, code: 'preflight_inputs_missing' });
+      if (!VERIFICATION_EXECUTORS.includes(item.preflight.executor?.type)) findings.push({ step: item.id, code: 'preflight_executor_unknown', value: item.preflight.executor?.type });
+      if (item.preflight.sideEffects !== 'none') findings.push({ step: item.id, code: 'preflight_side_effects_unsafe', value: item.preflight.sideEffects });
+      if (!Number.isInteger(item.preflight.budgetMs) || item.preflight.budgetMs < 1) findings.push({ step: item.id, code: 'preflight_budget_invalid', value: item.preflight.budgetMs });
+    }
     for (const profile of item.profiles ?? []) if (!VERIFICATION_PROFILES.includes(profile)) findings.push({ step: item.id, code: 'unknown_profile', value: profile });
     for (const group of item.groups ?? []) if (!VERIFICATION_GROUPS.includes(group)) findings.push({ step: item.id, code: 'unknown_group', value: group });
   }
   for (const item of steps) for (const dependency of item.dependsOn ?? []) {
     if (!ids.has(dependency)) findings.push({ step: item.id, code: 'unknown_dependency', value: dependency });
+  }
+  for (const item of steps) {
+    const owner = item.testing?.primaryEvidenceOwner;
+    if (owner && !ids.has(owner)) findings.push({ step: item.id, code: 'unknown_primary_evidence_owner', value: owner });
   }
   const artifactProducers = steps.filter((item) => item.executor?.type === 'candidate-artifact');
   const artifactConsumers = steps.filter((item) => item.executor?.consumesArtifact === true);
@@ -87,20 +187,44 @@ export function validateVerificationRegistry(steps = verificationSteps) {
   return { ok: findings.length === 0, findings };
 }
 
+export function createVerificationPreflightPlan(request = {}, steps = verificationSteps) {
+  const validation = validateVerificationRegistry(steps);
+  if (!validation.ok) throw new Error(`Invalid verification registry:\n${validation.findings.map((item) => `${item.step}: ${item.code}`).join('\n')}`);
+  const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
+  const selected = [];
+  for (const item of steps) {
+    if (!item.preflight) continue;
+    const matched = paths.filter((productPath) => item.preflight.inputs.some((pattern) => matchesInput(productPath, pattern)));
+    if (matched.length) selected.push(Object.freeze({
+      id: `preflight-${item.id}`, name: `${item.name} preflight`, executor: item.preflight.executor,
+      dependsOn: [], profiles: [], groups: [], inputs: item.preflight.inputs, concurrencyClass: 'default', resources: [],
+      budgetMs: item.preflight.budgetMs, reasons: Object.freeze(matched.map((entry) => `${entry} matches candidate-aware preflight`)),
+      assures: item.id,
+    }));
+  }
+  return Object.freeze({ paths: Object.freeze(paths), profiles: Object.freeze([]), groups: Object.freeze([]), stepIds: Object.freeze([]), steps: Object.freeze(selected) });
+}
+
 export function auditVerificationInputCoverage(paths, steps = verificationSteps) {
   const mapped = [];
+  const delegated = [];
   const ignored = [];
   const unmapped = [];
   for (const rawPath of paths) {
     const productPath = normalizeProductPath(rawPath);
-    const owners = steps.filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern))).map((item) => item.id);
+    const owners = steps.filter((item) => matchedStepInput(item, productPath)).map((item) => item.id);
+    const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
+      .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
+      .map((item) => item.owner);
     if (owners.length > 0) mapped.push({ path: productPath, owners });
+    else if (delegatedOwners.length > 0) delegated.push({ path: productPath, owners: delegatedOwners });
     else if (VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) ignored.push(productPath);
     else unmapped.push(productPath);
   }
   return Object.freeze({
     ok: unmapped.length === 0,
     mapped: Object.freeze(mapped),
+    delegated: Object.freeze(delegated),
     ignored: Object.freeze(ignored),
     unmapped: Object.freeze(unmapped),
   });
@@ -140,6 +264,9 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const profiles = [...new Set(request.profiles ?? [])];
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
+  const fullScopeMatches = paths.flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
+    .filter((pattern) => matchesInput(productPath, pattern))
+    .map((pattern) => ({ productPath, pattern })));
   for (const id of stepIds) {
     if (!byId.has(id)) throw new Error(`Unknown verification step: ${id}`);
     selected.add(id);
@@ -152,6 +279,12 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `profile ${profile}`]);
     }
   }
+  if (fullScopeMatches.length > 0) {
+    for (const item of steps) if (item.profiles.includes('candidate')) {
+      selected.add(item.id);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => `${productPath} matches full-scope owner ${pattern}`)]);
+    }
+  }
   for (const group of groups) {
     if (!VERIFICATION_GROUPS.includes(group)) throw new Error(`Unknown verification group: ${group}`);
     for (const item of steps) if (item.groups.includes(group)) {
@@ -160,12 +293,17 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     }
   }
   const unmatchedPaths = [];
+  const delegatedPaths = [];
   for (const productPath of paths) {
-    const matched = steps.filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)));
-    if (matched.length === 0 && !VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) unmatchedPaths.push(productPath);
+    const matched = steps.filter((item) => matchedStepInput(item, productPath));
+    const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
+      .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
+      .map((item) => item.owner);
+    if (matched.length === 0 && delegatedOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(delegatedOwners) }));
+    else if (matched.length === 0 && !VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) unmatchedPaths.push(productPath);
     for (const item of matched) {
       selected.add(item.id);
-      reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${item.inputs.find((pattern) => matchesInput(productPath, pattern))}`]);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${matchedStepInput(item, productPath)}`]);
     }
   }
   if (unmatchedPaths.length > 0) throw new Error(`Unmapped Product paths:\n${unmatchedPaths.map((item) => `- ${item}`).join('\n')}`);
@@ -176,6 +314,7 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),
     stepIds: Object.freeze(stepIds),
+    delegated: Object.freeze(delegatedPaths),
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
   });
 }

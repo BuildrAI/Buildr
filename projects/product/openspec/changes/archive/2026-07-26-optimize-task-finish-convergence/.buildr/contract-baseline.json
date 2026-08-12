@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-convergence",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-e818073e17a48e8ce9fa607f05fd9eb996d7fd2e568a9debab89ba0221859c6f",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 使用持久化执行架构",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 使用持久化执行架构\nBuildr MUST 提供实现 `buildr.task-finish/v1` 的薄 `task-finish` Workspace Skill，把当前轮次明确的“收尾”作为受限授权，并使用持久化 finish run 编排 selected verification、Git integration、worktree lifecycle、asset review 与 current knowledge providers。Skill MUST NOT 复制 provider policy 或依赖单个 Agent session 保存步骤进度。\n\n#### Scenario: 默认在同一用户对话继续\n- **WHEN** finish run 的 environment execution binding 有效\n- **THEN** Task Finish MUST 在同一用户对话继续同一 task/change/run\n- **AND** 后台 session MUST 只是可选执行载体，不得成为 task environment 成立条件\n\n#### Scenario: provider 步骤失败后恢复\n- **WHEN** 某个 provider action blocked 且早期副作用已经 passed\n- **THEN** Task Finish MUST 保存 checkpoint 并从 blocked/stale 边界恢复\n- **AND** MUST NOT 要求 Agent 从头复述或重跑整个 Skill\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Task environment 必须核验 execution binding",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task environment 必须核验 execution binding\nBuildr MUST 以 environment receipt、repository membership/identity、allowed execution roots、checkout-local CLI/runtime projection identity 和明确 target/workdir 判断 `executionReady`。Agent session root MUST NOT 是普通 proposal、implementation、verification 或 finish 的必要条件，也 MUST NOT 被要求等于 environment root。\n\n#### Scenario: canonical workspace 对话操作 task environment\n- **WHEN** Agent session 从 canonical Workspace 启动，但命令使用 task environment 的明确 target、成员 checkout workdir 和 checkout-local CLI\n- **THEN** context MUST 在 environment 与 repository identity 匹配时返回 `executionReady: true`\n- **AND** canonical Workspace 中已加载的能力 MUST NOT 因 session root 不同而失效\n\n#### Scenario: 请求路径或 CLI 越界\n- **WHEN** target/workdir 不属于 allowed execution roots，或 CLI/runtime projection identity 不属于该 environment\n- **THEN** context MUST 返回 blocked 并 fail closed\n- **AND** MUST 报告不匹配的 target、workdir、membership 或 CLI identity\n\n#### Scenario: runtime identity 漂移\n- **WHEN** environment identity、repository plan 或 checkout-local runtime projection identity 不再匹配 receipt\n- **THEN** context MUST 返回 `stale` 或 `blocked`\n- **AND** MUST 要求重新收敛 environment/runtime，而不是创建另一份纯 checkout\n"
+    },
+    {
+      "capability": "task-environments",
+      "title": "Runtime activation evidence 必须是按影响触发的特例",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Runtime activation evidence 必须是按影响触发的特例\nBuildr MUST 只在任务修改 Rules、Skills 或 runtime adapter，且验收明确要求证明新 runtime 已由 Agent 激活时检查 adapter-specific activation。该 evidence MUST 与普通 execution readiness 分离。\n\n#### Scenario: Agent 提交 activation evidence\n- **WHEN** Agent/runtime host 提交 reload 或新 session activation evidence\n- **THEN** result MUST 将 environment evidence 标为 `buildr-verified`，将 host evidence 标为 `agent-attested`\n- **AND** MUST 明确 Buildr 没有直接内省或自动启动 Agent host\n\n#### Scenario: Codex 无法绑定既有 environment\n- **WHEN** Codex 只支持 session-start，当前 App 又不能把新 session 绑定到既有 Buildr worktree\n- **THEN** Buildr MUST 报告 activation evidence 缺口\n- **AND** MUST NOT 创建指向该 worktree 的另一份纯 checkout或把 adoption receipt 包装成自动 handoff\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish 使用独立持久化 run 渐进执行",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Task Finish 使用独立持久化 run 渐进执行\nBuildr MUST 为每次逻辑任务收尾建立独立 finish run，并为每一步持久化 `pending|running|passed|blocked|stale`、输入 fingerprint、effects、evidence、invalidation dependencies 与 retry policy。run MUST 绑定 task/change identity，但 MUST NOT 绑定单个 Agent session。\n\n#### Scenario: 可选执行载体继续同一逻辑任务\n- **WHEN** Agent 选择后台 session 或 subagent 执行某个 finish action\n- **THEN** 新执行载体 MUST 继续相同 task、change 和 finish run identity\n- **AND** 该载体 MUST NOT 成为 task environment 成立或 `executionReady` 的必要条件\n\n#### Scenario: 检查 checkpoint\n- **WHEN** consumer 调用 `buildr task finish inspect`\n- **THEN** 结果 MUST 返回当前步骤、已完成 effects、有效 evidence、阻塞原因、stale steps 和 next action\n- **AND** inspect MUST NOT 改变 run 或取得 lease\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 只恢复失效或阻塞的下游",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Finish run 只恢复失效或阻塞的下游\nBuildr MUST 通过显式依赖和 fingerprint 精确传播失效；resume MUST 保留输入未变的 passed 步骤，只重试 blocked/stale 及其下游。\n\n#### Scenario: push 成功而 cleanup 失败\n- **WHEN** push 步骤已 passed 且 cleanup blocked\n- **THEN** resume MUST 从 cleanup 继续\n- **AND** MUST NOT 重复 push、integration 或 formal assurance\n\n#### Scenario: rebase 改变最终树\n- **WHEN** target convergence 改变 formal assurance 的输入 fingerprint\n- **THEN** formal assurance 及其下游 MUST 标记 stale\n- **AND** 更早且输入未变的 OpenSpec/current-knowledge 步骤 MUST 保持 passed\n\n#### Scenario: 重复提交同一步成功结果\n- **WHEN** consumer 使用相同 attempt、fingerprint 和 effect identity 再次提交 passed\n- **THEN** Buildr MUST 返回现有 checkpoint\n- **AND** MUST NOT 重复记录副作用\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "正式验证发生在 delivery convergence 之后",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 正式验证发生在 delivery convergence 之后\nFinish plan MUST 将正式 affected 或 Candidate assurance 放在 canonical/runtime/target convergence 后，并将最终树 identity 纳入输入 fingerprint。required assurance 仍由 selected task-verification provider 决定。\n\n#### Scenario: 普通任务要求 affected\n- **WHEN** selected provider 返回 `requiredAssurance: affected`\n- **THEN** finish run MUST 执行 affected step 而非机械升级 Candidate\n- **AND** 该 step MUST 绑定 convergence 后的最终树 identity\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "并发 finish run 只锁定共享资源",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: 并发 finish run 只锁定共享资源\nBuildr MUST 允许多个 finish run 独立推进且 MUST NOT 使用 Workspace 全局锁。只有 target branch、canonical checkout、runtime sync、默认 Local App/CLI install 等共享资源步骤 MAY 使用短 lease；远端 ref MUST 使用乐观并发 observation。\n\n#### Scenario: 两个不共享资源的 run 并发\n- **WHEN** 两个 run 的当前步骤没有相同 shared resource\n- **THEN** 两者 MUST 都能进入 running\n\n#### Scenario: 共享 target branch\n- **WHEN** 一个 run 已持有未过期的 target branch lease\n- **THEN** 另一个 run MUST 返回 blocked 和 lease owner/expiry\n- **AND** MUST NOT 改写第一个 run 的 checkpoint\n\n#### Scenario: 远端 ref 在验证后前进\n- **WHEN** 集成前观测到 target ref 不等于 convergence 时保存的 expected value\n- **THEN** run MUST 以 `target-race` 阻塞并使 target convergence 下游 stale\n- **AND** MUST NOT push 或 force push\n"
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "CLI 提供 inspect advance resume",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: CLI 提供 inspect advance resume\nBuildr MUST 提供 `buildr task finish inspect|advance|resume`。`advance` MUST 创建或推进 run，`resume` MUST 先恢复 blocked/stale 边界再推进，所有写操作 MUST 原子持久化并返回 machine-readable result evidence。\n\n#### Scenario: advance 领取下一动作\n- **WHEN** 当前步骤为 pending 且其依赖均 passed\n- **THEN** advance MUST 将其标记 running 并返回 attempt token、输入 fingerprint、action 和 retry policy\n\n#### Scenario: blocked 后 resume\n- **WHEN** 当前步骤 blocked 且 consumer 提供了新的有效输入 fingerprint\n- **THEN** resume MUST 将该步骤及需要重算的下游恢复为可执行状态\n- **AND** MUST 保留已完成 effects 历史\n"
+    },
+    {
+      "capability": "workspace-first-runtime-projection",
+      "title": "Runtime projection 必须提供 execution binding 与条件式 activation expectation",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Runtime projection 必须提供 execution binding 与条件式 activation expectation\nBuildr runtime adapter plan 与公开 runtime evidence MUST 提供 task environment 可消费的 adapter identity、runtime source root、projection identity 和 Rules/Skills activation metadata。projection identity MUST 参与普通 execution binding；session activation evidence MUST 只在 Rules、Skills/runtime adapter 变更且验收明确要求 activation proof 时检查。公开 evidence MUST 描述 Buildr 可证明的投射事实，不得声称目标 Agent 已在当前 session 加载 runtime。\n\n#### Scenario: Session-start Skills 已投射到 task checkout\n- **WHEN** Buildr 为 task environment 成功投射一个 Skills activation 为 `session-start` 的 runtime\n- **THEN** runtime evidence MUST 返回 checkout-local runtime source root、projection identity 与 activation metadata\n- **AND** 普通 proposal、implementation、verification 与 finish MUST NOT 等待 session adoption evidence\n\n#### Scenario: Runtime projection identity 改变\n- **WHEN** task environment 的 sync/render 改变了影响 Rules 或 Skills discovery 的 projection identity\n- **THEN** runtime evidence MUST 使既有 execution binding 失效\n- **AND** 如果当前验收另行要求 activation proof，既有 activation receipt MUST 同时可被识别为 stale\n\n#### Scenario: Filesystem 无法证明 session consumption\n- **WHEN** runtime check 只能证明投射内容与期望状态一致\n- **THEN** result MUST 报告 projection ready 与 session consumption unknown\n- **AND** MUST NOT 仅凭文件存在、content identity 或 checker success 报告 session adopted\n"
+    },
+    {
+      "capability": "workspace-first-runtime-projection",
+      "title": "Codex runtime evidence 必须保持 path-read 与 session-start 边界",
+      "operation": "MODIFIED",
+      "state": "present",
+      "content": "### Requirement: Codex runtime evidence 必须保持 path-read 与 session-start 边界\nCodex adapter MUST 继续将 Rules activation 声明为 `path-read`、Skills activation 声明为 `session-start`，并 MUST 将 activation guidance 标记为条件式验收信息，而不是普通 task environment readiness 门禁。\n\n#### Scenario: Codex task environment runtime 准备完成\n- **WHEN** checkout-local Codex runtime 已通过 sync 与 doctor\n- **THEN** Buildr MUST 报告 Rules 和 Skills 各自的 activation mode、runtime source root 与 projection identity\n- **AND** 只有验收明确要求证明 checkout-local Skills 已被 Agent 激活时，才 MUST 请求 host 可提供的 reload/session evidence；无法绑定既有 environment 时 MUST 如实报告缺口\n"
+    }
+  ]
+}

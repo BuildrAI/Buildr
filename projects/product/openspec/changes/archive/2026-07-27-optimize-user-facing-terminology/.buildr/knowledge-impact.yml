@@ -1,0 +1,13 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-user-facing-terminology
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-user-facing-terminology/brief.md
+    reason: 正式 Change 需要人类可读的表达规则范围、例外与验收入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-user-facing-terminology/proposal.md
+      - openspec/changes/optimize-user-facing-terminology/design.md
+unresolvedItems: []

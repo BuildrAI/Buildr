@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: enforce-openspec-sync-sequencing
+operation: reconcile
+treeIdentity: implementation-reconciled-before-verification
+impacts:
+  - type: brief
+    target: openspec/changes/enforce-openspec-sync-sequencing/brief.md
+    reason: 本 Change 固化了 OpenSpec sync、archive 与 runtime projection verification 的流程和验收边界。
+    status: updated
+    sourceIdentities: [proposal.md, design.md, tasks.md, specs/agent-task-workflows/spec.md]
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: pre-sync、agent-driven canonical sync、post-sync 与 archive 的顺序是 Change lifecycle 的核心执行事实。
+    status: updated
+    sourceIdentities: [openspec/specs/agent-task-workflows/spec.md, services/buildr/package/targets/workspace/skills/buildr/task-finish/SKILL.md]
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 受控同步和 runtime projection-only 是新的长期 workflow 分类，需显式避免与普通 sync 或 implementation-changed 混用。
+    status: updated
+    sourceIdentities: [openspec/specs/agent-task-workflows/spec.md, services/buildr/package/targets/workspace/skills/buildr/task-finish/SKILL.md]
+unresolvedItems: []

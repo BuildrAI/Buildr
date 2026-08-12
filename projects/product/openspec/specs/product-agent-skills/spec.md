@@ -3,6 +3,7 @@
 ## Purpose
 定义 Buildr 产品入口 Agent Skill、workspace Skill 源资产、Project capability/applicability context、runtime 投射和场景化工作流引导契约。
 ## Requirements
+
 ### Requirement: 产品内置 Agent Skills
 Buildr MUST 支持面向支持 runtime 的产品内置 Agent Skills，将其作为 workspace sync 的一部分进行同步，并 MUST 通过 capability contracts 路由可替换的 workspace 专业动作。
 
@@ -26,21 +27,21 @@ Buildr MUST 支持面向支持 runtime 的产品内置 Agent Skills，将其作�
 
 #### Scenario: Buildr Skill 感知 Git 管理的 workspace 同步意图
 - **WHEN** 用户要求 Agent“更新 workspace”“同步 workspace”或表达明确等价意图，且 workspace root 由 Git 管理
-- **THEN** Buildr Skill MUST resolve `buildr.git-workspace-update/v1` and use the selected provider to inspect branch、upstream 和 working tree state and safely update the local checkout
+- **THEN** Buildr Skill MUST resolve `buildr.git-operations/v1`，并把明确 workspace、upstream、update operation 与授权交给 selected provider
 - **AND** Git 更新成功后 Agent MUST 直接运行 `buildr sync <agent> --target <dir>`，不得因 sync 再次询问授权
 - **AND** Agent MUST NOT 先运行 `buildr update`
 - **AND** Agent MUST 使用 sync 的最终 doctor 结果判断 workspace 同步是否完成
 
 #### Scenario: Git workspace update provider 不可用
-- **WHEN** `buildr.git-workspace-update/v1` consumer readiness is `blocked`
+- **WHEN** `buildr.git-operations/v1` consumer readiness is `blocked`
 - **THEN** Buildr Skill MUST stop before changing the checkout
 - **AND** Agent MUST report the readiness reason and executable provider or binding nextActions
-- **AND** Agent MUST NOT silently fall back to the uninstalled builtin `git-ops`
+- **AND** Agent MUST NOT silently fall back to a removed builtin or hand-written Git route
 
 #### Scenario: Git workspace 无法安全更新
 - **WHEN** workspace Git 更新遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态
 - **THEN** Agent MUST 停止并说明实际状态和可执行选项
-- **AND** Agent MUST NOT 自动 stash、rebase、覆盖或继续执行 `buildr sync`
+- **AND** Agent MUST NOT 自动 stash、rebase、merge、覆盖或继续执行 `buildr sync`
 
 #### Scenario: Buildr Skill 感知非 Git workspace 同步意图
 - **WHEN** 用户要求 Agent“更新 workspace”“同步 workspace”或表达明确等价意图，且 workspace root 不由 Git 管理
@@ -96,30 +97,6 @@ Buildr Skill MUST 按 asset semantics 定义 Rules 与 Skills，而不是按它�
 - **THEN** reusable Conventional Commits format、type selection and message generation procedure MUST belong to the Git operations Skill
 - **AND** Buildr default commit language MUST belong to required Core so it remains independent of the Git operations Skill lifecycle
 - **AND** more specific Project、Service or repository rules MUST be allowed to override the Core language default
-
-### Requirement: Git Ops 生成精简提交信息
-Buildr Git Ops Skill MUST 提供精简的 Conventional Commits 提交信息生成规则，并遵循 Core 和更具体的提交语言约定。
-
-#### Scenario: 生成提交主题
-- **WHEN** Agent 为已确认提交范围生成 commit message
-- **THEN** subject MUST 使用 `<type>(<scope>): <subject>` 格式，其中 scope 可选
-- **AND** type MUST 从 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 中选择
-- **AND** Agent MUST 基于实际提交内容选择 type 和 scope，不得猜测不明确的 scope
-
-#### Scenario: 补充正文或破坏性变更
-- **WHEN** 变更动机、行为差异或破坏性影响需要补充说明
-- **THEN** Agent MUST 使用可选正文说明动机和行为差异
-- **AND** 破坏性变更 MUST 使用 `BREAKING CHANGE:` 说明
-- **AND** 不需要补充信息时 MUST 保持仅一行 subject
-
-#### Scenario: 应用提交语言约定
-- **WHEN** Agent 使用 Git Ops 生成 commit message
-- **THEN** Git Ops MUST 遵循 Core 的默认提交语言和当前 scope 的更具体约定
-- **AND** Git Ops MUST NOT 在 Skill 正文中复制 Core 的语言约束
-
-#### Scenario: 仓库已有明确格式
-- **WHEN** 项目或仓库规则定义了比 Git Ops 默认格式更具体的提交约定
-- **THEN** Agent MUST 遵循更具体的项目或仓库约定
 
 ### Requirement: Buildr 技能引导工具型资产维护
 Buildr 内置技能 MUST 引导 Agent 使用 Buildr 源资产维护规则、技能和命令行工具清单，并区分源资产维护与运行环境投射。
@@ -258,24 +235,8 @@ Buildr 产品内置 Skill MUST 在用户只表达卸载对象而未明确 Compon
 - **THEN** Buildr Skill MUST 引导 Agent 使用对应单项资产卸载协议
 - **AND** Agent MUST NOT 为了执行卸载临时创建 Component
 
-### Requirement: 产品入口 Buildr Skill 路由任务资产沉淀审查
-产品内置 Buildr Skill MUST 帮助 Agent 发现 selected `buildr.task-asset-review/v2` provider，并在非简单 Workspace 任务开始、任务过程出现资产信号、用户明确复盘或任务结束 finalize 时路由到该 provider。
-
-#### Scenario: 非简单任务开始
-- **WHEN** Agent 开始探索、设计、诊断、实现或验证非简单 Workspace 任务
-- **THEN** Buildr Skill MUST 引导 Agent 使用 selected provider 判断是否维护 observation
-- **AND** Buildr Skill MUST NOT 在自身正文复制完整观察流程
-
-#### Scenario: Runtime 找不到 provider
-- **WHEN** capability graph 表示 provider 应存在但 runtime 无法发现
-- **THEN** Buildr Skill MUST 引导 Agent 检查 builtin、workspace source、binding 和 runtime 投射
-
-#### Scenario: Skill 已卸载
-- **WHEN** 用户已显式卸载 optional provider
-- **THEN** Buildr Skill MUST 尊重卸载状态并使用 degraded semantics
-
 ### Requirement: 产品入口识别工作能力适配意图
-产品入口 Buildr Skill MUST 识别可能改变 Skill 行为或跨 Skill 协作关系的用户工作意图，并 MUST 将具体资产开发路由到 `capability-adaptation` 管理 Skill。
+产品入口 Buildr Skill MUST 识别可能改变 Skill 行为或跨 Skill 协作关系的用户工作意图，并 MUST 将具体资产开发路由到 `capability-adaptation` 管理 Skill；产品入口只对自身已命中的管理意图执行按需能力路由，MUST NOT 承载完整 workspace consumer dependency graph。
 
 #### Scenario: 用户不使用 capability 术语
 - **WHEN** 用户只表达“采用内部流程”“调整工作方式”“修改默认 Skill 行为”或等价自然语言意图
@@ -288,22 +249,12 @@ Buildr 产品内置 Skill MUST 在用户只表达卸载对象而未明确 Compon
 - **AND** 适配流程 MUST 判断目标行为是否被其他 Skill 组合、是否需要替换实现、consumer 是否依赖稳定保证或结果证据，以及生命周期是否需要影响诊断
 
 #### Scenario: 产品入口是能力路由者
-- **WHEN** 产品入口根据某个用户意图使用 capability routing evidence
-- **THEN** 该 capability MUST 只作为本次意图的 required dependency
+- **WHEN** 产品入口已因 Buildr 管理意图被加载，且该意图需要一项可替换 capability
+- **THEN** Agent MUST 从当前 scope 的 Doctor full capability graph 解析该 capability 的 contract 和 selected provider
+- **AND** 该 capability MUST 只作为本次意图的 required route
 - **AND** 单项 capability blocked MUST NOT 阻塞 Buildr Skill 的无关管理意图
+- **AND** 产品入口 runtime Skill MUST NOT 注入其他 consumers、其他 scopes 或完整 workspace capability graph
 - **AND** 产品入口 MUST NOT 作为具有全部 capabilities required dependencies 的 workspace manifest consumer
-
-### Requirement: 产品入口按 capability 路由用户意图
-产品入口 Buildr Skill MUST 将资产观察、显式复盘和结束 finalize 路由到 `buildr.task-asset-review/v2` selected provider，并 MUST NOT 将 builtin Skill id 当作不可替换入口。
-
-#### Scenario: 路由任务资产审查
-- **WHEN** 用户意图或任务节点需要观察、审查或 finalize
-- **THEN** Buildr Skill MUST 使用当前 capability graph 的 v2 selected provider
-- **AND** Buildr Skill MUST honor blocked and degraded semantics
-
-#### Scenario: 用户替换 provider
-- **WHEN** workspace 绑定兼容的内部 v2 provider
-- **THEN** Buildr Skill MUST 路由到该 provider而不要求 `task-asset-review` Skill id
 
 ### Requirement: Buildr Skill 使用 workspace source 与两种 render destination
 产品入口 Buildr Skill MUST 将 Skill 源资产维护统一路由到 workspace，并 MUST 根据用户意图区分 user 与 workspace render destination。
@@ -377,3 +328,137 @@ Buildr Product Skill MUST explain the canonical Project fields, source boundary,
 #### Scenario: Agent 看到 branch drift
 - **WHEN** doctor 或 UI 报告 current branch 偏离 integration branch
 - **THEN** Skill MUST 引导 Agent 结合当前任务判断，而不是让 Buildr 自动切换分支
+
+### Requirement: Git Operations 生成精简提交信息
+Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的 Conventional Commits 提交信息规则，并 MUST 遵循 Core 和更具体的提交语言约定。
+
+#### Scenario: 生成提交主题
+- **WHEN** Agent 为已确认提交范围生成 commit message
+- **THEN** subject MUST 使用 `<type>(<scope>): <subject>` 格式，其中 scope 可选
+- **AND** type MUST 从 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 中选择
+- **AND** Agent MUST 基于实际提交内容选择 type 和 scope，不得猜测不明确的 scope
+
+#### Scenario: 补充正文或破坏性变更
+- **WHEN** 变更动机、行为差异或破坏性影响需要补充说明
+- **THEN** Agent MUST 使用可选正文说明动机和行为差异
+- **AND** 破坏性变更 MUST 使用 `BREAKING CHANGE:` 说明
+- **AND** 不需要补充信息时 MUST 保持仅一行 subject
+
+#### Scenario: 应用提交语言约定
+- **WHEN** Agent 使用 Git Operations 生成 commit message
+- **THEN** Git Operations MUST 遵循 Core 的默认提交语言和当前 scope 的更具体约定
+- **AND** Git Operations MUST NOT 在 Skill 正文中复制 Core 的语言约束
+
+#### Scenario: 仓库已有明确格式
+- **WHEN** 项目或仓库规则定义了比 Git Operations 默认格式更具体的提交约定
+- **THEN** Agent MUST 遵循更具体的项目或仓库约定
+
+### Requirement: 产品入口 Buildr Skill 路由 Task Retrospective
+产品内置 Buildr Skill MUST 在用户明确要求记录、查看或处理任务复盘时路由到 selected `buildr.task-retrospective/v2` provider，并 MUST 将复盘报告限制为 terminal Task 的 Agent 执行效率复盘；处理已有报告时 MAY 通过 Task Manager 承接后续改进。
+
+#### Scenario: 用户明确要求任务复盘
+- **WHEN** 用户要求复盘已完成或已放弃 Task 的执行效率
+- **THEN** Buildr Skill MUST 引导 Agent 使用 selected Task Retrospective provider
+- **AND** MUST NOT恢复过程 observation、资产候选或 lifecycle gate
+
+#### Scenario: 用户明确要求处理已有复盘
+- **WHEN** 用户要求处理 pending Retrospective Result
+- **THEN** Buildr Skill MUST 路由同一 v2 provider 执行当前事实重评与 Task 承接
+- **AND** MUST NOT把处理简化为只改 disposition note
+
+#### Scenario: Runtime 找不到 provider
+- **WHEN** capability graph 表示 provider 应存在但 runtime 无法发现
+- **THEN** Buildr Skill MUST 引导 Agent 检查 builtin、workspace source、binding 和 runtime 投射
+
+### Requirement: 产品入口按 current capability 路由复盘意图
+产品入口 Buildr Skill MUST 将明确的 terminal Task 执行效率复盘及其后续处理路由到 `buildr.task-retrospective/v2` selected provider，并 MUST NOT 将 builtin Skill id 当作不可替换入口。
+
+#### Scenario: 路由 Task Retrospective
+- **WHEN** 用户明确要求记录、查看或处理 terminal Task 的执行效率复盘
+- **THEN** Buildr Skill MUST 使用当前 capability graph 的 v2 selected provider
+- **AND** Buildr Skill MUST honor blocked semantics
+
+#### Scenario: 用户替换 provider
+- **WHEN** workspace 绑定兼容的内部 v2 provider
+- **THEN** Buildr Skill MUST 路由到该 provider而不要求 `task-retrospective` Skill id
+
+### Requirement: Package必须投射Declaration Intake Skill
+Buildr package MUST提供`declaration-intake` workspace Skill，description MUST覆盖声明初始化、刷新及自动触发缺口。Skill MUST声明只读发现、用户授权与owner handoff，并 MUST不成为Preparation或Verification capability provider。
+
+#### Scenario: 授权Preparation写入
+- **WHEN** Intake取得`preparation.yml`精确diff授权
+- **THEN** Agent MUST进入`task-environment` owner流程维护声明
+- **AND** Intake Skill MUST不直接执行Preparation Step
+
+#### Scenario: 授权Verification写入
+- **WHEN** Intake取得`verification.yml`精确diff授权
+- **THEN** Agent MUST进入`task-verification` owner流程维护声明
+- **AND** Intake Skill MUST不执行或开发验证能力
+
+### Requirement: Task Skills 必须解释协调与专业 authority 边界
+Buildr package MUST更新Task Manager、Triage、Development、Review与Finish Skills，使Agent能发现Parent Plan/Contribution意图、创建独立Child、形成Contribution Handoff、显式reconcile并完成Parent最终验收；Skills MUST NOT引导双写、checkbox同步或自动状态传播。
+
+#### Scenario: runtime Agent读取新流程
+- **WHEN** 用户要求创建Parent或从Contribution启动Child
+- **THEN** matching Skill MUST路由到现有Task/Development/Review/Finish capabilities与Parent coordination actions
+- **AND** MUST明确禁止继承Parent Change和推断delivery
+
+### Requirement: Runtime投射必须来自Workspace source
+更新后的Skills/contracts MUST从Product package source同步到Workspace source再投射当前Agent runtime；派生`.agents/skills` MUST NOT作为长期编辑authority。
+
+#### Scenario: 自举同步
+- **WHEN** Formal Finish交付包含Skill或contract source变化
+- **THEN** self-bootstrap MUST按冻结Contribution执行适用sync/render
+- **AND** 最终Doctor MUST证明selected Agent graph与projection ready
+
+### Requirement: 产品入口 Buildr Skill 分离宿主身份与投射目标
+产品入口 Buildr Skill MUST 将当前宿主 Agent、用户明确指定的维护目标和 Buildr 投射 adapter 视为不同事实。普通面向当前环境的操作 MUST 使用宿主明确提供且受支持的 adapter；只有用户明确指定其他 runtime 时才能改用该目标。
+
+#### Scenario: Qoder 读取 Codex 投射后更新 workspace
+- **WHEN** Qoder 会话发现了由 Codex adapter 投射到 `.agents/skills/` 的 Buildr Skill，且用户只要求“更新 workspace”
+- **THEN** Buildr Skill MUST 使用 `qoder` 执行 workspace sync 和后续 Doctor
+- **AND** MUST NOT 因投射路径、生成正文或已有 Codex runtime 而使用 `codex`
+
+#### Scenario: 用户明确维护其他 runtime
+- **WHEN** 当前宿主是 Qoder，且用户明确要求更新 Codex runtime
+- **THEN** Buildr Skill MUST 允许把本次明确目标设为 `codex`
+- **AND** MUST NOT 把该目标改写为当前宿主身份
+
+#### Scenario: 当前宿主身份无法确认
+- **WHEN** Agent 宿主没有提供可与 supported adapter 对齐的明确身份，且用户也未明确指定目标
+- **THEN** Buildr Skill MUST 在执行需要 `<agent>` 的命令前停止并请求确认
+- **AND** MUST NOT 使用投射文件、受支持列表或其他 adapter 作为 fallback
+
+### Requirement: 产品入口 Buildr Skill 禁止从投射诊断推断宿主身份
+产品入口 Buildr Skill MUST 明确禁止从 Skill 路径、generated marker、投射回执以及 Doctor 的 `requested`、`selected` 或 `detectedAgents` 推断当前宿主 Agent。
+
+#### Scenario: Doctor 检查显式 adapter
+- **WHEN** Agent 运行 `buildr doctor --agent codex`
+- **THEN** Buildr Skill MUST 将结果解释为检查了调用者显式选择的 Codex runtime
+- **AND** MUST NOT 将 `selected: codex` 或包含 `codex` 的 `detectedAgents` 解释为宿主身份验证
+
+### Requirement: Agent Skills 必须区分 todo 创建与 active 启动
+Task Triage 与 Task Manager provider MUST 将 todo 创建视为仅写 Workspace SQLite 的已接受意向，将 active 创建或 todo 激活视为正式执行入口。只有后者 MUST 条件消费 Git Operations 完成创建前基线收敛；Task Manager Application 自身 MUST 保持不执行 Git。
+
+#### Scenario: 复盘产生 todo
+- **WHEN** 用户同意保留复盘改进意向但未要求立即研发
+- **THEN** Agent MUST 通过 Task Manager 创建 todo 与来源关系
+- **AND** MUST NOT运行 Git baseline、准备 Environment 或创建 Change
+
+#### Scenario: 启动 todo
+- **WHEN** 用户要求开始执行已有 todo
+- **THEN** Task Triage MUST 先完成当前事实确认与 Git 基线收敛，再调用 activate
+- **AND** 任一前置门禁 blocked 时 MUST 保持 todo 不变
+
+### Requirement: Task Retrospective Skill 必须完成后续落地闭环
+Task Retrospective provider MUST 把 inspect、当前事实重评、承接 Task 选择、来源关系写入和 disposition 更新组成一个可恢复流程。它 MUST 先向用户提供原始报告或不可变引用，且 MUST 在所有 Task 关系成功后才标记 handled。
+
+#### Scenario: 处理待处理复盘
+- **WHEN** 用户要求处理 pending retrospective
+- **THEN** provider MUST 输出原文/引用、当前有效性分析、重新拆分的方向、承接 Task 与丢弃理由
+- **AND** MUST 返回实际 Task IDs、关系 effects 与最终 disposition evidence
+
+#### Scenario: 中途写入失败
+- **WHEN** 任一目标 Task 创建或来源关系 mutation 失败
+- **THEN** provider MUST 保持 retrospective 为 pending 并报告精确恢复动作
+- **AND** MUST NOT把部分完成冒充为 handled

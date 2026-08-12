@@ -8,7 +8,7 @@ import { createWorkspace } from '../../domain/workspace/workspace.mjs';
 export const WORKSPACE_SCHEMA_V1 = 'buildr.workspace/v1';
 export const WORKSPACE_DESCRIPTION_TODO = 'TODO: 请补充 Workspace 的管理范围和用途。';
 
-const CANONICAL_FIELDS = new Set(['schemaVersion', 'id', 'name', 'description', 'kind', 'profile']);
+const CANONICAL_FIELDS = new Set(['schemaVersion', 'id', 'name', 'description', 'kind', 'profile', 'runtime']);
 
 function parseYaml(content, label) {
   const document = YAML.parseDocument(content, { uniqueKeys: true, prettyErrors: true });
@@ -54,7 +54,8 @@ export function parseWorkspaceManifest(content, label = '.buildr/workspace.yml')
       canonical: true,
       migrationRequired: false,
       schemaVersion: WORKSPACE_SCHEMA_V1,
-      workspace: createWorkspace(document),
+      workspace: createWorkspace(document, { required: false }),
+      nodeMigrationRequired: document.runtime === undefined,
       compatibility,
       document,
     };
@@ -71,6 +72,7 @@ export function parseWorkspaceManifest(content, label = '.buildr/workspace.yml')
         description: typeof document.description === 'string' ? document.description.trim() : '',
       },
       compatibility,
+      nodeMigrationRequired: true,
       document,
     };
   }
@@ -85,6 +87,7 @@ export function renderWorkspaceManifest({ workspace, compatibility = {} }) {
     id: canonical.id,
     name: canonical.name,
     description: canonical.description,
+    runtime: canonical.runtime,
   };
   if (compatibility.kind !== undefined) {
     document.kind = optionalCompatibilityText(compatibility.kind, 'kind', 'Workspace metadata');

@@ -1,0 +1,37 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: automate-deterministic-openspec-convergence
+operation: assess
+treeIdentity: planning@39c97a77220a89ae82effa762ef33c10bb34a4db
+impacts:
+  - type: brief
+    target: openspec/changes/automate-deterministic-openspec-convergence/brief.md
+    reason: 正式Change需要表达确定性边界、Agent fallback与真实finish验收
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/openspec-deterministic-sync/spec.md
+      - specs/task-finish-execution/spec.md
+      - specs/openspec-contract-guard/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 产品持有convergence与deterministic sync会改变Task Finish正常路径
+    status: updated
+    sourceIdentities:
+      - specs/openspec-deterministic-sync/spec.md
+      - specs/task-finish-execution/spec.md
+  - type: task-board
+    target: openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html
+    reason: 长期Task Finish优化需要记录上一轮6分52秒实测和第四阶段Change
+    status: updated
+    sourceIdentities:
+      - previous finish completion receipt
+      - proposal.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: deterministic sync是实现/规范能力名称，不改变产品领域概念边界
+    status: not-applicable
+    sourceIdentities:
+      - proposal.md
+      - design.md
+unresolvedItems: []

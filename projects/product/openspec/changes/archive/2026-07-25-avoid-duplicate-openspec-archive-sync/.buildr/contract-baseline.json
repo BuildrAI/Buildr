@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "avoid-duplicate-openspec-archive-sync",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-c378d50892573dc700eb4fff02f5bddb4caa2f78454ec646e5a1d32711812117",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "agent-task-workflows",
+      "title": "Task Finish 归档已手动同步的 OpenSpec change 时跳过重复 spec update",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

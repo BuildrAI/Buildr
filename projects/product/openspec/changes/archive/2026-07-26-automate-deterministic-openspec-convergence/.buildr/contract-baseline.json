@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "automate-deterministic-openspec-convergence",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-ce4b5627219de3b4ae5ee041d1a5401b7661fdb78a37c57a102291852f6c4a47",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "openspec-contract-guard",
+      "title": "Contract guard必须与sync receipt共享identity",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-contract-guard",
+      "title": "Convergence receipt必须持久化阶段恢复证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-deterministic-sync",
+      "title": "Sync planner必须证明唯一结果",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-deterministic-sync",
+      "title": "Deterministic operation必须使用保守白名单",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-deterministic-sync",
+      "title": "Sync apply必须原子且identity-bound",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "openspec-deterministic-sync",
+      "title": "Deterministic sync必须提供Agent fallback证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Task Finish必须消费产品持有的convergence orchestrator",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish入口必须解析权威execution roots",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Completion receipt必须持久化完整效率证据",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Full detail必须使用有界诊断引用",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish benchmark必须测量执行与Agent编排",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

@@ -24,7 +24,7 @@ buildr update
 command -v buildr
 buildr skill install <agent> --target <workspace-root>
 ```
-用户要求“更新 workspace”或“同步 workspace”时，先确认 workspace root 是否由 Git 管理。Git 管理的 workspace 解析 `buildr.git-workspace-update/v1` binding，读取 selected provider 后检查当前分支、upstream 和工作区状态并安全更新本地 checkout；required provider blocked 或遇到本地改动、分叉、冲突、缺少 upstream 等决策点时停止说明，不自动 stash、rebase、覆盖，也不继续 sync。Git 更新成功后不重复询问 sync；非 Git workspace 跳过 Git provider。然后使用当前 CLI 执行 sync，不先更新 CLI；这不是 `buildr sync` 的隐式 Git 行为：
+用户要求“更新 workspace”或“同步 workspace”时，先确认 workspace root 是否由 Git 管理。Git 管理的 workspace 解析 `buildr.git-operations/v1` binding，读取 selected provider，并由 Buildr Skill 提供明确 workspace、upstream 和 update operation；required provider blocked 或遇到本地改动、分叉、冲突、缺少 upstream 等决策点时停止说明，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。Git 更新成功后不重复询问 sync；非 Git workspace 跳过 Git provider。然后使用当前 CLI 执行 sync，不先更新 CLI；这不是 `buildr sync` 的隐式 Git 行为：
 
 ```bash
 buildr sync <agent> --target <dir>
@@ -37,8 +37,7 @@ buildr sync <agent> --target <dir>
 buildr skill install <agent> --target <dir>
 ```
 
-如果安装后 Buildr Skill 可用，后续按 Buildr Skill 工作。本指南只保留 Skill 不可用时的最小兜底流程。
-
+如果安装后Buildr Skill可用，后续按Buildr Skill工作。本指南只保留Skill不可用时的最小兜底流程。Task Record、Development、Verification、Review与Retrospective current records都由对应Application保存到Workspace SQLite，不进入Git或跨机器同步；不要读取、迁移或生成旧Task YAML。Git Operations只处理用户或上游consumer明确选择的普通Git内容。Environment、Finish、mutations、worktree/runtime、Candidate与delivery source继续遵守各自owner边界。
 ## 最小兜底
 
 优先使用 Buildr CLI 完成用户指令。workspace 必须完成初始化；未初始化时使用上面的 `buildr init --agent <agent>`，其成功输出已包含最终 doctor，不再重复执行。已有 workspace 中，`buildr doctor --agent <agent> --json` 是最小兜底流程的默认事实入口。不要省略 `--agent`；未指定 Agent 时 doctor 会检查所有支持的 runtime。

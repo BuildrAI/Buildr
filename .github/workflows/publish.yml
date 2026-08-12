@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: "22.14.0"
+          node-version: "24.15.0"
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Install supported npm CLI
@@ -37,40 +37,66 @@ jobs:
             "${{ steps.contract.outputs.version }}" \
             ../../../../CHANGELOG.md \
             > "${RUNNER_TEMP}/buildr-release-notes.md"
-      - name: Verify final release candidate
+      - name: Prepare immutable release artifact
+        id: artifact
+        run: node scripts/release/release-artifact.mjs "${RUNNER_TEMP}/buildr-release-artifact"
+      - name: Verify release artifact contract
         env:
-          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-release-verification-timing.json
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-release-verification-diagnostics
-        run: ./scripts/verify-buildr-product
-      - name: Check official registry version
-        id: registry
+          BUILDR_CANDIDATE_TARBALL: ${{ steps.artifact.outputs.tarball }}
+          BUILDR_CANDIDATE_PACK_METADATA: ${{ steps.artifact.outputs.pack_metadata }}
+        run: node test/verification/release/open-source-candidate.mjs
+      - name: Smoke immutable release artifact before publish
+        env:
+          BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ steps.artifact.outputs.manifest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/buildr-release-diagnostics"
+          node test/verification/release/release-smoke.mjs \
+            2>&1 | tee "${RUNNER_TEMP}/buildr-release-diagnostics/prepublish-smoke.log"
+      - name: Check official registry artifact
+        id: registry_before
         run: >-
           node scripts/release/registry-version-state.mjs
           "${{ steps.contract.outputs.version }}"
+          --manifest "${{ steps.artifact.outputs.manifest }}"
       - name: Publish public npm package
-        if: steps.registry.outputs.published != 'true'
-        run: npm publish --access public --tag "${{ steps.contract.outputs.npm_tag }}"
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
+        if: steps.registry_before.outputs.published != 'true'
         run: >-
-          gh release create "${GITHUB_REF_NAME}"
-          --verify-tag
-          --title "${GITHUB_REF_NAME}"
-          --notes-file "${RUNNER_TEMP}/buildr-release-notes.md"
-          ${{ steps.contract.outputs.prerelease == 'true' && '--prerelease' || '' }}
-          ${{ steps.contract.outputs.prerelease == 'true' && '--latest=false' || '' }}
-      - name: Upload release verification timing
+          npm publish "${{ steps.artifact.outputs.tarball }}"
+          --access public
+          --tag "${{ steps.contract.outputs.npm_tag }}"
+      - name: Confirm official registry artifact and dist-tag
+        run: >-
+          node scripts/release/registry-version-state.mjs
+          "${{ steps.contract.outputs.version }}"
+          --manifest "${{ steps.artifact.outputs.manifest }}"
+          --tag "${{ steps.contract.outputs.npm_tag }}"
+          --require-published
+          --wait
+      - name: Ensure GitHub release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/release/github-release-ensure.mjs
+          "${GITHUB_REF_NAME}"
+          "${RUNNER_TEMP}/buildr-release-notes.md"
+          "${{ steps.contract.outputs.prerelease }}"
+      - name: Smoke exact package from official registry
+        env:
+          BUILDR_RELEASE_PACKAGE_SPEC: "@buildr-ai/buildr@${{ steps.contract.outputs.version }}"
+        run: >-
+          node test/verification/release/release-smoke.mjs
+          2>&1 | tee "${RUNNER_TEMP}/buildr-release-diagnostics/postpublish-smoke.log"
+      - name: Upload immutable release artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: release-verification-timing-${{ github.ref_name }}
-          path: ${{ runner.temp }}/buildr-release-verification-timing.json
+          name: release-artifact-${{ github.ref_name }}
+          path: ${{ runner.temp }}/buildr-release-artifact
           if-no-files-found: warn
       - name: Upload release failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: release-verification-diagnostics-${{ github.ref_name }}
-          path: ${{ runner.temp }}/buildr-release-verification-diagnostics
+          path: ${{ runner.temp }}/buildr-release-diagnostics
           if-no-files-found: ignore

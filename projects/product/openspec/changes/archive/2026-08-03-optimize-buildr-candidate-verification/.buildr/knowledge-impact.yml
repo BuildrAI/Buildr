@@ -1,0 +1,31 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-buildr-candidate-verification
+operation: reconcile
+treeIdentity: git:871c13c20d8b40b0b1ea70aabbe72818168e2bb4+dirty
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-buildr-candidate-verification/brief.md
+    reason: 正式 Change 需要提供成本、范围、验证目标拆分及测试迁移的人类入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-buildr-candidate-verification/proposal.md
+      - openspec/changes/optimize-buildr-candidate-verification/design.md
+      - openspec/changes/optimize-buildr-candidate-verification/brief.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 当前验证能力、affected/full 选择、完整回归 membership 与交付流程将变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-buildr-candidate-verification/specs/project-testing-guidance/spec.md
+      - openspec/changes/optimize-buildr-candidate-verification/specs/cli-modular-architecture/spec.md
+      - services/buildr/test/verification/registry.mjs
+      - verification.yml
+      - openspec/knowledge/services/buildr.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: Project Testing 的 Quick、affected/full、Candidate/Release 关系被重新定义，需要同步 canonical terminology
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+      - openspec/changes/optimize-buildr-candidate-verification/specs/project-testing-guidance/spec.md
+unresolvedItems: []

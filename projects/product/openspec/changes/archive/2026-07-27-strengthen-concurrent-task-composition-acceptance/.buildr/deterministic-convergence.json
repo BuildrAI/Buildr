@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "buildr.openspec-convergence-receipt/v2",
+  "change": "strengthen-concurrent-task-composition-acceptance",
+  "project": "product",
+  "deltaHash": "sha256-e5667ad449e2ab8b5f951d08f68aa61a22ee7ae037d4d05b7e70f724e5970764",
+  "openspecExecutable": "external:openspec",
+  "openspecExecutableIdentity": {
+    "sourceKind": "external-declared",
+    "reference": "external:openspec",
+    "version": "1.6.0",
+    "sha256": "ca136f0e9fd4951dcf93d8ed729ebc97b2d97d3980cd9dc9d42fc80e32e797c6"
+  },
+  "stage": "post-sync",
+  "transitions": [
+    {
+      "stage": "pending-rebind",
+      "oldDeltaHash": "sha256-bc581ef7c998e1d2663a2d3c4a07c301d83c491ec5cd6068accc25c139f19588",
+      "reason": "archive rehearsal failed before canonical writes; existing Scenario identities were restored"
+    },
+    {
+      "stage": "pending-rebind",
+      "oldDeltaHash": "sha256-8ca1687a5bc3bfe2d3726abacc0ea80b95238e5463af059af53f1a44e5e32547",
+      "reason": "archive rehearsal failed before canonical writes; the remaining existing Scenario identity was restored"
+    },
+    {
+      "stage": "archive-rehearsal",
+      "completedAt": "2026-07-27T07:08:17.586Z"
+    },
+    {
+      "stage": "pre-sync",
+      "completedAt": "2026-07-27T07:08:20.080Z"
+    },
+    {
+      "stage": "sync-plan",
+      "completedAt": "2026-07-27T07:08:21.712Z",
+      "planIdentity": "sha256-659983e0f83ea403ee3d93587466e9c323db6299f1df3e3b80ed3e5356295f1e"
+    },
+    {
+      "stage": "sync-apply",
+      "completedAt": "2026-07-27T07:08:29.118Z",
+      "planIdentity": "sha256-659983e0f83ea403ee3d93587466e9c323db6299f1df3e3b80ed3e5356295f1e",
+      "openspecExecutable": "external:openspec",
+      "openspecExecutableIdentity": {
+        "sourceKind": "external-declared",
+        "reference": "external:openspec",
+        "version": "1.6.0",
+        "sha256": "ca136f0e9fd4951dcf93d8ed729ebc97b2d97d3980cd9dc9d42fc80e32e797c6"
+      }
+    },
+    {
+      "stage": "strict-validation",
+      "completedAt": "2026-07-27T07:08:30.512Z"
+    },
+    {
+      "stage": "post-sync",
+      "completedAt": "2026-07-27T07:08:32.175Z"
+    }
+  ]
+}

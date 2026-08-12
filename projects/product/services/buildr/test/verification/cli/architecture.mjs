@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { validateVerificationRegistry } from '../planner.mjs';
 import { verificationSteps } from '../registry.mjs';
 import { validateProductSourceLayout } from './product-source-layout.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/interfaces/cli/registry.mjs';
 
 const reportOnly = process.argv.includes('--report');
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -13,9 +14,12 @@ const projectRoot = path.resolve(productRoot, '../..');
 const sourceRoot = path.join(productRoot, 'src');
 const entry = path.join(productRoot, 'bin', 'buildr.mjs');
 const problems = [];
+const ignoredProjectRootEntries = new Set([
+  '.agents', '.claude', '.codebuddy', '.cursor', '.qoder', '.trae', '.buildr', '.git',
+]);
 
 problems.push(...validateProductSourceLayout({
-  projectEntries: fs.readdirSync(projectRoot).filter((entryName) => entryName !== 'node_modules'),
+  projectEntries: fs.readdirSync(projectRoot).filter((entryName) => !ignoredProjectRootEntries.has(entryName)),
   serviceEntries: fs.readdirSync(productRoot).filter((entryName) => entryName !== 'node_modules'),
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));
@@ -54,11 +58,20 @@ if (!entryContent.includes("from '../src/interfaces/cli/main.mjs'")) problems.pu
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime = [
-  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs',
-  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web/app.js',
+  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs', 'interfaces/cli/task-record.mjs',
+  'interfaces/cli/task-verification.mjs',
+  'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
+  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web-dist/index.html',
   'application/compose-runtime.mjs', 'application/doctor.mjs', 'application/package-maintenance.mjs',
   'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
-  'application/worktree/worktree-application.mjs',
+  'application/worktree/git-worktree-provider.mjs',
+  'application/task-environment/task-environment-application.mjs',
+  'domain/task-environment/task-environment.mjs', 'infrastructure/filesystem/task-environment-repository.mjs',
+  'application/task-finish/task-finish-application.mjs', 'application/task-finish/task-finish-run.mjs',
+  'application/task-finish/task-finish-product-executor.mjs',
+  'application/task-verification/task-verification-application.mjs', 'domain/task-verification/task-verification.mjs',
+  'infrastructure/sqlite/task-development-repository.mjs', 'infrastructure/sqlite/task-review-repository.mjs',
+  'infrastructure/sqlite/task-verification-repository.mjs',
   'application/domains/workspace.mjs', 'application/domains/rules.mjs', 'application/domains/skills.mjs',
   'application/domains/commands.mjs', 'application/domains/components.mjs', 'application/domains/openspec.mjs',
   'application/domains/runtime.mjs', 'application/json-contracts.mjs',
@@ -188,18 +201,103 @@ const registry = path.join(sourceRoot, 'interfaces', 'cli', 'registry.mjs');
 if (fs.existsSync(registry)) {
   const source = fs.readFileSync(registry, 'utf8');
   if (!source.includes('COMMAND_REGISTRY')) problems.push('command registry must expose one explicit COMMAND_REGISTRY');
-  const keys = [...source.matchAll(/key:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
+  const keys = COMMAND_CATALOG.map((item) => item.key);
   const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicates.length) problems.push(`duplicate command registry keys: ${[...new Set(duplicates)].join(', ')}`);
-  const expectedKeys = [
-    'init', 'app launcher install', 'app launcher status', 'app launcher uninstall', 'app preview start', 'app preview list', 'app preview stop', 'app', 'bootstrap guide', 'package check', 'package build', 'project create', 'service create', 'worktree create', 'worktree inspect', 'worktree context',
-    'doctor', 'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove',
-    'openspec baseline create', 'openspec check', 'component list', 'component check', 'component install',
-    'component uninstall', 'rules add', 'rules remove', 'builtin list', 'builtin uninstall', 'builtin restore',
-    'update check', 'update', 'render', 'sync', 'skills add', 'skills remove', 'skills bind', 'skills unbind',
-    'skills migrate-project-assets', 'skill install', 'runtime check', 'skills render', 'rules render',
-  ];
-  if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) problems.push('command registry keys differ from the supported CLI surface');
+  const surfaces = new Set(['primary', 'agent-machine', 'maintenance']);
+  for (const descriptor of COMMAND_CATALOG) {
+    if (!surfaces.has(descriptor.surface)) problems.push(`command has invalid surface: ${descriptor.key}`);
+    if (!descriptor.summary?.trim()) problems.push(`command is missing summary: ${descriptor.key}`);
+    if (!Array.isArray(descriptor.help) || !descriptor.help.some((line) => line.startsWith('Usage:'))) problems.push(`command is missing canonical help: ${descriptor.key}`);
+    if (descriptor.executable && (typeof descriptor.match !== 'function' || typeof descriptor.run !== 'function')) problems.push(`executable command is missing match/run: ${descriptor.key}`);
+    if (!descriptor.executable && (descriptor.match || descriptor.run)) problems.push(`aggregate command must not execute: ${descriptor.key}`);
+  }
+  if (COMMAND_REGISTRY.some((item) => !item.executable)) problems.push('COMMAND_REGISTRY must contain executable descriptors only');
+  for (const retired of ['openspec audit', 'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'skills migrate-project-assets']) {
+    if (keys.includes(retired)) problems.push(`retired command remains in catalog: ${retired}`);
+  }
+  if (!source.includes('registerCommandHelp(runtime, COMMAND_CATALOG)')) problems.push('dispatch and help must consume the same command catalog');
+}
+
+const taskRecordApplication = path.join(sourceRoot, 'application', 'task-record', 'task-record-application.mjs');
+const taskRecordInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-record.mjs');
+if (fs.existsSync(taskRecordApplication)) {
+  const source = fs.readFileSync(taskRecordApplication, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|parseCli|taskRecordCommand/.test(source)) {
+    problems.push('Task Record Application must not own CLI parsing, output, or process exit state');
+  }
+}
+if (fs.existsSync(taskRecordInterface)) {
+  const source = fs.readFileSync(taskRecordInterface, 'utf8');
+  if (!source.includes('export function taskRecordCommand') || !source.includes('runtime.createTaskRecord')) {
+    problems.push('Task Record CLI interface must adapt registry actions to the shared Application');
+  }
+}
+
+const taskEnvironmentApplication = path.join(sourceRoot, 'application', 'task-environment', 'task-environment-application.mjs');
+const taskEnvironmentInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-environment.mjs');
+if (fs.existsSync(taskEnvironmentApplication)) {
+  const source = fs.readFileSync(taskEnvironmentApplication, 'utf8');
+  if (/process\.(?:stdout|stderr|exitCode)|taskEnvironmentCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
+    problems.push('Task Environment Application must not own CLI parsing, output, or process exit state');
+  }
+}
+
+const taskReviewApplication = path.join(sourceRoot, 'application', 'task-review', 'task-review-application.mjs');
+const taskReviewInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-review.mjs');
+if (fs.existsSync(taskReviewApplication)) {
+  const source = fs.readFileSync(taskReviewApplication, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|taskReviewCommand|parseTaskReviewCli/.test(source)) {
+    problems.push('Task Review Application must not own CLI parsing, output, or process exit state');
+  }
+  if (!source.includes('runtime.readTaskReviewResultPersistence') || !source.includes('runtime.writeTaskReviewResultPersistence')) {
+    problems.push('Task Review Application must remain the shared reader/writer over the narrow repository');
+  }
+}
+if (fs.existsSync(taskReviewInterface)) {
+  const source = fs.readFileSync(taskReviewInterface, 'utf8');
+  if (!source.includes('export function taskReviewCommand') || !source.includes('runtime.inspectTaskReview') || !source.includes('runtime.recordTaskReview')) {
+    problems.push('Task Review CLI interface must adapt both actions to the shared Application');
+  }
+}
+
+const taskVerificationApplication = path.join(sourceRoot, 'application', 'task-verification', 'task-verification-application.mjs');
+const taskVerificationInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-verification.mjs');
+if (fs.existsSync(taskVerificationApplication)) {
+  const source = fs.readFileSync(taskVerificationApplication, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|taskVerificationCommand|parseTaskVerificationCli/.test(source)) {
+    problems.push('Task Verification Application must not own CLI parsing, output, or process exit state');
+  }
+  if (!source.includes('runtime.readTaskVerificationResultPersistence') || !source.includes('runtime.writeTaskVerificationResultPersistence')) {
+    problems.push('Task Verification Application must remain the shared reader/writer over the narrow repository');
+  }
+}
+if (fs.existsSync(taskVerificationInterface)) {
+  const source = fs.readFileSync(taskVerificationInterface, 'utf8');
+  if (!source.includes('export function taskVerificationCommand') || !source.includes('runtime.inspectTaskVerification') || !source.includes('runtime.recordTaskVerification')) {
+    problems.push('Task Verification CLI interface must adapt both actions to the shared Application');
+  }
+}
+if (fs.existsSync(taskEnvironmentInterface)) {
+  const source = fs.readFileSync(taskEnvironmentInterface, 'utf8');
+  if (!source.includes('export async function taskEnvironmentCommand') || !source.includes('runtime.prepareTaskEnvironment')) {
+    problems.push('Task Environment CLI interface must adapt registry actions to the shared Application');
+  }
+}
+
+const gitWorktreeProvider = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');
+const gitWorktreeInterface = path.join(sourceRoot, 'interfaces', 'cli', 'git-worktree.mjs');
+if (fs.existsSync(gitWorktreeProvider)) {
+  const source = fs.readFileSync(gitWorktreeProvider, 'utf8');
+  if (/process\.(?:stdout|stderr|exitCode)|gitWorktreeCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
+    problems.push('Git worktree provider must not own CLI parsing, output, or process exit state');
+  }
+}
+if (fs.existsSync(gitWorktreeInterface)) {
+  const source = fs.readFileSync(gitWorktreeInterface, 'utf8');
+  if (!source.includes('export function gitWorktreeCommand') || !source.includes('runtime.prepareGitWorktrees')) {
+    problems.push('Git worktree CLI interface must adapt registry actions to the narrow provider Application');
+  }
 }
 
 const legacyRootToken = ['to', 'ols/'].join('');

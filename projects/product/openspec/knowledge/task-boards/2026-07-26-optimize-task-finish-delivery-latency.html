@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Agent 单向维护的任务看板。">
+  <title>任务看板</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --line: #dfe5ec;
+      --paper: #fff;
+      --canvas: #f3f6f8;
+      --navy: #14213d;
+      --teal: #087f76;
+      --teal-soft: #ddf4f0;
+      --blue: #2563eb;
+      --blue-soft: #eaf1ff;
+      --amber: #b96300;
+      --amber-soft: #fff3d7;
+      --red: #b83a34;
+      --red-soft: #fff0ee;
+      --green: #15803d;
+      --green-soft: #eaf8ee;
+      --shadow: 0 14px 40px rgba(20, 33, 61, .09);
+      --radius: 20px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 2%, rgba(8, 127, 118, .09), transparent 24rem),
+        radial-gradient(circle at 92% 8%, rgba(37, 99, 235, .07), transparent 28rem),
+        var(--canvas);
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+    button, a { font: inherit; }
+    .page { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 32px 0 72px; }
+    .hero {
+      padding: 46px;
+      color: #fff;
+      border-radius: 28px;
+      background: linear-gradient(135deg, var(--navy), #183d52 62%, #0b625e);
+      box-shadow: var(--shadow);
+    }
+    .hero-top, .section-head, .split, .metric-row, .tab-list { display: flex; }
+    .hero-top { align-items: center; justify-content: space-between; gap: 18px; }
+    .eyebrow, .status, .tag {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 6px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .04em;
+    }
+    .eyebrow { color: #caf8ee; border: 1px solid rgba(202, 248, 238, .35); background: rgba(8, 127, 118, .27); }
+    .hero h1 { max-width: 850px; margin: 22px 0 0; overflow-wrap: anywhere; font-size: clamp(34px, 5vw, 60px); line-height: 1.12; letter-spacing: -.045em; }
+    .hero-lead { max-width: 840px; margin: 18px 0 0; overflow-wrap: anywhere; color: rgba(255, 255, 255, .8); font-size: 18px; }
+    .metric-row { gap: 14px; margin-top: 30px; }
+    .metric { flex: 1; min-width: 0; padding: 16px 18px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 16px; background: rgba(255, 255, 255, .075); }
+    .metric strong { display: block; overflow-wrap: anywhere; font-size: 22px; line-height: 1.25; }
+    .metric span { display: block; margin-top: 4px; color: rgba(255, 255, 255, .66); font-size: 12px; }
+    .tabs { position: sticky; top: 0; z-index: 10; margin: 18px 0 0; padding: 10px; border: 1px solid rgba(223, 229, 236, .95); border-radius: 18px; background: rgba(255, 255, 255, .92); box-shadow: 0 8px 28px rgba(20, 33, 61, .06); backdrop-filter: blur(14px); }
+    .tab-list { gap: 8px; overflow-x: auto; }
+    .tab {
+      flex: 0 0 auto;
+      padding: 10px 16px;
+      color: var(--muted);
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      cursor: pointer;
+      font-weight: 800;
+    }
+    .tab[aria-selected="true"] { color: #fff; background: var(--navy); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .section { margin-top: 22px; padding: 30px; border: 1px solid rgba(223, 229, 236, .96); border-radius: var(--radius); background: rgba(255, 255, 255, .95); box-shadow: 0 8px 28px rgba(20, 33, 61, .05); }
+    .section-head { align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+    .section h2 { margin: 0; color: var(--navy); font-size: 24px; line-height: 1.25; }
+    .section-desc { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    .focus { padding: 24px; border-radius: 18px; background: linear-gradient(135deg, var(--blue-soft), #f7fbff); border: 1px solid #cbdcff; }
+    .focus-label { color: var(--blue); font-size: 12px; font-weight: 900; letter-spacing: .08em; }
+    .focus h2 { margin: 8px 0 0; font-size: clamp(24px, 3.4vw, 38px); }
+    .focus p { max-width: 840px; margin: 10px 0 0; color: #40516e; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+    .card h3 { margin: 8px 0 0; overflow-wrap: anywhere; color: var(--navy); font-size: 18px; }
+    .card p { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+    .tag.done { color: var(--green); background: var(--green-soft); }
+    .tag.current { color: var(--blue); background: var(--blue-soft); }
+    .tag.next { color: var(--amber); background: var(--amber-soft); }
+    .tag.blocked { color: var(--red); background: var(--red-soft); }
+    .status { color: #fff; background: rgba(255, 255, 255, .15); }
+    .alert { padding: 18px 20px; border-left: 4px solid var(--amber); border-radius: 14px; background: var(--amber-soft); }
+    .alert strong { display: block; color: #7c4500; }
+    .alert p { margin: 5px 0 0; color: #765523; }
+    .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .flow-step { position: relative; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+    .flow-step:not(:last-child)::after { position: absolute; right: -10px; top: 50%; content: "→"; color: #96a1b3; font-weight: 900; transform: translateY(-50%); }
+    .flow-step strong { display: block; color: var(--navy); }
+    .flow-step span { display: block; margin-top: 5px; color: var(--muted); font-size: 13px; }
+    .timeline { display: grid; gap: 12px; }
+    .stage { display: grid; grid-template-columns: 150px 1fr; gap: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+    .stage.current { border-color: #a8c5ff; background: #f7faff; }
+    .stage.blocked { border-color: #f2c5c2; background: #fffafa; }
+    .stage-title strong { display: block; margin-top: 8px; }
+    .stage-body p { margin: 0; color: var(--muted); }
+    .compact-list { margin: 12px 0 0; padding-left: 20px; }
+    .compact-list li + li { margin-top: 6px; }
+    .split { gap: 14px; }
+    .split > * { flex: 1; }
+    .evidence { display: grid; gap: 10px; }
+    .evidence-item { padding: 15px 17px; border: 1px solid var(--line); border-radius: 13px; background: #fbfcfe; }
+    .evidence-item strong { display: block; }
+    .evidence-item span, .evidence-item a { display: block; margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; font-size: 13px; }
+    pre { margin: 12px 0 0; padding: 17px; overflow: auto; color: #e8edf7; border-radius: 14px; background: #111a2d; font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 26px; color: var(--muted); font-size: 12px; }
+    .empty { color: var(--muted); font-style: italic; }
+    @media (max-width: 820px) {
+      .page { width: min(100% - 24px, 1180px); padding-top: 12px; }
+      .hero { padding: 28px 22px; border-radius: 22px; }
+      .hero-top, .section-head, .split, footer { align-items: stretch; flex-direction: column; }
+      .metric-row { display: grid; grid-template-columns: 1fr; }
+      .grid, .flow { grid-template-columns: 1fr; }
+      .flow-step:not(:last-child)::after { right: auto; left: 50%; top: auto; bottom: -18px; content: "↓"; transform: translateX(-50%); }
+      .stage { grid-template-columns: 1fr; gap: 10px; }
+      .section { padding: 22px 18px; }
+      .tabs { top: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="hero-top">
+        <span class="eyebrow">TASK BOARD · AGENT MAINTAINED</span>
+        <span class="status" id="hero-status">待更新</span>
+      </div>
+      <h1 id="hero-title">任务看板</h1>
+      <p class="hero-lead" id="hero-purpose">用一句普通人能理解的话说明这个任务要解决什么。</p>
+      <div class="metric-row" id="hero-metrics"></div>
+    </header>
+
+    <nav class="tabs" aria-label="任务看板视图">
+      <div class="tab-list" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" aria-controls="overview-panel" data-tab="overview">首页</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="progress-panel" data-tab="progress">推进</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="solution-panel" data-tab="solution">方案</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="technical-panel" data-tab="technical">技术细节</button>
+      </div>
+    </nav>
+
+    <section class="panel active" id="overview-panel" data-panel="overview"></section>
+    <section class="panel" id="progress-panel" data-panel="progress"></section>
+    <section class="panel" id="solution-panel" data-panel="solution"></section>
+    <section class="panel" id="technical-panel" data-panel="technical"></section>
+
+    <footer>
+      <span id="footer-id"></span>
+      <span>由 Agent 单向维护 · 页面只读</span>
+    </footer>
+  </main>
+
+  <script id="board-data" type="application/json">
+  {
+    "meta":{"title":"Task Finish 收尾耗时优化","taskId":"optimize-task-finish-delivery-latency","status":"进行中","phase":"第八阶段 · Identity 与计时事实","taskProgress":"已完成 10 / 13 个批次 · 前置修复已集成，恢复身份计时收尾","updatedAt":"2026-07-27 15:22","relativePath":"projects/product/openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html"},
+    "overview":{
+      "purpose":"把 Buildr 普通 Task Finish 从 20 多分钟逐步缩短到稳定约 3 分钟，同时保留 checkpoint、resume 与并发安全边界。",
+      "conclusion":"安全门禁、动作登记和跨状态机恢复闭环已经成立；verification child退出后的有界收敛、失败summary与preview orphan均已修复、归档并推送dev。当前恢复身份计时Change，补齐其候选内对非通过summary的blocked evidence消费。",
+      "currentFocus":"rebase harden-task-finish-identity-timing到最新dev，修复failed/incomplete summary只能阻塞、不能推进交付的证据边界，并恢复原finish checkpoint。",
+      "userAttention":"前置产品阻塞已完成；后续若收尾阶段再发现新的候选缺陷，继续停止并对齐，不静默修复。",
+      "highlights":{
+        "done":{"title":"已经完成","text":"第一阶段加入 execution plan、lease renew、OpenSpec convergence receipt、attempt timing 与 late asset review；真实收尾从 20 多分钟降至 12 分 39 秒。"},
+        "current":{"title":"最新完成","text":"前置Change最终affected 42.339秒通过，7/7 step cleanup均为clean；归档、dev集成、push与task environment清理已完成。"},
+        "next":{"title":"下一步","text":"恢复身份计时Change，允许可信failed/incomplete summary完成blocked attempt，同时确保passed交付仍只接受passed assurance。"}
+      },
+      "blockers":[],
+      "flow":[{"title":"第一轮收敛","text":"减少重试与错误顺序"},{"title":"补齐正确性","text":"清理 detached descendants"},{"title":"安全自动执行","text":"建立 handler registry"},{"title":"编排收敛","text":"验证与cleanup产品化"},{"title":"确定性同步","text":"消除正常路径Agent手工sync"},{"title":"恢复与Fixtures","text":"消除身份重建往返和重复准备"},{"title":"责任与计量","text":"分离验证返工和真正closeout"},{"title":"Action Registry","text":"消除标准步骤命令猜测"},{"title":"恢复闭环","text":"让post-sync后的合法变化可由产品继续"},{"title":"验证收敛","text":"child退出后有界cleanup与summary"},{"title":"Identity与计时","text":"候选失效和真实wall-clock可信"},{"title":"Provider连续执行","text":"确定性动作一次完成"},{"title":"运行成本收敛","text":"进程、selector与compact输出"}]
+    },
+    "changes":[
+      {"id":"optimize-task-finish-closeout-latency-phase-1","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-closeout-latency-phase-1/","summary":"完成第一阶段重试浪费与 convergence 安全优化；真实收尾 12 分 39 秒。","batchIds":["phase-1"]},
+      {"id":"fix-task-finish-detached-process-cleanup","status":"archived","path":"openspec/changes/archive/2026-07-26-fix-task-finish-detached-process-cleanup/","summary":"补齐 detached descendant cleanup，并验证 selector completion 可重放。","batchIds":["correctness-patch"]},
+      {"id":"optimize-task-finish-safe-execution","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-safe-execution/","summary":"完成safe handler registry与task finish run；实测finish run 7分51秒。","batchIds":["phase-2"]},
+      {"id":"optimize-task-finish-orchestration-efficiency","status":"archived","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-orchestration-efficiency/","summary":"verification composite与cleanup/ref transition已生效；真实finish约6分52秒。","batchIds":["phase-3"]},
+      {"id":"automate-deterministic-openspec-convergence","status":"archived","path":"openspec/changes/archive/2026-07-26-automate-deterministic-openspec-convergence/","summary":"已产品化确定性sync并完成真实收尾；自动同步有效，但OpenSpec骨架与fixtures暴露新瓶颈。","batchIds":["phase-4"]},
+      {"id":"optimize-task-finish-recovery-and-fixtures","status":"completed","path":"openspec/changes/archive/2026-07-26-optimize-task-finish-recovery-and-fixtures/","summary":"实现与最终affected验证完成：fixtures 18.435秒，OpenSpec/runtime recovery约2.5/1.7秒；异常收尾仍暴露compact诊断与Agent编排间隔。","batchIds":["phase-5"]},
+      {"id":"harden-task-finish-verification-boundaries","status":"archived","path":"openspec/changes/archive/2026-07-27-harden-task-finish-verification-boundaries/","summary":"已归档并推送dev：Task Finish收尾repair授权边界、candidate-aware preflight、portable receipts和阶段计量。","batchIds":["phase-6"]},
+      {"id":"introduce-task-finish-action-registry","status":"archived","path":"openspec/changes/archive/2026-07-27-introduce-task-finish-action-registry/","summary":"全步骤action registry、自动计划、provider handoff与Agent fallback已实现并集成。","batchIds":["phase-7"]},
+      {"id":"harden-task-finish-identity-timing","status":"active","path":"openspec/changes/harden-task-finish-identity-timing/","summary":"身份与provider execution计时修复已实现并验证；产品恢复前置条件已完成，现恢复真实收尾。","batchIds":["phase-8"]},
+      {"id":"complete-task-finish-convergence-recovery","status":"archived","path":"openspec/changes/archive/2026-07-27-complete-task-finish-convergence-recovery/","summary":"已完成stale receipt恢复、结构化阻塞出口、独立投射验证模块和真实端到端收尾，并推送dev。","batchIds":["phase-9"]}
+      ,{"id":"repair-verification-completion-recovery","status":"archived","path":"openspec/changes/archive/2026-07-27-repair-verification-completion-recovery/","summary":"已修复verification child退出后的有界收敛、非通过summary和preview orphan；最终affected 42.339秒通过并集成dev。","batchIds":["verification-recovery-patch"]}
+    ],
+    "progress":{
+      "batches":[
+        {"id":"phase-1","status":"completed","label":"已完成","title":"第一阶段 · 正常收尾进入分钟级","summary":"减少 OpenSpec、lease、execution binding、timing 与 late review 的可避免返工。","deliverable":"Change 已归档并推送 dev；实测 12 分 39 秒，较此前下降约 35%–40%。","changeIds":["optimize-task-finish-closeout-latency-phase-1"],"items":["execution plan 预检","lease renew 与完整 attempt timing","事务式 OpenSpec convergence","真实 finish timing evidence"]},
+        {"id":"correctness-patch","status":"completed","label":"已完成","title":"补丁 · detached process cleanup","summary":"修复第一阶段现场暴露的进程回收缺口和 selector completion 回归。","deliverable":"真实 detached descendant 已被精确回收；真实 finish completion 接受持久化 selector plan；affected 验证后无任务进程残留。","changeIds":["fix-task-finish-detached-process-cleanup"],"items":["runner-owned detached descendant cleanup","selector completion integration proof","正式 affected verification"]},
+        {"id":"phase-2","status":"completed","label":"已完成","title":"第二阶段 · 安全自动执行器","summary":"增加task finish run，在原状态机上自动执行已登记安全步骤。","deliverable":"Change已归档并推送dev；executor有效，但真实finish run 7分51秒，尚未达到约3分钟。","changeIds":["optimize-task-finish-safe-execution"],"items":["safe handler registry","结构化JSON assertion与输出摘要","只读observation并行化","异常回落checkpoint/resume"]},
+        {"id":"phase-3","status":"completed","label":"已完成","title":"第三阶段 · 编排效率与证据可靠性","summary":"完成verification composite、完整ref transition、attempt/lease原子恢复与两阶段cleanup。","deliverable":"Change已归档并推送dev；真实finish约6分52秒，验证32.54秒，但OpenSpec convergence仍需Agent手工sync。","changeIds":["optimize-task-finish-orchestration-efficiency"],"items":["formal verification composite","完整ref transition","原子attempt/lease恢复","两阶段cleanup","compact CLI evidence"]},
+        {"id":"phase-4","status":"completed","label":"已完成","title":"第四阶段 · 确定性同步与路径收敛","summary":"让产品对可证明唯一结果的OpenSpec delta生成plan并原子apply，同时消除root/cwd误路由。","deliverable":"Change已归档并推送dev；11个Requirements自动同步，resume为3.35秒；真实finish因两次骨架缺陷重跑为22分13秒。","changeIds":["automate-deterministic-openspec-convergence"],"items":["deterministic sync planner","atomic apply","convergence orchestrator","root/cwd authority","completion timing与diagnostics引用"]},
+        {"id":"phase-5","status":"completed","label":"已完成","title":"第五阶段 · 恢复往返与Fixtures性能","summary":"expected tree门禁、typed recover、共享fixture preparation与coverage计量均完成最终affected验证。","deliverable":"最终affected 59.239秒；fixtures 18.435秒；OpenSpec/runtime recovery约2.5/1.7秒。正常产品路径接近3分钟，异常路径仍受full affected重跑、compact诊断缺口和Agent编排间隔影响。","changeIds":["optimize-task-finish-recovery-and-fixtures"],"items":["expected-tree strict validation complete","typed identity recovery complete","run-local prepared fixtures 18.435s","structured diagnostic digest complete","coverage-aware completion metrics complete","真实finish benchmark complete"]},
+        {"id":"phase-6","status":"completed","label":"已完成","title":"第六阶段 · 验证与收尾责任边界","summary":"把formal failure变成用户repair决策点，并让产品分别计量验收、返工、重新验收和真正closeout。","deliverable":"实现、runtime sync、聚焦/contract/integration与最终affected均通过；收尾repair边界不干预实现期开发循环。","changeIds":["harden-task-finish-verification-boundaries"],"items":["repair authorization boundary","candidate-aware preflight","portable convergence receipts","failure-first compact diagnostics","verification/repair/re-verification/closeout-only timing"]},
+        {"id":"phase-7","status":"completed","label":"已完成","title":"第七阶段 · 产品 Action Registry","summary":"由产品登记全部标准finish动作及其执行、provider handoff和fallback边界，消除Agent命令猜测。","deliverable":"13个标准actions、CLI查询、registry默认计划、外部产品CLI兼容、Skill/runtime和最终affected均通过并集成。","changeIds":["introduce-task-finish-action-registry"],"items":["versioned full-step action registry","registry-generated plan and fingerprint","provider handoff without command guessing","agent-reasoning-required only for uncovered behavior","read-only actions query"]},
+        {"id":"phase-8","status":"in-progress","label":"当前工作","title":"第八阶段 · Identity 与计时事实","summary":"让Task Finish自动观测真实candidate/ref/verification identity，正确失效旧evidence，并按provider真实execution记录wall-clock。","deliverable":"前置runner修复已归档并推送dev；正在rebase原Change、补齐非通过summary的blocked evidence消费并恢复真实finish checkpoint。","changeIds":["harden-task-finish-identity-timing"],"items":["product-observed candidate and ref identity","identity-bound evidence invalidation","verifier-reported wall-clock ingestion","provider execution versus orchestration timing","失败summary持久化修复","真实finish审计"]},
+        {"id":"phase-9","status":"completed","label":"已完成","title":"第九阶段 · OpenSpec收敛恢复闭环","summary":"从旧baseline、sync plan、receipt和canonical摘要恢复可证明的pre-sync事实，并重新完成convergence。","deliverable":"Change已归档并推送dev；真实收尾无需Agent手工编辑canonical、baseline或receipt，稳定收敛为2.049–5.871秒。","changeIds":["complete-task-finish-convergence-recovery"],"items":["versioned convergence recovery","pre-sync fact restoration","action registry recovery classification","real end-to-end journey"]}
+        ,{"id":"verification-recovery-patch","status":"completed","label":"已完成","title":"前置补丁 · Verification有界收敛","summary":"把child exit、owned cleanup、stdio close和settle拆开，避免后代持管道时验证永久悬挂。","deliverable":"Change已归档并推送dev；最终affected 42.339秒、7/7 cleanup clean，task preview stop后无orphan。","changeIds":["repair-verification-completion-recovery"],"items":["exit-to-close grace period","idempotent owned cleanup","process-close-timeout diagnostics","non-passing timing summary","preview owner shutdown"]}
+        ,{"id":"phase-10","status":"planned","label":"下一轮","title":"第十阶段 · Provider Action 连续执行","summary":"把已登记且结果唯一的provider handoff升级为产品executor，在单次run内完成claim、执行、证据核验、complete和next。","deliverable":"无异常正常路径只需一次task finish run；Git、无observation审查、archive、runtime install和cleanup prepare不再逐步交给Agent编排。","changeIds":[],"items":["provider resolve-claim-execute-complete loop","deterministic Git and archive actions","automatic evidence projection","semantic branch and authorization fallback","normal closeout target 2-3 minutes"]}
+        ,{"id":"phase-11","status":"planned","label":"后续","title":"第十一阶段 · 进程、输出与 Selector 成本","summary":"继续收敛reparent descendant、selector覆盖证明和正常命令输出成本。","deliverable":"验证结束即无task-owned descendants；selector返回实际选中覆盖；正常finish不向Agent展开完整inventory和历史diagnostics。","changeIds":[],"items":["reparented Local App ownership cleanup","selector coverage evidence","compact-by-default doctor and finish output","full diagnostics only on demand"]}
+      ],
+      "dependencyPool":[]
+    },
+    "solution":{
+      "summary":"保留既有checkpoint/resume架构，把步骤级safe executor提升为产品拥有的多阶段编排，并以真实实测持续校正。",
+      "businessPlan":[{"label":"交付体验","title":"普通收尾可预测","text":"正常路径稳定在约 3 分钟，异常路径保留明确 checkpoint、原因和可恢复动作。"}],
+      "technicalPlan":[
+        {"label":"正确性补丁","title":"Owned process lifecycle","text":"验证 runner 必须持有可回收的 process ownership，覆盖主命令退出后仍存活或重新托管的 descendants。"},
+        {"label":"第二阶段","title":"Safe executor","text":"只自动执行已声明、可预检且副作用边界确定的步骤；异常继续使用现有checkpoint/resume。"},
+        {"label":"第三阶段","title":"Composite orchestration","text":"产品持有verification、Git ref transition和两阶段cleanup，默认输出compact evidence。"},
+        {"label":"第四阶段","title":"Deterministic OpenSpec sync","text":"产品只自动应用可结构化证明唯一结果的操作；任一歧义整批零写入并回退Agent。"},
+        {"label":"第七阶段","title":"Task Finish Action Registry","text":"全部标准步骤先由产品registry解析；确定性动作执行，语义动作交接provider，只有未覆盖行为才让Agent重新推理。"},
+        {"label":"第九阶段","title":"Convergence Recovery","text":"每个可预期收敛阻塞必须落到产品恢复、语义交接或明确不可恢复结论；禁止Agent手工搬运receipt或采用事后baseline。"}
+      ],
+      "boundaries":{"inScope":["Task Finish 正常路径耗时","确定性步骤自动执行","runner-owned process cleanup","耗时与重试证据"],"outOfScope":["降低 Candidate 覆盖","force push 或共享历史改写","用全局进程匹配清理"]},
+      "decisions":["第一阶段目标与约3分钟目标拆成独立Change","detached cleanup作为第一阶段正确性补丁，不并入safe executor Change","任务看板以完整优化计划为identity，不随单个Change归档结束","safe executor方向保留；第三阶段重点从增加handler转向减少Agent编排与Token开销","确定性sync按结构化保守白名单判断，不使用模型置信度；blocked整批零写入并保留Agent fallback","标准finish行为先进入产品action registry；registry未覆盖、匹配歧义或登记外语义分支时Agent才重新推理","OpenSpec子状态机恢复已集成dev，身份计时Change恢复原finish checkpoint并继续收尾"]
+    },
+    "technical":{"details":[{"title":"第一阶段实测","text":"完整finish run 12分39秒；一次selector completion缺陷产生约89秒attributable waste，cleanup发现并终止7个task-owned detached Local App fixture processes。"},{"title":"正确性补丁验证","text":"新增真实detached descendant回收证明、reparent lineage与非owned保护测试，以及task finish start→persist→completion selector集成证明；Product fast和archive lifecycle门禁全部通过。"},{"title":"第二阶段实测","text":"finish run 7分51秒、端到端约10分钟；runtime safe steps仅约1–2秒。主要浪费来自Agent逐段convergence/evidence编排、数万Token doctor输出，以及错误target race后的验证和下游重做。"},{"title":"第三阶段实测","text":"端到端约6分52秒；formal verification composite为32.54秒，OpenSpec convergence attempt为94.8秒。cleanup prepare/finalize与ref transition正确，但completion receipt缺少完整run timing，且多次root/cwd错误与full checkpoint仍显著消耗Token。"},{"title":"第四阶段进行中实测","text":"产品一次生成并应用11个safe Requirement；首次convergence 13.01秒后由EOF newline规范化缺陷在post-sync阻塞，未重跑rehearsal/pre-sync/plan/apply/strict，修复后仅用3.35秒从post-sync恢复。当前attributable waste为13.01秒，正常路径已不需要Agent手工编辑canonical。"},{"title":"第九阶段恢复闭环实测","text":"产品从可证明的pre-sync事实恢复stale receipt并重新收敛，无需Agent手工编辑canonical、baseline或receipt；稳定收敛2.049–5.871秒，affected验证87.452秒，最终Change归档、推送与环境清理完成。"}]}
+  }
+  </script>
+  <script>
+    (() => {
+      const dataNode = document.getElementById('board-data');
+      let data;
+      try { data = JSON.parse(dataNode.textContent); }
+      catch (error) {
+        document.body.innerHTML = '<main class="page"><section class="section"><h1>任务看板数据无法解析</h1><p>请让 Agent 检查 #board-data JSON。</p></section></main>';
+        return;
+      }
+
+      const el = (tag, className, text) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = text;
+        return node;
+      };
+      const appendList = (items) => {
+        if (!items || !items.length) return el('p', 'empty', '暂无');
+        const list = el('ul', 'compact-list');
+        items.forEach(item => list.append(el('li', '', item)));
+        return list;
+      };
+      const section = (title, desc) => {
+        const wrap = el('section', 'section');
+        const head = el('div', 'section-head');
+        const titleWrap = el('div');
+        titleWrap.append(el('h2', '', title));
+        if (desc) titleWrap.append(el('p', 'section-desc', desc));
+        head.append(titleWrap);
+        wrap.append(head);
+        return wrap;
+      };
+
+      document.title = `${data.meta.title}｜任务看板`;
+      document.getElementById('hero-title').textContent = data.meta.title;
+      document.getElementById('hero-purpose').textContent = data.overview.purpose;
+      document.getElementById('hero-status').textContent = data.meta.status;
+      document.getElementById('footer-id').textContent = `${data.meta.taskId} · ${data.meta.relativePath}`;
+      const metrics = [
+        [data.meta.phase, '当前批次'],
+        [data.meta.taskProgress, '可核实进度'],
+        [data.meta.updatedAt, '最近更新']
+      ];
+      const metricRow = document.getElementById('hero-metrics');
+      metrics.forEach(([value, label]) => {
+        const card = el('div', 'metric');
+        card.append(el('strong', '', value), el('span', '', label));
+        metricRow.append(card);
+      });
+
+      const overviewPanel = document.getElementById('overview-panel');
+      const focus = section('当前最重要的事');
+      const focusBox = el('div', 'focus');
+      focusBox.append(el('span', 'focus-label', 'CURRENT FOCUS'), el('h2', '', data.overview.conclusion), el('p', '', data.overview.currentFocus));
+      focus.append(focusBox);
+      overviewPanel.append(focus);
+
+      const highlights = section('一眼看懂推进情况', '只保留已经完成、正在做和下一步三个重点。');
+      const highlightGrid = el('div', 'grid');
+      [['done', 'done'], ['current', 'current'], ['next', 'next']].forEach(([key, status]) => {
+        const item = data.overview.highlights[key];
+        const card = el('article', 'card');
+        card.append(el('span', `tag ${status}`, item.title), el('h3', '', item.text));
+        highlightGrid.append(card);
+      });
+      highlights.append(highlightGrid);
+      overviewPanel.append(highlights);
+
+      const attention = section('需要关注', '阻塞和需要用户判断的事项必须集中展示。');
+      if (data.overview.blockers && data.overview.blockers.length) {
+        data.overview.blockers.forEach(item => {
+          const alert = el('div', 'alert');
+          alert.append(el('strong', '', item.title), el('p', '', item.text));
+          attention.append(alert);
+        });
+      } else {
+        const alert = el('div', 'alert');
+        alert.append(el('strong', '', '当前无阻塞'), el('p', '', data.overview.userAttention));
+        attention.append(alert);
+      }
+      overviewPanel.append(attention);
+
+      const flowSection = section('整体怎么推进', '首页只展示最短路径，详细方案放在后续视图。');
+      const flow = el('div', 'flow');
+      (data.overview.flow || []).forEach(item => {
+        const step = el('div', 'flow-step');
+        step.append(el('strong', '', item.title), el('span', '', item.text));
+        flow.append(step);
+      });
+      flowSection.append(flow);
+      overviewPanel.append(flowSection);
+
+      const progressPanel = document.getElementById('progress-panel');
+      const changeSection = section('关联的 OpenSpec changes', 'Change 是可选真实关联；没有 change 的 code-only 或外部协作任务保持空集合。');
+      const changeGrid = el('div', 'grid');
+      (data.changes || []).forEach(change => {
+        const card = el('article', 'card');
+        card.append(el('span', `tag ${change.status === 'archived' ? 'done' : 'current'}`, change.status || '待核实'));
+        card.append(el('h3', '', change.id), el('p', '', change.summary));
+        card.append(el('p', 'section-desc', change.path));
+        card.append(el('p', 'section-desc', `关联批次：${(change.batchIds || []).join('、') || '待核实'}`));
+        changeGrid.append(card);
+      });
+      if (!changeGrid.children.length) changeGrid.append(el('p', 'empty', '当前任务没有关联 OpenSpec change。'));
+      changeSection.append(changeGrid);
+      progressPanel.append(changeSection);
+
+      const progressSection = section('已形成的交付批次', '每个批次是一组可以独立形成方案、实施和验收的任务；只记录真实 change 关联。');
+      const timeline = el('div', 'timeline');
+      (data.progress.batches || []).forEach(stageData => {
+        const stage = el('article', `stage ${stageData.status || ''}`);
+        const title = el('div', 'stage-title');
+        title.append(el('span', `tag ${stageData.status || 'next'}`, stageData.label || stageData.status), el('strong', '', stageData.title));
+        const body = el('div', 'stage-body');
+        body.append(el('p', '', stageData.summary));
+        if (stageData.deliverable) body.append(el('p', 'section-desc', `交付：${stageData.deliverable}`));
+        body.append(el('p', 'section-desc', `关联 change：${(stageData.changeIds || []).join('、') || 'code-only / 外部交付'}`), appendList(stageData.items));
+        stage.append(title, body);
+        timeline.append(stage);
+      });
+      if (!timeline.children.length) timeline.append(el('p', 'empty', 'Agent 尚未形成交付批次。'));
+      progressSection.append(timeline);
+      progressPanel.append(progressSection);
+
+      if ((data.progress.dependencyPool || []).length) {
+        const dependencySection = section('依赖任务池', '尚未满足实施条件的任务继续属于完整任务；已就绪部分拆成新批次，其余继续留池。');
+        const dependencyTimeline = el('div', 'timeline');
+        data.progress.dependencyPool.forEach(item => {
+          const stage = el('article', `stage ${item.status || 'next'}`);
+          const title = el('div', 'stage-title');
+          title.append(el('span', `tag ${item.status || 'next'}`, item.label || '依赖中'), el('strong', '', item.title));
+          const body = el('div', 'stage-body');
+          body.append(el('p', '', item.summary));
+          if (item.entryCondition) body.append(el('p', 'section-desc', `进入条件：${item.entryCondition}`));
+          if (item.unaffectedBatchIds) body.append(el('p', 'section-desc', `不影响批次：${item.unaffectedBatchIds.join('、') || '无'}`));
+          body.append(appendList(item.items));
+          stage.append(title, body);
+          dependencyTimeline.append(stage);
+        });
+        dependencySection.append(dependencyTimeline);
+        progressPanel.append(dependencySection);
+      }
+
+      const solutionPanel = document.getElementById('solution-panel');
+      const summary = section('业务与技术方案', '说明完整任务涉及模块的业务流程、系统处理方式和关键设计选择。');
+      summary.append(el('div', 'focus', data.solution.summary));
+      solutionPanel.append(summary);
+      const solutionGroups = [
+        ['业务方案', '按相关业务模块说明完整任务要解决什么。', data.solution.businessPlan],
+        ['技术方案', '记录开发前已确认的系统交互、状态处理、实现边界和验证策略。', data.solution.technicalPlan]
+      ];
+      solutionGroups.forEach(([titleText, desc, items]) => {
+        const group = section(titleText, desc);
+        const grid = el('div', 'grid');
+        (items || []).forEach(item => {
+          const card = el('article', 'card');
+          card.append(el('span', 'tag current', item.label), el('h3', '', item.title), el('p', '', item.text));
+          grid.append(card);
+        });
+        if (!grid.children.length) grid.append(el('p', 'empty', '暂无。'));
+        group.append(grid);
+        solutionPanel.append(group);
+      });
+      const boundaries = section('范围与边界');
+      const split = el('div', 'split');
+      [['本次处理', data.solution.boundaries.inScope], ['明确不处理', data.solution.boundaries.outOfScope]].forEach(([titleText, items]) => {
+        const card = el('article', 'card');
+        card.append(el('h3', '', titleText), appendList(items));
+        split.append(card);
+      });
+      boundaries.append(split);
+      solutionPanel.append(boundaries);
+      const decisions = section('关键选择', '只记录影响整体方案的决定及理由。');
+      const decisionGrid = el('div', 'grid');
+      (data.solution.decisions || []).forEach(item => {
+        const card = el('article', 'card');
+        card.append(el('span', 'tag current', item.label || '决定'), el('h3', '', item.title), el('p', '', item.reason));
+        decisionGrid.append(card);
+      });
+      if (!decisionGrid.children.length) decisionGrid.append(el('p', 'empty', '暂无关键选择。'));
+      decisions.append(decisionGrid);
+      solutionPanel.append(decisions);
+
+      const technicalPanel = document.getElementById('technical-panel');
+      const technicalDetails = data.technical.details || [];
+      if (!technicalDetails.length) {
+        const emptyDetails = section('复杂任务技术细节', '只记录已经完成、且确有技术含量或沉淀价值的任务。');
+        emptyDetails.append(el('p', 'empty', '当前暂无需要回写的复杂任务技术细节。'));
+        technicalPanel.append(emptyDetails);
+      }
+      technicalDetails.forEach(detail => {
+        const group = section(detail.title || `任务 ${detail.taskId}`, detail.summary || '已完成复杂任务的关键实现说明。');
+        const evidence = el('div', 'evidence');
+        (detail.items || []).forEach(item => {
+          const card = el('div', 'evidence-item');
+          card.append(el('strong', '', item.title));
+          if (item.text) card.append(el('span', '', item.text));
+          if (item.path) card.append(el('span', '', item.path));
+          evidence.append(card);
+        });
+        if (!evidence.children.length) evidence.append(el('p', 'empty', '暂无。'));
+        group.append(evidence);
+        technicalPanel.append(group);
+        (detail.snippets || []).forEach(snippet => group.append(el('pre', '', snippet.code)));
+      });
+
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          const target = tab.dataset.tab;
+          document.querySelectorAll('.tab').forEach(item => item.setAttribute('aria-selected', item === tab ? 'true' : 'false'));
+          document.querySelectorAll('.panel').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === target));
+          window.scrollTo({ top: document.querySelector('.tabs').offsetTop - 6, behavior: 'smooth' });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

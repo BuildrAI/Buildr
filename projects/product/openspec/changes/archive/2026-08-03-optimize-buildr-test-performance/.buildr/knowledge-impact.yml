@@ -1,0 +1,30 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-buildr-test-performance
+operation: reconcile
+treeIdentity: git:59ed7c7b990adc5335a0c9be73ad05b10c815656+dirty
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-buildr-test-performance/brief.md
+    reason: 正式 Change 需要提供性能根因、测试 owner 收敛和并发校准的人类入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-buildr-test-performance/proposal.md
+      - openspec/changes/optimize-buildr-test-performance/design.md
+      - openspec/changes/optimize-buildr-test-performance/brief.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 测试入口、System 边界、Candidate owner 与执行 profile 将变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-buildr-test-performance/specs/product-verification-quality/spec.md
+      - services/buildr/test/verification/registry.mjs
+      - docs/verification-ownership.md
+      - openspec/knowledge/services/buildr.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 继续使用既有 Unit、Component、Integration、System、Quick、Candidate 与 Task Verification 术语
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+      - openspec/changes/optimize-buildr-test-performance/specs/product-verification-quality/spec.md
+unresolvedItems: []

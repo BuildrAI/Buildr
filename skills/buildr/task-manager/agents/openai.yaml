@@ -1,0 +1,4 @@
+interface:
+  display_name: "任务管理器"
+  short_description: "管理待办与正式 Task Record 及复盘来源"
+  default_prompt: "Use $task-manager to inspect or mutate todo and active Task Records and retrospective source links through Buildr product actions."

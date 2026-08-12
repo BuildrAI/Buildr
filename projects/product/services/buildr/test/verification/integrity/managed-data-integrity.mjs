@@ -49,7 +49,7 @@ function assertNoMutationTransaction(root, label) {
 function verifyOptionalBuiltinPreflight(mode) {
   const root = path.join(fixtureRoot, `optional-${mode}`);
   run(['init', '--target', root, '--name', `optional-${mode}`]);
-  const skillRoot = path.join(root, 'skills', 'buildr', 'task-asset-review');
+  const skillRoot = path.join(root, 'skills', 'buildr', 'task-retrospective');
   const skillFile = path.join(skillRoot, 'SKILL.md');
   if (mode === 'modified') fs.appendFileSync(skillFile, '\nuser modification\n');
   else fs.rmSync(skillRoot, { recursive: true, force: true });
@@ -58,7 +58,7 @@ function verifyOptionalBuiltinPreflight(mode) {
   const beforeContent = mode === 'modified' ? fs.readFileSync(skillFile, 'utf8') : null;
   const result = run(['sync', 'codex', '--target', root], { expectFailure: true, env: { BUILDR_FAIL_IF_MUTATION_STARTED: '1' } });
   const output = `${result.stdout}\n${result.stderr}`;
-  if (!output.includes(`skill:task-asset-review (${mode})`)) throw new Error(`Optional Builtin ${mode} did not report the expected decision point.`);
+  if (!output.includes(`skill:task-retrospective (${mode})`)) throw new Error(`Optional Builtin ${mode} did not report the expected decision point.`);
   if (output.includes('Injected failure because workspace mutation started')) throw new Error(`Optional Builtin ${mode} entered workspace mutation.`);
   assertNoMutationTransaction(root, `Optional Builtin ${mode}`);
   if (git(['status', '--porcelain=v1', '--untracked-files=all'], root) !== beforeStatus) throw new Error(`Optional Builtin ${mode} changed Git status.`);

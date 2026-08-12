@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-buildr-system-test-context",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-f91fb184178eabeb05774470cd11bf29528d31cb094d49c98d2ec10549f8d983",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "product-verification-quality",
+      "title": "可复用 System 测试上下文必须共享不可变基线并隔离写入",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

@@ -2,13 +2,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
-import { spawnSync } from '../infrastructure/process.mjs';
+import { runFinalDoctor } from '../infrastructure/final-doctor-process.mjs';
 import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.mjs';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.mjs';
 import { getRuntimeAdapter, reconcileRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../infrastructure/runtime/skills/inventory.mjs';
-import { parseSkillProjectionReceipt, sha256Integrity } from '../infrastructure/runtime/skills/projection-files.mjs';
+import {
+  legacySkillProjectionOwnershipReceiptTarget,
+  parseSkillProjectionReceipt,
+  sha256Integrity,
+  skillProjectionOwnershipReceiptTarget,
+} from '../infrastructure/runtime/skills/projection-files.mjs';
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
+import { observeGitCheckoutIdentity, sameFilesystemPath } from '../infrastructure/git/checkout-identity.mjs';
 
 export function registerApplicationRuntime(runtime) {
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
@@ -25,8 +31,34 @@ export function registerApplicationRuntime(runtime) {
   const assertInitializedBuildrWorkspace = (...args) => runtime.assertInitializedBuildrWorkspace(...args);
   const workspaceMigrationPlan = (...args) => runtime.workspaceMigrationPlan(...args);
   const migrateWorkspaceMetadata = (...args) => runtime.migrateWorkspaceMetadata(...args);
+  const openWorkspaceStructuredStore = (...args) => runtime.openWorkspaceStructuredStore(...args);
+  const workspaceStructuredStorePath = (...args) => runtime.workspaceStructuredStorePath(...args);
   const projectMigrationPlan = (...args) => runtime.projectMigrationPlan(...args);
   const migrateProjectRegistry = (...args) => runtime.migrateProjectRegistry(...args);
+
+  function pathIsWithin(root, candidate) {
+    const relative = path.relative(path.resolve(root), path.resolve(candidate));
+    return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+  }
+
+  function assertRuntimeProjectionTarget(targetRoot, options = {}) {
+    const source = observeGitCheckoutIdentity(productRoot());
+    if (!source?.linkedWorktree) return { source, target: observeGitCheckoutIdentity(targetRoot) };
+    if (options.destination === 'user' && (!options.runtimeTargetRoot || !pathIsWithin(targetRoot, options.runtimeTargetRoot))) {
+      const error = new Error('候选 Product checkout 不能更新共享的用户级 Agent runtime；请使用自身任务验证 Workspace。');
+      error.code = 'runtime.candidate_shared_target';
+      error.details = { source: source.checkoutRoot, target: options.runtimeTargetRoot || 'user' };
+      throw error;
+    }
+    const target = observeGitCheckoutIdentity(targetRoot);
+    if (target && sameFilesystemPath(source.gitCommonDirectory, target.gitCommonDirectory) && !sameFilesystemPath(source.checkoutRoot, target.checkoutRoot)) {
+      const error = new Error('候选 Product checkout 只能渲染自己的任务验证 Workspace；不能更新 retained Workspace 或另一个 task worktree 的 Agent runtime。');
+      error.code = 'runtime.candidate_cross_checkout_target';
+      error.details = { source: source.checkoutRoot, target: target.checkoutRoot };
+      throw error;
+    }
+    return { source, target };
+  }
 
   function renderRuntime(agent, args, options = {}) {
     const renderArgs = [...args];
@@ -35,6 +67,7 @@ export function registerApplicationRuntime(runtime) {
     }
     const renderCommand = withResolvedTarget(renderArgs);
     const { targetRoot } = renderCommand;
+    assertRuntimeProjectionTarget(targetRoot);
     const requestedScope = optionValue(renderCommand.args, '--scope', '.');
     const scopeInfo = resolveRuleScope(targetRoot, requestedScope);
     const skillScope = skillScopeForRuleScope(scopeInfo.scope);
@@ -49,14 +82,16 @@ export function registerApplicationRuntime(runtime) {
     const skillScope = optionValue(renderCommand.args, '--scope', '.');
     const destination = optionValue(renderCommand.args, '--destination', 'workspace');
     if (!['workspace', 'user'].includes(destination)) throw new Error(`Unsupported Skill destination: ${destination}. Use workspace or user.`);
+    const runtimeTargetRoot = destination === 'workspace' ? renderCommand.targetRoot : os.homedir();
+    if (!runtimeTargetRoot) throw new Error(`Cannot determine user home for Skill destination ${destination}.`);
+    assertRuntimeProjectionTarget(renderCommand.targetRoot, { destination, runtimeTargetRoot });
     if (skillScope !== '.') {
-      const error = new Error(`Legacy Project Skill render scope is no longer supported: ${skillScope}. Run buildr skills migrate-project-assets --target ${renderCommand.targetRoot} --check, then use --destination ${destination}.`);
+      const error = new Error(`Legacy Project Skill render scope is no longer supported: ${skillScope}. This Buildr version does not migrate Project Skill sources; review and move the source to workspace skills/ before using --destination ${destination}.`);
       error.code = 'skills.project_scope_unsupported';
+      error.nextActions = ['Review the legacy Project Skill source without modifying it.', `buildr skills render ${agent} --destination ${destination} --target ${renderCommand.targetRoot}`];
       throw error;
     }
     if (args.includes('--scope')) console.error('Warning: --scope . is deprecated for skills render; use --destination workspace or --destination user.');
-    const runtimeTargetRoot = destination === 'workspace' ? renderCommand.targetRoot : os.homedir();
-    if (!runtimeTargetRoot) throw new Error(`Cannot determine user home for Skill destination ${destination}.`);
     const orphanPlan = destination === 'workspace' ? buildRuntimeOrphanRemovalPlan(renderCommand.targetRoot, agent, '.').map((item) => ({ ...item, targetFile: item.path })) : [];
     const assembled = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: runtimeTargetRoot, scope: '.', adapterId: agent, destination, selection: { workspaceSkills: true }, removals: orphanPlan });
     let plan = assembled.plan;
@@ -110,6 +145,7 @@ export function registerApplicationRuntime(runtime) {
 
   function renderRulesRuntime(agent, args) {
     const renderCommand = withResolvedTarget(args);
+    assertRuntimeProjectionTarget(renderCommand.targetRoot);
     const scope = optionValue(renderCommand.args, '--scope', '.');
     const { plan } = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: renderCommand.targetRoot, scope, adapterId: agent, selection: { rules: true } });
     reconcileRuntimePlan(plan);
@@ -129,8 +165,11 @@ export function registerApplicationRuntime(runtime) {
         });
       }
       const targetDir = path.join(targetRoot, runtimeRoot, 'skills', ...finding.replacementRuntimePath.split('/'));
-      const targetReceipt = path.join(targetRoot, runtimeRoot, 'buildr', 'skill-projection-receipts', agent, `${finding.replacementRuntimePath}.json`);
-      if (fs.existsSync(targetDir) || fs.existsSync(targetReceipt)) {
+      const targetReceipts = [
+        skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, finding.replacementRuntimePath),
+        legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, finding.replacementRuntimePath),
+      ];
+      if (fs.existsSync(targetDir) || targetReceipts.some((file) => fs.existsSync(file))) {
         conflicts.push({
           type: 'runtime', id: finding.id, status: 'modified', path: finding.replacementRuntimePath,
           replacementFrom: finding.replacementFrom, reason: 'replacement runtime target already exists',
@@ -147,7 +186,7 @@ export function registerApplicationRuntime(runtime) {
     const components = syncPackageComponents(targetRoot, { checkOnly: true });
     const affectedPaths = assertSafeSyncMutationPaths(targetRoot, [...workspace.affectedPaths, ...projects.affectedPaths, ...builtins.affectedPaths, ...components.affectedPaths]);
     const needsDecision = [
-      ...builtins.findings.filter((finding) => !finding.component && !finding.required && ['modified', 'missing'].includes(finding.status)),
+      ...builtins.findings.filter((finding) => !finding.component && !finding.required && !finding.converge && ['modified', 'missing'].includes(finding.status)),
       ...replacementRuntimePreflight(targetRoot, agent, builtins.findings),
     ];
     return {
@@ -170,14 +209,28 @@ export function registerApplicationRuntime(runtime) {
     }
   }
 
+  function migrateWorkspaceStructuredStore(targetRoot) {
+    const file = workspaceStructuredStorePath(targetRoot);
+    if (!fs.existsSync(file)) return { status: 'uninitialized', file, migrations: [] };
+    const opened = openWorkspaceStructuredStore(targetRoot, { writable: true });
+    try {
+      const applied = opened.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ version: row.version, name: row.name }));
+      return { status: 'current', file: opened.file, version: opened.version, migrations: applied };
+    } finally {
+      opened.database.close();
+    }
+  }
+
   function syncRuntime(agent, args) {
     const adapter = getRuntimeAdapter(agent);
     const syncArgs = [...args];
     if (!syncArgs.includes('--scope')) syncArgs.push('--scope', '.');
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
+    assertRuntimeProjectionTarget(targetRoot);
     assertInitializedBuildrWorkspace(targetRoot);
     const preflight = buildSyncSourcePlan(targetRoot, agent);
     assertSyncSourcePlanReady(preflight);
+    const structuredStoreMigration = migrateWorkspaceStructuredStore(targetRoot);
     let lockedPlan = null;
     const updated = withWorkspaceMutation(targetRoot, `buildr.sync:${agent}`, preflight.affectedPaths, () => {
       const workspaceMigration = migrateWorkspaceMetadata(targetRoot);
@@ -187,7 +240,7 @@ export function registerApplicationRuntime(runtime) {
       if (components.errors.length) {
         throw new Error(`sync 暂停：Component 源资产存在冲突。\n- ${components.errors.map((item) => item.error).join('\n- ')}`);
       }
-      const needsDecision = sourceUpdate.findings.filter((finding) => !finding.component && !finding.required && ['modified', 'missing'].includes(finding.status));
+      const needsDecision = sourceUpdate.findings.filter((finding) => !finding.component && !finding.required && !finding.converge && ['modified', 'missing'].includes(finding.status));
       if (needsDecision.length) {
         throw new Error(`sync 暂停：以下 optional Buildr 内置能力需要用户决策。\n- ${needsDecision.map((item) => `${item.type}:${item.id} (${item.status})`).join('\n- ')}`);
       }
@@ -202,12 +255,20 @@ export function registerApplicationRuntime(runtime) {
         if (lockedPlan.signature !== preflight.signature) throw new Error('sync source plan changed after preflight; rerun sync against the current workspace state.');
       },
     });
+    const workspaceRecord = runtime.readWorkspaceRecord(targetRoot);
+    const canAdoptCurrentNode = workspaceRecord.workspace.runtime?.node?.version === process.versions.node;
+    const workspaceNode = runtime.ensureWorkspaceNodeRuntime(workspaceRecord.workspace, { adoptCurrent: canAdoptCurrentNode });
     const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
-    const doctorResult = spawnSync(process.execPath, [path.join(productRoot(), 'bin', 'buildr.mjs'), 'doctor', '--agent', agent, '--target', targetRoot, '--json'], {
+    const finalDoctor = runFinalDoctor({
+      executable: process.execPath,
+      cliPath: path.join(productRoot(), 'bin', 'buildr.mjs'),
+      agent,
+      targetRoot,
       cwd: productRoot(),
-      encoding: 'utf8',
     });
     console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
+    console.log(`Workspace Node：${workspaceNode.identity.version}（${workspaceNode.action}）`);
+    if (structuredStoreMigration.migrations.length > 0) console.log(`Workspace structured store：已确认 migration 0000-${String(structuredStoreMigration.migrations.at(-1).version).padStart(4, '0')}。`);
     if (updated.changed.length > 0) {
       console.log('产品能力变更：');
       for (const file of updated.changed) console.log(`  ${file}`);
@@ -221,15 +282,13 @@ export function registerApplicationRuntime(runtime) {
       }
     }
     for (const warning of rendered.warnings) console.error(`Warning: ${warning}`);
-    if (doctorResult.status !== 0) {
-      console.log('doctor 仍有需要处理的问题：');
-      process.stdout.write(doctorResult.stdout || '');
-      process.stderr.write(doctorResult.stderr || '');
-      throw new Error(`${agent} sync 未完成：最终 doctor 未通过。`);
+    if (finalDoctor.classification.status !== 'passed') {
+      const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
+      throw new Error(`${agent} sync 未完成：${finalDoctor.classification.message}${detail}`);
     }
     console.log('doctor 通过。');
   }
 
-  Object.assign(runtime, { renderRuntime, renderSkillsRuntime, renderRulesRuntime, buildSyncSourcePlan, assertSyncSourcePlanReady, syncRuntime });
+  Object.assign(runtime, { assertRuntimeProjectionTarget, renderRuntime, renderSkillsRuntime, renderRulesRuntime, buildSyncSourcePlan, assertSyncSourcePlanReady, syncRuntime });
   return runtime;
 }

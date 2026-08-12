@@ -10,8 +10,8 @@ function registryRevision(content) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function localAppDataRoot() {
-  if (process.env.BUILDR_APP_DATA_DIR) return path.resolve(process.env.BUILDR_APP_DATA_DIR);
+export function localAppDataRoot({ respectOverride = true } = {}) {
+  if (respectOverride && process.env.BUILDR_APP_DATA_DIR) return path.resolve(process.env.BUILDR_APP_DATA_DIR);
   if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'Buildr');
   if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Buildr');
   return path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'), 'buildr');

@@ -1,0 +1,30 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: harden-task-finish-and-environment-boundaries
+operation: reconcile
+treeIdentity: candidate:codex/fix-task-finish-worktree-safety
+impacts:
+  - type: brief
+    target: openspec/changes/harden-task-finish-and-environment-boundaries/brief.md
+    reason: 收敛本次跨 Task Finish、task environment 和 runtime activation 的用户可见边界。
+    status: updated
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 普通实现流程不再把 Rule/Skill 内容修改解释为 session activation 门禁。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/agent-task-workflows/spec.md
+      - openspec/specs/task-environments/spec.md
+      - openspec/knowledge/flows/openspec-change-lifecycle.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Finish run 与 environment CLI/activation 行为发生产品实现变化。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-finish-execution/spec.md
+      - openspec/specs/workspace-first-runtime-projection/spec.md
+      - openspec/knowledge/services/buildr.md
+unresolvedItems: []

@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+## 0.1.0-rc.8 - 2026-08-12
+
+- Breaking：把 Buildr 为 Agent Skill 投射保存的所有权回执迁移到 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`；实际 Agent Skills 路径不变。新版本会安全迁移仍能证明 runtime 文件的旧回执，新旧冲突或 runtime 漂移时零写入停止；旧 CLI 不再能自动管理已迁移投射。
+- Breaking：清退 CLI Legacy 产品表面，删除 `openspec baseline create`、阶段型 `openspec check` 与 `skills migrate-project-assets` 的 route、实现和 JSON schema；连同已删除的 `sync-plan`/`sync-apply`，旧调用统一返回零写入 unknown-command。OpenSpec apply 改用 strict validation、current Planning Review 与单一 `converge`，legacy Project Skill source 只 fail closed，不再自动迁移。
+- 收敛 Buildr CLI 产品表面：以单一 command catalog 统一 dispatch、canonical help、未知命令建议和 `primary`、`agent-machine`、`maintenance` 三层分类；补齐 `task finish` 聚合帮助。
+- 修复候选验证的跨平台 npm 入口，并让 CI 在 Pull Request 与推送场景显式使用对应 Git 基线，保证 Windows 和 OpenSpec changed-path 审计可以执行。
+- 修复 Windows 8.3 checkout 路径导致的 Environment Manager 误判，并隔离候选矩阵的 Node runtime 临时目录。
+- 加固 Windows 受管 Node runtime 的离线 source copy、并发安装锁、短暂 `EPERM` 恢复和失败诊断；锁竞争测试使用平台无关的探测替身，不再把 POSIX shell fixture 当作 Windows `node.exe` 执行。
+- 系统收敛跨平台候选验证：统一 Windows npm/OpenSpec shim、node:test 盘符路径、Git checkout 与用户目录边界；隔离 macOS Local App loopback 连接复用，改用确定性资源容量证据，并在 CI 采用受限 workspace 并发。
+- 明确 CLI 支持 Node.js `>=24.15.0 <25`：macOS 与 Windows 各运行一份固定受管 runtime 完整 Candidate，并以最低和当前 24.x 的短版 Host Node 作业验证版本敏感边界，删除重复的完整 Candidate 与独立 release smoke。
+- 发布工作流只打包一次不可变 npm tarball，并让发布前 smoke、registry publish、CI artifact 与发布后 integrity 核验消费同一制品；已存在版本仅在官方 registry integrity 一致时安全复用。
+- 扩展 Task 与 Local App 的交付可观察性：保留正式验证执行记录、终态交付关联和复盘入口，支持 Parent/Child Task、嵌套筛选，并在 Environment 阻塞时仍可读取 Task 关联 Change。
+- 收敛 Task Development、Environment 与 Finish 编排：稳定 Planning identity、Candidate 复用、语义化交付提交、隔离 Delivery Carrier 和自举同步边界，减少目标前进后的重复验证与恢复成本。
 
 ## 0.1.0-rc.7 - 2026-07-24
 

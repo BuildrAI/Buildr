@@ -3,6 +3,7 @@
 ## Purpose
 定义 Buildr Skill capability contract、provider/consumer 声明、scope binding、依赖 readiness、runtime 投射和 Agent 工作能力适配的产品契约。
 ## Requirements
+
 ### Requirement: Agent 根据工作意图执行工作能力适配
 Buildr MUST 将用户工作意图作为 Agent 工作能力适配的入口，并 MUST NOT 要求普通用户识别或手动维护 capability contract、provider、consumer 或 binding。
 
@@ -169,13 +170,25 @@ Buildr MUST 对 installed consumer 的 required 和 optional dependencies 应用
 - **AND** provider lifecycle MUST 保持独立
 
 ### Requirement: Runtime 投射包含 capability binding evidence
-Buildr MUST 将解析后的 capability binding 作为受管 runtime 派生内容提供给 Agent，并 MUST 保持 workspace、Project 和外部 Skill 源正文不变。
+Buildr MUST 将解析后的 consumer-local capability binding 作为紧凑、受管的 runtime 派生内容提供给 Agent，MUST 将完整诊断和完整性证据保留在 Doctor 与 projection receipt，并 MUST 保持 workspace、Project 和外部 Skill 源正文不变。
 
 #### Scenario: 投射已绑定 consumer
-- **WHEN** Buildr 为 consumer 生成 runtime Skill
-- **THEN** runtime Skill MUST 包含受管 capability binding block
-- **AND** block MUST 记录 capability id、version、contract source path/digest、dependency mode、selected provider id、provider runtime path、provider scope、readiness 和 reason
+- **WHEN** Buildr 为声明 `requires` 的 consumer 生成 runtime Skill
+- **THEN** runtime Skill MUST 只包含该 consumer 自身依赖的受管 capability binding block
+- **AND** block MUST 记录 capability id、version、dependency mode、readiness、reason、contract source path、selected provider id、provider runtime path 和 provider scope
+- **AND** block MUST NOT 展示 contract digest、binding provenance、其他 consumers 或完整 workspace capability graph
 - **AND** block MUST 要求 Agent 在执行 provider-dependent action 前读取已解析 contract 和 selected provider
+
+#### Scenario: Consumer projection receipt 保存完整局部证据
+- **WHEN** Buildr 为包含 capability binding block 的 consumer 生成 projection receipt
+- **THEN** receipt MUST 保存该 consumer 的 contract digest、binding provenance、readiness 和 resolved provider 快照及其完整性证据
+- **AND** receipt MUST 位于对应 destination 的 `.buildr/agent-runtime/<destination>/<adapter>/skill-projection-ownership-receipts/`
+- **AND** receipt MUST NOT 作为 runtime Skill 正文、workspace Skill source 或 Git 交付资产
+
+#### Scenario: Doctor full 输出完整能力图
+- **WHEN** Agent 需要检查全局 capability、contract digest、binding、consumer readiness、候选 provider 或修复动作
+- **THEN** Agent MUST 使用当前 workspace 的 Doctor full capability graph
+- **AND** Buildr MUST NOT 通过把完整图复制进产品入口或每个 consumer runtime Skill 来提供该证据
 
 #### Scenario: Provider 源保持不变
 - **WHEN** Buildr 组合 capability binding block、Skill Contribution 或其他 runtime 派生内容
@@ -185,7 +198,7 @@ Buildr MUST 将解析后的 capability binding 作为受管 runtime 派生内容
 #### Scenario: Required consumer 从 ready 变为 blocked
 - **WHEN** provider 卸载、binding 失效或 runtime compatibility 变化使 required consumer 不再 capability-ready
 - **THEN** render MUST 更新可证明由 Buildr 管理的 consumer runtime 副本并注入 blocked evidence
-- **AND** consumer MUST 继续提供安全停止、问题解释和修复路径
+- **AND** consumer MUST 继续提供安全停止、问题解释和通过 Doctor 获取修复路径的指引
 - **AND** Buildr MUST 继续投射不依赖该 capability 的其他 Skills
 
 ### Requirement: Skill 生命周期展示 capability 影响范围
@@ -275,3 +288,42 @@ Buildr MUST 要求并行或替代 provider 使用各自 Skill ID，并 MUST NOT 
 - **WHEN** 候选 provider 试图使用已存在 Skill ID 但具有不同 source identity 或内容
 - **THEN** Buildr MUST 在 runtime binding 前报告 Skill name conflict
 - **AND** MUST NOT 将 capability binding 作为绕过名称冲突的依据
+
+### Requirement: Capability graph 必须消费已安装 Component 的结构化 dependency contribution
+Buildr capability graph MUST只从 base consumer `requires`、enabled installed Component 的结构化 dependency contributions 和 Project capability context 计算依赖；它 MUST NOT解析 Skill 或 Contribution Markdown 来猜测 dependency edge。
+
+#### Scenario: Component dependency contribution 生效
+- **WHEN** runtime resolver 成功组合目标 Skill 与 Component-owned dependency contribution
+- **THEN** Doctor、render 和 runtime binding evidence MUST按 effective dependency 计算 required/optional readiness
+- **AND** `ready`仍 MUST只表示结构可路由，不得冒充 provider behavior 或本次 action 成功
+
+#### Scenario: Component 只包含行为说明
+- **WHEN** fragment 正文提到另一个 Skill、capability、provider 或命令但 Component 没有结构化 dependency declaration
+- **THEN** capability graph MUST NOT自动创建 edge
+- **AND** package verification MUST在已知 builtin contract fixture 中检测正文硬停止条件与声明缺失，但运行时不得使用自然语言推断
+
+#### Scenario: Dependency contribution 的 capability 不可解析
+- **WHEN** declaration 结构有效但对应 contract、binding 或 provider 在当前 Workspace/scope 不可用
+- **THEN** capability graph MUST按标准 missing/ambiguous/version/runtime/invalid-binding 语义报告目标 consumer
+- **AND** Component validator MUST NOT通过 Skill id或description猜测 compatible provider
+
+#### Scenario: 直接产品命令不受 Skill graph 伪保护
+- **WHEN**用户或其他客户端绕过入口 Skill直接调用产品 CLI
+- **THEN** capability graph MUST NOT声称已执行 Skill dependency 或满足 Task lifecycle facts
+- **AND** CLI 必须由自身 Application 校验其产品级输入与文件事实；未被 CLI contract 要求的语义义务仍由入口 consumer 负责
+
+### Requirement: 现有 capabilities 必须扩展最小协作保证
+Task Record、Development、Review与Finish contracts MUST分别保证顶层关系/状态、Parent Plan与Contribution Handoff、identity applicability、terminal handoff association；MUST NOT创建第二套Parent coordination Result/store或把全部Skills互相声明为依赖。
+
+#### Scenario: capability graph 验证
+- **WHEN** package验证解析更新后的providers/consumers
+- **THEN** selected bindings MUST保持ready且major版本与新保证一致
+- **AND** graph MUST不包含lifecycle/progress/event store provider
+
+### Requirement: 顶层Parent coordination入口必须可发现且不歧义
+如果Parent coordination成为独立capability，默认provider description MUST覆盖inspect/record/reconcile/final acceptance用户意图，并与Task Manager顶层记录意图区分；binding ready MUST NOT替代routing验证。
+
+#### Scenario: 用户说reconcile Parent Plan
+- **WHEN** Agent进行入口匹配
+- **THEN** MUST选择Parent coordination provider而不是直接写Task Record或Development store
+- **AND** provider MUST通过Applications调用专业authority

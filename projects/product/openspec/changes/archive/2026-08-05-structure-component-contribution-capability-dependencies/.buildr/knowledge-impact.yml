@@ -1,0 +1,32 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: structure-component-contribution-capability-dependencies
+operation: reconcile
+treeIdentity: sha256-26dcca0720e706e930706b2139410678bd89e4cf8e58b5aac7a8e10ddce060e9
+impacts:
+  - type: brief
+    target: openspec/changes/structure-component-contribution-capability-dependencies/brief.md
+    reason: 正式Change需要稳定说明Component依赖authority和OpenSpec收敛边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/structure-component-contribution-capability-dependencies/proposal.md
+      - openspec/changes/structure-component-contribution-capability-dependencies/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: runtime Skill resolution和capability graph新增Component dependency contribution输入
+    status: updated
+    sourceIdentities:
+      - openspec/changes/structure-component-contribution-capability-dependencies/specs/managed-components/spec.md
+      - openspec/changes/structure-component-contribution-capability-dependencies/specs/skill-capability-contracts/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: OpenSpec apply门禁、sync/archive与converge边界变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/structure-component-contribution-capability-dependencies/specs/agent-task-workflows/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service的Component parser、runtime resolver、Doctor graph和package验证变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/structure-component-contribution-capability-dependencies/specs/buildr-package-assets/spec.md
+unresolvedItems: []

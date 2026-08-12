@@ -2,7 +2,8 @@
 set -euo pipefail
 
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source_bin="$product_root/bin/buildr.mjs"
+source_bin="$product_root/scripts/run-development-cli"
+legacy_source_bin="$product_root/bin/buildr.mjs"
 install_dir="${BUILDR_CLI_INSTALL_DIR:-$HOME/.local/bin}"
 target_bin="$install_dir/buildr"
 
@@ -12,7 +13,7 @@ if [[ ! -L "$target_bin" ]]; then
 fi
 
 existing_target="$(readlink "$target_bin")"
-if [[ "$existing_target" != "$source_bin" ]]; then
+if [[ "$existing_target" != "$source_bin" && "$existing_target" != "$legacy_source_bin" ]]; then
   echo "Refusing to remove buildr command not managed by this checkout: $target_bin -> $existing_target" >&2
   exit 1
 fi

@@ -1,0 +1,33 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: adopt-task-environment-session
+operation: reconcile
+treeIdentity: working-tree@1cc30233ff1e10712d405f20e7c610ac2be275d9
+impacts:
+  - type: brief
+    target: openspec/changes/adopt-task-environment-session/brief.md
+    reason: 正式 Change 需要人类可读的目标、流程、风险和验收入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/adopt-task-environment-session/proposal.md
+      - openspec/changes/adopt-task-environment-session/design.md
+      - openspec/changes/adopt-task-environment-session/specs/
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: implementation workflow 新增 environment 创建后的 session handoff/adoption 门禁。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/adopt-task-environment-session/specs/agent-task-workflows/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr CLI/runtime provider 新增 task adoption evidence 与 assurance 边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/adopt-task-environment-session/specs/task-environments/spec.md
+      - openspec/changes/adopt-task-environment-session/specs/workspace-first-runtime-projection/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: session adoption 与 runtime source evidence 使用现有 task environment、Agent runtime 和 evidence 词汇，不引入需要长期定义的新领域术语。
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

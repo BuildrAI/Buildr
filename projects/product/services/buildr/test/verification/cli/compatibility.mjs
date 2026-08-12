@@ -6,6 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { registerCommandHelp } from '../../../src/interfaces/cli/help.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/interfaces/cli/registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -18,23 +20,31 @@ function run(args, options = {}) {
   });
 }
 
-const helpTopics = [
-  [], ['version'], ['init'], ['project', 'create'], ['service', 'create'], ['doctor'],
-  ['worktree', 'create'],
-  ['mutation', 'recover'], ['runtime', 'list'], ['runtime', 'check'],
-  ['commands', 'add'], ['commands', 'remove'], ['commands', 'check'],
-  ['openspec', 'baseline', 'create'], ['openspec', 'check'],
-  ['component', 'list'], ['component', 'check'], ['component', 'install'], ['component', 'uninstall'],
-  ['rules', 'add'], ['rules', 'remove'], ['rules', 'render'],
-  ['builtin', 'list'], ['builtin', 'uninstall'], ['builtin', 'restore'],
-  ['update'], ['update', 'check'], ['package', 'check'], ['package', 'build'],
-  ['bootstrap', 'guide'], ['render'], ['sync'], ['skill', 'install'],
-  ['skills', 'add'], ['skills', 'remove'], ['skills', 'bind'], ['skills', 'unbind'], ['skills', 'render'],
-];
+const helpTopics = [[], ...COMMAND_CATALOG.map((item) => item.key.split(' '))];
+const helpRuntime = registerCommandHelp({}, COMMAND_CATALOG);
+const originalLog = console.log;
+let renderedHelp = '';
+console.log = (...parts) => { renderedHelp += `${parts.join(' ')}\n`; };
+try {
+  for (const topic of helpTopics) {
+    renderedHelp = '';
+    assert.equal(helpRuntime.isHelpRequest(topic.length === 0 ? [] : [...topic, '--help']), true);
+    assert.equal(helpRuntime.printHelp(topic), true, `help topic is not registered: ${topic.join(' ')}`);
+    assert.match(renderedHelp, /Usage:/, `help missing Usage: buildr ${topic.join(' ')}`);
+  }
+} finally {
+  console.log = originalLog;
+}
 
-for (const topic of helpTopics) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));
-  try {
+const publicHelpTopics = [
+  [], ['init'], ['app', 'preview', 'start'], ['task', 'environment', 'prepare'],
+  ['task', 'verification', 'record'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
+  ['openspec', 'convergence', 'inspect'],
+];
+const helpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));
+try {
+  for (const topic of publicHelpTopics) {
+    const cwd = helpCwd;
     const result = run([...topic, '--help'], { cwd });
     assert.equal(result.status, 0, `help failed: buildr ${topic.join(' ')}`);
     assert.match(result.stdout, /Usage:/, `help missing Usage: buildr ${topic.join(' ')}`);
@@ -46,9 +56,49 @@ for (const topic of helpTopics) {
       assert.equal(commandHelp.stdout, result.stdout, `help forms differ: ${topic.join(' ')}`);
       assert.equal(commandHelp.stderr, '');
     }
-  } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
   }
+} finally {
+  fs.rmSync(helpCwd, { recursive: true, force: true });
+}
+
+const rootHelp = run([]);
+assert.equal(rootHelp.status, 0);
+const surfaceHeadings = {
+  primary: 'Primary workspace commands:',
+  'agent-machine': 'Agent machine commands:',
+  maintenance: 'Product maintenance commands:',
+};
+for (const [surface, heading] of Object.entries(surfaceHeadings)) {
+  const start = rootHelp.stdout.indexOf(heading);
+  assert.notEqual(start, -1, `root help is missing ${surface} section`);
+  const later = Object.values(surfaceHeadings)
+    .map((candidate) => rootHelp.stdout.indexOf(candidate, start + heading.length))
+    .filter((index) => index !== -1);
+  const section = rootHelp.stdout.slice(start, later.length ? Math.min(...later) : undefined);
+  for (const descriptor of COMMAND_REGISTRY.filter((item) => item.surface === surface)) {
+    assert.match(section, new RegExp(`^  ${descriptor.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s`, 'm'), `${descriptor.key} is not rendered in ${surface}`);
+  }
+}
+
+const removedHelpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-removed-help-'));
+try {
+  const removedCommands = [
+    { key: 'openspec audit', args: ['openspec', 'audit', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec baseline create', args: ['openspec', 'baseline', 'create', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec check', args: ['openspec', 'check', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec sync-plan', args: ['openspec', 'sync-plan', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec sync-apply', args: ['openspec', 'sync-apply', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'skills migrate-project-assets', args: ['skills', 'migrate-project-assets', '--target', removedHelpCwd, '--check', '--json'] },
+  ];
+  for (const command of removedCommands) {
+    const result = run(command.args, { cwd: removedHelpCwd });
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).error.code, 'cli.unknown_command');
+    assert.deepEqual(fs.readdirSync(removedHelpCwd), [], `removed command wrote files: ${command.key}`);
+    assert.equal(COMMAND_REGISTRY.some((item) => item.key === command.key), false);
+  }
+} finally {
+  fs.rmSync(removedHelpCwd, { recursive: true, force: true });
 }
 
 for (const [args, expected] of [
@@ -85,6 +135,15 @@ assert.equal(unknownJson.stderr, '');
 assert.equal(JSON.parse(unknownJson.stdout).schemaVersion, 'buildr.cli-error/v1');
 assert.equal(JSON.parse(unknownJson.stdout).error.code, 'cli.unknown_command');
 assert.deepEqual(JSON.parse(unknownJson.stdout).suggestions, ['doctor']);
+const finishStatus = run(['task', 'finish', 'status', '--json']);
+assert.equal(finishStatus.status, 2);
+assert.equal(JSON.parse(finishStatus.stdout).error.code, 'cli.unknown_command');
+assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish run', 'task finish inspect', 'task inspect']);
+assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr --help');
+
+const invalidInspect = run(['worktree', 'inspect', 'demo', '--agent', 'codex']);
+assert.notEqual(invalidInspect.status, 0);
+assert.match(`${invalidInspect.stdout}${invalidInspect.stderr}`, /Unknown argument: --agent/);
 
 const runtime = run(['runtime', 'list', '--json']);
 assert.equal(runtime.status, 0);
@@ -108,7 +167,7 @@ try {
   assert.match(result.stdout, /Buildr onboarding 已完成：codex/);
   result = run(['project', 'create', 'demo', '--target', workspace]);
   assert.equal(result.status, 0, result.stderr);
-  result = run(['doctor', '--agent', 'codex', '--target', workspace, '--json']);
+  result = run(['doctor', '--agent', 'codex', '--target', workspace, '--json', '--detail', 'full']);
   assert.equal(result.status, 0, result.stderr);
   const doctor = JSON.parse(result.stdout);
   assert.equal(doctor.ok, true);
@@ -119,4 +178,4 @@ try {
   fs.rmSync(workspace, { recursive: true, force: true });
 }
 
-console.log(`CLI compatibility verification passed: ${helpTopics.length} help topics, package identity, actionable failures, JSON discovery, and workspace mutation.`);
+console.log(`CLI compatibility verification passed: ${helpTopics.length} in-process help contracts, ${publicHelpTopics.length} public help entrypoints, package identity, actionable failures, JSON discovery, and workspace mutation.`);

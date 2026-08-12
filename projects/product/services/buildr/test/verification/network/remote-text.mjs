@@ -30,7 +30,11 @@ const server = http.createServer((req, res) => {
   res.writeHead(404);
   res.end('not found');
 });
-server.listen(0, '127.0.0.1', () => fs.writeFileSync(portFile, String(server.address().port)));
+server.listen(0, '127.0.0.1', () => {
+  const temporaryPortFile = portFile + '.tmp-' + process.pid;
+  fs.writeFileSync(temporaryPortFile, String(server.address().port));
+  fs.renameSync(temporaryPortFile, portFile);
+});
 `;
 const server = spawn(process.execPath, ['-e', serverScript, portFile], { stdio: ['ignore', 'ignore', 'inherit'] });
 
@@ -51,14 +55,20 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   assert.equal(fs.existsSync(portFile), true, 'test server did not start');
-  const port = fs.readFileSync(portFile, 'utf8');
+  const port = fs.readFileSync(portFile, 'utf8').trim();
+  assert.match(port, /^\d+$/, 'test server port must be complete');
   const baseUrl = `http://127.0.0.1:${port}`;
-  assert.equal(fetchRemoteText(`${baseUrl}/ok`), 'ready');
+  const offlineEnv = { ...process.env, BUILDR_VERIFICATION_NETWORK_MODE: 'offline' };
+  assert.equal(fetchRemoteText(`${baseUrl}/ok`, { env: offlineEnv }), 'ready');
+  assert.throws(
+    () => fetchRemoteText('https://example.com/skill.md', { env: offlineEnv }),
+    /disabled during offline verification/,
+  );
   assert.throws(() => remoteTextTimeouts({ BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '0' }), /must be an integer/);
   assert.throws(() => remoteTextTimeouts({ BUILDR_REMOTE_SKILL_INACTIVITY_TIMEOUT_MS: '120001' }), /must be an integer/);
 
   const timeoutEnv = {
-    ...process.env,
+    ...offlineEnv,
     BUILDR_REMOTE_SKILL_INACTIVITY_TIMEOUT_MS: '150',
     BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '500',
   };

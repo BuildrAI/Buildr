@@ -5,19 +5,38 @@
 定义 Buildr 候选版本的 Node/操作系统验证范围、正式 tarball 生命周期 smoke，以及可观察但不阻塞的验证耗时记录。
 
 ## Requirements
+
 ### Requirement: CI 必须覆盖最低 Node、当前 Node 和目标桌面平台
-Buildr CI MUST 在 Linux Node 20 和 Node 22 上运行完整产品候选验证，并 MUST 在 macOS、Windows Node 22 上运行可移植 release smoke；CI MUST NOT 为已经由 Linux Node 22 完整验证覆盖的相同 release lifecycle 建立独立 Linux smoke job。
+Buildr CI MUST 将任务分支的 Windows 平台预检、Host Node 兼容性和完整受管运行时 Candidate 分开；合入 `dev` 前 MUST 在 Windows Node 24.15.0 和当前 Node 24 上运行定向平台预检，最终候选 MUST 在 macOS、Windows 各运行一份完整受管运行时 Candidate，并 MUST 在 macOS、Windows 的最低 Node 24.15.0 与当前 Node 24 代表点运行 Host Node 兼容验证。矩阵 MUST 禁用 fail-fast，且 CI MUST NOT 为相同冻结 tree 在 `main` push 或独立 release smoke job 中重复已经成立的完整 Candidate 证据。
+
+#### Scenario: 任务分支验证 Windows 平台边界
+- **WHEN** pull request 以 `dev` 为目标触发产品 CI
+- **THEN** Windows Node 24.15.0 和当前 Node 24 job MUST 安装锁定依赖
+- **AND** 两个 job MUST 直接使用各自 Host Node 运行覆盖路径身份、子进程启动、runtime 文件一致性、Task/worktree 生命周期和发布包生命周期的定向平台预检
+- **AND** 任一 job 失败 MUST NOT 取消另一个 job
+- **AND** CI MUST NOT 为该任务分支重复运行完整 macOS/Windows Candidate
 
 #### Scenario: 验证最低 Node 版本
-- **WHEN** push 或 pull request 触发产品 CI
-- **THEN** Linux Node 20 job MUST 安装锁定依赖和支持的 OpenSpec CLI
-- **AND** job MUST 运行完整产品候选验证
+- **WHEN** `dev -> main` pull request或手工候选验证触发最终候选 CI
+- **THEN** macOS、Windows Node 24.15.0 job MUST 各自运行 Host Node compatibility
+- **AND** 两个 job MUST 随后准备 Workspace 声明的受管 Node 并各自运行一次完整 `test:candidate`
+- **AND** evidence MUST 分别记录 Host Node 和受管 Node 的精确版本与 executable identity
 
 #### Scenario: 验证当前 Node 与桌面平台
-- **WHEN** push 或 pull request 触发产品 CI
-- **THEN** Linux Node 22 MUST 运行完整产品候选验证
-- **AND** macOS、Windows Node 22 MUST 运行 standalone release smoke
-- **AND** 桌面平台 job MUST NOT 重复运行只依赖 Node 和产品源码的 unit tests
+- **WHEN** `dev -> main` pull request或手工候选验证触发最终候选 CI
+- **THEN** macOS、Windows 当前 Node 24 job MUST 各自只运行 Host Node compatibility
+- **AND** compatibility MUST 验证 engines、锁定依赖、npm tarball pack/install、安装后 CLI 初始化/诊断以及 SQLite、Process、Filesystem 等 Node 版本敏感边界
+- **AND** compatibility MUST NOT 经过受管 Node wrapper 或重复完整 Candidate
+
+#### Scenario: 最终候选复用内置发布冒烟
+- **WHEN** macOS、Windows 的完整受管运行时 Candidate job 运行
+- **THEN** 每个 job MUST 通过 Candidate 内置的 `release-tarball-smoke` 验证打包、安装和 CLI 生命周期
+- **AND** workflow MUST NOT 建立覆盖相同 lifecycle 的独立 macOS 或 Windows `release-smoke` job
+
+#### Scenario: 相同 main tree 不重复完整 Candidate
+- **WHEN** 已通过 branch protection 的 `dev -> main` 候选 tree 合入 `main`
+- **THEN** `main` push MUST NOT 再次触发相同完整 Candidate
+- **AND**正式 tag 发布验证 MUST 由独立 release artifact 契约负责
 
 ### Requirement: release smoke 必须验证安装后生命周期
 Buildr MUST 提供不依赖 development checkout runtime 的跨平台 release smoke，使用 standalone npm pack 或同一候选 run 提供的不可变正式 tarball，并使用安装后的 `buildr` 完成初始化、同步、诊断、optional Component 卸载和最终诊断。
@@ -35,12 +54,26 @@ Buildr MUST 提供不依赖 development checkout runtime 的跨平台 release sm
 - **AND** verifier MUST 完成与 standalone 模式相同的安装后生命周期
 
 #### Scenario: release smoke 跨平台运行
-- **WHEN** verifier 在 Linux、macOS 或 Windows Node 22 运行
+- **WHEN** verifier 在 Linux、macOS 或 Windows Node 24.15.0 运行
 - **THEN** verifier MUST 使用平台对应的 npm executable 和 installed bin 路径
 - **AND** verifier MUST NOT 依赖 Bash、Unix-only 临时目录命令或固定 `/tmp` 路径
 
+### Requirement: OpenSpec fixture case 必须只有一个 Candidate owner
+Buildr Product MUST 将 OpenSpec contract 与 convergence/recovery fixture 划分为互斥 case 集合；完整 Candidate 中同一个 named case MUST NOT 由两个 verification step 重复执行。
+
+#### Scenario: 完整 Candidate 执行 OpenSpec fixtures
+- **WHEN** Candidate 同时选择 `openspec-contract-fixtures` 与 `openspec-convergence-recovery`
+- **THEN** 两个 step MUST 调用互斥的 case 集合
+- **AND** 两个集合的并集 MUST 覆盖登记的全部 OpenSpec fixture cases
+- **AND** timing evidence MUST 分别记录两个 step 的准备、case 数量、并发和 wall-clock
+
+#### Scenario: 维护者显式诊断全部 fixtures
+- **WHEN** 维护者直接选择 OpenSpec fixture 的 `all` 诊断入口
+- **THEN** runner MAY 在一个进程中执行两个集合的并集
+- **AND** `all` MUST NOT 被 Candidate 中两个 owner 同时调用
+
 ### Requirement: 重复生命周期验证必须声明唯一主 owner
-Buildr Product MUST 为 development checkout onboarding、init 行为、checkout/package parity 和安装后 release lifecycle 声明不同的主 verifier；多个 verifier MAY 经过相同命令，但 MUST NOT 重复持有同一 happy-path 结果作为主要证据。
+Buildr Product MUST 为 development checkout onboarding、init 行为、checkout/package parity、Task lifecycle、并发 Task Environment 和安装后 release lifecycle 声明不同的主 verifier；多个 verifier MAY 经过相同命令，但 MUST NOT 重复持有同一 happy-path 结果作为主要证据。
 
 #### Scenario: 验证 development checkout onboarding
 - **WHEN** repository onboarding verifier 运行
@@ -54,7 +87,8 @@ Buildr Product MUST 为 development checkout onboarding、init 行为、checkout
 
 #### Scenario: 验证 checkout 与 package 一致性
 - **WHEN** CLI package parity verifier 运行
-- **THEN** verifier MUST 比较 checkout 与同一 candidate tarball 的代表输出和 mutation 结果
+- **THEN** verifier MUST 比较 checkout 与同一 candidate tarball 的代表输出和一个代表 mutation 结果
+- **AND** verifier MUST NOT 重跑 Task Record、Task Review Result、Task Verification Result 或双 Task Environment 生命周期
 - **AND** verifier MUST NOT 将单侧初始化成功作为独立发布证据
 
 #### Scenario: 验证安装后发布生命周期
@@ -62,17 +96,17 @@ Buildr Product MUST 为 development checkout onboarding、init 行为、checkout
 - **THEN** verifier MUST 独占安装后 init、sync、doctor、optional uninstall 和最终 doctor 的发布生命周期证据
 
 ### Requirement: 产品验证必须提供分层入口
-Buildr 产品验证 MUST 将测试证据层、主要门禁和故障定位入口明确分离：维护者主要工作流 MUST 收敛为 fast、changed 和 candidate 三种门禁，Unit、Contract 与 Fast Integration MUST 保留直接定位入口；Fast MUST 只包含可频繁执行的低成本证据，需要多轮真实 workspace/Git 演进、大量 CLI 子进程或失败恢复矩阵的 verifier MUST 使用独立 Candidate-only step identity，并 MUST 仍可由 changed/focus 定点选择。
+Buildr 产品验证 MUST 将测试证据层、主要门禁和故障定位入口明确分离：维护者主要工作流 MUST 收敛为 fast、changed 和 candidate 三种门禁，Unit、Component、Contract、Integration 与 System MUST 保留直接定位入口；Fast MUST 只包含可频繁执行的低成本证据，需要多轮真实 Workspace/Git 演进、大量 CLI 子进程或失败恢复矩阵的 verifier MUST 使用独立 affected/full step identity，并 MUST 仍可由 changed/focus 定点选择。
 
 #### Scenario: 普通任务运行默认测试
 - **WHEN** 维护者或 Agent 在 Product checkout 运行 `npm test` 或 `npm run test:fast`
-- **THEN** verifier MUST 运行 Unit、Contract、低成本 Fast Integration、架构、canonical spec quality/strict 和全部 runtime adapter 低成本契约
-- **AND** verifier MUST NOT 执行 builtin replacement/migration/recovery 失败矩阵、多轮真实 workspace/Git 演进、npm pack/install、网络访问或 Workspace E2E
+- **THEN** verifier MUST 运行 Unit、Component、低成本 Contract、架构、canonical spec quality/strict 和全部 runtime adapter 低成本契约
+- **AND** verifier MUST NOT 执行完整 CLI/Workspace/System、多轮真实 Git 演进、npm pack/install、网络访问或发布生命周期
 
 #### Scenario: 根据改动运行验证
 - **WHEN** 维护者或 Agent 运行 `npm run test:changed`
 - **THEN** verifier MUST 根据 Git diff 或显式 Product 路径选择最小验证 DAG
-- **AND** 实现路径命中重型 recovery/migration 主 owner 时 MUST 选择对应 Candidate-only focused step，不得因其不属于 Fast 而跳过
+- **AND** 实现路径命中重型 System、recovery/migration 主 owner 时 MUST 选择对应 focused step，不得因其不属于 Fast 而跳过
 - **AND** 计划 MUST 解释每个 step 的选择原因并对未映射路径 fail closed
 
 #### Scenario: 定点重跑 step 或领域
@@ -81,15 +115,15 @@ Buildr 产品验证 MUST 将测试证据层、主要门禁和故障定位入口�
 - **AND** verifier MUST 只展开真实执行依赖，不得无条件附加完整 Fast
 - **AND** 未知 selector MUST 在启动验证进程前 fail closed
 
-#### Scenario: 定位低成本测试层
-- **WHEN** 维护者直接运行 Unit、Contract 或 Fast Integration script
-- **THEN** 每个入口 MUST 只执行对应证据层
+#### Scenario: 定位测试层
+- **WHEN** 维护者直接运行 Unit、Component、Contract、Integration 或 System script
+- **THEN** 每个入口 MUST 只执行对应证据边界
 - **AND** 这些入口 MUST NOT 被描述为独立发布门禁
 
 #### Scenario: 最终候选运行完整验证
 - **WHEN** 实现、自然语言资产、生成资产和 review 修订已经冻结
 - **THEN** 维护者或 CI MUST 运行 `npm run test:candidate`
-- **AND** candidate verifier MUST 直接编排全部 candidate profile steps，包括从 Fast 拆出的 recovery/migration 和真实 workspace/Git steps
+- **AND** candidate verifier MUST 直接编排全部 candidate profile steps，包括真实 Integration、System、recovery/migration 和 Workspace/Git steps
 - **AND** candidate verifier MUST NOT 使用 diff、group 或 step selector 缩小覆盖范围
 - **AND** candidate verifier MUST 保留产品要求的文档、安全、onboarding、package、runtime adapter、release、managed data、Workspace E2E、OpenSpec 门禁及 timing summary
 
@@ -136,22 +170,39 @@ Buildr Product MUST 将 builtin replacement 和 recovery 的纯状态分类分�
 - **AND** 预算调整 MUST NOT 替代场景覆盖核对或把单次超时变为正确性失败
 
 ### Requirement: 候选验证必须避免重复制品和无边界串行执行
-Buildr candidate verifier MUST 在同一冻结候选 run 内复用不可变 npm tarball，并 MUST 对已证明使用隔离状态的昂贵 verifier 和 Workspace E2E suites 采用有界并行，同时保持逐阶段失败和 timing 可观察性。
+Buildr candidate verifier MUST 在同一冻结候选 run 内复用不可变 npm tarball和已准备的只读测试输入，并 MUST 将 System 文件按 primary owner、可变状态与资源压力拆为可独立计时的 steps；已证明使用隔离状态的 owner MUST 采用有界并行，同时保持逐阶段失败、完整文件归属和 timing 可观察性。
 
 #### Scenario: 多个 verifier 使用候选 tarball
 - **WHEN** candidate verifier 运行 tarball inventory、package parity 和 release smoke
 - **THEN** orchestrator MUST 只生成一个候选 tarball 和对应 pack metadata
 - **AND** 各 verifier MUST 使用该只读制品，但 MUST 继续使用彼此隔离的安装 prefix 和 workspace
 
+#### Scenario: System 文件按资源 owner 调度
+- **WHEN** Candidate 编排全部 System tests
+- **THEN** 每个 System test file MUST 恰好归属一个 Candidate primary owner
+- **AND** fresh build、runtime recovery、Task Finish、Workspace lifecycle、Local App HTTP、App process 和轻量验证契约 MUST 可按不同资源容量独立调度与计时
+- **AND** monolithic System 入口 MUST 复用同一文件归属事实运行完整 System 集合
+
 #### Scenario: Workspace E2E suites 使用隔离状态
 - **WHEN** candidate verifier 编排全部 Workspace E2E suites
 - **THEN** 每个 suite MUST 创建和清理自己的临时 workspace、repo 与 diagnostics namespace
 - **AND** suite MUST NOT 依赖其他 suite 的执行顺序或可变输出
-- **AND** orchestrator MUST 将每个 suite 记录为独立 timing step
+- **AND** orchestrator MUST 将每个 suite 或其拆分后的 primary owner 记录为独立 timing step
 
 #### Scenario: standalone release smoke 没有共享制品
 - **WHEN** release smoke 在 macOS、Windows 或独立本地命令中运行且没有收到候选 tarball
 - **THEN** verifier MUST 自行执行 npm pack 并完成相同安装后生命周期
+
+#### Scenario: 复用只读 fixture 基线
+- **WHEN** 多个 System tests 需要相同 controller dependencies、Workspace baseline 或 Web dist
+- **THEN** verifier MAY 复用只读不变输入或将其复制到独立临时 root
+- **AND** 每个测试 MUST 继续隔离 `.buildr`、SQLite、Git worktree、Task/Finish、Local App runtime state 与其他可变 Workspace 内容
+
+#### Scenario: fresh build 保持真实依赖闭包
+- **WHEN** `system-fresh-build` 验证 Task Environment 的多 Service preparation
+- **THEN** 测试 harness MAY 复用当前已安装 controller 而不额外复制源码并执行 controller `npm ci`
+- **AND** 被测 Buildr 与 Buildr Web checkout MUST 从没有 `node_modules` 的状态分别执行锁定安装
+- **AND** 被测 checkout MUST 使用受管工具链真实完成一次 `build:web`
 
 #### Scenario: 并行阶段发生失败
 - **WHEN** 同一并行批次中的任一 verifier 返回非零状态
@@ -190,32 +241,38 @@ Buildr 产品验证 MUST 对全部 supported runtime adapter 执行低成本 des
 - **AND** npm release smoke、package smoke 和 workspace lifecycle E2E MUST 保持各自既有 owner 与覆盖
 
 ### Requirement: Candidate 调度必须避免资源饱和型 verifier 互相放大
-Buildr verification registry 和 scheduler MUST 能表达子进程/文件系统饱和型 verifier 的资源约束，并 MUST 在当前执行策略下防止这些 steps 超过已验证的同时运行上限；调度策略 MUST 被 timing summary 记录，且 MUST NOT 改变 Candidate required step 集合。
+Buildr verification registry 和 scheduler MUST 能表达 System owner 的 inner concurrency、子进程/文件系统/构建/App runtime 资源约束，并 MUST 在当前执行策略下防止互斥或饱和型 steps 超过已验证的同时运行上限；调度策略 MUST 被 timing summary 记录，且 MUST NOT 减少 Candidate 所需行为覆盖。资源 capacity MUST 表达压力节流而非共享可变状态锁，资源受限 profile 的上限 MUST NOT 高于默认 profile。
 
 #### Scenario: 资源受限 CI 运行 Candidate
 - **WHEN** Candidate 在已声明资源受限的 CI execution profile 下运行
-- **THEN** scheduler MUST 使用该 profile 已验证的 global/class/饱和型并发上限
-- **AND** `integration-fast` 拆分后的重型 owner 与 `runtime-adapter-parity` MUST NOT 在超过该上限时同时扩张子进程
+- **THEN** scheduler MUST 使用该 profile 对每个 System owner 声明的 global/class/resource/inner concurrency 上限
+- **AND** fresh build、runtime recovery、App process、Task Finish 与 `runtime-adapter-parity` MUST NOT 在冲突资源上同时扩张子进程
+- **AND**轻量隔离 owner MAY 在重型 owner 运行期间并行
 - **AND** summary MUST 记录 execution profile、并发上限、step 调度时间线与 queue duration
 
 #### Scenario: 本地维护者运行 Candidate
 - **WHEN** Candidate 在本地默认 execution profile 下运行
-- **THEN** scheduler MUST 使用已登记且可观测的本地并发策略
+- **THEN** scheduler MUST 允许已证明使用不同临时 execution root 的 System owner 有界并行
 - **AND** 本地与 CI profile MUST 使用相同 registry、required steps、dependencies 和 executors
 
+#### Scenario: 本地维护者运行完整 System
+- **WHEN** 维护者运行 `npm run test:system`
+- **THEN** runner MUST 从 Candidate 使用的同一 System owner registry 展开完整文件集合
+- **AND** 所有未明确 standalone 的 System files MUST 恰好执行一次
+
 #### Scenario: 未知调度 profile
-- **WHEN** 调用方请求未登记的 verification execution profile 或非法并发上限
-- **THEN** planner/scheduler MUST 在启动任何 verifier 前 fail closed
-- **AND** 诊断 MUST 标识未知 profile 或无效限制
+- **WHEN** 调用方请求未登记的 profile、非法并发上限、重复 System 文件 owner 或未归属 System 文件
+- **THEN** planner/scheduler MUST 在启动对应 verifier 前 fail closed
+- **AND** 诊断 MUST 标识未知 profile、无效限制或冲突文件
 
 ### Requirement: 验证效率优化必须用同 tree 多轮证据验收
-Buildr Product MUST 在改变 Fast 边界、Candidate 调度或 runtime parity 覆盖矩阵时，使用同一冻结 Candidate tree 的多轮成功 timing 证据对比基线与候选策略，并 MUST 同时验证 owner/required step/关键场景覆盖不减少；性能结果 MUST 保持非阻断观察语义。
+Buildr Product MUST 在改变 Fast 边界、Candidate 调度、System owner topology 或 runtime parity 覆盖矩阵时，使用同一冻结 Candidate tree 的多轮成功 timing 证据对比基线与候选策略，并 MUST 同时验证旧新 owner coverage map、关键场景和完整行为集合不减少；性能结果 MUST 保持非阻断观察语义。
 
 #### Scenario: 对比 Candidate 调度策略
-- **WHEN** 维护者评估新的 concurrency class/profile 或饱和型互斥策略
+- **WHEN** 维护者评估新的 concurrency class/profile、System owner topology 或饱和型互斥策略
 - **THEN** 对照与候选 runs MUST 绑定同一 repository、Product root 和 Candidate tree/fingerprint
 - **AND** 每种策略 MUST 记录多轮成功的整体 wall-clock、重项 executor duration、queue duration、中位数与波动范围
-- **AND** 候选策略 MUST 保留与基线相同的 Candidate required step identities 与关键覆盖断言
+- **AND** owner coverage map MUST 证明旧完整 System 文件集合与新 primary owner 文件并集相同且无重复
 
 #### Scenario: 性能证据波动或单次超预算
 - **WHEN** 单次 run 超过目标预算或不同 runs 出现环境波动
@@ -383,6 +440,7 @@ Buildr Workspace E2E MUST 只保留必须通过多条真实命令、多个产品
 - **AND** 全 adapter 生命周期 MUST 由 runtime parity 持有
 - **AND** onboarding 异常分支 MUST 由 onboarding integration 持有
 - **AND** tarball inventory 和安装后发布生命周期 MUST 分别由 package/open-source verifier 与 release smoke 持有
+
 ### Requirement: Candidate 必须观测独立 package 验证阶段
 Buildr Candidate MUST 将 package static、package workspace smoke 和 package domain integration 作为独立 verification steps 编排，并 MUST 为每个 step 保留稳定 identity、耗时预算和失败诊断。
 
@@ -402,19 +460,35 @@ Buildr Candidate MUST 将 package static、package workspace smoke 和 package d
 - **AND** verifier MUST NOT 依赖同批次其他 step 的可变输出或执行顺序
 
 ### Requirement: 产品验证步骤必须由统一 registry 声明
-Buildr Product MUST 使用单一 verification registry 声明所有可编排 step 的稳定 id、显示名称、执行命令、输入路径、真实执行依赖、profile/group、预算、并发类别、可选调度成本和 artifact 需求，并 MUST 在执行前验证 registry 完整性；`dependsOn` MUST NOT 用于表达 profile 完整性或建议门禁顺序。
+Buildr Product MUST 使用单一 verification registry 声明所有可编排 step 的稳定 id、显示名称、执行命令、输入路径、真实执行依赖、profile/group、预算、并发类别、可选调度成本、artifact 需求、环境足迹、隔离方式和重置负担，并 MUST 在执行前验证 registry 完整性；`dependsOn` MUST NOT 用于表达 profile 完整性或建议门禁顺序。Planner MUST 根据这些显式事实判断 Component 与 Quick 准入，MUST NOT 根据 step id、目录名或暂时实测耗时补猜资格。
 
 #### Scenario: registry 定义合法
 - **WHEN** fast、focus、changed 或 Candidate 解析 verification registry
 - **THEN** 每个 step id MUST 唯一且引用的依赖、profile、group、concurrency class 和 executor MUST 已登记
+- **AND** 每个 step MUST 声明闭合、可校验的环境足迹、隔离方式与重置负担
 - **AND** 可选 `schedulingCostMs` MUST 是正整数
 - **AND** dependency graph MUST 无环
 - **AND** 声明消费候选 artifact 的 step MUST 依赖对应 artifact producer
 
 #### Scenario: registry 定义非法
-- **WHEN** registry 存在重复 id、未知依赖、依赖环、artifact consumer 缺失 producer 依赖、缺失执行信息或非法 `schedulingCostMs`
+- **WHEN** registry 存在重复 id、未知依赖、依赖环、artifact consumer 缺失 producer 依赖、缺失执行信息、非法 `schedulingCostMs`、缺失环境事实或非法准入组合
 - **THEN** planner MUST 在启动任何验证进程前 fail closed
 - **AND** 诊断 MUST 标识无效 step 与原因
+
+#### Scenario: Component 穿过真实环境边界
+- **WHEN** step 声明为 Component，但环境足迹包含真实 filesystem、CLI、Git、网络或完整 Workspace 生命周期，或声明任何 reset burden
+- **THEN** planner MUST 拒绝该 registry
+- **AND** MUST NOT 因 step 名称或目标耗时较低允许其进入 Component
+
+#### Scenario: Quick step 需要重复重置
+- **WHEN** step 属于 Quick，但需要重复初始化、迁移、安装、环境清理或完整生命周期
+- **THEN** planner MUST 拒绝该 registry
+- **AND** 诊断 MUST 明确指出其 reset burden 不符合 Quick
+
+#### Scenario: 低成本 Integration 申请进入 Quick
+- **WHEN** Integration step 属于 Quick
+- **THEN** registry MUST 明确声明有界目标耗时、可测环境足迹、独立隔离且无 reset burden
+- **AND** step 包含 network、Git、Workspace lifecycle 或共享可变环境时 planner MUST fail closed
 
 #### Scenario: step 只需要共同通过而不消费输出
 - **WHEN** 两个 verifier 由同一 Fast 或 Candidate profile 选择但彼此不消费输出
@@ -495,26 +569,44 @@ Buildr Candidate MUST 从统一 registry 选择完整 candidate profile、展开
 - **AND** verifier MUST 根据 required gate identity 判断完整性，不得把某个固定 step 数作为质量契约
 
 ### Requirement: 低成本 Node 验证必须按测试语义分层
-Buildr Product MUST 将低成本 Node tests 分为 unit、静态契约和快速集成三个稳定入口，并 MUST 由 fast 与 Candidate profile 聚合全部三层；测试迁移 MUST NOT 删除既有覆盖或把昂贵 Workspace、package、network、onboarding、release 生命周期引入 fast。
+Buildr Product MUST 将 Node tests 按 Unit、Component、Contract、Integration 与 System 的真实执行边界提供稳定入口；Quick MUST 聚合完整低成本 Unit、Component、静态 Contract 和必要静态检查，MUST NOT 因历史文件名、step 名称或暂时较快把真实 filesystem、CLI、Git、网络、Workspace 生命周期或重复重置测试归入低成本入口。
 
 #### Scenario: 运行纯单元测试
 - **WHEN** 维护者运行 `npm run test:unit`
 - **THEN** verifier MUST 只发现直接调用同进程产品模块的 unit tests
 - **AND** 这些测试 MUST NOT 启动真实 CLI、Git 或 npm 子进程
 
-#### Scenario: 运行静态契约测试
-- **WHEN** 维护者运行 `npm run test:contract`
-- **THEN** verifier MUST 检查源码结构、manifest、文档、Skills、schema 或 entrypoint declaration 的静态一致性
-- **AND** 这些测试 MUST 与 unit coverage 分开报告
+#### Scenario: 运行有界组件测试
+- **WHEN** 维护者运行 `npm run test:component`
+- **THEN** verifier MUST 验证单一有界 Application 组装并使用 fake 或内存实现替代外部系统
+- **AND** verifier MUST NOT 穿过真实 filesystem、CLI、Git、网络或完整 Workspace 生命周期
 
-#### Scenario: 运行快速集成测试
-- **WHEN** 维护者运行 `npm run test:integration:fast`
-- **THEN** verifier MUST 运行需要真实 CLI、Git 子进程或多模块组合的低成本测试
-- **AND** verifier MUST NOT 执行完整用户 workspace、npm tarball 安装或发布生命周期
+#### Scenario: 运行契约测试
+- **WHEN** 维护者运行 `npm run test:contract`
+- **THEN** verifier MUST 只检查源码结构、manifest、文档、Skills、schema 或 entrypoint declaration 的一致性
+- **AND** static contract MUST 自动拒绝 Contract 目录中新引入的真实子进程、Git、网络或可变临时环境测试
+
+#### Scenario: 运行技术集成测试
+- **WHEN** 维护者运行 `npm run test:integration`
+- **THEN** verifier MUST 运行跨真实 filesystem、Git 或子进程技术边界的测试
+- **AND** verifier MUST 不把完整公共入口或 Workspace 生命周期降格为 Integration
+- **AND** 从 Contract 迁出的真实环境测试 MUST 保留 changed/affected、Candidate 与 focus 可选择性
+
+#### Scenario: 运行系统测试
+- **WHEN** 维护者运行 `npm run test:system`
+- **THEN** verifier MUST 运行完整 CLI、Workspace、Local App 或 Task 生命周期 System 测试
+- **AND** Product MUST NOT 保留将同一 System 集合命名为 `test:integration:fast` 的第二入口
+- **AND** runner MUST 保留明确的文件集合、退出码、signal 与失败 diagnostics，不得把无 TAP 输出的聚合失败变成不可定位结果
+
+#### Scenario: 验证全部 CLI help
+- **WHEN** CLI compatibility verifier 检查全部公开 help topics
+- **THEN** 所有 topic 的路由与 Usage 内容 MUST 在同一进程中穷举验证
+- **AND** 代表性的 root、普通、深层 Task、App、Finish 与 runtime-dependent topics MUST 继续通过真实 CLI 进程验证 stdout、exit status、两种 help form 与零写入
+- **AND** verifier MUST NOT 为每个 topic 重复启动两次完整产品进程
 
 #### Scenario: 聚合低成本验证
-- **WHEN** 维护者运行 `npm test`、`npm run test:fast` 或完整 Candidate
-- **THEN** unified registry MUST 选择 unit、contract 和 fast integration 三个独立 step
+- **WHEN** 维护者运行 `npm test` 或 `npm run test:fast`
+- **THEN** unified registry MUST 只选择显式满足环境足迹、隔离方式和 reset burden 准入的低成本 steps
 - **AND** 每层 MUST 保留稳定 step identity、失败状态和 diagnostics
 
 ### Requirement: 单元测试覆盖率必须独立可观察
@@ -579,3 +671,141 @@ Buildr Changed verification MUST 使用与 Candidate 相同的 timing schema fam
 - **WHEN** Changed verification 成功或失败并完成 summary 写入
 - **THEN** summary 与 diagnostics MUST 保留在本次唯一 evidence directory
 - **AND** 候选 package 等短生命周期执行制品 MUST 继续清理
+
+### Requirement: Candidate 包含双任务并发整体验收
+Buildr Product Candidate MUST 将 `concurrent-task-acceptance` 登记为 required verification step，MUST 真正并发准备两个不同 Task 的独立 Environment，并 MUST 使用独立 executor、阶段 timing 和预算执行；不得由其他单项测试的通过状态推断该组合验收通过。
+
+#### Scenario: 执行完整候选验证
+- **WHEN** 维护者执行 Product Candidate 验证
+- **THEN** verification registry MUST 选择 `concurrent-task-acceptance`
+- **AND** 该步骤失败或证据不完整时 Candidate MUST 失败
+
+#### Scenario: 准备两个 Task Environment
+- **WHEN** acceptance fixture 已创建两个正式 Task Record
+- **THEN** verifier MUST 并发调用两个独立 Task Environment prepare
+- **AND** 两个 Environment MUST 使用不同 execution roots 并保持各自 repository set 与 CLI invocation
+- **AND** summary MUST 记录 fixture、environment prepare、Task invocation、verification、Verification Result、preview、resource coordination 与 cleanup 的 wall-clock
+
+#### Scenario: 两个 Task 形成独立 current Verification Result
+- **WHEN** 两个 Task 的显式 verification execution 都已完成
+- **THEN** verifier MUST 并发调用各自 Receipt-bound CLI 记录两份 current Result
+- **AND** 两个 Result MUST 使用不同 Task-scoped path 与 digest 并保持 `current` applicability
+- **AND** acceptance MUST NOT 为证明 `record` 响应再重复执行两个 `inspect`；Result reader 的完整协议由 Task Verification System owner 持有
+
+#### Scenario: 清理并发 Task Environment
+- **WHEN** 两个 Task 的并发行为已经完成
+- **THEN** verifier MUST 证明清理第一个 Task 不会删除或使第二个 Environment 失效
+- **AND** verifier MUST 最终清理两个 Environment 及其 owned resources
+
+### Requirement: Product test plan 与 Task Verification authority 必须分离
+Buildr Product MAY 继续在 `test/verification/` 使用 Fast、Changed、Focus、Candidate profiles、DAG scheduling、prepared fixtures 与 workspace-saturating resources；这些名称和实现 MUST 只属于 Product repository testing policy。Installed Project declaration parser、capability runner 与 Task Verification Result MUST NOT 导入该 test-only planner、复制其 profile levels 或把它变成所有 Project 的默认 schema。
+
+#### Scenario: Product Candidate 使用 DAG
+- **WHEN** `npm run test:candidate` 根据 Product verification registry 生成有依赖的 plan
+- **THEN** `test/verification/dag-scheduler.mjs` MAY 有界调度依赖、并发 class 与 workspace-saturating resources
+- **AND** 该 DAG MUST 不出现在 `buildr.project-verification/v2` 或 Task Verification Result
+
+#### Scenario: installed CLI 执行 Project capability
+- **WHEN** npm package 中的 `buildr verification run` 执行显式 capability set
+- **THEN** runtime MUST 只依赖 `src/` 内 declaration、process、resource 与 transient evidence modules
+- **AND** package inventory MUST 不包含或导入 Product test planner/scheduler
+
+### Requirement: P0.4 验证必须覆盖 current Result authority
+Buildr Product focused/fast/candidate tests MUST 覆盖 Result closed schema、Project scope declaration binding、atomic replacement rollback、target/declaration stale、absent declaration gap、unique writer、CLI/Local App parity、transient execution separation、Finish shared consumer 与旧 authority absence。
+
+#### Scenario: 运行 P0.4 focused verification
+- **WHEN** 维护者修改 Verification domain、Application、declaration、Skill/contract、Finish 或 Local App
+- **THEN** affected tests MUST 证明 Result current path 与 failure preservation
+- **AND** MUST 不以 fixture 字段存在代替真实 CLI、filesystem 或 HTTP journey
+
+### Requirement: 可复用 System 测试上下文必须共享不可变基线并隔离写入
+Buildr Product MUST 允许主要被测事实不包含 Workspace 初始化的高重复 System 测试复用同一运行内的已初始化基线；共享部分 MUST 保持不可变，每个 test case MUST 在独立可写 sandbox 中执行，且验证初始化、全局状态或完整生命周期本身的测试 MUST 保持独立环境 owner。
+
+#### Scenario: System suite 复用同一上下文
+- **WHEN** 一个 `test:system` invocation 包含多个声明使用相同 context identity 的测试文件
+- **THEN** runner MUST 对该 identity 最多准备一次基线并把它交给对应 worker
+- **AND** 基线 MUST 只包含这些测试共同需要且不是主要被测目标的前置事实
+
+#### Scenario: 并发 test case 修改工作区
+- **WHEN** 两个或更多 test case 并发使用同一基线
+- **THEN** 每个 case MUST 获得 realpath 不同的可写 sandbox
+- **AND** 任一 case 的修改 MUST NOT 改变基线或其他 case 的可见状态
+
+#### Scenario: 基线缺失或被污染
+- **WHEN** runner 提供的 context marker、路径边界或内容 identity 缺失、不匹配或在运行中发生变化
+- **THEN** System verification MUST fail closed 并报告 context diagnostic
+- **AND** worker MUST NOT 静默创建替代基线后继续冒充 suite context 成功
+
+#### Scenario: 直接运行单个测试文件
+- **WHEN** 维护者不经过 System runner 直接执行一个已接入 context 的 test file
+- **THEN** 该 worker MUST 在本进程内最多准备一次等价基线
+- **AND** 所有 case 完成或失败后 MUST 清理该本地基线和各自 sandbox
+
+#### Scenario: 测试以初始化或全局生命周期为主要事实
+- **WHEN** System 测试验证 Workspace init、Project/Service 创建、真实 Git/Task Environment、安装、迁移、cleanup 或 Task Finish 交付生命周期
+- **THEN** 该测试 MUST 保留自身完整隔离环境
+- **AND** runner MUST NOT 用预建结果跳过其主要被测边界
+
+### Requirement: 正式执行的 changed capability 必须自带可解析输入
+Buildr Product 已登记为 Project Verification capability 的 changed selector command MUST 在正式 `buildr verification run` 中拥有闭合的 changed-path 输入契约。该 capability MAY 优先接受调用方显式提供的 changed paths；未提供时 MUST 使用自身声明的 Git/base 事实或返回可执行的 input diagnostic。通用 Verification runner MUST NOT 为某个 Product capability 硬编码其 selector 选择逻辑。
+
+#### Scenario: Browser capability 使用显式 changed paths
+- **WHEN** `product.browser-smoke` execution 收到合法的 `BUILDR_CHANGED_PATHS_JSON`
+- **THEN** dispatcher MUST 校验并使用该路径集合生成 selector plan
+- **AND** formal `verification run` MUST 能启动 Browser capability，不要求 Agent 额外手工修改命令
+
+#### Scenario: Browser capability 从 Git fallback 选择
+- **WHEN** `product.browser-smoke` execution 未收到 `BUILDR_CHANGED_PATHS_JSON` 且 execution root 能解析 verification base
+- **THEN** dispatcher MUST 从 Git diff 收集 Product-relative changed paths并生成与显式输入一致的 selector plan
+- **AND** selector plan MUST 保留 affected/full 模式、选择原因和未映射路径的 fail-closed 行为
+
+#### Scenario: Browser capability 缺少可解析输入
+- **WHEN** `product.browser-smoke` execution 没有显式 changed paths 且无法解析 Git verification base
+- **THEN** dispatcher MUST 在启动 Chrome 前返回稳定的 input/base diagnostic
+- **AND** MUST NOT 将该情况报告为 Browser 页面或业务交互失败
+
+### Requirement: 正式发布必须围绕一个不可变 tarball 收敛
+Buildr 正式 tag 发布 workflow MUST 将一次 `npm pack` 产生的 tarball 作为本次发布的唯一 release artifact，并 MUST 让发布前 smoke、`npm publish`、制品 evidence 与 registry integrity 核对绑定同一 artifact identity；workflow MUST NOT 在 tag 发布阶段重复运行完整 Candidate。
+
+#### Scenario: 准备正式发布物
+- **WHEN** 受保护 tag workflow 完成 release contract 与 release notes 检查
+- **THEN** workflow MUST 只执行一次 `npm pack` 并生成包含 package name/version、filename、文件清单、size、SHA-256 与 SHA-512 integrity 的 manifest
+- **AND** tarball 与 manifest MUST 作为同一 run 的 CI artifact 保存
+
+#### Scenario: 发布前验证正式发布物
+- **WHEN** release artifact 已生成
+- **THEN** 发布前 smoke MUST 从该 tarball 安装 CLI 并完成 `init`、`sync`、`doctor`、optional Component uninstall 和最终 doctor
+- **AND** smoke MUST NOT 从 checkout 重新 pack 或使用 development checkout runtime 冒充安装后 CLI
+
+#### Scenario: 发布同一个 tarball
+- **WHEN** 官方 npm registry 不存在目标 package version 且发布前 smoke 通过
+- **THEN** workflow MUST 使用 trusted publishing 执行 `npm publish <tarball>` 并应用 release contract 指定的 dist-tag
+- **AND** workflow MUST NOT 从 checkout、目录或第二个 pack 结果隐式重建待发布 bytes
+
+#### Scenario: Registry 已存在目标版本
+- **WHEN** 同一 tag workflow 重跑且官方 npm registry 已存在目标 package version
+- **THEN** workflow MUST 比较 registry `dist.integrity` 与本次 artifact manifest 的 SHA-512 integrity
+- **AND** identity 相同 MUST 跳过 publish，identity 不同 MUST fail closed 且不得覆盖、unpublish 或移动现有版本
+
+#### Scenario: 发布后核对官方 registry
+- **WHEN** publish 已成功或 registry 已有同 identity 版本
+- **THEN** workflow MUST 以有界重试确认官方 registry 的 version、integrity 和目标 dist-tag
+- **AND** workflow MUST 从官方 registry 安装精确 `name@version` 并完成与发布前相同的 CLI 生命周期 smoke
+
+### Requirement: 正式发布恢复必须保留已完成的不可逆事实
+Buildr 正式发布 workflow MUST 在 npm version 或 GitHub Release 已经存在时核对并复用一致事实，只补齐缺失步骤；任一事实不一致 MUST fail closed，且 workflow MUST NOT 通过删除 tag、重复 publish、unpublish 或覆盖公开 Release 隐藏部分成功。
+
+#### Scenario: GitHub Release 尚不存在
+- **WHEN** npm registry 已确认目标 artifact identity 且目标 GitHub Release 不存在
+- **THEN** workflow MUST 从目标 CHANGELOG 章节创建指向同一 tag 的 GitHub Release
+- **AND** prerelease 与 Latest 状态 MUST 符合 release contract
+
+#### Scenario: GitHub Release 已存在
+- **WHEN** 同一 tag workflow 重跑且目标 GitHub Release 已存在
+- **THEN** workflow MUST 核对 tag、target commit、body 与 prerelease/Latest 状态
+- **AND** 全部一致 MUST 复用该 Release，任一不一致 MUST fail closed 且不得自动覆盖
+
+#### Scenario: 不可逆步骤后验证失败
+- **WHEN** npm publish 或 GitHub Release 已成功，但后续 registry smoke、readback 或网络步骤失败
+- **THEN** workflow MUST 保留已完成的 tag、npm version、dist-tag 与 Release 事实并报告失败阶段
+- **AND** 后续同一 tag 重跑 MUST 从 identity/readback gate 恢复，不得重做已经成功的不可逆动作

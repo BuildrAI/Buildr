@@ -1,0 +1,13 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-doctor-json-output
+operation: reconcile
+treeIdentity: sha256-c3b125f9357992cf81762ba010451b319e9fe6074a102041e4d33cda3c6e4e57
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-doctor-json-output/brief.md
+    reason: 公开 Doctor JSON 默认详细度和内部最终 Doctor 失败语义发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-doctor-json-output/proposal.md
+      - openspec/changes/optimize-doctor-json-output/design.md
+unresolvedItems: []

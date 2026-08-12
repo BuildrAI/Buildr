@@ -4,6 +4,7 @@
 
 定义 Buildr 标准规则资产与 Agent runtime 投射产物的边界，以及 MVP 以 workspace runtime 为主路径的行为。
 ## Requirements
+
 ### Requirement: Buildr 标准规则资产独立于 Agent runtime
 Buildr MVP MUST 将 `AGENTS.md` 作为 Buildr 标准规则资产，并将 Agent runtime 目录视为可重建投射产物。
 
@@ -448,12 +449,40 @@ Buildr MUST 在写入结束后确认本次命令负责的运行时状态已经�
 - **THEN** 命令 MUST 返回失败并给出可重新执行的修复动作
 
 ### Requirement: Buildr Core 要求简明表达
-Buildr required Core MUST 要求 Agent 面向用户时优先使用常用、直接和简练的语言，避免使用不必要的专业术语。
+Buildr 必读核心规则（required Core）MUST 要求智能体（Agent）面向用户说明或回复产品设计、实现、问题、方案、进度或结果时，使用直接、简练、易于理解的表达，并按统一规则表达中英文专业术语与必须精确对应实现的文本。
 
 #### Scenario: Agent 说明方案或结果
-- **WHEN** Agent 向用户说明问题、方案、进度或结果
-- **THEN** Agent MUST 优先使用用户容易理解的简练语言
-- **AND** 只有准确表达所必需时才使用专业术语，并在需要时解释
+- **WHEN** 智能体面向用户说明或回复产品设计、实现、问题、方案、进度或结果
+- **THEN** 智能体 MUST 优先使用用户容易理解的直接、简练表达
+- **AND** 智能体 MUST 只在准确表达所必需时使用专业术语
+
+#### Scenario: 专业术语只使用中文
+- **WHEN** 智能体选择使用已有中文名称或准确中文释义表达专业术语
+- **THEN** 智能体 MUST 使用中文名称或中文释义，并且不要求同时附带英文原词
+- **AND** 同一描述范围内 MUST 保持术语译法一致
+
+#### Scenario: 已有中文名称的专业术语首次出现
+- **WHEN** 智能体在面向用户的说明或回复中首次使用已有中文名称的英文专业术语
+- **THEN** 智能体 MUST 同时提供对应中文名称或中文含义
+- **AND** 智能体 MUST 使用“中文（English Term）”形式
+- **AND** 智能体 MUST NOT 单独使用英文专业术语
+
+#### Scenario: 英文专业术语后续再次出现
+- **WHEN** 智能体在同一说明或回复中再次使用英文专业术语
+- **THEN** 智能体 MUST 再次同时提供对应中文名称或中文含义
+- **AND** 智能体 MUST 使用“中文（English Term）”形式
+- **AND** 智能体 MUST NOT 因该术语此前已经解释而单独使用英文专业术语
+
+#### Scenario: 专业术语没有稳定中文译名
+- **WHEN** 面向用户的英文专业术语没有稳定中文译名
+- **THEN** 智能体 MUST 使用能够说明其含义的准确中文表述
+- **AND** 智能体保留英文原词时 MUST 使用“中文释义（English Term）”形式，不得只写英文原词
+
+#### Scenario: 文本必须精确对应实现
+- **WHEN** 命令、代码标识、字段名、接口名、文件路径、错误原文、产品专名或其他文本必须与实现精确对应
+- **THEN** 智能体 MUST 保留需要精确对应的英文原文
+- **AND** 智能体将该文本作为专业概念向用户说明时 MUST 同时补充中文名称或中文释义
+- **AND** 用户可见标签或说明 MUST NOT 使用英文原文代替中文或中英文并列的专业称谓
 
 ### Requirement: Buildr Core 要求 Agent 引导下一步
 Buildr required Core MUST 要求 Agent 在完成当前工作、到达阶段节点或遇到阻塞时，向用户说明明确、可执行的下一步。
@@ -662,7 +691,7 @@ Buildr MUST 将产品 Buildr Skill、workspace Skills 和 Skill install plans �
 - **AND** Buildr MUST NOT 将文件已写入描述为当前会话已经加载
 
 ### Requirement: 新增 adapters 的 checker 报告环境与前置条件事实
-Buildr MUST 让每个新增 adapter 的 `runtime-check` 区分投射状态、安装/版本 probe 状态和 activation guidance，并且只执行随产品静态声明的有限时无 shell probe；产品级真实 Agent 验证缺口 MUST NOT 作为当前 workspace prerequisite finding。
+Buildr MUST 让每个新增 adapter 的 `runtime-check` 区分投射状态、安装/版本 probe 状态和 activation guidance，并且只执行随产品静态声明的有限时 probe；probe MUST 与目标平台适配。没有稳定、安全、跨安装形态的自动 probe 时，descriptor MUST 使用 `manual` probe 并给出确认 guidance。
 
 #### Scenario: Environment probe 可自动执行
 - **WHEN** descriptor 声明静态 command installation 或 version probe
@@ -678,6 +707,23 @@ Buildr MUST 让每个新增 adapter 的 `runtime-check` 区分投射状态、安
 - **WHEN** Buildr 只能证明 Rules 或 Skills 投射存在，无法从文件系统证明目标 Agent 已在会话中加载
 - **THEN** runtime list、runtime check 或权威文档 MUST 提供对应 activation guidance
 - **AND** runtime check MUST NOT 仅因没有真实 Agent marker smoke 而生成当前用户必须处理的 prerequisite warning
+
+#### Scenario: macOS desktop probe 仅在 macOS 执行
+- **WHEN** TRAE Work 或 WorkBuddy descriptor 在 `darwin` 平台执行 runtime check
+- **THEN** installation/version probe MAY 使用静态声明的 macOS `defaults` executable 和参数
+- **AND** 输出 MUST 包含 probe 状态与可审计 evidence
+
+#### Scenario: 非 macOS desktop probe 使用人工确认
+- **WHEN** TRAE Work 或 WorkBuddy descriptor 在 Windows 或 Linux 平台执行 runtime check
+- **THEN** descriptor MUST 使用 `manual` installation/version probe 和确认应用版本或安装位置的 guidance
+- **AND** runtime check MUST 返回 `manual` 状态
+- **AND** MUST NOT 将 macOS `defaults` 的 ENOENT 或其他平台不适用错误报告为 installation missing、version unavailable 或 `userActionRequired` prerequisite warning
+
+#### Scenario: 其他自动 probe 仍保持安全边界
+- **WHEN** descriptor 声明 command installation 或 version probe
+- **THEN** runtime check MUST 使用静态 executable 和 arguments，在有限超时内执行
+- **AND** 除 Windows `.cmd`/`.bat` shim 所需的平台启动适配外 MUST 不经过任意 shell command 字符串
+- **AND** 输出 MUST 包含 probe 状态与可审计 evidence
 
 ### Requirement: 每个新增 adapter 保留独立兼容证据与分层验证状态
 Buildr MUST 为每个新增 adapter 记录 runtime-specific 官方文档、本机观察或安装包源码 provenance，并 MUST 以可重复的 descriptor、plan、projection、checker 和 lifecycle tests 验证 Buildr 可负责的兼容边界；descriptor MUST NOT 编码真实 Agent marker smoke 状态或品牌特有的历史通过快照。
@@ -772,3 +818,98 @@ Buildr MUST 在生成任何 Skill mutation 前组合 Buildr 管理候选的 sour
 - **WHEN** adapter inventory 为 partial 但没有发现与 Buildr 管理候选 ID 相同的可观测 Skill
 - **THEN** Buildr MAY 在保留 partial assurance metadata 后继续投射
 - **AND** MUST NOT 将该结果描述为顶层 Skill 路由无歧义已证明
+
+### Requirement: Runtime projection 必须提供 execution binding 与条件式 activation expectation
+Buildr runtime adapter plan 与公开 runtime evidence MUST 提供 Task Environment 可消费的 adapter identity、runtime source root、projection target/root、projection identity 和 Rules/Skills activation metadata。Task Environment MUST 将匹配的 projection identity 纳入 execution binding，但 MUST 只记录 projection facts；真实 Agent session activation evidence MUST 由 Task Verification 在 runtime discovery、loading、activation mode、投射路径或相关 metadata 发生变化且专项验收要求时持有。普通 Rule/Skill 内容、contract 或 description 修改 MUST NOT 因 Skills activation mode 为 `session-start` 而要求新 session。
+
+#### Scenario: Session-start Skills 已投射到任务验证工作区
+- **WHEN** Buildr 为 receipt 绑定的 Task Validation Workspace 成功投射一个 Skills activation 为 `session-start` 的 runtime
+- **THEN** runtime evidence MUST 返回 runtime source root、target root、projection identity 与 activation metadata
+- **AND** Environment `ready` 与普通 proposal、implementation、verification/finish routing MUST NOT 等待 session adoption evidence
+
+#### Scenario: 候选 source 投射自身验证根
+- **WHEN** candidate Product source 把同一 Environment Receipt 登记的 Task Validation Workspace 作为 target
+- **THEN** runtime guard MUST 允许 workspace-scoped projection 和验证根内隔离模拟 user destination
+- **AND** evidence MUST 明确这是候选验证投射，不是 retained runtime 或真实共享用户 runtime 已生效
+
+#### Scenario: 候选 source 请求越界 target
+- **WHEN** candidate Product source 请求写入 retained Workspace、peer task worktree 或 Task Validation Workspace 之外的共享 user runtime
+- **THEN** runtime guard MUST 在任何写入前 fail closed
+- **AND** MUST 返回 candidate source、允许根和越界 target identity
+
+#### Scenario: Runtime projection identity 改变
+- **WHEN** Task Validation Workspace 的 sync/render 改变了影响 Rules 或 Skills discovery 的 projection identity
+- **THEN** Environment MUST 将既有 execution binding 识别为 stale 并重新 probe
+- **AND** 只有当前专项验收要求 activation proof 时，Task Verification 中既有 session evidence 才 MUST 同时失效
+
+#### Scenario: Filesystem 无法证明 session consumption
+- **WHEN** runtime check 只能证明投射内容与期望状态一致
+- **THEN** result MUST 报告 projection ready 与 session consumption unknown/not-applicable
+- **AND** MUST NOT 仅凭文件存在、content identity、Environment Receipt 或 checker success 报告 session adopted
+
+### Requirement: Codex runtime evidence 必须保持 path-read 与 session-start 边界
+Codex adapter MUST 继续将 Rules activation 声明为 `path-read`、Skills activation 声明为 `session-start`，并 MUST 将 activation guidance 标记为 Task Verification 的条件式验收信息，而不是 Task Environment `ready` 门禁。Environment Receipt MAY 引用 Codex runtime source/projection identity，但 MUST NOT 保存 session handle、adoption mode 或 activation 结论。
+
+#### Scenario: Codex 任务验证工作区 runtime 准备完成
+- **WHEN** checkout-local Codex runtime 已在 Task Validation Workspace 通过 sync 与 doctor
+- **THEN** Buildr MUST 报告 Rules/Skills activation mode、runtime source root、target root 与 projection identity
+- **AND** Task Environment MUST 只据此判断 projection readiness，不要求当前会话重新加载 Skill
+
+#### Scenario: Codex 专项验收需要真实采用
+- **WHEN** 变更影响 Codex Skills discovery/session-start loading/投射机制，且 P0.4 验收明确要求真实 Agent session proof
+- **THEN** Task Verification MUST 绑定 Environment/source/projection/session identity 记录实际 evidence 或如实缺口
+- **AND** Environment Receipt、`ready` 与普通 workflow MUST NOT 因无法把新 session 绑定到既有 worktree 而伪造 adoption 或创建第二份 checkout
+
+### Requirement: candidate runtime identity 必须同时约束 runtime projection 与 Structured Store mutation
+自举 candidate source 的 runtime identity guard MUST 一致约束 runtime projection 和 Workspace Structured Store mutation。候选 source 只可向 receipt-bound Task Validation Workspace 投射及写入其独立验证 store；同一 Git common-dir 的 retained Workspace、peer task worktree、canonical Structured Store 与验证根外共享 runtime MUST 在任何写入前被拒绝。
+
+#### Scenario: candidate runtime 使用验证根
+- **WHEN** candidate source 对 matching Task Validation Workspace 执行 sync/render、migration 或候选功能验证
+- **THEN** runtime guard MUST 允许该隔离 target 并返回候选验证 provenance evidence
+- **AND** evidence MUST NOT 宣称 retained runtime 或 canonical data 已生效
+
+#### Scenario: candidate runtime 目标越界
+- **WHEN** candidate source 请求写入 retained Workspace runtime、canonical Structured Store、peer task worktree 或验证根外共享 user runtime
+- **THEN** guard MUST 在首个相关 mutation 前 fail closed
+- **AND** diagnostic MUST 区分 caller identity、允许 validation boundary 与被拒绝 target identity
+
+### Requirement: Skill 投射所有权回执使用 Buildr destination 控制状态根
+Buildr MUST 将 Skill 投射所有权回执与 Agent 实际消费的 runtime root 分离，并 MUST 使用 destination-aware 的 Buildr 控制状态路径作为唯一 canonical authority。
+
+#### Scenario: Workspace Skill 投射回执路径
+- **WHEN** Buildr 为 adapter `<adapter>` 的 workspace destination 投射 runtime path `<runtime-path>`
+- **THEN** 回执 MUST 写入 `<workspace>/.buildr/agent-runtime/workspace/<adapter>/skill-projection-ownership-receipts/<runtime-path>.json`
+- **AND** 实际 Skill MUST 继续写入 adapter 声明的 workspace Skills root
+
+#### Scenario: User Skill 投射回执路径
+- **WHEN** Buildr 为 adapter `<adapter>` 的 user destination 投射 runtime path `<runtime-path>`
+- **THEN** 回执 MUST 写入 `<user-home>/.buildr/agent-runtime/user/<adapter>/skill-projection-ownership-receipts/<runtime-path>.json`
+- **AND** 实际 Skill MUST 继续写入 adapter 声明的 user Skills root
+
+#### Scenario: User home 同时是 Workspace
+- **WHEN** workspace root 与 user home 指向同一目录
+- **THEN** workspace 与 user 回执 MUST 仍由路径中的 `workspace` 和 `user` 分段保持隔离
+- **AND** 任一 destination 的 render MUST NOT 覆盖另一 destination 的回执
+
+### Requirement: 旧 runtime-root 回执受控迁移到 canonical 路径
+Buildr MUST 只把旧 adapter runtime root 中的有效投射回执作为一次性迁移输入，并 MUST 在迁移后维持单一 canonical authority。
+
+#### Scenario: 只有有效旧回执
+- **WHEN** canonical 回执缺失、legacy 回执 schema 与 identity 有效且其文件 inventory 仍匹配 runtime
+- **THEN** 下一次适用 mutation MUST 在同一受管 transaction 中写入 canonical 回执并删除 legacy 回执
+- **AND** transaction 失败 MUST 恢复操作前状态
+
+#### Scenario: 新旧回执内容等价
+- **WHEN** canonical 与 legacy 回执同时存在且 identity、digest 与 inventory 等价
+- **THEN** Buildr MUST 保留 canonical 回执并受控删除 legacy 回执
+- **AND** MUST NOT 改写未变化的 runtime Skill 文件
+
+#### Scenario: 新旧回执发生冲突
+- **WHEN** canonical 与 legacy 回执的 identity、digest 或 inventory 不一致
+- **THEN** Buildr MUST 在写入任何计划目标前报告 ownership conflict
+- **AND** Buildr MUST 保留两份回执和全部 runtime 文件
+
+#### Scenario: 旧回执无法证明 runtime ownership
+- **WHEN** legacy 回执无效或其登记文件不再匹配 runtime
+- **THEN** Buildr MUST 保留现场并阻塞自动迁移、更新和清理
+- **AND** Buildr MUST NOT 通过长期双读或目录内容推断取得 ownership

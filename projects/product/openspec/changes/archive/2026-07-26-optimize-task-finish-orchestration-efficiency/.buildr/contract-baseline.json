@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "buildr.openspec-contract-baseline/v1",
+  "change": "optimize-task-finish-orchestration-efficiency",
+  "project": "product",
+  "upstreamVersion": "1.6.0",
+  "deltaHash": "sha256-7cb6d10f4f14358efe69918992a2b25d98efc6953b591f36f207aa1a3e99d57b",
+  "adopted": false,
+  "targets": [
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish run 必须支持 identity-bound 多阶段编排",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Integration push 必须表达完整 ref transition",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Invalidation 必须原子终结 attempt 与 lease",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Cleanup completion 必须绑定真实删除与 durable receipt",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish CLI 默认返回 compact progress evidence",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-finish-execution",
+      "title": "Finish timing 必须区分执行与编排成本",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Verification provider 必须聚合 required capabilities",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    },
+    {
+      "capability": "task-verification",
+      "title": "Verification summary 必须支持低噪声消费",
+      "operation": "ADDED",
+      "state": "absent",
+      "content": null
+    }
+  ]
+}

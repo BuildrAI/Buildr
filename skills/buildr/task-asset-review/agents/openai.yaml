@@ -1,4 +1,0 @@
-interface:
-  display_name: "任务资产审查"
-  short_description: "持续记录任务资产信号并完成审查、决定和交接"
-  default_prompt: "Use $task-asset-review to maintain a lightweight task asset observation and finalize its human-reviewed handoff."

@@ -1,0 +1,39 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-finish-recovery-and-fixtures
+operation: reconcile
+treeIdentity: implementation-current
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-task-finish-recovery-and-fixtures/brief.md
+    reason: 需要为普通用户说明上一轮真实收尾暴露的问题、目标和验收边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/archive/2026-07-26-automate-deterministic-openspec-convergence
+      - .buildr/task-finish/completed/automate-deterministic-openspec-convergence.json
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 实现后需要更新expected-tree validation与Task Finish recovery流程
+    status: updated
+    sourceIdentities:
+      - openspec/specs/openspec-deterministic-sync/spec.md
+      - openspec/specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Finish公开CLI、recovery状态机与diagnostic/metrics语义已变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-task-finish-recovery-and-fixtures/specs/task-finish-execution/spec.md
+      - services/buildr/src/application/task-finish/task-finish-run.mjs
+  - type: task-board
+    target: openspec/knowledge/task-boards/2026-07-26-optimize-task-finish-delivery-latency.html
+    reason: 该Change是同一Task Finish长期性能优化任务的下一批次
+    status: updated
+    sourceIdentities:
+      - openspec/changes/optimize-task-finish-recovery-and-fixtures
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: identity recovery、prepared artifact与observation ledger均为实现术语，不改变长期产品概念
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/optimize-task-finish-recovery-and-fixtures/design.md
+unresolvedItems: []
