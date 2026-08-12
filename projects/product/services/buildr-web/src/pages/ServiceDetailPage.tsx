@@ -3,10 +3,13 @@ import { Link, useParams } from 'react-router-dom';
 import { Button } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
+import { ServiceEditModal } from '../components/ServiceEditModal';
 import { serviceTypeLabel, sourceTypeLabel, workspaceHref } from '../lib/labels';
 
 type ServiceDetail = {
   revision: string;
+  migrationRequired?: boolean;
+  nextActions?: string[];
   project?: { name?: string };
   service: {
     id?: string;
@@ -28,6 +31,8 @@ export function ServiceDetailPage() {
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [data, setData] = useState<ServiceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +44,7 @@ export function ServiceDetailPage() {
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
+        setWorkspaceName(workspace.workspace.name);
         setBreadcrumbParts([workspace.workspace.name, '项目', detail.project?.name || projectCode, '服务', detail.service.name]);
         setData(detail);
       } catch (err) {
@@ -85,9 +91,7 @@ export function ServiceDetailPage() {
             <h1 id="service-detail-name">{service.name}</h1>
             <p className="page-copy">只读详情</p>
           </div>
-          <Link id="service-edit-link" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(serviceCode)}/edit`)}>
-            <Button type="primary">编辑服务</Button>
-          </Link>
+          <Button id="service-edit-button" type="primary" onClick={() => setEditOpen(true)}>编辑服务</Button>
         </div>
       </section>
       <section className="detail-facts-section" aria-label="服务详情">
@@ -121,6 +125,35 @@ export function ServiceDetailPage() {
           </div>
         </details>
       </section>
+      <ServiceEditModal
+        open={editOpen}
+        projectCode={editOpen ? projectCode : null}
+        serviceCode={editOpen ? serviceCode : null}
+        onClose={() => setEditOpen(false)}
+        onSaved={(saved) => {
+          setData((current) => (
+            current
+              ? {
+                  ...current,
+                  revision: saved.revision,
+                  service: {
+                    ...current.service,
+                    name: saved.name,
+                    description: saved.description,
+                    type: saved.type,
+                  },
+                }
+              : current
+          ));
+          setBreadcrumbParts([
+            workspaceName || '工作空间',
+            '项目',
+            data.project?.name || projectCode,
+            '服务',
+            saved.name,
+          ]);
+        }}
+      />
     </>
   );
 }

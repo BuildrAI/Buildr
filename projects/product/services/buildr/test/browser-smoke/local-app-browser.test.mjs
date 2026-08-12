@@ -524,17 +524,19 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
   });
 
-  if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情与编辑分离', async () => {
+  if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情编辑使用弹框', async () => {
     await page.goto(`${workspaceUrl}/services?project=demo`);
     const projectSelect = page.locator('#service-project-select');
     await unique(projectSelect, '服务所属项目过滤器');
     assert.match(await antdSelectDisplay(page, 'service-project-select'), /demo/);
     const row = page.locator('#service-table-body tr').filter({ hasText: '演示服务' });
+    await row.waitFor({ state: 'visible' });
     await unique(row, '服务行');
     await capture(page, 'local-app-services-desktop.png');
     const detail = row.getByRole('link', { name: '详情', exact: true });
     await unique(detail, '服务详情操作');
     await unique(row.getByRole('link', { name: '项目', exact: true }), '服务所属项目操作');
+    await unique(row.getByRole('button', { name: '编辑', exact: true }), '服务目录编辑操作');
     await detail.click();
     await page.waitForURL(`${workspaceUrl}/services/demo/api`);
     assert.equal(await page.locator('#service-detail-name').innerText(), '演示服务');
@@ -545,16 +547,14 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
     assert.equal(await page.locator('.detail-facts > div').count(), 6);
     assert.equal(await page.locator('[data-nav="services"]').evaluate((item) => item.classList.contains('active')), true);
-    await page.getByRole('link', { name: '编辑服务', exact: true }).first().click();
-    await page.waitForURL(`${workspaceUrl}/services/demo/api/edit`);
-    assert.equal(await page.locator('.read-only-section .technical-details').count(), 1);
-    assert.equal(await page.getByText('技术信息', { exact: true }).count(), 1);
-    await page.locator('#service-description').fill('已在独立详情页更新');
+    await page.getByRole('button', { name: '编辑服务', exact: true }).click();
+    await page.locator('#service-edit-form').waitFor({ state: 'visible' });
+    assert.equal(await page.url(), `${workspaceUrl}/services/demo/api`);
+    await page.locator('#service-description').fill('已在弹框中更新');
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('service-save-state')?.textContent === '保存成功');
-    assert.equal(await page.locator('#service-save-state').innerText(), '保存成功');
-    await page.reload();
-    assert.equal(await page.locator('#service-description').inputValue(), '已在独立详情页更新');
+    await page.waitForFunction(() => document.getElementById('service-detail-description')?.textContent === '已在弹框中更新');
+    assert.equal(await page.locator('#service-detail-description').innerText(), '已在弹框中更新');
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
   });
 
   if (selected('service')) await t.test('390px 下目录与详情不产生页面横向溢出', async () => {
@@ -565,7 +565,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.getByRole('link', { name: '详情', exact: true }).click();
     await page.locator('#service-detail-name').waitFor({ state: 'visible' });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await unique(page.getByRole('link', { name: '编辑服务', exact: true }).first(), '服务详情编辑操作');
+    await unique(page.getByRole('button', { name: '编辑服务', exact: true }), '服务详情编辑操作');
     await capture(page, 'local-app-service-detail-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });
   });
