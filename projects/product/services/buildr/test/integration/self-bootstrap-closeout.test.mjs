@@ -414,6 +414,28 @@ test('plan identity由run、frozen paths和去重动作确定', () => {
   assert.equal(first.actions['install-development-local-app'].length, 1);
 });
 
+test('零差异 Finish Result优先按activation paths规划自举并兼容changedPaths回退', () => {
+  const root = '/tmp/buildr-zero-delta-plan';
+  const zeroDelta = finishResult(root, 'a'.repeat(40), [], {
+    carrier: {
+      identity: 'sha256-zero-delta-carrier',
+      changedPaths: [],
+      activationPaths: [
+        'projects/product/services/buildr/package/manifest.yml',
+        'projects/product/services/buildr/src/example.mjs',
+      ],
+      zeroDelta: true,
+    },
+  });
+  const plan = createSelfBootstrapCloseoutPlan(zeroDelta);
+  assert.deepEqual(plan.frozenPaths, zeroDelta.carrier.activationPaths);
+  assert.equal(plan.actions['sync-retained-workspace'].length, 1);
+  assert.equal(plan.actions['install-development-cli'].length, 1);
+
+  const legacy = createSelfBootstrapCloseoutPlan(finishResult(root, 'b'.repeat(40), ['projects/product/services/buildr/src/legacy.mjs']));
+  assert.deepEqual(legacy.frozenPaths, ['projects/product/services/buildr/src/legacy.mjs']);
+});
+
 test('Skill命令入口通过Product CLI只读取得同一Finish Result', (t) => {
   const { root, baseRef, environment, defaultBuildr } = fixture(t);
   const finish = finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);

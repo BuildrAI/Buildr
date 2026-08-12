@@ -568,7 +568,7 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 3);
 });
 
-test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery Adaptation恢复交付', async (t) => {
+test('同路径基线冲突保留current Candidate并经显式零差异 Delivery Adaptation恢复交付', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-adaptation-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -617,9 +617,21 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   command(retained, 'git', ['push', 'origin', 'dev']);
 
   let compatibilityStatus = 'failed';
+  let advanceTargetDuringCompatibility = false;
+  let racedBaselineHead = null;
   Object.assign(runtime, {
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
-    runTaskFinishCarrierCompatibility: ({ carrier }) => ({ status: compatibilityStatus, checks: [{ id: 'product.delivery-carrier-compatibility', status: compatibilityStatus, carrierTree: carrier.tree }], evidenceIdentity: `compatibility-${carrier.tree}-${compatibilityStatus}` }),
+    runTaskFinishCarrierCompatibility: ({ carrier }) => {
+      if (compatibilityStatus === 'passed' && advanceTargetDuringCompatibility) {
+        fs.writeFileSync(path.join(retained, 'target-race.txt'), 'target advanced after zero-delta review\n');
+        command(retained, 'git', ['add', 'target-race.txt']);
+        command(retained, 'git', ['commit', '-m', 'advance after zero-delta review']);
+        command(retained, 'git', ['push', 'origin', 'dev']);
+        racedBaselineHead = command(retained, 'git', ['rev-parse', 'HEAD']);
+        advanceTargetDuringCompatibility = false;
+      }
+      return { status: compatibilityStatus, checks: [{ id: 'product.delivery-carrier-compatibility', status: compatibilityStatus, carrierTree: carrier.tree }], evidenceIdentity: `compatibility-${carrier.tree}-${compatibilityStatus}` };
+    },
     optionValue: (args, name, fallback) => {
       const index = args.indexOf(name);
       return index === -1 ? fallback : args[index + 1];
@@ -644,10 +656,13 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   assert.equal(command(environmentRoot, 'git', ['rev-parse', 'HEAD']), taskHeadBeforeFinish);
   assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current');
 
-  fs.writeFileSync(path.join(first.carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
-  command(first.carrier.root, 'git', ['add', 'shared.txt']);
-  command(first.carrier.root, 'git', ['commit', '-F', '-'], { input: `${firstSubject}\n\nBuildr-Task: ${task}\n` });
-  const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
+  const carrierHeadBeforeResume = command(first.carrier.root, 'git', ['rev-parse', 'HEAD']);
+  const missingConfirmation = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
+  assert.equal(missingConfirmation.status, 'blocked');
+  assert.equal(missingConfirmation.primaryFailure.code, 'task-finish.delivery-adaptation-missing');
+  assert.equal(command(first.carrier.root, 'git', ['rev-parse', 'HEAD']), carrierHeadBeforeResume);
+
+  const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', missingConfirmation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
   assert.equal(compatibilityFailure.status, 'blocked');
   assert.equal(compatibilityFailure.primaryFailure.code, 'task-finish.compatibility-checks-failed');
   assert.equal(compatibilityFailure.delivery, null);
@@ -655,21 +670,42 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], advancedBaselineHead);
 
   compatibilityStatus = 'passed';
-  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', compatibilityFailure.resume.token, '--target', retained]);
+  advanceTargetDuringCompatibility = true;
+  const targetRace = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', compatibilityFailure.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
+  assert.equal(targetRace.status, 'blocked');
+  assert.equal(targetRace.primaryFailure.code, 'task-finish.target-race');
+  assert.equal(targetRace.carrier.zeroDelta, true);
+  assert.match(targetRace.resume.token, /^sha256-/);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], racedBaselineHead);
+
+  const renewedAdaptation = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', targetRace.resume.token, '--target', retained]);
+  assert.equal(renewedAdaptation.status, 'blocked');
+  assert.equal(renewedAdaptation.primaryFailure.code, 'task-finish.delivery-adaptation-required');
+  assert.equal(renewedAdaptation.carrier.deliveryBaseline.head, racedBaselineHead);
+
+  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', renewedAdaptation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
 
   assert.equal(second.status, 'complete', JSON.stringify(second, null, 2));
   assert.equal(second.reuseMode, 'agent-reviewed-delivery-adaptation');
   assert.equal(second.equivalence.semanticEquivalence, 'agent-reviewed-not-proven-by-buildr');
+  assert.equal(second.carrier.zeroDelta, true);
+  assert.equal(second.carrier.adaptation.zeroDelta, true);
+  assert.deepEqual(second.carrier.changedPaths, []);
+  assert.deepEqual(second.carrier.changes, []);
+  assert.deepEqual(second.carrier.activationPaths, ['shared.txt']);
   assert.equal(second.carrier.adaptation.compatibilityChecks.status, 'passed');
   assert.equal(second.candidate.identity, frozen.identity);
   assert.equal(second.candidate.generation, 1);
   assert.equal(second.metrics.formalVerificationExecutions, 0);
-  assert.equal(second.carrier.deliveryBaseline.head, advancedBaselineHead);
-  assert.equal(second.delivery.remoteAfterRef, second.carrier.head);
-  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], second.carrier.head);
+  assert.equal(second.carrier.deliveryBaseline.head, racedBaselineHead);
+  assert.equal(second.carrier.head, racedBaselineHead);
+  assert.equal(second.delivery.targetDisposition, 'already-contained');
+  assert.equal(second.delivery.containment.proof, 'agent-reviewed-zero-delta');
+  assert.equal(second.delivery.remoteAfterRef, racedBaselineHead);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], racedBaselineHead);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'completed');
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', second.runId)), false);
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'carriers', second.runId)), false);
 });
 
 test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {

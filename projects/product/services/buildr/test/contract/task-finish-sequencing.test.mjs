@@ -24,7 +24,9 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(finish, /formalVerificationExecutions.*0/);
   assert.match(finish, /nextWorkflow: task-development/);
   assert.match(finish, /--commit-message '<semantic-message>'/);
-  assert.match(finish, /最终carrier HEAD必须保持run冻结的完整message/);
+  assert.match(finish, /非零适配HEAD必须保持冻结message/);
+  assert.match(finish, /--accept-zero-delta-adaptation/);
+  assert.match(finish, /不得创建空提交或无关差异/);
   assert.match(finishContract, /Buildr-Task.*trailer/);
   assert.match(finishContract, /公开投影只含subject与identity/);
   assert.match(finish, /complete 后.*任务复盘.*Token 不可得可缺失.*用户同意后路由 `task-retrospective`/s);
@@ -83,6 +85,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   const runnerPath = path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
   const runner = fs.readFileSync(runnerPath, 'utf8');
   for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-cli'", "'install-local-app'", "'verify-cli-identity'", "'finalize'", 'default-cli-launcher-mismatch', 'default-cli-entry-mismatch', 'default-cli-version-mismatch']) assert.ok(runner.includes(phrase), phrase);
+  assert.match(runner, /activationPaths \|\| finishResult\.carrier\?\.changedPaths/);
   assert.match(runner, /task', 'finish', 'inspect'/);
   assert.match(runner, /node-identity-mismatch/);
   assert.doesNotMatch(runner, /(?:from\s+|import\s*\()['"]\.\.\//, 'workspace-only runner must not import modules outside its Skill directory');

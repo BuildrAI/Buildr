@@ -42,9 +42,9 @@ preflight → prepare → verify → deliver → cleanup
 
 - `preflight`核对current handoff、Environment、carrier adapter与retained target；preflight、prepare、verify、deliver及resume都由Development精确核对run冻结的handoff、Candidate、generation与Content Target identity，不回查历史handoffs。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
-- Agent只在carrier完成交付适配（Delivery Adaptation）；最终carrier HEAD必须保持run冻结的完整message，否则resume保持blocked。resume核验ownership、baseline、source/handoff、cleanliness、message identity与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
+- Agent只在carrier完成交付适配（Delivery Adaptation）。非零适配HEAD必须保持冻结message；若审查确认baseline已满足任务且正确适配为零tree delta，保持clean baseline carrier并在matching resume传入`--accept-zero-delta-adaptation`，不得创建空提交或无关差异。确认不替代token或Buildr语义证明；resume仍核验ownership、baseline、source/handoff、cleanliness、适用message与bounded compatibility checks，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
-- `deliver`只做fast-forward、普通push/回读、类型化runtime activation与run绑定的指定Agent Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；Doctor要求Workspace health ready，失败时保留已经完成的remote readback、partial delivery与精确resume事实并停止cleanup。通用Product executor不读取Project/Service配置，不执行sync，不安装Buildr development CLI或Buildr Web，也不接受任意命令字符串。
+- `deliver`只做fast-forward、普通push/回读、按冻结Task Contribution paths选择的runtime activation与指定Agent Doctor；零差异carrier的actual changed paths为空但保留activation paths。Doctor失败时保留remote readback、partial delivery与精确resume并停止cleanup。通用executor不读Project/Service配置、不sync、不安装CLI/Buildr Web，也不接受任意命令字符串。
 - render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
 - `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 
@@ -53,7 +53,7 @@ target前进时先证明carrier ancestry及changed paths；完整包含则跳过
 恢复命令：
 
 ```bash
-buildr task finish run --task <task-id> --run <run-id> --resume <product-token> --target <canonical-workspace> --json
+buildr task finish run --task <task-id> --run <run-id> --resume <product-token> [--accept-zero-delta-adaptation] --target <canonical-workspace> --json
 ```
 
 只读查看：
@@ -72,7 +72,7 @@ Finish不改变Candidate/generation、Development Receipt、Change或原Task wor
 - Result引用Development handoff、Candidate/generation、Content Target、Task Contribution、Delivery Baseline和Delivery Carrier；
 - Result标记`deterministic-reuse`或`agent-reviewed-delivery-adaptation`，后者不声称Buildr证明语义等价；
 - carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
-- Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留逐路径证明、原carrier与最新后代final ref；
+- Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留适用的逐路径或零差异Agent review/baseline/ref/activation paths证明；
 - `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。
 
 `run`结果的additive `executionRecord`必须可解释：`retained`表示本invocation正文已保留；`attention`表示record或diagnostics cleanup需owner后续处理，但不得据此回滚、改写或重跑已经成立的Finish delivery/cleanup/Task终态；`blocked`表示容量门禁在五阶段前停止；invalid或complete no-op为`not-opened`。`task finish inspect`只读Finish current/terminal，不列举records。

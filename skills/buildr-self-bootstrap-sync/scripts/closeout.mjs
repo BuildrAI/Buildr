@@ -141,8 +141,9 @@ function finishMode(result) {
 export function createSelfBootstrapCloseoutPlan(finishResult) {
   const mode = finishMode(finishResult);
   if (!mode) throw closeoutError('self-bootstrap-closeout.finish-result-ineligible', 'Finish Result不是complete或唯一retained Doctor blocked模式。');
-  const changedPaths = [...new Set((finishResult.carrier?.changedPaths || []).map(portable))].filter(Boolean).sort();
-  if (changedPaths.length !== (finishResult.carrier?.changedPaths || []).length) throw closeoutError('self-bootstrap-closeout.frozen-path-invalid', 'Finish Result包含不安全或重复的frozen path。');
+  const frozenCarrierPaths = finishResult.carrier?.activationPaths || finishResult.carrier?.changedPaths || [];
+  const changedPaths = [...new Set(frozenCarrierPaths.map(portable))].filter(Boolean).sort();
+  if (changedPaths.length !== frozenCarrierPaths.length) throw closeoutError('self-bootstrap-closeout.frozen-path-invalid', 'Finish Result包含不安全或重复的frozen path。');
   const actions = classifications(changedPaths);
   const baseRef = mode === 'complete'
     ? finishResult.delivery?.finalRemoteRef || finishResult.completion?.finalRemoteRef

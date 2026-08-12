@@ -127,7 +127,7 @@ function markRunSuperseded(run) {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -135,7 +135,7 @@ function assertArgs(action, args) {
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
-    if (option === '--json') continue;
+    if (option === '--json' || option === '--accept-zero-delta-adaptation') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
     index += 1;
@@ -207,11 +207,16 @@ export function registerTaskFinishApplication(runtime) {
     const root = command.targetRoot;
     const resumeToken = optionValue(command.args, '--resume', null);
     const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
+    const acceptZeroDeltaAdaptation = command.args.includes('--accept-zero-delta-adaptation');
+    const requestedRunId = optionValue(command.args, '--run', null);
+    if (acceptZeroDeltaAdaptation && (!requestedRunId || !resumeToken)) {
+      throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation requires an existing --run and its current --resume token.', 'run');
+    }
     const withReadCompatibility = runtime.withWorkspaceStructuredStoreReadCompatibility
       ? (operation) => runtime.withWorkspaceStructuredStoreReadCompatibility(root, operation)
       : (operation) => operation();
     const prepared = withReadCompatibility(() => {
-        const runId = optionValue(command.args, '--run', null);
+        const runId = requestedRunId;
         let finishRun = null;
         let finishPersistence = null;
         if (runId) {
@@ -220,6 +225,7 @@ export function registerTaskFinishApplication(runtime) {
           if (!finishRun) {
             const completed = runtime.readTaskFinishCompletionPersistence?.(root, { runId }, { optional: true });
             if (completed?.completion?.result) {
+              if (acceptZeroDeltaAdaptation) throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
               if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
               return { completed: completed.completion.result };
             }
@@ -296,6 +302,9 @@ export function registerTaskFinishApplication(runtime) {
         if (finishRun && ['blocked', 'cleanup_pending'].includes(finishRun.status) && (!resumeToken || finishRun.resume?.token !== resumeToken)) {
           throw inputError('task_finish.resume_token_mismatch', 'Task Finish blocked run requires its current product-generated resume token.', 'run');
         }
+        if (acceptZeroDeltaAdaptation && (finishRun?.status !== 'blocked' || finishRun.deliveryCarrier?.reuseMode !== 'adaptation-required')) {
+          throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
+        }
         return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, developmentHandoff: finishRun?.developmentHandoff || null, replaceableStaleRun: null };
       });
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
@@ -341,7 +350,7 @@ export function registerTaskFinishApplication(runtime) {
       finishRun = resolveFinishRun({ root, resumeToken, runtime, identity, deliveryCommit: prepared.deliveryCommit, developmentHandoff: prepared.developmentHandoff });
     }
     const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
-    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot });
+    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
     const result = await executeFinishRun({ root, run: finishRun, handlers, resumeToken, runtime, observer: evidence });
     const snapshot = evidence.snapshot();
     const outcome = taskFinishExecutionRecordOutcome(result);

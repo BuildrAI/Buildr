@@ -91,6 +91,10 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.equal(missingTask.status, 2, missingTask.stderr || missingTask.stdout);
   assert.equal(JSON.parse(missingTask.stdout).error.code, 'task_finish.missing_parameter');
 
+  const invalidZeroDelta = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--accept-zero-delta-adaptation', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(invalidZeroDelta.status, 2, invalidZeroDelta.stderr || invalidZeroDelta.stdout);
+  assert.equal(JSON.parse(invalidZeroDelta.stdout).error.code, 'task_finish.zero_delta_adaptation_context_invalid');
+
   const created = spawnSync(process.execPath, [cli, 'task', 'create', 'finish-cli-task', '--title', 'Finish CLI Task', '--intent', '验证 Task Environment 门禁', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--target', root, '--json'], { encoding: 'utf8' });
@@ -111,6 +115,8 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.match(helpText, /task finish inspect/);
   assert.match(helpText, /--task <task-id> --commit-message <message> \[--agent <agent>\]/);
   assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
+  assert.match(helpText, /--accept-zero-delta-adaptation/);
+  assert.match(helpText, /不创建commit、不替代resume token/);
   assert.match(helpText, /Buildr-Task trailer/);
   assert.match(helpText, /current formal Development handoff/);
   assert.match(helpText, /retained canonical Workspace 的当前符号分支/);
