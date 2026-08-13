@@ -38,7 +38,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - 目标提交可从 `dev` 收敛到 `main`，没有未处理改动或未完成发布范围。
 - CHANGELOG、README 当前版本入口、known limitations 和 release checklist 与目标类型一致。
 - `CHANGELOG.md` 存在唯一的 `## <version> - <YYYY-MM-DD>` 章节，release notes 提取器输出与目标版本一致且不包含相邻版本内容。
-- CI、`npm-production` Environment 和 publish workflow 仍存在；使用 npm 11.15+ authenticated maintainer session 运行 `release-authority-preflight.mjs`，只有 package、Git remote、GitHub current repository/Environment 和 `npm trust list @buildr-ai/buildr --json` 与 contract tuple 精确一致才是 ready。未登录、旧 npm、未知 permission 或任一 readback unavailable 都是 blocked，历史 provenance 和 checklist 不能替代 current evidence。
+- CI、`npm-production` Environment 和 publish workflow 仍存在；tag publish jobs 与手动authority probe job事件互斥，并使用相同repository、workflow、Environment和`id-token: write`身份。Current authority只能由GitHub-hosted probe对目标package完成npm OIDC token exchange证明；本机npm CLI、登录态、OTP与`npm trust list`不再是前置条件。检查意图只核对该能力结构，不触发hosted run；准备或发布阶段才按明确授权运行probe。
 - tag workflow 只生成一次带 manifest/integrity 的 release tarball，发布前 smoke 与 `npm publish <tarball>` 消费同一文件，并且不重复运行完整 Candidate。
 - 候选版没有误用 `latest`；稳定版没有误用 `next`。
 - 稳定版的 RC 反馈、发布阻塞 Issue 和已知限制已经明确评估。
@@ -61,7 +61,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 10. 从保留 workspace 运行 `node projects/product/services/buildr/scripts/release/release-convergence.mjs --repo <workspace-root> --version <version> --candidate-base <candidate-base> --candidate-tree <tree> --stage pre-main`；只有 `ok: true` 才创建 `dev -> main` PR。checker 必须证明版本提交已进入 `origin/dev`、dev tree 等于候选，并且没有未集成的同版本 release task ref。
 11. 创建 `dev -> main` PR，等待必须的 CI 和 branch protection，通过后按仓库策略 squash merge 到 `main`。
 12. PR 合入后使用 `node projects/product/services/buildr/scripts/release/bridge-main-to-dev.mjs --repo <workspace-root> --version <version> --candidate-tree <tree>` 执行发布专用历史衔接。该工具必须先确认 `origin/main^{tree}` 和 `origin/dev^{tree}` 都与已验证 candidate tree，且两个 ref 的 package version 都与目标版本一致；`origin/main` 已是 `origin/dev` 祖先时 no-op，否则创建仅衔接历史、不改变 tree 的 merge commit，复核 tree 后普通 push `dev`。
-13. bridge 后，以 `origin/main` 完整 commit 运行 `node projects/product/services/buildr/scripts/release/release-authority-preflight.mjs --repo <workspace-root> --source-commit <origin-main-commit> --output <authority-evidence.json>`。该命令必须使用 npm 11.15+ authenticated maintainer session；`ready` evidence 必须绑定当前 main commit、`publish.yml` digest 和唯一 `publishAuthority`，并在15分钟内交给post-main convergence。任何 drift、过期、E401/ENEEDAUTH、工具不支持或控制面 unavailable 都必须停止，不得创建 tag，也不得把人工 UI/checklist 声明为已验证。
+13. bridge 后，以 `origin/main` 完整 commit 运行一个入口：`node projects/product/services/buildr/scripts/release/release-authority-probe-runner.mjs --repo <workspace-root> --source-commit <origin-main-commit> --output <authority-evidence.json>`。Runner生成唯一probe id，dispatch同一`publish.yml`的手动probe、显示run URL、等待唯一run、下载credential-free artifact，并由`release-authority-preflight.mjs`通过GitHub current API复核run、artifact、package、source commit、workflow digest和唯一`publishAuthority`。若`npm-production`要求人工审批，maintainer只在GitHub批准该run，不执行本机密码或OTP输入。Hosted job只执行OIDC token exchange，不创建tag、不pack/publish、不创建Release；GitHub ID token与npm exchange token都不得进入stdout、output或artifact。`ready` v2 evidence必须在15分钟内交给post-main convergence；任何drift、过期、exchange拒绝、run/artifact不可用或远端竞争都停止，不要求本机npm login/OTP，也不得用人工UI/checklist替代。
 14. 使用同一 evidence 运行 convergence checker 的 `--stage post-main --authority-evidence <authority-evidence.json>`；任一 base、version、tree、ancestry、release task、authority evidence、远端竞争、branch protection 或 push finding 都必须停止后续 tag 动作。该 version/tree gate 失败时不得使用 force push、reset 或 `ours` 掩盖内容差异。
 15. 确认 `main` 指向已验证内容，版本和发布材料一致，且远端 `dev` 已包含 squash `main` 历史。
 16. 明确报告“准备完成，尚未创建 tag，尚未触发 npm 发布”，并在涉及CLI时同时报告retained `projects/product/buildr`的identity与验证结果；不得把它描述为机器默认或npm发布入口，然后停止。
@@ -73,7 +73,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 只有用户明确要求发布对应候选版或稳定版时执行：
 
 1. fetch 远端并确认本地 `main`、`origin/main` 和已准备的候选提交一致；工作区必须干净。
-2. 再次执行只读发布检查。首次发布确认目标 npm version、Git tag 和 GitHub Release 不存在；继续中断发布则记录已有 tag、npm version/integrity、dist-tag 和 GitHub Release 的精确状态。紧邻 tag 创建前重新生成 authenticated authority evidence，并用 `release-convergence.mjs --stage post-main --authority-evidence <authority-evidence.json>` 复核；不得沿用控制面 readback 失败或 source/workflow 已漂移的旧 evidence。
+2. 再次执行只读发布检查。首次发布确认目标 npm version、Git tag 和 GitHub Release 不存在；继续中断发布则记录已有 tag、npm version/integrity、dist-tag 和 GitHub Release 的精确状态。紧邻 tag 创建前重新运行GitHub-hosted authority probe生成v2 evidence，并用 `release-convergence.mjs --stage post-main --authority-evidence <authority-evidence.json>` 复核；不得沿用exchange/run readback失败、超过15分钟或source/workflow已漂移的旧evidence。
 3. 确认 `package.json` version 与将创建的 `v<version>` 完全一致。
 4. 在已验证的 `main` 提交创建 annotated 或仓库约定的 release tag，并普通 push 该 tag；不得 force push 或移动已有 tag。
 5. tag push 后只使用 GitHub-hosted publish workflow。不得因为 workflow 等待、失败或 npm 认证问题改为本机 `npm publish`。
@@ -93,7 +93,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - tag 尚未 push：修复候选后重新验证；不要沿用内容已变化的验证结果。
 - squash merge 已成功但 `main -> dev` 历史衔接未完成：保留已合入 `main` 和已验证 candidate tree 证据，从 tree-identity 门禁重新检查。tree mismatch、远端竞争或 push 拒绝时不创建 tag，不回滚 `main`，不 force push `dev`。
 - 已发布版本高于 `dev` package version：停止新版本准备，先创建独立 recovery change，把 package/lockfile 和缺失发布事实语义合并回当前 dev；不得直接使用 `ours` merge 声称发布内容已收敛。
-- tag 已 push、workflow 未开始或失败：保留 tag，检查 workflow、Environment 和 expected `publishAuthority`，不删除 tag 后重发。npm 返回 `E401`、`ENEEDAUTH` 或 OIDC/Trusted Publisher 相关 `E404` 时，先在 authenticated maintainer session 重跑 authority preflight，按 expected tuple 修复 current GitHub/npm 控制面，再 rerun 同一 GitHub-hosted workflow；不得回退本机 token publish。
+- tag 已 push、workflow 未开始或失败：保留 tag，检查 workflow、Environment 和 expected `publishAuthority`，不删除 tag 后重发。npm 返回 `E401`、`ENEEDAUTH` 或 OIDC/Trusted Publisher 相关 `E404` 时，针对current `main`重跑GitHub-hosted authority probe，按expected tuple修复current GitHub/npm控制面，再rerun同一GitHub-hosted publish workflow；不得回退本机 token publish。
 - npm 版本已经存在：不得再次 publish；先比较官方 registry `dist.integrity` 与本次 release artifact manifest，一致才恢复尚未完成的 dist-tag readback、GitHub Release 或发布后 smoke，不一致时 fail closed。
 - GitHub Release 已存在：不得重复创建或自动覆盖；核对 tag target、CHANGELOG 正文和 prerelease/Latest 状态，一致才复用。
 - npm version 已存在但 GitHub Release 缺失：从目标版本 changelog 重新生成 notes，恢复 Release 创建时继续使用已有 tag，不回退到 `--generate-notes`。

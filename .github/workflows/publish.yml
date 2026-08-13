@@ -1,16 +1,68 @@
 name: Publish Buildr
 
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Authority probe {0}', inputs.probe_id) || format('Publish {0}', github.ref_name) }}
+
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      probe_id:
+        description: Unique caller identity for this authority probe
+        required: true
+        type: string
+      source_commit:
+        description: Full origin/main commit to prove
+        required: true
+        type: string
+      workflow_sha256:
+        description: SHA-256 of publish.yml at source_commit
+        required: true
+        type: string
 
 permissions:
   contents: read
   actions: read
 
 jobs:
+  authority-probe:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_commit }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.15.0"
+          package-manager-cache: false
+      - name: Exchange the hosted publishing identity without retaining credentials
+        run: >-
+          node scripts/release/release-authority-oidc-probe.mjs
+          --source-commit "${{ inputs.source_commit }}"
+          --workflow-sha256 "${{ inputs.workflow_sha256 }}"
+          --output "${RUNNER_TEMP}/authority-probe/release-authority-probe.json"
+      - name: Upload credential-free authority evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-authority-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/authority-probe/release-authority-probe.json
+          if-no-files-found: error
+          retention-days: 1
+
   contract:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -47,6 +99,7 @@ jobs:
           retention-days: 14
 
   candidate:
+    if: github.event_name == 'push'
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -132,6 +185,7 @@ jobs:
           retention-days: 14
 
   host-node:
+    if: github.event_name == 'push'
     needs: [contract, candidate]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -159,6 +213,7 @@ jobs:
           node test/verification/host-node.mjs
 
   launcher:
+    if: github.event_name == 'push'
     needs: [contract, candidate]
     timeout-minutes: 35
     strategy:
@@ -187,6 +242,7 @@ jobs:
         run: node test/verification/release/release-smoke.mjs
 
   publish:
+    if: github.event_name == 'push'
     needs: [contract, candidate, host-node, launcher]
     runs-on: ubuntu-latest
     timeout-minutes: 40

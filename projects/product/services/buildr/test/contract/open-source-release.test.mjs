@@ -368,12 +368,14 @@ test('release notes fail closed for missing, duplicate, or empty target sections
   );
 });
 
-test('publish workflow is tag-gated, npm-only, byte-stable, recoverable, OIDC-ready, and npm-token-free', () => {
+test('publish workflow isolates credential-free OIDC probe from tag-gated npm release', () => {
   const workflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const parsed = YAML.parseDocument(workflow, { uniqueKeys: true });
   assert.deepEqual(parsed.errors, [], parsed.errors.map((error) => error.message).join('\n'));
+  const document = parsed.toJS();
   for (const required of [
-    'tags:', 'id-token: write', 'environment: npm-production',
+    'tags:', 'workflow_dispatch:', 'authority-probe:', 'id-token: write', 'environment: npm-production',
+    'release-authority-oidc-probe.mjs', 'release-authority-probe-${{ github.run_id }}-${{ github.run_attempt }}',
     'release-contract.mjs', 'release-notes.mjs', 'application-payload.mjs build',
     'release-artifact.mjs',
     'registry-version-state.mjs', "steps.registry_before.outputs.published != 'true'",
@@ -384,6 +386,14 @@ test('publish workflow is tag-gated, npm-only, byte-stable, recoverable, OIDC-re
     'contract:', 'candidate:', 'host-node:', 'launcher:', 'publish:',
     'name: npm-candidate-${{ github.ref_name }}',
   ]) assert.equal(workflow.includes(required), true, required);
+  assert.deepEqual(Object.keys(document.on).sort(), ['push', 'workflow_dispatch']);
+  assert.equal(document.jobs['authority-probe'].if, "github.event_name == 'workflow_dispatch'");
+  assert.equal(document.jobs['authority-probe'].environment, 'npm-production');
+  assert.equal(document.jobs['authority-probe'].permissions['id-token'], 'write');
+  assert.equal(document.jobs['authority-probe'].steps.filter((step) => typeof step.run === 'string' && step.run.includes('release-authority-oidc-probe.mjs')).length, 1);
+  for (const job of ['contract', 'candidate', 'host-node', 'launcher', 'publish']) assert.equal(document.jobs[job].if, "github.event_name == 'push'", job);
+  const probeRuns = document.jobs['authority-probe'].steps.map((step) => step.run).filter((value) => typeof value === 'string').join('\n');
+  for (const forbidden of ['npm publish', 'trusted-publish.mjs', 'npm pack', 'release-artifact.mjs', 'github-release-ensure.mjs']) assert.equal(probeRuns.includes(forbidden), false, forbidden);
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
   assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);
@@ -476,9 +486,10 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '重新查询远端确认 ref 不存在', '清理 follow-up',
     '不得把长期保留当作默认结果', '未取得删除授权时必须明确报告待清理项',
     '只执行一次 `npm pack`', '`npm publish <tarball>`', '`dist.integrity`',
-    'release-authority-preflight.mjs', 'npm trust list @buildr-ai/buildr --json',
+    'release-authority-probe-runner.mjs', 'GitHub-hosted authority probe',
     '--authority-evidence <authority-evidence.json>', '不得回退本机 token publish',
     'GitHub Release 使用 ensure 语义', '安装精确 `@buildr-ai/buildr@<version>`',
     '不删除 tag、不 unpublish、不重复 publish',
   ]) assert.equal(skill.includes(required), true, required);
+  for (const retired of ['npm trust list @buildr-ai/buildr --json', 'npm 11.15+ authenticated maintainer session', 'authenticated authority evidence']) assert.equal(skill.includes(retired), false, retired);
 });
