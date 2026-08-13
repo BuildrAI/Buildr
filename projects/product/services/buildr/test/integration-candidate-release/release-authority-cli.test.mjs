@@ -83,6 +83,29 @@ test('hosted OIDC probe exchanges identity but never retains either token', asyn
   assert.equal(containsCredentialMaterial(result), false);
 });
 
+test('hosted OIDC probe normalizes Registry Unix-second exchange timestamps', async (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-authority-probe-unix-time-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(repo, '.github', 'workflows'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.github', 'workflows', 'publish.yml'), workflow);
+  const created = '2026-08-13T00:04:00.000Z';
+  const expires = 1786583040;
+  let requestCount = 0;
+  const result = await runReleaseAuthorityOidcProbe({ repo, sourceCommit: fixtureCommit, workflowSha256: sha256(workflow) }, {
+    env: hostedEnvironment(),
+    now: () => '2026-08-13T00:05:00.000Z',
+    fetchImpl: async () => {
+      requestCount += 1;
+      if (requestCount === 1) return new Response(JSON.stringify({ value: 'header.payload.signature' }), { status: 200 });
+      return new Response(JSON.stringify({ token_type: 'oidc', token: 'npm_registry_secret_that_must_not_escape', created, expires }), { status: 201 });
+    },
+  });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.npm.exchange.created, created);
+  assert.equal(result.npm.exchange.expires, new Date(expires * 1000).toISOString());
+  assert.equal(containsCredentialMaterial(result), false);
+});
+
 test('hosted OIDC probe fails closed on exchange rejection without parsing a secret body', async (t) => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-authority-probe-reject-'));
   t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
