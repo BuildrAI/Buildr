@@ -40,6 +40,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - `CHANGELOG.md` 存在唯一的 `## <version> - <YYYY-MM-DD>` 章节，release notes 提取器输出与目标版本一致且不包含相邻版本内容。
 - CI、`npm-production` Environment 和 publish workflow 仍存在；tag publish jobs 与手动authority probe job事件互斥，并使用相同repository、workflow、Environment和`id-token: write`身份。Current authority只能由GitHub-hosted probe对目标package完成npm OIDC token exchange证明；本机npm CLI、登录态、OTP与`npm trust list`不再是前置条件。检查意图只核对该能力结构，不触发hosted run；准备或发布阶段才按明确授权运行probe。
 - tag workflow 只生成一次带 manifest/integrity 的 release tarball，发布前 smoke 与 `npm publish <tarball>` 消费同一文件，并且不重复运行完整 Candidate。
+- `dev → main` 的正式源码 Candidate 由 `verify.yml` 的稳定 `Candidate gate` 聚合；preflight、唯一候选tarball、macOS core、三个Windows高成本shard和四个Host Node tuple必须绑定同一source SHA。内部job成功不能替代aggregate结果。
 - 候选版没有误用 `latest`；稳定版没有误用 `next`。
 - 稳定版的 RC 反馈、发布阻塞 Issue 和已知限制已经明确评估。
 
@@ -55,11 +56,11 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 4. 更新 CHANGELOG、README 当前发布入口、known limitations 和 release checklist；只记录真实发布范围和仍存在的限制。
 5. 从 workspace root 运行 `node projects/product/services/buildr/scripts/release/release-notes.mjs <version> CHANGELOG.md`，向维护者展示 workflow 将使用的最终 notes；提取失败或内容仍是笼统发布标题时继续维护 CHANGELOG，不进入候选验证。
 6. 确认 lockfile 不因本机 install 镜像写入私有或非 canonical registry URL，`publishConfig.registry` 保持 npm 官方 registry。
-7. 运行受影响验证，再对冻结候选运行一次完整产品验证；读取 timing summary 并报告总耗时、最慢阶段、失败阶段和路径。记录已验证 candidate tree identity（`git rev-parse HEAD^{tree}`），后续相同 tree 的 commit、squash 结果和历史衔接复用该证据。
+7. 先运行changed/affected验证并读取timing summary。普通发布准备不再无条件本地运行完整`test:candidate`；只有verification registry/planner/executor、Candidate shard/evidence/aggregate、`verify.yml`本身发生变化，维护者明确要求全量，或为诊断GitHub故障时，才额外运行本地完整Candidate。记录candidate tree identity（`git rev-parse HEAD^{tree}`）；本地结果不得冒充后续GitHub aggregate。
 8. 使用 `task-finish` 把准备改动 fast-forward 集成并推送到 `dev`。release task 如果无法从 `<candidate-base>` 无语义冲突地进入当前 `dev`，必须停止；需要排除已有 dev 内容时，先结束本次准备并在 dev 上通过独立 change/revert 移除，禁止改从旧 dev ancestor 制作候选。
 9. 检查本次发布范围是否涉及 Buildr CLI 入口或实现，包括 `buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、legacy安装/卸载脚本或 npm CLI 映射。若涉及，必须从已经集成本次改动且会继续保留的 Product checkout，以该Task Environment绑定的Node显式运行 `projects/product/buildr version --json`、`projects/product/buildr --help` 和 `projects/product/buildr doctor --agent <agent> --target <workspace-root> --json`，核对development channel、source commit、Node和package/version。不得调用`scripts/install-buildr-cli`，不得读取、创建、覆盖或要求PATH默认`buildr`绑定checkout。npm发布身份由候选tarball验证与发布后官方registry精确安装smoke独立证明；两类证据不得互相替代。任一验证失败时停止发布准备，也不得要求维护者去其他workspace通过Agent“更新Buildr”代替本地checkout验证。
 10. 从保留 workspace 运行 `node projects/product/services/buildr/scripts/release/release-convergence.mjs --repo <workspace-root> --version <version> --candidate-base <candidate-base> --candidate-tree <tree> --stage pre-main`；只有 `ok: true` 才创建 `dev -> main` PR。checker 必须证明版本提交已进入 `origin/dev`、dev tree 等于候选，并且没有未集成的同版本 release task ref。
-11. 创建 `dev -> main` PR，等待必须的 CI 和 branch protection，通过后按仓库策略 squash merge 到 `main`。
+11. 创建 `dev -> main` PR，等待稳定required check `Candidate gate`。它必须回读为同一PR head SHA的passed aggregate，并包含preflight、唯一artifact、macOS core、三个Windows shard和四个Host Node tuple的current evidence。单个内部job绿色、旧run或旧SHA不得替代。失败发生在同一SHA的暂态/runner问题时只重新运行失败job；新commit形成新SHA后必须运行完整当前门禁。通过后按仓库策略squash merge到`main`。
 12. PR 合入后使用 `node projects/product/services/buildr/scripts/release/bridge-main-to-dev.mjs --repo <workspace-root> --version <version> --candidate-tree <tree>` 执行发布专用历史衔接。该工具必须先确认 `origin/main^{tree}` 和 `origin/dev^{tree}` 都与已验证 candidate tree，且两个 ref 的 package version 都与目标版本一致；`origin/main` 已是 `origin/dev` 祖先时 no-op，否则创建仅衔接历史、不改变 tree 的 merge commit，复核 tree 后普通 push `dev`。
 13. bridge 后，以 `origin/main` 完整 commit 运行一个入口：`node projects/product/services/buildr/scripts/release/release-authority-probe-runner.mjs --repo <workspace-root> --source-commit <origin-main-commit> --output <authority-evidence.json>`。Runner生成唯一probe id，dispatch同一`publish.yml`的手动probe、显示run URL、等待唯一run、下载credential-free artifact，并由`release-authority-preflight.mjs`通过GitHub current API复核run、artifact、package、source commit、workflow digest和唯一`publishAuthority`。若`npm-production`要求人工审批，maintainer只在GitHub批准该run，不执行本机密码或OTP输入。Hosted job只执行OIDC token exchange，不创建tag、不pack/publish、不创建Release；GitHub ID token与npm exchange token都不得进入stdout、output或artifact。`ready` v2 evidence必须在15分钟内交给post-main convergence；任何drift、过期、exchange拒绝、run/artifact不可用或远端竞争都停止，不要求本机npm login/OTP，也不得用人工UI/checklist替代。
 14. 使用同一 evidence 运行 convergence checker 的 `--stage post-main --authority-evidence <authority-evidence.json>`；任一 base、version、tree、ancestry、release task、authority evidence、远端竞争、branch protection 或 push finding 都必须停止后续 tag 动作。该 version/tree gate 失败时不得使用 force push、reset 或 `ours` 掩盖内容差异。
@@ -94,6 +95,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - squash merge 已成功但 `main -> dev` 历史衔接未完成：保留已合入 `main` 和已验证 candidate tree 证据，从 tree-identity 门禁重新检查。tree mismatch、远端竞争或 push 拒绝时不创建 tag，不回滚 `main`，不 force push `dev`。
 - 已发布版本高于 `dev` package version：停止新版本准备，先创建独立 recovery change，把 package/lockfile 和缺失发布事实语义合并回当前 dev；不得直接使用 `ours` merge 声称发布内容已收敛。
 - tag 已 push、workflow 未开始或失败：保留 tag，检查 workflow、Environment 和 expected `publishAuthority`，不删除 tag 后重发。npm 返回 `E401`、`ENEEDAUTH` 或 OIDC/Trusted Publisher 相关 `E404` 时，针对current `main`重跑GitHub-hosted authority probe，按expected tuple修复current GitHub/npm控制面，再rerun同一GitHub-hosted publish workflow；不得回退本机 token publish。
+- `dev → main` Candidate shard失败：读取aggregate finding、失败shard evidence和内部阶段timing。同一SHA的暂态失败使用GitHub“重新运行失败作业”，让新attempt evidence覆盖该shard旧artifact并重跑aggregate；不得重跑全部workflow。代码修复产生新SHA时旧evidence必须失效，但三个Windows高成本shard继续并行，不能恢复为单个串行Windows完整Candidate。
 - npm 版本已经存在：不得再次 publish；先比较官方 registry `dist.integrity` 与本次 release artifact manifest，一致才恢复尚未完成的 dist-tag readback、GitHub Release 或发布后 smoke，不一致时 fail closed。
 - GitHub Release 已存在：不得重复创建或自动覆盖；核对 tag target、CHANGELOG 正文和 prerelease/Latest 状态，一致才复用。
 - npm version 已存在但 GitHub Release 缺失：从目标版本 changelog 重新生成 notes，恢复 Release 创建时继续使用已有 tag，不回退到 `--generate-notes`。
@@ -107,7 +109,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 
 - 发布类型、version、Git tag、npm dist-tag 和 commit。
 - 准备阶段是否停在 tag 前，或发布阶段的 workflow run 与 Environment 审批状态。
-- 完整验证结果和 timing summary。
+- changed/affected结果；适用时的本地完整Candidate结果；以及GitHub `Candidate gate`绑定的source SHA、aggregate、各shard wall-clock/runner minutes、最长Windows shard和重跑范围。
 - 本次发布范围是否涉及 Buildr CLI；若涉及，retained `projects/product/buildr`的checkout、Node、channel、source commit、package/version、help和doctor结果，以及npm发布物的独立验证状态。
 - npm 官方 registry、GitHub Release 和安装 smoke 结果。
 - GitHub Release body 是否与目标版本 changelog 预览一致。

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, parseProcessLineage, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
 import { candidateStepBudget } from '../../test/verification/timing/budgets.mjs';
+import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder, parseVerificationPhaseTimings } from '../../test/verification/timing/phases.mjs';
 import {
   collectVerificationSourceIdentity,
   cleanupVerificationTimingEvidence,
@@ -39,6 +40,82 @@ async function assertProcessExited(pid, timeoutMs = 1_000) {
   }
 }
 
+test('verification phase markers provide structured inner-step timing', async () => {
+  let now = 1000;
+  let output = '';
+  const evidenceOutput = path.join(os.tmpdir(), `buildr-phase-marker-${process.pid}.jsonl`);
+  fs.rmSync(evidenceOutput, { force: true });
+  const recorder = createVerificationPhaseRecorder('release-smoke', {
+    now: () => now,
+    env: { BUILDR_VERIFICATION_PHASE_OUTPUT: evidenceOutput },
+  });
+  await recorder.run('install', async () => { now = 1125; });
+  recorder.record('cleanup', 1125, 1150, 'retained');
+  recorder.emit({ write(chunk) { output += chunk; } });
+  assert.deepEqual(parseVerificationPhaseTimings(`noise\n${output}`), [
+    {
+      scope: 'release-smoke', id: 'install', status: 'passed',
+      startedAt: '1970-01-01T00:00:01.000Z', finishedAt: '1970-01-01T00:00:01.125Z', durationMs: 125,
+    },
+    {
+      scope: 'release-smoke', id: 'cleanup', status: 'retained',
+      startedAt: '1970-01-01T00:00:01.125Z', finishedAt: '1970-01-01T00:00:01.150Z', durationMs: 25,
+    },
+  ]);
+  assert.equal(fs.existsSync(evidenceOutput), false, 'an explicit test stream must not leak fixture markers into runner evidence');
+});
+
+test('verification runner preserves phase evidence hidden by a child reporter', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-phase-evidence-'));
+  try {
+    const result = await runVerificationStep({
+      name: 'phase evidence',
+      command: process.execPath,
+      args: ['-e', `require('node:fs').appendFileSync(process.env.BUILDR_VERIFICATION_PHASE_OUTPUT, '[buildr-verification-phase] {"scope":"fresh-build","id":"npm-ci","status":"passed","startedAt":"1970-01-01T00:00:01.000Z","finishedAt":"1970-01-01T00:00:01.125Z","durationMs":125}\\n')`],
+      diagnosticsDirectory: root,
+    });
+    assert.equal(result.status, 'passed');
+    assert.deepEqual(result.phases, [{
+      scope: 'fresh-build', id: 'npm-ci', status: 'passed',
+      startedAt: '1970-01-01T00:00:01.000Z', finishedAt: '1970-01-01T00:00:01.125Z', durationMs: 125,
+    }]);
+    assert.equal(fs.existsSync(path.join(root, 'phase-evidence.phases.jsonl')), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('persistent phase evidence survives before final emit', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-persistent-phase-'));
+  try {
+    const evidenceOutput = path.join(root, 'phases.jsonl');
+    const recorder = createVerificationPhaseRecorder('release-smoke', {
+      persistEvidence: true,
+      evidenceOutput,
+    });
+    recorder.record('installation', 1000, 1125);
+    assert.deepEqual(parseVerificationPhaseTimings(fs.readFileSync(evidenceOutput, 'utf8')).map((phase) => phase.id), ['installation']);
+    recorder.emit({ write() {} });
+    assert.deepEqual(parseVerificationPhaseTimings(fs.readFileSync(evidenceOutput, 'utf8')).map((phase) => phase.id), ['installation']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('harness cleanup only retains known Windows lock races', () => {
+  const locked = Object.assign(new Error('locked'), { code: 'EPERM' });
+  const retained = cleanupVerificationHarnessRoot('C:\\fixture', {
+    platform: 'win32', removeRoot() { throw locked; }, warn() {},
+  });
+  assert.equal(retained.status, 'retained');
+  assert.throws(() => cleanupVerificationHarnessRoot('/tmp/fixture', {
+    platform: 'darwin', removeRoot() { throw locked; }, warn() {},
+  }), /locked/);
+  assert.throws(() => cleanupVerificationHarnessRoot('C:\\fixture', {
+    platform: 'win32', removeRoot() { throw Object.assign(new Error('invalid path'), { code: 'EINVAL' }); }, warn() {},
+  }), /invalid path/);
+});
+
 test('timing summary 保留向后兼容的 step 调度时间轴', () => {
   const summary = createVerificationTimingSummary({
     status: 'passed',
@@ -59,6 +136,7 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
       startedAt: '1970-01-01T00:00:01.050Z',
       finishedAt: '1970-01-01T00:00:01.150Z',
       queueDurationMs: 50,
+      phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
     }],
   });
   assert.deepEqual(summary.steps[0], {
@@ -70,6 +148,7 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
     startedAt: '1970-01-01T00:00:01.050Z',
     finishedAt: '1970-01-01T00:00:01.150Z',
     queueDurationMs: 50,
+    phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
   });
   assert.equal(summary.environment.schedulingMode, 'cost');
   assert.equal(summary.environment.executionProfile, 'ci');

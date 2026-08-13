@@ -20,7 +20,7 @@
 - `rules render`、`runtime check` 和 `skills render` 支持当前 adapter 主路径。
 - Supported runtime adapter 由静态 registry 和声明式 RuntimePlan contract 管理；Component 必须验证自身完整性但不能扩展 adapter。
 - `package check` 和 `package build` 校验、构建 Buildr 产品随包资产。
-- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备再显式运行 `test:candidate` 完整回归。
+- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备默认复用changed/affected结果，`dev → main`由GitHub分布式Candidate形成正式门禁。
 - Buildr mutation 具备严格 identity、scope/ownership 路径保护、atomic writer、workspace transaction、失败回滚和 doctor recovery；package output 使用 receipt/integrity 安全替换。
 - bootstrap guide 在 Skill 不可用时提供纯文本兜底入口。
 
@@ -36,8 +36,8 @@
 - [x] 准备公开 example workspace，展示 Organization/Root、Project、Service、Rules、Skills 和 runtime 投射的最小路径。
 - [x] 完成去私有化检查，覆盖模板、默认目录、归档文档、示例内容、作者信息、URL、邮箱和组织内部术语。
 - [x] 建立 GitHub Actions 最小 CI，运行 `projects/product/services/buildr/scripts/verify-buildr-product`。
-- [ ] 在 macOS/Windows × Node 24.15.0 的两个完整受管 runtime Candidate，以及 macOS/Windows × 最低/当前 24.x 的四个短版 Host Node 兼容验证中证明支持范围；Node 25 及未来主版本须另建适配任务后再加入。
-- [ ] 新 workflow 首次产生 check contexts 后更新 branch protection：`dev` 要求两个 `windows-npm-preflight` Node 矩阵，`main` 要求两个 `managed-runtime-candidate` 与两个 `current-host-node` context；删除历史 `product (20)`、`product (22)` 和两个独立 `release-smoke` required contexts。修改前后均从 GitHub 回读精确 context 名称，不凭文档猜测。
+- [x] 在同一冻结source SHA上完成至少三轮分布式Candidate：macOS core、Windows runtime/Launcher、Workspace/Task、fresh build，以及macOS/Windows × 最低/当前24.x四个Host Node tuple全部由`Candidate gate`聚合；Node 25及未来主版本须另建适配任务后再加入。冻结SHA `c2a76cde2d39566a2e665dcc7c2a1291c65a89b9`的runs `31719158091`、`31719762961`、`31720456534`全部绿色，总墙钟中位441s。
+- [x] 新workflow首次产生绿色`Candidate gate`并完成精确context回读后更新`main` branch protection，只要求该稳定aggregate；随后删除`managed-runtime-candidate (macos-latest)`、`managed-runtime-candidate (windows-latest)`、`current-host-node (macos-latest)`、`current-host-node (windows-latest)`旧contexts。当前保护规则保持`strict: true`，唯一required check为`Candidate gate`且GitHub Actions app id为`15368`。`dev`保留development feedback而不把它声明为完整Candidate。
 - [x] 明确 npm registry 发布流程：`@buildr-ai/buildr`、RC 使用 `next`、稳定版使用 `latest`、tag/version fail closed、GitHub Environment 审批和 OIDC trusted publishing。
 - [x] 将干净候选快照推到 `BuildrAI/Buildr`，在真实 GitHub runner 通过 CI，并配置 `main`/`dev` branch protection 与 Private Vulnerability Reporting。
 - [x] 通过 2FA 首次发布 `0.1.0-rc.1`，随后为 `@buildr-ai/buildr` 配置 GitHub trusted publisher。
@@ -99,11 +99,11 @@ npm run test:focus -- --plan group:openspec
 npm run --silent test:focus -- --json release-tarball-smoke
 ```
 
-显式完整回归自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`，但发布使用登记的默认 profile。
+显式本地完整回归自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`。
 
-Candidate CI在进入npm tarball与Launcher smoke前分别校验Host Node和独立Workspace Node；两种runtime identity不得互相替代。npm冒烟保持应用状态与workspace隔离，普通CLI不启动HTTP；macOS/Windows Launcher冒烟从同一冻结tarball的真实npm安装出发，证明默认零桌面副作用以及显式install/launch/status/repair/uninstall lifecycle。
+Candidate CI先运行低成本preflight，再构建一次绑定精确source SHA的tarball。macOS core、Windows runtime/Launcher、Workspace/Task、fresh build及四个Host Node tuple并行消费同一registry计划和适用的同一tarball；稳定`Candidate gate`只接受source SHA、registry identity、artifact digest和coverage全部current的closed evidence。Host Node和独立Workspace Node identity不得互相替代。
 
-资源受限 CI 的完整 System 文件固定串行执行；Integration 仍可保持有界并发。Windows runtime 临时目录清理对短暂 `EPERM` 使用 bounded retry，不通过放宽单个测试断言掩盖资源争用。
+资源受限CI的单个shard仍使用有界并发。产品owned进程、Launcher、Task Environment或Workspace cleanup失败继续阻塞；全部断言和owned cleanup完成后，最外层Windows临时根遇到`EPERM`、`EBUSY`或`ENOTEMPTY`才只warning并保留路径。release smoke与fresh build evidence保存内部阶段耗时，便于定位安装、启动、漂移修复、卸载/Doctor或harness cleanup。
 
 开发期间需要复现跨组件 workspace 生命周期问题时，通过同一个 focus 入口定点运行独立 Workspace E2E suites：
 
@@ -112,11 +112,13 @@ npm run test:focus -- workspace-lifecycle
 npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
-正式任务在所有 rebase、冲突解决和内容修改结束后，通过 Task Verification 对最终冻结 Candidate 执行 delivery-required `product.delivery`。普通任务由 changed planner 运行 affected；全局验证 owner 变化时同一 plan 运行 full。候选发布准备、用户明确全量要求和 `dev → main` Candidate CI 另行调用以下显式完整回归兼容入口。tag发布不重复源码Candidate，而是验证同一release contract下冻结的唯一npm tarball：
+正式任务在所有rebase、冲突解决和内容修改结束后，通过Task Verification对最终冻结Candidate执行delivery-required `product.delivery`。普通任务由changed planner运行affected；全局验证owner变化时同一plan运行full。本地完整入口保留给验证系统自身变化、明确全量要求、诊断或GitHub不可用；普通发布准备不再与GitHub重复执行。`dev → main`以GitHub `Candidate gate`为正式完整源码Candidate，tag发布不重复源码Candidate，而是验证同一release contract下冻结的唯一npm tarball：
 
 ```bash
 npm run test:candidate
 ```
+
+同一SHA的暂态失败使用GitHub“重新运行失败作业”：每个shard以唯一逻辑artifact名和`overwrite`替换旧attempt evidence，只重跑失败shard及aggregate。代码修复产生新SHA后旧evidence必须失效并重新运行完整分布式门禁；三个Windows高成本shard并行，因此wall-clock由最长shard主导，而不是把安装、runtime、Workspace和fresh build再次串成一条长作业。
 
 Product delivery/full 验证会把每个阶段和总耗时写入 `BUILDR_TIMING_OUTPUT` 指定的 JSON 文件；未显式指定时，每次 Candidate/Changed run 都在系统临时目录创建唯一 evidence 目录，其中包含 `timing.json` 和 diagnostics，结束时直接打印绝对路径，不维护可被并发覆盖的固定 `latest` 文件。summary 的 `evidenceLifecycle` 将这类目录标记为 `transient`、`consumer-finished` 后可清理并提供精确 `cleanupReference`；它只在当前任务 consumer 使用期间保留，不是长期证据库。显式设置 `BUILDR_TIMING_OUTPUT` / `BUILDR_DIAGNOSTICS_OUTPUT` 时标记为 `caller-managed`，由调用方保证路径唯一并决定保留期，CI 总是上传这些证据。summary 还记录 run kind/id、来源仓库与 Product root、HEAD、branch、dirty、候选 fingerprint、每个 step 日志路径以及 Node、平台、架构和 CI 环境。Workspace E2E 直接运行失败时默认保留失败 fixture 并打印位置，成功时清理；需要主动保留成功 fixture 时可设置 `BUILDR_WORKSPACE_E2E_KEEP=1`。
 

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
+import { parseVerificationPhaseTimings } from './phases.mjs';
 
 function diagnosticBaseName(step) {
   return String(step.diagnosticId ?? step.name ?? 'verification-step')
@@ -197,6 +198,13 @@ export function cleanupTrackedDescendants(rootPid, ownedProcesses, { platform = 
 
 export async function runVerificationStep(step, runtime = {}) {
   const startedAt = Date.now();
+  const phaseOutputPath = step.diagnosticsDirectory
+    ? path.join(path.resolve(step.diagnosticsDirectory), `${diagnosticBaseName(step)}.phases.jsonl`)
+    : null;
+  if (phaseOutputPath) {
+    fs.mkdirSync(path.dirname(phaseOutputPath), { recursive: true });
+    fs.rmSync(phaseOutputPath, { force: true });
+  }
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -240,6 +248,9 @@ export async function runVerificationStep(step, runtime = {}) {
       const durationMs = Date.now() - startedAt;
       const budgetMs = Number.isFinite(step.budgetMs) ? step.budgetMs : undefined;
       const diagnosticPaths = writeVerificationDiagnostics(step, stdout, stderr);
+      const phaseOutput = phaseOutputPath && fs.existsSync(phaseOutputPath)
+        ? fs.readFileSync(phaseOutputPath, 'utf8')
+        : '';
       resolve({
         name: step.name,
         status: exitCode === 0 ? 'passed' : 'failed',
@@ -248,6 +259,7 @@ export async function runVerificationStep(step, runtime = {}) {
         stdout,
         stderr,
         processCleanup,
+        phases: parseVerificationPhaseTimings(phaseOutput || `${stdout}\n${stderr}`),
         ...(failureCode ? { failureCode } : {}),
         ...diagnosticPaths,
         ...(budgetMs === undefined ? {} : { budgetMs, budgetStatus: durationMs <= budgetMs ? 'within' : 'over' }),
@@ -257,7 +269,9 @@ export async function runVerificationStep(step, runtime = {}) {
     let child;
     child = spawnProcess(step.command, step.args ?? [], {
       cwd: step.cwd,
-      env: step.env ?? process.env,
+      env: phaseOutputPath
+        ? { ...(step.env ?? process.env), BUILDR_VERIFICATION_PHASE_OUTPUT: phaseOutputPath }
+        : step.env ?? process.env,
       shell: step.shell ?? false,
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],

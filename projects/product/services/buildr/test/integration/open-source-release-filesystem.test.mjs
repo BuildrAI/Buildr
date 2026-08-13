@@ -8,8 +8,14 @@ import { fileURLToPath } from 'node:url';
 import { buildApplicationPayload } from '../../scripts/release/application-payload.mjs';
 import { createReleaseArtifact, readReleaseArtifact } from '../../scripts/release/release-artifact.mjs';
 import { inspectCandidatePaths } from '../../test/verification/release/open-source-candidate.mjs';
-import { readSharedCandidatePackage } from '../../test/verification/release/candidate-package.mjs';
+import {
+  CANDIDATE_PACK_METADATA_ENV,
+  CANDIDATE_RELEASE_MANIFEST_ENV,
+  CANDIDATE_TARBALL_ENV,
+  readSharedCandidatePackage,
+} from '../../test/verification/release/candidate-package.mjs';
 import { resolveReleaseSmokeSource, waitForWebReadiness } from '../../test/verification/release/release-smoke.mjs';
+import { createVerificationExecutor } from '../../test/verification/executor.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -82,6 +88,20 @@ test('release artifact preparation packs once and detects mutated bytes', async 
     assert.equal(artifact.manifest.applicationPayloadDigest, payload.manifest.applicationPayloadDigest);
     assert.equal(artifact.manifest.inventory.some((entry) => entry.path === 'package.json'), true);
     assert.equal(readReleaseArtifact(artifact.manifestPath).tarball, artifact.tarball);
+
+    const forbiddenRepackRoot = path.join(root, 'must-not-repack');
+    const execute = createVerificationExecutor({
+      productRoot: serviceRoot,
+      artifactDirectory: forbiddenRepackRoot,
+      env: {
+        [CANDIDATE_TARBALL_ENV]: artifact.tarball,
+        [CANDIDATE_PACK_METADATA_ENV]: artifact.packMetadataPath,
+        [CANDIDATE_RELEASE_MANIFEST_ENV]: artifact.manifestPath,
+      },
+    });
+    const reused = await execute({ id: 'candidate-tarball', name: 'reuse external artifact', executor: { type: 'candidate-artifact' } });
+    assert.equal(reused.status, 'passed', reused.stderr);
+    assert.equal(fs.existsSync(forbiddenRepackRoot), false, 'external Candidate artifact must prevent another npm pack');
 
     const smokeSource = resolveReleaseSmokeSource({ BUILDR_RELEASE_ARTIFACT_MANIFEST: artifact.manifestPath });
     assert.equal(smokeSource.kind, 'release-artifact');

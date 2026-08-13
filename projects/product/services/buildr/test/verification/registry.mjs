@@ -147,17 +147,22 @@ export const VERIFICATION_IGNORED_INPUTS = Object.freeze([
 
 export const VERIFICATION_GOVERNED_REPOSITORY_INPUTS = Object.freeze([
   '.github/workflows/publish.yml',
+  '.github/workflows/verify.yml',
 ]);
 
 export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
+  '.github/workflows/verify.yml',
   'preparation.yml',
   'verification.yml',
   'package.json',
   'package-lock.json',
   'scripts/verify-buildr-product',
   'scripts/verify-buildr-product-fast',
+  'scripts/verify-buildr-product-ci',
   'scripts/run-workspace-node.mjs',
   'test/verification/candidate.mjs',
+  'test/verification/candidate-ci.mjs',
+  'test/verification/candidate-ci-evidence.mjs',
   'test/verification/changed.mjs',
   'test/verification/changed-paths.mjs',
   'test/verification/dag-scheduler.mjs',
@@ -261,7 +266,7 @@ export const verificationSteps = Object.freeze([
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/contract/**', 'test/fixtures/**', 'preparation.yml', 'verification.yml', 'task-finish.yml',
-    '.github/workflows/publish.yml',
+    '.github/workflows/publish.yml', '.github/workflows/verify.yml',
     'scripts/release/release-authority.mjs',
     'scripts/release/release-authority-oidc-probe.mjs',
     'scripts/release/release-authority-preflight.mjs',
@@ -270,6 +275,8 @@ export const verificationSteps = Object.freeze([
     'scripts/release/trusted-publish.mjs',
     'src/infrastructure/runtime/render-claude-code.mjs',
     'test/verification/candidate.mjs',
+    'test/verification/candidate-ci.mjs',
+    'test/verification/candidate-ci-evidence.mjs',
     'test/verification/changed.mjs',
     'test/verification/affected.mjs',
     'test/verification/focus.mjs',
@@ -284,7 +291,7 @@ export const verificationSteps = Object.freeze([
     'test/verification/workspace/suites.mjs',
     'test/verification/runtime/adapter-smoke-workspace.mjs',
     'test/verification/runtime/adapter-smoke-workspace.test.mjs',
-    'scripts/verify-buildr-product', 'scripts/verify-buildr-product-fast', 'scripts/run-workspace-node.mjs',
+    'scripts/verify-buildr-product', 'scripts/verify-buildr-product-fast', 'scripts/verify-buildr-product-ci', 'scripts/run-workspace-node.mjs',
     'package/manifest.yml', 'package/targets/workspace/rules/buildr/core.md',
     'package/targets/workspace/skills/**', 'package/targets/runtime/skills/**',
     'skills/buildr-release/**', 'docs/skill-capability-contracts.md',
@@ -472,6 +479,90 @@ export const verificationSteps = Object.freeze([
   ], schedulingCostMs: 9000, concurrencyClass: 'workspace-heavy' }),
 
   step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.mjs' }, profiles: ['candidate'], inputs: ['**/*.md', 'openspec/**/*.html', 'docs/publications/assets/**', 'test/verification/docs/quality.mjs'], concurrencyClass: 'default' }),
+]);
+
+const candidateShard = (id, runner, phase, stepIds, options = {}) => Object.freeze({
+  id,
+  runner,
+  phase,
+  stepIds: Object.freeze(stepIds),
+  requiresArtifact: options.requiresArtifact === true,
+  producesArtifact: options.producesArtifact === true,
+});
+
+export const CANDIDATE_CI_SHARDS = Object.freeze([
+  candidateShard('preflight-macos', 'macos', 'preflight', [
+    'unit',
+    'component',
+    'contract',
+    'cli-architecture',
+    'openspec-spec-quality',
+    'openspec-strict',
+    'runtime-adapter-contract',
+    'openspec-candidate-audit',
+    'managed-mutations',
+    'package-static',
+    'docs-quality',
+  ]),
+  candidateShard('artifact-macos', 'macos', 'artifact', [
+    'candidate-tarball',
+  ], { producesArtifact: true }),
+  candidateShard('core-macos', 'macos', 'verification', [
+    'integration',
+    'system-verification-contracts',
+    'system-local-app-http',
+    'application-payload-release',
+    'npm-launcher-candidate',
+    'open-source-candidate',
+    'capability-cli-integration',
+    'commands-cli-integration',
+    'openspec-contract-fixtures',
+    'package-workspace',
+    'package-commands',
+    'package-rules',
+    'package-skills',
+    'package-runtime',
+    'ownership-recovery',
+    'runtime-reconciliation',
+    'init-onboarding',
+    'cli-compatibility',
+    'cli-package-parity',
+    'service-branch-contract',
+    'remote-skill-timeout',
+    'release-tarball-smoke',
+    'managed-data-integrity',
+  ], { requiresArtifact: true }),
+  candidateShard('runtime-windows', 'windows', 'verification', [
+    'system-runtime-recovery',
+    'system-app-process',
+    'npm-launcher-candidate',
+    'runtime-adapter-parity',
+    'release-tarball-smoke',
+  ], { requiresArtifact: true }),
+  candidateShard('workspace-windows', 'windows', 'verification', [
+    'integration-task-development',
+    'system-workspace-lifecycle',
+    'system-task-finish',
+    'integration-candidate-recovery',
+    'concurrent-task-acceptance',
+    'openspec-convergence-recovery',
+    'workspace-lifecycle',
+  ]),
+  candidateShard('fresh-build-windows', 'windows', 'verification', [
+    'system-fresh-build',
+  ]),
+]);
+
+export const CANDIDATE_CI_PLATFORM_REPEATS = Object.freeze({
+  'npm-launcher-candidate': Object.freeze(['core-macos', 'runtime-windows']),
+  'release-tarball-smoke': Object.freeze(['core-macos', 'runtime-windows']),
+});
+
+export const CANDIDATE_CI_HOST_NODE_TUPLES = Object.freeze([
+  Object.freeze({ id: 'host-minimum-macos', runner: 'macos', requestedNode: '24.15.0', expectation: 'minimum' }),
+  Object.freeze({ id: 'host-minimum-windows', runner: 'windows', requestedNode: '24.15.0', expectation: 'minimum' }),
+  Object.freeze({ id: 'host-current-macos', runner: 'macos', requestedNode: '24.x', expectation: 'current' }),
+  Object.freeze({ id: 'host-current-windows', runner: 'windows', requestedNode: '24.x', expectation: 'current' }),
 ]);
 
 export const VERIFICATION_TEST_INTENTS = Object.freeze(['Development', 'Acceptance', 'Static Conformance', 'Delivery / Release']);

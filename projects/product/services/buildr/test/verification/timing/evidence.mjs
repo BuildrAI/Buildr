@@ -101,6 +101,7 @@ function normalizedSteps(results) {
     ...(result.resourceCoordination ? { resourceCoordination: result.resourceCoordination } : {}),
     ...(result.failureCode ? { failureCode: result.failureCode } : {}),
     ...(result.processCleanup ? { processCleanup: result.processCleanup } : {}),
+    ...(result.phases?.length ? { phases: result.phases } : {}),
   }));
 }
 

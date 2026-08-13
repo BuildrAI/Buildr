@@ -70,6 +70,9 @@
     "test:focus": "node test/verification/focus.mjs",
     "test:host-node": "node test/verification/host-node.mjs",
     "test:candidate": "bash scripts/verify-buildr-product",
+    "test:candidate:ci": "bash scripts/verify-buildr-product-ci",
+    "test:candidate:host": "node test/verification/candidate-ci.mjs host",
+    "test:candidate:aggregate": "node test/verification/candidate-ci.mjs aggregate",
     "test:release": "node test/verification/release/release-smoke.mjs",
     "install:development": "./scripts/install-buildr-development",
     "pack:check": "npm pack --dry-run"

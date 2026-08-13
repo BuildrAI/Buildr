@@ -136,6 +136,14 @@ Development 稳定 Content Target 并固定 verification policy
         ↓ Verification facts 完整后冻结 Task Candidate
 ```
 
+GitHub Candidate不是第二套测试registry，而是同一Candidate profile的闭合分布式投影：低成本`candidate-preflight`先短路；`candidate-artifact`只构建一次tarball；macOS core、Windows runtime/Launcher、Windows Workspace/Task、Windows fresh build和四个Host Node tuple并行；`Candidate gate`聚合全部closed evidence并作为`main`唯一稳定required context。每个shard evidence绑定source SHA、registry identity、适用artifact identity、primary steps、内部阶段timing和workflow attempt。同一SHA只重跑失败job时，新attempt以相同逻辑artifact名覆盖旧evidence并重跑aggregate；新SHA不复用旧结果。
+
+冻结 source SHA `c2a76cde2d39566a2e665dcc7c2a1291c65a89b9` 的三轮 GitHub Candidate（runs `31719158091`、`31719762961`、`31720456534`）全部通过。总墙钟为 394s、468s、441s，中位 441s、范围 74s；runner 总量为 1136s、1156s、1181s，中位 1156s、范围 45s；最长 Windows Workspace/Task shard 为 288s、360s、331s，中位 331s、范围 72s。对照旧拓扑三轮绿色 run 的总墙钟 695s、931s、780s（中位 780s），新拓扑中位下降约 43.5%；runner 总量从旧中位 1274s 降到 1156s，下降约 9.3%。一次真实 runtime shard 失败后仅重跑 failed job 与 aggregate，恢复墙钟 159s、runner 154s，已成功的 artifact、core、Workspace、fresh build 与 Host Node jobs 没有重新执行。`main` branch protection 已在新 gate 绿色回读后保持 `strict: true`，从旧四个 contexts 迁移为唯一 `Candidate gate`（GitHub Actions app id `15368`）。
+
+本地完整 Candidate 在最终实现树上 46/46 通过，墙钟 189.157s，超过 120s 观察预算。该超限同时说明两件事：120s 是 38-step 历史候选形成的优化目标，已不再是当前 46-step 完整集合的现实预期上界；但当前测试本体也仍有可优化热点，不能只提高预算。最慢 owner 是 System Workspace lifecycle 73.852s、System Task Finish 49.260s、technical boundary integration 40.580s、System runtime recovery 37.817s 和 concurrent task acceptance 30.997s。120s 保持 nonblocking optimization warning；GitHub 发布门禁另以总墙钟、最长 shard、runner minutes 与失败重跑成本评估，后续优先优化 Workspace/Task 长尾后再用新基线校准预算。
+
+Project `verification.yml`仍只声明可由Task Verification选择的稳定本地capability。GitHub job/shard是仓库候选运行策略，不新增Project capability，也不把CI内部job写入portable Task Verification Result。
+
 完整 stdout/stderr、临时路径、环境启动和 timing 属于 transient Execution Evidence；Workspace-local current Result 只保留 Content Target、声明、实际能力事实、coverage gap 和整体结论。target 或 declaration 变化后 Result 派生为 stale。Task Development 与 Buildr Web 复用同一个 Result reader；Task Finish 不读取或发起 Verification。
 
 ## 7. 当前性能根因与本轮结论

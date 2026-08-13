@@ -175,13 +175,19 @@ test('release smoke cleanup reports retained temporary roots without masking ver
   const cleanupError = Object.assign(new Error('locked'), { code: 'EPERM' });
   const warnings = [];
   const retained = cleanupReleaseSmokeRoot('C:\\temporary\\release-smoke', {
+    platform: 'win32',
     removeRoot() { throw cleanupError; },
     warn(message) { warnings.push(message); },
   });
 
   assert.equal(retained.status, 'retained');
   assert.equal(retained.error, cleanupError);
-  assert.deepEqual(warnings, ['Buildr release smoke retained temporary root C:\\temporary\\release-smoke: EPERM']);
+  assert.deepEqual(warnings, ['Buildr verification retained temporary root C:\\temporary\\release-smoke: EPERM']);
+
+  assert.throws(() => cleanupReleaseSmokeRoot('C:\\temporary\\release-smoke', {
+    platform: 'win32',
+    removeRoot() { throw Object.assign(new Error('unexpected cleanup defect'), { code: 'EINVAL' }); },
+  }), /unexpected cleanup defect/);
 
   const cleaned = cleanupReleaseSmokeRoot('/tmp/release-smoke', { removeRoot() {} });
   assert.deepEqual(cleaned, { status: 'cleaned', root: '/tmp/release-smoke' });
@@ -436,23 +442,25 @@ test('CI and publish workflows use the supported Node runtime', () => {
   const verifyWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8');
   const publishWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const hostNodeSmoke = fs.readFileSync(path.join(serviceRoot, 'test/verification/host-node/cli-smoke.mjs'), 'utf8');
-  assert.match(verifyWorkflow, /node: \[24\.15\.0, 24\.x\]/, 'Windows PR preflight must retain both supported Node representatives');
   assert.match(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
-  assert.match(verifyWorkflow, /group:windows-npm-preflight/);
   assert.match(verifyWorkflow, /github\.base_ref == 'dev'/);
   assert.match(verifyWorkflow, /github\.base_ref == 'main'/);
   assert.match(verifyWorkflow, /github\.head_ref == 'dev'/);
   assert.doesNotMatch(verifyWorkflow, /^  release-smoke:/m);
-  assert.equal((verifyWorkflow.match(/npm run test:candidate/g) || []).length, 1);
-  assert.equal((verifyWorkflow.match(/npm run test:host-node/g) || []).length, 2);
+  assert.equal((verifyWorkflow.match(/npm run test:candidate:ci/g) || []).length, 4);
+  assert.equal((verifyWorkflow.match(/npm run test:candidate:host/g) || []).length, 1);
+  assert.equal((verifyWorkflow.match(/npm run test:candidate:aggregate/g) || []).length, 1);
   assert.match(hostNodeSmoke, /verifyWorkspaceOwnedRuntime/);
   assert.match(hostNodeSmoke, /expectedMainRole: 'host'/);
   assert.match(hostNodeSmoke, /expectedChannel: 'npm'/);
-  assert.match(verifyWorkflow, /^  managed-runtime-candidate:/m);
-  assert.match(verifyWorkflow, /^  current-host-node:/m);
+  assert.match(verifyWorkflow, /^  candidate-preflight:/m);
+  assert.match(verifyWorkflow, /^  candidate-artifact:/m);
+  assert.match(verifyWorkflow, /^  candidate-windows:/m);
+  assert.match(verifyWorkflow, /^  candidate-gate:/m);
   assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
-  assert.match(verifyWorkflow, /node-version: 24\.x/);
-  assert.doesNotMatch(verifyWorkflow, /^  push:/m, 'main push must not duplicate the already verified Candidate tree');
+  assert.match(verifyWorkflow, /node: 24\.x/);
+  assert.match(verifyWorkflow, /^  push:[\s\S]*branches: \[dev\]/m);
+  assert.doesNotMatch(verifyWorkflow, /branches: \[main\]/, 'main push must not duplicate the already verified Candidate tree');
   assert.equal((verifyWorkflow.match(/release-tarball-smoke/g) || []).length, 0);
   assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);
@@ -490,6 +498,8 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '--authority-evidence <authority-evidence.json>', '不得回退本机 token publish',
     'GitHub Release 使用 ensure 语义', '安装精确 `@buildr-ai/buildr@<version>`',
     '不删除 tag、不 unpublish、不重复 publish',
+    '`Candidate gate`', '普通发布准备不再无条件本地运行完整`test:candidate`',
+    '重新运行失败作业', '三个Windows高成本shard继续并行',
   ]) assert.equal(skill.includes(required), true, required);
   for (const retired of ['npm trust list @buildr-ai/buildr --json', 'npm 11.15+ authenticated maintainer session', 'authenticated authority evidence']) assert.equal(skill.includes(retired), false, retired);
 });
