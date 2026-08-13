@@ -112,6 +112,41 @@ async function waitForProcessExit(pid, timeoutMs = 5_000) {
   throw new Error(`Process ${pid} did not exit within ${timeoutMs}ms.`);
 }
 
+async function waitForChildClose(child, timeoutMs) {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return new Promise((resolve) => {
+    const onClose = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.off('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+    child.once('close', onClose);
+  });
+}
+
+async function stopChildProcess(child, timeoutMs = 2_000) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill('SIGTERM');
+  if (await waitForChildClose(child, timeoutMs)) return;
+  child.kill('SIGKILL');
+  await waitForChildClose(child, timeoutMs);
+}
+
+export function cleanupReleaseSmokeRoot(root, options = {}) {
+  const removeRoot = options.removeRoot ?? ((target) => fs.rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
+  const warn = options.warn ?? console.warn;
+  try {
+    removeRoot(root);
+    return { status: 'cleaned', root };
+  } catch (error) {
+    warn(`Buildr release smoke retained temporary root ${root}: ${error.code ?? error.message}`);
+    return { status: 'retained', root, error };
+  }
+}
+
 export async function runReleaseSmoke(env = process.env) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-smoke-'));
   const packDirectory = path.join(root, 'pack');
@@ -128,6 +163,7 @@ export async function runReleaseSmoke(env = process.env) {
   };
   const source = resolveReleaseSmokeSource(env);
   let web = null;
+  let launcherProcess = null;
 
   function runBuildr(buildrScript, args) {
     return run(process.execPath, [buildrScript, ...args], {
@@ -193,9 +229,7 @@ export async function runReleaseSmoke(env = process.env) {
     web.stderr.on('data', (chunk) => { webStderr += chunk; });
     const health = await waitForWebReadiness({ appData, child: web, stderr: () => webStderr });
     assert.equal(health.productIdentity.channel, 'npm');
-    web.kill('SIGTERM');
-    await Promise.race([new Promise((resolve) => web.once('close', resolve)), new Promise((resolve) => setTimeout(resolve, 2_000))]);
-    if (web.exitCode === null) web.kill('SIGKILL');
+    await stopChildProcess(web);
     web = null;
 
     if (launcherTarget) {
@@ -205,7 +239,6 @@ export async function runReleaseSmoke(env = process.env) {
       assert.equal(sameFilesystemPath(installedLauncher.binding.packageEntry.path, buildrScript), true);
       assert.equal(installedLauncher.binding.installationOwnershipIdentity, health.productIdentity.installationIdentity);
 
-      let launcherProcess = null;
       if (process.platform === 'darwin') {
         launcherProcess = spawn(path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web'), [], {
           cwd: workspace,
@@ -213,7 +246,7 @@ export async function runReleaseSmoke(env = process.env) {
           stdio: ['ignore', 'ignore', 'pipe'],
         });
       } else {
-        launcherProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:BUILDR_LAUNCHER_SHORTCUT'], {
+        launcherProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:BUILDR_LAUNCHER_SHORTCUT -Wait'], {
           cwd: workspace,
           env: { ...process.env, ...runtimeEnv, BUILDR_LAUNCHER_NO_OPEN: '1', BUILDR_LAUNCHER_SHORTCUT: launcherTarget },
           stdio: ['ignore', 'ignore', 'pipe'],
@@ -224,7 +257,7 @@ export async function runReleaseSmoke(env = process.env) {
       assert.equal(launcherHealth.launcherIdentity.bindingIdentity, installedLauncher.binding.bindingIdentity);
       try { process.kill(launcherHealth.pid, 'SIGTERM'); } catch {}
       await waitForProcessExit(launcherHealth.pid);
-      if (launcherProcess.exitCode === null) launcherProcess.kill('SIGTERM');
+      await stopChildProcess(launcherProcess);
 
       if (process.platform === 'darwin') {
         fs.appendFileSync(path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web'), '\n# drift\n');
@@ -261,8 +294,9 @@ export async function runReleaseSmoke(env = process.env) {
     console.log(`Buildr release smoke passed from ${source.kind} on ${process.platform} with Node ${process.versions.node}.`);
     return { source: source.kind, version: installedMetadata.version };
   } finally {
-    if (web && web.exitCode === null) web.kill('SIGKILL');
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    await stopChildProcess(web);
+    await stopChildProcess(launcherProcess);
+    cleanupReleaseSmokeRoot(root);
   }
 }
 

@@ -20,7 +20,7 @@ import {
   registryVersionState,
   waitForRegistryRelease,
 } from '../../scripts/release/registry-version-state.mjs';
-import { resolveReleaseSmokeSource } from '../../test/verification/release/release-smoke.mjs';
+import { cleanupReleaseSmokeRoot, resolveReleaseSmokeSource } from '../../test/verification/release/release-smoke.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot = path.resolve(serviceRoot, '../../../..');
@@ -169,6 +169,22 @@ test('release smoke selects one explicit immutable source', () => {
     () => resolveReleaseSmokeSource({ BUILDR_RELEASE_PACKAGE_SPEC: '@buildr-ai/buildr@next' }),
     /requires exact/,
   );
+});
+
+test('release smoke cleanup reports retained temporary roots without masking verification', () => {
+  const cleanupError = Object.assign(new Error('locked'), { code: 'EPERM' });
+  const warnings = [];
+  const retained = cleanupReleaseSmokeRoot('C:\\temporary\\release-smoke', {
+    removeRoot() { throw cleanupError; },
+    warn(message) { warnings.push(message); },
+  });
+
+  assert.equal(retained.status, 'retained');
+  assert.equal(retained.error, cleanupError);
+  assert.deepEqual(warnings, ['Buildr release smoke retained temporary root C:\\temporary\\release-smoke: EPERM']);
+
+  const cleaned = cleanupReleaseSmokeRoot('/tmp/release-smoke', { removeRoot() {} });
+  assert.deepEqual(cleaned, { status: 'cleaned', root: '/tmp/release-smoke' });
 });
 
 test('GitHub Release ensure reuses an exact release and fails closed on drift', async () => {
