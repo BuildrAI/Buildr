@@ -46,11 +46,11 @@ else if (args[0] === 'openspec' && args[1] === 'converge') {
 else if (args[0] === 'task' && args[1] === 'environment' && args[2] === 'prepare') {
   output({ schemaVersion: 'buildr.task-environment-operation-result/v1', operation: 'prepare', status: 'ready', taskId: args[3] });
 }
-else if (args[0] === 'app' && args[1] === 'launcher' && ['install', 'status'].includes(args[2])) {
+else if (args[0] === 'web' && args[1] === 'launcher' && ['install', 'status'].includes(args[2])) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   output({
     schemaVersion: 'buildr.launcher-status/v1', platform: 'darwin', channel: 'development',
-    target: '/Applications/Buildr Dev.app', installed: true,
+    target: '/Applications/Buildr Web Dev.app', installed: true,
     identity: { schemaVersion: 'buildr.launcher-identity/v1', channel: 'development', source: 'checkout', buildId: head.slice(0, 12) + '-fixture', checkout: { head, dirty: false } },
   });
 }
@@ -125,15 +125,20 @@ function taskEnvironmentFixture({ task, environmentRoot, retained, controllerCom
 }
 
 function taskDevelopmentFixture() {
-  const candidate = { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target', taskContextIdentity: 'sha256-task-context', policyIdentity: 'sha256-policy' };
+  let generation = 1;
   const gates = {
     planning: { targetIdentity: 'sha256-planning-target', resultDigest: 'sha256-planning', outcome: 'ready' },
     verification: { targetIdentity: 'sha256-verification-target', resultDigest: 'sha256-verification', outcome: 'passed' },
     completion: { targetIdentity: 'sha256-completion-target', resultDigest: 'sha256-completion', outcome: 'ready' },
   };
-  const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'ready', risks: [] };
-  const handoff = { identity: 'sha256-handoff', candidate, gates, decision };
-  const receipt = { candidate, gates, decision, handoffs: [handoff] };
+  const history = [];
+  const snapshot = () => {
+    const candidate = { identity: `sha256-candidate-${generation}`, generation, contentTargetIdentity: `sha256-content-target-${generation}`, taskContextIdentity: 'sha256-task-context', policyIdentity: 'sha256-policy' };
+    const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'ready', risks: [] };
+    const handoff = { identity: `sha256-handoff-${generation}`, candidate, gates, decision };
+    if (!history.some((item) => item.identity === handoff.identity)) history.push(handoff);
+    return { candidate, decision, handoff, receipt: { candidate, gates, decision, handoffs: [...history] } };
+  };
   let taskRecord = null;
   return {
     inspectTaskRecord: (_root, task) => ({ record: taskRecord || { taskId: task, status: 'active', result: null } }),
@@ -142,15 +147,134 @@ function taskDevelopmentFixture() {
       if (taskRecord.status === 'active') taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: [{ type: 'updated', taskId: task }] };
     },
-    inspectTaskDevelopment: () => ({ development: { receipt, applicability: { handoff: 'current' } } }),
-    assertTaskDevelopmentCarrier: () => ({ status: 'equivalent', development: { receipt, applicability: { handoff: 'current' } }, effects: [] }),
+    inspectTaskDevelopment: () => {
+      const current = snapshot();
+      return { development: { receipt: current.receipt, applicability: { handoff: 'current' } } };
+    },
+    assertTaskDevelopmentCarrier: (_root, _task, expected) => {
+      const current = snapshot();
+      const observed = {
+        handoffIdentity: current.handoff.identity,
+        candidateIdentity: current.candidate.identity,
+        candidateGeneration: current.candidate.generation,
+        contentTargetIdentity: current.candidate.contentTargetIdentity,
+      };
+      const mismatches = Object.keys(observed).filter((field) => observed[field] !== expected?.[field]);
+      return mismatches.length
+        ? { status: 'stale', development: { receipt: current.receipt, applicability: { handoff: 'current' } }, diagnostic: { code: 'task_development_carrier_identity_mismatch', details: { expected, current: observed, mismatches } }, effects: [] }
+        : { status: 'equivalent', development: { receipt: current.receipt, applicability: { handoff: 'current' } }, effects: [] };
+    },
+    advanceTaskDevelopmentHandoff: () => { generation += 1; return snapshot().handoff; },
   };
 }
 
-function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment }) {
+test('preflight-only陈旧run要求新commit message；已有carrier事实时保留现场并拒绝换绑', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-stale-run-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const seed = path.join(fixture, 'seed');
+  const remote = path.join(fixture, 'remote.git');
+  const retained = path.join(fixture, 'workspace');
+  fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Stale Finish run fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+  fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  command(seed, 'git', ['init', '-b', 'dev']);
+  command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
+  fs.writeFileSync(path.join(seed, 'README.md'), '# baseline\n');
+  command(seed, 'git', ['add', '-A']);
+  command(seed, 'git', ['commit', '-m', 'baseline']);
+  command(fixture, 'git', ['init', '--bare', remote]);
+  command(seed, 'git', ['remote', 'add', 'origin', remote]);
+  command(seed, 'git', ['push', '-u', 'origin', 'dev']);
+  command(fixture, 'git', ['clone', '--branch', 'dev', remote, retained]);
+  command(retained, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(retained, 'git', ['config', 'user.email', 'journey@example.com']);
+
+  const task = 'stale-finish-run';
+  const environmentRoot = path.join(retained, '.worktrees', task);
+  command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
+  fs.writeFileSync(path.join(environmentRoot, 'feature.txt'), 'generation one\n');
+  command(environmentRoot, 'git', ['add', 'feature.txt']);
+  command(environmentRoot, 'git', ['commit', '-m', 'candidate generation one']);
+  fs.writeFileSync(path.join(retained, 'retained-blocker.txt'), 'keep preflight blocked\n');
+
+  const development = taskDevelopmentFixture();
+  const environment = taskEnvironmentFixture({ task, environmentRoot, retained });
+  const runtime = {
+    ...createTaskFinishSqliteRuntime(retained, task),
+    ...environment,
+    ...development,
+    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
+    optionValue: (args, name, fallback) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget: (args) => {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? retained : args[index + 1]) };
+    },
+  };
+  registerTaskFinishApplication(runtime);
+
+  const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation one', '--target', retained]);
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.primaryFailure.phase, 'preflight');
+  assert.equal(first.carrier, null);
+  const firstRunId = first.runId;
+  const firstRecordCount = runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length;
+  assert.equal(firstRecordCount, 1);
+
+  development.advanceTaskDevelopmentHandoff();
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--target', retained]),
+    (error) => error.code === 'task_finish.entry_gaps'
+      && error.details?.gaps?.delivery?.some((gap) => gap.code === 'task_finish.commit_message_required'),
+  );
+  assert.equal(runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run.runId, firstRunId);
+
+  const second = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation two', '--target', retained]);
+  assert.equal(second.status, 'blocked');
+  assert.notEqual(second.runId, firstRunId);
+  assert.equal(second.candidate.generation, 2);
+  assert.equal(second.deliveryCommit.subject, 'fix(task-finish): deliver generation two');
+  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 2);
+
+  const persisted = runtime.readTaskFinishRunPersistence(retained, { taskId: task });
+  persisted.run.deliveryCarrier = { identity: 'sha256-owned-carrier', root: path.join(retained, '.buildr', 'task-finish', 'carriers', second.runId) };
+  persisted.run.status = 'blocked';
+  persisted.run.phases.find((phase) => phase.id === 'preflight').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'prepare').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'prepare').attempts = 1;
+  persisted.run.phases.find((phase) => phase.id === 'verify').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'verify').attempts = 1;
+  persisted.run.phases.find((phase) => phase.id === 'deliver').status = 'blocked';
+  persisted.run.phases.find((phase) => phase.id === 'deliver').attempts = 1;
+  persisted.run.primaryFailure = { phase: 'deliver', operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', status: 'blocked', exitCode: null, message: 'Target changed.', findings: [], diagnostic: null };
+  persisted.run.resume = { phase: 'deliver', token: 'sha256-deliver-resume', generatedAt: new Date().toISOString(), carrierIdentity: 'sha256-owned-carrier' };
+  runtime.writeTaskFinishRunPersistence(retained, persisted.run);
+  development.advanceTaskDevelopmentHandoff();
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation three', '--target', retained]),
+    (error) => error.code === 'task_finish.current_run_identity_conflict'
+      && error.details?.sideEffectFacts?.includes('carrier'),
+  );
+  await assert.rejects(
+    runtime.taskFinish('run', ['--run', second.runId, '--resume', 'sha256-deliver-resume', '--target', retained]),
+    (error) => error.code === 'task_finish.current_run_identity_conflict'
+      && error.details?.runId === second.runId,
+  );
+  const retainedCurrent = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
+  assert.equal(retainedCurrent.runId, second.runId);
+  assert.equal(retainedCurrent.deliveryCarrier.identity, 'sha256-owned-carrier');
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], command(retained, 'git', ['rev-parse', 'HEAD']));
+});
+
+function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment, workspaceOnly = false }) {
   let receipt = null;
   let savedObservation = null;
-  let taskRecord = { taskId: task, intent: 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: ['product'], services: [] }, changes: [], status: 'active', result: null };
+  let taskRecord = { taskId: task, intent: workspaceOnly ? 'Deliver a workspace-only formal Task.' : 'Reuse the same Candidate after Delivery Baseline advance.', scope: { projects: workspaceOnly ? [] : ['product'], services: [] }, changes: [], status: 'active', result: null };
   const planningTargetIdentity = taskDevelopmentDigest(`${task}:planning`);
   const declarationIdentity = taskDevelopmentDigest(`${task}:declaration`);
   const sqliteRuntime = createTaskFinishSqliteRuntime(retained, task);
@@ -164,7 +288,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
       if (changed) taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: changed ? [{ type: 'updated', taskId: task }] : [] };
     },
-    observeTaskVerificationDeclarations: () => [{
+    observeTaskVerificationDeclarations: () => workspaceOnly ? [] : [{
       project: 'product', path: 'projects/product/verification.yml', identity: declarationIdentity, valid: true,
       declaration: { capabilities: [{ id: 'product.delivery', requiredForDelivery: true }] },
     }],
@@ -184,8 +308,9 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
       resultDigest: taskDevelopmentDigest(`${task}:verification-result`),
       result: {
         target: { identity: options.targetIdentity },
-        capabilities: [{ project: 'product', capability: 'product.delivery', outcome: 'passed', facts: ['Passed.'] }],
-        coverageGaps: [], conclusion: { outcome: 'passed' },
+        capabilities: workspaceOnly ? [] : [{ project: 'product', capability: 'product.delivery', outcome: 'passed', facts: ['Passed.'] }],
+        coverageGaps: workspaceOnly ? [{ scope: 'workspace', summary: 'No workspace verification capability.' }] : [],
+        conclusion: { outcome: workspaceOnly ? 'not-passed' : 'passed' },
       },
     } }),
     readTaskDevelopmentPersistence: (_root, _task, options = {}) => {
@@ -202,9 +327,14 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   registerContentTargetObserver(runtime);
   registerTaskDevelopmentApplication(runtime);
   runtime.observeTaskDevelopment(retained, task, { changeDispositions: [], planningTargetIdentity });
-  runtime.recordTaskDevelopmentPolicy(retained, task, { capabilities: [{ project: 'product', capability: 'product.delivery', required: true }], coverageGaps: [], overrides: [] });
+  runtime.recordTaskDevelopmentPolicy(retained, task, workspaceOnly
+    ? { capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [] }
+    : { capabilities: [{ project: 'product', capability: 'product.delivery', required: true }], coverageGaps: [], overrides: [] });
   runtime.freezeTaskDevelopmentCandidate(retained, task, { planningTargetIdentity });
-  runtime.decideTaskDevelopment(retained, task, { outcome: 'proceed', summary: 'Current gates.', risks: [] });
+  runtime.decideTaskDevelopment(retained, task, {
+    outcome: 'proceed', summary: 'Current gates.',
+    risks: workspaceOnly ? [{ gate: 'verification', resultDigest: taskDevelopmentDigest(`${task}:verification-result`), scope: 'workspace', summary: 'Workspace coverage gap accepted for this Candidate.', source: 'user:system-regression' }] : [],
+  });
   runtime.createTaskDevelopmentHandoff(retained, task);
   const before = runtime.inspectTaskDevelopment(retained, task);
   assert.equal(before.development.applicability.handoff, 'current');
@@ -438,7 +568,7 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 3);
 });
 
-test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery Adaptation恢复交付', async (t) => {
+test('同路径基线冲突保留current Candidate并经显式零差异 Delivery Adaptation恢复交付', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-adaptation-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -487,9 +617,21 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   command(retained, 'git', ['push', 'origin', 'dev']);
 
   let compatibilityStatus = 'failed';
+  let advanceTargetDuringCompatibility = false;
+  let racedBaselineHead = null;
   Object.assign(runtime, {
     workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
-    runTaskFinishCarrierCompatibility: ({ carrier }) => ({ status: compatibilityStatus, checks: [{ id: 'product.delivery-carrier-compatibility', status: compatibilityStatus, carrierTree: carrier.tree }], evidenceIdentity: `compatibility-${carrier.tree}-${compatibilityStatus}` }),
+    runTaskFinishCarrierCompatibility: ({ carrier }) => {
+      if (compatibilityStatus === 'passed' && advanceTargetDuringCompatibility) {
+        fs.writeFileSync(path.join(retained, 'target-race.txt'), 'target advanced after zero-delta review\n');
+        command(retained, 'git', ['add', 'target-race.txt']);
+        command(retained, 'git', ['commit', '-m', 'advance after zero-delta review']);
+        command(retained, 'git', ['push', 'origin', 'dev']);
+        racedBaselineHead = command(retained, 'git', ['rev-parse', 'HEAD']);
+        advanceTargetDuringCompatibility = false;
+      }
+      return { status: compatibilityStatus, checks: [{ id: 'product.delivery-carrier-compatibility', status: compatibilityStatus, carrierTree: carrier.tree }], evidenceIdentity: `compatibility-${carrier.tree}-${compatibilityStatus}` };
+    },
     optionValue: (args, name, fallback) => {
       const index = args.indexOf(name);
       return index === -1 ? fallback : args[index + 1];
@@ -514,10 +656,13 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   assert.equal(command(environmentRoot, 'git', ['rev-parse', 'HEAD']), taskHeadBeforeFinish);
   assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current');
 
-  fs.writeFileSync(path.join(first.carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
-  command(first.carrier.root, 'git', ['add', 'shared.txt']);
-  command(first.carrier.root, 'git', ['commit', '-F', '-'], { input: `${firstSubject}\n\nBuildr-Task: ${task}\n` });
-  const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
+  const carrierHeadBeforeResume = command(first.carrier.root, 'git', ['rev-parse', 'HEAD']);
+  const missingConfirmation = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
+  assert.equal(missingConfirmation.status, 'blocked');
+  assert.equal(missingConfirmation.primaryFailure.code, 'task-finish.delivery-adaptation-missing');
+  assert.equal(command(first.carrier.root, 'git', ['rev-parse', 'HEAD']), carrierHeadBeforeResume);
+
+  const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', missingConfirmation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
   assert.equal(compatibilityFailure.status, 'blocked');
   assert.equal(compatibilityFailure.primaryFailure.code, 'task-finish.compatibility-checks-failed');
   assert.equal(compatibilityFailure.delivery, null);
@@ -525,21 +670,42 @@ test('同路径基线冲突保留current Candidate并经Agent-reviewed Delivery 
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], advancedBaselineHead);
 
   compatibilityStatus = 'passed';
-  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', compatibilityFailure.resume.token, '--target', retained]);
+  advanceTargetDuringCompatibility = true;
+  const targetRace = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', compatibilityFailure.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
+  assert.equal(targetRace.status, 'blocked');
+  assert.equal(targetRace.primaryFailure.code, 'task-finish.target-race');
+  assert.equal(targetRace.carrier.zeroDelta, true);
+  assert.match(targetRace.resume.token, /^sha256-/);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], racedBaselineHead);
+
+  const renewedAdaptation = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', targetRace.resume.token, '--target', retained]);
+  assert.equal(renewedAdaptation.status, 'blocked');
+  assert.equal(renewedAdaptation.primaryFailure.code, 'task-finish.delivery-adaptation-required');
+  assert.equal(renewedAdaptation.carrier.deliveryBaseline.head, racedBaselineHead);
+
+  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', renewedAdaptation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
 
   assert.equal(second.status, 'complete', JSON.stringify(second, null, 2));
   assert.equal(second.reuseMode, 'agent-reviewed-delivery-adaptation');
   assert.equal(second.equivalence.semanticEquivalence, 'agent-reviewed-not-proven-by-buildr');
+  assert.equal(second.carrier.zeroDelta, true);
+  assert.equal(second.carrier.adaptation.zeroDelta, true);
+  assert.deepEqual(second.carrier.changedPaths, []);
+  assert.deepEqual(second.carrier.changes, []);
+  assert.deepEqual(second.carrier.activationPaths, ['shared.txt']);
   assert.equal(second.carrier.adaptation.compatibilityChecks.status, 'passed');
   assert.equal(second.candidate.identity, frozen.identity);
   assert.equal(second.candidate.generation, 1);
   assert.equal(second.metrics.formalVerificationExecutions, 0);
-  assert.equal(second.carrier.deliveryBaseline.head, advancedBaselineHead);
-  assert.equal(second.delivery.remoteAfterRef, second.carrier.head);
-  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], second.carrier.head);
+  assert.equal(second.carrier.deliveryBaseline.head, racedBaselineHead);
+  assert.equal(second.carrier.head, racedBaselineHead);
+  assert.equal(second.delivery.targetDisposition, 'already-contained');
+  assert.equal(second.delivery.containment.proof, 'agent-reviewed-zero-delta');
+  assert.equal(second.delivery.remoteAfterRef, racedBaselineHead);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], racedBaselineHead);
   assert.equal(fs.existsSync(environmentRoot), false);
   assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'completed');
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', second.runId)), false);
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'carriers', second.runId)), false);
 });
 
 test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
@@ -584,19 +750,22 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const originalPath = process.env.PATH;
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
-  const sqliteRuntime = createTaskFinishSqliteRuntime(retained, task);
-  const runtime = {
-    ...sqliteRuntime,
-    ...taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand: controller, controllerSourceRoot: path.dirname(controller) }),
-    ...taskDevelopmentFixture(),
-    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
-  };
+  const environment = taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand: controller, controllerSourceRoot: path.dirname(controller) });
+  const runtime = realTaskDevelopmentFixture({ task, environmentRoot, retained, environment, workspaceOnly: true });
+  runtime.workspaceNodeExecution = () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath });
+  const development = runtime.inspectTaskDevelopment(retained, task).development;
+  const handoff = development.receipt.handoffs.at(-1);
+  const candidate = development.receipt.candidate;
+  assert.equal(development.applicability.handoff, 'current');
+  assert.equal(development.receipt.verificationPolicy.declarations.length, 0);
+  assert.equal(development.receipt.gates.verification.outcome, 'not-passed');
+  assert.equal(development.receipt.decision.risks[0].scope, 'workspace');
   const run = persistTaskFinishRun(runtime, retained, {
       task,
-      handoffIdentity: 'sha256-handoff',
-      candidateIdentity: 'sha256-candidate',
-      candidateGeneration: 1,
-      contentTargetIdentity: 'sha256-content-target',
+      handoffIdentity: handoff.identity,
+      candidateIdentity: candidate.identity,
+      candidateGeneration: candidate.generation,
+      contentTargetIdentity: candidate.contentTargetIdentity,
       agent: 'codex',
       targetBranch: 'dev',
       remote: 'origin',
@@ -621,8 +790,8 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   });
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
-  assert.equal(result.handoff.identity, 'sha256-handoff');
-  assert.equal(result.candidate.identity, 'sha256-candidate');
+  assert.equal(result.handoff.identity, handoff.identity);
+  assert.equal(result.candidate.identity, candidate.identity);
   assert.equal(result.candidate.generation, 1);
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
@@ -638,8 +807,9 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
   assert.equal(result.completion.receipt, `workspace-sqlite:task-finish-completion/${task}`);
   const completion = runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }, { optional: false }).completion;
-  assert.equal(completion.handoffIdentity, 'sha256-handoff');
-  assert.equal(completion.candidateIdentity, 'sha256-candidate');
+  assert.equal(completion.handoffIdentity, handoff.identity);
+  assert.equal(completion.candidateIdentity, candidate.identity);
   assert.equal(completion.candidateGeneration, 1);
-  assert.equal(completion.contentTargetIdentity, 'sha256-content-target');
+  assert.equal(completion.contentTargetIdentity, candidate.contentTargetIdentity);
+  assert.equal(result.metrics.formalVerificationExecutions, 0);
 });

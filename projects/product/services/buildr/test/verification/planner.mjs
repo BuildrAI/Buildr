@@ -7,6 +7,7 @@ import {
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
   VERIFICATION_FULL_SCOPE_INPUTS,
+  VERIFICATION_GOVERNED_REPOSITORY_INPUTS,
   VERIFICATION_GROUPS,
   VERIFICATION_IGNORED_INPUTS,
   VERIFICATION_PROFILES,
@@ -19,6 +20,9 @@ export function normalizeProductPath(value) {
   if (typeof value !== 'string' || value.length === 0 || path.isAbsolute(value)) throw new Error(`Invalid Product path: ${value}`);
   const normalized = path.posix.normalize(value.replaceAll('\\', '/')).replace(/^\.\//, '');
   if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../')) throw new Error(`Product path escapes root: ${value}`);
+  if (normalized.startsWith('.github/') && !VERIFICATION_GOVERNED_REPOSITORY_INPUTS.includes(normalized)) {
+    throw new Error(`Ungoverned repository path is outside Product verification ownership: ${value}`);
+  }
   return normalized;
 }
 

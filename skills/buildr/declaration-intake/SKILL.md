@@ -29,7 +29,7 @@ Intake 不保存状态、不拥有 schema 或 writer，也不管理 `capabilitie
 
 对每个 scope 输出：trigger、当前声明状态、Preparation Recipe 候选/差异、Verification Capability 候选/差异、证据、外部缺口和建议写入。没有稳定事实时标记 gap，不创建技术栈 adapter、测试、wrapper 或工具安装方案。
 
-Discovery、Project/Service 注册、Local App GET、Doctor、Environment `inspect` 与 Task Finish 均不得创建、修改或删除长期声明。
+Discovery、Project/Service 注册、Buildr Web GET、Doctor、Environment `inspect` 与 Task Finish 均不得创建、修改或删除长期声明。
 
 ## 3. 取得长期写入授权
 

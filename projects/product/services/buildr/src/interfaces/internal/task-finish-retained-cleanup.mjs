@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
-import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import { isDeepStrictEqual } from 'node:util';
 
 import { createRuntime } from '../../application/compose-runtime.mjs';
-import { inspectGitCarrierContainment } from '../../application/task-finish/git-task-contribution.mjs';
+import {
+  inspectAgentReviewedZeroDeltaContainment,
+  inspectGitCarrierContainment,
+} from '../../application/task-finish/git-task-contribution.mjs';
 import { readFinishCompletion, readFinishRun } from '../../application/task-finish/task-finish-run.mjs';
 
 function cleanupError(code, message, details = null) {
@@ -20,8 +21,7 @@ function resolvedPath(value) {
   try { return fs.realpathSync(resolved); } catch { return resolved; }
 }
 
-function parseArgs(argv) {
-  const args = argv.slice(2);
+function parseArgs(args) {
   const allowed = new Set(['--run', '--target']);
   const values = new Map();
   for (let index = 0; index < args.length; index += 2) {
@@ -44,10 +44,14 @@ function completedDelivery(root, run) {
   const disposition = delivery.targetDisposition || 'carrier';
   if (disposition === 'carrier') return delivery.remoteAfterRef === carrierRef;
   if (disposition !== 'already-contained') return false;
-  const observed = inspectGitCarrierContainment({
+  const inspectContainment = delivery.containment?.proof === 'agent-reviewed-zero-delta' || run.deliveryCarrier?.zeroDelta === true
+    ? inspectAgentReviewedZeroDeltaContainment
+    : inspectGitCarrierContainment;
+  const observed = inspectContainment({
     repositoryRoot: root,
     targetRef: delivery.finalRemoteRef,
     carrier: run.deliveryCarrier,
+    runId: run.runId,
   });
   return observed.status === 'contained'
     && isDeepStrictEqual(delivery.containment, observed);
@@ -101,9 +105,9 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
   });
 }
 
-async function main() {
+export async function runRetainedTaskFinishCleanup(args) {
   try {
-    const input = parseArgs(process.argv);
+    const input = parseArgs(args);
     const result = await executeRetainedTaskFinishCleanup(input);
     process.stdout.write(`${JSON.stringify(result)}\n`);
     if (result.status !== 'cleaned') process.exitCode = 1;
@@ -120,5 +124,3 @@ async function main() {
     process.exitCode = 1;
   }
 }
-
-if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) await main();

@@ -182,7 +182,7 @@ function assertState(record) {
 export function normalizeTaskExecutionRecord(value, { expectedTaskId = null, expectedRecordId = null } = {}) {
   const record = object(value, 'record');
   closed(record, new Set([
-    'schemaVersion', 'recordId', 'taskId', 'owner', 'kind', 'runIdentity', 'targetIdentity', 'producer',
+    'schemaVersion', 'recordId', 'taskId', 'owner', 'kind', 'runIdentity', 'invocationIdentity', 'targetIdentity', 'producer',
     'outcome', 'lifecycleStatus', 'resolutionStatus', 'bodyStatus', 'quotaStatus', 'body', 'retention', 'timestamps', 'cleanupCode',
   ]), 'record');
   if (record.schemaVersion !== TASK_EXECUTION_RECORD_SCHEMA) throw taskExecutionRecordError('task_execution_record_schema_unsupported', `schemaVersion必须是${TASK_EXECUTION_RECORD_SCHEMA}。`, 409, { actual: record.schemaVersion });
@@ -207,6 +207,7 @@ export function normalizeTaskExecutionRecord(value, { expectedTaskId = null, exp
     owner,
     kind,
     runIdentity: text(record.runIdentity, 'runIdentity'),
+    invocationIdentity: nullableDigest(record.invocationIdentity, 'invocationIdentity'),
     targetIdentity: text(record.targetIdentity, 'targetIdentity'),
     producer: text(record.producer, 'producer'),
     outcome: oneOf(record.outcome, TASK_EXECUTION_RECORD_OUTCOMES, 'outcome'),
@@ -239,7 +240,7 @@ export function normalizeTaskExecutionRecord(value, { expectedTaskId = null, exp
   return assertState(normalized);
 }
 
-export function createOpenTaskExecutionRecord({ recordId = `task-exec-${crypto.randomUUID()}`, taskId, owner, kind, runIdentity, targetIdentity, producer, openedAt = new Date().toISOString() }) {
+export function createOpenTaskExecutionRecord({ recordId = `task-exec-${crypto.randomUUID()}`, taskId, owner, kind, runIdentity, invocationIdentity = null, targetIdentity, producer, openedAt = new Date().toISOString() }) {
   return normalizeTaskExecutionRecord({
     schemaVersion: TASK_EXECUTION_RECORD_SCHEMA,
     recordId,
@@ -247,6 +248,7 @@ export function createOpenTaskExecutionRecord({ recordId = `task-exec-${crypto.r
     owner,
     kind,
     runIdentity,
+    invocationIdentity,
     targetIdentity,
     producer,
     outcome: 'running',

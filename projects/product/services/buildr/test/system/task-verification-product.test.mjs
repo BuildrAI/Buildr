@@ -124,7 +124,25 @@ test('Verification coverage gap保留current事实并返回只读Intake next act
   assert.equal(fs.existsSync(declarationPath), false);
 });
 
-test('Local App 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {
+test('Task Verification CLI记录workspace-only负向Result且不伪造passed', (t) => {
+  const { root } = fixture(t);
+  createRuntime().createTaskRecord(root, { taskId: 'workspace-verification', title: 'Workspace Verification', intent: 'Record a workspace coverage gap.', projects: [], services: [], changes: [] });
+  const response = json([
+    'task', 'verification', 'record', 'workspace-verification',
+    '--target-identity', 'workspace:delivery-v1', '--target-summary', 'Workspace delivery target',
+    '--coverage-gap', 'workspace::No workspace verification capability',
+    '--outcome', 'not-passed', '--summary', 'Workspace coverage gap remains',
+    '--declaration-root', root, '--target', root,
+  ]);
+  assert.deepEqual(response.slot.result.declarations, []);
+  assert.deepEqual(response.slot.result.capabilities, []);
+  assert.deepEqual(response.slot.result.coverageGaps, [{ scope: 'workspace', summary: 'No workspace verification capability' }]);
+  assert.equal(response.slot.result.conclusion.outcome, 'not-passed');
+  assert.equal(response.slot.applicability.status, 'current');
+  assert.deepEqual(response.nextActions, []);
+});
+
+test('Buildr Web 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {
   const { base, root } = fixture(t);
   createRuntime().recordTaskVerification(root, 'verification-task', recordInput(root));
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
@@ -153,7 +171,7 @@ test('Local App 只读投影 current Result，并只生成 Task Verification Age
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(`${endpoint}/tasks/verification-task/verification`, { method: 'POST', headers: writeHeaders, body: '{}' });
-  assert.equal(response.status, 404, 'Local App must not expose direct Verification Result writer');
+  assert.equal(response.status, 404, 'Buildr Web must not expose direct Verification Result writer');
 
   response = await request(`${endpoint}/prompts/task-verification`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'verification-task', targetIdentity: 'delivery:v1' }) });
   assert.equal(response.status, 200);

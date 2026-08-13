@@ -4,7 +4,7 @@ import test from 'node:test';
 import { parseChangedPaths, selectBrowserSelectors } from '../verification/browser-selector-dispatcher.mjs';
 import { createVerificationPlan } from '../verification/planner.mjs';
 
-test('Browser dispatcher skips Chrome for HTTP-only Local App changes', () => {
+test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   const plan = selectBrowserSelectors(['src/interfaces/local-app/http/server.mjs']);
   assert.deepEqual(plan.selectors, []);
   assert.match(plan.reasons[0].reason, /HTTP\/API owner/);
@@ -56,7 +56,7 @@ test('Browser dispatcher rejects malformed or unresolvable changed path input', 
   }
 });
 
-test('changed planner gives Local App HTTP its narrow System owner', () => {
+test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', () => {
   const plan = createVerificationPlan({ paths: ['src/interfaces/local-app/http/server.mjs'] });
   const ids = plan.steps.map((step) => step.id);
   assert.ok(ids.includes('system-local-app-http'));

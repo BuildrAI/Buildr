@@ -83,7 +83,7 @@ Buildr MUST 保护本地页面的写操作，避免其他网页或任意路径�
 
 #### Scenario: 离线静态资源
 - **WHEN** 用户加载本地应用页面
-- **THEN** 页面 MUST 使用 Buildr npm package（或等价 launcher bundle）内已包含的 Local App 构建产物静态资源
+- **THEN** 页面 MUST 使用 Buildr npm package（或等价 launcher bundle）内已包含的 Buildr Web 构建产物静态资源
 - **AND** MUST NOT 依赖 CDN、远程字体、远程脚本或远程图片
 - **AND** MUST NOT 要求运行时从远程仓库拉取前端源码
 
@@ -491,7 +491,7 @@ Buildr MUST 在现有 Workspace 产品能力中维护本机登记 root 列表，
 - **THEN** Application MUST 返回已有 Workspace 并保持登记列表幂等
 
 #### Scenario: 移除 Workspace 登记
-- **WHEN** 用户确认从 Buildr App 移除已登记 Workspace
+- **WHEN** 用户确认从 Buildr Web 移除已登记 Workspace
 - **THEN** Application MUST 只删除本机 root 记录
 - **AND** MUST NOT 修改或删除目标目录及其中任何资产
 
@@ -558,60 +558,6 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 - **THEN** Buildr MUST 允许启动入口直接打开该 Workspace 的“开始”页
 - **AND** 最近使用状态 MUST NOT 写入 Workspace 源资产
 
-### Requirement: Buildr App 必须以单实例本机 Web 服务运行
-Buildr MUST 启动或复用一个只监听 loopback 的全局本机 Web 服务，并 MUST 在服务就绪后打开默认浏览器。
-
-#### Scenario: 首次启动 App
-- **WHEN** 当前用户没有健康的 Buildr App 实例
-- **THEN** `buildr app` MUST 启动一个全局实例、记录可验证的 runtime state 并打开默认浏览器
-
-#### Scenario: 重复启动 App
-- **WHEN** 当前用户已经存在通过 Buildr health handshake 的实例
-- **THEN** 启动入口 MUST 复用已有实例并重新打开浏览器
-- **AND** MUST NOT 再启动一个 server
-
-#### Scenario: 恢复陈旧实例状态
-- **WHEN** runtime state 指向不存在或无法通过带实例 secret 的 health handshake 的进程
-- **THEN** Buildr MUST 安全替换陈旧状态并启动新实例
-- **AND** MUST 保留持久 Workspace 登记列表
-
-#### Scenario: 开发环境不打开浏览器
-- **WHEN** 调用方使用 `buildr app --no-open`
-- **THEN** Buildr MUST 启动或复用实例但 MUST NOT 打开浏览器
-
-#### Scenario: 兼容指定 Workspace 启动
-- **WHEN** 调用方使用 `buildr app --target <workspace>`
-- **THEN** Buildr MUST 验证并登记该 Workspace、启动或复用全局实例，并打开其 Workspace route
-
-### Requirement: 普通用户必须能够启动和退出本机 Web 应用
-Buildr MUST 提供无需用户理解命令行、端口或进程的可双击启动入口，并 MUST 在 Web 页面提供明确的安全退出操作。
-
-#### Scenario: macOS 双击启动入口
-- **WHEN** 普通用户双击已安装的 macOS `Buildr.app` launcher
-- **THEN** launcher MUST 启动或复用 Buildr App 并在默认浏览器打开页面
-- **AND** launcher MUST NOT 创建 Desktop WebView 或第二套 UI
-- **AND** macOS application bundle MUST 声明并携带可识别的 Buildr application icon
-
-#### Scenario: Windows 双击启动入口
-- **WHEN** 普通用户点击 Windows 开始菜单或桌面的 Buildr 图标
-- **THEN** Windows launcher MUST 启动或复用同一个 Buildr App 并在默认浏览器打开页面
-- **AND** launcher MUST NOT 要求用户预先配置 Node、npm 或 PATH
-- **AND** 桌面和开始菜单快捷方式 MUST 使用随包交付的 Buildr icon
-
-#### Scenario: 关闭浏览器页面
-- **WHEN** 用户关闭 Buildr 浏览器标签页或窗口
-- **THEN** Buildr server MUST 继续运行
-- **AND** 用户再次使用启动入口时 MUST 能重新打开已有实例
-
-#### Scenario: 从页面退出 Buildr
-- **WHEN** 当前同源页面携带有效 session 发起退出并得到用户确认
-- **THEN** server MUST 停止接受新请求、清理当前 runtime state 并退出进程
-- **AND** MUST 保留 Workspace 登记列表和所有 Workspace 源资产
-
-#### Scenario: 非法退出请求
-- **WHEN** 退出请求缺少有效 Origin、session token 或允许的请求格式
-- **THEN** server MUST 拒绝退出并继续运行
-
 ### Requirement: 全局 Workspace 登记必须使用最小本机安全边界
 Buildr MUST 将任意目录选择限制在显式登记用例中，并 MUST 保护登记文件和 Workspace 源资产不被普通 Web 请求越权访问。
 
@@ -628,139 +574,6 @@ Buildr MUST 将任意目录选择限制在显式登记用例中，并 MUST 保�
 - **WHEN** 登记或移除请求携带的 registry revision 已过期
 - **THEN** Application MUST 返回 conflict
 - **AND** MUST NOT 覆盖另一页面或进程已经完成的修改
-
-### Requirement: 平台安装必须提供完整且可解释的 Buildr App
-Buildr MUST 为 macOS 和 Windows 提供不依赖用户预装 Node、npm 或 PATH 的平台安装产物，并 MUST 将安装、启动和后台常驻保持为不同动作。
-
-#### Scenario: macOS 安装 Buildr App
-- **WHEN** 普通用户完成 macOS 平台安装
-- **THEN** 系统 MUST 提供带正确名称、图标、版本和独立 runtime 的 `Buildr.app` 启动入口
-- **AND** 安装 MUST NOT 无提示启动 Buildr 或注册登录启动
-
-#### Scenario: Windows 安装 Buildr App
-- **WHEN** 普通用户完成 Windows 平台安装
-- **THEN** 系统 MUST 提供带正确名称、图标、版本和独立 runtime 的开始菜单入口
-- **AND** 桌面快捷方式 MUST 由安装选择明确决定
-- **AND** 安装 MUST NOT 要求用户配置命令行环境
-
-#### Scenario: 安装完成后显式打开
-- **WHEN** 安装完成界面提供“打开 Buildr”且用户明确选择该动作
-- **THEN** installer MUST 通过已安装 launcher 启动 Buildr
-- **AND** 后续行为 MUST 与用户日常点击同一 launcher 一致
-
-### Requirement: Buildr App 首次启动必须引导建立 Workspace 上下文
-Buildr MUST 在用户级 Workspace Registry 为空时提供可理解的首次运行页面，解释 Workspace → Project → Service 最小模型，并 MUST 复用全局 Web 应用而不是在 installer 中维护第二套 Workspace 流程。
-
-#### Scenario: 首次打开空 Registry
-- **WHEN** 用户第一次打开 Buildr App 且 Workspace Registry 为空
-- **THEN** 页面 MUST 说明 Workspace、Project 与 Service 分别代表什么以及三者关系
-- **AND** MUST 将“添加已有工作空间”作为主操作，将“让 Agent 创建工作空间”作为次操作
-- **AND** MUST NOT 首先展示 Change、Rules、Skills、runtime 或 CLI 教学
-
-#### Scenario: 选择已有 Workspace
-- **WHEN** 首次运行用户选择一个包含合法 Buildr Workspace identity 的目录
-- **THEN** Buildr MUST 登记该 Workspace 并进入其“开始”页
-- **AND** MUST NOT 复制、迁移或修改 Workspace 源资产
-
-#### Scenario: 选择未初始化目录
-- **WHEN** 用户通过 native directory picker 选择可读取但尚未初始化的目录
-- **THEN** Buildr MUST 保持 Registry 不变并显示该目录尚不是 Buildr Workspace
-- **AND** 页面 MUST 提供重新选择和生成带该 candidate 位置的 Workspace 初始化 Agent Action
-- **AND** 页面 MUST NOT 自动执行 init
-
-#### Scenario: 选择需要迁移或修复的目录
-- **WHEN** picker 选择的目录存在 migration required、invalid metadata 或可恢复诊断
-- **THEN** Buildr MUST 保持 Registry 不变并展示稳定、可理解的诊断类别
-- **AND** 页面 MUST 提供重新选择和生成 canonical sync/repair Agent Action
-- **AND** MUST NOT 自动选择 identity、覆盖文件或执行迁移
-
-#### Scenario: 选择不可读或 identity 冲突目录
-- **WHEN** picker 选择的目录不可读或与已登记 Workspace identity 冲突
-- **THEN** Buildr MUST 保持 Registry 不变并说明不能登记的原因
-- **AND** MUST NOT 生成声称可以安全自动修复的结果
-
-#### Scenario: 暂不登记 Workspace
-- **WHEN** 用户选择稍后处理
-- **THEN** Buildr MUST 保持全局应用可退出
-- **AND** MUST NOT 创建虚构 Workspace 或自动扫描磁盘
-
-### Requirement: Launcher 必须暴露可诊断的运行身份和失败反馈
-Buildr launcher MUST 携带版本、channel、构建来源和平台 identity，并 MUST 在启动失败、source checkout 不可用、受管 Node 缺失或版本不兼容时提供用户可见反馈。
-
-#### Scenario: Launcher 成功启动
-- **WHEN** launcher 启动或复用兼容的 Buildr 单实例
-- **THEN** release launcher MUST 使用自身 bundle runtime，development launcher MUST 使用绑定 checkout 的当前 `bin/buildr.mjs` 启动或复用实例
-- **AND** launcher MUST 使用实例返回的实际 loopback URL 打开默认浏览器
-- **AND** 随机端口 MUST 保持为内部状态而不是用户配置
-
-#### Scenario: Development launcher 成功启动
-- **WHEN** 绑定 checkout、Buildr CLI 入口和受管 Node probe 均通过
-- **THEN** launcher MUST 使用绑定 checkout 的当前 `bin/buildr.mjs` 启动或复用实例
-- **AND** status MUST 报告 source root、observed checkout、Node identity 和运行实例 identity
-
-#### Scenario: Development source checkout 不可用
-- **WHEN** source root 被移动、删除、不是预期 Buildr Service checkout 或缺少 CLI 入口
-- **THEN** launcher MUST 拒绝启动并输出 source root、原因、日志位置和重新安装 development launcher 的动作
-- **AND** MUST NOT 回退到另一个 checkout、Release bundle 或 PATH 中的 Buildr
-
-#### Scenario: Development Node runtime 不可用
-- **WHEN** identity 指定的受管 Node executable 缺失、版本不匹配或不能启动
-- **THEN** launcher MUST 拒绝启动并输出 Node version、runtime path、日志位置以及 `buildr sync`/重新安装动作
-- **AND** MUST NOT 静默选择 PATH 中的另一个 Node
-
-#### Scenario: Launcher 启动失败
-- **WHEN** runtime 缺失、bundle 不完整、实例未就绪或浏览器打开失败
-- **THEN** launcher MUST 显示简短错误、日志位置和重试动作
-- **AND** MUST NOT 仅静默退出
-
-#### Scenario: 已运行实例版本不兼容
-- **WHEN** 现有实例与自身 App protocol 或 runtime identity 不兼容
-- **THEN** launcher MUST 拒绝静默复用
-- **AND** MUST 安全退出旧实例后启动当前版本，或明确告知阻塞原因
-
-### Requirement: 开发 launcher 必须支持安全的重复构建和本机更新
-Buildr MUST 为 development checkout 提供 canonical launcher 安装入口，并 MUST 使用 stage、verify、switch 更新独立的 development thin launcher；该 launcher MUST 绑定 checkout，而不是复制 Buildr application 或 Node runtime 快照。
-
-#### Scenario: 首次安装开发 launcher
-- **WHEN** 开发者从 Buildr Service checkout 执行 canonical 安装入口
-- **THEN** Buildr MUST 在 staging 构建带 source root、checkout identity 和受管 Node identity 的 thin bundle
-- **AND** thin bundle MUST NOT 包含 Node executable、Node 动态库、Buildr `src/`、`package/` 或 `node_modules`
-- **AND** MUST 验证后安装为隔离的 `Buildr Dev`
-- **AND** macOS 默认目标 MUST 为 `/Applications/Buildr Dev.app`
-- **AND** macOS launcher MUST 作为不驻留 Dock 的后台入口运行
-
-#### Scenario: 源码修改后启动 development launcher
-- **WHEN** checkout 的 `src/`、Web resource 或 migration 已改变，但 source root 和 Node identity 仍有效
-- **THEN** development launcher MUST 在重启服务后读取当前 checkout 内容
-- **AND** MUST NOT 要求重新复制 Node 或 Buildr application
-
-#### Scenario: 更新正在使用的开发 launcher
-- **WHEN** 已安装 launcher 或服务仍使用旧 thin bundle
-- **THEN** 更新流程 MUST 先构建并验证新版本，再安全退出旧实例并等待释放
-- **AND** MUST NOT 原地覆盖运行中的 bundle
-
-#### Scenario: 开发 launcher 切换失败
-- **WHEN** 新 bundle 验证、退出、安装切换或启动核对失败
-- **THEN** 更新流程 MUST 保留或恢复上一已验证版本
-- **AND** MUST 返回失败阶段、旧版本状态、staging 位置和恢复建议
-
-#### Scenario: 开发 launcher 更新成功
-- **WHEN** 新 thin bundle 已原子安装且启动核对通过
-- **THEN** 诊断 MUST 显示 source root、checkout identity、Node identity、安装目标和运行 identity
-- **AND** 旧 staging MUST 清理而不影响正式 App
-
-### Requirement: Launcher 卸载必须保留用户工作资产
-Buildr MUST 按安装渠道提供 launcher 卸载能力，并 MUST 默认保留 Workspace Registry、日志和全部 Workspace 源资产。
-
-#### Scenario: 卸载官方 launcher
-- **WHEN** 用户通过平台卸载入口移除 Buildr App
-- **THEN** installer MUST 移除其拥有的 bundle、快捷方式和卸载登记
-- **AND** MUST NOT 删除任何已登记 Workspace 或其中的源资产
-
-#### Scenario: 清理开发 launcher
-- **WHEN** 开发者执行 canonical 开发 launcher 清理入口
-- **THEN** Buildr MUST 只停止并移除 development channel 拥有的实例、bundle、快捷方式和 staging 产物
-- **AND** MUST NOT 修改正式 launcher、npm CLI 或 Workspace 源资产
 
 ### Requirement: Workspace onboarding 状态必须由真实资产派生
 Buildr MUST 通过 Application 组合现有 Workspace、Project 与 Service read model 生成只读 Getting Started projection，并 MUST 区分完整、部分可用和需要处理的事实；该 projection MUST NOT 成为 Workspace readiness 或资源关系的第二事实源。
@@ -802,7 +615,7 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 #### Scenario: 复制开始工作 prompt
 - **WHEN** 浏览器成功复制开始工作 prompt
 - **THEN** 页面 MUST 提示用户回到 Agent 对话中粘贴该指令
-- **AND** MUST 明确任务尚未在 local app 中开始或完成
+- **AND** MUST 明确任务尚未在 Buildr Web 中开始或完成
 
 #### Scenario: 开始工作写安全边界
 - **WHEN** prompt 请求包含 filesystem path、未知字段、无效 session、错误 Origin、非 JSON 或超限 body
@@ -833,21 +646,219 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **THEN** 本机应用 MUST不提供该路由
 - **AND** Task Record、Environment、Development、Review与已有Result bytes MUST保持不变
 
-### Requirement: Local App 必须生成受限 Task Verification Agent prompt
+### Requirement: 文章读取必须保护 Workspace 与 publication 资源边界
+
+文章列表、详情和图片资源 API MUST 只接受已登记 Workspace 身份、已发现的 publication ID 和固定目录内的合法相对资源名；MUST 拒绝任意 `target`、`root`、`path`、路径穿越、符号链接和固定 publication root 之外的文件。
+
+#### Scenario: 拒绝任意文件系统路径
+
+- **WHEN** 文章 API query 或 request body 携带 `target`、`root` 或 `path`
+- **THEN** API MUST 返回明确的参数拒绝诊断
+- **AND** MUST NOT 读取请求指定的文件系统位置
+
+#### Scenario: 文章图片可安全读取
+
+- **WHEN** 有效文章引用固定 publication root 下的 regular image file
+- **THEN** API MUST 以对应图片 content type 返回该文件
+- **AND** 响应 MUST 保持 no-store 并限制在 canonical publication root 内
+
+#### Scenario: 文章图片越界或为符号链接
+
+- **WHEN** 图片资源名包含路径穿越、指向 publication root 外部或解析为符号链接
+- **THEN** API MUST 拒绝请求并返回明确诊断
+- **AND** MUST NOT 返回文件内容
+
+### Requirement: Task 概览必须以关联 Change Brief 为主要说明
+Buildr Web MUST 仅在 Task 详情概览中，从该 Task Record 已保存的 Change 引用读取关联 Change，并 MUST 将每个可用的 Change Brief 作为主要人类可读说明。Task title、intent、范围和其他 Task 专业事实 MUST 保持可读，但 MUST NOT 取代 Brief 成为关联 Change 的主要说明。
+
+#### Scenario: 查看含 Brief 的关联 Change
+- **WHEN** 用户打开一个含有可解析 Change 引用且该 Change 提供 Brief 的 Task 概览
+- **THEN** 页面 MUST 在概览中展示该 Brief 的原始人类可读内容和 Change identity
+- **AND** 页面 MUST 提供从当前 Task 进入该 Change 技术 artifacts 的 Task-scoped 链接
+
+#### Scenario: 一个 Task 关联多个 Change
+- **WHEN** Task Record 保存多个 Change 引用
+- **THEN** 页面 MUST 按每个已保存引用分别展示可用 Brief 或其不可用状态
+- **AND** 页面 MUST NOT 推断、标记或合并任一“主 Change”
+
+#### Scenario: Brief 或关联 Change 不可用
+- **WHEN** 已保存的 Change 引用无法解析，或可解析 Change 没有 Brief
+- **THEN** 页面 MUST 展示该引用的真实 unavailable 状态
+- **AND** Task 的 title、intent 和其他可用事实 MUST 继续可读
+- **AND** 页面 MUST NOT 生成、保存、推断或从全局目录查找 Brief
+
+#### Scenario: Task 没有关联 Change
+- **WHEN** Task Record 没有 Change 引用
+- **THEN** 页面 MUST 显示明确的无关联 Change 状态
+- **AND** 页面 MUST NOT 扫描 Workspace、Project 或 Task Environment 以发现 Change
+
+### Requirement: 首次开始工作必须触发scope内Declaration Intake
+Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
+
+#### Scenario: Project-only开始工作
+- **WHEN** 用户选择Project但不选择Service
+- **THEN** prompt MUST触发Project-only Declaration Intake
+- **AND** MUST明确Service不是必需范围
+
+#### Scenario: Service-scoped开始工作
+- **WHEN** 用户选择一个Service开始工作
+- **THEN** prompt MUST触发Project与该Service的Declaration Intake
+- **AND** MUST不检查或安装未选择Service
+
+### Requirement: Parent coordination 接口必须共享同一 Application
+CLI与Buildr Web MUST调用同一Parent Coordination Application执行inspect、record、reconcile与final acceptance actions；interface MUST NOT直接查询SQLite、扫描文件系统或在GET中回填状态。
+
+#### Scenario: CLI 与 HTTP 读取同一 Parent
+- **WHEN** 两个client读取同一Parent identity
+- **THEN** 两者 MUST返回相同Parent Plan、Child Contribution与prerequisite facts
+- **AND** GET MUST保持零mutation effects
+
+### Requirement: mutation 必须使用 current identity 并受界面安全保护
+Parent Plan reconciliation与final acceptance mutation MUST使用expected current identity；Buildr Web HTTP MUST另外执行same-origin、session与closed JSON校验。
+
+#### Scenario: 陈旧页面提交reconciliation
+- **WHEN** expected Parent Plan identity与current不一致
+- **THEN** Application MUST返回conflict且零写入
+- **AND** client MUST刷新current read model后再决定
+
+### Requirement: 正式 Local HTTP Server 必须整点调度 ExecRecord GC
+Buildr 正式 Local HTTP Server MUST 在 ready 后注册 Workspace scheduled maintenance：从下一个本地整点开始、之后每个本地整点取得当前 Workspace Registry 快照，并对每个已登记且可用的 canonical Workspace 调用默认 bounded ExecRecord GC。Scheduler MUST单进程防重入、隔离各 Workspace 失败、在 server close 时释放 timer，并 MUST直接调用 Application 而不是启动 CLI 子进程或保存第二份 run history。
+
+#### Scenario: 正式 server 到达整点
+- **WHEN** 非 preview 的 Local HTTP Server 已 ready 且到达下一个本地整点
+- **THEN** scheduler MUST 对当前已登记 Workspace 各执行一次默认 bounded ExecRecord GC
+- **AND** 单个 Workspace 失败 MUST NOT阻止其余 Workspace 或下一整点运行
+
+#### Scenario: 上一批仍在运行
+- **WHEN** 新整点到达时上一轮 scheduled maintenance 尚未完成
+- **THEN** scheduler MUST跳过并发重入
+- **AND** MUST NOT创建第二个 timer worker、GC lease 或持久队列
+
+#### Scenario: server 关闭
+- **WHEN** Local HTTP Server 开始关闭或触发 close
+- **THEN** scheduler MUST取消后续 timer
+- **AND** MUST NOT在 server 终止后启动新的 GC batch
+
+### Requirement: Task Preview Server 必须禁用 scheduled maintenance
+Buildr Task Preview Server MUST 在创建任何 scheduled maintenance 之前根据显式 preview identity 禁用调度。Preview MUST NOT注册 ExecRecord GC timer、执行 startup GC 或在后台读取/修改 Workspace execution records；该边界 MUST适用于直接 server factory 测试与由 `BUILDR_LOCAL_APP_PREVIEW` 启动的真实 preview。
+
+#### Scenario: Task Preview 启动并持续运行
+- **WHEN** Local HTTP Server 以有效 preview identity 启动并跨过一个或多个整点
+- **THEN** server MUST从未创建或调用 scheduled maintenance scheduler
+- **AND** execution record SQLite rows 与正文 MUST不因 preview 进程而变化
+
+#### Scenario: 正式 server 与 preview 并存
+- **WHEN** 默认 Local HTTP Server 和 Task Preview Server 同时运行
+- **THEN** 只有默认正式实例 MUST拥有 scheduled maintenance
+- **AND** preview MUST不共享、接管或补跑正式实例的 timer
+
+### Requirement: 当前本机浏览器产品必须采用 Buildr Web 分层术语
+当前用户能力 MUST 命名为 Buildr Web（本机 Web 界面）；`buildr-web` Service MUST 命名为 Buildr Web Frontend Service；`buildr` Service 中负责 loopback HTTP、session、安全与 Application 调用的部分 MUST 命名为 Buildr Web Runtime；平台图形入口 MUST 命名为 Buildr Web Launcher。Buildr App MUST 保留给未来真正的桌面应用，当前产品、帮助、页面与 Launcher MUST NOT 使用该名称。
+
+#### Scenario: 用户打开当前本机界面
+- **WHEN** 用户通过 CLI、npm、checkout 或平台图形入口打开浏览器中的本机界面
+- **THEN** 可见产品名称 MUST 为 Buildr Web
+- **AND** 页面、帮助、错误、日志说明与安装提示 MUST NOT 将其称为 Local App 或 Buildr App
+
+#### Scenario: 维护者定位组件责任
+- **WHEN** 维护者阅读 architecture、Service knowledge 或实现说明
+- **THEN** 文档 MUST 区分 Buildr Web、Buildr Web Frontend Service、Buildr Web Runtime 与 Buildr Web Launcher
+- **AND** MUST NOT 将 Frontend Service、Runtime 或 Launcher 描述为第二个产品或第二套 authority
+
+#### Scenario: Buildr App 保留给未来桌面产品
+- **WHEN** 当前 Buildr Web 产品表面需要命名图形入口或本机 Runtime
+- **THEN** MUST 使用 Buildr Web Launcher 或 Buildr Web Runtime
+- **AND** MUST NOT 以 Buildr App 名义注册当前命令、bundle display name、shortcut 或帮助主题
+
+### Requirement: Buildr Web Runtime 必须保持现有本机安全与 authority 不变量
+Buildr Web Runtime MUST 只绑定 loopback、按需启动并复用现有随机端口、session token、Origin 校验、单实例、Workspace Registry 与 Application 接口。未运行 `buildr web` 或明确 preview/Launcher 路径时 HTTP 服务 MUST NOT 启动。Buildr Web MUST NOT 创建新数据库、第二 writer、Web 专用业务状态或远程服务。
+
+#### Scenario: no-open 启动隔离服务
+- **WHEN** 调用方运行 `buildr web --no-open`
+- **THEN** Runtime MUST 在 loopback 上启动或复用 matching 单实例并通过 authenticated health/readiness 检查
+- **AND** MUST NOT 打开浏览器、绑定非 loopback 地址或绕过 session/Origin 安全边界
+
+#### Scenario: Workspace 事实写入
+- **WHEN** Buildr Web 执行允许的 metadata 或 Task action
+- **THEN** HTTP interface MUST 调用现有 Application，由 Workspace Registry、SQLite 或对应 canonical authority 执行写入
+- **AND** Web/React 层 MUST NOT 直连 SQLite、复制 validator 或建立第二份业务状态
+
+### Requirement: Buildr Web 必须以单实例本机 Web 服务运行
+Buildr MUST 启动或复用一个只监听 loopback 的全局本机 Web 服务，并 MUST 在服务就绪后打开默认浏览器。
+
+#### Scenario: 首次启动 App
+- **WHEN** 当前用户没有健康的 Buildr Web 实例
+- **THEN** `buildr web` MUST 启动一个全局实例、记录可验证的 runtime state 并打开默认浏览器
+
+#### Scenario: 重复启动 App
+- **WHEN** 当前用户已经存在通过 Buildr health handshake 的实例
+- **THEN** 启动入口 MUST 复用已有实例并重新打开浏览器
+- **AND** MUST NOT 再启动一个 server
+
+#### Scenario: 恢复陈旧实例状态
+- **WHEN** runtime state 指向不存在或无法通过带实例 secret 的 health handshake 的进程
+- **THEN** Buildr MUST 安全替换陈旧状态并启动新实例
+- **AND** MUST 保留持久 Workspace 登记列表
+
+#### Scenario: 开发环境不打开浏览器
+- **WHEN** 调用方使用 `buildr web --no-open`
+- **THEN** Buildr MUST 启动或复用实例但 MUST NOT 打开浏览器
+
+#### Scenario: 兼容指定 Workspace 启动
+- **WHEN** 调用方使用 `buildr web --target <workspace>`
+- **THEN** Buildr MUST 验证并登记该 Workspace、启动或复用全局实例，并打开其 Workspace route
+
+### Requirement: Buildr Web 首次启动必须引导建立 Workspace 上下文
+Buildr MUST 在用户级 Workspace Registry 为空时提供可理解的首次运行页面，解释 Workspace → Project → Service 最小模型，并 MUST 复用全局 Web 应用而不是在 installer 中维护第二套 Workspace 流程。
+
+#### Scenario: 首次打开空 Registry
+- **WHEN** 用户第一次打开 Buildr Web 且 Workspace Registry 为空
+- **THEN** 页面 MUST 说明 Workspace、Project 与 Service 分别代表什么以及三者关系
+- **AND** MUST 将“添加已有工作空间”作为主操作，将“让 Agent 创建工作空间”作为次操作
+- **AND** MUST NOT 首先展示 Change、Rules、Skills、runtime 或 CLI 教学
+
+#### Scenario: 选择已有 Workspace
+- **WHEN** 首次运行用户选择一个包含合法 Buildr Workspace identity 的目录
+- **THEN** Buildr MUST 登记该 Workspace 并进入其“开始”页
+- **AND** MUST NOT 复制、迁移或修改 Workspace 源资产
+
+#### Scenario: 选择未初始化目录
+- **WHEN** 用户通过 native directory picker 选择可读取但尚未初始化的目录
+- **THEN** Buildr MUST 保持 Registry 不变并显示该目录尚不是 Buildr Workspace
+- **AND** 页面 MUST 提供重新选择和生成带该 candidate 位置的 Workspace 初始化 Agent Action
+- **AND** 页面 MUST NOT 自动执行 init
+
+#### Scenario: 选择需要迁移或修复的目录
+- **WHEN** picker 选择的目录存在 migration required、invalid metadata 或可恢复诊断
+- **THEN** Buildr MUST 保持 Registry 不变并展示稳定、可理解的诊断类别
+- **AND** 页面 MUST 提供重新选择和生成 canonical sync/repair Agent Action
+- **AND** MUST NOT 自动选择 identity、覆盖文件或执行迁移
+
+#### Scenario: 选择不可读或 identity 冲突目录
+- **WHEN** picker 选择的目录不可读或与已登记 Workspace identity 冲突
+- **THEN** Buildr MUST 保持 Registry 不变并说明不能登记的原因
+- **AND** MUST NOT 生成声称可以安全自动修复的结果
+
+#### Scenario: 暂不登记 Workspace
+- **WHEN** 用户选择稍后处理
+- **THEN** Buildr MUST 保持全局应用可退出
+- **AND** MUST NOT 创建虚构 Workspace 或自动扫描磁盘
+
+### Requirement: Buildr Web 必须生成受限 Task Verification Agent prompt
 本机应用 MAY 在 Task“证据”视图的验证结果区块提供 Agent Action 以生成 Task Verification prompt。prompt MUST 绑定正式 Task ID、Task Intent 和可选调用方已知 target identity，指导 Agent 读取 v3 Skill、inspect current Result、恢复 ready Environment、执行适用声明能力，并只在完整结论后通过 Application record；复制 prompt 本身 MUST NOT 等于 recorded。
 
 #### Scenario: 用户请求开始验证
 - **WHEN** 用户从 Task“证据”视图的验证结果区块触发 Agent Action
 - **THEN** prompt MUST明确execution evidence与Workspace-local current Result分离、中断不覆盖和coverage gap边界
-- **AND** Local App MUST 不执行测试、不生成 target identity、不写 Result
+- **AND** Buildr Web MUST 不执行测试、不生成 target identity、不写 Result
 
 #### Scenario: terminal Task 请求新验证
 - **WHEN** Task Record 已是 completed 或 abandoned
 - **THEN** prompt Application MUST fail closed
 - **AND** 已有 Result 仍可只读查看
 
-### Requirement: Local App Task 视图必须只消费 Workspace structured Task read model
-Buildr Local App MUST 继续通过 Task Record Application 列出、查看和维护 Workspace Task，并 MUST 将 SQLite repository 保持为 interface 后的本地 infrastructure。页面和 HTTP interface MUST NOT 读取旧 `task.yml`、打开数据库、执行 SQL、解释 migration ledger 或暴露 database path/table/row id。Local App MUST 先通过已登记 Workspace identity 将请求解析为 root，再由 Task Application 消费该 root 的 structured Task read model；对已经解析 root 的只读调用 MUST NOT 执行 Git/worktree provenance 校验或 `git rev-parse`。Local App 的 Task mutation MUST NOT 添加、移除或以其他方式维护 Change 引用。
+### Requirement: Buildr Web Task 视图必须只消费 Workspace structured Task read model
+Buildr Web MUST 继续通过 Task Record Application 列出、查看和维护 Workspace Task，并 MUST 将 SQLite repository 保持为 interface 后的本地 infrastructure。页面和 HTTP interface MUST NOT 读取旧 `task.yml`、打开数据库、执行 SQL、解释 migration ledger 或暴露 database path/table/row id。Buildr Web MUST 先通过已登记 Workspace identity 将请求解析为 root，再由 Task Application 消费该 root 的 structured Task read model；对已经解析 root 的只读调用 MUST NOT 执行 Git/worktree provenance 校验或 `git rev-parse`。Buildr Web 的 Task mutation MUST NOT 添加、移除或以其他方式维护 Change 引用。
 
 #### Scenario: 浏览 SQLite-backed Task 列表
 - **WHEN** 用户进入已登记 Workspace 的 Task 列表
@@ -871,17 +882,17 @@ Buildr Local App MUST 继续通过 Task Record Application 列出、查看和维
 
 #### Scenario: 数据库不可用
 - **WHEN** Task Application 返回 schema drift、version newer、busy、corruption 或 integrity diagnostic
-- **THEN** Local App MUST 显示稳定、可操作的 Workspace Task unavailable 状态
+- **THEN** Buildr Web MUST 显示稳定、可操作的 Workspace Task unavailable 状态
 - **AND** MUST NOT 静默显示空列表、自动重建数据库、回退旧 YAML 或把 SQL/本机 path 暴露给浏览器
 
-#### Scenario: Local App 修改 Task
+#### Scenario: Buildr Web 修改 Task
 - **WHEN** 用户通过受保护的 Task API 创建、更新、完成或放弃 Task
 - **THEN** HTTP interface MUST 只提交明确 action input 和适用的 `expectedRecordDigest` 给 Task Application
-- **AND** Local App update input MUST NOT 接受 `addChanges` 或 `removeChanges`
+- **AND** Buildr Web update input MUST NOT 接受 `addChanges` 或 `removeChanges`
 - **AND** HTTP interface MUST NOT 接受 SQL、database path、table、row id、migration version 或完整 next-state document
 
-### Requirement: Local App 必须动态投影和维护 Parent Task 层级
-Local App Task 列表与详情 MUST 通过 Task Record Application read model 展示直接 Parent/Children；active Task 的创建与编辑 MUST 允许选择或清除合法 Parent，并 MUST 复用 expected `recordDigest` 冲突边界。
+### Requirement: Buildr Web 必须动态投影和维护 Parent Task 层级
+Buildr Web Task 列表与详情 MUST 通过 Task Record Application read model 展示直接 Parent/Children；active Task 的创建与编辑 MUST 允许选择或清除合法 Parent，并 MUST 复用 expected `recordDigest` 冲突边界。
 
 #### Scenario: 查看协调 Task
 - **WHEN** 用户打开拥有直接 Children 的 Task 详情
@@ -903,8 +914,8 @@ Local App Task 列表与详情 MUST 通过 Task Record Application read model �
 - **THEN** 页面 MUST 保留 Parent/Children 投影并禁用关系 mutation
 - **AND** MUST NOT 提供自动处置关联 Task 的按钮
 
-### Requirement: Local App 必须以 Application terminal projection 展示 Task 交付事实
-Local App Task详情 MUST保持“概览、研发、证据、复盘、环境”五个一级页签，并 MUST只通过Application read model获取current/terminal facts。“概览”MUST调用Task Overview Application的一次SQLite联表读取；其他页签MUST继续调用所属专业Application reader。HTTP/Web MUST NOT直接读取SQLite、扫描Finish JSON、计算live identity、接受target/root/path filesystem query或依赖独立lifecycle projection；Terminal Delivery Application MUST只查询Task、Development与唯一Finish current保存事实。
+### Requirement: Buildr Web 必须以 Application terminal projection 展示 Task 交付事实
+Buildr Web Task详情 MUST保持“概览、研发、证据、复盘、环境”五个一级页签，并 MUST只通过Application read model获取current/terminal facts。“概览”MUST调用Task Overview Application的一次SQLite联表读取；其他页签MUST继续调用所属专业Application reader。HTTP/Web MUST NOT直接读取SQLite、扫描Finish JSON、计算live identity、接受target/root/path filesystem query或依赖独立lifecycle projection；Terminal Delivery Application MUST只查询Task、Development与唯一Finish current保存事实。
 
 #### Scenario: completed delivered Task
 - **WHEN** terminal projection返回delivered
@@ -944,13 +955,13 @@ Task Finish MAY请求Development Application针对一个允许的carrier root重
 - **THEN** equivalence MUST失败并判定current handoff失效
 - **AND** Finish MUST退出到Development重新验证和生成Candidate
 
-### Requirement: Local App 必须提供独立文章入口
+### Requirement: Buildr Web 必须提供独立文章入口
 
-Local App MUST 在 Workspace 级应用外壳中提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
+Buildr Web MUST 在 Workspace 级应用外壳中提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
 
 #### Scenario: 从工作空间导航打开文章
 
-- **WHEN** 用户在已选定 Workspace 的 Local App 中点击“文章”
+- **WHEN** 用户在已选定 Workspace 的 Buildr Web 中点击“文章”
 - **THEN** 应用 MUST 导航到该 Workspace scoped 的文章列表页
 - **AND** 导航项 MUST 在文章列表或详情页保持 active 状态
 
@@ -961,13 +972,13 @@ Local App MUST 在 Workspace 级应用外壳中提供独立的“文章”导航
 - **AND** 页面 MUST 提供返回文章列表的可用链接
 - **AND** 页面 MUST NOT 提供修改文章正文或发布状态的写操作
 
-### Requirement: Local App 必须从 canonical publication source 只读投影文章
+### Requirement: Buildr Web 必须从 canonical publication source 只读投影文章
 
-Local App MUST 通过 Application read model 读取已登记 Workspace 中 Product Project 的 `docs/publications/` Markdown 文件；HTTP/Web MUST NOT 直接扫描任意 root/path、读取 SQLite 中的文章副本或创建第二份文章正文。
+Buildr Web MUST 通过 Application read model 读取已登记 Workspace 中 Product Project 的 `docs/publications/` Markdown 文件；HTTP/Web MUST NOT 直接扫描任意 root/path、读取 SQLite 中的文章副本或创建第二份文章正文。
 
 #### Scenario: 读取文章列表
 
-- **WHEN** Local App 请求当前 Workspace 的文章列表
+- **WHEN** Buildr Web 请求当前 Workspace 的文章列表
 - **THEN** Application MUST 根据 registered Workspace 和 Product Project source 解析固定 publication root
 - **AND** MUST 返回有效文章的稳定 ID、标题、类型、状态、发布日期和发布目标
 - **AND** MUST 排除 `README.md`、隐藏文件和缺少有效文章 ID/标题的 Markdown 文件
@@ -976,46 +987,24 @@ Local App MUST 通过 Application read model 读取已登记 Workspace 中 Produ
 
 - **WHEN** Product Project 没有 `docs/publications/` 目录或目录中没有有效文章
 - **THEN** API MUST 返回成功的空列表或明确的 `empty` read-model 状态
-- **AND** Local App MUST 展示“暂无文章”空状态
+- **AND** Buildr Web MUST 展示“暂无文章”空状态
 - **AND** MUST NOT 阻塞工作空间、项目、服务、任务或变更页面
 
 #### Scenario: 文章详情不存在
 
 - **WHEN** 用户请求不存在或已移除的 publication ID
 - **THEN** API MUST 返回稳定的 not-found 诊断
-- **AND** Local App MUST 展示文章不可用状态及返回文章列表的链接
+- **AND** Buildr Web MUST 展示文章不可用状态及返回文章列表的链接
 
-### Requirement: 文章读取必须保护 Workspace 与 publication 资源边界
+### Requirement: Buildr Web Markdown 视图必须支持受控本地图片
 
-文章列表、详情和图片资源 API MUST 只接受已登记 Workspace 身份、已发现的 publication ID 和固定目录内的合法相对资源名；MUST 拒绝任意 `target`、`root`、`path`、路径穿越、符号链接和固定 publication root 之外的文件。
-
-#### Scenario: 拒绝任意文件系统路径
-
-- **WHEN** 文章 API query 或 request body 携带 `target`、`root` 或 `path`
-- **THEN** API MUST 返回明确的参数拒绝诊断
-- **AND** MUST NOT 读取请求指定的文件系统位置
-
-#### Scenario: 文章图片可安全读取
-
-- **WHEN** 有效文章引用固定 publication root 下的 regular image file
-- **THEN** API MUST 以对应图片 content type 返回该文件
-- **AND** 响应 MUST 保持 no-store 并限制在 canonical publication root 内
-
-#### Scenario: 文章图片越界或为符号链接
-
-- **WHEN** 图片资源名包含路径穿越、指向 publication root 外部或解析为符号链接
-- **THEN** API MUST 拒绝请求并返回明确诊断
-- **AND** MUST NOT 返回文件内容
-
-### Requirement: Local App Markdown 视图必须支持受控本地图片
-
-Local App Markdown renderer MUST 支持标准 Markdown 图片语法，并 MUST 只将已由文章资源 API 解析的相对图片路径转换为本机同源资源 URL；不受控的图片路径 MUST NOT 绕过既有内容安全策略。
+Buildr Web Markdown renderer MUST 支持标准 Markdown 图片语法，并 MUST 只将已由文章资源 API 解析的相对图片路径转换为本机同源资源 URL；不受控的图片路径 MUST NOT 绕过既有内容安全策略。
 
 #### Scenario: 渲染文章本地图片
 
 - **WHEN** 文章正文包含 `![alt](assets/<filename>)` 且资源 API 能解析该文件
 - **THEN** 文章详情 MUST 渲染同源图片并保留 alt 文本
-- **AND** 图片 MUST 使用当前 Local App 的资源 URL
+- **AND** 图片 MUST 使用当前 Buildr Web 的资源 URL
 
 #### Scenario: 不受控图片路径
 
@@ -1023,61 +1012,37 @@ Local App Markdown renderer MUST 支持标准 Markdown 图片语法，并 MUST �
 - **THEN** renderer MUST NOT 加载该图片
 - **AND** 页面 MUST 保留安全的文本或空内容表现
 
-### Requirement: Task 概览必须以关联 Change Brief 为主要说明
-Local App MUST 仅在 Task 详情概览中，从该 Task Record 已保存的 Change 引用读取关联 Change，并 MUST 将每个可用的 Change Brief 作为主要人类可读说明。Task title、intent、范围和其他 Task 专业事实 MUST 保持可读，但 MUST NOT 取代 Brief 成为关联 Change 的主要说明。
-
-#### Scenario: 查看含 Brief 的关联 Change
-- **WHEN** 用户打开一个含有可解析 Change 引用且该 Change 提供 Brief 的 Task 概览
-- **THEN** 页面 MUST 在概览中展示该 Brief 的原始人类可读内容和 Change identity
-- **AND** 页面 MUST 提供从当前 Task 进入该 Change 技术 artifacts 的 Task-scoped 链接
-
-#### Scenario: 一个 Task 关联多个 Change
-- **WHEN** Task Record 保存多个 Change 引用
-- **THEN** 页面 MUST 按每个已保存引用分别展示可用 Brief 或其不可用状态
-- **AND** 页面 MUST NOT 推断、标记或合并任一“主 Change”
-
-#### Scenario: Brief 或关联 Change 不可用
-- **WHEN** 已保存的 Change 引用无法解析，或可解析 Change 没有 Brief
-- **THEN** 页面 MUST 展示该引用的真实 unavailable 状态
-- **AND** Task 的 title、intent 和其他可用事实 MUST 继续可读
-- **AND** 页面 MUST NOT 生成、保存、推断或从全局目录查找 Brief
-
-#### Scenario: Task 没有关联 Change
-- **WHEN** Task Record 没有 Change 引用
-- **THEN** 页面 MUST 显示明确的无关联 Change 状态
-- **AND** 页面 MUST NOT 扫描 Workspace、Project 或 Task Environment 以发现 Change
-
-### Requirement: Local App 必须将 Change 限定为 Task-scoped 只读内容
-Local App MUST 只通过当前 Task 的已保存 Change 引用读取 Change 内容。HTTP/Web MUST NOT 提供 Local App 的 Change 创建、修改、关联、移除、继续、审查、同步或归档操作；这些 Change 动作 MUST 保持为 Agent 在 Task 过程中使用相应 authority 推进的工作。
+### Requirement: Buildr Web 必须将 Change 限定为 Task-scoped 只读内容
+Buildr Web MUST 只通过当前 Task 的已保存 Change 引用读取 Change 内容。HTTP/Web MUST NOT 提供 Buildr Web 的 Change 创建、修改、关联、移除、继续、审查、同步或归档操作；这些 Change 动作 MUST 保持为 Agent 在 Task 过程中使用相应 authority 推进的工作。
 
 #### Scenario: 查看关联 Change 的完整 artifacts
 - **WHEN** 用户从 Task 概览打开关联 Change
 - **THEN** 页面 MUST 只通过 `/tasks/<task-id>/changes/<project>/<change>` 的 Task-scoped read model 展示 Brief、proposal、design、specs 和 tasks
 - **AND** 页面 MUST 验证该 Change 引用属于当前 Task
 
-#### Scenario: Local App 尝试通过 Change 修改 Task
-- **WHEN** 浏览器请求包含 `addChanges`、`removeChanges` 或 Change-specific prompt 的 Local App 路由
+#### Scenario: Buildr Web 尝试通过 Change 修改 Task
+- **WHEN** 浏览器请求包含 `addChanges`、`removeChanges` 或 Change-specific prompt 的 Buildr Web 路由
 - **THEN** HTTP interface MUST 在 Application mutation 前拒绝该请求
 - **AND** Task Record 与 OpenSpec artifacts MUST 保持不变
 
 #### Scenario: 未关联真实 Task 的 Change
 - **WHEN** Workspace 中存在没有真实 Task Record 引用的 Change
-- **THEN** Local App MUST NOT 在本次能力中列出、扫描、关联或处置该 Change
-- **AND** Local App MUST NOT 将其显示为待处理 Task 或空态计数
+- **THEN** Buildr Web MUST NOT 在本次能力中列出、扫描、关联或处置该 Change
+- **AND** Buildr Web MUST NOT 将其显示为待处理 Task 或空态计数
 
-### Requirement: Local App 必须展示保存的终态交付事实
-Local App 的任务终态投影 MUST 展示最近一次 Finish 已保存的 terminal association snapshot，并明确其为交付时事实。页面读取 MUST NOT 因当前 Review、Verification 或 Development 状态变化而重新推导历史交付关联。
+### Requirement: Buildr Web 必须展示保存的终态交付事实
+Buildr Web 的任务终态投影 MUST 展示最近一次 Finish 已保存的 terminal association snapshot，并明确其为交付时事实。页面读取 MUST NOT 因当前 Review、Verification 或 Development 状态变化而重新推导历史交付关联。
 
 #### Scenario: 已完成 Task 打开终态信息
 - **WHEN** 用户读取已有 terminal association snapshot 的已完成 Task
 - **THEN** HTTP interface MUST 通过 Application 返回保存的 handoff/gate 关联
 - **AND** Web 页面 MUST 将其呈现为最近一次正式交付采用的事实
 
-### Requirement: Local App HTTP interface 必须托管构建产物并支持 SPA 深链
-Buildr Local App HTTP interface MUST 从 Local App Web 构建产物目录提供 `index.html` 与静态资产，并 MUST 在注入本机 session token 与可选 preview identity 后返回 shell。对已登记 Workspace 的应用深链（非 `/api/`），当请求不是已声明的静态资产时，HTTP interface MUST 返回同一注入后的 `index.html`，以便 React Router 恢复路由。静态托管 MUST 限制为构建产物内可证明的资产，MUST NOT 递归托管任意未纳入产物清单的远程或用户路径。
+### Requirement: Buildr Web HTTP interface 必须托管构建产物并支持 SPA 深链
+Buildr Web HTTP interface MUST 从 Buildr Web 构建产物目录提供 `index.html` 与静态资产，并 MUST 在注入本机 session token 与可选 preview identity 后返回 shell。对已登记 Workspace 的应用深链（非 `/api/`），当请求不是已声明的静态资产时，HTTP interface MUST 返回同一注入后的 `index.html`，以便 React Router 恢复路由。静态托管 MUST 限制为构建产物内可证明的资产，MUST NOT 递归托管任意未纳入产物清单的远程或用户路径。
 
 #### Scenario: 深链恢复
-- **WHEN** 用户直接打开 `/workspaces/<workspaceId>/tasks/<taskId>` 之类的 Local App 深链
+- **WHEN** 用户直接打开 `/workspaces/<workspaceId>/tasks/<taskId>` 之类的 Buildr Web 深链
 - **THEN** HTTP interface MUST 返回注入 session 的构建产物 `index.html`
 - **AND** 客户端 MUST 能够恢复对应 Task 详情路由
 
@@ -1087,39 +1052,39 @@ Buildr Local App HTTP interface MUST 从 Local App Web 构建产物目录提供 
 - **AND** MUST NOT 将 API 请求回退为 `index.html`
 
 #### Scenario: preview meta 保持
-- **WHEN** Local App 以 preview 实例启动
+- **WHEN** Buildr Web 以 preview 实例启动
 - **THEN** 返回的 shell MUST 继续注入 preview identity 信息
-- **AND** 页面 MUST 能显示 preview 身份条且不得改写 `Buildr Dev.app` identity
+- **AND** 页面 MUST 能显示 preview 身份条且不得改写 `Buildr Web Dev.app` identity
 
-### Requirement: Local App 必须通过 Task Finish Application 投影 current 与 terminal 状态
-Terminal Delivery Application MUST从Workspace SQLite中的唯一`task_finish_current` authority形成read model；Local App HTTP/Web MUST只消费该Application结果，不得直接查询SQLite、读取phase detail、扫描或配对legacy Finish files、读取transient diagnostics、恢复run、计算live identity或读取lifecycle projection。terminal delivered判断 MUST只使用同Task且与保存Development handoff匹配的compact terminal association；非terminal current row只用于展示进行中、blocked、failed或cleanup pending状态。
+### Requirement: Buildr Web 必须通过 Task Finish Application 投影 current 与 terminal 状态
+Terminal Delivery Application MUST从Workspace SQLite中的唯一`task_finish_current` authority形成read model；Buildr Web HTTP/Web MUST只消费该Application结果，不得直接查询SQLite、读取phase detail、扫描或配对legacy Finish files、读取transient diagnostics、恢复run、计算live identity或读取lifecycle projection。terminal delivered判断 MUST只使用同Task且与保存Development handoff匹配的compact terminal association；非terminal current row只用于展示进行中、blocked、failed或cleanup pending状态。
 
 #### Scenario: Finish 正在执行
 - **WHEN** Task存在非terminal Finish current row
-- **THEN** Local App MUST展示current phase、有界状态、更新时间与唯一next action
+- **THEN** Buildr Web MUST展示current phase、有界状态、更新时间与唯一next action
 - **AND** MUST NOT把Task显示为delivered、读取完整stdout/stderr或触发resume
 
 #### Scenario: Finish cleanup pending
 - **WHEN** delivery已证明但Environment或Finish-owned cleanup尚未完成
-- **THEN** Local App MUST显示“交付清理中”或匹配的blocked状态
+- **THEN** Buildr Web MUST显示“交付清理中”或匹配的blocked状态
 - **AND** MUST NOT提前显示Task completed或terminal delivered成功语义
 
 #### Scenario: Finish terminal completion
 - **WHEN** Application返回与Task/Development保存identity匹配且`status: complete`的compact terminal current association
-- **THEN** Local App MUST以其commit/ref、remote readback、Doctor、cleanup与完成时间投影“已交付”
+- **THEN** Buildr Web MUST以其commit/ref、remote readback、Doctor、cleanup与完成时间投影“已交付”
 - **AND** GET MUST不访问Git、remote、Environment provider、旧四表、legacy files、transient root或已删除lifecycle table
 
 #### Scenario: legacy store 残留
 - **WHEN** `.buildr/task-finish`仍存在但SQLite中没有matching terminal current
-- **THEN** Local App MUST不扫描、不读取、不把legacy文件当作交付authority
+- **THEN** Buildr Web MUST不扫描、不读取、不把legacy文件当作交付authority
 - **AND** MUST只展示SQLite-backed Application read model；旧目录清理由升级步骤负责
 
-### Requirement: Local App 静态资源托管必须继续归属 buildr 且不因前端 Service 拆分改变安全模型
-在 `buildr-web` 拥有前端源码后，Buildr MUST 继续由 `product/buildr` 的 Local App HTTP interface 在 loopback 上同源托管已纳入的构建产物。写保护 MUST 继续要求当前应用 Origin、有效 session token 与 JSON content type。拆分 MUST NOT 引入分域 CORS 写路径、远程 CDN 静态依赖，或要求运行时读取 `buildr-web` 源码树。
+### Requirement: Buildr Web 静态资源托管必须继续归属 buildr 且不因前端 Service 拆分改变安全模型
+在 `buildr-web` 拥有前端源码后，Buildr MUST 继续由 `product/buildr` 的 Buildr Web HTTP interface 在 loopback 上同源托管已纳入的构建产物。写保护 MUST 继续要求当前应用 Origin、有效 session token 与 JSON content type。拆分 MUST NOT 引入分域 CORS 写路径、远程 CDN 静态依赖，或要求运行时读取 `buildr-web` 源码树。
 
 #### Scenario: 拆分后仍同源托管 dist
-- **WHEN** 用户通过 `buildr app`、已安装 npm package 或 launcher 打开 Local App
-- **THEN** 页面 MUST 使用 `buildr` 内已包含的 Local App 构建产物静态资源
+- **WHEN** 用户通过 `buildr web`、已安装 npm package 或 launcher 打开 Buildr Web
+- **THEN** 页面 MUST 使用 `buildr` 内已包含的 Buildr Web 构建产物静态资源
 - **AND** MUST NOT 依赖 CDN、远程字体、远程脚本或远程图片
 - **AND** MUST NOT 要求运行时从 `buildr-web` 或其他远程位置拉取前端源码
 
@@ -1128,37 +1093,8 @@ Terminal Delivery Application MUST从Workspace SQLite中的唯一`task_finish_cu
 - **THEN** Buildr MUST 将请求交给对应 Application 用例
 - **AND** Origin 不匹配或缺少有效 session 时 MUST 在 Application mutation 前拒绝
 
-### Requirement: 首次开始工作必须触发scope内Declaration Intake
-Local App生成Start Work Agent prompt时 MUST要求Agent在任务分流前只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。
-
-#### Scenario: Project-only开始工作
-- **WHEN**用户选择Project但不选择Service
-- **THEN**prompt MUST触发Project-only Declaration Intake
-- **AND** MUST明确Service不是必需范围
-
-#### Scenario: Service-scoped开始工作
-- **WHEN**用户选择一个Service开始工作
-- **THEN**prompt MUST触发Project与该Service的Declaration Intake
-- **AND** MUST不检查或安装未选择Service
-
-### Requirement: Parent coordination 接口必须共享同一 Application
-CLI与Local App MUST调用同一Parent Coordination Application执行inspect、record、reconcile与final acceptance actions；interface MUST NOT直接查询SQLite、扫描文件系统或在GET中回填状态。
-
-#### Scenario: CLI 与 HTTP 读取同一 Parent
-- **WHEN** 两个client读取同一Parent identity
-- **THEN** 两者 MUST返回相同Parent Plan、Child Contribution与prerequisite facts
-- **AND** GET MUST保持零mutation effects
-
-### Requirement: mutation 必须使用 current identity 并受界面安全保护
-Parent Plan reconciliation与final acceptance mutation MUST使用expected current identity；Local App HTTP MUST另外执行same-origin、session与closed JSON校验。
-
-#### Scenario: 陈旧页面提交reconciliation
-- **WHEN** expected Parent Plan identity与current不一致
-- **THEN** Application MUST返回conflict且零写入
-- **AND** client MUST刷新current read model后再决定
-
-### Requirement: Local App HTTP 必须开放 Task-scoped execution record 只读接口
-Local App HTTP interface MUST 在解析已登记 Workspace 后提供 Task-scoped execution record list、detail 与 body-file GET。List MUST 只接受 closed `view=all|verification|finish`，detail/body MUST 同时验证 record 属于 route Task；所有响应 MUST 使用 `no-store`。HTTP interface MUST 只调用 Task Execution Record Application，MUST NOT 直接查询 SQLite、读取 locator、扫描文件系统或提供 mutation。
+### Requirement: Buildr Web HTTP 必须开放 Task-scoped execution record 只读接口
+Buildr Web HTTP interface MUST 在解析已登记 Workspace 后提供 Task-scoped execution record list、detail 与 body-file GET。List MUST 只接受 closed `view=all|verification|finish`，detail/body MUST 同时验证 record 属于 route Task；所有响应 MUST 使用 `no-store`。HTTP interface MUST 只调用 Task Execution Record Application，MUST NOT 直接查询 SQLite、读取 locator、扫描文件系统或提供 mutation。
 
 #### Scenario: 按 view 查询记录
 - **WHEN** browser 请求 Task execution record list 且 view 合法
@@ -1174,8 +1110,8 @@ Local App HTTP interface MUST 在解析已登记 Workspace 后提供 Task-scoped
 - **WHEN** request 包含未知 view、未知 filename 或额外查询字段
 - **THEN** HTTP MUST 在读取 record body 前返回 closed-input diagnostic
 
-### Requirement: Execution Record 读取必须进入 bounded Local App read executor
-Local App bounded read executor MUST 登记 execution-record list、detail 与 body-file 三项纯读 operation，并 MUST 以 closed Worker message 传递已解析 Workspace root、Task ID 和 operation 所需最小参数。Executor MUST 保持既有固定 Worker/queue 容量、取消和 failure isolation 语义，且 MUST NOT 承载 execution record mutation、cleanup、GC 或 Doctor。
+### Requirement: Execution Record 读取必须进入 bounded Buildr Web read executor
+Buildr Web bounded read executor MUST 登记 execution-record list、detail 与 body-file 三项纯读 operation，并 MUST 以 closed Worker message 传递已解析 Workspace root、Task ID 和 operation 所需最小参数。Executor MUST 保持既有固定 Worker/queue 容量、取消和 failure isolation 语义，且 MUST NOT 承载 execution record mutation、cleanup、GC 或 Doctor。
 
 #### Scenario: 正常读取
 - **WHEN** HTTP 提交合法 execution record read operation
@@ -1186,33 +1122,116 @@ Local App bounded read executor MUST 登记 execution-record list、detail 与 b
 - **THEN** request MUST 使用既有 bounded-read diagnostic 结束
 - **AND** MUST NOT 在 HTTP 主线程回退执行正文读取
 
-### Requirement: 正式 Local HTTP Server 必须整点调度 ExecRecord GC
-Buildr 正式 Local HTTP Server MUST 在 ready 后注册 Workspace scheduled maintenance：从下一个本地整点开始、之后每个本地整点取得当前 Workspace Registry 快照，并对每个已登记且可用的 canonical Workspace 调用默认 bounded ExecRecord GC。Scheduler MUST单进程防重入、隔离各 Workspace 失败、在 server close 时释放 timer，并 MUST直接调用 Application 而不是启动 CLI 子进程或保存第二份 run history。
+### Requirement: npm Buildr Web Launcher 必须提供显式可恢复 lifecycle
+Buildr MUST 只从 formal npm installation 提供 `buildr web launcher install|status|repair|uninstall`。普通 npm install MUST NOT 修改 Applications、Desktop 或 Start Menu；所有 Launcher mutation MUST 由显式命令或同 ownership npm update 后的受限 refresh 触发。
 
-#### Scenario: 正式 server 到达整点
-- **WHEN** 非 preview 的 Local HTTP Server 已 ready 且到达下一个本地整点
-- **THEN** scheduler MUST 对当前已登记 Workspace 各执行一次默认 bounded ExecRecord GC
-- **AND** 单个 Workspace 失败 MUST NOT阻止其余 Workspace 或下一整点运行
+#### Scenario: 显式安装 Launcher
+- **WHEN** 用户从 formal npm installation 执行 `buildr web launcher install`
+- **THEN** Buildr MUST 原子创建本机 Launcher 与 closed binding，并返回 ownership、target、Host Node、package entry、prefix 与 payload identity
+- **AND** target 已由 foreign installation 管理时 MUST fail closed 且不得覆盖
 
-#### Scenario: 上一批仍在运行
-- **WHEN** 新整点到达时上一轮 scheduled maintenance 尚未完成
-- **THEN** scheduler MUST跳过并发重入
-- **AND** MUST NOT创建第二个 timer worker、GC lease 或持久队列
+#### Scenario: 查询与修复 Launcher
+- **WHEN** 用户执行 `launcher status` 或 `launcher repair`
+- **THEN** status MUST 只读返回 `ready|stale|invalid|absent` 与精确诊断，repair MUST 只从当前已验证 npm installation 重建同 ownership binding
+- **AND** repair MUST NOT 从 PATH 搜索 Node、npm 或 Buildr，也不得改绑另一个 prefix
 
-#### Scenario: server 关闭
-- **WHEN** Local HTTP Server 开始关闭或触发 close
-- **THEN** scheduler MUST取消后续 timer
-- **AND** MUST NOT在 server 终止后启动新的 GC batch
+#### Scenario: 卸载 Launcher
+- **WHEN** 用户执行 `launcher uninstall`
+- **THEN** Buildr MUST 只删除 binding 与 target ownership identity 精确匹配的 `.app` 或 shortcut
+- **AND** MUST 保留 npm package、Workspace Registry、SQLite、日志、Workspace data 与 Agent runtime
 
-### Requirement: Task Preview Server 必须禁用 scheduled maintenance
-Buildr Task Preview Server MUST 在创建任何 scheduled maintenance 之前根据显式 preview identity 禁用调度。Preview MUST NOT注册 ExecRecord GC timer、执行 startup GC 或在后台读取/修改 Workspace execution records；该边界 MUST适用于直接 server factory 测试与由 `BUILDR_LOCAL_APP_PREVIEW` 启动的真实 preview。
+### Requirement: npm 用户必须能够启动和退出本机 Buildr Web
+普通 npm 用户 MUST 能通过 `buildr web` 或显式安装的 `Buildr Web` Launcher 启动同一 npm Buildr Web Runtime，并 MUST 能通过公开退出动作停止实例。图形 Launcher MUST 只执行其 binding 记录的 Host Node + package entry + `web`；当前产品 MUST NOT 要求或声称存在平台 installer、Product Node 或 SEA。
 
-#### Scenario: Task Preview 启动并持续运行
-- **WHEN** Local HTTP Server 以有效 preview identity 启动并跨过一个或多个整点
-- **THEN** server MUST从未创建或调用 scheduled maintenance scheduler
-- **AND** execution record SQLite rows 与正文 MUST不因 preview 进程而变化
+#### Scenario: 命令行启动
+- **WHEN** 用户从 npm installation 执行 `buildr web`
+- **THEN** Buildr MUST 启动或复用本机单实例 HTTP runtime，并在 ready 后按选项打开浏览器
+- **AND** 非 Web CLI MUST NOT 启动 HTTP 服务
 
-#### Scenario: 正式 server 与 preview 并存
-- **WHEN** 默认 Local HTTP Server 和 Task Preview Server 同时运行
-- **THEN** 只有默认正式实例 MUST拥有 scheduled maintenance
-- **AND** preview MUST不共享、接管或补跑正式实例的 timer
+#### Scenario: 图形入口启动
+- **WHEN** 用户点击已验证的 `Buildr Web` 本机 Launcher
+- **THEN** wrapper MUST 使用绝对 Host Node 与 package entry 执行 `web --launcher-binding <binding>`，由同一Buildr runtime等待health/readiness并打开浏览器
+- **AND** MUST NOT 启动第二份 Buildr、复制 runtime、使用 shell PATH 或嵌入桌面 WebView
+
+#### Scenario: binding 已漂移
+- **WHEN** Launcher 记录的 Node、entry、package root、prefix、payload 或 ownership identity 与当前文件事实不符
+- **THEN** Launcher MUST fail closed、写入可诊断日志并提示 `buildr web launcher repair`
+- **AND** MUST NOT 尝试 PATH 中的另一个 `buildr`
+
+### Requirement: npm Launcher 必须暴露可诊断身份和失败反馈
+Buildr MUST 让 Launcher status 展示 channel、Buildr version、Host Node version/executable identity、package entry、npm prefix、protocol/payload identity、ownership identity与target，并让图形启动失败在平台可见输出中提示status/repair动作。输出 MUST 不泄露 token、完整环境变量或 Workspace secret。
+
+#### Scenario: Launcher ready
+- **WHEN** binding、target、Host Node、entry 与 formal npm origin 全部匹配
+- **THEN** `launcher status --json` MUST 报告 `ready` 和稳定 closed identity fields
+- **AND** CLI version、Web health 与 Launcher binding MUST 报告相同 Buildr/protocol/payload/installation identity
+
+#### Scenario: 图形启动失败
+- **WHEN** Host Node 不兼容、entry 不存在、payload 漂移或 Web readiness 失败
+- **THEN** wrapper MUST 给出用户可见的简短失败反馈、日志位置和 repair/retry 动作
+- **AND** MUST NOT 静默启动未知安装或暴露敏感参数
+
+### Requirement: development 与 npm Launcher 必须安全独立更新
+Development launcher MUST 继续以 checkout-backed `Buildr Web Dev` 独立存在，并 MUST 与 npm-owned `Buildr Web` 使用不同名称、binding schema、target 与 ownership identity。两者都 MUST 是无 Node/源码复制的薄投射。
+
+#### Scenario: 重建 development launcher
+- **WHEN** 当前 checkout identity 改变并执行 canonical development launcher 更新
+- **THEN** Buildr MUST 在 staging 验证 checkout、development Host Node、entry 与 Web readiness 后原子替换 `Buildr Web Dev`
+- **AND** MUST NOT 修改 npm-owned Launcher
+
+#### Scenario: npm Launcher 更新
+- **WHEN** npm package update 刷新已存在 Launcher
+- **THEN** Buildr MUST 只刷新同 ownership npm binding
+- **AND** MUST NOT 修改 development checkout、runtime 或 `Buildr Web Dev`
+
+### Requirement: npm Launcher 卸载必须保留用户工作资产
+Launcher uninstall MUST 只移除 Launcher target、binding、owned shortcut metadata 与 Launcher 自身日志索引，并 MUST 保留 npm installation 与全部 Workspace/Agent/user data。
+
+#### Scenario: npm Launcher 卸载
+- **WHEN** matching npm installation 执行 `buildr web launcher uninstall`
+- **THEN** Buildr MUST 删除其拥有的 `Buildr Web.app` 或 Start Menu shortcut 与 binding
+- **AND** npm package、Workspace Registry、Workspace SQLite、Workspace assets、Agent runtime 与日志内容 MUST 保留
+
+#### Scenario: ownership 无法证明
+- **WHEN** target 或 binding 缺失、损坏或属于另一 installation
+- **THEN** uninstall MUST fail closed 并列出未删除的精确 target
+- **AND** MUST NOT 递归清理 Applications、Start Menu、npm prefix 或 user data root
+
+### Requirement: 旧 Launcher 入口必须由 closed ownership 控制
+新 npm Launcher install/repair MUST NOT 自动接管旧 development、SEA、平台 installer或foreign wrapper。只有当前closed npm Launcher binding与同installation slot ownership精确匹配时才能原子刷新；其他旧入口 MUST 原样保留并要求用户决定。
+
+#### Scenario: 刷新现有 npm wrapper
+- **WHEN** install或npm update发现现有入口持有当前schema且绑定同一 npm package root/prefix installation slot
+- **THEN** Buildr MUST 先验证新binding与wrapper结构，再原子替换现有投射
+- **AND** MUST NOT复制旧Node、源码或runtime到新Launcher
+
+#### Scenario: 发现平台或 foreign 入口
+- **WHEN** target 由旧平台 installer、legacy无closed binding入口、其他 npm prefix、development channel 或外部应用拥有
+- **THEN** install/repair MUST fail closed 并报告冲突 ownership
+- **AND** MUST NOT 删除、覆盖或重新签名该入口
+
+### Requirement: Buildr 当前必须只通过 npm 提供完整 Web
+Buildr 当前 MUST NOT 提供或宣传平台安装。完整 Buildr Web MUST 由 npm package 提供；图形 Launcher 只作为 npm installation 的显式本机投射，并 MUST 在缺少兼容 Host Node 或 formal npm origin 时拒绝安装。
+
+#### Scenario: 普通 npm 安装
+- **WHEN** 用户完成 `npm install -g @buildr-ai/buildr`
+- **THEN** 完整 CLI 与 `buildr web` MUST 可用
+- **AND** 系统 MUST NOT 自动生成 `.app`、Start Menu shortcut、SEA、PKG/MSI 或登录启动项
+
+#### Scenario: 请求无需 Node 的平台安装
+- **WHEN** 用户请求当前不支持的 self-contained 平台安装
+- **THEN** 文档与诊断 MUST 明确当前正式渠道需要兼容 Node/npm
+- **AND** MUST NOT 提供未验证的下载链接、unsigned installer 或隐藏 SEA fallback
+
+### Requirement: npm Buildr Web runtime 必须只按显式 web 命令启动
+npm Buildr Web HTTP/runtime MUST 只在图形 Launcher 或用户显式执行 `buildr web` 时启动。`buildr --help`、version、Doctor、status、Task 与其他普通 CLI 命令 MUST NOT 启动、探测复用或遗留 HTTP listener，除非公开契约明确要求访问现有 Web instance。
+
+#### Scenario: 图形入口启动 Web
+- **WHEN** 用户打开 npm-owned `Buildr Web` Launcher
+- **THEN** wrapper MUST 通过 binding 执行同一 npm package 的 `web` command 并等待 health/readiness 后打开浏览器
+- **AND** MUST NOT 启动第二份 runtime executable 或桌面 WebView
+
+#### Scenario: 普通 CLI 不启动服务
+- **WHEN** 用户在无现有实例的环境执行 `buildr --help` 或代表性非 Web CLI
+- **THEN** 命令 MUST 正常完成且没有 Buildr HTTP listener 或后台 server process
+- **AND** 退出后 MUST 不留下 Web instance identity、port receipt 或 launcher-owned process

@@ -82,3 +82,51 @@ export function taskExecutionRecordGcCommand(runtime, args) {
     return payload;
   }
 }
+
+function parseReadCli(operation, args) {
+  const allowed = operation === 'list' ? new Set(['--task', '--view', '--target', '--json']) : new Set(['--task', '--record', '--target', '--json']);
+  const values = new Map();
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg.startsWith('--') || !allowed.has(arg)) throw syntax(`Unknown argument: ${arg}`);
+    if (values.has(arg)) throw syntax(`Argument may only be provided once: ${arg}`);
+    if (arg === '--json') values.set(arg, true);
+    else {
+      const value = args[index + 1];
+      if (!value || value.startsWith('--')) throw syntax(`Missing value for ${arg}`);
+      values.set(arg, value);
+      index += 1;
+    }
+  }
+  if (!values.get('--task')) throw syntax(`${operation} requires --task <task-id>.`);
+  if (operation === 'inspect' && !values.get('--record')) throw syntax('inspect requires --record <record-id>.');
+  return {
+    targetRoot: path.resolve(values.get('--target') || process.cwd()),
+    taskId: values.get('--task'),
+    recordId: values.get('--record') || null,
+    view: values.get('--view') || 'verification',
+    json: values.has('--json'),
+  };
+}
+
+function printRead(payload, json) {
+  if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else if (payload.records) {
+    for (const record of payload.records) console.log(`${record.recordId}\t${record.lifecycleStatus}\t${record.outcome}\t${record.runIdentity}`);
+  } else {
+    console.log(`${payload.record.recordId}: ${payload.record.lifecycleStatus}/${payload.record.outcome}`);
+    if (payload.execution.status === 'available') console.log(`Duration: ${payload.execution.durationMs} ms; failures: ${payload.execution.failures.length}`);
+    else console.log(`Execution summary: ${payload.execution.reason}`);
+  }
+  return payload;
+}
+
+export function taskExecutionRecordListCommand(runtime, args) {
+  const parsed = parseReadCli('list', args);
+  return printRead(runtime.listTaskExecutionRecordView(parsed.targetRoot, parsed.taskId, { view: parsed.view }), parsed.json);
+}
+
+export function taskExecutionRecordInspectCommand(runtime, args) {
+  const parsed = parseReadCli('inspect', args);
+  return printRead(runtime.inspectTaskExecutionRecordCompactView(parsed.targetRoot, parsed.taskId, parsed.recordId), parsed.json);
+}

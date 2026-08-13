@@ -13,11 +13,11 @@ description: 用户要求运行已有测试、验证改动、查看 current 验�
 
 先确认：
 
-- 正式 Task ID、Intent、Project/Service scope 和 active 状态；
+- 正式 Task ID、Intent、Project/Service/Project-bound Change scope 和 active 状态，并计算三者所属Project的去重排序并集；
 - canonical Workspace，以及由 Task Environment 交接的实际 execution root；
 - 当前交付目标的明确、稳定 target identity 和可移植 summary；
 - operation：`inspect`、`execute`、`record` 或 transient `cleanup`；
-- Task scope 内每个 Project 当前 `verification.yml`，以及实际变更路径、条件、环境和副作用。
+- Task有效Project集合内每个 Project 当前 `verification.yml`，以及实际变更路径、条件、环境和副作用；有效Project集合为空时明确采用仅工作区分支。
 
 没有正式 Task 时可以按用户要求执行已有测试并报告 transient 事实，但不得伪造 Task Result。没有稳定 target identity 时可以 inspect 为 `unknown`，不能 record。
 
@@ -36,6 +36,7 @@ current Result 只有在 target 与全部 declaration identities 都 `current` �
 `buildr.project-verification/v2` 只登记已经存在的能力：identity、Project/Service scope、command 或 bounded Agent invocation、applicability、proves、是否 delivery required，以及确有需要的 environment/effects/resource claims。
 
 - 不存在声明或适用能力时，只记录 `project:<code>` 或 `service:<project>/<service>` coverage gap；不自动创建测试、脚本、CI 或框架。
+- 只有有效Project集合确实为空且没有workspace验证能力时，记录唯一`workspace` coverage gap、空declarations、空capabilities与`not-passed`；不得把Service或Change所属Project伪装成仅工作区，也不得自动passed。
 - 声明无效时停止执行其中的能力，先报告具体字段诊断。
 - `requiredForDelivery` 是 Project policy，不是 Verification 的 proceed/blocked 决定。
 - 不使用 minimal/affected/candidate、maturity、mode、enforcement、dependsOn 或 supersedes。
@@ -64,6 +65,15 @@ buildr verification run --project <code> \
 
 `verification run` 只执行已选择的 command capability，并返回 `buildr.verification-execution/v1`；它不接受 `--declaration-root`。带 matching Task Environment 的正式 execution 会在启动 capability 前 open 一条 Task Execution Record，完成后先 seal 受控、脱敏、有限期正文，再精确清理 transient evidence；容量不足时不得启动 capability。Task 外 execution 仍只产生 transient evidence。`--declaration-root` 只用于 `task verification record`，让 Application 在正式写入动作中读取当前 ready Task Environment 内尚未进入 canonical Workspace 的 declaration bytes；`inspect`不重新观察声明。
 
+正式 execution 启动时会返回并持久化 record/run identity。工具PTY或session丢失后，先按Task回查同一次执行，禁止直接整轮重跑：
+
+```bash
+buildr task execution-record list --task <task-id> --view verification --target <canonical-workspace> --json
+buildr task execution-record inspect --task <task-id> --record <record-id> --target <canonical-workspace> --json
+```
+
+相同Task、target、Project/declaration与capability集合已有`open` record时，普通`verification run`返回`status: active`及原record/run identity，并且不启动capability、不占第二份配额。继续使用list/inspect读取终态；只有确认需要独立新执行时才显式追加`--retry`。`attention`是已有正文的终态，不算active，也不能仅因工具session丢失而创建第二个execution authority。
+
 声明 `effects.authorization: explicit` 时，取得对应授权后逐项增加 `--authorize-capability <id>`；声明为 explicit 的资源同理增加 `--authorize-resource <id>`。不得用一次宽泛授权覆盖其他 capability 或 resource。
 
 - Agent capability 按声明 instructions 做有界操作，保留实际事实；不要硬塞进 command runner。
@@ -82,13 +92,15 @@ buildr task verification record <task-id> \
   --target-identity <identity> \
   --target-summary <portable-summary> \
   --capability '<project>/<id>::<passed|failed>::<portable-fact>' \
-  --coverage-gap '<project:code|service:project/service>::<summary>' \
+  --coverage-gap '<workspace|project:code|service:project/service>::<summary>' \
   --outcome <passed|not-passed> \
   --summary <portable-conclusion> \
   --target <canonical-workspace> --json
 ```
 
 同一 capability 的多个 `--capability` 会合并 facts。至少需要一个实际 capability 或 coverage gap。存在 failed capability 或 coverage gap 时 outcome 必须为 `not-passed`。
+
+仅工作区Result不执行不存在的能力，直接以唯一workspace gap形成完整负向事实；Project/Service/Change Task仍必须绑定全部有效Project declarations并拒绝workspace gap。
 
 Result 只回答 target、采用的 declarations、实际执行能力及事实、coverage gaps 和总体验证结论。不要复制 stdout/stderr、耗时、临时 evidence path、Environment Receipt、本机绝对路径、applicability、digest、history/revision，或写入 proceed/blocked、Task 状态和 Candidate generation。
 

@@ -11,7 +11,7 @@ import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
-import { taskExecutionRecordGcCommand } from './task-execution-record.mjs';
+import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand } from './task-execution-record.mjs';
 
 const COMMAND_ROUTES = [
   {
@@ -30,85 +30,97 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.initBuildr(c.argv.slice(3)),
   },
   {
-    key: "app launcher install",
+    key: "web launcher install",
     surface: "primary",
-    summary: "构建到新的 staging、验证后安全切换 launcher；Release 自包含，development 绑定当前 checkout 的 Buildr Dev thin launcher。",
+    summary: "从当前已验证的 npm installation 显式生成不复制 Node 或 package 的 Buildr Web Launcher。",
     help: [
-      "Usage: buildr app launcher install [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher install [--target <path>] [--json]",
       "",
-      "构建到新的 staging、验证后安全切换 launcher；Release 自包含，development 绑定当前 checkout 与 Workspace Node 的 Buildr Dev thin launcher。",
-      "默认安装到用户级应用目录，不安装 Buildr Skill，也不修改 Workspace 源资产。"
+      "macOS 生成本机 Buildr Web.app，Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。",
+      "普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'install',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
     run: (r, c) => r.manageLocalAppLauncher('install', c.argv.slice(5)),
   },
   {
-    key: "app launcher status",
+    key: "web launcher status",
     surface: "primary",
-    summary: "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。",
+    summary: "只读验证 npm Buildr Web Launcher 的 binding、Host Node、package entry、prefix 与 ownership。",
     help: [
-      "Usage: buildr app launcher status [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher status [--target <path>] [--json]",
       "",
-      "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。"
+      "任何路径或摘要漂移都会 fail closed；不会从 PATH 查找替代 Buildr。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'status',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'status',
     run: (r, c) => r.manageLocalAppLauncher('status', c.argv.slice(5)),
   },
   {
-    key: "app launcher uninstall",
+    key: "web launcher repair",
     surface: "primary",
-    summary: "只移除对应 channel 拥有的 launcher 和上一版本；保留 Workspace Registry 与 Workspace 源资产。",
+    summary: "从同一已登记 npm installation 原子重建当前 owned Launcher binding。",
     help: [
-      "Usage: buildr app launcher uninstall [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher repair [--target <path>] [--json]",
       "",
-      "只移除对应 channel 拥有的 launcher 和上一版本；保留 Workspace Registry 与 Workspace 源资产。"
+      "repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'launcher' && runtimeId === 'uninstall',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
+    run: (r, c) => r.manageLocalAppLauncher('repair', c.argv.slice(5)),
+  },
+  {
+    key: "web launcher uninstall",
+    surface: "primary",
+    summary: "只移除 ownership 精确匹配的 npm Buildr Web Launcher，保留 npm package 与 Workspace 数据。",
+    help: [
+      "Usage: buildr web launcher uninstall [--target <path>] [--json]",
+      "",
+      "foreign target 或 binding 会被保留并 fail closed；本命令不卸载 npm Buildr、Workspace Registry、SQLite、日志或 Workspace data。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'uninstall',
     run: (r, c) => r.manageLocalAppLauncher('uninstall', c.argv.slice(5)),
   },
   {
-    key: "app preview start",
+    key: "web preview start",
     surface: "maintenance",
     summary: "提供 --task 时，从该 Task Environment 的任务验证工作区启动，并在健康后登记为 Environment 动态资源；登记失败会认证停止刚创建的实例。",
     help: [
-      "Usage: buildr app preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]",
+      "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]",
       "",
       "提供 --task 时，从该 Task Environment 的任务验证工作区启动，并在健康后登记为 Environment 动态资源；登记失败会认证停止刚创建的实例。",
-      "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认本机应用。"
+      "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'preview' && runtimeId === 'start',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'start',
     run: (r, c) => r.manageLocalAppPreview('start', c.argv.slice(5)),
   },
   {
-    key: "app preview list",
+    key: "web preview list",
     surface: "maintenance",
     summary: "列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。",
     help: [
-      "Usage: buildr app preview list [--json]",
+      "Usage: buildr web preview list [--json]",
       "",
       "列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'preview' && runtimeId === 'list',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'list',
     run: (r, c) => r.manageLocalAppPreview('list', c.argv.slice(5)),
   },
   {
-    key: "app preview stop",
+    key: "web preview stop",
     surface: "maintenance",
     summary: "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Environment resource、preview metadata 和进程 secret 完全匹配；停止后释放同一资源。独立 preview 保持实例级停止。",
     help: [
-      "Usage: buildr app preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]",
+      "Usage: buildr web preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]",
       "",
       "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Environment resource、preview metadata 和进程 secret 完全匹配；停止后释放同一资源。独立 preview 保持实例级停止。"
     ],
-    match: ({ domain, action, runtimeId }) => domain === 'app' && action === 'preview' && runtimeId === 'stop',
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'stop',
     run: (r, c) => r.manageLocalAppPreview('stop', c.argv.slice(5)),
   },
   {
-    key: "app",
+    key: "web",
     surface: "primary",
     summary: "启动或复用只监听 127.0.0.1 的全局本机 Web 应用，并默认打开浏览器；--no-open 只启动服务。",
     help: [
-      "Usage: buildr app [--target <workspace>] [--port <port>] [--no-open]",
+      "Usage: buildr web [--target <workspace>] [--port <port>] [--no-open]",
       "",
       "启动或复用只监听 127.0.0.1 的全局本机 Web 应用，并默认打开浏览器；--no-open 只启动服务。",
       "--target 验证并登记指定 Workspace，然后打开该 Workspace；不提供时显示本机已登记 Workspace。",
@@ -118,9 +130,9 @@ const COMMAND_ROUTES = [
       "页面不会 checkout、stash、merge 或改写 Project Git source。",
       "旧 Workspace metadata 可以只读查看，完成 canonical sync 迁移后才能从页面保存。",
       "本机登记列表只保存 Workspace root；事实仍来自各 Workspace，应用不提供远程服务或 Agent session connector。",
-      "任务验证工作区的并行验收可使用 app preview；每个 preview 具有独立状态和 loopback URL，不会改变默认应用或 Buildr Dev.app。"
+      "任务验证工作区的并行验收可使用 web preview；每个 preview 具有独立状态和 loopback URL，不会改变默认 Buildr Web 或 Buildr Web Dev.app。"
     ],
-    match: ({ domain }) => domain === 'app',
+    match: ({ domain }) => domain === 'web',
     run: (r, c) => r.startLocalWorkspaceApp(c.argv.slice(3)),
   },
   {
@@ -232,13 +244,13 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；正式 Task execution 会保留受控 execution record。",
     help: [
-      "Usage: buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--json]",
+      "Usage: buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--retry] [--json]",
       "",
       "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；applicability 选择与 bounded Agent operation 由 task-verification Skill 负责。",
       "--declaration-root 只属于 task verification record；verification run 与 task verification inspect 都不读取 declaration source。",
-      "采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。",
+      "采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；正式 execution 由 Receipt 固定的 retained controller 编排，capability 仍在候选 execution root 执行，候选 runtime 不获得 canonical writer authority。Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。",
       "effects.authorization: explicit 必须逐项 --authorize-capability；显式授权资源必须逐项 --authorize-resource。被实际 claim 的 coordinated 资源通过 Git common-dir lease 跨 Task 排队。该命令不创建任务、调度 Agent 或写 current Result。",
-      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量，完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json 返回buildr.verification-execution/v1及portable executionRecord摘要。"
+      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量；相同Task/target/declaration/capability集合已有active record时默认零执行返回原record/run identity，只有--retry创建独立run/record。完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json 返回buildr.verification-execution/v1及portable executionRecord摘要。"
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'run',
     run: (r, c) => r.verificationRun(c.argv.slice(4)),
@@ -254,6 +266,22 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'cleanup',
     run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
+  },
+  {
+    key: "task execution-record list",
+    surface: "agent-machine",
+    summary: "按 Task 返回紧凑、可移植的 Execution Record 列表。",
+    help: ["Usage: buildr task execution-record list --task <task-id> [--view <all|verification|finish>] [--target <canonical-workspace>] [--json]", "", "原终端不可用时按Task恢复同一次execution identity；只读取Execution Record，不写Verification Result或Finish current。"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'list',
+    run: (r, c) => taskExecutionRecordListCommand(r, c.argv.slice(5)),
+  },
+  {
+    key: "task execution-record inspect",
+    surface: "agent-machine",
+    summary: "按 Task 与 record identity 回读状态、耗时、失败和证据摘要。",
+    help: ["Usage: buildr task execution-record inspect --task <task-id> --record <record-id> [--target <canonical-workspace>] [--json]", "", "回读同一record的lifecycle、timing、failure与evidence摘要；只读且不写Verification Result或Finish current。"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'inspect',
+    run: (r, c) => taskExecutionRecordInspectCommand(r, c.argv.slice(5)),
   },
   {
     key: "task execution-record gc",
@@ -509,7 +537,7 @@ const COMMAND_ROUTES = [
       "必需参数：--run。",
       "互斥参数：无。",
       "Execution surface：canonical Workspace 中的 durable finish run，只读。",
-      "安全副作用：无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。",
+      "安全副作用：无；JSON默认返回closed compact投影，显式--detail full返回完整诊断Result；两者均保留恢复所需identity、primaryFailure与resume token。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect',
@@ -521,15 +549,17 @@ const COMMAND_ROUTES = [
     summary: "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；resume复用已冻结message。",
     help: [
       "Usage: buildr task finish run --task <task-id> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]",
-      "Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--target <canonical-workspace>] [--detail <compact|full>] [--json]",
+      "Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--accept-zero-delta-adaptation] [--target <canonical-workspace>] [--detail <compact|full>] [--json]",
       "",
       "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；Agent根据最终内容和仓库约定提供完整message，产品规范化并追加Buildr-Task trailer。target branch 默认使用 retained canonical Workspace 的当前符号分支，Environment startPoint 不提供交付分支 authority。",
       "互斥参数：已有run/resume不接受--commit-message覆盖；--resume只接受产品为当前blocked run生成的令牌；不接受--project/--change或调用方Candidate/Result。",
+      "零差异适配：--accept-zero-delta-adaptation只用于已有adaptation-required run的matching resume，表示Agent已审查clean baseline carrier无需新增差异；它不创建commit、不替代resume token，也不表示Buildr证明语义等价。",
       "Execution surface：Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。",
       "安全副作用：产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。",
       "提交信息：新run拒绝缺失、空subject或精确“交付 + 当前Task ID”的占位主题；同一run的prepare、adaptation与resume复用冻结message，公开Result只返回subject和identity。",
       "deliver使用首次run绑定的指定Agent Doctor；Doctor未ready时保留已完成的remote readback、partial delivery与精确resume token，普通Workspace保持blocked并且不cleanup。",
       "每次真正执行的run/resume先预留独立finish-diagnostics execution record容量；retained后只清理invocation diagnostics transient。record attention不改变已成立的Finish delivery、cleanup或Task终态，Carrier与恢复资源继续由Finish owner管理。",
+      "JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run',
@@ -743,6 +773,18 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.builtinRestore(c.argv.slice(4)),
   },
   {
+    key: "installation status",
+    surface: "primary",
+    summary: "分别报告 npm、development、本机 Launcher 与当前运行实例的可信身份。",
+    help: [
+      "Usage: buildr installation status [--json]",
+      "",
+      "只读取 embedded identity 与 ownership receipt；不会扫描 PATH 或按文件名猜测来源。"
+    ],
+    match: ({ domain, action }) => domain === 'installation' && action === 'status',
+    run: (r, c) => r.installationStatus(c.argv.slice(4)),
+  },
+  {
     key: "update check",
     surface: "primary",
     summary: "检查 Buildr CLI 来源、远端版本和安全更新状态；不读取 workspace。",
@@ -915,11 +957,11 @@ const COMMAND_ROUTES = [
 
 const COMMAND_GROUPS = [
   {
-    key: "app preview",
+    key: "web preview",
     surface: "maintenance",
     summary: "预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。",
     help: [
-      "Usage: buildr app preview <start|list|stop> ...",
+      "Usage: buildr web preview <start|list|stop> ...",
       "",
       "预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。"
     ],
@@ -928,11 +970,11 @@ const COMMAND_GROUPS = [
   {
     key: "task execution-record",
     surface: "maintenance",
-    summary: "管理 Task Execution Record authority 的 Workspace 级维护操作。",
+    summary: "读取Task-scoped Execution Record，或执行Workspace级bounded GC。",
     help: [
-      "Usage: buildr task execution-record <gc> ...",
+      "Usage: buildr task execution-record <list|inspect|gc> ...",
       "",
-      "当前只提供 bounded GC；不提供文件系统 discovery、failure 自动处置或执行资源 cleanup。"
+      "list/inspect用于原终端不可用后的只读恢复；gc执行bounded维护。不提供文件系统 discovery、failure 自动处置或执行资源 cleanup。"
     ],
     executable: false,
   },
@@ -945,7 +987,7 @@ const COMMAND_GROUPS = [
       "",
       "Task Manager 只管理 canonical Workspace 中的 Task Record：创建、查看、明确更新、设置或清除 Parent Task、完成或放弃。",
       "它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
-      "Agent 和 Local App 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
+      "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],
     executable: false,
   },

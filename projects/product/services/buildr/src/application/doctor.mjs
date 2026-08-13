@@ -16,6 +16,7 @@ import { createCapabilityDiagnostics } from './doctor/capability-diagnostics.mjs
 import { createProjectVerificationDiagnostics } from './doctor/project-verification-diagnostics.mjs';
 import { createProjectEnvironmentPreparationDiagnostics } from './doctor/project-environment-preparation-diagnostics.mjs';
 import { buildDoctorHealth, buildDoctorRepairPlan } from './doctor/result-model.mjs';
+import { printProductInstallationReport } from './doctor/product-installation-report.mjs';
 
 export function registerApplicationDoctor(runtime) {
   const runCommandsCheck = (...args) => runtime.runCommandsCheck(...args);
@@ -192,6 +193,8 @@ export function registerApplicationDoctor(runtime) {
         console.log(`[${finding.status}] ${finding.code}${location} - ${finding.message}`);
       }
     }
+
+    printProductInstallationReport(result);
 
     if (result.repairPlan.length > 0) {
       console.log('');

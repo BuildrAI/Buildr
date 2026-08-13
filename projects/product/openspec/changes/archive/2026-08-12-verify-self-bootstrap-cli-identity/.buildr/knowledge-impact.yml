@@ -1,0 +1,32 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: verify-self-bootstrap-cli-identity
+operation: reconcile
+treeIdentity: sha256-32c1f676a4b33c1715870bcfce7c3c171612e90ea370df3732d04bce0d4ee602
+impacts:
+  - type: brief
+    target: openspec/changes/verify-self-bootstrap-cli-identity/brief.md
+    reason: 正式Change需要稳定说明默认CLI identity问题、唯一runner边界与验收范围
+    status: updated
+    sourceIdentities:
+      - openspec/changes/verify-self-bootstrap-cli-identity/proposal.md
+      - openspec/changes/verify-self-bootstrap-cli-identity/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr self-bootstrap runner新增默认CLI identity gate并改变finalize执行入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/verify-self-bootstrap-cli-identity/specs/buildr-package-assets/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: post-Finish activation顺序新增默认CLI identity gate并要求默认入口执行Doctor或resume
+    status: updated
+    sourceIdentities:
+      - openspec/changes/verify-self-bootstrap-cli-identity/specs/agent-task-workflows/spec.md
+      - openspec/changes/verify-self-bootstrap-cli-identity/specs/buildr-package-assets/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 既有自举激活术语需要补充默认CLI identity与唯一finalize入口边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/verify-self-bootstrap-cli-identity/specs/agent-task-workflows/spec.md
+unresolvedItems: []

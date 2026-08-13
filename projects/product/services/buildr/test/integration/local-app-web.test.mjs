@@ -73,7 +73,7 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
   assert.doesNotMatch(server, /suffix === '\/changes'|change-create|change-action|addChanges/);
 });
 
-test('Local App 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
+test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
   const app = read('../buildr-web/src/App.tsx');
   const layout = read('../buildr-web/src/app/AppLayout.tsx');
   const index = read('../buildr-web/index.html');

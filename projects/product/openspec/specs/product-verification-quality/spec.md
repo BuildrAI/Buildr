@@ -6,58 +6,6 @@
 
 ## Requirements
 
-### Requirement: CI 必须覆盖最低 Node、当前 Node 和目标桌面平台
-Buildr CI MUST 将任务分支的 Windows 平台预检、Host Node 兼容性和完整受管运行时 Candidate 分开；合入 `dev` 前 MUST 在 Windows Node 24.15.0 和当前 Node 24 上运行定向平台预检，最终候选 MUST 在 macOS、Windows 各运行一份完整受管运行时 Candidate，并 MUST 在 macOS、Windows 的最低 Node 24.15.0 与当前 Node 24 代表点运行 Host Node 兼容验证。矩阵 MUST 禁用 fail-fast，且 CI MUST NOT 为相同冻结 tree 在 `main` push 或独立 release smoke job 中重复已经成立的完整 Candidate 证据。
-
-#### Scenario: 任务分支验证 Windows 平台边界
-- **WHEN** pull request 以 `dev` 为目标触发产品 CI
-- **THEN** Windows Node 24.15.0 和当前 Node 24 job MUST 安装锁定依赖
-- **AND** 两个 job MUST 直接使用各自 Host Node 运行覆盖路径身份、子进程启动、runtime 文件一致性、Task/worktree 生命周期和发布包生命周期的定向平台预检
-- **AND** 任一 job 失败 MUST NOT 取消另一个 job
-- **AND** CI MUST NOT 为该任务分支重复运行完整 macOS/Windows Candidate
-
-#### Scenario: 验证最低 Node 版本
-- **WHEN** `dev -> main` pull request或手工候选验证触发最终候选 CI
-- **THEN** macOS、Windows Node 24.15.0 job MUST 各自运行 Host Node compatibility
-- **AND** 两个 job MUST 随后准备 Workspace 声明的受管 Node 并各自运行一次完整 `test:candidate`
-- **AND** evidence MUST 分别记录 Host Node 和受管 Node 的精确版本与 executable identity
-
-#### Scenario: 验证当前 Node 与桌面平台
-- **WHEN** `dev -> main` pull request或手工候选验证触发最终候选 CI
-- **THEN** macOS、Windows 当前 Node 24 job MUST 各自只运行 Host Node compatibility
-- **AND** compatibility MUST 验证 engines、锁定依赖、npm tarball pack/install、安装后 CLI 初始化/诊断以及 SQLite、Process、Filesystem 等 Node 版本敏感边界
-- **AND** compatibility MUST NOT 经过受管 Node wrapper 或重复完整 Candidate
-
-#### Scenario: 最终候选复用内置发布冒烟
-- **WHEN** macOS、Windows 的完整受管运行时 Candidate job 运行
-- **THEN** 每个 job MUST 通过 Candidate 内置的 `release-tarball-smoke` 验证打包、安装和 CLI 生命周期
-- **AND** workflow MUST NOT 建立覆盖相同 lifecycle 的独立 macOS 或 Windows `release-smoke` job
-
-#### Scenario: 相同 main tree 不重复完整 Candidate
-- **WHEN** 已通过 branch protection 的 `dev -> main` 候选 tree 合入 `main`
-- **THEN** `main` push MUST NOT 再次触发相同完整 Candidate
-- **AND**正式 tag 发布验证 MUST 由独立 release artifact 契约负责
-
-### Requirement: release smoke 必须验证安装后生命周期
-Buildr MUST 提供不依赖 development checkout runtime 的跨平台 release smoke，使用 standalone npm pack 或同一候选 run 提供的不可变正式 tarball，并使用安装后的 `buildr` 完成初始化、同步、诊断、optional Component 卸载和最终诊断。
-
-#### Scenario: standalone verifier 从候选生成 tarball
-- **WHEN** 维护者或跨平台 CI 独立运行 release smoke
-- **THEN** verifier MUST 执行 `npm pack` 并将 tarball 安装到隔离 prefix
-- **AND** 安装后的 CLI MUST 完成 `init --agent`、独立 `sync` 和 `doctor --json`
-- **AND** 安装后的 CLI MUST 卸载一个 optional Component 并再次运行 `doctor --json`
-- **AND** 两次 doctor MUST 没有 error
-
-#### Scenario: candidate verifier 提供共享 tarball
-- **WHEN** release smoke 收到同一冻结候选 run 生成的 tarball
-- **THEN** verifier MUST 直接安装该 tarball，而不是再次执行 npm pack
-- **AND** verifier MUST 完成与 standalone 模式相同的安装后生命周期
-
-#### Scenario: release smoke 跨平台运行
-- **WHEN** verifier 在 Linux、macOS 或 Windows Node 24.15.0 运行
-- **THEN** verifier MUST 使用平台对应的 npm executable 和 installed bin 路径
-- **AND** verifier MUST NOT 依赖 Bash、Unix-only 临时目录命令或固定 `/tmp` 路径
-
 ### Requirement: OpenSpec fixture case 必须只有一个 Candidate owner
 Buildr Product MUST 将 OpenSpec contract 与 convergence/recovery fixture 划分为互斥 case 集合；完整 Candidate 中同一个 named case MUST NOT 由两个 verification step 重复执行。
 
@@ -180,7 +128,7 @@ Buildr candidate verifier MUST 在同一冻结候选 run 内复用不可变 npm 
 #### Scenario: System 文件按资源 owner 调度
 - **WHEN** Candidate 编排全部 System tests
 - **THEN** 每个 System test file MUST 恰好归属一个 Candidate primary owner
-- **AND** fresh build、runtime recovery、Task Finish、Workspace lifecycle、Local App HTTP、App process 和轻量验证契约 MUST 可按不同资源容量独立调度与计时
+- **AND** fresh build、runtime recovery、Task Finish、Workspace lifecycle、Buildr Web HTTP、App process 和轻量验证契约 MUST 可按不同资源容量独立调度与计时
 - **AND** monolithic System 入口 MUST 复用同一文件归属事实运行完整 System 集合
 
 #### Scenario: Workspace E2E suites 使用隔离状态
@@ -196,7 +144,7 @@ Buildr candidate verifier MUST 在同一冻结候选 run 内复用不可变 npm 
 #### Scenario: 复用只读 fixture 基线
 - **WHEN** 多个 System tests 需要相同 controller dependencies、Workspace baseline 或 Web dist
 - **THEN** verifier MAY 复用只读不变输入或将其复制到独立临时 root
-- **AND** 每个测试 MUST 继续隔离 `.buildr`、SQLite、Git worktree、Task/Finish、Local App runtime state 与其他可变 Workspace 内容
+- **AND** 每个测试 MUST 继续隔离 `.buildr`、SQLite、Git worktree、Task/Finish、Buildr Web runtime state 与其他可变 Workspace 内容
 
 #### Scenario: fresh build 保持真实依赖闭包
 - **WHEN** `system-fresh-build` 验证 Task Environment 的多 Service preparation
@@ -594,7 +542,7 @@ Buildr Product MUST 将 Node tests 按 Unit、Component、Contract、Integration
 
 #### Scenario: 运行系统测试
 - **WHEN** 维护者运行 `npm run test:system`
-- **THEN** verifier MUST 运行完整 CLI、Workspace、Local App 或 Task 生命周期 System 测试
+- **THEN** verifier MUST 运行完整 CLI、Workspace、Buildr Web 或 Task 生命周期 System 测试
 - **AND** Product MUST NOT 保留将同一 System 集合命名为 `test:integration:fast` 的第二入口
 - **AND** runner MUST 保留明确的文件集合、退出码、signal 与失败 diagnostics，不得把无 TAP 输出的聚合失败变成不可定位结果
 
@@ -711,10 +659,10 @@ Buildr Product MAY 继续在 `test/verification/` 使用 Fast、Changed、Focus�
 - **AND** package inventory MUST 不包含或导入 Product test planner/scheduler
 
 ### Requirement: P0.4 验证必须覆盖 current Result authority
-Buildr Product focused/fast/candidate tests MUST 覆盖 Result closed schema、Project scope declaration binding、atomic replacement rollback、target/declaration stale、absent declaration gap、unique writer、CLI/Local App parity、transient execution separation、Finish shared consumer 与旧 authority absence。
+Buildr Product focused/fast/candidate tests MUST 覆盖 Result closed schema、Project scope declaration binding、atomic replacement rollback、target/declaration stale、absent declaration gap、unique writer、CLI/Buildr Web parity、transient execution separation、Finish shared consumer 与旧 authority absence。
 
 #### Scenario: 运行 P0.4 focused verification
-- **WHEN** 维护者修改 Verification domain、Application、declaration、Skill/contract、Finish 或 Local App
+- **WHEN** 维护者修改 Verification domain、Application、declaration、Skill/contract、Finish 或 Buildr Web
 - **THEN** affected tests MUST 证明 Result current path 与 failure preservation
 - **AND** MUST 不以 fixture 字段存在代替真实 CLI、filesystem 或 HTTP journey
 
@@ -764,48 +712,67 @@ Buildr Product 已登记为 Project Verification capability 的 changed selector
 - **THEN** dispatcher MUST 在启动 Chrome 前返回稳定的 input/base diagnostic
 - **AND** MUST NOT 将该情况报告为 Browser 页面或业务交互失败
 
-### Requirement: 正式发布必须围绕一个不可变 tarball 收敛
-Buildr 正式 tag 发布 workflow MUST 将一次 `npm pack` 产生的 tarball 作为本次发布的唯一 release artifact，并 MUST 让发布前 smoke、`npm publish`、制品 evidence 与 registry integrity 核对绑定同一 artifact identity；workflow MUST NOT 在 tag 发布阶段重复运行完整 Candidate。
+### Requirement: CI 必须覆盖最低 Node、当前 Node 与 npm Launcher 平台行为
+CI MUST 在 `engines.node` 最低支持 Node 与当前 Node 24 上分别安装同一 npm tarball并验证 CLI、`buildr web --no-open`、health/readiness 和 Workspace-owned runtime role。macOS 与 Windows Launcher 行为 MUST 在对应 OS runner 验证本机 wrapper/shortcut lifecycle，但 MUST NOT 声称验证 SEA、installer、签名或无需 Node 的平台产品。
 
-#### Scenario: 准备正式发布物
-- **WHEN** 受保护 tag workflow 完成 release contract 与 release notes 检查
-- **THEN** workflow MUST 只执行一次 `npm pack` 并生成包含 package name/version、filename、文件清单、size、SHA-256 与 SHA-512 integrity 的 manifest
-- **AND** tarball 与 manifest MUST 作为同一 run 的 CI artifact 保存
+#### Scenario: 两个兼容 Host Node
+- **WHEN** Candidate 执行最低 Node 与当前 Node jobs
+- **THEN** 两者 MUST 消费同一 tarball，并分别通过普通 CLI 无 HTTP、Web health/readiness、identity 与 Host/Workspace Node 分离
+- **AND** tarball MUST NOT 为不同 Node 重新 pack
 
-#### Scenario: 发布前验证正式发布物
-- **WHEN** release artifact 已生成
-- **THEN** 发布前 smoke MUST 从该 tarball 安装 CLI 并完成 `init`、`sync`、`doctor`、optional Component uninstall 和最终 doctor
-- **AND** smoke MUST NOT 从 checkout 重新 pack 或使用 development checkout runtime 冒充安装后 CLI
+#### Scenario: 操作系统 Launcher 验证
+- **WHEN** macOS 或 Windows runner 执行 Launcher lifecycle
+- **THEN** verifier MUST 从隔离 npm installation 显式 install/status/launch/repair/uninstall 本机投射并验证 ownership
+- **AND** MUST 证明普通 npm install 零桌面副作用且 wrapper/shortcut 不复制 Node 或 package
 
-#### Scenario: 发布同一个 tarball
-- **WHEN** 官方 npm registry 不存在目标 package version 且发布前 smoke 通过
-- **THEN** workflow MUST 使用 trusted publishing 执行 `npm publish <tarball>` 并应用 release contract 指定的 dist-tag
-- **AND** workflow MUST NOT 从 checkout、目录或第二个 pack 结果隐式重建待发布 bytes
+### Requirement: release smoke 必须验证 npm 安装与 Launcher 生命周期
+Release smoke MUST 从唯一冻结 npm tarball 安装 Buildr，并 MUST 验证 CLI、Buildr Web、npm update authority 和显式 Launcher install/status/repair/uninstall。它 MUST 验证 drift/foreign target fail closed 与 npm package/Workspace data 保留；不得用源码启动或平台 staging 目录替代。
 
-#### Scenario: Registry 已存在目标版本
-- **WHEN** 同一 tag workflow 重跑且官方 npm registry 已存在目标 package version
-- **THEN** workflow MUST 比较 registry `dist.integrity` 与本次 artifact manifest 的 SHA-512 integrity
-- **AND** identity 相同 MUST 跳过 publish，identity 不同 MUST fail closed 且不得覆盖、unpublish 或移动现有版本
+#### Scenario: npm tarball lifecycle
+- **WHEN** release smoke 将 tarball 安装到隔离 prefix
+- **THEN** `buildr --help`、代表性 CLI、`buildr web --no-open`、health/readiness 和 `launcher install/status/launch` MUST 使用该 prefix 的 Host Node/package entry
+- **AND** ordinary install/CLI MUST NOT 自动创建 Launcher 或启动 HTTP
 
-#### Scenario: 发布后核对官方 registry
-- **WHEN** publish 已成功或 registry 已有同 identity 版本
-- **THEN** workflow MUST 以有界重试确认官方 registry 的 version、integrity 和目标 dist-tag
-- **AND** workflow MUST 从官方 registry 安装精确 `name@version` 并完成与发布前相同的 CLI 生命周期 smoke
+#### Scenario: repair 与 uninstall
+- **WHEN** verifier 使 binding 中一个 identity field 漂移后执行 status/launch/repair/uninstall
+- **THEN** status/launch MUST fail closed，repair MUST 从同一 formal npm installation 原子恢复，uninstall MUST 只删除 owned Launcher
+- **AND** npm package 与 Workspace/user data MUST 保持不变
 
-### Requirement: 正式发布恢复必须保留已完成的不可逆事实
-Buildr 正式发布 workflow MUST 在 npm version 或 GitHub Release 已经存在时核对并复用一致事实，只补齐缺失步骤；任一事实不一致 MUST fail closed，且 workflow MUST NOT 通过删除 tag、重复 publish、unpublish 或覆盖公开 Release 隐藏部分成功。
+### Requirement: 正式发布必须围绕一个不可变 npm tarball 收敛
+Buildr 正式发布 MUST 只执行一次 `npm pack`，并 MUST 让 inventory、Host Node smoke、Launcher lifecycle、protected publish、Registry integrity readback 与安装后 smoke 使用同一 tarball bytes。任何需要重新 pack 的路径 MUST 停止并重新开始尚未产生公开事实的候选。
 
-#### Scenario: GitHub Release 尚不存在
-- **WHEN** npm registry 已确认目标 artifact identity 且目标 GitHub Release 不存在
-- **THEN** workflow MUST 从目标 CHANGELOG 章节创建指向同一 tag 的 GitHub Release
-- **AND** prerelease 与 Latest 状态 MUST 符合 release contract
+#### Scenario: 构建与验证单一 tarball
+- **WHEN** tag workflow 进入可逆候选阶段
+- **THEN** workflow MUST 冻结 tarball filename、size、SHA-256、SHA-512 integrity、payload digest 与 source commit
+- **AND** 全部后续检查 MUST 逐字节核对该 identity
 
-#### Scenario: GitHub Release 已存在
-- **WHEN** 同一 tag workflow 重跑且目标 GitHub Release 已存在
-- **THEN** workflow MUST 核对 tag、target commit、body 与 prerelease/Latest 状态
-- **AND** 全部一致 MUST 复用该 Release，任一不一致 MUST fail closed 且不得自动覆盖
+#### Scenario: publish 与 readback
+- **WHEN** 可逆门禁全部通过且 protected npm publish 获得授权
+- **THEN** workflow MUST 发布冻结 tarball并从 Registry 核对相同 integrity 后安装 smoke
+- **AND** MUST NOT 上传 GitHub Release binary Asset 或使用 Actions artifact 作为公共下载
 
-#### Scenario: 不可逆步骤后验证失败
-- **WHEN** npm publish 或 GitHub Release 已成功，但后续 registry smoke、readback 或网络步骤失败
-- **THEN** workflow MUST 保留已完成的 tag、npm version、dist-tag 与 Release 事实并报告失败阶段
-- **AND** 后续同一 tag 重跑 MUST 从 identity/readback gate 恢复，不得重做已经成功的不可逆动作
+### Requirement: npm 正式发布恢复必须保留已完成的不可逆事实
+发布恢复 MUST 以 tag/commit、npm package/version/integrity 和冻结 tarball identity 为 authority。npm version 缺失时只补齐 publish；完全相同时复用；漂移时停止。恢复 MUST NOT 重建 tarball、删除 tag、unpublish、改用本地 publish 或创建平台 Assets。
+
+#### Scenario: npm publish 部分成功后重跑
+- **WHEN** Registry 已有相同 version 与 integrity，但后续 readback 失败
+- **THEN** rerun MUST 复用 Registry 事实并只重试 readback/smoke
+- **AND** MUST NOT再次 publish 或 pack
+
+#### Scenario: Registry bytes 漂移
+- **WHEN** 相同 version 的 Registry integrity 与冻结 tarball 不同
+- **THEN** workflow MUST fail closed 并保留所有公开事实供人工处理
+- **AND** MUST NOT覆盖、撤销或生成替代 version
+
+### Requirement: Host Node 与 Workspace Node runtime role 必须分别验证
+Candidate MUST 从最终 npm tarball验证主进程使用 formal installation 绑定的 Host Node，Workspace-owned subprocess 使用 Workspace 精确声明的 Node，并 MUST 比较 role、path、executable SHA-256、identity 和 runtime directory digest。Launcher 启动的主进程 MUST 与 CLI 报告同一 Host Node/installation identity。
+
+#### Scenario: npm CLI 与 Launcher runtime role
+- **WHEN** npm CLI 与其显式 Launcher 分别执行同一 Workspace-owned verification capability
+- **THEN** 两个主进程 MUST 报告相同 `host` identity，Workspace child MUST 报告相同独立 `workspace` identity
+- **AND** Host Node 与 Workspace Node 版本相同 MUST NOT 合并 ownership 或 path
+
+#### Scenario: npm package 更新
+- **WHEN** verifier 模拟同 prefix 的 package update 并刷新 Launcher binding
+- **THEN** Buildr/package/payload identity MAY 更新，但 Workspace Node identity、path、executable 与 directory digest MUST 不变
+- **AND** Launcher MUST 继续绑定更新后的 Host Node/package entry 而不是 Workspace Node

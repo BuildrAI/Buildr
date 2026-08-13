@@ -13,6 +13,7 @@ import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-pro
 import {
   adoptAgentReviewedGitCarrier,
   createIsolatedGitCarrier,
+  inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
@@ -60,8 +61,9 @@ function terminalAssociation(handoff, observedAt) {
 
 function deliveryCarrier(run, isolated, { reuseMode, status = 'prepared', activationPlan = null }) {
   const deliveryCommit = isolated.deliveryCommit || publicTaskFinishDeliveryCommit(run.deliveryCommit || legacyTaskFinishDeliveryCommit(run.identity.task));
+  const activationPaths = isolated.activationPaths || isolated.changedPaths || [];
   const carrier = {
-    identity: digest({ head: isolated.head, tree: isolated.tree, expectedTargetRef: isolated.deliveryBaseline.head, taskContributionIdentity: isolated.taskContribution.identity, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity, deliveryCommitIdentity: deliveryCommit?.identity || null, reuseMode, activationPlanIdentity: activationPlan?.identity || null }),
+    identity: digest({ head: isolated.head, tree: isolated.tree, expectedTargetRef: isolated.deliveryBaseline.head, taskContributionIdentity: isolated.taskContribution.identity, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity, deliveryCommitIdentity: deliveryCommit?.identity || null, reuseMode, zeroDelta: isolated.zeroDelta === true, activationPaths, activationPlanIdentity: activationPlan?.identity || null }),
     status,
     reuseMode,
     kind: 'git-isolated-commit',
@@ -73,6 +75,8 @@ function deliveryCarrier(run, isolated, { reuseMode, status = 'prepared', activa
     targetRef: `${run.identity.remote}/${run.identity.targetBranch}`,
     changedPaths: isolated.changedPaths,
     changes: isolated.changes || [],
+    activationPaths,
+    zeroDelta: isolated.zeroDelta === true,
     deliveryBaseline: isolated.deliveryBaseline,
     taskContribution: isolated.taskContribution,
     handoffIdentity: run.identity.handoffIdentity,
@@ -167,13 +171,13 @@ async function cleanupThroughRetainedController(runtime, context, run, deliverie
     };
   }
   const invocation = context.controllerInvocation;
-  if (!invocation?.command || !invocation?.sourceRoot) return { payload: null, observation: null };
-  const bootstrap = path.join(invocation.sourceRoot, 'src', 'interfaces', 'internal', 'task-finish-retained-cleanup.mjs');
+  if (!invocation?.command || !Array.isArray(invocation.argsPrefix)) return { payload: null, observation: null };
   const executed = runJsonCommand('cleanup-retained-environment-manager', invocation.command, [
-    bootstrap,
+    ...invocation.argsPrefix,
+    '__internal', 'task-finish-retained-cleanup',
     '--run', run.runId,
     '--target', run.identity.workspaceRoot,
-  ], run.identity.workspaceRoot);
+  ], run.identity.workspaceRoot, { env: { ...process.env, BUILDR_INTERNAL_PRODUCT_REENTRY: '1' } });
   return { payload: executed.payload, observation: executed.observation, result: executed.result };
 }
 
@@ -246,7 +250,7 @@ function phaseFailure(findings, fallbackClass = 'product-execution-failure') {
   };
 }
 
-export function createTaskFinishProductHandlers({ runtime, root }) {
+export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaAdaptation = false }) {
   const environmentRoot = path.resolve(root);
 
   function taskEnvironment(run) {
@@ -257,15 +261,26 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
     return planRetainedTaskFinishActivation({ agent: run.identity.agent, changedPaths });
   }
 
+  function frozenDevelopmentIdentity(run) {
+    return {
+      handoffIdentity: run.identity.handoffIdentity,
+      candidateIdentity: run.identity.candidateIdentity,
+      candidateGeneration: run.identity.candidateGeneration,
+      contentTargetIdentity: run.identity.contentTargetIdentity,
+    };
+  }
+
   function developmentCarrier(run) {
-    const model = runtime.inspectTaskDevelopment(run.identity.workspaceRoot, run.identity.task);
-    const receipt = model.development?.receipt;
-    const current = model.development?.applicability?.handoff === 'current';
-    const handoff = current ? [...receipt.handoffs].reverse().find((item) => item.identity === run.identity.handoffIdentity) || null : null;
-    const matches = Boolean(handoff
-      && handoff.candidate.identity === run.identity.candidateIdentity
-      && handoff.candidate.contentTargetIdentity === run.identity.contentTargetIdentity);
-    return { model, receipt, handoff, matches };
+    const assertion = runtime.assertTaskDevelopmentCarrier(
+      run.identity.workspaceRoot,
+      run.identity.task,
+      frozenDevelopmentIdentity(run),
+    );
+    const receipt = assertion.development?.receipt || null;
+    const handoff = assertion.status === 'equivalent'
+      ? run.developmentHandoff || receipt?.handoffs?.find((item) => item.identity === run.identity.handoffIdentity) || null
+      : null;
+    return { assertion, receipt, handoff, matches: assertion.status === 'equivalent' };
   }
 
   function currentWorkspaceNode(run) {
@@ -342,18 +357,20 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         if (run.deliveryCarrier.deliveryBaseline?.head !== expectedTargetRef) return { status: 'blocked', operations, failure: { operation: 'delivery-baseline', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Delivery Baseline changed while the isolated carrier awaited adaptation.', findings: [{ expected: run.deliveryCarrier.deliveryBaseline?.head, observed: expectedTargetRef }] } };
         const currentContribution = observeGitTaskContribution({ root: environmentRoot, deliveryBaselineHead: run.deliveryCarrier.taskContribution.originalBaseline.head });
         if (currentContribution.identity !== run.deliveryCarrier.taskContribution.identity || currentContribution.source.tree !== run.deliveryCarrier.taskContribution.source.tree) return { status: 'blocked', operations, failure: { operation: 'task-contribution', failureClass: 'semantic-review-required', code: 'task-finish.task-contribution-drift-unresolved', message: 'Frozen Task Contribution no longer matches the Delivery Adaptation source facts; Development applicability must be inspected before any rebuild.' } };
-        const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier });
+        const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier, acceptZeroDelta: acceptZeroDeltaAdaptation });
         if (adopted.status !== 'adopted') return { status: 'blocked', operations, failure: { operation: 'delivery-adaptation', failureClass: 'semantic-review-required', code: adopted.code || 'task-finish.delivery-adaptation-required', message: 'Delivery Adaptation is not ready for deterministic verification.', findings: [adopted] }, output: { deliveryCarrier: run.deliveryCarrier } };
         const isolated = { ...run.deliveryCarrier, ...adopted, taskContribution: run.deliveryCarrier.taskContribution, deliveryBaseline: run.deliveryCarrier.deliveryBaseline };
-        const plan = activationPlan(run, isolated.changedPaths || run.deliveryCarrier.changedPaths || []);
+        const plan = activationPlan(run, isolated.activationPaths || isolated.changedPaths || run.deliveryCarrier.changedPaths || []);
         const carrier = deliveryCarrier(run, isolated, { reuseMode: 'agent-reviewed-delivery-adaptation', activationPlan: plan });
         const compatibilityChecks = typeof runtime.runTaskFinishCarrierCompatibility === 'function'
           ? await runtime.runTaskFinishCarrierCompatibility({ task: run.identity.task, carrier, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity })
           : { status: 'not-required', checks: [], basis: 'The current Project adapter declares no carrier-specific compatibility checks.' };
         if (!['passed', 'not-required'].includes(compatibilityChecks?.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-compatibility', failureClass: 'semantic-review-required', code: 'task-finish.compatibility-checks-failed', message: 'Project-required Delivery Carrier compatibility checks did not pass.', findings: [compatibilityChecks] }, output: { deliveryCarrier: run.deliveryCarrier } };
-        carrier.adaptation = { status: 'agent-reviewed', compatibilityChecks };
+        carrier.adaptation = { status: 'agent-reviewed', zeroDelta: carrier.zeroDelta, compatibilityChecks };
         operations.push({ kind: 'product', id: 'adopt-agent-reviewed-delivery-carrier', status: 'passed', carrierRoot: carrier.root });
         operations.push({ kind: 'product', id: 'carrier-compatibility-checks', status: compatibilityChecks.status, checks: compatibilityChecks.checks || [], evidenceIdentity: compatibilityChecks.evidenceIdentity || null });
+        const equivalent = developmentCarrier(run).assertion;
+        if (equivalent.status !== 'equivalent') return { status: 'failed', operations, failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Development handoff changed while Delivery Adaptation was being adopted.', diagnostic: equivalent.diagnostic }, output: { deliveryCarrier: carrier } };
         return { status: 'passed', operations, inputIdentity: run.identity.handoffIdentity, outputIdentity: carrier.identity, output: { deliveryCarrier: carrier } };
       }
       let isolated;
@@ -372,9 +389,14 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         return { status: 'failed', operations, failure: { operation: 'carrier-preparation', failureClass: 'product-execution-failure', code: error.code || 'task-finish.carrier-prepare-failed', message: error.message, diagnostic: error.details || error.cleanup || null } };
       }
       if (isolated.status === 'adaptation-required') {
-        const plan = activationPlan(run, isolated.changedPaths || []);
+        const plan = activationPlan(run, isolated.activationPaths || isolated.changedPaths || []);
         const carrier = deliveryCarrier(run, isolated, { reuseMode: 'adaptation-required', status: 'blocked', activationPlan: plan });
         operations.push({ kind: 'product', id: 'prepare-isolated-carrier', status: 'blocked', code: isolated.conflict.code, carrierRoot: isolated.root });
+        const equivalent = developmentCarrier(run).assertion;
+        if (equivalent.status !== 'equivalent') {
+          const cleanup = removeIsolatedGitCarrier({ repositoryRoot: environmentRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, expectedRoot: isolated.root });
+          return { status: 'failed', operations, failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Development handoff changed during isolated carrier preparation.', diagnostic: { development: equivalent.diagnostic, carrierCleanup: cleanup } } };
+        }
         return {
           status: 'blocked', operations,
           inputIdentity: run.identity.handoffIdentity, outputIdentity: carrier.identity,
@@ -383,12 +405,12 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         };
       }
       operations.push({ kind: 'product', id: 'prepare-isolated-carrier', status: 'passed', carrierRoot: isolated.root });
-      const equivalent = runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task);
+      const equivalent = developmentCarrier(run).assertion;
       if (equivalent.status !== 'equivalent') {
         const cleanup = removeIsolatedGitCarrier({ repositoryRoot: environmentRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, expectedRoot: isolated.root });
         return { status: 'failed', operations, failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Task Content Target or Development handoff changed during isolated carrier preparation.', diagnostic: { development: equivalent.diagnostic, carrierCleanup: cleanup } } };
       }
-      const plan = activationPlan(run, isolated.changedPaths || []);
+      const plan = activationPlan(run, isolated.activationPaths || isolated.changedPaths || []);
       const carrier = deliveryCarrier(run, isolated, { reuseMode: 'deterministic-reuse', activationPlan: plan });
       return { status: 'passed', operations, inputIdentity: run.identity.handoffIdentity, outputIdentity: carrier.identity, output: { deliveryCarrier: carrier } };
     },
@@ -396,7 +418,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
     async verify({ run }) {
       const observed = verifyGitTaskContributionCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier });
       if (observed.status !== 'equivalent') return { status: 'blocked', failure: { operation: 'carrier-verification', failureClass: 'semantic-review-required', code: observed.code || 'task-finish.carrier-changed', message: 'Delivery Carrier facts cannot be verified.', findings: [observed] } };
-      const equivalent = runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task);
+      const equivalent = developmentCarrier(run).assertion;
       if (equivalent.status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Delivery carrier is no longer content-equivalent to the Development handoff.', diagnostic: equivalent.diagnostic } };
       const equivalence = { status: 'equivalent', reuseMode: run.deliveryCarrier.reuseMode, semanticEquivalence: run.deliveryCarrier.reuseMode === 'deterministic-reuse' ? 'deterministic-git-identity' : 'agent-reviewed-not-proven-by-buildr', handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, candidateGeneration: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity, taskContributionIdentity: run.deliveryCarrier.taskContribution.identity, deliveryBaselineIdentity: digest(run.deliveryCarrier.deliveryBaseline), carrierIdentity: run.deliveryCarrier.identity, formalVerificationExecutions: 0 };
       return { status: 'passed', inputIdentity: run.deliveryCarrier.identity, outputIdentity: digest(equivalence), output: { equivalence } };
@@ -406,7 +428,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
       const operations = [];
       const carrier = verifyGitTaskContributionCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier });
       if (carrier.status !== 'equivalent') return { status: 'blocked', failure: { operation: 'carrier', failureClass: 'semantic-review-required', code: carrier.code || 'task-finish.carrier-changed', message: 'Delivery Carrier facts changed before delivery.' } };
-      if (runtime.assertTaskDevelopmentCarrier(run.identity.workspaceRoot, run.identity.task).status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Development handoff is no longer current before delivery.' } };
+      if (!developmentCarrier(run).matches) return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Development handoff is no longer current before delivery.' } };
       const retainedRoot = run.identity.workspaceRoot;
       const lease = acquireFinishTargetLease({
         root: retainedRoot,
@@ -422,8 +444,26 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         if (remote.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-observation', failureClass: 'transient-external-condition', code: 'task-finish.target-observation-failed', exitCode: remote.result.status, message: 'Unable to observe remote target ref.', diagnostic: remote.observation.stderr } };
         const observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
         const alreadyDelivered = observedTargetRef === run.deliveryCarrier.head;
-        let alreadyContained = false;
-        let containment = null;
+        const zeroDeltaContainment = run.deliveryCarrier.zeroDelta === true
+          && observedTargetRef === run.deliveryCarrier.expectedTargetRef
+          && observedTargetRef === run.deliveryCarrier.head
+          ? inspectAgentReviewedZeroDeltaContainment({ repositoryRoot: retainedRoot, targetRef: observedTargetRef, carrier: run.deliveryCarrier, runId: run.runId })
+          : null;
+        if (zeroDeltaContainment && zeroDeltaContainment.status !== 'contained') {
+          return {
+            status: 'blocked',
+            operations,
+            failure: {
+              operation: 'carrier-containment',
+              failureClass: 'semantic-review-required',
+              code: zeroDeltaContainment.code,
+              message: 'Agent-reviewed zero-delta Delivery Carrier containment cannot be reconstructed.',
+              findings: [zeroDeltaContainment],
+            },
+          };
+        }
+        let alreadyContained = zeroDeltaContainment?.status === 'contained';
+        let containment = zeroDeltaContainment;
         if (!alreadyDelivered && observedTargetRef !== run.deliveryCarrier.expectedTargetRef) {
           const fetched = git(retainedRoot, 'deliver-contained-target-fetch', ['fetch', run.identity.remote, run.identity.targetBranch]);
           operations.push(fetched.observation);
@@ -457,7 +497,7 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
 
         const context = taskEnvironment(run);
         if (!context?.ready) return { status: 'blocked', operations, failure: { operation: 'retained-controller', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.retained-controller-unavailable', message: context?.blocked?.message || 'Retained Environment controller is unavailable.' } };
-        const plan = run.deliveryCarrier.activationPlan || activationPlan(run, run.deliveryCarrier.changedPaths || []);
+        const plan = run.deliveryCarrier.activationPlan || activationPlan(run, run.deliveryCarrier.activationPaths || run.deliveryCarrier.changedPaths || []);
         const beforeActivation = activationGitDelta(retainedRoot);
         if (beforeActivation === null) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-status-unavailable', message: 'Unable to observe retained Git status before activation.' } };
         if (beforeActivation.length) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-workspace-dirty', message: 'Retained Workspace has non-metadata changes before activation.', findings: beforeActivation } };
@@ -522,9 +562,9 @@ export function createTaskFinishProductHandlers({ runtime, root }) {
         return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'product-execution-failure', code: 'task-finish.terminal-association-identity-mismatch', message: 'Prepared terminal association does not match the current Finish run identity.' } };
       }
       if (!association) {
-        const development = developmentCarrier(run);
-        if (!development.matches) return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'upstream-candidate-defect', code: 'task-finish.development-handoff-not-current', message: 'Cannot persist terminal delivery associations because the current Development handoff no longer matches this run.' } };
-        association = terminalAssociation(development.handoff, new Date().toISOString());
+        const handoff = run.developmentHandoff || developmentCarrier(run).handoff;
+        if (!handoff) return { status: 'blocked', operations, failure: { operation: 'terminal-association', failureClass: 'product-execution-failure', code: 'task-finish.frozen-handoff-unavailable', message: 'Cannot persist terminal delivery associations because the run has no matching frozen Development handoff snapshot.' } };
+        association = terminalAssociation(handoff, new Date().toISOString());
       }
       const prepared = {
         schemaVersion: 'buildr.task-finish-completion/v1',

@@ -17,7 +17,7 @@ export function pickWorkspaceDirectory({ platform = process.platform, execute = 
       ].join('; ');
       return execute('powershell.exe', ['-NoProfile', '-STA', '-Command', script], { encoding: 'utf8', windowsHide: true }).trim() || null;
     }
-    const error = new Error('当前平台暂不支持图形目录选择，请使用 buildr app --target <workspace>。');
+    const error = new Error('当前平台暂不支持图形目录选择，请使用 buildr web --target <workspace>。');
     error.code = 'workspace_picker_unsupported';
     error.status = 501;
     throw error;

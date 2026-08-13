@@ -190,7 +190,7 @@ Workspace Structured Store MUST 以独立窄表保存 Task Development current R
 - **AND** MUST NOT 迁移、双写、重建或因旧 files 存在而阻塞 SQLite mutation
 
 ### Requirement: canonical Workspace Structured Store 必须验证 writer runtime provenance
-Buildr MUST 在创建数据库、打开 writable connection、应用 migration 或写入 canonical Workspace Structured Store 前，验证 caller runtime source 对 target canonical Workspace 的 writer provenance。来自与 target 共享 Git common-dir 的 linked task worktree、候选 checkout 或无法证明为 retained controller 的自举 runtime MUST 在任何 SQLite/filesystem mutation 前被拒绝；CLI、HTTP、Local App 与 internal driver MUST 经过同一保护边界。该 writer 规则 MUST NOT 延伸为对已解析 root 的只读 Git/worktree 观察，也 MUST NOT 降低普通用户 Workspace 对其已安装/retained runtime 的合法单库写入能力。
+Buildr MUST 在创建数据库、打开 writable connection、应用 migration 或写入 canonical Workspace Structured Store 前，验证 caller runtime source 对 target canonical Workspace 的 writer provenance。来自与 target 共享 Git common-dir 的 linked task worktree、候选 checkout 或无法证明为 retained controller 的自举 runtime MUST 在任何 SQLite/filesystem mutation 前被拒绝；CLI、HTTP、Buildr Web 与 internal driver MUST 经过同一保护边界。该 writer 规则 MUST NOT 延伸为对已解析 root 的只读 Git/worktree 观察，也 MUST NOT 降低普通用户 Workspace 对其已安装/retained runtime 的合法单库写入能力。
 
 #### Scenario: candidate runtime 尝试写 canonical database
 - **WHEN** 自举 task worktree 中的 candidate Buildr runtime 将 canonical retained Workspace 作为 Structured Store target 执行任一 writable Task、migration 或 repository action

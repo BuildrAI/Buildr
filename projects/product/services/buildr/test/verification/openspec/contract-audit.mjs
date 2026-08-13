@@ -109,8 +109,13 @@ for (const change of [...archivedChanges.values()].sort((left, right) => left.en
     const current = replay.get(capability) || baseCanonical(capability);
     replay.set(capability, current);
     canonicalFiles.set(capability, { path: `openspec/specs/${capability}/spec.md`, ...current });
-    const purpose = openSpecSection(actualCanonical(capability).content, 'Purpose').trim();
+    const actual = actualCanonical(capability);
+    const purpose = openSpecSection(actual.content, 'Purpose').trim();
     if (purpose) capabilityPurposes.set(capability, purpose);
+    else if (!actual.exists) capabilityPurposes.set(
+      capability,
+      `Historical replay placeholder for removed capability ${capability}; the final candidate does not retain this capability.`,
+    );
   }
   const deltaDigest = `sha256-${crypto.createHash('sha256').update([...change.capabilities.values()].map((item) => item.content).join('\0')).digest('hex')}`;
   const plan = createConvergencePlan({

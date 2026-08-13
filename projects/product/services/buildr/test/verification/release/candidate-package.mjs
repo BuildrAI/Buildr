@@ -2,9 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
+import { buildApplicationPayload } from '../../../scripts/release/application-payload.mjs';
+import { createReleaseArtifact, readReleaseArtifact } from '../../../scripts/release/release-artifact.mjs';
 
 export const CANDIDATE_TARBALL_ENV = 'BUILDR_CANDIDATE_TARBALL';
 export const CANDIDATE_PACK_METADATA_ENV = 'BUILDR_CANDIDATE_PACK_METADATA';
+export const CANDIDATE_RELEASE_MANIFEST_ENV = 'BUILDR_CANDIDATE_RELEASE_MANIFEST';
 
 function parsePackMetadata(metadataPath) {
   let payload;
@@ -22,7 +25,8 @@ function parsePackMetadata(metadataPath) {
 export function readSharedCandidatePackage(env = process.env) {
   const tarballValue = env[CANDIDATE_TARBALL_ENV];
   const metadataValue = env[CANDIDATE_PACK_METADATA_ENV];
-  if (!tarballValue && !metadataValue) return null;
+  const manifestValue = env[CANDIDATE_RELEASE_MANIFEST_ENV];
+  if (!tarballValue && !metadataValue && !manifestValue) return null;
   if (!tarballValue || !metadataValue) throw new Error('shared candidate package requires both tarball and pack metadata');
 
   const tarball = path.resolve(tarballValue);
@@ -31,21 +35,37 @@ export function readSharedCandidatePackage(env = process.env) {
   if (!fs.statSync(metadataPath, { throwIfNoEntry: false })?.isFile()) throw new Error(`shared candidate pack metadata is missing: ${metadataPath}`);
   const metadata = parsePackMetadata(metadataPath);
   if (path.basename(tarball) !== metadata.filename) throw new Error('shared candidate tarball filename does not match pack metadata');
-  return { tarball, metadataPath, metadata };
+  if (!manifestValue) return { tarball, metadataPath, metadata };
+  const artifact = readReleaseArtifact(manifestValue, {
+    packageName: metadata.name,
+    version: metadata.version,
+  });
+  if (artifact.tarball !== tarball) throw new Error('shared candidate release manifest does not bind the candidate tarball');
+  return { tarball, metadataPath, metadata, manifestPath: artifact.manifestPath, manifest: artifact.manifest };
 }
 
-export function createCandidatePackage(productRoot, destination, options = {}) {
+export async function createCandidatePackage(productRoot, destination, options = {}) {
   const npmExecutable = options.npmExecutable ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   fs.mkdirSync(destination, { recursive: true });
-  const result = spawnCommandSync(npmExecutable, ['pack', productRoot, '--pack-destination', destination, '--json'], {
+  const source = spawnCommandSync('git', ['rev-parse', 'HEAD'], {
     cwd: productRoot,
     encoding: 'utf8',
   });
-  if (result.status !== 0) throw new Error(`npm pack failed with exit ${result.status}: ${(result.stderr || '').trim()}`);
-  const metadataPath = path.join(destination, 'npm-pack.json');
-  fs.writeFileSync(metadataPath, `${result.stdout.trim()}\n`, 'utf8');
-  const metadata = parsePackMetadata(metadataPath);
-  const tarball = path.join(destination, metadata.filename);
-  if (!fs.statSync(tarball, { throwIfNoEntry: false })?.isFile()) throw new Error(`npm pack did not create expected tarball: ${tarball}`);
-  return { tarball, metadataPath, metadata, stdout: result.stdout, stderr: result.stderr };
+  if (source.status !== 0 || !/^[a-f0-9]{40,64}$/.test(source.stdout.trim())) {
+    throw new Error(`candidate source commit is unavailable: ${(source.stderr || source.stdout || '').trim()}`);
+  }
+  const payload = await buildApplicationPayload(path.join(destination, 'application-payload'), source.stdout.trim());
+  const artifact = createReleaseArtifact(payload.root, destination, { npmExecutable });
+  const metadata = parsePackMetadata(artifact.packMetadataPath);
+  return {
+    tarball: artifact.tarball,
+    metadataPath: artifact.packMetadataPath,
+    metadata,
+    manifestPath: artifact.manifestPath,
+    manifest: artifact.manifest,
+    payloadRoot: payload.root,
+    payloadManifest: payload.manifest,
+    stdout: '',
+    stderr: '',
+  };
 }

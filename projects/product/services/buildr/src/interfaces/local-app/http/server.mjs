@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.mjs';
 import {
   clearLocalAppInstance,
   acquireLocalAppStartLock,
@@ -26,9 +26,11 @@ import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-c
 import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
 import { createLocalAppScheduledMaintenance } from '../runtime/scheduled-maintenance.mjs';
+import { readCliIdentity } from '../../cli/identity.mjs';
+import { assertCurrentNpmLauncherBinding } from '../../../infrastructure/product-launcher/index.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
-const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web-dist');
+const STATIC_ROOT = resolveProductResource('product/src/interfaces/local-app/web-dist');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective', 'retrospectiveState']);
@@ -88,7 +90,7 @@ function apiError(response, error) {
   jsonResponse(response, status, {
     error: {
       code: error.code || 'internal_error',
-      message: status >= 500 ? 'Buildr 本地应用处理请求失败。' : error.message,
+      message: status >= 500 ? 'Buildr Web 处理请求失败。' : error.message,
       ...(error.details === undefined ? {} : { details: error.details }),
     },
   });
@@ -128,19 +130,19 @@ function readJsonBody(request) {
 
 function assertWriteRequest(request, origin, sessionToken) {
   if (request.headers.origin !== origin) {
-    const error = new Error('写请求必须来自当前 Buildr 本地应用。');
+    const error = new Error('写请求必须来自当前 Buildr Web。');
     error.code = 'origin_forbidden';
     error.status = 403;
     throw error;
   }
   if (request.headers['x-buildr-session'] !== sessionToken) {
-    const error = new Error('Buildr 本地应用 session 已失效，请刷新页面。');
+    const error = new Error('Buildr Web session 已失效，请刷新页面。');
     error.code = 'session_forbidden';
     error.status = 403;
     throw error;
   }
   if (!String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
-    const error = new Error('Buildr 本地应用请求 content type 必须是 application/json。');
+    const error = new Error('Buildr Web 请求 content type 必须是 application/json。');
     error.code = 'content_type_unsupported';
     error.status = 415;
     throw error;
@@ -215,7 +217,7 @@ function contentTypeFor(filePath) {
 function injectedIndexHtml(sessionToken, previewIdentity) {
   const indexPath = path.join(STATIC_ROOT, 'index.html');
   if (!fs.existsSync(indexPath)) {
-    const error = new Error('Local App web dist 缺失，请先运行 npm run build:web。');
+    const error = new Error('Buildr Web dist 缺失，请先运行 npm run build:web。');
     error.code = 'web_dist_missing';
     error.status = 503;
     throw error;
@@ -257,6 +259,7 @@ export function createLocalWorkspaceServer(runtime, {
   port = 0,
   instanceSecret = null,
   launcherIdentity = null,
+  productIdentity = null,
   previewIdentity = null,
   onShutdown = null,
   readExecutor = null,
@@ -302,7 +305,14 @@ export function createLocalWorkspaceServer(runtime, {
           jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });
           return;
         }
-        jsonResponse(response, 200, { schemaVersion: 'buildr.local-app-health/v1', status: closing ? 'stopping' : 'ready', pid: process.pid, launcherIdentity, previewIdentity });
+        jsonResponse(response, 200, {
+          schemaVersion: 'buildr.local-app-health/v1',
+          status: closing ? 'stopping' : 'ready',
+          pid: process.pid,
+          launcherIdentity,
+          productIdentity,
+          previewIdentity,
+        });
         return;
       }
       if (request.method === 'GET' && pathname === '/api/v1/workspaces') {
@@ -513,6 +523,16 @@ export function createLocalWorkspaceServer(runtime, {
         }
         const servicesMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services$/);
         if (request.method === 'GET' && servicesMatch) return jsonResponse(response, 200, runtime.listServices(root, servicesMatch[1]));
+        const serviceDocumentMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services\/([A-Za-z0-9][A-Za-z0-9._-]*)\/documents\/(.+)$/);
+        if (request.method === 'GET' && serviceDocumentMatch) {
+          let documentPath = serviceDocumentMatch[3];
+          try {
+            documentPath = decodeURIComponent(documentPath);
+          } catch {
+            throw Object.assign(new Error('服务文档路径无效。'), { code: 'service_document_path_forbidden', status: 400 });
+          }
+          return jsonResponse(response, 200, runtime.serviceDocument(root, serviceDocumentMatch[1], serviceDocumentMatch[2], documentPath));
+        }
         const serviceMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
         if (request.method === 'GET' && serviceMatch) return jsonResponse(response, 200, runtime.serviceDetail(root, serviceMatch[1], serviceMatch[2]));
         if (request.method === 'PUT' && serviceMatch) {
@@ -542,7 +562,7 @@ export function createLocalWorkspaceServer(runtime, {
           return jsonResponse(response, 200, runtime.generateTaskVerificationPrompt(root, input));
         }
       }
-      jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr 本地应用资源不存在。' } });
+      jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr Web 资源不存在。' } });
     }).catch((error) => apiError(response, error));
   });
   server.once('close', () => {
@@ -575,26 +595,36 @@ export function createLocalWorkspaceServer(runtime, {
 export function registerLocalWorkspaceAppInterface(runtime) {
   registerLocalAppPreviewResourceProvider(runtime);
   async function startLocalWorkspaceApp(args) {
-    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open']), new Set(['--no-open']));
+    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding']), new Set(['--no-open']));
     const targetValue = runtime.optionValue(args, '--target', null);
     const targetRoot = targetValue ? path.resolve(targetValue) : null;
     const rawPort = runtime.optionValue(args, '--port', '0');
     const port = Number(rawPort);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
-    const noOpen = args.includes('--no-open');
-    const launcherIdentity = readLauncherIdentityFromEnvironment();
+    const launcherBindingPath = runtime.optionValue(args, '--launcher-binding', null);
+    const noOpen = args.includes('--no-open') || (launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
+    const productIdentity = readCliIdentity();
+    const npmLauncherBinding = launcherBindingPath ? assertCurrentNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
+    const launcherIdentity = npmLauncherBinding || readLauncherIdentityFromEnvironment();
     const previewIdentity = readPreviewIdentityFromEnvironment();
     let initialWorkspaceId = null;
     if (targetRoot) initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
     const recorded = readLocalAppInstance();
     const healthy = await healthyLocalAppInstance(recorded);
     if (healthy) {
-      if (launcherIdentity && healthy.launcherIdentity && launcherIdentity.protocolVersion !== healthy.launcherIdentity.protocolVersion) {
-        throw new Error(`已运行 Buildr App protocol v${healthy.launcherIdentity.protocolVersion} 与当前 launcher v${launcherIdentity.protocolVersion} 不兼容，请先退出旧实例。`);
+      const healthyProtocol = healthy.productIdentity?.protocolIdentity
+        || (healthy.launcherIdentity?.protocolIdentity ?? (healthy.launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${healthy.launcherIdentity.protocolVersion}` : null));
+      if (healthyProtocol && productIdentity.protocolIdentity !== healthyProtocol) {
+        throw new Error(`已运行 Buildr Web protocol ${healthyProtocol} 与当前产品 ${productIdentity.protocolIdentity} 不兼容，请先退出旧实例。`);
+      }
+      const launcherProtocol = launcherIdentity?.protocolIdentity || (launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${launcherIdentity.protocolVersion}` : null);
+      const healthyLauncherProtocol = healthy.launcherIdentity?.protocolIdentity || (healthy.launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${healthy.launcherIdentity.protocolVersion}` : null);
+      if (launcherProtocol && healthyLauncherProtocol && launcherProtocol !== healthyLauncherProtocol) {
+        throw new Error(`已运行 Buildr Web protocol ${healthyLauncherProtocol} 与当前 Launcher ${launcherProtocol} 不兼容，请先退出旧实例。`);
       }
       const pageUrl = initialWorkspaceId ? `${healthy.url}/workspaces/${initialWorkspaceId}/` : healthy.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
-      console.log(`Buildr 本地应用已运行：${pageUrl}`);
+      console.log(`Buildr Web 已运行：${pageUrl}`);
       return { reused: true, url: pageUrl };
     }
     if (recorded) clearLocalAppInstance(recorded);
@@ -604,7 +634,7 @@ export function registerLocalWorkspaceAppInterface(runtime) {
       if (!started) throw new Error('另一个 Buildr 启动进程没有在预期时间内就绪，请稍后重试。');
       const pageUrl = initialWorkspaceId ? `${started.url}/workspaces/${initialWorkspaceId}/` : started.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
-      console.log(`Buildr 本地应用已运行：${pageUrl}`);
+      console.log(`Buildr Web 已运行：${pageUrl}`);
       return { reused: true, url: pageUrl };
     }
     const secret = crypto.randomBytes(32).toString('hex');
@@ -615,6 +645,7 @@ export function registerLocalWorkspaceAppInterface(runtime) {
         port,
         instanceSecret: secret,
         launcherIdentity,
+        productIdentity,
         previewIdentity,
         onShutdown: () => {
           if (state) clearLocalAppInstance(state);
@@ -622,12 +653,12 @@ export function registerLocalWorkspaceAppInterface(runtime) {
         },
       });
       const ready = await instance.ready;
-      state = { url: ready.url, secret, pid: process.pid, launcherIdentity };
+      state = { url: ready.url, secret, pid: process.pid, launcherIdentity, productIdentity };
       writeLocalAppInstance(runtime, state);
       releaseLocalAppStartLock(startLock);
       const pageUrl = initialWorkspaceId ? `${ready.url}/workspaces/${initialWorkspaceId}/` : ready.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
-      console.log(`Buildr 本地应用：${pageUrl}`);
+      console.log(`Buildr Web：${pageUrl}`);
       console.log('仅限本机访问；关闭浏览器不会退出服务，请在页面中选择“退出 Buildr”。');
       const cleanup = () => { clearLocalAppInstance(state); };
       process.once('exit', cleanup);
@@ -638,30 +669,30 @@ export function registerLocalWorkspaceAppInterface(runtime) {
       releaseLocalAppStartLock(startLock);
       clearLocalAppInstance(state);
       instance?.server.close();
-      throw new Error(`Buildr 本地应用启动失败：${error.message}`);
+      throw new Error(`Buildr Web 启动失败：${error.message}`);
     }
   }
 
   async function manageLocalAppPreview(action, args) {
     if (action === 'start') {
       const [name, ...options] = args;
-      if (!name) throw new Error('Usage: buildr app preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]');
+      if (!name) throw new Error('Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]');
       const result = await startPreview(runtime, name, options);
       if (options.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
-      else console.log(`Buildr 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}`);
+      else console.log(`Buildr Web 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}`);
       return result;
     }
     if (action === 'list') {
       runtime.assertNoUnknownOptions(args, new Set(['--json']), new Set(['--json']));
       const result = await listPreviews();
       if (args.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
-      else if (!result.previews.length) console.log('没有运行中的 Buildr 开发预览。');
+      else if (!result.previews.length) console.log('没有运行中的 Buildr Web 开发预览。');
       else result.previews.forEach((preview) => console.log(`${preview.instance}\t${preview.status}\t${preview.url || '-'}\t${preview.owner.worktree}`));
       return result;
     }
     if (action === 'stop') {
       const [name, ...options] = args;
-      if (!name) throw new Error('Usage: buildr app preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]');
+      if (!name) throw new Error('Usage: buildr web preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]');
       runtime.assertNoUnknownOptions(options, new Set(['--target', '--task', '--json']), new Set(['--json']));
       const target = runtime.optionValue(options, '--target', null);
       const taskId = runtime.optionValue(options, '--task', null);
@@ -691,7 +722,7 @@ export function registerLocalWorkspaceAppInterface(runtime) {
         await stopPreview(name, { caller });
       }
       if (options.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
-      else console.log(`Buildr 开发预览已停止：${result.instance}`);
+      else console.log(`Buildr Web 开发预览已停止：${result.instance}`);
       return result;
     }
     throw new Error(`未知 preview 操作：${action}`);

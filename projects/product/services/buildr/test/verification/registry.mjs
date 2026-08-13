@@ -40,12 +40,12 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Task Development lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish behaves correctly across its real filesystem, Git, and process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-local-app-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Local App HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-local-app-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Task Finish public CLI and delivery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'Verification contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
   'system-workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 35000, 'Workspace and Task lifecycle journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-runtime-recovery': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Runtime installation and recovery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Local App process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Buildr Web process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-fresh-build': testing(PROJECT_OWNER, 'Development', 'System', 180000, 'A clean Task Environment performs real dependency installation and Web build.', TEST_ENVIRONMENTS.workspaceLifecycle),
   contract: testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.', TEST_ENVIRONMENTS.sourceReadOnly),
   'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 3000, 'CLI modules and wrappers preserve the declared architecture.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -56,10 +56,12 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-candidate-recovery': testing(SERVICE_OWNER, 'Development', 'System', 25000, 'Builtin recovery and migration journeys preserve user-owned state.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release branch convergence behaves correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
   'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 30000, 'Concurrent Task workflows satisfy the declared acceptance contract.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 10000, 'The Buildr npm candidate artifact can be assembled.', TEST_ENVIRONMENTS.isolatedCli),
+  'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'One frozen application payload produces the single npm candidate tarball consumed by later verification.', TEST_ENVIRONMENTS.isolatedGitCli),
+  'application-payload-release': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 30000, 'The frozen application payload is deterministic, complete, host-Node compatible, and serves Buildr Web only on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'npm-launcher-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Integration', 15000, 'The explicit local Launcher binds one verified npm installation without copying Node or Buildr and fails closed on identity drift.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'host-node-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 2000, 'The active Host Node satisfies the bounded package engine contract.', TEST_ENVIRONMENTS.sourceReadOnly),
   'host-node-boundaries': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Node-sensitive SQLite, process, and filesystem boundaries work on the active Host Node.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'host-node-cli-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'The candidate tarball installs and its minimal public CLI lifecycle works on the active Host Node.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'host-node-cli-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'The candidate tarball installs on the active Host Node and executes CLI, Web, and Workspace-owned verification with an independent exact Workspace Node.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'open-source-candidate': testing(PROJECT_OWNER, 'Delivery / Release', 'Static', 10000, 'The candidate contains the required public release materials.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-candidate-audit': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Candidate OpenSpec contracts are current and internally consistent.', TEST_ENVIRONMENTS.sourceReadOnly),
   'managed-mutations': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Production filesystem mutations remain behind declared owners.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -83,7 +85,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'cli-package-parity': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 15000, 'Representative source and packaged CLI outputs and one init mutation remain equivalent.', TEST_ENVIRONMENTS.repeatedCli),
   'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', 10000, 'Service branch configuration works in an isolated repository.', TEST_ENVIRONMENTS.isolatedGitCli),
   'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Remote Skill reads fail within the declared timeout boundary.', TEST_ENVIRONMENTS.loopbackNetwork),
-  'release-tarball-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 10000, 'The release tarball installs and serves its public CLI surface.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'release-tarball-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'The shared release tarball installs, keeps ordinary CLI HTTP-free, and serves healthy Buildr Web on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'managed-data-integrity': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Managed mutations remain atomic and preserve nested repositories.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'docs-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product documentation links and required content remain valid.', TEST_ENVIRONMENTS.sourceReadOnly),
 });
@@ -141,6 +143,10 @@ export const VERIFICATION_IGNORED_INPUTS = Object.freeze([
   'node_modules/**',
   '.buildr/**',
   '.gitignore',
+]);
+
+export const VERIFICATION_GOVERNED_REPOSITORY_INPUTS = Object.freeze([
+  '.github/workflows/publish.yml',
 ]);
 
 export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
@@ -210,9 +216,13 @@ export const verificationSteps = Object.freeze([
     'src/application/verification/**',
     'src/domain/task-environment/**',
     'src/infrastructure/content/**',
+    'src/infrastructure/product-identity/**',
+    'src/infrastructure/product-invocation/**',
     'src/interfaces/internal/**',
     'src/infrastructure/filesystem/workspace-node-runtime.mjs',
     'src/infrastructure/runtime/**',
+    'src/application/product-installation-status.mjs',
+    'src/application/npm-installation-enrollment.mjs',
     'src/interfaces/local-app/runtime/**',
     'services/buildr-web/src/api/client.ts',
     'services/buildr-web/src/App.tsx',
@@ -251,6 +261,11 @@ export const verificationSteps = Object.freeze([
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/contract/**', 'test/fixtures/**', 'preparation.yml', 'verification.yml', 'task-finish.yml',
+    '.github/workflows/publish.yml',
+    'scripts/release/release-authority.mjs',
+    'scripts/release/release-authority-preflight.mjs',
+    'scripts/release/release-contract.mjs',
+    'scripts/release/trusted-publish.mjs',
     'src/infrastructure/runtime/render-claude-code.mjs',
     'test/verification/candidate.mjs',
     'test/verification/changed.mjs',
@@ -297,7 +312,7 @@ export const verificationSteps = Object.freeze([
     'test/system/task-finish-product-journey.test.mjs',
     'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.mjs',
-  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-platform-preflight'], selection: 'explicit-only', inputs: [
+  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', inputs: [
     'test/system/cli-update.test.mjs',
     'test/system/install-buildr-cli-runtime.test.mjs',
     'test/system/local-app-launcher.test.mjs',
@@ -334,9 +349,9 @@ export const verificationSteps = Object.freeze([
     'package/targets/workspace/manifest.yml',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
-    'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-convergence.mjs',
+    'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-authority.mjs', 'scripts/release/release-convergence.mjs',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
-  step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], groups: ['windows-platform-preflight'], inputs: [
+  step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], groups: ['windows-npm-preflight'], inputs: [
     'test/verification/concurrency/**', 'test/helpers/child-process-supervisor.mjs', 'test/helpers/clean-product-source.mjs',
     'src/application/worktree/**', 'src/application/task-verification/**', 'src/application/verification/**', 'src/interfaces/local-app/runtime/preview-manager.mjs',
     'openspec/specs/concurrent-task-acceptance/**', 'openspec/specs/task-environments/**',
@@ -357,13 +372,33 @@ export const verificationSteps = Object.freeze([
     'test/verification/host-node.mjs',
     'test/verification/host-node/**',
   ], concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'candidate-tarball', name: 'candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate', 'host-node'], inputs: ['package.json', 'package-lock.json', '.npmignore', 'buildr', 'bin/buildr.mjs', 'scripts/install-buildr-cli', 'scripts/uninstall-buildr-cli'] }),
+  step({ id: 'candidate-tarball', name: 'frozen application payload and candidate npm tarball', executor: { type: 'candidate-artifact' }, profiles: ['candidate', 'host-node'], groups: ['release'], inputs: [
+    'package.json', 'package-lock.json', 'LICENSE', 'README.md',
+    'scripts/release/application-payload.mjs', 'scripts/release/application-payload-entry.mjs', 'scripts/release/release-artifact.mjs',
+    'src/**', 'package/**', 'test/verification/release/candidate-package.mjs', 'test/verification/executor.mjs', '.github/workflows/publish.yml',
+  ], inputExclusions: ['package/launchers/**'] }),
+  step({ id: 'application-payload-release', name: 'application payload and npm runtime candidate', executor: { type: 'node-test', files: [
+    'test/integration/application-payload-release.test.mjs',
+  ], args: ['--test-concurrency=1', '--test-reporter=dot'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], inputs: [
+    'scripts/release/application-payload.mjs', 'scripts/release/application-payload-entry.mjs', 'scripts/release/release-artifact.mjs',
+    'src/**', 'package/**', 'test/integration/application-payload-release.test.mjs',
+    'test/verification/release/candidate-package.mjs', 'test/verification/executor.mjs', '.github/workflows/publish.yml',
+  ], inputExclusions: ['package/launchers/**'], dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'npm-launcher-candidate', name: 'verified npm installation Launcher projection', executor: { type: 'node-test', files: [
+    'test/integration/npm-launcher.test.mjs',
+  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
+    'src/infrastructure/product-launcher/**', 'src/infrastructure/product-identity/**',
+    'src/interfaces/cli/launcher.mjs', 'src/interfaces/local-app/http/server.mjs',
+    'scripts/release/application-payload.mjs', 'scripts/release/application-payload-entry.mjs',
+    'test/integration/npm-launcher.test.mjs', 'test/verification/release/release-smoke.mjs',
+    '.github/workflows/publish.yml',
+  ], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'host-node-cli-smoke', name: 'Host Node installed CLI smoke', executor: { type: 'node', file: 'test/verification/host-node/cli-smoke.mjs', consumesArtifact: true }, profiles: ['host-node'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**', 'src/application/doctor/**',
-    'src/application/workspace-operations.mjs', 'package.json', 'package-lock.json',
+    'src/application/workspace-operations.mjs', 'scripts/release/runtime-role-verification.mjs', 'package.json', 'package-lock.json',
     'test/verification/host-node.mjs', 'test/verification/host-node/**', 'test/verification/release/candidate-package.mjs',
   ], dependsOn: ['candidate-tarball'], concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'], inputs: ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/**', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'docs/agent-runtime-adapters.md'], dependsOn: ['candidate-tarball'] }),
+  step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'], inputs: ['package.json', 'package-lock.json', '.npmignore', 'README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/workflows/publish.yml', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'docs/agent-runtime-adapters.md'], dependsOn: ['candidate-tarball'] }),
   step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.mjs' }, profiles: ['candidate'], groups: ['openspec'], inputs: ['openspec/**', 'test/verification/openspec/contract-audit.mjs'] }),
   step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: ['src/application/package-maintenance/**', 'src/application/workspace-operations.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/runtime/**', 'package.json'] }),
 
@@ -387,9 +422,9 @@ export const verificationSteps = Object.freeze([
   step({ id: 'package-skills', ...packageVerifier('skills'), profiles: ['candidate'], groups: ['package'], inputs: ['package/targets/workspace/skills/**', 'package/targets/runtime/skills/**', 'src/application/domains/skills.mjs', 'src/infrastructure/runtime/skills/**', 'src/application/package-maintenance/**'], schedulingCostMs: 10000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-runtime', ...packageVerifier('runtime'), profiles: ['candidate'], groups: ['package', 'runtime'], inputs: ['package/targets/runtime/**', 'package/targets/workspace/rules/**', 'src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/package-maintenance/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'runtime-skill-projection', name: 'runtime packaged Skill projection', executor: { type: 'node', file: 'test/verification/runtime/skill-projection.mjs' }, groups: ['runtime'], inputs: ['test/verification/runtime/skill-projection.mjs', 'test/verification/runtime/fixture.mjs', 'package/targets/workspace/skills/manifest.yml', 'package/targets/workspace/skills/buildr/**', 'package/targets/workspace/skills/openspec/**'], schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'runtime-adapter-parity', name: 'runtime adapter implementation-family parity', executor: { type: 'node', file: 'test/verification/runtime/adapter-parity.mjs' }, profiles: ['candidate'], groups: ['runtime', 'windows-platform-preflight'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/doctor/runtime-diagnostics.mjs', 'test/verification/runtime/adapter-parity.mjs', 'test/verification/runtime/fixture.mjs', 'package/targets/runtime/**', 'package/targets/workspace/rules/**'], schedulingCostMs: 30000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  step({ id: 'runtime-adapter-parity', name: 'runtime adapter implementation-family parity', executor: { type: 'node', file: 'test/verification/runtime/adapter-parity.mjs' }, profiles: ['candidate'], groups: ['runtime', 'windows-npm-preflight'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/doctor/runtime-diagnostics.mjs', 'test/verification/runtime/adapter-parity.mjs', 'test/verification/runtime/fixture.mjs', 'package/targets/runtime/**', 'package/targets/workspace/rules/**'], schedulingCostMs: 30000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
 
-  step({ id: 'workspace-lifecycle', name: 'Workspace E2E: workspace lifecycle', executor: { type: 'workspace-suite', selector: 'workspace-lifecycle' }, profiles: ['candidate'], groups: ['windows-platform-preflight'], inputs: ['src/application/domains/workspace.mjs', 'src/application/domains/commands.mjs', 'src/application/domains/rules.mjs', 'src/application/domains/skills.mjs', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/workspace-lifecycle.mjs'], schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'workspace-lifecycle', name: 'Workspace E2E: workspace lifecycle', executor: { type: 'workspace-suite', selector: 'workspace-lifecycle' }, profiles: ['candidate'], groups: ['windows-npm-preflight'], inputs: ['src/application/domains/workspace.mjs', 'src/application/domains/commands.mjs', 'src/application/domains/rules.mjs', 'src/application/domains/skills.mjs', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/workspace-lifecycle.mjs'], schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'ownership-recovery', name: 'Workspace E2E: ownership recovery', executor: { type: 'workspace-suite', selector: 'ownership-recovery' }, profiles: ['candidate'], inputs: ['src/application/domains/components.mjs', 'src/application/package-maintenance/**', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/ownership-recovery.mjs'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'runtime-reconciliation', name: 'Workspace E2E: runtime reconciliation', executor: { type: 'workspace-suite', selector: 'runtime-reconciliation' }, profiles: ['candidate'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/runtime-reconciliation.mjs', 'package/targets/runtime/**', 'package/targets/workspace/rules/**'], schedulingCostMs: 10000, concurrencyClass: 'workspace-heavy' }),
 
@@ -404,17 +439,22 @@ export const verificationSteps = Object.freeze([
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
     'src/application/compose-runtime.mjs', 'src/application/json-contracts.mjs',
+    'src/application/task-finish/task-finish-result-projection.mjs',
     'src/infrastructure/product-layout.mjs',
     'test/verification/cli/package-parity.mjs', 'package.json', 'package-lock.json',
   ], dependsOn: ['candidate-tarball'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.mjs' }, profiles: ['candidate'], inputs: ['src/application/domains/workspace.mjs', 'test/verification/onboarding/service-branch.mjs', 'services/**'], inputExclusions: ['services/buildr-web/**'], schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'remote-skill-timeout', name: 'remote Skill timeout contract', executor: { type: 'node', file: 'test/verification/network/remote-text.mjs' }, profiles: ['candidate'], inputs: ['src/infrastructure/network/fetch-remote-text.mjs', 'src/application/domains/skills.mjs', 'test/verification/network/**'], concurrencyClass: 'network' }),
-  step({ id: 'release-tarball-smoke', name: 'release tarball smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-platform-preflight'], inputs: [
+  step({ id: 'remote-skill-timeout', name: 'remote Skill timeout contract', executor: { type: 'node', file: 'test/verification/network/remote-text.mjs' }, profiles: ['candidate'], inputs: [
+    'src/infrastructure/network/**', 'src/infrastructure/product-invocation/**',
+    'src/interfaces/cli/main.mjs', 'scripts/release/application-payload-entry.mjs',
+    'src/application/domains/skills.mjs', 'test/verification/network/**',
+  ], concurrencyClass: 'network' }),
+  step({ id: 'release-tarball-smoke', name: 'release tarball smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
     'src/application/cli-update.mjs', 'src/application/compose-runtime.mjs',
     'src/application/package-maintenance/**', 'src/application/package-maintenance.mjs',
     'src/application/workspace-operations.mjs', 'src/infrastructure/product-layout.mjs',
-    'package.json', 'package-lock.json', 'test/verification/release/**',
+    'package.json', 'package-lock.json', 'test/verification/release/**', '.github/workflows/publish.yml',
   ], dependsOn: ['candidate-tarball'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'managed-data-integrity', name: 'managed data integrity', executor: { type: 'node', file: 'test/verification/integrity/managed-data-integrity.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: [
     'src/application/package-maintenance/**', 'src/application/package-maintenance.mjs',
@@ -435,7 +475,7 @@ export const verificationSteps = Object.freeze([
 export const VERIFICATION_TEST_INTENTS = Object.freeze(['Development', 'Acceptance', 'Static Conformance', 'Delivery / Release']);
 export const VERIFICATION_EXECUTION_BOUNDARIES = Object.freeze(['Static', 'Unit', 'Component', 'Integration', 'System']);
 export const VERIFICATION_PROFILES = Object.freeze(['fast', 'candidate', 'host-node']);
-export const VERIFICATION_GROUPS = Object.freeze(['public', 'cli', 'runtime', 'package', 'openspec', 'release', 'recovery', 'windows-platform-preflight']);
+export const VERIFICATION_GROUPS = Object.freeze(['public', 'cli', 'runtime', 'package', 'openspec', 'release', 'recovery', 'windows-npm-preflight']);
 export const VERIFICATION_EXECUTORS = Object.freeze(['node', 'node-test', 'npm', 'openspec', 'package-selector', 'workspace-suite', 'candidate-artifact']);
 
 export function verificationStepById(id) {

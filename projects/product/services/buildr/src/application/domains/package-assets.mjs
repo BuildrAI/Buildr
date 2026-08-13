@@ -51,7 +51,6 @@ export function registerDomainsPackageAssets(runtime) {
         include: [],
         agentSkills: [],
         skillSources: [],
-        builtins: { rules: [], skills: [], commands: [] },
         components: [],
         workspaceDirectories: [],
         workspaceFiles: [],

@@ -137,6 +137,43 @@ test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'conflict', expectedRoot: carrier.root }).status, 'removed');
 });
 
+test('Agent 显式确认时采用 clean baseline carrier 作为零差异 adaptation', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
+  git(taskRoot, ['add', 'shared.txt']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline already satisfies task meaning\n');
+  git(root, ['add', 'shared.txt']);
+  git(root, ['commit', '-m', 'advance target with reviewed meaning']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'zero-delta', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
+  assert.equal(carrier.status, 'adaptation-required');
+
+  const missingConfirmation = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
+  assert.equal(missingConfirmation.status, 'blocked');
+  assert.equal(missingConfirmation.code, 'task-finish.delivery-adaptation-missing');
+
+  const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier, acceptZeroDelta: true });
+  assert.equal(adopted.status, 'adopted');
+  assert.equal(adopted.zeroDelta, true);
+  assert.equal(adopted.head, baselineHead);
+  assert.equal(adopted.tree, carrier.deliveryBaseline.tree);
+  assert.deepEqual(adopted.changedPaths, []);
+  assert.deepEqual(adopted.changes, []);
+  assert.deepEqual(adopted.activationPaths, ['shared.txt']);
+  assert.equal(adopted.deliveryCommit, carrier.deliveryCommit);
+
+  const adaptedCarrier = { ...carrier, ...adopted, reuseMode: 'agent-reviewed-delivery-adaptation' };
+  const verified = verifyGitTaskContributionCarrier({ repositoryRoot: taskRoot, carrier: adaptedCarrier });
+  assert.equal(verified.status, 'equivalent');
+  assert.equal(verified.appliedIdentity, adopted.carrierDeltaIdentity);
+  const cleanupProof = verifyDeliveredGitTaskContribution({ taskRoot, targetRef: baselineHead, proof: adaptedCarrier });
+  assert.equal(cleanupProof.status, 'equivalent');
+  assert.equal(cleanupProof.carrierIdentity, adopted.carrierDeltaIdentity);
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'zero-delta', expectedRoot: carrier.root }).status, 'removed');
+});
+
 test('Agent-reviewed adaptation改变冻结message时保持blocked', (t) => {
   const { root, taskRoot } = repository(t);
   fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');

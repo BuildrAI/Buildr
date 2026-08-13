@@ -30,7 +30,8 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
     'unit', 'component', 'integration', 'integration-task-development', 'contract',
     'system-verification-contracts', 'system-workspace-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-fresh-build',
     'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
-    'integration-candidate-recovery', 'concurrent-task-acceptance', 'candidate-tarball', 'open-source-candidate',
+    'integration-candidate-recovery', 'concurrent-task-acceptance', 'candidate-tarball',
+    'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate',
     'openspec-candidate-audit', 'managed-mutations', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'openspec-convergence-recovery', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
     'package-runtime', 'runtime-adapter-parity', 'workspace-lifecycle', 'ownership-recovery', 'runtime-reconciliation',
@@ -95,6 +96,21 @@ test('docs-only changed plan 只选择轻量文档 owner', () => {
   assert.match(plan.steps[0].reasons[0], /docs\/buildr-product\.md matches/);
 });
 
+test('受治理 repo-root publish workflow 精确进入 release owners，其他 root workflow 仍 fail closed', () => {
+  const workflow = '.github/workflows/publish.yml';
+  const plan = createVerificationPlan({ paths: [workflow] });
+  assert.deepEqual(ids(plan), [
+    'contract', 'candidate-tarball', 'application-payload-release',
+    'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke',
+  ]);
+  const audit = auditVerificationInputCoverage([workflow]);
+  assert.deepEqual(audit.mapped, [{
+    path: workflow,
+    owners: ['contract', 'candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke'],
+  }]);
+  assert.throws(() => createVerificationPlan({ paths: ['.github/workflows/unowned.yml'] }), /Ungoverned repository path/);
+});
+
 test('验证选择基础路径由同一 changed plan 扩展为完整回归', () => {
   const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
   for (const path of ['verification.yml', 'test/verification/registry.mjs', 'test/verification/planner.mjs']) {
@@ -151,7 +167,7 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
   }
 });
 
-test('local app Changed 路由只选择内部 owner，Browser 由独立 capability 拥有', () => {
+test('Buildr Web Changed 路由只选择内部 owner，Browser 由独立 capability 拥有', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/api/client.ts'] })), ['unit', 'integration', 'system-local-app-http']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/App.tsx'] })), ['unit', 'integration']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ProjectsPage.tsx'] })), ['unit']);
@@ -160,7 +176,9 @@ test('local app Changed 路由只选择内部 owner，Browser 由独立 capabili
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TaskChangeDetailPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/main.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/WorkspacesPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), ['unit', 'integration', 'system-app-process']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), [
+    'unit', 'integration', 'system-app-process', 'candidate-tarball', 'application-payload-release',
+  ]);
   const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
   assert.deepEqual(ids(browserTest), []);
   assert.deepEqual(browserTest.delegated, [{ path: 'test/browser-smoke/local-app-browser.test.mjs', owners: ['product.browser-smoke'] }]);
@@ -183,7 +201,7 @@ test('OpenSpec 路径只选择真实 owner', () => {
 
 test('Task Finish affected 路径使用有界 Integration/System slice', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/application/task-finish/task-finish-application.mjs'] })), [
-    'unit', 'integration-task-finish', 'system-task-finish',
+    'unit', 'integration-task-finish', 'system-task-finish', 'candidate-tarball', 'application-payload-release',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-finish-run.test.mjs'] })), [
     'integration-task-finish',
@@ -193,11 +211,12 @@ test('Task Finish affected 路径使用有界 Integration/System slice', () => {
   ]);
   const skillPlan = ids(createVerificationPlan({ paths: ['package/targets/workspace/skills/buildr/task-finish/SKILL.md'] }));
   assert.deepEqual(skillPlan, [
-    'contract', 'capability-cli-integration', 'package-static', 'package-skills', 'runtime-skill-projection', 'docs-quality',
+    'contract', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration',
+    'package-static', 'package-skills', 'runtime-skill-projection', 'docs-quality',
   ]);
   assert.equal(skillPlan.includes('runtime-adapter-parity'), false);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['package/targets/workspace/skills/contracts/buildr/task-finish/v1.md'] })), [
-    'contract', 'capability-cli-integration', 'package-static', 'package-skills', 'docs-quality',
+    'contract', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration', 'package-static', 'package-skills', 'docs-quality',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['docs/cli-reference.md'] })), [
     'candidate-tarball', 'open-source-candidate', 'cli-compatibility', 'docs-quality',
@@ -206,7 +225,9 @@ test('Task Finish affected 路径使用有界 Integration/System slice', () => {
 
 test('Task Development lifecycle 路径使用独立重型 Integration owner', () => {
   const sourcePlan = ids(createVerificationPlan({ paths: ['src/application/task-development/task-development-application.mjs'] }));
-  assert.deepEqual(sourcePlan, ['unit', 'integration-task-development', 'system-workspace-lifecycle']);
+  assert.deepEqual(sourcePlan, [
+    'unit', 'integration-task-development', 'system-workspace-lifecycle', 'candidate-tarball', 'application-payload-release',
+  ]);
   assert.equal(sourcePlan.includes('integration'), false);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-development-application.test.mjs'] })), [
     'integration-task-development',
@@ -231,7 +252,7 @@ test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {
   ] });
   assert.deepEqual(ids(plan), [
     'unit', 'integration-task-finish', 'contract', 'system-task-finish',
-    'openspec-spec-quality', 'openspec-strict', 'candidate-tarball', 'open-source-candidate', 'openspec-candidate-audit',
+    'openspec-spec-quality', 'openspec-strict', 'candidate-tarball', 'application-payload-release', 'open-source-candidate', 'openspec-candidate-audit',
     'capability-cli-integration', 'package-static', 'package-skills',
     'runtime-skill-projection', 'cli-compatibility', 'docs-quality',
   ]);
@@ -241,7 +262,10 @@ test('focus step 与 group 去重且只展开真实 artifact 依赖', () => {
   const plan = createVerificationPlan({ stepIds: ['release-tarball-smoke', 'release-tarball-smoke'], groups: ['release'] });
   assert.deepEqual(plan.stepIds, ['release-tarball-smoke']);
   assert.deepEqual(plan.groups, ['release']);
-  assert.deepEqual(ids(plan), ['integration-candidate-release', 'candidate-tarball', 'open-source-candidate', 'release-tarball-smoke']);
+  assert.deepEqual(ids(plan), [
+    'integration-candidate-release', 'candidate-tarball', 'application-payload-release',
+    'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke',
+  ]);
   assert.equal(ids(plan).includes('unit'), false);
   assert.throws(() => createVerificationPlan({ stepIds: ['unknown'] }), /Unknown verification step/);
 });

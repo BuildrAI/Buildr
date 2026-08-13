@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  windows-platform-preflight:
+  windows-npm-preflight:
     if: github.event_name == 'pull_request' && github.base_ref == 'dev'
     runs-on: windows-latest
     timeout-minutes: 30
@@ -42,26 +42,26 @@ jobs:
           BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
         shell: bash
         run: projects/product/buildr sync codex --target .
-      - name: Verify Windows platform boundaries
+      - name: Verify Windows npm and Launcher boundaries
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/buildr-verification-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/buildr-verification-diagnostics
           BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         shell: bash
-        run: npm run test:focus -- group:windows-platform-preflight
-      - name: Upload Windows preflight timing
+        run: npm run test:focus -- group:windows-npm-preflight
+      - name: Upload Windows npm preflight timing
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-preflight-timing-node-${{ matrix.node }}
+          name: windows-npm-preflight-timing-node-${{ matrix.node }}
           path: ${{ runner.temp }}/buildr-verification-timing.json
           if-no-files-found: warn
-      - name: Upload Windows preflight failure diagnostics
+      - name: Upload Windows npm preflight failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-preflight-diagnostics-node-${{ matrix.node }}
+          name: windows-npm-preflight-diagnostics-node-${{ matrix.node }}
           path: ${{ runner.temp }}/buildr-verification-diagnostics
           if-no-files-found: ignore
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { Button, Drawer, Space, Typography } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { CaretDownFilled, PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AgentActionDrawer } from './AgentActionDrawer';
@@ -53,7 +53,7 @@ export function AppLayout() {
     document.body.classList.toggle('global-context', isGlobal);
     if (isGlobal) {
       setWorkspaceState(null);
-      document.title = 'Buildr 工作空间';
+      document.title = 'Buildr Web';
       setBreadcrumbParts(['工作空间']);
     }
   }, [isGlobal]);
@@ -64,7 +64,7 @@ export function AppLayout() {
 
   const setWorkspace = useCallback((data: { workspace: { name: string }; rootPath: string }) => {
     setWorkspaceState({ name: data.workspace.name, rootPath: data.rootPath });
-    document.title = `${data.workspace.name} · Buildr`;
+    document.title = `${data.workspace.name} · Buildr Web`;
   }, []);
 
   const openAgentAction = useCallback((action?: string, context: Record<string, unknown> = {}) => {
@@ -89,8 +89,8 @@ export function AppLayout() {
 
   const quit = async () => {
     const ok = await confirmModal({
-      title: '退出 Buildr？',
-      content: '退出 Buildr 后，本机服务将停止。确定退出吗？',
+      title: '退出 Buildr Web？',
+      content: '退出 Buildr Web 后，本机服务将停止。确定退出吗？',
       okText: '退出',
       okButtonProps: { danger: true },
     });
@@ -127,9 +127,9 @@ export function AppLayout() {
   if (exited) {
     return (
       <div className="exit-screen">
-        <Typography.Title level={2}>Buildr 已退出</Typography.Title>
+        <Typography.Title level={2}>Buildr Web 已退出</Typography.Title>
         <Typography.Paragraph type="secondary">
-          你可以关闭此页面；再次点击 Buildr 图标即可重新打开。
+          你可以关闭此页面；再次点击 Buildr Web 图标即可重新打开。
         </Typography.Paragraph>
       </div>
     );
@@ -138,12 +138,12 @@ export function AppLayout() {
   return (
     <AppShellContext.Provider value={shellValue}>
       <div className="app-shell">
-        <aside className="app-sider" aria-label="Buildr 主导航">
+        <aside className="app-sider" aria-label="Buildr Web 主导航">
           <div className="sider-top">
-            <Link className="brand-link" to="/" aria-label="Buildr 工作空间首页">
+            <Link className="brand-link" to="/" aria-label="Buildr Web 工作空间首页">
               <span className="brand-mark">B</span>
               <span>
-                <strong>Buildr</strong>
+                <strong>Buildr Web</strong>
                 <small>全局应用</small>
               </span>
             </Link>
@@ -177,7 +177,10 @@ export function AppLayout() {
                 onClick={() => setResourceExpanded((value) => !value)}
               >
                 <span>核心范围</span>
-                <span className="nav-chevron">{resourceExpanded ? '⌄' : '›'}</span>
+                <CaretDownFilled
+                  className={`nav-chevron${resourceExpanded ? ' expanded' : ''}`}
+                  aria-hidden
+                />
               </Button>
               <nav
                 id="resource-nav-children"
@@ -215,7 +218,7 @@ export function AppLayout() {
                 工作空间设置
               </NavLink>
               <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
-                退出 Buildr
+                退出 Buildr Web
               </Button>
             </nav>
             <div className="local-note">
@@ -229,7 +232,7 @@ export function AppLayout() {
           <header className="topbar">
             <div className="mobile-brand">
               <span className="brand-mark">B</span>
-              <strong>Buildr</strong>
+              <strong>Buildr Web</strong>
             </div>
             <div id="page-breadcrumb" className="breadcrumb" aria-label="当前位置">
               {breadcrumbParts.map((part, index) => (

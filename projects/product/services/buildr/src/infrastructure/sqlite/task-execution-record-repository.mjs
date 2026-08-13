@@ -22,6 +22,7 @@ function rowToRecord(row) {
     owner: row.owner,
     kind: row.kind,
     runIdentity: row.run_identity,
+    invocationIdentity: row.invocation_identity,
     targetIdentity: row.target_identity,
     producer: row.producer,
     outcome: row.outcome,
@@ -51,7 +52,7 @@ function rowToRecord(row) {
   });
 }
 
-const SELECT = `SELECT record_id, schema_version, task_id, owner, kind, run_identity, target_identity, producer,
+const SELECT = `SELECT record_id, schema_version, task_id, owner, kind, run_identity, invocation_identity, target_identity, producer,
   outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest,
   stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until,
   opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at
@@ -70,18 +71,19 @@ function sameOpenIdentity(left, right) {
     && left.owner === right.owner
     && left.kind === right.kind
     && left.runIdentity === right.runIdentity
+    && left.invocationIdentity === right.invocationIdentity
     && left.targetIdentity === right.targetIdentity
     && left.producer === right.producer;
 }
 
 function insert(database, record) {
   database.prepare(`INSERT INTO task_execution_records(
-    record_id, schema_version, task_id, owner, kind, run_identity, target_identity, producer,
+    record_id, schema_version, task_id, owner, kind, run_identity, invocation_identity, target_identity, producer,
     outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest,
     stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until,
     opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    record.recordId, record.schemaVersion, record.taskId, record.owner, record.kind, record.runIdentity, record.targetIdentity, record.producer,
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    record.recordId, record.schemaVersion, record.taskId, record.owner, record.kind, record.runIdentity, record.invocationIdentity, record.targetIdentity, record.producer,
     record.outcome, record.lifecycleStatus, record.resolutionStatus, record.bodyStatus, record.quotaStatus, record.body.locator, record.body.digest,
     record.body.storedSizeBytes, record.body.originalSizeBytes, record.body.truncated ? 1 : 0, record.body.redactionVersion, record.body.reservedSizeBytes,
     record.retention.retainUntil, record.timestamps.openedAt, record.timestamps.sealedAt, record.timestamps.resolvedAt,
@@ -134,12 +136,12 @@ export function registerTaskExecutionRecordRepository(runtime) {
     finally { try { opened?.database?.close(); } catch {} }
   }
 
-  function openTaskExecutionRecordPersistence(targetRoot, value) {
+  function openTaskExecutionRecordPersistence(targetRoot, value, { allowDuplicateActive = false } = {}) {
     const record = normalizeTaskExecutionRecord(value);
     const task = runtime.readTaskRecordPersistence(targetRoot, record.taskId);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const existingRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND run_identity = ?`).get(record.taskId, record.owner, record.kind, record.runIdentity);
@@ -147,7 +149,15 @@ export function registerTaskExecutionRecordRepository(runtime) {
         const existing = rowToRecord(existingRow);
         if (!sameOpenIdentity(existing, record)) throw taskExecutionRecordError('task_execution_record_open_conflict', '相同Task/owner/kind/run identity已绑定不同record facts。', 409, { recordId: existing.recordId });
         database.exec('COMMIT');
-        return { ...persisted(task.root, existing), created: false };
+        return { ...persisted(task.root, existing), created: false, existingActive: false };
+      }
+      if (!allowDuplicateActive && record.invocationIdentity) {
+        const activeRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND invocation_identity = ? AND lifecycle_status = 'open' ORDER BY opened_at, record_id LIMIT 1`).get(record.taskId, record.owner, record.kind, record.invocationIdentity);
+        if (activeRow) {
+          const active = rowToRecord(activeRow);
+          database.exec('COMMIT');
+          return { ...persisted(task.root, active), created: false, existingActive: true };
+        }
       }
       const taskOwnerBytes = quotaCharge(database, "WHERE task_id = ? AND owner = ? AND quota_status IN ('reserved', 'charged')", [record.taskId, record.owner]);
       const workspaceBytes = quotaCharge(database, "WHERE quota_status IN ('reserved', 'charged')");
@@ -160,7 +170,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
       insert(database, record);
       const written = rowToRecord(database.prepare(`${SELECT} WHERE record_id = ?`).get(record.recordId));
       database.exec('COMMIT');
-      return { ...persisted(task.root, written), created: true };
+      return { ...persisted(task.root, written), created: true, existingActive: false };
     } catch (error) {
       try { opened?.database?.exec('ROLLBACK'); } catch {}
       throw asError(error, 'open', { taskId: record.taskId, recordId: record.recordId, rollback: { status: 'restored' } });
@@ -173,7 +183,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
     const task = runtime.readTaskRecordPersistence(targetRoot, previous.taskId);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const currentRow = database.prepare(`${SELECT} WHERE record_id = ?`).get(previous.recordId);
@@ -277,7 +287,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
     if (expected.lifecycleStatus !== 'cleaned') throw taskExecutionRecordError('task_execution_record_tombstone_required', '只有cleaned tombstone可以删除metadata。', 409, { recordId: expected.recordId });
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(targetRoot, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(targetRoot, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const row = database.prepare(`${SELECT} WHERE record_id = ?`).get(expected.recordId);

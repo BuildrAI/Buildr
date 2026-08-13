@@ -3,11 +3,11 @@ import path from 'node:path';
 
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
-import { removeIsolatedGitCarrier } from './git-task-contribution.mjs';
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
-import { executeFinishRun, inspectFinishRun, readFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
+import { executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
+import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
   TASK_FINISH_EXECUTION_RECORD_OWNER,
@@ -24,9 +24,111 @@ function inputError(code, message, action, details = null) {
   return error;
 }
 
+function frozenDevelopmentIdentity(run) {
+  return {
+    handoffIdentity: run.identity.handoffIdentity,
+    candidateIdentity: run.identity.candidateIdentity,
+    candidateGeneration: run.identity.candidateGeneration,
+    contentTargetIdentity: run.identity.contentTargetIdentity,
+  };
+}
+
+function finishRunSideEffectFacts(persistence) {
+  const run = persistence?.run;
+  const laterPhases = (run?.phases || []).filter((phase) => phase.id !== 'preflight');
+  const facts = {
+    carrier: Boolean(run?.deliveryCarrier),
+    lease: Boolean(persistence?.lease),
+    delivery: Boolean(run?.delivery),
+    retained: Boolean(run?.delivery?.remoteAfterRef || run?.delivery?.activation),
+    cleanup: Boolean(persistence?.preparedCompletion || run?.completion || laterPhases.find((phase) => phase.id === 'cleanup' && (phase.attempts > 0 || phase.status !== 'pending'))),
+    uncertainPhase: Boolean(laterPhases.find((phase) => phase.attempts > 0 || phase.status !== 'pending')),
+  };
+  return {
+    ...facts,
+    categories: Object.entries(facts).filter(([, present]) => present).map(([category]) => category),
+  };
+}
+
+function replaceablePreflightRun(persistence) {
+  const run = persistence?.run;
+  const preflight = run?.phases?.find((phase) => phase.id === 'preflight');
+  const facts = finishRunSideEffectFacts(persistence);
+  return Boolean(run
+    && ['blocked', 'failed'].includes(run.status)
+    && ['blocked', 'failed'].includes(preflight?.status)
+    && facts.categories.length === 0);
+}
+
+function cleanupResumeAllowed(persistence) {
+  const run = persistence?.run;
+  return Boolean(run
+    && run.resume?.phase === 'cleanup'
+    && (persistence?.preparedCompletion || run.delivery?.finalRemoteRef));
+}
+
+function currentRunIdentityError(run, current, facts) {
+  return inputError(
+    'task_finish.current_run_identity_conflict',
+    'Current Task Finish run is bound to a different Development handoff and owns recovery or delivery facts.',
+    'run',
+    {
+      taskId: run.identity.task,
+      runId: run.runId,
+      frozen: frozenDevelopmentIdentity(run),
+      current,
+      sideEffectFacts: facts.categories,
+      nextAction: 'Inspect the current Finish run and resolve or complete its owned recovery facts before starting a new handoff.',
+    },
+  );
+}
+
+function supersededRunError(run, current) {
+  return inputError(
+    'task_finish.development_handoff_superseded',
+    'The requested preflight-only Finish run was superseded by a newer Development handoff.',
+    'run',
+    {
+      taskId: run.identity.task,
+      runId: run.runId,
+      frozen: frozenDevelopmentIdentity(run),
+      current,
+      nextAction: `Run task finish again for ${run.identity.task} without --run and provide a fresh --commit-message.`,
+    },
+  );
+}
+
+function markRunSuperseded(run) {
+  const updatedAt = new Date().toISOString();
+  const next = JSON.parse(JSON.stringify(run));
+  const preflight = next.phases.find((phase) => phase.id === 'preflight');
+  const failure = {
+    phase: 'preflight',
+    operation: 'development-handoff',
+    check: 'development-handoff',
+    failureClass: 'upstream-candidate-defect',
+    code: 'task-finish.development-handoff-superseded',
+    status: 'failed',
+    exitCode: null,
+    message: 'A newer current Development handoff superseded this preflight-only run.',
+    findings: [],
+    diagnostic: null,
+  };
+  next.status = 'failed';
+  next.primaryFailure = failure;
+  next.resume = null;
+  next.updatedAt = updatedAt;
+  if (preflight) {
+    preflight.status = 'failed';
+    preflight.completedAt ||= updatedAt;
+    preflight.failure = failure;
+  }
+  return next;
+}
+
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -34,9 +136,12 @@ function assertArgs(action, args) {
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
-    if (option === '--json') continue;
+    if (option === '--json' || option === '--accept-zero-delta-adaptation') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
+    if (option === '--detail' && !['compact', 'full'].includes(value)) {
+      throw inputError('task_finish.detail_invalid', '--detail must be compact or full.', action, { detail: value });
+    }
     index += 1;
   }
 }
@@ -106,18 +211,39 @@ export function registerTaskFinishApplication(runtime) {
     const root = command.targetRoot;
     const resumeToken = optionValue(command.args, '--resume', null);
     const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
+    const acceptZeroDeltaAdaptation = command.args.includes('--accept-zero-delta-adaptation');
+    const requestedRunId = optionValue(command.args, '--run', null);
+    if (acceptZeroDeltaAdaptation && (!requestedRunId || !resumeToken)) {
+      throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation requires an existing --run and its current --resume token.', 'run');
+    }
     const withReadCompatibility = runtime.withWorkspaceStructuredStoreReadCompatibility
       ? (operation) => runtime.withWorkspaceStructuredStoreReadCompatibility(root, operation)
       : (operation) => operation();
     const prepared = withReadCompatibility(() => {
-        const runId = optionValue(command.args, '--run', null);
+        const runId = requestedRunId;
         let finishRun = null;
+        let finishPersistence = null;
         if (runId) {
-          try { finishRun = readFinishRun({ root, runId, runtime }); } catch {
+          finishPersistence = runtime.readTaskFinishRunPersistence?.(root, { runId }, { optional: true }) || null;
+          finishRun = finishPersistence?.run || null;
+          if (!finishRun) {
             const completed = runtime.readTaskFinishCompletionPersistence?.(root, { runId }, { optional: true });
             if (completed?.completion?.result) {
+              if (acceptZeroDeltaAdaptation) throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
               if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
               return { completed: completed.completion.result };
+            }
+          }
+        }
+        if (finishRun) {
+          if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
+          if (!sameFilesystemPath(finishRun.identity.workspaceRoot, root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
+          if (!cleanupResumeAllowed(finishPersistence)) {
+            const assertion = runtime.assertTaskDevelopmentCarrier(root, finishRun.identity.task, frozenDevelopmentIdentity(finishRun));
+            if (assertion.status !== 'equivalent') {
+              const current = assertion.diagnostic?.details?.current || null;
+              if (replaceablePreflightRun(finishPersistence)) throw supersededRunError(finishRun, current);
+              throw currentRunIdentityError(finishRun, current, finishRunSideEffectFacts(finishPersistence));
             }
           }
         }
@@ -146,8 +272,17 @@ export function registerTaskFinishApplication(runtime) {
             || currentRun.identity?.candidateIdentity !== handoff.candidate.identity
             || currentRun.identity?.candidateGeneration !== handoff.candidate.generation
             || currentRun.identity?.contentTargetIdentity !== handoff.candidate.contentTargetIdentity);
-          const staleFailedRun = currentRun?.status === 'failed' && handoffChanged ? currentRun : null;
-          if (staleFailedRun) {
+          if (currentRun && handoffChanged && cleanupResumeAllowed(current)) {
+            finishRun = currentRun;
+          } else if (currentRun && handoffChanged) {
+            if (!replaceablePreflightRun(current)) {
+              throw currentRunIdentityError(currentRun, {
+                handoffIdentity: handoff.identity,
+                candidateIdentity: handoff.candidate.identity,
+                candidateGeneration: handoff.candidate.generation,
+                contentTargetIdentity: handoff.candidate.contentTargetIdentity,
+              }, finishRunSideEffectFacts(current));
+            }
             if (!entry.deliveryCommit) {
               const missing = observeTaskFinishEntryReadiness({
                 runtime, root, task,
@@ -160,18 +295,21 @@ export function registerTaskFinishApplication(runtime) {
               throw taskFinishEntryGapsError(missing, 'run');
             }
             identity.deliveryCommitIdentity = entry.deliveryCommit.identity;
-            return { identity, deliveryCommit: entry.deliveryCommit, staleFailedRun, finishRun: null };
+            return { identity, deliveryCommit: entry.deliveryCommit, developmentHandoff: handoff, replaceableStaleRun: currentRun, finishRun: null };
           }
-          if (currentRun && requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
-          finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity, deliveryCommit: entry.deliveryCommit });
-        } else {
-          if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
-          if (!sameFilesystemPath(finishRun.identity.workspaceRoot, root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
+          if (finishRun && currentRun && requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
+          if (!finishRun) {
+            if (currentRun && requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
+            finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity, deliveryCommit: entry.deliveryCommit, developmentHandoff: handoff });
+          }
         }
         if (finishRun && ['blocked', 'cleanup_pending'].includes(finishRun.status) && (!resumeToken || finishRun.resume?.token !== resumeToken)) {
           throw inputError('task_finish.resume_token_mismatch', 'Task Finish blocked run requires its current product-generated resume token.', 'run');
         }
-        return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, staleFailedRun: null };
+        if (acceptZeroDeltaAdaptation && (finishRun?.status !== 'blocked' || finishRun.deliveryCarrier?.reuseMode !== 'adaptation-required')) {
+          throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
+        }
+        return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, developmentHandoff: finishRun?.developmentHandoff || null, replaceableStaleRun: null };
       });
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
     if (prepared.completed) return print(withExecutionRecord(prepared.completed, notOpened), command.args);
@@ -209,22 +347,14 @@ export function registerTaskFinishApplication(runtime) {
       });
       return print(executionGateResult(identity, executionRecord, error), command.args);
     }
-    if (prepared.staleFailedRun) {
-      const oldRun = prepared.staleFailedRun;
-      const oldWorkspaceRoot = oldRun.identity?.workspaceRoot || root;
-      if (oldRun.deliveryCarrier?.root) {
-        removeIsolatedGitCarrier({
-          repositoryRoot: oldWorkspaceRoot,
-          workspaceRoot: oldWorkspaceRoot,
-          runId: oldRun.runId,
-          expectedRoot: oldRun.deliveryCarrier.root,
-        });
-      }
+    if (prepared.replaceableStaleRun) {
+      const oldRun = markRunSuperseded(prepared.replaceableStaleRun);
+      runtime.writeTaskFinishRunPersistence(root, oldRun);
       runtime.discardFailedTaskFinishRunPersistence?.(root, { taskId: identity.task, runId: oldRun.runId });
-      finishRun = resolveFinishRun({ root, resumeToken, runtime, identity, deliveryCommit: prepared.deliveryCommit });
+      finishRun = resolveFinishRun({ root, resumeToken, runtime, identity, deliveryCommit: prepared.deliveryCommit, developmentHandoff: prepared.developmentHandoff });
     }
     const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
-    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot });
+    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
     const result = await executeFinishRun({ root, run: finishRun, handlers, resumeToken, runtime, observer: evidence });
     const snapshot = evidence.snapshot();
     const outcome = taskFinishExecutionRecordOutcome(result);
@@ -273,7 +403,10 @@ export function registerTaskFinishApplication(runtime) {
   }
 
   function print(result, args) {
-    if (args.includes('--json')) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (args.includes('--json')) {
+      const detail = optionValue(args, '--detail', 'compact');
+      process.stdout.write(`${JSON.stringify(projectTaskFinishResult(result, detail), null, 2)}\n`);
+    }
     else {
       console.log(`Task Finish run ${result.runId}: ${result.status}`);
       if (result.primaryFailure) console.log(`Failure: ${result.primaryFailure.phase}/${result.primaryFailure.operation || result.primaryFailure.check || 'unknown'} - ${result.primaryFailure.message}`);

@@ -37,7 +37,7 @@
 - [x] 完成去私有化检查，覆盖模板、默认目录、归档文档、示例内容、作者信息、URL、邮箱和组织内部术语。
 - [x] 建立 GitHub Actions 最小 CI，运行 `projects/product/services/buildr/scripts/verify-buildr-product`。
 - [ ] 在 macOS/Windows × Node 24.15.0 的两个完整受管 runtime Candidate，以及 macOS/Windows × 最低/当前 24.x 的四个短版 Host Node 兼容验证中证明支持范围；Node 25 及未来主版本须另建适配任务后再加入。
-- [ ] 新 workflow 首次产生 check contexts 后更新 branch protection：`dev` 要求两个 `windows-platform-preflight` Node 矩阵，`main` 要求两个 `managed-runtime-candidate` 与两个 `current-host-node` context；删除历史 `product (20)`、`product (22)` 和两个独立 `release-smoke` required contexts。修改前后均从 GitHub 回读精确 context 名称，不凭文档猜测。
+- [ ] 新 workflow 首次产生 check contexts 后更新 branch protection：`dev` 要求两个 `windows-npm-preflight` Node 矩阵，`main` 要求两个 `managed-runtime-candidate` 与两个 `current-host-node` context；删除历史 `product (20)`、`product (22)` 和两个独立 `release-smoke` required contexts。修改前后均从 GitHub 回读精确 context 名称，不凭文档猜测。
 - [x] 明确 npm registry 发布流程：`@buildr-ai/buildr`、RC 使用 `next`、稳定版使用 `latest`、tag/version fail closed、GitHub Environment 审批和 OIDC trusted publishing。
 - [x] 将干净候选快照推到 `BuildrAI/Buildr`，在真实 GitHub runner 通过 CI，并配置 `main`/`dev` branch protection 与 Private Vulnerability Reporting。
 - [x] 通过 2FA 首次发布 `0.1.0-rc.1`，随后为 `@buildr-ai/buildr` 配置 GitHub trusted publisher。
@@ -101,7 +101,7 @@ npm run --silent test:focus -- --json release-tarball-smoke
 
 显式完整回归自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`，但发布使用登记的默认 profile。
 
-Candidate CI 在进入 `release-tarball-smoke` 前必须先准备并校验受管 Node runtime；发布包冒烟保持应用状态与 workspace 隔离，但继承调用方的 `BUILDR_NODE_RUNTIME_DATA_DIR`，避免每个矩阵重复访问 Node 分发网络。独立运行且调用方未提供 runtime locator 时，冒烟仍使用自己的临时目录验证从零安装。
+Candidate CI在进入npm tarball与Launcher smoke前分别校验Host Node和独立Workspace Node；两种runtime identity不得互相替代。npm冒烟保持应用状态与workspace隔离，普通CLI不启动HTTP；macOS/Windows Launcher冒烟从同一冻结tarball的真实npm安装出发，证明默认零桌面副作用以及显式install/launch/status/repair/uninstall lifecycle。
 
 资源受限 CI 的完整 System 文件固定串行执行；Integration 仍可保持有界并发。Windows runtime 临时目录清理对短暂 `EPERM` 使用 bounded retry，不通过放宽单个测试断言掩盖资源争用。
 
@@ -112,7 +112,7 @@ npm run test:focus -- workspace-lifecycle
 npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
-正式任务在所有 rebase、冲突解决和内容修改结束后，通过 Task Verification 对最终冻结 Candidate 执行 delivery-required `product.delivery`。普通任务由 changed planner 运行 affected；全局验证 owner 变化时同一 plan 运行 full。候选发布准备、用户明确全量要求和 `dev → main` Candidate CI 另行调用以下显式完整回归兼容入口。tag 发布不重复运行它，而是验证唯一 release artifact：
+正式任务在所有 rebase、冲突解决和内容修改结束后，通过 Task Verification 对最终冻结 Candidate 执行 delivery-required `product.delivery`。普通任务由 changed planner 运行 affected；全局验证 owner 变化时同一 plan 运行 full。候选发布准备、用户明确全量要求和 `dev → main` Candidate CI 另行调用以下显式完整回归兼容入口。tag发布不重复源码Candidate，而是验证同一release contract下冻结的唯一npm tarball：
 
 ```bash
 npm run test:candidate
@@ -130,22 +130,20 @@ Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与
 
 Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责矩阵](../../../docs/verification-ownership.md)为维护依据；发现重复时先确认主 owner，再迁移或删除断言。
 
-## npm Release 流程
+## npm-only Release 流程
 
-1. 日常改动集成到 `dev`；准备 `<version>` 前 fetch 并记录最新 `origin/dev` 为不可变 candidate base，再从该 commit 创建 `release-<version>` task id、`tasks/release-<version>` 分支和 `<workspace-root>/.worktrees/release-<version>` canonical worktree。需要排除 dev 内容时先在 dev 独立撤销，不得从旧 ancestor 挑选发布候选。新建发布 worktree 后先在 `projects/product` 执行 `npm ci`，成功后才修改版本和发布材料。
-2. 根 `CHANGELOG.md` 必须包含唯一的 `## <version> - <YYYY-MM-DD>` 章节和非空正文。冻结候选前从 workspace root 运行 `node projects/product/services/buildr/scripts/release/release-notes.mjs <version> CHANGELOG.md`，预览 GitHub Release 将使用的最终 Markdown。
-3. 对冻结候选完成完整验证并记录 candidate tree identity；release task 必须先通过 task-finish fast-forward 集成到 `dev`，再运行 `release-convergence.mjs --stage pre-main`。通过 PR 将 `dev` squash merge 到 `main` 后，只有 main/dev version 与 tree 均匹配候选时才运行带 `--version` 的 history bridge，随后运行 `--stage post-main` 证明 main 已是 dev ancestor。任一 base、version、tree、task ref、远端竞争或 push finding 都停止 tag 动作。
-4. package version 与 Git tag 必须完全一致。当前准备的 `0.1.0-rc.8` 将对应 `v0.1.0-rc.8` 和 `next`；稳定版 `0.1.0` 对应 `v0.1.0` 和 `latest`。
-5. 首个 `@buildr-ai/buildr` package 已由 npm Organization owner `elevenching2` 使用 2FA 执行 `npm publish --access public --tag next`，于 2026-07-13 完成。
-6. npm trusted publisher 已配置为 GitHub user `elevenching`、repository `Buildr`、workflow `publish.yml`、Environment `npm-production`、allowed action `npm publish`。
-7. 后续发布只由 release tag 触发 GitHub-hosted workflow；workflow 在 registry write 前提取 notes，并只执行一次 `npm pack`，生成带 filename、inventory、SHA-256 与 SHA-512 integrity 的 manifest。发布前 smoke、`npm publish <tarball>` 和 CI artifact upload 必须消费同一个 tarball，不再重复完整 Candidate。
-8. 目标 npm version 不存在时才发布；已存在时必须比较官方 registry `dist.integrity`，一致才跳过 publish，不一致立即 fail closed。publish 后以有界重试确认 version、integrity 与目标 dist-tag，再从官方 registry 安装精确 `name@version` 并运行同一 CLI 生命周期 smoke。
-9. GitHub Release 使用 ensure 语义：不存在时按 CHANGELOG 创建，存在时核对 tag、commit、body 与 prerelease/Latest，不一致时不覆盖。npm 或 GitHub Release 已成功但后续失败时，保留这些不可逆事实；同一 tag 重跑只补齐缺失步骤，不删除 tag、不重复 publish、不 unpublish。
-10. 已发布版本不覆盖。RC 问题发布新的 prerelease；正式版本问题优先发布 patch，必要时 deprecate 或移动 dist-tag，不把 unpublish 当作常规回滚。
-11. tag、npm version/dist-tag、GitHub Release 和官方 registry 精确版本安装 smoke 全部验证成功后，查询远端 `tasks/release-<version>`。如存在，先展示 ref、commit 和稳定发布证据并取得用户明确授权，再删除并复核远端 ref 不存在；未授权或清理失败只记录 follow-up，不回滚或重做发布。
+1. 日常改动集成到`dev`；准备`<version>`前fetch并记录最新`origin/dev`为不可变candidate base，再从该commit创建正式release Task、独立分支和worktree。新环境先按Preparation Declaration准备，不从旧ancestor、旧worktree或旧Receipt派生。
+2. 根`CHANGELOG.md`必须包含唯一`## <version> - <YYYY-MM-DD>`章节和非空正文；package version、`v<version>`tag、dist-tag、`engines.node`、protocol identity与Release notes必须由唯一npm-only release contract解析且互相一致。Contract不得声明Product Node、SEA、installer、平台matrix或binary Assets。
+3. 冻结前完成full Product Candidate、current knowledge与OpenSpec convergence。Release contract必须机器可读声明`provider/repository/workflow/Environment/allowedActions`唯一authority tuple；完成release Task交付及`dev → main`历史收敛后，在npm 11.15+ authenticated maintainer session运行`release-authority-preflight.mjs`，只读交叉核对package metadata、Git remote、GitHub current repository/Environment、workflow与`npm trust list @buildr-ai/buildr --json`。只有绑定当前`origin/main`commit和`publish.yml`digest、且在15分钟内被post-main convergence消费的`ready`evidence，才允许申请创建tag；任一drift、过期、未登录、工具不支持或readback unavailable都fail closed，历史provenance/checklist/UI描述不得冒充current evidence。tag、publish、Release mutation与凭证配置各自需要额外明确授权。
+4. workflow先构建一次`buildr.application-payload/v1`，再从该payload只执行一次`npm pack`。tarball manifest冻结filename、inventory、payload digest、SHA-256与SHA-512 integrity；smoke、publish、Actions evidence和Registry readback必须复用同一bytes。
+5. 全部可逆门禁先通过：payload与npm inventory、兼容Host Node、独立Workspace Node、CLI/Web/health、普通CLI无HTTP；普通npm install不得写Applications/Start Menu，显式Launcher必须验证install/actual launch/status/repair/uninstall、无Node/Buildr复制、同identity、foreign target与漂移fail closed。
+6. 可逆门禁通过后才进入受`npm-production`Environment保护的公开写入。目标npm version缺失时由`trusted-publish.mjs`发布同一tarball；已存在时只接受`dist.integrity`完全相同。`E401`、`ENEEDAUTH`或OIDC/Trusted Publisher相关`E404`必须保留npm原始失败和已有tag，直接输出expected tuple与“authenticated preflight→修复current authority→rerun hosted workflow”恢复路径，不得回退本机token publish。publish后有界核对version/integrity/dist-tag并从Registry安装精确版本复跑Host Node CLI/Web/Launcher smoke。
+7. GitHub Release只使用metadata ensure语义：不存在时创建，存在时核对tag、target commit、notes、draft、prerelease/Latest；发现任何Buildr binary Asset必须停止。npm tarball、生成的Launcher、payload manifest或内部evidence不得上传为Release Asset。
+8. npm tarball只由npm Registry承载；Actions artifact只保存冻结候选/evidence，README、官网和安装脚本不得把它作为公共下载地址。发布后只从Registry下载精确package并核对安装readback。
+9. 已发布版本不覆盖。RC问题发布新的prerelease；正式版本问题优先发布patch，必要时deprecate或移动dist-tag。所有tag、Registry与公共安装readback稳定后，远端release Task分支清理仍需独立授权；清理失败只记录follow-up，不回滚已发布事实。
 
-`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6` 和 `0.1.0-rc.7` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用；`0.1.0-rc.8` 当前按同一 trusted publishing 流程准备，发布事实以 npm 官方 registry 和对应 GitHub prerelease 为准。后续发布仍需每次具有明确发布意图。
+`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6`、`0.1.0-rc.7` 和 `0.1.0-rc.8` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用；`0.1.0-rc.9` 当前按同一 trusted publishing 流程准备，发布事实以 npm 官方 registry 和对应 GitHub prerelease 为准。后续发布仍需每次具有明确发布意图。
 
-实际自举 workspace 如需消费新版产品资产，可独立执行 sync，并在状态变更后运行当前 Agent doctor；CLI update 只更新当前 Product checkout 或 registry package。这不是第二轮产品 E2E。上述验证只证明当前本地产品包和 MVP 主路径成立；公开发布仍需要完成上面的发布材料和分发流程。
+实际自举workspace如需消费新版产品资产，可独立执行sync并在状态变更后运行当前Agent doctor。`buildr update`只按installation receipt更新当前npm package或development checkout；它不更新Workspace Node。上述能力验证不等于已完成tag、publish或GitHub Release mutation。
 
 使用`task-finish`自动收尾时，必须先由`task-development`完成OpenSpec/current knowledge/runtime内容fixed point，观察stable Content Target，形成verification policy，并在Candidate freeze前执行formal Task Verification。Verification target/declarations current且policy facts完整后冻结Task Candidate，Completion Review绑定Candidate，再由Development记录proceed/必要风险接受并固化current handoff。Finish的`preflight`只聚合handoff/Environment/target/retained问题；`prepare`区分任务贡献（Task Contribution）与交付基线（Delivery Baseline），只在run-owned isolated carrier把原贡献机械应用到最新基线；`verify`只证明contribution/baseline/carrier与handoff等价且formal Verification执行次数为0。target前进时先证明carrier ancestry和全部changed-path after state；完整包含则跳过重复transition，否则凭精确产品token重建isolated carrier。两者都不增加Candidate generation、不重跑Verification/Completion Review；冲突、贡献漂移、不等价或无法证明时必须终止run并返回Development。不得在Finish中converge/archive、rebase原Task、修改贡献、生成Candidate、自动解决冲突或force push。

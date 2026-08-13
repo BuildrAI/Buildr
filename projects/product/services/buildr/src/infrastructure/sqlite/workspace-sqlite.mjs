@@ -1,25 +1,13 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-// Supported Node 24.15.0 through 24.x builds provide the API used here, but some still emit the
-// historical module-level ExperimentalWarning. Suppress only that known load
-// warning so public JSON and npm/checkout parity remain clean.
-const originalEmitWarning = process.emitWarning;
-process.emitWarning = function emitWarning(warning, ...args) {
-  if (String(warning).includes('SQLite is an experimental feature')) return;
-  return originalEmitWarning.call(this, warning, ...args);
-};
-let sqliteModule;
-try { sqliteModule = await import('node:sqlite'); }
-finally { process.emitWarning = originalEmitWarning; }
-const { DatabaseSync } = sqliteModule;
+import { DatabaseSync } from 'node:sqlite';
 
 import { observeGitCheckoutIdentity } from '../git/checkout-identity.mjs';
+import { resolveProductResource } from '../product-resources/index.mjs';
 
 const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/u;
-const MIGRATIONS_ROOT = fileURLToPath(new URL('./migrations/', import.meta.url));
+const MIGRATIONS_ROOT = resolveProductResource('product/src/infrastructure/sqlite/migrations');
 const BUSY_TIMEOUT_MS = 5_000;
 let defaultMigrationScripts = null;
 
@@ -155,15 +143,11 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     );
   }
 
-  function assertStructuredStoreWriterProvenance(root, targetCheckout, { writerRole = null } = {}) {
+  function assertStructuredStoreWriterProvenance(root, targetCheckout) {
     if (!targetCheckout) return;
     const source = runtimeSourceCheckout();
     if (!source.checkout?.linkedWorktree || !targetCheckout || source.checkout.gitCommonDirectory !== targetCheckout.gitCommonDirectory) return;
     if (isCandidateValidationWorkspace(source.checkout, targetCheckout)) return;
-    if (['task-finish-retained', 'retained-task-state'].includes(writerRole)
-      && !targetCheckout.linkedWorktree
-      && source.checkout.linkedWorktree
-      && source.checkout.gitCommonDirectory === targetCheckout.gitCommonDirectory) return;
     throw structuredStoreError(
       'workspace_store_writer_provenance_forbidden',
       '候选 Buildr runtime 不能写入 retained canonical Workspace structured store。',
@@ -245,7 +229,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     }
   }
 
-  function assertCanonicalStructuredWorkspace(targetRoot, { writable = false, writerRole = null } = {}) {
+  function assertCanonicalStructuredWorkspace(targetRoot, { writable = false } = {}) {
     const root = path.resolve(targetRoot);
     const scope = activeOperationScope(root);
     if (scope?.canonicalRoot) return scope.canonicalRoot;
@@ -256,7 +240,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
       if (checkout?.linkedWorktree && !isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, checkout)) {
         throw structuredStoreError('workspace_store_workspace_not_canonical', 'Workspace structured store target 必须是 canonical Workspace，不能是 linked task worktree。', 409, { target: root }, '显式传入 retained canonical Workspace 的路径。');
       }
-      assertStructuredStoreWriterProvenance(root, checkout, { writerRole });
+      assertStructuredStoreWriterProvenance(root, checkout);
     }
     if (scope) scope.canonicalRoot = root;
     return root;
@@ -270,8 +254,8 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     return workspaceStructuredStorePathAtRoot(assertCanonicalStructuredWorkspace(targetRoot));
   }
 
-  function openWorkspaceStructuredStore(targetRoot, { writable = false, allowPendingRead = false, writerRole = null } = {}) {
-    const root = assertCanonicalStructuredWorkspace(targetRoot, { writable, writerRole });
+  function openWorkspaceStructuredStore(targetRoot, { writable = false, allowPendingRead = false } = {}) {
+    const root = assertCanonicalStructuredWorkspace(targetRoot, { writable });
     const file = workspaceStructuredStorePathAtRoot(root);
     const scripts = loadWorkspaceSqliteMigrations();
     if (!fs.existsSync(file) && !writable) return { root, file, present: false, database: null, version: null, scripts };

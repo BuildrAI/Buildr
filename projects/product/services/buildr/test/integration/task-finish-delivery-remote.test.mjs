@@ -50,12 +50,13 @@ function repositoryFixture(t) {
   return { fixture, remote, retained };
 }
 
-function deliveryFixture(t, hook) {
+function deliveryFixture(t, hook, prepareCandidate = null) {
   const data = repositoryFixture(t);
   const environmentRoot = path.join(data.retained, '.worktrees', 'delivery');
   command(data.retained, 'git', ['worktree', 'add', '-b', 'codex/delivery', environmentRoot, 'dev']);
-  fs.writeFileSync(path.join(environmentRoot, 'feature.txt'), 'candidate\n');
-  command(environmentRoot, 'git', ['add', 'feature.txt']);
+  if (prepareCandidate) prepareCandidate(environmentRoot);
+  else fs.writeFileSync(path.join(environmentRoot, 'feature.txt'), 'candidate\n');
+  command(environmentRoot, 'git', ['add', '-A']);
   command(environmentRoot, 'git', ['commit', '-m', 'candidate']);
   const expectedTargetRef = command(data.retained, 'git', ['rev-parse', 'dev']);
   const contribution = observeGitTaskContribution({ root: environmentRoot, deliveryBaselineHead: expectedTargetRef });
@@ -85,7 +86,6 @@ function deliveryFixture(t, hook) {
       branch: null,
       expectedTargetRef,
       targetRef: 'origin/dev',
-      changedPaths: ['feature.txt'],
     },
   };
   const sqliteRuntime = createTaskFinishSqliteRuntime(data.retained, 'delivery-remote-evidence');
@@ -104,7 +104,7 @@ function deliveryFixture(t, hook) {
       },
     }),
   };
-  return { ...data, environmentRoot, expectedTargetRef, carrierRef, run: persistedRun, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
+  return { ...data, environmentRoot, expectedTargetRef, carrierRef, run: persistedRun, runtime, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
 
 test('workspace source 缺少 Environment remote 时解析 retained branch upstream', (t) => {
@@ -158,6 +158,28 @@ test('push 后远端回读不一致时返回 target race 且不形成 remoteAfte
   assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], data.expectedTargetRef);
 });
 
+test('deliver 前Development handoff漂移时零lease零push', async (t) => {
+  const data = deliveryFixture(t);
+  const remoteBefore = command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0];
+  let expected = null;
+  data.runtime.assertTaskDevelopmentCarrier = (_root, _task, identity) => {
+    expected = identity;
+    return { status: 'stale', diagnostic: { code: 'task_development_carrier_identity_mismatch' } };
+  };
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.failure.code, 'task-finish.carrier-not-equivalent');
+  assert.deepEqual(expected, {
+    handoffIdentity: data.run.identity.handoffIdentity,
+    candidateIdentity: data.run.identity.candidateIdentity,
+    candidateGeneration: data.run.identity.candidateGeneration,
+    contentTargetIdentity: data.run.identity.contentTargetIdentity,
+  });
+  assert.deepEqual(result.operations, undefined);
+  assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], remoteBefore);
+  assert.equal(data.runtime.readTaskFinishRunPersistence(data.retained, { taskId: data.run.identity.task }).lease, null);
+});
+
 test('push 后远端无法回读时只保留可恢复 deliver 阻塞', async (t) => {
   const data = deliveryFixture(t, ({ remote }) => `#!/bin/sh\nmv "${remote}" "${remote}.offline"\n`);
   const result = await data.handlers.deliver({ run: data.run });
@@ -186,6 +208,24 @@ test('远端 target 已精确包含 carrier 时不重复 merge/push 并继续 Do
   assert.equal(result.operations.some((operation) => operation.id === 'deliver-contained-target-fetch'), true);
   assert.equal(result.operations.some((operation) => operation.id === 'deliver-fast-forward'), false);
   assert.equal(result.operations.some((operation) => operation.id === 'deliver-push'), false);
+});
+
+test('远端 target 已精确包含 rename carrier 时使用删除与新增路径完成证明', async (t) => {
+  const data = deliveryFixture(t, null, (environmentRoot) => {
+    command(environmentRoot, 'git', ['mv', 'README.md', 'README-renamed.md']);
+  });
+  command(data.retained, 'git', ['merge', '--ff-only', data.carrierRef]);
+  command(data.retained, 'git', ['push', 'origin', 'dev']);
+  fs.writeFileSync(path.join(data.retained, 'later.txt'), 'independent target advance\n');
+  command(data.retained, 'git', ['add', 'later.txt']);
+  command(data.retained, 'git', ['commit', '-m', 'advance target after rename carrier']);
+  command(data.retained, 'git', ['push', 'origin', 'dev']);
+
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
+  assert.equal(result.output.delivery.targetDisposition, 'already-contained');
+  assert.deepEqual(result.output.delivery.containment.changedPaths, ['README-renamed.md', 'README.md']);
+  assert.equal(result.output.delivery.containment.checkedPaths.every((entry) => entry.exact), true);
 });
 
 test('远端 target 覆盖 carrier 路径时仍按 target race 停止', async (t) => {

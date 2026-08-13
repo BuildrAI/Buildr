@@ -361,7 +361,7 @@ suiteTest('manifest-registry', 'sync 显式迁移 legacy Workspace，并在 iden
   assert.equal(sha256(path.join(conflictRoot, '.buildr', 'workspace.yml')), before);
 });
 
-suiteTest('local-app-http', '本地应用只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
+suiteTest('local-app-http', 'Buildr Web Runtime 只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
   const root = initWorkspace(t);
   isolateLocalAppData(t, path.join(temporaryRoot(t), 'local-app-data'));
   const runtime = createRuntime();
@@ -375,7 +375,7 @@ suiteTest('local-app-http', '本地应用只监听 loopback，并保护写 API�
   assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
 
   const html = await fetch(url).then((response) => response.text());
-  assert.match(html, /Buildr 工作空间/);
+  assert.match(html, /<title>Buildr Web<\/title>/);
   assert.match(html, /id="root"/);
   assert.match(html, /\/assets\/index-[^"]+\.js/);
   assert.match(html, /\/assets\/index-[^"]+\.css/);
@@ -384,7 +384,7 @@ suiteTest('local-app-http', '本地应用只监听 loopback，并保护写 API�
   for (const route of [`${workspaceBase}/`, `${workspaceBase}/settings`, `${workspaceBase}/projects`, `${workspaceBase}/projects/product`, `${workspaceBase}/services`]) {
     response = await fetch(`${url}${route}`);
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Buildr 工作空间/);
+    assert.match(await response.text(), /<title>Buildr Web<\/title>/);
   }
   const assetMatches = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
   assert.ok(assetMatches.length >= 2, 'SPA shell must reference built web-dist assets');
@@ -452,7 +452,7 @@ suiteTest('local-app-http', '本地应用只监听 loopback，并保护写 API�
   response = await fetch(`${url}${apiBase}`, {
     method: 'PUT',
     headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken },
-    body: JSON.stringify({ revision: current.revision, name: 'From UI', description: 'Saved by local app' }),
+    body: JSON.stringify({ revision: current.revision, name: 'From UI', description: 'Saved by Buildr Web' }),
   });
   assert.equal(response.status, 200);
   const updated = await response.json();
@@ -478,7 +478,7 @@ suiteTest('local-app-http', '本地应用只监听 loopback，并保护写 API�
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
-suiteTest('local-app-http', '本地应用文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
+suiteTest('local-app-http', 'Buildr Web 文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
   const root = initWorkspace(t);
   const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'publication-app-data'));
   const created = runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '文章测试项目']);
@@ -498,7 +498,7 @@ suiteTest('local-app-http', '本地应用文章入口只读投影项目文章、
   const apiBase = `${url}/api/v1/workspaces/${initialWorkspaceId}`;
   let response = await fetch(`${url}/workspaces/${initialWorkspaceId}/articles`);
   assert.equal(response.status, 200);
-  assert.match(await response.text(), /Buildr 工作空间/);
+  assert.match(await response.text(), /<title>Buildr Web<\/title>/);
   const list = await fetch(`${apiBase}/publications`).then((item) => item.json());
   assert.equal(list.publications[0].id, 'article');
   const detail = await fetch(`${apiBase}/publications/article`).then((item) => item.json());
@@ -515,7 +515,7 @@ suiteTest('local-app-http', '本地应用文章入口只读投影项目文章、
   assert.equal(response.status, 400);
 });
 
-suiteTest('local-app-http', '全局本机应用隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
+suiteTest('local-app-http', '全局 Buildr Web Runtime 隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
   const base = temporaryRoot(t);
   isolateLocalAppData(t, path.join(base, 'global-app-data'));
   const first = initWorkspace(t, { name: 'global-first' });
@@ -551,39 +551,39 @@ suiteTest('local-app-http', '全局本机应用隔离多个 Workspace，并保�
   assert.equal(shutdown, true);
 });
 
-suiteTest('app-process', 'buildr app 重复启动复用单实例并从陈旧 runtime state 恢复', { timeout: 15_000 }, async (t) => {
+suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 runtime state 恢复', { timeout: 15_000 }, async (t) => {
   const base = temporaryRoot(t);
   const root = initWorkspace(t, { name: 'single-instance' });
   const appData = path.join(base, 'single-instance-data');
   fs.mkdirSync(appData, { recursive: true });
   fs.writeFileSync(path.join(appData, 'instance.json'), '{"schemaVersion":"buildr.local-app-instance/v1","url":"http://127.0.0.1:1","secret":"stale","pid":999999}\n');
   const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
-  const child = spawn(process.execPath, [BUILDR, 'app', '--target', root, '--no-open'], { cwd: PRODUCT_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [BUILDR, 'web', '--target', root, '--no-open'], { cwd: PRODUCT_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   let errors = '';
   child.stdout.on('data', (chunk) => { output += chunk; });
   child.stderr.on('data', (chunk) => { errors += chunk; });
   t.after(() => { if (child.exitCode === null) child.kill('SIGTERM'); });
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Buildr app 未就绪：${output}\n${errors}`)), 5000);
+    const timeout = setTimeout(() => reject(new Error(`Buildr Web 未就绪：${output}\n${errors}`)), 5000);
     const poll = setInterval(() => {
-      if (output.includes('Buildr 本地应用：')) {
+      if (output.includes('Buildr Web：')) {
         clearTimeout(timeout);
         clearInterval(poll);
         resolve();
       }
     }, 25);
     child.once('exit', (code) => {
-      if (!output.includes('Buildr 本地应用：')) {
+      if (!output.includes('Buildr Web：')) {
         clearTimeout(timeout);
         clearInterval(poll);
-        reject(new Error(`Buildr app 提前退出 ${code}：${errors}`));
+        reject(new Error(`Buildr Web 提前退出 ${code}：${errors}`));
       }
     });
   });
-  const reused = spawnSync(process.execPath, [BUILDR, 'app', '--target', root, '--no-open'], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: 5000 });
+  const reused = spawnSync(process.execPath, [BUILDR, 'web', '--target', root, '--no-open'], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: 5000 });
   assert.equal(reused.status, 0, reused.stderr);
-  assert.match(reused.stdout, /Buildr 本地应用已运行/);
+  assert.match(reused.stdout, /Buildr Web 已运行/);
   child.kill('SIGTERM');
   await new Promise((resolve) => child.once('exit', resolve));
   if (process.platform === 'win32') {
@@ -621,7 +621,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
     t.diagnostic(`[preview-isolation-timing] current=${currentPhase} ${timings.join(' ')}`);
   });
 
-  const firstStart = await runPreviewCommand('start-first', ['app', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json']);
+  const firstStart = await runPreviewCommand('start-first', ['web', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json']);
   assert.equal(firstStart.status, 0, firstStart.stderr);
   started.push('first-task');
   const firstPreview = JSON.parse(firstStart.stdout);
@@ -638,7 +638,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   assert.match(firstPage, /first-task/);
   assert.match(firstPage, /buildr-preview/);
 
-  const secondStart = await runPreviewCommand('start-second', ['app', 'preview', 'start', 'second-task', '--target', second, '--no-open', '--json']);
+  const secondStart = await runPreviewCommand('start-second', ['web', 'preview', 'start', 'second-task', '--target', second, '--no-open', '--json']);
   assert.equal(secondStart.status, 0, secondStart.stderr);
   started.push('second-task');
   const secondPreview = JSON.parse(secondStart.stdout);
@@ -646,23 +646,23 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   assert.equal(secondPreview.owner.worktree, second);
   assert.equal(secondPreview.owner.identityMode, 'standalone-checkout');
 
-  const collision = await runPreviewCommand('reject-collision', ['app', 'preview', 'start', 'first-task', '--target', second, '--no-open', '--json']);
+  const collision = await runPreviewCommand('reject-collision', ['web', 'preview', 'start', 'first-task', '--target', second, '--no-open', '--json']);
   assert.notEqual(collision.status, 0);
   assert.match(collision.stderr, /正由 .* 使用/);
 
-  const listed = await runPreviewCommand('list-both', ['app', 'preview', 'list', '--json']);
+  const listed = await runPreviewCommand('list-both', ['web', 'preview', 'list', '--json']);
   assert.equal(listed.status, 0, listed.stderr);
   assert.deepEqual(JSON.parse(listed.stdout).previews.map((item) => item.instance).sort(), ['first-task', 'second-task']);
 
   const stopped = await measure('stop-first', () => stopPreview('first-task', { dataRoot: appData, caller: null }));
   started.splice(started.indexOf('first-task'), 1);
   assert.equal(stopped.status, 'stopped');
-  const remainingResult = await runPreviewCommand('list-remaining', ['app', 'preview', 'list', '--json']);
+  const remainingResult = await runPreviewCommand('list-remaining', ['web', 'preview', 'list', '--json']);
   assert.equal(remainingResult.status, 0, remainingResult.stderr);
   const remaining = JSON.parse(remainingResult.stdout).previews;
   assert.deepEqual(remaining.map((item) => item.instance), ['second-task']);
   const secondPid = secondPreview.pid;
-  const secondStopped = await runPreviewCommand('stop-second', ['app', 'preview', 'stop', 'second-task', '--json']);
+  const secondStopped = await runPreviewCommand('stop-second', ['web', 'preview', 'stop', 'second-task', '--json']);
   assert.equal(secondStopped.status, 0, secondStopped.stderr);
   started.splice(started.indexOf('second-task'), 1);
   await measure('confirm-second-exit', async () => {
@@ -675,11 +675,11 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   currentPhase = 'completed';
 });
 
-suiteTest('manifest-registry', 'public CLI 暴露 app 与 init description help', () => {
-  const appHelp = runBuildr(['app', '--help']);
+suiteTest('manifest-registry', 'public CLI 暴露 web 与 init description help', () => {
+  const appHelp = runBuildr(['web', '--help']);
   assert.equal(appHelp.status, 0, appHelp.stderr);
   assert.match(appHelp.stdout, /只监听 127\.0\.0\.1/);
-  const previewHelp = runBuildr(['app', 'preview', 'start', '--help']);
+  const previewHelp = runBuildr(['web', 'preview', 'start', '--help']);
   assert.equal(previewHelp.status, 0, previewHelp.stderr);
   assert.match(previewHelp.stdout, /Task Environment 的任务验证工作区/);
   assert.match(previewHelp.stdout, /动态资源/);

@@ -48,7 +48,7 @@ const capability = closed({
   required: { type: 'boolean' },
 }, ['project', 'capability', 'required']);
 
-const coverageGap = closed({ scope: text(), summary: text() }, ['scope', 'summary']);
+const coverageGap = closed({ scope: text('真正仅工作区Task使用workspace；其他Task使用project:<code>或service:<project>/<service>。'), summary: text() }, ['scope', 'summary']);
 const override = closed({
   project: text(),
   capability: text(),
@@ -158,8 +158,18 @@ const contracts = {
   },
   carrier: {
     summary: '检查 Delivery Carrier 与 current handoff Candidate 的内容等价性。',
-    inputSchema: inputSchema(),
-    example: {},
+    inputSchema: inputSchema({
+      handoffIdentity: text('Finish run冻结的Development handoff identity。'),
+      candidateIdentity: text('Finish run冻结的Candidate identity。'),
+      candidateGeneration: { type: 'integer', minimum: 1, description: 'Finish run冻结的Candidate generation。' },
+      contentTargetIdentity: text('Finish run冻结的Content Target identity。'),
+    }, ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']),
+    example: {
+      handoffIdentity: 'sha256-<handoff>',
+      candidateIdentity: 'sha256-<candidate>',
+      candidateGeneration: 1,
+      contentTargetIdentity: 'sha256-<content-target>',
+    },
   },
 };
 

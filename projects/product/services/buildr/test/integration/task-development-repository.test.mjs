@@ -46,6 +46,18 @@ function observation(status = 'planning', observedAt = '2026-08-04T00:00:00.000Z
   return { applicability: { status, taskContext: 'current', planning: 'current', contentTarget: 'missing', policy: 'missing', candidate: 'missing', handoff: 'missing', gates: { planning: null, verification: null, completion: null }, reasons: [] }, observedAt };
 }
 
+function workspaceReceipt() {
+  const taskContextPayload = { taskId: 'demo-task', intent: 'Workspace-only content', scope: { projects: [], services: [] }, changes: [] };
+  const components = [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', observer: 'fixture.filesystem/v1', identity: taskDevelopmentDigest('workspace-content') }];
+  const policyPayload = { declarations: [], capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [] };
+  return {
+    ...receipt(),
+    taskContext: { identity: taskDevelopmentDigest(taskContextPayload), ...taskContextPayload },
+    contentTarget: { identity: taskDevelopmentDigest({ components }), components },
+    verificationPolicy: { identity: taskDevelopmentDigest(policyPayload), ...policyPayload },
+  };
+}
+
 test('Development current Receipt 只在SQLite写入、替换和读取，旧YAML保持inert', (t) => {
   const { root, runtime } = fixture(t);
   const legacy = path.join(root, '.buildr', 'tasks', 'demo-task', 'development.yml');
@@ -93,4 +105,18 @@ test('Development repository拒绝不存在Task且不产生orphan row', (t) => {
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
   assert.equal(opened.database.prepare('SELECT count(*) AS count FROM task_development_current').get().count, 0);
   opened.database.close();
+});
+
+test('workspace-only Development policy兼容读取，但scope变化后拒绝作为新current写回', (t) => {
+  const { root, runtime } = fixture(t);
+  runtime.writeTaskDevelopmentPersistence(root, workspaceReceipt(), observation('developing'));
+  assert.deepEqual(runtime.readTaskDevelopmentPersistence(root, 'demo-task').receipt.verificationPolicy.declarations, []);
+  const task = runtime.readTaskRecordPersistence(root, 'demo-task').record;
+  runtime.writeTaskRecordPersistence(root, {
+    ...task,
+    scope: { projects: ['docs'], services: [] },
+    updatedAt: '2026-08-04T00:01:00.000Z',
+  });
+  assert.deepEqual(runtime.readTaskDevelopmentPersistence(root, 'demo-task').receipt.verificationPolicy.declarations, [], 'old self-described policy remains readable');
+  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, workspaceReceipt(), observation('developing', '2026-08-04T00:01:00.000Z')), (error) => error.code === 'task_development_write_failed' && /有效 Project 集合/.test(error.message));
 });

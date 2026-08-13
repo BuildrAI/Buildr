@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { normalizeTaskRecord, TASK_RECORD_SCHEMA } from '../../src/domain/task-record/task-record.mjs';
+import { isWorkspaceOnlyTaskRecord, normalizeTaskRecord, taskRecordEffectiveProjectCodes, TASK_RECORD_SCHEMA } from '../../src/domain/task-record/task-record.mjs';
 
 function active(overrides = {}) {
   return {
@@ -55,4 +55,16 @@ test('Task identity、当前记录引用去重与时间关系 fail closed', () =
   assert.throws(() => normalizeTaskRecord(active({ retrospectiveSourceTaskIds: ['demo-task'] })), (error) => error.code === 'task_record_retrospective_source_self_reference');
   assert.doesNotThrow(() => normalizeTaskRecord(active({ changes: [{ project: 'demo', change: 'same' }, { project: 'other', change: 'same' }] })));
   assert.throws(() => normalizeTaskRecord(active({ updatedAt: '2026-07-31T23:59:59.000Z' })), (error) => error.code === 'task_record_timestamp_invalid');
+});
+
+test('有效 Project 集合合并显式 Project、Service 与 Change，只有空并集才是仅工作区', () => {
+  const record = normalizeTaskRecord(active({
+    scope: { projects: ['zeta', 'demo'], services: [{ project: 'alpha', service: 'api' }, { project: 'demo', service: 'web' }] },
+    changes: [{ project: 'beta', change: 'one' }, { project: 'alpha', change: 'two' }],
+  }));
+  assert.deepEqual(taskRecordEffectiveProjectCodes(record), ['alpha', 'beta', 'demo', 'zeta']);
+  assert.equal(isWorkspaceOnlyTaskRecord(record), false);
+  const workspaceOnly = normalizeTaskRecord(active({ scope: { projects: [], services: [] }, changes: [] }));
+  assert.deepEqual(taskRecordEffectiveProjectCodes(workspaceOnly), []);
+  assert.equal(isWorkspaceOnlyTaskRecord(workspaceOnly), true);
 });

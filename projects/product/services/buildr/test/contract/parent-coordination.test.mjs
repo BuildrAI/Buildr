@@ -25,7 +25,7 @@ test('Parent Plan是closed计划值且Task Record不复制计划或Child状态',
   for (const forbidden of ['parentPlan', 'plannedContributions', 'contributionHandoff', 'parentAcceptance']) assert.equal(taskRecord.includes(forbidden), false, forbidden);
 });
 
-test('CLI、Local App与Agent共用Parent Coordination Application和单一public JSON identity', () => {
+test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一public JSON identity', () => {
   const registry = read('src/interfaces/cli/registry.mjs');
   const cli = read('src/interfaces/cli/parent-coordination.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
@@ -47,7 +47,7 @@ test('模型不恢复lifecycle/progress/event/history authority且没有历史Ta
   ].join('\n');
   for (const forbidden of ['task_lifecycle_current', 'completed_child_count', 'parent_progress', 'coordination_events', 'coordination_history', 'delivery_registry', 'govern-task-intermediate-artifacts']) assert.equal(sources.includes(forbidden), false, forbidden);
   const migrations = fs.readdirSync(path.join(root, 'src/infrastructure/sqlite/migrations')).sort();
-  assert.equal(migrations.at(-1), '0013_add_todo_task_retrospective_sources.sql');
+  assert.equal(migrations.at(-1), '0014_add_task_execution_invocation_identity.sql');
   assert.equal(migrations.some((name) => name.includes('parent_coordination') || name.includes('parent_plan') || name.includes('progress')), false);
 });
 

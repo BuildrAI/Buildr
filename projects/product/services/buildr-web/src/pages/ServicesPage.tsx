@@ -4,6 +4,7 @@ import { Alert, Button, Empty, Form, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
+import { ServiceEditModal } from '../components/ServiceEditModal';
 import { serviceTypeLabel, workspaceHref } from '../lib/labels';
 
 type Project = { code: string; name: string };
@@ -35,6 +36,7 @@ export function ServicesPage() {
   const [emptyText, setEmptyText] = useState('选择项目后显示服务。');
   const [migrationMessage, setMigrationMessage] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [editServiceCode, setEditServiceCode] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +87,7 @@ export function ServicesPage() {
         setProjectName(data.project.name);
         setServices(data.services);
         setTitle(`${data.project.name}的服务`);
-        setCopy('目录负责资源定位与关联跳转；稳定元数据使用独立编辑页修改。');
+        setCopy('目录负责资源定位与关联跳转；稳定元数据可在弹框中编辑。');
         setCount(`${data.services.length} 个服务`);
         setEmptyText(`项目“${data.project.name}”暂未登记服务。服务只在需要管理代码仓、应用、模块或可执行资产时添加；你也可以直接回到“开始”页推进项目范围工作。`);
         setMigrationMessage(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
@@ -127,7 +129,14 @@ export function ServicesPage() {
       render: (_value, service) => (
         <div className="table-operations">
           <Link className="table-action" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}`)}>详情</Link>
-          <Link className="table-action" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}/edit`)}>编辑</Link>
+          <button
+            type="button"
+            className="table-action"
+            id={`service-edit-action-${service.code}`}
+            onClick={() => setEditServiceCode(service.code)}
+          >
+            编辑
+          </button>
           <Link className="table-action" to={href(`/projects/${encodeURIComponent(projectCode)}`)}>项目</Link>
         </div>
       ),
@@ -138,9 +147,8 @@ export function ServicesPage() {
     <>
       <section className="resource-toolbar">
         <div>
-          <p className="eyebrow">服务</p>
           <Typography.Title level={2} style={{ margin: 0 }}>服务目录</Typography.Title>
-          <p className="page-copy">按项目查看已登记服务；详情与编辑使用独立页面。</p>
+          <p className="page-copy">按项目查看已登记服务；编辑在弹框中完成。</p>
         </div>
         <div className="toolbar-actions">
           <span id="services-count" className="count-label">{count}</span>
@@ -197,6 +205,19 @@ export function ServicesPage() {
         </div>
       </section>
       <span className="hidden">{projectName}</span>
+      <ServiceEditModal
+        open={Boolean(editServiceCode)}
+        projectCode={projectCode || null}
+        serviceCode={editServiceCode}
+        onClose={() => setEditServiceCode(null)}
+        onSaved={(saved) => {
+          setServices((items) => items.map((item) => (
+            item.code === saved.code
+              ? { ...item, name: saved.name, description: saved.description, type: saved.type }
+              : item
+          )));
+        }}
+      />
     </>
   );
 }

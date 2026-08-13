@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { normalizeProductPath } from './planner.mjs';
+import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './registry.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.mjs';
 
 function git(gitRoot, args, options = {}) {
@@ -42,12 +43,12 @@ export function collectChangedProductPaths(options) {
   const productPrefix = git(productRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const projectPrefix = git(projectRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const base = resolveVerificationBase(gitRoot, options.base);
-  const pathspec = projectPrefix || '.';
+  const pathspecs = [projectPrefix || '.', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS];
   const commands = [
-    ['diff', '--name-only', '-z', `${base}...HEAD`, '--', pathspec],
-    ['diff', '--cached', '--name-only', '-z', '--', pathspec],
-    ['diff', '--name-only', '-z', '--', pathspec],
-    ['ls-files', '--others', '--exclude-standard', '-z', '--', pathspec],
+    ['diff', '--name-only', '-z', `${base}...HEAD`, '--', ...pathspecs],
+    ['diff', '--cached', '--name-only', '-z', '--', ...pathspecs],
+    ['diff', '--name-only', '-z', '--', ...pathspecs],
+    ['ls-files', '--others', '--exclude-standard', '-z', '--', ...pathspecs],
   ];
   const workspacePaths = commands.flatMap((args) => zeroSeparated(git(gitRoot, args)));
   const paths = [];
@@ -58,6 +59,8 @@ export function collectChangedProductPaths(options) {
       relative = productPrefix ? normalizedWorkspacePath.slice(productPrefix.length + 1) : normalizedWorkspacePath;
     } else if (!projectPrefix || normalizedWorkspacePath === projectPrefix || normalizedWorkspacePath.startsWith(`${projectPrefix}/`)) {
       relative = projectPrefix ? normalizedWorkspacePath.slice(projectPrefix.length + 1) : normalizedWorkspacePath;
+    } else if (VERIFICATION_GOVERNED_REPOSITORY_INPUTS.includes(normalizedWorkspacePath)) {
+      relative = normalizedWorkspacePath;
     } else continue;
     if (relative) paths.push(normalizeProductPath(relative));
   }

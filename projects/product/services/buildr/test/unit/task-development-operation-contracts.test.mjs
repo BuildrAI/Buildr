@@ -39,7 +39,12 @@ test('schema与example使用稳定发现envelope并区分运行态约束', () =>
   assert.deepEqual(example.inputJson, { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } });
   assert.match(example.note, /current/);
   assert.deepEqual(taskDevelopmentDriverExample('inspect').inputJson, {});
-  assert.deepEqual(taskDevelopmentDriverExample('carrier').inputJson, {});
+  assert.deepEqual(taskDevelopmentDriverExample('carrier').inputJson, {
+    handoffIdentity: 'sha256-<handoff>',
+    candidateIdentity: 'sha256-<candidate>',
+    candidateGeneration: 1,
+    contentTargetIdentity: 'sha256-<content-target>',
+  });
 });
 
 test('未知action不产生伪造contract', () => {

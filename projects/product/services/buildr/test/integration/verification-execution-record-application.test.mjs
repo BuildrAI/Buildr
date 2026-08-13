@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import YAML from 'yaml';
@@ -44,7 +45,7 @@ function declare(projectRoot, capabilities) {
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({ schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities }));
 }
 
-async function run(current, id) {
+async function run(current, id, extra = []) {
   const previousLog = console.log;
   console.log = () => {};
   process.exitCode = 0;
@@ -52,12 +53,72 @@ async function run(current, id) {
     return await current.runtime.verificationRun([
       '--project', 'demo', '--capability', id, '--target-identity', `target:${id}`, '--target', current.root,
       '--environment', current.taskId, '--workspace', current.root,
+      ...extra,
     ]);
   } finally {
     console.log = previousLog;
     process.exitCode = 0;
   }
 }
+
+test('session丢失后相同验证返回active record且零执行，显式retry才重跑', async (t) => {
+  const current = setup(t, 'verification-active-reuse');
+  const markerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-active-reuse-'));
+  t.after(() => fs.rmSync(markerRoot, { recursive: true, force: true }));
+  const marker = path.join(markerRoot, 'executions.txt');
+  declare(current.projectRoot, [capability('demo.long', `require("fs").appendFileSync(${JSON.stringify(marker)}, "run\\n")`)]);
+  const seal = current.runtime.sealTaskExecutionRecord;
+  current.runtime.sealTaskExecutionRecord = () => {
+    const error = new Error('session lost before seal');
+    error.code = 'verification_test_session_lost';
+    throw error;
+  };
+  const interrupted = await run(current, 'demo.long');
+  current.runtime.sealTaskExecutionRecord = seal;
+  assert.equal(interrupted.executionRecord.lifecycleStatus, 'open');
+
+  const recovered = await run(current, 'demo.long');
+  assert.equal(recovered.status, 'active');
+  assert.equal(recovered.executionRecord.recordId, interrupted.executionRecord.recordId);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'run\n');
+
+  const retried = await run(current, 'demo.long', ['--retry']);
+  assert.equal(retried.status, 'passed');
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'run\nrun\n');
+  const records = current.runtime.listTaskExecutionRecords(current.root, current.taskId).records;
+  assert.equal(records.length, 2);
+  assert.deepEqual(records.map((record) => record.lifecycleStatus).sort(), ['open', 'retained']);
+});
+
+test('候选 Verification 通过 Receipt 固定的 retained controller 编排 canonical record', async (t) => {
+  const current = setup(t, 'verification-retained-controller');
+  declare(current.projectRoot, [capability('demo.pass', 'process.stdout.write("candidate")')]);
+  const candidateSource = path.join(current.root, 'candidate-product');
+  const retainedSource = path.join(current.root, 'retained-product');
+  fs.mkdirSync(candidateSource);
+  fs.mkdirSync(retainedSource);
+  current.runtime.productRoot = () => candidateSource;
+  current.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true,
+    taskId: current.taskId,
+    environmentRoot: current.root,
+    workspaceRoot: current.root,
+    scopes: [],
+    allowedExecutionRoots: [current.root],
+    controllerInvocation: { command: process.execPath, argsPrefix: ['retained-buildr.mjs'], sourceRoot: retainedSource, kind: 'stable-controller' },
+  });
+  let delegated = null;
+  current.runtime.runVerificationThroughRetainedController = (context, args) => {
+    delegated = { context, args };
+    return { status: 'delegated' };
+  };
+
+  const payload = await run(current, 'demo.pass');
+  assert.equal(payload.status, 'delegated');
+  assert.equal(delegated.context.controllerInvocation.sourceRoot, retainedSource);
+  assert.deepEqual(delegated.args.slice(0, 4), ['--project', 'demo', '--capability', 'demo.pass']);
+  assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records.length, 0);
+});
 
 test('formal Verification 为passed/failed/retry/drift/cancelled保留独立execution records', async (t) => {
   const current = setup(t);

@@ -28,7 +28,7 @@ test('task-manager routing 正向命中正式记录，负向排除普通任务�
   for (const negative of ['普通任务分流', '只读探索', 'Task Environment', 'Verification', 'Git', 'Finish']) assert.ok(manager.includes(negative), negative);
   assert.match(manager, /不要仅因用户说“任务”就触发/); assert.doesNotMatch(manager, /buildr worktree create|buildr verification run|buildr task finish run|git commit|git push/);
   assert.match(manager, /complete\|abandon.*任务复盘.*Token 数据仅在 Agent 可取得时记录.*用户明确同意后才路由 `task-retrospective`/s);
-  assert.match(triage, /Local App 已创建时先 inspect/); assert.match(triage, /本次动作仅维护已有生命周期 metadata 时不递归创建新 Task/);
+  assert.match(triage, /Buildr Web 已创建时先 inspect/); assert.match(triage, /本次动作仅维护已有生命周期 metadata 时不递归创建新 Task/);
 });
 
 test('task-triage 从 Parent 规划项启动独立 Child 时不共享 Change 或 worktree', () => {

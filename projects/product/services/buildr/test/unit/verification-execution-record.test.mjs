@@ -6,6 +6,7 @@ import {
   createVerificationExecutionRecordFiles,
   publicVerificationExecutionRecord,
   verificationExecutionRecordOutcome,
+  verificationInvocationIdentity,
 } from '../../src/application/verification/execution-record.mjs';
 
 function input(overrides = {}) {
@@ -63,6 +64,14 @@ test('Verification execution record outcome 区分失败、取消和容量阻塞
   assert.equal(verificationExecutionRecordOutcome({ passed: false, checks: [{ signal: 'SIGTERM' }] }), 'cancelled');
   assert.equal(verificationExecutionRecordOutcome({ passed: false, blocked: true }), 'blocked');
   assert.equal(verificationExecutionRecordOutcome({ passed: false, checks: [{ signal: null }] }), 'failed');
+});
+
+test('Verification invocation identity只绑定Task、target、declaration与规范化capability集合', () => {
+  const base = { taskId: 'task-1', projectCode: 'demo', declarationIdentity: `sha256-${'a'.repeat(64)}`, targetIdentity: 'target:demo' };
+  const first = verificationInvocationIdentity({ ...base, selectedCapabilities: [{ id: 'demo.b' }, { id: 'demo.a' }] });
+  assert.equal(first, verificationInvocationIdentity({ ...base, selectedCapabilities: ['demo.a', 'demo.b'] }));
+  assert.notEqual(first, verificationInvocationIdentity({ ...base, targetIdentity: 'target:other', selectedCapabilities: ['demo.a', 'demo.b'] }));
+  assert.notEqual(first, verificationInvocationIdentity({ ...base, selectedCapabilities: ['demo.a'] }));
 });
 
 test('公开 executionRecord 摘要不泄露 body locator', () => {

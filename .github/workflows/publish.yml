@@ -6,14 +6,195 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
+  actions: read
 
 jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.contract.outputs.version }}
+      npm_tag: ${{ steps.contract.outputs.npm_tag }}
+      prerelease: ${{ steps.contract.outputs.prerelease }}
+      artifact: contract-${{ github.ref_name }}-${{ github.run_attempt }}
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.15.0"
+          package-manager-cache: false
+      - name: Resolve the npm-only release contract
+        id: contract
+        run: >-
+          node scripts/release/release-contract.mjs "${GITHUB_REF_NAME}"
+          --source-commit "${GITHUB_SHA}"
+          --output "${RUNNER_TEMP}/contract/release-contract.json"
+      - name: Freeze release notes
+        run: >-
+          node scripts/release/release-notes.mjs
+          "${{ steps.contract.outputs.version }}"
+          ../../../../CHANGELOG.md
+          > "${RUNNER_TEMP}/contract/release-notes.md"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: contract-${{ github.ref_name }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/contract
+          if-no-files-found: error
+          retention-days: 14
+
+  candidate:
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      artifact: npm-candidate-${{ github.ref_name }}
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.15.0"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.contract.outputs.artifact }}
+          path: ${{ runner.temp }}/contract
+      - name: Restore the frozen npm candidate from an earlier attempt
+        id: restore
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: npm-candidate-${{ github.ref_name }}
+          path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+      - name: Validate restored bytes or declare the candidate missing
+        id: state
+        run: |
+          if [ ! -f "${RUNNER_TEMP}/candidate/npm/release-artifact.json" ]; then
+            echo "restored=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          node scripts/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import { readReleaseArtifact } from "./scripts/release/release-artifact.mjs";
+            const contract = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+            if (payload.sourceCommit !== contract.sourceCommit || payload.buildrVersion !== contract.version || payload.enginesNode !== contract.enginesNode) throw new Error("restored payload does not match release contract");
+            readReleaseArtifact(process.argv[3], { packageName: contract.packageName, version: contract.version, applicationPayloadDigest: payload.applicationPayloadDigest });
+          ' "${RUNNER_TEMP}/contract/release-contract.json" "${RUNNER_TEMP}/candidate/application-payload/application-payload.json" "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+          echo "restored=true" >> "${GITHUB_OUTPUT}"
+      - name: Install locked release tooling
+        if: steps.state.outputs.restored != 'true'
+        run: |
+          npm install --global npm@11.5.1
+          npm ci
+      - name: Build the application payload exactly once
+        if: steps.state.outputs.restored != 'true'
+        id: payload
+        run: >-
+          node scripts/release/application-payload.mjs build
+          --output "${RUNNER_TEMP}/candidate/application-payload"
+          --source-commit "${GITHUB_SHA}"
+      - name: Pack the npm tarball exactly once
+        if: steps.state.outputs.restored != 'true'
+        id: artifact
+        run: >-
+          node scripts/release/release-artifact.mjs
+          --payload "${{ steps.payload.outputs.payload_root }}"
+          --output "${RUNNER_TEMP}/candidate/npm"
+      - name: Verify npm inventory and immutable bytes
+        if: steps.state.outputs.restored != 'true'
+        env:
+          BUILDR_CANDIDATE_TARBALL: ${{ steps.artifact.outputs.tarball }}
+          BUILDR_CANDIDATE_PACK_METADATA: ${{ steps.artifact.outputs.pack_metadata }}
+        run: node test/verification/release/open-source-candidate.mjs
+      - name: Smoke the same tarball before public writes
+        if: steps.state.outputs.restored != 'true'
+        env:
+          BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ steps.artifact.outputs.manifest }}
+        run: node test/verification/release/release-smoke.mjs
+      - name: Freeze the candidate for partial reruns
+        if: steps.state.outputs.restored != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-candidate-${{ github.ref_name }}
+          path: ${{ runner.temp }}/candidate
+          if-no-files-found: error
+          retention-days: 14
+
+  host-node:
+    needs: [contract, candidate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24.15.0", "24.x"]
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.candidate.outputs.artifact }}
+          path: ${{ runner.temp }}/candidate
+      - name: Verify CLI, Web and Host/Workspace runtime roles from the same tarball
+        run: |
+          export BUILDR_CANDIDATE_TARBALL="$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
+          export BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm/npm-pack.json"
+          node test/verification/host-node.mjs
+
+  launcher:
+    needs: [contract, candidate]
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+          - runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.15.0"
+          package-manager-cache: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.candidate.outputs.artifact }}
+          path: ${{ runner.temp }}/candidate
+      - name: Verify explicit local Launcher lifecycle from the same tarball
+        env:
+          BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ runner.temp }}/candidate/npm/release-artifact.json
+        run: node test/verification/release/release-smoke.mjs
+
   publish:
+    needs: [contract, candidate, host-node, launcher]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: npm-production
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -26,77 +207,72 @@ jobs:
           package-manager-cache: false
       - name: Install supported npm CLI
         run: npm install --global npm@11.5.1
-      - name: Install product dependencies
-        run: npm ci
-      - name: Resolve release contract
-        id: contract
-        run: node scripts/release/release-contract.mjs "${GITHUB_REF_NAME}"
-      - name: Generate GitHub release notes
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.contract.outputs.artifact }}
+          path: ${{ runner.temp }}/contract
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.candidate.outputs.artifact }}
+          path: ${{ runner.temp }}/candidate
+      - name: Revalidate frozen bytes before any public mutation
         run: |
-          node scripts/release/release-notes.mjs \
-            "${{ steps.contract.outputs.version }}" \
-            ../../../../CHANGELOG.md \
-            > "${RUNNER_TEMP}/buildr-release-notes.md"
-      - name: Prepare immutable release artifact
-        id: artifact
-        run: node scripts/release/release-artifact.mjs "${RUNNER_TEMP}/buildr-release-artifact"
-      - name: Verify release artifact contract
-        env:
-          BUILDR_CANDIDATE_TARBALL: ${{ steps.artifact.outputs.tarball }}
-          BUILDR_CANDIDATE_PACK_METADATA: ${{ steps.artifact.outputs.pack_metadata }}
-        run: node test/verification/release/open-source-candidate.mjs
-      - name: Smoke immutable release artifact before publish
-        env:
-          BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ steps.artifact.outputs.manifest }}
-        run: |
-          mkdir -p "${RUNNER_TEMP}/buildr-release-diagnostics"
-          node test/verification/release/release-smoke.mjs \
-            2>&1 | tee "${RUNNER_TEMP}/buildr-release-diagnostics/prepublish-smoke.log"
-      - name: Check official registry artifact
-        id: registry_before
-        run: >-
-          node scripts/release/registry-version-state.mjs
-          "${{ steps.contract.outputs.version }}"
-          --manifest "${{ steps.artifact.outputs.manifest }}"
-      - name: Publish public npm package
-        if: steps.registry_before.outputs.published != 'true'
-        run: >-
-          npm publish "${{ steps.artifact.outputs.tarball }}"
-          --access public
-          --tag "${{ steps.contract.outputs.npm_tag }}"
-      - name: Confirm official registry artifact and dist-tag
-        run: >-
-          node scripts/release/registry-version-state.mjs
-          "${{ steps.contract.outputs.version }}"
-          --manifest "${{ steps.artifact.outputs.manifest }}"
-          --tag "${{ steps.contract.outputs.npm_tag }}"
-          --require-published
-          --wait
-      - name: Ensure GitHub release
+          node scripts/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import { readReleaseArtifact } from "./scripts/release/release-artifact.mjs";
+            const contract = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+            readReleaseArtifact(process.argv[3], { packageName: contract.packageName, version: contract.version, applicationPayloadDigest: payload.applicationPayloadDigest });
+          ' "${RUNNER_TEMP}/contract/release-contract.json" "${RUNNER_TEMP}/candidate/application-payload/application-payload.json" "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+      - name: Preflight GitHub Release metadata without assets or mutation
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          node scripts/release/github-release-ensure.mjs
+          node scripts/release/github-release-ensure.mjs preflight
           "${GITHUB_REF_NAME}"
-          "${RUNNER_TEMP}/buildr-release-notes.md"
-          "${{ steps.contract.outputs.prerelease }}"
-      - name: Smoke exact package from official registry
-        env:
-          BUILDR_RELEASE_PACKAGE_SPEC: "@buildr-ai/buildr@${{ steps.contract.outputs.version }}"
+          "${RUNNER_TEMP}/contract/release-notes.md"
+          "${{ needs.contract.outputs.prerelease }}"
+      - name: Check official Registry artifact
+        id: registry_before
         run: >-
-          node test/verification/release/release-smoke.mjs
-          2>&1 | tee "${RUNNER_TEMP}/buildr-release-diagnostics/postpublish-smoke.log"
-      - name: Upload immutable release artifact
+          node scripts/release/registry-version-state.mjs
+          "${{ needs.contract.outputs.version }}"
+          --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+      - name: Publish the frozen npm tarball
+        if: steps.registry_before.outputs.published != 'true'
+        run: >-
+          node scripts/release/trusted-publish.mjs
+          "$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
+          --access public
+          --tag "${{ needs.contract.outputs.npm_tag }}"
+      - name: Confirm official Registry integrity and dist-tag
+        run: >-
+          node scripts/release/registry-version-state.mjs
+          "${{ needs.contract.outputs.version }}"
+          --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+          --tag "${{ needs.contract.outputs.npm_tag }}"
+          --require-published
+          --wait
+      - name: Ensure GitHub Release notes without binary Assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/release/github-release-ensure.mjs ensure
+          "${GITHUB_REF_NAME}"
+          "${RUNNER_TEMP}/contract/release-notes.md"
+          "${{ needs.contract.outputs.prerelease }}"
+      - name: Smoke exact package from the official Registry
+        env:
+          BUILDR_RELEASE_PACKAGE_SPEC: "@buildr-ai/buildr@${{ needs.contract.outputs.version }}"
+        run: node test/verification/release/release-smoke.mjs
+      - name: Upload temporary release evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: release-artifact-${{ github.ref_name }}
-          path: ${{ runner.temp }}/buildr-release-artifact
+          name: release-evidence-${{ github.ref_name }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/contract
+            ${{ runner.temp }}/candidate/npm/release-artifact.json
           if-no-files-found: warn
-      - name: Upload release failure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-verification-diagnostics-${{ github.ref_name }}
-          path: ${{ runner.temp }}/buildr-release-diagnostics
-          if-no-files-found: ignore
+          retention-days: 14

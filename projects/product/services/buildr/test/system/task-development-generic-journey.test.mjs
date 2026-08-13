@@ -132,9 +132,23 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   assert.equal(development.development.receipt.handoffs.length, 1);
   assert.equal(development.development.applicability.handoff, 'current');
 
-  const finishAdapter = runtime.assertTaskDevelopmentCarrier(root, 'publish-guide');
+  assert.throws(
+    () => runtime.assertTaskDevelopmentCarrier(root, 'publish-guide'),
+    (error) => error.code === 'task_development_field_invalid' && error.details?.field === 'handoffIdentity',
+  );
+  const frozenIdentity = {
+    handoffIdentity: development.development.receipt.handoffs[0].identity,
+    candidateIdentity: candidate.identity,
+    candidateGeneration: candidate.generation,
+    contentTargetIdentity: candidate.contentTargetIdentity,
+  };
+  const finishAdapter = runtime.assertTaskDevelopmentCarrier(root, 'publish-guide', frozenIdentity);
   assert.equal(finishAdapter.status, 'equivalent');
   assert.deepEqual(finishAdapter.effects, []);
+  const historical = runtime.assertTaskDevelopmentCarrier(root, 'publish-guide', { ...frozenIdentity, handoffIdentity: 'sha256-historical-handoff' });
+  assert.equal(historical.status, 'stale');
+  assert.equal(historical.diagnostic.code, 'task_development_carrier_identity_mismatch');
+  assert.deepEqual(historical.diagnostic.details.mismatches, ['handoffIdentity']);
   const portable = JSON.stringify(finishAdapter.development.receipt);
   assert.doesNotMatch(portable, /node_modules|npm|OpenSpec|git-worktree|\/private\//i);
   assert.equal(finishAdapter.development.receipt.handoffs[0].candidate.contentTargetIdentity, targetIdentity);

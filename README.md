@@ -14,6 +14,56 @@ Agent 可用的工作事实覆盖得越广，能做的就越多；经过验证�
 
 你指挥，Agent 构建；资产归你，Agent 可换。
 
+## 快速开始：只需三步
+
+### 1. 安装或更新 Buildr
+
+把这份 README 发给 Agent，然后说“帮我安装 Buildr”，或者手动执行：
+
+```bash
+npm install --global @buildr-ai/buildr@next
+```
+
+如需 Buildr Web 本机入口：
+
+```bash
+buildr web launcher install
+```
+
+已经安装过时，直接告诉 Agent“帮我更新 Buildr”。
+
+### 2. 初始化或更新 Workspace
+
+进入你的工作目录，对 Agent 说：
+
+```text
+用 Buildr 管理这个工作空间。
+```
+
+已有 Workspace 则说：
+
+```text
+帮我更新这个 Workspace。
+```
+
+初始化或更新 Workspace 时，Buildr 会同时为当前 Agent 安装或更新 Buildr Skill。
+
+更新 Buildr 是更新本机产品；更新 Workspace 是更新工作资产和 Agent runtime，两者互不代替。
+
+### 3. 直接开始工作
+
+Workspace 准备好后，继续在 Agent 对话框里描述真实目标：
+
+```text
+帮我梳理支付产品的需求，并建立项目。
+```
+
+```text
+为这个需求形成方案，完成开发、测试和交付。
+```
+
+你不需要先学习 Buildr 命令。Agent 会使用 Buildr 管理工作资产，然后继续实际工作。
+
 ## 三个核心价值
 
 ### 1. 一个 Agent 窗口，从产品到发布
@@ -95,91 +145,39 @@ Skill 只在工作空间的 `skills/` 维护，然后 render 到两种 Agent run
 
 Buildr 管理的是长期工作资产，不直接填充模型的 context window。Agent 根据当前任务发现和选择相关内容，形成自己的任务上下文。Agent 负责理解、检索、推理和专业执行；Buildr 负责工作资产治理、确定性状态变更、runtime 投射、完整性保护和诊断。
 
-## 快速开始
-
-把这份 README 给 Agent，然后说：
-
-```
-用 Buildr 管理这个项目
-```
-
-Agent 读到这个任务后，按以下流程完成初始化。本节主要给 Agent 看，人了解流程即可。
-
-**1. 准备 Node.js 和 Buildr CLI**
-
-Buildr 支持 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`）。先检查 Node.js 版本和本机是否已有 `buildr` 命令；条件不满足时，先询问用户再安装或升级。Workspace 的受管 runtime 使用受版本控制声明中的精确版本，当前自举 Workspace 固定为 24.15.0：
-
-- **预发布版（当前推荐试用，当前候选版：`0.1.0-rc.8`）**：`npm install -g @buildr-ai/buildr@next`
-- **开发版**：让用户确认保存位置后，执行 `git clone https://github.com/BuildrAI/Buildr.git <path>`，后续使用 `<path>/projects/product/buildr`
-
-下文中的 `buildr` 表示所选入口：预发布版使用全局命令，开发版使用 `<path>/projects/product/buildr`。
-
-**2. 初始化工作空间（Workspace）**
-
-CLI 就绪后，识别当前 Agent runtime 并执行初始化：
-
-```bash
-buildr runtime list --json
-buildr init --agent <agent> --target . --name <name> --profile <personal|team|company>
-```
-
-`init --agent` 会初始化工作空间源资产、准备当前 Agent runtime，并以最终 doctor 通过作为完成条件。
-
-Agent 只有同时满足以下条件，才算初始化完成：
-
-- 工作空间源资产已经创建
-- 当前 Agent runtime 已经准备完成
-- 最终 doctor 已通过
-
-**3. 告诉 Agent 你想推进的第一项真实工作**
-
-工作空间准备好后，用户不需要先学命令、规则或技能。直接告诉 Agent：你要推进什么、已有些什么、希望先得到什么结果。
-
-Agent 会帮你确认第一项工作，并把它归入一个项目（Project）。项目是长期业务或产品的工作单元，不等同于某一个代码仓；只有确实需要管理代码仓、应用或模块时，才把它们接入为服务（Service）。没有服务也可以先推进项目工作。
-
-**Git 不需要一开始就决定。** 工作空间、项目和服务都可以各自使用独立的 Git 仓，也可以从上到下共用同一个 Git 仓。把已有仓库地址、本地目录和希望协作的分支告诉 Agent；它会按真实的 Git 边界处理。不确定时也不用猜，先从目标开始即可。
-
-如果你还不确定该怎么描述，只要先说：
-
-```text
-我想开始推进支付能力。请根据我现有的资料，引导我建立项目，并问我下一步最需要做什么。
-```
-
-信息明确时，可以这样说：
-
-```text
-我想建立“支付”项目：目标是支持线上收款和退款。已有资料和 payment-api 代码仓在 <git-url>；请按实际 Git 边界引导我确认项目和服务，并先梳理支付流程。
-```
-
-第一项工作不需要很大；关键是让 Agent 从真实目标开始，而不是让你停在“已经初始化”这一步。Agent 通过 Buildr Skill 理解目标，通过 Buildr CLI 执行可确定的资产操作。
-
-Buildr 当前处于预发布阶段，版本和安装来源以 [GitHub Releases](https://github.com/BuildrAI/Buildr/releases) 为准。
-
 ## 当前能力
 
 - 一个工作空间（Workspace）管理多个项目（Project）；每个项目可按需要管理多个服务（Service）
 - 规则、工作空间级 Skills、组件和命令等资产的统一管理；Skill 支持 user/workspace destination 与同名冲突预检
-- 任务（Task）及其过程信息管理，包括任务复盘
-- Local App：查看和管理工作空间、项目、服务与任务等信息；当前仍在持续完善
+- 管理任务（Task）从规划、环境、开发、审查、验证到交付和复盘的过程事实
+- Buildr Web：在本机浏览器中查看和管理工作空间、项目、服务、文档、任务、验证与执行记录；当前仍在持续完善
 - 支持 7 个 Agent runtime adapter（claude-code、codex、cursor、qoder、trae、trae-work、workbuddy）
 
 详细边界见[已知限制](projects/product/services/buildr/docs/known-limitations.md)。
 
 ## 文档
 
+- [日常使用手册](projects/product/docs/manual/README.md)：安装、Workspace 准备和日常工作流程
 - [产品说明](projects/product/docs/buildr-product.md)：完整定位、核心模型、边界和 Roadmap
 - [Buildr Skill](projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md)：Agent 使用 Buildr 的主要入口
 - [CLI Reference](projects/product/services/buildr/docs/cli-reference.md)：公开命令和参数
 - [Runtime Adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md)：各 Agent 的接入方式和限制
 - [OpenSpec specs](projects/product/openspec/specs/)：规范性产品行为契约
 
-## Buildr 自举 workspace
+## Buildr 自举 workspace：开发者与协作者
 
-本仓库也是 Buildr 开发自身的 workspace。Product 治理事实维护在 `projects/product/`，可执行产品的唯一源码根是 `projects/product/services/buildr/`；根目录资产是消费状态。
+普通用户只需安装 npm 版本，不需要克隆本仓库。参与 Buildr 开发时：
 
 ```bash
-projects/product/buildr runtime list --json
-projects/product/buildr doctor --agent <agent> --target . --json
+git clone https://github.com/BuildrAI/Buildr.git
+cd Buildr/projects/product
+npm ci
+./buildr --help
+./buildr runtime list --json
 ```
+
+开发 checkout 使用仓库内的 `projects/product/buildr`，不依赖 PATH 中的全局 `buildr`。Product 治理事实位于 `projects/product/`，CLI 与 runtime 实现在 `services/buildr/`，Buildr Web 前端在 `services/buildr-web/`。
+
+开始修改前请阅读[贡献指南](CONTRIBUTING.md)。
 
 [贡献指南](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/BuildrAI/Buildr/issues)

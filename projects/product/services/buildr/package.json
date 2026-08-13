@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.0-rc.9",
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
@@ -38,7 +38,10 @@
     "docs/skill-capability-contracts.md",
     "docs/cli-architecture.md",
     "docs/known-limitations.md",
-    "package/"
+    "package/README.md",
+    "package/manifest.yml",
+    "package/bootstrap/",
+    "package/targets/"
   ],
   "scripts": {
     "test": "./scripts/verify-buildr-product-fast",
@@ -68,8 +71,6 @@
     "test:host-node": "node test/verification/host-node.mjs",
     "test:candidate": "bash scripts/verify-buildr-product",
     "test:release": "node test/verification/release/release-smoke.mjs",
-    "package:launcher": "node package/launchers/build.mjs",
-    "install:local": "./scripts/install-buildr-local",
     "install:development": "./scripts/install-buildr-development",
     "pack:check": "npm pack --dry-run"
   },
@@ -84,6 +85,7 @@
   ],
   "devDependencies": {
     "@fission-ai/openspec": "1.6.0",
+    "esbuild": "0.28.2",
     "playwright-core": "^1.61.1"
   }
 }

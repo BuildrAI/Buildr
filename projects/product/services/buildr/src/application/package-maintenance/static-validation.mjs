@@ -160,9 +160,21 @@ export function createPackageStaticValidator(deps) {
           if (!packageMetadata.keywords?.includes(keyword)) problems.push(`package.json keywords must include ${keyword}.`);
         }
         const packagedFiles = new Set(packageMetadata.files || []);
-        for (const required of ['LICENSE', 'bin/buildr.mjs', 'src/', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'package/']) {
+        for (const required of [
+          'LICENSE',
+          'bin/buildr.mjs',
+          'src/',
+          'docs/cli-reference.md',
+          'docs/cli-architecture.md',
+          'docs/known-limitations.md',
+          'package/README.md',
+          'package/manifest.yml',
+          'package/bootstrap/',
+          'package/targets/',
+        ]) {
           if (!packagedFiles.has(required)) problems.push(`package.json files must include ${required}.`);
         }
+        if (packagedFiles.has('package/')) problems.push('package.json files must not publish package/ wholesale because it contains development-only Launcher assets.');
         for (const forbiddenPrefix of ['test/', 'scripts/', ['to', 'ols/'].join('')]) {
           if ([...packagedFiles].some((entry) => entry === forbiddenPrefix || entry.startsWith(forbiddenPrefix))) {
             problems.push(`package.json files must not publish checkout-only path: ${forbiddenPrefix}.`);
@@ -359,7 +371,7 @@ export function createPackageStaticValidator(deps) {
     }
 
     const localServer = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'server.mjs');
-    if (!existsFile(localServer)) problems.push('Task Review Local App interface is missing.');
+    if (!existsFile(localServer)) problems.push('Task Review Buildr Web interface is missing.');
     else {
       const content = fs.readFileSync(localServer, 'utf8');
       const readWorker = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'read-worker.mjs');
@@ -370,9 +382,9 @@ export function createPackageStaticValidator(deps) {
         [content, "suffix === '/prompts/task-review'"],
         [content, 'runtime.generateTaskReviewPrompt(root, input)'],
       ]) {
-        if (!owner.includes(required)) problems.push(`Task Review Local App interface must include ${JSON.stringify(required)}.`);
+        if (!owner.includes(required)) problems.push(`Task Review Buildr Web interface must include ${JSON.stringify(required)}.`);
       }
-      if (content.includes('runtime.recordTaskReview(')) problems.push('Local App must not expose a direct Task Review Result writer.');
+      if (content.includes('runtime.recordTaskReview(')) problems.push('Buildr Web must not expose a direct Task Review Result writer.');
     }
 
     const changeDetail = path.join(root, 'src', 'interfaces', 'local-app', 'web', 'features', 'change-detail.js');
@@ -819,22 +831,7 @@ export function createPackageStaticValidator(deps) {
       const sourceFile = path.resolve(root, rule.path);
       if (!existsFile(sourceFile)) {
         problems.push(`${label}.path does not exist: ${rule.path}`);
-      } else {
-        if (rule.id === 'buildr-core') {
-          const coreContent = fs.readFileSync(sourceFile, 'utf8');
-          for (const requiredText of [
-            'Agent 是默认操作入口',
-            '取得所需授权后直接执行',
-            '不把命令或操作步骤作为默认结果要求用户代为执行',
-            '才提供准确的手动操作作为兜底',
-            '创建、修改、替换或卸载 Skill 前必须检查相关 `provides`、`requires`',
-            '不得绕过已知依赖直接激活',
-          ]) {
-            if (!coreContent.includes(requiredText)) problems.push(`Buildr Core must include ${JSON.stringify(requiredText)}.`);
-          }
-        }
-        files.push(sourceFile);
-      }
+      } else files.push(sourceFile);
     }
     if (!manifest.builtins.rules.some((rule) => rule.id === 'buildr-core' && rule.required === true && rule.target === 'rules/buildr/core.md')) {
       problems.push('builtins.rules must declare required buildr-core at rules/buildr/core.md.');
@@ -994,7 +991,7 @@ export function createPackageStaticValidator(deps) {
           '不要仅因用户说“任务”就触发',
           '不读取 environment receipt',
           '不从 worktree 推断 retained root',
-          'Local App 是同一 Application 的独立人类客户端',
+          'Buildr Web 是同一 Application 的独立人类客户端',
           '不直接读写 Workspace SQLite 或旧 `.buildr/tasks/<task-id>/task.yml`',
           '不自动 commit、push、publication、Finish 或 cleanup',
         ]) {
@@ -1015,7 +1012,7 @@ export function createPackageStaticValidator(deps) {
         for (const relative of ['../buildr-web/src/pages/TasksPage.tsx', '../buildr-web/src/pages/TaskDetailPage.tsx']) {
           const webFile = path.join(root, relative);
           if (!existsFile(webFile)) {
-            problems.push(`Task Manager Local App asset is missing: ${relative}.`);
+            problems.push(`Task Manager Buildr Web asset is missing: ${relative}.`);
             continue;
           }
           const content = fs.readFileSync(webFile, 'utf8');
@@ -1271,40 +1268,6 @@ export function createPackageStaticValidator(deps) {
       validateLegacyIntegrities(command, `builtins.commands.${command.id || '<missing>'}`);
       if (!command.id || typeof command.required !== 'boolean' || !isPlainObject(command.manifestEntry)) {
         problems.push(`builtins.commands entries must include id, required, and manifestEntry.`);
-      }
-    }
-
-    const canonicalProjectAgentsPath = path.resolve(root, '../..', 'AGENTS.md');
-    const productAgentsPath = existsFile(canonicalProjectAgentsPath)
-      ? canonicalProjectAgentsPath
-      : workspaceRoot
-        ? path.join(workspaceRoot, 'projects', 'product', 'AGENTS.md')
-        : path.join(root, 'AGENTS.md');
-    if (existsFile(productAgentsPath)) {
-      const productAgents = fs.readFileSync(productAgentsPath, 'utf8');
-      files.push(productAgentsPath);
-      for (const requiredText of [
-        '合并前候选验证使用临时 workspace 或 task worktree 自身',
-        '冻结明确 target identity',
-        '相同内容集成、push 和 worktree 清理不改变 target 时可以复用',
-        'tree 或 declaration bytes 发生任何变化后 Result 直接派生为 stale',
-        '按当前目标选择直接相关的已有 capability',
-        '`requiredForDelivery`',
-        '不得在每个普通任务后运行产品总验证或临时 workspace E2E',
-        '继续等待同一进程，不重复启动相同命令',
-        '修复循环优先重跑失败项和受影响检查',
-        'selected `buildr.task-verification/v3` provider',
-        'Task-scoped current Result',
-        '不作为相同 tree 后续 Git 动作的重复产品验证门禁',
-        '使用`task-finish`只消费current Development Handoff',
-        '不授权force push、merge commit、远端任务分支删除',
-        'Environment cleanup后不得追索Receipt',
-        'Buildr 功能默认由 Agent 操作',
-        '取得所需授权后直接执行',
-        '不得把命令或操作步骤作为默认交付结果要求用户代为执行',
-        '才提供准确的手动操作作为兜底',
-      ]) {
-        if (!productAgents.includes(requiredText)) problems.push(`Product AGENTS.md must include ${JSON.stringify(requiredText)}.`);
       }
     }
 

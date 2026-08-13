@@ -249,45 +249,62 @@ Buildr MUST登记Parent Plan、Contribution binding、Contribution Handoff、coo
 - **AND** MUST保持原Task read model兼容
 
 ### Requirement: Task Finish run 必须提供 portable execution record operation summary
-`buildr task finish run --json` MUST继续输出`buildr.task-finish-result/v2`并以additive `executionRecord` summary表达`not-opened|retained|blocked|attention`、portable record identity/outcome/lifecycle/body summary、diagnostics transient cleanup、diagnostic与next action。Payload MUST NOT暴露SQLite/database、body或transient locator、本机持久路径、Carrier路径、remote credential、lease/resume/resource token，也 MUST NOT把execution record解释为Finish current、delivery、Task terminal或Result adoption authority。`task finish inspect --json` MUST保持既有pure Finish read model且不添加record列表或正文。
+`buildr task finish run|inspect --json` MUST按`--detail compact|full`返回不同且稳定的公开JSON投影。缺省或显式`--detail compact` MUST返回closed `buildr.task-finish-compact-result/v1`；显式`--detail full` MUST继续输出既有`buildr.task-finish-result/v2`。compact MUST保留Task/run/status、current phase、Development handoff、Candidate/generation、Content Target、主失败、唯一next workflow/action、matching resume、关键carrier/target/remote refs、delivery/completion disposition、阶段与总体timing，以及run调用可用的portable`executionRecord` summary；MUST NOT透传完整checks、operations、observations、stdout/stderr、diagnostics正文、本机locator或未登记字段。full payload的字段与语义 MUST保持兼容。
+
+`executionRecord` summary MUST表达`not-opened|retained|blocked|attention`、portable record identity/outcome/lifecycle/body summary、diagnostics transient cleanup、diagnostic与next action。compact与full均 MUST NOT暴露SQLite/database、body或transient locator、本机持久路径、Carrier绝对路径、remote credential、lease或resource token，也 MUST NOT把execution record解释为Finish current、delivery、Task terminal或Result adoption authority。`task finish inspect --json` MUST保持pure Finish read model且不添加record列表或正文。
 
 当`buildr task finish run --json`在创建run之前因入口聚合缺口失败时，CLI MUST输出`buildr.cli-error/v1`，且`error.code` MUST为`task_finish.entry_gaps`；`error.details.gaps` MUST包含`development`、`environment`、`delivery`三个数组（可空），每项至少含既有`code`与`message`；若`development`非空，`suggestions`或等价next指示 MUST指向`task-development`。该失败路径 MUST NOT返回伪Finish run result或`executionRecord`。
 
+#### Scenario: 缺省 compact 输出
+- **WHEN** Agent执行`task finish run|inspect --json`且没有显式`--detail`
+- **THEN** CLI MUST返回`buildr.task-finish-compact-result/v1`与`detail: compact`
+- **AND** payload MUST只包含closed compact字段，不得与full payload逐字相同
+
+#### Scenario: 显式 full 输出
+- **WHEN** Agent执行`task finish run|inspect --detail full --json`
+- **THEN** CLI MUST返回兼容的`buildr.task-finish-result/v2`
+- **AND** 现有完整phase、delivery、completion与diagnostic facts MUST保持可用
+
 #### Scenario: Finish invocation retained
-- **WHEN**一次实际执行的Finish invocation已terminal seal且record retained
-- **THEN** run JSON MUST返回portable record ID、outcome、lifecycle、body digest/size/truncated与diagnostics cleanup disposition
+- **WHEN** 一次实际执行的Finish invocation已terminal seal且record retained
+- **THEN** run compact JSON MUST返回portable record ID、outcome、lifecycle、body digest/size/truncated与diagnostics cleanup disposition
 - **AND** 顶层Finish status、failure、resume与delivery facts MUST继续由`task_finish_current`决定
 
 #### Scenario: record open backpressure
 - **WHEN** record quota reservation在任何Finish execution side effect前被拒绝
-- **THEN** run JSON MUST返回blocked execution record summary、portable diagnostic与唯一cleanup/resolution next action
+- **THEN** run compact JSON MUST返回blocked execution record summary、portable diagnostic与唯一cleanup/resolution next action
 - **AND** MUST不返回伪Finish run、phase、Carrier、delivery mutation或terminal completion
 
 #### Scenario: Finish完成后record attention
 - **WHEN** Finish owner已形成complete terminal truth但record seal、post-read或diagnostics cleanup无法完整确认
-- **THEN** JSON MUST保持`status: complete`并返回`executionRecord.status: attention`
+- **THEN** compact与full JSON MUST保持`status: complete`并返回`executionRecord.status: attention`
 - **AND** MUST明确保留或已retained的evidence disposition，不得要求重跑Finish或暴露本机恢复locator
 
 #### Scenario: invalid或no-op invocation
 - **WHEN** request在open前无效，或既有Finish已经complete且run只返回幂等no-op
-- **THEN** JSON MUST返回`executionRecord.status: not-opened`与零record effect
+- **THEN** 有效Finish payload MUST返回`executionRecord.status: not-opened`与零record effect
 - **AND** MUST不创建execution record、diagnostics transient或改变既有Finish facts
+
+#### Scenario: 非法 detail
+- **WHEN** 调用方提供`--detail`且值不是`compact|full`
+- **THEN** CLI MUST在任何Finish读取或执行副作用前返回`buildr.cli-error/v1`
+- **AND** MUST提供稳定错误code与对应Task Finish help
 
 #### Scenario: 入口聚合缺口的 CLI 错误
 - **WHEN** `task finish run --json`在创建run前同时观察到环境与研发入口缺口
 - **THEN** CLI MUST输出`buildr.cli-error/v1`且`error.details.gaps`同时包含非空的`environment`与`development`
-- **AND** MUST NOT输出`buildr.task-finish-result/v2` run payload
+- **AND** MUST NOT输出compact或full Finish run payload
 
 ### Requirement: Task Execution Record 查询必须提供稳定 portable JSON
 Buildr MUST 为 Task-scoped execution record list、detail 与 body-file read 登记稳定 v1 public JSON identity。List MUST 表达 requested view 与 records；detail MUST 表达单条 portable record 和可用正文文件；body-file read MUST 表达 record/file identity、完整性 metadata、内容与截断状态。三类 payload MUST 使用 closed 字段白名单，且 MUST NOT 暴露 SQLite、database row、body locator、本机路径、resource token 或 mutation action。
 
 #### Scenario: list 与 detail JSON
-- **WHEN** Local App HTTP 返回 execution record list 或 detail
+- **WHEN** Buildr Web HTTP 返回 execution record list 或 detail
 - **THEN** payload MUST 分别使用已登记的 v1 schema identity
 - **AND** 同一 record 在不同 view 中 MUST 保持相同 record identity 与 metadata 语义
 
 #### Scenario: body-file JSON
-- **WHEN** Local App HTTP 成功读取 execution record 正文文件
+- **WHEN** Buildr Web HTTP 成功读取 execution record 正文文件
 - **THEN** payload MUST 返回 UTF-8 content、digest、stored size、stored truncation、response bytes 与 response truncation
 - **AND** payload MUST NOT 返回 locator 或任何可用于读取其他文件的路径
 
@@ -313,3 +330,80 @@ Buildr MUST 提供 `buildr task execution-record gc [--target <canonical-workspa
 - **WHEN** caller 提供越界 limit、force、owner、path 或 retention override
 - **THEN** CLI MUST在 GC mutation 前拒绝请求并返回稳定 input diagnostic
 - **AND** MUST NOT创建第二策略或绕过固定 retention
+
+### Requirement: Buildr Web 术语迁移不得机械重命名已发布 JSON identity
+Buildr MUST 将公开帮助、文档和用户可见字段说明迁移为 Buildr Web，但 MUST 保留本次任务前已经发布并参与兼容读取的 JSON schema id、protocol identity 与 closed payload field。只有独立规范证明用户价值、版本迁移与兼容读取时，未来 Change 才能修改这些 identity。
+
+#### Scenario: 验证 JSON schema registry
+- **WHEN** verifier 比较术语迁移前后的 public JSON registry 与代表性 launcher/instance/preview payload
+- **THEN** 既有 `buildr.local-app-*`、`buildr.launcher-*` 或等价已发布 identity MUST 保持可读且未被机械改名
+- **AND** CLI/help/docs 中的产品名称和 canonical command MUST 使用 Buildr Web 与 `buildr web`
+
+#### Scenario: 内部 identity 不形成 legacy command
+- **WHEN** internal schema、环境变量、SQLite 或目录仍保留 `app` / `local-app` compatibility identity
+- **THEN** CLI executable catalog、help topics、suggestions 与 Launcher command MUST NOT 因此重新暴露 `buildr app`
+
+### Requirement: npm 应用负载 manifest 必须使用稳定公共 JSON identity
+Application payload manifest MUST 使用稳定 schema identity，并 MUST 表达 package/version、protocol identity、source commit、runtime/worker/resource inventory、每项 size/SHA-256 和唯一 payload digest。Manifest MUST 只描述 npm package 共享业务负载，不得包含 Product Node、SEA、installer、签名或本机 Launcher target。
+
+#### Scenario: 验证 payload manifest
+- **WHEN** npm pack 或 runtime 读取 application payload manifest
+- **THEN** reader MUST 验证 closed schema、排序 inventory、逐文件摘要与总 digest
+- **AND** 未知字段、绝对路径、平台 envelope 或资源漂移 MUST fail closed
+
+### Requirement: npm release artifact manifest 必须使用稳定公共 JSON identity
+npm release artifact manifest MUST 使用稳定 schema identity，并 MUST 表达 package/version、filename、size、SHA-256、SHA-512 integrity、payload digest、protocol、source commit、Host Node engines 与 inventory。当前 MUST NOT 生成或登记 platform release manifest/checksums schema。
+
+#### Scenario: 验证 npm release artifact
+- **WHEN** workflow 在 smoke、publish 或 Registry readback 前读取 release artifact manifest
+- **THEN** reader MUST 逐字节核对唯一 tarball 的 filename、size、SHA-256、integrity 与 payload digest
+- **AND** manifest 出现 platform target、Product Node、installer 或签名字段时 MUST 失败
+
+### Requirement: npm installation、Launcher 与运行状态必须使用稳定公共 JSON identity
+Installation origin、installation registry、Launcher binding、installation status、Doctor、CLI version 与 Web health MUST 使用 closed schema 表达 npm、development 和当前 instance identity。npm Launcher binding MUST 包含 ownership、Host Node、package entry、prefix、protocol/payload 与 target；当前 enum MUST NOT 声称 platform installation 或 Product Node 可用。
+
+#### Scenario: npm installation 与 Launcher status
+- **WHEN** Agent 请求 installation 或 launcher status JSON
+- **THEN** 输出 MUST 分别展示 formal npm installation、Launcher binding、development 与当前 instance 的 closed identity、状态和 next actions
+- **AND** MUST NOT包含 secret、完整环境变量、PATH 推断或不存在的 platform channel
+
+#### Scenario: binding 漂移
+- **WHEN** Host Node、entry、prefix、origin、payload 或 ownership 任一不匹配
+- **THEN** JSON MUST 将 Launcher 标为 stale/invalid，列出稳定 reason code 与 repair action
+- **AND** MUST NOT把可执行成功或版本相同解释为 identity current
+
+### Requirement: Execution record CLI readback 必须提供closed portable JSON
+Buildr MUST为Task execution record CLI list与inspect登记稳定public JSON schema identity。List payload MUST包含Task、requested view、observedAt与有界records；inspect payload MUST包含matching portable record、可选compact Verification summary、available body filenames、diagnostic与next actions。两类payload MUST复用Task Execution Record Application值语义，MUST不暴露SQLite、body locator、本机路径、raw command、resource token或mutation action。
+
+#### Scenario: list JSON
+- **WHEN** Agent使用`task execution-record list --json`
+- **THEN** stdout MUST为单一closed JSON object并返回稳定排序records
+- **AND** open与terminal record MUST保持各自真实lifecycle/outcome，不推断Result采用状态
+
+#### Scenario: inspect JSON
+- **WHEN** Agent使用matching Task/record调用`task execution-record inspect --json`
+- **THEN** stdout MUST为单一closed JSON object并返回portable compact facts与正文文件名
+- **AND** open record没有正文时 MUST明确返回summary unavailable而不是伪造terminal facts
+
+### Requirement: Verification active duplicate 必须返回非执行JSON结果
+当`verification run --json`发现相同invocation identity的active record且未提供`--retry`时，Buildr MUST返回同一`buildr.verification-execution/v1` family中的非执行结果，包含`status: active`、existing record/run/invocation identity、空checks、零duration执行事实与指向list/inspect的next actions。Payload MUST不声称existing execution已经passed/failed，也MUST不包含transient evidence locator或新record effect。
+
+#### Scenario: 默认请求命中active execution
+- **WHEN** matching active record已存在且caller未显式retry
+- **THEN** JSON MUST返回existing portable identity与`executionRecord.status: active`
+- **AND** checks MUST为空且不得创建新evidence、record或capability side effect
+
+#### Scenario: 显式retry正常执行
+- **WHEN** caller提供`--retry`
+- **THEN** JSON MUST按新run返回正常execution envelope与独立execution record summary
+- **AND** payload MUST不覆盖或内联旧active execution结果
+### Requirement: Task Finish compact schema 必须由自动覆盖保护
+Buildr MUST在public JSON registry、CLI help、schema coverage与checkout/npm parity中登记`buildr.task-finish-compact-result/v1`。compact字段白名单、关键恢复字段与禁止字段 MUST由自动测试保护；新增full Result字段 MUST NOT未经显式契约更新自动进入compact。
+
+#### Scenario: compact registry 漂移
+- **WHEN** Task Finish compact CLI可达但schema registry、关键字段guard或checkout/npm parity任一缺失
+- **THEN** Product verification MUST失败并报告缺失的compact family
+
+#### Scenario: compact 泄漏完整诊断
+- **WHEN** compact payload包含完整operations、checks、observations、stdout/stderr、diagnostics正文或本机locator
+- **THEN** public JSON contract test MUST失败

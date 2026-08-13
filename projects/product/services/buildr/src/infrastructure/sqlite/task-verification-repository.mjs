@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { normalizeTaskVerificationResult, taskVerificationError } from '../../domain/task-verification/task-verification.mjs';
+import { taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
 
 function locator(taskId) { return `workspace-sqlite:task-verification/${taskId}`; }
 function digest(value) { return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`; }
@@ -45,6 +46,9 @@ export function registerTaskVerificationRepository(runtime) {
     let serialized;
     try {
       normalized = normalizeTaskVerificationResult(result, { expectedTaskId: task.record.taskId });
+      const expectedProjects = taskRecordEffectiveProjectCodes(task.record);
+      const actualProjects = normalized.declarations.map((item) => item.project).sort((left, right) => left.localeCompare(right));
+      if (JSON.stringify(actualProjects) !== JSON.stringify(expectedProjects)) throw taskVerificationError('task_verification_declarations_scope_mismatch', 'Task Verification declarations 必须精确匹配 current Task 的有效 Project 集合。', 409, { expectedProjects, actualProjects });
       serialized = (runtime.taskVerificationSerialize || renderTaskVerificationResult)(normalized);
       normalized = normalizeTaskVerificationResult(JSON.parse(serialized), { expectedTaskId: task.record.taskId });
       serialized = JSON.stringify(normalized);
@@ -54,7 +58,7 @@ export function registerTaskVerificationRepository(runtime) {
     let opened;
     let stage = 'mutation';
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const current = database.prepare('SELECT result_json FROM task_verification_current WHERE task_id = ?').get(normalized.taskId);

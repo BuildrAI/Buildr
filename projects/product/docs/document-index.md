@@ -8,6 +8,7 @@
 |------|------|
 | [../README.md](../README.md) | 产品入口、快速开始和文档导航 |
 | [buildr-product.md](buildr-product.md) | 产品理解：定位、核心模型、工作资产、协作方式和后续方向 |
+| [manual/README.md](manual/README.md) | 团队成员与协作者日常使用 Buildr + Agent 的简明操作手册 |
 | [architecture/buildr-skill-system.md](architecture/buildr-skill-system.md) | Buildr Skill 的来源、组合、能力依赖、runtime 投射与 Doctor/receipt 分层 |
 | [architecture/buildr-project-declaration-system.md](architecture/buildr-project-declaration-system.md) | Project Preparation/Verification 声明、Declaration Intake、Task 选择、专业 authority 与非 Node 边界 |
 | [../openspec/knowledge/overview.md](../openspec/knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
@@ -52,7 +53,7 @@
 
 - 保持现有文件的原路径和原内容，不迁移、不重写、不删除或重新接管。
 - 只作为历史过程和来源线索，不再承担当前任务工作状态或导航职责。
-- 当前 Task、Parent/Child、Development、Review 与 Verification 状态必须通过各专业 Application/read model、Local App、canonical specs 和有效 evidence 核实。
+- 当前 Task、Parent/Child、Development、Review 与 Verification 状态必须通过各专业 Application/read model、Buildr Web、canonical specs 和有效 evidence 核实。
 - 不创建新的 `task-boards/*.html` 或 `task-cockpits/*.html`。
 
 ## Roadmap 规则
@@ -78,7 +79,7 @@
 
 - 新增当前产品说明时，优先更新 `docs/buildr-product.md`。
 - 新增当前实现事实时，按影响更新 `openspec/knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/` 或 `services/` 中真正相关的资产；不生成空文档。
-- 正式 Task 的协调和进度使用 Task Record、Parent/Child、各专业公开 read model、Local App 与对话汇报；不要创建第二份 Board authority。既有 `task-boards/` 与 `task-cockpits/` 页面保持原路径和原内容，只作为历史旁证。
+- 正式 Task 的协调和进度使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话汇报；不要创建第二份 Board authority。既有 `task-boards/` 与 `task-cockpits/` 页面保持原路径和原内容，只作为历史旁证。
 - 新增规范性行为时，更新 `openspec/specs/` 或创建 OpenSpec change。
 - 新增尚未进入实现的详细产品方向时，维护 `docs/roadmap/` 并保持非当前事实声明。
 - 新增 Agent runtime adapter 前，先按 `services/buildr/docs/agent-runtime-adapter-contribution.md` 取得目标 Agent 的版本化证据；进入实现后仍必须创建独立 OpenSpec change。

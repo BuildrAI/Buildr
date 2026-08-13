@@ -204,7 +204,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   let targetRoot = requestedRoot;
   let taskEnvironment = null;
   let taskExecution = null;
-  let appInvocation = { command: process.execPath, argsPrefix: [cliPath], sourceRoot: path.resolve(path.dirname(cliPath), '..') };
+  let appInvocation = { ...runtime.currentProductInvocation({ cliPath }), sourceRoot: runtime.productRoot() };
   if (taskId) {
     const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
     taskExecution = runtime.resolveTaskEnvironmentExecution(workspaceRoot, taskId);
@@ -261,7 +261,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   const root = previewDataRoot(instance, dataRoot);
   fs.mkdirSync(root, { recursive: true });
   writeOwner(runtime, owner, dataRoot);
-  const child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'app', '--target', targetRoot, '--port', String(port), '--no-open'], {
+  const child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(port), '--no-open'], {
     cwd: targetRoot,
     detached: true,
     stdio: 'ignore',

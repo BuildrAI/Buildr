@@ -68,7 +68,7 @@ export function selectBrowserSelectors(changedPaths) {
       continue;
     }
     if (value.startsWith('src/interfaces/local-app/http/')) {
-      plan.reasons.push({ path: value, selector: null, reason: 'HTTP/API owner; verify through the Local App HTTP/System owner without starting Chrome.' });
+      plan.reasons.push({ path: value, selector: null, reason: 'HTTP/API owner; verify through the Buildr Web Runtime/System owner without starting Chrome.' });
       continue;
     }
     if (value.startsWith('services/buildr-web/src/') || value.startsWith('src/interfaces/local-app/web-dist/')) {
@@ -80,15 +80,15 @@ export function selectBrowserSelectors(changedPaths) {
       else if (value.endsWith('/main.tsx') || value.endsWith('/App.tsx') || value.endsWith('/AppLayout.tsx') || value.endsWith('/index.html') || value.includes('/web-dist/')) {
         add(plan, 'shell', value, 'Global app bootstrap or router changed.');
         add(plan, 'core', value, 'Shared routing changed; run the representative Task route smoke.');
-      } else add(plan, 'core', value, 'Unclassified Local App Web path uses the core smoke fallback.');
+      } else add(plan, 'core', value, 'Unclassified Buildr Web path uses the core smoke fallback.');
       continue;
     }
     if (value.startsWith('src/interfaces/local-app/runtime/')) {
-      add(plan, 'shell', value, 'Local App bootstrap/runtime changed.');
-      add(plan, 'core', value, 'Local App runtime change requires the representative route smoke.');
+      add(plan, 'shell', value, 'Buildr Web bootstrap/runtime changed.');
+      add(plan, 'core', value, 'Buildr Web runtime change requires the representative route smoke.');
       continue;
     }
-    if (value.startsWith('src/interfaces/local-app/')) add(plan, 'core', value, 'Unclassified Local App path uses the core smoke fallback.');
+    if (value.startsWith('src/interfaces/local-app/')) add(plan, 'core', value, 'Unclassified Buildr Web path uses the core smoke fallback.');
   }
   if (plan.mode === 'full') plan.selectors = ['all'];
   return plan;

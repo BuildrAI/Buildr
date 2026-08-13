@@ -221,7 +221,7 @@ Buildr Product Project MUST 在 canonical Service registry 中登记承载 Build
 - **AND** 页面与 doctor MUST NOT 虚构独立 remote、integration branch 或 Service Git 状态
 
 ### Requirement: Buildr 自举 Product 必须登记真实的 buildr-web Service
-Buildr Product Project MUST 在 canonical Service registry 中登记承载 Local App 前端工程的 `buildr-web` Service，并 MUST 使用真实 workspace source path `projects/product/services/buildr-web`，而不是空壳、重复路径或只为界面展示生成的 fixture。`buildr-web` MUST 与 `buildr` 并列存在，且二者的 `source.path` MUST NOT 重叠。
+Buildr Product Project MUST 在 canonical Service registry 中登记承载 Buildr Web 前端工程的 `buildr-web` Service，并 MUST 使用真实 workspace source path `projects/product/services/buildr-web`，而不是空壳、重复路径或只为界面展示生成的 fixture。`buildr-web` MUST 与 `buildr` 并列存在，且二者的 `source.path` MUST NOT 重叠。
 
 #### Scenario: 读取 Product Service registry 中的 buildr-web
 - **WHEN** CLI、doctor 或本机应用读取 Product Project 的 Service collection

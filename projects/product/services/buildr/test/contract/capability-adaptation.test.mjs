@@ -45,7 +45,8 @@ test('Git Operations 实例区分 Agent capability 与产品 Task Finish executo
 });
 
 test('Core 要求 Skill 变更前检查跨 Skill 影响', () => {
-  assert.match(core, /创建、修改、替换或卸载 Skill 前必须检查相关 `provides`、`requires`/);
+  assert.match(core, /创建、修改、替换或卸载 Skill 前必须判断跨 Skill 依赖/);
+  assert.match(core, /检查相关 `provides`、`requires`/);
   assert.match(core, /不得绕过已知依赖直接激活/);
 });
 

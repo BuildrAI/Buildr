@@ -1,4 +1,5 @@
 import { normalizeTaskDevelopmentReceipt, taskDevelopmentError, taskDevelopmentDigest } from '../../domain/task-development/task-development.mjs';
+import { taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
 
 function locator(taskId) { return `workspace-sqlite:task-development/${taskId}`; }
 
@@ -61,6 +62,11 @@ export function registerTaskDevelopmentRepository(runtime) {
     let serialized;
     try {
       normalized = normalizeTaskDevelopmentReceipt(receipt, { expectedTaskId: task.record.taskId });
+      if (normalized.verificationPolicy) {
+        const expectedProjects = taskRecordEffectiveProjectCodes(task.record);
+        const actualProjects = normalized.verificationPolicy.declarations.map((item) => item.project).sort((left, right) => left.localeCompare(right));
+        if (JSON.stringify(actualProjects) !== JSON.stringify(expectedProjects)) throw taskDevelopmentError('task_development_policy_declarations_scope_mismatch', 'Development policy declarations 必须精确匹配 current Task 的有效 Project 集合。', 409, { expectedProjects, actualProjects });
+      }
       serialized = (runtime.taskDevelopmentSerialize || renderTaskDevelopmentReceipt)(normalized);
       normalized = normalizeTaskDevelopmentReceipt(JSON.parse(serialized), { expectedTaskId: task.record.taskId });
       serialized = JSON.stringify(normalized);
@@ -75,7 +81,7 @@ export function registerTaskDevelopmentRepository(runtime) {
     let opened;
     let stage = 'mutation';
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const current = database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get(normalized.taskId);

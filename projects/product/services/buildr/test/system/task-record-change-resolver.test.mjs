@@ -17,7 +17,7 @@ import {
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
-test('Task-scoped Change Resolver 在 Application 与 Local App 复用候选、baseline 和不可用事实', async (t) => {
+test('Task-scoped Change Resolver 在 Application 与 Buildr Web 复用候选、baseline 和不可用事实', async (t) => {
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-change-resolver-app-'));
   process.env.BUILDR_APP_DATA_DIR = appData;
@@ -79,7 +79,7 @@ test('Task-scoped Change Resolver 在 Application 与 Local App 复用候选、b
   assert.equal(runtime.abandonTaskRecord(root, 'resolver-task', { reason: 'resolver fixture complete' }).status, 'abandoned');
 });
 
-test('安装版 Local App 在 saved Receipt blocked 时仍读取 Task worktree 的 candidate-only Change', async (t) => {
+test('安装版 Buildr Web 在 saved Receipt blocked 时仍读取 Task worktree 的 candidate-only Change', async (t) => {
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-installed-task-change-reader-app-'));
   process.env.BUILDR_APP_DATA_DIR = appData;
@@ -141,7 +141,7 @@ test('安装版 Local App 在 saved Receipt blocked 时仍读取 Task worktree �
   });
   runtime.workspaceNodeExecution = () => ({ ready: true, identity: { digest: 'workspace-node' }, executable: process.execPath, npmExecutable: process.execPath, environment: process.env });
   runtime.checkRuntimeAdapter = () => ({ runtimeSourceEvidence: { projectionReady: true, projectionIdentity: 'projection' } });
-  const bundleRoot = path.join(base, 'Buildr Dev.app', 'Contents', 'Resources', 'buildr');
+  const bundleRoot = path.join(base, 'Buildr Web Dev.app', 'Contents', 'Resources', 'buildr');
   fs.mkdirSync(bundleRoot, { recursive: true });
   runtime.productRoot = () => bundleRoot;
 

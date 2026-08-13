@@ -47,13 +47,19 @@ Buildr MUST继续以`preflight → prepare → verify → deliver → cleanup`�
 
 ### Requirement: Task Finish 必须只接受 finish-ready candidate
 
-进入Task Finish的Candidate MUST由Task Development Application生成并通过current handoff交接；该handoff MUST已闭合Content Target、Task context、verification policy、Planning/Verification/Completion gates与proceed decision。Task Finish MUST NOT执行额外Review、formal Verification、risk decision、Candidate generation或Candidate applicability判断。Development Application报告的内容、context、policy、gate或handoff漂移 MUST退出当前Finish并回到Development；Finish自己的Git conflict只表示机械应用失败或需要语义判断，MUST进入隔离Delivery Adaptation而不得宣称Candidate stale。
+进入Task Finish的Candidate MUST由Task Development Application生成并通过current handoff交接；该handoff MUST已闭合Content Target、Task context、verification policy、Planning/Verification/Completion gates与proceed decision。Task Finish MUST冻结handoff、Candidate、generation与Content Target identity，并在preflight、prepare、verify、deliver及复用阶段输出的resume前，通过Development Application精确断言四项仍等于`observed.currentHandoff`。Task Finish MUST NOT自行遍历历史handoffs判断currentness，也 MUST NOT执行额外Review、formal Verification、risk decision、Candidate generation或Candidate applicability判断。Development Application报告的内容、context、policy、gate或handoff漂移 MUST退出当前Finish并回到Development；Finish自己的Git conflict只表示机械应用失败或需要语义判断，MUST进入隔离Delivery Adaptation而不得宣称Candidate stale。
 
 #### Scenario: Preflight 发现产品缺陷
 
 - **WHEN** Development Application报告Candidate/handoff不再current
 - **THEN** run MUST标记terminal `failed`并返回`nextWorkflow: task-development`
 - **AND** MUST NOT在Finish中编辑内容、修改decision或补写专业Result
+
+#### Scenario: 历史handoff不能使旧run通过
+
+- **WHEN** Development receipt同时保留历史handoff A和current handoff B，而run冻结A
+- **THEN** preflight及后续阶段 MUST因精确identity mismatch停止
+- **AND** MUST NOT从历史handoffs取回A或从B的Task source形成A的carrier
 
 #### Scenario: carrier等价核验失败
 
@@ -66,6 +72,12 @@ Buildr MUST继续以`preflight → prepare → verify → deliver → cleanup`�
 - **WHEN** Development handoff缺少current Verification gate、Result为stale/incomplete，或未形成允许推进的Development decision
 - **THEN** Finish MUST在preflight返回`nextWorkflow: task-development`
 - **AND** MUST NOT在Finish内执行formal Verification、读取Result store或接受风险
+
+#### Scenario: push前handoff漂移
+
+- **WHEN** prepare或verify已完成后Development形成新的current handoff
+- **THEN** deliver MUST在取得target lease或push前停止并使旧阶段复用失效
+- **AND** MUST保持零push且保留既有run evidence
 
 ### Requirement: Deliver 必须只交付冻结候选
 `deliver` MUST在短target lease/fencing边界内重新核对Delivery Carrier绑定的expected target ref，只允许已通过Development handoff current与Task Contribution equivalence的carrier fast-forward、普通push、retained Workspace convergence与受影响入口安装。Product adapter MUST在创建Git-backed run时从retained checkout当前符号分支解析默认target branch；显式target branch MUST与该当前分支一致。Task Environment checkout `startPoint` MUST只作为环境来源证据，不得直接充当交付分支identity。Product adapter MUST为每个Git-backed Finish run绑定retained checkout中真实配置的delivery remote；当Environment repository因`source.type: workspace`没有声明remote时，MUST从target branch upstream或唯一配置的remote确定性解析，无法解析或存在歧义时 MUST在创建run和delivery mutation前fail closed。普通push成功后 MUST重新读取远端target ref；只有真实回读值等于carrier ref时才能记录`remoteAfterRef`、报告`delivered`并进入cleanup。Force push、merge commit、远端任务分支push/delete、丢弃改动、原Task worktree rebase和语义冲突resolution MUST保持未授权。
@@ -111,13 +123,13 @@ Buildr MUST继续以`preflight → prepare → verify → deliver → cleanup`�
 - **AND** recovery MUST只重做隔离carrier的`prepare → verify → deliver → cleanup`，不得重建Candidate、重跑formal Verification、force push或自行解决内容冲突
 
 #### Scenario: Retained 入口受影响
-- **WHEN** Development Candidate改变runtime、默认CLI或Local App的正式影响路径
+- **WHEN** Development Candidate改变runtime、默认CLI或Buildr Web的正式影响路径
 - **THEN** deliver MUST使用receipt-bound retained root、CLI与Node identity执行相应doctor/sync/install
 - **AND** 未受影响入口 MUST记录not-applicable reason而不执行安装
 
 ### Requirement: Resume 必须由产品根据真实状态生成
 
-Task Finish MUST根据current run、Development handoff、Task Contribution、Delivery Baseline、carrier observations、target ref与retained/cleanup真实状态生成最早可恢复边界和`resumeToken`。Content Target与handoff仍current的target lease、target race、Delivery Adaptation、retained或cleanup阻塞 MAY在同一run恢复。调用方 MUST NOT提供recovery manifest、Candidate、step fingerprint、execution plan、claimed semantic equivalence或冲突解决结果boolean。
+Task Finish MUST根据current run、Development handoff、Task Contribution、Delivery Baseline、carrier observations、target ref与retained/cleanup真实状态生成最早可恢复边界和`resumeToken`。Content Target与handoff仍精确等于run冻结identity的target lease、target race、Delivery Adaptation、retained或cleanup阻塞 MAY在同一run恢复。调用方 MUST NOT提供recovery manifest、Candidate、step fingerprint、execution plan、claimed semantic equivalence或冲突解决结果boolean。若current handoff已变化，只有尚无carrier、lease、delivery、retained或cleanup事实的preflight-only旧run MAY以类型化superseded终结并保留Execution Record；新handoff MUST由新run重新提交并冻结commit message。已有任一上述副作用或恢复事实的旧run MUST保持原identity与现场并返回类型化current-run identity conflict，MUST NOT自动删除、终结或换绑。Cleanup MAY根据已持久化delivery/cleanup facts恢复，MUST NOT因交付后Development形成新handoff而丢弃必要清理。
 
 #### Scenario: 目标 ref 前进后的候选恢复
 
@@ -141,7 +153,25 @@ Task Finish MUST根据current run、Development handoff、Task Contribution、De
 
 - **WHEN** run因target lease、retained install或cleanup暂态失败，且再次观察证明handoff与适用carrier未变、条件已解除
 - **THEN** matching resume token MAY从最早blocked phase继续
-- **AND** 已通过的prepare/verify MUST仅在Development Application仍报告current时复用
+- **AND** 已通过的prepare/verify MUST仅在Development Application仍报告精确冻结identity current时复用
+
+#### Scenario: preflight-only旧run安全失效
+
+- **WHEN** blocked旧run的handoff已变化，且没有carrier、lease、delivery、retained或cleanup事实
+- **THEN** 产品 MUST以`task-finish.development-handoff-superseded`终结旧run并保留Execution Record
+- **AND** current handoff的新run MUST要求调用方重新提供commit message并冻结独立message identity
+
+#### Scenario: 已有副作用事实的旧run保留现场
+
+- **WHEN** 旧run的handoff已变化，且存在carrier、lease、delivery、retained或cleanup事实
+- **THEN** 产品 MUST返回`task-finish.current-run-identity-conflict`并保留run、资源ownership和resume evidence
+- **AND** MUST NOT自动删除、终结或把旧run换绑到current handoff
+
+#### Scenario: retained Doctor同identity恢复
+
+- **WHEN** run只因retained Doctor阻塞，且Development精确冻结identity仍current
+- **THEN** matching resume token MAY在同一run恢复retained与cleanup
+- **AND** MUST不创建新run或要求新的commit message
 
 #### Scenario: 恢复状态无法证明
 
@@ -392,7 +422,7 @@ Git-backed Task Finish MUST把任务贡献（Task Contribution）定义为原任
 - **AND** 只有新的formal Verification、Completion Review、handoff与freeze才可增加generation
 
 ### Requirement: 当前 Task Finish 必须保持单一窄交付 adapter
-Buildr MUST在只有一个真实交付 adapter 时直接使用当前 Product/Git adapter，并 MUST把通用 Task Finish 边界限制为current Development Handoff、Delivery Carrier preparation、carrier equivalence、delivery effects、cleanup eligibility与run/resume facts。Git remote、branch、fast-forward与push MUST留在Git delivery实现，Buildr sync/Doctor/CLI/Local App install MUST留在Product retained activation，Task-owned resource/provider cleanup MUST只由Task Environment Application执行。Buildr MUST NOT在第二种真实adapter、明确selection authority和独立E2E fixture出现前创建公共adapter registry、插件协议、第二capability graph或通用transaction/state-machine框架。
+Buildr MUST在只有一个真实交付 adapter 时直接使用当前 Product/Git adapter，并 MUST把通用 Task Finish 边界限制为current Development Handoff、Delivery Carrier preparation、carrier equivalence、delivery effects、cleanup eligibility与run/resume facts。Git remote、branch、fast-forward与push MUST留在Git delivery实现，Buildr sync/Doctor/CLI/Buildr Web install MUST留在Product retained activation，Task-owned resource/provider cleanup MUST只由Task Environment Application执行。Buildr MUST NOT在第二种真实adapter、明确selection authority和独立E2E fixture出现前创建公共adapter registry、插件协议、第二capability graph或通用transaction/state-machine框架。
 
 #### Scenario: 当前只有 Git direct-to-target adapter
 - **WHEN** package与runtime只登记当前Buildr Product的Git direct-to-target delivery
@@ -400,7 +430,7 @@ Buildr MUST在只有一个真实交付 adapter 时直接使用当前 Product/Git
 - **AND** MUST NOT要求调用方选择adapter kind、provider id、execution plan或未来delivery type
 
 #### Scenario: Product retained activation适用
-- **WHEN** Delivery Carrier改变runtime、默认CLI或Local App正式影响路径
+- **WHEN** Delivery Carrier改变runtime、默认CLI或Buildr Web正式影响路径
 - **THEN** 当前Product adapter MUST在deliver内执行适用的retained sync/Doctor/install并记录not-applicable或真实结果
 - **AND** 通用Development handoff、Candidate或Task Environment schema MUST NOT获得Buildr/Git/Node/npm常量
 
@@ -640,3 +670,123 @@ Task Finish MUST把规范化交付提交信息作为run-owned immutable恢复事
 - **WHEN** Workspace升级时已经存在缺少`deliveryCommit`字段的blocked或cleanup-pending run
 - **THEN** Buildr MAY按该run已有carrier或legacy恢复事实继续完成同一run
 - **AND**后续首次创建的新run MUST仍要求Agent提供语义message，不得长期回退占位模板
+
+### Requirement: Task Finish 必须消费仅工作区Task的正式研发交接
+Task Finish MUST把workspace-only Task形成的current immutable Development handoff与Project/Service Task handoff等同作为入口authority，并继续执行`preflight → prepare → verify → deliver → cleanup`五阶段。Finish MUST不解释空declarations、workspace coverage gap或风险语义，也 MUST不补跑Verification、重新freeze Candidate或降低Completion Review与proceed门禁。
+
+#### Scenario: workspace-only handoff完成五阶段交付
+- **WHEN** workspace-only Task已经以current Content Target、policy、`not-passed` Verification Result、明确风险接受、Completion Review、Candidate和Development handoff满足全部入口门禁
+- **THEN** `task finish run` MUST消费同一handoff完成carrier preparation、equivalence、delivery、remote readback和Environment cleanup
+- **AND** Result MUST报告`formalVerificationExecutions: 0`并保持原Candidate generation与gate关联
+
+#### Scenario: workspace gap未处置时拒绝Finish
+- **WHEN** workspace-only Task缺少current Candidate、Completion Review、proceed decision或Development handoff
+- **THEN** Task Finish entry readiness MUST继续返回`task_finish.development_handoff_not_current`
+- **AND** environment或delivery ready MUST不绕过Development缺口
+
+### Requirement: Current run factory 必须拒绝identity冲突
+
+`createFinishRun` MUST在返回同Task已有current run前比较规范化请求identity与existing run identity digest。只有两者完全一致时 MAY幂等复用；不同identity MUST抛出稳定`task_finish.current_run_identity_conflict`，不得静默返回旧run。显式run恢复 MUST同样取得current Development handoff并执行精确identity assertion，不得绕过entry readiness。
+
+#### Scenario: existing run identity相同
+
+- **WHEN** 同Task已有current run且请求的handoff、Candidate、generation、Content Target及其他run identity字段完全一致
+- **THEN** factory MAY幂等返回existing run
+- **AND** MUST不创建重复Execution Record
+
+#### Scenario: existing run identity不同
+
+- **WHEN** 同Task已有current run但请求identity digest不同
+- **THEN** factory MUST抛出`task_finish.current_run_identity_conflict`
+- **AND** MUST不返回、修改、删除或换绑existing run
+
+#### Scenario: 显式旧run恢复遇到新handoff
+
+- **WHEN** 调用方显式指定旧run，而current Development handoff已变化
+- **THEN** Application MUST执行副作用分级并返回superseded或current-run identity conflict
+- **AND** MUST不因显式run ID而跳过Development currentness检查
+
+### Requirement: 零差异 Delivery Adaptation 必须由 Agent 显式确认并复用同一 run
+当 Task Contribution 不能机械应用到最新 Delivery Baseline，但 Agent 审查确认最新 target 已满足冻结任务语义且无需新增文件差异时，Task Finish MUST 只在 matching blocked run、current exact resume token 与显式零差异确认同时存在时采用零差异 Delivery Adaptation。采用前 MUST 核验 current Development handoff、Candidate/generation、Content Target、Task Contribution source、Delivery Baseline、carrier ownership 与 cleanliness；Result MUST 标记 `agent-reviewed-delivery-adaptation`，不得声称 Buildr 已证明语义等价。
+
+#### Scenario: 显式采用 clean 的零差异 carrier
+- **WHEN** current run 因 Delivery Adaptation blocked，调用方提供 matching resume token 与显式零差异确认，且 run-owned carrier 的 HEAD/tree 等于冻结 Delivery Baseline并保持clean
+- **THEN** Task Finish MUST采用零 delta identity，不创建 carrier commit、不修改原 Task worktree且不重跑正式 Verification
+- **AND** MUST记录 Agent-reviewed zero-delta evidence并继续同一run
+
+#### Scenario: 未显式确认零差异
+- **WHEN** adaptation-required carrier 相对 Delivery Baseline 没有 tree delta，但调用方未提供显式零差异确认
+- **THEN** Task Finish MUST保持`task-finish.delivery-adaptation-missing`或等价的当前blocked诊断
+- **AND** MUST NOT把普通resume或未修改carrier解释为Agent审查结论
+
+#### Scenario: 零差异确认不适用于当前run
+- **WHEN** 显式零差异确认用于新run、非prepare adaptation状态、错误token、漂移baseline、dirty carrier或不匹配identity
+- **THEN** Task Finish MUST在交付副作用前fail closed并返回canonical诊断
+- **AND** MUST NOT写入Agent-reviewed carrier facts、远端ref或Task终态
+
+#### Scenario: 既有 adaptation-required v2 run 原地恢复
+- **WHEN** 既有blocked run已保存current Task Contribution trees、Delivery Baseline、run-owned carrier与matching token
+- **THEN** 新实现 MUST从这些既有authority派生零差异adoption所需事实并恢复同一run
+- **AND** MUST NOT要求迁移SQLite、重建Candidate、重跑Verification或创建新Finish run
+
+### Requirement: 零差异适配必须保留冻结 Task Contribution 的 activation 影响面
+Task Finish MUST分别表达 carrier 相对 Delivery Baseline 的实际delta paths与冻结Task Contribution的activation paths。零差异carrier的实际delta paths MUST保持为空；activation paths MUST从冻结original baseline tree与source tree的规范化`--no-renames`差异派生，并供retained activation和self-bootstrap消费。
+
+#### Scenario: 零差异 carrier 命中 runtime 与自举路径
+- **WHEN** 零差异适配的冻结 Task Contribution包含Workspace runtime、Buildr CLI、package或Buildr Web Launcher路径
+- **THEN** carrier实际`changedPaths` MUST保持为空，而additive activation paths MUST包含规范化原贡献路径
+- **AND** retained activation与self-bootstrap MUST按activation paths执行适用动作，不得因carrier delta为空而返回错误的not-applicable
+
+#### Scenario: 旧 Result 没有 activation paths
+- **WHEN** consumer读取没有additive activation paths的既有非零carrier Result
+- **THEN** consumer MUST回退使用既有`changedPaths`
+- **AND** MUST保持旧deterministic与agent-reviewed非零适配行为不变
+
+### Requirement: 稳定的零差异适配必须以 already-contained 完成交付
+verify已采用零差异Delivery Adaptation且远端target仍等于冻结Delivery Baseline/carrier HEAD时，deliver MUST记录`targetDisposition: already-contained`并跳过fast-forward与push；随后 MUST继续remote readback、retained activation、Doctor与cleanup。若target再次前进，MUST返回新的target-race恢复事实，不得跨baseline沿用旧Agent审查。
+
+#### Scenario: 零差异 baseline 保持稳定
+- **WHEN** prepare/verify采用零差异适配且deliver观察到远端仍等于冻结baseline/carrier HEAD
+- **THEN** deliver MUST执行零fast-forward、零push并记录Agent-reviewed already-contained evidence
+- **AND** MUST继续activation、Doctor和cleanup，Candidate generation与`formalVerificationExecutions`保持不变
+
+#### Scenario: 零差异审查后 target 再次前进
+- **WHEN** deliver观察到远端不再等于零差异适配所绑定的Delivery Baseline
+- **THEN** Task Finish MUST返回`task-finish.target-race`与新的exact resume token
+- **AND** MUST NOT复用旧零差异审查、自动接受重叠路径或修改共享历史
+
+### Requirement: retained cleanup 必须重建并复核专用零差异 containment proof
+当 deliver 已以 Agent-reviewed zero-delta `already-contained` 完成交付并进入 durable cleanup boundary 时，retained cleanup MUST使用与 deliver 相同的专用观察器，从真实 run-owned carrier、Delivery Baseline、target ref与零delta identity重新构造containment proof。它 MUST要求carrier ownership/cleanliness/current facts仍可证明，并 MUST把重建proof与已保存delivery proof整值比较；不得把空changed paths交给要求非空path的通用containment观察器，也不得只信任已保存proof code或identity。
+
+#### Scenario: 零差异交付继续完成cleanup
+- **WHEN** current run已保存`agent-reviewed-delivery-adaptation`、`zeroDelta=true`、空actual delta、稳定baseline target、专用already-contained proof与prepared completion，且carrier仍run-owned、registered和clean
+- **THEN** retained cleanup MUST重建相同proof并继续Environment、carrier、transient与lease owner cleanup及Task terminal transition
+- **AND** MUST NOT重跑deliver、Formal Verification、Candidate或Agent语义审查
+
+#### Scenario: 零差异proof或真实carrier被篡改
+- **WHEN** saved proof的code、proof、ref、空paths或identity不匹配，或carrier不再registered/clean、HEAD/tree偏离baseline、actual delta不为空、target ref不再等于baseline
+- **THEN** retained cleanup MUST在Environment cleanup与Task terminal transition前fail closed
+- **AND** MUST保留当前run、carrier与精确诊断，不得回退为普通empty-path containment或删除不明资源
+
+#### Scenario: 普通already-contained保持原验证
+- **WHEN** delivered carrier包含非空changed paths并以普通`already-contained`完成
+- **THEN** retained cleanup MUST继续按每个path的mode/blob/删除状态与ancestry重建通用containment proof
+- **AND** MUST不把该delivery解释为Agent-reviewed zero-delta
+
+### Requirement: Task Finish CLI detail 投影必须与执行 authority 分离
+Task Finish Application MUST从同一个canonical `buildr.task-finish-result/v2`确定性生成CLI detail投影。`full` MUST原样保留canonical Result；`compact` MUST通过closed字段白名单生成`buildr.task-finish-compact-result/v1`，且 MUST不写SQLite、不改变run/result、不查询第二authority、不创建新的恢复或diagnostics store。detail选择 MUST只影响CLI JSON序列化，不得改变五阶段执行、resume、Delivery Carrier、Execution Record、Task terminal或Environment cleanup。
+
+#### Scenario: complete Result 的两种投影
+- **WHEN** 同一complete terminal Result分别以compact与full读取
+- **THEN** 两者 MUST表达相同run、Task、handoff、Candidate、Content Target、status、delivery与completion结论
+- **AND** compact MUST省略full diagnostics并使用独立schema identity
+
+#### Scenario: blocked Result 可恢复
+- **WHEN** current run因Delivery Adaptation、target race、retained Doctor或cleanup暂态条件blocked
+- **THEN** compact MUST保留current phase、primary failure、唯一next action或workflow、matching resume与恢复所需关键refs
+- **AND** Agent MUST不需要读取full Result才能识别并恢复同一run
+
+#### Scenario: compact 投影失败
+- **WHEN** canonical Result缺少compact契约要求的run、identity、status或恢复事实
+- **THEN** Application MUST fail closed并返回受控CLI错误
+- **AND** MUST不补造identity、修改canonical Result或降级为对象展开

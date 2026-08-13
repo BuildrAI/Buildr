@@ -34,7 +34,7 @@ if (args[0] === 'doctor') {
   process.stdout.write(JSON.stringify({ health: { ready }, findings: ready ? [] : [{ code: 'fixture.not-ready' }] }) + '\\n');
   if (!ready) process.exitCode = 1;
 }
-else if (args[0] === 'app' && args[1] === 'launcher') process.stdout.write(JSON.stringify({ installed: true }) + '\\n');
+else if (args[0] === 'web' && args[1] === 'launcher') process.stdout.write(JSON.stringify({ installed: true }) + '\\n');
 else if (args[0] === 'render') {
   const skill = fs.readFileSync(path.join(target, 'skills', 'example', 'SKILL.md'), 'utf8');
   if (skill.includes('tracked-delta')) fs.writeFileSync(path.join(target, 'README.md'), 'render changed tracked source\\n');

@@ -15,7 +15,7 @@
 | 正式任务 | Task | 准备产生持久交付变更并完成闭环的执行单元 |
 | 任务记录 | Task Record | 任务身份、意图、业务范围、Change 引用和顶层结果的最小事实来源；当前保存在 Workspace Structured Store |
 | 任务管理器 | Task Manager / `task-manager` | Agent 创建、读取、更新和结束 Task Record 的薄 Skill；不管理任务环境或专业阶段 |
-| 任务记录应用 | Task Record Application | Task Record 的唯一产品 writer；同时服务 Task Manager/CLI 与 Local App |
+| 任务记录应用 | Task Record Application | Task Record 的唯一产品 writer；同时服务 Task Manager/CLI 与 Buildr Web |
 | 任务环境 / 环境回执 | Task Environment / Environment Receipt | 可执行、可核验、可清理的任务环境及其本机控制记录 |
 | 保留工作区 Buildr 环境管理器 | Retained Buildr Environment Manager | 从 canonical retained Workspace 提供受信 Buildr 执行入口，管理 Task Environment；现有 `controller` 只是内部字段名，不是产品实体 |
 | 任务研发 / 研发回执 | Task Development / Development Receipt | 从环境就绪到形成不可变研发交接的唯一研发编排事实 |
@@ -42,7 +42,7 @@ flowchart TB
     W["Workspace Foundation<br/>长期共享基础"]
     T["Task Triage<br/>按需"]
     S["task-manager Skill<br/>Agent 入口"]
-    L["Local App<br/>人的 Task 入口"]
+    L["Buildr Web<br/>人的 Task 入口"]
     M["Task Record Application<br/>Task Record"]
     E["Task Environment<br/>首次 ready 门槛"]
     D["Task Development"]
@@ -77,7 +77,7 @@ flowchart TB
     P["Coordinating Task<br/>Parent / Children"] <--> M
 ```
 
-主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 只接收 Task Record 内容，Local App 则在同一 Task 详情中组合各模块的只读投影。当前已交付的一级视图为“概览、研发、证据、环境”：研发调用 Task Development reader，证据连续展示 Review 与 Verification，环境调用 Task Environment reader；P2.1 随任务复盘增加只读“复盘”Tab。这些专业内容都不写入 Task Record。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
+主线图表示会形成持久交付变更和 Candidate 的正式 Task。Task Record Application 只维护 Task Record；`task-manager`/CLI 只接收 Task Record 内容，Buildr Web 则在同一 Task 详情中组合各模块的只读投影。当前已交付的一级视图为“概览、研发、证据、环境”：研发调用 Task Development reader，证据连续展示 Review 与 Verification，环境调用 Task Environment reader；P2.1 随任务复盘增加只读“复盘”Tab。这些专业内容都不写入 Task Record。已经创建 Task、但在产生交付变更前确认无需修改时，可以直接 `complete --no-change`，不虚构专业记录。
 
 ## 系统基础
 
@@ -89,11 +89,11 @@ flowchart TB
 
 | 模块 | 核心目的 | 状态 |
 |---|---|---|
-| Task Manager / Task Record / Local App | 通过共享 Application 创建、展示和维护正式 Task 的最小顶层记录 | P0.1 已交付并生效（2026-08-01） |
+| Task Manager / Task Record / Buildr Web | 通过共享 Application 创建、展示和维护正式 Task 的最小顶层记录 | P0.1 已交付并生效（2026-08-01） |
 | Task Triage | 判断任务应走什么路径 | 已确认；P0.1 接入 Task Manager |
 | Task Environment | 建立并维护可执行、可核验、可清理的任务环境 | P0.2 已交付并生效（2026-08-02） |
 | Task Verification | 声明现有验证能力、执行显式能力并维护 current Task Verification Result | P0.4 已交付并生效（2026-08-03） |
-| Task Development | 从首个正式研发动作到Finish handoff维护可选planning nodes、Content Target、正式Verification、Task Candidate、推进决定与不可变研发交接 | P0.5 已交付并生效（2026-08-04）；v2全研发周期authority与Local App只读投影已补齐 |
+| Task Development | 从首个正式研发动作到Finish handoff维护可选planning nodes、Content Target、正式Verification、Task Candidate、推进决定与不可变研发交接 | P0.5 已交付并生效（2026-08-04）；v2全研发周期authority与Buildr Web只读投影已补齐 |
 | Task Finish | 消费研发交接，为当前 Product 执行内容等价载体交付、retained 激活与 Task Environment 清理 | P0.5 已收窄为 handoff adapter；P0.8 第一阶段收敛现有交付边界，后续只按真实需求扩展路径 |
 
 ## 辅助与横切能力
@@ -106,7 +106,7 @@ flowchart TB
 | Parent Task | 让一个普通 Task 管理直接子 Task；只表达协调层级，不传播状态、结果或专业动作 |
 | Structured Task Board 评估 | Parent/Child 无法覆盖非 Task 规划项、多协调者成员关系、显式依赖、稳定排序/分组或跨 Task 决策记录时，再评估独立 Domain |
 | Task Retrospective | 第一版在任务终态后由 Agent 对可见执行过程作一次非阻塞的效率复盘，并将自由文本报告保存为 SQLite current record；后续再按真实价值扩展 |
-| Local App | P0.1 提供 Task 最小列表、详情和受控管理；P0.2/P0.3/P0.4 交付环境、审查与验证 reader；P0.5a 将一级视图收敛为“概览、研发、证据、环境”并增加 Development 只读投影；Parent Task Change 增加层级展示、导航和维护；P2.1 增加任务复盘只读 Tab；后续按真实缺口补充专业投影 |
+| Buildr Web | P0.1 提供 Task 最小列表、详情和受控管理；P0.2/P0.3/P0.4 交付环境、审查与验证 reader；P0.5a 将一级视图收敛为“概览、研发、证据、环境”并增加 Development 只读投影；Parent Task Change 增加层级展示、导航和维护；P2.1 增加任务复盘只读 Tab；后续按真实缺口补充专业投影 |
 
 ## Workspace Foundation
 
@@ -151,7 +151,7 @@ flowchart TB
 - Foundation 组织长期共享的事实、方法和发现入口，不接管所有代码、数据库、网页或用户输入。
 - 人和 Agent 共用同一 Source Authority；Agent Runtime 是实际运行面，但不是第二份事实源。
 - Task Environment 由保留工作区 Buildr 环境管理器执行准备、恢复、资源登记和清理。task worktree/branch 中的 Rule、Skill、contract、功能模块和 package 都是候选变更，可以在隔离目标测试；只有实现完成并集成到 retained checkout 后，才从 retained Product source sync/render 对应 Agent runtime 并确认生效。
-- 当前 P0.5 Task Finish adapter 只消费研发交接；交付进入retained source后只按Workspace根Task Contribution选择`none | render-runtime`，完成普通push/readback、run绑定的selected-Agent Doctor与Environment cleanup，不安装Buildr development CLI或Local App。Doctor未ready时Product保存partial delivery/readback和精确resume token，并在cleanup前阻塞。Buildr自举Workspace安装的`buildr-self-bootstrap` Component既可在Formal Finish成功后按冻结Task Contribution去重执行package sync、development CLI/Local App activation与最终Doctor，也可在唯一retained Doctor failure且证据完整时先激活再恢复同一run；普通用户Workspace不包含该覆盖能力。通用Development contract不因此依赖Product、Git或runtime常量。
+- 当前 P0.5 Task Finish adapter 只消费研发交接；交付进入retained source后只按Workspace根Task Contribution选择`none | render-runtime`，完成普通push/readback、run绑定的selected-Agent Doctor与Environment cleanup，不安装Buildr development CLI或Buildr Web。Doctor未ready时Product保存partial delivery/readback和精确resume token，并在cleanup前阻塞。Buildr自举Workspace安装的`buildr-self-bootstrap` Component既可在Formal Finish成功后按冻结Task Contribution去重执行package sync、development Buildr Web activation、retained Project bridge identity gate与最终Doctor，也可在唯一retained Doctor failure且证据完整时先激活再恢复同一run；普通用户Workspace不包含该覆盖能力。通用Development contract不因此依赖Product、Git或runtime常量。
 - Foundation 可以提供跨 Task、跨 Change 的功能模块；具体状态由对应模块管理。
 - Buildr 保证身份、结构、边界和投射，不裁决业务事实，也不替 Agent 构造完整 Task Context。
 
@@ -214,7 +214,7 @@ Task Environment 不是只执行一次的线性阶段：生命周期图中的节
 | 时点 | Task Environment 的动作 |
 |---|---|
 | 首次进入持久交付变更 | 以 Task ID 创建 receipt，再准备执行根、Runtime / CLI、依赖等适用资源，完成最小真实探测后返回 `ready` 或 `blocked` |
-| Development / Verification | 正式 Task 新增相关 repo，或登记 Local App Preview、dev server 等动态资源 |
+| Development / Verification | 正式 Task 新增相关 repo，或登记 Buildr Web Preview、dev server 等动态资源 |
 | 跨 Agent session 恢复 | 通过 Task ID 串行找回同一份 receipt，重新执行最小环境探测；不得按 cwd 或 branch 猜测，也不得把恢复理解为多窗口并发推进 |
 | Finish / 明确放弃 | 根据同一份 receipt 清理资源并解除占用；未清理完成时保留现场 |
 
@@ -231,7 +231,7 @@ Task Environment Receipt 是 Task 级环境事实的唯一汇总入口。长期�
 | Task 绑定 | Task ID、canonical Workspace identity / root |
 | 执行位置 | 每个工作范围的 Project / Service 引用、执行根或任务验证 Workspace 根、共享与占用事实、清理责任；Git 仓库按需记录 checkout、branch / HEAD 等 Git 事实 |
 | 执行基础 | 保留工作区 Buildr 环境管理器 identity、适用的语言 Runtime（如 Node）、Workspace CLI、workspace-scoped Agent runtime 的 source/projection identity、package manager / lockfile、依赖就绪结果及最小事实指纹 |
-| 动态资源 | Local App Preview、dev server、端口、容器、临时数据库等持久资源及其清理信息 |
+| 动态资源 | Buildr Web Preview、dev server、端口、容器、临时数据库等持久资源及其清理信息 |
 | 最新结果 | `ready` / `blocked`、失败原因和最终清理结果 |
 
 Receipt 不保存 Agent session 上下文、任务计划、开发进度、完整测试结果、runtime 生成文件副本、`node_modules` 内容或凭证。它只登记完成恢复、真实探测和清理所需的 runtime source/projection identity 与本机事实；实际行为验证属于 Task Verification。环境管理器 fingerprint 只证明执行环境动作的 Buildr source/CLI 与最近一次成功核验的管理入口一致，不是 Task source baseline、Candidate identity 或 retained target revision，也不因自身变化自动要求任务吸收 retained Workspace 的新代码。
@@ -248,7 +248,7 @@ Receipt 不保存 Agent session 上下文、任务计划、开发进度、完整
 - Buildr 自举任务使用 Workspace Foundation 提供的保留工作区 Buildr 环境管理器创建、恢复和清理环境；worktree 内的 Buildr CLI 是 Development / Verification 的候选对象，不能负责创建、认领或清理自己的环境。环境 ready 后，候选 CLI 可以把候选 runtime 投射到 receipt 绑定的自身任务验证 Workspace，也可以在验证 Workspace 内使用隔离的模拟用户目录测试 user destination；但不能写入 retained Workspace、另一个 Task 的 worktree 或验证 Workspace 外的共享用户 runtime。模拟投射不等于真实 Agent runtime 已生效。
 - `ready` 必须来自实际执行根中的最小真实探测，核验执行位置、适用的 Runtime / CLI 和依赖是否满足运行需要；Git 仓库再核验 checkout identity。`ready` 表示环境已知且可执行，不承诺已经物理隔离，也不代替项目测试。
 - 当本次变更会改变 Agent runtime 的发现、加载或行为时，文件已渲染只证明 projection ready；需要真实采用证据时，应从该任务验证 Workspace 启动独立 Agent session，再由 Task Verification 绑定 source/projection/environment identity 记录结果。P0.2 只准备和恢复环境，不把该验证结论写进 Environment Receipt。
-- Local App Preview 不是首次 `ready` 的前置条件。正式 Task 在 Development / Verification 中按需启动后，立即登记到 receipt，供后续清理。
+- Buildr Web Preview 不是首次 `ready` 的前置条件。正式 Task 在 Development / Verification 中按需启动后，立即登记到 receipt，供后续清理。
 
 ### 来源基线与环境管理器 identity
 
@@ -297,11 +297,11 @@ Task ID 是正式 Task 生命周期中人可读、稳定且在当前 Workspace �
 - Environment Receipt、Development Receipt、Review Result、Verification Result、Task Finish run/result、Retrospective、worktree 和任务分支都使用同一个 Task ID，但各自维护自己的事实；P0.5 不新增 Finish Receipt。
 - 一个 Task 可以关联 `0..N` 个已存在 OpenSpec Change；P0.1 只用 `project/change` 消除跨 Project 同名歧义并在当前记录内去重，不扫描其他 Task Records，也不声明跨 Task 唯一 ownership。
 - Task ID 一旦创建就不因标题或意图微调而改名。Task Record 可保存一个直接 `parentTaskId` 并派生直接 `childTaskIds`；它不保存执行者 identity、通用关系图或依赖。
-- Task Record Application 是唯一逻辑 writer；`task-manager`/CLI 与 Local App 只是客户端。第一版不支持多人协同编辑、自动合并、锁或租约；Local App 的陈旧页面只用不持久化的 `recordDigest` fail closed。
+- Task Record Application 是唯一逻辑 writer；`task-manager`/CLI 与 Buildr Web 只是客户端。第一版不支持多人协同编辑、自动合并、锁或租约；Buildr Web 的陈旧页面只用不持久化的 `recordDigest` fail closed。
 
 ### Task Manager 与最小 Task Record
 
-Task Record Application 是 Task Record 的唯一 writer。`task-manager` 是 Agent 创建、读取、更新和结束 Task Record 的 Skill；Local App 是人的列表、详情和受控管理入口。两者调用同一 Application，Task Manager 不是 Task Core、总调度器或专业记录索引，Local App 也不在 Web 层另建 writer。
+Task Record Application 是 Task Record 的唯一 writer。`task-manager` 是 Agent 创建、读取、更新和结束 Task Record 的 Skill；Buildr Web 是人的列表、详情和受控管理入口。两者调用同一 Application，Task Manager 不是 Task Core、总调度器或专业记录索引，Buildr Web 也不在 Web 层另建 writer。
 
 每个 Task ID 在 canonical Workspace 的 `.buildr/local/workspace.sqlite` 中维护一份规范化记录。以下 YAML 只是 `buildr.task-record/v1` 逻辑模型的可读表达，不是磁盘文件：
 
@@ -337,7 +337,7 @@ updatedAt: 2026-08-01T10:00:00.000Z
 | `active / completed / abandoned` 与 result | 表达最小顶层处置；completed 可标记 `noChange` |
 | `createdAt / updatedAt` | 基础审计和排序，由产品生成 |
 
-当前明确不保存 `revision`、`recordDigest`、`workspaceId`、执行者、通用 Task relations、依赖、blocker、富文本 Overview，以及任何 Environment、Development、Review、Verification、Git、Finish、独立 Board 或 Retrospective 内容与引用。Parent/Child 只表达协调层级，不自动完成/放弃、不聚合状态或 Result，也不触发任何专业动作。Local App 直接投影这份关系及各专业 reader，不要求 Task Record 复制索引。
+当前明确不保存 `revision`、`recordDigest`、`workspaceId`、执行者、通用 Task relations、依赖、blocker、富文本 Overview，以及任何 Environment、Development、Review、Verification、Git、Finish、独立 Board 或 Retrospective 内容与引用。Parent/Child 只表达协调层级，不自动完成/放弃、不聚合状态或 Result，也不触发任何专业动作。Buildr Web 直接投影这份关系及各专业 reader，不要求 Task Record 复制索引。
 
 Task Manager 不读取 Environment Receipt，也不提供结构化字段记录 worktree、branch、runtime、CLI、依赖、进程、端口、资源、凭证、完整日志或专业 record revision。从 task environment 调用时，上游只向它提供已经确认的 canonical Workspace target；v1 不对 title/intent/result 做启发式文本扫描。
 
@@ -345,7 +345,7 @@ P0.2 保留 Task Record 的 closed-schema 和领域校验，但把“Change 是�
 
 ### 产品动作与客户端边界
 
-通过 Agent 工作时，Agent 负责理解用户意图、判断是否已经形成正式 Task，并提供 title、intent、业务 scope 与真实 Change 引用；人也可以在 Local App 直接表达这些顶层事实。Buildr Application 对所有客户端固化以下动作：
+通过 Agent 工作时，Agent 负责理解用户意图、判断是否已经形成正式 Task，并提供 title、intent、业务 scope 与真实 Change 引用；人也可以在 Buildr Web 直接表达这些顶层事实。Buildr Application 对所有客户端固化以下动作：
 
 - `create`：生成 active record、默认值和系统时间；可选择一个已存在且 active 的直接 Parent；
 - `inspect`：只读返回最新记录；
@@ -353,31 +353,31 @@ P0.2 保留 Task Record 的 closed-schema 和领域校验，但把“Change 是�
 - `complete`：写入 completed、summary 与 `noChange: true|false`；
 - `abandon`：写入 abandoned 与 reason。
 
-Agent 不直接编辑 YAML，不提交完整 next-state document，也不推理系统字段和合法状态转换；Local App 同样不解析/render YAML 或自行实现状态迁移。终态不可重开或继续修改。
+Agent 不直接编辑 YAML，不提交完整 next-state document，也不推理系统字段和合法状态转换；Buildr Web 同样不解析/render YAML 或自行实现状态迁移。终态不可重开或继续修改。
 
 关系写入拒绝不存在或 terminal Parent、自引用和任何祖先循环。Parent 后续进入终态时既有关系仍可读，Child 仍可独立更新和结束；Parent/Child 的 complete、abandon、Verification、Finish、cleanup 和 Result 都互不传播。Application read model 只返回直接 Parent 与直接 Children 摘要，不递归展开整棵树。
 
-### P0.1 Local App
+### P0.1 Buildr Web
 
 P0.1 把“任务”加入 Workspace 核心导航，提供：
 
 - `/workspaces/:workspaceId/tasks`：SQLite 轻量 Task 列表，默认 active，支持关键词、Project、Service、status 与直接 Child 筛选；
 - `/workspaces/:workspaceId/tasks/:taskId`：单 Task stored-state 详情，不在首屏解析专业 currentness；
-- 编辑 active Task 的 title/intent/scope/Change references；正式 Task 只由 Agent/Task Manager 创建，Local App 不提供 create route；
+- 编辑 active Task 的 title/intent/scope/Change references；正式 Task 只由 Agent/Task Manager 创建，Buildr Web 不提供 create route；
 - 编辑 active Task 时可选择、重挂或清除 Parent；候选在操作字段时按需读取，列表显示层级摘要，详情可在 Parent 与直接 Children 间导航；
 - 明确确认后 complete 或 abandon，完成时明确选择是否 no-change；terminal Task 只读。
 
-Local App 通过 Workspace-scoped API 调用 Task Record Application，继续只接受已登记 `workspaceId`，拒绝 `target/root/path`、未知字段和不可信写请求。完成/放弃确认必须说明“只更新顶层 Task 状态，不执行 Finish、Git、Verification 或 Environment cleanup”。P0.1 不显示专业阶段卡片、不建设 Board、不做批量操作或语义比较。
+Buildr Web 通过 Workspace-scoped API 调用 Task Record Application，继续只接受已登记 `workspaceId`，拒绝 `target/root/path`、未知字段和不可信写请求。完成/放弃确认必须说明“只更新顶层 Task 状态，不执行 Finish、Git、Verification 或 Environment cleanup”。P0.1 不显示专业阶段卡片、不建设 Board、不做批量操作或语义比较。
 
-Application read model 返回当前逻辑记录的 `recordDigest`；Local App mutation 必须携带页面读取到的摘要。摘要变化时在同一数据库事务内返回冲突并要求刷新，不覆盖、不自动合并。`recordDigest` 不持久化，也不是通用协同编辑协议。
+Application read model 返回当前逻辑记录的 `recordDigest`；Buildr Web mutation 必须携带页面读取到的摘要。摘要变化时在同一数据库事务内返回冲突并要求刷新，不覆盖、不自动合并。`recordDigest` 不持久化，也不是通用协同编辑协议。
 
-### P0.2 Local App 环境页签
+### P0.2 Buildr Web 环境页签
 
 P0.2 在既有 Task 详情中增加独立、只读的“环境”页签。页面通过 Workspace-scoped API 调用 Task Environment Application `inspect`，展示当前机器的 `observedAt`、receipt 可用性、`ready / blocked / drift / unavailable`、scope/root、Runtime/CLI/依赖、runtime projection identity、Git provider evidence、动态资源与 cleanup 摘要。打开页签、页面重新获得焦点或手动刷新时执行一次有界 probe；首版不增加 WebSocket、后台持续轮询或 prepare/cleanup 按钮。
 
 HTTP/Web 层只接收已登记的 `workspaceId` 与真实 Task ID，拒绝 `target/root/path` 和 receipt bytes，不直接解析 Environment Receipt，也不从 branch/worktree 名猜测环境。Environment 暂不可用时仍展示 Task Record，并明确显示本机不可用或下一动作；任何环境事实都不复制到 Task Record。
 
-### P0.5a Local App 研发与证据视图
+### P0.5a Buildr Web 研发与证据视图
 
 P0.5a 当时不增加第五个模块页签，而将已交付的信息架构收敛为“概览、研发、证据、环境”。“研发”通过 Workspace-scoped、no-store 的只读 API 调用 Task Development Application `inspect`，展示 `missing / developing / candidate-current / handoff-current / unknown` 的中文结论、最小输入适用性、候选代次、三个门禁、保存的推进决定、风险和最近一次研发交接；P2.1 再以同样的只读边界加入“复盘”Tab。页面不打开SQLite或读取旧YAML，不重新推导 currentness，也不提供 Development writer。
 
@@ -393,7 +393,7 @@ Task Record 与后续专业 current records 都属于 canonical Workspace，但�
     └── workspace.sqlite
 ```
 
-Task Record Application只维护SQLite中的Task表及规范化关系表；Task Manager/CLI与Local App只调用Application。Task Development、Verification、Review与Retrospective分别通过自己的Application和SQLite repository独占专业current records；进入同一个数据库不等于合并Domain、writer或状态机。Task Environment、Finish与Board继续独占自己的专业记录。linked task worktree不是Structured Store authority，不能创建或修改canonical Workspace数据库。
+Task Record Application只维护SQLite中的Task表及规范化关系表；Task Manager/CLI与Buildr Web只调用Application。Task Development、Verification、Review与Retrospective分别通过自己的Application和SQLite repository独占专业current records；进入同一个数据库不等于合并Domain、writer或状态机。Task Environment、Finish与Board继续独占自己的专业记录。linked task worktree不是Structured Store authority，不能创建或修改canonical Workspace数据库。
 
 `.buildr/`作为**Workspace Local Data Store**处理：Structured Store承载Task Record及Development、Verification、Planning/Completion Review、Retrospective全部current records；File Store只继续承载Environment、Finish、日志等各owner明确保留的本机运行/交付事实。`.buildr/local/`整体忽略且不发布、不同步；Task current records不进入Git。未来组织协作由Buildr Server/Cloud承担，本任务不设计其schema、API或同步协议。
 
@@ -405,7 +405,7 @@ Task Record Application只维护SQLite中的Task表及规范化关系表；Task 
 - Task Record repository只拥有`tasks`及其Project、Service、Change关系表；各专业repository只拥有各自current tables，业务判断不下沉到SQL；
 - schema 由有序、带 checksum 的 SQL migration assets 建立；版本缺口、漂移、未知更新版本或完整性失败均 fail closed；
 - 每个 create/update/terminal mutation 在单个 SQLite transaction 中完成，foreign keys 和 closed domain constraints 同时生效；
-- Local App mutation 以不持久化的 `recordDigest` 拒绝已经陈旧的页面；
+- Buildr Web mutation 以不持久化的 `recordDigest` 拒绝已经陈旧的页面；
 - mutation失败必须rollback，保留最后一份有效逻辑记录和所有其他current slots；
 - `completed / abandoned` 不得回到 `active`。
 
@@ -428,7 +428,7 @@ Task Record及全部专业current records明确属于local-only Structured Store
 
 ### 当前方向
 
-> 优先让一个普通 Task 通过 Parent/Child 关系管理直接子 Task，并由 Local App 动态投影协调视图；当前不创建独立 Board Domain。
+> 优先让一个普通 Task 通过 Parent/Child 关系管理直接子 Task，并由 Buildr Web 动态投影协调视图；当前不创建独立 Board Domain。
 
 协调 Task 仍是普通 Task Record，使用同一 Task ID、状态和生命周期。它可以有多个直接 Children，也可以自身作为另一个 Task 的 Child，从而形成多层树。每个 Child 至多一个直接 Parent；关系只存在于同一 canonical Workspace。
 
@@ -442,9 +442,9 @@ Task Record Application 是关系的唯一 writer。SQLite 直接使用 nullable
 - Parent 后续进入终态时既有关系继续可读；terminal Parent 不能接收新 Child，terminal Child 不能再重挂或清除 Parent。
 - 是否可以结束协调 Task 由人或 Agent 根据目标判断；Buildr 不根据 Children 状态自动推导。
 
-### Local App
+### Buildr Web
 
-Local App 编辑 active Task 时可选择、重挂或清除 Parent；候选只在操作 Parent 字段时通过 SQLite query projection 延迟读取当前 Workspace 的 active Task 并排除自身。任务列表显示 Parent 和查询派生的直接 Child 数量，详情显示 Parent 与直接 Children 的真实标题和状态，并支持双向导航。页面不创建 Task、不递归加载整棵树、不把 Child 状态合成为 Parent 健康度，也不新增 Board writer。
+Buildr Web 编辑 active Task 时可选择、重挂或清除 Parent；候选只在操作 Parent 字段时通过 SQLite query projection 延迟读取当前 Workspace 的 active Task 并排除自身。任务列表显示 Parent 和查询派生的直接 Child 数量，详情显示 Parent 与直接 Children 的真实标题和状态，并支持双向导航。页面不创建 Task、不递归加载整棵树、不把 Child 状态合成为 Parent 健康度，也不新增 Board writer。
 
 Task 外的临时测试、服务和 API 操作没有 Task ID，因此不进入层级投影。需要纳入持续协调时，先创建正式 Task，再建立 Parent 关系。
 
@@ -568,7 +568,7 @@ Task Finish 发现 carrier 不等价、目标前进或任何 handoff 前提变�
 
 ### 建设形态
 
-P0.5 已实现 **Skill + capability contract + 唯一 Application + internal driver**。`task-development` required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge，不消费 Task Retrospective；不注册公共 Development CLI。P0.5a 增加 Application `inspect` 的 Local App read surface；P2.1 再把任务详情扩展为“概览、研发、证据、复盘、环境”五个一级视图。仍不提供 Development 写 API、浏览器 mutation，也不建设 Task Core、planner、通用状态机、独立数据存储、history、revision/CAS 或锁协议。
+P0.5 已实现 **Skill + capability contract + 唯一 Application + internal driver**。`task-development` required 消费 Task Record、Task Environment、Task Review、Task Verification 与 current knowledge，不消费 Task Retrospective；不注册公共 Development CLI。P0.5a 增加 Application `inspect` 的 Buildr Web read surface；P2.1 再把任务详情扩展为“概览、研发、证据、复盘、环境”五个一级视图。仍不提供 Development 写 API、浏览器 mutation，也不建设 Task Core、planner、通用状态机、独立数据存储、history、revision/CAS 或锁协议。
 
 ## Task Finish
 
@@ -712,7 +712,7 @@ Review Result是canonical Workspace中的本地轻量evidence，不是新的life
 
 ### 建设形态
 
-当前保持 **一个语义 Skill + 一个确定性 Application**：`task-review` Skill 动态确定审阅对象、执行 Review 并如实形成完整输入；Application/CLI 只校验、记录和读取两个 current Result，不执行语义审查。Local App 只读管理两个槽位并生成 Agent action，不提供直接 Result CRUD。未来 Task Development 只决定何时调用、处理 findings，并把最小结果引用写入 Development Receipt，不内置审阅逻辑。
+当前保持 **一个语义 Skill + 一个确定性 Application**：`task-review` Skill 动态确定审阅对象、执行 Review 并如实形成完整输入；Application/CLI 只校验、记录和读取两个 current Result，不执行语义审查。Buildr Web 只读管理两个槽位并生成 Agent action，不提供直接 Result CRUD。未来 Task Development 只决定何时调用、处理 findings，并把最小结果引用写入 Development Receipt，不内置审阅逻辑。
 
 ## Task Verification
 
@@ -789,11 +789,11 @@ Applicability 只有 `current / stale / unknown`：
 
 ### 共享 consumer
 
-CLI、`task-verification` Skill、Local App“证据”视图的验证结果区块和 Task Development 都调用同一个 Task Verification Application：
+CLI、`task-verification` Skill、Buildr Web“证据”视图的验证结果区块和 Task Development 都调用同一个 Task Verification Application：
 
 - CLI 提供稳定的 `task verification inspect|record` JSON family；
 - Skill 负责选择已有能力、运行 transient execution、提炼完整 Result，并在不存在能力时报告 coverage gap；
-- Local App 只读投影 current Result 与 applicability，并提供受限 Agent prompt，不建立第二 writer；
+- Buildr Web 只读投影 current Result 与 applicability，并提供受限 Agent prompt，不建立第二 writer；
 - Task Development 形成 policy、请求 Formal Verification，并只消费绑定当前 Content Target/declarations 且具备全部 policy facts 或 coverage gaps 的 Result。`not-passed`/gap 不阻止 Candidate freeze，但没有精确风险接受时阻止 `proceed`。
 
 Task Verification 不创建 Candidate、不递增 generation、不改 Task 状态，也不保存 `proceed / blocked` 或用户风险决定。Task Finish 只消费研发交接，Formal Verification execution count 为 0。
@@ -824,11 +824,11 @@ Task Review 与 Task Verification 面向当前方案、实现和 Candidate；Tas
 
 Token、调用次数和耗时只能使用 Agent host 或 Task facts 实际可见的数值。Token 可信可得时记录数值、来源和覆盖范围；部分可得时明确实际覆盖范围及其不代表完整 Task；不可得时直接标记缺失。报告仍可依据可见的重复、输出量或阶段耗时判断热点，但不得为了补齐 Token 回放完整上下文、读取隐藏推理、强制估算、新增采集流程或增加任务消耗，也不得把 Task 的完整墙钟跨度当作 Agent 实际执行时间。
 
-### SQLite 记录与 Local App
+### SQLite 记录与 Buildr Web
 
 Task Retrospective Application 是这一类事实的唯一 writer/reader。在 canonical Workspace SQLite 中按 Task ID 保存至多一行 `task_retrospective_current`：`taskId`、固定的第一版范围 `agent-execution-efficiency`、自由文本 `reportMarkdown` 和完成时间。重跑时整值替换该行，不保存 history、候选状态、评分、全局索引或跨 Task 聚合；没有记录只表示尚未复盘。
 
-`task-retrospective` Skill 负责让 Agent 形成报告并调用该 Application，Task Record 不复制摘要或状态。Local App 在任务详情增加只读“复盘”Tab：存在记录时渲染完整报告，报告建议清楚说明效率结论、主要消耗点、可见依据、优化方向和数据缺口；没有记录时只显示“尚未复盘”。页面不生成、编辑、关闭或自动转化任何改进事项。
+`task-retrospective` Skill 负责让 Agent 形成报告并调用该 Application，Task Record 不复制摘要或状态。Buildr Web 在任务详情增加只读“复盘”Tab：存在记录时渲染完整报告，报告建议清楚说明效率结论、主要消耗点、可见依据、优化方向和数据缺口；没有记录时只显示“尚未复盘”。页面不生成、编辑、关闭或自动转化任何改进事项。
 
 ### 旧能力处置
 
@@ -872,9 +872,9 @@ P2.1 删除 `task-asset-review` 及其 observation、finalize、accept/reject、
 | `.buildr/`是Workspace Local Data Store；Structured Store承载Task current state，File Store继续承载Environment/Finish等明确本机事实 | Task Store / Task Environment / Task Finish | 保持owner分层，不建立双authority或通用数据库框架 |
 | 自举主 Workspace 的正式 runtime 激活只能发生在内容已进入retained source之后；若Common Finish只被retained Doctor阻塞，激活后必须恢复同一run并由Product最终裁决 | P0.8 Task Finish / Workspace Foundation | Common Finish执行通用render与selected-Agent Doctor，失败时保留partial delivery且不cleanup；self-bootstrap Component只在精确Doctor-blocked证据下执行sync/产品安装与same-run resume，其他failure保持阻塞 |
 | target advancement 不自动更新 Environment，也不自动使 Candidate stale；Finish 在隔离 carrier deterministic reuse、Delivery Adaptation 或 exact-token target-race resume，不在原 Task worktree rebase、重验或生成 Candidate | P0.5 Task Development / Candidate、P0.8 Task Finish | 已固定 applicability 与交付基线分层；只有 Development Application 报告真实 stale 才返回 Development |
-| Local App 在 Task 详情展示当前机器 Environment 时调用 Environment Application，不复制进 Task Record | P0.2 Task Environment | 已交付只读“环境”视图、Workspace-scoped API 与本机不可用状态 |
-| Local App 通过各模块 reader 组合 Development、Review 与 Verification，不复制进 Task Record | P0.5a Local App 专业投影 | 已交付“概览、研发、证据、环境”四个一级视图；P2.1 以同一只读边界新增“复盘”Tab，Development 保持只读，Review/Verification 在证据视图独立加载 |
-| Local App 展示 Parent/Children 时调用 Task Record Application 的直接关系 read model，不在 Web 层推导或复制 | Parent Task / Local App | 延续既有四视图边界；关系编辑仍复用 Task writer，不重建专业 reader/API |
+| Buildr Web 在 Task 详情展示当前机器 Environment 时调用 Environment Application，不复制进 Task Record | P0.2 Task Environment | 已交付只读“环境”视图、Workspace-scoped API 与本机不可用状态 |
+| Buildr Web 通过各模块 reader 组合 Development、Review 与 Verification，不复制进 Task Record | P0.5a Buildr Web 专业投影 | 已交付“概览、研发、证据、环境”四个一级视图；P2.1 以同一只读边界新增“复盘”Tab，Development 保持只读，Review/Verification 在证据视图独立加载 |
+| Buildr Web 展示 Parent/Children 时调用 Task Record Application 的直接关系 read model，不在 Web 层推导或复制 | Parent Task / Buildr Web | 延续既有四视图边界；关系编辑仍复用 Task writer，不重建专业 reader/API |
 
 ### 开发交付跟踪
 
@@ -882,20 +882,20 @@ P2.1 删除 `task-asset-review` 及其 observation、finalize、accept/reject、
 
 | 顺序 | 模块 / Change | 当前状态 | 已交付并生效内容 | 对应旧能力处置 |
 |---|---|---|---|---|
-| P0.1 | Task Manager / Task Record / Local App `introduce-task-record` | 已交付并生效（2026-08-01，`dev@2448db0`） | 已交付稳定 Task ID、最小 Task Record 逻辑模型、唯一 Task Record Application、`task-manager`、CLI 五个确定性动作和 Local App Task 列表/详情/受控管理；后续 SQLite Task Store Change 将持久化切换到 Workspace Structured Store | 旧 `task.yml` 在 SQLite 切换后保持 inert，不迁移、不读取、不双写、不删除 |
-| P0.1a | Parent Task `introduce-parent-task` | 已交付并生效（2026-08-05） | SQLite Task Store 已提供单 Parent/多直接 Child、循环保护、Task Manager/CLI/Local App 双向查看与维护；协调模型已切换为普通 Task + Parent/Child + dynamic projection | 未创建独立 Board Domain，未迁移旧 Board 数据，不传播 Parent/Child 生命周期 |
-| P0.1b | Local App Task 轻量查询 `simplify-and-optimize-local-app-task-list` | 已收敛（2026-08-05） | Local App 列表/详情首屏改为固定批量 SQLite stored-state projection，加入封闭过滤、派生直接 Child 数量、竞态防护和 Parent 候选延迟读取 | 删除 Local App Task create UI/route；CLI、Task Manager 五个 action、完整 inspect 与专业 currentness authority 保持不变；不增加 migration、物化计数或缓存 |
-| P0.2 | Task Environment `introduce-task-environment` | 已交付并生效（2026-08-02，`dev@29f9c74`） | 已交付唯一 Task Environment Application、薄 CLI/Skill、Environment Receipt、真实 ready/恢复/runtime projection、动态资源与 cleanup、Local App 环境页签、Task-scoped Change Resolver 和窄 Git provider；retained runtime 已同步并通过 Doctor | 已按 A=1/B=1/C=31/D=0 完成一次性迁移；删除旧 environment writer、receipt authority、routing、JSON/help 与 consumer 残留，旧 worktree 能力仅保留为窄 Git provider evidence |
-| P0.3 | Task Review Result `introduce-task-review-results` | 已交付并生效（2026-08-02，`dev@7764a99`） | 已交付一个 Task Review Application、Planning/Completion 两个可选 current Result 槽位、最小 closed schema、明确 target identity、执行方式、覆盖、findings、结论与派生适用性；CLI、`task-review` Skill 和 Local App 任务 Review 管理复用同一 authority，retained runtime/CLI/Local App 已安装并通过 Candidate verification、Doctor 与真实 Result 写入回读 | Task-scoped Change 审查已切到 Planning Review；删除冲突旧 task-review route/store/schema/test，全局 retained-only generic Change review保持独立authority；后续P2.1退役Task Asset Review |
-| P0.4 | Task Verification Result `introduce-task-verification-results` | 已交付并生效（2026-08-03，`introduce-task-verification-results`） | 已交付 Project declaration v2、显式 transient execution、唯一 Task Verification Application、原子 current Result、target/declaration staleness、CLI 与 Local App；P0.5 已把正式 lifecycle consumer 切换为 Development | 删除旧声明 v1、固定 assurance/层级、旧 run schema、声明级 plan/DAG、Finish summary 输入和重复 writer；Product-only DAG 留在 test harness，真实资源协调按 claim 保留 |
+| P0.1 | Task Manager / Task Record / Buildr Web `introduce-task-record` | 已交付并生效（2026-08-01，`dev@2448db0`） | 已交付稳定 Task ID、最小 Task Record 逻辑模型、唯一 Task Record Application、`task-manager`、CLI 五个确定性动作和 Buildr Web Task 列表/详情/受控管理；后续 SQLite Task Store Change 将持久化切换到 Workspace Structured Store | 旧 `task.yml` 在 SQLite 切换后保持 inert，不迁移、不读取、不双写、不删除 |
+| P0.1a | Parent Task `introduce-parent-task` | 已交付并生效（2026-08-05） | SQLite Task Store 已提供单 Parent/多直接 Child、循环保护、Task Manager/CLI/Buildr Web 双向查看与维护；协调模型已切换为普通 Task + Parent/Child + dynamic projection | 未创建独立 Board Domain，未迁移旧 Board 数据，不传播 Parent/Child 生命周期 |
+| P0.1b | Buildr Web Task 轻量查询 `simplify-and-optimize-local-app-task-list` | 已收敛（2026-08-05） | Buildr Web 列表/详情首屏改为固定批量 SQLite stored-state projection，加入封闭过滤、派生直接 Child 数量、竞态防护和 Parent 候选延迟读取 | 删除 Buildr Web Task create UI/route；CLI、Task Manager 五个 action、完整 inspect 与专业 currentness authority 保持不变；不增加 migration、物化计数或缓存 |
+| P0.2 | Task Environment `introduce-task-environment` | 已交付并生效（2026-08-02，`dev@29f9c74`） | 已交付唯一 Task Environment Application、薄 CLI/Skill、Environment Receipt、真实 ready/恢复/runtime projection、动态资源与 cleanup、Buildr Web 环境页签、Task-scoped Change Resolver 和窄 Git provider；retained runtime 已同步并通过 Doctor | 已按 A=1/B=1/C=31/D=0 完成一次性迁移；删除旧 environment writer、receipt authority、routing、JSON/help 与 consumer 残留，旧 worktree 能力仅保留为窄 Git provider evidence |
+| P0.3 | Task Review Result `introduce-task-review-results` | 已交付并生效（2026-08-02，`dev@7764a99`） | 已交付一个 Task Review Application、Planning/Completion 两个可选 current Result 槽位、最小 closed schema、明确 target identity、执行方式、覆盖、findings、结论与派生适用性；CLI、`task-review` Skill 和 Buildr Web 任务 Review 管理复用同一 authority，retained runtime/CLI/Buildr Web 已安装并通过 Candidate verification、Doctor 与真实 Result 写入回读 | Task-scoped Change 审查已切到 Planning Review；删除冲突旧 task-review route/store/schema/test，全局 retained-only generic Change review保持独立authority；后续P2.1退役Task Asset Review |
+| P0.4 | Task Verification Result `introduce-task-verification-results` | 已交付并生效（2026-08-03，`introduce-task-verification-results`） | 已交付 Project declaration v2、显式 transient execution、唯一 Task Verification Application、原子 current Result、target/declaration staleness、CLI 与 Buildr Web；P0.5 已把正式 lifecycle consumer 切换为 Development | 删除旧声明 v1、固定 assurance/层级、旧 run schema、声明级 plan/DAG、Finish summary 输入和重复 writer；Product-only DAG 留在 test harness，真实资源协调按 claim 保留 |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` | 已交付并生效（2026-08-04） | 已交付唯一 Task Development Application/Receipt、通用 Content Target observer、verification policy、Task Candidate/generation、gates/decision、append-only immutable handoff、internal driver 与非 Git/no Change System fixture；Formal Verification 先于 Candidate freeze，Completion Review 绑定 Candidate | Development 成为唯一 Candidate/decision/handoff authority；Verification/Review 保留 Result authority；Finish 收窄为 v2 handoff adapter，删除旧 Verification、Change convergence、Candidate/risk mutation path |
-| P0.5a | Task Development Local App 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情当时收敛为“概览、研发、证据、环境”，P2.1在不改变Development authority的前提下新增“复盘”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
+| P0.5a | Task Development Buildr Web 投影 `project-task-development-in-local-app` | 已交付并生效（2026-08-04） | 新增 Workspace-scoped Development inspect API；Task 详情当时收敛为“概览、研发、证据、环境”，P2.1在不改变Development authority的前提下新增“复盘”；研发展示候选、门禁、决定与最近交接，证据组合 Review/Verification，专业术语中文优先 | 删除 Review/Verification 独立一级页签；不新增 Development writer、CLI、二级页签、历史浏览器或生命周期状态 |
 | P0.6 | Git Operations `formalize-git-operations` | 已交付并生效（2026-08-04） | 已交付唯一 Skill-only `git-operations` / `buildr.git-operations/v1`、consumer-selected operation 边界、精确暂存、commit/push 分离、完整 push range、共享冻结、最小 Result 与部分失败 evidence；retained runtime 已同步并通过 Doctor | Task Finish optional dependency 与 Buildr 产品入口已迁移；删除 `git-ops` 和三项旧 contracts/bindings/router/schema，`git-worktree-provider/v1` 保持独立 |
-| P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 已收敛（2026-08-05） | Development、Verification与Planning/Completion Review current records通过连续migration进入Workspace SQLite；各专业Application与Local App reader边界不变 | 旧YAML保持inert；Task Metadata Publication source、contract、binding、helper、tests、spec与runtime整体清退 |
+| P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 已收敛（2026-08-05） | Development、Verification与Planning/Completion Review current records通过连续migration进入Workspace SQLite；各专业Application与Buildr Web reader边界不变 | 旧YAML保持inert；Task Metadata Publication source、contract、binding、helper、tests、spec与runtime整体清退 |
 | P0.7b | Lifecycle current退役 `retire-task-lifecycle-current` | 已完成实现收敛（2026-08-08） | Development同事务保存正式applicability observation；Review/Verification保存规范化查询字段；Task Overview以单条SQLite联表查询组合专业摘要；Terminal Delivery直接消费Finish completion association | 连续migration核验后删除`task_lifecycle_current`；删除projection repository/Application、六类writer接线与Finish runtime refresh，不建立第二store、cache或状态机 |
 | P0.7a | 静态 Task Board 清退 `simplify-task-board-after-sqlite-consolidation` | 已收敛（2026-08-05） | `task-board` Skill、maintenance contract、binding、Triage分支、template、package/runtime与专属tests退出；协调只组合Task/Parent与专业read models | 两类历史HTML原路径原内容保留；SQLite schema与Task Record shape零变更；通用builtin replacement继续服务真实consumer |
 | P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 已收敛（2026-08-04） | current specs、Roadmap、CLI help、package/runtime 与 residual verification 统一为现有 v2 delivery boundary；保留单一直接接线 Product/Git adapter、Delivery Adaptation、exact-token target-race resume、remote readback、retained activation 与 Environment cleanup | 审计 active run/Application/CLI/registry/compose/schema/managed mutations/capability graph；没有真实可达旧 writer/router/binding，故以 zero-delete evidence 关闭，不制造 framework 或迁移 |
-| P2.1 | 任务复盘（Task Retrospective）`introduce-task-retrospective` | 已收敛（2026-08-06） | SQLite 单行执行效率复盘记录、Skill、内部driver、Local App只读Tab与旧数据不变验证已实现 | 同Change清退Task Asset Review及全部门禁/routing；旧observation保留但不读取、不迁移、不删除 |
+| P2.1 | 任务复盘（Task Retrospective）`introduce-task-retrospective` | 已收敛（2026-08-06） | SQLite 单行执行效率复盘记录、Skill、内部driver、Buildr Web只读Tab与旧数据不变验证已实现 | 同Change清退Task Asset Review及全部门禁/routing；旧observation保留但不读取、不迁移、不删除 |
 | P2.2 | 生命周期残留审计（Lifecycle Residual Audit）`audit-task-lifecycle-residuals` | 未开始 | 无 | 只检查残留；发现问题归回 owner 模块修复 |
 
 ### 阶段 0：共同实施约束
@@ -903,40 +903,40 @@ P2.1 删除 `task-asset-review` 及其 observation、finalize、accept/reject、
 阶段 0 不创建 `task-lifecycle-v2` 总 Change，也不预先创建全部后续 Change。跨模块共同遵守：
 
 - 所有模块共享稳定 Task ID，但每类事实只有一个 owner；
-- Task Record Application 只维护最小 Task Record，Task Manager/CLI 与 Local App 是客户端，不保存 Environment 或专业 records；
+- Task Record Application 只维护最小 Task Record，Task Manager/CLI 与 Buildr Web 是客户端，不保存 Environment 或专业 records；
 - 能稳定固化的 schema、校验、状态转换、路由和副作用进入产品/contract/fixtures，不让 Agent 反复推理；
 - 一个 Task 可以关联 `0..N` 个 `project/change`；P0.1 只做当前记录内限定与去重；
 - Candidate generation 只由 Task Development 创建和递增；
 - Review Result 按目标 identity 失效；Verification Result 按 target 与 Project declaration identity 失效；
 - Task Finish 只消费研发交接，不创建或收敛 Change，不发起 Verification；
 - commit、push、PR和Board状态都不单独等于Task完成；
-- 持久 revision、跨 Task Change ownership 与 publication 协议不作为所有记录的预设共同机制；P0.1 只为真实 Local App 陈旧页面提供非持久 `recordDigest`，其他 owner 模块按实际需要决定；
+- 持久 revision、跨 Task Change ownership 与 publication 协议不作为所有记录的预设共同机制；P0.1 只为真实 Buildr Web 陈旧页面提供非持久 `recordDigest`，其他 owner 模块按实际需要决定；
 - 每个模块在自己的 Change 中完成 authority 切换和重叠旧能力清退。
 
 ### P0：任务主闭环
 
 | 顺序 | 单一模块与建议 Change | 本次只完成 | 最小模块验收与旧能力处置 |
 |---|---|---|---|
-| P0.1 | Task Manager / Task Record / Local App `introduce-task-record` + `introduce-parent-task` + `simplify-and-optimize-local-app-task-list` | Task ID、最小 Task Record、唯一 Task Record Application、`task-manager`、产品化 create/inspect/update/complete/abandon、Local App Task 轻量列表/详情与已有记录编辑/完成/放弃、三态/no-change、`0..N` 个 `project/change`，以及单 Parent/多直接 Child；正式 Task 只由 Agent/Task Manager 创建，当前以本机 SQLite 规范化持久化，不含通用依赖图、Environment、专业 references、持久 revision、跨 Task Change ownership或同步 | CLI/Task Manager 保留五个 action 与完整 inspect；Local App 复用同一 Application 的 stored-state query projection 和有限 writer，不提供 create；SQL schema、foreign keys、迁移 ledger 和完整性 fail closed；陈旧页面冲突刷新；关系拒绝自引用/循环/terminal 新 Parent；Parent/Child 生命周期独立；linked worktree 不得成为 authority |
-| P0.2 | Task Environment `introduce-task-environment` | Task 级 Environment Receipt、唯一 Application、薄公共 CLI/Skill、`.worktrees/<task-id>` 任务验证 Workspace、真实 ready 探测、task-scoped runtime projection identity、Task-scoped Change Resolver、Local App 只读环境页签、串行恢复、资源登记和 cleanup | 创建 Task → 保留工作区 Buildr 环境管理器准备环境 → 候选 Change 可被 Task 范围解析 → Local App 查看本机环境 → 候选投射自身 runtime → 跨 session 恢复 → Finish/放弃 cleanup；同 Change 将 task-worktree 收窄为 Git provider，按 A/B/C/D 一次性迁移旧 v1 receipt，并删除旧 environment mutation/routing/help/JSON/consumer；不把 worktree 称为主/retained/开发 Workspace 或 Agent runtime |
+| P0.1 | Task Manager / Task Record / Buildr Web `introduce-task-record` + `introduce-parent-task` + `simplify-and-optimize-local-app-task-list` | Task ID、最小 Task Record、唯一 Task Record Application、`task-manager`、产品化 create/inspect/update/complete/abandon、Buildr Web Task 轻量列表/详情与已有记录编辑/完成/放弃、三态/no-change、`0..N` 个 `project/change`，以及单 Parent/多直接 Child；正式 Task 只由 Agent/Task Manager 创建，当前以本机 SQLite 规范化持久化，不含通用依赖图、Environment、专业 references、持久 revision、跨 Task Change ownership或同步 | CLI/Task Manager 保留五个 action 与完整 inspect；Buildr Web 复用同一 Application 的 stored-state query projection 和有限 writer，不提供 create；SQL schema、foreign keys、迁移 ledger 和完整性 fail closed；陈旧页面冲突刷新；关系拒绝自引用/循环/terminal 新 Parent；Parent/Child 生命周期独立；linked worktree 不得成为 authority |
+| P0.2 | Task Environment `introduce-task-environment` | Task 级 Environment Receipt、唯一 Application、薄公共 CLI/Skill、`.worktrees/<task-id>` 任务验证 Workspace、真实 ready 探测、task-scoped runtime projection identity、Task-scoped Change Resolver、Buildr Web 只读环境页签、串行恢复、资源登记和 cleanup | 创建 Task → 保留工作区 Buildr 环境管理器准备环境 → 候选 Change 可被 Task 范围解析 → Buildr Web 查看本机环境 → 候选投射自身 runtime → 跨 session 恢复 → Finish/放弃 cleanup；同 Change 将 task-worktree 收窄为 Git provider，按 A/B/C/D 一次性迁移旧 v1 receipt，并删除旧 environment mutation/routing/help/JSON/consumer；不把 worktree 称为主/retained/开发 Workspace 或 Agent runtime |
 | P0.3 | Task Review `introduce-task-review-results` | 一个 Result 模型、Planning/Completion 两个可选 current 槽位、目标 identity、执行方式、覆盖、findings、结论与派生适用性；无持久 revision/history，不编排 Development、Candidate 或门禁 | 两类 Result 可独立存在并绑定明确目标；同类型完整替换、跨类型隔离，中断不覆盖 current；Task-scoped Change 单次切到 Planning Review，全局 generic Change review保持独立authority；P2.1另行退役Task Asset Review |
-| P0.4 | Task Verification `introduce-task-verification-results` | Project declaration v2、transient execution evidence、一个 current Verification Result、Content Target/declaration identity 与派生 applicability；不包含推进决定、Candidate generation 或 Environment Receipt | 真实 command/Agent facts 可提炼完整 Result；中断或写入失败不覆盖 current；target/declaration 变化派生 stale；CLI、Skill、Local App、Development consumer 共用唯一 Application；删除旧 assurance、run/plan/DAG lifecycle、summary 输入与重复 schema |
+| P0.4 | Task Verification `introduce-task-verification-results` | Project declaration v2、transient execution evidence、一个 current Verification Result、Content Target/declaration identity 与派生 applicability；不包含推进决定、Candidate generation 或 Environment Receipt | 真实 command/Agent facts 可提炼完整 Result；中断或写入失败不覆盖 current；target/declaration 变化派生 stale；CLI、Skill、Buildr Web、Development consumer 共用唯一 Application；删除旧 assurance、run/plan/DAG lifecycle、summary 输入与重复 schema |
 | P0.5 | Task Development / Candidate `introduce-task-development-candidate` + `establish-parent-child-task-coordination-model` | Development Receipt、`0..N` Change处置、可选Parent Plan/planned Contribution/final acceptance、Content Target/policy、Candidate identity/generation、三个gates、decision与含可选Contribution Handoff的immutable handoff；明确control metadata/carrier/runtime/session不是Candidate | 普通Task保持既有研发链；opt-in Parent以Plan identity审查协调内容，Child独立交付窄Change并由saved handoff证明Contribution，显式reconcile范围变化，全部Child完成不传播Parent终态；v1/v2/legacy absent-compatible，无新表/backfill |
 | P0.6 | Git Operations `formalize-git-operations` | 单次 Git operation 授权、安全边界、前后 identity 与最小 Result | 精确暂存；commit/push 分离；不 force push；同 Change 迁移有效安全约束并删除冲突旧 capability/binding/router/schema |
-| P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 四类专业current records进入SQLite，保持独立Domain/Application/writer；不建设history、同步或通用框架 | fresh/continuous schema、foreign key、slot isolation、rollback、旧YAML inert、Local App/lifecycle consumer与publication residual验证 |
+| P0.7 | Task current-record SQLite收敛 `consolidate-task-current-records-in-sqlite` | 四类专业current records进入SQLite，保持独立Domain/Application/writer；不建设history、同步或通用框架 | fresh/continuous schema、foreign key、slot isolation、rollback、旧YAML inert、Buildr Web/lifecycle consumer与publication residual验证 |
 | P0.8 第一阶段 | Task Finish `simplify-task-finish-delivery-boundary` | 收敛现有 v2 delivery boundary；保留直接 Product/Git adapter，不新增非 Git、多交付单元、PR/release/deploy、adapter registry 或 Finish Receipt | canonical/current/package/help 一致；正常路径单次 CLI，Delivery Adaptation 与连续 target race 复用同一 Candidate/handoff，formal Verification 为 0；审计真实旧 writer/router/binding 并仅在存在时删除 |
 
 P0.1 到 P0.8 分别在各自交付时切换自己拥有的 authority。过渡期允许“新 Task Record + 尚未替换的专业模块”组合，但同一类事实不能有两个 writer；P0.8 不再承担统一默认 authority 切换。
 
 ### P1：协调、投影与交互（Coordination, Projection, and Interaction）
 
-P1不再登记独立Board或通用协调引擎。当前协调使用普通Task/Parent关系与Task Development中的opt-in Parent Plan/Contribution模型：Parent保存计划，Child独立交付，Parent Coordination Application动态组合saved facts；不建立第二writer、progress/lifecycle表或状态同步。只有实际使用证明该模型无法覆盖非Task规划项、多协调者成员、稳定排序/分组或跨Task决策记录时，才重新提出独立能力。Local App继续按功能模块复用唯一Application/reader。
+P1不再登记独立Board或通用协调引擎。当前协调使用普通Task/Parent关系与Task Development中的opt-in Parent Plan/Contribution模型：Parent保存计划，Child独立交付，Parent Coordination Application动态组合saved facts；不建立第二writer、progress/lifecycle表或状态同步。只有实际使用证明该模型无法覆盖非Task规划项、多协调者成员、稳定排序/分组或跨Task决策记录时，才重新提出独立能力。Buildr Web继续按功能模块复用唯一Application/reader。
 
 ### P2：复盘与残留审计（Retrospective and Residual Audit）
 
 | 顺序 | 单一模块与建议 Change | 最小验收与旧能力处置 |
 |---|---|---|
-| P2.1 | 任务复盘（Task Retrospective）`introduce-task-retrospective` | 每个终态 Task 至多一行 SQLite current record；结束 Agent 基于可见过程和可读取 Task facts 自由复盘时间与 Token 消耗点，不记录完整 transcript 或隐藏推理；Local App 只读“复盘”Tab 渲染报告与数据缺口；复盘遗漏/失败不阻塞终态；同 Change 删除 Task Asset Review 的 Skill、contract、binding、helper、template、tests 与所有门禁/routing，既有 observation 保留但不读取、不迁移、不删除 |
+| P2.1 | 任务复盘（Task Retrospective）`introduce-task-retrospective` | 每个终态 Task 至多一行 SQLite current record；结束 Agent 基于可见过程和可读取 Task facts 自由复盘时间与 Token 消耗点，不记录完整 transcript 或隐藏推理；Buildr Web 只读“复盘”Tab 渲染报告与数据缺口；复盘遗漏/失败不阻塞终态；同 Change 删除 Task Asset Review 的 Skill、contract、binding、helper、template、tests 与所有门禁/routing，既有 observation 保留但不读取、不迁移、不删除 |
 | P2.2 | 生命周期残留审计（Lifecycle Residual Audit）`audit-task-lifecycle-residuals` | 纯负向检查 manifest、runtime、CLI、public JSON、specs、docs 和 tests 是否仍路由旧 authority；不预设批量删除，发现残留就归回对应 owner 模块创建窄修复 Change |
 
 旧测试不整体删除。禁止 force push、精确归属、部分交付效果保留、Candidate 失效停止写入和 cleanup ownership 等仍有效安全不变量，必须在对应新模块 Change 中迁移；只删除绑定旧 shape、旧 mutation path 或旧协议的断言。

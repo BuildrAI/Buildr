@@ -1,0 +1,28 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: harden-release-authority-preflight
+operation: reconcile
+treeIdentity: task-environment-candidate
+impacts:
+  - type: brief
+    target: openspec/changes/harden-release-authority-preflight/brief.md
+    reason: 正式 Change 的范围、流程、风险与验收入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-release-authority-preflight/proposal.md
+      - openspec/changes/harden-release-authority-preflight/design.md
+      - openspec/changes/harden-release-authority-preflight/specs/open-source-release-governance/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: tag 前发布控制面一致性门禁属于 release 安全架构
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-release-authority-preflight/design.md
+      - openspec/knowledge/architecture/technical.md
+  - type: flow
+    target: openspec/knowledge/flows/open-source-release.md
+    reason: 当前 npm 发布顺序需要加入 authenticated authority preflight
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-release-authority-preflight/specs/open-source-release-governance/spec.md
+      - openspec/knowledge/flows/open-source-release.md
+unresolvedItems: []

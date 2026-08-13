@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: 双任务并发组合验收
-Buildr MUST 提供可重复的双正式 Task 组合验收，在同一临时 canonical Workspace 中使用两个 Task Environment，覆盖 Environment Receipt 绑定 CLI 的实际执行、包含嵌套独立仓库的完整 scope、Local App Preview 并发启动、验证资源协调、目标分支竞态、可恢复收尾和 Environment cleanup，并 MUST 输出可归因到两个 Task 的结构化证据。
+Buildr MUST 提供可重复的双正式 Task 组合验收，在同一临时 canonical Workspace 中使用两个 Task Environment，覆盖 Environment Receipt 绑定 CLI 的实际执行、包含嵌套独立仓库的完整 scope、Buildr Web Preview 并发启动、验证资源协调、目标分支竞态、可恢复收尾和 Environment cleanup，并 MUST 输出可归因到两个 Task 的结构化证据。
 
 #### Scenario: 两个任务从不同执行目录运行专属 CLI
 - **WHEN** Candidate 验收创建两个正式 Task、分别准备 ready Task Environment，并从 canonical Workspace 或其中一个 Project 执行根调用 Environment Receipt 返回的绝对 CLI invocation

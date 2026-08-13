@@ -187,11 +187,12 @@ if (verificationSteps.filter((step) => step.executor.type === 'candidate-artifac
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
 if (packageJson.bin?.buildr !== 'bin/buildr.mjs') problems.push('package.json bin must expose bin/buildr.mjs');
-for (const required of ['bin/buildr.mjs', 'src/', 'package/']) {
-  if (!(packageJson.files || []).includes(required)) problems.push(`package.json files must publish ${required}`);
+const candidatePackageSource = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'release', 'candidate-package.mjs'), 'utf8');
+if (!candidatePackageSource.includes('buildApplicationPayload(') || !candidatePackageSource.includes('createReleaseArtifact(')) {
+  problems.push('formal candidate must build the application payload and create the release artifact from that frozen payload');
 }
-for (const forbidden of ['test/', 'scripts/', ['to', 'ols/'].join('')]) {
-  if ((packageJson.files || []).some((item) => item === forbidden || item.startsWith(forbidden))) problems.push(`package.json files must not publish ${forbidden}`);
+if (/npm(?:Executable)?[^\n]*\[\s*['"]pack['"][^\n]*productRoot/u.test(candidatePackageSource)) {
+  problems.push('formal candidate must not npm pack the development product root');
 }
 if (packageJson.scripts?.['test:focus'] !== 'node test/verification/focus.mjs') problems.push('package.json must expose the unified focus selector');
 if (packageJson.scripts?.['test:release'] !== 'node test/verification/release/release-smoke.mjs') problems.push('package.json must retain the cross-platform release smoke entry');

@@ -50,7 +50,7 @@ export function WorkspacesPage() {
   const removeWorkspace = async (entry: WorkspaceEntry, revision: string) => {
     const ok = await confirmModal({
       title: '移除工作空间',
-      content: `只从 Buildr App 移除“${entry.workspace?.name || entry.rootPath}”，不会删除目录。继续吗？`,
+      content: `只从 Buildr Web 移除“${entry.workspace?.name || entry.rootPath}”，不会删除目录。继续吗？`,
       okText: '移除',
       okButtonProps: { danger: true },
     });

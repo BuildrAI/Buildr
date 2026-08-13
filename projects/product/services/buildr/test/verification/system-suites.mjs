@@ -53,7 +53,7 @@ export const SYSTEM_SUITES = Object.freeze([
   }),
   Object.freeze({
     id: 'system-local-app-http',
-    name: 'System Local App HTTP',
+    name: 'System Buildr Web Runtime',
     innerConcurrency: 2,
     schedulingCostMs: 20000,
     concurrencyClass: 'workspace-heavy',
@@ -65,7 +65,7 @@ export const SYSTEM_SUITES = Object.freeze([
   }),
   Object.freeze({
     id: 'system-app-process',
-    name: 'System App process and preview',
+    name: 'System Buildr Web process and preview',
     innerConcurrency: 2,
     schedulingCostMs: 25000,
     concurrencyClass: 'workspace-heavy',

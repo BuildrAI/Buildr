@@ -1042,8 +1042,7 @@ export function registerDomainsComponents(runtime) {
       throw new Error(`Component 源资产已提交，但 ${agent} runtime reconcile 失败：${error.message}\n修复后运行：buildr sync ${agent} --target ${targetRoot}`);
     }
     const finalDoctor = runFinalDoctor({
-      executable: process.execPath,
-      cliPath: path.join(productRoot(), 'bin', 'buildr.mjs'),
+      invocation: runtime.currentProductInvocation(),
       agent,
       targetRoot,
       cwd: productRoot(),

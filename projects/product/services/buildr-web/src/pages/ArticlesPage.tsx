@@ -6,7 +6,7 @@ import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 
 const statusLabel: Record<string, string> = { published: '已发布', planned: '待发布', draft: '草稿' };
-const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'local-app': 'Local App' };
+const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'local-app': 'Buildr Web' };
 
 type Publication = {
   id: string;
@@ -61,9 +61,8 @@ export function ArticlesPage() {
     <>
       <section className="resource-toolbar">
         <div>
-          <p className="eyebrow">文章</p>
           <Typography.Title level={2} style={{ margin: 0 }}>对外发布材料</Typography.Title>
-          <p className="page-copy">项目内维护的文章源；Local App 只读展示，不在这里编辑或发布。</p>
+          <p className="page-copy">项目内维护的文章源；Buildr Web 只读展示，不在这里编辑或发布。</p>
         </div>
         <div className="toolbar-actions">
           <span id="publications-state" className="count-label">{state}</span>

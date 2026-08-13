@@ -64,13 +64,25 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const renderWorkspaceManifest = (...args) => runtime.renderWorkspaceManifest(...args);
   const diagnoseWorkspaceMetadata = (...args) => runtime.diagnoseWorkspaceMetadata(...args);
 
+  function diagnoseProductInstallation(result) {
+    result.productInstallation = runtime.buildInstallationInventory();
+  }
+
   function diagnoseWorkspaceNode(result, targetRoot, requestedAgent) {
     let record;
     try { record = runtime.readWorkspaceRecord(targetRoot); } catch { return; }
     const workspace = record.workspace;
     const probe = runtime.probeWorkspaceNodeRuntime(workspace);
-    const actualCliVersion = process.versions.node;
-    result.workspaceNode = { declaration: workspace.runtime || null, identity: probe.identity, runtime: probe, cli: { executable: process.execPath, version: actualCliVersion } };
+    const installation = result.productInstallation || runtime.buildInstallationInventory();
+    const currentRuntime = installation.currentInstallation.runtime;
+    result.productInstallation = installation;
+    result.workspaceNode = {
+      declaration: workspace.runtime || null,
+      identity: probe.identity,
+      runtime: probe,
+      execution: probe.status === 'ready' ? { role: 'workspace', executable: probe.executable, version: probe.actualVersion, identity: probe.identity?.digest || null } : null,
+      mainProcess: currentRuntime,
+    };
     const command = `buildr sync ${requestedAgent || '<agent>'} --target ${targetRoot}`;
     if (!workspace.runtime?.node?.version) {
       addDoctorFinding(result, 'warning', 'workspace.node_declaration_missing', 'Workspace 缺少精确 Node version 声明。', {
@@ -85,10 +97,25 @@ export function registerApplicationWorkspaceOperations(runtime) {
       });
       return;
     }
-    if (actualCliVersion !== workspace.runtime.node.version) {
-      addDoctorFinding(result, 'warning', 'workspace.node_cli_drift', `当前 CLI Node ${actualCliVersion} 与 Workspace Node ${workspace.runtime.node.version} 不一致。`, {
-        path: process.execPath, expected: probe.identity, actual: { executable: process.execPath, version: actualCliVersion },
-        suggestion: '使用 Workspace Node-aware Buildr launcher 重新执行；runtime 缺失时先运行 sync。', command, userActionRequired: true,
+    const expectedMainRole = installation.currentInstallation.channel === 'npm'
+        ? 'host'
+        : installation.currentInstallation.channel === 'development'
+          ? 'development'
+          : 'unknown';
+    if (currentRuntime.role !== expectedMainRole) {
+      addDoctorFinding(result, 'error', 'product.runtime_role_drift', `当前 Buildr main process runtime role ${currentRuntime.role} 与 installation channel ${installation.currentInstallation.channel} 不匹配。`, {
+        path: currentRuntime.executable,
+        expected: { role: expectedMainRole, installationIdentity: installation.currentInstallation.identity?.ownershipIdentity || null },
+        actual: currentRuntime,
+        suggestion: '从该渠道的可信入口重新启动 Buildr；不要从 PATH 或 Workspace Node 替代主进程 runtime。',
+        userActionRequired: true,
+      });
+    } else if (installation.currentInstallation.channel === 'unknown') {
+      addDoctorFinding(result, 'warning', 'product.installation_origin_unknown', '当前 Buildr installation origin 无法证明。', {
+        path: currentRuntime.executable,
+        actual: installation.currentInstallation.reason,
+        suggestion: '从 canonical development checkout、npm package 或签名平台安装重新启动；不要根据 PATH 猜测来源。',
+        userActionRequired: true,
       });
     }
   }
@@ -277,6 +304,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
       capabilities: { structurallyRoutableOnly: true, graphs: [], items: [] },
       builtins: { items: [] },
       commandLineTools: null,
+      productInstallation: null,
+      workspaceNode: null,
       runtime: Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent) => [RUNTIME_ADAPTERS[agent].traits.checker.resultKey ?? agent.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()), []])),
       mutations: { blocked: false, lock: null, transactions: [] },
       diagnosticProfile: DOCTOR_DIAGNOSTIC_PROFILE,
@@ -287,6 +316,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
     };
 
     diagnoseWorkspace(result, targetRoot);
+    diagnoseProductInstallation(result);
     if (result.workspace?.initialized) diagnoseWorkspaceMetadata(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo);
     if (result.workspace?.initialized) diagnoseTaskFinishStore(result, targetRoot);
@@ -342,6 +372,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
     if (json) {
       const report = detail === 'compact' ? {
         targetRoot: result.targetRoot, scope: result.scope, agentRuntime: result.agentRuntime,
+        productInstallation: result.productInstallation,
+        workspaceNode: result.workspaceNode,
         ok: result.ok, summary: result.summary, health: result.health,
         findings: result.findings, repairPlan: result.repairPlan, nextSteps: result.nextSteps,
       } : result;
@@ -392,7 +424,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
       workspace: { id: workspaceId, name, description, runtime: { node: { version: process.versions.node } } },
       compatibility: { kind: 'organization', profile },
     }), created);
-    const nodeRuntime = runtime.ensureWorkspaceNodeRuntime({ id: workspaceId, name, description, runtime: { node: { version: process.versions.node } } }, { adoptCurrent: true });
+    const nodeRuntime = runtime.ensureWorkspaceNodeRuntime({ id: workspaceId, name, description, runtime: { node: { version: process.versions.node } } });
     ensureRootRequiredBlock(targetRoot, changed);
     trackWrite(targetRoot, path.join(targetRoot, 'skills', 'manifest.yml'), renderSkillsManifestYaml({
       ...(skillsBaseline || { schemaVersion: 'buildr.skills/v3', skills: [] }),

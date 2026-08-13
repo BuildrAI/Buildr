@@ -3,6 +3,7 @@
 ## Purpose
 定义 Buildr MVP 的用户与 Agent 协作 onboarding 行为：用户用自然语言触发，Agent 在 Buildr Skill 可用时使用它，并通过基础 CLI 命令完成最小闭环；当 Skill 不可用时，bootstrap guide 提供兜底路径。
 ## Requirements
+
 ### Requirement: 自然语言触发 Buildr onboarding
 Buildr MVP MUST 支持用户通过自然语言向 Agent 表达使用 Buildr 管理项目的意图，并由 Agent 在 Buildr Skill 可用时按 Skill 完成后续引导；当 Skill 不可用时，Agent MUST 能按 bootstrap guide 兜底。
 
@@ -393,21 +394,21 @@ Buildr MUST 区分技术 onboarding 完成与用户第一次有效工作。技�
 - **THEN** Agent MUST 使用当前范围适用的工作资产推进任务
 - **AND** Buildr onboarding MUST NOT 要求用户先掌握其他资产类型或 CLI 命令
 
-### Requirement: Onboarding 必须提供 local app 与 Agent-only 两种一致入口
-Buildr MUST 允许用户通过 local app 或直接在 Agent 对话中开始使用，并 MUST 让两种入口使用相同的 Workspace → Project → Service 心智、同一 source authority 和同一 Agent 执行边界。
+### Requirement: Onboarding 必须提供 Buildr Web 与 Agent-only 两种一致入口
+Buildr MUST 允许用户通过 Buildr Web 或直接在 Agent 对话中开始使用，并 MUST 让两种入口使用相同的 Workspace → Project → Service 心智、同一 source authority 和同一 Agent 执行边界。
 
 #### Scenario: 用户选择 local app
-- **WHEN** 用户通过 Buildr App 添加或进入 Workspace
-- **THEN** local app MUST 帮助用户理解和选择 Workspace、Project 与可选 Service
+- **WHEN** 用户通过 Buildr Web 添加或进入 Workspace
+- **THEN** Buildr Web MUST 帮助用户理解和选择 Workspace、Project 与可选 Service
 - **AND** 创建、迁移、修复和开始工作 MUST 通过可复制 Agent Action 交接给 Agent
-- **AND** local app MUST NOT声称自己已经执行 Agent 的专业工作
+- **AND** Buildr Web MUST NOT声称自己已经执行 Agent 的专业工作
 
 #### Scenario: 用户只使用 Agent
-- **WHEN** 用户不打开 local app 而在 supported Agent 中请求使用 Buildr
+- **WHEN** 用户不打开 Buildr Web 而在 supported Agent 中请求使用 Buildr
 - **THEN** Agent MUST 完成 runtime discovery、init/doctor、首次教学和必要的 Project/Service 引导
-- **AND** MUST NOT 要求用户为了完成 onboarding 打开 local app
+- **AND** MUST NOT 要求用户为了完成 onboarding 打开 Buildr Web
 
 #### Scenario: 用户在两种入口之间切换
-- **WHEN** 用户先通过 Agent 创建或修改资产，再打开 local app，或者从 local app 复制 prompt 后回到 Agent
+- **WHEN** 用户先通过 Agent 创建或修改资产，再打开 Buildr Web，或者从 Buildr Web 复制 prompt 后回到 Agent
 - **THEN** 两种入口 MUST 从同一 Workspace 源资产读取事实
 - **AND** MUST NOT 维护需要双向同步的第二份 Project/Service/onboarding 状态

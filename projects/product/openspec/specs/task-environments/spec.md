@@ -27,39 +27,6 @@ Buildr MUST 只为已经存在的正式 Task 建立任务环境（Task Environme
 - **THEN** 该 metadata-only 写入 MUST NOT 要求重新准备已清理的 Task Environment
 - **AND** MUST NOT 把 canonical metadata root 误报为新的执行环境
 
-### Requirement: Task Environment Application 必须提供唯一确定性操作边界
-Buildr MUST由共享Task Environment Application实现Plan `record/inspect`、Environment `prepare`、live `inspect`、saved-current read、`resource register/release`与`cleanup`，并 MUST让CLI、Skill、Local App、Preview和Finish复用对应Application action。`prepare` MUST幂等承担首次准备与恢复；live `inspect` MUST只读观察matching current的Plan、executable/input identity和output facts；saved-current read MUST只读取Workspace SQLite current。
-
-#### Scenario: Agent 准备或恢复环境
-- **WHEN** Agent运行`buildr task environment prepare <task-id>`并可选提供Plan
-- **THEN** CLI MUST只把结构化参数交给Application并返回当前`ready / blocked`结果
-- **AND** 已有matching current时 MUST从同一环境恢复，不得创建第二份环境或单独restore命令
-
-#### Scenario: CLI只读检查环境
-- **WHEN** CLI `inspect`请求当前Task Environment
-- **THEN** Application MUST只读比较current Plan、resolved executable/input identities和expected outputs
-- **AND** MUST不写Receipt、执行Plan command、创建目录、启动/停止资源或cleanup
-
-#### Scenario: Local App读取保存事实
-- **WHEN** Local App GET请求Environment read model
-- **THEN** Application MUST只读取最近一次正式lifecycle action保存的SQLite current
-- **AND** MUST不探测文件系统、执行Plan或形成新的ready结论
-
-#### Scenario: 人或产品模块只读检查环境
-- **WHEN** CLI `inspect`、Local App或其他产品模块请求当前Task Environment read model
-- **THEN** CLI `inspect` MUST执行零写入live observation，其他saved-current consumer MUST只读取SQLite current
-- **AND** 任一读取方 MUST不直接解析Receipt文件、手写ready/cleanup结论或在GET中补写projection
-
-#### Scenario: 产品模块登记持久资源
-- **WHEN** 已登记provider创建或释放Task-owned持久资源
-- **THEN** 产品模块 MUST直接调用Application `resource register/release`
-- **AND** 公共CLI MUST不暴露这两个内部action
-
-#### Scenario: CLI 执行 cleanup
-- **WHEN** 调用方运行`cleanup`
-- **THEN** Application MUST验证Finish handoff或明确abandon authorization再编排providers
-- **AND** CLI MUST不接受任意cleanup shell、完整Receipt或caller-authored next state
-
 ### Requirement: Task Environment 必须记录实际执行位置而非固定 mode
 Task Environment MUST 记录每个工作范围的实际执行根、任务验证工作区根、共享/占用和 cleanup 事实，并 MUST NOT 用 `in-place / dedicated` 等顶层 mode 代替真实资源。Git MUST NOT 是 Environment Receipt 或 `ready` 的前提；需要 Git 隔离时才 MUST 调用所选 Git worktree provider。
 
@@ -253,7 +220,7 @@ Task Environment mutation MUST 由 canonical retained Workspace 的可信 Enviro
 - **AND** result MUST NOT 返回 controller handoff、rebind 或 generation-transition effect
 
 #### Scenario: 非 manager 的安装版读取 matching Environment
-- **WHEN** 安装版 Local App 或其他只读产品消费者以 canonical Workspace 与 matching Task ID 调用 `inspect`，且其 product sourceRoot/adapter 不同于 Receipt controller
+- **WHEN** 安装版 Buildr Web 或其他只读产品消费者以 canonical Workspace 与 matching Task ID 调用 `inspect`，且其 product sourceRoot/adapter 不同于 Receipt controller
 - **THEN** Application MUST 仅使用 Receipt controller 对已登记 Environment 执行当前机器的有界只读 probe，并按 probe 返回 ready 或 blocked read model
 - **AND** MUST NOT 因调用方不是 retained manager 而拒绝读取、写入/更新 Receipt，或授予任何 mutation authorization
 
@@ -266,24 +233,6 @@ Task Environment mutation MUST 由 canonical retained Workspace 的可信 Enviro
 - **WHEN** mutation 入口来自 candidate linked worktree、Receipt 登记外的 sourceRoot/adapter、dirty Git source 或无法取得可信 Git clean evidence
 - **THEN** `prepare`、resource register/release 与 `cleanup` MUST 在对应持久效果前 fail closed
 - **AND** MUST 保留原 Receipt、Task checkout、provider evidence 与动态资源
-
-### Requirement: 自举 Task Validation Workspace 必须隔离候选 Structured Store
-自举 Task Environment MUST 为 candidate runtime 的 migration、CLI、HTTP 和 Local App 验证提供 receipt-bound Task Validation Workspace 与独立 Workspace Structured Store。候选验证产生的 schema、ledger、Task 和测试数据 MUST 只存在于该验证边界；真实 Task lifecycle metadata MUST 继续由 receipt-pinned retained controller 写入 canonical Workspace。Environment cleanup 或 abandon MUST 只回收精确 Task-owned validation resources。
-
-#### Scenario: candidate 验证 Task 功能
-- **WHEN** candidate Buildr 在其 Task Validation Workspace 中创建 Task、运行 migration 或执行本地 smoke 测试
-- **THEN** candidate MUST 使用验证 Workspace 的独立 Structured Store
-- **AND** canonical Task Record、Development、Review、Verification、Retrospective、Environment 与 Finish state MUST 不受候选测试数据影响
-
-#### Scenario: candidate Local App 启动 smoke
-- **WHEN** Task Environment 为候选 Local App 启动验证服务
-- **THEN** 服务 MUST 绑定 Task Validation Workspace，并将端口/进程作为 Task-owned resource 登记
-- **AND** retained Local App MUST 继续绑定 canonical Workspace，且两者不得共享数据 store identity
-
-#### Scenario: 清理 validation Workspace
-- **WHEN** self-bootstrap Task 正常 cleanup 或按明确 abandon authorization cleanup
-- **THEN** Environment MUST 只删除可证明属于该 Task Validation Workspace 的 store、sidecar 与服务资源
-- **AND** MUST NOT 对 canonical Workspace database 执行 schema rollback、ledger rewrite 或数据删除
 
 ### Requirement: 真实 Task 写入必须使用 receipt-pinned retained controller
 在 self-bootstrap topology 中，任何会改变 canonical Task lifecycle/structured data 的操作 MUST 使用 matching Environment Receipt 绑定的 retained controller executable 与 identity；调用方 MUST NOT 从候选 worktree cwd、shell PATH 或 candidate CLI 推断写入 authority。
@@ -448,14 +397,6 @@ Task Environment MUST通过canonical Task ID从Workspace SQLite恢复同一Recei
 - **THEN** Environment MUST整体blocked并保留其他成功事实
 - **AND** diagnostic MUST包含scope、Recipe、Step、退出信息与next action
 
-### Requirement: inspect与saved GET必须保持不同只读语义
-CLI Environment `inspect` MUST只读观察saved Plan绑定的声明、Recipe、executable、inputs与outputs；Local App GET MUST只读取SQLite current。两者 MUST不执行Step、不创建或修复outputs、不替换Plan或Receipt。
-
-#### Scenario: Local App刷新Environment Tab
-- **WHEN** 用户刷新Environment Tab
-- **THEN** 页面 MUST展示最近保存的Declaration、Recipe、scope与Step状态
-- **AND** GET MUST不打开Project声明或文件系统形成新结论
-
 ### Requirement: 旧Plan与Receipt只读兼容
 Task Environment reader MUST能够只读展示`buildr.task-environment-plan/v1`与Receipt v4为legacy；新prepare writer MUST只生成Plan v2与Receipt v5，且 MUST不从旧Step推断Declaration或Recipe identity。
 
@@ -463,3 +404,62 @@ Task Environment reader MUST能够只读展示`buildr.task-environment-plan/v1`�
 - **WHEN** current只有legacy v4且调用方未提交Selection Request
 - **THEN** prepare MUST返回blocked并要求显式选择Recipe或task-inline Plan
 - **AND** MUST保留旧current值，不自动升级
+
+### Requirement: Task Environment Application 必须为 Buildr Web 提供唯一确定性操作边界
+Buildr MUST由共享Task Environment Application实现Plan `record/inspect`、Environment `prepare`、live `inspect`、saved-current read、`resource register/release`与`cleanup`，并 MUST让CLI、Skill、Buildr Web、Preview和Finish复用对应Application action。`prepare` MUST幂等承担首次准备与恢复；live `inspect` MUST只读观察matching current的Plan、executable/input identity和output facts；saved-current read MUST只读取Workspace SQLite current。
+
+#### Scenario: Agent 准备或恢复环境
+- **WHEN** Agent运行`buildr task environment prepare <task-id>`并可选提供Plan
+- **THEN** CLI MUST只把结构化参数交给Application并返回当前`ready / blocked`结果
+- **AND** 已有matching current时 MUST从同一环境恢复，不得创建第二份环境或单独restore命令
+
+#### Scenario: CLI只读检查环境
+- **WHEN** CLI `inspect`请求当前Task Environment
+- **THEN** Application MUST只读比较current Plan、resolved executable/input identities和expected outputs
+- **AND** MUST不写Receipt、执行Plan command、创建目录、启动/停止资源或cleanup
+
+#### Scenario: Buildr Web读取保存事实
+- **WHEN** Buildr Web GET请求Environment read model
+- **THEN** Application MUST只读取最近一次正式lifecycle action保存的SQLite current
+- **AND** MUST不探测文件系统、执行Plan或形成新的ready结论
+
+#### Scenario: 人或产品模块只读检查环境
+- **WHEN** CLI `inspect`、Buildr Web或其他产品模块请求当前Task Environment read model
+- **THEN** CLI `inspect` MUST执行零写入live observation，其他saved-current consumer MUST只读取SQLite current
+- **AND** 任一读取方 MUST不直接解析Receipt文件、手写ready/cleanup结论或在GET中补写projection
+
+#### Scenario: 产品模块登记持久资源
+- **WHEN** 已登记provider创建或释放Task-owned持久资源
+- **THEN** 产品模块 MUST直接调用Application `resource register/release`
+- **AND** 公共CLI MUST不暴露这两个内部action
+
+#### Scenario: CLI 执行 cleanup
+- **WHEN** 调用方运行`cleanup`
+- **THEN** Application MUST验证Finish handoff或明确abandon authorization再编排providers
+- **AND** CLI MUST不接受任意cleanup shell、完整Receipt或caller-authored next state
+
+### Requirement: 自举 Task Validation Workspace 必须隔离候选 Buildr Web Structured Store
+自举 Task Environment MUST 为 candidate runtime 的 migration、CLI、HTTP 和 Buildr Web 验证提供 receipt-bound Task Validation Workspace 与独立 Workspace Structured Store。候选验证产生的 schema、ledger、Task 和测试数据 MUST 只存在于该验证边界；真实 Task lifecycle metadata MUST 继续由 receipt-pinned retained controller 写入 canonical Workspace。Environment cleanup 或 abandon MUST 只回收精确 Task-owned validation resources。
+
+#### Scenario: candidate 验证 Task 功能
+- **WHEN** candidate Buildr 在其 Task Validation Workspace 中创建 Task、运行 migration 或执行本地 smoke 测试
+- **THEN** candidate MUST 使用验证 Workspace 的独立 Structured Store
+- **AND** canonical Task Record、Development、Review、Verification、Retrospective、Environment 与 Finish state MUST 不受候选测试数据影响
+
+#### Scenario: candidate Buildr Web 启动 smoke
+- **WHEN** Task Environment 为候选 Buildr Web 启动验证服务
+- **THEN** 服务 MUST 绑定 Task Validation Workspace，并将端口/进程作为 Task-owned resource 登记
+- **AND** retained Buildr Web MUST 继续绑定 canonical Workspace，且两者不得共享数据 store identity
+
+#### Scenario: 清理 validation Workspace
+- **WHEN** self-bootstrap Task 正常 cleanup 或按明确 abandon authorization cleanup
+- **THEN** Environment MUST 只删除可证明属于该 Task Validation Workspace 的 store、sidecar 与服务资源
+- **AND** MUST NOT 对 canonical Workspace database 执行 schema rollback、ledger rewrite 或数据删除
+
+### Requirement: inspect 与 Buildr Web saved GET 必须保持不同只读语义
+CLI Environment `inspect` MUST只读观察saved Plan绑定的声明、Recipe、executable、inputs与outputs；Buildr Web GET MUST只读取SQLite current。两者 MUST不执行Step、不创建或修复outputs、不替换Plan或Receipt。
+
+#### Scenario: Buildr Web刷新Environment Tab
+- **WHEN** 用户刷新Environment Tab
+- **THEN** 页面 MUST展示最近保存的Declaration、Recipe、scope与Step状态
+- **AND** GET MUST不打开Project声明或文件系统形成新结论

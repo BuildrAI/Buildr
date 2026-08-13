@@ -72,6 +72,21 @@ test('候选审计接受无需tracked Receipt且可重放到当前canonical的Ar
   assert.equal(fs.existsSync(path.join(archived, '.buildr', 'convergence-receipt.json')), false);
 });
 
+test('候选审计可重放先新增后移除且最终不存在的历史 capability', (t) => {
+  const value = fixture(t);
+  fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST bind the retained canonical change.\n');
+  const first = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-candidate-change');
+  write(path.join(first, 'specs', 'demo', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Candidate\nSystem MUST bind the retained canonical change.\n');
+  write(path.join(first, 'specs', 'ephemeral', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Temporary\nSystem MUST expose a temporary capability.\n');
+  const second = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-28-remove-ephemeral');
+  write(path.join(second, 'specs', 'ephemeral', 'spec.md'), '## REMOVED Requirements\n\n### Requirement: Temporary\n**Reason**: The temporary capability is no longer current.\n\n**Migration**: Remove it.\n\n#### Scenario: Remove temporary capability\n- **WHEN** the later Change converges\n- **THEN** the capability MUST be absent\n');
+  git(value.root, ['add', '.']);
+  git(value.root, ['commit', '-m', 'converged add then remove capability']);
+  const result = runAudit(value);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /demo associated with current candidate Archived Change deltas/);
+});
+
 test('候选审计拒绝Archived Change delta与当前canonical不匹配', (t) => {
   const value = fixture(t);
   fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST preserve a different result.\n');

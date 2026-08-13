@@ -5,15 +5,26 @@ export const VERIFICATION_EXECUTION_RECORD_OWNER = 'task-verification';
 export const VERIFICATION_EXECUTION_RECORD_KIND = 'verification-execution';
 export const VERIFICATION_EXECUTION_RECORD_PRODUCER = 'buildr.verification-command-runner/v1';
 
-const PUBLIC_STATUSES = new Set(['not-applicable', 'not-opened', 'retained', 'blocked', 'attention']);
+const PUBLIC_STATUSES = new Set(['not-applicable', 'not-opened', 'active', 'retained', 'blocked', 'attention']);
 const MAPPER_FIELDS = new Set([
-  'runId', 'executionIdentity', 'context', 'targetRoot', 'targetIdentity', 'targetStable', 'targetDrift', 'before', 'after',
+  'runId', 'executionIdentity', 'invocationIdentity', 'context', 'targetRoot', 'targetIdentity', 'targetStable', 'targetDrift', 'before', 'after',
   'projectCode', 'declarationPath', 'declarationIdentity', 'workspaceNode', 'selectedCapabilities', 'authorizedCapabilities',
   'authorizedResources', 'checks', 'outcome', 'durationMs', 'startedAt', 'finishedAt', 'diagnostic',
 ]);
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+}
+
+export function verificationInvocationIdentity({ taskId, projectCode, declarationIdentity, targetIdentity, selectedCapabilities }) {
+  return digest({
+    taskId,
+    project: projectCode,
+    declarationIdentity,
+    targetIdentity,
+    capabilities: (selectedCapabilities || []).map((item) => typeof item === 'string' ? item : item.id).sort(),
+    invocationKind: 'command',
+  });
 }
 
 function relativePortable(root, value) {
@@ -98,6 +109,7 @@ export function createVerificationExecutionRecordFiles(input) {
     schemaVersion: 'buildr.verification-execution-record-summary/v1',
     runId: input.runId,
     executionIdentity: input.executionIdentity || null,
+    invocationIdentity: input.invocationIdentity || null,
     scopeIdentity: digest({
       project: input.projectCode,
       declarationIdentity: input.declarationIdentity,
@@ -177,6 +189,8 @@ export function publicVerificationExecutionRecord(status, options = {}) {
   return {
     status,
     recordId: record?.recordId || options.recordId || null,
+    runIdentity: record?.runIdentity || options.runIdentity || null,
+    invocationIdentity: record?.invocationIdentity || options.invocationIdentity || null,
     outcome: record?.outcome || options.outcome || null,
     lifecycleStatus: record?.lifecycleStatus || options.lifecycleStatus || null,
     body: record ? {

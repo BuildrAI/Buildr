@@ -41,7 +41,7 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 
 ## 4. 处理 current 复盘
 
-用户要求处理已有复盘时，先 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Local App 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
+用户要求处理已有复盘时，先 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Buildr Web 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
 
 ### 4.1 先完成只读讨论
 

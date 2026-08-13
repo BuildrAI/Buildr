@@ -11,7 +11,7 @@ import './styles.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('缺少 #root');
 
-// Production Local App hosts a single long-lived shell; avoid StrictMode double-mount
+// Production Buildr Web hosts a single long-lived shell; avoid StrictMode double-mount
 // races with imperative legacy page renderers under browser smoke.
 createRoot(root).render(
   <ConfigProvider

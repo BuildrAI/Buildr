@@ -224,7 +224,7 @@ function normalizePolicyDeclaration(value, index) {
 export function normalizeTaskVerificationPolicy(value) {
   const policy = object(value, 'verificationPolicy');
   closed(policy, new Set(['identity', 'declarations', 'capabilities', 'coverageGaps', 'overrides']), 'verificationPolicy');
-  if (!Array.isArray(policy.declarations) || policy.declarations.length === 0) throw taskDevelopmentError('task_development_policy_declarations_empty', 'verificationPolicy.declarations 必须是非空数组。', 400, { field: 'verificationPolicy.declarations' });
+  if (!Array.isArray(policy.declarations)) throw taskDevelopmentError('task_development_field_invalid', 'verificationPolicy.declarations 必须是数组。', 400, { field: 'verificationPolicy.declarations' });
   const declarations = policy.declarations.map(normalizePolicyDeclaration).sort((left, right) => left.project.localeCompare(right.project));
   if (new Set(declarations.map((item) => item.project)).size !== declarations.length) throw taskDevelopmentError('task_development_value_duplicate', 'verificationPolicy.declarations Project 不能重复。', 400, { field: 'verificationPolicy.declarations' });
   if (!Array.isArray(policy.capabilities)) throw taskDevelopmentError('task_development_field_invalid', 'verificationPolicy.capabilities 必须是数组。', 400, { field: 'verificationPolicy.capabilities' });
@@ -259,6 +259,17 @@ export function normalizeTaskVerificationPolicy(value) {
     };
   }).sort((left, right) => `${left.project}/${left.capability}/${left.scope}`.localeCompare(`${right.project}/${right.capability}/${right.scope}`));
   if (new Set(overrides.map((item) => `${item.project}/${item.capability}/${item.scope}`)).size !== overrides.length) throw taskDevelopmentError('task_development_value_duplicate', 'verificationPolicy.overrides 不能重复。', 400, { field: 'verificationPolicy.overrides' });
+  const workspaceShape = declarations.length === 0
+    && capabilities.length === 0
+    && coverageGaps.length === 1
+    && coverageGaps[0].scope === 'workspace'
+    && overrides.length === 0;
+  if (declarations.length === 0 && !workspaceShape) {
+    throw taskDevelopmentError('task_development_policy_workspace_shape_invalid', '空 declarations 只允许与空 capabilities、唯一 workspace coverage gap 和空 overrides 组成仅工作区 policy。', 400, { field: 'verificationPolicy' });
+  }
+  if (declarations.length > 0 && coverageGaps.some((item) => item.scope === 'workspace')) {
+    throw taskDevelopmentError('task_development_policy_workspace_shape_invalid', 'workspace coverage gap 只允许用于空 declarations 的仅工作区 policy。', 400, { field: 'verificationPolicy.coverageGaps' });
+  }
   const payload = { declarations, capabilities, coverageGaps, overrides };
   const identity = taskDevelopmentDigest(payload);
   assertDerivedIdentity(policy.identity, identity, 'verificationPolicy.identity');

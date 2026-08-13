@@ -256,12 +256,11 @@ export function registerApplicationRuntime(runtime) {
       },
     });
     const workspaceRecord = runtime.readWorkspaceRecord(targetRoot);
-    const canAdoptCurrentNode = workspaceRecord.workspace.runtime?.node?.version === process.versions.node;
-    const workspaceNode = runtime.ensureWorkspaceNodeRuntime(workspaceRecord.workspace, { adoptCurrent: canAdoptCurrentNode });
+    const workspaceNode = runtime.ensureWorkspaceNodeRuntime(workspaceRecord.workspace);
     const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
+    const productInvocation = runtime.currentProductInvocation();
     const finalDoctor = runFinalDoctor({
-      executable: process.execPath,
-      cliPath: path.join(productRoot(), 'bin', 'buildr.mjs'),
+      invocation: productInvocation,
       agent,
       targetRoot,
       cwd: productRoot(),

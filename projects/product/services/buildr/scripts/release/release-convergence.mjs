@@ -1,9 +1,18 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import {
+  releaseAuthorityEvidenceMaxAgeMs,
+  releasePublishAuthority,
+  samePublishAuthority,
+  sha256,
+} from './release-authority.mjs';
+
+const releaseWorkflowPath = '.github/workflows/publish.yml';
 
 function runGit(repo, args, { allowFailure = false } = {}) {
   const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
@@ -25,6 +34,26 @@ function isAncestor(repo, ancestor, descendant) {
   return runGit(repo, ['merge-base', '--is-ancestor', ancestor, descendant], { allowFailure: true }).status === 0;
 }
 
+function fileAt(repo, ref, file) {
+  const result = runGit(repo, ['show', `${ref}:${file}`], { allowFailure: true });
+  return result.status === 0 ? result.stdout : null;
+}
+
+export function checkReleaseAuthorityEvidence({ evidence, sourceCommit, workflowSource, nowMs = Date.now() }) {
+  const findings = [];
+  if (!evidence) return [{ code: 'release_authority_evidence_missing', expected: 'buildr.release-authority-preflight/v1 ready evidence', actual: null }];
+  if (evidence.schemaVersion !== 'buildr.release-authority-preflight/v1') findings.push({ code: 'release_authority_evidence_schema_mismatch', expected: 'buildr.release-authority-preflight/v1', actual: evidence.schemaVersion ?? null });
+  if (evidence.status !== 'ready' || !Array.isArray(evidence.findings) || evidence.findings.length !== 0) findings.push({ code: 'release_authority_not_ready', expected: 'ready with zero findings', actual: { status: evidence.status ?? null, findingCount: Array.isArray(evidence.findings) ? evidence.findings.length : null } });
+  if (!samePublishAuthority(evidence.expected, releasePublishAuthority)) findings.push({ code: 'release_authority_tuple_mismatch', expected: releasePublishAuthority, actual: evidence.expected ?? null });
+  if (evidence.sourceCommit !== sourceCommit) findings.push({ code: 'release_authority_source_commit_mismatch', expected: sourceCommit, actual: evidence.sourceCommit ?? null });
+  const observedAtMs = Date.parse(evidence.observedAt ?? '');
+  const evidenceAgeMs = nowMs - observedAtMs;
+  if (!Number.isFinite(observedAtMs) || evidenceAgeMs < -60_000 || evidenceAgeMs > releaseAuthorityEvidenceMaxAgeMs) findings.push({ code: 'release_authority_evidence_stale', expected: `observed within ${releaseAuthorityEvidenceMaxAgeMs}ms`, actual: evidence.observedAt ?? null });
+  const workflowDigest = typeof workflowSource === 'string' ? sha256(workflowSource) : null;
+  if (evidence.workflow?.path !== releaseWorkflowPath || evidence.workflow?.sha256 !== workflowDigest) findings.push({ code: 'release_authority_workflow_mismatch', expected: { path: releaseWorkflowPath, sha256: workflowDigest }, actual: evidence.workflow ?? null });
+  return findings;
+}
+
 function releaseTaskRefs(repo, version) {
   const result = runGit(repo, ['for-each-ref', '--format=%(refname) %(objectname)', `refs/heads/tasks/release-${version}`, `refs/remotes/*/tasks/release-${version}`]);
   return result.stdout.trim().split('\n').filter(Boolean).map((line) => {
@@ -43,6 +72,8 @@ export function checkReleaseConvergence({
   main = 'main',
   dev = 'dev',
   fetch = true,
+  authorityEvidence = null,
+  nowMs = Date.now(),
 }) {
   if (!repo || !version || !candidateBase || !candidateTree) throw new Error('repo, version, candidateBase and candidateTree are required');
   if (!['pre-main', 'post-main'].includes(stage)) throw new Error(`Unsupported release convergence stage: ${stage}`);
@@ -72,6 +103,12 @@ export function checkReleaseConvergence({
     if (trees.main !== candidateTree) findings.push({ code: 'main_tree_mismatch', expected: candidateTree, actual: trees.main });
     if (versions.main !== version) findings.push({ code: 'main_version_mismatch', expected: version, actual: versions.main });
     if (!isAncestor(repo, mainRef, devRef)) findings.push({ code: 'main_not_ancestor_of_dev', main: refs.main, dev: refs.dev });
+    findings.push(...checkReleaseAuthorityEvidence({
+      evidence: authorityEvidence,
+      sourceCommit: refs.main,
+      workflowSource: fileAt(repo, mainRef, releaseWorkflowPath),
+      nowMs,
+    }));
   }
   return {
     schemaVersion: 'buildr.release-convergence/v1',
@@ -105,6 +142,7 @@ function parseArgs(argv) {
     remote: options.remote || 'origin',
     main: options.main || 'main',
     dev: options.dev || 'dev',
+    authorityEvidence: options['authority-evidence'] ? JSON.parse(fs.readFileSync(options['authority-evidence'], 'utf8')) : null,
   };
 }
 

@@ -443,7 +443,7 @@ export function registerApplicationPackageMaintenance(runtime) {
     parseProjectsYaml,
     parseRulesManifestYaml,
     path,
-    process,
+    currentProductInvocation: runtime.currentProductInvocation, productInvocationArgs: runtime.productInvocationArgs,
     readSkillManifest,
     renderClaudeCodeRules,
     resolveRuleScope,

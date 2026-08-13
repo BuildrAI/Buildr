@@ -9,6 +9,7 @@ import test from 'node:test';
 
 import { bridgeMainToDev } from '../../scripts/release/bridge-main-to-dev.mjs';
 import { checkReleaseConvergence } from '../../scripts/release/release-convergence.mjs';
+import { releasePublishAuthority, sha256 } from '../../scripts/release/release-authority.mjs';
 
 function differentTree(tree) {
   return `${tree.slice(0, -1)}${tree.endsWith('0') ? '1' : '0'}`;
@@ -24,7 +25,24 @@ function writeVersion(cwd, version, marker) {
   fs.mkdirSync(path.join(cwd, 'projects', 'product', 'services', 'buildr'), { recursive: true });
   fs.writeFileSync(path.join(cwd, 'projects', 'product', 'services', 'buildr', 'package.json'), `${JSON.stringify({ name: '@buildr-ai/buildr', version })}\n`);
   fs.writeFileSync(path.join(cwd, 'candidate.txt'), `${marker}\n`);
+  fs.mkdirSync(path.join(cwd, '.github', 'workflows'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.github', 'workflows', 'publish.yml'), 'name: fixture\n');
   git(cwd, 'add', '.');
+}
+
+function authorityEvidence(repo, overrides = {}) {
+  const sourceCommit = git(repo, 'rev-parse', 'origin/main');
+  const workflowSource = git(repo, 'show', 'origin/main:.github/workflows/publish.yml');
+  return {
+    schemaVersion: 'buildr.release-authority-preflight/v1',
+    status: 'ready',
+    expected: releasePublishAuthority,
+    sourceCommit,
+    workflow: { path: '.github/workflows/publish.yml', sha256: sha256(`${workflowSource}\n`) },
+    findings: [],
+    observedAt: new Date().toISOString(),
+    ...overrides,
+  };
 }
 
 function fixture() {
@@ -65,8 +83,16 @@ test('release convergence requires dev candidate before main and ancestry after 
   assert.equal(beforeBridge.ok, false);
   assert.equal(beforeBridge.findings.some((item) => item.code === 'main_not_ancestor_of_dev'), true);
   bridgeMainToDev({ repo: data.work, version: '0.1.0-rc.5', candidateTree: data.candidateTree });
-  const afterBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });
+  const afterBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main', authorityEvidence: authorityEvidence(data.work) });
   assert.equal(afterBridge.ok, true);
+
+  const stale = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main', authorityEvidence: authorityEvidence(data.work, { sourceCommit: 'b'.repeat(40) }) });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.findings.some((item) => item.code === 'release_authority_source_commit_mismatch'), true);
+
+  const expired = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main', authorityEvidence: authorityEvidence(data.work, { observedAt: '2026-01-01T00:00:00.000Z' }) });
+  assert.equal(expired.ok, false);
+  assert.equal(expired.findings.some((item) => item.code === 'release_authority_evidence_stale'), true);
 });
 
 test('release convergence rejects stale version, tree and unintegrated release task', (t) => {

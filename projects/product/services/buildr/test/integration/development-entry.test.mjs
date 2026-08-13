@@ -7,8 +7,6 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
-
 // Integration: every case crosses a real launcher process and temporary filesystem boundary.
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -29,12 +27,14 @@ echo "${marker}|$*"
 function run(entry, args, env) {
   const cwd = env.BUILDR_TEST_CWD || os.tmpdir();
   const executionEnv = { ...env };
+  const inheritedEnv = { ...process.env };
   delete executionEnv.BUILDR_TEST_CWD;
+  delete inheritedEnv.BUILDR_NODE;
   return spawnSync(entry, args, {
     encoding: 'utf8',
     cwd,
     env: {
-      ...process.env,
+      ...inheritedEnv,
       ...executionEnv,
     },
   });
@@ -52,34 +52,42 @@ test('Project bridge 使用 PATH 中首个兼容 Node 启动 Service CLI', { ski
   assert.match(result.stdout, /^current\|.*bin\/buildr\.mjs doctor --json\n$/u);
 });
 
-test('已初始化 Workspace 固定使用声明的受管 Node 并忽略 PATH Node', { skip: process.platform === 'win32' }, () => {
+test('已初始化 Workspace 的 development main process 保持使用 development host Node', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-workspace-'));
   const workspace = path.join(fixture, 'workspace');
-  const appData = path.join(fixture, 'app-data');
-  const managed = workspaceNodeRuntimePaths('24.15.0', { dataRoot: appData }).node;
   const pathNode = path.join(fixture, 'path/node');
   fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
   fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 24.15.0\n');
-  fakeNode(managed, '24.15.0', 'managed');
-  fakeNode(pathNode, '24.0.0', 'path');
-  const result = run(runner, ['--help'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: appData, PATH: `${path.dirname(pathNode)}:/usr/bin:/bin` });
+  fakeNode(pathNode, '24.18.0', 'development-host');
+  const result = run(runner, ['--help'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(pathNode)}:/usr/bin:/bin` });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^managed\|.*bin\/buildr\.mjs --help\n$/u);
+  assert.match(result.stdout, /^development-host\|.*bin\/buildr\.mjs --help\n$/u);
 });
 
-test('受管 Node 缺失时仅 doctor/sync 可使用 bootstrap Node', { skip: process.platform === 'win32' }, () => {
+test('runner-only identity inspection返回launcher、CLI entry和实际Node', { skip: process.platform === 'win32' }, () => {
+  const result = run(runner, [], {
+    PATH: path.dirname(process.execPath),
+    BUILDR_NODE: process.execPath,
+    BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const identity = JSON.parse(result.stdout);
+  assert.equal(identity.schemaVersion, 'buildr.development-cli-identity/v1');
+  assert.equal(identity.launcher, runner);
+  assert.equal(identity.cliEntry, path.join(serviceRoot, 'bin', 'buildr.mjs'));
+  assert.equal(identity.nodeExecutable, process.execPath);
+});
+
+test('Workspace Node 缺失不会把 development main process 切换或阻断', { skip: process.platform === 'win32' }, () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-recovery-'));
   const workspace = path.join(fixture, 'workspace');
   const bootstrap = path.join(fixture, 'path/node');
   fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
   fs.writeFileSync(path.join(workspace, '.buildr/workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: f2f40b71-2382-5906-82bd-76a7927b59f3\nname: Demo\ndescription: Demo\nruntime:\n  node:\n    version: 24.15.0\n');
   fakeNode(bootstrap, '24.15.0', 'bootstrap');
-  const blocked = run(runner, ['project', 'create', 'demo'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(bootstrap)}:/usr/bin:/bin` });
-  assert.equal(blocked.status, 1);
-  assert.match(blocked.stderr, /Workspace Node runtime 24\.15\.0 is unavailable.*sync/u);
-  const recovery = run(runner, ['doctor', '--json'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(bootstrap)}:/usr/bin:/bin` });
-  assert.equal(recovery.status, 0, recovery.stderr);
-  assert.match(recovery.stdout, /^bootstrap\|.*doctor --json\n$/u);
+  const main = run(runner, ['project', 'create', 'demo'], { BUILDR_TEST_CWD: workspace, BUILDR_APP_DATA_DIR: path.join(fixture, 'app-data'), PATH: `${path.dirname(bootstrap)}:/usr/bin:/bin` });
+  assert.equal(main.status, 0, main.stderr);
+  assert.match(main.stdout, /^bootstrap\|.*bin\/buildr\.mjs project create demo\n$/u);
 });
 
 test('BUILDR_NODE 优先于 PATH 且不兼容 override 会 fail fast', { skip: process.platform === 'win32' }, () => {
@@ -136,6 +144,7 @@ test('开发启动器最低版本与 package engines 保持一致', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8'));
   const source = fs.readFileSync(runner, 'utf8');
   assert.equal(packageJson.engines.node, '>=24.15.0 <25');
-  assert.match(source, /minimum_node_version=24\.15\.0/u);
+  assert.match(source, /supported_node_range='>=24\.15\.0 <25'/u);
   assert.match(source, /candidate_major" -eq 24/u);
+  assert.doesNotMatch(source, /workspace\.yml|Workspace Node runtime|BUILDR_NODE_RUNTIME_DATA_DIR/u);
 });

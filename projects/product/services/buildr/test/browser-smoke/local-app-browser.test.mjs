@@ -67,7 +67,7 @@ function writeChange(projectRoot, relative, title) {
   fs.mkdirSync(path.join(changeRoot, 'specs', 'demo-capability'), { recursive: true });
   fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
   fs.writeFileSync(path.join(changeRoot, 'brief.md'), `# ${title}\n\n## 一句话摘要\n\n普通用户先从这里了解变更。\n\n## 核心流程\n\n- 查看 Brief\n- 深入技术产物\n`);
-  fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${title}\n\n验证本机应用。\n`);
+  fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${title}\n\n验证 Buildr Web。\n`);
   fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\nBrowser smoke fixture.\n');
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 准备 fixture\n- [ ] 验证页面\n');
   fs.writeFileSync(path.join(changeRoot, 'specs', 'demo-capability', 'spec.md'), '# Demo Capability Specification\n\n## Purpose\n\nFixture.\n\n## Requirements\n');
@@ -165,7 +165,7 @@ capabilities:
     applicability:
       paths: ["**"]
     proves:
-      - Task Verification Result is visible in Local App
+      - Task Verification Result is visible in Buildr Web
     requiredForDelivery: true
 `);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
@@ -177,11 +177,11 @@ capabilities:
   runGit(root, ['commit', '-qm', 'browser fixture baseline']);
   runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--target', root]);
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
-  runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Local App 轻量查询客户端', '--parent', 'browser-task', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Buildr Web 轻量查询客户端', '--parent', 'browser-task', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   for (const [taskId, title] of [['browser-delivered', '已交付浏览器任务'], ['browser-stale', '目标已变化浏览器任务']]) {
     runBuildr(['task', 'create', taskId, '--title', title, '--intent', '验证 terminal delivery 与 live applicability 分离', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
     const planFile = path.join(path.dirname(root), `${taskId}-environment-plan.json`);
-    fs.writeFileSync(planFile, `${JSON.stringify({ schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Local App facts.', steps: [] }] })}\n`);
+    fs.writeFileSync(planFile, `${JSON.stringify({ schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] })}\n`);
     runBuildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, ...(taskId === 'browser-delivered' ? ['--shared'] : []), '--target', root], controllerCli);
     runBuildr(['task', 'review', 'record', taskId, '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   }
@@ -226,7 +226,7 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
   runtime.recordTaskVerification(root, taskId, {
     targetIdentity,
     targetSummary: '浏览器交付目标',
-    capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['Local App 验证投影已通过。'] }],
+    capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['Buildr Web 验证投影已通过。'] }],
     coverageGaps: [],
     conclusion: { outcome: 'passed', summary: '浏览器验证已通过。' },
     declarationRoot: root,
@@ -329,7 +329,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true });
 }
 
-test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 180_000 : 45_000 }, async (t) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 180_000 : 45_000 }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
   const workspaceRoot = path.join(base, 'workspace');
   let browser;
@@ -457,7 +457,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.goto(url);
     await page.locator('#workspace-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#empty-add-workspace').count(), 1);
-    assert.equal(await page.getByRole('button', { name: '让 Agent 创建工作空间' }).count(), 1);
+    assert.equal(await page.locator('#empty-create-workspace').count(), 1);
     assert.equal(await page.getByRole('button', { name: '稍后处理' }).count(), 1);
     current = runtime.registerLocalWorkspace({ rootPath: workspaceRoot, revision: current.revision });
     runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: current.revision });
@@ -472,7 +472,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.waitForURL(`${workspaceUrl}/articles/browser-article`);
     await page.locator('#publication-title').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#publication-title').innerText(), '浏览器测试文章');
-    assert.match(await page.locator('#publication-targets').innerText(), /Local App/);
+    assert.match(await page.locator('#publication-targets').innerText(), /Buildr Web/);
     assert.equal(await page.locator('.publication-content img').count(), 1);
     assert.match(await page.locator('.publication-content img').getAttribute('src'), /\/api\/v1\/workspaces\/[^/]+\/publications\/browser-article\/assets\/assets\/cover\.png$/);
     await page.locator('.ant-segmented-item').filter({ hasText: '原文' }).click();
@@ -524,37 +524,48 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
   });
 
-  if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情与编辑分离', async () => {
+  if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情展示基础事实与文档', async () => {
     await page.goto(`${workspaceUrl}/services?project=demo`);
     const projectSelect = page.locator('#service-project-select');
     await unique(projectSelect, '服务所属项目过滤器');
     assert.match(await antdSelectDisplay(page, 'service-project-select'), /demo/);
     const row = page.locator('#service-table-body tr').filter({ hasText: '演示服务' });
+    await row.waitFor({ state: 'visible' });
     await unique(row, '服务行');
     await capture(page, 'local-app-services-desktop.png');
     const detail = row.getByRole('link', { name: '详情', exact: true });
     await unique(detail, '服务详情操作');
     await unique(row.getByRole('link', { name: '项目', exact: true }), '服务所属项目操作');
+    await unique(row.getByRole('button', { name: '编辑', exact: true }), '服务目录编辑操作');
     await detail.click();
     await page.waitForURL(`${workspaceUrl}/services/demo/api`);
     assert.equal(await page.locator('#service-detail-name').innerText(), '演示服务');
-    assert.equal(await page.locator('#service-project-code').textContent(), 'demo');
+    assert.equal(await page.locator('#service-detail-description').innerText(), '浏览器测试服务');
     assert.equal(await page.locator('#service-detail-type').innerText(), '后端');
     assert.equal(await page.locator('#app-view input, #app-view textarea').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.detail-facts > div').count(), 6);
+    assert.equal(await page.locator('.detail-facts > div').count(), 3);
     assert.equal(await page.locator('[data-nav="services"]').evaluate((item) => item.classList.contains('active')), true);
-    await page.getByRole('link', { name: '编辑服务', exact: true }).first().click();
-    await page.waitForURL(`${workspaceUrl}/services/demo/api/edit`);
-    assert.equal(await page.locator('.read-only-section .technical-details').count(), 1);
-    assert.equal(await page.getByText('技术信息', { exact: true }).count(), 1);
-    await page.locator('#service-description').fill('已在独立详情页更新');
+    await page.waitForFunction(() => {
+      const body = document.getElementById('service-document-README-md')?.textContent || '';
+      return !body.includes('正在读取') && /Demo API|README/.test(body);
+    });
+    assert.match(await page.locator('#service-document-README-md').innerText(), /Demo API|README/);
+    await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).click();
+    await page.waitForFunction(() => {
+      const pathLabel = document.getElementById('service-document-path')?.textContent?.trim();
+      const body = document.getElementById('service-document-AGENTS-md')?.textContent || '';
+      return pathLabel === 'AGENTS.md' && !body.includes('正在读取') && /未找到 AGENTS\.md/.test(body);
+    });
+    await page.getByRole('button', { name: '编辑服务', exact: true }).click();
+    await page.locator('#service-edit-form').waitFor({ state: 'visible' });
+    assert.equal(await page.url(), `${workspaceUrl}/services/demo/api`);
+    await page.locator('#service-description').fill('已在弹框中更新');
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('service-save-state')?.textContent === '保存成功');
-    assert.equal(await page.locator('#service-save-state').innerText(), '保存成功');
-    await page.reload();
-    assert.equal(await page.locator('#service-description').inputValue(), '已在独立详情页更新');
+    await page.waitForFunction(() => document.getElementById('service-detail-description')?.textContent === '已在弹框中更新');
+    assert.equal(await page.locator('#service-detail-description').innerText(), '已在弹框中更新');
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
   });
 
   if (selected('service')) await t.test('390px 下目录与详情不产生页面横向溢出', async () => {
@@ -565,7 +576,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.getByRole('link', { name: '详情', exact: true }).click();
     await page.locator('#service-detail-name').waitFor({ state: 'visible' });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await unique(page.getByRole('link', { name: '编辑服务', exact: true }).first(), '服务详情编辑操作');
+    await unique(page.getByRole('button', { name: '编辑服务', exact: true }), '服务详情编辑操作');
     await capture(page, 'local-app-service-detail-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });
   });
@@ -590,7 +601,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     const deliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
     writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
-    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Local App facts.', steps: [] }] } });
+    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
     assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
     prepareDevelopmentFixture(runtime, workspaceRoot);
     runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成', noChange: false });
@@ -747,6 +758,8 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     await page.locator('#task-execution-record-detail').waitFor({ state: 'visible' });
     await page.locator('#task-execution-record-detail').getByRole('button', { name: /stdout\.txt/ }).click();
     await page.waitForFunction(() => document.querySelector('.execution-record-body pre')?.textContent?.includes('browser verification failed output'));
+    await page.locator('.ant-modal-close').click();
+    await page.locator('.ant-modal-wrap').waitFor({ state: 'hidden' });
     await page.locator('#task-verification-execution-records').click();
     await page.locator('#task-execution-record-filter-verification[aria-pressed="true"]').waitFor({ state: 'visible' });
     await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 2);
@@ -758,7 +771,7 @@ test(`本机应用浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has(
     assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
     assert.match(await page.locator('#task-verification-result').innerText(), /sha256-/);
     assert.match(await page.locator('#task-verification-result').innerText(), /浏览器验证已通过/);
-    assert.match(await page.locator('#task-verification-result').innerText(), /demo\/demo.browser · 已通过 · Local App 验证投影已通过/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /demo\/demo.browser · 已通过 · Buildr Web 验证投影已通过/);
     await page.getByRole('button', { name: '交给智能体验证', exact: true }).click();
     await page.getByRole('button', { name: '生成验证指令', exact: true }).click();
     await page.locator('#action-prompt-output').waitFor({ state: 'visible' });

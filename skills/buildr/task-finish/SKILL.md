@@ -14,7 +14,7 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 3. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
 4. 根据最终交付内容与Workspace、Project、Service、repository约定形成完整commit message。subject必须描述内容，优先使用简洁Conventional Commits；Task ID由产品写入trailer，不得使用“交付 + Task ID”占位主题。调用前向用户展示subject，正文存在时一并展示。
 5. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
-6. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。
+6. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。仅工作区Task也必须先有current Candidate、Completion Review、proceed decision与Development handoff；Finish只消费handoff，不解释workspace gap或重新接受风险。
    - Child承担Parent Contribution时，handoff还必须包含与current Parent Plan和planned binding一致的Contribution Handoff。
    - Parent采用Parent Plan时，必须已记录current plan identity的显式最终集成验收；Child全部完成本身不满足该条件。
 
@@ -23,7 +23,7 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 从 canonical retained Workspace 的可信 Environment Manager 调用：
 
 ```bash
-buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --json
+buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json
 ```
 
 直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding，不猜测contract版本，也不为调用创建或修改execution capsule。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
@@ -36,15 +36,15 @@ preflight → prepare → verify → deliver → cleanup
 
 五阶段由产品连续执行，Agent不编排阶段、补evidence或设计recovery。
 
-完整message只在首次创建run时提供。产品规范化换行、确定性加入`Buildr-Task: <task-id>` trailer并冻结identity；公开Result和Execution Record只投影subject与identity。已有run的resume命令不得再次提供或覆盖message。
+完整message只在首次创建run时提供并冻结identity；公开结果只投影subject与identity，resume不得覆盖。新handoff必须以新message创建新run。旧run仅在preflight且无carrier、lease、delivery、retained、cleanup事实时失效；否则保留现场并返回identity conflict，不删除carrier或换绑。
 
 每次真正执行的首次run或resume会先以独立invocation identity预留`task-finish/finish-diagnostics` Execution Record容量；backpressure时五阶段与所有Finish owner副作用都不启动。产品在invocation期间把timeline、diagnostics和受控stdout/stderr写入独立transient files，record retained后只清理该diagnostics目录。Delivery Carrier、lease、resume与cleanup资源仍由Finish current独立管理；Agent不得用record恢复或删除这些资源。
 
-- `preflight` 只核对 current handoff、Environment、carrier adapter 与 retained target；activation不读取Project或Service声明。
+- `preflight`核对current handoff、Environment、carrier adapter与retained target；preflight、prepare、verify、deliver及resume都由Development精确核对run冻结的handoff、Candidate、generation与Content Target identity，不回查历史handoffs。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
-- Agent只在carrier完成交付适配（Delivery Adaptation）；最终carrier HEAD必须保持run冻结的完整message，否则resume保持blocked。resume核验ownership、baseline、source/handoff、cleanliness、message identity与bounded compatibility checks。checks不写Task Verification Result，`formalVerificationExecutions` 必须为 `0`。
+- Agent只在carrier完成交付适配（Delivery Adaptation）。非零适配HEAD必须保持冻结message；若审查确认baseline已满足任务且正确适配为零tree delta，保持clean baseline carrier并在matching resume传入`--accept-zero-delta-adaptation`，不得创建空提交或无关差异。确认不替代token或Buildr语义证明；resume仍核验ownership、baseline、source/handoff、cleanliness、适用message与bounded compatibility checks，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
-- `deliver`只做fast-forward、普通push/回读、类型化runtime activation与run绑定的指定Agent Doctor。Task Contribution命中Workspace根runtime source时render，其他为none；Doctor要求Workspace health ready，失败时保留已经完成的remote readback、partial delivery与精确resume事实并停止cleanup。通用Product executor不读取Project/Service配置，不执行sync，不安装Buildr development CLI或Local App，也不接受任意命令字符串。
+- `deliver`只做fast-forward、普通push/回读、按冻结Task Contribution paths选择的runtime activation与指定Agent Doctor；零差异carrier的actual changed paths为空但保留activation paths。Doctor失败时保留remote readback、partial delivery与精确resume并停止cleanup。通用executor不读Project/Service配置、不sync、不安装CLI/Buildr Web，也不接受任意命令字符串。
 - render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
 - `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 
@@ -53,13 +53,13 @@ target前进时先证明carrier ancestry及changed paths；完整包含则跳过
 恢复命令：
 
 ```bash
-buildr task finish run --task <task-id> --run <run-id> --resume <product-token> --target <canonical-workspace> --json
+buildr task finish run --task <task-id> --run <run-id> --resume <product-token> [--accept-zero-delta-adaptation] --target <canonical-workspace> --detail compact --json
 ```
 
 只读查看：
 
 ```bash
-buildr task finish inspect --run <run-id> --target <canonical-workspace> --json
+buildr task finish inspect --run <run-id> --target <canonical-workspace> --detail compact --json
 ```
 
 ## 禁止事项
@@ -72,7 +72,7 @@ Finish不改变Candidate/generation、Development Receipt、Change或原Task wor
 - Result引用Development handoff、Candidate/generation、Content Target、Task Contribution、Delivery Baseline和Delivery Carrier；
 - Result标记`deterministic-reuse`或`agent-reviewed-delivery-adaptation`，后者不声称Buildr证明语义等价；
 - carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
-- Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留逐路径证明、原carrier与最新后代final ref；
+- Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留适用的逐路径或零差异Agent review/baseline/ref/activation paths证明；
 - `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。
 
 `run`结果的additive `executionRecord`必须可解释：`retained`表示本invocation正文已保留；`attention`表示record或diagnostics cleanup需owner后续处理，但不得据此回滚、改写或重跑已经成立的Finish delivery/cleanup/Task终态；`blocked`表示容量门禁在五阶段前停止；invalid或complete no-op为`not-opened`。`task finish inspect`只读Finish current/terminal，不列举records。

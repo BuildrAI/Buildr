@@ -120,7 +120,35 @@ function generateRunId(identity, clock) {
   return `${identity.task}-${stamp}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
-export function createFinishRun({ root, identity, deliveryCommit = null, runId = null, clock = Date.now, runtime = null }) {
+function normalizeDevelopmentHandoff(handoff, identity) {
+  if (handoff == null) return null;
+  const matches = handoff?.identity === identity.handoffIdentity
+    && handoff?.candidate?.identity === identity.candidateIdentity
+    && handoff?.candidate?.generation === identity.candidateGeneration
+    && handoff?.candidate?.contentTargetIdentity === identity.contentTargetIdentity;
+  if (!matches) {
+    const error = new Error('Task Finish Development handoff snapshot does not match the run identity.');
+    Object.assign(error, { code: 'task_finish.development_handoff_identity_mismatch' });
+    throw error;
+  }
+  return clone(handoff);
+}
+
+function currentRunIdentityConflict(current, normalized) {
+  const error = new Error(`Task ${normalized.task} already has a current Finish run with a different identity.`);
+  Object.assign(error, {
+    code: 'task_finish.current_run_identity_conflict',
+    details: {
+      taskId: normalized.task,
+      currentRunId: current.run.runId,
+      currentIdentityDigest: current.run.identityDigest,
+      requestedIdentityDigest: sha256(normalized),
+    },
+  });
+  return error;
+}
+
+export function createFinishRun({ root, identity, deliveryCommit = null, developmentHandoff = null, runId = null, clock = Date.now, runtime = null }) {
   if (deliveryCommit?.identity && identity?.deliveryCommitIdentity && deliveryCommit.identity !== identity.deliveryCommitIdentity) throw new Error('Task Finish delivery commit identity does not match the run identity.');
   const normalized = normalizeIdentity({
     ...identity,
@@ -129,7 +157,10 @@ export function createFinishRun({ root, identity, deliveryCommit = null, runId =
   const actualRunId = runId || generateRunId(normalized, clock);
   const sqlite = requireTaskFinishRuntime(runtime, 'run persistence');
   const current = sqlite.readTaskFinishRunPersistence(root, { taskId: normalized.task }, { optional: true });
-  if (current) return current.run;
+  if (current) {
+    if (current.run.identityDigest !== sha256(normalized)) throw currentRunIdentityConflict(current, normalized);
+    return current.run;
+  }
   const createdAt = now(clock);
   return clone({
     schemaVersion: FINISH_RUN_SCHEMA,
@@ -143,6 +174,7 @@ export function createFinishRun({ root, identity, deliveryCommit = null, runId =
     invocations: 0,
     productCommandObservations: 0,
     deliveryCommit: clone(deliveryCommit),
+    developmentHandoff: normalizeDevelopmentHandoff(developmentHandoff, normalized),
     deliveryCarrier: null,
     equivalence: null,
     delivery: null,
@@ -169,15 +201,15 @@ function resumableRunCandidates(root, identity, runtime = null) {
   return ['blocked', 'cleanup_pending'].includes(current?.run?.status) && current.run.identityDigest === sha256(normalizeIdentity(identity)) ? [current.run] : [];
 }
 
-export function resolveFinishRun({ root, identity, deliveryCommit = null, runId = null, resumeToken = null, clock = Date.now, runtime = null }) {
+export function resolveFinishRun({ root, identity, deliveryCommit = null, developmentHandoff = null, runId = null, resumeToken = null, clock = Date.now, runtime = null }) {
   if (runId) {
     const run = readFinishRun({ root, runId, runtime });
-    if (run.identityDigest !== sha256(normalizeIdentity(identity))) throw new Error('Task Finish run identity does not match the requested task/candidate/target.');
+    if (run.identityDigest !== sha256(normalizeIdentity(identity))) throw currentRunIdentityConflict({ run }, normalizeIdentity(identity));
     if (resumeToken && run.resume?.token !== resumeToken) throw new Error('Task Finish resume token does not match the current blocked state.');
     return run;
   }
   const reusable = resumableRunCandidates(root, identity, runtime).find((run) => !resumeToken || run.resume?.token === resumeToken);
-  return reusable || createFinishRun({ root, identity, deliveryCommit, clock, runtime });
+  return reusable || createFinishRun({ root, identity, deliveryCommit, developmentHandoff, clock, runtime });
 }
 
 function normalizeFailure(value, phaseId, fallbackCode = 'task-finish.phase-failed') {

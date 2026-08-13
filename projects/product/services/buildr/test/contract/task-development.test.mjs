@@ -31,7 +31,7 @@ test('Candidate identity 不包含 Result 或 Delivery Carrier，handoff 才绑�
   assert.match(handoffBody, /normalizedDecision/);
 });
 
-test('不暴露 public Development CLI，Local App 只读投影复用 Application inspect authority', () => {
+test('不暴露 public Development CLI，Buildr Web 只读投影复用 Application inspect authority', () => {
   const registry = read('src/interfaces/cli/registry.mjs');
   const help = read('src/interfaces/cli/help.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
@@ -43,8 +43,8 @@ test('不暴露 public Development CLI，Local App 只读投影复用 Applicatio
   assert.doesNotMatch(server, /runtime\.(?:observe|record|freeze|decide|create)TaskDevelopment/);
   const readWorker = read('src/interfaces/local-app/http/read-worker.mjs');
   assert.match(readWorker, /development:\s*'inspectTaskDevelopmentView'/);
-  assert.match(skill, /Local App只消费Application `inspect`的只读投影/);
-  assert.doesNotMatch(skill, /没有 Local App 专业投影/);
+  assert.match(skill, /Buildr Web只消费Application `inspect`的只读投影/);
+  assert.doesNotMatch(skill, /没有 Buildr Web 专业投影/);
   assert.equal(fs.existsSync(path.join(root, 'src/interfaces/internal/task-development-driver.mjs')), true);
   const driver = read('src/interfaces/internal/task-development-driver.mjs');
   assert.match(driver, /buildr\.task-development-driver-profile\/v1/);

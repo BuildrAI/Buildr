@@ -161,7 +161,7 @@ test('renderMarkdown 支持标题层级偏移，避免详情页重复 h1', async
 test('renderMarkdown 渲染行内代码、围栏代码块、链接与表格', async () => {
   const { renderMarkdown } = await loadRenderer();
   const root = renderMarkdown([
-    '使用 `buildr app`。',
+    '使用 `buildr web`。',
     '',
     '```js',
     'const x = 1;',
@@ -173,7 +173,7 @@ test('renderMarkdown 渲染行内代码、围栏代码块、链接与表格', as
     '| --- | --- |',
     '| 甲 | 乙 |',
   ].join('\n'));
-  assert.equal(root.querySelector('code')?.textContent, 'buildr app');
+  assert.equal(root.querySelector('code')?.textContent, 'buildr web');
   assert.equal(root.querySelector('pre code')?.textContent, 'const x = 1;');
   const link = root.querySelector('a');
   assert.equal(link?.textContent, '文档');

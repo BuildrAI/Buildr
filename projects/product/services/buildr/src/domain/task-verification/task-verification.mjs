@@ -77,9 +77,7 @@ function normalizeTarget(value) {
 }
 
 function normalizeDeclarations(value) {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw taskVerificationError('task_verification_field_invalid', 'declarations 必须是非空数组。', 400, { field: 'declarations' });
-  }
+  if (!Array.isArray(value)) throw taskVerificationError('task_verification_field_invalid', 'declarations 必须是数组。', 400, { field: 'declarations' });
   const seen = new Set();
   return value.map((item, index) => {
     const field = `declarations[${index}]`;
@@ -151,6 +149,17 @@ export function normalizeTaskVerificationResult(value, { expectedTaskId = null }
     throw taskVerificationError('task_verification_result_empty', 'Result 必须至少包含一项实际 capability 或 coverage gap。', 400, { field: 'capabilities' });
   }
   const conclusion = normalizeConclusion(result.conclusion);
+  const workspaceShape = declarations.length === 0
+    && capabilities.length === 0
+    && coverageGaps.length === 1
+    && coverageGaps[0].scope === 'workspace'
+    && conclusion.outcome === 'not-passed';
+  if (declarations.length === 0 && !workspaceShape) {
+    throw taskVerificationError('task_verification_workspace_shape_invalid', '空 declarations 只允许与空 capabilities、唯一 workspace coverage gap 和 not-passed 结论组成仅工作区 Result。', 400, { field: 'declarations' });
+  }
+  if (declarations.length > 0 && coverageGaps.some((item) => item.scope === 'workspace')) {
+    throw taskVerificationError('task_verification_workspace_shape_invalid', 'workspace coverage gap 只允许用于空 declarations 的仅工作区 Result。', 400, { field: 'coverageGaps' });
+  }
   if (conclusion.outcome === 'passed' && (coverageGaps.length > 0 || capabilities.some((item) => item.outcome === 'failed'))) {
     throw taskVerificationError('task_verification_conclusion_inconsistent', '存在 failed capability 或 coverage gap 时 conclusion 不能是 passed。', 400, { field: 'conclusion.outcome' });
   }

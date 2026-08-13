@@ -1,0 +1,27 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: stabilize-verification-execution-readback
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/stabilize-verification-execution-readback/brief.md
+    reason: 本Change需要面向Agent解释session丢失后的恢复流程、默认重复保护和显式retry边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/stabilize-verification-execution-readback/proposal.md
+      - openspec/changes/stabilize-verification-execution-readback/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service的Task Execution Record与Verification CLI职责将增加invocation identity、active duplicate保护和Agent只读回查入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/stabilize-verification-execution-readback/specs/task-execution-artifacts/spec.md
+      - openspec/changes/stabilize-verification-execution-readback/specs/task-verification/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 核对既有“验证执行”和“任务执行记录”是否已覆盖invocation identity字段，不为代码字段创建新长期术语。
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+      - openspec/changes/stabilize-verification-execution-readback/design.md
+unresolvedItems: []

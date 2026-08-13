@@ -87,11 +87,40 @@
 - 来源：[Product current facts](overview.md)
 
 
-### Buildr Web（buildr-web）
+### Buildr Web
 
-- 含义：Product 下与 `buildr` 同仓同级的 workspace Service，拥有 Local App React/Vite 前端源码与构建；产物由 `buildr` 消费到 `web-dist` 并同源托管。
-- 适用范围：前端工程边界、构建交接与 Service registry；不表示独立 Git 仓或独立生产端口。
-- 避免混用：不是 Local App HTTP/runtime authority，也不改变 session 安全模型。
+- 定义：Buildr 通过默认浏览器提供的本机 Web 界面与能力；canonical CLI 入口为 `buildr web`。
+- 适用范围：用户可见界面、CLI 产品表面、文档、Launcher 与诊断建议。
+- 避免混用：不是桌面应用，不是独立远程服务，不拥有第二套数据或业务 writer。
+- 来源：canonical `openspec/specs/local-app-browser-interface/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
+
+### Buildr Web Frontend Service
+
+- 定义：Product 下 `projects/product/services/buildr-web` Service 的正式名称，拥有 React/Vite 前端源码、依赖与正式构建。
+- 适用范围：前端工程边界、Service registry 和构建交接；产物由 `buildr` Service 消费到内部 `web-dist`。
+- 避免混用：不托管生产 HTTP，不拥有 session、SQLite 或 Application authority。
+- 来源：[Buildr Web Frontend Service](services/buildr-web.md)。
+
+### Buildr Web Runtime
+
+- 定义：`buildr` Service 中按需启动的 loopback HTTP 运行时，负责 session、Origin 安全、同源 `web-dist` 托管与 Application 调用。
+- 适用范围：`buildr web`、Launcher 和生产 browser smoke 的运行边界。
+- 避免混用：不是 Frontend Service，不是常驻后台服务，不绕过现有 Application writer 边界。
+- 来源：[Buildr Service](services/buildr.md) 与 [技术架构](architecture/technical.md)。
+
+### Buildr Web Launcher
+
+- 定义：启动 `buildr web` 并打开默认浏览器的平台图形入口；正式显示名为 Buildr Web，开发入口为 Buildr Web Dev。
+- 适用范围：正式npm用户显式运行`buildr web launcher install|status|repair|uninstall`后生成的macOS `.app`或Windows Start Menu shortcut；它精确绑定Host Node、npm package entry、prefix和installation identity并执行`web`。checkout-backed入口另名Buildr Web Dev。
+- 避免混用：它不是 Buildr App，不是独立产品安装或更新渠道，不复制Node/Buildr，也不取得 Workspace 数据所有权。
+- 来源：canonical `openspec/specs/local-workspace-application/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
+
+### Buildr App
+
+- 定义：为未来真正的 Buildr 桌面应用保留的产品术语；当前尚未实现。
+- 适用范围：只用于说明保留边界；当前不是 CLI command、help topic、Launcher 名称或运行时产品。
+- 避免混用：不得用于指称 Buildr Web 或 Buildr Web Launcher，也不为 `buildr app` 建立 alias 或 legacy surface。
+- 来源：canonical `openspec/specs/cli-product-surface/spec.md` 与 `openspec/specs/local-app-browser-interface/spec.md`。
 
 ## Service
 
@@ -207,13 +236,13 @@
 
 - 定义：`buildr.task-record/v2` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复、激活和维护 Task Record。
 - 适用范围：用户明确管理正式 Task Record，或 `task-triage` 判断正式持久交付即将首次写入的时点。
-- 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Local App 是同一 Application 的人类客户端，不通过 Task Manager 写入。
+- 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Buildr Web 是同一 Application 的人类客户端，不通过 Task Manager 写入。
 - 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v2.md)
 
 ## 父任务 / 子任务（Parent Task / Child Task）
 
 - 定义：同一canonical Workspace内Task Record之间的直接协调层级；每个Child至多一个Parent，一个Parent可有多个直接Children。
-- 适用范围：协调Task拆分、Local App层级展示与导航，以及Task Manager显式设置、重挂或清除Parent。
+- 适用范围：协调Task拆分、Buildr Web层级展示与导航，以及Task Manager显式设置、重挂或清除Parent。
 - 避免混用：不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
 - 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v2.md)
 
@@ -263,7 +292,7 @@
 
 - 定义：从 canonical retained Workspace 运行 Task Environment Application 的受信 Buildr source/CLI 执行角色，负责会产生持久效果的环境 prepare、资源管理和 cleanup。
 - 适用范围：Buildr 自举任务需要由候选 checkout 之外的稳定入口管理 Task Environment 时；Environment Receipt 记录其执行 identity。
-- 避免混用：不是 Task Environment 的 source baseline、Candidate identity、retained target revision 或独立 lifecycle authority；matching Receipt 的只读 `inspect` 使用其登记 controller 做 probe，不要求 Local App 等读取方成为 manager；现有 schema/code 中的 `controller` 只是内部实现字段名，不作为产品术语继续扩散。
+- 避免混用：不是 Task Environment 的 source baseline、Candidate identity、retained target revision 或独立 lifecycle authority；matching Receipt 的只读 `inspect` 使用其登记 controller 做 probe，不要求 Buildr Web 等读取方成为 manager；现有 schema/code 中的 `controller` 只是内部实现字段名，不作为产品术语继续扩散。
 - 来源：[Task Environment specification](../specs/task-environments/spec.md) 与 [Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
 
 ## 环境回执（Environment Receipt）
@@ -339,14 +368,14 @@
 ## 任务复盘（Task Retrospective）
 
 - 定义：用户明确要求时，Agent面向terminal Task检查自身执行时间、token消耗、重复尝试、人机协作和Buildr workflow/harness成本，并形成一份自由Markdown效率报告。
-- 适用范围：Workspace SQLite中按Task ID唯一的current Result；重复复盘完整替换，Local App“复盘”Tab只读展示。
+- 适用范围：Workspace SQLite中按Task ID唯一的current Result；重复复盘完整替换，Buildr Web“复盘”Tab只读展示。
 - 避免混用：不是Task Review、Verification、Development或Finish gate，不采集隐藏推理或完整轨迹，不自动写回Rule/Skill/产品资产。旧Task Asset Review与`.buildr/asset-review/`已退出current能力，数据保持inert。
 - 来源：canonical `openspec/specs/task-retrospectives/spec.md`（本 Change converge 时建立）
 
 ## 复盘处置状态（Retrospective Disposition）
 
 - 定义：一份 current Task Retrospective 的当前处置结论，只取 `pending | handled | no-action`。
-- 适用范围：与 Result 保存在同一 `task_retrospective_current` row；重新记录报告会回到 `pending`，Agent 与 Local App 共用同一 Application `handle`。
+- 适用范围：与 Result 保存在同一 `task_retrospective_current` row；重新记录报告会回到 `pending`，Agent 与 Buildr Web 共用同一 Application `handle`。
 - 避免混用：`handled` 表示已完成处置判断，不表示建议已落地或改进 Task 已完成；`no-action` 必须有明确理由。
 - 来源：canonical `openspec/specs/task-retrospectives/spec.md`
 
@@ -379,22 +408,22 @@
 
 ## 任务验证（Task Verification）
 
-- 定义：面向正式 Task 的专业验证能力，读取相关 Project declarations、选择并执行适用的已有 capability，再通过唯一 Task Verification Application 记录或读取 current Result。
-- 适用范围：明确 target identity 的测试执行、coverage gap 报告、Result 记录与 applicability 检查。
+- 定义：面向正式 Task 的专业验证能力，按显式Project、Service所属Project与Change所属Project的有效并集读取declarations、选择并执行适用已有capability；有效并集为空时以唯一workspace coverage gap记录没有验证能力的负向事实，再通过唯一Application维护current Result。
+- 适用范围：明确 target identity 的测试执行、Project/Service/workspace coverage gap 报告、Result 记录与 applicability 检查。
 - 避免混用：不替代 Task Review、Task Environment 或业务验收，不开发缺失测试，也不拥有 Task Development、Candidate generation、`proceed / blocked` 或 Task 顶层状态。
 - 来源：[Task Verification capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-verification/v3.md)
 
 ## 验证结果（Verification Result）
 
-- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v1` current row，绑定Task、stable Content Target与实际declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间。
-- 适用范围：CLI、Skill、Local App 与 Task Development 共用的 current verification authority；读取时按 Content Target/declaration identity 派生 `current / stale / unknown`。Task Finish不直接消费该Result。
+- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v1` current row，绑定Task、stable Content Target与实际declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间；真正仅工作区时使用空declarations、空capabilities、唯一workspace gap与`not-passed`。
+- 适用范围：CLI、Skill、Buildr Web 与 Task Development 共用的 current verification authority；读取时按 Content Target/declaration identity 派生 `current / stale / unknown`。Task Finish不直接消费该Result。
 - 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 任务研发（Task Development）
 
-- 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority。
-- 适用范围：全研发区间的可选节点引用/currentness、实现收敛、formal Verification编排、Candidate freeze、Completion Review消费、风险/豁免决定和研发交接；Local App可通过Application`inspect`只读展示这些事实。
+- 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority；仅工作区不是第二种Task authority，只是有效Project集合为空时的受约束policy/Result语义。
+- 适用范围：全研发区间的可选节点引用/currentness、实现收敛、formal Verification编排、Candidate freeze、Completion Review消费、风险/豁免决定和研发交接；Buildr Web可通过Application`inspect`只读展示这些事实。
 - 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；通用Development没有公共CLI，Parent coordination只开放受控Application薄接口。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
@@ -485,8 +514,8 @@
 ## 自举激活（Self-bootstrap Activation）
 
 - 定义：Buildr自举Workspace在Formal Task Finish成功后，由`buildr-self-bootstrap` Component只按该Result绑定的冻结Task Contribution paths选择并执行的本机产品收敛动作。
-- 适用范围：去重组合retained package sync、development CLI安装、development Local App安装与最终Doctor；只存在于显式安装该Component的Buildr自举Workspace。
-- 避免混用：不是Formal Task Finish阶段、通用retained runtime activation、Task Verification、Task Record完成状态或新的workflow authority；失败不得改写已成功的Finish Result、Environment cleanup或上游研发事实。
+- 适用范围：去重组合retained package sync、development Buildr Web安装、retained Project bridge identity gate与最终Doctor或same-run resume；只存在于显式安装该Component的Buildr自举Workspace。成功要求Environment retained Node显式验证delivered retained `projects/product/buildr`且最终Workspace Doctor ready；PATH默认`buildr`只属于npm installation。
+- 避免混用：不是Formal Task Finish阶段、通用retained runtime activation、Task Verification、Task Record完成状态或新的workflow authority；源码CLI可运行、`command -v`命中同名命令或`--help`可启动都不能替代默认入口identity证明，失败不得改写已成功的Finish Result、Environment cleanup或上游研发事实。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)与[Buildr package assets specification](../specs/buildr-package-assets/spec.md)
 
 ## 交付适配（Delivery Adaptation）
@@ -538,11 +567,49 @@
 - 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、运行formal Verification、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
 - 来源：[Task Finish执行规范](../specs/task-finish-execution/spec.md)
 
+## Buildr 应用负载（Buildr Application Payload）
+
+- 定义：一次构建形成的渠道无关、可摘要比较的公共应用内容，包括CLI、Core/Application、Buildr Web HTTP/runtime与正式静态资源、SQLite migrations、package baseline、生产依赖、许可证、版本和协议identity。
+- 适用范围：npm package消费的`buildr.application-payload/v1` manifest及`applicationPayloadDigest`；同一payload内只携带生成Launcher所需图标，不携带已生成入口。
+- 避免混用：不是npm tarball、已生成Launcher或Actions artifact；不包含Node、测试、源码映射、Vite toolchain或开发依赖。
+- 来源：canonical `openspec/specs/buildr-application-payload/spec.md`。
+
+## 产品 Node（Product Node）
+
+- 定义：历史SEA/平台安装设计中随Buildr产品单元交付的官方Node.js runtime；当前npm-only产品不实现或分发Product Node。
+- 适用范围：仅用于解释已归档Change与未来可能重新评估的自包含安装模型，不是当前runtime role。
+- 避免混用：不是当前npm Host Node、development host Node或Workspace Node；不得从历史设计推断当前支持SEA、PKG或MSI。
+
+## 宿主 Node（Host Node）
+
+- 定义：安装并启动`@buildr-ai/buildr` npm package的用户Node.js executable，必须满足package `engines.node`。
+- 适用范围：npm渠道Buildr main process和同一runtime bundle。
+- 避免混用：不随npm package交付，也不会因进入Workspace而切换为Workspace Node。
+
+## 开发宿主 Node（Development Host Node）
+
+- 定义：由development installation identity绑定、用于启动checkout-backed Buildr CLI与Buildr Web Dev的兼容Node.js executable。
+- 适用范围：development channel main process与同一checkout中的product re-entry；Workspace-owned子进程仍另行解析Workspace Node。
+- 避免混用：不是npm package消费者的Host Node或Workspace Node；版本相同也不共享ownership、更新或卸载生命周期。
+
+## 平台产品单元（Platform Product Unit）
+
+- 定义：历史平台installer设计中的原子Buildr所有权边界；当前npm-only产品不实现平台产品单元。
+- 适用范围：只用于已归档Change或未来企业/普通用户自包含安装的新Change。
+- 避免混用：本机Buildr Web Launcher只是npm安装的图形投射，不是平台产品单元。
+
+## 正式发布制品集合（Release Artifact Set）
+
+- 定义：同一npm-only release contract和Application Payload identity下冻结的唯一npm tarball及其内部release-artifact evidence。
+- 适用范围：npm tarball只发布到npm Registry；GitHub Release只保存版本说明并拒绝Buildr binary Assets。
+- 避免混用：GitHub Actions artifact只是临时候选/evidence carrier，不是公开下载渠道；本机Launcher也不是公开制品。
+- 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
+
 ## Workspace Node Version
 
 - 定义：Workspace 在 `.buildr/workspace.yml` 中明确采用的精确 Node.js toolchain 版本，由 `init` 首次确定，之后只能通过显式 Workspace 配置变更升级或降级。
-- 适用范围：Buildr CLI、npm、测试、Verification、Candidate 与 Finish 的统一 Node 选择。
-- 避免混用：不是 `package.json#engines.node` 的产品兼容范围，也不是 Agent runtime 可自行保存或决定的版本。
+- 适用范围：Workspace拥有的npm、测试、Verification、Finish adapter与项目执行；由Workspace resolver显式选择。
+- 避免混用：不是npm Host Node或development host Node；版本相同也不合并identity、更新或卸载生命周期。
 
 ## Workspace Node Identity
 

@@ -125,11 +125,6 @@ export function ProjectsPage() {
   return (
     <>
       <section className="resource-toolbar">
-        <div>
-          <p className="eyebrow">项目</p>
-          <Typography.Title level={2} style={{ margin: 0 }}>项目目录</Typography.Title>
-          <p className="page-copy">查看当前工作空间的项目，并可直接编辑稳定元数据。</p>
-        </div>
         <div className="toolbar-actions">
           <span id="projects-state" className="count-label">{state}</span>
           <Button id="create-project-button" type="primary" onClick={() => openAgentAction('project')}>

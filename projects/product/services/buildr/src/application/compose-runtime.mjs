@@ -49,10 +49,13 @@ import { registerParentCoordinationApplication } from './parent-coordination/par
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
 import { registerTaskExecutionRecordApplication } from './task-execution-record/task-execution-record-application.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
+import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
+import { registerProductInstallationStatus } from './product-installation-status.mjs';
 import * as platform from '../infrastructure/platform.mjs';
 
 const REGISTRATIONS = [
   registerWorkspaceInfrastructure,
+  registerProductInvocation,
   registerWorkspaceManifestRepository,
   registerWorkspaceRegistryRepository,
   registerDomainsRuntime,
@@ -88,6 +91,7 @@ const REGISTRATIONS = [
   registerApplicationPackageMaintenance,
   registerApplicationWorkspaceOperations,
   registerApplicationCliUpdate,
+  registerProductInstallationStatus,
   registerApplicationRuntime,
   registerGitWorktreeProvider,
   registerTaskEnvironmentApplication,

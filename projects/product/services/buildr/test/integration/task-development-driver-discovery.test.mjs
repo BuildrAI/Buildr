@@ -37,6 +37,11 @@ test('schema与example输出closed input contract', () => {
   assert.equal(example.schemaVersion, 'buildr.task-development-driver-example/v1');
   assert.deepEqual(example.inputJson, { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } });
   assert.deepEqual(JSON.parse(run(['inspect', '--example']).stdout).inputJson, {});
+
+  const carrier = JSON.parse(run(['carrier', '--schema']).stdout);
+  assert.deepEqual(carrier.inputSchema.required, ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']);
+  assert.equal(carrier.inputSchema.properties.candidateGeneration.minimum, 1);
+  assert.deepEqual(Object.keys(JSON.parse(run(['carrier', '--example']).stdout).inputJson), ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']);
 });
 
 test('发现路径在runtime dynamic import前返回', () => {

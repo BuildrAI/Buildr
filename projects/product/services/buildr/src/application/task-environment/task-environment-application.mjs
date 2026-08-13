@@ -25,6 +25,7 @@ import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.
 import { spawnCommandSync, spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { declarationIntakeGapNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
+import { currentProductInvocation } from '../../infrastructure/product-invocation/index.mjs';
 
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
 const ENVIRONMENT_MANAGER_SOURCE_PATHS = ['bin', 'src', 'package', 'package.json', 'package-lock.json'];
@@ -76,6 +77,7 @@ function fileIdentity(file) {
 }
 
 export function registerTaskEnvironmentApplication(runtime) {
+  const productInvocation = (options) => (runtime.currentProductInvocation || currentProductInvocation)(options);
   function candidateController(sourceCheckout, workspaceCheckout) {
     return Boolean(sourceCheckout?.linkedWorktree && workspaceCheckout
       && sameFilesystemPath(sourceCheckout.gitCommonDirectory, workspaceCheckout.gitCommonDirectory));
@@ -166,12 +168,12 @@ export function registerTaskEnvironmentApplication(runtime) {
       return {
         sourceRoot,
         source,
-        command: process.platform === 'win32' ? process.execPath : path.resolve(sourceRoot, '..', '..', 'buildr'),
-        argsPrefix: process.platform === 'win32' ? [source] : [],
+        ...productInvocation({ isSea: false, cliPath: source, kind: 'task-environment-candidate' }),
         kind: 'task-environment-candidate',
       };
     }
-    return { sourceRoot: controller.sourceRoot, source: controller.cliSource, command: process.execPath, argsPrefix: [controller.cliSource], kind: 'stable-controller' };
+    const invocation = productInvocation({ cliPath: controller.cliSource, kind: 'stable-controller' });
+    return { sourceRoot: controller.sourceRoot, source: controller.cliSource, command: invocation.command, argsPrefix: invocation.argsPrefix, kind: 'stable-controller' };
   }
 
   function workspaceHasRootGit(workspaceRoot) {
@@ -1178,8 +1180,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       validationRoot: inspected.environment.scopes[0].validationRoot,
       controller: inspected.environment.controller,
       controllerInvocation: {
-        command: process.execPath,
-        argsPrefix: [persistence.receipt.controller.cliSource],
+        ...productInvocation({ cliPath: persistence.receipt.controller.cliSource, kind: 'stable-controller' }),
         sourceRoot: persistence.receipt.controller.sourceRoot,
         kind: 'stable-controller',
       },
@@ -1210,8 +1211,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         environmentRoot: persistence.receipt.scopes[0].validationRoot,
         controller: persistence.receipt.controller,
         controllerInvocation: {
-          command: process.execPath,
-          argsPrefix: [persistence.receipt.controller.cliSource],
+          ...runtime.currentProductInvocation({ cliPath: persistence.receipt.controller.cliSource, kind: 'stable-controller' }),
           sourceRoot: persistence.receipt.controller.sourceRoot,
           kind: 'stable-controller',
         },

@@ -205,7 +205,7 @@ Buildr Project `openspec/knowledge/` MUST 保持 current-state knowledge、canon
 
 #### Scenario: 任务看板包含未来批次
 - **WHEN** Agent 推进普通或 Parent-managed 正式 Task
-- **THEN** Agent MUST 使用 Task Record、Parent/Child、各专业 Application/read model、Local App 与对话汇报
+- **THEN** Agent MUST 使用 Task Record、Parent/Child、各专业 Application/read model、Buildr Web 与对话汇报
 - **AND** MUST NOT 创建新的 `task-boards/*.html` 或 `task-cockpits/*.html`
 
 #### Scenario: 读取权威事实
