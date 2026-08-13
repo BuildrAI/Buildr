@@ -65,7 +65,7 @@ function publishExclusiveFileLockCandidate(file, record) {
   const candidate = `${file}.candidate-${record.pid}-${record.token}`;
   try {
     fs.writeFileSync(candidate, `${JSON.stringify(record)}\n`, { flag: 'wx', mode: 0o600 });
-    const descriptor = fs.openSync(candidate, 'r');
+    const descriptor = fs.openSync(candidate, 'r+');
     try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
     fs.linkSync(candidate, file);
     return true;
