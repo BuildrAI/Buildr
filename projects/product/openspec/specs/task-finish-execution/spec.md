@@ -129,7 +129,7 @@ Buildr MUST继续以`preflight → prepare → verify → deliver → cleanup`�
 
 ### Requirement: Resume 必须由产品根据真实状态生成
 
-Task Finish MUST根据current run、Development handoff、Task Contribution、Delivery Baseline、carrier observations、target ref与retained/cleanup真实状态生成最早可恢复边界和`resumeToken`。Content Target与handoff仍精确等于run冻结identity的target lease、target race、Delivery Adaptation、retained或cleanup阻塞 MAY在同一run恢复。调用方 MUST NOT提供recovery manifest、Candidate、step fingerprint、execution plan、claimed semantic equivalence或冲突解决结果boolean。若current handoff已变化，只有尚无carrier、lease、delivery、retained或cleanup事实的preflight-only旧run MAY以类型化superseded终结并保留Execution Record；新handoff MUST由新run重新提交并冻结commit message。已有任一上述副作用或恢复事实的旧run MUST保持原identity与现场并返回类型化current-run identity conflict，MUST NOT自动删除、终结或换绑。Cleanup MAY根据已持久化delivery/cleanup facts恢复，MUST NOT因交付后Development形成新handoff而丢弃必要清理。
+Task Finish MUST根据current run、Development handoff、Task Contribution、Delivery Baseline、carrier observations、target ref与retained/cleanup真实状态生成最早可恢复边界和`resumeToken`。Content Target与handoff仍精确等于run冻结identity的target lease、target race、Delivery Adaptation、retained或cleanup阻塞 MAY在同一run恢复。调用方 MUST NOT提供recovery manifest、Candidate、step fingerprint、execution plan、claimed semantic equivalence或冲突解决结果boolean。若current handoff已变化，只有可证明尚无carrier、lease、delivery、retained、prepared completion或cleanup事实，且只停止于preflight或carrier ownership形成前无resume token的terminal failed prepare的旧run MAY以类型化superseded终结并保留Execution Record；preflight-only blocked旧run MAY保留其preflight resume token。新handoff MUST由新run重新提交并冻结commit message。已有任一上述副作用或恢复事实、prepare为blocked、prepare仍有resume token、后续阶段已经开始或阶段状态无法证明的旧run MUST保持原identity与现场并返回类型化current-run identity conflict，MUST NOT自动删除、终结或换绑。Cleanup MAY根据已持久化delivery/cleanup facts恢复，MUST NOT因交付后Development形成新handoff而丢弃必要清理。
 
 #### Scenario: 目标 ref 前进后的候选恢复
 
@@ -157,9 +157,21 @@ Task Finish MUST根据current run、Development handoff、Task Contribution、De
 
 #### Scenario: preflight-only旧run安全失效
 
-- **WHEN** blocked旧run的handoff已变化，且没有carrier、lease、delivery、retained或cleanup事实
+- **WHEN** blocked或failed旧run的handoff已变化，且只有preflight开始、没有carrier、lease、delivery、retained、prepared completion或cleanup事实
 - **THEN** 产品 MUST以`task-finish.development-handoff-superseded`终结旧run并保留Execution Record
-- **AND** current handoff的新run MUST要求调用方重新提供commit message并冻结独立message identity
+- **AND** current handoff的新run MUST要求调用方重新提供commit message并冻结独立message identity；旧run的preflight resume token MUST NOT阻止该安全失效
+
+#### Scenario: carrier形成前prepare失败安全失效
+
+- **WHEN** 旧run的preflight已通过、prepare因`carrier-preparation` terminal failed，verify、deliver和cleanup从未开始，且没有carrier、lease、resume、delivery、retained、prepared completion或cleanup事实
+- **THEN** 产品 MUST允许current handoff以新的commit message创建新run，并以`task-finish.development-handoff-superseded`处置旧run
+- **AND** MUST保留旧invocation的Execution Record，不重试或换绑旧run
+
+#### Scenario: prepare状态无法证明无副作用
+
+- **WHEN** 旧run在prepare blocked、持有resume token、已有后续阶段attempt、存在owner fact，或failure不是可识别的carrier ownership形成前terminal failure
+- **THEN** 产品 MUST返回`task-finish.current-run-identity-conflict`并保留现场
+- **AND** MUST NOT因carrier字段为空就自动supersede旧run
 
 #### Scenario: 已有副作用事实的旧run保留现场
 
@@ -321,13 +333,19 @@ Task Finish MUST以receipt-bound Task identity与Development handoff作为所有
 
 ### Requirement: Prepare 必须只准备内容等价Delivery Carrier
 
-`prepare` MUST在产品拥有的隔离位置，以最新Delivery Baseline机械形成承载current Development Candidate之Task Contribution的可交付ref。它 MAY使用临时Git index、source snapshot tree、binary patch、detached worktree与carrier commit，但 MUST NOT提交、rebase或改写原Task worktree/index/branch，MUST NOT执行OpenSpec convergence/archive、runtime内容sync、生成资产收敛、语义冲突resolution、Candidate freeze或generation。Clean apply必须记录`deterministic-reuse`；机械失败必须保留run-owned baseline carrier并返回Delivery Adaptation facts。
+`prepare` MUST在产品拥有的隔离位置，以最新Delivery Baseline机械形成承载current Development Candidate之Task Contribution的可交付ref。Task source snapshot MUST从原任务基线与当前Task工作树精确构造新增、修改和删除后的tree；当前已删除的基线路径 MUST通过临时index表达删除，MUST NOT作为必须在工作树中匹配的Git pathspec。它 MAY使用临时Git index、source snapshot tree、binary patch、detached worktree与carrier commit，但 MUST NOT提交、rebase或改写原Task worktree/index/branch，MUST NOT执行OpenSpec convergence/archive、runtime内容sync、生成资产收敛、语义冲突resolution、Candidate freeze或generation。Clean apply必须记录`deterministic-reuse`；机械失败必须保留run-owned baseline carrier并返回Delivery Adaptation facts。
 
 #### Scenario: 未提交内容形成carrier commit
 
 - **WHEN** exact Candidate source可在最新Delivery Baseline无冲突应用并确定性核验原Task Contribution identity
 - **THEN** prepare MUST只在隔离carrier中commit并记录Task Contribution、Delivery Baseline、changed paths、mode/blob与carrier ref
 - **AND** reuse mode MUST为`deterministic-reuse`，原Task worktree、Candidate/generation与专业Result保持不变
+
+#### Scenario: 未提交归档重命名进入source snapshot
+
+- **WHEN** Task工作树把已跟踪的active Change目录移入archive，旧路径已经不存在且新路径尚未提交
+- **THEN** source snapshot MUST包含旧路径删除和archive路径新增，并可继续形成Task Contribution
+- **AND** MUST不修改原Task index、工作树或把旧路径作为必须存在的exact pathspec
 
 #### Scenario: 最新基线已前进且贡献等价
 
@@ -337,7 +355,7 @@ Task Finish MUST以receipt-bound Task identity与Development handoff作为所有
 
 #### Scenario: Git apply conflict需要Delivery Adaptation
 
-- **WHEN** 同路径Delivery Baseline变化导致Git apply conflict或需要语义判断
+- **WHEN** Task Contribution与最新Delivery Baseline发生机械Git conflict，且Development handoff仍current
 - **THEN** prepare MUST保留匹配run-owned baseline carrier，blocked返回`delivery-adaptation-required`/`semantic-review-required`及exact resume token
 - **AND** MUST不自动解决冲突、不cleanup原Task Environment、不修改Development Receipt或原Task worktree
 

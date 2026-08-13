@@ -60,6 +60,39 @@ test('最新 Delivery Baseline 上干净应用时 Task Contribution identity 保
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'clean-reuse', expectedRoot: carrier.root }).status, 'removed');
 });
 
+test('未提交 active Change 归档重命名进入 Task source snapshot 且不修改原 index', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-contribution-archive-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '-b', 'dev']);
+  git(root, ['config', 'user.name', 'Buildr Test']);
+  git(root, ['config', 'user.email', 'buildr@example.com']);
+  fs.writeFileSync(path.join(root, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  const active = path.join(root, 'openspec', 'changes', 'archive-me');
+  fs.mkdirSync(active, { recursive: true });
+  fs.writeFileSync(path.join(active, '.openspec.yaml'), 'schema: spec-driven\n');
+  fs.writeFileSync(path.join(active, 'proposal.md'), '# Active change\n');
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-m', 'baseline active change']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const taskRoot = path.join(root, '.worktrees', 'archive-task');
+  git(root, ['worktree', 'add', '-b', 'codex/archive-task', taskRoot, 'dev']);
+  const archived = path.join(taskRoot, 'openspec', 'changes', 'archive', '2026-08-13-archive-me');
+  fs.mkdirSync(path.dirname(archived), { recursive: true });
+  fs.renameSync(path.join(taskRoot, 'openspec', 'changes', 'archive-me'), archived);
+  const indexBefore = git(taskRoot, ['diff', '--cached', '--binary']);
+  const statusBefore = git(taskRoot, ['status', '--porcelain=v1', '--untracked-files=all']);
+
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+
+  const sourcePaths = git(taskRoot, ['ls-tree', '-r', '--name-only', contribution.source.tree]).split('\n');
+  assert.equal(sourcePaths.includes('openspec/changes/archive-me/.openspec.yaml'), false);
+  assert.equal(sourcePaths.includes('openspec/changes/archive-me/proposal.md'), false);
+  assert.equal(sourcePaths.includes('openspec/changes/archive/2026-08-13-archive-me/.openspec.yaml'), true);
+  assert.equal(sourcePaths.includes('openspec/changes/archive/2026-08-13-archive-me/proposal.md'), true);
+  assert.equal(git(taskRoot, ['diff', '--cached', '--binary']), indexBefore);
+  assert.equal(git(taskRoot, ['status', '--porcelain=v1', '--untracked-files=all']), statusBefore);
+});
+
 test('新 target 保留 carrier 的逐路径结果时形成 exact containment evidence', (t) => {
   const { root, taskRoot } = repository(t);
   fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'candidate contribution\n');
