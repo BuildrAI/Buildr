@@ -147,8 +147,8 @@ function inspectWindowsShortcut(name, expectedRoot) {
     return { target: shortcut, present: true, owned: false, diagnostic: { code: 'launcher.shortcut_ownership_unavailable', message: `当前主机无法证明 Windows shortcut ownership，已保留：${shortcut}` } };
   }
   const script = [
-    '$shortcut = $args[0]',
-    '$root = $args[1]',
+    '$shortcut = $env:BUILDR_LAUNCHER_SHORTCUT',
+    '$root = $env:BUILDR_LAUNCHER_ROOT',
     '$shell = New-Object -ComObject WScript.Shell',
     '$item = $shell.CreateShortcut($shortcut)',
     '$expected = [IO.Path]::GetFullPath((Join-Path $root "Buildr.vbs"))',
@@ -157,7 +157,11 @@ function inspectWindowsShortcut(name, expectedRoot) {
     'if ($owned) { "owned" } else { "foreign" }',
   ].join('; ');
   try {
-    const result = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script, shortcut, expectedRoot], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const result = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, BUILDR_LAUNCHER_SHORTCUT: shortcut, BUILDR_LAUNCHER_ROOT: expectedRoot },
+    }).trim();
     const owned = result === 'owned';
     return { target: shortcut, present: true, owned, diagnostic: owned ? null : { code: 'launcher.shortcut_ownership_unproven', message: `Windows shortcut ownership 无法证明，已保留：${shortcut}` } };
   } catch (error) {

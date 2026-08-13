@@ -201,9 +201,9 @@ export async function runReleaseSmoke(env = process.env) {
           stdio: ['ignore', 'ignore', 'pipe'],
         });
       } else {
-        launcherProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $args[0]', launcherTarget], {
+        launcherProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:BUILDR_LAUNCHER_SHORTCUT'], {
           cwd: workspace,
-          env: { ...process.env, ...runtimeEnv, BUILDR_LAUNCHER_NO_OPEN: '1' },
+          env: { ...process.env, ...runtimeEnv, BUILDR_LAUNCHER_NO_OPEN: '1', BUILDR_LAUNCHER_SHORTCUT: launcherTarget },
           stdio: ['ignore', 'ignore', 'pipe'],
         });
       }
@@ -217,8 +217,11 @@ export async function runReleaseSmoke(env = process.env) {
       if (process.platform === 'darwin') {
         fs.appendFileSync(path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web'), '\n# drift\n');
       } else {
-        const driftScript = '$shell=New-Object -ComObject WScript.Shell; $s=$shell.CreateShortcut($args[0]); $s.Arguments="foreign"; $s.Save()';
-        run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', driftScript, launcherTarget], { cwd: workspace, env: runtimeEnv });
+        const driftScript = '$shell=New-Object -ComObject WScript.Shell; $s=$shell.CreateShortcut($env:BUILDR_LAUNCHER_SHORTCUT); $s.Arguments="foreign"; $s.Save()';
+        run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', driftScript], {
+          cwd: workspace,
+          env: { ...runtimeEnv, BUILDR_LAUNCHER_SHORTCUT: launcherTarget },
+        });
       }
       const stale = parseJson('launcher drift status', run(process.execPath, [buildrScript, 'web', 'launcher', 'status', '--target', launcherTarget, '--json'], {
         cwd: workspace,

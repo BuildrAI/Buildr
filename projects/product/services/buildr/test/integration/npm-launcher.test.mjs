@@ -139,3 +139,13 @@ test('Launcher refuses foreign targets and Windows shortcut binds exact Host Nod
     /Refusing to remove foreign Launcher target/,
   );
 });
+
+test('Windows Launcher PowerShell bridge preserves shortcut and root paths containing spaces', () => {
+  const npmLauncherSource = fs.readFileSync(new URL('../../src/infrastructure/product-launcher/index.mjs', import.meta.url), 'utf8');
+  const developmentLauncherSource = fs.readFileSync(new URL('../../package/launchers/manage.mjs', import.meta.url), 'utf8');
+  for (const source of [npmLauncherSource, developmentLauncherSource]) {
+    assert.doesNotMatch(source, /\$args\[[01]\]/);
+    assert.match(source, /\$env:BUILDR_LAUNCHER_SHORTCUT/);
+  }
+  assert.match(developmentLauncherSource, /\$env:BUILDR_LAUNCHER_ROOT/);
+});

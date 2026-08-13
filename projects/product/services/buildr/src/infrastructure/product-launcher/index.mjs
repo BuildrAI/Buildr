@@ -161,10 +161,13 @@ function readWindowsShortcut(target, options = {}) {
   const script = [
     '$ErrorActionPreference = "Stop"',
     '$shell = New-Object -ComObject WScript.Shell',
-    '$shortcut = $shell.CreateShortcut($args[0])',
+    '$shortcut = $shell.CreateShortcut($env:BUILDR_LAUNCHER_SHORTCUT)',
     '[ordered]@{ target = $shortcut.TargetPath; arguments = $shortcut.Arguments; workingDirectory = $shortcut.WorkingDirectory } | ConvertTo-Json -Compress',
   ].join('; ');
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script, target], { encoding: 'utf8' });
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+    env: { ...process.env, BUILDR_LAUNCHER_SHORTCUT: target },
+  });
   if (result.status !== 0) throw new Error(`Cannot inspect Buildr Web shortcut: ${(result.stderr || '').trim()}`);
   return JSON.parse(result.stdout);
 }
