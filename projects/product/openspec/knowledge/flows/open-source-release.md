@@ -8,7 +8,7 @@
 2. 一次application payload build冻结runtime bundle、Worker bundle与resource inventory，产生稳定`applicationPayloadDigest`。npm staging消费并逐项验证同一manifest。
 3. workflow只执行一次`npm pack`，冻结tarball filename、size、SHA-256、SHA-512 integrity与inventory；Host Node、Launcher、publish和Registry readback全部复用该bytes。跨attempt恢复只接受与contract/payload完全一致的冻结candidate。
 4. 在任何公开写入前，候选必须通过完整CLI、普通CLI不启动HTTP、`buildr web --no-open`与health/readiness、Host Node/Workspace Node角色分离，以及macOS/Windows本机Launcher lifecycle验证。
-5. `dev → main`收敛后、tag授权前，authenticated maintainer使用npm 11.15+只读核对package、Git remote、GitHub current repository/Environment、workflow和npm Trusted Publisher current配置。只有绑定`origin/main`commit与workflow digest、且在15分钟内消费的`ready`evidence能进入post-main convergence；过期、unavailable或drift都停止，不用历史provenance或checklist代替。
+5. `dev → main`收敛后、tag授权前，本机runner针对当前`origin/main`与workflow digest dispatch同一`publish.yml`的手动authority probe。Probe在`npm-production`Environment中以GitHub OIDC身份对目标package完成token exchange，但不创建tag、不pack/publish，且不保留任何token；本机preflight通过GitHub current API复核唯一run与credential-free artifact。只有绑定commit、workflow bytes、package和run，且在15分钟内消费的v2 `ready`evidence能进入post-main convergence；exchange拒绝、过期、unavailable或drift都停止，不用本机npm session、`npm trust list`、历史provenance或checklist代替。
 6. 可逆门禁通过后才允许进入`npm-production`Environment。目标version缺失时发布冻结tarball；已存在时只接受相同integrity。OIDC authority相关失败保留原始npm错误和tag，按expected tuple修复current控制面后只rerun hosted workflow。随后有界确认version、dist-tag与integrity，并从Registry安装精确版本重新smoke。
 
 ## 本机 Launcher 边界

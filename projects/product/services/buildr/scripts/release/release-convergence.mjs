@@ -7,12 +7,16 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import {
   releaseAuthorityEvidenceMaxAgeMs,
+  releaseAuthorityPreflightSchema,
+  releaseAuthorityProbeArtifactName,
+  releaseAuthorityProbeSchema,
+  releasePackageName,
   releasePublishAuthority,
+  releaseWorkflowPath,
   samePublishAuthority,
   sha256,
 } from './release-authority.mjs';
-
-const releaseWorkflowPath = '.github/workflows/publish.yml';
+import { containsCredentialMaterial } from './release-authority-preflight.mjs';
 
 function runGit(repo, args, { allowFailure = false } = {}) {
   const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
@@ -41,8 +45,9 @@ function fileAt(repo, ref, file) {
 
 export function checkReleaseAuthorityEvidence({ evidence, sourceCommit, workflowSource, nowMs = Date.now() }) {
   const findings = [];
-  if (!evidence) return [{ code: 'release_authority_evidence_missing', expected: 'buildr.release-authority-preflight/v1 ready evidence', actual: null }];
-  if (evidence.schemaVersion !== 'buildr.release-authority-preflight/v1') findings.push({ code: 'release_authority_evidence_schema_mismatch', expected: 'buildr.release-authority-preflight/v1', actual: evidence.schemaVersion ?? null });
+  if (!evidence) return [{ code: 'release_authority_evidence_missing', expected: `${releaseAuthorityPreflightSchema} ready evidence`, actual: null }];
+  if (containsCredentialMaterial(evidence)) findings.push({ code: 'release_authority_evidence_contains_credentials', expected: 'credential-free evidence', actual: 'forbidden token material' });
+  if (evidence.schemaVersion !== releaseAuthorityPreflightSchema) findings.push({ code: 'release_authority_evidence_schema_mismatch', expected: releaseAuthorityPreflightSchema, actual: evidence.schemaVersion ?? null });
   if (evidence.status !== 'ready' || !Array.isArray(evidence.findings) || evidence.findings.length !== 0) findings.push({ code: 'release_authority_not_ready', expected: 'ready with zero findings', actual: { status: evidence.status ?? null, findingCount: Array.isArray(evidence.findings) ? evidence.findings.length : null } });
   if (!samePublishAuthority(evidence.expected, releasePublishAuthority)) findings.push({ code: 'release_authority_tuple_mismatch', expected: releasePublishAuthority, actual: evidence.expected ?? null });
   if (evidence.sourceCommit !== sourceCommit) findings.push({ code: 'release_authority_source_commit_mismatch', expected: sourceCommit, actual: evidence.sourceCommit ?? null });
@@ -51,6 +56,20 @@ export function checkReleaseAuthorityEvidence({ evidence, sourceCommit, workflow
   if (!Number.isFinite(observedAtMs) || evidenceAgeMs < -60_000 || evidenceAgeMs > releaseAuthorityEvidenceMaxAgeMs) findings.push({ code: 'release_authority_evidence_stale', expected: `observed within ${releaseAuthorityEvidenceMaxAgeMs}ms`, actual: evidence.observedAt ?? null });
   const workflowDigest = typeof workflowSource === 'string' ? sha256(workflowSource) : null;
   if (evidence.workflow?.path !== releaseWorkflowPath || evidence.workflow?.sha256 !== workflowDigest) findings.push({ code: 'release_authority_workflow_mismatch', expected: { path: releaseWorkflowPath, sha256: workflowDigest }, actual: evidence.workflow ?? null });
+  const run = evidence.observed?.github?.run;
+  const expectedRun = { event: 'workflow_dispatch', headSha: sourceCommit, status: 'completed', conclusion: 'success' };
+  if (!run || run.event !== expectedRun.event || run.headSha !== expectedRun.headSha || run.status !== expectedRun.status || run.conclusion !== expectedRun.conclusion || String(run.workflowPath ?? '').split('@')[0] !== releaseWorkflowPath) {
+    findings.push({ code: 'release_authority_run_mismatch', expected: { ...expectedRun, workflowPath: releaseWorkflowPath }, actual: run ?? null });
+  }
+  if (evidence.observed?.github?.repository !== releasePublishAuthority.repository || evidence.observed?.github?.environment !== releasePublishAuthority.environment) findings.push({ code: 'release_authority_github_identity_mismatch', expected: { repository: releasePublishAuthority.repository, environment: releasePublishAuthority.environment }, actual: evidence.observed?.github ?? null });
+  const probe = evidence.observed?.probe;
+  const expectedArtifact = run?.id && run?.attempt ? releaseAuthorityProbeArtifactName(run.id, run.attempt) : null;
+  if (probe?.schemaVersion !== releaseAuthorityProbeSchema || probe?.status !== 'ready' || probe?.artifact?.name !== expectedArtifact || probe?.github?.runId !== run?.id || probe?.github?.runAttempt !== run?.attempt || probe?.github?.headSha !== sourceCommit || probe?.npm?.package !== releasePackageName || probe?.npm?.exchange?.status !== 201) {
+    findings.push({ code: 'release_authority_probe_mismatch', expected: { schemaVersion: releaseAuthorityProbeSchema, status: 'ready', artifact: expectedArtifact, sourceCommit, package: releasePackageName, exchangeStatus: 201 }, actual: probe ?? null });
+  }
+  const probeObservedAtMs = Date.parse(probe?.observedAt ?? '');
+  const probeExpiresMs = Date.parse(probe?.npm?.exchange?.expires ?? '');
+  if (!Number.isFinite(probeObservedAtMs) || nowMs - probeObservedAtMs < -60_000 || nowMs - probeObservedAtMs > releaseAuthorityEvidenceMaxAgeMs || !Number.isFinite(probeExpiresMs) || probeExpiresMs <= nowMs) findings.push({ code: 'release_authority_probe_stale', expected: 'current and unexpired hosted probe', actual: { observedAt: probe?.observedAt ?? null, expires: probe?.npm?.exchange?.expires ?? null } });
   return findings;
 }
 
