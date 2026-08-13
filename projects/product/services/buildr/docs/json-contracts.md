@@ -37,10 +37,11 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
 | Buildr Web Task execution record list/detail/body file | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-detail-view/v1` / `buildr.task-execution-record-body-file/v1` |
 | `task execution-record list/inspect` | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-inspect-result/v1` |
-| `task finish run/inspect` | `buildr.task-finish-result/v2` |
+| `task finish run/inspect`（缺省或`--detail compact`） | `buildr.task-finish-compact-result/v1` |
+| `task finish run/inspect --detail full` | `buildr.task-finish-result/v2` |
 | `web preview start/list/stop` | `buildr.local-app-preview/v1` |
 
-Task Finish 的 v2 Result 继续由SQLite current/terminal authority决定；`run` additive返回portable `executionRecord` operation summary，表达`not-opened|blocked|retained|attention`、record outcome/body大小与diagnostics transient cleanup，但不暴露SQLite、body/transient locator、Carrier路径或token。`inspect`不读取或列举records。每次真实run/resume独立保留受控diagnostics；record attention不改写已成立的delivery、cleanup、Task terminal或Finish status。Carrier、lease、resume和恢复资源仍只由Finish current管理。`task complete`不是新的JSON contract，而是Task Record terminal status。
+Task Finish 的canonical v2 Result继续由SQLite current/terminal authority决定；CLI只在JSON输出边界选择detail。缺省或显式`compact`返回closed v1投影，只保留Task/run/status、current phase、handoff/Candidate/Content Target、主失败、next action、matching resume、关键refs、delivery/completion disposition、timing和portable `executionRecord`摘要；完整checks、operations、observations与diagnostics仅由显式`full`返回。`inspect`不读取或列举records。每次真实run/resume独立保留受控diagnostics；record attention不改写已成立的delivery、cleanup、Task terminal或Finish status。Carrier、lease、resume和恢复资源仍只由Finish current管理。`task complete`不是新的JSON contract，而是Task Record terminal status。
 
 `buildr.task-environment-result/v4`统一返回`operation`、`status`、Task ID、Receipt availability/locator、`current-machine`、`observedAt`、Environment read model、ready时的`execution`binding、diagnostic、effects与next actions。read model包含resolved Plan及逐Declaration/Scope/Recipe/Step current与prepared identity、inputs/outputs/required/executed/status/diagnostic；`preparation-step-executed`effect给出本次真实执行。`execution`包含明确workdir、execution/allowed roots与绝对`cliInvocation`。read model不暴露资源cleanup handle或controller CLI私有路径。
 

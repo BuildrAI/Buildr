@@ -7,6 +7,7 @@ import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './tas
 import { executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
+import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
   TASK_FINISH_EXECUTION_RECORD_OWNER,
@@ -138,6 +139,9 @@ function assertArgs(action, args) {
     if (option === '--json' || option === '--accept-zero-delta-adaptation') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
+    if (option === '--detail' && !['compact', 'full'].includes(value)) {
+      throw inputError('task_finish.detail_invalid', '--detail must be compact or full.', action, { detail: value });
+    }
     index += 1;
   }
 }
@@ -399,7 +403,10 @@ export function registerTaskFinishApplication(runtime) {
   }
 
   function print(result, args) {
-    if (args.includes('--json')) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (args.includes('--json')) {
+      const detail = optionValue(args, '--detail', 'compact');
+      process.stdout.write(`${JSON.stringify(projectTaskFinishResult(result, detail), null, 2)}\n`);
+    }
     else {
       console.log(`Task Finish run ${result.runId}: ${result.status}`);
       if (result.primaryFailure) console.log(`Failure: ${result.primaryFailure.phase}/${result.primaryFailure.operation || result.primaryFailure.check || 'unknown'} - ${result.primaryFailure.message}`);

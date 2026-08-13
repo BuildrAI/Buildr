@@ -23,7 +23,7 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 从 canonical retained Workspace 的可信 Environment Manager 调用：
 
 ```bash
-buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --json
+buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json
 ```
 
 直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding，不猜测contract版本，也不为调用创建或修改execution capsule。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
@@ -53,13 +53,13 @@ target前进时先证明carrier ancestry及changed paths；完整包含则跳过
 恢复命令：
 
 ```bash
-buildr task finish run --task <task-id> --run <run-id> --resume <product-token> [--accept-zero-delta-adaptation] --target <canonical-workspace> --json
+buildr task finish run --task <task-id> --run <run-id> --resume <product-token> [--accept-zero-delta-adaptation] --target <canonical-workspace> --detail compact --json
 ```
 
 只读查看：
 
 ```bash
-buildr task finish inspect --run <run-id> --target <canonical-workspace> --json
+buildr task finish inspect --run <run-id> --target <canonical-workspace> --detail compact --json
 ```
 
 ## 禁止事项

@@ -537,7 +537,7 @@ const COMMAND_ROUTES = [
       "必需参数：--run。",
       "互斥参数：无。",
       "Execution surface：canonical Workspace 中的 durable finish run，只读。",
-      "安全副作用：无；返回五阶段状态、具体 primaryFailure、恢复令牌和效率指标。",
+      "安全副作用：无；JSON默认返回closed compact投影，显式--detail full返回完整诊断Result；两者均保留恢复所需identity、primaryFailure与resume token。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect',
@@ -559,6 +559,7 @@ const COMMAND_ROUTES = [
       "提交信息：新run拒绝缺失、空subject或精确“交付 + 当前Task ID”的占位主题；同一run的prepare、adaptation与resume复用冻结message，公开Result只返回subject和identity。",
       "deliver使用首次run绑定的指定Agent Doctor；Doctor未ready时保留已完成的remote readback、partial delivery与精确resume token，普通Workspace保持blocked并且不cleanup。",
       "每次真正执行的run/resume先预留独立finish-diagnostics execution record容量；retained后只清理invocation diagnostics transient。record attention不改变已成立的Finish delivery、cleanup或Task终态，Carrier与恢复资源继续由Finish owner管理。",
+      "JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run',

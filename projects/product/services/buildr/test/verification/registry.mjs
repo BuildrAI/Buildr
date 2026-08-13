@@ -435,6 +435,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
     'src/application/compose-runtime.mjs', 'src/application/json-contracts.mjs',
+    'src/application/task-finish/task-finish-result-projection.mjs',
     'src/infrastructure/product-layout.mjs',
     'test/verification/cli/package-parity.mjs', 'package.json', 'package-lock.json',
   ], dependsOn: ['candidate-tarball'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),

@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
+import { PUBLIC_JSON_SCHEMAS } from '../../../src/application/json-contracts.mjs';
+import { compactTaskFinishResult } from '../../../src/application/task-finish/task-finish-result-projection.mjs';
 import { createCandidatePackage, readSharedCandidatePackage } from '../release/candidate-package.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -58,7 +60,19 @@ try {
   ], { env: { npm_config_cache: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false' } });
   assert.equal(installed.status, 0, installed.stderr);
   const packagedCli = path.join(prefix, 'node_modules', '.bin', process.platform === 'win32' ? 'buildr.cmd' : 'buildr');
-  const webDist = path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'payload', 'product', 'src', 'interfaces', 'local-app', 'web-dist');
+  const packagedRoot = path.join(prefix, 'node_modules', '@buildr-ai', 'buildr');
+  const packagedSchemas = await import(pathToFileURL(path.join(packagedRoot, 'src', 'application', 'json-contracts.mjs')));
+  const packagedProjection = await import(pathToFileURL(path.join(packagedRoot, 'src', 'application', 'task-finish', 'task-finish-result-projection.mjs')));
+  assert.equal(PUBLIC_JSON_SCHEMAS.taskFinishCompactResult, 'buildr.task-finish-compact-result/v1');
+  assert.equal(packagedSchemas.PUBLIC_JSON_SCHEMAS.taskFinishCompactResult, PUBLIC_JSON_SCHEMAS.taskFinishCompactResult);
+  const finishFixture = {
+    schemaVersion: PUBLIC_JSON_SCHEMAS.taskFinishResult,
+    runId: 'package-parity', status: 'complete',
+    identity: { task: 'package-parity', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev' },
+    phases: [], metrics: {},
+  };
+  assert.deepEqual(packagedProjection.compactTaskFinishResult(finishFixture), compactTaskFinishResult(finishFixture));
+  const webDist = path.join(packagedRoot, 'payload', 'product', 'src', 'interfaces', 'local-app', 'web-dist');
   for (const relative of ['index.html', 'assets']) assert.ok(fs.existsSync(path.join(webDist, relative)), `packaged Buildr Web dist asset is missing: ${relative}`);
   const distAssets = fs.readdirSync(path.join(webDist, 'assets'));
   assert.ok(distAssets.some((name) => name.endsWith('.js')), 'packaged Buildr Web web-dist must include built JS assets');
@@ -71,6 +85,8 @@ try {
     ['--version'],
     ['help', 'doctor'],
     ['help', 'task', 'verification'],
+    ['help', 'task', 'finish', 'run'],
+    ['help', 'task', 'finish', 'inspect'],
     ['task', 'create', '--json'],
     ['runtime', 'list', '--json'],
     ['doctr', '--json'],
