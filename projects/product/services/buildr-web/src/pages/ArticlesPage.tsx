@@ -61,7 +61,6 @@ export function ArticlesPage() {
     <>
       <section className="resource-toolbar">
         <div>
-          <p className="eyebrow">文章</p>
           <Typography.Title level={2} style={{ margin: 0 }}>对外发布材料</Typography.Title>
           <p className="page-copy">项目内维护的文章源；Buildr Web 只读展示，不在这里编辑或发布。</p>
         </div>

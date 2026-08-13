@@ -147,7 +147,6 @@ export function ServicesPage() {
     <>
       <section className="resource-toolbar">
         <div>
-          <p className="eyebrow">服务</p>
           <Typography.Title level={2} style={{ margin: 0 }}>服务目录</Typography.Title>
           <p className="page-copy">按项目查看已登记服务；编辑在弹框中完成。</p>
         </div>

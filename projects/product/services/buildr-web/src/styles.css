@@ -203,6 +203,14 @@ a {
 
 .app-shell .nav-chevron {
   color: var(--soft-muted);
+  font-size: 10px;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform 180ms ease;
+}
+
+.app-shell .nav-chevron.expanded {
+  transform: rotate(0deg);
 }
 
 .app-shell .nav-secondary {
@@ -384,6 +392,7 @@ a {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .global-context [data-workspace-route],

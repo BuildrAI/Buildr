@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { Button, Drawer, Space, Typography } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { CaretDownFilled, PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AgentActionDrawer } from './AgentActionDrawer';
@@ -177,7 +177,10 @@ export function AppLayout() {
                 onClick={() => setResourceExpanded((value) => !value)}
               >
                 <span>核心范围</span>
-                <span className="nav-chevron">{resourceExpanded ? '⌄' : '›'}</span>
+                <CaretDownFilled
+                  className={`nav-chevron${resourceExpanded ? ' expanded' : ''}`}
+                  aria-hidden
+                />
               </Button>
               <nav
                 id="resource-nav-children"
