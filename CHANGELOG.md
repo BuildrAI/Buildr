@@ -12,7 +12,7 @@
 - 加固 Formal Task Finish：阻止陈旧 handoff 恢复，正确处理重命名贡献的包含性判定，支持受控零差异 Delivery Adaptation、可恢复 compact 输出，以及多个 Finish run 并存时的 owner-ordered 自举恢复预检。
 - 扩展正式 Verification 执行记录：支持按 Task 回读同一次执行、阻止相同目标和 capability 集合的重复启动，并恢复多任务数据库与 migration 的隔离边界。
 - 收敛 Buildr 自举激活：Finish 交付后由唯一 runner 使用 Environment retained Node 编排 retained sync、Buildr Web Dev、development entry identity 与最终 Doctor，不再让开发安装占用机器默认 npm CLI。
-- 在 release tag 前增加机器可读 authority preflight，把 package metadata、GitHub repository、`publish.yml`、`npm-production` Environment 和 npm Trusted Publisher 当前事实绑定到同一 `main` commit 与 workflow digest；未登录、漂移或控制面不可读时 fail closed。
+- 在 release tag 前增加 GitHub-hosted OIDC authority probe：由同一 `publish.yml` 和 `npm-production` Environment 对目标 npm package 完成 token exchange，并把不含凭证的 run、artifact、package、`main` commit 与 workflow digest 绑定为短时 current evidence；本机 npm 登录、OTP、`npm trust list` 不再参与发布前证明，任何漂移、过期或控制面不可读都 fail closed。
 - 收紧 Rule 与 Skill 的权威边界，补齐 workspace-only Task Development handoff，并新增简洁的 Buildr 与 Agent 日常操作手册及双语公开上手路径。
 
 ## 0.1.0-rc.8 - 2026-08-12
