@@ -50,15 +50,21 @@ Updating Buildr updates the local product. Updating a Workspace updates its work
 
 ### 3. Start Working
 
-Once the Workspace is ready, describe your real goal in the Agent conversation:
+Once the Workspace is ready, tell the Agent what you want to set up or accomplish:
 
 ```text
-Help me clarify the requirements for our payments product and set up the Project.
+Create a Project called Buildr. Repository: https://github.com/xxx (optional).
 ```
 
 ```text
-Create a plan for this requirement, then complete development, testing, and delivery.
+Create a Service named buildr under the Buildr Project. Repository: https://github.com/xxx (optional).
 ```
+
+```text
+Build a feature that reviews the entire Task after closeout. Focus on execution time, repeated attempts, and areas for improvement.
+```
+
+A Project can hold work directly. Create a Service only when there is a code repository, application, module, or other executable asset.
 
 You do not need to learn Buildr commands first. The Agent uses Buildr to manage work assets, then continues with the actual work.
 

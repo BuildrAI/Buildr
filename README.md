@@ -52,17 +52,23 @@ buildr web launcher install
 
 ### 3. 直接开始工作
 
-Workspace 准备好后，继续在 Agent 对话框里描述真实目标：
+Workspace 准备好后，直接告诉 Agent 你要建立什么，或者要完成什么工作：
 
 ```text
-帮我梳理支付产品的需求，并建立项目。
+创建一个叫 Buildr 的项目，代码仓库是 https://github.com/xxx（可选）。
 ```
 
 ```text
-为这个需求形成方案，完成开发、测试和交付。
+在 Buildr 项目下创建一个 buildr 服务，代码仓库是 https://github.com/xxx（可选）。
 ```
 
-你不需要先学习 Buildr 命令。Agent 会使用 Buildr 管理工作资产，然后继续实际工作。
+```text
+开发一个功能：任务收尾后，复盘整个任务。要求重点分析执行耗时、重复尝试和可以改进的地方。
+```
+
+项目可以直接承载工作；只有存在代码仓、应用、模块或其他可执行资产时，才需要按需创建服务。
+
+你不需要先学习 Buildr 命令，Agent 会使用 Buildr 管理工作资产，然后继续实际工作。
 
 ## 三个核心价值
 
