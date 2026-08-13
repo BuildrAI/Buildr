@@ -100,6 +100,18 @@ async function waitForWebReadiness({ appData, child = null, stderr = () => '' })
   throw new Error(`Buildr Web did not become ready: ${stderr()}`);
 }
 
+async function waitForProcessExit(pid, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { process.kill(pid, 0); } catch (error) {
+      if (error.code === 'ESRCH') return;
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Process ${pid} did not exit within ${timeoutMs}ms.`);
+}
+
 export async function runReleaseSmoke(env = process.env) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-smoke-'));
   const packDirectory = path.join(root, 'pack');
@@ -211,7 +223,7 @@ export async function runReleaseSmoke(env = process.env) {
       assert.equal(launcherHealth.productIdentity.installationIdentity, health.productIdentity.installationIdentity);
       assert.equal(launcherHealth.launcherIdentity.bindingIdentity, installedLauncher.binding.bindingIdentity);
       try { process.kill(launcherHealth.pid, 'SIGTERM'); } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForProcessExit(launcherHealth.pid);
       if (launcherProcess.exitCode === null) launcherProcess.kill('SIGTERM');
 
       if (process.platform === 'darwin') {
@@ -250,7 +262,7 @@ export async function runReleaseSmoke(env = process.env) {
     return { source: source.kind, version: installedMetadata.version };
   } finally {
     if (web && web.exitCode === null) web.kill('SIGKILL');
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
 
