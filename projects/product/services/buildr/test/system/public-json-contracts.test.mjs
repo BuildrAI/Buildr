@@ -122,6 +122,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskExecutionRecordBodyFile',
     'taskExecutionRecordDetailView',
     'taskExecutionRecordGcResult',
+    'taskExecutionRecordInspectResult',
     'taskExecutionRecordListView',
     'taskFinishResult',
     'taskFinishRun',

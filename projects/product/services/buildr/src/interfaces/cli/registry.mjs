@@ -11,7 +11,7 @@ import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
-import { taskExecutionRecordGcCommand } from './task-execution-record.mjs';
+import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand } from './task-execution-record.mjs';
 
 const COMMAND_ROUTES = [
   {
@@ -244,13 +244,13 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；正式 Task execution 会保留受控 execution record。",
     help: [
-      "Usage: buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--json]",
+      "Usage: buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--retry] [--json]",
       "",
       "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；applicability 选择与 bounded Agent operation 由 task-verification Skill 负责。",
       "--declaration-root 只属于 task verification record；verification run 与 task verification inspect 都不读取 declaration source。",
       "采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。",
       "effects.authorization: explicit 必须逐项 --authorize-capability；显式授权资源必须逐项 --authorize-resource。被实际 claim 的 coordinated 资源通过 Git common-dir lease 跨 Task 排队。该命令不创建任务、调度 Agent 或写 current Result。",
-      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量，完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json 返回buildr.verification-execution/v1及portable executionRecord摘要。"
+      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量；相同Task/target/declaration/capability集合已有active record时默认零执行返回原record/run identity，只有--retry创建独立run/record。完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json 返回buildr.verification-execution/v1及portable executionRecord摘要。"
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'run',
     run: (r, c) => r.verificationRun(c.argv.slice(4)),
@@ -266,6 +266,22 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'cleanup',
     run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
+  },
+  {
+    key: "task execution-record list",
+    surface: "agent-machine",
+    summary: "按 Task 返回紧凑、可移植的 Execution Record 列表。",
+    help: ["Usage: buildr task execution-record list --task <task-id> [--view <all|verification|finish>] [--target <canonical-workspace>] [--json]", "", "原终端不可用时按Task恢复同一次execution identity；只读取Execution Record，不写Verification Result或Finish current。"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'list',
+    run: (r, c) => taskExecutionRecordListCommand(r, c.argv.slice(5)),
+  },
+  {
+    key: "task execution-record inspect",
+    surface: "agent-machine",
+    summary: "按 Task 与 record identity 回读状态、耗时、失败和证据摘要。",
+    help: ["Usage: buildr task execution-record inspect --task <task-id> --record <record-id> [--target <canonical-workspace>] [--json]", "", "回读同一record的lifecycle、timing、failure与evidence摘要；只读且不写Verification Result或Finish current。"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'inspect',
+    run: (r, c) => taskExecutionRecordInspectCommand(r, c.argv.slice(5)),
   },
   {
     key: "task execution-record gc",
@@ -953,11 +969,11 @@ const COMMAND_GROUPS = [
   {
     key: "task execution-record",
     surface: "maintenance",
-    summary: "管理 Task Execution Record authority 的 Workspace 级维护操作。",
+    summary: "读取Task-scoped Execution Record，或执行Workspace级bounded GC。",
     help: [
-      "Usage: buildr task execution-record <gc> ...",
+      "Usage: buildr task execution-record <list|inspect|gc> ...",
       "",
-      "当前只提供 bounded GC；不提供文件系统 discovery、failure 自动处置或执行资源 cleanup。"
+      "list/inspect用于原终端不可用后的只读恢复；gc执行bounded维护。不提供文件系统 discovery、failure 自动处置或执行资源 cleanup。"
     ],
     executable: false,
   },

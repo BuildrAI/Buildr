@@ -349,6 +349,22 @@ test('execution record migration建立closed单表、非级联Task FK与完整ro
   rollback.close();
 });
 
+test('execution invocation migration兼容legacy row并建立active identity索引', () => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  const invocation = migrations.find((migration) => migration.name === '0014_add_task_execution_invocation_identity.sql');
+  const database = new DatabaseSync(':memory:');
+  for (const migration of migrations.filter((item) => item.version < invocation.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('invocation-task', 'buildr.task-record/v2', 'Invocation', 'Legacy compatibility', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
+  database.prepare(`INSERT INTO task_execution_records(record_id, schema_version, task_id, owner, kind, run_identity, target_identity, producer, outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest, stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until, opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at)
+    VALUES ('legacy-record', 'buildr.task-execution-record/v1', 'invocation-task', 'task-verification', 'verification-execution', 'legacy-run', 'target', 'test', 'running', 'open', 'not-required', 'staging', 'reserved', NULL, NULL, 0, 0, 0, 'buildr.task-execution-record-redaction/v1', 16777216, NULL, '2026-08-01T00:00:00.000Z', NULL, NULL, NULL, NULL, NULL, '2026-08-01T00:00:00.000Z')`).run();
+  applyWorkspaceSqliteMigration(database, invocation);
+  assert.equal(database.prepare("SELECT invocation_identity FROM task_execution_records WHERE record_id = 'legacy-record'").get().invocation_identity, null);
+  assert.ok(database.prepare("SELECT name FROM pragma_index_list('task_execution_records')").all().some((row) => row.name === 'task_execution_records_active_invocation_idx'));
+  assert.throws(() => database.prepare("UPDATE task_execution_records SET invocation_identity = 'sha256-not-a-digest' WHERE record_id = 'legacy-record'").run());
+  database.close();
+});
+
 test('Task Finish migration把run、prepared completion与lease收敛为唯一current row', () => {
   const migrations = loadWorkspaceSqliteMigrations();
   const compact = migrations.find((migration) => migration.name === '0012_compact_task_finish_current.sql');

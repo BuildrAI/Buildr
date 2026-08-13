@@ -135,6 +135,51 @@ test('Application open幂等、seal、inspect/list和failure resolution共享单
   assert.equal(resolved.record.resolutionStatus, 'acknowledged');
 });
 
+test('相同invocation identity原子复用active record，显式retry才创建新record', (t) => {
+  const { root, runtime } = fixture(t);
+  const invocationIdentity = `sha256-${'a'.repeat(64)}`;
+  const input = {
+    owner: 'task-verification', kind: 'verification-execution', invocationIdentity,
+    targetIdentity: 'target-stable', producer: 'integration-test',
+  };
+  const first = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-first' });
+  const active = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-second' });
+  assert.equal(first.status, 'opened');
+  assert.equal(active.status, 'existing-active');
+  assert.equal(active.record.recordId, first.record.recordId);
+  assert.equal(runtime.listTaskExecutionRecords(root, 'record-task').records.length, 1);
+
+  const retry = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-retry', allowDuplicateActive: true });
+  assert.equal(retry.status, 'opened');
+  assert.notEqual(retry.record.recordId, first.record.recordId);
+  assert.equal(runtime.listTaskExecutionRecords(root, 'record-task').records.length, 2);
+});
+
+test('紧凑inspect只读返回验证终态、耗时、失败与可移植evidence摘要', (t) => {
+  const { root, runtime } = fixture(t);
+  const opened = open(runtime, root, 'record-task', 'verification-compact');
+  runtime.sealTaskExecutionRecord(root, opened.record.recordId, {
+    outcome: 'failed',
+    files: [
+      { name: 'summary.json', content: { outcome: 'failed', durationMs: 1234, timingSource: 'wrapper-measured', startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.234Z', project: { code: 'demo' }, target: { identity: 'target-compact' }, declaration: { identity: `sha256-${'b'.repeat(64)}` }, selectedCapabilities: [{ id: 'demo.test' }] } },
+      { name: 'diagnostics.json', content: { failures: [{ capabilityId: 'demo.test', exitCode: 1 }], diagnostic: null } },
+    ],
+  });
+  const compact = runtime.inspectTaskExecutionRecordCompactView(root, 'record-task', opened.record.recordId);
+  assert.equal(compact.schemaVersion, 'buildr.task-execution-record-inspect-result/v1');
+  assert.equal(compact.execution.status, 'available');
+  assert.equal(compact.execution.durationMs, 1234);
+  assert.deepEqual(compact.execution.failures, [{ capabilityId: 'demo.test', exitCode: 1 }]);
+  assert.equal(JSON.stringify(compact).includes(root), false);
+
+  const list = spawnSync(process.execPath, [BUILDR, 'task', 'execution-record', 'list', '--task', 'record-task', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(list.status, 0, list.stderr || list.stdout);
+  assert.equal(JSON.parse(list.stdout).records[0].recordId, opened.record.recordId);
+  const inspect = spawnSync(process.execPath, [BUILDR, 'task', 'execution-record', 'inspect', '--task', 'record-task', '--record', opened.record.recordId, '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(inspect.status, 0, inspect.stderr || inspect.stdout);
+  assert.equal(JSON.parse(inspect.stdout).execution.durationMs, 1234);
+});
+
 test('Task-owner与Workspace quota在producer前backpressure且失败不创建row', (t) => {
   const taskIds = ['quota-1', 'quota-2', 'quota-3', 'quota-4', 'quota-5'];
   const { root, runtime } = fixture(t, taskIds);

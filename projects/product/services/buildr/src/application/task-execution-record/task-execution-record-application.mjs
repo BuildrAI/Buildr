@@ -61,6 +61,7 @@ function portableRecord(record, body = portableBody(record)) {
     owner: record.owner,
     kind: record.kind,
     runIdentity: record.runIdentity,
+    invocationIdentity: record.invocationIdentity,
     targetIdentity: record.targetIdentity,
     producer: record.producer,
     outcome: record.outcome,
@@ -113,12 +114,15 @@ function portableGcDiagnostic(error, status) {
 
 export function registerTaskExecutionRecordApplication(runtime) {
   function openTaskExecutionRecord(targetRoot, taskId, input) {
-    assertInput(input, new Set(['owner', 'kind', 'runIdentity', 'targetIdentity', 'producer']), 'Task Execution Record open');
+    assertInput(input, new Set(['owner', 'kind', 'runIdentity', 'invocationIdentity', 'targetIdentity', 'producer', 'allowDuplicateActive']), 'Task Execution Record open');
     const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
     if (task.record.status !== 'active') throw taskExecutionRecordError('task_execution_record_task_terminal', `Task ${taskId} 已是${task.record.status}，不能open新的执行记录。`, 409, { status: task.record.status });
-    const draft = createOpenTaskExecutionRecord({ taskId: task.record.taskId, ...input });
-    const persisted = runtime.openTaskExecutionRecordPersistence(task.root, draft);
-    return result('open', persisted.created ? 'opened' : 'reused', persisted, [{ type: persisted.created ? 'created' : 'reused', path: persisted.file }]);
+    if (input.allowDuplicateActive !== undefined && typeof input.allowDuplicateActive !== 'boolean') throw taskExecutionRecordError('task_execution_record_allow_duplicate_active_invalid', 'allowDuplicateActive必须是boolean。', 400);
+    const { allowDuplicateActive = false, ...recordInput } = input;
+    const draft = createOpenTaskExecutionRecord({ taskId: task.record.taskId, ...recordInput });
+    const persisted = runtime.openTaskExecutionRecordPersistence(task.root, draft, { allowDuplicateActive });
+    const status = persisted.existingActive ? 'existing-active' : persisted.created ? 'opened' : 'reused';
+    return result('open', status, persisted, [{ type: status, path: persisted.file }]);
   }
 
   function inspectTaskExecutionRecord(targetRoot, recordId) {
@@ -151,8 +155,10 @@ export function registerTaskExecutionRecordApplication(runtime) {
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordListView, {
       taskId,
       view,
+      observedAt: new Date().toISOString(),
       records: records.map((item) => portableRecord(item.record)),
       diagnostic: null,
+      nextActions: [],
     });
   }
 
@@ -178,6 +184,35 @@ export function registerTaskExecutionRecordApplication(runtime) {
       }
     }
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordDetailView, { taskId, record: portableRecord(record, body), diagnostic: null });
+  }
+
+  function inspectTaskExecutionRecordCompactView(targetRoot, taskId, recordId) {
+    const detail = inspectTaskExecutionRecordView(targetRoot, taskId, recordId);
+    const record = detail.record;
+    let execution = { status: 'unavailable', reason: record.lifecycleStatus === 'open' ? 'record-open' : `body-${record.body.status}` };
+    if (record.owner === 'task-verification' && record.kind === 'verification-execution' && record.body.available) {
+      try {
+        const summary = JSON.parse(readTaskExecutionRecordBodyFileView(targetRoot, taskId, recordId, 'summary.json').file.content);
+        const diagnostics = JSON.parse(readTaskExecutionRecordBodyFileView(targetRoot, taskId, recordId, 'diagnostics.json').file.content);
+        execution = {
+          status: 'available',
+          outcome: summary.outcome,
+          durationMs: summary.durationMs,
+          timingSource: summary.timingSource,
+          startedAt: summary.startedAt,
+          finishedAt: summary.finishedAt,
+          project: summary.project,
+          target: summary.target,
+          declaration: summary.declaration,
+          selectedCapabilities: summary.selectedCapabilities,
+          failures: diagnostics.failures,
+          diagnostic: diagnostics.diagnostic,
+        };
+      } catch (error) {
+        execution = { status: 'unavailable', reason: 'body-integrity-failed', diagnostic: safeBodyDiagnostic(error) };
+      }
+    }
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordInspectResult, { taskId, record, execution, diagnostic: null, nextActions: [] });
   }
 
   function readTaskExecutionRecordBodyFileView(targetRoot, taskId, recordId, filename) {
@@ -326,6 +361,7 @@ export function registerTaskExecutionRecordApplication(runtime) {
     listTaskExecutionRecords,
     listTaskExecutionRecordView,
     inspectTaskExecutionRecordView,
+    inspectTaskExecutionRecordCompactView,
     readTaskExecutionRecordBodyFileView,
     sealTaskExecutionRecord: sealTaskExecutionRecordOperation,
     resolveTaskExecutionRecord: resolveTaskExecutionRecordOperation,

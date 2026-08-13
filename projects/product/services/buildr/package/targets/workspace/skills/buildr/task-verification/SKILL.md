@@ -65,6 +65,15 @@ buildr verification run --project <code> \
 
 `verification run` 只执行已选择的 command capability，并返回 `buildr.verification-execution/v1`；它不接受 `--declaration-root`。带 matching Task Environment 的正式 execution 会在启动 capability 前 open 一条 Task Execution Record，完成后先 seal 受控、脱敏、有限期正文，再精确清理 transient evidence；容量不足时不得启动 capability。Task 外 execution 仍只产生 transient evidence。`--declaration-root` 只用于 `task verification record`，让 Application 在正式写入动作中读取当前 ready Task Environment 内尚未进入 canonical Workspace 的 declaration bytes；`inspect`不重新观察声明。
 
+正式 execution 启动时会返回并持久化 record/run identity。工具PTY或session丢失后，先按Task回查同一次执行，禁止直接整轮重跑：
+
+```bash
+buildr task execution-record list --task <task-id> --view verification --target <canonical-workspace> --json
+buildr task execution-record inspect --task <task-id> --record <record-id> --target <canonical-workspace> --json
+```
+
+相同Task、target、Project/declaration与capability集合已有`open` record时，普通`verification run`返回`status: active`及原record/run identity，并且不启动capability、不占第二份配额。继续使用list/inspect读取终态；只有确认需要独立新执行时才显式追加`--retry`。`attention`是已有正文的终态，不算active，也不能仅因工具session丢失而创建第二个execution authority。
+
 声明 `effects.authorization: explicit` 时，取得对应授权后逐项增加 `--authorize-capability <id>`；声明为 explicit 的资源同理增加 `--authorize-resource <id>`。不得用一次宽泛授权覆盖其他 capability 或 resource。
 
 - Agent capability 按声明 instructions 做有界操作，保留实际事实；不要硬塞进 command runner。

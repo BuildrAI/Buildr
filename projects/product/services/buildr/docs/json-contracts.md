@@ -36,6 +36,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | Buildr Web Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
 | Buildr Web Task execution record list/detail/body file | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-detail-view/v1` / `buildr.task-execution-record-body-file/v1` |
+| `task execution-record list/inspect` | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-inspect-result/v1` |
 | `task finish run/inspect` | `buildr.task-finish-result/v2` |
 | `web preview start/list/stop` | `buildr.local-app-preview/v1` |
 
@@ -47,7 +48,7 @@ Task Finish 的 v2 Result 继续由SQLite current/terminal authority决定；`ru
 
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
 
-`buildr.verification-execution/v1` 返回显式 target identity、Project/declaration identity、实际选择的 command capabilities、逐项终态、可选 Task Environment execution binding、精确 capability/resource 授权、资源协调、真实 wall-clock、execution identity 与 transient evidence lifecycle。请求无效、能力失败或目标在执行中变化时仍输出同一单一 JSON envelope 并非零退出；worker stdout/stderr 只作为有界字段进入 checks，不与顶层 JSON 混排。它不是 portable Task Result，也不表达固定 assurance、推进决定或 Candidate generation。
+`buildr.verification-execution/v1` 返回显式 target identity、Project/declaration identity、实际选择的 command capabilities、逐项终态、可选 Task Environment execution binding、精确 capability/resource 授权、资源协调、真实 wall-clock、execution identity 与 transient evidence lifecycle。正式Task run额外返回portable invocation/record/run identity；相同调用已有open record时返回`status: active`且零执行，只有`--retry`创建独立run。请求无效、能力失败或目标在执行中变化时仍输出同一单一 JSON envelope 并非零退出；worker stdout/stderr 只作为有界字段进入 checks，不与顶层 JSON 混排。它不是 portable Task Result，也不表达固定 assurance、推进决定或 Candidate generation。
 
 `buildr.verification-evidence-cleanup/v1` 只报告 transient execution evidence 的 cleanup 状态。非 transient、identity 不匹配、目录越界或无法证明 provider ownership 的文件不会被删除。
 
@@ -62,6 +63,8 @@ Task Finish 的 v2 Result 继续由SQLite current/terminal authority决定；`ru
 Buildr Web stored-state projection 使用详情 v2 和列表 v4，在既有字段上增加 `retrospectiveRelations`并支持 `open|todo|active|completed|abandoned|all`过滤。`open` 只是查询语义，不持久。这两个视图仍不解析专业 currentness，`recordDigest`、`childTaskCount` 与关系摘要都不进入 Task Record schema。
 
 Task Execution Record 的三个 Buildr Web read model 只读取同一 `task_execution_records` authority。list v1 固定支持 `all|verification|finish`，detail v1 返回 portable metadata 与经完整性验证的 closed正文文件清单，body-file v1 只返回单个白名单文件最多 512 KiB 的 UTF-8 preview 和双重截断状态。三者都不暴露 SQLite、locator、本机路径、reserved quota、resource token 或 mutation；cleaned tombstone 仍可列出，但正文读取返回 unavailable diagnostic。
+
+Agent CLI复用同一list v1，并以`buildr.task-execution-record-inspect-result/v1`返回紧凑Verification终态：record/run/invocation identity、lifecycle/outcome、timing、failure、Project/target/declaration与capability evidence摘要。inspect只从已验证manifest/digest的受控正文提炼；open、cleaned、正文损坏或不可用时返回明确unavailable原因，不扫描SQLite路径或建立第二份状态authority。
 
 ## Doctor v1 结果语义
 
