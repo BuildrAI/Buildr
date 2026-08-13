@@ -20,6 +20,7 @@ const skippedNames = new Set(['.git', '.worktrees', 'node_modules', '.agents', '
 function copyFilter(source) {
   if (source === workspaceRoot) return true;
   const relative = path.relative(workspaceRoot, source);
+  if (relative === path.join('.buildr', 'local') || relative.startsWith(`${path.join('.buildr', 'local')}${path.sep}`)) return false;
   return !relative.split(path.sep).some((segment) => skippedNames.has(segment));
 }
 
@@ -43,6 +44,7 @@ try {
   const copiedService = path.join(copiedProduct, 'services', 'buildr');
   assert.equal(fs.existsSync(path.join(copiedService, 'node_modules')), false, 'fresh candidate must not contain node_modules');
   assert.equal(fs.existsSync(path.join(checkout, '.agents')), false, 'fresh candidate must not contain Agent runtime');
+  assert.equal(fs.existsSync(path.join(checkout, '.buildr', 'local')), false, 'fresh candidate must not copy Workspace-local structured state');
   run('git', ['init', '--bare', '-q', remote], { cwd: tempRoot });
   run('git', ['init', '-q'], { cwd: checkout });
   run('git', ['config', 'user.email', 'buildr@example.com'], { cwd: checkout });

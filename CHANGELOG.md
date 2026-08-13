@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+## 0.1.0-rc.9 - 2026-08-13
+
+- Breaking：Buildr 的机器默认 CLI 现在只属于 npm installation，development checkout 不再创建、覆盖或要求 PATH 中的 `buildr` 指向源码；自举 workspace 统一显式使用 retained checkout 的 `projects/product/buildr`，并独立核对 Node、development channel、source commit 与 package version。
+- Breaking：本机产品入口统一为 Buildr Web；CLI、Launcher、文档和自举激活不再把旧 Local App/Buildr App 身份当作当前产品表面。公开 npm 安装默认不产生桌面副作用，只有显式 Launcher 生命周期操作才创建、启动、修复或卸载图形入口。
+- 将 Buildr Web 前端权威源码拆分到独立 `buildr-web` Service，并优化 Project/Service 目录与详情交互：支持文档展示、类型下拉、弹框编辑和更紧凑的目录页眉。
+- 加固 Formal Task Finish：阻止陈旧 handoff 恢复，正确处理重命名贡献的包含性判定，支持受控零差异 Delivery Adaptation、可恢复 compact 输出，以及多个 Finish run 并存时的 owner-ordered 自举恢复预检。
+- 扩展正式 Verification 执行记录：支持按 Task 回读同一次执行、阻止相同目标和 capability 集合的重复启动，并恢复多任务数据库与 migration 的隔离边界。
+- 收敛 Buildr 自举激活：Finish 交付后由唯一 runner 使用 Environment retained Node 编排 retained sync、Buildr Web Dev、development entry identity 与最终 Doctor，不再让开发安装占用机器默认 npm CLI。
+- 在 release tag 前增加机器可读 authority preflight，把 package metadata、GitHub repository、`publish.yml`、`npm-production` Environment 和 npm Trusted Publisher 当前事实绑定到同一 `main` commit 与 workflow digest；未登录、漂移或控制面不可读时 fail closed。
+- 收紧 Rule 与 Skill 的权威边界，补齐 workspace-only Task Development handoff，并新增简洁的 Buildr 与 Agent 日常操作手册及双语公开上手路径。
+
 ## 0.1.0-rc.8 - 2026-08-12
 
 - Breaking：把 Buildr 为 Agent Skill 投射保存的所有权回执迁移到 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`；实际 Agent Skills 路径不变。新版本会安全迁移仍能证明 runtime 文件的旧回执，新旧冲突或 runtime 漂移时零写入停止；旧 CLI 不再能自动管理已迁移投射。

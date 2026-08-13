@@ -142,7 +142,7 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 8. npm tarball只由npm Registry承载；Actions artifact只保存冻结候选/evidence，README、官网和安装脚本不得把它作为公共下载地址。发布后只从Registry下载精确package并核对安装readback。
 9. 已发布版本不覆盖。RC问题发布新的prerelease；正式版本问题优先发布patch，必要时deprecate或移动dist-tag。所有tag、Registry与公共安装readback稳定后，远端release Task分支清理仍需独立授权；清理失败只记录follow-up，不回滚已发布事实。
 
-`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6` 和 `0.1.0-rc.7` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用；`0.1.0-rc.8` 当前按同一 trusted publishing 流程准备，发布事实以 npm 官方 registry 和对应 GitHub prerelease 为准。后续发布仍需每次具有明确发布意图。
+`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6`、`0.1.0-rc.7` 和 `0.1.0-rc.8` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用；`0.1.0-rc.9` 当前按同一 trusted publishing 流程准备，发布事实以 npm 官方 registry 和对应 GitHub prerelease 为准。后续发布仍需每次具有明确发布意图。
 
 实际自举workspace如需消费新版产品资产，可独立执行sync并在状态变更后运行当前Agent doctor。`buildr update`只按installation receipt更新当前npm package或development checkout；它不更新Workspace Node。上述能力验证不等于已完成tag、publish或GitHub Release mutation。
 
