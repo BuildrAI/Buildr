@@ -81,12 +81,23 @@ function parseJson(label, output, schemaVersion) {
   return payload;
 }
 
-async function waitForWebReadiness({ appData, child = null, stderr = () => '' }) {
+export async function waitForWebReadiness({ appData, child = null, stderr = () => '', fetchHealth = fetch }) {
+  let lastConnectionError = null;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     let instance = null;
     try { instance = JSON.parse(fs.readFileSync(path.join(appData, 'instance.json'), 'utf8')); } catch {}
     if (instance) {
-      const response = await fetch(`${instance.url}/api/v1/health`, { headers: { 'x-buildr-instance': instance.secret } });
+      let response = null;
+      try {
+        response = await fetchHealth(`${instance.url}/api/v1/health`, { headers: { 'x-buildr-instance': instance.secret } });
+      } catch (error) {
+        lastConnectionError = error;
+      }
+      if (!response) {
+        if (child?.exitCode !== null && child) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
       assert.equal(response.status, 200);
       const health = await response.json();
       assert.equal(health.schemaVersion, 'buildr.local-app-health/v1');
@@ -97,7 +108,7 @@ async function waitForWebReadiness({ appData, child = null, stderr = () => '' })
     if (child?.exitCode !== null && child) break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`Buildr Web did not become ready: ${stderr()}`);
+  throw new Error(`Buildr Web did not become ready: ${stderr()}${lastConnectionError ? ` (${lastConnectionError.cause?.code ?? lastConnectionError.message})` : ''}`);
 }
 
 async function waitForProcessExit(pid, timeoutMs = 5_000) {

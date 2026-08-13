@@ -9,9 +9,31 @@ import { buildApplicationPayload } from '../../scripts/release/application-paylo
 import { createReleaseArtifact, readReleaseArtifact } from '../../scripts/release/release-artifact.mjs';
 import { inspectCandidatePaths } from '../../test/verification/release/open-source-candidate.mjs';
 import { readSharedCandidatePackage } from '../../test/verification/release/candidate-package.mjs';
-import { resolveReleaseSmokeSource } from '../../test/verification/release/release-smoke.mjs';
+import { resolveReleaseSmokeSource, waitForWebReadiness } from '../../test/verification/release/release-smoke.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+test('release smoke readiness retries a stale instance connection while startup continues', async (t) => {
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-readiness-'));
+  t.after(() => fs.rmSync(appData, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(appData, 'instance.json'), JSON.stringify({ url: 'http://127.0.0.1:64218', secret: 'test' }));
+  let attempts = 0;
+
+  const health = await waitForWebReadiness({
+    appData,
+    async fetchHealth() {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+      return {
+        status: 200,
+        async json() { return { schemaVersion: 'buildr.local-app-health/v1', status: 'ready' }; },
+      };
+    },
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(health.status, 'ready');
+});
 
 test('open-source candidate ignores tracked paths deleted from the frozen worktree', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-open-source-deletion-'));
