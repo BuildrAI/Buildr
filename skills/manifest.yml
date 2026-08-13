@@ -470,7 +470,7 @@ skills:
         mode: required
   - id: buildr-self-bootstrap-sync
     path: buildr-self-bootstrap-sync
-    description: Buildr自举Workspace的Formal Task Finish成功或只被retained Doctor阻塞后使用；按冻结Task Contribution去重执行package sync、development CLI、development Local App，并以最终Doctor或same-run resume收敛。
+    description: Buildr自举Workspace的Formal Task Finish成功或只被retained Doctor阻塞后使用；多个Finish carrier并存时先生成只读owner-ordered恢复计划，否则按冻结Task Contribution执行self-bootstrap activation并以最终Doctor或same-run resume收敛。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-self-bootstrap-sync
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-self-bootstrap-sync
   - id: declaration-intake

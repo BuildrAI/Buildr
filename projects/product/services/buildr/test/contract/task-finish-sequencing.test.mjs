@@ -76,7 +76,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
     'projects/product/services/buildr/src/interfaces/cli/launcher.mjs',
     'projects/product/services/buildr/package/launchers/**',
   ]) assert.ok(skill.includes(input), input);
-  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-cli', 'install-development-local-app', 'package/launchers/manage.mjs install --channel development', '公开命令没有development channel', 'verify-cli-identity', 'PATH顺序', 'version --json', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
+  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-cli', 'install-development-local-app', 'package/launchers/manage.mjs install --channel development', '公开命令没有development channel', 'verify-cli-identity', 'PATH顺序', 'version --json', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'resume-owner-cleanup', 'retry-current-closeout', '原Task Finish owner', '协调器不得直接删除foreign carrier', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
   for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', 'Skill本地runner', '默认`buildr`', '不得启动第二个orchestrator或绕过runner补做sync、安装、CLI检查、Doctor或resume', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
   assert.match(runtimeFinish, /Buildr 自举 Workspace 激活/);
   assert.match(runtimeFinish, /doctor-blocked/);
@@ -85,7 +85,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   assert.equal(packageManifest.includes('buildr-self-bootstrap-sync'), false);
   const runnerPath = path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
   const runner = fs.readFileSync(runnerPath, 'utf8');
-  for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-cli'", "'install-local-app'", "'verify-cli-identity'", "'finalize'", 'default-cli-launcher-mismatch', 'default-cli-entry-mismatch', 'default-cli-version-mismatch']) assert.ok(runner.includes(phrase), phrase);
+  for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'foreign-carriers-require-owner-recovery', 'manual-owner-review', 'unprovable', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-cli'", "'install-local-app'", "'verify-cli-identity'", "'finalize'", 'default-cli-launcher-mismatch', 'default-cli-entry-mismatch', 'default-cli-version-mismatch']) assert.ok(runner.includes(phrase), phrase);
   assert.match(runner, /activationPaths \|\| finishResult\.carrier\?\.changedPaths/);
   assert.match(runner, /task', 'finish', 'inspect'/);
   assert.match(runner, /'--detail', 'full'/);

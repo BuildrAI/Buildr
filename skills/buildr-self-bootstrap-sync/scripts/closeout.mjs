@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
+export const SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA = 'buildr.self-bootstrap-recovery-plan/v1';
 export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
   'preflight',
   'plan',
@@ -227,6 +228,241 @@ function ownedFinishCarrierPath(finishResult, workspaceRoot) {
     throw closeoutError('self-bootstrap-closeout.carrier-root-invalid', 'Doctor blocked Finish Result声明的Delivery Carrier越出canonical Workspace。', { expectedRoot });
   }
   return relativeRoot;
+}
+
+function safeRunId(value) {
+  const runId = portable(value);
+  return runId && runId !== '.' && !runId.includes('/') ? runId : null;
+}
+
+function carrierRootPath(workspaceRoot, runId) {
+  return path.resolve(workspaceRoot, ...`${FINISH_CARRIER_ROOT}/${runId}`.split('/'));
+}
+
+function carrierObservationDiagnostic(code, message, details = null) {
+  return { code, message, details };
+}
+
+export function discoverFinishCarrierEntries(workspaceRoot) {
+  const root = fs.realpathSync(path.resolve(workspaceRoot));
+  const carrierRoot = path.join(root, ...FINISH_CARRIER_ROOT.split('/'));
+  let carrierRootStat;
+  try { carrierRootStat = fs.lstatSync(carrierRoot); } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    return [{
+      runId: null,
+      path: carrierRoot,
+      realPath: null,
+      diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-inventory-unreadable', 'Finish carrier根无法读取。', { error: error.message }),
+    }];
+  }
+  if (!carrierRootStat.isDirectory() || carrierRootStat.isSymbolicLink()) {
+    return [{
+      runId: null,
+      path: carrierRoot,
+      realPath: null,
+      diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-inventory-root-invalid', 'Finish carrier根必须是真实目录且不能是symlink。'),
+    }];
+  }
+  const realRoot = fs.realpathSync(root);
+  const realCarrierRoot = fs.realpathSync(carrierRoot);
+  const carrierRootRelative = path.relative(realRoot, realCarrierRoot);
+  if (!carrierRootRelative || path.isAbsolute(carrierRootRelative) || carrierRootRelative.split(path.sep).includes('..')) {
+    return [{
+      runId: null,
+      path: carrierRoot,
+      realPath: realCarrierRoot,
+      diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-inventory-root-invalid', 'Finish carrier根越出canonical Workspace。'),
+    }];
+  }
+
+  let entries;
+  try { entries = fs.readdirSync(carrierRoot, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name)); } catch (error) {
+    return [{
+      runId: null,
+      path: carrierRoot,
+      realPath: realCarrierRoot,
+      diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-inventory-unreadable', 'Finish carrier根无法枚举。', { error: error.message }),
+    }];
+  }
+  const realPaths = new Map();
+  return entries.map((entry) => {
+    const entryPath = path.join(carrierRoot, entry.name);
+    const runId = safeRunId(entry.name);
+    if (!runId || runId !== entry.name) {
+      return {
+        runId: entry.name,
+        path: entryPath,
+        realPath: null,
+        diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-entry-name-invalid', 'Finish carrier目录名不是安全run identity。'),
+      };
+    }
+    let entryStat;
+    try { entryStat = fs.lstatSync(entryPath); } catch (error) {
+      return {
+        runId,
+        path: entryPath,
+        realPath: null,
+        diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-entry-unreadable', 'Finish carrier条目无法读取。', { error: error.message }),
+      };
+    }
+    if (!entryStat.isDirectory() || entryStat.isSymbolicLink()) {
+      return {
+        runId,
+        path: entryPath,
+        realPath: null,
+        diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-entry-invalid', 'Finish carrier条目必须是真实目录且不能是symlink。'),
+      };
+    }
+    let realPath;
+    try { realPath = fs.realpathSync(entryPath); } catch (error) {
+      return {
+        runId,
+        path: entryPath,
+        realPath: null,
+        diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-entry-unreadable', 'Finish carrier条目realpath无法读取。', { error: error.message }),
+      };
+    }
+    const relative = path.relative(realCarrierRoot, realPath);
+    if (!relative || path.isAbsolute(relative) || relative.split(path.sep).includes('..') || relative.includes(path.sep)) {
+      return {
+        runId,
+        path: entryPath,
+        realPath,
+        diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-entry-outside-root', 'Finish carrier条目不是固定根下的真实直接目录。'),
+      };
+    }
+    const realIdentity = normalizeFilesystemPath(realPath);
+    if (realPaths.has(realIdentity)) {
+      return {
+        runId,
+        path: entryPath,
+        realPath,
+        diagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.carrier-entry-realpath-duplicate', '多个Finish carrier条目解析为同一realpath。', { duplicateOf: realPaths.get(realIdentity) }),
+      };
+    }
+    realPaths.set(realIdentity, runId);
+    return { runId, path: entryPath, realPath, diagnostic: null };
+  });
+}
+
+function validateForeignFinishCarrier(entry, finishResult, workspaceRoot) {
+  if (finishResult?.schemaVersion !== 'buildr.task-finish-result/v2') {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-finish-schema-invalid', 'Foreign carrier的Finish Result schema不受支持。');
+  }
+  if (finishResult.runId !== entry.runId) {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-run-mismatch', 'Foreign Finish Result的run identity与carrier目录不一致。', { expected: entry.runId, actual: finishResult.runId || null });
+  }
+  if (!finishResult.identity?.task) {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-owner-missing', 'Foreign Finish Result缺少owning Task identity。');
+  }
+  if (!finishResult.identity?.workspaceRoot || !sameFilesystemPath(finishResult.identity.workspaceRoot, workspaceRoot)) {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-workspace-mismatch', 'Foreign Finish Result不属于当前canonical Workspace。');
+  }
+  if (!finishResult.carrier?.root || !sameFilesystemPath(finishResult.carrier.root, entry.path)) {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-carrier-root-mismatch', 'Foreign Finish Result声明的carrier root与观察目录不一致。', { expected: entry.path, actual: finishResult.carrier?.root || null });
+  }
+  if (!finishResult.carrier?.identity) {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-carrier-identity-missing', 'Foreign Finish Result缺少carrier identity。');
+  }
+  if (finishResult.resume && finishResult.resume.carrierIdentity !== finishResult.carrier.identity) {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-resume-carrier-mismatch', 'Foreign Finish Result的resume identity与carrier identity不一致。', { carrierIdentity: finishResult.carrier.identity, resumeCarrierIdentity: finishResult.resume?.carrierIdentity || null });
+  }
+  if (finishResult.status === 'cleanup_pending'
+    && (finishResult.primaryFailure?.phase !== 'cleanup' || finishResult.resume?.phase !== 'cleanup' || !finishResult.resume?.token)) {
+    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-cleanup-resume-invalid', 'cleanup_pending foreign Finish Result缺少matching cleanup resume事实。', {
+      failurePhase: finishResult.primaryFailure?.phase || null,
+      resumePhase: finishResult.resume?.phase || null,
+      hasResumeToken: Boolean(finishResult.resume?.token),
+    });
+  }
+  return null;
+}
+
+function ownerFacts(finishResult, runId) {
+  return {
+    kind: 'task-finish-owner',
+    taskId: finishResult?.identity?.task || null,
+    runId,
+    agent: finishResult?.identity?.agent || null,
+  };
+}
+
+export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEntries, workspaceRoot, nodeExecutable, runnerPath }) {
+  const currentRunId = currentFinishResult.runId;
+  const observations = carrierEntries.map((entry) => {
+    if (entry.runId === currentRunId && !entry.diagnostic) {
+      return {
+        runId: entry.runId,
+        path: entry.path,
+        classification: 'current',
+        owner: ownerFacts(currentFinishResult, entry.runId),
+        status: currentFinishResult.status || null,
+        diagnostic: null,
+      };
+    }
+    if (entry.diagnostic) {
+      return { runId: entry.runId, path: entry.path, classification: 'unprovable', owner: null, status: null, diagnostic: entry.diagnostic };
+    }
+    if (entry.inspectDiagnostic) {
+      return { runId: entry.runId, path: entry.path, classification: 'unprovable', owner: null, status: null, diagnostic: entry.inspectDiagnostic };
+    }
+    const finishResult = entry.finishResult;
+    const diagnostic = validateForeignFinishCarrier(entry, finishResult, workspaceRoot);
+    if (diagnostic) {
+      return { runId: entry.runId, path: entry.path, classification: 'unprovable', owner: null, status: finishResult?.status || null, diagnostic };
+    }
+    const cleanupPending = finishResult.status === 'cleanup_pending' && Boolean(finishResult.identity?.task);
+    return {
+      runId: entry.runId,
+      path: entry.path,
+      classification: cleanupPending ? 'cleanup_pending' : 'manual-owner-review',
+      owner: ownerFacts(finishResult, entry.runId),
+      status: finishResult.status || null,
+      diagnostic: cleanupPending ? null : carrierObservationDiagnostic('self-bootstrap-closeout.foreign-state-unsupported', 'Foreign Finish run不是可确定性恢复的cleanup_pending状态。', {
+        status: finishResult.status || null,
+        failurePhase: finishResult.primaryFailure?.phase || null,
+        resumePhase: finishResult.resume?.phase || null,
+      }),
+      resumeToken: cleanupPending ? finishResult.resume.token : null,
+    };
+  });
+  const foreign = observations.filter((item) => item.runId !== currentRunId || item.classification !== 'current');
+  if (!foreign.length) return null;
+  const actionable = foreign.filter((item) => item.classification === 'cleanup_pending')
+    .sort((left, right) => `${left.owner.taskId}\0${left.runId}`.localeCompare(`${right.owner.taskId}\0${right.runId}`));
+  const status = foreign.every((item) => item.classification === 'cleanup_pending') ? 'actionable' : 'blocked';
+  const orderedSteps = actionable.map((item, index) => ({
+    order: index + 1,
+    action: 'resume-owner-cleanup',
+    owner: item.owner,
+    authorization: { required: true, scope: `仅恢复Finish run ${item.runId}的owner cleanup` },
+    command: {
+      executable: nodeExecutable,
+      args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--resume', item.resumeToken, '--target', workspaceRoot, '--detail', 'full', '--json'],
+    },
+    expectedEffects: ['cleanup-owned-task-environment', 'delete-owned-finish-carrier', 'complete-owning-task'],
+  }));
+  orderedSteps.push({
+    order: orderedSteps.length + 1,
+    action: 'retry-current-closeout',
+    owner: { kind: 'self-bootstrap-closeout', taskId: currentFinishResult.identity?.task || null, runId: currentRunId, agent: currentFinishResult.identity?.agent || null },
+    authorization: { required: true, scope: '全部predecessor owner cleanup完成并只剩当前run carrier后重试' },
+    command: {
+      executable: nodeExecutable,
+      args: [runnerPath, '--run', currentRunId, '--target', workspaceRoot, '--node-executable', nodeExecutable],
+    },
+    expectedEffects: ['self-bootstrap-activation', 'verify-cli-identity', 'doctor-or-same-run-finish-resume'],
+    blockedBy: status === 'actionable' ? actionable.map((item) => item.runId) : foreign.map((item) => item.runId),
+  });
+  const plan = {
+    schemaVersion: SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA,
+    status,
+    current: { taskId: currentFinishResult.identity?.task || null, runId: currentRunId },
+    observations,
+    orderedSteps,
+  };
+  return { ...plan, identity: digest(plan) };
 }
 
 function belongsToUntrackedRoot(pathname, root) {
@@ -463,7 +699,7 @@ function markPassed(stage, inputIdentity, outputIdentity, effects = []) {
   stage.effects.push(...effects);
 }
 
-function closeoutResult(result, plan, stages, status, diagnostic = null, cliIdentity = null) {
+function closeoutResult(result, plan, stages, status, diagnostic = null, cliIdentity = null, recoveryPlan = null) {
   return {
     schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA,
     status,
@@ -471,6 +707,7 @@ function closeoutResult(result, plan, stages, status, diagnostic = null, cliIden
     taskId: result?.identity?.task || null,
     mode: plan?.mode || null,
     plan: plan || null,
+    recoveryPlan,
     cliIdentity,
     phases: SELF_BOOTSTRAP_CLOSEOUT_PHASES.map((id) => stages.get(id)),
     effects: SELF_BOOTSTRAP_CLOSEOUT_PHASES.flatMap((id) => stages.get(id).effects),
@@ -478,7 +715,7 @@ function closeoutResult(result, plan, stages, status, diagnostic = null, cliIden
   };
 }
 
-export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExecutable, execute = defaultExecute, environment = process.env }) {
+export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExecutable, recoveryPlan = null, execute = defaultExecute, environment = process.env }) {
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const stages = new Map(SELF_BOOTSTRAP_CLOSEOUT_PHASES.map((id) => [id, phase(id)]));
   let plan = null;
@@ -489,7 +726,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     if (!fs.existsSync(componentFile) || !/^id:\s*buildr-self-bootstrap\s*$/m.test(fs.readFileSync(componentFile, 'utf8'))) {
       markNotApplicable(active, 'canonical Workspace没有buildr-self-bootstrap Component。');
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(1)) markNotApplicable(stages.get(id), 'Workspace不适用self-bootstrap closeout。');
-      return closeoutResult(finishResult, null, stages, 'not-applicable', null, cliIdentity);
+      return closeoutResult(finishResult, null, stages, 'not-applicable', null, cliIdentity, recoveryPlan);
     }
     if (finishResult?.schemaVersion !== 'buildr.task-finish-result/v2') throw closeoutError('self-bootstrap-closeout.finish-result-schema-invalid', 'Runner只消费buildr.task-finish-result/v2。');
     if (finishResult.resolvedContext?.capability?.id !== 'buildr.task-finish' || finishResult.resolvedContext?.capability?.version !== 1) {
@@ -499,15 +736,20 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     if (!finishWorkspaceRoot || !sameFilesystemPath(finishWorkspaceRoot, root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', 'Finish Result绑定的canonical Workspace与runner target不一致。');
     plan = createSelfBootstrapCloseoutPlan(finishResult);
     if (!plan.runId || !plan.taskId || !plan.agent || !plan.targetBranch || !plan.remote || !plan.baseRef) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish Result缺少run、Task、Agent、target、remote或final ref。');
+    if (recoveryPlan) {
+      throw closeoutError('self-bootstrap-closeout.foreign-carriers-require-owner-recovery', '检测到foreign Finish carrier；当前runner必须等待原owner按recovery plan恢复。', {
+        recoveryPlanIdentity: recoveryPlan.identity,
+        recoveryPlanStatus: recoveryPlan.status,
+      });
+    }
     const applicable = Object.values(plan.actions).some((paths) => paths.length);
     if (!applicable) {
       markNotApplicable(active, 'frozen Task Contribution未命中self-bootstrap动作。');
       active = stages.get('plan');
       markPassed(active, finishResult.resolvedContext.identity, plan.identity);
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(2)) markNotApplicable(stages.get(id), '当前plan没有适用动作。');
-      return closeoutResult(finishResult, plan, stages, 'not-applicable', null, cliIdentity);
+      return closeoutResult(finishResult, plan, stages, 'not-applicable', null, cliIdentity, recoveryPlan);
     }
-
     const actualRoot = gitText(execute, root, ['rev-parse', '--show-toplevel'], 'workspace-root', active, 'self-bootstrap-closeout.git-root-unavailable');
     if (!sameFilesystemPath(actualRoot, root)) throw closeoutError('self-bootstrap-closeout.git-root-mismatch', 'Runner target不是retained Git根目录。', { actualRoot });
     const branch = gitText(execute, root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], 'target-branch', active, 'self-bootstrap-closeout.detached-head');
@@ -638,7 +880,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
       markPassed(active, finishResult.resume.token, payload.resolvedContext?.identity || payload.runId);
     }
-    return closeoutResult(finishResult, plan, stages, 'passed', null, cliIdentity);
+    return closeoutResult(finishResult, plan, stages, 'passed', null, cliIdentity, recoveryPlan);
   } catch (error) {
     const { cliIdentity: failedCliIdentity = null, ...diagnosticDetails } = error.details || {};
     if (failedCliIdentity) cliIdentity = failedCliIdentity;
@@ -652,7 +894,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       const item = stages.get(id);
       if (item.status === 'pending') markNotApplicable(item, '前序阶段已停止。');
     }
-    return closeoutResult(finishResult, plan, stages, 'blocked', active.diagnostic, cliIdentity);
+    return closeoutResult(finishResult, plan, stages, 'blocked', active.diagnostic, cliIdentity, recoveryPlan);
   }
 }
 
@@ -697,7 +939,33 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
     throw closeoutError('self-bootstrap-closeout.finish-inspect-result-invalid', 'Product CLI没有返回合法Finish Result JSON。', { parseError: error.message, stdout: String(inspected.stdout || '').slice(0, 2000) });
   }
   if (finishResult.runId !== runId) throw closeoutError('self-bootstrap-closeout.finish-run-mismatch', 'Product CLI返回的Finish run identity不匹配。', { expected: runId, actual: finishResult.runId || null });
-  return runSelfBootstrapCloseout({ finishResult, workspaceRoot: root, nodeExecutable, execute, environment });
+  const carrierEntries = discoverFinishCarrierEntries(root).map((entry) => {
+    if (entry.diagnostic || entry.runId === runId) return entry;
+    const foreignInspection = execute(nodeExecutable, [cli, 'task', 'finish', 'inspect', '--run', entry.runId, '--target', root, '--detail', 'full', '--json'], { cwd: root });
+    if (foreignInspection.status !== 0) {
+      return {
+        ...entry,
+        inspectDiagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.foreign-finish-inspect-failed', '无法通过Product CLI读取foreign Finish Result。', {
+          exitCode: foreignInspection.status,
+          stderr: String(foreignInspection.stderr || '').trim().slice(0, 2000),
+        }),
+      };
+    }
+    try { return { ...entry, finishResult: JSON.parse(foreignInspection.stdout) }; } catch (error) {
+      return {
+        ...entry,
+        inspectDiagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.foreign-finish-inspect-result-invalid', 'Product CLI没有返回合法foreign Finish Result JSON。', { parseError: error.message }),
+      };
+    }
+  });
+  const recoveryPlan = createSelfBootstrapRecoveryPlan({
+    currentFinishResult: finishResult,
+    carrierEntries,
+    workspaceRoot: root,
+    nodeExecutable,
+    runnerPath: fileURLToPath(import.meta.url),
+  });
+  return runSelfBootstrapCloseout({ finishResult, workspaceRoot: root, nodeExecutable, recoveryPlan, execute, environment });
 }
 
 function main() {

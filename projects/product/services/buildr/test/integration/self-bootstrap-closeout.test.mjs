@@ -6,7 +6,9 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import {
+  SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA,
   createSelfBootstrapCloseoutPlan,
+  discoverFinishCarrierEntries,
   runSelfBootstrapCloseout,
   runSelfBootstrapCloseoutCommand,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
@@ -130,6 +132,23 @@ function doctorBlockedResult(root, baseRef, changedPaths, overrides = {}) {
   };
 }
 
+function cleanupPendingResult(root, baseRef, runId, taskId = `task-${runId}`, overrides = {}) {
+  const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
+  const carrierIdentity = `sha256-carrier-${runId}`;
+  return finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs'], {
+    runId,
+    status: 'cleanup_pending',
+    identity: {
+      ...finishResult(root, baseRef, []).identity,
+      task: taskId,
+    },
+    primaryFailure: { phase: 'cleanup', operation: 'task-environment-cleanup' },
+    carrier: { identity: carrierIdentity, root: carrierRoot, changedPaths: ['projects/product/services/buildr/src/example.mjs'] },
+    resume: { phase: 'cleanup', token: `sha256-resume-${runId}`, carrierIdentity },
+    ...overrides,
+  });
+}
+
 function createCarrier(root, runId = 'closeout-run') {
   const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
   fs.mkdirSync(carrierRoot, { recursive: true });
@@ -179,7 +198,10 @@ function executor(root, options = {}) {
     if (executable === process.execPath && args[0] === productScript) {
       const productArgs = args.slice(1);
       if (productArgs[0] === 'task' && productArgs[1] === 'finish' && productArgs[2] === 'inspect') {
-        return { status: 0, stdout: JSON.stringify(options.finishInspection), stderr: '' };
+        const inspectedRun = productArgs[productArgs.indexOf('--run') + 1];
+        if (options.finishInspectionFailures?.includes(inspectedRun)) return { status: 1, stdout: '', stderr: `inspection failed: ${inspectedRun}` };
+        const inspection = options.finishInspections?.[inspectedRun] ?? options.finishInspection;
+        return { status: 0, stdout: JSON.stringify(inspection), stderr: '' };
       }
       if (productArgs[0] === 'sync') {
         fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v2\n');
@@ -670,6 +692,146 @@ test('Skill命令入口通过Product CLI只读取得同一Finish Result', (t) =>
   const defaultOperation = phase(result, 'finalize').operations.find((item) => item.kind === 'default-cli');
   assert.equal(defaultOperation.executable, defaultBuildr);
   assert.equal(result.runId, finish.runId);
+});
+
+test('multi-run preflight按owner顺序返回cleanup plan并在predecessor消失后重试当前runner', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  const predecessorZ = cleanupPendingResult(root, baseRef, 'run-z', 'task-z');
+  const predecessorA = cleanupPendingResult(root, baseRef, 'run-a', 'task-a');
+  createCarrier(root, current.runId);
+  createCarrier(root, predecessorZ.runId);
+  createCarrier(root, predecessorA.runId);
+  const invocations = [];
+  const delegated = executor(root, {
+    finishInspections: {
+      [current.runId]: current,
+      [predecessorZ.runId]: predecessorZ,
+      [predecessorA.runId]: predecessorA,
+    },
+  });
+  const execute = (...args) => {
+    invocations.push({ executable: args[0], args: args[1] });
+    return delegated(...args);
+  };
+
+  const blocked = runSelfBootstrapCloseoutCommand({
+    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+    actualNodeExecutable: process.execPath,
+    execute,
+    environment,
+  });
+
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'self-bootstrap-closeout.foreign-carriers-require-owner-recovery');
+  assert.equal(blocked.recoveryPlan.schemaVersion, SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA);
+  assert.equal(blocked.recoveryPlan.status, 'actionable');
+  assert.deepEqual(blocked.recoveryPlan.orderedSteps.map((step) => `${step.action}:${step.owner.runId}`), [
+    'resume-owner-cleanup:run-a',
+    'resume-owner-cleanup:run-z',
+    `retry-current-closeout:${current.runId}`,
+  ]);
+  assert.deepEqual(blocked.recoveryPlan.orderedSteps.slice(0, 2).map((step) => step.command.args[step.command.args.indexOf('--resume') + 1]), [
+    predecessorA.resume.token,
+    predecessorZ.resume.token,
+  ]);
+  assert.ok(invocations.every((item) => item.args[1] === 'task' && item.args[2] === 'finish' && item.args[3] === 'inspect'));
+  assert.ok(blocked.phases.every((item) => ['blocked', 'not-applicable'].includes(item.status)));
+
+  fs.rmSync(predecessorA.carrier.root, { recursive: true });
+  fs.rmSync(predecessorZ.carrier.root, { recursive: true });
+  const resumed = runSelfBootstrapCloseoutCommand({
+    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+    actualNodeExecutable: process.execPath,
+    execute: executor(root, { finishInspection: current }),
+    environment,
+  });
+  assert.equal(resumed.status, 'passed', JSON.stringify(resumed.diagnostic));
+  assert.equal(resumed.recoveryPlan, null);
+});
+
+test('multi-run preflight对不支持状态和inspect失败保持fail closed且不生成owner command', async (t) => {
+  for (const scenario of [
+    {
+      name: 'unsupported-state',
+      makeForeign(root, baseRef) {
+        return doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs'], {
+          runId: 'foreign-doctor-blocked',
+          identity: { ...finishResult(root, baseRef, []).identity, task: 'foreign-task' },
+          carrier: {
+            identity: 'sha256-foreign-doctor',
+            root: path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', 'foreign-doctor-blocked'),
+            changedPaths: ['projects/product/services/buildr/src/example.mjs'],
+          },
+          resume: { phase: 'deliver', token: 'sha256-foreign-doctor', carrierIdentity: 'sha256-foreign-doctor' },
+        });
+      },
+      options(foreign, current) { return { finishInspections: { [current.runId]: current, [foreign.runId]: foreign } }; },
+      classification: 'manual-owner-review',
+    },
+    {
+      name: 'inspect-failure',
+      makeForeign(root, baseRef) { return cleanupPendingResult(root, baseRef, 'foreign-unreadable'); },
+      options(foreign, current) { return { finishInspections: { [current.runId]: current }, finishInspectionFailures: [foreign.runId] }; },
+      classification: 'unprovable',
+    },
+  ]) {
+    await t.test(scenario.name, (t) => {
+      const { root, baseRef, environment } = fixture(t);
+      const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+      const foreign = scenario.makeForeign(root, baseRef);
+      createCarrier(root, current.runId);
+      createCarrier(root, foreign.runId);
+      const result = runSelfBootstrapCloseoutCommand({
+        args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+        actualNodeExecutable: process.execPath,
+        execute: executor(root, scenario.options(foreign, current)),
+        environment,
+      });
+      const observation = result.recoveryPlan.observations.find((item) => item.runId === foreign.runId);
+      assert.equal(result.status, 'blocked');
+      assert.equal(result.recoveryPlan.status, 'blocked');
+      assert.equal(observation.classification, scenario.classification);
+      assert.equal(result.recoveryPlan.orderedSteps.some((step) => step.action === 'resume-owner-cleanup'), false);
+    });
+  }
+});
+
+test('multi-run carrier inventory拒绝symlink并把identity漂移标为unprovable', async (t) => {
+  await t.test('symlink', (t) => {
+    const { root } = fixture(t);
+    const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers');
+    const outside = path.join(path.dirname(root), 'foreign-outside');
+    fs.mkdirSync(carrierRoot, { recursive: true });
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, path.join(carrierRoot, 'foreign-symlink'));
+    const observation = discoverFinishCarrierEntries(root).find((item) => item.runId === 'foreign-symlink');
+    assert.equal(observation.diagnostic.code, 'self-bootstrap-closeout.carrier-entry-invalid');
+  });
+
+  for (const scenario of [
+    ['workspace', (foreign) => ({ ...foreign, identity: { ...foreign.identity, workspaceRoot: path.dirname(foreign.identity.workspaceRoot) } }), 'self-bootstrap-closeout.foreign-workspace-mismatch'],
+    ['carrier', (foreign) => ({ ...foreign, carrier: { ...foreign.carrier, identity: 'sha256-drifted' } }), 'self-bootstrap-closeout.foreign-resume-carrier-mismatch'],
+    ['token', (foreign) => ({ ...foreign, resume: { ...foreign.resume, token: null } }), 'self-bootstrap-closeout.foreign-cleanup-resume-invalid'],
+  ]) {
+    await t.test(scenario[0], (t) => {
+      const { root, baseRef, environment } = fixture(t);
+      const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+      const foreignBase = cleanupPendingResult(root, baseRef, `foreign-${scenario[0]}`);
+      const foreign = scenario[1](foreignBase);
+      createCarrier(root, current.runId);
+      createCarrier(root, foreign.runId);
+      const result = runSelfBootstrapCloseoutCommand({
+        args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+        actualNodeExecutable: process.execPath,
+        execute: executor(root, { finishInspections: { [current.runId]: current, [foreign.runId]: foreign } }),
+        environment,
+      });
+      const observation = result.recoveryPlan.observations.find((item) => item.runId === foreign.runId);
+      assert.equal(observation.classification, 'unprovable');
+      assert.equal(observation.diagnostic.code, scenario[2]);
+    });
+  }
 });
 
 test('Skill runner从每个Agent声明的runtime投射位置启动时不依赖Product源码相对路径', async (t) => {
