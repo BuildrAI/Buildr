@@ -290,6 +290,13 @@ test('release contract maps prerelease to next and stable to latest', () => {
     channel: 'npm', registry: 'https://registry.npmjs.org/', package: '@buildr-ai/buildr',
   });
   assert.equal(formal.github.binaryAssets, false);
+  assert.deepEqual(formal.publishAuthority, {
+    provider: 'github-actions',
+    repository: 'BuildrAI/Buildr',
+    workflow: 'publish.yml',
+    environment: 'npm-production',
+    allowedActions: ['npm publish'],
+  });
   for (const retired of ['productNodeVersion', 'platformTargets', 'generation', 'previousPlatformRelease']) {
     assert.equal(Object.hasOwn(formal, retired), false, retired);
   }
@@ -354,7 +361,7 @@ test('publish workflow is tag-gated, npm-only, byte-stable, recoverable, OIDC-re
     'release-contract.mjs', 'release-notes.mjs', 'application-payload.mjs build',
     'release-artifact.mjs',
     'registry-version-state.mjs', "steps.registry_before.outputs.published != 'true'",
-    'npm publish "$(find "${RUNNER_TEMP}/candidate/npm"', 'github-release-ensure.mjs',
+    'trusted-publish.mjs', 'github-release-ensure.mjs',
     'github-release-ensure.mjs preflight',
     'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC',
     '--manifest', '--require-published', '--wait', 'macos-15', 'windows-2025',
@@ -372,7 +379,8 @@ test('publish workflow is tag-gated, npm-only, byte-stable, recoverable, OIDC-re
     'github-release-asset-ensure.mjs', 'public-release-readback.mjs',
     '.pkg', '.msi', 'postject', 'codesign', 'notar', 'signtool',
   ]) assert.equal(workflow.includes(retired), false, retired);
-  assert.equal((workflow.match(/npm publish/g) || []).length, 1);
+  assert.equal((workflow.match(/npm publish/g) || []).length, 0);
+  assert.equal((workflow.match(/trusted-publish\.mjs/g) || []).length, 1);
   assert.equal((workflow.match(/node scripts\/release\/release-artifact\.mjs/g) || []).length, 1);
   assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 3);
   assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 1);
@@ -452,6 +460,8 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '重新查询远端确认 ref 不存在', '清理 follow-up',
     '不得把长期保留当作默认结果', '未取得删除授权时必须明确报告待清理项',
     '只执行一次 `npm pack`', '`npm publish <tarball>`', '`dist.integrity`',
+    'release-authority-preflight.mjs', 'npm trust list @buildr-ai/buildr --json',
+    '--authority-evidence <authority-evidence.json>', '不得回退本机 token publish',
     'GitHub Release 使用 ensure 语义', '安装精确 `@buildr-ai/buildr@<version>`',
     '不删除 tag、不 unpublish、不重复 publish',
   ]) assert.equal(skill.includes(required), true, required);

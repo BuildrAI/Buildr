@@ -60,7 +60,7 @@ Workspace manifest 的 `runtime.node.version` 是Workspace-owned subprocess采�
 
 ## 验证
 
-开发反馈、最终候选与正式发布物使用不同CI边界。正式tag workflow先解析唯一npm-only release contract，构建一次公共payload并只执行一次`npm pack`；所有Host Node、macOS/Windows Launcher、publish和Registry readback都复用同一tarball bytes。全部可逆门禁通过后才进入`npm-production`保护的Trusted Publishing；目标version已存在时只接受完全相同的Registry integrity。GitHub Release只ensure tag、commit、notes、prerelease/Latest且拒绝binary Assets；Actions artifact只保存按tag/commit/payload冻结的临时候选与evidence。
+开发反馈、最终候选与正式发布物使用不同CI边界。正式tag workflow先解析唯一npm-only release contract，contract同时声明provider/repository/workflow/Environment/allowed action发布权威元组；tag前preflight用authenticated npm current readback与GitHub current事实核对该元组，并把ready evidence绑定`origin/main`commit和workflow digest，post-main convergence只接受15分钟内的evidence，对过期、漂移或unavailable fail closed。随后workflow构建一次公共payload并只执行一次`npm pack`；所有Host Node、macOS/Windows Launcher、publish和Registry readback都复用同一tarball bytes。全部可逆门禁通过后才进入`npm-production`保护的Trusted Publishing；目标version已存在时只接受完全相同的Registry integrity。OIDC认证失败保留原始错误和tag，不回退本机publish。GitHub Release只ensure tag、commit、notes、prerelease/Latest且拒绝binary Assets；Actions artifact只保存按tag/commit/payload冻结的临时候选与evidence。
 
 Project `preparation.yml`使用closed `buildr.project-environment-preparation/v1`，只声明已知Project/Service Recipe及其明确无shell Step，不保存Task选择或机器状态；Project `verification.yml`使用closed `buildr.project-verification/v2`，只声明已存在capability的identity、Project/Service scope、invocation、applicability、可证明事实、delivery policy及必要environment/effects/resource边界。两者都由Agent只读发现并在用户授权后维护长期文件；Task级选择与结果分别进入Environment Plan/Receipt和Verification Result。声明缺失不会触发Buildr扫描或自动开发能力。
 

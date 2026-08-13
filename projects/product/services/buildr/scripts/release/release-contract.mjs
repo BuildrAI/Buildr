@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { extractReleaseNotes } from './release-notes.mjs';
 import { parseArguments, writeJson } from './release-files.mjs';
+import { releasePublishAuthority } from './release-authority.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot = path.resolve(productRoot, '../../../..');
@@ -58,6 +59,7 @@ export function resolveReleaseContract(version, refName, options = {}) {
       latest: !prerelease,
       binaryAssets: false,
     },
+    publishAuthority: releasePublishAuthority,
     distribution: {
       channel: 'npm',
       registry: 'https://registry.npmjs.org/',

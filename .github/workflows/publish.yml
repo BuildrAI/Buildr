@@ -242,7 +242,8 @@ jobs:
       - name: Publish the frozen npm tarball
         if: steps.registry_before.outputs.published != 'true'
         run: >-
-          npm publish "$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
+          node scripts/release/trusted-publish.mjs
+          "$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
           --access public
           --tag "${{ needs.contract.outputs.npm_tag }}"
       - name: Confirm official Registry integrity and dist-tag
