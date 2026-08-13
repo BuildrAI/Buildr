@@ -27,12 +27,14 @@ echo "${marker}|$*"
 function run(entry, args, env) {
   const cwd = env.BUILDR_TEST_CWD || os.tmpdir();
   const executionEnv = { ...env };
+  const inheritedEnv = { ...process.env };
   delete executionEnv.BUILDR_TEST_CWD;
+  delete inheritedEnv.BUILDR_NODE;
   return spawnSync(entry, args, {
     encoding: 'utf8',
     cwd,
     env: {
-      ...process.env,
+      ...inheritedEnv,
       ...executionEnv,
     },
   });

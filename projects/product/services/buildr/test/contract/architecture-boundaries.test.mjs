@@ -69,7 +69,9 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
   assert.doesNotMatch(adapter, /ownerExecutable/);
   const closeout = fs.readFileSync(path.join(productRoot, '../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
   assert.match(closeout, /productCommand\(execute, root, nodeExecutable/);
-  assert.doesNotMatch(closeout, /path\.join\(root, PRODUCT_ROOT, 'buildr'\)/);
+  assert.match(closeout, /path\.join\(root, PRODUCT_ROOT, 'buildr'\)/);
+  assert.match(closeout, /BUILDR_NODE: nodeExecutable/);
+  assert.doesNotMatch(closeout, /resolveDefaultBuildr|install-development-cli/u);
 });
 
 test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源随 src 交付', () => {

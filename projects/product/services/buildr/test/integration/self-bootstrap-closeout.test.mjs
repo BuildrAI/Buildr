@@ -35,18 +35,19 @@ function fixture(t) {
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'bin'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers'), { recursive: true });
   fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
+  const projectBridge = path.join(root, 'projects', 'product', 'buildr');
   const launcher = path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
   const cliEntry = path.join(root, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
-  const installer = path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli');
   const sourceServiceRoot = path.resolve(import.meta.dirname, '../..');
   const defaultBin = path.join(base, 'default-bin');
   fs.writeFileSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap', 'component.yml'), 'schemaVersion: buildr.component/v1\nid: buildr-self-bootstrap\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-test' }));
+  fs.writeFileSync(projectBridge, `#!/bin/sh
+exec '${launcher}' "$@"
+`, { mode: 0o755 });
   fs.copyFileSync(path.join(sourceServiceRoot, 'scripts', 'run-development-cli'), launcher);
-  fs.copyFileSync(path.join(sourceServiceRoot, 'scripts', 'install-buildr-cli'), installer);
   fs.chmodSync(launcher, 0o755);
-  fs.chmodSync(installer, 0o755);
   fs.writeFileSync(cliEntry, `#!/usr/bin/env node
 const args = process.argv.slice(2);
 if (args[0] === 'version') console.log(JSON.stringify({ package: '@buildr-ai/buildr', version: '0.1.0-test' }));
@@ -61,14 +62,7 @@ else process.exitCode = 2;
   fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs'), '#!/usr/bin/env node\n', { mode: 0o755 });
   fs.mkdirSync(defaultBin);
-  fs.writeFileSync(path.join(defaultBin, 'buildr'), `#!/bin/sh
-# buildr-development-cli-wrapper/v1
-set -eu
-BUILDR_NODE='${process.execPath}'
-BUILDR_DEVELOPMENT_CLI_WRAPPER='buildr.development-cli-wrapper/v1'
-export BUILDR_NODE BUILDR_DEVELOPMENT_CLI_WRAPPER
-exec '${launcher}' "$@"
-`, { mode: 0o755 });
+  fs.writeFileSync(path.join(defaultBin, 'buildr'), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v1\n');
   git(root, 'init', '-b', 'dev');
   git(root, 'config', 'user.name', 'Buildr Test');
@@ -84,6 +78,7 @@ exec '${launcher}' "$@"
     root,
     remote,
     baseRef,
+    projectBridge,
     launcher,
     cliEntry,
     defaultBuildr: path.join(defaultBin, 'buildr'),
@@ -164,23 +159,18 @@ function executor(root, options = {}) {
       return run(executable, args, context.cwd);
     }
     const productScript = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
+    const projectBridge = path.join(canonicalRoot, 'projects', 'product', 'buildr');
     const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
     const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
-    const defaultBuildr = path.join(path.dirname(canonicalRoot), 'default-bin', 'buildr');
     let resolvedExecutable = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
-    if (options.realDefaultCli && resolvedExecutable === fs.realpathSync(defaultBuildr)) {
-      const result = spawnSync(executable, args, { cwd: context.cwd, env: context.env, encoding: 'utf8' });
-      return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || result.error?.message || '' };
-    }
-    if (resolvedExecutable === launcher || resolvedExecutable === fs.realpathSync(defaultBuildr)) {
+    if (resolvedExecutable === fs.realpathSync(projectBridge)) {
       if (context.env?.BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON === '1') {
         if (options.failCliInspection) return { status: 1, stdout: '', stderr: 'inspection failed' };
         return {
           status: 0,
           stdout: JSON.stringify({
             schemaVersion: 'buildr.development-cli-identity/v1',
-            wrapperSchema: options.observedWrapperSchema === undefined ? 'buildr.development-cli-wrapper/v1' : options.observedWrapperSchema,
             launcher: options.observedLauncher || launcher,
             cliEntry: options.observedCliEntry || productScript,
             nodeExecutable: options.observedNodeExecutable || process.execPath,
@@ -190,10 +180,16 @@ function executor(root, options = {}) {
       }
       if (args[0] === 'version') {
         if (options.failCliVersion) return { status: 1, stdout: '', stderr: 'version failed' };
-        return { status: 0, stdout: JSON.stringify({ package: options.observedPackage || '@buildr-ai/buildr', version: options.observedVersion || '0.1.0-test' }), stderr: '' };
+        return { status: 0, stdout: JSON.stringify({
+          package: options.observedPackage || '@buildr-ai/buildr',
+          version: options.observedVersion || '0.1.0-test',
+          channel: options.observedChannel || 'development',
+          sourceCommit: options.observedSourceCommit || git(canonicalRoot, 'rev-parse', 'HEAD'),
+          runtime: { executable: options.observedVersionNode || process.execPath },
+        }), stderr: '' };
       }
       if (args[0] === 'doctor') return { status: 0, stdout: JSON.stringify({ health: { ready: true } }), stderr: '' };
-      if (args[0] === 'task') return { status: 0, stdout: JSON.stringify({ status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' } }), stderr: '' };
+      if (args[0] === 'task') return { status: 0, stdout: JSON.stringify({ status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' }, resumePreflight: 'passed', doctor: 'ready' }), stderr: '' };
     }
     if (executable === process.execPath && args[0] === productScript) {
       const productArgs = args.slice(1);
@@ -229,18 +225,6 @@ function executor(root, options = {}) {
         stderr: '',
       };
     }
-    if (executable === path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli')) {
-      if (options.failCliInstall) return { status: 1, stdout: '', stderr: 'install failed' };
-      if (options.realCliInstall) {
-        const result = spawnSync(executable, args, {
-          cwd: context.cwd,
-          env: { ...context.env, BUILDR_CLI_INSTALL_DIR: path.join(path.dirname(canonicalRoot), 'default-bin') },
-          encoding: 'utf8',
-        });
-        return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || result.error?.message || '' };
-      }
-      return { status: 0, stdout: 'installed', stderr: '' };
-    }
     return { status: 1, stdout: '', stderr: `unexpected command: ${executable} ${args.join(' ')}` };
   };
 }
@@ -270,7 +254,7 @@ test('fresh closeout以精确successor commit和remote readback完成', (t) => {
   assert.equal(phase(result, 'sync').status, 'passed');
   assert.equal(phase(result, 'commit').status, 'passed');
   assert.equal(phase(result, 'push').status, 'passed');
-  assert.equal(phase(result, 'install-cli').status, 'not-applicable');
+  assert.equal(phase(result, 'verify-development-entry').status, 'passed');
   assert.equal(phase(result, 'finalize').status, 'passed');
   const head = git(root, 'rev-parse', 'HEAD');
   assert.notEqual(head, baseRef);
@@ -362,7 +346,7 @@ test('descendant sync successor以当前activation base为parent并可被下一R
   });
   assert.equal(second.status, 'passed', JSON.stringify(second.diagnostic));
   assert.equal(git(root, 'rev-parse', 'HEAD'), successor);
-  assert.equal(phase(second, 'install-cli').status, 'passed');
+  assert.equal(phase(second, 'verify-development-entry').status, 'passed');
 });
 
 test('Buildr descendant chain仍拒绝merge provenance', (t) => {
@@ -402,7 +386,7 @@ test('Buildr-owned descendant尚未push时拒绝选择activation base', (t) => {
   });
   assert.equal(result.status, 'blocked');
   assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.remote-drift');
-  assert.equal(phase(result, 'install-cli').status, 'not-applicable');
+  assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
 });
 
 test('无匹配动作not-applicable且身份漂移fail closed', (t) => {
@@ -417,20 +401,20 @@ test('无匹配动作not-applicable且身份漂移fail closed', (t) => {
   const drift = runSelfBootstrapCloseout({ finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']), workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root), environment });
   assert.equal(drift.status, 'blocked');
   assert.equal(drift.diagnostic.code, 'self-bootstrap-closeout.successor-identity-unprovable');
-  assert.equal(phase(drift, 'install-cli').status, 'not-applicable');
+  assert.equal(phase(drift, 'verify-development-entry').status, 'not-applicable');
 });
 
-test('安装失败保留前序事实，Doctor blocked使用同一run resume', (t) => {
+test('development entry验证失败保留前序事实，Doctor blocked使用同一run resume', (t) => {
   const firstFixture = fixture(t);
   const installFailure = runSelfBootstrapCloseout({
     finishResult: finishResult(firstFixture.root, firstFixture.baseRef, ['projects/product/services/buildr/src/example.mjs']),
     workspaceRoot: firstFixture.root,
     nodeExecutable: process.execPath,
-    execute: executor(firstFixture.root, { failCliInstall: true }),
+    execute: executor(firstFixture.root, { failCliInspection: true }),
     environment: firstFixture.environment,
   });
   assert.equal(installFailure.status, 'blocked');
-  assert.equal(phase(installFailure, 'install-cli').status, 'blocked');
+  assert.equal(phase(installFailure, 'verify-development-entry').status, 'blocked');
   assert.equal(phase(installFailure, 'finalize').status, 'not-applicable');
 
   const secondFixture = fixture(t);
@@ -442,8 +426,8 @@ test('安装失败保留前序事实，Doctor blocked使用同一run resume', (t
   assert.equal(phase(resumed, 'finalize').operations.filter((item) => item.id === 'final-doctor').length, 0);
 });
 
-test('自举恢复闭环以真实owned wrapper完成sync、Launcher、identity与same-run resume', (t) => {
-  const { root, baseRef, environment, defaultBuildr } = fixture(t);
+test('自举恢复闭环以显式Project bridge完成sync、Launcher、identity与same-run resume', (t) => {
+  const { root, baseRef, environment, defaultBuildr, projectBridge } = fixture(t);
   const input = doctorBlockedResult(root, baseRef, [
     'projects/product/services/buildr/package/manifest.yml',
     'projects/product/services/buildr/src/example.mjs',
@@ -455,17 +439,17 @@ test('自举恢复闭环以真实owned wrapper完成sync、Launcher、identity�
     finishResult: input,
     workspaceRoot: root,
     nodeExecutable: process.execPath,
-    execute: executor(root, { realCliInstall: true, realDefaultCli: true }),
+    execute: executor(root),
     environment,
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  for (const id of ['sync', 'install-cli', 'install-local-app', 'verify-cli-identity', 'finalize']) {
+  for (const id of ['sync', 'install-local-app', 'verify-development-entry', 'finalize']) {
     assert.equal(phase(result, id).status, 'passed', `${id} must pass in the same closeout chain`);
   }
-  assert.equal(fs.lstatSync(defaultBuildr).isSymbolicLink(), false);
-  assert.equal(result.cliIdentity.wrapperSchema.observed, 'buildr.development-cli-wrapper/v1');
-  assert.equal(fs.realpathSync(result.cliIdentity.nodeExecutable.observed), fs.realpathSync(process.execPath));
+  assert.equal(fs.readFileSync(defaultBuildr, 'utf8'), '#!/bin/sh\nexit 97\n');
+  assert.equal(fs.realpathSync(result.developmentEntryIdentity.projectBridge), fs.realpathSync(projectBridge));
+  assert.equal(fs.realpathSync(result.developmentEntryIdentity.nodeExecutable.observed), fs.realpathSync(process.execPath));
   const resumed = phase(result, 'finalize').operations.find((item) => item.id === 'resume-finish-run');
   assert.equal(JSON.parse(resumed.stdout).resumePreflight, 'passed');
   assert.equal(JSON.parse(resumed.stdout).doctor, 'ready');
@@ -495,8 +479,8 @@ test('Development Launcher只调用内部manager并在identity或安装失败时
   }
 });
 
-test('默认CLI identity evidence覆盖完整入口链且complete只经默认入口Doctor', (t) => {
-  const { root, baseRef, environment, launcher, cliEntry, defaultBuildr } = fixture(t);
+test('development entry identity evidence覆盖完整入口链且complete只经Project bridge Doctor', (t) => {
+  const { root, baseRef, environment, launcher, cliEntry, projectBridge, defaultBuildr } = fixture(t);
   const result = runSelfBootstrapCloseout({
     finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']),
     workspaceRoot: root,
@@ -506,22 +490,24 @@ test('默认CLI identity evidence覆盖完整入口链且complete只经默认入
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  assert.equal(phase(result, 'verify-cli-identity').status, 'passed');
-  assert.equal(result.cliIdentity.status, 'passed');
-  assert.equal(result.cliIdentity.command, 'buildr');
-  assert.equal(result.cliIdentity.pathEntry, defaultBuildr);
-  assert.equal(fs.realpathSync(result.cliIdentity.launcher.expected), fs.realpathSync(launcher));
-  assert.equal(fs.realpathSync(result.cliIdentity.launcher.observed), fs.realpathSync(launcher));
-  assert.equal(fs.realpathSync(result.cliIdentity.cliEntry.expected), fs.realpathSync(cliEntry));
-  assert.equal(fs.realpathSync(result.cliIdentity.cliEntry.observed), fs.realpathSync(cliEntry));
-  assert.deepEqual(result.cliIdentity.nodeExecutable, { expected: process.execPath, observed: process.execPath });
-  assert.deepEqual(result.cliIdentity.package, { expected: '@buildr-ai/buildr', observed: '@buildr-ai/buildr' });
-  assert.deepEqual(result.cliIdentity.version, { expected: '0.1.0-test', observed: '0.1.0-test' });
+  assert.equal(phase(result, 'verify-development-entry').status, 'passed');
+  assert.equal(result.developmentEntryIdentity.status, 'passed');
+  assert.equal(result.developmentEntryIdentity.command, 'projects/product/buildr');
+  assert.equal(fs.realpathSync(result.developmentEntryIdentity.projectBridge), fs.realpathSync(projectBridge));
+  assert.equal(fs.realpathSync(result.developmentEntryIdentity.launcher.expected), fs.realpathSync(launcher));
+  assert.equal(fs.realpathSync(result.developmentEntryIdentity.launcher.observed), fs.realpathSync(launcher));
+  assert.equal(fs.realpathSync(result.developmentEntryIdentity.cliEntry.expected), fs.realpathSync(cliEntry));
+  assert.equal(fs.realpathSync(result.developmentEntryIdentity.cliEntry.observed), fs.realpathSync(cliEntry));
+  assert.deepEqual(result.developmentEntryIdentity.nodeExecutable, { expected: process.execPath, observed: process.execPath });
+  assert.deepEqual(result.developmentEntryIdentity.package, { expected: '@buildr-ai/buildr', observed: '@buildr-ai/buildr' });
+  assert.deepEqual(result.developmentEntryIdentity.version, { expected: '0.1.0-test', observed: '0.1.0-test' });
+  assert.deepEqual(result.developmentEntryIdentity.channel, { expected: 'development', observed: 'development' });
   assert.equal(phase(result, 'finalize').operations.filter((item) => item.id === 'final-doctor').length, 1);
-  assert.equal(phase(result, 'finalize').operations[0].executable, defaultBuildr);
+  assert.equal(fs.realpathSync(phase(result, 'finalize').operations[0].executable), fs.realpathSync(projectBridge));
+  assert.equal(fs.readFileSync(defaultBuildr, 'utf8'), '#!/bin/sh\nexit 97\n');
 });
 
-test('默认CLI identity对PATH shadowing和旧symlink fail closed', async (t) => {
+test('development entry identity忽略PATH shadowing和旧symlink', async (t) => {
   for (const scenario of ['shadow', 'old-symlink']) {
     await t.test(scenario, (t) => {
       const current = fixture(t);
@@ -541,19 +527,19 @@ test('默认CLI identity对PATH shadowing和旧symlink fail closed', async (t) =
         environment,
       });
 
-      assert.equal(result.status, 'blocked');
-      assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.default-cli-inspection-failed');
-      assert.equal(phase(result, 'finalize').status, 'not-applicable');
+      assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+      assert.equal(phase(result, 'verify-development-entry').status, 'passed');
+      assert.equal(phase(result, 'finalize').status, 'passed');
     });
   }
 });
 
-test('默认CLI identity对入口链、版本和启动失败 fail closed', async (t) => {
+test('development entry identity对入口链、版本和启动失败 fail closed', async (t) => {
   const scenarios = [
-    ['wrapper', { observedWrapperSchema: null }, 'self-bootstrap-closeout.default-cli-wrapper-schema-mismatch'],
-    ['entry', { observedCliEntry: '/tmp/old-buildr.mjs' }, 'self-bootstrap-closeout.default-cli-entry-mismatch'],
-    ['version', { observedVersion: '0.0.0-old' }, 'self-bootstrap-closeout.default-cli-version-mismatch'],
-    ['startup', { failCliInspection: true }, 'self-bootstrap-closeout.default-cli-inspection-failed'],
+    ['entry', { observedCliEntry: '/tmp/old-buildr.mjs' }, 'self-bootstrap-closeout.development-entry-cli-mismatch'],
+    ['version', { observedVersion: '0.0.0-old' }, 'self-bootstrap-closeout.development-entry-version-mismatch'],
+    ['channel', { observedChannel: 'npm' }, 'self-bootstrap-closeout.development-entry-version-mismatch'],
+    ['startup', { failCliInspection: true }, 'self-bootstrap-closeout.development-entry-inspection-failed'],
   ];
   for (const [name, options, code] of scenarios) {
     await t.test(name, (t) => {
@@ -569,7 +555,7 @@ test('默认CLI identity对入口链、版本和启动失败 fail closed', async
       assert.equal(result.status, 'blocked');
       assert.equal(result.diagnostic.code, code);
       assert.equal(phase(result, 'finalize').status, 'not-applicable');
-      assert.equal(result.cliIdentity.status, 'blocked');
+      assert.equal(result.developmentEntryIdentity.status, 'blocked');
     });
   }
 });
@@ -652,7 +638,7 @@ test('plan identity由run、frozen paths和去重动作确定', () => {
   const second = createSelfBootstrapCloseoutPlan(result);
   assert.deepEqual(first, second);
   assert.equal(first.actions['sync-retained-workspace'].length, 1);
-  assert.equal(first.actions['install-development-cli'].length, 1);
+  assert.ok(first.actions['verify-development-entry'].length >= 1);
   assert.equal(first.actions['install-development-local-app'].length, 1);
 });
 
@@ -672,14 +658,14 @@ test('零差异 Finish Result优先按activation paths规划自举并兼容chang
   const plan = createSelfBootstrapCloseoutPlan(zeroDelta);
   assert.deepEqual(plan.frozenPaths, zeroDelta.carrier.activationPaths);
   assert.equal(plan.actions['sync-retained-workspace'].length, 1);
-  assert.equal(plan.actions['install-development-cli'].length, 1);
+  assert.ok(plan.actions['verify-development-entry'].length >= 1);
 
   const legacy = createSelfBootstrapCloseoutPlan(finishResult(root, 'b'.repeat(40), ['projects/product/services/buildr/src/legacy.mjs']));
   assert.deepEqual(legacy.frozenPaths, ['projects/product/services/buildr/src/legacy.mjs']);
 });
 
 test('Skill命令入口通过Product CLI只读取得同一Finish Result', (t) => {
-  const { root, baseRef, environment, defaultBuildr } = fixture(t);
+  const { root, baseRef, environment, projectBridge } = fixture(t);
   const finish = finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
   const result = runSelfBootstrapCloseoutCommand({
     args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
@@ -688,9 +674,9 @@ test('Skill命令入口通过Product CLI只读取得同一Finish Result', (t) =>
     environment,
   });
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  assert.equal(phase(result, 'install-cli').status, 'passed');
-  const defaultOperation = phase(result, 'finalize').operations.find((item) => item.kind === 'default-cli');
-  assert.equal(defaultOperation.executable, defaultBuildr);
+  assert.equal(phase(result, 'verify-development-entry').status, 'passed');
+  const developmentOperation = phase(result, 'finalize').operations.find((item) => item.kind === 'development-entry');
+  assert.equal(fs.realpathSync(developmentOperation.executable), fs.realpathSync(projectBridge));
   assert.equal(result.runId, finish.runId);
 });
 

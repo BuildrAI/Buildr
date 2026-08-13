@@ -514,7 +514,7 @@
 ## 自举激活（Self-bootstrap Activation）
 
 - 定义：Buildr自举Workspace在Formal Task Finish成功后，由`buildr-self-bootstrap` Component只按该Result绑定的冻结Task Contribution paths选择并执行的本机产品收敛动作。
-- 适用范围：去重组合retained package sync、development CLI安装、development Buildr Web安装、默认CLI identity gate与最终Doctor或same-run resume；只存在于显式安装该Component的Buildr自举Workspace。成功要求PATH实际`buildr`绑定delivered retained checkout且最终Workspace Doctor ready。
+- 适用范围：去重组合retained package sync、development Buildr Web安装、retained Project bridge identity gate与最终Doctor或same-run resume；只存在于显式安装该Component的Buildr自举Workspace。成功要求Environment retained Node显式验证delivered retained `projects/product/buildr`且最终Workspace Doctor ready；PATH默认`buildr`只属于npm installation。
 - 避免混用：不是Formal Task Finish阶段、通用retained runtime activation、Task Verification、Task Record完成状态或新的workflow authority；源码CLI可运行、`command -v`命中同名命令或`--help`可启动都不能替代默认入口identity证明，失败不得改写已成功的Finish Result、Environment cleanup或上游研发事实。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)与[Buildr package assets specification](../specs/buildr-package-assets/spec.md)
 

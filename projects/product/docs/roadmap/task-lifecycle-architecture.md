@@ -151,7 +151,7 @@ flowchart TB
 - Foundation 组织长期共享的事实、方法和发现入口，不接管所有代码、数据库、网页或用户输入。
 - 人和 Agent 共用同一 Source Authority；Agent Runtime 是实际运行面，但不是第二份事实源。
 - Task Environment 由保留工作区 Buildr 环境管理器执行准备、恢复、资源登记和清理。task worktree/branch 中的 Rule、Skill、contract、功能模块和 package 都是候选变更，可以在隔离目标测试；只有实现完成并集成到 retained checkout 后，才从 retained Product source sync/render 对应 Agent runtime 并确认生效。
-- 当前 P0.5 Task Finish adapter 只消费研发交接；交付进入retained source后只按Workspace根Task Contribution选择`none | render-runtime`，完成普通push/readback、run绑定的selected-Agent Doctor与Environment cleanup，不安装Buildr development CLI或Buildr Web。Doctor未ready时Product保存partial delivery/readback和精确resume token，并在cleanup前阻塞。Buildr自举Workspace安装的`buildr-self-bootstrap` Component既可在Formal Finish成功后按冻结Task Contribution去重执行package sync、development CLI/Buildr Web activation与最终Doctor，也可在唯一retained Doctor failure且证据完整时先激活再恢复同一run；普通用户Workspace不包含该覆盖能力。通用Development contract不因此依赖Product、Git或runtime常量。
+- 当前 P0.5 Task Finish adapter 只消费研发交接；交付进入retained source后只按Workspace根Task Contribution选择`none | render-runtime`，完成普通push/readback、run绑定的selected-Agent Doctor与Environment cleanup，不安装Buildr development CLI或Buildr Web。Doctor未ready时Product保存partial delivery/readback和精确resume token，并在cleanup前阻塞。Buildr自举Workspace安装的`buildr-self-bootstrap` Component既可在Formal Finish成功后按冻结Task Contribution去重执行package sync、development Buildr Web activation、retained Project bridge identity gate与最终Doctor，也可在唯一retained Doctor failure且证据完整时先激活再恢复同一run；普通用户Workspace不包含该覆盖能力。通用Development contract不因此依赖Product、Git或runtime常量。
 - Foundation 可以提供跨 Task、跨 Change 的功能模块；具体状态由对应模块管理。
 - Buildr 保证身份、结构、边界和投射，不裁决业务事实，也不替 Agent 构造完整 Task Context。
 

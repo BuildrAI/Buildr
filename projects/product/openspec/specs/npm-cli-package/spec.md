@@ -128,7 +128,7 @@ Buildr release automation MUST 将 prerelease 版本发布到 `next`，将稳定
 - **THEN** release automation MUST 在 npm publish 前失败
 
 ### Requirement: 开发 checkout 必须从 Buildr Service package root 运行并保留 Project bridge
-Buildr MUST 将 `projects/product/services/buildr` 作为 development checkout 的 npm package root，并 MUST 保留 `projects/product/buildr` 作为稳定兼容入口；source discovery、安装、自更新和诊断必须识别二者属于同一 Product checkout。Project bridge MUST 使用满足 package `engines.node` 的 Node 启动 Service CLI，并在当前环境没有兼容 Node 时返回可操作诊断。
+Buildr MUST 将 `projects/product/services/buildr` 作为 development checkout 的 npm package root，并 MUST 保留 `projects/product/buildr` 作为稳定且唯一的 checkout 开发 CLI 入口；source discovery、诊断和 self-bootstrap 必须识别二者属于同一 Product checkout。Project bridge MUST 使用满足 package `engines.node` 的 Node 启动 Service CLI，并在当前环境没有兼容 Node 时返回可操作诊断。机器默认 PATH 中的 `buildr` MUST 保留给 npm installation，canonical development preparation、self-bootstrap 和 release preparation MUST NOT 创建、覆盖或要求该入口绑定 development checkout。
 
 #### Scenario: 从 Service package root 打包
 - **WHEN** 维护者从 `projects/product/services/buildr` 运行 `npm pack`
@@ -153,9 +153,9 @@ Buildr MUST 将 `projects/product/services/buildr` 作为 development checkout �
 - **AND** MUST NOT 暴露由不兼容 Node 解析 ESM 产生的语法错误作为首要诊断
 
 #### Scenario: 安装本机开发入口
-- **WHEN** 维护者运行 Buildr Service 的 `scripts/install-buildr-cli`
-- **THEN** 安装链接 MUST 指向 Service `bin/buildr.mjs`
-- **AND** 冲突检查 MUST 识别旧 Project package root 与新 Service package root 的 Buildr-managed identity
+- **WHEN** 维护者运行 canonical development preparation、self-bootstrap 或 release preparation
+- **THEN** Buildr MUST通过当前 retained checkout 的 `projects/product/buildr` 执行开发 CLI 命令
+- **AND** MUST NOT创建、覆盖、删除或要求 PATH 中的默认 `buildr` 指向 development checkout
 
 ### Requirement: Buildr Skill 必须由目标 Workspace 生命周期投射
 Buildr 全局安装 MUST NOT 猜测 Agent runtime destination 或安装 Buildr Skill；Buildr Skill MUST 由目标 Workspace 的 `init`、`sync` 或 `render` 生命周期管理。
@@ -211,7 +211,7 @@ Buildr npm package MUST 包含 Project v2 declaration parser、显式 capability
 - **AND** MUST NOT 下载 Product Node、切换 Workspace Node 或从 PATH 选择其他 Node 掩盖不兼容
 
 ### Requirement: npm CLI 与本机 Launcher 必须共享安装身份
-Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让 CLI 与本地图形 Launcher 共享同一 npm installation identity、Buildr version、protocol identity、`applicationPayloadDigest`、Host Node executable、package entry 和 npm prefix。Launcher MUST 是可重建投射，不得成为平台 installation、复制 payload 或建立独立更新事实；来源 MUST 由 formal npm origin、payload binding 与 ownership receipt 证明，不得根据 PATH 或文件名猜测。
+Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让 CLI 与本地图形 Launcher 共享同一 npm installation identity、Buildr version、protocol identity、`applicationPayloadDigest`、Host Node executable、package entry 和 npm prefix。Launcher MUST 是可重建投射，不得成为平台 installation、复制 payload 或建立独立更新事实；来源 MUST 由 formal npm origin、payload binding 与 ownership receipt 证明，不得根据 PATH 或文件名猜测。Development checkout MUST只拥有显式 Project bridge 与隔离的 `Buildr Web Dev` Launcher，不得创建第二个机器默认 CLI installation。
 
 #### Scenario: 安装 npm Buildr
 - **WHEN** 用户通过 npm 安装 `@buildr-ai/buildr`
@@ -229,9 +229,9 @@ Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让
 - **AND** 同一版本或 executable 文件名相同 MUST NOT 导致 lifecycle 合并或 target 覆盖
 
 #### Scenario: 开发者准备 Buildr checkout
-- **WHEN** 开发者从 Buildr Service checkout 执行 canonical 开发准备入口
-- **THEN** Buildr MUST 将开发 CLI 与 `Buildr Web Dev` 绑定当前 checkout 和 development runtime
-- **AND** MUST NOT 覆盖 npm installation 或 npm-owned `Buildr Web` Launcher
+- **WHEN** 开发者从 Buildr Service checkout 执行 `npm run install:development`
+- **THEN** Buildr MUST只将 `Buildr Web Dev` 绑定当前 checkout 和 development runtime
+- **AND** MUST NOT创建或覆盖默认 PATH CLI、npm installation 或 npm-owned `Buildr Web` Launcher
 
 ### Requirement: npm 与 development 安装必须拥有明确更新责任
 Buildr MUST 让 npm 与 development 只更新各自拥有的 installation，并 MUST 在版本、source root、Host Node、package entry、prefix 或 ownership identity 不一致时提供可解释诊断。当前产品 MUST NOT 声明 platform installer 更新渠道。

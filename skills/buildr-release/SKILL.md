@@ -57,14 +57,14 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 6. 确认 lockfile 不因本机 install 镜像写入私有或非 canonical registry URL，`publishConfig.registry` 保持 npm 官方 registry。
 7. 运行受影响验证，再对冻结候选运行一次完整产品验证；读取 timing summary 并报告总耗时、最慢阶段、失败阶段和路径。记录已验证 candidate tree identity（`git rev-parse HEAD^{tree}`），后续相同 tree 的 commit、squash 结果和历史衔接复用该证据。
 8. 使用 `task-finish` 把准备改动 fast-forward 集成并推送到 `dev`。release task 如果无法从 `<candidate-base>` 无语义冲突地进入当前 `dev`，必须停止；需要排除已有 dev 内容时，先结束本次准备并在 dev 上通过独立 change/revert 移除，禁止改从旧 dev ancestor 制作候选。
-9. 检查本次发布范围是否涉及 Buildr CLI 入口或实现，包括 `buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、安装/卸载脚本或 npm CLI 映射。若涉及，必须从已经集成本次改动且会继续保留的 Product checkout 运行 `scripts/install-buildr-cli`，再运行 `command -v buildr`、`buildr --help` 和 `buildr doctor --agent <agent> --target <workspace-root> --json`。安装或验证失败时停止发布准备；不得把本机入口留在即将清理的 task worktree，也不得要求维护者去其他 workspace 通过 Agent“更新 Buildr”来代替本地开发安装。该动作只刷新本机开发 CLI，不等同于 registry `buildr update`，也不触发其他 workspace 的 `buildr sync`。
+9. 检查本次发布范围是否涉及 Buildr CLI 入口或实现，包括 `buildr`、`bin/buildr.mjs`、`src/**/*.mjs`、legacy安装/卸载脚本或 npm CLI 映射。若涉及，必须从已经集成本次改动且会继续保留的 Product checkout，以该Task Environment绑定的Node显式运行 `projects/product/buildr version --json`、`projects/product/buildr --help` 和 `projects/product/buildr doctor --agent <agent> --target <workspace-root> --json`，核对development channel、source commit、Node和package/version。不得调用`scripts/install-buildr-cli`，不得读取、创建、覆盖或要求PATH默认`buildr`绑定checkout。npm发布身份由候选tarball验证与发布后官方registry精确安装smoke独立证明；两类证据不得互相替代。任一验证失败时停止发布准备，也不得要求维护者去其他workspace通过Agent“更新Buildr”代替本地checkout验证。
 10. 从保留 workspace 运行 `node projects/product/services/buildr/scripts/release/release-convergence.mjs --repo <workspace-root> --version <version> --candidate-base <candidate-base> --candidate-tree <tree> --stage pre-main`；只有 `ok: true` 才创建 `dev -> main` PR。checker 必须证明版本提交已进入 `origin/dev`、dev tree 等于候选，并且没有未集成的同版本 release task ref。
 11. 创建 `dev -> main` PR，等待必须的 CI 和 branch protection，通过后按仓库策略 squash merge 到 `main`。
 12. PR 合入后使用 `node projects/product/services/buildr/scripts/release/bridge-main-to-dev.mjs --repo <workspace-root> --version <version> --candidate-tree <tree>` 执行发布专用历史衔接。该工具必须先确认 `origin/main^{tree}` 和 `origin/dev^{tree}` 都与已验证 candidate tree，且两个 ref 的 package version 都与目标版本一致；`origin/main` 已是 `origin/dev` 祖先时 no-op，否则创建仅衔接历史、不改变 tree 的 merge commit，复核 tree 后普通 push `dev`。
 13. bridge 后，以 `origin/main` 完整 commit 运行 `node projects/product/services/buildr/scripts/release/release-authority-preflight.mjs --repo <workspace-root> --source-commit <origin-main-commit> --output <authority-evidence.json>`。该命令必须使用 npm 11.15+ authenticated maintainer session；`ready` evidence 必须绑定当前 main commit、`publish.yml` digest 和唯一 `publishAuthority`，并在15分钟内交给post-main convergence。任何 drift、过期、E401/ENEEDAUTH、工具不支持或控制面 unavailable 都必须停止，不得创建 tag，也不得把人工 UI/checklist 声明为已验证。
 14. 使用同一 evidence 运行 convergence checker 的 `--stage post-main --authority-evidence <authority-evidence.json>`；任一 base、version、tree、ancestry、release task、authority evidence、远端竞争、branch protection 或 push finding 都必须停止后续 tag 动作。该 version/tree gate 失败时不得使用 force push、reset 或 `ours` 掩盖内容差异。
 15. 确认 `main` 指向已验证内容，版本和发布材料一致，且远端 `dev` 已包含 squash `main` 历史。
-16. 明确报告“准备完成，尚未创建 tag，尚未触发 npm 发布”，并在涉及 CLI 时同时报告本机开发入口的安装与验证结果，然后停止。
+16. 明确报告“准备完成，尚未创建 tag，尚未触发 npm 发布”，并在涉及CLI时同时报告retained `projects/product/buildr`的identity与验证结果；不得把它描述为机器默认或npm发布入口，然后停止。
 
 准备候选版时使用 prerelease 版本并声明 `next`；准备稳定版时移除 prerelease 后缀，确认稳定发布日期和 `latest`，并额外复核 RC 反馈是否收敛。
 
@@ -108,7 +108,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - 发布类型、version、Git tag、npm dist-tag 和 commit。
 - 准备阶段是否停在 tag 前，或发布阶段的 workflow run 与 Environment 审批状态。
 - 完整验证结果和 timing summary。
-- 本次发布范围是否涉及 Buildr CLI；若涉及，本机开发入口的安装来源、`command -v buildr`、`buildr --help` 和 doctor 结果。
+- 本次发布范围是否涉及 Buildr CLI；若涉及，retained `projects/product/buildr`的checkout、Node、channel、source commit、package/version、help和doctor结果，以及npm发布物的独立验证状态。
 - npm 官方 registry、GitHub Release 和安装 smoke 结果。
 - GitHub Release body 是否与目标版本 changelog 预览一致。
 - 未完成步骤、阻塞项、回滚或后续版本建议。

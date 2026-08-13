@@ -100,6 +100,7 @@ test('development installer直接调用内部manager而不是npm-owned公开Laun
   const installer = fs.readFileSync(path.join(PRODUCT_ROOT, 'scripts', 'install-buildr-development'), 'utf8');
   assert.match(installer, /package\/launchers\/manage\.mjs" install --channel development/u);
   assert.doesNotMatch(installer, /bin\/buildr\.mjs" web launcher/u);
+  assert.doesNotMatch(installer, /install-buildr-cli|command -v buildr|buildr --version/u);
 });
 
 test('Buildr Web Dev builder拒绝覆盖非空输出目录', (t) => {
