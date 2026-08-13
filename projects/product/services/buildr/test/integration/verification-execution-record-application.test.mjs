@@ -90,6 +90,36 @@ test('session丢失后相同验证返回active record且零执行，显式retry�
   assert.deepEqual(records.map((record) => record.lifecycleStatus).sort(), ['open', 'retained']);
 });
 
+test('候选 Verification 通过 Receipt 固定的 retained controller 编排 canonical record', async (t) => {
+  const current = setup(t, 'verification-retained-controller');
+  declare(current.projectRoot, [capability('demo.pass', 'process.stdout.write("candidate")')]);
+  const candidateSource = path.join(current.root, 'candidate-product');
+  const retainedSource = path.join(current.root, 'retained-product');
+  fs.mkdirSync(candidateSource);
+  fs.mkdirSync(retainedSource);
+  current.runtime.productRoot = () => candidateSource;
+  current.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true,
+    taskId: current.taskId,
+    environmentRoot: current.root,
+    workspaceRoot: current.root,
+    scopes: [],
+    allowedExecutionRoots: [current.root],
+    controllerInvocation: { command: process.execPath, argsPrefix: ['retained-buildr.mjs'], sourceRoot: retainedSource, kind: 'stable-controller' },
+  });
+  let delegated = null;
+  current.runtime.runVerificationThroughRetainedController = (context, args) => {
+    delegated = { context, args };
+    return { status: 'delegated' };
+  };
+
+  const payload = await run(current, 'demo.pass');
+  assert.equal(payload.status, 'delegated');
+  assert.equal(delegated.context.controllerInvocation.sourceRoot, retainedSource);
+  assert.deepEqual(delegated.args.slice(0, 4), ['--project', 'demo', '--capability', 'demo.pass']);
+  assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records.length, 0);
+});
+
 test('formal Verification 为passed/failed/retry/drift/cancelled保留独立execution records', async (t) => {
   const current = setup(t);
   const selfSignalOutcome = process.platform === 'win32' ? 'failed' : 'cancelled';

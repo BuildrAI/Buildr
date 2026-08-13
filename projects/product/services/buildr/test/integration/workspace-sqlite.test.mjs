@@ -131,6 +131,42 @@ test('候选 runtime 只能写自身 linked validation Workspace，不能污染 
   assert.equal(fs.existsSync(retainedStore), false);
 });
 
+test('候选 migration N+1 即使伪造 writerRole 也不能升级 canonical N', (t) => {
+  const retained = workspace(t);
+  const validation = workspace(t);
+  const candidateSource = path.join(validation, 'projects', 'product', 'services', 'buildr');
+  const commonDirectory = path.join(retained, '.git');
+  const checkouts = new Map([
+    [path.resolve(candidateSource), { checkoutRoot: validation, gitDirectory: path.join(commonDirectory, 'worktrees', 'candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+    [path.resolve(retained), { checkoutRoot: retained, gitDirectory: commonDirectory, gitCommonDirectory: commonDirectory, linkedWorktree: false }],
+    [path.resolve(validation), { checkoutRoot: validation, gitDirectory: path.join(commonDirectory, 'worktrees', 'candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+  ]);
+  const scripts = loadWorkspaceSqliteMigrations();
+  const retainedStore = path.join(retained, '.buildr', 'local', 'workspace.sqlite');
+  fs.mkdirSync(path.dirname(retainedStore), { recursive: true });
+  const database = new DatabaseSync(retainedStore);
+  for (const script of scripts.slice(0, -1)) applyWorkspaceSqliteMigration(database, script);
+  database.close();
+  const before = fs.readFileSync(retainedStore);
+
+  const candidate = createRuntime();
+  registerWorkspaceSqlite(candidate, { sourceRoot: candidateSource, observeCheckout: (root) => checkouts.get(path.resolve(root)) || null });
+  for (const writerRole of ['retained-task-state', 'task-finish-retained']) {
+    assert.throws(
+      () => candidate.openWorkspaceStructuredStore(retained, { writable: true, writerRole }),
+      (error) => error.code === 'workspace_store_writer_provenance_forbidden',
+    );
+  }
+  assert.deepEqual(fs.readFileSync(retainedStore), before);
+  const retainedRead = new DatabaseSync(retainedStore, { readOnly: true });
+  assert.equal(retainedRead.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, scripts.at(-2).version);
+  retainedRead.close();
+
+  const candidateStore = candidate.openWorkspaceStructuredStore(validation, { writable: true });
+  assert.equal(candidateStore.version, scripts.at(-1).version);
+  candidateStore.database.close();
+});
+
 test('candidate/validation 自身 store 可只读打开且不观察 Git', (t) => {
   const validation = workspace(t);
   const writer = createRuntime();

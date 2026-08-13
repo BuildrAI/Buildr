@@ -4,10 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
-import { PUBLIC_JSON_SCHEMAS } from '../../../src/application/json-contracts.mjs';
-import { compactTaskFinishResult } from '../../../src/application/task-finish/task-finish-result-projection.mjs';
 import { createCandidatePackage, readSharedCandidatePackage } from '../release/candidate-package.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -43,9 +41,13 @@ function snapshot(directory) {
 function normalizeWorkspaceSnapshot(value) {
   const workspaceId = value['.buildr/workspace.yml']?.match(/^id:\s*([0-9a-f-]{36})$/m)?.[1];
   const skillsWorkspaceId = value['skills/manifest.yml']?.match(/^workspaceId:\s*([0-9a-f-]{36})$/m)?.[1];
+  const runtimeNodeVersion = value['.buildr/workspace.yml']?.match(/^\s+version:\s*([^\s]+)$/m)?.[1];
   assert.ok(workspaceId, 'Workspace metadata must contain a UUID');
+  assert.ok(runtimeNodeVersion, 'Workspace metadata must contain a Node runtime version');
   assert.equal(skillsWorkspaceId, workspaceId, 'Workspace and Skills manifests must share one UUID');
-  return Object.fromEntries(Object.entries(value).map(([file, content]) => [file, content.replaceAll(workspaceId, '<workspace-id>')]));
+  return Object.fromEntries(Object.entries(value).map(([file, content]) => [file, content
+    .replaceAll(workspaceId, '<workspace-id>')
+    .replaceAll(`version: ${runtimeNodeVersion}`, 'version: <runtime-node-version>')]));
 }
 
 try {
@@ -61,17 +63,8 @@ try {
   assert.equal(installed.status, 0, installed.stderr);
   const packagedCli = path.join(prefix, 'node_modules', '.bin', process.platform === 'win32' ? 'buildr.cmd' : 'buildr');
   const packagedRoot = path.join(prefix, 'node_modules', '@buildr-ai', 'buildr');
-  const packagedSchemas = await import(pathToFileURL(path.join(packagedRoot, 'src', 'application', 'json-contracts.mjs')));
-  const packagedProjection = await import(pathToFileURL(path.join(packagedRoot, 'src', 'application', 'task-finish', 'task-finish-result-projection.mjs')));
-  assert.equal(PUBLIC_JSON_SCHEMAS.taskFinishCompactResult, 'buildr.task-finish-compact-result/v1');
-  assert.equal(packagedSchemas.PUBLIC_JSON_SCHEMAS.taskFinishCompactResult, PUBLIC_JSON_SCHEMAS.taskFinishCompactResult);
-  const finishFixture = {
-    schemaVersion: PUBLIC_JSON_SCHEMAS.taskFinishResult,
-    runId: 'package-parity', status: 'complete',
-    identity: { task: 'package-parity', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev' },
-    phases: [], metrics: {},
-  };
-  assert.deepEqual(packagedProjection.compactTaskFinishResult(finishFixture), compactTaskFinishResult(finishFixture));
+  assert.equal(fs.existsSync(path.join(packagedRoot, 'src')), false, 'npm artifact must not republish private product source');
+  assert.equal(fs.existsSync(path.join(packagedRoot, 'runtime', 'buildr.cjs')), true, 'npm artifact must contain the bundled public runtime');
   const webDist = path.join(packagedRoot, 'payload', 'product', 'src', 'interfaces', 'local-app', 'web-dist');
   for (const relative of ['index.html', 'assets']) assert.ok(fs.existsSync(path.join(webDist, relative)), `packaged Buildr Web dist asset is missing: ${relative}`);
   const distAssets = fs.readdirSync(path.join(webDist, 'assets'));
@@ -110,8 +103,13 @@ try {
   for (const field of ['schemaVersion', 'package', 'version', 'protocolIdentity', 'sourceCommit']) {
     assert.equal(packagedIdentity[field], checkoutIdentity[field], `version identity differs: ${field}`);
   }
-  for (const field of ['executable', 'version', 'platform', 'architecture']) {
+  for (const field of ['platform', 'architecture']) {
     assert.equal(packagedIdentity.runtime[field], checkoutIdentity.runtime[field], `runtime identity differs: ${field}`);
+  }
+  for (const identity of [checkoutIdentity, packagedIdentity]) {
+    const [major, minor] = identity.runtime.version.split('.').map(Number);
+    assert.equal(major, 24);
+    assert.ok(minor >= 15);
   }
   assert.equal(checkoutIdentity.channel, 'development');
   assert.equal(checkoutIdentity.runtime.role, 'development');

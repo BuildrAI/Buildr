@@ -93,7 +93,6 @@ function open(runtime, targetRoot, writable) {
   return runtime.openWorkspaceStructuredStore(targetRoot, {
     writable,
     allowPendingRead: !writable,
-    writerRole: writable ? 'task-finish-retained' : null,
   });
 }
 

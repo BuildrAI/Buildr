@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { parseProjectVerification, validateProjectVerification } from '../doctor/project-verification-diagnostics.mjs';
@@ -27,6 +27,40 @@ function digest(value) {
 function inside(parent, child) {
   const relative = path.relative(parent, child);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function sameFilesystemPath(left, right) {
+  if (!left || !right) return false;
+  const canonical = (value) => {
+    try { return fs.realpathSync(path.resolve(value)); } catch { return path.resolve(value); }
+  };
+  return canonical(left) === canonical(right);
+}
+
+function runVerificationThroughRetainedController(context, args) {
+  const invocation = context?.controllerInvocation;
+  if (!invocation?.command || !Array.isArray(invocation.argsPrefix)) {
+    const error = new Error('Task Environment Receipt 未提供可执行的 retained controller invocation。');
+    error.code = 'verification.retained_controller_missing';
+    throw error;
+  }
+  const result = spawnSync(invocation.command, [...invocation.argsPrefix, 'verification', 'run', ...args], {
+    cwd: context.workspaceRoot,
+    encoding: 'utf8',
+    env: process.env,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  process.exitCode = result.status ?? 1;
+  if (!args.includes('--json')) return null;
+  try { return JSON.parse(result.stdout); }
+  catch {
+    const error = new Error('Retained controller 未返回合法 Verification JSON。');
+    error.code = 'verification.retained_controller_invalid_output';
+    throw error;
+  }
 }
 
 function gitOutput(cwd, args) {
@@ -207,9 +241,16 @@ export function registerVerificationApplication(runtime) {
     if (validationErrors.length) throw new Error(`Project verification declaration is invalid:\n- ${validationErrors.join('\n- ')}`);
 
     if (Boolean(requestedEnvironment) !== Boolean(requestedWorkspace)) throw new Error('Task Environment verification requires --environment <task-id> and --workspace <canonical-workspace> together.');
-    const context = requestedEnvironment ? runtime.resolveTaskEnvironmentExecution(path.resolve(requestedWorkspace), requestedEnvironment) : null;
+    const canonicalWorkspace = requestedWorkspace ? path.resolve(requestedWorkspace) : null;
+    const context = requestedEnvironment
+      ? runtime.withWorkspaceStructuredStoreReadCompatibility(canonicalWorkspace, () => runtime.resolveTaskEnvironmentExecution(canonicalWorkspace, requestedEnvironment))
+      : null;
     if (context && !context.ready) throw new Error(context.blocked?.message || 'Requested Task Environment binding is not ready.');
     if (context && !context.allowedExecutionRoots.some((root) => inside(root, targetRoot))) throw new Error('Verification target is outside the requested Task Environment execution roots.');
+    if (context?.controllerInvocation?.sourceRoot && !sameFilesystemPath(runtime.productRoot(), context.controllerInvocation.sourceRoot)) {
+      const execute = runtime.runVerificationThroughRetainedController || runVerificationThroughRetainedController;
+      return execute(context, args);
+    }
     const workspaceNode = runtime.workspaceNodeExecution(targetRoot);
     if (!workspaceNode.ready) throw new Error(`Workspace Node runtime is not ready: ${workspaceNode.status}. Run buildr sync before verification.`);
 

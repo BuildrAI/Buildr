@@ -141,7 +141,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
     const task = runtime.readTaskRecordPersistence(targetRoot, record.taskId);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const existingRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND run_identity = ?`).get(record.taskId, record.owner, record.kind, record.runIdentity);
@@ -183,7 +183,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
     const task = runtime.readTaskRecordPersistence(targetRoot, previous.taskId);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const currentRow = database.prepare(`${SELECT} WHERE record_id = ?`).get(previous.recordId);
@@ -287,7 +287,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
     if (expected.lifecycleStatus !== 'cleaned') throw taskExecutionRecordError('task_execution_record_tombstone_required', '只有cleaned tombstone可以删除metadata。', 409, { recordId: expected.recordId });
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(targetRoot, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(targetRoot, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const row = database.prepare(`${SELECT} WHERE record_id = ?`).get(expected.recordId);

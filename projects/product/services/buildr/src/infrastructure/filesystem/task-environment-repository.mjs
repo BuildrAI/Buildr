@@ -87,7 +87,7 @@ export function registerTaskEnvironmentRepository(runtime) {
 
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true, writerRole: 'retained-task-state' });
+      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const current = database.prepare('SELECT status, receipt_json, updated_at FROM task_environment_current WHERE task_id = ?').get(normalized.taskId);
