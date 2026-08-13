@@ -89,6 +89,17 @@ test('web launcher CLI只读投影npm-owned Launcher target', (t) => {
   assert.equal(status.status, 'absent');
   assert.equal(status.target, root);
   assert.doesNotMatch(status.target, /Buildr Web Dev/);
+
+  const rejected = spawnSync(process.execPath, [CLI, 'web', 'launcher', 'install', '--channel', 'development', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stdout || rejected.stderr, /Unknown argument: --channel/u);
+  assert.equal(fs.readdirSync(root).length, 0);
+});
+
+test('development installer直接调用内部manager而不是npm-owned公开Launcher', () => {
+  const installer = fs.readFileSync(path.join(PRODUCT_ROOT, 'scripts', 'install-buildr-development'), 'utf8');
+  assert.match(installer, /package\/launchers\/manage\.mjs" install --channel development/u);
+  assert.doesNotMatch(installer, /bin\/buildr\.mjs" web launcher/u);
 });
 
 test('Buildr Web Dev builder拒绝覆盖非空输出目录', (t) => {
@@ -140,6 +151,7 @@ test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的de
   fs.writeFileSync(identityPath, `${JSON.stringify(identity, null, 2)}\n`);
   const broken = launcherStatus({ platform: 'darwin', channel: 'development', installRoot: root });
   assert.deepEqual(broken.diagnostics.map((finding) => finding.code), ['development.source_missing', 'development.node_missing']);
+  assert.match(broken.diagnostics[0].suggestion, /npm run install:development/u);
 
   const removed = await uninstallLauncher({ platform: 'darwin', channel: 'development', installRoot: root });
   assert.equal(removed.removed, true);

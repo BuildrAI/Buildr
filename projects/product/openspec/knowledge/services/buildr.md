@@ -15,7 +15,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 
 - `scripts/release/application-payload.mjs`把同一runtime CJS bundle、read Worker bundle、Web dist、migrations、package baseline、生产依赖、图标与许可证冻结为`buildr.application-payload/v1`；npm staging消费同一`applicationPayloadDigest`。resource resolver只从摘要验证payload或canonical development root解析资源，正式runtime不依赖cwd、PATH、`buildr-web`源码或Vite。
 - npm package是唯一正式产品安装。`buildr web launcher install`只在显式请求后生成本机macOS `.app`或Windows Start Menu shortcut，closed binding精确记录formal npm origin、Host Node、package entry、prefix、payload/protocol与target；wrapper不复制Node、Buildr package或payload，也不形成独立更新渠道。
-- Development Launcher继续由当前checkout的`package/launchers`构建为thin入口，只包含图标、identity与启动脚本，绑定Service source root和独立development host Node，不使用Workspace Node、不复制payload或npm安装。它与formal npm Launcher在名称、target、identity和lifecycle上隔离。
+- Development Launcher继续由当前checkout的`package/launchers`内部manager构建为thin入口，只包含图标、identity与启动脚本，绑定Service source root和独立development host Node，不使用Workspace Node、不复制payload或npm安装。`npm run install:development`和self-bootstrap activation都用绑定的development/retained Node直接调用该manager；它们不经过npm-owned公开`buildr web launcher`命令。Development Launcher与formal npm Launcher在名称、target、identity和lifecycle上隔离。
 - `installation status --json`、Doctor和Web health/instance分别展示receipt证明的npm、development、Launcher与current instance identity；`update`按同一receipt路由npm package或development checkout，并只原子刷新同slot已有Launcher，不扫描PATH、文件名或目录形状。
 
 ## 数据与依赖

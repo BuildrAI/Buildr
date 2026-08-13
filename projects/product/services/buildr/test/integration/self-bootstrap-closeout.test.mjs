@@ -31,6 +31,7 @@ function fixture(t) {
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'bin'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers'), { recursive: true });
   fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
   const launcher = path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
   const cliEntry = path.join(root, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
@@ -40,6 +41,7 @@ function fixture(t) {
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-test' }));
   fs.writeFileSync(launcher, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(cliEntry, '#!/usr/bin/env node\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs'), '#!/usr/bin/env node\n', { mode: 0o755 });
   fs.mkdirSync(defaultBin);
   fs.symlinkSync(launcher, path.join(defaultBin, 'buildr'));
   fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v1\n');
@@ -121,6 +123,7 @@ function executor(root, options = {}) {
     }
     const productScript = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
     const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
+    const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
     let resolvedExecutable = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
     if (resolvedExecutable === launcher) {
@@ -153,7 +156,27 @@ function executor(root, options = {}) {
         fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v2\n');
         return { status: options.failSync ? 1 : 0, stdout: '{"status":"synced"}', stderr: options.failSync ? 'sync failed' : '' };
       }
-      if (productArgs[0] === 'web') return { status: 0, stdout: JSON.stringify({ status: 'installed', channel: 'development' }), stderr: '' };
+    }
+    if (executable === process.execPath && args[0] === launcherManager) {
+      if (options.failLauncherInstall) return { status: 1, stdout: '', stderr: 'launcher manager failed' };
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          schemaVersion: 'buildr.launcher-status/v1',
+          channel: 'development',
+          installed: true,
+          target: path.join(canonicalRoot, 'Buildr Web Dev.app'),
+          identity: {
+            schemaVersion: 'buildr.launcher-identity/v1',
+            channel: 'development',
+            source: 'checkout',
+            sourceRoot: options.observedLauncherSourceRoot || path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr'),
+            developmentRuntime: { executable: options.observedLauncherNode || process.execPath },
+            checkout: { head: options.observedLauncherHead || git(canonicalRoot, 'rev-parse', 'HEAD') },
+          },
+        }),
+        stderr: '',
+      };
     }
     if (executable === path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli')) return { status: options.failCliInstall ? 1 : 0, stdout: 'installed', stderr: options.failCliInstall ? 'install failed' : '' };
     return { status: 1, stdout: '', stderr: `unexpected command: ${executable} ${args.join(' ')}` };
@@ -355,6 +378,30 @@ test('安装失败保留前序事实，Doctor blocked使用同一run resume', (t
   assert.equal(resumed.status, 'passed', JSON.stringify(resumed.diagnostic));
   assert.equal(phase(resumed, 'finalize').operations.at(-1).id, 'resume-finish-run');
   assert.equal(phase(resumed, 'finalize').operations.filter((item) => item.id === 'final-doctor').length, 0);
+});
+
+test('Development Launcher只调用内部manager并在identity或安装失败时阻断finalize', (t) => {
+  for (const scenario of [
+    { name: 'success', options: {}, status: 'passed', code: null },
+    { name: 'manager-failure', options: { failLauncherInstall: true }, status: 'blocked', code: 'self-bootstrap-closeout.local-app-install-failed' },
+    { name: 'identity-drift', options: { observedLauncherHead: 'f'.repeat(40) }, status: 'blocked', code: 'self-bootstrap-closeout.local-app-identity-mismatch' },
+  ]) {
+    const current = fixture(t);
+    const result = runSelfBootstrapCloseout({
+      finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
+      workspaceRoot: current.root,
+      nodeExecutable: process.execPath,
+      execute: executor(current.root, scenario.options),
+      environment: current.environment,
+    });
+    assert.equal(result.status, scenario.status, `${scenario.name}: ${JSON.stringify(result.diagnostic)}`);
+    assert.equal(result.diagnostic?.code || null, scenario.code);
+    const install = phase(result, 'install-local-app');
+    assert.equal(install.operations[0].kind, 'development-launcher-manager');
+    assert.deepEqual(install.operations[0].args, ['install', '--channel', 'development']);
+    assert.doesNotMatch(`${install.operations[0].script} ${install.operations[0].args.join(' ')}`, /bin\/buildr\.mjs web launcher/u);
+    assert.equal(phase(result, 'finalize').status, scenario.status === 'passed' ? 'passed' : 'not-applicable');
+  }
 });
 
 test('默认CLI identity evidence覆盖完整入口链且complete只经默认入口Doctor', (t) => {

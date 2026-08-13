@@ -245,6 +245,26 @@ function productCommand(execute, root, nodeExecutable, args, id, phaseResult) {
   return command(execute, nodeExecutable, [script, ...args], root, id, phaseResult, { kind: 'product', script, args });
 }
 
+function validateDevelopmentLauncherResult(payload, root, nodeExecutable, successor) {
+  const expectedSourceRoot = path.join(root, SERVICE_ROOT);
+  const identity = payload?.identity;
+  if (payload?.schemaVersion !== 'buildr.launcher-status/v1'
+    || payload.channel !== 'development'
+    || payload.installed !== true
+    || identity?.schemaVersion !== 'buildr.launcher-identity/v1'
+    || identity.channel !== 'development'
+    || identity.source !== 'checkout'
+    || !sameFilesystemPath(identity.sourceRoot, expectedSourceRoot)
+    || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)
+    || identity.checkout?.head !== successor) {
+    throw closeoutError('self-bootstrap-closeout.local-app-identity-mismatch', 'Development Launcher没有绑定当前retained checkout与retained Node。', {
+      expected: { sourceRoot: expectedSourceRoot, nodeExecutable, checkoutHead: successor },
+      actual: identity || null,
+    });
+  }
+  return payload;
+}
+
 function cliIdentityFailure(evidence, code, message, details = null) {
   evidence.status = 'blocked';
   throw closeoutError(code, message, { cliIdentity: evidence, ...details });
@@ -591,10 +611,17 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
 
     active = stages.get('install-local-app');
     if (plan.actions['install-development-local-app'].length) {
-      const installed = productCommand(execute, root, nodeExecutable, ['web', 'launcher', 'install', '--channel', 'development', '--json'], 'install-development-local-app', active);
+      const manager = path.join(root, SERVICE_ROOT, 'package', 'launchers', 'manage.mjs');
+      const args = [manager, 'install', '--channel', 'development'];
+      const installed = command(execute, nodeExecutable, args, root, 'install-development-local-app', active, { kind: 'development-launcher-manager', script: manager, args: args.slice(1) });
       requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', 'Development Local App安装失败。');
-      const payload = parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', 'Development Local App installer没有返回JSON。');
-      markPassed(active, plan.identity, digest(payload), [{ type: 'install-development-local-app', ref: successor, channel: 'development' }]);
+      const payload = validateDevelopmentLauncherResult(
+        parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', 'Development Local App installer没有返回JSON。'),
+        root,
+        nodeExecutable,
+        successor,
+      );
+      markPassed(active, plan.identity, digest(payload), [{ type: 'install-development-local-app', ref: successor, channel: 'development', target: payload.target }]);
     } else markNotApplicable(active, 'frozen paths未命中Development Local App输入。');
 
     active = stages.get('verify-cli-identity');

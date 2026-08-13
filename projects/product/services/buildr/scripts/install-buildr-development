@@ -2,8 +2,14 @@
 set -euo pipefail
 
 service_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-"$service_root/scripts/install-buildr-cli"
-"$service_root/bin/buildr.mjs" web launcher install --channel development "$@"
-"$service_root/bin/buildr.mjs" web launcher status --channel development --json
+node_executable="${BUILDR_NODE_EXECUTABLE:-$(command -v node || true)}"
+
+if [[ -z "$node_executable" || ! -x "$node_executable" ]]; then
+  echo "Buildr development installation requires a compatible Host Node." >&2
+  exit 1
+fi
+
+"$service_root/scripts/install-buildr-cli" --node-executable "$node_executable"
+"$node_executable" "$service_root/package/launchers/manage.mjs" install --channel development "$@"
 command -v buildr >/dev/null
 buildr --version
