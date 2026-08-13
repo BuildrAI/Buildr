@@ -23,7 +23,7 @@ Result必须恰好属于一种模式：
 - `sync-retained-workspace`：`projects/product/services/buildr/package/manifest.yml`或`projects/product/services/buildr/package/targets/workspace/**`；
 - `install-development-cli`：`projects/product/buildr`、`projects/product/services/buildr/bin/**`、`projects/product/services/buildr/src/**/*.mjs`、development launcher、CLI安装/卸载脚本、`package.json`或`package-lock.json`；
 - `install-development-local-app`：这是保留兼容的内部动作ID；用户可见能力是development Buildr Web。它由`projects/product/services/buildr/src/interfaces/local-app/**`、`projects/product/services/buildr/src/interfaces/cli/launcher.mjs`、`projects/product/services/buildr/package/launchers/**`、`projects/product/services/buildr/package.json`、`projects/product/services/buildr/package-lock.json`或`projects/product/services/buildr/LICENSE`命中，并required依赖同一plan的`install-development-cli`；
-- `verify-cli-identity`：任一前三项适用时，在安装动作后解析PATH实际命中的默认`buildr`，证明它绑定本次retained checkout并核对package/version；
+- `verify-cli-identity`：任一前三项适用时，在安装动作后解析PATH实际命中的默认`buildr`，执行其closed wrapper identity probe，证明wrapper schema、retained Node、launcher与CLI entry绑定本次retained checkout并核对package/version；
 - `finalize`：identity验证通过后，`complete`模式通过该默认入口执行一次指定Agent Doctor，`doctor-blocked`模式通过该默认入口恢复一次同一Finish run。
 
 同一动作即使被多条路径命中也只执行一次。所有路径均未命中时返回`not-applicable`，不执行sync、Git、CLI install、Local App install、Doctor或Finish resume。
@@ -45,7 +45,7 @@ Runner是本Skill的bundled script，只存在于Buildr自举Workspace，不进�
 
 Plan的`baseRef`始终冻结为当前Finish Result的final ref，runner不因后续交付改写它。Preflight另选择本次实际`activationBaseRef`：HEAD等于base时直接使用base；HEAD已前进时，只接受base到HEAD无merge、每个first-parent commit带非空`Buildr-Task` trailer或成对`Buildr-Finish-Run`/`Buildr-Closeout-Plan` trailer、working tree clean且remote精确等于HEAD的Buildr-owned descendant。若HEAD本身是当前run/plan的精确successor，则以其parent作为activation base，remote只可等于parent或HEAD。当前sync产生的新successor必须直接以activation base为parent。这样较早Result可以在已push的后续Formal Finish或self-bootstrap successor上顺序激活，但未知commit、merge、未push descendant或remote drift仍在安装与finalize前fail closed；不增加持久queue、store或第二份lifecycle authority。
 
-`verify-cli-identity`按当前PATH顺序解析实际可执行的`buildr`。其realpath必须是本次retained checkout的`scripts/run-development-cli`；launcher的runner-only inspection必须返回同一checkout的`bin/buildr.mjs`和Environment retained Node；随后由该默认入口执行`version --json`，package/version必须与retained `package.json`一致。PATH未命中、同名命令抢占、旧checkout symlink、launcher或CLI entry不匹配、Node不一致、版本不一致或命令启动失败一律fail closed，不进入`finalize`。
+`verify-cli-identity`按当前PATH顺序解析实际可执行的`buildr`，但不以文件名或realpath猜来源。默认入口的runner-only inspection必须返回`buildr.development-cli-wrapper/v1`、本次retained checkout的`scripts/run-development-cli`与`bin/buildr.mjs`、Environment retained Node；随后由该默认入口执行`version --json`，package/version必须与retained `package.json`一致。PATH未命中、同名命令抢占、旧checkout symlink、wrapper schema、launcher或CLI entry不匹配、Node不一致、版本不一致或命令启动失败一律fail closed，不进入`finalize`。
 
 `doctor-blocked`模式下，尚未cleanup的当前Delivery Carrier是Finish owner的恢复资源，不属于用户dirty tree。Runner只在`workspaceRoot + runId`推导的路径与同一Result的`carrier.root`精确匹配、真实存在且不是symlink时，从untracked observation中排除该唯一root及其后代；该路径下的tracked/staged差异、其他untracked路径、root缺失或identity不匹配仍然fail closed。此规则不写`.gitignore`或`.git/info/exclude`。
 
@@ -56,6 +56,7 @@ Runner结果是正常路径的唯一执行证据。需要诊断时只读其失�
 ## 失败与恢复
 
 - staged/未知delta、symlink逃逸、HEAD/remote漂移、descendant merge、缺失Buildr provenance、current successor run/plan trailer不匹配、installer identity不匹配、默认CLI入口链不匹配、package/version不一致或launcher channel/commit不匹配时fail closed。
+- 修复本runner阻塞的正式Task时，修复Task的候选验证必须用真实owned CLI wrapper覆盖install、精确Node identity、Development Launcher、sync、Doctor与doctor-blocked same-run resume链；不得把每个后续症状自动拆成新的递归修复Task。
 - 不使用`git add -A`、force push或共享历史改写，不把sync delta混入原Task carrier。
 - 失败时停止后续不安全动作，报告已完成动作、失败动作、冻结inputs、当前retained/remote/CLI/launcher identity与精确恢复入口。
 - `complete`模式失败固定报告“主任务已交付、自举Workspace激活未完成”，不得重新运行Finish或改写已完成Result。

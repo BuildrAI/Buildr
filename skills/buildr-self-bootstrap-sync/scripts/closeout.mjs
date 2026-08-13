@@ -279,6 +279,7 @@ function verifyDefaultCliIdentity({ execute, root, nodeExecutable, environment, 
     status: 'pending',
     command: 'buildr',
     pathEntry: null,
+    wrapperSchema: { expected: 'buildr.development-cli-wrapper/v1', observed: null },
     launcher: { expected: expectedLauncher, observed: null },
     cliEntry: { expected: expectedCliEntry, observed: null },
     nodeExecutable: { expected: nodeExecutable, observed: null },
@@ -291,15 +292,6 @@ function verifyDefaultCliIdentity({ execute, root, nodeExecutable, environment, 
   if (!defaultBuildr) {
     cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-not-found', 'PATH中没有可执行的默认buildr。');
   }
-  let observedLauncher;
-  try { observedLauncher = fs.realpathSync(defaultBuildr); } catch (error) {
-    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-unresolvable', '无法解析PATH命中的默认buildr入口。', { error: error.message });
-  }
-  evidence.launcher.observed = observedLauncher;
-  if (!sameFilesystemPath(observedLauncher, expectedLauncher)) {
-    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-launcher-mismatch', 'PATH命中的默认buildr没有绑定本次retained checkout launcher。');
-  }
-
   const inspected = execute(defaultBuildr, [], {
     cwd: root,
     env: { ...environment, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
@@ -327,9 +319,13 @@ function verifyDefaultCliIdentity({ execute, root, nodeExecutable, environment, 
       schemaVersion: inspectedIdentity.schemaVersion || null,
     });
   }
-  evidence.launcher.observed = inspectedIdentity.launcher || evidence.launcher.observed;
+  evidence.wrapperSchema.observed = inspectedIdentity.wrapperSchema || null;
+  evidence.launcher.observed = inspectedIdentity.launcher || null;
   evidence.cliEntry.observed = inspectedIdentity.cliEntry || null;
   evidence.nodeExecutable.observed = inspectedIdentity.nodeExecutable || null;
+  if (evidence.wrapperSchema.observed !== evidence.wrapperSchema.expected) {
+    cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-wrapper-schema-mismatch', '默认buildr不是当前Buildr-owned development CLI wrapper。');
+  }
   if (!sameFilesystemPath(evidence.launcher.observed, expectedLauncher)) {
     cliIdentityFailure(evidence, 'self-bootstrap-closeout.default-cli-launcher-mismatch', '默认buildr运行时launcher与本次retained checkout不一致。');
   }

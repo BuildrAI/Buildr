@@ -35,15 +35,38 @@ function fixture(t) {
   fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
   const launcher = path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
   const cliEntry = path.join(root, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
+  const installer = path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli');
+  const sourceServiceRoot = path.resolve(import.meta.dirname, '../..');
   const defaultBin = path.join(base, 'default-bin');
   fs.writeFileSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap', 'component.yml'), 'schemaVersion: buildr.component/v1\nid: buildr-self-bootstrap\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-test' }));
-  fs.writeFileSync(launcher, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  fs.writeFileSync(cliEntry, '#!/usr/bin/env node\n', { mode: 0o755 });
+  fs.copyFileSync(path.join(sourceServiceRoot, 'scripts', 'run-development-cli'), launcher);
+  fs.copyFileSync(path.join(sourceServiceRoot, 'scripts', 'install-buildr-cli'), installer);
+  fs.chmodSync(launcher, 0o755);
+  fs.chmodSync(installer, 0o755);
+  fs.writeFileSync(cliEntry, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'version') console.log(JSON.stringify({ package: '@buildr-ai/buildr', version: '0.1.0-test' }));
+else if (args[0] === 'doctor') console.log(JSON.stringify({ health: { ready: true } }));
+else if (args[0] === 'task' && args[1] === 'finish' && args[2] === 'run') console.log(JSON.stringify({ status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' }, resumePreflight: 'passed', doctor: 'ready' }));
+else if (args[0] === 'sync') console.log(JSON.stringify({ status: 'synced' }));
+else process.exitCode = 2;
+`, { mode: 0o755 });
+  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'node_modules', 'yaml'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'node_modules', 'yaml', 'package.json'), JSON.stringify({ name: 'yaml', version: '0.0.0-test', type: 'module', exports: './index.mjs' }));
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'node_modules', 'yaml', 'index.mjs'), 'export default {};\n');
+  fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs'), '#!/usr/bin/env node\n', { mode: 0o755 });
   fs.mkdirSync(defaultBin);
-  fs.symlinkSync(launcher, path.join(defaultBin, 'buildr'));
+  fs.writeFileSync(path.join(defaultBin, 'buildr'), `#!/bin/sh
+# buildr-development-cli-wrapper/v1
+set -eu
+BUILDR_NODE='${process.execPath}'
+BUILDR_DEVELOPMENT_CLI_WRAPPER='buildr.development-cli-wrapper/v1'
+export BUILDR_NODE BUILDR_DEVELOPMENT_CLI_WRAPPER
+exec '${launcher}' "$@"
+`, { mode: 0o755 });
   fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v1\n');
   git(root, 'init', '-b', 'dev');
   git(root, 'config', 'user.name', 'Buildr Test');
@@ -62,7 +85,7 @@ function fixture(t) {
     launcher,
     cliEntry,
     defaultBuildr: path.join(defaultBin, 'buildr'),
-    environment: { ...process.env, PATH: `${defaultBin}${path.delimiter}${process.env.PATH || ''}` },
+    environment: { ...process.env, BUILDR_CLI_INSTALL_DIR: defaultBin, PATH: `${defaultBin}${path.delimiter}${process.env.PATH || ''}` },
   };
 }
 
@@ -124,15 +147,21 @@ function executor(root, options = {}) {
     const productScript = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
     const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
     const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
+    const defaultBuildr = path.join(path.dirname(canonicalRoot), 'default-bin', 'buildr');
     let resolvedExecutable = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
-    if (resolvedExecutable === launcher) {
+    if (options.realDefaultCli && resolvedExecutable === fs.realpathSync(defaultBuildr)) {
+      const result = spawnSync(executable, args, { cwd: context.cwd, env: context.env, encoding: 'utf8' });
+      return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || result.error?.message || '' };
+    }
+    if (resolvedExecutable === launcher || resolvedExecutable === fs.realpathSync(defaultBuildr)) {
       if (context.env?.BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON === '1') {
         if (options.failCliInspection) return { status: 1, stdout: '', stderr: 'inspection failed' };
         return {
           status: 0,
           stdout: JSON.stringify({
             schemaVersion: 'buildr.development-cli-identity/v1',
+            wrapperSchema: options.observedWrapperSchema === undefined ? 'buildr.development-cli-wrapper/v1' : options.observedWrapperSchema,
             launcher: options.observedLauncher || launcher,
             cliEntry: options.observedCliEntry || productScript,
             nodeExecutable: options.observedNodeExecutable || process.execPath,
@@ -178,7 +207,18 @@ function executor(root, options = {}) {
         stderr: '',
       };
     }
-    if (executable === path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli')) return { status: options.failCliInstall ? 1 : 0, stdout: 'installed', stderr: options.failCliInstall ? 'install failed' : '' };
+    if (executable === path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'install-buildr-cli')) {
+      if (options.failCliInstall) return { status: 1, stdout: '', stderr: 'install failed' };
+      if (options.realCliInstall) {
+        const result = spawnSync(executable, args, {
+          cwd: context.cwd,
+          env: { ...context.env, BUILDR_CLI_INSTALL_DIR: path.join(path.dirname(canonicalRoot), 'default-bin') },
+          encoding: 'utf8',
+        });
+        return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || result.error?.message || '' };
+      }
+      return { status: 0, stdout: 'installed', stderr: '' };
+    }
     return { status: 1, stdout: '', stderr: `unexpected command: ${executable} ${args.join(' ')}` };
   };
 }
@@ -380,6 +420,35 @@ test('安装失败保留前序事实，Doctor blocked使用同一run resume', (t
   assert.equal(phase(resumed, 'finalize').operations.filter((item) => item.id === 'final-doctor').length, 0);
 });
 
+test('自举恢复闭环以真实owned wrapper完成sync、Launcher、identity与same-run resume', (t) => {
+  const { root, baseRef, environment, defaultBuildr } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, [
+    'projects/product/services/buildr/package/manifest.yml',
+    'projects/product/services/buildr/src/example.mjs',
+    'projects/product/services/buildr/package/launchers/manage.mjs',
+  ]);
+  createCarrier(root);
+
+  const result = runSelfBootstrapCloseout({
+    finishResult: input,
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root, { realCliInstall: true, realDefaultCli: true }),
+    environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  for (const id of ['sync', 'install-cli', 'install-local-app', 'verify-cli-identity', 'finalize']) {
+    assert.equal(phase(result, id).status, 'passed', `${id} must pass in the same closeout chain`);
+  }
+  assert.equal(fs.lstatSync(defaultBuildr).isSymbolicLink(), false);
+  assert.equal(result.cliIdentity.wrapperSchema.observed, 'buildr.development-cli-wrapper/v1');
+  assert.equal(fs.realpathSync(result.cliIdentity.nodeExecutable.observed), fs.realpathSync(process.execPath));
+  const resumed = phase(result, 'finalize').operations.find((item) => item.id === 'resume-finish-run');
+  assert.equal(JSON.parse(resumed.stdout).resumePreflight, 'passed');
+  assert.equal(JSON.parse(resumed.stdout).doctor, 'ready');
+});
+
 test('Development Launcher只调用内部manager并在identity或安装失败时阻断finalize', (t) => {
   for (const scenario of [
     { name: 'success', options: {}, status: 'passed', code: null },
@@ -451,7 +520,7 @@ test('默认CLI identity对PATH shadowing和旧symlink fail closed', async (t) =
       });
 
       assert.equal(result.status, 'blocked');
-      assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.default-cli-launcher-mismatch');
+      assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.default-cli-inspection-failed');
       assert.equal(phase(result, 'finalize').status, 'not-applicable');
     });
   }
@@ -459,6 +528,7 @@ test('默认CLI identity对PATH shadowing和旧symlink fail closed', async (t) =
 
 test('默认CLI identity对入口链、版本和启动失败 fail closed', async (t) => {
   const scenarios = [
+    ['wrapper', { observedWrapperSchema: null }, 'self-bootstrap-closeout.default-cli-wrapper-schema-mismatch'],
     ['entry', { observedCliEntry: '/tmp/old-buildr.mjs' }, 'self-bootstrap-closeout.default-cli-entry-mismatch'],
     ['version', { observedVersion: '0.0.0-old' }, 'self-bootstrap-closeout.default-cli-version-mismatch'],
     ['startup', { failCliInspection: true }, 'self-bootstrap-closeout.default-cli-inspection-failed'],
