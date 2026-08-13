@@ -1,3 +1,16 @@
+export function createBuildrSelfInvoker({ currentProductInvocation, productInvocationArgs, execFileSync, spawnSync }) {
+  let invocation;
+  const invoke = (runner, args, options) => {
+    invocation ??= currentProductInvocation();
+    const [command, invocationArgs] = productInvocationArgs(invocation, args);
+    return runner(command, invocationArgs, options);
+  };
+  return Object.freeze({
+    exec: (args, options) => invoke(execFileSync, args, options),
+    spawn: (args, options) => invoke(spawnSync, args, options),
+  });
+}
+
 export function createPackageSmokeChecks(deps) {
   const {
     BUILDR_REQUIRED_BLOCK_START,
@@ -19,7 +32,6 @@ export function createPackageSmokeChecks(deps) {
     parseProjectsYaml,
     parseRulesManifestYaml,
     path,
-    process,
     readSkillManifest,
     renderClaudeCodeRules,
     resolveRuleScope,
@@ -27,13 +39,14 @@ export function createPackageSmokeChecks(deps) {
     toPosixRelative,
     writeServicesManifest,
   } = deps;
+  const buildrSelf = createBuildrSelfInvoker(deps);
 
-  function verifyRecursiveRules(context, tempRoot, buildrScript) {
+  function verifyRecursiveRules(context) {
     const { root, problems } = context;
     const recursiveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-rules-'));
     try {
-      execFileSync(process.execPath, [buildrScript, 'init', '--target', recursiveRoot, '--name', 'recursive', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
-      execFileSync(process.execPath, [buildrScript, 'project', 'create', 'demo', '--target', recursiveRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['init', '--target', recursiveRoot, '--name', 'recursive', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['project', 'create', 'demo', '--target', recursiveRoot], { cwd: root, stdio: 'ignore' });
       const recursiveProjectRoot = path.join(recursiveRoot, 'projects', 'demo');
       const apiRoot = path.join(recursiveProjectRoot, 'services', 'api');
       const webRoot = path.join(recursiveProjectRoot, 'services', 'web');
@@ -169,10 +182,10 @@ export function createPackageSmokeChecks(deps) {
     }
   }
 
-  function verifyWorkspaceAssetLifecycle(context, tempRoot, buildrScript, kind, finalize = true) {
+  function verifyWorkspaceAssetLifecycle(context, tempRoot, kind, finalize = true) {
     const { root, manifest, problems, parseJsonOutput } = context;
     if (kind === 'runtime') {
-    execFileSync(process.execPath, [buildrScript, 'rules', 'render', 'claude-code', '--scope', 'projects/demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+    buildrSelf.exec(['rules', 'render', 'claude-code', '--scope', 'projects/demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     const oldReferenceBlock = [
       '<!-- BEGIN Buildr managed Claude Code rules bridge; hash: 0000000000000000000000000000000000000000000000000000000000000000 -->',
       '@AGENTS.md',
@@ -195,14 +208,14 @@ export function createPackageSmokeChecks(deps) {
     if (referenceRuntime.repairCommands.some((command) => command.includes('rules render'))) {
       problems.push('reference bridge metadata info must not suggest required rules render.');
     }
-    const doctorWithoutInfo = parseJsonOutput('doctor without info', execFileSync(process.execPath, [buildrScript, 'doctor', '--target', tempRoot, '--scope', 'projects/demo', '--json', '--detail', 'full'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const doctorWithoutInfo = parseJsonOutput('doctor without info', buildrSelf.exec(['doctor', '--target', tempRoot, '--scope', 'projects/demo', '--json', '--detail', 'full'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     if (doctorWithoutInfo.findings.some((finding) => finding.code === 'runtime.reference_bridge_metadata_stale')) {
       problems.push('doctor --json must not include reference bridge metadata info by default.');
     }
     if (doctorWithoutInfo.runtime.claudeCode.some((entry) => entry.findings.some((finding) => finding.status === 'info'))) {
       problems.push('doctor --json runtime details must not include info findings by default.');
     }
-    const doctorWithInfo = parseJsonOutput('doctor with info', execFileSync(process.execPath, [buildrScript, 'doctor', '--target', tempRoot, '--scope', 'projects/demo', '--json', '--include-info'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const doctorWithInfo = parseJsonOutput('doctor with info', buildrSelf.exec(['doctor', '--target', tempRoot, '--scope', 'projects/demo', '--json', '--include-info'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     if (!doctorWithInfo.findings.some((finding) => finding.code === 'runtime.reference_bridge_metadata_stale' && finding.userActionRequired === false)) {
       problems.push('doctor --json --include-info must include non-actionable reference bridge metadata info.');
     }
@@ -215,7 +228,7 @@ export function createPackageSmokeChecks(deps) {
     if (!existsFile(installedCommandsManifest)) {
       problems.push('buildr init did not install commands/manifest.yml.');
     } else {
-      const commandsCheckJson = execFileSync(process.execPath, [buildrScript, 'commands', 'check', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const commandsCheckJson = buildrSelf.exec(['commands', 'check', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       const commandsCheck = parseJsonOutput('commands check', commandsCheckJson);
       if (!commandsCheck.ok || !commandsCheck.manifest.valid) {
         problems.push(`Default commands manifest check failed: ${JSON.stringify(commandsCheck.summary)}`);
@@ -232,13 +245,13 @@ export function createPackageSmokeChecks(deps) {
           problems.push('Default workspace must aggregate the OpenSpec Component command collection.');
         }
       }
-      execFileSync(process.execPath, [buildrScript, 'commands', 'add', 'demo-tool', '--purpose', '测试命令行工具维护', '--description', 'package check temporary command', '--install-hint', 'https://example.com/demo-tool', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      const commandsAfterAdd = parseJsonOutput('commands check after add', execFileSync(process.execPath, [buildrScript, 'commands', 'check', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+      buildrSelf.exec(['commands', 'add', 'demo-tool', '--purpose', '测试命令行工具维护', '--description', 'package check temporary command', '--install-hint', 'https://example.com/demo-tool', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      const commandsAfterAdd = parseJsonOutput('commands check after add', buildrSelf.exec(['commands', 'check', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
       const demoDefinition = commandsAfterAdd.catalog?.definitions?.find((item) => item.id === 'demo-tool');
       if (demoDefinition?.installHint !== 'https://example.com/demo-tool' || Object.hasOwn(demoDefinition ?? {}, 'install')) {
         problems.push('commands add/check catalog must use installHint and must not emit install.');
       }
-      execFileSync(process.execPath, [buildrScript, 'commands', 'remove', 'demo-tool', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['commands', 'remove', 'demo-tool', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       const commandsAfterRemove = parseCommandsManifestYaml(fs.readFileSync(installedCommandsManifest, 'utf8'));
       if (!Array.isArray(commandsAfterRemove.commands) || commandsAfterRemove.commands.length !== 0) {
         problems.push('commands remove must keep an empty commands array.');
@@ -249,19 +262,19 @@ export function createPackageSmokeChecks(deps) {
       const packageCheckRuleFile = path.join(tempRoot, 'rules', 'package-check-rule.md');
       const claudeBeforeRulesAdd = existsFile(path.join(tempRoot, 'CLAUDE.md')) ? fs.readFileSync(path.join(tempRoot, 'CLAUDE.md'), 'utf8') : null;
       fs.writeFileSync(packageCheckRuleFile, '# Package Check Rule\n', 'utf8');
-      const missingDescription = spawnSync(process.execPath, [buildrScript, 'rules', 'add', 'missing-description', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
+      const missingDescription = buildrSelf.spawn(['rules', 'add', 'missing-description', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
       if (missingDescription.status === 0 || !missingDescription.stderr.includes('Missing required option: --description')) {
         problems.push('rules add must require a non-empty description.');
       }
-      const missingRuleFile = spawnSync(process.execPath, [buildrScript, 'rules', 'add', 'missing-rule-file', '--description', 'missing file', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
+      const missingRuleFile = buildrSelf.spawn(['rules', 'add', 'missing-rule-file', '--description', 'missing file', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
       if (missingRuleFile.status === 0 || !missingRuleFile.stderr.includes('registers an existing root Rule file')) {
         problems.push('rules add must reject missing Rule source files.');
       }
-      const projectRulesScope = spawnSync(process.execPath, [buildrScript, 'rules', 'add', 'project-rule', '--scope', 'projects/demo', '--description', 'project scope', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
+      const projectRulesScope = buildrSelf.spawn(['rules', 'add', 'project-rule', '--scope', 'projects/demo', '--description', 'project scope', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
       if (projectRulesScope.status === 0 || !projectRulesScope.stderr.includes('Project rules are maintained through projects/<project>/AGENTS.md')) {
         problems.push('rules add must reject Project scope usage with Project AGENTS.md guidance.');
       }
-      execFileSync(process.execPath, [buildrScript, 'rules', 'add', 'package-check-rule', '--description', 'package check temporary rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['rules', 'add', 'package-check-rule', '--description', 'package check temporary rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       let packageCheckRules = parseRulesManifestYaml(fs.readFileSync(rulesManifestFile, 'utf8'));
       let packageCheckRule = packageCheckRules.rules.find((rule) => rule.id === 'package-check-rule');
       if (packageCheckRule?.path !== 'rules/package-check-rule.md' || packageCheckRule?.description !== 'package check temporary rule' || packageCheckRule?.source !== 'workspace') {
@@ -270,11 +283,11 @@ export function createPackageSmokeChecks(deps) {
       if (claudeBeforeRulesAdd !== null && fs.readFileSync(path.join(tempRoot, 'CLAUDE.md'), 'utf8') !== claudeBeforeRulesAdd) {
         problems.push('rules add must not write Agent runtime output.');
       }
-      const requiredRuleRemove = spawnSync(process.execPath, [buildrScript, 'rules', 'remove', 'buildr-core', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
+      const requiredRuleRemove = buildrSelf.spawn(['rules', 'remove', 'buildr-core', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
       if (requiredRuleRemove.status === 0 || !requiredRuleRemove.stderr.includes('Required Buildr Rule cannot be removed')) {
         problems.push('rules remove must protect required Buildr Rules.');
       }
-      execFileSync(process.execPath, [buildrScript, 'rules', 'remove', 'package-check-rule', '--keep-file', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['rules', 'remove', 'package-check-rule', '--keep-file', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       if (!existsFile(packageCheckRuleFile)) {
         problems.push('rules remove --keep-file must keep the Rule source file.');
       }
@@ -282,12 +295,12 @@ export function createPackageSmokeChecks(deps) {
       if (packageCheckRules.rules.some((rule) => rule.id === 'package-check-rule')) {
         problems.push('rules remove --keep-file must remove the manifest entry.');
       }
-      const doctorAfterKeepRule = parseJsonOutput('doctor after rules remove --keep-file', execFileSync(process.execPath, [buildrScript, 'doctor', '--target', tempRoot, '--agent', 'codex', '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+      const doctorAfterKeepRule = parseJsonOutput('doctor after rules remove --keep-file', buildrSelf.exec(['doctor', '--target', tempRoot, '--agent', 'codex', '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
       if (!doctorAfterKeepRule.findings.some((finding) => finding.code === 'rules.unregistered' && finding.path === 'rules/package-check-rule.md')) {
         problems.push('doctor must report a Rule file kept by rules remove --keep-file as unregistered.');
       }
-      execFileSync(process.execPath, [buildrScript, 'rules', 'add', 'package-check-rule', '--description', 'package check temporary rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      execFileSync(process.execPath, [buildrScript, 'rules', 'remove', 'package-check-rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['rules', 'add', 'package-check-rule', '--description', 'package check temporary rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['rules', 'remove', 'package-check-rule', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       if (existsFile(packageCheckRuleFile)) {
         problems.push('rules remove must delete the Rule source file by default.');
       }
@@ -309,7 +322,7 @@ export function createPackageSmokeChecks(deps) {
         '',
       ].join('\n'));
       fs.writeFileSync(path.join(packageCheckSkillSource, 'scripts', 'run.sh'), 'echo package-check\n');
-      execFileSync(process.execPath, [buildrScript, 'skills', 'add', '--source', packageCheckSkillSource, '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['skills', 'add', '--source', packageCheckSkillSource, '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       const packageCheckSkills = readSkillManifest(path.join(tempRoot, 'skills', 'manifest.yml'));
       const packageCheckSkill = packageCheckSkills.find((skill) => skill.id === 'package-check-skill');
       if (!packageCheckSkill || packageCheckSkill.description !== 'package check temporary skill') {
@@ -321,23 +334,23 @@ export function createPackageSmokeChecks(deps) {
       if (existsDirectory(path.join(tempRoot, '.claude', 'skills', 'package-check-skill'))) {
         problems.push('skills add must not write Agent runtime output.');
       }
-      execFileSync(process.execPath, [buildrScript, 'skills', 'remove', 'package-check-skill', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['skills', 'remove', 'package-check-skill', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       if (existsDirectory(path.join(tempRoot, 'skills', 'package-check-skill'))) {
         problems.push('skills remove must delete the loaded Skill source directory.');
       }
-      execFileSync(process.execPath, [buildrScript, 'skills', 'add', 'package-check-remote', '--remote-source', 'https://example.com/package-check-remote', '--description', 'remote info source', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['skills', 'add', 'package-check-remote', '--remote-source', 'https://example.com/package-check-remote', '--description', 'remote info source', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       let remoteSkills = readSkillManifest(path.join(tempRoot, 'skills', 'manifest.yml'));
       let remoteSkill = remoteSkills.find((skill) => skill.id === 'package-check-remote');
       if (remoteSkill?.source?.kind !== 'url' || remoteSkill?.install?.mode !== 'agent') {
         problems.push('skills add --remote-source must write source.kind=url and install.mode=agent.');
       }
-      execFileSync(process.execPath, [buildrScript, 'skills', 'add', 'package-check-remote', '--remote-source', 'https://example.com/package-check-remote', '--resolved-source', 'https://example.com/package-check-remote/SKILL.md', '--integrity', 'sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '--replace', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['skills', 'add', 'package-check-remote', '--remote-source', 'https://example.com/package-check-remote', '--resolved-source', 'https://example.com/package-check-remote/SKILL.md', '--integrity', 'sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '--replace', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       remoteSkills = readSkillManifest(path.join(tempRoot, 'skills', 'manifest.yml'));
       remoteSkill = remoteSkills.find((skill) => skill.id === 'package-check-remote');
       if (remoteSkill?.resolved?.kind !== 'skill-url' || remoteSkill?.install?.mode !== 'buildr' || remoteSkill?.source?.url !== 'https://example.com/package-check-remote') {
         problems.push('skills add --resolved-source must preserve source and write resolved.kind=skill-url with install.mode=buildr.');
       }
-      execFileSync(process.execPath, [buildrScript, 'skills', 'remove', 'package-check-remote', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['skills', 'remove', 'package-check-remote', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     }
     if (finalize) {
       for (const rawEntry of manifest.workspaceFiles) {
@@ -346,7 +359,7 @@ export function createPackageSmokeChecks(deps) {
         problems.push(`buildr init did not install workspace file: ${entry.target}`);
       }
     }
-    const doctorJson = execFileSync(process.execPath, [buildrScript, 'doctor', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const doctorJson = buildrSelf.exec(['doctor', '--target', tempRoot, '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const doctorResult = parseJsonOutput('doctor final', doctorJson);
     if (!doctorResult.ok) {
       problems.push(`Temporary init doctor failed: ${JSON.stringify(doctorResult.summary)}`);
@@ -354,7 +367,7 @@ export function createPackageSmokeChecks(deps) {
     }
   }
 
-  function verifyInitializedWorkspace(context, tempRoot, buildrScript) {
+  function verifyInitializedWorkspace(context, tempRoot) {
     const { root, problems, bootstrapContract, parseJsonOutput } = context;
     if (existsDirectory(path.join(tempRoot, 'practices'))) {
       problems.push('buildr init must not create the removed root practices/ baseline.');
@@ -367,7 +380,7 @@ export function createPackageSmokeChecks(deps) {
         problems.push('Default projects/manifest.yml must start with an empty Project registry.');
       }
     }
-    execFileSync(process.execPath, [buildrScript, 'project', 'create', 'demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+    buildrSelf.exec(['project', 'create', 'demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     if (existsDirectory(path.join(tempRoot, 'projects', 'demo', 'practices'))) {
       problems.push('project create must not create the removed Project practices/ baseline.');
     }
@@ -403,20 +416,20 @@ export function createPackageSmokeChecks(deps) {
     const projectPracticeSentinel = path.join(legacyProjectPractices, 'keep-project.md');
     fs.writeFileSync(rootPracticeSentinel, 'root legacy content\n', 'utf8');
     fs.writeFileSync(projectPracticeSentinel, 'project legacy content\n', 'utf8');
-    execFileSync(process.execPath, [buildrScript, 'project', 'create', 'demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-    execFileSync(process.execPath, [buildrScript, 'sync', 'codex', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+    buildrSelf.exec(['project', 'create', 'demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+    buildrSelf.exec(['sync', 'codex', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     if (fs.readFileSync(rootPracticeSentinel, 'utf8') !== 'root legacy content\n'
       || fs.readFileSync(projectPracticeSentinel, 'utf8') !== 'project legacy content\n') {
       problems.push('sync and Project repair must preserve legacy practices/ content unchanged.');
     }
-    const legacyPracticesDoctor = parseJsonOutput('doctor legacy practices', execFileSync(process.execPath, [buildrScript, 'doctor', '--target', tempRoot, '--agent', 'codex', '--json', '--include-info'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const legacyPracticesDoctor = parseJsonOutput('doctor legacy practices', buildrSelf.exec(['doctor', '--target', tempRoot, '--agent', 'codex', '--json', '--include-info'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
     const legacyPracticeFindings = legacyPracticesDoctor.findings.filter((finding) => finding.code === 'practices.legacy_directory_present');
     if (legacyPracticeFindings.length !== 2
       || legacyPracticeFindings.some((finding) => finding.status !== 'info' || finding.userActionRequired !== false)
       || legacyPracticesDoctor.nextSteps.some((step) => step.code === 'practices.legacy_directory_present')) {
       problems.push('doctor --include-info must report root and Project legacy practices/ as non-actionable info only.');
     }
-    execFileSync(process.execPath, [buildrScript, 'skill', 'install', 'claude-code', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+    buildrSelf.exec(['skill', 'install', 'claude-code', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     const installedBuildrSkill = path.join(tempRoot, '.claude', 'skills', 'buildr', 'SKILL.md');
     if (!existsFile(installedBuildrSkill)) {
       problems.push('buildr skill install did not install Buildr Skill runtime.');
@@ -446,10 +459,9 @@ export function createPackageSmokeChecks(deps) {
     const { root, problems } = context;
     const compatRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-check-existing-agents-'));
     try {
-      const buildrScript = path.join(root, 'bin', 'buildr.mjs');
       const existingAgents = path.join(compatRoot, 'AGENTS.md');
       fs.writeFileSync(existingAgents, '# Existing root entry\n');
-      execFileSync(process.execPath, [buildrScript, 'init', '--target', compatRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['init', '--target', compatRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
       const existingContent = fs.readFileSync(existingAgents, 'utf8');
       if (!existingContent.includes('# Existing root entry') || !existingContent.includes(BUILDR_REQUIRED_BLOCK_START) || !existingContent.includes('rules/buildr/core.md')) {
         problems.push('buildr init must preserve existing root AGENTS.md body and add only the Buildr required block.');
@@ -478,10 +490,9 @@ export function createPackageSmokeChecks(deps) {
   function runPackageWorkspaceSmoke(context) {
     const { root } = context;
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-workspace-'));
-    const buildrScript = path.join(root, 'bin', 'buildr.mjs');
     try {
-      execFileSync(process.execPath, [buildrScript, 'init', '--target', tempRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
-      verifyInitializedWorkspace(context, tempRoot, buildrScript);
+      buildrSelf.exec(['init', '--target', tempRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
+      verifyInitializedWorkspace(context, tempRoot);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -491,36 +502,33 @@ export function createPackageSmokeChecks(deps) {
   function runPackageDomainIntegration(context, kind) {
     const { root } = context;
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-package-${kind}-`));
-    const buildrScript = path.join(root, 'bin', 'buildr.mjs');
     try {
-      execFileSync(process.execPath, [buildrScript, 'init', '--target', tempRoot, '--name', 'assets', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
-      execFileSync(process.execPath, [buildrScript, 'project', 'create', 'demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      verifyWorkspaceAssetLifecycle(context, tempRoot, buildrScript, kind);
+      buildrSelf.exec(['init', '--target', tempRoot, '--name', 'assets', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
+      buildrSelf.exec(['project', 'create', 'demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
+      verifyWorkspaceAssetLifecycle(context, tempRoot, kind);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   }
 
   function runPackageRuntimeIntegration(context) {
-    const { root } = context;
     runPackageDomainIntegration(context, 'runtime');
-    verifyRecursiveRules(context, null, path.join(root, 'bin', 'buildr.mjs'));
+    verifyRecursiveRules(context);
   }
 
   function runPackageAggregateSmoke(context) {
     const { root } = context;
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-check-'));
-    const buildrScript = path.join(root, 'bin', 'buildr.mjs');
     try {
-      execFileSync(process.execPath, [buildrScript, 'init', '--target', tempRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
-      verifyInitializedWorkspace(context, tempRoot, buildrScript);
+      buildrSelf.exec(['init', '--target', tempRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
+      verifyInitializedWorkspace(context, tempRoot);
       for (const kind of ['runtime', 'commands', 'rules', 'skills']) {
-        verifyWorkspaceAssetLifecycle(context, tempRoot, buildrScript, kind, kind === 'skills');
+        verifyWorkspaceAssetLifecycle(context, tempRoot, kind, kind === 'skills');
       }
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
-    verifyRecursiveRules(context, null, buildrScript);
+    verifyRecursiveRules(context);
     verifyExistingAgentsCompatibility(context);
   }
 

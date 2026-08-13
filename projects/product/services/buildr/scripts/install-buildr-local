@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-service_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-"$service_root/scripts/install-buildr-cli"
-"$service_root/bin/buildr.mjs" web launcher install --channel release "$@"
-"$service_root/bin/buildr.mjs" web launcher status --channel release --json
-command -v buildr >/dev/null
-buildr --version

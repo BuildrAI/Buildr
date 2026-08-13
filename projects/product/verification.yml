@@ -147,3 +147,28 @@ capabilities:
       externalSystems: []
       authorization: implicit
     resourceClaims: []
+  - id: product.release-artifact-set
+    title: Buildr npm 正式发布候选与本机 Launcher 验证
+    scope:
+      project: product
+      services: [buildr]
+    invocation:
+      kind: command
+      argv: ["npm", "run", "test:focus", "--", "group:release"]
+      cwd: services/buildr
+    applicability:
+      paths: ["services/buildr/scripts/release/**", "services/buildr/src/**", "services/buildr/package/**", "services/buildr/package.json", "services/buildr/package-lock.json", "services/buildr/test/**", ".github/workflows/publish.yml"]
+      conditions:
+        - Application Payload、npm candidate、Host Node、Launcher binding、Registry readback 或发布 workflow 发生变化
+    proves:
+      - 同一冻结 Application Payload 只生成一次 npm tarball，并由所有 smoke、publish 与 Registry readback 复用
+      - npm 安装使用兼容 Host Node，完整支持 CLI、按需 Buildr Web 和独立 Workspace Node 子进程
+      - 显式安装的 macOS/Windows Launcher 不复制 Node 或 Buildr，精确绑定同一 npm 安装，并在 Node、entry、prefix 或 package identity 漂移时 fail closed
+    requiredForDelivery: true
+    environment:
+      requires: [node, npm, git]
+    effects:
+      writes: ["系统临时目录中的冻结 payload、npm tarball、Launcher fixture、timing evidence 与 diagnostics"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []

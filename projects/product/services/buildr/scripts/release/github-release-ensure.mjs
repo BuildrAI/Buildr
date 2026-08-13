@@ -39,6 +39,7 @@ export function assertGitHubRelease(release, expected) {
   if (release?.body !== expected.body) throw new Error(`GitHub Release body does not match ${expected.tag} release notes.`);
   if (release?.draft !== false) throw new Error('GitHub Release must not be a draft.');
   if (release?.prerelease !== expected.prerelease) throw new Error('GitHub Release prerelease state does not match release contract.');
+  if (Array.isArray(release?.assets) && release.assets.length > 0) throw new Error('npm-only GitHub Release must not contain binary Assets.');
 }
 
 async function resolveTagCommit(repository, tag, token, fetchImpl) {
@@ -72,9 +73,38 @@ async function assertLatestState(repository, expected, token, fetchImpl) {
   }
 }
 
+function stableTagTuple(tag) {
+  const match = /^v(\d+)\.(\d+)\.(\d+)$/.exec(tag ?? '');
+  if (!match) throw new Error(`Stable GitHub Release tag cannot be ordered safely: ${tag}.`);
+  return match.slice(1).map(Number);
+}
+
+function compareStableTags(left, right) {
+  const leftTuple = stableTagTuple(left);
+  const rightTuple = stableTagTuple(right);
+  for (let index = 0; index < leftTuple.length; index += 1) {
+    if (leftTuple[index] !== rightTuple[index]) return leftTuple[index] - rightTuple[index];
+  }
+  return 0;
+}
+
+async function assertMissingReleaseLatestSafety(repository, expected, token, fetchImpl) {
+  if (expected.prerelease) return { latestMutation: false };
+  const response = await githubRequest(repository, '/releases/latest', token, fetchImpl);
+  if (response.status === 404) return { latestMutation: true, previousLatest: null };
+  if (response.status !== 200) throw new Error(`GitHub latest Release preflight failed with HTTP ${response.status}.`);
+  const latest = await readJson(response, 'GitHub latest Release preflight');
+  if (compareStableTags(latest.tag_name, expected.tag) >= 0) {
+    throw new Error(`Missing stable Release ${expected.tag} cannot replace existing Latest ${latest.tag_name}.`);
+  }
+  return { latestMutation: true, previousLatest: latest.tag_name };
+}
+
 export async function ensureGitHubRelease(expected, options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const token = options.token;
+  const mode = options.mode ?? 'ensure';
+  if (!['preflight', 'ensure'].includes(mode)) throw new Error(`Unsupported GitHub Release ensure mode: ${mode}.`);
   if (!/^[^/]+\/[^/]+$/.test(expected.repository || '')) throw new Error('GitHub repository must use owner/name form.');
   if (!token) throw new Error('GitHub token is required to ensure a Release.');
   const tagCommit = await resolveTagCommit(expected.repository, expected.tag, token, fetchImpl);
@@ -86,6 +116,8 @@ export async function ensureGitHubRelease(expected, options = {}) {
   let action;
   let release;
   if (response.status === 404) {
+    const latestSafety = await assertMissingReleaseLatestSafety(expected.repository, expected, token, fetchImpl);
+    if (mode === 'preflight') return { action: 'release-missing', tag: expected.tag, targetCommit: tagCommit, prerelease: expected.prerelease, mutation: false, ...latestSafety };
     response = await githubRequest(expected.repository, '/releases', token, fetchImpl, {
       method: 'POST',
       body: {
@@ -109,13 +141,15 @@ export async function ensureGitHubRelease(expected, options = {}) {
   }
   assertGitHubRelease(release, expected);
   await assertLatestState(expected.repository, expected, token, fetchImpl);
-  return { action, tag: expected.tag, targetCommit: tagCommit, prerelease: expected.prerelease };
+  return { action: mode === 'preflight' ? 'reusable' : action, tag: expected.tag, targetCommit: tagCommit, prerelease: expected.prerelease, ...(mode === 'preflight' ? { mutation: false } : {}) };
 }
 
 async function main() {
-  const [tag, notesPath, prereleaseValue] = process.argv.slice(2);
+  const input = process.argv.slice(2);
+  const mode = ['preflight', 'ensure'].includes(input[0]) ? input.shift() : 'ensure';
+  const [tag, notesPath, prereleaseValue] = input;
   if (!tag || !notesPath || !['true', 'false'].includes(prereleaseValue)) {
-    throw new Error('Usage: github-release-ensure.mjs <tag> <notes-path> <true|false>');
+    throw new Error('Usage: github-release-ensure.mjs [preflight|ensure] <tag> <notes-path> <true|false>');
   }
   const result = await ensureGitHubRelease({
     repository: process.env.GITHUB_REPOSITORY,
@@ -124,7 +158,7 @@ async function main() {
     body: fs.readFileSync(notesPath, 'utf8'),
     prerelease: prereleaseValue === 'true',
     targetCommit: process.env.GITHUB_SHA,
-  }, { token: process.env.GITHUB_TOKEN });
+  }, { token: process.env.GITHUB_TOKEN, mode });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 

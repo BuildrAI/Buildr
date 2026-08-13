@@ -27,6 +27,34 @@ const server = http.createServer((req, res) => {
     res.write('---\\nname: slow-skill\\n');
     return;
   }
+  if (req.url === '/active') {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    const timer = setInterval(() => res.write('active'), 40);
+    res.on('close', () => clearInterval(timer));
+    return;
+  }
+  if (req.url === '/redirect') {
+    res.writeHead(302, { location: '/ok' });
+    res.write('redirect-body');
+    const timer = setInterval(() => res.write('.'), 40);
+    res.on('close', () => clearInterval(timer));
+    return;
+  }
+  if (req.url === '/redirect-external') {
+    res.writeHead(302, { location: 'https://example.com/skill.md' });
+    res.end();
+    return;
+  }
+  if (req.url === '/redirect-invalid') {
+    res.writeHead(302, { location: 'http://[invalid' });
+    res.end();
+    return;
+  }
+  if (req.url === '/error') {
+    res.writeHead(503);
+    res.end('unavailable');
+    return;
+  }
   res.writeHead(404);
   res.end('not found');
 });
@@ -59,7 +87,23 @@ try {
   assert.match(port, /^\d+$/, 'test server port must be complete');
   const baseUrl = `http://127.0.0.1:${port}`;
   const offlineEnv = { ...process.env, BUILDR_VERIFICATION_NETWORK_MODE: 'offline' };
-  assert.equal(fetchRemoteText(`${baseUrl}/ok`, { env: offlineEnv }), 'ready');
+  const directInvocation = { command: process.execPath, argsPrefix: [buildr], kind: 'verification-product-entry' };
+  assert.equal(fetchRemoteText(`${baseUrl}/ok`, { env: offlineEnv, invocation: directInvocation }), 'ready');
+  const redirectStarted = Date.now();
+  assert.equal(fetchRemoteText(`${baseUrl}/redirect`, { env: offlineEnv, invocation: directInvocation }), 'ready');
+  assert(Date.now() - redirectStarted < 1000, 'redirect must close the abandoned response body');
+  assert.throws(
+    () => fetchRemoteText(`${baseUrl}/redirect-external`, { env: offlineEnv, invocation: directInvocation }),
+    /Remote text redirect is disabled during offline verification/,
+  );
+  assert.throws(
+    () => fetchRemoteText(`${baseUrl}/redirect-invalid`, { env: offlineEnv, invocation: directInvocation }),
+    /Invalid URL/,
+  );
+  assert.throws(
+    () => fetchRemoteText(`${baseUrl}/error`, { env: offlineEnv, invocation: directInvocation }),
+    /HTTP 503/,
+  );
   assert.throws(
     () => fetchRemoteText('https://example.com/skill.md', { env: offlineEnv }),
     /disabled during offline verification/,
@@ -70,11 +114,24 @@ try {
   const timeoutEnv = {
     ...offlineEnv,
     BUILDR_REMOTE_SKILL_INACTIVITY_TIMEOUT_MS: '150',
-    BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '500',
+    BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '1200',
   };
   const started = Date.now();
-  assert.throws(() => fetchRemoteText(`${baseUrl}/hang`, { label: 'timeout fixture', env: timeoutEnv }), /Failed to fetch timeout fixture/);
+  assert.throws(
+    () => fetchRemoteText(`${baseUrl}/hang`, { label: 'timeout fixture', env: timeoutEnv, invocation: directInvocation }),
+    /Remote (?:request|response) inactivity timeout after 150ms/,
+  );
   assert(Date.now() - started < 5000, 'remote text timeout was not bounded');
+
+  const totalTimeoutEnv = {
+    ...offlineEnv,
+    BUILDR_REMOTE_SKILL_INACTIVITY_TIMEOUT_MS: '1000',
+    BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '300',
+  };
+  assert.throws(
+    () => fetchRemoteText(`${baseUrl}/active`, { label: 'total timeout fixture', env: totalTimeoutEnv, invocation: directInvocation }),
+    /total timeout after 300ms/,
+  );
 
   fs.mkdirSync(workspace);
   run(['init', '--target', workspace, '--name', 'remote-timeout', '--profile', 'personal']);

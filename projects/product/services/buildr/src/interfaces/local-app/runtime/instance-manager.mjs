@@ -54,7 +54,7 @@ export function readLocalAppInstance() {
   try {
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (value.schemaVersion !== INSTANCE_SCHEMA || typeof value.url !== 'string' || typeof value.secret !== 'string' || !Number.isInteger(value.pid)) return null;
-    return { ...value, launcherIdentity: value.launcherIdentity ?? null, file };
+    return { ...value, launcherIdentity: value.launcherIdentity ?? null, productIdentity: value.productIdentity ?? null, file };
   } catch {
     return null;
   }
@@ -62,7 +62,14 @@ export function readLocalAppInstance() {
 
 export function writeLocalAppInstance(runtime, value) {
   const file = localAppInstancePath();
-  runtime.atomicWriteJson(file, { schemaVersion: INSTANCE_SCHEMA, url: value.url, secret: value.secret, pid: value.pid, launcherIdentity: value.launcherIdentity ?? null });
+  runtime.atomicWriteJson(file, {
+    schemaVersion: INSTANCE_SCHEMA,
+    url: value.url,
+    secret: value.secret,
+    pid: value.pid,
+    launcherIdentity: value.launcherIdentity ?? null,
+    productIdentity: value.productIdentity ?? null,
+  });
   return file;
 }
 
@@ -82,7 +89,13 @@ export async function healthyLocalAppInstance(instance = readLocalAppInstance())
     });
     if (!response.ok) return null;
     const body = await response.json();
-    return body.schemaVersion === 'buildr.local-app-health/v1' && body.status === 'ready' ? { ...instance, launcherIdentity: body.launcherIdentity ?? instance.launcherIdentity ?? null } : null;
+    return body.schemaVersion === 'buildr.local-app-health/v1' && body.status === 'ready'
+      ? {
+          ...instance,
+          launcherIdentity: body.launcherIdentity ?? instance.launcherIdentity ?? null,
+          productIdentity: body.productIdentity ?? instance.productIdentity ?? null,
+        }
+      : null;
   } catch {
     return null;
   }

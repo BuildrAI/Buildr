@@ -111,9 +111,9 @@
 ### Buildr Web Launcher
 
 - 定义：启动 `buildr web` 并打开默认浏览器的平台图形入口；正式显示名为 Buildr Web，开发入口为 Buildr Web Dev。
-- 适用范围：macOS application bundle、Windows shortcut/bundle 及 `buildr web launcher install|status|uninstall`。
-- 避免混用：它不是 Buildr App，不包含 Desktop WebView，不取得 Workspace 数据所有权。
-- 来源：canonical `openspec/specs/launcher-lifecycle/spec.md`。
+- 适用范围：正式npm用户显式运行`buildr web launcher install|status|repair|uninstall`后生成的macOS `.app`或Windows Start Menu shortcut；它精确绑定Host Node、npm package entry、prefix和installation identity并执行`web`。checkout-backed入口另名Buildr Web Dev。
+- 避免混用：它不是 Buildr App，不是独立产品安装或更新渠道，不复制Node/Buildr，也不取得 Workspace 数据所有权。
+- 来源：canonical `openspec/specs/local-workspace-application/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
 
 ### Buildr App
 
@@ -567,11 +567,49 @@
 - 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、运行formal Verification、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
 - 来源：[Task Finish执行规范](../specs/task-finish-execution/spec.md)
 
+## Buildr 应用负载（Buildr Application Payload）
+
+- 定义：一次构建形成的渠道无关、可摘要比较的公共应用内容，包括CLI、Core/Application、Buildr Web HTTP/runtime与正式静态资源、SQLite migrations、package baseline、生产依赖、许可证、版本和协议identity。
+- 适用范围：npm package消费的`buildr.application-payload/v1` manifest及`applicationPayloadDigest`；同一payload内只携带生成Launcher所需图标，不携带已生成入口。
+- 避免混用：不是npm tarball、已生成Launcher或Actions artifact；不包含Node、测试、源码映射、Vite toolchain或开发依赖。
+- 来源：canonical `openspec/specs/buildr-application-payload/spec.md`。
+
+## 产品 Node（Product Node）
+
+- 定义：历史SEA/平台安装设计中随Buildr产品单元交付的官方Node.js runtime；当前npm-only产品不实现或分发Product Node。
+- 适用范围：仅用于解释已归档Change与未来可能重新评估的自包含安装模型，不是当前runtime role。
+- 避免混用：不是当前npm Host Node、development host Node或Workspace Node；不得从历史设计推断当前支持SEA、PKG或MSI。
+
+## 宿主 Node（Host Node）
+
+- 定义：安装并启动`@buildr-ai/buildr` npm package的用户Node.js executable，必须满足package `engines.node`。
+- 适用范围：npm渠道Buildr main process和同一runtime bundle。
+- 避免混用：不随npm package交付，也不会因进入Workspace而切换为Workspace Node。
+
+## 开发宿主 Node（Development Host Node）
+
+- 定义：由development installation identity绑定、用于启动checkout-backed Buildr CLI与Buildr Web Dev的兼容Node.js executable。
+- 适用范围：development channel main process与同一checkout中的product re-entry；Workspace-owned子进程仍另行解析Workspace Node。
+- 避免混用：不是npm package消费者的Host Node或Workspace Node；版本相同也不共享ownership、更新或卸载生命周期。
+
+## 平台产品单元（Platform Product Unit）
+
+- 定义：历史平台installer设计中的原子Buildr所有权边界；当前npm-only产品不实现平台产品单元。
+- 适用范围：只用于已归档Change或未来企业/普通用户自包含安装的新Change。
+- 避免混用：本机Buildr Web Launcher只是npm安装的图形投射，不是平台产品单元。
+
+## 正式发布制品集合（Release Artifact Set）
+
+- 定义：同一npm-only release contract和Application Payload identity下冻结的唯一npm tarball及其内部release-artifact evidence。
+- 适用范围：npm tarball只发布到npm Registry；GitHub Release只保存版本说明并拒绝Buildr binary Assets。
+- 避免混用：GitHub Actions artifact只是临时候选/evidence carrier，不是公开下载渠道；本机Launcher也不是公开制品。
+- 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
+
 ## Workspace Node Version
 
 - 定义：Workspace 在 `.buildr/workspace.yml` 中明确采用的精确 Node.js toolchain 版本，由 `init` 首次确定，之后只能通过显式 Workspace 配置变更升级或降级。
-- 适用范围：Buildr CLI、npm、测试、Verification、Candidate 与 Finish 的统一 Node 选择。
-- 避免混用：不是 `package.json#engines.node` 的产品兼容范围，也不是 Agent runtime 可自行保存或决定的版本。
+- 适用范围：Workspace拥有的npm、测试、Verification、Finish adapter与项目执行；由Workspace resolver显式选择。
+- 避免混用：不是npm Host Node或development host Node；版本相同也不合并identity、更新或卸载生命周期。
 
 ## Workspace Node Identity
 

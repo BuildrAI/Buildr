@@ -15,10 +15,13 @@ test('changed path collector 合并 base diff、staged、unstaged 与 untracked 
   try {
     const productRoot = path.join(root, 'projects', 'product');
     fs.mkdirSync(path.join(productRoot, 'docs'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.github', 'workflows'), { recursive: true });
     fs.mkdirSync(path.join(root, 'outside'), { recursive: true });
     fs.writeFileSync(path.join(productRoot, 'docs', 'tracked.md'), 'base\n');
     fs.writeFileSync(path.join(productRoot, 'docs', 'staged.md'), 'base\n');
     fs.writeFileSync(path.join(root, 'outside', 'ignored.md'), 'base\n');
+    fs.writeFileSync(path.join(root, '.github', 'workflows', 'publish.yml'), 'base\n');
+    fs.writeFileSync(path.join(root, '.github', 'workflows', 'unowned.yml'), 'base\n');
     git(root, ['init']);
     git(root, ['config', 'user.email', 'verification@example.com']);
     git(root, ['config', 'user.name', 'Verification Fixture']);
@@ -30,11 +33,13 @@ test('changed path collector 合并 base diff、staged、unstaged 与 untracked 
     git(root, ['add', 'projects/product/docs/staged.md']);
     fs.writeFileSync(path.join(productRoot, 'docs', 'untracked.md'), 'new\n');
     fs.writeFileSync(path.join(root, 'outside', 'ignored.md'), 'outside\n');
+    fs.writeFileSync(path.join(root, '.github', 'workflows', 'publish.yml'), 'governed\n');
+    fs.writeFileSync(path.join(root, '.github', 'workflows', 'unowned.yml'), 'must stay outside Product ownership\n');
 
     const changed = collectChangedProductPaths({ productRoot, base: 'HEAD' });
     assert.equal(changed.base, 'HEAD');
     assert.equal(changed.source, 'git');
-    assert.deepEqual(changed.paths, ['docs/staged.md', 'docs/tracked.md', 'docs/untracked.md']);
+    assert.deepEqual(changed.paths, ['.github/workflows/publish.yml', 'docs/staged.md', 'docs/tracked.md', 'docs/untracked.md']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

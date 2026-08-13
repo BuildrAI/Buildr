@@ -558,35 +558,6 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 - **THEN** Buildr MUST 允许启动入口直接打开该 Workspace 的“开始”页
 - **AND** 最近使用状态 MUST NOT 写入 Workspace 源资产
 
-### Requirement: 普通用户必须能够启动和退出本机 Web 应用
-Buildr MUST 提供无需用户理解命令行、端口或进程的可双击启动入口，并 MUST 在 Web 页面提供明确的安全退出操作。
-
-#### Scenario: macOS 双击启动入口
-- **WHEN** 普通用户双击已安装的 macOS `Buildr Web.app` launcher
-- **THEN** launcher MUST 启动或复用 Buildr Web 并在默认浏览器打开页面
-- **AND** launcher MUST NOT 创建 Desktop WebView 或第二套 UI
-- **AND** macOS application bundle MUST 声明并携带可识别的 Buildr application icon
-
-#### Scenario: Windows 双击启动入口
-- **WHEN** 普通用户点击 Windows 开始菜单或桌面的 Buildr 图标
-- **THEN** Windows launcher MUST 启动或复用同一个 Buildr Web 并在默认浏览器打开页面
-- **AND** launcher MUST NOT 要求用户预先配置 Node、npm 或 PATH
-- **AND** 桌面和开始菜单快捷方式 MUST 使用随包交付的 Buildr icon
-
-#### Scenario: 关闭浏览器页面
-- **WHEN** 用户关闭 Buildr 浏览器标签页或窗口
-- **THEN** Buildr server MUST 继续运行
-- **AND** 用户再次使用启动入口时 MUST 能重新打开已有实例
-
-#### Scenario: 从页面退出 Buildr
-- **WHEN** 当前同源页面携带有效 session 发起退出并得到用户确认
-- **THEN** server MUST 停止接受新请求、清理当前 runtime state 并退出进程
-- **AND** MUST 保留 Workspace 登记列表和所有 Workspace 源资产
-
-#### Scenario: 非法退出请求
-- **WHEN** 退出请求缺少有效 Origin、session token 或允许的请求格式
-- **THEN** server MUST 拒绝退出并继续运行
-
 ### Requirement: 全局 Workspace 登记必须使用最小本机安全边界
 Buildr MUST 将任意目录选择限制在显式登记用例中，并 MUST 保护登记文件和 Workspace 源资产不被普通 Web 请求越权访问。
 
@@ -603,84 +574,6 @@ Buildr MUST 将任意目录选择限制在显式登记用例中，并 MUST 保�
 - **WHEN** 登记或移除请求携带的 registry revision 已过期
 - **THEN** Application MUST 返回 conflict
 - **AND** MUST NOT 覆盖另一页面或进程已经完成的修改
-
-### Requirement: Launcher 必须暴露可诊断的运行身份和失败反馈
-Buildr launcher MUST 携带版本、channel、构建来源和平台 identity，并 MUST 在启动失败、source checkout 不可用、受管 Node 缺失或版本不兼容时提供用户可见反馈。
-
-#### Scenario: Launcher 成功启动
-- **WHEN** launcher 启动或复用兼容的 Buildr 单实例
-- **THEN** release launcher MUST 使用自身 bundle runtime，development launcher MUST 使用绑定 checkout 的当前 `bin/buildr.mjs` 启动或复用实例
-- **AND** launcher MUST 使用实例返回的实际 loopback URL 打开默认浏览器
-- **AND** 随机端口 MUST 保持为内部状态而不是用户配置
-
-#### Scenario: Development launcher 成功启动
-- **WHEN** 绑定 checkout、Buildr CLI 入口和受管 Node probe 均通过
-- **THEN** launcher MUST 使用绑定 checkout 的当前 `bin/buildr.mjs` 启动或复用实例
-- **AND** status MUST 报告 source root、observed checkout、Node identity 和运行实例 identity
-
-#### Scenario: Development source checkout 不可用
-- **WHEN** source root 被移动、删除、不是预期 Buildr Service checkout 或缺少 CLI 入口
-- **THEN** launcher MUST 拒绝启动并输出 source root、原因、日志位置和重新安装 development launcher 的动作
-- **AND** MUST NOT 回退到另一个 checkout、Release bundle 或 PATH 中的 Buildr
-
-#### Scenario: Development Node runtime 不可用
-- **WHEN** identity 指定的受管 Node executable 缺失、版本不匹配或不能启动
-- **THEN** launcher MUST 拒绝启动并输出 Node version、runtime path、日志位置以及 `buildr sync`/重新安装动作
-- **AND** MUST NOT 静默选择 PATH 中的另一个 Node
-
-#### Scenario: Launcher 启动失败
-- **WHEN** runtime 缺失、bundle 不完整、实例未就绪或浏览器打开失败
-- **THEN** launcher MUST 显示简短错误、日志位置和重试动作
-- **AND** MUST NOT 仅静默退出
-
-#### Scenario: 已运行实例版本不兼容
-- **WHEN** 现有实例与自身 App protocol 或 runtime identity 不兼容
-- **THEN** launcher MUST 拒绝静默复用
-- **AND** MUST 安全退出旧实例后启动当前版本，或明确告知阻塞原因
-
-### Requirement: 开发 launcher 必须支持安全的重复构建和本机更新
-Buildr MUST 为 development checkout 提供 canonical launcher 安装入口，并 MUST 使用 stage、verify、switch 更新独立的 development thin launcher；该 launcher MUST 绑定 checkout，而不是复制 Buildr application 或 Node runtime 快照。
-
-#### Scenario: 首次安装开发 launcher
-- **WHEN** 开发者从 Buildr Service checkout 执行 canonical 安装入口
-- **THEN** Buildr MUST 在 staging 构建带 source root、checkout identity 和受管 Node identity 的 thin bundle
-- **AND** thin bundle MUST NOT 包含 Node executable、Node 动态库、Buildr `src/`、`package/` 或 `node_modules`
-- **AND** MUST 验证后安装为隔离的 `Buildr Web Dev`
-- **AND** macOS 默认目标 MUST 为 `/Applications/Buildr Web Dev.app`
-- **AND** macOS launcher MUST 作为不驻留 Dock 的后台入口运行
-
-#### Scenario: 源码修改后启动 development launcher
-- **WHEN** checkout 的 `src/`、Web resource 或 migration 已改变，但 source root 和 Node identity 仍有效
-- **THEN** development launcher MUST 在重启服务后读取当前 checkout 内容
-- **AND** MUST NOT 要求重新复制 Node 或 Buildr application
-
-#### Scenario: 更新正在使用的开发 launcher
-- **WHEN** 已安装 launcher 或服务仍使用旧 thin bundle
-- **THEN** 更新流程 MUST 先构建并验证新版本，再安全退出旧实例并等待释放
-- **AND** MUST NOT 原地覆盖运行中的 bundle
-
-#### Scenario: 开发 launcher 切换失败
-- **WHEN** 新 bundle 验证、退出、安装切换或启动核对失败
-- **THEN** 更新流程 MUST 保留或恢复上一已验证版本
-- **AND** MUST 返回失败阶段、旧版本状态、staging 位置和恢复建议
-
-#### Scenario: 开发 launcher 更新成功
-- **WHEN** 新 thin bundle 已原子安装且启动核对通过
-- **THEN** 诊断 MUST 显示 source root、checkout identity、Node identity、安装目标和运行 identity
-- **AND** 旧 staging MUST 清理而不影响正式 App
-
-### Requirement: Launcher 卸载必须保留用户工作资产
-Buildr MUST 按安装渠道提供 launcher 卸载能力，并 MUST 默认保留 Workspace Registry、日志和全部 Workspace 源资产。
-
-#### Scenario: 卸载官方 launcher
-- **WHEN** 用户通过平台卸载入口移除 Buildr Web
-- **THEN** installer MUST 移除其拥有的 bundle、快捷方式和卸载登记
-- **AND** MUST NOT 删除任何已登记 Workspace 或其中的源资产
-
-#### Scenario: 清理开发 launcher
-- **WHEN** 开发者执行 canonical 开发 launcher 清理入口
-- **THEN** Buildr MUST 只停止并移除 development channel 拥有的实例、bundle、快捷方式和 staging 产物
-- **AND** MUST NOT 修改正式 launcher、npm CLI 或 Workspace 源资产
 
 ### Requirement: Workspace onboarding 状态必须由真实资产派生
 Buildr MUST 通过 Application 组合现有 Workspace、Project 与 Service read model 生成只读 Getting Started projection，并 MUST 区分完整、部分可用和需要处理的事实；该 projection MUST NOT 成为 Workspace readiness 或资源关系的第二事实源。
@@ -890,24 +783,6 @@ Buildr Web Runtime MUST 只绑定 loopback、按需启动并复用现有随机�
 - **THEN** HTTP interface MUST 调用现有 Application，由 Workspace Registry、SQLite 或对应 canonical authority 执行写入
 - **AND** Web/React 层 MUST NOT 直连 SQLite、复制 validator 或建立第二份业务状态
 
-### Requirement: Buildr Web Launcher 必须受控迁移 Buildr-owned 旧入口
-release Launcher MUST 显示为 `Buildr Web`，development Launcher MUST 显示为 `Buildr Web Dev`，且 macOS/Windows 生成内容 MUST 执行 `buildr web`。安装或卸载 MAY 处理旧 `Buildr.app`、`Buildr Dev.app` 与旧 Windows shortcut，但 MUST 只迁移或删除能由 `buildr.launcher-identity/v1`、matching channel 和已知 Buildr install target 证明 ownership 的入口。Bundle protocol/persistent identity MAY 保留内部 `local-app` 名称以维持 ownership，不得因此向用户展示旧产品名。
-
-#### Scenario: 成功安装新 Launcher 后清理 owned 旧入口
-- **WHEN** 新 `Buildr Web` 或 `Buildr Web Dev` Launcher 已完成 staging、identity 验证和安全切换，且旧入口具有 matching Buildr ownership evidence
-- **THEN** installer MUST 删除对应 channel 的旧入口和旧 shortcut
-- **AND** 最终 MUST 不留下两个可误启动的正式或开发图形入口
-
-#### Scenario: 旧入口 ownership 不可证明
-- **WHEN** 旧名称路径、bundle 或 shortcut 缺少 matching launcher identity、目标越出已知 install root、channel 不符或已被用户/第三方修改
-- **THEN** installer/uninstaller MUST 保留该入口并返回可解释 diagnostic
-- **AND** MUST NOT 覆盖、重命名或删除未知文件
-
-#### Scenario: Launcher 卸载保留用户数据
-- **WHEN** 用户卸载 release 或 development Buildr Web Launcher
-- **THEN** uninstaller MUST 只移除当前 channel 拥有的新旧 Launcher、previous/staging 与 owned shortcut
-- **AND** MUST 保留 Workspace Registry、日志、npm CLI、其他 channel 与全部 Workspace 数据
-
 ### Requirement: Buildr Web 必须以单实例本机 Web 服务运行
 Buildr MUST 启动或复用一个只监听 loopback 的全局本机 Web 服务，并 MUST 在服务就绪后打开默认浏览器。
 
@@ -932,25 +807,6 @@ Buildr MUST 启动或复用一个只监听 loopback 的全局本机 Web 服务�
 #### Scenario: 兼容指定 Workspace 启动
 - **WHEN** 调用方使用 `buildr web --target <workspace>`
 - **THEN** Buildr MUST 验证并登记该 Workspace、启动或复用全局实例，并打开其 Workspace route
-
-### Requirement: 平台安装必须提供完整且可解释的 Buildr Web
-Buildr MUST 为 macOS 和 Windows 提供不依赖用户预装 Node、npm 或 PATH 的平台安装产物，并 MUST 将安装、启动和后台常驻保持为不同动作。
-
-#### Scenario: macOS 安装 Buildr Web Launcher
-- **WHEN** 普通用户完成 macOS 平台安装
-- **THEN** 系统 MUST 提供带正确名称、图标、版本和独立 runtime 的 `Buildr Web.app` 启动入口
-- **AND** 安装 MUST NOT 无提示启动 Buildr 或注册登录启动
-
-#### Scenario: Windows 安装 Buildr Web Launcher
-- **WHEN** 普通用户完成 Windows 平台安装
-- **THEN** 系统 MUST 提供带正确名称、图标、版本和独立 runtime 的开始菜单入口
-- **AND** 桌面快捷方式 MUST 由安装选择明确决定
-- **AND** 安装 MUST NOT 要求用户配置命令行环境
-
-#### Scenario: 安装完成后显式打开
-- **WHEN** 安装完成界面提供“打开 Buildr”且用户明确选择该动作
-- **THEN** installer MUST 通过已安装 launcher 启动 Buildr
-- **AND** 后续行为 MUST 与用户日常点击同一 launcher 一致
 
 ### Requirement: Buildr Web 首次启动必须引导建立 Workspace 上下文
 Buildr MUST 在用户级 Workspace Registry 为空时提供可理解的首次运行页面，解释 Workspace → Project → Service 最小模型，并 MUST 复用全局 Web 应用而不是在 installer 中维护第二套 Workspace 流程。
@@ -1265,3 +1121,117 @@ Buildr Web bounded read executor MUST 登记 execution-record list、detail 与 
 - **WHEN** executor 队列已满或 request 被取消
 - **THEN** request MUST 使用既有 bounded-read diagnostic 结束
 - **AND** MUST NOT 在 HTTP 主线程回退执行正文读取
+
+### Requirement: npm Buildr Web Launcher 必须提供显式可恢复 lifecycle
+Buildr MUST 只从 formal npm installation 提供 `buildr web launcher install|status|repair|uninstall`。普通 npm install MUST NOT 修改 Applications、Desktop 或 Start Menu；所有 Launcher mutation MUST 由显式命令或同 ownership npm update 后的受限 refresh 触发。
+
+#### Scenario: 显式安装 Launcher
+- **WHEN** 用户从 formal npm installation 执行 `buildr web launcher install`
+- **THEN** Buildr MUST 原子创建本机 Launcher 与 closed binding，并返回 ownership、target、Host Node、package entry、prefix 与 payload identity
+- **AND** target 已由 foreign installation 管理时 MUST fail closed 且不得覆盖
+
+#### Scenario: 查询与修复 Launcher
+- **WHEN** 用户执行 `launcher status` 或 `launcher repair`
+- **THEN** status MUST 只读返回 `ready|stale|invalid|absent` 与精确诊断，repair MUST 只从当前已验证 npm installation 重建同 ownership binding
+- **AND** repair MUST NOT 从 PATH 搜索 Node、npm 或 Buildr，也不得改绑另一个 prefix
+
+#### Scenario: 卸载 Launcher
+- **WHEN** 用户执行 `launcher uninstall`
+- **THEN** Buildr MUST 只删除 binding 与 target ownership identity 精确匹配的 `.app` 或 shortcut
+- **AND** MUST 保留 npm package、Workspace Registry、SQLite、日志、Workspace data 与 Agent runtime
+
+### Requirement: npm 用户必须能够启动和退出本机 Buildr Web
+普通 npm 用户 MUST 能通过 `buildr web` 或显式安装的 `Buildr Web` Launcher 启动同一 npm Buildr Web Runtime，并 MUST 能通过公开退出动作停止实例。图形 Launcher MUST 只执行其 binding 记录的 Host Node + package entry + `web`；当前产品 MUST NOT 要求或声称存在平台 installer、Product Node 或 SEA。
+
+#### Scenario: 命令行启动
+- **WHEN** 用户从 npm installation 执行 `buildr web`
+- **THEN** Buildr MUST 启动或复用本机单实例 HTTP runtime，并在 ready 后按选项打开浏览器
+- **AND** 非 Web CLI MUST NOT 启动 HTTP 服务
+
+#### Scenario: 图形入口启动
+- **WHEN** 用户点击已验证的 `Buildr Web` 本机 Launcher
+- **THEN** wrapper MUST 使用绝对 Host Node 与 package entry 执行 `web --launcher-binding <binding>`，由同一Buildr runtime等待health/readiness并打开浏览器
+- **AND** MUST NOT 启动第二份 Buildr、复制 runtime、使用 shell PATH 或嵌入桌面 WebView
+
+#### Scenario: binding 已漂移
+- **WHEN** Launcher 记录的 Node、entry、package root、prefix、payload 或 ownership identity 与当前文件事实不符
+- **THEN** Launcher MUST fail closed、写入可诊断日志并提示 `buildr web launcher repair`
+- **AND** MUST NOT 尝试 PATH 中的另一个 `buildr`
+
+### Requirement: npm Launcher 必须暴露可诊断身份和失败反馈
+Buildr MUST 让 Launcher status 展示 channel、Buildr version、Host Node version/executable identity、package entry、npm prefix、protocol/payload identity、ownership identity与target，并让图形启动失败在平台可见输出中提示status/repair动作。输出 MUST 不泄露 token、完整环境变量或 Workspace secret。
+
+#### Scenario: Launcher ready
+- **WHEN** binding、target、Host Node、entry 与 formal npm origin 全部匹配
+- **THEN** `launcher status --json` MUST 报告 `ready` 和稳定 closed identity fields
+- **AND** CLI version、Web health 与 Launcher binding MUST 报告相同 Buildr/protocol/payload/installation identity
+
+#### Scenario: 图形启动失败
+- **WHEN** Host Node 不兼容、entry 不存在、payload 漂移或 Web readiness 失败
+- **THEN** wrapper MUST 给出用户可见的简短失败反馈、日志位置和 repair/retry 动作
+- **AND** MUST NOT 静默启动未知安装或暴露敏感参数
+
+### Requirement: development 与 npm Launcher 必须安全独立更新
+Development launcher MUST 继续以 checkout-backed `Buildr Web Dev` 独立存在，并 MUST 与 npm-owned `Buildr Web` 使用不同名称、binding schema、target 与 ownership identity。两者都 MUST 是无 Node/源码复制的薄投射。
+
+#### Scenario: 重建 development launcher
+- **WHEN** 当前 checkout identity 改变并执行 canonical development launcher 更新
+- **THEN** Buildr MUST 在 staging 验证 checkout、development Host Node、entry 与 Web readiness 后原子替换 `Buildr Web Dev`
+- **AND** MUST NOT 修改 npm-owned Launcher
+
+#### Scenario: npm Launcher 更新
+- **WHEN** npm package update 刷新已存在 Launcher
+- **THEN** Buildr MUST 只刷新同 ownership npm binding
+- **AND** MUST NOT 修改 development checkout、runtime 或 `Buildr Web Dev`
+
+### Requirement: npm Launcher 卸载必须保留用户工作资产
+Launcher uninstall MUST 只移除 Launcher target、binding、owned shortcut metadata 与 Launcher 自身日志索引，并 MUST 保留 npm installation 与全部 Workspace/Agent/user data。
+
+#### Scenario: npm Launcher 卸载
+- **WHEN** matching npm installation 执行 `buildr web launcher uninstall`
+- **THEN** Buildr MUST 删除其拥有的 `Buildr Web.app` 或 Start Menu shortcut 与 binding
+- **AND** npm package、Workspace Registry、Workspace SQLite、Workspace assets、Agent runtime 与日志内容 MUST 保留
+
+#### Scenario: ownership 无法证明
+- **WHEN** target 或 binding 缺失、损坏或属于另一 installation
+- **THEN** uninstall MUST fail closed 并列出未删除的精确 target
+- **AND** MUST NOT 递归清理 Applications、Start Menu、npm prefix 或 user data root
+
+### Requirement: 旧 Launcher 入口必须由 closed ownership 控制
+新 npm Launcher install/repair MUST NOT 自动接管旧 development、SEA、平台 installer或foreign wrapper。只有当前closed npm Launcher binding与同installation slot ownership精确匹配时才能原子刷新；其他旧入口 MUST 原样保留并要求用户决定。
+
+#### Scenario: 刷新现有 npm wrapper
+- **WHEN** install或npm update发现现有入口持有当前schema且绑定同一 npm package root/prefix installation slot
+- **THEN** Buildr MUST 先验证新binding与wrapper结构，再原子替换现有投射
+- **AND** MUST NOT复制旧Node、源码或runtime到新Launcher
+
+#### Scenario: 发现平台或 foreign 入口
+- **WHEN** target 由旧平台 installer、legacy无closed binding入口、其他 npm prefix、development channel 或外部应用拥有
+- **THEN** install/repair MUST fail closed 并报告冲突 ownership
+- **AND** MUST NOT 删除、覆盖或重新签名该入口
+
+### Requirement: Buildr 当前必须只通过 npm 提供完整 Web
+Buildr 当前 MUST NOT 提供或宣传平台安装。完整 Buildr Web MUST 由 npm package 提供；图形 Launcher 只作为 npm installation 的显式本机投射，并 MUST 在缺少兼容 Host Node 或 formal npm origin 时拒绝安装。
+
+#### Scenario: 普通 npm 安装
+- **WHEN** 用户完成 `npm install -g @buildr-ai/buildr`
+- **THEN** 完整 CLI 与 `buildr web` MUST 可用
+- **AND** 系统 MUST NOT 自动生成 `.app`、Start Menu shortcut、SEA、PKG/MSI 或登录启动项
+
+#### Scenario: 请求无需 Node 的平台安装
+- **WHEN** 用户请求当前不支持的 self-contained 平台安装
+- **THEN** 文档与诊断 MUST 明确当前正式渠道需要兼容 Node/npm
+- **AND** MUST NOT 提供未验证的下载链接、unsigned installer 或隐藏 SEA fallback
+
+### Requirement: npm Buildr Web runtime 必须只按显式 web 命令启动
+npm Buildr Web HTTP/runtime MUST 只在图形 Launcher 或用户显式执行 `buildr web` 时启动。`buildr --help`、version、Doctor、status、Task 与其他普通 CLI 命令 MUST NOT 启动、探测复用或遗留 HTTP listener，除非公开契约明确要求访问现有 Web instance。
+
+#### Scenario: 图形入口启动 Web
+- **WHEN** 用户打开 npm-owned `Buildr Web` Launcher
+- **THEN** wrapper MUST 通过 binding 执行同一 npm package 的 `web` command 并等待 health/readiness 后打开浏览器
+- **AND** MUST NOT 启动第二份 runtime executable 或桌面 WebView
+
+#### Scenario: 普通 CLI 不启动服务
+- **WHEN** 用户在无现有实例的环境执行 `buildr --help` 或代表性非 Web CLI
+- **THEN** 命令 MUST 正常完成且没有 Buildr HTTP listener 或后台 server process
+- **AND** 退出后 MUST 不留下 Web instance identity、port receipt 或 launcher-owned process

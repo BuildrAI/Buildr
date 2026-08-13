@@ -51,6 +51,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   const delivery = declaration.capabilities.find((capability) => capability.id === 'product.delivery');
   const fullRegression = declaration.capabilities.find((capability) => capability.id === 'product.full-regression');
   const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
+  const releaseSet = declaration.capabilities.find((capability) => capability.id === 'product.release-artifact-set');
   assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
   const fastPlan = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
@@ -76,6 +77,15 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.ok(browserDelegation);
   for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
+  assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
+  assert.equal(releaseSet.requiredForDelivery, true);
+  assert.ok(releaseSet.applicability.paths.includes('.github/workflows/publish.yml'));
+  assert.equal(releaseSet.applicability.paths.some((value) => value === '.github/**' || value === '.github/workflows/**'), false);
+  assert.equal(declaration.capabilities.some((capability) => capability.id.startsWith('product.platform-')), false);
+  assert.equal(declaration.resources.some((resource) => resource.id === 'nodejs-release'), false);
+  for (const owner of ['contract', 'candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke']) {
+    assert.ok(verificationSteps.find((step) => step.id === owner).inputs.includes('.github/workflows/publish.yml'), `${owner} must own the governed release workflow`);
+  }
 });
 
 test('focus verification de-duplicates groups without attaching fast', () => {
@@ -85,12 +95,30 @@ test('focus verification de-duplicates groups without attaching fast', () => {
   assert.equal(plan.steps.filter((step) => step.id === 'candidate-tarball').length, 1);
 });
 
-test('Windows platform preflight keeps the bounded high-risk owners and tarball dependency', () => {
-  const plan = createVerificationPlan({ groups: ['windows-platform-preflight'] });
+test('npm Launcher candidate is registered without a platform distribution dependency', () => {
+  const direct = createVerificationPlan({ stepIds: ['npm-launcher-candidate'] });
+  assert.deepEqual(direct.steps.map((step) => step.id), ['npm-launcher-candidate']);
+  assert.equal(direct.steps[0].testing.environment.footprints.includes('network'), false);
+  assert.ok(direct.steps[0].inputs.includes('src/infrastructure/product-launcher/**'));
+});
+
+test('remote text owner includes product re-entry and payload entry boundaries', () => {
+  const remote = verificationSteps.find((step) => step.id === 'remote-skill-timeout');
+  for (const input of [
+    'src/infrastructure/network/**',
+    'src/infrastructure/product-invocation/**',
+    'src/interfaces/cli/main.mjs',
+    'scripts/release/application-payload-entry.mjs',
+  ]) assert.ok(remote.inputs.includes(input), `remote-skill-timeout must own ${input}`);
+});
+
+test('Windows npm preflight keeps the bounded high-risk owners and tarball dependency', () => {
+  const plan = createVerificationPlan({ groups: ['windows-npm-preflight'] });
   assert.deepEqual(plan.steps.map((step) => step.id), [
     'system-windows-platform',
     'concurrent-task-acceptance',
     'candidate-tarball',
+    'npm-launcher-candidate',
     'runtime-adapter-parity',
     'workspace-lifecycle',
     'release-tarball-smoke',
@@ -134,7 +162,9 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'CLI modular architecture',
     'OpenSpec canonical spec quality',
     'openspec strict validation',
-    'candidate npm tarball',
+    'frozen application payload and candidate npm tarball',
+    'application payload and npm runtime candidate',
+    'verified npm installation Launcher projection',
     'open-source candidate',
     'OpenSpec contract candidate audit',
     'managed mutations',
@@ -187,10 +217,11 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.ok(verificationSteps.find((step) => step.id === 'system-fresh-build').schedulingCostMs >= 120_000);
 });
 
-test('release tarball smoke preserves the caller-prepared managed runtime locator', () => {
+test('release tarball smoke preserves the managed runtime locator and isolates npm cache writes', () => {
   const releaseSmoke = read('test/verification/release/release-smoke.mjs');
   assert.match(releaseSmoke, /const runtimeData = process\.env\.BUILDR_NODE_RUNTIME_DATA_DIR \|\| appData;/);
   assert.match(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData/);
+  assert.match(releaseSmoke, /npm_config_cache: npmCache/);
   assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: appData/);
   assert.match(releaseSmoke, /\['install', '--offline', '--global'/);
 });
@@ -200,12 +231,22 @@ test('Host Node compatibility runs offline and reuses the active Windows distrib
   const hostNode = read('test/verification/host-node.mjs');
   const cliSmoke = read('test/verification/host-node/cli-smoke.mjs');
   const policy = read('src/infrastructure/network/verification-network-policy.mjs');
+  const workflow = read('../../../../.github/workflows/verify.yml');
+  const minimumHostJob = workflow.slice(workflow.indexOf('  managed-runtime-candidate:'), workflow.indexOf('  current-host-node:'));
+  const currentHostJob = workflow.slice(workflow.indexOf('  current-host-node:'));
   assert.deepEqual(packageManifest.bundleDependencies, ['yaml']);
   assert.match(hostNode, /enforceOfflineVerification\(\)/);
   assert.match(policy, /npm_config_offline = 'true'/);
   assert.match(policy, /BUILDR_VERIFICATION_NETWORK_MODE/);
   assert.match(cliSmoke, /\['install', '--offline', '--global'/);
   assert.match(cliSmoke, /BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource/);
+  assert.match(cliSmoke, /\[buildrScript, 'web', '--no-open', '--port', '0'\]/);
+  assert.match(cliSmoke, /\/api\/v1\/health/);
+  assert.match(cliSmoke, /ordinary CLI must not start HTTP/);
+  assert.match(cliSmoke, /readiness\.productIdentity\?\.applicationPayloadDigest/);
+  assert.doesNotMatch(cliSmoke, /npm pack|createReleaseArtifact|buildApplicationPayload/);
+  assert.match(minimumHostJob, /node-version: 24\.15\.0[\s\S]*npm run test:host-node/);
+  assert.match(currentHostJob, /node-version: 24\.x[\s\S]*npm run test:host-node/);
 });
 
 test('managed Candidate 在离线验证前准备两个 Service 的依赖缓存', () => {

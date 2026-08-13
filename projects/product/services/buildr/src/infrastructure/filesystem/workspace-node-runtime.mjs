@@ -5,6 +5,7 @@ import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { spawnCommandSync } from '../process.mjs';
 import { assertVerificationNetworkAllowed } from '../network/verification-network-policy.mjs';
+import { currentProductInvocation } from '../product-invocation/index.mjs';
 
 import { localAppDataRoot } from './workspace-registry-repository.mjs';
 
@@ -166,14 +167,12 @@ function archiveDescriptor(version, platform, arch) {
 }
 
 function downloadFile(url, output) {
-  const script = `
-const fs = require('node:fs');
-fetch(process.argv[1], { redirect: 'follow' }).then((response) => {
-  if (!response.ok) throw new Error('HTTP ' + response.status + ' for ' + process.argv[1]);
-  return response.arrayBuffer();
-}).then((body) => fs.writeFileSync(process.argv[2], Buffer.from(body))).catch((error) => { console.error(error.message); process.exit(1); });
-`;
-  execFileSync(process.execPath, ['-e', script, url, output], { stdio: ['ignore', 'ignore', 'pipe'], timeout: INSTALL_TIMEOUT_MS });
+  const invocation = currentProductInvocation();
+  execFileSync(invocation.command, [...invocation.argsPrefix, '__internal', 'download-file', url, output], {
+    stdio: ['ignore', 'ignore', 'pipe'],
+    timeout: INSTALL_TIMEOUT_MS,
+    env: { ...process.env, BUILDR_INTERNAL_PRODUCT_REENTRY: '1' },
+  });
 }
 
 function installFromOfficial(version, stage, options = {}) {
@@ -204,20 +203,12 @@ function installFromOfficial(version, stage, options = {}) {
   }
 }
 
-function installFromCurrent(stage, version) {
+function installFromBootstrapDistribution(stage, version) {
   if (process.versions.node !== version) throw new Error(`Current Node ${process.versions.node} cannot prepare Workspace Node ${version}.`);
-  if (process.platform === 'win32') {
-    throw new Error('Adopting the bootstrap Node distribution is not supported on Windows; use the verified official archive.');
-  }
-  const bin = path.join(stage, 'bin');
-  fs.mkdirSync(bin, { recursive: true });
-  const currentBin = path.dirname(process.execPath);
-  const npm = path.join(currentBin, 'npm');
-  const npx = path.join(currentBin, 'npx');
-  if (!fs.existsSync(npm)) throw new Error(`Current Node distribution does not provide npm beside process.execPath: ${npm}`);
-  fs.symlinkSync(fs.realpathSync(process.execPath), path.join(bin, 'node'));
-  fs.symlinkSync(fs.realpathSync(npm), path.join(bin, 'npm'));
-  if (fs.existsSync(npx)) fs.symlinkSync(fs.realpathSync(npx), path.join(bin, 'npx'));
+  const distributionRoot = process.platform === 'win32' ? path.dirname(process.execPath) : path.resolve(path.dirname(process.execPath), '..');
+  const npm = process.platform === 'win32' ? path.join(distributionRoot, 'npm.cmd') : path.join(distributionRoot, 'bin', 'npm');
+  if (!fs.existsSync(npm)) throw new Error(`Bootstrap Node distribution does not provide npm: ${npm}`);
+  copyRuntimeTree(distributionRoot, stage, { operation: 'copy-bootstrap-distribution' });
 }
 
 function readRuntimeInstallLock(lock) {
@@ -343,8 +334,13 @@ export function ensureWorkspaceNodeRuntime(workspace, options = {}) {
     removeRuntimeTree(stage, { ...options, platform: initial.paths.platform, operation: 'remove-stale-stage' });
     const source = options.sourceRoot || process.env.BUILDR_NODE_RUNTIME_SOURCE_ROOT;
     if (source) copyRuntimeTree(path.resolve(source), stage, { ...options, platform: initial.paths.platform, operation: 'copy-source-to-stage' });
-    else if (options.adoptCurrent === true && process.platform !== 'win32') installFromCurrent(stage, initial.identity.version);
-    else installFromOfficial(initial.identity.version, stage, options);
+    else if (options.seedBootstrapDistribution !== false && process.versions.node === initial.identity.version) {
+      try { installFromBootstrapDistribution(stage, initial.identity.version); }
+      catch {
+        removeRuntimeTree(stage, { ...options, platform: initial.paths.platform, operation: 'remove-incompatible-bootstrap-stage' });
+        installFromOfficial(initial.identity.version, stage, options);
+      }
+    } else installFromOfficial(initial.identity.version, stage, options);
     const stagedPaths = {
       ...workspaceNodeRuntimePaths(initial.identity.version, options),
       root: stage,

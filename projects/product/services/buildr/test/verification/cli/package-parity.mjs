@@ -6,14 +6,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
-import { readSharedCandidatePackage } from '../release/candidate-package.mjs';
+import { createCandidatePackage, readSharedCandidatePackage } from '../release/candidate-package.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const checkoutCli = path.join(productRoot, 'bin', 'buildr.mjs');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cli-parity-'));
 
 function spawn(command, args, options = {}) {
-  return spawnCommandSync(command, args, { cwd: options.cwd || productRoot, encoding: 'utf8', env: process.env });
+  return spawnCommandSync(command, args, {
+    cwd: options.cwd || productRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      BUILDR_APP_DATA_DIR: path.join(root, 'app-data'),
+      BUILDR_NODE_RUNTIME_DATA_DIR: path.join(root, 'workspace-runtimes'),
+      ...options.env,
+    },
+  });
 }
 
 function snapshot(directory) {
@@ -43,19 +52,15 @@ try {
   fs.mkdirSync(packDir, { recursive: true });
   const shared = readSharedCandidatePackage();
   let tarball = shared?.tarball;
-  if (!tarball) {
-    const packed = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--json', '--pack-destination', packDir]);
-    assert.equal(packed.status, 0, packed.stderr);
-    tarball = path.join(packDir, JSON.parse(packed.stdout)[0].filename);
-  }
-  const installed = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--prefix', prefix, tarball]);
+  if (!tarball) tarball = (await createCandidatePackage(productRoot, packDir)).tarball;
+  const installed = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
+    'install', '--offline', '--ignore-scripts', '--prefix', prefix, tarball,
+  ], { env: { npm_config_cache: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false' } });
   assert.equal(installed.status, 0, installed.stderr);
   const packagedCli = path.join(prefix, 'node_modules', '.bin', process.platform === 'win32' ? 'buildr.cmd' : 'buildr');
-  for (const relative of ['index.html', 'assets']) {
-    assert.ok(fs.existsSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web-dist', relative)), `packaged Buildr Web dist asset is missing: ${relative}`);
-  }
-  assert.ok(fs.existsSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), 'packaged Buildr Web web-dist index.html is missing');
-  const distAssets = fs.readdirSync(path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'src', 'interfaces', 'local-app', 'web-dist', 'assets'));
+  const webDist = path.join(prefix, 'node_modules', '@buildr-ai', 'buildr', 'payload', 'product', 'src', 'interfaces', 'local-app', 'web-dist');
+  for (const relative of ['index.html', 'assets']) assert.ok(fs.existsSync(path.join(webDist, relative)), `packaged Buildr Web dist asset is missing: ${relative}`);
+  const distAssets = fs.readdirSync(path.join(webDist, 'assets'));
   assert.ok(distAssets.some((name) => name.endsWith('.js')), 'packaged Buildr Web web-dist must include built JS assets');
   assert.ok(distAssets.some((name) => name.endsWith('.css')), 'packaged Buildr Web web-dist must include built CSS assets');
 
@@ -64,7 +69,6 @@ try {
   const representativeOutputs = [
     [],
     ['--version'],
-    ['version', '--json'],
     ['help', 'doctor'],
     ['help', 'task', 'verification'],
     ['task', 'create', '--json'],
@@ -74,10 +78,31 @@ try {
   for (const args of representativeOutputs) {
     const checkout = runCheckout(args);
     const packaged = runPackaged(args);
-    assert.equal(packaged.status, checkout.status, `exit status differs: ${args.join(' ')}`);
+    assert.equal(packaged.status, checkout.status, [
+      `exit status differs: ${args.join(' ')}`,
+      `checkout stdout: ${checkout.stdout}`,
+      `checkout stderr: ${checkout.stderr}`,
+      `packaged stdout: ${packaged.stdout}`,
+      `packaged stderr: ${packaged.stderr}`,
+    ].join('\n'));
     assert.equal(packaged.stdout, checkout.stdout, `stdout differs: ${args.join(' ')}`);
     assert.equal(packaged.stderr, checkout.stderr, `stderr differs: ${args.join(' ')}`);
   }
+
+  const checkoutIdentity = JSON.parse(runCheckout(['version', '--json']).stdout);
+  const packagedIdentity = JSON.parse(runPackaged(['version', '--json']).stdout);
+  for (const field of ['schemaVersion', 'package', 'version', 'protocolIdentity', 'sourceCommit']) {
+    assert.equal(packagedIdentity[field], checkoutIdentity[field], `version identity differs: ${field}`);
+  }
+  for (const field of ['executable', 'version', 'platform', 'architecture']) {
+    assert.equal(packagedIdentity.runtime[field], checkoutIdentity.runtime[field], `runtime identity differs: ${field}`);
+  }
+  assert.equal(checkoutIdentity.channel, 'development');
+  assert.equal(checkoutIdentity.runtime.role, 'development');
+  assert.equal(checkoutIdentity.applicationPayloadDigest, null);
+  assert.equal(packagedIdentity.channel, 'npm');
+  assert.equal(packagedIdentity.runtime.role, 'host');
+  assert.match(packagedIdentity.applicationPayloadDigest, /^sha256-[a-f0-9]{64}$/);
 
   const checkoutWorkspace = path.join(root, 'checkout-workspace');
   const packagedWorkspace = path.join(root, 'packaged-workspace');

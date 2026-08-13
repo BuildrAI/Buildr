@@ -14,7 +14,7 @@ Agent 使用本 Skill 判断用户意图属于哪类 Buildr 资产，并通过 B
 组织资产先改变源资产（使用 Buildr CLI），再同步 Agent runtime（使用 render/sync）。
 Agent 是 Buildr 功能的默认操作入口。Agent 能在当前工具、权限和安全边界内完成的动作，应先说明必要影响并取得所需授权，再直接执行和验证；不得默认把命令交给用户代为执行。用户明确选择手动方式，或 Agent 因工具不可用、权限、登录态、外部环境等原因无法完成时，再提供准确的手动操作兜底。
 
-用户要求“安装 Buildr”且未限制范围时，在 macOS 或 Windows 默认先安装 npm CLI，再运行 `buildr web launcher install --channel release --json`，并分别验证命令、版本、Buildr Web Launcher status 和启动能力；部分失败时报告各自状态与恢复动作。全局安装不猜测 Workspace 或写 Agent runtime；`init --agent` 在目标 Workspace 首次投射 Buildr Skill，之后由 `sync`/`render` 收敛。Buildr 产品 checkout 使用 `npm run install:development` 同时更新当前 checkout CLI 与隔离的 `Buildr Web Dev`，Launcher 变化后重复执行，禁止覆盖运行中 bundle 或正式 Launcher。
+用户要求“安装 Buildr”且未限制范围时，只从 npm Registry 安装 `@buildr-ai/buildr`，并验证 CLI 与 `buildr web`。普通安装默认不修改 Applications 或 Start Menu；只有用户明确需要图形入口时才执行 `buildr web launcher install`，并验证它绑定同一 npm installation、Host Node 与 package entry。全局安装不猜测 Workspace 或写 Agent runtime；`init --agent` 在目标 Workspace 首次投射 Buildr Skill，之后由 `sync`/`render` 收敛。Buildr 产品 checkout 使用 `npm run install:development` 同时更新当前 checkout CLI 与隔离的 `Buildr Web Dev`；development Launcher 不覆盖正式 npm Launcher。
 ## 执行循环
 
 1. 确认 `target`。未指定时默认当前目录；如果当前目录在服务（Service）代码仓内，先定位 Buildr 组织（Organization/Root）。
@@ -32,7 +32,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 | 用户意图 | 资产类型 |
 |---|---|
-| 安装 Buildr | npm CLI + 当前平台 launcher；尚无目标 Workspace 时不安装 Buildr Skill |
+| 安装 Buildr | 只从 npm Registry 安装 npm package；仅在用户明确需要时显式安装本机图形 Launcher；尚无目标 Workspace 时不安装 Buildr Skill |
 | 初始化、修复或诊断 Buildr workspace | 组织（Organization/Root） |
 | 更新或同步 Buildr | Buildr CLI update + 产品入口 Buildr Skill install |
 | 更新或同步 Git workspace | Buildr Skill 向 `buildr.git-operations/v1` selected provider 提供明确 workspace、upstream 和 update operation；更新后直接 sync |

@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { buildCommandInvocation } from '../../src/infrastructure/process.mjs';
-import { createCandidatePackage, CANDIDATE_PACK_METADATA_ENV, CANDIDATE_TARBALL_ENV } from './release/candidate-package.mjs';
+import {
+  createCandidatePackage,
+  CANDIDATE_PACK_METADATA_ENV,
+  CANDIDATE_RELEASE_MANIFEST_ENV,
+  CANDIDATE_TARBALL_ENV,
+} from './release/candidate-package.mjs';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
 
 export function workerBudgetEnvironment(step, executionProfile) {
@@ -59,7 +64,7 @@ export function createVerificationExecutor(options) {
       try {
         const artifactDirectory = path.resolve(options.artifactDirectory);
         fs.mkdirSync(artifactDirectory, { recursive: true });
-        const candidate = createCandidatePackage(productRoot, artifactDirectory, { npmExecutable });
+        const candidate = await createCandidatePackage(productRoot, artifactDirectory, { npmExecutable });
         artifacts.candidate = candidate;
       } catch (caught) {
         error = caught;
@@ -80,6 +85,7 @@ export function createVerificationExecutor(options) {
     const artifactEnv = step.executor.consumesArtifact && artifacts.candidate ? {
       [CANDIDATE_TARBALL_ENV]: artifacts.candidate.tarball,
       [CANDIDATE_PACK_METADATA_ENV]: artifacts.candidate.metadataPath,
+      [CANDIDATE_RELEASE_MANIFEST_ENV]: artifacts.candidate.manifestPath,
     } : {};
     return runVerificationStep({
       ...step,

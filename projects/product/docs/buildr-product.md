@@ -153,7 +153,7 @@ Buildr 资产是源头；Agent runtime 是面向当前 Agent 的可重建入口�
 
 当前本地产品通过 `buildr web` 启动或复用只监听 loopback 的全局本机 Web 应用，并在默认浏览器中提供工作空间（Workspace）、项目（Project）、服务（Service）、任务（Task）与变更（Change）管理视图。用户级登记列表只保存 Workspace root 和最近使用项；Workspace identity、metadata 与下属资源仍由各 Workspace 文件实时提供，不建立跨 Workspace 第二事实源。Buildr Web 是任务记录（Task Record）的观察与有限维护客户端：正式 Task 由 Agent/Task Manager 创建，页面只允许编辑、完成和放弃已有 active Task。任务列表和概览使用同一 Task Record Application 的 SQLite stored-state query projection，支持封闭筛选并派生直接 Child 数量，不在首屏解析 Change 或专业 currentness；复盘处置筛选只消费已保存的状态列。Parent 候选按操作延迟读取。任务详情固定为“概览、研发、证据、复盘、环境”五个一级视图。“研发”只读调用 Task Development Application `inspect`，展示当前结论、候选、门禁、决定与最近保存的研发交接；“证据”分别调用 Task Review 与 Task Verification reader，任一读取失败不隐藏另一份证据；“复盘”保持 Markdown 报告只读，但可通过同一 Task Retrospective Application 标记已处理、无需处理或重新打开；“环境”继续只读调用 Task Environment Application。页面不提供 Development mutation、Environment prepare/cleanup 或专业 Result CRUD。全局 Change 视图保持 retained-only；用户在全局 Change 详情主动打开关联面板后，页面才读取 active Task stored-state projection，并以既有 `recordDigest` mutation 保存 Change reference（只保存引用，不复制变更文件），不把 Task/Environment/Git 读取带入首屏；从 Task 打开 stored Change reference 后，具体页面才按 matching Task Environment execution root 与 retained baseline 分开显示 provenance，其审查按钮进入同一 Planning Review action。
 
-macOS `Buildr Web.app` 和 Windows launcher bundle 携带运行所需的 Node runtime 与相同 Web 资源，只负责启动或复用本机服务并打开默认浏览器，不引入 Desktop WebView。关闭浏览器不等于退出服务；页面提供受 session 保护的显式退出操作。当前不提供菜单栏、登录启动、磁盘自动扫描或跨 Workspace 资源聚合，Buildr Web Launcher 也不启动或管理 Agent。Buildr App 为未来真正的桌面产品保留，当前未实现。
+Buildr当前只通过npm Registry正式分发完整CLI与`buildr web`，主进程使用满足`engines.node`的Host Node。用户可显式运行`buildr web launcher install`生成macOS `.app`或Windows Start Menu shortcut；该图形入口只绑定同一npm安装并执行`web`，不复制Node、Buildr或payload，也不引入Desktop WebView或第二更新渠道。普通CLI不启动HTTP，关闭浏览器不等于退出服务。Buildr App与自包含平台安装器为未来产品阶段保留，当前未实现。
 
 新建 Workspace、Project、Service 或 Change，以及继续 Change、Task Review，均只生成交给 Agent 的完整 prompt，不绕过 Agent 对范围、目录、Git、授权、OpenSpec 契约和 runtime 的判断。Task-scoped Change 使用 Task Review Planning route；全局 Change 的通用审查 prompt 保持原边界。已归档 Change 默认只读，页面不会直接创建、编辑、apply、sync 或 archive Change。portable工作资产继续由文件系统/Git承载；适合索引、关系、聚合和事务的本地structured data由每个Workspace独立SQLite承载。
 
@@ -219,7 +219,7 @@ Buildr 的数据完整性保护是不可卸载的 CLI core：资产 identity、s
 后续产品方向包括：
 
 - 以[Agent 时代的工作基础设施](roadmap/agent-work-infrastructure.md)明确长期产品边界：Agent 负责理解任务、选择 Workspace 与资产、形成上下文、自行编排和专业执行；Buildr Application Core 提供 Enterprise、多 Workspace、外部数据源、长期工作资产与可接续共享状态。飞书、Agent 原生界面和 Buildr 界面具有不同的用户价值，彼此的接入与会话承载方式仍待验证；ACP 是未来可研究的 Agent 接入协议，不是上下文编排器。
-- 正式 npm registry、release tag 和更多安装渠道；开发 checkout 与本地 tarball路径已经具备 Agent onboarding smoke test。
+- npm-only发布能力：同一Application Payload只生成一次npm tarball，所有Host Node/Launcher smoke、publish和Registry readback复用同一bytes；GitHub Release只保存版本说明且拒绝binary Assets。真实tag、publish与公开readback仍由独立release授权触发。
 - 更多 Agent runtime adapters；每个新增 runtime 仍需独立 change 明确 identity、兼容版本、投射 targets 和 contract tests，不能借用现有 adapter fallback。
 - 更完整的 Skills registry、版本策略、强制 integrity policy 和 package 型远端解析；当前已支持 manifest、resolved `skill-url`、version/integrity metadata 和有界网络读取。
 - 权限裁剪和治理门禁。

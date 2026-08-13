@@ -89,7 +89,11 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
     assert.ok(fs.existsSync(path.join(productRoot, relative)), `missing ${relative}`);
   }
   const packageJson = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
-  assert.ok(packageJson.files.includes('src/'));
+  assert.equal(packageJson.bin.buildr, 'bin/buildr.mjs');
+  const candidatePackage = fs.readFileSync(path.join(productRoot, 'test/verification/release/candidate-package.mjs'), 'utf8');
+  assert.match(candidatePackage, /buildApplicationPayload\(/);
+  assert.match(candidatePackage, /createReleaseArtifact\(/);
+  assert.doesNotMatch(candidatePackage, /\['pack', productRoot/);
   assert.equal(fs.existsSync(path.join(productRoot, 'tools')), false);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/project')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/service')), true);

@@ -7,11 +7,10 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { readSharedCandidatePackage } from './candidate-package.mjs';
+import { createCandidatePackage, readSharedCandidatePackage } from './candidate-package.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const workspaceRoot = path.resolve(productRoot, '../../../..');
-const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const maximumTrackedFileBytes = 1024 * 1024;
 
 const contentRules = [
@@ -68,7 +67,17 @@ export function inspectPackageVersionConsistency(metadata, lockfile) {
 export function inspectTarballFiles(files) {
   const findings = [];
   const paths = new Set(files.map((entry) => entry.path));
-  for (const required of ['LICENSE', 'README.md', 'package.json', 'bin/buildr.mjs', 'package/manifest.yml']) {
+  for (const required of [
+    'LICENSE',
+    'README.md',
+    'package.json',
+    'bin/buildr.mjs',
+    'application-payload.json',
+    'installation-origin.json',
+    'runtime/buildr.cjs',
+    'payload/product/package/manifest.yml',
+    'payload/product/src/interfaces/local-app/web-dist/index.html',
+  ]) {
     if (!paths.has(required)) findings.push(finding('tarball.required', required, 'required publish asset is missing'));
   }
   for (const entry of paths) {
@@ -103,16 +112,12 @@ function inspectTrackedCandidate() {
   return inspectCandidatePaths(workspaceRoot, trackedFiles());
 }
 
-function packAndInspect() {
+async function packAndInspect() {
   const shared = readSharedCandidatePackage();
   if (shared) return inspectTarballFiles(shared.metadata.files);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-open-source-candidate-'));
   try {
-    const result = spawnSync(npmExecutable, ['pack', productRoot, '--pack-destination', root, '--json'], { cwd: productRoot, encoding: 'utf8' });
-    if (result.status !== 0) throw new Error(`npm pack failed with exit ${result.status}: ${(result.stderr || '').trim()}`);
-    const packages = JSON.parse(result.stdout);
-    if (packages.length !== 1) throw new Error(`expected one npm pack result, got ${packages.length}`);
-    return inspectTarballFiles(packages[0].files || []);
+    return inspectTarballFiles((await createCandidatePackage(productRoot, root)).metadata.files);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -142,7 +147,7 @@ function inspectReadmes() {
   return findings;
 }
 
-export function runOpenSourceCandidateCheck() {
+export async function runOpenSourceCandidateCheck() {
   const metadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
   const lockfile = JSON.parse(fs.readFileSync(path.join(productRoot, 'package-lock.json'), 'utf8'));
   return [
@@ -150,12 +155,12 @@ export function runOpenSourceCandidateCheck() {
     ...inspectPackageMetadata(metadata),
     ...inspectPackageVersionConsistency(metadata, lockfile),
     ...inspectReadmes(),
-    ...packAndInspect(),
+    ...await packAndInspect(),
   ];
 }
 
-function main() {
-  const findings = runOpenSourceCandidateCheck();
+async function main() {
+  const findings = await runOpenSourceCandidateCheck();
   if (findings.length) {
     console.error('Open-source candidate verification failed:');
     for (const item of findings) console.error(`- [${item.rule}] ${item.path}: ${item.message}`);
@@ -164,4 +169,4 @@ function main() {
   console.log('Open-source candidate verification passed: tracked tree, public metadata, bilingual README, file sizes, and npm tarball inventory.');
 }
 
-if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) main();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) await main();

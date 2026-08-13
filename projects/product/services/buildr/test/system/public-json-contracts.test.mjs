@@ -78,6 +78,7 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['version', '--json'], PUBLIC_JSON_SCHEMAS.version],
     [['unknown-command', '--json'], PUBLIC_JSON_SCHEMAS.cliError, 2],
     [['runtime', 'list', '--json'], PUBLIC_JSON_SCHEMAS.runtimeList],
+    [['installation', 'status', '--json'], PUBLIC_JSON_SCHEMAS.installationStatus],
     [['web', 'preview', 'list', '--json'], PUBLIC_JSON_SCHEMAS.localAppPreview],
     [['web', 'launcher', 'status', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.launcherStatus],
     [['doctor', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.doctor],
@@ -108,6 +109,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'contributionHandoff',
     'doctor',
     'gitWorktreeResult',
+    'installationStatus',
     'launcherStatus',
     'localAppPreview',
     'openspecConverge',
@@ -143,8 +145,11 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   const explicitCompact = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'compact']);
   assert.deepEqual(compact, explicitCompact);
   assert.deepEqual(Object.keys(compact), [
-    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
+    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'workspaceNode', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
   ]);
+  assert.equal(compact.workspaceNode.runtime.status, 'ready');
+  assert.equal(compact.workspaceNode.execution.role, 'workspace');
+  assert.equal(compact.workspaceNode.mainProcess.role, compact.productInstallation.currentInstallation.runtime.role);
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in compact, false, field);
 
   const full = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
@@ -153,6 +158,65 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   const contracts = full.capabilities.graphs.flatMap((graph) => graph.contracts);
   assert.ok(contracts.length > 0);
   assert.ok(contracts.every((contract) => /^[a-f0-9]{64}$/.test(contract.digest)));
+});
+
+test('human Doctor separates npm, development, Launcher, Host and Workspace identities', async (t) => {
+  const root = fixtureWorkspace(t, 'codex');
+  const appData = path.join(root, 'human-installation-status');
+  fs.mkdirSync(appData, { recursive: true });
+  const instance = {
+    schemaVersion: 'buildr.local-app-instance/v1',
+    url: 'http://127.0.0.1:4317',
+    secret: 'must-not-be-reported',
+    pid: 2147483647,
+    launcherIdentity: null,
+    productIdentity: {
+      channel: 'npm',
+      version: '1.2.3',
+      protocolIdentity: 'buildr.web-protocol/v1',
+      applicationPayloadDigest: `sha256-${'a'.repeat(64)}`,
+      installationIdentity: `sha256-${'b'.repeat(64)}`,
+      runtime: {
+        role: 'host',
+        version: '24.15.0',
+        executable: '/usr/local/bin/node',
+        identity: `sha256-${'c'.repeat(64)}`,
+      },
+    },
+  };
+  fs.writeFileSync(path.join(appData, 'instance.json'), `${JSON.stringify(instance, null, 2)}\n`);
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+  const output = await run(['doctor', '--agent', 'codex', '--target', root], { json: false, env });
+  for (const expected of [
+    'Product installations:',
+    'npm: channel=npm',
+    'development: channel=development',
+    'npm launcher: status=',
+    'current instance: status=',
+    'Runtime identities:',
+    'Host Node:',
+    'Development Node:',
+    'Current main process:',
+    'Workspace Node: status=ready role=workspace',
+    'current instance: status=stale',
+    'identity: Buildr=1.2.3 protocol=buildr.web-protocol/v1',
+    `payload=sha256-${'a'.repeat(64)} ownership=sha256-${'b'.repeat(64)}`,
+    'runtime: role=host Node=24.15.0 executable=/usr/local/bin/node',
+  ]) assert.equal(output.includes(expected), true, expected);
+  assert.equal(output.includes(instance.secret), false);
+
+  const status = await run(['installation', 'status'], { json: false, env });
+  for (const expected of [
+    'npm: channel=npm status=',
+    'development: channel=development status=',
+    'npm launcher: status=',
+    'current installation: channel=development status=current',
+    'current instance: status=stale readiness=not-probed',
+    'identity: channel=npm Buildr=1.2.3 protocol=buildr.web-protocol/v1',
+    `payload=sha256-${'a'.repeat(64)} ownership=sha256-${'b'.repeat(64)}`,
+    'runtime: role=host Node=24.15.0 executable=/usr/local/bin/node',
+  ]) assert.equal(status.includes(expected), true, expected);
+  assert.equal(status.includes(instance.secret), false);
 });
 
 test('doctor 严格报告 workspace identity 与独立 readiness', async (t) => {

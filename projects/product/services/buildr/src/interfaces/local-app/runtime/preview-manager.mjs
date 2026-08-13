@@ -204,7 +204,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   let targetRoot = requestedRoot;
   let taskEnvironment = null;
   let taskExecution = null;
-  let appInvocation = { command: process.execPath, argsPrefix: [cliPath], sourceRoot: path.resolve(path.dirname(cliPath), '..') };
+  let appInvocation = { ...runtime.currentProductInvocation({ cliPath }), sourceRoot: runtime.productRoot() };
   if (taskId) {
     const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
     taskExecution = runtime.resolveTaskEnvironmentExecution(workspaceRoot, taskId);

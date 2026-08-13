@@ -6,6 +6,201 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_BOOTSTRAP_CONTRACT, PACKAGE_WORKSPACE_TARGET } from '../product-layout.mjs';
+import { resolveProductRoot } from '../product-resources/index.mjs';
+
+let activeWorkspaceMutation = null;
+
+const EXCLUSIVE_FILE_LOCK_SCHEMA = 'buildr.exclusive-file-lock/v1';
+const EXCLUSIVE_FILE_LOCK_TIMEOUT_MS = 5_000;
+const EXCLUSIVE_FILE_LOCK_RETRY_DELAY_MS = 25;
+
+function waitSynchronously(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function exclusiveFileLockError(message, code, file, cause = null) {
+  const error = new Error(message, cause ? { cause } : undefined);
+  error.code = code;
+  error.operation = 'exclusive-file-lock';
+  error.target = file;
+  return error;
+}
+
+function validateExclusiveFileLockRecord(value, target) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (Object.keys(value).sort().join(',') !== 'createdAt,pid,schemaVersion,target,token') return null;
+  if (
+    value.schemaVersion !== EXCLUSIVE_FILE_LOCK_SCHEMA
+    || !Number.isInteger(value.pid) || value.pid <= 0
+    || typeof value.token !== 'string' || !/^[a-f0-9]{32}$/.test(value.token)
+    || typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))
+    || typeof value.target !== 'string' || path.resolve(value.target) !== target
+  ) return null;
+  return value;
+}
+
+function readExclusiveFileLock(file, target) {
+  try {
+    const raw = fs.readFileSync(file, 'utf8');
+    let value = null;
+    try { value = JSON.parse(raw); } catch {}
+    return { raw, record: validateExclusiveFileLockRecord(value, target) };
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw exclusiveFileLockError(`Cannot read exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_read_failed', file, error);
+  }
+}
+
+function exclusiveFileLockOwnerAlive(record, options = {}) {
+  if (options.ownerAlive) return options.ownerAlive(record.pid, record);
+  try {
+    process.kill(record.pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== 'ESRCH';
+  }
+}
+
+function publishExclusiveFileLockCandidate(file, record) {
+  const candidate = `${file}.candidate-${record.pid}-${record.token}`;
+  try {
+    fs.writeFileSync(candidate, `${JSON.stringify(record)}\n`, { flag: 'wx', mode: 0o600 });
+    const descriptor = fs.openSync(candidate, 'r');
+    try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+    fs.linkSync(candidate, file);
+    return true;
+  } catch (error) {
+    if (error.code === 'EEXIST') return false;
+    throw exclusiveFileLockError(`Cannot acquire exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_acquire_failed', file, error);
+  } finally {
+    fs.rmSync(candidate, { force: true });
+  }
+}
+
+function moveAndRemoveExclusiveFileLock(file, observed, operationToken) {
+  const quarantine = `${file}.${operationToken}-${crypto.randomUUID()}`;
+  try {
+    fs.renameSync(file, quarantine);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw exclusiveFileLockError(`Cannot claim exclusive filesystem lock ${file} for ${operationToken}: ${error.message}`, 'buildr_exclusive_file_lock_claim_failed', file, error);
+  }
+  let moved;
+  try {
+    moved = fs.readFileSync(quarantine, 'utf8');
+    if (moved !== observed.raw) {
+      if (!fs.existsSync(file)) fs.renameSync(quarantine, file);
+      throw exclusiveFileLockError(`Exclusive filesystem lock ${file} changed while ${operationToken} claimed it.`, 'buildr_exclusive_file_lock_ownership_lost', file);
+    }
+    fs.rmSync(quarantine, { force: true });
+    return true;
+  } catch (error) {
+    if (error?.code?.startsWith?.('buildr_exclusive_file_lock_')) throw error;
+    throw exclusiveFileLockError(`Cannot remove claimed exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_release_failed', file, error);
+  }
+}
+
+export function acquireExclusiveFileLock(file, target, options = {}) {
+  const resolvedFile = path.resolve(file);
+  const resolvedTarget = path.resolve(target);
+  const now = options.now || Date.now;
+  const pause = options.wait || waitSynchronously;
+  const timeoutMs = options.timeoutMs ?? EXCLUSIVE_FILE_LOCK_TIMEOUT_MS;
+  const retryDelayMs = options.retryDelayMs ?? EXCLUSIVE_FILE_LOCK_RETRY_DELAY_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || !Number.isFinite(retryDelayMs) || retryDelayMs <= 0) {
+    throw new Error('Exclusive filesystem lock timeout and retry delay must be bounded non-negative milliseconds.');
+  }
+  fs.mkdirSync(path.dirname(resolvedFile), { recursive: true });
+  const startedAt = now();
+  const deadline = startedAt + timeoutMs;
+  const record = Object.freeze({
+    schemaVersion: EXCLUSIVE_FILE_LOCK_SCHEMA,
+    pid: process.pid,
+    token: crypto.randomBytes(16).toString('hex'),
+    createdAt: new Date(startedAt).toISOString(),
+    target: resolvedTarget,
+  });
+  while (true) {
+    if (publishExclusiveFileLockCandidate(resolvedFile, record)) {
+      return Object.freeze({ owner: true, file: resolvedFile, target: resolvedTarget, record });
+    }
+    const observed = readExclusiveFileLock(resolvedFile, resolvedTarget);
+    if (!observed) continue;
+    if (observed.record && !exclusiveFileLockOwnerAlive(observed.record, options)) {
+      if (moveAndRemoveExclusiveFileLock(resolvedFile, observed, 'stale')) continue;
+    }
+    const observedAt = now();
+    if (observedAt >= deadline) {
+      const owner = observed.record
+        ? `pid=${observed.record.pid} createdAt=${observed.record.createdAt}`
+        : 'owner=invalid-or-unknown';
+      throw exclusiveFileLockError(`Exclusive filesystem lock wait expired for ${resolvedFile}: ${owner}.`, 'buildr_exclusive_file_lock_timeout', resolvedFile);
+    }
+    pause(Math.min(retryDelayMs, Math.max(1, deadline - observedAt)));
+  }
+}
+
+export function releaseExclusiveFileLock(lock) {
+  if (!lock?.owner || typeof lock.file !== 'string' || typeof lock.target !== 'string' || !lock.record) return false;
+  const file = path.resolve(lock.file);
+  const target = path.resolve(lock.target);
+  const expected = validateExclusiveFileLockRecord(lock.record, target);
+  if (!expected) return false;
+  const observed = readExclusiveFileLock(file, target);
+  if (!observed?.record) return false;
+  if (JSON.stringify(observed.record) !== JSON.stringify(expected)) return false;
+  return moveAndRemoveExclusiveFileLock(file, observed, 'release');
+}
+
+export function withExclusiveFileLock(file, target, callback, options = {}) {
+  const lock = acquireExclusiveFileLock(file, target, options);
+  let result;
+  let primaryError = null;
+  try {
+    options.onAcquired?.(lock);
+    result = callback(lock);
+  } catch (error) {
+    primaryError = error;
+  }
+  const released = releaseExclusiveFileLock(lock);
+  if (!released) {
+    throw exclusiveFileLockError(
+      `Exclusive filesystem lock ownership was lost before release: ${lock.file}.`,
+      'buildr_exclusive_file_lock_ownership_lost',
+      lock.file,
+      primaryError,
+    );
+  }
+  if (primaryError) throw primaryError;
+  return result;
+}
+
+export function atomicWriteFile(file, content, encoding = 'utf8', options = {}) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.buildr-tmp-${process.pid}-${crypto.randomUUID()}`);
+  try {
+    fs.writeFileSync(temporary, content, { encoding, ...options });
+    try {
+      const descriptor = fs.openSync(temporary, 'r');
+      try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+    } catch {
+      // Some filesystems do not support fsync for these files; rename is still atomic.
+    }
+    fs.renameSync(temporary, file);
+    if (activeWorkspaceMutation && process.env.BUILDR_FAULT_AFTER_MUTATION_WRITE) {
+      activeWorkspaceMutation.writeCount = (activeWorkspaceMutation.writeCount || 0) + 1;
+      if (activeWorkspaceMutation.writeCount === Number(process.env.BUILDR_FAULT_AFTER_MUTATION_WRITE)) {
+        throw new Error(`Injected Buildr mutation failure after write ${activeWorkspaceMutation.writeCount}.`);
+      }
+    }
+  } finally {
+    if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
+  }
+}
+
+export function atomicWriteJson(file, value, options = {}) {
+  atomicWriteFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8', options);
+}
 
 export function registerWorkspaceInfrastructure(runtime) {
   const doctor = (...args) => runtime.doctor(...args);
@@ -69,33 +264,6 @@ export function registerWorkspaceInfrastructure(runtime) {
 
   function removePath(target) {
     fs.rmSync(target, { recursive: true, force: true });
-  }
-
-  function atomicWriteFile(file, content, encoding = 'utf8') {
-    ensureDirectory(path.dirname(file));
-    const temporary = path.join(path.dirname(file), `.${path.basename(file)}.buildr-tmp-${process.pid}-${crypto.randomUUID()}`);
-    try {
-      fs.writeFileSync(temporary, content, encoding);
-      try {
-        const descriptor = fs.openSync(temporary, 'r');
-        try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
-      } catch {
-        // Some filesystems do not support fsync for these files; rename is still atomic.
-      }
-      fs.renameSync(temporary, file);
-      if (activeWorkspaceMutation && process.env.BUILDR_FAULT_AFTER_MUTATION_WRITE) {
-        activeWorkspaceMutation.writeCount = (activeWorkspaceMutation.writeCount || 0) + 1;
-        if (activeWorkspaceMutation.writeCount === Number(process.env.BUILDR_FAULT_AFTER_MUTATION_WRITE)) {
-          throw new Error(`Injected Buildr mutation failure after write ${activeWorkspaceMutation.writeCount}.`);
-        }
-      }
-    } finally {
-      if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
-    }
-  }
-
-  function atomicWriteJson(file, value) {
-    atomicWriteFile(file, `${JSON.stringify(value, null, 2)}\n`);
   }
 
   function parseYamlDocument(content, label = 'YAML document') {
@@ -219,8 +387,6 @@ export function registerWorkspaceInfrastructure(runtime) {
     }
   }
 
-  let activeWorkspaceMutation = null;
-
   function withWorkspaceMutation(targetRoot, operation, affectedPaths, callback, options = {}) {
     const root = path.resolve(targetRoot);
     if (activeWorkspaceMutation?.targetRoot === root) return callback(activeWorkspaceMutation);
@@ -292,7 +458,7 @@ export function registerWorkspaceInfrastructure(runtime) {
   }
 
   function productRoot() {
-    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+    return resolveProductRoot();
   }
 
   function packageRoot() {

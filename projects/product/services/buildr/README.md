@@ -36,7 +36,7 @@ Workspace → Project → Service（可选）
 
 ## 手动或技术兜底
 
-当 Agent 无法执行时，再使用下面的确定性入口。Buildr 支持 Node.js `>=24.15.0 <25`；Workspace 受管 runtime 仍使用声明的精确版本：
+当 Agent 无法执行时，再使用下面的确定性入口。npm是唯一正式渠道并支持Host Node.js `>=24.15.0 <25`；Workspace受管Node仍使用`.buildr/workspace.yml`声明的精确版本，只供Workspace-owned子进程使用。两者identity和生命周期互不替代：
 
 ```bash
 npm install --global @buildr-ai/buildr@next

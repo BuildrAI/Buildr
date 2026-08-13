@@ -32,12 +32,12 @@ const COMMAND_ROUTES = [
   {
     key: "web launcher install",
     surface: "primary",
-    summary: "构建到新的 staging、验证后安全切换 Buildr Web Launcher；release 自包含，development 绑定当前 checkout 的 Buildr Web Dev thin launcher。",
+    summary: "从当前已验证的 npm installation 显式生成不复制 Node 或 package 的 Buildr Web Launcher。",
     help: [
-      "Usage: buildr web launcher install [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher install [--target <path>] [--json]",
       "",
-      "构建到新的 staging、验证后安全切换 Buildr Web Launcher；release 自包含，development 绑定当前 checkout 与 Workspace Node 的 Buildr Web Dev thin launcher。",
-      "默认安装到用户级应用目录，不安装 Buildr Skill，也不修改 Workspace 源资产。"
+      "macOS 生成本机 Buildr Web.app，Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。",
+      "普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
     run: (r, c) => r.manageLocalAppLauncher('install', c.argv.slice(5)),
@@ -45,23 +45,35 @@ const COMMAND_ROUTES = [
   {
     key: "web launcher status",
     surface: "primary",
-    summary: "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。",
+    summary: "只读验证 npm Buildr Web Launcher 的 binding、Host Node、package entry、prefix 与 ownership。",
     help: [
-      "Usage: buildr web launcher status [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher status [--target <path>] [--json]",
       "",
-      "报告 launcher 的真实安装位置、channel、版本、checkout/runtime identity 与 Development 诊断。"
+      "任何路径或摘要漂移都会 fail closed；不会从 PATH 查找替代 Buildr。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'status',
     run: (r, c) => r.manageLocalAppLauncher('status', c.argv.slice(5)),
   },
   {
+    key: "web launcher repair",
+    surface: "primary",
+    summary: "从同一已登记 npm installation 原子重建当前 owned Launcher binding。",
+    help: [
+      "Usage: buildr web launcher repair [--target <path>] [--json]",
+      "",
+      "repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
+    run: (r, c) => r.manageLocalAppLauncher('repair', c.argv.slice(5)),
+  },
+  {
     key: "web launcher uninstall",
     surface: "primary",
-    summary: "只移除对应 channel 拥有的 launcher 和上一版本；保留 Workspace Registry 与 Workspace 源资产。",
+    summary: "只移除 ownership 精确匹配的 npm Buildr Web Launcher，保留 npm package 与 Workspace 数据。",
     help: [
-      "Usage: buildr web launcher uninstall [--channel <release|development>] [--target <dir>] [--json]",
+      "Usage: buildr web launcher uninstall [--target <path>] [--json]",
       "",
-      "只移除对应 channel 拥有的 launcher 和上一版本；保留 Workspace Registry 与 Workspace 源资产。"
+      "foreign target 或 binding 会被保留并 fail closed；本命令不卸载 npm Buildr、Workspace Registry、SQLite、日志或 Workspace data。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'uninstall',
     run: (r, c) => r.manageLocalAppLauncher('uninstall', c.argv.slice(5)),
@@ -742,6 +754,18 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'builtin' && action === 'restore',
     run: (r, c) => r.builtinRestore(c.argv.slice(4)),
+  },
+  {
+    key: "installation status",
+    surface: "primary",
+    summary: "分别报告 npm、development、本机 Launcher 与当前运行实例的可信身份。",
+    help: [
+      "Usage: buildr installation status [--json]",
+      "",
+      "只读取 embedded identity 与 ownership receipt；不会扫描 PATH 或按文件名猜测来源。"
+    ],
+    match: ({ domain, action }) => domain === 'installation' && action === 'status',
+    run: (r, c) => r.installationStatus(c.argv.slice(4)),
   },
   {
     key: "update check",

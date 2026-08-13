@@ -464,22 +464,22 @@ Buildr doctor MUST 将 Project registry 作为 Project baseline 和 Service meta
 - **THEN** doctor MUST 按现有契约继续检查 Project baseline 和 Service metadata
 
 ### Requirement: doctor 必须只读诊断 Workspace Node toolchain
-`buildr doctor` MUST 检查 Workspace Node 声明、受管 runtime、当前 CLI、runtime `npm` 和正式验证执行环境是否解析为同一 Node identity，并 MUST 保持只读。
+`buildr doctor` MUST 分别检查当前 Buildr 主进程 runtime role 与 Workspace Node 声明/受管 runtime。npm 主进程 MUST 匹配其 formal Host Node identity 与 `engines.node`，development 主进程 MUST 匹配其 checkout runtime identity，Workspace-owned npm、验证、Finish adapter 和项目执行环境 MUST 匹配 Workspace Node identity；Doctor MUST 保持只读，不得要求这些 role 解析为同一 Node，也不得报告当前不存在的 Product Node/platform role。
 
 #### Scenario: Node toolchain 健康
-- **WHEN** 声明有效、受管 runtime probe 成功且 CLI/npm/验证环境均匹配声明
-- **THEN** doctor MUST 报告 Node identity 与健康状态
-- **AND** MUST NOT 修改 metadata、下载 runtime 或重写 PATH
+- **WHEN** 当前 npm/development installation runtime identity 有效，Workspace 声明有效、受管 runtime probe 成功且 Workspace-owned execution environment 匹配声明
+- **THEN** doctor MUST 分字段报告 Host/development main runtime 与 Workspace Node identity、role 和健康状态
+- **AND** MUST NOT 修改 metadata、下载 runtime、重写 PATH 或因版本相同合并两个 identity
 
 #### Scenario: runtime 缺失
-- **WHEN** 声明有效但对应受管 runtime 不存在
-- **THEN** doctor MUST 返回稳定 warning/error finding 和 `buildr sync <agent> --target <workspace>` 修复建议
-- **AND** MUST NOT 直接安装 runtime
+- **WHEN** Workspace 声明有效但对应受管 Workspace Node runtime 不存在
+- **THEN** doctor MUST 保留当前 Host/development main runtime 健康结论，并为 Workspace-owned execution 返回稳定 warning/error finding 与 `buildr sync <agent> --target <workspace>` 修复建议
+- **AND** MUST NOT 直接安装 runtime 或建议 npm package/Launcher update 修复 Workspace Node
 
 #### Scenario: CLI 或 npm 漂移
-- **WHEN** 当前 CLI、npm 或验证环境使用的 Node 与 Workspace identity 不一致
-- **THEN** doctor MUST 报告每个实际 executable/version 与期望 identity
-- **AND** MUST NOT 因当前版本仍满足 `engines.node` 而把漂移视为健康
+- **WHEN** 当前 npm 主进程不满足 formal Host Node identity/engines、development runtime 与 checkout identity 不符，或 Workspace-owned npm/验证环境不匹配 Workspace Node
+- **THEN** doctor MUST 按 runtime role 报告每个实际 executable/version 与期望 identity
+- **AND** MUST NOT 因另一个 role 的 Node 满足 `engines.node`、版本相同或可从 PATH 发现而把漂移视为健康
 
 ### Requirement: Doctor JSON 默认提供紧凑诊断
 Buildr MUST 让 `doctor --json` 默认返回紧凑、稳定且足以判断健康状态和后续动作的结构化结果，并 MUST 仅在调用方显式请求时返回完整诊断 inventory。
@@ -520,3 +520,21 @@ Buildr Doctor MUST 从 `.buildr/agent-runtime/<destination>/<adapter>/skill-proj
 - **WHEN** Doctor 发现同一 adapter/runtime path 的 canonical 与 legacy receipt 不等价
 - **THEN** Doctor MUST 报告 actionable ownership conflict
 - **AND** repair plan MUST 要求保留现场并核对两份 identity，不能建议直接删除任一侧
+
+### Requirement: Doctor 与 status 必须投影 npm 安装、Launcher 与运行时身份
+Doctor 与 installation/Launcher status MUST 从 formal npm installation registry、development identity、Launcher bindings 与当前 instance receipt 分别投影 npm、development、当前运行实例和本地图形 Launcher。每项 MUST 显示版本、路径、runtime role/source、protocol、payload 与 ownership identity；不得扫描 PATH、根据文件名猜来源或报告当前不存在的 platform channel。
+
+#### Scenario: npm 与 development 并存
+- **WHEN** 同一用户登记了 npm installation、npm-owned Launcher 与 development launcher
+- **THEN** Doctor/status MUST 分别展示 npm package/prefix/Host Node、npm Launcher binding、development checkout/runtime 与当前 instance
+- **AND** 版本相同 MUST NOT 合并 installation 或 ownership lifecycle
+
+#### Scenario: Launcher binding 漂移
+- **WHEN** binding 的 Host Node、entry、package root、prefix、payload 或 ownership receipt 与文件事实不符
+- **THEN** Doctor/status MUST 将 Launcher 标记为 stale 或 invalid 并提供 `launcher repair|uninstall` 下一步
+- **AND** MUST NOT 用 PATH 中可运行的另一个 Buildr 将状态修正为 ready
+
+#### Scenario: 当前 Web instance
+- **WHEN** current instance receipt 指向 canonical loopback 并能通过 secret-protected health probe
+- **THEN** status MUST 展示 readiness、PID、npm/development channel、Host/development runtime 与完整 product identity
+- **AND** MUST NOT 泄露 instance secret

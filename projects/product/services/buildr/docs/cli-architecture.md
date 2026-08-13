@@ -1,6 +1,6 @@
 # Buildr Product 内部架构
 
-本文面向 Buildr 维护者，说明 Product 源码、CLI、Agent runtime、仓库验证与交付资产的边界。`src/` 是 npm package 的内部实现，不是公开 JavaScript API；公开兼容承诺仍以命令、参数、help、JSON schema、文件结果和 OpenSpec specs 为准。
+本文面向 Buildr 维护者，说明 Product 源码、CLI、Agent runtime、仓库验证与交付资产的边界。`src/` 是应用负载的内部实现，不是公开 JavaScript API；公开兼容承诺仍以命令、参数、help、JSON schema、文件结果和 OpenSpec specs 为准。
 
 ## 生命周期目录
 
@@ -93,8 +93,9 @@ Workspace E2E 位于 `test/verification/workspace/`，保留 `workspace-lifecycl
 ## npm 与交付边界
 
 - `package.json#bin.buildr` 指向 `bin/buildr.mjs`。
-- `package.json#files` 发布 `bin`、`src`、公开文档和顶层 `package`，不发布仓库测试、维护脚本、active changes 或 Workspace 私有资产。
-- `package/` 只表示 init、sync、runtime 和 bootstrap 使用的交付源资产；它不是 npm 源码、构建脚本或测试 fixture 目录。
+- 正式 npm candidate 由同一 application payload builder 生成 runtime bundle 与资源，再由 release artifact builder 对 staging 执行唯一一次 `npm pack`；平台制品消费同一个 payload identity。根 `package.json#files` 不再作为正式发布 inventory authority。
+- npm tarball 只携带薄入口、runtime bundle、payload manifest、安装来源 receipt 与完整运行资源；不携带平台 Node、Launcher、开发源码树或测试工具链。
+- `package/` 只表示 init、sync、runtime 和 bootstrap 使用的交付源资产；正式 tarball 中它位于 payload 资源树，不是 npm 源码、构建脚本或测试 fixture 目录。
 - 安装后的 `buildr package check` 必须只依赖 tarball 内的运行闭包。
 - 内部路径不提供兼容承诺；重构仍不得改变公开 CLI 行为、JSON schema、文件结果或 transaction/fail-closed 语义。
 

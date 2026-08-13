@@ -5,10 +5,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { readReleaseArtifact } from '../../../scripts/release/release-artifact.mjs';
+import { buildApplicationPayload } from '../../../scripts/release/application-payload.mjs';
+import { createReleaseArtifact, readReleaseArtifact } from '../../../scripts/release/release-artifact.mjs';
 import { officialRegistry } from '../../../scripts/release/registry-version-state.mjs';
 import { readSharedCandidatePackage } from './candidate-package.mjs';
 
@@ -80,19 +81,46 @@ function parseJson(label, output, schemaVersion) {
   return payload;
 }
 
-export function runReleaseSmoke(env = process.env) {
+async function waitForWebReadiness({ appData, child = null, stderr = () => '' }) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    let instance = null;
+    try { instance = JSON.parse(fs.readFileSync(path.join(appData, 'instance.json'), 'utf8')); } catch {}
+    if (instance) {
+      const response = await fetch(`${instance.url}/api/v1/health`, { headers: { 'x-buildr-instance': instance.secret } });
+      assert.equal(response.status, 200);
+      const health = await response.json();
+      assert.equal(health.schemaVersion, 'buildr.local-app-health/v1');
+      assert.equal(health.status, 'ready');
+      if (child) assert.equal(health.pid, child.pid);
+      return health;
+    }
+    if (child?.exitCode !== null && child) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Buildr Web did not become ready: ${stderr()}`);
+}
+
+export async function runReleaseSmoke(env = process.env) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-smoke-'));
   const packDirectory = path.join(root, 'pack');
   const prefix = path.join(root, 'prefix');
   const workspace = path.join(root, 'workspace');
   const appData = path.join(root, 'app-data');
+  const npmCache = path.join(root, 'npm-cache');
   const runtimeData = process.env.BUILDR_NODE_RUNTIME_DATA_DIR || appData;
+  const runtimeEnv = {
+    BUILDR_APP_DATA_DIR: appData,
+    BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData,
+    npm_config_cache: npmCache,
+    npm_config_update_notifier: 'false',
+  };
   const source = resolveReleaseSmokeSource(env);
+  let web = null;
 
   function runBuildr(buildrScript, args) {
     return run(process.execPath, [buildrScript, ...args], {
       cwd: workspace,
-      env: { BUILDR_APP_DATA_DIR: appData, BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData },
+      env: runtimeEnv,
     });
   }
 
@@ -103,15 +131,16 @@ export function runReleaseSmoke(env = process.env) {
     let installTarget = source.installTarget;
     let expectedVersion = source.expectedVersion;
     if (!installTarget) {
-      const pack = JSON.parse(run(npmExecutable, ['pack', productRoot, '--pack-destination', packDirectory, '--json']));
-      assert.equal(pack.length, 1, 'release smoke must produce one tarball');
-      installTarget = path.join(packDirectory, pack[0].filename);
-      expectedVersion = pack[0].version;
+      const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: productRoot }).trim();
+      const payload = await buildApplicationPayload(path.join(root, 'application-payload'), sourceCommit);
+      const artifact = createReleaseArtifact(payload.root, packDirectory);
+      installTarget = artifact.tarball;
+      expectedVersion = artifact.manifest.version;
     }
     const installArgs = source.offline
       ? ['install', '--offline', '--global', '--prefix', prefix, installTarget]
       : ['install', '--prefer-online', '--global', '--prefix', prefix, '--registry', officialRegistry, installTarget];
-    run(npmExecutable, installArgs);
+    run(npmExecutable, installArgs, { env: runtimeEnv });
 
     const modulesRoot = process.platform === 'win32' ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib', 'node_modules');
     const installedPackageRoot = path.join(modulesRoot, '@buildr-ai', 'buildr');
@@ -121,19 +150,88 @@ export function runReleaseSmoke(env = process.env) {
     const buildrScript = path.join(installedPackageRoot, 'bin', 'buildr.mjs');
     assert.equal(fs.existsSync(buildrScript), true, 'installed Buildr executable source must exist');
 
+    const launcherTarget = process.platform === 'darwin'
+      ? path.join(root, 'Applications', 'Buildr Web.app')
+      : process.platform === 'win32'
+        ? path.join(root, 'Start Menu', 'Buildr Web.lnk')
+        : null;
+    if (launcherTarget) assert.equal(fs.existsSync(launcherTarget), false, 'ordinary npm install must not create a graphical Launcher');
+
     const updateCheck = parseJson('registry update check', run(process.execPath, [buildrScript, 'update', 'check', '--json'], {
       cwd: workspace,
       expectedStatus: 1,
       env: {
-        BUILDR_APP_DATA_DIR: appData,
-        BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData,
+        ...runtimeEnv,
         npm_config_registry: 'http://127.0.0.1:9',
         npm_config_fetch_retries: '0',
         npm_config_fetch_timeout: '1000',
       },
     }), 'buildr.update-check/v1');
-    assert.equal(updateCheck.mode, 'registry-package');
+    assert.equal(updateCheck.mode, 'npm');
     assert.equal(updateCheck.status, 'blocked');
+
+    assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
+    let webStderr = '';
+    web = spawn(process.execPath, [buildrScript, 'web', '--no-open', '--port', '0'], {
+      cwd: workspace,
+      env: { ...process.env, ...runtimeEnv },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    web.stderr.setEncoding('utf8');
+    web.stderr.on('data', (chunk) => { webStderr += chunk; });
+    const health = await waitForWebReadiness({ appData, child: web, stderr: () => webStderr });
+    assert.equal(health.productIdentity.channel, 'npm');
+    web.kill('SIGTERM');
+    await Promise.race([new Promise((resolve) => web.once('close', resolve)), new Promise((resolve) => setTimeout(resolve, 2_000))]);
+    if (web.exitCode === null) web.kill('SIGKILL');
+    web = null;
+
+    if (launcherTarget) {
+      const installedLauncher = parseJson('launcher install', runBuildr(buildrScript, ['web', 'launcher', 'install', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
+      assert.equal(installedLauncher.status, 'ready');
+      assert.equal(sameFilesystemPath(installedLauncher.binding.hostNode.path, process.execPath), true);
+      assert.equal(sameFilesystemPath(installedLauncher.binding.packageEntry.path, buildrScript), true);
+      assert.equal(installedLauncher.binding.installationOwnershipIdentity, health.productIdentity.installationIdentity);
+
+      let launcherProcess = null;
+      if (process.platform === 'darwin') {
+        launcherProcess = spawn(path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web'), [], {
+          cwd: workspace,
+          env: { ...process.env, ...runtimeEnv, BUILDR_LAUNCHER_NO_OPEN: '1' },
+          stdio: ['ignore', 'ignore', 'pipe'],
+        });
+      } else {
+        launcherProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $args[0]', launcherTarget], {
+          cwd: workspace,
+          env: { ...process.env, ...runtimeEnv, BUILDR_LAUNCHER_NO_OPEN: '1' },
+          stdio: ['ignore', 'ignore', 'pipe'],
+        });
+      }
+      const launcherHealth = await waitForWebReadiness({ appData });
+      assert.equal(launcherHealth.productIdentity.installationIdentity, health.productIdentity.installationIdentity);
+      assert.equal(launcherHealth.launcherIdentity.bindingIdentity, installedLauncher.binding.bindingIdentity);
+      try { process.kill(launcherHealth.pid, 'SIGTERM'); } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (launcherProcess.exitCode === null) launcherProcess.kill('SIGTERM');
+
+      if (process.platform === 'darwin') {
+        fs.appendFileSync(path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web'), '\n# drift\n');
+      } else {
+        const driftScript = '$shell=New-Object -ComObject WScript.Shell; $s=$shell.CreateShortcut($args[0]); $s.Arguments="foreign"; $s.Save()';
+        run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', driftScript, launcherTarget], { cwd: workspace, env: runtimeEnv });
+      }
+      const stale = parseJson('launcher drift status', run(process.execPath, [buildrScript, 'web', 'launcher', 'status', '--target', launcherTarget, '--json'], {
+        cwd: workspace,
+        env: runtimeEnv,
+        expectedStatus: 1,
+      }), 'buildr.launcher-status/v1');
+      assert.ok(['stale', 'invalid'].includes(stale.status));
+      const repaired = parseJson('launcher repair', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
+      assert.equal(repaired.status, 'ready');
+      const uninstalled = parseJson('launcher uninstall', runBuildr(buildrScript, ['web', 'launcher', 'uninstall', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
+      assert.equal(uninstalled.status, 'absent');
+      assert.equal(fs.existsSync(installedPackageRoot), true, 'Launcher uninstall must retain the npm package');
+    }
 
     runBuildr(buildrScript, ['init', '--agent', 'codex', '--target', workspace, '--name', 'release-smoke', '--profile', 'team']);
     runBuildr(buildrScript, ['sync', 'codex', '--target', workspace]);
@@ -148,8 +246,9 @@ export function runReleaseSmoke(env = process.env) {
     console.log(`Buildr release smoke passed from ${source.kind} on ${process.platform} with Node ${process.versions.node}.`);
     return { source: source.kind, version: installedMetadata.version };
   } finally {
+    if (web && web.exitCode === null) web.kill('SIGKILL');
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
 
-if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) runReleaseSmoke();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) await runReleaseSmoke();

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.mjs';
 import {
   clearLocalAppInstance,
   acquireLocalAppStartLock,
@@ -26,9 +26,11 @@ import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-c
 import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
 import { createLocalAppScheduledMaintenance } from '../runtime/scheduled-maintenance.mjs';
+import { readCliIdentity } from '../../cli/identity.mjs';
+import { assertCurrentNpmLauncherBinding } from '../../../infrastructure/product-launcher/index.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
-const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web-dist');
+const STATIC_ROOT = resolveProductResource('product/src/interfaces/local-app/web-dist');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective', 'retrospectiveState']);
@@ -257,6 +259,7 @@ export function createLocalWorkspaceServer(runtime, {
   port = 0,
   instanceSecret = null,
   launcherIdentity = null,
+  productIdentity = null,
   previewIdentity = null,
   onShutdown = null,
   readExecutor = null,
@@ -302,7 +305,14 @@ export function createLocalWorkspaceServer(runtime, {
           jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });
           return;
         }
-        jsonResponse(response, 200, { schemaVersion: 'buildr.local-app-health/v1', status: closing ? 'stopping' : 'ready', pid: process.pid, launcherIdentity, previewIdentity });
+        jsonResponse(response, 200, {
+          schemaVersion: 'buildr.local-app-health/v1',
+          status: closing ? 'stopping' : 'ready',
+          pid: process.pid,
+          launcherIdentity,
+          productIdentity,
+          previewIdentity,
+        });
         return;
       }
       if (request.method === 'GET' && pathname === '/api/v1/workspaces') {
@@ -585,22 +595,32 @@ export function createLocalWorkspaceServer(runtime, {
 export function registerLocalWorkspaceAppInterface(runtime) {
   registerLocalAppPreviewResourceProvider(runtime);
   async function startLocalWorkspaceApp(args) {
-    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open']), new Set(['--no-open']));
+    runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding']), new Set(['--no-open']));
     const targetValue = runtime.optionValue(args, '--target', null);
     const targetRoot = targetValue ? path.resolve(targetValue) : null;
     const rawPort = runtime.optionValue(args, '--port', '0');
     const port = Number(rawPort);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
-    const noOpen = args.includes('--no-open');
-    const launcherIdentity = readLauncherIdentityFromEnvironment();
+    const launcherBindingPath = runtime.optionValue(args, '--launcher-binding', null);
+    const noOpen = args.includes('--no-open') || (launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
+    const productIdentity = readCliIdentity();
+    const npmLauncherBinding = launcherBindingPath ? assertCurrentNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
+    const launcherIdentity = npmLauncherBinding || readLauncherIdentityFromEnvironment();
     const previewIdentity = readPreviewIdentityFromEnvironment();
     let initialWorkspaceId = null;
     if (targetRoot) initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
     const recorded = readLocalAppInstance();
     const healthy = await healthyLocalAppInstance(recorded);
     if (healthy) {
-      if (launcherIdentity && healthy.launcherIdentity && launcherIdentity.protocolVersion !== healthy.launcherIdentity.protocolVersion) {
-        throw new Error(`已运行 Buildr Web protocol v${healthy.launcherIdentity.protocolVersion} 与当前 Launcher v${launcherIdentity.protocolVersion} 不兼容，请先退出旧实例。`);
+      const healthyProtocol = healthy.productIdentity?.protocolIdentity
+        || (healthy.launcherIdentity?.protocolIdentity ?? (healthy.launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${healthy.launcherIdentity.protocolVersion}` : null));
+      if (healthyProtocol && productIdentity.protocolIdentity !== healthyProtocol) {
+        throw new Error(`已运行 Buildr Web protocol ${healthyProtocol} 与当前产品 ${productIdentity.protocolIdentity} 不兼容，请先退出旧实例。`);
+      }
+      const launcherProtocol = launcherIdentity?.protocolIdentity || (launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${launcherIdentity.protocolVersion}` : null);
+      const healthyLauncherProtocol = healthy.launcherIdentity?.protocolIdentity || (healthy.launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${healthy.launcherIdentity.protocolVersion}` : null);
+      if (launcherProtocol && healthyLauncherProtocol && launcherProtocol !== healthyLauncherProtocol) {
+        throw new Error(`已运行 Buildr Web protocol ${healthyLauncherProtocol} 与当前 Launcher ${launcherProtocol} 不兼容，请先退出旧实例。`);
       }
       const pageUrl = initialWorkspaceId ? `${healthy.url}/workspaces/${initialWorkspaceId}/` : healthy.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
@@ -625,6 +645,7 @@ export function registerLocalWorkspaceAppInterface(runtime) {
         port,
         instanceSecret: secret,
         launcherIdentity,
+        productIdentity,
         previewIdentity,
         onShutdown: () => {
           if (state) clearLocalAppInstance(state);
@@ -632,7 +653,7 @@ export function registerLocalWorkspaceAppInterface(runtime) {
         },
       });
       const ready = await instance.ready;
-      state = { url: ready.url, secret, pid: process.pid, launcherIdentity };
+      state = { url: ready.url, secret, pid: process.pid, launcherIdentity, productIdentity };
       writeLocalAppInstance(runtime, state);
       releaseLocalAppStartLock(startLock);
       const pageUrl = initialWorkspaceId ? `${ready.url}/workspaces/${initialWorkspaceId}/` : ready.url;

@@ -26,6 +26,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Project：业务事实、OpenSpec、capability/applicability context 和 Service 关系。
 - Service：职责与代码/资产边界。
 - Buildr Web：当前通过默认浏览器使用的本机 Web 界面，由 Buildr Web Frontend Service 交付前端产物、Buildr Web Runtime 同源托管，并可由 Buildr Web Launcher 启动。三者不建立第二个数据或 Application authority；Buildr App 为未来桌面产品保留，当前未实现。
+- Buildr Application Payload 与分发载体：CLI、Core/Application、Buildr Web Runtime和正式静态资源、SQLite migrations、package baseline、生产依赖、版本与协议identity只形成一份公共负载；唯一正式载体是npm package。本机Launcher只是显式安装的图形投射，绑定同一npm安装，不复制Node、Buildr或业务实现。
 - Work Assets：工作事实与工作方法；Rules、Skills、Commands、Specs 等只是当前示例。
 - Change：规范驱动的变更管理；Brief 提供人类入口，标准 artifacts 保持规范 authority。
 - Task Record：正式 Task 的最小顶层事实。closed v2 表达 todo/active/终态、Parent/Children 和复盘来源 Task ID；todo 只是 data-only 意向，`open` 是 todo + active 查询。Buildr Web 只观察和有限维护已有 Task，不创建/激活。Task 专业模块仍保持独立 Domain、Application 和 writer。

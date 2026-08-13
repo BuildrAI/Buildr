@@ -160,9 +160,21 @@ export function createPackageStaticValidator(deps) {
           if (!packageMetadata.keywords?.includes(keyword)) problems.push(`package.json keywords must include ${keyword}.`);
         }
         const packagedFiles = new Set(packageMetadata.files || []);
-        for (const required of ['LICENSE', 'bin/buildr.mjs', 'src/', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'package/']) {
+        for (const required of [
+          'LICENSE',
+          'bin/buildr.mjs',
+          'src/',
+          'docs/cli-reference.md',
+          'docs/cli-architecture.md',
+          'docs/known-limitations.md',
+          'package/README.md',
+          'package/manifest.yml',
+          'package/bootstrap/',
+          'package/targets/',
+        ]) {
           if (!packagedFiles.has(required)) problems.push(`package.json files must include ${required}.`);
         }
+        if (packagedFiles.has('package/')) problems.push('package.json files must not publish package/ wholesale because it contains development-only Launcher assets.');
         for (const forbiddenPrefix of ['test/', 'scripts/', ['to', 'ols/'].join('')]) {
           if ([...packagedFiles].some((entry) => entry === forbiddenPrefix || entry.startsWith(forbiddenPrefix))) {
             problems.push(`package.json files must not publish checkout-only path: ${forbiddenPrefix}.`);

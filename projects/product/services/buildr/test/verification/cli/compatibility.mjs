@@ -139,11 +139,28 @@ for (const args of [['--version'], ['-V'], ['version']]) {
 }
 const versionJson = run(['version', '--json']);
 assert.equal(versionJson.status, 0);
-assert.deepEqual(JSON.parse(versionJson.stdout), {
-  schemaVersion: 'buildr.version/v1',
-  package: '@buildr-ai/buildr',
-  version: packageVersion,
-});
+const versionIdentity = JSON.parse(versionJson.stdout);
+assert.deepEqual(Object.keys(versionIdentity), [
+  'schemaVersion', 'package', 'version', 'protocolIdentity', 'applicationPayloadDigest',
+  'channel', 'runtime', 'installationIdentity', 'sourceCommit',
+]);
+assert.equal(versionIdentity.schemaVersion, 'buildr.version/v1');
+assert.equal(versionIdentity.package, '@buildr-ai/buildr');
+assert.equal(versionIdentity.version, packageVersion);
+assert.equal(versionIdentity.protocolIdentity, 'buildr.web-protocol/v1');
+assert.equal(versionIdentity.applicationPayloadDigest, null);
+assert.equal(versionIdentity.channel, 'development');
+assert.match(versionIdentity.installationIdentity, /^sha256-[a-f0-9]{64}$/);
+assert.match(versionIdentity.sourceCommit, /^[a-f0-9]{40}$/);
+assert.deepEqual(Object.keys(versionIdentity.runtime), [
+  'role', 'executable', 'version', 'platform', 'architecture', 'identity',
+]);
+assert.equal(versionIdentity.runtime.role, 'development');
+assert.equal(path.isAbsolute(versionIdentity.runtime.executable), true);
+assert.equal(versionIdentity.runtime.version, process.versions.node);
+assert.equal(versionIdentity.runtime.platform, process.platform);
+assert.equal(versionIdentity.runtime.architecture, process.arch);
+assert.match(versionIdentity.runtime.identity, /^sha256-[a-f0-9]{64}$/);
 const unknownJson = run(['doctr', '--json']);
 assert.equal(unknownJson.status, 2);
 assert.equal(unknownJson.stderr, '');

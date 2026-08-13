@@ -2,8 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../infrastructure/process.mjs';
-import { sameFilesystemPath } from '../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
+import {
+  readCurrentInstallationOrigin,
+  validateFormalInstallationOriginPayloadBinding,
+  validateInstallationOrigin,
+} from '../infrastructure/product-identity/installation-origin.mjs';
+import {
+  findRegisteredProductInstallation,
+  inspectProductUpdateAuthority,
+} from '../infrastructure/product-identity/installation-registry.mjs';
+import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../infrastructure/product-resources/index.mjs';
 
 function run(command, args, options = {}) {
   const result = spawnCommandSync(command, args, { encoding: 'utf8', ...options });
@@ -18,15 +27,6 @@ function run(command, args, options = {}) {
 
 function readPackage(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
-}
-
-function registryPrefixForProductRoot(root) {
-  const normalized = path.resolve(root);
-  const marker = process.platform === 'win32'
-    ? `${path.sep}node_modules${path.sep}`
-    : `${path.sep}lib${path.sep}node_modules${path.sep}`;
-  const index = normalized.lastIndexOf(marker);
-  return index > 0 ? normalized.slice(0, index) : null;
 }
 
 export function compareVersions(left, right) {
@@ -61,39 +61,80 @@ export function compareVersions(left, right) {
   return 0;
 }
 
-export function identifyCliSource(productRoot) {
+export function identifyCliSource(productRoot, options = {}) {
   const root = fs.realpathSync(path.resolve(productRoot));
   const packageFile = path.join(root, 'package.json');
   const manifest = readPackage(packageFile);
+  const payloadRoot = options.payloadRoot || resolveApplicationPayloadRoot();
+  let origin;
+  try {
+    if (options.origin) {
+      origin = validateInstallationOrigin(options.origin);
+      if (origin.channel === 'npm') {
+        const payloadManifest = options.payloadManifest || (payloadRoot ? readApplicationPayloadManifest(payloadRoot) : null);
+        validateFormalInstallationOriginPayloadBinding(origin, payloadManifest);
+      }
+    } else {
+      origin = readCurrentInstallationOrigin(root, { payloadRoot, ...options });
+    }
+  } catch (error) {
+    origin = {
+      channel: 'unknown',
+      runtimeRole: 'unknown',
+      ownershipIdentity: null,
+      applicationPayloadDigest: null,
+      protocolIdentity: null,
+      blockingReasons: [`正式安装来源与 application payload 无法交叉验证：${error.message}`],
+    };
+  }
+  const registration = options.registration === undefined
+    ? findRegisteredProductInstallation(origin, {
+      file: options.installationRegistryFile,
+      dataRoot: options.installationRegistryDataRoot,
+      productRoot: root,
+      envelopePath: origin.receipt?.file,
+      entryPath: options.entryPath || process.env.BUILDR_NPM_ENTRY_PATH,
+    })
+    : options.registration;
   const base = {
     productRoot: root,
     packageRoot: root,
     package: manifest?.name || null,
     version: manifest?.version || null,
+    channel: origin.channel,
+    runtimeRole: origin.runtimeRole,
+    installationIdentity: origin.ownershipIdentity,
+    applicationPayloadDigest: origin.applicationPayloadDigest,
+    protocolIdentity: origin.protocolIdentity,
   };
   if (manifest?.name !== '@buildr-ai/buildr') {
     return { ...base, mode: 'unknown', installPrefix: null, blockingReasons: ['当前 executable 的产品根没有声明 @buildr-ai/buildr package identity。'] };
   }
-  const gitRoot = run('git', ['-C', root, 'rev-parse', '--show-toplevel']);
-  if (gitRoot.ok) {
-    const resolvedGitRoot = fs.realpathSync(path.resolve(gitRoot.stdout));
-    const expectedServiceRoot = path.join(resolvedGitRoot, 'projects', 'product', 'services', 'buildr');
-    const canonicalService = sameFilesystemPath(root, expectedServiceRoot);
+  if (origin.channel === 'development') {
     return {
       ...base,
-      mode: 'development-checkout',
-      gitRoot: resolvedGitRoot,
-      projectRoot: canonicalService ? path.join(resolvedGitRoot, 'projects', 'product') : null,
-      service: canonicalService ? { projectCode: 'product', code: 'buildr' } : null,
+      mode: 'development',
+      gitRoot: origin.gitRoot,
+      projectRoot: path.join(origin.gitRoot, 'projects', 'product'),
+      service: { projectCode: 'product', code: 'buildr' },
       installPrefix: null,
       blockingReasons: [],
     };
   }
-  const installPrefix = registryPrefixForProductRoot(root);
-  if (installPrefix) {
-    return { ...base, mode: 'registry-package', installPrefix, blockingReasons: [] };
+  if (origin.channel === 'npm') {
+    const updateAuthority = registration?.status === 'installed' ? registration.entry.updateAuthority : null;
+    return {
+      ...base,
+      mode: 'npm',
+      installPrefix: updateAuthority?.prefix || null,
+      installUnit: origin.installUnit,
+      updateAuthority,
+      registrationStatus: registration?.status || 'absent',
+      registrationReason: registration?.reason || null,
+      blockingReasons: [],
+    };
   }
-  return { ...base, mode: 'unknown', installPrefix: null, blockingReasons: ['无法证明当前 executable 来自 Buildr Git checkout 或支持的 npm global prefix。'] };
+  return { ...base, mode: 'unknown', installPrefix: null, blockingReasons: origin.blockingReasons || ['无法从 installation identity 与 ownership receipt 证明当前 Buildr 来源。'] };
 }
 
 function gitValue(root, args) {
@@ -159,6 +200,7 @@ function gitUpdatePlan(source, { fetch = true, registryLookup = null } = {}) {
         : 'up-to-date';
   return {
     mode: source.mode,
+    channel: source.channel,
     current: { version: source.version, productRoot: source.productRoot, gitRoot: root, branch, head, upstream, ahead, behind, dirty },
     available: { upstream, commitsBehind: behind, releasedVersion: released.version, releaseTag: released.tag, releaseVersionError: released.error },
     status,
@@ -176,36 +218,50 @@ function gitUpdatePlan(source, { fetch = true, registryLookup = null } = {}) {
   };
 }
 
-function registryUpdatePlan(source) {
+function registryUpdatePlan(source, options = {}) {
   const blockingReasons = [];
-  const result = run('npm', ['view', source.package, 'version', '--json']);
   let availableVersion = null;
-  if (!result.ok) blockingReasons.push(`无法查询 npm registry：${result.stderr || result.error || 'unknown error'}`);
-  else {
-    try { availableVersion = JSON.parse(result.stdout); } catch { blockingReasons.push('npm registry 返回了无法解析的版本。'); }
+  const authority = inspectProductUpdateAuthority(source.updateAuthority, { productRoot: source.productRoot });
+  if (authority.status !== 'ready') {
+    blockingReasons.push(`当前 npm package 缺少可用的 receipt registry update authority：${authority.reason}；Buildr 不会根据 PATH、文件名或目录布局猜测更新命令。`);
+  } else {
+    const result = run(authority.authority.nodeExecutable, [
+      authority.authority.npmCliPath,
+      'view', source.package, 'version', '--json',
+    ], options.registryCommandOptions);
+    if (!result.ok) blockingReasons.push(`无法通过登记的 npm authority 查询 registry：${result.stderr || result.error || 'unknown error'}`);
+    else {
+      try { availableVersion = JSON.parse(result.stdout); } catch { blockingReasons.push('npm registry 返回了无法解析的版本。'); }
+    }
   }
   const updateAvailable = availableVersion && compareVersions(availableVersion, source.version) > 0;
   return {
     mode: source.mode,
-    current: { package: source.package, version: source.version, productRoot: source.productRoot, installPrefix: source.installPrefix },
+    channel: source.channel,
+    current: { package: source.package, version: source.version, productRoot: source.productRoot, installPrefix: source.installPrefix, installationIdentity: source.installationIdentity, hostNode: process.versions.node, updateAuthority: source.updateAuthority },
     available: { version: availableVersion },
     status: blockingReasons.length ? 'blocked' : updateAvailable ? 'update-available' : 'up-to-date',
-    strategy: updateAvailable ? 'npm-install' : 'none',
+    strategy: updateAvailable && source.updateAuthority ? 'npm-install' : 'none',
     blockingReasons,
     nextActions: blockingReasons.length
-      ? ['检查当前 npm registry、网络和安装 prefix 后重试。']
-      : updateAvailable
-        ? ['运行 buildr update 更新 Buildr CLI；成功后由 Agent 按用户意图决定是否执行 buildr sync <agent>。']
+      ? [authority.status !== 'ready'
+        ? '通过原 package manager 重装该全局 npm package 以建立可信 channel envelope；--ignore-scripts 安装将继续安全阻塞自更新。'
+        : '检查当前 npm registry、网络和登记的安装 prefix 后重试。']
+      : updateAvailable && source.updateAuthority
+        ? ['运行 buildr update 更新同一 npm package/prefix；Workspace Node 不会随之改变。']
+        : updateAvailable
+          ? ['当前 npm package identity 有效，但缺少可证明的 install prefix；请通过原 package manager 更新，不要让 Buildr 猜测 PATH 或目录。']
         : [],
   };
 }
 
 export function buildCliUpdatePlan(productRoot, options = {}) {
-  const source = identifyCliSource(productRoot);
-  if (source.mode === 'development-checkout') return gitUpdatePlan(source, options);
-  if (source.mode === 'registry-package') return registryUpdatePlan(source);
+  const source = identifyCliSource(productRoot, options);
+  if (source.mode === 'development') return gitUpdatePlan(source, options);
+  if (source.mode === 'npm') return registryUpdatePlan(source, options);
   return {
     mode: 'unknown',
+    channel: 'unknown',
     current: { package: source.package, version: source.version, productRoot: source.productRoot },
     available: null,
     status: 'blocked',
@@ -216,10 +272,23 @@ export function buildCliUpdatePlan(productRoot, options = {}) {
 }
 
 export function executeCliUpdatePlan(plan, options = {}) {
-  if (plan.status !== 'update-available') return { ok: ['up-to-date', 'version-stale'].includes(plan.status), status: ['up-to-date', 'version-stale'].includes(plan.status) ? 0 : 1, stdout: '', stderr: '', error: null };
-  return plan.mode === 'development-checkout'
-    ? run('git', ['-C', plan.current.gitRoot, plan.strategy === 'fast-forward' ? 'merge' : 'rebase', ...(plan.strategy === 'fast-forward' ? ['--ff-only'] : []), plan.current.upstream], options)
-    : run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--global', '--prefix', plan.current.installPrefix, `${plan.current.package}@${plan.available.version}`], options);
+  if (plan.status !== 'update-available') return { ok: ['up-to-date', 'version-stale', 'manual-check-required'].includes(plan.status), status: ['up-to-date', 'version-stale', 'manual-check-required'].includes(plan.status) ? 0 : 1, stdout: '', stderr: '', error: null };
+  if (plan.mode === 'npm' && (!plan.current.updateAuthority || plan.strategy !== 'npm-install')) {
+    return { ok: false, status: 1, stdout: '', stderr: 'npm update authority is not receipt-registry-proven.', error: 'npm-update-authority-required' };
+  }
+  if (plan.mode === 'development') {
+    return run('git', ['-C', plan.current.gitRoot, plan.strategy === 'fast-forward' ? 'merge' : 'rebase', ...(plan.strategy === 'fast-forward' ? ['--ff-only'] : []), plan.current.upstream], options);
+  }
+  const authority = plan.current.updateAuthority;
+  const authorityInspection = inspectProductUpdateAuthority(authority, { productRoot: plan.current.productRoot });
+  if (authorityInspection.status !== 'ready') {
+    return { ok: false, status: 1, stdout: '', stderr: authorityInspection.reason, error: 'npm-update-authority-invalid' };
+  }
+  return run(authority.nodeExecutable, [
+    authority.npmCliPath,
+    'install', '--global', '--prefix', authority.prefix,
+    `${plan.current.package}@${plan.available.version}`,
+  ], options);
 }
 
 function printPlan(plan, label) {
@@ -267,13 +336,13 @@ export function registerApplicationCliUpdate(runtime) {
     }
     const result = executeCliUpdatePlan(plan);
     if (!result.ok) {
-      const failed = { ...plan, status: 'blocked', blockingReasons: [`CLI 更新失败：${result.stderr || result.error || 'unknown error'}`], nextActions: plan.mode === 'development-checkout' && plan.strategy === 'rebase' ? ['检查 Git rebase 状态并决定继续或中止；Buildr 不会自动解决冲突。'] : ['处理安装错误后重新运行 buildr update。'] };
+      const failed = { ...plan, status: 'blocked', blockingReasons: [`CLI 更新失败：${result.stderr || result.error || 'unknown error'}`], nextActions: plan.mode === 'development' && plan.strategy === 'rebase' ? ['检查 Git rebase 状态并决定继续或中止；Buildr 不会自动解决冲突。'] : ['处理安装错误后重新运行 buildr update。'] };
       if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, failed), null, 2)}\n`);
       else printPlan(failed, 'Buildr CLI update');
       process.exitCode = 1;
       return failed;
     }
-    const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新。若用户要求完整更新 Buildr，重新解析 buildr 入口并运行 buildr sync <agent> --target <workspace>。'] };
+    const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。Workspace Node 不会随之改变。'] };
     if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, completed), null, 2)}\n`);
     else printPlan(completed, 'Buildr CLI update');
     return completed;

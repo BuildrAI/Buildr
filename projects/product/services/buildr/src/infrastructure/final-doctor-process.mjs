@@ -46,8 +46,9 @@ export function classifyFinalDoctorResult(result) {
   return { status: 'passed', code: 'doctor.passed', message: '最终 Doctor 通过。', diagnostic: '' };
 }
 
-export function runFinalDoctor({ executable, cliPath, agent, targetRoot, cwd, spawn = spawnSync }) {
-  const result = spawn(executable, [cliPath, ...finalDoctorArgs(agent, targetRoot)], {
+export function runFinalDoctor({ invocation = null, executable, cliPath, agent, targetRoot, cwd, spawn = spawnSync }) {
+  const selected = invocation || { command: executable, argsPrefix: cliPath ? [cliPath] : [] };
+  const result = spawn(selected.command, [...selected.argsPrefix, ...finalDoctorArgs(agent, targetRoot)], {
     cwd,
     encoding: 'utf8',
     maxBuffer: FINAL_DOCTOR_MAX_BUFFER,

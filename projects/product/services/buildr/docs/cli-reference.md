@@ -16,18 +16,18 @@
 ## 首次使用
 
 ```bash
-buildr web launcher install --channel release --json
+buildr installation status --json
 buildr runtime list --json
 buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <workspace> --name <name> --description <description> --profile <personal|team|company>
 ```
 
-用户要求 Agent“安装 Buildr”时，默认先安装 npm CLI，再安装当前平台 release launcher，并分别验证。`buildr web launcher install|status|uninstall` 只管理指定 launcher channel；macOS 默认安装到 `/Applications`，Windows 默认安装到当前用户的 LocalAppData Programs，`development` channel 安装为隔离的 `Buildr Web Dev`。全局安装不写 Agent runtime Skill；`init --agent` 在目标 Workspace 首次投射 Buildr Skill，`sync`/`render` 负责后续收敛。
+用户要求Agent“安装Buildr”时，只从npm Registry安装`@buildr-ai/buildr`；它包含完整CLI与`buildr web`并使用满足`engines.node`的Host Node。普通安装默认不修改Applications或Start Menu；只有用户显式执行`buildr web launcher install`才创建绑定同一npm安装的本机图形入口。全局安装不写Agent runtime Skill；`init --agent`在目标Workspace首次投射Buildr Skill，`sync`/`render`负责后续收敛。
 
 `init --agent` 是默认首次 onboarding 入口：它先初始化源资产，再复用完整 `sync` 执行 source update、产品 Buildr Skill 安装、workspace destination 投射和最终 doctor。`init`/`sync` 不隐式写用户级 Skills。
 
 Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件保存的所有权回执属于 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/` 本机控制状态，并由 `init`、`sync`、`skills render` 和 Doctor 统一维护；`/.buildr/agent-runtime/` 默认忽略 Git。旧 runtime-root 回执只作为一次性迁移输入，有效且能证明当前文件时自动迁移，冲突或漂移时零写入停止。
 
-`buildr update` 只更新 CLI 自身：开发 checkout 使用 Git 安全更新，registry package 使用 npm 更新。它不接收 `--target`，也不读取 workspace。用户要求“更新 Buildr”或“同步 Buildr”时，Agent 在 update 成功后重新解析入口，再执行 `buildr skill install <agent> --target <workspace>`，更新 CLI 与产品入口 Buildr Skill，而不扩大为 workspace sync。用户要求“更新 workspace”或“同步 workspace”时，Agent 先判断 workspace root 是否由 Git 管理：Git workspace 解析 `buildr.git-operations/v1` binding，并由 Buildr Skill 向 selected provider 提供明确 workspace、upstream 和 update operation，成功后执行 `buildr sync <agent> --target <workspace>`；非 Git workspace 直接 sync。required provider blocked 或 Git 决策点会阻止后续 sync，Agent 不自动 stash、reset、rebase、merge 或覆盖；该复合意图不先更新 CLI，且 Git 更新成功后不重复询问 sync。`buildr sync` 自身不隐式执行 Git 更新。
+`buildr update`只更新receipt证明的当前安装渠道：development checkout使用Git安全更新，npm使用同一package/prefix，platform只协调匹配架构、摘要与签名的完整installer；unknown来源fail closed。它不接收`--target`、不读取workspace，也不修改Workspace Node。用户要求“更新workspace”或“同步workspace”时，Agent先判断workspace root是否由Git管理：Git workspace解析 `buildr.git-operations/v1` binding，并向selected provider提供明确 workspace、upstream 和 update operation，成功后执行`buildr sync <agent> --target <workspace>`；非 Git workspace 直接 sync。required provider blocked或Git决策点会阻止后续sync，Agent 不自动 stash、reset、rebase、merge 或覆盖；Git更新成功后不重复询问 sync。`buildr sync`自身不隐式执行 Git 更新，只按`.buildr/workspace.yml`恢复Workspace Node与runtime assets，不更新Buildr产品渠道。
 
 ## Workspace 与资产
 
@@ -36,7 +36,8 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 | `buildr init [--agent <agent>]` | 初始化 Organization/Root，写入当前受支持 CLI 的精确 Workspace Node version 并准备受管 runtime；传入 `--agent` 时一次完成 Agent runtime 与最终 doctor。 |
 | `buildr web [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
 | `buildr web preview start|list|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview 使用 ready Task Environment 的任务验证工作区，健康后登记为动态资源，停止确认后释放；不带 Task 时保持独立 checkout preview。 |
-| `buildr web launcher install/status/uninstall` | 安装、诊断或卸载 release/development launcher；使用新 staging 验证后切换，保留 Workspace Registry 和源资产。 |
+| `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
+| `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
 | `buildr task environment plan record\|inspect <task-id>` | Agent登记或只读查看覆盖全部Task Service scope的Environment Preparation Plan；`record --input <json-file>`不执行Step。 |
@@ -57,7 +58,7 @@ Task Finish current、target lease、Carrier/resume/cleanup与compact terminal R
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
 | `buildr component list/check/install/uninstall` | 管理 workspace 级 Rules、Skills、Command collections 与声明式 Skill Contribution。 |
 | `buildr builtin list/uninstall/restore` | 查看或维护 Buildr 内置能力；required 能力不能卸载。`restore` 表示明确放弃该 Builtin 的本地修改；replacement 只接管可证明为 Buildr-managed 的 predecessor，恢复 source 后再运行 `sync <agent>` 收敛 runtime。 |
-| `buildr update [check]` | 检查或更新 Buildr CLI 自身；不维护 workspace。 |
+| `buildr update [check]` | 按installation receipt检查或更新当前npm/platform/development渠道；不维护workspace或Workspace Node。 |
 
 新 Workspace 使用 `.buildr/workspace.yml` 的 `buildr.workspace/v1` schema，并与 `skills/manifest.yml.workspaceId` 共享同一 UUID。旧 metadata 可以在 `buildr web` 中只读查看；`buildr sync <agent>` 通过同一 source transaction 显式迁移两份 Manifest，identity 冲突时零写入失败。页面修改使用 revision compare-and-swap，不自动覆盖 Agent、Git 或编辑器已经产生的外部变化。
 
@@ -82,7 +83,7 @@ Git provider evidence 使用 `buildr.git-worktree-evidence/v1`，保存在 Git c
 | 命令 | 用途 |
 |---|---|
 | `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
-| `buildr doctor` | 只读聚合 workspace、Workspace Node 声明/runtime/CLI/npm/验证环境、registries、Components 和 Commands；Node 缺失或漂移时建议运行 `sync`，不直接修复。 |
+| `buildr doctor` | 只读聚合workspace、npm/platform/development/current instance安装身份、main process runtime role、独立Workspace Node声明/runtime、registries、Components和Commands；不要求main process Node等于Workspace Node。 |
 | `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
 | `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime；不扫描或迁移旧 Task Environment 文件。 |
 | `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |

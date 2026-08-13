@@ -103,14 +103,15 @@ Use Buildr to manage this project.
 
 The Agent should complete the following initialization flow. This section is mainly for the Agent; people only need to understand the outline.
 
-**1. Prepare Node.js and Buildr CLI**
+**1. Install Buildr**
 
-Buildr supports Node.js from 24.15.0 up to, but not including, 25 (`>=24.15.0 <25`). First check the Node.js version and whether the `buildr` command is available. If a requirement is not met, ask the user before installing or upgrading. A Workspace's managed runtime uses the exact version in version-controlled metadata; this bootstrap Workspace currently pins 24.15.0:
+The npm Registry is Buildr's only formal distribution channel. Buildr uses a host Node.js from 24.15.0 up to, but not including, 25 (`>=24.15.0 <25`). The Workspace Node remains pinned by `.buildr/workspace.yml`, is used only by Workspace-owned subprocesses, and never replaces the Host Node running Buildr:
 
-- **Pre-release (currently recommended for evaluation; current candidate: `0.1.0-rc.8`)**: `npm install -g @buildr-ai/buildr@next`
+- **npm package (current pre-release candidate `0.1.0-rc.8`)**: `npm install -g @buildr-ai/buildr@next`
+- **Optional graphical entry**: after installation, explicitly run `buildr web launcher install`. It creates a local `Buildr Web.app` on macOS or Start Menu shortcut on Windows that binds to the same npm Buildr without copying Node or Buildr.
 - **Development checkout**: after the user confirms where to save it, run `git clone https://github.com/BuildrAI/Buildr.git <path>`, then use `<path>/projects/product/buildr`
 
-In the commands below, `buildr` means the selected entry point: the global command for the pre-release or `<path>/projects/product/buildr` for a development checkout.
+In the commands below, `buildr` means the globally installed npm command, or `<path>/projects/product/buildr` for a development checkout.
 
 **2. Initialize the Workspace**
 
@@ -151,14 +152,14 @@ Create a Payments Project to support online collection and refunds. The project 
 
 The first task does not need to be large. The important part is starting from a real goal rather than stopping at initialization. The Agent uses Buildr Skill to understand the goal and Buildr CLI for deterministic asset operations.
 
-Buildr is currently in pre-release. Use [GitHub Releases](https://github.com/BuildrAI/Buildr/releases) as the source of truth for versions and installation sources.
+Buildr is currently in pre-release. The npm package is published only through the [npm Registry](https://www.npmjs.com/package/@buildr-ai/buildr). GitHub Releases carry release notes but no Buildr binary assets, and GitHub Actions artifacts are not public download locations.
 
 ## Current Capabilities
 
 - One Workspace manages multiple Projects; each Project can manage multiple Services when needed
 - Unified management of Rules, Skills, Components, and Commands
 - Task records and task process information, including retrospectives
-- Local App views for Workspaces, Projects, Services, and Tasks; the experience is still being refined
+- Buildr Web views for Workspaces, Projects, Services, and Tasks; the experience is still being refined
 - Seven Agent runtime adapters: `claude-code`, `codex`, `cursor`, `qoder`, `trae`, `trae-work`, and `workbuddy`
 
 See [Known Limitations](projects/product/services/buildr/docs/known-limitations.md) for current boundaries.

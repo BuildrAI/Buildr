@@ -1,6 +1,55 @@
 import process from 'node:process';
+import fs from 'node:fs';
+import { streamRemoteText } from '../../infrastructure/network/stream-remote-text.mjs';
+
+function writeInternalDownload(file, bytes) {
+  fs.writeFileSync(file, bytes, { flag: 'wx' });
+}
+
+async function runInternalProductAction(argv) {
+  if (argv[2] !== '__internal' || process.env.BUILDR_INTERNAL_PRODUCT_REENTRY !== '1') return false;
+  const action = argv[3];
+  if (action === 'download-file') {
+    const [url, output] = argv.slice(4);
+    if (!url || !output) throw new Error('Internal download-file requires URL and output path.');
+    const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(180_000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+    writeInternalDownload(output, Buffer.from(await response.arrayBuffer()));
+    return true;
+  }
+  if (action === 'fetch-text') {
+    const [url, timeout = '10000'] = argv.slice(4);
+    if (!url) throw new Error('Internal fetch-text requires URL.');
+    const timeoutMs = Number(timeout);
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180_000) throw new Error('Internal fetch-text timeout is invalid.');
+    await streamRemoteText(url, timeoutMs);
+    return true;
+  }
+  if (action === 'task-finish-retained-cleanup') {
+    const { runRetainedTaskFinishCleanup } = await import('../internal/task-finish-retained-cleanup.mjs');
+    await runRetainedTaskFinishCleanup(argv.slice(4));
+    return true;
+  }
+  if (action === 'enroll-npm-installation') {
+    const { enrollNpmInstallationFromLifecycle } = await import('../../application/npm-installation-enrollment.mjs');
+    const result = enrollNpmInstallationFromLifecycle();
+    if (result.action === 'skipped') console.warn(`Buildr npm update authority was not enrolled: ${result.reason}.`);
+    else {
+      try {
+        const { refreshInstalledNpmLauncher } = await import('../../infrastructure/product-launcher/index.mjs');
+        const refresh = refreshInstalledNpmLauncher({ registration: { status: 'installed', entry: result.entry } });
+        if (refresh.action === 'blocked') console.warn(`Buildr Web Launcher binding was not refreshed: ${refresh.reason}.`);
+      } catch (error) {
+        console.warn(`Buildr Web Launcher binding refresh failed closed: ${error.message}. Run buildr web launcher repair from the updated npm installation.`);
+      }
+    }
+    return true;
+  }
+  throw new Error(`Unknown internal Buildr product action: ${action || '<missing>'}.`);
+}
 
 export async function runCli(argv = process.argv) {
+  if (await runInternalProductAction(argv)) return;
   const { isLightweightTaskFinishCommand, runLightweightTaskFinish } = await import('./task-finish-bootstrap.mjs');
   if (isLightweightTaskFinishCommand(argv)) return runLightweightTaskFinish(argv);
   if (process.env.BUILDR_TEST_FAIL_FULL_BOOTSTRAP === '1') throw new Error('Injected full runtime bootstrap failure.');

@@ -105,14 +105,15 @@ Buildr 管理的是长期工作资产，不直接填充模型的 context window�
 
 Agent 读到这个任务后，按以下流程完成初始化。本节主要给 Agent 看，人了解流程即可。
 
-**1. 准备 Node.js 和 Buildr CLI**
+**1. 安装 Buildr**
 
-Buildr 支持 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`）。先检查 Node.js 版本和本机是否已有 `buildr` 命令；条件不满足时，先询问用户再安装或升级。Workspace 的受管 runtime 使用受版本控制声明中的精确版本，当前自举 Workspace 固定为 24.15.0：
+Buildr 当前唯一正式分发渠道是 npm Registry，使用宿主 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`）。Workspace 受管 Node 仍由 `.buildr/workspace.yml` 精确声明，只供 Workspace-owned 子进程使用，不会替换 Buildr 主进程的 Host Node：
 
-- **预发布版（当前推荐试用，当前候选版：`0.1.0-rc.8`）**：`npm install -g @buildr-ai/buildr@next`
+- **npm package（当前预发布候选版：`0.1.0-rc.8`）**：`npm install -g @buildr-ai/buildr@next`
+- **可选图形入口**：安装完成后显式运行 `buildr web launcher install`，在 macOS 生成本机 `Buildr Web.app`，在 Windows 生成 Start Menu 快捷方式；它们只绑定并执行同一份 npm Buildr，不复制 Node 或 Buildr
 - **开发版**：让用户确认保存位置后，执行 `git clone https://github.com/BuildrAI/Buildr.git <path>`，后续使用 `<path>/projects/product/buildr`
 
-下文中的 `buildr` 表示所选入口：预发布版使用全局命令，开发版使用 `<path>/projects/product/buildr`。
+下文中的 `buildr` 表示 npm 安装的全局命令；开发版使用 `<path>/projects/product/buildr`。
 
 **2. 初始化工作空间（Workspace）**
 
@@ -153,14 +154,14 @@ Agent 会帮你确认第一项工作，并把它归入一个项目（Project）�
 
 第一项工作不需要很大；关键是让 Agent 从真实目标开始，而不是让你停在“已经初始化”这一步。Agent 通过 Buildr Skill 理解目标，通过 Buildr CLI 执行可确定的资产操作。
 
-Buildr 当前处于预发布阶段，版本和安装来源以 [GitHub Releases](https://github.com/BuildrAI/Buildr/releases) 为准。
+Buildr 当前处于预发布阶段，npm package 只以 [npm Registry](https://www.npmjs.com/package/@buildr-ai/buildr) 为正式来源。GitHub Release 只承载版本说明，不承载 Buildr 二进制资产；GitHub Actions artifact 也不是公共下载地址。
 
 ## 当前能力
 
 - 一个工作空间（Workspace）管理多个项目（Project）；每个项目可按需要管理多个服务（Service）
 - 规则、工作空间级 Skills、组件和命令等资产的统一管理；Skill 支持 user/workspace destination 与同名冲突预检
 - 任务（Task）及其过程信息管理，包括任务复盘
-- Local App：查看和管理工作空间、项目、服务与任务等信息；当前仍在持续完善
+- Buildr Web：查看和管理工作空间、项目、服务与任务等信息；当前仍在持续完善
 - 支持 7 个 Agent runtime adapter（claude-code、codex、cursor、qoder、trae、trae-work、workbuddy）
 
 详细边界见[已知限制](projects/product/services/buildr/docs/known-limitations.md)。

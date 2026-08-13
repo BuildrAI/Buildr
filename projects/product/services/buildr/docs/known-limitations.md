@@ -3,8 +3,8 @@
 - 当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy` runtime adapter；目标路径与兼容证据来源见 [Agent Runtime Adapters](agent-runtime-adapters.md)。自动 contract/parity 覆盖 Buildr 的投射和维护边界，但不证明目标 Agent 已在当前版本、workspace 或会话加载文件。
 - TRAE Work 依赖桌面 Rules import toggle，WorkBuddy 依赖 `CODEBUDDY.md` 中的 imperative reference bridge；checker 报告 projection、environment probe 和 activation guidance，不把缺少真实 Agent marker smoke 作为当前 workspace 故障。Buildr 暂不维护品牌 smoke 状态或历史通过快照。
 - runtime trait catalog 只降低新增 adapter 的重复实现；它不会把尚未独立验证五项 capabilities 的 Agent 自动视为 supported。
-- CLI 支持 Node.js 24.15.0 至 25 之前的版本（`>=24.15.0 <25`），以使用已经验证的内置 `node:sqlite`、进程和文件系统语义。Workspace 继续声明并使用精确受管 Node 版本；低于 24.15.0 或尚未独立适配验证的未来主版本不能作为 bootstrap 或产品 runtime。
-- Buildr Web 当前是浏览器中的本机 Web 界面，不提供 Desktop WebView、菜单栏、登录启动、静默自动更新或系统通知。macOS 与 Windows Buildr Web Launcher 只启动/复用随机 loopback 端口上的 Buildr Web Runtime 并打开默认浏览器；Linux 首批使用 CLI。官方签名、公证和 Windows SmartScreen 交付仍需在发布阶段单独启用与验证。
+- npm Host Node支持24.15.0至25之前的版本（`>=24.15.0 <25`）；Workspace继续声明并使用精确、独立的受管Node。两者版本相同也不合并identity或生命周期，未来主版本升级需分别验证。
+- Buildr Web当前是浏览器中的本机Web界面，不提供Desktop WebView、菜单栏、登录启动、静默自动更新或系统通知。macOS/Windows图形入口只是用户本机显式生成的thin wrapper/shortcut，依赖同一npm安装和Host Node；当前不发布SEA、PKG、MSI、DMG或Setup EXE，也不承诺无Node安装。
 - Buildr Web 不扫描磁盘或跨 Workspace 聚合资源；用户显式登记 root，关闭浏览器不等于退出，必须使用页面“退出 Buildr”或终止进程。Buildr App 为未来桌面产品保留，当前未实现。
 - Component 只支持 workspace scope；没有 Project/Service Component、远程 registry、依赖求解或可执行 Hook。
 - Buildr Local 使用文件系统/Git保存portable工作资产，并在每个Workspace的本地SQLite中保存适合索引、关系、聚合和事务的structured data。SQLite文件不提交、不同步，也不提供多人并发协作；未来组织协作需要独立的Buildr Server/Cloud authority。

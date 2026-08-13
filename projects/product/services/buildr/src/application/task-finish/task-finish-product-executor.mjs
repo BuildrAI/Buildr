@@ -171,13 +171,13 @@ async function cleanupThroughRetainedController(runtime, context, run, deliverie
     };
   }
   const invocation = context.controllerInvocation;
-  if (!invocation?.command || !invocation?.sourceRoot) return { payload: null, observation: null };
-  const bootstrap = path.join(invocation.sourceRoot, 'src', 'interfaces', 'internal', 'task-finish-retained-cleanup.mjs');
+  if (!invocation?.command || !Array.isArray(invocation.argsPrefix)) return { payload: null, observation: null };
   const executed = runJsonCommand('cleanup-retained-environment-manager', invocation.command, [
-    bootstrap,
+    ...invocation.argsPrefix,
+    '__internal', 'task-finish-retained-cleanup',
     '--run', run.runId,
     '--target', run.identity.workspaceRoot,
-  ], run.identity.workspaceRoot);
+  ], run.identity.workspaceRoot, { env: { ...process.env, BUILDR_INTERNAL_PRODUCT_REENTRY: '1' } });
   return { payload: executed.payload, observation: executed.observation, result: executed.result };
 }
 

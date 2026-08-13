@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { buildApplicationPayload } from '../../scripts/release/application-payload.mjs';
 import { createReleaseArtifact, readReleaseArtifact } from '../../scripts/release/release-artifact.mjs';
 import { inspectCandidatePaths } from '../../test/verification/release/open-source-candidate.mjs';
 import { readSharedCandidatePackage } from '../../test/verification/release/candidate-package.mjs';
@@ -46,15 +47,17 @@ test('shared candidate package requires a matching immutable tarball and metadat
   }
 });
 
-test('release artifact preparation packs once and detects mutated bytes', () => {
+test('release artifact preparation packs once and detects mutated bytes', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-artifact-'));
   try {
-    const artifact = createReleaseArtifact(serviceRoot, root);
+    const payload = await buildApplicationPayload(path.join(root, 'payload'), '0'.repeat(40));
+    const artifact = createReleaseArtifact(payload.root, path.join(root, 'artifact'));
     assert.equal(artifact.manifest.schemaVersion, 'buildr.release-artifact/v1');
     assert.equal(artifact.manifest.packageName, '@buildr-ai/buildr');
     assert.equal(artifact.manifest.version.length > 0, true);
     assert.match(artifact.manifest.sha256, /^[a-f0-9]{64}$/);
     assert.match(artifact.manifest.integrity, /^sha512-/);
+    assert.equal(artifact.manifest.applicationPayloadDigest, payload.manifest.applicationPayloadDigest);
     assert.equal(artifact.manifest.inventory.some((entry) => entry.path === 'package.json'), true);
     assert.equal(readReleaseArtifact(artifact.manifestPath).tarball, artifact.tarball);
 

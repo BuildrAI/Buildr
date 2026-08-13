@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 
 import {
   inspectCandidateFile,
@@ -45,7 +46,17 @@ test('open-source metadata and tarball contracts enforce public identity and inv
   };
   assert.deepEqual(inspectPackageMetadata(valid), []);
   assert.equal(inspectPackageMetadata({ ...valid, name: '@wrong/buildr' })[0].rule, 'package.identity');
-  const files = ['LICENSE', 'README.md', 'package.json', 'bin/buildr.mjs', 'package/manifest.yml'].map((path) => ({ path }));
+  const files = [
+    'LICENSE',
+    'README.md',
+    'package.json',
+    'bin/buildr.mjs',
+    'application-payload.json',
+    'installation-origin.json',
+    'runtime/buildr.cjs',
+    'payload/product/package/manifest.yml',
+    'payload/product/src/interfaces/local-app/web-dist/index.html',
+  ].map((path) => ({ path }));
   assert.deepEqual(inspectTarballFiles(files), []);
   assert.equal(inspectTarballFiles([...files, { path: 'openspec/spec.md' }]).at(-1).rule, 'tarball.forbidden');
   assert.equal(inspectTarballFiles([...files, { path: 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs' }]).at(-1).rule, 'tarball.self-bootstrap-runner');
@@ -192,6 +203,15 @@ test('GitHub Release ensure reuses an exact release and fails closed on drift', 
     ensureGitHubRelease(expected, { token: 'fixture', fetchImpl: async () => drifted.shift() }),
     /body does not match/,
   );
+
+  const binaryAsset = [
+    { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 200, async json() { return { ...release, assets: [{ name: 'buildr.pkg' }] }; } },
+  ];
+  await assert.rejects(
+    ensureGitHubRelease(expected, { token: 'fixture', fetchImpl: async () => binaryAsset.shift() }),
+    /must not contain binary Assets/,
+  );
 });
 
 test('GitHub Release ensure creates only a missing release', async () => {
@@ -201,6 +221,7 @@ test('GitHub Release ensure creates only a missing release', async () => {
   const requests = [];
   const responses = [
     { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 404 },
     { status: 404 },
     { status: 201, async json() { return { tag_name: expected.tag, name: expected.title, body: expected.body, draft: false, prerelease: false }; } },
     { status: 200, async json() { return { tag_name: expected.tag }; } },
@@ -216,12 +237,62 @@ test('GitHub Release ensure creates only a missing release', async () => {
   assert.equal(requests.filter((request) => request.method === 'POST').length, 1);
 });
 
+test('GitHub Release metadata preflight is read-only for missing state and fails closed on drift', async () => {
+  const expected = {
+    repository: 'BuildrAI/Buildr', tag: 'v0.1.0', title: 'v0.1.0', body: 'stable\n', prerelease: false, targetCommit: 'commit-sha',
+  };
+  const requests = [];
+  const missingResponses = [
+    { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 404 },
+    { status: 404 },
+  ];
+  const missing = await ensureGitHubRelease(expected, {
+    token: 'fixture', mode: 'preflight',
+    fetchImpl: async (url, options) => { requests.push({ url, method: options.method }); return missingResponses.shift(); },
+  });
+  assert.equal(missing.action, 'release-missing');
+  assert.equal(missing.mutation, false);
+  assert.equal(requests.every((request) => request.method === 'GET'), true);
+
+  const newerLatest = [
+    { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 404 },
+    { status: 200, async json() { return { tag_name: 'v0.2.0' }; } },
+  ];
+  await assert.rejects(ensureGitHubRelease(expected, {
+    token: 'fixture', mode: 'preflight', fetchImpl: async () => newerLatest.shift(),
+  }), /cannot replace existing Latest v0\.2\.0/);
+
+  const driftResponses = [
+    { status: 200, async json() { return { object: { type: 'commit', sha: 'commit-sha' } }; } },
+    { status: 200, async json() { return { tag_name: expected.tag, name: 'drift', body: expected.body, draft: false, prerelease: false }; } },
+  ];
+  await assert.rejects(ensureGitHubRelease(expected, {
+    token: 'fixture', mode: 'preflight', fetchImpl: async () => driftResponses.shift(),
+  }), /title does not match/);
+});
+
 test('release contract maps prerelease to next and stable to latest', () => {
   assert.deepEqual(resolveReleaseContract('0.1.0-rc.1', 'v0.1.0-rc.1'), {
     version: '0.1.0-rc.1', refName: 'v0.1.0-rc.1', npmTag: 'next', prerelease: true,
   });
   assert.equal(resolveReleaseContract('0.1.0', 'v0.1.0').npmTag, 'latest');
   assert.throws(() => resolveReleaseContract('0.1.0', 'v0.1.1'), /does not match/);
+  const formal = resolveReleaseContract('0.1.0', 'v0.1.0', {
+    sourceCommit: 'a'.repeat(40),
+    protocolIdentity: 'buildr.web-protocol/v1',
+    enginesNode: '>=24.15.0 <25',
+    releaseNotes: 'notes\n',
+  });
+  assert.equal(formal.schemaVersion, 'buildr.release-contract/v2');
+  assert.deepEqual(formal.distribution, {
+    channel: 'npm', registry: 'https://registry.npmjs.org/', package: '@buildr-ai/buildr',
+  });
+  assert.equal(formal.github.binaryAssets, false);
+  for (const retired of ['productNodeVersion', 'platformTargets', 'generation', 'previousPlatformRelease']) {
+    assert.equal(Object.hasOwn(formal, retired), false, retired);
+  }
 });
 
 test('release notes extract the exact target changelog section', () => {
@@ -274,54 +345,75 @@ test('release notes fail closed for missing, duplicate, or empty target sections
   );
 });
 
-test('publish workflow is tag-gated, pack-once, recoverable, OIDC-ready, and npm-token-free', () => {
+test('publish workflow is tag-gated, npm-only, byte-stable, recoverable, OIDC-ready, and npm-token-free', () => {
   const workflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
+  const parsed = YAML.parseDocument(workflow, { uniqueKeys: true });
+  assert.deepEqual(parsed.errors, [], parsed.errors.map((error) => error.message).join('\n'));
   for (const required of [
-    'tags:', 'id-token: write', 'environment: npm-production', 'release-contract.mjs',
-    'release-notes.mjs', 'release-artifact.mjs', 'registry-version-state.mjs',
-    "steps.registry_before.outputs.published != 'true'", 'npm publish "${{ steps.artifact.outputs.tarball }}"',
-    'github-release-ensure.mjs', 'BUILDR_RELEASE_ARTIFACT_MANIFEST',
-    'BUILDR_RELEASE_PACKAGE_SPEC', '--manifest', '--require-published', '--wait',
-    'release-artifact-${{ github.ref_name }}', 'release-verification-diagnostics-${{ github.ref_name }}',
+    'tags:', 'id-token: write', 'environment: npm-production',
+    'release-contract.mjs', 'release-notes.mjs', 'application-payload.mjs build',
+    'release-artifact.mjs',
+    'registry-version-state.mjs', "steps.registry_before.outputs.published != 'true'",
+    'npm publish "$(find "${RUNNER_TEMP}/candidate/npm"', 'github-release-ensure.mjs',
+    'github-release-ensure.mjs preflight',
+    'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC',
+    '--manifest', '--require-published', '--wait', 'macos-15', 'windows-2025',
+    'contract:', 'candidate:', 'host-node:', 'launcher:', 'publish:',
+    'name: npm-candidate-${{ github.ref_name }}',
   ]) assert.equal(workflow.includes(required), true, required);
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
   assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);
   assert.equal(workflow.includes('./scripts/verify-buildr-product'), false);
   assert.equal(workflow.includes('gh release create'), false);
+  for (const retired of [
+    'environment: platform-production', 'node-distribution.mjs', 'sea-build.mjs',
+    'build-pkg.mjs', 'build-msi.mjs', 'release-manifest.mjs',
+    'github-release-asset-ensure.mjs', 'public-release-readback.mjs',
+    '.pkg', '.msi', 'postject', 'codesign', 'notar', 'signtool',
+  ]) assert.equal(workflow.includes(retired), false, retired);
   assert.equal((workflow.match(/npm publish/g) || []).length, 1);
-  assert.equal((workflow.match(/release-artifact\.mjs/g) || []).length, 1);
-  assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 2);
-  const releaseNotes = workflow.indexOf('Generate GitHub release notes');
-  const artifact = workflow.indexOf('Prepare immutable release artifact');
-  const prepublishSmoke = workflow.indexOf('Smoke immutable release artifact before publish');
-  const registryCheck = workflow.indexOf('Check official registry artifact');
-  const npmPublish = workflow.indexOf('Publish public npm package');
-  const registryConfirm = workflow.indexOf('Confirm official registry artifact and dist-tag');
-  const releaseEnsure = workflow.indexOf('Ensure GitHub release');
-  const postpublishSmoke = workflow.indexOf('Smoke exact package from official registry');
-  assert.equal(releaseNotes < artifact, true);
-  assert.equal(artifact < prepublishSmoke, true);
-  assert.equal(prepublishSmoke < registryCheck, true);
-  assert.equal(releaseNotes < registryCheck, true);
+  assert.equal((workflow.match(/node scripts\/release\/release-artifact\.mjs/g) || []).length, 1);
+  assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 3);
+  assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 1);
+  assert.equal(workflow.includes('npm-candidate-${{ github.ref_name }}-${{ github.run_attempt }}'), false);
+  assert.equal(workflow.includes('Validate restored bytes or declare the candidate missing'), true);
+  const contract = workflow.indexOf('\n  contract:');
+  const candidate = workflow.indexOf('\n  candidate:');
+  const hostNode = workflow.indexOf('\n  host-node:');
+  const launcher = workflow.indexOf('\n  launcher:');
+  const publish = workflow.indexOf('\n  publish:');
+  const registryCheck = workflow.indexOf('Check official Registry artifact');
+  const metadataPreflight = workflow.indexOf('Preflight GitHub Release metadata without assets or mutation');
+  const npmPublish = workflow.indexOf('Publish the frozen npm tarball');
+  const registryConfirm = workflow.indexOf('Confirm official Registry integrity and dist-tag');
+  const releaseEnsure = workflow.indexOf('Ensure GitHub Release notes without binary Assets');
+  assert.equal(contract < candidate, true);
+  assert.equal(candidate < hostNode, true);
+  assert.equal(hostNode < launcher, true);
+  assert.equal(launcher < publish, true);
+  assert.equal(metadataPreflight < registryCheck, true);
   assert.equal(registryCheck < npmPublish, true);
   assert.equal(npmPublish < registryConfirm, true);
   assert.equal(registryConfirm < releaseEnsure, true);
-  assert.equal(releaseEnsure < postpublishSmoke, true);
 });
 
 test('CI and publish workflows use the supported Node runtime', () => {
   const verifyWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8');
   const publishWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
+  const hostNodeSmoke = fs.readFileSync(path.join(serviceRoot, 'test/verification/host-node/cli-smoke.mjs'), 'utf8');
   assert.match(verifyWorkflow, /node: \[24\.15\.0, 24\.x\]/, 'Windows PR preflight must retain both supported Node representatives');
   assert.match(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
-  assert.match(verifyWorkflow, /group:windows-platform-preflight/);
+  assert.match(verifyWorkflow, /group:windows-npm-preflight/);
   assert.match(verifyWorkflow, /github\.base_ref == 'dev'/);
   assert.match(verifyWorkflow, /github\.base_ref == 'main'/);
   assert.match(verifyWorkflow, /github\.head_ref == 'dev'/);
   assert.doesNotMatch(verifyWorkflow, /^  release-smoke:/m);
   assert.equal((verifyWorkflow.match(/npm run test:candidate/g) || []).length, 1);
   assert.equal((verifyWorkflow.match(/npm run test:host-node/g) || []).length, 2);
+  assert.match(hostNodeSmoke, /verifyWorkspaceOwnedRuntime/);
+  assert.match(hostNodeSmoke, /expectedMainRole: 'host'/);
+  assert.match(hostNodeSmoke, /expectedChannel: 'npm'/);
   assert.match(verifyWorkflow, /^  managed-runtime-candidate:/m);
   assert.match(verifyWorkflow, /^  current-host-node:/m);
   assert.match(verifyWorkflow, /node-version: 24\.15\.0/);

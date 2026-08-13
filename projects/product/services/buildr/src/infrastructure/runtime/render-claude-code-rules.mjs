@@ -438,22 +438,3 @@ export function renderClaudeCodeRules(argv, options = {}) {
     warnings: rendered.discovery.warnings,
   };
 }
-
-function main() {
-  const { targetRoot, actions, warnings } = renderClaudeCodeRules(process.argv.slice(2), {
-    command: 'node src/infrastructure/runtime/render-claude-code-rules.mjs',
-  });
-  for (const warning of warnings) console.error(`Warning: ${warning}`);
-  for (const item of actions) {
-    console.log(`${item.action} ${toPosixRelative(targetRoot, item.targetFile)}`);
-  }
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    main();
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
-  }
-}

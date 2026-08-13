@@ -41,53 +41,6 @@ Buildr MUST 提供可在本地和 CI 重复运行的开源候选 verifier，扫�
 - **THEN** verifier MUST 返回非零状态
 - **AND** 诊断 MUST 包含规则、相对路径和可执行的修复方向，且 MUST NOT 回显 secret 全文
 
-### Requirement: Release workflow 必须按版本和渠道受控发布
-Buildr MUST 提供 tag 驱动、GitHub-hosted、Environment 审批且 OIDC-ready 的 release workflow，并 MUST 在发布前校验候选来源、版本、main/dev 收敛、dist-tag 和 tarball；发布成功后的远端 release task 分支清理 MUST 以稳定发布事实和用户明确授权为前提。
-
-#### Scenario: 发布 prerelease tag
-- **WHEN** `v<version>` tag 对应的 package version 包含 prerelease 标识
-- **THEN** workflow MUST 使用 `next` dist-tag
-- **AND** workflow MUST 在 `npm-production` Environment 中执行完整验证和公开候选检查后才允许 publish
-
-#### Scenario: 发布稳定 tag
-- **WHEN** `v<version>` tag 对应稳定 package version
-- **THEN** workflow MUST 使用 `latest` dist-tag
-- **AND** tag version MUST 与 package version 完全一致
-- **AND** workflow MUST NOT 从长期 npm publish token 获得默认写权限
-
-#### Scenario: 第一阶段只准备发布能力
-- **WHEN** 本 change 完成并集成内部 `dev`
-- **THEN** Buildr MUST NOT 因此自动推送公开 GitHub、创建 release tag 或执行 npm publish
-- **AND** 外部发布 MUST 等待后续显式授权和账号侧配置完成
-
-#### Scenario: 候选必须来自最新 dev
-- **WHEN** 维护者准备目标版本 release candidate
-- **THEN** release task MUST 记录准备时的 `origin/dev` commit 并从该基线形成候选
-- **AND** 版本与发布材料提交 MUST 先通过 task finish 集成并推送到 `dev`
-- **AND** 如需排除已有 dev 内容，维护者 MUST 先通过独立 change 在 dev 撤销，不得从旧 ancestor 直接发布
-
-#### Scenario: main 合入前验证 dev 候选
-- **WHEN** release task 准备创建 `dev` 到 `main` 的发布 PR
-- **THEN** convergence gate MUST 证明 `origin/dev` 的 package version 和 tree 等于已验证候选
-- **AND** release task branch 无法 fast-forward 集成 dev 时 MUST 停止发布准备
-
-#### Scenario: main 合入后验证历史收敛
-- **WHEN** 发布 PR 已 squash merge 到 `main`
-- **THEN** convergence gate MUST 证明 `origin/main` 与 `origin/dev` tree 等于已验证候选
-- **AND** history bridge 后 `origin/main` MUST 是 `origin/dev` 的 ancestor
-- **AND** 任一 ref、tree、version 或 release task 状态不一致时 MUST 在创建 tag 前停止
-
-#### Scenario: 发布完成后清理 release task 分支
-- **WHEN** 目标 tag、npm 版本与 dist-tag、GitHub Release 和安装 smoke 均已验证成功，且远端存在 `tasks/release-<version>`
-- **THEN** Agent MUST 展示待删除 ref、commit 和稳定发布证据
-- **AND** Agent MUST 在用户明确授权后才删除该远端分支
-- **AND** 删除后 MUST 重新查询远端并确认 ref 不存在
-
-#### Scenario: 未授权或清理失败
-- **WHEN** 用户未授权删除、远端查询不可用或分支删除失败
-- **THEN** Agent MUST 保留该远端分支并报告清理 follow-up
-- **AND** Agent MUST NOT 把清理失败解释为目标版本发布失败或重做 tag、npm publish、GitHub Release 的理由
-
 ### Requirement: GitHub Release 必须使用匹配版本的 changelog
 Buildr MUST 将根 `CHANGELOG.md` 中与目标 package version 精确匹配的版本章节作为 GitHub Release 的具体发布说明来源，并 MUST 在 npm publish 前完成提取和校验。
 
@@ -114,3 +67,42 @@ Buildr MUST 将根 `CHANGELOG.md` 中与目标 package version 精确匹配的�
 - **THEN** workflow MUST 使用预先生成的 notes file
 - **AND** workflow MUST 校验远端 tag 已存在
 - **AND** GitHub Release MUST NOT 标记为 prerelease
+
+### Requirement: Release workflow 必须只发布 npm package
+Buildr release workflow MUST 只将唯一 `@buildr-ai/buildr` tarball 发布到 npm Registry。Workflow MUST 从 tag、package version、source commit、dist-tag 与 release notes 解析唯一 release contract，只执行一次 application payload build 和一次 `npm pack`，并让 smoke、protected publish 与 Registry integrity readback 消费同一 tarball bytes。GitHub Release MAY 承载 tag notes metadata，但 MUST NOT 上传 npm tarball、Launcher、SEA、PKG/MSI、platform manifest 或 checksums。
+
+#### Scenario: 可逆验证先于 npm publish
+- **WHEN** tag workflow 准备发布
+- **THEN** npm inventory、Host Node CLI/Web、Launcher lifecycle、package identity、integrity 与 release notes checks MUST 在 `npm publish` 前全部通过
+- **AND** 任一失败 MUST 阻止不可逆发布
+
+#### Scenario: 发布并回读同一 tarball
+- **WHEN** protected npm publish 获得授权
+- **THEN** workflow MUST 发布已冻结 tarball，并从官方 Registry 读取精确 version/integrity 后重新安装 smoke
+- **AND** MUST NOT重新 pack、切换本地 publish 或把 Actions artifact 作为公共下载地址
+
+### Requirement: 正式 Buildr bytes 必须只由 npm Registry 承载
+Buildr 当前正式产品 bytes MUST 只通过 npm Registry 的 `@buildr-ai/buildr` package 分发。官网、README 与安装说明 MUST 只指向 npm installation；本机 `.app` 或 Start Menu shortcut MUST 由用户显式运行已安装 Buildr 生成，不得作为下载资产、GitHub Release Asset 或第二份 binary 保存。
+
+#### Scenario: 获取正式 Buildr
+- **WHEN** 用户查找正式安装方式
+- **THEN** 文档 MUST 提供 `npm install -g @buildr-ai/buildr` 与兼容 Node 要求
+- **AND** MUST NOT 提供 `.pkg`、`.msi`、SEA 或 Actions artifact 下载链接
+
+#### Scenario: 获取图形入口
+- **WHEN** npm 用户需要图形入口
+- **THEN** 文档 MUST 指引显式执行 `buildr web launcher install`
+- **AND** 生成的本机投射 MUST NOT 上传到 Registry、GitHub Release、官网或另一个 binary store
+
+### Requirement: GitHub Release metadata 必须可恢复且禁止 binary Assets
+GitHub Release metadata MUST 继续与 tag、target commit、version、notes 和 prerelease/Latest 语义一致，但当前 release workflow MUST NOT 创建或 ensure 正式 binary Assets。npm Registry 的已发布 version/integrity 是唯一 product-byte recovery authority；同 version 已存在且 integrity 相同时 MUST 复用，漂移时 MUST 停止且不得覆盖。
+
+#### Scenario: 重跑缺少 npm publish 的 tag workflow
+- **WHEN** tag metadata 已存在但 npm version 尚不存在
+- **THEN** workflow MUST 复用冻结 tarball并只补齐 npm publish/readback
+- **AND** MUST NOT 创建平台 Assets 或重建 tarball
+
+#### Scenario: npm version 已存在
+- **WHEN** Registry 已存在相同 version
+- **THEN** workflow MUST 比较 package、version 与 integrity；完全相同时复用并继续 readback，任何不一致时停止
+- **AND** MUST NOT unpublish、覆盖或发布第二份 bytes

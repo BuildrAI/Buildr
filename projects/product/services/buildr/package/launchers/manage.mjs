@@ -6,9 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import YAML from 'yaml';
 import { buildLauncher } from './build.mjs';
-import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 const PRODUCT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -35,16 +33,19 @@ function nodeVersion(executable) {
 function developmentRuntime(runtime) {
   const workspaceRoot = findWorkspaceRoot();
   if (!workspaceRoot) throw new Error('Development launcher requires a Buildr Workspace. Run it from the Workspace checkout and retry.');
-  let workspace;
-  try { workspace = YAML.parse(fs.readFileSync(path.join(workspaceRoot, '.buildr', 'workspace.yml'), 'utf8')); } catch (error) { throw new Error(`Development launcher cannot read Workspace metadata: ${error.message}`); }
-  const version = workspace?.runtime?.node?.version;
-  if (!version) throw new Error('Development launcher requires Workspace Node identity. Run buildr sync before installing the launcher.');
-  const managed = workspaceNodeRuntimePaths(version).node;
   const provided = path.resolve(runtime);
-  const candidates = [managed, provided].filter((candidate, index, all) => all.indexOf(candidate) === index);
-  const executable = candidates.find((candidate) => fs.existsSync(candidate) && nodeVersion(candidate) === version);
-  if (!executable) throw new Error(`Workspace Node runtime ${version} is unavailable. Run buildr sync <agent> --target ${workspaceRoot}, then reinstall the Development launcher.`);
-  return { workspaceRoot, version, executable, source: executable === managed ? 'workspace-managed' : 'workspace-cli' };
+  const version = nodeVersion(provided);
+  if (!version || !/^24\.(?:1[5-9]|[2-9]\d)\./.test(version)) throw new Error(`Development host Node is missing or incompatible: ${provided}. Use Node >=24.15.0 <25 and reinstall the launcher.`);
+  return {
+    workspaceRoot,
+    version,
+    executable: provided,
+    source: 'development-host',
+    identity: `development-host:${fs.realpathSync(provided)}:${version}`,
+  };
+}
+function assertDevelopmentChannel(channel) {
+  if (channel !== 'development') throw new Error('Formal npm Buildr Web Launcher is managed only by `buildr web launcher`; package/launchers manages development only.');
 }
 function appName(channel) { return channel === 'development' ? 'Buildr Web Dev' : 'Buildr Web'; }
 function legacyAppName(channel) { return channel === 'development' ? 'Buildr Dev' : 'Buildr'; }
@@ -88,25 +89,18 @@ function ownedLauncher(target, platform, channel) {
   };
 }
 function buildIdentity(platform, channel) {
+  assertDevelopmentChannel(channel);
   const checkout = checkoutIdentity();
-  const identity = { schemaVersion: 'buildr.launcher-identity/v1', version: packageVersion(), channel, source: channel === 'development' ? 'checkout' : 'package', buildId: channel === 'development' ? `${checkout.head.slice(0, 12)}-${checkout.fingerprint}` : packageVersion(), buildNumber: String(Date.now()), protocolVersion: 1, platform, builtAt: new Date().toISOString(), checkout };
-  if (channel === 'development') {
-    const runtime = developmentRuntime(process.execPath);
-    return { ...identity, sourceRoot: PRODUCT_ROOT, workspaceRoot: runtime.workspaceRoot, nodeRuntime: { executable: runtime.executable, version: runtime.version, source: runtime.source } };
-  }
-  return identity;
+  const identity = { schemaVersion: 'buildr.launcher-identity/v1', version: packageVersion(), channel, source: 'checkout', buildId: `${checkout.head.slice(0, 12)}-${checkout.fingerprint}`, buildNumber: String(Date.now()), protocolVersion: 1, platform, builtAt: new Date().toISOString(), checkout };
+  const runtime = developmentRuntime(process.execPath);
+  return { ...identity, sourceRoot: PRODUCT_ROOT, workspaceRoot: runtime.workspaceRoot, developmentRuntime: { executable: runtime.executable, version: runtime.version, source: runtime.source, identity: runtime.identity }, workspaceNode: null };
 }
 function validateBundle(bundle, platform, expected) {
   const actual = readIdentity(bundle, platform);
   if (!actual || actual.buildId !== expected.buildId || actual.channel !== expected.channel) throw new Error('Staged launcher identity validation failed.');
-  if (expected.channel === 'development') {
-    if (!sameFilesystemPath(actual.sourceRoot, expected.sourceRoot) || !sameFilesystemPath(actual.nodeRuntime?.executable, expected.nodeRuntime?.executable) || actual.nodeRuntime?.version !== expected.nodeRuntime?.version) throw new Error('Staged Development launcher checkout/runtime identity validation failed.');
-    if (!fs.existsSync(actual.sourceRoot) || !fs.existsSync(path.join(actual.sourceRoot, 'bin', 'buildr.mjs')) || !fs.existsSync(path.join(actual.sourceRoot, 'package.json')) || !fs.existsSync(path.join(actual.sourceRoot, 'src')) || !fs.existsSync(path.join(actual.sourceRoot, 'package'))) throw new Error('Staged Development launcher checkout is missing.');
-    if (!fs.existsSync(actual.nodeRuntime.executable)) throw new Error('Staged Development launcher Workspace Node runtime is missing.');
-  } else {
-    const runtime = platform === 'darwin' ? path.join(bundle, 'Contents', 'MacOS', 'node') : path.join(bundle, 'runtime', 'node.exe');
-    if (!fs.existsSync(runtime)) throw new Error('Staged launcher runtime is missing.');
-  }
+  if (!sameFilesystemPath(actual.sourceRoot, expected.sourceRoot) || !sameFilesystemPath(actual.developmentRuntime?.executable, expected.developmentRuntime?.executable) || actual.developmentRuntime?.version !== expected.developmentRuntime?.version || actual.developmentRuntime?.identity !== expected.developmentRuntime?.identity) throw new Error('Staged Development launcher checkout/development runtime identity validation failed.');
+  if (!fs.existsSync(actual.sourceRoot) || !fs.existsSync(path.join(actual.sourceRoot, 'bin', 'buildr.mjs')) || !fs.existsSync(path.join(actual.sourceRoot, 'package.json')) || !fs.existsSync(path.join(actual.sourceRoot, 'src')) || !fs.existsSync(path.join(actual.sourceRoot, 'package'))) throw new Error('Staged Development launcher checkout is missing.');
+  if (!fs.existsSync(actual.developmentRuntime.executable)) throw new Error('Staged Development launcher host runtime is missing.');
   return actual;
 }
 function launcherDiagnostics(identity) {
@@ -115,9 +109,9 @@ function launcherDiagnostics(identity) {
   if (!identity.sourceRoot || !path.isAbsolute(identity.sourceRoot) || !fs.existsSync(identity.sourceRoot)) findings.push({ code: 'development.source_missing', message: `Buildr checkout 不存在：${identity.sourceRoot || 'unknown'}`, suggestion: '重新运行 buildr web launcher install --channel development。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'bin', 'buildr.mjs'))) findings.push({ code: 'development.cli_missing', message: `Buildr CLI 不存在：${path.join(identity.sourceRoot, 'bin', 'buildr.mjs')}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'package.json')) || !fs.existsSync(path.join(identity.sourceRoot, 'src')) || !fs.existsSync(path.join(identity.sourceRoot, 'package'))) findings.push({ code: 'development.checkout_invalid', message: `Buildr Service checkout 不完整：${identity.sourceRoot}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });
-  const executable = identity.nodeRuntime?.executable;
-  if (!executable || !fs.existsSync(executable)) findings.push({ code: 'development.node_missing', message: `Workspace Node 不存在：${executable || 'unknown'}`, suggestion: '运行 buildr sync 后重新安装 launcher。' });
-  else if (nodeVersion(executable) !== identity.nodeRuntime.version) findings.push({ code: 'development.node_version_mismatch', message: `Workspace Node 版本不匹配：${executable}`, suggestion: '运行 buildr sync 后重新安装 launcher。' });
+  const executable = identity.developmentRuntime?.executable;
+  if (!executable || !fs.existsSync(executable)) findings.push({ code: 'development.node_missing', message: `Development host Node 不存在：${executable || 'unknown'}`, suggestion: '使用兼容 development host Node 重新安装 launcher。' });
+  else if (nodeVersion(executable) !== identity.developmentRuntime.version) findings.push({ code: 'development.node_version_mismatch', message: `Development host Node 版本不匹配：${executable}`, suggestion: '使用 identity 绑定的 development host Node 重新安装 launcher。' });
   return findings;
 }
 async function stopOwnedInstance({ waitMs = 3000, channel, failOnUnknown = false } = {}) {
@@ -190,7 +184,8 @@ function removeOwnedShortcut(observation, removed, preserved) {
   fs.rmSync(observation.target, { force: true });
   removed.push(observation.target);
 }
-export function launcherStatus({ platform = process.platform, channel = 'release', installRoot } = {}) {
+export function launcherStatus({ platform = process.platform, channel = 'development', installRoot } = {}) {
+  assertDevelopmentChannel(channel);
   const target = targetPath(platform, channel, installRoot);
   const legacyTarget = legacyTargetPath(platform, channel, installRoot);
   const instance = runningInstance();
@@ -210,7 +205,8 @@ export function launcherStatus({ platform = process.platform, channel = 'release
     runningInstance: instance ? { url: instance.url, pid: instance.pid, launcherIdentity: instance.launcherIdentity ?? null } : null,
   };
 }
-export async function installLauncher({ platform = process.platform, channel = 'release', installRoot, runtime = process.execPath, stopInstance = true } = {}) {
+export async function installLauncher({ platform = process.platform, channel = 'development', installRoot, runtime = process.execPath, stopInstance = true } = {}) {
+  assertDevelopmentChannel(channel);
   if (!['darwin', 'win32'].includes(platform)) throw new Error(`Unsupported launcher platform: ${platform}`);
   const target = targetPath(platform, channel, installRoot);
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -261,7 +257,8 @@ export async function installLauncher({ platform = process.platform, channel = '
     };
   } finally { fs.rmSync(staging, { recursive: true, force: true }); }
 }
-export async function uninstallLauncher({ platform = process.platform, channel = 'release', installRoot } = {}) {
+export async function uninstallLauncher({ platform = process.platform, channel = 'development', installRoot } = {}) {
+  assertDevelopmentChannel(channel);
   const target = targetPath(platform, channel, installRoot);
   const legacyTarget = legacyTargetPath(platform, channel, installRoot);
   const current = ownedLauncher(target, platform, channel);
@@ -293,7 +290,7 @@ export async function uninstallLauncher({ platform = process.platform, channel =
 async function main(args = process.argv.slice(2)) {
   const action = args[0] || 'status';
   const value = (name, fallback) => { const i = args.indexOf(name); return i === -1 ? fallback : args[i + 1]; };
-  const options = { platform: value('--platform', process.platform), channel: value('--channel', 'release'), installRoot: value('--target', undefined) };
+  const options = { platform: value('--platform', process.platform), channel: value('--channel', 'development'), installRoot: value('--target', undefined) };
   const result = action === 'install' ? await installLauncher(options) : action === 'uninstall' ? await uninstallLauncher(options) : action === 'status' ? launcherStatus(options) : (() => { throw new Error(`Unknown launcher action: ${action}`); })();
   console.log(JSON.stringify(result, null, 2));
 }

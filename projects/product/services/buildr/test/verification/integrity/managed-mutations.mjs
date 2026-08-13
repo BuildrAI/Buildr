@@ -29,11 +29,14 @@ for (const entry of packageManifest.files.filter((file) => file === 'src/' || fi
 productionFiles.sort();
 const allowed = new Map([
   ['src/infrastructure/filesystem/index.mjs', new Set([
-    'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
+    'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
   ['src/infrastructure/filesystem/workspace-node-runtime.mjs', new Set([
-    'downloadFile', 'removeRuntimeTree', 'copyRuntimeTree', 'reclaimRuntimeInstallLock', 'acquireRuntimeInstallLock', 'releaseRuntimeInstallLock', 'installFromOfficial', 'installFromCurrent', 'renameRuntimeStage', 'ensureWorkspaceNodeRuntime',
+    'downloadFile', 'removeRuntimeTree', 'copyRuntimeTree', 'reclaimRuntimeInstallLock', 'acquireRuntimeInstallLock', 'releaseRuntimeInstallLock', 'installFromOfficial', 'installFromBootstrapDistribution', 'renameRuntimeStage', 'ensureWorkspaceNodeRuntime',
+  ])],
+  ['src/infrastructure/product-launcher/index.mjs', new Set([
+    'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
   ['src/infrastructure/filesystem/task-execution-record-body-store.mjs', new Set([
     'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
@@ -41,6 +44,7 @@ const allowed = new Map([
   ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
     'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
   ])],
+  ['src/interfaces/cli/main.mjs', new Set(['writeInternalDownload'])],
   ['src/interfaces/local-app/runtime/preview-manager.mjs', new Set(['clearOwner'])],
   ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
   ['src/application/task-finish/task-finish-run.mjs', new Set([

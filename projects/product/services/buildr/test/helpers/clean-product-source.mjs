@@ -21,19 +21,27 @@ function sourceExecutablePaths(sourceRoot) {
 
 export function materializeCleanProductSource(sourceRoot, targetRoot) {
   const executablePaths = sourceExecutablePaths(sourceRoot);
-  fs.mkdirSync(targetRoot, { recursive: true });
+  const repositoryRoot = path.resolve(targetRoot);
+  const productRoot = path.join(repositoryRoot, 'projects', 'product', 'services', 'buildr');
+  const gitProductRoot = 'projects/product/services/buildr';
+  fs.mkdirSync(productRoot, { recursive: true });
   for (const entry of PRODUCT_SOURCE_ENTRIES) {
     const source = path.join(sourceRoot, entry);
     if (!fs.existsSync(source)) continue;
-    fs.cpSync(source, path.join(targetRoot, entry), { recursive: true });
+    fs.cpSync(source, path.join(productRoot, entry), { recursive: true });
   }
   const sourceModules = path.join(sourceRoot, 'node_modules');
-  if (fs.existsSync(sourceModules)) fs.symlinkSync(sourceModules, path.join(targetRoot, 'node_modules'), 'dir');
-  git(targetRoot, ['init', '--quiet', '--initial-branch=retained']);
-  git(targetRoot, ['config', 'user.name', 'Buildr Test']);
-  git(targetRoot, ['config', 'user.email', 'buildr-test@example.com']);
-  git(targetRoot, ['add', '--', ...PRODUCT_SOURCE_ENTRIES.filter((entry) => fs.existsSync(path.join(targetRoot, entry)))]);
-  for (const file of executablePaths) git(targetRoot, ['update-index', '--chmod=+x', '--', file]);
-  git(targetRoot, ['commit', '--quiet', '-m', 'materialize clean retained product source']);
-  return { root: fs.realpathSync(targetRoot), cli: path.join(fs.realpathSync(targetRoot), 'bin', 'buildr.mjs') };
+  if (fs.existsSync(sourceModules)) fs.symlinkSync(sourceModules, path.join(productRoot, 'node_modules'), 'dir');
+  git(repositoryRoot, ['init', '--quiet', '--initial-branch=retained']);
+  git(repositoryRoot, ['config', 'user.name', 'Buildr Test']);
+  git(repositoryRoot, ['config', 'user.email', 'buildr-test@example.com']);
+  const trackedEntries = PRODUCT_SOURCE_ENTRIES
+    .filter((entry) => fs.existsSync(path.join(productRoot, entry)))
+    .map((entry) => `${gitProductRoot}/${entry}`);
+  git(repositoryRoot, ['add', '--', ...trackedEntries]);
+  for (const file of executablePaths) git(repositoryRoot, ['update-index', '--chmod=+x', '--', `${gitProductRoot}/${file}`]);
+  git(repositoryRoot, ['commit', '--quiet', '-m', 'materialize clean retained product source']);
+  fs.appendFileSync(path.join(repositoryRoot, '.git', 'info', 'exclude'), `/${gitProductRoot}/node_modules\n`);
+  const root = fs.realpathSync(productRoot);
+  return { root, cli: path.join(root, 'bin', 'buildr.mjs') };
 }

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.mjs';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
 const OPERATIONS = new Set(['overview', 'development', 'reviews', 'verification', 'coordination', 'execution-records', 'execution-record-detail', 'execution-record-body']);
@@ -8,7 +9,9 @@ const EXECUTION_RECORD_VIEWS = new Set(['all', 'verification', 'finish']);
 const EXECUTION_RECORD_BODY_FILES = new Set(['summary.json', 'stdout.txt', 'stderr.txt', 'timeline.json', 'diagnostics.json']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
-const WORKER_URL = new URL('./read-worker.mjs', import.meta.url);
+const WORKER_PATH = resolveProductResource('runtime/read-worker.cjs', {
+  developmentFallback: 'src/interfaces/local-app/http/read-worker.mjs',
+});
 
 function readExecutorError(code, message, status = 503, details = undefined) {
   const error = new Error(message);
@@ -50,7 +53,7 @@ function validateRequest(operation, input) {
 }
 
 function defaultWorkerFactory() {
-  return new Worker(WORKER_URL, { type: 'module' });
+  return new Worker(WORKER_PATH);
 }
 
 export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER_COUNT, queueLimit = DEFAULT_QUEUE_LIMIT, workerFactory = defaultWorkerFactory } = {}) {

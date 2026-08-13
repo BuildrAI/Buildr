@@ -44,19 +44,3 @@ export function installClaudeCodeBuildrSkill(argv, options = {}) {
   const files = [renderSkill(repoRoot, targetRoot, skill)];
   return { targetRoot, files };
 }
-
-function main() {
-  const { targetRoot, files } = renderClaudeCode(process.argv.slice(2));
-  for (const file of files) {
-    console.log(path.relative(targetRoot, file).split(path.sep).join('/'));
-  }
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    main();
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
-  }
-}

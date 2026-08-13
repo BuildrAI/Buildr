@@ -10,6 +10,7 @@ import { resolveVerificationWorkerBudget } from './worker-budget.mjs';
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const integrationRoot = path.join(productRoot, 'test', 'integration');
 const excludedFromGeneral = new Set([
+  'application-payload-release.test.mjs',
   'task-development-application.test.mjs',
   'task-finish-delivery-remote.test.mjs',
   'task-finish-retained-activation.test.mjs',
