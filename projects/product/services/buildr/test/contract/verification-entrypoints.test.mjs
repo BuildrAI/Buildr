@@ -258,6 +258,13 @@ test('managed Candidate 在离线验证前准备两个 Service 的依赖缓存',
   assert.ok(managedJob.indexOf('Prepare Buildr Web dependencies for offline Candidate') < managedJob.indexOf('Verify final product candidate'));
 });
 
+test('managed Candidate 只沿 dev first-parent 选择 release verification base', () => {
+  const workflow = read('../../../../.github/workflows/verify.yml');
+  const managedJob = workflow.slice(workflow.indexOf('  managed-runtime-candidate:'), workflow.indexOf('  current-host-node:'));
+  assert.match(managedJob, /git log --first-parent origin\/dev --format=%H --grep=/);
+  assert.doesNotMatch(managedJob, /git log origin\/dev --format=%H --grep=/);
+});
+
 test('fresh build reuses prepared controller dependencies without weakening tested installs', () => {
   const source = read('test/system/task-environment-fresh-build-web.test.mjs');
   assert.doesNotMatch(source, /\[npmCli, 'ci'\]/);
