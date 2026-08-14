@@ -27,6 +27,7 @@ const FINISH_CARRIER_ROOT = '.buildr/transient/task-finish/carriers';
 const TASK_TRAILER = 'Buildr-Task';
 const FINISH_RUN_TRAILER = 'Buildr-Finish-Run';
 const PLAN_TRAILER = 'Buildr-Closeout-Plan';
+const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 
 // This runner must remain executable after the Skill is projected under an
 // Agent runtime, where Product source modules are not available by relative path.
@@ -480,6 +481,92 @@ function validateDevelopmentLauncherResult(payload, root, nodeExecutable, succes
   return payload;
 }
 
+function inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, phaseResult) {
+  const script = path.join(root, DEVELOPMENT_WEB_CONTINUITY_SCRIPT);
+  const inspected = command(execute, nodeExecutable, [script, 'inspect'], root, 'inspect-development-web-continuity', phaseResult, {
+    kind: 'development-web-continuity',
+    script,
+    action: 'inspect',
+  }, environment);
+  requirePassed(inspected, 'self-bootstrap-closeout.development-web-inspection-failed', '无法认证Development Web安装前实例状态。');
+  const payload = parseJson(inspected, 'self-bootstrap-closeout.development-web-inspection-invalid', 'Development Web安装前状态不是合法JSON。');
+  const allowed = new Set(['healthy-development', 'not-running', 'stale', 'different-owner']);
+  if (payload?.schemaVersion !== 'buildr.development-web-continuity/v1' || payload.action !== 'inspect' || !allowed.has(payload.status)) {
+    throw closeoutError('self-bootstrap-closeout.development-web-inspection-invalid', 'Development Web安装前状态不符合closed continuity contract。', { payload });
+  }
+  if (payload.status === 'healthy-development') {
+    const instance = payload.instance;
+    if (!Number.isInteger(instance?.port) || instance.port <= 0 || instance.port > 65535
+      || !Number.isInteger(instance?.pid) || instance.pid <= 0
+      || instance.launcherIdentity?.channel !== 'development') {
+      throw closeoutError('self-bootstrap-closeout.development-web-inspection-invalid', '健康Development Web实例缺少可证明的port、PID或Launcher identity。', { payload });
+    }
+  }
+  return payload;
+}
+
+function developmentLauncherIdentityPath(payload) {
+  return payload.platform === 'darwin'
+    ? path.join(payload.target, 'Contents', 'Resources', 'launcher-identity.json')
+    : path.join(payload.target, 'launcher-identity.json');
+}
+
+function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity, environment, phaseResult }) {
+  if (continuity.status !== 'healthy-development') {
+    return {
+      schemaVersion: 'buildr.development-web-continuity/v1',
+      action: 'restart',
+      status: 'not-applicable',
+      reason: continuity.status,
+      previous: continuity.instance || null,
+      instance: null,
+    };
+  }
+  const script = path.join(root, DEVELOPMENT_WEB_CONTINUITY_SCRIPT);
+  const projectBridge = path.join(root, PRODUCT_ROOT, 'buildr');
+  const expectedSourceRoot = path.join(root, SERVICE_ROOT);
+  const previous = continuity.instance;
+  const args = [
+    script,
+    'restart',
+    '--project-bridge', projectBridge,
+    '--port', String(previous.port),
+    '--launcher-identity', developmentLauncherIdentityPath(launcher),
+    '--expected-source-root', expectedSourceRoot,
+    '--expected-head', successor,
+    '--node-executable', nodeExecutable,
+    '--previous-pid', String(previous.pid),
+  ];
+  const restarted = command(execute, nodeExecutable, args, root, 'restart-development-web-continuity', phaseResult, {
+    kind: 'development-web-continuity',
+    script,
+    action: 'restart',
+    port: previous.port,
+  }, environment);
+  requirePassed(restarted, 'self-bootstrap-closeout.development-web-restart-failed', 'Development Web未能在原端口恢复。');
+  const payload = parseJson(restarted, 'self-bootstrap-closeout.development-web-restart-invalid', 'Development Web恢复结果不是合法JSON。');
+  const identity = payload?.launcherIdentity;
+  if (payload?.schemaVersion !== 'buildr.development-web-continuity/v1'
+    || payload.action !== 'restart'
+    || payload.status !== 'passed'
+    || payload.previous?.pid !== previous.pid
+    || payload.previous?.port !== previous.port
+    || payload.instance?.port !== previous.port
+    || !Number.isInteger(payload.instance?.pid)
+    || payload.instance.pid <= 0
+    || payload.instance.pid === previous.pid
+    || identity?.channel !== 'development'
+    || !sameFilesystemPath(identity.sourceRoot, expectedSourceRoot)
+    || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)
+    || identity.checkout?.head !== successor) {
+    throw closeoutError('self-bootstrap-closeout.development-web-restart-identity-mismatch', '恢复后的Development Web没有保持原端口或绑定retained successor identity。', {
+      expected: { port: previous.port, previousPid: previous.pid, sourceRoot: expectedSourceRoot, nodeExecutable, checkoutHead: successor },
+      actual: payload || null,
+    });
+  }
+  return payload;
+}
+
 function developmentEntryFailure(evidence, code, message, details = null) {
   evidence.status = 'blocked';
   throw closeoutError(code, message, { developmentEntryIdentity: evidence, ...details });
@@ -830,6 +917,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
 
     active = stages.get('install-local-app');
     if (plan.actions['install-development-local-app'].length) {
+      const continuityBefore = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, active);
       const manager = path.join(root, SERVICE_ROOT, 'package', 'launchers', 'manage.mjs');
       const args = [manager, 'install', '--channel', 'development'];
       const installed = command(execute, nodeExecutable, args, root, 'install-development-local-app', active, { kind: 'development-launcher-manager', script: manager, args: args.slice(1) });
@@ -840,7 +928,27 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
         nodeExecutable,
         successor,
       );
-      markPassed(active, plan.identity, digest(payload), [{ type: 'install-development-local-app', ref: successor, channel: 'development', target: payload.target }]);
+      const continuityAfter = recoverDevelopmentWebContinuity({
+        execute,
+        root,
+        nodeExecutable,
+        successor,
+        launcher: payload,
+        continuity: continuityBefore,
+        environment,
+        phaseResult: active,
+      });
+      markPassed(active, plan.identity, digest({ launcher: payload, continuityBefore, continuityAfter }), [
+        { type: 'install-development-local-app', ref: successor, channel: 'development', target: payload.target },
+        {
+          type: 'development-web-continuity',
+          status: continuityAfter.status,
+          reason: continuityAfter.reason || null,
+          previousPid: continuityBefore.instance?.pid || null,
+          currentPid: continuityAfter.instance?.pid || null,
+          port: continuityBefore.instance?.port || null,
+        },
+      ]);
     } else markNotApplicable(active, 'frozen paths未命中Development Local App输入。');
 
     active = stages.get('verify-development-entry');

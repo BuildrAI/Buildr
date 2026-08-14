@@ -20,6 +20,17 @@ import {
 
 const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';
 
+test.beforeEach((t) => {
+  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-launcher-test-app-data-'));
+  process.env.BUILDR_APP_DATA_DIR = appData;
+  t.after(() => {
+    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  });
+});
+
 async function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-launcher-'));
   const prefix = path.join(root, 'prefix');

@@ -44,7 +44,7 @@ Runner是本Skill的bundled script，只存在于Buildr自举Workspace，不进�
 
 foreign doctor-blocked、其他blocked、terminal残留或不支持状态只标记`manual-owner-review`；symlink、越界、重复realpath、inspect失败、Workspace/path/carrier/resume identity或token不可证明时标记`unprovable`且不给resume command。存在任意foreign carrier时，当前调用固定blocked，并在Git、sync、安装、Doctor、Finish resume与carrier mutation全部零副作用处停止。协调计划是ephemeral read model，不写SQLite、Receipt、Execution Record、Git或第二份队列/聚合store，也不授予跨owner mutation authority。
 
-`install-local-app`只用Environment retained Node直接执行retained checkout中的`package/launchers/manage.mjs install --channel development`，并核对closed status、checkout source root、HEAD与development runtime executable后才继续。它不得调用npm-owned公开`buildr web launcher`命令；公开命令没有development channel。显式`npm run install:development`复用同一内部manager，因此人工development安装与post-Finish activation共享一个实现入口。
+`install-local-app`先通过runner自带的continuity helper读取默认instance state并使用instance secret执行health认证；只有健康且`launcherIdentity.channel=development`的实例才冻结原PID与loopback端口。随后它只用Environment retained Node直接执行retained checkout中的`package/launchers/manage.mjs install --channel development`，并核对closed status、checkout source root、HEAD与development runtime executable后才继续。安装前存在上述健康实例时，helper必须显式以retained `projects/product/buildr web --port <same> --no-open`、Environment retained Node和新Launcher identity恢复服务，等待health并证明端口不变、新PID、source root、successor HEAD与Node匹配；未运行、stale或其他channel保持按需启动。恢复失败时helper只回收本次启动且PID可证明的异常进程，runner停止后续development entry gate与finalize，不回退已经成功更新且绑定delivered checkout的Launcher。它不得调用npm-owned公开`buildr web launcher`命令；公开命令没有development channel。显式`npm run install:development`复用同一内部manager，因此人工development安装与post-Finish activation共享一个安装入口，但条件式HTTP恢复只属于持有完整Finish/retained identity的self-bootstrap runner。
 
 Plan的`baseRef`始终冻结为当前Finish Result的final ref，runner不因后续交付改写它。Preflight另选择本次实际`activationBaseRef`：HEAD等于base时直接使用base；HEAD已前进时，只接受base到HEAD无merge、每个first-parent commit带非空`Buildr-Task` trailer或成对`Buildr-Finish-Run`/`Buildr-Closeout-Plan` trailer、working tree clean且remote精确等于HEAD的Buildr-owned descendant。若HEAD本身是当前run/plan的精确successor，则以其parent作为activation base，remote只可等于parent或HEAD。当前sync产生的新successor必须直接以activation base为parent。这样较早Result可以在已push的后续Formal Finish或self-bootstrap successor上顺序激活，但未知commit、merge、未push descendant或remote drift仍在安装与finalize前fail closed；不增加持久queue、store或第二份lifecycle authority。
 
@@ -58,7 +58,7 @@ Runner结果是正常路径的唯一执行证据。需要诊断时只读其失�
 
 ## 失败与恢复
 
-- staged/未知delta、symlink逃逸、HEAD/remote漂移、descendant merge、缺失Buildr provenance、current successor run/plan trailer不匹配、development entry identity不匹配、package/version不一致或launcher channel/commit不匹配时fail closed。
+- staged/未知delta、symlink逃逸、HEAD/remote漂移、descendant merge、缺失Buildr provenance、current successor run/plan trailer不匹配、development entry identity不匹配、package/version不一致、launcher channel/commit不匹配，或安装前健康Development Web未能在同一端口以新identity恢复时fail closed。
 - 修复本runner阻塞的正式Task时，修复Task的候选验证必须覆盖显式retained Project bridge、精确Node identity、Development Launcher、sync、Doctor与doctor-blocked same-run resume链；不得把每个后续症状自动拆成新的递归修复Task。
 - 不使用`git add -A`、force push或共享历史改写，不把sync delta混入原Task carrier。
 - 失败时停止后续不安全动作，报告已完成动作、失败动作、冻结inputs、当前retained/remote/CLI/launcher identity与精确恢复入口。
@@ -68,4 +68,4 @@ Runner结果是正常路径的唯一执行证据。需要诊断时只读其失�
 
 ## 结果边界
 
-成功消费`buildr.self-bootstrap-closeout-result/v1`并报告`passed`，包含输入模式、Formal Result/run identity、frozen paths、分类与plan identity，以及每个阶段的`passed|not-applicable`、frozen ref与actual activation base、Buildr descendant provenance、sync commit/push/readback、retained Project bridge、launcher/CLI entry/Node、channel/source commit、package/version和最终Doctor或same-run resume evidence。发现foreign carrier时报告`blocked`并additive返回ephemeral `buildr.self-bootstrap-recovery-plan/v1`；没有foreign carrier时`recoveryPlan=null`且现有结果和执行语义不变。未命中报告`not-applicable`。该结果不是新的持久authority；`complete`模式不改变Task终态，`doctor-blocked`模式只有Product resume可以形成Formal Finish终态。Task Manager继续独立管理顶层完成状态。
+成功消费`buildr.self-bootstrap-closeout-result/v1`并报告`passed`，包含输入模式、Formal Result/run identity、frozen paths、分类与plan identity，以及每个阶段的`passed|not-applicable`、frozen ref与actual activation base、Buildr descendant provenance、sync commit/push/readback、retained Project bridge、launcher/CLI entry/Node、channel/source commit、package/version、安装前Development Web状态、适用时的原端口/前后PID/恢复identity和最终Doctor或same-run resume evidence。发现foreign carrier时报告`blocked`并additive返回ephemeral `buildr.self-bootstrap-recovery-plan/v1`；没有foreign carrier时`recoveryPlan=null`且现有结果和执行语义不变。未命中报告`not-applicable`。该结果不是新的持久authority；`complete`模式不改变Task终态，`doctor-blocked`模式只有Product resume可以形成Formal Finish终态。Task Manager继续独立管理顶层完成状态。

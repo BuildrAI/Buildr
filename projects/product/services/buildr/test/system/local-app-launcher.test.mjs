@@ -13,6 +13,17 @@ const BUILDER = path.join(PRODUCT_ROOT, 'package', 'launchers', 'build.mjs');
 const CLI = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const builtBundles = new Map();
 
+test.beforeEach((t) => {
+  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-launcher-test-app-data-'));
+  process.env.BUILDR_APP_DATA_DIR = appData;
+  t.after(() => {
+    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  });
+});
+
 test.after(() => {
   for (const output of builtBundles.values()) fs.rmSync(output, { recursive: true, force: true });
   builtBundles.clear();
@@ -122,9 +133,6 @@ test('macOS Buildr Web Dev默认安装到系统Applications且与正式产品分
 test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的development入口', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-launcher-lifecycle-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
-  process.env.BUILDR_APP_DATA_DIR = path.join(root, 'app-data');
-  t.after(() => { if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR; else process.env.BUILDR_APP_DATA_DIR = previousAppData; });
   const official = path.join(root, 'Buildr Web.app');
   fs.mkdirSync(official);
   fs.writeFileSync(path.join(official, 'official-sentinel'), 'keep');

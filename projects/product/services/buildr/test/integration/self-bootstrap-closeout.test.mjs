@@ -12,6 +12,10 @@ import {
   runSelfBootstrapCloseout,
   runSelfBootstrapCloseoutCommand,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
+import {
+  inspectDevelopmentInstance,
+  restartDevelopmentInstance,
+} from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { RUNTIME_ADAPTERS, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
 
 function run(executable, args, cwd) {
@@ -162,6 +166,7 @@ function executor(root, options = {}) {
     const projectBridge = path.join(canonicalRoot, 'projects', 'product', 'buildr');
     const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
     const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
+    const continuityHelper = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
     let resolvedExecutable = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
     if (resolvedExecutable === fs.realpathSync(projectBridge)) {
@@ -224,6 +229,63 @@ function executor(root, options = {}) {
         }),
         stderr: '',
       };
+    }
+    if (executable === process.execPath && args[0] === continuityHelper) {
+      if (args[1] === 'inspect') {
+        if (options.failContinuityInspect) return { status: 1, stdout: '', stderr: 'continuity inspection failed' };
+        const healthy = options.runningDevelopmentInstance === true;
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            schemaVersion: 'buildr.development-web-continuity/v1',
+            action: 'inspect',
+            status: healthy ? 'healthy-development' : (options.continuityStatus || 'not-running'),
+            reason: healthy ? null : (options.continuityStatus || 'instance-record-absent'),
+            instance: healthy ? {
+              url: 'http://127.0.0.1:4317',
+              port: 4317,
+              pid: options.previousDevelopmentPid || 71173,
+              launcherIdentity: { channel: 'development' },
+              productIdentity: null,
+            } : null,
+          }),
+          stderr: '',
+        };
+      }
+      if (args[1] === 'restart') {
+        if (options.failDevelopmentRestart) {
+          return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'development-web-continuity.start-timeout', details: { cleanup: { pid: 72200, status: 'requested' } } }) };
+        }
+        const value = (name) => args[args.indexOf(name) + 1];
+        const previousPid = Number(value('--previous-pid'));
+        const port = Number(value('--port'));
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            schemaVersion: 'buildr.development-web-continuity/v1',
+            action: 'restart',
+            status: 'passed',
+            previous: { pid: previousPid, port },
+            instance: {
+              url: `http://127.0.0.1:${port}`,
+              port,
+              pid: options.restartedDevelopmentPid || previousPid + 1,
+              launcherIdentity: { channel: 'development' },
+              productIdentity: null,
+            },
+            launcherIdentity: {
+              schemaVersion: 'buildr.launcher-identity/v1',
+              channel: 'development',
+              source: 'checkout',
+              sourceRoot: options.observedRestartSourceRoot || path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr'),
+              developmentRuntime: { executable: options.observedRestartNode || process.execPath },
+              checkout: { head: options.observedRestartHead || git(canonicalRoot, 'rev-parse', 'HEAD') },
+            },
+            cleanup: null,
+          }),
+          stderr: '',
+        };
+      }
     }
     return { status: 1, stdout: '', stderr: `unexpected command: ${executable} ${args.join(' ')}` };
   };
@@ -472,11 +534,153 @@ test('Development Launcher只调用内部manager并在identity或安装失败时
     assert.equal(result.status, scenario.status, `${scenario.name}: ${JSON.stringify(result.diagnostic)}`);
     assert.equal(result.diagnostic?.code || null, scenario.code);
     const install = phase(result, 'install-local-app');
-    assert.equal(install.operations[0].kind, 'development-launcher-manager');
-    assert.deepEqual(install.operations[0].args, ['install', '--channel', 'development']);
-    assert.doesNotMatch(`${install.operations[0].script} ${install.operations[0].args.join(' ')}`, /bin\/buildr\.mjs web launcher/u);
+    const manager = install.operations.find((item) => item.id === 'install-development-local-app');
+    assert.equal(manager.kind, 'development-launcher-manager');
+    assert.deepEqual(manager.args, ['install', '--channel', 'development']);
+    assert.doesNotMatch(`${manager.script} ${manager.args.join(' ')}`, /bin\/buildr\.mjs web launcher/u);
     assert.equal(phase(result, 'finalize').status, scenario.status === 'passed' ? 'passed' : 'not-applicable');
   }
+});
+
+test('Development Web连续性只恢复安装前健康实例并保持同端口新identity', (t) => {
+  const current = fixture(t);
+  const result = runSelfBootstrapCloseout({
+    finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
+    workspaceRoot: current.root,
+    nodeExecutable: process.execPath,
+    execute: executor(current.root, { runningDevelopmentInstance: true }),
+    environment: current.environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  const install = phase(result, 'install-local-app');
+  assert.deepEqual(install.operations.map((item) => item.id), [
+    'inspect-development-web-continuity',
+    'install-development-local-app',
+    'restart-development-web-continuity',
+  ]);
+  const effect = install.effects.find((item) => item.type === 'development-web-continuity');
+  assert.deepEqual(effect, { type: 'development-web-continuity', status: 'passed', reason: null, previousPid: 71173, currentPid: 71174, port: 4317 });
+});
+
+test('Development Web安装前未运行时保持按需启动', (t) => {
+  const current = fixture(t);
+  const result = runSelfBootstrapCloseout({
+    finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
+    workspaceRoot: current.root,
+    nodeExecutable: process.execPath,
+    execute: executor(current.root),
+    environment: current.environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  const install = phase(result, 'install-local-app');
+  assert.equal(install.operations.some((item) => item.id === 'restart-development-web-continuity'), false);
+  assert.deepEqual(install.effects.find((item) => item.type === 'development-web-continuity'), {
+    type: 'development-web-continuity', status: 'not-applicable', reason: 'not-running', previousPid: null, currentPid: null, port: null,
+  });
+});
+
+test('Development Web恢复失败或identity漂移时阻断后续activation', async (t) => {
+  for (const scenario of [
+    { name: 'start-timeout', options: { runningDevelopmentInstance: true, failDevelopmentRestart: true }, code: 'self-bootstrap-closeout.development-web-restart-failed' },
+    { name: 'identity-drift', options: { runningDevelopmentInstance: true, observedRestartHead: 'f'.repeat(40) }, code: 'self-bootstrap-closeout.development-web-restart-identity-mismatch' },
+  ]) {
+    await t.test(scenario.name, (t) => {
+      const current = fixture(t);
+      const result = runSelfBootstrapCloseout({
+        finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
+        workspaceRoot: current.root,
+        nodeExecutable: process.execPath,
+        execute: executor(current.root, scenario.options),
+        environment: current.environment,
+      });
+      assert.equal(result.status, 'blocked');
+      assert.equal(result.diagnostic.code, scenario.code);
+      assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
+      assert.equal(phase(result, 'finalize').status, 'not-applicable');
+      if (scenario.name === 'start-timeout') assert.match(phase(result, 'install-local-app').operations.at(-1).stderr, /"status":"requested"/u);
+    });
+  }
+});
+
+test('continuity helper认证health、验证新identity并回收失败启动PID', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-development-web-continuity-'));
+  const dataRoot = path.join(root, 'data');
+  const failureDataRoot = path.join(root, 'failure-data');
+  const sourceRoot = path.join(root, 'service');
+  const projectBridge = path.join(root, 'projects', 'product', 'buildr');
+  const identityPath = path.join(root, 'launcher-identity.json');
+  fs.mkdirSync(dataRoot, { recursive: true });
+  fs.mkdirSync(failureDataRoot, { recursive: true });
+  fs.mkdirSync(sourceRoot, { recursive: true });
+  fs.mkdirSync(path.dirname(projectBridge), { recursive: true });
+  fs.writeFileSync(projectBridge, '#!/bin/sh\n', { mode: 0o755 });
+  const launcherIdentity = {
+    schemaVersion: 'buildr.launcher-identity/v1',
+    channel: 'development',
+    source: 'checkout',
+    sourceRoot,
+    developmentRuntime: { executable: process.execPath },
+    checkout: { head: 'a'.repeat(40) },
+  };
+  fs.writeFileSync(identityPath, JSON.stringify(launcherIdentity));
+  const healthyFetch = async (_url, options) => {
+    assert.equal(options.headers['x-buildr-instance'], 'secret');
+    return { ok: true, status: 200 };
+  };
+  fs.writeFileSync(path.join(dataRoot, 'instance.json'), JSON.stringify({
+    url: 'http://127.0.0.1:4317', secret: 'secret', pid: 71173, launcherIdentity,
+  }));
+  const inspected = await inspectDevelopmentInstance({ dataRoot, fetchImpl: healthyFetch });
+  assert.equal(inspected.status, 'healthy-development');
+  assert.equal(inspected.instance.port, 4317);
+
+  let spawnOptions;
+  const restarted = await restartDevelopmentInstance({
+    projectBridge,
+    port: 4317,
+    launcherIdentityPath: identityPath,
+    expectedSourceRoot: sourceRoot,
+    expectedHead: 'a'.repeat(40),
+    nodeExecutable: process.execPath,
+    previousPid: 71173,
+    dataRoot,
+    fetchImpl: healthyFetch,
+    spawnImpl: (_command, _args, options) => {
+      spawnOptions = options;
+      fs.writeFileSync(path.join(dataRoot, 'instance.json'), JSON.stringify({
+        url: 'http://127.0.0.1:4317', secret: 'secret', pid: 71174, launcherIdentity,
+      }));
+      return { pid: 71174, exitCode: null, unref() {} };
+    },
+  });
+  assert.equal(restarted.status, 'passed');
+  assert.equal(restarted.instance.pid, 71174);
+  assert.equal(spawnOptions.env.BUILDR_NODE, process.execPath);
+  assert.equal(spawnOptions.env.BUILDR_LAUNCHER_IDENTITY, identityPath);
+
+  const killed = [];
+  await assert.rejects(() => restartDevelopmentInstance({
+    projectBridge,
+    port: 4317,
+    launcherIdentityPath: identityPath,
+    expectedSourceRoot: sourceRoot,
+    expectedHead: 'a'.repeat(40),
+    nodeExecutable: process.execPath,
+    previousPid: 71173,
+    dataRoot: failureDataRoot,
+    timeoutMs: 0,
+    fetchImpl: healthyFetch,
+    spawnImpl: () => ({ pid: 72200, exitCode: null, unref() {} }),
+    killProcess: (pid, signal) => killed.push({ pid, signal }),
+  }), (error) => {
+    assert.equal(error.code, 'development-web-continuity.start-timeout');
+    assert.deepEqual(error.details.cleanup, { pid: 72200, status: 'requested', reason: null });
+    return true;
+  });
+  assert.deepEqual(killed, [{ pid: 72200, signal: 'SIGTERM' }]);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 });
 
 test('development entry identity evidence覆盖完整入口链且complete只经Project bridge Doctor', (t) => {
