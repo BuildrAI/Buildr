@@ -24,7 +24,6 @@ const taskRecordContextConsumers = [
   'task-record-local-app.test.mjs',
 ];
 const fullIsolationOwners = [
-  'install-buildr-cli-runtime.test.mjs',
   'project-product.test.mjs',
   'public-json-contracts.test.mjs',
   'service-product.test.mjs',

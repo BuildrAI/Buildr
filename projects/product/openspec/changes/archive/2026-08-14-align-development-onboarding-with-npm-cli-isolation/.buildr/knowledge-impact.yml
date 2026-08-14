@@ -1,0 +1,57 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: align-development-onboarding-with-npm-cli-isolation
+operation: reconcile
+treeIdentity: git:d618322f5c1bec0a0245cbab672b9741f41a9c32+dirty
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 记录development onboarding与npm CLI隔离冲突、范围和验收
+    status: updated
+    sourceIdentities:
+      - openspec/specs/product-verification-quality/spec.md
+      - openspec/knowledge/services/buildr.md
+      - openspec/knowledge/architecture/technical.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Service当前认知已声明PATH默认CLI只属于npm且development使用显式Project bridge
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/services/buildr.md
+      - openspec/changes/align-development-onboarding-with-npm-cli-isolation/specs/product-verification-quality/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 技术架构已声明npm默认CLI与development checkout入口隔离
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/architecture/technical.md
+      - openspec/changes/align-development-onboarding-with-npm-cli-isolation/design.md
+  - type: technical-architecture
+    target: docs/verification-ownership.md
+    reason: 验证owner、clean-checkout环境、timing数据与预算校准属于当前验证执行架构
+    status: updated
+    sourceIdentities:
+      - openspec/changes/align-development-onboarding-with-npm-cli-isolation/specs/product-verification-quality/spec.md
+      - services/buildr/test/verification/registry.mjs
+      - services/buildr/test/verification/onboarding/repository.mjs
+      - docs/verification-ownership.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 本Change只对齐既有Project bridge、npm installation、development与PATH术语，不新增或重定义长期术语
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+terminology:
+  status: not-applicable
+  termsConsulted:
+    - npm installation
+    - development checkout
+    - Project bridge
+    - PATH default CLI
+  canonicalTerms: []
+  changedAssets: []
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/knowledge/glossary.md
+    - openspec/knowledge/services/buildr.md
+    - openspec/knowledge/architecture/technical.md
+unresolvedItems: []

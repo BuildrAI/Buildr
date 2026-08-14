@@ -46,7 +46,6 @@ export const SYSTEM_SUITES = Object.freeze([
     resources: Object.freeze(['workspace-saturating']),
     files: Object.freeze([
       'test/system/cli-update.test.mjs',
-      'test/system/install-buildr-cli-runtime.test.mjs',
       'test/system/runtime-target-authority.test.mjs',
       'test/system/workspace-runtime-recovery.test.mjs',
     ]),
