@@ -16,14 +16,6 @@ const launcherRoot = path.join(tempRoot, 'launchers');
 const appDataRoot = path.join(tempRoot, 'app-data');
 const remote = path.join(tempRoot, 'Buildr.git');
 
-const skippedNames = new Set(['.git', '.worktrees', 'node_modules', '.agents', '.claude']);
-function copyFilter(source) {
-  if (source === workspaceRoot) return true;
-  const relative = path.relative(workspaceRoot, source);
-  if (relative === path.join('.buildr', 'local') || relative.startsWith(`${path.join('.buildr', 'local')}${path.sep}`)) return false;
-  return !relative.split(path.sep).some((segment) => skippedNames.has(segment));
-}
-
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? checkout,
@@ -38,21 +30,65 @@ function run(command, args, options = {}) {
   return result.stdout || '';
 }
 
+function runDevelopment(args, options = {}) {
+  const copiedProduct = path.join(checkout, 'projects', 'product');
+  const env = { ...(options.env ?? process.env), BUILDR_NODE: process.execPath };
+  if (process.platform === 'win32') {
+    return run('sh', ['./buildr', ...args], { ...options, cwd: copiedProduct, env });
+  }
+  return run(path.join(copiedProduct, 'buildr'), args, { ...options, cwd: copiedProduct, env });
+}
+
+function npmCliForCurrentNode() {
+  const executableDirectory = path.dirname(process.execPath);
+  const candidates = [
+    path.resolve(executableDirectory, '../lib/node_modules/npm/bin/npm-cli.js'),
+    path.resolve(executableDirectory, 'node_modules/npm/bin/npm-cli.js'),
+    process.env.npm_execpath,
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      if (fs.statSync(candidate).isFile()) return fs.realpathSync(candidate);
+    } catch {}
+  }
+  throw new Error(`npm CLI for the current Host Node was not found beside ${process.execPath}`);
+}
+
+function copyUntrackedSourceFiles() {
+  const output = run('git', ['ls-files', '--others', '--exclude-standard', '-z'], { cwd: workspaceRoot, capture: true });
+  for (const relative of output.split('\0').filter(Boolean)) {
+    const source = path.join(workspaceRoot, relative);
+    const target = path.join(checkout, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.cpSync(source, target, { recursive: true });
+  }
+}
+
 try {
-  fs.cpSync(workspaceRoot, checkout, { recursive: true, filter: copyFilter });
+  const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: workspaceRoot, capture: true }).trim();
+  run('git', ['clone', '--shared', '--no-checkout', '-q', workspaceRoot, checkout], { cwd: tempRoot });
+  run('git', ['checkout', '--detach', '-q', sourceCommit], { cwd: checkout });
+  const sourceDelta = run('git', ['diff', '--binary', 'HEAD'], { cwd: workspaceRoot, capture: true });
+  if (sourceDelta) {
+    const applied = spawnSync('git', ['apply', '--whitespace=nowarn', '-'], { cwd: checkout, input: sourceDelta, encoding: 'utf8' });
+    if (applied.status !== 0) throw new Error(`failed to apply source delta: ${applied.stderr || applied.stdout || applied.error?.message || 'unknown error'}`);
+  }
+  copyUntrackedSourceFiles();
   const copiedProduct = path.join(checkout, 'projects', 'product');
   const copiedService = path.join(copiedProduct, 'services', 'buildr');
   assert.equal(fs.existsSync(path.join(copiedService, 'node_modules')), false, 'fresh candidate must not contain node_modules');
   assert.equal(fs.existsSync(path.join(checkout, '.agents')), false, 'fresh candidate must not contain Agent runtime');
   assert.equal(fs.existsSync(path.join(checkout, '.buildr', 'local')), false, 'fresh candidate must not copy Workspace-local structured state');
   run('git', ['init', '--bare', '-q', remote], { cwd: tempRoot });
-  run('git', ['init', '-q'], { cwd: checkout });
   run('git', ['config', 'user.email', 'buildr@example.com'], { cwd: checkout });
   run('git', ['config', 'user.name', 'Buildr Verification'], { cwd: checkout });
-  run('git', ['add', '.'], { cwd: checkout });
-  run('git', ['commit', '-qm', 'candidate'], { cwd: checkout });
-  run('git', ['branch', '-M', 'main'], { cwd: checkout });
-  run('git', ['remote', 'add', 'origin', remote], { cwd: checkout });
+  run('git', ['switch', '-C', 'main', '-q'], { cwd: checkout });
+  const candidateStatus = run('git', ['status', '--short'], { cwd: checkout, capture: true });
+  if (candidateStatus.trim()) {
+    run('git', ['add', '-A'], { cwd: checkout });
+    run('git', ['commit', '-qm', 'candidate'], { cwd: checkout });
+  }
+  run('git', ['remote', 'set-url', 'origin', remote], { cwd: checkout });
   run('git', ['push', '-qu', 'origin', 'main'], { cwd: checkout });
 
   const env = {
@@ -64,20 +100,18 @@ try {
     PATH: `${installBin}${path.delimiter}${process.env.PATH || ''}`,
   };
   fs.mkdirSync(installBin, { recursive: true });
-  fs.symlinkSync(path.join(copiedProduct, 'bin', 'buildr.mjs'), path.join(installBin, 'buildr'));
-  run(path.join(copiedService, 'scripts', 'install-buildr-cli'), ['--node-executable', process.execPath], { cwd: copiedService, env });
-  const buildr = path.join(installBin, 'buildr');
-  assert.equal(fs.existsSync(buildr), true, 'installer must create the buildr command');
-  assert.equal(fs.lstatSync(buildr).isSymbolicLink(), false, 'installer must create an identity-bound wrapper');
-  const installedIdentity = JSON.parse(run(buildr, [], {
-    cwd: checkout,
+  const pathSentinels = [path.join(installBin, 'buildr'), path.join(installBin, 'buildr.cmd')];
+  for (const sentinel of pathSentinels) fs.writeFileSync(sentinel, `npm-owned sentinel: ${path.basename(sentinel)}\n`);
+  const sentinelContents = new Map(pathSentinels.map((sentinel) => [sentinel, fs.readFileSync(sentinel, 'utf8')]));
+  run(process.execPath, [npmCliForCurrentNode(), 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: copiedService, env });
+  const developmentIdentity = JSON.parse(runDevelopment([], {
     env: { ...env, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
     capture: true,
   }));
-  assert.equal(installedIdentity.wrapperSchema, 'buildr.development-cli-wrapper/v1');
-  assert.equal(fs.realpathSync(installedIdentity.launcher), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')));
-  assert.equal(fs.realpathSync(installedIdentity.nodeExecutable), fs.realpathSync(process.execPath));
-  run(buildr, ['sync', 'codex', '--target', checkout], { cwd: checkout, env });
+  assert.equal(developmentIdentity.wrapperSchema, null);
+  assert.equal(fs.realpathSync(developmentIdentity.launcher), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')));
+  assert.equal(fs.realpathSync(developmentIdentity.nodeExecutable), fs.realpathSync(process.execPath));
+  runDevelopment(['sync', 'codex', '--target', checkout], { env });
   const synchronizedStatus = run('git', ['status', '--short'], { cwd: checkout, env, capture: true }).trimEnd();
   if (synchronizedStatus.trim()) {
     const managedRoots = ['.buildr/builtin-receipts.json', 'rules/', 'skills/', 'commands/', 'components/'];
@@ -89,32 +123,23 @@ try {
     run('git', ['commit', '-qm', 'synchronize Buildr-owned projections'], { cwd: checkout });
     run('git', ['push', '-q'], { cwd: checkout });
   }
-  const runtime = JSON.parse(run(buildr, ['runtime', 'list', '--json'], { cwd: checkout, env, capture: true }));
+  const runtime = JSON.parse(runDevelopment(['runtime', 'list', '--json'], { env, capture: true }));
   assert(runtime.supportedAgents.includes('codex'));
   const launcher = JSON.parse(run(process.execPath, [fs.realpathSync(path.join(copiedService, 'package', 'launchers', 'manage.mjs')), 'install', '--channel', 'development', '--target', launcherRoot], { cwd: checkout, env, capture: true }));
   assert.equal(launcher.installed, true);
   assert.equal(launcher.identity.channel, 'development');
   assert.equal(fs.realpathSync(launcher.identity.sourceRoot), fs.realpathSync(copiedService));
   assert.equal(fs.realpathSync(launcher.identity.developmentRuntime.executable), fs.realpathSync(process.execPath));
-  const doctor = JSON.parse(run(buildr, ['doctor', '--agent', 'codex', '--target', checkout, '--json'], { cwd: checkout, env, capture: true, timeout: 180000 }));
-  assert.equal(doctor.health.ready, true, `candidate-installed default CLI must complete the real sync → Launcher → Doctor chain: ${JSON.stringify(doctor.findings || [])}`);
-  const update = JSON.parse(run(buildr, ['update', 'check', '--json'], { cwd: checkout, env, capture: true }));
+  const doctor = JSON.parse(runDevelopment(['doctor', '--agent', 'codex', '--target', checkout, '--json'], { env, capture: true, timeout: 180000 }));
+  assert.equal(doctor.health.ready, true, `explicit checkout entry must complete the real sync → Launcher → Doctor chain: ${JSON.stringify(doctor.findings || [])}`);
+  const update = JSON.parse(runDevelopment(['update', 'check', '--json'], { env, capture: true }));
   assert.equal(update.mode, 'development');
   assert.equal(update.status, 'up-to-date');
+  for (const sentinel of pathSentinels) {
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), sentinelContents.get(sentinel), `development checkout must not mutate PATH default ${path.basename(sentinel)}`);
+  }
 
-  run(path.join(copiedService, 'scripts', 'uninstall-buildr-cli'), [], { cwd: copiedService, env });
-  assert.equal(fs.existsSync(buildr), false, 'uninstaller must remove the symlink managed by this checkout');
-  run(path.join(copiedService, 'scripts', 'uninstall-buildr-cli'), [], { cwd: copiedService, env });
-  run(path.join(copiedService, 'scripts', 'install-buildr-cli'), ['--node-executable', process.execPath], { cwd: copiedService, env });
-  const reinstalledIdentity = JSON.parse(run(buildr, [], {
-    cwd: checkout,
-    env: { ...env, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
-    capture: true,
-  }));
-  assert.equal(reinstalledIdentity.wrapperSchema, 'buildr.development-cli-wrapper/v1');
-  assert.equal(fs.realpathSync(reinstalledIdentity.launcher), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')));
-
-  console.log('Repository onboarding verification passed: clean checkout, identity-bound development CLI, sync, Development Launcher, Doctor ready, reinstall, runtime discovery, and update source.');
+  console.log('Repository onboarding verification passed: clean checkout, explicit development entry, no PATH CLI mutation, sync, Development Launcher, Doctor ready, runtime discovery, and update source.');
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

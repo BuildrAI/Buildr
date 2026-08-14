@@ -236,10 +236,8 @@ export function createPackageStaticValidator(deps) {
     for (const legacyRepository of ['task-development-repository.mjs', 'task-verification-repository.mjs', 'task-review-repository.mjs']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }
-    if (existsFile(path.join(root, 'scripts', 'install-buildr-cli'))) {
-      for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'scripts/release/release-contract.mjs']) {
-        if (!existsFile(path.join(root, required))) problems.push(`Development checkout verification is missing: ${required}`);
-      }
+    for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'scripts/release/release-contract.mjs']) {
+      if (!existsFile(path.join(root, required))) problems.push(`Development checkout verification is missing: ${required}`);
     }
 
     for (const legacyPath of LEGACY_PACKAGE_PATHS) {
