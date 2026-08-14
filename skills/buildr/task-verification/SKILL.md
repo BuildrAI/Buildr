@@ -50,6 +50,10 @@ current Result 只有在 target 与全部 declaration identities 都 `current` �
 
 ## 3. 选择并执行已有能力
 
+在追加 broad transient verification 前，如果 Project registry 或现有命令提供不执行测试的 `plan-only` / `dry-run` affected plan，先消费该计划，核对所选范围、成本、未映射路径与额外风险，再由 Agent结合Task Intent、实际变更、declaration和policy判断是否需要补充反馈。通用Skill不发明或硬编码Project专用命令；Project没有计划入口时，依据现有事实选择范围，不创建planner、不猜命令，也不把缺少preview记为coverage gap。
+
+计划预览不是 Verification Execution Evidence、Result fact或 capability execution。stable Content Target进入正式Verification后，policy要求的capability仍须实际执行，或按exact invocation语义复用既有正式Execution Record；CLI plan输出、Agent推理和耗时估计都不能替代Task Verification Application的current Result authority。
+
 针对 target 逐项核对 capability 的 Project/Service scope、paths/conditions、environment、effects 和授权：
 
 - command capability 使用正式 executor：

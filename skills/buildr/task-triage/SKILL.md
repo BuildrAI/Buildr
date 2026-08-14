@@ -16,6 +16,8 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 - 完整 Git repository set，使用 Workspace/Project/Service selector，不按目录层级猜测边界；
 - 写入授权、不可逆影响和仍需用户决定的语义冲突。
 
+首次修改 proposal、Skill、代码、测试或当前知识前，从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立一次有界 authority source map。该 map 只用于当前 Agent 工作上下文，不写入 Task Record、Development Receipt、sidecar 或其他产品 authority；后续只有 scope、authority 或相关事实变化时才增量刷新，不反复全量扫描。
+
 authority 冲突、授权或 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
 
 ## 2. 两轴决策
@@ -43,7 +45,9 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 ## 3. 条件化交接
 
-执行前读取相应 optional binding、contract 和 selected provider；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
+按 next executable action 渐进装配上下文：执行当前动作前读取相应 optional binding、contract、selected provider 与直接 authority，Verification、Completion、Finish 等下游阶段只在成为当前动作时再读取。该边界不允许跳过已触发 Skill、required Rule、provider contract、授权或 result evidence；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
+
+用户已经授权实现，且 active Task、matching ready Environment 与 Development `begin` 所需事实完整时，立即进入 proposal 或当前首个研发动作；不要为收集非当前阶段信息、预读下游 Skills 或建立额外进度 authority 延迟写入。
 
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
