@@ -5,7 +5,6 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
-import { resolveSkillCapabilityGraph } from '../../src/infrastructure/runtime/skills/capabilities.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
@@ -36,29 +35,12 @@ test('terminology 与 current knowledge contracts 具有稳定 identity 和固�
 });
 
 test('默认 providers 与 bindings 可解析，Development 承接专业依赖且 Finish 只消费 handoff', () => {
-  const graph = resolveSkillCapabilityGraph(WORKSPACE_TARGET, null, { runtime: 'codex' });
-  const knowledge = graph.consumers.find((item) => item.consumer === 'current-knowledge-maintenance');
-  const development = graph.consumers.find((item) => item.consumer === 'task-development');
-  const finish = graph.consumers.find((item) => item.consumer === 'task-finish');
-  assert.ok(knowledge);
-  assert.equal(knowledge.readiness, 'ready');
-  assert.equal(knowledge.dependencies[0].selectedProvider.id, 'terminology-governance');
-  assert.deepEqual(development.dependencies.map((item) => [item.capability, item.mode]), [
-    ['buildr.task-record', 'required'],
-    ['buildr.task-environment', 'required'],
-    ['buildr.task-review', 'required'],
-    ['buildr.task-verification', 'required'],
-    ['buildr.current-knowledge-maintenance', 'required'],
-  ]);
-  assert.deepEqual(finish.dependencies.map((item) => [item.capability, item.mode]), [
-    ['buildr.task-development', 'required'],
-    ['buildr.task-environment', 'required'],
-    ['buildr.git-operations', 'optional'],
-  ]);
-  assert.equal(finish.readiness, 'ready');
   const packageManifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const knowledge = packageManifest.builtins.skills.find((item) => item.id === 'current-knowledge-maintenance');
   const packagedDevelopment = packageManifest.builtins.skills.find((item) => item.id === 'task-development');
   const packagedFinish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
+  assert.deepEqual(knowledge.requires, [{ capability: 'buildr.terminology-governance', version: 1, mode: 'required' }]);
+  assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.terminology-governance').provider, 'terminology-governance');
   assert.deepEqual(packagedDevelopment.requires, [
     { capability: 'buildr.task-record', version: 2, mode: 'required' },
     { capability: 'buildr.task-environment', version: 1, mode: 'required' },
@@ -71,11 +53,10 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
     { capability: 'buildr.task-environment', version: 1, mode: 'required' },
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
   ]);
-  const triage = graph.consumers.find((item) => item.consumer === 'task-triage');
-  assert.equal(triage.readiness, 'ready');
-  assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 2 && item.mode === 'optional'));
-  assert.equal(triage.dependencies.some((item) => item.capability === 'buildr.task-board-maintenance'), false);
-  assert.ok(triage.dependencies.some((item) => item.capability === 'buildr.task-environment' && item.version === 1 && item.mode === 'optional'));
+  const triage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');
+  assert.ok(triage.requires.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 2 && item.mode === 'optional'));
+  assert.equal(triage.requires.some((item) => item.capability === 'buildr.task-board-maintenance'), false);
+  assert.ok(triage.requires.some((item) => item.capability === 'buildr.task-environment' && item.version === 1 && item.mode === 'optional'));
   assert.equal(packageManifest.builtins.skills.some((item) => item.id === 'task-board'), false);
   assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-board-maintenance'), false);
   assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-board-maintenance'), false);

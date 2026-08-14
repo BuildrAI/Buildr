@@ -39,6 +39,10 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const assertName = (...args) => runtime.assertName(...args);
   const assertAgentId = (...args) => runtime.assertAgentId(...args);
   const renderSkillsManifestYaml = (...args) => runtime.renderSkillsManifestYaml(...args);
+  const renderProjectsYaml = (...args) => runtime.renderProjectsYaml(...args);
+  const renderRulesManifestYaml = (...args) => runtime.renderRulesManifestYaml(...args);
+  const renderCommandsManifestYaml = (...args) => runtime.renderCommandsManifestYaml(...args);
+  const renderComponentsManifestYaml = (...args) => runtime.renderComponentsManifestYaml(...args);
   const trackWrite = (...args) => runtime.trackWrite(...args);
   const printResult = (...args) => runtime.printResult(...args);
   const optionValue = (...args) => runtime.optionValue(...args);
@@ -409,15 +413,9 @@ export function registerApplicationWorkspaceOperations(runtime) {
     }
 
     const workspaceId = createWorkspaceId();
-    const variables = { name, description, profile, workspaceId, nodeVersion: process.versions.node };
-    let skillsBaseline = null;
+    const variables = {};
     for (const rawEntry of manifest.workspaceFiles) {
       const entry = parseManifestFileEntry(rawEntry, 'workspaceFiles');
-      if (entry.target === '.buildr/workspace.yml') continue;
-      if (entry.target === 'skills/manifest.yml') {
-        skillsBaseline = parseYamlDocument(fs.readFileSync(path.resolve(runtime.productRoot(), entry.source), 'utf8'), entry.source);
-        continue;
-      }
       writeMappedFileIfMissing(targetRoot, targetRoot, entry, variables, created);
     }
     trackWrite(targetRoot, path.join(targetRoot, '.buildr', 'workspace.yml'), renderWorkspaceManifest({
@@ -426,10 +424,13 @@ export function registerApplicationWorkspaceOperations(runtime) {
     }), created);
     const nodeRuntime = runtime.ensureWorkspaceNodeRuntime({ id: workspaceId, name, description, runtime: { node: { version: process.versions.node } } });
     ensureRootRequiredBlock(targetRoot, changed);
-    trackWrite(targetRoot, path.join(targetRoot, 'skills', 'manifest.yml'), renderSkillsManifestYaml({
-      ...(skillsBaseline || { schemaVersion: 'buildr.skills/v3', skills: [] }),
-      workspaceId,
-    }), created);
+    trackWrite(targetRoot, path.join(targetRoot, 'projects', 'manifest.yml'), renderProjectsYaml({ schemaVersion: 'buildr.projects/v2', projects: {} }), created);
+    trackWrite(targetRoot, path.join(targetRoot, 'rules', 'manifest.yml'), renderRulesManifestYaml({ rules: [] }), created);
+    trackWrite(targetRoot, path.join(targetRoot, 'skills', 'manifest.yml'), renderSkillsManifestYaml({ schemaVersion: 'buildr.skills/v3', workspaceId, skills: [] }), created);
+    trackWrite(targetRoot, path.join(targetRoot, 'commands', 'manifest.yml'), renderCommandsManifestYaml({ commands: [] }), created);
+    trackWrite(targetRoot, path.join(targetRoot, 'components', 'manifest.yml'), renderComponentsManifestYaml({ components: [] }), created);
+    const builtinResult = syncPackageBuiltins(targetRoot);
+    changed.push(...builtinResult.changed);
     const componentResult = syncPackageComponents(targetRoot);
     if (componentResult.errors.length) throw new Error(componentResult.errors.map((item) => item.error).join('\n'));
     changed.push(...componentResult.changed);

@@ -30,6 +30,9 @@ function repository(t) {
   git(root, ['config', 'user.email', 'buildr@example.com']);
   fs.writeFileSync(path.join(root, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline\n');
+  const packagedWorkspace = path.join(root, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml');
+  fs.mkdirSync(path.dirname(packagedWorkspace), { recursive: true });
+  fs.writeFileSync(packagedWorkspace, 'legacy product source\n');
   git(root, ['add', '-A']);
   git(root, ['commit', '-m', 'baseline']);
   const taskRoot = path.join(root, '.worktrees', 'task');
@@ -58,6 +61,28 @@ test('最新 Delivery Baseline 上干净应用时 Task Contribution identity 保
   assert.equal(git(carrier.root, ['show', 'HEAD:baseline-advance.txt']), 'advanced independently');
   assert.equal(git(carrier.root, ['show', 'HEAD:feature.txt']), 'candidate contribution');
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'clean-reuse', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('Task Contribution交付普通嵌套 .buildr 删除并排除OpenSpec Change receipt', (t) => {
+  const { root, taskRoot } = repository(t);
+  const packagedWorkspace = 'package/targets/workspace/.buildr/workspace.yml';
+  fs.rmSync(path.join(taskRoot, packagedWorkspace));
+  const changeReceipt = path.join(taskRoot, 'openspec', 'changes', 'demo', '.buildr', 'convergence-receipt.json');
+  fs.mkdirSync(path.dirname(changeReceipt), { recursive: true });
+  fs.writeFileSync(changeReceipt, '{"status":"control-only"}\n');
+  git(taskRoot, ['add', '-A']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const sourcePaths = git(taskRoot, ['ls-tree', '-r', '--name-only', contribution.source.tree]).split('\n');
+  assert.equal(sourcePaths.includes(packagedWorkspace), false);
+  assert.equal(sourcePaths.includes('openspec/changes/demo/.buildr/convergence-receipt.json'), false);
+
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'nested-buildr-delete', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
+  assert.equal(carrier.changedPaths.includes(packagedWorkspace), true);
+  assert.equal(fs.existsSync(path.join(carrier.root, packagedWorkspace)), false);
+  assert.equal(verifyGitTaskContributionCarrier({ repositoryRoot: taskRoot, carrier }).status, 'equivalent');
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'nested-buildr-delete', expectedRoot: carrier.root }).status, 'removed');
 });
 
 test('未提交 active Change 归档重命名进入 Task source snapshot 且不修改原 index', (t) => {

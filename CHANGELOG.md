@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+## 0.1.0-rc.12 - 2026-08-15
+
+- 包含 rc.11 已验证候选中的 Buildr CLI 安装通道隔离、Buildr Web、自举激活、Formal Task Finish、Verification、分布式 Candidate 和唯一 pre-tag OIDC authority probe 等改进；`v0.1.0-rc.11` tag 保持不动，但其 workflow 在任何 npm 写入和 GitHub Release 创建前失败。
+- 修复产品发布包携带开发仓用户态配置源的问题：`.buildr/workspace.yml`、Workspace registries、Project `capabilities.yml`/`commands.yml` 和 Service registry 不再进入 package target、Application Payload 或 npm tarball。
+- Workspace 初始化、Project 创建和同步更新现在通过对应 Domain writer 生成缺失的 schema-valid 空配置，再从 package 声明收敛 Builtins 与 Components；已有用户配置保持用户 ownership，不从产品开发配置复制或覆盖。
+- 增加 package static、初始化/同步、Application Payload 和真实 npm candidate inventory 契约，持续拒绝用户态配置源回到发布物；同时修复 rc.11 publish job 在重新校验 frozen payload 时因缺失 `resources/product/package/targets/workspace/.buildr/workspace.yml` 而失败的根因。
+
 ## 0.1.0-rc.11 - 2026-08-14
 
 - 包含 rc.10 已验证候选中的 Buildr CLI 安装通道隔离、Buildr Web、自举激活、Formal Task Finish、Verification、分布式 Candidate 与唯一 pre-tag OIDC authority probe 等改进；`v0.1.0-rc.10` tag 保持不动，但该 tag workflow 在任何 npm 写入和 GitHub Release 创建前失败。

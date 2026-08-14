@@ -4,29 +4,20 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { resolveSkillCapabilityGraph } from '../../src/infrastructure/runtime/skills/capabilities.mjs';
 import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
 
-const target = path.resolve('package/targets/workspace');
 const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
 
 test('task-review contract/provider/binding 以一个能力支持两种参数化 Result', () => {
-  const manifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
-  const contract = manifest.contracts.find((item) => item.id === 'buildr.task-review' && item.version === 1);
+  const manifest = YAML.parse(read('package/manifest.yml'));
+  const contract = manifest.capabilityContracts.find((item) => item.id === 'buildr.task-review' && item.version === 1);
   assert.ok(contract);
-  assert.equal(parseCapabilityContract(path.join(target, 'skills', contract.path), contract).id, 'buildr.task-review');
-  assert.deepEqual(manifest.bindings.find((item) => item.capability === 'buildr.task-review'), { capability: 'buildr.task-review', version: 1, provider: 'task-review' });
-  const provider = manifest.skills.find((item) => item.id === 'task-review');
-  assert.equal(provider.enabled, true);
+  assert.equal(parseCapabilityContract(path.resolve(contract.path), contract).id, 'buildr.task-review');
+  assert.deepEqual(manifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-review'), { capability: 'buildr.task-review', version: 1, provider: 'task-review' });
+  const provider = manifest.builtins.skills.find((item) => item.id === 'task-review');
   assert.equal(provider.required, false);
-  assert.equal(provider.state, 'installed');
   assert.deepEqual(provider.provides, [{ capability: 'buildr.task-review', version: 1 }]);
-  assert.equal(manifest.contracts.some((item) => /(?:planning|completion)[.-]review|task-review-(?:planning|completion)/i.test(item.id)), false);
-  const graph = resolveSkillCapabilityGraph(target, null, { runtime: 'codex' });
-  assert.deepEqual(graph.bindings.find((item) => item.capability === 'buildr.task-review'), {
-    capability: 'buildr.task-review', version: 1, provider: 'task-review', scope: '.', manifestPath: 'skills/manifest.yml', context: 'workspace-default',
-  });
-  assert.deepEqual(graph.skills.find((item) => item.id === 'task-review').provides, [{ capability: 'buildr.task-review', version: 1 }]);
+  assert.equal(manifest.capabilityContracts.some((item) => /(?:planning|completion)[.-]review|task-review-(?:planning|completion)/i.test(item.id)), false);
 });
 
 test('task-review 动态审查范围、真实 method，并在中断时不写 Result', () => {

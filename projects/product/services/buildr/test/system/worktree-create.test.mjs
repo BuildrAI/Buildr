@@ -150,11 +150,11 @@ test('Git provider cleanup 幂等确认已提前消失的 worktree 与本地分�
   assert.equal(fs.existsSync(created.evidencePath), false);
 });
 
-test('Git provider cleanup 只容忍任意层级 Buildr control metadata，source dirt 仍 fail closed', (t) => {
+test('Git provider cleanup 只容忍已知 Buildr control metadata，普通嵌套 .buildr source dirt 仍 fail closed', (t) => {
   const root = fixtureWorkspace(t);
   const controlTask = 'provider-control-metadata-cleanup';
   const control = buildr(['worktree', 'create', controlTask, '--branch', `codex/${controlTask}`, '--start-point', 'main', '--target', root, '--json']);
-  const nestedMetadata = path.join(control.repositories[0].checkoutPath, 'docs', '.buildr', 'receipt.yml');
+  const nestedMetadata = path.join(control.repositories[0].checkoutPath, 'projects', 'product', 'openspec', 'changes', 'demo', '.buildr', 'convergence-receipt.json');
   fs.mkdirSync(path.dirname(nestedMetadata), { recursive: true });
   fs.writeFileSync(nestedMetadata, 'status: current\n');
   const cleaned = buildr(['worktree', 'cleanup', controlTask, '--integrated-ref', 'workspace=main', '--target', root, '--json']);
@@ -163,7 +163,8 @@ test('Git provider cleanup 只容忍任意层级 Buildr control metadata，sourc
 
   const sourceTask = 'provider-source-dirt-blocked';
   const source = buildr(['worktree', 'create', sourceTask, '--branch', `codex/${sourceTask}`, '--start-point', 'main', '--target', root, '--json']);
-  const dirtySource = path.join(source.repositories[0].checkoutPath, 'source-dirty.txt');
+  const dirtySource = path.join(source.repositories[0].checkoutPath, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml');
+  fs.mkdirSync(path.dirname(dirtySource), { recursive: true });
   fs.writeFileSync(dirtySource, 'uncommitted source\n');
   const blocked = buildr(['worktree', 'cleanup', sourceTask, '--integrated-ref', 'workspace=main', '--target', root, '--json'], 1);
   assert.equal(blocked.diagnostic.code, 'git_worktree_dirty');

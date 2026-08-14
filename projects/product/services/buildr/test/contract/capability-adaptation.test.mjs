@@ -6,7 +6,6 @@ import YAML from 'yaml';
 // These tests own the static contract between packaged assets, manifests, and public guidance.
 const read = (path) => fs.readFileSync(path, 'utf8');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
-const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 const core = read('package/targets/workspace/rules/buildr/core.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const adaptation = read('package/targets/workspace/skills/buildr/capability-adaptation/SKILL.md');
@@ -52,16 +51,11 @@ test('Core 要求 Skill 变更前检查跨 Skill 影响', () => {
 
 test('capability-adaptation 作为 optional 管理 Skill 发布且不声明空洞 capability', () => {
   const packaged = packageManifest.builtins.skills.find((skill) => skill.id === 'capability-adaptation');
-  const workspace = workspaceManifest.skills.find((skill) => skill.id === 'capability-adaptation');
   assert.ok(packaged);
   assert.equal(packaged.required, false);
   assert.deepEqual(packaged.provides, undefined);
   assert.deepEqual(packaged.requires, undefined);
   assert.equal(packaged.runtimes.length, 7);
-  assert.ok(workspace);
-  assert.equal(workspace.state, 'installed');
-  assert.equal(workspace.required, false);
-  assert.equal(workspace.runtimePath, 'capability-adaptation');
 });
 
 test('能力适配先验证候选并保留可恢复的当前实现', () => {

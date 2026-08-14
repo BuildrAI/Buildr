@@ -11,6 +11,8 @@ export function registerDomainsPackageAssets(runtime) {
   const readSkillManifest = (...args) => runtime.readSkillManifest(...args);
   const readSkillManifestSchemaVersion = (...args) => runtime.readSkillManifestSchemaVersion(...args);
   const renderSkillsManifestYaml = (...args) => runtime.renderSkillsManifestYaml(...args);
+  const renderProjectCapabilitiesYaml = (...args) => runtime.renderProjectCapabilitiesYaml(...args);
+  const renderProjectCommandsYaml = (...args) => runtime.renderProjectCommandsYaml(...args);
   const skillsManifestPath = (...args) => runtime.skillsManifestPath(...args);
   const parseYamlValue = (...args) => runtime.parseYamlValue(...args);
   const parseServicesYaml = (...args) => runtime.parseServicesYaml(...args);
@@ -539,13 +541,19 @@ export function registerDomainsPackageAssets(runtime) {
     const variables = { project: projectName };
     for (const rawEntry of manifest.projectFiles) {
       const entry = parseManifestFileEntry(rawEntry, 'projectFiles');
-      if (entry.target === 'services/manifest.yml') continue;
-      if (entry.target === 'services/manifest.yml' && existsFile(path.join(projectRoot, 'services.yml'))) {
-        continue;
-      }
       const before = changed.length;
       writeMappedFileIfMissing(targetRoot, projectRoot, entry, variables, changed);
       if (changed.length > before) changed[changed.length - 1] = `projects/${projectName}/${entry.target}`;
+    }
+    for (const [relativePath, content] of [
+      ['capabilities.yml', renderProjectCapabilitiesYaml()],
+      ['commands.yml', renderProjectCommandsYaml()],
+    ]) {
+      const file = path.join(projectRoot, relativePath);
+      if (!existsFile(file)) {
+        atomicWriteFile(file, content);
+        changed.push(toPosixRelative(targetRoot, file));
+      }
     }
     // Unsupported projects/<project>/skills is preserved verbatim. Current
     // repair/sync never creates, rewrites, merges, migrates, or deletes it.
@@ -661,6 +669,8 @@ export function registerDomainsPackageAssets(runtime) {
         const entry = parseManifestFileEntry(rawEntry, 'projectFiles');
         affected.add(path.join(projectRoot, entry.target));
       }
+      affected.add(path.join(projectRoot, 'capabilities.yml'));
+      affected.add(path.join(projectRoot, 'commands.yml'));
       affected.add(path.join(projectRoot, 'services.yml'));
       affected.add(skillsManifestPath(projectRoot));
       affected.add(servicesManifestPath(projectRoot));

@@ -20,6 +20,8 @@ export function registerDomainsWorkspace(runtime) {
   const isValidAssetId = (...args) => runtime.isValidAssetId(...args);
   const assertName = (...args) => runtime.assertName(...args);
   const renderSkillsManifestYaml = (...args) => runtime.renderSkillsManifestYaml(...args);
+  const renderProjectCapabilitiesYaml = (...args) => runtime.renderProjectCapabilitiesYaml(...args);
+  const renderProjectCommandsYaml = (...args) => runtime.renderProjectCommandsYaml(...args);
   const optionValue = (...args) => runtime.optionValue(...args);
   const ensureDirectory = (...args) => runtime.ensureDirectory(...args);
   const atomicWriteFile = (...args) => runtime.atomicWriteFile(...args);
@@ -500,9 +502,10 @@ export function registerDomainsWorkspace(runtime) {
         const variables = { project };
         for (const rawEntry of manifest.projectFiles) {
           const entry = parseManifestFileEntry(rawEntry, 'projectFiles');
-          if (entry.target === 'services/manifest.yml') continue;
           writeMappedFileIfMissing(targetRoot, projectRoot, entry, variables, created);
         }
+        trackWrite(targetRoot, path.join(projectRoot, 'capabilities.yml'), renderProjectCapabilitiesYaml(), created);
+        trackWrite(targetRoot, path.join(projectRoot, 'commands.yml'), renderProjectCommandsYaml(), created);
         const source = repoRef
           ? {
             type: 'git',

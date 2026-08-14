@@ -15,7 +15,6 @@ const taskVerificationReference = read('package/targets/workspace/skills/buildr/
 const taskVerificationTemplate = YAML.parse(read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
 const taskTriage = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
-const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 const packageManifest = YAML.parse(read('package/manifest.yml'));
 
 test('project-testing 是无状态且无 capability binding 的独立 Skill', () => {
@@ -24,16 +23,13 @@ test('project-testing 是无状态且无 capability binding 的独立 Skill', ()
     '不写 `verification.yml`', '交给 `task-verification`',
   ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
 
-  const workspaceSkill = workspaceManifest.skills.find((item) => item.id === 'project-testing');
-  assert.ok(workspaceSkill);
-  assert.equal(workspaceSkill.required, false);
-  assert.equal(Object.hasOwn(workspaceSkill, 'provides'), false);
-  assert.equal(Object.hasOwn(workspaceSkill, 'requires'), false);
-  assert.equal(workspaceManifest.contracts.some((item) => item.id.includes('project-testing')), false);
-  assert.equal(workspaceManifest.bindings.some((item) => item.capability.includes('project-testing')), false);
-
   const packagedSkill = packageManifest.builtins.skills.find((item) => item.id === 'project-testing');
   assert.ok(packagedSkill);
+  assert.equal(packagedSkill.required, false);
+  assert.equal(Object.hasOwn(packagedSkill, 'provides'), false);
+  assert.equal(Object.hasOwn(packagedSkill, 'requires'), false);
+  assert.equal(packageManifest.capabilityContracts.some((item) => item.id.includes('project-testing')), false);
+  assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability.includes('project-testing')), false);
   assert.equal(packagedSkill.required, false);
   assert.equal(Object.hasOwn(packagedSkill, 'provides'), false);
   assert.equal(Object.hasOwn(packagedSkill, 'requires'), false);

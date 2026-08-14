@@ -9,7 +9,6 @@ const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
 const read = (relative) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
 const readProduct = (relative) => fs.readFileSync(path.join(PRODUCT_ROOT, relative), 'utf8');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
-const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 const runtimeBuildr = read('package/targets/runtime/skills/buildr/SKILL.md');
 const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
 const gitSkill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
@@ -18,14 +17,10 @@ const workflowDelta = readProduct('openspec/specs/agent-task-workflows/spec.md')
 
 test('“收尾”路由区分 Formal Task Finish 与无 Task 直接 Git 交付', () => {
   const packagedFinish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
-  const workspaceFinish = workspaceManifest.skills.find((item) => item.id === 'task-finish');
   const packagedGit = packageManifest.builtins.skills.find((item) => item.id === 'git-operations');
-  const workspaceGit = workspaceManifest.skills.find((item) => item.id === 'git-operations');
 
-  assert.equal(workspaceFinish.description, packagedFinish.description);
-  assert.equal(workspaceGit.description, packagedGit.description);
-  assert.match(workspaceFinish.description, /active formal Task/);
-  assert.match(workspaceGit.description, /没有 active Task.*“收尾”/);
+  assert.match(packagedFinish.description, /active formal Task/);
+  assert.match(packagedGit.description, /没有 active Task.*“收尾”/);
   assert.match(runtimeBuildr, /没有 active Task.*“收尾”/);
   assert.match(runtimeBuildr, /fetch → 必要时精确 commit → rebase → push/);
   assert.match(runtimeBuildr, /不创建 Task、Environment、Verification、Candidate、Finish Result/);

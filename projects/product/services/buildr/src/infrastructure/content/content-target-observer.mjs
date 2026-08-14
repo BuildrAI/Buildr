@@ -3,12 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { spawnSync } from '../process.mjs';
+import { controlMetadataPath } from '../git/control-metadata-path.mjs';
 import { taskDevelopmentError } from '../../domain/task-development/task-development.mjs';
 
 export const GIT_CONTENT_OBSERVER = 'buildr.git-content-observer/v1';
 export const FILESYSTEM_CONTENT_OBSERVER = 'buildr.filesystem-content-observer/v1';
-
-const CONTROL_ENTRIES = new Set(['.buildr', '.git']);
 
 function posix(value) {
   return value.split(path.sep).join('/');
@@ -38,8 +37,8 @@ function filesystemPaths(root, io) {
   const files = [];
   const visit = (directory) => {
     for (const entry of io.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
-      if (CONTROL_ENTRIES.has(entry.name)) continue;
       const target = path.join(directory, entry.name);
+      if (controlMetadataPath(posix(path.relative(root, target)))) continue;
       if (entry.isDirectory() && !entry.isSymbolicLink()) visit(target);
       else files.push(target);
     }
@@ -49,8 +48,7 @@ function filesystemPaths(root, io) {
 }
 
 function deliverablePath(root, target) {
-  const segments = posix(path.relative(root, target)).split('/');
-  return !segments.some((segment) => CONTROL_ENTRIES.has(segment));
+  return !controlMetadataPath(posix(path.relative(root, target)));
 }
 
 function gitPaths(root, run, io) {

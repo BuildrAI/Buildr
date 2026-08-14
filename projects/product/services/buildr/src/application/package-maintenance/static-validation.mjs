@@ -2,11 +2,14 @@ import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } fr
 
 export function createPackageStaticValidator(deps) {
   const {
+    GENERATED_USER_REGISTRY_PACKAGE_SOURCES,
     LEGACY_PACKAGE_PATHS,
     PACKAGE_RUNTIME_TARGET,
     PACKAGE_WORKSPACE_TARGET,
     SUPPORTED_AGENT_IDS,
     collectFiles,
+    builtinRuleEntry,
+    builtinSkillEntry,
     componentMemberPaths,
     existsDirectory,
     existsFile,
@@ -20,11 +23,13 @@ export function createPackageStaticValidator(deps) {
     parseCommandsManifestYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
+    parseRulesManifestYaml,
     parseSkillFrontmatter,
     parseSkillSourceRef,
     path,
     readPackageManifest,
     readSkillManifest,
+    sourcePathFromBuiltin,
     toPosixRelative,
     validateBootstrapContract,
     validateCommandsManifest,
@@ -49,16 +54,16 @@ export function createPackageStaticValidator(deps) {
   function validateWorkspaceSkillsBaseline(root, problems) {
     const workspaceSkillsRoot = path.join(root, 'skills');
     const workspaceManifest = path.join(workspaceSkillsRoot, 'manifest.yml');
-    const baselineSkillsRoot = path.join(packageWorkspaceTargetRoot(), 'skills');
-    const baselineManifest = path.join(baselineSkillsRoot, 'manifest.yml');
-    const packageSkillSourceIds = new Set(readPackageManifest().skillSources.map((source) => source.id));
+    const manifest = readPackageManifest();
+    const packageSkillSourceIds = new Set(manifest.skillSources.map((source) => source.id));
 
-    if (!existsFile(workspaceManifest) || !existsFile(baselineManifest)) return;
+    if (!existsFile(workspaceManifest)) return;
 
     const workspaceSkills = new Map(readSkillManifest(workspaceManifest).map((skill) => [skill.id, skill]));
-    for (const baselineSkill of readSkillManifest(baselineManifest)) {
+    for (const builtin of manifest.builtins.skills.filter((skill) => !skill.component)) {
+      const baselineSkill = builtinSkillEntry(builtin);
       if (!baselineSkill.id || (baselineSkill.path === undefined && baselineSkill.source === undefined && baselineSkill.resolved === undefined)) {
-        problems.push('Workspace skills baseline manifest entries must include id and path, source, or resolved.');
+        problems.push('Package builtin Skill entries must produce id and path, source, or resolved.');
         continue;
       }
 
@@ -94,10 +99,10 @@ export function createPackageStaticValidator(deps) {
         continue;
       }
 
-      const baselineSkillFile = path.join(baselineSkillsRoot, baselineSkill.path, 'SKILL.md');
+      const baselineSkillFile = path.join(sourcePathFromBuiltin(builtin), 'SKILL.md');
       const workspaceSkillFile = path.join(workspaceSkillsRoot, workspaceSkill.path, 'SKILL.md');
       if (!existsFile(baselineSkillFile)) {
-        problems.push(`Workspace skills baseline SKILL.md does not exist: ${PACKAGE_WORKSPACE_TARGET}/skills/${baselineSkill.path}/SKILL.md`);
+        problems.push(`Package builtin Skill SKILL.md does not exist: ${builtin.path}/SKILL.md`);
         continue;
       }
       if (!existsFile(workspaceSkillFile)) {
@@ -116,7 +121,6 @@ export function createPackageStaticValidator(deps) {
   function validateWorkspaceRulesBaseline(root, problems) {
     const baselinePairs = [
       ['AGENTS.md', 'AGENTS.md'],
-      ['rules/manifest.yml', 'rules/manifest.yml'],
       ['rules/buildr/core.md', 'rules/buildr/core.md'],
     ];
 
@@ -128,6 +132,22 @@ export function createPackageStaticValidator(deps) {
         const packageContent = fs.readFileSync(packageFile, 'utf8');
         if (rootContent !== packageContent) {
           problems.push(`Root ${rootRelative} differs from ${PACKAGE_WORKSPACE_TARGET}/${packageRelative}.`);
+        }
+      }
+    }
+
+    const rulesManifestFile = path.join(root, 'rules', 'manifest.yml');
+    if (existsFile(rulesManifestFile)) {
+      const rootRules = parseRulesManifestYaml(fs.readFileSync(rulesManifestFile, 'utf8')).rules || [];
+      for (const builtin of readPackageManifest().builtins.rules.filter((rule) => !rule.component)) {
+        const desired = builtinRuleEntry(builtin);
+        const actual = rootRules.find((rule) => rule.id === desired.id);
+        if (!actual) {
+          problems.push(`Workspace rules baseline ${desired.id} is missing from root rules/manifest.yml.`);
+          continue;
+        }
+        if (JSON.stringify(actual) !== JSON.stringify(desired)) {
+          problems.push(`Workspace rules baseline ${desired.id} differs from the package builtin declaration.`);
         }
       }
     }
@@ -470,6 +490,9 @@ export function createPackageStaticValidator(deps) {
           continue;
         }
         mappedEntries.push(entry);
+        if (GENERATED_USER_REGISTRY_PACKAGE_SOURCES.includes(entry.source)) {
+          problems.push(`Package manifest must not map generated user registry source: ${entry.raw}`);
+        }
         if (LEGACY_PACKAGE_PATHS.some((legacyPath) => entry.source === legacyPath || entry.source.startsWith(`${legacyPath}/`))) {
           problems.push(`Package manifest must not reference legacy package source: ${entry.raw}`);
         }
@@ -1344,6 +1367,17 @@ export function createPackageStaticValidator(deps) {
   function validatePackageAssets(context) {
     const { root, workspaceRoot, manifestPath, manifest, allowedVariables, files, problems } = context;
     const bootstrapContract = validateBootstrapContract(root, files, problems);
+    for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
+      if (existsFile(path.resolve(root, relativePath))) {
+        problems.push(`Generated user registry must not exist as a package source: ${relativePath}`);
+      }
+    }
+    for (const file of collectFiles(packageWorkspaceTargetRoot())) {
+      const relativePath = toPosixRelative(packageWorkspaceTargetRoot(), file);
+      if (!/\.ya?ml$/u.test(relativePath)) continue;
+      if (relativePath.startsWith('skills/') || relativePath.startsWith('commands/buildr/') || relativePath.startsWith('components/buildr/')) continue;
+      problems.push(`Workspace-target YAML must be product content, not a user registry source: ${PACKAGE_WORKSPACE_TARGET}/${relativePath}`);
+    }
     if (workspaceRoot) {
       validateWorkspaceSkillsBaseline(workspaceRoot, problems);
       validateWorkspaceRulesBaseline(workspaceRoot, problems);

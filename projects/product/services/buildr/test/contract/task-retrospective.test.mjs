@@ -6,20 +6,19 @@ import YAML from 'yaml';
 
 import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
 
-const root = path.resolve('package/targets/workspace');
 const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
 
 test('Task Retrospective contract/provider/binding保持terminal-only与非门禁边界', () => {
-  const manifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
-  const contract = manifest.contracts.find((item) => item.id === 'buildr.task-retrospective' && item.version === 2);
+  const manifest = YAML.parse(read('package/manifest.yml'));
+  const contract = manifest.capabilityContracts.find((item) => item.id === 'buildr.task-retrospective' && item.version === 2);
   assert.ok(contract);
-  assert.equal(parseCapabilityContract(path.join(root, 'skills', contract.path), contract).id, 'buildr.task-retrospective');
-  assert.deepEqual(manifest.bindings.find((item) => item.capability === 'buildr.task-retrospective'), { capability: 'buildr.task-retrospective', version: 2, provider: 'task-retrospective' });
-  const provider = manifest.skills.find((item) => item.id === 'task-retrospective');
+  assert.equal(parseCapabilityContract(path.resolve(contract.path), contract).id, 'buildr.task-retrospective');
+  assert.deepEqual(manifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-retrospective'), { capability: 'buildr.task-retrospective', version: 2, provider: 'task-retrospective' });
+  const provider = manifest.builtins.skills.find((item) => item.id === 'task-retrospective');
   assert.deepEqual(provider.provides, [{ capability: 'buildr.task-retrospective', version: 2 }]);
   assert.ok(provider.requires.some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required'));
-  const development = manifest.skills.find((item) => item.id === 'task-development');
-  const finish = manifest.skills.find((item) => item.id === 'task-finish');
+  const development = manifest.builtins.skills.find((item) => item.id === 'task-development');
+  const finish = manifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   const skill = read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md');
@@ -51,8 +50,7 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
 
 test('active package不再发布Task Asset Review', () => {
   const productManifest = read('package/manifest.yml');
-  const workspaceManifest = read('package/targets/workspace/skills/manifest.yml');
-  for (const content of [productManifest, workspaceManifest]) {
+  for (const content of [productManifest]) {
     const parsed = YAML.parse(content);
     const skills = parsed.builtins?.skills || parsed.skills || [];
     const contracts = parsed.capabilityContracts || parsed.contracts || [];

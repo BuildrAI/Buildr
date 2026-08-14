@@ -5,20 +5,16 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
-import { resolveSkillCapabilityGraph } from '../../src/infrastructure/runtime/skills/capabilities.mjs';
 
 const target = path.resolve('package/targets/workspace');
 
 test('task-manager contract/provider/binding 与 task-triage optional consumer 原子一致', () => {
-  const manifest = YAML.parse(fs.readFileSync(path.join(target, 'skills', 'manifest.yml'), 'utf8'));
-  const contract = manifest.contracts.find((item) => item.id === 'buildr.task-record' && item.version === 2);
-  assert.ok(contract); assert.equal(parseCapabilityContract(path.join(target, 'skills', contract.path), contract).id, 'buildr.task-record');
-  assert.deepEqual(manifest.bindings.find((item) => item.capability === 'buildr.task-record'), { capability: 'buildr.task-record', version: 2, provider: 'task-manager' });
-  const manager = manifest.skills.find((item) => item.id === 'task-manager'); assert.equal(manager.enabled, true); assert.equal(manager.state, 'installed'); assert.equal(manager.required, false); assert.deepEqual(manager.provides, [{ capability: 'buildr.task-record', version: 2 }]);
-  const triage = manifest.skills.find((item) => item.id === 'task-triage'); assert.ok(triage.requires.some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional'));
-  const graph = resolveSkillCapabilityGraph(target, null, { runtime: 'codex' });
-  const dependency = graph.consumers.find((item) => item.consumer === 'task-triage').dependencies.find((item) => item.capability === 'buildr.task-record');
-  assert.equal(dependency.selectedProvider.id, 'task-manager'); assert.equal(dependency.readiness, 'ready');
+  const manifest = YAML.parse(fs.readFileSync('package/manifest.yml', 'utf8'));
+  const contract = manifest.capabilityContracts.find((item) => item.id === 'buildr.task-record' && item.version === 2);
+  assert.ok(contract); assert.equal(parseCapabilityContract(path.resolve(contract.path), contract).id, 'buildr.task-record');
+  assert.deepEqual(manifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-record'), { capability: 'buildr.task-record', version: 2, provider: 'task-manager' });
+  const manager = manifest.builtins.skills.find((item) => item.id === 'task-manager'); assert.equal(manager.required, false); assert.deepEqual(manager.provides, [{ capability: 'buildr.task-record', version: 2 }]);
+  const triage = manifest.builtins.skills.find((item) => item.id === 'task-triage'); assert.ok(triage.requires.some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional'));
 });
 
 test('task-manager routing 正向命中正式记录，负向排除普通任务和专业阶段', () => {
