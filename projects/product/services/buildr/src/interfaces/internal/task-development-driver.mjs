@@ -10,6 +10,7 @@ import {
   taskDevelopmentDriverHelp,
   taskDevelopmentDriverSchema,
 } from '../../application/task-development/task-development-operation-contracts.mjs';
+import { compactTaskDevelopmentOperationResult } from '../../application/task-development/task-development-result-projection.mjs';
 
 function option(args, name, fallback = undefined) {
   const index = args.indexOf(name);
@@ -55,6 +56,8 @@ if (discoveryFlags.length === 1) {
   process.exit(0);
 }
 
+if (args.includes('--compact') && args.includes('--profile')) usageError('--compact 与 --profile 不能同时使用。');
+
 const taskId = option(args, '--task');
 const targetRoot = option(args, '--target');
 
@@ -84,7 +87,8 @@ try {
   const result = operations[action]();
   const applicationMs = performance.now() - applicationStartedAt;
   const serializationStartedAt = performance.now();
-  const serialized = JSON.stringify(result, null, 2);
+  const output = args.includes('--compact') ? compactTaskDevelopmentOperationResult(result) : result;
+  const serialized = JSON.stringify(output, null, 2);
   const serializationMs = performance.now() - serializationStartedAt;
   if (args.includes('--profile')) {
     const timing = {

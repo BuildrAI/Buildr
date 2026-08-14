@@ -251,7 +251,7 @@ export function runOpenSpecConvergence({
       activeConflicts,
     });
     execution.push({ id: 'plan', status: plan.status === 'blocked' ? 'blocked' : 'passed', durationMs: Date.now() - planStartedAt, commandCount: 0 });
-    if (plan.status === 'blocked') return result('blocked', context, startedAt, execution, { code: 'semantic-resolution-required', blocked: plan.blocked, operations: plan.operations, nextActions: ['解决 delta 或 active Change 语义冲突后重新运行 converge。'] });
+    if (plan.status === 'blocked') return result('blocked', context, startedAt, execution, { code: 'semantic-resolution-required', blocked: plan.blocked, operations: plan.operations, effects: [], nextActions: ['解决 delta 或 active Change 语义冲突后重新运行 converge。'] });
     const validation = validateProjected({ files: plan.files.map((item) => ({ path: item.path, content: item.expectedContent, exists: item.expectedExists !== false })) });
     execution.push({ id: 'projected-validation', ...validation });
     if (validation.status !== 'passed') return result('blocked', context, startedAt, execution, { code: validation.code, validation, nextActions: ['修正 Change artifacts 使 projected Project 通过 strict validation。'] });

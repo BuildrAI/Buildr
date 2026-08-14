@@ -82,6 +82,8 @@ test('MODIFIED省略baseline Scenario时要求语义处理', (t) => {
   const plan = createDeterministicSyncPlan({ change: 'change', project: 'product', projectRoot, delta: delta([{ type: 'MODIFIED', capability: 'sample', title: 'One', requirement: requirement('One', 'Changed MUST work.') }]), baseline: { targets: [{ capability: 'sample', title: 'One', state: 'present', content: original }] } });
   assert.equal(plan.status, 'blocked');
   assert.equal(plan.blocked[0].code, 'semantic-resolution-required');
+  assert.equal(plan.blocked[0].reason, 'scenario-identities-omitted');
+  assert.deepEqual(plan.blocked[0].omittedScenarioIdentities, ['retained']);
 });
 
 test('所有temporary准备完成前失败不会写canonical', (t) => {

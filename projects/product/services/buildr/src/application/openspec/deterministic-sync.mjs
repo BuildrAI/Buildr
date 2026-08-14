@@ -99,7 +99,7 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
       const copies = document.identities.get(title) || [];
       let status = 'safe';
       let reason = 'unique-structural-result';
-      const fail = (code) => { status = 'blocked'; reason = code; blocked.push({ capability, requirement: title, operation: operation.type, code }); };
+      const fail = (code, details = {}) => { status = 'blocked'; reason = code; blocked.push({ capability, requirement: title, operation: operation.type, code, ...details }); };
       if (copies.length > 1) fail('semantic-resolution-required');
       else if (operation.type === 'ADDED') {
         if (copies.length === 0) additions.push(operation.requirement);
@@ -111,7 +111,11 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
         const deltaScenarios = scenarioIdentities(operation.requirement);
         const omitted = baselineScenarios.names.filter((name) => !deltaScenarios.names.includes(name));
         if (!target || target.state !== 'present' || copies[0] !== target.content) fail('baseline-or-canonical-drift');
-        else if (!baselineScenarios.unique || !deltaScenarios.unique || omitted.length) fail('semantic-resolution-required');
+        else if (!baselineScenarios.unique || !deltaScenarios.unique) fail('semantic-resolution-required');
+        else if (omitted.length) fail('semantic-resolution-required', {
+          reason: 'scenario-identities-omitted',
+          omittedScenarioIdentities: [...omitted].sort((left, right) => left.localeCompare(right)),
+        });
         else if (copies[0] === normalize(operation.requirement)) { status = 'already-applied'; reason = 'canonical-equals-delta'; }
         else replacements.set(operation.title, normalize(operation.requirement));
       } else if (operation.type === 'REMOVED') {

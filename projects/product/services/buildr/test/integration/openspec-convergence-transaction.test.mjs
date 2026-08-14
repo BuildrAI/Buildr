@@ -48,6 +48,18 @@ test('planner聚合语义冲突并拒绝可执行写入', () => {
   assert.equal(plan.blocked.some((item) => item.code === 'active-change-conflict'), true);
 });
 
+test('planner按确定顺序返回MODIFIED省略的Scenario identities', () => {
+  const existing = `${requirement('Existing')}\n#### Scenario: zeta\n- **WHEN** zeta成立\n- **THEN** 系统 MUST 保留\n\n#### Scenario: alpha\n- **WHEN** alpha成立\n- **THEN** 系统 MUST 保留\n`;
+  const before = canonical(existing);
+  const operations = [{ type: 'MODIFIED', capability: 'demo', title: 'Existing', requirement: requirement('Existing', '系统 MUST 更新行为。') }];
+  const plan = planFor(before, operations);
+  assert.equal(plan.status, 'blocked');
+  assert.deepEqual(plan.blocked, [{
+    capability: 'demo', requirement: 'Existing', operation: 'MODIFIED', code: 'semantic-resolution-required',
+    reason: 'scenario-identities-omitted', omittedScenarioIdentities: ['alpha', 'zeta'],
+  }]);
+});
+
 test('observer只按before expected实际digest判断恢复状态', () => {
   const before = canonical(requirement('Existing'));
   const plan = planFor(before, [{ type: 'ADDED', capability: 'demo', title: 'Added', requirement: requirement('Added') }]);
@@ -149,8 +161,8 @@ function journey(options = {}) {
   fs.mkdirSync(changeRoot, { recursive: true });
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), options.tasks || '- [x] Complete fixture implementation\n');
-  fs.writeFileSync(file, canonical(requirement('Existing')));
-  const operations = [{ type: 'ADDED', capability: 'demo', title: 'Added', requirement: requirement('Added') }];
+  fs.writeFileSync(file, options.before || canonical(requirement('Existing')));
+  const operations = options.operations || [{ type: 'ADDED', capability: 'demo', title: 'Added', requirement: requirement('Added') }];
   const context = { change: 'change-a', project: 'product', projectRoot: root, changeRoot, archived: false, delta: delta(operations, options.hash) };
   let archiveCalls = 0;
   let releaseCalls = 0;
@@ -206,6 +218,26 @@ test('未完成checklist在receipt与canonical写入前fail closed', () => {
     assert.deepEqual(result.checklist, { exists: true, completed: 1, total: 2, remaining: 1 });
     assert.deepEqual(result.effects, []);
     assert.deepEqual(result.execution, [{ id: 'checklist', status: 'blocked', durationMs: 0, commandCount: 0 }]);
+    assert.equal(fs.readFileSync(fixture.file, 'utf8'), before);
+    assert.equal(fs.existsSync(convergenceReceiptPath(fixture.changeRoot)), false);
+    assert.equal(fixture.archiveCalls(), 0);
+  } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('convergence result透传Scenario omission且保持零写入', () => {
+  const existing = `${requirement('Existing')}\n#### Scenario: retained\n- **WHEN** retained成立\n- **THEN** 系统 MUST 保留\n`;
+  const before = canonical(existing);
+  const fixture = journey({
+    before,
+    operations: [{ type: 'MODIFIED', capability: 'demo', title: 'Existing', requirement: requirement('Existing', '系统 MUST 更新行为。') }],
+  });
+  try {
+    const result = fixture.run();
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.code, 'semantic-resolution-required');
+    assert.deepEqual(result.blocked[0].omittedScenarioIdentities, ['retained']);
+    assert.equal(result.blocked[0].reason, 'scenario-identities-omitted');
+    assert.deepEqual(result.effects, []);
     assert.equal(fs.readFileSync(fixture.file, 'utf8'), before);
     assert.equal(fs.existsSync(convergenceReceiptPath(fixture.changeRoot)), false);
     assert.equal(fixture.archiveCalls(), 0);
