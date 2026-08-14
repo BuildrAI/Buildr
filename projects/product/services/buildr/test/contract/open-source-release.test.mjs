@@ -441,7 +441,14 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
 test('CI and publish workflows use the supported Node runtime', () => {
   const verifyWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8');
   const publishWorkflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
+  const verifyDocument = YAML.parseDocument(verifyWorkflow, { uniqueKeys: true }).toJS();
   const hostNodeSmoke = fs.readFileSync(path.join(serviceRoot, 'test/verification/host-node/cli-smoke.mjs'), 'utf8');
+  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'workflow_dispatch']);
+  assert.deepEqual(verifyDocument.on.pull_request.branches, ['dev', 'main']);
+  assert.equal(verifyDocument.on.push, undefined);
+  assert.equal(verifyDocument.jobs['dev-feedback'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
+  assert.equal(verifyDocument.jobs['candidate-preflight'].if, "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')");
+  assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.match(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
   assert.match(verifyWorkflow, /github\.base_ref == 'dev'/);
   assert.match(verifyWorkflow, /github\.base_ref == 'main'/);
@@ -459,8 +466,6 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.match(verifyWorkflow, /^  candidate-gate:/m);
   assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
   assert.match(verifyWorkflow, /node: 24\.x/);
-  assert.match(verifyWorkflow, /^  push:[\s\S]*branches: \[dev\]/m);
-  assert.doesNotMatch(verifyWorkflow, /branches: \[main\]/, 'main push must not duplicate the already verified Candidate tree');
   assert.equal((verifyWorkflow.match(/release-tarball-smoke/g) || []).length, 0);
   assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);

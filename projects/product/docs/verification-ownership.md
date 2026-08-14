@@ -136,6 +136,8 @@ Development 稳定 Content Target 并固定 verification policy
         ↓ Verification facts 完整后冻结 Task Candidate
 ```
 
+GitHub hosted验证只承担独立边界：PR到`dev`运行双平台changed/affected Development feedback；`dev → main`和手工dispatch运行完整Candidate；tag workflow验证并发布正式制品。Formal Finish和self-bootstrap successor直接推送`dev`不自动启动`Verify Buildr`：source commit复用current Task Verification与Finish remote readback，successor复用self-bootstrap runner的精确delta、push readback、development identity与最终Doctor。平台高风险修改需要进入`dev`前的hosted Windows evidence时使用PR到`dev`，不把每次正式交付重新变成GitHub验证。
+
 GitHub Candidate不是第二套测试registry，而是同一Candidate profile的闭合分布式投影：低成本`candidate-preflight`先短路；`candidate-artifact`只构建一次tarball；macOS core、Windows runtime/Launcher、Windows Workspace/Task、Windows fresh build和四个Host Node tuple并行；`Candidate gate`聚合全部closed evidence并作为`main`唯一稳定required context。每个shard evidence绑定source SHA、registry identity、适用artifact identity、primary steps、内部阶段timing和workflow attempt。同一SHA只重跑失败job时，新attempt以相同逻辑artifact名覆盖旧evidence并重跑aggregate；新SHA不复用旧结果。
 
 冻结 source SHA `c2a76cde2d39566a2e665dcc7c2a1291c65a89b9` 的三轮 GitHub Candidate（runs `31719158091`、`31719762961`、`31720456534`）全部通过。总墙钟为 394s、468s、441s，中位 441s、范围 74s；runner 总量为 1136s、1156s、1181s，中位 1156s、范围 45s；最长 Windows Workspace/Task shard 为 288s、360s、331s，中位 331s、范围 72s。对照旧拓扑三轮绿色 run 的总墙钟 695s、931s、780s（中位 780s），新拓扑中位下降约 43.5%；runner 总量从旧中位 1274s 降到 1156s，下降约 9.3%。一次真实 runtime shard 失败后仅重跑 failed job 与 aggregate，恢复墙钟 159s、runner 154s，已成功的 artifact、core、Workspace、fresh build 与 Host Node jobs 没有重新执行。`main` branch protection 已在新 gate 绿色回读后保持 `strict: true`，从旧四个 contexts 迁移为唯一 `Candidate gate`（GitHub Actions app id `15368`）。
