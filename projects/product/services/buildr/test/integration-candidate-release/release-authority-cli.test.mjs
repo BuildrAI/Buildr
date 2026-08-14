@@ -246,6 +246,7 @@ else { process.stderr.write('unexpected gh command: '+key); process.exitCode=1; 
   assert.equal(evidence.observed.github.run.id, runId);
   assert.equal(evidence.observed.probe.artifact.name, artifactName);
   assert.deepEqual(evidence.findings, []);
+  assert.equal(containsCredentialMaterial(evidence), false);
   assert.equal(JSON.stringify(evidence).includes('"token":'), false);
   assert.equal(JSON.stringify(evidence).includes('eyJ'), false);
 });

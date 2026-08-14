@@ -89,7 +89,7 @@ function jobAuthority(job, script) {
   const runs = Array.isArray(job?.steps) ? job.steps.map((step) => step?.run).filter((value) => typeof value === 'string') : [];
   return {
     environment: environmentName(job?.environment),
-    idToken: permissions?.['id-token'] ?? null,
+    idTokenPermission: permissions?.['id-token'] ?? null,
     condition: typeof job?.if === 'string' ? job.if : null,
     scriptInvocations: runs.filter((value) => value.includes(script)).length,
   };
@@ -202,10 +202,10 @@ export function runReleaseAuthorityPreflight(options = {}, dependencies = {}) {
   else {
     if (path.basename(releaseWorkflowPath) !== expected.workflow) findings.push(finding('workflow_filename_mismatch', expected.workflow, path.basename(releaseWorkflowPath), 'workflow'));
     if (workflowAuthority.publish.environment !== expected.environment) findings.push(finding('workflow_environment_mismatch', expected.environment, workflowAuthority.publish.environment, 'workflow'));
-    if (workflowAuthority.publish.idToken !== 'write') findings.push(finding('workflow_id_token_permission_mismatch', 'write', workflowAuthority.publish.idToken, 'workflow'));
+    if (workflowAuthority.publish.idTokenPermission !== 'write') findings.push(finding('workflow_id_token_permission_mismatch', 'write', workflowAuthority.publish.idTokenPermission, 'workflow'));
     if (JSON.stringify(workflowAuthority.publish.allowedActions) !== JSON.stringify(expected.allowedActions)) findings.push(finding('workflow_allowed_actions_mismatch', expected.allowedActions, workflowAuthority.publish.allowedActions, 'workflow'));
     if (workflowAuthority.publish.condition !== "github.event_name == 'push'") findings.push(finding('workflow_publish_event_guard_mismatch', "github.event_name == 'push'", workflowAuthority.publish.condition, 'workflow'));
-    if (workflowAuthority.probe.environment !== expected.environment || workflowAuthority.probe.idToken !== 'write' || workflowAuthority.probe.condition !== "github.event_name == 'workflow_dispatch'" || workflowAuthority.probe.scriptInvocations !== 1) findings.push(finding('workflow_probe_identity_mismatch', { environment: expected.environment, idToken: 'write', condition: "github.event_name == 'workflow_dispatch'", scriptInvocations: 1 }, workflowAuthority.probe, 'workflow'));
+    if (workflowAuthority.probe.environment !== expected.environment || workflowAuthority.probe.idTokenPermission !== 'write' || workflowAuthority.probe.condition !== "github.event_name == 'workflow_dispatch'" || workflowAuthority.probe.scriptInvocations !== 1) findings.push(finding('workflow_probe_identity_mismatch', { environment: expected.environment, idTokenPermission: 'write', condition: "github.event_name == 'workflow_dispatch'", scriptInvocations: 1 }, workflowAuthority.probe, 'workflow'));
   }
 
   const observed = {
