@@ -1,9 +1,0 @@
-schemaVersion: buildr.workspace/v1
-id: "{{workspaceId}}"
-kind: organization
-name: "{{name}}"
-description: "{{description}}"
-runtime:
-  node:
-    version: "{{nodeVersion}}"
-profile: "{{profile}}"
