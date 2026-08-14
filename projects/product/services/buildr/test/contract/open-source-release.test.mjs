@@ -404,10 +404,16 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
   const installIndex = hostNodeSteps.findIndex((step) => step.run === 'npm ci');
   const downloadIndex = hostNodeSteps.findIndex((step) => step.uses === 'actions/download-artifact@v7');
   const verifierIndex = hostNodeSteps.findIndex((step) => typeof step.run === 'string' && step.run.includes('test/verification/host-node.mjs'));
+  const verifierStep = hostNodeSteps[verifierIndex];
   assert.equal(checkoutIndex < setupNodeIndex, true);
   assert.equal(setupNodeIndex < installIndex, true);
   assert.equal(installIndex < downloadIndex, true);
   assert.equal(downloadIndex < verifierIndex, true);
+  for (const binding of [
+    'BUILDR_CANDIDATE_TARBALL=',
+    'BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm/npm-pack.json"',
+    'BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/npm/release-artifact.json"',
+  ]) assert.equal(verifierStep.run.includes(binding), true, binding);
   assert.equal(document.jobs['host-node'].needs.includes('candidate'), true);
   assert.equal(hostNodeSteps.some((step) => typeof step.run === 'string' && step.run.includes('npm pack')), false);
   const probeRuns = document.jobs['authority-probe'].steps.map((step) => step.run).filter((value) => typeof value === 'string').join('\n');
