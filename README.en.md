@@ -22,7 +22,7 @@ Give this README to an Agent and say “Install Buildr for me,” or run:
 npm install --global @buildr-ai/buildr@next
 ```
 
-The current repository candidate is `0.1.0-rc.11`; available versions and the `next` dist-tag are always determined by the official npm Registry.
+The current repository candidate is `0.1.0-rc.12`; available versions and the `next` dist-tag are always determined by the official npm Registry.
 
 For an optional local Buildr Web launcher:
 

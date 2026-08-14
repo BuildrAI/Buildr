@@ -144,7 +144,7 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 8. npm tarball只由npm Registry承载；Actions artifact只保存冻结候选/evidence，README、官网和安装脚本不得把它作为公共下载地址。发布后只从Registry下载精确package并核对安装readback。
 9. 已发布版本不覆盖。RC问题发布新的prerelease；正式版本问题优先发布patch，必要时deprecate或移动dist-tag。所有tag、Registry与公共安装readback稳定后，远端release Task分支清理仍需独立授权；清理失败只记录follow-up，不回滚已发布事实。
 
-`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6`、`0.1.0-rc.7` 和 `0.1.0-rc.8` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用。`v0.1.0-rc.9` tag workflow 因Host Node checkout验证依赖缺失而失败；`v0.1.0-rc.10` 已补齐独立 `npm ci`，但两个Host Node jobs未向verifier传入冻结`release-artifact.json`而确定性失败。两次失败都发生在任何npm写入和GitHub Release创建前，npm `next`仍指向rc.8。rc.11以新版本显式绑定tarball、pack metadata与release manifest，不删除、移动或覆盖rc.9/rc.10 tag；后续正式发布仍需单独明确授权。
+`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6`、`0.1.0-rc.7` 和 `0.1.0-rc.8` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用。`v0.1.0-rc.9` tag workflow 因Host Node checkout验证依赖缺失而失败；`v0.1.0-rc.10` 已补齐独立 `npm ci`，但两个Host Node jobs未向verifier传入冻结`release-artifact.json`而确定性失败；`v0.1.0-rc.11` 修复Host Node wiring后进入publish job，但frozen Application Payload仍把开发仓用户态`.buildr/workspace.yml`当作必需资源，因该源已被正确移除而在任何公共写入前fail closed。npm `next`因此仍指向rc.8。rc.12以新版本移除全部Workspace、Project与Service用户态配置发布源，并由Domain writer在初始化、创建或同步时生成；既有rc.9/rc.10/rc.11 tag保持不动，后续正式发布仍需单独明确授权。
 
 实际自举workspace如需消费新版产品资产，可独立执行sync并在状态变更后运行当前Agent doctor。`buildr update`只按installation receipt更新当前npm package或development checkout；它不更新Workspace Node。上述能力验证不等于已完成tag、publish或GitHub Release mutation。
 
