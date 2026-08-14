@@ -168,7 +168,7 @@ function taskDevelopmentFixture() {
   };
 }
 
-test('preflight-only陈旧run要求新commit message；已有carrier事实时保留现场并拒绝换绑', async (t) => {
+test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢复或carrier事实拒绝换绑', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-stale-run-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -241,8 +241,50 @@ test('preflight-only陈旧run要求新commit message；已有carrier事实时保
   assert.equal(second.deliveryCommit.subject, 'fix(task-finish): deliver generation two');
   assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 2);
 
+  const safePrepare = runtime.readTaskFinishRunPersistence(retained, { taskId: task });
+  const prepareFailure = { phase: 'prepare', operation: 'carrier-preparation', check: null, failureClass: 'product-execution-failure', code: 'task-finish.carrier-prepare-failed', status: 'failed', exitCode: null, message: 'Unable to snapshot exact Task source.', findings: [], diagnostic: null };
+  safePrepare.run.status = 'failed';
+  safePrepare.run.phases.find((phase) => phase.id === 'preflight').status = 'passed';
+  safePrepare.run.phases.find((phase) => phase.id === 'preflight').failure = null;
+  safePrepare.run.phases.find((phase) => phase.id === 'prepare').status = 'failed';
+  safePrepare.run.phases.find((phase) => phase.id === 'prepare').attempts = 1;
+  safePrepare.run.phases.find((phase) => phase.id === 'prepare').failure = prepareFailure;
+  safePrepare.run.primaryFailure = prepareFailure;
+  safePrepare.run.resume = null;
+  runtime.writeTaskFinishRunPersistence(retained, safePrepare.run);
+  development.advanceTaskDevelopmentHandoff();
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--target', retained]),
+    (error) => error.code === 'task_finish.entry_gaps'
+      && error.details?.gaps?.delivery?.some((gap) => gap.code === 'task_finish.commit_message_required'),
+  );
+  const third = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation three', '--target', retained]);
+  assert.equal(third.status, 'blocked');
+  assert.notEqual(third.runId, second.runId);
+  assert.equal(third.candidate.generation, 3);
+  assert.equal(third.deliveryCommit.subject, 'fix(task-finish): deliver generation three');
+  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 3);
+
+  const prepareBlocked = runtime.readTaskFinishRunPersistence(retained, { taskId: task });
+  const blockedFailure = { phase: 'prepare', operation: 'target-fetch', check: null, failureClass: 'transient-external-condition', code: 'task-finish.target-fetch-failed', status: 'blocked', exitCode: 1, message: 'Unable to observe the target branch.', findings: [], diagnostic: null };
+  prepareBlocked.run.status = 'blocked';
+  prepareBlocked.run.phases.find((phase) => phase.id === 'preflight').status = 'passed';
+  prepareBlocked.run.phases.find((phase) => phase.id === 'preflight').failure = null;
+  prepareBlocked.run.phases.find((phase) => phase.id === 'prepare').status = 'blocked';
+  prepareBlocked.run.phases.find((phase) => phase.id === 'prepare').attempts = 1;
+  prepareBlocked.run.phases.find((phase) => phase.id === 'prepare').failure = blockedFailure;
+  prepareBlocked.run.primaryFailure = blockedFailure;
+  prepareBlocked.run.resume = { phase: 'prepare', token: 'sha256-prepare-resume', generatedAt: new Date().toISOString(), carrierIdentity: null };
+  runtime.writeTaskFinishRunPersistence(retained, prepareBlocked.run);
+  development.advanceTaskDevelopmentHandoff();
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation four', '--target', retained]),
+    (error) => error.code === 'task_finish.current_run_identity_conflict'
+      && error.details?.sideEffectFacts?.includes('uncertainPhase'),
+  );
+
   const persisted = runtime.readTaskFinishRunPersistence(retained, { taskId: task });
-  persisted.run.deliveryCarrier = { identity: 'sha256-owned-carrier', root: path.join(retained, '.buildr', 'task-finish', 'carriers', second.runId) };
+  persisted.run.deliveryCarrier = { identity: 'sha256-owned-carrier', root: path.join(retained, '.buildr', 'task-finish', 'carriers', third.runId) };
   persisted.run.status = 'blocked';
   persisted.run.phases.find((phase) => phase.id === 'preflight').status = 'passed';
   persisted.run.phases.find((phase) => phase.id === 'prepare').status = 'passed';
@@ -254,19 +296,18 @@ test('preflight-only陈旧run要求新commit message；已有carrier事实时保
   persisted.run.primaryFailure = { phase: 'deliver', operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', status: 'blocked', exitCode: null, message: 'Target changed.', findings: [], diagnostic: null };
   persisted.run.resume = { phase: 'deliver', token: 'sha256-deliver-resume', generatedAt: new Date().toISOString(), carrierIdentity: 'sha256-owned-carrier' };
   runtime.writeTaskFinishRunPersistence(retained, persisted.run);
-  development.advanceTaskDevelopmentHandoff();
   await assert.rejects(
-    runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation three', '--target', retained]),
+    runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation four', '--target', retained]),
     (error) => error.code === 'task_finish.current_run_identity_conflict'
       && error.details?.sideEffectFacts?.includes('carrier'),
   );
   await assert.rejects(
-    runtime.taskFinish('run', ['--run', second.runId, '--resume', 'sha256-deliver-resume', '--target', retained]),
+    runtime.taskFinish('run', ['--run', third.runId, '--resume', 'sha256-deliver-resume', '--target', retained]),
     (error) => error.code === 'task_finish.current_run_identity_conflict'
-      && error.details?.runId === second.runId,
+      && error.details?.runId === third.runId,
   );
   const retainedCurrent = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
-  assert.equal(retainedCurrent.runId, second.runId);
+  assert.equal(retainedCurrent.runId, third.runId);
   assert.equal(retainedCurrent.deliveryCarrier.identity, 'sha256-owned-carrier');
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], command(retained, 'git', ['rev-parse', 'HEAD']));
 });

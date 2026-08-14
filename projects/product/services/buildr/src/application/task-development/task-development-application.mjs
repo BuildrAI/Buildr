@@ -12,7 +12,7 @@ import {
   taskDevelopmentError,
 } from '../../domain/task-development/task-development.mjs';
 import { createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizePlannedContributionBindings, parentCoordinationError, validateContributionHandoffAgainstPlan } from '../../domain/parent-coordination/parent-coordination.mjs';
-import { taskDevelopmentActionFields } from './task-development-operation-contracts.mjs';
+import { taskDevelopmentActionFields, taskDevelopmentActionRequiredFields } from './task-development-operation-contracts.mjs';
 import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
 
 function assertObject(input, label) {
@@ -26,6 +26,12 @@ function assertFields(input, fields, label) {
 
 function assertActionFields(action, input, label) {
   assertFields(input, taskDevelopmentActionFields(action), label);
+}
+
+function assertActionRequiredFields(action, input, label) {
+  for (const field of taskDevelopmentActionRequiredFields(action)) {
+    if (!Object.hasOwn(input, field)) throw taskDevelopmentError('task_development_field_required', `${label} 缺少必填字段：${field}。`, 400, { field });
+  }
 }
 
 function relative(root, file) {
@@ -345,8 +351,27 @@ export function registerTaskDevelopmentApplication(runtime) {
     return { path: persistence.file, receiptDigest: persistence.receiptDigest, receipt: persistence.receipt, applicability, observedAt: persistence.observedAt ?? null };
   }
 
-  function result(operation, status, taskId, persistence, applicability, effects = [], diagnostic = null, nextActions = []) {
-    return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, diagnostic, effects, nextActions };
+  function recommendedNextActions(persistence, applicability) {
+    if (!persistence || !applicability) return [];
+    const receipt = persistence.receipt;
+    const reasonCodes = new Set((applicability.reasons || []).map((item) => item.code));
+    if (applicability.taskContext === 'stale' || applicability.planning === 'stale') return ['刷新current Task context与完整planning snapshot；专业artifact仍由对应authority维护。'];
+    if (!applicability.gates?.planning || reasonCodes.has('planning-missing-or-stale') || reasonCodes.has('planning-changes-required')) return ['通过task-review完成current Planning Review，或记录明确的not-applicable/waived disposition。'];
+    if (applicability.contentTarget !== 'current') return ['完成内容、测试开发与Change收敛后调用observe建立stable Content Target。'];
+    if (applicability.policy !== 'current') return ['根据current Task Verification declarations记录verification policy。'];
+    if (!applicability.gates?.verification || reasonCodes.has('verification-missing-or-stale') || reasonCodes.has('required-facts-incomplete')) return ['通过task-verification形成与current Content Target和policy匹配的正式Result。'];
+    if (applicability.candidate !== 'current') return ['调用freeze形成或复用current Task Candidate；负向Verification仍需后续显式风险决定。'];
+    if (!applicability.gates?.completion || reasonCodes.has('completion-missing-or-stale')) return ['通过task-review形成current Completion Review，或记录明确的not-applicable/waived disposition。'];
+    if (reasonCodes.has('completion-changes-required') && !receipt.decision) return ['处理Completion Review findings，或在明确授权下记录与current Result绑定的风险决定。'];
+    if (!receipt.decision || receipt.decision.candidateIdentity !== receipt.candidate?.identity) return ['根据current gates记录proceed或blocked；风险接受必须绑定精确Result与明确授权。'];
+    if (receipt.decision.outcome === 'blocked') return ['处理blocked原因并更新对应专业事实；Buildr不会自动推进。'];
+    if (applicability.handoff !== 'current') return ['调用handoff形成immutable Finish handoff。'];
+    return ['current Finish handoff已就绪；等待明确交付授权后进入task-finish。'];
+  }
+
+  function result(operation, status, taskId, persistence, applicability, effects = [], diagnostic = null, nextActions = null) {
+    const guidance = nextActions ?? recommendedNextActions(persistence, applicability);
+    return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, diagnostic, effects, nextActions: guidance };
   }
 
   function applicabilityFromObserved(receipt, observed) {
@@ -371,11 +396,13 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function planningMutation(operation, targetRoot, taskId, input) {
-    assertActionFields(operation, input, `Task Development ${operation}`);
+    const label = `Task Development ${operation}`;
+    assertActionFields(operation, input, label);
+    assertActionRequiredFields(operation, input, label);
     const inspected = task(targetRoot, taskId, { active: true, mutation: true });
     const execution = environment(targetRoot, taskId);
     const context = taskContext(inspected, input.changeDispositions);
-    const planning = planningSnapshot(input.planning || {});
+    const planning = planningSnapshot(input.planning);
     const requestedGate = input.planningGate ?? null;
     if (requestedGate) {
       assertFields(requestedGate, new Set(['disposition', 'targetIdentity', 'summary', 'source']), 'planningGate');

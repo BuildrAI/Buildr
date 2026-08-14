@@ -29,9 +29,10 @@ runtime:
   return root;
 }
 
-function run(root, profile = false) {
-  const result = spawnSync(process.execPath, [DRIVER, 'inspect', '--task', 'profile-driver', '--target', root, ...(profile ? ['--profile'] : [])], { encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
+function run(root, flags = [], expectedStatus = 0) {
+  const result = spawnSync(process.execPath, [DRIVER, 'inspect', '--task', 'profile-driver', '--target', root, ...flags], { encoding: 'utf8' });
+  assert.equal(result.status, expectedStatus, result.stderr);
+  if (expectedStatus !== 0) return JSON.parse(result.stderr);
   assert.equal(result.stderr, '');
   return JSON.parse(result.stdout);
 }
@@ -42,12 +43,24 @@ test('Task Development driver profile为opt-in response evidence', (t) => {
   assert.equal(ordinary.schemaVersion, 'buildr.task-development-operation-result/v1');
   assert.equal(ordinary.operation, 'inspect');
 
-  const profiled = run(root, true);
+  const profiled = run(root, ['--profile']);
   assert.equal(profiled.schemaVersion, 'buildr.task-development-driver-profile/v1');
   assert.equal(profiled.action, 'inspect');
   assert.equal(profiled.result.schemaVersion, 'buildr.task-development-operation-result/v1');
   assert.deepEqual(Object.keys(profiled.timing), ['moduleLoadMs', 'compositionMs', 'applicationMs', 'serializationMs', 'totalMs']);
   for (const value of Object.values(profiled.timing)) assert.equal(Number.isFinite(value) && value >= 0, true);
   assert.equal(profiled.timing.totalMs, profiled.timing.moduleLoadMs + profiled.timing.compositionMs + profiled.timing.applicationMs + profiled.timing.serializationMs);
+  assert.equal(createRuntime().readTaskDevelopmentPersistence(root, 'profile-driver', { optional: true }), null);
+
+  const compact = run(root, ['--compact']);
+  assert.equal(compact.schemaVersion, 'buildr.task-development-driver-compact/v1');
+  assert.equal(compact.operation, 'inspect');
+  assert.equal(compact.current, null);
+  assert.match(compact.nextActions[0], /begin/);
+  assert.equal(Object.hasOwn(compact, 'development'), false);
+
+  const ambiguous = run(root, ['--compact', '--profile'], 2);
+  assert.equal(ambiguous.diagnostic.code, 'task_development_driver_usage_invalid');
+  assert.match(ambiguous.diagnostic.message, /不能同时使用/);
   assert.equal(createRuntime().readTaskDevelopmentPersistence(root, 'profile-driver', { optional: true }), null);
 });

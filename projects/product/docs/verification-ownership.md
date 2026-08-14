@@ -50,7 +50,7 @@ Product registry 当前有 43 个 executable steps、40 个 primary owners；Tas
 | Package/Release Journey | `cli-package-parity`、`release-tarball-smoke` | checkout 与同一 tarball 的代表输出/一次 init mutation 一致；安装版 init/sync/doctor/uninstall 可用 | 共享 Candidate tarball、临时 npm prefix/Workspace；三个 consumer 依赖 `candidate-tarball`，可在产物生成后并行 |
 | CLI 与 capability | `capability-cli-integration`、`commands-cli-integration`、`cli-compatibility`、`service-branch-contract`、`remote-skill-timeout` | capability/Commands 资产、公开 CLI 兼容、Service branch、远程读取超时 | 临时 Workspace/Git/CLI；55 项 help 同进程穷举、7 项代表 help 走真实 CLI；timeout 只使用 loopback HTTP |
 | Runtime 与 Workspace E2E | `runtime-adapter-contract`、`runtime-adapter-parity`、`workspace-lifecycle`、`ownership-recovery`、`runtime-reconciliation`、`init-onboarding`、`managed-data-integrity` | adapter descriptor 与多轮临时投射、7 个 adapter inventory/Doctor、5 个实现族生命周期、Workspace 生命周期/恢复/投射、init、原子 mutation 与 nested repo 保留 | `runtime-adapter-contract` 需要重复临时 filesystem cleanup；其余为多轮临时 Workspace、CLI、Git，runtime parity 是 `workspace-saturating` |
-| 独立专项 | `integration-candidate-release`、`repository-onboarding` | dev/main release convergence；干净 checkout 安装开发 CLI | 本地临时 Git；不属于核心 Full，按 Release 或 affected/focus 选择 |
+| 独立专项 | `integration-candidate-release`、`repository-onboarding` | dev/main release convergence；干净 checkout 通过显式 Project bridge 完成同步与诊断且不改变 PATH 默认 CLI | 本地临时 Git；不属于核心 Full，按 Release 或 affected/focus 选择 |
 
 `concurrent-task-acceptance` 是唯一组合 Acceptance owner：它创建本地多仓 Workspace 和两个正式 Task，并发 prepare 两个 Environment，并发运行 Project verification、记录两份独立 current Result，并启动两个 Preview；它验证共享资源容量、owner guard、异常诊断，再顺序 cleanup Environment 以证明清理一个 Task 不影响另一个。完整浏览器业务验收由独立 Browser capability 持有，不混入这个步骤。
 
@@ -136,6 +136,16 @@ Development 稳定 Content Target 并固定 verification policy
         ↓ Verification facts 完整后冻结 Task Candidate
 ```
 
+GitHub hosted验证只承担独立边界：PR到`dev`运行双平台changed/affected Development feedback；`dev → main`和手工dispatch运行完整Candidate；tag workflow验证并发布正式制品。Formal Finish和self-bootstrap successor直接推送`dev`不自动启动`Verify Buildr`：source commit复用current Task Verification与Finish remote readback，successor复用self-bootstrap runner的精确delta、push readback、development identity与最终Doctor。平台高风险修改需要进入`dev`前的hosted Windows evidence时使用PR到`dev`，不把每次正式交付重新变成GitHub验证。
+
+GitHub Candidate不是第二套测试registry，而是同一Candidate profile的闭合分布式投影：低成本`candidate-preflight`先短路；`candidate-artifact`只构建一次tarball；macOS core、Windows runtime/Launcher、Windows Workspace/Task、Windows fresh build和四个Host Node tuple并行；`Candidate gate`聚合全部closed evidence并作为`main`唯一稳定required context。每个shard evidence绑定source SHA、registry identity、适用artifact identity、primary steps、内部阶段timing和workflow attempt。同一SHA只重跑失败job时，新attempt以相同逻辑artifact名覆盖旧evidence并重跑aggregate；新SHA不复用旧结果。
+
+冻结 source SHA `c2a76cde2d39566a2e665dcc7c2a1291c65a89b9` 的三轮 GitHub Candidate（runs `31719158091`、`31719762961`、`31720456534`）全部通过。总墙钟为 394s、468s、441s，中位 441s、范围 74s；runner 总量为 1136s、1156s、1181s，中位 1156s、范围 45s；最长 Windows Workspace/Task shard 为 288s、360s、331s，中位 331s、范围 72s。对照旧拓扑三轮绿色 run 的总墙钟 695s、931s、780s（中位 780s），新拓扑中位下降约 43.5%；runner 总量从旧中位 1274s 降到 1156s，下降约 9.3%。一次真实 runtime shard 失败后仅重跑 failed job 与 aggregate，恢复墙钟 159s、runner 154s，已成功的 artifact、core、Workspace、fresh build 与 Host Node jobs 没有重新执行。`main` branch protection 已在新 gate 绿色回读后保持 `strict: true`，从旧四个 contexts 迁移为唯一 `Candidate gate`（GitHub Actions app id `15368`）。
+
+本地完整 Candidate 在最终实现树上 46/46 通过，墙钟 189.157s，超过 120s 观察预算。该超限同时说明两件事：120s 是 38-step 历史候选形成的优化目标，已不再是当前 46-step 完整集合的现实预期上界；但当前测试本体也仍有可优化热点，不能只提高预算。最慢 owner 是 System Workspace lifecycle 73.852s、System Task Finish 49.260s、technical boundary integration 40.580s、System runtime recovery 37.817s 和 concurrent task acceptance 30.997s。120s 保持 nonblocking optimization warning；GitHub 发布门禁另以总墙钟、最长 shard、runner minutes 与失败重跑成本评估，后续优先优化 Workspace/Task 长尾后再用新基线校准预算。
+
+Project `verification.yml`仍只声明可由Task Verification选择的稳定本地capability。GitHub job/shard是仓库候选运行策略，不新增Project capability，也不把CI内部job写入portable Task Verification Result。
+
 完整 stdout/stderr、临时路径、环境启动和 timing 属于 transient Execution Evidence；Workspace-local current Result 只保留 Content Target、声明、实际能力事实、coverage gap 和整体结论。target 或 declaration 变化后 Result 派生为 stale。Task Development 与 Buildr Web 复用同一个 Result reader；Task Finish 不读取或发起 Verification。
 
 ## 7. 当前性能根因与本轮结论
@@ -198,3 +208,4 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 21. Candidate 与 changed owner 解耦 | Candidate 的 `--base` 会把 broad changed-path owner（例如 repository onboarding）带入普通 Candidate，破坏 profile 选择边界；本轮移除 Candidate 的 Git diff、preflight 和 `--base`，Full regression 只调用 `npm run test:candidate`，changed owner 仍由 delivery capability 负责 |
 | 22. 去重 System fixture 准备 | `local-app-launcher` 重复构建相同 launcher bundle，`package-capability-retirement` 重复 CLI 初始化相同 Workspace；分别改为文件内 bundle cache 与不可变基线复制。两个热点单文件均通过，完整 Candidate timing 从 126.295s 降到 118.890s，首次进入 120s 目标以内 |
 | 23. 对齐 Buildr Web read-worker 契约 | Buildr Web 三个只读 Tab 已由 `submitTaskRead` 派发至 `read-worker`，旧 contract/static verifier 仍要求 server 直接出现 `runtime.inspectTaskReviewView/inspectTaskVerification`，导致 Candidate 非代码失败；契约改为检查实际 operation dispatch 与 worker mapping，不恢复 terminal 聚合投影。修复后 Contract、package-static 与 38-step Candidate 全部通过 |
+| 24. 对齐 development onboarding 与 npm CLI 隔离 | Windows旧owner在约102.917s准备后才因POSIX `install-buildr-cli` 返回`ENOENT`。实现删除PATH installer lifecycle，以显式Project bridge、双sentinel和共享Git object candidate snapshot保留clean checkout/sync/Launcher/Doctor证据；三次本地成功focus为15.507s、15.659s、15.572s，中位数15.572s、范围0.152s，完整changed资源竞争下为22.115s且185.121s DAG全绿。archive后两次hosted Windows source SHA均执行通过，onboarding实际为45.452s与63.162s，完整plan为769.226s与630.575s；这证明测试本体优化后仍存在真实跨平台与runner波动，25s/20s只按macOS标定不合理，60s也无法覆盖第二个真实样本，因此非阻断target校准为90s、调度成本60s。Candidate jobs在这些PR run中均skipped，完整Candidate仍只属于后续dev到main候选门禁。 |

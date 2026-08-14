@@ -41,6 +41,12 @@ test('task-review 动态审查范围、真实 method，并在中断时不写 Res
     '不生成总 receipt',
   ]) assert.ok(skill.includes(required), required);
   assert.match(skill, /不要把 OpenSpec artifacts、代码目录、测试命令或 checklist 固定为每个 Task 的必选范围/);
+  assert.match(skill, /current planning nodes包含OpenSpec Change `tasks\.md`/);
+  assert.match(skill, /逐项语义判断checkbox能否在Change convergence\/archive前完成/);
+  assert.match(skill, /把实际checklist写入`reviewed`.*无法审查时写入`uncovered`/);
+  assert.match(skill, /必须形成精确finding并返回`changes-required`/);
+  assert.match(skill, /不得用关键词匹配代替语义判断/);
+  assert.match(skill, /同名产品能力.*Change-owned action仍可合法保留/);
   assert.doesNotMatch(skill, /buildr verification run|buildr task finish run|git commit|git push|revision:/);
 });
 

@@ -167,6 +167,32 @@ test('Task Finish inspect 使用轻量 bootstrap，执行 domain 只在 run 延�
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-action-registry.mjs')), false);
 });
 
+test('Task Finish bootstrap recovery留在full retained Application且不开放任意candidate runtime', () => {
+  const main = read('src/interfaces/cli/main.mjs');
+  const bootstrap = read('src/interfaces/cli/task-finish-bootstrap.mjs');
+  const application = read('src/application/task-finish/task-finish-application.mjs');
+  const recovery = read('src/application/task-finish/task-finish-bootstrap-recovery.mjs');
+  assert.doesNotMatch(main, /runTaskFinishBootstrapRecovery/);
+  assert.doesNotMatch(bootstrap, /prepareTaskFinishBootstrapRecoveryContext/);
+  assert.match(application, /--bootstrap-recovery/);
+  assert.ok(application.indexOf('openedExecutionRecord = runtime.openTaskExecutionRecord') < application.indexOf('const bootstrapContext = prepareTaskFinishBootstrapRecoveryContext'));
+  assert.match(application, /readTaskFinishRunPersistence/);
+  assert.match(application, /writeTaskFinishRunPersistence/);
+  assert.match(application, /createTaskFinishBootstrapRecoveryRuntimeFacade/);
+  assert.doesNotMatch(application, /Object\.create\(runtime\)/);
+  assert.match(recovery, /inspectTaskEnvironment/);
+  assert.match(recovery, /assertTaskDevelopmentCarrier/);
+  assert.match(recovery, /clone.*--shared.*--no-checkout/);
+  assert.match(recovery, /RUNTIME_METHODS/);
+  assert.match(recovery, /retained-writer-candidate-phase-provider/);
+  const executor = read('src/application/task-finish/task-finish-product-executor.mjs');
+  assert.doesNotMatch(executor, /cleanupTaskFinishBootstrapRecovery/);
+  for (const forbidden of ['npm pack', 'npm install', 'candidateCli', 'registerWorkspaceSqlite(runtime, { sourceRoot: context', '--source', '--module', '--manifest', '--tarball']) {
+    assert.equal(bootstrap.includes(forbidden), false, forbidden);
+    assert.equal(recovery.includes(forbidden), false, forbidden);
+  }
+});
+
 test('current Product/Git adapter 直接接线且没有未来 adapter registry', () => {
   const application = read('src/application/task-finish/task-finish-application.mjs');
   const bootstrap = read('src/interfaces/cli/task-finish-bootstrap.mjs');

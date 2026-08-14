@@ -7,9 +7,10 @@
 1. npm-only release contract绑定`v<version>`、source commit、dist-tag、`engines.node`、协议identity、CHANGELOG release notes与唯一`publishAuthority`。Authority tuple固定provider、GitHub repository、workflow filename、Environment和allowed npm action；contract不声明Product Node、SEA、installer、平台矩阵或binary Assets。
 2. 一次application payload build冻结runtime bundle、Worker bundle与resource inventory，产生稳定`applicationPayloadDigest`。npm staging消费并逐项验证同一manifest。
 3. workflow只执行一次`npm pack`，冻结tarball filename、size、SHA-256、SHA-512 integrity与inventory；Host Node、Launcher、publish和Registry readback全部复用该bytes。跨attempt恢复只接受与contract/payload完全一致的冻结candidate。
-4. 在任何公开写入前，候选必须通过完整CLI、普通CLI不启动HTTP、`buildr web --no-open`与health/readiness、Host Node/Workspace Node角色分离，以及macOS/Windows本机Launcher lifecycle验证。
-5. `dev → main`收敛后、tag授权前，本机runner针对当前`origin/main`与workflow digest dispatch同一`publish.yml`的手动authority probe。Probe在`npm-production`Environment中以GitHub OIDC身份对目标package完成token exchange，但不创建tag、不pack/publish，且不保留任何token；本机preflight通过GitHub current API复核唯一run与credential-free artifact。只有绑定commit、workflow bytes、package和run，且在15分钟内消费的v2 `ready`evidence能进入post-main convergence；exchange拒绝、过期、unavailable或drift都停止，不用本机npm session、`npm trust list`、历史provenance或checklist代替。
-6. 可逆门禁通过后才允许进入`npm-production`Environment。目标version缺失时发布冻结tarball；已存在时只接受相同integrity。OIDC authority相关失败保留原始npm错误和tag，按expected tuple修复current控制面后只rerun hosted workflow。随后有界确认version、dist-tag与integrity，并从Registry安装精确版本重新smoke。
+4. `dev → main`的源码候选由分布式`Candidate gate`证明：preflight先短路，唯一PR tarball绑定精确source SHA，macOS core、三个Windows高成本shard和四个Host Node tuple并行，aggregate只接受current closed evidence。普通发布准备默认复用changed/affected反馈，不在本机重复完整Candidate；验证系统自身变化或诊断时才额外运行本地完整入口。
+5. 在任何公开写入前，候选必须通过完整CLI、普通CLI不启动HTTP、`buildr web --no-open`与health/readiness、Host Node/Workspace Node角色分离，以及macOS/Windows本机Launcher lifecycle验证。
+6. `dev → main`收敛后、tag授权前，本机runner针对当前`origin/main`与workflow digest dispatch同一`publish.yml`的手动authority probe。Probe在`npm-production`Environment中以GitHub OIDC身份对目标package完成token exchange，但不创建tag、不pack/publish，且不保留任何token；本机preflight通过GitHub current API复核唯一run与credential-free artifact。只有绑定commit、workflow bytes、package和run，且在15分钟内消费的v2 `ready`evidence能进入post-main convergence；exchange拒绝、过期、unavailable或drift都停止，不用本机npm session、`npm trust list`、历史provenance或checklist代替。
+7. 可逆门禁通过后才允许进入`npm-production`Environment。目标version缺失时发布冻结tarball；已存在时只接受相同integrity。OIDC authority相关失败保留原始npm错误和tag，按expected tuple修复current控制面后只rerun hosted workflow。随后有界确认version、dist-tag与integrity，并从Registry安装精确版本重新smoke。
 
 ## 本机 Launcher 边界
 
@@ -22,6 +23,7 @@
 
 - `@buildr-ai/buildr` tarball只由npm Registry承载；GitHub Release只保存版本说明，不上传Buildr binary Assets。
 - Actions artifact只保存冻结candidate与验证evidence，不能作为README、官网、安装脚本或其他公共下载authority。
+- 同一Candidate run重跑失败job时，每个逻辑shard用同名overwrite替换旧attempt evidence；成功shard与唯一tarball继续复用。代码修复产生新source SHA后必须重跑完整分布式门禁，但Windows高成本场景保持三个并行恢复边界。
 - GitHub Release ensure只核对tag、target commit、notes、draft、prerelease/Latest并拒绝任何binary Asset；Buildr bytes的missing/same/drift恢复只由npm Registry version与integrity决定。
 - 已发布version不覆盖。RC问题发布新的prerelease；正式版本问题发布patch，必要时deprecate或移动dist-tag。
 

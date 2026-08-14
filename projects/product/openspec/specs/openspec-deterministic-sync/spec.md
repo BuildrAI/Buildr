@@ -32,15 +32,18 @@ Buildr MUST 提供纯 deterministic sync planner，比较 change delta、当前 
 ### Requirement: Deterministic operation必须使用保守白名单
 Planner MUST只自动接受能由结构与baseline证明唯一结果的完整ADDED、唯一REMOVED、无冲突RENAMED、baseline/current匹配的完整MODIFIED，以及identity唯一且内容完整的Scenario增改。未明确声明的Scenario缺失 MUST NOT被推断为删除。
 
+当完整`MODIFIED`省略既有Scenario且两侧Scenario identity均唯一时，blocked item MUST保留既有capability、Requirement、operation与`semantic-resolution-required` code，并增加`reason: scenario-identities-omitted`及按确定顺序排列的`omittedScenarioIdentities`。该诊断 MUST只提供可移植identity，不复制Scenario正文，也不得授权Buildr自动保留或删除。
+
 #### Scenario: 完整MODIFIED与baseline一致
 - **WHEN** delta提供完整Requirement，baseline中有唯一原内容且current仍等于baseline
 - **THEN** planner MUST生成完整替换operation并保留delta未要求删除之外的契约结构
 - **AND** expected digest MUST绑定完整结果
 
 #### Scenario: Partial MODIFIED省略既有Scenario
-- **WHEN** planner无法证明delta是完整Requirement或省略内容是否应保留
-- **THEN** 整批plan MUST blocked
-- **AND** result MUST列出受影响Requirement和需要Agent判断的最小上下文
+- **WHEN** planner确认canonical或baseline的唯一Scenario identities中存在delta未包含的identity
+- **THEN** 整批plan MUST blocked且保持canonical零写入
+- **AND** blocker MUST列出受影响Requirement、`scenario-identities-omitted` reason与全部`omittedScenarioIdentities`
+- **AND** Agent MUST根据Change意图显式修订完整Requirement后重试，Buildr不得自行补回或删除Scenario
 
 ### Requirement: Sync apply必须原子且identity-bound
 Buildr MUST 通过 canonical applier 只消费当前 convergence identity 对应且通过隔离验证的内存 plan；写入前 MUST 重验 change delta、OpenSpec executable identity 和全部 canonical before digests。任一 operation blocked 或任一输入变化时整批 MUST 零写入并重新观察/规划，不得修补旧 plan 或刷新旧 baseline。
@@ -229,3 +232,16 @@ Buildr MUST 提供 OpenSpec Convergence Inspect，只在当前收敛恢复现场
 - **WHEN** Change lifecycle已经是archived
 - **THEN** Inspect MUST返回`not-applicable`与`convergence-terminal`
 - **AND** MUST NOT要求读取历史Receipt或在Worktree清理后返回`recovery-unprovable`
+
+### Requirement: OpenSpec Converge 必须明确使用 Task execution root
+`buildr openspec converge` MUST将 `--target` 表达并校验为当前 Task Environment 允许的 execution root，而不是 canonical Workspace authority root。CLI MUST在 target 中无法解析 active Change 时返回零写入诊断，要求 Agent使用 matching Environment Receipt 的 `execution.workdir`，并 MUST NOT扫描、猜测或自动选择其他 worktree。
+
+#### Scenario: CLI 展示 converge target
+- **WHEN** Agent读取 `buildr openspec converge` 的命令帮助
+- **THEN** `--target` MUST显示为 `<task-execution-root>` 或等价明确表述
+- **AND** MUST不使用无法区分 canonical Workspace 与 Task Environment 的 `<workspace>` 或 `<dir>` 占位符
+
+#### Scenario: canonical Workspace 看不到 active Change
+- **WHEN** Agent把 canonical Workspace 作为 converge target，且 active Change 只存在于 matching Task execution root
+- **THEN** command MUST在 canonical、receipt 与 archive 零写入状态返回 active Change not found 诊断
+- **AND** next action MUST要求从 Environment Receipt 使用 `execution.workdir` 重试，不得自动搜索或修改 canonical Workspace绕过

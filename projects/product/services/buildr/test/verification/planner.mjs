@@ -1,5 +1,8 @@
 import path from 'node:path';
 import {
+  CANDIDATE_CI_HOST_NODE_TUPLES,
+  CANDIDATE_CI_PLATFORM_REPEATS,
+  CANDIDATE_CI_SHARDS,
   VERIFICATION_CONCURRENCY,
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
@@ -15,6 +18,73 @@ import {
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
+
+const CANDIDATE_CI_RUNNERS = Object.freeze(['macos', 'windows']);
+const CANDIDATE_CI_PHASES = Object.freeze(['preflight', 'artifact', 'verification']);
+
+export function validateCandidateCiCoverage(
+  steps = verificationSteps,
+  shards = CANDIDATE_CI_SHARDS,
+  hostNodeTuples = CANDIDATE_CI_HOST_NODE_TUPLES,
+  platformRepeats = CANDIDATE_CI_PLATFORM_REPEATS,
+) {
+  const findings = [];
+  const byId = new Map(steps.map((item) => [item.id, item]));
+  const candidateIds = new Set(steps.filter((item) => item.profiles.includes('candidate')).map((item) => item.id));
+  const shardIds = new Set();
+  const owners = new Map();
+  let artifactProducers = 0;
+  for (const shard of shards) {
+    if (!shard.id || shardIds.has(shard.id)) findings.push({ step: shard.id || '<candidate-shard>', code: 'candidate_shard_duplicate_or_missing_id' });
+    shardIds.add(shard.id);
+    if (!CANDIDATE_CI_RUNNERS.includes(shard.runner)) findings.push({ step: shard.id, code: 'candidate_shard_runner_invalid', value: shard.runner });
+    if (!CANDIDATE_CI_PHASES.includes(shard.phase)) findings.push({ step: shard.id, code: 'candidate_shard_phase_invalid', value: shard.phase });
+    if (!Array.isArray(shard.stepIds) || shard.stepIds.length === 0 || new Set(shard.stepIds).size !== shard.stepIds.length) {
+      findings.push({ step: shard.id, code: 'candidate_shard_steps_invalid' });
+      continue;
+    }
+    if (shard.producesArtifact) artifactProducers += 1;
+    if (shard.producesArtifact && (shard.phase !== 'artifact' || shard.stepIds.length !== 1 || shard.stepIds[0] !== 'candidate-tarball')) {
+      findings.push({ step: shard.id, code: 'candidate_artifact_shard_invalid' });
+    }
+    for (const id of shard.stepIds) {
+      if (!byId.has(id)) findings.push({ step: shard.id, code: 'candidate_shard_unknown_step', value: id });
+      else if (!candidateIds.has(id)) findings.push({ step: shard.id, code: 'candidate_shard_non_candidate_step', value: id });
+      owners.set(id, [...(owners.get(id) ?? []), shard.id]);
+      if (byId.get(id)?.executor?.consumesArtifact && !shard.requiresArtifact) {
+        findings.push({ step: shard.id, code: 'candidate_shard_artifact_requirement_missing', value: id });
+      }
+    }
+  }
+  if (artifactProducers !== 1) findings.push({ step: '<candidate-shards>', code: 'candidate_artifact_shard_count', value: artifactProducers });
+  for (const id of candidateIds) {
+    const actual = owners.get(id) ?? [];
+    const allowed = platformRepeats[id];
+    if (allowed) {
+      if (JSON.stringify([...actual].sort()) !== JSON.stringify([...allowed].sort())) {
+        findings.push({ step: id, code: 'candidate_platform_repeat_mismatch', value: actual.join(',') });
+      }
+    } else if (actual.length !== 1) findings.push({ step: id, code: actual.length === 0 ? 'candidate_step_unowned' : 'candidate_step_duplicated', value: actual.join(',') });
+  }
+  for (const [id, allowed] of Object.entries(platformRepeats)) {
+    if (!candidateIds.has(id) || !Array.isArray(allowed) || allowed.length < 2 || new Set(allowed).size !== allowed.length) {
+      findings.push({ step: id, code: 'candidate_platform_repeat_invalid' });
+    }
+    for (const shardId of allowed ?? []) if (!shardIds.has(shardId)) findings.push({ step: id, code: 'candidate_platform_repeat_unknown_shard', value: shardId });
+  }
+  const tupleIds = new Set();
+  const expectedTuples = new Set(['minimum:macos', 'minimum:windows', 'current:macos', 'current:windows']);
+  for (const tuple of hostNodeTuples) {
+    if (!tuple.id || tupleIds.has(tuple.id)) findings.push({ step: tuple.id || '<host-node-tuple>', code: 'candidate_host_tuple_duplicate_or_missing_id' });
+    tupleIds.add(tuple.id);
+    if (!CANDIDATE_CI_RUNNERS.includes(tuple.runner) || !['minimum', 'current'].includes(tuple.expectation)) {
+      findings.push({ step: tuple.id, code: 'candidate_host_tuple_invalid' });
+    }
+    expectedTuples.delete(`${tuple.expectation}:${tuple.runner}`);
+  }
+  for (const tuple of expectedTuples) findings.push({ step: '<host-node-tuples>', code: 'candidate_host_tuple_missing', value: tuple });
+  return { ok: findings.length === 0, findings };
+}
 
 export function normalizeProductPath(value) {
   if (typeof value !== 'string' || value.length === 0 || path.isAbsolute(value)) throw new Error(`Invalid Product path: ${value}`);
@@ -188,6 +258,7 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     visited.add(id);
   };
   for (const item of steps) visit(item.id);
+  if (steps === verificationSteps) findings.push(...validateCandidateCiCoverage(steps).findings);
   return { ok: findings.length === 0, findings };
 }
 
@@ -320,5 +391,33 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     stepIds: Object.freeze(stepIds),
     delegated: Object.freeze(delegatedPaths),
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
+  });
+}
+
+export function createCandidateCiShardPlan(shardId, options = {}, steps = verificationSteps) {
+  const validation = validateCandidateCiCoverage(steps);
+  if (!validation.ok) throw new Error(`Invalid Candidate CI coverage:\n${validation.findings.map((item) => `${item.step}: ${item.code}`).join('\n')}`);
+  const shard = CANDIDATE_CI_SHARDS.find((item) => item.id === shardId);
+  if (!shard) throw new Error(`Unknown Candidate CI shard: ${shardId}`);
+  if (shard.requiresArtifact && options.externalArtifact !== true) throw new Error(`Candidate CI shard ${shardId} requires an external candidate artifact`);
+  const plan = createVerificationPlan({ stepIds: shard.stepIds }, steps);
+  const primary = new Set(shard.stepIds);
+  const projectedSteps = [];
+  for (const item of plan.steps) {
+    if (!primary.has(item.id) && item.id !== 'candidate-tarball') {
+      throw new Error(`Candidate CI shard ${shardId} has an undeclared cross-shard dependency: ${item.id}`);
+    }
+    if (item.id === 'candidate-tarball' && !primary.has(item.id) && options.externalArtifact === true) continue;
+    projectedSteps.push(Object.freeze({
+      ...item,
+      dependsOn: Object.freeze((item.dependsOn ?? []).filter((dependency) => !(dependency === 'candidate-tarball' && options.externalArtifact === true))),
+    }));
+  }
+  return Object.freeze({
+    ...plan,
+    source: 'candidate-ci-shard',
+    shard,
+    primaryStepIds: shard.stepIds,
+    steps: Object.freeze(projectedSteps),
   });
 }

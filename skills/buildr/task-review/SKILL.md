@@ -30,6 +30,8 @@ Result 存在但未提供 current target 时 applicability 是 `unknown`；ident
 
 根据 Task Intent、Project authority、目标内容、风险和用户要求选择实际 reviewed 对象。不要把 OpenSpec artifacts、代码目录、测试命令或 checklist 固定为每个 Task 的必选范围。
 
+current planning nodes包含OpenSpec Change `tasks.md`时，Planning Review必须逐项语义判断checkbox能否在Change convergence/archive前完成，并把实际checklist写入`reviewed`；无法审查时写入`uncovered`及原因。只能在archive后由Formal Verification、Candidate、Completion Review、Task Finish、Environment cleanup或Task terminal authority完成的checkbox必须形成精确finding并返回`changes-required`，先修订planning artifact。不得用关键词匹配代替语义判断：实现或测试同名产品能力、且能在archive前完成的Change-owned action仍可合法保留。planning不含`tasks.md`时不创建虚假审查对象。
+
 同时维护：
 
 - `reviewed`：至少一个实际完成审阅的可移植逻辑对象；

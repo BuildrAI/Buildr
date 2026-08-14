@@ -9,6 +9,14 @@ import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEviden
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
 import {
+  activateTaskFinishBootstrapRecovery,
+  createTaskFinishBootstrapRecoveryRuntimeFacade,
+  finalizeTaskFinishBootstrapRecovery,
+  importTaskFinishBootstrapRecoveryProvider,
+  inspectTaskFinishBootstrapRecoveryQualification,
+  prepareTaskFinishBootstrapRecoveryContext,
+} from './task-finish-bootstrap-recovery.mjs';
+import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
   TASK_FINISH_EXECUTION_RECORD_OWNER,
   TASK_FINISH_EXECUTION_RECORD_PRODUCER,
@@ -33,16 +41,46 @@ function frozenDevelopmentIdentity(run) {
   };
 }
 
+function untouchedPhase(phase) {
+  return Boolean(phase && phase.status === 'pending' && phase.attempts === 0);
+}
+
+function replaceablePrepareFailure(run) {
+  const preflight = run?.phases?.find((phase) => phase.id === 'preflight');
+  const prepare = run?.phases?.find((phase) => phase.id === 'prepare');
+  const later = (run?.phases || []).filter((phase) => ['verify', 'deliver', 'cleanup'].includes(phase.id));
+  const phaseFailure = prepare?.failure;
+  const primaryFailure = run?.primaryFailure;
+  const recognized = (failure) => Boolean(failure
+    && failure.phase === 'prepare'
+    && failure.operation === 'carrier-preparation'
+    && failure.code === 'task-finish.carrier-prepare-failed'
+    && failure.diagnostic == null);
+  return Boolean(run?.status === 'failed'
+    && preflight?.status === 'passed'
+    && preflight.attempts > 0
+    && prepare?.status === 'failed'
+    && prepare.attempts > 0
+    && run.resume == null
+    && recognized(phaseFailure)
+    && recognized(primaryFailure)
+    && later.length === 3
+    && later.every(untouchedPhase));
+}
+
 function finishRunSideEffectFacts(persistence) {
   const run = persistence?.run;
-  const laterPhases = (run?.phases || []).filter((phase) => phase.id !== 'preflight');
+  const prepare = run?.phases?.find((phase) => phase.id === 'prepare');
+  const downstreamPhases = (run?.phases || []).filter((phase) => ['verify', 'deliver', 'cleanup'].includes(phase.id));
+  const safePrepareFailure = replaceablePrepareFailure(run);
   const facts = {
     carrier: Boolean(run?.deliveryCarrier),
     lease: Boolean(persistence?.lease),
     delivery: Boolean(run?.delivery),
     retained: Boolean(run?.delivery?.remoteAfterRef || run?.delivery?.activation),
-    cleanup: Boolean(persistence?.preparedCompletion || run?.completion || laterPhases.find((phase) => phase.id === 'cleanup' && (phase.attempts > 0 || phase.status !== 'pending'))),
-    uncertainPhase: Boolean(laterPhases.find((phase) => phase.attempts > 0 || phase.status !== 'pending')),
+    cleanup: Boolean(persistence?.preparedCompletion || run?.completion || downstreamPhases.find((phase) => phase.id === 'cleanup' && !untouchedPhase(phase))),
+    uncertainPhase: Boolean((prepare && !untouchedPhase(prepare) && !safePrepareFailure)
+      || downstreamPhases.find((phase) => !untouchedPhase(phase))),
   };
   return {
     ...facts,
@@ -50,14 +88,17 @@ function finishRunSideEffectFacts(persistence) {
   };
 }
 
-function replaceablePreflightRun(persistence) {
+function replaceableStaleRun(persistence) {
   const run = persistence?.run;
   const preflight = run?.phases?.find((phase) => phase.id === 'preflight');
+  const laterPhases = (run?.phases || []).filter((phase) => phase.id !== 'preflight');
   const facts = finishRunSideEffectFacts(persistence);
-  return Boolean(run
+  const preflightOnly = Boolean(run
     && ['blocked', 'failed'].includes(run.status)
     && ['blocked', 'failed'].includes(preflight?.status)
-    && facts.categories.length === 0);
+    && laterPhases.length === 4
+    && laterPhases.every(untouchedPhase));
+  return Boolean((preflightOnly || replaceablePrepareFailure(run)) && facts.categories.length === 0);
 }
 
 function cleanupResumeAllowed(persistence) {
@@ -86,7 +127,7 @@ function currentRunIdentityError(run, current, facts) {
 function supersededRunError(run, current) {
   return inputError(
     'task_finish.development_handoff_superseded',
-    'The requested preflight-only Finish run was superseded by a newer Development handoff.',
+    'The requested no-side-effect Finish run was superseded by a newer Development handoff.',
     'run',
     {
       taskId: run.identity.task,
@@ -101,16 +142,17 @@ function supersededRunError(run, current) {
 function markRunSuperseded(run) {
   const updatedAt = new Date().toISOString();
   const next = JSON.parse(JSON.stringify(run));
-  const preflight = next.phases.find((phase) => phase.id === 'preflight');
+  const stoppedPhase = next.phases.find((phase) => ['blocked', 'failed'].includes(phase.status));
+  const phaseId = ['preflight', 'prepare'].includes(stoppedPhase?.id) ? stoppedPhase.id : 'preflight';
   const failure = {
-    phase: 'preflight',
+    phase: phaseId,
     operation: 'development-handoff',
     check: 'development-handoff',
     failureClass: 'upstream-candidate-defect',
     code: 'task-finish.development-handoff-superseded',
     status: 'failed',
     exitCode: null,
-    message: 'A newer current Development handoff superseded this preflight-only run.',
+    message: 'A newer current Development handoff superseded this no-side-effect run.',
     findings: [],
     diagnostic: null,
   };
@@ -118,17 +160,17 @@ function markRunSuperseded(run) {
   next.primaryFailure = failure;
   next.resume = null;
   next.updatedAt = updatedAt;
-  if (preflight) {
-    preflight.status = 'failed';
-    preflight.completedAt ||= updatedAt;
-    preflight.failure = failure;
+  if (stoppedPhase) {
+    stoppedPhase.status = 'failed';
+    stoppedPhase.completedAt ||= updatedAt;
+    stoppedPhase.failure = failure;
   }
   return next;
 }
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--bootstrap-recovery', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -136,7 +178,7 @@ function assertArgs(action, args) {
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
-    if (option === '--json' || option === '--accept-zero-delta-adaptation') continue;
+    if (option === '--json' || option === '--accept-zero-delta-adaptation' || option === '--bootstrap-recovery') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
     if (option === '--detail' && !['compact', 'full'].includes(value)) {
@@ -190,6 +232,7 @@ function executionGateResult(identity, executionRecord, diagnostic) {
       canonicalCliInvocations: 0,
       agentProviderCompletions: 0,
       manualRecoveryManifests: 0,
+      bootstrapRecoveryExecutions: 0,
       formalVerificationExecutions: 0,
       productCommandObservations: 0,
       productExecutionMs: 0,
@@ -212,7 +255,11 @@ export function registerTaskFinishApplication(runtime) {
     const resumeToken = optionValue(command.args, '--resume', null);
     const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
     const acceptZeroDeltaAdaptation = command.args.includes('--accept-zero-delta-adaptation');
+    const bootstrapRecoveryRequested = command.args.includes('--bootstrap-recovery');
     const requestedRunId = optionValue(command.args, '--run', null);
+    if (bootstrapRecoveryRequested && !requestedRunId) {
+      throw inputError('task_finish.bootstrap_recovery_run_required', '--bootstrap-recovery requires an existing --run <run-id>.', 'run');
+    }
     if (acceptZeroDeltaAdaptation && (!requestedRunId || !resumeToken)) {
       throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation requires an existing --run and its current --resume token.', 'run');
     }
@@ -242,7 +289,7 @@ export function registerTaskFinishApplication(runtime) {
             const assertion = runtime.assertTaskDevelopmentCarrier(root, finishRun.identity.task, frozenDevelopmentIdentity(finishRun));
             if (assertion.status !== 'equivalent') {
               const current = assertion.diagnostic?.details?.current || null;
-              if (replaceablePreflightRun(finishPersistence)) throw supersededRunError(finishRun, current);
+              if (replaceableStaleRun(finishPersistence)) throw supersededRunError(finishRun, current);
               throw currentRunIdentityError(finishRun, current, finishRunSideEffectFacts(finishPersistence));
             }
           }
@@ -275,7 +322,7 @@ export function registerTaskFinishApplication(runtime) {
           if (currentRun && handoffChanged && cleanupResumeAllowed(current)) {
             finishRun = currentRun;
           } else if (currentRun && handoffChanged) {
-            if (!replaceablePreflightRun(current)) {
+            if (!replaceableStaleRun(current)) {
               throw currentRunIdentityError(currentRun, {
                 handoffIdentity: handoff.identity,
                 candidateIdentity: handoff.candidate.identity,
@@ -314,7 +361,16 @@ export function registerTaskFinishApplication(runtime) {
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
     if (prepared.completed) return print(withExecutionRecord(prepared.completed, notOpened), command.args);
     let finishRun = prepared.finishRun;
-    if (finishRun && ['failed', 'complete'].includes(finishRun.status)) return print(withExecutionRecord(inspectFinishRun({ root, runId: finishRun.runId, runtime }), notOpened), command.args);
+    if (finishRun?.status === 'complete' || (finishRun?.status === 'failed' && !bootstrapRecoveryRequested)) return print(withExecutionRecord(inspectFinishRun({ root, runId: finishRun.runId, runtime }), notOpened), command.args);
+    if (finishRun?.bootstrapRecovery && !bootstrapRecoveryRequested) {
+      throw inputError('task_finish.bootstrap_recovery_flag_required', 'This run is bound to bootstrap recovery; resume it with --bootstrap-recovery and the current resume token.', 'run');
+    }
+    let bootstrapQualification = null;
+    if (bootstrapRecoveryRequested) {
+      const persistence = runtime.readTaskFinishRunPersistence(root, { runId: finishRun.runId }, { optional: false });
+      bootstrapQualification = inspectTaskFinishBootstrapRecoveryQualification(persistence);
+      if (!bootstrapQualification.ready) throw inputError(bootstrapQualification.code, bootstrapQualification.message, 'run', bootstrapQualification);
+    }
     const identity = prepared.identity || finishRun?.identity;
     const invocationId = finishInvocationId(identity.task);
     let openedExecutionRecord;
@@ -353,9 +409,32 @@ export function registerTaskFinishApplication(runtime) {
       runtime.discardFailedTaskFinishRunPersistence?.(root, { taskId: identity.task, runId: oldRun.runId });
       finishRun = resolveFinishRun({ root, resumeToken, runtime, identity, deliveryCommit: prepared.deliveryCommit, developmentHandoff: prepared.developmentHandoff });
     }
-    const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
-    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
-    const result = await executeFinishRun({ root, run: finishRun, handlers, resumeToken, runtime, observer: evidence });
+    let handlers;
+    if (bootstrapRecoveryRequested) {
+      const persistence = runtime.readTaskFinishRunPersistence(root, { runId: finishRun.runId }, { optional: false });
+      const bootstrapContext = prepareTaskFinishBootstrapRecoveryContext({ run: finishRun, targetRoot: root, runtime });
+      if (bootstrapQualification.terminalOnly) {
+        handlers = Object.freeze({});
+      } else {
+        const createTaskFinishProductHandlers = await importTaskFinishBootstrapRecoveryProvider(bootstrapContext);
+        const handlerRuntime = createTaskFinishBootstrapRecoveryRuntimeFacade(runtime, bootstrapContext);
+        handlers = createTaskFinishProductHandlers({ runtime: handlerRuntime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
+      }
+      finishRun = activateTaskFinishBootstrapRecovery(finishRun, bootstrapContext, persistence);
+      runtime.writeTaskFinishRunPersistence(root, finishRun);
+    } else {
+      const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
+      handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
+    }
+    const result = await executeFinishRun({
+      root,
+      run: finishRun,
+      handlers,
+      resumeToken,
+      runtime,
+      observer: evidence,
+      bootstrapRecoveryFinalizer: finishRun.bootstrapRecovery ? finalizeTaskFinishBootstrapRecovery : null,
+    });
     const snapshot = evidence.snapshot();
     const outcome = taskFinishExecutionRecordOutcome(result);
     let executionRecord;

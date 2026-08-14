@@ -46,11 +46,19 @@ function nulPaths(result) {
   return String(result.stdout).split('\0').filter(Boolean).map(normalizePath);
 }
 
-function taskSourcePaths(root, baselineHead) {
+function taskSourceInventory(root, baselineHead) {
   const baseline = nulPaths(gitContributionCommand(root, ['ls-tree', '-r', '-z', '--name-only', baselineHead]));
   const current = nulPaths(gitContributionCommand(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']));
-  if (!baseline || !current) throw new Error('Unable to inventory Task source paths.');
-  return [...new Set([...baseline, ...current].filter(deliverablePath))].sort();
+  const deleted = nulPaths(gitContributionCommand(root, ['ls-files', '-z', '--deleted']));
+  if (!baseline || !current || !deleted) throw new Error('Unable to inventory Task source paths.');
+  const deletedPaths = new Set(deleted.filter(deliverablePath));
+  const currentPaths = new Set(current.filter(deliverablePath));
+  return {
+    present: [...currentPaths].filter((item) => !deletedPaths.has(item)).sort(),
+    removed: [...new Set(baseline.filter(deliverablePath))]
+      .filter((item) => deletedPaths.has(item) || !currentPaths.has(item))
+      .sort(),
+  };
 }
 
 export function withGitTaskContributionSnapshot(root, baselineHead, operation) {
@@ -60,9 +68,13 @@ export function withGitTaskContributionSnapshot(root, baselineHead, operation) {
     const environment = { ...process.env, GIT_INDEX_FILE: indexFile };
     const read = gitContributionCommand(root, ['read-tree', baselineHead], { env: environment });
     if (read.status !== 0) throw new Error(`Unable to seed Task source snapshot: ${read.stderr || read.stdout}`);
-    const sourcePaths = taskSourcePaths(root, baselineHead);
-    if (sourcePaths.length > 0) {
-      const added = gitContributionCommand(root, ['add', '-A', '-f', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: environment, encoding: 'buffer', input: Buffer.from(`${sourcePaths.join('\0')}\0`) });
+    const source = taskSourceInventory(root, baselineHead);
+    if (source.removed.length > 0) {
+      const removed = gitContributionCommand(root, ['update-index', '--force-remove', '-z', '--stdin'], { env: environment, encoding: 'buffer', input: Buffer.from(`${source.removed.join('\0')}\0`) });
+      if (removed.status !== 0) throw new Error(`Unable to snapshot deleted Task source paths: ${removed.stderr || removed.stdout}`);
+    }
+    if (source.present.length > 0) {
+      const added = gitContributionCommand(root, ['add', '-A', '-f', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: environment, encoding: 'buffer', input: Buffer.from(`${source.present.join('\0')}\0`) });
       if (added.status !== 0) throw new Error(`Unable to snapshot exact Task source: ${added.stderr || added.stdout}`);
     }
     const tree = requireGitContributionText(root, ['write-tree'], 'Unable to write Task source snapshot tree.', { env: environment });

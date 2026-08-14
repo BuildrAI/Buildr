@@ -83,9 +83,18 @@ function assertHostedIdentity(identity, sourceCommit) {
   if (identity.headSha !== sourceCommit) throw new ProbeError('github_source_commit_mismatch', 'GitHub checkout does not match frozen source commit', identity.headSha);
 }
 
-function safeTimestamp(value, field) {
-  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) throw new ProbeError('npm_exchange_metadata_invalid', `${field} is not a valid timestamp`, value ?? null);
-  return value;
+function normalizedTimestamp(value, field) {
+  const timestampMs = typeof value === 'string'
+    ? Date.parse(value)
+    : Number.isSafeInteger(value) && value >= 0
+      ? value * 1000
+      : Number.NaN;
+  if (!Number.isFinite(timestampMs)) throw new ProbeError('npm_exchange_metadata_invalid', `${field} is not a valid timestamp`, value ?? null);
+  try {
+    return new Date(timestampMs).toISOString();
+  } catch {
+    throw new ProbeError('npm_exchange_metadata_invalid', `${field} is not a valid timestamp`, value ?? null);
+  }
 }
 
 async function jsonResponse(response, code) {
@@ -136,8 +145,8 @@ export async function runReleaseAuthorityOidcProbe(options, dependencies = {}) {
   const exchange = await jsonResponse(exchangeResponse, 'npm_oidc_exchange_response_invalid');
   requiredString(exchange?.token, 'npm exchange token');
   const tokenType = requiredString(exchange?.token_type, 'npm token_type');
-  const created = safeTimestamp(exchange?.created, 'npm created');
-  const expires = safeTimestamp(exchange?.expires, 'npm expires');
+  const created = normalizedTimestamp(exchange?.created, 'npm created');
+  const expires = normalizedTimestamp(exchange?.expires, 'npm expires');
   if (Date.parse(expires) <= Date.parse(created)) throw new ProbeError('npm_exchange_metadata_invalid', 'npm exchange expiry must be after creation', { created, expires });
 
   return {

@@ -73,6 +73,7 @@ function failure(value) {
   if (!value) return null;
   return {
     phase: PHASES.has(value.phase) ? value.phase : null,
+    origin: value.origin || null,
     operation: value.operation || null,
     check: value.check || null,
     failureClass: value.failureClass || null,
@@ -204,10 +205,25 @@ export function compactTaskFinishResult(result) {
     refs: refs(result),
     delivery: delivery(result.delivery),
     completion: completion(result.completion),
+    bootstrapRecovery: result.bootstrapRecovery ? {
+      identity: result.bootstrapRecovery.identity || null,
+      mode: result.bootstrapRecovery.mode || null,
+      retainedSourceCommit: result.bootstrapRecovery.retainedSourceCommit || null,
+      sourceCommit: result.bootstrapRecovery.sourceCommit || null,
+      sourceTree: result.bootstrapRecovery.sourceTree || null,
+      executorDigest: result.bootstrapRecovery.executorDigest || null,
+      originalFailure: result.bootstrapRecovery.originalAttempt?.primaryFailure ? {
+        phase: result.bootstrapRecovery.originalAttempt.primaryFailure.phase || null,
+        origin: result.bootstrapRecovery.originalAttempt.primaryFailure.origin || null,
+        code: result.bootstrapRecovery.originalAttempt.primaryFailure.code || null,
+      } : null,
+      capsuleRevocation: result.bootstrapRecovery.capsule?.revocation?.status || null,
+    } : null,
     metrics: result.metrics ? {
       canonicalCliInvocations: result.metrics.canonicalCliInvocations || 0,
       agentProviderCompletions: result.metrics.agentProviderCompletions || 0,
       manualRecoveryManifests: result.metrics.manualRecoveryManifests || 0,
+      bootstrapRecoveryExecutions: result.metrics.bootstrapRecoveryExecutions || 0,
       formalVerificationExecutions: result.metrics.formalVerificationExecutions || 0,
       productCommandObservations: result.metrics.productCommandObservations || 0,
       productExecutionMs: result.metrics.productExecutionMs || 0,

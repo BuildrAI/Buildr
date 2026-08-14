@@ -26,7 +26,7 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json
 ```
 
-直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding，不猜测contract版本，也不为调用创建或修改execution capsule。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
+直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
 
 产品在创建 run 前一次聚合 Environment / Development / 交付入口观察；通过后固定执行：
 
@@ -36,19 +36,19 @@ preflight → prepare → verify → deliver → cleanup
 
 五阶段由产品连续执行，Agent不编排阶段、补evidence或设计recovery。
 
-完整message只在首次创建run时提供并冻结identity；公开结果只投影subject与identity，resume不得覆盖。新handoff必须以新message创建新run。旧run仅在preflight且无carrier、lease、delivery、retained、cleanup事实时失效；否则保留现场并返回identity conflict，不删除carrier或换绑。
+完整message只在首次run冻结；resume不得覆盖。新handoff以新message创建新run。旧run仅在preflight且无交付副作用时失效，否则保留现场并返回identity conflict。
 
-每次真正执行的首次run或resume会先以独立invocation identity预留`task-finish/finish-diagnostics` Execution Record容量；backpressure时五阶段与所有Finish owner副作用都不启动。产品在invocation期间把timeline、diagnostics和受控stdout/stderr写入独立transient files，record retained后只清理该diagnostics目录。Delivery Carrier、lease、resume与cleanup资源仍由Finish current独立管理；Agent不得用record恢复或删除这些资源。
+首次run或resume先预留独立`task-finish/finish-diagnostics` Execution Record；容量不足不启动五阶段。record只保留受控诊断，carrier、lease、resume与cleanup仍由Finish current管理。
 
-- `preflight`核对current handoff、Environment、carrier adapter与retained target；preflight、prepare、verify、deliver及resume都由Development精确核对run冻结的handoff、Candidate、generation与Content Target identity，不回查历史handoffs。
+- `preflight`核对current handoff、Environment、carrier adapter与retained target；各阶段和resume都精确核对run冻结的handoff、Candidate、generation与Content Target。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
-- Agent只在carrier完成交付适配（Delivery Adaptation）。非零适配HEAD必须保持冻结message；若审查确认baseline已满足任务且正确适配为零tree delta，保持clean baseline carrier并在matching resume传入`--accept-zero-delta-adaptation`，不得创建空提交或无关差异。确认不替代token或Buildr语义证明；resume仍核验ownership、baseline、source/handoff、cleanliness、适用message与bounded compatibility checks，`formalVerificationExecutions` 必须为 `0`。
+- Agent只在carrier完成交付适配（Delivery Adaptation）。非零适配HEAD必须保持冻结message；若baseline已满足任务且正确适配为零tree delta，保持clean carrier并在matching resume传入`--accept-zero-delta-adaptation`，不得创建空提交或无关差异。resume仍执行bounded compatibility checks，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
-- `deliver`只做fast-forward、普通push/回读、按冻结Task Contribution paths选择的runtime activation与指定Agent Doctor；零差异carrier的actual changed paths为空但保留activation paths。Doctor失败时保留remote readback、partial delivery与精确resume并停止cleanup。通用executor不读Project/Service配置、不sync、不安装CLI/Buildr Web，也不接受任意命令字符串。
+- `deliver`只做fast-forward、push/回读、按冻结Task Contribution选择的runtime activation与Agent Doctor；Doctor失败保留现场并停止cleanup。通用executor不sync、不安装CLI/Buildr Web或接受任意命令。
 - render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
 - `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
 
-target前进时先证明carrier ancestry及changed paths；完整包含则跳过apply/fast-forward/push并继续Doctor与cleanup，否则返回精确token。恢复不增加 Candidate generation、不重跑formal Verification或Completion Review。Git conflict返回适配facts；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。不得手写token、recovery manifest或claimed semantic equivalence。
+target前进时先证明carrier ancestry及changed paths；完整包含才跳过apply/push并继续Doctor与cleanup。恢复不增加 Candidate generation或重跑formal Verification/Completion Review；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。路径不重叠都不等于语义安全；不得手写token、recovery manifest或claimed semantic equivalence。
 
 恢复命令：
 
@@ -64,7 +64,7 @@ buildr task finish inspect --run <run-id> --target <canonical-workspace> --detai
 
 ## 禁止事项
 
-Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定proceed/blocked或接受风险。Finish不运行OpenSpec Converge或Convergence Inspect，不要求Convergence Receipt进入Delivery Carrier，也不在Environment cleanup后追索该事务材料。两种reuse mode都复用handoff；clean apply、resume或路径不重叠都不等于语义安全。
+Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定风险。Finish不运行OpenSpec Converge。两种reuse mode都复用handoff；clean apply或resume不等于语义安全。仅当既有run在preflight/prepare发生已记录、无副作用的Product provider exception时，用户才可明确授权`--bootstrap-recovery`；它只让retained Application从current ready Environment和current Development handoff共同确认的clean committed checkout加载run-owned capsule provider。retained Application、SQLite、Execution Record及状态机仍是唯一writer；不得传source/module/manifest/tarball、运行candidate CLI、临时安装或新建run。入口、registry、Application、repository或migration损坏不适用。
 
 ## 完成标准
 
@@ -74,7 +74,6 @@ Finish不改变Candidate/generation、Development Receipt、Change或原Task wor
 - carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
 - Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留适用的逐路径或零差异Agent review/baseline/ref/activation paths证明；
 - `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。
+- bootstrap recovery还须证明同一run/capsule、原failure、source commit/tree/provider digest及cleanup后的authority revocation；`bootstrapRecoveryExecutions = 1`。
 
-`run`结果的additive `executionRecord`必须可解释：`retained`表示本invocation正文已保留；`attention`表示record或diagnostics cleanup需owner后续处理，但不得据此回滚、改写或重跑已经成立的Finish delivery/cleanup/Task终态；`blocked`表示容量门禁在五阶段前停止；invalid或complete no-op为`not-opened`。`task finish inspect`只读Finish current/terminal，不列举records。
-
-complete 后先报告终态，再询问是否进行“任务复盘”：当前关注 Agent 耗时、Token、重复尝试和人机协作，Token 不可得可缺失。仅用户同意后路由 `task-retrospective`；blocked/failed 不提示，且复盘不影响终态。
+`run`结果的additive `executionRecord`必须可解释：`retained`表示本invocation正文已保留；`attention`表示record或diagnostics cleanup需owner后续处理，但不得据此回滚、改写或重跑已经成立的Finish delivery/cleanup/Task终态；`blocked`表示容量门禁在五阶段前停止；invalid或complete no-op为`not-opened`。`task finish inspect`只读Finish current/terminal，不列举records。complete 后先报告终态，再询问是否进行“任务复盘”：当前关注 Agent 耗时、Token、重复尝试和人机协作，Token 不可得可缺失。仅用户同意后路由 `task-retrospective`；blocked/failed 不提示，且复盘不影响终态。

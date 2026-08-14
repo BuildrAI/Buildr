@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
+import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../verification/timing/phases.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const webSourceRoot = path.resolve(serviceRoot, '../buildr-web');
@@ -18,8 +19,21 @@ function run(command, args, options = {}) {
 }
 
 test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用锁定工具链完成 build:web', { timeout: 420_000 }, (t) => {
+  const phase = createVerificationPhaseRecorder('system-fresh-build', { persistEvidence: true });
+  const fixtureStartedAt = Date.now();
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-fresh-environment-')));
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  t.after(() => {
+    const cleanupStartedAt = Date.now();
+    try {
+      const cleanup = cleanupVerificationHarnessRoot(base);
+      phase.record('harness-root-cleanup', cleanupStartedAt, Date.now(), cleanup.status === 'retained' ? 'retained' : 'passed');
+    } catch (error) {
+      phase.record('harness-root-cleanup', cleanupStartedAt, Date.now(), 'failed');
+      throw error;
+    } finally {
+      phase.emit();
+    }
+  });
   const root = path.join(base, 'workspace');
   const managerStatus = run('git', ['status', '--porcelain', '--', 'bin', 'src', 'package', 'package.json', 'package-lock.json'], { cwd: serviceRoot });
   const controller = managerStatus.trim()
@@ -120,7 +134,10 @@ recipes:
       ],
     }],
   }, null, 2)}\n`);
+  const prepareStartedAt = Date.now();
+  phase.record('fixture-preparation', fixtureStartedAt, prepareStartedAt);
   const prepared = buildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, '--agent', 'codex', '--target', root, '--json']);
+  const prepareFinishedAt = Date.now();
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v4');
   assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v5');
@@ -136,6 +153,10 @@ recipes:
   ]);
   assert.equal(prepared.effects.filter((effect) => effect.type === 'preparation-step-executed').length, 2);
   assert.deepEqual(prepared.environment.preparationSteps.map((step) => step.executed), [true, true]);
+  const [buildrPreparedAt, buildrWebPreparedAt] = prepared.environment.preparationSteps.map((step) => Date.parse(step.observedAt));
+  phase.record('buildr-npm-ci', prepareStartedAt, buildrPreparedAt);
+  phase.record('buildr-web-npm-ci', buildrPreparedAt, buildrWebPreparedAt);
+  phase.record('environment-finalization', buildrWebPreparedAt, prepareFinishedAt);
   const worktree = prepared.execution.workdir;
   const worktreeBuildr = path.join(worktree, 'projects', 'product', 'services', 'buildr');
   const worktreeWeb = path.join(worktree, 'projects', 'product', 'services', 'buildr-web');
@@ -149,6 +170,8 @@ recipes:
     ? [process.env.SystemRoot && path.join(process.env.SystemRoot, 'System32'), process.env.SystemRoot].filter(Boolean)
     : ['/usr/bin', '/bin'];
   const managedPath = [path.dirname(managedNpm), ...systemCommandPaths].join(path.delimiter);
+  const buildWebStartedAt = Date.now();
   run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, PATH: managedPath } });
+  phase.record('build-web', buildWebStartedAt, Date.now());
   assert.equal(fs.existsSync(path.join(worktreeBuildr, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), true);
 });

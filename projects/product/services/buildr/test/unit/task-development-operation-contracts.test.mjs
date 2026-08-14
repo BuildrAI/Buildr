@@ -5,6 +5,7 @@ import {
   TASK_DEVELOPMENT_ACTIONS,
   taskDevelopmentActionContract,
   taskDevelopmentActionFields,
+  taskDevelopmentActionRequiredFields,
   taskDevelopmentDriverExample,
   taskDevelopmentDriverSchema,
 } from '../../src/application/task-development/task-development-operation-contracts.mjs';
@@ -21,6 +22,7 @@ test('Task Development action contract覆盖全部driver actions并提供closed 
     assert.equal(contract.inputSchema.type, 'object');
     assert.equal(contract.inputSchema.additionalProperties, false);
     assert.deepEqual([...taskDevelopmentActionFields(action)], Object.keys(contract.inputSchema.properties));
+    assert.deepEqual([...taskDevelopmentActionRequiredFields(action)], contract.inputSchema.required || []);
     for (const field of Object.keys(contract.example)) assert.equal(Object.hasOwn(contract.inputSchema.properties, field), true, `${action}.${field}`);
   }
 });
@@ -30,7 +32,7 @@ test('schema与example使用稳定发现envelope并区分运行态约束', () =>
   assert.equal(schema.schemaVersion, 'buildr.task-development-driver-schema/v1');
   assert.equal(schema.action, 'begin');
   assert.equal(schema.inputSchema.additionalProperties, false);
-  assert.deepEqual(schema.inputSchema.required, ['changeDispositions']);
+  assert.deepEqual(schema.inputSchema.required, ['changeDispositions', 'planning']);
   assert.deepEqual(Object.keys(schema.inputSchema.properties), ['changeDispositions', 'planning', 'planningGate']);
   assert.match(schema.runtimeValidation, /Application/);
 
@@ -52,4 +54,5 @@ test('未知action不产生伪造contract', () => {
   assert.equal(taskDevelopmentDriverSchema('unknown'), null);
   assert.equal(taskDevelopmentDriverExample('unknown'), null);
   assert.throws(() => taskDevelopmentActionFields('unknown'), /Unknown Task Development action contract/);
+  assert.throws(() => taskDevelopmentActionRequiredFields('unknown'), /Unknown Task Development action contract/);
 });

@@ -69,7 +69,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   const compact = compactTaskFinishResult(canonical());
   assert.deepEqual(Object.keys(compact), [
     'schemaVersion', 'detail', 'runId', 'identity', 'status', 'currentPhase', 'deliveryCommit', 'phases', 'primaryFailure',
-    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'refs', 'delivery', 'completion', 'metrics', 'timing', 'executionRecord',
+    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'refs', 'delivery', 'completion', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
   ]);
   assert.equal(compact.schemaVersion, 'buildr.task-finish-compact-result/v1');
   assert.equal(compact.detail, 'compact');
@@ -89,6 +89,19 @@ test('full Task Finish Result 保持canonical对象不变', () => {
   const full = canonical();
   assert.equal(projectTaskFinishResult(full, 'full'), full);
   assert.equal(full.schemaVersion, 'buildr.task-finish-result/v2');
+});
+
+test('compact bootstrap provenance不暴露capsule路径', () => {
+  const compact = compactTaskFinishResult(canonical({
+    bootstrapRecovery: {
+      identity: 'sha256-bootstrap', mode: 'retained-writer-candidate-phase-provider', retainedSourceCommit: 'before', sourceCommit: 'after', sourceTree: 'tree', executorDigest: 'sha256-provider',
+      originalAttempt: { primaryFailure: { phase: 'prepare', origin: 'product-phase-provider', code: 'task-finish.provider-crashed' } },
+      capsule: { root: '/private/capsule', manifest: '/private/capsule/authority.json', revocation: { status: 'revoked' } },
+    },
+  }));
+  assert.equal(compact.bootstrapRecovery.originalFailure.origin, 'product-phase-provider');
+  assert.equal(compact.bootstrapRecovery.capsuleRevocation, 'revoked');
+  assert.doesNotMatch(JSON.stringify(compact.bootstrapRecovery), /private|authority\.json/);
 });
 
 test('compact覆盖complete、Doctor blocked、target race与Delivery Adaptation结论', () => {

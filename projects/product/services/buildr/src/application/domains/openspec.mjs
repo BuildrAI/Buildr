@@ -45,7 +45,10 @@ export function registerDomainsOpenspec(runtime) {
     const changesRoot = path.join(projectRoot, 'openspec', 'changes');
     const changeRoot = path.join(changesRoot, change);
     if (!changeRoot.startsWith(`${changesRoot}${path.sep}`) || !existsDirectory(changeRoot)) {
-      throw new Error(`Active OpenSpec change not found: ${change}`);
+      const error = new Error(`Active OpenSpec change not found in the provided --target: ${change}.`);
+      error.code = 'openspec.active_change_not_found';
+      error.nextAction = '从matching Task Environment Receipt读取execution.workdir，并原样作为--target重试；不得把Change复制到canonical Workspace或自动搜索其他worktree。';
+      throw error;
     }
     if (!existsFile(path.join(changeRoot, '.openspec.yaml'))) {
       throw new Error(`OpenSpec change is missing .openspec.yaml: ${change}`);
@@ -257,7 +260,13 @@ export function registerDomainsOpenspec(runtime) {
     const project = optionValue(args, '--project');
     const { projectRoot } = resolveOpenSpecContractProject(targetRoot, project);
     const component = openSpecContractComponent(targetRoot);
-    const resolvedChange = options.allowArchived ? openSpecConvergenceChangePath(projectRoot, change) : { changeRoot: openSpecContractChangePath(projectRoot, change), archived: false };
+    let resolvedChange;
+    try {
+      resolvedChange = options.allowArchived ? openSpecConvergenceChangePath(projectRoot, change) : { changeRoot: openSpecContractChangePath(projectRoot, change), archived: false };
+    } catch (error) {
+      if (error.code === 'openspec.active_change_not_found') error.usage = options.usage;
+      throw error;
+    }
     const { changeRoot, archived } = resolvedChange;
     if (!archived) validateUpstreamOpenSpecStrict(projectRoot, change, component.executablePath);
     const delta = parseOpenSpecChangeDelta(changeRoot);
@@ -267,7 +276,7 @@ export function registerDomainsOpenspec(runtime) {
 
   function openspecConverge(args) {
     const context = openSpecContractContext(args, {
-      usage: 'buildr openspec converge <change> --project <project> [--target <dir>] [--json]',
+      usage: 'buildr openspec converge <change> --project <project> [--target <task-execution-root>] [--json]',
       allowArchived: true,
     });
     const openspecExecutable = context.component.executablePath;

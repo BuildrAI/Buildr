@@ -7,9 +7,21 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Buildr Web只消费Application `inspect`的只读投影来展示通用Development。Parent coordination另有受控公共CLI/Buildr Web surface，但Development Receipt仍只能由Application写入。不得手写Development Receipt。
 
+## 阶段化上下文与效率边界
+
+只在某个专业动作成为 next executable action 时读取该动作的 capability contract、selected provider 与直接 authority：Planning Review、current knowledge、Formal Verification、Completion Review 和 Finish 的完整指引分别在进入对应阶段前装配，不在 proposal 前一次性预读整个生命周期。当前动作仍必须遵守已触发 Skill、required Rule、授权与 result evidence，按需读取不等于跳过门禁。
+
+首次修改 proposal、Skill、代码、测试或当前知识前，复用 triage 建立的一次有界 authority source map；若尚未形成，则从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立。该 map 保留在 Agent 工作上下文，不写入 Receipt 或其他产品 store；只有 scope、authority 或相关事实变化时才增量刷新。
+
+proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
+
+日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，可对内部driver显式使用`--compact`；它只是同一次Application result的response projection，不追加inspect、观察或写入。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。`nextActions`只帮助Agent定位候选下一步，不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
+
 ## Parent Plan 与 Child Contribution
 
 新建Parent可以显式采用Parent Plan。先用`task parent inspect`确认`legacy|parent-plan`模式；首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
+
+Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入，不是Development资源或长期事实。Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`record`或`reconcile`成功后必须立即删除。命令失败时，只有仍需使用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。Application保存的current Parent Plan才是authority；CLI、Task Development和Environment cleanup均不扫描或删除调用方临时输入。
 
 Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。Child仍拥有独立Environment、窄Change、Planning Review、Verification、Completion Review与Finish；同一个具体规范变化同一时间只能由一个active Change持有。
 
@@ -23,8 +35,8 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 
 1. 读取Task Record，确认Task active、Intent、Project/Service scope和`0..N` Change引用。
 2. 通过`task-environment`恢复matching ready Environment，只使用Receipt返回的execution/validation roots。
-3. 通过Development Application inspect已有Receipt；若缺失，在首个proposal、design、直接实现或其他正式研发动作前调用`begin`，记录完整Change dispositions与current planning snapshot。
-4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。
+3. 通过Development Application inspect已有Receipt；若缺失，在首个proposal、design、直接实现或其他正式研发动作前调用`begin`，记录完整Change dispositions与current planning snapshot。`begin|planning`都必须显式提交完整`planning`整值；没有node时提交`{"targetIdentity":null,"nodes":[]}`，不得用字段omission表达清空、保留或patch。
+4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。省略顶层`planning`时Application会在任何Receipt写入前失败关闭，Agent应根据专业authority重新形成完整snapshot，而不是猜测旧值。
 5. 通过`task-review`inspect Planning Result。Review可按当前policy不存在、not-applicable或明确waived；存在时必须绑定current planning target。旧Result和handoff snapshot即使stale也不删除或改写。
 
 正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用Task Environment声明的Node与Buildr Service execution root调用只读resolver：

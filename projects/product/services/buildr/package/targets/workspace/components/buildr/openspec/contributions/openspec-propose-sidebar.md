@@ -16,4 +16,4 @@
 
 完整 planning artifacts 形成后，读取 required `buildr.current-knowledge-maintenance/v1` binding、contract 和 selected provider：创建或刷新同级 `brief.md`，执行 `assess`，并把真实 Brief/current knowledge/terminology impacts 写入 tasks 与 `.buildr/knowledge-impact.yml` evidence。没有真实内容的目标不得产生空文档任务；provider unresolved 或 dependency blocked 时将 Change 报告为 blocked，不得开始 apply。
 
-`tasks.md`只包含Change disposition前可完成的实现、当前认知、直接验证反馈与archive readiness动作。不得把Formal Development、Task Verification/Candidate、Completion Review、Task Finish、Environment cleanup、Task terminal state或其他只能在archive后发生的Task lifecycle动作写为Change checkbox。
+写入或修订`tasks.md`的每个checkbox时，立即确认它能在Change convergence/archive前完成；只包含Change disposition前可完成的实现、当前认知、直接验证反馈与archive readiness动作，不为填写checklist预读完整下游流程。不得把Formal Development、Task Verification/Candidate、Completion Review、Task Finish、Environment cleanup、Task terminal state或其他只能在archive后发生的Task lifecycle动作写为Change checkbox。

@@ -37,6 +37,14 @@ test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一publ
   assert.match(worker, /coordination:\s*'inspectParentCoordination'/);
   assert.match(json, /buildr\.parent-coordination-result\/v1/);
   for (const phrase of ['Parent Plan', 'Contribution Handoff', 'task parent bind-child', '不自动完成Parent']) assert.ok(skill.includes(phrase), phrase);
+  for (const phrase of [
+    'Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入',
+    '操作系统临时目录',
+    '不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`',
+    '`record`或`reconcile`成功后必须立即删除',
+    'Application保存的current Parent Plan才是authority',
+    '不扫描或删除调用方临时输入',
+  ]) assert.ok(skill.includes(phrase), `task-development must govern temporary Parent Plan input lifecycle: ${phrase}`);
 });
 
 test('模型不恢复lifecycle/progress/event/history authority且没有历史Task专用逻辑', () => {

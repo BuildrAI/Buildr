@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/application/package-maintenance/verification-registry.mjs';
 import { createVerificationPlan } from '../../test/verification/planner.mjs';
-import { VERIFICATION_DELEGATED_INPUTS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.mjs';
+import { VERIFICATION_DELEGATED_INPUTS, VERIFICATION_EXECUTION_PROFILES, VERIFICATION_FULL_SCOPE_INPUTS, verificationSteps } from '../../test/verification/registry.mjs';
 import { workspaceSuites } from '../../test/verification/workspace/suites.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -31,6 +31,9 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
   assert.equal(scripts['test:host-node'], 'node test/verification/host-node.mjs');
   assert.equal(scripts['test:candidate'], 'bash scripts/verify-buildr-product');
+  assert.equal(scripts['test:candidate:ci'], 'bash scripts/verify-buildr-product-ci');
+  assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.mjs host');
+  assert.equal(scripts['test:candidate:aggregate'], 'node test/verification/candidate-ci.mjs aggregate');
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.mjs');
   assert.doesNotMatch(scripts['test:host-node'], /run-workspace-node/, 'Host Node compatibility must run on the caller-selected Node');
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
@@ -232,8 +235,7 @@ test('Host Node compatibility runs offline and reuses the active Windows distrib
   const cliSmoke = read('test/verification/host-node/cli-smoke.mjs');
   const policy = read('src/infrastructure/network/verification-network-policy.mjs');
   const workflow = read('../../../../.github/workflows/verify.yml');
-  const minimumHostJob = workflow.slice(workflow.indexOf('  managed-runtime-candidate:'), workflow.indexOf('  current-host-node:'));
-  const currentHostJob = workflow.slice(workflow.indexOf('  current-host-node:'));
+  const hostJob = workflow.slice(workflow.indexOf('  candidate-host-node:'), workflow.indexOf('  candidate-gate:'));
   assert.deepEqual(packageManifest.bundleDependencies, ['yaml']);
   assert.match(hostNode, /enforceOfflineVerification\(\)/);
   assert.match(policy, /npm_config_offline = 'true'/);
@@ -245,24 +247,50 @@ test('Host Node compatibility runs offline and reuses the active Windows distrib
   assert.match(cliSmoke, /ordinary CLI must not start HTTP/);
   assert.match(cliSmoke, /readiness\.productIdentity\?\.applicationPayloadDigest/);
   assert.doesNotMatch(cliSmoke, /npm pack|createReleaseArtifact|buildApplicationPayload/);
-  assert.match(minimumHostJob, /node-version: 24\.15\.0[\s\S]*npm run test:host-node/);
-  assert.match(currentHostJob, /node-version: 24\.x[\s\S]*npm run test:host-node/);
+  assert.match(hostJob, /host-minimum-macos[\s\S]*node: 24\.15\.0/);
+  assert.match(hostJob, /host-current-windows[\s\S]*node: 24\.x/);
+  assert.match(hostJob, /npm run test:candidate:host -- \$\{\{ matrix\.id \}\}/);
+  assert.match(hostJob, /name: candidate-package/);
 });
 
-test('managed Candidate 在离线验证前准备两个 Service 的依赖缓存', () => {
+test('distributed Candidate creates one artifact and fans out independent consumers', () => {
   const workflow = read('../../../../.github/workflows/verify.yml');
-  const managedJob = workflow.slice(workflow.indexOf('  managed-runtime-candidate:'), workflow.indexOf('  current-host-node:'));
-  assert.match(managedJob, /projects\/product\/services\/buildr\/package-lock\.json/);
-  assert.match(managedJob, /projects\/product\/services\/buildr-web\/package-lock\.json/);
-  assert.match(managedJob, /Prepare Buildr Web dependencies for offline Candidate[\s\S]*working-directory: projects\/product\/services\/buildr-web[\s\S]*npm ci --ignore-scripts/);
-  assert.ok(managedJob.indexOf('Prepare Buildr Web dependencies for offline Candidate') < managedJob.indexOf('Verify final product candidate'));
+  const document = YAML.parse(workflow);
+  assert.deepEqual(Object.keys(document.jobs), [
+    'dev-feedback', 'candidate-preflight', 'candidate-artifact', 'candidate-core-macos',
+    'candidate-windows', 'candidate-host-node', 'candidate-gate',
+  ]);
+  assert.equal(document.jobs['candidate-artifact'].needs, 'candidate-preflight');
+  assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-artifact');
+  assert.equal(document.jobs['candidate-windows'].needs, 'candidate-artifact');
+  assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-artifact');
+  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, ['runtime-windows', 'workspace-windows', 'fresh-build-windows']);
+  const windowsJob = workflow.slice(workflow.indexOf('  candidate-windows:'), workflow.indexOf('  candidate-host-node:'));
+  assert.match(windowsJob, /projects\/product\/services\/buildr-web\/package-lock\.json/);
+  assert.match(windowsJob, /if: matrix\.shard == 'fresh-build-windows'[\s\S]*npm ci --ignore-scripts/);
+  assert.equal((workflow.match(/name: candidate-package/g) || []).length, 4, 'one upload and three consumer downloads');
+  assert.equal((workflow.match(/Build the single Candidate artifact/g) || []).length, 1);
 });
 
-test('managed Candidate 只沿 dev first-parent 选择 release verification base', () => {
+test('Candidate workflow checks out one exact source SHA and always aggregates closed evidence', () => {
   const workflow = read('../../../../.github/workflows/verify.yml');
-  const managedJob = workflow.slice(workflow.indexOf('  managed-runtime-candidate:'), workflow.indexOf('  current-host-node:'));
-  assert.match(managedJob, /git log --first-parent origin\/dev --format=%H --grep=/);
-  assert.doesNotMatch(managedJob, /git log origin\/dev --format=%H --grep=/);
+  const document = YAML.parse(workflow);
+  assert.equal(document.env.CANDIDATE_SOURCE_SHA, '${{ github.event.pull_request.head.sha || github.sha }}');
+  assert.equal(document.jobs['candidate-gate'].name, 'Candidate gate');
+  assert.match(document.jobs['candidate-gate'].if, /^always\(\)/);
+  assert.deepEqual(document.jobs['candidate-gate'].needs, [
+    'candidate-preflight', 'candidate-artifact', 'candidate-core-macos', 'candidate-windows', 'candidate-host-node',
+  ]);
+  assert.match(workflow, /pattern: candidate-evidence-\*/);
+  assert.match(workflow, /merge-multiple: true/);
+  assert.match(workflow, /npm run test:candidate:aggregate/);
+  assert.equal((workflow.match(/overwrite: true/g) || []).length, 8, 'reruns replace one logical artifact per shard or aggregate');
+  assert.equal((workflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 7);
+  assert.doesNotMatch(workflow, /git log --first-parent origin\/dev/);
+  for (const input of [
+    '.github/workflows/verify.yml', 'scripts/verify-buildr-product-ci',
+    'test/verification/candidate-ci.mjs', 'test/verification/candidate-ci-evidence.mjs',
+  ]) assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes(input), `${input} must force full changed verification`);
 });
 
 test('fresh build reuses prepared controller dependencies without weakening tested installs', () => {

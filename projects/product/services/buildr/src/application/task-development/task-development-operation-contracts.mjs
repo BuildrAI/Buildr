@@ -97,12 +97,12 @@ const contracts = {
   },
   begin: {
     summary: '在首个正式研发动作前建立 Development Receipt 与 planning snapshot。',
-    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning, planningGate }, ['changeDispositions']),
+    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning, planningGate }, ['changeDispositions', 'planning']),
     example: { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } },
   },
   planning: {
     summary: '在专业 planning artifacts 变化后刷新 planning snapshot。',
-    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning, planningGate }, ['changeDispositions']),
+    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning, planningGate }, ['changeDispositions', 'planning']),
     example: { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } },
   },
   observe: {
@@ -194,12 +194,18 @@ export function taskDevelopmentActionFields(action) {
   return new Set(Object.keys(contract.inputSchema.properties));
 }
 
+export function taskDevelopmentActionRequiredFields(action) {
+  const contract = taskDevelopmentActionContract(action);
+  if (!contract) throw new Error(`Unknown Task Development action contract: ${action}`);
+  return new Set(contract.inputSchema.required || []);
+}
+
 export function taskDevelopmentDriverHelp(action = null) {
   if (action === null) {
     return {
       schemaVersion: 'buildr.task-development-driver-help/v1',
       action: null,
-      usage: 'node task-development-driver.mjs <action> --task <task-id> --target <canonical-workspace> [--input-json <json>] [--profile]',
+      usage: 'node task-development-driver.mjs <action> --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]',
       discovery: ['--help', '<action> --help', '<action> --schema', '<action> --example'],
       actions: TASK_DEVELOPMENT_ACTIONS.map((name) => ({ action: name, summary: contracts[name].summary })),
     };
@@ -210,7 +216,7 @@ export function taskDevelopmentDriverHelp(action = null) {
     schemaVersion: 'buildr.task-development-driver-help/v1',
     action,
     summary: contract.summary,
-    usage: `node task-development-driver.mjs ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>] [--profile]`,
+    usage: `node task-development-driver.mjs ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]`,
     discovery: [`${action} --schema`, `${action} --example`],
   };
 }

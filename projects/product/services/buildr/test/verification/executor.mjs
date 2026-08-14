@@ -7,6 +7,7 @@ import {
   CANDIDATE_PACK_METADATA_ENV,
   CANDIDATE_RELEASE_MANIFEST_ENV,
   CANDIDATE_TARBALL_ENV,
+  readSharedCandidatePackage,
 } from './release/candidate-package.mjs';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
 
@@ -31,7 +32,8 @@ export function createVerificationExecutor(options) {
     BUILDR_SERVICE_ROOT: productRoot,
     PATH: [nodeBin, nodeModulesBin, inheritedEnv.PATH].filter(Boolean).join(path.delimiter),
   };
-  const artifacts = {};
+  const sharedCandidate = readSharedCandidatePackage(baseEnv);
+  const artifacts = sharedCandidate ? { candidate: sharedCandidate } : {};
   const nodeTestFile = (file) => {
     const relative = path.relative(productRoot, file).split(path.sep).join('/');
     return relative.startsWith('.') ? relative : `./${relative}`;
@@ -62,10 +64,12 @@ export function createVerificationExecutor(options) {
       const startedAt = Date.now();
       let error = null;
       try {
-        const artifactDirectory = path.resolve(options.artifactDirectory);
-        fs.mkdirSync(artifactDirectory, { recursive: true });
-        const candidate = await createCandidatePackage(productRoot, artifactDirectory, { npmExecutable });
-        artifacts.candidate = candidate;
+        if (!sharedCandidate) {
+          const artifactDirectory = path.resolve(options.artifactDirectory);
+          fs.mkdirSync(artifactDirectory, { recursive: true });
+          const candidate = await createCandidatePackage(productRoot, artifactDirectory, { npmExecutable });
+          artifacts.candidate = candidate;
+        }
       } catch (caught) {
         error = caught;
       }

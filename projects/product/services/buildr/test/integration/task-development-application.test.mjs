@@ -162,6 +162,51 @@ function workspaceOnlyFixture(t, taskId) {
   return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity };
 }
 
+test('begin与planning省略完整snapshot时零写入失败关闭', (t) => {
+  const current = fixture(t, 'planning-snapshot-required');
+  const before = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.throws(
+    () => current.runtime.recordTaskDevelopmentPlanning(current.root, current.taskId, { changeDispositions: [] }),
+    (error) => error.code === 'task_development_field_required' && error.details.field === 'planning',
+  );
+  const after = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.equal(after.development.receiptDigest, before.development.receiptDigest);
+  assert.deepEqual(after.development.receipt, before.development.receipt);
+
+  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
+  opened.database.prepare('DELETE FROM task_development_current WHERE task_id = ?').run(current.taskId);
+  opened.database.close();
+  assert.throws(
+    () => current.runtime.beginTaskDevelopment(current.root, current.taskId, { changeDispositions: [] }),
+    (error) => error.code === 'task_development_field_required' && error.details.field === 'planning',
+  );
+  assert.equal(current.runtime.readTaskDevelopmentPersistence(current.root, current.taskId, { optional: true }), null);
+});
+
+test('Development result按保存事实给出单一建议方向且不自动推进', (t) => {
+  const current = fixture(t, 'development-guidance');
+  let result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.equal(result.nextActions.length, 1);
+  assert.match(result.nextActions[0], /task-verification/);
+
+  recordVerification(current);
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  assert.match(result.nextActions[0], /task-review/);
+  const candidate = result.development.receipt.candidate;
+
+  current.runtime.recordTaskReview(current.root, current.taskId, {
+    reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Current Candidate'], uncovered: [], findings: [],
+    conclusion: { outcome: 'ready', summary: 'Ready.' },
+  });
+  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'All current gates are ready.', risks: [] });
+  assert.match(result.nextActions[0], /handoff/);
+  assert.equal(result.development.receipt.handoffs.length, 0);
+
+  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
+  assert.match(result.nextActions[0], /明确交付授权/);
+  assert.equal(result.development.applicability.handoff, 'current');
+});
+
 test('workspace-only policy、负向 Verification、风险决定与 handoff 形成完整 current 生命周期', (t) => {
   const current = workspaceOnlyFixture(t, 'workspace-only-lifecycle');
   assert.deepEqual(current.runtime.observeTaskVerificationDeclarations(current.root, current.taskId, current.root), []);

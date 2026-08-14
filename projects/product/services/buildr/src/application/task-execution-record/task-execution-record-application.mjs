@@ -114,14 +114,20 @@ function portableGcDiagnostic(error, status) {
 
 export function registerTaskExecutionRecordApplication(runtime) {
   function openTaskExecutionRecord(targetRoot, taskId, input) {
-    assertInput(input, new Set(['owner', 'kind', 'runIdentity', 'invocationIdentity', 'targetIdentity', 'producer', 'allowDuplicateActive']), 'Task Execution Record open');
+    assertInput(input, new Set(['owner', 'kind', 'runIdentity', 'invocationIdentity', 'targetIdentity', 'producer', 'allowDuplicateInvocation']), 'Task Execution Record open');
     const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
     if (task.record.status !== 'active') throw taskExecutionRecordError('task_execution_record_task_terminal', `Task ${taskId} 已是${task.record.status}，不能open新的执行记录。`, 409, { status: task.record.status });
-    if (input.allowDuplicateActive !== undefined && typeof input.allowDuplicateActive !== 'boolean') throw taskExecutionRecordError('task_execution_record_allow_duplicate_active_invalid', 'allowDuplicateActive必须是boolean。', 400);
-    const { allowDuplicateActive = false, ...recordInput } = input;
+    if (input.allowDuplicateInvocation !== undefined && typeof input.allowDuplicateInvocation !== 'boolean') throw taskExecutionRecordError('task_execution_record_allow_duplicate_invocation_invalid', 'allowDuplicateInvocation必须是boolean。', 400);
+    const { allowDuplicateInvocation = false, ...recordInput } = input;
     const draft = createOpenTaskExecutionRecord({ taskId: task.record.taskId, ...recordInput });
-    const persisted = runtime.openTaskExecutionRecordPersistence(task.root, draft, { allowDuplicateActive });
-    const status = persisted.existingActive ? 'existing-active' : persisted.created ? 'opened' : 'reused';
+    const persisted = runtime.openTaskExecutionRecordPersistence(task.root, draft, { allowDuplicateInvocation });
+    const status = persisted.existingActive
+      ? 'existing-active'
+      : persisted.existingTerminal
+        ? 'existing-terminal'
+        : persisted.created
+          ? 'opened'
+          : 'reused';
     return result('open', status, persisted, [{ type: status, path: persisted.file }]);
   }
 

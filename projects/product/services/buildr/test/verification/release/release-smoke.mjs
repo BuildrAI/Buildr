@@ -12,6 +12,7 @@ import { buildApplicationPayload } from '../../../scripts/release/application-pa
 import { createReleaseArtifact, readReleaseArtifact } from '../../../scripts/release/release-artifact.mjs';
 import { officialRegistry } from '../../../scripts/release/registry-version-state.mjs';
 import { readSharedCandidatePackage } from './candidate-package.mjs';
+import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../timing/phases.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const packageName = '@buildr-ai/buildr';
@@ -143,19 +144,11 @@ async function stopChildProcess(child, timeoutMs = 2_000) {
   child.kill('SIGTERM');
   if (await waitForChildClose(child, timeoutMs)) return;
   child.kill('SIGKILL');
-  await waitForChildClose(child, timeoutMs);
+  if (!await waitForChildClose(child, timeoutMs)) throw new Error(`Owned child process ${child.pid} did not close after SIGKILL.`);
 }
 
 export function cleanupReleaseSmokeRoot(root, options = {}) {
-  const removeRoot = options.removeRoot ?? ((target) => fs.rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
-  const warn = options.warn ?? console.warn;
-  try {
-    removeRoot(root);
-    return { status: 'cleaned', root };
-  } catch (error) {
-    warn(`Buildr release smoke retained temporary root ${root}: ${error.code ?? error.message}`);
-    return { status: 'retained', root, error };
-  }
+  return cleanupVerificationHarnessRoot(root, options);
 }
 
 export async function runReleaseSmoke(env = process.env) {
@@ -173,8 +166,12 @@ export async function runReleaseSmoke(env = process.env) {
     npm_config_update_notifier: 'false',
   };
   const source = resolveReleaseSmokeSource(env);
+  const phase = createVerificationPhaseRecorder('release-tarball-smoke', { persistEvidence: true });
   let web = null;
   let launcherProcess = null;
+  let installedMetadata = null;
+  let buildrScript = null;
+  let launcherTarget = null;
 
   function runBuildr(buildrScript, args) {
     return run(process.execPath, [buildrScript, ...args], {
@@ -184,39 +181,43 @@ export async function runReleaseSmoke(env = process.env) {
   }
 
   try {
-    fs.mkdirSync(packDirectory, { recursive: true });
-    fs.mkdirSync(workspace, { recursive: true });
-
     let installTarget = source.installTarget;
     let expectedVersion = source.expectedVersion;
-    if (!installTarget) {
-      const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: productRoot }).trim();
-      const payload = await buildApplicationPayload(path.join(root, 'application-payload'), sourceCommit);
-      const artifact = createReleaseArtifact(payload.root, packDirectory);
-      installTarget = artifact.tarball;
-      expectedVersion = artifact.manifest.version;
-    }
-    const installArgs = source.offline
-      ? ['install', '--offline', '--global', '--prefix', prefix, installTarget]
-      : ['install', '--prefer-online', '--global', '--prefix', prefix, '--registry', officialRegistry, installTarget];
-    run(npmExecutable, installArgs, { env: runtimeEnv });
+    await phase.run('source-preparation', async () => {
+      fs.mkdirSync(packDirectory, { recursive: true });
+      fs.mkdirSync(workspace, { recursive: true });
+      if (!installTarget) {
+        const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: productRoot }).trim();
+        const payload = await buildApplicationPayload(path.join(root, 'application-payload'), sourceCommit);
+        const artifact = createReleaseArtifact(payload.root, packDirectory);
+        installTarget = artifact.tarball;
+        expectedVersion = artifact.manifest.version;
+      }
+    });
 
-    const modulesRoot = process.platform === 'win32' ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib', 'node_modules');
-    const installedPackageRoot = path.join(modulesRoot, '@buildr-ai', 'buildr');
-    const installedMetadata = JSON.parse(fs.readFileSync(path.join(installedPackageRoot, 'package.json'), 'utf8'));
-    assert.equal(installedMetadata.name, source.expectedName, 'installed package name');
-    if (expectedVersion) assert.equal(installedMetadata.version, expectedVersion, 'installed package version');
-    const buildrScript = path.join(installedPackageRoot, 'bin', 'buildr.mjs');
-    assert.equal(fs.existsSync(buildrScript), true, 'installed Buildr executable source must exist');
+    let installedPackageRoot = null;
+    await phase.run('package-installation', async () => {
+      const installArgs = source.offline
+        ? ['install', '--offline', '--global', '--prefix', prefix, installTarget]
+        : ['install', '--prefer-online', '--global', '--prefix', prefix, '--registry', officialRegistry, installTarget];
+      run(npmExecutable, installArgs, { env: runtimeEnv });
+      const modulesRoot = process.platform === 'win32' ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib', 'node_modules');
+      installedPackageRoot = path.join(modulesRoot, '@buildr-ai', 'buildr');
+      installedMetadata = JSON.parse(fs.readFileSync(path.join(installedPackageRoot, 'package.json'), 'utf8'));
+      assert.equal(installedMetadata.name, source.expectedName, 'installed package name');
+      if (expectedVersion) assert.equal(installedMetadata.version, expectedVersion, 'installed package version');
+      buildrScript = path.join(installedPackageRoot, 'bin', 'buildr.mjs');
+      assert.equal(fs.existsSync(buildrScript), true, 'installed Buildr executable source must exist');
+      launcherTarget = process.platform === 'darwin'
+        ? path.join(root, 'Applications', 'Buildr Web.app')
+        : process.platform === 'win32'
+          ? path.join(root, 'Start Menu', 'Buildr Web.lnk')
+          : null;
+      if (launcherTarget) assert.equal(fs.existsSync(launcherTarget), false, 'ordinary npm install must not create a graphical Launcher');
+    });
 
-    const launcherTarget = process.platform === 'darwin'
-      ? path.join(root, 'Applications', 'Buildr Web.app')
-      : process.platform === 'win32'
-        ? path.join(root, 'Start Menu', 'Buildr Web.lnk')
-        : null;
-    if (launcherTarget) assert.equal(fs.existsSync(launcherTarget), false, 'ordinary npm install must not create a graphical Launcher');
-
-    const updateCheck = parseJson('registry update check', run(process.execPath, [buildrScript, 'update', 'check', '--json'], {
+    await phase.run('web-launcher-lifecycle', async () => {
+      const updateCheck = parseJson('registry update check', run(process.execPath, [buildrScript, 'update', 'check', '--json'], {
       cwd: workspace,
       expectedStatus: 1,
       env: {
@@ -225,9 +226,9 @@ export async function runReleaseSmoke(env = process.env) {
         npm_config_fetch_retries: '0',
         npm_config_fetch_timeout: '1000',
       },
-    }), 'buildr.update-check/v1');
-    assert.equal(updateCheck.mode, 'npm');
-    assert.equal(updateCheck.status, 'blocked');
+      }), 'buildr.update-check/v1');
+      assert.equal(updateCheck.mode, 'npm');
+      assert.equal(updateCheck.status, 'blocked');
 
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     let webStderr = '';
@@ -243,7 +244,7 @@ export async function runReleaseSmoke(env = process.env) {
     await stopChildProcess(web);
     web = null;
 
-    if (launcherTarget) {
+      if (launcherTarget) {
       const installedLauncher = parseJson('launcher install', runBuildr(buildrScript, ['web', 'launcher', 'install', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
       assert.equal(installedLauncher.status, 'ready');
       assert.equal(sameFilesystemPath(installedLauncher.binding.hostNode.path, process.execPath), true);
@@ -290,24 +291,45 @@ export async function runReleaseSmoke(env = process.env) {
       const uninstalled = parseJson('launcher uninstall', runBuildr(buildrScript, ['web', 'launcher', 'uninstall', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
       assert.equal(uninstalled.status, 'absent');
       assert.equal(fs.existsSync(installedPackageRoot), true, 'Launcher uninstall must retain the npm package');
-    }
+      }
+    });
 
-    runBuildr(buildrScript, ['init', '--agent', 'codex', '--target', workspace, '--name', 'release-smoke', '--profile', 'team']);
-    runBuildr(buildrScript, ['sync', 'codex', '--target', workspace]);
-    const doctorBefore = parseJson('doctor before uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v1');
-    assert.equal(doctorBefore.summary.error, 0);
+    await phase.run('workspace-lifecycle', async () => {
+      runBuildr(buildrScript, ['init', '--agent', 'codex', '--target', workspace, '--name', 'release-smoke', '--profile', 'team']);
+      runBuildr(buildrScript, ['sync', 'codex', '--target', workspace]);
+      const doctorBefore = parseJson('doctor before uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v1');
+      assert.equal(doctorBefore.summary.error, 0);
+    });
 
-    runBuildr(buildrScript, ['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', workspace, '--reason', 'release-smoke']);
-    const doctorAfter = parseJson('doctor after uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v1');
-    assert.equal(doctorAfter.summary.error, 0);
-    assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'openspec-explore')), false);
+    await phase.run('uninstall-final-doctor', async () => {
+      runBuildr(buildrScript, ['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', workspace, '--reason', 'release-smoke']);
+      const doctorAfter = parseJson('doctor after uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v1');
+      assert.equal(doctorAfter.summary.error, 0);
+      assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'openspec-explore')), false);
+    });
 
     console.log(`Buildr release smoke passed from ${source.kind} on ${process.platform} with Node ${process.versions.node}.`);
     return { source: source.kind, version: installedMetadata.version };
   } finally {
-    await stopChildProcess(web);
-    await stopChildProcess(launcherProcess);
-    cleanupReleaseSmokeRoot(root);
+    let cleanupFailure = null;
+    try {
+      await phase.run('owned-process-cleanup', async () => {
+        await stopChildProcess(web);
+        await stopChildProcess(launcherProcess);
+      });
+    } catch (error) {
+      cleanupFailure = error;
+    }
+    const cleanupStartedAt = Date.now();
+    try {
+      const cleanup = cleanupReleaseSmokeRoot(root);
+      phase.record('harness-root-cleanup', cleanupStartedAt, Date.now(), cleanup.status === 'retained' ? 'retained' : 'passed');
+    } catch (error) {
+      phase.record('harness-root-cleanup', cleanupStartedAt, Date.now(), 'failed');
+      cleanupFailure ??= error;
+    }
+    phase.emit();
+    if (cleanupFailure) throw cleanupFailure;
   }
 }
 

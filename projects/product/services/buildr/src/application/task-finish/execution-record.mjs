@@ -26,7 +26,7 @@ function portableFailure(value) {
   const diagnostic = value.diagnostic == null ? null : {
     digest: value.diagnostic?.digest || digest(value.diagnostic),
   };
-  return {
+  const result = {
     phase: PHASES.has(value.phase) ? value.phase : null,
     operation: value.operation || value.check || null,
     check: value.check || null,
@@ -37,6 +37,8 @@ function portableFailure(value) {
     message: value.message || 'Task Finish execution stopped.',
     diagnostic,
   };
+  if (value.origin) result.origin = value.origin;
+  return result;
 }
 
 function portableOperation(value) {
@@ -82,7 +84,7 @@ function portableRun(run) {
   const carrier = run?.deliveryCarrier || null;
   const delivery = run?.delivery || null;
   const completion = run?.completion || null;
-  return {
+  const result = {
     id: run?.runId || null,
     invocationOrdinal: run?.invocations || null,
     taskId: identity.task || null,
@@ -120,6 +122,19 @@ function portableRun(run) {
     } : null,
     status: run?.status || null,
   };
+  if (run?.bootstrapRecovery) {
+    const originalFailure = run.bootstrapRecovery.originalAttempt?.primaryFailure || null;
+    result.bootstrapRecovery = {
+      identity: run.bootstrapRecovery.identity || null,
+      mode: run.bootstrapRecovery.mode || null,
+      sourceCommit: run.bootstrapRecovery.sourceCommit || null,
+      sourceTree: run.bootstrapRecovery.sourceTree || null,
+      executorDigest: run.bootstrapRecovery.executorDigest || null,
+      originalFailure: originalFailure ? { phase: originalFailure.phase || null, origin: originalFailure.origin || null, code: originalFailure.code || null } : null,
+      capsuleRevocation: run.bootstrapRecovery.capsule?.revocation?.status || null,
+    };
+  }
+  return result;
 }
 
 export function taskFinishExecutionRecordOutcome(result) {
@@ -166,6 +181,7 @@ export function createTaskFinishExecutionRecordFiles(input) {
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,
   };
+  if (run.bootstrapRecovery) summary.bootstrapRecovery = run.bootstrapRecovery;
   const timeline = {
     schemaVersion: 'buildr.task-finish-execution-record-timeline/v1',
     invocationId: input.invocationId,

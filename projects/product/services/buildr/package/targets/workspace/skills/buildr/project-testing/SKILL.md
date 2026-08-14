@@ -57,6 +57,8 @@ Service 负责自身代码、公开技术契约和独立交付物可判定的事
 
 Bug 回归测试说明它捕获的旧错误，并在安全、低成本且可复现时证明测试会在修复前、受控错误实现或移除修复后失败。旧行为无法安全执行时，使用当前失败复现、受控替代实现或精确人工推导作为替代证据并报告 gap；不得为取得红灯证据执行越权或破坏性操作，也不得伪造失败历史。
 
+修改被多个action、状态或公共入口复用的validation/helper时，先枚举真实调用面并核对各入口既有错误类型、诊断顺序与公共结果；再结合已有tests和Project `plan-only`/`dry-run` changed-plan reasons，选择至少一个能区分主要兼容回归、成本最低的既有canary。一个canary不能覆盖已识别的独立公共边界时，按最低充分原则扩大focused regression；不得为固定低耗时遗漏已知路径。该反馈属于Development，不能把plan preview或canary结果冒充Task Verification Result，也不替代最终affected Formal Verification。
+
 测试涉及文件、数据库、消息、缓存、全局配置或其他状态与副作用时，按风险检查隔离、必要幂等、失败后清理和重复运行。纯逻辑测试不机械承担这些检查。
 
 提案或设计存在明确验收标准时，可以先识别 Acceptance cases 和未来自动化边界。第一版不自动建设浏览器、移动端、性能、安全或其他 QA 平台；没有实际执行事实时不得宣称业务验收完成。

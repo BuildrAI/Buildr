@@ -288,7 +288,7 @@ export function registerVerificationApplication(runtime) {
           invocationIdentity,
           targetIdentity,
           producer: VERIFICATION_EXECUTION_RECORD_PRODUCER,
-          allowDuplicateActive: retry,
+          allowDuplicateInvocation: retry,
         });
       } catch (error) {
         error.verificationExecutionRecord = publicVerificationExecutionRecord('blocked', {
@@ -299,12 +299,14 @@ export function registerVerificationApplication(runtime) {
         throw error;
       }
     }
-    if (openedExecutionRecord?.status === 'existing-active') {
+    if (['existing-active', 'existing-terminal'].includes(openedExecutionRecord?.status)) {
       const record = openedExecutionRecord.record;
-      const nextActions = [`使用 buildr task execution-record inspect --task ${context.taskId} --record ${record.recordId} 回读当前执行；仅需独立重试时显式传 --retry。`];
+      const active = openedExecutionRecord.status === 'existing-active';
+      const terminalPassed = !active && record.outcome === 'passed' && record.lifecycleStatus !== 'attention';
+      const nextActions = [`使用 buildr task execution-record inspect --task ${context.taskId} --record ${record.recordId} 回读已有执行；只有明确需要独立执行时才显式传 --retry。`];
       const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationExecution, {
         operation: 'execute',
-        status: 'active',
+        status: active ? 'active' : terminalPassed ? 'passed' : 'failed',
         target: { identity: targetIdentity, stable: null, observation: null, drift: null },
         project: { code: projectCode, root: projectRoot },
         declaration: { path: declarationPath, identity: declarationIdentity },
@@ -314,7 +316,7 @@ export function registerVerificationApplication(runtime) {
         authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
         checks: [],
         durationMs: 0,
-        timingSource: 'not-started-existing-active',
+        timingSource: active ? 'not-started-existing-active' : 'not-started-existing-terminal',
         startedAt: null,
         finishedAt: null,
         failures: [],
@@ -322,7 +324,7 @@ export function registerVerificationApplication(runtime) {
         invocationIdentity,
         runId: record.runIdentity,
         run: { id: record.runIdentity },
-        executionRecord: publicVerificationExecutionRecord('active', {
+        executionRecord: publicVerificationExecutionRecord(active ? 'active' : record.lifecycleStatus === 'attention' ? 'attention' : 'retained', {
           record,
           nextActions,
         }),
@@ -331,7 +333,10 @@ export function registerVerificationApplication(runtime) {
         nextActions,
       });
       if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-      else console.log(`Verification execution already active: ${record.recordId} (${record.runIdentity})`);
+      else console.log(active
+        ? `Verification execution already active: ${record.recordId} (${record.runIdentity})`
+        : `Verification execution reused terminal record: ${record.recordId} (${record.outcome}/${record.lifecycleStatus})`);
+      if (!active && !terminalPassed) process.exitCode = 1;
       return payload;
     }
     const before = executionContentObservation(targetRoot);

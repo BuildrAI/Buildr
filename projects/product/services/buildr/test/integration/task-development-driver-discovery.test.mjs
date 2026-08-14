@@ -19,6 +19,7 @@ test('全局与action帮助无需Task或Workspace', () => {
   assert.equal(global.action, null);
   assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'begin', 'planning', 'observe', 'policy', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
   assert.deepEqual(global.discovery, ['--help', '<action> --help', '<action> --schema', '<action> --example']);
+  assert.match(global.usage, /--compact \| --profile/);
 
   const action = JSON.parse(run(['planning', '--help']).stdout);
   assert.equal(action.action, 'planning');
@@ -31,7 +32,7 @@ test('schema与example输出closed input contract', () => {
   assert.equal(schema.schemaVersion, 'buildr.task-development-driver-schema/v1');
   assert.equal(schema.inputSchema.additionalProperties, false);
   assert.deepEqual(Object.keys(schema.inputSchema.properties), ['changeDispositions', 'planning', 'planningGate']);
-  assert.deepEqual(schema.inputSchema.required, ['changeDispositions']);
+  assert.deepEqual(schema.inputSchema.required, ['changeDispositions', 'planning']);
 
   const example = JSON.parse(run(['planning', '--example']).stdout);
   assert.equal(example.schemaVersion, 'buildr.task-development-driver-example/v1');

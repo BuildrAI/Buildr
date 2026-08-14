@@ -61,6 +61,23 @@ async function run(current, id, extra = []) {
   }
 }
 
+async function runWithExit(current, id, extra = []) {
+  const previousLog = console.log;
+  console.log = () => {};
+  process.exitCode = 0;
+  try {
+    const payload = await current.runtime.verificationRun([
+      '--project', 'demo', '--capability', id, '--target-identity', `target:${id}`, '--target', current.root,
+      '--environment', current.taskId, '--workspace', current.root,
+      ...extra,
+    ]);
+    return { payload, exitCode: process.exitCode || 0 };
+  } finally {
+    console.log = previousLog;
+    process.exitCode = 0;
+  }
+}
+
 test('session丢失后相同验证返回active record且零执行，显式retry才重跑', async (t) => {
   const current = setup(t, 'verification-active-reuse');
   const markerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-active-reuse-'));
@@ -88,6 +105,87 @@ test('session丢失后相同验证返回active record且零执行，显式retry�
   const records = current.runtime.listTaskExecutionRecords(current.root, current.taskId).records;
   assert.equal(records.length, 2);
   assert.deepEqual(records.map((record) => record.lifecycleStatus).sort(), ['open', 'retained']);
+});
+
+test('相同terminal verification默认复用原record且只有retry或identity变化才执行', async (t) => {
+  const current = setup(t, 'verification-terminal-reuse');
+  const markerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-terminal-reuse-'));
+  t.after(() => fs.rmSync(markerRoot, { recursive: true, force: true }));
+  const marker = path.join(markerRoot, 'executions.txt');
+  declare(current.projectRoot, [capability('demo.pass', `require("fs").appendFileSync(${JSON.stringify(marker)}, "original\\n")`)]);
+
+  const first = await run(current, 'demo.pass');
+  const reused = await run(current, 'demo.pass');
+  assert.equal(first.status, 'passed');
+  assert.equal(reused.status, 'passed');
+  assert.equal(reused.timingSource, 'not-started-existing-terminal');
+  assert.equal(reused.durationMs, 0);
+  assert.deepEqual(reused.checks, []);
+  assert.equal(reused.executionIdentity, null);
+  assert.equal(reused.evidenceReference, null);
+  assert.equal(reused.executionRecord.recordId, first.executionRecord.recordId);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'original\n');
+  assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records.length, 1);
+
+  const retried = await run(current, 'demo.pass', ['--retry']);
+  assert.equal(retried.status, 'passed');
+  assert.notEqual(retried.executionRecord.recordId, first.executionRecord.recordId);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'original\noriginal\n');
+
+  declare(current.projectRoot, [capability('demo.pass', `require("fs").appendFileSync(${JSON.stringify(marker)}, "changed-declaration\\n")`)]);
+  const changedIdentity = await run(current, 'demo.pass');
+  assert.equal(changedIdentity.status, 'passed');
+  assert.notEqual(changedIdentity.invocationIdentity, first.invocationIdentity);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'original\noriginal\nchanged-declaration\n');
+  assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records.length, 3);
+});
+
+test('terminal outcome与lifecycle readback全覆盖且负向或attention保持非零退出', async (t) => {
+  const matrix = [
+    ['passed', 'retained', 'passed', 0],
+    ['failed', 'cleanup_pending', 'failed', 1],
+    ['blocked', 'cleaned', 'failed', 1],
+    ['cancelled', 'retained', 'failed', 1],
+    ['passed', 'attention', 'failed', 1],
+  ];
+  for (const [index, [outcome, lifecycleStatus, status, exitCode]] of matrix.entries()) {
+    const current = setup(t, `verification-terminal-${index}`);
+    const marker = path.join(current.projectRoot, 'unexpected-execution.txt');
+    declare(current.projectRoot, [capability('demo.terminal', `require("fs").writeFileSync(${JSON.stringify(marker)}, "executed")`)]);
+    current.runtime.openTaskExecutionRecord = (_root, _taskId, input) => ({
+      status: 'existing-terminal',
+      record: {
+        recordId: `task-exec-terminal-${index}`,
+        runIdentity: `run-terminal-${index}`,
+        invocationIdentity: input.invocationIdentity,
+        targetIdentity: input.targetIdentity,
+        outcome,
+        lifecycleStatus,
+        body: { digest: `sha256-${String(index + 5).repeat(64)}`, storedSizeBytes: 1, originalSizeBytes: 1, truncated: false },
+      },
+    });
+    const observed = await runWithExit(current, 'demo.terminal');
+    assert.equal(observed.payload.status, status);
+    assert.equal(observed.exitCode, exitCode);
+    assert.equal(observed.payload.executionRecord.outcome, outcome);
+    assert.equal(observed.payload.executionRecord.lifecycleStatus, lifecycleStatus);
+    assert.equal(observed.payload.timingSource, 'not-started-existing-terminal');
+    assert.equal(fs.existsSync(marker), false);
+  }
+});
+
+test('failed terminal verification默认保持失败且不重复process', async (t) => {
+  const current = setup(t, 'verification-terminal-failed');
+  const marker = path.join(current.projectRoot, 'failed-executions.txt');
+  declare(current.projectRoot, [capability('demo.fail-once', `require("fs").appendFileSync(${JSON.stringify(marker)}, "run\\n"); process.exit(3)`)]);
+  const first = await runWithExit(current, 'demo.fail-once');
+  const reused = await runWithExit(current, 'demo.fail-once');
+  assert.equal(first.payload.status, 'failed');
+  assert.equal(reused.payload.status, 'failed');
+  assert.equal(reused.exitCode, 1);
+  assert.equal(reused.payload.executionRecord.recordId, first.payload.executionRecord.recordId);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'run\n');
+  assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records.length, 1);
 });
 
 test('候选 Verification 通过 Receipt 固定的 retained controller 编排 canonical record', async (t) => {
