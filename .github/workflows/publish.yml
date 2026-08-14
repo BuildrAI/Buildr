@@ -202,6 +202,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
+      - name: Install checkout verification dependencies
+        run: npm ci
       - uses: actions/download-artifact@v7
         with:
           name: ${{ needs.candidate.outputs.artifact }}

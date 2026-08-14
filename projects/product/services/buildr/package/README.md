@@ -35,6 +35,8 @@ buildr init --agent <agent> --target . --name <name> --profile <personal|team|co
 buildr web --target .
 ```
 
+The current package candidate is `0.1.0-rc.10`; available versions and the `next` dist-tag are always determined by the official npm Registry.
+
 `init --agent` uses the final doctor result as technical onboarding evidence; the Agent should then complete a brief first-use handoff from the real Project and Service state.
 
 Buildr does not replace an Agent's reasoning, planning, or professional execution. It organizes durable work assets and provides deterministic tools and diagnostics. See the repository [README](https://github.com/BuildrAI/Buildr#readme), [Buildr Product](https://github.com/BuildrAI/Buildr/blob/main/projects/product/docs/buildr-product.md), [CLI Reference](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/cli-reference.md), and [Runtime Adapters](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/agent-runtime-adapters.md) for details.

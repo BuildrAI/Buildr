@@ -38,7 +38,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - 目标提交可从 `dev` 收敛到 `main`，没有未处理改动或未完成发布范围。
 - CHANGELOG、README 当前版本入口、known limitations 和 release checklist 与目标类型一致。
 - `CHANGELOG.md` 存在唯一的 `## <version> - <YYYY-MM-DD>` 章节，release notes 提取器输出与目标版本一致且不包含相邻版本内容。
-- CI、`npm-production` Environment 和 publish workflow 仍存在；tag publish jobs 与手动authority probe job事件互斥，并使用相同repository、workflow、Environment和`id-token: write`身份。Current authority只能由GitHub-hosted probe对目标package完成npm OIDC token exchange证明；本机npm CLI、登录态、OTP与`npm trust list`不再是前置条件。检查意图只核对该能力结构，不触发hosted run；准备或发布阶段才按明确授权运行probe。
+- CI、`npm-production` Environment 和 publish workflow 仍存在；tag publish jobs 与手动authority probe job事件互斥，并使用相同repository、workflow、Environment和`id-token: write`身份。Current authority只能由GitHub-hosted probe对目标package完成npm OIDC token exchange证明；本机npm CLI、登录态、OTP与`npm trust list`不再是前置条件。检查与准备意图只核对该能力结构，不触发hosted run；只有用户明确授权正式发布后才运行probe。
 - tag workflow 只生成一次带 manifest/integrity 的 release tarball，发布前 smoke 与 `npm publish <tarball>` 消费同一文件，并且不重复运行完整 Candidate。
 - `dev → main` 的正式源码 Candidate 由 `verify.yml` 的稳定 `Candidate gate` 聚合；preflight、唯一候选tarball、macOS core、三个Windows高成本shard和四个Host Node tuple必须绑定同一source SHA。内部job成功不能替代aggregate结果。
 - 候选版没有误用 `latest`；稳定版没有误用 `next`。
@@ -62,10 +62,9 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 10. 从保留 workspace 运行 `node projects/product/services/buildr/scripts/release/release-convergence.mjs --repo <workspace-root> --version <version> --candidate-base <candidate-base> --candidate-tree <tree> --stage pre-main`；只有 `ok: true` 才创建 `dev -> main` PR。checker 必须证明版本提交已进入 `origin/dev`、dev tree 等于候选，并且没有未集成的同版本 release task ref。
 11. 创建 `dev -> main` PR，等待稳定required check `Candidate gate`。它必须回读为同一PR head SHA的passed aggregate，并包含preflight、唯一artifact、macOS core、三个Windows shard和四个Host Node tuple的current evidence。单个内部job绿色、旧run或旧SHA不得替代。失败发生在同一SHA的暂态/runner问题时只重新运行失败job；新commit形成新SHA后必须运行完整当前门禁。通过后按仓库策略squash merge到`main`。
 12. PR 合入后使用 `node projects/product/services/buildr/scripts/release/bridge-main-to-dev.mjs --repo <workspace-root> --version <version> --candidate-tree <tree>` 执行发布专用历史衔接。该工具必须先确认 `origin/main^{tree}` 和 `origin/dev^{tree}` 都与已验证 candidate tree，且两个 ref 的 package version 都与目标版本一致；`origin/main` 已是 `origin/dev` 祖先时 no-op，否则创建仅衔接历史、不改变 tree 的 merge commit，复核 tree 后普通 push `dev`。
-13. bridge 后，以 `origin/main` 完整 commit 运行一个入口：`node projects/product/services/buildr/scripts/release/release-authority-probe-runner.mjs --repo <workspace-root> --source-commit <origin-main-commit> --output <authority-evidence.json>`。Runner生成唯一probe id，dispatch同一`publish.yml`的手动probe、显示run URL、等待唯一run、下载credential-free artifact，并由`release-authority-preflight.mjs`通过GitHub current API复核run、artifact、package、source commit、workflow digest和唯一`publishAuthority`。若`npm-production`要求人工审批，maintainer只在GitHub批准该run，不执行本机密码或OTP输入。Hosted job只执行OIDC token exchange，不创建tag、不pack/publish、不创建Release；GitHub ID token与npm exchange token都不得进入stdout、output或artifact。`ready` v2 evidence必须在15分钟内交给post-main convergence；任何drift、过期、exchange拒绝、run/artifact不可用或远端竞争都停止，不要求本机npm login/OTP，也不得用人工UI/checklist替代。
-14. 使用同一 evidence 运行 convergence checker 的 `--stage post-main --authority-evidence <authority-evidence.json>`；任一 base、version、tree、ancestry、release task、authority evidence、远端竞争、branch protection 或 push finding 都必须停止后续 tag 动作。该 version/tree gate 失败时不得使用 force push、reset 或 `ours` 掩盖内容差异。
-15. 确认 `main` 指向已验证内容，版本和发布材料一致，且远端 `dev` 已包含 squash `main` 历史。
-16. 明确报告“准备完成，尚未创建 tag，尚未触发 npm 发布”，并在涉及CLI时同时报告retained `projects/product/buildr`的identity与验证结果；不得把它描述为机器默认或npm发布入口，然后停止。
+13. bridge 后运行 convergence checker 的 `--stage post-main`，只证明 base、version、tree、ancestry、release task、branch protection、push 与远端竞争已经收敛；准备阶段不得传入 authority evidence、dispatch hosted authority probe、请求 `npm-production` 审批或执行 npm token exchange。该 version/tree gate 失败时不得使用 force push、reset 或 `ours` 掩盖内容差异。
+14. 确认 `main` 指向已验证内容，版本和发布材料一致，且远端 `dev` 已包含 squash `main` 历史。
+15. 明确报告“准备完成，尚未运行发布 authority probe，尚未创建 tag，尚未触发 npm 发布”，并在涉及CLI时同时报告retained `projects/product/buildr`的identity与验证结果；不得把它描述为机器默认或npm发布入口，然后停止。
 
 准备候选版时使用 prerelease 版本并声明 `next`；准备稳定版时移除 prerelease 后缀，确认稳定发布日期和 `latest`，并额外复核 RC 反馈是否收敛。
 
@@ -74,7 +73,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 只有用户明确要求发布对应候选版或稳定版时执行：
 
 1. fetch 远端并确认本地 `main`、`origin/main` 和已准备的候选提交一致；工作区必须干净。
-2. 再次执行只读发布检查。首次发布确认目标 npm version、Git tag 和 GitHub Release 不存在；继续中断发布则记录已有 tag、npm version/integrity、dist-tag 和 GitHub Release 的精确状态。紧邻 tag 创建前重新运行GitHub-hosted authority probe生成v2 evidence，并用 `release-convergence.mjs --stage post-main --authority-evidence <authority-evidence.json>` 复核；不得沿用exchange/run readback失败、超过15分钟或source/workflow已漂移的旧evidence。
+2. 再次执行只读发布检查。首次发布确认目标 npm version、Git tag 和 GitHub Release 不存在；继续中断发布则记录已有 tag、npm version/integrity、dist-tag 和 GitHub Release 的精确状态。紧邻 tag 创建前运行唯一一次 `release-authority-probe-runner.mjs`，以当前 `origin/main` 完整 commit 生成 credential-free v2 evidence；Runner dispatch 同一 `publish.yml` 的手动 probe，hosted job 在 `npm-production` Environment 中以 OIDC 对目标 package 完成 token exchange，但不创建 tag、不 pack/publish、不创建 Release。若 Environment 要求审批，只报告该 probe run 的审批入口并等待用户操作。取得 evidence 后立即用 `release-convergence.mjs --stage pre-tag --authority-evidence <authority-evidence.json>` 复核；不得沿用 exchange/run readback 失败、超过15分钟或 source/workflow 已漂移的旧 evidence，也不得在准备阶段提前生成第二份 evidence。
 3. 确认 `package.json` version 与将创建的 `v<version>` 完全一致。
 4. 在已验证的 `main` 提交创建 annotated 或仓库约定的 release tag，并普通 push 该 tag；不得 force push 或移动已有 tag。
 5. tag push 后只使用 GitHub-hosted publish workflow。不得因为 workflow 等待、失败或 npm 认证问题改为本机 `npm publish`。
