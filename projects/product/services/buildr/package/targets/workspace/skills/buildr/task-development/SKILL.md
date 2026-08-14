@@ -7,6 +7,14 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Buildr Web只消费Application `inspect`的只读投影来展示通用Development。Parent coordination另有受控公共CLI/Buildr Web surface，但Development Receipt仍只能由Application写入。不得手写Development Receipt。
 
+## 阶段化上下文与效率边界
+
+只在某个专业动作成为 next executable action 时读取该动作的 capability contract、selected provider 与直接 authority：Planning Review、current knowledge、Formal Verification、Completion Review 和 Finish 的完整指引分别在进入对应阶段前装配，不在 proposal 前一次性预读整个生命周期。当前动作仍必须遵守已触发 Skill、required Rule、授权与 result evidence，按需读取不等于跳过门禁。
+
+首次修改 proposal、Skill、代码、测试或当前知识前，复用 triage 建立的一次有界 authority source map；若尚未形成，则从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立。该 map 保留在 Agent 工作上下文，不写入 Receipt 或其他产品 store；只有 scope、authority 或相关事实变化时才增量刷新。
+
+proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
+
 ## Parent Plan 与 Child Contribution
 
 新建Parent可以显式采用Parent Plan。先用`task parent inspect`确认`legacy|parent-plan`模式；首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
