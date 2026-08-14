@@ -468,15 +468,9 @@ workspaceDirectories:
 
 workspaceFiles:
   - package/targets/workspace/AGENTS.md => AGENTS.md render
-  - package/targets/workspace/.buildr/workspace.yml => .buildr/workspace.yml render
-  - package/targets/workspace/projects/manifest.yml => projects/manifest.yml copy
   - package/targets/workspace/gitattributes => .gitattributes copy
   - package/targets/workspace/gitignore => .gitignore copy
-  - package/targets/workspace/rules/manifest.yml => rules/manifest.yml copy
   - package/targets/workspace/rules/buildr/core.md => rules/buildr/core.md copy
-  - package/targets/workspace/commands/manifest.yml => commands/manifest.yml copy
-  - package/targets/workspace/components/manifest.yml => components/manifest.yml copy
-  - package/targets/workspace/skills/manifest.yml => skills/manifest.yml copy
   - package/targets/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
@@ -524,18 +518,9 @@ projectDirectories:
 
 projectFiles:
   - package/targets/workspace/projects/AGENTS.project.md => AGENTS.md render
-  - package/targets/workspace/projects/capabilities.yml => capabilities.yml copy
-  - package/targets/workspace/projects/commands.yml => commands.yml copy
-  - package/targets/workspace/projects/services/manifest.yml => services/manifest.yml render
 
 templateVariables:
-  - name
-  - description
-  - profile
-  - workspaceId
-  - nodeVersion
   - project
-  - projectId
 
 forbiddenPatterns:
   - /Users/

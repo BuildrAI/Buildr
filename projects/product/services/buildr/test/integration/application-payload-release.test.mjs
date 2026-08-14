@@ -9,6 +9,7 @@ import { buildApplicationPayload } from '../../scripts/release/application-paylo
 import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../scripts/release/release-artifact.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { createInstallationOrigin } from '../../src/infrastructure/product-identity/installation-origin.mjs';
+import { GENERATED_USER_REGISTRY_PACKAGE_SOURCES } from '../../src/infrastructure/product-layout.mjs';
 import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.mjs';
 import { readSharedCandidatePackage } from '../verification/release/candidate-package.mjs';
 
@@ -61,6 +62,9 @@ test('same inputs create byte-identical payload and installed resource mapping d
     assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('.map')), false);
     assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('/web-dist/index.html')), true);
     assert.equal(first.manifest.files.some((entry) => entry.path.includes('/sqlite/migrations/0000_')), true);
+    for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
+      assert.equal(first.manifest.files.some((entry) => entry.path === `resources/product/${relativePath}`), false, relativePath);
+    }
     const runtimeMetadata = JSON.parse(fs.readFileSync(path.join(first.root, 'resources/product/package.json'), 'utf8'));
     assert.equal(runtimeMetadata.devDependencies, undefined);
     assert.equal(runtimeMetadata.scripts, undefined);
@@ -132,6 +136,9 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'payload/product/package/launchers/assets/Buildr.ico',
     ]);
     assert.equal(paths.some((value) => /\.(?:app|pkg|msi|map)$/iu.test(value)), false);
+    for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
+      assert.equal(paths.includes(`payload/product/${relativePath}`), false, relativePath);
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

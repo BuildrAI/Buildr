@@ -10,7 +10,6 @@ const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'package/targets/workspace');
 const read = (relative) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
-const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 const skill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
 const contractPath = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/git-operations/v1.md');
 const contract = fs.readFileSync(contractPath, 'utf8');
@@ -23,20 +22,14 @@ test('Git Operations contract 与 Skill 保持唯一 Skill-only authority', () =
   assert.match(contract, /不创建 Receipt/);
 
   const packaged = packageManifest.builtins.skills.find((item) => item.id === 'git-operations');
-  const workspace = workspaceManifest.skills.find((item) => item.id === 'git-operations');
   assert.deepEqual(packaged.provides, [{ capability: 'buildr.git-operations', version: 1 }]);
-  assert.deepEqual(workspace.provides, [{ capability: 'buildr.git-operations', version: 1 }]);
   assert.equal(packaged.requires, undefined);
-  assert.equal(workspace.requires, undefined);
   assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.git-operations').provider, 'git-operations');
-  assert.equal(workspaceManifest.bindings.find((item) => item.capability === 'buildr.git-operations').provider, 'git-operations');
 });
 
 test('Git Operations routing description 精确一致且不扩展完整命令集', () => {
   const packaged = packageManifest.builtins.skills.find((item) => item.id === 'git-operations');
-  const workspace = workspaceManifest.skills.find((item) => item.id === 'git-operations');
   const frontmatter = skill.match(/^---\n[\s\S]*?^description:\s*(.+)$/m)?.[1];
-  assert.equal(workspace.description, packaged.description);
   assert.equal(frontmatter, packaged.description);
   assert.match(packaged.description, /已明确选择 repository、Git Operation 与相关 ref/);
   assert.match(packaged.description, /commit、push、commit\+push/);
@@ -88,9 +81,6 @@ test('旧 Git graph 只保留 migration evidence，active manifests 与文件为
   assert.equal(packageManifest.capabilityContracts.some((item) => legacyCapabilities.has(item.id)), false);
   assert.equal(packageManifest.initialSkillBindings.some((item) => legacyCapabilities.has(item.capability)), false);
   assert.equal(packageManifest.builtins.skills.some((item) => item.id === 'git-ops'), false);
-  assert.equal(workspaceManifest.contracts.some((item) => legacyCapabilities.has(item.id)), false);
-  assert.equal(workspaceManifest.bindings.some((item) => legacyCapabilities.has(item.capability)), false);
-  assert.equal(workspaceManifest.skills.some((item) => item.id === 'git-ops'), false);
   for (const file of [
     'package/targets/workspace/skills/contracts/buildr/git-single-operation/v1.md',
     'package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md',

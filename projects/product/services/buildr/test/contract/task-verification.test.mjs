@@ -29,7 +29,6 @@ const openSpecUpdateSidebar = read('package/targets/workspace/components/buildr/
 const openSpecApplySidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
-const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 
 function sourceFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -163,9 +162,9 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('task-verification/v3.md')));
   assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-verification-v2.md')));
 
-  assert.equal(workspaceManifest.contracts.find((item) => item.id === 'buildr.task-verification').version, 3);
-  assert.equal(workspaceManifest.bindings.find((item) => item.capability === 'buildr.task-verification').version, 3);
-  assert.deepEqual(workspaceManifest.skills.find((item) => item.id === 'task-verification').provides, [{ capability: 'buildr.task-verification', version: 3 }]);
+  assert.equal(packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-verification').version, 3);
+  assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-verification').version, 3);
+  assert.deepEqual(packageManifest.builtins.skills.find((item) => item.id === 'task-verification').provides, [{ capability: 'buildr.task-verification', version: 3 }]);
 });
 
 test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification authority', () => {

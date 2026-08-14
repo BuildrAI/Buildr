@@ -17,7 +17,6 @@ const updateUpstream = read('package/targets/workspace/skills/openspec/openspec-
 const updateSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
 const openSpecComponent = YAML.parse(read('package/targets/workspace/components/buildr/openspec/component.yml'));
 const packageManifest = YAML.parse(read('package/manifest.yml'));
-const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
 
 test('task triage 输出两轴决策、repository set 与 Task Environment 动作', () => {
   for (const required of [
@@ -92,9 +91,7 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
   assert.doesNotMatch(worktreeSkill, /executionReady|worktree context|worktree adopt/);
 
   const packagedTriage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');
-  const workspaceTriage = workspaceManifest.skills.find((item) => item.id === 'task-triage');
   assert.deepEqual(packagedTriage.provides || [], []);
-  assert.deepEqual(workspaceTriage.provides || [], []);
   const expected = [
     { capability: 'buildr.task-record', version: 2, mode: 'optional' },
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
@@ -103,7 +100,6 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
     { capability: 'buildr.task-development', version: 2, mode: 'optional' },
   ];
   assert.deepEqual(packagedTriage.requires, expected);
-  assert.deepEqual(workspaceTriage.requires, expected);
   assert.equal(packagedTriage.requires.some((item) => item.capability === 'buildr.task-verification'), false);
 
   const environmentContract = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-environment');
@@ -111,23 +107,19 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
   const environmentBinding = packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-environment');
   const worktreeBinding = packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.git-worktree-provider');
   const packagedWorktree = packageManifest.builtins.skills.find((item) => item.id === 'task-worktree');
-  const workspaceWorktree = workspaceManifest.skills.find((item) => item.id === 'task-worktree');
   assert.equal(environmentContract.version, 1);
   assert.deepEqual(environmentContract.replaces.map((item) => `${item.id}@${item.version}`), ['buildr.task-worktree-lifecycle@1', 'buildr.task-worktree-lifecycle@2']);
   assert.equal(worktreeContract.version, 1);
   assert.equal(environmentBinding.provider, 'task-environment');
   assert.equal(worktreeBinding.provider, 'task-worktree');
-  assert.equal(packagedWorktree.description, workspaceWorktree.description);
   assert.match(packagedWorktree.description, /不负责环境 ready、恢复、Runtime、资源或总 cleanup。$/);
   assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-worktree-lifecycle'), false);
   assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-worktree-lifecycle'), false);
 
   for (const id of ['task-triage', 'task-environment', 'task-worktree', 'task-finish']) {
     const packaged = packageManifest.builtins.skills.find((item) => item.id === id);
-    const workspace = workspaceManifest.skills.find((item) => item.id === id);
     const source = read(packaged.path.replace(/^package\//, 'package/') + '/SKILL.md');
     const frontmatter = source.match(/^description: (.+)$/m)?.[1];
-    assert.equal(packaged.description, workspace.description);
     assert.equal(packaged.description, frontmatter);
   }
 });

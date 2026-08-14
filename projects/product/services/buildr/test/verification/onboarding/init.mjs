@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -34,9 +35,35 @@ try {
   result = run(['init', '--target', sourceOnly, '--name', 'source-only', '--profile', 'personal']);
   assert.equal(result.status, 0, output(result));
   assert.equal(fs.existsSync(path.join(sourceOnly, 'projects', 'manifest.yml')), true);
+  const workspace = YAML.parse(fs.readFileSync(path.join(sourceOnly, '.buildr', 'workspace.yml'), 'utf8'));
+  const projects = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'manifest.yml'), 'utf8'));
+  const rules = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'rules', 'manifest.yml'), 'utf8'));
+  const skills = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'skills', 'manifest.yml'), 'utf8'));
+  const commands = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'commands', 'manifest.yml'), 'utf8'));
+  const components = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'components', 'manifest.yml'), 'utf8'));
+  assert.match(workspace.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
+  assert.deepEqual(projects, { schemaVersion: 'buildr.projects/v2', projects: {} });
+  assert.equal(rules.rules.some((item) => item.id === 'buildr-core' && item.state === 'installed'), true);
+  assert.equal(skills.workspaceId, workspace.id);
+  assert.equal(skills.skills.some((item) => item.id === 'task-triage' && item.state === 'installed'), true);
+  assert.deepEqual(commands, { schemaVersion: 'buildr.commands/v1', commands: [] });
+  assert.equal(components.components.some((item) => item.id === 'openspec' && item.state === 'installed'), true);
   assert.equal(fs.existsSync(path.join(sourceOnly, '.agents')), false, 'source-only init must not render Agent runtime');
   assert.match(result.stdout, /仅初始化源资产的后续步骤/);
   assert.match(result.stdout, /buildr sync <agent>/);
+
+  result = run(['project', 'create', 'demo', '--target', sourceOnly]);
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'demo', 'capabilities.yml'), 'utf8')), {
+    schemaVersion: 'buildr.project-capabilities/v1', requires: [], bindings: [], skills: [],
+  });
+  assert.deepEqual(YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'demo', 'commands.yml'), 'utf8')), {
+    schemaVersion: 'buildr.project-commands/v1', requirements: [],
+  });
+  const services = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'demo', 'services', 'manifest.yml'), 'utf8'));
+  assert.equal(services.schemaVersion, 'buildr.services/v2');
+  assert.match(services.projectId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
+  assert.deepEqual(services.services, {});
 
   const onboarded = path.join(root, 'onboarded');
   result = run(['init', '--agent', 'codex', '--target', onboarded, '--name', 'onboarded', '--profile', 'team']);
@@ -47,6 +74,17 @@ try {
   assert.match(result.stdout, /第一项真实工作/);
   assert.doesNotMatch(result.stdout, /下一步可按需创建 Project/);
   assert.equal(fs.existsSync(path.join(onboarded, '.agents', 'skills', 'buildr', 'SKILL.md')), true);
+
+  result = run(['project', 'create', 'synced', '--target', onboarded]);
+  assert.equal(result.status, 0, output(result));
+  for (const relative of ['capabilities.yml', 'commands.yml', 'services/manifest.yml']) {
+    fs.rmSync(path.join(onboarded, 'projects', 'synced', relative));
+  }
+  result = run(['sync', 'codex', '--target', onboarded]);
+  assert.equal(result.status, 0, output(result));
+  for (const relative of ['capabilities.yml', 'commands.yml', 'services/manifest.yml']) {
+    assert.equal(fs.existsSync(path.join(onboarded, 'projects', 'synced', relative)), true, `sync must generate missing ${relative}`);
+  }
 
   result = run(['init', '--agent', 'codex', '--target', onboarded, '--name', 'onboarded', '--profile', 'team']);
   assert.equal(result.status, 0, `idempotent init --agent failed:\n${output(result)}`);

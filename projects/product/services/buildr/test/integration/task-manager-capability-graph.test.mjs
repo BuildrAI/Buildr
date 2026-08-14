@@ -5,14 +5,13 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
+import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { resolveSkillCapabilityGraph } from '../../src/infrastructure/runtime/skills/capabilities.mjs';
-
-const target = path.resolve('package/targets/workspace');
 
 test('task-triage 的 optional provider 不 ready 只降级依赖，不让其他分支伪造成功', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-manager-graph-'));
   try {
-    fs.cpSync(path.join(target, 'skills'), path.join(root, 'skills'), { recursive: true });
+    createRuntime().initBuildr(['--target', root, '--name', 'task-manager-graph', '--description', 'Capability graph fixture', '--profile', 'personal']);
     const file = path.join(root, 'skills', 'manifest.yml');
     const manifest = YAML.parse(fs.readFileSync(file, 'utf8'));
     manifest.skills.find((item) => item.id === 'task-manager').state = 'uninstalled';

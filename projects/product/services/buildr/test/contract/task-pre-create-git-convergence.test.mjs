@@ -55,10 +55,8 @@ test('Git Operations 明确提供独立 fetch、selected rebase 与可见 abort 
 
 test('package manifests 声明 task-triage optional Git Operations dependency', () => {
   const packageManifest = YAML.parse(read('package/manifest.yml'));
-  const workspaceManifest = YAML.parse(read('package/targets/workspace/skills/manifest.yml'));
   const dependency = { capability: 'buildr.git-operations', version: 1, mode: 'optional' };
   assert.ok(packageManifest.builtins.skills.find((item) => item.id === 'task-triage').requires.some((item) => JSON.stringify(item) === JSON.stringify(dependency)));
-  assert.ok(workspaceManifest.skills.find((item) => item.id === 'task-triage').requires.some((item) => JSON.stringify(item) === JSON.stringify(dependency)));
 });
 
 test('Task Record 与 Environment 继续排除创建前 Git 编排', () => {

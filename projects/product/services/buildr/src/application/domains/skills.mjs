@@ -91,6 +91,17 @@ export function registerDomainsSkills(runtime) {
     return YAML.stringify(document, { lineWidth: 0 });
   }
 
+  function renderProjectCapabilitiesYaml(document = {}) {
+    const normalized = {
+      schemaVersion: PROJECT_CAPABILITIES_SCHEMA,
+      requires: document.requires || [],
+      bindings: document.bindings || [],
+      skills: document.skills || [],
+    };
+    validateProjectCapabilitiesDocument(normalized, 'capabilities.yml');
+    return YAML.stringify(normalized, { lineWidth: 0 });
+  }
+
   function validateSkillManifestEntries(skills, manifestPath) {
     const ids = new Set();
     for (const [index, skill] of skills.entries()) {
@@ -742,6 +753,6 @@ export function registerDomainsSkills(runtime) {
     return result;
   }
 
-  Object.assign(runtime, { manifestDocumentFor, attachManifestDocument, readSkillManifestDocument, readSkillManifest, readSkillManifestSchemaVersion, renderYamlObject, renderSkillsManifestYaml, validateSkillManifestEntries, isManifestSourceLabel, validateSkillUrlObject, validateResolvedSkillSource, normalizeRelativePathForBuildr, parseSkillSourceRef, assertHttpUrl, resolvePackageSkillSourceRef, scopeRootForSkills, capabilityContextForScope, skillsManifestPath, readSkillsManifestForWrite, writeSkillsManifest, parseSkillFrontmatter, supportedSkillSourceEntries, inspectSkillSource, samePath, copySupportedSkillSource, printSkillsMutationReceipt, skillsAddUnsafe, skillsAdd, safeSkillSourceDir, skillsRemoveUnsafe, skillsRemove, skillsBindUnsafe, skillsBind, skillsUnbind });
+  Object.assign(runtime, { manifestDocumentFor, attachManifestDocument, readSkillManifestDocument, readSkillManifest, readSkillManifestSchemaVersion, renderYamlObject, renderSkillsManifestYaml, renderProjectCapabilitiesYaml, validateSkillManifestEntries, isManifestSourceLabel, validateSkillUrlObject, validateResolvedSkillSource, normalizeRelativePathForBuildr, parseSkillSourceRef, assertHttpUrl, resolvePackageSkillSourceRef, scopeRootForSkills, capabilityContextForScope, skillsManifestPath, readSkillsManifestForWrite, writeSkillsManifest, parseSkillFrontmatter, supportedSkillSourceEntries, inspectSkillSource, samePath, copySupportedSkillSource, printSkillsMutationReceipt, skillsAddUnsafe, skillsAdd, safeSkillSourceDir, skillsRemoveUnsafe, skillsRemove, skillsBindUnsafe, skillsBind, skillsUnbind });
   return runtime;
 }

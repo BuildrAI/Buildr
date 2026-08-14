@@ -8,7 +8,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 
 - CLI：`projects/product/buildr`是Buildr checkout唯一开发入口；PATH默认`buildr`只代表npm installation。两者身份和更新责任隔离。
 - Buildr Web：loopback HTTP 与浏览器界面。Task 列表默认 `open` (todo + active)，可分别过滤 todo、active 和终态；Task 详情展示复盘来源，复盘 Tab 展示后续 Task 与当前状态。正式 Task 只由 Agent/Task Manager 创建或激活，Buildr Web 只编辑/结束已有 Task 并维护复盘处置。五个 Task 一级视图、Task-scoped Change route、专业只读边界、复盘处置 PATCH 与文章入口其余语义保持不变。
-- Package：`services/buildr/package/manifest.yml` 定义发布边界、workspace/project baseline、builtins、contracts、bindings 和 Components；Component definition 同时拥有 Skill fragments 与其引入的结构化 capability dependencies，package builtin descriptor 不重复维护 Component-owned `requires`。
+- Package：`services/buildr/package/manifest.yml` 定义发布边界、可安装产品内容、builtins、contracts、bindings 和 Components；不携带 `.buildr/workspace.yml`、Workspace 根 Registry、Project capabilities/commands 或 Service Registry 等用户持久化配置源。`init`、Project create 与 `sync` 使用 canonical Domain renderer/writer 生成缺失 Registry并保留已有用户内容，再从 package 声明收敛 Builtins/Components。Component definition 同时拥有 Skill fragments 与其引入的结构化 capability dependencies，package builtin descriptor 不重复维护 Component-owned `requires`。
 - Runtime Skill renderer统一组合package产品入口与Workspace Skills。产品入口不接收完整capability routing dump；每个consumer只获得自身`requires`的紧凑binding block。Doctor full输出全局capability graph，destination-aware `.buildr/agent-runtime/` receipt保存受管文件identity和consumer-local contract digest/provenance快照，runtime目录不承担机器证据authority。
 
 ## 应用负载、Launcher 与发布运行时

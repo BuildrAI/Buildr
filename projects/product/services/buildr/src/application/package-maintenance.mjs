@@ -12,7 +12,7 @@ import {
   renderClaudeCodeRules,
   resolveRuleScope,
 } from '../infrastructure/runtime/render-claude-code-rules.mjs';
-import { BUILDR_REQUIRED_BLOCK_START, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, PACKAGE_WORKSPACE_TARGET } from '../infrastructure/product-layout.mjs';
+import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_PACKAGE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, PACKAGE_WORKSPACE_TARGET } from '../infrastructure/product-layout.mjs';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 import { createPackageOutput } from './package-maintenance/output.mjs';
@@ -91,7 +91,6 @@ export function registerApplicationPackageMaintenance(runtime) {
   const copyDirectoryIfChanged = (...args) => runtime.copyDirectoryIfChanged(...args);
   const removePath = (...args) => runtime.removePath(...args);
   const assertInitializedBuildrWorkspace = (...args) => runtime.assertInitializedBuildrWorkspace(...args);
-
   const {
     key: builtinReceiptKey,
     snapshot: builtinSnapshot,
@@ -384,11 +383,12 @@ export function registerApplicationPackageMaintenance(runtime) {
     validatePackageStatic,
     parseJsonOutput,
   } = createPackageStaticValidator({
+    GENERATED_USER_REGISTRY_PACKAGE_SOURCES,
     LEGACY_PACKAGE_PATHS,
     PACKAGE_RUNTIME_TARGET,
     PACKAGE_WORKSPACE_TARGET,
     SUPPORTED_AGENT_IDS,
-    collectFiles,
+    collectFiles, builtinRuleEntry, builtinSkillEntry,
     componentMemberPaths,
     existsDirectory,
     existsFile,
@@ -403,11 +403,11 @@ export function registerApplicationPackageMaintenance(runtime) {
     parseProjectCommandsYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
+    parseRulesManifestYaml,
     parseSkillFrontmatter,
     parseSkillSourceRef,
     path,
-    readPackageManifest,
-    readSkillManifest,
+    readPackageManifest, readSkillManifest, sourcePathFromBuiltin,
     toPosixRelative,
     validateBootstrapContract,
     validateCommandsManifest,

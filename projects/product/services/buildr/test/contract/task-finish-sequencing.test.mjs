@@ -16,7 +16,6 @@ const verification = read('package/targets/workspace/skills/buildr/task-verifica
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
 const packageManifest = read('package/manifest.yml');
-const workspaceSkills = read('package/targets/workspace/skills/manifest.yml');
 
 test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 carrier equivalence', () => {
   assert.deepEqual(FINISH_PHASES, ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
@@ -107,11 +106,9 @@ test('Task Development 是 Candidate/handoff 单一 authority，Finish required 
   assert.match(development, /没有公共Development CLI/);
   assert.match(finish, /buildr task finish run --task <task-id> --commit-message/);
   assert.doesNotMatch(finish, /--project|--change/);
-  for (const manifest of [packageManifest, workspaceSkills]) {
-    assert.match(manifest, /task-development[\s\S]*provides:[\s\S]*buildr\.task-development[\s\S]*version: 2/);
-    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-development[\s\S]*version: 2[\s\S]*mode: required/);
-    assert.match(manifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-environment[\s\S]*version: 1[\s\S]*mode: required/);
-  }
+  assert.match(packageManifest, /task-development[\s\S]*provides:[\s\S]*buildr\.task-development[\s\S]*version: 2/);
+  assert.match(packageManifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-development[\s\S]*version: 2[\s\S]*mode: required/);
+  assert.match(packageManifest, /task-finish[\s\S]*requires:[\s\S]*buildr\.task-environment[\s\S]*version: 1[\s\S]*mode: required/);
 });
 
 test('Task Verification 只表达 transient execution 与 current Result authority', () => {
