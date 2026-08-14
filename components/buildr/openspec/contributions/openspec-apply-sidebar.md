@@ -8,7 +8,7 @@
 
 实现 active change 时只编辑 change artifacts 与实现内容，不把 delta 预写入 canonical specs。完成实现、当前认知与适用的直接验证反馈后，必须先完成全部Change-owned checkbox，再调用单一`buildr openspec converge`事务执行deterministic canonical sync/archive；不得手工恢复canonical、刷新baseline、选择内部stage或直接运行`--skip-specs`掩盖事务失败。
 
-`tasks.md`只表达Change disposition前可完成的工作，不得包含Formal Development、Task Verification/Candidate、Completion Review、Task Finish、Environment cleanup或Task terminal state。Convergence/archive在Task Development观察stable Content Target和形成Formal Development handoff之前完成；Task Finish不调用、不拥有也不解释Change checklist或convergence/archive。
+开始apply以及每次修订`tasks.md`时，立即逐项确认checkbox能在Change convergence/archive前完成；只表达Change disposition前可完成的工作，不为这项自检预读完整下游流程。不得包含Formal Development、Task Verification/Candidate、Completion Review、Task Finish、Environment cleanup或Task terminal state。Convergence/archive在Task Development观察stable Content Target和形成Formal Development handoff之前完成；Task Finish不调用、不拥有也不解释Change checklist或convergence/archive。
 
 `buildr openspec converge`会在任何receipt/canonical/archive写入前检查现有checkbox；存在未完成项时必须消费`change-checklist-incomplete`并修订或完成真实Change task，不得自动勾选、删除任务或用归档后lifecycle evidence绕过门禁。
 
