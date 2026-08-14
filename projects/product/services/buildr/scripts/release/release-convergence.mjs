@@ -95,22 +95,24 @@ export function checkReleaseConvergence({
   nowMs = Date.now(),
 }) {
   if (!repo || !version || !candidateBase || !candidateTree) throw new Error('repo, version, candidateBase and candidateTree are required');
-  if (!['pre-main', 'post-main'].includes(stage)) throw new Error(`Unsupported release convergence stage: ${stage}`);
+  if (!['pre-main', 'post-main', 'pre-tag'].includes(stage)) throw new Error(`Unsupported release convergence stage: ${stage}`);
+  if (stage !== 'pre-tag' && authorityEvidence) throw new Error('authority evidence is only accepted by the pre-tag stage');
   if (fetch) runGit(repo, ['fetch', remote, main, dev]);
   const devRef = `${remote}/${dev}`;
   const mainRef = `${remote}/${main}`;
   const findings = [];
+  const checksMain = stage === 'post-main' || stage === 'pre-tag';
   const refs = {
     dev: rev(repo, devRef),
-    main: stage === 'post-main' ? rev(repo, mainRef) : null,
+    main: checksMain ? rev(repo, mainRef) : null,
   };
   const trees = {
     dev: rev(repo, `${devRef}^{tree}`),
-    main: stage === 'post-main' ? rev(repo, `${mainRef}^{tree}`) : null,
+    main: checksMain ? rev(repo, `${mainRef}^{tree}`) : null,
   };
   const versions = {
     dev: packageVersionAt(repo, devRef),
-    main: stage === 'post-main' ? packageVersionAt(repo, mainRef) : null,
+    main: checksMain ? packageVersionAt(repo, mainRef) : null,
   };
   if (!isAncestor(repo, candidateBase, devRef)) findings.push({ code: 'candidate_base_not_in_dev', expected: candidateBase, actual: refs.dev });
   if (trees.dev !== candidateTree) findings.push({ code: 'dev_tree_mismatch', expected: candidateTree, actual: trees.dev });
@@ -118,10 +120,12 @@ export function checkReleaseConvergence({
   for (const item of releaseTaskRefs(repo, version)) {
     if (!isAncestor(repo, item.commit, devRef)) findings.push({ code: 'release_task_not_integrated', ref: item.ref, commit: item.commit });
   }
-  if (stage === 'post-main') {
+  if (checksMain) {
     if (trees.main !== candidateTree) findings.push({ code: 'main_tree_mismatch', expected: candidateTree, actual: trees.main });
     if (versions.main !== version) findings.push({ code: 'main_version_mismatch', expected: version, actual: versions.main });
     if (!isAncestor(repo, mainRef, devRef)) findings.push({ code: 'main_not_ancestor_of_dev', main: refs.main, dev: refs.dev });
+  }
+  if (stage === 'pre-tag') {
     findings.push(...checkReleaseAuthorityEvidence({
       evidence: authorityEvidence,
       sourceCommit: refs.main,

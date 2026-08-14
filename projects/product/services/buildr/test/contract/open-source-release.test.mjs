@@ -398,6 +398,18 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
   assert.equal(document.jobs['authority-probe'].permissions['id-token'], 'write');
   assert.equal(document.jobs['authority-probe'].steps.filter((step) => typeof step.run === 'string' && step.run.includes('release-authority-oidc-probe.mjs')).length, 1);
   for (const job of ['contract', 'candidate', 'host-node', 'launcher', 'publish']) assert.equal(document.jobs[job].if, "github.event_name == 'push'", job);
+  const hostNodeSteps = document.jobs['host-node'].steps;
+  const checkoutIndex = hostNodeSteps.findIndex((step) => step.uses === 'actions/checkout@v7');
+  const setupNodeIndex = hostNodeSteps.findIndex((step) => step.uses === 'actions/setup-node@v6');
+  const installIndex = hostNodeSteps.findIndex((step) => step.run === 'npm ci');
+  const downloadIndex = hostNodeSteps.findIndex((step) => step.uses === 'actions/download-artifact@v7');
+  const verifierIndex = hostNodeSteps.findIndex((step) => typeof step.run === 'string' && step.run.includes('test/verification/host-node.mjs'));
+  assert.equal(checkoutIndex < setupNodeIndex, true);
+  assert.equal(setupNodeIndex < installIndex, true);
+  assert.equal(installIndex < downloadIndex, true);
+  assert.equal(downloadIndex < verifierIndex, true);
+  assert.equal(document.jobs['host-node'].needs.includes('candidate'), true);
+  assert.equal(hostNodeSteps.some((step) => typeof step.run === 'string' && step.run.includes('npm pack')), false);
   const probeRuns = document.jobs['authority-probe'].steps.map((step) => step.run).filter((value) => typeof value === 'string').join('\n');
   for (const forbidden of ['npm publish', 'trusted-publish.mjs', 'npm pack', 'release-artifact.mjs', 'github-release-ensure.mjs']) assert.equal(probeRuns.includes(forbidden), false, forbidden);
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
@@ -474,6 +486,8 @@ test('CI and publish workflows use the supported Node runtime', () => {
 
 test('Buildr release Skill fixes release identity, dependency preparation, and tree-gated history bridging', () => {
   const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-release/SKILL.md'), 'utf8');
+  const preparation = skill.slice(skill.indexOf('## 准备发布'), skill.indexOf('## 发布版本'));
+  const release = skill.slice(skill.indexOf('## 发布版本'), skill.indexOf('## 中断与失败恢复'));
   const identity = skill.indexOf('tasks/release-<version>');
   const npmCi = skill.indexOf('`npm ci`');
   const versionMutation = skill.indexOf('`package.json`');
@@ -506,5 +520,10 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '`Candidate gate`', '普通发布准备不再无条件本地运行完整`test:candidate`',
     '重新运行失败作业', '三个Windows高成本shard继续并行',
   ]) assert.equal(skill.includes(required), true, required);
+  assert.equal(preparation.includes('release-authority-probe-runner.mjs'), false);
+  assert.equal(preparation.includes('--stage post-main'), true);
+  assert.equal(preparation.includes('--authority-evidence'), false);
+  assert.equal(release.includes('release-authority-probe-runner.mjs'), true);
+  assert.equal(release.includes('--stage pre-tag --authority-evidence <authority-evidence.json>'), true);
   for (const retired of ['npm trust list @buildr-ai/buildr --json', 'npm 11.15+ authenticated maintainer session', 'authenticated authority evidence']) assert.equal(skill.includes(retired), false, retired);
 });

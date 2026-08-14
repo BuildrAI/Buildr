@@ -102,16 +102,34 @@ test('release convergence requires dev candidate before main and ancestry after 
   assert.equal(beforeBridge.ok, false);
   assert.equal(beforeBridge.findings.some((item) => item.code === 'main_not_ancestor_of_dev'), true);
   bridgeMainToDev({ repo: data.work, version: '0.1.0-rc.5', candidateTree: data.candidateTree });
-  const afterBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main', authorityEvidence: authorityEvidence(data.work) });
+  const afterBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });
   assert.equal(afterBridge.ok, true);
 
-  const stale = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main', authorityEvidence: authorityEvidence(data.work, { sourceCommit: 'b'.repeat(40) }) });
+  const missing = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-tag' });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.findings.some((item) => item.code === 'release_authority_evidence_missing'), true);
+
+  const ready = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-tag', authorityEvidence: authorityEvidence(data.work) });
+  assert.equal(ready.ok, true);
+
+  const stale = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-tag', authorityEvidence: authorityEvidence(data.work, { sourceCommit: 'b'.repeat(40) }) });
   assert.equal(stale.ok, false);
   assert.equal(stale.findings.some((item) => item.code === 'release_authority_source_commit_mismatch'), true);
 
-  const expired = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main', authorityEvidence: authorityEvidence(data.work, { observedAt: '2026-01-01T00:00:00.000Z' }) });
+  const workflowDrift = authorityEvidence(data.work);
+  workflowDrift.workflow.sha256 = '0'.repeat(64);
+  const drifted = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-tag', authorityEvidence: workflowDrift });
+  assert.equal(drifted.ok, false);
+  assert.equal(drifted.findings.some((item) => item.code === 'release_authority_workflow_mismatch'), true);
+
+  const expired = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-tag', authorityEvidence: authorityEvidence(data.work, { observedAt: '2026-01-01T00:00:00.000Z' }) });
   assert.equal(expired.ok, false);
   assert.equal(expired.findings.some((item) => item.code === 'release_authority_evidence_stale'), true);
+
+  assert.throws(
+    () => checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main', authorityEvidence: authorityEvidence(data.work) }),
+    /only accepted by the pre-tag stage/,
+  );
 });
 
 test('release convergence rejects stale version, tree and unintegrated release task', (t) => {

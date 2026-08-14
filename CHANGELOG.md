@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+## 0.1.0-rc.10 - 2026-08-14
+
+- 包含 `0.1.0-rc.9` 候选中已经完成的 Buildr CLI 安装通道隔离、Buildr Web 产品表面、自举激活、Formal Task Finish、Verification 与分布式 Candidate 改进；rc.9 的公开 tag 保持不动，但该版本没有写入 npm Registry 或创建 GitHub Release。
+- 修复 tag publish 的独立 Host Node jobs 未安装 checkout verification harness 依赖而确定性失败的问题；最低支持 Node 与当前 Node 24.x runner 现在都依据 package lockfile 独立执行 `npm ci`，随后验证同一冻结正式 tarball，不跨 job 复用 `node_modules`，也不重建候选制品。
+- 将 GitHub-hosted OIDC authority probe 收敛到正式发布授权后的唯一 pre-tag 门禁：候选准备只完成无 hosted evidence 的 `post-main` source convergence，不再提前触发 `npm-production` 审批或重复 token exchange；发布时的 current evidence 仍绑定 `main` commit、workflow bytes、package 与唯一 run，并在 15 分钟内 fail-closed 消费。
+
 ## 0.1.0-rc.9 - 2026-08-14
 
 - Breaking：Buildr 的机器默认 CLI 现在只属于 npm installation，development checkout 不再创建、覆盖或要求 PATH 中的 `buildr` 指向源码；自举 workspace 统一显式使用 retained checkout 的 `projects/product/buildr`，并独立核对 Node、development channel、source commit 与 package version。
