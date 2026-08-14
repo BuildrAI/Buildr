@@ -4,16 +4,17 @@
 
 ## Unreleased
 
-## 0.1.0-rc.9 - 2026-08-13
+## 0.1.0-rc.9 - 2026-08-14
 
 - Breaking：Buildr 的机器默认 CLI 现在只属于 npm installation，development checkout 不再创建、覆盖或要求 PATH 中的 `buildr` 指向源码；自举 workspace 统一显式使用 retained checkout 的 `projects/product/buildr`，并独立核对 Node、development channel、source commit 与 package version。
 - Breaking：本机产品入口统一为 Buildr Web；CLI、Launcher、文档和自举激活不再把旧 Local App/Buildr App 身份当作当前产品表面。公开 npm 安装默认不产生桌面副作用，只有显式 Launcher 生命周期操作才创建、启动、修复或卸载图形入口。
 - 将 Buildr Web 前端权威源码拆分到独立 `buildr-web` Service，并优化 Project/Service 目录与详情交互：支持文档展示、类型下拉、弹框编辑和更紧凑的目录页眉。
-- 加固 Formal Task Finish：阻止陈旧 handoff 恢复，正确处理重命名贡献的包含性判定，支持受控零差异 Delivery Adaptation、可恢复 compact 输出，以及多个 Finish run 并存时的 owner-ordered 自举恢复预检。
-- 扩展正式 Verification 执行记录：支持按 Task 回读同一次执行、阻止相同目标和 capability 集合的重复启动，并恢复多任务数据库与 migration 的隔离边界。
-- 收敛 Buildr 自举激活：Finish 交付后由唯一 runner 使用 Environment retained Node 编排 retained sync、Buildr Web Dev、development entry identity 与最终 Doctor，不再让开发安装占用机器默认 npm CLI。
+- 加固 Formal Task Finish：阻止陈旧 handoff 恢复，正确处理重命名贡献的包含性判定，支持受控零差异 Delivery Adaptation、可恢复 compact 输出、多个 Finish run 并存时的 owner-ordered 自举恢复预检，以及 retained provider 失败后的同 run bootstrap recovery。
+- 扩展正式 Verification 执行记录：支持按 Task 回读并复用同一次终态执行、阻止相同目标和 capability 集合的重复启动，并恢复多任务数据库与 migration 的隔离边界。
+- 将 `dev → main` 正式 Candidate 重构为同一 source SHA 与唯一 npm 候选制品上的 preflight、macOS core、三个 Windows shard、四个 Host Node tuple 和稳定 `Candidate gate` 聚合；`dev` push 不再重复触发完整 Candidate。
+- 收敛 Buildr 自举激活：Finish 交付后由唯一 runner 使用 Environment retained Node 编排 retained sync、Buildr Web Dev、development entry identity 与最终 Doctor，不再让开发安装占用机器默认 npm CLI；安装前健康的 development 服务会在同一 loopback 端口以 successor checkout、全新 PID 与匹配 Node 恢复，保持自举更新和验证期间的服务连续性。
 - 在 release tag 前增加 GitHub-hosted OIDC authority probe：由同一 `publish.yml` 和 `npm-production` Environment 对目标 npm package 完成 token exchange，并把不含凭证的 run、artifact、package、`main` commit 与 workflow digest 绑定为短时 current evidence；本机 npm 登录、OTP、`npm trust list` 不再参与发布前证明，任何漂移、过期或控制面不可读都 fail closed。
-- 收紧 Rule 与 Skill 的权威边界，补齐 workspace-only Task Development handoff，并新增简洁的 Buildr 与 Agent 日常操作手册及双语公开上手路径。
+- 收紧 Rule 与 Skill 的权威边界，补齐 workspace-only Task Development handoff，压缩日常 Task Development 往返并规范 Parent Plan 临时输入清理，同时新增简洁的 Buildr 与 Agent 日常操作手册及双语公开上手路径。
 
 ## 0.1.0-rc.8 - 2026-08-12
 
