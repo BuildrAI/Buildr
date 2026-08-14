@@ -13,6 +13,7 @@ import {
   inspectWorkflowAuthority,
   runReleaseAuthorityPreflight,
 } from '../../scripts/release/release-authority-preflight.mjs';
+import { checkReleaseAuthorityEvidence } from '../../scripts/release/release-convergence.mjs';
 import {
   authorityFailureDiagnostic,
   runTrustedPublish,
@@ -108,8 +109,8 @@ function successfulExecutor(overrides = new Map()) {
 
 test('workflow authority isolates hosted probe from tag publish', () => {
   assert.deepEqual(inspectWorkflowAuthority(workflow), {
-    publish: { environment: 'npm-production', idToken: 'write', condition: "github.event_name == 'push'", scriptInvocations: 1, allowedActions: ['npm publish'], wrapperInvocations: 1, rawPublishInvocations: 0 },
-    probe: { environment: 'npm-production', idToken: 'write', condition: "github.event_name == 'workflow_dispatch'", scriptInvocations: 1 },
+    publish: { environment: 'npm-production', idTokenPermission: 'write', condition: "github.event_name == 'push'", scriptInvocations: 1, allowedActions: ['npm publish'], wrapperInvocations: 1, rawPublishInvocations: 0 },
+    probe: { environment: 'npm-production', idTokenPermission: 'write', condition: "github.event_name == 'workflow_dispatch'", scriptInvocations: 1 },
   });
   assert.deepEqual(inspectWorkflowAuthority(workflow.replace('trusted-publish.mjs', 'other.mjs')).publish.allowedActions, []);
   assert.deepEqual(inspectWorkflowAuthority(workflow.replace('node scripts/release/trusted-publish.mjs candidate.tgz --access public', 'npm publish candidate.tgz')).publish.allowedActions, []);
@@ -122,6 +123,8 @@ test('release authority preflight binds current GitHub run and probe artifact wi
   assert.deepEqual(ready.expected, releasePublishAuthority);
   assert.equal(ready.sourceCommit, commit);
   assert.equal(ready.findings.length, 0);
+  assert.equal(containsCredentialMaterial(ready), false);
+  assert.deepEqual(checkReleaseAuthorityEvidence({ evidence: ready, sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }), []);
 
   const staleRun = runReleaseAuthorityPreflight({ repo: '/fixture', runId, probeEvidence: probeEvidence() }, {
     execute: successfulExecutor(new Map([[`gh api repos/BuildrAI/Buildr/actions/runs/${runId}`, { status: 0, stdout: JSON.stringify(githubRun({ head_sha: 'b'.repeat(40) })) }]])),
