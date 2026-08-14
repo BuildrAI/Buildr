@@ -4,8 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+import { controlMetadataPath } from './control-metadata-path.mjs';
+
 const MAX_BUFFER = 64 * 1024 * 1024;
-const CONTROL_SEGMENTS = new Set(['.buildr', '.git']);
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
@@ -17,7 +18,7 @@ function normalizePath(value) {
 
 function deliverablePath(value) {
   const normalized = normalizePath(value);
-  return Boolean(normalized) && !normalized.split('/').some((segment) => CONTROL_SEGMENTS.has(segment));
+  return Boolean(normalized) && !controlMetadataPath(normalized);
 }
 
 export function gitContributionCommand(root, args, options = {}) {

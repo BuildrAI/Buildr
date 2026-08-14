@@ -7,12 +7,12 @@ import { spawnSync } from '../../infrastructure/process.mjs';
 import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { verifyDeliveredGitTaskContribution } from '../task-finish/git-task-contribution.mjs';
+import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';
 export const GIT_WORKTREE_EVIDENCE_SCHEMA = 'buildr.git-worktree-evidence/v1';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
-const CONTROL_METADATA_SEGMENTS = new Set(['.buildr', '.git']);
 const EVIDENCE_REPOSITORY_FIELDS = new Set(['selector', 'entityType', 'sourcePath', 'sourceRepository', 'checkoutPath', 'branch', 'startPoint', 'head', 'clean', 'registered', 'remote', 'remoteUrl', 'state', 'diagnostic']);
 const EVIDENCE_REPOSITORY_STATES = new Set(['created', 'reused', 'ready', 'blocked']);
 const EVIDENCE_EFFECT_FIELDS = Object.freeze({
@@ -61,11 +61,6 @@ export function registerGitWorktreeProvider(runtime) {
   function gitText(cwd, args) {
     const result = git(cwd, args);
     return result.status === 0 ? result.stdout.trim() : null;
-  }
-
-  function controlMetadataPath(value) {
-    const normalized = path.posix.normalize(String(value || '').replaceAll('\\', '/')).replace(/^\.\//, '');
-    return Boolean(normalized) && normalized.split('/').some((segment) => CONTROL_METADATA_SEGMENTS.has(segment));
   }
 
   function changedWorktreePaths(targetRoot) {

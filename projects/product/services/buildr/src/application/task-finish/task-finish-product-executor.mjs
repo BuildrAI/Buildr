@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
+import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
+
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { acquireFinishTargetLease, readFinishCompletion, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
@@ -151,11 +153,6 @@ function git(root, id, args) {
 function gitText(root, args) {
   const value = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: MAX_OUTPUT_BYTES });
   return value.status === 0 ? value.stdout.trim() : null;
-}
-
-function controlMetadataPath(value) {
-  const normalized = normalizePortablePath(value);
-  return Boolean(normalized) && normalized.split('/').some((segment) => segment === '.buildr' || segment === '.git');
 }
 
 async function cleanupThroughRetainedController(runtime, context, run, deliveries, integratedContributions) {
