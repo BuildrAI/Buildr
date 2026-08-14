@@ -525,6 +525,13 @@
 - 避免混用：不是原Task worktree rebase、Candidate修改、formal Verification、Completion Review或Buildr语义等价证明；无法判断时必须保持blocked。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
+## 自修复 Provider 载体（Bootstrap Provider Capsule）
+
+- 定义：retained Task Finish 在已有run满足封闭恢复资格且用户单独授权后，从current ready Task Environment与current Development handoff共同冻结的clean committed checkout派生的run-owned、detached provider source；外置authority manifest绑定run、Candidate/generation、Content Target、source commit/tree与provider digest。
+- 适用范围：只用于恢复`preflight|prepare`的确定`product-phase-provider`异常；Execution Record成功open后创建，后续同run resume复用，cleanup phase持久化passed后由retained finalizer撤销可执行source authority。
+- 避免混用：不是Delivery Carrier、candidate CLI、npm tarball、任意module/manifest入口、通用sandbox、第二writer或新的Execution Capsule；canonical run与SQLite mutation仍只属于retained Application/repository。
+- 来源：[Task Finish execution 规范](../specs/task-finish-execution/spec.md)
+
 ## 研发交接（Development Handoff）
 
 - 定义：Development Receipt 中 append-only 不可变快照，绑定 Task Candidate、Change dispositions、Planning/Verification/Completion 最小 Result 引用、`proceed` 决定和精确用户风险接受。

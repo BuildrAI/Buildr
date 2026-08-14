@@ -9,6 +9,14 @@ import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEviden
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
 import {
+  activateTaskFinishBootstrapRecovery,
+  createTaskFinishBootstrapRecoveryRuntimeFacade,
+  finalizeTaskFinishBootstrapRecovery,
+  importTaskFinishBootstrapRecoveryProvider,
+  inspectTaskFinishBootstrapRecoveryQualification,
+  prepareTaskFinishBootstrapRecoveryContext,
+} from './task-finish-bootstrap-recovery.mjs';
+import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
   TASK_FINISH_EXECUTION_RECORD_OWNER,
   TASK_FINISH_EXECUTION_RECORD_PRODUCER,
@@ -162,7 +170,7 @@ function markRunSuperseded(run) {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--bootstrap-recovery', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -170,7 +178,7 @@ function assertArgs(action, args) {
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
-    if (option === '--json' || option === '--accept-zero-delta-adaptation') continue;
+    if (option === '--json' || option === '--accept-zero-delta-adaptation' || option === '--bootstrap-recovery') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
     if (option === '--detail' && !['compact', 'full'].includes(value)) {
@@ -224,6 +232,7 @@ function executionGateResult(identity, executionRecord, diagnostic) {
       canonicalCliInvocations: 0,
       agentProviderCompletions: 0,
       manualRecoveryManifests: 0,
+      bootstrapRecoveryExecutions: 0,
       formalVerificationExecutions: 0,
       productCommandObservations: 0,
       productExecutionMs: 0,
@@ -246,7 +255,11 @@ export function registerTaskFinishApplication(runtime) {
     const resumeToken = optionValue(command.args, '--resume', null);
     const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
     const acceptZeroDeltaAdaptation = command.args.includes('--accept-zero-delta-adaptation');
+    const bootstrapRecoveryRequested = command.args.includes('--bootstrap-recovery');
     const requestedRunId = optionValue(command.args, '--run', null);
+    if (bootstrapRecoveryRequested && !requestedRunId) {
+      throw inputError('task_finish.bootstrap_recovery_run_required', '--bootstrap-recovery requires an existing --run <run-id>.', 'run');
+    }
     if (acceptZeroDeltaAdaptation && (!requestedRunId || !resumeToken)) {
       throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation requires an existing --run and its current --resume token.', 'run');
     }
@@ -348,7 +361,16 @@ export function registerTaskFinishApplication(runtime) {
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
     if (prepared.completed) return print(withExecutionRecord(prepared.completed, notOpened), command.args);
     let finishRun = prepared.finishRun;
-    if (finishRun && ['failed', 'complete'].includes(finishRun.status)) return print(withExecutionRecord(inspectFinishRun({ root, runId: finishRun.runId, runtime }), notOpened), command.args);
+    if (finishRun?.status === 'complete' || (finishRun?.status === 'failed' && !bootstrapRecoveryRequested)) return print(withExecutionRecord(inspectFinishRun({ root, runId: finishRun.runId, runtime }), notOpened), command.args);
+    if (finishRun?.bootstrapRecovery && !bootstrapRecoveryRequested) {
+      throw inputError('task_finish.bootstrap_recovery_flag_required', 'This run is bound to bootstrap recovery; resume it with --bootstrap-recovery and the current resume token.', 'run');
+    }
+    let bootstrapQualification = null;
+    if (bootstrapRecoveryRequested) {
+      const persistence = runtime.readTaskFinishRunPersistence(root, { runId: finishRun.runId }, { optional: false });
+      bootstrapQualification = inspectTaskFinishBootstrapRecoveryQualification(persistence);
+      if (!bootstrapQualification.ready) throw inputError(bootstrapQualification.code, bootstrapQualification.message, 'run', bootstrapQualification);
+    }
     const identity = prepared.identity || finishRun?.identity;
     const invocationId = finishInvocationId(identity.task);
     let openedExecutionRecord;
@@ -387,9 +409,32 @@ export function registerTaskFinishApplication(runtime) {
       runtime.discardFailedTaskFinishRunPersistence?.(root, { taskId: identity.task, runId: oldRun.runId });
       finishRun = resolveFinishRun({ root, resumeToken, runtime, identity, deliveryCommit: prepared.deliveryCommit, developmentHandoff: prepared.developmentHandoff });
     }
-    const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
-    const handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
-    const result = await executeFinishRun({ root, run: finishRun, handlers, resumeToken, runtime, observer: evidence });
+    let handlers;
+    if (bootstrapRecoveryRequested) {
+      const persistence = runtime.readTaskFinishRunPersistence(root, { runId: finishRun.runId }, { optional: false });
+      const bootstrapContext = prepareTaskFinishBootstrapRecoveryContext({ run: finishRun, targetRoot: root, runtime });
+      if (bootstrapQualification.terminalOnly) {
+        handlers = Object.freeze({});
+      } else {
+        const createTaskFinishProductHandlers = await importTaskFinishBootstrapRecoveryProvider(bootstrapContext);
+        const handlerRuntime = createTaskFinishBootstrapRecoveryRuntimeFacade(runtime, bootstrapContext);
+        handlers = createTaskFinishProductHandlers({ runtime: handlerRuntime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
+      }
+      finishRun = activateTaskFinishBootstrapRecovery(finishRun, bootstrapContext, persistence);
+      runtime.writeTaskFinishRunPersistence(root, finishRun);
+    } else {
+      const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
+      handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
+    }
+    const result = await executeFinishRun({
+      root,
+      run: finishRun,
+      handlers,
+      resumeToken,
+      runtime,
+      observer: evidence,
+      bootstrapRecoveryFinalizer: finishRun.bootstrapRecovery ? finalizeTaskFinishBootstrapRecovery : null,
+    });
     const snapshot = evidence.snapshot();
     const outcome = taskFinishExecutionRecordOutcome(result);
     let executionRecord;

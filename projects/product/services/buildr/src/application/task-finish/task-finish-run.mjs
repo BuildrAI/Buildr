@@ -216,6 +216,7 @@ function normalizeFailure(value, phaseId, fallbackCode = 'task-finish.phase-fail
   const failure = value && typeof value === 'object' ? clone(value) : {};
   return {
     phase: phaseId,
+    origin: failure.origin || null,
     operation: failure.operation || failure.check || null,
     check: failure.check || null,
     failureClass: failure.failureClass || 'product-execution-failure',
@@ -299,7 +300,7 @@ function compactStoredPhaseDiagnostics(run) {
   }
 }
 
-export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now, runtime = null, observer = null }) {
+export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now, runtime = null, observer = null, bootstrapRecoveryFinalizer = null }) {
   if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error('Task Finish executor requires a current run.');
   if (['failed', 'complete'].includes(run.status)) return finishResult(run, clock);
   if (['blocked', 'cleanup_pending'].includes(run.status) && (!resumeToken || resumeToken !== run.resume?.token)) {
@@ -333,6 +334,7 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
       normalized = normalizePhaseResult({
         status: error?.resumable === true ? 'blocked' : 'failed',
         failure: {
+          origin: 'product-phase-provider',
           operation: error?.operation || null,
           check: error?.check || null,
           failureClass: error?.failureClass || 'product-execution-failure',
@@ -390,6 +392,27 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
     }
     writeRun(root, run, clock, runtime);
   }
+  if (run.bootstrapRecovery && typeof bootstrapRecoveryFinalizer === 'function') {
+    try {
+      run.bootstrapRecovery = bootstrapRecoveryFinalizer(run);
+      writeRun(root, run, clock, runtime);
+    } catch (error) {
+      run.status = 'cleanup_pending';
+      run.completedAt = null;
+      run.primaryFailure = normalizeFailure({
+        operation: 'bootstrap-recovery-revocation',
+        failureClass: 'transient-external-condition',
+        code: error.code || 'task-finish.bootstrap-recovery-revocation-failed',
+        status: 'blocked',
+        message: error.message,
+        diagnostic: error.details || null,
+      }, 'cleanup');
+      run.resume = { phase: 'cleanup', token: resumeTokenFor(run, 'cleanup', run.primaryFailure), generatedAt: now(clock), carrierIdentity: run.deliveryCarrier?.identity || null };
+      writeRun(root, run, clock, runtime);
+      observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
+      return finishResult(run, clock);
+    }
+  }
   run.status = 'complete';
   run.completedAt = now(clock);
   run.primaryFailure = null;
@@ -442,6 +465,10 @@ export function finishResult(run, clock = Date.now) {
   const phaseDurationMs = run.phases.reduce((total, item) => total + (item.durationMs || 0), 0);
   const commandObservations = run.productCommandObservations || 0;
   const formalVerificationExecutions = 0;
+  const retainedOnlyBootstrapResume = Boolean(run.bootstrapRecovery
+    && run.status === 'cleanup_pending'
+    && run.resume?.phase === 'cleanup'
+    && run.phases.every((phase) => ['passed', 'not-applicable'].includes(phase.status)));
   const result = {
     schemaVersion: FINISH_RESULT_SCHEMA,
     runId: run.runId,
@@ -459,7 +486,9 @@ export function finishResult(run, clock = Date.now) {
       ? (run.primaryFailure?.failureClass === 'upstream-candidate-defect' ? 'task-development' : 'task-finish-investigation')
       : null,
     nextAction: ['blocked', 'cleanup_pending'].includes(run.status)
-      ? (run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
+      ? (retainedOnlyBootstrapResume
+        ? 'repeat-task-finish-run-with-bootstrap-recovery-and-resume-token'
+        : run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
         ? 'adapt-run-owned-delivery-carrier-and-repeat-task-finish-run-with-resume-token'
         : 'repeat-task-finish-run-with-resume-token')
       : run.status === 'complete' ? TASK_RETROSPECTIVE_PROMPT : null,
@@ -467,10 +496,12 @@ export function finishResult(run, clock = Date.now) {
     equivalence: clone(run.equivalence),
     delivery: clone(run.delivery),
     completion: clone(run.completion),
+    bootstrapRecovery: run.bootstrapRecovery ? clone(run.bootstrapRecovery) : null,
     metrics: {
       canonicalCliInvocations: run.invocations,
       agentProviderCompletions: 0,
       manualRecoveryManifests: 0,
+      bootstrapRecoveryExecutions: run.bootstrapRecovery ? 1 : 0,
       formalVerificationExecutions,
       productCommandObservations: commandObservations,
       productExecutionMs: phaseDurationMs,

@@ -91,6 +91,33 @@ test('Finish execution record outcome保持Finish owner状态映射', () => {
   assert.equal(taskFinishExecutionRecordOutcome({ status: 'blocked', cancelled: true }), 'cancelled');
 });
 
+test('bootstrap execution record只追加portable provenance', () => {
+  const bootstrapRun = run();
+  bootstrapRun.bootstrapRecovery = {
+    identity: 'sha256-bootstrap',
+    mode: 'retained-writer-candidate-phase-provider',
+    sourceCommit: 'abc123',
+    sourceTree: 'tree123',
+    executorDigest: 'sha256-provider',
+    originalAttempt: { primaryFailure: { phase: 'prepare', origin: 'product-phase-provider', code: 'task-finish.provider-crashed' } },
+    capsule: { root: '/private/capsule', revocation: { status: 'active' } },
+  };
+  const files = createTaskFinishExecutionRecordFiles({
+    invocationId: 'finish-bootstrap-invocation',
+    run: bootstrapRun,
+    outcome: 'blocked',
+    startedAt: '2026-08-10T00:00:00.000Z',
+    finishedAt: '2026-08-10T00:00:01.000Z',
+    durationMs: 1000,
+    timeline: [], phaseResults: [], stdout: '', stderr: '', failure: null,
+  });
+  const summary = files.find((file) => file.name === 'summary.json').content;
+  assert.equal(summary.bootstrapRecovery.identity, 'sha256-bootstrap');
+  assert.equal(summary.bootstrapRecovery.originalFailure.origin, 'product-phase-provider');
+  assert.equal(summary.bootstrapRecovery.capsuleRevocation, 'active');
+  assert.doesNotMatch(JSON.stringify(summary.bootstrapRecovery), /private|capsule.*root/i);
+});
+
 test('公开Finish executionRecord摘要不暴露locator', () => {
   const result = publicTaskFinishExecutionRecord('retained', {
     record: {
