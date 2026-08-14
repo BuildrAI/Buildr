@@ -15,6 +15,8 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
 
+日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，可对内部driver显式使用`--compact`；它只是同一次Application result的response projection，不追加inspect、观察或写入。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。`nextActions`只帮助Agent定位候选下一步，不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
+
 ## Parent Plan 与 Child Contribution
 
 新建Parent可以显式采用Parent Plan。先用`task parent inspect`确认`legacy|parent-plan`模式；首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
@@ -31,8 +33,8 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 
 1. 读取Task Record，确认Task active、Intent、Project/Service scope和`0..N` Change引用。
 2. 通过`task-environment`恢复matching ready Environment，只使用Receipt返回的execution/validation roots。
-3. 通过Development Application inspect已有Receipt；若缺失，在首个proposal、design、直接实现或其他正式研发动作前调用`begin`，记录完整Change dispositions与current planning snapshot。
-4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。
+3. 通过Development Application inspect已有Receipt；若缺失，在首个proposal、design、直接实现或其他正式研发动作前调用`begin`，记录完整Change dispositions与current planning snapshot。`begin|planning`都必须显式提交完整`planning`整值；没有node时提交`{"targetIdentity":null,"nodes":[]}`，不得用字段omission表达清空、保留或patch。
+4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。省略顶层`planning`时Application会在任何Receipt写入前失败关闭，Agent应根据专业authority重新形成完整snapshot，而不是猜测旧值。
 5. 通过`task-review`inspect Planning Result。Review可按当前policy不存在、not-applicable或明确waived；存在时必须绑定current planning target。旧Result和handoff snapshot即使stale也不删除或改写。
 
 正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用Task Environment声明的Node与Buildr Service execution root调用只读resolver：
