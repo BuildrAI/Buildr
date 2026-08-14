@@ -9,6 +9,14 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const triage = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
 const development = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
+const retrospective = read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md');
+const proposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
+const applySidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
+const syncSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md');
+const archiveSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md');
+const contractGuard = read('package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md');
+const cliRegistry = read('src/interfaces/cli/registry.mjs');
+const cliReference = read('docs/cli-reference.md');
 const overview = read('../../openspec/knowledge/overview.md');
 const serviceKnowledge = read('../../openspec/knowledge/services/buildr.md');
 
@@ -51,4 +59,32 @@ test('效率指标只进入复盘参考而不成为产品门禁', () => {
   ]) assert.ok(development.includes(required), `task-development must include ${required}`);
   assert.match(overview, /效率指标只供 Task Retrospective 跟踪、评估和优化/);
   assert.match(overview, /不形成新的 Result、gate 或进度 authority/);
+  assert.match(retrospective, /用户或团队给出的同类任务耗时参考区间/);
+  assert.match(retrospective, /不把它固化为通用产品阈值、Result字段、gate、pass\/fail标准或自动缩减验证范围/);
+  assert.doesNotMatch(retrospective, /12\s*[–-]\s*18\s*分钟/);
+});
+
+test('OpenSpec checklist 自检就近执行且converge只指向Task execution root', () => {
+  for (const sidebar of [proposeSidebar, applySidebar]) {
+    assert.match(sidebar, /立即/);
+    assert.match(sidebar, /checkbox/);
+    assert.match(sidebar, /convergence\/archive前完成/);
+    assert.match(sidebar, /不为.*预读完整下游流程/);
+  }
+  for (const surface of [syncSidebar, archiveSidebar, contractGuard, cliRegistry, cliReference]) {
+    assert.match(surface, /<task-execution-root>/);
+    assert.match(surface, /execution\.workdir/);
+  }
+  for (const sidebar of [syncSidebar, archiveSidebar]) {
+    assert.doesNotMatch(sidebar, /openspec converge[^\n]*--target <workspace>/);
+    assert.match(sidebar, /不得把canonical Workspace当作target/);
+    assert.match(sidebar, /自动搜索其他worktree/);
+  }
+});
+
+test('Verification retry说明只出现在exact identity决策点', () => {
+  assert.match(verification, /同一exact invocation独立新执行/);
+  assert.match(verification, /该决策点说明一次并显式追加`--retry`/);
+  assert.match(verification, /按新identity正常创建首次执行/);
+  assert.match(verification, /不重复播报“未传`--retry`”/);
 });

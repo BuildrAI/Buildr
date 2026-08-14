@@ -123,7 +123,7 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 ## Product maintenance / workflow internal
 
 - `buildr package check/build`：产品 package 维护和构建，不是普通 workspace 日常命令。
-- `buildr openspec converge <change> --project <project> --target <workspace> --json`：Buildr OpenSpec单一收敛事务；内部完成规划、隔离strict validation、条件式canonical应用、写后确认与`archive --skip-specs`，正常archive后释放本次事务Receipt，结果为`passed|blocked|recovery-unprovable`。
+- `buildr openspec converge <change> --project <project> --target <task-execution-root> --json`：Buildr OpenSpec单一收敛事务；target取自matching Task Environment Receipt的`execution.workdir`，不是canonical Workspace。内部完成规划、隔离strict validation、条件式canonical应用、写后确认与`archive --skip-specs`，正常archive后释放本次事务Receipt，结果为`passed|blocked|recovery-unprovable`。
 - `buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`：只读检查仍存在的未决事务Receipt及before/expected/actual；active Change未开始或Change已归档时返回`not-applicable`。它不写canonical、Receipt或archive，也不用于环境清理后的长期审计。
 - `openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`与`openspec sync-apply`均已删除；旧调用返回标准unknown-command。
 - `openspec baseline create`、阶段型 `openspec check`、`openspec sync-plan` 与 `openspec sync-apply` 均已删除；旧调用返回标准 unknown-command 且不会读取或写入旧 sidecar。确定性 planning/apply 只保留为 `converge` 单一事务的内部步骤。

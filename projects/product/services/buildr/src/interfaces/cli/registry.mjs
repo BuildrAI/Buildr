@@ -646,8 +646,9 @@ const COMMAND_ROUTES = [
     surface: "maintenance",
     summary: "产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。",
     help: [
-      "Usage: buildr openspec converge <change> --project <project> [--target <dir>] [--json]",
+      "Usage: buildr openspec converge <change> --project <project> [--target <task-execution-root>] [--json]",
       "",
+      "--target 使用matching Task Environment Receipt的execution.workdir，不是canonical Workspace；不会自动搜索或选择其他worktree。",
       "产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。"
     ],
     match: ({ domain, action }) => domain === 'openspec' && action === 'converge',

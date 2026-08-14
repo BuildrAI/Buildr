@@ -78,7 +78,7 @@ buildr task execution-record inspect --task <task-id> --record <record-id> --tar
 
 普通`verification run`对相同Task、target、Project/declaration与规范化capability集合先按exact invocation identity查询同一Execution Record authority：有`open` record时返回`status: active`及latest active record/run identity；没有active但有`retained|cleanup_pending|cleaned|attention` terminal record时，返回latest terminal的原`passed|failed|blocked|cancelled` outcome/lifecycle。两条路径都不观察target、不启动capability、不取得resource、不创建transient evidence或第二份record；terminal复用使用`not-started-existing-terminal` timing，负向outcome或`attention`保持failed和非零退出。
 
-latest固定按active优先，再在对应集合使用`opened_at DESC, record_id DESC`；原始与retry records通过相同invocation identity成组，但各自保留独立run/record identity。只有确认需要同invocation独立新执行时才显式追加`--retry`；Content Target、declaration、capability set或其他既有identity输入变化时正常创建首次执行，不要求retry。继续使用list/inspect读取所选record；不能仅因工具session丢失或旧结果为failed而创建第二个execution authority。
+latest固定按active优先，再在对应集合使用`opened_at DESC, record_id DESC`；原始与retry records通过相同invocation identity成组，但各自保留独立run/record identity。只有Agent已确认要对同一exact invocation独立新执行时，才在该决策点说明一次并显式追加`--retry`；复用active/terminal record或讨论exact identity是否重执行时也只解释一次。Content Target、declaration、capability set或其他既有identity输入变化时按新identity正常创建首次执行，直接报告新identity，不重复播报“未传`--retry`”。继续使用list/inspect读取所选record；不能仅因工具session丢失或旧结果为failed而创建第二个execution authority。
 
 声明 `effects.authorization: explicit` 时，取得对应授权后逐项增加 `--authorize-capability <id>`；声明为 explicit 的资源同理增加 `--authorize-resource <id>`。不得用一次宽泛授权覆盖其他 capability 或 resource。
 

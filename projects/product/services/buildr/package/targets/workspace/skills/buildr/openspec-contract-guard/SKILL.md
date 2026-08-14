@@ -31,8 +31,10 @@ openspec validate <change> --strict
 
 ```bash
 openspec validate <change> --strict
-buildr openspec converge <change> --project <project> --target <workspace> --json
+buildr openspec converge <change> --project <project> --target <task-execution-root> --json
 ```
+
+`<task-execution-root>`必须原样取自matching Task Environment Receipt的`execution.workdir`，不是canonical Workspace，也不得从cwd、其他worktree或目录扫描猜测。target中看不到active Change时保持零写入，按CLI next action回到同一Environment Receipt纠正target。
 
 产品计算单一 identity/plan，在临时 Project 投射 expected files并运行 `validate --all --strict`；随后重验 delta、executable 与全部 canonical before digests，条件一致才替换文件。首次canonical mutation前写入唯一事务期`.buildr/convergence-receipt.json`；写后只确认expected digests与真实strict validation，再执行`archive --skip-specs`，正常archive成功后释放本次Receipt再返回`passed`。
 

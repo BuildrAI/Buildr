@@ -75,6 +75,7 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
     'Workspace本地current Result', 'buildr verification cleanup --summary <file>',
     '不用于设计测试框架、开发测试、生成 Candidate 或 Finish',
     'active优先', '`opened_at DESC, record_id DESC`', '`not-started-existing-terminal`', '显式追加`--retry`',
+    '同一exact invocation独立新执行', '按新identity正常创建首次执行', '不重复播报“未传`--retry`”',
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);

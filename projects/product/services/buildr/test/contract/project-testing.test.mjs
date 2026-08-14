@@ -76,6 +76,17 @@ test('project-testing 指导 Agent 建立可证伪的最小测试质量闭环', 
   assert.match(testingModel, /不要 mock 幂等判断后只验证数据库方法被调用/);
 });
 
+test('共享helper改动先检查调用面并运行最低成本兼容canary', () => {
+  for (const required of [
+    '多个action、状态或公共入口复用的validation/helper',
+    '枚举真实调用面', '既有错误类型、诊断顺序与公共结果',
+    '`plan-only`/`dry-run` changed-plan reasons', '成本最低的既有canary',
+    '按最低充分原则扩大focused regression', '最终affected Formal Verification',
+  ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
+  assert.match(projectTestingSkill, /不能把plan preview或canary结果冒充Task Verification Result/);
+  assert.doesNotMatch(projectTestingSkill, /固定.*分钟|自动.*Formal Verification|跳过.*Formal Verification/);
+});
+
 test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(taskTriage, /测试框架.*`project-testing`/s);
   assert.match(taskTriage, /selected `buildr\.task-verification\/v3` provider/);
