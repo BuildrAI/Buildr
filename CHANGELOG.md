@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+## 0.1.0-rc.11 - 2026-08-14
+
+- 包含 rc.10 已验证候选中的 Buildr CLI 安装通道隔离、Buildr Web、自举激活、Formal Task Finish、Verification、分布式 Candidate 与唯一 pre-tag OIDC authority probe 等改进；`v0.1.0-rc.10` tag 保持不动，但该 tag workflow 在任何 npm 写入和 GitHub Release 创建前失败。
+- 修复 tag publish 的 Host Node jobs 下载冻结 candidate artifact 后只传入 tarball 与 `npm-pack` metadata、未传入 `release-artifact.json` 的输入契约缺口；最低与当前 Node 24 runner 现在都显式核对同一 manifest、application payload digest 和 immutable tarball bytes。
+- 扩展 publish workflow contract test，把 tarball、pack metadata、release manifest 与 verifier 顺序作为闭合门禁，避免 GitHub Candidate adapter 与 tag-only workflow 再次发生 wiring 漂移。
+
 ## 0.1.0-rc.10 - 2026-08-14
 
 - 包含 `0.1.0-rc.9` 候选中已经完成的 Buildr CLI 安装通道隔离、Buildr Web 产品表面、自举激活、Formal Task Finish、Verification 与分布式 Candidate 改进；rc.9 的公开 tag 保持不动，但该版本没有写入 npm Registry 或创建 GitHub Release。

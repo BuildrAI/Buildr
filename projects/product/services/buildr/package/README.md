@@ -35,7 +35,7 @@ buildr init --agent <agent> --target . --name <name> --profile <personal|team|co
 buildr web --target .
 ```
 
-The current package candidate is `0.1.0-rc.10`; available versions and the `next` dist-tag are always determined by the official npm Registry.
+The current package candidate is `0.1.0-rc.11`; available versions and the `next` dist-tag are always determined by the official npm Registry.
 
 `init --agent` uses the final doctor result as technical onboarding evidence; the Agent should then complete a brief first-use handoff from the real Project and Service state.
 

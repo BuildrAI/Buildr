@@ -212,6 +212,7 @@ jobs:
         run: |
           export BUILDR_CANDIDATE_TARBALL="$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
           export BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm/npm-pack.json"
+          export BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/npm/release-artifact.json"
           node test/verification/host-node.mjs
 
   launcher:
