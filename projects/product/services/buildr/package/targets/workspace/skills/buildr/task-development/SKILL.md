@@ -21,6 +21,8 @@ proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到
 
 新建Parent可以显式采用Parent Plan。先用`task parent inspect`确认`legacy|parent-plan`模式；首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
 
+Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入，不是Development资源或长期事实。Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`record`或`reconcile`成功后必须立即删除。命令失败时，只有仍需使用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。Application保存的current Parent Plan才是authority；CLI、Task Development和Environment cleanup均不扫描或删除调用方临时输入。
+
 Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。Child仍拥有独立Environment、窄Change、Planning Review、Verification、Completion Review与Finish；同一个具体规范变化同一时间只能由一个active Change持有。
 
 Child形成正式handoff时必须提交`contributionHandoff`，完整表达planned、delivered、extra、residual、superseded、affected与唯一`nextAction`。Application要求planned精确匹配已保存binding，全部引用属于current Parent Plan，且parentTaskId与Task Record关系一致；`completed`状态不能替代handoff证明。Parent自己承担窄集成Contribution时，在Plan中把`plannedChildTaskId`设为Parent Task ID，并由Parent自己的current Development handoff证明。
