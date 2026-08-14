@@ -131,12 +131,12 @@ export function registerTaskExecutionRecordRepository(runtime) {
       const params = [taskId];
       if (owner) { clauses.push('owner = ?'); params.push(owner); }
       if (kind) { clauses.push('kind = ?'); params.push(kind); }
-      return opened.database.prepare(`${SELECT} WHERE ${clauses.join(' AND ')} ORDER BY opened_at DESC, record_id`).all(...params).map((row) => persisted(task.root, rowToRecord(row)));
+      return opened.database.prepare(`${SELECT} WHERE ${clauses.join(' AND ')} ORDER BY opened_at DESC, record_id DESC`).all(...params).map((row) => persisted(task.root, rowToRecord(row)));
     } catch (error) { throw asError(error, '列表', { taskId }); }
     finally { try { opened?.database?.close(); } catch {} }
   }
 
-  function openTaskExecutionRecordPersistence(targetRoot, value, { allowDuplicateActive = false } = {}) {
+  function openTaskExecutionRecordPersistence(targetRoot, value, { allowDuplicateInvocation = false } = {}) {
     const record = normalizeTaskExecutionRecord(value);
     const task = runtime.readTaskRecordPersistence(targetRoot, record.taskId);
     let opened;
@@ -149,14 +149,21 @@ export function registerTaskExecutionRecordRepository(runtime) {
         const existing = rowToRecord(existingRow);
         if (!sameOpenIdentity(existing, record)) throw taskExecutionRecordError('task_execution_record_open_conflict', '相同Task/owner/kind/run identity已绑定不同record facts。', 409, { recordId: existing.recordId });
         database.exec('COMMIT');
-        return { ...persisted(task.root, existing), created: false, existingActive: false };
+        return { ...persisted(task.root, existing), created: false, existingActive: false, existingTerminal: false };
       }
-      if (!allowDuplicateActive && record.invocationIdentity) {
-        const activeRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND invocation_identity = ? AND lifecycle_status = 'open' ORDER BY opened_at, record_id LIMIT 1`).get(record.taskId, record.owner, record.kind, record.invocationIdentity);
+      if (!allowDuplicateInvocation && record.invocationIdentity) {
+        const identity = [record.taskId, record.owner, record.kind, record.invocationIdentity];
+        const activeRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND invocation_identity = ? AND lifecycle_status = 'open' ORDER BY opened_at DESC, record_id DESC LIMIT 1`).get(...identity);
         if (activeRow) {
           const active = rowToRecord(activeRow);
           database.exec('COMMIT');
-          return { ...persisted(task.root, active), created: false, existingActive: true };
+          return { ...persisted(task.root, active), created: false, existingActive: true, existingTerminal: false };
+        }
+        const terminalRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND invocation_identity = ? AND lifecycle_status IN ('retained', 'cleanup_pending', 'cleaned', 'attention') ORDER BY opened_at DESC, record_id DESC LIMIT 1`).get(...identity);
+        if (terminalRow) {
+          const terminal = rowToRecord(terminalRow);
+          database.exec('COMMIT');
+          return { ...persisted(task.root, terminal), created: false, existingActive: false, existingTerminal: true };
         }
       }
       const taskOwnerBytes = quotaCharge(database, "WHERE task_id = ? AND owner = ? AND quota_status IN ('reserved', 'charged')", [record.taskId, record.owner]);
@@ -170,7 +177,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
       insert(database, record);
       const written = rowToRecord(database.prepare(`${SELECT} WHERE record_id = ?`).get(record.recordId));
       database.exec('COMMIT');
-      return { ...persisted(task.root, written), created: true, existingActive: false };
+      return { ...persisted(task.root, written), created: true, existingActive: false, existingTerminal: false };
     } catch (error) {
       try { opened?.database?.exec('ROLLBACK'); } catch {}
       throw asError(error, 'open', { taskId: record.taskId, recordId: record.recordId, rollback: { status: 'restored' } });

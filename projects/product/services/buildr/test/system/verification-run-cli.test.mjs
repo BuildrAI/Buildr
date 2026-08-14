@@ -40,6 +40,14 @@ function runArgs(root, capabilities) {
   return ['verification', 'run', '--project', 'demo', ...capabilities.flatMap((id) => ['--capability', id]), '--target-identity', 'target:demo', '--target', root, '--json'];
 }
 
+test('verification run help将retry限定为同invocation独立执行', () => {
+  const result = runBuildr(['verification', 'run', '--help']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /active或terminal record/);
+  assert.match(result.stdout, /只有显式--retry创建同invocation的独立run\/record/);
+  assert.match(result.stdout, /identity输入变化仍创建首次执行/);
+});
+
 test('verification run 并发执行显式 v2 capabilities 并只产生 transient execution evidence', (t) => {
   const root = fixture(t);
   const projectRoot = path.join(root, 'projects', 'demo');

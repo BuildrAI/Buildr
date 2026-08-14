@@ -70,6 +70,10 @@ test('Verification invocation identity只绑定Task、target、declaration与规
   const base = { taskId: 'task-1', projectCode: 'demo', declarationIdentity: `sha256-${'a'.repeat(64)}`, targetIdentity: 'target:demo' };
   const first = verificationInvocationIdentity({ ...base, selectedCapabilities: [{ id: 'demo.b' }, { id: 'demo.a' }] });
   assert.equal(first, verificationInvocationIdentity({ ...base, selectedCapabilities: ['demo.a', 'demo.b'] }));
+  assert.equal(first, verificationInvocationIdentity({ ...base, selectedCapabilities: ['demo.a', 'demo.b'], concurrency: 32, authorization: ['ignored'], runId: 'ignored' }));
+  assert.notEqual(first, verificationInvocationIdentity({ ...base, taskId: 'task-2', selectedCapabilities: ['demo.a', 'demo.b'] }));
+  assert.notEqual(first, verificationInvocationIdentity({ ...base, projectCode: 'other', selectedCapabilities: ['demo.a', 'demo.b'] }));
+  assert.notEqual(first, verificationInvocationIdentity({ ...base, declarationIdentity: `sha256-${'b'.repeat(64)}`, selectedCapabilities: ['demo.a', 'demo.b'] }));
   assert.notEqual(first, verificationInvocationIdentity({ ...base, targetIdentity: 'target:other', selectedCapabilities: ['demo.a', 'demo.b'] }));
   assert.notEqual(first, verificationInvocationIdentity({ ...base, selectedCapabilities: ['demo.a'] }));
 });

@@ -113,6 +113,34 @@ function cleanedTombstone(runtime, root, runIdentity, cleanedAt) {
   return cleaned;
 }
 
+function invocationInput(invocationIdentity, runIdentity) {
+  return {
+    owner: 'task-verification', kind: 'verification-execution', runIdentity, invocationIdentity,
+    targetIdentity: 'target-stable', producer: 'integration-test',
+  };
+}
+
+function seedOpenInvocation(runtime, root, { recordId, invocationIdentity, runIdentity, openedAt }) {
+  const record = createOpenTaskExecutionRecord({
+    recordId, taskId: 'record-task', ...invocationInput(invocationIdentity, runIdentity), openedAt,
+  });
+  return runtime.openTaskExecutionRecordPersistence(root, record, { allowDuplicateInvocation: true }).record;
+}
+
+function seedTerminalInvocation(runtime, root, { recordId, invocationIdentity, runIdentity, outcome, lifecycleStatus, openedAt }) {
+  const opened = seedOpenInvocation(runtime, root, { recordId, invocationIdentity, runIdentity, openedAt });
+  const persisted = runtime.readTaskExecutionRecordPersistence(root, opened.recordId);
+  const body = runtime.publishTaskExecutionRecordBody(root, persisted.record, [{ name: 'summary.json', content: { runIdentity, outcome } }]);
+  let record = sealTaskExecutionRecord(persisted.record, body, outcome, '2026-01-02T00:00:00.000Z', { attention: lifecycleStatus === 'attention' });
+  if (['cleanup_pending', 'cleaned'].includes(lifecycleStatus)) {
+    if (outcome !== 'passed') record = resolveTaskExecutionRecord(record, 'recovered', '2026-01-02T01:00:00.000Z');
+    record = beginTaskExecutionRecordCleanup(record, '2026-01-03T00:00:00.000Z');
+  }
+  if (lifecycleStatus === 'cleaned') record = completeTaskExecutionRecordCleanup(record, 'body-deleted', '2026-01-04T00:00:00.000Z');
+  runtime.replaceTaskExecutionRecordPersistence(root, persisted.record, record);
+  return record;
+}
+
 test('Application open幂等、seal、inspect/list和failure resolution共享单一authority', (t) => {
   const { root, runtime } = fixture(t);
   const first = open(runtime, root);
@@ -135,7 +163,7 @@ test('Application open幂等、seal、inspect/list和failure resolution共享单
   assert.equal(resolved.record.resolutionStatus, 'acknowledged');
 });
 
-test('相同invocation identity原子复用active record，显式retry才创建新record', (t) => {
+test('相同invocation identity原子复用active或terminal record，显式retry才创建新record', (t) => {
   const { root, runtime } = fixture(t);
   const invocationIdentity = `sha256-${'a'.repeat(64)}`;
   const input = {
@@ -149,10 +177,77 @@ test('相同invocation identity原子复用active record，显式retry才创建�
   assert.equal(active.record.recordId, first.record.recordId);
   assert.equal(runtime.listTaskExecutionRecords(root, 'record-task').records.length, 1);
 
-  const retry = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-retry', allowDuplicateActive: true });
+  const retry = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-retry', allowDuplicateInvocation: true });
   assert.equal(retry.status, 'opened');
   assert.notEqual(retry.record.recordId, first.record.recordId);
   assert.equal(runtime.listTaskExecutionRecords(root, 'record-task').records.length, 2);
+
+  runtime.sealTaskExecutionRecord(root, retry.record.recordId, { outcome: 'failed', files: [{ name: 'summary.json', content: { outcome: 'failed' } }] });
+  const stillActive = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-third' });
+  assert.equal(stillActive.status, 'existing-active');
+  assert.equal(stillActive.record.recordId, first.record.recordId, 'active必须优先于terminal历史');
+
+  runtime.sealTaskExecutionRecord(root, first.record.recordId, { outcome: 'passed', files: [{ name: 'summary.json', content: { outcome: 'passed' } }] });
+  const terminal = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-fourth' });
+  assert.equal(terminal.status, 'existing-terminal');
+  assert.equal(terminal.record.recordId, retry.record.recordId, 'latest terminal按openedAt选择显式retry record');
+  assert.equal(runtime.listTaskExecutionRecords(root, 'record-task').records.length, 2);
+});
+
+test('terminal closed states全部参与复用且保留原outcome/lifecycle', (t) => {
+  const { root, runtime } = fixture(t);
+  const matrix = [
+    ['passed', 'retained'],
+    ['failed', 'cleanup_pending'],
+    ['blocked', 'cleaned'],
+    ['cancelled', 'attention'],
+  ];
+  for (const [index, [outcome, lifecycleStatus]] of matrix.entries()) {
+    const invocationIdentity = `sha256-${String(index + 1).repeat(64)}`;
+    const seeded = seedTerminalInvocation(runtime, root, {
+      recordId: `task-exec-${outcome}`,
+      invocationIdentity,
+      runIdentity: `run-${outcome}`,
+      outcome,
+      lifecycleStatus,
+      openedAt: `2026-01-01T00:00:0${index}.000Z`,
+    });
+    const reused = runtime.openTaskExecutionRecord(root, 'record-task', {
+      ...invocationInput(invocationIdentity, `run-${outcome}-default`),
+    });
+    assert.equal(reused.status, 'existing-terminal');
+    assert.equal(reused.record.recordId, seeded.recordId);
+    assert.equal(reused.record.outcome, outcome);
+    assert.equal(reused.record.lifecycleStatus, lifecycleStatus);
+  }
+});
+
+test('exact identity latest选择使用openedAt与recordId降序且active优先', (t) => {
+  const { root, runtime } = fixture(t);
+  const invocationIdentity = `sha256-${'e'.repeat(64)}`;
+  const openedAt = '2026-01-01T00:00:00.000Z';
+  seedTerminalInvocation(runtime, root, {
+    recordId: 'task-exec-terminal-a', invocationIdentity, runIdentity: 'run-terminal-a', outcome: 'failed', lifecycleStatus: 'retained', openedAt,
+  });
+  const terminalB = seedTerminalInvocation(runtime, root, {
+    recordId: 'task-exec-terminal-b', invocationIdentity, runIdentity: 'run-terminal-b', outcome: 'passed', lifecycleStatus: 'retained', openedAt,
+  });
+  const latestTerminal = runtime.openTaskExecutionRecord(root, 'record-task', {
+    ...invocationInput(invocationIdentity, 'run-default-terminal'),
+  });
+  assert.equal(latestTerminal.status, 'existing-terminal');
+  assert.equal(latestTerminal.record.recordId, terminalB.recordId);
+
+  seedOpenInvocation(runtime, root, { recordId: 'task-exec-active-a', invocationIdentity, runIdentity: 'run-active-a', openedAt });
+  const activeB = seedOpenInvocation(runtime, root, { recordId: 'task-exec-active-b', invocationIdentity, runIdentity: 'run-active-b', openedAt });
+  const latestActive = runtime.openTaskExecutionRecord(root, 'record-task', {
+    ...invocationInput(invocationIdentity, 'run-default-active'),
+  });
+  assert.equal(latestActive.status, 'existing-active');
+  assert.equal(latestActive.record.recordId, activeB.recordId);
+  assert.deepEqual(runtime.listTaskExecutionRecords(root, 'record-task').records.map((record) => record.recordId), [
+    'task-exec-terminal-b', 'task-exec-terminal-a', 'task-exec-active-b', 'task-exec-active-a',
+  ]);
 });
 
 test('紧凑inspect只读返回验证终态、耗时、失败与可移植evidence摘要', (t) => {

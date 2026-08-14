@@ -12,6 +12,9 @@ const contract = read('package/targets/workspace/skills/contracts/buildr/task-ve
 const verificationSkill = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
 const verificationReference = read('package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
 const verificationTemplate = read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml');
+const cliRegistry = read('src/interfaces/cli/registry.mjs');
+const cliReference = read('docs/cli-reference.md');
+const jsonContracts = read('docs/json-contracts.md');
 const worktreeSkill = read('package/targets/workspace/skills/buildr/task-worktree/SKILL.md');
 const environmentSkill = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
 const gitOperationsContract = read('package/targets/workspace/skills/contracts/buildr/git-operations/v1.md');
@@ -53,6 +56,8 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
     'requiredForDelivery', 'Task Verification Application', '完整替换 current',
     '不得提交 declaration identity', '不得保存 stdout/stderr',
     'Task progression', '测试命令完整失败可以形成 `not-passed` Result',
+    'exact invocation identity', '`opened_at DESC, record_id DESC`', '`not-started-existing-terminal`',
+    '只有显式`--retry`', 'Execution Record readback不得创建、替换或充当current Verification Result',
   ]) assert.ok(contract.includes(required), `contract must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance', 'candidateCompleteness', 'mode: augment', 'mode: authoritative']) {
     assert.equal(contract.includes(forbidden), false, `contract must remove ${forbidden}`);
@@ -69,6 +74,7 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
     '不自动创建测试、脚本、CI 或框架', '原子替换', '不得覆盖原 current',
     'Workspace本地current Result', 'buildr verification cleanup --summary <file>',
     '不用于设计测试框架、开发测试、生成 Candidate 或 Finish',
+    'active优先', '`opened_at DESC, record_id DESC`', '`not-started-existing-terminal`', '显式追加`--retry`',
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);
@@ -82,6 +88,12 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
   assert.equal(template.capabilities[0].invocation.kind, 'command');
   assert.equal(template.capabilities[0].scope.project, 'replace-with-project-code');
   assert.equal(Object.hasOwn(template.capabilities[0], 'resourceClaims'), false);
+  for (const surface of [cliRegistry, cliReference]) {
+    assert.match(surface, /active或terminal|active优先/);
+    assert.match(surface, /--retry/);
+  }
+  assert.match(jsonContracts, /not-started-existing-terminal/);
+  assert.match(jsonContracts, /executionIdentity: null/);
 });
 
 test('Application 是 current Result persistence 的唯一 writer/reader', () => {
