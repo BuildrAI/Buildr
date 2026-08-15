@@ -37,12 +37,16 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 30000, 'Buildr modules behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
+  'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
+  'integration-task-execution-records': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Task and Verification execution records preserve metadata, body-store, recovery, and retention boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 60000, 'Task Development lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish behaves correctly across its real filesystem, Git, and process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-local-app-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Task Finish public CLI and delivery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'Verification contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
+  'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection and Verification run entry contracts fail closed before heavy verification starts.', TEST_ENVIRONMENTS.repeatedCli),
+  'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 20000, 'Remaining Verification contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
   'system-workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 35000, 'Workspace and Task lifecycle journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-runtime-recovery': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Runtime installation and recovery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Buildr Web process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -100,6 +104,7 @@ const step = (definition) => {
     concurrencyClass: 'default',
     resources: [],
     preflight: null,
+    admission: false,
     ...definition,
     budgetMs: classification?.targetDurationMs ?? definition.budgetMs,
     testing: classification ? Object.freeze({ ...classification, primaryEvidenceOwner: classification.primaryEvidenceOwner ?? definition.id }) : null,
@@ -179,14 +184,95 @@ export const VERIFICATION_DELEGATED_INPUTS = Object.freeze([
 ]);
 
 const SYSTEM_OWNER_INPUTS = Object.freeze({
+  'system-verification-admission': Object.freeze(['test/verification/changed*.mjs', 'test/verification/candidate.mjs', 'test/verification/dag-scheduler.mjs', 'test/verification/plan-runner.mjs', 'test/verification/planner.mjs', 'test/verification/registry.mjs', 'src/application/verification/**']),
   'system-verification-contracts': Object.freeze(['test/verification/changed*.mjs', 'test/verification/focus.mjs', 'test/verification/executor.mjs', 'test/verification/plan-runner.mjs', 'test/verification/planner.mjs', 'test/verification/registry.mjs', 'test/verification/resource-coordinator.mjs', 'test/verification/system*.mjs', 'test/verification/timing/**', 'test/verification/workspace/**', 'src/application/verification/**', 'src/application/json-contracts.mjs', 'src/application/openspec/**']),
   'system-workspace-lifecycle': Object.freeze(['src/application/project/**', 'src/application/service/**', 'src/application/task-record/**', 'src/application/task-development/**', 'src/application/task-review/**', 'src/application/task-verification/**', 'src/application/worktree/**', 'src/application/workspace/**', 'src/domain/**', 'src/infrastructure/git/**', 'src/infrastructure/platform.mjs', 'src/infrastructure/product-layout.mjs', 'test/helpers/task-record-system-fixture.mjs', 'test/helpers/workspace-product-suite.mjs']),
-  'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
+  'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/release-awareness.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
   'system-local-app-http': Object.freeze(['src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
   'system-app-process': Object.freeze(['src/interfaces/local-app/runtime/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
   'system-task-finish': Object.freeze(['src/application/task-finish/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-fresh-build': Object.freeze(['src/application/task-environment/**', 'src/domain/task-environment/**', 'preparation.yml', 'services/buildr-web/package.json', 'services/buildr-web/package-lock.json', 'services/buildr-web/vite.config.*', 'services/buildr-web/tsconfig*.json', 'test/helpers/clean-product-source.mjs']),
 });
+
+const integrationSlice = (id, files, inputs, options = {}) => Object.freeze({
+  id,
+  files: Object.freeze(files),
+  inputs: Object.freeze(inputs),
+  schedulingCostMs: options.schedulingCostMs,
+  concurrencyClass: options.concurrencyClass ?? 'workspace-heavy',
+  resources: Object.freeze(options.resources ?? []),
+  args: Object.freeze(options.args ?? []),
+});
+
+export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
+  integrationSlice('integration-task-read-models', [
+    'test/integration/task-entry-snapshot-application.test.mjs',
+    'test/integration/task-overview-repository.test.mjs',
+    'test/integration/task-planning-identity-application.test.mjs',
+    'test/integration/task-retrospective-repository.test.mjs',
+  ], [
+    'src/application/task-entry/**',
+    'src/application/task-overview/**',
+    'src/application/task-planning-identity/**',
+    'src/application/task-retrospective/**',
+  ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-task-coordination', [
+    'test/integration/parent-coordination-application.test.mjs',
+    'test/integration/publication-application.test.mjs',
+  ], [
+    'src/application/parent-coordination/**',
+    'src/application/publication/**',
+  ], { schedulingCostMs: 3000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-task-execution-records', [
+    'test/integration/task-execution-record-application.test.mjs',
+    'test/integration/task-execution-record-body-store.test.mjs',
+    'test/integration/verification-execution-record-application.test.mjs',
+  ], [
+    'src/application/task-execution-record/**',
+    'src/application/verification/execution-record*.mjs',
+    'src/domain/task-execution-record/**',
+    'src/infrastructure/filesystem/task-execution-record-body-store.mjs',
+    'src/infrastructure/sqlite/task-execution-record-repository.mjs',
+  ], { schedulingCostMs: 12000, args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-task-development', [
+    'test/integration/task-development-application.test.mjs',
+  ], [
+    'src/application/task-development/**',
+    'src/domain/task-development/**',
+    'src/infrastructure/sqlite/task-development-repository.mjs',
+    'src/infrastructure/sqlite/task-review-repository.mjs',
+    'src/infrastructure/sqlite/task-verification-repository.mjs',
+    'src/application/task-review/**',
+    'src/application/task-verification/**',
+    'src/application/verification/**',
+    'src/application/task-environment/**',
+  ], { schedulingCostMs: 50000, resources: ['workspace-saturating', 'task-lifecycle-heavy'], args: ['--test-concurrency=1'] }),
+  integrationSlice('integration-task-finish', [
+    'test/integration/task-finish-bootstrap-application.test.mjs',
+    'test/integration/task-finish-bootstrap-capsule.test.mjs',
+    'test/integration/task-finish-delivery-remote.test.mjs',
+    'test/integration/task-finish-retained-activation.test.mjs',
+    'test/integration/task-finish-retained-cleanup.test.mjs',
+    'test/integration/task-finish-run.test.mjs',
+    'test/integration/task-finish-task-contribution.test.mjs',
+  ], [
+    'test/helpers/task-finish-sqlite-fixture.mjs',
+    'src/application/task-finish/**',
+    'src/application/task-terminal-delivery/**',
+  ], { schedulingCostMs: 15000 }),
+]);
+
+export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
+  'test/integration/application-payload-release.test.mjs',
+  'test/integration/npm-launcher.test.mjs',
+  ...INTEGRATION_PRIMARY_SLICES.flatMap((slice) => slice.files),
+])]);
+
+export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST = Object.freeze([
+  Object.freeze({ path: 'src/application/declaration-intake/declaration-intake-trigger.mjs', owner: 'unit', reason: 'The trigger is pure declaration selection glue; declaration Application and CLI behavior have separate owners.' }),
+  Object.freeze({ path: 'src/application/task-retrospective-prompt.mjs', owner: 'unit', reason: 'Prompt rendering is pure formatting; Task Retrospective repository and Application behavior are owned by the read-model slice.' }),
+  Object.freeze({ path: 'src/infrastructure/product-resources/index.mjs', owner: 'application-payload-release', reason: 'The resource resolver is exercised directly by the application payload release verifier.' }),
+]);
 
 export const verificationSteps = Object.freeze([
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'], inputs: [
@@ -213,6 +299,7 @@ export const verificationSteps = Object.freeze([
     'src/application/change/**',
     'src/application/compose-runtime.mjs',
     'src/application/doctor/**',
+    'src/application/doctor.mjs',
     'src/application/openspec/**',
     'src/application/package-maintenance/**',
     'src/application/task-environment/**',
@@ -222,6 +309,7 @@ export const verificationSteps = Object.freeze([
     'src/application/verification/**',
     'src/domain/task-environment/**',
     'src/infrastructure/content/**',
+    'src/infrastructure/final-doctor-process.mjs',
     'src/infrastructure/product-identity/**',
     'src/infrastructure/product-invocation/**',
     'src/interfaces/internal/**',
@@ -233,40 +321,29 @@ export const verificationSteps = Object.freeze([
     'services/buildr-web/src/api/client.ts',
     'services/buildr-web/src/App.tsx',
   ], inputExclusions: [
-    'test/integration/task-development-application.test.mjs',
-    'test/integration/task-finish-*.test.mjs',
+    ...INTEGRATION_GENERAL_EXCLUDED_FILES,
     'src/application/task-development/**',
     'src/domain/task-development/**',
     'src/infrastructure/sqlite/task-development-repository.mjs',
     'src/application/task-finish/**',
+    'src/application/verification/execution-record*.mjs',
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'integration-task-development', name: 'Task Development lifecycle integration', executor: { type: 'node-test', files: [
-    'test/integration/task-development-application.test.mjs',
-  ], args: ['--test-concurrency=1'] }, profiles: ['candidate'], inputs: [
-    'test/integration/task-development-application.test.mjs',
-    'src/application/task-development/**',
-    'src/domain/task-development/**',
-    'src/infrastructure/sqlite/task-development-repository.mjs',
-    'src/infrastructure/sqlite/task-review-repository.mjs',
-    'src/infrastructure/sqlite/task-verification-repository.mjs',
-    'src/application/task-review/**',
-    'src/application/task-verification/**',
-    'src/application/verification/**',
-    'src/application/task-environment/**',
-  ], schedulingCostMs: 50000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
-  step({ id: 'integration-task-finish', name: 'Task Finish integration slice', executor: { type: 'node-test', files: [
-    'test/integration/task-finish-bootstrap-application.test.mjs',
-    'test/integration/task-finish-bootstrap-capsule.test.mjs',
-    'test/integration/task-finish-delivery-remote.test.mjs',
-    'test/integration/task-finish-retained-activation.test.mjs',
-    'test/integration/task-finish-retained-cleanup.test.mjs',
-    'test/integration/task-finish-run.test.mjs',
-    'test/integration/task-finish-task-contribution.test.mjs',
-  ] }, inputs: [
-    'test/integration/task-finish-*.test.mjs',
-    'test/helpers/task-finish-sqlite-fixture.mjs',
-    'src/application/task-finish/**',
-  ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
+  ...INTEGRATION_PRIMARY_SLICES.map((slice) => step({
+    id: slice.id,
+    name: ({
+      'integration-task-read-models': 'Task read-model integration slice',
+      'integration-task-coordination': 'Task coordination integration slice',
+      'integration-task-execution-records': 'Task execution-record integration slice',
+      'integration-task-development': 'Task Development lifecycle integration',
+      'integration-task-finish': 'Task Finish integration slice',
+    })[slice.id],
+    executor: { type: 'node-test', files: [...slice.files], args: [...slice.args] },
+    profiles: ['candidate'],
+    inputs: [...slice.files, ...slice.inputs],
+    schedulingCostMs: slice.schedulingCostMs,
+    concurrencyClass: slice.concurrencyClass,
+    resources: [...slice.resources],
+  })),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/contract/**', 'test/fixtures/**', 'preparation.yml', 'verification.yml', 'task-finish.yml',
     'src/infrastructure/sqlite/migrations/**',
@@ -315,6 +392,7 @@ export const verificationSteps = Object.freeze([
     schedulingCostMs: suite.schedulingCostMs,
     concurrencyClass: suite.concurrencyClass,
     resources: [...suite.resources],
+    admission: suite.id === 'system-verification-admission',
   })),
   step({ id: 'system-windows-platform', name: 'Windows high-risk system journey slice', executor: { type: 'node-test', files: [
     'test/system/cli-update.test.mjs',
@@ -493,12 +571,17 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
     'managed-mutations',
     'package-static',
     'docs-quality',
+    'system-verification-admission',
   ]),
   candidateShard('artifact-macos', 'macos', 'artifact', [
     'candidate-tarball',
   ], { producesArtifact: true }),
   candidateShard('core-macos', 'macos', 'verification', [
     'integration',
+    'integration-task-read-models',
+    'integration-task-coordination',
+    'integration-task-execution-records',
+    'integration-task-finish',
     'system-verification-contracts',
     'system-local-app-http',
     'application-payload-release',

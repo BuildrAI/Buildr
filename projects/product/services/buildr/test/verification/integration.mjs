@@ -6,17 +6,11 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
 import { resolveVerificationWorkerBudget } from './worker-budget.mjs';
+import { INTEGRATION_GENERAL_EXCLUDED_FILES } from './registry.mjs';
 
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const integrationRoot = path.join(productRoot, 'test', 'integration');
-const excludedFromGeneral = new Set([
-  'application-payload-release.test.mjs',
-  'task-development-application.test.mjs',
-  'task-finish-delivery-remote.test.mjs',
-  'task-finish-retained-activation.test.mjs',
-  'task-finish-retained-cleanup.test.mjs',
-  'task-finish-run.test.mjs',
-]);
+const excludedFromGeneral = new Set(INTEGRATION_GENERAL_EXCLUDED_FILES.map((file) => path.basename(file)));
 
 function parseArgs(args) {
   if (args.length === 2 && args[0] === '--suite' && args[1] === 'general') return 'general';

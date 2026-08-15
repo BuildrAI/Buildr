@@ -133,10 +133,14 @@ test('Windows npm preflight keeps the bounded high-risk owners and tarball depen
 test('candidate verification retains necessary Candidate facts without Browser and Release-only owners', () => {
   const wrapper = read('scripts/verify-buildr-product');
   const candidate = read('test/verification/candidate.mjs');
+  const changed = read('test/verification/changed.mjs');
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
   assert.ok(wrapper.includes('"$@"'));
   assert.ok(candidate.includes("profiles: ['candidate']"));
   assert.doesNotMatch(candidate, /collectChangedProductPaths|createVerificationPreflightPlan|--base/);
+  assert.doesNotMatch(changed, /createVerificationPreflightPlan/);
+  assert.equal((candidate.match(/await executePlan\(/g) ?? []).length, 1);
+  assert.equal((changed.match(/await executePlan\(/g) ?? []).length, 1);
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
   assert.match(candidate, /process\.versions\.node !== managedNodeVersion/);
@@ -151,8 +155,13 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'fine-grained unit tests',
     'bounded component tests',
     'technical boundary integration tests',
+    'Task read-model integration slice',
+    'Task coordination integration slice',
+    'Task execution-record integration slice',
     'Task Development lifecycle integration',
+    'Task Finish integration slice',
     'repository contract tests',
+    'System verification admission canary',
     'System verification contracts',
     'System Workspace lifecycle',
     'System runtime recovery',
@@ -200,7 +209,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   const systemOwners = candidatePlan.steps.filter((step) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 7);
+  assert.equal(systemOwners.length, 8);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.mjs');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.mjs'));
@@ -213,6 +222,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 4);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], 1);

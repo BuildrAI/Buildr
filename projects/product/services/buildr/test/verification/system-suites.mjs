@@ -1,5 +1,17 @@
 export const SYSTEM_SUITES = Object.freeze([
   Object.freeze({
+    id: 'system-verification-admission',
+    name: 'System verification admission canary',
+    innerConcurrency: 2,
+    schedulingCostMs: 5000,
+    concurrencyClass: 'cpu-heavy',
+    resources: Object.freeze([]),
+    files: Object.freeze([
+      'test/system/verification-changed-paths.test.mjs',
+      'test/system/verification-run-cli.test.mjs',
+    ]),
+  }),
+  Object.freeze({
     id: 'system-verification-contracts',
     name: 'System verification contracts',
     innerConcurrency: 4,
@@ -9,9 +21,7 @@ export const SYSTEM_SUITES = Object.freeze([
     files: Object.freeze([
       'test/system/openspec-contract-audit.test.mjs',
       'test/system/public-json-contracts.test.mjs',
-      'test/system/verification-changed-paths.test.mjs',
       'test/system/verification-resource-coordination.test.mjs',
-      'test/system/verification-run-cli.test.mjs',
       'test/system/verification-timing.test.mjs',
       'test/system/workspace-verification.test.mjs',
     ]),

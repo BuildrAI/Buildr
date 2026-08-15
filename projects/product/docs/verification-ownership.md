@@ -18,16 +18,17 @@ Buildr 不把所有验证强行塞进 Unit、Component、Integration。每个 re
 
 ## 2. 直接测试层
 
-Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，稳定直接入口如下：
+Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-15，稳定直接入口如下：
 
 | 层次 | 入口与规模 | 主要内容 | 环境 | 并发 |
 | --- | --- | --- | --- | --- |
-| Unit | `test:unit`；`test/unit` 21 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Unit | `test:unit`；`test/unit` 49 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
 | Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，不穿过真实 filesystem 或进程边界 | `node:test`；外层 `cpu-heavy=2` |
-| Contract | `test:contract`；`test/contract` 19 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口 declaration 一致性 | 只读 Product tree；不创建可变 fixture，不启动真实 CLI/Git/网络 | `node:test` 文件并发；外层 `cpu-heavy=2` |
-| Integration | `test:integration`；`test/integration` 34 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；包含从 Contract 迁出的环境测试；无浏览器 | 直接入口保留全部文件以便定位；Candidate 中普通聚合排除专属 lifecycle slice，并以 6 worker 运行 |
+| Contract | `test:contract`；`test/contract` 32 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口 declaration 一致性 | 只读 Product tree；不创建可变 fixture，不启动真实 CLI/Git/网络 | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Integration | `test:integration`；`test/integration` 65 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；包含从 Contract 迁出的环境测试；无浏览器 | 直接入口保留全部文件以便定位；Candidate 中 general 从统一 slice registry 排除所有专属文件，并以 6 worker 运行 |
+| Task domain Integration | `integration-task-read-models` 4 个、`integration-task-coordination` 2 个、`integration-task-execution-records` 3 个文件 | Task Entry/Overview/Planning Identity/Retrospective、Parent Coordination/Publication、Execution Record 的真实 repository/Application 边界 | 独立临时 filesystem/Git；按 changed source 精确选择 | `cpu-heavy` 或 `workspace-heavy`；每个文件只属于一个 primary slice，不在 general 重复 |
 | Task Development Integration | `integration-task-development`；`task-development-application.test.mjs` 1 个文件、2 个用例 | Task Development 贯穿真实 CLI、filesystem 和 Application 的生命周期事实 | 独立临时 Workspace、CLI、Git；无浏览器 | `workspace-heavy` + `workspace-saturating`；文件内顺序执行，避免与普通 Integration 混在一起 |
-| System | `test:system`；`test/system` 25 个文件 | 完整 CLI、Workspace、Buildr Web runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
+| System | `test:system`；`test/system` 28 个文件 | 完整 CLI、Workspace、Buildr Web runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | 按 8 个 primary owner 执行；其中 2 个 verification entry 文件属于约 5 秒的 admission canary |
 | Recovery | `test:integration:candidate:recovery` 1 个文件；Release 专项 2 个文件 | builtin 迁移/恢复与 Git release convergence | 多轮临时 Workspace/Git | `workspace-saturating`；默认最多 2 路，受限 CI 1 路 |
 | Browser System | `test:browser:smoke` 1 个文件、6 个 selector | Buildr Web shell、Task、Project、Service、Change 的真实浏览器 Journey | 本机 Chrome/Chromium、Playwright Core、loopback server、临时 Workspace | 不进入 Product Full；`verification.yml` 的 `browser` 协调资源容量为 1 |
 
@@ -37,12 +38,13 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，�
 
 ## 3. 完整 registry inventory
 
-Product registry 当前有 43 个 executable steps、40 个 primary owners；Task Development 与两个 Task Finish slice 分别复用 `integration` 或 `system` 的 primary owner，`runtime-skill-projection` 独立持有 packaged Skill 内容投射证据。`test:candidate` 选择 38 个主步骤：新增 Task Development step 只是从原 `integration` 聚合中拆出既有文件，不减少其他 Candidate 证据。Release Git convergence 与 clean-checkout onboarding 保留为 focus/Release 专项。
+Product registry 当前有 57 个 executable steps、52 个 primary owners；`test:candidate` 选择 50 个主步骤。Integration general、5 个专属 slice 与 application payload 的文件集合互斥，8 个 System owner 也各自唯一持有文件；Release Git convergence 与 clean-checkout onboarding 保留为 focus/Release 专项。
 
 | 分组 | step IDs | 主要事实 | 主要环境与并发 |
 | --- | --- | --- | --- |
-| 直接层 | `unit`、`component`、`contract`、`integration`、`integration-task-development`、`system` | 纯逻辑、有界组装、仓库契约、普通技术边界、Task Development 生命周期、完整公共 Journey | 见上一节；重型 owner 会产生较多 CLI/Git 子进程 |
-| affected slice | `integration-task-finish`、`system-task-finish`、`runtime-skill-projection` | Task Finish 直接影响的 3 个 Integration 文件和 2 个 System 文件；变更 Skill 在 7 个 supported adapter 的 source digest、完整投射 inventory 与 receipt | changed plan 使用有界 owner；Candidate 仍运行完整聚合层与 `runtime-adapter-parity` |
+| 直接层 | `unit`、`component`、`contract`、`integration` | 纯逻辑、有界组装、仓库契约与普通技术边界 | 见上一节；重型 owner 会产生较多 CLI/Git 子进程 |
+| affected slice | `integration-task-read-models`、`integration-task-coordination`、`integration-task-execution-records`、`integration-task-development`、`integration-task-finish`、`system-task-finish`、`runtime-skill-projection` | Task 领域真实边界、生命周期与 Skill 投射事实 | changed plan 使用直接 owner；Candidate 保留全部 primary owner，但 general 不再重复专属 Integration 文件 |
+| admission | `unit`、`component`、`contract`、`cli-architecture`、`openspec-spec-quality`、`openspec-strict`；验证框架适用时再加 `system-verification-admission` | 低成本逻辑/静态门禁，以及 changed-path 与 verification run CLI 的真实入口契约 | 本地 changed/full 合成到同一 DAG；任何重型 step 都等待 admission 通过，单次 execution 不重复 step |
 | Quick 静态门禁 | `cli-architecture`、`openspec-spec-quality`、`openspec-strict` | CLI 模块结构、canonical spec 质量、OpenSpec strict | Product tree、bundled OpenSpec；只读运行，可与其他低成本 step 并行 |
 | 恢复与验收 | `integration-candidate-recovery`、`concurrent-task-acceptance`、`openspec-contract-fixtures`、`openspec-convergence-recovery` | builtin 恢复、双 Task 组合验收、OpenSpec contract、convergence/recovery | 临时 Git/Workspace；OpenSpec contract 10 case、recovery 5 case，集合互斥；重型步骤受 `workspace-saturating` 限制 |
 | Candidate 静态事实 | `open-source-candidate`、`openspec-candidate-audit`、`managed-mutations`、`package-static`、`docs-quality` | 公共发布材料、Change contract、mutation owner、package inventory、文档质量 | Product tree 或已生成 tarball；无浏览器 |
@@ -87,9 +89,9 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 | 入口 | 定位 | 选择规则 |
 | --- | --- | --- |
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、静态 Contract、CLI architecture、OpenSpec spec quality/strict；不含真实投射、重复 cleanup、System、npm pack、浏览器或恢复矩阵 |
-| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；聚合层可排除已有专属 slice 的路径；未映射 fail closed；命中 registry/planner/runner/声明/timing 等全局 owner 时确定性扩展 full |
+| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或 3 条精确 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架全局 owner 时扩展 full 并加入 canary |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
-| `test:candidate` | 显式 Product Full | 只选择 Candidate profile 的全部 required owners；不读取 Git diff 或 changed paths；输出 transient timing/diagnostics |
+| `test:candidate` | 显式 Product Full | 只选择 Candidate profile 的全部 required owners；不读取 Git diff 或 changed paths；同一 DAG 先运行 Quick + verification admission canary，再启动重型步骤，输出一份 transient timing/diagnostics |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Buildr Web 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
 

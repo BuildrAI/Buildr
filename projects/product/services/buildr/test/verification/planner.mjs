@@ -14,10 +14,22 @@ import {
   VERIFICATION_GROUPS,
   VERIFICATION_IGNORED_INPUTS,
   VERIFICATION_PROFILES,
+  VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
   VERIFICATION_RESET_BURDENS,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
+
+const PRODUCTION_OWNER_GOVERNED_INPUTS = Object.freeze([
+  'src/application/**/*.mjs',
+  'src/infrastructure/**/*.mjs',
+]);
+const PRODUCTION_OWNER_BROAD_STEPS = new Set([
+  'unit',
+  'candidate-tarball',
+  'application-payload-release',
+]);
+const PRODUCTION_OWNER_BOUNDARIES = new Set(['Static', 'Integration', 'System']);
 
 const CANDIDATE_CI_RUNNERS = Object.freeze(['macos', 'windows']);
 const CANDIDATE_CI_PHASES = Object.freeze(['preflight', 'artifact', 'verification']);
@@ -305,6 +317,40 @@ export function auditVerificationInputCoverage(paths, steps = verificationSteps)
   });
 }
 
+export function auditProductionOwnerCoverage(paths, steps = verificationSteps) {
+  const mapped = [];
+  const allowlisted = [];
+  const gaps = [];
+  for (const rawPath of paths) {
+    const productPath = normalizeProductPath(rawPath);
+    if (!PRODUCTION_OWNER_GOVERNED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) continue;
+    const owners = steps
+      .filter((item) => matchedStepInput(item, productPath))
+      .map((item) => item.id);
+    const directOwners = steps
+      .filter((item) => owners.includes(item.id))
+      .filter((item) => !PRODUCTION_OWNER_BROAD_STEPS.has(item.id))
+      .filter((item) => PRODUCTION_OWNER_BOUNDARIES.has(item.testing?.executionBoundary))
+      .map((item) => item.id);
+    if (directOwners.length > 0) {
+      mapped.push(Object.freeze({ path: productPath, owners: Object.freeze(directOwners) }));
+      continue;
+    }
+    const exception = VERIFICATION_PRODUCTION_OWNER_ALLOWLIST.find((item) => item.path === productPath);
+    if (exception && owners.includes(exception.owner)) {
+      allowlisted.push(exception);
+      continue;
+    }
+    gaps.push(Object.freeze({ path: productPath, broadOwners: Object.freeze(owners) }));
+  }
+  return Object.freeze({
+    ok: gaps.length === 0,
+    mapped: Object.freeze(mapped),
+    allowlisted: Object.freeze(allowlisted),
+    gaps: Object.freeze(gaps),
+  });
+}
+
 function expandDependencies(selected, byId, reasons) {
   const visit = (id, parent = null) => {
     if (selected.has(id)) return;
@@ -336,6 +382,10 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const selected = new Set();
   const reasons = new Map();
   const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
+  const productionOwnerAudit = auditProductionOwnerCoverage(paths, steps);
+  if (!productionOwnerAudit.ok) {
+    throw new Error(`Production source owner coverage gap:\n${productionOwnerAudit.gaps.map((item) => `- ${item.path}`).join('\n')}`);
+  }
   const profiles = [...new Set(request.profiles ?? [])];
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
@@ -396,6 +446,42 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     stepIds: Object.freeze(stepIds),
     delegated: Object.freeze(delegatedPaths),
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
+  });
+}
+
+export function createVerificationAdmissionPlan(plan, steps = verificationSteps) {
+  if (plan.steps.length === 0) return Object.freeze({ ...plan, admissionStepIds: Object.freeze([]) });
+  const fastPlan = createVerificationPlan({ profiles: ['fast'] }, steps);
+  const admissionStepIds = [...new Set([
+    ...fastPlan.steps.map((item) => item.id),
+    ...plan.steps.filter((item) => item.admission === true).map((item) => item.id),
+  ])];
+  const admissionIds = new Set(admissionStepIds);
+  const merged = new Map();
+  for (const item of [...fastPlan.steps, ...plan.steps]) {
+    const existing = merged.get(item.id);
+    merged.set(item.id, Object.freeze({
+      ...(existing ?? item),
+      ...item,
+      reasons: Object.freeze([...new Set([...(existing?.reasons ?? []), ...(item.reasons ?? [])])]),
+    }));
+  }
+  const orderedIds = [
+    ...admissionStepIds,
+    ...plan.steps.map((item) => item.id).filter((id) => !admissionIds.has(id)),
+  ];
+  const composedSteps = orderedIds.map((id) => {
+    const item = merged.get(id);
+    if (admissionIds.has(id)) return item;
+    return Object.freeze({
+      ...item,
+      dependsOn: Object.freeze([...new Set([...(item.dependsOn ?? []), ...admissionStepIds])]),
+    });
+  });
+  return Object.freeze({
+    ...plan,
+    admissionStepIds: Object.freeze(admissionStepIds),
+    steps: Object.freeze(composedSteps),
   });
 }
 

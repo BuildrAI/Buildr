@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { collectChangedProductPaths } from './changed-paths.mjs';
-import { createVerificationPlan, createVerificationPreflightPlan } from './planner.mjs';
+import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
@@ -48,9 +48,8 @@ try {
   } else {
     const changed = collectChangedProductPaths({ productRoot, projectRoot, base: args.base, explicitPaths: args.paths });
     const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
-    const preflightPlan = createVerificationPreflightPlan({ paths: changed.paths });
-    const plan = createVerificationPlan({ paths: changed.paths, fullScopeExemptPaths: changed.versionOnlyPackagePaths });
-    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, delegated: plan.delegated, preflightSteps: preflightPlan.steps, steps: plan.steps };
+    const plan = createVerificationAdmissionPlan(createVerificationPlan({ paths: changed.paths, fullScopeExemptPaths: changed.versionOnlyPackagePaths }));
+    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds, preflightSteps: [], steps: plan.steps };
     if (args.json) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
     else if (args.planOnly) {
       if (changed.base) process.stdout.write(`Git base: ${changed.base}\n`);
@@ -80,13 +79,9 @@ try {
         stream: process.stdout,
         errorStream: process.stderr,
       };
-      let preflight = { passed: true, results: [] };
-      if (preflightPlan.steps.length) {
-        process.stdout.write(`[verify-changed] preflight: ${preflightPlan.steps.map((item) => item.id).join(', ')}\n`);
-        preflight = await executePlan(preflightPlan, executionOptions);
-      }
-      const execution = preflight.passed ? await executePlan(plan, executionOptions) : { passed: false, results: [] };
-      results = [...preflight.results, ...execution.results];
+      process.stdout.write(`[verify-changed] admission: ${plan.admissionStepIds.join(', ')}\n`);
+      const execution = await executePlan(plan, executionOptions);
+      results = execution.results;
       writeVerificationTimingEvidence({
         ...evidence,
         kind: 'changed',
