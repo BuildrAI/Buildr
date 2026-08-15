@@ -93,6 +93,39 @@ function fixture() {
   return { root, seed, work, candidateBase, candidateTree };
 }
 
+function selfBootstrapEvidence(data) {
+  const runId = 'finish-run-release-rc5';
+  const taskId = 'release-0.1.0-rc.5';
+  const devRef = git(data.work, 'rev-parse', 'origin/dev');
+  const evidencePath = path.join(data.root, 'self-bootstrap-closeout.json');
+  const phase = (id, status, outputIdentity = null) => ({
+    id, status, inputIdentity: null, outputIdentity, effects: [], diagnostic: null,
+  });
+  fs.writeFileSync(evidencePath, `${JSON.stringify({
+    schemaVersion: 'buildr.self-bootstrap-closeout-result/v1',
+    status: 'not-applicable',
+    runId,
+    taskId,
+    mode: 'complete',
+    plan: { runId, taskId, remote: 'origin', targetBranch: 'dev', baseRef: devRef },
+    recoveryPlan: null,
+    developmentEntryIdentity: null,
+    phases: [
+      phase('preflight', 'not-applicable'),
+      phase('plan', 'passed', 'sha256-plan'),
+      phase('sync', 'not-applicable'),
+      phase('commit', 'not-applicable'),
+      phase('push', 'not-applicable'),
+      phase('install-local-app', 'not-applicable'),
+      phase('verify-development-entry', 'not-applicable'),
+      phase('finalize', 'not-applicable'),
+    ],
+    effects: [],
+    diagnostic: null,
+  })}\n`);
+  return { selfBootstrapRun: runId, selfBootstrapEvidence: evidencePath };
+}
+
 test('release convergence requires dev candidate before main and ancestry after bridge', (t) => {
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
@@ -101,7 +134,12 @@ test('release convergence requires dev candidate before main and ancestry after 
   const beforeBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });
   assert.equal(beforeBridge.ok, false);
   assert.equal(beforeBridge.findings.some((item) => item.code === 'main_not_ancestor_of_dev'), true);
-  bridgeMainToDev({ repo: data.work, version: '0.1.0-rc.5', candidateTree: data.candidateTree });
+  bridgeMainToDev({
+    repo: data.work,
+    version: '0.1.0-rc.5',
+    candidateTree: data.candidateTree,
+    ...selfBootstrapEvidence(data),
+  });
   const afterBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });
   assert.equal(afterBridge.ok, true);
 

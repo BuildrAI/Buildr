@@ -548,22 +548,37 @@ test('CI and publish workflows use the supported Node runtime', () => {
 
 test('Buildr release Skill fixes release identity, dependency preparation, and tree-gated history bridging', () => {
   const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-release/SKILL.md'), 'utf8');
+  const selfBootstrapSkill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
+  const selfBootstrapRunner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
+  const bridgeSource = fs.readFileSync(path.join(serviceRoot, 'scripts/release/bridge-main-to-dev.mjs'), 'utf8');
   const preparation = skill.slice(skill.indexOf('## 准备发布'), skill.indexOf('## 发布版本'));
   const release = skill.slice(skill.indexOf('## 发布版本'), skill.indexOf('## 中断与失败恢复'));
   const identity = skill.indexOf('tasks/release-<version>');
   const npmCi = skill.indexOf('`npm ci`');
   const versionMutation = skill.indexOf('`package.json`');
-  const candidateTree = skill.indexOf('candidate tree identity');
+  const candidateTree = skill.indexOf('<candidate-tree>');
   const localCliInstall = skill.indexOf('scripts/install-buildr-cli');
   const bridge = skill.indexOf('bridge-main-to-dev.mjs');
+  const selfBootstrap = preparation.indexOf('buildr-self-bootstrap-sync');
+  const finish = preparation.indexOf('8. 使用 `task-finish`');
+  const preMain = preparation.indexOf('--stage pre-main');
+  const evidenceBridge = preparation.indexOf('--self-bootstrap-evidence <self-bootstrap-evidence.json>');
   const postReleaseCleanup = skill.indexOf('必须进入发布后清理检查');
-  for (const [name, value] of Object.entries({ identity, npmCi, versionMutation, candidateTree, localCliInstall, bridge, postReleaseCleanup })) {
+  for (const [name, value] of Object.entries({ identity, npmCi, versionMutation, candidateTree, localCliInstall, bridge, finish, selfBootstrap, preMain, evidenceBridge, postReleaseCleanup })) {
     assert.notEqual(value, -1, name);
   }
   assert.equal(identity < npmCi, true);
   assert.equal(npmCi < versionMutation, true);
   assert.equal(candidateTree < bridge, true);
   assert.equal(localCliInstall < bridge, true);
+  assert.equal(finish < selfBootstrap, true);
+  assert.equal(selfBootstrap < preMain, true);
+  assert.equal(preMain < evidenceBridge, true);
+  assert.match(selfBootstrapSkill, /descendant merge/);
+  assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.descendant-merge-unprovable/);
+  assert.match(bridgeSource, /Missing required --self-bootstrap-run/);
+  assert.match(bridgeSource, /Missing required --self-bootstrap-evidence/);
+  assert.match(bridgeSource, /Self-bootstrap closeout evidence does not match current remote dev/);
   for (const required of [
     'release-<version>', '<workspace-root>/.worktrees/release-<version>',
     'origin/main^{tree}', 'origin/dev^{tree}', 'force push', 'tree gate',
@@ -581,6 +596,8 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '不删除 tag、不 unpublish、不重复 publish',
     '`Candidate gate`', '普通发布准备不再无条件本地运行完整`test:candidate`',
     '重新运行失败作业', '三个Windows高成本shard继续并行',
+    '--self-bootstrap-run <finish-run-id>', '--self-bootstrap-evidence <self-bootstrap-evidence.json>',
+    '绝不先bridge再补跑', 'activation后冻结的候选',
   ]) assert.equal(skill.includes(required), true, required);
   assert.equal(preparation.includes('release-authority-probe-runner.mjs'), false);
   assert.equal(preparation.includes('--stage post-main'), true);
