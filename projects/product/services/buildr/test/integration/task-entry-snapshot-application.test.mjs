@@ -177,6 +177,7 @@ test('profile只增加本次可观察事实且不改变决策', (t) => {
 test('Review、Verification与Finish只在成为next时出现', (t) => {
   const cases = [
     ['buildr.task-review', 1, 'planning-review'],
+    ['buildr.current-knowledge-maintenance', 2, 'inspect'],
     ['buildr.task-verification', 3, 'verify'],
     ['buildr.task-finish', 1, 'finish'],
   ];

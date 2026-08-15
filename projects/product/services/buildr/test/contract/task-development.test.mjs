@@ -19,6 +19,11 @@ test('Task Development 是唯一 Receipt/Candidate/generation/handoff Applicatio
   for (const forbidden of ['readTaskReviewResultPersistence', 'readTaskVerificationResultPersistence', 'writeTaskReviewResultPersistence', 'writeTaskVerificationResultPersistence']) assert.equal(application.includes(forbidden), false, forbidden);
   const writers = fs.readFileSync(path.join(root, 'src/application/task-development/task-development-application.mjs'), 'utf8').includes('writeTaskDevelopmentPersistence');
   assert.equal(writers, true);
+  assert.match(application, /deriveFormalVerificationReadiness/);
+  assert.match(application, /task_development_change_pending_for_content_target/);
+  assert.match(application, /buildr\.current-knowledge-maintenance[\s\S]*version:\s*2/);
+  const verification = read('src/application/verification/verification-application.mjs');
+  assert.doesNotMatch(verification, /formalVerificationReadiness|current-knowledge-maintenance|change-disposition-pending/);
 });
 
 test('Candidate identity 不包含 Result 或 Delivery Carrier，handoff 才绑定 gates', () => {
@@ -45,6 +50,9 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(readWorker, /development:\s*'inspectTaskDevelopmentView'/);
   assert.match(skill, /Buildr Web只消费Application `inspect`的只读投影/);
   assert.match(skill, /--compact/);
+  assert.match(skill, /formalVerificationReadiness/);
+  assert.match(skill, /focused\/affected\/unit\/integration/);
+  assert.match(skill, /Task外transient `verification run`和Candidate CI不读取readiness/);
   assert.match(skill, /省略顶层`planning`时Application会在任何Receipt写入前失败关闭/);
   assert.doesNotMatch(skill, /没有 Buildr Web 专业投影/);
   assert.equal(fs.existsSync(path.join(root, 'src/interfaces/internal/task-development-driver.mjs')), true);
@@ -62,6 +70,8 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(operationContracts, /buildr\.task-development-driver-schema\/v1/);
   const capabilityContract = read('package/targets/workspace/skills/contracts/buildr/task-development/v2.md');
   assert.match(capabilityContract, /buildr\.task-development-driver-compact\/v1/);
+  assert.match(capabilityContract, /response-only Formal Verification readiness/);
+  assert.match(capabilityContract, /不构成通用Verification executor硬门禁/);
   assert.match(capabilityContract, /字段omission不得表示清空、保留、patch或推断/);
 });
 

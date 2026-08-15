@@ -52,6 +52,50 @@ function inputText(value, field) {
   return value.trim();
 }
 
+export function deriveFormalVerificationReadiness(persistence, applicability) {
+  if (!persistence || !applicability) return null;
+  const receipt = persistence.receipt;
+  const pendingChanges = receipt.taskContext.changes
+    .filter((item) => item.disposition === 'pending')
+    .map((item) => `${item.project}/${item.change}`);
+  const checks = {
+    changes: pendingChanges.length === 0 ? 'ready' : 'blocked',
+    contentTarget: applicability.contentTarget,
+    policy: applicability.policy,
+    currentKnowledge: 'not-applicable',
+  };
+  if (!receipt.contentTarget) {
+    return {
+      scope: 'formal-verification',
+      status: 'not-applicable',
+      checks,
+      reasons: [{ axis: 'formal-verification', code: 'formal-verification-handoff-not-reached' }],
+    };
+  }
+  if (applicability.gates?.verification) {
+    return {
+      scope: 'formal-verification',
+      status: 'not-applicable',
+      checks,
+      reasons: [{ axis: 'verification', code: 'matching-formal-verification-current' }],
+    };
+  }
+  const reasons = [
+    ...(pendingChanges.length ? [{ axis: 'change', code: 'change-disposition-pending', changes: pendingChanges }] : []),
+    ...(applicability.taskContext === 'current' ? [] : [{ axis: 'task-context', code: 'task-context-not-current' }]),
+    ...(applicability.planning === 'current' ? [] : [{ axis: 'planning', code: 'planning-not-current' }]),
+    ...(applicability.contentTarget === 'current' ? [] : [{ axis: 'content-target', code: 'content-target-not-current' }]),
+    ...(applicability.policy === 'current' ? [] : [{ axis: 'policy', code: 'verification-policy-not-current' }]),
+  ];
+  if (reasons.length) return { scope: 'formal-verification', status: 'blocked', checks, reasons };
+  return {
+    scope: 'formal-verification',
+    status: 'unknown',
+    checks: { ...checks, currentKnowledge: 'unknown' },
+    reasons: [{ axis: 'current-knowledge', code: 'current-knowledge-inspect-required' }],
+  };
+}
+
 export function registerTaskDevelopmentApplication(runtime) {
   function task(targetRoot, taskId, { active = false, mutation = false } = {}) {
     const persistence = mutation ? runtime.prepareTaskRecordPersistence(targetRoot, taskId) : null;
@@ -359,6 +403,9 @@ export function registerTaskDevelopmentApplication(runtime) {
     if (!applicability.gates?.planning || reasonCodes.has('planning-missing-or-stale') || reasonCodes.has('planning-changes-required')) return { mode: 'recommended', owner: 'task-review', action: 'planning-review', capability: { id: 'buildr.task-review', version: 1 }, summary: '通过task-review完成current Planning Review，或记录明确的not-applicable/waived disposition。' };
     if (applicability.contentTarget !== 'current') return { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: '完成内容、测试开发与Change收敛后调用observe建立stable Content Target。' };
     if (applicability.policy !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'policy', capability: { id: 'buildr.task-development', version: 2 }, summary: '根据current Task Verification declarations记录verification policy。' };
+    const verificationReadiness = deriveFormalVerificationReadiness(persistence, applicability);
+    if (verificationReadiness?.status === 'blocked') return { mode: 'recommended', owner: 'agent', action: 'stabilize-formal-target', capability: null, summary: '处理Formal Verification readiness中的明确Change、Content Target或policy blocker，再进入正式验证。' };
+    if (verificationReadiness?.status === 'unknown') return { mode: 'recommended', owner: 'current-knowledge-maintenance', action: 'inspect', capability: { id: 'buildr.current-knowledge-maintenance', version: 2 }, summary: '对同一current tree执行只读current knowledge inspect；aligned或not-applicable后直接进入task-verification，unresolved时先收敛内容。' };
     if (!applicability.gates?.verification || reasonCodes.has('verification-missing-or-stale') || reasonCodes.has('required-facts-incomplete')) return { mode: 'recommended', owner: 'task-verification', action: 'verify', capability: { id: 'buildr.task-verification', version: 3 }, summary: '通过task-verification形成与current Content Target和policy匹配的正式Result。' };
     if (applicability.candidate !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'freeze', capability: { id: 'buildr.task-development', version: 2 }, summary: '调用freeze形成或复用current Task Candidate；负向Verification仍需后续显式风险决定。' };
     if (!applicability.gates?.completion || reasonCodes.has('completion-missing-or-stale')) return { mode: 'recommended', owner: 'task-review', action: 'completion-review', capability: { id: 'buildr.task-review', version: 1 }, summary: '通过task-review形成current Completion Review，或记录明确的not-applicable/waived disposition。' };
@@ -372,7 +419,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   function result(operation, status, taskId, persistence, applicability, effects = [], diagnostic = null, nextActions = null) {
     const next = taskDevelopmentNext(persistence, applicability);
     const guidance = nextActions ?? (next ? [next.summary] : []);
-    return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, next, diagnostic, effects, nextActions: guidance };
+    return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, formalVerificationReadiness: deriveFormalVerificationReadiness(persistence, applicability), next, diagnostic, effects, nextActions: guidance };
   }
 
   function applicabilityFromObserved(receipt, observed) {
@@ -447,6 +494,14 @@ export function registerTaskDevelopmentApplication(runtime) {
     const inspected = task(targetRoot, taskId, { active: true, mutation: true });
     const execution = environment(targetRoot, taskId);
     const context = taskContext(inspected, input.changeDispositions);
+    const pendingChanges = context.changes.filter((item) => item.disposition === 'pending');
+    if (pendingChanges.length) throw taskDevelopmentError(
+      'task_development_change_pending_for_content_target',
+      'Change仍在专业流程中，不能观察stable Content Target。',
+      409,
+      { pendingChanges: pendingChanges.map((item) => `${item.project}/${item.change}`) },
+      '先完成Change-owned实现、current knowledge与deterministic convergence/archive，再重试observe。',
+    );
     const target = contentTarget(execution);
     const current = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
     const planning = current?.receipt.planning || createTaskDevelopmentPlanning({ targetIdentity: input.planningTargetIdentity || null, nodes: [] });

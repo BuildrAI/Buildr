@@ -187,7 +187,9 @@ test('Development result按保存事实给出单一建议方向且不自动推�
   const current = fixture(t, 'development-guidance');
   let result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
   assert.equal(result.nextActions.length, 1);
-  assert.match(result.nextActions[0], /task-verification/);
+  assert.equal(result.formalVerificationReadiness.status, 'unknown');
+  assert.equal(result.next.owner, 'current-knowledge-maintenance');
+  assert.match(result.nextActions[0], /current knowledge inspect/);
 
   recordVerification(current);
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
@@ -284,6 +286,34 @@ test('converged disposition只接受Task working copy archived，retained active
   });
   assert.equal(result.development.receipt.taskContext.changes[0].disposition, 'converged');
   assert.ok(result.development.receipt.contentTarget);
+});
+
+test('observe对pending Change零Content observation失败关闭，空Change与not-applicable继续合法', (t) => {
+  const pending = changeFixture(t, 'pending-content-target', { availability: 'available', lifecycle: 'active' });
+  let contentObservations = 0;
+  const observeContent = pending.runtime.observeTaskContentComponents;
+  pending.runtime.observeTaskContentComponents = (...args) => {
+    contentObservations += 1;
+    return observeContent(...args);
+  };
+  assert.throws(() => pending.runtime.observeTaskDevelopment(pending.root, pending.taskId, {
+    changeDispositions: [{ project: 'demo', change: 'convergence-guard', disposition: 'pending', summary: 'Implementation remains active.' }],
+    planningTargetIdentity: pending.planningTargetIdentity,
+  }), (error) => error.code === 'task_development_change_pending_for_content_target'
+    && error.details.pendingChanges[0] === 'demo/convergence-guard');
+  assert.equal(contentObservations, 0);
+  assert.equal(pending.runtime.readTaskDevelopmentPersistence(pending.root, pending.taskId, { optional: true }), null);
+
+  const notApplicable = changeFixture(t, 'not-applicable-content-target', { availability: 'available', lifecycle: 'active' });
+  const result = notApplicable.runtime.observeTaskDevelopment(notApplicable.root, notApplicable.taskId, {
+    changeDispositions: [{ project: 'demo', change: 'convergence-guard', disposition: 'not-applicable', summary: 'No Change convergence applies to this target.' }],
+    planningTargetIdentity: notApplicable.planningTargetIdentity,
+  });
+  assert.ok(result.development.receipt.contentTarget);
+  assert.equal(result.development.receipt.taskContext.changes[0].disposition, 'not-applicable');
+
+  const codeOnly = workspaceOnlyFixture(t, 'empty-change-content-target');
+  assert.match(codeOnly.targetIdentity, /^sha256-/);
 });
 
 test('active或resolver不可用的Change不能伪报converged', (t) => {

@@ -427,6 +427,13 @@
 - 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
+## 正式验证就绪度（Formal Verification Readiness）
+
+- 定义：Task Development operation/compact Result在Development → Formal Verification交接处，根据已保存Task Context Change dispositions、Content Target、verification policy与Verification gate派生的response-only摘要；产品值为`not-applicable|blocked|unknown`，current knowledge owner对同一tree返回`aligned|not-applicable`后由Agent瞬时汇总为`ready`并直接进入Task Verification。
+- 适用范围：`formalVerificationReadiness`与Task Entry typed next，用于在昂贵正式验证前先暴露明确未稳定事实或路由一次只读current knowledge `inspect`。
+- 避免混用：不是Verification Result、Development gate、Receipt、持久preflight authority或通用verification executor门禁；不适用于开发期focused/affected测试、Task外transient verification、Candidate CI或Planning Review前的OpenSpec semantic readiness。
+- 来源：[Task Development specification](../specs/task-development/spec.md)与[OpenSpec Change生命周期](flows/openspec-change-lifecycle.md)。
+
 ## 任务研发（Task Development）
 
 - 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority；仅工作区不是第二种Task authority，只是有效Project集合为空时的受约束policy/Result语义。

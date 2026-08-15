@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { compactTaskDevelopmentOperationResult } from '../../src/application/task-development/task-development-result-projection.mjs';
+import { deriveFormalVerificationReadiness } from '../../src/application/task-development/task-development-application.mjs';
 
 test('compact projection只保留同次Development result的current与guidance', () => {
   const gates = {
@@ -34,6 +35,11 @@ test('compact projection只保留同次Development result的current与guidance',
         reasons: [],
       },
     },
+    formalVerificationReadiness: {
+      scope: 'formal-verification', status: 'not-applicable',
+      checks: { changes: 'ready', contentTarget: 'current', policy: 'current', currentKnowledge: 'not-applicable' },
+      reasons: [{ axis: 'verification', code: 'matching-formal-verification-current' }],
+    },
     diagnostic: null,
     effects: [{ type: 'updated', path: 'workspace-sqlite:task-development/compact-result' }],
     nextActions: ['等待明确交付授权后进入task-finish。'],
@@ -54,10 +60,29 @@ test('compact projection只保留同次Development result的current与guidance',
     gates,
     decision: { outcome: 'proceed', candidateIdentity: 'sha256-candidate' },
     reasons: [],
+    formalVerificationReadiness: full.formalVerificationReadiness,
   });
   assert.deepEqual(compact.effects, full.effects);
   assert.deepEqual(compact.nextActions, full.nextActions);
   assert.equal(Object.hasOwn(compact, 'development'), false);
+});
+
+test('Formal Verification readiness只按保存事实区分not-applicable、blocked与unknown', () => {
+  const persistence = (changes = [], contentTarget = { identity: 'sha256-content' }) => ({ receipt: {
+    taskContext: { changes }, contentTarget, verificationPolicy: { identity: 'sha256-policy' },
+  } });
+  const applicability = (overrides = {}) => ({
+    taskContext: 'current', planning: 'current', contentTarget: 'current', policy: 'current', gates: { verification: null }, ...overrides,
+  });
+
+  assert.equal(deriveFormalVerificationReadiness(persistence([], null), applicability({ contentTarget: 'missing', policy: 'missing' })).status, 'not-applicable');
+  const blocked = deriveFormalVerificationReadiness(persistence([{ project: 'demo', change: 'active', disposition: 'pending' }]), applicability());
+  assert.equal(blocked.status, 'blocked');
+  assert.deepEqual(blocked.reasons[0], { axis: 'change', code: 'change-disposition-pending', changes: ['demo/active'] });
+  const unknown = deriveFormalVerificationReadiness(persistence(), applicability());
+  assert.equal(unknown.status, 'unknown');
+  assert.equal(unknown.checks.currentKnowledge, 'unknown');
+  assert.equal(deriveFormalVerificationReadiness(persistence(), applicability({ gates: { verification: { outcome: 'passed' } } })).status, 'not-applicable');
 });
 
 test('compact projection保留missing current并拒绝其他result schema', () => {
