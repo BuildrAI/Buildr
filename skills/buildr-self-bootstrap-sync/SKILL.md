@@ -1,6 +1,6 @@
 ---
 name: buildr-self-bootstrap-sync
-description: Buildr自举Workspace的Formal Task Finish成功或只被retained Doctor阻塞后使用；多个Finish carrier并存时先生成只读owner-ordered恢复计划，foreign清除后可基于latest dev有界重试同run，否则按冻结Task Contribution执行self-bootstrap activation并以最终Doctor或same-run resume收敛。
+description: 仅在当前会话持有matching Formal Task Finish Result且Buildr自举Workspace的Finish成功或只被retained Doctor阻塞后使用；协作者推送、普通Workspace update或本地没有对应Task时不适用。多个Finish carrier并存时先生成只读owner-ordered恢复计划，foreign清除后可基于latest dev有界重试同run，否则按冻结Task Contribution执行self-bootstrap activation并以最终Doctor或same-run resume收敛。
 ---
 
 # Buildr Self-bootstrap Activation
@@ -10,6 +10,8 @@ description: Buildr自举Workspace的Formal Task Finish成功或只被retained D
 ## 输入与适用性
 
 只消费当前`buildr.task-finish-result/v2`中的Task ID、run identity、Agent、canonical Workspace、remote/target branch、carrier/final或remote-after ref、Environment绑定的retained Node/CLI identity、Delivery Carrier内冻结Task Contribution paths，以及blocked路径的matching resume token。不得从HEAD、dirty tree、当前diff、时间或安装结果反推贡献。
+
+当前会话没有绑定同一canonical Workspace、Task、run与delivered ref的matching Formal Finish Result时，本Skill必须在启动runner前返回`not-applicable`：不得从commit author、协作者提交、Git tree前进、Doctor runtime drift或本地缺少对应Task反推Finish。此时按普通Workspace update处理，先消费post-transition Doctor；若其适用修复是当前Agent workspace sync，则路由产品入口Buildr Skill按授权执行`buildr sync <agent> --target <workspace-root>`。本地没有协作者Task是正常事实，不触发Task恢复、回滚、self-bootstrap或新的生命周期authority。
 
 Result必须恰好属于一种模式：
 
