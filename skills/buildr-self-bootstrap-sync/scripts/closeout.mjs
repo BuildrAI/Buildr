@@ -85,7 +85,10 @@ function classifications(changedPaths) {
   const cli = [];
   const localApp = [];
   for (const pathname of changedPaths) {
-    if (matches(pathname, [`${SERVICE_ROOT}/package/manifest.yml`], [`${SERVICE_ROOT}/package/targets/workspace/`])) sync.push(pathname);
+    if (matches(pathname, [`${SERVICE_ROOT}/package/manifest.yml`], [
+      `${SERVICE_ROOT}/package/targets/workspace/`,
+      `${SERVICE_ROOT}/package/targets/runtime/skills/buildr/`,
+    ])) sync.push(pathname);
     if (matches(pathname, [
       `${PRODUCT_ROOT}/buildr`,
       `${SERVICE_ROOT}/package.json`,

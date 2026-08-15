@@ -20,7 +20,7 @@ Result必须恰好属于一种模式：
 
 按规范化Workspace相对路径形成封闭动作集合：
 
-- `sync-retained-workspace`：`projects/product/services/buildr/package/manifest.yml`或`projects/product/services/buildr/package/targets/workspace/**`；
+- `sync-retained-workspace`：`projects/product/services/buildr/package/manifest.yml`、`projects/product/services/buildr/package/targets/workspace/**`或`projects/product/services/buildr/package/targets/runtime/skills/buildr/**`；
 - `install-development-local-app`：这是保留兼容的内部动作ID；用户可见能力是development Buildr Web。它由`projects/product/services/buildr/src/interfaces/local-app/**`、`projects/product/services/buildr/src/interfaces/cli/launcher.mjs`、`projects/product/services/buildr/package/launchers/**`、`projects/product/services/buildr/package.json`、`projects/product/services/buildr/package-lock.json`或`projects/product/services/buildr/LICENSE`命中；
 - `verify-development-entry`：`projects/product/buildr`、`projects/product/services/buildr/bin/**`、`projects/product/services/buildr/src/**/*.mjs`、legacy CLI安装/卸载脚本、`package.json`、`package-lock.json`或任一其他self-bootstrap动作命中时，以Environment retained Node显式执行retained Project bridge，证明development launcher、CLI entry、Node、channel、source commit与package/version绑定本次retained checkout；
 - `finalize`：identity验证通过后，`complete`模式通过该显式retained入口执行一次指定Agent Doctor，`doctor-blocked`模式通过同一入口恢复一次同一Finish run。

@@ -70,6 +70,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   for (const input of [
     'projects/product/services/buildr/package/manifest.yml',
     'projects/product/services/buildr/package/targets/workspace/**',
+    'projects/product/services/buildr/package/targets/runtime/skills/buildr/**',
     'projects/product/services/buildr/src/**/*.mjs',
     'projects/product/services/buildr/src/interfaces/local-app/**',
     'projects/product/services/buildr/src/interfaces/cli/launcher.mjs',

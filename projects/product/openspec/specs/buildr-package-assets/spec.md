@@ -1378,8 +1378,8 @@ Buildr自举Workspace的`buildr-self-bootstrap` Component MUST通过单一专属
 - **THEN** self-bootstrap activation MUST安装development Buildr Web，launcher identity MUST绑定delivered retained commit
 - **AND** MUST不安装或覆盖稳定版Buildr Web或PATH默认CLI
 
-#### Scenario: package workspace inputs
-- **WHEN** 冻结Task Contribution命中package manifest或workspace package targets
+#### Scenario: package workspace inputs或Buildr runtime Skill source
+- **WHEN** 冻结Task Contribution命中package manifest、workspace package targets或`package/targets/runtime/skills/buildr/**`
 - **THEN** self-bootstrap activation MUST执行retained sync，只提交受管sync delta，并通过普通push与远端回读完成收敛
 - **AND** package sync MUST不与Buildr Web或开发入口分类重复执行相同动作
 

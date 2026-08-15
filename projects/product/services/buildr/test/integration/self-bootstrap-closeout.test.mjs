@@ -846,6 +846,19 @@ test('plan identity由run、frozen paths和去重动作确定', () => {
   assert.equal(first.actions['install-development-local-app'].length, 1);
 });
 
+test('Buildr runtime Skill source变化必须触发retained workspace sync', () => {
+  const root = '/tmp/buildr-runtime-skill-plan';
+  const result = finishResult(root, 'a'.repeat(40), [
+    'projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md',
+  ]);
+  const plan = createSelfBootstrapCloseoutPlan(result);
+  assert.deepEqual(plan.actions['sync-retained-workspace'], [
+    'projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md',
+  ]);
+  assert.equal(plan.actions['verify-development-entry'].length, 1);
+  assert.equal(plan.actions['install-development-local-app'].length, 0);
+});
+
 test('零差异 Finish Result优先按activation paths规划自举并兼容changedPaths回退', () => {
   const root = '/tmp/buildr-zero-delta-plan';
   const zeroDelta = finishResult(root, 'a'.repeat(40), [], {
