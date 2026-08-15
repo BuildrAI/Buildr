@@ -24,8 +24,8 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:integration:fast'], undefined);
   assert.equal(scripts['test:browser:smoke'], 'npm run build:web && node --test test/browser-smoke/*.test.mjs');
   assert.equal(scripts['test:browser:changed'], 'npm run build:web && node test/verification/browser-selector-dispatcher.mjs --run');
-  assert.equal(scripts['test:integration:candidate:recovery'], 'node --test test/integration-candidate-recovery/*.test.mjs');
-  assert.equal(scripts['test:integration:candidate:release'], 'node --test test/integration-candidate-release/*.test.mjs');
+  assert.equal(scripts['test:integration:candidate:recovery'], undefined);
+  assert.equal(scripts['test:integration:candidate:release'], 'node test/verification/run-node-tests.mjs test/integration-candidate-release/*.test.mjs');
   assert.equal(scripts['coverage:unit'], 'node test/verification/unit-coverage.mjs');
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
@@ -81,7 +81,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
   assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
-  assert.equal(releaseSet.requiredForDelivery, true);
+  assert.equal(releaseSet.requiredForDelivery, false);
   assert.ok(releaseSet.applicability.paths.includes('.github/workflows/publish.yml'));
   assert.equal(releaseSet.applicability.paths.some((value) => value === '.github/**' || value === '.github/workflows/**'), false);
   assert.equal(declaration.capabilities.some((capability) => capability.id.startsWith('product.platform-')), false);
@@ -160,7 +160,6 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'System Buildr Web process and preview',
     'System Task Finish',
     'System fresh build',
-    'Candidate integration: builtin recovery and migration',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
     'OpenSpec canonical spec quality',
@@ -257,19 +256,20 @@ test('distributed Candidate creates one artifact and fans out independent consum
   const workflow = read('../../../../.github/workflows/verify.yml');
   const document = YAML.parse(workflow);
   assert.deepEqual(Object.keys(document.jobs), [
-    'dev-feedback', 'candidate-preflight', 'candidate-artifact', 'candidate-core-macos',
+    'dev-feedback', 'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows',
     'candidate-windows', 'candidate-host-node', 'candidate-gate',
   ]);
-  assert.equal(document.jobs['candidate-artifact'].needs, 'candidate-preflight');
-  assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-artifact');
-  assert.equal(document.jobs['candidate-windows'].needs, 'candidate-artifact');
-  assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-artifact');
-  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, ['runtime-windows', 'workspace-windows', 'fresh-build-windows']);
+  assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-bootstrap');
+  assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
+  assert.equal(document.jobs['candidate-windows'].needs, 'candidate-bootstrap');
+  assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-bootstrap');
+  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, ['workspace-lifecycle-windows', 'task-workflow-windows', 'fresh-build-windows']);
   const windowsJob = workflow.slice(workflow.indexOf('  candidate-windows:'), workflow.indexOf('  candidate-host-node:'));
   assert.match(windowsJob, /projects\/product\/services\/buildr-web\/package-lock\.json/);
   assert.match(windowsJob, /if: matrix\.shard == 'fresh-build-windows'[\s\S]*npm ci --ignore-scripts/);
   assert.equal((workflow.match(/name: candidate-package/g) || []).length, 4, 'one upload and three consumer downloads');
   assert.equal((workflow.match(/Build the single Candidate artifact/g) || []).length, 1);
+  assert.doesNotMatch(windowsJob, /candidate-package|BUILDR_CANDIDATE_CI_ARTIFACT_DIR/);
 });
 
 test('Candidate workflow checks out one exact source SHA and always aggregates closed evidence', () => {
@@ -279,18 +279,42 @@ test('Candidate workflow checks out one exact source SHA and always aggregates c
   assert.equal(document.jobs['candidate-gate'].name, 'Candidate gate');
   assert.match(document.jobs['candidate-gate'].if, /^always\(\)/);
   assert.deepEqual(document.jobs['candidate-gate'].needs, [
-    'candidate-preflight', 'candidate-artifact', 'candidate-core-macos', 'candidate-windows', 'candidate-host-node',
+    'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows', 'candidate-windows', 'candidate-host-node',
   ]);
   assert.match(workflow, /pattern: candidate-evidence-\*/);
   assert.match(workflow, /merge-multiple: true/);
-  assert.match(workflow, /npm run test:candidate:aggregate/);
-  assert.equal((workflow.match(/overwrite: true/g) || []).length, 8, 'reruns replace one logical artifact per shard or aggregate');
+  const gate = workflow.slice(workflow.indexOf('  candidate-gate:'));
+  assert.match(gate, /runs-on: macos-latest/);
+  assert.match(gate, /node test\/verification\/candidate-ci\.mjs aggregate/);
+  assert.doesNotMatch(gate, /npm ci|cache: npm/);
+  assert.equal((workflow.match(/overwrite: true/g) || []).length, 9, 'reruns replace one logical artifact per shard or aggregate');
   assert.equal((workflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 7);
   assert.doesNotMatch(workflow, /git log --first-parent origin\/dev/);
   for (const input of [
     '.github/workflows/verify.yml', 'scripts/verify-buildr-product-ci',
     'test/verification/candidate-ci.mjs', 'test/verification/candidate-ci-evidence.mjs',
   ]) assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes(input), `${input} must force full changed verification`);
+});
+
+test('Candidate aggregate import graph is clean-checkout Node-only', () => {
+  const pending = ['test/verification/candidate-ci.mjs'];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const relative = pending.pop();
+    if (visited.has(relative)) continue;
+    visited.add(relative);
+    const source = read(relative);
+    for (const match of source.matchAll(/from\s+['"]([^'"]+)['"]/gu)) {
+      const specifier = match[1];
+      assert.ok(specifier.startsWith('node:') || specifier.startsWith('.'), `${relative} imports external dependency ${specifier}`);
+      if (!specifier.startsWith('.')) continue;
+      const target = path.posix.normalize(path.posix.join(path.posix.dirname(relative), specifier));
+      assert.ok(fs.statSync(path.join(productRoot, target), { throwIfNoEntry: false })?.isFile(), `${relative} import is missing: ${target}`);
+      pending.push(target);
+    }
+  }
+  assert.ok(visited.has('test/verification/candidate-ci-evidence.mjs'));
+  assert.ok(visited.has('test/verification/registry.mjs'));
 });
 
 test('fresh build reuses prepared controller dependencies without weakening tested installs', () => {

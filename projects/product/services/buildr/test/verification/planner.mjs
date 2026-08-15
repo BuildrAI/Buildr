@@ -339,7 +339,8 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const profiles = [...new Set(request.profiles ?? [])];
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
-  const fullScopeMatches = paths.flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
+  const fullScopeExemptPaths = new Set((request.fullScopeExemptPaths ?? []).map(normalizeProductPath));
+  const fullScopeMatches = paths.filter((productPath) => !fullScopeExemptPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
     .filter((pattern) => matchesInput(productPath, pattern))
     .map((pattern) => ({ productPath, pattern })));
   for (const id of stepIds) {
@@ -357,7 +358,11 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   if (fullScopeMatches.length > 0) {
     for (const item of steps) if (item.profiles.includes('candidate')) {
       selected.add(item.id);
-      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => `${productPath} matches full-scope owner ${pattern}`)]);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => (
+        ['package.json', 'package-lock.json'].includes(productPath)
+          ? `${productPath} contains unverified or non-version package metadata changes; matches full-scope owner ${pattern}`
+          : `${productPath} matches full-scope owner ${pattern}`
+      ))]);
     }
   }
   for (const group of groups) {

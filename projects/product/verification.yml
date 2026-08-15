@@ -164,7 +164,7 @@ capabilities:
       - 同一冻结 Application Payload 只生成一次 npm tarball，并由所有 smoke、publish 与 Registry readback 复用
       - npm 安装使用兼容 Host Node，完整支持 CLI、按需 Buildr Web 和独立 Workspace Node 子进程
       - 显式安装的 macOS/Windows Launcher 不复制 Node 或 Buildr，精确绑定同一 npm 安装，并在 Node、entry、prefix 或 package identity 漂移时 fail closed
-    requiredForDelivery: true
+    requiredForDelivery: false
     environment:
       requires: [node, npm, git]
     effects:

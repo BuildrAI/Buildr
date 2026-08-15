@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { isDeepStrictEqual } from 'node:util';
 import { normalizeProductPath } from './planner.mjs';
 import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './registry.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.mjs';
@@ -11,6 +12,28 @@ function git(gitRoot, args, options = {}) {
 
 function zeroSeparated(output) {
   return output.split('\0').filter(Boolean);
+}
+
+function withoutAllowedVersionFields(productPath, text) {
+  const value = JSON.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${productPath} must contain a JSON object`);
+  delete value.version;
+  if (productPath === 'package-lock.json' && value.packages?.[''] && typeof value.packages[''] === 'object') {
+    delete value.packages[''].version;
+  }
+  return value;
+}
+
+export function isVersionOnlyPackageMetadataChange(productPath, baseText, currentText) {
+  if (!['package.json', 'package-lock.json'].includes(productPath)) return false;
+  try {
+    return isDeepStrictEqual(
+      withoutAllowedVersionFields(productPath, baseText),
+      withoutAllowedVersionFields(productPath, currentText),
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function resolveVerificationBase(gitRoot, requestedBase) {
@@ -35,7 +58,7 @@ export function collectChangedProductPaths(options) {
   const productRoot = fs.realpathSync(path.resolve(options.productRoot));
   const projectRoot = fs.realpathSync(path.resolve(options.projectRoot ?? productRoot));
   if ((options.explicitPaths ?? []).length > 0) {
-    return { base: null, paths: [...new Set(options.explicitPaths.map(normalizeProductPath))].sort(), source: 'explicit' };
+    return { base: null, paths: [...new Set(options.explicitPaths.map(normalizeProductPath))].sort(), source: 'explicit', versionOnlyPackagePaths: [] };
   }
   const gitRoot = fs.realpathSync(git(productRoot, ['rev-parse', '--show-toplevel']).trim());
   const projectGitRoot = git(projectRoot, ['rev-parse', '--show-toplevel']).trim();
@@ -64,5 +87,15 @@ export function collectChangedProductPaths(options) {
     } else continue;
     if (relative) paths.push(normalizeProductPath(relative));
   }
-  return { base, paths: [...new Set(paths)].sort(), source: 'git' };
+  const uniquePaths = [...new Set(paths)].sort();
+  const versionOnlyPackagePaths = [];
+  for (const productPath of uniquePaths.filter((item) => ['package.json', 'package-lock.json'].includes(item))) {
+    try {
+      const workspacePath = productPrefix ? `${productPrefix}/${productPath}` : productPath;
+      const baseText = git(gitRoot, ['show', `${base}:${workspacePath}`]);
+      const currentText = fs.readFileSync(path.join(productRoot, productPath), 'utf8');
+      if (isVersionOnlyPackageMetadataChange(productPath, baseText, currentText)) versionOnlyPackagePaths.push(productPath);
+    } catch {}
+  }
+  return { base, paths: uniquePaths, source: 'git', versionOnlyPackagePaths };
 }

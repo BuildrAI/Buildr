@@ -49,8 +49,8 @@ try {
     const changed = collectChangedProductPaths({ productRoot, projectRoot, base: args.base, explicitPaths: args.paths });
     const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
     const preflightPlan = createVerificationPreflightPlan({ paths: changed.paths });
-    const plan = createVerificationPlan({ paths: changed.paths });
-    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, delegated: plan.delegated, preflightSteps: preflightPlan.steps, steps: plan.steps };
+    const plan = createVerificationPlan({ paths: changed.paths, fullScopeExemptPaths: changed.versionOnlyPackagePaths });
+    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, delegated: plan.delegated, preflightSteps: preflightPlan.steps, steps: plan.steps };
     if (args.json) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
     else if (args.planOnly) {
       if (changed.base) process.stdout.write(`Git base: ${changed.base}\n`);

@@ -73,8 +73,8 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
-  candidate-preflight:
-    name: Candidate preflight
+  candidate-bootstrap:
+    name: Candidate bootstrap
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
     runs-on: macos-latest
     timeout-minutes: 20
@@ -115,30 +115,6 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
-  candidate-artifact:
-    name: Candidate artifact
-    needs: candidate-preflight
-    runs-on: macos-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: projects/product/services/buildr
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.15.0
-          cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
-      - name: Prepare managed Workspace Node
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        run: projects/product/buildr sync codex --target .
       - name: Build the single Candidate artifact
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -167,7 +143,7 @@ jobs:
 
   candidate-core-macos:
     name: Candidate core (macOS)
-    needs: candidate-artifact
+    needs: candidate-bootstrap
     runs-on: macos-latest
     timeout-minutes: 35
     defaults:
@@ -214,15 +190,66 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
+  candidate-runtime-windows:
+    name: Candidate Windows (runtime-windows)
+    needs: candidate-bootstrap
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: candidate-package
+          path: ${{ runner.temp }}/candidate-package
+      - name: Prepare managed Workspace Node
+        working-directory: .
+        env:
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+        shell: bash
+        run: projects/product/buildr sync codex --target .
+      - name: Run Windows runtime shard
+        env:
+          BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          BUILDR_CANDIDATE_CI_ARTIFACT_DIR: ${{ runner.temp }}/candidate-package
+          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-runtime-windows
+          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-runtime-windows.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-runtime-windows-diagnostics
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        shell: bash
+        run: npm run test:candidate:ci -- runtime-windows
+      - name: Upload Windows runtime evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-evidence-runtime-windows
+          path: |
+            ${{ runner.temp }}/candidate-evidence
+            ${{ runner.temp }}/candidate-runtime-windows-diagnostics
+          if-no-files-found: warn
+          overwrite: true
+
   candidate-windows:
     name: Candidate Windows (${{ matrix.shard }})
-    needs: candidate-artifact
+    needs: candidate-bootstrap
     runs-on: windows-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        shard: [runtime-windows, workspace-windows, fresh-build-windows]
+        shard: [workspace-lifecycle-windows, task-workflow-windows, fresh-build-windows]
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -243,10 +270,6 @@ jobs:
         if: matrix.shard == 'fresh-build-windows'
         working-directory: projects/product/services/buildr-web
         run: npm ci --ignore-scripts
-      - uses: actions/download-artifact@v7
-        with:
-          name: candidate-package
-          path: ${{ runner.temp }}/candidate-package
       - name: Prepare managed Workspace Node
         working-directory: .
         env:
@@ -256,7 +279,6 @@ jobs:
       - name: Run Windows Candidate shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
-          BUILDR_CANDIDATE_CI_ARTIFACT_DIR: ${{ runner.temp }}/candidate-package
           BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-${{ matrix.shard }}
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-${{ matrix.shard }}.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-${{ matrix.shard }}-diagnostics
@@ -277,7 +299,7 @@ jobs:
 
   candidate-host-node:
     name: Candidate Host Node (${{ matrix.id }})
-    needs: candidate-artifact
+    needs: candidate-bootstrap
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -338,9 +360,9 @@ jobs:
     name: Candidate gate
     if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
     needs:
-      - candidate-preflight
-      - candidate-artifact
+      - candidate-bootstrap
       - candidate-core-macos
+      - candidate-runtime-windows
       - candidate-windows
       - candidate-host-node
     runs-on: macos-latest
@@ -356,9 +378,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24.15.0
-          cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
       - name: Prepare aggregate evidence directory
         working-directory: .
         run: mkdir -p "${{ runner.temp }}/candidate-evidence"
@@ -374,7 +393,7 @@ jobs:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-evidence
           BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT: ${{ runner.temp }}/candidate-ci-aggregate.json
-        run: npm run test:candidate:aggregate
+        run: node test/verification/candidate-ci.mjs aggregate
       - name: Upload aggregate result
         if: always()
         uses: actions/upload-artifact@v7

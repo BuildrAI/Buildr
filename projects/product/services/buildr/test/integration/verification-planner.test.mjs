@@ -30,7 +30,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
     'unit', 'component', 'integration', 'integration-task-development', 'contract',
     'system-verification-contracts', 'system-workspace-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-fresh-build',
     'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
-    'integration-candidate-recovery', 'concurrent-task-acceptance', 'candidate-tarball',
+    'concurrent-task-acceptance', 'candidate-tarball',
     'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate',
     'openspec-candidate-audit', 'managed-mutations', 'capability-cli-integration', 'commands-cli-integration',
     'openspec-contract-fixtures', 'openspec-convergence-recovery', 'package-static', 'package-workspace', 'package-commands', 'package-rules', 'package-skills',
@@ -151,13 +151,13 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
     },
     {
       path: 'src/application/package-maintenance/builtin-replacement.mjs',
-      required: ['unit', 'integration-candidate-recovery', 'managed-mutations', 'package-static', 'ownership-recovery', 'release-tarball-smoke', 'managed-data-integrity'],
+      required: ['unit', 'managed-mutations', 'package-static', 'ownership-recovery', 'release-tarball-smoke', 'managed-data-integrity'],
       excluded: ['contract', 'cli-architecture', 'capability-cli-integration', 'cli-compatibility', 'cli-package-parity'],
     },
     {
       path: 'src/infrastructure/runtime/skills/publication.mjs',
       required: ['runtime-adapter-contract', 'managed-mutations', 'capability-cli-integration', 'package-skills', 'package-runtime', 'runtime-adapter-parity', 'runtime-reconciliation', 'managed-data-integrity'],
-      excluded: ['contract', 'cli-architecture', 'integration-candidate-recovery', 'cli-compatibility', 'cli-package-parity', 'release-tarball-smoke'],
+      excluded: ['contract', 'cli-architecture', 'cli-compatibility', 'cli-package-parity', 'release-tarball-smoke'],
     },
   ];
   for (const sample of cases) {

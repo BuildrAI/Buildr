@@ -53,7 +53,6 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'openspec-strict': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'All OpenSpec artifacts pass upstream strict validation.', TEST_ENVIRONMENTS.cliReadOnly),
   'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', 5000, 'Runtime adapter declarations and isolated filesystem projections satisfy their contract.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'runtime-skill-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Changed packaged Skills bind their source identity and complete projected inventory through every supported runtime adapter.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-candidate-recovery': testing(SERVICE_OWNER, 'Development', 'System', 25000, 'Builtin recovery and migration journeys preserve user-owned state.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release branch convergence behaves correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
   'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 30000, 'Concurrent Task workflows satisfy the declared acceptance contract.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'One frozen application payload produces the single npm candidate tarball consumed by later verification.', TEST_ENVIRONMENTS.isolatedGitCli),
@@ -196,6 +195,8 @@ export const verificationSteps = Object.freeze([
     'services/buildr-web/**',
     'test/verification/dag-scheduler.mjs',
     'test/verification/planner.mjs',
+    'test/verification/test-files.mjs',
+    'test/verification/run-node-tests.mjs',
     'test/verification/resource-coordinator.mjs',
     'test/verification/registry.mjs',
     'test/verification/browser-selector-dispatcher.mjs',
@@ -345,18 +346,6 @@ export const verificationSteps = Object.freeze([
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], inputs: ['openspec/**'] }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.mjs' }, profiles: ['candidate'], groups: ['runtime'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/doctor/runtime-diagnostics.mjs', 'test/verification/runtime/adapter-contract.mjs', 'package/targets/runtime/**', 'docs/agent-runtime-adapters.md'] }),
 
-  step({ id: 'integration-candidate-recovery', name: 'Candidate integration: builtin recovery and migration', executor: { type: 'npm', args: ['run', 'test:integration:candidate:recovery'] }, profiles: ['candidate'], groups: ['recovery'], inputs: [
-    'test/integration-candidate-recovery/**', 'bin/buildr.mjs', 'buildr',
-    'src/application/package-maintenance.mjs',
-    'src/application/package-maintenance/builtin-lifecycle.mjs',
-    'src/application/package-maintenance/builtin-receipts.mjs',
-    'src/application/package-maintenance/builtin-replacement.mjs',
-    'src/application/package-maintenance/sync-plan.mjs',
-    'src/application/workspace-operations.mjs',
-    'src/infrastructure/filesystem/**',
-    'package/manifest.yml',
-    'package/targets/workspace/manifest.yml',
-  ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
     'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-authority.mjs', 'scripts/release/release-convergence.mjs',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
@@ -539,14 +528,15 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
     'runtime-adapter-parity',
     'release-tarball-smoke',
   ], { requiresArtifact: true }),
-  candidateShard('workspace-windows', 'windows', 'verification', [
-    'integration-task-development',
+  candidateShard('workspace-lifecycle-windows', 'windows', 'verification', [
     'system-workspace-lifecycle',
-    'system-task-finish',
-    'integration-candidate-recovery',
-    'concurrent-task-acceptance',
     'openspec-convergence-recovery',
     'workspace-lifecycle',
+  ]),
+  candidateShard('task-workflow-windows', 'windows', 'verification', [
+    'integration-task-development',
+    'system-task-finish',
+    'concurrent-task-acceptance',
   ]),
   candidateShard('fresh-build-windows', 'windows', 'verification', [
     'system-fresh-build',

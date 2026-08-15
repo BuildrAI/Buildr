@@ -61,7 +61,7 @@ Workspace manifest 的 `runtime.node.version` 是Workspace-owned subprocess采�
 
 ## 验证
 
-GitHub候选拓扑是Product唯一verification registry的闭合投影，不是第二测试清单。Registry同时声明Candidate shard、runner OS、允许的平台复验和最低/当前Host Node tuple；契约验证保证分片primary steps并集与本地完整Candidate相等。CI依次执行低成本preflight、唯一artifact producer，再并行运行macOS core、三个Windows高成本shard和Host Node matrix；`Candidate gate`在`if: always()`下只接受source SHA、registry identity、artifact digest和coverage全部current的closed evidence。每个逻辑shard只保留一个Actions evidence artifact；同一run重试用overwrite替换旧attempt，新SHA使旧evidence失效。Project `verification.yml`不登记这些CI内部job。
+GitHub候选拓扑是Product唯一verification registry的闭合投影，不是第二测试清单。Registry同时声明Candidate shard、runner OS、允许的平台复验和最低/当前Host Node tuple；契约验证保证分片primary steps并集与本地完整Candidate相等且拒绝空`node-test`集合。单个macOS bootstrap顺序形成独立preflight与artifact evidence并只构建一个tarball，再并行运行macOS core、Windows runtime artifact consumer、Windows Workspace lifecycle、Windows Task workflow、Windows fresh build和Host Node matrix；后三个Windows shard不声明或下载artifact。`Candidate gate`在`if: always()`下继续使用macOS与pinned Node、无需`npm ci`，只接受source SHA、registry identity、artifact digest和coverage全部current的closed evidence。每个逻辑shard只保留一个Actions evidence artifact；同一run重试用overwrite替换旧attempt，新SHA使旧evidence失效。Project `verification.yml`不登记这些CI内部job。
 
 高成本lifecycle verifier通过结构化stdout marker向外层runner报告内部phase timing。产品owned进程、Launcher、端口、Task Environment、资源协调和Workspace cleanup失败保持correctness failure；只有全部断言及owned cleanup完成后，Windows harness最外层临时根的`EPERM`、`EBUSY`或`ENOTEMPTY`占用可记录retained warning。未知清理错误仍失败。
 

@@ -10,6 +10,7 @@ import {
   readSharedCandidatePackage,
 } from './release/candidate-package.mjs';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
+import { resolveNodeTestFiles } from './test-files.mjs';
 
 export function workerBudgetEnvironment(step, executionProfile) {
   const budget = executionProfile?.limits?.innerConcurrency?.[step.id];
@@ -42,10 +43,13 @@ export function createVerificationExecutor(options) {
   const commandFor = (step) => {
     const executor = step.executor;
     if (executor.type === 'node') return { command: process.execPath, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
-    if (executor.type === 'node-test') return {
-      command: process.execPath,
-      args: ['--test', ...(executor.args ?? []), ...executor.files.map((file) => nodeTestFile(path.join(productRoot, file)))],
-    };
+    if (executor.type === 'node-test') {
+      const files = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
+      return {
+        command: process.execPath,
+        args: ['--test', ...(executor.args ?? []), ...files.map(nodeTestFile)],
+      };
+    }
     if (executor.type === 'npm') {
       const invocation = buildCommandInvocation(npmExecutable, executor.args ?? []);
       return { command: invocation.executable, args: invocation.args, shell: invocation.shell };
