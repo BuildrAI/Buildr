@@ -6,6 +6,7 @@ import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../local-app/http/server.mjs';
 import { registerLauncherInterface } from './launcher.mjs';
 import { taskRecordCommand } from './task-record.mjs';
+import { taskEntrySnapshotCommand } from './task-entry-snapshot.mjs';
 import { taskReviewCommand } from './task-review.mjs';
 import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
@@ -335,6 +336,19 @@ const COMMAND_ROUTES = [
     help: ["Usage: buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]"],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'accept',
     run: (r, c) => parentCoordinationCommand(r, 'accept', c.argv.slice(5)),
+  },
+  {
+    key: "task next",
+    surface: "agent-machine",
+    summary: "只读返回Formal Task当前最小identity、execution/writer route与唯一required或recommended next action。",
+    help: [
+      "Usage: buildr task next <task-id> [--execution-target <path>] [--profile] [--target <canonical-workspace>] [--json]",
+      "",
+      "按Task → Environment → Development的最早硬前置短路读取；不执行next、不写正式事实，也不展开完整下游lifecycle或capability graph。",
+      "--execution-target只核验matching Environment允许的执行根；--profile只返回本次调用可观察的wall-clock与owner read事实。"
+    ],
+    match: ({ domain, action }) => domain === 'task' && action === 'next',
+    run: (r, c) => taskEntrySnapshotCommand(r, c.argv.slice(4)),
   },
   {
     key: "task create",
@@ -984,11 +998,11 @@ const COMMAND_GROUPS = [
   {
     key: "task",
     surface: "primary",
-    summary: "Task Manager 只管理 canonical Workspace 中的 Task Record：创建、查看、明确更新、设置或清除 Parent Task、完成或放弃。",
+    summary: "Task Manager管理Task Record；task next另提供只读Formal Task compact入口。",
     help: [
-      "Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task <next|create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
       "",
-      "Task Manager 只管理 canonical Workspace 中的 Task Record：创建、查看、明确更新、设置或清除 Parent Task、完成或放弃。",
+      "Task Manager只管理canonical Workspace中的Task Record；task next是组合既有owner的只读compact projection。",
       "它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
       "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],

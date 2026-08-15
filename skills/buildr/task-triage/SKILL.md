@@ -45,6 +45,8 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 ## 3. 条件化交接
 
+已有或刚创建的active Formal Task优先运行`buildr task next <task-id> --target <canonical-workspace> --json`。它只读组合Task、Environment与Development当前最小事实：`required`表示必须先恢复的authority/identity安全前置，`recommended`只是默认推进建议，用户可以选择其他仍满足对应owner contract的合法动作。只读取Snapshot当前next返回的capability contract与selected provider；不要为发现未来阶段运行Doctor full或预读完整Review、Verification、Finish。Snapshot不自动执行、不替代专业owner写前重验。
+
 按 next executable action 渐进装配上下文：执行当前动作前读取相应 optional binding、contract、selected provider 与直接 authority，Verification、Completion、Finish 等下游阶段只在成为当前动作时再读取。该边界不允许跳过已触发 Skill、required Rule、provider contract、授权或 result evidence；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
 
 用户已经授权实现，且 active Task、matching ready Environment 与 Development `begin` 所需事实完整时，立即进入 proposal 或当前首个研发动作；不要为收集非当前阶段信息、预读下游 Skills 或建立额外进度 authority 延迟写入。

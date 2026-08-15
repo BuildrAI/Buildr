@@ -39,6 +39,7 @@ export function compactTaskDevelopmentOperationResult(result) {
     status: result.status,
     taskId: result.taskId,
     current: compactCurrent(result.development),
+    next: result.next,
     diagnostic: result.diagnostic,
     effects: result.effects,
     nextActions: result.nextActions,

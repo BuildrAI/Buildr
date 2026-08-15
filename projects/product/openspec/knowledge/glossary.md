@@ -171,6 +171,13 @@
 - 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
+## 任务入口快照（Task Entry Snapshot）
+
+- 定义：面向Agent启动或继续Formal Task的只读compact projection，按最早硬前置组合Task Record、matching Task Environment execution projection与保存的Task Development applicability，并返回一个typed next及其action-local capability/provider identity。
+- 适用范围：`buildr task next <task-id>`与`buildr.task-entry-snapshot/v1`；`required`表示不可安全绕过的authority/identity恢复前置，`recommended`表示用户可按实际情况调整的默认路径。
+- 避免混用：不是任务上下文（Task Context）、Context Window、完整lifecycle DAG、Task Overview、Receipt/Result、writer或第二套状态机；不自动执行next，也不把耗时/调用指标变成gate。
+- 来源：[Task Entry Snapshot specification](../specs/task-entry-snapshot/spec.md)
+
 ## 任务记录（Task Record）
 
 - 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、scope、Change、顶层状态、终态摘要与复盘来源 Task ID。

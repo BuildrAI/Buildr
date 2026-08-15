@@ -9,13 +9,15 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 ## 阶段化上下文与效率边界
 
+进入或继续已有Formal Task时，先消费`buildr task next <task-id> --target <canonical-workspace> --json`的compact snapshot。它返回matching Environment execution roots、retained controller、保存的Development applicability和一个typed next；默认不复制完整Receipt。`required`只覆盖authority/identity恢复，`recommended`不构成gate，用户选择其他合法动作时仍交给实际owner contract判断。只有诊断恢复、审查或明确请求完整evidence时才读取详细Result。
+
 只在某个专业动作成为 next executable action 时读取该动作的 capability contract、selected provider 与直接 authority：Planning Review、current knowledge、Formal Verification、Completion Review 和 Finish 的完整指引分别在进入对应阶段前装配，不在 proposal 前一次性预读整个生命周期。当前动作仍必须遵守已触发 Skill、required Rule、授权与 result evidence，按需读取不等于跳过门禁。
 
 首次修改 proposal、Skill、代码、测试或当前知识前，复用 triage 建立的一次有界 authority source map；若尚未形成，则从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立。该 map 保留在 Agent 工作上下文，不写入 Receipt 或其他产品 store；只有 scope、authority 或相关事实变化时才增量刷新。
 
 proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
 
-日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，可对内部driver显式使用`--compact`；它只是同一次Application result的response projection，不追加inspect、观察或写入。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。`nextActions`只帮助Agent定位候选下一步，不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
+日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，优先使用Task Entry Snapshot；直接调试Development owner时可对内部driver显式使用`--compact`。两者都只是response projection，不追加观察或写入。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。typed `next`与legacy `nextActions`来自同一判定；它们不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
 
 ## Parent Plan 与 Child Contribution
 

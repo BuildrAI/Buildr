@@ -31,6 +31,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `verification run` | `buildr.verification-execution/v1` |
 | `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
 | `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v4` |
+| `task next` | `buildr.task-entry-snapshot/v1` |
 | `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v1` |
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v1` / `buildr.contribution-handoff/v1` |
 | Buildr Web Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
@@ -58,6 +59,8 @@ Task Finish 的canonical v2 Result继续由SQLite current/terminal authority决�
 当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
 
 `buildr.task-record-result/v4` 覆盖六个 Task Record 动作，返回 closed v2 `record`、`recordDigest`、Parent/Child `taskRelations`与复盘来源/后续 `retrospectiveRelations`。`record.retrospectiveSourceTaskIds` 只保存 source Task ID；关系摘要补充当前标题和状态。完整 Application 列表仍使用 `buildr.task-record-list/v2`。
+
+`buildr.task-entry-snapshot/v1`是零写入Formal Task入口，只按Task → Environment → Development最早硬前置读取，返回最小identity/current facts、receipt证明的execution/writer route、直接blockers与唯一typed next。它不复制完整Receipt/Result或capability graph，不替代实际owner写前重验。`required`只表示当前authority/identity安全前置；`recommended`是可调整建议。显式`--profile`只增加本次wall-clock、owner read次数与失败/重复尝试事实，不持久化、不影响gate、Candidate或Task status。
 
 `buildr.parent-coordination-result/v1`覆盖Parent coordination五个action。根对象返回operation/status/taskId、`legacy|parent-plan` mode、Parent status/Plan/final acceptance/Planning Review、直接Children及其planned binding和matching Contribution Handoff、按Contribution派生的disposition、blockers、final acceptance readiness、effects/diagnostic/nextActions。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child状态和交付不复制进Parent Record/Plan，completed无matching handoff为`unproven`，最终验收不自动完成Parent。legacy Task返回absent diagnostic且不backfill。
 

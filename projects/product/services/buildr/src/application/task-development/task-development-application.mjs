@@ -351,27 +351,28 @@ export function registerTaskDevelopmentApplication(runtime) {
     return { path: persistence.file, receiptDigest: persistence.receiptDigest, receipt: persistence.receipt, applicability, observedAt: persistence.observedAt ?? null };
   }
 
-  function recommendedNextActions(persistence, applicability) {
-    if (!persistence || !applicability) return [];
+  function taskDevelopmentNext(persistence, applicability) {
+    if (!persistence || !applicability) return null;
     const receipt = persistence.receipt;
     const reasonCodes = new Set((applicability.reasons || []).map((item) => item.code));
-    if (applicability.taskContext === 'stale' || applicability.planning === 'stale') return ['刷新current Task context与完整planning snapshot；专业artifact仍由对应authority维护。'];
-    if (!applicability.gates?.planning || reasonCodes.has('planning-missing-or-stale') || reasonCodes.has('planning-changes-required')) return ['通过task-review完成current Planning Review，或记录明确的not-applicable/waived disposition。'];
-    if (applicability.contentTarget !== 'current') return ['完成内容、测试开发与Change收敛后调用observe建立stable Content Target。'];
-    if (applicability.policy !== 'current') return ['根据current Task Verification declarations记录verification policy。'];
-    if (!applicability.gates?.verification || reasonCodes.has('verification-missing-or-stale') || reasonCodes.has('required-facts-incomplete')) return ['通过task-verification形成与current Content Target和policy匹配的正式Result。'];
-    if (applicability.candidate !== 'current') return ['调用freeze形成或复用current Task Candidate；负向Verification仍需后续显式风险决定。'];
-    if (!applicability.gates?.completion || reasonCodes.has('completion-missing-or-stale')) return ['通过task-review形成current Completion Review，或记录明确的not-applicable/waived disposition。'];
-    if (reasonCodes.has('completion-changes-required') && !receipt.decision) return ['处理Completion Review findings，或在明确授权下记录与current Result绑定的风险决定。'];
-    if (!receipt.decision || receipt.decision.candidateIdentity !== receipt.candidate?.identity) return ['根据current gates记录proceed或blocked；风险接受必须绑定精确Result与明确授权。'];
-    if (receipt.decision.outcome === 'blocked') return ['处理blocked原因并更新对应专业事实；Buildr不会自动推进。'];
-    if (applicability.handoff !== 'current') return ['调用handoff形成immutable Finish handoff。'];
-    return ['current Finish handoff已就绪；等待明确交付授权后进入task-finish。'];
+    if (applicability.taskContext === 'stale' || applicability.planning === 'stale') return { mode: 'required', owner: 'task-development', action: 'planning', capability: { id: 'buildr.task-development', version: 2 }, summary: '刷新current Task context与完整planning snapshot；专业artifact仍由对应authority维护。' };
+    if (!applicability.gates?.planning || reasonCodes.has('planning-missing-or-stale') || reasonCodes.has('planning-changes-required')) return { mode: 'recommended', owner: 'task-review', action: 'planning-review', capability: { id: 'buildr.task-review', version: 1 }, summary: '通过task-review完成current Planning Review，或记录明确的not-applicable/waived disposition。' };
+    if (applicability.contentTarget !== 'current') return { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: '完成内容、测试开发与Change收敛后调用observe建立stable Content Target。' };
+    if (applicability.policy !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'policy', capability: { id: 'buildr.task-development', version: 2 }, summary: '根据current Task Verification declarations记录verification policy。' };
+    if (!applicability.gates?.verification || reasonCodes.has('verification-missing-or-stale') || reasonCodes.has('required-facts-incomplete')) return { mode: 'recommended', owner: 'task-verification', action: 'verify', capability: { id: 'buildr.task-verification', version: 3 }, summary: '通过task-verification形成与current Content Target和policy匹配的正式Result。' };
+    if (applicability.candidate !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'freeze', capability: { id: 'buildr.task-development', version: 2 }, summary: '调用freeze形成或复用current Task Candidate；负向Verification仍需后续显式风险决定。' };
+    if (!applicability.gates?.completion || reasonCodes.has('completion-missing-or-stale')) return { mode: 'recommended', owner: 'task-review', action: 'completion-review', capability: { id: 'buildr.task-review', version: 1 }, summary: '通过task-review形成current Completion Review，或记录明确的not-applicable/waived disposition。' };
+    if (reasonCodes.has('completion-changes-required') && !receipt.decision) return { mode: 'recommended', owner: 'agent', action: 'remediate-or-decide', capability: null, summary: '处理Completion Review findings，或在明确授权下记录与current Result绑定的风险决定。' };
+    if (!receipt.decision || receipt.decision.candidateIdentity !== receipt.candidate?.identity) return { mode: 'recommended', owner: 'task-development', action: 'decide', capability: { id: 'buildr.task-development', version: 2 }, summary: '根据current gates记录proceed或blocked；风险接受必须绑定精确Result与明确授权。' };
+    if (receipt.decision.outcome === 'blocked') return { mode: 'recommended', owner: 'agent', action: 'remediate-blocker', capability: null, summary: '处理blocked原因并更新对应专业事实；Buildr不会自动推进。' };
+    if (applicability.handoff !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'handoff', capability: { id: 'buildr.task-development', version: 2 }, summary: '调用handoff形成immutable Finish handoff。' };
+    return { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'current Finish handoff已就绪；等待明确交付授权后进入task-finish。' };
   }
 
   function result(operation, status, taskId, persistence, applicability, effects = [], diagnostic = null, nextActions = null) {
-    const guidance = nextActions ?? recommendedNextActions(persistence, applicability);
-    return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, diagnostic, effects, nextActions: guidance };
+    const next = taskDevelopmentNext(persistence, applicability);
+    const guidance = nextActions ?? (next ? [next.summary] : []);
+    return { schemaVersion: 'buildr.task-development-operation-result/v1', operation, status, taskId, development: persistence ? readModel(persistence, applicability) : null, next, diagnostic, effects, nextActions: guidance };
   }
 
   function applicabilityFromObserved(receipt, observed) {
@@ -388,11 +389,15 @@ export function registerTaskDevelopmentApplication(runtime) {
     };
   }
 
+  function inspectTaskDevelopmentCurrent(targetRoot, taskId) {
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
+    if (!persistence) return { ...result('inspect', 'missing', taskId, null, null, [], null, ['在首个正式研发动作时使用task-development begin建立current planning facts。']), next: { mode: 'required', owner: 'task-development', action: 'begin', capability: { id: 'buildr.task-development', version: 2 }, summary: '在首个正式研发动作时使用task-development begin建立current planning facts。' } };
+    return result('inspect', 'inspected', taskId, persistence, persistence.applicability);
+  }
+
   function inspectTaskDevelopment(targetRoot, taskId) {
     const inspectedTask = task(targetRoot, taskId);
-    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
-    if (!persistence) return result('inspect', 'missing', inspectedTask.taskId, null, null, [], null, ['在首个正式研发动作时使用task-development begin建立current planning facts。']);
-    return result('inspect', 'inspected', taskId, persistence, persistence.applicability);
+    return inspectTaskDevelopmentCurrent(targetRoot, inspectedTask.taskId);
   }
 
   function planningMutation(operation, targetRoot, taskId, input) {
@@ -657,6 +662,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   };
   Object.assign(runtime, {
     inspectTaskDevelopment: scoped(inspectTaskDevelopment),
+    inspectTaskDevelopmentCurrent: scoped(inspectTaskDevelopmentCurrent),
     beginTaskDevelopment: scoped(beginTaskDevelopment),
     recordTaskDevelopmentPlanning: scoped(recordTaskDevelopmentPlanning),
     observeTaskDevelopment: scoped(observeTaskDevelopment),

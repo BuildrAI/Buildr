@@ -199,6 +199,45 @@ export function capabilityBindingsForSkill(graph, skillId) {
   return graph.consumers.find((consumer) => consumer.consumer === skillId) || null;
 }
 
+function directCapabilityRoute(graph, capability, version) {
+  const contract = graph.contracts.find((item) => item.id === capability && item.version === version) || null;
+  const binding = graph.bindings.find((item) => item.capability === capability && item.version === version) || null;
+  const providers = graph.skills.filter((skill) => (skill.provides || []).some((item) => item.capability === capability && item.version === version));
+  const selected = binding ? providers.find((skill) => skill.id === binding.provider) || null : providers.length === 1 ? providers[0] : null;
+  let reason = null;
+  if (!contract) reason = 'contract_missing';
+  else if (binding && !selected) reason = 'invalid_binding';
+  else if (!binding && providers.length > 1) reason = 'ambiguous_provider';
+  else if (!selected) reason = 'missing_provider';
+  const providerReadiness = selected ? graph.consumers.find((consumer) => consumer.consumer === selected.id) || null : null;
+  if (!reason && providerReadiness?.readiness === 'blocked') reason = 'provider_not_ready';
+  return {
+    scope: graph.scope,
+    capability,
+    version,
+    readiness: reason ? 'blocked' : providerReadiness?.readiness || 'ready',
+    reason,
+    contract: contract ? { path: contract.contractPath, digest: `sha256-${contract.digest}` } : null,
+    binding: binding ? { scope: binding.scope, provider: binding.provider, provenance: binding.context } : null,
+    selectedProvider: selected ? { id: selected.id, scope: selected.declaredScope || graph.scope, runtimePath: selected.runtimePath || selected.id } : null,
+  };
+}
+
+export function resolveCapabilityRoute(organizationRoot, projectNames, capability, version, options = {}) {
+  const projects = [...new Set(projectNames || [])].sort((left, right) => left.localeCompare(right));
+  const graphs = projects.length
+    ? projects.map((name) => resolveSkillCapabilityGraph(organizationRoot, path.join(organizationRoot, 'projects', name), { runtime: options.runtime, scope: `projects/${name}` }))
+    : [resolveSkillCapabilityGraph(organizationRoot, null, { runtime: options.runtime })];
+  const routes = graphs.map((graph) => directCapabilityRoute(graph, capability, version));
+  const blocked = routes.find((route) => route.readiness === 'blocked');
+  if (blocked) return blocked;
+  const providerIdentities = new Set(routes.map((route) => `${route.selectedProvider?.id || ''}:${route.selectedProvider?.runtimePath || ''}`));
+  if (providerIdentities.size > 1) return {
+    scope: 'cross-project', capability, version, readiness: 'blocked', reason: 'cross_project_binding_ambiguous', contract: routes[0]?.contract || null, binding: null, selectedProvider: null,
+  };
+  return routes[0];
+}
+
 function capabilityGraphsForWorkspace(organizationRoot, runtime, changedScope = '.') {
   if (changedScope !== '.') {
     const projectRoot = path.join(organizationRoot, changedScope);
