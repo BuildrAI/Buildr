@@ -11,10 +11,11 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 
 1. 明确正式 Task ID 与 canonical Workspace。
 2. 用户排除 push、install 或 cleanup 而改变交付语义时停止。
-3. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
-4. 根据最终交付内容与Workspace、Project、Service、repository约定形成完整commit message。subject必须描述内容，优先使用简洁Conventional Commits；Task ID由产品写入trailer，不得使用“交付 + Task ID”占位主题。调用前向用户展示subject，正文存在时一并展示。
-5. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
-6. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。仅工作区Task也必须先有current Candidate、Completion Review、proceed decision与Development handoff；Finish只消费handoff，不解释workspace gap或重新接受风险。
+3. 轻量确认任务分支贡献已提交、本机主工作区已对齐目标远端。未提交或落后时先说明并等待处理或明确继续；不得做成新的入口缺口码。
+4. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
+5. 根据最终交付内容与Workspace、Project、Service、repository约定形成完整commit message。subject必须描述内容，优先使用简洁Conventional Commits；Task ID由产品写入trailer，不得使用“交付 + Task ID”占位主题。调用前向用户展示subject，正文存在时一并展示。
+6. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
+7. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。仅工作区Task也必须先有current Candidate、Completion Review、proceed decision与Development handoff；Finish只消费handoff，不解释workspace gap或重新接受风险。
    - Child承担Parent Contribution时，handoff还必须包含与current Parent Plan和planned binding一致的Contribution Handoff。
    - Parent采用Parent Plan时，必须已记录current plan identity的显式最终集成验收；Child全部完成本身不满足该条件。
 

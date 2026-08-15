@@ -8,7 +8,7 @@
 - 明确只创建或维护 OpenSpec artifacts、规则、Skills、文档或模板时，也使用 Task Environment；它可以选择共享执行根，不必创建 Git worktree。任务后来升级为实现时由同一 Environment `prepare` 恢复，不另建第二份 artifacts。
 - 无法判断是否会进入实现时，先澄清执行范围，不得先创建 artifacts 再决定位置。
 
-取得ready Environment后、写入首个Change artifact前，调用selected`buildr.task-development/v2`provider的`begin`建立研发回执；此时Content Target、policy、Candidate与专业Result保持缺失。每个proposal/design/specs/tasks current集合形成或改变后调用`planning`，只登记OpenSpec authority、相对artifact reference、content identity与disposition，不复制正文。若当前Task不存在该节点则不造占位；用户明确跳过时记录waiver source。
+取得ready Environment后，若本次要创建OpenSpec变更，固定顺序为：先`openspec new change`形成可解析脚手架，再`task update --add-change`绑到Task Record，再调用selected`buildr.task-development/v2`provider的`begin`（disposition覆盖任务上全部变更），最后才写入proposal/design/specs/tasks。不得在脚手架不存在时`add-change`，也不得对空变更列表`begin`后再绑定即将写入的变更。无变更的code-only任务仍可在首个实现前`begin`空列表。`begin`时Content Target、policy、Candidate与专业Result保持缺失。每个proposal/design/specs/tasks current集合形成或改变后调用`planning`，只登记OpenSpec authority、相对artifact reference、content identity与disposition，不复制正文。若当前Task不存在该节点则不造占位；用户明确跳过时记录waiver source。若事后绑定变更导致任务上下文过期，必须重新`begin`或`planning`，不得沿用过期研发回执。
 
 完整planning artifacts达到apply-ready后，使用Environment声明的Node与Buildr Service execution root调用`task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>`。只有`resolved`时才用返回的`target.identity`和全部`planningNodes`刷新Development planning并进入Planning Review；`blocked`时停止，禁止用文件路径、raw digest、mtime、checkbox progress、Git ref或旧Review target猜测。
 
