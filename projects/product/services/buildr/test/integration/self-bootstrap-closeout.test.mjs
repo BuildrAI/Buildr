@@ -171,6 +171,25 @@ function cleanupPendingResult(root, baseRef, runId, taskId = `task-${runId}`, ov
   });
 }
 
+function undeliveredBlockedResult(root, runId, taskId = `task-${runId}`, overrides = {}) {
+  const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
+  const carrierIdentity = `sha256-carrier-${runId}`;
+  return finishResult(root, 'a'.repeat(40), ['projects/product/services/buildr/src/example.mjs'], {
+    runId,
+    status: 'blocked',
+    identity: {
+      ...finishResult(root, 'a'.repeat(40), []).identity,
+      task: taskId,
+    },
+    primaryFailure: { phase: 'deliver', operation: 'push' },
+    carrier: { identity: carrierIdentity, root: carrierRoot, changedPaths: ['projects/product/services/buildr/src/example.mjs'] },
+    delivery: { status: 'blocked', remoteAfterRef: null, finalRemoteRef: null },
+    completion: null,
+    resume: { phase: 'deliver', token: `sha256-resume-${runId}`, carrierIdentity },
+    ...overrides,
+  });
+}
+
 function createCarrier(root, runId = 'closeout-run') {
   const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
   fs.mkdirSync(carrierRoot, { recursive: true });
@@ -225,6 +244,12 @@ function executor(root, options = {}) {
     }
     if (executable === process.execPath && args[0] === productScript) {
       const productArgs = args.slice(1);
+      if (productArgs[0] === 'task' && productArgs[1] === 'inspect') {
+        const inspectedTask = productArgs[2];
+        if (options.taskInspectionFailures?.includes(inspectedTask)) return { status: 1, stdout: '', stderr: `task inspection failed: ${inspectedTask}` };
+        const inspection = options.taskInspections?.[inspectedTask] ?? { record: { status: options.defaultTaskStatus || 'active' } };
+        return { status: 0, stdout: JSON.stringify(inspection), stderr: '' };
+      }
       if (productArgs[0] === 'task' && productArgs[1] === 'finish' && productArgs[2] === 'inspect') {
         const inspectedRun = productArgs[productArgs.indexOf('--run') + 1];
         if (options.finishInspectionFailures?.includes(inspectedRun)) return { status: 1, stdout: '', stderr: `inspection failed: ${inspectedRun}` };
@@ -1125,7 +1150,10 @@ test('multi-run preflight按owner顺序返回cleanup plan并在predecessor消失
   const retryStep = blocked.recoveryPlan.orderedSteps.at(-1);
   assert.equal(retryStep.authorization.required, false);
   assert.equal(retryStep.command.args[retryStep.command.args.indexOf('--retry-after-foreign-clear') + 1], 'true');
-  assert.ok(invocations.every((item) => item.args[1] === 'task' && item.args[2] === 'finish' && item.args[3] === 'inspect'));
+  assert.ok(invocations.every((item) => item.args[1] === 'task' && (
+    (item.args[2] === 'finish' && item.args[3] === 'inspect')
+    || item.args[2] === 'inspect'
+  )));
   assert.ok(blocked.phases.every((item) => ['blocked', 'not-applicable'].includes(item.status)));
 
   fs.rmSync(predecessorA.carrier.root, { recursive: true });
@@ -1270,6 +1298,88 @@ test('multi-run carrier inventory拒绝symlink并把identity漂移标为unprovab
       const observation = result.recoveryPlan.observations.find((item) => item.runId === foreign.runId);
       assert.equal(observation.classification, 'unprovable');
       assert.equal(observation.diagnostic.code, scenario[2]);
+    });
+  }
+});
+
+test('abandoned未交付foreign carrier生成owner occupancy释放命令且协调器不删除', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  const predecessorCleanup = cleanupPendingResult(root, baseRef, 'run-cleanup', 'task-cleanup');
+  const predecessorOccupancy = undeliveredBlockedResult(root, 'run-occupancy', 'task-occupancy');
+  createCarrier(root, current.runId);
+  createCarrier(root, predecessorCleanup.runId);
+  const occupancyRoot = createCarrier(root, predecessorOccupancy.runId);
+  const result = runSelfBootstrapCloseoutCommand({
+    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+    actualNodeExecutable: process.execPath,
+    execute: executor(root, {
+      finishInspections: {
+        [current.runId]: current,
+        [predecessorCleanup.runId]: predecessorCleanup,
+        [predecessorOccupancy.runId]: predecessorOccupancy,
+      },
+      taskInspections: {
+        'task-cleanup': { record: { status: 'active' } },
+        'task-occupancy': { record: { status: 'abandoned' } },
+      },
+    }),
+    environment,
+  });
+  const occupancy = result.recoveryPlan.observations.find((item) => item.runId === predecessorOccupancy.runId);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.recoveryPlan.status, 'actionable');
+  assert.equal(occupancy.classification, 'occupancy_release');
+  assert.deepEqual(result.recoveryPlan.orderedSteps.map((step) => `${step.action}:${step.owner.runId}`), [
+    'resume-owner-cleanup:run-cleanup',
+    'resume-owner-release-occupancy:run-occupancy',
+    `retry-current-closeout:${current.runId}`,
+  ]);
+  const occupancyStep = result.recoveryPlan.orderedSteps.find((step) => step.action === 'resume-owner-release-occupancy');
+  assert.equal(occupancyStep.command.args.includes('--release-occupancy'), true);
+  assert.equal(occupancyStep.command.args[occupancyStep.command.args.indexOf('--task') + 1], 'task-occupancy');
+  assert.equal(occupancyStep.command.args[occupancyStep.command.args.indexOf('--run') + 1], 'run-occupancy');
+  assert.equal(occupancyStep.command.args.includes('--resume'), false);
+  assert.deepEqual(occupancyStep.expectedEffects, ['delete-owned-finish-carrier']);
+  assert.deepEqual(result.effects, []);
+  assert.equal(fs.existsSync(occupancyRoot), true);
+});
+
+test('active或已交付foreign carrier不得给出occupancy释放命令', async (t) => {
+  for (const scenario of [
+    {
+      name: 'active-undelivered',
+      taskStatus: 'active',
+      makeForeign(root) { return undeliveredBlockedResult(root, 'foreign-active', 'foreign-active-task'); },
+    },
+    {
+      name: 'abandoned-delivered',
+      taskStatus: 'abandoned',
+      makeForeign(root, baseRef) {
+        return undeliveredBlockedResult(root, 'foreign-delivered', 'foreign-delivered-task', {
+          delivery: { status: 'delivered', remoteAfterRef: baseRef, finalRemoteRef: baseRef },
+        });
+      },
+    },
+  ]) {
+    await t.test(scenario.name, (t) => {
+      const { root, baseRef, environment } = fixture(t);
+      const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+      const foreign = scenario.makeForeign(root, baseRef);
+      createCarrier(root, current.runId);
+      createCarrier(root, foreign.runId);
+      const result = runSelfBootstrapCloseoutCommand({
+        args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+        actualNodeExecutable: process.execPath,
+        execute: executor(root, {
+          finishInspections: { [current.runId]: current, [foreign.runId]: foreign },
+          taskInspections: { [foreign.identity.task]: { record: { status: scenario.taskStatus } } },
+        }),
+        environment,
+      });
+      const observation = result.recoveryPlan.observations.find((item) => item.runId === foreign.runId);
+      assert.equal(observation.classification, 'manual-owner-review');
+      assert.equal(result.recoveryPlan.orderedSteps.some((step) => step.action === 'resume-owner-release-occupancy'), false);
     });
   }
 });

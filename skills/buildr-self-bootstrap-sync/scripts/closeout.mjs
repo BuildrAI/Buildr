@@ -384,6 +384,20 @@ function validateForeignFinishCarrier(entry, finishResult, workspaceRoot) {
   return null;
 }
 
+function successfulDelivery(finishResult) {
+  return finishResult?.delivery?.status === 'delivered'
+    || Boolean(finishResult?.delivery?.remoteAfterRef)
+    || Boolean(finishResult?.delivery?.finalRemoteRef)
+    || Boolean(finishResult?.completion?.finalRemoteRef);
+}
+
+function occupancyReleasable(finishResult, taskRecord) {
+  return taskRecord?.status === 'abandoned'
+    && Boolean(finishResult?.identity?.task)
+    && finishResult?.occupancy?.status !== 'released'
+    && !successfulDelivery(finishResult);
+}
+
 function ownerFacts(finishResult, runId) {
   return {
     kind: 'task-finish-owner',
@@ -418,36 +432,55 @@ export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEn
       return { runId: entry.runId, path: entry.path, classification: 'unprovable', owner: null, status: finishResult?.status || null, diagnostic };
     }
     const cleanupPending = finishResult.status === 'cleanup_pending' && Boolean(finishResult.identity?.task);
+    const occupancyRelease = !cleanupPending && occupancyReleasable(finishResult, entry.taskRecord);
+    const classification = cleanupPending ? 'cleanup_pending' : occupancyRelease ? 'occupancy_release' : 'manual-owner-review';
     return {
       runId: entry.runId,
       path: entry.path,
-      classification: cleanupPending ? 'cleanup_pending' : 'manual-owner-review',
+      classification,
       owner: ownerFacts(finishResult, entry.runId),
       status: finishResult.status || null,
-      diagnostic: cleanupPending ? null : carrierObservationDiagnostic('self-bootstrap-closeout.foreign-state-unsupported', 'Foreign Finish run不是可确定性恢复的cleanup_pending状态。', {
+      diagnostic: cleanupPending || occupancyRelease ? null : carrierObservationDiagnostic('self-bootstrap-closeout.foreign-state-unsupported', 'Foreign Finish run不是可确定性恢复的cleanup_pending状态。', {
         status: finishResult.status || null,
         failurePhase: finishResult.primaryFailure?.phase || null,
         resumePhase: finishResult.resume?.phase || null,
+        taskStatus: entry.taskRecord?.status || null,
       }),
       resumeToken: cleanupPending ? finishResult.resume.token : null,
     };
   });
   const foreign = observations.filter((item) => item.runId !== currentRunId || item.classification !== 'current');
   if (!foreign.length) return null;
-  const actionable = foreign.filter((item) => item.classification === 'cleanup_pending')
+  const cleanupPending = foreign.filter((item) => item.classification === 'cleanup_pending')
     .sort((left, right) => `${left.owner.taskId}\0${left.runId}`.localeCompare(`${right.owner.taskId}\0${right.runId}`));
-  const status = foreign.every((item) => item.classification === 'cleanup_pending') ? 'actionable' : 'blocked';
-  const orderedSteps = actionable.map((item, index) => ({
-    order: index + 1,
-    action: 'resume-owner-cleanup',
-    owner: item.owner,
-    authorization: { required: true, scope: `仅恢复Finish run ${item.runId}的owner cleanup` },
-    command: {
-      executable: nodeExecutable,
-      args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--resume', item.resumeToken, '--target', workspaceRoot, '--detail', 'full', '--json'],
-    },
-    expectedEffects: ['cleanup-owned-task-environment', 'delete-owned-finish-carrier', 'complete-owning-task'],
-  }));
+  const occupancyRelease = foreign.filter((item) => item.classification === 'occupancy_release')
+    .sort((left, right) => `${left.owner.taskId}\0${left.runId}`.localeCompare(`${right.owner.taskId}\0${right.runId}`));
+  const actionable = [...cleanupPending, ...occupancyRelease];
+  const status = foreign.every((item) => ['cleanup_pending', 'occupancy_release'].includes(item.classification)) ? 'actionable' : 'blocked';
+  const orderedSteps = [
+    ...cleanupPending.map((item, index) => ({
+      order: index + 1,
+      action: 'resume-owner-cleanup',
+      owner: item.owner,
+      authorization: { required: true, scope: `仅恢复Finish run ${item.runId}的owner cleanup` },
+      command: {
+        executable: nodeExecutable,
+        args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--resume', item.resumeToken, '--target', workspaceRoot, '--detail', 'full', '--json'],
+      },
+      expectedEffects: ['cleanup-owned-task-environment', 'delete-owned-finish-carrier', 'complete-owning-task'],
+    })),
+    ...occupancyRelease.map((item, index) => ({
+      order: cleanupPending.length + index + 1,
+      action: 'resume-owner-release-occupancy',
+      owner: item.owner,
+      authorization: { required: true, scope: `仅释放Finish run ${item.runId}的abandoned未交付隔离载体占用` },
+      command: {
+        executable: nodeExecutable,
+        args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--release-occupancy', '--target', workspaceRoot, '--detail', 'full', '--json'],
+      },
+      expectedEffects: ['delete-owned-finish-carrier'],
+    })),
+  ];
   orderedSteps.push({
     order: orderedSteps.length + 1,
     action: 'retry-current-closeout',
@@ -1122,7 +1155,19 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
         }),
       };
     }
-    try { return { ...entry, finishResult: JSON.parse(foreignInspection.stdout) }; } catch (error) {
+    try {
+      const finishResult = JSON.parse(foreignInspection.stdout);
+      const taskId = finishResult?.identity?.task || null;
+      if (!taskId) return { ...entry, finishResult };
+      const taskInspection = execute(nodeExecutable, [cli, 'task', 'inspect', taskId, '--target', root, '--json'], { cwd: root });
+      if (taskInspection.status !== 0) return { ...entry, finishResult, taskRecord: null };
+      try {
+        const inspected = JSON.parse(taskInspection.stdout);
+        return { ...entry, finishResult, taskRecord: inspected?.record || null };
+      } catch {
+        return { ...entry, finishResult, taskRecord: null };
+      }
+    } catch (error) {
       return {
         ...entry,
         inspectDiagnostic: carrierObservationDiagnostic('self-bootstrap-closeout.foreign-finish-inspect-result-invalid', 'Product CLI没有返回合法foreign Finish Result JSON。', { parseError: error.message }),

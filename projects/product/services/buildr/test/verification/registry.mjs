@@ -71,7 +71,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'openspec-strict': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'All OpenSpec artifacts pass upstream strict validation.', TEST_ENVIRONMENTS.cliReadOnly),
   'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', 5000, 'Runtime adapter declarations and isolated filesystem projections satisfy their contract.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'runtime-skill-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Changed packaged Skills bind their source identity and complete projected inventory through every supported runtime adapter.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release branch convergence behaves correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release contract cold-start and branch convergence behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
   'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 40000, 'Concurrent Task workflows satisfy the declared acceptance contract.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'One frozen application payload produces the single npm candidate tarball consumed by later verification.', TEST_ENVIRONMENTS.isolatedGitCli),
   'application-payload-release': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 30000, 'The frozen application payload is deterministic, complete, host-Node compatible, and serves Buildr Web only on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -210,7 +210,7 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/release-awareness.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
   'system-local-app-http': Object.freeze(['src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
   'system-app-process': Object.freeze(['src/interfaces/local-app/runtime/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
-  'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
+  'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-occupancy-release.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-task-finish-cli': Object.freeze(['src/application/task-finish/task-finish-result-projection.mjs', 'src/application/json-contracts.mjs', 'src/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-fresh-build': Object.freeze(['src/application/task-environment/**', 'src/domain/task-environment/**', 'preparation.yml', 'services/buildr-web/package.json', 'services/buildr-web/package-lock.json', 'services/buildr-web/vite.config.*', 'services/buildr-web/tsconfig*.json', 'test/helpers/clean-product-source.mjs']),
 });
@@ -393,6 +393,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/execution-record.mjs',
     'src/application/task-finish/task-finish-application.mjs',
     'src/application/task-finish/task-finish-bootstrap-recovery.mjs',
+    'src/application/task-finish/task-finish-occupancy-release.mjs',
     'src/application/task-finish/task-finish-delivery-commit.mjs',
     'src/application/task-finish/task-finish-entry-readiness.mjs',
     'src/application/task-finish/task-finish-result-projection.mjs',
@@ -403,9 +404,11 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-finish-retained-activation.test.mjs',
     'test/integration/task-finish-retained-cleanup.test.mjs',
     'test/integration/task-finish-task-contribution.test.mjs',
+    'test/integration/task-finish-occupancy-release.test.mjs',
   ], [
     'src/application/task-finish/git-task-contribution.mjs',
     'src/application/task-finish/task-finish-activation.mjs',
+    'src/application/task-finish/task-finish-occupancy-release.mjs',
     'src/application/task-finish/task-finish-delivery-commit.mjs',
     'src/application/task-finish/task-finish-delivery-remote.mjs',
     'src/application/task-finish/task-finish-delivery-target.mjs',
@@ -493,6 +496,7 @@ export const verificationSteps = Object.freeze([
     'scripts/release/release-authority-probe-runner.mjs',
     'scripts/release/release-contract.mjs',
     'scripts/release/trusted-publish.mjs',
+    'src/domain/release-version.mjs',
     'src/infrastructure/runtime/render-claude-code.mjs',
     'test/verification/candidate.mjs',
     'test/verification/candidate-ci.mjs',
@@ -568,8 +572,9 @@ export const verificationSteps = Object.freeze([
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], inputs: ['openspec/**'] }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.mjs' }, profiles: ['candidate'], groups: ['runtime'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/doctor/runtime-diagnostics.mjs', 'test/verification/runtime/adapter-contract.mjs', 'package/targets/runtime/**', 'docs/agent-runtime-adapters.md'] }),
 
-  step({ id: 'integration-candidate-release', name: 'Candidate integration: release Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
-    'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-authority.mjs', 'scripts/release/release-convergence.mjs',
+  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
+    'test/integration-candidate-release/**', 'scripts/release/bridge-main-to-dev.mjs', 'scripts/release/release-authority.mjs', 'scripts/release/release-contract.mjs',
+    'scripts/release/release-convergence.mjs', 'scripts/release/release-files.mjs', 'scripts/release/release-notes.mjs', 'src/domain/release-version.mjs',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], groups: ['windows-npm-preflight'], inputs: [
     'test/verification/concurrency/**', 'test/helpers/child-process-supervisor.mjs', 'test/helpers/clean-product-source.mjs',

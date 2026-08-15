@@ -482,10 +482,14 @@ export function finishResult(run, clock = Date.now) {
     phases: run.phases.map(publicPhase),
     primaryFailure: clone(run.primaryFailure),
     resume: clone(run.resume),
-    nextWorkflow: run.status === 'failed'
+    nextWorkflow: run.occupancy?.status === 'released'
+      ? null
+      : run.status === 'failed'
       ? (run.primaryFailure?.failureClass === 'upstream-candidate-defect' ? 'task-development' : 'task-finish-investigation')
       : null,
-    nextAction: ['blocked', 'cleanup_pending'].includes(run.status)
+    nextAction: run.occupancy?.status === 'released'
+      ? null
+      : ['blocked', 'cleanup_pending'].includes(run.status)
       ? (retainedOnlyBootstrapResume
         ? 'repeat-task-finish-run-with-bootstrap-recovery-and-resume-token'
         : run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
@@ -496,6 +500,7 @@ export function finishResult(run, clock = Date.now) {
     equivalence: clone(run.equivalence),
     delivery: clone(run.delivery),
     completion: clone(run.completion),
+    occupancy: run.occupancy ? clone(run.occupancy) : null,
     bootstrapRecovery: run.bootstrapRecovery ? clone(run.bootstrapRecovery) : null,
     metrics: {
       canonicalCliInvocations: run.invocations,

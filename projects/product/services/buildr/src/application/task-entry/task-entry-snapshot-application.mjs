@@ -114,7 +114,7 @@ export function registerTaskEntrySnapshotApplication(runtime) {
         if (!execution.allowedExecutionRoots.includes(actual)) return finish({ status: 'blocked', task: taskSummary(inspected), environment: environmentSummary(execution), development: null, blockers: [{ axis: 'execution-target', owner: 'task-environment', code: 'task_entry_execution_target_mismatch' }], next: requiredNext('task-environment', 'inspect', { id: 'buildr.task-environment', version: 1 }, '使用matching Environment Receipt返回的execution root并重新读取。'), diagnostic: { code: 'task_entry_execution_target_mismatch', owner: 'task-environment', message: '显式execution target不属于matching Task Environment。', details: { actual, allowed: execution.allowedExecutionRoots } }, effects: [] });
       }
 
-      const developmentResult = measured('task-development', () => runtime.inspectTaskDevelopmentCurrent(targetRoot, taskId));
+      const developmentResult = measured('task-development', () => runtime.inspectTaskDevelopmentCurrent(targetRoot, taskId, { inspectedTask: inspected }));
       const compact = compactTaskDevelopmentOperationResult(developmentResult);
       development = compact.current;
       let next = developmentResult.next;

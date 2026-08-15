@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+## 0.1.0-rc.14 - 2026-08-16
+
+- 修复发布契约在干净 GitHub runner 安装依赖前的冷启动：版本解析迁入无外部依赖的 Domain 模块，避免 `yaml` 尚未安装时在任何公开写入前确定性失败。
+- Formal Task Finish 在放弃尚未交付的 run 时释放其隔离载体占用，并在推荐 Finish 前复核关联 Change 已归档，避免陈旧状态阻塞后续收尾。
+- 明确协作者推送后的处理边界：远端更新没有本地 Task 属于普通 Workspace update；更新后以 Doctor 判断并执行 workspace sync，只有持有 matching Finish Result 的自举收尾才进入 self-bootstrap runner。
+
 ## 0.1.0-rc.13 - 2026-08-15
 
 - 增加稳定版与候选版发布感知：CLI、Doctor、Buildr Web 和内置 Skill 共享安装来源、用户选择的发布轨道及 npm `latest`/`next` 状态；npm 安装可显式选择 stable 或 candidate，development checkout 保持独立且不改写机器默认 `buildr`。

@@ -52,6 +52,39 @@ function inputText(value, field) {
   return value.trim();
 }
 
+function workingCopyConvergence(reference) {
+  const availability = reference?.availability || 'unavailable';
+  const lifecycle = reference?.workingCopy?.change?.lifecycle || null;
+  return { availability, lifecycle, proven: availability === 'available' && lifecycle === 'archived' };
+}
+
+function unprovenConvergedChanges(inspected, receipt) {
+  const references = new Map((inspected.changeReferences || []).map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
+  return (receipt.taskContext?.changes || [])
+    .filter((item) => item.disposition === 'converged')
+    .flatMap((item) => {
+      const proof = workingCopyConvergence(references.get(`${item.project}/${item.change}`));
+      return proof.proven ? [] : [{ project: item.project, change: item.change, availability: proof.availability, lifecycle: proof.lifecycle }];
+    });
+}
+
+function overlayInspectApplicability(persistence, inspected) {
+  const unproven = unprovenConvergedChanges(inspected, persistence.receipt);
+  if (!unproven.length) return persistence.applicability;
+  const applicability = persistence.applicability;
+  return {
+    ...applicability,
+    status: applicability.status === 'planning' ? 'planning' : 'developing',
+    taskContext: 'stale',
+    candidate: applicability.candidate === 'current' ? 'stale' : applicability.candidate,
+    handoff: applicability.handoff === 'current' ? 'stale' : applicability.handoff,
+    reasons: [
+      ...(applicability.reasons || []).filter((item) => item.code !== 'change-lifecycle-unproven'),
+      { axis: 'task-context', code: 'change-lifecycle-unproven', unproven },
+    ],
+  };
+}
+
 export function deriveFormalVerificationReadiness(persistence, applicability) {
   if (!persistence || !applicability) return null;
   const receipt = persistence.receipt;
@@ -129,15 +162,13 @@ export function registerTaskDevelopmentApplication(runtime) {
     const references = new Map((inspected.changeReferences || []).map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
     for (const [key, disposition] of input) {
       if (disposition.disposition !== 'converged') continue;
-      const reference = references.get(key);
-      const availability = reference?.availability || 'unavailable';
-      const lifecycle = reference?.workingCopy?.change?.lifecycle || null;
-      if (availability !== 'available' || lifecycle !== 'archived') {
+      const proof = workingCopyConvergence(references.get(key));
+      if (!proof.proven) {
         throw taskDevelopmentError(
           'task_development_change_not_converged',
           `Change尚未由当前Task working copy证明已收敛：${key}。`,
           409,
-          { project: disposition.project, change: disposition.change, availability, lifecycle },
+          { project: disposition.project, change: disposition.change, availability: proof.availability, lifecycle: proof.lifecycle },
           '先通过关联Change的专业流程完成deterministic convergence/archive，再重试Task Development。',
         );
       }
@@ -399,6 +430,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     if (!persistence || !applicability) return null;
     const receipt = persistence.receipt;
     const reasonCodes = new Set((applicability.reasons || []).map((item) => item.code));
+    if (reasonCodes.has('change-lifecycle-unproven')) return { mode: 'required', owner: 'task-development', action: 'planning', capability: { id: 'buildr.task-development', version: 2 }, summary: '当前 working copy 无法证明关联 Change 已归档；先恢复或 converge/archive，再刷新 Development。' };
     if (applicability.taskContext === 'stale' || applicability.planning === 'stale') return { mode: 'required', owner: 'task-development', action: 'planning', capability: { id: 'buildr.task-development', version: 2 }, summary: '刷新current Task context与完整planning snapshot；专业artifact仍由对应authority维护。' };
     if (!applicability.gates?.planning || reasonCodes.has('planning-missing-or-stale') || reasonCodes.has('planning-changes-required')) return { mode: 'recommended', owner: 'task-review', action: 'planning-review', capability: { id: 'buildr.task-review', version: 1 }, summary: '通过task-review完成current Planning Review，或记录明确的not-applicable/waived disposition。' };
     if (applicability.contentTarget !== 'current') return { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: '完成内容、测试开发与Change收敛后调用observe建立stable Content Target。' };
@@ -436,15 +468,16 @@ export function registerTaskDevelopmentApplication(runtime) {
     };
   }
 
-  function inspectTaskDevelopmentCurrent(targetRoot, taskId) {
+  function inspectTaskDevelopmentCurrent(targetRoot, taskId, options = {}) {
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: true });
     if (!persistence) return { ...result('inspect', 'missing', taskId, null, null, [], null, ['在首个正式研发动作时使用task-development begin建立current planning facts。']), next: { mode: 'required', owner: 'task-development', action: 'begin', capability: { id: 'buildr.task-development', version: 2 }, summary: '在首个正式研发动作时使用task-development begin建立current planning facts。' } };
-    return result('inspect', 'inspected', taskId, persistence, persistence.applicability);
+    const inspectedTask = options.inspectedTask || task(targetRoot, taskId);
+    return result('inspect', 'inspected', taskId, persistence, overlayInspectApplicability(persistence, inspectedTask));
   }
 
   function inspectTaskDevelopment(targetRoot, taskId) {
     const inspectedTask = task(targetRoot, taskId);
-    return inspectTaskDevelopmentCurrent(targetRoot, inspectedTask.taskId);
+    return inspectTaskDevelopmentCurrent(targetRoot, inspectedTask.taskId, { inspectedTask });
   }
 
   function planningMutation(operation, targetRoot, taskId, input) {

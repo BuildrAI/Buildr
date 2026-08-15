@@ -76,8 +76,10 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 2. 读取 optional `buildr.git-operations/v1` binding；在本 create 分支把 ready selected provider 作为 required。先为全部 repositories 逐一选择独立 `fetch` operation，明确 `origin` 与 `dev`，消费每个 Result。任一 fetch blocked 时不执行尚未开始的 rebase，不创建 Task，并报告全部已发生的 remote-ref effects。
 3. 全部 fetch 成功后重新核验 `dev`、`origin/dev` 与 clean 状态，再按同一顺序为每个 repository 明确选择 `rebase` operation，将本地 `dev` rebase 到本次观察的 `origin/dev`。本地已对齐、仅落后或含未 push 且未共享 commit 都使用同一 operation；provider 不自行选择 merge 或 push。
 4. rebase 冲突时，consumer 明确授权 provider 只在 pre-state 已证明 clean 时执行有界 `rebase --abort`。只有 branch、HEAD、index 与 working tree 精确恢复到 pre-rebase facts 才记为 recovered；无论恢复是否成功，本次 Task create 都是 `blocked`。abort 失败或恢复不可证明时保留现场。已经在其他 repository 成功的 fetch/rebase 不反向回滚，必须作为部分 effects 报告。
-5. 任一 rebase 返回 `treeChanged: true` 时，按 required Core 对相应 Buildr Workspace 执行当前 Agent 的 workspace transition check；Doctor 或必要收敛未 ready 时不创建 Task。
+5. 任一 rebase 返回 `treeChanged: true` 时，按 required Core 对相应 Buildr Workspace 执行当前 Agent 的 workspace transition check；Doctor 或必要收敛未 ready 时不创建 Task。若tree前进来自`origin/dev`上的协作者提交且当前会话不存在绑定同一Workspace、Task、run与delivered ref的matching Formal Finish Result，只能把它归类为普通Workspace update：本地没有协作者Task是正常事实，不得因此查找、恢复或启动`buildr-self-bootstrap-sync`。Doctor仅指向当前Agent managed workspace/runtime projection stale时，将现有用户授权或一次明确sync确认交给产品入口Buildr Skill执行`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；存在非sync blocker时按对应authority停止或处理，不用一次sync掩盖。
 6. 只有完整 repository set 的 fetch、rebase、恢复检查与适用 transition check 全部成功，才调用 selected `buildr.task-record/v2` provider 的 active `create` 或 `activate`。任一门禁blocked时todo保持不变。Task Record Application、Buildr Web 与 Task Environment 不获得任何Git mutation或本门禁状态authority。
+
+上述Workspace update分类只组合本次Git Result、post-transition Doctor与当前会话已有的matching Formal Finish Result，不按commit author推断ownership，也不建立持久状态。只有真实matching Finish Result才能把同一run交给self-bootstrap；普通workspace sync不创建Task、Environment、Verification、Candidate、Finish Result或self-bootstrap evidence。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
