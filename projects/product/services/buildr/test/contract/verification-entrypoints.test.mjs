@@ -176,20 +176,34 @@ test('candidate verification retains necessary Candidate facts without Browser a
   for (const stage of [
     'fine-grained unit tests',
     'bounded component tests',
-    'technical boundary integration tests',
+    'cross-domain technical boundary integration tests',
+    'Project declaration integration slice',
+    'OpenSpec application integration slice',
+    'Verification orchestration integration slice',
+    'Runtime and Local App integration slice',
+    'Release and installation integration slice',
+    'Workspace data-store integration slice',
+    'Task Environment integration slice',
+    'Self-bootstrap closeout integration slice',
     'Task read-model integration slice',
     'Task coordination integration slice',
     'Task execution-record integration slice',
     'Task Development lifecycle integration',
-    'Task Finish integration slice',
+    'Task Finish core integration slice',
+    'Task Finish delivery integration slice',
     'repository contract tests',
     'System verification admission canary',
-    'System verification contracts',
+    'System verification orchestration contracts',
+    'System public JSON contracts',
+    'System OpenSpec contract audit',
     'System Workspace lifecycle',
+    'System Task lifecycle',
+    'System Worktree lifecycle',
     'System runtime recovery',
     'System Buildr Web Runtime',
     'System Buildr Web process and preview',
-    'System Task Finish',
+    'System Task Finish product journey',
+    'System Task Finish CLI journey',
     'System fresh build',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
@@ -231,7 +245,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   const systemOwners = candidatePlan.steps.filter((step) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 8);
+  assert.equal(systemOwners.length, 13);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.mjs');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.mjs'));
@@ -243,7 +257,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 4);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 3);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);

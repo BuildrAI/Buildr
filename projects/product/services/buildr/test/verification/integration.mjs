@@ -26,6 +26,6 @@ const files = fs.readdirSync(integrationRoot)
 if (suite !== 'general' || files.length === 0) throw new Error('Integration general suite has no test files.');
 const workerBudget = resolveVerificationWorkerBudget({ env: process.env, fallback: 6, maximum: files.length, label: 'Integration general suite' });
 process.stderr.write(`[buildr-integration-suite] suite=${suite} files=${files.length} workerBudget=${workerBudget}\n`);
-const result = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, ...files], { cwd: productRoot, stdio: 'inherit', env: process.env });
+const result = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, '--test-reporter=dot', ...files], { cwd: productRoot, stdio: 'inherit', env: process.env });
 if (result.error) throw result.error;
 if (result.status !== 0) process.exitCode = result.status ?? 1;

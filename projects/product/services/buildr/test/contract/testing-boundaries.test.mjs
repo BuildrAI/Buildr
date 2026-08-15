@@ -117,7 +117,11 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   assert.equal(registry.ok, true, JSON.stringify(registry.findings));
   assert.equal(new Set(SYSTEM_SUITES.flatMap((suite) => suite.files)).size, systemFiles.length);
   assert.equal(fs.existsSync(path.join(productRoot, 'test', 'system', 'workspace-product.test.mjs')), false);
-  for (const owner of ['system-verification-admission', 'system-verification-contracts', 'system-workspace-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-fresh-build']) {
+  for (const owner of [
+    'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
+    'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
+    'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
+  ]) {
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }
   assert.equal(SYSTEM_SUITES.find((suite) => suite.id === 'system-runtime-recovery')?.innerConcurrency, 1,
