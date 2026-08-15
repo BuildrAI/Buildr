@@ -5,6 +5,7 @@ import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-p
 
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
 import { executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
+import { releaseFinishOccupancy } from './task-finish-occupancy-release.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
@@ -170,7 +171,7 @@ function markRunSuperseded(run) {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--bootstrap-recovery', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--bootstrap-recovery', '--release-occupancy', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
@@ -178,7 +179,7 @@ function assertArgs(action, args) {
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
-    if (option === '--json' || option === '--accept-zero-delta-adaptation' || option === '--bootstrap-recovery') continue;
+    if (option === '--json' || option === '--accept-zero-delta-adaptation' || option === '--bootstrap-recovery' || option === '--release-occupancy') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
     if (option === '--detail' && !['compact', 'full'].includes(value)) {
@@ -256,7 +257,18 @@ export function registerTaskFinishApplication(runtime) {
     const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
     const acceptZeroDeltaAdaptation = command.args.includes('--accept-zero-delta-adaptation');
     const bootstrapRecoveryRequested = command.args.includes('--bootstrap-recovery');
+    const releaseOccupancyRequested = command.args.includes('--release-occupancy');
     const requestedRunId = optionValue(command.args, '--run', null);
+    const requestedTaskId = optionValue(command.args, '--task', null);
+    if (releaseOccupancyRequested && (resumeToken || bootstrapRecoveryRequested || acceptZeroDeltaAdaptation)) {
+      throw inputError('task_finish.release_occupancy_mutex', '--release-occupancy cannot be combined with --resume, --bootstrap-recovery, or --accept-zero-delta-adaptation.', 'run');
+    }
+    if (releaseOccupancyRequested && !requestedRunId) {
+      throw inputError('task_finish.release_occupancy_run_required', '--release-occupancy requires an existing --run <run-id>.', 'run');
+    }
+    if (releaseOccupancyRequested && !requestedTaskId) {
+      throw inputError('task_finish.release_occupancy_task_required', '--release-occupancy requires --task <task-id>.', 'run');
+    }
     if (bootstrapRecoveryRequested && !requestedRunId) {
       throw inputError('task_finish.bootstrap_recovery_run_required', '--bootstrap-recovery requires an existing --run <run-id>.', 'run');
     }
@@ -273,7 +285,10 @@ export function registerTaskFinishApplication(runtime) {
         if (runId) {
           finishPersistence = runtime.readTaskFinishRunPersistence?.(root, { runId }, { optional: true }) || null;
           finishRun = finishPersistence?.run || null;
-          if (!finishRun) {
+          if (!finishRun && releaseOccupancyRequested) {
+          throw inputError('task_finish.release_occupancy_run_missing', 'Occupancy release requires an existing Task Finish run.', 'run');
+        }
+        if (!finishRun) {
             const completed = runtime.readTaskFinishCompletionPersistence?.(root, { runId }, { optional: true });
             if (completed?.completion?.result) {
               if (acceptZeroDeltaAdaptation) throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
@@ -285,7 +300,7 @@ export function registerTaskFinishApplication(runtime) {
         if (finishRun) {
           if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
           if (!sameFilesystemPath(finishRun.identity.workspaceRoot, root)) throw inputError('task_finish.environment_mismatch', 'Task Finish run is bound to a different canonical Workspace.', 'run');
-          if (!cleanupResumeAllowed(finishPersistence)) {
+          if (!cleanupResumeAllowed(finishPersistence) && !releaseOccupancyRequested) {
             const assertion = runtime.assertTaskDevelopmentCarrier(root, finishRun.identity.task, frozenDevelopmentIdentity(finishRun));
             if (assertion.status !== 'equivalent') {
               const current = assertion.diagnostic?.details?.current || null;
@@ -293,6 +308,9 @@ export function registerTaskFinishApplication(runtime) {
               throw currentRunIdentityError(finishRun, current, finishRunSideEffectFacts(finishPersistence));
             }
           }
+        }
+        if (!finishRun && releaseOccupancyRequested) {
+          throw inputError('task_finish.release_occupancy_run_missing', 'Occupancy release requires an existing Task Finish run.', 'run');
         }
         if (!finishRun) {
           const task = optionValue(command.args, '--task', null);
@@ -350,7 +368,7 @@ export function registerTaskFinishApplication(runtime) {
             finishRun = resolveFinishRun({ root, runId, resumeToken, runtime, identity, deliveryCommit: entry.deliveryCommit, developmentHandoff: handoff });
           }
         }
-        if (finishRun && ['blocked', 'cleanup_pending'].includes(finishRun.status) && (!resumeToken || finishRun.resume?.token !== resumeToken)) {
+        if (finishRun && ['blocked', 'cleanup_pending'].includes(finishRun.status) && !releaseOccupancyRequested && (!resumeToken || finishRun.resume?.token !== resumeToken)) {
           throw inputError('task_finish.resume_token_mismatch', 'Task Finish blocked run requires its current product-generated resume token.', 'run');
         }
         if (acceptZeroDeltaAdaptation && (finishRun?.status !== 'blocked' || finishRun.deliveryCarrier?.reuseMode !== 'adaptation-required')) {
@@ -359,8 +377,21 @@ export function registerTaskFinishApplication(runtime) {
         return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, developmentHandoff: finishRun?.developmentHandoff || null, replaceableStaleRun: null };
       });
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
-    if (prepared.completed) return print(withExecutionRecord(prepared.completed, notOpened), command.args);
+    if (prepared.completed) {
+      if (releaseOccupancyRequested) {
+        throw inputError('task_finish.release_occupancy_already_delivered', 'Occupancy release refuses a Finish run that already formed a successful delivery.', 'run');
+      }
+      return print(withExecutionRecord(prepared.completed, notOpened), command.args);
+    }
     let finishRun = prepared.finishRun;
+    if (releaseOccupancyRequested) {
+      return print(withExecutionRecord(releaseFinishOccupancy({
+        root,
+        run: finishRun,
+        taskId: requestedTaskId,
+        runtime,
+      }), notOpened), command.args);
+    }
     if (finishRun?.status === 'complete' || (finishRun?.status === 'failed' && !bootstrapRecoveryRequested)) return print(withExecutionRecord(inspectFinishRun({ root, runId: finishRun.runId, runtime }), notOpened), command.args);
     if (finishRun?.bootstrapRecovery && !bootstrapRecoveryRequested) {
       throw inputError('task_finish.bootstrap_recovery_flag_required', 'This run is bound to bootstrap recovery; resume it with --bootstrap-recovery and the current resume token.', 'run');
@@ -488,6 +519,7 @@ export function registerTaskFinishApplication(runtime) {
     }
     else {
       console.log(`Task Finish run ${result.runId}: ${result.status}`);
+      if (result.occupancy?.status === 'released') console.log('Occupancy: released');
       if (result.primaryFailure) console.log(`Failure: ${result.primaryFailure.phase}/${result.primaryFailure.operation || result.primaryFailure.check || 'unknown'} - ${result.primaryFailure.message}`);
       if (result.nextWorkflow) console.log(`Next workflow: ${result.nextWorkflow}`);
       else if (result.nextAction) console.log(`Next: ${result.nextAction}`);

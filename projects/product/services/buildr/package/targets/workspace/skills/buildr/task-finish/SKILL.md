@@ -62,7 +62,7 @@ buildr task finish run --task <task-id> --run <run-id> --resume <product-token> 
 ```bash
 buildr task finish inspect --run <run-id> --target <canonical-workspace> --detail compact --json
 ```
-
+abandon 后未交付隔离载体：对既有 run 加 `--release-occupancy`；不得 `git worktree remove` 或手删 `.buildr/transient/task-finish/carriers/`，也不作废已推送交付。
 ## 禁止事项
 
 Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定风险。Finish不运行OpenSpec Converge。两种reuse mode都复用handoff；clean apply或resume不等于语义安全。仅当既有run在preflight/prepare发生已记录、无副作用的Product provider exception时，用户才可明确授权`--bootstrap-recovery`；它只让retained Application从current ready Environment和current Development handoff共同确认的clean committed checkout加载run-owned capsule provider。retained Application、SQLite、Execution Record及状态机仍是唯一writer；不得传source/module/manifest/tarball、运行candidate CLI、临时安装或新建run。入口、registry、Application、repository或migration损坏不适用。

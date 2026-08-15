@@ -205,6 +205,10 @@ export function compactTaskFinishResult(result) {
     refs: refs(result),
     delivery: delivery(result.delivery),
     completion: completion(result.completion),
+    occupancy: result.occupancy ? {
+      status: result.occupancy.status || null,
+      releasedAt: result.occupancy.releasedAt || null,
+    } : null,
     bootstrapRecovery: result.bootstrapRecovery ? {
       identity: result.bootstrapRecovery.identity || null,
       mode: result.bootstrapRecovery.mode || null,

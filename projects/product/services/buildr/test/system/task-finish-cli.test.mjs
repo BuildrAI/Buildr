@@ -140,6 +140,8 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.match(helpText, /--task <task-id> --commit-message <message> \[--agent <agent>\]/);
   assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
   assert.match(helpText, /--accept-zero-delta-adaptation/);
+  assert.match(helpText, /--release-occupancy/);
+  assert.match(helpText, /占用释放/);
   assert.match(helpText, /不创建commit、不替代resume token/);
   assert.match(helpText, /Buildr-Task trailer/);
   assert.match(helpText, /current formal Development handoff/);

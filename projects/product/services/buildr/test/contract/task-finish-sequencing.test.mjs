@@ -26,6 +26,8 @@ test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 c
   assert.match(finish, /--detail compact --json/);
   assert.match(finish, /非零适配HEAD必须保持冻结message/);
   assert.match(finish, /--accept-zero-delta-adaptation/);
+  assert.match(finish, /--release-occupancy/);
+  assert.match(finish, /不得 `git worktree remove`/);
   assert.match(finish, /不得创建空提交或无关差异/);
   assert.match(finishContract, /Buildr-Task.*trailer/);
   assert.match(finishContract, /公开投影只含subject与identity/);
@@ -76,7 +78,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
     'projects/product/services/buildr/src/interfaces/cli/launcher.mjs',
     'projects/product/services/buildr/package/launchers/**',
   ]) assert.ok(skill.includes(input), input);
-  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-local-app', 'package/launchers/manage.mjs install --channel development', '公开命令没有development channel', 'verify-development-entry', 'projects/product/buildr', 'version --json', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'resume-owner-cleanup', 'retry-current-closeout', '原Task Finish owner', '协调器不得直接删除foreign carrier', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
+  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-local-app', 'package/launchers/manage.mjs install --channel development', '公开命令没有development channel', 'verify-development-entry', 'projects/product/buildr', 'version --json', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'resume-owner-cleanup', 'resume-owner-release-occupancy', 'retry-current-closeout', '原Task Finish owner', '协调器不得直接删除foreign carrier', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
   for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', 'Skill本地runner', 'projects/product/buildr', '不得启动第二个orchestrator或绕过runner补做sync、Buildr Web Dev安装、development entry检查或Doctor', '只有专用target-race adaptation diagnostic允许Agent按其中matching carrier/token继续Task Finish owner动作', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
   assert.match(runtimeFinish, /Buildr 自举 Workspace 激活/);
   assert.match(runtimeFinish, /doctor-blocked/);
@@ -85,7 +87,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   assert.equal(packageManifest.includes('buildr-self-bootstrap-sync'), false);
   const runnerPath = path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
   const runner = fs.readFileSync(runnerPath, 'utf8');
-  for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'foreign-carriers-require-owner-recovery', 'manual-owner-review', 'unprovable', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-local-app'", "'verify-development-entry'", "'finalize'", 'development-entry-launcher-mismatch', 'development-entry-cli-mismatch', 'development-entry-version-mismatch']) assert.ok(runner.includes(phrase), phrase);
+  for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'foreign-carriers-require-owner-recovery', 'manual-owner-review', 'unprovable', 'resume-owner-release-occupancy', '--release-occupancy', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-local-app'", "'verify-development-entry'", "'finalize'", 'development-entry-launcher-mismatch', 'development-entry-cli-mismatch', 'development-entry-version-mismatch']) assert.ok(runner.includes(phrase), phrase);
   assert.doesNotMatch(runner, /install-development-cli|resolveDefaultBuildr|default-cli-/u);
   assert.match(runner, /activationPaths \|\| finishResult\.carrier\?\.changedPaths/);
   assert.match(runner, /task', 'finish', 'inspect'/);
@@ -175,6 +177,7 @@ test('Task Finish bootstrap recovery留在full retained Application且不开放�
   assert.doesNotMatch(main, /runTaskFinishBootstrapRecovery/);
   assert.doesNotMatch(bootstrap, /prepareTaskFinishBootstrapRecoveryContext/);
   assert.match(application, /--bootstrap-recovery/);
+  assert.match(application, /--release-occupancy/);
   assert.ok(application.indexOf('openedExecutionRecord = runtime.openTaskExecutionRecord') < application.indexOf('const bootstrapContext = prepareTaskFinishBootstrapRecoveryContext'));
   assert.match(application, /readTaskFinishRunPersistence/);
   assert.match(application, /writeTaskFinishRunPersistence/);

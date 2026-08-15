@@ -210,7 +210,7 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/release-awareness.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
   'system-local-app-http': Object.freeze(['src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
   'system-app-process': Object.freeze(['src/interfaces/local-app/runtime/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
-  'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
+  'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-occupancy-release.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-task-finish-cli': Object.freeze(['src/application/task-finish/task-finish-result-projection.mjs', 'src/application/json-contracts.mjs', 'src/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-fresh-build': Object.freeze(['src/application/task-environment/**', 'src/domain/task-environment/**', 'preparation.yml', 'services/buildr-web/package.json', 'services/buildr-web/package-lock.json', 'services/buildr-web/vite.config.*', 'services/buildr-web/tsconfig*.json', 'test/helpers/clean-product-source.mjs']),
 });
@@ -393,6 +393,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/execution-record.mjs',
     'src/application/task-finish/task-finish-application.mjs',
     'src/application/task-finish/task-finish-bootstrap-recovery.mjs',
+    'src/application/task-finish/task-finish-occupancy-release.mjs',
     'src/application/task-finish/task-finish-delivery-commit.mjs',
     'src/application/task-finish/task-finish-entry-readiness.mjs',
     'src/application/task-finish/task-finish-result-projection.mjs',
@@ -403,9 +404,11 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-finish-retained-activation.test.mjs',
     'test/integration/task-finish-retained-cleanup.test.mjs',
     'test/integration/task-finish-task-contribution.test.mjs',
+    'test/integration/task-finish-occupancy-release.test.mjs',
   ], [
     'src/application/task-finish/git-task-contribution.mjs',
     'src/application/task-finish/task-finish-activation.mjs',
+    'src/application/task-finish/task-finish-occupancy-release.mjs',
     'src/application/task-finish/task-finish-delivery-commit.mjs',
     'src/application/task-finish/task-finish-delivery-remote.mjs',
     'src/application/task-finish/task-finish-delivery-target.mjs',
