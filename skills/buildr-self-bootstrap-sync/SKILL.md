@@ -1,6 +1,6 @@
 ---
 name: buildr-self-bootstrap-sync
-description: Buildr自举Workspace的Formal Task Finish成功或只被retained Doctor阻塞后使用；多个Finish carrier并存时先生成只读owner-ordered恢复计划，否则按冻结Task Contribution执行self-bootstrap activation并以最终Doctor或same-run resume收敛。
+description: Buildr自举Workspace的Formal Task Finish成功或只被retained Doctor阻塞后使用；多个Finish carrier并存时先生成只读owner-ordered恢复计划，foreign清除后可基于latest dev有界重试同run，否则按冻结Task Contribution执行self-bootstrap activation并以最终Doctor或same-run resume收敛。
 ---
 
 # Buildr Self-bootstrap Activation
@@ -29,7 +29,7 @@ Result必须恰好属于一种模式：
 
 ## 执行
 
-正常路径只启动一次本Skill携带的runner；Agent不得再逐条编排sync、commit、push、安装、Doctor或same-run resume：
+正常路径只启动一次本Skill携带的runner；只有后述精确foreign-carrier零副作用阻断解除后，Agent才可按recovery plan自动重试同一runner一次。Agent不得再逐条编排sync、commit、push、安装、Doctor或same-run resume：
 
 ```bash
 <receipt-node> skills/buildr-self-bootstrap-sync/scripts/closeout.mjs \
@@ -40,7 +40,9 @@ Result必须恰好属于一种模式：
 
 Runner是本Skill的bundled script，只存在于Buildr自举Workspace，不进入Buildr用户npm package、`package/targets/**`或普通Workspace Skill集合。它通过retained `projects/product/buildr task finish inspect --run ... --detail full --json`从同一run只读取得Finish Result与`resolvedContext`，不导入Product内部Application模块；随后核对Component、模式、frozen paths、target branch、remote/final ref、clean tree和retained Node identity，形成确定性plan。然后按`preflight → plan → sync → commit → push → install-local-app → verify-development-entry → finalize`执行；每阶段独立返回`passed|blocked|not-applicable`、identity、最小operations与effects，不写新authority。
 
-在任何Git、sync、安装、Doctor或Finish resume前，命令适配层只读枚举固定根`.buildr/transient/task-finish/carriers`的直接子项。目录名只作为run候选；每个foreign真实目录都必须由同一retained Product `task finish inspect --detail full`证明Finish Result schema、run、canonical Workspace、非symlink carrier路径、carrier identity与matching resume identity。合法`cleanup_pending` predecessor形成`buildr.self-bootstrap-recovery-plan/v1`的`resume-owner-cleanup`步骤，按`taskId + runId`稳定排序，最后才是当前run的`retry-current-closeout`。计划一次展示owner、状态、所需授权、原owner command与预期effects，但当前runner只负责只读协调：不得恢复、删除或忽略foreign carrier，各cleanup仍必须由原Task Finish owner在用户授权后执行；predecessor消失后重新启动当前runner，才回到既有single-run activation。
+在任何Git、sync、安装、Doctor或Finish resume前，命令适配层只读枚举固定根`.buildr/transient/task-finish/carriers`的直接子项。目录名只作为run候选；每个foreign真实目录都必须由同一retained Product `task finish inspect --detail full`证明Finish Result schema、run、canonical Workspace、非symlink carrier路径、carrier identity与matching resume identity。合法`cleanup_pending` predecessor形成`buildr.self-bootstrap-recovery-plan/v1`的`resume-owner-cleanup`步骤，按`taskId + runId`稳定排序，最后才是当前run的`retry-current-closeout`。计划一次展示owner、状态、所需授权、原owner command与预期effects；foreign cleanup仍必须由原Task Finish owner在用户授权后执行，当前retry则复用用户对本次closeout的既有授权。当前runner只负责只读协调，不得恢复、删除或忽略foreign carrier。
+
+只有前次结果精确以`self-bootstrap-closeout.foreign-carriers-require-owner-recovery`阻断、顶层`effects`为空、全部foreign carrier已由原owner清除，且current run、target、Environment retained Node与recovery plan command identity未改变时，Agent才直接执行计划中的`retry-current-closeout`命令一次，不再次询问current retry授权。该命令带`--retry-after-foreign-clear true`，使runner在既有clean tree与branch核验后读取latest remote target；本地落后且最新远端链可证明时，只执行fetch与`merge --ff-only`，再从最新HEAD重做frozen ref、无mergeBuildr-owned provenance、remote、run/plan与全部既有preflight。分叉、未知commit、merge、dirty tree、remote再次变化或其他identity无法证明时停止并报告，等待新指令；不得merge commit、rebase、stash、reset、force push或自动重试第二次。再次出现foreign carrier或重试结果再次blocked时同样停止报告。
 
 foreign doctor-blocked、其他blocked、terminal残留或不支持状态只标记`manual-owner-review`；symlink、越界、重复realpath、inspect失败、Workspace/path/carrier/resume identity或token不可证明时标记`unprovable`且不给resume command。存在任意foreign carrier时，当前调用固定blocked，并在Git、sync、安装、Doctor、Finish resume与carrier mutation全部零副作用处停止。协调计划是ephemeral read model，不写SQLite、Receipt、Execution Record、Git或第二份队列/聚合store，也不授予跨owner mutation authority。
 
@@ -54,7 +56,7 @@ Plan的`baseRef`始终冻结为当前Finish Result的final ref，runner不因后
 
 `complete`模式的`finalize`只通过已验证的retained `projects/product/buildr`运行一次指定Agent Doctor。`doctor-blocked`模式不另行运行第二个Doctor，而是由runner通过同一显式入口，使用原Task、run id和matching resume token恢复同一Formal Finish；恢复结果必须`status=complete`且cleanup完成。再次blocked时只消费runner返回的current resume事实，不重复启动本Skill或递归activation。
 
-Runner结果是正常路径的唯一执行证据。需要诊断时只读其失败阶段、实际Git/ref/remote、产品Result与可选`recoveryPlan`；不得绕过runner独立补做阶段。multi-run plan中的owner cleanup与当前runner重试分别是独立授权点，只能调用计划声明的原owner入口，协调器不得直接删除foreign carrier。
+Runner结果是正常路径的唯一执行证据。需要诊断时只读其失败阶段、实际Git/ref/remote、产品Result与可选`recoveryPlan`；不得绕过runner独立补做阶段。multi-run plan中的owner cleanup是独立授权点；current retry复用本次closeout既有授权且只能调用计划声明的同一runner入口，协调器不得直接删除foreign carrier。
 
 ## 失败与恢复
 

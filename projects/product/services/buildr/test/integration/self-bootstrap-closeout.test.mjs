@@ -303,6 +303,20 @@ function commitBuildrTask(root, taskId, pathname = `${taskId}.txt`) {
   return git(root, 'rev-parse', 'HEAD');
 }
 
+function commitRemoteTask(remote, taskId, { buildrOwned = true } = {}) {
+  const updater = path.join(path.dirname(remote), `updater-${taskId}`);
+  const cloned = run('git', ['clone', '--branch', 'dev', remote, updater], path.dirname(remote));
+  assert.equal(cloned.status, 0, cloned.stderr || cloned.stdout);
+  git(updater, 'config', 'user.name', 'Buildr Remote Test');
+  git(updater, 'config', 'user.email', 'buildr-remote-test@example.com');
+  fs.writeFileSync(path.join(updater, `${taskId}.txt`), `${taskId}\n`);
+  git(updater, 'add', '--', `${taskId}.txt`);
+  if (buildrOwned) git(updater, 'commit', '-m', `deliver ${taskId}`, '-m', `Buildr-Task: ${taskId}`);
+  else git(updater, 'commit', '-m', `unowned ${taskId}`);
+  git(updater, 'push', 'origin', 'dev');
+  return git(updater, 'rev-parse', 'HEAD');
+}
+
 test('fresh closeout以精确successor commit和remote readback完成', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const result = runSelfBootstrapCloseout({
@@ -938,8 +952,8 @@ test('Skill命令入口通过Product CLI只读取得同一Finish Result', (t) =>
   assert.equal(result.runId, finish.runId);
 });
 
-test('multi-run preflight按owner顺序返回cleanup plan并在predecessor消失后重试当前runner', (t) => {
-  const { root, baseRef, environment } = fixture(t);
+test('multi-run preflight按owner顺序返回cleanup plan并在predecessor消失后基于latest dev自动重试', (t) => {
+  const { root, remote, baseRef, environment } = fixture(t);
   const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
   const predecessorZ = cleanupPendingResult(root, baseRef, 'run-z', 'task-z');
   const predecessorA = cleanupPendingResult(root, baseRef, 'run-a', 'task-a');
@@ -979,19 +993,73 @@ test('multi-run preflight按owner顺序返回cleanup plan并在predecessor消失
     predecessorA.resume.token,
     predecessorZ.resume.token,
   ]);
+  assert.ok(blocked.recoveryPlan.orderedSteps.slice(0, 2).every((step) => step.authorization.required === true));
+  const retryStep = blocked.recoveryPlan.orderedSteps.at(-1);
+  assert.equal(retryStep.authorization.required, false);
+  assert.equal(retryStep.command.args[retryStep.command.args.indexOf('--retry-after-foreign-clear') + 1], 'true');
   assert.ok(invocations.every((item) => item.args[1] === 'task' && item.args[2] === 'finish' && item.args[3] === 'inspect'));
   assert.ok(blocked.phases.every((item) => ['blocked', 'not-applicable'].includes(item.status)));
 
   fs.rmSync(predecessorA.carrier.root, { recursive: true });
   fs.rmSync(predecessorZ.carrier.root, { recursive: true });
+  const latestDev = commitRemoteTask(remote, 'later-finish-after-foreign');
   const resumed = runSelfBootstrapCloseoutCommand({
-    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+    args: retryStep.command.args.slice(1),
     actualNodeExecutable: process.execPath,
     execute: executor(root, { finishInspection: current }),
     environment,
   });
   assert.equal(resumed.status, 'passed', JSON.stringify(resumed.diagnostic));
   assert.equal(resumed.recoveryPlan, null);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), latestDev);
+  assert.deepEqual(phase(resumed, 'preflight').effects.find((item) => item.type === 'retained-target-fast-forward'), {
+    type: 'retained-target-fast-forward',
+    branch: 'dev',
+    before: baseRef,
+    after: latestDev,
+    remote: 'origin',
+  });
+});
+
+test('foreign-clear retry拒绝无法证明的latest dev且不移动retained branch', (t) => {
+  const { root, remote, baseRef, environment } = fixture(t);
+  const current = finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  commitRemoteTask(remote, 'unknown-after-foreign', { buildrOwned: false });
+
+  const result = runSelfBootstrapCloseoutCommand({
+    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath, '--retry-after-foreign-clear', 'true'],
+    actualNodeExecutable: process.execPath,
+    execute: executor(root, { finishInspection: current }),
+    environment,
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.successor-identity-unprovable');
+  assert.equal(git(root, 'rev-parse', 'HEAD'), baseRef);
+  assert.deepEqual(result.effects, []);
+  assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
+});
+
+test('foreign-clear retry无法fast-forward到latest dev时报告并保留本地分支', (t) => {
+  const { root, remote, baseRef, environment } = fixture(t);
+  const current = finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  commitRemoteTask(remote, 'remote-diverged-finish');
+  fs.writeFileSync(path.join(root, 'local-diverged-finish.txt'), 'local\n');
+  git(root, 'add', '--', 'local-diverged-finish.txt');
+  git(root, 'commit', '-m', 'local delivery', '-m', 'Buildr-Task: local-diverged-finish');
+  const localHead = git(root, 'rev-parse', 'HEAD');
+
+  const result = runSelfBootstrapCloseoutCommand({
+    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath, '--retry-after-foreign-clear', 'true'],
+    actualNodeExecutable: process.execPath,
+    execute: executor(root, { finishInspection: current }),
+    environment,
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.latest-dev-fast-forward-unavailable');
+  assert.equal(git(root, 'rev-parse', 'HEAD'), localHead);
+  assert.deepEqual(result.effects, []);
 });
 
 test('multi-run preflight对不支持状态和inspect失败保持fail closed且不生成owner command', async (t) => {

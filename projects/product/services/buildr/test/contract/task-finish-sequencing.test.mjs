@@ -95,7 +95,9 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs')), false);
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/interfaces/internal/buildr-self-bootstrap-closeout-driver.mjs')), false);
   assert.equal(packageManifest.includes('skills/buildr-self-bootstrap-sync'), false);
-  for (const forbidden of ["'reset'", "'rebase'", "'merge'", "'stash'", "'push', '--force'"]) assert.equal(runner.includes(forbidden), false, forbidden);
+  assert.match(runner, /\['merge', '--ff-only', remote\]/, 'latest dev integration must remain fast-forward only');
+  assert.equal(runner.match(/'merge'/g)?.length, 1, 'runner must expose exactly one bounded fast-forward merge invocation');
+  for (const forbidden of ["'reset'", "'rebase'", "'stash'", "'push', '--force'"]) assert.equal(runner.includes(forbidden), false, forbidden);
 });
 
 test('Task Finish使用resolved capability binding和同一session有界长等待', () => {
