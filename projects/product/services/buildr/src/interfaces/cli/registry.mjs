@@ -12,7 +12,7 @@ import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
-import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand } from './task-execution-record.mjs';
+import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from './task-execution-record.mjs';
 import { taskTerminalDeliveryInspectCommand } from './task-terminal-delivery.mjs';
 
 const COMMAND_ROUTES = [
@@ -310,6 +310,20 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'gc',
     run: (r, c) => taskExecutionRecordGcCommand(r, c.argv.slice(5)),
+  },
+  {
+    key: "task execution-record recover",
+    surface: "agent-machine",
+    summary: "补seal有完整终态证据的Verification record；证据不可用时只在明确授权后保留unknown终态。",
+    help: [
+      "Usage: buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]",
+      "",
+      "--summary只接受matching Buildr-owned Verification transient summary，并补seal原record而不重跑。",
+      "没有summary时先返回authorization-required；--authorize-unknown-outcome不证明原结果，会终结原record并可能使仍存活producer的后续seal失败。",
+      "不接受outcome、files、locator、owner、producer、retry、timeout、process ID、SQL或cleanup shell。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'recover',
+    run: (r, c) => taskExecutionRecordRecoverCommand(r, c.argv.slice(5)),
   },
   {
     key: "task parent inspect",
@@ -1028,9 +1042,9 @@ const COMMAND_GROUPS = [
     surface: "maintenance",
     summary: "读取Task-scoped Execution Record，或执行Workspace级bounded GC。",
     help: [
-      "Usage: buildr task execution-record <list|inspect|gc> ...",
+      "Usage: buildr task execution-record <list|inspect|recover|gc> ...",
       "",
-      "list/inspect用于原终端不可用后的只读恢复；gc执行bounded维护。不提供文件系统 discovery、failure 自动处置或执行资源 cleanup。"
+      "list/inspect用于只读回查；recover补seal原Verification record或在明确授权后保留unknown；gc执行bounded维护。不提供自动retry、timeout或执行资源cleanup。"
     ],
     executable: false,
   },

@@ -194,6 +194,49 @@ test('相同invocation identity原子复用active或terminal record，显式retr
   assert.equal(runtime.listTaskExecutionRecords(root, 'record-task').records.length, 2);
 });
 
+test('unknown recovery先要求授权，授权后保留原record并解除invocation阻塞', (t) => {
+  const { root, runtime } = fixture(t);
+  const invocationIdentity = `sha256-${'d'.repeat(64)}`;
+  const input = {
+    owner: 'task-verification', kind: 'verification-execution', invocationIdentity,
+    targetIdentity: 'target-unknown', producer: 'buildr.verification-command-runner/v1',
+  };
+  const opened = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-unknown-original' });
+  const requested = runtime.recoverTaskExecutionRecord(root, 'record-task', opened.record.recordId, {});
+  assert.equal(requested.status, 'authorization-required');
+  assert.deepEqual(requested.effects, []);
+  assert.equal(runtime.inspectTaskExecutionRecord(root, opened.record.recordId).record.lifecycleStatus, 'open');
+
+  const recovered = runtime.recoverTaskExecutionRecord(root, 'record-task', opened.record.recordId, { authorizeUnknownOutcome: true });
+  assert.equal(recovered.status, 'attention');
+  assert.equal(recovered.mode, 'authorized-unknown');
+  assert.equal(recovered.record.outcome, 'unknown');
+  assert.equal(recovered.record.lifecycleStatus, 'retained');
+  assert.equal(recovered.record.resolutionStatus, 'acknowledged');
+  const compact = runtime.inspectTaskExecutionRecordCompactView(root, 'record-task', opened.record.recordId);
+  assert.equal(compact.execution.status, 'unknown');
+  assert.equal(compact.execution.reason, 'authorized-unknown');
+
+  const next = runtime.openTaskExecutionRecord(root, 'record-task', { ...input, runIdentity: 'run-after-unknown' });
+  assert.equal(next.status, 'opened');
+  assert.notEqual(next.record.recordId, opened.record.recordId);
+  assert.equal(runtime.listTaskExecutionRecords(root, 'record-task').records.length, 2);
+
+  const cliInvocationIdentity = `sha256-${'f'.repeat(64)}`;
+  const cliOpened = runtime.openTaskExecutionRecord(root, 'record-task', {
+    ...input, invocationIdentity: cliInvocationIdentity, runIdentity: 'run-unknown-cli',
+  });
+  const requestedProcess = spawnSync(process.execPath, [BUILDR, 'task', 'execution-record', 'recover', '--task', 'record-task', '--record', cliOpened.record.recordId, '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(requestedProcess.status, 1, requestedProcess.stderr || requestedProcess.stdout);
+  assert.equal(JSON.parse(requestedProcess.stdout).status, 'authorization-required');
+  assert.equal(runtime.inspectTaskExecutionRecord(root, cliOpened.record.recordId).record.lifecycleStatus, 'open');
+  const authorizedProcess = spawnSync(process.execPath, [BUILDR, 'task', 'execution-record', 'recover', '--task', 'record-task', '--record', cliOpened.record.recordId, '--authorize-unknown-outcome', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(authorizedProcess.status, 0, authorizedProcess.stderr || authorizedProcess.stdout);
+  const authorized = JSON.parse(authorizedProcess.stdout);
+  assert.equal(authorized.status, 'attention');
+  assert.equal(authorized.record.outcome, 'unknown');
+});
+
 test('terminal closed states全部参与复用且保留原outcome/lifecycle', (t) => {
   const { root, runtime } = fixture(t);
   const matrix = [

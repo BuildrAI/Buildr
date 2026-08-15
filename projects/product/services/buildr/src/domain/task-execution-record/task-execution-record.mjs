@@ -8,7 +8,7 @@ export const TASK_EXECUTION_RECORD_OWNER_KINDS = Object.freeze({
   'task-verification': Object.freeze(['verification-execution']),
   'task-finish': Object.freeze(['finish-diagnostics']),
 });
-export const TASK_EXECUTION_RECORD_OUTCOMES = Object.freeze(['running', 'passed', 'failed', 'blocked', 'cancelled']);
+export const TASK_EXECUTION_RECORD_OUTCOMES = Object.freeze(['running', 'passed', 'failed', 'blocked', 'cancelled', 'unknown']);
 export const TASK_EXECUTION_RECORD_LIFECYCLES = Object.freeze(['open', 'retained', 'cleanup_pending', 'cleaned', 'attention']);
 export const TASK_EXECUTION_RECORD_RESOLUTIONS = Object.freeze(['not-required', 'pending', 'acknowledged', 'recovered']);
 export const TASK_EXECUTION_RECORD_BODY_STATUSES = Object.freeze(['staging', 'available', 'cleaned']);
@@ -31,8 +31,8 @@ export const TASK_EXECUTION_RECORD_GC_LIMITS = Object.freeze({
   maximumBatch: 500,
 });
 
-const TERMINAL_OUTCOMES = new Set(['passed', 'failed', 'blocked', 'cancelled']);
-const FAILURE_OUTCOMES = new Set(['failed', 'blocked', 'cancelled']);
+const TERMINAL_OUTCOMES = new Set(['passed', 'failed', 'blocked', 'cancelled', 'unknown']);
+const FAILURE_OUTCOMES = new Set(['failed', 'blocked', 'cancelled', 'unknown']);
 const DIGEST = /^sha256-[a-f0-9]{64}$/u;
 const RECORD_ID = /^[a-z0-9][a-z0-9-]{0,127}$/u;
 const RELATIVE_LOCATOR = /^\.buildr\/local\/task-execution-records\/[a-z0-9-]+\/[a-z0-9][a-z0-9-]{0,127}\/$/u;
@@ -271,22 +271,30 @@ export function createOpenTaskExecutionRecord({ recordId = `task-exec-${crypto.r
   });
 }
 
-export function sealTaskExecutionRecord(record, body, outcome, sealedAt = new Date().toISOString(), { attention = false } = {}) {
+export function sealTaskExecutionRecord(record, body, outcome, sealedAt = new Date().toISOString(), { attention = false, resolutionStatus = null } = {}) {
   const current = normalizeTaskExecutionRecord(record);
   if (current.lifecycleStatus !== 'open') throw taskExecutionRecordError('task_execution_record_not_open', `只有open record可以seal：${current.recordId}。`, 409, { lifecycleStatus: current.lifecycleStatus });
   if (!TERMINAL_OUTCOMES.has(outcome)) throw taskExecutionRecordError('task_execution_record_outcome_not_terminal', 'seal outcome必须是terminal。', 400, { outcome });
+  if (resolutionStatus !== null && !(outcome === 'unknown' && resolutionStatus === 'acknowledged')) {
+    throw taskExecutionRecordError('task_execution_record_resolution_invalid', 'seal只能为已授权unknown outcome直接保存acknowledged resolution。', 400, { outcome, resolutionStatus });
+  }
   const days = outcome === 'passed' ? TASK_EXECUTION_RECORD_RETENTION.passedDays : TASK_EXECUTION_RECORD_RETENTION.failureDays;
+  const resolved = outcome === 'passed' ? 'not-required' : resolutionStatus || 'pending';
   return normalizeTaskExecutionRecord({
     ...current,
     outcome,
     lifecycleStatus: attention ? 'attention' : 'retained',
-    resolutionStatus: outcome === 'passed' ? 'not-required' : 'pending',
+    resolutionStatus: resolved,
     bodyStatus: 'available',
     quotaStatus: 'charged',
     body: { ...body, redactionVersion: TASK_EXECUTION_RECORD_REDACTION_VERSION, reservedSizeBytes: 0 },
     retention: { retainUntil: addDays(sealedAt, days) },
-    timestamps: { ...current.timestamps, sealedAt, updatedAt: sealedAt },
+    timestamps: { ...current.timestamps, sealedAt, resolvedAt: resolved === 'acknowledged' ? sealedAt : null, updatedAt: sealedAt },
   });
+}
+
+export function acknowledgeUnknownTaskExecutionRecord(record, body, acknowledgedAt = new Date().toISOString()) {
+  return sealTaskExecutionRecord(record, body, 'unknown', acknowledgedAt, { resolutionStatus: 'acknowledged' });
 }
 
 export function resolveTaskExecutionRecord(record, resolutionStatus, resolvedAt = new Date().toISOString()) {

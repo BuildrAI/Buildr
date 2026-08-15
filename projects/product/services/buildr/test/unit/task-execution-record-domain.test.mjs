@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   TASK_EXECUTION_RECORD_LIMITS,
+  acknowledgeUnknownTaskExecutionRecord,
   beginTaskExecutionRecordCleanup,
   completeTaskExecutionRecordCleanup,
   createOpenTaskExecutionRecord,
@@ -60,6 +61,21 @@ test('failure resolution与retention共同决定单记录cleanup eligibility', (
   assert.equal(cleaned.body.locator, null);
   assert.equal(cleaned.body.digest, body.digest);
   assert.equal(cleaned.quotaStatus, 'released');
+});
+
+test('已授权unknown终态保留结果未知事实并按失败类retention清理', () => {
+  const unknown = acknowledgeUnknownTaskExecutionRecord(opened(), body, '2026-01-02T00:00:00.000Z');
+  assert.equal(unknown.outcome, 'unknown');
+  assert.equal(unknown.lifecycleStatus, 'retained');
+  assert.equal(unknown.resolutionStatus, 'acknowledged');
+  assert.equal(unknown.timestamps.resolvedAt, '2026-01-02T00:00:00.000Z');
+  assert.equal(unknown.retention.retainUntil, '2026-02-01T00:00:00.000Z');
+  assert.deepEqual(evaluateTaskExecutionRecordCleanup(unknown, { now: '2026-01-31T00:00:00.000Z', recentRank: 1 }).reasons, ['retention-time-protected']);
+  assert.equal(evaluateTaskExecutionRecordCleanup(unknown, { now: '2026-02-02T00:00:00.000Z', recentRank: 1 }).eligible, true);
+  assert.throws(
+    () => sealTaskExecutionRecord(opened(), body, 'failed', '2026-01-02T00:00:00.000Z', { resolutionStatus: 'acknowledged' }),
+    (error) => error.code === 'task_execution_record_resolution_invalid',
+  );
 });
 
 test('passed最近三条与固定七天窗口都受保护', () => {

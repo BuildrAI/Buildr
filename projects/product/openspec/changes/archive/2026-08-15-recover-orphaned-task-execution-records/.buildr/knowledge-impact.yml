@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: recover-orphaned-task-execution-records
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/recover-orphaned-task-execution-records/brief.md
+    reason: 记录 Agent-first recovery、用户授权边界与验收范围
+    status: updated
+    sourceIdentities:
+      - openspec/changes/recover-orphaned-task-execution-records/proposal.md
+      - openspec/changes/recover-orphaned-task-execution-records/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Execution Record 与 Verification invocation 当前行为增加受控恢复和 unknown 终态
+    status: updated
+    sourceIdentities:
+      - openspec/changes/recover-orphaned-task-execution-records/specs/task-execution-artifacts/spec.md
+      - openspec/changes/recover-orphaned-task-execution-records/specs/cli-product-surface/spec.md
+      - openspec/knowledge/services/buildr.md
+unresolvedItems: []

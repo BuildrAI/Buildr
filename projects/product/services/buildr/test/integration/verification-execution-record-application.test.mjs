@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
+
+const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
+const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
@@ -266,7 +270,10 @@ test('quota/backpressure在runner启动前阻塞且不创建transient evidence',
 
 test('seal失败保留open record与transient evidence供恢复', async (t) => {
   const current = setup(t, 'verification-seal-failure');
-  declare(current.projectRoot, [capability('demo.pass', 'process.stdout.write("pass")')]);
+  const markerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-recover-'));
+  t.after(() => fs.rmSync(markerRoot, { recursive: true, force: true }));
+  const marker = path.join(markerRoot, 'recover-executions.txt');
+  declare(current.projectRoot, [capability('demo.pass', `require("fs").appendFileSync(${JSON.stringify(marker)}, "run\\n")`)]);
   const seal = current.runtime.sealTaskExecutionRecord;
   current.runtime.sealTaskExecutionRecord = () => {
     const error = new Error('seal unavailable');
@@ -282,4 +289,33 @@ test('seal失败保留open record与transient evidence供恢复', async (t) => {
   const listed = current.runtime.listTaskExecutionRecords(current.root, current.taskId);
   assert.equal(listed.records.length, 1);
   assert.equal(listed.records[0].lifecycleStatus, 'open');
+
+  const mismatchedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-run-'));
+  t.after(() => fs.rmSync(mismatchedRoot, { recursive: true, force: true }));
+  const mismatchedPath = path.join(mismatchedRoot, 'summary.json');
+  const mismatched = JSON.parse(fs.readFileSync(payload.evidenceReference, 'utf8'));
+  mismatched.executionRecord.recordId = 'task-exec-mismatched';
+  mismatched.evidenceReference = mismatchedPath;
+  mismatched.evidenceLifecycle.cleanupReference = mismatchedRoot;
+  mismatched.evidenceLifecycle.summaryPath = mismatchedPath;
+  fs.writeFileSync(mismatchedPath, `${JSON.stringify(mismatched, null, 2)}\n`);
+  const blockedRecovery = spawnSync(process.execPath, [BUILDR, 'task', 'execution-record', 'recover', '--task', current.taskId, '--record', payload.executionRecord.recordId, '--summary', mismatchedPath, '--target', current.root, '--json'], { encoding: 'utf8' });
+  assert.equal(blockedRecovery.status, 1, blockedRecovery.stderr || blockedRecovery.stdout);
+  assert.equal(JSON.parse(blockedRecovery.stdout).diagnostic.code, 'task_execution_record_recovery_identity_mismatch');
+  assert.equal(current.runtime.inspectTaskExecutionRecord(current.root, payload.executionRecord.recordId).record.lifecycleStatus, 'open');
+
+  const recoveryProcess = spawnSync(process.execPath, [BUILDR, 'task', 'execution-record', 'recover', '--task', current.taskId, '--record', payload.executionRecord.recordId, '--summary', payload.evidenceReference, '--target', current.root, '--json'], { encoding: 'utf8' });
+  assert.equal(recoveryProcess.status, 0, recoveryProcess.stderr || recoveryProcess.stdout);
+  const recovered = JSON.parse(recoveryProcess.stdout);
+  assert.equal(recovered.status, 'recovered');
+  assert.equal(recovered.mode, 'terminal-evidence');
+  assert.equal(recovered.record.outcome, 'passed');
+  assert.equal(recovered.record.lifecycleStatus, 'retained');
+  assert.equal(recovered.transientCleanup.status, 'cleaned');
+  assert.equal(fs.existsSync(payload.evidenceReference), false);
+
+  const reused = await run(current, 'demo.pass');
+  assert.equal(reused.status, 'passed');
+  assert.equal(reused.executionRecord.recordId, payload.executionRecord.recordId);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'run\n');
 });

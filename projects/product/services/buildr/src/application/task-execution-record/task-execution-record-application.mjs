@@ -1,6 +1,7 @@
 import {
   TASK_EXECUTION_RECORD_GC_LIMITS,
   TASK_EXECUTION_RECORD_OWNER_KINDS,
+  acknowledgeUnknownTaskExecutionRecord,
   beginTaskExecutionRecordCleanup,
   completeTaskExecutionRecordCleanup,
   createOpenTaskExecutionRecord,
@@ -12,6 +13,11 @@ import {
   taskExecutionRecordError,
 } from '../../domain/task-execution-record/task-execution-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { cleanupVerificationEvidence } from '../verification/evidence-lifecycle.mjs';
+import {
+  createAuthorizedUnknownExecutionRecordFiles,
+  loadVerificationExecutionRecordRecovery,
+} from '../verification/execution-record-recovery.mjs';
 
 const PUBLIC_VIEWS = Object.freeze({
   all: null,
@@ -112,6 +118,21 @@ function portableGcDiagnostic(error, status) {
   };
 }
 
+function recoveryResult(status, mode, persisted, { cleanup = null, diagnostic = null, effects = [], nextActions = [] } = {}) {
+  return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordRecoverResult, {
+    operation: 'recover',
+    status,
+    mode,
+    taskId: persisted.record.taskId,
+    recordId: persisted.record.recordId,
+    record: portableRecord(persisted.record),
+    transientCleanup: cleanup ? { status: cleanup.status, code: cleanup.code } : null,
+    diagnostic,
+    effects,
+    nextActions,
+  });
+}
+
 export function registerTaskExecutionRecordApplication(runtime) {
   function openTaskExecutionRecord(targetRoot, taskId, input) {
     assertInput(input, new Set(['owner', 'kind', 'runIdentity', 'invocationIdentity', 'targetIdentity', 'producer', 'allowDuplicateInvocation']), 'Task Execution Record open');
@@ -200,20 +221,22 @@ export function registerTaskExecutionRecordApplication(runtime) {
       try {
         const summary = JSON.parse(readTaskExecutionRecordBodyFileView(targetRoot, taskId, recordId, 'summary.json').file.content);
         const diagnostics = JSON.parse(readTaskExecutionRecordBodyFileView(targetRoot, taskId, recordId, 'diagnostics.json').file.content);
-        execution = {
-          status: 'available',
-          outcome: summary.outcome,
-          durationMs: summary.durationMs,
-          timingSource: summary.timingSource,
-          startedAt: summary.startedAt,
-          finishedAt: summary.finishedAt,
-          project: summary.project,
-          target: summary.target,
-          declaration: summary.declaration,
-          selectedCapabilities: summary.selectedCapabilities,
-          failures: diagnostics.failures,
-          diagnostic: diagnostics.diagnostic,
-        };
+        execution = summary.schemaVersion === 'buildr.verification-execution-record-recovery-summary/v1'
+          ? { status: 'unknown', reason: 'authorized-unknown', outcome: 'unknown', acknowledgedAt: summary.acknowledgedAt, failures: [], diagnostic: diagnostics.diagnostic }
+          : {
+            status: 'available',
+            outcome: summary.outcome,
+            durationMs: summary.durationMs,
+            timingSource: summary.timingSource,
+            startedAt: summary.startedAt,
+            finishedAt: summary.finishedAt,
+            project: summary.project,
+            target: summary.target,
+            declaration: summary.declaration,
+            selectedCapabilities: summary.selectedCapabilities,
+            failures: diagnostics.failures,
+            diagnostic: diagnostics.diagnostic,
+          };
       } catch (error) {
         execution = { status: 'unavailable', reason: 'body-integrity-failed', diagnostic: safeBodyDiagnostic(error) };
       }
@@ -239,6 +262,7 @@ export function registerTaskExecutionRecordApplication(runtime) {
 
   function sealTaskExecutionRecordOperation(targetRoot, recordId, input) {
     assertInput(input, new Set(['outcome', 'files']), 'Task Execution Record seal');
+    if (input.outcome === 'unknown') throw taskExecutionRecordError('task_execution_record_unknown_requires_authorization', 'unknown outcome只能通过受控recover授权路径写入。', 409);
     const persisted = runtime.readTaskExecutionRecordPersistence(targetRoot, recordId);
     const current = persisted.record;
     if (current.lifecycleStatus !== 'open') {
@@ -263,6 +287,52 @@ export function registerTaskExecutionRecordApplication(runtime) {
       } catch {}
       throw error;
     }
+  }
+
+  function recoverTaskExecutionRecord(targetRoot, taskId, recordId, input = {}) {
+    assertInput(input, new Set(['summaryPath', 'authorizeUnknownOutcome']), 'Task Execution Record recover');
+    if (input.summaryPath !== undefined && (typeof input.summaryPath !== 'string' || !input.summaryPath.trim())) throw taskExecutionRecordError('task_execution_record_recovery_summary_invalid', 'summaryPath必须是非空字符串。', 400);
+    if (input.authorizeUnknownOutcome !== undefined && typeof input.authorizeUnknownOutcome !== 'boolean') throw taskExecutionRecordError('task_execution_record_recovery_authorization_invalid', 'authorizeUnknownOutcome必须是boolean。', 400);
+    if (input.summaryPath && input.authorizeUnknownOutcome) throw taskExecutionRecordError('task_execution_record_recovery_mode_conflict', 'summary与unknown outcome授权不能同时使用。', 400);
+    let persisted = runtime.readTaskExecutionRecordPersistence(targetRoot, recordId);
+    sameTask(persisted.record, taskId);
+    const record = persisted.record;
+    if (record.owner !== 'task-verification' || record.kind !== 'verification-execution') throw taskExecutionRecordError('task_execution_record_recovery_owner_unsupported', 'recover只支持Verification Execution Record。', 409, { owner: record.owner, kind: record.kind });
+
+    if (input.summaryPath) {
+      const recovery = loadVerificationExecutionRecordRecovery(input.summaryPath, record);
+      const sealed = sealTaskExecutionRecordOperation(persisted.root, recordId, { outcome: recovery.outcome, files: recovery.files });
+      const cleanup = cleanupVerificationEvidence(recovery.summary, { removePath: runtime.removePath });
+      return recoveryResult('recovered', 'terminal-evidence', sealed, {
+        cleanup,
+        effects: [
+          { type: sealed.status === 'reused' ? 'reused' : 'sealed', recordId },
+          { type: cleanup.ok ? 'transient-cleaned' : 'transient-retained', recordId },
+        ],
+        diagnostic: cleanup.ok ? null : { code: cleanup.code, message: cleanup.message },
+        nextActions: cleanup.ok ? [] : ['Execution Record已恢复；检查transient cleanup diagnostic后只清理该owned evidence。'],
+      });
+    }
+
+    if (!input.authorizeUnknownOutcome) {
+      return recoveryResult('authorization-required', 'unknown-unconfirmed', persisted, {
+        diagnostic: { code: 'task_execution_record_recovery_authorization_required', message: '没有可验证terminal summary；Buildr不能判断原Verification outcome。' },
+        nextActions: ['仅在用户接受原结果未知、原record将终结且仍存活producer的后续seal可能失败时，传--authorize-unknown-outcome。'],
+      });
+    }
+    if (record.lifecycleStatus !== 'open') {
+      if (record.outcome === 'unknown') return recoveryResult('attention', 'authorized-unknown', persisted, { nextActions: ['该record仍不是Verification Result；后续普通invocation可以重新执行。'] });
+      throw taskExecutionRecordError('task_execution_record_not_open', `record ${recordId} 已是${record.lifecycleStatus}/${record.outcome}。`, 409, { lifecycleStatus: record.lifecycleStatus, outcome: record.outcome });
+    }
+    const acknowledgedAt = new Date().toISOString();
+    const body = runtime.publishTaskExecutionRecordBody(persisted.root, record, createAuthorizedUnknownExecutionRecordFiles(record, acknowledgedAt));
+    const next = acknowledgeUnknownTaskExecutionRecord(record, body, acknowledgedAt);
+    persisted = runtime.replaceTaskExecutionRecordPersistence(persisted.root, record, next);
+    return recoveryResult('attention', 'authorized-unknown', persisted, {
+      effects: [{ type: 'unknown-acknowledged', recordId }],
+      diagnostic: { code: 'verification.execution_outcome_unknown', message: '原Verification outcome不可证明，已按用户授权保留unknown终态。' },
+      nextActions: ['该record不是Verification Result；后续普通invocation可以重新执行。'],
+    });
   }
 
   function resolveTaskExecutionRecordOperation(targetRoot, recordId, input) {
@@ -373,6 +443,7 @@ export function registerTaskExecutionRecordApplication(runtime) {
     resolveTaskExecutionRecord: resolveTaskExecutionRecordOperation,
     cleanupTaskExecutionRecord,
     gcTaskExecutionRecords,
+    recoverTaskExecutionRecord,
   });
   return runtime;
 }
