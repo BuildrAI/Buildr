@@ -105,6 +105,7 @@ const step = (definition) => {
     resources: [],
     preflight: null,
     admission: false,
+    developmentRunners: [],
     ...definition,
     budgetMs: classification?.targetDurationMs ?? definition.budgetMs,
     testing: classification ? Object.freeze({ ...classification, primaryEvidenceOwner: classification.primaryEvidenceOwner ?? definition.id }) : null,
@@ -133,6 +134,7 @@ export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
 export const VERIFICATION_CONCURRENCY = VERIFICATION_EXECUTION_PROFILES.local;
 
 export const VERIFICATION_ENVIRONMENT_FOOTPRINTS = Object.freeze(['filesystem', 'cli', 'git', 'loopback-network', 'network', 'workspace-lifecycle']);
+export const VERIFICATION_DEVELOPMENT_RUNNERS = Object.freeze(['windows']);
 export const VERIFICATION_ENVIRONMENT_ISOLATIONS = Object.freeze(['none', 'read-only', 'unique-temporary-root', 'shared']);
 export const VERIFICATION_RESET_BURDENS = Object.freeze(['none', 'single-cleanup', 'repeated-cleanup', 'lifecycle']);
 
@@ -296,6 +298,7 @@ export const verificationSteps = Object.freeze([
     'test/integration/**',
     'test/verification/integration.mjs',
     'test/verification/worker-budget.mjs',
+    'test/verification/web-dist.mjs',
     'src/application/change/**',
     'src/application/compose-runtime.mjs',
     'src/application/doctor/**',
@@ -402,7 +405,7 @@ export const verificationSteps = Object.freeze([
     'test/system/task-finish-product-journey.test.mjs',
     'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.mjs',
-  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', inputs: [
+  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'], inputs: [
     'test/system/cli-update.test.mjs',
     'test/system/local-app-launcher.test.mjs',
     'test/system/task-environment-fresh-build-web.test.mjs',
@@ -419,6 +422,10 @@ export const verificationSteps = Object.freeze([
     'src/infrastructure/runtime/**',
     'src/interfaces/local-app/runtime/**',
     'package/targets/workspace/**',
+    'services/buildr-web/package.json',
+    'services/buildr-web/package-lock.json',
+    'services/buildr-web/vite.config.*',
+    'services/buildr-web/tsconfig*.json',
   ], schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.mjs' }, profiles: ['fast', 'candidate'], inputs: ['bin/**', 'src/interfaces/cli/**', 'src/application/compose-runtime.mjs', 'src/application/json-contracts.mjs', 'scripts/**', 'test/verification/cli/**', 'package.json'] }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.mjs' }, profiles: ['fast', 'candidate'], inputs: ['openspec/**/*.md', 'openspec/**/*.yaml', 'test/verification/openspec/spec-quality.mjs'] }),

@@ -6,6 +6,7 @@ import { createVerificationPlan } from '../verification/planner.mjs';
 
 test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   const plan = selectBrowserSelectors(['src/interfaces/local-app/http/server.mjs']);
+  assert.equal(plan.status, 'not-applicable');
   assert.deepEqual(plan.selectors, []);
   assert.match(plan.reasons[0].reason, /HTTP\/API owner/);
 });
@@ -15,8 +16,29 @@ test('Browser dispatcher selects only affected resource selectors', () => {
     'services/buildr-web/src/pages/TaskDetailPage.tsx',
     'services/buildr-web/src/pages/ProjectDetailPage.tsx',
   ]);
+  assert.equal(plan.status, 'selected');
   assert.deepEqual(plan.selectors, ['task', 'project']);
   assert.equal(plan.reasons.length, 2);
+});
+
+test('Browser dispatcher closes the old zero-selector success for Web package and build config', () => {
+  for (const input of [
+    'services/buildr-web/package.json',
+    'services/buildr-web/package-lock.json',
+    'services/buildr-web/vite.config.ts',
+    'services/buildr-web/tsconfig.json',
+  ]) {
+    const plan = selectBrowserSelectors([input]);
+    assert.equal(plan.status, 'selected', input);
+    assert.equal(plan.mode, 'full', input);
+    assert.deepEqual(plan.selectors, ['all'], input);
+  }
+});
+
+test('Browser dispatcher accepts Project-relative Buildr paths', () => {
+  const plan = selectBrowserSelectors(['services/buildr/src/interfaces/local-app/runtime/preview-manager.mjs']);
+  assert.equal(plan.status, 'selected');
+  assert.deepEqual(plan.selectors, ['shell', 'core']);
 });
 
 test('Browser dispatcher uses core fallback for unknown web paths and shared router', () => {

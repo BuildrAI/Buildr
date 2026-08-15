@@ -16,15 +16,11 @@ env:
   CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
-  dev-feedback:
-    name: Development feedback (${{ matrix.os }})
+  dev-feedback-macos:
+    name: Development feedback (macOS affected and Browser)
     if: github.event_name == 'pull_request' && github.base_ref == 'dev'
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -38,14 +34,6 @@ jobs:
           node-version: 24.15.0
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - name: Install product dependencies
-        run: npm ci
-      - name: Prepare managed Workspace Node
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        shell: bash
-        run: projects/product/buildr sync codex --target .
       - name: Resolve changed verification base
         id: base
         working-directory: .
@@ -54,6 +42,22 @@ jobs:
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="$(git rev-parse HEAD^)"; fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - name: Plan affected Browser evidence
+        id: browser
+        env:
+          BUILDR_VERIFICATION_BASE: ${{ steps.base.outputs.sha }}
+        shell: bash
+        run: |
+          node test/verification/browser-selector-dispatcher.mjs --output "${RUNNER_TEMP}/development-browser-plan.json"
+          node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.status === "selected") + "\n");' "${RUNNER_TEMP}/development-browser-plan.json"
+      - name: Install product dependencies
+        run: npm ci
+      - name: Prepare managed Workspace Node
+        working-directory: .
+        env:
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+        shell: bash
+        run: projects/product/buildr sync codex --target .
       - name: Verify changed product scope
         env:
           BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
@@ -62,14 +66,88 @@ jobs:
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         shell: bash
         run: npm run test:changed -- --base "${{ steps.base.outputs.sha }}"
-      - name: Upload development timing and diagnostics
+      - name: Install Buildr Web dependencies
+        if: steps.browser.outputs.selected == 'true'
+        working-directory: projects/product/services/buildr-web
+        run: npm ci
+      - name: Verify affected Browser evidence
+        if: steps.browser.outputs.selected == 'true'
+        env:
+          BUILDR_VERIFICATION_BASE: ${{ steps.base.outputs.sha }}
+          BUILDR_BROWSER_PLAN_OUTPUT: ${{ runner.temp }}/development-browser-plan.json
+        run: npm run test:browser:changed
+      - name: Upload macOS development evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: development-feedback-${{ matrix.os }}
+          name: development-feedback-macos
           path: |
+            ${{ runner.temp }}/development-browser-plan.json
             ${{ runner.temp }}/development-feedback-timing.json
             ${{ runner.temp }}/development-feedback-diagnostics
+          if-no-files-found: warn
+          overwrite: true
+
+  dev-feedback-windows:
+    name: Development feedback (Windows platform-sensitive)
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Resolve changed verification base
+        id: base
+        working-directory: .
+        shell: bash
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="$(git rev-parse HEAD^)"; fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - name: Plan Windows platform-sensitive evidence
+        id: windows-plan
+        shell: bash
+        run: |
+          node test/verification/changed.mjs --json --development-runner windows --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-windows-plan.json"
+          node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.steps.length > 0) + "\n");' "${RUNNER_TEMP}/development-windows-plan.json"
+      - name: Install product dependencies
+        if: steps.windows-plan.outputs.selected == 'true'
+        run: npm ci
+      - name: Prepare managed Workspace Node
+        if: steps.windows-plan.outputs.selected == 'true'
+        working-directory: .
+        env:
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+        shell: bash
+        run: projects/product/buildr sync codex --target .
+      - name: Verify Windows platform-sensitive product scope
+        if: steps.windows-plan.outputs.selected == 'true'
+        env:
+          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
+          BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-windows-timing.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/development-windows-diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        shell: bash
+        run: npm run test:changed -- --development-runner windows --base "${{ steps.base.outputs.sha }}"
+      - name: Upload Windows development evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: development-feedback-windows
+          path: |
+            ${{ runner.temp }}/development-windows-plan.json
+            ${{ runner.temp }}/development-windows-timing.json
+            ${{ runner.temp }}/development-windows-diagnostics
           if-no-files-found: warn
           overwrite: true
 

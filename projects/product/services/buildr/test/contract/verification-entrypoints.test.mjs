@@ -22,8 +22,12 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
-  assert.equal(scripts['test:browser:smoke'], 'npm run build:web && node --test test/browser-smoke/*.test.mjs');
-  assert.equal(scripts['test:browser:changed'], 'npm run build:web && node test/verification/browser-selector-dispatcher.mjs --run');
+  assert.equal(scripts['test:web-dist'], 'node test/verification/web-dist.mjs');
+  assert.equal(scripts['test:browser:smoke'], 'npm run test:web-dist && node --test test/browser-smoke/*.test.mjs');
+  assert.equal(scripts['test:browser:changed'], 'node test/verification/browser-selector-dispatcher.mjs --run');
+  for (const selector of ['core', 'shell', 'project', 'service', 'change', 'task', 'articles']) {
+    assert.match(scripts[`test:browser:${selector}`], /^npm run test:web-dist && /);
+  }
   assert.equal(scripts['test:integration:candidate:recovery'], undefined);
   assert.equal(scripts['test:integration:candidate:release'], 'node test/verification/run-node-tests.mjs test/integration-candidate-release/*.test.mjs');
   assert.equal(scripts['coverage:unit'], 'node test/verification/unit-coverage.mjs');
@@ -71,7 +75,25 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
   assert.equal(browser.requiredForDelivery, true);
-  assert.deepEqual(browser.applicability.paths, ['services/buildr-web/**', 'services/buildr/src/interfaces/local-app/web-dist/**', 'services/buildr/src/interfaces/local-app/runtime/**', 'services/buildr/test/browser-smoke/**']);
+  assert.deepEqual(browser.applicability.paths, [
+    'services/buildr-web/**',
+    'services/buildr/src/interfaces/local-app/web-dist/**',
+    'services/buildr/src/interfaces/local-app/runtime/**',
+    'services/buildr/test/browser-smoke/**',
+    'services/buildr/test/verification/browser-selector-dispatcher.mjs',
+    'services/buildr/test/verification/web-dist.mjs',
+  ]);
+  assert.deepEqual(browser.applicability.conditions, [
+    'Buildr Web 路由、DOM 交互、Agent Action、package、lockfile、Vite 或 TypeScript 配置发生变化',
+    '未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths',
+    '适用输入至少选择一个 Browser selector；非适用输入明确返回 not-applicable，Browser-owned 0 selector 阻塞',
+    'selected Browser 在启动 Chrome 前，将 Buildr Web 构建到系统临时 staging 并与 tracked web-dist 精确比较',
+  ]);
+  assert.deepEqual(browser.proves, [
+    '适用的 changed paths 已执行至少一个稳定 Browser selector，或被明确判定为 not-applicable',
+    '临时 staging build 与 tracked web-dist 精确一致，冻结目标未被改写',
+    'Project、Service、Change 与 Task 页面关键浏览器交互和错误反馈可用',
+  ]);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
   assert.deepEqual(browser.effects.externalSystems, []);
   assert.equal(browser.effects.authorization, 'implicit');
@@ -266,7 +288,7 @@ test('distributed Candidate creates one artifact and fans out independent consum
   const workflow = read('../../../../.github/workflows/verify.yml');
   const document = YAML.parse(workflow);
   assert.deepEqual(Object.keys(document.jobs), [
-    'dev-feedback', 'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows',
+    'dev-feedback-macos', 'dev-feedback-windows', 'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows',
     'candidate-windows', 'candidate-host-node', 'candidate-gate',
   ]);
   assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-bootstrap');
@@ -293,12 +315,13 @@ test('Candidate workflow checks out one exact source SHA and always aggregates c
   ]);
   assert.match(workflow, /pattern: candidate-evidence-\*/);
   assert.match(workflow, /merge-multiple: true/);
+  const candidateWorkflow = workflow.slice(workflow.indexOf('  candidate-bootstrap:'));
   const gate = workflow.slice(workflow.indexOf('  candidate-gate:'));
   assert.match(gate, /runs-on: macos-latest/);
   assert.match(gate, /node test\/verification\/candidate-ci\.mjs aggregate/);
   assert.doesNotMatch(gate, /npm ci|cache: npm/);
-  assert.equal((workflow.match(/overwrite: true/g) || []).length, 9, 'reruns replace one logical artifact per shard or aggregate');
-  assert.equal((workflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 7);
+  assert.equal((candidateWorkflow.match(/overwrite: true/g) || []).length, 8, 'Candidate reruns replace one logical artifact per shard or aggregate');
+  assert.equal((candidateWorkflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 6);
   assert.doesNotMatch(workflow, /git log --first-parent origin\/dev/);
   for (const input of [
     '.github/workflows/verify.yml', 'scripts/verify-buildr-product-ci',

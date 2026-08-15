@@ -7,6 +7,7 @@ import {
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
   VERIFICATION_ENVIRONMENT_ISOLATIONS,
+  VERIFICATION_DEVELOPMENT_RUNNERS,
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
   VERIFICATION_FULL_SCOPE_INPUTS,
@@ -147,6 +148,14 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     if (!item.name) findings.push({ step: item.id, code: 'missing_name' });
     if (!Array.isArray(item.inputs) || item.inputs.length === 0) findings.push({ step: item.id, code: 'missing_inputs' });
     if (item.selection != null && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'invalid_selection', value: item.selection });
+    if (!Array.isArray(item.developmentRunners)) findings.push({ step: item.id, code: 'invalid_development_runners' });
+    else {
+      if (new Set(item.developmentRunners).size !== item.developmentRunners.length) findings.push({ step: item.id, code: 'duplicate_development_runner' });
+      for (const runner of item.developmentRunners) if (!VERIFICATION_DEVELOPMENT_RUNNERS.includes(runner)) {
+        findings.push({ step: item.id, code: 'unknown_development_runner', value: runner });
+      }
+      if (item.developmentRunners.length > 0 && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'development_runner_owner_not_explicit' });
+    }
     if (item.inputExclusions != null && !Array.isArray(item.inputExclusions)) findings.push({ step: item.id, code: 'invalid_input_exclusions' });
     else for (const pattern of item.inputExclusions ?? []) {
       try { normalizeProductPath(pattern); } catch { findings.push({ step: item.id, code: 'invalid_input_exclusion', value: pattern }); }
@@ -446,6 +455,32 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     stepIds: Object.freeze(stepIds),
     delegated: Object.freeze(delegatedPaths),
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
+  });
+}
+
+export function createDevelopmentPlatformPlan(request = {}, steps = verificationSteps) {
+  const validation = validateVerificationRegistry(steps);
+  if (!validation.ok) throw new Error(`Invalid verification registry:\n${validation.findings.map((item) => `${item.step}: ${item.code}`).join('\n')}`);
+  const runner = request.runner;
+  if (!VERIFICATION_DEVELOPMENT_RUNNERS.includes(runner)) throw new Error(`Unknown development verification runner: ${runner}`);
+  const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
+  const matchedReasons = new Map();
+  for (const item of steps) {
+    if (!item.developmentRunners.includes(runner)) continue;
+    const matched = paths.filter((productPath) => item.inputs.some((pattern) => matchesInput(productPath, pattern))
+      && !(item.inputExclusions ?? []).some((pattern) => matchesInput(productPath, pattern)));
+    if (matched.length > 0) matchedReasons.set(item.id, matched.map((productPath) => `${productPath} matches ${runner} development owner ${item.id}`));
+  }
+  const base = createVerificationPlan({ stepIds: [...matchedReasons.keys()] }, steps);
+  return Object.freeze({
+    ...base,
+    source: 'development-platform',
+    runner,
+    paths: Object.freeze(paths),
+    steps: Object.freeze(base.steps.map((item) => Object.freeze({
+      ...item,
+      reasons: Object.freeze([...(item.reasons ?? []), ...(matchedReasons.get(item.id) ?? [])]),
+    }))),
   });
 }
 

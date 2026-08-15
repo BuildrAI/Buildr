@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { collectChangedProductPaths } from './changed-paths.mjs';
-import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
+import { createDevelopmentPlatformPlan, createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
@@ -15,11 +15,11 @@ const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const projectRoot = path.resolve(productRoot, '../..');
 
 function usage(stream = process.stdout) {
-  stream.write('Usage: npm run test:changed -- [--base <ref>] [--plan|--json] [path ...]\n');
+  stream.write('Usage: npm run test:changed -- [--base <ref>] [--development-runner <windows>] [--plan|--json] [path ...]\n');
 }
 
 function parseArgs(args) {
-  const result = { base: null, planOnly: false, json: false, paths: [] };
+  const result = { base: null, developmentRunner: null, planOnly: false, json: false, paths: [] };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--help' || arg === '-h') return { help: true };
@@ -28,6 +28,10 @@ function parseArgs(args) {
     else if (arg === '--base') {
       if (!args[index + 1] || args[index + 1].startsWith('-')) throw new Error('Missing value for --base');
       result.base = args[index + 1];
+      index += 1;
+    } else if (arg === '--development-runner') {
+      if (!args[index + 1] || args[index + 1].startsWith('-')) throw new Error('Missing value for --development-runner');
+      result.developmentRunner = args[index + 1];
       index += 1;
     } else if (arg.startsWith('-')) throw new Error(`Unknown test:changed option: ${arg}`);
     else result.paths.push(arg);
@@ -48,8 +52,11 @@ try {
   } else {
     const changed = collectChangedProductPaths({ productRoot, projectRoot, base: args.base, explicitPaths: args.paths });
     const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
-    const plan = createVerificationAdmissionPlan(createVerificationPlan({ paths: changed.paths, fullScopeExemptPaths: changed.versionOnlyPackagePaths }));
-    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds, preflightSteps: [], steps: plan.steps };
+    const affectedPlan = args.developmentRunner
+      ? createDevelopmentPlatformPlan({ runner: args.developmentRunner, paths: changed.paths })
+      : createVerificationPlan({ paths: changed.paths, fullScopeExemptPaths: changed.versionOnlyPackagePaths });
+    const plan = args.developmentRunner ? affectedPlan : createVerificationAdmissionPlan(affectedPlan);
+    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
     if (args.json) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
     else if (args.planOnly) {
       if (changed.base) process.stdout.write(`Git base: ${changed.base}\n`);
@@ -79,7 +86,7 @@ try {
         stream: process.stdout,
         errorStream: process.stderr,
       };
-      process.stdout.write(`[verify-changed] admission: ${plan.admissionStepIds.join(', ')}\n`);
+      if ((plan.admissionStepIds ?? []).length > 0) process.stdout.write(`[verify-changed] admission: ${plan.admissionStepIds.join(', ')}\n`);
       const execution = await executePlan(plan, executionOptions);
       results = execution.results;
       writeVerificationTimingEvidence({
