@@ -125,11 +125,11 @@
       "type": "skill",
       "id": "task-development",
       "target": "skills/buildr/task-development",
-      "integrity": "sha256-6c1b3bafc7f23c9ab0cfd3e1214dddcad9be1fd64cce869a0571fa48f3ef1545",
+      "integrity": "sha256-2a5521c68e411932f43f9bac3dd808b8afbd310d70480054357e81e81cc5c29a",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-17cbcaada5ee7fd0c3ea8a4751ad3847ff49f66fd89d26e0531f16a5c5728e7c"
+          "integrity": "sha256-ef1f7927e5776dc1c60c2ab05df735d4f46a6b7b16bd988082650be9bf1b737a"
         }
       ]
     },

@@ -17,7 +17,7 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
 
-日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，优先使用Task Entry Snapshot；直接调试Development owner时可对内部driver显式使用`--compact`。两者都只是response projection，不追加观察或写入。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。typed `next`与legacy `nextActions`来自同一判定；它们不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
+日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，优先使用Task Entry Snapshot；直接调试Development owner时可对内部driver显式使用`--compact`。两者都只是response projection，不追加观察或写入，并以同源`formalVerificationReadiness`说明正式验证交接是否尚未到达、存在明确blocker或需要current knowledge即时确认。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。typed `next`与legacy `nextActions`来自同一判定；它们不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
 
 ## Parent Plan 与 Child Contribution
 
@@ -55,7 +55,7 @@ Development只拥有这些专业事实如何构成当前Task研发过程，不�
 
 在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 deterministic convergence/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。OpenSpec归档路径、provenance、checkbox完成态和filesystem时间不属于plan target；只有Task Planning Identity resolver返回的新target才能使Planning Review stale。
 
-内容固定后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。code-only Task提交空数组。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
+内容固定后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。任一Change仍为`pending`时Application会在Content observation与Receipt写入前失败关闭；先完成Change-owned实现、current knowledge与deterministic convergence/archive，不能为了进入验证把pending伪装成stable。code-only Task提交空数组，明确`not-applicable`继续按原路径工作。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 
 Candidate freeze后交付基线（Delivery Baseline）前进时，不要rebase或修改原Task worktree。先只读inspect原Task source snapshot、Task Context、policy与gates；Task Development是Content Target、Candidate、Verification、Completion Review、decision与handoff是否current/stale的唯一authority。原Task source与这些输入未变时，全部facts保持current，直接让Finish在run-owned隔离交付载体（Delivery Carrier）处理交付适配（Delivery Adaptation）；不得调用observe覆盖Content Target、重跑正式Verification或递增generation。
 
@@ -71,6 +71,10 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 - 不在 Verification 阶段开发测试，也不复制 Project 测试 registry。
 
 有效Project集合必须合并显式Project、Service所属Project与Change所属Project。只有并集为空时才使用仅工作区policy：空declarations、空capabilities、唯一`workspace` coverage gap与空overrides；Service或Change不能因省略`scope.projects`进入该分支。仅工作区Content Target变化后重新形成policy；Project集合或declaration变化时旧policy必须stale。
+
+在启动昂贵Formal Verification前读取response-only `formalVerificationReadiness`：`blocked`只处理其中明确的Change、Content Target或policy blocker；`unknown`时调用selected current knowledge provider对同一current tree执行只读`inspect`。返回`aligned|not-applicable`后直接对同一Content Target进入`task-verification`，无需为了保存ready摘要重读Snapshot或写入Development；返回`unresolved`时先由knowledge owner收敛，任何delivery content变化都重新观察Content Target。readiness与inspect Result不进入Receipt、Result或新sidecar。
+
+该预检只属于正式Task的Development → Formal Verification交接。开发中的focused/affected/unit/integration反馈、Task外transient `verification run`和Candidate CI不读取readiness、不增加检查步骤，也不因Change pending或knowledge unknown被阻塞。`unknown`产生的是`recommended` owner action，不是通用executor硬门禁；合法替代顺序仍由实际owner contract判断。
 
 然后对 Content Target identity 执行正式 `task-verification`。Result target/declarations 必须 current；policy 中每个 required capability 都必须有明确 passed/failed fact，每个 policy gap 都必须在 Result 中有对应 coverage gap。仅工作区没有验证能力时记录空declarations、空capabilities、唯一workspace gap与`not-passed`，不得自动passed。gap尚未进入matching current Result时不得freeze；事实完整后仍按现有风险授权门禁推进。
 
