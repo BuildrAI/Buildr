@@ -334,8 +334,70 @@ test('active或resolver不可用的Change不能伪报converged', (t) => {
     && error.details.lifecycle === null);
 });
 
-test('已保存converged后外部漂移不改变inspect快照，下一正式action会fail closed', (t) => {
+test('已保存converged后外部漂移使inspect overlay stale且不推荐Finish，Receipt不变，下一正式action fail closed', (t) => {
   const current = changeFixture(t, 'working-copy-drift');
+  let result = freezeChangeFixture(current);
+  assert.equal(result.development.receipt.candidate.generation, 1);
+  const savedObservedAt = result.development.observedAt;
+  const savedApplicability = current.runtime.readTaskDevelopmentPersistence(current.root, current.taskId).applicability;
+  assert.match(savedObservedAt, /^2026-|^20\d\d-/);
+  assert.equal(savedApplicability.candidate, 'current');
+
+  current.setObserved({ availability: 'available', lifecycle: 'active' });
+  result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.deepEqual(result.effects, []);
+  assert.equal(result.development.observedAt, savedObservedAt);
+  assert.equal(result.development.applicability.status, 'developing');
+  assert.equal(result.development.applicability.taskContext, 'stale');
+  assert.equal(result.development.applicability.candidate, 'stale');
+  assert.equal(result.next.mode, 'required');
+  assert.equal(result.next.owner, 'task-development');
+  assert.equal(result.next.action, 'planning');
+  assert.equal(result.next.owner === 'task-finish', false);
+  const unproven = result.development.applicability.reasons.find((item) => item.code === 'change-lifecycle-unproven');
+  assert.deepEqual(unproven, {
+    axis: 'task-context',
+    code: 'change-lifecycle-unproven',
+    unproven: [{ project: 'demo', change: 'convergence-guard', availability: 'available', lifecycle: 'active' }],
+  });
+  const persisted = current.runtime.readTaskDevelopmentPersistence(current.root, current.taskId);
+  assert.equal(persisted.observedAt, savedObservedAt);
+  assert.equal(persisted.applicability.taskContext, 'current');
+  assert.equal(persisted.applicability.candidate, 'current');
+  assert.throws(() => current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId), (error) => error.code === 'task_development_change_not_converged');
+});
+
+test('handoff-current后working copy不可用时inspect与task next不推荐Finish且不改写handoff', (t) => {
+  const current = changeFixture(t, 'handoff-working-copy-missing');
+  let result = handoffChangeFixture(current);
+  assert.equal(result.development.applicability.handoff, 'current');
+  assert.equal(result.next.action, 'finish');
+  const savedHandoffs = result.development.receipt.handoffs;
+  const savedObservedAt = result.development.observedAt;
+
+  current.setObserved({ availability: 'unavailable', lifecycle: null });
+  result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.deepEqual(result.effects, []);
+  assert.equal(result.development.observedAt, savedObservedAt);
+  assert.equal(result.development.applicability.status, 'developing');
+  assert.equal(result.development.applicability.taskContext, 'stale');
+  assert.equal(result.development.applicability.candidate, 'stale');
+  assert.equal(result.development.applicability.handoff, 'stale');
+  assert.equal(result.next.action, 'planning');
+  assert.notEqual(result.next.owner, 'task-finish');
+  assert.deepEqual(result.development.receipt.handoffs, savedHandoffs);
+  const unproven = result.development.applicability.reasons.find((item) => item.code === 'change-lifecycle-unproven');
+  assert.equal(unproven.unproven[0].availability, 'unavailable');
+  assert.equal(unproven.unproven[0].lifecycle, null);
+
+  const snapshot = current.runtime.inspectTaskEntrySnapshot(current.root, current.taskId);
+  assert.equal(snapshot.status, 'blocked');
+  assert.equal(snapshot.next.action, 'planning');
+  assert.notEqual(snapshot.next.action, 'finish');
+  assert.deepEqual(snapshot.effects, []);
+});
+
+function freezeChangeFixture(current) {
   let result = current.runtime.observeTaskDevelopment(current.root, current.taskId, {
     changeDispositions: current.dispositions,
     planningTargetIdentity: current.planningTargetIdentity,
@@ -343,18 +405,16 @@ test('已保存converged后外部漂移不改变inspect快照，下一正式acti
   result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
   current.targetIdentity = result.development.receipt.contentTarget.identity;
   recordVerification(current);
-  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  assert.equal(result.development.receipt.candidate.generation, 1);
-  const savedObservedAt = result.development.observedAt;
-  assert.match(savedObservedAt, /^2026-|^20\d\d-/);
+  return current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+}
 
-  current.setObserved({ availability: 'available', lifecycle: 'active' });
-  result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
-  assert.equal(result.development.applicability.taskContext, 'current');
-  assert.equal(result.development.applicability.candidate, 'current');
-  assert.equal(result.development.observedAt, savedObservedAt);
-  assert.throws(() => current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId), (error) => error.code === 'task_development_change_not_converged');
-});
+function handoffChangeFixture(current) {
+  const frozen = freezeChangeFixture(current);
+  const candidate = frozen.development.receipt.candidate;
+  completion(current, candidate);
+  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
+  return current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
+}
 
 function completion(current, candidate, outcome = 'ready') {
   return current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Task Candidate'], uncovered: [], findings: outcome === 'ready' ? [] : ['Known acceptance concern.'], conclusion: { outcome, summary: outcome === 'ready' ? 'Ready.' : 'Requires explicit risk acceptance.' } });
