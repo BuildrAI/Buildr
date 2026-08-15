@@ -308,7 +308,11 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
       const retainedIdentity = currentGitIdentity(run.identity.workspaceRoot);
       const retainedReadiness = retainedWorkspaceReadiness(retainedIdentity);
       if (!retainedIdentity.head || retainedIdentity.branch !== run.identity.targetBranch) checks.push(finding('retained-workspace', 'error', 'task-finish.retained-target-mismatch', `Retained Workspace must be on target branch ${run.identity.targetBranch}.`, { failureClass: 'transient-external-condition' }));
-      else if (!retainedReadiness.ready) checks.push(finding('retained-workspace', 'error', 'task-finish.retained-workspace-dirty', 'Retained Workspace has unrelated uncommitted changes.', { failureClass: 'transient-external-condition', unrelated: retainedReadiness.unrelated }));
+      else if (!retainedReadiness.ready) checks.push(finding('retained-workspace', 'error', 'task-finish.retained-workspace-dirty', 'Retained Workspace has unrelated uncommitted changes.', {
+        failureClass: 'transient-external-condition',
+        unrelated: retainedReadiness.unrelated,
+        unrelatedPaths: retainedReadiness.unrelated.filter((item) => item !== 'git-status-unavailable'),
+      }));
       else checks.push(finding('retained-workspace', 'ok', 'task-finish.retained-workspace-ready', 'Retained Workspace is ready for target transition.', { workspaceMetadata: retainedReadiness.workspaceMetadata }));
 
       if (!run.identity.remote) checks.push(finding('delivery-remote', 'error', 'task-finish.delivery-remote-missing', 'Task Finish run is not bound to a retained Workspace delivery remote.'));

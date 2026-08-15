@@ -157,7 +157,8 @@ test('新 target 保留 carrier 的逐路径结果时形成 exact containment ev
 test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 Agent-reviewed adaptation', (t) => {
   const { root, taskRoot } = repository(t);
   fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
-  git(taskRoot, ['add', 'shared.txt']);
+  fs.writeFileSync(path.join(taskRoot, 'task-only.txt'), 'task-only meaning\n');
+  git(taskRoot, ['add', 'shared.txt', 'task-only.txt']);
   git(taskRoot, ['commit', '-m', 'candidate']);
   fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline meaning\n');
   git(root, ['add', 'shared.txt']);
@@ -168,6 +169,8 @@ test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 
   const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'conflict', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
   assert.equal(carrier.status, 'adaptation-required');
   assert.equal(carrier.conflict.code, 'task-finish.contribution-apply-conflict');
+  assert.deepEqual(carrier.activationPaths, ['shared.txt', 'task-only.txt']);
+  assert.deepEqual(carrier.conflict.conflictPaths, ['shared.txt']);
   assert.equal(git(carrier.root, ['status', '--porcelain']), '');
   assert.equal(git(carrier.root, ['show', 'HEAD:shared.txt']), 'baseline meaning');
 

@@ -62,6 +62,11 @@ function taskContributionActivationPaths(repositoryRoot, taskContribution) {
   return carrierChanges(repositoryRoot, before, after).changedPaths;
 }
 
+function taskContributionConflictPaths(repositoryRoot, taskContribution, deliveryBaselineTree, activationPaths) {
+  const deliveryBaselinePaths = new Set(carrierChanges(repositoryRoot, taskContribution.originalBaseline.tree, deliveryBaselineTree).changedPaths);
+  return activationPaths.filter((file) => deliveryBaselinePaths.has(file));
+}
+
 function containmentIdentity(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
@@ -215,6 +220,7 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
     if (patch.length > 0) {
       const applied = git(target, ['apply', '--index', '--binary', '-'], { encoding: 'buffer', input: patch });
       if (applied.status !== 0) {
+        const conflictPaths = taskContributionConflictPaths(target, taskContribution, deliveryBaselineTree, activationPaths);
         git(target, ['reset', '--hard', deliveryBaselineHead]);
         return {
           status: 'adaptation-required',
@@ -226,7 +232,7 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
           deliveryBaseline: { head: deliveryBaselineHead, tree: deliveryBaselineTree },
           taskContribution,
           deliveryCommit: publicTaskFinishDeliveryCommit(expectedDeliveryCommit),
-          conflict: { code: 'task-finish.contribution-apply-conflict', diagnostic: String(applied.stderr || applied.stdout).trim() },
+          conflict: { code: 'task-finish.contribution-apply-conflict', conflictPaths, diagnostic: String(applied.stderr || applied.stdout).trim() },
         };
       }
     }
