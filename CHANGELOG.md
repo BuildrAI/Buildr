@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+## 0.1.0-rc.13 - 2026-08-15
+
+- 增加稳定版与候选版发布感知：CLI、Doctor、Buildr Web 和内置 Skill 共享安装来源、用户选择的发布轨道及 npm `latest`/`next` 状态；npm 安装可显式选择 stable 或 candidate，development checkout 保持独立且不改写机器默认 `buildr`。
+- 增加 Formal Task 紧凑入口与 Finish 交付回读：`buildr task next` 只读聚合 Task、Environment 与 Development 的 current 最小事实，Finish 可按 Task 回读结构化冲突路径，并在自举 target race、foreign carrier 与 successor 激活场景中执行有界恢复。
+- 为 OpenSpec convergence 与 Formal Verification 增加语义就绪预检，区分阻塞、安全前置与推荐动作，避免为下游阶段重复装配完整上下文或在事实未收敛时启动昂贵验证。
+- 扩展 Task Retrospective 与 Verification 恢复能力：支持批量只读复盘检查，恢复 orphaned execution records，并修复 migration 契约基线。
+- 优化 changed/affected 与分布式 Candidate：先执行 admission 检查再展开受影响计划，闭合浏览器开发反馈，按 domain 拆分高成本 owner 与 shard，同时保持 `Candidate gate` 对同一 source、唯一制品和全部平台证据的完整聚合。
+
 ## 0.1.0-rc.12 - 2026-08-15
 
 - 包含 rc.11 已验证候选中的 Buildr CLI 安装通道隔离、Buildr Web、自举激活、Formal Task Finish、Verification、分布式 Candidate 和唯一 pre-tag OIDC authority probe 等改进；`v0.1.0-rc.11` tag 保持不动，但其 workflow 在任何 npm 写入和 GitHub Release 创建前失败。

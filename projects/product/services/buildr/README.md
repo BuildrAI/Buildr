@@ -45,7 +45,7 @@ buildr init --agent <agent> --target . --name <name> --profile <personal|team|co
 buildr web --target .
 ```
 
-当前 package 候选版本为 `0.1.0-rc.12`；可安装版本与 `next` 指向始终以 npm 官方 Registry 为准。
+当前 package 候选版本为 `0.1.0-rc.13`；可安装版本与 `next` 指向始终以 npm 官方 Registry 为准。
 
 `init --agent` 以最终 doctor 为技术 onboarding 证据；成功后仍应由 Agent 根据真实 Project/Service 状态完成简短交接。深入命令和 runtime 细节见 [CLI Reference](docs/cli-reference.md) 与 [Runtime Adapters](docs/agent-runtime-adapters.md)。
 
