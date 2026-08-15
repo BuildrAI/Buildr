@@ -123,6 +123,28 @@ function finishMode(result) {
   return doctorBlocked ? 'doctor-blocked' : null;
 }
 
+function targetRaceResumeToken(result, runId) {
+  const matches = result?.runId === runId
+    && result?.status === 'blocked'
+    && result.primaryFailure?.phase === 'deliver'
+    && result.primaryFailure?.code === 'task-finish.target-race'
+    && result.resume?.phase === 'deliver'
+    && result.resume?.token;
+  return matches ? result.resume.token : null;
+}
+
+function deliveryAdaptationRequired(result, runId) {
+  return Boolean(result?.runId === runId
+    && result?.status === 'blocked'
+    && result.primaryFailure?.phase === 'prepare'
+    && result.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
+    && result.carrier?.root
+    && result.carrier?.identity
+    && result.resume?.phase === 'prepare'
+    && result.resume?.carrierIdentity === result.carrier.identity
+    && result.resume?.token);
+}
+
 export function createSelfBootstrapCloseoutPlan(finishResult) {
   const mode = finishMode(finishResult);
   if (!mode) throw closeoutError('self-bootstrap-closeout.finish-result-ineligible', 'Finish Result不是complete或唯一retained Doctor blocked模式。');
@@ -1007,7 +1029,21 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     } else {
       const resumed = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', finishResult.resume.token, '--target', root, '--detail', 'full', '--json'], 'resume-finish-run', active);
       requirePassed(resumed, 'self-bootstrap-closeout.finish-resume-failed', '同一Finish run恢复命令失败。');
-      const payload = parseJson(resumed, 'self-bootstrap-closeout.finish-resume-result-invalid', 'Finish resume没有返回JSON。');
+      let payload = parseJson(resumed, 'self-bootstrap-closeout.finish-resume-result-invalid', 'Finish resume没有返回JSON。');
+      const targetRaceToken = allowLatestRemoteFastForward ? targetRaceResumeToken(payload, plan.runId) : null;
+      if (targetRaceToken) {
+        const recovered = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', targetRaceToken, '--target', root, '--detail', 'full', '--json'], 'resume-finish-target-race', active);
+        requirePassed(recovered, 'self-bootstrap-closeout.target-race-resume-failed', '同一Finish run的target-race恢复命令失败。');
+        payload = parseJson(recovered, 'self-bootstrap-closeout.target-race-resume-result-invalid', 'target-race恢复没有返回JSON。');
+        if (deliveryAdaptationRequired(payload, plan.runId)) {
+          throw closeoutError('self-bootstrap-closeout.target-race-adaptation-required', '最新Delivery Baseline需要Agent审核并适配同一Finish carrier；Agent无法安全处理时请求用户授权。', {
+            runId: payload.runId,
+            primaryFailure: payload.primaryFailure,
+            carrier: payload.carrier,
+            resume: payload.resume,
+          });
+        }
+      }
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
       markPassed(active, finishResult.resume.token, payload.resolvedContext?.identity || payload.runId);
     }

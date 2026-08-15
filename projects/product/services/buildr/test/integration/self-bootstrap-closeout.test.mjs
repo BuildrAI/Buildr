@@ -131,6 +131,29 @@ function doctorBlockedResult(root, baseRef, changedPaths, overrides = {}) {
   };
 }
 
+function targetRaceResult(token = 'sha256-target-race') {
+  return {
+    status: 'blocked',
+    runId: 'closeout-run',
+    primaryFailure: { phase: 'deliver', operation: 'target-transition', code: 'task-finish.target-race' },
+    resume: { phase: 'deliver', token },
+  };
+}
+
+function adaptationRequiredResult(root, token = 'sha256-adaptation') {
+  return {
+    status: 'blocked',
+    runId: 'closeout-run',
+    primaryFailure: { phase: 'prepare', operation: 'delivery-adaptation', code: 'task-finish.delivery-adaptation-required' },
+    carrier: {
+      root: path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', 'closeout-run'),
+      identity: 'sha256-carrier',
+      reuseMode: 'adaptation-required',
+    },
+    resume: { phase: 'prepare', token, carrierIdentity: 'sha256-carrier' },
+  };
+}
+
 function cleanupPendingResult(root, baseRef, runId, taskId = `task-${runId}`, overrides = {}) {
   const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
   const carrierIdentity = `sha256-carrier-${runId}`;
@@ -157,6 +180,7 @@ function createCarrier(root, runId = 'closeout-run') {
 
 function executor(root, options = {}) {
   const canonicalRoot = fs.realpathSync(root);
+  let finishResumeIndex = 0;
   return (executable, args, context) => {
     if (executable === 'git') {
       if (args[0] === 'push' && options.failPush) return { status: 1, stdout: '', stderr: 'simulated push failure' };
@@ -194,7 +218,10 @@ function executor(root, options = {}) {
         }), stderr: '' };
       }
       if (args[0] === 'doctor') return { status: 0, stdout: JSON.stringify({ health: { ready: true } }), stderr: '' };
-      if (args[0] === 'task') return { status: 0, stdout: JSON.stringify({ status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' }, resumePreflight: 'passed', doctor: 'ready' }), stderr: '' };
+      if (args[0] === 'task') {
+        const payload = options.finishResumeResults?.[finishResumeIndex++] || { status: 'complete', runId: 'closeout-run', resolvedContext: { identity: 'sha256-context' }, resumePreflight: 'passed', doctor: 'ready' };
+        return { status: 0, stdout: JSON.stringify(payload), stderr: '' };
+      }
     }
     if (executable === process.execPath && args[0] === productScript) {
       const productArgs = args.slice(1);
@@ -787,6 +814,107 @@ test('Doctor blocked preflight只排除同一run自有carrier', (t) => {
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
   assert.match(phase(result, 'preflight').operations.find((item) => item.id === 'preflight-untracked').stdout, /closeout-run/);
+});
+
+test('foreign-clear retry遇到target-race时有界承接一次并完成', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(root);
+  const result = runSelfBootstrapCloseout({
+    finishResult: input,
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    allowLatestRemoteFastForward: true,
+    execute: executor(root, { finishResumeResults: [
+      targetRaceResult(),
+      { status: 'complete', runId: input.runId, resolvedContext: { identity: 'sha256-context-after-race' } },
+    ] }),
+    environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.deepEqual(phase(result, 'finalize').operations.filter((item) => item.id.startsWith('resume-finish')).map((item) => item.id), [
+    'resume-finish-run',
+    'resume-finish-target-race',
+  ]);
+});
+
+test('foreign-clear target-race恢复需要Delivery Adaptation时交给Agent', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(root);
+  const adaptation = adaptationRequiredResult(root);
+  const result = runSelfBootstrapCloseout({
+    finishResult: input,
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    allowLatestRemoteFastForward: true,
+    execute: executor(root, { finishResumeResults: [targetRaceResult(), adaptation] }),
+    environment,
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.target-race-adaptation-required');
+  assert.equal(result.diagnostic.details.runId, input.runId);
+  assert.equal(result.diagnostic.details.carrier.root, adaptation.carrier.root);
+  assert.equal(result.diagnostic.details.resume.token, adaptation.resume.token);
+  assert.equal(phase(result, 'finalize').operations.filter((item) => item.id.startsWith('resume-finish')).length, 2);
+});
+
+test('foreign-clear target-race恢复拒绝不匹配的Delivery Adaptation carrier', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(root);
+  const adaptation = adaptationRequiredResult(root);
+  adaptation.resume.carrierIdentity = 'sha256-other-carrier';
+  const result = runSelfBootstrapCloseout({
+    finishResult: input,
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    allowLatestRemoteFastForward: true,
+    execute: executor(root, { finishResumeResults: [targetRaceResult(), adaptation] }),
+    environment,
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.finish-resume-incomplete');
+  assert.equal(phase(result, 'finalize').operations.filter((item) => item.id.startsWith('resume-finish')).length, 2);
+});
+
+test('普通closeout遇到target-race时不追加恢复调用', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(root);
+  const result = runSelfBootstrapCloseout({
+    finishResult: input,
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root, { finishResumeResults: [targetRaceResult()] }),
+    environment,
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.finish-resume-incomplete');
+  assert.equal(phase(result, 'finalize').operations.filter((item) => item.id.startsWith('resume-finish')).length, 1);
+});
+
+test('foreign-clear target-race恢复再次race时停止且不形成循环', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  createCarrier(root);
+  const result = runSelfBootstrapCloseout({
+    finishResult: input,
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    allowLatestRemoteFastForward: true,
+    execute: executor(root, { finishResumeResults: [targetRaceResult(), targetRaceResult('sha256-target-race-again')] }),
+    environment,
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.finish-resume-incomplete');
+  assert.equal(result.diagnostic.details.resume.token, 'sha256-target-race-again');
+  assert.equal(phase(result, 'finalize').operations.filter((item) => item.id.startsWith('resume-finish')).length, 2);
 });
 
 test('Doctor blocked preflight拒绝与run identity不匹配的carrier root', (t) => {

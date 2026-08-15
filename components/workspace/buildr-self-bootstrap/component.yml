@@ -1,7 +1,7 @@
 schemaVersion: buildr.component/v1
 id: buildr-self-bootstrap
 kind: integration
-version: 1.1.15
+version: 1.1.16
 source: workspace
 members:
   rules: []
@@ -14,5 +14,5 @@ contributions:
   skillFragments:
     - task-finish@append=components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md
 integrity:
-  - skills/buildr-self-bootstrap-sync=sha256-45f5d7307cd9cdab3e242f69a910b813c3530666cab38bbde19575d5ce4f969b
-  - components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-4bcb2256ffc101316ae7bcbd585d7f4feff43757b2e0d6ba6bbf4c7b6f442801
+  - skills/buildr-self-bootstrap-sync=sha256-b84ccce4c97c1e38906bbd1d5c4431b492b06d1f3e3180c21444077bcc035c87
+  - components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-b5f3ee8c53388eb645754d66741d6dd2253aadc55a0f232fc730e01b99b087e4
