@@ -7,6 +7,7 @@ import {
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
   VERIFICATION_ENVIRONMENT_ISOLATIONS,
+  VERIFICATION_DEVELOPMENT_RUNNERS,
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
   VERIFICATION_FULL_SCOPE_INPUTS,
@@ -14,10 +15,22 @@ import {
   VERIFICATION_GROUPS,
   VERIFICATION_IGNORED_INPUTS,
   VERIFICATION_PROFILES,
+  VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
   VERIFICATION_RESET_BURDENS,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
+
+const PRODUCTION_OWNER_GOVERNED_INPUTS = Object.freeze([
+  'src/application/**/*.mjs',
+  'src/infrastructure/**/*.mjs',
+]);
+const PRODUCTION_OWNER_BROAD_STEPS = new Set([
+  'unit',
+  'candidate-tarball',
+  'application-payload-release',
+]);
+const PRODUCTION_OWNER_BOUNDARIES = new Set(['Static', 'Integration', 'System']);
 
 const CANDIDATE_CI_RUNNERS = Object.freeze(['macos', 'windows']);
 const CANDIDATE_CI_PHASES = Object.freeze(['preflight', 'artifact', 'verification']);
@@ -135,6 +148,14 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     if (!item.name) findings.push({ step: item.id, code: 'missing_name' });
     if (!Array.isArray(item.inputs) || item.inputs.length === 0) findings.push({ step: item.id, code: 'missing_inputs' });
     if (item.selection != null && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'invalid_selection', value: item.selection });
+    if (!Array.isArray(item.developmentRunners)) findings.push({ step: item.id, code: 'invalid_development_runners' });
+    else {
+      if (new Set(item.developmentRunners).size !== item.developmentRunners.length) findings.push({ step: item.id, code: 'duplicate_development_runner' });
+      for (const runner of item.developmentRunners) if (!VERIFICATION_DEVELOPMENT_RUNNERS.includes(runner)) {
+        findings.push({ step: item.id, code: 'unknown_development_runner', value: runner });
+      }
+      if (item.developmentRunners.length > 0 && item.selection !== 'explicit-only') findings.push({ step: item.id, code: 'development_runner_owner_not_explicit' });
+    }
     if (item.inputExclusions != null && !Array.isArray(item.inputExclusions)) findings.push({ step: item.id, code: 'invalid_input_exclusions' });
     else for (const pattern of item.inputExclusions ?? []) {
       try { normalizeProductPath(pattern); } catch { findings.push({ step: item.id, code: 'invalid_input_exclusion', value: pattern }); }
@@ -305,6 +326,40 @@ export function auditVerificationInputCoverage(paths, steps = verificationSteps)
   });
 }
 
+export function auditProductionOwnerCoverage(paths, steps = verificationSteps) {
+  const mapped = [];
+  const allowlisted = [];
+  const gaps = [];
+  for (const rawPath of paths) {
+    const productPath = normalizeProductPath(rawPath);
+    if (!PRODUCTION_OWNER_GOVERNED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) continue;
+    const owners = steps
+      .filter((item) => matchedStepInput(item, productPath))
+      .map((item) => item.id);
+    const directOwners = steps
+      .filter((item) => owners.includes(item.id))
+      .filter((item) => !PRODUCTION_OWNER_BROAD_STEPS.has(item.id))
+      .filter((item) => PRODUCTION_OWNER_BOUNDARIES.has(item.testing?.executionBoundary))
+      .map((item) => item.id);
+    if (directOwners.length > 0) {
+      mapped.push(Object.freeze({ path: productPath, owners: Object.freeze(directOwners) }));
+      continue;
+    }
+    const exception = VERIFICATION_PRODUCTION_OWNER_ALLOWLIST.find((item) => item.path === productPath);
+    if (exception && owners.includes(exception.owner)) {
+      allowlisted.push(exception);
+      continue;
+    }
+    gaps.push(Object.freeze({ path: productPath, broadOwners: Object.freeze(owners) }));
+  }
+  return Object.freeze({
+    ok: gaps.length === 0,
+    mapped: Object.freeze(mapped),
+    allowlisted: Object.freeze(allowlisted),
+    gaps: Object.freeze(gaps),
+  });
+}
+
 function expandDependencies(selected, byId, reasons) {
   const visit = (id, parent = null) => {
     if (selected.has(id)) return;
@@ -336,10 +391,15 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const selected = new Set();
   const reasons = new Map();
   const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
+  const productionOwnerAudit = auditProductionOwnerCoverage(paths, steps);
+  if (!productionOwnerAudit.ok) {
+    throw new Error(`Production source owner coverage gap:\n${productionOwnerAudit.gaps.map((item) => `- ${item.path}`).join('\n')}`);
+  }
   const profiles = [...new Set(request.profiles ?? [])];
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
-  const fullScopeMatches = paths.flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
+  const fullScopeExemptPaths = new Set((request.fullScopeExemptPaths ?? []).map(normalizeProductPath));
+  const fullScopeMatches = paths.filter((productPath) => !fullScopeExemptPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
     .filter((pattern) => matchesInput(productPath, pattern))
     .map((pattern) => ({ productPath, pattern })));
   for (const id of stepIds) {
@@ -357,7 +417,11 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   if (fullScopeMatches.length > 0) {
     for (const item of steps) if (item.profiles.includes('candidate')) {
       selected.add(item.id);
-      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => `${productPath} matches full-scope owner ${pattern}`)]);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => (
+        ['package.json', 'package-lock.json'].includes(productPath)
+          ? `${productPath} contains unverified or non-version package metadata changes; matches full-scope owner ${pattern}`
+          : `${productPath} matches full-scope owner ${pattern}`
+      ))]);
     }
   }
   for (const group of groups) {
@@ -391,6 +455,68 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     stepIds: Object.freeze(stepIds),
     delegated: Object.freeze(delegatedPaths),
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
+  });
+}
+
+export function createDevelopmentPlatformPlan(request = {}, steps = verificationSteps) {
+  const validation = validateVerificationRegistry(steps);
+  if (!validation.ok) throw new Error(`Invalid verification registry:\n${validation.findings.map((item) => `${item.step}: ${item.code}`).join('\n')}`);
+  const runner = request.runner;
+  if (!VERIFICATION_DEVELOPMENT_RUNNERS.includes(runner)) throw new Error(`Unknown development verification runner: ${runner}`);
+  const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
+  const matchedReasons = new Map();
+  for (const item of steps) {
+    if (!item.developmentRunners.includes(runner)) continue;
+    const matched = paths.filter((productPath) => item.inputs.some((pattern) => matchesInput(productPath, pattern))
+      && !(item.inputExclusions ?? []).some((pattern) => matchesInput(productPath, pattern)));
+    if (matched.length > 0) matchedReasons.set(item.id, matched.map((productPath) => `${productPath} matches ${runner} development owner ${item.id}`));
+  }
+  const base = createVerificationPlan({ stepIds: [...matchedReasons.keys()] }, steps);
+  return Object.freeze({
+    ...base,
+    source: 'development-platform',
+    runner,
+    paths: Object.freeze(paths),
+    steps: Object.freeze(base.steps.map((item) => Object.freeze({
+      ...item,
+      reasons: Object.freeze([...(item.reasons ?? []), ...(matchedReasons.get(item.id) ?? [])]),
+    }))),
+  });
+}
+
+export function createVerificationAdmissionPlan(plan, steps = verificationSteps) {
+  if (plan.steps.length === 0) return Object.freeze({ ...plan, admissionStepIds: Object.freeze([]) });
+  const fastPlan = createVerificationPlan({ profiles: ['fast'] }, steps);
+  const admissionStepIds = [...new Set([
+    ...fastPlan.steps.map((item) => item.id),
+    ...plan.steps.filter((item) => item.admission === true).map((item) => item.id),
+  ])];
+  const admissionIds = new Set(admissionStepIds);
+  const merged = new Map();
+  for (const item of [...fastPlan.steps, ...plan.steps]) {
+    const existing = merged.get(item.id);
+    merged.set(item.id, Object.freeze({
+      ...(existing ?? item),
+      ...item,
+      reasons: Object.freeze([...new Set([...(existing?.reasons ?? []), ...(item.reasons ?? [])])]),
+    }));
+  }
+  const orderedIds = [
+    ...admissionStepIds,
+    ...plan.steps.map((item) => item.id).filter((id) => !admissionIds.has(id)),
+  ];
+  const composedSteps = orderedIds.map((id) => {
+    const item = merged.get(id);
+    if (admissionIds.has(id)) return item;
+    return Object.freeze({
+      ...item,
+      dependsOn: Object.freeze([...new Set([...(item.dependsOn ?? []), ...admissionStepIds])]),
+    });
+  });
+  return Object.freeze({
+    ...plan,
+    admissionStepIds: Object.freeze(admissionStepIds),
+    steps: Object.freeze(composedSteps),
   });
 }
 

@@ -1378,8 +1378,8 @@ Buildr自举Workspace的`buildr-self-bootstrap` Component MUST通过单一专属
 - **THEN** self-bootstrap activation MUST安装development Buildr Web，launcher identity MUST绑定delivered retained commit
 - **AND** MUST不安装或覆盖稳定版Buildr Web或PATH默认CLI
 
-#### Scenario: package workspace inputs
-- **WHEN** 冻结Task Contribution命中package manifest或workspace package targets
+#### Scenario: package workspace inputs或Buildr runtime Skill source
+- **WHEN** 冻结Task Contribution命中package manifest、workspace package targets或`package/targets/runtime/skills/buildr/**`
 - **THEN** self-bootstrap activation MUST执行retained sync，只提交受管sync delta，并通过普通push与远端回读完成收敛
 - **AND** package sync MUST不与Buildr Web或开发入口分类重复执行相同动作
 
@@ -1520,3 +1520,16 @@ Buildr自举Workspace的self-bootstrap activation MUST通过retained checkout的
 - **WHEN** 同端口启动超时、health认证失败、恢复后的Launcher/source/Node/commit identity不匹配或启动进程提前退出
 - **THEN** self-bootstrap activation MUST回收本次启动且ownership可证明的异常子进程并在Development Launcher阶段fail closed
 - **AND** MUST保留已成功更新的Launcher、报告恢复operation evidence，并且不得继续development entry验证、最终Doctor或same-run Finish resume
+
+### Requirement: Task Entry Snapshot 必须作为完整 package surface 交付
+Buildr package MUST包含Task Entry Snapshot Application、CLI route、public JSON identity、action-local Skill guidance、reference/current knowledge与focused tests。checkout源码入口、npm package与managed runtime projection MUST对该surface保持一致。
+
+#### Scenario: package/static parity
+- **WHEN** 产品构建或检查package assets
+- **THEN** 新Application、CLI、schema与guidance MUST均被正式package包含
+- **AND** 缺少任一运行时模块、registry identity或受管Skill更新 MUST使验证失败
+
+#### Scenario: 既有行为兼容
+- **WHEN** package加入Task Entry Snapshot
+- **THEN** 既有Task inspect、Environment、Development、retry/resume/cancel、Verification Result、Execution Record与Finish命令 MUST保持原schema和行为
+- **AND** 不得要求持久化migration或回填历史Task

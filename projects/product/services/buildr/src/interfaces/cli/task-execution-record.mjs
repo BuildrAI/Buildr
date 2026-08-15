@@ -3,13 +3,19 @@ import process from 'node:process';
 
 const SCHEMA = 'buildr.task-execution-record-gc-result/v1';
 const USAGE = 'buildr task execution-record gc [--target <canonical-workspace>] [--dry-run] [--limit <1..500>] [--json]';
+const RECOVER_SCHEMA = 'buildr.task-execution-record-recover-result/v1';
+const RECOVER_USAGE = 'buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]';
 
-function syntax(message) {
+function syntax(message, { code = 'task_execution_record_gc_cli.syntax', usage = USAGE } = {}) {
   const error = new Error(message);
-  error.code = 'task_execution_record_gc_cli.syntax';
+  error.code = code;
   error.status = 400;
-  error.usage = USAGE;
+  error.usage = usage;
   return error;
+}
+
+function recoverSyntax(message) {
+  return syntax(message, { code: 'task_execution_record_recover_cli.syntax', usage: RECOVER_USAGE });
 }
 
 export function parseTaskExecutionRecordGcCli(args) {
@@ -35,6 +41,35 @@ export function parseTaskExecutionRecordGcCli(args) {
     targetRoot: path.resolve(values.get('--target') || process.cwd()),
     dryRun: values.has('--dry-run'),
     limit,
+    json: values.has('--json'),
+  };
+}
+
+export function parseTaskExecutionRecordRecoverCli(args) {
+  const allowed = new Set(['--task', '--record', '--summary', '--authorize-unknown-outcome', '--target', '--json']);
+  const flags = new Set(['--authorize-unknown-outcome', '--json']);
+  const values = new Map();
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg.startsWith('--') || !allowed.has(arg)) throw recoverSyntax(`Unknown argument: ${arg}`);
+    if (values.has(arg)) throw recoverSyntax(`Argument may only be provided once: ${arg}`);
+    if (flags.has(arg)) values.set(arg, true);
+    else {
+      const value = args[index + 1];
+      if (!value || value.startsWith('--')) throw recoverSyntax(`Missing value for ${arg}`);
+      values.set(arg, value);
+      index += 1;
+    }
+  }
+  if (!values.get('--task')) throw recoverSyntax('recover requires --task <task-id>.');
+  if (!values.get('--record')) throw recoverSyntax('recover requires --record <record-id>.');
+  if (values.has('--summary') && values.has('--authorize-unknown-outcome')) throw recoverSyntax('--summary and --authorize-unknown-outcome are mutually exclusive.');
+  return {
+    targetRoot: path.resolve(values.get('--target') || process.cwd()),
+    taskId: values.get('--task'),
+    recordId: values.get('--record'),
+    summaryPath: values.has('--summary') ? path.resolve(values.get('--summary')) : null,
+    authorizeUnknownOutcome: values.has('--authorize-unknown-outcome'),
     json: values.has('--json'),
   };
 }
@@ -78,6 +113,51 @@ export function taskExecutionRecordGcCommand(runtime, args) {
     const json = parsed?.json || args.includes('--json');
     const payload = blocked(error, parsed);
     print(payload, json);
+    process.exitCode = 1;
+    return payload;
+  }
+}
+
+function blockedRecovery(error, parsed = null) {
+  const expected = error.taskExecutionRecordBusiness || error.code === 'task_execution_record_recover_cli.syntax';
+  return {
+    schemaVersion: RECOVER_SCHEMA,
+    operation: 'recover',
+    status: 'blocked',
+    mode: parsed?.summaryPath ? 'terminal-evidence' : parsed?.authorizeUnknownOutcome ? 'authorized-unknown' : 'unknown-unconfirmed',
+    taskId: parsed?.taskId || null,
+    recordId: parsed?.recordId || null,
+    record: null,
+    transientCleanup: null,
+    diagnostic: { code: error.code || 'task_execution_record_recovery_failed', message: expected ? error.message : 'Execution Record recover failed before a safe result could be formed.' },
+    effects: [],
+    nextActions: [error.usage ? `Usage: ${RECOVER_USAGE}` : error.nextAction || '检查matching Task、record与recovery evidence后重试。'],
+  };
+}
+
+function printRecovery(payload, json) {
+  if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else if (payload.status === 'recovered') console.log(`Execution Record recovered: ${payload.recordId} (${payload.record.outcome}/${payload.record.lifecycleStatus}).`);
+  else if (payload.status === 'attention') console.log(`Execution Record retained with unknown outcome: ${payload.recordId}.`);
+  else console.error(`[${payload.diagnostic.code}] ${payload.diagnostic.message}\nNext: ${payload.nextActions[0]}`);
+  return payload;
+}
+
+export function taskExecutionRecordRecoverCommand(runtime, args) {
+  let parsed;
+  try {
+    parsed = parseTaskExecutionRecordRecoverCli(args);
+    const payload = runtime.recoverTaskExecutionRecord(parsed.targetRoot, parsed.taskId, parsed.recordId, {
+      ...(parsed.summaryPath ? { summaryPath: parsed.summaryPath } : {}),
+      ...(parsed.authorizeUnknownOutcome ? { authorizeUnknownOutcome: true } : {}),
+    });
+    printRecovery(payload, parsed.json);
+    if (payload.status === 'authorization-required') process.exitCode = 1;
+    return payload;
+  } catch (error) {
+    const json = parsed?.json || args.includes('--json');
+    const payload = blockedRecovery(error, parsed);
+    printRecovery(payload, json);
     process.exitCode = 1;
     return payload;
   }

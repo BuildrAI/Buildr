@@ -74,12 +74,11 @@ npm run test:component
 npm run test:contract
 npm run test:integration
 npm run test:system
-npm run test:focus -- integration-candidate-recovery
 npm run test:focus -- integration-candidate-release
 npm run coverage:unit -- --summary /tmp/buildr-unit-coverage.json
 ```
 
-已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。完整 Unit 因低成本可覆盖全部 `src/**`；重型 Integration/System step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以“最终可由 CLI 到达”为由扩大选择。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。registry、planner、runner、声明或 timing 等全局 owner 变化时，同一个 Changed plan 扩展为完整回归：
+已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。完整 Unit 因低成本可覆盖全部 `src/**`；重型 Integration/System step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以“最终可由 CLI 到达”为由扩大选择。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。registry、planner、runner、声明或 timing 等全局 owner 变化时，同一个 Changed plan 扩展为完整回归。拥有Git base时，仅package与lockfile三个明确version字段变化按affected选择；依赖、scripts、engines、其他lockfile结构、解析失败以及没有base的显式paths仍保持full：
 
 ```bash
 npm run test:changed -- --plan
@@ -101,7 +100,7 @@ npm run --silent test:focus -- --json release-tarball-smoke
 
 显式本地完整回归自动选择 `local` 或 `ci` execution profile，并在 timing summary 记录 global/class/resource 上限、step 时间线和 queue duration。性能预算只产生 warning，不把正确性通过改成失败；调度实验可显式设置 `BUILDR_VERIFICATION_PROFILE=ci-workspace-limited`。
 
-Candidate CI先运行低成本preflight，再构建一次绑定精确source SHA的tarball。macOS core、Windows runtime/Launcher、Workspace/Task、fresh build及四个Host Node tuple并行消费同一registry计划和适用的同一tarball；稳定`Candidate gate`只接受source SHA、registry identity、artifact digest和coverage全部current的closed evidence。Host Node和独立Workspace Node identity不得互相替代。
+Candidate CI在单个bootstrap job中复用checkout、依赖与Workspace Node，先形成独立preflight evidence，再构建一次绑定精确source SHA的tarball。macOS core、Windows runtime/Launcher、Workspace lifecycle、Task workflow、fresh build及四个Host Node tuple并行消费同一registry计划；只有core、runtime和Host Node真实consumer下载tarball。稳定`Candidate gate`继续在macOS checkout上无需`npm ci`，直接使用pinned Node聚合source SHA、registry identity、artifact digest和coverage全部current的closed evidence。Host Node和独立Workspace Node identity不得互相替代。
 
 资源受限CI的单个shard仍使用有界并发。产品owned进程、Launcher、Task Environment或Workspace cleanup失败继续阻塞；全部断言和owned cleanup完成后，最外层Windows临时根遇到`EPERM`、`EBUSY`或`ENOTEMPTY`才只warning并保留路径。release smoke与fresh build evidence保存内部阶段耗时，便于定位安装、启动、漂移修复、卸载/Doctor或harness cleanup。
 
@@ -112,13 +111,13 @@ npm run test:focus -- workspace-lifecycle
 npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
-正式任务在所有rebase、冲突解决和内容修改结束后，通过Task Verification对最终冻结Candidate执行delivery-required `product.delivery`。普通任务由changed planner运行affected；全局验证owner变化时同一plan运行full。本地完整入口保留给验证系统自身变化、明确全量要求、诊断或GitHub不可用；普通发布准备不再与GitHub重复执行。`dev → main`以GitHub `Candidate gate`为正式完整源码Candidate，tag发布不重复源码Candidate，而是验证同一release contract下冻结的唯一npm tarball：
+正式任务在所有rebase、冲突解决和内容修改结束后，通过Task Verification对最终冻结Candidate执行唯一delivery-required `product.delivery`。`product.release-artifact-set`只在维护者明确要求独立release诊断时显式选择，不自动与普通delivery叠加。普通任务由changed planner运行affected；全局验证owner变化时同一plan运行full。本地完整入口保留给验证系统自身变化、明确全量要求、诊断或GitHub不可用；普通发布准备不再与GitHub重复执行。`dev → main`以GitHub `Candidate gate`为正式完整源码Candidate，tag发布不重复源码Candidate，而是验证同一release contract下冻结的唯一npm tarball：
 
 ```bash
 npm run test:candidate
 ```
 
-同一SHA的暂态失败使用GitHub“重新运行失败作业”：每个shard以唯一逻辑artifact名和`overwrite`替换旧attempt evidence，只重跑失败shard及aggregate。代码修复产生新SHA后旧evidence必须失效并重新运行完整分布式门禁；三个Windows高成本shard并行，因此wall-clock由最长shard主导，而不是把安装、runtime、Workspace和fresh build再次串成一条长作业。
+同一SHA的暂态失败使用GitHub“重新运行失败作业”：每个shard以唯一逻辑artifact名和`overwrite`替换旧attempt evidence，只重跑失败shard及aggregate。代码修复产生新SHA后旧evidence必须失效并重新运行完整分布式门禁；Windows runtime、Workspace lifecycle、Task workflow与fresh build各自形成并行恢复边界，因此wall-clock由最长shard主导，而不是把它们串成一条长作业。
 
 Product delivery/full 验证会把每个阶段和总耗时写入 `BUILDR_TIMING_OUTPUT` 指定的 JSON 文件；未显式指定时，每次 Candidate/Changed run 都在系统临时目录创建唯一 evidence 目录，其中包含 `timing.json` 和 diagnostics，结束时直接打印绝对路径，不维护可被并发覆盖的固定 `latest` 文件。summary 的 `evidenceLifecycle` 将这类目录标记为 `transient`、`consumer-finished` 后可清理并提供精确 `cleanupReference`；它只在当前任务 consumer 使用期间保留，不是长期证据库。显式设置 `BUILDR_TIMING_OUTPUT` / `BUILDR_DIAGNOSTICS_OUTPUT` 时标记为 `caller-managed`，由调用方保证路径唯一并决定保留期，CI 总是上传这些证据。summary 还记录 run kind/id、来源仓库与 Product root、HEAD、branch、dirty、候选 fingerprint、每个 step 日志路径以及 Node、平台、架构和 CI 环境。Workspace E2E 直接运行失败时默认保留失败 fixture 并打印位置，成功时清理；需要主动保留成功 fixture 时可设置 `BUILDR_WORKSPACE_E2E_KEEP=1`。
 
@@ -144,7 +143,7 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 8. npm tarball只由npm Registry承载；Actions artifact只保存冻结候选/evidence，README、官网和安装脚本不得把它作为公共下载地址。发布后只从Registry下载精确package并核对安装readback。
 9. 已发布版本不覆盖。RC问题发布新的prerelease；正式版本问题优先发布patch，必要时deprecate或移动dist-tag。所有tag、Registry与公共安装readback稳定后，远端release Task分支清理仍需独立授权；清理失败只记录follow-up，不回滚已发布事实。
 
-`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6`、`0.1.0-rc.7` 和 `0.1.0-rc.8` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用。`v0.1.0-rc.9` tag workflow 因Host Node checkout验证依赖缺失而失败；`v0.1.0-rc.10` 已补齐独立 `npm ci`，但两个Host Node jobs未向verifier传入冻结`release-artifact.json`而确定性失败；`v0.1.0-rc.11` 修复Host Node wiring后进入publish job，但frozen Application Payload仍把开发仓用户态`.buildr/workspace.yml`当作必需资源，因该源已被正确移除而在任何公共写入前fail closed。npm `next`因此仍指向rc.8。rc.12以新版本移除全部Workspace、Project与Service用户态配置发布源，并由Domain writer在初始化、创建或同步时生成；既有rc.9/rc.10/rc.11 tag保持不动，后续正式发布仍需单独明确授权。
+`0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6`、`0.1.0-rc.7`、`0.1.0-rc.8` 和 `0.1.0-rc.12` 已完成 npm 发布和 GitHub prerelease 创建；`0.1.0-rc.4` 因发布范围错误已弃用。`v0.1.0-rc.9` tag workflow 因Host Node checkout验证依赖缺失而失败；`v0.1.0-rc.10` 已补齐独立 `npm ci`，但两个Host Node jobs未向verifier传入冻结`release-artifact.json`而确定性失败；`v0.1.0-rc.11` 修复Host Node wiring后进入publish job，但frozen Application Payload仍把开发仓用户态`.buildr/workspace.yml`当作必需资源，因该源已被正确移除而在任何公共写入前fail closed。rc.12随后移除全部Workspace、Project与Service用户态配置发布源，并由Domain writer在初始化、创建或同步时生成，现已发布且npm `next`指向rc.12；既有rc.9/rc.10/rc.11 tag保持不动。当前正在准备rc.13，实际tag与发布仍需单独明确授权。
 
 实际自举workspace如需消费新版产品资产，可独立执行sync并在状态变更后运行当前Agent doctor。`buildr update`只按installation receipt更新当前npm package或development checkout；它不更新Workspace Node。上述能力验证不等于已完成tag、publish或GitHub Release mutation。
 

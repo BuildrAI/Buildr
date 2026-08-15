@@ -43,7 +43,15 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 
 ## 4. 处理 current 复盘
 
-用户要求处理已有复盘时，先 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Buildr Web 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
+用户要求处理多份已有复盘时，先通过一次有界批量只读调用取得默认 `pending` 摘要：
+
+```text
+node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <1..500>] [--include-report]
+```
+
+默认最多返回 100 份 pending 摘要且不包含报告正文；先用摘要收窄对象，只在确实需要批量读取原文时显式使用 `--include-report`，个别全文继续使用单 Task `inspect`。`list` 只减少重复 driver 调用，不自动分析、评分、生成方向、创建 Task 或修改 disposition，也不成为后续 mutation 的授权或门禁。
+
+用户要求处理已有复盘时，再对需要判断的对象使用 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Buildr Web 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
 
 ### 4.1 先完成只读讨论
 

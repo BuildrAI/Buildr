@@ -10,6 +10,7 @@ const ACTION_LABELS: Record<string, string> = {
   change: '变更',
   'task-review': '任务审查',
   'task-verification': '任务验证',
+  'release-update': 'Buildr 版本更新',
 };
 
 type Props = {
@@ -122,6 +123,15 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
   const showResult = (nextPrompt: string, noun: string, unchangedState = '') => {
     setPrompt(nextPrompt);
     setCopyState(unchangedState || `${noun}尚未创建。`);
+  };
+
+  const copyProvidedPrompt = async (value: string, unchangedState: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyState(`指令已复制。${unchangedState}`);
+    } catch {
+      setCopyState(`已选中指令，请手动复制。${unchangedState}`);
+    }
   };
 
   const submitStart = async (event: FormEvent) => {
@@ -277,11 +287,45 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
           <div className="copy-row">
             <Button
               id="copy-action-prompt"
-              onClick={() => void copyPrompt('工作空间', '目录尚未被初始化、迁移或登记。')}
+              onClick={() => void copyProvidedPrompt(context.prompt as string, '目录尚未被初始化、迁移或登记。')}
             >
               复制指令
             </Button>
             <span id="action-copy-state">{copyState || '目录尚未被初始化、迁移或登记。'}</span>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (action === 'release-update' && typeof context.prompt === 'string') {
+    return (
+      <>
+        <div className="form-header">
+          <Button type="link" style={{ paddingInline: 0 }} onClick={backToChooser}>← 返回</Button>
+          <span>更新 Buildr</span>
+        </div>
+        <p className="drawer-copy">
+          已选择
+          {' '}
+          <strong>{context.track === 'stable' ? 'GA 正式版' : 'RC 候选版'}</strong>
+          {' '}
+          {String(context.version || '')}。网页不会直接执行 npm 更新。
+        </p>
+        <div id="agent-action-result" className="prompt-result">
+          <label>
+            可复制指令
+            <Input.TextArea id="action-prompt-output" rows={10} readOnly value={context.prompt} />
+          </label>
+          <div className="copy-row">
+            <Button
+              id="copy-action-prompt"
+              type="primary"
+              onClick={() => void copyProvidedPrompt(context.prompt as string, '本机 Buildr 尚未更新。')}
+            >
+              复制给 Agent
+            </Button>
+            <span id="action-copy-state">{copyState || '本机 Buildr 尚未更新。'}</span>
           </div>
         </div>
       </>

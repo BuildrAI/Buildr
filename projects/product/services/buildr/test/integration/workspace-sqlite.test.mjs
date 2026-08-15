@@ -401,6 +401,30 @@ test('execution invocation migration兼容legacy row并建立active identity索�
   database.close();
 });
 
+test('execution unknown outcome migration保留既有row并扩展单表约束', () => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  const unknown = migrations.find((migration) => migration.name === '0015_add_task_execution_unknown_outcome.sql');
+  const database = new DatabaseSync(':memory:');
+  for (const migration of migrations.filter((item) => item.version < unknown.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('unknown-task', 'buildr.task-record/v2', 'Unknown', 'Recover open execution', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
+  const invocationIdentity = `sha256-${'a'.repeat(64)}`;
+  database.prepare(`INSERT INTO task_execution_records(record_id, schema_version, task_id, owner, kind, run_identity, target_identity, producer, outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest, stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until, opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at, invocation_identity)
+    VALUES ('open-before-unknown', 'buildr.task-execution-record/v1', 'unknown-task', 'task-verification', 'verification-execution', 'run-open', 'target', 'test', 'running', 'open', 'not-required', 'staging', 'reserved', NULL, NULL, 0, 0, 0, 'buildr.task-execution-record-redaction/v1', 16777216, NULL, '2026-08-01T00:00:00.000Z', NULL, NULL, NULL, NULL, NULL, '2026-08-01T00:00:00.000Z', ?)`).run(invocationIdentity);
+
+  applyWorkspaceSqliteMigration(database, unknown);
+
+  assert.deepEqual({ ...database.prepare("SELECT run_identity, invocation_identity, lifecycle_status, outcome FROM task_execution_records WHERE record_id = 'open-before-unknown'").get() }, {
+    run_identity: 'run-open', invocation_identity: invocationIdentity, lifecycle_status: 'open', outcome: 'running',
+  });
+  assert.ok(database.prepare("SELECT name FROM pragma_index_list('task_execution_records')").all().some((row) => row.name === 'task_execution_records_active_invocation_idx'));
+  database.prepare(`INSERT INTO task_execution_records(record_id, schema_version, task_id, owner, kind, run_identity, invocation_identity, target_identity, producer, outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest, stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until, opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at)
+    VALUES ('unknown-terminal', 'buildr.task-execution-record/v1', 'unknown-task', 'task-verification', 'verification-execution', 'run-unknown', ?, 'target', 'test', 'unknown', 'retained', 'acknowledged', 'available', 'charged', '.buildr/local/task-execution-records/task-verification/unknown-terminal/', ?, 10, 10, 0, 'buildr.task-execution-record-redaction/v1', 0, '2026-09-01T00:00:00.000Z', '2026-08-02T00:00:00.000Z', '2026-08-02T00:01:00.000Z', '2026-08-02T00:01:00.000Z', NULL, NULL, NULL, '2026-08-02T00:01:00.000Z')`).run(`sha256-${'b'.repeat(64)}`, `sha256-${'c'.repeat(64)}`);
+  assert.equal(database.prepare("SELECT outcome FROM task_execution_records WHERE record_id = 'unknown-terminal'").get().outcome, 'unknown');
+  assert.throws(() => database.prepare("UPDATE task_execution_records SET resolution_status = 'pending', resolved_at = NULL WHERE record_id = 'unknown-terminal'").run());
+  database.close();
+});
+
 test('Task Finish migration把run、prepared completion与lease收敛为唯一current row', () => {
   const migrations = loadWorkspaceSqliteMigrations();
   const compact = migrations.find((migration) => migration.name === '0012_compact_task_finish_current.sql');

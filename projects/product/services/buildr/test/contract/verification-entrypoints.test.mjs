@@ -22,10 +22,14 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
-  assert.equal(scripts['test:browser:smoke'], 'npm run build:web && node --test test/browser-smoke/*.test.mjs');
-  assert.equal(scripts['test:browser:changed'], 'npm run build:web && node test/verification/browser-selector-dispatcher.mjs --run');
-  assert.equal(scripts['test:integration:candidate:recovery'], 'node --test test/integration-candidate-recovery/*.test.mjs');
-  assert.equal(scripts['test:integration:candidate:release'], 'node --test test/integration-candidate-release/*.test.mjs');
+  assert.equal(scripts['test:web-dist'], 'node test/verification/web-dist.mjs');
+  assert.equal(scripts['test:browser:smoke'], 'npm run test:web-dist && node --test test/browser-smoke/*.test.mjs');
+  assert.equal(scripts['test:browser:changed'], 'node test/verification/browser-selector-dispatcher.mjs --run');
+  for (const selector of ['core', 'shell', 'project', 'service', 'change', 'task', 'articles']) {
+    assert.match(scripts[`test:browser:${selector}`], /^npm run test:web-dist && /);
+  }
+  assert.equal(scripts['test:integration:candidate:recovery'], undefined);
+  assert.equal(scripts['test:integration:candidate:release'], 'node test/verification/run-node-tests.mjs test/integration-candidate-release/*.test.mjs');
   assert.equal(scripts['coverage:unit'], 'node test/verification/unit-coverage.mjs');
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
@@ -71,7 +75,25 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
   assert.equal(browser.requiredForDelivery, true);
-  assert.deepEqual(browser.applicability.paths, ['services/buildr-web/**', 'services/buildr/src/interfaces/local-app/web-dist/**', 'services/buildr/src/interfaces/local-app/runtime/**', 'services/buildr/test/browser-smoke/**']);
+  assert.deepEqual(browser.applicability.paths, [
+    'services/buildr-web/**',
+    'services/buildr/src/interfaces/local-app/web-dist/**',
+    'services/buildr/src/interfaces/local-app/runtime/**',
+    'services/buildr/test/browser-smoke/**',
+    'services/buildr/test/verification/browser-selector-dispatcher.mjs',
+    'services/buildr/test/verification/web-dist.mjs',
+  ]);
+  assert.deepEqual(browser.applicability.conditions, [
+    'Buildr Web 路由、DOM 交互、Agent Action、package、lockfile、Vite 或 TypeScript 配置发生变化',
+    '未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths',
+    '适用输入至少选择一个 Browser selector；非适用输入明确返回 not-applicable，Browser-owned 0 selector 阻塞',
+    'selected Browser 在启动 Chrome 前，将 Buildr Web 构建到系统临时 staging 并与 tracked web-dist 精确比较',
+  ]);
+  assert.deepEqual(browser.proves, [
+    '适用的 changed paths 已执行至少一个稳定 Browser selector，或被明确判定为 not-applicable',
+    '临时 staging build 与 tracked web-dist 精确一致，冻结目标未被改写',
+    'Project、Service、Change 与 Task 页面关键浏览器交互和错误反馈可用',
+  ]);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
   assert.deepEqual(browser.effects.externalSystems, []);
   assert.equal(browser.effects.authorization, 'implicit');
@@ -81,7 +103,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
   assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
-  assert.equal(releaseSet.requiredForDelivery, true);
+  assert.equal(releaseSet.requiredForDelivery, false);
   assert.ok(releaseSet.applicability.paths.includes('.github/workflows/publish.yml'));
   assert.equal(releaseSet.applicability.paths.some((value) => value === '.github/**' || value === '.github/workflows/**'), false);
   assert.equal(declaration.capabilities.some((capability) => capability.id.startsWith('product.platform-')), false);
@@ -133,10 +155,14 @@ test('Windows npm preflight keeps the bounded high-risk owners and tarball depen
 test('candidate verification retains necessary Candidate facts without Browser and Release-only owners', () => {
   const wrapper = read('scripts/verify-buildr-product');
   const candidate = read('test/verification/candidate.mjs');
+  const changed = read('test/verification/changed.mjs');
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
   assert.ok(wrapper.includes('"$@"'));
   assert.ok(candidate.includes("profiles: ['candidate']"));
   assert.doesNotMatch(candidate, /collectChangedProductPaths|createVerificationPreflightPlan|--base/);
+  assert.doesNotMatch(changed, /createVerificationPreflightPlan/);
+  assert.equal((candidate.match(/await executePlan\(/g) ?? []).length, 1);
+  assert.equal((changed.match(/await executePlan\(/g) ?? []).length, 1);
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
   assert.match(candidate, /process\.versions\.node !== managedNodeVersion/);
@@ -150,17 +176,35 @@ test('candidate verification retains necessary Candidate facts without Browser a
   for (const stage of [
     'fine-grained unit tests',
     'bounded component tests',
-    'technical boundary integration tests',
+    'cross-domain technical boundary integration tests',
+    'Project declaration integration slice',
+    'OpenSpec application integration slice',
+    'Verification orchestration integration slice',
+    'Runtime and Local App integration slice',
+    'Release and installation integration slice',
+    'Workspace data-store integration slice',
+    'Task Environment integration slice',
+    'Self-bootstrap closeout integration slice',
+    'Task read-model integration slice',
+    'Task coordination integration slice',
+    'Task execution-record integration slice',
     'Task Development lifecycle integration',
+    'Task Finish core integration slice',
+    'Task Finish delivery integration slice',
     'repository contract tests',
-    'System verification contracts',
+    'System verification admission canary',
+    'System verification orchestration contracts',
+    'System public JSON contracts',
+    'System OpenSpec contract audit',
     'System Workspace lifecycle',
+    'System Task lifecycle',
+    'System Worktree lifecycle',
     'System runtime recovery',
     'System Buildr Web Runtime',
     'System Buildr Web process and preview',
-    'System Task Finish',
+    'System Task Finish product journey',
+    'System Task Finish CLI journey',
     'System fresh build',
-    'Candidate integration: builtin recovery and migration',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
     'OpenSpec canonical spec quality',
@@ -201,7 +245,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   const systemOwners = candidatePlan.steps.filter((step) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 7);
+  assert.equal(systemOwners.length, 13);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.mjs');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.mjs'));
@@ -213,7 +257,8 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 4);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 3);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], 1);
@@ -257,19 +302,20 @@ test('distributed Candidate creates one artifact and fans out independent consum
   const workflow = read('../../../../.github/workflows/verify.yml');
   const document = YAML.parse(workflow);
   assert.deepEqual(Object.keys(document.jobs), [
-    'dev-feedback', 'candidate-preflight', 'candidate-artifact', 'candidate-core-macos',
+    'dev-feedback-macos', 'dev-feedback-windows', 'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows',
     'candidate-windows', 'candidate-host-node', 'candidate-gate',
   ]);
-  assert.equal(document.jobs['candidate-artifact'].needs, 'candidate-preflight');
-  assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-artifact');
-  assert.equal(document.jobs['candidate-windows'].needs, 'candidate-artifact');
-  assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-artifact');
-  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, ['runtime-windows', 'workspace-windows', 'fresh-build-windows']);
+  assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-bootstrap');
+  assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
+  assert.equal(document.jobs['candidate-windows'].needs, 'candidate-bootstrap');
+  assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-bootstrap');
+  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, ['workspace-lifecycle-windows', 'task-workflow-windows', 'fresh-build-windows']);
   const windowsJob = workflow.slice(workflow.indexOf('  candidate-windows:'), workflow.indexOf('  candidate-host-node:'));
   assert.match(windowsJob, /projects\/product\/services\/buildr-web\/package-lock\.json/);
   assert.match(windowsJob, /if: matrix\.shard == 'fresh-build-windows'[\s\S]*npm ci --ignore-scripts/);
   assert.equal((workflow.match(/name: candidate-package/g) || []).length, 4, 'one upload and three consumer downloads');
   assert.equal((workflow.match(/Build the single Candidate artifact/g) || []).length, 1);
+  assert.doesNotMatch(windowsJob, /candidate-package|BUILDR_CANDIDATE_CI_ARTIFACT_DIR/);
 });
 
 test('Candidate workflow checks out one exact source SHA and always aggregates closed evidence', () => {
@@ -279,18 +325,43 @@ test('Candidate workflow checks out one exact source SHA and always aggregates c
   assert.equal(document.jobs['candidate-gate'].name, 'Candidate gate');
   assert.match(document.jobs['candidate-gate'].if, /^always\(\)/);
   assert.deepEqual(document.jobs['candidate-gate'].needs, [
-    'candidate-preflight', 'candidate-artifact', 'candidate-core-macos', 'candidate-windows', 'candidate-host-node',
+    'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows', 'candidate-windows', 'candidate-host-node',
   ]);
   assert.match(workflow, /pattern: candidate-evidence-\*/);
   assert.match(workflow, /merge-multiple: true/);
-  assert.match(workflow, /npm run test:candidate:aggregate/);
-  assert.equal((workflow.match(/overwrite: true/g) || []).length, 8, 'reruns replace one logical artifact per shard or aggregate');
-  assert.equal((workflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 7);
+  const candidateWorkflow = workflow.slice(workflow.indexOf('  candidate-bootstrap:'));
+  const gate = workflow.slice(workflow.indexOf('  candidate-gate:'));
+  assert.match(gate, /runs-on: macos-latest/);
+  assert.match(gate, /node test\/verification\/candidate-ci\.mjs aggregate/);
+  assert.doesNotMatch(gate, /npm ci|cache: npm/);
+  assert.equal((candidateWorkflow.match(/overwrite: true/g) || []).length, 8, 'Candidate reruns replace one logical artifact per shard or aggregate');
+  assert.equal((candidateWorkflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 6);
   assert.doesNotMatch(workflow, /git log --first-parent origin\/dev/);
   for (const input of [
     '.github/workflows/verify.yml', 'scripts/verify-buildr-product-ci',
     'test/verification/candidate-ci.mjs', 'test/verification/candidate-ci-evidence.mjs',
   ]) assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes(input), `${input} must force full changed verification`);
+});
+
+test('Candidate aggregate import graph is clean-checkout Node-only', () => {
+  const pending = ['test/verification/candidate-ci.mjs'];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const relative = pending.pop();
+    if (visited.has(relative)) continue;
+    visited.add(relative);
+    const source = read(relative);
+    for (const match of source.matchAll(/from\s+['"]([^'"]+)['"]/gu)) {
+      const specifier = match[1];
+      assert.ok(specifier.startsWith('node:') || specifier.startsWith('.'), `${relative} imports external dependency ${specifier}`);
+      if (!specifier.startsWith('.')) continue;
+      const target = path.posix.normalize(path.posix.join(path.posix.dirname(relative), specifier));
+      assert.ok(fs.statSync(path.join(productRoot, target), { throwIfNoEntry: false })?.isFile(), `${relative} import is missing: ${target}`);
+      pending.push(target);
+    }
+  }
+  assert.ok(visited.has('test/verification/candidate-ci-evidence.mjs'));
+  assert.ok(visited.has('test/verification/registry.mjs'));
 });
 
 test('fresh build reuses prepared controller dependencies without weakening tested installs', () => {

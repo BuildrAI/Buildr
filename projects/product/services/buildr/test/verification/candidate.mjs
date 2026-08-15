@@ -6,7 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { executePlan } from './plan-runner.mjs';
 import { parseVerificationSchedulingMode } from './dag-scheduler.mjs';
-import { createVerificationPlan } from './planner.mjs';
+import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.mjs';
 import { CANDIDATE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
@@ -26,10 +26,10 @@ function parseArgs(args) {
   return result;
 }
 const request = parseArgs(process.argv.slice(2));
-const plan = createVerificationPlan({ profiles: ['candidate'] });
+const plan = createVerificationAdmissionPlan(createVerificationPlan({ profiles: ['candidate'] }));
 if (request.json) {
   const project = (step) => ({ id: step.id, name: step.name, reasons: step.reasons });
-  await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', base: null, source: 'candidate-profile', paths: plan.paths, delegated: plan.delegated, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error) => error ? reject(error) : resolve()));
+  await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', base: null, source: 'candidate-profile', paths: plan.paths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error) => error ? reject(error) : resolve()));
   process.exit(0);
 }
 const managedNodeVersion = process.env.BUILDR_WORKSPACE_NODE_VERSION;

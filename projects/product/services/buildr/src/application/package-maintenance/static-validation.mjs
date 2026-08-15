@@ -435,10 +435,10 @@ export function createPackageStaticValidator(deps) {
     const consumers = new Map([
       ['package/targets/workspace/skills/buildr/task-development/SKILL.md', ['task-planning-identity-driver.mjs inspect', '`planningNodes`', 'raw digest']],
       ['package/targets/workspace/skills/buildr/task-review/SKILL.md', ['task-planning-identity-driver.mjs inspect', 'checkbox progress', '不重复record']],
-      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['task-planning-identity-driver.mjs inspect', '再次调用Task Planning Identity resolver']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['task-planning-identity-driver.mjs inspect', '`planningNodes`']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['task-planning-identity-driver.mjs inspect', 'target不变则不重复record Review']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['task-planning-identity-driver.mjs inspect', 'target与apply前相同则复用current Planning Review']],
+      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', 'Planning Review不拥有、不复制也不解释preflight逻辑', '再次调用Task Planning Identity resolver']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', '`planningNodes`']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', 'target不变则不重复record Review']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', 'target与apply前相同则复用current Planning Review']],
       ['package/targets/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md', ['重新调用Task Planning Identity resolver']],
       ['package/targets/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md', ['重新调用Task Planning Identity resolver']],
     ]);
@@ -1239,7 +1239,7 @@ export function createPackageStaticValidator(deps) {
         if (skillContent.includes('buildr openspec')) problems.push('task-triage source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec converge', 'buildr openspec convergence inspect', 'passed|blocked|recovery-unprovable', '`not-applicable`', 'archive --skip-specs', '正常archive成功后释放本次Receipt', 'Formal Task Finish与Environment cleanup不调用Inspect', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec convergence preflight', '`ready|blocked`', '`scenario-omission`', '最终`buildr openspec converge`永远重新读取最新事实', 'buildr openspec converge', 'buildr openspec convergence inspect', 'passed|blocked|recovery-unprovable', '`not-applicable`', 'archive --skip-specs', '正常archive成功后释放本次Receipt', 'Formal Task Finish与Environment cleanup不调用Inspect', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }

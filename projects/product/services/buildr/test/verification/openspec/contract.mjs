@@ -37,6 +37,7 @@ function run(args, expected = 0, fixtureRoot = root) {
   const payload = args.includes('--json') && result.stdout.trim() ? JSON.parse(result.stdout) : null;
   if (payload && args[0] === 'openspec') {
     const expectedSchema = args[1] === 'converge' ? 'buildr.openspec-convergence/v1'
+      : args[2] === 'preflight' ? 'buildr.openspec-convergence-preflight/v1'
       : 'buildr.openspec-convergence-inspect/v1';
     if (payload.schemaVersion !== expectedSchema) fail(`Expected ${expectedSchema}, got ${payload.schemaVersion}`);
   }
@@ -62,6 +63,7 @@ function change(id, capability, kind, delta) {
 }
 function removeChange(id) { fs.rmSync(path.join(changesRoot, id), { recursive: true, force: true }); }
 function converge(id, expected = 0) { return run(['openspec', 'converge', id, '--project', project, '--target', root, '--json'], expected); }
+function preflight(id, expected = 0) { return run(['openspec', 'convergence', 'preflight', id, '--project', project, '--target', root, '--json'], expected); }
 function inspect(id, expected = 0) { return run(['openspec', 'convergence', 'inspect', id, '--project', project, '--target', root, '--json'], expected); }
 function writeTransactionReceipt(id, operation) {
   const canonicalFile = path.join(specsRoot, 'demo', 'spec.md');
@@ -100,6 +102,49 @@ const cases = {
     canonical('upstream-archive', [preserved]); change('upstream-archive-safety', 'upstream-archive', 'modified', stale); write(path.join(changesRoot, 'upstream-archive-safety', 'design.md'), '# Design\n'); write(path.join(changesRoot, 'upstream-archive-safety', 'tasks.md'), '- [x] Archive safety fixture\n');
     runUpstream(['validate', 'upstream-archive-safety', '--strict'], projectRoot); const archived = runUpstream(['archive', 'upstream-archive-safety', '--yes', '--json'], projectRoot, 1);
     if (!/current spec contains scenario\(s\) not present|Refresh the change spec before archiving/.test(`${archived.stdout}\n${archived.stderr}`)) fail('OpenSpec archive must reject dropped scenario');
+  },
+  'convergence-preflight-ready-and-current'() {
+    change('preflight-ready', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const canonicalFile = path.join(specsRoot, 'demo', 'spec.md');
+    const beforeCanonical = fs.readFileSync(canonicalFile, 'utf8');
+    const first = preflight('preflight-ready');
+    if (first.status !== 'ready' || first.effects.length !== 0 || first.commandCount < 3) fail(`preflight ready result incomplete: ${JSON.stringify(first)}`);
+    if (fs.readFileSync(canonicalFile, 'utf8') !== beforeCanonical) fail('preflight must not mutate canonical specs');
+    if (fs.existsSync(path.join(changesRoot, 'preflight-ready', '.buildr'))) fail('preflight must not create a Change sidecar');
+    if (!fs.existsSync(path.join(changesRoot, 'preflight-ready', '.openspec.yaml'))) fail('preflight must not archive the Change');
+    const repeated = preflight('preflight-ready');
+    if (repeated.readinessIdentity !== first.readinessIdentity || repeated.planIdentity !== first.planIdentity) fail('same preflight inputs must keep identity stable');
+
+    const disjoint = requirement('PreflightDisjoint', '提供不相交的active Change能力');
+    change('preflight-disjoint', 'demo', 'modified', `## ADDED Requirements\n\n${disjoint}`);
+    const changed = preflight('preflight-ready');
+    if (changed.status !== 'ready' || changed.planIdentity !== first.planIdentity || changed.readinessIdentity === first.readinessIdentity) fail('active Change observation must invalidate readiness without changing the convergence plan');
+    removeChange('preflight-ready'); removeChange('preflight-disjoint');
+  },
+  'convergence-preflight-semantic-blockers'() {
+    change('preflight-active-a', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    change('preflight-active-b', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    const active = preflight('preflight-active-a', 2);
+    if (active.status !== 'blocked' || !active.blockers.some((item) => item.category === 'active-change-conflict' && item.change === 'preflight-active-b')) fail('preflight must classify active Change conflicts');
+    removeChange('preflight-active-a'); removeChange('preflight-active-b');
+
+    const preserved = ['### Requirement: Preserve scenarios', '系统 MUST 保留全部既有场景。', '', '#### Scenario: first scenario', '- **WHEN** 第一条件满足', '- **THEN** 第一结果成立', '', '#### Scenario: second scenario', '- **WHEN** 第二条件满足', '- **THEN** 第二结果成立', ''].join('\n');
+    const omitted = ['## MODIFIED Requirements', '', '### Requirement: Preserve scenarios', '系统 MUST 只声明第一个场景。', '', '#### Scenario: first scenario', '- **WHEN** 第一条件满足', '- **THEN** 第一结果成立', ''].join('\n');
+    canonical('preflight-omission', [preserved]);
+    change('preflight-omission-change', 'preflight-omission', 'modified', omitted);
+    const omission = preflight('preflight-omission-change', 2);
+    if (omission.status !== 'blocked' || omission.blockers[0]?.category !== 'scenario-omission' || omission.blockers[0]?.omittedScenarioIdentities?.[0] !== 'second scenario') fail('preflight must classify Scenario omission');
+    removeChange('preflight-omission-change');
+
+    change('preflight-rename', 'demo', 'modified', '## RENAMED Requirements\n\n- FROM: `### Requirement: Existing`\n- TO: `### Requirement: Untouched`\n');
+    const rename = preflight('preflight-rename', 2);
+    if (rename.status !== 'blocked' || rename.blockers[0]?.category !== 'identity-conflict' || rename.blockers[0]?.code !== 'rename-not-unique') fail('preflight must classify rename identity conflicts');
+  },
+  'convergence-preflight-project-validation-blocker'() {
+    change('preflight-validation', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
+    write(path.join(specsRoot, 'broken', 'spec.md'), '# broken Specification\n\n## Purpose\n\nMissing requirements on purpose.\n');
+    const result = preflight('preflight-validation', 2);
+    if (result.status !== 'blocked' || result.blockers[0]?.category !== 'projected-validation' || result.validation?.status !== 'blocked') fail('preflight must classify projected strict validation failures');
   },
   'convergence-transaction-safe'() {
     change('convergence-safe', 'demo', 'modified', `## ADDED Requirements\n\n${added}`);
@@ -154,6 +199,9 @@ const suites = Object.freeze({
   ]),
   recovery: Object.freeze([
     'upstream-archive-safety',
+    'convergence-preflight-ready-and-current',
+    'convergence-preflight-semantic-blockers',
+    'convergence-preflight-project-validation-blocker',
     'convergence-transaction-safe',
     'convergence-inspect-boundaries',
     'convergence-transaction-conflict-and-disjoint',

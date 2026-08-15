@@ -84,23 +84,23 @@ Buildr npm package MUST 声明非占位版本、开源 License、可执行 bin�
 - **AND** 已安装 package MUST NOT 依赖 development checkout 或仓库级验证脚本
 
 ### Requirement: registry package 支持 CLI 自更新
-从支持的 npm registry 安装的 Buildr package MUST 支持 `buildr update` 检查和更新同一 package identity，且不得隐式维护 workspace。
+从支持的 npm registry 安装的 Buildr package MUST 支持 `buildr update check` 同时检查 `latest` 与 `next`，并支持 `buildr update --track stable|candidate` 更新同一 package identity；所有动作不得隐式维护 Workspace。
 
 #### Scenario: 检查 registry 更新
 - **WHEN** registry 安装的 CLI 运行 `buildr update check --json`
-- **THEN** Buildr MUST 查询当前配置 registry 中同一 package identity 的可用版本
-- **AND** Buildr MUST NOT 修改 package、workspace 或 Agent runtime
+- **THEN** Buildr MUST 通过现有 npm update authority 一次查询同一 package identity 的 `dist-tags.latest` 与 `dist-tags.next`
+- **AND** Buildr MUST NOT 修改 package、Workspace 或 Agent runtime
 
 #### Scenario: 更新 registry package
-- **WHEN** registry 安装的 CLI 运行 `buildr update` 且存在可安全安装的新版本
-- **THEN** Buildr MUST 更新承载当前 executable 的 package
-- **AND** Buildr MUST 保持安装 prefix、registry、scope 和 tag
+- **WHEN** registry 安装的 CLI 运行 `buildr update --track stable|candidate` 且所选轨道存在可安全安装的新版本
+- **THEN** Buildr MUST 更新承载当前 executable 的 package到本次观测的精确版本
+- **AND** Buildr MUST 保持安装 prefix、registry 与 scope
 - **AND** Buildr MUST NOT 执行 workspace sync 或 doctor
 
 #### Scenario: registry update 回归验证
-- **WHEN** 产品验证构造包含旧版与新版 Buildr package 的临时 registry 或等价隔离 fixture
-- **THEN** verifier MUST 证明旧版 installed executable 能检查并更新到新版
-- **AND** verifier MUST 证明更新动作没有修改测试 workspace，后续显式 sync 才完成 workspace reconcile
+- **WHEN** 产品验证构造包含 GA 与 RC 版本的临时 registry 或等价隔离 fixture
+- **THEN** verifier MUST 证明 installed executable 能同时检查两个轨道并分别更新到用户选择的精确版本
+- **AND** verifier MUST 证明更新动作没有修改测试 Workspace，后续显式 sync 才完成 Workspace reconcile
 
 ### Requirement: 公开 registry package identity 必须稳定
 Buildr 公开 npm package MUST 使用 `@buildr-ai/buildr` identity、`buildr` executable 和指向 `https://github.com/BuildrAI/Buildr` 的完整 registry metadata。
@@ -113,7 +113,7 @@ Buildr 公开 npm package MUST 使用 `@buildr-ai/buildr` identity、`buildr` ex
 - **AND** package MUST 声明用于发现 CLI、Agent workspace 和开发工具的 keywords
 
 ### Requirement: npm 版本必须映射明确 dist-tag
-Buildr release automation MUST 将 prerelease 版本发布到 `next`，将稳定版本发布到 `latest`，并 MUST 拒绝 tag 与 package version 不一致的候选。
+Buildr release automation MUST 将 prerelease 版本发布到 `next`，将稳定版本发布到 `latest`，并 MUST 拒绝 tag 与 package version 不一致或版本类型与目标 dist-tag 不一致的候选。
 
 #### Scenario: 发布 0.1.0 RC
 - **WHEN** package version 是 `0.1.0-rc.1` 且 Git tag 是 `v0.1.0-rc.1`
@@ -126,6 +126,10 @@ Buildr release automation MUST 将 prerelease 版本发布到 `next`，将稳定
 #### Scenario: tag 与 package version 不一致
 - **WHEN** release tag 去除 `v` 后不等于 `package.json#version`
 - **THEN** release automation MUST 在 npm publish 前失败
+
+#### Scenario: dist-tag 版本类型不匹配
+- **WHEN** 稳定版本准备发布到 `next` 或 prerelease 准备发布到 `latest`
+- **THEN** release automation MUST在公开 mutation 前失败
 
 ### Requirement: 开发 checkout 必须从 Buildr Service package root 运行并保留 Project bridge
 Buildr MUST 将 `projects/product/services/buildr` 作为 development checkout 的 npm package root，并 MUST 保留 `projects/product/buildr` 作为稳定且唯一的 checkout 开发 CLI 入口；source discovery、诊断和 self-bootstrap 必须识别二者属于同一 Product checkout。Project bridge MUST 使用满足 package `engines.node` 的 Node 启动 Service CLI，并在当前环境没有兼容 Node 时返回可操作诊断。机器默认 PATH 中的 `buildr` MUST 保留给 npm installation，canonical development preparation、self-bootstrap 和 release preparation MUST NOT 创建、覆盖或要求该入口绑定 development checkout。

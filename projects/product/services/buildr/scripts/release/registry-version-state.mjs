@@ -5,7 +5,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { parseSemver } from '../../src/application/release-awareness.mjs';
 import { readReleaseArtifact } from './release-artifact.mjs';
+import { writeJson } from './release-files.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const officialRegistry = 'https://registry.npmjs.org/';
@@ -48,28 +50,73 @@ export function assertRegistryArtifact(state, artifact) {
   }
 }
 
-export async function registryTagState(packageName, npmTag, fetchImpl = fetch) {
+export async function registryDistTagsState(packageName, fetchImpl = fetch) {
   const url = new URL(encodeURIComponent(packageName), officialRegistry);
   const response = await fetchImpl(url, { headers: { accept: 'application/json' } });
   if (response.status !== 200) throw new Error(`Official npm registry dist-tag check failed with HTTP ${response.status}.`);
   const metadata = await responseJson(response, 'Official npm registry dist-tag check');
   return {
+    schemaVersion: 'buildr.registry-dist-tags/v1',
     package: packageName,
-    npmTag,
-    version: metadata?.['dist-tags']?.[npmTag] ?? null,
+    tags: {
+      latest: metadata?.['dist-tags']?.latest ?? null,
+      next: metadata?.['dist-tags']?.next ?? null,
+    },
     registry: officialRegistry,
   };
 }
 
-export async function confirmRegistryRelease({ packageName, version, npmTag, integrity, fetchImpl = fetch }) {
+export async function registryTagState(packageName, npmTag, fetchImpl = fetch) {
+  const state = await registryDistTagsState(packageName, fetchImpl);
+  return { package: packageName, npmTag, version: state.tags[npmTag] ?? null, registry: officialRegistry };
+}
+
+function assertTagState(value, packageName, label) {
+  if (!value || value.schemaVersion !== 'buildr.registry-dist-tags/v1' || value.package !== packageName) {
+    throw new Error(`${label} must be a buildr.registry-dist-tags/v1 snapshot for ${packageName}.`);
+  }
+  if (!value.tags || typeof value.tags !== 'object' || Array.isArray(value.tags)) throw new Error(`${label}.tags must be an object.`);
+  for (const tag of ['latest', 'next']) {
+    if (value.tags[tag] !== null && typeof value.tags[tag] !== 'string') throw new Error(`${label}.tags.${tag} must be a string or null.`);
+  }
+  return value;
+}
+
+export function assertRegistryTagTransition({ packageName, version, npmTag, before, after }) {
+  const parsed = parseSemver(version);
+  if (!parsed) throw new Error(`Release version is not valid semver: ${version}.`);
+  const expectedTag = parsed.prerelease.length ? 'next' : 'latest';
+  if (npmTag !== expectedTag) throw new Error(`Release version ${version} must publish to ${expectedTag}, not ${npmTag}.`);
+  const frozen = assertTagState(before, packageName, 'Before dist-tags');
+  const observed = assertTagState(after, packageName, 'After dist-tags');
+  const targetBefore = frozen.tags[npmTag];
+  if (targetBefore) {
+    const targetBeforeParsed = parseSemver(targetBefore);
+    if (!targetBeforeParsed) throw new Error(`Before dist-tag ${npmTag} is not valid semver: ${targetBefore}.`);
+    if (npmTag === 'next' && targetBeforeParsed.prerelease.length === 0) {
+      throw new Error(`Before dist-tag next points to stable version ${targetBefore}; candidate publish is blocked.`);
+    }
+  }
+  const targetAfter = observed.tags[npmTag];
+  if (targetAfter !== version) throw new Error(`Official npm registry dist-tag ${npmTag} points to ${targetAfter ?? 'nothing'}, not ${version}.`);
+  const targetAfterParsed = parseSemver(targetAfter);
+  if (!targetAfterParsed || Boolean(targetAfterParsed.prerelease.length) !== (npmTag === 'next')) {
+    throw new Error(`After dist-tag ${npmTag} has the wrong semver type: ${targetAfter}.`);
+  }
+  const otherTag = npmTag === 'next' ? 'latest' : 'next';
+  if (observed.tags[otherTag] !== frozen.tags[otherTag]) {
+    throw new Error(`Official npm registry non-target dist-tag ${otherTag} changed from ${frozen.tags[otherTag] ?? 'nothing'} to ${observed.tags[otherTag] ?? 'nothing'}.`);
+  }
+  return { targetTag: npmTag, targetVersion: version, unchangedTag: otherTag, unchangedVersion: observed.tags[otherTag] };
+}
+
+export async function confirmRegistryRelease({ packageName, version, npmTag, integrity, beforeTags, fetchImpl = fetch }) {
   const versionState = await registryVersionState(packageName, version, fetchImpl);
   if (!versionState.published) throw new Error(`Official npm registry does not contain ${packageName}@${version}.`);
   assertRegistryArtifact(versionState, { packageName, version, integrity });
-  const tagState = await registryTagState(packageName, npmTag, fetchImpl);
-  if (tagState.version !== version) {
-    throw new Error(`Official npm registry dist-tag ${npmTag} points to ${tagState.version ?? 'nothing'}, not ${version}.`);
-  }
-  return { ...versionState, npmTag, taggedVersion: tagState.version };
+  const afterTags = await registryDistTagsState(packageName, fetchImpl);
+  const transition = assertRegistryTagTransition({ packageName, version, npmTag, before: beforeTags, after: afterTags });
+  return { ...versionState, npmTag, taggedVersion: afterTags.tags[npmTag], beforeTags, afterTags, transition };
 }
 
 export async function waitForRegistryRelease(contract, options = {}) {
@@ -89,17 +136,19 @@ export async function waitForRegistryRelease(contract, options = {}) {
 }
 
 function parseArgs(argv) {
-  const options = { version: argv[0], manifest: null, npmTag: null, requirePublished: false, wait: false };
+  const options = { version: argv[0], manifest: null, npmTag: null, requirePublished: false, wait: false, snapshotTags: null, beforeTags: null };
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--manifest') options.manifest = argv[++index];
     else if (value === '--tag') options.npmTag = argv[++index];
     else if (value === '--require-published') options.requirePublished = true;
     else if (value === '--wait') options.wait = true;
+    else if (value === '--snapshot-tags') options.snapshotTags = argv[++index];
+    else if (value === '--before-tags') options.beforeTags = argv[++index];
     else throw new Error(`Unsupported registry check option: ${value}`);
   }
-  if ((options.requirePublished || options.wait) && (!options.manifest || !options.npmTag)) {
-    throw new Error('--require-published and --wait require both --manifest and --tag');
+  if ((options.requirePublished || options.wait) && (!options.manifest || !options.npmTag || !options.beforeTags)) {
+    throw new Error('--require-published and --wait require --manifest, --tag and --before-tags');
   }
   return options;
 }
@@ -113,6 +162,11 @@ async function main() {
     ? readReleaseArtifact(options.manifest, { packageName: metadata.name, version }).manifest
     : null;
 
+  if (options.snapshotTags) {
+    const tags = await registryDistTagsState(metadata.name);
+    writeJson(path.resolve(options.snapshotTags), tags);
+  }
+
   let state;
   if (options.wait) {
     state = await waitForRegistryRelease({
@@ -120,6 +174,7 @@ async function main() {
       version,
       npmTag: options.npmTag,
       integrity: artifact.integrity,
+      beforeTags: JSON.parse(fs.readFileSync(path.resolve(options.beforeTags), 'utf8')),
     });
   } else {
     state = await registryVersionState(metadata.name, version);

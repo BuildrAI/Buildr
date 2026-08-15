@@ -143,6 +143,13 @@
 - 避免混用：不是Formal Verification、Task Finish、Git交付或归档后的长期审计。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## OpenSpec语义就绪预检（OpenSpec Semantic Readiness Preflight）
+
+- 定义：在apply-ready Change进入Planning Review前，只读复用正式convergence planner、active Change conflict scan与projected strict validation，判断当前delta能否对当前canonical形成唯一且strict有效的expected Project。
+- 适用范围：`buildr openspec convergence preflight <change> --project <project> --target <task-execution-root>`；返回`ready|blocked`，并把active Change conflict、Scenario omission、rename/identity conflict与projected validation failure交给Agent处理。
+- 避免混用：不是Planning Review、Converge dry-run、Convergence Inspect、写入授权或实现后验证；不写canonical、Receipt、archive或Task/Review事实。delta、canonical、active Changes或executable变化后旧ready陈旧，最终Converge始终按最新事实重新检查。
+- 来源：[OpenSpec确定性同步规范](../specs/openspec-deterministic-sync/spec.md)
+
 ## OpenSpec 收敛执行（OpenSpec Converge）
 
 - 定义：执行OpenSpec Convergence的公开maintenance动作，完成规划、投射strict validation、条件canonical写入、写后确认、archive与事务Receipt release。
@@ -170,6 +177,13 @@
 - 适用范围：准备产生代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他可交付持久变化的工作。
 - 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 任务入口快照（Task Entry Snapshot）
+
+- 定义：面向Agent启动或继续Formal Task的只读compact projection，按最早硬前置组合Task Record、matching Task Environment execution projection与保存的Task Development applicability，并返回一个typed next及其action-local capability/provider identity。
+- 适用范围：`buildr task next <task-id>`与`buildr.task-entry-snapshot/v1`；`required`表示不可安全绕过的authority/identity恢复前置，`recommended`表示用户可按实际情况调整的默认路径。
+- 避免混用：不是任务上下文（Task Context）、Context Window、完整lifecycle DAG、Task Overview、Receipt/Result、writer或第二套状态机；不自动执行next，也不把耗时/调用指标变成gate。
+- 来源：[Task Entry Snapshot specification](../specs/task-entry-snapshot/spec.md)
 
 ## 任务记录（Task Record）
 
@@ -420,6 +434,13 @@
 - 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
+## 正式验证就绪度（Formal Verification Readiness）
+
+- 定义：Task Development operation/compact Result在Development → Formal Verification交接处，根据已保存Task Context Change dispositions、Content Target、verification policy与Verification gate派生的response-only摘要；产品值为`not-applicable|blocked|unknown`，current knowledge owner对同一tree返回`aligned|not-applicable`后由Agent瞬时汇总为`ready`并直接进入Task Verification。
+- 适用范围：`formalVerificationReadiness`与Task Entry typed next，用于在昂贵正式验证前先暴露明确未稳定事实或路由一次只读current knowledge `inspect`。
+- 避免混用：不是Verification Result、Development gate、Receipt、持久preflight authority或通用verification executor门禁；不适用于开发期focused/affected测试、Task外transient verification、Candidate CI或Planning Review前的OpenSpec semantic readiness。
+- 来源：[Task Development specification](../specs/task-development/spec.md)与[OpenSpec Change生命周期](flows/openspec-change-lifecycle.md)。
+
 ## 任务研发（Task Development）
 
 - 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority；仅工作区不是第二种Task authority，只是有效Project集合为空时的受约束policy/Result语义。
@@ -543,7 +564,7 @@
 
 - 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result 绑定对应专业authority提供的计划目标身份（Plan Target Identity）。
 - 适用范围：实现前方案检查；没有执行时 planning slot 可以不存在。
-- 避免混用：不要求所有Task固定为OpenSpec artifacts；正式Task的OpenSpec计划必须使用Task Planning Identity resolver，不由Agent手工摘要artifact、路径或执行进度。
+- 避免混用：不要求所有Task固定为OpenSpec artifacts；正式Task的OpenSpec计划必须先通过OpenSpec Semantic Readiness Preflight，再使用Task Planning Identity resolver。Planning Review不拥有、保存、复制或解释preflight检查，不由Agent手工摘要artifact、路径或执行进度。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)
 
 ## 计划目标身份（Plan Target Identity）
@@ -604,6 +625,20 @@
 - 定义：历史平台installer设计中的原子Buildr所有权边界；当前npm-only产品不实现平台产品单元。
 - 适用范围：只用于已归档Change或未来企业/普通用户自包含安装的新Change。
 - 避免混用：本机Buildr Web Launcher只是npm安装的图形投射，不是平台产品单元。
+
+## 版本发布感知（Release Awareness）
+
+- 定义：Buildr同时读取npm的`latest`和`next`，把GA正式版与RC候选版的当前发布头、可更新状态、提示与精确更新命令组合为统一的只读Application结果。
+- 适用范围：`buildr update check`、Doctor非阻断提示、Buildr Web全局提示和Buildr Skill；真正更新只在用户明确选择后由CLI执行。
+- 避免混用：不是自动更新器，不替用户选择版本，也不修改Workspace、Workspace Node或Agent runtime。
+- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`、`openspec/specs/agent-readable-doctor/spec.md`与`openspec/specs/local-workspace-application/spec.md`。
+
+## 发布轨道（Release Track）
+
+- 定义：用户更新Buildr时选择的版本类别；`stable`对应npm `latest`和GA正式版，`candidate`对应npm `next`和RC候选版。
+- 适用范围：双轨道版本检查、`buildr update --track stable|candidate`及Agent向用户说明选择。
+- 避免混用：不是npm/development安装来源，不进入Workspace配置；默认轨道只保持现有安装语义，正式版不会自动切到候选版。
+- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
 
 ## 正式发布制品集合（Release Artifact Set）
 

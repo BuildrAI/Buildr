@@ -14,6 +14,7 @@ export function createApiClient(options: {
     if (
       resource === '/api/v1/workspaces'
       || resource.startsWith('/api/v1/workspaces/')
+      || resource === '/api/v1/release-awareness'
       || resource.startsWith('/api/v1/app/')
       || resource === '/api/v1/prompts/workspace-create'
     ) {

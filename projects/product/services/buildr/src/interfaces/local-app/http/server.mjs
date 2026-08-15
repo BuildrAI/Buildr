@@ -315,6 +315,15 @@ export function createLocalWorkspaceServer(runtime, {
         });
         return;
       }
+      if (request.method === 'GET' && pathname === '/api/v1/release-awareness') {
+        const awareness = runtime.releaseAwareness({
+          allowDevelopmentQuery: false,
+          persistState: true,
+          notify: true,
+        });
+        jsonResponse(response, 200, withJsonSchema(PUBLIC_JSON_SCHEMAS.releaseAwareness, awareness));
+        return;
+      }
       if (request.method === 'GET' && pathname === '/api/v1/workspaces') {
         jsonResponse(response, 200, runtime.listRegisteredWorkspaces());
         return;

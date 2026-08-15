@@ -39,7 +39,7 @@ function result(status, context, startedAt, execution, extra = {}) {
   };
 }
 
-function canonicalSnapshots({ projectRoot, delta, io }) {
+export function canonicalSnapshots({ projectRoot, delta, io }) {
   const snapshots = new Map();
   for (const capability of [...delta.capabilities.keys()].sort()) {
     const file = path.join(projectRoot, 'openspec', 'specs', capability, 'spec.md');

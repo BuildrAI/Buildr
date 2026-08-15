@@ -820,12 +820,14 @@ Buildr product Skill、task-triage 和 builtin descriptions MUST 将测试框架
 - **AND** `project-testing` MUST 不提供 Task Verification capability binding 或 Result authority
 
 ### Requirement: task-development Skill 必须编排P0.5 authority顺序
+
 Buildr MUST交付`task-development` Workspace Skill并提供`buildr.task-development@2`。Skill MUST从proposal、design或直接实现等首个正式研发动作开始维护planning current snapshot，在内容稳定后建立Content Target与policy、调用formal Verification、冻结Candidate、按适用性调用或明确处置Completion Review，并形成decision/handoff；它 MUST通过内部Application driver工作且 MUST NOT新增公共CLI或Buildr Web writer。
 
 #### Scenario: OpenSpec planning入口登记事实
 - **WHEN** active Task在ready Environment中创建或更新proposal/design
-- **THEN** OpenSpec sidebar MUST先调用Development begin或planning action，并在artifact形成后登记其专业authority、portable reference与identity
+- **THEN** 若该文档属于尚未绑定的OpenSpec变更，OpenSpec sidebar MUST先完成脚手架与`add-change`，再调用Development begin，然后才写入artifact，并在artifact形成后登记其专业authority、portable reference与identity
 - **AND** MUST NOT把artifact正文复制到Development Receipt
+- **AND** MUST NOT对空变更列表 begin 后再绑定同一变更
 
 #### Scenario: Change任务进入Candidate准备
 - **WHEN** active Task包含0..N Change且实现已完成
@@ -1196,16 +1198,22 @@ Agent发现Child跨Contribution或改变依赖/invariant/acceptance时 MUST暂�
 - **AND** MUST重新建立其planning target与适用Review
 
 ### Requirement: OpenSpec workflow 必须消费统一 planning identity resolver
-正式 Task 的 OpenSpec propose、update、apply与converge/archive workflow MUST 在apply-ready后使用 Task Planning Identity Application取得current target与planning nodes，并把同一target交给Task Development和Planning Review。Agent MUST NOT通过 `shasum`、文件路径列表、mtime、checklist progress、Git ref或手工沿用旧值生成OpenSpec Planning Review target。
+正式 Task 的 OpenSpec propose、update、apply与converge/archive workflow MUST 在apply-ready后先运行OpenSpec Contract Guard semantic readiness preflight。Preflight current且`ready`后，workflow MUST使用Task Planning Identity Application取得current target与planning nodes，并把同一target交给Task Development和Planning Review；preflight `blocked`时 MUST在resolver、Planning Review和apply前停止，由Agent处理最小语义决定。Agent MUST NOT通过 `shasum`、文件路径列表、mtime、checklist progress、Git ref或手工沿用旧值生成OpenSpec Planning Review target，也 MUST NOT让Planning Review解释或复制preflight逻辑。
 
 #### Scenario: Apply 前建立 Planning Review target
-- **WHEN** 正式 Task 的OpenSpec Change artifacts达到apply-ready
-- **THEN** sidebar MUST调用resolver、用返回nodes更新Development planning并对返回target执行或inspect Planning Review
-- **AND** resolver blocked时 MUST停止apply且不得猜测target
+- **WHEN** 正式 Task 的OpenSpec Change artifacts达到apply-ready并通过upstream strict validation
+- **THEN** sidebar MUST先运行semantic readiness preflight；ready后再调用resolver、用返回nodes更新Development planning并对返回target执行或inspect Planning Review
+- **AND** preflight或resolver blocked时 MUST停止apply且不得猜测target或把blocker写入Review Result代替处理
+
+#### Scenario: Preflight blocker由Agent处理
+- **WHEN** semantic readiness preflight报告active Change conflict、Scenario omission、rename/identity conflict或projected validation failure
+- **THEN** Agent MUST只处理对应Change语义、依赖顺序或用户决定，并在事实变化后重新运行strict与preflight
+- **AND** MUST不手工生成ready、修改canonical或要求Planning Review裁决OpenSpec parser结果
 
 #### Scenario: Archive 后复核已有 Review
 - **WHEN** deterministic convergence把同一Change移动到archive且resolver返回与apply前相同target
 - **THEN** workflow MUST复用current Planning Review而不得仅因archive path或checklist完成态重新record
+- **AND** archive前最终converge仍 MUST按最新事实重新规划，不得消费apply前preflight作为写入授权
 
 ### Requirement: task-manager Skill 必须作为 Buildr Web 与 CLI 共享的 Task Record 薄管理入口
 Buildr MUST交付名为 `task-manager` 的 workspace Skill，并 MUST用精确 routing description 将它限制在 Agent 对正式 Task Record 的创建、按 Task ID 恢复、查看、更新和结束；Skill MUST通过 selected `buildr.task-record/v1` provider 执行，不得成为全局任务 dispatcher。Buildr Web MUST作为同一 Task Record Application 的独立人类客户端，不通过 Skill routing 写记录；任一客户端 MUST NOT直接访问 SQLite、SQL 或 migration scripts。
@@ -1337,3 +1345,97 @@ Buildr 内置任务 Skills MUST 在 Agent 即将写 Change checklist、调用 Op
 - **WHEN** 用户或团队为一类任务提供耗时参考区间
 - **THEN** Retrospective guidance MAY将其作为当前复杂度下的跟踪、评估和优化背景
 - **AND** MUST不把该数值固化为通用产品阈值、Result 字段、gate 或自动缩减验证范围的依据
+
+### Requirement: Formal Task 启动必须优先使用 compact entry surface
+Buildr内置task-triage与task-development guidance MUST在正式Task创建或恢复后优先读取Task Entry Snapshot，并只加载其current next action所指向的Skill、contract与provider。Agent MUST不把完整capability graph或下游lifecycle Skill列表当作启动依赖表。
+
+#### Scenario: 创建 active Task 后启动
+- **WHEN** Agent刚创建或恢复active formal Task
+- **THEN** Agent MUST立即通过Snapshot确定Environment前置并准备或恢复Environment
+- **AND** MUST不为了未来阶段预读Review、Verification或Finish provider
+
+#### Scenario: next action 改变
+- **WHEN** 一次正式动作使Snapshot的typed next发生变化
+- **THEN** Agent MUST按新next加载对应action-local contract/provider
+- **AND** 之前未成为next的专业能力 MUST不因完整lifecycle预想而提前加载
+
+### Requirement: workflow guidance 必须保留用户调整边界
+Buildr guidance MUST把Snapshot `required`解释为不可安全绕过的authority前置，把`recommended`解释为可由用户根据实际情况调整的默认路径。guidance MUST不把wall-clock参考目标、调用次数或recommendation编码为gate、自动推进或成功条件。
+
+#### Scenario: 用户选择合法替代动作
+- **WHEN** 用户基于当前事实调整recommended顺序、验证范围或专业provider
+- **THEN** Agent MUST通过对应owner contract核验并执行该选择
+- **AND** MUST不要求修改Snapshot、伪造next或绕过既有fail-closed authority
+
+### Requirement: 正式收尾前必须轻量确认贡献与主工作区对齐
+
+Task Finish Skill MUST 在调用产品 `task finish run` 之前，向用户或当前事实确认两件事：任务分支上的任务贡献已经提交；本机主工作区（retained Workspace）已经对齐本次交付的目标远端。该提醒 MUST NOT 替代产品入口一次聚合 Environment / Development / 交付缺口；Skill MUST 仍直接启动 canonical `task finish run`，并在返回 `task_finish.entry_gaps` 时按三个模块完整转述。
+
+#### Scenario: 收尾前发现贡献未提交或主工作区落后
+
+- **WHEN** 用户要求正式收尾，且任务分支仍有未提交贡献，或本机主工作区落后目标远端
+- **THEN** Skill MUST 先说明这两项风险，并在用户确认处理或明确继续之前停止调用产品收尾
+- **AND** MUST NOT 把该提醒实现为新的 `task_finish.entry_gaps` 缺口码
+
+#### Scenario: 已对齐后仍走产品聚合入口
+
+- **WHEN** 贡献已提交且主工作区已对齐目标远端，用户要求正式收尾
+- **THEN** Skill MUST 直接调用 canonical `task finish run`
+- **AND** MUST NOT 在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast
+
+### Requirement: OpenSpec 变更必须按可绑定顺序接入任务
+
+当正式 Task 需要 OpenSpec 变更时，Buildr OpenSpec 侧栏 MUST 要求固定顺序：先创建变更脚手架，再把该变更绑定到 Task Record，再调用 Task Development `begin`（disposition 覆盖任务上的全部变更），最后才写入 proposal/design/specs/tasks。侧栏 MUST NOT 要求在变更尚未绑定到任务时，为即将绑定的变更提前 `begin`。
+
+#### Scenario: 新建带变更的规划
+
+- **WHEN** active Task 已有 ready Environment，即将创建 OpenSpec 变更并写入规划文档
+- **THEN** Agent MUST 先 `openspec new change` 形成可解析脚手架，再 `task update --add-change`，再 Development `begin`，然后才写 artifacts
+- **AND** MUST NOT 在脚手架不存在时调用 `add-change`
+
+#### Scenario: 禁止先 begin 再绑定变更
+
+- **WHEN** Task Record 尚无该变更引用，Agent 即将写入该变更的 proposal 或 design
+- **THEN** 侧栏 MUST 阻止先对空变更列表 `begin`、写文档后再 `add-change`
+- **AND** 若任务上下文因事后绑定变更而过期，Agent MUST 重新 `begin` 或 `planning`，不得沿用过期研发回执
+
+### Requirement: Formal Verification 交接预检必须避免白跑且不干扰开发反馈
+Buildr Task Development workflow MUST在进入Formal Verification前消费response-only readiness：明确Development-owned blocker MUST先处理；`unknown` MUST由selected current knowledge provider对同一current tree执行只读`inspect`。Provider返回`aligned|not-applicable`后，Agent MUST在该tree与Content Target未变化时直接进入现有Task Verification；`unresolved` MUST停止。该编排 MUST NOT修改通用`verification run`、开发期focused/affected测试、Task外transient verification或Candidate CI。
+
+#### Scenario: 开发期测试不经过交接预检
+- **WHEN** Agent在Content Target稳定前运行focused、affected、unit、integration或其他开发反馈
+- **THEN** workflow MUST直接使用Project已有测试入口且不读取或写入Formal Verification readiness
+- **AND** MUST不因Change pending、knowledge未知或policy缺失阻塞这些反馈或增加额外测试步骤
+
+#### Scenario: 明确pending Change避免昂贵验证白跑
+- **WHEN** Task Entry看到关联Change仍pending或stable Content Target/policy并非current
+- **THEN** typed next MUST指向对应内容收敛/observe/policy动作而不是推荐Task Verification
+- **AND** Agent MUST先稳定最终delivery content，再为新target形成正式验证evidence
+
+#### Scenario: current knowledge瞬时确认后进入正式验证
+- **WHEN** readiness为`unknown`且current knowledge `inspect`对同一tree返回`aligned`或`not-applicable`
+- **THEN** Agent MUST将该次交接汇总为`ready`并直接调用selected Task Verification provider
+- **AND** MUST不要求把inspect Result或ready摘要写入Development、Verification、Task Record或新sidecar
+
+#### Scenario: current knowledge存在未解决项
+- **WHEN** current knowledge `inspect`返回`unresolved`或tree identity与当前候选不匹配
+- **THEN** Agent MUST停止Formal Verification并先由current knowledge owner完成reconcile或处理最小冲突
+- **AND** 任何修订delivery content的处理 MUST使旧Content Target/verification evidence失效并重新观察
+
+#### Scenario: 合法替代与非Task验证保持可用
+- **WHEN** 用户基于已知current事实调整recommended顺序，或调用不属于正式Task交接的transient verification
+- **THEN** workflow MUST按实际owner contract判断且不得把readiness recommendation升级为通用executor硬门禁
+- **AND** code-only、Workspace-only、空Change与明确not-applicable场景 MUST继续通过其既有合法路径
+
+### Requirement: Agent 必须有界自动重试已解除 foreign 阻断的同一自举收尾
+Buildr self-bootstrap workflow MUST把已授权current closeout与跨owner cleanup区分为不同授权边界。foreign owner action MUST继续等待用户明确授权；当前runner若仅因可证明foreign carrier在零副作用处blocked，则该foreign集合由原owner清空后，Agent MUST可复用当前closeout授权自动重试同一run一次。Agent MUST NOT为此创建后台协调器、持久等待状态或递归重试。
+
+#### Scenario: foreign owner 清理后继续当前收尾
+- **WHEN** 前次runner diagnostic精确为`self-bootstrap-closeout.foreign-carriers-require-owner-recovery`、顶层`effects`为空、原owner已清除全部foreign carrier，且run、target、Environment retained Node与runner command均未改变
+- **THEN** Agent MUST重新调用同一runner一次而无需询问current retry授权
+- **AND** runner MUST重新读取最新远端`dev`并执行完整preflight，不得复用前次plan观察替代current事实
+
+#### Scenario: current retry 不再满足安全条件
+- **WHEN** foreign carrier再次出现、run或command identity改变、latest `dev`无法clean fast-forward或完整preflight blocked
+- **THEN** Agent MUST停止自动推进，报告当前问题与runner恢复事实并等待新指令
+- **AND** Agent MUST NOT自动执行merge commit、rebase、冲突解决、跨owner mutation或第二次自动重试

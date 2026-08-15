@@ -72,9 +72,14 @@ test('candidate full plan only uses Candidate profile and rejects changed-path o
   assert.equal(payload.source, 'candidate-profile');
   assert.deepEqual(payload.paths, []);
   assert.deepEqual(payload.preflightSteps, []);
+  assert.ok(payload.admissionStepIds.includes('system-verification-admission'));
   assert.equal(new Set(payload.steps.map((step) => step.id)).size, payload.steps.length);
   assert.equal(payload.steps.some((step) => step.id === 'repository-onboarding'), false);
-  for (const id of ['system-verification-contracts', 'system-workspace-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-fresh-build', 'docs-quality']) {
+  for (const id of [
+    'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
+    'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
+    'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build', 'docs-quality',
+  ]) {
     assert.equal(payload.steps.filter((step) => step.id === id).length, 1);
   }
   assert.equal(payload.steps.some((step) => step.id === 'system'), false);
@@ -116,7 +121,8 @@ test('changed verification exposes plan/json and rejects unknown options before 
   const payload = JSON.parse(json.stdout);
   assert.equal(payload.schemaVersion, 'buildr.verification-plan/v1');
   assert.deepEqual(payload.paths, ['docs/buildr-product.md']);
-  assert.deepEqual(payload.steps.map((step) => step.id), ['docs-quality']);
+  assert.deepEqual(payload.admissionStepIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
+  assert.deepEqual(payload.steps.map((step) => step.id), [...payload.admissionStepIds, 'docs-quality']);
   const unknown = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(unknown.status, 2);
   assert.match(unknown.stderr, /Unknown test:changed option/);

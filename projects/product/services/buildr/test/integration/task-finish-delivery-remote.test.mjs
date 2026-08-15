@@ -95,6 +95,7 @@ function deliveryFixture(t, hook, prepareCandidate = null) {
   const runtime = {
     ...sqliteRuntime,
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }),
+    workspaceNodeExecution: () => ({ ready: true, identity: { digest: 'sha256-workspace-node', version: '24.15.0' } }),
     resolveTaskEnvironmentExecution: () => ({
       ready: true,
       controllerInvocation: {
@@ -106,6 +107,18 @@ function deliveryFixture(t, hook, prepareCandidate = null) {
   };
   return { ...data, environmentRoot, expectedTargetRef, carrierRef, run: persistedRun, runtime, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
+
+test('dirty retained Workspace preflight exposes structured unrelated paths', async (t) => {
+  const data = deliveryFixture(t, null);
+  fs.writeFileSync(path.join(data.retained, 'local-note.txt'), 'unrelated local work\n');
+
+  const result = await data.handlers.preflight({ run: data.run });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.retained-workspace-dirty');
+  const retainedFinding = result.failure.findings.find((item) => item.code === 'task-finish.retained-workspace-dirty');
+  assert.deepEqual(retainedFinding.unrelatedPaths, ['local-note.txt']);
+});
 
 test('workspace source 缺少 Environment remote 时解析 retained branch upstream', (t) => {
   const { retained, remote } = repositoryFixture(t);

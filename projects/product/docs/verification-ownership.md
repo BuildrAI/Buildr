@@ -18,16 +18,16 @@ Buildr 不把所有验证强行塞进 Unit、Component、Integration。每个 re
 
 ## 2. 直接测试层
 
-Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，稳定直接入口如下：
+Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-15，稳定直接入口如下：
 
 | 层次 | 入口与规模 | 主要内容 | 环境 | 并发 |
 | --- | --- | --- | --- | --- |
-| Unit | `test:unit`；`test/unit` 21 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Unit | `test:unit`；`test/unit` 49 个文件 | 同进程纯逻辑，协作者替换；任何实现变化都可完整运行 | Node；不启动真实 CLI、Git、npm 或 Workspace | `node:test` 文件并发；外层 `cpu-heavy=2` |
 | Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，不穿过真实 filesystem 或进程边界 | `node:test`；外层 `cpu-heavy=2` |
-| Contract | `test:contract`；`test/contract` 19 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口 declaration 一致性 | 只读 Product tree；不创建可变 fixture，不启动真实 CLI/Git/网络 | `node:test` 文件并发；外层 `cpu-heavy=2` |
-| Integration | `test:integration`；`test/integration` 34 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；包含从 Contract 迁出的环境测试；无浏览器 | 直接入口保留全部文件以便定位；Candidate 中普通聚合排除专属 lifecycle slice，并以 6 worker 运行 |
-| Task Development Integration | `integration-task-development`；`task-development-application.test.mjs` 1 个文件、2 个用例 | Task Development 贯穿真实 CLI、filesystem 和 Application 的生命周期事实 | 独立临时 Workspace、CLI、Git；无浏览器 | `workspace-heavy` + `workspace-saturating`；文件内顺序执行，避免与普通 Integration 混在一起 |
-| System | `test:system`；`test/system` 25 个文件 | 完整 CLI、Workspace、Buildr Web runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | `node:test` 固定最多 14 个文件 worker；外层同时受 `workspace-heavy` 与 `workspace-saturating` 限制 |
+| Contract | `test:contract`；`test/contract` 32 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口 declaration 一致性 | 只读 Product tree；不创建可变 fixture，不启动真实 CLI/Git/网络 | `node:test` 文件并发；外层 `cpu-heavy=2` |
+| Integration | `test:integration`；`test/integration` 66 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；包含从 Contract 迁出的环境测试；无浏览器 | 60 个文件由 14 个领域 primary slice 持有，2 个由外部 primary owner 持有，general 只剩 4 个跨领域文件并以 4 worker 运行 |
+| Domain Integration | 声明、OpenSpec、verification、runtime、release、data store、Task Environment、self-bootstrap，以及 6 个 Task 领域 slice | 修改哪个领域就运行哪个真实 repository/Application 边界；general 不再替所有领域陪跑 | 独立临时 filesystem/Git/CLI；重型生命周期 slice 使用 `workspace-saturating` | 每个文件只属于一个 primary owner；general exclusions 完全从统一 slice registry 派生 |
+| System | `test:system`；`test/system` 28 个文件 | 完整 CLI、Workspace、Buildr Web runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | 按 13 个 primary owner 执行；verification admission 的 2 个入口文件约 5 秒，Workspace、Task、Worktree 和 Finish CLI/Product Journey 各自独立 |
 | Recovery | `test:integration:candidate:recovery` 1 个文件；Release 专项 2 个文件 | builtin 迁移/恢复与 Git release convergence | 多轮临时 Workspace/Git | `workspace-saturating`；默认最多 2 路，受限 CI 1 路 |
 | Browser System | `test:browser:smoke` 1 个文件、6 个 selector | Buildr Web shell、Task、Project、Service、Change 的真实浏览器 Journey | 本机 Chrome/Chromium、Playwright Core、loopback server、临时 Workspace | 不进入 Product Full；`verification.yml` 的 `browser` 协调资源容量为 1 |
 
@@ -37,12 +37,13 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-04，�
 
 ## 3. 完整 registry inventory
 
-Product registry 当前有 43 个 executable steps、40 个 primary owners；Task Development 与两个 Task Finish slice 分别复用 `integration` 或 `system` 的 primary owner，`runtime-skill-projection` 独立持有 packaged Skill 内容投射证据。`test:candidate` 选择 38 个主步骤：新增 Task Development step 只是从原 `integration` 聚合中拆出既有文件，不减少其他 Candidate 证据。Release Git convergence 与 clean-checkout onboarding 保留为 focus/Release 专项。
+Product registry 当前有 71 个 executable primary owners；`test:candidate` 选择 64 个主步骤。Integration 的 14 个领域 slice、4 个 general 文件与 2 个外部 primary owner 互斥持有全部 66 个文件，13 个 System owner 也各自唯一持有全部 28 个文件；Release Git convergence 与 clean-checkout onboarding 保留为 focus/Release 专项。
 
 | 分组 | step IDs | 主要事实 | 主要环境与并发 |
 | --- | --- | --- | --- |
-| 直接层 | `unit`、`component`、`contract`、`integration`、`integration-task-development`、`system` | 纯逻辑、有界组装、仓库契约、普通技术边界、Task Development 生命周期、完整公共 Journey | 见上一节；重型 owner 会产生较多 CLI/Git 子进程 |
-| affected slice | `integration-task-finish`、`system-task-finish`、`runtime-skill-projection` | Task Finish 直接影响的 3 个 Integration 文件和 2 个 System 文件；变更 Skill 在 7 个 supported adapter 的 source digest、完整投射 inventory 与 receipt | changed plan 使用有界 owner；Candidate 仍运行完整聚合层与 `runtime-adapter-parity` |
+| 直接层 | `unit`、`component`、`contract`、`integration` | 纯逻辑、有界组装、仓库契约与普通技术边界 | 见上一节；重型 owner 会产生较多 CLI/Git 子进程 |
+| affected slice | `integration-declarations`、`integration-openspec`、`integration-verification`、`integration-runtime`、`integration-release`、`integration-data-store`、`integration-task-environment`、`integration-self-bootstrap` 与 6 个 Task 领域 slice；13 个 `system-*` owner | 领域真实边界、CLI/Workspace 生命周期与公共 Journey | changed plan 使用直接 owner；Candidate 保留全部 primary owner，但 general/System 聚合不再重复领域文件 |
+| admission | `unit`、`component`、`contract`、`cli-architecture`、`openspec-spec-quality`、`openspec-strict`；验证框架适用时再加 `system-verification-admission` | 低成本逻辑/静态门禁，以及 changed-path 与 verification run CLI 的真实入口契约 | 本地 changed/full 合成到同一 DAG；任何重型 step 都等待 admission 通过，单次 execution 不重复 step |
 | Quick 静态门禁 | `cli-architecture`、`openspec-spec-quality`、`openspec-strict` | CLI 模块结构、canonical spec 质量、OpenSpec strict | Product tree、bundled OpenSpec；只读运行，可与其他低成本 step 并行 |
 | 恢复与验收 | `integration-candidate-recovery`、`concurrent-task-acceptance`、`openspec-contract-fixtures`、`openspec-convergence-recovery` | builtin 恢复、双 Task 组合验收、OpenSpec contract、convergence/recovery | 临时 Git/Workspace；OpenSpec contract 10 case、recovery 5 case，集合互斥；重型步骤受 `workspace-saturating` 限制 |
 | Candidate 静态事实 | `open-source-candidate`、`openspec-candidate-audit`、`managed-mutations`、`package-static`、`docs-quality` | 公共发布材料、Change contract、mutation owner、package inventory、文档质量 | Product tree 或已生成 tarball；无浏览器 |
@@ -66,7 +67,7 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 
 还要同时考虑内层并发：
 
-- 外层 profile 是唯一预算 authority：`local`/`ci` 将普通 Integration、System、OpenSpec contract/recovery 分别限制为 6、8、4、3 个内部 worker；`ci-workspace-limited` 对应为 3、6、3、2。预算只在 Candidate、changed 与 focus 的 registry execution 中注入；直接定位命令保留各自安全默认值；
+- 外层 profile 是唯一预算 authority：`local`/`ci` 将普通 Integration、System、OpenSpec contract/recovery 分别限制为 4、8、4、3 个内部 worker；`ci-workspace-limited` 对应为 3、2（每个 System owner 上限）、2、2。预算只在 Candidate、changed 与 focus 的 registry execution 中注入；直接定位命令保留各自安全默认值；
 - `node:test` 会按文件启动 worker；`test:system` 的直接默认是最多 14 路，经过 registry 运行时使用 profile 注入的 8 路；
 - Candidate 中 `integration` 使用 general suite，排除 Task Development 与 Task Finish 专属文件；Task Development 专项保持单文件顺序执行并占用真实 `workspace-saturating` 压力容量；
 - `task-lifecycle-heavy` 只由 System 与 Task Development Integration 共同声明，容量为 1。它是已测得的 CPU/process/filesystem 压力节流，不是共享状态锁；OpenSpec recovery、runtime parity 等其他饱和型 owner 仍可在独立临时根上并行；
@@ -87,9 +88,9 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 | 入口 | 定位 | 选择规则 |
 | --- | --- | --- |
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、静态 Contract、CLI architecture、OpenSpec spec quality/strict；不含真实投射、重复 cleanup、System、npm pack、浏览器或恢复矩阵 |
-| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；聚合层可排除已有专属 slice 的路径；未映射 fail closed；命中 registry/planner/runner/声明/timing 等全局 owner 时确定性扩展 full |
+| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或 3 条精确 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架全局 owner 时扩展 full 并加入 canary |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
-| `test:candidate` | 显式 Product Full | 只选择 Candidate profile 的全部 required owners；不读取 Git diff 或 changed paths；输出 transient timing/diagnostics |
+| `test:candidate` | 显式 Product Full | 只选择 Candidate profile 的全部 required owners；不读取 Git diff 或 changed paths；同一 DAG 先运行 Quick + verification admission canary，再启动重型步骤，输出一份 transient timing/diagnostics |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Buildr Web 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
 
@@ -114,7 +115,7 @@ Quick 是成本约束，affected/full 是选择范围，Candidate/Release 是验
 
 ## 6. Task Verification 如何使用项目测试
 
-Task Verification 不登记 41 个内部 executable step，也不为用户设计测试。`verification.yml` 只暴露 6 个稳定能力接口：
+Task Verification 不登记内部 executable step，也不为用户设计测试。`verification.yml` 只暴露 7 个稳定能力接口：
 
 | capability | 调用与证明范围 | 交付要求 |
 | --- | --- | ---: |
@@ -124,6 +125,7 @@ Task Verification 不登记 41 个内部 executable step，也不为用户设计
 | `product.browser-smoke` | Buildr Web paths 适用时运行真实浏览器 Journey | 适用时是 |
 | `product.archive-lifecycle` | Change active/archive 与 Task Development/Finish authority 顺序 | 否 |
 | `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |
+| `product.release-artifact-set` | 显式发布准备时核验冻结 payload、npm tarball、Host Node、Launcher 与发布物 readback 边界；普通交付不自动执行 | 否 |
 
 Agent 的正式验证流程是：
 
@@ -176,10 +178,46 @@ Project `verification.yml`仍只声明可由Task Verification选择的稳定本�
 
 P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，38-step Changed 为 148.543 秒，37-step Candidate 为 147.819 秒且全部通过；同一优化树另有 132.741 秒和 143.323 秒全绿结果。相对 193.161 秒基线，墙钟下降约 23%–31%。rebase P0.5 后先复测当前 System 为 115/115、67.50 秒；正式 delivery timing 以本次稳定 Content Target 的 transient summary 为准。120 秒仍只是未达成的观察目标，不应通过调高预算或删必要风险证据宣告成功。
 
+### 领域 owner 拆分与预算校准（2026-08-15）
+
+本轮目标是缩短日常 affected 反馈，不改变 Candidate 的事实并集。拆分前普通 Integration 聚合约 25.9 秒；拆分后 general 两次成功采样为 4.073/5.000 秒，中位 4.537 秒、范围 0.927 秒。代表领域 owner 的两轮成功采样如下；完整两轮 owner union 均通过且文件无遗漏、无交集。
+
+| owner | 两轮秒数 | 中位 / 范围 | 适用场景 |
+| --- | --- | --- | --- |
+| `integration-declarations` | 0.203 / 0.223 | 0.213 / 0.020 | Doctor、Project verification declaration 与 package verification registry |
+| `integration-openspec` | 1.048 / 1.246 | 1.147 / 0.198 | Change/OpenSpec Application 与 convergence |
+| `integration-verification` | 4.443 / 5.301 | 4.872 / 0.858 | planner、runner、evidence、resource coordinator |
+| `integration-runtime` | 3.395 / 4.024 | 3.710 / 0.629 | runtime、Local App、Preview 与 Web dist |
+| `integration-task-environment` | 9.163 / 10.436 | 9.800 / 1.273 | Task Environment plan/controller/repository |
+| `integration-self-bootstrap` | 29.981 / 36.060 | 33.021 / 6.079 | self-bootstrap closeout；普通产品源码不陪跑 |
+| `integration-task-finish-delivery` | 35.151 / 35.516 | 35.334 / 0.365 | Finish remote、retained activation/cleanup、Contribution |
+| `system-public-json-contracts` | 19.272 / 20.299 | 19.786 / 1.027 | 公共 JSON closed contract |
+| `system-workspace-lifecycle` | 44.724 / 44.750 | 44.737 / 0.026 | Project/Service/catalog 生命周期 |
+| `system-task-lifecycle` | 15.649 / 15.778 | 15.714 / 0.129 | Task/Review/Verification/Development Journey |
+| `system-worktree-lifecycle` | 24.784 / 24.846 | 24.815 / 0.062 | Git-backed Worktree/Environment Journey |
+| `system-task-finish` / `system-task-finish-cli` | 46.066/46.616；7.434/7.548 | 46.341/0.550；7.491/0.114 | Product Journey 与 CLI contract 分开选择 |
+
+任务二的 13 条 budget warning 是本轮校准输入，不是统一放宽预算的理由。结构性长组被拆分；仍代表完整生命周期的 owner 按本轮成功 focus 留出有限波动余量：
+
+| 原 warning | 处置 |
+| --- | --- |
+| Integration 41.493s | general 拆为 4 个文件，预算 10s；领域 owner 各自独立预算 |
+| Task Finish Integration 25.098s | core 预算 20s，delivery Journey 预算 45s |
+| Workspace System 75.853s | Project/Service 55s、Task lifecycle 25s、Worktree 45s |
+| Task Finish System 62.806s | Product Journey 60s、CLI Journey 15s |
+| coordination 5.653s、execution record 16.601s | 保持独立 owner，预算分别校准为 8s、20s |
+| acceptance 32.459s | 保留唯一双 Task 组合事实，预算 40s |
+| capability CLI 29.372s、commands CLI 11.927s | 保留真实 CLI 边界，预算 35s、15s |
+| package workspace 6.822s | 保留 package 安装事实，预算 10s |
+| runtime parity 32.008s、CLI parity 15.076s、release smoke 19.246s | 保留 Candidate/Release 独立事实，预算 40s、20s、25s |
+
+代表 affected 计划显示选择更精确：声明约 79s→67s，OpenSpec 125s→96s，Runtime 174s→171s，Task Environment 275s→245s；这里的静态调度成本包含 Quick、canary 与其他真实 owner，不能等同墙钟。数据存储、Worktree、Task Finish、Public JSON 的估计可能持平或上升，因为补上了此前漏选或低估的直接 owner；这属于准确性修正。日常收益应以实际领域文件执行时间判断，而 Candidate 仍聚合全部 64 个主步骤。
+
 ## 8. 下一轮优化方案
 
-1. `worktree-create` 剩余约 24 秒主要是唯一的共享占用恢复与 Git-backed Environment lifecycle；只有产品 Environment prepare/cleanup 自身存在重复工作时再优化，不把唯一 System 事实下沉成 fake。
-2. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
+1. 先观察新 owner 在真实日常 Task 中的 selected set、墙钟与 warning 分布；没有新的重复事实前，不继续机械拆文件。
+2. `system-workspace-lifecycle`、`system-task-finish`、`integration-self-bootstrap` 与 Public JSON 仍是独立长尾；只有确认其内部重复 setup 时再优化，不能删除唯一 Journey 或以 fake 替代真实 Workspace/Git/CLI 边界。
+3. Browser、性能/压力、安全等扩展测试等到真实需求出现后再设计；Component 层随真实边界补齐，不为层次数量制造测试。
 
 ## 9. 迭代记录
 
@@ -209,3 +247,4 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 22. 去重 System fixture 准备 | `local-app-launcher` 重复构建相同 launcher bundle，`package-capability-retirement` 重复 CLI 初始化相同 Workspace；分别改为文件内 bundle cache 与不可变基线复制。两个热点单文件均通过，完整 Candidate timing 从 126.295s 降到 118.890s，首次进入 120s 目标以内 |
 | 23. 对齐 Buildr Web read-worker 契约 | Buildr Web 三个只读 Tab 已由 `submitTaskRead` 派发至 `read-worker`，旧 contract/static verifier 仍要求 server 直接出现 `runtime.inspectTaskReviewView/inspectTaskVerification`，导致 Candidate 非代码失败；契约改为检查实际 operation dispatch 与 worker mapping，不恢复 terminal 聚合投影。修复后 Contract、package-static 与 38-step Candidate 全部通过 |
 | 24. 对齐 development onboarding 与 npm CLI 隔离 | Windows旧owner在约102.917s准备后才因POSIX `install-buildr-cli` 返回`ENOENT`。实现删除PATH installer lifecycle，以显式Project bridge、双sentinel和共享Git object candidate snapshot保留clean checkout/sync/Launcher/Doctor证据；三次本地成功focus为15.507s、15.659s、15.572s，中位数15.572s、范围0.152s，完整changed资源竞争下为22.115s且185.121s DAG全绿。archive后两次hosted Windows source SHA均执行通过，onboarding实际为45.452s与63.162s，完整plan为769.226s与630.575s；这证明测试本体优化后仍存在真实跨平台与runner波动，25s/20s只按macOS标定不合理，60s也无法覆盖第二个真实样本，因此非阻断target校准为90s、调度成本60s。Candidate jobs在这些PR run中均skipped，完整Candidate仍只属于后续dev到main候选门禁。 |
+| 25. 拆分重型领域 owner | 66 个 Integration 文件收敛为 14 个领域 slice、4 个 general 文件和 2 个外部 owner；28 个 System 文件拆为 13 个 owner。两轮 focused union 全绿，general 中位约 4.54s；13 条历史 warning 分别通过结构拆分或生命周期预算校准处置，Candidate 文件并集与 CI phase/artifact/gate/platform 拓扑不变。 |

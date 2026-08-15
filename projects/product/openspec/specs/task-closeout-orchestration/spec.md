@@ -11,7 +11,8 @@ Buildr 自举 Workspace MUST由 `buildr-self-bootstrap-sync` Skill 自身携带�
 
 #### Scenario: Complete Result进入自举收尾
 - **WHEN** Formal Finish Result为complete且冻结Task Contribution命中至少一个self-bootstrap动作
-- **THEN** Agent MUST只调用一次Skill bundled runner入口并由runner形成去重plan、执行适用阶段和返回结构化结果
+- **THEN** Agent MUST启动Skill bundled runner入口并由runner形成去重plan、执行适用阶段和返回结构化结果
+- **AND** 除精确foreign-carrier零副作用阻断解除后的同run一次自动重试外，Agent MUST只调用一次runner
 - **AND** runner MUST从同一run的Finish Result读取frozen paths、Agent、target branch、remote与final ref
 
 #### Scenario: 普通Workspace或无匹配动作
@@ -92,13 +93,18 @@ Buildr 自举 Workspace 的 bundled self-bootstrap runner MUST在任何 sync、G
 
 #### Scenario: 可恢复 predecessor cleanup 阻塞当前 activation
 - **WHEN** 当前doctor-blocked run的carrier之外还存在一个或多个foreign真实目录，且各自Finish Result均为`cleanup_pending`、failure与resume phase均为`cleanup`、Workspace/path/carrier identity与matching token全部可证明
-- **THEN** runner MUST把每个foreign run表达为由其Task Finish owner执行的`resume-owner-cleanup`步骤，按`taskId + runId`确定性排序，并在最后追加当前run的`retry-current-closeout`步骤
-- **AND** 每步 MUST明确owner、所需授权、原owner command与预期cleanup/carrier/Task effects，当前runner MUST在所有predecessor消失前停止全部activation副作用
+- **THEN** runner MUST把每个foreign run表达为由其Task Finish owner执行且需要显式授权的`resume-owner-cleanup`步骤，按`taskId + runId`确定性排序，并在最后追加复用当前closeout既有授权的`retry-current-closeout`步骤
+- **AND** 每步 MUST明确owner、授权要求、原owner command与预期cleanup/carrier/Task effects，当前runner MUST在所有predecessor消失前停止全部activation副作用
 
 #### Scenario: predecessor 已由原 owner 清理
-- **WHEN** 用户按恢复计划授权并由每个原Task Finish owner完成cleanup，固定carrier根只剩当前doctor-blocked run精确拥有的carrier
-- **THEN** 重跑当前bundled runner MUST沿用现有单run preflight、activation、Doctor与same-run resume流程
-- **AND** MUST NOT因为曾经存在foreign carrier而保存历史计划、跳过current carrier核验或扩大owned paths
+- **WHEN** 每个原Task Finish owner已在明确授权下完成cleanup，固定carrier根只剩当前doctor-blocked run精确拥有的carrier，且前次current invocation仅以foreign-carrier diagnostic和空effects停止
+- **THEN** Agent MUST可在不追加current retry授权的情况下自动重跑一次同一bundled runner，并沿用现有单run preflight、activation、Doctor与same-run resume流程
+- **AND** MUST NOT因为曾经存在foreign carrier而保存历史计划、跳过current carrier核验、改变run/command identity、扩大owned paths或形成自动重试循环
+
+#### Scenario: 自动重试基于最新远端 dev
+- **WHEN** foreign carrier 清除后的同run重试发现clean retained target branch落后于最新远端target ref，且本地HEAD到远端ref可无冲突fast-forward
+- **THEN** runner MUST只以显式fetch和fast-forward更新retained branch，再对最新HEAD从头验证frozen ref、无mergeBuildr-owned descendant provenance、remote readback与run/plan identity
+- **AND** 无法fast-forward、最新链含未知commit或merge、tree不clean或identity无法证明时 MUST在sync、安装与finalize前blocked，报告问题并等待新指令，不得merge commit、rebase、stash、reset或force push
 
 #### Scenario: foreign carrier 状态不支持确定性 cleanup
 - **WHEN** foreign Result为doctor-blocked、prepare/deliver blocked、terminal但目录残留或其他非`cleanup_pending`状态
@@ -113,3 +119,21 @@ Buildr 自举 Workspace 的 bundled self-bootstrap runner MUST在任何 sync、G
 #### Scenario: 没有 foreign carrier
 - **WHEN** 固定carrier根不存在，或只包含当前doctor-blocked run精确拥有且已验证的carrier
 - **THEN** multi-run preflight MUST返回无predecessor且不得改变现有single-run closeout plan、阶段、effects或恢复语义
+
+### Requirement: foreign-clear 自举重试必须有界承接同 run target-race
+Buildr 自举 Workspace 的 bundled runner 在精确的 foreign-carrier 零副作用阻断解除后执行唯一同 run 重试时，若第一次 same-run Finish resume 返回 `task-finish.target-race`，MUST 使用该 Product Result 的 matching resume token 再承接一次既有 Task Finish target-race recovery。该承接 MUST只发生在本次 `--retry-after-foreign-clear true` invocation 内，MUST NOT为普通 closeout、其他 blocked Result或后续再次 target-race形成自动重试。
+
+#### Scenario: target-race 可机械恢复并完成
+- **WHEN** foreign carrier 已清除，runner 的唯一重试完成 latest target fast-forward、既有 activation 与 development entry gate，第一次 same-run resume 返回精确 `task-finish.target-race`及 matching deliver resume token，且第二次 resume 在最新 Delivery Baseline 上可机械完成
+- **THEN** runner MUST把第二次 Product resume 作为同一 finalize 阶段的有界恢复并返回 passed
+- **AND** runner MUST NOT复制 carrier reset、Git apply、containment或Task Finish状态机
+
+#### Scenario: 最新 baseline 需要 Agent 适配
+- **WHEN** runner 使用 target-race token 承接一次后，Task Finish 返回精确 Delivery Adaptation required、matching carrier与resume token
+- **THEN** runner MUST返回专用 blocked diagnostic并保留 Product run、failure、carrier与matching resume evidence
+- **AND** Agent MUST在该 carrier 内审核并执行可证明的适配，再由同一 Task Finish owner继续；Agent 无法安全处理时 MUST请求用户授权
+
+#### Scenario: target-race 恢复不得形成循环
+- **WHEN** 第二次 Product resume 再次返回 target-race、其他 blocked/failed Result，或 phase、code、carrier、resume token任一无法精确证明
+- **THEN** runner MUST停止并报告实际 Result，不得自动调用第三次 resume、重跑 runner或改变恢复策略
+- **AND** runner MUST NOT新增持久retry counter、队列、Receipt或聚合恢复store

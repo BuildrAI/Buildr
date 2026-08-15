@@ -15,7 +15,7 @@
 - `task-retrospective/v2` 处理 current Markdown 时可关联后续 Task，但不保存历史、评分、结构化行动项或进度；也不自动采集耗时/token、创建 Change 或跨 Workspace 聚合。旧 `.buildr/asset-review/` 数据保持 inert。
 - Formal Task Finish 在 carrier 已交付、自举 successor 已包含该 carrier 时依赖一次远端 fetch 形成 exact-containment evidence；若该 fetch 瞬时失败，当前 resume 会重建 carrier 并可能转入 Delivery Adaptation，不会自动把本地 ancestry 当作最终远程证据。
 - Service branch intent 不负责 pull、merge、rebase 或长期分支同步；它只控制首次 clone、metadata 和 drift 诊断。
-- `@buildr-ai/buildr@0.1.0-rc.8` 是当前已发布 RC，`next` 指向该版本；`v0.1.0-rc.9`、`v0.1.0-rc.10` 和 `v0.1.0-rc.11` 的 tag workflow 都在任何 npm 写入与 GitHub Release 创建前失败，当前仓库正在准备 `0.1.0-rc.12`。`latest` 仍指向历史 prerelease，它不代表稳定版。稳定版 `0.1.0` 尚未发布，公开试用应显式安装 `@next`。`0.1.0-rc.4` 因发布范围错误已弃用。
+- `@buildr-ai/buildr@0.1.0-rc.12` 是当前已发布 RC，`next` 指向该版本；`v0.1.0-rc.9`、`v0.1.0-rc.10` 和 `v0.1.0-rc.11` 的 tag workflow 都在任何 npm 写入与 GitHub Release 创建前失败，当前仓库正在准备 `0.1.0-rc.13`。`latest` 仍指向历史 prerelease，它不代表稳定版。稳定版 `0.1.0` 尚未发布，公开试用应显式安装 `@next`。`0.1.0-rc.4` 因发布范围错误已弃用。
 - `package check/build`是维护表面。普通workspace使用`openspec converge`；只有未决收敛现场仍存在且恢复状态不确定时使用只读`openspec convergence inspect`。Inspect不提供归档后的长期漂移、合规或forensic audit；正常archive后Receipt会释放，历史读取使用Archived Change、Canonical Specs与Git。旧`openspec audit`和阶段命令已删除并返回unknown-command。
 
 遇到 unsupported runtime 或不能确定的资产边界时，Agent 应停止自动变更、保留源资产，并报告可执行下一步。

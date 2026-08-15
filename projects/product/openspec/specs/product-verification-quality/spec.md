@@ -916,3 +916,209 @@ Buildr tag publish workflow 的每个 Host Node job MUST 在独立 runner 上依
 - **WHEN** candidate producer job 已在自己的 runner 中执行依赖安装并冻结 tarball
 - **THEN** 后续 Host Node job MUST NOT 把该 runner 的 `node_modules` 或工作目录视为可用输入
 - **AND** workflow contract MUST 在 Host Node job 缺失本地依赖准备、依赖准备位于 verifier 之后、缺失 release artifact manifest 输入或该输入未指向下载的冻结 candidate artifact 时失败
+
+### Requirement: 测试选择必须对空执行集合失败关闭
+Buildr Product MUST 在 registry `node-test` 或受管测试 glob 启动 Node test runner 前解析实际测试文件集合，并 MUST 在集合为空、路径不存在或 selector 只命中非文件时以非零状态失败；Candidate evidence MUST NOT 把零测试执行记录为 passed。
+
+#### Scenario: Registry node-test 引用了不存在的文件
+- **WHEN** Candidate、Changed 或 Focus 选择一个 `node-test` step，且其全部登记文件均不存在
+- **THEN** executor MUST 在启动 Node test runner 前失败
+- **AND** 诊断 MUST 标识 step identity 与未解析到测试文件
+
+#### Scenario: 受管测试 glob 没有匹配文件
+- **WHEN** package script 或 verification adapter 展开一个受管测试 glob且匹配集合为空
+- **THEN** invocation MUST 以非零状态结束
+- **AND** timing/evidence MUST NOT生成 passed 的零测试 primary owner
+
+#### Scenario: 退役空测试 owner
+- **WHEN** 维护者确认某个旧 step 的关键事实已经由其他 primary owners 持有且原测试集合已删除
+- **THEN** registry、shard、package script、文档和 aggregate expected set MUST 一致退役该 step
+- **AND** 契约测试 MUST 证明剩余 owner 集合没有覆盖缺口或重复 primary owner
+
+### Requirement: 正式验证能力必须保持单一 required primary delivery owner
+Buildr Product MUST 只把 `product.delivery` 声明为普通 Task 的 required delivery capability；release artifact 专项 MAY 保持可独立选择，但 MUST NOT 在同一普通正式 delivery execution 中自动与已经覆盖相同 registry steps 的 `product.delivery` 叠加。
+
+#### Scenario: Release Task 形成正式验证 policy
+- **WHEN** stable Content Target 包含 release metadata、package、Launcher 或 publish workflow 变化
+- **THEN** policy MUST 选择 required `product.delivery` 并由 changed planner覆盖适用 release primary owners
+- **AND** optional `product.release-artifact-set` MUST NOT仅因同一 applicability path 自动成为第二个 required command
+
+#### Scenario: 独立诊断 release artifact set
+- **WHEN** 维护者明确要求独立核验 release artifact set且不使用普通 delivery capability代替该专项
+- **THEN** `product.release-artifact-set` MAY 被显式选择
+- **AND** 其 invocation、proves、effects 与 Result fact MUST 保持独立可读
+
+### Requirement: 版本元数据变化必须与依赖图变化分开选择
+Buildr Changed planner MUST 在拥有可验证 base/current JSON 时把仅版本字段变化按 affected范围处理，并 MUST 对依赖图、scripts、engines、bundle、lockfile结构、验证拓扑、解析失败或无法取得base的 package metadata 变化保持 full-scope。
+
+#### Scenario: 只更新 package 与 lockfile 版本字段
+- **WHEN** `package.json` 只改变顶层 `version`，且 `package-lock.json` 只改变顶层 `version` 与根 package `version`
+- **THEN** planner MUST 不以 full-scope owner 为由选择全部 Candidate steps
+- **AND** planner MUST 继续按真实 changed paths选择 package、release与文档 primary owners
+
+#### Scenario: 依赖或脚本同时改变
+- **WHEN** package metadata 还改变 dependency graph、scripts、engines、bundle、lockfile dependency或其他字段
+- **THEN** planner MUST 选择 full-scope
+- **AND** plan reason MUST 指明 package metadata 包含非版本变化
+
+#### Scenario: 显式路径没有可比较 base
+- **WHEN** 调用方仅传入 `package.json` 或 `package-lock.json` path而没有可验证 base/current 内容
+- **THEN** planner MUST 保守选择 full-scope
+
+### Requirement: Candidate CI 必须最小化串行前置与无效制品依赖
+Buildr Candidate CI MUST 在不合并 evidence owner 的前提下复用 preflight 与 artifact runner setup，并 MUST 只让真实 artifact consumers等待和下载候选制品；互相隔离的 Windows Workspace/Task primary owners MUST 按资源压力拆成多个有界 shard。
+
+#### Scenario: Candidate bootstrap 成功
+- **WHEN** dev→main 或手工 Candidate run 启动
+- **THEN** 一个 bootstrap job MUST 在同一 checkout、Node、依赖与 Workspace Node 上先完成 `preflight-macos`再完成`artifact-macos`
+- **AND** job MUST 分别上传两份 shard evidence与一个不可变 Candidate artifact
+
+#### Scenario: Preflight 失败
+- **WHEN** bootstrap 中 cheap preflight 返回非零状态
+- **THEN** artifact 构建和全部下游 verification shard MUST 不启动
+- **AND** stable `Candidate gate` MUST 聚合为失败
+
+#### Scenario: Windows shard 不消费 artifact
+- **WHEN** `workspace-lifecycle-windows`、`task-workflow-windows` 或 `fresh-build-windows` 启动
+- **THEN** workflow MUST NOT 下载或向 runner声明 Candidate artifact目录
+- **AND** `runtime-windows` 与其他真实消费者 MUST 继续使用同一 bootstrap artifact
+
+#### Scenario: Workspace 与 Task owner 并行
+- **WHEN** Candidate 在资源受限 CI profile运行 Windows Workspace/Task验证
+- **THEN** Workspace lifecycle owners与Task workflow owners MUST 位于独立 runner shard并可并行
+- **AND** 每个 runner内部的`workspace-saturating`容量 MUST保持一
+- **AND** 两个 shard 的 primary step并集 MUST 等于旧完整 owner集合减去已正式退役的 stale owner，且不得重复
+
+### Requirement: Candidate aggregate gate 必须保持轻量且闭合集合
+Buildr Candidate aggregate gate MUST 只依赖 pinned Node、checkout 内聚合源码与下载的 closed evidence set，并 MUST NOT需要安装 Product npm dependencies；优化 MUST 保持稳定 job name、source SHA、registry identity、artifact identity、primary coverage 与结果完整性检查。
+
+#### Scenario: 聚合完整 Candidate evidence
+- **WHEN** 全部 required shard evidence已下载
+- **THEN** aggregate MUST 在没有 `node_modules` 的 checkout上运行
+- **AND** aggregate MUST 接受精确一次的全部 expected evidence并输出 passed closed result
+
+#### Scenario: Evidence 缺失或重复
+- **WHEN** 任一 required shard evidence缺失、重复、source SHA漂移、registry不匹配或 artifact identity冲突
+- **THEN** aggregate MUST 以非零状态失败
+- **AND** `Candidate gate` MUST 保持 branch protection可见的稳定失败结论
+
+### Requirement: 生产源码必须具有显式领域验证所有权
+Buildr Product MUST 为 `src/application` 与 `src/infrastructure` 的生产模块维护可执行的 affected owner 契约；通用 Unit、Candidate 制品或 broad application payload 匹配 MUST NOT 单独充当领域 owner。每个生产模块 MUST 命中至少一个直接 Integration/System/Static owner，或进入包含 owner 与理由的显式闭合 allowlist；新增或移除路径造成缺口时 planner MUST 在启动 verifier 前 fail closed。
+
+#### Scenario: 已有领域 Integration 的源码发生改变
+- **WHEN** Task Entry、Task Retrospective 或其他已有领域 Integration 证据的生产源码进入 changed paths
+- **THEN** planner MUST 选择包含该真实测试文件的有界领域 Integration owner
+- **AND** MUST NOT 仅返回 Unit、Candidate tarball 或 application payload owner
+
+#### Scenario: 新生产模块没有直接 owner
+- **WHEN** 新增 `src/application` 或 `src/infrastructure` 模块且没有直接 owner或显式 allowlist 条目
+- **THEN** planner 与 repository contract MUST 在启动测试进程前报告生产源码 owner coverage gap
+- **AND** MUST NOT 根据相似文件名、CLI 可达性或 broad `src/**` 匹配猜测领域覆盖
+
+#### Scenario: 生产模块明确只适用现有非领域证据
+- **WHEN** 维护者确认某模块没有真实领域 Integration/System 场景且已有 owner 足以证明其风险
+- **THEN** registry MAY 使用包含精确路径、owner 和理由的显式 allowlist
+- **AND** 已存在直接领域 Integration 测试的模块 MUST NOT 通过 allowlist 绕过选择
+
+### Requirement: 专属 Integration slice 必须保持唯一 primary ownership
+Buildr Product MUST 从同一 registry 派生专属 Integration slice 与 general suite exclusions。Candidate 中每个 Integration 测试文件 MUST 恰好由一个 primary owner执行；直接 Integration 层入口 MAY 继续运行完整文件集合用于定位，但 Candidate general 与专属 slice MUST NOT 重复执行同一文件。
+
+#### Scenario: Task read model 源码发生改变
+- **WHEN** changed paths 命中 Task Entry、Overview、Planning Identity 或 Retrospective 实现
+- **THEN** planner MUST 只选择对应有界 Task read-model Integration slice及其必要依赖
+- **AND** MUST NOT 因该路径选择完整 general Integration owner
+
+#### Scenario: Candidate 聚合全部 Integration
+- **WHEN** 维护者或 CI 运行 Candidate profile
+- **THEN** general Integration 与全部专属 slice 的测试文件并集 MUST 等于完整 Candidate Integration 文件集合
+- **AND** 交集 MUST 为空
+
+### Requirement: 本地 affected 与 Full 必须先通过同次 admission wave
+Buildr 本地 `test:changed` 与 `test:candidate` MUST 在同一 verification execution 中先运行低成本 Fast steps；当原计划包含验证框架 canary时 MUST 同时纳入 admission wave。所有非 admission steps MUST 等待 admission 全部通过；任一 admission step失败时，尚未启动的重型 Integration、System、Workspace、package 或 artifact steps MUST 被 blocked且不得产生执行副作用。
+
+#### Scenario: 验证框架变化包含廉价错误
+- **WHEN** registry、planner、changed runner 或 execution contract 变化使 Fast 或 verification canary失败
+- **THEN** 本地 affected/full MUST 在 admission wave结束时返回失败
+- **AND** MUST NOT 启动依赖该 wave 的重型 Candidate steps
+
+#### Scenario: 普通领域变化运行 affected
+- **WHEN** changed plan非空且没有选择 verification canary
+- **THEN** runner MUST 先运行 Fast admission并在通过后运行原 affected owners
+- **AND** MUST NOT无条件加入与该领域无关的 System canary
+
+#### Scenario: GitHub Candidate 运行分布式投影
+- **WHEN** `dev → main`或手工 Candidate 使用 GitHub shard topology
+- **THEN** 现有 preflight phase MUST 包含 Fast owners与verification canary，并在失败时阻止 artifact和verification phases
+- **AND** stable `Candidate gate`、artifact复用与后续shard边界 MUST 保持不变
+
+### Requirement: 同一验证执行必须复用 admission evidence
+Buildr MUST 通过单一去重 DAG 组合 admission 与主计划；同一 step identity 在一次 changed/candidate execution中 MUST 最多执行一次，且 timing summary、diagnostics和最终状态 MUST属于同一run。系统 MUST NOT 为复用 admission 结果建立跨 invocation cache、第二Result store或调用方管理的 evidence writer。
+
+#### Scenario: Fast step同时属于原始 Full plan
+- **WHEN** Candidate plan已经包含 Unit、Contract或其他Fast step
+- **THEN** admission composition MUST 复用该 step identity并只执行一次
+- **AND** 后续步骤 MUST 把同一passed result作为依赖完成事实
+
+#### Scenario: Admission 通过后主 DAG 失败
+- **WHEN** admission steps全部passed但后续重型step失败
+- **THEN** 最终 timing summary MUST 同时保留admission与主DAG结果
+- **AND** 整体结果 MUST failed且不得把早期passed evidence误报为独立正式Verification Result
+
+### Requirement: 开发 PR 验证必须按证据 owner 分配平台
+Buildr 面向 `dev` 的 PR verification MUST 由 macOS 执行主要 changed/affected plan及其 admission wave，并 MUST 从同一 changed base 条件执行适用的 Browser capability。Windows MUST 只执行单一 verification registry 显式声明的平台敏感 development owners；workflow MUST NOT 复制测试文件清单或在 macOS/Windows 重复完整 affected plan。
+
+#### Scenario: 普通非平台修改进入 dev
+- **WHEN** PR changed paths 不命中任何 Windows platform-sensitive development owner
+- **THEN** macOS MUST 执行主要 affected/admission feedback
+- **AND** Windows projection MUST 明确没有适用步骤且不得运行完整 affected plan
+
+#### Scenario: Windows高风险路径进入 dev
+- **WHEN** PR changed paths 命中 registry 中声明 `developmentRunners: [windows]` 的 owner inputs
+- **THEN** Windows runner MUST 执行该 owner及其registry依赖和资源边界
+- **AND** MUST NOT 重复执行与平台无关的完整 Fast、Contract、Integration或System集合
+
+#### Scenario: Browser-owned路径进入 dev
+- **WHEN** macOS Browser plan 对 PR changed base 返回 `selected`
+- **THEN** CI MUST 准备 Buildr Web依赖并执行同一base的 affected Browser verification
+- **AND** MUST 保留 selector plan 与 job outcome，使 0 selector 不得冒充 Browser evidence
+
+#### Scenario: Candidate topology 保持稳定
+- **WHEN** `dev → main` 或手工 Candidate verification 运行
+- **THEN** 现有 macOS/Windows Candidate shards、唯一 tarball与closed evidence aggregate MUST 保持完整
+- **AND** 稳定 `Candidate gate` 名称、macOS runner与 branch protection兼容性 MUST NOT 因开发反馈重编排而改变
+
+### Requirement: 日常 affected 重型验证必须使用最小可解释领域 DAG
+Buildr Product MUST 根据直接实现 ownership、测试主证据、fixture、隔离方式和生命周期组织重型 verification owner；普通领域变化 MUST 只选择证明该风险所需的最小可解释重型 DAG，而 MUST NOT 因共享 general Integration、Verification System、Workspace System 或 Task Finish 聚合入口执行无关 sibling 领域。
+
+#### Scenario: 普通领域实现发生改变
+- **WHEN** changed path属于 Task、声明、OpenSpec、验证编排、Runtime、发布、数据存储、Project/Service、Worktree 或 Task Finish 的直接实现边界
+- **THEN** planner MUST 选择该领域的 primary owner及真实 artifact dependency
+- **AND** planner MUST NOT选择无直接证据关系的 sibling重型 owner
+- **AND** Fast与适用 admission MUST 在重型 executor前执行并传播失败
+
+#### Scenario: 聚合 owner 包含可独立选择的领域
+- **WHEN** 一个 Integration 或 System owner包含变化频率、输入路径与生命周期不同的多个稳定领域集合
+- **THEN** registry MUST 将集合声明为可独立 focus、计时和诊断的 primary owners
+- **AND** 原稳定 identity MUST保留给语义连续的主领域
+- **AND** aggregate/general runner MUST从同一 registry派生排除或文件集合
+
+#### Scenario: 拆分后执行 Candidate
+- **WHEN** Candidate profile或Candidate CI执行完整产品回归
+- **THEN** 拆分前后的 Integration/System 行为文件并集 MUST相同
+- **AND** 每个文件 MUST恰好由一个 primary owner执行且同一plan最多执行一次
+- **AND** required owner MUST全部进入本地Candidate和原适用CI shard
+
+### Requirement: 性能优化必须使用可复核的选择与计时证据
+Buildr Product MUST 使用代表 changed-plan owner集合、registry调度成本和同一tree focused成功计时评估日常验证性能；一次共享runner墙钟或预算 warning MUST NOT单独决定 owner边界或永久预算。
+
+#### Scenario: 验收日常开发性能优化
+- **WHEN** 重型owner拓扑发生改变
+- **THEN** verifier MUST在启动重型executor前证明文件union、唯一ownership、Candidate/CI coverage与代表changed paths
+- **AND** 新增或显著改变的重型owner MUST在同一tree至少取得两轮focused成功样本
+- **AND** 性能结论 MUST分别说明affected选择改善、focused耗时与Candidate完整覆盖
+
+#### Scenario: 完整生命周期不适合继续拆分
+- **WHEN** 一个超预算step持有单一完整lifecycle、共享不可变准备或不可拆分的跨组件acceptance事实
+- **THEN** 维护者 MUST保留唯一primary owner而不得创建重复准备或重复happy-path证据
+- **AND** 非阻断预算 MUST结合focused成功样本、full-load observation与合理波动余量独立校准
+- **AND** budget adjustment MUST NOT改变step status、Candidate覆盖或失败传播

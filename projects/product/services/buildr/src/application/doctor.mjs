@@ -196,6 +196,11 @@ export function registerApplicationDoctor(runtime) {
 
     printProductInstallationReport(result);
 
+    if (result.notices?.length) {
+      console.log('\n版本发布提示：');
+      for (const notice of result.notices) console.log(`  ${notice.message}${notice.command ? `\n  命令：${notice.command}` : ''}`);
+    }
+
     if (result.repairPlan.length > 0) {
       console.log('');
       console.log('Repair plan:');

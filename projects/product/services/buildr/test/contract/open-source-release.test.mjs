@@ -16,7 +16,9 @@ import { extractReleaseNotes } from '../../scripts/release/release-notes.mjs';
 import { ensureGitHubRelease } from '../../scripts/release/github-release-ensure.mjs';
 import {
   assertRegistryArtifact,
+  assertRegistryTagTransition,
   confirmRegistryRelease,
+  registryDistTagsState,
   registryVersionState,
   waitForRegistryRelease,
 } from '../../scripts/release/registry-version-state.mjs';
@@ -24,6 +26,15 @@ import { cleanupReleaseSmokeRoot, resolveReleaseSmokeSource } from '../../test/v
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot = path.resolve(serviceRoot, '../../../..');
+
+function tagSnapshot(latest, next) {
+  return {
+    schemaVersion: 'buildr.registry-dist-tags/v1',
+    package: '@buildr-ai/buildr',
+    tags: { latest, next },
+    registry: 'https://registry.npmjs.org/',
+  };
+}
 
 test('open-source candidate content rules block secrets without echoing values', () => {
   const secret = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
@@ -91,7 +102,7 @@ test('official registry version check distinguishes published, absent, and unava
   );
 });
 
-test('official registry recovery compares artifact integrity and exact dist-tag', async () => {
+test('official registry recovery compares artifact integrity and both dist-tags', async () => {
   const responses = [
     {
       status: 200,
@@ -102,7 +113,7 @@ test('official registry recovery compares artifact integrity and exact dist-tag'
     {
       status: 200,
       async json() {
-        return { 'dist-tags': { next: '0.1.0-rc.8' } };
+        return { 'dist-tags': { latest: '0.1.0-rc.1', next: '0.1.0-rc.8' } };
       },
     },
   ];
@@ -111,6 +122,7 @@ test('official registry recovery compares artifact integrity and exact dist-tag'
     version: '0.1.0-rc.8',
     npmTag: 'next',
     integrity: 'sha512-same',
+    beforeTags: tagSnapshot('0.1.0-rc.1', '0.1.0-rc.7'),
     fetchImpl: async () => responses.shift(),
   });
   assert.equal(state.taggedVersion, '0.1.0-rc.8');
@@ -128,6 +140,7 @@ test('official registry confirmation retries only within a bounded window', asyn
   let attempts = 0;
   const state = await waitForRegistryRelease({
     packageName: '@buildr-ai/buildr', version: '0.1.0-rc.8', npmTag: 'next', integrity: 'sha512-same',
+    beforeTags: tagSnapshot('0.1.0-rc.1', '0.1.0-rc.7'),
   }, {
     attempts: 2,
     delayMs: 0,
@@ -143,11 +156,45 @@ test('official registry confirmation retries only within a bounded window', asyn
           },
         };
       }
-      return { status: 200, async json() { return { 'dist-tags': { next: '0.1.0-rc.8' } }; } };
+      return { status: 200, async json() { return { 'dist-tags': { latest: '0.1.0-rc.1', next: '0.1.0-rc.8' } }; } };
     },
   });
   assert.equal(attempts, 2);
   assert.equal(state.published, true);
+});
+
+test('release tag transition only advances the selected GA or RC tag', async () => {
+  const observed = await registryDistTagsState('@buildr-ai/buildr', async () => ({
+    status: 200,
+    async json() { return { 'dist-tags': { latest: '0.1.0', next: '0.2.0-rc.1' } }; },
+  }));
+  assert.deepEqual(observed.tags, { latest: '0.1.0', next: '0.2.0-rc.1' });
+
+  assert.deepEqual(assertRegistryTagTransition({
+    packageName: '@buildr-ai/buildr', version: '0.1.0-rc.13', npmTag: 'next',
+    before: tagSnapshot('0.1.0-rc.1', '0.1.0-rc.12'),
+    after: tagSnapshot('0.1.0-rc.1', '0.1.0-rc.13'),
+  }), {
+    targetTag: 'next', targetVersion: '0.1.0-rc.13', unchangedTag: 'latest', unchangedVersion: '0.1.0-rc.1',
+  });
+  assert.deepEqual(assertRegistryTagTransition({
+    packageName: '@buildr-ai/buildr', version: '0.1.0', npmTag: 'latest',
+    before: tagSnapshot('0.1.0-rc.1', '0.1.0-rc.13'),
+    after: tagSnapshot('0.1.0', '0.1.0-rc.13'),
+  }).unchangedTag, 'next');
+  assert.throws(() => assertRegistryTagTransition({
+    packageName: '@buildr-ai/buildr', version: '0.1.0', npmTag: 'next',
+    before: tagSnapshot(null, '0.1.0-rc.13'), after: tagSnapshot(null, '0.1.0'),
+  }), /must publish to latest/);
+  assert.throws(() => assertRegistryTagTransition({
+    packageName: '@buildr-ai/buildr', version: '0.1.0-rc.13', npmTag: 'next',
+    before: tagSnapshot('0.1.0-rc.1', '0.1.0-rc.12'),
+    after: tagSnapshot('0.1.0-rc.2', '0.1.0-rc.13'),
+  }), /non-target dist-tag latest changed/);
+  assert.throws(() => assertRegistryTagTransition({
+    packageName: '@buildr-ai/buildr', version: '0.1.0-rc.13', npmTag: 'next',
+    before: tagSnapshot('0.1.0', '0.1.0'), after: tagSnapshot('0.1.0', '0.1.0-rc.13'),
+  }), /next points to stable version/);
 });
 
 test('release smoke selects one explicit immutable source', () => {
@@ -441,10 +488,10 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
   const hostNode = workflow.indexOf('\n  host-node:');
   const launcher = workflow.indexOf('\n  launcher:');
   const publish = workflow.indexOf('\n  publish:');
-  const registryCheck = workflow.indexOf('Check official Registry artifact');
+  const registryCheck = workflow.indexOf('Snapshot official Registry artifact and both dist-tags');
   const metadataPreflight = workflow.indexOf('Preflight GitHub Release metadata without assets or mutation');
   const npmPublish = workflow.indexOf('Publish the frozen npm tarball');
-  const registryConfirm = workflow.indexOf('Confirm official Registry integrity and dist-tag');
+  const registryConfirm = workflow.indexOf('Confirm official Registry integrity and both dist-tags');
   const releaseEnsure = workflow.indexOf('Ensure GitHub Release notes without binary Assets');
   assert.equal(contract < candidate, true);
   assert.equal(candidate < hostNode, true);
@@ -454,6 +501,8 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
   assert.equal(registryCheck < npmPublish, true);
   assert.equal(npmPublish < registryConfirm, true);
   assert.equal(registryConfirm < releaseEnsure, true);
+  assert.equal(workflow.includes('--snapshot-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"'), true);
+  assert.equal(workflow.includes('--before-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"'), true);
 });
 
 test('CI and publish workflows use the supported Node runtime', () => {
@@ -464,22 +513,29 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'workflow_dispatch']);
   assert.deepEqual(verifyDocument.on.pull_request.branches, ['dev', 'main']);
   assert.equal(verifyDocument.on.push, undefined);
-  assert.equal(verifyDocument.jobs['dev-feedback'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
-  assert.equal(verifyDocument.jobs['candidate-preflight'].if, "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')");
+  assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
+  assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
+  assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');
+  assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
+  assert.equal(verifyDocument.jobs['candidate-bootstrap'].if, "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')");
   assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
-  assert.match(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
+  assert.doesNotMatch(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
+  assert.match(verifyWorkflow, /npm run test:changed -- --base/);
+  assert.match(verifyWorkflow, /npm run test:changed -- --development-runner windows --base/);
+  assert.match(verifyWorkflow, /npm run test:browser:changed/);
+  assert.match(verifyWorkflow, /development-browser-plan\.json/);
   assert.match(verifyWorkflow, /github\.base_ref == 'dev'/);
   assert.match(verifyWorkflow, /github\.base_ref == 'main'/);
   assert.match(verifyWorkflow, /github\.head_ref == 'dev'/);
   assert.doesNotMatch(verifyWorkflow, /^  release-smoke:/m);
-  assert.equal((verifyWorkflow.match(/npm run test:candidate:ci/g) || []).length, 4);
+  assert.equal((verifyWorkflow.match(/npm run test:candidate:ci/g) || []).length, 5);
   assert.equal((verifyWorkflow.match(/npm run test:candidate:host/g) || []).length, 1);
-  assert.equal((verifyWorkflow.match(/npm run test:candidate:aggregate/g) || []).length, 1);
+  assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.mjs aggregate/g) || []).length, 1);
   assert.match(hostNodeSmoke, /verifyWorkspaceOwnedRuntime/);
   assert.match(hostNodeSmoke, /expectedMainRole: 'host'/);
   assert.match(hostNodeSmoke, /expectedChannel: 'npm'/);
-  assert.match(verifyWorkflow, /^  candidate-preflight:/m);
-  assert.match(verifyWorkflow, /^  candidate-artifact:/m);
+  assert.match(verifyWorkflow, /^  candidate-bootstrap:/m);
+  assert.match(verifyWorkflow, /^  candidate-runtime-windows:/m);
   assert.match(verifyWorkflow, /^  candidate-windows:/m);
   assert.match(verifyWorkflow, /^  candidate-gate:/m);
   assert.match(verifyWorkflow, /node-version: 24\.15\.0/);

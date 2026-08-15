@@ -85,7 +85,10 @@ function classifications(changedPaths) {
   const cli = [];
   const localApp = [];
   for (const pathname of changedPaths) {
-    if (matches(pathname, [`${SERVICE_ROOT}/package/manifest.yml`], [`${SERVICE_ROOT}/package/targets/workspace/`])) sync.push(pathname);
+    if (matches(pathname, [`${SERVICE_ROOT}/package/manifest.yml`], [
+      `${SERVICE_ROOT}/package/targets/workspace/`,
+      `${SERVICE_ROOT}/package/targets/runtime/skills/buildr/`,
+    ])) sync.push(pathname);
     if (matches(pathname, [
       `${PRODUCT_ROOT}/buildr`,
       `${SERVICE_ROOT}/package.json`,
@@ -118,6 +121,28 @@ function finishMode(result) {
     && result.resume?.phase === 'deliver'
     && result.resume?.token;
   return doctorBlocked ? 'doctor-blocked' : null;
+}
+
+function targetRaceResumeToken(result, runId) {
+  const matches = result?.runId === runId
+    && result?.status === 'blocked'
+    && result.primaryFailure?.phase === 'deliver'
+    && result.primaryFailure?.code === 'task-finish.target-race'
+    && result.resume?.phase === 'deliver'
+    && result.resume?.token;
+  return matches ? result.resume.token : null;
+}
+
+function deliveryAdaptationRequired(result, runId) {
+  return Boolean(result?.runId === runId
+    && result?.status === 'blocked'
+    && result.primaryFailure?.phase === 'prepare'
+    && result.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
+    && result.carrier?.root
+    && result.carrier?.identity
+    && result.resume?.phase === 'prepare'
+    && result.resume?.carrierIdentity === result.carrier.identity
+    && result.resume?.token);
 }
 
 export function createSelfBootstrapCloseoutPlan(finishResult) {
@@ -427,10 +452,10 @@ export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEn
     order: orderedSteps.length + 1,
     action: 'retry-current-closeout',
     owner: { kind: 'self-bootstrap-closeout', taskId: currentFinishResult.identity?.task || null, runId: currentRunId, agent: currentFinishResult.identity?.agent || null },
-    authorization: { required: true, scope: '全部predecessor owner cleanup完成并只剩当前run carrier后重试' },
+    authorization: { required: false, scope: '复用当前已授权closeout；全部predecessor owner cleanup完成并只剩当前run carrier后自动重试一次' },
     command: {
       executable: nodeExecutable,
-      args: [runnerPath, '--run', currentRunId, '--target', workspaceRoot, '--node-executable', nodeExecutable],
+      args: [runnerPath, '--run', currentRunId, '--target', workspaceRoot, '--node-executable', nodeExecutable, '--retry-after-foreign-clear', 'true'],
     },
     expectedEffects: ['self-bootstrap-activation', 'verify-development-entry', 'doctor-or-same-run-finish-resume'],
     blockedBy: status === 'actionable' ? actionable.map((item) => item.runId) : foreign.map((item) => item.runId),
@@ -791,7 +816,7 @@ function closeoutResult(result, plan, stages, status, diagnostic = null, develop
   };
 }
 
-export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExecutable, recoveryPlan = null, execute = defaultExecute, environment = process.env }) {
+export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExecutable, recoveryPlan = null, allowLatestRemoteFastForward = false, execute = defaultExecute, environment = process.env }) {
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const stages = new Map(SELF_BOOTSTRAP_CLOSEOUT_PHASES.map((id) => [id, phase(id)]));
   let plan = null;
@@ -834,14 +859,53 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     const changeObservation = ownedCarrierPath ? { ignoredUntrackedRoots: [ownedCarrierPath] } : {};
     const initialChanges = changedPaths(execute, root, active, 'preflight', changeObservation);
     if (initialChanges.length) throw closeoutError('self-bootstrap-closeout.workspace-dirty', 'Retained Workspace在runner启动前不clean。', { changedPaths: initialChanges });
-    const head = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'head', active, 'self-bootstrap-closeout.head-unavailable');
-    const remote = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-before');
+    let head = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'head', active, 'self-bootstrap-closeout.head-unavailable');
+    let remote = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-before');
+    let prevalidatedProvenance = null;
+    if (allowLatestRemoteFastForward && remote !== head) {
+      requirePassed(
+        git(execute, root, ['fetch', '--no-tags', '--no-write-fetch-head', plan.remote, `refs/heads/${plan.targetBranch}`], 'latest-target-fetch', active),
+        'self-bootstrap-closeout.latest-dev-fetch-failed',
+        '无法读取latest remote target以准备安全fast-forward。',
+        { remote: plan.remote, targetBranch: plan.targetBranch },
+      );
+      const fetched = gitText(execute, root, ['rev-parse', `${remote}^{commit}`], 'latest-target-object', active, 'self-bootstrap-closeout.latest-dev-fetch-identity-mismatch');
+      if (fetched !== remote) {
+        throw closeoutError('self-bootstrap-closeout.latest-dev-fetch-identity-mismatch', 'Fetch后的latest remote target identity不匹配。', { expected: remote, actual: fetched });
+      }
+      const remoteAfterFetch = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-after-latest-fetch');
+      if (remoteAfterFetch !== remote) {
+        throw closeoutError('self-bootstrap-closeout.remote-drift', 'Latest remote target在fast-forward准备期间再次变化。', { before: remote, after: remoteAfterFetch });
+      }
+      const fastForwardable = git(execute, root, ['merge-base', '--is-ancestor', head, remote], 'latest-target-fast-forwardable', active);
+      if (fastForwardable.status !== 0) {
+        throw closeoutError('self-bootstrap-closeout.latest-dev-fast-forward-unavailable', 'Retained target无法无冲突fast-forward到latest remote target。', {
+          head,
+          remote,
+          exitCode: fastForwardable.status,
+          stderr: String(fastForwardable.stderr || '').trim(),
+        });
+      }
+      prevalidatedProvenance = inspectBuildrDescendantChain(execute, root, plan.baseRef, remote, active);
+      requirePassed(
+        git(execute, root, ['merge', '--ff-only', remote], 'latest-target-fast-forward', active),
+        'self-bootstrap-closeout.latest-dev-fast-forward-failed',
+        'Retained target未能fast-forward到已验证的latest remote target。',
+        { head, remote },
+      );
+      const fastForwardedHead = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'latest-target-head-readback', active, 'self-bootstrap-closeout.head-unavailable');
+      if (fastForwardedHead !== remote) {
+        throw closeoutError('self-bootstrap-closeout.latest-dev-fast-forward-readback-mismatch', 'Fast-forward后的retained HEAD与latest remote target不一致。', { expected: remote, actual: fastForwardedHead });
+      }
+      active.effects.push({ type: 'retained-target-fast-forward', branch: plan.targetBranch, before: head, after: fastForwardedHead, remote: plan.remote });
+      head = fastForwardedHead;
+    }
     let recovery = 'fresh';
     let activationBaseRef = plan.baseRef;
     if (head === plan.baseRef) {
       if (remote !== plan.baseRef) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Remote已偏离Finish final ref。', { expected: plan.baseRef, actual: remote });
     } else {
-      const provenance = inspectBuildrDescendantChain(execute, root, plan.baseRef, head, active);
+      const provenance = prevalidatedProvenance || inspectBuildrDescendantChain(execute, root, plan.baseRef, head, active);
       const parent = gitText(execute, root, ['rev-parse', 'HEAD^'], 'successor-parent', active, 'self-bootstrap-closeout.successor-parent-unavailable');
       const message = gitText(execute, root, ['show', '-s', '--format=%B', 'HEAD'], 'successor-message', active, 'self-bootstrap-closeout.successor-message-unavailable');
       const trailers = commitTrailers(message);
@@ -965,7 +1029,21 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     } else {
       const resumed = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', finishResult.resume.token, '--target', root, '--detail', 'full', '--json'], 'resume-finish-run', active);
       requirePassed(resumed, 'self-bootstrap-closeout.finish-resume-failed', '同一Finish run恢复命令失败。');
-      const payload = parseJson(resumed, 'self-bootstrap-closeout.finish-resume-result-invalid', 'Finish resume没有返回JSON。');
+      let payload = parseJson(resumed, 'self-bootstrap-closeout.finish-resume-result-invalid', 'Finish resume没有返回JSON。');
+      const targetRaceToken = allowLatestRemoteFastForward ? targetRaceResumeToken(payload, plan.runId) : null;
+      if (targetRaceToken) {
+        const recovered = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', targetRaceToken, '--target', root, '--detail', 'full', '--json'], 'resume-finish-target-race', active);
+        requirePassed(recovered, 'self-bootstrap-closeout.target-race-resume-failed', '同一Finish run的target-race恢复命令失败。');
+        payload = parseJson(recovered, 'self-bootstrap-closeout.target-race-resume-result-invalid', 'target-race恢复没有返回JSON。');
+        if (deliveryAdaptationRequired(payload, plan.runId)) {
+          throw closeoutError('self-bootstrap-closeout.target-race-adaptation-required', '最新Delivery Baseline需要Agent审核并适配同一Finish carrier；Agent无法安全处理时请求用户授权。', {
+            runId: payload.runId,
+            primaryFailure: payload.primaryFailure,
+            carrier: payload.carrier,
+            resume: payload.resume,
+          });
+        }
+      }
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
       markPassed(active, finishResult.resume.token, payload.resolvedContext?.identity || payload.runId);
     }
@@ -1004,7 +1082,7 @@ function commandResultError(code, message, result) {
 }
 
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
-  const allowed = new Set(['--run', '--target', '--node-executable']);
+  const allowed = new Set(['--run', '--target', '--node-executable', '--retry-after-foreign-clear']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', 'Runner参数必须为成对的option和值。');
   for (let index = 0; index < args.length; index += 2) {
     if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `Unknown option: ${args[index]}`);
@@ -1012,11 +1090,15 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   const runId = option(args, '--run');
   const targetRoot = option(args, '--target');
   const nodeExecutable = option(args, '--node-executable');
+  const retryAfterForeignClear = option(args, '--retry-after-foreign-clear');
   if (!runId || !targetRoot || !nodeExecutable) {
     throw closeoutError('self-bootstrap-closeout.arguments-incomplete', 'Usage: node closeout.mjs --run <finish-run-id> --target <canonical-workspace> --node-executable <retained-node>');
   }
   if (!sameFilesystemPath(actualNodeExecutable, nodeExecutable)) {
     throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', 'Runner必须由Environment绑定的retained Node启动。', { expected: nodeExecutable, actual: actualNodeExecutable });
+  }
+  if (retryAfterForeignClear !== null && retryAfterForeignClear !== 'true') {
+    throw closeoutError('self-bootstrap-closeout.retry-mode-invalid', '--retry-after-foreign-clear只接受true。');
   }
 
   const root = fs.realpathSync(path.resolve(targetRoot));
@@ -1054,7 +1136,15 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
     nodeExecutable,
     runnerPath: fileURLToPath(import.meta.url),
   });
-  return runSelfBootstrapCloseout({ finishResult, workspaceRoot: root, nodeExecutable, recoveryPlan, execute, environment });
+  return runSelfBootstrapCloseout({
+    finishResult,
+    workspaceRoot: root,
+    nodeExecutable,
+    recoveryPlan,
+    allowLatestRemoteFastForward: retryAfterForeignClear === 'true',
+    execute,
+    environment,
+  });
 }
 
 function main() {

@@ -30,6 +30,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
   const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
   const printDoctorReport = (...args) => runtime.printDoctorReport(...args);
+  const releaseAwareness = (...args) => runtime.releaseAwareness(...args);
   const positionalArgs = (...args) => runtime.positionalArgs(...args);
   const syncPackageComponents = (...args) => runtime.syncPackageComponents(...args);
   const readPackageManifest = (...args) => runtime.readPackageManifest(...args);
@@ -70,6 +71,27 @@ export function registerApplicationWorkspaceOperations(runtime) {
 
   function diagnoseProductInstallation(result) {
     result.productInstallation = runtime.buildInstallationInventory();
+  }
+
+  function diagnoseReleaseAwareness(result, options = {}) {
+    try {
+      result.releaseAwareness = releaseAwareness({
+        allowDevelopmentQuery: false,
+        persistState: true,
+        notify: true,
+        ...options,
+      });
+      result.notices = result.releaseAwareness.notices.filter((notice) => notice.notify === true);
+    } catch (error) {
+      result.releaseAwareness = {
+        schemaVersion: 'buildr.release-awareness/v1',
+        status: 'blocked',
+        freshness: { status: 'unavailable', source: 'doctor', checkedAt: null },
+        blockingReasons: [`版本发布感知暂不可用：${error.message}`],
+        notices: [],
+      };
+      result.notices = [];
+    }
   }
 
   function diagnoseWorkspaceNode(result, targetRoot, requestedAgent) {
@@ -309,6 +331,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
       builtins: { items: [] },
       commandLineTools: null,
       productInstallation: null,
+      releaseAwareness: null,
+      notices: [],
       workspaceNode: null,
       runtime: Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent) => [RUNTIME_ADAPTERS[agent].traits.checker.resultKey ?? agent.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()), []])),
       mutations: { blocked: false, lock: null, transactions: [] },
@@ -321,6 +345,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
 
     diagnoseWorkspace(result, targetRoot);
     diagnoseProductInstallation(result);
+    diagnoseReleaseAwareness(result, internalOptions.releaseAwarenessOptions);
     if (result.workspace?.initialized) diagnoseWorkspaceMetadata(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo);
     if (result.workspace?.initialized) diagnoseTaskFinishStore(result, targetRoot);
@@ -377,6 +402,8 @@ export function registerApplicationWorkspaceOperations(runtime) {
       const report = detail === 'compact' ? {
         targetRoot: result.targetRoot, scope: result.scope, agentRuntime: result.agentRuntime,
         productInstallation: result.productInstallation,
+        releaseAwareness: result.releaseAwareness,
+        notices: result.notices,
         workspaceNode: result.workspaceNode,
         ok: result.ok, summary: result.summary, health: result.health,
         findings: result.findings, repairPlan: result.repairPlan, nextSteps: result.nextSteps,

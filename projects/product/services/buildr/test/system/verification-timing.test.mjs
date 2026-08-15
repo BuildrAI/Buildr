@@ -460,7 +460,6 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'system-task-finish',
     'system-fresh-build',
     'capability-cli-integration',
-    'integration-candidate-recovery',
     'runtime-adapter-parity',
     'package-static',
     'package-workspace',

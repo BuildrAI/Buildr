@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { parseSemver } from '../../src/application/release-awareness.mjs';
 import { extractReleaseNotes } from './release-notes.mjs';
 import { parseArguments, writeJson } from './release-files.mjs';
 import { releasePublishAuthority } from './release-authority.mjs';
@@ -19,8 +20,9 @@ export const releaseProtocolIdentity = 'buildr.web-protocol/v1';
 export const githubRepository = 'BuildrAI/Buildr';
 
 function assertVersion(version) {
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`Unsupported release version: ${version}`);
-  return version;
+  const parsed = parseSemver(version);
+  if (!parsed || parsed.version !== version) throw new Error(`Unsupported release version: ${version}`);
+  return parsed;
 }
 
 function assertCommit(value) {
@@ -33,9 +35,9 @@ function sha256(value) {
 }
 
 export function resolveReleaseContract(version, refName, options = {}) {
-  assertVersion(version);
+  const parsedVersion = assertVersion(version);
   if (refName !== `v${version}`) throw new Error(`Release tag ${refName} does not match package version ${version}.`);
-  const prerelease = version.includes('-');
+  const prerelease = parsedVersion.prerelease.length > 0;
   const base = { version, refName, npmTag: prerelease ? 'next' : 'latest', prerelease };
   if (!options.sourceCommit) return base;
   const sourceCommit = assertCommit(options.sourceCommit);

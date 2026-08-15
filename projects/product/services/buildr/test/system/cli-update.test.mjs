@@ -6,6 +6,11 @@ import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 
 import { buildCliUpdatePlan, compareVersions, executeCliUpdatePlan, identifyCliSource } from '../../src/application/cli-update.mjs';
+import {
+  RELEASE_AWARENESS_STATE_SCHEMA,
+  buildReleaseAwareness,
+  readReleaseAwarenessState,
+} from '../../src/application/release-awareness.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { createInstallationOrigin } from '../../src/infrastructure/product-identity/installation-origin.mjs';
 import { createProductUpdateAuthority } from '../../src/infrastructure/product-identity/installation-registry.mjs';
@@ -113,7 +118,7 @@ test('开发 checkout 缺少 upstream 时 check 返回稳定阻塞结构', (t) =
   const plan = buildCliUpdatePlan(productRoot, { fetch: false, registryLookup: () => '1.0.0' });
   assert.equal(plan.mode, 'development');
   assert.equal(plan.status, 'blocked');
-  assert.deepEqual(Object.keys(plan).sort(), ['available', 'blockingReasons', 'channel', 'current', 'mode', 'nextActions', 'sourceStatus', 'status', 'strategy', 'versionStatus']);
+  for (const field of ['available', 'blockingReasons', 'current', 'freshness', 'notices', 'observedAt', 'selectedTrack', 'tracks']) assert.equal(field in plan, true, field);
   assert.match(plan.blockingReasons.join('\n'), /upstream/);
 });
 
@@ -230,7 +235,7 @@ test('npm update query and install both use registered Host Node and npm CLI wit
   const queryLog = path.join(fixture, 'query.log');
   fs.mkdirSync(productRoot, { recursive: true });
   fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.0.0"}\n');
-  fs.writeFileSync(npmCli, `import fs from 'node:fs'; fs.writeFileSync(process.env.QUERY_LOG, process.argv.slice(2).join(' ') + '\\n'); process.stdout.write('"2.0.0"\\n');\n`);
+  fs.writeFileSync(npmCli, `import fs from 'node:fs'; fs.writeFileSync(process.env.QUERY_LOG, process.argv.slice(2).join(' ') + '\\n'); process.stdout.write('{"latest":"2.0.0","next":"2.1.0-rc.1"}\\n');\n`);
   const updateAuthority = createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath: npmCli, prefix });
   const plan = buildCliUpdatePlan(productRoot, {
     ...formalOriginOptions('npm'),
@@ -239,7 +244,7 @@ test('npm update query and install both use registered Host Node and npm CLI wit
   });
   assert.equal(plan.status, 'update-available');
   assert.equal(plan.strategy, 'npm-install');
-  assert.equal(fs.readFileSync(queryLog, 'utf8').trim(), 'view @buildr-ai/buildr version --json');
+  assert.equal(fs.readFileSync(queryLog, 'utf8').trim(), 'view @buildr-ai/buildr dist-tags --json');
   assert.equal(plan.current.updateAuthority.nodeExecutable, process.execPath);
   assert.equal(plan.current.updateAuthority.npmCliPath, npmCli);
 
@@ -325,4 +330,128 @@ test('prerelease version comparison distinguishes RC sequence', () => {
   assert.equal(compareVersions('0.1.0-rc.3', '0.1.0-rc.5') < 0, true);
   assert.equal(compareVersions('0.1.0-rc.5', '0.1.0-rc.5'), 0);
   assert.equal(compareVersions('0.1.0', '0.1.0-rc.5') > 0, true);
+});
+
+test('Release Awareness 同时解释 GA 与 RC 并默认让 prerelease 跟随 candidate', () => {
+  const awareness = buildReleaseAwareness({
+    mode: 'npm', channel: 'npm', package: '@buildr-ai/buildr', version: '0.1.0-rc.12',
+    productRoot: '/product', installPrefix: '/prefix', installationIdentity: 'installation', updateAuthority: null,
+  }, {
+    registryTags: { latest: '0.1.0', next: '0.1.0-rc.13' },
+    observedAt: '2026-08-15T00:00:00.000Z',
+  });
+  assert.equal(awareness.selectedTrack, 'candidate');
+  assert.equal(awareness.tracks.stable.status, 'update-available');
+  assert.equal(awareness.tracks.candidate.status, 'update-available');
+  assert.deepEqual(awareness.nextActions, [
+    '运行 buildr update --track stable 更新到 0.1.0。',
+    '运行 buildr update --track candidate 更新到 0.1.0-rc.13。',
+  ]);
+});
+
+test('Release Awareness 不把 latest 上的历史 RC 称为 GA', () => {
+  const awareness = buildReleaseAwareness({
+    mode: 'npm', channel: 'npm', package: '@buildr-ai/buildr', version: '0.1.0-rc.12',
+    productRoot: '/product', installPrefix: '/prefix', installationIdentity: 'installation', updateAuthority: null,
+  }, { registryTags: { latest: '0.1.0-rc.1', next: '0.1.0-rc.13' } });
+  assert.equal(awareness.tracks.stable.version, null);
+  assert.equal(awareness.tracks.stable.observedVersion, '0.1.0-rc.1');
+  assert.equal(awareness.tracks.stable.status, 'not-published');
+  assert.match(awareness.notices.find((notice) => notice.track === 'stable').message, /GA 正式版尚未发布.*历史候选版/);
+});
+
+test('Release Awareness 对未变化的错误轨道头只主动通知一次', (t) => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-awareness-invalid-'));
+  t.after(() => fs.rmSync(dataRoot, { recursive: true, force: true }));
+  const source = {
+    mode: 'npm', channel: 'npm', package: '@buildr-ai/buildr', version: '0.1.0-rc.12',
+    productRoot: '/product', installPrefix: '/prefix', installationIdentity: 'installation', updateAuthority: null,
+  };
+  const options = {
+    registryTags: { latest: '0.1.0-rc.1', next: '0.1.0-rc.13' }, dataRoot,
+    persistState: true, notify: true, observedAt: '2026-08-15T01:00:00.000Z',
+  };
+  const first = buildReleaseAwareness(source, options);
+  const second = buildReleaseAwareness(source, { ...options, observedAt: '2026-08-15T02:00:00.000Z' });
+  assert.equal(first.notices.find((notice) => notice.track === 'stable').notify, true);
+  assert.equal(second.notices.find((notice) => notice.track === 'stable').notify, false);
+});
+
+test('Release Awareness 用户级状态原子保存每轨道 seen/notified 并抑制重复主动通知', (t) => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-awareness-state-'));
+  t.after(() => fs.rmSync(dataRoot, { recursive: true, force: true }));
+  const source = {
+    mode: 'npm', channel: 'npm', package: '@buildr-ai/buildr', version: '0.1.0-rc.12',
+    productRoot: '/product', installPrefix: '/prefix', installationIdentity: 'installation', updateAuthority: null,
+  };
+  const options = {
+    registryTags: { latest: '0.1.0', next: '0.1.0-rc.13' }, dataRoot,
+    persistState: true, notify: true, observedAt: '2026-08-15T00:00:00.000Z',
+  };
+  const first = buildReleaseAwareness(source, options);
+  const second = buildReleaseAwareness(source, { ...options, observedAt: '2026-08-15T01:00:00.000Z' });
+  assert.equal(first.tracks.stable.shouldNotify, true);
+  assert.equal(first.tracks.candidate.shouldNotify, true);
+  assert.equal(second.tracks.stable.shouldNotify, false);
+  assert.equal(second.tracks.candidate.shouldNotify, false);
+  const persisted = readReleaseAwarenessState({ dataRoot }).state;
+  assert.equal(persisted.schemaVersion, RELEASE_AWARENESS_STATE_SCHEMA);
+  assert.deepEqual(persisted.tracks.stable, {
+    lastSeenVersion: '0.1.0', lastNotifiedVersion: '0.1.0', checkedAt: '2026-08-15T01:00:00.000Z',
+  });
+  assert.deepEqual(persisted.tracks.candidate, {
+    lastSeenVersion: '0.1.0-rc.13', lastNotifiedVersion: '0.1.0-rc.13', checkedAt: '2026-08-15T01:00:00.000Z',
+  });
+});
+
+test('npm update 默认保持当前轨道并允许显式选择 GA 或 RC', (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-track-plan-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const prefix = path.join(fixture, 'prefix');
+  const productRoot = path.join(prefix, 'lib', 'node_modules', '@buildr-ai', 'buildr', 'payload', 'product');
+  const npmCli = path.join(fixture, 'npm-cli.mjs');
+  fs.mkdirSync(productRoot, { recursive: true });
+  fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"@buildr-ai/buildr","version":"0.1.0-rc.12"}\n');
+  fs.writeFileSync(npmCli, '\n');
+  const updateAuthority = createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath: npmCli, prefix });
+  const base = {
+    ...formalOriginOptions('npm', '0.1.0-rc.12'),
+    registration: { status: 'installed', entry: { updateAuthority }, reason: null },
+    registryTags: { latest: '0.1.0', next: '0.1.0-rc.13' },
+  };
+  const implicit = buildCliUpdatePlan(productRoot, base);
+  const stable = buildCliUpdatePlan(productRoot, { ...base, track: 'stable' });
+  assert.equal(implicit.selectedTrack, 'candidate');
+  assert.deepEqual(implicit.target, { track: 'candidate', tag: 'next', version: '0.1.0-rc.13' });
+  assert.equal(stable.selectedTrack, 'stable');
+  assert.deepEqual(stable.target, { track: 'stable', tag: 'latest', version: '0.1.0' });
+});
+
+test('npm update 不从正式版自动切换到 RC 且拒绝自动降级', (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-track-safety-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const prefix = path.join(fixture, 'prefix');
+  const productRoot = path.join(prefix, 'lib', 'node_modules', '@buildr-ai', 'buildr', 'payload', 'product');
+  const npmCli = path.join(fixture, 'npm-cli.mjs');
+  fs.mkdirSync(productRoot, { recursive: true });
+  fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.0.0"}\n');
+  fs.writeFileSync(npmCli, '\n');
+  const updateAuthority = createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath: npmCli, prefix });
+  const base = {
+    ...formalOriginOptions('npm', '1.0.0'),
+    registration: { status: 'installed', entry: { updateAuthority }, reason: null },
+    registryTags: { latest: '1.0.0', next: '2.0.0-rc.1' },
+  };
+  const implicit = buildCliUpdatePlan(productRoot, base);
+  const candidate = buildCliUpdatePlan(productRoot, { ...base, track: 'candidate' });
+  assert.equal(implicit.selectedTrack, 'stable');
+  assert.equal(implicit.status, 'up-to-date');
+  assert.equal(candidate.status, 'update-available');
+
+  const downgrade = buildCliUpdatePlan(productRoot, {
+    ...base, track: 'candidate', registryTags: { latest: '1.0.0', next: '0.9.0-rc.9' },
+  });
+  assert.equal(downgrade.status, 'blocked');
+  assert.equal(downgrade.strategy, 'none');
+  assert.match(downgrade.blockingReasons.join('\n'), /不会自动降级/);
 });

@@ -159,7 +159,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
           database.exec('COMMIT');
           return { ...persisted(task.root, active), created: false, existingActive: true, existingTerminal: false };
         }
-        const terminalRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND invocation_identity = ? AND lifecycle_status IN ('retained', 'cleanup_pending', 'cleaned', 'attention') ORDER BY opened_at DESC, record_id DESC LIMIT 1`).get(...identity);
+        const terminalRow = database.prepare(`${SELECT} WHERE task_id = ? AND owner = ? AND kind = ? AND invocation_identity = ? AND lifecycle_status IN ('retained', 'cleanup_pending', 'cleaned', 'attention') AND outcome <> 'unknown' ORDER BY opened_at DESC, record_id DESC LIMIT 1`).get(...identity);
         if (terminalRow) {
           const terminal = rowToRecord(terminalRow);
           database.exec('COMMIT');
@@ -261,7 +261,7 @@ export function registerTaskExecutionRecordRepository(runtime) {
         WHERE lifecycle_status = 'cleanup_pending'
           OR (lifecycle_status = 'retained' AND retain_until <= ? AND (
             (outcome = 'passed' AND outcome_rank > ?)
-            OR (outcome IN ('failed', 'blocked', 'cancelled') AND resolution_status IN ('acknowledged', 'recovered'))
+            OR (outcome IN ('failed', 'blocked', 'cancelled', 'unknown') AND resolution_status IN ('acknowledged', 'recovered'))
           ))
           OR (lifecycle_status = 'cleaned' AND cleaned_at <= ? AND tombstone_rank > ?)
       )

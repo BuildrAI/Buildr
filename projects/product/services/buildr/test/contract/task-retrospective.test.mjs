@@ -29,6 +29,9 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /不可得时直接标记缺失/);
   assert.match(skill, /不得为了补齐 Token 数字.*强制估算.*增加任务消耗/);
   assert.match(skill, /task-retrospective-driver\.mjs handle/);
+  assert.match(skill, /task-retrospective-driver\.mjs list/);
+  assert.match(skill, /默认.*pending.*摘要/);
+  assert.match(skill, /--include-report/);
   assert.match(skill, /`handled\|no-action` 必须提供非空完整处理意见/);
   assert.match(skill, /digest冲突，重新inspect/);
   assert.match(skill, /完整原始 `reportMarkdown`/);
@@ -45,6 +48,8 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(capabilityContract, /完整动作本身已构成授权时不得要求重复确认/);
   assert.match(capabilityContract, /current digest、拟 disposition、理由、目标 Task 或关系 effects 发生实质变化时，旧授权失效/);
   assert.match(capabilityContract, /保持 current disposition，不用旧授权继续写入/);
+  assert.match(capabilityContract, /有界批量只读/);
+  assert.match(capabilityContract, /不得自动分析、评分或处置/);
   assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
 });
 

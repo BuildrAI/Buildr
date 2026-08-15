@@ -1,0 +1,51 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: add-openspec-semantic-readiness-preflight
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/add-openspec-semantic-readiness-preflight/brief.md
+    reason: 正式Change需要为用户和Agent说明预检目的、阻断分类、失效条件及与Planning Review和converge的边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-openspec-semantic-readiness-preflight/proposal.md
+      - openspec/changes/add-openspec-semantic-readiness-preflight/design.md
+      - openspec/changes/add-openspec-semantic-readiness-preflight/specs/openspec-contract-guard/spec.md
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: apply-ready与Planning Review之间新增OpenSpec semantic readiness preflight及Agent blocked处理
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-openspec-semantic-readiness-preflight/specs/agent-task-workflows/spec.md
+      - openspec/changes/add-openspec-semantic-readiness-preflight/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: OpenSpec只读preflight复用planner但不得取得Receipt、canonical writer或archive资格
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-openspec-semantic-readiness-preflight/specs/openspec-deterministic-sync/spec.md
+      - openspec/changes/add-openspec-semantic-readiness-preflight/design.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 需要固定OpenSpec语义就绪预检及其与Planning Review、Converge和Convergence Inspect的边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-openspec-semantic-readiness-preflight/design.md
+      - openspec/changes/add-openspec-semantic-readiness-preflight/specs/openspec-contract-guard/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - OpenSpec Convergence
+    - OpenSpec Converge
+    - OpenSpec Convergence Inspect
+    - Planning Review
+  canonicalTerms: OpenSpec语义就绪预检（OpenSpec Semantic Readiness Preflight）
+  changedAssets:
+    - openspec/knowledge/flows/openspec-change-lifecycle.md
+    - openspec/knowledge/architecture/technical.md
+    - openspec/knowledge/glossary.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/changes/add-openspec-semantic-readiness-preflight/design.md
+    - openspec/changes/add-openspec-semantic-readiness-preflight/specs/openspec-contract-guard/spec.md
+unresolvedItems: []

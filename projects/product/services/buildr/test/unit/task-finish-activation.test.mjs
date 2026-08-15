@@ -14,6 +14,20 @@ test('Workspace root runtime sources select render-runtime', () => {
   assert.match(plan.identity, /^sha256-/);
 });
 
+test('self-bootstrap Skill与Component精确源路径由通用Finish render-runtime处理', () => {
+  const changedPaths = [
+    'skills/buildr-self-bootstrap-sync/SKILL.md',
+    'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
+    'components/workspace/buildr-self-bootstrap/component.yml',
+    'components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md',
+  ];
+  const plan = planRetainedTaskFinishActivation({ agent: 'codex', changedPaths });
+
+  assert.equal(plan.mode, 'render-runtime');
+  assert.deepEqual(plan.matchedPaths, [...changedPaths].sort());
+  assert.equal(plan.gitEffect, 'forbidden');
+});
+
 test('Project and ordinary code changes select none regardless of Task scope', () => {
   const plan = planRetainedTaskFinishActivation({
     workspaceRoot: '/ignored',

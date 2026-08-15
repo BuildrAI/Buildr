@@ -28,6 +28,7 @@ function compactCurrent(development) {
     gates: applicability.gates,
     decision: receipt.decision ? { outcome: receipt.decision.outcome, candidateIdentity: receipt.decision.candidateIdentity } : null,
     reasons: applicability.reasons,
+    formalVerificationReadiness: development.formalVerificationReadiness || null,
   };
 }
 
@@ -38,7 +39,8 @@ export function compactTaskDevelopmentOperationResult(result) {
     operation: result.operation,
     status: result.status,
     taskId: result.taskId,
-    current: compactCurrent(result.development),
+    current: compactCurrent(result.development ? { ...result.development, formalVerificationReadiness: result.formalVerificationReadiness || null } : null),
+    next: result.next,
     diagnostic: result.diagnostic,
     effects: result.effects,
     nextActions: result.nextActions,

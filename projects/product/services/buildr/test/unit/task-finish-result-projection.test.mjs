@@ -85,6 +85,32 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   }
 });
 
+test('compact Task Finish Result 保留 dirty preflight 与 Delivery Adaptation 的结构化路径', () => {
+  const dirty = compactTaskFinishResult(canonical({
+    primaryFailure: {
+      phase: 'preflight',
+      operation: 'retained-workspace',
+      code: 'task-finish.retained-workspace-dirty',
+      status: 'blocked',
+      message: 'Retained Workspace is dirty.',
+      findings: [{ unrelatedPaths: ['local-note.txt'] }],
+    },
+  }));
+  assert.deepEqual(dirty.primaryFailure.conflictPaths, ['local-note.txt']);
+
+  const adaptation = compactTaskFinishResult(canonical({
+    primaryFailure: {
+      phase: 'prepare',
+      operation: 'delivery-adaptation',
+      code: 'task-finish.delivery-adaptation-required',
+      status: 'blocked',
+      message: 'Adaptation required.',
+      diagnostic: { code: 'task-finish.contribution-apply-conflict', conflictPaths: ['shared.txt'] },
+    },
+  }));
+  assert.deepEqual(adaptation.primaryFailure.conflictPaths, ['shared.txt']);
+});
+
 test('full Task Finish Result 保持canonical对象不变', () => {
   const full = canonical();
   assert.equal(projectTaskFinishResult(full, 'full'), full);

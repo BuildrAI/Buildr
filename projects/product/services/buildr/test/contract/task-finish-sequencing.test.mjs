@@ -70,13 +70,14 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   for (const input of [
     'projects/product/services/buildr/package/manifest.yml',
     'projects/product/services/buildr/package/targets/workspace/**',
+    'projects/product/services/buildr/package/targets/runtime/skills/buildr/**',
     'projects/product/services/buildr/src/**/*.mjs',
     'projects/product/services/buildr/src/interfaces/local-app/**',
     'projects/product/services/buildr/src/interfaces/cli/launcher.mjs',
     'projects/product/services/buildr/package/launchers/**',
   ]) assert.ok(skill.includes(input), input);
   for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-local-app', 'package/launchers/manage.mjs install --channel development', '公开命令没有development channel', 'verify-development-entry', 'projects/product/buildr', 'version --json', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'resume-owner-cleanup', 'retry-current-closeout', '原Task Finish owner', '协调器不得直接删除foreign carrier', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
-  for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', 'Skill本地runner', 'projects/product/buildr', '不得启动第二个orchestrator或绕过runner补做sync、Buildr Web Dev安装、development entry检查、Doctor或resume', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
+  for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', 'Skill本地runner', 'projects/product/buildr', '不得启动第二个orchestrator或绕过runner补做sync、Buildr Web Dev安装、development entry检查或Doctor', '只有专用target-race adaptation diagnostic允许Agent按其中matching carrier/token继续Task Finish owner动作', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
   assert.match(runtimeFinish, /Buildr 自举 Workspace 激活/);
   assert.match(runtimeFinish, /doctor-blocked/);
   assert.ok(runtimeFinish.indexOf('Buildr 自举 Workspace 激活') > runtimeFinish.indexOf('## 完成标准'));
@@ -94,7 +95,9 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs')), false);
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/interfaces/internal/buildr-self-bootstrap-closeout-driver.mjs')), false);
   assert.equal(packageManifest.includes('skills/buildr-self-bootstrap-sync'), false);
-  for (const forbidden of ["'reset'", "'rebase'", "'merge'", "'stash'", "'push', '--force'"]) assert.equal(runner.includes(forbidden), false, forbidden);
+  assert.match(runner, /\['merge', '--ff-only', remote\]/, 'latest dev integration must remain fast-forward only');
+  assert.equal(runner.match(/'merge'/g)?.length, 1, 'runner must expose exactly one bounded fast-forward merge invocation');
+  for (const forbidden of ["'reset'", "'rebase'", "'stash'", "'push', '--force'"]) assert.equal(runner.includes(forbidden), false, forbidden);
 });
 
 test('Task Finish使用resolved capability binding和同一session有界长等待', () => {

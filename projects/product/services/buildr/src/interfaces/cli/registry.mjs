@@ -6,12 +6,14 @@ import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../local-app/http/server.mjs';
 import { registerLauncherInterface } from './launcher.mjs';
 import { taskRecordCommand } from './task-record.mjs';
+import { taskEntrySnapshotCommand } from './task-entry-snapshot.mjs';
 import { taskReviewCommand } from './task-review.mjs';
 import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
-import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand } from './task-execution-record.mjs';
+import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from './task-execution-record.mjs';
+import { taskTerminalDeliveryInspectCommand } from './task-terminal-delivery.mjs';
 
 const COMMAND_ROUTES = [
   {
@@ -268,6 +270,19 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
   },
   {
+    key: "task delivery inspect",
+    surface: "agent-machine",
+    summary: "仅凭 Task ID 回读既有 Terminal Delivery 状态、Finish run ID、最终远端引用、清理事实与可用恢复动作。",
+    help: [
+      "Usage: buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]",
+      "",
+      "调用既有 Terminal Delivery Application，返回 buildr.task-terminal-delivery/v1；只读且不执行 resume、cleanup 或 Finish。",
+      "task inspect 继续只查询 Task Record；task finish inspect --run 继续按 run identity 查询完整 Finish 明细。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'delivery' && runtimeId === 'inspect',
+    run: (r, c) => taskTerminalDeliveryInspectCommand(r, c.argv.slice(5)),
+  },
+  {
     key: "task execution-record list",
     surface: "agent-machine",
     summary: "按 Task 返回紧凑、可移植的 Execution Record 列表。",
@@ -295,6 +310,20 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'gc',
     run: (r, c) => taskExecutionRecordGcCommand(r, c.argv.slice(5)),
+  },
+  {
+    key: "task execution-record recover",
+    surface: "agent-machine",
+    summary: "补seal有完整终态证据的Verification record；证据不可用时只在明确授权后保留unknown终态。",
+    help: [
+      "Usage: buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]",
+      "",
+      "--summary只接受matching Buildr-owned Verification transient summary，并补seal原record而不重跑。",
+      "没有summary时先返回authorization-required；--authorize-unknown-outcome不证明原结果，会终结原record并可能使仍存活producer的后续seal失败。",
+      "不接受outcome、files、locator、owner、producer、retry、timeout、process ID、SQL或cleanup shell。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'recover',
+    run: (r, c) => taskExecutionRecordRecoverCommand(r, c.argv.slice(5)),
   },
   {
     key: "task parent inspect",
@@ -335,6 +364,19 @@ const COMMAND_ROUTES = [
     help: ["Usage: buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]"],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'accept',
     run: (r, c) => parentCoordinationCommand(r, 'accept', c.argv.slice(5)),
+  },
+  {
+    key: "task next",
+    surface: "agent-machine",
+    summary: "只读返回Formal Task当前最小identity、execution/writer route与唯一required或recommended next action。",
+    help: [
+      "Usage: buildr task next <task-id> [--execution-target <path>] [--profile] [--target <canonical-workspace>] [--json]",
+      "",
+      "按Task → Environment → Development的最早硬前置短路读取；不执行next、不写正式事实，也不展开完整下游lifecycle或capability graph。",
+      "--execution-target只核验matching Environment允许的执行根；--profile只返回本次调用可观察的wall-clock与owner read事实。"
+    ],
+    match: ({ domain, action }) => domain === 'task' && action === 'next',
+    run: (r, c) => taskEntrySnapshotCommand(r, c.argv.slice(4)),
   },
   {
     key: "task create",
@@ -655,6 +697,19 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.openspecConverge(c.argv.slice(4)),
   },
   {
+    key: "openspec convergence preflight",
+    surface: "maintenance",
+    summary: "只读检查Change能否按当前delta、canonical、active Changes与executable形成唯一且strict有效的收敛计划。",
+    help: [
+      "Usage: buildr openspec convergence preflight <change> --project <project> [--target <task-execution-root>] [--json]",
+      "",
+      "--target 使用matching Task Environment Receipt的execution.workdir，不是canonical Workspace；不会自动搜索或选择其他worktree。",
+      "只读检查当前语义就绪性；不会写canonical、Receipt或archive。ready会在delta、canonical、active Changes或executable变化后失效，最终converge始终重新检查。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'convergence' && runtimeId === 'preflight',
+    run: (r, c) => r.openspecConvergencePreflight(c.argv.slice(5)),
+  },
+  {
     key: "openspec convergence inspect",
     surface: "maintenance",
     summary: "只读检查未终结收敛事务的 before/expected 与当前实际摘要；未开始或已归档时不适用。",
@@ -790,11 +845,11 @@ const COMMAND_ROUTES = [
   {
     key: "update check",
     surface: "primary",
-    summary: "检查 Buildr CLI 来源、远端版本和安全更新状态；不读取 workspace。",
+    summary: "同时检查 GA 正式版与 RC 候选版；不读取 workspace。",
     help: [
       "Usage: buildr update check [--json]",
       "",
-      "检查 Buildr CLI 来源、远端版本和安全更新状态；不读取 workspace。"
+      "同时检查 latest 对应的 GA 正式版与 next 对应的 RC 候选版；不读取 workspace。"
     ],
     match: ({ domain, action }) => domain === 'update' && action === 'check',
     run: (r, c) => r.updateCheck(c.argv.slice(4)),
@@ -802,11 +857,12 @@ const COMMAND_ROUTES = [
   {
     key: "update",
     surface: "primary",
-    summary: "根据当前命令来源更新 Buildr CLI 自身；不读取或同步 workspace。",
+    summary: "更新 Buildr CLI 自身；npm installation 可显式选择 GA 或 RC。",
     help: [
-      "Usage: buildr update [--json]",
+      "Usage: buildr update [--track <stable|candidate>] [--json]",
       "",
-      "根据当前命令来源更新 Buildr CLI 自身；不读取或同步 workspace。",
+      "npm installation 使用 --track stable 选择 GA 正式版，使用 --track candidate 选择 RC 候选版。",
+      "省略 --track 时，当前 RC 跟随 candidate，当前正式版跟随 stable；不会自动切轨或降级。",
       "同步 workspace 请使用 buildr sync <agent> --target <dir>。"
     ],
     match: ({ domain }) => domain === 'update',
@@ -960,6 +1016,17 @@ const COMMAND_ROUTES = [
 
 const COMMAND_GROUPS = [
   {
+    key: "task delivery",
+    surface: "agent-machine",
+    summary: "按 Task ID 只读回读 Terminal Delivery，不替代 Task Record 或按 run 的 Finish 明细查询。",
+    help: [
+      "Usage: buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]",
+      "",
+      "按 Task ID 只读回读 Terminal Delivery；使用 task finish inspect --run 查询完整 Finish run 明细。"
+    ],
+    executable: false,
+  },
+  {
     key: "web preview",
     surface: "maintenance",
     summary: "预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。",
@@ -975,20 +1042,20 @@ const COMMAND_GROUPS = [
     surface: "maintenance",
     summary: "读取Task-scoped Execution Record，或执行Workspace级bounded GC。",
     help: [
-      "Usage: buildr task execution-record <list|inspect|gc> ...",
+      "Usage: buildr task execution-record <list|inspect|recover|gc> ...",
       "",
-      "list/inspect用于原终端不可用后的只读恢复；gc执行bounded维护。不提供文件系统 discovery、failure 自动处置或执行资源 cleanup。"
+      "list/inspect用于只读回查；recover补seal原Verification record或在明确授权后保留unknown；gc执行bounded维护。不提供自动retry、timeout或执行资源cleanup。"
     ],
     executable: false,
   },
   {
     key: "task",
     surface: "primary",
-    summary: "Task Manager 只管理 canonical Workspace 中的 Task Record：创建、查看、明确更新、设置或清除 Parent Task、完成或放弃。",
+    summary: "Task Manager管理Task Record；task next另提供只读Formal Task compact入口。",
     help: [
-      "Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task <next|create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
       "",
-      "Task Manager 只管理 canonical Workspace 中的 Task Record：创建、查看、明确更新、设置或清除 Parent Task、完成或放弃。",
+      "Task Manager只管理canonical Workspace中的Task Record；task next是组合既有owner的只读compact projection。",
       "它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
       "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],

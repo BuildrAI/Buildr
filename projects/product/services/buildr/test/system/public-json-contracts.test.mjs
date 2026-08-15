@@ -87,6 +87,8 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['component', 'check', 'openspec', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.componentCheck],
     [['builtin', 'list', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.builtinList],
     [['task', 'create', 'json-task', '--title', 'JSON Task', '--intent', '验证公开 JSON family', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskRecordResult],
+    [['task', 'next', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskEntrySnapshot],
+    [['task', 'delivery', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskTerminalDelivery],
     [['task', 'environment', 'plan', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskEnvironmentPlanResult],
     [['task', 'environment', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskEnvironmentResult],
     [['task', 'review', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskReviewOperationResult],
@@ -95,6 +97,11 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
   for (const [args, expected, expectedStatus = 0] of cases) {
     assert.equal((await run(args, { expectedStatus, env })).schemaVersion, expected, args.join(' '));
   }
+  const before = await run(['task', 'inspect', 'json-task', '--target', root, '--json']);
+  await run(['task', 'delivery', 'inspect', 'json-task', '--target', root, '--json']);
+  const after = await run(['task', 'inspect', 'json-task', '--target', root, '--json']);
+  assert.equal(after.recordDigest, before.recordDigest);
+  assert.deepEqual(after.record, before.record);
 });
 
 test('schema registry 覆盖全部当前公开 JSON family', () => {
@@ -114,9 +121,12 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'localAppPreview',
     'openspecConverge',
     'openspecConvergenceInspect',
+    'openspecConvergencePreflight',
     'parentCoordinationResult',
     'parentPlan',
+    'releaseAwareness',
     'runtimeList',
+    'taskEntrySnapshot',
     'taskEnvironmentPlanResult',
     'taskEnvironmentResult',
     'taskExecutionRecordBodyFile',
@@ -124,14 +134,17 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskExecutionRecordGcResult',
     'taskExecutionRecordInspectResult',
     'taskExecutionRecordListView',
+    'taskExecutionRecordRecoverResult',
     'taskFinishCompactResult',
     'taskFinishResult',
     'taskFinishRun',
     'taskRecordList',
     'taskRecordResult',
     'taskRecordView',
+    'taskRetrospectiveListResult',
     'taskRetrospectiveOperationResult',
     'taskReviewOperationResult',
+    'taskTerminalDelivery',
     'taskVerificationOperationResult',
     'update',
     'updateCheck',
@@ -147,8 +160,12 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   const explicitCompact = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'compact']);
   assert.deepEqual(compact, explicitCompact);
   assert.deepEqual(Object.keys(compact), [
-    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'workspaceNode', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
+    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'releaseAwareness', 'notices', 'workspaceNode', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
   ]);
+  assert.equal(compact.releaseAwareness.schemaVersion, PUBLIC_JSON_SCHEMAS.releaseAwareness);
+  assert.equal(compact.releaseAwareness.freshness.status, 'unavailable');
+  assert.deepEqual(compact.notices, []);
+  assert.equal(compact.health.ready, true, 'Release Awareness unavailable must not block Doctor readiness');
   assert.equal(compact.workspaceNode.runtime.status, 'ready');
   assert.equal(compact.workspaceNode.execution.role, 'workspace');
   assert.equal(compact.workspaceNode.mainProcess.role, compact.productInstallation.currentInstallation.runtime.role);
@@ -156,7 +173,7 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
 
   const full = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in full, true, field);
-  for (const field of ['ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
+  for (const field of ['releaseAwareness', 'notices', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
   const contracts = full.capabilities.graphs.flatMap((graph) => graph.contracts);
   assert.ok(contracts.length > 0);
   assert.ok(contracts.every((contract) => /^[a-f0-9]{64}$/.test(contract.digest)));

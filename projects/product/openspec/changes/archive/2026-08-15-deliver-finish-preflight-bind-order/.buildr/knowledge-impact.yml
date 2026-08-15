@@ -1,0 +1,32 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: deliver-finish-preflight-bind-order
+operation: reconcile
+treeIdentity: sha256-9366aa8753c8d4e0a7663fa40ebaa98e04a1f1860efc1e76219634e6cc9bb954
+impacts:
+  - type: brief
+    target: openspec/changes/deliver-finish-preflight-bind-order/brief.md
+    reason: 简报仍覆盖收尾前对齐、绑定顺序和生活例子，与最终实现一致。
+    status: updated
+    sourceIdentities:
+      - sha256-9366aa8753c8d4e0a7663fa40ebaa98e04a1f1860efc1e76219634e6cc9bb954
+  - type: overview
+    target: docs/overview.md
+    reason: 不改变产品定位或全局入口。
+    status: not-applicable
+    sourceIdentities: []
+  - type: product-architecture
+    target: docs/architecture/product.md
+    reason: 不改变角色或业务能力边界。
+    status: not-applicable
+    sourceIdentities: []
+  - type: technical-architecture
+    target: docs/architecture/technical.md
+    reason: 只改 Agent 引导顺序，不改变服务拓扑。
+    status: not-applicable
+    sourceIdentities: []
+  - type: glossary
+    target: docs/glossary.md
+    reason: 未引入需要治理的新术语。
+    status: not-applicable
+    sourceIdentities: []
+unresolvedItems: []

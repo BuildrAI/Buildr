@@ -77,6 +77,8 @@ try {
     [],
     ['--version'],
     ['help', 'doctor'],
+    ['help', 'update'],
+    ['help', 'update', 'check'],
     ['help', 'task', 'verification'],
     ['help', 'task', 'finish', 'run'],
     ['help', 'task', 'finish', 'inspect'],
