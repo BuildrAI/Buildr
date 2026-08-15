@@ -96,6 +96,11 @@ test('docs-only changed plan 只选择轻量文档 owner', () => {
   assert.match(plan.steps[0].reasons[0], /docs\/buildr-product\.md matches/);
 });
 
+test('migration变更选择读取全局migration集合的契约owner', () => {
+  const plan = createVerificationPlan({ paths: ['src/infrastructure/sqlite/migrations/0015_add_task_execution_unknown_outcome.sql'] });
+  assert.ok(ids(plan).includes('contract'));
+});
+
 test('受治理 repo-root publish workflow 精确进入 release owners，其他 root workflow 仍 fail closed', () => {
   const workflow = '.github/workflows/publish.yml';
   const plan = createVerificationPlan({ paths: [workflow] });

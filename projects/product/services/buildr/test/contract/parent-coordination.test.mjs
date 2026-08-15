@@ -55,8 +55,10 @@ test('模型不恢复lifecycle/progress/event/history authority且没有历史Ta
   ].join('\n');
   for (const forbidden of ['task_lifecycle_current', 'completed_child_count', 'parent_progress', 'coordination_events', 'coordination_history', 'delivery_registry', 'govern-task-intermediate-artifacts']) assert.equal(sources.includes(forbidden), false, forbidden);
   const migrations = fs.readdirSync(path.join(root, 'src/infrastructure/sqlite/migrations')).sort();
-  assert.equal(migrations.at(-1), '0014_add_task_execution_invocation_identity.sql');
-  assert.equal(migrations.some((name) => name.includes('parent_coordination') || name.includes('parent_plan') || name.includes('progress')), false);
+  const migrationSources = migrations.map((name) => `${name}\n${read(`src/infrastructure/sqlite/migrations/${name}`)}`).join('\n');
+  for (const forbidden of ['parent_coordination', 'parent_plan', 'parent_progress', 'coordination_events', 'coordination_history', 'delivery_registry']) {
+    assert.equal(migrationSources.includes(forbidden), false, forbidden);
+  }
 });
 
 test('OpenSpec guard声明一个具体规范变化只有一个active Change owner', () => {

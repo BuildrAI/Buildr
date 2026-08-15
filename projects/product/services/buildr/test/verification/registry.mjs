@@ -269,6 +269,7 @@ export const verificationSteps = Object.freeze([
   ], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/contract/**', 'test/fixtures/**', 'preparation.yml', 'verification.yml', 'task-finish.yml',
+    'src/infrastructure/sqlite/migrations/**',
     '.github/workflows/publish.yml', '.github/workflows/verify.yml',
     'scripts/release/release-authority.mjs',
     'scripts/release/release-authority-oidc-probe.mjs',
