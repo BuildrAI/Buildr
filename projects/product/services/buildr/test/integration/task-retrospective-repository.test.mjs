@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+
+const DRIVER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-retrospective-driver.mjs');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-retrospective-'));
@@ -44,6 +47,15 @@ function terminal(runtime, root, status = 'completed') {
     result: status === 'completed' ? { summary: 'done', noChange: false } : { summary: 'stopped' },
     updatedAt: '2026-08-05T00:01:00.000Z',
   });
+}
+
+function terminalTask(runtime, root, taskId, title = taskId) {
+  runtime.createTaskRecordPersistence(root, {
+    schemaVersion: 'buildr.task-record/v2', taskId, title, intent: `Retrospective for ${taskId}`,
+    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'completed',
+    result: { summary: 'done', noChange: false }, createdAt: '2026-08-05T00:00:00.000Z', updatedAt: '2026-08-05T00:01:00.000Z',
+  });
+  return runtime.recordTaskRetrospective(root, taskId, { reportMarkdown: `# ${title}\n\nCurrent report.` });
 }
 
 test('terminal Task维护单一SQLite current Result且旧observation保持原样', (t) => {
@@ -106,6 +118,79 @@ test('serialization或mutation失败保留last-valid current row', (t) => {
   opened.database.close();
   assert.throws(() => runtime.recordTaskRetrospective(root, 'demo-task', { reportMarkdown: 'new value' }), (error) => error.code === 'task_retrospective_write_failed' && error.details.rollback.status === 'restored');
   assert.equal(runtime.inspectTaskRetrospective(root, 'demo-task').slot.result.reportMarkdown, 'last valid');
+});
+
+test('批量list按current状态有界返回摘要、正文与逐项诊断且零写入', (t) => {
+  const { root, runtime } = fixture(t);
+  terminal(runtime, root);
+  const demo = runtime.recordTaskRetrospective(root, 'demo-task', { reportMarkdown: '# Demo\n\nPending report.' });
+  const alpha = terminalTask(runtime, root, 'alpha-task', 'Alpha');
+  runtime.handleTaskRetrospective(root, 'alpha-task', {
+    status: 'handled', note: '已有承接 Task。', expectedCurrentDigest: alpha.slot.currentDigest,
+  });
+  terminalTask(runtime, root, 'beta-task', 'Beta');
+
+  const before = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  const rowsBefore = before.database.prepare('SELECT * FROM task_retrospective_current ORDER BY task_id').all();
+  before.database.close();
+
+  const pending = runtime.listTaskRetrospectives(root);
+  assert.equal(pending.schemaVersion, 'buildr.task-retrospective-list-result/v1');
+  assert.deepEqual(pending.filters, { status: 'pending', taskIds: [], limit: 100, includeReport: false });
+  assert.deepEqual(pending.items.map((item) => item.task.taskId), ['beta-task', 'demo-task']);
+  assert.equal(pending.matchingTaskCount, 2);
+  assert.equal(pending.returnedTaskCount, 2);
+  assert.equal(pending.truncated, false);
+  assert.equal(Object.hasOwn(pending.items[0].retrospective, 'reportMarkdown'), false);
+  assert.deepEqual(pending.items[0].retrospective.followupTasks, []);
+  assert.deepEqual(pending.effects, []);
+
+  const bounded = runtime.listTaskRetrospectives(root, { status: 'all', taskIds: ['demo-task', 'alpha-task', 'demo-task'], limit: 1, includeReport: true });
+  assert.deepEqual(bounded.filters.taskIds, ['alpha-task', 'demo-task']);
+  assert.equal(bounded.matchingTaskCount, 2);
+  assert.equal(bounded.returnedTaskCount, 1);
+  assert.equal(bounded.truncated, true);
+  assert.equal(bounded.items[0].task.taskId, 'alpha-task');
+  assert.equal(bounded.items[0].retrospective.reportMarkdown, '# Alpha\n\nCurrent report.');
+  assert.equal(runtime.listTaskRetrospectives(root, { status: 'handled' }).items[0].task.taskId, 'alpha-task');
+
+  for (const input of [
+    { status: 'missing' }, { taskIds: ['Invalid Task'] }, { limit: 0 }, { limit: 501 }, { includeReport: 'yes' },
+  ]) assert.throws(() => runtime.listTaskRetrospectives(root, input), (error) => error.code?.startsWith('task_retrospective_list_'));
+
+  const corrupted = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  corrupted.database.prepare("UPDATE task_retrospective_current SET result_json = '{}' WHERE task_id = 'beta-task'").run();
+  corrupted.database.close();
+  const partial = runtime.listTaskRetrospectives(root, { status: 'pending' });
+  assert.equal(partial.items.find((item) => item.task.taskId === 'beta-task').retrospective, null);
+  assert.equal(partial.items.find((item) => item.task.taskId === 'beta-task').diagnostic.code, 'task_retrospective_result_invalid');
+  assert.equal(partial.items.find((item) => item.task.taskId === 'demo-task').diagnostic, null);
+
+  const after = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  const rowsAfter = after.database.prepare("SELECT * FROM task_retrospective_current WHERE task_id != 'beta-task' ORDER BY task_id").all();
+  after.database.close();
+  assert.deepEqual(rowsAfter, rowsBefore.filter((row) => row.task_id !== 'beta-task'));
+  assert.match(demo.slot.currentDigest, /^sha256-/);
+});
+
+test('内部driver以单进程list支持重复Task过滤和正文opt-in', (t) => {
+  const { root, runtime } = fixture(t);
+  terminal(runtime, root);
+  runtime.recordTaskRetrospective(root, 'demo-task', { reportMarkdown: '# Driver report' });
+  terminalTask(runtime, root, 'other-task', 'Other');
+
+  const listed = spawnSync(process.execPath, [
+    DRIVER, 'list', '--target', root, '--task', 'other-task', '--task', 'demo-task', '--include-report', '--limit', '2',
+  ], { encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  const output = JSON.parse(listed.stdout);
+  assert.equal(output.schemaVersion, 'buildr.task-retrospective-list-result/v1');
+  assert.deepEqual(output.items.map((item) => item.task.taskId), ['demo-task', 'other-task']);
+  assert.equal(output.items[0].retrospective.reportMarkdown, '# Driver report');
+
+  const invalid = spawnSync(process.execPath, [DRIVER, 'list', '--target', root, '--limit', '501'], { encoding: 'utf8' });
+  assert.equal(invalid.status, 1);
+  assert.equal(JSON.parse(invalid.stderr).diagnostic.code, 'task_retrospective_list_limit_invalid');
 });
 
 test('Buildr Web只读返回current Result或尚未复盘', async (t) => {

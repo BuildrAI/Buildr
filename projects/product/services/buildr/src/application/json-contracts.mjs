@@ -28,6 +28,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   parentPlan: 'buildr.parent-plan/v1',
   contributionHandoff: 'buildr.contribution-handoff/v1',
   taskReviewOperationResult: 'buildr.task-review-operation-result/v1',
+  taskRetrospectiveListResult: 'buildr.task-retrospective-list-result/v1',
   taskRetrospectiveOperationResult: 'buildr.task-retrospective-operation-result/v1',
   taskVerificationOperationResult: 'buildr.task-verification-operation-result/v1',
   taskExecutionRecordListView: 'buildr.task-execution-record-list-view/v1',

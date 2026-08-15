@@ -11,19 +11,37 @@ function option(args, name, fallback = undefined) {
   return value;
 }
 
+function options(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== name) continue;
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`Missing value for ${name}`);
+    values.push(value);
+  }
+  return values;
+}
+
 const args = process.argv.slice(2);
 const action = args[0];
 const taskId = option(args, '--task');
 const targetRoot = option(args, '--target');
-if (!['inspect', 'record', 'handle'].includes(action) || !taskId || !targetRoot) {
-  console.error('Internal usage: node task-retrospective-driver.mjs <inspect|record|handle> --task <task-id> --target <canonical-workspace> [--report-markdown <text>] [--status <pending|handled|no-action> --note <text> --expected-current-digest <digest>]');
+if (!['list', 'inspect', 'record', 'handle'].includes(action) || !targetRoot || (action !== 'list' && !taskId)) {
+  console.error('Internal usage: node task-retrospective-driver.mjs list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <count>] [--include-report]\n       node task-retrospective-driver.mjs <inspect|record|handle> --task <task-id> --target <canonical-workspace> [--report-markdown <text>] [--status <pending|handled|no-action> --note <text> --expected-current-digest <digest>]');
   process.exit(2);
 }
 
 try {
   const runtime = createRuntime();
-  const output = action === 'inspect'
-    ? runtime.inspectTaskRetrospective(targetRoot, taskId)
+  const output = action === 'list'
+    ? runtime.listTaskRetrospectives(targetRoot, {
+        status: option(args, '--status'),
+        taskIds: options(args, '--task'),
+        limit: option(args, '--limit') === undefined ? undefined : Number(option(args, '--limit')),
+        includeReport: args.includes('--include-report'),
+      })
+    : action === 'inspect'
+      ? runtime.inspectTaskRetrospective(targetRoot, taskId)
     : action === 'record'
       ? runtime.recordTaskRetrospective(targetRoot, taskId, { reportMarkdown: option(args, '--report-markdown') })
       : runtime.handleTaskRetrospective(targetRoot, taskId, {

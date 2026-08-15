@@ -141,6 +141,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskRecordList',
     'taskRecordResult',
     'taskRecordView',
+    'taskRetrospectiveListResult',
     'taskRetrospectiveOperationResult',
     'taskReviewOperationResult',
     'taskTerminalDelivery',
