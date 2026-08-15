@@ -859,6 +859,47 @@ test('Buildr runtime Skill source变化必须触发retained workspace sync', () 
   assert.equal(plan.actions['install-development-local-app'].length, 0);
 });
 
+test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品动作', () => {
+  const root = '/tmp/buildr-self-bootstrap-path-matrix';
+  const runtimeSourcePaths = [
+    'skills/buildr-self-bootstrap-sync/SKILL.md',
+    'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
+    'components/workspace/buildr-self-bootstrap/component.yml',
+    'components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md',
+  ];
+  const runtimeSourcePlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'a'.repeat(40), runtimeSourcePaths));
+  assert.deepEqual(runtimeSourcePlan.actions, {
+    'sync-retained-workspace': [],
+    'install-development-local-app': [],
+    'verify-development-entry': [],
+  });
+
+  const installerWrapperPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'b'.repeat(40), [
+    'projects/product/services/buildr/scripts/install-buildr-development',
+  ]));
+  assert.deepEqual(installerWrapperPlan.actions, {
+    'sync-retained-workspace': [],
+    'install-development-local-app': [],
+    'verify-development-entry': [],
+  });
+
+  const launcherManagerPath = 'projects/product/services/buildr/package/launchers/manage.mjs';
+  const launcherManagerPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'c'.repeat(40), [launcherManagerPath]));
+  assert.deepEqual(launcherManagerPlan.actions, {
+    'sync-retained-workspace': [],
+    'install-development-local-app': [launcherManagerPath],
+    'verify-development-entry': [launcherManagerPath],
+  });
+
+  const runtimeSkillPath = 'projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md';
+  const runtimeSkillPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'd'.repeat(40), [runtimeSkillPath]));
+  assert.deepEqual(runtimeSkillPlan.actions, {
+    'sync-retained-workspace': [runtimeSkillPath],
+    'install-development-local-app': [],
+    'verify-development-entry': [runtimeSkillPath],
+  });
+});
+
 test('零差异 Finish Result优先按activation paths规划自举并兼容changedPaths回退', () => {
   const root = '/tmp/buildr-zero-delta-plan';
   const zeroDelta = finishResult(root, 'a'.repeat(40), [], {
