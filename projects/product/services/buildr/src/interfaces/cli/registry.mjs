@@ -13,6 +13,7 @@ import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-envir
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
 import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand } from './task-execution-record.mjs';
+import { taskTerminalDeliveryInspectCommand } from './task-terminal-delivery.mjs';
 
 const COMMAND_ROUTES = [
   {
@@ -267,6 +268,19 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'cleanup',
     run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
+  },
+  {
+    key: "task delivery inspect",
+    surface: "agent-machine",
+    summary: "仅凭 Task ID 回读既有 Terminal Delivery 状态、Finish run ID、最终远端引用、清理事实与可用恢复动作。",
+    help: [
+      "Usage: buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]",
+      "",
+      "调用既有 Terminal Delivery Application，返回 buildr.task-terminal-delivery/v1；只读且不执行 resume、cleanup 或 Finish。",
+      "task inspect 继续只查询 Task Record；task finish inspect --run 继续按 run identity 查询完整 Finish 明细。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'delivery' && runtimeId === 'inspect',
+    run: (r, c) => taskTerminalDeliveryInspectCommand(r, c.argv.slice(5)),
   },
   {
     key: "task execution-record list",
@@ -974,6 +988,17 @@ const COMMAND_ROUTES = [
 ];
 
 const COMMAND_GROUPS = [
+  {
+    key: "task delivery",
+    surface: "agent-machine",
+    summary: "按 Task ID 只读回读 Terminal Delivery，不替代 Task Record 或按 run 的 Finish 明细查询。",
+    help: [
+      "Usage: buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]",
+      "",
+      "按 Task ID 只读回读 Terminal Delivery；使用 task finish inspect --run 查询完整 Finish run 明细。"
+    ],
+    executable: false,
+  },
   {
     key: "web preview",
     surface: "maintenance",

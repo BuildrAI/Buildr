@@ -38,7 +38,7 @@ try {
 
 const publicHelpTopics = [
   [], ['init'], ['web'], ['web', 'preview', 'start'], ['task', 'environment', 'prepare'],
-  ['task', 'verification', 'record'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
+  ['task', 'verification', 'record'], ['task', 'delivery'], ['task', 'delivery', 'inspect'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
   ['openspec', 'convergence', 'inspect'],
 ];
 const helpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));

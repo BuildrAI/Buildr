@@ -88,6 +88,7 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['builtin', 'list', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.builtinList],
     [['task', 'create', 'json-task', '--title', 'JSON Task', '--intent', '验证公开 JSON family', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskRecordResult],
     [['task', 'next', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskEntrySnapshot],
+    [['task', 'delivery', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskTerminalDelivery],
     [['task', 'environment', 'plan', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskEnvironmentPlanResult],
     [['task', 'environment', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskEnvironmentResult],
     [['task', 'review', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskReviewOperationResult],
@@ -96,6 +97,11 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
   for (const [args, expected, expectedStatus = 0] of cases) {
     assert.equal((await run(args, { expectedStatus, env })).schemaVersion, expected, args.join(' '));
   }
+  const before = await run(['task', 'inspect', 'json-task', '--target', root, '--json']);
+  await run(['task', 'delivery', 'inspect', 'json-task', '--target', root, '--json']);
+  const after = await run(['task', 'inspect', 'json-task', '--target', root, '--json']);
+  assert.equal(after.recordDigest, before.recordDigest);
+  assert.deepEqual(after.record, before.record);
 });
 
 test('schema registry 覆盖全部当前公开 JSON family', () => {
@@ -135,6 +141,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskRecordView',
     'taskRetrospectiveOperationResult',
     'taskReviewOperationResult',
+    'taskTerminalDelivery',
     'taskVerificationOperationResult',
     'update',
     'updateCheck',
