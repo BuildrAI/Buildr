@@ -9,6 +9,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   installationStatus: 'buildr.installation-status/v1',
   localAppPreview: 'buildr.local-app-preview/v1',
   openspecConverge: 'buildr.openspec-convergence/v1',
+  openspecConvergencePreflight: 'buildr.openspec-convergence-preflight/v1',
   openspecConvergenceInspect: 'buildr.openspec-convergence-inspect/v1',
   releaseAwareness: 'buildr.release-awareness/v1',
   runtimeList: 'buildr.runtime-list/v1',

@@ -103,6 +103,16 @@ test('converge help明确Task execution root且不把canonical Workspace作为ta
   assert.doesNotMatch(result.stdout, /--target <(?:dir|workspace)>/);
 });
 
+test('semantic readiness preflight help明确只读、失效与最终重检边界', () => {
+  const buildr = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
+  const result = spawnSync(process.execPath, [buildr, 'help', 'openspec', 'convergence', 'preflight'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /--target <task-execution-root>/);
+  assert.match(result.stdout, /不会写canonical、Receipt或archive/);
+  assert.match(result.stdout, /ready会在delta、canonical、active Changes或executable变化后失效/);
+  assert.match(result.stdout, /最终converge始终重新检查/);
+});
+
 test('canonical target看不到active Change时零写入并指向matching Environment Receipt', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-execution-root-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

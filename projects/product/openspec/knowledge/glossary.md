@@ -143,6 +143,13 @@
 - 避免混用：不是Formal Verification、Task Finish、Git交付或归档后的长期审计。
 - 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 
+## OpenSpec语义就绪预检（OpenSpec Semantic Readiness Preflight）
+
+- 定义：在apply-ready Change进入Planning Review前，只读复用正式convergence planner、active Change conflict scan与projected strict validation，判断当前delta能否对当前canonical形成唯一且strict有效的expected Project。
+- 适用范围：`buildr openspec convergence preflight <change> --project <project> --target <task-execution-root>`；返回`ready|blocked`，并把active Change conflict、Scenario omission、rename/identity conflict与projected validation failure交给Agent处理。
+- 避免混用：不是Planning Review、Converge dry-run、Convergence Inspect、写入授权或实现后验证；不写canonical、Receipt、archive或Task/Review事实。delta、canonical、active Changes或executable变化后旧ready陈旧，最终Converge始终按最新事实重新检查。
+- 来源：[OpenSpec确定性同步规范](../specs/openspec-deterministic-sync/spec.md)
+
 ## OpenSpec 收敛执行（OpenSpec Converge）
 
 - 定义：执行OpenSpec Convergence的公开maintenance动作，完成规划、投射strict validation、条件canonical写入、写后确认、archive与事务Receipt release。
@@ -557,7 +564,7 @@
 
 - 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result 绑定对应专业authority提供的计划目标身份（Plan Target Identity）。
 - 适用范围：实现前方案检查；没有执行时 planning slot 可以不存在。
-- 避免混用：不要求所有Task固定为OpenSpec artifacts；正式Task的OpenSpec计划必须使用Task Planning Identity resolver，不由Agent手工摘要artifact、路径或执行进度。
+- 避免混用：不要求所有Task固定为OpenSpec artifacts；正式Task的OpenSpec计划必须先通过OpenSpec Semantic Readiness Preflight，再使用Task Planning Identity resolver。Planning Review不拥有、保存、复制或解释preflight检查，不由Agent手工摘要artifact、路径或执行进度。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)
 
 ## 计划目标身份（Plan Target Identity）

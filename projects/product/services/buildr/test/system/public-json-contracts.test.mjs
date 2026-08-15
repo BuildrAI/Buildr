@@ -121,6 +121,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'localAppPreview',
     'openspecConverge',
     'openspecConvergenceInspect',
+    'openspecConvergencePreflight',
     'parentCoordinationResult',
     'parentPlan',
     'releaseAwareness',

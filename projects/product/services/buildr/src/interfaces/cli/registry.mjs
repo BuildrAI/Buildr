@@ -683,6 +683,19 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.openspecConverge(c.argv.slice(4)),
   },
   {
+    key: "openspec convergence preflight",
+    surface: "maintenance",
+    summary: "只读检查Change能否按当前delta、canonical、active Changes与executable形成唯一且strict有效的收敛计划。",
+    help: [
+      "Usage: buildr openspec convergence preflight <change> --project <project> [--target <task-execution-root>] [--json]",
+      "",
+      "--target 使用matching Task Environment Receipt的execution.workdir，不是canonical Workspace；不会自动搜索或选择其他worktree。",
+      "只读检查当前语义就绪性；不会写canonical、Receipt或archive。ready会在delta、canonical、active Changes或executable变化后失效，最终converge始终重新检查。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'convergence' && runtimeId === 'preflight',
+    run: (r, c) => r.openspecConvergencePreflight(c.argv.slice(5)),
+  },
+  {
     key: "openspec convergence inspect",
     surface: "maintenance",
     summary: "只读检查未终结收敛事务的 before/expected 与当前实际摘要；未开始或已归档时不适用。",

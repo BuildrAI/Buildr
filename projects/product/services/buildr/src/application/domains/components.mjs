@@ -498,7 +498,7 @@ export function registerDomainsComponents(runtime) {
           return '';
         }
       }).join('\n');
-      for (const requiredText of ['openspec validate <change> --strict', 'Planning Review']) {
+      for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec convergence preflight', 'Planning Review']) {
         if (!contributionContent.includes(requiredText)) errors.push(`OpenSpec Component Skill contributions must include ${JSON.stringify(requiredText)}.`);
       }
     }
