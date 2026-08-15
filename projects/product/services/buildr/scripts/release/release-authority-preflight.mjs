@@ -9,21 +9,29 @@ import YAML from 'yaml';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import {
-  npmRegistryOrigin,
-  releaseAuthorityEvidenceMaxAgeMs,
+  containsCredentialMaterial,
   releaseAuthorityPreflightSchema,
-  releaseAuthorityProbeArtifactName,
-  releaseAuthorityProbeSchema,
   releasePackageName,
   releasePublishAuthority,
   releaseWorkflowPath,
-  samePublishAuthority,
   sha256,
 } from './release-authority.mjs';
+
+export { containsCredentialMaterial } from './release-authority.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot = path.resolve(serviceRoot, '../../../..');
 const packagePath = 'projects/product/services/buildr/package.json';
+const protectedJobId = 'release';
+const expectedDispatchInputs = Object.freeze([
+  'candidate_base',
+  'candidate_tree',
+  'release_id',
+  'source_commit',
+  'version',
+  'workflow_sha256',
+]);
+const expectedNeeds = Object.freeze(['candidate', 'contract', 'host-node', 'launcher']);
 
 function defaultExecute(command, args, options = {}) {
   return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env });
@@ -65,8 +73,6 @@ function parseOptions(argv) {
     sourceCommit: options['source-commit'] || 'HEAD',
     remote: options.remote || 'origin',
     ghCommand: options.gh || 'gh',
-    runId: options['run-id'] || null,
-    probeEvidencePath: options['probe-evidence'] ? path.resolve(options['probe-evidence']) : null,
     output: options.output ? path.resolve(options.output) : null,
   };
 }
@@ -84,86 +90,64 @@ function parseJson(result) {
   try { return JSON.parse(result.stdout); } catch { return null; }
 }
 
-function jobAuthority(job, script) {
+function normalizedNeeds(value) {
+  if (typeof value === 'string') return [value];
+  return Array.isArray(value) ? [...value].sort() : [];
+}
+
+function runBodies(job) {
+  return Array.isArray(job?.steps)
+    ? job.steps.map((step) => step?.run).filter((value) => typeof value === 'string')
+    : [];
+}
+
+function jobAuthority(job) {
   const permissions = job?.permissions ?? {};
-  const runs = Array.isArray(job?.steps) ? job.steps.map((step) => step?.run).filter((value) => typeof value === 'string') : [];
+  const runs = runBodies(job);
   return {
     environment: environmentName(job?.environment),
     idTokenPermission: permissions?.['id-token'] ?? null,
-    condition: typeof job?.if === 'string' ? job.if : null,
-    scriptInvocations: runs.filter((value) => value.includes(script)).length,
+    contentsPermission: permissions?.contents ?? null,
+    needs: normalizedNeeds(job?.needs),
+    oidcProbeInvocations: runs.filter((value) => value.includes('scripts/release/release-authority-oidc-probe.mjs')).length,
+    preTagInvocations: runs.filter((value) => value.includes('scripts/release/release-convergence.mjs') && value.includes('--stage pre-tag')).length,
+    tagPreflightInvocations: runs.filter((value) => value.includes('scripts/release/release-tag-ensure.mjs preflight')).length,
+    tagEnsureInvocations: runs.filter((value) => value.includes('scripts/release/release-tag-ensure.mjs ensure')).length,
+    trustedPublishInvocations: runs.filter((value) => value.includes('scripts/release/trusted-publish.mjs')).length,
+    rawPublishInvocations: runs.filter((value) => /(^|\s)npm\s+publish(?:\s|$)/m.test(value)).length,
   };
 }
 
 export function inspectWorkflowAuthority(source) {
   const document = YAML.parse(source);
-  const publish = document?.jobs?.publish;
-  const probe = document?.jobs?.['authority-probe'];
-  const publishRuns = Array.isArray(publish?.steps) ? publish.steps.map((step) => step?.run).filter((value) => typeof value === 'string') : [];
-  const wrapperInvocations = publishRuns.filter((value) => value.includes('scripts/release/trusted-publish.mjs'));
-  const rawPublishInvocations = publishRuns.filter((value) => /(^|\s)npm\s+publish(?:\s|$)/m.test(value));
+  const jobs = document?.jobs && typeof document.jobs === 'object' ? document.jobs : {};
+  const workflowDispatch = document?.on?.workflow_dispatch;
+  const dispatchInputs = workflowDispatch?.inputs && typeof workflowDispatch.inputs === 'object'
+    ? Object.keys(workflowDispatch.inputs).sort()
+    : [];
+  const environmentJobs = Object.entries(jobs)
+    .filter(([, job]) => environmentName(job?.environment))
+    .map(([id, job]) => ({ id, environment: environmentName(job.environment) }));
+  const privilegedJobs = Object.entries(jobs)
+    .filter(([id, job]) => id !== protectedJobId && (job?.permissions?.['id-token'] === 'write' || job?.permissions?.contents === 'write'))
+    .map(([id, job]) => ({ id, idTokenPermission: job?.permissions?.['id-token'] ?? null, contentsPermission: job?.permissions?.contents ?? null }));
   return {
-    publish: {
-      ...jobAuthority(publish, 'scripts/release/trusted-publish.mjs'),
-      allowedActions: wrapperInvocations.length === 1 && rawPublishInvocations.length === 0 ? ['npm publish'] : [],
-      wrapperInvocations: wrapperInvocations.length,
-      rawPublishInvocations: rawPublishInvocations.length,
+    triggers: {
+      workflowDispatch: Boolean(workflowDispatch),
+      dispatchInputs,
+      push: Boolean(document?.on?.push),
+      pushTags: Array.isArray(document?.on?.push?.tags) ? document.on.push.tags : [],
     },
-    probe: jobAuthority(probe, 'scripts/release/release-authority-oidc-probe.mjs'),
+    protectedJobId,
+    environmentJobs,
+    privilegedJobs,
+    release: jobAuthority(jobs[protectedJobId]),
   };
-}
-
-export function containsCredentialMaterial(value) {
-  if (typeof value === 'string') return /(?:^|\W)npm_[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(value);
-  if (Array.isArray(value)) return value.some(containsCredentialMaterial);
-  if (!value || typeof value !== 'object') return false;
-  return Object.entries(value).some(([key, child]) => /^(?:token|idToken|accessToken|authorization)$/i.test(key) || containsCredentialMaterial(child));
-}
-
-function validateProbeEvidence({ evidence, sourceCommit, workflowDigest, run, artifacts, nowMs }) {
-  const findings = [];
-  const runId = Number(run?.id);
-  const runAttempt = Number(run?.run_attempt);
-  const expectedArtifact = releaseAuthorityProbeArtifactName(runId, runAttempt);
-  if (!evidence) return [finding('probe_evidence_missing', releaseAuthorityProbeSchema, null, 'probe')];
-  if (containsCredentialMaterial(evidence)) findings.push(finding('probe_evidence_contains_credentials', 'credential-free evidence', 'forbidden token material', 'probe'));
-  if (evidence.schemaVersion !== releaseAuthorityProbeSchema) findings.push(finding('probe_evidence_schema_mismatch', releaseAuthorityProbeSchema, evidence.schemaVersion ?? null, 'probe'));
-  if (evidence.status !== 'ready' || !Array.isArray(evidence.findings) || evidence.findings.length !== 0) findings.push(finding('probe_not_ready', 'ready with zero findings', { status: evidence.status ?? null, findings: evidence.findings ?? null }, 'probe'));
-  if (!samePublishAuthority(evidence.expected)) findings.push(finding('probe_authority_tuple_mismatch', releasePublishAuthority, evidence.expected ?? null, 'probe'));
-  if (evidence.sourceCommit !== sourceCommit) findings.push(finding('probe_source_commit_mismatch', sourceCommit, evidence.sourceCommit ?? null, 'probe'));
-  if (evidence.workflow?.path !== releaseWorkflowPath || evidence.workflow?.sha256 !== workflowDigest) findings.push(finding('probe_workflow_mismatch', { path: releaseWorkflowPath, sha256: workflowDigest }, evidence.workflow ?? null, 'probe'));
-  if (evidence.artifact?.name !== expectedArtifact) findings.push(finding('probe_artifact_identity_mismatch', expectedArtifact, evidence.artifact?.name ?? null, 'probe'));
-  const artifact = Array.isArray(artifacts?.artifacts) ? artifacts.artifacts.find((item) => item?.name === expectedArtifact) : null;
-  if (!artifact || artifact.expired === true) findings.push(finding('probe_artifact_unavailable', { name: expectedArtifact, expired: false }, artifact ? { name: artifact.name, expired: artifact.expired } : null, 'github'));
-
-  const expectedRun = {
-    repository: releasePublishAuthority.repository,
-    workflow: releasePublishAuthority.workflow,
-    environment: releasePublishAuthority.environment,
-    event: 'workflow_dispatch',
-    runId,
-    runAttempt,
-    headSha: sourceCommit,
-    runUrl: run?.html_url ?? null,
-  };
-  for (const [key, expected] of Object.entries(expectedRun)) {
-    if (evidence.github?.[key] !== expected) findings.push(finding(`probe_github_${key}_mismatch`, expected, evidence.github?.[key] ?? null, 'probe'));
-  }
-  if (typeof evidence.github?.workflowRef !== 'string' || !evidence.github.workflowRef.startsWith(`${releasePublishAuthority.repository}/${releaseWorkflowPath}@`)) findings.push(finding('probe_github_workflow_ref_mismatch', `${releasePublishAuthority.repository}/${releaseWorkflowPath}@<ref>`, evidence.github?.workflowRef ?? null, 'probe'));
-  if (evidence.npm?.package !== releasePackageName || evidence.npm?.registry !== npmRegistryOrigin || evidence.npm?.exchange?.status !== 201) findings.push(finding('probe_npm_exchange_mismatch', { package: releasePackageName, registry: npmRegistryOrigin, status: 201 }, evidence.npm ?? null, 'probe'));
-
-  const observedAtMs = Date.parse(evidence.observedAt ?? '');
-  const createdMs = Date.parse(evidence.npm?.exchange?.created ?? '');
-  const expiresMs = Date.parse(evidence.npm?.exchange?.expires ?? '');
-  if (!Number.isFinite(observedAtMs) || nowMs - observedAtMs < -60_000 || nowMs - observedAtMs > releaseAuthorityEvidenceMaxAgeMs) findings.push(finding('probe_evidence_stale', `observed within ${releaseAuthorityEvidenceMaxAgeMs}ms`, evidence.observedAt ?? null, 'probe'));
-  if (!Number.isFinite(createdMs) || !Number.isFinite(expiresMs) || expiresMs <= createdMs || expiresMs <= nowMs) findings.push(finding('probe_exchange_expired', 'valid unexpired exchange metadata', evidence.npm?.exchange ?? null, 'probe'));
-  return findings;
 }
 
 export function runReleaseAuthorityPreflight(options = {}, dependencies = {}) {
   const execute = dependencies.execute ?? defaultExecute;
   const now = dependencies.now ?? (() => new Date().toISOString());
-  const nowMs = dependencies.nowMs ?? (() => Date.now());
   const repo = path.resolve(options.repo || workspaceRoot);
   const remote = options.remote || 'origin';
   const ghCommand = options.ghCommand || 'gh';
@@ -201,11 +185,24 @@ export function runReleaseAuthorityPreflight(options = {}, dependencies = {}) {
   if (!workflowAuthority) findings.push(finding('workflow_unavailable', releaseWorkflowPath, safeReason(workflowResult), 'workflow'));
   else {
     if (path.basename(releaseWorkflowPath) !== expected.workflow) findings.push(finding('workflow_filename_mismatch', expected.workflow, path.basename(releaseWorkflowPath), 'workflow'));
-    if (workflowAuthority.publish.environment !== expected.environment) findings.push(finding('workflow_environment_mismatch', expected.environment, workflowAuthority.publish.environment, 'workflow'));
-    if (workflowAuthority.publish.idTokenPermission !== 'write') findings.push(finding('workflow_id_token_permission_mismatch', 'write', workflowAuthority.publish.idTokenPermission, 'workflow'));
-    if (JSON.stringify(workflowAuthority.publish.allowedActions) !== JSON.stringify(expected.allowedActions)) findings.push(finding('workflow_allowed_actions_mismatch', expected.allowedActions, workflowAuthority.publish.allowedActions, 'workflow'));
-    if (workflowAuthority.publish.condition !== "github.event_name == 'push'") findings.push(finding('workflow_publish_event_guard_mismatch', "github.event_name == 'push'", workflowAuthority.publish.condition, 'workflow'));
-    if (workflowAuthority.probe.environment !== expected.environment || workflowAuthority.probe.idTokenPermission !== 'write' || workflowAuthority.probe.condition !== "github.event_name == 'workflow_dispatch'" || workflowAuthority.probe.scriptInvocations !== 1) findings.push(finding('workflow_probe_identity_mismatch', { environment: expected.environment, idTokenPermission: 'write', condition: "github.event_name == 'workflow_dispatch'", scriptInvocations: 1 }, workflowAuthority.probe, 'workflow'));
+    if (!workflowAuthority.triggers.workflowDispatch || JSON.stringify(workflowAuthority.triggers.dispatchInputs) !== JSON.stringify(expectedDispatchInputs)) findings.push(finding('workflow_dispatch_contract_mismatch', { workflowDispatch: true, inputs: expectedDispatchInputs }, workflowAuthority.triggers, 'workflow'));
+    if (workflowAuthority.triggers.push || workflowAuthority.triggers.pushTags.length > 0) findings.push(finding('workflow_push_trigger_forbidden', { push: false, pushTags: [] }, workflowAuthority.triggers, 'workflow'));
+    if (JSON.stringify(workflowAuthority.environmentJobs) !== JSON.stringify([{ id: protectedJobId, environment: expected.environment }])) findings.push(finding('workflow_environment_owner_mismatch', [{ id: protectedJobId, environment: expected.environment }], workflowAuthority.environmentJobs, 'workflow'));
+    if (workflowAuthority.privilegedJobs.length > 0) findings.push(finding('workflow_unprotected_privileged_job', [], workflowAuthority.privilegedJobs, 'workflow'));
+    const release = workflowAuthority.release;
+    if (release.environment !== expected.environment || release.idTokenPermission !== 'write' || release.contentsPermission !== 'write') findings.push(finding('workflow_release_identity_mismatch', { environment: expected.environment, idTokenPermission: 'write', contentsPermission: 'write' }, release, 'workflow'));
+    if (JSON.stringify(release.needs) !== JSON.stringify(expectedNeeds)) findings.push(finding('workflow_release_needs_mismatch', expectedNeeds, release.needs, 'workflow'));
+    const invocations = {
+      oidcProbeInvocations: 1,
+      preTagInvocations: 1,
+      tagPreflightInvocations: 1,
+      tagEnsureInvocations: 1,
+      trustedPublishInvocations: 1,
+      rawPublishInvocations: 0,
+    };
+    for (const [key, expectedCount] of Object.entries(invocations)) {
+      if (release[key] !== expectedCount) findings.push(finding(`workflow_${key.replace(/[A-Z]/g, (value) => `_${value.toLowerCase()}`)}_mismatch`, expectedCount, release[key], 'workflow'));
+    }
   }
 
   const observed = {
@@ -213,42 +210,16 @@ export function runReleaseAuthorityPreflight(options = {}, dependencies = {}) {
     git: { remote, repository: remoteRepository },
     workflow: workflowAuthority,
     github: null,
-    probe: null,
   };
-
-  let probeEvidence = dependencies.probeEvidence ?? options.probeEvidence ?? null;
-  if (!probeEvidence && options.probeEvidencePath) {
-    try { probeEvidence = JSON.parse(fs.readFileSync(options.probeEvidencePath, 'utf8')); } catch { probeEvidence = null; }
-  }
-  const runId = String(options.runId ?? probeEvidence?.github?.runId ?? '');
-  if (!/^\d+$/.test(runId)) findings.push(finding('github_probe_run_id_missing', 'positive GitHub run id', runId || null, 'github'));
 
   if (findings.length === 0) {
     const repositoryResult = command(execute, ghCommand, ['repo', 'view', '--json', 'nameWithOwner'], repo);
-    const repositoryDocument = parseJson(repositoryResult);
-    const githubRepository = repositoryDocument?.nameWithOwner ?? null;
+    const githubRepository = parseJson(repositoryResult)?.nameWithOwner ?? null;
     if (githubRepository !== expected.repository) findings.push(finding('github_repository_mismatch', expected.repository, githubRepository ?? safeReason(repositoryResult), 'github'));
-
     const environmentResult = command(execute, ghCommand, ['api', `repos/${expected.repository}/environments/${expected.environment}`], repo);
     const githubEnvironment = parseJson(environmentResult)?.name ?? null;
     if (githubEnvironment !== expected.environment) findings.push(finding('github_environment_unavailable', expected.environment, githubEnvironment ?? safeReason(environmentResult), 'github'));
-
-    const runResult = command(execute, ghCommand, ['api', `repos/${expected.repository}/actions/runs/${runId}`], repo);
-    const run = parseJson(runResult);
-    if (!run) findings.push(finding('github_probe_run_unavailable', runId, safeReason(runResult), 'github'));
-    else {
-      const expectedRun = { repository: expected.repository, event: 'workflow_dispatch', headSha: sourceCommit, status: 'completed', conclusion: 'success', workflowPath: releaseWorkflowPath };
-      const actualRun = { repository: run.repository?.full_name ?? null, event: run.event ?? null, headSha: run.head_sha ?? null, status: run.status ?? null, conclusion: run.conclusion ?? null, workflowPath: typeof run.path === 'string' ? run.path.split('@')[0] : null };
-      if (JSON.stringify(actualRun) !== JSON.stringify(expectedRun)) findings.push(finding('github_probe_run_mismatch', expectedRun, actualRun, 'github'));
-      if (Number(run.id) !== Number(runId)) findings.push(finding('github_probe_run_identity_mismatch', Number(runId), run.id ?? null, 'github'));
-    }
-
-    const artifactsResult = command(execute, ghCommand, ['api', `repos/${expected.repository}/actions/runs/${runId}/artifacts`], repo);
-    const artifacts = parseJson(artifactsResult);
-    if (!artifacts) findings.push(finding('github_probe_artifacts_unavailable', 'current run artifacts', safeReason(artifactsResult), 'github'));
-    if (run && artifacts) findings.push(...validateProbeEvidence({ evidence: probeEvidence, sourceCommit, workflowDigest, run, artifacts, nowMs: nowMs() }));
-    observed.github = run ? { repository: githubRepository, environment: githubEnvironment, run: { id: Number(run.id), attempt: Number(run.run_attempt), event: run.event, headSha: run.head_sha, status: run.status, conclusion: run.conclusion, workflowPath: run.path, url: run.html_url } } : { repository: githubRepository, environment: githubEnvironment, run: null };
-    observed.probe = probeEvidence ? { schemaVersion: probeEvidence.schemaVersion, status: probeEvidence.status, artifact: probeEvidence.artifact, github: probeEvidence.github, npm: probeEvidence.npm, observedAt: probeEvidence.observedAt } : null;
+    observed.github = { repository: githubRepository, environment: githubEnvironment };
   }
 
   return {
@@ -261,7 +232,7 @@ export function runReleaseAuthorityPreflight(options = {}, dependencies = {}) {
     findings,
     observedAt: now(),
     nextActions: findings.length === 0 ? [] : [
-      '针对当前 origin/main commit 与 publish.yml digest 重新运行 GitHub-hosted authority probe，修复 current authority 后再生成 preflight evidence；不得创建或推送 release tag。',
+      '修复 current main、publish.yml唯一protected release transaction或GitHub Environment后重新运行静态preflight；不得dispatch发布、创建tag或执行npm publish。',
     ],
   };
 }

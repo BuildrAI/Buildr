@@ -10,8 +10,6 @@ import test from 'node:test';
 import { bridgeMainToDev } from '../../scripts/release/bridge-main-to-dev.mjs';
 import { checkReleaseConvergence } from '../../scripts/release/release-convergence.mjs';
 import {
-  releaseAuthorityPreflightSchema,
-  releaseAuthorityProbeArtifactName,
   releaseAuthorityProbeSchema,
   releasePublishAuthority,
   sha256,
@@ -40,24 +38,15 @@ function authorityEvidence(repo, overrides = {}) {
   const sourceCommit = git(repo, 'rev-parse', 'origin/main');
   const workflowSource = git(repo, 'show', 'origin/main:.github/workflows/publish.yml');
   const observedAt = new Date().toISOString();
-  const run = { id: 42, attempt: 1, event: 'workflow_dispatch', headSha: sourceCommit, status: 'completed', conclusion: 'success', workflowPath: '.github/workflows/publish.yml', url: 'https://github.com/BuildrAI/Buildr/actions/runs/42' };
   return {
-    schemaVersion: releaseAuthorityPreflightSchema,
+    schemaVersion: releaseAuthorityProbeSchema,
     status: 'ready',
     expected: releasePublishAuthority,
     sourceCommit,
     workflow: { path: '.github/workflows/publish.yml', sha256: sha256(`${workflowSource}\n`) },
-    observed: {
-      github: { repository: 'BuildrAI/Buildr', environment: 'npm-production', run },
-      probe: {
-        schemaVersion: releaseAuthorityProbeSchema,
-        status: 'ready',
-        artifact: { name: releaseAuthorityProbeArtifactName(run.id, run.attempt) },
-        github: { runId: run.id, runAttempt: run.attempt, headSha: sourceCommit },
-        npm: { package: '@buildr-ai/buildr', exchange: { status: 201, expires: new Date(Date.now() + 60 * 60 * 1000).toISOString() } },
-        observedAt,
-      },
-    },
+    artifact: { name: 'release-authority-probe-42-1' },
+    github: { repository: 'BuildrAI/Buildr', workflow: 'publish.yml', workflowRef: 'BuildrAI/Buildr/.github/workflows/publish.yml@refs/heads/main', environment: 'npm-production', event: 'workflow_dispatch', runId: 42, runAttempt: 1, headSha: sourceCommit, runUrl: 'https://github.com/BuildrAI/Buildr/actions/runs/42' },
+    npm: { package: '@buildr-ai/buildr', registry: 'https://registry.npmjs.org', exchange: { status: 201, tokenType: 'oidc', created: observedAt, expires: new Date(Date.now() + 60 * 60 * 1000).toISOString() } },
     findings: [],
     observedAt,
     ...overrides,

@@ -1,0 +1,36 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: reduce-release-to-single-approval
+operation: reconcile
+treeIdentity: implementation-reconciled-before-verification
+impacts:
+  - type: brief
+    target: openspec/changes/reduce-release-to-single-approval/brief.md
+    reason: 正式发布审批与tag所有权发生架构变化，需要面向维护者的Change摘要。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reduce-release-to-single-approval/proposal.md
+      - openspec/changes/reduce-release-to-single-approval/design.md
+  - type: flow
+    target: openspec/knowledge/flows/open-source-release.md
+    reason: 正式发布从probe和tag-push双run迁移为单一protected transaction。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reduce-release-to-single-approval/specs/open-source-release-governance/spec.md
+      - openspec/knowledge/flows/open-source-release.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: GitHub Actions权限、Environment owner、hosted evidence与tag mutation边界改变。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reduce-release-to-single-approval/specs/product-verification-quality/spec.md
+      - openspec/knowledge/architecture/technical.md
+      - services/buildr/scripts/release/release-transaction-runner.mjs
+      - services/buildr/scripts/release/release-tag-ensure.mjs
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: protected release transaction、Environment approval与attempt均沿用现有GitHub发布语义，不新增或重定义长期领域术语。
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/reduce-release-to-single-approval/design.md
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

@@ -421,14 +421,16 @@ test('release notes fail closed for missing, duplicate, or empty target sections
   );
 });
 
-test('publish workflow isolates credential-free OIDC probe from tag-gated npm release', () => {
+test('publish workflow uses one dispatch and one protected release transaction', () => {
   const workflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const parsed = YAML.parseDocument(workflow, { uniqueKeys: true });
   assert.deepEqual(parsed.errors, [], parsed.errors.map((error) => error.message).join('\n'));
   const document = parsed.toJS();
   for (const required of [
-    'tags:', 'workflow_dispatch:', 'authority-probe:', 'id-token: write', 'environment: npm-production',
-    'release-authority-oidc-probe.mjs', 'release-authority-probe-${{ github.run_id }}-${{ github.run_attempt }}',
+    'workflow_dispatch:', 'release_id:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
+    'id-token: write', 'contents: write', 'environment: npm-production',
+    'release-authority-oidc-probe.mjs', 'release-convergence.mjs', '--stage pre-tag',
+    'release-tag-ensure.mjs preflight', 'release-tag-ensure.mjs ensure',
     'release-contract.mjs', 'release-notes.mjs', 'application-payload.mjs build',
     'release-artifact.mjs',
     'registry-version-state.mjs', "steps.registry_before.outputs.published != 'true'",
@@ -436,15 +438,25 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
     'github-release-ensure.mjs preflight',
     'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC',
     '--manifest', '--require-published', '--wait', 'macos-15', 'windows-2025',
-    'contract:', 'candidate:', 'host-node:', 'launcher:', 'publish:',
-    'name: npm-candidate-${{ github.ref_name }}',
+    'contract:', 'candidate:', 'host-node:', 'launcher:', 'release:',
+    'name: npm-candidate-v${{ inputs.version }}',
   ]) assert.equal(workflow.includes(required), true, required);
-  assert.deepEqual(Object.keys(document.on).sort(), ['push', 'workflow_dispatch']);
-  assert.equal(document.jobs['authority-probe'].if, "github.event_name == 'workflow_dispatch'");
-  assert.equal(document.jobs['authority-probe'].environment, 'npm-production');
-  assert.equal(document.jobs['authority-probe'].permissions['id-token'], 'write');
-  assert.equal(document.jobs['authority-probe'].steps.filter((step) => typeof step.run === 'string' && step.run.includes('release-authority-oidc-probe.mjs')).length, 1);
-  for (const job of ['contract', 'candidate', 'host-node', 'launcher', 'publish']) assert.equal(document.jobs[job].if, "github.event_name == 'push'", job);
+  assert.deepEqual(Object.keys(document.on), ['workflow_dispatch']);
+  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_tree', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
+  assert.equal(document.on.push, undefined);
+  assert.equal(document.jobs['authority-probe'], undefined);
+  const protectedJobs = Object.entries(document.jobs).filter(([, job]) => job.environment !== undefined);
+  assert.deepEqual(protectedJobs.map(([id, job]) => [id, job.environment]), [['release', 'npm-production']]);
+  assert.equal(document.jobs.release.permissions['id-token'], 'write');
+  assert.equal(document.jobs.release.permissions.contents, 'write');
+  assert.deepEqual([...document.jobs.release.needs].sort(), ['candidate', 'contract', 'host-node', 'launcher']);
+  for (const job of ['contract', 'candidate', 'host-node', 'launcher']) {
+    assert.equal(document.jobs[job].environment, undefined, job);
+    assert.notEqual(document.jobs[job].permissions?.['id-token'], 'write', job);
+    assert.notEqual(document.jobs[job].permissions?.contents, 'write', job);
+    const checkout = document.jobs[job].steps.find((step) => step.uses === 'actions/checkout@v7');
+    assert.equal(checkout.with.ref, '${{ inputs.source_commit }}', job);
+  }
   const hostNodeSteps = document.jobs['host-node'].steps;
   const checkoutIndex = hostNodeSteps.findIndex((step) => step.uses === 'actions/checkout@v7');
   const setupNodeIndex = hostNodeSteps.findIndex((step) => step.uses === 'actions/setup-node@v6');
@@ -463,8 +475,6 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
   ]) assert.equal(verifierStep.run.includes(binding), true, binding);
   assert.equal(document.jobs['host-node'].needs.includes('candidate'), true);
   assert.equal(hostNodeSteps.some((step) => typeof step.run === 'string' && step.run.includes('npm pack')), false);
-  const probeRuns = document.jobs['authority-probe'].steps.map((step) => step.run).filter((value) => typeof value === 'string').join('\n');
-  for (const forbidden of ['npm publish', 'trusted-publish.mjs', 'npm pack', 'release-artifact.mjs', 'github-release-ensure.mjs']) assert.equal(probeRuns.includes(forbidden), false, forbidden);
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
   assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);
@@ -487,8 +497,12 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
   const candidate = workflow.indexOf('\n  candidate:');
   const hostNode = workflow.indexOf('\n  host-node:');
   const launcher = workflow.indexOf('\n  launcher:');
-  const publish = workflow.indexOf('\n  publish:');
+  const release = workflow.indexOf('\n  release:');
+  const authority = workflow.indexOf('Prove current hosted publishing authority without retaining credentials');
+  const convergence = workflow.indexOf('Recheck final source and authority convergence before tag mutation');
+  const tagPreflight = workflow.indexOf('Preflight immutable release tag');
   const registryCheck = workflow.indexOf('Snapshot official Registry artifact and both dist-tags');
+  const tagEnsure = workflow.indexOf('Create or reuse the immutable release tag');
   const metadataPreflight = workflow.indexOf('Preflight GitHub Release metadata without assets or mutation');
   const npmPublish = workflow.indexOf('Publish the frozen npm tarball');
   const registryConfirm = workflow.indexOf('Confirm official Registry integrity and both dist-tags');
@@ -496,8 +510,13 @@ test('publish workflow isolates credential-free OIDC probe from tag-gated npm re
   assert.equal(contract < candidate, true);
   assert.equal(candidate < hostNode, true);
   assert.equal(hostNode < launcher, true);
-  assert.equal(launcher < publish, true);
-  assert.equal(metadataPreflight < registryCheck, true);
+  assert.equal(launcher < release, true);
+  assert.equal(release < authority, true);
+  assert.equal(authority < convergence, true);
+  assert.equal(convergence < tagPreflight, true);
+  assert.equal(tagPreflight < registryCheck, true);
+  assert.equal(registryCheck < tagEnsure, true);
+  assert.equal(tagEnsure < metadataPreflight, true);
   assert.equal(registryCheck < npmPublish, true);
   assert.equal(npmPublish < registryConfirm, true);
   assert.equal(registryConfirm < releaseEnsure, true);
@@ -590,8 +609,9 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '重新查询远端确认 ref 不存在', '清理 follow-up',
     '不得把长期保留当作默认结果', '未取得删除授权时必须明确报告待清理项',
     '只执行一次 `npm pack`', '`npm publish <tarball>`', '`dist.integrity`',
-    'release-authority-probe-runner.mjs', 'GitHub-hosted authority probe',
-    '--authority-evidence <authority-evidence.json>', '不得回退本机 token publish',
+    'release-transaction-runner.mjs', '只对current`origin/main`dispatch一次`publish.yml`',
+    '本机不得创建或push tag', '唯一`release` job', '不请求第二次发布审批',
+    '新的protected deployment/attempt仍可能按GitHub规则再次要求审批', '不得回退本机token publish',
     'GitHub Release 使用 ensure 语义', '安装精确 `@buildr-ai/buildr@<version>`',
     '不删除 tag、不 unpublish、不重复 publish',
     '`Candidate gate`', '普通发布准备不再无条件本地运行完整`test:candidate`',
@@ -599,10 +619,11 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
     '--self-bootstrap-run <finish-run-id>', '--self-bootstrap-evidence <self-bootstrap-evidence.json>',
     '绝不先bridge再补跑', 'activation后冻结的候选',
   ]) assert.equal(skill.includes(required), true, required);
-  assert.equal(preparation.includes('release-authority-probe-runner.mjs'), false);
+  assert.equal(preparation.includes('release-transaction-runner.mjs'), false);
   assert.equal(preparation.includes('--stage post-main'), true);
   assert.equal(preparation.includes('--authority-evidence'), false);
-  assert.equal(release.includes('release-authority-probe-runner.mjs'), true);
-  assert.equal(release.includes('--stage pre-tag --authority-evidence <authority-evidence.json>'), true);
+  assert.equal(release.includes('release-transaction-runner.mjs'), true);
+  assert.equal(release.includes('release-authority-probe-runner.mjs'), false);
+  assert.equal(release.includes('本机不得创建或push tag'), true);
   for (const retired of ['npm trust list @buildr-ai/buildr --json', 'npm 11.15+ authenticated maintainer session', 'authenticated authority evidence']) assert.equal(skill.includes(retired), false, retired);
 });

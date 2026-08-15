@@ -14,9 +14,9 @@ export function authorityFailureDiagnostic(output, authority = releasePublishAut
     code: 'trusted-publisher-authority-check-required',
     expected: authority,
     recovery: [
-      '针对 current origin/main 重跑 GitHub-hosted release-authority-probe-runner.mjs。',
+      '针对 current origin/main 重新 dispatch 完整 release transaction，并在其唯一 protected job 内重做 OIDC authority proof。',
       '按 expected tuple 修复 npm Trusted Publisher 或 GitHub current authority。',
-      '保留现有 tag，在 GitHub-hosted publish workflow 上 rerun；不得回退本机 token publish。',
+      '保留现有 tag，在 GitHub-hosted release workflow 上恢复；不得回退本机 token publish。',
     ],
   };
 }
