@@ -612,6 +612,20 @@
 - 适用范围：只用于已归档Change或未来企业/普通用户自包含安装的新Change。
 - 避免混用：本机Buildr Web Launcher只是npm安装的图形投射，不是平台产品单元。
 
+## 版本发布感知（Release Awareness）
+
+- 定义：Buildr同时读取npm的`latest`和`next`，把GA正式版与RC候选版的当前发布头、可更新状态、提示与精确更新命令组合为统一的只读Application结果。
+- 适用范围：`buildr update check`、Doctor非阻断提示、Buildr Web全局提示和Buildr Skill；真正更新只在用户明确选择后由CLI执行。
+- 避免混用：不是自动更新器，不替用户选择版本，也不修改Workspace、Workspace Node或Agent runtime。
+- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`、`openspec/specs/agent-readable-doctor/spec.md`与`openspec/specs/local-workspace-application/spec.md`。
+
+## 发布轨道（Release Track）
+
+- 定义：用户更新Buildr时选择的版本类别；`stable`对应npm `latest`和GA正式版，`candidate`对应npm `next`和RC候选版。
+- 适用范围：双轨道版本检查、`buildr update --track stable|candidate`及Agent向用户说明选择。
+- 避免混用：不是npm/development安装来源，不进入Workspace配置；默认轨道只保持现有安装语义，正式版不会自动切到候选版。
+- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
+
 ## 正式发布制品集合（Release Artifact Set）
 
 - 定义：同一npm-only release contract和Application Payload identity下冻结的唯一npm tarball及其内部release-artifact evidence。

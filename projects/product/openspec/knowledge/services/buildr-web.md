@@ -10,6 +10,7 @@
 - 开发：`npm run dev`；正式构建：`npm run build`（也可由 `buildr` 的 `npm run build:web` / `dev:web` 委托）。
 - 构建输出：相对路径写入 sibling `buildr` 的 `src/interfaces/local-app/web-dist/`（`emptyOutDir: true`）。
 - OpenSpec 与 verification policy 仍在父级 Product Project；本 Service 通过 Service registry 登记并由 Buildr Web / doctor 可见。
+- 全局壳层读取 sibling `buildr` 的只读Release Awareness API，在所有路由顶部展示GA/RC更新；用户可以复制精确`buildr update --track stable|candidate`命令，或把同一选择交给Agent。首版不从网页执行npm更新，也不替用户决定轨道。
 
 ## 数据与依赖
 

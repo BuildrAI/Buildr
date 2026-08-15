@@ -117,6 +117,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'openspecConvergenceInspect',
     'parentCoordinationResult',
     'parentPlan',
+    'releaseAwareness',
     'runtimeList',
     'taskEntrySnapshot',
     'taskEnvironmentPlanResult',
@@ -149,8 +150,12 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   const explicitCompact = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'compact']);
   assert.deepEqual(compact, explicitCompact);
   assert.deepEqual(Object.keys(compact), [
-    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'workspaceNode', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
+    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'releaseAwareness', 'notices', 'workspaceNode', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
   ]);
+  assert.equal(compact.releaseAwareness.schemaVersion, PUBLIC_JSON_SCHEMAS.releaseAwareness);
+  assert.equal(compact.releaseAwareness.freshness.status, 'unavailable');
+  assert.deepEqual(compact.notices, []);
+  assert.equal(compact.health.ready, true, 'Release Awareness unavailable must not block Doctor readiness');
   assert.equal(compact.workspaceNode.runtime.status, 'ready');
   assert.equal(compact.workspaceNode.execution.role, 'workspace');
   assert.equal(compact.workspaceNode.mainProcess.role, compact.productInstallation.currentInstallation.runtime.role);
@@ -158,7 +163,7 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
 
   const full = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in full, true, field);
-  for (const field of ['ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
+  for (const field of ['releaseAwareness', 'notices', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
   const contracts = full.capabilities.graphs.flatMap((graph) => graph.contracts);
   assert.ok(contracts.length > 0);
   assert.ok(contracts.every((contract) => /^[a-f0-9]{64}$/.test(contract.digest)));

@@ -292,12 +292,13 @@ jobs:
           "${GITHUB_REF_NAME}"
           "${RUNNER_TEMP}/contract/release-notes.md"
           "${{ needs.contract.outputs.prerelease }}"
-      - name: Check official Registry artifact
+      - name: Snapshot official Registry artifact and both dist-tags
         id: registry_before
         run: >-
           node scripts/release/registry-version-state.mjs
           "${{ needs.contract.outputs.version }}"
           --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+          --snapshot-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
       - name: Publish the frozen npm tarball
         if: steps.registry_before.outputs.published != 'true'
         run: >-
@@ -305,12 +306,13 @@ jobs:
           "$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
           --access public
           --tag "${{ needs.contract.outputs.npm_tag }}"
-      - name: Confirm official Registry integrity and dist-tag
+      - name: Confirm official Registry integrity and both dist-tags
         run: >-
           node scripts/release/registry-version-state.mjs
           "${{ needs.contract.outputs.version }}"
           --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
           --tag "${{ needs.contract.outputs.npm_tag }}"
+          --before-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
           --require-published
           --wait
       - name: Ensure GitHub Release notes without binary Assets

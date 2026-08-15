@@ -312,6 +312,58 @@ a {
   flex-shrink: 0;
 }
 
+.release-awareness-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  border-bottom: 1px solid #f2d59b;
+  background: #fff8e8;
+  color: var(--soft-ink);
+}
+
+.release-awareness-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+}
+
+.release-awareness-copy span,
+#release-copy-state {
+  color: var(--soft-muted);
+  font-size: 12px;
+}
+
+.release-awareness-actions,
+.release-update-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.release-awareness-actions {
+  justify-content: flex-end;
+}
+
+.release-update-item {
+  padding-left: 10px;
+  border-left: 1px solid #ead39f;
+}
+
+@media (max-width: 900px) {
+  .release-awareness-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .release-awareness-actions {
+    justify-content: flex-start;
+  }
+}
+
 #app-view {
   flex: 1;
   min-width: 0;

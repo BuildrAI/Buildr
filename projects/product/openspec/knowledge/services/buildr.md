@@ -7,6 +7,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 ## 接口与入口
 
 - CLI：`projects/product/buildr`是Buildr checkout唯一开发入口；PATH默认`buildr`只代表npm installation。两者身份和更新责任隔离。
+- Release Awareness Application一次读取npm的`latest`与`next`，分别投影GA正式版和RC候选版。`buildr update check [--json]`同时展示两个版本；`buildr update --track stable|candidate`只在用户显式选择后更新精确版本，不自动切轨或降级。
 - Buildr Web：loopback HTTP 与浏览器界面。Task 列表默认 `open` (todo + active)，可分别过滤 todo、active 和终态；Task 详情展示复盘来源，复盘 Tab 展示后续 Task 与当前状态。正式 Task 只由 Agent/Task Manager 创建或激活，Buildr Web 只编辑/结束已有 Task 并维护复盘处置。五个 Task 一级视图、Task-scoped Change route、专业只读边界、复盘处置 PATCH 与文章入口其余语义保持不变。
 - Package：`services/buildr/package/manifest.yml` 定义发布边界、可安装产品内容、builtins、contracts、bindings 和 Components；不携带 `.buildr/workspace.yml`、Workspace 根 Registry、Project capabilities/commands 或 Service Registry 等用户持久化配置源。`init`、Project create 与 `sync` 使用 canonical Domain renderer/writer 生成缺失 Registry并保留已有用户内容，再从 package 声明收敛 Builtins/Components。Component definition 同时拥有 Skill fragments 与其引入的结构化 capability dependencies，package builtin descriptor 不重复维护 Component-owned `requires`。
 - Runtime Skill renderer统一组合package产品入口与Workspace Skills。产品入口不接收完整capability routing dump；每个consumer只获得自身`requires`的紧凑binding block。Doctor full输出全局capability graph，destination-aware `.buildr/agent-runtime/` receipt保存受管文件identity和consumer-local contract digest/provenance快照，runtime目录不承担机器证据authority。
@@ -17,6 +18,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 - npm package是唯一正式产品安装。`buildr web launcher install`只在显式请求后生成本机macOS `.app`或Windows Start Menu shortcut，closed binding精确记录formal npm origin、Host Node、package entry、prefix、payload/protocol与target；wrapper不复制Node、Buildr package或payload，也不形成独立更新渠道。
 - Development Launcher继续由当前checkout的`package/launchers`内部manager构建为thin入口，只包含图标、identity与启动脚本，绑定Service source root和独立development host Node，不使用Workspace Node、不复制payload或npm安装。`npm run install:development`和self-bootstrap activation都用绑定的development/retained Node直接调用该manager；它们不经过npm-owned公开`buildr web launcher`命令。Development Launcher与formal npm Launcher在名称、target、identity和lifecycle上隔离。
 - `installation status --json`、Doctor和Web health/instance分别展示receipt证明的npm、development、Launcher与current instance identity；`update`按同一receipt路由npm package或development checkout，并只原子刷新同slot已有Launcher，不扫描PATH、文件名或目录形状。
+- Doctor通过独立`releaseAwareness`/`notices`投影版本提示，查询失败不进入Workspace findings、repair plan或readiness；Buildr Web Runtime只开放全局只读`GET /api/v1/release-awareness`，不提供网页npm更新mutation。每轨道的seen/notified/check时间只保存在用户级Buildr Data Root，不写Workspace。
 
 ## 数据与依赖
 

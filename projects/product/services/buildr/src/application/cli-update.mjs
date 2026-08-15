@@ -4,6 +4,12 @@ import process from 'node:process';
 import { spawnCommandSync } from '../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 import {
+  RELEASE_TRACKS,
+  buildReleaseAwareness,
+  compareVersions,
+  defaultReleaseTrack,
+} from './release-awareness.mjs';
+import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
@@ -29,37 +35,7 @@ function readPackage(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-export function compareVersions(left, right) {
-  const parse = (value) => {
-    const [core, prerelease = null] = String(value || '').replace(/^v/, '').split('+', 1)[0].split('-', 2);
-    return {
-      core: core.split('.').map((part) => Number(part)),
-      prerelease: prerelease === null ? null : prerelease.split('.').flatMap((part) => part.match(/[A-Za-z]+|\d+/g) || [part]),
-    };
-  };
-  const a = parse(left);
-  const b = parse(right);
-  for (let index = 0; index < Math.max(a.core.length, b.core.length); index += 1) {
-    const delta = (a.core[index] || 0) - (b.core[index] || 0);
-    if (delta !== 0) return delta;
-  }
-  if (a.prerelease === null || b.prerelease === null) {
-    if (a.prerelease === b.prerelease) return 0;
-    return a.prerelease === null ? 1 : -1;
-  }
-  for (let index = 0; index < Math.max(a.prerelease.length, b.prerelease.length); index += 1) {
-    const leftPart = a.prerelease[index];
-    const rightPart = b.prerelease[index];
-    if (leftPart === undefined || rightPart === undefined) return leftPart === undefined ? -1 : 1;
-    if (leftPart === rightPart) continue;
-    const leftNumber = /^\d+$/.test(leftPart) ? Number(leftPart) : null;
-    const rightNumber = /^\d+$/.test(rightPart) ? Number(rightPart) : null;
-    if (leftNumber !== null && rightNumber !== null) return leftNumber - rightNumber;
-    if (leftNumber !== null || rightNumber !== null) return leftNumber !== null ? -1 : 1;
-    return leftPart.localeCompare(rightPart);
-  }
-  return 0;
-}
+export { compareVersions } from './release-awareness.mjs';
 
 export function identifyCliSource(productRoot, options = {}) {
   const root = fs.realpathSync(path.resolve(productRoot));
@@ -142,19 +118,7 @@ function gitValue(root, args) {
   return result.ok ? result.stdout : null;
 }
 
-function releasedVersionForDevelopment(source, registryLookup) {
-  const tag = String(source.version || '').includes('-') ? 'next' : 'latest';
-  try {
-    if (registryLookup) return { tag, version: registryLookup(source.package, tag), error: null };
-    const result = run('npm', ['view', source.package, `dist-tags.${tag}`, '--json']);
-    if (!result.ok) return { tag, version: null, error: result.stderr || result.error || 'unknown error' };
-    return { tag, version: JSON.parse(result.stdout), error: null };
-  } catch (error) {
-    return { tag, version: null, error: error.message };
-  }
-}
-
-function gitUpdatePlan(source, { fetch = true, registryLookup = null } = {}) {
+function gitUpdatePlan(source, { fetch = true, registryLookup = null, ...options } = {}) {
   const root = source.gitRoot;
   const blockingReasons = [];
   const branch = gitValue(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
@@ -183,7 +147,14 @@ function gitUpdatePlan(source, { fetch = true, registryLookup = null } = {}) {
     else strategy = 'rebase';
   }
   const sourceStatus = blockingReasons.length ? 'blocked' : strategy === 'none' ? 'up-to-date' : 'update-available';
-  const released = releasedVersionForDevelopment(source, registryLookup);
+  const awareness = buildReleaseAwareness(source, { ...options, registryLookup });
+  const releaseTrack = defaultReleaseTrack(source.version);
+  const releasedTrack = awareness.tracks[releaseTrack];
+  const released = {
+    tag: RELEASE_TRACKS[releaseTrack].tag,
+    version: releasedTrack.version,
+    error: awareness.freshness.status === 'fresh' ? null : awareness.blockingReasons.join(' ') || 'unknown error',
+  };
   const versionStatus = released.version === null
     ? 'unknown'
     : compareVersions(source.version, released.version) < 0
@@ -198,7 +169,9 @@ function gitUpdatePlan(source, { fetch = true, registryLookup = null } = {}) {
       : versionStatus === 'stale'
         ? 'version-stale'
         : 'up-to-date';
+  const { schemaVersion: _schemaVersion, current: _releaseCurrent, status: _releaseStatus, ...releaseProjection } = awareness;
   return {
+    ...releaseProjection,
     mode: source.mode,
     channel: source.channel,
     current: { version: source.version, productRoot: source.productRoot, gitRoot: root, branch, head, upstream, ahead, behind, dirty },
@@ -219,39 +192,36 @@ function gitUpdatePlan(source, { fetch = true, registryLookup = null } = {}) {
 }
 
 function registryUpdatePlan(source, options = {}) {
-  const blockingReasons = [];
-  let availableVersion = null;
-  const authority = inspectProductUpdateAuthority(source.updateAuthority, { productRoot: source.productRoot });
-  if (authority.status !== 'ready') {
-    blockingReasons.push(`当前 npm package 缺少可用的 receipt registry update authority：${authority.reason}；Buildr 不会根据 PATH、文件名或目录布局猜测更新命令。`);
-  } else {
-    const result = run(authority.authority.nodeExecutable, [
-      authority.authority.npmCliPath,
-      'view', source.package, 'version', '--json',
-    ], options.registryCommandOptions);
-    if (!result.ok) blockingReasons.push(`无法通过登记的 npm authority 查询 registry：${result.stderr || result.error || 'unknown error'}`);
-    else {
-      try { availableVersion = JSON.parse(result.stdout); } catch { blockingReasons.push('npm registry 返回了无法解析的版本。'); }
+  const awareness = buildReleaseAwareness(source, options);
+  const selected = awareness.tracks[awareness.selectedTrack];
+  const blockingReasons = [...awareness.blockingReasons];
+  let status = awareness.status;
+  let strategy = 'none';
+  if (options.purpose !== 'check' && blockingReasons.length === 0) {
+    if (selected.status === 'update-available') {
+      status = 'update-available';
+      strategy = 'npm-install';
+    } else if (selected.status === 'behind-current') {
+      status = 'blocked';
+      blockingReasons.push(`${selected.label} ${selected.version} 低于当前安装 ${source.version}；Buildr 不会自动降级。`);
+    } else if (selected.status === 'current') {
+      status = 'up-to-date';
+    } else {
+      status = 'blocked';
+      blockingReasons.push(`${selected.label}当前不可安装，请先处理 ${selected.tag} 发布状态。`);
     }
+  } else if (options.purpose === 'check') {
+    strategy = selected.status === 'update-available' ? 'npm-install' : 'none';
   }
-  const updateAvailable = availableVersion && compareVersions(availableVersion, source.version) > 0;
+  const { schemaVersion: _schemaVersion, ...projection } = awareness;
   return {
-    mode: source.mode,
-    channel: source.channel,
-    current: { package: source.package, version: source.version, productRoot: source.productRoot, installPrefix: source.installPrefix, installationIdentity: source.installationIdentity, hostNode: process.versions.node, updateAuthority: source.updateAuthority },
-    available: { version: availableVersion },
-    status: blockingReasons.length ? 'blocked' : updateAvailable ? 'update-available' : 'up-to-date',
-    strategy: updateAvailable && source.updateAuthority ? 'npm-install' : 'none',
+    ...projection,
+    available: { version: selected.version },
+    target: { track: awareness.selectedTrack, tag: selected.tag, version: selected.version },
+    status,
+    strategy,
     blockingReasons,
-    nextActions: blockingReasons.length
-      ? [authority.status !== 'ready'
-        ? '通过原 package manager 重装该全局 npm package 以建立可信 channel envelope；--ignore-scripts 安装将继续安全阻塞自更新。'
-        : '检查当前 npm registry、网络和登记的安装 prefix 后重试。']
-      : updateAvailable && source.updateAuthority
-        ? ['运行 buildr update 更新同一 npm package/prefix；Workspace Node 不会随之改变。']
-        : updateAvailable
-          ? ['当前 npm package identity 有效，但缺少可证明的 install prefix；请通过原 package manager 更新，不要让 Buildr 猜测 PATH 或目录。']
-        : [],
+    nextActions: blockingReasons.length ? ['检查当前 npm 安装、Registry 与所选发布轨道后重试。'] : awareness.nextActions,
   };
 }
 
@@ -259,10 +229,12 @@ export function buildCliUpdatePlan(productRoot, options = {}) {
   const source = identifyCliSource(productRoot, options);
   if (source.mode === 'development') return gitUpdatePlan(source, options);
   if (source.mode === 'npm') return registryUpdatePlan(source, options);
+  const awareness = buildReleaseAwareness(source, options);
+  const { schemaVersion: _schemaVersion, ...projection } = awareness;
   return {
+    ...projection,
     mode: 'unknown',
     channel: 'unknown',
-    current: { package: source.package, version: source.version, productRoot: source.productRoot },
     available: null,
     status: 'blocked',
     strategy: 'none',
@@ -287,11 +259,28 @@ export function executeCliUpdatePlan(plan, options = {}) {
   return run(authority.nodeExecutable, [
     authority.npmCliPath,
     'install', '--global', '--prefix', authority.prefix,
-    `${plan.current.package}@${plan.available.version}`,
+    `${plan.current.package}@${plan.target?.version || plan.available?.version}`,
   ], options);
 }
 
 function printPlan(plan, label) {
+  if (plan.tracks && plan.current?.version) {
+    console.log(`当前安装：${plan.current.version}`);
+    const candidate = plan.tracks.candidate;
+    const stable = plan.tracks.stable;
+    const trackText = (track) => {
+      if (track.status === 'update-available') return `${track.version} 可更新`;
+      if (track.status === 'current') return `${track.version}（当前版本）`;
+      if (track.status === 'behind-current') return `${track.version}（低于当前版本，不自动降级）`;
+      if (track.status === 'not-published') return '尚未发布';
+      return track.observedVersion ? `配置异常（${track.observedVersion}）` : '配置异常';
+    };
+    console.log(`RC 候选版：${trackText(candidate)}`);
+    console.log(`GA 正式版：${trackText(stable)}`);
+    for (const notice of plan.notices || []) if (!notice.command) console.log(`提示：${notice.message}`);
+    for (const action of plan.nextActions || []) console.log(`下一步：${action}`);
+    return;
+  }
   console.log(`${label}: ${plan.status}`);
   console.log(`mode: ${plan.mode}`);
   if (plan.current?.version) console.log(`current: ${plan.current.version}`);
@@ -307,11 +296,23 @@ export function registerApplicationCliUpdate(runtime) {
   const productRoot = (...args) => runtime.productRoot(...args);
   const assertNoUnknownOptions = (...args) => runtime.assertNoUnknownOptions(...args);
   const hasFlag = (...args) => runtime.hasFlag(...args);
+  const optionValue = (...args) => runtime.optionValue(...args);
+
+  function selectedTrack(args) {
+    const track = optionValue(args, '--track', null);
+    if (track !== null && !RELEASE_TRACKS[track]) throw new Error('--track must be stable or candidate.');
+    return track;
+  }
+
+  function releaseAwareness(options = {}) {
+    const source = options.source || identifyCliSource(productRoot(), options);
+    return buildReleaseAwareness(source, options);
+  }
 
   function updateCheck(args) {
     if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
-    assertNoUnknownOptions(args, new Set(['--json']));
-    const plan = buildCliUpdatePlan(productRoot());
+    assertNoUnknownOptions(args, new Set(['--json']), new Set(['--json']));
+    const plan = buildCliUpdatePlan(productRoot(), { purpose: 'check', persistState: true, notify: true });
     if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.updateCheck, plan), null, 2)}\n`);
     else printPlan(plan, 'Buildr CLI update check');
     if (plan.status === 'blocked') process.exitCode = 1;
@@ -320,9 +321,12 @@ export function registerApplicationCliUpdate(runtime) {
 
   function updateBuildr(args) {
     if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
-    assertNoUnknownOptions(args, new Set(['--json']));
+    assertNoUnknownOptions(args, new Set(['--json', '--track']), new Set(['--json']));
     const json = hasFlag(args, '--json');
-    const plan = buildCliUpdatePlan(productRoot());
+    const track = selectedTrack(args);
+    const source = identifyCliSource(productRoot());
+    if (track && source.mode === 'development') throw new Error('release track 只适用于 npm installation；development checkout 更新不接受 --track。');
+    const plan = buildCliUpdatePlan(productRoot(), { track, purpose: 'update', persistState: true, notify: true });
     if (plan.status === 'blocked') {
       if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, plan), null, 2)}\n`);
       else printPlan(plan, 'Buildr CLI update');
@@ -348,6 +352,6 @@ export function registerApplicationCliUpdate(runtime) {
     return completed;
   }
 
-  Object.assign(runtime, { updateCheck, updateBuildr });
+  Object.assign(runtime, { releaseAwareness, updateCheck, updateBuildr });
   return runtime;
 }

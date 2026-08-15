@@ -15,6 +15,22 @@ type PreviewIdentity = {
   worktree?: string;
 };
 
+type ReleaseTrack = {
+  track: 'stable' | 'candidate';
+  label: string;
+  version: string | null;
+  status: string;
+  available: boolean;
+  installable: boolean;
+  shouldNotify?: boolean;
+};
+
+type ReleaseAwareness = {
+  current: { version: string | null };
+  tracks: { stable: ReleaseTrack; candidate: ReleaseTrack };
+  freshness: { status: string };
+};
+
 function readPreviewIdentity(): PreviewIdentity | null {
   const raw = document.querySelector('meta[name="buildr-preview"]')?.getAttribute('content');
   if (!raw) return null;
@@ -46,6 +62,8 @@ export function AppLayout() {
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
   const [exited, setExited] = useState(false);
   const [taskListResetToken, setTaskListResetToken] = useState(0);
+  const [releaseAwareness, setReleaseAwareness] = useState<ReleaseAwareness | null>(null);
+  const [releaseCopyState, setReleaseCopyState] = useState('');
 
   const preview = useMemo(() => readPreviewIdentity(), []);
 
@@ -87,6 +105,19 @@ export function AppLayout() {
     document.body.classList.toggle('drawer-open', drawerOpen);
   }, [drawerOpen]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const awareness = await api('/api/v1/release-awareness', { signal: controller.signal }) as ReleaseAwareness;
+        if (!controller.signal.aborted) setReleaseAwareness(awareness);
+      } catch {
+        if (!controller.signal.aborted) setReleaseAwareness(null);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
   const quit = async () => {
     const ok = await confirmModal({
       title: '退出 Buildr Web？',
@@ -112,6 +143,29 @@ export function AppLayout() {
   }, [location.pathname, isGlobal]);
 
   const resourceActive = ['tasks', 'projects', 'services', 'articles'].includes(routeId);
+  const releaseUpdates = useMemo(() => {
+    if (releaseAwareness?.freshness.status !== 'fresh') return [];
+    return [releaseAwareness.tracks.stable, releaseAwareness.tracks.candidate]
+      .filter((track) => track.available && track.installable && track.version && track.shouldNotify !== false);
+  }, [releaseAwareness]);
+
+  const releaseCommand = (track: ReleaseTrack) => `buildr update --track ${track.track}`;
+
+  const copyReleaseCommand = async (track: ReleaseTrack) => {
+    const command = releaseCommand(track);
+    try {
+      await navigator.clipboard.writeText(command);
+      setReleaseCopyState(`${track.label}更新命令已复制。`);
+    } catch {
+      setReleaseCopyState(`请手动复制：${command}`);
+    }
+  };
+
+  const handReleaseUpdateToAgent = (track: ReleaseTrack) => {
+    const command = releaseCommand(track);
+    const prompt = `用户已选择把本机 Buildr 更新到${track.label} ${track.version}。请先读取 buildr update check --json 确认当前双轨道结果，再运行 ${command}；不要切换到其他轨道，不要降级，也不要修改 Workspace、Workspace Node 或 Agent runtime。完成后说明本机 Buildr 的实际版本。`;
+    openAgentAction('release-update', { prompt, track: track.track, command, version: track.version });
+  };
 
   const shellValue = {
     workspaceId,
@@ -264,6 +318,24 @@ export function AppLayout() {
               ) : null}
             </div>
           </header>
+          {releaseUpdates.length > 0 ? (
+            <section id="release-awareness-banner" className="release-awareness-banner" aria-label="Buildr 版本更新">
+              <div className="release-awareness-copy">
+                <strong>Buildr 有新版本</strong>
+                <span>当前安装 {releaseAwareness?.current.version || '未知'}，请选择要更新的版本。</span>
+              </div>
+              <div className="release-awareness-actions">
+                {releaseUpdates.map((track) => (
+                  <div className="release-update-item" data-release-track={track.track} key={track.track}>
+                    <span><strong>{track.label}</strong> {track.version}</span>
+                    <Button size="small" onClick={() => void copyReleaseCommand(track)}>复制命令</Button>
+                    <Button size="small" type="primary" onClick={() => handReleaseUpdateToAgent(track)}>交给 Agent</Button>
+                  </div>
+                ))}
+                <span id="release-copy-state" role="status">{releaseCopyState}</span>
+              </div>
+            </section>
+          ) : null}
           <main id="app-view" tabIndex={-1} aria-live="polite">
             <Outlet />
           </main>

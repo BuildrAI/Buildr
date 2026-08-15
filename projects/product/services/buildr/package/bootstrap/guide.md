@@ -17,10 +17,11 @@ workspace 尚未初始化时，用一个高层命令完成源资产、Buildr Ski
 buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>
 ```
 技术初始化完成后，不把 `project create` 命令直接交给用户。Agent 应读取最终 doctor 和真实 Workspace 状态，用普通语言完成一次首次使用交接：Workspace 是人和 Agent 共同工作的顶层目录；Project 是业务、产品、系统或长期工作；Service 只在需要代码仓、应用、模块或可执行资产时接入。没有 Project 时询问用户要长期管理什么；唯一 Project 没有 Service 时询问是接入已有资产还是直接开始 Project 范围工作；范围唯一时直接邀请用户描述第一项真实目标；有多个候选时只询问消除范围歧义所必需的问题。不要生成 `WELCOME.md`、持久 checklist 或固定教学 Rule。
-已有 workspace 中，用户要求“更新 Buildr”或“同步 Buildr”时先更新 CLI，再用新入口安装最新产品入口 Buildr Skill，不同步整个 workspace：
+已有 workspace 中，用户要求完整检查 Buildr、检查安装状态或“更新 Buildr”时，先运行 `buildr update check --json` 同时读取 GA 正式版与 RC 候选版。
+Agent 分别说明 `stable` 与 `candidate` 的可用更新，并让用户选择 GA、RC 或暂不更新。只有用户明确选择后才执行对应命令；不得自动切轨或降级：
 
 ```bash
-buildr update
+buildr update --track <stable|candidate>
 command -v buildr
 buildr skill install <agent> --target <workspace-root>
 ```
@@ -30,7 +31,7 @@ buildr skill install <agent> --target <workspace-root>
 buildr sync <agent> --target <dir>
 ```
 
-用户明确只更新 CLI 时只运行 `buildr update`，不追加 Skill install 或 workspace sync。Git 更新属于 Agent 对 workspace 更新意图的编排，不是 `buildr sync` 的隐式行为；`sync` 包含产品能力同步、产品入口 Buildr Skill 安装、从 `.` 递归投射各层 `AGENTS.md` 的当前 Agent runtime render 和 doctor 复查。
+用户明确只更新 CLI 时，在选定轨道后只运行对应 `buildr update --track ...`，不追加 Skill install 或 workspace sync。Git 更新属于 Agent 对 workspace 更新意图的编排，不是 `buildr sync` 的隐式行为；`sync` 包含产品能力同步、产品入口 Buildr Skill 安装、从 `.` 递归投射各层 `AGENTS.md` 的当前 Agent runtime render 和 doctor 复查。
 只需要在未初始化目录单独恢复产品入口 Skill 时使用专项入口：
 
 ```bash

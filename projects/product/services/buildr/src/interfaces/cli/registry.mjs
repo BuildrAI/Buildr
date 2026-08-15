@@ -804,11 +804,11 @@ const COMMAND_ROUTES = [
   {
     key: "update check",
     surface: "primary",
-    summary: "检查 Buildr CLI 来源、远端版本和安全更新状态；不读取 workspace。",
+    summary: "同时检查 GA 正式版与 RC 候选版；不读取 workspace。",
     help: [
       "Usage: buildr update check [--json]",
       "",
-      "检查 Buildr CLI 来源、远端版本和安全更新状态；不读取 workspace。"
+      "同时检查 latest 对应的 GA 正式版与 next 对应的 RC 候选版；不读取 workspace。"
     ],
     match: ({ domain, action }) => domain === 'update' && action === 'check',
     run: (r, c) => r.updateCheck(c.argv.slice(4)),
@@ -816,11 +816,12 @@ const COMMAND_ROUTES = [
   {
     key: "update",
     surface: "primary",
-    summary: "根据当前命令来源更新 Buildr CLI 自身；不读取或同步 workspace。",
+    summary: "更新 Buildr CLI 自身；npm installation 可显式选择 GA 或 RC。",
     help: [
-      "Usage: buildr update [--json]",
+      "Usage: buildr update [--track <stable|candidate>] [--json]",
       "",
-      "根据当前命令来源更新 Buildr CLI 自身；不读取或同步 workspace。",
+      "npm installation 使用 --track stable 选择 GA 正式版，使用 --track candidate 选择 RC 候选版。",
+      "省略 --track 时，当前 RC 跟随 candidate，当前正式版跟随 stable；不会自动切轨或降级。",
       "同步 workspace 请使用 buildr sync <agent> --target <dir>。"
     ],
     match: ({ domain }) => domain === 'update',

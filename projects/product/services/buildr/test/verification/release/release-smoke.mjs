@@ -226,9 +226,11 @@ export async function runReleaseSmoke(env = process.env) {
         npm_config_fetch_retries: '0',
         npm_config_fetch_timeout: '1000',
       },
-      }), 'buildr.update-check/v1');
+      }), 'buildr.update-check/v2');
       assert.equal(updateCheck.mode, 'npm');
       assert.equal(updateCheck.status, 'blocked');
+      assert.deepEqual(Object.keys(updateCheck.tracks).sort(), ['candidate', 'stable']);
+      assert.equal(updateCheck.freshness.status, 'unavailable');
 
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     let webStderr = '';

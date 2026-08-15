@@ -97,3 +97,36 @@ test('正式 Local HTTP Server 启动scheduler，Task Preview Server完全不创
   await new Promise((resolve) => preview.server.close(resolve));
   assert.deepEqual(runtime.inspectTaskRecord(root, 'scheduler-boundary').record, taskBefore);
 });
+
+test('Buildr Web Runtime 提供全局只读 Release Awareness 且没有 npm 更新写路由', async (t) => {
+  const { base, root } = fixture(t, 'local-app-release-awareness');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const runtime = createRuntime();
+  runtime.releaseAwareness = () => ({
+    schemaVersion: 'buildr.release-awareness/v1',
+    current: { version: '0.1.0-rc.12' },
+    selectedTrack: 'candidate',
+    tracks: {
+      stable: { tag: 'latest', version: '0.1.0', status: 'update-available', available: true, installable: true },
+      candidate: { tag: 'next', version: '0.1.0-rc.13', status: 'update-available', available: true, installable: true },
+    },
+    notices: [], observedAt: '2026-08-15T00:00:00.000Z',
+    freshness: { status: 'fresh', source: 'fixture', checkedAt: '2026-08-15T00:00:00.000Z' },
+    blockingReasons: [], nextActions: [],
+  });
+  const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
+  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
+  const { url } = await instance.ready;
+
+  const response = await fetch(`${url}/api/v1/release-awareness`);
+  assert.equal(response.status, 200);
+  const awareness = await response.json();
+  assert.equal(awareness.schemaVersion, 'buildr.release-awareness/v1');
+  assert.equal(awareness.tracks.stable.version, '0.1.0');
+  assert.equal(awareness.tracks.candidate.version, '0.1.0-rc.13');
+
+  const rejected = await fetch(`${url}/api/v1/release-awareness`, { method: 'POST' });
+  assert.equal(rejected.status, 404);
+  assert.equal((await rejected.json()).error.code, 'not_found');
+});
