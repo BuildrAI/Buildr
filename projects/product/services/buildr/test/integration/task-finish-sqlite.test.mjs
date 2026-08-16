@@ -38,7 +38,6 @@ function identity(root, task) {
     remote: 'origin',
     environmentRoot: root,
     workspaceRoot: root,
-    workspaceNodeIdentity: 'sha256-node',
   };
 }
 

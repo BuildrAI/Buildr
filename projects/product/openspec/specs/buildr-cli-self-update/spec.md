@@ -88,7 +88,7 @@ Buildr MUST 从当前进程校验后的 installation-origin identity 与 ownersh
 #### Scenario: update 成功后退出
 - **WHEN** Agent 运行 `buildr update --track stable|candidate` 且当前 npm 来源和所选轨道可安全更新
 - **THEN** Buildr MUST 只完成当前 npm installation 拥有的精确版本更新，并在适用时原子刷新已存在 Launcher binding
-- **AND** MUST NOT 同步 Workspace assets、安装 Buildr Skill、render Agent runtime、运行 Workspace doctor 或改变 Workspace Node
+- **AND** MUST NOT 同步 Workspace assets、安装 Buildr Skill、render Agent runtime或运行 Workspace doctor
 
 #### Scenario: 无参数兼容更新
 - **WHEN** Agent 对 prerelease 当前版本运行无参数 `buildr update`

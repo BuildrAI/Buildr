@@ -6,6 +6,7 @@ import {
 } from '../verification/cli/product-source-layout.mjs';
 
 const canonicalProjectEntries = [
+  '.node-version',
   'AGENTS.md',
   'CLAUDE.md',
   'README.md',

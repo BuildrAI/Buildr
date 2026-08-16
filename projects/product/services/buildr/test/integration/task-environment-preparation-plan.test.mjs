@@ -23,9 +23,9 @@ function planFor(services) {
       steps: [{
         id: 'npm-ci',
         cwd: '.',
-        executable: { kind: 'workspace-foundation', name: 'npm' },
-        args: ['ci'],
-        inputs: ['package.json', 'package-lock.json'],
+        executable: { kind: 'workspace-foundation', name: 'node' },
+        args: ['prepare-fixture.mjs'],
+        inputs: ['package.json', 'package-lock.json', 'prepare-fixture.mjs'],
         outputs: [{ path: 'node_modules', kind: 'directory' }],
         required: true,
         timeoutMs: 180_000,
@@ -40,8 +40,8 @@ function declarationFor(services, timeoutMs = 180_000) {
     recipes: services.map((service) => ({
       id: `${service}.npm-ci`, scope: { kind: 'service', service }, required: true,
       steps: [{
-        id: 'npm-ci', cwd: '.', executable: { kind: 'workspace-foundation', name: 'npm' }, args: ['ci'],
-        inputs: ['package.json', 'package-lock.json'], outputs: [{ path: 'node_modules', kind: 'directory' }], required: true, timeoutMs,
+        id: 'npm-ci', cwd: '.', executable: { kind: 'workspace-foundation', name: 'node' }, args: ['prepare-fixture.mjs'],
+        inputs: ['package.json', 'package-lock.json', 'prepare-fixture.mjs'], outputs: [{ path: 'node_modules', kind: 'directory' }], required: true, timeoutMs,
       }],
     })),
   };
@@ -72,21 +72,13 @@ function fixture(t, { services = ['buildr', 'buildr-web', 'unrelated'], scoped =
   fs.mkdirSync(path.join(controllerRoot, 'src'), { recursive: true });
   fs.mkdirSync(path.join(controllerRoot, 'package'), { recursive: true });
   fs.writeFileSync(path.join(controllerRoot, 'bin', 'buildr.mjs'), "if (process.argv[2] === 'version') process.stdout.write(JSON.stringify({version:'fixture'}) + '\\n'); else process.exitCode = 1;\n");
-  for (const service of services) writePackage(path.join(projectRoot, 'services', service), service);
   const installLog = path.join(base, 'installs.log');
-  const npmExecutable = path.join(base, process.platform === 'win32' ? 'managed-npm.cmd' : 'managed-npm');
-  fs.writeFileSync(npmExecutable, process.platform === 'win32' ? `@echo off
-if not "%FAIL_ROOT%"=="" if /I "%FAIL_ROOT%"=="%CD%" (echo declared install failure 1>&2 & exit /b 17)
-if exist node_modules rmdir /s /q node_modules
-mkdir node_modules
-echo %CD%>>"%INSTALL_LOG%"
-` : `#!/bin/sh
-if [ -n "$FAIL_ROOT" ] && [ "$FAIL_ROOT" = "$PWD" ]; then echo "declared install failure" >&2; exit 17; fi
-rm -rf node_modules
-mkdir -p node_modules
-printf '%s\\n' "$PWD" >> "$INSTALL_LOG"
-`);
-  fs.chmodSync(npmExecutable, 0o755);
+  const failMarker = path.join(base, 'fail-root');
+  for (const service of services) {
+    const serviceRoot = path.join(projectRoot, 'services', service);
+    writePackage(serviceRoot, service);
+    fs.writeFileSync(path.join(serviceRoot, 'prepare-fixture.mjs'), `import fs from 'node:fs';\nimport path from 'node:path';\nconst cwd = process.cwd();\nconst failMarker = ${JSON.stringify(failMarker)};\nif (fs.existsSync(failMarker) && fs.readFileSync(failMarker, 'utf8') === cwd) { console.error('declared install failure'); process.exit(17); }\nfs.rmSync(path.join(cwd, 'node_modules'), { recursive: true, force: true });\nfs.mkdirSync(path.join(cwd, 'node_modules'));\nfs.appendFileSync(${JSON.stringify(installLog)}, cwd + '\\n');\n`);
+  }
   let persistence = null;
   let failRoot = '';
   let writes = 0;
@@ -112,7 +104,6 @@ printf '%s\\n' "$PWD" >> "$INSTALL_LOG"
     readServiceRegistryRecord: () => ({ services: serviceEntities }),
     readWorkspaceRecord: () => ({ workspace: { id: 'workspace-fixture' } }),
     isSupportedAgent: (adapter) => adapter === 'codex',
-    workspaceNodeExecution: () => ({ ready: true, identity: { digest: 'managed-node' }, executable: process.execPath, npmExecutable, paths: { npx: npmExecutable }, environment: { ...process.env, INSTALL_LOG: installLog, FAIL_ROOT: failRoot } }),
     checkRuntimeAdapter: () => ({ runtimeSourceEvidence: { projectionReady: true, projectionIdentity: 'projection-fixture' } }),
     renderRuntime: () => { throw new Error('projection should remain ready'); },
     probeTaskEnvironmentResource: () => { throw new Error('no resources'); },
@@ -126,7 +117,11 @@ printf '%s\\n' "$PWD" >> "$INSTALL_LOG"
     installRoots: () => fs.existsSync(installLog) ? fs.readFileSync(installLog, 'utf8').split(/\r?\n/u).map((line) => line.trim()).filter(Boolean) : [],
     serviceRoot: (service) => path.join(projectRoot, 'services', service),
     writeDeclaration(value = declarationFor(services)) { fs.writeFileSync(path.join(projectRoot, 'preparation.yml'), `${JSON.stringify(value, null, 2)}\n`); },
-    fail(service = null) { failRoot = service ? path.join(projectRoot, 'services', service) : ''; },
+    fail(service = null) {
+      failRoot = service ? path.join(projectRoot, 'services', service) : '';
+      if (failRoot) fs.writeFileSync(failMarker, failRoot);
+      else fs.rmSync(failMarker, { force: true });
+    },
   };
 }
 

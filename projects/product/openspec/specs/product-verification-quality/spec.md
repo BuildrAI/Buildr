@@ -25,8 +25,8 @@ Buildr Product MUST 为 development checkout onboarding、init 行为、checkout
 
 #### Scenario: 验证 development checkout onboarding
 - **WHEN** repository onboarding verifier 在干净 Git checkout运行
-- **THEN** verifier MUST 使用精确 Host Node执行 checkout 内显式 `projects/product/buildr` Project bridge，并证明 development entry identity与development update source
-- **AND** verifier MUST 完成真实 sync、development-only Launcher activation和最终 Doctor，同时证明 PATH默认`buildr`与`buildr.cmd`未被读取、创建、覆盖或删除
+- **THEN** verifier MUST 使用Product声明的精确development Node执行checkout内显式`projects/product/buildr` Project bridge，并证明development entry identity与development update source
+- **AND** verifier MUST 完成真实sync、development-only Launcher activation和最终Doctor，同时证明PATH默认`buildr`与`buildr.cmd`未被读取、创建、覆盖或删除
 - **AND** verifier MUST NOT安装development PATH CLI，也不得重复持有完整init或npm tarball release lifecycle
 
 #### Scenario: 验证 init 行为
@@ -714,12 +714,17 @@ Buildr Product 已登记为 Project Verification capability 的 changed selector
 - **AND** MUST NOT 将该情况报告为 Browser 页面或业务交互失败
 
 ### Requirement: CI 必须覆盖最低 Node、当前 Node 与 npm Launcher 平台行为
-CI MUST 在 `engines.node` 最低支持 Node 与当前 Node 24 上分别安装同一 npm tarball并验证 CLI、`buildr web --no-open`、health/readiness 和 Workspace-owned runtime role。macOS 与 Windows Launcher 行为 MUST 在对应 OS runner 验证本机 wrapper/shortcut lifecycle，但 MUST NOT 声称验证 SEA、installer、签名或无需 Node 的平台产品。
+CI MUST 在 `engines.node` 最低支持 Node 与当前 Node 24 上分别安装同一 npm tarball并验证 CLI、`buildr web --no-open`、health/readiness和Host Node identity；development checkout jobs MUST另外使用Product声明的精确Node并验证hostile PATH不产生漂移。macOS与Windows Launcher行为 MUST在对应OS runner验证本机wrapper/shortcut lifecycle，但 MUST NOT声称验证SEA、installer、签名或无需Node的平台产品。
 
 #### Scenario: 两个兼容 Host Node
 - **WHEN** Candidate 执行最低 Node 与当前 Node jobs
-- **THEN** 两者 MUST 消费同一 tarball，并分别通过普通 CLI 无 HTTP、Web health/readiness、identity 与 Host/Workspace Node 分离
+- **THEN** 两者 MUST 消费同一tarball并分别通过普通CLI无HTTP、Web health/readiness与Host installation identity
 - **AND** tarball MUST NOT 为不同 Node 重新 pack
+
+#### Scenario: development hostile PATH
+- **WHEN** checkout PATH首位存在满足`engines.node`但不等于Product精确开发版本的Node
+- **THEN** development bridge、Product npm wrapper与self-bootstrap前置检查 MUST拒绝漂移或选择显式提供的精确Node
+- **AND** MUST NOT把该Node写入Workspace metadata
 
 #### Scenario: 操作系统 Launcher 验证
 - **WHEN** macOS 或 Windows runner 执行 Launcher lifecycle
@@ -764,19 +769,6 @@ Buildr 正式发布 MUST 只执行一次 `npm pack`，并 MUST 让 inventory、H
 - **WHEN** 相同 version 的 Registry integrity 与冻结 tarball 不同
 - **THEN** workflow MUST fail closed 并保留所有公开事实供人工处理
 - **AND** MUST NOT覆盖、撤销或生成替代 version
-
-### Requirement: Host Node 与 Workspace Node runtime role 必须分别验证
-Candidate MUST 从最终 npm tarball验证主进程使用 formal installation 绑定的 Host Node，Workspace-owned subprocess 使用 Workspace 精确声明的 Node，并 MUST 比较 role、path、executable SHA-256、identity 和 runtime directory digest。Launcher 启动的主进程 MUST 与 CLI 报告同一 Host Node/installation identity。
-
-#### Scenario: npm CLI 与 Launcher runtime role
-- **WHEN** npm CLI 与其显式 Launcher 分别执行同一 Workspace-owned verification capability
-- **THEN** 两个主进程 MUST 报告相同 `host` identity，Workspace child MUST 报告相同独立 `workspace` identity
-- **AND** Host Node 与 Workspace Node 版本相同 MUST NOT 合并 ownership 或 path
-
-#### Scenario: npm package 更新
-- **WHEN** verifier 模拟同 prefix 的 package update 并刷新 Launcher binding
-- **THEN** Buildr/package/payload identity MAY 更新，但 Workspace Node identity、path、executable 与 directory digest MUST 不变
-- **AND** Launcher MUST 继续绑定更新后的 Host Node/package entry 而不是 Workspace Node
 
 ### Requirement: CI Candidate 必须由可验证的分布式覆盖计划组成
 Buildr Product MUST 从统一 verification registry 为一个精确 source SHA 生成闭合的 CI Candidate coverage plan，并 MUST 让 preflight、artifact producer、平台 shard、Host Node tuple 和 aggregate gate 共同证明完整发布门禁；本地完整 Candidate MUST 继续从同一 registry运行全部 Candidate steps。
@@ -975,7 +967,7 @@ Buildr Candidate CI MUST 在不合并 evidence owner 的前提下复用 prefligh
 
 #### Scenario: Candidate bootstrap 成功
 - **WHEN** dev→main 或手工 Candidate run 启动
-- **THEN** 一个 bootstrap job MUST 在同一 checkout、Node、依赖与 Workspace Node 上先完成 `preflight-macos`再完成`artifact-macos`
+- **THEN** 一个bootstrap job MUST在同一checkout、Product精确development Node与依赖上先完成`preflight-macos`再完成`artifact-macos`
 - **AND** job MUST 分别上传两份 shard evidence与一个不可变 Candidate artifact
 
 #### Scenario: Preflight 失败

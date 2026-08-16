@@ -34,7 +34,6 @@ export function resolvedFinishContext(identity) {
       generation: identity.candidateGeneration,
       contentTargetIdentity: identity.contentTargetIdentity,
     },
-    environment: { workspaceNodeIdentity: identity.workspaceNodeIdentity || null },
     delivery: {
       agent: identity.agent,
       targetBranch: identity.targetBranch,
@@ -110,7 +109,6 @@ function normalizeIdentity(input) {
     remote: typeof input.remote === 'string' && input.remote.trim() ? input.remote : null,
     environmentRoot: path.resolve(input.environmentRoot),
     workspaceRoot: path.resolve(input.workspaceRoot),
-    workspaceNodeIdentity: typeof input.workspaceNodeIdentity === 'string' && input.workspaceNodeIdentity ? input.workspaceNodeIdentity : null,
     deliveryCommitIdentity: typeof input.deliveryCommitIdentity === 'string' && input.deliveryCommitIdentity ? input.deliveryCommitIdentity : null,
   };
 }

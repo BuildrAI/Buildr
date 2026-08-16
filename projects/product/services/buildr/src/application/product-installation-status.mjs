@@ -94,7 +94,6 @@ function developmentLauncherIdentity(options = {}) {
       sourceCommit: identity.checkout?.head || null,
     },
     runtime: developmentRuntime ? { role: 'development', version: developmentRuntime.version || null, executable: developmentRuntime.executable || null, identity: developmentRuntime.identity || null } : null,
-    workspaceNode: identity.workspaceNode || null,
     reason: null,
   };
 }

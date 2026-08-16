@@ -93,7 +93,7 @@ function buildIdentity(platform, channel) {
   const checkout = checkoutIdentity();
   const identity = { schemaVersion: 'buildr.launcher-identity/v1', version: packageVersion(), channel, source: 'checkout', buildId: `${checkout.head.slice(0, 12)}-${checkout.fingerprint}`, buildNumber: String(Date.now()), protocolVersion: 1, platform, builtAt: new Date().toISOString(), checkout };
   const runtime = developmentRuntime(process.execPath);
-  return { ...identity, sourceRoot: PRODUCT_ROOT, workspaceRoot: runtime.workspaceRoot, developmentRuntime: { executable: runtime.executable, version: runtime.version, source: runtime.source, identity: runtime.identity }, workspaceNode: null };
+  return { ...identity, sourceRoot: PRODUCT_ROOT, workspaceRoot: runtime.workspaceRoot, developmentRuntime: { executable: runtime.executable, version: runtime.version, source: runtime.source, identity: runtime.identity } };
 }
 function validateBundle(bundle, platform, expected) {
   const actual = readIdentity(bundle, platform);

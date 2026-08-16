@@ -139,7 +139,6 @@ test('安装版 Buildr Web 在 saved Receipt blocked 时仍读取 Task worktree 
     createdAt: observedAt,
     updatedAt: observedAt,
   });
-  runtime.workspaceNodeExecution = () => ({ ready: true, identity: { digest: 'workspace-node' }, executable: process.execPath, npmExecutable: process.execPath, environment: process.env });
   runtime.checkRuntimeAdapter = () => ({ runtimeSourceEvidence: { projectionReady: true, projectionIdentity: 'projection' } });
   const bundleRoot = path.join(base, 'Buildr Web Dev.app', 'Contents', 'Resources', 'buildr');
   fs.mkdirSync(bundleRoot, { recursive: true });

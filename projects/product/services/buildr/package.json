@@ -52,7 +52,7 @@
     "test:integration": "node --test test/integration/*.test.mjs",
     "test:system": "node test/verification/system.mjs",
     "test:openspec:convergence": "node --test test/integration/openspec-convergence-transaction.test.mjs test/system/task-finish-cli.test.mjs && node test/verification/openspec/contract.mjs --suite recovery",
-    "build:web": "npm --prefix ../buildr-web run build",
+    "build:web": "./scripts/run-development-npm --prefix ../buildr-web run build",
     "dev:web": "npm --prefix ../buildr-web run dev",
     "test:web-dist": "node test/verification/web-dist.mjs",
     "test:browser:smoke": "npm run test:web-dist && node --test test/browser-smoke/*.test.mjs",

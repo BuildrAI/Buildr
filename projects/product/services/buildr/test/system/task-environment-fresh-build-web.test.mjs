@@ -47,8 +47,14 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   const candidateBuildr = path.join(productRoot, 'services', 'buildr');
   const candidateWeb = path.join(productRoot, 'services', 'buildr-web');
   fs.mkdirSync(candidateBuildr, { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'scripts'), { recursive: true });
+  fs.copyFileSync(path.resolve(serviceRoot, '../../.node-version'), path.join(productRoot, '.node-version'));
   fs.copyFileSync(path.join(serviceRoot, 'package.json'), path.join(candidateBuildr, 'package.json'));
   fs.copyFileSync(path.join(serviceRoot, 'package-lock.json'), path.join(candidateBuildr, 'package-lock.json'));
+  for (const script of ['resolve-development-node', 'run-development-node', 'run-development-npm']) {
+    fs.copyFileSync(path.join(serviceRoot, 'scripts', script), path.join(candidateBuildr, 'scripts', script));
+    fs.chmodSync(path.join(candidateBuildr, 'scripts', script), 0o755);
+  }
   fs.cpSync(webSourceRoot, candidateWeb, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   const workspaceId = /^id:\s*(\S+)\s*$/m.exec(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'))?.[1];
   assert.ok(workspaceId);
@@ -93,7 +99,7 @@ recipes:
     steps:
       - id: npm-ci
         cwd: .
-        executable: { kind: workspace-foundation, name: npm }
+        executable: { kind: project, path: services/buildr/scripts/run-development-npm }
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs: [{ path: node_modules, kind: directory }]
@@ -105,7 +111,7 @@ recipes:
     steps:
       - id: npm-ci
         cwd: .
-        executable: { kind: workspace-foundation, name: npm }
+        executable: { kind: project, path: services/buildr/scripts/run-development-npm }
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs: [{ path: node_modules, kind: directory }]

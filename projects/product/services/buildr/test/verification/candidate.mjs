@@ -32,12 +32,10 @@ if (request.json) {
   await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', base: null, source: 'candidate-profile', paths: plan.paths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error) => error ? reject(error) : resolve()));
   process.exit(0);
 }
-const managedNodeVersion = process.env.BUILDR_WORKSPACE_NODE_VERSION;
-const managedNodeIdentity = process.env.BUILDR_WORKSPACE_NODE_IDENTITY;
-if (!managedNodeVersion || !managedNodeIdentity) throw new Error('Candidate verification must run through the managed Workspace Node runtime.');
-if (process.versions.node !== managedNodeVersion) throw new Error(`Managed Workspace Node mismatch: expected ${managedNodeVersion}, active ${process.versions.node}.`);
+const developmentNodeVersion = fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim();
+if (process.versions.node !== developmentNodeVersion) throw new Error(`Buildr Product development Node mismatch: expected ${developmentNodeVersion}, active ${process.versions.node}.`);
 enforceOfflineVerification();
-process.stdout.write(`[verify-product] managedNode=${managedNodeVersion} identity=${managedNodeIdentity} executable=${process.execPath}\n`);
+process.stdout.write(`[verify-product] developmentNode=${developmentNodeVersion} executable=${process.execPath}\n`);
 const executionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-verification-'));
 const evidence = createVerificationEvidencePaths('candidate');
 const source = collectVerificationSourceIdentity(productRoot, { projectRoot });

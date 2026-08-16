@@ -76,7 +76,6 @@ function deliveryFixture(t, hook, prepareCandidate = null) {
       remote: 'origin',
       environmentRoot,
       workspaceRoot: data.retained,
-      workspaceNodeIdentity: 'sha256-workspace-node',
     },
     deliveryCarrier: {
       identity: 'sha256-carrier',
@@ -95,7 +94,6 @@ function deliveryFixture(t, hook, prepareCandidate = null) {
   const runtime = {
     ...sqliteRuntime,
     assertTaskDevelopmentCarrier: () => ({ status: 'equivalent' }),
-    workspaceNodeExecution: () => ({ ready: true, identity: { digest: 'sha256-workspace-node', version: '24.15.0' } }),
     resolveTaskEnvironmentExecution: () => ({
       ready: true,
       controllerInvocation: {

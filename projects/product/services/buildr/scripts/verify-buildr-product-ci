@@ -2,9 +2,4 @@
 set -euo pipefail
 
 product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-bootstrap_node="${npm_node_execpath:-${BUILDR_NODE_EXECUTABLE:-$(command -v node || true)}}"
-if [[ -z "$bootstrap_node" || ! -x "$bootstrap_node" ]]; then
-  echo "Bootstrap Node executable is missing. Run verification through npm or a compatible Node." >&2
-  exit 1
-fi
-exec "$bootstrap_node" "$product_root/scripts/run-workspace-node.mjs" test/verification/candidate-ci.mjs run "$@"
+exec "$product_root/scripts/run-development-node" test/verification/candidate-ci.mjs run "$@"

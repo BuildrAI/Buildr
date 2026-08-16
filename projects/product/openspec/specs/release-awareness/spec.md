@@ -30,7 +30,7 @@ Buildr MUST 支持用户显式选择 `stable` 或 `candidate`，只安装该轨�
 #### Scenario: 用户选择 candidate
 - **WHEN** 用户执行 `buildr update --track candidate` 且 candidate 轨道存在高于当前安装的有效版本
 - **THEN** Buildr MUST 安装精确的候选版本
-- **AND** MUST NOT 改变 stable tag、Workspace、Workspace Node 或 Agent runtime
+- **AND** MUST NOT 改变 stable tag、Workspace metadata或 Agent runtime
 
 #### Scenario: 用户选择 stable
 - **WHEN** 用户执行 `buildr update --track stable` 且 stable 轨道存在高于当前安装的有效版本

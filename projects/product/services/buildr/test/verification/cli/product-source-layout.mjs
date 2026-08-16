@@ -12,6 +12,7 @@ const forbiddenProjectRootEntries = new Set([
 
 const allowedProjectRootEntries = new Set([
   'AGENTS.md',
+  '.node-version',
   'CLAUDE.md',
   'README.md',
   'buildr',

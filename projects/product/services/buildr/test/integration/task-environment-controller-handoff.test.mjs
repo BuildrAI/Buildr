@@ -154,7 +154,6 @@ else process.exitCode = 1;
     readServiceRegistryRecord: () => ({ services: { buildr: { code: 'buildr', source: { type: 'workspace', path: 'projects/product/services/buildr' } } } }),
     readWorkspaceRecord: () => ({ workspace: { id: 'workspace-fixture' } }),
     isSupportedAgent: (adapter) => ['codex', 'claude-code'].includes(adapter),
-    workspaceNodeExecution: () => ({ ready: true, identity: { digest: 'workspace-node' }, executable: process.execPath, npmExecutable: process.execPath, environment: process.env }),
     checkRuntimeAdapter: () => {
       calls.projectionChecks += 1;
       return { runtimeSourceEvidence: { projectionReady: retainedProjectionReady, projectionIdentity: 'retained-projection' } };

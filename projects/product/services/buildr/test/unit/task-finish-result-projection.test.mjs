@@ -25,7 +25,6 @@ function canonical(overrides = {}) {
       task: { taskId: 'finish-task' },
       handoff: { identity: 'sha256-handoff' },
       candidate: { identity: 'sha256-candidate', generation: 3, contentTargetIdentity: 'sha256-content' },
-      environment: { workspaceNodeIdentity: 'sha256-node' },
       delivery: { agent: 'codex', targetBranch: 'dev', remote: 'origin' },
       identity: 'sha256-context',
     },

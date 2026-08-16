@@ -46,7 +46,6 @@ export function observeTaskFinishEntryReadiness({
   let deliveryRoot = root;
   let environmentRemote = null;
   let agent = requestedAgent;
-  let workspaceNodeIdentity = null;
   let handoff = null;
   let targetBranch = null;
   let remote = null;
@@ -79,10 +78,6 @@ export function observeTaskFinishEntryReadiness({
         requestedAgent,
         environmentAgent: defaultAgent,
       }));
-    }
-    workspaceNodeIdentity = runtime.workspaceNodeExecution(context.validationRoot)?.identity?.digest || null;
-    if (!workspaceNodeIdentity) {
-      pushGap(gaps, gap('environment', 'task_finish.workspace_node_unavailable', 'Task Finish requires a receipt-bound Workspace Node identity.'));
     }
   }
 
@@ -157,7 +152,6 @@ export function observeTaskFinishEntryReadiness({
       remote,
       environmentRoot: context.validationRoot,
       workspaceRoot: context.workspaceRoot,
-      workspaceNodeIdentity,
       deliveryCommitIdentity: deliveryCommit?.identity || null,
     } : null,
   };

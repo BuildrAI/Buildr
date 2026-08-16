@@ -90,9 +90,8 @@ export function loadVerificationExecutionRecordRecovery(summaryPath, record, opt
   if (summary.executionRecord?.lifecycleStatus !== 'open') throw blocked('task_execution_record_recovery_summary_not_open', 'Recovery summary没有证明seal前的open record状态。');
   if (!DIGEST.test(summary.executionIdentity || '')) throw blocked('task_execution_record_recovery_execution_identity_invalid', 'Recovery summary缺少完整execution identity。');
   if (typeof summary.project?.code !== 'string' || typeof summary.project?.root !== 'string'
-    || typeof summary.declaration?.path !== 'string' || !DIGEST.test(summary.declaration?.identity || '')
-    || !summary.workspaceNode || typeof summary.workspaceNode !== 'object') {
-    throw blocked('task_execution_record_recovery_context_invalid', 'Recovery summary缺少完整Project/declaration/Workspace Node facts。');
+    || typeof summary.declaration?.path !== 'string' || !DIGEST.test(summary.declaration?.identity || '')) {
+    throw blocked('task_execution_record_recovery_context_invalid', 'Recovery summary缺少完整Project/declaration facts。');
   }
   if (!validTimestamp(summary.startedAt) || !validTimestamp(summary.finishedAt) || Date.parse(summary.finishedAt) < Date.parse(summary.startedAt)) {
     throw blocked('task_execution_record_recovery_timing_invalid', 'Recovery summary缺少合法startedAt/finishedAt终态时间。');
@@ -125,7 +124,6 @@ export function loadVerificationExecutionRecordRecovery(summaryPath, record, opt
     projectCode: summary.project.code,
     declarationPath: summary.declaration.path,
     declarationIdentity: summary.declaration.identity,
-    workspaceNode: summary.workspaceNode,
     selectedCapabilities: selected,
     authorizedCapabilities: summary.authorization?.capabilities || [],
     authorizedResources: summary.authorization?.resources || [],

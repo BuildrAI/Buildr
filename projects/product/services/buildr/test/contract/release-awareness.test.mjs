@@ -34,5 +34,5 @@ test('CLI 和 Buildr Web 只暴露明确轨道选择，不提供网页 npm 更�
   assert.match(appLayout, /data-release-track=\{track\.track\}/);
   assert.match(appLayout, /复制命令/);
   assert.match(appLayout, /交给 Agent/);
-  assert.match(appLayout, /不要修改 Workspace、Workspace Node 或 Agent runtime/);
+  assert.match(appLayout, /不要修改 Workspace 数据或 Agent runtime/);
 });

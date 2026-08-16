@@ -19,7 +19,6 @@ function spawn(command, args, options = {}) {
     env: {
       ...process.env,
       BUILDR_APP_DATA_DIR: path.join(root, 'app-data'),
-      BUILDR_NODE_RUNTIME_DATA_DIR: path.join(root, 'workspace-runtimes'),
       ...options.env,
     },
   });
@@ -41,13 +40,11 @@ function snapshot(directory) {
 function normalizeWorkspaceSnapshot(value) {
   const workspaceId = value['.buildr/workspace.yml']?.match(/^id:\s*([0-9a-f-]{36})$/m)?.[1];
   const skillsWorkspaceId = value['skills/manifest.yml']?.match(/^workspaceId:\s*([0-9a-f-]{36})$/m)?.[1];
-  const runtimeNodeVersion = value['.buildr/workspace.yml']?.match(/^\s+version:\s*([^\s]+)$/m)?.[1];
   assert.ok(workspaceId, 'Workspace metadata must contain a UUID');
-  assert.ok(runtimeNodeVersion, 'Workspace metadata must contain a Node runtime version');
+  assert.doesNotMatch(value['.buildr/workspace.yml'], /^runtime:/m, 'Workspace metadata must not contain a runtime declaration');
   assert.equal(skillsWorkspaceId, workspaceId, 'Workspace and Skills manifests must share one UUID');
   return Object.fromEntries(Object.entries(value).map(([file, content]) => [file, content
-    .replaceAll(workspaceId, '<workspace-id>')
-    .replaceAll(`version: ${runtimeNodeVersion}`, 'version: <runtime-node-version>')]));
+    .replaceAll(workspaceId, '<workspace-id>')]));
 }
 
 try {

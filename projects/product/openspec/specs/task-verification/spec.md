@@ -99,7 +99,7 @@ Repository MUST 在写入前完成 closed-schema normalization 与 serialization
 - **AND** Skill MAY按bounded instructions执行并最终通过同一Task Verification Result Application提炼事实，但本Change MUST NOT伪造尚未登记的Agent execution record producer
 
 ### Requirement: 执行可靠性实现只服务真实声明能力
-Runner MUST 继续使用受管 Workspace Node、Environment allowed roots、进程 descendant 有界收敛、单次 transient cleanup 与被实际 capability claim 的资源协调。Project declaration execution MUST NOT 新建通用 DAG、dependency、supersedes、scheduler 或资源平台语义。对同一 coordinated resource 的有效 waiter，coordinator MUST 按确定的先到顺序授予可用容量，并 MUST 让取消、timeout、崩溃或过期 waiter 可被精确、有界恢复；新 waiter MUST NOT 越过仍有效的更早 waiter。
+Runner MUST 继续使用Environment allowed roots、进程 descendant 有界收敛、单次 transient cleanup 与被实际 capability claim 的资源协调，并 MUST按capability声明argv与当前受控执行环境运行。Project declaration execution MUST NOT 新建通用 runtime resolver、DAG、dependency、supersedes、scheduler 或资源平台语义。对同一 coordinated resource 的有效 waiter，coordinator MUST 按确定的先到顺序授予可用容量，并 MUST 让取消、timeout、崩溃或过期 waiter 可被精确、有界恢复；新 waiter MUST NOT 越过仍有效的更早 waiter。
 
 #### Scenario: 真实 coordinated capability 并发
 - **WHEN** 两个或更多 execution runs 声明并请求同一有限容量 coordinated resource
@@ -184,7 +184,7 @@ Formal Task command runner MUST在调用前语义校验完成后、任何produce
 - **AND** MUST NOT启动capability、创建transient run目录、写current Result或静默清理其他record
 
 #### Scenario: 调用前请求无效
-- **WHEN** Project、declaration、capability、authorization、execution root或Workspace Node在open前校验失败
+- **WHEN** Project、declaration、capability、authorization或execution root在open前校验失败
 - **THEN** runner MUST返回既有invalid request envelope且execution record为not-opened
 - **AND** MUST NOT创建metadata、quota reservation、transient evidence或专业Result
 

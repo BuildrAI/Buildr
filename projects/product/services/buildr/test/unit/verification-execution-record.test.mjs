@@ -24,7 +24,6 @@ function input(overrides = {}) {
     projectCode: 'demo',
     declarationPath: path.join(root, 'projects/demo/verification.yml'),
     declarationIdentity: 'sha256-declaration',
-    workspaceNode: { identity: { version: '24.0.0', digest: 'sha256-node' }, executable: '/secret/node', actualVersion: '24.0.0' },
     selectedCapabilities: [{ id: 'demo.test', scope: { project: 'demo', services: [] }, proves: ['tests'], requiredForDelivery: true, resourceClaims: [] }],
     authorizedCapabilities: [],
     authorizedResources: [],
@@ -49,7 +48,7 @@ test('Verification execution record mapper 只生成受控可移植正文', () =
   assert.deepEqual(files.map((file) => file.name), ['summary.json', 'stdout.txt', 'stderr.txt', 'timeline.json', 'diagnostics.json']);
   const summary = files.find((file) => file.name === 'summary.json').content;
   assert.equal(summary.declaration.path, 'projects/demo/verification.yml');
-  assert.equal(summary.workspaceNode.executable, undefined);
+  assert.equal(summary.workspaceNode, undefined);
   assert.equal(summary.target.before.root, undefined);
   assert.equal(summary.task.scopes[0].executionRoot, undefined);
   assert.equal(summary.checks[0].resourceCoordination.claims[0].owner, undefined);

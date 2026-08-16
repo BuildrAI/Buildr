@@ -66,9 +66,7 @@ test('verification run 并发执行显式 v2 capabilities 并只产生 transient
   assert.equal(payload.schemaVersion, 'buildr.verification-execution/v1');
   assert.equal(payload.status, 'passed');
   assert.equal(payload.target.identity, 'target:demo');
-  assert.equal(payload.workspaceNode.actualVersion, process.versions.node);
-  assert.equal(payload.workspaceNode.identity.version, process.versions.node);
-  assert.match(payload.workspaceNode.identity.digest, /^sha256-/);
+  assert.equal(Object.hasOwn(payload, 'workspaceNode'), false);
   assert.match(payload.executionIdentity, /^sha256-/);
   assert.deepEqual(payload.evidenceLifecycle, {
     schemaVersion: 'buildr.verification-evidence-lifecycle/v1',
@@ -92,25 +90,26 @@ test('verification run 并发执行显式 v2 capabilities 并只产生 transient
   assert.equal(JSON.parse(repeated.stdout).code, 'cleanup.already_absent');
 });
 
-test('verification runner 用 Workspace Node 替换 argv 中的 PATH Node', (t) => {
+test('verification runner 直接执行声明中的 executable，不做 Workspace Node 替换', (t) => {
   const root = fixture(t);
   const fakeBin = path.join(root, 'fake-bin');
   const fakeNode = path.join(fakeBin, 'node');
   fs.mkdirSync(fakeBin);
-  fs.writeFileSync(fakeNode, '#!/bin/sh\necho 18.20.0\nexit 18\n');
+  fs.writeFileSync(fakeNode, '#!/bin/sh\nexit 18\n');
   fs.chmodSync(fakeNode, 0o755);
   const projectRoot = path.join(root, 'projects', 'demo');
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
     schemaVersion: 'buildr.project-verification/v2', resources: [],
     capabilities: [declaredCapability('demo.node', 'void 0', {
-      invocation: { kind: 'command', argv: [fakeNode, '-e', 'if (process.versions.node !== process.env.BUILDR_WORKSPACE_NODE_VERSION) process.exit(9)'], cwd: '.' },
+      invocation: { kind: 'command', argv: [fakeNode], cwd: '.' },
     })],
   }));
   const result = runBuildr(runArgs(root, ['demo.node']));
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.notEqual(result.status, 0);
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.checks[0].exitCode, 0);
-  assert.equal(payload.workspaceNode.identity.version, process.versions.node);
+  assert.equal(payload.status, 'failed');
+  assert.equal(payload.checks[0].exitCode, 18);
+  assert.equal(Object.hasOwn(payload, 'workspaceNode'), false);
 });
 
 test('verification run 对 explicit capability effects 要求精确授权', (t) => {

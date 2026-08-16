@@ -550,9 +550,8 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal((verifyWorkflow.match(/npm run test:candidate:ci/g) || []).length, 5);
   assert.equal((verifyWorkflow.match(/npm run test:candidate:host/g) || []).length, 1);
   assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.mjs aggregate/g) || []).length, 1);
-  assert.match(hostNodeSmoke, /verifyWorkspaceOwnedRuntime/);
-  assert.match(hostNodeSmoke, /expectedMainRole: 'host'/);
-  assert.match(hostNodeSmoke, /expectedChannel: 'npm'/);
+  assert.match(hostNodeSmoke, /cliIdentity\.runtime\?\.role, 'host'/);
+  assert.doesNotMatch(hostNodeSmoke, /WorkspaceOwnedRuntime|workspaceNode|BUILDR_NODE_RUNTIME/);
   assert.match(verifyWorkflow, /^  candidate-bootstrap:/m);
   assert.match(verifyWorkflow, /^  candidate-runtime-windows:/m);
   assert.match(verifyWorkflow, /^  candidate-windows:/m);

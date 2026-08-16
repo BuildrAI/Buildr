@@ -374,15 +374,26 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
   }
 
-  function resolveExecutable(step, scopeRoot, projectRoot, serviceRoot, workspaceNode) {
+  function resolvePathExecutable(name) {
+    const extensions = process.platform === 'win32'
+      ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';')
+      : [''];
+    for (const directory of (process.env.PATH || '').split(path.delimiter)) {
+      for (const extension of extensions) {
+        const candidate = path.resolve(directory || '.', `${name}${extension}`);
+        try {
+          const stat = fs.statSync(candidate);
+          if (stat.isFile() && (process.platform === 'win32' || Boolean(stat.mode & 0o111))) return fs.realpathSync(candidate);
+        } catch {}
+      }
+    }
+    return null;
+  }
+
+  function resolveExecutable(step, scopeRoot, projectRoot, serviceRoot) {
     if (step.executable.kind === 'workspace-foundation') {
-      const executables = {
-        node: workspaceNode?.executable,
-        npm: workspaceNode?.npmExecutable,
-        npx: workspaceNode?.paths?.npx,
-      };
-      const executable = executables[step.executable.name];
-      if (!executable) throw taskEnvironmentError('task_environment_plan_foundation_unknown', `Workspace Foundation 未提供可执行项：${step.executable.name}。`, 409, { name: step.executable.name });
+      const executable = resolvePathExecutable(step.executable.name);
+      if (!executable) throw taskEnvironmentError('task_environment_plan_foundation_missing', `当前执行环境无法解析Workspace Foundation命令：${step.executable.name}。`, 409, { name: step.executable.name });
       return executable;
     }
     if (step.executable.kind === 'absolute') return step.executable.path;
@@ -416,7 +427,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
   }
 
-  function plannedSteps(receipt, workspaceNode) {
+  function plannedSteps(receipt) {
     if (!receipt.preparationPlan) return [];
     const scopes = new Map(receipt.scopes.map((scope) => [scope.selector, scope]));
     return receipt.preparationPlan.projects.flatMap((project) => project.scopes.flatMap((plannedScope) => {
@@ -434,7 +445,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         projectRoot: projectScope.executionRoot,
         serviceRoot,
         cwd: path.resolve(scope.executionRoot, step.cwd),
-        executablePath: resolveExecutable(step, scope.executionRoot, projectScope.executionRoot, serviceRoot, workspaceNode),
+        executablePath: resolveExecutable(step, scope.executionRoot, projectScope.executionRoot, serviceRoot),
       })));
     }));
   }
@@ -489,11 +500,11 @@ export function registerTaskEnvironmentApplication(runtime) {
     };
   }
 
-  function prepareSteps(receipt, workspaceNode, effects, { mutate, onStep = null }) {
+  function prepareSteps(receipt, effects, { mutate, onStep = null }) {
     const saved = new Map((receipt.preparationSteps || []).map((step) => [step.id, step]));
     const blockedServices = new Set();
     const observed = [];
-    for (const planned of plannedSteps(receipt, workspaceNode)) {
+    for (const planned of plannedSteps(receipt)) {
       let step = observePreparationStep(planned, saved.get(planned.id));
       if (blockedServices.has(planned.scope)) {
         step = { ...step, status: 'blocked', observedAt: now(), diagnostic: `前序 required Step 失败，未执行：${planned.id}` };
@@ -501,7 +512,7 @@ export function registerTaskEnvironmentApplication(runtime) {
         const result = spawnCommandSync(step.executable, planned.args, {
           cwd: step.cwd,
           encoding: 'utf8',
-          env: planned.executable.kind === 'workspace-foundation' ? workspaceNode.environment : process.env,
+          env: process.env,
           timeout: planned.timeoutMs,
           maxBuffer: 4 * 1024 * 1024,
         });
@@ -601,21 +612,21 @@ export function registerTaskEnvironmentApplication(runtime) {
     return { declarations, preparationScopes, recipes };
   }
 
-  function probeCli(cli, executionRoot, workspaceNode) {
+  function probeCli(cli, executionRoot) {
     const identity = fs.existsSync(cli.sourceRoot) ? digestFiles(cli.sourceRoot) : null;
     if (!fs.existsSync(cli.command) || !identity) return probe('blocked', identity, `执行 CLI 不存在：${cli.command}`);
-    const result = spawnSync(cli.command, [...cli.argsPrefix, 'version', '--json'], { cwd: executionRoot, encoding: 'utf8', env: workspaceNode?.environment || process.env, maxBuffer: 1024 * 1024 });
+    const result = spawnSync(cli.command, [...cli.argsPrefix, 'version', '--json'], { cwd: executionRoot, encoding: 'utf8', env: process.env, maxBuffer: 1024 * 1024 });
     let payload = null;
     try { payload = JSON.parse(result.stdout || ''); } catch { /* diagnostic below */ }
     if (result.status !== 0 || !payload?.version) return probe('blocked', identity, (result.stderr || '执行 CLI 未返回有效 version JSON。').trim().slice(0, 2000));
     return probe('ready', `${identity}:${payload.version}`);
   }
 
-  function probeCandidateProjection(adapter, validationRoot, cli, workspaceNode) {
+  function probeCandidateProjection(adapter, validationRoot, cli) {
     const result = spawnSync(cli.command, [...cli.argsPrefix, 'runtime', 'check', adapter, '--target', validationRoot, '--scope', '.'], {
       cwd: validationRoot,
       encoding: 'utf8',
-      env: workspaceNode?.environment || process.env,
+      env: process.env,
       timeout: 180_000,
       maxBuffer: 4 * 1024 * 1024,
     });
@@ -626,15 +637,15 @@ export function registerTaskEnvironmentApplication(runtime) {
     return probe('ready', identity);
   }
 
-  function prepareProjection(adapter, validationRoot, cli, workspaceNode, effects) {
+  function prepareProjection(adapter, validationRoot, cli, effects) {
     const check = runtime.checkRuntimeAdapter || checkRuntimeAdapter;
     let checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
     if (cli.kind === 'task-environment-candidate') {
       try {
-        const rendered = spawnSync(cli.command, [...cli.argsPrefix, 'sync', adapter, '--target', validationRoot], { cwd: validationRoot, encoding: 'utf8', env: workspaceNode?.environment || process.env, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
+        const rendered = spawnSync(cli.command, [...cli.argsPrefix, 'sync', adapter, '--target', validationRoot], { cwd: validationRoot, encoding: 'utf8', env: process.env, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
         if (rendered.status !== 0) return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, (rendered.stderr || rendered.stdout || 'Candidate runtime projection failed.').trim().slice(0, 2000));
         effects.push({ type: 'runtime-projected', adapter, target: validationRoot, source: cli.kind });
-        return probeCandidateProjection(adapter, validationRoot, cli, workspaceNode);
+        return probeCandidateProjection(adapter, validationRoot, cli);
       } catch (error) {
         return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, error.message);
       }
@@ -651,9 +662,9 @@ export function registerTaskEnvironmentApplication(runtime) {
     return checked.runtimeSourceEvidence?.projectionReady ? probe('ready', checked.runtimeSourceEvidence.projectionIdentity) : probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, 'Agent runtime projection 未就绪。');
   }
 
-  function observeProjection(adapter, validationRoot, cli, workspaceNode) {
+  function observeProjection(adapter, validationRoot, cli) {
     try {
-      if (cli.kind === 'task-environment-candidate') return probeCandidateProjection(adapter, validationRoot, cli, workspaceNode);
+      if (cli.kind === 'task-environment-candidate') return probeCandidateProjection(adapter, validationRoot, cli);
       const check = runtime.checkRuntimeAdapter || checkRuntimeAdapter;
       const checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
       return checked.runtimeSourceEvidence?.projectionReady ? probe('ready', checked.runtimeSourceEvidence.projectionIdentity) : probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, 'Agent runtime projection 已漂移或不完整。');
@@ -671,8 +682,7 @@ export function registerTaskEnvironmentApplication(runtime) {
 
   function prepareFoundations(receipt, controller, effects, { mutate, onStep = null }) {
     const validationRoot = receipt.scopes[0].validationRoot;
-    const workspaceNode = runtime.workspaceNodeExecution(validationRoot);
-    const runtimeProbe = workspaceNode.ready ? probe('ready', workspaceNode.identity.digest) : probe('blocked', workspaceNode.identity?.digest || null, workspaceNode.diagnostic || 'Workspace Node 未就绪。');
+    const runtimeProbe = probe('ready', null);
     const cli = candidateCli(controller, receipt.workspace.root, validationRoot, planOwnsCandidateController(receipt, controller));
     if (!receipt.preparationPlan) {
       const diagnostic = 'Task 尚未登记 Environment Preparation Plan。';
@@ -681,16 +691,16 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
     const declarations = observePreparationDeclarations(receipt);
     const declarationBlocked = declarations.find((declaration) => declaration.status !== 'ready');
-    const preparationSteps = declarationBlocked ? (receipt.preparationSteps || []).map((step) => ({ ...step, executed: false })) : prepareSteps(receipt, workspaceNode, effects, { mutate, onStep });
+    const preparationSteps = declarationBlocked ? (receipt.preparationSteps || []).map((step) => ({ ...step, executed: false })) : prepareSteps(receipt, effects, { mutate, onStep });
     const aggregated = aggregatePreparation(receipt, preparationSteps, declarations);
     let scopes = aggregated.scopes;
     const preparationBlocked = aggregated.preparationScopes.some((scope) => scope.status === 'blocked');
-    const cliProbe = preparationBlocked ? probe('blocked', null, '必需环境准备 Step 未就绪，跳过 CLI probe。') : probeCli(cli, validationRoot, workspaceNode);
+    const cliProbe = preparationBlocked ? probe('blocked', null, '必需环境准备 Step 未就绪，跳过 CLI probe。') : probeCli(cli, validationRoot);
     const projection = preparationBlocked
       ? probe('blocked', null, '环境准备未就绪，跳过 runtime projection。')
       : mutate
-        ? prepareProjection(controller.adapter, validationRoot, cli, workspaceNode, effects)
-        : observeProjection(controller.adapter, validationRoot, cli, workspaceNode);
+        ? prepareProjection(controller.adapter, validationRoot, cli, effects)
+        : observeProjection(controller.adapter, validationRoot, cli);
     scopes = scopes.map((scope) => ({ ...scope, runtime: runtimeProbe, cli: cliProbe, projection }));
     const ready = scopes.every((scope) => [scope.runtime, scope.cli, scope.preparation, scope.projection].every((item) => item.status !== 'blocked'));
     const blockedScope = aggregated.preparationScopes.find((scope) => scope.status === 'blocked');

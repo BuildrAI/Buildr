@@ -92,7 +92,6 @@ function persistBlockedCarrier(runtime, root, environmentRoot, task, runId) {
     remote: 'origin',
     environmentRoot,
     workspaceRoot: root,
-    workspaceNodeIdentity: 'sha256-node',
   };
   const run = createFinishRun({ root, identity, runId, runtime });
   run.status = 'blocked';

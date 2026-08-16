@@ -160,15 +160,12 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   const explicitCompact = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'compact']);
   assert.deepEqual(compact, explicitCompact);
   assert.deepEqual(Object.keys(compact), [
-    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'releaseAwareness', 'notices', 'workspaceNode', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
+    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'releaseAwareness', 'notices', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
   ]);
   assert.equal(compact.releaseAwareness.schemaVersion, PUBLIC_JSON_SCHEMAS.releaseAwareness);
   assert.equal(compact.releaseAwareness.freshness.status, 'unavailable');
   assert.deepEqual(compact.notices, []);
   assert.equal(compact.health.ready, true, 'Release Awareness unavailable must not block Doctor readiness');
-  assert.equal(compact.workspaceNode.runtime.status, 'ready');
-  assert.equal(compact.workspaceNode.execution.role, 'workspace');
-  assert.equal(compact.workspaceNode.mainProcess.role, compact.productInstallation.currentInstallation.runtime.role);
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in compact, false, field);
 
   const full = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
@@ -179,7 +176,7 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   assert.ok(contracts.every((contract) => /^[a-f0-9]{64}$/.test(contract.digest)));
 });
 
-test('human Doctor separates npm, development, Launcher, Host and Workspace identities', async (t) => {
+test('human Doctor separates npm, development, Launcher and Host identities', async (t) => {
   const root = fixtureWorkspace(t, 'codex');
   const appData = path.join(root, 'human-installation-status');
   fs.mkdirSync(appData, { recursive: true });
@@ -216,7 +213,6 @@ test('human Doctor separates npm, development, Launcher, Host and Workspace iden
     'Host Node:',
     'Development Node:',
     'Current main process:',
-    'Workspace Node: status=ready role=workspace',
     'current instance: status=stale',
     'identity: Buildr=1.2.3 protocol=buildr.web-protocol/v1',
     `payload=sha256-${'a'.repeat(64)} ownership=sha256-${'b'.repeat(64)}`,

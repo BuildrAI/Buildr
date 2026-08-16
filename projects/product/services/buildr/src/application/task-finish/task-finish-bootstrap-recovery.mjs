@@ -18,7 +18,6 @@ const RUNTIME_METHODS = Object.freeze([
   'resolveTaskEnvironmentCleanupContext',
   'resolveTaskEnvironmentExecution',
   'runTaskFinishCarrierCompatibility',
-  'workspaceNodeExecution',
 ]);
 
 function clone(value) {

@@ -6,16 +6,12 @@ import { resolveWorkspaceIdentity } from '../../src/application/workspace/worksp
 
 const WORKSPACE_ID = 'f2f40b71-2382-5906-82bd-76a7927b59f3';
 
-test('Workspace Domain 使用稳定 UUID、metadata 和精确 Node toolchain', () => {
-  const runtime = { node: { version: '24.15.0' } };
-  const workspace = createWorkspace({ id: WORKSPACE_ID, name: ' Buildr ', description: ' Product workspace ', runtime });
-  assert.deepEqual(workspace, { id: WORKSPACE_ID, name: 'Buildr', description: 'Product workspace', runtime });
+test('Workspace Domain 只使用稳定 UUID 与通用 metadata', () => {
+  const workspace = createWorkspace({ id: WORKSPACE_ID, name: ' Buildr ', description: ' Product workspace ' });
+  assert.deepEqual(workspace, { id: WORKSPACE_ID, name: 'Buildr', description: 'Product workspace' });
   assert.equal(isWorkspaceId(workspace.id), true);
-  assert.throws(() => createWorkspace({ id: 'workspace', name: 'Buildr', description: 'Description', runtime }), /must be a UUID/);
-  assert.throws(() => createWorkspace({ id: WORKSPACE_ID, name: '', description: 'Description', runtime }), /name must be a non-empty string/);
-  assert.throws(() => createWorkspace({ id: WORKSPACE_ID, name: 'Buildr', description: 'Description', runtime: { node: { version: '24.14.0' } } }), />=24\.15\.0/);
-  assert.equal(createWorkspace({ id: WORKSPACE_ID, name: 'Buildr', description: 'Description', runtime: { node: { version: '24.99.0' } } }).runtime.node.version, '24.99.0');
-  assert.throws(() => createWorkspace({ id: WORKSPACE_ID, name: 'Buildr', description: 'Description', runtime: { node: { version: '25.0.0' } } }), /<25/);
+  assert.throws(() => createWorkspace({ id: 'workspace', name: 'Buildr', description: 'Description' }), /must be a UUID/);
+  assert.throws(() => createWorkspace({ id: WORKSPACE_ID, name: '', description: 'Description' }), /name must be a non-empty string/);
 });
 
 test('Workspace identity 复用已有 UUID、按需生成并拒绝冲突', () => {

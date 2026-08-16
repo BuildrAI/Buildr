@@ -48,7 +48,7 @@ test('full retained Application在Execution Record gate后写同一run并只给c
   git(root, ['worktree', 'add', '-b', 'codex/bootstrap-application', environmentRoot, 'dev']);
   write(path.join(environmentRoot, provider), `
 export function createTaskFinishProductHandlers({ runtime }) {
-  if (Object.keys(runtime).length !== 7) throw new Error('runtime facade is not closed');
+  if (Object.keys(runtime).length !== 6) throw new Error('runtime facade is not closed');
   if ('readTaskFinishRunPersistence' in runtime) throw new Error('canonical repository leaked to candidate provider');
   return {
     preflight: async () => ({ status: 'passed' }),
@@ -80,13 +80,12 @@ export function createTaskFinishProductHandlers({ runtime }) {
     resolveTaskEnvironmentCleanupContext() {},
     resolveTaskEnvironmentExecution() {},
     runTaskFinishCarrierCompatibility() {},
-    workspaceNodeExecution() {},
   });
 
   const identity = {
     task, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 4,
     contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin',
-    environmentRoot, workspaceRoot: root, workspaceNodeIdentity: 'sha256-node',
+    environmentRoot, workspaceRoot: root,
   };
   const run = createFinishRun({ root, identity, runId: 'bootstrap-application-20260814000000-deadbeef', runtime });
   const injected = providerFailure();
@@ -137,7 +136,7 @@ test('Execution Record拒绝时不创建bootstrap capsule', async (t) => {
   const identity = {
     task, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1,
     contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin',
-    environmentRoot: path.join(root, '.worktrees', task), workspaceRoot: root, workspaceNodeIdentity: 'sha256-node',
+    environmentRoot: path.join(root, '.worktrees', task), workspaceRoot: root,
   };
   const run = createFinishRun({ root, identity, runId: 'bootstrap-record-gate-20260814000000-deadbeef', runtime });
   const injected = providerFailure();
@@ -170,7 +169,7 @@ test('cleanup已passed后先撤销capsule authority；terminal写入失败仍以
   const identity = {
     task, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1,
     contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin',
-    environmentRoot: path.join(root, '.worktrees', task), workspaceRoot: root, workspaceNodeIdentity: 'sha256-node',
+    environmentRoot: path.join(root, '.worktrees', task), workspaceRoot: root,
   };
   const run = createFinishRun({ root, identity, runId: 'bootstrap-terminal-resume-20260814000000-deadbeef', runtime });
   for (const phase of run.phases) {

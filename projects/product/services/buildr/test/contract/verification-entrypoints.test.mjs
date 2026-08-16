@@ -43,7 +43,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
 
   const fast = read('scripts/verify-buildr-product-fast');
-  assert.match(fast, /run-workspace-node\.mjs" test\/verification\/profile\.mjs fast/);
+  assert.match(fast, /run-development-node" test\/verification\/profile\.mjs fast/);
   const fastIds = createVerificationPlan({ profiles: ['fast'] }).steps.map((step) => step.id);
   assert.deepEqual(fastIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.equal(fastIds.includes('system'), false);
@@ -63,17 +63,17 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   const fastPlan = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
   assert.deepEqual(fast.proves, ['低成本 Unit、Component 与 Static Conformance 通过']);
-  assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
+  assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
   assert.equal(delivery.requiredForDelivery, true);
   assert.deepEqual(delivery.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(delivery.applicability.paths, ['**']);
-  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
+  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
   assert.equal(fullRegression.requiredForDelivery, false);
   assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
   assert.equal(declaration.capabilities.some((capability) => ['product.task-affected', 'product.candidate'].includes(capability.id)), false);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
-  assert.deepEqual(browser.invocation, { kind: 'command', argv: ['npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
+  assert.deepEqual(browser.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
   assert.equal(browser.requiredForDelivery, true);
   assert.deepEqual(browser.applicability.paths, [
     'services/buildr-web/**',
@@ -102,7 +102,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.ok(browserDelegation);
   for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
-  assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
+  assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
   assert.equal(releaseSet.requiredForDelivery, false);
   assert.ok(releaseSet.applicability.paths.includes('.github/workflows/publish.yml'));
   assert.equal(releaseSet.applicability.paths.some((value) => value === '.github/**' || value === '.github/workflows/**'), false);
@@ -165,8 +165,8 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.equal((changed.match(/await executePlan\(/g) ?? []).length, 1);
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
-  assert.match(candidate, /process\.versions\.node !== managedNodeVersion/);
-  assert.match(candidate, /Candidate verification must run through the managed Workspace Node runtime/);
+  assert.match(candidate, /process\.versions\.node !== developmentNodeVersion/);
+  assert.match(candidate, /Buildr Product development Node mismatch/);
   assert.match(candidate, /enforceOfflineVerification\(\)/);
   assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan = createVerificationPlan({ profiles: ['candidate'] });
@@ -265,16 +265,14 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.ok(verificationSteps.find((step) => step.id === 'system-fresh-build').schedulingCostMs >= 120_000);
 });
 
-test('release tarball smoke preserves the managed runtime locator and isolates npm cache writes', () => {
+test('release tarball smoke isolates npm cache writes without a Workspace runtime', () => {
   const releaseSmoke = read('test/verification/release/release-smoke.mjs');
-  assert.match(releaseSmoke, /const runtimeData = process\.env\.BUILDR_NODE_RUNTIME_DATA_DIR \|\| appData;/);
-  assert.match(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData/);
   assert.match(releaseSmoke, /npm_config_cache: npmCache/);
-  assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME_DATA_DIR: appData/);
+  assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME/);
   assert.match(releaseSmoke, /\['install', '--offline', '--global'/);
 });
 
-test('Host Node compatibility runs offline and reuses the active Windows distribution', () => {
+test('Host Node compatibility runs offline without a Workspace Node distribution', () => {
   const packageManifest = JSON.parse(read('package.json'));
   const hostNode = read('test/verification/host-node.mjs');
   const cliSmoke = read('test/verification/host-node/cli-smoke.mjs');
@@ -286,7 +284,7 @@ test('Host Node compatibility runs offline and reuses the active Windows distrib
   assert.match(policy, /npm_config_offline = 'true'/);
   assert.match(policy, /BUILDR_VERIFICATION_NETWORK_MODE/);
   assert.match(cliSmoke, /\['install', '--offline', '--global'/);
-  assert.match(cliSmoke, /BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource/);
+  assert.doesNotMatch(cliSmoke, /BUILDR_NODE_RUNTIME|workspaceNode/);
   assert.match(cliSmoke, /\[buildrScript, 'web', '--no-open', '--port', '0'\]/);
   assert.match(cliSmoke, /\/api\/v1\/health/);
   assert.match(cliSmoke, /ordinary CLI must not start HTTP/);

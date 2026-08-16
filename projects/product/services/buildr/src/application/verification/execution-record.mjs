@@ -8,7 +8,7 @@ export const VERIFICATION_EXECUTION_RECORD_PRODUCER = 'buildr.verification-comma
 const PUBLIC_STATUSES = new Set(['not-applicable', 'not-opened', 'active', 'retained', 'blocked', 'attention']);
 const MAPPER_FIELDS = new Set([
   'runId', 'executionIdentity', 'invocationIdentity', 'context', 'targetRoot', 'targetIdentity', 'targetStable', 'targetDrift', 'before', 'after',
-  'projectCode', 'declarationPath', 'declarationIdentity', 'workspaceNode', 'selectedCapabilities', 'authorizedCapabilities',
+  'projectCode', 'declarationPath', 'declarationIdentity', 'selectedCapabilities', 'authorizedCapabilities',
   'authorizedResources', 'checks', 'outcome', 'durationMs', 'startedAt', 'finishedAt', 'diagnostic',
 ]);
 
@@ -127,10 +127,6 @@ export function createVerificationExecutionRecordFiles(input) {
     },
     project: { code: input.projectCode },
     declaration: { path: declarationPath, identity: input.declarationIdentity },
-    workspaceNode: {
-      identity: input.workspaceNode?.identity || null,
-      actualVersion: input.workspaceNode?.actualVersion || null,
-    },
     selectedCapabilities: (input.selectedCapabilities || []).map((capability) => ({
       id: capability.id,
       scope: capability.scope,

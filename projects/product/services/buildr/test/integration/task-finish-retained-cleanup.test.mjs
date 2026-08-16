@@ -71,7 +71,6 @@ function readyRun(t) {
       remote: 'origin',
       environmentRoot: path.join(root, '.worktrees', 'finish-task'),
       workspaceRoot: root,
-      workspaceNodeIdentity: 'sha256-workspace-node',
     },
     runtime,
   });
@@ -267,7 +266,6 @@ async function realZeroDeltaCleanupRun(t) {
       remote: 'origin',
       environmentRoot: root,
       workspaceRoot: root,
-      workspaceNodeIdentity: 'sha256-workspace-node',
     },
     runtime,
   });

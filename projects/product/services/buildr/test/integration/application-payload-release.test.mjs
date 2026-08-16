@@ -255,7 +255,6 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
       ...process.env,
       PATH: process.platform === 'win32' ? process.env.SystemRoot : '/usr/bin:/bin',
       BUILDR_APP_DATA_DIR: appData,
-      BUILDR_NODE_RUNTIME_DATA_DIR: path.join(root, 'workspace-runtimes'),
     };
     const run = (args) => spawnSync(process.execPath, [cli, ...args], { cwd: root, env: runtimeEnv, encoding: 'utf8' });
     const help = run(['--help']);

@@ -163,7 +163,7 @@ export function AppLayout() {
 
   const handReleaseUpdateToAgent = (track: ReleaseTrack) => {
     const command = releaseCommand(track);
-    const prompt = `用户已选择把本机 Buildr 更新到${track.label} ${track.version}。请先读取 buildr update check --json 确认当前双轨道结果，再运行 ${command}；不要切换到其他轨道，不要降级，也不要修改 Workspace、Workspace Node 或 Agent runtime。完成后说明本机 Buildr 的实际版本。`;
+    const prompt = `用户已选择把本机 Buildr 更新到${track.label} ${track.version}。请先读取 buildr update check --json 确认当前双轨道结果，再运行 ${command}；不要切换到其他轨道，不要降级，也不要修改 Workspace 数据或 Agent runtime。完成后说明本机 Buildr 的实际版本。`;
     openAgentAction('release-update', { prompt, track: track.track, command, version: track.version });
   };
 
