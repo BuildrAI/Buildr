@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+## 0.1.0-rc.16 - 2026-08-16
+
+- 将 Product checkout 的 development Node 固定为 `24.15.0`，并把 development CLI、npm wrapper、验证、Task Environment 与 self-bootstrap 统一绑定到该 retained Node；npm package 继续只声明兼容的 Host Node 范围。
+- 移除 Workspace Node 的通用依赖与旧运行时探测，收敛 workspace、Doctor、Task Finish、Verification、发布包和 Buildr Web 对新 Node ownership 边界的实现与契约。
+- 更新跨平台 Candidate 与发布相关验证，确保 development entry、npm 安装、Task Environment、发布 payload 和 Windows/macOS smoke 使用一致的 Node 与入口身份。
+
 ## 0.1.0-rc.15 - 2026-08-16
 
 - 将正式发布收敛为一次 `publish.yml` transaction：可逆的 contract、唯一 tarball、Host Node 与 Launcher 门禁通过后，只请求一次 `npm-production` 审批，并在同一个 protected job 中完成 OIDC authority probe、pre-tag convergence、tag ensure、npm publish、dist-tag/integrity 回读、GitHub Release 与官方 Registry 安装 smoke。
