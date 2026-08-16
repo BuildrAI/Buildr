@@ -740,17 +740,17 @@ Release smoke MUST 从唯一冻结 npm tarball 安装 Buildr，并 MUST 验证 C
 - **AND** npm package 与 Workspace/user data MUST 保持不变
 
 ### Requirement: 正式发布必须围绕一个不可变 npm tarball 收敛
-Buildr 正式发布 MUST 只执行一次 `npm pack`，并 MUST 让 inventory、Host Node smoke、Launcher lifecycle、protected publish、Registry integrity readback 与安装后 smoke 使用同一 tarball bytes。任何需要重新 pack 的路径 MUST 停止并重新开始尚未产生公开事实的候选。
+Buildr 正式发布 MUST 只执行一次 `npm pack`，并 MUST 让 inventory、Host Node smoke、Launcher lifecycle、protected release transaction、Registry integrity readback 与安装后 smoke 使用同一 tarball bytes。任何需要重新 pack 的路径 MUST 停止并重新开始尚未产生公开事实的候选。
 
 #### Scenario: 构建与验证单一 tarball
-- **WHEN** tag workflow 进入可逆候选阶段
-- **THEN** workflow MUST 冻结 tarball filename、size、SHA-256、SHA-512 integrity、payload digest 与 source commit
-- **AND** 全部后续检查 MUST 逐字节核对该 identity
+- **WHEN** 显式dispatch workflow进入可逆候选阶段
+- **THEN** workflow MUST冻结tarball filename、size、SHA-256、SHA-512 integrity、payload digest与source commit
+- **AND** 全部后续检查与唯一protected transaction MUST逐字节核对该identity
 
 #### Scenario: publish 与 readback
-- **WHEN** 可逆门禁全部通过且 protected npm publish 获得授权
-- **THEN** workflow MUST 发布冻结 tarball并从 Registry 核对相同 integrity 后安装 smoke
-- **AND** MUST NOT 上传 GitHub Release binary Asset 或使用 Actions artifact 作为公共下载
+- **WHEN** 可逆门禁全部通过且protected release transaction获得授权
+- **THEN** workflow MUST在同一job完成authority/pre-tag/tag门禁后发布冻结tarball，并从Registry核对相同integrity后安装smoke
+- **AND** MUST NOT上传GitHub Release binary Asset或使用Actions artifact作为公共下载
 
 ### Requirement: npm 正式发布恢复必须保留已完成的不可逆事实
 发布恢复 MUST 以 tag/commit、npm package/version/integrity 和冻结 tarball identity 为 authority。npm version 缺失时只补齐 publish；完全相同时复用；漂移时停止。恢复 MUST NOT 重建 tarball、删除 tag、unpublish、改用本地 publish 或创建平台 Assets。
@@ -821,9 +821,9 @@ CI Candidate MUST 先运行已登记的低成本确定性 preflight，并 MUST �
 - **AND** consumer MUST NOT重新执行`npm pack`
 
 #### Scenario: 正式发布开始
-- **WHEN** 最终`main`commit形成正式tag workflow
-- **THEN** tag workflow MUST 从最终 commit重新构建一次唯一正式 tarball并继续既有发布 integrity gate
-- **AND** pre-main PR artifact MUST NOT被复用或声明为最终 npm bytes
+- **WHEN** 最终`main`commit通过显式dispatch进入正式release workflow
+- **THEN** release workflow MUST从该commit重新构建一次唯一正式tarball并继续既有发布integrity gate
+- **AND** pre-main PR artifact MUST NOT被复用或声明为最终npm bytes
 
 ### Requirement: Candidate shard evidence 必须可独立重跑且可聚合
 每个 Candidate shard和Host Node tuple MUST写出closed机器可读 evidence；稳定 aggregate gate MUST只在全部预期 evidence current、identity一致、覆盖完整且required results passed时通过。
@@ -879,7 +879,7 @@ Release smoke、fresh build和其他高成本lifecycle verifier MUST记录阶段
 - **AND** 每个阶段的性能预算 MUST保持非阻断
 
 ### Requirement: 开发反馈、候选门禁与发布验证必须分离
-Buildr release workflow MUST区分PR到`dev`的changed/affected反馈、`dev → main`的分布式完整Candidate与tag workflow的正式发布物验证；Formal Finish或self-bootstrap successor直接推送`dev` MUST NOT自动启动GitHub Product verification，普通发布准备 MUST NOT无条件在本机和GitHub重复完整Candidate。
+Buildr release workflow MUST区分PR到`dev`的changed/affected反馈、`dev → main`的分布式完整Candidate与显式dispatch release workflow的正式发布物验证；Formal Finish或self-bootstrap successor直接推送`dev` MUST NOT自动启动GitHub Product verification，普通发布准备 MUST NOT无条件在本机和GitHub重复完整Candidate。
 
 #### Scenario: PR向Dev提交开发修改
 - **WHEN** 外部贡献、普通feature branch或需要hosted跨平台反馈的修改通过PR进入`dev`
@@ -898,24 +898,29 @@ Buildr release workflow MUST区分PR到`dev`的changed/affected反馈、`dev →
 - **AND** 本地默认验证 MUST使用changed/focus/affected结果
 - **AND** 只有验证框架自身变化、故障诊断或GitHub不可用等明确场景才要求额外本地完整Candidate
 
+#### Scenario: 正式发布
+- **WHEN** maintainer对已准备的current `main`候选明确授权发布
+- **THEN** 本机 MUST只dispatch一次正式release workflow并跟踪同一run
+- **AND** workflow MUST在审批前完成正式tarball可逆验证，并只让唯一protected transaction执行tag与npm/GitHub mutation
+
 #### Scenario: 迁移分支保护
 - **WHEN** 新aggregate check尚未在实际PR head SHA上通过并完成回读
 - **THEN** 旧required contexts MUST继续保留
 - **AND** 新gate稳定后才可切换required contexts并删除旧名称
 
 ### Requirement: Tag publish Host Node 验证必须在隔离 runner 中准备自身依赖
-Buildr tag publish workflow 的每个 Host Node job MUST 在独立 runner 上依据当前 package lockfile 准备 checkout verification harness 所需依赖，再执行同一冻结正式 tarball 的 Host Node、CLI、Web 与 Workspace runtime role 验证。每个 job MUST 显式提供同一 candidate artifact 中的 tarball、`npm-pack` metadata 与 release artifact manifest，并由 verifier 在安装后 identity 验证前核对三者绑定的 filename、version、application payload digest 与 immutable bytes。Job MUST NOT 假设其他 job 的工作目录、`node_modules` 或进程状态可见，且依赖准备与输入绑定 MUST NOT 重建、修改或替换被冻结的 tarball。
+Buildr正式release workflow的每个Host Node job MUST在独立runner上依据current package lockfile准备checkout verification harness所需依赖，再执行同一冻结正式tarball的Host Node、CLI、Web与Workspace runtime role验证。每个job MUST显式提供同一candidate artifact中的tarball、`npm-pack` metadata与release artifact manifest，并由verifier在安装后identity验证前核对三者绑定的filename、version、application payload digest与immutable bytes。Job MUST NOT假设其他job的工作目录、`node_modules`或进程状态可见，且依赖准备与输入绑定 MUST NOT重建、修改或替换被冻结的tarball。
 
 #### Scenario: 独立 Host Node runner 验证正式 tarball
-- **WHEN** tag workflow 为最低支持 Node 与当前 Node 24 分别启动 Host Node job
-- **THEN** 每个 job MUST checkout 相同 tag source、设置目标 Node、依据 lockfile 独立安装 verification harness 依赖并下载同一 candidate artifact
-- **AND** 每个 job MUST 在依赖准备完成后向 Host Node verifier 显式传入 candidate tarball、pack metadata 与 release artifact manifest
-- **AND** 两个 job MUST 验证同一 tarball filename、manifest、application payload digest 与 immutable bytes
+- **WHEN** 显式dispatch release workflow为最低支持Node与current Node 24分别启动Host Node job
+- **THEN** 每个job MUST checkout相同source commit、设置目标Node、依据lockfile独立安装verification harness依赖并下载同一candidate artifact
+- **AND** 每个job MUST在依赖准备完成后向Host Node verifier显式传入candidate tarball、pack metadata与release artifact manifest
+- **AND** 两个job MUST验证同一tarball filename、manifest、application payload digest与immutable bytes
 
 #### Scenario: 前序 candidate job 已安装依赖
-- **WHEN** candidate producer job 已在自己的 runner 中执行依赖安装并冻结 tarball
-- **THEN** 后续 Host Node job MUST NOT 把该 runner 的 `node_modules` 或工作目录视为可用输入
-- **AND** workflow contract MUST 在 Host Node job 缺失本地依赖准备、依赖准备位于 verifier 之后、缺失 release artifact manifest 输入或该输入未指向下载的冻结 candidate artifact 时失败
+- **WHEN** candidate producer job已在自己的runner中执行依赖安装并冻结tarball
+- **THEN** 后续Host Node job MUST NOT把该runner的`node_modules`或工作目录视为可用输入
+- **AND** workflow contract MUST在Host Node job缺失本地依赖准备、依赖准备位于verifier之后、缺失release artifact manifest输入或该输入未指向下载的冻结candidate artifact时失败
 
 ### Requirement: 测试选择必须对空执行集合失败关闭
 Buildr Product MUST 在 registry `node-test` 或受管测试 glob 启动 Node test runner 前解析实际测试文件集合，并 MUST 在集合为空、路径不存在或 selector 只命中非文件时以非零状态失败；Candidate evidence MUST NOT 把零测试执行记录为 passed。

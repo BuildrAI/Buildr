@@ -1,19 +1,28 @@
 name: Publish Buildr
 
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Authority probe {0}', inputs.probe_id) || format('Publish {0}', github.ref_name) }}
+run-name: Release ${{ inputs.version }} (${{ inputs.release_id }})
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
-      probe_id:
-        description: Unique caller identity for this authority probe
+      release_id:
+        description: Unique caller identity for this release transaction
+        required: true
+        type: string
+      version:
+        description: Package version without the v prefix
         required: true
         type: string
       source_commit:
-        description: Full origin/main commit to prove
+        description: Full current origin/main commit to release
+        required: true
+        type: string
+      candidate_base:
+        description: Immutable release candidate base commit
+        required: true
+        type: string
+      candidate_tree:
+        description: Verified release candidate tree identity
         required: true
         type: string
       workflow_sha256:
@@ -26,15 +35,14 @@ permissions:
   actions: read
 
 jobs:
-  authority-probe:
-    if: github.event_name == 'workflow_dispatch'
+  contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: npm-production
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.contract.outputs.version }}
+      npm_tag: ${{ steps.contract.outputs.npm_tag }}
+      prerelease: ${{ steps.contract.outputs.prerelease }}
+      artifact: contract-v${{ inputs.version }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -42,39 +50,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_commit }}
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24.15.0"
-          package-manager-cache: false
-      - name: Exchange the hosted publishing identity without retaining credentials
-        run: >-
-          node scripts/release/release-authority-oidc-probe.mjs
-          --source-commit "${{ inputs.source_commit }}"
-          --workflow-sha256 "${{ inputs.workflow_sha256 }}"
-          --output "${RUNNER_TEMP}/authority-probe/release-authority-probe.json"
-      - name: Upload credential-free authority evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-authority-probe-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/authority-probe/release-authority-probe.json
-          if-no-files-found: error
-          retention-days: 1
-
-  contract:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      version: ${{ steps.contract.outputs.version }}
-      npm_tag: ${{ steps.contract.outputs.npm_tag }}
-      prerelease: ${{ steps.contract.outputs.prerelease }}
-      artifact: contract-${{ github.ref_name }}-${{ github.run_attempt }}
-    defaults:
-      run:
-        working-directory: projects/product/services/buildr
-    steps:
-      - uses: actions/checkout@v7
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
@@ -82,9 +58,14 @@ jobs:
       - name: Resolve the npm-only release contract
         id: contract
         run: >-
-          node scripts/release/release-contract.mjs "${GITHUB_REF_NAME}"
-          --source-commit "${GITHUB_SHA}"
+          node scripts/release/release-contract.mjs "v${{ inputs.version }}"
+          --source-commit "${{ inputs.source_commit }}"
           --output "${RUNNER_TEMP}/contract/release-contract.json"
+      - name: Confirm the frozen dispatch identity
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ inputs.source_commit }}"
+          test "$(git rev-parse HEAD^{tree})" = "${{ inputs.candidate_tree }}"
+          test "${{ steps.contract.outputs.version }}" = "${{ inputs.version }}"
       - name: Freeze release notes
         run: >-
           node scripts/release/release-notes.mjs
@@ -93,23 +74,24 @@ jobs:
           > "${RUNNER_TEMP}/contract/release-notes.md"
       - uses: actions/upload-artifact@v7
         with:
-          name: contract-${{ github.ref_name }}-${{ github.run_attempt }}
+          name: contract-v${{ inputs.version }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/contract
           if-no-files-found: error
           retention-days: 14
 
   candidate:
-    if: github.event_name == 'push'
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 40
     outputs:
-      artifact: npm-candidate-${{ github.ref_name }}
+      artifact: npm-candidate-v${{ inputs.version }}
     defaults:
       run:
         working-directory: projects/product/services/buildr
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_commit }}
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
@@ -124,7 +106,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
-          name: npm-candidate-${{ github.ref_name }}
+          name: npm-candidate-v${{ inputs.version }}
           path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
           run-id: ${{ github.run_id }}
@@ -156,7 +138,7 @@ jobs:
         run: >-
           node scripts/release/application-payload.mjs build
           --output "${RUNNER_TEMP}/candidate/application-payload"
-          --source-commit "${GITHUB_SHA}"
+          --source-commit "${{ inputs.source_commit }}"
       - name: Pack the npm tarball exactly once
         if: steps.state.outputs.restored != 'true'
         id: artifact
@@ -179,13 +161,12 @@ jobs:
         if: steps.state.outputs.restored != 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: npm-candidate-${{ github.ref_name }}
+          name: npm-candidate-v${{ inputs.version }}
           path: ${{ runner.temp }}/candidate
           if-no-files-found: error
           retention-days: 14
 
   host-node:
-    if: github.event_name == 'push'
     needs: [contract, candidate]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -198,6 +179,8 @@ jobs:
         working-directory: projects/product/services/buildr
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_commit }}
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
@@ -216,7 +199,6 @@ jobs:
           node test/verification/host-node.mjs
 
   launcher:
-    if: github.event_name == 'push'
     needs: [contract, candidate]
     timeout-minutes: 35
     strategy:
@@ -231,6 +213,8 @@ jobs:
         working-directory: projects/product/services/buildr
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_commit }}
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
@@ -244,8 +228,7 @@ jobs:
           BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ runner.temp }}/candidate/npm/release-artifact.json
         run: node test/verification/release/release-smoke.mjs
 
-  publish:
-    if: github.event_name == 'push'
+  release:
     needs: [contract, candidate, host-node, launcher]
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -259,6 +242,9 @@ jobs:
         working-directory: projects/product/services/buildr
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
@@ -282,16 +268,30 @@ jobs:
             import { readReleaseArtifact } from "./scripts/release/release-artifact.mjs";
             const contract = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
             const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+            if (payload.sourceCommit !== "${{ inputs.source_commit }}") throw new Error("payload source does not match dispatch source");
             readReleaseArtifact(process.argv[3], { packageName: contract.packageName, version: contract.version, applicationPayloadDigest: payload.applicationPayloadDigest });
           ' "${RUNNER_TEMP}/contract/release-contract.json" "${RUNNER_TEMP}/candidate/application-payload/application-payload.json" "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
-      - name: Preflight GitHub Release metadata without assets or mutation
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: Prove current hosted publishing authority without retaining credentials
         run: >-
-          node scripts/release/github-release-ensure.mjs preflight
-          "${GITHUB_REF_NAME}"
-          "${RUNNER_TEMP}/contract/release-notes.md"
-          "${{ needs.contract.outputs.prerelease }}"
+          node scripts/release/release-authority-oidc-probe.mjs
+          --source-commit "${{ inputs.source_commit }}"
+          --workflow-sha256 "${{ inputs.workflow_sha256 }}"
+          --output "${RUNNER_TEMP}/contract/release-authority.json"
+      - name: Recheck final source and authority convergence before tag mutation
+        run: >-
+          node scripts/release/release-convergence.mjs
+          --repo ../../../..
+          --version "${{ inputs.version }}"
+          --candidate-base "${{ inputs.candidate_base }}"
+          --candidate-tree "${{ inputs.candidate_tree }}"
+          --stage pre-tag
+          --authority-evidence "${RUNNER_TEMP}/contract/release-authority.json"
+      - name: Preflight immutable release tag
+        run: >-
+          node scripts/release/release-tag-ensure.mjs preflight
+          "v${{ inputs.version }}"
+          "${{ inputs.source_commit }}"
+          --repo ../../../..
       - name: Snapshot official Registry artifact and both dist-tags
         id: registry_before
         run: >-
@@ -299,6 +299,20 @@ jobs:
           "${{ needs.contract.outputs.version }}"
           --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
           --snapshot-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
+      - name: Create or reuse the immutable release tag
+        run: >-
+          node scripts/release/release-tag-ensure.mjs ensure
+          "v${{ inputs.version }}"
+          "${{ inputs.source_commit }}"
+          --repo ../../../..
+      - name: Preflight GitHub Release metadata without assets or mutation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/release/github-release-ensure.mjs preflight
+          "v${{ inputs.version }}"
+          "${RUNNER_TEMP}/contract/release-notes.md"
+          "${{ needs.contract.outputs.prerelease }}"
       - name: Publish the frozen npm tarball
         if: steps.registry_before.outputs.published != 'true'
         run: >-
@@ -320,7 +334,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
           node scripts/release/github-release-ensure.mjs ensure
-          "${GITHUB_REF_NAME}"
+          "v${{ inputs.version }}"
           "${RUNNER_TEMP}/contract/release-notes.md"
           "${{ needs.contract.outputs.prerelease }}"
       - name: Smoke exact package from the official Registry
@@ -331,7 +345,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: release-evidence-${{ github.ref_name }}-${{ github.run_attempt }}
+          name: release-evidence-v${{ inputs.version }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/contract
             ${{ runner.temp }}/candidate/npm/release-artifact.json

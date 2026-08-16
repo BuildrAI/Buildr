@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+## 0.1.0-rc.15 - 2026-08-16
+
+- 将正式发布收敛为一次 `publish.yml` transaction：可逆的 contract、唯一 tarball、Host Node 与 Launcher 门禁通过后，只请求一次 `npm-production` 审批，并在同一个 protected job 中完成 OIDC authority probe、pre-tag convergence、tag ensure、npm publish、dist-tag/integrity 回读、GitHub Release 与官方 Registry 安装 smoke。
+- 调整发布候选收敛顺序：Release Task Finish 后先运行唯一 self-bootstrap activation，再冻结 `origin/dev` commit/tree；pre-main、`dev → main` Candidate 与历史衔接共同消费该 tree，bridge 必须校验 matching Finish run 和临时 activation evidence，避免先衔接历史再补做自举激活。
+- 加固发布恢复与验证契约：tag 改为 protected transaction 内的 `preflight|ensure` 语义，发布 runner 只 dispatch 一次正式 transaction；同步更新 authority、convergence、history bridge 与 Candidate affected owner 的契约测试。
+
 ## 0.1.0-rc.14 - 2026-08-16
 
 - 修复发布契约在干净 GitHub runner 安装依赖前的冷启动：版本解析迁入无外部依赖的 Domain 模块，避免 `yaml` 尚未安装时在任何公开写入前确定性失败。

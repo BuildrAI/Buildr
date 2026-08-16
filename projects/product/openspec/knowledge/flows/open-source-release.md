@@ -1,6 +1,6 @@
 # Buildr npm 发布流程
 
-本文描述已经实现的发布能力边界；创建tag、`npm publish`、GitHub Release mutation或推送仍需独立发布授权。
+本文描述已经实现的发布能力边界；正式release transaction及其中的tag、`npm publish`和GitHub Release mutation仍需独立发布授权。
 
 ## 唯一事实链
 
@@ -9,8 +9,8 @@
 3. workflow只执行一次`npm pack`，冻结tarball filename、size、SHA-256、SHA-512 integrity、inventory与release artifact manifest；每个Host Node runner显式消费同一artifact中的tarball、`npm-pack` metadata和manifest，Launcher、publish和Registry readback继续复用该bytes。跨attempt恢复只接受与contract/payload完全一致的冻结candidate。
 4. `dev → main`的源码候选由分布式`Candidate gate`证明：单个bootstrap复用setup并先形成preflight evidence，唯一PR tarball绑定精确source SHA；macOS core、Windows runtime、相互隔离的Workspace lifecycle与Task workflow、fresh build和四个Host Node tuple并行，只有真实consumer下载tarball，aggregate无需安装项目依赖且只接受current closed evidence。普通发布准备默认复用changed/affected反馈，不在本机重复完整Candidate；验证系统自身变化或诊断时才额外运行本地完整入口。
 5. 在任何公开写入前，候选必须通过完整CLI、普通CLI不启动HTTP、`buildr web --no-open`与health/readiness、Host Node/Workspace Node角色分离，以及macOS/Windows本机Launcher lifecycle验证。
-6. `dev → main`合入并完成`main → dev`历史衔接后，准备阶段只运行`post-main` source convergence，验证version、tree、ancestry、branch protection与远端竞争，不dispatch hosted authority probe，也不请求`npm-production`审批。只有维护者明确授权正式发布后，本机runner才紧邻tag创建针对当前`origin/main`与workflow digest dispatch同一`publish.yml`的唯一手动authority probe。Probe在`npm-production`Environment中以GitHub OIDC身份对目标package完成token exchange，但不创建tag、不pack/publish，且不保留任何token；本机preflight通过GitHub current API复核唯一run与credential-free artifact。只有绑定commit、workflow bytes、package和run，且在15分钟内消费的v2 `ready` evidence能进入`pre-tag` convergence；exchange拒绝、过期、unavailable或drift都停止，不用本机npm session、`npm trust list`、历史provenance或checklist代替。
-7. 可逆门禁通过后才允许进入`npm-production`Environment。目标version缺失时发布冻结tarball；已存在时只接受相同integrity。发布前后都读取`latest`与`next`：RC只推进`next`，GA只推进`latest`，目标tag必须匹配版本类型且非目标tag不得变化；历史`latest`错误指向RC时，GA发布允许把它纠正为正式版。OIDC authority相关失败保留原始npm错误和tag，按expected tuple修复current控制面后只rerun hosted workflow。随后有界确认version、两个dist-tag与integrity，并从Registry安装精确版本重新smoke。
+6. `dev → main`合入并完成`main → dev`历史衔接后，准备阶段只运行`post-main`source convergence，验证version、tree、ancestry、branch protection与远端竞争，不dispatch正式release transaction，也不请求`npm-production`审批。只有维护者明确授权正式发布后，本机`release-transaction-runner.mjs`才针对current`origin/main`、version、candidate base/tree与workflow digest dispatch一次`publish.yml`并跟踪同一run；本机不创建或push tag。Workflow先用read-only jobs完成contract、一次payload/`npm pack`、Host Node和Launcher可逆验证。
+7. 可逆门禁通过后，唯一`release` job请求一次`npm-production`审批；同一approved execution以GitHub OIDC身份完成credential-free token exchange proof，立即消费为final`pre-tag`convergence，再以ensure语义创建或复用只指向同一source的tag，发布同一tarball并回读Registry/GitHub Release。其他job不持有Environment或write权限。目标version已存在时只接受相同integrity；RC只推进`next`，GA只推进`latest`，非目标tag不得变化。失败保留已有tag/npm/Release事实，新的protected attempt重新证明current authority且可能再次审批，不回退本机publish或弱化Environment protection。
 
 ## 本机 Launcher 边界
 

@@ -26,23 +26,30 @@ const now = '2026-08-13T00:05:00.000Z';
 const created = '2026-08-13T00:04:00.000Z';
 const expires = '2026-08-13T01:04:00.000Z';
 const workflow = `on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release_id: { required: true, type: string }
+      version: { required: true, type: string }
+      source_commit: { required: true, type: string }
+      candidate_base: { required: true, type: string }
+      candidate_tree: { required: true, type: string }
+      workflow_sha256: { required: true, type: string }
 jobs:
-  authority-probe:
-    if: github.event_name == 'workflow_dispatch'
+  contract: { runs-on: ubuntu-latest }
+  candidate: { runs-on: ubuntu-latest }
+  host-node: { runs-on: ubuntu-latest }
+  launcher: { runs-on: ubuntu-latest }
+  release:
+    needs: [contract, candidate, host-node, launcher]
     environment: npm-production
     permissions:
+      contents: write
       id-token: write
     steps:
       - run: node scripts/release/release-authority-oidc-probe.mjs --source-commit fixture
-  publish:
-    if: github.event_name == 'push'
-    environment: npm-production
-    permissions:
-      id-token: write
-    steps:
+      - run: node scripts/release/release-convergence.mjs --stage pre-tag
+      - run: node scripts/release/release-tag-ensure.mjs preflight v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      - run: node scripts/release/release-tag-ensure.mjs ensure v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       - run: node scripts/release/trusted-publish.mjs candidate.tgz --access public
 `;
 
@@ -76,21 +83,6 @@ function probeEvidence(overrides = {}) {
   };
 }
 
-function githubRun(overrides = {}) {
-  return {
-    id: runId,
-    run_attempt: runAttempt,
-    repository: { full_name: 'BuildrAI/Buildr' },
-    event: 'workflow_dispatch',
-    head_sha: commit,
-    status: 'completed',
-    conclusion: 'success',
-    path: '.github/workflows/publish.yml',
-    html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}`,
-    ...overrides,
-  };
-}
-
 function successfulExecutor(overrides = new Map()) {
   return (command, args) => {
     const key = [command, ...args].join(' ');
@@ -101,42 +93,60 @@ function successfulExecutor(overrides = new Map()) {
     if (key === `git show ${commit}:.github/workflows/publish.yml`) return { status: 0, stdout: workflow };
     if (key === 'gh repo view --json nameWithOwner') return { status: 0, stdout: JSON.stringify({ nameWithOwner: 'BuildrAI/Buildr' }) };
     if (key === 'gh api repos/BuildrAI/Buildr/environments/npm-production') return { status: 0, stdout: JSON.stringify({ name: 'npm-production' }) };
-    if (key === `gh api repos/BuildrAI/Buildr/actions/runs/${runId}`) return { status: 0, stdout: JSON.stringify(githubRun()) };
-    if (key === `gh api repos/BuildrAI/Buildr/actions/runs/${runId}/artifacts`) return { status: 0, stdout: JSON.stringify({ artifacts: [{ name: releaseAuthorityProbeArtifactName(runId, runAttempt), expired: false }] }) };
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
 }
 
-test('workflow authority isolates hosted probe from tag publish', () => {
-  assert.deepEqual(inspectWorkflowAuthority(workflow), {
-    publish: { environment: 'npm-production', idTokenPermission: 'write', condition: "github.event_name == 'push'", scriptInvocations: 1, allowedActions: ['npm publish'], wrapperInvocations: 1, rawPublishInvocations: 0 },
-    probe: { environment: 'npm-production', idTokenPermission: 'write', condition: "github.event_name == 'workflow_dispatch'", scriptInvocations: 1 },
+test('workflow authority has one dispatch entry and one protected transaction owner', () => {
+  const observed = inspectWorkflowAuthority(workflow);
+  assert.deepEqual(observed.triggers, {
+    workflowDispatch: true,
+    dispatchInputs: ['candidate_base', 'candidate_tree', 'release_id', 'source_commit', 'version', 'workflow_sha256'],
+    push: false,
+    pushTags: [],
   });
-  assert.deepEqual(inspectWorkflowAuthority(workflow.replace('trusted-publish.mjs', 'other.mjs')).publish.allowedActions, []);
-  assert.deepEqual(inspectWorkflowAuthority(workflow.replace('node scripts/release/trusted-publish.mjs candidate.tgz --access public', 'npm publish candidate.tgz')).publish.allowedActions, []);
+  assert.deepEqual(observed.environmentJobs, [{ id: 'release', environment: 'npm-production' }]);
+  assert.deepEqual(observed.privilegedJobs, []);
+  assert.deepEqual(observed.release, {
+    environment: 'npm-production',
+    idTokenPermission: 'write',
+    contentsPermission: 'write',
+    needs: ['candidate', 'contract', 'host-node', 'launcher'],
+    oidcProbeInvocations: 1,
+    preTagInvocations: 1,
+    tagPreflightInvocations: 1,
+    tagEnsureInvocations: 1,
+    trustedPublishInvocations: 1,
+    rawPublishInvocations: 0,
+  });
 });
 
-test('release authority preflight binds current GitHub run and probe artifact without npm CLI', () => {
-  const ready = runReleaseAuthorityPreflight({ repo: '/fixture', runId, probeEvidence: probeEvidence() }, { execute: successfulExecutor(), now: () => now, nowMs: () => Date.parse(now) });
+test('release authority preflight validates static topology without dispatching or exchanging credentials', () => {
+  const ready = runReleaseAuthorityPreflight({ repo: '/fixture' }, { execute: successfulExecutor(), now: () => now });
   assert.equal(ready.schemaVersion, releaseAuthorityPreflightSchema);
   assert.equal(ready.status, 'ready');
   assert.deepEqual(ready.expected, releasePublishAuthority);
   assert.equal(ready.sourceCommit, commit);
   assert.equal(ready.findings.length, 0);
   assert.equal(containsCredentialMaterial(ready), false);
-  assert.deepEqual(checkReleaseAuthorityEvidence({ evidence: ready, sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }), []);
 
-  const staleRun = runReleaseAuthorityPreflight({ repo: '/fixture', runId, probeEvidence: probeEvidence() }, {
-    execute: successfulExecutor(new Map([[`gh api repos/BuildrAI/Buildr/actions/runs/${runId}`, { status: 0, stdout: JSON.stringify(githubRun({ head_sha: 'b'.repeat(40) })) }]])),
+  const duplicateEnvironment = workflow.replace('  contract: { runs-on: ubuntu-latest }', '  contract: { runs-on: ubuntu-latest, environment: npm-production }');
+  const blocked = runReleaseAuthorityPreflight({ repo: '/fixture' }, {
+    execute: successfulExecutor(new Map([[`git show ${commit}:.github/workflows/publish.yml`, { status: 0, stdout: duplicateEnvironment }]])),
     now: () => now,
-    nowMs: () => Date.parse(now),
   });
-  assert.equal(staleRun.status, 'blocked');
-  assert.equal(staleRun.findings.some((item) => item.code === 'github_probe_run_mismatch'), true);
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.findings.some((item) => item.code === 'workflow_environment_owner_mismatch'), true);
+});
 
-  const expired = runReleaseAuthorityPreflight({ repo: '/fixture', runId, probeEvidence: probeEvidence({ observedAt: '2026-08-12T00:00:00.000Z' }) }, { execute: successfulExecutor(), now: () => now, nowMs: () => Date.parse(now) });
-  assert.equal(expired.status, 'blocked');
-  assert.equal(expired.findings.some((item) => item.code === 'probe_evidence_stale'), true);
+test('pre-tag convergence consumes credential-free evidence from the current protected job', () => {
+  assert.deepEqual(checkReleaseAuthorityEvidence({ evidence: probeEvidence(), sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }), []);
+  const wrongRun = checkReleaseAuthorityEvidence({ evidence: probeEvidence({ github: { ...probeEvidence().github, runAttempt: 0 } }), sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) });
+  assert.equal(wrongRun.some((item) => item.code === 'release_authority_github_identity_mismatch'), true);
+  const expiredEvidence = probeEvidence({ observedAt: '2026-08-12T00:00:00.000Z' });
+  assert.equal(checkReleaseAuthorityEvidence({ evidence: expiredEvidence, sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }).some((item) => item.code === 'release_authority_evidence_stale'), true);
+  const drifted = probeEvidence({ workflow: { path: '.github/workflows/publish.yml', sha256: '0'.repeat(64) } });
+  assert.equal(checkReleaseAuthorityEvidence({ evidence: drifted, sourceCommit: commit, workflowSource: workflow, nowMs: Date.parse(now) }).some((item) => item.code === 'release_authority_workflow_mismatch'), true);
 });
 
 test('credential scanner rejects token fields and JWT material', () => {
