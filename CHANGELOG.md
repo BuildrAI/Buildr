@@ -4,11 +4,12 @@
 
 ## Unreleased
 
-## 0.1.0-rc.17 - 2026-08-16
+## 0.1.0-rc.18 - 2026-08-16
 
-- 包含未公开发布的 `0.1.0-rc.16` 候选内容；将 Product checkout 的 development Node 固定为 `24.15.0`，并把 development CLI、npm wrapper、验证、Task Environment 与 self-bootstrap 统一绑定到该 retained Node；npm package 继续只声明兼容的 Host Node 范围。
+- 包含未公开发布的 `0.1.0-rc.16` 与 `0.1.0-rc.17` 候选内容；将 Product checkout 的 development Node 固定为 `24.15.0`，并把 development CLI、npm wrapper、验证、Task Environment 与 self-bootstrap 统一绑定到该 retained Node；npm package 继续只声明兼容的 Host Node 范围。
 - 移除 Workspace Node 的通用依赖与旧运行时探测，收敛 workspace、Doctor、Task Finish、Verification、发布包和 Buildr Web 对新 Node ownership 边界的实现与契约。
 - 更新跨平台 Candidate 与发布相关验证，修复干净检出和 Windows 下 development npm/build wrapper 的执行问题，确保 development entry、npm 安装、Task Environment、发布 payload 和 Windows/macOS smoke 使用一致的 Node 与入口身份。
+- 修复 `0.1.0-rc.16` squash merge 后遗漏的 `main → dev` 历史衔接；在保持候选内容不变的前提下，从已收敛的 `dev` 为 rc.18 重新建立 self-bootstrap、Candidate、history bridge 与发布 transaction 证据链。
 
 ## 0.1.0-rc.15 - 2026-08-16
 
