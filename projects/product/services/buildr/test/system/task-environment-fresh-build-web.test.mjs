@@ -55,6 +55,7 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     'resolve-development-node',
     'run-development-node',
     'run-development-npm',
+    'run-development-npm.mjs',
     'resolve-development-node.cmd',
     'run-development-node.cmd',
     'run-development-npm.cmd',
