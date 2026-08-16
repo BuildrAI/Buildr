@@ -399,7 +399,13 @@ export function registerTaskEnvironmentApplication(runtime) {
     if (step.executable.kind === 'absolute') return step.executable.path;
     const executableRoot = step.executable.kind === 'project' ? projectRoot : serviceRoot;
     if (!executableRoot) throw taskEnvironmentError('task_environment_plan_executable_scope_invalid', `${step.executable.kind} executable不适用于当前Recipe scope。`, 409, { kind: step.executable.kind });
-    const executable = path.resolve(executableRoot, step.executable.path);
+    const declaredExecutable = path.resolve(executableRoot, step.executable.path);
+    const windowsShim = process.platform === 'win32'
+      && !path.extname(declaredExecutable)
+      && fs.existsSync(`${declaredExecutable}.cmd`)
+      ? `${declaredExecutable}.cmd`
+      : null;
+    const executable = windowsShim || declaredExecutable;
     if (!inside(executableRoot, executable)) throw taskEnvironmentError('task_environment_plan_path_invalid', `Recipe executable 越出执行根：${step.executable.path}。`, 409, { executable, executableRoot });
     try {
       const real = fs.realpathSync(executable);

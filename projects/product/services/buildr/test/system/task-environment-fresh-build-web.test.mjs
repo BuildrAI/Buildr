@@ -51,9 +51,16 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   fs.copyFileSync(path.resolve(serviceRoot, '../../.node-version'), path.join(productRoot, '.node-version'));
   fs.copyFileSync(path.join(serviceRoot, 'package.json'), path.join(candidateBuildr, 'package.json'));
   fs.copyFileSync(path.join(serviceRoot, 'package-lock.json'), path.join(candidateBuildr, 'package-lock.json'));
-  for (const script of ['resolve-development-node', 'run-development-node', 'run-development-npm']) {
+  for (const script of [
+    'resolve-development-node',
+    'run-development-node',
+    'run-development-npm',
+    'resolve-development-node.cmd',
+    'run-development-node.cmd',
+    'run-development-npm.cmd',
+  ]) {
     fs.copyFileSync(path.join(serviceRoot, 'scripts', script), path.join(candidateBuildr, 'scripts', script));
-    fs.chmodSync(path.join(candidateBuildr, 'scripts', script), 0o755);
+    if (!script.endsWith('.cmd')) fs.chmodSync(path.join(candidateBuildr, 'scripts', script), 0o755);
   }
   fs.cpSync(webSourceRoot, candidateWeb, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   const workspaceId = /^id:\s*(\S+)\s*$/m.exec(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'))?.[1];
