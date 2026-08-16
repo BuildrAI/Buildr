@@ -166,11 +166,11 @@ export function ServicesPage() {
         {migrationMessage ? <Alert type="warning" showIcon message={migrationMessage} style={{ marginBottom: 16 }} /> : null}
       </div>
       <section className="list-controls">
-        <Form layout="vertical" style={{ maxWidth: 360 }}>
+        <Form layout="inline">
           <Form.Item label="所属项目">
             <Select
               id="service-project-select"
-              style={{ width: '100%' }}
+              style={{ minWidth: 240 }}
               disabled={projects.length === 0}
               loading={projects.length === 0 && !loaded}
               placeholder={projects.length === 0 ? '正在读取项目…' : undefined}

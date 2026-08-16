@@ -161,17 +161,11 @@ export function ProjectDetailPage() {
 
   return (
     <>
-      <section className="detail-page-header">
-        <Link className="back-link" to={href('/projects')}>← 返回项目目录</Link>
+      <section className="detail-title-row project-detail-header">
+        <h1 id="project-detail-name">{project.name}</h1>
+        <Button id="project-edit-button" type="primary" onClick={() => setEditOpen(true)}>编辑项目</Button>
       </section>
       <section className="panel project-basics-panel" aria-label="项目基本信息">
-        <div className="detail-title-row">
-          <div>
-            <p className="eyebrow">项目</p>
-            <h1 id="project-detail-name">{project.name}</h1>
-          </div>
-          <Button id="project-edit-button" type="primary" onClick={() => setEditOpen(true)}>编辑项目</Button>
-        </div>
         <dl className="read-facts detail-facts">
           <div>
             <dt>项目说明</dt>

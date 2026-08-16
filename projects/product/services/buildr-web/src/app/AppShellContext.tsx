@@ -14,7 +14,7 @@ export type AppShellContextValue = {
   openAgentAction: (action?: string, context?: AgentActionContext) => void;
   breadcrumbParts: string[];
   setBreadcrumbParts: (parts: string[]) => void;
-  /** 侧栏进入任务列表时递增，强制重建列表实例以重置筛选。 */
+  /** 顶栏进入任务列表时递增，强制重建列表实例以重置筛选。 */
   taskListResetToken: number;
   resetTaskList: () => void;
 };

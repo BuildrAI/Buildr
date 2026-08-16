@@ -124,6 +124,9 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   preparedStatements = 0; runtime.inspectTaskRecordView(root, 'app-task'); assert.equal(preparedStatements, 7, '详情轻量视图不得扫描或解析其他 Task');
   runtime.openWorkspaceStructuredStore = openStore;
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: '%_' }).tasks.map((item) => item.record.taskId), ['app-task'], 'SQL wildcard 必须按普通文本匹配');
+  assert.deepEqual(runtime.queryTaskRecordViews(root, { q: 'app-ta' }).tasks.map((item) => item.record.taskId), ['app-task'], 'q 必须按标题、意图或任务编号做子串匹配');
+  assert.deepEqual(runtime.queryTaskRecordViews(root, { q: 'APP-TASK' }).tasks.map((item) => item.record.taskId), ['app-task'], '任务编号必须不区分大小写');
+  assert.deepEqual(runtime.queryTaskRecordViews(root, { q: 'app task' }).tasks.map((item) => item.record.taskId), ['app-task'], '任务编号必须把空格与连字符当作模糊分隔');
   assert.deepEqual(runtime.queryTaskRecordViews(root, { q: "%' OR 1=1 --" }).tasks, [], 'query input 必须保持参数绑定');
   bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true }); bulkStore.database.prepare("DELETE FROM tasks WHERE task_id LIKE 'bulk-%'").run(); bulkStore.database.close();
   runtime.createTaskRecord(root, { taskId: 'app-retrospective', title: '已复盘任务', intent: '验证复盘筛选', projects: [], services: [], changes: [] });

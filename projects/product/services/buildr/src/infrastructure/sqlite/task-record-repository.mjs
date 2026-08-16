@@ -70,14 +70,31 @@ function group(rows, key, value = (item) => item) {
   return values;
 }
 
+function appendQuerySearch(conditions, parameters, raw) {
+  const text = String(raw || '').trim().replace(/^#/, '');
+  if (!text) return;
+  const lowered = text.toLowerCase();
+  const tokens = [...new Set(lowered.split(/[^0-9a-z\u0080-\uffff]+/).filter(Boolean))];
+  const needles = tokens.length ? tokens : [lowered];
+  const tokenClause = needles
+    .map(() => '(instr(lower(t.title), ?) > 0 OR instr(lower(t.intent), ?) > 0 OR instr(lower(t.task_id), ?) > 0)')
+    .join(' AND ');
+  const tokenParams = needles.flatMap((needle) => [needle, needle, needle]);
+  const compact = lowered.replace(/[^0-9a-z\u0080-\uffff]/g, '');
+  if (compact && compact !== lowered) {
+    conditions.push(`((${tokenClause}) OR instr(replace(replace(replace(lower(t.task_id), '-', ''), '_', ''), '.', ''), ?) > 0)`);
+    parameters.push(...tokenParams, compact);
+  } else {
+    conditions.push(`(${tokenClause})`);
+    parameters.push(...tokenParams);
+  }
+}
+
 function taskViewQuery(filters = {}, taskId = null) {
   const conditions = [];
   const parameters = [];
   if (taskId) { conditions.push('t.task_id = ?'); parameters.push(taskId); }
-  if (filters.q) {
-    conditions.push('(instr(lower(t.title), lower(?)) > 0 OR instr(lower(t.intent), lower(?)) > 0)');
-    parameters.push(filters.q, filters.q);
-  }
+  if (filters.q) appendQuerySearch(conditions, parameters, filters.q);
   if (filters.project) {
     conditions.push('EXISTS (SELECT 1 FROM task_projects project_filter WHERE project_filter.task_id = t.task_id AND project_filter.project = ?)');
     parameters.push(filters.project);

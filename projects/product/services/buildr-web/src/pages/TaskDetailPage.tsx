@@ -578,11 +578,9 @@ export function TaskDetailPage() {
     return (
       <>
         <section className="page-header">
-          <p className="eyebrow">任务</p>
           <h1>任务不可用</h1>
           <p className="page-copy">{pageError}</p>
         </section>
-        <Link to={href('/tasks')}><Button>返回任务列表</Button></Link>
       </>
     );
   }
@@ -590,10 +588,8 @@ export function TaskDetailPage() {
   if (!data) {
     return (
       <section className="detail-page-header">
-        <Link className="back-link" to={href('/tasks')}>← 返回任务列表</Link>
         <div className="detail-title-row">
           <div>
-            <p className="eyebrow">任务</p>
             <h1 id="task-detail-title">正在读取…</h1>
             <p id="task-detail-intent" className="page-copy" />
           </div>
@@ -612,10 +608,8 @@ export function TaskDetailPage() {
   return (
     <>
       <section className="detail-page-header">
-        <Link className="back-link" to={href('/tasks')}>← 返回任务列表</Link>
         <div className="detail-title-row">
           <div>
-            <p className="eyebrow">任务</p>
             <h1 id="task-detail-title">{record.title}</h1>
             <p id="task-detail-intent" className="page-copy">{record.intent}</p>
           </div>

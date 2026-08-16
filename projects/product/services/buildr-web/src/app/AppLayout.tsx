@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
-import { Button, Drawer, Space, Typography } from 'antd';
+import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
+import { Button, Drawer, Dropdown, Space, Typography } from 'antd';
 import { CaretDownFilled, PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
@@ -31,6 +31,12 @@ type ReleaseAwareness = {
   freshness: { status: string };
 };
 
+type WorkspaceEntry = {
+  status: string;
+  rootPath: string;
+  workspace?: { id: string; name: string };
+};
+
 function readPreviewIdentity(): PreviewIdentity | null {
   const raw = document.querySelector('meta[name="buildr-preview"]')?.getAttribute('content');
   if (!raw) return null;
@@ -45,18 +51,52 @@ function navClass({ isActive }: { isActive: boolean }): string {
   return isActive ? 'active' : '';
 }
 
+function PrimaryNav({
+  workspaceHref,
+  resetTaskList,
+  onNavigate,
+}: {
+  workspaceHref: (suffix: string) => string;
+  resetTaskList: () => void;
+  onNavigate?: () => void;
+}) {
+  const items = [
+    { suffix: '/tasks', nav: 'tasks', label: '任务', onClick: resetTaskList },
+    { suffix: '/projects', nav: 'projects', label: '项目' },
+    { suffix: '/services', nav: 'services', label: '服务' },
+    { suffix: '/articles', nav: 'articles', label: '文章' },
+  ] as const;
+
+  return (
+    <nav className="top-nav" aria-label="Buildr Web 主导航">
+      {items.map((item) => (
+        <NavLink
+          key={item.nav}
+          to={workspaceHref(item.suffix)}
+          data-nav={item.nav}
+          data-workspace-route={item.suffix}
+          className={navClass}
+          onClick={() => {
+            if ('onClick' in item) item.onClick();
+            onNavigate?.();
+          }}
+        >
+          {item.label}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
 export function AppLayout() {
   const params = useParams();
-  const location = useLocation();
+  const navigate = useNavigate();
   const workspaceId = params.workspaceId ?? null;
   const isGlobal = !workspaceId;
   setWorkspaceId(workspaceId);
 
   const [workspace, setWorkspaceState] = useState<WorkspaceShellInfo | null>(null);
   const [breadcrumbParts, setBreadcrumbParts] = useState<string[]>(['工作空间']);
-  const [resourceExpanded, setResourceExpanded] = useState(
-    () => window.matchMedia('(min-width: 701px)').matches,
-  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerAction, setDrawerAction] = useState<string | undefined>();
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
@@ -64,6 +104,7 @@ export function AppLayout() {
   const [taskListResetToken, setTaskListResetToken] = useState(0);
   const [releaseAwareness, setReleaseAwareness] = useState<ReleaseAwareness | null>(null);
   const [releaseCopyState, setReleaseCopyState] = useState('');
+  const [registry, setRegistry] = useState<WorkspaceEntry[]>([]);
 
   const preview = useMemo(() => readPreviewIdentity(), []);
 
@@ -118,6 +159,19 @@ export function AppLayout() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const data = await api('/api/v1/workspaces', { signal: controller.signal }) as { workspaces: WorkspaceEntry[] };
+        if (!controller.signal.aborted) setRegistry(data.workspaces || []);
+      } catch {
+        if (!controller.signal.aborted) setRegistry([]);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
   const quit = async () => {
     const ok = await confirmModal({
       title: '退出 Buildr Web？',
@@ -130,19 +184,6 @@ export function AppLayout() {
     setExited(true);
   };
 
-  const routeId = useMemo(() => {
-    const path = location.pathname;
-    if (isGlobal || path === '/') return 'workspaces';
-    if (/\/settings\/?$/.test(path)) return 'settings';
-    if (/\/articles(\/|$)/.test(path)) return 'articles';
-    if (/\/tasks(\/|$)/.test(path)) return 'tasks';
-    if (/\/projects(\/|$)/.test(path)) return 'projects';
-    if (/\/services(\/|$)/.test(path)) return 'services';
-    if (/\/overview\/?$/.test(path) || /\/workspaces\/[^/]+\/?$/.test(path)) return 'overview';
-    return 'overview';
-  }, [location.pathname, isGlobal]);
-
-  const resourceActive = ['tasks', 'projects', 'services', 'articles'].includes(routeId);
   const releaseUpdates = useMemo(() => {
     if (releaseAwareness?.freshness.status !== 'fresh') return [];
     return [releaseAwareness.tracks.stable, releaseAwareness.tracks.candidate]
@@ -178,6 +219,47 @@ export function AppLayout() {
     resetTaskList,
   };
 
+  const switchWorkspace = (id: string | null) => {
+    navigate(id ? `/workspaces/${id}/tasks` : '/?catalog=1');
+  };
+
+  const workspaceMenuItems = [
+    {
+      key: 'all',
+      label: '全部工作空间',
+      onClick: () => switchWorkspace(null),
+    },
+    { type: 'divider' as const },
+    ...registry.map((entry) => {
+      const id = entry.workspace?.id;
+      const name = entry.workspace?.name || id || entry.rootPath;
+      return {
+        key: id || entry.rootPath,
+        disabled: !id || entry.status !== 'ready',
+        label: name,
+        onClick: id ? () => switchWorkspace(id) : undefined,
+      };
+    }),
+  ];
+
+  const settingsLink = !isGlobal ? (
+    <NavLink
+      to={workspaceHref('/settings')}
+      data-nav="settings"
+      data-workspace-route="/settings"
+      className={navClass}
+    >
+      设置
+    </NavLink>
+  ) : null;
+
+  const primaryNav = !isGlobal ? (
+    <PrimaryNav
+      workspaceHref={workspaceHref}
+      resetTaskList={resetTaskList}
+    />
+  ) : null;
+
   if (exited) {
     return (
       <div className="exit-screen">
@@ -192,154 +274,72 @@ export function AppLayout() {
   return (
     <AppShellContext.Provider value={shellValue}>
       <div className="app-shell">
-        <aside className="app-sider" aria-label="Buildr Web 主导航">
-          <div className="sider-top">
-            <Link className="brand-link" to="/" aria-label="Buildr Web 工作空间首页">
-              <span className="brand-mark">B</span>
-              <span>
-                <strong>Buildr Web</strong>
-                <small>全局应用</small>
-              </span>
-            </Link>
-            <div className="workspace-context">
-              <span className="context-label">当前工作空间</span>
-              <strong id="shell-workspace-name">
-                {isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')}
-              </strong>
-            </div>
-            <nav className="nav-list">
-              <NavLink to="/" data-nav="workspaces" className={navClass} end>
-                工作空间
-              </NavLink>
-              <NavLink
-                to={workspaceHref('/')}
-                data-nav="overview"
-                data-workspace-route="/"
-                className={() => (routeId === 'overview' ? 'active' : '')}
-                aria-current={routeId === 'overview' ? 'page' : undefined}
-              >
-                开始
-              </NavLink>
-            </nav>
-            <div className={`nav-group${resourceActive ? ' active' : ''}`} data-nav-group="resources">
+        <header className="topbar">
+          <Link
+            className="brand-link"
+            to={isGlobal ? '/' : workspaceHref('/tasks')}
+            aria-label="当前工作空间任务列表"
+          >
+            <span className="brand-mark">B</span>
+            <strong>Buildr Web</strong>
+          </Link>
+          {primaryNav}
+          <div className="topbar-actions">
+            <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
+              <button type="button" className="workspace-switcher" aria-label="切换工作空间">
+                <span className="context-label">工作空间</span>
+                <strong id="shell-workspace-name">
+                  {isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')}
+                </strong>
+                <CaretDownFilled aria-hidden />
+              </button>
+            </Dropdown>
+            {settingsLink}
+            <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
+              退出
+            </Button>
+            <div
+              id="preview-identity"
+              className="preview-identity hidden"
+              aria-hidden="true"
+              data-preview={preview
+                ? `开发预览：${preview.instance} · ${preview.branch} · ${preview.head.slice(0, 12)}${preview.dirty ? ' · 有未提交修改' : ''}`
+                : undefined}
+              title={preview?.worktree || undefined}
+            />
+            {!isGlobal ? (
               <Button
-                id="resource-nav-toggle"
-                className="nav-group-toggle"
-                type="text"
-                aria-expanded={resourceExpanded}
-                aria-controls="resource-nav-children"
-                onClick={() => setResourceExpanded((value) => !value)}
+                id="open-agent-action"
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => openAgentAction()}
               >
-                <span>核心范围</span>
-                <CaretDownFilled
-                  className={`nav-chevron${resourceExpanded ? ' expanded' : ''}`}
-                  aria-hidden
-                />
+                交给 Agent
               </Button>
-              <nav
-                id="resource-nav-children"
-                className={`nav-children${resourceExpanded ? '' : ' collapsed'}`}
-                aria-label="资源类型"
-              >
-                <NavLink
-                  to={workspaceHref('/tasks')}
-                  data-nav="tasks"
-                  data-workspace-route="/tasks"
-                  className={navClass}
-                  onClick={resetTaskList}
-                >
-                  <span>任务</span>
-                  <small>顶层任务记录</small>
-                </NavLink>
-                <NavLink to={workspaceHref('/projects')} data-nav="projects" data-workspace-route="/projects" className={navClass}>
-                  <span>项目</span>
-                  <small>长期工作单元</small>
-                </NavLink>
-                <NavLink to={workspaceHref('/services')} data-nav="services" data-workspace-route="/services" className={navClass}>
-                  <span>服务</span>
-                  <small>代码与应用资产</small>
-                </NavLink>
-                <NavLink to={workspaceHref('/articles')} data-nav="articles" data-workspace-route="/articles" className={navClass}>
-                  <span>文章</span>
-                  <small>对外发布材料</small>
-                </NavLink>
-              </nav>
-            </div>
+            ) : null}
           </div>
-          <div className="sider-bottom">
-            <nav className="nav-list nav-secondary">
-              <NavLink to={workspaceHref('/settings')} data-nav="settings" data-workspace-route="/settings" className={navClass}>
-                工作空间设置
-              </NavLink>
-              <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
-                退出 Buildr Web
-              </Button>
-            </nav>
-            <div className="local-note">
-              <span className="status-dot" />
-              仅限本机访问
+        </header>
+        {releaseUpdates.length > 0 ? (
+          <section id="release-awareness-banner" className="release-awareness-banner" aria-label="Buildr 版本更新">
+            <div className="release-awareness-copy">
+              <strong>Buildr 有新版本</strong>
+              <span>当前安装 {releaseAwareness?.current.version || '未知'}，请选择要更新的版本。</span>
             </div>
-          </div>
-        </aside>
-
-        <div className="app-main">
-          <header className="topbar">
-            <div className="mobile-brand">
-              <span className="brand-mark">B</span>
-              <strong>Buildr Web</strong>
-            </div>
-            <div id="page-breadcrumb" className="breadcrumb" aria-label="当前位置">
-              {breadcrumbParts.map((part, index) => (
-                index === breadcrumbParts.length - 1
-                  ? <strong key={`${part}-${index}`}>{part}</strong>
-                  : <span key={`${part}-${index}`}>{part}</span>
+            <div className="release-awareness-actions">
+              {releaseUpdates.map((track) => (
+                <div className="release-update-item" data-release-track={track.track} key={track.track}>
+                  <span><strong>{track.label}</strong> {track.version}</span>
+                  <Button size="small" onClick={() => void copyReleaseCommand(track)}>复制命令</Button>
+                  <Button size="small" type="primary" onClick={() => handReleaseUpdateToAgent(track)}>交给 Agent</Button>
+                </div>
               ))}
+              <span id="release-copy-state" role="status">{releaseCopyState}</span>
             </div>
-            <div className="topbar-actions">
-              <div
-                id="preview-identity"
-                className={`preview-identity${preview ? '' : ' hidden'}`}
-                aria-label="开发预览身份"
-                title={preview?.worktree || undefined}
-              >
-                {preview
-                  ? `开发预览：${preview.instance} · ${preview.branch} · ${preview.head.slice(0, 12)}${preview.dirty ? ' · 有未提交修改' : ''}`
-                  : null}
-              </div>
-              {!isGlobal ? (
-                <Button
-                  id="open-agent-action"
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => openAgentAction()}
-                >
-                  交给 Agent
-                </Button>
-              ) : null}
-            </div>
-          </header>
-          {releaseUpdates.length > 0 ? (
-            <section id="release-awareness-banner" className="release-awareness-banner" aria-label="Buildr 版本更新">
-              <div className="release-awareness-copy">
-                <strong>Buildr 有新版本</strong>
-                <span>当前安装 {releaseAwareness?.current.version || '未知'}，请选择要更新的版本。</span>
-              </div>
-              <div className="release-awareness-actions">
-                {releaseUpdates.map((track) => (
-                  <div className="release-update-item" data-release-track={track.track} key={track.track}>
-                    <span><strong>{track.label}</strong> {track.version}</span>
-                    <Button size="small" onClick={() => void copyReleaseCommand(track)}>复制命令</Button>
-                    <Button size="small" type="primary" onClick={() => handReleaseUpdateToAgent(track)}>交给 Agent</Button>
-                  </div>
-                ))}
-                <span id="release-copy-state" role="status">{releaseCopyState}</span>
-              </div>
-            </section>
-          ) : null}
-          <main id="app-view" tabIndex={-1} aria-live="polite">
-            <Outlet />
-          </main>
-        </div>
+          </section>
+        ) : null}
+        <main id="app-view" tabIndex={-1} aria-live="polite">
+          <Outlet />
+        </main>
       </div>
 
       <div
