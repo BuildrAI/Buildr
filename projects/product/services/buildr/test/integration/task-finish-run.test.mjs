@@ -91,7 +91,6 @@ function identity(root, task = 'finish-handoff') {
     remote: null,
     environmentRoot: root,
     workspaceRoot: root,
-    workspaceNodeIdentity: 'sha256-workspace-node',
   };
 }
 
@@ -119,7 +118,7 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   assert.deepEqual(result.resolvedContext.task, { taskId: 'finish-handoff' });
   assert.deepEqual(result.resolvedContext.handoff, { identity: 'sha256-handoff' });
   assert.deepEqual(result.resolvedContext.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
-  assert.deepEqual(result.resolvedContext.environment, { workspaceNodeIdentity: 'sha256-workspace-node' });
+  assert.equal(result.resolvedContext.environment, undefined);
   assert.deepEqual(result.resolvedContext.delivery, { agent: 'codex', targetBranch: 'dev', remote: null });
   assert.match(result.resolvedContext.identity, /^sha256-/);
   assert.deepEqual(result.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });

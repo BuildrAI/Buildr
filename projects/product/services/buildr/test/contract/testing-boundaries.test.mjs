@@ -124,11 +124,7 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   ]) {
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }
-  assert.equal(SYSTEM_SUITES.find((suite) => suite.id === 'system-runtime-recovery')?.innerConcurrency, 1,
-    'runtime recovery copies and replaces a full local distribution on Windows and must remain sequential');
-  const workspaceSuite = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'workspace-product-suite.mjs'), 'utf8');
-  assert.match(workspaceSuite, /BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource/,
-    'Windows runtime recovery must reuse the verified local distribution instead of depending on public network');
+  assert.equal(SYSTEM_SUITES.find((suite) => suite.id === 'system-runtime-recovery')?.innerConcurrency, 1);
 
   for (const file of taskLifecycleContextConsumers) {
     const source = fs.readFileSync(path.join(productRoot, 'test', 'system', file), 'utf8');

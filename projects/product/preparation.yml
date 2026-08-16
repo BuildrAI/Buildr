@@ -10,8 +10,8 @@ recipes:
       - id: npm-ci
         cwd: .
         executable:
-          kind: workspace-foundation
-          name: npm
+          kind: project
+          path: services/buildr/scripts/run-development-npm
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs:
@@ -29,8 +29,8 @@ recipes:
       - id: npm-ci
         cwd: .
         executable:
-          kind: workspace-foundation
-          name: npm
+          kind: project
+          path: services/buildr/scripts/run-development-npm
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs:

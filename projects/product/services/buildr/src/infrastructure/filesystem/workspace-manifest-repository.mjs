@@ -54,8 +54,7 @@ export function parseWorkspaceManifest(content, label = '.buildr/workspace.yml')
       canonical: true,
       migrationRequired: false,
       schemaVersion: WORKSPACE_SCHEMA_V1,
-      workspace: createWorkspace(document, { required: false }),
-      nodeMigrationRequired: document.runtime === undefined,
+      workspace: createWorkspace(document),
       compatibility,
       document,
     };
@@ -72,7 +71,6 @@ export function parseWorkspaceManifest(content, label = '.buildr/workspace.yml')
         description: typeof document.description === 'string' ? document.description.trim() : '',
       },
       compatibility,
-      nodeMigrationRequired: true,
       document,
     };
   }
@@ -87,7 +85,6 @@ export function renderWorkspaceManifest({ workspace, compatibility = {} }) {
     id: canonical.id,
     name: canonical.name,
     description: canonical.description,
-    runtime: canonical.runtime,
   };
   if (compatibility.kind !== undefined) {
     document.kind = optionalCompatibilityText(compatibility.kind, 'kind', 'Workspace metadata');

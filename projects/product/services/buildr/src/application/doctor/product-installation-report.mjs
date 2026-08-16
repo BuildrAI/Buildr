@@ -33,6 +33,4 @@ export function printProductInstallationReport(result) {
   printRuntimeIdentity('Host Node', inventory.channels?.npm?.runtime, inventory.channels?.npm?.status);
   printRuntimeIdentity('Development Node', inventory.channels?.development?.runtime, inventory.channels?.development?.status);
   printRuntimeIdentity('Current main process', inventory.currentInstallation?.runtime, inventory.currentInstallation?.status);
-  const workspaceRuntime = result.workspaceNode?.execution || result.workspaceNode?.runtime || null;
-  printRuntimeIdentity('Workspace Node', workspaceRuntime, result.workspaceNode?.runtime?.status || 'unavailable');
 }

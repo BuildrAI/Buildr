@@ -167,16 +167,7 @@ function sanitizeCheck(result) {
   };
 }
 
-function bindWorkspaceNodeCommand(capability, workspaceNode) {
-  const [command, ...args] = capability.command.argv;
-  const executable = path.basename(command).toLowerCase();
-  if (['node', 'node.exe'].includes(executable)) return { ...capability, command: { ...capability.command, argv: [workspaceNode.executable, ...args] } };
-  if (['npm', 'npm.cmd'].includes(executable)) return { ...capability, command: { ...capability.command, argv: [workspaceNode.npmExecutable, ...args] } };
-  if (['npx', 'npx.cmd'].includes(executable)) return { ...capability, command: { ...capability.command, argv: [workspaceNode.paths.npx, ...args] } };
-  return capability;
-}
-
-export function verificationExecutionIdentityMaterial({ project, declaration, target, context, workspaceNodeIdentity, observation, checks }) {
+export function verificationExecutionIdentityMaterial({ project, declaration, target, context, observation, checks }) {
   return {
     schemaVersion: PUBLIC_JSON_SCHEMAS.verificationExecution,
     project,
@@ -195,7 +186,6 @@ export function verificationExecutionIdentityMaterial({ project, declaration, ta
         projectionIdentity: scope.projection.identity,
       })),
     } : null,
-    workspaceNode: workspaceNodeIdentity,
     observation,
     checks: checks.map((check) => ({ id: check.id, status: check.status, exitCode: check.exitCode })),
   };
@@ -251,9 +241,6 @@ export function registerVerificationApplication(runtime) {
       const execute = runtime.runVerificationThroughRetainedController || runVerificationThroughRetainedController;
       return execute(context, args);
     }
-    const workspaceNode = runtime.workspaceNodeExecution(targetRoot);
-    if (!workspaceNode.ready) throw new Error(`Workspace Node runtime is not ready: ${workspaceNode.status}. Run buildr sync before verification.`);
-
     const byId = new Map(declaration.capabilities.map((capability) => [capability.id, capability]));
     const selected = requestedCapabilities.map((id) => {
       const capability = byId.get(id);
@@ -311,7 +298,6 @@ export function registerVerificationApplication(runtime) {
         project: { code: projectCode, root: projectRoot },
         declaration: { path: declarationPath, identity: declarationIdentity },
         environment: { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot },
-        workspaceNode: { identity: workspaceNode.identity, actualVersion: workspaceNode.actualVersion },
         selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, proves: capability.proves, requiredForDelivery: capability.requiredForDelivery, resourceClaims: capability.resourceClaims ?? [] })),
         authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
         checks: [],
@@ -357,7 +343,7 @@ export function registerVerificationApplication(runtime) {
       concurrency,
       resourceCoordinator: coordinator,
       authorizedResources,
-      execute: (capability, execution) => executeVerificationCommand(bindWorkspaceNodeCommand(capability, workspaceNode), { cwd: capability.executionCwd, env: { ...workspaceNode.environment, ...execution.resourceEnvironment } }),
+      execute: (capability, execution) => executeVerificationCommand(capability, { cwd: capability.executionCwd, env: { ...process.env, ...execution.resourceEnvironment } }),
     });
     const after = executionContentObservation(targetRoot);
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
@@ -372,7 +358,6 @@ export function registerVerificationApplication(runtime) {
       declaration: declarationIdentity,
       target: targetIdentity,
       context,
-      workspaceNodeIdentity: workspaceNode.identity,
       observation: after,
       checks,
     });
@@ -384,7 +369,6 @@ export function registerVerificationApplication(runtime) {
       project: { code: projectCode, root: projectRoot },
       declaration: { path: declarationPath, identity: declarationIdentity },
       environment: context ? { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot, scopes: context.scopes.map((scope) => ({ selector: scope.selector, executionRoot: scope.executionRoot, sourceIdentity: scope.cli.identity, projectionIdentity: scope.projection.identity })), allowedExecutionRoots: context.allowedExecutionRoots } : null,
-      workspaceNode: { identity: workspaceNode.identity, executable: workspaceNode.executable, npmExecutable: workspaceNode.npmExecutable, actualVersion: workspaceNode.actualVersion },
       selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, proves: capability.proves, requiredForDelivery: capability.requiredForDelivery, resourceClaims: capability.resourceClaims ?? [] })),
       authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
       checks,
@@ -427,7 +411,6 @@ export function registerVerificationApplication(runtime) {
             projectCode,
             declarationPath,
             declarationIdentity,
-            workspaceNode,
             selectedCapabilities: selected,
             authorizedCapabilities,
             authorizedResources,

@@ -13,7 +13,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["npm", "test"]
+      argv: ["scripts/run-development-npm", "test"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
@@ -36,7 +36,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["npm", "run", "test:changed", "--", "--base", "origin/dev"]
+      argv: ["scripts/run-development-npm", "run", "test:changed", "--", "--base", "origin/dev"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
@@ -59,7 +59,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["npm", "run", "test:candidate"]
+      argv: ["scripts/run-development-npm", "run", "test:candidate"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
@@ -84,7 +84,7 @@ capabilities:
       services: [buildr, buildr-web]
     invocation:
       kind: command
-      argv: ["npm", "run", "test:browser:changed"]
+      argv: ["scripts/run-development-npm", "run", "test:browser:changed"]
       cwd: services/buildr
     applicability:
       paths: ["services/buildr-web/**", "services/buildr/src/interfaces/local-app/web-dist/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**", "services/buildr/test/verification/browser-selector-dispatcher.mjs", "services/buildr/test/verification/web-dist.mjs"]
@@ -112,7 +112,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
+      argv: ["scripts/run-development-node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
       cwd: services/buildr
     applicability:
       paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/package/targets/workspace/skills/buildr/task-finish/**", "services/buildr/test/contract/**"]
@@ -135,7 +135,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["npm", "run", "test:openspec:convergence"]
+      argv: ["scripts/run-development-npm", "run", "test:openspec:convergence"]
       cwd: services/buildr
     applicability:
       paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/application/openspec/**", "services/buildr/src/application/domains/openspec.mjs", "services/buildr/src/interfaces/cli/**", "services/buildr/src/application/task-finish/**", "services/buildr/test/verification/openspec/**"]
@@ -158,7 +158,7 @@ capabilities:
       services: [buildr]
     invocation:
       kind: command
-      argv: ["npm", "run", "test:focus", "--", "group:release"]
+      argv: ["scripts/run-development-npm", "run", "test:focus", "--", "group:release"]
       cwd: services/buildr
     applicability:
       paths: ["services/buildr/scripts/release/**", "services/buildr/src/**", "services/buildr/package/**", "services/buildr/package.json", "services/buildr/package-lock.json", "services/buildr/test/**", ".github/workflows/publish.yml"]
@@ -166,7 +166,7 @@ capabilities:
         - Application Payload、npm candidate、Host Node、Launcher binding、Registry readback 或发布 workflow 发生变化
     proves:
       - 同一冻结 Application Payload 只生成一次 npm tarball，并由所有 smoke、publish 与 Registry readback 复用
-      - npm 安装使用兼容 Host Node，完整支持 CLI、按需 Buildr Web 和独立 Workspace Node 子进程
+      - npm 安装使用兼容 Host Node，完整支持 CLI 与按需 Buildr Web
       - 显式安装的 macOS/Windows Launcher 不复制 Node 或 Buildr，精确绑定同一 npm 安装，并在 Node、entry、prefix 或 package identity 漂移时 fail closed
     requiredForDelivery: false
     environment:

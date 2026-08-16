@@ -52,15 +52,8 @@ jobs:
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.status === "selected") + "\n");' "${RUNNER_TEMP}/development-browser-plan.json"
       - name: Install product dependencies
         run: npm ci
-      - name: Prepare managed Workspace Node
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        shell: bash
-        run: projects/product/buildr sync codex --target .
       - name: Verify changed product scope
         env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-feedback-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/development-feedback-diagnostics
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
@@ -123,17 +116,9 @@ jobs:
       - name: Install product dependencies
         if: steps.windows-plan.outputs.selected == 'true'
         run: npm ci
-      - name: Prepare managed Workspace Node
-        if: steps.windows-plan.outputs.selected == 'true'
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        shell: bash
-        run: projects/product/buildr sync codex --target .
       - name: Verify Windows platform-sensitive product scope
         if: steps.windows-plan.outputs.selected == 'true'
         env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-windows-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/development-windows-diagnostics
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
@@ -170,18 +155,12 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - run: npm ci
-      - name: Prepare managed Workspace Node
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        run: projects/product/buildr sync codex --target .
       - name: Run cheap Candidate preflight
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-preflight
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-preflight-macos.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-preflight-diagnostics
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         run: npm run test:candidate:ci -- preflight-macos
       - name: Upload preflight evidence
@@ -200,7 +179,6 @@ jobs:
           BUILDR_CANDIDATE_CI_ARTIFACT_DIR: ${{ runner.temp }}/candidate-package
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-artifact-macos.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-artifact-diagnostics
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         run: npm run test:candidate:ci -- artifact-macos
       - name: Upload immutable Candidate artifact
@@ -242,11 +220,6 @@ jobs:
         with:
           name: candidate-package
           path: ${{ runner.temp }}/candidate-package
-      - name: Prepare managed Workspace Node
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        run: projects/product/buildr sync codex --target .
       - name: Run macOS core shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -254,7 +227,6 @@ jobs:
           BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-core
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-core-macos.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-core-diagnostics
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         run: npm run test:candidate:ci -- core-macos
       - name: Upload core evidence and diagnostics
@@ -291,12 +263,6 @@ jobs:
         with:
           name: candidate-package
           path: ${{ runner.temp }}/candidate-package
-      - name: Prepare managed Workspace Node
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        shell: bash
-        run: projects/product/buildr sync codex --target .
       - name: Run Windows runtime shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -304,7 +270,6 @@ jobs:
           BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-runtime-windows
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-runtime-windows.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-runtime-windows-diagnostics
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         shell: bash
         run: npm run test:candidate:ci -- runtime-windows
@@ -348,19 +313,12 @@ jobs:
         if: matrix.shard == 'fresh-build-windows'
         working-directory: projects/product/services/buildr-web
         run: npm ci --ignore-scripts
-      - name: Prepare managed Workspace Node
-        working-directory: .
-        env:
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
-        shell: bash
-        run: projects/product/buildr sync codex --target .
       - name: Run Windows Candidate shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-${{ matrix.shard }}
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-${{ matrix.shard }}.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-${{ matrix.shard }}-diagnostics
-          BUILDR_NODE_RUNTIME_DATA_DIR: ${{ runner.temp }}/buildr-node-runtime
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         shell: bash
         run: npm run test:candidate:ci -- ${{ matrix.shard }}

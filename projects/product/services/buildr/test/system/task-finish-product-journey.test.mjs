@@ -59,7 +59,6 @@ else if (args[0] === 'verification' && args[1] === 'run') {
   const checks = options('--capability').map((id) => ({ id, title: id, status: 'passed', exitCode: 0, durationMs: 7, stdout: '', stderr: '' }));
   output({
     schemaVersion: 'buildr.verification-execution/v1', status: 'passed', target: { identity: targetIdentity, stable: true },
-    workspaceNode: { identity: { digest: 'sha256-workspace-node', version: '22.4.1' } },
     checks, executionIdentity: 'execution-' + targetIdentity, evidenceReference: null, durationMs: 7,
   });
 } else if (args[0] === 'doctor') {
@@ -206,7 +205,6 @@ test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢
     ...createTaskFinishSqliteRuntime(retained, task),
     ...environment,
     ...development,
-    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
     optionValue: (args, name, fallback) => {
       const index = args.indexOf(name);
       return index === -1 ? fallback : args[index + 1];
@@ -447,7 +445,6 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   process.env.PATH = `${hostileBin}${path.delimiter}${originalPath || ''}`;
   t.after(() => { process.env.PATH = originalPath; });
   Object.assign(runtime, {
-    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
     optionValue: (args, name, fallback) => {
       const index = args.indexOf(name);
       return index === -1 ? fallback : args[index + 1];
@@ -661,7 +658,6 @@ test('同路径基线冲突保留current Candidate并经显式零差异 Delivery
   let advanceTargetDuringCompatibility = false;
   let racedBaselineHead = null;
   Object.assign(runtime, {
-    workspaceNodeExecution: () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath }),
     runTaskFinishCarrierCompatibility: ({ carrier }) => {
       if (compatibilityStatus === 'passed' && advanceTargetDuringCompatibility) {
         fs.writeFileSync(path.join(retained, 'target-race.txt'), 'target advanced after zero-delta review\n');
@@ -793,7 +789,6 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   t.after(() => { process.env.PATH = originalPath; });
   const environment = taskEnvironmentFixture({ task, environmentRoot, retained, controllerCommand: controller, controllerSourceRoot: path.dirname(controller) });
   const runtime = realTaskDevelopmentFixture({ task, environmentRoot, retained, environment, workspaceOnly: true });
-  runtime.workspaceNodeExecution = () => ({ ready: true, status: 'ready', identity: { digest: 'sha256-workspace-node', version: '22.4.1' }, executable: process.execPath });
   const development = runtime.inspectTaskDevelopment(retained, task).development;
   const handoff = development.receipt.handoffs.at(-1);
   const candidate = development.receipt.candidate;
@@ -812,7 +807,6 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
       remote: 'origin',
       environmentRoot,
       workspaceRoot: retained,
-      workspaceNodeIdentity: 'sha256-workspace-node',
     }, 'product-code-only-journey');
   /* The helper persists the SQLite current run; the executor owns subsequent checkpoints. */
   const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot });

@@ -81,7 +81,6 @@ async function main(args = process.argv.slice(2)) {
     buildId: option(args, '--build-id', packageData.version), buildNumber: option(args, '--build-number', '1'), protocolVersion: 1,
     platform: option(args, '--platform', process.platform), builtAt: new Date().toISOString(), sourceRoot,
     developmentRuntime: { executable: runtime, version, source: 'development-host', identity: `development-host:${fs.realpathSync(runtime)}:${version}` },
-    workspaceNode: null,
   };
   const output = path.resolve(option(args, '--output', path.join(PRODUCT_ROOT, 'dist', 'launcher', `development-${identity.buildId}`)));
   console.log(buildLauncher({ platform: identity.platform, output, identity }));

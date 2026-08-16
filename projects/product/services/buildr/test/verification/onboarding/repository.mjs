@@ -15,6 +15,7 @@ const installBin = path.join(tempRoot, 'bin');
 const launcherRoot = path.join(tempRoot, 'launchers');
 const appDataRoot = path.join(tempRoot, 'app-data');
 const remote = path.join(tempRoot, 'Buildr.git');
+const developmentNode = process.env.BUILDR_NODE || process.execPath;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -32,15 +33,15 @@ function run(command, args, options = {}) {
 
 function runDevelopment(args, options = {}) {
   const copiedProduct = path.join(checkout, 'projects', 'product');
-  const env = { ...(options.env ?? process.env), BUILDR_NODE: process.execPath };
+  const env = { ...(options.env ?? process.env), BUILDR_NODE: developmentNode };
   if (process.platform === 'win32') {
     return run('sh', ['./buildr', ...args], { ...options, cwd: copiedProduct, env });
   }
   return run(path.join(copiedProduct, 'buildr'), args, { ...options, cwd: copiedProduct, env });
 }
 
-function npmCliForCurrentNode() {
-  const executableDirectory = path.dirname(process.execPath);
+function npmCliForNode(nodeExecutable) {
+  const executableDirectory = path.dirname(nodeExecutable);
   const candidates = [
     path.resolve(executableDirectory, '../lib/node_modules/npm/bin/npm-cli.js'),
     path.resolve(executableDirectory, 'node_modules/npm/bin/npm-cli.js'),
@@ -51,7 +52,7 @@ function npmCliForCurrentNode() {
       if (fs.statSync(candidate).isFile()) return fs.realpathSync(candidate);
     } catch {}
   }
-  throw new Error(`npm CLI for the current Host Node was not found beside ${process.execPath}`);
+  throw new Error(`npm CLI for the Product Node was not found beside ${nodeExecutable}`);
 }
 
 function copyUntrackedSourceFiles() {
@@ -103,33 +104,36 @@ try {
   const pathSentinels = [path.join(installBin, 'buildr'), path.join(installBin, 'buildr.cmd')];
   for (const sentinel of pathSentinels) fs.writeFileSync(sentinel, `npm-owned sentinel: ${path.basename(sentinel)}\n`);
   const sentinelContents = new Map(pathSentinels.map((sentinel) => [sentinel, fs.readFileSync(sentinel, 'utf8')]));
-  run(process.execPath, [npmCliForCurrentNode(), 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: copiedService, env });
+  run(developmentNode, [npmCliForNode(developmentNode), 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: copiedService, env });
   const developmentIdentity = JSON.parse(runDevelopment([], {
     env: { ...env, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
     capture: true,
   }));
   assert.equal(developmentIdentity.wrapperSchema, null);
   assert.equal(fs.realpathSync(developmentIdentity.launcher), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')));
-  assert.equal(fs.realpathSync(developmentIdentity.nodeExecutable), fs.realpathSync(process.execPath));
+  assert.equal(fs.realpathSync(developmentIdentity.nodeExecutable), fs.realpathSync(developmentNode));
   runDevelopment(['sync', 'codex', '--target', checkout], { env });
   const synchronizedStatus = run('git', ['status', '--short'], { cwd: checkout, env, capture: true }).trimEnd();
   if (synchronizedStatus.trim()) {
     const managedRoots = ['.buildr/builtin-receipts.json', 'rules/', 'skills/', 'commands/', 'components/'];
+    const canonicalMigrations = ['.buildr/workspace.yml'];
     const unexpected = synchronizedStatus.split('\n')
       .map((line) => line.slice(3).split(' -> ').at(-1))
-      .filter((file) => !managedRoots.some((root) => file === root || file.startsWith(root)));
-    assert.deepEqual(unexpected, [], `sync must only update Buildr-owned projections:\n${synchronizedStatus}`);
-    run('git', ['add', '-A', '--', '.buildr/builtin-receipts.json', 'rules', 'skills', 'commands', 'components'], { cwd: checkout });
-    run('git', ['commit', '-qm', 'synchronize Buildr-owned projections'], { cwd: checkout });
+      .filter((file) => !canonicalMigrations.includes(file) && !managedRoots.some((root) => file === root || file.startsWith(root)));
+    assert.deepEqual(unexpected, [], `sync must only update canonical Workspace data and Buildr-owned projections:\n${synchronizedStatus}`);
+    const synchronizedWorkspace = fs.readFileSync(path.join(checkout, '.buildr', 'workspace.yml'), 'utf8');
+    assert.doesNotMatch(synchronizedWorkspace, /(?:^|\n)runtime:/, 'sync must remove the legacy Workspace Node declaration');
+    run('git', ['add', '-A', '--', '.buildr/workspace.yml', '.buildr/builtin-receipts.json', 'rules', 'skills', 'commands', 'components'], { cwd: checkout });
+    run('git', ['commit', '-qm', 'synchronize canonical Workspace data and Buildr-owned projections'], { cwd: checkout });
     run('git', ['push', '-q'], { cwd: checkout });
   }
   const runtime = JSON.parse(runDevelopment(['runtime', 'list', '--json'], { env, capture: true }));
   assert(runtime.supportedAgents.includes('codex'));
-  const launcher = JSON.parse(run(process.execPath, [fs.realpathSync(path.join(copiedService, 'package', 'launchers', 'manage.mjs')), 'install', '--channel', 'development', '--target', launcherRoot], { cwd: checkout, env, capture: true }));
+  const launcher = JSON.parse(run(developmentNode, [fs.realpathSync(path.join(copiedService, 'package', 'launchers', 'manage.mjs')), 'install', '--channel', 'development', '--target', launcherRoot], { cwd: checkout, env, capture: true }));
   assert.equal(launcher.installed, true);
   assert.equal(launcher.identity.channel, 'development');
   assert.equal(fs.realpathSync(launcher.identity.sourceRoot), fs.realpathSync(copiedService));
-  assert.equal(fs.realpathSync(launcher.identity.developmentRuntime.executable), fs.realpathSync(process.execPath));
+  assert.equal(fs.realpathSync(launcher.identity.developmentRuntime.executable), fs.realpathSync(developmentNode));
   const doctor = JSON.parse(runDevelopment(['doctor', '--agent', 'codex', '--target', checkout, '--json'], { env, capture: true, timeout: 180000 }));
   assert.equal(doctor.health.ready, true, `explicit checkout entry must complete the real sync → Launcher → Doctor chain: ${JSON.stringify(doctor.findings || [])}`);
   const update = JSON.parse(runDevelopment(['update', 'check', '--json'], { env, capture: true }));

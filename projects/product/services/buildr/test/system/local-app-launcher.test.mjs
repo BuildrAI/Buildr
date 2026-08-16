@@ -68,7 +68,6 @@ test('development launcher支持带空格checkout并绑定独立development host
       buildId: 'space-test', buildNumber: '1', protocolVersion: 1, platform: 'darwin', builtAt: new Date().toISOString(),
       sourceRoot,
       developmentRuntime: { executable: process.execPath, version: process.versions.node, identity: `development-host:${process.execPath}` },
-      workspaceNode: null,
     },
   });
   const launcher = fs.readFileSync(path.join(output, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
@@ -146,7 +145,6 @@ test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的de
   assert.equal(first.identity.source, 'checkout');
   assert.equal(first.identity.sourceRoot, PRODUCT_ROOT);
   assert.ok(first.identity.developmentRuntime?.executable);
-  assert.equal(first.identity.workspaceNode, null);
   assert.equal(fs.existsSync(path.join(first.target, 'Contents', 'MacOS', 'node')), false);
   assert.equal(fs.existsSync(ownedLegacy), false);
   const second = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });

@@ -280,11 +280,6 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
     return { assertion, receipt, handoff, matches: assertion.status === 'equivalent' };
   }
 
-  function currentWorkspaceNode(run) {
-    const observed = runtime.workspaceNodeExecution(environmentRoot);
-    return { ...observed, matches: Boolean(observed.ready && run.identity.workspaceNodeIdentity && observed.identity?.digest === run.identity.workspaceNodeIdentity) };
-  }
-
   return {
     async preflight({ run }) {
       const checks = [];
@@ -295,10 +290,6 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
       const development = developmentCarrier(run);
       if (!development.matches) checks.push(finding('development-handoff', 'error', 'task-finish.development-handoff-not-current', 'Formal Development handoff is missing, stale, or does not match this run.', { failureClass: 'upstream-candidate-defect' }));
       else checks.push(finding('development-handoff', 'ok', 'task-finish.development-handoff-current', `Development handoff ${run.identity.handoffIdentity} is current.`));
-
-      const workspaceNode = currentWorkspaceNode(run);
-      if (!workspaceNode.matches) checks.push(finding('workspace-node', 'error', 'task-finish.workspace-node-drift', 'Workspace Node identity does not match the Task Finish run.'));
-      else checks.push(finding('workspace-node', 'ok', 'task-finish.workspace-node-ready', `Workspace Node ${workspaceNode.identity.version} is ready.`));
 
       const taskIdentity = currentGitIdentity(environmentRoot);
       if (!taskIdentity.head || !taskIdentity.tree || !taskIdentity.branch) checks.push(finding('delivery-adapter', 'error', 'task-finish.git-carrier-unavailable', 'The current Finish adapter requires a readable Git delivery carrier.'));
@@ -343,7 +334,6 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
     async prepare({ run }) {
       const operations = [];
       if (!developmentCarrier(run).matches) return { status: 'failed', failure: { operation: 'development-handoff', failureClass: 'upstream-candidate-defect', code: 'task-finish.development-handoff-not-current', message: 'Development handoff changed before carrier preparation.' } };
-      if (!currentWorkspaceNode(run).matches) return { status: 'failed', failure: { operation: 'workspace-node', failureClass: 'product-execution-failure', code: 'task-finish.workspace-node-drift', message: 'Workspace Node identity changed before carrier preparation.' } };
       const context = taskEnvironment(run);
       if (!context?.ready) return { status: 'blocked', failure: { operation: 'environment-context', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.environment-not-ready', message: context?.blocked?.message || 'Task Environment is not ready.' } };
       if (!run.identity.remote) return { status: 'failed', failure: { operation: 'delivery-remote', failureClass: 'product-execution-failure', code: 'task-finish.delivery-remote-missing', message: 'Task Finish cannot prepare a delivery carrier without a frozen delivery remote.' } };

@@ -158,10 +158,8 @@ export async function runReleaseSmoke(env = process.env) {
   const workspace = path.join(root, 'workspace');
   const appData = path.join(root, 'app-data');
   const npmCache = path.join(root, 'npm-cache');
-  const runtimeData = process.env.BUILDR_NODE_RUNTIME_DATA_DIR || appData;
   const runtimeEnv = {
     BUILDR_APP_DATA_DIR: appData,
-    BUILDR_NODE_RUNTIME_DATA_DIR: runtimeData,
     npm_config_cache: npmCache,
     npm_config_update_notifier: 'false',
   };

@@ -32,9 +32,6 @@ const allowed = new Map([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
-  ['src/infrastructure/filesystem/workspace-node-runtime.mjs', new Set([
-    'downloadFile', 'removeRuntimeTree', 'copyRuntimeTree', 'reclaimRuntimeInstallLock', 'acquireRuntimeInstallLock', 'releaseRuntimeInstallLock', 'installFromOfficial', 'installFromBootstrapDistribution', 'renameRuntimeStage', 'ensureWorkspaceNodeRuntime',
-  ])],
   ['src/infrastructure/product-launcher/index.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],

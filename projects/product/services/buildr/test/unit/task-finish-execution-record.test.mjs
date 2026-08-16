@@ -23,7 +23,6 @@ function run(status = 'blocked') {
       remote: 'origin',
       workspaceRoot: '/Users/example/workspace',
       environmentRoot: '/Users/example/worktree',
-      workspaceNodeIdentity: 'sha256-node',
     },
     deliveryCommit: {
       message: 'fix(task-finish): preserve delivery semantics\n\nprivate body',

@@ -84,7 +84,7 @@ function fixture(t, { contributionPath, contributionContent }) {
   const isolated = createIsolatedGitCarrier({ repositoryRoot: environmentRoot, workspaceRoot: retained, runId: 'activation-delivery', deliveryBaselineHead: expectedTargetRef, taskContribution, message: 'carrier' });
   const activationPlan = planRetainedTaskFinishActivation({ agent: 'codex', changedPaths: isolated.changedPaths });
   const carrier = { identity: 'sha256-carrier', ...isolated, kind: 'git-isolated-commit', branch: null, expectedTargetRef, targetRef: 'origin/dev', activationPlan };
-  const run = { runId: 'activation-delivery', identity: { task: 'activation', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot, workspaceRoot: retained, workspaceNodeIdentity: 'sha256-node' }, deliveryCarrier: carrier, delivery: null };
+  const run = { runId: 'activation-delivery', identity: { task: 'activation', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-target', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot, workspaceRoot: retained }, deliveryCarrier: carrier, delivery: null };
   const sqliteRuntime = createTaskFinishSqliteRuntime(retained, run.identity.task);
   const persistedRun = persistTaskFinishRun(sqliteRuntime, retained, run.identity, run.runId);
   persistedRun.deliveryCarrier = run.deliveryCarrier;

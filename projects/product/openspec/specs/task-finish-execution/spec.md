@@ -289,22 +289,6 @@ Buildr Product MUST以真实Task Environment journey验收P0.5 Finish adapter正
 - **THEN** Task Finish MUST一次返回具体`task-development` handoff
 - **AND** benchmark MUST在该failure结束，不把修复或re-verification计入Finish wall-clock
 
-### Requirement: Task Finish 必须冻结并核验 Workspace Node identity
-Task Finish MUST在preflight读取Workspace Node identity，并在prepare、verify-equivalence、deliver与resume前重新核验。Finish的CLI、carrier Git动作、retained sync/install和子进程 MUST使用该identity对应的受管runtime；Node identity不属于Development Candidate identity，也不得用于复用Verification evidence。
-
-#### Scenario: Finish 复用匹配证据
-- **WHEN** Environment/retained execution要求的Node identity在Finish各阶段保持一致
-- **THEN** Finish MAY继续机械delivery并在结果中披露Node identity
-
-#### Scenario: Candidate 与 Finish Node 不一致
-- **WHEN** 当前受管Node identity与Environment execution requirement不一致或证据缺失
-- **THEN** Finish MUST停止delivery并返回精确environment/runtime诊断
-- **AND** MUST NOT通过重跑Verification或修改Candidate吸收差异
-
-#### Scenario: Finish 运行中 Node identity 漂移
-- **WHEN** 受管runtime identity在preflight、prepare、verify、deliver或resume之间改变
-- **THEN** Finish MUST fail closed且不得继续push或cleanup
-
 ### Requirement: Task Finish 必须支持无 Change 的 code-only 候选
 Task Finish MUST以receipt-bound Task identity与Development handoff作为所有run的主身份，并 MUST允许Task Record包含0..N Change references。Change context已由Development handoff闭合且对Finish保持opaque；Finish MUST NOT要求调用方提供单一Project/Change、派生Candidate kind，也不得为无Change候选创建、推断或选择虚假Change。
 
@@ -394,7 +378,7 @@ Task Finish MUST以receipt-bound Task identity与Development handoff作为所有
 - **AND** MUST不push、不cleanup原Task Environment或伪造reuse evidence
 
 ### Requirement: Code-only run 必须完全省略Change authority
-Task Finish MUST对无Changehandoff完全省略Change tasks、knowledge impact、OpenSpec plan/check/convergence/archive operations，MUST NOT新增`candidateKind`或`changeContext`字段重新拥有分类。结果与completion evidence MUST包含Task、Candidate、handoff、Content Target、carrier与Workspace Node identity。
+Task Finish MUST对无Changehandoff完全省略Change tasks、knowledge impact、OpenSpec plan/check/convergence/archive operations，MUST NOT新增`candidateKind`或`changeContext`字段重新拥有分类。结果与completion evidence MUST包含Task、Candidate、handoff、Content Target与carrier identity。
 
 #### Scenario: Code-only preflight
 - **WHEN** preflight处理code-only handoff
@@ -622,21 +606,21 @@ Task Finish MUST先按既有owner规则持久化每个阶段、delivery、cleanu
 - **AND** MUST NOT枚举、读取或反向关联execution records，也不得因record attention改变Finish applicability
 
 ### Requirement: Task Finish Result 必须报告只读解析上下文
-`buildr.task-finish-result/v2` MUST以additive `resolvedContext`报告本次run从既有Task、Development handoff、Environment和delivery target事实中解析出的最小上下文，包括`buildr.task-finish/v1` capability identity、Task/handoff/Candidate/Content Target identity、Agent、target branch、remote、Workspace Node identity与该集合的确定性identity。`resolvedContext` MUST只由产品生成，不得作为run输入、可编辑execution capsule、独立数据库列、Receipt、恢复manifest或第二authority。
+`buildr.task-finish-result/v2` MUST以additive `resolvedContext`报告本次run从既有Task、Development handoff、Environment和delivery target事实中解析出的最小上下文，包括`buildr.task-finish/v1` capability identity、Task/handoff/Candidate/Content Target identity、Agent、target branch、remote与该集合的确定性identity。`resolvedContext` MUST只由产品生成，不得作为run输入、可编辑execution capsule、独立数据库列、Receipt、恢复manifest或第二authority。
 
 #### Scenario: 新run形成解析上下文
 - **WHEN** `task finish run`通过入口readiness并创建新的Finish run
 - **THEN** run与后续inspect/terminal Result MUST返回由同一run identity确定性形成的`resolvedContext`
-- **AND**调用方 MUST不需要提交contract版本、handoff、Environment、Candidate或delivery plan
+- **AND** 调用方 MUST不需要提交contract版本、handoff、Environment、Candidate或delivery plan
 
 #### Scenario: inspect读取terminal Result
-- **WHEN**调用方按run id inspect已完成或blocked的Finish Result
+- **WHEN** 调用方按run id inspect已完成或blocked的Finish Result
 - **THEN** `resolvedContext` MUST与该run采用的identity保持一致
 - **AND** reader MUST NOT重新解释当前Task、Environment或后续变化来改写历史解析上下文
 
 #### Scenario: 读取缺少字段的既有v2 Result
 - **WHEN** Workspace中存在本变更前写入且没有`resolvedContext`的合法`buildr.task-finish-result/v2`
-- **THEN**兼容reader MUST允许该字段为null或按已保存run identity只读派生
+- **THEN** 兼容reader MUST允许该字段为null或按已保存run identity只读派生
 - **AND** MUST NOT迁移历史Result、建立补写任务或把缺失字段解释为交付失败
 
 ### Requirement: Task Finish 必须冻结有语义的交付提交信息

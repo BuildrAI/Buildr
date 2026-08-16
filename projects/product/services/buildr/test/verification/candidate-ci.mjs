@@ -46,9 +46,8 @@ function artifactEnvironment(artifact) {
 }
 
 function assertManagedNode() {
-  const version = process.env.BUILDR_WORKSPACE_NODE_VERSION;
-  const identity = process.env.BUILDR_WORKSPACE_NODE_IDENTITY;
-  if (!version || !identity || process.versions.node !== version) throw new Error('Candidate CI shard must run through the managed Workspace Node runtime.');
+  const version = fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim();
+  if (!version || process.versions.node !== version) throw new Error(`Candidate CI shard must run through the exact Buildr Product Node runtime ${version || '(missing .node-version)'}, active ${process.versions.node}.`);
 }
 
 async function runShard(shardId) {

@@ -54,7 +54,7 @@ Payload builder MUST 使用排序后的相对路径、文件 mode、size 与 SHA
 - **AND** 清理 MUST 只删除 matching ownership 与 payload identity 的 materialized resources
 
 ### Requirement: Host Node 产品重入与 Workspace Node 执行必须显式分类
-Buildr runtime MUST NOT 将 `process.execPath` 无条件视为任意安装来源或 Workspace Node。npm 产品重入 MUST 使用已登记 Host Node 与 package entry 的受控 invocation；Workspace-owned npm、验证、Finish adapter 和项目执行 MUST 通过 Workspace Node resolver 使用声明的精确 executable。
+Buildr runtime MUST NOT 将 `process.execPath` 无条件视为任意安装来源。npm 产品重入 MUST 使用已登记 Host Node 与 package entry 的受控 invocation；Project verification、Preparation Step与其他Workspace命令 MUST按自身声明和当前受控执行环境运行，MUST NOT通过Organization Workspace Node resolver改写。
 
 #### Scenario: npm 产品重入
 - **WHEN** npm runtime 需要启动 Buildr-owned worker 或重新进入某个产品动作
@@ -62,6 +62,6 @@ Buildr runtime MUST NOT 将 `process.execPath` 无条件视为任意安装来源
 - **AND** MUST NOT 从 PATH 查找 `node`、`npm` 或 `buildr`
 
 #### Scenario: Workspace-owned subprocess
-- **WHEN** Buildr 为 Workspace 执行 npm、verification、Finish adapter 或项目命令
-- **THEN** resolver MUST 使用 `.buildr/workspace.yml` 声明的 Workspace Node identity
-- **AND** npm Host Node 与 Workspace Node 即使版本相同也 MUST 保持不同的 identity 和 lifecycle evidence
+- **WHEN** Buildr为Workspace执行verification capability或Preparation Step
+- **THEN** executor MUST使用声明argv/executable与当前受控执行环境
+- **AND** MUST NOT要求、下载或记录Workspace Node identity

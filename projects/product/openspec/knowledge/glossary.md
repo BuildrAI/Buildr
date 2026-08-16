@@ -270,7 +270,7 @@
 ## 任务环境（Task Environment）
 
 - 定义：某个正式 Task 在当前机器上可执行、可恢复和可清理的实际工作环境，由同一 Task ID、唯一环境回执及其中的实际 checkout/provider/probe facts 确定。
-- 适用范围：共享执行根或`.worktrees/<task-id>`checkout、Agent登记的环境准备计划、Workspace Node/CLI、Agent runtime投射、动态资源和cleanup。
+- 适用范围：共享执行根或`.worktrees/<task-id>`checkout、Agent登记的环境准备计划及其显式executable、CLI、Agent runtime投射、动态资源和cleanup。
 - 避免混用：不是 Workspace、保留工作区、Agent runtime 或 Task Record；Git worktree 只是可选 provider，retained Buildr 的实现版本也不是该 Environment 的源码版本。
 - 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
 
@@ -606,19 +606,19 @@
 
 - 定义：历史SEA/平台安装设计中随Buildr产品单元交付的官方Node.js runtime；当前npm-only产品不实现或分发Product Node。
 - 适用范围：仅用于解释已归档Change与未来可能重新评估的自包含安装模型，不是当前runtime role。
-- 避免混用：不是当前npm Host Node、development host Node或Workspace Node；不得从历史设计推断当前支持SEA、PKG或MSI。
+- 避免混用：不是当前npm Host Node或development host Node；不得从历史设计推断当前支持SEA、PKG或MSI。
 
 ## 宿主 Node（Host Node）
 
 - 定义：安装并启动`@buildr-ai/buildr` npm package的用户Node.js executable，必须满足package `engines.node`。
 - 适用范围：npm渠道Buildr main process和同一runtime bundle。
-- 避免混用：不随npm package交付，也不会因进入Workspace而切换为Workspace Node。
+- 避免混用：不随npm package交付，也不会因进入Workspace而切换runtime。
 
 ## 开发宿主 Node（Development Host Node）
 
-- 定义：由development installation identity绑定、用于启动checkout-backed Buildr CLI与Buildr Web Dev的兼容Node.js executable。
-- 适用范围：development channel main process与同一checkout中的product re-entry；Workspace-owned子进程仍另行解析Workspace Node。
-- 避免混用：不是npm package消费者的Host Node或Workspace Node；版本相同也不共享ownership、更新或卸载生命周期。
+- 定义：由Buildr Product `.node-version`精确锁定、用于启动checkout-backed Buildr CLI、Buildr Web Dev、Product准备与验证的Node.js executable。
+- 适用范围：development channel main process、同一checkout中的product re-entry、声明的npm准备与self-bootstrap验证；当前精确版本为`24.15.0`。
+- 避免混用：不是npm package消费者的Host Node，也不是Workspace通用runtime；兼容但非精确版本必须fail closed。
 
 ## 平台产品单元（Platform Product Unit）
 
@@ -630,7 +630,7 @@
 
 - 定义：Buildr同时读取npm的`latest`和`next`，把GA正式版与RC候选版的当前发布头、可更新状态、提示与精确更新命令组合为统一的只读Application结果。
 - 适用范围：`buildr update check`、Doctor非阻断提示、Buildr Web全局提示和Buildr Skill；真正更新只在用户明确选择后由CLI执行。
-- 避免混用：不是自动更新器，不替用户选择版本，也不修改Workspace、Workspace Node或Agent runtime。
+- 避免混用：不是自动更新器，不替用户选择版本，也不修改Workspace数据或Agent runtime。
 - 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`、`openspec/specs/agent-readable-doctor/spec.md`与`openspec/specs/local-workspace-application/spec.md`。
 
 ## 发布轨道（Release Track）
@@ -646,18 +646,6 @@
 - 适用范围：npm tarball只发布到npm Registry；GitHub Release只保存版本说明并拒绝Buildr binary Assets。
 - 避免混用：GitHub Actions artifact只是临时候选/evidence carrier，不是公开下载渠道；本机Launcher也不是公开制品。
 - 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
-
-## Workspace Node Version
-
-- 定义：Workspace 在 `.buildr/workspace.yml` 中明确采用的精确 Node.js toolchain 版本，由 `init` 首次确定，之后只能通过显式 Workspace 配置变更升级或降级。
-- 适用范围：Workspace拥有的npm、测试、Verification、Finish adapter与项目执行；由Workspace resolver显式选择。
-- 避免混用：不是npm Host Node或development host Node；版本相同也不合并identity、更新或卸载生命周期。
-
-## Workspace Node Identity
-
-- 定义：由 Workspace identity、精确 Node version、platform 与 architecture 组成的稳定摘要，用于绑定 task environment、验证 evidence 与 Finish frozen candidate。
-- 适用范围：检查本机受管 runtime 与 Workspace 声明是否一致，以及决定旧 evidence 是否可复用。
-- 避免混用：不包含某台机器的临时绝对路径，也不等于 Agent runtime identity。
 
 ## 受控同步（Controlled Sync）
 

@@ -6,7 +6,6 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
-import { currentNodeDistributionRoot, verifyWorkspaceOwnedRuntime } from '../../../scripts/release/runtime-role-verification.mjs';
 import { readSharedCandidatePackage } from '../release/candidate-package.mjs';
 
 const productRoot = path.resolve(import.meta.dirname, '../../..');
@@ -19,10 +18,8 @@ const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const windowsRuntimeSource = process.platform === 'win32' ? path.dirname(fs.realpathSync(process.execPath)) : null;
 const runtimeEnv = {
   BUILDR_APP_DATA_DIR: appData,
-  BUILDR_NODE_RUNTIME_DATA_DIR: appData,
   npm_config_cache: npmCache,
   npm_config_update_notifier: 'false',
-  ...(windowsRuntimeSource ? { BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource } : {}),
 };
 let web = null;
 
@@ -86,22 +83,6 @@ try {
   assert.equal(cliIdentity.runtime?.version, process.versions.node);
   assert.equal(cliIdentity.applicationPayloadDigest, shared.manifest.applicationPayloadDigest);
 
-  const runtimeRole = await verifyWorkspaceOwnedRuntime({
-    invocation: { command: process.execPath, argsPrefix: [buildrScript] },
-    verificationRoot: root,
-    workspaceRoot: workspace,
-    appDataRoot: appData,
-    nodeRuntimeDataRoot: appData,
-    workspaceNodeSourceRoot: currentNodeDistributionRoot(),
-    environment: { ...process.env, ...runtimeEnv },
-    expectedMainRole: 'host',
-    expectedChannel: 'npm',
-  });
-  assert.equal(runtimeRole.mainProcess.runtime.version, process.versions.node);
-  assert.equal(runtimeRole.mainProcess.applicationPayloadDigest, shared.manifest.applicationPayloadDigest);
-  assert.equal(runtimeRole.workspaceRuntime.declaredVersion, process.versions.node);
-  assert.equal(runtimeRole.separation.mainAndWorkspaceExecutablesDistinct, true);
-
   web = spawn(process.execPath, [buildrScript, 'web', '--no-open', '--port', '0'], {
     cwd: workspace,
     env: { ...process.env, ...runtimeEnv },
@@ -137,7 +118,7 @@ try {
   const shell = await fetch(instance.url, { signal: AbortSignal.timeout(2_000) });
   assert.equal(shell.status, 200);
   assert.match(await shell.text(), /<div id="root"><\/div>/);
-  process.stdout.write(`Installed CLI, Workspace-owned verification, and on-demand Buildr Web smoke passed on ${process.platform} with Host Node ${process.versions.node}; main role=host, child role=workspace.\n`);
+  process.stdout.write(`Installed CLI and on-demand Buildr Web smoke passed on ${process.platform} with Host Node ${process.versions.node}; main role=host.\n`);
 } finally {
   await stopWeb(web);
   fs.rmSync(root, { recursive: true, force: true });

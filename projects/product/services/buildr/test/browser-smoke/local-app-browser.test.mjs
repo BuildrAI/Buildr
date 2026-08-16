@@ -258,7 +258,7 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
   const completion = { status: 'complete', cleanup: cleanupResult };
   const run = {
     schemaVersion: FINISH_RUN_SCHEMA, runId, status: 'complete',
-    identity: { task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: root, workspaceRoot: root, workspaceNodeIdentity: 'sha256-browser-node' },
+    identity: { task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: root, workspaceRoot: root },
     identityDigest: 'sha256-browser-run', createdAt: completedAt, updatedAt: completedAt, completedAt, invocations: 1,
     deliveryCarrier: carrier, equivalence, delivery, completion, resume: null, primaryFailure: null,
     phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: completedAt, completedAt, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),

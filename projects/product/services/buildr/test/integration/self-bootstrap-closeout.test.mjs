@@ -102,7 +102,6 @@ function finishResult(root, baseRef, changedPaths, overrides = {}) {
     remote: 'origin',
     environmentRoot: path.join(root, '.worktrees', 'task'),
     workspaceRoot: root,
-    workspaceNodeIdentity: 'sha256-node',
   };
   return {
     schemaVersion: 'buildr.task-finish-result/v2',

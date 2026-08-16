@@ -1,0 +1,56 @@
+#!/bin/sh
+set -u
+
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case "$link" in
+    /*) self=$link ;;
+    *) self="${self%/*}/$link" ;;
+  esac
+done
+script_root=$(CDPATH= cd "${self%/*}" && pwd)
+product_root=$(CDPATH= cd "$script_root/../../.." && pwd)
+IFS= read -r required_version < "$product_root/.node-version"
+
+node_version() {
+  "$1" -p 'process.versions.node' 2>/dev/null
+}
+
+is_exact_node() {
+  [ -x "$1" ] || return 1
+  [ "$(node_version "$1")" = "$required_version" ]
+}
+
+select_node() {
+  candidate=$1
+  case "$candidate" in
+    */*) ;;
+    *) candidate=$(command -v "$candidate" 2>/dev/null || true) ;;
+  esac
+  if is_exact_node "$candidate"; then
+    printf '%s\n' "$candidate"
+    exit 0
+  fi
+}
+
+if [ "${BUILDR_NODE+x}" = x ]; then
+  select_node "$BUILDR_NODE"
+  echo "Buildr Product checkout requires exact Node.js $required_version; BUILDR_NODE resolved to a different or invalid executable." >&2
+  exit 1
+fi
+
+old_ifs=$IFS
+IFS=:
+for path_entry in ${PATH:-}; do
+  [ -n "$path_entry" ] || path_entry=.
+  select_node "$path_entry/node"
+done
+for path_entry in ${PATH:-}; do
+  [ -n "$path_entry" ] || path_entry=.
+  select_node "$path_entry/../../node/bin/node"
+done
+IFS=$old_ifs
+
+echo "Buildr Product checkout requires exact Node.js $required_version. Set BUILDR_NODE to that executable or activate the Product .node-version before running checkout commands." >&2
+exit 1

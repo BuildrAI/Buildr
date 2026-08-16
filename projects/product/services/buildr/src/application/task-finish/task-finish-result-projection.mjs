@@ -65,7 +65,6 @@ function identity(result) {
     agent: source.delivery?.agent || result.identity?.agent || null,
     targetBranch: source.delivery?.targetBranch || result.identity?.targetBranch || null,
     remote: source.delivery?.remote || result.identity?.remote || null,
-    workspaceNodeIdentity: source.environment?.workspaceNodeIdentity || result.identity?.workspaceNodeIdentity || null,
   };
 }
 

@@ -26,7 +26,6 @@ function material(environmentContext) {
     declaration: 'sha256-declaration',
     target: 'target-one',
     context: environmentContext,
-    workspaceNodeIdentity: { digest: 'sha256-node' },
     observation: { fingerprint: 'sha256-content' },
     checks: [{ id: 'product.candidate', status: 'passed', exitCode: 0 }],
   });

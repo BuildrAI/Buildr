@@ -35,12 +35,13 @@ Buildr MUST允许Agent为一个active正式Task登记closed `buildr.task-environ
 - **AND** MUST不执行任何技术栈准备命令或报告ready
 
 ### Requirement: Service Plan 必须由通用 Preparation Steps 构成
-每个`required` Service Plan MUST包含至少一个required Preparation Step。Step MUST声明稳定id、Service-relative cwd、无shell executable来源、字符串args、有界timeout、Service-relative input files、Service-relative expected outputs与required；Task Environment MUST只解释通用执行和文件事实，MUST NOT解释npm、Python、Cargo、Maven或其他技术栈语义。
+每个`required` Service Plan MUST包含至少一个required Preparation Step。Step MUST声明稳定id、Service-relative cwd、无shell executable来源、字符串args、有界timeout、Service-relative input files、Service-relative expected outputs与required；Task Environment MUST只解释通用执行和文件事实，MUST NOT解释npm、Python、Cargo、Maven或其他技术栈语义，也不得为全部scope建立Node runtime前置。
 
 #### Scenario: Workspace Foundation工具步骤
-- **WHEN** Agent声明`workspace-foundation` executable及名称`npm`
-- **THEN** Environment MUST解析当前Workspace Foundation提供的绝对受管executable并记录identity
-- **AND** MUST不从ambient PATH解析同名命令
+- **WHEN** Agent在某个Project/Service Recipe中显式声明`workspace-foundation` executable及名称`npm`
+- **THEN** Environment MUST从当前受控执行环境解析该命令的绝对executable并记录identity
+- **AND** executable缺失或后续漂移 MUST只阻塞引用它的Step和scope
+- **AND** 未引用该工具的scope MUST不生成Node/npm runtime probe
 
 #### Scenario: Service wrapper步骤
 - **WHEN** Agent声明Service-relative executable

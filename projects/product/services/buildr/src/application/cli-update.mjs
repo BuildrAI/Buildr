@@ -346,7 +346,7 @@ export function registerApplicationCliUpdate(runtime) {
       process.exitCode = 1;
       return failed;
     }
-    const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。Workspace Node 不会随之改变。'] };
+    const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。'] };
     if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, completed), null, 2)}\n`);
     else printPlan(completed, 'Buildr CLI update');
     return completed;

@@ -255,8 +255,6 @@ export function registerApplicationRuntime(runtime) {
         if (lockedPlan.signature !== preflight.signature) throw new Error('sync source plan changed after preflight; rerun sync against the current workspace state.');
       },
     });
-    const workspaceRecord = runtime.readWorkspaceRecord(targetRoot);
-    const workspaceNode = runtime.ensureWorkspaceNodeRuntime(workspaceRecord.workspace);
     const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
     const productInvocation = runtime.currentProductInvocation();
     const finalDoctor = runFinalDoctor({
@@ -266,7 +264,6 @@ export function registerApplicationRuntime(runtime) {
       cwd: productRoot(),
     });
     console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
-    console.log(`Workspace Node：${workspaceNode.identity.version}（${workspaceNode.action}）`);
     if (structuredStoreMigration.migrations.length > 0) console.log(`Workspace structured store：已确认 migration 0000-${String(structuredStoreMigration.migrations.at(-1).version).padStart(4, '0')}。`);
     if (updated.changed.length > 0) {
       console.log('产品能力变更：');

@@ -43,7 +43,6 @@ export function registerWorkspaceApplication(runtime) {
     const persistedWorkspaceId = persistence.metadata.canonical ? persistence.metadata.workspace.id : null;
     const workspaceId = resolveWorkspaceIdentity(persistedWorkspaceId, persistence.skills.workspaceId);
     const migrationRequired = persistence.metadata.migrationRequired
-      || persistence.metadata.nodeMigrationRequired
       || !persistence.skills.workspaceId
       || persistence.skills.workspaceId !== persistedWorkspaceId;
     return {
@@ -53,7 +52,6 @@ export function registerWorkspaceApplication(runtime) {
         id: persistedWorkspaceId || persistence.skills.workspaceId || null,
         name: persistence.metadata.workspace.name,
         description: persistence.metadata.workspace.description,
-        runtime: persistence.metadata.workspace.runtime,
       },
       resolvedWorkspaceId: workspaceId,
     };
@@ -212,7 +210,6 @@ export function registerWorkspaceApplication(runtime) {
         id: workspaceId,
         name: current.workspace.name,
         description: current.workspace.description || WORKSPACE_DESCRIPTION_TODO,
-        runtime: current.workspace.runtime || { node: { version: process.versions.node } },
       });
       const metadataContent = runtime.renderWorkspaceManifest({ workspace, compatibility: current.metadata.compatibility });
       const skillsContent = runtime.renderSkillsManifestYaml({
@@ -268,7 +265,6 @@ export function registerWorkspaceApplication(runtime) {
         id: current.workspace.id,
         name: input.name === undefined ? current.workspace.name : input.name,
         description: input.description === undefined ? current.workspace.description : input.description,
-        runtime: current.workspace.runtime,
       });
       runtime.writeWorkspaceManifest(current.metadataPath, runtime.renderWorkspaceManifest({
         workspace,

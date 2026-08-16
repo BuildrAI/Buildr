@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+script_root=$(CDPATH= cd "${0%/*}" && pwd)
+node_executable=$($script_root/resolve-development-node)
+node_root=${node_executable%/*}
+PATH="$node_root:${PATH:-}"
+export PATH
+npm_cli="$node_root/../lib/node_modules/npm/bin/npm-cli.js"
+if [ ! -f "$npm_cli" ]; then
+  echo "Exact Buildr Product Node does not provide its adjacent npm CLI: $npm_cli" >&2
+  exit 1
+fi
+exec "$node_executable" "$npm_cli" "$@"

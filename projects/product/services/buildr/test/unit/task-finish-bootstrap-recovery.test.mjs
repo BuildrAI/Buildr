@@ -25,7 +25,7 @@ function failedPrepareRun() {
     identity: {
       task: 'repair-finish', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 2,
       contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin',
-      environmentRoot: '/tmp/task-source', workspaceRoot: '/tmp/workspace', workspaceNodeIdentity: 'sha256-node', deliveryCommitIdentity: 'sha256-message',
+      environmentRoot: '/tmp/task-source', workspaceRoot: '/tmp/workspace', deliveryCommitIdentity: 'sha256-message',
     },
     identityDigest: 'sha256-run',
     createdAt: '2026-08-14T00:00:00.000Z', updatedAt: '2026-08-14T00:00:01.000Z', completedAt: null,

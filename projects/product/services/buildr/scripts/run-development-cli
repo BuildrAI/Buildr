@@ -1,7 +1,6 @@
 #!/bin/sh
-set -u
+set -eu
 
-supported_node_range='>=24.15.0 <25'
 self=$0
 while [ -L "$self" ]; do
   link=$(readlink "$self")
@@ -14,26 +13,7 @@ script_root=$(CDPATH= cd "${self%/*}" && pwd)
 launcher_entry="$script_root/run-development-cli"
 cli_root=$(CDPATH= cd "$script_root/../bin" && pwd)
 cli_entry="$cli_root/buildr.mjs"
-
-node_version() {
-  "$1" -p 'process.versions.node' 2>/dev/null
-}
-
-is_compatible_node() {
-  [ -x "$1" ] || return 1
-  candidate_version=$(node_version "$1") || return 1
-  old_ifs=$IFS
-  IFS=.
-  set -- $candidate_version
-  IFS=$old_ifs
-  candidate_major=${1:-}
-  candidate_minor=${2:-}
-  candidate_patch=${3:-}
-  case "$candidate_major.$candidate_minor.$candidate_patch" in
-    *[!0-9.]*) return 1 ;;
-  esac
-  [ "$candidate_major" -eq 24 ] && [ "$candidate_minor" -ge 15 ]
-}
+selected_node=$($script_root/resolve-development-node)
 
 run_with_node() {
   selected_node=$1
@@ -53,38 +33,4 @@ process.stdout.write(`${JSON.stringify({
   exec "$selected_node" "$cli_entry" "$@"
 }
 
-if [ "${BUILDR_NODE+x}" = x ]; then
-  explicit_node=$BUILDR_NODE
-  case "$explicit_node" in
-    */*) ;;
-    *) explicit_node=$(command -v "$explicit_node" 2>/dev/null || true) ;;
-  esac
-  if ! is_compatible_node "$explicit_node"; then
-    echo "Buildr bootstrap requires Node.js ${supported_node_range}; BUILDR_NODE must name a compatible executable." >&2
-    exit 1
-  fi
-  run_with_node "$explicit_node" "$@"
-fi
-
-old_ifs=$IFS
-IFS=:
-for path_entry in ${PATH:-}; do
-  [ -n "$path_entry" ] || path_entry=.
-  candidate="$path_entry/node"
-  if is_compatible_node "$candidate"; then
-    IFS=$old_ifs
-    run_with_node "$candidate" "$@"
-  fi
-done
-for path_entry in ${PATH:-}; do
-  [ -n "$path_entry" ] || path_entry=.
-  candidate="$path_entry/../../node/bin/node"
-  if is_compatible_node "$candidate"; then
-    IFS=$old_ifs
-    run_with_node "$candidate" "$@"
-  fi
-done
-IFS=$old_ifs
-
-echo "Buildr development host requires Node.js ${supported_node_range}. Set BUILDR_NODE to the identity-bound compatible development executable or add one to PATH. Workspace Node is resolved only for Workspace-owned subprocesses." >&2
-exit 1
+run_with_node "$selected_node" "$@"

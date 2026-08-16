@@ -8,7 +8,6 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { workspaceNodeRuntimePaths } from '../../src/infrastructure/filesystem/workspace-node-runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
 
@@ -102,7 +101,7 @@ suiteTest('manifest-registry', 'init 生成 canonical Workspace，并让两个 M
   assert.match(workspace.id, /^[0-9a-f-]{36}$/);
   assert.equal(workspace.id, skills.workspaceId);
   assert.equal(workspace.description, 'Demo workspace');
-  assert.equal(workspace.runtime.node.version, process.versions.node);
+  assert.equal(Object.hasOwn(workspace, 'runtime'), false);
 });
 
 suiteTest('manifest-registry', 'Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
@@ -156,42 +155,32 @@ suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 pa
   assert.equal(lines.includes('custom-user-entry'), true);
 });
 
-suiteTest('runtime-recovery', 'doctor 只读诊断被删除的 Workspace Node，sync 按原声明恢复且不改版本', (t) => {
+suiteTest('runtime-recovery', 'legacy runtime.node 不影响健康，sync 移除声明且不删除已有本机文件', (t) => {
   const appData = path.join(temporaryRoot(t), 'node-app-data');
   const root = path.join(temporaryRoot(t), 'workspace');
-  const windowsRuntimeSource = process.platform === 'win32' ? path.dirname(fs.realpathSync(process.execPath)) : null;
-  const env = {
-    ...process.env,
-    BUILDR_APP_DATA_DIR: appData,
-    BUILDR_NODE_RUNTIME_DATA_DIR: appData,
-    ...(windowsRuntimeSource ? { BUILDR_NODE_RUNTIME_SOURCE_ROOT: windowsRuntimeSource } : {}),
-  };
-  if (windowsRuntimeSource) {
-    assert.equal(fs.existsSync(path.join(windowsRuntimeSource, 'npm.cmd')), true,
-      'Windows Candidate 必须复用已验证的本地 Node distribution，而不是再次访问公网');
-  }
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
   let result = runBuildr(['init', '--target', root, '--name', 'node-recovery', '--description', 'Node recovery workspace'], { env });
   assert.equal(result.status, 0, result.stderr);
   const manifest = path.join(root, '.buildr', 'workspace.yml');
-  const declared = YAML.parse(fs.readFileSync(manifest, 'utf8')).runtime.node.version;
-  const before = fs.readFileSync(manifest, 'utf8');
-  const managed = workspaceNodeRuntimePaths(declared, { dataRoot: appData });
-  fs.rmSync(managed.root, { recursive: true, force: true });
+  fs.appendFileSync(manifest, `runtime:\n  node:\n    version: ${process.versions.node}\n`);
+  const retainedRuntime = path.join(appData, 'runtimes', 'node', process.versions.node, 'retained-runtime.txt');
+  fs.mkdirSync(path.dirname(retainedRuntime), { recursive: true });
+  fs.writeFileSync(retainedRuntime, 'keep');
 
   result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full'], { env });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const report = JSON.parse(result.stdout);
-  assert.ok(report.findings.some((finding) => finding.code === 'workspace.node_runtime_missing' && /sync/.test(finding.command)));
-  assert.equal(fs.existsSync(managed.node), false, 'doctor 必须保持只读');
-  assert.equal(fs.readFileSync(manifest, 'utf8'), before);
+  assert.equal(report.findings.some((finding) => /node_runtime/u.test(finding.code)), false);
+  assert.equal(Object.hasOwn(report, 'workspaceNode'), false);
+  assert.equal(fs.readFileSync(retainedRuntime, 'utf8'), 'keep');
 
   result = runBuildr(['sync', 'codex', '--target', root], { env });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(fs.existsSync(managed.node), true);
-  assert.equal(YAML.parse(fs.readFileSync(manifest, 'utf8')).runtime.node.version, declared);
+  assert.equal(Object.hasOwn(YAML.parse(fs.readFileSync(manifest, 'utf8')), 'runtime'), false);
+  assert.equal(fs.readFileSync(retainedRuntime, 'utf8'), 'keep');
   result = runBuildr(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full'], { env });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(JSON.parse(result.stdout).workspaceNode.identity.version, declared);
+  assert.equal(Object.hasOwn(JSON.parse(result.stdout), 'workspaceNode'), false);
 });
 
 suiteTest('manifest-registry', '未提供 description 时 init 写入 TODO，doctor 返回可见诊断', (t) => {

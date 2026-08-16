@@ -434,7 +434,7 @@ test('Task Finish migration把run、prepared completion与lease收敛为唯一cu
     VALUES ('finish-migration', 'buildr.task-record/v1', 'Finish', 'Compact Finish', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
   const run = {
     schemaVersion: 'buildr.task-finish-run/v2', runId: 'finish-migration-run', status: 'cleanup_pending',
-    identity: { task: 'finish-migration', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace', workspaceNodeIdentity: 'sha256-node' },
+    identity: { task: 'finish-migration', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
     identityDigest: 'sha256-run', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T01:00:00.000Z', completedAt: null,
     invocations: 1, deliveryCarrier: { identity: 'sha256-carrier' }, equivalence: null, delivery: null, completion: null,
     resume: { phase: 'cleanup', token: 'sha256-resume', generatedAt: '2026-08-01T01:00:00.000Z', carrierIdentity: 'sha256-carrier' },
@@ -470,7 +470,7 @@ test('Task Finish migration把terminal-only completion原位收敛为compact ter
     cleanup: { status: 'cleaned' }, preparedAt: '2026-08-01T01:00:00.000Z', completedAt: '2026-08-01T02:00:00.000Z',
     result: {
       schemaVersion: 'buildr.task-finish-result/v2', runId: 'finish-terminal-run', status: 'complete',
-      identity: { task: 'finish-terminal', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 2, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace', workspaceNodeIdentity: 'sha256-node' },
+      identity: { task: 'finish-terminal', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 2, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
       carrier: { identity: 'sha256-carrier' }, phases: finishPhases('passed'), completion: { cleanup: { status: 'cleaned' } },
     },
   };
@@ -492,7 +492,7 @@ test('Task Finish migration遇到live artifact metadata时完整rollback', () =>
     VALUES ('finish-artifact', 'buildr.task-record/v1', 'Finish', 'Rollback artifact', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
   const run = {
     schemaVersion: 'buildr.task-finish-run/v2', runId: 'finish-artifact-run', status: 'active',
-    identity: { task: 'finish-artifact', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace', workspaceNodeIdentity: 'sha256-node' },
+    identity: { task: 'finish-artifact', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
     identityDigest: 'sha256-run', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z', completedAt: null,
     invocations: 0, deliveryCarrier: null, equivalence: null, delivery: null, completion: null, resume: null, primaryFailure: null, phases: finishPhases(),
   };

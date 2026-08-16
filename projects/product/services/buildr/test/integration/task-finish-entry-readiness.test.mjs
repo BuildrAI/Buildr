@@ -48,7 +48,6 @@ test('入口同时报告环境与研发缺口且不短路', (t) => {
   const runtime = {
     resolveTaskEnvironmentExecution: () => ({ ready: false, blocked: { code: 'task_environment_snapshot_missing', message: 'Environment missing.' } }),
     inspectTaskDevelopment: () => ({ development: { receipt: null, applicability: { handoff: 'missing' } } }),
-    workspaceNodeExecution: () => ({ identity: null }),
   };
   const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task' });
   assert.equal(observed.ready, false);
@@ -82,7 +81,6 @@ test('仅交付 remote 缺口时不误标为研发', (t) => {
         applicability: { handoff: 'current' },
       },
     }),
-    workspaceNodeExecution: () => ({ identity: { digest: 'sha256-node' } }),
   };
   const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task' });
   assert.equal(observed.ready, false);
@@ -109,7 +107,6 @@ test('全部入口就绪时返回 identityParts', (t) => {
         applicability: { handoff: 'current' },
       },
     }),
-    workspaceNodeExecution: () => ({ identity: { digest: 'sha256-node' } }),
   };
   const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task', requestedCommitMessage: 'fix(task-finish): freeze delivery message', requireCommitMessage: true });
   assert.equal(observed.ready, true);

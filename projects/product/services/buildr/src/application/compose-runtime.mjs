@@ -30,7 +30,6 @@ import { registerApplicationWorkspaceOperations } from './workspace-operations.m
 import { registerApplicationRuntime } from './runtime.mjs';
 import { registerApplicationCliUpdate } from './cli-update.mjs';
 import { registerWorkspaceApplication } from './workspace/workspace-application.mjs';
-import { registerWorkspaceNodeRuntime } from '../infrastructure/filesystem/workspace-node-runtime.mjs';
 import { registerProjectApplication } from './project/project-application.mjs';
 import { registerPublicationApplication } from './publication/publication-application.mjs';
 import { registerServiceApplication } from './service/service-application.mjs';
@@ -84,7 +83,6 @@ const REGISTRATIONS = [
   registerDomainsPackageAssets,
   registerDomainsSkills,
   registerWorkspaceApplication,
-  registerWorkspaceNodeRuntime,
   registerProjectApplication,
   registerPublicationApplication,
   registerServiceApplication,
