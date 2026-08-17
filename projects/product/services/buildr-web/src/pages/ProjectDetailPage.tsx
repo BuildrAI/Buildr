@@ -186,14 +186,14 @@ export function ProjectDetailPage() {
             label: tab.label,
           }))}
         />
-        <div className="project-document-toolbar">
-          {showBack ? (
+        {showBack ? (
+          <div className="project-document-toolbar">
             <button type="button" className="back-link project-document-back" id="project-document-back" onClick={onDocumentBack}>
               ← 返回上一篇
             </button>
-          ) : null}
-          <span className="project-document-path" id="project-document-path">{viewPath}</span>
-        </div>
+            <span className="project-document-path" id="project-document-path">{viewPath}</span>
+          </div>
+        ) : null}
         <div
           id={`project-document-${activeTab.replace('.', '-')}`}
           className="project-document-body"

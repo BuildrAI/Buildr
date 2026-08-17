@@ -525,9 +525,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#project-document-missing-README-md').innerText(), /未找到 README\.md/);
     await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).click();
     await page.waitForFunction(() => {
-      const path = document.getElementById('project-document-path')?.textContent?.trim();
       const body = document.getElementById('project-document-AGENTS-md')?.textContent || '';
-      return path === 'AGENTS.md' && !body.includes('正在读取') && /AGENTS\.md|Project|项目/.test(body);
+      return !body.includes('正在读取') && /AGENTS\.md|Project|项目/.test(body);
     });
     assert.match(await page.locator('#project-document-AGENTS-md').innerText(), /AGENTS\.md|Project|项目/);
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
@@ -570,9 +569,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#service-document-README-md').innerText(), /Demo API|README/);
     await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).click();
     await page.waitForFunction(() => {
-      const pathLabel = document.getElementById('service-document-path')?.textContent?.trim();
       const body = document.getElementById('service-document-AGENTS-md')?.textContent || '';
-      return pathLabel === 'AGENTS.md' && !body.includes('正在读取') && /未找到 AGENTS\.md/.test(body);
+      return !body.includes('正在读取') && /未找到 AGENTS\.md/.test(body);
     });
     await page.getByRole('button', { name: '编辑服务', exact: true }).click();
     await page.locator('#service-edit-form').waitFor({ state: 'visible' });

@@ -195,14 +195,14 @@ export function ServiceDetailPage() {
             label: tab.label,
           }))}
         />
-        <div className="project-document-toolbar">
-          {showBack ? (
+        {showBack ? (
+          <div className="project-document-toolbar">
             <button type="button" className="back-link project-document-back" id="service-document-back" onClick={onDocumentBack}>
               ← 返回上一篇
             </button>
-          ) : null}
-          <span className="project-document-path" id="service-document-path">{viewPath}</span>
-        </div>
+            <span className="project-document-path" id="service-document-path">{viewPath}</span>
+          </div>
+        ) : null}
         <div
           id={`service-document-${activeTab.replace('.', '-')}`}
           className="project-document-body"

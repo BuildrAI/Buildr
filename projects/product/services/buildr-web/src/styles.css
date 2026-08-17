@@ -563,11 +563,6 @@ a {
   white-space: nowrap;
 }
 
-.resource-list-host .project-list-section {
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
 .resource-list-host .project-list-section .ant-table-tbody > tr > td {
   padding-left: 16px;
   padding-right: 16px;
@@ -837,12 +832,11 @@ a {
 }
 
 .project-document-body {
-  min-height: 120px;
+  min-height: 240px;
 }
 
 .project-document-content {
-  max-height: min(70vh, 720px);
-  overflow: auto;
+  overflow: visible;
   padding: 4px 2px 8px;
 }
 
