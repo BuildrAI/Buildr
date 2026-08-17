@@ -596,6 +596,7 @@ const COMMAND_ROUTES = [
       "Occupancy release: buildr task finish run --task <task-id> --run <id> --release-occupancy --target <canonical-workspace> [--detail <compact|full>] [--json]",
       "",
       "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；Agent根据最终内容和仓库约定提供完整message，产品规范化并追加Buildr-Task trailer。target branch 默认使用 retained canonical Workspace 的当前符号分支，Environment startPoint 不提供交付分支 authority。",
+      "可选 --agent：省略时使用 Task Environment 已绑定 adapter，不得猜测当前聊天宿主或默认为 Codex；传入值必须与 Environment adapter 一致。",
       "互斥参数：已有run/resume不接受--commit-message覆盖；--resume只接受产品为当前blocked run生成的令牌；--release-occupancy与--resume、--bootstrap-recovery、--accept-zero-delta-adaptation互斥，且必须同时提供--run与--task；不接受--project/--change或调用方Candidate/Result。",
       "零差异适配：--accept-zero-delta-adaptation只用于已有adaptation-required run的matching resume，表示Agent已审查clean baseline carrier无需新增差异；它不创建commit、不替代resume token，也不表示Buildr证明语义等价。",
       "受控自修复：--bootstrap-recovery只用于已有run在无交付副作用的preflight/prepare Product provider缺陷；必须另行明确授权。retained Application仍是writer，只从冻结clean Task Environment HEAD派生并加载run-owned provider capsule；不接受source/module/tarball/manifest输入。",
@@ -603,7 +604,7 @@ const COMMAND_ROUTES = [
       "Execution surface：Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。",
       "安全副作用：产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。",
       "提交信息：新run拒绝缺失、空subject或精确“交付 + 当前Task ID”的占位主题；同一run的prepare、adaptation与resume复用冻结message，公开Result只返回subject和identity。",
-      "deliver使用首次run绑定的指定Agent Doctor；Doctor未ready时保留已完成的remote readback、partial delivery与精确resume token，普通Workspace保持blocked并且不cleanup。",
+      "deliver使用Environment adapter冻结的run agent执行retained Doctor；Doctor未ready时保留已完成的remote readback、partial delivery与精确resume token，普通Workspace保持blocked并且不cleanup。",
       "每次真正执行的run/resume先预留独立finish-diagnostics execution record容量；retained后只清理invocation diagnostics transient。record attention不改变已成立的Finish delivery、cleanup或Task终态，Carrier与恢复资源继续由Finish owner管理。",
       "JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"

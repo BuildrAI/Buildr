@@ -11,7 +11,7 @@ description: 用户要求已有 active formal Task 的“收尾”或交付 curr
 
 1. 明确正式 Task ID 与 canonical Workspace。
 2. 用户排除 push、install 或 cleanup 而改变交付语义时停止。
-3. 轻量确认任务分支贡献已提交、本机主工作区已对齐目标远端。未提交或落后时先说明并等待处理或明确继续；不得做成新的入口缺口码。
+3. 轻量确认任务分支贡献已提交、本机主工作区已对齐目标远端；`--agent`省略或等于 Environment adapter。未提交或落后时先说明并等待处理或明确继续；不得做成新的入口缺口码。
 4. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
 5. 根据最终交付内容与Workspace、Project、Service、repository约定形成完整commit message。subject必须描述内容，优先使用简洁Conventional Commits；Task ID由产品写入trailer，不得使用“交付 + Task ID”占位主题。调用前向用户展示subject，正文存在时一并展示。
 6. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
@@ -41,7 +41,7 @@ preflight → prepare → verify → deliver → cleanup
 
 首次run或resume先预留独立`task-finish/finish-diagnostics` Execution Record；容量不足不启动五阶段。record只保留受控诊断，carrier、lease、resume与cleanup仍由Finish current管理。
 
-- `preflight`核对current handoff、Environment、carrier adapter与retained target；各阶段和resume都精确核对run冻结的handoff、Candidate、generation与Content Target。
+- `preflight`核对handoff、Environment、carrier、retained与远端对齐；各阶段/resume精确核对冻结handoff、Candidate、generation与Content Target。
 - `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
 - Agent只在carrier完成交付适配（Delivery Adaptation）。非零适配HEAD必须保持冻结message；若baseline已满足任务且正确适配为零tree delta，保持clean carrier并在matching resume传入`--accept-zero-delta-adaptation`，不得创建空提交或无关差异。resume仍执行bounded compatibility checks，`formalVerificationExecutions` 必须为 `0`。
 - `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。

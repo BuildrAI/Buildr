@@ -146,7 +146,9 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.match(helpText, /Buildr-Task trailer/);
   assert.match(helpText, /current formal Development handoff/);
   assert.match(helpText, /retained canonical Workspace 的当前符号分支/);
-  assert.match(helpText, /Environment startPoint 不提供交付分支 authority/);
+  assert.match(helpText, /省略时使用 Task Environment 已绑定 adapter/);
+  assert.match(helpText, /不得猜测当前聊天宿主或默认为 Codex/);
+  assert.match(helpText, /deliver使用Environment adapter冻结的run agent/);
   assert.doesNotMatch(helpText, /Usage:[^\n]*(?:--project|--change)/);
   assert.doesNotMatch(helpText, /target branch 默认来自 Git carrier provider start point/);
   assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);

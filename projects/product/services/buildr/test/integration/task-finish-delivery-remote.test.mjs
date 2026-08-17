@@ -118,6 +118,53 @@ test('dirty retained Workspace preflight exposes structured unrelated paths', as
   assert.deepEqual(retainedFinding.unrelatedPaths, ['local-note.txt']);
 });
 
+test('preflight 在 retained 已与远端对齐时通过且不 fetch', async (t) => {
+  const data = deliveryFixture(t, null);
+  const beforeHead = command(data.retained, 'git', ['rev-parse', 'HEAD']);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'passed', JSON.stringify(result.failure, null, 2));
+  assert.ok(result.checks.some((item) => item.check === 'retained-remote-alignment' && item.code === 'task-finish.retained-remote-aligned'));
+  assert.equal(command(data.retained, 'git', ['rev-parse', 'HEAD']), beforeHead);
+  assert.equal(command(data.retained, 'git', ['symbolic-ref', '--short', 'HEAD']), 'dev');
+});
+
+test('preflight 在 retained 落后远端时 blocked', async (t) => {
+  const data = deliveryFixture(t, null);
+  const seed = path.join(data.fixture, 'seed');
+  fs.writeFileSync(path.join(seed, 'ahead.txt'), 'remote advanced\n');
+  command(seed, 'git', ['add', 'ahead.txt']);
+  command(seed, 'git', ['commit', '-m', 'advance remote']);
+  command(seed, 'git', ['push', 'origin', 'dev']);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.retained-workspace-behind');
+  assert.ok(result.checks.every((item) => item.check !== 'prepare-isolated-carrier'));
+});
+
+test('preflight 在 retained 与远端分叉时 blocked', async (t) => {
+  const data = deliveryFixture(t, null);
+  fs.writeFileSync(path.join(data.retained, 'local.txt'), 'retained only\n');
+  command(data.retained, 'git', ['add', 'local.txt']);
+  command(data.retained, 'git', ['commit', '-m', 'retained divergence']);
+  const seed = path.join(data.fixture, 'seed');
+  fs.writeFileSync(path.join(seed, 'remote-only.txt'), 'remote only\n');
+  command(seed, 'git', ['add', 'remote-only.txt']);
+  command(seed, 'git', ['commit', '-m', 'remote divergence']);
+  command(seed, 'git', ['push', 'origin', 'dev']);
+  command(data.retained, 'git', ['fetch', 'origin']);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.retained-workspace-diverged');
+});
+
+test('preflight 在远端不可观察时 blocked', async (t) => {
+  const data = deliveryFixture(t, null);
+  command(data.retained, 'git', ['remote', 'set-url', 'origin', path.join(data.fixture, 'missing.git')]);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.target-observation-failed');
+});
+
 test('workspace source 缺少 Environment remote 时解析 retained branch upstream', (t) => {
   const { retained, remote } = repositoryFixture(t);
   assert.deepEqual(resolveTaskFinishTargetBranch({ root: retained }), { targetBranch: 'dev', source: 'retained-current' });

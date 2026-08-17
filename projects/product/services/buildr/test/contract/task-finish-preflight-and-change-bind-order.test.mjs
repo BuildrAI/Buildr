@@ -20,7 +20,10 @@ test('Task Finish Skill 在调用产品前轻量确认贡献已提交且主工�
     '若返回 `task_finish.entry_gaps`',
     '`development` / `environment` / `delivery` 完整转述',
     '不得只报第一项',
+    'Environment adapter',
   ]) assert.ok(finishSkill.includes(required), required);
+  assert.match(finishSkill, /`--agent`省略或等于 Environment adapter/);
+  assert.doesNotMatch(finishSkill, /--agent cursor|--agent codex/);
   const preflightIndex = finishSkill.indexOf('任务分支贡献已提交');
   const runIndex = finishSkill.indexOf('直接启动 canonical `buildr task finish run`');
   assert.ok(preflightIndex > 0 && runIndex > preflightIndex, 'alignment reminder must precede task finish run');

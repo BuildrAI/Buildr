@@ -112,6 +112,7 @@ test('全部入口就绪时返回 identityParts', (t) => {
   assert.equal(observed.ready, true);
   assert.equal(observed.identityParts.remote, 'origin');
   assert.equal(observed.identityParts.targetBranch, 'dev');
+  assert.equal(observed.identityParts.agent, 'codex');
   assert.equal(observed.identityParts.handoffIdentity, 'sha256-handoff');
   assert.equal(observed.identityParts.deliveryCommitIdentity, observed.deliveryCommit.identity);
   assert.match(observed.deliveryCommit.message, /Buildr-Task: demo-task$/);
@@ -119,4 +120,35 @@ test('全部入口就绪时返回 identityParts', (t) => {
   const missing = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task', requireCommitMessage: true });
   assert.equal(missing.ready, false);
   assert.ok(missing.gaps.delivery.some((item) => item.code === 'task_finish.commit_message_required'));
+});
+
+test('Finish --agent 与 Environment adapter 不一致时不创建 identity', (t) => {
+  const root = makeGitRoot(t, { remotes: true });
+  const handoff = handoffFixture();
+  const runtime = {
+    resolveTaskEnvironmentExecution: () => ({
+      ready: true,
+      workspaceRoot: root,
+      validationRoot: root,
+      controller: { adapter: 'codex' },
+      repositories: [{ selector: 'workspace', remote: 'origin' }],
+    }),
+    inspectTaskDevelopment: () => ({
+      development: {
+        receipt: { candidate: handoff.candidate, gates: handoff.gates, decision: handoff.decision, handoffs: [handoff] },
+        applicability: { handoff: 'current' },
+      },
+    }),
+  };
+  const observed = observeTaskFinishEntryReadiness({
+    runtime,
+    root,
+    task: 'demo-task',
+    requestedAgent: 'cursor',
+    requestedCommitMessage: 'fix(task-finish): freeze delivery message',
+    requireCommitMessage: true,
+  });
+  assert.equal(observed.ready, false);
+  assert.equal(observed.identityParts, null);
+  assert.ok(observed.gaps.environment.some((item) => item.code === 'task_finish.environment_mismatch'));
 });

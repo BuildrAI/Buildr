@@ -227,6 +227,48 @@ function retainedWorkspaceReadiness(identity) {
   return { ready: unrelated.length === 0, workspaceMetadata: [...new Set(workspaceMetadata)].sort(), unrelated };
 }
 
+function gitOk(root, args) {
+  return spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: MAX_OUTPUT_BYTES }).status === 0;
+}
+
+function observeRetainedRemoteAlignment({ root, remote, targetBranch, head }) {
+  const observed = spawnSync('git', ['ls-remote', '--heads', remote, targetBranch], { cwd: root, encoding: 'utf8', maxBuffer: MAX_OUTPUT_BYTES });
+  if (observed.status !== 0) {
+    return finding('retained-remote-alignment', 'error', 'task-finish.target-observation-failed', 'Unable to observe remote target ref.', {
+      failureClass: 'transient-external-condition',
+      exitCode: Number.isInteger(observed.status) ? observed.status : 1,
+    });
+  }
+  const observedTargetRef = String(observed.stdout || '').trim().split(/\s+/)[0] || null;
+  if (!observedTargetRef) {
+    return finding('retained-remote-alignment', 'error', 'task-finish.target-ref-missing', `Target ref is unavailable: ${remote}/${targetBranch}.`, {
+      failureClass: 'transient-external-condition',
+    });
+  }
+  if (head === observedTargetRef) {
+    return finding('retained-remote-alignment', 'ok', 'task-finish.retained-remote-aligned', `Retained HEAD equals observed remote ${remote}/${targetBranch}.`, { observedTargetRef });
+  }
+  if (!gitOk(root, ['cat-file', '-e', `${observedTargetRef}^{commit}`]) || gitOk(root, ['merge-base', '--is-ancestor', head, observedTargetRef])) {
+    return finding('retained-remote-alignment', 'error', 'task-finish.retained-workspace-behind', 'Retained Workspace is behind the observed remote target ref.', {
+      failureClass: 'transient-external-condition',
+      observedTargetRef,
+      head,
+    });
+  }
+  if (gitOk(root, ['merge-base', '--is-ancestor', observedTargetRef, head])) {
+    return finding('retained-remote-alignment', 'error', 'task-finish.retained-workspace-not-ready', 'Retained Workspace HEAD is not the observed remote target ref.', {
+      failureClass: 'transient-external-condition',
+      observedTargetRef,
+      head,
+    });
+  }
+  return finding('retained-remote-alignment', 'error', 'task-finish.retained-workspace-diverged', 'Retained Workspace and the observed remote target ref have diverged.', {
+    failureClass: 'transient-external-condition',
+    observedTargetRef,
+    head,
+  });
+}
+
 function finding(check, severity, code, message, extra = {}) {
   return { check, severity, code, message, ...extra };
 }
@@ -306,14 +348,24 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
       }));
       else checks.push(finding('retained-workspace', 'ok', 'task-finish.retained-workspace-ready', 'Retained Workspace is ready for target transition.', { workspaceMetadata: retainedReadiness.workspaceMetadata }));
 
+      let deliveryRemoteReady = false;
       if (!run.identity.remote) checks.push(finding('delivery-remote', 'error', 'task-finish.delivery-remote-missing', 'Task Finish run is not bound to a retained Workspace delivery remote.'));
       else {
         try {
           const resolved = resolveTaskFinishDeliveryRemote({ root: run.identity.workspaceRoot, targetBranch: run.identity.targetBranch, requestedRemote: run.identity.remote });
           checks.push(finding('delivery-remote', 'ok', 'task-finish.delivery-remote-ready', `Delivery remote ${resolved.remote} is configured in the retained Workspace.`));
+          deliveryRemoteReady = true;
         } catch (error) {
           checks.push(finding('delivery-remote', 'error', 'task-finish.delivery-remote-unavailable', error.message, { failureClass: 'transient-external-condition', details: error.details }));
         }
+      }
+      if (deliveryRemoteReady && retainedIdentity.head && retainedIdentity.branch === run.identity.targetBranch) {
+        checks.push(observeRetainedRemoteAlignment({
+          root: run.identity.workspaceRoot,
+          remote: run.identity.remote,
+          targetBranch: run.identity.targetBranch,
+          head: retainedIdentity.head,
+        }));
       }
 
       const retainedActivation = activationPlan(run, []);
