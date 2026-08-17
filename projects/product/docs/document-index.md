@@ -11,6 +11,8 @@
 | [manual/README.md](manual/README.md) | 团队成员与协作者日常使用 Buildr + Agent 的简明操作手册 |
 | [architecture/buildr-skill-system.md](architecture/buildr-skill-system.md) | Buildr Skill 的来源、组合、能力依赖、runtime 投射与 Doctor/receipt 分层 |
 | [architecture/buildr-project-declaration-system.md](architecture/buildr-project-declaration-system.md) | Project Preparation/Verification 声明、Declaration Intake、Task 选择、专业 authority 与非 Node 边界 |
+| [architecture/progressive-business-modeling.md](architecture/progressive-business-modeling.md) | 从数据模型、领域模型和业务行为出发渐进推进业务设计的当前共识 |
+| [architecture/service-architecture.md](architecture/service-architecture.md) | Buildr Service 工程目录、业务与产品模块、技术分层、Resources、Tools、Web 宿主与 Bootstrap 的组织共识 |
 | [../openspec/knowledge/overview.md](../openspec/knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
 | [../openspec/specs/](../openspec/specs/) | 规范性产品行为契约 |
 | [roadmap/](roadmap/) | 尚未实现的产品方向和详细设计候选，不作为当前事实或实施契约 |
