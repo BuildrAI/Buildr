@@ -74,7 +74,6 @@ export function SettingsPage() {
     <>
       <section className="page-header">
         <div>
-          <p className="eyebrow">工作空间</p>
           <Typography.Title level={2} style={{ margin: 0 }}>工作空间设置</Typography.Title>
           <p className="page-copy">只修改稳定元数据；身份、目录和数据格式版本始终保持只读。</p>
         </div>

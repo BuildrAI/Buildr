@@ -112,9 +112,8 @@ export function WorkspacesPage() {
     <>
       <section className="resource-toolbar">
         <div>
-          <p className="eyebrow">从这里建立工作范围</p>
           <Typography.Title level={2} style={{ margin: 0 }}>工作空间</Typography.Title>
-          <p className="page-copy">工作空间是你和 Agent 共同工作的顶层目录；项目表示长期工作单元，服务按需登记代码仓、应用或模块。</p>
+          <p className="page-copy">从这里建立工作范围。工作空间是你和 Agent 共同工作的顶层目录；项目表示长期工作单元，服务按需登记代码仓、应用或模块。</p>
         </div>
         <div className="toolbar-actions">
           <Button id="add-workspace" type="primary" loading={adding} onClick={() => void pickWorkspace()}>
