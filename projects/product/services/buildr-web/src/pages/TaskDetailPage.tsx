@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Button, Input, Select, Table } from 'antd';
+import { Button, Input, Modal, Select, Table } from 'antd';
 import { api, type ApiError } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { confirmModal } from '../lib/confirm';
@@ -65,6 +65,7 @@ export function TaskDetailPage() {
   const [completeSummary, setCompleteSummary] = useState('');
   const [completeNoChange, setCompleteNoChange] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
+  const [actionModal, setActionModal] = useState<null | 'edit' | 'complete' | 'abandon'>(null);
 
   const [developmentData, setDevelopmentData] = useState<any>(null);
   const [developmentLoading, setDevelopmentLoading] = useState(false);
@@ -387,6 +388,7 @@ export function TaskDetailPage() {
     setCompleteSummary('');
     setCompleteNoChange('');
     setAbandonReason('');
+    setActionModal(null);
     setEditState('可以修改');
     developmentRequestRef.current += 1;
     overviewRequestRef.current += 1;
@@ -517,6 +519,7 @@ export function TaskDetailPage() {
       void loadBriefs(updated.record.changes);
       setEditState(updated.effects.length ? '保存成功' : '内容一致');
       setAlert(null);
+      setActionModal(null);
     } catch (err) {
       showMutationError(err as ApiError);
     } finally {
@@ -542,6 +545,7 @@ export function TaskDetailPage() {
           noChange: completeNoChange === 'true',
         }),
       });
+      setActionModal(null);
       await refresh();
       selectTab('overview');
     } catch (err) {
@@ -567,6 +571,7 @@ export function TaskDetailPage() {
           reason: abandonReason,
         }),
       });
+      setActionModal(null);
       await refresh();
       selectTab('overview');
     } catch (err) {
@@ -589,8 +594,9 @@ export function TaskDetailPage() {
     return (
       <section className="detail-page-header">
         <div className="detail-title-row">
-          <div>
+          <div className="detail-title-copy">
             <h1 id="task-detail-title">正在读取…</h1>
+            <p id="task-detail-id" className="task-detail-id" />
             <p id="task-detail-intent" className="page-copy" />
           </div>
           <span id="task-detail-status" className="lifecycle-badge">—</span>
@@ -609,8 +615,9 @@ export function TaskDetailPage() {
     <>
       <section className="detail-page-header">
         <div className="detail-title-row">
-          <div>
+          <div className="detail-title-copy">
             <h1 id="task-detail-title">{record.title}</h1>
+            <p id="task-detail-id" className="task-detail-id">{record.taskId}</p>
             <p id="task-detail-intent" className="page-copy">{record.intent}</p>
           </div>
           <span id="task-detail-status" className={`lifecycle-badge ${record.status}`}>{taskStatusLabel(record.status)}</span>
@@ -620,18 +627,31 @@ export function TaskDetailPage() {
         {alert?.message || ''}
       </div>
       <nav className="detail-tabs" aria-label="任务详情">
-        {TABS.map((tab) => (
-          <Button
-            key={tab.id}
-            className={`detail-tab${activeTab === tab.id ? ' active' : ''}`}
-            type="text"
-            data-task-tab={tab.id}
-            aria-selected={activeTab === tab.id}
-            onClick={() => selectTab(tab.id)}
-          >
-            {tab.label}
+        <div className="detail-tabs-list">
+          {TABS.map((tab) => (
+            <Button
+              key={tab.id}
+              className={`detail-tab${activeTab === tab.id ? ' active' : ''}`}
+              type="text"
+              data-task-tab={tab.id}
+              aria-selected={activeTab === tab.id}
+              onClick={() => selectTab(tab.id)}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </div>
+        <div id="task-active-actions" className={`detail-tab-actions${terminal ? ' hidden' : ''}`}>
+          <Button id="task-edit-action" size="small" onClick={() => setActionModal('edit')}>
+            {record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}
           </Button>
-        ))}
+          <Button id="task-complete-action" size="small" onClick={() => setActionModal('complete')}>
+            结束任务
+          </Button>
+          <Button id="task-abandon-action" size="small" danger onClick={() => setActionModal('abandon')}>
+            放弃任务
+          </Button>
+        </div>
       </nav>
 
       <div id="task-overview-panel" className={activeTab === 'overview' ? '' : 'hidden'} data-task-panel="overview">
@@ -812,97 +832,113 @@ export function TaskDetailPage() {
             </dl>
           </aside>
         </section>
-        <section id="task-active-actions" className={`task-actions${terminal ? ' hidden' : ''}`}>
-          <article className="panel">
-            <div className="panel-heading">
-              <div>
-                <h2>{record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}</h2>
-                <p className="section-copy">保存时只提交明确的设置与增删操作；Change 由 Agent 在任务过程中维护，页面只读展示。修改 Parent 不会自动处置任何关联 Task。</p>
-              </div>
-              <span id="task-edit-state" className="state">{editState}</span>
-            </div>
-            <form id="task-edit-form" className="prompt-grid" onSubmit={(event) => void onSave(event)}>
-              <label>
-                标题
-                <Input id="task-edit-title" required value={title} onChange={(event) => setTitle(event.target.value)} />
-              </label>
-              <label>
-                Parent Task
-                <Select
-                  id="task-edit-parent"
-                  style={{ width: '100%' }}
-                  value={parentTaskId}
-                  loading={parentOptionsLoading}
-                  onDropdownVisibleChange={(open) => { if (open) void loadParentOptions(); }}
-                  onChange={(value) => setParentTaskId(value ?? '')}
-                  options={parentOptions}
-                />
-              </label>
-              <label className="full">
-                意图
-                <Input.TextArea id="task-edit-intent" rows={3} required value={intent} onChange={(event) => setIntent(event.target.value)} />
-              </label>
-              <label>
-                项目范围
-                <Input.TextArea id="task-edit-projects" rows={3} value={projectsText} onChange={(event) => setProjectsText(event.target.value)} />
-              </label>
-              <label>
-                服务范围（project/service）
-                <Input.TextArea id="task-edit-services" rows={3} value={servicesText} onChange={(event) => setServicesText(event.target.value)} />
-              </label>
-              <div className="actions full">
-                <Button id="task-edit-button" type="primary" htmlType="submit" loading={saving}>保存任务记录</Button>
-              </div>
-            </form>
-          </article>
-          <article className="panel terminal-panel">
-            <div className="panel-heading">
-              <div>
-                <h2>结束任务</h2>
-                <p className="section-copy">只更新顶层状态；不会执行任务收尾（Task Finish）、Git、任务验证、任务环境清理或其他专业动作。</p>
-              </div>
-            </div>
-            <div className="terminal-action-grid">
-              <form id="task-complete-form" onSubmit={(event) => void onComplete(event)}>
-                <h3>完成</h3>
-                <label>
-                  完成摘要
-                  <Input.TextArea id="task-complete-summary" rows={3} required value={completeSummary} onChange={(event) => setCompleteSummary(event.target.value)} />
-                </label>
-                <label>
-                  是否无需交付变更
-                  <Select
-                    id="task-complete-no-change"
-                    style={{ width: '100%' }}
-                    placeholder="请选择"
-                    value={completeNoChange || undefined}
-                    onChange={(value) => setCompleteNoChange(value || '')}
-                    options={record.status === 'todo'
-                      ? [{ value: 'true', label: '确认无需变更' }]
-                      : [
-                          { value: 'false', label: '有交付变更' },
-                          { value: 'true', label: '确认无需变更' },
-                        ]}
-                  />
-                </label>
-                <Button type="default" htmlType="submit">确认完成</Button>
-              </form>
-              <form id="task-abandon-form" onSubmit={(event) => void onAbandon(event)}>
-                <h3>放弃</h3>
-                <label>
-                  放弃原因
-                  <Input.TextArea id="task-abandon-reason" rows={3} required value={abandonReason} onChange={(event) => setAbandonReason(event.target.value)} />
-                </label>
-                <Button danger htmlType="submit">确认放弃</Button>
-              </form>
-            </div>
-          </article>
-        </section>
         <section id="task-terminal-note" className={`empty-state${terminal ? '' : ' hidden'}`}>
           <h2>这是终态任务记录</h2>
           <p>顶层事实与 Parent/Child 关系保持只读，不提供重开、重新挂接或自动处置关联 Task 的入口。专业模块仍由各自权威来源管理。</p>
         </section>
       </div>
+
+      <Modal
+        title={record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}
+        open={actionModal === 'edit'}
+        onCancel={() => setActionModal(null)}
+        footer={null}
+        destroyOnClose
+        width={720}
+        className="task-action-modal"
+      >
+        <p className="section-copy">保存时只提交明确的设置与增删操作；Change 由 Agent 在任务过程中维护，页面只读展示。修改 Parent 不会自动处置任何关联 Task。</p>
+        <span id="task-edit-state" className="state">{editState}</span>
+        <form id="task-edit-form" className="prompt-grid" onSubmit={(event) => void onSave(event)}>
+          <label>
+            标题
+            <Input id="task-edit-title" required value={title} onChange={(event) => setTitle(event.target.value)} />
+          </label>
+          <label>
+            Parent Task
+            <Select
+              id="task-edit-parent"
+              style={{ width: '100%' }}
+              value={parentTaskId}
+              loading={parentOptionsLoading}
+              onDropdownVisibleChange={(open) => { if (open) void loadParentOptions(); }}
+              onChange={(value) => setParentTaskId(value ?? '')}
+              options={parentOptions}
+            />
+          </label>
+          <label className="full">
+            意图
+            <Input.TextArea id="task-edit-intent" rows={3} required value={intent} onChange={(event) => setIntent(event.target.value)} />
+          </label>
+          <label>
+            项目范围
+            <Input.TextArea id="task-edit-projects" rows={3} value={projectsText} onChange={(event) => setProjectsText(event.target.value)} />
+          </label>
+          <label>
+            服务范围（project/service）
+            <Input.TextArea id="task-edit-services" rows={3} value={servicesText} onChange={(event) => setServicesText(event.target.value)} />
+          </label>
+          <div className="actions full">
+            <Button id="task-edit-button" type="primary" htmlType="submit" loading={saving}>保存任务记录</Button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        title="结束任务"
+        open={actionModal === 'complete'}
+        onCancel={() => setActionModal(null)}
+        footer={null}
+        destroyOnClose
+        width={520}
+        className="task-action-modal"
+      >
+        <p className="section-copy">只更新顶层状态；不会执行任务收尾（Task Finish）、Git、任务验证、任务环境清理或其他专业动作。</p>
+        <form id="task-complete-form" onSubmit={(event) => void onComplete(event)}>
+          <label>
+            完成摘要
+            <Input.TextArea id="task-complete-summary" rows={3} required value={completeSummary} onChange={(event) => setCompleteSummary(event.target.value)} />
+          </label>
+          <label>
+            是否无需交付变更
+            <Select
+              id="task-complete-no-change"
+              style={{ width: '100%' }}
+              placeholder="请选择"
+              value={completeNoChange || undefined}
+              onChange={(value) => setCompleteNoChange(value || '')}
+              options={record.status === 'todo'
+                ? [{ value: 'true', label: '确认无需变更' }]
+                : [
+                    { value: 'false', label: '有交付变更' },
+                    { value: 'true', label: '确认无需变更' },
+                  ]}
+            />
+          </label>
+          <div className="actions">
+            <Button type="default" htmlType="submit">确认完成</Button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        title="放弃任务"
+        open={actionModal === 'abandon'}
+        onCancel={() => setActionModal(null)}
+        footer={null}
+        destroyOnClose
+        width={520}
+        className="task-action-modal"
+      >
+        <p className="section-copy">只更新顶层状态；不会清理任务环境、执行 Git 或其他专业动作。</p>
+        <form id="task-abandon-form" onSubmit={(event) => void onAbandon(event)}>
+          <label>
+            放弃原因
+            <Input.TextArea id="task-abandon-reason" rows={3} required value={abandonReason} onChange={(event) => setAbandonReason(event.target.value)} />
+          </label>
+          <div className="actions">
+            <Button danger htmlType="submit">确认放弃</Button>
+          </div>
+        </form>
+      </Modal>
 
       <DevelopmentTab
         taskId={taskId}

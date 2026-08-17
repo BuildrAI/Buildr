@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Input } from 'antd';
+import { Button, Input, Modal } from 'antd';
 import { Link } from 'react-router-dom';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import { formatDateTime, taskStatusLabel } from '../../lib/taskLabels';
@@ -25,9 +25,11 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
   const present = Boolean(data?.slot?.present);
   const disposition = data?.slot?.disposition;
   const [note, setNote] = useState('');
+  const [handleOpen, setHandleOpen] = useState(false);
 
   useEffect(() => {
     setNote(disposition?.status === 'pending' ? '' : disposition?.note || '');
+    if (disposition?.status !== 'pending') setHandleOpen(false);
   }, [data?.slot?.currentDigest, disposition?.note, disposition?.status]);
 
   const pending = disposition?.status === 'pending';
@@ -60,10 +62,17 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
       >
         {!data ? null : present ? (
           <>
-            <dl className="read-facts retrospective-facts">
-              <Fact label="关注范围" value="Agent 执行效率" />
-              <Fact label="完成时间" value={formatDateTime(data.slot.result.completedAt)} />
-            </dl>
+            <div className="retrospective-facts-module">
+              <dl className="read-facts retrospective-facts">
+                <Fact label="关注范围" value="Agent 执行效率" />
+                <Fact label="完成时间" value={formatDateTime(data.slot.result.completedAt)} />
+              </dl>
+              {pending ? (
+                <Button id="task-retrospective-handle-open" size="small" onClick={() => setHandleOpen(true)}>
+                  复盘处理
+                </Button>
+              ) : null}
+            </div>
             <section className="retrospective-disposition" aria-label="复盘处置">
               <div className="retrospective-disposition-heading">
                 <div>
@@ -81,30 +90,39 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
                   <Fact label="处置说明" value={disposition.note} />
                   <Fact label="处置时间" value={formatDateTime(disposition.disposedAt)} />
                 </dl>
-              ) : (
-                <div className="retrospective-disposition-form">
-                  <label htmlFor="task-retrospective-disposition-note">
-                    处置说明
-                    <Input.TextArea
-                      id="task-retrospective-disposition-note"
-                      rows={3}
-                      placeholder="记录处理结论，或说明为什么无需处理"
-                      value={note}
-                      disabled={loading}
-                      onChange={(event) => setNote(event.target.value)}
-                    />
-                  </label>
-                  <div className="actions">
-                    <Button id="task-retrospective-handle" type="primary" disabled={loading || !noteReady} onClick={() => onHandle('handled', note.trim())}>
-                      标记已处理
-                    </Button>
-                    <Button id="task-retrospective-no-action" disabled={loading || !noteReady} onClick={() => onHandle('no-action', note.trim())}>
-                      无需处理
-                    </Button>
-                  </div>
-                </div>
-              )}
+              ) : null}
             </section>
+            <Modal
+              title="复盘处理"
+              open={handleOpen}
+              onCancel={() => setHandleOpen(false)}
+              footer={null}
+              destroyOnClose
+              width={520}
+              className="task-action-modal"
+            >
+              <div className="retrospective-disposition-form">
+                <label htmlFor="task-retrospective-disposition-note">
+                  处置说明
+                  <Input.TextArea
+                    id="task-retrospective-disposition-note"
+                    rows={3}
+                    placeholder="记录处理结论，或说明为什么无需处理"
+                    value={note}
+                    disabled={loading}
+                    onChange={(event) => setNote(event.target.value)}
+                  />
+                </label>
+                <div className="actions">
+                  <Button id="task-retrospective-handle" type="primary" disabled={loading || !noteReady} onClick={() => onHandle('handled', note.trim())}>
+                    标记已处理
+                  </Button>
+                  <Button id="task-retrospective-no-action" disabled={loading || !noteReady} onClick={() => onHandle('no-action', note.trim())}>
+                    无需处理
+                  </Button>
+                </div>
+              </div>
+            </Modal>
             <section className="retrospective-followups" aria-label="后续承接任务">
               <div className="retrospective-disposition-heading">
                 <div>

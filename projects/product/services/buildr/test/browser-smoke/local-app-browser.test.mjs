@@ -286,6 +286,10 @@ async function unique(locator, description) {
   return locator;
 }
 
+async function openTaskActionModal(page, actionId) {
+  await page.locator(`#${actionId}`).click();
+}
+
 async function openAntdSelect(page, id) {
   await page.locator(`.ant-select:has(#${id}) .ant-select-selector`).click();
   await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').last().waitFor({ state: 'visible' });
@@ -682,6 +686,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#close-agent-action').click();
     await page.getByRole('button', { name: '概览', exact: true }).click();
 
+    await openTaskActionModal(page, 'task-complete-action');
+    await page.locator('#task-complete-form').waitFor({ state: 'visible' });
     await page.locator('#task-complete-summary').fill('页面确认完成');
     await selectAntdOption(page, 'task-complete-no-change', '有交付变更');
     await page.locator('#task-complete-form').getByRole('button', { name: '确认完成', exact: true }).click();
@@ -703,7 +709,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('减少重复读取'));
     assert.match(await page.locator('#task-retrospective-content').innerText(), /Agent 执行效率[\s\S]*执行效率[\s\S]*减少重复读取/);
     assert.equal(await page.locator('#task-retrospective-content h2').innerText(), '执行效率');
-    assert.match(await page.locator('.retrospective-disposition').innerText(), /未处理[\s\S]*无需处理/);
+    assert.match(await page.locator('.retrospective-disposition').innerText(), /未处理/);
+    await page.locator('#task-retrospective-handle-open').click();
+    await page.locator('#task-retrospective-disposition-note').waitFor({ state: 'visible' });
     await page.locator('#task-retrospective-disposition-note').fill('没有可转化为改进任务的事项');
     await page.locator('#task-retrospective-no-action').click();
     await page.waitForFunction(() => document.querySelector('.retrospective-disposition')?.textContent.includes('没有可转化为改进任务的事项'));
@@ -716,13 +724,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await openTaskActionModal(page, 'task-edit-action');
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });
     await page.locator('#task-change-briefs .change-brief-panel').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-change-briefs').innerText(), /普通用户先从这里了解变更/);
     assert.match(await antdSelectDisplay(page, 'task-edit-parent'), /browser-parent/);
     await selectAntdOption(page, 'task-edit-parent', '无 Parent（独立 Task）');
     await page.getByRole('button', { name: '保存任务记录', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-edit-state')?.textContent === '保存成功');
+    await page.locator('#task-edit-form').waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#task-detail-parent').innerText(), '无（独立 Task）');
     const taskChange = page.locator('#task-detail-changes a').filter({ hasText: 'demo/browser-flow' });
     await unique(taskChange, '任务关联 Change');
@@ -841,6 +850,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('button', { name: '概览', exact: true }).click();
 
     runtime.updateTaskRecord(workspaceRoot, 'browser-task', { intent: '另一客户端已经更新' });
+    await openTaskActionModal(page, 'task-edit-action');
+    await page.locator('#task-edit-form').waitFor({ state: 'visible' });
     await page.locator('#task-edit-title').fill('陈旧页面不得覆盖');
     await page.getByRole('button', { name: '保存任务记录', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-edit-state')?.textContent === '记录已变化');
@@ -849,12 +860,17 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       if (/\/tasks\/browser-task \[[^\]]*\]: Failed to load resource: the server responded with a status of 409 \(Conflict\)$/.test(browserErrors[index])) browserErrors.splice(index, 1);
     }
     await page.reload();
+    await openTaskActionModal(page, 'task-edit-action');
+    await page.locator('#task-edit-form').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-edit-intent').inputValue(), '另一客户端已经更新');
     await page.locator('#task-edit-intent').fill('页面基于最新记录更新');
     await page.getByRole('button', { name: '保存任务记录', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-edit-state')?.textContent === '保存成功');
+    await page.locator('#task-edit-form').waitFor({ state: 'hidden' });
+    assert.match(await page.locator('#task-detail-intent').innerText(), /页面基于最新记录更新/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-abandon`);
+    await openTaskActionModal(page, 'task-abandon-action');
+    await page.locator('#task-abandon-form').waitFor({ state: 'visible' });
     await page.locator('#task-abandon-reason').fill('浏览器验收取消');
     await page.locator('#task-abandon-form').getByRole('button', { name: '确认放弃', exact: true }).click();
     await page.locator('.ant-modal-confirm').waitFor({ state: 'visible' });
