@@ -21,7 +21,11 @@ proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到
 
 ## Parent Plan 与 Child Contribution
 
-新建Parent可以显式采用Parent Plan。先用`task parent inspect`确认`legacy|parent-plan`模式；首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
+新建Parent可以显式采用Parent Plan。正常启动顺序是：active Task → matching ready Parent Environment → Development begin → Parent Plan record → current Planning Review → `task parent refresh-planning`消费Review → `task next`返回首个依赖已满足的Contribution。任何一步blocked都只恢复该步的owner事实；不要先创建Child、手工拼Development写入或把非阻塞建议升级成gate。
+
+Parent Environment只服务Parent本身。纯协调且在Child前不修改交付内容的Parent可以显式采用coordination-only共享执行根；Parent会直接修改代码、文档或其他生产内容时，必须从一开始使用隔离checkout。Child Environment按Child自己的Task scope另行准备，既不继承Parent Receipt，也不因Parent Plan刚建立而提前prepare。若Child依赖Parent尚未进入canonical baseline的真实交付，Parent Plan必须表达该依赖，并等前置Contribution正式交付后再准备Child Environment。
+
+先用`task parent inspect`确认`legacy|parent-plan`模式；`task parent record|reconcile --schema|--example`是Parent Plan输入的公开发现入口。首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
 
 Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入，不是Development资源或长期事实。Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`record`或`reconcile`成功后必须立即删除。命令失败时，只有仍需使用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。Application保存的current Parent Plan才是authority；CLI、Task Development和Environment cleanup均不扫描或删除调用方临时输入。
 

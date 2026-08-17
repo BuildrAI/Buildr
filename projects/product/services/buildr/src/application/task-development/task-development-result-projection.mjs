@@ -19,6 +19,7 @@ function compactCurrent(development) {
       taskContext: receipt.taskContext.identity,
       planning: receipt.planning.identity,
       planningTarget: receipt.planning.targetIdentity,
+      parentPlan: receipt.parentPlan?.identity || null,
       contentTarget: receipt.contentTarget?.identity || null,
       policy: receipt.verificationPolicy?.identity || null,
       candidate: receipt.candidate?.identity || null,

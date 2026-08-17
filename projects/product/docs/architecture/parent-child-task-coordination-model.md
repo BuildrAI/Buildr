@@ -57,6 +57,14 @@ Domain会排序数组、拒绝重复与未知引用、拒绝循环依赖，并�
 
 首次采用使用 `record`；Plan已存在后只能提交current expected identity、完整next Plan和非空reason执行 `reconcile`。reconciliation只更新计划，不自动修改任何Child Task、Change或handoff。
 
+### 3.1 Parent 启动顺序
+
+Parent推进到首个Child之前遵循：active Task → matching ready Parent Environment → Development begin → Parent Plan record → current Planning Review → `task parent refresh-planning`消费Review → 选择一个依赖已满足的eligible Contribution。`task next`只读返回当前唯一next，不自动执行Review、refresh或Child创建。
+
+纯协调且在Child前不修改交付内容的Parent可以使用明确的coordination-only共享执行根；Parent会直接修改代码、文档或其他生产内容时使用隔离checkout。Child始终准备自己的Environment；若Child依赖尚未进入canonical baseline的Parent交付，必须等对应前置Contribution正式交付后再prepare Child Environment。
+
+`task parent record|reconcile --schema|--example`公开closed输入结构。`refresh-planning`不接收caller重构的planning JSON，只复用saved Parent Plan、matching planning snapshot与current ready Planning Review；Plan或Review漂移时零写入并要求重新inspect。
+
 ## 4. Child 独立交付
 
 Child 的创建顺序是：

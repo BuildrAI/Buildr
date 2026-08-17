@@ -59,6 +59,8 @@ function commandRoute(next, execution, taskId) {
   const controller = execution.controllerInvocation;
   const publicArgs = {
     'planning-review': ['task', 'review', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
+    'refresh-parent-planning': ['task', 'parent', 'refresh-planning', taskId, '--target', execution.workspaceRoot, '--json'],
+    'accept-parent': ['task', 'parent', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
     verify: ['task', 'verification', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
     finish: ['task', 'finish', 'run', '--task', taskId, '--target', execution.workspaceRoot, '--json'],
   }[next.action] || null;
@@ -93,6 +95,7 @@ export function registerTaskEntrySnapshotApplication(runtime) {
     let inspected = null;
     let execution = null;
     let development = null;
+    let parent = null;
     try {
       inspected = measured('task-manager', () => runtime.inspectTaskRecord(targetRoot, taskId));
       if (inspected.record.status !== 'active') return finish({ status: 'blocked', task: taskSummary(inspected), environment: null, development: null, blockers: [{ axis: 'task', owner: 'task-manager', code: 'task_entry_task_not_active' }], next: requiredNext('task-manager', 'inspect', { id: 'buildr.task-record', version: 2 }, `Task ${taskId} 已是 ${inspected.record.status}，不能继续正式研发。`), diagnostic: { code: 'task_entry_task_not_active', owner: 'task-manager', message: `Task ${taskId} 不是 active。` }, effects: [] });
@@ -136,6 +139,19 @@ export function registerTaskEntrySnapshotApplication(runtime) {
           identityBlocker = { axis: 'development', owner: 'task-development', code: 'task_entry_development_identity_stale', message: 'Development保存的direct applicability已标记stale。' };
         }
       }
+      if (!identityBlocker && developmentResult.development?.receipt.parentPlan) {
+        const startup = measured('parent-coordination', () => runtime.inspectParentStartupReadiness(targetRoot, taskId, { task: inspected, execution, development: developmentResult }));
+        parent = { mode: startup.mode, status: startup.status, checks: startup.checks, blockers: startup.blockers, eligibleContributions: startup.eligibleContributions };
+        const parentNext = startup.next;
+        if (parentNext) {
+          const capability = {
+            'planning-review': { id: 'buildr.task-review', version: 1 },
+            'refresh-parent-planning': { id: 'buildr.task-development', version: 2 },
+            'accept-parent': { id: 'buildr.task-development', version: 2 },
+          }[parentNext.action] || null;
+          next = { ...parentNext, capability };
+        }
+      }
       if (next?.capability) {
         next = { ...next, route: measured('capability-routing', () => capabilityRoute(targetRoot, taskRecordEffectiveProjectCodes(inspected.record), next.capability.id, next.capability.version, { runtime: execution.controller?.adapter || options.runtime || 'codex' })) };
         if (next.route.readiness === 'blocked') next = { ...next, mode: 'required' };
@@ -147,7 +163,8 @@ export function registerTaskEntrySnapshotApplication(runtime) {
         task: taskSummary(inspected),
         environment: environmentSummary(execution),
         development,
-        blockers: identityBlocker ? [identityBlocker] : routeBlocked ? [{ axis: 'capability', owner: 'capability-routing', code: next.route.reason }] : [],
+        parent,
+        blockers: identityBlocker ? [identityBlocker] : routeBlocked ? [{ axis: 'capability', owner: 'capability-routing', code: next.route.reason }] : parent?.blockers || [],
         next,
         diagnostic: identityBlocker ? { code: identityBlocker.code, owner: identityBlocker.owner, message: identityBlocker.message } : routeBlocked ? { code: `task_entry_${next.route.reason}`, owner: 'capability-routing', message: `当前capability route不可用：${next.capability.id}@${next.capability.version}。` } : null,
         effects: [],
@@ -155,7 +172,7 @@ export function registerTaskEntrySnapshotApplication(runtime) {
     } catch (error) {
       attempts.failed += 1;
       const owner = ownerFor(error);
-      return finish({ status: 'blocked', task: inspected ? taskSummary(inspected) : null, environment: execution ? environmentSummary(execution) : null, development, blockers: [{ axis: owner, owner, code: error.code || 'task_entry_snapshot_failed' }], next: requiredNext(owner, 'inspect', null, error.nextAction || '由对应owner检查诊断并恢复current facts。'), diagnostic: { code: error.code || 'task_entry_snapshot_failed', owner, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }, effects: [] });
+      return finish({ status: 'blocked', task: inspected ? taskSummary(inspected) : null, environment: execution ? environmentSummary(execution) : null, development, parent, blockers: [{ axis: owner, owner, code: error.code || 'task_entry_snapshot_failed' }], next: requiredNext(owner, 'inspect', null, error.nextAction || '由对应owner检查诊断并恢复current facts。'), diagnostic: { code: error.code || 'task_entry_snapshot_failed', owner, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }, effects: [] });
     }
   }
 

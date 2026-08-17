@@ -455,6 +455,13 @@
 - 避免混用：不是OpenSpec delta Change、Child状态/Result副本、实现清单、Markdown checkbox进度或lifecycle authority；普通Child状态变化不改变其bytes或identity。
 - 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
 
+## Parent 启动就绪（Parent Startup Readiness）
+
+- 定义：Parent Coordination基于current Task、matching Environment、Development、Parent Plan、Planning Review/gate及Contribution依赖派生的response-only启动投影。
+- 适用范围：Parent-aware `task next`在首个Child创建前返回planning-review、refresh-parent-planning、eligible Contribution或依赖等待动作。
+- 避免混用：不是新的Parent lifecycle状态、Receipt字段、自动planner或跨authority事务；它不自动Review、刷新gate、创建Child或准备Child Environment。
+- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+
 ## Contribution Handoff
 
 - 定义：承担Parent Contribution的Task在既有immutable Development handoff中保存的实际交付事实，明确planned、delivered、extra、residual、superseded、affected与唯一next action。

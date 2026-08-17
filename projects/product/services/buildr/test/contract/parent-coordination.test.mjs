@@ -32,8 +32,9 @@ test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一publ
   const worker = read('src/interfaces/local-app/http/read-worker.mjs');
   const json = read('src/application/json-contracts.mjs');
   const skill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
-  for (const command of ['task parent inspect', 'task parent record', 'task parent bind-child', 'task parent reconcile', 'task parent accept']) assert.ok(registry.includes(command), command);
-  for (const method of ['inspectParentCoordination', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'acceptParentCoordination']) assert.ok(cli.includes(method) || server.includes(method), method);
+  for (const command of ['task parent inspect', 'task parent record', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile', 'task parent accept']) assert.ok(registry.includes(command), command);
+  for (const method of ['inspectParentCoordination', 'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'acceptParentCoordination']) assert.ok(cli.includes(method) || server.includes(method), method);
+  for (const flag of ['--schema', '--example']) assert.ok(cli.includes(flag), flag);
   assert.match(worker, /coordination:\s*'inspectParentCoordination'/);
   assert.match(json, /buildr\.parent-coordination-result\/v1/);
   for (const phrase of ['Parent Plan', 'Contribution Handoff', 'task parent bind-child', '不自动完成Parent']) assert.ok(skill.includes(phrase), phrase);
