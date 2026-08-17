@@ -512,7 +512,7 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "按Project Preparation Declaration与Agent选择的Task Plan幂等准备Project/Service执行环境。",
     help: [
-      "Usage: buildr task environment prepare <task-id> [--plan <json-file>] [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task environment prepare <task-id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--plan <json-file>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
       "",
       "Plan Request必须恰好覆盖Task Record中的全部Project/Service scope，可引用Project preparation.yml的Recipe或显式task-inline Recipe。",
       "默认使用Git worktree；inspect严格只读，不执行Step或回写current。"

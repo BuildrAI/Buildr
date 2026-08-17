@@ -144,7 +144,8 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function assertEnvironmentManager(workspaceRoot, receipt = null, adapter = null) {
-    const expectedAdapter = receipt?.controller.adapter || adapter || 'codex';
+    const expectedAdapter = receipt?.controller.adapter || adapter || null;
+    if (!expectedAdapter) throw taskEnvironmentError('task_environment_adapter_required', '准备 Task Environment 必须显式指定当前宿主 adapter。', 400, undefined, '提供受支持的 --agent <adapter> 后重试，不得省略或依赖产品默认值。');
     const current = currentEnvironmentManager(workspaceRoot, expectedAdapter);
     if (receipt && (!sameFilesystemPath(receipt.controller.sourceRoot, current.sourceRoot) || receipt.controller.adapter !== current.adapter)) {
       throw taskEnvironmentError('task_environment_manager_mismatch', '当前 Buildr 不是该 Environment Receipt 登记的 retained Environment Manager。', 409, {
@@ -800,7 +801,8 @@ export function registerTaskEnvironmentApplication(runtime) {
       if (taskPersistence.record.status !== 'active') throw taskEnvironmentError('task_environment_task_terminal', `Task ${taskId} 已是 ${taskPersistence.record.status}，不能准备新环境效果。`, 409, { status: taskPersistence.record.status }, `运行 buildr task environment inspect ${taskId} 查看最终环境事实。`);
       persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
       if (persistence?.receipt.status === 'cleaned') throw taskEnvironmentError('task_environment_already_cleaned', `Task Environment 已清理：${taskId}。`, 409, undefined, '新范围请创建新的正式 Task。');
-      const adapter = persistence?.receipt.controller.adapter || options.adapter || 'codex';
+      const adapter = persistence?.receipt.controller.adapter || options.adapter || null;
+      if (!adapter) throw taskEnvironmentError('task_environment_adapter_required', '首次准备 Task Environment 必须显式指定当前宿主 adapter。', 400, undefined, '提供受支持的 --agent <adapter> 后重试，不得省略或依赖产品默认值。');
       if (persistence && options.adapter && options.adapter !== persistence.receipt.controller.adapter) throw taskEnvironmentError('task_environment_manager_mismatch', '恢复参数中的 adapter 与 Environment Receipt 登记值不一致。', 409, { expected: persistence.receipt.controller.adapter, actual: options.adapter });
       if (!runtime.isSupportedAgent(adapter)) throw taskEnvironmentError('task_environment_adapter_unsupported', `Agent runtime 不受支持：${adapter}。`, 409);
       const controller = assertEnvironmentManager(root, persistence?.receipt || null, adapter);
@@ -823,7 +825,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       const storedWorkspaceRepository = storedProvider?.evidence.repositories.find((item) => item.selector === 'workspace') || null;
       if (storedProvider && options.branch && options.branch !== storedProvider.evidence.branch) throw taskEnvironmentError('task_environment_plan_mismatch', '恢复参数中的 branch 与现有 Git provider evidence 不一致。', 409);
       if (storedWorkspaceRepository && options.startPoint && options.startPoint !== storedWorkspaceRepository.startPoint) throw taskEnvironmentError('task_environment_plan_mismatch', '恢复参数中的 start point 与现有 Git provider evidence 不一致。', 409);
-      const branch = storedProvider?.evidence.branch || options.branch || `codex/${taskId}`;
+      const branch = storedProvider?.evidence.branch || options.branch || `${adapter}/${taskId}`;
       const startPoint = storedWorkspaceRepository?.startPoint || options.startPoint || 'HEAD';
       const checkoutRoot = useGit ? path.join(root, '.worktrees', taskId) : null;
       const providerPlan = useGit ? runtime.planGitWorktrees({ workspaceRoot: root, taskId, branch, startPoint, includes: providerIncludes(scopes) }) : null;

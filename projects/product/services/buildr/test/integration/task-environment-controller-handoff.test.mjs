@@ -209,7 +209,7 @@ test('retained controller uses candidate CLI to sync and verify a candidate-owne
   const current = fixture(t);
   current.setRetainedProjectionReady(false);
 
-  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID);
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex' });
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.scopes[0].projection.identity, 'candidate-projection');
   assert.equal(prepared.environment.controller.identity, 'sha256-created-at-m1');
@@ -236,7 +236,7 @@ test('dirty Git-backed manager blocks first prepare before any persistent effect
     await t.test(name, () => {
       const current = fixture(t, { withReceipt: false, isolated: false });
       dirty(current);
-      const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+      const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
       assert.equal(result.status, 'blocked');
       assert.equal(result.diagnostic.code, 'task_environment_manager_dirty');
       assert.deepEqual(result.effects, []);
@@ -254,11 +254,11 @@ test('.buildr lifecycle changes do not affect manager clean or Receipt creation 
   const metadata = path.join(current.root, '.buildr', 'tasks', 'other-task');
   fs.mkdirSync(metadata, { recursive: true });
   fs.writeFileSync(path.join(metadata, 'task.yml'), 'taskId: other-task\n');
-  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: current.plan });
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan });
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   const createdIdentity = current.receipt().controller.identity;
   fs.appendFileSync(path.join(metadata, 'task.yml'), 'status: active\n');
-  const restored = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+  const restored = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
   assert.equal(restored.status, 'ready', JSON.stringify(restored, null, 2));
   assert.equal(current.receipt().controller.identity, createdIdentity);
   assert.equal(restored.effects.some((effect) => effect.type === 'controller-handoff'), false);
@@ -267,7 +267,7 @@ test('.buildr lifecycle changes do not affect manager clean or Receipt creation 
 test('existing Task Environment placement cannot switch between Git and shared roots', async (t) => {
   await t.test('Git to shared', (subtest) => {
     const current = fixture(subtest);
-    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
     assert.equal(result.status, 'blocked');
     assert.equal(result.diagnostic.code, 'task_environment_plan_mismatch');
     assert.deepEqual(result.effects, []);
@@ -278,7 +278,7 @@ test('existing Task Environment placement cannot switch between Git and shared r
 
   await t.test('shared to Git', (subtest) => {
     const current = fixture(subtest, { isolated: false });
-    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: true });
+    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: true });
     assert.equal(result.status, 'blocked');
     assert.equal(result.diagnostic.code, 'task_environment_plan_mismatch');
     assert.deepEqual(result.effects, []);
@@ -300,7 +300,7 @@ test('clean retained M2 keeps probing the M1 task checkout without handoff or so
   assert.equal(git(current.taskRoot, ['rev-parse', 'HEAD']), current.m1);
 
   const checksBefore = current.calls.projectionChecks;
-  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID);
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex' });
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.ok(current.calls.projectionChecks > checksBefore);
   assert.equal(current.receipt().controller.identity, 'sha256-created-at-m1');
@@ -338,7 +338,7 @@ test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without
   await t.test('dirty retained manager', async (subtest) => {
     const current = fixture(subtest);
     fs.appendFileSync(path.join(current.controllerRoot, 'src', 'controller.mjs'), 'export const dirty = true;\n');
-    const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID);
+    const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex' });
     assert.equal(prepared.status, 'blocked');
     assert.equal(prepared.diagnostic.code, 'task_environment_manager_dirty');
     assert.equal(current.calls.writes, 0);
@@ -354,7 +354,7 @@ test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without
     current.setProductRoot(path.join(current.taskRoot, 'projects', 'product', 'services', 'buildr'));
     const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
     assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
-    const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID);
+    const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex' });
     assert.equal(prepared.status, 'blocked');
     assert.equal(prepared.diagnostic.code, 'task_environment_candidate_controller_forbidden');
     assert.throws(() => current.runtime.registerTaskEnvironmentResource(current.root, TASK_ID, {}), (error) => error.code === 'task_environment_candidate_controller_forbidden');
@@ -369,7 +369,7 @@ test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without
     current.setProductRoot(current.alternateControllerRoot);
     const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
     assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
-    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID);
+    const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex' });
     assert.equal(result.status, 'blocked');
     assert.equal(result.diagnostic.code, 'task_environment_manager_mismatch');
     assert.throws(() => current.runtime.registerTaskEnvironmentResource(current.root, TASK_ID, {}), (error) => error.code === 'task_environment_manager_mismatch');
@@ -384,6 +384,15 @@ test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without
     assert.equal(result.diagnostic.code, 'task_environment_manager_mismatch');
     assert.equal(current.calls.writes, 0);
   });
+});
+
+test('首次 prepare 缺少 adapter 必须 fail closed 且零写入', (t) => {
+  const current = fixture(t, { withReceipt: false, isolated: false });
+  const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: current.plan });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'task_environment_adapter_required');
+  assert.equal(current.calls.writes, 0);
+  assert.equal(current.receipt(), null);
 });
 
 test('cleanup keeps the existing unauthorized diagnostic persistence behavior', async (t) => {

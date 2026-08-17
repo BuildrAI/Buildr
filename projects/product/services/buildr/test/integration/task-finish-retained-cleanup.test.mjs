@@ -233,6 +233,7 @@ async function realZeroDeltaCleanupRun(t) {
     changes: [],
   });
   const preparedEnvironment = runtime.prepareTaskEnvironment(root, 'zero-delta-subprocess', {
+    adapter: 'codex',
     useGit: false,
     plan: {
       schemaVersion: 'buildr.task-environment-plan/v1',

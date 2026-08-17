@@ -14,14 +14,15 @@ description: 正式 Task 需要准备、检查、恢复或清理实际执行环�
 必须已有正式 Task Record，并明确 canonical Workspace：
 
 ```bash
-buildr task environment prepare <task-id> --target <canonical-workspace> --json
-buildr task environment prepare <task-id> --plan <json-file> --target <canonical-workspace> --json
+buildr task environment prepare <task-id> --agent <adapter> --target <canonical-workspace> --json
+buildr task environment prepare <task-id> --plan <json-file> --agent <adapter> --target <canonical-workspace> --json
 buildr task environment plan record <task-id> --input <json-file> --target <canonical-workspace> --json
 buildr task environment plan inspect <task-id> --target <canonical-workspace> --json
 buildr task environment inspect <task-id> --target <canonical-workspace> --json
 buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 ```
 
+- `--agent`对`prepare`必填，必须写成当前宿主，例如 Cursor 会话写`cursor`、Codex 会话写`codex`。不得省略，也不得假设省略后默认为 Codex。未给`--branch`时默认任务分支为`<adapter>/<task-id>`；显式`--branch`优先。
 - Project可选维护closed `preparation.yml`，长期声明Project-wide或Service-scoped Recipe。Agent读取Task Record的完整Project/Service scope与构建、验证事实，只选择当前Task需要的Recipe，提交`buildr.task-environment-plan-request/v1`；Application解析声明identity并保存`buildr.task-environment-plan/v2`执行快照。没有长期声明时可显式提交`task-inline` Recipe，但不得静默回写Project。
 - `prepare --plan`可一次完成登记与准备；若Agent必须先检查Task checkout，可先运行无Plan的`prepare`取得受控执行根（结果明确blocked），再运行`plan record`和`prepare`。
 - Plan Request只是CLI的一次性输入，不是Environment资源或长期事实。需要JSON文件时，Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`prepare --plan`或`plan record`成功后必须立即删除。命令失败时，只有仍需用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。
@@ -38,4 +39,4 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 
 ## 停止条件
 
-Task/Workspace不匹配、Plan Request未完整覆盖Task Project/Service scope、声明/Recipe identity漂移、Receipt损坏、retained Environment Manager不可信或源码dirty、provider/resource identity漂移、required Recipe/Step缺失/漂移/执行失败、必需probe blocked、执行根越界或cleanup未授权时停止，保留现场并报告具体Declaration/Scope/Recipe/Step diagnostic与next action。Task checkout/provider evidence决定源码版本；不要从cwd、分支、同一HEAD或旧worktree receipt猜ownership，retained Buildr hash同样不是ownership；也不要由Environment自动fetch/rebase。
+Task/Workspace不匹配、省略`--agent`、Plan Request未完整覆盖Task Project/Service scope、声明/Recipe identity漂移、Receipt损坏、retained Environment Manager不可信或源码dirty、provider/resource identity漂移、required Recipe/Step缺失/漂移/执行失败、必需probe blocked、执行根越界或cleanup未授权时停止，保留现场并报告具体Declaration/Scope/Recipe/Step diagnostic与next action。Task checkout/provider evidence决定源码版本；不要从cwd、分支、同一HEAD或旧worktree receipt猜ownership，retained Buildr hash同样不是ownership；也不要由Environment自动fetch/rebase。

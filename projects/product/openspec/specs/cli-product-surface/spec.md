@@ -468,12 +468,13 @@ Buildr MUST 不再注册、执行或发布 `buildr skills migrate-project-assets
 - **AND** MUST NOT 推荐当前版本不存在的 migration command 或执行自动修复
 
 ### Requirement: Task Environment 必须提供 Plan 与 Environment 薄公共 CLI actions
-Buildr CLI MUST公开`task environment plan record|inspect`以及`task environment prepare|inspect|cleanup`。Plan record MUST只接收`--input <json-file>`中的closed Plan；prepare MUST支持可选`--plan <json-file>`并在省略时复用current Plan。所有CLI MUST只负责参数解析、Application调用、JSON/文本输出和退出码；Buildr Web MUST使用saved-current reader。
+Buildr CLI MUST公开`task environment plan record|inspect`以及`task environment prepare|inspect|cleanup`。Plan record MUST只接收`--input <json-file>`中的closed Plan；prepare MUST支持可选`--plan <json-file>`并在省略时复用current Plan。prepare MUST要求`--agent <adapter>`；省略时 MUST以CLI syntax失败并以非零状态退出，且 MUST NOT默认为`codex`或任何其他adapter。所有CLI MUST只负责参数解析、Application调用、JSON/文本输出和退出码；Buildr Web MUST使用saved-current reader。
 
 #### Scenario: 查看 Task Environment 帮助
 - **WHEN** 用户运行`buildr help task environment`或action help
 - **THEN** 帮助 MUST展示Plan登记/读取以及prepare/inspect/cleanup
 - **AND** MUST说明Plan由Agent形成、prepare执行、inspect零写入且Receipt不属于Task Record
+- **AND** prepare usage MUST把`--agent <adapter>`写成必填，不得写成可选或暗示可省略
 
 #### Scenario: 登记 Plan
 - **WHEN** Agent运行`task environment plan record <task-id> --input <file>`
@@ -481,9 +482,16 @@ Buildr CLI MUST公开`task environment plan record|inspect`以及`task environme
 - **AND** MUST不执行Plan Steps或接受完整Receipt/next state
 
 #### Scenario: 准备或恢复 Environment
-- **WHEN** Agent运行prepare并可选传入Plan
+- **WHEN** Agent运行prepare并传入`--agent`且可选传入Plan
 - **THEN** CLI MUST返回ready/blocked、execution roots、Plan及逐Service/Step facts和effects
 - **AND** MUST不选择技术栈、扫描manifest或直接调用Git provider形成总结果
+- **AND** MUST把解析后的adapter原样交给Application，不得改写为另一个默认宿主
+
+#### Scenario: 省略 prepare --agent
+- **WHEN** 调用方运行`buildr task environment prepare <task-id>`且未提供`--agent`
+- **THEN** CLI MUST在调用Application前以syntax失败并以非零状态退出
+- **AND** MUST零写入Task Environment Receipt、Git worktree与Preparation Steps
+- **AND** diagnostic MUST要求提供`--agent <adapter>`，不得继续并默认为`codex`
 
 #### Scenario: 只读检查 Environment
 - **WHEN** 调用方运行inspect

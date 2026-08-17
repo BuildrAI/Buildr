@@ -182,7 +182,7 @@ capabilities:
     runBuildr(['task', 'create', taskId, '--title', title, '--intent', '验证 terminal delivery 与 live applicability 分离', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
     const planFile = path.join(path.dirname(root), `${taskId}-environment-plan.json`);
     fs.writeFileSync(planFile, `${JSON.stringify({ schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] })}\n`);
-    runBuildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, ...(taskId === 'browser-delivered' ? ['--shared'] : []), '--target', root], controllerCli);
+    runBuildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, ...(taskId === 'browser-delivered' ? ['--shared'] : []), '--agent', 'codex', '--target', root], controllerCli);
     runBuildr(['task', 'review', 'record', taskId, '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   }
   runBuildr(['task', 'create', 'browser-unproven', '--title', '交付未经证明任务', '--intent', '验证 completed 但缺少 matching Finish', '--target', root]);
@@ -613,7 +613,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const deliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
     writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
-    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
+    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
     assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
     prepareDevelopmentFixture(runtime, workspaceRoot);
     runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成', noChange: false });
