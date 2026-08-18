@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { Button, Input, Modal, Select } from 'antd';
 import { api, type ApiError } from '../api';
 import { useAppShell } from '../app/AppShellContext';
+import { MarkdownHost } from '../components/MarkdownHost';
 import { confirmModal } from '../lib/confirm';
+import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocumentReference } from '../lib/taskDocumentLinks';
 import { ChangeBriefPanel } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
@@ -13,6 +15,7 @@ import { EvidenceTab } from './task-detail/EvidenceTab';
 import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
+import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
 import type { ParentCoordinationResult } from './task-detail/parentCoordination';
 import { PreviewTab, type UiPreviewData } from './task-detail/PreviewTab';
 import {
@@ -73,6 +76,7 @@ export function TaskDetailPage() {
   const [completeNoChange, setCompleteNoChange] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
   const [actionModal, setActionModal] = useState<null | 'edit' | 'complete' | 'abandon'>(null);
+  const [documentReference, setDocumentReference] = useState<TaskDocumentReference | null>(null);
 
   const [developmentData, setDevelopmentData] = useState<any>(null);
   const [developmentLoading, setDevelopmentLoading] = useState(false);
@@ -110,6 +114,7 @@ export function TaskDetailPage() {
   const executionRecordViewRef = useRef<ExecutionRecordView>('all');
   const retrospectiveRequestRef = useRef(0);
   const retrospectiveMutationRef = useRef(0);
+  const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
 
   const applyRecord = useCallback((next: TaskDetailData, workspaceName?: string) => {
     setData(next);
@@ -418,6 +423,8 @@ export function TaskDetailPage() {
     setCompleteNoChange('');
     setAbandonReason('');
     setActionModal(null);
+    setDocumentReference(null);
+    projectRegistryRef.current = null;
     setEditState('可以修改');
     developmentRequestRef.current += 1;
     previewRequestRef.current += 1;
@@ -517,6 +524,29 @@ export function TaskDetailPage() {
       error: error.code !== 'task_record_conflict',
     });
     setEditState(error.code === 'task_record_conflict' ? '记录已变化' : '保存失败');
+  };
+
+  const openIntentDocument = async (linkHref: string) => {
+    const current = dataRef.current;
+    if (!current) return;
+    try {
+      if (!projectRegistryRef.current) {
+        const registry = await api('/api/v1/projects') as { projects?: RegisteredProject[] };
+        projectRegistryRef.current = registry.projects || [];
+      }
+      const reference = resolveTaskDocumentReference(linkHref, current.record.scope, projectRegistryRef.current);
+      if (!reference) {
+        setAlert({
+          message: `无法打开“${linkHref}”：仅支持当前任务范围内已登记项目的 Markdown 文档。`,
+          error: true,
+        });
+        return;
+      }
+      setAlert(null);
+      setDocumentReference(reference);
+    } catch (error) {
+      setAlert({ message: error instanceof Error ? error.message : '读取项目文档入口失败。', error: true });
+    }
   };
 
   const onSave = async (event: FormEvent) => {
@@ -649,7 +679,12 @@ export function TaskDetailPage() {
           <div className="detail-title-copy">
             <h1 id="task-detail-title">{record.title}</h1>
             <p id="task-detail-id" className="task-detail-id">{record.taskId}</p>
-            <p id="task-detail-intent" className="page-copy">{record.intent}</p>
+            <div id="task-detail-intent" className="page-copy task-intent-markdown">
+              <MarkdownHost
+                markdown={record.intent}
+                options={{ allowRelativeLinks: true, onRelativeLinkClick: (linkHref) => { void openIntentDocument(linkHref); } }}
+              />
+            </div>
           </div>
           <span id="task-detail-status" className={`lifecycle-badge ${record.status}`}>{taskStatusLabel(record.status)}</span>
         </div>
@@ -849,6 +884,7 @@ export function TaskDetailPage() {
           <label className="full">
             意图
             <Input.TextArea id="task-edit-intent" rows={3} required value={intent} onChange={(event) => setIntent(event.target.value)} />
+            <small className="context-help">支持 Markdown 链接；Workspace 内文档请使用相对路径，例如 projects/product/docs/example.md。</small>
           </label>
           <label>
             项目范围
@@ -863,6 +899,7 @@ export function TaskDetailPage() {
           </div>
         </form>
       </Modal>
+      <TaskDocumentPreviewModal reference={documentReference} onClose={() => setDocumentReference(null)} />
       <Modal
         title="结束任务"
         open={actionModal === 'complete'}

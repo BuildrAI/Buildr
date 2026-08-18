@@ -1438,6 +1438,16 @@ button.table-action {
 .markdown-body th { background: #f5f7f5; color: var(--soft-ink); font-weight: 700; }
 .markdown-body strong { color: var(--soft-ink); }
 .markdown-body img { display: block; width: min(100%, 840px); height: auto; margin: 4px auto; border: 1px solid var(--soft-line); border-radius: 8px; }
+.task-intent-markdown { margin-top: 8px; }
+.task-intent-markdown > .markdown-body > p { color: inherit; font-size: inherit; line-height: inherit; }
+.task-document-preview { display: grid; gap: 12px; }
+.task-document-preview-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.task-document-preview-heading > div { display: grid; gap: 3px; }
+.task-document-preview-heading strong { color: var(--soft-ink); font-size: 15px; }
+.task-document-preview-heading small { color: var(--soft-muted); }
+.task-document-preview-path { display: block; width: fit-content; max-width: 100%; overflow-wrap: anywhere; }
+.task-document-preview-loading { display: flex; align-items: center; gap: 8px; min-height: 80px; color: var(--soft-muted); }
+.task-document-preview-content { max-height: 62vh; overflow: auto; padding: 14px; border: 1px solid var(--soft-line); border-radius: 8px; background: #fbfcfb; }
 
 form { display: grid; gap: 16px; }
 label { display: grid; gap: 6px; color: #2c3932; font-size: 12px; font-weight: 700; }

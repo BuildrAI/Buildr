@@ -268,6 +268,22 @@ test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
   assert.doesNotMatch(app, /path=["'][^"']*review-change/);
 });
 
+test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
+  const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const preview = read('../buildr-web/src/pages/task-detail/TaskDocumentPreviewModal.tsx');
+  const resolver = read('../buildr-web/src/lib/taskDocumentLinks.ts');
+  assert.match(detail, /id="task-detail-intent"[\s\S]*MarkdownHost/);
+  assert.match(detail, /resolveTaskDocumentReference/);
+  assert.match(detail, /api\('\/api\/v1\/projects'\)/);
+  assert.match(detail, /TaskDocumentPreviewModal/);
+  assert.match(preview, /\/api\/v1\/projects\/\$\{encodeURIComponent\(reference\.projectCode\)\}\/documents/);
+  assert.match(preview, /resolveProjectMarkdownHref/);
+  assert.match(preview, /相关资料/);
+  assert.match(resolver, /allowedProjects\.has\(project\.code\)/);
+  assert.match(resolver, /\.endsWith\('\.md'\)/);
+  assert.doesNotMatch(detail, /taskAttachment|attachmentId|\/attachments/);
+});
+
 test('任务列表使用可取消的服务端筛选，详情首屏只读轻量视图并延迟读取 Parent 候选', () => {
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
