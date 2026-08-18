@@ -79,6 +79,18 @@
     },
     {
       "type": "skill",
+      "id": "project-daily-progress",
+      "target": "skills/buildr/project-daily-progress",
+      "integrity": "sha256-c485ceebbaa0bbc5e4fc6eac8fd1b34ff14d9e833eb63a2bd0e71216f5de34ae",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-e55d704212908138e6bc7cac9fd37ecb8a62bc765d7eb43a06e3002508bbb333"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "project-testing",
       "target": "skills/buildr/project-testing",
       "integrity": "sha256-c4270e14af9a84dbac6dad950b48426177800724fbb7dc111e66e5c8454e9d52",
