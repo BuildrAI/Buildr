@@ -491,6 +491,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: declaration-intake
+  - id: ui-preview
+    assetIdentity: buildr:skill:ui-preview
+    sourceIdentity: package:skills/buildr/ui-preview
+    source: buildr
+    path: buildr/ui-preview
+    description: 用户已明确确认需要在正式前端开发前查看本次提案实施后的完整页面预演时使用；调查现有真实界面，生成并在浏览器验证一个或多个自包含 HTML。未明确确认时不得使用。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: ui-preview
 contracts:
   - id: buildr.terminology-governance
     version: 1
