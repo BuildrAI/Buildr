@@ -362,9 +362,11 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   integrationSlice('integration-task-execution-records', [
     'test/integration/task-execution-record-application.test.mjs',
     'test/integration/task-execution-record-body-store.test.mjs',
+    'test/integration/task-finish-execution-record-recovery.test.mjs',
     'test/integration/verification-execution-record-application.test.mjs',
   ], [
     'src/application/task-execution-record/**',
+    'src/application/task-finish/execution-record-recovery.mjs',
     'src/application/verification/execution-record*.mjs',
     'src/domain/task-execution-record/**',
     'src/infrastructure/filesystem/task-execution-record-body-store.mjs',

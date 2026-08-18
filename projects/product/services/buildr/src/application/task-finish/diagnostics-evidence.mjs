@@ -187,6 +187,8 @@ export function cleanupTaskFinishDiagnosticsEvidence(evidence, options = {}) {
     return { ok: false, status: 'retained', code: 'cleanup.identity-mismatch', message: 'Task Finish diagnostics summary does not match the cleanup identity.' };
   }
   if (typeof options.removePath !== 'function') return { ok: false, status: 'retained', code: 'cleanup.mutation-unavailable', message: 'Task Finish diagnostics cleanup capability is unavailable.' };
-  options.removePath(directory);
+  try { options.removePath(directory); }
+  catch { return { ok: false, status: 'retained', code: 'cleanup.remove-failed', message: 'Task Finish diagnostics cleanup mutation failed; exact evidence remains retained.' }; }
+  if (fs.existsSync(directory)) return { ok: false, status: 'retained', code: 'cleanup.remove-unconfirmed', message: 'Task Finish diagnostics cleanup returned without removing the exact evidence directory.' };
   return { ok: true, status: 'cleaned', code: 'cleanup.removed' };
 }

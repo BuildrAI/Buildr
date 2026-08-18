@@ -314,12 +314,13 @@ const COMMAND_ROUTES = [
   {
     key: "task execution-record recover",
     surface: "agent-machine",
-    summary: "补seal有完整终态证据的Verification record；证据不可用时只在明确授权后保留unknown终态。",
+    summary: "按registered producer的完整终态证据补seal Verification或Task Finish Execution Record。",
     help: [
       "Usage: buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]",
       "",
-      "--summary只接受matching Buildr-owned Verification transient summary，并补seal原record而不重跑。",
-      "没有summary时先返回authorization-required；--authorize-unknown-outcome不证明原结果，会终结原record并可能使仍存活producer的后续seal失败。",
+      "--summary只接受matching Buildr-owned Verification transient summary，或该Finish invocation精确diagnostics summary；补seal原record而不重跑。",
+      "Task Finish recovery只读核对matching current/terminal Finish authority，不改写Finish current、delivery、Environment或Task terminal，并只清理该invocation evidence。",
+      "--authorize-unknown-outcome仅适用于Verification：它不证明原结果，会终结原record并可能使仍存活producer的后续seal失败；Task Finish必须有terminal evidence。",
       "不接受outcome、files、locator、owner、producer、retry、timeout、process ID、SQL或cleanup shell。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'recover',
