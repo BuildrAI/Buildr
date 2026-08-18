@@ -249,26 +249,29 @@ Buildr MUST登记Parent Plan、Contribution binding、Contribution Handoff、coo
 - **AND** MUST保持原Task read model兼容
 
 ### Requirement: Task Finish run 必须提供 portable execution record operation summary
-`buildr task finish run|inspect --json` MUST按`--detail compact|full`返回不同且稳定的公开JSON投影。缺省或显式`--detail compact` MUST返回closed `buildr.task-finish-compact-result/v1`；显式`--detail full` MUST继续输出既有`buildr.task-finish-result/v2`。compact MUST保留Task/run/status、current phase、Development handoff、Candidate/generation、Content Target、主失败、唯一next workflow/action、matching resume、关键carrier/target/remote refs、delivery/completion disposition、阶段与总体timing，以及run调用可用的portable`executionRecord` summary；MUST NOT透传完整checks、operations、observations、stdout/stderr、diagnostics正文、本机locator或未登记字段。full payload的字段与语义 MUST保持兼容。
+`buildr task finish run|inspect --json` MUST按`--detail compact|full`返回不同且稳定的公开JSON投影。缺省或显式`--detail compact` MUST继续返回closed `buildr.task-finish-compact-result/v1`；显式`--detail full` MUST返回canonical `buildr.task-finish-result/v3`。v3 MUST以排序的Environment repository set及repository-scoped contribution、carrier、equivalence、delivery与cleanup state作为多仓库authority，并提供repository set、carrier set与delivery set identity；顶层单值carrier、target与delivery只能投影当前failure repository、适用Workspace repository或唯一有贡献repository，MUST NOT伪装跨repository聚合事实。compact MUST保持既有closed字段集合和语义，不新增repository数组、absolute path、lease或恢复token之外的内部owner事实。
 
-`executionRecord` summary MUST表达`not-opened|retained|blocked|attention`、portable record identity/outcome/lifecycle/body summary、diagnostics transient cleanup、diagnostic与next action。compact与full均 MUST NOT暴露SQLite/database、body或transient locator、本机持久路径、Carrier绝对路径、remote credential、lease或resource token，也 MUST NOT把execution record解释为Finish current、delivery、Task terminal或Result adoption authority。`task finish inspect --json` MUST保持pure Finish read model且不添加record列表或正文。
-
-当`buildr task finish run --json`在创建run之前因入口聚合缺口失败时，CLI MUST输出`buildr.cli-error/v1`，且`error.code` MUST为`task_finish.entry_gaps`；`error.details.gaps` MUST包含`development`、`environment`、`delivery`三个数组（可空），每项至少含既有`code`与`message`；若`development`非空，`suggestions`或等价next指示 MUST指向`task-development`。该失败路径 MUST NOT返回伪Finish run result或`executionRecord`。
-
-#### Scenario: 缺省 compact 输出
-- **WHEN** Agent执行`task finish run|inspect --json`且没有显式`--detail`
-- **THEN** CLI MUST返回`buildr.task-finish-compact-result/v1`与`detail: compact`
-- **AND** payload MUST只包含closed compact字段，不得与full payload逐字相同
+旧`buildr.task-finish-result/v2` MUST继续支持有界读取和compact投影，但新run MUST只写v3。compact与full均 MUST NOT把Execution Record、repository set identity或兼容单值投影视为新的Finish current、delivery、Task terminal或Result adoption authority。
 
 #### Scenario: 显式 full 输出
-- **WHEN** Agent执行`task finish run|inspect --detail full --json`
-- **THEN** CLI MUST返回兼容的`buildr.task-finish-result/v2`
-- **AND** 现有完整phase、delivery、completion与diagnostic facts MUST保持可用
+- **WHEN** Agent执行`task finish run|inspect --detail full --json`读取新repository-set run
+- **THEN** CLI MUST返回`buildr.task-finish-result/v3`及排序的repository-scoped states和set identities
+- **AND** 多个有贡献repository时 MUST不以顶层单值carrier或delivery伪装完整集合
+
+#### Scenario: 缺省 compact 输出
+- **WHEN** 同一v3 Result以缺省或显式`--detail compact`读取
+- **THEN** CLI MUST继续返回closed `buildr.task-finish-compact-result/v1`与`detail: compact`
+- **AND** MUST不暴露repository数组、本机locator或SQLite/lease内部事实
+
+#### Scenario: 旧 v2 Result 有界读取
+- **WHEN** inspect读取合法的旧`buildr.task-finish-result/v2`
+- **THEN** Product MUST保持既有full事实可读并可生成兼容compact投影
+- **AND** MUST不把旧singleton事实猜测扩展为多repository delivery
 
 #### Scenario: Finish invocation retained
 - **WHEN** 一次实际执行的Finish invocation已terminal seal且record retained
 - **THEN** run compact JSON MUST返回portable record ID、outcome、lifecycle、body digest/size/truncated与diagnostics cleanup disposition
-- **AND** 顶层Finish status、failure、resume与delivery facts MUST继续由`task_finish_current`决定
+- **AND** 顶层Finish status、failure、resume与repository delivery facts MUST继续由`task_finish_current`决定
 
 #### Scenario: record open backpressure
 - **WHEN** record quota reservation在任何Finish execution side effect前被拒绝

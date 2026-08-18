@@ -483,6 +483,40 @@ test('Task Finish migration把terminal-only completion原位收敛为compact ter
   database.close();
 });
 
+test('Task Finish repository-set migration 保留 v2 run payload 并扩展查询 identity', () => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  const expansion = migrations.find((migration) => migration.name === '0017_expand_task_finish_repository_set.sql');
+  const database = new DatabaseSync(':memory:');
+  for (const migration of migrations.filter((item) => item.version < expansion.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('finish-v2-reader', 'buildr.task-record/v2', 'Finish v2', 'Preserve bounded reader', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
+  const phases = finishPhases();
+  const run = {
+    schemaVersion: 'buildr.task-finish-run/v2', runId: 'finish-v2-reader-run', status: 'active',
+    identity: { task: 'finish-v2-reader', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
+    identityDigest: 'sha256-run', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z', completedAt: null,
+    invocations: 0, deliveryCarrier: null, equivalence: null, delivery: null, completion: null, resume: null, primaryFailure: null,
+  };
+  database.prepare(`INSERT INTO task_finish_current(
+    task_id, run_id, schema_version, status, identity_digest, current_phase,
+    handoff_identity, candidate_identity, candidate_generation, content_target_identity,
+    target_branch, target_remote, phases_json, payload_json, created_at, updated_at, completed_at
+  ) VALUES (?, ?, 'buildr.task-finish-current/v1', 'active', ?, 'preflight', ?, ?, 1, ?, 'dev', 'origin', ?, ?, ?, ?, NULL)`).run(
+    'finish-v2-reader', run.runId, run.identityDigest, run.identity.handoffIdentity, run.identity.candidateIdentity,
+    run.identity.contentTargetIdentity, JSON.stringify(phases), JSON.stringify({ kind: 'run', run, preparedCompletion: null }), run.createdAt, run.updatedAt,
+  );
+
+  applyWorkspaceSqliteMigration(database, expansion);
+  const row = database.prepare("SELECT schema_version, target_branch, target_remote, repository_set_identity, carrier_set_identity, delivery_set_identity, json_extract(payload_json, '$.run.schemaVersion') AS run_schema FROM task_finish_current WHERE task_id = 'finish-v2-reader'").get();
+  assert.deepEqual({ ...row }, {
+    schema_version: 'buildr.task-finish-current/v2', target_branch: 'dev', target_remote: 'origin',
+    repository_set_identity: null, carrier_set_identity: null, delivery_set_identity: null,
+    run_schema: 'buildr.task-finish-run/v2',
+  });
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, expansion.version);
+  database.close();
+});
+
 test('Task Finish migration遇到live artifact metadata时完整rollback', () => {
   const migrations = loadWorkspaceSqliteMigrations();
   const compact = migrations.find((migration) => migration.name === '0012_compact_task_finish_current.sql');

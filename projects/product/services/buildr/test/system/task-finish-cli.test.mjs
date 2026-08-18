@@ -56,7 +56,7 @@ test('task finish inspect 默认compact、显式full且文本保持稳定', (t) 
   for (const forbidden of ['resolvedContext', 'carrier', 'equivalence', 'checks', 'operations', 'observations']) assert.equal(forbidden in compact, false, forbidden);
 
   const fullResult = JSON.parse(full.stdout);
-  assert.equal(fullResult.schemaVersion, 'buildr.task-finish-result/v2');
+  assert.equal(fullResult.schemaVersion, 'buildr.task-finish-result/v3');
   assert.deepEqual(fullResult.resolvedContext.capability, { id: 'buildr.task-finish', version: 1 });
   assert.equal(fullResult.metrics.agentProviderCompletions, 0);
   assert.equal(fullResult.metrics.manualRecoveryManifests, 0);

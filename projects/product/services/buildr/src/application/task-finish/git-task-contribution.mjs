@@ -19,10 +19,20 @@ import {
 
 export { observeGitTaskContribution } from '../../infrastructure/git/git-task-contribution.mjs';
 
-function carrierRoot(workspaceRoot, runId) {
+function carrierContainer(workspaceRoot, runId) {
   const base = path.resolve(workspaceRoot, '.buildr', 'transient', 'task-finish', 'carriers');
   const target = path.resolve(base, runId);
   if (path.dirname(target) !== base) throw new Error('Task Finish carrier path escapes its run-owned root.');
+  return target;
+}
+
+function carrierRoot(workspaceRoot, runId, repositorySelector = null) {
+  const container = carrierContainer(workspaceRoot, runId);
+  if (!repositorySelector) return container;
+  const readable = String(repositorySelector).replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'repository';
+  const identity = crypto.createHash('sha256').update(String(repositorySelector)).digest('hex').slice(0, 12);
+  const target = path.resolve(container, `${readable}-${identity}`);
+  if (path.dirname(target) !== container) throw new Error('Task Finish repository carrier path escapes its run-owned root.');
   return target;
 }
 
@@ -105,13 +115,13 @@ export function inspectGitCarrierContainment({ repositoryRoot, targetRef, carrie
   return { status: 'contained', ...proof, identity: containmentIdentity(proof) };
 }
 
-export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, targetRef, carrier, runId }) {
+export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, workspaceRoot = repositoryRoot, targetRef, carrier, runId, repositorySelector = null }) {
   const carrierRef = carrier?.head || null;
   const baseline = carrier?.deliveryBaseline || null;
   const changedPaths = Array.isArray(carrier?.changedPaths) ? carrier.changedPaths : null;
   const changes = Array.isArray(carrier?.changes) ? carrier.changes : null;
   let expectedRoot = null;
-  try { expectedRoot = runId ? carrierRoot(repositoryRoot, runId) : null; } catch { /* invalid run identity remains unprovable */ }
+  try { expectedRoot = runId ? carrierRoot(workspaceRoot, runId, repositorySelector) : null; } catch { /* invalid run identity remains unprovable */ }
   if (!carrierRef || !targetRef || !expectedRoot || !carrier?.root || !sameFilesystemPath(carrier.root, expectedRoot)
     || carrier?.reuseMode !== 'agent-reviewed-delivery-adaptation'
     || carrier?.zeroDelta !== true
@@ -179,15 +189,20 @@ export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, targe
   };
 }
 
-export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, expectedRoot = null }) {
-  const target = carrierRoot(workspaceRoot, runId);
+export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, repositorySelector = null, expectedRoot = null }) {
+  const target = carrierRoot(workspaceRoot, runId, repositorySelector);
   if (expectedRoot && !sameFilesystemPath(expectedRoot, target)) return { status: 'blocked', code: 'task-finish.carrier-root-mismatch', root: target };
   const registered = carrierRegistration(repositoryRoot, target);
-  if (!registered) return fs.existsSync(target)
-    ? { status: 'blocked', code: 'task-finish.carrier-ownership-unprovable', root: target }
-    : { status: 'not-applicable', root: target };
+  if (!registered) {
+    if (fs.existsSync(target)) return { status: 'blocked', code: 'task-finish.carrier-ownership-unprovable', root: target };
+    const container = carrierContainer(workspaceRoot, runId);
+    if (repositorySelector && fs.existsSync(container) && fs.readdirSync(container).length === 0) fs.rmdirSync(container);
+    return { status: 'not-applicable', root: target };
+  }
   const removed = git(repositoryRoot, ['worktree', 'remove', '--force', target]);
   if (removed.status !== 0) return { status: 'blocked', code: 'task-finish.carrier-cleanup-failed', root: target, diagnostic: String(removed.stderr || removed.stdout).trim() };
+  const container = carrierContainer(workspaceRoot, runId);
+  if (repositorySelector && fs.existsSync(container) && fs.readdirSync(container).length === 0) fs.rmdirSync(container);
   return { status: 'removed', root: target };
 }
 
@@ -204,12 +219,12 @@ function verifyCarrierDeliveryCommit(carrier) {
     : { matches: false, observed: null };
 }
 
-export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, deliveryBaselineHead, taskContribution, deliveryCommit = null, message = null }) {
+export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, repositorySelector = null, deliveryBaselineHead, taskContribution, deliveryCommit = null, message = null }) {
   const expectedDeliveryCommit = deliveryCommit || taskFinishDeliveryCommitFromMessage(message);
   const activationPaths = taskContributionActivationPaths(repositoryRoot, taskContribution);
   if (!activationPaths) throw Object.assign(new Error('Task Contribution activation paths are unavailable.'), { code: 'task-finish.task-contribution-unprovable' });
-  const target = carrierRoot(workspaceRoot, runId);
-  const existing = removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId });
+  const target = carrierRoot(workspaceRoot, runId, repositorySelector);
+  const existing = removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, repositorySelector });
   if (existing.status === 'blocked') throw Object.assign(new Error('Existing Delivery Carrier ownership cannot be proved.'), { code: existing.code, details: existing });
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const added = git(repositoryRoot, ['worktree', 'add', '--detach', target, deliveryBaselineHead]);
@@ -244,33 +259,37 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
         status: 'adaptation-required',
         root: target,
         head: deliveryBaselineHead,
-          tree: deliveryBaselineTree,
-          changedPaths: [],
-          activationPaths,
-          deliveryBaseline: { head: deliveryBaselineHead, tree: deliveryBaselineTree },
+        tree: deliveryBaselineTree,
+        changedPaths: [],
+        activationPaths,
+        deliveryBaseline: { head: deliveryBaselineHead, tree: deliveryBaselineTree },
         taskContribution,
         deliveryCommit: publicTaskFinishDeliveryCommit(expectedDeliveryCommit),
         conflict: { code: 'task-finish.contribution-not-equivalent', diagnostic: { expected: taskContribution.identity, observed: appliedIdentity } },
       };
     }
-    if (appliedTree !== deliveryBaselineTree) {
+    const commitCreated = appliedTree !== deliveryBaselineTree;
+    if (commitCreated) {
       const committed = git(target, ['commit', '-F', '-'], { input: `${expectedDeliveryCommit.message}\n` });
       if (committed.status !== 0) throw Object.assign(new Error(`Unable to commit isolated Delivery Carrier: ${committed.stderr || committed.stdout}`), { code: 'task-finish.commit-failed' });
     }
     const head = requireGitText(target, ['rev-parse', 'HEAD^{commit}'], 'Delivery Carrier HEAD is unavailable.');
     const tree = requireGitText(target, ['rev-parse', 'HEAD^{tree}'], 'Delivery Carrier tree is unavailable.');
-    const actualMessage = gitText(target, ['log', '-1', '--format=%B', head]);
-    const messageMatch = taskFinishDeliveryCommitMatches(expectedDeliveryCommit, actualMessage);
-    if (!messageMatch.matches) throw Object.assign(new Error('Delivery Carrier commit message does not match the frozen Task Finish message.'), {
-      code: 'task-finish.commit-message-mismatch',
-      details: { expected: publicTaskFinishDeliveryCommit(expectedDeliveryCommit), observed: publicTaskFinishDeliveryCommit(messageMatch.observed) },
-    });
+    if (commitCreated) {
+      const actualMessage = gitText(target, ['log', '-1', '--format=%B', head]);
+      const messageMatch = taskFinishDeliveryCommitMatches(expectedDeliveryCommit, actualMessage);
+      if (!messageMatch.matches) throw Object.assign(new Error('Delivery Carrier commit message does not match the frozen Task Finish message.'), {
+        code: 'task-finish.commit-message-mismatch',
+        details: { expected: publicTaskFinishDeliveryCommit(expectedDeliveryCommit), observed: publicTaskFinishDeliveryCommit(messageMatch.observed) },
+      });
+    }
     const { changes, changedPaths } = carrierChanges(target, deliveryBaselineHead, head);
     return {
       status: 'prepared',
       root: target,
       head,
       tree,
+      commitCreated,
       changedPaths,
       changes,
       activationPaths,
@@ -279,7 +298,7 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
       deliveryCommit: publicTaskFinishDeliveryCommit(expectedDeliveryCommit),
     };
   } catch (error) {
-    const cleanup = removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, expectedRoot: target });
+    const cleanup = removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, repositorySelector, expectedRoot: target });
     if (cleanup.status === 'blocked') error.cleanup = cleanup;
     throw error;
   }
@@ -382,5 +401,57 @@ export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof 
     return { status: 'equivalent', identity: sourceIdentity, reuseMode: 'deterministic-reuse' };
   } catch (error) {
     return { status: 'stale', code: 'git_worktree_contribution_proof_failed', diagnostic: error.message };
+  }
+}
+
+export function createGitNoContributionProof({ taskRoot, targetRef, taskContribution }) {
+  const current = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: taskContribution.originalBaseline.head });
+  if (current.identity !== taskContribution.identity
+    || current.source.head !== taskContribution.source.head
+    || current.source.tree !== taskContribution.source.tree
+    || current.originalBaseline.tree !== current.source.tree) {
+    return { status: 'stale', code: 'task-finish.no-contribution-drift', observed: current };
+  }
+  const targetHead = gitText(taskRoot, ['rev-parse', `${targetRef}^{commit}`]);
+  const targetTree = targetHead ? gitText(taskRoot, ['rev-parse', `${targetHead}^{tree}`]) : null;
+  if (!targetHead || !targetTree) return { status: 'stale', code: 'task-finish.no-contribution-target-unavailable' };
+  const value = {
+    schemaVersion: 'buildr.git-no-contribution-proof/v1',
+    kind: 'no-contribution',
+    taskContribution,
+    target: { head: targetHead, tree: targetTree },
+  };
+  return { status: 'equivalent', proof: { ...value, identity: containmentIdentity(value) } };
+}
+
+export function verifyGitNoContributionProof({ taskRoot, targetRef, proof }) {
+  try {
+    if (proof?.schemaVersion !== 'buildr.git-no-contribution-proof/v1'
+      || proof?.kind !== 'no-contribution'
+      || !proof?.taskContribution?.originalBaseline?.head
+      || !proof?.taskContribution?.source?.tree
+      || !proof?.target?.head
+      || !proof?.target?.tree
+      || !proof?.identity) return { status: 'stale', code: 'git_worktree_no_contribution_proof_invalid' };
+    const unsigned = {
+      schemaVersion: proof.schemaVersion,
+      kind: proof.kind,
+      taskContribution: proof.taskContribution,
+      target: proof.target,
+    };
+    if (containmentIdentity(unsigned) !== proof.identity) return { status: 'stale', code: 'git_worktree_no_contribution_proof_identity_mismatch' };
+    const targetHead = requireGitText(taskRoot, ['rev-parse', `${targetRef}^{commit}`], 'No-contribution target ref is unavailable.');
+    const targetTree = requireGitText(taskRoot, ['rev-parse', `${targetHead}^{tree}`], 'No-contribution target tree is unavailable.');
+    if (targetHead !== proof.target.head || targetTree !== proof.target.tree) return { status: 'stale', code: 'git_worktree_no_contribution_target_mismatch' };
+    const current = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: proof.taskContribution.originalBaseline.head });
+    if (current.identity !== proof.taskContribution.identity
+      || current.source.head !== proof.taskContribution.source.head
+      || current.source.tree !== proof.taskContribution.source.tree
+      || current.originalBaseline.tree !== current.source.tree) {
+      return { status: 'stale', code: 'git_worktree_no_contribution_source_drift', observed: current };
+    }
+    return { status: 'equivalent', identity: current.identity, proofIdentity: proof.identity, reuseMode: 'no-contribution' };
+  } catch (error) {
+    return { status: 'stale', code: 'git_worktree_no_contribution_proof_failed', diagnostic: error.message };
   }
 }

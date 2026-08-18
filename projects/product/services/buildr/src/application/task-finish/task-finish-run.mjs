@@ -4,9 +4,19 @@ import path from 'node:path';
 import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
 import { compactTaskFinishFailure } from './execution-record.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
+import {
+  createTaskFinishRepositoryStates,
+  normalizeTaskFinishRepositorySet,
+  singletonApplicableTaskFinishRepository,
+  singletonTaskFinishRepositoryState,
+  taskFinishCarrierSetIdentity,
+  taskFinishDeliverySetIdentity,
+  taskFinishRepositorySetIdentity,
+} from './task-finish-repository-set.mjs';
 
-export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v2';
-export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v2';
+export const LEGACY_FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v2';
+export const FINISH_RUN_SCHEMA = 'buildr.task-finish-run/v3';
+export const FINISH_RESULT_SCHEMA = 'buildr.task-finish-result/v3';
 export const FINISH_PHASES = Object.freeze(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
 export const FINISH_PHASE_STATUSES = Object.freeze(['pending', 'running', 'passed', 'blocked', 'failed', 'not-applicable']);
 
@@ -25,6 +35,14 @@ function sha256(value) {
 }
 
 export function resolvedFinishContext(identity) {
+  const repositories = (identity.repositories || []).map((repository) => ({
+    selector: repository.selector,
+    disposition: repository.disposition,
+    targetBranch: repository.targetBranch,
+    remote: repository.remote,
+    repositoryIdentity: repository.repositoryIdentity,
+    leaseTargetIdentity: repository.leaseTargetIdentity,
+  }));
   const context = {
     capability: { id: 'buildr.task-finish', version: 1 },
     task: { taskId: identity.task },
@@ -38,6 +56,8 @@ export function resolvedFinishContext(identity) {
       agent: identity.agent,
       targetBranch: identity.targetBranch,
       remote: identity.remote || null,
+      repositorySetIdentity: identity.repositorySetIdentity || null,
+      repositories,
     },
   };
   return { ...context, identity: sha256(context) };
@@ -93,11 +113,17 @@ function phase(id) {
 }
 
 function normalizeIdentity(input) {
-  const required = ['task', 'handoffIdentity', 'candidateIdentity', 'contentTargetIdentity', 'agent', 'targetBranch', 'environmentRoot', 'workspaceRoot'];
+  const required = ['task', 'handoffIdentity', 'candidateIdentity', 'contentTargetIdentity', 'agent', 'environmentRoot', 'workspaceRoot'];
   for (const field of required) {
     if (typeof input?.[field] !== 'string' || !input[field].trim()) throw new Error(`Task Finish requires ${field}.`);
   }
   if (!Number.isInteger(input.candidateGeneration) || input.candidateGeneration < 1) throw new Error('Task Finish requires candidateGeneration.');
+  const repositories = Array.isArray(input.repositories) && input.repositories.length
+    ? normalizeTaskFinishRepositorySet(input.repositories)
+    : [];
+  const singleton = repositories.length ? singletonApplicableTaskFinishRepository({ repositories }) : null;
+  const repositorySetIdentity = repositories.length ? taskFinishRepositorySetIdentity(repositories) : null;
+  if (input.repositorySetIdentity && input.repositorySetIdentity !== repositorySetIdentity) throw new Error('Task Finish repository set identity does not match its repositories.');
   return {
     task: input.task,
     handoffIdentity: input.handoffIdentity,
@@ -105,8 +131,10 @@ function normalizeIdentity(input) {
     candidateGeneration: input.candidateGeneration,
     contentTargetIdentity: input.contentTargetIdentity,
     agent: input.agent,
-    targetBranch: input.targetBranch,
-    remote: typeof input.remote === 'string' && input.remote.trim() ? input.remote : null,
+    targetBranch: singleton?.targetBranch || (typeof input.targetBranch === 'string' && input.targetBranch.trim() ? input.targetBranch : null),
+    remote: singleton?.remote || (typeof input.remote === 'string' && input.remote.trim() ? input.remote : null),
+    repositories,
+    repositorySetIdentity,
     environmentRoot: path.resolve(input.environmentRoot),
     workspaceRoot: path.resolve(input.workspaceRoot),
     deliveryCommitIdentity: typeof input.deliveryCommitIdentity === 'string' && input.deliveryCommitIdentity ? input.deliveryCommitIdentity : null,
@@ -173,6 +201,7 @@ export function createFinishRun({ root, identity, deliveryCommit = null, develop
     productCommandObservations: 0,
     deliveryCommit: clone(deliveryCommit),
     developmentHandoff: normalizeDevelopmentHandoff(developmentHandoff, normalized),
+    repositories: normalized.repositories.length ? createTaskFinishRepositoryStates(normalized.repositories) : [],
     deliveryCarrier: null,
     equivalence: null,
     delivery: null,
@@ -249,7 +278,7 @@ function resumeTokenFor(run, phaseId, failure) {
     schemaVersion: FINISH_RUN_SCHEMA,
     runId: run.runId,
     identity: run.identityDigest,
-    carrier: run.deliveryCarrier?.identity || null,
+    carrier: taskFinishCarrierSetIdentity(run.repositories) || run.deliveryCarrier?.identity || null,
     activationPlan: run.deliveryCarrier?.activationPlan?.identity || run.delivery?.activation?.plan?.identity || null,
     phase: phaseId,
     failure: { code: failure.code, operation: failure.operation, diagnostic: failure.diagnostic?.digest || null },
@@ -257,6 +286,18 @@ function resumeTokenFor(run, phaseId, failure) {
 }
 
 function applyPhaseOutput(run, phaseId, output) {
+  if (Array.isArray(output?.repositories)) {
+    const expected = new Set((run.identity.repositories || []).map((repository) => repository.selector));
+    const received = new Set(output.repositories.map((repository) => repository.selector));
+    if (expected.size !== received.size || [...expected].some((selector) => !received.has(selector))) {
+      throw new Error('Task Finish phase repository output does not match the frozen repository set.');
+    }
+    run.repositories = clone(output.repositories).sort((left, right) => left.selector.localeCompare(right.selector));
+    const singleton = singletonTaskFinishRepositoryState(run);
+    run.deliveryCarrier = singleton?.deliveryCarrier || null;
+    run.equivalence = singleton?.equivalence || null;
+    run.delivery = singleton?.delivery || null;
+  }
   if (phaseId === 'prepare' && output?.deliveryCarrier) run.deliveryCarrier = clone(output.deliveryCarrier);
   if (phaseId === 'verify' && output?.equivalence) run.equivalence = clone(output.equivalence);
   if (phaseId === 'deliver' && output?.delivery) run.delivery = clone(output.delivery);
@@ -298,8 +339,30 @@ function compactStoredPhaseDiagnostics(run) {
   }
 }
 
+function failureRepositorySelector(failure) {
+  return (failure?.findings || []).find((finding) => typeof finding?.selector === 'string')?.selector || null;
+}
+
+function selectedRepositoryState(run, failure = run.primaryFailure) {
+  const applicable = (run.identity.repositories || []).filter((repository) => repository.disposition === 'applicable');
+  const failureSelector = failureRepositorySelector(failure);
+  if (failureSelector) return (run.repositories || []).find((repository) => repository.selector === failureSelector) || null;
+  const workspace = applicable.find((repository) => repository.selector === 'workspace');
+  if (workspace) return (run.repositories || []).find((repository) => repository.selector === 'workspace') || null;
+  return applicable.length === 1
+    ? (run.repositories || []).find((repository) => repository.selector === applicable[0].selector) || null
+    : null;
+}
+
+function resumeCarrierIdentity(run, failure) {
+  return selectedRepositoryState(run, failure)?.deliveryCarrier?.identity
+    || taskFinishCarrierSetIdentity(run.repositories)
+    || run.deliveryCarrier?.identity
+    || null;
+}
+
 export async function executeFinishRun({ root, run, handlers, resumeToken = null, clock = Date.now, runtime = null, observer = null, bootstrapRecoveryFinalizer = null }) {
-  if (run.schemaVersion !== FINISH_RUN_SCHEMA) throw new Error('Task Finish executor requires a current run.');
+  if (![LEGACY_FINISH_RUN_SCHEMA, FINISH_RUN_SCHEMA].includes(run.schemaVersion)) throw new Error('Task Finish executor requires a supported run.');
   if (['failed', 'complete'].includes(run.status)) return finishResult(run, clock);
   if (['blocked', 'cleanup_pending'].includes(run.status) && (!resumeToken || resumeToken !== run.resume?.token)) {
     throw new Error('Task Finish blocked run requires its current product-generated resume token.');
@@ -327,7 +390,18 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
     writeRun(root, run, clock, runtime);
     let normalized;
     try {
-      normalized = normalizePhaseResult(await handlers[phaseId]({ root, run: clone(run), phase: clone(item) }), phaseId);
+      normalized = normalizePhaseResult(await handlers[phaseId]({
+        root,
+        run: clone(run),
+        phase: clone(item),
+        checkpoint: ({ output = null, inputIdentity = null, outputIdentity = null } = {}) => {
+          applyPhaseOutput(run, phaseId, output);
+          item.inputIdentity = inputIdentity || item.inputIdentity;
+          item.outputIdentity = outputIdentity || item.outputIdentity;
+          writeRun(root, run, clock, runtime);
+          return clone(run);
+        },
+      }), phaseId);
     } catch (error) {
       normalized = normalizePhaseResult({
         status: error?.resumable === true ? 'blocked' : 'failed',
@@ -374,7 +448,7 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
         phase: phaseId,
         token: resumeTokenFor(run, phaseId, normalized.failure),
         generatedAt: now(clock),
-        carrierIdentity: run.deliveryCarrier?.identity || null,
+        carrierIdentity: resumeCarrierIdentity(run, normalized.failure),
       };
       writeRun(root, run, clock, runtime);
       observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
@@ -405,7 +479,7 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
         message: error.message,
         diagnostic: error.details || null,
       }, 'cleanup');
-      run.resume = { phase: 'cleanup', token: resumeTokenFor(run, 'cleanup', run.primaryFailure), generatedAt: now(clock), carrierIdentity: run.deliveryCarrier?.identity || null };
+      run.resume = { phase: 'cleanup', token: resumeTokenFor(run, 'cleanup', run.primaryFailure), generatedAt: now(clock), carrierIdentity: resumeCarrierIdentity(run, run.primaryFailure) };
       writeRun(root, run, clock, runtime);
       observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
       return finishResult(run, clock);
@@ -430,7 +504,7 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
         message: error.message,
         diagnostic: error.details || null,
       }, 'cleanup');
-      run.resume = { phase: 'cleanup', token: resumeTokenFor(run, 'cleanup', run.primaryFailure), generatedAt: now(clock), carrierIdentity: run.deliveryCarrier?.identity || null };
+      run.resume = { phase: 'cleanup', token: resumeTokenFor(run, 'cleanup', run.primaryFailure), generatedAt: now(clock), carrierIdentity: resumeCarrierIdentity(run, run.primaryFailure) };
       writeRun(root, run, clock, runtime);
       observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
       return finishResult(run, clock);
@@ -467,7 +541,16 @@ export function finishResult(run, clock = Date.now) {
     && run.status === 'cleanup_pending'
     && run.resume?.phase === 'cleanup'
     && run.phases.every((phase) => ['passed', 'not-applicable'].includes(phase.status)));
-  const carrier = clone(run.deliveryCarrier);
+  const repositoryResults = clone(run.repositories || []);
+  const singletonState = singletonTaskFinishRepositoryState(run);
+  const projectedState = selectedRepositoryState(run) || singletonState;
+  const workspacePlan = (run.identity.repositories || []).find((repository) => repository.selector === 'workspace' && repository.disposition === 'applicable') || null;
+  const projectedIdentity = clone(run.identity);
+  if (workspacePlan) {
+    projectedIdentity.targetBranch ||= workspacePlan.targetBranch;
+    projectedIdentity.remote ||= workspacePlan.remote;
+  }
+  const carrier = clone(projectedState?.deliveryCarrier || run.deliveryCarrier);
   const adaptationGuidance = carrier?.adaptationGuidance || null;
   if (carrier) delete carrier.adaptationGuidance;
   const deliveryAdaptation = run.status === 'blocked'
@@ -482,11 +565,15 @@ export function finishResult(run, clock = Date.now) {
     schemaVersion: FINISH_RESULT_SCHEMA,
     runId: run.runId,
     status: run.status,
-    identity: clone(run.identity),
-    resolvedContext: resolvedFinishContext(run.identity),
+    identity: projectedIdentity,
+    resolvedContext: resolvedFinishContext(projectedIdentity),
     handoff: { identity: run.identity.handoffIdentity },
     candidate: { identity: run.identity.candidateIdentity, generation: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity },
     deliveryCommit: publicTaskFinishDeliveryCommit(run.deliveryCommit),
+    repositorySetIdentity: run.identity.repositorySetIdentity || null,
+    carrierSetIdentity: taskFinishCarrierSetIdentity(run.repositories),
+    deliverySetIdentity: taskFinishDeliverySetIdentity(run.repositories),
+    repositories: repositoryResults,
     carrier,
     phases: run.phases.map(publicPhase),
     primaryFailure: clone(run.primaryFailure),
@@ -505,10 +592,10 @@ export function finishResult(run, clock = Date.now) {
         ? 'adapt-run-owned-delivery-carrier-and-repeat-task-finish-run-with-resume-token'
         : 'repeat-task-finish-run-with-resume-token')
       : run.status === 'complete' ? TASK_RETROSPECTIVE_PROMPT : null,
-    reuseMode: run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
+    reuseMode: projectedState?.equivalence?.reuseMode || projectedState?.deliveryCarrier?.reuseMode || run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
     deliveryAdaptation,
-    equivalence: clone(run.equivalence),
-    delivery: clone(run.delivery),
+    equivalence: clone(projectedState?.equivalence || run.equivalence),
+    delivery: clone(projectedState?.delivery || run.delivery),
     completion: clone(run.completion),
     occupancy: run.occupancy ? clone(run.occupancy) : null,
     bootstrapRecovery: run.bootstrapRecovery ? clone(run.bootstrapRecovery) : null,

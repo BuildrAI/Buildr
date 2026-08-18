@@ -7,13 +7,16 @@ import test from 'node:test';
 
 import {
   adoptAgentReviewedGitCarrier,
+  createGitNoContributionProof,
   createIsolatedGitCarrier,
   inspectGitCarrierContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
   verifyDeliveredGitTaskContribution,
   verifyGitTaskContributionCarrier,
+  verifyGitNoContributionProof,
 } from '../../src/application/task-finish/git-task-contribution.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
 import { registerGitWorktreeProvider } from '../../src/application/worktree/git-worktree-provider.mjs';
 
 function git(root, args) {
@@ -61,6 +64,29 @@ test('最新 Delivery Baseline 上干净应用时 Task Contribution identity 保
   assert.equal(git(carrier.root, ['show', 'HEAD:baseline-advance.txt']), 'advanced independently');
   assert.equal(git(carrier.root, ['show', 'HEAD:feature.txt']), 'candidate contribution');
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'clean-reuse', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('无 tree delta 时 carrier adapter 不把 baseline HEAD 消息当作本次冻结消息校验', (t) => {
+  const { root, taskRoot } = repository(t);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  assert.equal(contribution.originalBaseline.tree, contribution.source.tree);
+  const deliveryCommit = normalizeTaskFinishDeliveryCommit('fix(task-finish): frozen delivery message', 'task');
+
+  const carrier = createIsolatedGitCarrier({
+    repositoryRoot: taskRoot,
+    workspaceRoot: root,
+    runId: 'empty-contribution',
+    repositorySelector: 'workspace',
+    deliveryBaselineHead: baselineHead,
+    taskContribution: contribution,
+    deliveryCommit,
+  });
+
+  assert.equal(carrier.head, baselineHead);
+  assert.equal(carrier.commitCreated, false);
+  assert.equal(git(carrier.root, ['log', '-1', '--format=%s']), 'baseline');
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'empty-contribution', repositorySelector: 'workspace', expectedRoot: carrier.root }).status, 'removed');
 });
 
 test('Task Contribution交付普通嵌套 .buildr 删除并排除OpenSpec Change receipt', (t) => {
@@ -319,4 +345,54 @@ test('Git provider 独立复算等价贡献后清理非 ancestor Task worktree',
   assert.equal(fs.existsSync(taskRoot), false);
   assert.notEqual(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/codex/task'], { cwd: root }).status, 0);
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: root, workspaceRoot: root, runId: 'provider-cleanup', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('Git provider 以 no-contribution proof 清理只有空提交的 Task worktree 并对 source drift fail closed', (t) => {
+  const { root, taskRoot } = repository(t);
+  git(taskRoot, ['commit', '--allow-empty', '-m', 'Task bookkeeping only']);
+  const taskHead = git(taskRoot, ['rev-parse', 'HEAD']);
+  const targetHead = git(root, ['rev-parse', 'dev']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: targetHead });
+  assert.equal(contribution.originalBaseline.tree, contribution.source.tree);
+  assert.notEqual(taskHead, targetHead);
+  assert.notEqual(spawnSync('git', ['merge-base', '--is-ancestor', taskHead, targetHead], { cwd: root }).status, 0);
+  const formed = createGitNoContributionProof({ taskRoot, targetRef: targetHead, taskContribution: contribution });
+  assert.equal(formed.status, 'equivalent');
+  assert.equal(formed.proof.kind, 'no-contribution');
+  assert.equal(verifyGitNoContributionProof({ taskRoot, targetRef: targetHead, proof: formed.proof }).status, 'equivalent');
+
+  const runtime = registerGitWorktreeProvider({
+    assertCanonicalTaskWorkspace: () => root,
+    atomicWriteJson: (target, value) => {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
+    },
+    removePath: (target) => fs.rmSync(target, { force: true }),
+  });
+  runtime.writeGitWorktreeEvidence(root, {
+    schemaVersion: 'buildr.git-worktree-evidence/v1',
+    taskId: 'task',
+    workspaceRoot: root,
+    branch: 'codex/task',
+    planDigest: `sha256-${'1'.repeat(64)}`,
+    status: 'ready',
+    repositories: [{
+      selector: 'workspace', entityType: 'workspace', sourcePath: '.', sourceRepository: fs.realpathSync(root),
+      checkoutPath: fs.realpathSync(taskRoot), branch: 'codex/task', startPoint: 'dev', head: taskHead,
+      clean: true, registered: true, remote: null, remoteUrl: null, state: 'ready', diagnostic: null,
+    }],
+    effects: [],
+    updatedAt: new Date().toISOString(),
+  });
+
+  fs.writeFileSync(path.join(taskRoot, 'drift.txt'), 'late source drift\n');
+  const blocked = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId: 'task', integratedRefs: { workspace: targetHead }, integratedContributions: { workspace: formed.proof } });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(fs.existsSync(taskRoot), true);
+  fs.rmSync(path.join(taskRoot, 'drift.txt'));
+
+  const cleaned = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId: 'task', integratedRefs: { workspace: targetHead }, integratedContributions: { workspace: formed.proof } });
+  assert.equal(cleaned.status, 'cleaned', JSON.stringify(cleaned, null, 2));
+  assert.equal(fs.existsSync(taskRoot), false);
+  assert.notEqual(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/codex/task'], { cwd: root }).status, 0);
 });

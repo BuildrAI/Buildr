@@ -8,7 +8,8 @@ import test from 'node:test';
 import { registerTaskDevelopmentApplication } from '../../src/application/task-development/task-development-application.mjs';
 import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
 import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
-import { executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 import { registerContentTargetObserver } from '../../src/infrastructure/content/content-target-observer.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
@@ -308,6 +309,107 @@ test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢
   assert.equal(retainedCurrent.runId, third.runId);
   assert.equal(retainedCurrent.deliveryCarrier.identity, 'sha256-owned-carrier');
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], command(retained, 'git', ['rev-parse', 'HEAD']));
+});
+
+test('旧 v2 无副作用 commit-message mismatch 可由同一首次命令安全替换', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-legacy-mismatch-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const seed = path.join(fixture, 'seed');
+  const remote = path.join(fixture, 'remote.git');
+  const retained = path.join(fixture, 'workspace');
+  fs.mkdirSync(seed);
+  fs.writeFileSync(path.join(seed, 'AGENTS.md'), '# Legacy mismatch recovery fixture\n');
+  fs.mkdirSync(path.join(seed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+  fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
+  command(seed, 'git', ['init', '-b', 'dev']);
+  command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
+  fs.writeFileSync(path.join(seed, 'README.md'), '# baseline with unrelated commit message\n');
+  command(seed, 'git', ['add', '-A']);
+  command(seed, 'git', ['commit', '-m', 'baseline message unrelated to Finish']);
+  command(fixture, 'git', ['init', '--bare', remote]);
+  command(seed, 'git', ['remote', 'add', 'origin', remote]);
+  command(seed, 'git', ['push', '-u', 'origin', 'dev']);
+  command(fixture, 'git', ['clone', '--branch', 'dev', remote, retained]);
+  command(retained, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(retained, 'git', ['config', 'user.email', 'journey@example.com']);
+
+  const task = 'legacy-message-mismatch-task';
+  const environmentRoot = path.join(retained, '.worktrees', task);
+  command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
+  fs.writeFileSync(path.join(environmentRoot, 'feature.txt'), 'Task contribution\n');
+  command(environmentRoot, 'git', ['add', 'feature.txt']);
+  command(environmentRoot, 'git', ['commit', '-m', 'implement candidate']);
+  const environment = taskEnvironmentFixture({ task, environmentRoot, retained });
+  const development = taskDevelopmentFixture();
+  const runtime = {
+    ...createTaskFinishSqliteRuntime(retained, task),
+    ...environment,
+    ...development,
+    optionValue: (args, name, fallback) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget: (args) => {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? retained : args[index + 1]) };
+    },
+  };
+  const current = development.inspectTaskDevelopment().development.receipt;
+  const handoff = current.handoffs.at(-1);
+  const subject = 'fix(task-finish): recover legacy mismatch';
+  const deliveryCommit = normalizeTaskFinishDeliveryCommit(subject, task);
+  const legacy = createFinishRun({
+    root: retained,
+    runId: 'legacy-message-mismatch-run',
+    identity: {
+      task,
+      handoffIdentity: handoff.identity,
+      candidateIdentity: handoff.candidate.identity,
+      candidateGeneration: handoff.candidate.generation,
+      contentTargetIdentity: handoff.candidate.contentTargetIdentity,
+      agent: 'codex',
+      targetBranch: 'dev',
+      remote: 'origin',
+      environmentRoot,
+      workspaceRoot: retained,
+      deliveryCommitIdentity: deliveryCommit.identity,
+    },
+    deliveryCommit,
+    developmentHandoff: handoff,
+    runtime,
+  });
+  legacy.schemaVersion = 'buildr.task-finish-run/v2';
+  const mismatch = {
+    phase: 'prepare', operation: 'carrier-preparation', check: null, failureClass: 'product-execution-failure',
+    code: 'task-finish.commit-message-mismatch', status: 'failed', exitCode: null,
+    message: 'Delivery Carrier commit message does not match the frozen Task Finish message.', findings: [],
+    diagnostic: { expectedIdentity: deliveryCommit.identity, observedSubject: 'baseline message unrelated to Finish' },
+  };
+  legacy.status = 'failed';
+  legacy.phases.find((phase) => phase.id === 'preflight').status = 'passed';
+  legacy.phases.find((phase) => phase.id === 'preflight').attempts = 1;
+  legacy.phases.find((phase) => phase.id === 'prepare').status = 'failed';
+  legacy.phases.find((phase) => phase.id === 'prepare').attempts = 1;
+  legacy.phases.find((phase) => phase.id === 'prepare').failure = mismatch;
+  legacy.primaryFailure = mismatch;
+  runtime.writeTaskFinishRunPersistence(retained, legacy);
+  registerTaskFinishApplication(runtime);
+
+  await assert.rejects(
+    runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): different message', '--target', retained]),
+    (error) => error.code === 'task_finish.commit_message_override',
+  );
+  assert.equal(runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run.runId, legacy.runId);
+
+  const recovered = await runtime.taskFinish('run', ['--task', task, '--commit-message', subject, '--target', retained]);
+  assert.equal(recovered.status, 'complete', JSON.stringify(recovered, null, 2));
+  assert.notEqual(recovered.runId, legacy.runId);
+  assert.equal(runtime.readTaskFinishRunPersistence(retained, { taskId: task }, { optional: true }), null);
+  assert.equal(runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }).completion.result.runId, recovered.runId);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], recovered.carrier.head);
 });
 
 function realTaskDevelopmentFixture({ task, environmentRoot, retained, environment, workspaceOnly = false }) {
@@ -847,4 +949,275 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   assert.equal(completion.candidateGeneration, 1);
   assert.equal(completion.contentTargetIdentity, candidate.contentTargetIdentity);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
+});
+
+test('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspace', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-multi-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const workspaceSeed = path.join(fixture, 'workspace-seed');
+  const workspaceRemote = path.join(fixture, 'workspace-remote.git');
+  const retained = path.join(fixture, 'workspace');
+  const serviceSeed = path.join(fixture, 'service-seed');
+  const serviceRemote = path.join(fixture, 'service-remote.git');
+  const serviceRetained = path.join(fixture, 'service');
+  for (const repository of [workspaceSeed, serviceSeed]) fs.mkdirSync(repository);
+
+  fs.writeFileSync(path.join(workspaceSeed, 'AGENTS.md'), '# Multi repository Finish fixture\n');
+  fs.mkdirSync(path.join(workspaceSeed, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(workspaceSeed, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+  fs.writeFileSync(path.join(workspaceSeed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+  writeExecutable(path.join(workspaceSeed, 'projects', 'product', 'buildr'), fakeBuildr);
+  command(workspaceSeed, 'git', ['init', '-b', 'dev']);
+  command(workspaceSeed, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(workspaceSeed, 'git', ['config', 'user.email', 'journey@example.com']);
+  command(workspaceSeed, 'git', ['add', '-A']);
+  command(workspaceSeed, 'git', ['commit', '-m', 'workspace baseline message intentionally unrelated']);
+  command(fixture, 'git', ['init', '--bare', workspaceRemote]);
+  command(workspaceSeed, 'git', ['remote', 'add', 'origin', workspaceRemote]);
+  command(workspaceSeed, 'git', ['push', '-u', 'origin', 'dev']);
+  command(fixture, 'git', ['clone', '--branch', 'dev', workspaceRemote, retained]);
+
+  fs.writeFileSync(path.join(serviceSeed, 'service.txt'), 'service baseline\n');
+  command(serviceSeed, 'git', ['init', '-b', 'dev']);
+  command(serviceSeed, 'git', ['config', 'user.name', 'Buildr Journey']);
+  command(serviceSeed, 'git', ['config', 'user.email', 'journey@example.com']);
+  command(serviceSeed, 'git', ['add', '-A']);
+  command(serviceSeed, 'git', ['commit', '-m', 'service baseline']);
+  command(fixture, 'git', ['init', '--bare', serviceRemote]);
+  command(serviceSeed, 'git', ['remote', 'add', 'origin', serviceRemote]);
+  command(serviceSeed, 'git', ['push', '-u', 'origin', 'dev']);
+  command(fixture, 'git', ['clone', '--branch', 'dev', serviceRemote, serviceRetained]);
+  for (const repository of [retained, serviceRetained]) {
+    command(repository, 'git', ['config', 'user.name', 'Buildr Journey']);
+    command(repository, 'git', ['config', 'user.email', 'journey@example.com']);
+  }
+
+  const task = 'finish-multi-repository-task';
+  const workspaceTaskRoot = path.join(retained, '.worktrees', task);
+  const serviceTaskRoot = path.join(fixture, 'service-worktree');
+  command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, workspaceTaskRoot, 'dev']);
+  command(serviceRetained, 'git', ['worktree', 'add', '-b', `codex/${task}`, serviceTaskRoot, 'dev']);
+  fs.writeFileSync(path.join(serviceTaskRoot, 'service.txt'), 'service delivered by Task\n');
+  command(serviceTaskRoot, 'git', ['add', 'service.txt']);
+  command(serviceTaskRoot, 'git', ['commit', '-m', 'implement service contribution']);
+  const serviceTaskHead = command(serviceTaskRoot, 'git', ['rev-parse', 'HEAD']);
+  const workspaceRemoteBefore = command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0];
+
+  const controllerCommand = path.join(retained, 'projects', 'product', 'buildr');
+  const execution = () => ({
+    ready: true,
+    taskId: task,
+    receiptSchema: 'buildr.task-environment-receipt/v2',
+    workspaceRoot: retained,
+    environmentRoot: workspaceTaskRoot,
+    validationRoot: workspaceTaskRoot,
+    executionRoots: [workspaceTaskRoot, serviceTaskRoot],
+    allowedExecutionRoots: [workspaceTaskRoot, serviceTaskRoot],
+    controller: { identity: 'fixture-controller', adapter: 'codex' },
+    controllerInvocation: { command: process.execPath, argsPrefix: [controllerCommand], sourceRoot: path.dirname(controllerCommand), kind: 'stable-controller' },
+    repositories: [
+      { selector: 'workspace', sourcePath: '.', sourceRepository: retained, checkoutPath: workspaceTaskRoot, branch: `codex/${task}`, remote: 'origin', startPoint: 'dev', state: 'ready' },
+      { selector: 'service:product/service', sourcePath: 'projects/service', sourceRepository: serviceRetained, checkoutPath: serviceTaskRoot, branch: `codex/${task}`, remote: 'origin', startPoint: 'dev', state: 'ready' },
+    ],
+    scopes: [
+      { selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: workspaceTaskRoot, validationRoot: workspaceTaskRoot, shared: false },
+      { selector: 'service:product/service', kind: 'service', sourcePath: 'projects/service', executionRoot: serviceTaskRoot, validationRoot: serviceTaskRoot, shared: false },
+    ],
+    resources: [],
+  });
+  const environment = {
+    resolveTaskEnvironmentExecution: execution,
+    resolveTaskEnvironmentCleanupContext: execution,
+    cleanupTaskEnvironmentThroughRetainedController: async (workspaceRoot, taskId, authorization) => {
+      assert.equal(path.resolve(workspaceRoot), path.resolve(retained));
+      assert.equal(taskId, task);
+      assert.deepEqual(Object.keys(authorization.deliveries).sort(), ['service:product/service', 'workspace']);
+      assert.equal(authorization.integratedContributions.workspace.kind, 'no-contribution');
+      assert.equal(authorization.integratedContributions['service:product/service'].kind, 'git-isolated-commit');
+      assert.equal(authorization.deliveries.workspace, workspaceRemoteBefore);
+      assert.equal(authorization.deliveries['service:product/service'], command(serviceRetained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0]);
+      for (const [source, taskRoot] of [[serviceRetained, serviceTaskRoot], [retained, workspaceTaskRoot]]) {
+        command(source, 'git', ['worktree', 'remove', '--force', taskRoot]);
+        command(source, 'git', ['branch', '-D', `codex/${task}`]);
+      }
+      return { status: 'cleaned', completedAt: new Date().toISOString(), effects: [{ type: 'git-worktrees-removed', count: 2 }], diagnostic: null };
+    },
+  };
+  const runtime = {
+    ...createTaskFinishSqliteRuntime(retained, task),
+    ...environment,
+    ...taskDevelopmentFixture(),
+    optionValue: (args, name, fallback) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget: (args) => {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? retained : args[index + 1]) };
+    },
+  };
+  registerTaskFinishApplication(runtime);
+  const result = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver service contribution', '--target', retained]);
+
+  assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
+  assert.equal(result.repositories.length, 2);
+  const workspace = result.repositories.find((repository) => repository.selector === 'workspace');
+  const service = result.repositories.find((repository) => repository.selector === 'service:product/service');
+  assert.equal(workspace.disposition, 'not-applicable');
+  assert.equal(workspace.deliveryCarrier, null);
+  assert.equal(workspace.delivery, null);
+  assert.equal(workspace.cleanupProof.kind, 'no-contribution');
+  assert.equal(service.disposition, 'applicable');
+  assert.equal(service.delivery.status, 'delivered');
+  assert.equal(service.deliveryCarrier.repositorySelector, 'service:product/service');
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], workspaceRemoteBefore);
+  assert.equal(command(serviceRetained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], service.deliveryCarrier.head);
+  assert.notEqual(service.deliveryCarrier.head, serviceTaskHead);
+  assert.equal(fs.existsSync(workspaceTaskRoot), false);
+  assert.equal(fs.existsSync(serviceTaskRoot), false);
+  assert.equal(command(retained, 'git', ['branch', '--list', `codex/${task}`]), '');
+  assert.equal(command(serviceRetained, 'git', ['branch', '--list', `codex/${task}`]), '');
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'carriers', result.runId)), false);
+});
+
+test('多贡献 repository 在第二个 target advance 后保存部分交付并从最早未完成处恢复', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-partial-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const createRepository = (name, files) => {
+    const seed = path.join(fixture, `${name}-seed`);
+    const remote = path.join(fixture, `${name}-remote.git`);
+    const retainedRepository = path.join(fixture, name);
+    fs.mkdirSync(seed);
+    for (const [relative, content] of Object.entries(files)) {
+      const file = path.join(seed, relative);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content);
+    }
+    command(seed, 'git', ['init', '-b', 'dev']);
+    command(seed, 'git', ['config', 'user.name', 'Buildr Journey']);
+    command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
+    command(seed, 'git', ['add', '-A']);
+    command(seed, 'git', ['commit', '-m', `${name} baseline`]);
+    command(fixture, 'git', ['init', '--bare', remote]);
+    command(seed, 'git', ['remote', 'add', 'origin', remote]);
+    command(seed, 'git', ['push', '-u', 'origin', 'dev']);
+    command(fixture, 'git', ['clone', '--branch', 'dev', remote, retainedRepository]);
+    command(retainedRepository, 'git', ['config', 'user.name', 'Buildr Journey']);
+    command(retainedRepository, 'git', ['config', 'user.email', 'journey@example.com']);
+    return { seed, remote, retained: retainedRepository };
+  };
+  const workspace = createRepository('workspace', {
+    'AGENTS.md': '# Partial multi repository fixture\n',
+    '.gitignore': '/.buildr/\n/.worktrees/\n',
+    'projects/manifest.yml': 'schemaVersion: buildr.projects/v2\nprojects: {}\n',
+    'projects/product/buildr': fakeBuildr,
+  });
+  fs.chmodSync(path.join(workspace.retained, 'projects', 'product', 'buildr'), 0o755);
+  const serviceA = createRepository('service-a', { 'service.txt': 'service A baseline\n' });
+  const serviceB = createRepository('service-b', { 'service.txt': 'service B baseline\n' });
+
+  const task = 'finish-partial-multi-task';
+  const workspaceTaskRoot = path.join(workspace.retained, '.worktrees', task);
+  const serviceATaskRoot = path.join(fixture, 'service-a-worktree');
+  const serviceBTaskRoot = path.join(fixture, 'service-b-worktree');
+  for (const [repository, taskRoot] of [[workspace, workspaceTaskRoot], [serviceA, serviceATaskRoot], [serviceB, serviceBTaskRoot]]) {
+    command(repository.retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, taskRoot, 'dev']);
+  }
+  for (const [taskRoot, content] of [[serviceATaskRoot, 'service A Task contribution\n'], [serviceBTaskRoot, 'service B Task contribution\n']]) {
+    fs.writeFileSync(path.join(taskRoot, 'service.txt'), content);
+    command(taskRoot, 'git', ['add', 'service.txt']);
+    command(taskRoot, 'git', ['commit', '-m', 'implement Task contribution']);
+  }
+
+  const controllerCommand = path.join(workspace.retained, 'projects', 'product', 'buildr');
+  const repositories = [
+    { selector: 'workspace', sourcePath: '.', sourceRepository: workspace.retained, checkoutPath: workspaceTaskRoot, branch: `codex/${task}`, remote: 'origin', startPoint: 'dev', state: 'ready' },
+    { selector: 'service:a', sourcePath: 'projects/service-a', sourceRepository: serviceA.retained, checkoutPath: serviceATaskRoot, branch: `codex/${task}`, remote: 'origin', startPoint: 'dev', state: 'ready' },
+    { selector: 'service:b', sourcePath: 'projects/service-b', sourceRepository: serviceB.retained, checkoutPath: serviceBTaskRoot, branch: `codex/${task}`, remote: 'origin', startPoint: 'dev', state: 'ready' },
+  ];
+  const execution = () => ({
+    ready: true,
+    taskId: task,
+    receiptSchema: 'buildr.task-environment-receipt/v2',
+    workspaceRoot: workspace.retained,
+    environmentRoot: workspaceTaskRoot,
+    validationRoot: workspaceTaskRoot,
+    executionRoots: [workspaceTaskRoot, serviceATaskRoot, serviceBTaskRoot],
+    allowedExecutionRoots: [workspaceTaskRoot, serviceATaskRoot, serviceBTaskRoot],
+    controller: { identity: 'fixture-controller', adapter: 'codex' },
+    controllerInvocation: { command: process.execPath, argsPrefix: [controllerCommand], sourceRoot: path.dirname(controllerCommand), kind: 'stable-controller' },
+    repositories,
+    scopes: repositories.map((repository) => ({ selector: repository.selector, kind: repository.selector === 'workspace' ? 'workspace' : 'service', sourcePath: repository.sourcePath, executionRoot: repository.checkoutPath, validationRoot: repository.checkoutPath, shared: false })),
+    resources: [],
+  });
+  const development = taskDevelopmentFixture();
+  const assertDevelopment = development.assertTaskDevelopmentCarrier;
+  let carrierAssertions = 0;
+  let advancedServiceB = null;
+  development.assertTaskDevelopmentCarrier = (...args) => {
+    carrierAssertions += 1;
+    if (carrierAssertions === 5) {
+      fs.writeFileSync(path.join(serviceB.retained, 'target-advance.txt'), 'advance target after all carriers are verified\n');
+      command(serviceB.retained, 'git', ['add', 'target-advance.txt']);
+      command(serviceB.retained, 'git', ['commit', '-m', 'advance service B target']);
+      command(serviceB.retained, 'git', ['push', 'origin', 'dev']);
+      advancedServiceB = command(serviceB.retained, 'git', ['rev-parse', 'HEAD']);
+    }
+    return assertDevelopment(...args);
+  };
+  const environment = {
+    resolveTaskEnvironmentExecution: execution,
+    resolveTaskEnvironmentCleanupContext: execution,
+    cleanupTaskEnvironmentThroughRetainedController: async (_workspaceRoot, _taskId, authorization) => {
+      assert.equal(authorization.integratedContributions.workspace.kind, 'no-contribution');
+      assert.equal(authorization.integratedContributions['service:a'].kind, 'git-isolated-commit');
+      assert.equal(authorization.integratedContributions['service:b'].kind, 'git-isolated-commit');
+      for (const [repository, taskRoot] of [[serviceA, serviceATaskRoot], [serviceB, serviceBTaskRoot], [workspace, workspaceTaskRoot]]) {
+        command(repository.retained, 'git', ['worktree', 'remove', '--force', taskRoot]);
+        command(repository.retained, 'git', ['branch', '-D', `codex/${task}`]);
+      }
+      return { status: 'cleaned', completedAt: new Date().toISOString(), effects: [{ type: 'git-worktrees-removed', count: 3 }], diagnostic: null };
+    },
+  };
+  const runtime = {
+    ...createTaskFinishSqliteRuntime(workspace.retained, task),
+    ...environment,
+    ...development,
+    optionValue: (args, name, fallback) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget: (args) => {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? workspace.retained : args[index + 1]) };
+    },
+  };
+  registerTaskFinishApplication(runtime);
+  const commitMessage = 'fix(task-finish): deliver multiple repositories';
+  const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', commitMessage, '--target', workspace.retained]);
+
+  assert.equal(first.status, 'blocked', JSON.stringify(first, null, 2));
+  assert.equal(first.primaryFailure.code, 'task-finish.target-race');
+  assert.ok(advancedServiceB);
+  const firstA = first.repositories.find((repository) => repository.selector === 'service:a');
+  const firstB = first.repositories.find((repository) => repository.selector === 'service:b');
+  assert.equal(firstA.delivery.status, 'delivered');
+  assert.equal(firstB.delivery, null);
+  assert.equal(command(serviceA.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], firstA.deliveryCarrier.head);
+  assert.equal(command(serviceB.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], advancedServiceB);
+
+  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', workspace.retained]);
+  assert.equal(second.status, 'complete', JSON.stringify(second, null, 2));
+  const secondA = second.repositories.find((repository) => repository.selector === 'service:a');
+  const secondB = second.repositories.find((repository) => repository.selector === 'service:b');
+  assert.equal(secondA.delivery.status, 'delivered');
+  assert.equal(secondA.delivery.targetDisposition, 'already-contained');
+  assert.equal(secondA.deliveryCarrier.identity, firstA.deliveryCarrier.identity);
+  assert.equal(secondB.delivery.status, 'delivered');
+  assert.equal(secondB.deliveryCarrier.expectedTargetRef, advancedServiceB);
+  assert.equal(command(serviceB.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], secondB.deliveryCarrier.head);
+  assert.equal(fs.existsSync(workspaceTaskRoot), false);
+  assert.equal(fs.existsSync(serviceATaskRoot), false);
+  assert.equal(fs.existsSync(serviceBTaskRoot), false);
+  assert.equal(fs.existsSync(path.join(workspace.retained, '.buildr', 'transient', 'task-finish', 'carriers', second.runId)), false);
 });

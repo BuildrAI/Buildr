@@ -9,10 +9,12 @@ import {
   createFinishRun as createFinishRunWithSqlite,
   executeFinishRun as executeFinishRunWithSqlite,
   FINISH_PHASES,
+  finishResult,
   inspectFinishRun as inspectFinishRunWithSqlite,
   readTaskFinishResults as readTaskFinishResultsWithSqlite,
   readFinishRun as readFinishRunWithSqlite,
 } from '../../src/application/task-finish/task-finish-run.mjs';
+import { normalizeTaskFinishRepositorySet } from '../../src/application/task-finish/task-finish-repository-set.mjs';
 
 const runtimes = new Map();
 
@@ -109,7 +111,7 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   const root = fixture(t);
   const calls = [];
   const result = await executeFinishRun({ root, run: createFinishRun({ root, runId: 'normal', identity: identity(root) }), handlers: passingHandlers(calls) });
-  assert.equal(result.schemaVersion, 'buildr.task-finish-result/v2');
+  assert.equal(result.schemaVersion, 'buildr.task-finish-result/v3');
   assert.equal(result.status, 'complete', JSON.stringify(result.primaryFailure));
   assert.deepEqual(calls, FINISH_PHASES);
   assert.deepEqual(result.phases.map((phase) => phase.id), FINISH_PHASES);
@@ -119,7 +121,7 @@ test('单次产品调用消费 handoff 并完成五阶段，formal Verification 
   assert.deepEqual(result.resolvedContext.handoff, { identity: 'sha256-handoff' });
   assert.deepEqual(result.resolvedContext.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
   assert.equal(result.resolvedContext.environment, undefined);
-  assert.deepEqual(result.resolvedContext.delivery, { agent: 'codex', targetBranch: 'dev', remote: null });
+  assert.deepEqual(result.resolvedContext.delivery, { agent: 'codex', targetBranch: 'dev', remote: null, repositorySetIdentity: null, repositories: [] });
   assert.match(result.resolvedContext.identity, /^sha256-/);
   assert.deepEqual(result.candidate, { identity: 'sha256-candidate', generation: 1, contentTargetIdentity: 'sha256-content-target' });
   assert.equal(result.carrier.identity, 'carrier-abc');
@@ -152,7 +154,7 @@ test('run identity 强制绑定 Development handoff/Candidate/Content Target，�
   const root = fixture(t);
   const runtime = runtimeFor(root, 'finish-handoff');
   const run = createFinishRun({ root, runId: 'current', identity: identity(root), runtime });
-  assert.equal(run.schemaVersion, 'buildr.task-finish-run/v2');
+  assert.equal(run.schemaVersion, 'buildr.task-finish-run/v3');
   for (const field of ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']) {
     const invalid = identity(root);
     delete invalid[field];
@@ -169,6 +171,61 @@ test('run identity 强制绑定 Development handoff/Candidate/Content Target，�
       && error.details.currentRunId === 'current'
       && error.details.currentIdentityDigest !== error.details.requestedIdentityDigest,
   );
+});
+
+test('bounded v2 current run 继续由 legacy singleton handler 恢复', async (t) => {
+  const root = fixture(t);
+  const calls = [];
+  const run = createFinishRun({ root, runId: 'legacy-v2-resume', identity: identity(root, 'legacy-v2-resume') });
+  run.schemaVersion = 'buildr.task-finish-run/v2';
+  const result = await executeFinishRun({ root, run, handlers: passingHandlers(calls, 'legacy-head') });
+  assert.equal(result.status, 'complete');
+  assert.equal(result.schemaVersion, 'buildr.task-finish-result/v3');
+  assert.deepEqual(calls, FINISH_PHASES);
+  assert.equal(result.carrier.head, 'legacy-head');
+});
+
+test('多仓库 Result 为 self-bootstrap 选择唯一 Workspace carrier 而不伪装聚合 carrier', (t) => {
+  const root = fixture(t);
+  const task = 'finish-workspace-carrier-projection';
+  const contribution = (selector) => ({
+    identity: `sha256-${selector}-contribution`,
+    originalBaseline: { head: `${selector}-before`, tree: `${selector}-before-tree` },
+    source: { head: `${selector}-after`, tree: `${selector}-after-tree` },
+  });
+  const repositories = normalizeTaskFinishRepositorySet([
+    {
+      selector: 'workspace', sourcePath: '.', retainedRoot: root, taskRoot: path.join(root, '.worktrees', task),
+      environmentBranch: `codex/${task}`, targetBranch: 'dev', remote: 'origin', disposition: 'applicable', reason: null,
+      taskContribution: contribution('workspace'),
+    },
+    {
+      selector: 'service:example', sourcePath: 'projects/example', retainedRoot: path.join(root, 'projects/example'), taskRoot: path.join(root, '.worktrees', task, 'projects/example'),
+      environmentBranch: `codex/${task}`, targetBranch: 'dev-service', remote: 'upstream', disposition: 'applicable', reason: null,
+      taskContribution: contribution('service'),
+    },
+  ]);
+  const run = createFinishRun({
+    root,
+    runId: 'workspace-carrier-projection',
+    identity: { ...identity(root, task), targetBranch: null, remote: null, repositories },
+  });
+  for (const state of run.repositories) {
+    state.deliveryCarrier = { identity: `sha256-${state.selector}-carrier`, repositorySelector: state.selector, head: `${state.selector}-head`, activationPaths: state.selector === 'workspace' ? ['projects/product/services/buildr/src/example.mjs'] : ['service.txt'] };
+    state.equivalence = { status: 'equivalent', selector: state.selector };
+    state.delivery = { status: 'delivered', selector: state.selector, carrierRef: state.deliveryCarrier.head, finalRemoteRef: state.deliveryCarrier.head, remoteAfterRef: state.deliveryCarrier.head };
+  }
+  run.status = 'complete';
+  run.completedAt = run.updatedAt;
+  run.phases.forEach((phase) => { phase.status = 'passed'; });
+
+  const result = finishResult(run);
+  assert.equal(result.carrier.repositorySelector, 'workspace');
+  assert.equal(result.delivery.selector, 'workspace');
+  assert.equal(result.identity.targetBranch, 'dev');
+  assert.equal(result.identity.remote, 'origin');
+  assert.equal(result.repositories.length, 2);
+  assert.equal(result.carrierSetIdentity === result.carrier.identity, false);
 });
 
 test('carrier equivalence 缺陷终止 run 并返回 Task Development', async (t) => {

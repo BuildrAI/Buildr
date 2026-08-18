@@ -1,0 +1,22 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: support-multi-repository-task-finish
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/support-multi-repository-task-finish/brief.md
+    reason: 多仓库 Task Finish 的用户目标、流程、恢复与兼容边界需要可读入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/support-multi-repository-task-finish/proposal.md
+      - openspec/changes/support-multi-repository-task-finish/design.md
+      - openspec/changes/support-multi-repository-task-finish/specs/task-finish-execution/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Task Finish 从单 repository current 扩展为 repository-scoped delivery、lease、recovery 与 cleanup proof。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-finish-execution/spec.md
+      - openspec/changes/support-multi-repository-task-finish/specs/task-finish-execution/spec.md
+      - openspec/changes/support-multi-repository-task-finish/specs/public-json-contracts/spec.md
+unresolvedItems: []

@@ -5,7 +5,7 @@ import { compactTaskFinishResult, projectTaskFinishResult } from '../../src/appl
 
 function canonical(overrides = {}) {
   return {
-    schemaVersion: 'buildr.task-finish-result/v2',
+    schemaVersion: 'buildr.task-finish-result/v3',
     runId: 'finish-run',
     status: 'blocked',
     identity: {
@@ -124,7 +124,7 @@ test('compact Task Finish Result 保留 dirty preflight 与 Delivery Adaptation 
 test('full Task Finish Result 保持canonical对象不变', () => {
   const full = canonical();
   assert.equal(projectTaskFinishResult(full, 'full'), full);
-  assert.equal(full.schemaVersion, 'buildr.task-finish-result/v2');
+  assert.equal(full.schemaVersion, 'buildr.task-finish-result/v3');
 });
 
 test('compact bootstrap provenance不暴露capsule路径', () => {

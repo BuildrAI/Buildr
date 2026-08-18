@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const RUN_LOCATOR = 'workspace-sqlite:task-finish-run';
 const COMPLETION_LOCATOR = 'workspace-sqlite:task-finish-completion';
 const LEASE_LOCATOR = 'workspace-sqlite:task-finish-target-lease';
-const CURRENT_SCHEMA = 'buildr.task-finish-current/v1';
+const CURRENT_SCHEMA = 'buildr.task-finish-current/v2';
 const PHASE_IDS = Object.freeze(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
 const PHASE_STATUSES = new Set(['pending', 'running', 'passed', 'blocked', 'failed', 'not-applicable']);
 const RUN_STATUSES = new Set(['active', 'blocked', 'failed', 'complete', 'cleanup_pending']);
@@ -14,6 +14,7 @@ const CURRENT_COLUMNS = Object.freeze([
   'task_id', 'run_id', 'schema_version', 'status', 'identity_digest', 'current_phase',
   'handoff_identity', 'candidate_identity', 'candidate_generation', 'content_target_identity',
   'target_branch', 'target_remote', 'carrier_identity',
+  'repository_set_identity', 'carrier_set_identity', 'delivery_set_identity',
   'association_handoff_identity', 'association_candidate_identity', 'association_candidate_generation',
   'planning_gate_target_identity', 'completion_gate_target_identity', 'verification_gate_target_identity',
   'primary_failure_phase', 'primary_failure_operation', 'primary_failure_class', 'primary_failure_code',
@@ -52,7 +53,7 @@ function assertPhases(phases) {
 
 function assertRun(run) {
   if (!run || typeof run !== 'object' || Array.isArray(run)) throw error('task_finish_run_invalid', 'Task Finish current run 必须是对象。');
-  if (run.schemaVersion !== 'buildr.task-finish-run/v2') throw error('task_finish_run_schema_invalid', `Task Finish run schema 不支持：${run.schemaVersion || '<missing>'}。`);
+  if (!['buildr.task-finish-run/v2', 'buildr.task-finish-run/v3'].includes(run.schemaVersion)) throw error('task_finish_run_schema_invalid', `Task Finish run schema 不支持：${run.schemaVersion || '<missing>'}。`);
   if (typeof run.runId !== 'string' || !run.runId) throw error('task_finish_run_identity_invalid', 'Task Finish run 缺少 runId。');
   if (typeof run.identity?.task !== 'string' || !run.identity.task) throw error('task_finish_run_identity_invalid', 'Task Finish run 缺少 Task identity。');
   if (!RUN_STATUSES.has(run.status)) throw error('task_finish_run_status_invalid', `Task Finish run status 不支持：${run.status || '<missing>'}。`);
@@ -87,6 +88,23 @@ function compactResult(result) {
       targetRef: result.carrier.targetRef || null,
       changedPaths: Array.isArray(result.carrier.changedPaths) ? result.carrier.changedPaths.slice(0, 500) : [],
     } : null,
+    repositories: Array.isArray(result?.repositories) ? result.repositories.map((repository) => ({
+      selector: repository.selector,
+      disposition: repository.disposition,
+      reason: repository.reason || null,
+      taskContribution: repository.taskContribution || null,
+      deliveryCarrier: repository.deliveryCarrier ? {
+        identity: repository.deliveryCarrier.identity || null,
+        kind: repository.deliveryCarrier.kind || null,
+        head: repository.deliveryCarrier.head || null,
+        tree: repository.deliveryCarrier.tree || null,
+        expectedTargetRef: repository.deliveryCarrier.expectedTargetRef || null,
+        changedPaths: Array.isArray(repository.deliveryCarrier.changedPaths) ? repository.deliveryCarrier.changedPaths.slice(0, 500) : [],
+      } : null,
+      equivalence: repository.equivalence || null,
+      delivery: repository.delivery || null,
+      cleanupProof: repository.cleanupProof || null,
+    })) : [],
     phases: Array.isArray(result?.phases) ? result.phases.map(compactPhase) : [],
   };
 }
@@ -145,6 +163,26 @@ function associationValues(completion) {
   };
 }
 
+function repositorySetIdentity(run, result = null) {
+  return run?.identity?.repositorySetIdentity || result?.repositorySetIdentity || null;
+}
+
+function carrierSetIdentity(run, result = null, completion = null) {
+  const explicit = result?.carrierSetIdentity || completion?.carrierSetIdentity || null;
+  if (explicit) return explicit;
+  const carriers = (run?.repositories || []).filter((repository) => repository.deliveryCarrier?.identity)
+    .map((repository) => ({ selector: repository.selector, identity: repository.deliveryCarrier.identity }));
+  return carriers.length ? digest(carriers) : null;
+}
+
+function deliverySetIdentity(run, result = null, completion = null) {
+  const explicit = result?.deliverySetIdentity || completion?.deliverySetIdentity || null;
+  if (explicit) return explicit;
+  const deliveries = (run?.repositories || []).filter((repository) => repository.delivery?.finalRemoteRef)
+    .map((repository) => ({ selector: repository.selector, finalRemoteRef: repository.delivery.finalRemoteRef }));
+  return deliveries.length ? digest(deliveries) : null;
+}
+
 function currentRecord(run, { preparedCompletion = null, lease = null } = {}) {
   const normalized = assertRun(run);
   const failure = normalized.primaryFailure || null;
@@ -162,6 +200,9 @@ function currentRecord(run, { preparedCompletion = null, lease = null } = {}) {
     target_branch: normalized.identity.targetBranch,
     target_remote: normalized.identity.remote || null,
     carrier_identity: normalized.deliveryCarrier?.identity || preparedCompletion?.carrierIdentity || null,
+    repository_set_identity: repositorySetIdentity(normalized),
+    carrier_set_identity: carrierSetIdentity(normalized, null, preparedCompletion),
+    delivery_set_identity: deliverySetIdentity(normalized, null, preparedCompletion),
     ...associationValues(preparedCompletion),
     primary_failure_phase: failure?.phase || null,
     primary_failure_operation: failure?.operation || failure?.check || null,
@@ -217,6 +258,9 @@ function terminalRecord(run, result, completion) {
       target_branch: normalized.identity.targetBranch,
       target_remote: normalized.identity.remote || null,
       carrier_identity: normalized.deliveryCarrier?.identity || fullCompletion.carrierIdentity || null,
+      repository_set_identity: repositorySetIdentity(normalized, storedResult),
+      carrier_set_identity: carrierSetIdentity(normalized, storedResult, fullCompletion),
+      delivery_set_identity: deliverySetIdentity(normalized, storedResult, fullCompletion),
       ...associationValues(fullCompletion),
       primary_failure_phase: null,
       primary_failure_operation: null,
@@ -275,10 +319,25 @@ function leaseFromRow(row) {
   return row?.lease_target_identity ? { targetIdentity: row.lease_target_identity, token: row.lease_token, expiresAt: row.lease_expires_at } : null;
 }
 
+function ownedTargetIdentities(payload, row) {
+  const identity = payload?.kind === 'run'
+    ? payload.run?.identity
+    : payload?.completion?.result?.identity;
+  const repositories = Array.isArray(identity?.repositories) ? identity.repositories : [];
+  const repositoryTargets = repositories
+    .filter((repository) => repository?.disposition === 'applicable' && typeof repository.leaseTargetIdentity === 'string')
+    .map((repository) => repository.leaseTargetIdentity);
+  if (repositoryTargets.length) return repositoryTargets;
+  return row?.target_remote && row?.target_branch
+    ? [`${row.target_remote}:${row.target_branch}`]
+    : [];
+}
+
 const QUERY_FIELDS = Object.freeze([
   'identity_digest', 'status', 'current_phase',
   'handoff_identity', 'candidate_identity', 'candidate_generation', 'content_target_identity',
   'target_branch', 'target_remote', 'carrier_identity',
+  'repository_set_identity', 'carrier_set_identity', 'delivery_set_identity',
   'association_handoff_identity', 'association_candidate_identity', 'association_candidate_generation',
   'planning_gate_target_identity', 'completion_gate_target_identity', 'verification_gate_target_identity',
   'primary_failure_phase', 'primary_failure_operation', 'primary_failure_class', 'primary_failure_code',
@@ -304,6 +363,9 @@ function terminalQueryFields(completion) {
     target_branch: completion.targetBranch,
     target_remote: result.identity?.remote || null,
     carrier_identity: completion.carrierIdentity || result.carrier?.identity || null,
+    repository_set_identity: result.repositorySetIdentity || result.identity?.repositorySetIdentity || null,
+    carrier_set_identity: result.carrierSetIdentity || completion.carrierSetIdentity || null,
+    delivery_set_identity: result.deliverySetIdentity || completion.deliverySetIdentity || null,
     ...associationValues(completion),
     primary_failure_phase: null,
     primary_failure_operation: null,
@@ -488,8 +550,8 @@ export function registerTaskFinishRepository(runtime) {
       const requestedPayload = requested ? decodeRow(requested) : null;
       const eligible = requestedPayload?.kind === 'run' || (requestedPayload?.kind === 'terminal' && requested.status === 'complete');
       if (!requested || requested.run_id !== runId || !eligible) throw error('task_finish_current_conflict', 'Target lease requires matching current or terminal Finish owner。', 409, { taskId, runId, currentRunId: requested?.run_id || null, kind: requestedPayload?.kind || null });
-      const requestedTargetIdentity = requested.target_remote ? `${requested.target_remote}:${requested.target_branch}` : null;
-      if (requestedTargetIdentity !== targetIdentity) throw error('task_finish_target_identity_mismatch', 'Target lease identity与Finish owner冻结target不一致。', 409, { taskId, runId, expected: requestedTargetIdentity, actual: targetIdentity });
+      const requestedTargetIdentities = ownedTargetIdentities(requestedPayload, requested);
+      if (!requestedTargetIdentities.includes(targetIdentity)) throw error('task_finish_target_identity_mismatch', 'Target lease identity与Finish owner冻结target不一致。', 409, { taskId, runId, expected: requestedTargetIdentities, actual: targetIdentity });
       if (owner && owner.run_id !== runId) {
         const expired = Date.parse(owner.lease_expires_at) <= currentTime;
         if (!expired || !['failed', 'complete'].includes(owner.status)) {

@@ -202,7 +202,7 @@ function deliveryAdaptation(value) {
 
 export function compactTaskFinishResult(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw compactProjectionError('Task Finish compact projection requires a canonical Result.');
-  if (result.schemaVersion !== PUBLIC_JSON_SCHEMAS.taskFinishResult) throw compactProjectionError('Task Finish compact projection requires the canonical v2 Result.', { schemaVersion: result.schemaVersion || null });
+  if (![PUBLIC_JSON_SCHEMAS.taskFinishResult, 'buildr.task-finish-result/v2'].includes(result.schemaVersion)) throw compactProjectionError('Task Finish compact projection requires a supported canonical Result.', { schemaVersion: result.schemaVersion || null });
   const compactIdentity = identity(result);
   if (!compactIdentity.taskId || !compactIdentity.handoffIdentity || !compactIdentity.candidate.identity || !compactIdentity.candidate.generation || !compactIdentity.candidate.contentTargetIdentity || !result.status) {
     throw compactProjectionError('Task Finish canonical Result is missing required compact identity or status facts.', { runId: result.runId || null });
