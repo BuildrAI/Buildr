@@ -61,7 +61,9 @@ Development只拥有这些专业事实如何构成当前Task研发过程，不�
 
 在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 deterministic convergence/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。OpenSpec归档路径、provenance、checkbox完成态和filesystem时间不属于plan target；只有Task Planning Identity resolver返回的新target才能使Planning Review stale。
 
-内容固定后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。任一Change仍为`pending`时Application会在Content observation与Receipt写入前失败关闭；先完成Change-owned实现、current knowledge与deterministic convergence/archive，不能为了进入验证把pending伪装成stable。code-only Task提交空数组，明确`not-applicable`继续按原路径工作。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
+创建或重写文本文件时直接遵守required Core的EOF不变量。内容固定后、调用`observe`形成Content Target之前，检查Task本次新增的全部文本文件；Git-backed scope必须同时覆盖tracked-added与未忽略的untracked文件，非Git scope按Task实际新增文件inventory检查。发现末尾空白行时先修正再`observe`；不得为了清理未触达的存量EOF问题扩大当前Task范围。修正改变delivery bytes时，后续Content Target与验证证据必须基于修正后内容，不得复用旧bytes的evidence。
+
+检查通过后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。任一Change仍为`pending`时Application会在Content observation与Receipt写入前失败关闭；先完成Change-owned实现、current knowledge与deterministic convergence/archive，不能为了进入验证把pending伪装成stable。code-only Task提交空数组，明确`not-applicable`继续按原路径工作。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 
 Candidate freeze后交付基线（Delivery Baseline）前进时，不要rebase或修改原Task worktree。先只读inspect原Task source snapshot、Task Context、policy与gates；Task Development是Content Target、Candidate、Verification、Completion Review、decision与handoff是否current/stale的唯一authority。原Task source与这些输入未变时，全部facts保持current，直接让Finish在run-owned隔离交付载体（Delivery Carrier）处理交付适配（Delivery Adaptation）；不得调用observe覆盖Content Target、重跑正式Verification或递增generation。
 
