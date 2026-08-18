@@ -191,6 +191,63 @@ test('v2与v3 Result归一化为同一稳定self-bootstrap契约', () => {
   assert.equal(JSON.stringify(multi).includes('task-finish-result/v3'), false);
 });
 
+test('v3空repositories且仅有legacy singleton carrier时投影唯一Workspace repository', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete',
+    primaryFailure: null,
+    resume: null,
+    identity: { ...canonical().identity, repositories: [] },
+    repositories: [],
+    repositorySetIdentity: null,
+    carrier: {
+      identity: 'sha256-980797bee339d60c6820f414eef2b4295150c19d26cc26cd4dfe84eed88e88a2',
+      head: '4e220b287c746020a9ff95486935200e2fe1eb32',
+      changedPaths: [
+        'projects/product/services/buildr/src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
+        'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
+      ],
+    },
+    delivery: { status: 'delivered', remoteAfterRef: '4e220b287c746020a9ff95486935200e2fe1eb32', finalRemoteRef: '4e220b287c746020a9ff95486935200e2fe1eb32' },
+    phases: [{ id: 'cleanup', status: 'passed' }],
+    completion: {
+      status: 'complete',
+      cleanup: { status: 'cleaned' },
+      finalRemoteRef: '4e220b287c746020a9ff95486935200e2fe1eb32',
+    },
+  }));
+
+  assert.equal(result.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(result.mode, 'complete');
+  assert.equal(result.workspaceRepository.selector, 'workspace');
+  assert.equal(result.workspaceRepository.disposition, 'applicable');
+  assert.equal(result.workspaceRepository.carrier.identity, 'sha256-980797bee339d60c6820f414eef2b4295150c19d26cc26cd4dfe84eed88e88a2');
+  assert.equal(result.workspaceRepository.carrier.root, null);
+  assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
+  assert.deepEqual(result.selfBootstrap.activationPaths, [
+    'projects/product/services/buildr/src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
+    'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
+  ]);
+  assert.equal(result.selfBootstrap.applicability, 'applicable');
+  assert.equal(result.selfBootstrap.baseRef, '4e220b287c746020a9ff95486935200e2fe1eb32');
+  assert.deepEqual(result.carriers.map((carrier) => carrier.selector), ['workspace']);
+});
+
+test('v3空repositories且没有legacy carrier时保持workspace unavailable', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete',
+    primaryFailure: null,
+    resume: null,
+    identity: { ...canonical().identity, repositories: [] },
+    repositories: [],
+    carrier: null,
+  }));
+  assert.equal(result.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(result.workspaceRepository, null);
+  assert.equal(result.selfBootstrap.applicability, 'unavailable');
+  assert.equal(result.selfBootstrap.reason, 'Workspace repository facts are unavailable.');
+  assert.deepEqual(result.repositories, []);
+});
+
 test('无Workspace贡献投影为not-applicable且Service carrier不提升为自举输入', () => {
   const result = selfBootstrapTaskFinishResult(canonical({
     status: 'complete', primaryFailure: null, resume: null,

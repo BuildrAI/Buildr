@@ -109,19 +109,27 @@ function resultIdentity(result) {
   };
 }
 
+function legacyWorkspaceProjection(result, allowCleanedRoot) {
+  const carrier = projectedCarrier('workspace', result.carrier, { allowCleanedRoot });
+  return [{
+    selector: 'workspace',
+    disposition: carrier ? 'applicable' : 'unavailable',
+    reason: carrier ? null : 'Legacy Result does not expose a Workspace carrier.',
+    targetBranch: optionalString(result.identity?.targetBranch),
+    remote: optionalString(result.identity?.remote),
+    carrier,
+    delivery: projectedDelivery(result.delivery),
+  }];
+}
+
+function hasProjectableLegacyCarrier(result) {
+  return Boolean(optionalString(result?.carrier?.identity));
+}
+
 function repositoryProjection(result) {
   const allowCleanedRoot = cleanupCompleted(result);
   if (result.schemaVersion === 'buildr.task-finish-result/v2') {
-    const carrier = projectedCarrier('workspace', result.carrier, { allowCleanedRoot });
-    return [{
-      selector: 'workspace',
-      disposition: carrier ? 'applicable' : 'unavailable',
-      reason: carrier ? null : 'Legacy Result does not expose a Workspace carrier.',
-      targetBranch: optionalString(result.identity?.targetBranch),
-      remote: optionalString(result.identity?.remote),
-      carrier,
-      delivery: projectedDelivery(result.delivery),
-    }];
+    return legacyWorkspaceProjection(result, allowCleanedRoot);
   }
 
   const plans = Array.isArray(result.identity?.repositories) ? result.identity.repositories : [];
@@ -139,6 +147,9 @@ function repositoryProjection(result) {
     stateBySelector.set(selector, state);
   }
   const selectors = [...new Set([...planBySelector.keys(), ...stateBySelector.keys()])].sort();
+  if (selectors.length === 0 && hasProjectableLegacyCarrier(result)) {
+    return legacyWorkspaceProjection(result, allowCleanedRoot);
+  }
   return selectors.map((selector) => {
     const plan = planBySelector.get(selector) || {};
     const state = stateBySelector.get(selector) || {};
