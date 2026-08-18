@@ -97,9 +97,9 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
   for (const [args, expected, expectedStatus = 0] of cases) {
     assert.equal((await run(args, { expectedStatus, env })).schemaVersion, expected, args.join(' '));
   }
-  const before = await run(['task', 'inspect', 'json-task', '--target', root, '--json']);
-  await run(['task', 'delivery', 'inspect', 'json-task', '--target', root, '--json']);
-  const after = await run(['task', 'inspect', 'json-task', '--target', root, '--json']);
+  const before = await run(['task', 'inspect', 'json-task', '--target', root, '--json'], { env });
+  await run(['task', 'delivery', 'inspect', 'json-task', '--target', root, '--json'], { env });
+  const after = await run(['task', 'inspect', 'json-task', '--target', root, '--json'], { env });
   assert.equal(after.recordDigest, before.recordDigest);
   assert.deepEqual(after.record, before.record);
 });

@@ -194,8 +194,8 @@ test('内部driver以单进程list支持重复Task过滤和正文opt-in', (t) =>
 });
 
 test('Buildr Web只读返回current Result或尚未复盘', async (t) => {
-  const { root, runtime } = fixture(t);
   const appData = isolateLocalAppData(t);
+  const { root, runtime } = fixture(t);
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId } = await instance.ready;

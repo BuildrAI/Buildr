@@ -15,7 +15,7 @@ function fixture(t) {
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), [
     'schemaVersion: buildr.workspace/v1',
-    'id: fixture-workspace',
+    'id: 22222222-2222-4222-8222-222222222222',
     'name: Fixture',
     'description: Fixture Workspace',
     'runtime:',
@@ -38,7 +38,7 @@ function receipt(root, status = 'ready') {
   return {
     schemaVersion: TASK_ENVIRONMENT_RECEIPT_SCHEMA,
     taskId: 'demo-task',
-    workspace: { id: 'fixture-workspace', root },
+    workspace: { id: '22222222-2222-4222-8222-222222222222', root },
     controller: { sourceRoot: controllerRoot, cliSource: path.join(controllerRoot, 'bin', 'buildr.mjs'), identity: 'sha256-controller', adapter: 'codex' },
     status,
     scopes: [{

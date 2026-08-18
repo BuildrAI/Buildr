@@ -6,7 +6,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
 import { atomicWriteJson } from '../filesystem/index.mjs';
-import { localAppDataRoot } from '../filesystem/workspace-registry-repository.mjs';
+import { productDataRoot } from '../product-identity/web-profile.mjs';
 import {
   createNpmLauncherBinding,
   inspectNpmLauncherBinding,
@@ -36,7 +36,7 @@ export function defaultNpmLauncherTarget(platform = process.platform, options = 
 export function npmLauncherBindingPath(platform = process.platform, target = defaultNpmLauncherTarget(platform)) {
   return platform === 'darwin'
     ? path.join(path.resolve(target), 'Contents', 'Resources', 'launcher-binding.json')
-    : path.join(localAppDataRoot(), 'launchers', 'npm', 'launcher-binding.json');
+    : path.join(productDataRoot(), 'launchers', 'npm', 'launcher-binding.json');
 }
 
 function macLauncherScript(binding) {

@@ -4,8 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { openDefaultBrowser, readLauncherIdentityFromEnvironment } from '../../src/interfaces/local-app/runtime/instance-manager.mjs';
+import {
+  clearLocalAppInstance,
+  localAppInstancePath,
+  localAppStartLockPath,
+  openDefaultBrowser,
+  readLauncherIdentityFromEnvironment,
+  readLocalAppInstance,
+  writeLocalAppInstance,
+} from '../../src/interfaces/local-app/runtime/instance-manager.mjs';
 import { pickWorkspaceDirectory } from '../../src/interfaces/local-app/runtime/directory-picker.mjs';
+import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
 
 function opener(platform) {
   const calls = [];
@@ -43,4 +52,21 @@ test('Workspace 目录选择器复用 macOS 与 Windows 系统对话框', () => 
   assert.equal(calls[0].command, 'osascript');
   assert.equal(calls[1].command, 'powershell.exe');
   assert.throws(() => pickWorkspaceDirectory({ platform: 'linux', execute }), (error) => error.code === 'workspace_picker_unsupported');
+});
+
+test('released与development instance receipt和start lock绑定各自Web profile', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-local-app-profiles-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const released = resolveWebProfile({ channel: 'npm', runtime: { role: 'host' } }, { dataRoot: path.join(base, 'released') });
+  const development = resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, { dataRoot: path.join(base, 'development') });
+  const runtime = { atomicWriteJson(file, value) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); } };
+  const state = { url: 'http://127.0.0.1:4321', secret: 'secret', pid: 1234, webProfile: development };
+  writeLocalAppInstance(runtime, state);
+  assert.equal(localAppInstancePath(released), path.join(base, 'released', 'instance.json'));
+  assert.equal(localAppInstancePath(development), path.join(base, 'development', 'instance.json'));
+  assert.equal(localAppStartLockPath(released), path.join(base, 'released', 'instance-start.lock'));
+  assert.equal(readLocalAppInstance(released), null);
+  assert.equal(readLocalAppInstance(development).webProfile.identity, development.identity);
+  assert.equal(clearLocalAppInstance(state, development), true);
+  assert.equal(fs.existsSync(localAppInstancePath(development)), false);
 });

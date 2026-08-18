@@ -19,6 +19,7 @@ function spawn(command, args, options = {}) {
     env: {
       ...process.env,
       BUILDR_APP_DATA_DIR: path.join(root, 'app-data'),
+      BUILDR_PRODUCT_DATA_DIR: path.join(root, 'app-data'),
       ...options.env,
     },
   });

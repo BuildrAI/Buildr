@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -143,14 +144,16 @@ test('Task Verification CLI记录workspace-only负向Result且不伪造passed', 
 });
 
 test('Buildr Web 只读投影 current Result，并只生成 Task Verification Agent prompt', async (t) => {
-  const { base, root } = fixture(t);
-  createRuntime().recordTaskVerification(root, 'verification-task', recordInput(root));
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-verification-product-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => {
     if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
     else process.env.BUILDR_APP_DATA_DIR = previousAppData;
   });
+  const { root } = fixture(t, { base });
+  createRuntime().recordTaskVerification(root, 'verification-task', recordInput(root));
   const runtime = createRuntime();
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));

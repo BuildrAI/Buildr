@@ -22,11 +22,15 @@ const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';
 
 test.beforeEach((t) => {
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const previousProductData = process.env.BUILDR_PRODUCT_DATA_DIR;
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-launcher-test-app-data-'));
   process.env.BUILDR_APP_DATA_DIR = appData;
+  process.env.BUILDR_PRODUCT_DATA_DIR = appData;
   t.after(() => {
     if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
     else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    if (previousProductData === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR;
+    else process.env.BUILDR_PRODUCT_DATA_DIR = previousProductData;
     fs.rmSync(appData, { recursive: true, force: true });
   });
 });

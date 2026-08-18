@@ -24,6 +24,20 @@ export function printProductInstallationReport(result) {
   for (const channel of ['npm', 'development']) printInstallationChannel(inventory.channels?.[channel]);
   console.log(`  npm launcher: status=${doctorValue(inventory.launcher?.status)} target=${doctorValue(inventory.launcher?.target)} binding=${doctorValue(inventory.launcher?.binding?.bindingIdentity)} ownership=${doctorValue(inventory.launcher?.binding?.launcherOwnershipIdentity)}`);
   printInstallationChannel(inventory.currentInstallation, 'current installation');
+  for (const profile of ['released', 'development']) {
+    const profiled = inventory.instances?.[profile];
+    console.log(`  ${profile} Web Data Root: ${doctorValue(profiled?.dataRoot)}`);
+    console.log(`    instance: status=${doctorValue(profiled?.status)} pid=${doctorValue(profiled?.identity?.pid)} url=${doctorValue(profiled?.identity?.url)} channel=${doctorValue(profiled?.identity?.channel)} health=${doctorValue(profiled?.observation?.health)}`);
+  }
+  const management = inventory.workspaceManagement;
+  if (management) {
+    console.log('  Workspace management:');
+    for (const profile of ['released', 'development']) {
+      const registry = management.registries?.[profile];
+      console.log(`    ${profile}: status=${doctorValue(registry?.status)} Data Root=${doctorValue(registry?.dataRoot)} registry=${doctorValue(registry?.file)} entries=${registry?.entries?.length ?? 0}`);
+    }
+    for (const conflict of management.conflicts || []) console.log(`    conflict: type=${doctorValue(conflict.type)} workspace=${doctorValue(conflict.workspaceId)} released=${doctorValue(conflict.releasedRoot)} development=${doctorValue(conflict.developmentRoot)} reason=${doctorValue(conflict.reason)}`);
+  }
   const instance = inventory.currentInstance;
   console.log(`  current instance: status=${doctorValue(instance?.status)} pid=${doctorValue(instance?.identity?.pid)} url=${doctorValue(instance?.identity?.url)} channel=${doctorValue(instance?.identity?.channel)} PID=${instance?.observation?.pidAlive === true ? 'alive' : instance?.observation?.pidAlive === false ? 'not-alive' : '-'} endpoint=${doctorValue(instance?.observation?.endpoint)} health=${doctorValue(instance?.observation?.health)}`);
   console.log(`    identity: Buildr=${doctorValue(instance?.identity?.version)} protocol=${doctorValue(instance?.identity?.protocolIdentity)} payload=${doctorValue(instance?.identity?.applicationPayloadDigest)} ownership=${doctorValue(instance?.identity?.ownershipIdentity)}`);

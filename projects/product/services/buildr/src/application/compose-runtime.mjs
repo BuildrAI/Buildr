@@ -1,6 +1,7 @@
 import { registerWorkspaceInfrastructure } from '../infrastructure/filesystem/index.mjs';
 import { registerWorkspaceManifestRepository } from '../infrastructure/filesystem/workspace-manifest-repository.mjs';
 import { registerWorkspaceRegistryRepository } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
+import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/workspace-management-fence.mjs';
 import { registerProjectManifestRepository } from '../infrastructure/filesystem/project-manifest-repository.mjs';
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
 import { registerWorkspaceSqlite } from '../infrastructure/sqlite/workspace-sqlite.mjs';
@@ -58,6 +59,7 @@ const REGISTRATIONS = [
   registerProductInvocation,
   registerWorkspaceManifestRepository,
   registerWorkspaceRegistryRepository,
+  registerWorkspaceManagementFence,
   registerDomainsRuntime,
   registerDomainsWorkspace,
   registerProjectManifestRepository,

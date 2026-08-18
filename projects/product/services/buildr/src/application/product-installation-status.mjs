@@ -12,6 +12,9 @@ import { registeredProductInstallations } from '../infrastructure/product-identi
 import { localAppDataRoot } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
 import { resolveApplicationPayloadRoot } from '../infrastructure/product-resources/index.mjs';
 import { npmLauncherStatus } from '../infrastructure/product-launcher/index.mjs';
+import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../infrastructure/product-identity/web-profile.mjs';
+import { readWorkspaceRegistryFile } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
+import { parseWorkspaceManifest } from '../infrastructure/filesystem/workspace-manifest-repository.mjs';
 
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -128,11 +131,78 @@ function loopbackInstanceUrl(value) {
   }
 }
 
+function workspaceRegistryInventory(profile) {
+  const observation = readWorkspaceRegistryFile(path.join(profile.dataRoot, 'workspace-registry.json'));
+  const entries = (observation.registry?.roots || []).map((registeredRoot) => {
+    let canonicalRoot = path.resolve(registeredRoot);
+    let workspaceId = null;
+    let status = 'ready';
+    let reason = null;
+    try {
+      canonicalRoot = fs.realpathSync.native(canonicalRoot);
+      const manifest = parseWorkspaceManifest(fs.readFileSync(path.join(canonicalRoot, '.buildr', 'workspace.yml'), 'utf8'));
+      workspaceId = manifest.canonical ? manifest.workspace.id : null;
+      if (!workspaceId) throw new Error('Workspace manifest has no canonical UUID.');
+    } catch (error) {
+      status = 'invalid';
+      reason = error.message;
+    }
+    let managementOwner = null;
+    try {
+      const record = JSON.parse(fs.readFileSync(path.join(canonicalRoot, '.buildr', 'local', 'web-management.json'), 'utf8'));
+      managementOwner = record?.owner || null;
+    } catch {}
+    return { registeredRoot, canonicalRoot, workspaceId, status, reason, managementOwner };
+  });
+  return { profile: profile.profile, dataRoot: profile.dataRoot, file: observation.file, status: observation.status, reason: observation.reason, entries };
+}
+
+function workspaceManagementInventory(profiles) {
+  const registries = {
+    released: workspaceRegistryInventory(profiles.released),
+    development: workspaceRegistryInventory(profiles.development),
+  };
+  const conflicts = [];
+  for (const profile of ['released', 'development']) {
+    const registry = registries[profile];
+    if (registry.status === 'invalid') conflicts.push({ type: 'registry-invalid', profile, registry: registry.file, reason: registry.reason });
+    for (const entry of registry.entries) {
+      if (entry.status === 'invalid') conflicts.push({ type: 'workspace-identity-invalid', profile, registry: registry.file, root: entry.registeredRoot, reason: entry.reason });
+      if (entry.managementOwner && entry.managementOwner.profile !== profile) conflicts.push({ type: 'management-owner-conflict', profile, registry: registry.file, root: entry.canonicalRoot, owner: entry.managementOwner });
+    }
+  }
+  for (const released of registries.released.entries.filter((entry) => entry.status === 'ready')) {
+    for (const development of registries.development.entries.filter((entry) => entry.status === 'ready')) {
+      if (released.canonicalRoot === development.canonicalRoot || released.workspaceId === development.workspaceId) {
+        conflicts.push({
+          type: 'cross-channel-registration',
+          workspaceId: released.workspaceId === development.workspaceId ? released.workspaceId : null,
+          releasedRoot: released.canonicalRoot,
+          developmentRoot: development.canonicalRoot,
+        });
+      }
+    }
+  }
+  return { registries, conflicts };
+}
+
+function annotateInstanceProfile(instance, profile) {
+  const expectedChannel = profile === 'released' ? 'npm' : 'development';
+  if (instance.identity && instance.identity.channel !== 'unknown' && instance.identity.channel !== expectedChannel) {
+    return {
+      ...instance,
+      status: 'profile-conflict',
+      reason: `${profile} Web Data Root中的instance属于${instance.identity.channel} channel；请通过旧实例公开退出动作停止后重新启动。`,
+    };
+  }
+  return instance;
+}
+
 function observeCurrentInstance(options = {}) {
   const file = path.resolve(options.instanceFile || path.join(options.dataRoot || localAppDataRoot(), 'instance.json'));
   if (!fs.existsSync(file)) return { receipt: null, result: { status: 'absent', identity: null, observation: { file, pidAlive: false, endpoint: 'absent', health: 'not-probed' } } };
   const value = readJson(file);
-  if (!value || value.schemaVersion !== 'buildr.local-app-instance/v1' || typeof value.secret !== 'string' || !Number.isInteger(value.pid) || value.pid <= 0) {
+  if (!value || !['buildr.local-app-instance/v1', 'buildr.local-app-instance/v2'].includes(value.schemaVersion) || typeof value.secret !== 'string' || !Number.isInteger(value.pid) || value.pid <= 0) {
     return { receipt: null, result: { status: 'invalid', identity: null, observation: { file, pidAlive: false, endpoint: 'invalid', health: 'not-probed' }, reason: 'current instance receipt is invalid' } };
   }
   const endpoint = loopbackInstanceUrl(value.url);
@@ -154,6 +224,7 @@ function observeCurrentInstance(options = {}) {
       runtimeRole: launcher?.runtimeRole || product?.runtime?.role || 'unknown',
       ownershipIdentity: launcher?.ownershipIdentity || product?.installationIdentity || null,
       runtime: product?.runtime || null,
+      webProfile: value.webProfile || null,
     },
     observation: {
       file,
@@ -232,13 +303,58 @@ export function buildInstallationInventory(productRoot, options = {}) {
     runtime: runtimeIdentityForOrigin(current),
     reason: current.blockingReasons?.join('; ') || null,
   };
+  const profileOptions = options.webProfileOptions || {};
+  let currentProfile = null;
+  try { currentProfile = resolveWebProfile(current, profileOptions); } catch {}
+  const explicitRoots = options.instanceDataRoots;
+  let releasedProfile;
+  let developmentProfile;
+  if (explicitRoots) {
+    releasedProfile = resolveWebProfile({ channel: 'npm', runtime: { role: 'host' } }, {
+      ...profileOptions,
+      dataRoot: explicitRoots.released || defaultWebDataRoot('released', profileOptions),
+    });
+    developmentProfile = resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, {
+      ...profileOptions,
+      dataRoot: explicitRoots.development || defaultWebDataRoot('development', profileOptions),
+    });
+  } else if (currentProfile?.overridden) {
+    const peerProfile = oppositeWebProfile(currentProfile, current, profileOptions);
+    releasedProfile = currentProfile.profile === 'released' ? currentProfile : peerProfile;
+    developmentProfile = currentProfile.profile === 'development' ? currentProfile : peerProfile;
+  } else {
+    releasedProfile = resolveWebProfile({ channel: 'npm', runtime: { role: 'host' } }, {
+      ...profileOptions,
+      dataRoot: defaultWebDataRoot('released', profileOptions),
+    });
+    developmentProfile = resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, {
+      ...profileOptions,
+      dataRoot: defaultWebDataRoot('development', profileOptions),
+    });
+  }
+  const instances = {
+    released: annotateInstanceProfile(inspectCurrentInstance({ dataRoot: releasedProfile.dataRoot, pidProbe: options.pidProbe }), 'released'),
+    development: annotateInstanceProfile(inspectCurrentInstance({ dataRoot: developmentProfile.dataRoot, pidProbe: options.pidProbe }), 'development'),
+  };
+  instances.released.dataRoot = releasedProfile.dataRoot;
+  instances.released.webProfile = releasedProfile;
+  instances.development.dataRoot = developmentProfile.dataRoot;
+  instances.development.webProfile = developmentProfile;
+  const workspaceManagement = workspaceManagementInventory({ released: releasedProfile, development: developmentProfile });
+  const currentInstance = options.instanceFile || options.instanceDataRoot || process.env.BUILDR_APP_DATA_DIR
+    ? inspectCurrentInstance({ dataRoot: options.instanceDataRoot, instanceFile: options.instanceFile, pidProbe: options.pidProbe })
+    : currentProfile
+      ? instances[currentProfile.profile]
+      : inspectCurrentInstance({ pidProbe: options.pidProbe });
   return {
     channels: { npm, development },
     launcher: ['darwin', 'win32'].includes(process.platform)
       ? npmLauncherStatus({ platform: process.platform, target: options.launcherTarget })
       : { schemaVersion: 'buildr.launcher-status/v1', channel: 'npm', platform: process.platform, status: 'not-applicable', installed: false, target: null, bindingPath: null, binding: null, diagnostic: null, nextActions: [] },
     currentInstallation,
-    currentInstance: inspectCurrentInstance({ dataRoot: options.instanceDataRoot, instanceFile: options.instanceFile, pidProbe: options.pidProbe }),
+    instances,
+    workspaceManagement,
+    currentInstance,
     installationRegistry: {
       schemaVersion: registered.registry?.schemaVersion || null,
       status: registered.status,
@@ -250,15 +366,37 @@ export function buildInstallationInventory(productRoot, options = {}) {
 
 export async function buildInstallationStatusInventory(productRoot, options = {}) {
   const inventory = buildInstallationInventory(productRoot, options);
-  return {
-    ...inventory,
-    currentInstance: await inspectCurrentInstanceReadiness({
+  const instances = {
+    released: annotateInstanceProfile(await inspectCurrentInstanceReadiness({
+      dataRoot: inventory.instances.released.dataRoot,
+      pidProbe: options.pidProbe, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs,
+    }), 'released'),
+    development: annotateInstanceProfile(await inspectCurrentInstanceReadiness({
+      dataRoot: inventory.instances.development.dataRoot,
+      pidProbe: options.pidProbe, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs,
+    }), 'development'),
+  };
+  for (const profile of ['released', 'development']) {
+    instances[profile].dataRoot = inventory.instances[profile].dataRoot;
+    instances[profile].webProfile = inventory.instances[profile].webProfile;
+  }
+  let currentInstance;
+  if (options.instanceFile || options.instanceDataRoot || process.env.BUILDR_APP_DATA_DIR) {
+    currentInstance = await inspectCurrentInstanceReadiness({
       dataRoot: options.instanceDataRoot,
       instanceFile: options.instanceFile,
       pidProbe: options.pidProbe,
       fetchImpl: options.fetchImpl,
       timeoutMs: options.timeoutMs,
-    }),
+    });
+  } else {
+    const profile = inventory.currentInstallation.channel === 'npm' ? 'released' : inventory.currentInstallation.channel === 'development' ? 'development' : null;
+    currentInstance = profile ? instances[profile] : inventory.currentInstance;
+  }
+  return {
+    ...inventory,
+    instances,
+    currentInstance,
   };
 }
 
@@ -271,6 +409,10 @@ export function registerProductInstallationStatus(runtime) {
       for (const channel of ['npm', 'development']) printHumanInstallation(result.channels[channel]);
       console.log(`npm launcher: status=${humanValue(result.launcher?.status)} target=${humanValue(result.launcher?.target)} binding=${humanValue(result.launcher?.binding?.bindingIdentity)}`);
       printHumanInstallation(result.currentInstallation, 'current installation');
+      for (const profile of ['released', 'development']) {
+        console.log(`${profile} Web Data Root: ${result.instances[profile].dataRoot}`);
+        printHumanInstance(result.instances[profile]);
+      }
       printHumanInstance(result.currentInstance);
     }
     return result;

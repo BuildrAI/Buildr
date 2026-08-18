@@ -14,7 +14,7 @@ const fixtureRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'build
 const { root: PRODUCT_ROOT, cli: BUILDR } = materializeCleanProductSource(SOURCE_PRODUCT_ROOT, path.join(fixtureRoot, 'product-manager'));
 const workspace = path.join(fixtureRoot, 'workspace');
 const appData = path.join(fixtureRoot, 'app-data');
-const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+const env = { ...process.env, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: appData };
 const platformTimeout = (milliseconds) => process.platform === 'win32' ? milliseconds * 3 : milliseconds;
 const previews = [];
 const taskIds = ['acceptance-task-a', 'acceptance-task-b'];

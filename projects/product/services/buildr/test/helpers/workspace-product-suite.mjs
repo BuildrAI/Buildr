@@ -35,10 +35,15 @@ function isolateLocalAppData(t, appData) {
 }
 
 function runBuildr(args, options = {}) {
-  const transientAppData = options.env || process.env.BUILDR_APP_DATA_DIR
+  const targetIndex = args.indexOf('--target');
+  const targetRoot = targetIndex >= 0 ? args[targetIndex + 1] : null;
+  const scopedAppData = options.env || process.env.BUILDR_APP_DATA_DIR
     ? null
-    : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-command-'));
-  const env = options.env || { ...process.env, ...(transientAppData ? { BUILDR_APP_DATA_DIR: transientAppData } : {}) };
+    : targetRoot
+      ? path.join(path.dirname(path.resolve(targetRoot)), 'app-data')
+      : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-command-'));
+  const transientAppData = scopedAppData && !targetRoot ? scopedAppData : null;
+  const env = options.env || { ...process.env, ...(scopedAppData ? { BUILDR_APP_DATA_DIR: scopedAppData } : {}) };
   try {
     return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
   } finally {

@@ -160,6 +160,7 @@ export async function runReleaseSmoke(env = process.env) {
   const npmCache = path.join(root, 'npm-cache');
   const runtimeEnv = {
     BUILDR_APP_DATA_DIR: appData,
+    BUILDR_PRODUCT_DATA_DIR: appData,
     npm_config_cache: npmCache,
     npm_config_update_notifier: 'false',
   };
@@ -247,7 +248,7 @@ export async function runReleaseSmoke(env = process.env) {
       if (launcherTarget) {
       const installedLauncher = parseJson('launcher install', runBuildr(buildrScript, ['web', 'launcher', 'install', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
       assert.equal(installedLauncher.status, 'ready');
-      assert.equal(sameFilesystemPath(installedLauncher.binding.hostNode.path, process.execPath), true);
+      assert.equal(sameFilesystemPath(installedLauncher.binding.hostNode.path, process.execPath), true, JSON.stringify({ actual: installedLauncher.binding.hostNode.path, expected: process.execPath }));
       assert.equal(sameFilesystemPath(installedLauncher.binding.packageEntry.path, buildrScript), true);
       assert.equal(installedLauncher.binding.installationOwnershipIdentity, health.productIdentity.installationIdentity);
 

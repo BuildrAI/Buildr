@@ -504,22 +504,27 @@ Buildr Doctor MUST 从 `.buildr/agent-runtime/<destination>/<adapter>/skill-proj
 - **AND** repair plan MUST 要求保留现场并核对两份 identity，不能建议直接删除任一侧
 
 ### Requirement: Doctor 与 status 必须投影 npm 安装、Launcher 与运行时身份
-Doctor 与 installation/Launcher status MUST 从 formal npm installation registry、development identity、Launcher bindings 与当前 instance receipt 分别投影 npm、development、当前运行实例和本地图形 Launcher。每项 MUST 显示版本、路径、runtime role/source、protocol、payload 与 ownership identity；不得扫描 PATH、根据文件名猜来源或报告当前不存在的 platform channel。
+Doctor 与 installation/Launcher status MUST从formal npm installation registry、development identity、Launcher bindings及released/development各自instance receipt分别投影npm安装、development安装、两种当前普通Web实例和本地图形Launcher。每项 MUST显示版本、路径、runtime role/source、protocol、payload、ownership identity与适用Web Data Root；不得扫描PATH、根据文件名或Root名字猜来源，也不得把另一channel instance合并为current。
 
 #### Scenario: npm 与 development 并存
-- **WHEN** 同一用户登记了 npm installation、npm-owned Launcher 与 development launcher
-- **THEN** Doctor/status MUST 分别展示 npm package/prefix/Host Node、npm Launcher binding、development checkout/runtime 与当前 instance
-- **AND** 版本相同 MUST NOT 合并 installation 或 ownership lifecycle
+- **WHEN** 同一用户登记了npm installation、npm-owned Launcher、development launcher且两种普通Web实例都健康
+- **THEN** Doctor/status MUST分别展示npm package/prefix/Host Node、npm Launcher binding、development checkout/runtime，以及released与development实例的不同PID、URL和Data Root
+- **AND** 版本或protocol相同 MUST NOT合并installation、instance或ownership lifecycle
 
 #### Scenario: Launcher binding 漂移
-- **WHEN** binding 的 Host Node、entry、package root、prefix、payload 或 ownership receipt 与文件事实不符
-- **THEN** Doctor/status MUST 将 Launcher 标记为 stale 或 invalid 并提供 `launcher repair|uninstall` 下一步
-- **AND** MUST NOT 用 PATH 中可运行的另一个 Buildr 将状态修正为 ready
+- **WHEN** binding的Host Node、entry、package root、prefix、payload、channel/runtime role或ownership receipt与文件/产品事实不符
+- **THEN** Doctor/status MUST将Launcher标记为stale或invalid并提供matching repair/uninstall下一步
+- **AND** MUST NOT用PATH中可运行的另一个Buildr或另一channel实例将状态修正为ready
 
 #### Scenario: 当前 Web instance
-- **WHEN** current instance receipt 指向 canonical loopback 并能通过 secret-protected health probe
-- **THEN** status MUST 展示 readiness、PID、npm/development channel、Host/development runtime 与完整 product identity
-- **AND** MUST NOT 泄露 instance secret
+- **WHEN** released或development instance receipt指向canonical loopback并能通过secret-protected health probe
+- **THEN** status MUST在对应channel下展示readiness、PID、Data Root、npm/development channel、Host/development runtime与完整product identity
+- **AND** MUST NOT泄露instance secret或把该实例报告到另一channel
+
+#### Scenario: Workspace管理冲突
+- **WHEN** Doctor观察到同一canonical real root或Workspace UUID同时出现在两种registry，或Workspace-local manager与当前channel冲突
+- **THEN** Doctor MUST在不打开Workspace SQLite的情况下报告路径、当前channel、冲突channel和损坏/冲突authority
+- **AND** repair plan MUST建议使用隔离副本或从错误registry移除，不能建议force、SQLite降级或静默ownership转移
 
 ### Requirement: Doctor 必须非阻断投影版本发布感知
 Buildr Doctor MUST 在 JSON 与人类可读输出中提供独立 `releaseAwareness` 与 `notices`，展示 GA/RC 更新，但这些字段 MUST NOT 进入 Workspace findings、repair plan、next steps、`ok` 或 readiness 计算。

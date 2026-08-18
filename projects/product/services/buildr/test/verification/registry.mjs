@@ -316,8 +316,12 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/infrastructure/product-resources/**',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-data-store', [
+    'test/integration/workspace-management-fence.test.mjs',
     'test/integration/workspace-sqlite.test.mjs',
   ], [
+    'src/application/workspace/**',
+    'src/infrastructure/filesystem/workspace-management-fence.mjs',
+    'src/infrastructure/filesystem/workspace-registry-repository.mjs',
     'src/infrastructure/sqlite/**',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-environment', [

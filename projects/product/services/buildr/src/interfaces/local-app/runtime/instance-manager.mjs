@@ -3,9 +3,15 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 
-import { localAppDataRoot } from '../../../infrastructure/filesystem/workspace-registry-repository.mjs';
+import { readCurrentProductIdentity } from '../../../infrastructure/product-identity/current-product-identity.mjs';
+import { resolveWebProfile } from '../../../infrastructure/product-identity/web-profile.mjs';
 
-const INSTANCE_SCHEMA = 'buildr.local-app-instance/v1';
+export const INSTANCE_SCHEMA = 'buildr.local-app-instance/v2';
+const LEGACY_INSTANCE_SCHEMA = 'buildr.local-app-instance/v1';
+
+function resolvedProfile(profile = null) {
+  return profile || resolveWebProfile(readCurrentProductIdentity());
+}
 
 export function readLauncherIdentityFromEnvironment(env = process.env) {
   const file = env.BUILDR_LAUNCHER_IDENTITY;
@@ -16,16 +22,16 @@ export function readLauncherIdentityFromEnvironment(env = process.env) {
   } catch { return null; }
 }
 
-export function localAppInstancePath() {
-  return path.join(localAppDataRoot(), 'instance.json');
+export function localAppInstancePath(profile = null) {
+  return path.join(resolvedProfile(profile).dataRoot, 'instance.json');
 }
 
-function startLockPath() {
-  return path.join(localAppDataRoot(), 'instance-start.lock');
+export function localAppStartLockPath(profile = null) {
+  return path.join(resolvedProfile(profile).dataRoot, 'instance-start.lock');
 }
 
-export function acquireLocalAppStartLock() {
-  const file = startLockPath();
+export function acquireLocalAppStartLock(profile = null) {
+  const file = localAppStartLockPath(profile);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   try {
     const descriptor = fs.openSync(file, 'wx');
@@ -40,7 +46,7 @@ export function acquireLocalAppStartLock() {
       try { process.kill(ownerPid, 0); return { file, owner: false }; } catch {}
     }
     fs.rmSync(file, { force: true });
-    return acquireLocalAppStartLock();
+    return acquireLocalAppStartLock(profile);
   }
 }
 
@@ -48,20 +54,27 @@ export function releaseLocalAppStartLock(lock) {
   if (lock?.owner) fs.rmSync(lock.file, { force: true });
 }
 
-export function readLocalAppInstance() {
-  const file = localAppInstancePath();
+export function readLocalAppInstance(profile = null) {
+  const file = localAppInstancePath(profile);
   if (!fs.existsSync(file)) return null;
   try {
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (value.schemaVersion !== INSTANCE_SCHEMA || typeof value.url !== 'string' || typeof value.secret !== 'string' || !Number.isInteger(value.pid)) return null;
-    return { ...value, launcherIdentity: value.launcherIdentity ?? null, productIdentity: value.productIdentity ?? null, file };
+    if (![INSTANCE_SCHEMA, LEGACY_INSTANCE_SCHEMA].includes(value.schemaVersion) || typeof value.url !== 'string' || typeof value.secret !== 'string' || !Number.isInteger(value.pid)) return null;
+    return {
+      ...value,
+      launcherIdentity: value.launcherIdentity ?? null,
+      productIdentity: value.productIdentity ?? null,
+      webProfile: value.webProfile ?? null,
+      file,
+    };
   } catch {
     return null;
   }
 }
 
 export function writeLocalAppInstance(runtime, value) {
-  const file = localAppInstancePath();
+  const profile = value.webProfile || resolvedProfile();
+  const file = localAppInstancePath(profile);
   runtime.atomicWriteJson(file, {
     schemaVersion: INSTANCE_SCHEMA,
     url: value.url,
@@ -69,14 +82,15 @@ export function writeLocalAppInstance(runtime, value) {
     pid: value.pid,
     launcherIdentity: value.launcherIdentity ?? null,
     productIdentity: value.productIdentity ?? null,
+    webProfile: profile,
   });
   return file;
 }
 
-export function clearLocalAppInstance(expected = null) {
-  const current = readLocalAppInstance();
+export function clearLocalAppInstance(expected = null, profile = expected?.webProfile || null) {
+  const current = readLocalAppInstance(profile);
   if (expected && current && (current.secret !== expected.secret || current.url !== expected.url)) return false;
-  fs.rmSync(localAppInstancePath(), { force: true });
+  fs.rmSync(localAppInstancePath(profile), { force: true });
   return true;
 }
 
@@ -94,6 +108,7 @@ export async function healthyLocalAppInstance(instance = readLocalAppInstance())
           ...instance,
           launcherIdentity: body.launcherIdentity ?? instance.launcherIdentity ?? null,
           productIdentity: body.productIdentity ?? instance.productIdentity ?? null,
+          webProfile: body.webProfile ?? instance.webProfile ?? null,
         }
       : null;
   } catch {
@@ -101,9 +116,9 @@ export async function healthyLocalAppInstance(instance = readLocalAppInstance())
   }
 }
 
-export async function waitForLocalAppInstance({ attempts = 40, intervalMs = 50 } = {}) {
+export async function waitForLocalAppInstance({ attempts = 40, intervalMs = 50, profile = null } = {}) {
   for (let index = 0; index < attempts; index += 1) {
-    const healthy = await healthyLocalAppInstance();
+    const healthy = await healthyLocalAppInstance(readLocalAppInstance(profile));
     if (healthy) return healthy;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

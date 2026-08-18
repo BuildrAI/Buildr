@@ -11,7 +11,7 @@ import {
   defaultReleaseTrack,
   parseSemver,
 } from '../domain/release-version.mjs';
-import { localAppDataRoot } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
+import { productDataRoot } from '../infrastructure/product-identity/web-profile.mjs';
 import { spawnCommandSync } from '../infrastructure/process.mjs';
 import { inspectProductUpdateAuthority } from '../infrastructure/product-identity/installation-registry.mjs';
 
@@ -65,7 +65,7 @@ export function canonicalReleaseAwarenessState(value) {
 }
 
 export function releaseAwarenessStatePath(options = {}) {
-  return path.join(path.resolve(options.dataRoot || localAppDataRoot()), 'release-awareness.json');
+  return path.join(path.resolve(options.dataRoot || productDataRoot()), 'release-awareness.json');
 }
 
 export function readReleaseAwarenessState(options = {}) {
