@@ -178,6 +178,28 @@ function executionRecord(value) {
   };
 }
 
+function deliveryAdaptation(value) {
+  if (!value) return null;
+  const hints = value.preparationHints || {};
+  return {
+    expectedCommitMessage: typeof value.expectedCommitMessage === 'string' ? value.expectedCommitMessage : null,
+    preparationHints: {
+      schemaVersion: hints.schemaVersion || null,
+      steps: (hints.steps || []).map((step) => ({
+        id: step.id || null,
+        scope: step.scope || null,
+        recipe: step.recipe || null,
+        cwd: portablePath(step.cwd),
+        executable: portablePath(step.executable),
+        args: Array.isArray(step.args) ? step.args.filter((arg) => typeof arg === 'string') : [],
+        timeoutMs: Number.isInteger(step.timeoutMs) ? step.timeoutMs : null,
+        outputs: (step.outputs || []).map((output) => ({ path: portablePath(output.path), kind: output.kind || null })).filter((output) => output.path),
+      })).filter((step) => step.cwd && step.executable),
+      unavailable: (hints.unavailable || []).map((item) => ({ id: item.id || null, reason: item.reason || null })),
+    },
+  };
+}
+
 export function compactTaskFinishResult(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw compactProjectionError('Task Finish compact projection requires a canonical Result.');
   if (result.schemaVersion !== PUBLIC_JSON_SCHEMAS.taskFinishResult) throw compactProjectionError('Task Finish compact projection requires the canonical v2 Result.', { schemaVersion: result.schemaVersion || null });
@@ -201,6 +223,7 @@ export function compactTaskFinishResult(result) {
     nextWorkflow: result.nextWorkflow || null,
     nextAction: result.nextAction || null,
     reuseMode: result.reuseMode || null,
+    deliveryAdaptation: deliveryAdaptation(result.deliveryAdaptation),
     refs: refs(result),
     delivery: delivery(result.delivery),
     completion: completion(result.completion),

@@ -244,7 +244,47 @@ test('push 后远端无法回读时只保留可恢复 deliver 阻塞', async (t)
   assert.equal(result.status, 'blocked');
   assert.equal(result.failure.code, 'task-finish.remote-readback-failed', JSON.stringify(result, null, 2));
   assert.equal(result.output, undefined);
-  assert.equal(result.operations.at(-1).id, 'deliver-target-readback');
+  assert.deepEqual(result.operations.filter((operation) => operation.id.startsWith('deliver-target-readback')).map((operation) => operation.id), [
+    'deliver-target-readback',
+    'deliver-target-readback-2',
+    'deliver-target-readback-3',
+  ]);
+});
+
+test('push 后远端回读暂态失败时有限重试且不重复push', async (t) => {
+  const data = deliveryFixture(t);
+  const realGit = process.env.PATH
+    .split(path.delimiter)
+    .map((entry) => path.join(entry, 'git'))
+    .find((candidate) => fs.existsSync(candidate));
+  assert.ok(realGit, 'git executable must be resolvable before installing the test wrapper');
+  const wrapperRoot = path.join(data.fixture, 'git-wrapper');
+  const counter = path.join(wrapperRoot, 'ls-remote-count');
+  writeExecutable(path.join(wrapperRoot, 'git'), `#!/bin/sh
+if [ "$1" = "ls-remote" ]; then
+  count=0
+  if [ -f "${counter}" ]; then count=$(tr -d '\\n' < "${counter}"); fi
+  count=$((count + 1))
+  echo "$count" > "${counter}"
+  if [ "$count" -eq 2 ]; then exit 1; fi
+fi
+exec "${realGit}" "$@"
+`);
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${wrapperRoot}${path.delimiter}${previousPath}`;
+  let result;
+  try {
+    result = await data.handlers.deliver({ run: data.run });
+  } finally {
+    process.env.PATH = previousPath;
+  }
+  assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
+  assert.equal(result.operations.filter((operation) => operation.id === 'deliver-push').length, 1);
+  const readbacks = result.operations.filter((operation) => operation.id.startsWith('deliver-target-readback'));
+  assert.equal(readbacks.length, 2, JSON.stringify(readbacks));
+  assert.notEqual(readbacks[0].status, 0);
+  assert.equal(readbacks.at(-1).status, 0);
+  assert.equal(result.output.delivery.remoteAfterRef, data.carrierRef);
 });
 
 test('远端 target 已精确包含 carrier 时不重复 merge/push 并继续 Doctor', async (t) => {

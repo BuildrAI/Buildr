@@ -23,9 +23,22 @@ import {
 } from './git-task-contribution.mjs';
 
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
+const REMOTE_READBACK_ATTEMPTS = 3;
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
+}
+
+function remoteReadback(root, remote, branch, operations) {
+  let observed = null;
+  for (let attempt = 1; attempt <= REMOTE_READBACK_ATTEMPTS; attempt += 1) {
+    const id = attempt === 1 ? 'deliver-target-readback' : `deliver-target-readback-${attempt}`;
+    observed = git(root, id, ['ls-remote', '--heads', remote, branch]);
+    operations.push(observed.observation);
+    if (observed.result.status === 0) break;
+    if (attempt < REMOTE_READBACK_ATTEMPTS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+  }
+  return observed;
 }
 
 function deliveredGate(gate, type) {
@@ -434,6 +447,7 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
       if (isolated.status === 'adaptation-required') {
         const plan = activationPlan(run, isolated.activationPaths || isolated.changedPaths || []);
         const carrier = deliveryCarrier(run, isolated, { reuseMode: 'adaptation-required', status: 'blocked', activationPlan: plan });
+        carrier.adaptationGuidance = { preparationHints: context.preparationHints || { schemaVersion: 'buildr.task-finish-preparation-hints/v1', steps: [], unavailable: [] } };
         operations.push({ kind: 'product', id: 'prepare-isolated-carrier', status: 'blocked', code: isolated.conflict.code, carrierRoot: isolated.root });
         const equivalent = developmentCarrier(run).assertion;
         if (equivalent.status !== 'equivalent') {
@@ -531,8 +545,7 @@ export function createTaskFinishProductHandlers({ runtime, root, acceptZeroDelta
           if (pushed.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-push', failureClass: 'transient-external-condition', code: 'task-finish.push-failed', exitCode: pushed.result.status, message: 'Target push failed.', diagnostic: pushed.observation.stderr } };
         }
 
-        const readback = git(retainedRoot, 'deliver-target-readback', ['ls-remote', '--heads', run.identity.remote, run.identity.targetBranch]);
-        operations.push(readback.observation);
+        const readback = remoteReadback(retainedRoot, run.identity.remote, run.identity.targetBranch, operations);
         if (readback.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'target-readback', failureClass: 'transient-external-condition', code: 'task-finish.remote-readback-failed', exitCode: readback.result.status, message: 'Unable to read back the remote target ref after delivery.', diagnostic: readback.observation.stderr } };
         const remoteAfterRef = readback.result.stdout.trim().split(/\s+/)[0] || null;
         const expectedRemoteAfterRef = alreadyContained ? observedTargetRef : run.deliveryCarrier.head;

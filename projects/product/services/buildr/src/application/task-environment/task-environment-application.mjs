@@ -457,6 +457,40 @@ export function registerTaskEnvironmentApplication(runtime) {
     }));
   }
 
+  function portablePreparationHints(receipt) {
+    const root = receipt.scopes[0].validationRoot;
+    const portableRelative = (value) => {
+      if (!inside(root, value)) return null;
+      const relative = path.relative(root, value).split(path.sep).join('/');
+      return relative || '.';
+    };
+    const steps = [];
+    const unavailable = [];
+    for (const planned of plannedSteps(receipt).filter((step) => step.required || step.recipeRequired)) {
+      const cwd = portableRelative(planned.cwd);
+      const executable = portableRelative(planned.executablePath);
+      const outputs = planned.outputs.map((output) => ({
+        path: portableRelative(path.resolve(planned.scopeRoot, output.path)),
+        kind: output.kind,
+      }));
+      if (!cwd || !executable || outputs.some((output) => !output.path)) {
+        unavailable.push({ id: planned.id, reason: 'step-path-not-portable-to-carrier' });
+        continue;
+      }
+      steps.push({
+        id: planned.id,
+        scope: planned.scope,
+        recipe: planned.recipe,
+        cwd,
+        executable,
+        args: [...planned.args],
+        timeoutMs: planned.timeoutMs,
+        outputs,
+      });
+    }
+    return { schemaVersion: 'buildr.task-finish-preparation-hints/v1', steps, unavailable };
+  }
+
   function observePreparationStep(planned, saved = null, prepared = null) {
     const observedAt = now();
     const executable = planned.executablePath;
@@ -1206,6 +1240,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       repositories: providerResult?.repositories || [],
       scopes: inspected.environment.scopes,
       resources: inspected.environment.resources.map((resource) => ({ ...resource, handle: handles.get(resource.id) })),
+      preparationHints: portablePreparationHints(persistence.receipt),
       observedAt: inspected.observedAt,
     };
   }

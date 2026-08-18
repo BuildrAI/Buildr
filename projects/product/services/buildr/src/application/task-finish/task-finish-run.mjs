@@ -467,6 +467,17 @@ export function finishResult(run, clock = Date.now) {
     && run.status === 'cleanup_pending'
     && run.resume?.phase === 'cleanup'
     && run.phases.every((phase) => ['passed', 'not-applicable'].includes(phase.status)));
+  const carrier = clone(run.deliveryCarrier);
+  const adaptationGuidance = carrier?.adaptationGuidance || null;
+  if (carrier) delete carrier.adaptationGuidance;
+  const deliveryAdaptation = run.status === 'blocked'
+    && run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
+    && run.deliveryCommit?.message
+    ? {
+        expectedCommitMessage: run.deliveryCommit.message,
+        preparationHints: clone(adaptationGuidance?.preparationHints || { schemaVersion: 'buildr.task-finish-preparation-hints/v1', steps: [], unavailable: [] }),
+      }
+    : null;
   const result = {
     schemaVersion: FINISH_RESULT_SCHEMA,
     runId: run.runId,
@@ -476,7 +487,7 @@ export function finishResult(run, clock = Date.now) {
     handoff: { identity: run.identity.handoffIdentity },
     candidate: { identity: run.identity.candidateIdentity, generation: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity },
     deliveryCommit: publicTaskFinishDeliveryCommit(run.deliveryCommit),
-    carrier: clone(run.deliveryCarrier),
+    carrier,
     phases: run.phases.map(publicPhase),
     primaryFailure: clone(run.primaryFailure),
     resume: clone(run.resume),
@@ -495,6 +506,7 @@ export function finishResult(run, clock = Date.now) {
         : 'repeat-task-finish-run-with-resume-token')
       : run.status === 'complete' ? TASK_RETROSPECTIVE_PROMPT : null,
     reuseMode: run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,
+    deliveryAdaptation,
     equivalence: clone(run.equivalence),
     delivery: clone(run.delivery),
     completion: clone(run.completion),

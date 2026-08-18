@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
@@ -109,6 +111,44 @@ test('Task Finish current独占完整delivery message且公开result只投影sub
   assert.doesNotMatch(JSON.stringify(result), /private body evidence/);
 });
 
+test('Delivery Adaptation Result临时返回完整冻结message与可移植准备提示', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  const task = 'delivery-adaptation-guidance';
+  runtime.createTaskRecord(root, { taskId: task, title: 'Delivery adaptation guidance', intent: 'Prove exact adaptation guidance.', projects: [], services: [], changes: [] });
+  const deliveryCommit = normalizeTaskFinishDeliveryCommit('fix(task-finish): adapt carrier\n\nprivate rationale', task);
+  const run = createFinishRun({
+    root,
+    runId: 'delivery-adaptation-guidance-run',
+    identity: { ...identity(root, task), deliveryCommitIdentity: deliveryCommit.identity },
+    deliveryCommit,
+    runtime,
+  });
+  run.status = 'blocked';
+  run.primaryFailure = { phase: 'prepare', operation: 'delivery-adaptation', code: 'task-finish.delivery-adaptation-required', status: 'blocked' };
+  run.resume = { phase: 'prepare', token: 'sha256-resume', carrierIdentity: 'sha256-carrier' };
+  run.deliveryCarrier = {
+    identity: 'sha256-carrier',
+    adaptationGuidance: {
+      preparationHints: {
+        schemaVersion: 'buildr.task-finish-preparation-hints/v1',
+        steps: [{ id: 'prepare', cwd: 'projects/product/services/buildr', executable: 'scripts/run-development-npm', args: ['ci'], outputs: [] }],
+        unavailable: [],
+      },
+    },
+  };
+
+  const adaptation = finishResult(run);
+  assert.equal(adaptation.deliveryAdaptation.expectedCommitMessage, deliveryCommit.message);
+  assert.equal(adaptation.deliveryAdaptation.preparationHints.steps[0].args[0], 'ci');
+  assert.equal(adaptation.carrier.adaptationGuidance, undefined);
+
+  run.status = 'complete';
+  run.primaryFailure = null;
+  run.resume = null;
+  assert.equal(finishResult(run).deliveryAdaptation, null);
+});
+
 test('target lease使用expiry与token fencing避免旧owner释放新owner', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();
@@ -131,6 +171,67 @@ test('target lease使用expiry与token fencing避免旧owner释放新owner', (t)
   assert.notEqual(leaseB.token, leaseA.token);
   assert.equal(runtime.releaseTaskFinishTargetLease(root, leaseA).released, false);
   assert.equal(runtime.releaseTaskFinishTargetLease(root, leaseB).released, true);
+});
+
+test('retained内部lease driver以closed schema获取刷新和释放matching owner', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  const taskId = 'lease-driver-owner';
+  const runId = 'lease-driver-owner-run';
+  runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove internal lease driver.', projects: [], services: [], changes: [] });
+  const run = createFinishRun({ root, runId, identity: identity(root, taskId), runtime });
+  runtime.writeTaskFinishRunPersistence(root, run);
+  const driver = fileURLToPath(new URL('../../src/interfaces/internal/task-finish-target-lease-driver.mjs', import.meta.url));
+  const invoke = (action, extra = []) => spawnSync(process.execPath, [driver, action, '--task', taskId, '--run', runId, '--target-identity', 'origin:dev', '--target', root, ...extra], { encoding: 'utf8' });
+
+  const acquired = invoke('acquire');
+  assert.equal(acquired.status, 0, acquired.stderr);
+  const acquisition = JSON.parse(acquired.stdout);
+  assert.equal(acquisition.schemaVersion, 'buildr.task-finish-target-lease-driver-result/v1');
+  assert.equal(acquisition.status, 'passed');
+  assert.ok(acquisition.lease.token);
+
+  const refreshed = invoke('refresh');
+  assert.equal(refreshed.status, 0, refreshed.stderr);
+  assert.equal(JSON.parse(refreshed.stdout).lease.token, acquisition.lease.token);
+
+  const released = invoke('release', ['--lease-token', acquisition.lease.token]);
+  assert.equal(released.status, 0, released.stderr);
+  assert.equal(JSON.parse(released.stdout).released, true);
+  assert.deepEqual(runtime.inspectTaskFinishPersistence(root).leases, []);
+});
+
+test('terminal Finish row可临时持有自举lease且过期后由新owner接管', async (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  for (const taskId of ['terminal-lease-owner', 'terminal-lease-successor']) {
+    runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove terminal activation lease.', projects: [], services: [], changes: [] });
+  }
+  const terminalRun = createFinishRun({ root, runId: 'terminal-lease-owner-run', identity: identity(root, 'terminal-lease-owner'), runtime });
+  runtime.writeTaskFinishRunPersistence(root, terminalRun);
+  const completion = {
+    schemaVersion: 'buildr.task-finish-completion/v1', runId: terminalRun.runId, task: terminalRun.identity.task,
+    handoffIdentity: terminalRun.identity.handoffIdentity, candidateIdentity: terminalRun.identity.candidateIdentity,
+    candidateGeneration: terminalRun.identity.candidateGeneration, contentTargetIdentity: terminalRun.identity.contentTargetIdentity,
+    carrierIdentity: 'sha256-carrier', carrierRef: 'carrier-head', finalRemoteRef: 'remote-head', targetBranch: 'dev', status: 'complete', association: null,
+  };
+  const handlers = Object.fromEntries(['preflight', 'prepare', 'verify', 'deliver'].map((phase) => [phase, async () => ({ status: 'passed' })]));
+  handlers.cleanup = async () => ({ status: 'passed', output: { completion: { ...completion, completedAt: new Date().toISOString() } } });
+  assert.equal((await executeFinishRun({ root, run: terminalRun, handlers, runtime })).status, 'complete');
+
+  const activationLease = runtime.acquireTaskFinishCurrentTargetLease(root, {
+    taskId: terminalRun.identity.task, runId: terminalRun.runId, targetIdentity: 'origin:dev', leaseDurationMs: 15 * 60_000, clock: () => 0,
+  });
+  assert.equal(activationLease.value.expiresAt, new Date(15 * 60_000).toISOString());
+
+  const successor = createFinishRun({ root, runId: 'terminal-lease-successor-run', identity: identity(root, 'terminal-lease-successor'), runtime });
+  runtime.writeTaskFinishRunPersistence(root, successor);
+  assert.equal(runtime.acquireTaskFinishTargetLease(root, { run: successor, targetIdentity: 'origin:dev', clock: () => 60_000 }).blocked, true);
+  const successorLease = runtime.acquireTaskFinishTargetLease(root, { run: successor, targetIdentity: 'origin:dev', clock: () => 15 * 60_000 + 1 });
+  assert.equal(successorLease.blocked, undefined);
+  assert.notEqual(successorLease.token, activationLease.token);
+  assert.equal(runtime.releaseTaskFinishTargetLease(root, activationLease).released, false);
+  assert.equal(runtime.releaseTaskFinishTargetLease(root, successorLease).released, true);
 });
 
 test('SQLite-only Finish 不迁移旧目录中的 completed 或 blocked 状态', (t) => {

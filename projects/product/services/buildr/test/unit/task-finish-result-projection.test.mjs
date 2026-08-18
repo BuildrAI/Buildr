@@ -68,7 +68,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   const compact = compactTaskFinishResult(canonical());
   assert.deepEqual(Object.keys(compact), [
     'schemaVersion', 'detail', 'runId', 'identity', 'status', 'currentPhase', 'deliveryCommit', 'phases', 'primaryFailure',
-    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'refs', 'delivery', 'completion', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
+    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
   ]);
   assert.equal(compact.schemaVersion, 'buildr.task-finish-compact-result/v1');
   assert.equal(compact.detail, 'compact');
@@ -106,8 +106,19 @@ test('compact Task Finish Result 保留 dirty preflight 与 Delivery Adaptation 
       message: 'Adaptation required.',
       diagnostic: { code: 'task-finish.contribution-apply-conflict', conflictPaths: ['shared.txt'] },
     },
+    deliveryAdaptation: {
+      expectedCommitMessage: 'fix(task-finish): resolve conflict\n\nprivate body\n\nBuildr-Task: finish-task',
+      preparationHints: {
+        schemaVersion: 'buildr.task-finish-preparation-hints/v1',
+        steps: [{ id: 'npm-ci', scope: 'service:product/buildr', recipe: 'buildr.npm-ci', cwd: 'projects/product/services/buildr', executable: 'projects/product/services/buildr/scripts/run-development-npm', args: ['ci'], timeoutMs: 300000, outputs: [{ path: 'projects/product/services/buildr/node_modules', kind: 'directory' }] }],
+        unavailable: [],
+      },
+    },
   }));
   assert.deepEqual(adaptation.primaryFailure.conflictPaths, ['shared.txt']);
+  assert.match(adaptation.deliveryAdaptation.expectedCommitMessage, /Buildr-Task: finish-task/);
+  assert.equal(adaptation.deliveryAdaptation.preparationHints.steps[0].args[0], 'ci');
+  assert.doesNotMatch(JSON.stringify(adaptation.deliveryAdaptation.preparationHints), /\/private\//);
 });
 
 test('full Task Finish Result 保持canonical对象不变', () => {
