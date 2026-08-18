@@ -216,6 +216,34 @@ test('无Workspace贡献投影为not-applicable且Service carrier不提升为自
   assert.deepEqual(result.carriers.map((carrier) => carrier.selector), ['service:product/example']);
 });
 
+test('complete cleanup后carrier root可清理但冻结自举事实保持可投影', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    phases: [{ id: 'cleanup', status: 'passed' }],
+    identity: {
+      ...canonical().identity,
+      repositories: [{ selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' }],
+    },
+    repositories: [{
+      selector: 'workspace', disposition: 'applicable',
+      deliveryCarrier: { identity: 'sha256-cleaned-carrier', activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+      delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    }],
+    completion: {
+      status: 'complete',
+      cleanup: { status: 'cleaned' },
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-cleaned-carrier', carrierRef: 'final-ref', finalRemoteRef: 'final-ref' }],
+    },
+  }));
+
+  assert.equal(result.mode, 'complete');
+  assert.equal(result.workspaceRepository.carrier.identity, 'sha256-cleaned-carrier');
+  assert.equal(result.workspaceRepository.carrier.root, null);
+  assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
+  assert.deepEqual(result.selfBootstrap.activationPaths, ['projects/product/services/buildr/src/example.mjs']);
+  assert.equal(result.selfBootstrap.baseRef, 'final-ref');
+});
+
 test('self-bootstrap projector对未知内部major与不完整carrier fail closed', () => {
   assert.throws(
     () => selfBootstrapTaskFinishResult(canonical({ schemaVersion: 'buildr.task-finish-result/v4', futureField: true })),
@@ -224,6 +252,14 @@ test('self-bootstrap projector对未知内部major与不完整carrier fail close
   assert.throws(
     () => selfBootstrapTaskFinishResult({
       ...canonical({ schemaVersion: 'buildr.task-finish-result/v2' }),
+      carrier: { identity: 'sha256-carrier', activationPaths: [] },
+    }),
+    (error) => error.code === 'task_finish.self_bootstrap_projection_invalid',
+  );
+  assert.throws(
+    () => selfBootstrapTaskFinishResult({
+      ...canonical({ schemaVersion: 'buildr.task-finish-result/v2' }),
+      status: 'complete',
       carrier: { identity: 'sha256-carrier', activationPaths: [] },
     }),
     (error) => error.code === 'task_finish.self_bootstrap_projection_invalid',

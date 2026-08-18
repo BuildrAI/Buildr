@@ -495,6 +495,37 @@ test('fresh closeout以精确successor commit和remote readback完成', (t) => {
   assert.match(message, new RegExp(`Buildr-Closeout-Plan: ${result.plan.identity}`));
 });
 
+test('Skill命令入口消费cleanup后无carrier root的terminal稳定投影', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const canonical = canonicalFinishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs'], {
+    phases: [{ id: 'cleanup', status: 'passed' }],
+    carrier: {
+      identity: 'sha256-cleaned-carrier',
+      changedPaths: ['projects/product/services/buildr/src/example.mjs'],
+    },
+    completion: {
+      status: 'complete',
+      finalRemoteRef: baseRef,
+      cleanup: { status: 'cleaned' },
+    },
+  });
+  const finish = selfBootstrapTaskFinishResult(canonical);
+  assert.equal(finish.workspaceRepository.carrier.root, null);
+  assert.equal(finish.workspaceRepository.carrier.availability, 'cleaned');
+
+  const result = runSelfBootstrapCloseoutCommand({
+    args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
+    actualNodeExecutable: process.execPath,
+    execute: executor(root, { finishInspection: finish }),
+    environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.deepEqual(result.plan.frozenPaths, ['projects/product/services/buildr/src/example.mjs']);
+  assert.equal(phase(result, 'verify-development-entry').status, 'passed');
+  assert.equal(phase(result, 'finalize').status, 'passed');
+});
+
 test('commit后push失败保留successor，重跑从同一commit恢复', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const input = finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);

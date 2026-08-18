@@ -51,11 +51,18 @@ function activationPaths(carrier) {
   return normalized.sort();
 }
 
-function projectedCarrier(selector, carrier) {
+function cleanupCompleted(result) {
+  if (result?.status !== 'complete') return false;
+  if (result.completion?.cleanup?.status === 'cleaned') return true;
+  return Array.isArray(result.phases)
+    && result.phases.some((phase) => phase?.id === 'cleanup' && phase?.status === 'passed');
+}
+
+function projectedCarrier(selector, carrier, { allowCleanedRoot = false } = {}) {
   if (!carrier) return null;
   const identity = optionalString(carrier.identity);
   const root = optionalString(carrier.root);
-  if (!identity || !root || !path.isAbsolute(root)) {
+  if (!identity || (root && !path.isAbsolute(root)) || (!root && !allowCleanedRoot)) {
     throw projectionError('Task Finish carrier is missing a stable identity or absolute root.', {
       selector,
       carrierIdentity: identity,
@@ -65,7 +72,8 @@ function projectedCarrier(selector, carrier) {
   return {
     selector,
     identity,
-    root: path.resolve(root),
+    root: root ? path.resolve(root) : null,
+    availability: root ? 'retained' : 'cleaned',
     activationPaths: activationPaths(carrier),
   };
 }
@@ -102,8 +110,9 @@ function resultIdentity(result) {
 }
 
 function repositoryProjection(result) {
+  const allowCleanedRoot = cleanupCompleted(result);
   if (result.schemaVersion === 'buildr.task-finish-result/v2') {
-    const carrier = projectedCarrier('workspace', result.carrier);
+    const carrier = projectedCarrier('workspace', result.carrier, { allowCleanedRoot });
     return [{
       selector: 'workspace',
       disposition: carrier ? 'applicable' : 'unavailable',
@@ -144,7 +153,7 @@ function repositoryProjection(result) {
       reason: optionalString(state.reason) || optionalString(plan.reason),
       targetBranch: optionalString(plan.targetBranch),
       remote: optionalString(plan.remote),
-      carrier: projectedCarrier(selector, state.deliveryCarrier),
+      carrier: projectedCarrier(selector, state.deliveryCarrier, { allowCleanedRoot }),
       delivery: projectedDelivery(state.delivery),
     };
   });
