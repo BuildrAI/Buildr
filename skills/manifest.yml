@@ -491,11 +491,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: declaration-intake
-  - id: ui-visual-redesign
-    path: ui-visual-redesign
-    description: 用户要求 Local App 或产品 Web UI 重构、换肤、视觉方向调整、杂志感/产品感改版，或引入/更换前端组件库（如 Ant Design）时使用；在编码前强制审美闸门，并在引入组件库时执行 CSP、依赖与 Environment re-prepare 硬清单。
-    assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:ui-visual-redesign
-    sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:ui-visual-redesign
 contracts:
   - id: buildr.terminology-governance
     version: 1
