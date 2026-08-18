@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
 export const SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA = 'buildr.self-bootstrap-recovery-plan/v1';
+export const TASK_FINISH_SELF_BOOTSTRAP_INPUT_SCHEMA = 'buildr.task-finish-self-bootstrap-input/v1';
 export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
   'preflight',
   'plan',
@@ -114,15 +115,7 @@ function classifications(changedPaths) {
 }
 
 function finishMode(result) {
-  if (result?.status === 'complete') return 'complete';
-  const doctorBlocked = result?.status === 'blocked'
-    && result.primaryFailure?.phase === 'deliver'
-    && result.primaryFailure?.operation === 'retained-doctor'
-    && result.delivery?.status === 'activation-blocked'
-    && result.delivery?.remoteAfterRef
-    && result.resume?.phase === 'deliver'
-    && result.resume?.token;
-  return doctorBlocked ? 'doctor-blocked' : null;
+  return ['complete', 'doctor-blocked'].includes(result?.mode) ? result.mode : null;
 }
 
 function targetRaceResumeToken(result, runId) {
@@ -136,32 +129,36 @@ function targetRaceResumeToken(result, runId) {
 }
 
 function deliveryAdaptationRequired(result, runId) {
+  const carrier = result?.workspaceRepository?.carrier;
   return Boolean(result?.runId === runId
     && result?.status === 'blocked'
     && result.primaryFailure?.phase === 'prepare'
     && result.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
-    && result.carrier?.root
-    && result.carrier?.identity
+    && carrier?.root
+    && carrier?.identity
     && result.resume?.phase === 'prepare'
-    && result.resume?.carrierIdentity === result.carrier.identity
+    && result.resume?.carrierIdentity === carrier.identity
     && result.resume?.token);
 }
 
 export function createSelfBootstrapCloseoutPlan(finishResult) {
   const mode = finishMode(finishResult);
   if (!mode) throw closeoutError('self-bootstrap-closeout.finish-result-ineligible', 'Finish Result不是complete或唯一retained Doctor blocked模式。');
-  const frozenCarrierPaths = finishResult.carrier?.activationPaths || finishResult.carrier?.changedPaths || [];
+  const applicability = finishResult.selfBootstrap?.applicability || 'unavailable';
+  if (!['applicable', 'not-applicable'].includes(applicability)) {
+    throw closeoutError('self-bootstrap-closeout.workspace-repository-unavailable', '稳定Finish投影没有唯一可判定的Workspace repository。');
+  }
+  const frozenCarrierPaths = finishResult.selfBootstrap?.activationPaths || [];
   const changedPaths = [...new Set(frozenCarrierPaths.map(portable))].filter(Boolean).sort();
   if (changedPaths.length !== frozenCarrierPaths.length) throw closeoutError('self-bootstrap-closeout.frozen-path-invalid', 'Finish Result包含不安全或重复的frozen path。');
   const actions = classifications(changedPaths);
-  const baseRef = mode === 'complete'
-    ? finishResult.delivery?.finalRemoteRef || finishResult.completion?.finalRemoteRef
-    : finishResult.delivery?.remoteAfterRef;
+  const baseRef = finishResult.selfBootstrap?.baseRef || null;
   const plan = {
     schemaVersion: 'buildr.self-bootstrap-closeout-plan/v1',
     runId: finishResult.runId,
-    taskId: finishResult.identity?.task,
+    taskId: finishResult.identity?.taskId,
     mode,
+    applicability,
     agent: finishResult.identity?.agent,
     targetBranch: finishResult.identity?.targetBranch,
     remote: finishResult.identity?.remote,
@@ -210,31 +207,92 @@ function zeroList(value) {
 
 function ownedFinishCarrierPath(finishResult, workspaceRoot) {
   if (finishMode(finishResult) !== 'doctor-blocked') return null;
+  return proveFinishCarrierOwnership(finishResult, workspaceRoot).relativeRoot;
+}
+
+function proveFinishCarrierOwnership(finishResult, workspaceRoot, expectedEntryPath = null) {
+  if (finishResult?.schemaVersion !== TASK_FINISH_SELF_BOOTSTRAP_INPUT_SCHEMA) {
+    throw closeoutError('self-bootstrap-closeout.finish-result-schema-invalid', 'Runner只消费稳定Task Finish self-bootstrap输入。');
+  }
   const runId = portable(finishResult.runId);
   if (!runId || runId === '.' || runId.includes('/')) throw closeoutError('self-bootstrap-closeout.carrier-run-invalid', 'Doctor blocked Finish Result的run identity不能安全定位Delivery Carrier。');
   const relativeRoot = `${FINISH_CARRIER_ROOT}/${runId}`;
   const expectedRoot = path.resolve(workspaceRoot, ...relativeRoot.split('/'));
-  const declaredRoot = finishResult.carrier?.root;
+  const declaredRoot = finishResult.carrierContainerRoot;
   if (!declaredRoot || !sameFilesystemPath(declaredRoot, expectedRoot)) {
-    throw closeoutError('self-bootstrap-closeout.carrier-root-mismatch', 'Doctor blocked Finish Result声明的Delivery Carrier不属于当前run。', {
+    throw closeoutError('self-bootstrap-closeout.carrier-root-mismatch', '稳定Finish投影声明的carrier container不属于当前run。', {
       expectedRoot,
       declaredRoot: declaredRoot || null,
     });
   }
+  if (expectedEntryPath && !sameFilesystemPath(expectedEntryPath, expectedRoot)) {
+    throw closeoutError('self-bootstrap-closeout.carrier-entry-mismatch', '观察到的carrier目录与稳定Finish投影的run container不一致。', {
+      expectedRoot,
+      observedRoot: expectedEntryPath,
+    });
+  }
   let carrierStat;
   try { carrierStat = fs.lstatSync(expectedRoot); } catch {
-    throw closeoutError('self-bootstrap-closeout.carrier-root-missing', 'Doctor blocked Finish Result声明的Delivery Carrier不存在。', { expectedRoot });
+    throw closeoutError('self-bootstrap-closeout.carrier-root-missing', '稳定Finish投影声明的carrier container不存在。', { expectedRoot });
   }
   if (!carrierStat.isDirectory() || carrierStat.isSymbolicLink()) {
-    throw closeoutError('self-bootstrap-closeout.carrier-root-invalid', 'Doctor blocked Finish Result声明的Delivery Carrier必须是真实目录且不能是symlink。', { expectedRoot });
+    throw closeoutError('self-bootstrap-closeout.carrier-root-invalid', '稳定Finish投影声明的carrier container必须是真实目录且不能是symlink。', { expectedRoot });
   }
   const realWorkspaceRoot = fs.realpathSync(workspaceRoot);
   const realCarrierRoot = fs.realpathSync(expectedRoot);
   const realRelative = path.relative(realWorkspaceRoot, realCarrierRoot);
   if (!realRelative || path.isAbsolute(realRelative) || realRelative.split(path.sep).includes('..')) {
-    throw closeoutError('self-bootstrap-closeout.carrier-root-invalid', 'Doctor blocked Finish Result声明的Delivery Carrier越出canonical Workspace。', { expectedRoot });
+    throw closeoutError('self-bootstrap-closeout.carrier-root-invalid', '稳定Finish投影声明的carrier container越出canonical Workspace。', { expectedRoot });
   }
-  return relativeRoot;
+  const carriers = Array.isArray(finishResult.carriers) ? finishResult.carriers : [];
+  if (!carriers.length) throw closeoutError('self-bootstrap-closeout.carrier-set-empty', '存在run carrier container但稳定Finish投影没有repository carrier。');
+  const selectors = new Set();
+  const identities = new Set();
+  const realPaths = new Set();
+  for (const carrier of carriers) {
+    if (!carrier?.selector || selectors.has(carrier.selector)) throw closeoutError('self-bootstrap-closeout.carrier-selector-invalid', '稳定Finish投影的repository carrier selector缺失或重复。', { selector: carrier?.selector || null });
+    if (!carrier?.identity || identities.has(carrier.identity)) throw closeoutError('self-bootstrap-closeout.carrier-identity-invalid', '稳定Finish投影的repository carrier identity缺失或重复。', { carrierIdentity: carrier?.identity || null });
+    selectors.add(carrier.selector);
+    identities.add(carrier.identity);
+    const carrierRoot = carrier.root;
+    if (!carrierRoot || !path.isAbsolute(carrierRoot)) throw closeoutError('self-bootstrap-closeout.repository-carrier-root-invalid', 'Repository carrier root必须是绝对路径。', { selector: carrier.selector, carrierRoot: carrierRoot || null });
+    const relative = path.relative(path.resolve(declaredRoot), path.resolve(carrierRoot));
+    if (path.isAbsolute(relative) || relative.split(path.sep).includes('..')) {
+      throw closeoutError('self-bootstrap-closeout.repository-carrier-root-outside-container', 'Repository carrier越出run container。', { selector: carrier.selector, carrierRoot });
+    }
+    let current = path.resolve(declaredRoot);
+    for (const segment of relative.split(path.sep).filter(Boolean)) {
+      current = path.join(current, segment);
+      let segmentStat;
+      try { segmentStat = fs.lstatSync(current); } catch {
+        throw closeoutError('self-bootstrap-closeout.repository-carrier-root-missing', 'Repository carrier路径不存在。', { selector: carrier.selector, carrierRoot });
+      }
+      if (segmentStat.isSymbolicLink()) throw closeoutError('self-bootstrap-closeout.repository-carrier-root-symlink', 'Repository carrier路径不能包含symlink。', { selector: carrier.selector, carrierRoot, segment: current });
+    }
+    let carrierStat;
+    try { carrierStat = fs.lstatSync(carrierRoot); } catch {
+      throw closeoutError('self-bootstrap-closeout.repository-carrier-root-missing', 'Repository carrier路径不存在。', { selector: carrier.selector, carrierRoot });
+    }
+    if (!carrierStat.isDirectory() || carrierStat.isSymbolicLink()) throw closeoutError('self-bootstrap-closeout.repository-carrier-root-invalid', 'Repository carrier必须是真实目录。', { selector: carrier.selector, carrierRoot });
+    const realCarrier = fs.realpathSync(carrierRoot);
+    const realRelativeCarrier = path.relative(realCarrierRoot, realCarrier);
+    if (path.isAbsolute(realRelativeCarrier) || realRelativeCarrier.split(path.sep).includes('..')) throw closeoutError('self-bootstrap-closeout.repository-carrier-root-outside-container', 'Repository carrier realpath越出run container。', { selector: carrier.selector, carrierRoot });
+    const normalizedReal = normalizeFilesystemPath(realCarrier);
+    if (realPaths.has(normalizedReal)) throw closeoutError('self-bootstrap-closeout.repository-carrier-realpath-duplicate', '多个repository carrier解析为同一realpath。', { selector: carrier.selector, carrierRoot });
+    realPaths.add(normalizedReal);
+  }
+  const workspaceCarrier = finishResult.workspaceRepository?.carrier;
+  if (workspaceCarrier && !carriers.some((carrier) => carrier.selector === 'workspace'
+    && carrier.identity === workspaceCarrier.identity
+    && sameFilesystemPath(carrier.root, workspaceCarrier.root))) {
+    throw closeoutError('self-bootstrap-closeout.workspace-carrier-set-mismatch', 'Workspace repository carrier不在稳定投影的carrier集合中。');
+  }
+  if (finishResult.resume?.carrierIdentity && !identities.has(finishResult.resume.carrierIdentity)) {
+    throw closeoutError('self-bootstrap-closeout.resume-carrier-mismatch', 'Resume carrier identity不属于稳定投影的carrier集合。', {
+      resumeCarrierIdentity: finishResult.resume.carrierIdentity,
+    });
+  }
+  return { relativeRoot, expectedRoot, carriers };
 }
 
 function safeRunId(value) {
@@ -354,26 +412,22 @@ export function discoverFinishCarrierEntries(workspaceRoot) {
 }
 
 function validateForeignFinishCarrier(entry, finishResult, workspaceRoot) {
-  if (finishResult?.schemaVersion !== 'buildr.task-finish-result/v2') {
+  if (finishResult?.schemaVersion !== TASK_FINISH_SELF_BOOTSTRAP_INPUT_SCHEMA) {
     return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-finish-schema-invalid', 'Foreign carrier的Finish Result schema不受支持。');
   }
   if (finishResult.runId !== entry.runId) {
     return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-run-mismatch', 'Foreign Finish Result的run identity与carrier目录不一致。', { expected: entry.runId, actual: finishResult.runId || null });
   }
-  if (!finishResult.identity?.task) {
+  if (!finishResult.identity?.taskId) {
     return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-owner-missing', 'Foreign Finish Result缺少owning Task identity。');
   }
   if (!finishResult.identity?.workspaceRoot || !sameFilesystemPath(finishResult.identity.workspaceRoot, workspaceRoot)) {
     return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-workspace-mismatch', 'Foreign Finish Result不属于当前canonical Workspace。');
   }
-  if (!finishResult.carrier?.root || !sameFilesystemPath(finishResult.carrier.root, entry.path)) {
-    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-carrier-root-mismatch', 'Foreign Finish Result声明的carrier root与观察目录不一致。', { expected: entry.path, actual: finishResult.carrier?.root || null });
-  }
-  if (!finishResult.carrier?.identity) {
-    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-carrier-identity-missing', 'Foreign Finish Result缺少carrier identity。');
-  }
-  if (finishResult.resume && finishResult.resume.carrierIdentity !== finishResult.carrier.identity) {
-    return carrierObservationDiagnostic('self-bootstrap-closeout.foreign-resume-carrier-mismatch', 'Foreign Finish Result的resume identity与carrier identity不一致。', { carrierIdentity: finishResult.carrier.identity, resumeCarrierIdentity: finishResult.resume?.carrierIdentity || null });
+  try {
+    proveFinishCarrierOwnership(finishResult, workspaceRoot, entry.path);
+  } catch (error) {
+    return carrierObservationDiagnostic(error.code || 'self-bootstrap-closeout.foreign-carrier-invalid', error.message, error.details || null);
   }
   if (finishResult.status === 'cleanup_pending'
     && (finishResult.primaryFailure?.phase !== 'cleanup' || finishResult.resume?.phase !== 'cleanup' || !finishResult.resume?.token)) {
@@ -387,15 +441,12 @@ function validateForeignFinishCarrier(entry, finishResult, workspaceRoot) {
 }
 
 function successfulDelivery(finishResult) {
-  return finishResult?.delivery?.status === 'delivered'
-    || Boolean(finishResult?.delivery?.remoteAfterRef)
-    || Boolean(finishResult?.delivery?.finalRemoteRef)
-    || Boolean(finishResult?.completion?.finalRemoteRef);
+  return finishResult?.delivery?.successful === true;
 }
 
 function occupancyReleasable(finishResult, taskRecord) {
   return taskRecord?.status === 'abandoned'
-    && Boolean(finishResult?.identity?.task)
+    && Boolean(finishResult?.identity?.taskId)
     && finishResult?.occupancy?.status !== 'released'
     && !successfulDelivery(finishResult);
 }
@@ -403,7 +454,7 @@ function occupancyReleasable(finishResult, taskRecord) {
 function ownerFacts(finishResult, runId) {
   return {
     kind: 'task-finish-owner',
-    taskId: finishResult?.identity?.task || null,
+    taskId: finishResult?.identity?.taskId || null,
     runId,
     agent: finishResult?.identity?.agent || null,
   };
@@ -413,6 +464,10 @@ export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEn
   const currentRunId = currentFinishResult.runId;
   const observations = carrierEntries.map((entry) => {
     if (entry.runId === currentRunId && !entry.diagnostic) {
+      const diagnostic = validateForeignFinishCarrier(entry, currentFinishResult, workspaceRoot);
+      if (diagnostic) {
+        return { runId: entry.runId, path: entry.path, classification: 'unprovable', owner: null, status: currentFinishResult.status || null, diagnostic };
+      }
       return {
         runId: entry.runId,
         path: entry.path,
@@ -433,7 +488,7 @@ export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEn
     if (diagnostic) {
       return { runId: entry.runId, path: entry.path, classification: 'unprovable', owner: null, status: finishResult?.status || null, diagnostic };
     }
-    const cleanupPending = finishResult.status === 'cleanup_pending' && Boolean(finishResult.identity?.task);
+    const cleanupPending = finishResult.status === 'cleanup_pending' && Boolean(finishResult.identity?.taskId);
     const occupancyRelease = !cleanupPending && occupancyReleasable(finishResult, entry.taskRecord);
     return {
       runId: entry.runId,
@@ -466,7 +521,7 @@ export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEn
       authorization: { required: true, scope: `仅恢复Finish run ${item.runId}的owner cleanup` },
       command: {
         executable: nodeExecutable,
-        args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--resume', item.ownerAction.resumeToken, '--target', workspaceRoot, '--detail', 'full', '--json'],
+        args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--resume', item.ownerAction.resumeToken, '--target', workspaceRoot, '--detail', 'self-bootstrap', '--json'],
       },
       expectedEffects: ['cleanup-owned-task-environment', 'delete-owned-finish-carrier', 'complete-owning-task'],
     })),
@@ -477,7 +532,7 @@ export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEn
       authorization: { required: true, scope: `仅释放Finish run ${item.runId}的abandoned未交付隔离载体占用` },
       command: {
         executable: nodeExecutable,
-        args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--release-occupancy', '--target', workspaceRoot, '--detail', 'full', '--json'],
+        args: [path.join(workspaceRoot, SERVICE_ROOT, 'bin', 'buildr.mjs'), 'task', 'finish', 'run', '--task', item.owner.taskId, '--run', item.runId, '--release-occupancy', '--target', workspaceRoot, '--detail', 'self-bootstrap', '--json'],
       },
       expectedEffects: ['delete-owned-finish-carrier'],
     })),
@@ -485,7 +540,7 @@ export function createSelfBootstrapRecoveryPlan({ currentFinishResult, carrierEn
   const plan = {
     schemaVersion: SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA,
     status,
-    current: { taskId: currentFinishResult.identity?.task || null, runId: currentRunId },
+    current: { taskId: currentFinishResult.identity?.taskId || null, runId: currentRunId },
     observations,
     orderedSteps,
   };
@@ -868,7 +923,7 @@ function closeoutResult(result, plan, stages, status, diagnostic = null, develop
     schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA,
     status,
     runId: result?.runId || null,
-    taskId: result?.identity?.task || null,
+    taskId: result?.identity?.taskId || null,
     mode: plan?.mode || null,
     plan: plan || null,
     recoveryPlan,
@@ -905,25 +960,31 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(1)) markNotApplicable(stages.get(id), 'Workspace不适用self-bootstrap closeout。');
       return closeoutResult(finishResult, null, stages, 'not-applicable', null, developmentEntryIdentity, recoveryPlan);
     }
-    if (currentFinishResult?.schemaVersion !== 'buildr.task-finish-result/v2') throw closeoutError('self-bootstrap-closeout.finish-result-schema-invalid', 'Runner只消费buildr.task-finish-result/v2。');
-    if (currentFinishResult.resolvedContext?.capability?.id !== 'buildr.task-finish' || currentFinishResult.resolvedContext?.capability?.version !== 1) {
-      throw closeoutError('self-bootstrap-closeout.capability-binding-missing', 'Finish Result没有已解析的buildr.task-finish/v1 capability binding。');
-    }
+    if (currentFinishResult?.schemaVersion !== TASK_FINISH_SELF_BOOTSTRAP_INPUT_SCHEMA) throw closeoutError('self-bootstrap-closeout.finish-result-schema-invalid', 'Runner只消费稳定Task Finish self-bootstrap输入。');
+    if (!currentFinishResult.projectionIdentity) throw closeoutError('self-bootstrap-closeout.projection-identity-missing', '稳定Task Finish self-bootstrap输入缺少projection identity。');
     const finishWorkspaceRoot = currentFinishResult.identity?.workspaceRoot ? fs.realpathSync(path.resolve(currentFinishResult.identity.workspaceRoot)) : null;
     if (!finishWorkspaceRoot || !sameFilesystemPath(finishWorkspaceRoot, root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', 'Finish Result绑定的canonical Workspace与runner target不一致。');
     plan = createSelfBootstrapCloseoutPlan(currentFinishResult);
-    if (!plan.runId || !plan.taskId || !plan.agent || !plan.targetBranch || !plan.remote || !plan.baseRef) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish Result缺少run、Task、Agent、target、remote或final ref。');
+    if (!plan.runId || !plan.taskId || !plan.agent || !plan.targetBranch || !plan.remote) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish投影缺少run、Task、Agent、target或remote。');
     if (recoveryPlan?.status === 'blocked') {
       throw closeoutError('self-bootstrap-closeout.foreign-carriers-require-owner-recovery', '检测到foreign Finish carrier；当前runner必须等待原owner按recovery plan恢复。', {
         recoveryPlanIdentity: recoveryPlan.identity,
         recoveryPlanStatus: recoveryPlan.status,
       });
     }
+    if (plan.applicability === 'not-applicable') {
+      markNotApplicable(active, currentFinishResult.selfBootstrap?.reason || 'Workspace repository没有Task Contribution。');
+      active = stages.get('plan');
+      markPassed(active, currentFinishResult.projectionIdentity, plan.identity);
+      for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(2)) markNotApplicable(stages.get(id), 'Workspace repository没有自举贡献。');
+      return closeoutResult(currentFinishResult, plan, stages, 'not-applicable', null, developmentEntryIdentity, recoveryPlan);
+    }
+    if (!plan.baseRef) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish投影缺少Workspace repository final ref。');
     const applicable = Object.values(plan.actions).some((paths) => paths.length);
     if (!applicable) {
       markNotApplicable(active, 'frozen Task Contribution未命中self-bootstrap动作。');
       active = stages.get('plan');
-      markPassed(active, currentFinishResult.resolvedContext.identity, plan.identity);
+      markPassed(active, currentFinishResult.projectionIdentity, plan.identity);
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(2)) markNotApplicable(stages.get(id), '当前plan没有适用动作。');
       return closeoutResult(currentFinishResult, plan, stages, 'not-applicable', null, developmentEntryIdentity, recoveryPlan);
     }
@@ -984,7 +1045,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     }
     if (plan.mode === 'doctor-blocked' && head !== plan.baseRef && remote === head) {
       const earlyResume = (resumeToken, id) => {
-        const resumed = productCommand(execute, root, nodeExecutable, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', resumeToken, '--target', root, '--detail', 'full', '--json'], id, active);
+        const resumed = productCommand(execute, root, nodeExecutable, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', resumeToken, '--target', root, '--detail', 'self-bootstrap', '--json'], id, active);
         requirePassed(resumed, 'self-bootstrap-closeout.early-finish-resume-failed', 'Activation前同一Finish run恢复命令失败。');
         return parseJson(resumed, 'self-bootstrap-closeout.early-finish-resume-result-invalid', 'Activation前Finish resume没有返回JSON。');
       };
@@ -994,7 +1055,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
         throw closeoutError('self-bootstrap-closeout.target-race-adaptation-required', '最新Delivery Baseline需要Agent审核并适配同一Finish carrier。', {
           runId: payload.runId,
           primaryFailure: payload.primaryFailure,
-          carrier: payload.carrier,
+          carrier: payload.workspaceRepository?.carrier || null,
           resume: payload.resume,
           deliveryAdaptation: payload.deliveryAdaptation || null,
         });
@@ -1008,7 +1069,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
           throw closeoutError('self-bootstrap-closeout.target-race-adaptation-required', '最新Delivery Baseline需要Agent审核并适配同一Finish carrier。', {
             runId: payload.runId,
             primaryFailure: payload.primaryFailure,
-            carrier: payload.carrier,
+            carrier: payload.workspaceRepository?.carrier || null,
             resume: payload.resume,
             deliveryAdaptation: payload.deliveryAdaptation || null,
           });
@@ -1050,7 +1111,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       }
       active.effects.push({ type: 'buildr-descendant-chain', baseRef: plan.baseRef, head, provenance });
     }
-    markPassed(active, currentFinishResult.resolvedContext.identity, head, [{
+    markPassed(active, currentFinishResult.projectionIdentity, head, [{
       type: 'activation-base-selected',
       frozenRef: plan.baseRef,
       activationBaseRef,
@@ -1058,7 +1119,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     }]);
 
     active = stages.get('plan');
-    markPassed(active, currentFinishResult.resolvedContext.identity, plan.identity);
+    markPassed(active, currentFinishResult.projectionIdentity, plan.identity);
 
     const syncRequired = plan.actions['sync-retained-workspace'].length > 0;
     let successor = head;
@@ -1162,14 +1223,14 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       if (payload.health?.ready !== true) throw closeoutError('self-bootstrap-closeout.doctor-not-ready', '最终Doctor未ready。', { findings: payload.findings || [] });
       markPassed(active, successor, digest(payload));
     } else {
-      const resumed = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', currentFinishResult.resume.token, '--target', root, '--detail', 'full', '--json'], 'resume-finish-run', active);
+      const resumed = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', currentFinishResult.resume.token, '--target', root, '--detail', 'self-bootstrap', '--json'], 'resume-finish-run', active);
       requirePassed(resumed, 'self-bootstrap-closeout.finish-resume-failed', '同一Finish run恢复命令失败。');
       let payload = parseJson(resumed, 'self-bootstrap-closeout.finish-resume-result-invalid', 'Finish resume没有返回JSON。');
       activationLeaseToken = null;
       const targetRaceToken = targetRaceResumeToken(payload, plan.runId);
       if (targetRaceToken) {
         holdTargetLease('reacquire-target-lease-before-final-target-race');
-        const recovered = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', targetRaceToken, '--target', root, '--detail', 'full', '--json'], 'resume-finish-target-race', active);
+        const recovered = developmentEntryCommand(execute, developmentEntryIdentity, environment, root, ['task', 'finish', 'run', '--task', plan.taskId, '--run', plan.runId, '--resume', targetRaceToken, '--target', root, '--detail', 'self-bootstrap', '--json'], 'resume-finish-target-race', active);
         requirePassed(recovered, 'self-bootstrap-closeout.target-race-resume-failed', '同一Finish run的target-race恢复命令失败。');
         payload = parseJson(recovered, 'self-bootstrap-closeout.target-race-resume-result-invalid', 'target-race恢复没有返回JSON。');
         activationLeaseToken = null;
@@ -1177,14 +1238,14 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
           throw closeoutError('self-bootstrap-closeout.target-race-adaptation-required', '最新Delivery Baseline需要Agent审核并适配同一Finish carrier；Agent无法安全处理时请求用户授权。', {
             runId: payload.runId,
             primaryFailure: payload.primaryFailure,
-            carrier: payload.carrier,
+            carrier: payload.workspaceRepository?.carrier || null,
             resume: payload.resume,
             deliveryAdaptation: payload.deliveryAdaptation || null,
           });
         }
       }
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
-      markPassed(active, currentFinishResult.resume.token, payload.resolvedContext?.identity || payload.runId);
+      markPassed(active, currentFinishResult.resume.token, payload.projectionIdentity || payload.runId);
     }
     releaseTargetLease('release-target-lease');
     return closeoutResult(currentFinishResult, plan, stages, 'passed', null, developmentEntryIdentity, recoveryPlan);
@@ -1248,7 +1309,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
 
   const root = fs.realpathSync(path.resolve(targetRoot));
   const cli = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');
-  const inspected = execute(nodeExecutable, [cli, 'task', 'finish', 'inspect', '--run', runId, '--target', root, '--detail', 'full', '--json'], { cwd: root });
+  const inspected = execute(nodeExecutable, [cli, 'task', 'finish', 'inspect', '--run', runId, '--target', root, '--detail', 'self-bootstrap', '--json'], { cwd: root });
   if (inspected.status !== 0) throw commandResultError('self-bootstrap-closeout.finish-inspect-failed', '无法通过Product CLI读取Finish Result。', inspected);
   let finishResult;
   try { finishResult = JSON.parse(inspected.stdout); } catch (error) {
@@ -1257,7 +1318,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   if (finishResult.runId !== runId) throw closeoutError('self-bootstrap-closeout.finish-run-mismatch', 'Product CLI返回的Finish run identity不匹配。', { expected: runId, actual: finishResult.runId || null });
   const carrierEntries = discoverFinishCarrierEntries(root).map((entry) => {
     if (entry.diagnostic || entry.runId === runId) return entry;
-    const foreignInspection = execute(nodeExecutable, [cli, 'task', 'finish', 'inspect', '--run', entry.runId, '--target', root, '--detail', 'full', '--json'], { cwd: root });
+    const foreignInspection = execute(nodeExecutable, [cli, 'task', 'finish', 'inspect', '--run', entry.runId, '--target', root, '--detail', 'self-bootstrap', '--json'], { cwd: root });
     if (foreignInspection.status !== 0) {
       return {
         ...entry,
@@ -1269,7 +1330,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
     }
     try {
       const finishResult = JSON.parse(foreignInspection.stdout);
-      const taskId = finishResult?.identity?.task || null;
+      const taskId = finishResult?.identity?.taskId || null;
       if (!taskId) return { ...entry, finishResult };
       const taskInspection = execute(nodeExecutable, [cli, 'task', 'inspect', taskId, '--target', root, '--json'], { cwd: root });
       if (taskInspection.status !== 0) return { ...entry, finishResult, taskRecord: null };

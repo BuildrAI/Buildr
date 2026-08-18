@@ -9,7 +9,9 @@ description: 仅在当前会话持有matching Formal Task Finish Result且Buildr
 
 ## 输入与适用性
 
-只消费当前`buildr.task-finish-result/v2`中的Task ID、run identity、Agent、canonical Workspace、remote/target branch、carrier/final或remote-after ref、Environment绑定的retained Node/CLI identity、Delivery Carrier内冻结Task Contribution paths，以及blocked路径的matching resume token。不得从HEAD、dirty tree、当前diff、时间或安装结果反推贡献。
+只消费Product CLI的稳定`buildr.task-finish-self-bootstrap-input/v1`投影，其中包含Task/run identity、Agent、canonical Workspace、remote/target branch、唯一Workspace repository、run-owned carrier container、repository carrier集合、final或remote-after ref、冻结Task Contribution paths，以及blocked路径的matching resume token。不得直接解析`buildr.task-finish-result/v2|v3|v4|...`，也不得从HEAD、dirty tree、当前diff、时间或安装结果反推贡献。
+
+内部Task Finish Result升级但自举语义不变时，只由Product projector把新major归一化到稳定v1，runner不增加内部版本分支。同一稳定major的未知additive字段必须忽略；未知稳定major、必需identity缺失或语义不能完整投影时，在任何effect前fail closed。自举语义本身需要不兼容变化时，由Product发布新的稳定投影major并显式迁移runner。
 
 当前会话没有绑定同一canonical Workspace、Task、run与delivered ref的matching Formal Finish Result时，本Skill必须在启动runner前返回`not-applicable`：不得从commit author、协作者提交、Git tree前进、Doctor runtime drift或本地缺少对应Task反推Finish。此时按普通Workspace update处理，先消费post-transition Doctor；若其适用修复是当前Agent workspace sync，则路由产品入口Buildr Skill按授权执行`buildr sync <agent> --target <workspace-root>`。本地没有协作者Task是正常事实，不触发Task恢复、回滚、self-bootstrap或新的生命周期authority。
 
@@ -29,6 +31,8 @@ Result必须恰好属于一种模式：
 
 同一动作即使被多条路径命中也只执行一次。所有路径均未命中时返回`not-applicable`，不执行sync、Git、Buildr Web Dev install、development entry verification、Doctor或Finish resume。
 
+多仓库Task只使用唯一`selector=workspace` repository的frozen activation paths；Service repository即使有贡献、carrier或类似Workspace路径也不能触发自举动作。Workspace repository为`not-applicable/no-contribution`时，本Skill直接返回`not-applicable`且不执行激活；这些Service与Workspace环境仍由原Task Finish cleanup统一处置。
+
 ## 执行
 
 正常路径只启动一次本Skill携带的runner。Agent不得再逐条编排sync、commit、push、安装、Doctor或same-run resume：
@@ -40,9 +44,9 @@ Result必须恰好属于一种模式：
   --node-executable <receipt-node>
 ```
 
-Runner是本Skill的bundled script，只存在于Buildr自举Workspace，不进入Buildr用户npm package、`package/targets/**`或普通Workspace Skill集合。它通过retained `projects/product/buildr task finish inspect --run ... --detail full --json`从同一run只读取得Finish Result与`resolvedContext`，不导入Product内部Application模块；随后核对Component、模式、frozen paths、target branch、remote/final ref、clean tree和retained Node identity，形成确定性plan。然后按`preflight → plan → sync → commit → push → install-local-app → verify-development-entry → finalize`执行；每阶段独立返回`passed|blocked|not-applicable`、identity、最小operations与effects，不写新authority。
+Runner是本Skill的bundled script，只存在于Buildr自举Workspace，不进入Buildr用户npm package、`package/targets/**`或普通Workspace Skill集合。它通过retained `projects/product/buildr task finish inspect --run ... --detail self-bootstrap --json`从同一run只读取得稳定投影，不导入Product内部Application模块；所有same-run resume也继续请求该detail。随后核对Component、投影major、模式、Workspace repository、frozen paths、target branch、remote/final ref、clean tree和retained Node identity，形成确定性plan。然后按`preflight → plan → sync → commit → push → install-local-app → verify-development-entry → finalize`执行；每阶段独立返回`passed|blocked|not-applicable`、identity、最小operations与effects，不写新authority。
 
-在任何retained target mutation、sync、安装、Doctor或Finish resume前，命令适配层只读枚举固定根`.buildr/transient/task-finish/carriers`的直接子项。目录名只作为run候选；每个foreign真实目录都必须由同一retained Product `task finish inspect --detail full`证明Finish Result schema、run、canonical Workspace、非symlink carrier路径、carrier identity与matching resume identity。证明闭合的foreign carrier标记为`isolated-coexisting`：runner只把它的精确相对目录及后代从untracked observation中排除，不忽略tracked或staged差异，也不恢复、删除或修改该carrier。合法`cleanup_pending` owner仍可形成`resume-owner-cleanup`建议；Task已`abandoned`且从未成功交付时可形成`resume-owner-release-occupancy`建议。建议按`taskId + runId`稳定排序，仅供原owner后续处理，不是当前closeout的predecessor，也不生成`retry-current-closeout`。
+在任何retained target mutation、sync、安装、Doctor或Finish resume前，命令适配层只读枚举固定根`.buildr/transient/task-finish/carriers`的直接子项。目录名只作为run候选；current与每个foreign真实目录都必须由同一retained Product `task finish inspect --detail self-bootstrap`证明稳定schema、run、canonical Workspace、精确run container、全部repository carrier的非symlink/containment/唯一性及matching resume identity。v2归一化后carrier可以等于container，v3多仓库carrier可以是其受控后代；runner不从目录层级反推内部Result major。证明闭合的foreign carrier标记为`isolated-coexisting`：runner只把它的精确run container相对目录及后代从untracked observation中排除，不忽略tracked或staged差异，也不恢复、删除或修改其中任一carrier。合法`cleanup_pending` owner仍可形成`resume-owner-cleanup`建议；Task已`abandoned`且从未成功交付时可形成`resume-owner-release-occupancy`建议。建议按`taskId + runId`稳定排序，仅供原owner后续处理，不是当前closeout的predecessor，也不生成`retry-current-closeout`。
 
 symlink、越界、重复realpath、inspect失败、Workspace/path/carrier/resume identity或token不可证明时标记`unprovable`并在任何activation effect前阻断。证明闭合的doctor-blocked、其他blocked、terminal残留或不支持状态均可隔离共存；其owner状态只影响是否附带cleanup/occupancy建议，不影响当前run取得target lease。协调计划是ephemeral advisory read model，不写SQLite、Receipt、Execution Record、Git或第二份队列/聚合store，也不授予跨owner mutation authority。
 
@@ -58,7 +62,7 @@ Plan的`baseRef`始终来自当前Finish Result的final ref。Preflight另选择
 
 `verify-development-entry`不解析或执行PATH默认`buildr`。Runner直接执行本次retained checkout的`projects/product/buildr`，注入`BUILDR_NODE=<Environment retained Node>`，先使用closed development identity probe核对`scripts/run-development-cli`、`bin/buildr.mjs`与Node，再执行`version --json`核对development channel、source commit与retained `package.json`中的package/version。Project bridge缺失或不可执行、launcher/CLI entry/Node漂移、channel/source commit/package/version不一致或命令启动失败一律fail closed，不进入`finalize`。
 
-`doctor-blocked`模式下，尚未cleanup的当前Delivery Carrier是Finish owner的恢复资源，不属于用户dirty tree。Runner只在`workspaceRoot + runId`推导的路径与同一Result的`carrier.root`精确匹配、真实存在且不是symlink时，从untracked observation中排除该root及其后代；上述已证明的foreign carrier也按同一方式逐个隔离。任何carrier路径下的tracked/staged差异、其他untracked路径、root缺失或identity不匹配仍然fail closed。此规则不写`.gitignore`或`.git/info/exclude`。
+`doctor-blocked`模式下，尚未cleanup的当前run container及repository carriers是Finish owner的恢复资源，不属于用户dirty tree。Runner只在`workspaceRoot + runId`推导的container与稳定投影精确匹配、真实存在且不是symlink，并且全部projected carrier真实、唯一、受container包含且resume identity匹配时，从untracked observation中排除该container及其后代；上述已证明的foreign container也按同一方式逐个隔离。任何carrier路径下的tracked/staged差异、其他untracked路径、root缺失、越界、重复realpath或identity不匹配仍然fail closed。此规则不写`.gitignore`或`.git/info/exclude`。
 
 `complete`模式的`finalize`只通过已验证的retained `projects/product/buildr`运行一次指定Agent Doctor。`doctor-blocked`模式不另行运行第二个Doctor，而是由runner通过同一显式入口，使用当前Task、run id和matching resume token恢复同一Formal Finish；恢复结果必须`status=complete`且cleanup完成。若该finalize第一次精确返回target-race，runner可在重新获取lease后再交回一次matching token；若进入Delivery Adaptation，Agent可以在该runner已验证的carrier内按Task Finish owner处理，处理不了再请求用户授权。其他再次blocked只消费runner返回的current resume事实，不重复启动本Skill或递归activation。
 

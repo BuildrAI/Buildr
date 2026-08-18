@@ -1,6 +1,7 @@
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { selfBootstrapTaskFinishResult } from './task-finish-self-bootstrap-projection.mjs';
 
-const DETAILS = new Set(['compact', 'full']);
+const DETAILS = new Set(['compact', 'full', 'self-bootstrap']);
 const PHASES = new Set(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
 const PATH_KEYS = new Set(['path', 'file', 'relativePath']);
 const PATH_LIST_KEYS = new Set(['paths', 'conflictPaths', 'unrelatedPaths']);
@@ -267,5 +268,6 @@ export function compactTaskFinishResult(result) {
 
 export function projectTaskFinishResult(result, detail = 'compact') {
   if (!DETAILS.has(detail)) throw compactProjectionError(`Unsupported Task Finish detail: ${detail}`);
-  return detail === 'full' ? result : compactTaskFinishResult(result);
+  if (detail === 'full') return result;
+  return detail === 'self-bootstrap' ? selfBootstrapTaskFinishResult(result) : compactTaskFinishResult(result);
 }

@@ -79,8 +79,9 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
     'projects/product/services/buildr/src/interfaces/cli/launcher.mjs',
     'projects/product/services/buildr/package/launchers/**',
   ]) assert.ok(skill.includes(input), input);
-  for (const boundary of ['doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-local-app', 'package/launchers/manage.mjs install --channel development', '公开命令没有development channel', 'verify-development-entry', 'projects/product/buildr', 'version --json', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'isolated-coexisting', 'resume-owner-cleanup', 'resume-owner-release-occupancy', 'target lease', '普通用户Workspace没有本Skill', '完整冻结commit message', '原owner', '协调器不得直接删除foreign carrier', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
-  for (const boundary of ['更具体覆盖规则', '不能先按前文', 'matching product resume token', '无适用动作时保持普通blocked结论', 'Skill本地runner', 'projects/product/buildr', '不同target不因该lease互相阻塞', '普通用户Workspace没有本Skill或自举收尾', '不得启动第二个orchestrator或绕过runner补做sync、Buildr Web Dev安装、development entry检查或Doctor', '只有专用target-race adaptation diagnostic允许Agent按其中matching carrier/token与guidance继续Task Finish owner动作', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
+  for (const boundary of ['buildr.task-finish-self-bootstrap-input/v1', '不得直接解析`buildr.task-finish-result/v2|v3|v4|...`', '内部Task Finish Result升级', '唯一`selector=workspace`', 'no-contribution', 'doctor-blocked', 'primaryFailure.phase=deliver', 'matching resume token', '冻结Task Contribution', 'install-development-local-app', 'package/launchers/manage.mjs install --channel development', '公开命令没有development channel', 'verify-development-entry', 'projects/product/buildr', 'version --json', '同一动作即使被多条路径命中也只执行一次', 'same-run resume', '不创建receipt、数据库记录、事件或状态机', 'scripts/closeout.mjs', 'buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'isolated-coexisting', 'resume-owner-cleanup', 'resume-owner-release-occupancy', 'target lease', '普通用户Workspace没有本Skill', '完整冻结commit message', '原owner', '协调器不得直接删除foreign carrier', 'Formal Finish仍被Doctor阻塞、自举恢复未完成']) assert.ok(skill.includes(boundary), boundary);
+  for (const boundary of ['更具体覆盖规则', '不能先按前文', 'buildr.task-finish-self-bootstrap-input/v1', '--detail self-bootstrap', '内部Task Finish Result major只由Product projector归一化', '唯一Workspace repository', 'Service repository不能触发根自举', 'Workspace无贡献时直接`not-applicable`', '全部repository carrier', '重复realpath', 'matching product resume token', '无适用动作时保持普通blocked结论', 'Skill本地runner', 'projects/product/buildr', '不同target不因该lease互相阻塞', '普通用户Workspace没有本Skill或自举收尾', '不得启动第二个orchestrator或绕过runner补做sync、Buildr Web Dev安装、development entry检查或Doctor', '只有专用target-race adaptation diagnostic允许Agent按其中matching carrier/token与guidance继续Task Finish owner动作', '成功后才cleanup']) assert.ok(contribution.includes(boundary), boundary);
+  assert.doesNotMatch(contribution, /resolvedContext|--detail full|task-finish-result\/v[234]/);
   if (runtimeFinish) {
     assert.match(runtimeFinish, /Buildr 自举 Workspace 激活/);
     assert.match(runtimeFinish, /doctor-blocked/);
@@ -92,9 +93,10 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   const runner = fs.readFileSync(runnerPath, 'utf8');
   for (const phrase of ['buildr.self-bootstrap-closeout-result/v1', 'buildr.self-bootstrap-recovery-plan/v1', 'foreign-carriers-require-owner-recovery', 'isolated-coexisting', 'unprovable', 'task-finish-target-lease-driver.mjs', 'target-lease-held', 'resume-owner-release-occupancy', '--release-occupancy', 'Buildr-Finish-Run', 'Buildr-Closeout-Plan', "'sync'", "'commit'", "'push'", "'install-local-app'", "'verify-development-entry'", "'finalize'", 'development-entry-launcher-mismatch', 'development-entry-cli-mismatch', 'development-entry-version-mismatch']) assert.ok(runner.includes(phrase), phrase);
   assert.doesNotMatch(runner, /install-development-cli|resolveDefaultBuildr|default-cli-/u);
-  assert.match(runner, /activationPaths \|\| finishResult\.carrier\?\.changedPaths/);
+  assert.match(runner, /finishResult\.selfBootstrap\?\.activationPaths/);
   assert.match(runner, /task', 'finish', 'inspect'/);
-  assert.match(runner, /'--detail', 'full'/);
+  assert.match(runner, /'--detail', 'self-bootstrap'/);
+  assert.doesNotMatch(runner, /task-finish-result\/v[234]/);
   assert.match(runner, /node-identity-mismatch/);
   assert.doesNotMatch(runner, /(?:from\s+|import\s*\()['"]\.\.\//, 'workspace-only runner must not import modules outside its Skill directory');
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs')), false);

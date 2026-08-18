@@ -215,7 +215,7 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-local-app-http': Object.freeze(['src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
   'system-app-process': Object.freeze(['src/interfaces/local-app/runtime/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
   'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-occupancy-release.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-repository-set.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
-  'system-task-finish-cli': Object.freeze(['src/application/task-finish/task-finish-result-projection.mjs', 'src/application/json-contracts.mjs', 'src/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
+  'system-task-finish-cli': Object.freeze(['src/application/task-finish/task-finish-result-projection.mjs', 'src/application/task-finish/task-finish-self-bootstrap-projection.mjs', 'src/application/json-contracts.mjs', 'src/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-fresh-build': Object.freeze(['src/application/task-environment/**', 'src/domain/task-environment/**', 'preparation.yml', 'services/buildr-web/package.json', 'services/buildr-web/package-lock.json', 'services/buildr-web/vite.config.*', 'services/buildr-web/tsconfig*.json', 'test/helpers/clean-product-source.mjs']),
 });
 
@@ -405,6 +405,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/task-finish-entry-readiness.mjs',
     'src/application/task-finish/task-finish-repository-set.mjs',
     'src/application/task-finish/task-finish-result-projection.mjs',
+    'src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
     'src/application/task-finish/task-finish-run.mjs',
   ], { schedulingCostMs: 11000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-finish-delivery', [
@@ -672,6 +673,7 @@ export const verificationSteps = Object.freeze([
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
     'src/application/compose-runtime.mjs', 'src/application/json-contracts.mjs',
     'src/application/task-finish/task-finish-result-projection.mjs',
+    'src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
     'src/infrastructure/product-layout.mjs',
     'test/verification/cli/package-parity.mjs', 'package.json', 'package-lock.json',
   ], dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),

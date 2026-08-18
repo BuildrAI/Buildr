@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { compactTaskFinishResult, projectTaskFinishResult } from '../../src/application/task-finish/task-finish-result-projection.mjs';
+import { selfBootstrapTaskFinishResult } from '../../src/application/task-finish/task-finish-self-bootstrap-projection.mjs';
 
 function canonical(overrides = {}) {
   return {
@@ -125,6 +126,108 @@ test('full Task Finish Result 保持canonical对象不变', () => {
   const full = canonical();
   assert.equal(projectTaskFinishResult(full, 'full'), full);
   assert.equal(full.schemaVersion, 'buildr.task-finish-result/v3');
+});
+
+test('v2与v3 Result归一化为同一稳定self-bootstrap契约', () => {
+  const legacyRoot = '/private/workspace/.buildr/transient/task-finish/carriers/finish-run';
+  const legacy = selfBootstrapTaskFinishResult({
+    ...canonical({ schemaVersion: 'buildr.task-finish-result/v2' }),
+    carrier: { identity: 'sha256-workspace-carrier', root: legacyRoot, activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+    delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    completion: { status: 'complete', finalRemoteRef: 'final-ref' },
+    primaryFailure: null,
+    resume: null,
+    status: 'complete',
+  });
+  const workspaceCarrierRoot = `${legacyRoot}/workspace-123`;
+  const serviceCarrierRoot = `${legacyRoot}/service-456`;
+  const multi = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete',
+    primaryFailure: null,
+    resume: null,
+    identity: {
+      ...canonical().identity,
+      repositories: [
+        { selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' },
+        { selector: 'service:product/example', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' },
+      ],
+      repositorySetIdentity: 'sha256-repository-set',
+    },
+    repositorySetIdentity: 'sha256-repository-set',
+    repositories: [
+      {
+        selector: 'service:product/example', disposition: 'applicable',
+        deliveryCarrier: { identity: 'sha256-service-carrier', root: serviceCarrierRoot, activationPaths: ['service.txt'] },
+        delivery: { status: 'delivered', remoteAfterRef: 'service-ref', finalRemoteRef: 'service-ref' },
+      },
+      {
+        selector: 'workspace', disposition: 'applicable',
+        deliveryCarrier: { identity: 'sha256-workspace-carrier', root: workspaceCarrierRoot, activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+        delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+      },
+    ],
+    completion: {
+      status: 'complete',
+      repositories: [
+        { selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-workspace-carrier', carrierRef: 'workspace-ref', finalRemoteRef: 'final-ref' },
+        { selector: 'service:product/example', disposition: 'applicable', carrierIdentity: 'sha256-service-carrier', carrierRef: 'service-ref', finalRemoteRef: 'service-ref' },
+      ],
+    },
+  }));
+
+  assert.equal(legacy.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(multi.schemaVersion, legacy.schemaVersion);
+  assert.deepEqual(Object.keys(multi), Object.keys(legacy));
+  assert.equal(projectTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    identity: { ...canonical().identity, repositories: [] },
+  }), 'self-bootstrap').schemaVersion, legacy.schemaVersion);
+  assert.equal(multi.workspaceRepository.selector, 'workspace');
+  assert.equal(multi.workspaceRepository.carrier.root, workspaceCarrierRoot);
+  assert.deepEqual(multi.carriers.map((carrier) => carrier.selector), ['service:product/example', 'workspace']);
+  assert.equal(multi.carrierContainerRoot, legacyRoot);
+  assert.equal(multi.selfBootstrap.baseRef, 'final-ref');
+  assert.equal(multi.projectionIdentity.startsWith('sha256-'), true);
+  assert.equal(JSON.stringify(multi).includes('task-finish-result/v3'), false);
+});
+
+test('无Workspace贡献投影为not-applicable且Service carrier不提升为自举输入', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    identity: {
+      ...canonical().identity,
+      repositories: [
+        { selector: 'workspace', disposition: 'not-applicable', reason: 'no-contribution', targetBranch: 'dev', remote: 'origin' },
+        { selector: 'service:product/example', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' },
+      ],
+    },
+    repositories: [
+      { selector: 'workspace', disposition: 'not-applicable', reason: 'no-contribution', deliveryCarrier: null, delivery: null },
+      {
+        selector: 'service:product/example', disposition: 'applicable',
+        deliveryCarrier: { identity: 'sha256-service', root: '/private/workspace/.buildr/transient/task-finish/carriers/finish-run/service', activationPaths: ['projects/product/services/buildr/src/looks-like-workspace.mjs'] },
+        delivery: { status: 'delivered', remoteAfterRef: 'service-ref', finalRemoteRef: 'service-ref' },
+      },
+    ],
+  }));
+  assert.equal(result.selfBootstrap.applicability, 'not-applicable');
+  assert.deepEqual(result.selfBootstrap.activationPaths, []);
+  assert.equal(result.workspaceRepository.carrier, null);
+  assert.deepEqual(result.carriers.map((carrier) => carrier.selector), ['service:product/example']);
+});
+
+test('self-bootstrap projector对未知内部major与不完整carrier fail closed', () => {
+  assert.throws(
+    () => selfBootstrapTaskFinishResult(canonical({ schemaVersion: 'buildr.task-finish-result/v4', futureField: true })),
+    (error) => error.code === 'task_finish.self_bootstrap_projection_invalid',
+  );
+  assert.throws(
+    () => selfBootstrapTaskFinishResult({
+      ...canonical({ schemaVersion: 'buildr.task-finish-result/v2' }),
+      carrier: { identity: 'sha256-carrier', activationPaths: [] },
+    }),
+    (error) => error.code === 'task_finish.self_bootstrap_projection_invalid',
+  );
 });
 
 test('compact bootstrap provenance不暴露capsule路径', () => {

@@ -195,8 +195,8 @@ function assertArgs(action, args) {
     if (option === '--json' || option === '--accept-zero-delta-adaptation' || option === '--bootstrap-recovery' || option === '--release-occupancy') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
-    if (option === '--detail' && !['compact', 'full'].includes(value)) {
-      throw inputError('task_finish.detail_invalid', '--detail must be compact or full.', action, { detail: value });
+    if (option === '--detail' && !['compact', 'full', 'self-bootstrap'].includes(value)) {
+      throw inputError('task_finish.detail_invalid', '--detail must be compact, full, or self-bootstrap.', action, { detail: value });
     }
     index += 1;
   }

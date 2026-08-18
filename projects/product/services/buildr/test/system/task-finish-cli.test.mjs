@@ -36,15 +36,16 @@ function create(root, runId = 'current-inspect') {
   return run;
 }
 
-test('task finish inspect 默认compact、显式full且文本保持稳定', (t) => {
+test('task finish inspect 默认compact、显式full/self-bootstrap且文本保持稳定', (t) => {
   const root = fixture(t, true);
   create(root);
   const inspect = (...args) => spawnSync(process.execPath, [cli, 'task', 'finish', 'inspect', '--run', 'current-inspect', '--target', root, ...args], { encoding: 'utf8' });
   const implicit = inspect('--json');
   const explicit = inspect('--json', '--detail', 'compact');
   const full = inspect('--json', '--detail', 'full');
+  const selfBootstrap = inspect('--json', '--detail', 'self-bootstrap');
   const text = inspect();
-  for (const result of [implicit, explicit, full, text]) assert.equal(result.status, 0, result.stderr);
+  for (const result of [implicit, explicit, full, selfBootstrap, text]) assert.equal(result.status, 0, result.stderr);
 
   const compact = JSON.parse(implicit.stdout);
   const explicitCompact = JSON.parse(explicit.stdout);
@@ -62,6 +63,12 @@ test('task finish inspect 默认compact、显式full且文本保持稳定', (t) 
   assert.equal(fullResult.metrics.manualRecoveryManifests, 0);
   assert.notEqual(implicit.stdout, full.stdout);
   assert.ok(implicit.stdout.length < full.stdout.length);
+  const selfBootstrapInput = JSON.parse(selfBootstrap.stdout);
+  assert.equal(selfBootstrapInput.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(selfBootstrapInput.detail, 'self-bootstrap');
+  assert.equal(selfBootstrapInput.identity.taskId, 'current-inspect');
+  assert.equal(selfBootstrapInput.mode, 'ineligible');
+  assert.equal('resolvedContext' in selfBootstrapInput, false);
   assert.equal(text.stdout, 'Task Finish run current-inspect: active\nNext: none\n');
 });
 
@@ -141,6 +148,7 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
   assert.match(helpText, /--accept-zero-delta-adaptation/);
   assert.match(helpText, /--release-occupancy/);
+  assert.match(helpText, /compact\|full\|self-bootstrap/);
   assert.match(helpText, /占用释放/);
   assert.match(helpText, /不创建commit、不替代resume token/);
   assert.match(helpText, /Buildr-Task trailer/);
