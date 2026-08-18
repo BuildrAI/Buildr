@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Button, Input, Modal, Select, Table } from 'antd';
+import { Button, Input, Modal, Select } from 'antd';
 import { api, type ApiError } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { confirmModal } from '../lib/confirm';
@@ -12,6 +12,8 @@ import { EnvironmentTab } from './task-detail/EnvironmentTab';
 import { EvidenceTab } from './task-detail/EvidenceTab';
 import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
+import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
+import type { ParentCoordinationResult } from './task-detail/parentCoordination';
 import {
   diff,
   Fact,
@@ -45,7 +47,7 @@ export function TaskDetailPage() {
   const [data, setData] = useState<TaskDetailData | null>(null);
   const [overviewData, setOverviewData] = useState<any>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
-  const [coordinationData, setCoordinationData] = useState<any>(null);
+  const [coordinationData, setCoordinationData] = useState<ParentCoordinationResult | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ message: string; error: boolean } | null>(null);
@@ -178,7 +180,7 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setCoordinationLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`);
+      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`) as ParentCoordinationResult;
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) setCoordinationData(next);
     } catch (err) {
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
@@ -674,58 +676,7 @@ export function TaskDetailPage() {
             </dl>
           )}
         </section>
-        <section className="panel" id="task-parent-coordination" aria-live="polite">
-          <div className="panel-heading">
-            <div>
-              <h2>父子任务协调</h2>
-              <p className="section-copy">直接展示 Parent Coordination Application 的派生 read model；不在 Parent Task Record 复制 Child 状态或交付结果。</p>
-            </div>
-            <Button onClick={() => { void refreshCoordination(); }} disabled={coordinationLoading}>{coordinationLoading ? '读取中…' : '刷新协调事实'}</Button>
-          </div>
-          {coordinationData?.mode === 'parent-plan' ? (
-            <>
-              <dl className="read-facts detail-facts">
-                <Fact label="Parent outcome" value={coordinationData.parentPlan?.outcome || '—'} />
-                <Fact label="Plan identity" value={coordinationData.parentPlan?.identity || '—'} />
-                <Fact label="前置条件" value={coordinationData.prerequisitesSatisfied ? '已满足，仍需显式最终集成验收' : `未满足（${coordinationData.blockers?.length || 0} 项）`} />
-                <Fact label="最终集成验收" value={coordinationData.parentAcceptance ? `${coordinationData.parentAcceptance.summary} · ${formatDateTime(coordinationData.parentAcceptance.acceptedAt)}` : '尚未记录'} />
-                <Fact label="Planning Review" value={coordinationData.planningReview?.present ? `${coordinationData.planningReview.outcome} · ${coordinationData.planningReview.gateMatch}` : '尚未记录'} />
-              </dl>
-              <Table
-                size="small"
-                pagination={false}
-                rowKey="id"
-                dataSource={coordinationData.contributions || []}
-                columns={[
-                  {
-                    title: 'Contribution',
-                    render: (_value: unknown, contribution: { id: string }) => <strong>{contribution.id}</strong>,
-                  },
-                  { title: '计划结果', dataIndex: 'summary' },
-                  { title: '派生状态', dataIndex: 'disposition' },
-                  {
-                    title: '承担 / 交付',
-                    render: (_value: unknown, contribution: any) => (
-                      contribution.deliveredBy?.taskId || contribution.plannedChildTaskId || '尚未分配'
-                    ),
-                  },
-                ]}
-              />
-              <h3>直接 Child Tasks</h3>
-              {coordinationData.children?.length ? (
-                <dl className="read-facts detail-facts">
-                  {coordinationData.children.map((child: any) => (
-                    <Fact key={child.taskId} label={child.taskId} value={`${taskStatusLabel(child.status)} · planned: ${child.plannedContributions.join('、') || '无'} · handoff: ${child.deliveryProven ? '已证明' : '未证明'}`} />
-                  ))}
-                </dl>
-              ) : <p className="empty-copy">尚无直接 Child Task。</p>}
-            </>
-          ) : (
-            <p className={coordinationData?.diagnostic?.code && coordinationData.diagnostic.code !== 'parent_plan_absent' ? 'alert error' : 'section-copy'}>
-              {coordinationData?.diagnostic?.message || '该 Task 没有 Parent Plan；历史 Task 保持可读且不会自动 backfill。'}
-            </p>
-          )}
-        </section>
+        <ParentCoordinationPanel data={coordinationData} loading={coordinationLoading} onRefresh={() => { void refreshCoordination(); }} />
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {
             if (item.kind === 'empty') {

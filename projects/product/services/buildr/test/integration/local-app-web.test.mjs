@@ -105,6 +105,9 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
 
 test('任务详情使用概览、研发、证据、复盘、环境五个一级视图', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const coordination = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx');
+  const coordinationModel = read('../buildr-web/src/pages/task-detail/parentCoordination.ts');
+  const coordinationStyles = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.css');
   const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
   const retrospective = read('../buildr-web/src/pages/task-detail/RetrospectiveTab.tsx');
   const styles = read('../buildr-web/src/styles.css');
@@ -114,11 +117,20 @@ test('任务详情使用概览、研发、证据、复盘、环境五个一级�
   assert.match(source, /id: 'evidence', label: '证据'/);
   assert.match(source, /id: 'retrospective', label: '复盘'/);
   assert.match(source, /id: 'environment', label: '环境'/);
-  assert.match(source, /id="task-parent-coordination"/);
+  assert.match(source, /ParentCoordinationPanel/);
   assert.match(source, /\/coordination`\)/);
-  assert.match(source, /Parent Coordination Application 的派生 read model/);
-  assert.match(source, /parent_plan_absent/);
-  assert.match(source, /prerequisitesSatisfied[\s\S]*显式最终集成验收/);
+  assert.match(coordination, /id="task-parent-coordination"/);
+  assert.match(coordination, /Parent Coordination Application 的派生 read model/);
+  assert.match(coordination, /parent_plan_absent/);
+  assert.match(coordination, /id="parent-current-status"[\s\S]*可以推进/);
+  assert.match(coordination, /id="parent-eligible-contributions"[\s\S]*建议先启动[\s\S]*其他可启动/);
+  assert.match(coordination, /ContributionIdentity[\s\S]*summary[\s\S]*contribution\.id/);
+  assert.match(coordination, /prerequisitesSatisfied[\s\S]*显式最终集成验收/);
+  assert.match(coordination, /planningReview\.result\?\.conclusion\?\.outcome/);
+  assert.match(coordination, /planningReview\.result\?\.completedAt/);
+  assert.doesNotMatch(coordination, /planningReview\?\.outcome|planningReview\?\.gateMatch/);
+  assert.match(coordinationModel, /dependencyBlockers\?: ParentDependencyBlocker\[\]/);
+  assert.match(coordinationStyles, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.doesNotMatch(source, /id: '(?:review|verification)'/);
   assert.match(evidence, /data-task-panel="evidence"/);
   assert.match(retrospective, /data-task-panel="retrospective"/);

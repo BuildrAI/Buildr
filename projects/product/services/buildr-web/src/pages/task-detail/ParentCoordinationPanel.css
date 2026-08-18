@@ -1,0 +1,191 @@
+.parent-coordination-panel {
+  overflow: hidden;
+}
+
+.parent-progress-grid,
+.parent-coordination-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.parent-progress-card,
+.parent-coordination-section,
+.parent-eligible-card,
+.parent-contribution-list > li,
+.parent-child-list > li {
+  min-width: 0;
+  border: 1px solid var(--soft-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.parent-progress-card {
+  padding: 16px;
+  background: var(--soft-sidebar);
+}
+
+.parent-progress-card.ready {
+  border-color: #a9d0b8;
+  background: #f1f8f3;
+}
+
+.parent-progress-card.blocked {
+  border-color: #dfc98f;
+  background: #fffaf0;
+}
+
+.parent-progress-eyebrow,
+.parent-eligible-kind {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--soft-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.parent-progress-card strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.parent-progress-card p,
+.parent-child-list p {
+  margin: 0;
+  color: var(--soft-muted);
+  line-height: 1.55;
+}
+
+.parent-coordination-section {
+  margin-top: 12px;
+  padding: 16px;
+}
+
+.parent-coordination-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.parent-coordination-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.parent-eligible-list,
+.parent-contribution-list,
+.parent-child-list,
+.parent-compact-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.parent-eligible-card,
+.parent-contribution-list > li,
+.parent-child-list > li {
+  padding: 12px;
+}
+
+.parent-eligible-card.recommended {
+  border-color: #a9d0b8;
+  background: #f6fbf7;
+}
+
+.parent-contribution-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.parent-contribution-identity > span {
+  min-width: 0;
+  flex: 1 1 360px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.parent-contribution-identity code,
+.parent-child-heading code,
+.parent-child-contributions code,
+.parent-compact-list code {
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: #315d58;
+  background: rgba(79, 143, 138, .1);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.parent-contribution-list > li,
+.parent-child-list > li {
+  display: grid;
+  gap: 10px;
+}
+
+.parent-contribution-meta,
+.parent-child-heading,
+.parent-child-contributions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: var(--soft-muted);
+  font-size: 12px;
+}
+
+.parent-disposition {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(92, 107, 106, .1);
+}
+
+.parent-disposition.delivered,
+.parent-disposition.superseded {
+  color: #3d7a58;
+  background: rgba(90, 154, 120, .12);
+}
+
+.parent-disposition.residual,
+.parent-disposition.unproven {
+  color: #8a5d2f;
+  background: rgba(196, 139, 90, .14);
+}
+
+.parent-compact-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--soft-muted);
+  line-height: 1.5;
+}
+
+.parent-governance-details {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--soft-line);
+  border-radius: 10px;
+  background: var(--soft-sidebar);
+}
+
+.parent-governance-details .read-facts {
+  margin-top: 12px;
+}
+
+@media (max-width: 700px) {
+  .parent-progress-grid,
+  .parent-coordination-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .parent-progress-card,
+  .parent-coordination-section,
+  .parent-governance-details {
+    padding: 12px;
+  }
+}

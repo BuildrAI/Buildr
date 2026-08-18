@@ -108,6 +108,7 @@ test('Parent startup按真实安全顺序推进Review、gate refresh与首个eli
   assert.equal(refreshed.startup.next.action, 'start-child-contribution');
   assert.deepEqual(refreshed.startup.eligibleContributions, ['child-delivery']);
   assert.equal(refreshed.startup.blockers.length, 0);
+  assert.deepEqual(refreshed.startup.dependencyBlockers, [{ contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
 });
 
 test('Parent planning refresh不接受缺失、stale或changes-required Review', (t) => {
@@ -134,6 +135,7 @@ test('Parent startup只在没有eligible Contribution时暴露依赖阻塞', (t)
   const startup = current.runtime.inspectParentStartupReadiness(current.root, 'parent-task');
   assert.equal(startup.status, 'blocked');
   assert.equal(startup.next.action, 'wait-contribution-dependencies');
+  assert.deepEqual(startup.dependencyBlockers, [{ contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
   assert.deepEqual(startup.blockers, [{ axis: 'contribution-dependency', code: 'parent_startup_contribution_dependency_incomplete', contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
 });
 

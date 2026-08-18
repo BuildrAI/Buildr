@@ -84,7 +84,7 @@ export function registerParentCoordinationApplication(runtime) {
     else if (eligibleContributions.length) next = { mode: 'recommended', owner: 'task-triage', action: 'start-child-contribution', contributionIds: eligibleContributions, summary: '选择一个依赖已满足的Contribution并启动独立Child Task。' };
     else if (progress.prerequisitesSatisfied) next = { mode: 'recommended', owner: 'task-development', action: 'accept-parent', summary: '全部Contribution已有明确处置；执行Parent最终集成验收。' };
     else next = { mode: 'recommended', owner: 'agent', action: 'wait-contribution-dependencies', summary: '当前没有可启动Contribution；等待既有Child handoff或显式reconcile。' };
-    return { status: gateCurrent && (eligibleContributions.length || progress.prerequisitesSatisfied) ? 'ready' : 'blocked', checks, blockers, eligibleContributions, next };
+    return { status: gateCurrent && (eligibleContributions.length || progress.prerequisitesSatisfied) ? 'ready' : 'blocked', checks, blockers, dependencyBlockers, eligibleContributions, next };
   }
 
   function inspectParentCoordination(targetRoot, taskId, options = {}) {
@@ -106,7 +106,7 @@ export function registerParentCoordinationApplication(runtime) {
     }
     const startup = plan
       ? startupReadiness(task, execution, development, plan, planningReview, progress)
-      : { status: 'not-applicable', checks: {}, blockers: [], eligibleContributions: [], next: null };
+      : { status: 'not-applicable', checks: {}, blockers: [], dependencyBlockers: [], eligibleContributions: [], next: null };
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.parentCoordinationResult, {
       operation: 'inspect', status: 'inspected', taskId, mode: plan ? 'parent-plan' : 'legacy', parentStatus: task.record.status, parentPlan: plan, parentAcceptance: receipt?.parentAcceptance || null, parentDelivery, planningReview, startup, children, ...progress, finalAcceptanceReady: Boolean(plan && progress.prerequisitesSatisfied), effects: [], diagnostic: plan ? null : { code: 'parent_plan_absent', message: '该Task尚未显式采用Parent Plan；历史Task继续使用既有模型。' }, nextActions: plan ? (startup.next ? [startup.next.summary] : []) : ['仅在明确采用新模型时record Parent Plan；不要自动backfill。']
     });
