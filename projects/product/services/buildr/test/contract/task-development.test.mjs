@@ -99,3 +99,15 @@ test('Development Application 不硬编码自举 Project、Git/OpenSpec 或测�
   assert.match(observer, /FILESYSTEM_CONTENT_OBSERVER/);
   assert.match(observer, /GIT_CONTENT_OBSERVER/);
 });
+
+test('Task Development 在 observe 前检查新增文本文件且不扩张存量范围', () => {
+  const skill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
+  const observer = read('src/infrastructure/content/content-target-observer.mjs');
+  assert.match(skill, /创建或重写文本文件时直接遵守required Core的EOF不变量/);
+  assert.match(skill, /调用`observe`形成Content Target之前，检查Task本次新增的全部文本文件/);
+  assert.match(skill, /Git-backed scope必须同时覆盖tracked-added与未忽略的untracked文件/);
+  assert.match(skill, /不得为了清理未触达的存量EOF问题扩大当前Task范围/);
+  assert.match(skill, /检查通过后，向Development Application提交完整Change dispositions并调用`observe`/);
+  assert.match(observer, /'--cached', '--others', '--exclude-standard'/);
+  assert.doesNotMatch(observer, /trailing-blank-line|missing-final-newline|修正.*EOF/u);
+});
