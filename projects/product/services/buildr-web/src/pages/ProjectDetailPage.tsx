@@ -7,6 +7,7 @@ import { MarkdownHost } from '../components/MarkdownHost';
 import { ProjectEditModal } from '../components/ProjectEditModal';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../lib/projectDocuments';
 import { workspaceHref } from '../lib/labels';
+import { DailyProgressPanel } from './project-detail/DailyProgressPanel';
 
 type ProjectDetail = {
   revision: string;
@@ -31,11 +32,12 @@ type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 const DOC_TABS = [
   { key: 'README.md', label: 'README.md' },
   { key: 'AGENTS.md', label: 'AGENTS.md' },
+  { key: 'daily-progress', label: '每日演进' },
 ] as const;
 
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
-  const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
+  const { workspaceId, setWorkspace, setBreadcrumbParts, openAgentAction } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [data, setData] = useState<ProjectDetail | null>(null);
   const [serviceCount, setServiceCount] = useState('—');
@@ -111,6 +113,7 @@ export function ProjectDetailPage() {
 
   const onTabChange = (key: string) => {
     setActiveTab(key);
+    if (key === 'daily-progress') return;
     void openDocument(key, { replaceHistory: true, pushHistory: false });
   };
 
@@ -186,7 +189,7 @@ export function ProjectDetailPage() {
             label: tab.label,
           }))}
         />
-        {showBack ? (
+        {showBack && activeTab !== 'daily-progress' ? (
           <div className="project-document-toolbar">
             <button type="button" className="back-link project-document-back" id="project-document-back" onClick={onDocumentBack}>
               ← 返回上一篇
@@ -194,6 +197,13 @@ export function ProjectDetailPage() {
             <span className="project-document-path" id="project-document-path">{viewPath}</span>
           </div>
         ) : null}
+        {activeTab === 'daily-progress' ? (
+          <DailyProgressPanel
+            projectCode={projectCode}
+            workspaceId={workspaceId}
+            onAskAgent={() => openAgentAction('daily-progress', { projectCode, date: new Date().toISOString().slice(0, 10) })}
+          />
+        ) : (
         <div
           id={`project-document-${activeTab.replace('.', '-')}`}
           className="project-document-body"
@@ -220,6 +230,7 @@ export function ProjectDetailPage() {
             <p className="page-copy project-document-hint" role="status">{docMessage}</p>
           ) : null}
         </div>
+        )}
       </section>
       <ProjectEditModal
         open={editOpen}

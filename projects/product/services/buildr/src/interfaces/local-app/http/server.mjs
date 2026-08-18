@@ -537,11 +537,32 @@ export function createLocalWorkspaceServer(runtime, {
           if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task abandon 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
           return jsonResponse(response, 200, runtime.abandonTaskRecord(root, taskAbandonMatch[1], input));
         }
+        const taskDailyProgressMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/daily-progress$`));
+        if (request.method === 'GET' && taskDailyProgressMatch) return jsonResponse(response, 200, runtime.inspectTaskDailyProgress(root, taskDailyProgressMatch[1]));
         const projectMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
         if (request.method === 'GET' && projectMatch) return jsonResponse(response, 200, runtime.projectDetail(root, projectMatch[1]));
         if (request.method === 'PUT' && projectMatch) {
           assertWriteRequest(request, origin, sessionToken);
           return jsonResponse(response, 200, runtime.updateProjectMetadata(root, projectMatch[1], await readJsonBody(request)));
+        }
+        const projectDailyProgressTodayMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/daily-progress$/);
+        const projectDailyProgressDateMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/daily-progress\/(\d{4}-\d{2}-\d{2})$/);
+        if (request.method === 'GET' && (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)) {
+          const extra = [...requestUrl.searchParams.keys()].filter((field) => field !== 'group');
+          if (extra.length) {
+            const error = new Error('每日演进 API 只接受 group query。');
+            error.code = 'daily_progress_query_forbidden';
+            error.status = 400;
+            error.details = { field: extra[0] };
+            throw error;
+          }
+          const project = (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)[1];
+          const date = projectDailyProgressDateMatch?.[2] || undefined;
+          return jsonResponse(response, 200, runtime.inspectProjectDailyProgress(root, {
+            project,
+            date,
+            group: requestUrl.searchParams.get('group') || undefined,
+          }));
         }
         const projectDocumentMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/documents\/(.+)$/);
         if (request.method === 'GET' && projectDocumentMatch) {

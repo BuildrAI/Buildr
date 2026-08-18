@@ -12,6 +12,7 @@ import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
+import { projectDailyProgressCommand } from './project-daily-progress.mjs';
 import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from './task-execution-record.mjs';
 import { taskTerminalDeliveryInspectCommand } from './task-terminal-delivery.mjs';
 
@@ -187,6 +188,46 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'project' && action === 'create',
     run: (r, c) => r.createProject(c.argv.slice(4)),
+  },
+  {
+    key: "project daily-progress record",
+    surface: "agent-machine",
+    summary: "把 Agent 已构造的 Git 提交日摘要写入本机每日演进文件；Task 关联可选，不进入 Git 或 Task SQLite。",
+    help: [
+      "Usage: buildr project daily-progress record --project <code> [--date <YYYY-MM-DD>] --input <payload.json> [--target <canonical-workspace>] [--json]",
+      "       buildr project daily-progress record --schema|--example [--json]",
+      "",
+      "把 Agent 已构造的四问摘要、提交与变更文件写入 .buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml。",
+      "一天一份，校验通过后原子覆盖；他人提交不得挂 Task，存在的 Task ID 必须本机已有，否则整次失败且不写文件。",
+      "该命令写本机文件并可关联本机 Task Record，不进入 Git 或 Task SQLite，也不扫描 Git，不是 primary 人类主路径。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'record',
+    run: (r, c) => projectDailyProgressCommand(r, 'record', c.argv.slice(5)),
+  },
+  {
+    key: "project daily-progress inspect",
+    surface: "agent-machine",
+    summary: "只读查看某 Project 某日已保存的每日演进，并按日、人、任务投影；不创建文件。",
+    help: [
+      "Usage: buildr project daily-progress inspect --project <code> [--date <YYYY-MM-DD>] [--group day|person|task] [--target <canonical-workspace>] [--json]",
+      "",
+      "只读查看已保存的本机每日演进文件并解析仍存在的 Task 摘要。",
+      "文件不存在时返回 not-found；v1 旧文件返回 incompatible。不创建文件，也不根据 Git 或 Task 列表合成日报。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'inspect',
+    run: (r, c) => projectDailyProgressCommand(r, 'inspect', c.argv.slice(5)),
+  },
+  {
+    key: "project daily-progress list",
+    surface: "agent-machine",
+    summary: "只读列出某 Project 已保存的每日演进日期；不扫描 Git，不写文件。",
+    help: [
+      "Usage: buildr project daily-progress list --project <code> [--target <canonical-workspace>] [--json]",
+      "",
+      "只读列出 .buildr/daily-progress/<project-code>/ 中已保存的日期。不扫描 Git，也不把目录缺失解释为远端数据丢失。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
+    run: (r, c) => projectDailyProgressCommand(r, 'list', c.argv.slice(5)),
   },
   {
     key: "service create",
@@ -1027,6 +1068,17 @@ const COMMAND_ROUTES = [
 ];
 
 const COMMAND_GROUPS = [
+  {
+    key: "project daily-progress",
+    surface: "agent-machine",
+    summary: "记录、查看或列出 Project 本机每日演进；写本机文件，Task 关联可选，不进入 Git 或 Task SQLite。",
+    help: [
+      "Usage: buildr project daily-progress <record|inspect|list> --project <code> ...",
+      "",
+      "记录、查看或列出 Project 本机每日演进。这些命令写本机 YAML 并可关联本机 Task Record，不进入 Git 或 Task SQLite，不扫描 Git，也不是 primary 人类主路径，不提供定时调度。"
+    ],
+    executable: false,
+  },
   {
     key: "task delivery",
     surface: "agent-machine",

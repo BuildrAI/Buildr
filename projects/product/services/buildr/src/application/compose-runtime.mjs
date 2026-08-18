@@ -1,4 +1,5 @@
 import { registerWorkspaceInfrastructure } from '../infrastructure/filesystem/index.mjs';
+import { registerProjectDailyProgressStore } from '../infrastructure/filesystem/project-daily-progress-store.mjs';
 import { registerWorkspaceManifestRepository } from '../infrastructure/filesystem/workspace-manifest-repository.mjs';
 import { registerWorkspaceRegistryRepository } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
 import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/workspace-management-fence.mjs';
@@ -47,6 +48,7 @@ import { registerTaskEntrySnapshotApplication } from './task-entry/task-entry-sn
 import { registerTaskPlanningIdentityApplication } from './task-planning-identity/task-planning-identity-application.mjs';
 import { registerTaskOverviewApplication } from './task-overview/task-overview-application.mjs';
 import { registerParentCoordinationApplication } from './parent-coordination/parent-coordination-application.mjs';
+import { registerProjectDailyProgressApplication } from './project-daily-progress/project-daily-progress-application.mjs';
 import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
 import { registerTaskExecutionRecordApplication } from './task-execution-record/task-execution-record-application.mjs';
 import { registerVerificationApplication } from './verification/verification-application.mjs';
@@ -75,6 +77,7 @@ const REGISTRATIONS = [
   registerTaskExecutionRecordRepository,
   registerTaskExecutionRecordBodyStore,
   registerTaskEnvironmentRepository,
+  registerProjectDailyProgressStore,
   registerContentTargetObserver,
   registerProjectGitObserver,
   registerDomainsComponents,
@@ -97,6 +100,7 @@ const REGISTRATIONS = [
   registerGitWorktreeProvider,
   registerTaskEnvironmentApplication,
   registerTaskRecordApplication,
+  registerProjectDailyProgressApplication,
   registerTaskExecutionRecordApplication,
   registerTaskReviewApplication,
   registerTaskRetrospectiveApplication,

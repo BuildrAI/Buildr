@@ -1657,3 +1657,196 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .page-loading { min-height: 48vh; display: grid; place-content: center; justify-items: center; color: var(--soft-muted); font-size: 12px; }
 .loader { width: 22px; height: 22px; border: 2px solid #d6e4dc; border-top-color: var(--soft-primary); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.progress-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.date-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--soft-muted);
+  font-size: 13px;
+}
+.date-field .ant-picker {
+  min-width: 9.5em;
+}
+#progress-date {
+  font-variant-numeric: tabular-nums;
+}
+.progress-toolbar .segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: var(--soft-sidebar);
+}
+.progress-toolbar .segmented button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--soft-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.progress-toolbar .segmented button.active,
+.progress-toolbar .segmented button[aria-pressed="true"] {
+  color: var(--soft-ink);
+  background: #fff;
+  font-weight: 650;
+}
+.progress-meta,
+.progress-hint,
+.local-note {
+  color: var(--soft-muted);
+  font-size: 13px;
+}
+.progress-group {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.progress-group h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+.summary-card {
+  padding: 12px 14px;
+  border: 1px solid var(--soft-line);
+  border-radius: 10px;
+  background: #fff;
+}
+.summary-card h3 {
+  margin: 0 0 6px;
+  color: var(--soft-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.summary-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.commit-item,
+.file-item,
+.progress-item {
+  padding: 14px 16px;
+  border: 1px solid var(--soft-line);
+  border-radius: 10px;
+  background: #fff;
+}
+.commit-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.sha {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--soft-muted);
+}
+.commit-subject {
+  margin: 0 0 8px;
+  line-height: 1.55;
+}
+.commit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.author-chip,
+.owner-chip,
+.kind-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.author-chip {
+  background: var(--soft-sidebar);
+  color: var(--soft-muted);
+}
+.owner-chip.self {
+  background: rgba(79, 143, 138, 0.14);
+  color: #2f6b66;
+}
+.owner-chip.other {
+  background: #eef0f2;
+  color: #5d6670;
+}
+.kind-chip {
+  background: #eef3f0;
+  color: #3d6a80;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.file-item code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+@media (min-width: 960px) {
+  .summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.progress-summary {
+  margin: 0 0 6px;
+}
+.progress-author,
+.progress-tasks {
+  margin: 0;
+  color: var(--soft-muted);
+  font-size: 12px;
+}
+.progress-task-chip {
+  display: inline-block;
+  margin: 6px 8px 0 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--soft-sidebar);
+  text-decoration: none;
+}
+.progress-task-chip.unresolved {
+  color: #8a6a2b;
+  background: #fff6e5;
+}
+.progress-task-links {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.progress-task-links li {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--soft-line);
+  border-radius: 10px;
+  background: #fff;
+}
+.progress-task-links a {
+  font-weight: 650;
+  text-decoration: none;
+}

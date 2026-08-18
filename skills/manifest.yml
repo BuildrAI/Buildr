@@ -509,6 +509,28 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: ui-preview
+  - id: project-daily-progress
+    assetIdentity: buildr:skill:project-daily-progress
+    sourceIdentity: package:skills/buildr/project-daily-progress
+    source: buildr
+    path: buildr/project-daily-progress
+    description: 用户要求展示、生成或重跑某 Project 的每日演进，或询问能否每天自动执行时使用；先同步最新代码，再收集当日 Git 提交与更改文件，由 Agent 总结四问后通过 CLI 写入本机文件。读取路径不扫描 Git、不写 Task Record、不提供产品 cron。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: project-daily-progress
+    requires:
+      - capability: buildr.git-operations
+        version: 1
+        mode: optional
 contracts:
   - id: buildr.terminology-governance
     version: 1

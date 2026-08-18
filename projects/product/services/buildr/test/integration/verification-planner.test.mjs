@@ -37,7 +37,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
     'unit', 'component', 'integration', 'integration-declarations', 'integration-openspec', 'integration-verification', 'integration-runtime', 'integration-release', 'integration-data-store', 'integration-task-environment', 'integration-self-bootstrap',
-    'integration-task-read-models', 'integration-task-coordination', 'integration-task-execution-records', 'integration-task-development', 'integration-task-finish', 'integration-task-finish-delivery', 'contract',
+    'integration-task-read-models', 'integration-task-coordination', 'integration-project-daily-progress', 'integration-task-execution-records', 'integration-task-development', 'integration-task-finish', 'integration-task-finish-delivery', 'contract',
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit', 'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
     'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'concurrent-task-acceptance', 'candidate-tarball',
@@ -301,6 +301,11 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       path: 'src/application/json-contracts.mjs',
       required: ['system-public-json-contracts', 'system-task-finish-cli'],
       excluded: ['system-verification-contracts', 'system-openspec-contract-audit'],
+    },
+    {
+      path: 'src/application/project-daily-progress/project-daily-progress-application.mjs',
+      required: ['integration-project-daily-progress'],
+      excluded: ['integration', 'integration-task-coordination', 'integration-task-development'],
     },
   ];
   for (const sample of cases) {

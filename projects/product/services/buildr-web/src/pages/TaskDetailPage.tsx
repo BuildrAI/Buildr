@@ -15,6 +15,7 @@ import { EvidenceTab } from './task-detail/EvidenceTab';
 import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
+import { DailyProgressLinksPanel } from './task-detail/DailyProgressLinksPanel';
 import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
 import type { ParentCoordinationResult } from './task-detail/parentCoordination';
 import { PreviewTab, type UiPreviewData } from './task-detail/PreviewTab';
@@ -404,6 +405,7 @@ export function TaskDetailPage() {
   useEffect(() => {
     setPageError(null);
     setAlert(null);
+    setData(null);
     setActiveTab('overview');
     setOverviewData(null);
     setCoordinationData(null);
@@ -740,6 +742,7 @@ export function TaskDetailPage() {
             </dl>
           )}
         </section>
+        <DailyProgressLinksPanel taskId={taskId} workspaceId={workspaceId} />
         <ParentCoordinationPanel data={coordinationData} loading={coordinationLoading} onRefresh={() => { void refreshCoordination(); }} />
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {

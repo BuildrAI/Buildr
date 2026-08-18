@@ -554,6 +554,15 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       return !body.includes('正在读取') && /AGENTS\.md|Project|项目/.test(body);
     });
     assert.match(await page.locator('#project-document-AGENTS-md').innerText(), /AGENTS\.md|Project|项目/);
+    await page.getByRole('tab', { name: '每日演进', exact: true }).click();
+    await page.locator('#progress-date').waitFor({ state: 'visible' });
+    await page.locator('#progress-date').click();
+    await page.locator('.ant-picker-dropdown:visible').waitFor({ state: 'visible' });
+    await page.keyboard.press('Escape');
+    await page.locator('#daily-progress-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#daily-progress-empty').innerText(), /需要 Agent/);
+    assert.equal(await page.locator('#progress-body input, #progress-body textarea').count(), 0);
+    assert.equal(await page.locator('[data-group]').count(), 3);
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
     await page.locator('#project-edit-form').waitFor({ state: 'visible' });
     assert.equal(await page.url(), `${workspaceUrl}/projects/demo`);
@@ -746,7 +755,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
     await page.locator('#task-parent-coordination').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#task-parent-coordination').innerText(), /历史Task继续使用既有模型|没有 Parent Plan/);
+    await page.locator('#task-daily-progress').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-daily-progress').innerText(), /本机每日演进/);
     assert.equal(await page.locator('[data-task-tab]').count(), 6);
     await unique(page.getByRole('button', { name: '预演', exact: true }), '任务预演页签');
     await unique(page.getByRole('button', { name: '研发', exact: true }), '任务研发页签');

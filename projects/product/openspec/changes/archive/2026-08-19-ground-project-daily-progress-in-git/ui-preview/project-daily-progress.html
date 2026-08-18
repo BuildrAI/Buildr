@@ -1,0 +1,1152 @@
+<!doctype html>
+<!-- buildr:ui-preview -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>项目每日演进 · Git 提交驱动 · 界面预演</title>
+  <style>
+    :root {
+      --soft-bg: #f3f6f6;
+      --soft-surface: #ffffff;
+      --soft-ink: #1e2a2a;
+      --soft-muted: #5c6b6a;
+      --soft-line: #d5e0de;
+      --soft-line-2: #e4eceb;
+      --soft-primary: #4f8f8a;
+      --soft-sidebar: #f7faf9;
+      --page-gutter: 32px;
+      --shadow: 0 1px 2px rgba(30, 42, 42, 0.04), 0 6px 16px rgba(30, 42, 42, 0.05);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      color: var(--soft-ink);
+      background: var(--soft-bg);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
+    }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    .hidden { display: none !important; }
+
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--soft-bg);
+    }
+    .brand-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      color: var(--soft-ink);
+      text-decoration: none;
+    }
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--soft-primary);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .brand-link strong { font-size: 14px; font-weight: 650; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      min-height: 56px;
+      padding: 0 var(--page-gutter);
+      border-bottom: 1px solid var(--soft-line);
+      background: var(--soft-surface);
+    }
+    .top-nav {
+      display: flex;
+      align-items: stretch;
+      gap: 2px;
+      min-width: 0;
+      height: 56px;
+    }
+    .top-nav a, .topbar a[data-nav="settings"] {
+      display: flex;
+      align-items: center;
+      height: 56px;
+      padding: 0 12px;
+      border-bottom: 2px solid transparent;
+      color: var(--soft-muted);
+      text-decoration: none;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .top-nav a:hover, .topbar a[data-nav="settings"]:hover { color: var(--soft-ink); }
+    .top-nav a.active, .topbar a[data-nav="settings"].active {
+      border-bottom-color: var(--soft-primary);
+      color: var(--soft-ink);
+      font-weight: 650;
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    .workspace-switcher {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 220px;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--soft-line-2);
+      border-radius: 8px;
+      background: var(--soft-bg);
+      color: inherit;
+    }
+    .workspace-switcher .context-label { color: var(--soft-muted); font-size: 11px; }
+    .workspace-switcher strong { font-size: 12px; font-weight: 600; }
+    .caret { color: var(--soft-muted); font-size: 9px; }
+    .nav-quit {
+      height: 32px;
+      padding: 0 8px;
+      border: 0;
+      background: transparent;
+      color: var(--soft-muted);
+      cursor: pointer;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: var(--soft-surface);
+      color: var(--soft-ink);
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(30, 42, 42, 0.03);
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: #b7cdc9; }
+    .btn:disabled { opacity: 0.45; cursor: default; }
+    .btn-primary {
+      border-color: var(--soft-primary);
+      background: var(--soft-primary);
+      color: #fff;
+      box-shadow: 0 1px 2px rgba(79, 143, 138, 0.18);
+    }
+    .btn-primary:hover { filter: brightness(1.04); }
+    .btn-text {
+      height: auto;
+      padding: 10px 16px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: var(--soft-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .btn-text:hover { color: var(--soft-ink); }
+    .btn-text.active {
+      border-bottom-color: var(--soft-primary);
+      color: var(--soft-primary);
+    }
+    .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+
+    #app-view {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .resource-cockpit {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      flex: 1;
+      min-height: 0;
+    }
+    .resource-list-host {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+      padding: 16px 14px 0;
+      border-right: 1px solid var(--soft-line);
+      background: var(--soft-surface);
+    }
+    .resource-detail-host {
+      min-width: 0;
+      overflow: auto;
+      padding: 20px 24px 48px;
+    }
+    .resource-toolbar { margin-bottom: 10px; }
+    .resource-toolbar h2 { margin: 0; font-size: 16px; font-weight: 600; }
+    .page-copy, .section-copy { margin: 4px 0 0; color: var(--soft-muted); font-size: 12px; line-height: 1.45; }
+    .task-toolbar-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .count-label { color: var(--soft-muted); font-size: 13px; }
+    .resource-list-section { flex: 1; overflow: auto; padding-bottom: 24px; }
+    .list-row {
+      display: block;
+      width: 100%;
+      margin: 0 0 4px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .list-row:hover, .list-row.active { background: rgba(79, 143, 138, 0.1); }
+    .list-row strong, .list-row small {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .list-row small { margin-top: 2px; color: var(--soft-muted); font-size: 12px; font-weight: 400; }
+
+    .detail-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .detail-title-row h1, .detail-page-header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .task-detail-id {
+      margin: 0 0 8px;
+      color: var(--soft-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    .panel {
+      margin-bottom: 16px;
+      padding: 16px;
+      border: 1px solid var(--soft-line);
+      border-radius: 12px;
+      background: var(--soft-surface);
+    }
+    .panel-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .panel-heading h2 { margin: 0; font-size: 18px; }
+    .read-facts { display: grid; gap: 10px; margin: 0; }
+    .read-facts > div { display: grid; gap: 2px; }
+    .read-facts dt { color: var(--soft-muted); font-size: 12px; }
+    .read-facts dd { margin: 0; word-break: break-word; }
+    .ant-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--soft-line);
+    }
+    .ant-tabs button {
+      margin-bottom: -1px;
+      height: auto;
+      padding: 8px 12px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--soft-muted);
+      cursor: pointer;
+    }
+    .ant-tabs button:hover { color: var(--soft-ink); }
+    .ant-tabs button.active {
+      border-bottom-color: var(--soft-primary);
+      color: var(--soft-ink);
+      font-weight: 650;
+    }
+    .markdown-body { color: var(--soft-ink); line-height: 1.7; }
+    .markdown-body h2 { margin: 0 0 8px; font-size: 18px; }
+    .markdown-body p { margin: 0 0 10px; color: var(--soft-muted); }
+    .detail-tabs {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 8px 12px;
+      margin: 18px 0 20px;
+      border-bottom: 1px solid var(--soft-line);
+    }
+    .detail-tabs-list { display: flex; gap: 4px; }
+    .detail-tab-actions { display: flex; gap: 8px; margin: 0 0 8px auto; }
+    .lifecycle-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(79, 143, 138, 0.1);
+      color: var(--soft-primary);
+      font-size: 12px;
+    }
+    .lifecycle-badge.todo { background: rgba(110, 102, 155, 0.12); color: #62588f; }
+
+    .progress-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .date-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--soft-muted);
+      font-size: 13px;
+    }
+    .picker-wrap { position: relative; }
+    .date-picker {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 9.5em;
+      height: 28px;
+      padding: 0 8px 0 10px;
+      border: 1px solid var(--soft-line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--soft-ink);
+      cursor: pointer;
+    }
+    .date-picker input {
+      width: 7.2em;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+    .date-picker input:focus { outline: none; }
+    .calendar-icon {
+      width: 14px;
+      height: 14px;
+      color: var(--soft-muted);
+    }
+    .calendar-pop {
+      position: absolute;
+      z-index: 12;
+      top: calc(100% + 6px);
+      left: 0;
+      width: 280px;
+      padding: 10px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: var(--shadow);
+    }
+    .calendar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .calendar-grid span {
+      padding: 6px 0;
+      color: var(--soft-muted);
+    }
+    .calendar-grid button {
+      height: 30px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--soft-ink);
+      cursor: pointer;
+    }
+    .calendar-grid button:hover { background: rgba(79, 143, 138, 0.1); }
+    .calendar-grid button.active {
+      background: var(--soft-primary);
+      color: #fff;
+      font-weight: 650;
+    }
+    .calendar-grid button.muted { color: #9aa8a6; }
+    .segmented {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: var(--soft-bg);
+    }
+    .segmented button {
+      height: 28px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--soft-muted);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .segmented button.active {
+      background: var(--soft-surface);
+      color: var(--soft-ink);
+      font-weight: 650;
+      box-shadow: var(--shadow);
+    }
+    .progress-meta {
+      margin-left: auto;
+      color: var(--soft-muted);
+      font-size: 12px;
+    }
+    .progress-hint {
+      margin: 0 0 14px;
+      color: var(--soft-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .summary-card {
+      padding: 12px 14px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: #fbfcfc;
+    }
+    .summary-card h3 {
+      margin: 0 0 6px;
+      color: var(--soft-muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .summary-card p { margin: 0; font-size: 13px; line-height: 1.55; }
+    .progress-group { margin-bottom: 18px; }
+    .progress-group h3 {
+      margin: 0 0 8px;
+      color: var(--soft-ink);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .commit-item, .file-item, .progress-item {
+      margin-bottom: 8px;
+      padding: 12px 14px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: #fbfcfc;
+    }
+    .commit-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .sha {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: var(--soft-muted);
+    }
+    .commit-subject { margin: 0 0 8px; line-height: 1.55; }
+    .commit-meta, .progress-item-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .author-chip, .task-chip, .unresolved-chip, .owner-chip, .kind-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    .author-chip { background: rgba(79, 143, 138, 0.08); color: var(--soft-muted); }
+    .owner-chip.self { background: rgba(79, 143, 138, 0.14); color: #2f6b66; }
+    .owner-chip.other { background: #eef0f2; color: #5d6670; }
+    .kind-chip { background: #eef3f0; color: #3d6a80; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+    .task-chip {
+      border: 0;
+      background: rgba(91, 143, 168, 0.12);
+      color: #3d6a80;
+      cursor: pointer;
+    }
+    .task-chip:hover { text-decoration: underline; }
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .file-item code {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    .empty-state {
+      padding: 36px 16px 28px;
+      text-align: center;
+      color: var(--soft-muted);
+    }
+    .empty-state h2 { margin: 0 0 8px; color: var(--soft-ink); font-size: 16px; }
+    .empty-state p { margin: 0 auto 14px; max-width: 460px; line-height: 1.55; }
+    .local-note {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #f4f7f5;
+      color: var(--soft-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .progress-link {
+      display: grid;
+      gap: 2px;
+      width: fit-content;
+      margin: 0 0 10px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .progress-link:hover strong { color: var(--soft-primary); text-decoration: underline; }
+    .progress-link small { color: var(--soft-muted); font-size: 12px; }
+    .facts-panel .eyebrow {
+      margin: 0 0 4px;
+      color: var(--soft-muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .detail-layout { display: grid; gap: 16px; }
+    @media (min-width: 960px) {
+      .detail-layout { grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); }
+      .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    .drawer-backdrop {
+      position: fixed;
+      z-index: 20;
+      inset: 0;
+      background: rgba(8, 22, 16, 0.32);
+    }
+    .drawer {
+      position: fixed;
+      z-index: 21;
+      top: 0;
+      right: 0;
+      width: min(440px, 100%);
+      height: 100vh;
+      overflow: auto;
+      padding: 24px;
+      border-left: 1px solid var(--soft-line);
+      background: #fff;
+      box-shadow: -14px 0 36px rgba(9, 35, 23, 0.14);
+    }
+    .drawer-kicker { margin: 0; color: var(--soft-muted); font-size: 12px; }
+    .drawer h2 { margin: 4px 0 12px; font-size: 20px; }
+    .drawer-prompt {
+      padding: 12px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: var(--soft-bg);
+      color: var(--soft-ink);
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand-link" href="#project" data-nav-root>
+        <span class="brand-mark">B</span>
+        <strong>Buildr Web</strong>
+      </a>
+      <nav class="top-nav" aria-label="Buildr Web 主导航">
+        <a href="#task" data-nav="tasks">任务</a>
+        <a href="#project" data-nav="projects" class="active">项目</a>
+        <a href="#project" data-nav="services">服务</a>
+        <a href="#project" data-nav="articles">文章</a>
+      </nav>
+      <div class="topbar-actions">
+        <div class="workspace-switcher" aria-label="切换工作空间">
+          <span class="context-label">工作空间</span>
+          <strong>Buildr</strong>
+          <span class="caret">▼</span>
+        </div>
+        <a data-nav="settings" href="#project">设置</a>
+        <button class="nav-quit" type="button">退出</button>
+        <button class="btn btn-primary" type="button" id="open-agent-action">交给 Agent</button>
+      </div>
+    </header>
+
+    <main id="app-view">
+      <div id="view-project" class="resource-cockpit has-detail">
+        <div class="resource-list-host">
+          <section class="resource-toolbar">
+            <h2>项目</h2>
+            <p class="page-copy">选择左侧项目查看文档与关联服务；编辑在详情右上角完成。</p>
+            <div class="task-toolbar-meta">
+              <span class="count-label">2 个项目</span>
+              <button class="btn btn-primary btn-sm" type="button" style="margin-left:auto">让 Agent 创建项目</button>
+            </div>
+          </section>
+          <section class="resource-list-section">
+            <button class="list-row active" type="button">
+              <strong>Buildr 产品自举开发</strong>
+              <small>本机应用、CLI 与工作治理产品</small>
+            </button>
+            <button class="list-row" type="button">
+              <strong>组织知识库</strong>
+              <small>跨项目共享的说明与流程</small>
+            </button>
+          </section>
+        </div>
+        <div class="resource-detail-host">
+          <section class="detail-title-row project-detail-header">
+            <h1>Buildr 产品自举开发</h1>
+            <button class="btn btn-primary" type="button">编辑项目</button>
+          </section>
+          <section class="panel" aria-label="项目基本信息">
+            <dl class="read-facts">
+              <div>
+                <dt>项目说明</dt>
+                <dd>Buildr 用来开发 Buildr 自身的产品项目，覆盖本机应用、CLI 与工作治理。</dd>
+              </div>
+              <div>
+                <dt>服务登记</dt>
+                <dd>2 个已登记服务</dd>
+              </div>
+            </dl>
+          </section>
+          <section class="panel" id="project-document-tabs" aria-label="项目文档与每日演进">
+            <div class="ant-tabs" role="tablist">
+              <button type="button" role="tab" data-project-tab="readme">README.md</button>
+              <button type="button" role="tab" data-project-tab="agents">AGENTS.md</button>
+              <button type="button" role="tab" data-project-tab="progress" class="active" aria-selected="true">每日演进</button>
+            </div>
+            <div id="tab-readme" class="hidden">
+              <div class="markdown-body">
+                <h2>Buildr 产品</h2>
+                <p>当前认知仍解释产品现在长什么样。每日演进回答的是今天提交了什么，不替代这份 README。</p>
+              </div>
+            </div>
+            <div id="tab-agents" class="hidden">
+              <div class="markdown-body">
+                <h2>Agent 入口</h2>
+                <p>生成每日演进时交给 Agent：先同步，再拉取当日 Git 提交与改动文件，判断后写入。页面只读展示。</p>
+              </div>
+            </div>
+            <div id="tab-progress">
+              <div class="progress-toolbar">
+                <div class="date-field">
+                  <span>日期</span>
+                  <button class="btn btn-sm" type="button" id="prev-day">前一天</button>
+                  <div class="picker-wrap">
+                    <button class="date-picker" type="button" id="progress-date-button" aria-label="选择日期">
+                      <input id="progress-date" readonly value="2026-08-18" placeholder="请选择日期" />
+                      <svg class="calendar-icon" viewBox="0 0 16 16" aria-hidden="true">
+                        <rect x="2" y="3" width="12" height="11" rx="2" fill="none" stroke="currentColor"></rect>
+                        <path d="M2 6.5h12M5.5 2v3M10.5 2v3" fill="none" stroke="currentColor"></path>
+                      </svg>
+                    </button>
+                    <div id="calendar-pop" class="calendar-pop hidden" role="dialog" aria-label="选择日期"></div>
+                  </div>
+                  <button class="btn btn-sm" type="button" id="next-day">后一天</button>
+                </div>
+                <div class="segmented" role="group" aria-label="分组方式">
+                  <button type="button" data-group="day" class="active">按日</button>
+                  <button type="button" data-group="person">按人</button>
+                  <button type="button" data-group="task">按任务</button>
+                </div>
+                <span class="progress-meta" id="progress-meta">本机 · 3 条提交 · 关联 1 个 Task</span>
+              </div>
+              <p class="progress-hint">只读展示 Agent 已保存的日摘要。生成或重跑请用右上角「交给 Agent」；页面不会现场扫描 Git。</p>
+              <div id="progress-body"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="view-task" class="resource-cockpit has-detail hidden">
+        <div class="resource-list-host">
+          <section class="resource-toolbar">
+            <h2>任务</h2>
+            <p class="page-copy">选择左侧任务查看详情。每日演进不会改变任务状态。</p>
+            <div class="task-toolbar-meta">
+              <span class="count-label">2 个任务</span>
+            </div>
+          </section>
+          <section class="resource-list-section">
+            <button class="list-row active" type="button" data-open-task="project-daily-progress">
+              <strong>引入项目每日演进</strong>
+              <small>project-daily-progress</small>
+            </button>
+            <button class="list-row" type="button" data-open-task="local-app-soft-ui">
+              <strong>Local App 柔和产品感</strong>
+              <small>local-app-soft-ui</small>
+            </button>
+          </section>
+        </div>
+        <div class="resource-detail-host" id="task-detail-root"></div>
+      </div>
+    </main>
+  </div>
+
+  <div id="agent-action-backdrop" class="drawer-backdrop hidden"></div>
+  <aside id="agent-action-drawer" class="drawer hidden" aria-label="交给 Agent">
+    <p class="drawer-kicker">AGENT ACTION</p>
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+      <h2>交给 Agent</h2>
+      <button class="btn btn-sm" type="button" id="close-agent-action">关闭</button>
+    </div>
+    <p class="section-copy" style="margin-bottom:12px">页面不直接写每日演进，也不在打开时扫描 Git。把生成或重跑交给 Agent。</p>
+    <div class="drawer-prompt" id="agent-prompt"></div>
+  </aside>
+
+  <script>
+    const TODAY = "2026-08-18";
+    const LOCAL_EMAIL = "wangzhihong@example.com";
+    const TASKS = {
+      "project-daily-progress": {
+        id: "project-daily-progress",
+        title: "引入项目每日演进",
+        status: "进行中",
+        intent: "按 Project 保存本机每日演进；输入改为当日 Git 提交，Task 关联改为可选。"
+      },
+      "local-app-soft-ui": {
+        id: "local-app-soft-ui",
+        title: "Local App 柔和产品感",
+        status: "已完成",
+        intent: "把 Local App 视觉调整为柔和产品感。"
+      }
+    };
+    const FILES = {
+      "2026-08-18": {
+        daySummary: {
+          added: "新增以 Git 提交为输入的日摘要四问、提交列表、变更文件，以及自己/他人作者对比。",
+          updated: "每日演进从「必须挂 Task 的推进项」改为「Task 关联可选」；提案与预演按新四问对齐。",
+          deleted: "去掉「做了什么 / 做到什么程度」两个摘要维度，以及推进项必须挂已有 Task 的硬边界。",
+          drawbacks: "未提交改动不会进日报；他人提交不能挂本机 Task；摘要质量仍取决于 Agent 判断。"
+        },
+        commits: [
+          {
+            sha: "c3a91f2",
+            subject: "提案：每日演进改为 Git 提交输入，Task 关联改为可选",
+            authorName: "王志宏",
+            authorEmail: "wangzhihong@example.com",
+            authorship: "self",
+            taskIds: ["project-daily-progress"]
+          },
+          {
+            sha: "8e12b44",
+            subject: "修正产品 README 中的过时入口说明",
+            authorName: "王志宏",
+            authorEmail: "wangzhihong@example.com",
+            authorship: "self",
+            taskIds: []
+          },
+          {
+            sha: "9aa1111",
+            subject: "调整 CI 缓存路径，缩短候选验证时间",
+            authorName: "李四",
+            authorEmail: "li.si@example.com",
+            authorship: "other",
+            taskIds: []
+          }
+        ],
+        files: [
+          { path: "projects/product/openspec/changes/ground-project-daily-progress-in-git/proposal.md", kind: "added" },
+          { path: "projects/product/services/buildr-web/src/pages/project-detail/DailyProgressPanel.tsx", kind: "modified" },
+          { path: "projects/product/openspec/knowledge/overview.md", kind: "modified" },
+          { path: "projects/product/openspec/specs/project-daily-progress/spec.md", kind: "modified" },
+          { path: "projects/product/services/buildr/src/interfaces/local-app/web-dist/assets/index-CAkZ4Uns.js", kind: "deleted" }
+        ]
+      }
+    };
+
+    const state = {
+      screen: "project",
+      projectTab: "progress",
+      date: TODAY,
+      group: "day",
+      taskId: "project-daily-progress",
+      calendarOpen: false
+    };
+
+    function shiftDate(value, days) {
+      const [year, month, day] = value.split("-").map(Number);
+      const date = new Date(year, month - 1, day + days);
+      return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0")
+      ].join("-");
+    }
+
+    function taskChip(taskId) {
+      const task = TASKS[taskId];
+      if (!task) return `<span class="unresolved-chip">${taskId} · 未解析</span>`;
+      return `<button class="task-chip" type="button" data-open-task="${task.id}">${task.title}</button>`;
+    }
+
+    function commitCard(commit) {
+      const owner = commit.authorship === "self"
+        ? `<span class="owner-chip self">我的提交</span>`
+        : `<span class="owner-chip other">他人提交</span>`;
+      const chips = commit.authorship === "self" && commit.taskIds.length
+        ? commit.taskIds.map(taskChip).join("")
+        : "";
+      return `<article class="commit-item">
+        <div class="commit-top">
+          <span class="sha">${commit.sha}</span>
+          ${owner}
+        </div>
+        <p class="commit-subject">${commit.subject}</p>
+        <div class="commit-meta">
+          <span class="author-chip">${commit.authorName} · ${commit.authorEmail}</span>
+          ${chips}
+        </div>
+      </article>`;
+    }
+
+    function summaryGrid(summary) {
+      const cards = [
+        ["新增了什么", summary.added],
+        ["更新了什么", summary.updated],
+        ["删除了什么", summary.deleted],
+        ["有什么弊端", summary.drawbacks]
+      ];
+      return `<section class="summary-grid" aria-label="日摘要">
+        ${cards.map(([title, body]) => `<article class="summary-card"><h3>${title}</h3><p>${body}</p></article>`).join("")}
+      </section>`;
+    }
+
+    function fileList(files) {
+      const label = { added: "新增", modified: "修改", deleted: "删除" };
+      return `<section class="progress-group">
+        <h3>变更文件</h3>
+        ${files.map((file) => `<div class="file-item"><span class="kind-chip">${label[file.kind] || file.kind}</span><code>${file.path}</code></div>`).join("")}
+      </section>`;
+    }
+
+    function renderProgress() {
+      const body = document.getElementById("progress-body");
+      const meta = document.getElementById("progress-meta");
+      const dateInput = document.getElementById("progress-date");
+      dateInput.value = state.date;
+      const day = FILES[state.date];
+      if (!day) {
+        meta.textContent = "本机 · 当天还没有文件";
+        body.innerHTML = `<div class="empty-state" id="daily-progress-empty">
+          <h2>这一天还没有每日演进</h2>
+          <p>需要 Agent 先同步最新代码，再拉取当日 Git 提交与更改文件，对比本机 user.email 后总结新增、更新、删除与弊端，并判断是否关联 Task。页面不会根据 Git 自动填充。</p>
+          <button class="btn btn-primary" type="button" id="empty-agent-action">交给 Agent</button>
+        </div>`;
+        return;
+      }
+      const linked = new Set(day.commits.flatMap((commit) => commit.taskIds)).size;
+      meta.textContent = `本机 · ${day.commits.length} 条提交 · 关联 ${linked} 个 Task · 对比 ${LOCAL_EMAIL}`;
+      if (state.group === "person") {
+        const groups = new Map();
+        day.commits.forEach((commit) => {
+          const key = commit.authorEmail;
+          if (!groups.has(key)) groups.set(key, { label: `${commit.authorName} · ${commit.authorEmail}`, items: [] });
+          groups.get(key).items.push(commit);
+        });
+        body.innerHTML = summaryGrid(day.daySummary) + Array.from(groups.values()).map((group) => `
+          <section class="progress-group">
+            <h3>${group.label}</h3>
+            ${group.items.map(commitCard).join("")}
+          </section>`).join("") + fileList(day.files);
+        return;
+      }
+      if (state.group === "task") {
+        const groups = new Map();
+        day.commits.filter((commit) => commit.authorship === "self" && commit.taskIds.length).forEach((commit) => {
+          commit.taskIds.forEach((taskId) => {
+            const label = TASKS[taskId] ? TASKS[taskId].title : `${taskId}（未解析）`;
+            if (!groups.has(label)) groups.set(label, []);
+            groups.get(label).push(commit);
+          });
+        });
+        const unlinked = day.commits.filter((commit) => commit.authorship === "self" && !commit.taskIds.length);
+        body.innerHTML = `<p class="progress-hint">按任务只聚合已关联的自己的提交；他人提交不进入任务分组。</p>` +
+          Array.from(groups.entries()).map(([name, items]) => `
+          <section class="progress-group">
+            <h3>${name}</h3>
+            ${items.map(commitCard).join("")}
+          </section>`).join("") +
+          (unlinked.length ? `<section class="progress-group"><h3>未关联任务</h3>${unlinked.map(commitCard).join("")}</section>` : "");
+        return;
+      }
+      body.innerHTML = summaryGrid(day.daySummary) +
+        `<section class="progress-group"><h3>今日提交</h3>${day.commits.map(commitCard).join("")}</section>` +
+        fileList(day.files) +
+        `<p class="local-note">文件保存在本机 .buildr/daily-progress/product/${state.date}.yml。提交列表由 Agent 写入；打开页面时不会 git log。</p>`;
+    }
+
+    function relatedCommits(taskId) {
+      return Object.entries(FILES).flatMap(([date, day]) =>
+        day.commits
+          .filter((commit) => commit.taskIds.includes(taskId))
+          .map((commit) => ({ ...commit, date, project: "Buildr 产品自举开发" }))
+      );
+    }
+
+    function renderTask() {
+      const task = TASKS[state.taskId];
+      const related = relatedCommits(state.taskId);
+      document.querySelectorAll("#view-task .list-row").forEach((row) => {
+        row.classList.toggle("active", row.dataset.openTask === state.taskId);
+      });
+      document.getElementById("task-detail-root").innerHTML = `
+        <section class="detail-page-header">
+          <div class="detail-title-row">
+            <div>
+              <h1>${task.title}</h1>
+              <p class="task-detail-id">${task.id}</p>
+              <p class="page-copy">${task.intent}</p>
+            </div>
+            <span class="lifecycle-badge ${task.status === "进行中" ? "" : "todo"}">${task.status}</span>
+          </div>
+        </section>
+        <nav class="detail-tabs" aria-label="任务详情">
+          <div class="detail-tabs-list">
+            <button class="btn-text active" type="button">概览</button>
+            <button class="btn-text" type="button">预演</button>
+            <button class="btn-text" type="button">研发</button>
+            <button class="btn-text" type="button">证据</button>
+            <button class="btn-text" type="button">复盘</button>
+            <button class="btn-text" type="button">环境</button>
+          </div>
+          <div class="detail-tab-actions">
+            <button class="btn btn-sm" type="button">编辑进行中的任务</button>
+            <button class="btn btn-sm" type="button">结束任务</button>
+          </div>
+        </nav>
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>专业进展摘要</h2>
+              <p class="section-copy">一次只读查询组合各专业最近保存事实；顶层状态仍由 Task Record 管理。</p>
+            </div>
+            <button class="btn btn-sm" type="button">刷新摘要</button>
+          </div>
+          <dl class="read-facts">
+            <div><dt>研发</dt><dd>active · 2026-08-18 20:48</dd></div>
+            <div><dt>规划审查</dt><dd>尚未记录</dd></div>
+            <div><dt>正式验证</dt><dd>尚未记录</dd></div>
+          </dl>
+        </section>
+        <section class="panel" id="task-daily-progress" aria-label="本机每日演进">
+          <div class="panel-heading">
+            <div>
+              <h2>本机每日演进</h2>
+              <p class="section-copy">只列出 Agent 判断后关联到本任务的提交，不是任务进度。他人提交不会出现在这里。</p>
+            </div>
+          </div>
+          ${related.length ? related.map((item) => `
+            <button class="progress-link" type="button" data-back-date="${item.date}">
+              <strong>${item.subject}</strong>
+              <small>${item.date} · ${item.project} · ${item.sha} · ${item.authorName}</small>
+            </button>`).join("") : `<div class="empty-state"><h2>还没有提交引用此任务</h2><p>自己的提交被 Agent 关联后才会出现在这里。</p></div>`}
+        </section>
+        <section class="detail-layout">
+          <article class="panel">
+            <div class="panel-heading"><h2>任务记录（Task Record）</h2></div>
+            <dl class="read-facts">
+              <div><dt>任务 ID</dt><dd>${task.id}</dd></div>
+              <div><dt>项目范围</dt><dd>product</dd></div>
+            </dl>
+          </article>
+          <aside class="panel facts-panel">
+            <p class="eyebrow">技术事实</p>
+            <h2>读取证据</h2>
+            <dl class="read-facts">
+              <div><dt>数据格式</dt><dd>buildr.project-daily-progress/v2</dd></div>
+              <div><dt>存储范围</dt><dd>Workspace 本地数据</dd></div>
+            </dl>
+          </aside>
+        </section>`;
+    }
+
+    function setScreen(screen) {
+      state.screen = screen;
+      document.getElementById("view-project").classList.toggle("hidden", screen !== "project");
+      document.getElementById("view-task").classList.toggle("hidden", screen !== "task");
+      document.querySelectorAll(".top-nav a").forEach((link) => {
+        link.classList.toggle("active", link.dataset.nav === (screen === "task" ? "tasks" : "projects"));
+      });
+    }
+
+    function setProjectTab(tab) {
+      state.projectTab = tab;
+      document.querySelectorAll("[data-project-tab]").forEach((button) => {
+        const selected = button.dataset.projectTab === tab;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-selected", selected ? "true" : "false");
+      });
+      ["readme", "agents", "progress"].forEach((id) => {
+        document.getElementById("tab-" + id).classList.toggle("hidden", id !== tab);
+      });
+    }
+
+    function openAgent(date) {
+      const target = date || state.date;
+      document.getElementById("agent-prompt").textContent =
+        `请为当前项目 product 生成本机 ${target} 的每日演进。先按「更新 workspace」同步最新代码；成功后拉取该日全部 Git 提交与更改文件，用本机 git config user.email 对比作者。总结今日新增了什么、更新了什么、删除了什么、有什么弊端，再判断自己的提交是否关联已有 Task（可以为空）。他人提交必须写入但不得挂 Task。然后调用 record 覆盖当天文件。不要在页面读取时现场 git log 合成。`;
+      document.getElementById("agent-action-backdrop").classList.remove("hidden");
+      document.getElementById("agent-action-drawer").classList.remove("hidden");
+    }
+
+    function closeAgent() {
+      document.getElementById("agent-action-backdrop").classList.add("hidden");
+      document.getElementById("agent-action-drawer").classList.add("hidden");
+    }
+
+    function renderCalendar() {
+      const pop = document.getElementById("calendar-pop");
+      const [year, month, day] = state.date.split("-").map(Number);
+      const first = new Date(year, month - 1, 1);
+      const start = first.getDay();
+      const days = new Date(year, month, 0).getDate();
+      const prevDays = new Date(year, month - 1, 0).getDate();
+      const cells = [];
+      for (let i = 0; i < 42; i += 1) {
+        const offset = i - start + 1;
+        let date;
+        let muted = false;
+        if (offset < 1) {
+          date = new Date(year, month - 2, prevDays + offset);
+          muted = true;
+        } else if (offset > days) {
+          date = new Date(year, month, offset - days);
+          muted = true;
+        } else {
+          date = new Date(year, month - 1, offset);
+        }
+        const value = [
+          date.getFullYear(),
+          String(date.getMonth() + 1).padStart(2, "0"),
+          String(date.getDate()).padStart(2, "0")
+        ].join("-");
+        cells.push(`<button type="button" class="${value === state.date ? "active" : ""} ${muted ? "muted" : ""}" data-pick-date="${value}">${date.getDate()}</button>`);
+      }
+      pop.innerHTML = `<div class="calendar-head"><span>${year} 年 ${month} 月</span></div>
+        <div class="calendar-grid">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+          ${cells.join("")}
+        </div>`;
+    }
+
+    function setCalendarOpen(open) {
+      state.calendarOpen = open;
+      const pop = document.getElementById("calendar-pop");
+      pop.classList.toggle("hidden", !open);
+      if (open) renderCalendar();
+    }
+
+    document.body.addEventListener("click", (event) => {
+      const pick = event.target.closest("[data-pick-date]");
+      if (pick) {
+        state.date = pick.dataset.pickDate;
+        setCalendarOpen(false);
+        renderProgress();
+        return;
+      }
+      if (event.target.closest("#progress-date-button")) {
+        setCalendarOpen(!state.calendarOpen);
+        return;
+      }
+      if (!event.target.closest("#calendar-pop")) setCalendarOpen(false);
+      const openTask = event.target.closest("[data-open-task]");
+      if (openTask) {
+        if (!TASKS[openTask.dataset.openTask]) return;
+        state.taskId = openTask.dataset.openTask;
+        setScreen("task");
+        renderTask();
+        return;
+      }
+      const back = event.target.closest("[data-back-date]");
+      if (back) {
+        state.date = back.dataset.backDate;
+        setScreen("project");
+        setProjectTab("progress");
+        renderProgress();
+      }
+    });
+
+    document.querySelectorAll("[data-project-tab]").forEach((button) => {
+      button.addEventListener("click", () => setProjectTab(button.dataset.projectTab));
+    });
+    document.querySelectorAll("[data-group]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.group = button.dataset.group;
+        document.querySelectorAll("[data-group]").forEach((item) => item.classList.toggle("active", item === button));
+        renderProgress();
+      });
+    });
+    document.getElementById("prev-day").addEventListener("click", () => {
+      state.date = shiftDate(state.date, -1);
+      renderProgress();
+    });
+    document.getElementById("next-day").addEventListener("click", () => {
+      state.date = shiftDate(state.date, 1);
+      renderProgress();
+    });
+    document.getElementById("open-agent-action").addEventListener("click", () => openAgent());
+    document.getElementById("close-agent-action").addEventListener("click", closeAgent);
+    document.getElementById("agent-action-backdrop").addEventListener("click", closeAgent);
+    document.querySelectorAll(".top-nav a").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (link.dataset.nav === "tasks") {
+          setScreen("task");
+          renderTask();
+        } else if (link.dataset.nav === "projects") {
+          setScreen("project");
+        }
+      });
+    });
+    document.body.addEventListener("click", (event) => {
+      if (event.target.id === "empty-agent-action") openAgent(state.date);
+    });
+
+    renderProgress();
+  </script>
+</body>
+</html>

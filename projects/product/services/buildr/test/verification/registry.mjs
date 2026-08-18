@@ -47,6 +47,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
+  'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
   'integration-task-execution-records': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task and Verification execution records preserve metadata, body-store, recovery, and retention boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 25000, 'Task Development, Review, and Verification lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish core bootstrap, run, diagnostics, entry, and SQLite behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
@@ -359,6 +360,14 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/parent-coordination/**',
     'src/application/publication/**',
   ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-project-daily-progress', [
+    'test/integration/project-daily-progress-application.test.mjs',
+  ], [
+    'src/application/project-daily-progress/**',
+    'src/domain/project-daily-progress/**',
+    'src/infrastructure/filesystem/project-daily-progress-store.mjs',
+    'src/interfaces/cli/project-daily-progress.mjs',
+  ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-execution-records', [
     'test/integration/task-execution-record-application.test.mjs',
     'test/integration/task-execution-record-body-store.test.mjs',
@@ -485,6 +494,7 @@ export const verificationSteps = Object.freeze([
       'integration-self-bootstrap': 'Self-bootstrap closeout integration slice',
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
+      'integration-project-daily-progress': 'Project daily progress integration slice',
       'integration-task-execution-records': 'Task execution-record integration slice',
       'integration-task-development': 'Task Development lifecycle integration',
       'integration-task-finish': 'Task Finish core integration slice',
@@ -747,6 +757,7 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
     'integration-self-bootstrap',
     'integration-task-read-models',
     'integration-task-coordination',
+    'integration-project-daily-progress',
     'integration-task-execution-records',
     'integration-task-finish',
     'integration-task-finish-delivery',
