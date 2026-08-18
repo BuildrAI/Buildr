@@ -20,6 +20,12 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 
 authority 冲突、授权或 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
 
+### UI Preview 选择
+
+若当前 Task、提案或预期实现可能产生用户可见的前端 UI 变化，向用户询问：“本次是否需要先生成界面预演稿（UI Preview）？”询问只负责取得选择，不生成文件，也不改变语义治理或执行形态判断。
+
+只有用户在当前任务中明确确认需要，才在方案已有足够上下文、正式前端实现开始前加载独立 `ui-preview` Skill。用户拒绝、未确认或直接要求继续时不调用 Skill，正常推进后续流程；不得创建占位文件、waiver、Result、Receipt 或 blocker。UI Preview 不替代 OpenSpec Change、Planning Review 或正式实现。
+
 ## 2. 两轴决策
 
 ### 语义治理

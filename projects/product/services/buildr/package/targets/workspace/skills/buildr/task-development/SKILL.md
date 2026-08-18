@@ -15,6 +15,8 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 首次修改 proposal、Skill、代码、测试或当前知识前，复用 triage 建立的一次有界 authority source map；若尚未形成，则从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立。该 map 保留在 Agent 工作上下文，不写入 Receipt 或其他产品 store；只有 scope、authority 或相关事实变化时才增量刷新。
 
+Task 可能产生用户可见前端 UI 变化、且 triage 尚未询问时，先询问用户是否需要界面预演稿（UI Preview）。只有当前任务已有明确确认，才在正式前端实现前加载独立 `ui-preview` Skill；用户拒绝、未确认或要求继续时不生成并继续本流程。UI Preview 与是否完成 planning、形成 Content Target、进入 Verification 或 Finish 无关，不保存为 Development node、gate、Result、Receipt 或 blocker。
+
 proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
 
 日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，优先使用Task Entry Snapshot；直接调试Development owner时可对内部driver显式使用`--compact`。两者都只是response projection，不追加观察或写入，并以同源`formalVerificationReadiness`说明正式验证交接是否尚未到达、存在明确blocker或需要current knowledge即时确认。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。typed `next`与legacy `nextActions`来自同一判定；它们不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。

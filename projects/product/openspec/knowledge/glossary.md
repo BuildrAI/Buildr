@@ -94,6 +94,13 @@
 - 避免混用：不是桌面应用，不是独立远程服务，不拥有第二套数据或业务 writer。
 - 来源：canonical `openspec/specs/local-app-browser-interface/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
 
+### 界面预演稿（UI Preview）
+
+- 定义：Agent 在用户对当前任务明确确认需要后，先调查现有真实界面，再以一个或多个自包含 HTML 呈现本次提案实施后的完整页面参考。
+- 适用范围：前端 UI 可能变化的 Task、Task 关联 OpenSpec Change、设计对齐，以及正式前端开发前的视觉与交互参考；Buildr Web 只读发现并隔离展示带 `buildr:ui-preview` 标记的页面。
+- 避免混用：不是正式设计稿、生产原型、像素级验收标准、Planning Identity、规范或 Verification evidence；也不等于在真实前端工程中验证产品与技术方案的编码式原型。
+- 来源：canonical `openspec/specs/ui-preview/spec.md`（本 Change convergence 时建立）。
+
 ### Buildr Web Frontend Service
 
 - 定义：Product 下 `projects/product/services/buildr-web` Service 的正式名称，拥有 React/Vite 前端源码、依赖与正式构建。

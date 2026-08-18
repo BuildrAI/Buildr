@@ -14,6 +14,7 @@ import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
 import type { ParentCoordinationResult } from './task-detail/parentCoordination';
+import { PreviewTab, type UiPreviewData } from './task-detail/PreviewTab';
 import {
   diff,
   Fact,
@@ -33,6 +34,7 @@ type BriefState =
 
 const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'overview', label: '概览' },
+  { id: 'preview', label: '预演' },
   { id: 'development', label: '研发' },
   { id: 'evidence', label: '证据' },
   { id: 'retrospective', label: '复盘' },
@@ -54,6 +56,9 @@ export function TaskDetailPage() {
   const [editState, setEditState] = useState('可以修改');
   const [activeTab, setActiveTab] = useState<TaskTab>('overview');
   const [briefs, setBriefs] = useState<BriefState[]>([]);
+  const [previewData, setPreviewData] = useState<UiPreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [intent, setIntent] = useState('');
@@ -95,6 +100,7 @@ export function TaskDetailPage() {
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
   const developmentRequestRef = useRef(0);
+  const previewRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
   const coordinationRequestRef = useRef(0);
   const environmentRequestRef = useRef(0);
@@ -211,6 +217,24 @@ export function TaskDetailPage() {
       }
     } finally {
       if (developmentRequestRef.current === requestId) setDevelopmentLoading(false);
+    }
+  }, [taskId]);
+
+  const refreshPreview = useCallback(async () => {
+    const requestId = ++previewRequestRef.current;
+    const currentTaskId = taskId;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-previews`) as UiPreviewData;
+      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPreviewData(next);
+    } catch (err) {
+      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+        setPreviewError(`${(err as ApiError).code || 'task_ui_preview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
+        setPreviewData(null);
+      }
+    } finally {
+      if (previewRequestRef.current === requestId) setPreviewLoading(false);
     }
   }, [taskId]);
 
@@ -362,6 +386,7 @@ export function TaskDetailPage() {
       void refreshCoordination();
     }
     if (tab === 'development') void refreshDevelopment();
+    if (tab === 'preview') void refreshPreview();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
       void refreshReview();
@@ -369,7 +394,7 @@ export function TaskDetailPage() {
       void refreshExecutionRecords();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPreview, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
@@ -378,6 +403,8 @@ export function TaskDetailPage() {
     setOverviewData(null);
     setCoordinationData(null);
     setDevelopmentData(null);
+    setPreviewData(null);
+    setPreviewError(null);
     setEnvironmentData(null);
     setReviewData(null);
     setVerificationData(null);
@@ -393,6 +420,7 @@ export function TaskDetailPage() {
     setActionModal(null);
     setEditState('可以修改');
     developmentRequestRef.current += 1;
+    previewRequestRef.current += 1;
     overviewRequestRef.current += 1;
     coordinationRequestRef.current += 1;
     environmentRequestRef.current += 1;
@@ -402,6 +430,7 @@ export function TaskDetailPage() {
     retrospectiveRequestRef.current += 1;
     retrospectiveMutationRef.current += 1;
     setDevelopmentLoading(false);
+    setPreviewLoading(false);
     setOverviewLoading(false);
     setCoordinationLoading(false);
     setEnvironmentLoading(false);
@@ -899,6 +928,14 @@ export function TaskDetailPage() {
         onRefresh={() => { void refreshDevelopment(); }}
         onSelectEvidence={() => selectTab('evidence')}
         onSelectFinishExecutionRecords={() => selectExecutionRecordView('finish')}
+      />
+      <PreviewTab
+        active={activeTab === 'preview'}
+        workspaceId={workspaceId}
+        data={previewData}
+        loading={previewLoading}
+        error={previewError}
+        onRefresh={() => { void refreshPreview(); }}
       />
       <EvidenceTab
         active={activeTab === 'evidence'}

@@ -73,6 +73,24 @@ function writeChange(projectRoot, relative, title) {
   fs.writeFileSync(path.join(changeRoot, 'specs', 'demo-capability', 'spec.md'), '# Demo Capability Specification\n\n## Purpose\n\nFixture.\n\n## Requirements\n');
 }
 
+function writeUiPreviewFixtures(projectRoot, relative) {
+  const previewRoot = path.join(projectRoot, 'openspec', 'changes', relative, 'preview-fixtures');
+  fs.mkdirSync(previewRoot, { recursive: true });
+  fs.writeFileSync(path.join(previewRoot, 'overview.html'), `<!doctype html>
+<!-- buildr:ui-preview -->
+<html lang="zh-CN"><head><meta charset="utf-8"><title>预演任务总览</title><style>
+body{margin:0;font-family:system-ui;background:#f4f5f1;color:#283126}.shell{min-height:100vh}.nav{padding:18px 28px;background:#23372d;color:white}.page{padding:28px}.card{max-width:720px;padding:24px;border-radius:18px;background:white;box-shadow:0 12px 32px #23372d18}button{padding:9px 15px;border:0;border-radius:999px;background:#c9572c;color:white}
+</style></head><body data-parent-access="pending"><div class="shell"><nav class="nav">Buildr · 任务</nav><main class="page"><section class="card"><p>完整任务页面</p><h1>预演任务总览</h1><button id="preview-action">切换关键状态</button><strong id="preview-state">待确认</strong></section></main></div><script>
+try { parent.document.querySelector('#task-detail-title'); document.body.dataset.parentAccess = 'unexpected'; } catch { document.body.dataset.parentAccess = 'blocked'; }
+document.querySelector('#preview-action').addEventListener('click', () => { document.querySelector('#preview-state').textContent = '已确认'; });
+</script></body></html>`);
+  fs.writeFileSync(path.join(previewRoot, 'details.html'), `<!doctype html>
+<!-- buildr:ui-preview -->
+<html lang="zh-CN"><head><meta charset="utf-8"><title>预演任务详情</title><style>
+body{margin:0;font-family:system-ui;background:#f4f5f1;color:#283126}.nav{padding:18px 28px;background:#23372d;color:white}.page{padding:28px}.grid{display:grid;grid-template-columns:220px 1fr;gap:18px}.panel{padding:22px;border-radius:18px;background:white}
+</style></head><body><nav class="nav">Buildr · 任务</nav><main class="page"><div class="grid"><aside class="panel">任务导航</aside><section class="panel"><p>完整任务详情页面</p><h1 id="preview-detail-heading">预演任务详情</h1></section></div></main></body></html>`);
+}
+
 function createCoreFixture(root) {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke-core', '--description', '核心 Browser Smoke fixture']);
   runBuildr(['task', 'create', 'core-task', '--title', '核心浏览器任务', '--intent', '验证核心 Browser Smoke 路由与只读 Tab', '--target', root]);
@@ -169,6 +187,7 @@ capabilities:
     requiredForDelivery: true
 `);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
+  writeUiPreviewFixtures(projectRoot, 'browser-flow');
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runGit(root, ['init', '-q']);
   runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
@@ -620,6 +639,30 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
     const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
     assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
+    await page.goto(`${workspaceUrl}/tasks/browser-parent`);
+    await page.getByRole('button', { name: '预演', exact: true }).click();
+    await page.locator('#task-preview-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-preview-empty').innerText(), /还没有可查看的界面预演稿[\s\S]*不会阻塞任务推进/);
+    await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.getByRole('button', { name: '预演', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.ui-preview-page').length === 2);
+    assert.equal(await page.locator('.ui-preview-page').count(), 2);
+    await page.locator('.ui-preview-page').filter({ hasText: '预演任务总览' }).click();
+    assert.match(await page.locator('#task-preview-source').innerText(), /demo\/browser-flow[\s\S]*preview-fixtures/);
+    assert.equal(await page.locator('#task-preview-frame').getAttribute('sandbox'), 'allow-scripts');
+    const previewSource = await page.locator('#task-preview-frame').getAttribute('src');
+    assert.ok(previewSource);
+    const previewResponse = await page.request.get(new URL(previewSource, url).href);
+    assert.equal(previewResponse.status(), 200);
+    assert.match(previewResponse.headers()['content-security-policy'] || '', /sandbox allow-scripts[\s\S]*connect-src 'none'[\s\S]*form-action 'none'[\s\S]*frame-ancestors 'self'/);
+    const previewFrame = page.frameLocator('#task-preview-frame');
+    await previewFrame.locator('#preview-action').waitFor({ state: 'visible' });
+    assert.equal(await previewFrame.locator('body').getAttribute('data-parent-access'), 'blocked');
+    await previewFrame.locator('#preview-action').click();
+    assert.equal(await previewFrame.locator('#preview-state').innerText(), '已确认');
+    await page.locator('.ui-preview-page').filter({ hasText: '预演任务详情' }).click();
+    await page.frameLocator('#task-preview-frame').locator('#preview-detail-heading').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#task-preview-title').innerText(), '预演任务详情');
     runtime.beginTaskDevelopment(workspaceRoot, 'browser-parent', {
       changeDispositions: [],
       planning: { targetIdentity: null, nodes: [] },
@@ -701,7 +744,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
     await page.locator('#task-parent-coordination').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-parent-coordination').innerText(), /历史Task继续使用既有模型|没有 Parent Plan/);
-    assert.equal(await page.locator('[data-task-tab]').count(), 5);
+    assert.equal(await page.locator('[data-task-tab]').count(), 6);
+    await unique(page.getByRole('button', { name: '预演', exact: true }), '任务预演页签');
     await unique(page.getByRole('button', { name: '研发', exact: true }), '任务研发页签');
     await unique(page.getByRole('button', { name: '证据', exact: true }), '任务证据页签');
     await unique(page.getByRole('button', { name: '复盘', exact: true }), '任务复盘页签');

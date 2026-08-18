@@ -2,6 +2,8 @@
 
 `openspec-update-change` 只修订既有 planning artifacts，不授予实现、同步或归档权限。Task Environment 与 Task Development 是该 consumer 的条件依赖：纯 planning 修订可在 provider 未 ready 时安全降级；若本次修订需要新的实现、构建、测试、资源或执行位置变化，必须停止当前 update，先按正式 Task ID 重新运行 Task Environment `prepare`，取得 matching `ready`、明确 execution roots 与执行 CLI，并取得 matching Development context，随后用 `openspec-apply-change` 进入实现。
 
+若修订后首次明确会产生用户可见前端 UI 变化，且当前任务尚未询问，确认用户是否需要界面预演稿（UI Preview）。只有用户明确确认后才加载独立 `ui-preview` Skill；拒绝、未确认或继续任务时不生成、不阻塞 update/apply，也不创建任何 planning 或 lifecycle 占位事实。
+
 仅更新计划时不重复报告 upstream 已解析的 status 或 `changeRoot`。计划修订不得绕过 verification、Buildr baseline/check 或 task-finish 的既有门禁。
 
 若本次修订改变 scope、核心流程、影响、验收或 delta requirements，读取 required `buildr.current-knowledge-maintenance/v1` binding、contract 和 selected provider，刷新 `brief.md` 并重新执行 `assess`；tasks 与 `.buildr/knowledge-impact.yml` 必须反映修订后的真实影响。Provider unresolved 或 dependency blocked 时停止并报告，不得保留已知陈旧 Brief/evidence。

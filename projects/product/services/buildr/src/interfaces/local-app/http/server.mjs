@@ -84,6 +84,17 @@ function binaryResponse(response, status, content, contentType) {
   response.end(content);
 }
 
+function uiPreviewHtmlResponse(response, content) {
+  response.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-security-policy': "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  });
+  response.end(content);
+}
+
 function apiError(response, error) {
   if (response.destroyed || response.writableEnded) return;
   const status = Number.isInteger(error.status) ? error.status : 500;
@@ -499,6 +510,15 @@ export function createLocalWorkspaceServer(runtime, {
         if (request.method === 'GET' && taskChangeMatch) {
           runtime.inspectTaskRecord(root, taskChangeMatch[1]);
           return jsonResponse(response, 200, runtime.taskScopedChangeDetail(root, taskChangeMatch[1], taskChangeMatch[2], taskChangeMatch[3]));
+        }
+        const taskUiPreviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-previews$`));
+        if (request.method === 'GET' && taskUiPreviewsMatch) {
+          return jsonResponse(response, 200, runtime.taskUiPreviews(root, taskUiPreviewsMatch[1]));
+        }
+        const taskUiPreviewMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-previews/([a-f0-9]{32})$`));
+        if (request.method === 'GET' && taskUiPreviewMatch) {
+          const preview = runtime.taskUiPreview(root, taskUiPreviewMatch[1], taskUiPreviewMatch[2]);
+          return uiPreviewHtmlResponse(response, preview.html);
         }
         const taskCompleteMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/complete$`));
         if (request.method === 'POST' && taskCompleteMatch) {
