@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+## 0.1.0-rc.19 - 2026-08-19
+
+- 增加 Project 每日演进能力：通过 `buildr project daily-progress` 记录 Git 驱动的当日推进，并在 Buildr Web 的 Project 与 Task 详情中展示关联演进。
+- 重构 Buildr Web 的本机工作台壳层与主导航，支持工作空间切换；任务详情补充任务文档引用、文档预览、Parent/Child 协调进度和每日演进关联。
+- 增加界面预演与任务文档引用的可读入口，帮助 Agent 和维护者在正式实现前后对齐 proposal、design、brief 等重要材料。
+- 加固多仓库 Task Finish 与 self-bootstrap 的目标租约、最新 `dev` 收敛、交付载体隔离和 retained CLI/Doctor 身份校验，降低并发收尾与自举恢复中的误交付风险。
+- 收敛 Buildr Web development/released channel 隔离、Workspace 管理和发布感知相关的运行时与验证契约，继续保持 npm-only 分发和 Host Node `>=24.15.0 <25` 兼容范围。
+
 ## 0.1.0-rc.18 - 2026-08-16
 
 - 包含未公开发布的 `0.1.0-rc.16` 与 `0.1.0-rc.17` 候选内容；将 Product checkout 的 development Node 固定为 `24.15.0`，并把 development CLI、npm wrapper、验证、Task Environment 与 self-bootstrap 统一绑定到该 retained Node；npm package 继续只声明兼容的 Host Node 范围。
