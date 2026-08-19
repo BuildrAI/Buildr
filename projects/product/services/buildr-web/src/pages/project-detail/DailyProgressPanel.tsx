@@ -26,11 +26,6 @@ type Commit = {
   tasks: TaskRef[];
 };
 
-type FileChange = {
-  path: string;
-  kind: 'added' | 'modified' | 'deleted';
-};
-
 type Group = {
   key: string;
   label: string;
@@ -53,7 +48,6 @@ type InspectResult = {
   taskReferenceCount: number;
   daySummary: DaySummary | null;
   commits: Commit[];
-  files: FileChange[];
   groups: Group[];
 };
 
@@ -62,12 +56,6 @@ const GROUPS = [
   { value: 'person', label: '按人' },
   { value: 'task', label: '按任务' },
 ] as const;
-
-const FILE_KIND_LABEL = {
-  added: '新增',
-  modified: '修改',
-  deleted: '删除',
-} as const;
 
 const SUMMARY_CARDS = [
   { key: 'added', title: '新增了什么' },
@@ -130,21 +118,6 @@ function SummaryGrid({ summary }: { summary: DaySummary }) {
           <h3>{card.title}</h3>
           <p>{summary[card.key]}</p>
         </article>
-      ))}
-    </section>
-  );
-}
-
-function FileList({ files }: { files: FileChange[] }) {
-  if (!files.length) return null;
-  return (
-    <section className="progress-group">
-      <h3>变更文件</h3>
-      {files.map((file) => (
-        <div key={file.path} className="file-item">
-          <span className="kind-chip">{FILE_KIND_LABEL[file.kind]}</span>
-          <code>{file.path}</code>
-        </div>
       ))}
     </section>
   );
@@ -248,7 +221,6 @@ export function DailyProgressPanel({ projectCode, workspaceId, onAskAgent }: Pro
                 {section.commits.map((commit) => <CommitCard key={`${section.key}-${commit.sha}`} commit={commit} href={href} />)}
               </section>
             ))}
-            {group !== 'task' ? <FileList files={data.files} /> : null}
             <p className="local-note">文件保存在本机 .buildr/daily-progress/{data.project}/{data.date}.yml，不进 Git。提交列表由 Agent 写入；打开页面时不会 git log。</p>
           </>
         ) : null}

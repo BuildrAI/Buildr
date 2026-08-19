@@ -283,7 +283,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
       '1. 读取并遵循 project-daily-progress Skill。',
       '2. 先按「更新 workspace」同步最新代码：Git 管理时把安全 update 交给 buildr.git-operations/v1，成功后再运行 buildr sync <agent>。dirty、冲突、upstream 不明或 Doctor 未 ready 时停止，不要调用 record。',
       '3. 同步成功后收集当日 Git 提交与更改文件，用本机 git config user.email 对比作者。自己的提交可挂 0..N 个已有 Task；他人提交必须写入且不得挂 Task。总结四问：新增了什么、更新了什么、删除了什么、有什么弊端。不要根据任务列表自动填充。',
-      '4. 把 payload JSON 放到操作系统临时目录，调用 `buildr project daily-progress record --project <code> [--date YYYY-MM-DD] --input <payload.json> --json`。成功后删除临时文件。',
+      `4. 把 payload JSON 放到操作系统临时目录，调用 \`buildr project daily-progress record --project ${selectedProject || '<project-code>'}${selectedDate ? ` --date ${selectedDate}` : ''} --input <payload.json> --json\`。成功后删除临时文件。`,
       '5. 不要手写 YAML，不要写入 Task SQLite，不要实现 Buildr 产品 cron。',
     ].join('\n');
     return (

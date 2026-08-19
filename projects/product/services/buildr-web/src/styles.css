@@ -1739,7 +1739,6 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
   line-height: 1.55;
 }
 .commit-item,
-.file-item,
 .progress-item {
   padding: 14px 16px;
   border: 1px solid var(--soft-line);
@@ -1769,8 +1768,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
   gap: 8px;
 }
 .author-chip,
-.owner-chip,
-.kind-chip {
+.owner-chip {
   display: inline-flex;
   align-items: center;
   padding: 3px 8px;
@@ -1788,22 +1786,6 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .owner-chip.other {
   background: #eef0f2;
   color: #5d6670;
-}
-.kind-chip {
-  background: #eef3f0;
-  color: #3d6a80;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-}
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.file-item code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 12px;
 }
 @media (min-width: 960px) {
   .summary-grid {
