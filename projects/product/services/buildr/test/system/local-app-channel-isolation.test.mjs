@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
@@ -44,7 +45,7 @@ async function waitForExit(child, timeoutMs = 10_000) {
 }
 
 function startChild(root, releasedRoot, developmentRoot, identity) {
-  const child = spawn(process.execPath, [CHILD.pathname], {
+  const child = spawn(process.execPath, [fileURLToPath(CHILD)], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,

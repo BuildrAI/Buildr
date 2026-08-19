@@ -8,6 +8,10 @@ import { controlMetadataPath } from './control-metadata-path.mjs';
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 
+function gitArguments(args) {
+  return process.platform === 'win32' ? ['-c', 'core.longpaths=true', ...args] : args;
+}
+
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
@@ -22,7 +26,7 @@ function deliverablePath(value) {
 }
 
 export function gitContributionCommand(root, args, options = {}) {
-  return spawnSync('git', args, {
+  return spawnSync('git', gitArguments(args), {
     cwd: root,
     encoding: options.encoding ?? 'utf8',
     maxBuffer: MAX_BUFFER,

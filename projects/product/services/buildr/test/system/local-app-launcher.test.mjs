@@ -174,7 +174,7 @@ test('Buildr Web Dev builder拒绝覆盖非空输出目录', (t) => {
   assert.equal(fs.readFileSync(path.join(output, 'running-bundle'), 'utf8'), 'preserve');
 });
 
-test('macOS Buildr Web Dev默认安装到系统Applications且与正式产品分根', () => {
+test('macOS Buildr Web Dev默认安装到系统Applications且与正式产品分根', { skip: process.platform !== 'darwin' }, () => {
   const override = process.env.BUILDR_APP_DATA_DIR;
   delete process.env.BUILDR_APP_DATA_DIR;
   const status = launcherStatus({ platform: 'darwin', channel: 'development' });
