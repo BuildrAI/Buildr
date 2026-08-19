@@ -137,16 +137,21 @@ function runCommand(id, command, args, cwd, options = {}) {
   const started = process.hrtime.bigint();
   const startedAt = new Date().toISOString();
   const runtimePath = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}`;
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: MAX_OUTPUT_BYTES,
-    env: options.env || { ...process.env, PATH: runtimePath },
-  });
+  let result;
+  try {
+    result = spawnSync(command, args, {
+      cwd,
+      encoding: 'utf8',
+      maxBuffer: MAX_OUTPUT_BYTES,
+      env: options.env || { ...process.env, PATH: runtimePath },
+    });
+  } catch (error) {
+    result = { status: null, signal: null, error, stdout: '', stderr: '' };
+  }
   const normalized = {
     status: Number.isInteger(result.status) ? result.status : 1,
     signal: result.signal || null,
-    errorCode: result.error?.code || null,
+    errorCode: result.error?.code || (result.error ? 'spawn_failed' : null),
     stdout: result.stdout || '',
     stderr: result.stderr || result.error?.message || '',
   };

@@ -17,16 +17,21 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitForInstance(file, timeoutMs = 10_000) {
+const INSTANCE_STARTUP_TIMEOUT_MS = process.platform === 'win32' ? 60_000 : 10_000;
+
+async function waitForInstance(file, { child = null, stderr = () => '', timeoutMs = INSTANCE_STARTUP_TIMEOUT_MS } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const value = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (value.url && value.secret && value.pid) return value;
     } catch {}
+    if (child?.exitCode !== null) {
+      throw new Error(`Child exited before writing ${file}: exitCode=${child.exitCode}; stderr=${stderr() || '<empty>'}`);
+    }
     await wait(25);
   }
-  throw new Error(`Timed out waiting for ${file}.`);
+  throw new Error(`Timed out waiting for ${file} after ${timeoutMs}ms; childExitCode=${child?.exitCode ?? 'running'}; stderr=${stderr() || '<empty>'}`);
 }
 
 async function waitForExit(child, timeoutMs = 10_000) {
@@ -69,14 +74,14 @@ test('released与development普通HTTP Server并行运行且独立退出', async
     channel: 'npm', runtime: { role: 'host' }, installationIdentity: 'released-test',
   });
   children.push(released);
-  const releasedState = await waitForInstance(path.join(releasedRoot, 'instance.json'));
+  const releasedState = await waitForInstance(path.join(releasedRoot, 'instance.json'), { child: released.child, stderr: released.stderr });
 
   const development = startChild(developmentRoot, releasedRoot, developmentRoot, {
     package: '@buildr-ai/buildr', version: 'test', protocolIdentity: 'buildr.web-protocol/v1',
     channel: 'development', runtime: { role: 'development' }, installationIdentity: 'development-test',
   });
   children.push(development);
-  const developmentState = await waitForInstance(path.join(developmentRoot, 'instance.json'));
+  const developmentState = await waitForInstance(path.join(developmentRoot, 'instance.json'), { child: development.child, stderr: development.stderr });
 
   assert.notEqual(releasedState.pid, developmentState.pid);
   assert.notEqual(releasedState.url, developmentState.url);

@@ -62,10 +62,10 @@ function namedTargetPath(platform, name, installRoot = defaultInstallRoot(platfo
 }
 function targetPath(platform, channel, installRoot = defaultInstallRoot(platform)) { return namedTargetPath(platform, appName(channel), installRoot); }
 function legacyTargetPath(platform, channel, installRoot = defaultInstallRoot(platform)) { return namedTargetPath(platform, legacyAppName(channel), installRoot); }
-function appDataRoot() {
-  return resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }).dataRoot;
+function appDataRoot(platform = process.platform) {
+  return resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, { platform }).dataRoot;
 }
-function runningInstance() { try { return JSON.parse(fs.readFileSync(path.join(appDataRoot(), 'instance.json'), 'utf8')); } catch { return null; } }
+function runningInstance(platform = process.platform) { try { return JSON.parse(fs.readFileSync(path.join(appDataRoot(platform), 'instance.json'), 'utf8')); } catch { return null; } }
 function identityPath(target, platform) { return platform === 'darwin' ? path.join(target, 'Contents', 'Resources', 'launcher-identity.json') : path.join(target, 'launcher-identity.json'); }
 function readIdentity(target, platform) { try { return JSON.parse(fs.readFileSync(identityPath(target, platform), 'utf8')); } catch { return null; } }
 function ownedLauncher(target, platform, channel) {
@@ -191,7 +191,7 @@ export function launcherStatus({ platform = process.platform, channel = 'develop
   assertDevelopmentChannel(channel);
   const target = targetPath(platform, channel, installRoot);
   const legacyTarget = legacyTargetPath(platform, channel, installRoot);
-  const instance = runningInstance();
+  const instance = runningInstance(platform);
   const current = ownedLauncher(target, platform, channel);
   const legacy = ownedLauncher(legacyTarget, platform, channel);
   const diagnostics = [current.diagnostic, legacy.diagnostic, ...launcherDiagnostics(current.identity)].filter(Boolean);
@@ -199,7 +199,7 @@ export function launcherStatus({ platform = process.platform, channel = 'develop
     schemaVersion: 'buildr.launcher-status/v1',
     platform,
     channel,
-    dataRoot: appDataRoot(),
+    dataRoot: appDataRoot(platform),
     target,
     present: current.present,
     installed: current.owned,

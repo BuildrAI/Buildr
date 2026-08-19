@@ -599,7 +599,12 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.equal(fs.existsSync(environmentRoot), true);
   runtime.openTaskExecutionRecord = openTaskExecutionRecord;
   const doctorBlocked = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
-  assert.equal(doctorBlocked.status, 'blocked');
+  assert.equal(doctorBlocked.status, 'blocked', JSON.stringify({
+    status: doctorBlocked.status,
+    primaryFailure: doctorBlocked.primaryFailure,
+    delivery: doctorBlocked.delivery,
+    deliverPhase: doctorBlocked.phases.find((phase) => phase.id === 'deliver'),
+  }, null, 2));
   assert.equal(doctorBlocked.primaryFailure.operation, 'retained-doctor');
   assert.equal(doctorBlocked.primaryFailure.code, 'task-finish.retained-doctor-failed');
   assert.equal(doctorBlocked.delivery.status, 'activation-blocked');
