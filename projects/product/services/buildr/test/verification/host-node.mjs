@@ -38,6 +38,7 @@ function writeSummary(status) {
     stream: process.stdout,
     errorStream: process.stderr,
     executionProfile,
+    expectedNodeVersion: null,
   });
 }
 

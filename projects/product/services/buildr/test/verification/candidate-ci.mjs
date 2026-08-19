@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
+import { createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.mjs';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.mjs';
 import { executePlan } from './plan-runner.mjs';
 import { createCandidateCiShardPlan } from './planner.mjs';
@@ -12,11 +12,13 @@ import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerification
 import {
   aggregateCandidateCiEvidence,
   candidateCiRegistryIdentity,
+  createCandidateCiCheckpoint,
   createCandidateCiEvidence,
   readCandidateCiArtifact,
   readCandidateCiEvidenceFiles,
   resolveCandidateSourceCommit,
   writeCandidateCiEvidence,
+  writeCandidateCiCheckpoint,
 } from './candidate-ci-evidence.mjs';
 import {
   CANDIDATE_PACK_METADATA_ENV,
@@ -30,6 +32,7 @@ const action = process.argv[2];
 const id = process.argv[3];
 const outputRoot = path.resolve(process.env.BUILDR_CANDIDATE_CI_OUTPUT_DIR || path.join(os.tmpdir(), 'buildr-candidate-ci'));
 const evidencePath = (evidenceId) => path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT || path.join(outputRoot, `candidate-ci-evidence-${evidenceId}.json`));
+const checkpointPath = (evidenceId) => path.join(path.dirname(evidencePath(evidenceId)), `candidate-ci-checkpoint-${evidenceId}.json`);
 const expectedSource = process.env.BUILDR_CANDIDATE_SOURCE_SHA || null;
 const workflowIdentity = process.env.GITHUB_RUN_ID ? {
   runId: process.env.GITHUB_RUN_ID,
@@ -58,15 +61,39 @@ async function runShard(shardId) {
   const runner = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : process.platform;
   if (runner !== shard.runner) throw new Error(`Candidate CI shard ${shardId} requires ${shard.runner}, active runner is ${runner}`);
   const sourceCommit = resolveCandidateSourceCommit(productRoot, expectedSource);
+  const registryIdentity = candidateCiRegistryIdentity();
   const artifactDirectory = path.resolve(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'));
   const externalArtifact = shard.requiresArtifact ? readCandidateCiArtifact(artifactDirectory, sourceCommit) : null;
   const plan = createCandidateCiShardPlan(shardId, { externalArtifact: Boolean(externalArtifact) });
   const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
   let results = [];
   let status = 'failed';
   let failure = null;
+  const completedResults = [];
+  const writeCheckpoint = (checkpointStatus = 'running') => {
+    let checkpointArtifact = externalArtifact;
+    if (!checkpointArtifact && shard.producesArtifact) {
+      try { checkpointArtifact = readCandidateCiArtifact(artifactDirectory, sourceCommit); } catch {}
+    }
+    const checkpoint = createCandidateCiCheckpoint({
+      id: shardId,
+      sourceCommit,
+      registryIdentity,
+      workflow: workflowIdentity,
+      artifact: checkpointArtifact?.identity ?? null,
+      expectedStepIds: shard.stepIds,
+      completedResults,
+      startedAt,
+      updatedAt: new Date().toISOString(),
+      status: checkpointStatus,
+    });
+    const output = writeCandidateCiCheckpoint(checkpointPath(shardId), checkpoint);
+    process.stdout.write(`[candidate-ci] checkpoint=${output} completed=${checkpoint.completedStepIds.length}/${checkpoint.expectedStepIds.length}\n`);
+  };
   try {
     fs.mkdirSync(outputRoot, { recursive: true });
+    writeCheckpoint('running');
     const execution = await executePlan(plan, {
       productRoot,
       projectRoot,
@@ -80,6 +107,10 @@ async function runShard(shardId) {
       env: externalArtifact ? artifactEnvironment(externalArtifact) : {},
       runId: process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_RUN_ID}-${shardId}` : `candidate-ci-${shardId}-${process.pid}`,
       taskId: `candidate-ci-${shardId}`,
+      onComplete(result) {
+        completedResults.push(result);
+        writeCheckpoint(result.status === 'passed' ? 'running' : 'failed');
+      },
     });
     results = execution.results;
     status = execution.passed ? 'passed' : 'failed';
@@ -97,15 +128,16 @@ async function runShard(shardId) {
     }
   }
   const finishedAtMs = Date.now();
+  if (completedResults.length > 0) writeCheckpoint(status === 'passed' ? 'passed' : 'failed');
   const evidence = createCandidateCiEvidence({
     kind: 'shard',
     id: shardId,
     sourceCommit,
-    registryIdentity: candidateCiRegistryIdentity(),
+    registryIdentity,
     workflow: workflowIdentity,
     artifact: artifact?.identity ?? null,
     primaryStepIds: shard.stepIds,
-    startedAt: new Date(startedAtMs).toISOString(),
+    startedAt,
     finishedAt: new Date(finishedAtMs).toISOString(),
     durationMs: finishedAtMs - startedAtMs,
     status,
@@ -130,15 +162,16 @@ function runHostNode(tupleId) {
   const runner = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : process.platform;
   if (runner !== tuple.runner) throw new Error(`Host Node tuple ${tupleId} requires ${tuple.runner}, active runner is ${runner}`);
   assertHostNode(tuple);
+  const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });
   const sourceCommit = resolveCandidateSourceCommit(productRoot, expectedSource);
   const artifact = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'), sourceCommit);
   fs.mkdirSync(outputRoot, { recursive: true });
   const startedAtMs = Date.now();
-  const result = spawnCommandSync(process.execPath, [path.join(productRoot, 'test/verification/host-node.mjs')], {
+  const result = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'test/verification/host-node.mjs')], {
     cwd: productRoot,
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...exactNode.env,
       ...artifactEnvironment(artifact),
       BUILDR_TIMING_OUTPUT: process.env.BUILDR_TIMING_OUTPUT || path.join(outputRoot, `host-node-timing-${tupleId}.json`),
       BUILDR_DIAGNOSTICS_OUTPUT: process.env.BUILDR_DIAGNOSTICS_OUTPUT || path.join(outputRoot, `host-node-diagnostics-${tupleId}`),

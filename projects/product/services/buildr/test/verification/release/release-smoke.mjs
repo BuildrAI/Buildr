@@ -14,11 +14,11 @@ import { createReleaseArtifact, readReleaseArtifact } from '../../../scripts/rel
 import { officialRegistry } from '../../../scripts/release/registry-version-state.mjs';
 import { readSharedCandidatePackage } from './candidate-package.mjs';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../timing/phases.mjs';
+import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure/process.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const packageName = '@buildr-ai/buildr';
 const exactRegistryPackagePattern = /^@buildr-ai\/buildr@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
-const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 export const RELEASE_ARTIFACT_MANIFEST_ENV = 'BUILDR_RELEASE_ARTIFACT_MANIFEST';
 export const RELEASE_PACKAGE_SPEC_ENV = 'BUILDR_RELEASE_PACKAGE_SPEC';
@@ -69,7 +69,7 @@ function run(command, args, options = {}) {
     cwd: options.cwd ?? productRoot,
     encoding: 'utf8',
     env: { ...process.env, ...options.env },
-    shell: process.platform === 'win32' && command === npmExecutable,
+    shell: process.platform === 'win32' && /\.cmd$/i.test(command),
   });
   if (result.status !== (options.expectedStatus ?? 0)) {
     throw new Error(`${command} ${args.join(' ')} exited ${result.status}:\n${result.stdout}\n${result.stderr}`);
@@ -164,6 +164,10 @@ export function cleanupReleaseSmokeRoot(root, options = {}) {
 }
 
 export async function runReleaseSmoke(env = process.env) {
+  const expectedVersion = fs.readFileSync(path.resolve(productRoot, '../..', '.node-version'), 'utf8').trim();
+  const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true, expectedVersion });
+  const nodeExecutable = exactNode.nodeExecutable;
+  const npmExecutable = exactNode.npmExecutable;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-smoke-'));
   const packDirectory = path.join(root, 'pack');
   const prefix = path.join(root, 'prefix');
@@ -171,11 +175,13 @@ export async function runReleaseSmoke(env = process.env) {
   const appData = path.join(root, 'app-data');
   const npmCache = path.join(root, 'npm-cache');
   const runtimeEnv = {
+    ...exactNode.env,
     BUILDR_APP_DATA_DIR: appData,
     BUILDR_PRODUCT_DATA_DIR: appData,
     npm_config_cache: npmCache,
     npm_config_update_notifier: 'false',
   };
+  process.stdout.write(`[release-smoke] node=${JSON.stringify(exactNode.audit)}\n`);
   const source = resolveReleaseSmokeSource(env);
   const phase = createVerificationPhaseRecorder('release-tarball-smoke', { persistEvidence: true });
   let web = null;
@@ -185,7 +191,7 @@ export async function runReleaseSmoke(env = process.env) {
   let launcherTarget = null;
 
   function runBuildr(buildrScript, args) {
-    return run(process.execPath, [buildrScript, ...args], {
+    return run(nodeExecutable, [buildrScript, ...args], {
       cwd: workspace,
       env: runtimeEnv,
     });
@@ -228,7 +234,7 @@ export async function runReleaseSmoke(env = process.env) {
     });
 
     await phase.run('web-launcher-lifecycle', async () => {
-      const updateCheck = parseJson('registry update check', run(process.execPath, [buildrScript, 'update', 'check', '--json'], {
+      const updateCheck = parseJson('registry update check', run(nodeExecutable, [buildrScript, 'update', 'check', '--json'], {
       cwd: workspace,
       expectedStatus: 1,
       env: {
@@ -245,7 +251,7 @@ export async function runReleaseSmoke(env = process.env) {
 
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     let webStderr = '';
-    web = spawn(process.execPath, [buildrScript, 'web', '--no-open', '--port', '0'], {
+    web = spawn(nodeExecutable, [buildrScript, 'web', '--no-open', '--port', '0'], {
       cwd: workspace,
       env: { ...process.env, ...runtimeEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -262,7 +268,7 @@ export async function runReleaseSmoke(env = process.env) {
       assert.equal(installedLauncher.status, 'ready');
       assert.equal(installedLauncher.binding.schemaVersion, 'buildr.npm-launcher-binding/v2');
       assert.deepEqual(installedLauncher.binding.webPort, { preferred: 4457, fallback: 'random' });
-      assert.equal(sameFilesystemPath(installedLauncher.binding.hostNode.path, process.execPath), true, JSON.stringify({ actual: installedLauncher.binding.hostNode.path, expected: process.execPath }));
+      assert.equal(sameFilesystemPath(installedLauncher.binding.hostNode.path, nodeExecutable), true, JSON.stringify({ actual: installedLauncher.binding.hostNode.path, expected: nodeExecutable }));
       assert.equal(sameFilesystemPath(installedLauncher.binding.packageEntry.path, buildrScript), true);
       assert.equal(installedLauncher.binding.installationOwnershipIdentity, health.productIdentity.installationIdentity);
 
@@ -350,7 +356,7 @@ export async function runReleaseSmoke(env = process.env) {
           env: { ...runtimeEnv, BUILDR_LAUNCHER_SHORTCUT: launcherTarget },
         });
       }
-      const stale = parseJson('launcher drift status', run(process.execPath, [buildrScript, 'web', 'launcher', 'status', '--target', launcherTarget, '--json'], {
+      const stale = parseJson('launcher drift status', run(nodeExecutable, [buildrScript, 'web', 'launcher', 'status', '--target', launcherTarget, '--json'], {
         cwd: workspace,
         env: runtimeEnv,
         expectedStatus: 1,

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -20,7 +21,12 @@ export function writeVerificationDiagnostics(step, stdout, stderr) {
   const stderrPath = path.join(directory, `${base}.stderr.log`);
   fs.writeFileSync(stdoutPath, stdout || '', 'utf8');
   fs.writeFileSync(stderrPath, stderr || '', 'utf8');
-  return { stdoutPath, stderrPath };
+  const digest = (value) => `sha256-${crypto.createHash('sha256').update(value || '').digest('hex')}`;
+  return {
+    stdoutPath,
+    stderrPath,
+    diagnosticDigests: { stdout: digest(stdout), stderr: digest(stderr) },
+  };
 }
 
 export function cleanupOwnedProcessGroup(pid, { platform = process.platform, kill = process.kill, killTree = spawnSync } = {}) {
@@ -61,13 +67,26 @@ function defaultListProcesses() {
 
 let sharedProcessSnapshot = null;
 let sharedProcessSnapshotAt = 0;
+let sharedProcessSamplingMetrics = { requests: 0, snapshots: 0 };
 
 function sharedListProcesses() {
+  sharedProcessSamplingMetrics.requests += 1;
   const now = Date.now();
   if (sharedProcessSnapshot && now - sharedProcessSnapshotAt < 40) return sharedProcessSnapshot;
+  sharedProcessSamplingMetrics.snapshots += 1;
   sharedProcessSnapshot = defaultListProcesses();
   sharedProcessSnapshotAt = now;
   return sharedProcessSnapshot;
+}
+
+export function resetProcessLineageSamplingMetrics() {
+  sharedProcessSnapshot = null;
+  sharedProcessSnapshotAt = 0;
+  sharedProcessSamplingMetrics = { requests: 0, snapshots: 0 };
+}
+
+export function readProcessLineageSamplingMetrics() {
+  return { ...sharedProcessSamplingMetrics };
 }
 
 function processInstanceKey(processInfo) {
@@ -198,6 +217,7 @@ export function cleanupTrackedDescendants(rootPid, ownedProcesses, { platform = 
 
 export async function runVerificationStep(step, runtime = {}) {
   const startedAt = Date.now();
+  const platform = runtime.platform ?? process.platform;
   const phaseOutputPath = step.diagnosticsDirectory
     ? path.join(path.resolve(step.diagnosticsDirectory), `${diagnosticBaseName(step)}.phases.jsonl`)
     : null;
@@ -212,12 +232,19 @@ export async function runVerificationStep(step, runtime = {}) {
     let processCleanup = { status: 'pending', ownership: 'unavailable' };
     let lineageTracker = null;
     let cleanupCompleted = false;
+    let terminating = false;
     let exitCloseTimer = null;
+    let wallTimer = null;
+    let abortListener = null;
     let exitResult = null;
     const requestedExitCloseGraceMs = runtime.exitCloseGraceMs ?? 10_000;
     const exitCloseGraceMs = Number.isFinite(requestedExitCloseGraceMs) && requestedExitCloseGraceMs >= 0 ? requestedExitCloseGraceMs : 10_000;
     const scheduleTimeout = runtime.setTimeout ?? setTimeout;
     const cancelTimeout = runtime.clearTimeout ?? clearTimeout;
+    const wait = runtime.wait ?? ((delayMs) => new Promise((resolveWait) => setTimeout(resolveWait, delayMs)));
+    const timeoutMs = Number.isFinite(step.timeoutMs) && step.timeoutMs > 0 ? step.timeoutMs : null;
+    const terminationGraceMs = Number.isFinite(runtime.terminationGraceMs) && runtime.terminationGraceMs >= 0 ? runtime.terminationGraceMs : 2_000;
+    const terminationConfirmMs = Number.isFinite(runtime.terminationConfirmMs) && runtime.terminationConfirmMs >= 0 ? runtime.terminationConfirmMs : 1_000;
     const cleanup = () => {
       if (cleanupCompleted) return processCleanup;
       cleanupCompleted = true;
@@ -233,11 +260,15 @@ export async function runVerificationStep(step, runtime = {}) {
       };
       return processCleanup;
     };
-    const finish = (exitCode, error = null, failureCode = null) => {
+    const finish = (exitCode, error = null, failureCode = null, statusOverride = null) => {
       if (settled) return;
       settled = true;
       if (exitCloseTimer !== null) cancelTimeout(exitCloseTimer);
       exitCloseTimer = null;
+      if (wallTimer !== null) cancelTimeout(wallTimer);
+      wallTimer = null;
+      if (abortListener && runtime.signal) runtime.signal.removeEventListener('abort', abortListener);
+      abortListener = null;
       cleanup();
       if (error) stderr += `${error.message}\n`;
       if (processCleanup.status === 'failed' && exitCode === 0) {
@@ -253,9 +284,10 @@ export async function runVerificationStep(step, runtime = {}) {
         : '';
       resolve({
         name: step.name,
-        status: exitCode === 0 ? 'passed' : 'failed',
+        status: statusOverride ?? (exitCode === 0 ? 'passed' : 'failed'),
         exitCode,
         durationMs,
+        process: Number.isInteger(child?.pid) ? { pid: child.pid, processGroupId: platform === 'win32' ? null : child.pid } : null,
         stdout,
         stderr,
         processCleanup,
@@ -273,15 +305,92 @@ export async function runVerificationStep(step, runtime = {}) {
         ? { ...(step.env ?? process.env), BUILDR_VERIFICATION_PHASE_OUTPUT: phaseOutputPath }
         : step.env ?? process.env,
       shell: step.shell ?? false,
-      detached: process.platform !== 'win32',
+      detached: platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     lineageTracker = createOwnedDescendantTracker(child.pid, runtime);
+    const processGroupId = platform === 'win32' ? null : child.pid;
+    runtime.onSpawn?.({ pid: child.pid, processGroupId, startedAt });
+    const terminate = async (failureCode, status, message) => {
+      if (settled || terminating) return;
+      terminating = true;
+      if (wallTimer !== null) cancelTimeout(wallTimer);
+      wallTimer = null;
+      stderr += `${message}\n`;
+      cleanup();
+      await wait(terminationGraceMs);
+      const forced = { processGroup: [], descendants: [] };
+      if (platform === 'win32') {
+        const result = (runtime.killTree ?? spawnSync)('taskkill', ['/pid', String(child.pid), '/t', '/f'], { encoding: 'utf8' });
+        if (result.status !== 0 && !/not found|no running instance/i.test(`${result.stdout || ''}\n${result.stderr || ''}`)) {
+          forced.processGroup.push({ pid: child.pid, error: `${result.stdout || ''}\n${result.stderr || ''}`.trim() || `taskkill exited ${result.status}` });
+        }
+      } else {
+        try {
+          (runtime.kill ?? process.kill)(-child.pid, 0);
+          (runtime.kill ?? process.kill)(-child.pid, 'SIGKILL');
+          forced.processGroup.push({ pid: child.pid, signal: 'SIGKILL' });
+        } catch (error) {
+          if (error.code !== 'ESRCH') forced.processGroup.push({ pid: child.pid, error: error.message });
+        }
+        const owned = processCleanup.descendants?.observed ?? [];
+        for (const pid of owned) {
+          try {
+            (runtime.kill ?? process.kill)(pid, 0);
+            (runtime.kill ?? process.kill)(pid, 'SIGKILL');
+            forced.descendants.push({ pid, signal: 'SIGKILL' });
+          } catch (error) {
+            if (error.code !== 'ESRCH') forced.descendants.push({ pid, error: error.message });
+          }
+        }
+      }
+      const kill = runtime.kill ?? process.kill;
+      const confirmationTargets = platform === 'win32'
+        ? [{ pid: child.pid, target: child.pid, kind: 'pid-tree' }]
+        : [{ pid: child.pid, target: -child.pid, kind: 'process-group' }, ...(processCleanup.descendants?.observed ?? []).map((pid) => ({ pid, target: pid, kind: 'descendant' }))];
+      const deadline = Date.now() + terminationConfirmMs;
+      let remaining = confirmationTargets;
+      while (remaining.length > 0) {
+        const next = [];
+        for (const target of remaining) {
+          try {
+            kill(target.target, 0);
+            next.push(target);
+          } catch (error) {
+            if (error.code !== 'ESRCH') forced.descendants.push({ pid: target.pid, error: `exit confirmation failed: ${error.message}` });
+          }
+        }
+        remaining = next;
+        if (remaining.length === 0 || Date.now() >= deadline) break;
+        await wait(Math.min(25, Math.max(1, deadline - Date.now())));
+      }
+      for (const target of remaining) forced.descendants.push({ pid: target.pid, error: `${target.kind} remained alive after ${terminationConfirmMs} ms exit confirmation` });
+      const forceFailures = [...forced.processGroup, ...forced.descendants].filter((item) => item.error);
+      processCleanup = {
+        ...processCleanup,
+        status: processCleanup.status === 'failed' || forceFailures.length > 0 ? 'failed' : 'clean',
+        escalation: { graceMs: terminationGraceMs, confirmationMs: terminationConfirmMs, forced },
+      };
+      finish(status === 'timed-out' ? 124 : 130, null, failureCode, status);
+    };
+    if (timeoutMs !== null) {
+      wallTimer = scheduleTimeout(() => {
+        void terminate('capability-timeout', 'timed-out', `capability-timeout: ${step.id ?? step.name} exceeded ${timeoutMs} ms (pid=${child.pid}, pgid=${processGroupId ?? 'n/a'}).`);
+      }, timeoutMs);
+      wallTimer?.unref?.();
+    }
+    if (runtime.signal) {
+      if (runtime.signal.aborted) void terminate('capability-cancelled', 'cancelled', `capability-cancelled: ${step.id ?? step.name} was cancelled.`);
+      else {
+        abortListener = () => void terminate('capability-cancelled', 'cancelled', `capability-cancelled: ${step.id ?? step.name} was cancelled.`);
+        runtime.signal.addEventListener('abort', abortListener, { once: true });
+      }
+    }
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => finish(1, error));
     child.on('exit', (code, signal) => {
-      if (settled || exitResult) return;
+      if (settled || terminating || exitResult) return;
       exitResult = { code: Number.isInteger(code) ? code : 1, signal };
       cleanup();
       exitCloseTimer = scheduleTimeout(() => {
@@ -290,6 +399,7 @@ export async function runVerificationStep(step, runtime = {}) {
       }, exitCloseGraceMs);
     });
     child.on('close', (code, signal) => {
+      if (terminating) return;
       const finalSignal = signal ?? exitResult?.signal;
       if (finalSignal) stderr += `terminated by signal ${finalSignal}\n`;
       finish(Number.isInteger(code) ? code : exitResult?.code ?? 1);

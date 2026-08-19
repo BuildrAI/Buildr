@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { buildCommandInvocation } from '../../src/infrastructure/process.mjs';
+import { buildCommandInvocation, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
 import {
   createCandidatePackage,
   CANDIDATE_PACK_METADATA_ENV,
@@ -22,16 +22,23 @@ export function workerBudgetEnvironment(step, executionProfile) {
 export function createVerificationExecutor(options) {
   const productRoot = path.resolve(options.productRoot);
   const projectRoot = path.resolve(options.projectRoot ?? productRoot);
-  const nodeBin = path.dirname(process.execPath);
+  const nodeVersionPath = path.join(projectRoot, '.node-version');
+  const expectedVersion = options.expectedNodeVersion === null
+    ? undefined
+    : options.expectedNodeVersion ?? (fs.statSync(nodeVersionPath, { throwIfNoEntry: false })?.isFile() ? fs.readFileSync(nodeVersionPath, 'utf8').trim() : undefined);
+  const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: { ...process.env, ...options.env }, requireNpm: true, expectedVersion });
+  const nodeBin = exactNode.audit.bin;
   const nodeModulesBin = path.join(productRoot, 'node_modules', '.bin');
-  const npmExecutable = path.join(nodeBin, process.platform === 'win32' ? 'npm.cmd' : 'npm');
+  const npmExecutable = exactNode.npmExecutable;
   const openspecExecutable = path.join(nodeModulesBin, process.platform === 'win32' ? 'openspec.cmd' : 'openspec');
-  const inheritedEnv = { ...process.env, ...options.env };
+  const inheritedEnv = exactNode.env;
   const baseEnv = {
     ...inheritedEnv,
     BUILDR_PROJECT_ROOT: projectRoot,
     BUILDR_SERVICE_ROOT: productRoot,
-    PATH: [nodeBin, nodeModulesBin, inheritedEnv.PATH].filter(Boolean).join(path.delimiter),
+    PATH: [nodeBin, nodeModulesBin, ...(inheritedEnv.PATH || '').split(path.delimiter).filter(Boolean).filter((entry) => path.resolve(entry) !== path.resolve(nodeBin))].join(path.delimiter),
+    BUILDR_NODE_EXECUTABLE: exactNode.nodeExecutable,
+    BUILDR_NODE_IDENTITY: exactNode.audit.identity,
   };
   const sharedCandidate = readSharedCandidatePackage(baseEnv);
   const artifacts = sharedCandidate ? { candidate: sharedCandidate } : {};
@@ -42,11 +49,11 @@ export function createVerificationExecutor(options) {
 
   const commandFor = (step) => {
     const executor = step.executor;
-    if (executor.type === 'node') return { command: process.execPath, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
+    if (executor.type === 'node') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') {
       const files = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
       return {
-        command: process.execPath,
+        command: exactNode.nodeExecutable,
         args: ['--test', ...(executor.args ?? []), ...files.map(nodeTestFile)],
       };
     }
@@ -58,8 +65,8 @@ export function createVerificationExecutor(options) {
       const invocation = buildCommandInvocation(openspecExecutable, executor.args ?? []);
       return { command: invocation.executable, args: invocation.args, cwd: projectRoot, shell: invocation.shell };
     }
-    if (executor.type === 'package-selector') return { command: process.execPath, args: [path.join(productRoot, 'test/verification/package/run.mjs'), executor.selector] };
-    if (executor.type === 'workspace-suite') return { command: process.execPath, args: [path.join(productRoot, 'test/verification/workspace', `${executor.selector}.mjs`)] };
+    if (executor.type === 'package-selector') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, 'test/verification/package/run.mjs'), executor.selector] };
+    if (executor.type === 'workspace-suite') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, 'test/verification/workspace', `${executor.selector}.mjs`)] };
     throw new Error(`Executor ${executor.type} does not resolve to a command`);
   };
 
@@ -101,6 +108,9 @@ export function createVerificationExecutor(options) {
       cwd: resolved.cwd ?? productRoot,
       env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext.executionProfile) },
       diagnosticsDirectory: options.diagnosticsDirectory,
+    }, {
+      signal: options.signal,
+      onSpawn: (processIdentity) => options.onProcessStart?.(step, processIdentity),
     });
   };
 }

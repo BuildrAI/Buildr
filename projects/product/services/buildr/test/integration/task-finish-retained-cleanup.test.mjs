@@ -238,6 +238,11 @@ async function realZeroDeltaCleanupRun(t) {
     ...options,
     cliPath: options.cliPath || retainedCli,
   });
+  const retainedInvocation = runtime.currentProductInvocation();
+  assert.equal(retainedInvocation.argsPrefix[0], retainedCli);
+  assert.equal(path.basename(path.dirname(retainedInvocation.argsPrefix[0])), 'bin');
+  assert.equal(path.basename(retainedInvocation.argsPrefix[0]), 'buildr.mjs');
+  assert.notEqual(path.resolve(retainedInvocation.argsPrefix[0]), path.resolve(process.argv[1]));
   runtime.createTaskRecord(root, {
     taskId: 'zero-delta-subprocess',
     title: 'Zero Delta Subprocess',

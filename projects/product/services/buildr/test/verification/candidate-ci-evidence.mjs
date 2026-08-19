@@ -14,6 +14,7 @@ import { validateCandidateCiCoverage } from './planner.mjs';
 
 export const CANDIDATE_CI_EVIDENCE_SCHEMA = 'buildr.candidate-ci-evidence/v1';
 export const CANDIDATE_CI_AGGREGATE_SCHEMA = 'buildr.candidate-ci-aggregate/v1';
+export const CANDIDATE_CI_CHECKPOINT_SCHEMA = 'buildr.candidate-ci-checkpoint/v1';
 
 const sha256 = (value) => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 const platformRunner = (platform = process.platform) => platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform;
@@ -28,6 +29,8 @@ function registryProjection() {
       dependsOn: item.dependsOn,
       consumesArtifact: item.executor.consumesArtifact === true,
       executor: item.executor.type,
+      timeoutMs: item.timeoutMs,
+      resources: item.resources,
     })),
   };
 }
@@ -83,11 +86,52 @@ function resultProjection(results) {
     phases: item.phases ?? [],
     failureCode: item.failureCode ?? null,
     processCleanup: item.processCleanup ?? null,
+    ...(item.process ? { process: item.process } : {}),
     diagnostics: item.diagnostics ?? (item.stdoutPath || item.stderrPath ? {
       stdoutFile: item.stdoutPath ? diagnosticFileName(item.stdoutPath) : null,
       stderrFile: item.stderrPath ? diagnosticFileName(item.stderrPath) : null,
+      ...(item.diagnosticDigests ? { stdoutDigest: item.diagnosticDigests.stdout, stderrDigest: item.diagnosticDigests.stderr } : {}),
     } : null),
   }));
+}
+
+export function createCandidateCiCheckpoint(input) {
+  if (!/^[a-f0-9]{40,64}$/.test(input.sourceCommit || '')) throw new Error('Candidate CI checkpoint requires a source commit');
+  if (input.registryIdentity !== candidateCiRegistryIdentity()) throw new Error('Candidate CI checkpoint registry identity is not current');
+  const completedResults = resultProjection(input.completedResults ?? []);
+  const expectedStepIds = [...(input.expectedStepIds ?? [])];
+  const completedIds = new Set(completedResults.map((item) => item.id));
+  if (completedResults.some((item) => !expectedStepIds.includes(item.id))) throw new Error('Candidate CI checkpoint contains an unexpected step');
+  return {
+    schemaVersion: CANDIDATE_CI_CHECKPOINT_SCHEMA,
+    kind: 'shard-checkpoint',
+    id: input.id,
+    sourceCommit: input.sourceCommit,
+    registryIdentity: input.registryIdentity,
+    workflow: input.workflow ?? null,
+    artifact: input.artifact ?? null,
+    expectedStepIds,
+    completedStepIds: expectedStepIds.filter((id) => completedIds.has(id)),
+    completedResults,
+    startedAt: input.startedAt,
+    updatedAt: input.updatedAt,
+    status: input.status ?? 'running',
+    aggregateEligible: false,
+  };
+}
+
+function writeJsonAtomic(file, value) {
+  const target = path.resolve(file);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  fs.renameSync(temporary, target);
+  return target;
+}
+
+export function writeCandidateCiCheckpoint(file, checkpoint) {
+  if (checkpoint?.schemaVersion !== CANDIDATE_CI_CHECKPOINT_SCHEMA || checkpoint.aggregateEligible !== false) throw new Error('Invalid Candidate CI checkpoint');
+  return writeJsonAtomic(file, checkpoint);
 }
 
 export function createCandidateCiEvidence(input) {
@@ -122,10 +166,7 @@ export function createCandidateCiEvidence(input) {
 }
 
 export function writeCandidateCiEvidence(file, evidence) {
-  const target = path.resolve(file);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
-  return target;
+  return writeJsonAtomic(file, evidence);
 }
 
 export function readCandidateCiEvidenceFiles(root) {

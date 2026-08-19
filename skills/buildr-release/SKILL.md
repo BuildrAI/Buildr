@@ -51,7 +51,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 准备阶段是普通开发任务，遵循 `task-triage`、`task-worktree`、项目验证和 `task-finish`：
 
 1. fetch `origin/dev`，将其 commit 记录为本次不可变 `<candidate-base>`；从不带 `v` 前缀的完整目标 package version 派生发布 task identity：task id 为 `release-<version>`，分支为 `tasks/release-<version>`，canonical worktree 为 `<workspace-root>/.worktrees/release-<version>`，且新 worktree 必须从该 `<candidate-base>` 创建。同一版本已有分支和 worktree时必须检查归属、base 和当前远端状态后复用，不创建第二个发布任务 identity；不得在 `main` 直接准备发布材料。
-2. 新建发布 worktree 后，立即在该 worktree 的 `projects/product` 执行 `npm ci`；该步骤必须先于版本文件、发布材料和候选验证修改。复用已有 worktree 时，依赖缺失或 lockfile 已变则重新执行 `npm ci`。`npm ci` 失败时停止发布准备，不继续修改、验证或 Git 集成。
+2. 通过正式 Task Environment `prepare` 取得发布 Task 的 execution root、权威 Node executable、Workspace CLI 和 preparation receipt。不得在 `projects/product` 或其他调用方自选 cwd 直接运行 `npm ci`，不得用会话 PATH 猜 Node。只接受 receipt 中 ready 的 `service:product/buildr/buildr.npm-ci` recipe，要求其 cwd 为 `projects/product/services/buildr`，且 `package.json`、Service `package-lock.json`、declaration、Plan 与 recipe identity 完整；依赖准备只由该 recipe 执行。Environment 未 ready、Service lockfile 缺失或 receipt identity 漂移时停止。
 3. 使用无 tag 的版本更新方式同步 `package.json` 和 `package-lock.json`。
 4. 更新 CHANGELOG、README 当前发布入口、known limitations 和 release checklist；只记录真实发布范围和仍存在的限制。
 5. 从 workspace root 运行 `node projects/product/services/buildr/scripts/release/release-notes.mjs <version> CHANGELOG.md`，向维护者展示 workflow 将使用的最终 notes；提取失败或内容仍是笼统发布标题时继续维护 CHANGELOG，不进入候选验证。
@@ -76,7 +76,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 1. fetch 远端并确认本地 `main`、`origin/main` 和已准备的候选提交一致；工作区必须干净。
 2. 再次执行只读发布检查和`release-authority-preflight.mjs`静态检查。首次发布确认目标npm version、Git tag和GitHub Release不存在；继续中断发布则记录已有tag、npm version/integrity、dist-tag和GitHub Release的精确状态。Preflight必须证明closed dispatch inputs、唯一`npm-production` owner、唯一OIDC/pre-tag/tag/publish调用链与current repository/Environment；它不dispatch、不exchange token、不创建tag。
 3. 确认`package.json` version与目标`v<version>`完全一致，并恢复准备阶段记录的`<candidate-base>`与`<candidate-tree>`；缺失或不匹配时停止，不从聊天、旧run或近似Git ref猜测。
-4. 运行`node projects/product/services/buildr/scripts/release/release-transaction-runner.mjs --repo <workspace-root> --version <version> --candidate-base <candidate-base> --candidate-tree <candidate-tree> --source-commit origin/main`。Runner只对current`origin/main`dispatch一次`publish.yml`并定位同一run；本机不得创建或push tag，也不得另行dispatch probe-only run。
+4. 从已完成 release Task 的 Environment Receipt 读取同一权威 Node executable，并以其绝对路径启动 `projects/product/services/buildr/scripts/release/release-transaction-runner.mjs --repo <workspace-root> --version <version> --candidate-base <candidate-base> --candidate-tree <candidate-tree> --source-commit origin/main --release-task release-<version> --candidate-run-id <candidate-run-id> --dev-commit origin/dev [--support-tasks <task-id,...>]`。Runner同时把该 Node bin置于子进程PATH首位，核对父子 Node identity；它通过 Application read model读取completed release/support Tasks、retrospective sources和Task Environment Plan/Receipt，要求权威Service recipe与冻结source lockfile identity一致。Runner只对current`origin/main`dispatch一次`publish.yml`并定位同一run。本机不得创建或push tag，也不得另行dispatch probe-only run。
 5. workflow先完成contract、唯一正式tarball、Host Node和Launcher可逆验证。只有这些jobs全部通过后，唯一`release` job才请求`npm-production` Environment审批；向用户报告同一run审批入口并等待用户完成，不请求第二次发布审批。
 6. 审批后继续跟踪同一run。Protected job必须依次执行credential-free OIDC probe、final`pre-tag` convergence、tag `preflight|ensure`、Registry snapshot、`npm publish <tarball>`、双dist-tag/integrity readback、GitHub Release ensure和官方Registry精确安装smoke；任一tag/source/workflow/candidate/integrity漂移都fail closed。
 7. workflow必须只执行一次 `npm pack`并保留release artifact manifest；发布前smoke、CI artifact evidence和`npm publish <tarball>`必须绑定同一filename、SHA-256与SHA-512 integrity。恢复attempt可复用同run冻结artifact与匹配公开事实，但新的protected deployment/attempt仍可能按GitHub规则再次要求审批；不得通过弱化Environment protection规避。
@@ -84,8 +84,9 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 9. GitHub Release 使用 ensure 语义：不存在时创建，存在时核对 tag target、正文和 prerelease/Latest；RC 必须是 prerelease 且不是 Latest，稳定版必须不是 prerelease 且成为 Latest。不一致时停止且不得覆盖。该步骤成功后仍需继续跟踪发布后 smoke，不能把 Release 已创建单独视为完成。
 10. 使用同一 release notes 提取器生成期望 Markdown，并核对 `gh release view <tag> --json body` 返回的 GitHub Release body 与目标版本内容一致；不得只因 Release 已存在就接受笼统 PR 摘要。
 11. 从 npm 官方 registry 安装精确 `@buildr-ai/buildr@<version>` 并运行发布后 CLI 生命周期 smoke；不得使用 checkout、本地 tarball 或浮动 dist-tag 冒充发布后验证。
-12. 上述发布事实全部验证成功后，默认直接清理本地 release task environment，不把它留作长期恢复点。从保留的 checkout 执行：确认 `<workspace-root>/.worktrees/release-<version>` 干净、`tasks/release-<version>` 已集成到目标开发分支、没有该 environment 所属的健康 preview，且本机 `buildr` 不指向该 worktree；随后删除该本地 worktree 和本地分支，并复核 worktree 列表与本地 ref 均已不存在。此清理不依赖远端 release task ref 是否存在；任一检查或删除失败时保留现场，报告具体阻塞和恢复路径。
-13. 远端 release task 分支只服务于发布准备与中断恢复；本地清理完成后，该远端分支不再承载有用工作，必须进入发布后清理检查，不得把长期保留当作默认结果。查询远端 `tasks/release-<version>`；如 ref 存在，展示待删除 ref、commit，以及已验证的 tag、npm version/dist-tag、GitHub Release 和安装 smoke 证据，并请求用户明确授权删除；只有取得该授权后才删除远端分支，随后重新查询远端确认 ref 不存在。用户未授权、查询不可用或删除失败时保留分支并报告清理 follow-up，不得因此重做 tag、npm publish 或 GitHub Release。
+12. 上述发布事实全部验证成功后，使用同一权威 Node执行 `release-transaction-evidence.mjs inspect-run --run-id <publish-run-id> --repository BuildrAI/Buildr`，下载既有`release-evidence-*` artifact到系统临时目录，验证context/evidence digest与GitHub run/source/attempt一致，返回release Task、retrospective、support Tasks、Candidate、main/dev、publish、tag、npm/GitHub Release和Registry smoke的portable关联结果，并立即清理临时目录。inspect失败不得把发布描述为完整，也不得重发workflow。
+13. Task Finish 已按正式生命周期清理Environment时保持该结果；publication只依赖上述Receipt重建，不重新创建旧worktree。若同一次发布授权前Environment仍为ready，则在发布事实和inspect全部成功后通过Task Environment正式cleanup，不把它留作长期恢复点。禁止用手工worktree或手工依赖安装补造环境。
+14. 远端 release task 分支只服务于发布准备与中断恢复；本地清理完成后，该远端分支不再承载有用工作，必须进入发布后清理检查，不得把长期保留当作默认结果。查询远端 `tasks/release-<version>`；如 ref 存在，展示待删除 ref、commit，以及已验证的 tag、npm version/dist-tag、GitHub Release 和安装 smoke 证据，并请求用户明确授权删除；只有取得该授权后才删除远端分支，随后重新查询远端确认 ref 不存在。用户未授权、查询不可用或删除失败时保留分支并报告清理 follow-up，不得因此重做 tag、npm publish 或 GitHub Release。
 
 发布候选版不得主动把 `latest` 当作稳定版更新。发布稳定版后确认 `latest` 指向稳定版本，并报告 `next` 的当前状态，不擅自移动或删除它。
 
@@ -114,6 +115,7 @@ description: 准备、检查、发布和验证 Buildr 候选版或稳定版时�
 - matching release Finish run、self-bootstrap result的`passed|not-applicable`、activation后`origin/dev` commit/tree、bridge evidence校验与临时evidence清理状态。
 - 本次发布范围是否涉及 Buildr CLI；若涉及，retained `projects/product/buildr`的checkout、Node、channel、source commit、package/version、help和doctor结果，以及npm发布物的独立验证状态。
 - npm 官方 registry、GitHub Release 和安装 smoke 结果。
+- release transaction context/evidence identity，以及release/support Task、retrospective source、Candidate/publish run、main/dev、tag和公开发布事实的inspect关联结果。
 - GitHub Release body 是否与目标版本 changelog 预览一致。
 - 未完成步骤、阻塞项、回滚或后续版本建议。
 - 本地 release worktree/branch 的清理前置条件、删除结果与复核结果。

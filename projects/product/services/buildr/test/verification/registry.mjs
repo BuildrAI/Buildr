@@ -110,6 +110,11 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
 
 const step = (definition) => {
   const classification = VERIFICATION_STEP_TESTING[definition.id];
+  const timeoutMs = definition.timeoutMs ?? (
+    classification?.environment.footprints.includes('workspace-lifecycle') ? 360_000
+      : classification?.primaryIntent === 'Delivery / Release' || (classification?.targetDurationMs ?? 0) >= 25_000 ? 300_000
+        : 180_000
+  );
   return Object.freeze({
     dependsOn: [],
     profiles: [],
@@ -122,6 +127,7 @@ const step = (definition) => {
     admission: false,
     developmentRunners: [],
     ...definition,
+    timeoutMs,
     budgetMs: classification?.targetDurationMs ?? definition.budgetMs,
     testing: classification ? Object.freeze({ ...classification, primaryEvidenceOwner: classification.primaryEvidenceOwner ?? definition.id }) : null,
   });
@@ -225,6 +231,7 @@ const integrationSlice = (id, files, inputs, options = {}) => Object.freeze({
   files: Object.freeze(files),
   inputs: Object.freeze(inputs),
   schedulingCostMs: options.schedulingCostMs,
+  ...(options.timeoutMs == null ? {} : { timeoutMs: options.timeoutMs }),
   concurrencyClass: options.concurrencyClass ?? 'workspace-heavy',
   resources: Object.freeze(options.resources ?? []),
   args: Object.freeze([...(options.args ?? []), '--test-reporter=dot']),
@@ -434,7 +441,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/task-finish-delivery-target.mjs',
     'src/application/task-finish/task-finish-product-executor.mjs',
     'src/application/task-terminal-delivery/**',
-  ], { schedulingCostMs: 35000, args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 35000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'], timeoutMs: 360_000 }),
 ]);
 
 export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
@@ -504,6 +511,7 @@ export const verificationSteps = Object.freeze([
     profiles: ['candidate'],
     inputs: [...slice.files, ...slice.inputs],
     schedulingCostMs: slice.schedulingCostMs,
+    ...(slice.timeoutMs == null ? {} : { timeoutMs: slice.timeoutMs }),
     concurrencyClass: slice.concurrencyClass,
     resources: [...slice.resources],
   })),
@@ -727,6 +735,98 @@ const candidateShard = (id, runner, phase, stepIds, options = {}) => Object.free
   producesArtifact: options.producesArtifact === true,
 });
 
+export const CORE_MACOS_STEP_IDS = Object.freeze([
+  'integration',
+  'integration-declarations',
+  'integration-openspec',
+  'integration-verification',
+  'integration-runtime',
+  'integration-release',
+  'integration-data-store',
+  'integration-task-environment',
+  'integration-self-bootstrap',
+  'integration-task-read-models',
+  'integration-task-coordination',
+  'integration-project-daily-progress',
+  'integration-task-execution-records',
+  'integration-task-finish',
+  'integration-task-finish-delivery',
+  'system-verification-contracts',
+  'system-public-json-contracts',
+  'system-openspec-contract-audit',
+  'system-local-app-http',
+  'application-payload-release',
+  'npm-launcher-candidate',
+  'open-source-candidate',
+  'capability-cli-integration',
+  'commands-cli-integration',
+  'openspec-contract-fixtures',
+  'package-workspace',
+  'package-commands',
+  'package-rules',
+  'package-skills',
+  'package-runtime',
+  'ownership-recovery',
+  'runtime-reconciliation',
+  'init-onboarding',
+  'cli-compatibility',
+  'cli-package-parity',
+  'service-branch-contract',
+  'remote-skill-timeout',
+  'release-tarball-smoke',
+  'managed-data-integrity',
+]);
+
+export const CORE_MACOS_SHARDS = Object.freeze([
+  candidateShard('core-task-lifecycle-macos', 'macos', 'verification', [
+    'integration-task-environment',
+    'integration-self-bootstrap',
+    'integration-task-execution-records',
+    'integration-task-finish',
+    'integration-task-finish-delivery',
+  ], { requiresArtifact: true }),
+  candidateShard('core-project-task-macos', 'macos', 'verification', [
+    'integration',
+    'integration-declarations',
+    'integration-openspec',
+    'integration-verification',
+    'integration-data-store',
+    'integration-task-read-models',
+    'integration-task-coordination',
+    'integration-project-daily-progress',
+    'system-verification-contracts',
+    'system-public-json-contracts',
+    'system-openspec-contract-audit',
+    'openspec-contract-fixtures',
+  ], { requiresArtifact: true }),
+  candidateShard('core-package-runtime-release-macos', 'macos', 'verification', [
+    'integration-runtime',
+    'integration-release',
+    'system-local-app-http',
+    'application-payload-release',
+    'npm-launcher-candidate',
+    'open-source-candidate',
+    'package-workspace',
+    'package-commands',
+    'package-rules',
+    'package-skills',
+    'package-runtime',
+    'ownership-recovery',
+    'runtime-reconciliation',
+    'cli-package-parity',
+    'remote-skill-timeout',
+    'release-tarball-smoke',
+    'managed-data-integrity',
+  ], { requiresArtifact: true }),
+  candidateShard('core-cli-contract-macos', 'macos', 'verification', [
+    'capability-cli-integration',
+    'commands-cli-integration',
+    'init-onboarding',
+    'cli-compatibility',
+    'service-branch-contract',
+  ], { requiresArtifact: true }),
+]);
+
 export const CANDIDATE_CI_SHARDS = Object.freeze([
   candidateShard('preflight-macos', 'macos', 'preflight', [
     'unit',
@@ -745,47 +845,7 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
   candidateShard('artifact-macos', 'macos', 'artifact', [
     'candidate-tarball',
   ], { producesArtifact: true }),
-  candidateShard('core-macos', 'macos', 'verification', [
-    'integration',
-    'integration-declarations',
-    'integration-openspec',
-    'integration-verification',
-    'integration-runtime',
-    'integration-release',
-    'integration-data-store',
-    'integration-task-environment',
-    'integration-self-bootstrap',
-    'integration-task-read-models',
-    'integration-task-coordination',
-    'integration-project-daily-progress',
-    'integration-task-execution-records',
-    'integration-task-finish',
-    'integration-task-finish-delivery',
-    'system-verification-contracts',
-    'system-public-json-contracts',
-    'system-openspec-contract-audit',
-    'system-local-app-http',
-    'application-payload-release',
-    'npm-launcher-candidate',
-    'open-source-candidate',
-    'capability-cli-integration',
-    'commands-cli-integration',
-    'openspec-contract-fixtures',
-    'package-workspace',
-    'package-commands',
-    'package-rules',
-    'package-skills',
-    'package-runtime',
-    'ownership-recovery',
-    'runtime-reconciliation',
-    'init-onboarding',
-    'cli-compatibility',
-    'cli-package-parity',
-    'service-branch-contract',
-    'remote-skill-timeout',
-    'release-tarball-smoke',
-    'managed-data-integrity',
-  ], { requiresArtifact: true }),
+  ...CORE_MACOS_SHARDS,
   candidateShard('runtime-windows', 'windows', 'verification', [
     'system-runtime-recovery',
     'system-app-process',
@@ -812,8 +872,8 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
 ]);
 
 export const CANDIDATE_CI_PLATFORM_REPEATS = Object.freeze({
-  'npm-launcher-candidate': Object.freeze(['core-macos', 'runtime-windows']),
-  'release-tarball-smoke': Object.freeze(['core-macos', 'runtime-windows']),
+  'npm-launcher-candidate': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
+  'release-tarball-smoke': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
 });
 
 export const CANDIDATE_CI_HOST_NODE_TUPLES = Object.freeze([

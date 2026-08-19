@@ -304,6 +304,23 @@ test('distributed Candidate creates one artifact and fans out independent consum
     'candidate-windows', 'candidate-host-node', 'candidate-gate',
   ]);
   assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-bootstrap');
+  assert.equal(document.jobs['candidate-core-macos']['timeout-minutes'], 20);
+  assert.equal(document.jobs['candidate-core-macos'].strategy['fail-fast'], false);
+  assert.deepEqual(document.jobs['candidate-core-macos'].strategy.matrix.shard, [
+    'core-task-lifecycle-macos',
+    'core-project-task-macos',
+    'core-package-runtime-release-macos',
+    'core-cli-contract-macos',
+  ]);
+  const candidateTimeouts = verificationSteps.filter((step) => step.profiles.includes('candidate')).map((step) => step.timeoutMs);
+  assert.ok(candidateTimeouts.every((timeoutMs) => Number.isInteger(timeoutMs) && timeoutMs > 0));
+  assert.ok(Math.max(...candidateTimeouts) + 3_000 < document.jobs['candidate-core-macos']['timeout-minutes'] * 60_000);
+  assert.ok(document.jobs['candidate-core-macos']['timeout-minutes'] < 35);
+  for (const id of ['integration-task-finish-delivery', 'integration-self-bootstrap']) {
+    const owner = verificationSteps.find((step) => step.id === id);
+    assert.ok(owner.resources.includes('workspace-saturating'), id);
+    assert.equal(owner.timeoutMs, 360_000, id);
+  }
   assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
   assert.equal(document.jobs['candidate-windows'].needs, 'candidate-bootstrap');
   assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-bootstrap');

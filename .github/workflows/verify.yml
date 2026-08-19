@@ -198,10 +198,18 @@ jobs:
           overwrite: true
 
   candidate-core-macos:
-    name: Candidate core (macOS)
+    name: Candidate core (${{ matrix.shard }})
     needs: candidate-bootstrap
     runs-on: macos-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - core-task-lifecycle-macos
+          - core-project-task-macos
+          - core-package-runtime-release-macos
+          - core-cli-contract-macos
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -220,23 +228,23 @@ jobs:
         with:
           name: candidate-package
           path: ${{ runner.temp }}/candidate-package
-      - name: Run macOS core shard
+      - name: Run macOS semantic core shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_ARTIFACT_DIR: ${{ runner.temp }}/candidate-package
-          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-core
-          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-core-macos.json
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-core-diagnostics
+          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-core-${{ matrix.shard }}
+          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-${{ matrix.shard }}.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-core-diagnostics-${{ matrix.shard }}
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        run: npm run test:candidate:ci -- core-macos
+        run: npm run test:candidate:ci -- ${{ matrix.shard }}
       - name: Upload core evidence and diagnostics
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: candidate-evidence-core-macos
+          name: candidate-evidence-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/candidate-evidence
-            ${{ runner.temp }}/candidate-core-diagnostics
+            ${{ runner.temp }}/candidate-core-diagnostics-${{ matrix.shard }}
           if-no-files-found: warn
           overwrite: true
 

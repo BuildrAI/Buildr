@@ -29,6 +29,7 @@ const workflow = `on:
   workflow_dispatch:
     inputs:
       release_id: { required: true, type: string }
+      release_context: { required: true, type: string }
       version: { required: true, type: string }
       source_commit: { required: true, type: string }
       candidate_base: { required: true, type: string }
@@ -101,7 +102,7 @@ test('workflow authority has one dispatch entry and one protected transaction ow
   const observed = inspectWorkflowAuthority(workflow);
   assert.deepEqual(observed.triggers, {
     workflowDispatch: true,
-    dispatchInputs: ['candidate_base', 'candidate_tree', 'release_id', 'source_commit', 'version', 'workflow_sha256'],
+    dispatchInputs: ['candidate_base', 'candidate_tree', 'release_context', 'release_id', 'source_commit', 'version', 'workflow_sha256'],
     push: false,
     pushTags: [],
   });
