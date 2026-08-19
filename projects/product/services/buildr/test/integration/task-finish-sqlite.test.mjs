@@ -43,6 +43,25 @@ function identity(root, task) {
   };
 }
 
+function repositoryPlan(root, selector, { retainedRoot = root, remote = 'origin', targetBranch = 'dev' } = {}) {
+  const suffix = selector.replaceAll(/[^a-z0-9]+/gi, '-');
+  return {
+    selector,
+    sourcePath: selector === 'workspace' ? '.' : `projects/${suffix}`,
+    retainedRoot,
+    taskRoot: path.join(root, '.worktrees', suffix),
+    environmentBranch: `codex/${suffix}`,
+    targetBranch,
+    remote,
+    disposition: 'applicable',
+    taskContribution: {
+      identity: `sha256-contribution-${suffix}`,
+      originalBaseline: { tree: `baseline-${suffix}` },
+      source: { tree: `source-${suffix}` },
+    },
+  };
+}
+
 test('Task Finish current run、lease和completion由Workspace SQLite统一持久化', async (t) => {
   const root = workspace(t);
   const runtime = createRuntime();
@@ -189,6 +208,9 @@ test('retained内部lease driver以closed schema获取刷新和释放matching ow
   const acquisition = JSON.parse(acquired.stdout);
   assert.equal(acquisition.schemaVersion, 'buildr.task-finish-target-lease-driver-result/v1');
   assert.equal(acquisition.status, 'passed');
+  assert.equal(acquisition.targetIdentity, 'origin:dev');
+  assert.equal(acquisition.resolvedTargetIdentity, 'origin:dev');
+  assert.equal(acquisition.resolution, 'exact');
   assert.ok(acquisition.lease.token);
 
   const refreshed = invoke('refresh');
@@ -199,6 +221,101 @@ test('retained内部lease driver以closed schema获取刷新和释放matching ow
   assert.equal(released.status, 0, released.stderr);
   assert.equal(JSON.parse(released.stdout).released, true);
   assert.deepEqual(runtime.inspectTaskFinishPersistence(root).leases, []);
+});
+
+test('repository-set lease只对matching owner唯一解析legacy logical target', (t) => {
+  const root = workspace(t);
+  const foreignRoot = workspace(t);
+  const runtime = createRuntime();
+  for (const taskId of ['repository-lease-unique', 'repository-lease-ambiguous']) {
+    runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove repository-scoped lease compatibility.', projects: [], services: [], changes: [] });
+  }
+
+  const uniqueRun = createFinishRun({
+    root,
+    runId: 'repository-lease-unique-run',
+    identity: { ...identity(root, 'repository-lease-unique'), repositories: [repositoryPlan(root, 'workspace')] },
+    runtime,
+  });
+  runtime.writeTaskFinishRunPersistence(root, uniqueRun);
+  const exactIdentity = uniqueRun.identity.repositories[0].leaseTargetIdentity;
+  const legacy = runtime.acquireTaskFinishCurrentTargetLease(root, {
+    taskId: uniqueRun.identity.task,
+    runId: uniqueRun.runId,
+    targetIdentity: 'origin:dev',
+  });
+  assert.equal(legacy.resolution.mode, 'legacy-logical-unique');
+  assert.equal(legacy.resolution.targetIdentity, exactIdentity);
+  assert.equal(legacy.value.targetIdentity, exactIdentity);
+  assert.equal(runtime.inspectTaskFinishPersistence(root).leases[0].targetIdentity, exactIdentity);
+  assert.equal(runtime.releaseTaskFinishCurrentTargetLease(root, {
+    taskId: uniqueRun.identity.task,
+    runId: uniqueRun.runId,
+    targetIdentity: 'origin:dev',
+    token: 'wrong-token',
+  }).released, false);
+  assert.equal(runtime.inspectTaskFinishPersistence(root).leases.length, 1);
+  assert.throws(() => runtime.releaseTaskFinishCurrentTargetLease(root, {
+    taskId: uniqueRun.identity.task,
+    runId: 'wrong-run',
+    targetIdentity: 'origin:dev',
+    token: legacy.token,
+  }), (error) => error.code === 'task_finish_current_conflict');
+  assert.equal(runtime.releaseTaskFinishCurrentTargetLease(root, {
+    taskId: uniqueRun.identity.task,
+    runId: uniqueRun.runId,
+    targetIdentity: 'origin:dev',
+    token: legacy.token,
+  }).released, true);
+
+  assert.throws(() => runtime.acquireTaskFinishCurrentTargetLease(root, {
+    taskId: uniqueRun.identity.task,
+    runId: uniqueRun.runId,
+    targetIdentity: 'upstream:main',
+  }), (error) => error.code === 'task_finish_target_identity_mismatch');
+  assert.throws(() => runtime.acquireTaskFinishCurrentTargetLease(root, {
+    taskId: uniqueRun.identity.task,
+    runId: uniqueRun.runId,
+    targetIdentity: 'sha256-wrong-repository',
+  }), (error) => error.code === 'task_finish_target_identity_mismatch');
+  assert.throws(() => runtime.acquireTaskFinishCurrentTargetLease(foreignRoot, {
+    taskId: uniqueRun.identity.task,
+    runId: uniqueRun.runId,
+    targetIdentity: exactIdentity,
+  }), (error) => error.code === 'task_finish_current_conflict');
+
+  const ambiguousRun = createFinishRun({
+    root,
+    runId: 'repository-lease-ambiguous-run',
+    identity: {
+      ...identity(root, 'repository-lease-ambiguous'),
+      repositories: [
+        repositoryPlan(root, 'workspace'),
+        repositoryPlan(root, 'service:product/example', { retainedRoot: path.join(root, 'repositories', 'example') }),
+      ],
+    },
+    runtime,
+  });
+  runtime.writeTaskFinishRunPersistence(root, ambiguousRun);
+  assert.throws(() => runtime.acquireTaskFinishCurrentTargetLease(root, {
+    taskId: ambiguousRun.identity.task,
+    runId: ambiguousRun.runId,
+    targetIdentity: 'origin:dev',
+  }), (error) => error.code === 'task_finish_target_identity_ambiguous');
+  const serviceIdentity = ambiguousRun.identity.repositories.find((repository) => repository.selector === 'service:product/example').leaseTargetIdentity;
+  const exact = runtime.acquireTaskFinishCurrentTargetLease(root, {
+    taskId: ambiguousRun.identity.task,
+    runId: ambiguousRun.runId,
+    targetIdentity: serviceIdentity,
+  });
+  assert.equal(exact.resolution.mode, 'exact');
+  assert.equal(exact.value.targetIdentity, serviceIdentity);
+  assert.equal(runtime.releaseTaskFinishCurrentTargetLease(root, {
+    taskId: ambiguousRun.identity.task,
+    runId: ambiguousRun.runId,
+    targetIdentity: serviceIdentity,
+    token: exact.token,
+  }).released, true);
 });
 
 test('terminal Finish row可临时持有自举lease且过期后由新owner接管', async (t) => {

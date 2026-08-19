@@ -111,12 +111,15 @@ function resultIdentity(result) {
 
 function legacyWorkspaceProjection(result, allowCleanedRoot) {
   const carrier = projectedCarrier('workspace', result.carrier, { allowCleanedRoot });
+  const targetBranch = optionalString(result.identity?.targetBranch);
+  const remote = optionalString(result.identity?.remote);
   return [{
     selector: 'workspace',
     disposition: carrier ? 'applicable' : 'unavailable',
     reason: carrier ? null : 'Legacy Result does not expose a Workspace carrier.',
-    targetBranch: optionalString(result.identity?.targetBranch),
-    remote: optionalString(result.identity?.remote),
+    targetBranch,
+    remote,
+    leaseTargetIdentity: remote && targetBranch ? `${remote}:${targetBranch}` : null,
     carrier,
     delivery: projectedDelivery(result.delivery),
   }];
@@ -164,6 +167,7 @@ function repositoryProjection(result) {
       reason: optionalString(state.reason) || optionalString(plan.reason),
       targetBranch: optionalString(plan.targetBranch),
       remote: optionalString(plan.remote),
+      leaseTargetIdentity: optionalString(plan.leaseTargetIdentity),
       carrier: projectedCarrier(selector, state.deliveryCarrier, { allowCleanedRoot }),
       delivery: projectedDelivery(state.delivery),
     };

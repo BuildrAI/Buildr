@@ -162,6 +162,7 @@ export function createSelfBootstrapCloseoutPlan(finishResult) {
     agent: finishResult.identity?.agent,
     targetBranch: finishResult.identity?.targetBranch,
     remote: finishResult.identity?.remote,
+    leaseTargetIdentity: finishResult.workspaceRepository?.leaseTargetIdentity || null,
     baseRef: baseRef || null,
     frozenPaths: changedPaths,
     actions,
@@ -572,7 +573,7 @@ function productCommand(execute, root, nodeExecutable, args, id, phaseResult) {
 
 function targetLeaseCommand(execute, root, nodeExecutable, plan, action, token, id, phaseResult) {
   const script = path.join(root, TARGET_LEASE_DRIVER);
-  const args = [script, action, '--task', plan.taskId, '--run', plan.runId, '--target-identity', `${plan.remote}:${plan.targetBranch}`, '--target', root];
+  const args = [script, action, '--task', plan.taskId, '--run', plan.runId, '--target-identity', plan.leaseTargetIdentity, '--target', root];
   if (action === 'release') args.push('--lease-token', token);
   else args.push('--duration-ms', String(TARGET_LEASE_DURATION_MS));
   const result = command(execute, nodeExecutable, args, root, id, phaseResult, { kind: 'task-finish-target-lease', script, action });
@@ -584,7 +585,8 @@ function targetLeaseCommand(execute, root, nodeExecutable, plan, action, token, 
     || payload.operation !== action
     || payload.taskId !== plan.taskId
     || payload.runId !== plan.runId
-    || payload.targetIdentity !== `${plan.remote}:${plan.targetBranch}`) {
+    || payload.targetIdentity !== plan.leaseTargetIdentity
+    || payload.resolvedTargetIdentity !== plan.leaseTargetIdentity) {
     throw closeoutError('self-bootstrap-closeout.target-lease-identity-mismatch', 'Target lease driver Result identity不匹配。', { action, payload });
   }
   if (payload.status === 'blocked' && payload.existing) {
@@ -965,7 +967,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     const finishWorkspaceRoot = currentFinishResult.identity?.workspaceRoot ? fs.realpathSync(path.resolve(currentFinishResult.identity.workspaceRoot)) : null;
     if (!finishWorkspaceRoot || !sameFilesystemPath(finishWorkspaceRoot, root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', 'Finish Result绑定的canonical Workspace与runner target不一致。');
     plan = createSelfBootstrapCloseoutPlan(currentFinishResult);
-    if (!plan.runId || !plan.taskId || !plan.agent || !plan.targetBranch || !plan.remote) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish投影缺少run、Task、Agent、target或remote。');
+    if (!plan.runId || !plan.taskId || !plan.agent || !plan.targetBranch || !plan.remote || !plan.leaseTargetIdentity) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish投影缺少run、Task、Agent、target、remote或repository lease identity。');
     if (recoveryPlan?.status === 'blocked') {
       throw closeoutError('self-bootstrap-closeout.foreign-carriers-require-owner-recovery', '检测到foreign Finish carrier；当前runner必须等待原owner按recovery plan恢复。', {
         recoveryPlanIdentity: recoveryPlan.identity,

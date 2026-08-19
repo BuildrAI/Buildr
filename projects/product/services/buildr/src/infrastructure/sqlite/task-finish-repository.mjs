@@ -319,18 +319,68 @@ function leaseFromRow(row) {
   return row?.lease_target_identity ? { targetIdentity: row.lease_target_identity, token: row.lease_token, expiresAt: row.lease_expires_at } : null;
 }
 
-function ownedTargetIdentities(payload, row) {
+function ownedTargetRepositories(payload, row) {
   const identity = payload?.kind === 'run'
     ? payload.run?.identity
     : payload?.completion?.result?.identity;
   const repositories = Array.isArray(identity?.repositories) ? identity.repositories : [];
   const repositoryTargets = repositories
     .filter((repository) => repository?.disposition === 'applicable' && typeof repository.leaseTargetIdentity === 'string')
-    .map((repository) => repository.leaseTargetIdentity);
+    .map((repository) => ({
+      selector: repository.selector || null,
+      leaseTargetIdentity: repository.leaseTargetIdentity,
+      logicalTargetIdentity: typeof repository.remote === 'string' && typeof repository.targetBranch === 'string'
+        ? `${repository.remote}:${repository.targetBranch}`
+        : null,
+    }));
   if (repositoryTargets.length) return repositoryTargets;
   return row?.target_remote && row?.target_branch
-    ? [`${row.target_remote}:${row.target_branch}`]
+    ? [{
+      selector: 'workspace',
+      leaseTargetIdentity: `${row.target_remote}:${row.target_branch}`,
+      logicalTargetIdentity: `${row.target_remote}:${row.target_branch}`,
+    }]
     : [];
+}
+
+function resolveOwnedTargetIdentity(payload, row, requestedTargetIdentity) {
+  const repositories = ownedTargetRepositories(payload, row);
+  const exactMatches = repositories.filter((repository) => repository.leaseTargetIdentity === requestedTargetIdentity);
+  if (exactMatches.length === 1) {
+    return { requestedTargetIdentity, targetIdentity: requestedTargetIdentity, mode: 'exact', selector: exactMatches[0].selector };
+  }
+  if (exactMatches.length > 1) {
+    throw error('task_finish_target_identity_ambiguous', 'Target lease exact identity匹配多个冻结repository。', 409, {
+      taskId: row?.task_id || null,
+      runId: row?.run_id || null,
+      requestedTargetIdentity,
+      selectors: exactMatches.map((repository) => repository.selector),
+    });
+  }
+  const logicalMatches = repositories.filter((repository) => repository.logicalTargetIdentity === requestedTargetIdentity);
+  if (logicalMatches.length === 1) {
+    return {
+      requestedTargetIdentity,
+      targetIdentity: logicalMatches[0].leaseTargetIdentity,
+      mode: logicalMatches[0].leaseTargetIdentity === requestedTargetIdentity ? 'exact' : 'legacy-logical-unique',
+      selector: logicalMatches[0].selector,
+    };
+  }
+  if (logicalMatches.length > 1) {
+    throw error('task_finish_target_identity_ambiguous', 'Legacy target lease identity匹配多个冻结repository。', 409, {
+      taskId: row?.task_id || null,
+      runId: row?.run_id || null,
+      requestedTargetIdentity,
+      selectors: logicalMatches.map((repository) => repository.selector),
+    });
+  }
+  throw error('task_finish_target_identity_mismatch', 'Target lease identity与Finish owner冻结target不一致。', 409, {
+    taskId: row?.task_id || null,
+    runId: row?.run_id || null,
+    expected: repositories.map((repository) => repository.leaseTargetIdentity),
+    legacyLogicalTargets: [...new Set(repositories.map((repository) => repository.logicalTargetIdentity).filter(Boolean))],
+    actual: requestedTargetIdentity,
+  });
 }
 
 const QUERY_FIELDS = Object.freeze([
@@ -545,27 +595,27 @@ export function registerTaskFinishRepository(runtime) {
       opened = open(runtime, targetRoot, true);
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
-      const owner = database.prepare('SELECT * FROM task_finish_current WHERE lease_target_identity = ?').get(targetIdentity) || null;
       const requested = readCurrentRow(database, { taskId });
       const requestedPayload = requested ? decodeRow(requested) : null;
       const eligible = requestedPayload?.kind === 'run' || (requestedPayload?.kind === 'terminal' && requested.status === 'complete');
       if (!requested || requested.run_id !== runId || !eligible) throw error('task_finish_current_conflict', 'Target lease requires matching current or terminal Finish owner。', 409, { taskId, runId, currentRunId: requested?.run_id || null, kind: requestedPayload?.kind || null });
-      const requestedTargetIdentities = ownedTargetIdentities(requestedPayload, requested);
-      if (!requestedTargetIdentities.includes(targetIdentity)) throw error('task_finish_target_identity_mismatch', 'Target lease identity与Finish owner冻结target不一致。', 409, { taskId, runId, expected: requestedTargetIdentities, actual: targetIdentity });
+      const resolution = resolveOwnedTargetIdentity(requestedPayload, requested, targetIdentity);
+      const resolvedTargetIdentity = resolution.targetIdentity;
+      const owner = database.prepare('SELECT * FROM task_finish_current WHERE lease_target_identity = ?').get(resolvedTargetIdentity) || null;
       if (owner && owner.run_id !== runId) {
         const expired = Date.parse(owner.lease_expires_at) <= currentTime;
         if (!expired || !['failed', 'complete'].includes(owner.status)) {
           database.exec('ROLLBACK');
-          return { blocked: true, locator: leaseLocator(targetIdentity), existing: { taskId: owner.task_id, runId: owner.run_id, targetIdentity, expiresAt: owner.lease_expires_at, expired } };
+          return { blocked: true, locator: leaseLocator(resolvedTargetIdentity), existing: { taskId: owner.task_id, runId: owner.run_id, targetIdentity: resolvedTargetIdentity, expiresAt: owner.lease_expires_at, expired }, resolution };
         }
         database.prepare('UPDATE task_finish_current SET lease_target_identity = NULL, lease_token = NULL, lease_expires_at = NULL WHERE task_id = ? AND run_id = ? AND lease_token = ?').run(owner.task_id, owner.run_id, owner.lease_token);
       }
-      const token = requested.lease_target_identity === targetIdentity && requested.lease_token ? requested.lease_token : crypto.randomUUID();
+      const token = requested.lease_target_identity === resolvedTargetIdentity && requested.lease_token ? requested.lease_token : crypto.randomUUID();
       const expiresAt = timestamp(currentTime + leaseDurationMs);
-      const changed = database.prepare('UPDATE task_finish_current SET lease_target_identity = ?, lease_token = ?, lease_expires_at = ?, updated_at = ? WHERE task_id = ? AND run_id = ?').run(targetIdentity, token, expiresAt, timestamp(currentTime), taskId, runId);
+      const changed = database.prepare('UPDATE task_finish_current SET lease_target_identity = ?, lease_token = ?, lease_expires_at = ?, updated_at = ? WHERE task_id = ? AND run_id = ?').run(resolvedTargetIdentity, token, expiresAt, timestamp(currentTime), taskId, runId);
       if (changed.changes !== 1) throw error('task_finish_target_lease_failed', 'Task Finish target lease owner更新失败。', 409, { taskId, runId });
       database.exec('COMMIT');
-      return { storage: 'sqlite', locator: leaseLocator(targetIdentity), token, value: { schemaVersion: 'buildr.task-finish-target-lease/v1', targetIdentity, runId, task: taskId, targetBranch: requested.target_branch, token, expiresAt } };
+      return { storage: 'sqlite', locator: leaseLocator(resolvedTargetIdentity), token, resolution, value: { schemaVersion: 'buildr.task-finish-target-lease/v1', targetIdentity: resolvedTargetIdentity, runId, task: taskId, targetBranch: requested.target_branch, token, expiresAt } };
     } catch (cause) {
       try { opened?.database?.exec('ROLLBACK'); } catch {}
       if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
@@ -601,6 +651,29 @@ export function registerTaskFinishRepository(runtime) {
     } finally { close(opened); }
   }
 
+  function releaseTaskFinishCurrentTargetLease(targetRoot, { taskId, runId, targetIdentity, token }) {
+    if (typeof taskId !== 'string' || !taskId || typeof runId !== 'string' || !runId) throw error('task_finish_target_lease_owner_invalid', 'Task Finish target lease release requires Task and run identity.', 400);
+    if (typeof targetIdentity !== 'string' || !targetIdentity || typeof token !== 'string' || !token) throw error('task_finish_target_lease_release_invalid', 'Task Finish target lease release requires target identity and token.', 400);
+    let opened;
+    try {
+      opened = open(runtime, targetRoot, true);
+      const database = opened.database;
+      database.exec('BEGIN IMMEDIATE');
+      const requested = readCurrentRow(database, { taskId });
+      const requestedPayload = requested ? decodeRow(requested) : null;
+      const eligible = requestedPayload?.kind === 'run' || (requestedPayload?.kind === 'terminal' && requested.status === 'complete');
+      if (!requested || requested.run_id !== runId || !eligible) throw error('task_finish_current_conflict', 'Target lease release requires matching current or terminal Finish owner。', 409, { taskId, runId, currentRunId: requested?.run_id || null, kind: requestedPayload?.kind || null });
+      const resolution = resolveOwnedTargetIdentity(requestedPayload, requested, targetIdentity);
+      const changed = database.prepare('UPDATE task_finish_current SET lease_target_identity = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ? WHERE task_id = ? AND run_id = ? AND lease_target_identity = ? AND lease_token = ?').run(timestamp(), taskId, runId, resolution.targetIdentity, token);
+      database.exec('COMMIT');
+      return { released: changed.changes === 1, resolution };
+    } catch (cause) {
+      try { opened?.database?.exec('ROLLBACK'); } catch {}
+      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
+      throw error('task_finish_target_lease_release_failed', `Task Finish target lease owner release失败：${cause.message}`, 500, { taskId, runId, targetIdentity });
+    } finally { close(opened); }
+  }
+
   function readTaskFinishResultsPersistence(targetRoot, taskId) {
     const completion = readTaskFinishCompletionPersistence(targetRoot, { taskId }, { optional: true });
     if (!completion || completion.status !== 'complete') return { taskId, results: [], diagnostics: [] };
@@ -631,6 +704,7 @@ export function registerTaskFinishRepository(runtime) {
     finalizeTaskFinishPersistence,
     acquireTaskFinishCurrentTargetLease,
     acquireTaskFinishTargetLease,
+    releaseTaskFinishCurrentTargetLease,
     releaseTaskFinishTargetLease,
     readTaskFinishResultsPersistence,
     inspectTaskFinishPersistence,

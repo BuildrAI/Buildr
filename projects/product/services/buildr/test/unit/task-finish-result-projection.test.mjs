@@ -148,8 +148,8 @@ test('v2与v3 Result归一化为同一稳定self-bootstrap契约', () => {
     identity: {
       ...canonical().identity,
       repositories: [
-        { selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' },
-        { selector: 'service:product/example', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' },
+        { selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin', leaseTargetIdentity: 'sha256-workspace-target' },
+        { selector: 'service:product/example', disposition: 'applicable', targetBranch: 'dev', remote: 'origin', leaseTargetIdentity: 'sha256-service-target' },
       ],
       repositorySetIdentity: 'sha256-repository-set',
     },
@@ -183,6 +183,9 @@ test('v2与v3 Result归一化为同一稳定self-bootstrap契约', () => {
     identity: { ...canonical().identity, repositories: [] },
   }), 'self-bootstrap').schemaVersion, legacy.schemaVersion);
   assert.equal(multi.workspaceRepository.selector, 'workspace');
+  assert.equal(multi.workspaceRepository.leaseTargetIdentity, 'sha256-workspace-target');
+  assert.equal(multi.repositories[0].leaseTargetIdentity, 'sha256-service-target');
+  assert.equal(legacy.workspaceRepository.leaseTargetIdentity, 'origin:dev');
   assert.equal(multi.workspaceRepository.carrier.root, workspaceCarrierRoot);
   assert.deepEqual(multi.carriers.map((carrier) => carrier.selector), ['service:product/example', 'workspace']);
   assert.equal(multi.carrierContainerRoot, legacyRoot);

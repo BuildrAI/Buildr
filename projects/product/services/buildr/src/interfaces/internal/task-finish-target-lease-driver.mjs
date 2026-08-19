@@ -14,7 +14,7 @@ function option(args, name) {
 }
 
 function usage() {
-  return 'Internal usage: node task-finish-target-lease-driver.mjs <acquire|refresh|release> --task <task-id> --run <run-id> --target-identity <remote:branch> --target <canonical-workspace> [--lease-token <token>] [--duration-ms <milliseconds>]';
+  return 'Internal usage: node task-finish-target-lease-driver.mjs <acquire|refresh|release> --task <task-id> --run <run-id> --target-identity <repository-lease-identity> --target <canonical-workspace> [--lease-token <token>] [--duration-ms <milliseconds>]';
 }
 
 const args = process.argv.slice(2);
@@ -35,10 +35,7 @@ if (!['acquire', 'refresh', 'release'].includes(action) || !taskId || !runId || 
 try {
   const runtime = createRuntime();
   if (action === 'release') {
-    const released = runtime.releaseTaskFinishTargetLease(targetRoot, {
-      token: leaseToken,
-      value: { targetIdentity },
-    });
+    const released = runtime.releaseTaskFinishCurrentTargetLease(targetRoot, { taskId, runId, targetIdentity, token: leaseToken });
     console.log(JSON.stringify({
       schemaVersion: RESULT_SCHEMA,
       operation: action,
@@ -46,6 +43,8 @@ try {
       taskId,
       runId,
       targetIdentity,
+      resolvedTargetIdentity: released.resolution.targetIdentity,
+      resolution: released.resolution.mode,
       released: released.released,
     }, null, 2));
   } else {
@@ -58,6 +57,8 @@ try {
       taskId,
       runId,
       targetIdentity,
+      resolvedTargetIdentity: blocked ? lease.resolution?.targetIdentity || null : lease.value.targetIdentity,
+      resolution: lease.resolution?.mode || null,
       lease: blocked ? null : { token: lease.token, expiresAt: lease.value.expiresAt },
       existing: blocked ? lease.existing : null,
     }, null, 2));
@@ -71,6 +72,8 @@ try {
     taskId: taskId || null,
     runId: runId || null,
     targetIdentity: targetIdentity || null,
+    resolvedTargetIdentity: null,
+    resolution: null,
     diagnostic: { code: error.code || 'task_finish_target_lease_driver_failed', message: error.message, details: error.details || null },
   }, null, 2));
   process.exitCode = 1;
